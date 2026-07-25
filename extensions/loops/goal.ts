@@ -2463,6 +2463,26 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
           else if (!v.trim()) saveSettings("global", ctx.cwd, { wedgeAlertMinutes: undefined });
           else ctx.ui.notify(`Not a non-negative integer: ${v}`, "warning");
         }
+      } else if (choice.startsWith("Subagent model strategy")) {
+        const v = await ctx.ui.select("Subagent model (pi-subagents default agents)", [
+          "inherit-parent — subagents share your session model + its quota pool (fixes separate-provider 403s; search agents may run on a pricier model)",
+          "agent-default — upstream behavior: Explore pins claude-haiku-4-5 (cheap search, but a SEPARATE provider quota from your session)",
+        ]);
+        if (v) {
+          const strategy: SubagentModelStrategy = v.startsWith("agent-default") ? "agent-default" : "inherit-parent";
+          saveSettings("global", ctx.cwd, { subagentModelStrategy: strategy });
+          ctx.ui.notify("Subagent model strategy saved — applies to NEW pi sessions (pi-subagents registers agents at session start).", "info");
+        }
+      } else if (choice.startsWith("Subagent Explore model pin")) {
+        const v = await ctx.ui.input("Model pin for Explore subagents", "provider/model-id e.g. minimax/MiniMax-M3 — always wins over strategy; empty = follow strategy");
+        if (v !== undefined) {
+          const current = loadSettings(ctx.cwd).subagentModelOverrides ?? {};
+          const next = { ...current };
+          if (v.trim()) next.Explore = v.trim();
+          else delete next.Explore;
+          saveSettings("global", ctx.cwd, { subagentModelOverrides: Object.keys(next).length > 0 ? next : undefined });
+          ctx.ui.notify("Explore model pin saved — applies to NEW pi sessions.", "info");
+        }
       }
     } catch {
       return;
