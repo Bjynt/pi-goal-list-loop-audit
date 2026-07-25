@@ -61,10 +61,10 @@ test("countTrailingDisapprovals: counts only the trailing streak", () => {
   const h = [
     v({ disapproved: true }),
     v({ disapproved: true }),
-    v({ error: "auditor stalled" }), // infra error breaks the streak
+    v({ error: "auditor stalled" }), // v0.25.4: infra errors are TRANSPARENT (not verdicts)
     v({ disapproved: true }),
   ];
-  assert.equal(countTrailingDisapprovals(h), 1);
+  assert.equal(countTrailingDisapprovals(h), 3);
 });
 
 test("countTrailingDisapprovals: shield-blocked approval breaks the streak", () => {

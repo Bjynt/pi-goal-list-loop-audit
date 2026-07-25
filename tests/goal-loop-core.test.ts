@@ -277,7 +277,9 @@ test("mergeSettings: does not mutate the base", () => {
 
 test("auditFeedbackExcerpt: bounds executor feedback at the configured character count", () => {
   assert.equal(DEFAULT_AUDIT_FEEDBACK_CHARS, 0);
-  assert.equal(auditFeedbackExcerpt("abcdefghij", 6), "abcdef");
+  // v0.25.4: capped excerpts keep the TAIL (the auditor's Required-fixes
+  // section lives there) with a head-truncation marker.
+  assert.equal(auditFeedbackExcerpt("abcdefghij", 6), "[head truncated — full report via /goal status]\n…efghij");
 });
 
 test("auditFeedbackExcerpt: zero returns the full auditor report", () => {

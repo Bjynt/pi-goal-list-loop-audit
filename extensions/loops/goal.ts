@@ -1950,7 +1950,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       const auditFeedbackIsFull = auditFeedbackChars === 0 || result.output.length <= auditFeedbackChars;
       const auditFeedbackLabel = auditFeedbackIsFull
         ? "full report"
-        : `first ${auditFeedbackChars} chars`;
+        : `last ${auditFeedbackChars} chars (Required-fixes tail)`;
       const auditFeedbackTruncationHint = auditFeedbackIsFull
         ? ""
         : `\n\nReport truncated at the configured limit. /goal status shows the full report; change future feedback with /glla auditfeedbackchars=N (0 = full report).`;
