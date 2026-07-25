@@ -232,3 +232,12 @@ age, and average item duration. Drafting cross-recommends: multi-hour
 seeds in `/list` get pointed at `/goal`, aggregate "N items, one commit
 each" seeds get shaped into N short items. See **LIST-PHILOSOPHY.md**
 for the full hierarchy and the wrapper-goal anti-pattern it prevents.
+
+## Auditing the auditor (v0.25.4)
+
+Every audit verdict is appended to `.pi-glla/audits.jsonl` (goal id,
+verdict, model, full report) — the durable trail for "where are we weak"
+reviews. `/glla audits` lists the last 10 verdicts, `/glla audits 30`
+shows more, `/glla audits full` prints the latest report. Reports are
+think-block-stripped; disapprovals end with a `## Required fixes`
+actionable tail, which is also what capped executor feedback keeps.

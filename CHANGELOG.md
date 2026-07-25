@@ -1,6 +1,41 @@
 # Changelog
 
+## [0.25.4] — 2026-07-25
+
+### Added — auditor polish: durable audit log, report hygiene, honest streaks
+
+User-driven (2026-07-25): "log so we can look back and see where we are
+weak — the auditor perhaps needs work, or how we are designating tasks".
+Forensics across 3 live projects showed disapprovals are mostly CORRECT
+(wrapper-goal contracts — fixed in 0.25.3), but the auditor leaks think
+blocks and there was no durable verdict trail.
+
+- **`.pi-glla/audits.jsonl`** — append-only audit log: every real verdict
+  {at, goalId, objective, verdict, model, thinkingLevel, FULL report}
+  survives state-snapshot rotation and archive.
+- **`/glla audits [N|full]`** — browse recent verdicts (glyph, time, goal,
+  model, first report line); `full` prints the latest report.
+- **Think-block stripping** — `<think>…</think>` bodies, stray `</think>`
+  fragments, and partial-tag artifacts are removed from reports before
+  storage/display (wild-caught MiniMax-M3 leakage, incl. non-English
+  reasoning spillover). The auditor prompt now also forbids think blocks
+  and requires English reports.
+- **`## Required fixes` tail** — the auditor ends disapprovals with a
+  one-line-per-blocking-gap actionable section; `auditFeedbackExcerpt`
+  is now tail-aware, so a capped excerpt keeps the fixes (head-slicing
+  used to cut exactly them).
+- **Infra-transparent streaks** — `countTrailingDisapprovals` skips pure
+  infra errors instead of treating them as streak-breakers: 39
+  hegemon-style infra errors can no longer reset the audit cap and
+  re-open infinite re-continuation.
+- **Auditor-quiet stall in the widget** — audit progress events carry a
+  timestamp; >3min quiet while auditing shows "auditor quiet Nm — may be
+  stuck; Esc aborts, verdict is not counted".
+
+7 new tests + 2 updated to the new semantics (338 → 345).
+
 ## [0.25.3] — 2026-07-25
+
 
 ### Changed — list-philosophy rework: the three modes long-run differently
 
