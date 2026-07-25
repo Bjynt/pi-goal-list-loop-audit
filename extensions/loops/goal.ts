@@ -87,6 +87,7 @@ import {
 } from "../goal-loop-core.js";
 import {
   isQuotaError,
+  isSubagentQuotaResult,
   parseQuotaError,
   scheduleQuotaRetry,
   cancelQuotaRetry,
