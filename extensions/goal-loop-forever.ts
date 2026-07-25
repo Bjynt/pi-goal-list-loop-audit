@@ -75,6 +75,25 @@ export interface LoopState {
   consecutiveStuck?: number;
   /** v0.24.0: the last stuck reason (for the intervention directive + ledger). */
   lastStuckReason?: string;
+  /** v0.25.1: /loop start toolsamerepeat=N — legacy same-tool-same-result
+   * check window. 0 disables it (multi-signal detector only). */
+  toolSameRepeat?: number;
+  /** v0.25.1: per-iteration progress-signal accumulators for the
+   * multi-signal stuck gate. fileWrites bumps on write/edit tool results;
+   * iterationStartHead/At snapshot when the iteration BEGAN so the tick can
+   * count commits and spec_item_progress events produced during it. */
+  iterMetrics?: {
+    fileWrites: number;
+    iterationStartHead?: string;
+    iterationStartAt?: string;
+  };
+}
+
+/** v0.25.1: stop reason for /loop finish — a clean "completed" end,
+ * distinct from stuck/plateau/stopped-by-user. */
+export function loopFinishStopReason(reason?: string): string {
+  const r = (reason ?? "").trim();
+  return `completed: ${r || "finished by user"}`;
 }
 
 /** Scratch-branch name for branch=1 mode. Format pinned by tests. */
@@ -229,6 +248,7 @@ export function parseLoopStartArgs(raw: string): {
   force: boolean;
   timeLimitHours?: number;
   tokenBudget?: number;
+  toolSameRepeat?: number;
 } {
   // Key=value pairs first (measure= and direction= may hold quoted values),
   // the remaining text is the target.
@@ -294,6 +314,12 @@ export function parseLoopStartArgs(raw: string): {
     force: forceRaw === "1" || forceRaw === "true" || forceRaw === "yes",
     timeLimitHours: Number.isFinite(timeRaw) && timeRaw > 0 ? timeRaw : undefined,
     tokenBudget: Number.isFinite(tokensRaw) && tokensRaw > 0 ? tokensRaw : undefined,
+    toolSameRepeat: (() => {
+      const raw = (kv.get("toolsamerepeat") ?? "").trim();
+      if (!raw) return undefined;
+      const n = Number.parseInt(raw, 10);
+      return Number.isInteger(n) && n >= 0 ? n : undefined;
+    })(),
   };
 }
 

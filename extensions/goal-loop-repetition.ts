@@ -142,6 +142,59 @@ export interface LoopStuckInput {
   recentToolResults: ToolResultPrint[];
   /** Consecutive iterations with zero tool calls, including this one. */
   toollessStreak: number;
+  /** v0.25.1 progress signals (multi-signal stuck model): file writes,
+   * git commits, and spec_item_progress events in the FINISHED iteration.
+   * Optional for backward compat — absent = 0. */
+  fileWriteCount?: number;
+  gitCommitCount?: number;
+  specItemProgressCount?: number;
+}
+
+/**
+ * v0.25.1: forward-transition marker — the agent explicitly declares it is
+ * moving on ("Next step (iter-222, implement branch)"). Conservative word
+ * list: if the agent isn't saying "moving on", it's probably spinning.
+ */
+export function forwardTransitionMarker(text: string): boolean {
+  if (
+    /\b(next|next step|next phantom|next iter|iter[ -]\d+|pivot|moving on|implement next|switch to|now (do|implement|fix|add)|then (do|implement|fix|add))\b/i.test(
+      text,
+    )
+  ) {
+    return true;
+  }
+  // Line-start "Next:" / "Next step" — the phrasing the wild-caught
+  // transcripts used.
+  return /^\s*next\s*(step)?\s*:/im.test(text);
+}
+
+/** A forward marker only counts PAIRED with a real write/commit in the
+ * same iteration — pure narration ("next: implement X" × N, shipping
+ * nothing) is the narrate-but-don't-ship loop and IS stuck. */
+export function forwardTransitionPaired(input: LoopStuckInput): boolean {
+  if (!forwardTransitionMarker(input.assistantText)) return false;
+  return (input.fileWriteCount ?? 0) > 0 || (input.gitCommitCount ?? 0) > 0;
+}
+
+/**
+ * v0.25.1 multi-signal stuck gate (progress-signals model): an iteration
+ * is stuck ONLY when every progress signal is zero — file writes, git
+ * commits, spec_item_progress events, and a PAIRED forward transition —
+ * AND the legacy single-signal detector also fires. Stable verification
+ * output from a loop that is still shipping is the GOAL state of a
+ * metricless loop, not the stuck state (the two wild-caught transcripts
+ * that motivated this rework both died in exactly that false positive).
+ *
+ * `toolSameRepeat` (the /loop start toolsamerepeat=N kwarg) forwards to
+ * the legacy check: 0 disables the same-tool-same-result branch entirely
+ * (new detector only), undefined = REPETITION.toolResultRepeat.
+ */
+export function isActuallyStuck(input: LoopStuckInput, toolSameRepeat?: number): string | undefined {
+  if ((input.fileWriteCount ?? 0) > 0) return undefined;
+  if ((input.gitCommitCount ?? 0) > 0) return undefined;
+  if ((input.specItemProgressCount ?? 0) > 0) return undefined;
+  if (forwardTransitionPaired(input)) return undefined;
+  return detectLoopStuck(input, toolSameRepeat);
 }
 
 function clip(text: string, n: number): string {
@@ -154,7 +207,7 @@ function clip(text: string, n: number): string {
  * or undefined when it's working normally. Checks run cheapest-and-most-
  * certain first; the first hit wins so the reason stays specific.
  */
-export function detectLoopStuck(input: LoopStuckInput): string | undefined {
+export function detectLoopStuck(input: LoopStuckInput, toolResultRepeatOverride?: number): string | undefined {
   const { assistantText, recentPrints, previousText, recentToolResults, toollessStreak } = input;
 
   // Narration only: iterations that never touch tools produce nothing inspectable.
@@ -189,14 +242,17 @@ export function detectLoopStuck(input: LoopStuckInput): string | undefined {
   }
 
   // Same tool, same output, three times running: the loop is re-reading a result it already has.
-  const recentTools = recentToolResults.slice(-REPETITION.toolResultRepeat);
+  // v0.25.1: toolsamerepeat=0 disables this branch entirely (new detector only).
+  const toolResultRepeat = toolResultRepeatOverride ?? REPETITION.toolResultRepeat;
+  const recentTools = toolResultRepeat > 0 ? recentToolResults.slice(-toolResultRepeat) : [];
   if (
-    recentTools.length === REPETITION.toolResultRepeat &&
+    toolResultRepeat > 0 &&
+    recentTools.length === toolResultRepeat &&
     recentTools.every((r) => r.tool === recentTools[0]!.tool && r.hash === recentTools[0]!.hash)
   ) {
     return recentTools.every((r) => r.isError)
-      ? `same ${recentTools[0]!.tool} error ${REPETITION.toolResultRepeat}× in a row`
-      : `same ${recentTools[0]!.tool} result ${REPETITION.toolResultRepeat}× in a row (no new information)`;
+      ? `same ${recentTools[0]!.tool} error ${toolResultRepeat}× in a row`
+      : `same ${recentTools[0]!.tool} result ${toolResultRepeat}× in a row (no new information)`;
   }
 
   return undefined;
