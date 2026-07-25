@@ -817,7 +817,7 @@ export function extractPendingTasks(report: string, cap = 5): string[] {
     const line = raw.trim();
     const m = line.match(/^(?:[-*•]|\d+[.)])\s+(.{8,200})$/);
     if (!m) continue;
-    const text = m[1].trim();
+    const text = m[1]!.trim();
     // Skip pure-evidence bullets ("file X exists", "tests pass") — we want
     // OBJECTIONS: missing/failing/not-done language.
     if (!/miss|fail|not |no |lack|absent|doesn|didn|won|can'?t|remain|todo|fix|requir|incomplete|unverified/i.test(text)) continue;

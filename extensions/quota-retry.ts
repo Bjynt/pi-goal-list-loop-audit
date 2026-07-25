@@ -40,7 +40,7 @@ export function parseQuotaError(error: string, defaultRetryAfterSec = 3600): Quo
   m = error.match(/retry (?:after|in)\s+(\d+)\s*(s|sec|seconds|m|min|minutes|h|hours?)/i);
   if (m) {
     const n = Number(m[1]);
-    const unit = m[2].toLowerCase();
+    const unit = m[2]!.toLowerCase();
     const mult = unit.startsWith("h") ? 3600 : unit.startsWith("m") ? 60 : 1;
     if (Number.isFinite(n) && n >= 0) return { raw: error, retryAfterSec: n * mult, fromUpstream: true };
   }

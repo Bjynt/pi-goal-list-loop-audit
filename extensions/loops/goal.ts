@@ -50,13 +50,6 @@ import {
   sumNewAssistantTokens,
   takeAt,
   countTrailingDisapprovals,
-} from "../goal-loop-core";
-import {
-  isQuotaError,
-  parseQuotaError,
-  scheduleQuotaRetry,
-  cancelQuotaRetry,
-} from "../quota-retry";
   goalArgsNeedDrafting,
   buildSeedGrillMessage,
   askUserQuestionAnswered,
@@ -81,6 +74,12 @@ import {
   writeGoalMd,
   missingGllaTools,
 } from "../goal-loop-core.js";
+import {
+  isQuotaError,
+  parseQuotaError,
+  scheduleQuotaRetry,
+  cancelQuotaRetry,
+} from "../quota-retry.js";
 import { runGoalCompletionAuditor } from "../goal-loop-auditor.js";
 import {
   REPETITION,
@@ -1515,6 +1514,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
     parameters: Type.Object({
       completionSummary: Type.Optional(Type.String({ description: "1-paragraph completion claim" })),
       verificationSummary: Type.Optional(Type.String({ description: "Per-item evidence for the verification contract" })),
+      newObjective: Type.Optional(Type.String({ description: "v0.25.0 (contract item 15): when the work has legitimately shifted, pass the new objective here — it atomically replaces the goal objective AND the audit proceeds against the NEW objective in this same call. Do not use to dodge a legitimate disapproval; the auditor sees the change." })),
     }),
     async execute(_id, params, signal, _onUpdate, execCtx) {
       const foreign0 = foreignToolGuard(execCtx);
@@ -1522,7 +1522,18 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       if (!state.goal || state.goal.status !== "active") {
         return { content: [{ type: "text", text: "No active goal." }], details: {} };
       }
-      const p = params as { completionSummary?: string; verificationSummary?: string };
+      const p = params as { completionSummary?: string; verificationSummary?: string; newObjective?: string };
+      // v0.25.0 (contract item 15): atomic objective update + audit in one
+      // call — the objective-drift disapprove loop (ship shifted work →
+      // auditor disapproves the ORIGINAL objective) ends here. Ledgered so
+      // the shift is auditable.
+      if (p.newObjective?.trim()) {
+        const oldObjective = state.goal.objective;
+        const { objective: cleanObj, verificationContract } = extractVerificationContract(p.newObjective.trim());
+        updateGoal({ objective: cleanObj, ...(verificationContract ? { verificationContract } : {}) }, ctx);
+        appendLedger(ctx.cwd, "goal_tweaked", { via: "complete_goal.newObjective", from: oldObjective.slice(0, 200), to: cleanObj.slice(0, 200) });
+        ctx.ui.notify(`Objective updated (complete_goal newObjective): ${cleanObj.slice(0, 80)}`, "info");
+      }
       updateGoal({ status: "auditing" }, ctx);
       const settings = loadSettings(ctx.cwd);
       const { model: auditorModel, error: modelError, via } = resolveAuditorModel(ctx, settings.auditorModel);
@@ -1636,6 +1647,42 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       // The wild-caught case: 6 silent "disapprovals" that were really a dead
       // auditor model. The agent must be able to tell the difference.
       if (result.error && !result.disapproved) {
+        // v0.25.0 (contract Section C): quota errors used to re-fire the
+        // continuation FOREVER against a window that resets in an hour.
+        // Now: pause with a one-shot scheduled retry at the upstream's own
+        // Retry-After hint (default quotaRetryMinutes).
+        if (isQuotaError(result.error)) {
+          const settingsNow = loadSettings(ctx.cwd);
+          const defaultSec = (settingsNow.quotaRetryMinutes ?? DEFAULT_QUOTA_RETRY_MINUTES) * 60;
+          const quota = parseQuotaError(result.error, defaultSec);
+          const retryMin = Math.max(1, Math.round(quota.retryAfterSec / 60));
+          updateGoal({
+            status: "paused",
+            auditHistory: history,
+            pauseReason: `auditor quota: ${result.error}`,
+            pauseSuggestedAction: `Quota auto-retry in ${retryMin}m — or /goal resume to retry now`,
+          }, ctx);
+          appendLedger(ctx.cwd, "goal_paused", { reason: `auditor quota: retry in ${quota.retryAfterSec}s (${quota.fromUpstream ? "upstream hint" : "default"})` });
+          scheduleQuotaRetry(ctx, quota.retryAfterSec, result.error, () => {
+            // Re-check: only auto-resume if STILL paused for the quota
+            // reason (a user /goal pause during the window is not stomped).
+            if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor quota:")) {
+              updateGoal({ status: "active" }, ctx);
+              appendLedger(ctx.cwd, "goal_resumed", { via: "quota-retry" });
+              if (resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).aggressiveMode) {
+                ctx.ui.notify("Auto-resume fired (event: auditor quota window elapsed). Continue working.", "info");
+              }
+              scheduleContinuation(ctx, true);
+            }
+          });
+          return {
+            content: [{
+              type: "text",
+              text: `The auditor hit a QUOTA / rate-limit error (infrastructure, NOT a verdict): ${result.error}\nThe goal is PAUSED with an automatic retry scheduled in ${retryMin} minute(s)${quota.fromUpstream ? " (upstream Retry-After hint)" : " (default window — /glla quotaretryminutes=N to change)"}. Your completion claim was not evaluated; do not change your deliverable for this. /goal resume retries immediately.`,
+            }],
+            details: {},
+          };
+        }
         updateGoal({
           status: "active",
           auditHistory: history,
