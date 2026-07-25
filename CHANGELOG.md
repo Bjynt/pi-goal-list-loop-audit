@@ -1,6 +1,30 @@
 # Changelog
 
+## [0.25.5] — 2026-07-25
+
+### Added — completes the 0.25.4 auditor-polish contract (post-audit fix)
+
+The isolated auditor disapproved 0.25.4's completion claim: the
+retry-once-with-backoff half of the infra item was missing, and
+`/glla audits` browsed the global log instead of the active goal's
+history. Both gaps closed here — the auditor was right.
+
+- **Infra retry-once-with-backoff** — a retriable auditor infra failure
+  (stream/auth blip) now gets ONE automatic retry with backoff before
+  being reported as "auditor infrastructure error (retried once)".
+  User aborts and missing-model config are never retried; neither
+  attempt counts as a verdict. `runWithInfraRetry` +
+  `isRetriableInfraError` in core; `audit_infra_retry` ledger event.
+- **`/glla audits` realigned** — default view is now the ACTIVE goal's
+  own audit history with per-audit elapsed (`✖ 07-25 20:00 MiniMax-M3 ·
+  5m — ## Audit result`); `all`/`global`/`log` browses the durable
+  cross-goal log; `full` prefers the active goal's latest report.
+- **Audit entries gain `durationMs` + `retriedOnce`** (history + log).
+
+3 new tests (345 → 348).
+
 ## [0.25.4] — 2026-07-25
+
 
 ### Added — auditor polish: durable audit log, report hygiene, honest streaks
 

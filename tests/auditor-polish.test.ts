@@ -126,3 +126,55 @@ test("auditor prompt requires the Required-fixes tail + no think blocks", () => 
   assert.match(src, /never emit <think> blocks/);
   assert.match(src, /Write the report in English/);
 });
+
+test("isRetriableInfraError: aborts and missing-model are NOT retried", async () => {
+  const { isRetriableInfraError } = await import("../extensions/goal-loop-core.ts");
+  assert.equal(isRetriableInfraError(undefined), false);
+  assert.equal(isRetriableInfraError("Auditor aborted."), false);
+  assert.equal(isRetriableInfraError("no model (session model also unset)"), false);
+  assert.equal(isRetriableInfraError("stream error: connection reset"), true);
+  assert.equal(isRetriableInfraError("403 Forbidden (quota?)"), true);
+});
+
+test("runWithInfraRetry: retriable infra failure retried exactly once", async () => {
+  const { runWithInfraRetry } = await import("../extensions/goal-loop-core.ts");
+  type R = { error?: string; approved: boolean; disapproved: boolean; output: string };
+  const noSleep = () => Promise.resolve();
+  // Fails once, then succeeds:
+  let calls = 0;
+  const flaky = async (): Promise<R> => (++calls === 1 ? { error: "stream error", approved: false, disapproved: false, output: "" } : { approved: true, disapproved: false, output: "ok" });
+  const out1 = await runWithInfraRetry(flaky, { sleep: noSleep });
+  assert.equal(out1.retriedOnce, true);
+  assert.equal(out1.result.approved, true);
+  assert.equal(calls, 2);
+  // Both attempts fail → second result returned, still exactly one retry:
+  calls = 0;
+  const alwaysFails = async (): Promise<R> => { calls++; return { error: "stream error", approved: false, disapproved: false, output: "" }; };
+  const out2 = await runWithInfraRetry(alwaysFails, { sleep: noSleep });
+  assert.equal(out2.retriedOnce, true);
+  assert.equal(calls, 2);
+  assert.equal(out2.result.error, "stream error");
+  // Verdict on first attempt → no retry:
+  const verdict = async (): Promise<R> => ({ approved: false, disapproved: true, output: "no" });
+  const out3 = await runWithInfraRetry(verdict, { sleep: noSleep });
+  assert.equal(out3.retriedOnce, false);
+  // Abort / no-model → no retry:
+  const aborted = async (): Promise<R> => ({ error: "Auditor aborted.", approved: false, disapproved: false, output: "" });
+  assert.equal((await runWithInfraRetry(aborted, { sleep: noSleep })).retriedOnce, false);
+});
+
+test("formatGoalAuditHistory: one line per verdict with elapsed", async () => {
+  const { formatGoalAuditHistory } = await import("../extensions/goal-loop-core.ts");
+  const goal = {
+    id: "g1",
+    auditHistory: [
+      { at: "2026-07-25T20:00:00Z", approved: false, disapproved: true, model: "MiniMax-M3", report: "## Audit result\nno", durationMs: 5 * 60_000 },
+      { at: "2026-07-25T21:30:00Z", approved: true, disapproved: false, model: "k3", report: "All pass." },
+    ],
+  };
+  const lines = formatGoalAuditHistory(goal).split("\n");
+  assert.equal(lines.length, 2);
+  assert.match(lines[0]!, /^✖ 07-25 20:00 MiniMax-M3 · 5m — ## Audit result$/);
+  assert.match(lines[1]!, /^✔ 07-25 21:30 k3 — All pass\.$/);
+  assert.match(formatGoalAuditHistory({ id: "g2" }), /no audits on this goal yet/);
+});
