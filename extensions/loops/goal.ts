@@ -105,6 +105,7 @@ import {
 import {
   DEFAULT_REVIEWER_CONFIG,
   resolveReviewerConfig,
+  reviewerMenuOptions,
   runReviewer,
   type ReviewerConfig,
 } from "../reviewer.js";
@@ -2838,6 +2839,73 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
   }
 }
 
+/** v0.26.0: /review <archived-goal-id> — manual reviewer invocation. */
+async function cmdReview(args: string, ctx: ExtensionContext): Promise<void> {
+  const id = args.trim();
+  if (!id) {
+    ctx.ui.notify("Usage: /review <goal-id> — see /goal archive for ids.", "info");
+    return;
+  }
+  // Resolve the id against the archive (suffix match allowed).
+  let goalId = id;
+  let objective = "(archived goal)";
+  try {
+    const files = fs.readdirSync(archiveDir(ctx.cwd)).filter((f) => f.endsWith(".md"));
+    const match = files.find((f) => f === `${id}.md`) ?? files.find((f) => f.includes(id));
+    if (!match) {
+      ctx.ui.notify(`No archived goal matching "${id}". /goal archive lists them.`, "warning");
+      return;
+    }
+    goalId = match.replace(/\.md$/, "");
+    const md = fs.readFileSync(path.join(archiveDir(ctx.cwd), match), "utf-8");
+    const objMatch = md.match(/## Objective\n\n> ([\s\S]*?)(?:\n\n|$)/);
+    if (objMatch) objective = objMatch[1]!.replace(/\n/g, " ").slice(0, 300);
+  } catch {
+    ctx.ui.notify(`No archive found for ${id}.`, "warning");
+    return;
+  }
+  fireReviewer(ctx, { kind: "goal", goalId, objective, terminal: "goal-complete" }, { manual: true });
+}
+
+/** v0.26.0: /glla reviewer — the reviewer config menu (project-scoped). */
+async function cmdReviewerSettings(ctx: ExtensionContext): Promise<void> {
+  if (!ctx.hasUI) {
+    const cfg = resolveReviewerConfig(loadSettings(ctx.cwd).reviewer as Partial<ReviewerConfig> | undefined);
+    ctx.ui.notify(`reviewer (project): ${JSON.stringify(cfg, null, 2)}`, "info");
+    return;
+  }
+  const load = () => resolveReviewerConfig(loadSettings(ctx.cwd).reviewer as Partial<ReviewerConfig> | undefined);
+  const save = (patch: Partial<ReviewerConfig>) => saveSettings("project", ctx.cwd, { reviewer: { ...load(), ...patch } as Record<string, unknown> });
+  for (;;) {
+    const cfg = load();
+    let choice: string | undefined;
+    try {
+      choice = await ctx.ui.select("Reviewer — post-completion follow-up enqueuer (project settings)", reviewerMenuOptions(cfg));
+    } catch {
+      return;
+    }
+    if (!choice || choice === "Done") return;
+    try {
+      if (choice.startsWith("Enabled")) save({ enabled: !cfg.enabled });
+      else if (choice.startsWith("Leverage mode")) save({ leverageMode: cfg.leverageMode === "fix-without-confirm" ? "confirm-all" : "fix-without-confirm" });
+      else if (choice.startsWith("Fire on goal-complete")) save({ fireOn: cfg.fireOn.includes("goal-complete") ? cfg.fireOn.filter((e) => e !== "goal-complete") : [...cfg.fireOn, "goal-complete"] });
+      else if (choice.startsWith("Fire on list-complete")) save({ fireOn: cfg.fireOn.includes("list-complete") ? cfg.fireOn.filter((e) => e !== "list-complete") : [...cfg.fireOn, "list-complete"] });
+      else if (choice.startsWith("Cascade: audit-on-clean")) save({ cascade: cfg.cascade.includes("fire-audit-on-clean") ? cfg.cascade.filter((c) => c !== "fire-audit-on-clean") : [...cfg.cascade, "fire-audit-on-clean"] });
+      else if (choice.startsWith("Max findings")) {
+        const v = await ctx.ui.input("Max findings per review", "1-50");
+        const n = Number(v?.trim());
+        if (Number.isSafeInteger(n) && n >= 1 && n <= 50) save({ maxFindingsPerReview: n });
+      } else if (choice.startsWith("Max reviews")) {
+        const v = await ctx.ui.input("Max reviewer fires per day", "1-100");
+        const n = Number(v?.trim());
+        if (Number.isSafeInteger(n) && n >= 1 && n <= 100) save({ maxReviewsPerDay: n });
+      }
+    } catch {
+      /* individual save failures are non-fatal */
+    }
+  }
+}
+
 /**
  * v0.25.2: /glla stats — one command, every project's rollup. Args:
  *   (none)            markdown table, all discovered projects
@@ -2928,6 +2996,10 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   }
   if (/^audits\b/.test(trimmed)) {
     cmdAudits(trimmed.slice("audits".length).trim(), ctx);
+    return;
+  }
+  if (/^reviewer\b/.test(trimmed)) {
+    await cmdReviewerSettings(ctx);
     return;
   }
   if (!trimmed) {
@@ -3233,9 +3305,14 @@ export default function (pi: ExtensionAPI): void {
       ["stats", "per-project ledger rollups: /glla stats [json|premature|project=<path>]"],
       ["audits", "audit-log browser: /glla audits [N|full] — recent verdicts from .pi-glla/audits.jsonl"],
       ["autoaccept=", "on: drafts activate without the Confirm dialog (unattended rigs)"],
+      ["reviewer", "reviewer config menu (post-completion follow-up enqueuer)"],
       ["project", "write a project override: /glla project key=value"],
     ]),
     handler: settingsHandler,
+  });
+  pi.registerCommand("review", {
+    description: "Manually run the reviewer on an archived goal: /review <goal-id> — extracts findings, writes a report to .pi-glla/reviews/, enqueues bug-class fixes to /list, proposes architectural items as /goal. Bypasses the trigger gates (explicit user request).",
+    handler: (args: string, ctx: ExtensionContext) => { rememberCtx(ctx); return cmdReview(args, ctx); },
   });
   pi.registerCommand("list", {
     description: "Loop 2: the list of audited goals — order is the default, not the law. /list <describe tasks or name a plan file> (dumps get shaped into items, files import, 'Done when:' adds directly) | /list show | /list resume | /list next [n] | /list remove <n> | /list clear | /list cancel",
@@ -3245,6 +3322,7 @@ export default function (pi: ExtensionAPI): void {
       ["next", "activate the next item (or /list next <n> for position n)"],
       ["remove", "remove an item: /list remove <n>"],
       ["clear", "empty the list"],
+      ["depth", "queue depth, oldest item age, average item duration"],
       ["cancel", "stop the whole list: abort the active item + drop all waiting"],
     ]),
     handler: (args: string, ctx: ExtensionContext) => { rememberCtx(ctx); return cmdList(args, ctx); },

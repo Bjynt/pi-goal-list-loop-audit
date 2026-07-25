@@ -259,3 +259,18 @@ export function runReviewer(
   }
   return { fired: true, report, reportPath, enqueued, proposed };
 }
+
+/** /glla reviewer menu options, derived from the config — extracted so
+ * the menu surface is unit-testable without a pi host. */
+export function reviewerMenuOptions(cfg: ReviewerConfig): string[] {
+  return [
+    `Enabled — ${cfg.enabled ? "ON" : "OFF"}`,
+    `Leverage mode — ${cfg.leverageMode} (bug/refactor findings)`,
+    `Fire on goal-complete — ${cfg.fireOn.includes("goal-complete") ? "ON" : "OFF"}`,
+    `Fire on list-complete — ${cfg.fireOn.includes("list-complete") ? "ON" : "OFF"}`,
+    `Cascade: audit-on-clean — ${cfg.cascade.includes("fire-audit-on-clean") ? "ON" : "OFF"}`,
+    `Max findings per review — ${cfg.maxFindingsPerReview}`,
+    `Max reviews per day — ${cfg.maxReviewsPerDay}`,
+    "Done",
+  ];
+}
