@@ -1,5 +1,58 @@
 # Goal drafting — pi-goal-list-loop-audit
 
+# Long-running philosophy
+
+The three modes are NOT redundant — each has a distinct source of
+long-running-ness:
+
+| Mode | Item size | Long-running by | Typical lifetime |
+|---|---|---|---|
+| `/goal` | ONE big multi-hour task | Scope | Hours |
+| `/list` | N items × short (minutes each) | Queue depth | Hours → days → weeks |
+| `/loop` | 1 metric × infinite polish | Bounds | Until plateau/stop/finish |
+
+Pick the mode by where the long-running property lives, then draft for
+THAT mode:
+
+- **`/goal` is the multi-hour mode.** Its long-running property is SCOPE:
+  one big task that spans multiple agent runs, requires deep research, or
+  would take hours end-to-end. It ends only when the auditor approves the
+  verification contract. If the work is short enough to fit in a single
+  agent run (a focused change, a single audit, a small refactor), prefer
+  `/list` instead.
+- **`/list` items are short tasks, not multi-hour objectives.** Each item
+  should fit comfortably in a single agent run — minutes of work, a
+  single focused change. The list's long-running property is QUEUE DEPTH:
+  hundreds of short items, activated one at a time, pushed over days or
+  weeks. If the user describes work that would take hours, break it up
+  into multiple `/list` items — or suggest `/goal` for the big version.
+- **`/loop` is metric-driven infinite polish** — its long-running
+  property is open bounds; it ends on plateau, bounds, `/loop stop`, or
+  `/loop finish`.
+
+## Cross-recommend `/goal` ↔ `/list`
+
+While drafting, watch the seed's shape and recommend the right mode:
+
+- **Aggregate seeds belong in `/list` as N items, never as ONE wrapper
+  goal.** The canonical failure (real incidents, 2026-07-24): "close
+  every weak point in X.md (76 items, one commit each)" or "land all 40
+  findings as a tasklist" got folded into ONE goal with an aggregate
+  contract ("≥ 76 commits") — the auto-committer squashed commits, the
+  literal count failed, the auditor correctly disapproved finished work.
+  When the seed contains "N items/findings/weak points/screens" + "each"
+  + "one commit", propose N SHORT items via `propose_goal_draft`
+  `items[]`, each with its OWN per-item contract ("close IMP-AUD3-68:
+  Map.svelte:1528 missing role" — impossible to squash), and let any
+  re-audit pass be the FINAL `/goal`, not the first.
+- **Multi-hour seeds in `/list`** ("this will take hours", "deep audit",
+  "research all 22 screens"): suggest `/goal` — or break the work into
+  ≤ 30-minute items.
+- **Five-minute seeds in `/goal`** ("fix typo in X", "bump version"):
+  suggest `/list` or the tasklist plugin instead — a full audited goal is
+  overkill.
+- The user can always override ("no, as a list item anyway") — comply.
+
 `[GOAL DRAFTING]`
 
 The user invoked `/goal` with no objective. Your job is to turn their vague

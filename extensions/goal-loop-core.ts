@@ -922,3 +922,125 @@ export function lastShippedAtMs(cwd: string): number | null {
   }
   return best;
 }
+
+// =================================================================
+// v0.25.3: list-philosophy rework — cross-mode recommendation +
+// /list depth rollups
+// =================================================================
+
+/**
+ * Detect a mode mismatch between what the user described and the mode
+ * they invoked. Returns a recommendation string for the drafting
+ * injection, or undefined when the seed fits the mode.
+ *
+ * The canonical failure this prevents (real incidents 2026-07-24):
+ * "close 76 weak points, one commit each" folded into ONE wrapper goal
+ * with an aggregate "≥ 76 commits" contract → auto-committer squash →
+ * literal count fails → auditor correctly disapproves finished work.
+ */
+export function crossRecommendMode(seed: string, mode: "goal" | "list"): string | undefined {
+  const s = seed.trim();
+  if (!s) return undefined;
+  // Aggregate seed: "N items/findings/weak points/screens/todos/fixes"
+  // (+ "each" / "one commit" flavor) — the wrapper-goal anti-pattern.
+  const aggregate = s.match(/(\d+)\s*(?:items?|findings?|weak[\s-]points?|screens?|todos?|fix(?:es)?|tasks?|issues?)/i);
+  const n = aggregate ? Number(aggregate[1]) : 0;
+  if (n >= 5) {
+    return (
+      `[MODE CHECK — this seed names ${n} discrete items${/each|one commit|as a tasklist/i.test(s) ? ' ("each"/"tasklist" phrasing)' : ""}. ` +
+      `Do NOT fold them into ONE wrapper ${mode === "list" ? "list item" : "goal"} with an aggregate contract ("≥ ${n} commits") — ` +
+      `the auto-committer squashes commits and the literal count fails even when the work is done (the 2026-07-24 76-weak-points incident). ` +
+      `Propose ${n} SHORT /list items via propose_goal_draft items[] — each item closes exactly ONE finding with its own per-item contract. ` +
+      `Any aggregate re-audit becomes the FINAL /goal, not the first.]`
+    );
+  }
+  if (mode === "list") {
+    if (/\b(?:take|takes|taking)\s+(?:a\s+)?(?:few|several|\d+)\s+hours?\b/i.test(s) || /\b(?:multi-hour|deep (?:audit|research|dive)|all day|over the weekend)\b/i.test(s)) {
+      return (
+        `[MODE CHECK — this seed sounds like multi-hour work. /list items are SHORT (minutes, one focused change). ` +
+        `Either break it into ≤ 30-minute items via items[], or tell the user this fits /goal better — one big task, ` +
+        `ends on auditor approval. If the user overrides ("as a list item anyway"), comply.]`
+      );
+    }
+  } else {
+    if (/^(?:fix|typo|rename|bump|remove|delete|clean ?up|tweak)\b/i.test(s) && s.length < 80 && !/\bhours?\b|\ball\b|\bevery\b|\beach\b/i.test(s)) {
+      return (
+        `[MODE CHECK — this seed sounds like a five-minute cleanup. A full audited /goal may be overkill; ` +
+        `suggest /list (queue of short items) or the tasklist plugin. If the user wants the audit anyway, comply.]`
+      );
+    }
+  }
+  return undefined;
+}
+
+/** /list depth rollup: how deep is the queue, how stale is the head,
+ * how long do items actually take (from archived list-policy goals). */
+export interface ListDepthStats {
+  queueDepth: number;
+  oldestItemId?: string;
+  oldestAgeMs?: number;
+  avgDurationMs?: number;
+  durationSamples: number;
+}
+
+export function computeListDepth(
+  queue: Array<{ id: string; addedAt: string }>,
+  ledgerEntries: Array<{ type: string; value?: any }>,
+  nowMs: number,
+): ListDepthStats {
+  let oldestItemId: string | undefined;
+  let oldestAgeMs: number | undefined;
+  for (const item of queue) {
+    const added = Date.parse(item.addedAt);
+    if (Number.isNaN(added)) continue;
+    const age = nowMs - added;
+    if (oldestAgeMs === undefined || age > oldestAgeMs) {
+      oldestAgeMs = age;
+      oldestItemId = item.id;
+    }
+  }
+  // Average item duration from the ledger's list-policy goals (most
+  // recent 10 with both timestamps).
+  const finals = new Map<string, { createdAt?: string; updatedAt?: string; policy?: string; status?: string }>();
+  for (const e of ledgerEntries) {
+    if (e.type === "state" && e.value?.goal?.id) {
+      finals.set(String(e.value.goal.id), e.value.goal);
+    }
+  }
+  const durations: number[] = [];
+  for (const g of finals.values()) {
+    if (g.policy !== "list") continue;
+    if (g.status !== "complete" && g.status !== "archived") continue;
+    const c = Date.parse(g.createdAt ?? "");
+    const u = Date.parse(g.updatedAt ?? "");
+    if (Number.isNaN(c) || Number.isNaN(u) || u < c) continue;
+    durations.push(u - c);
+  }
+  const recent = durations.slice(-10);
+  const avgDurationMs = recent.length > 0 ? Math.round(recent.reduce((a, b) => a + b, 0) / recent.length) : undefined;
+  return {
+    queueDepth: queue.length,
+    oldestItemId,
+    oldestAgeMs,
+    avgDurationMs,
+    durationSamples: recent.length,
+  };
+}
+
+function fmtAge(ms: number): string {
+  const mins = Math.round(ms / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.round(mins / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.round(hours / 24)}d ${Math.round((hours % 24))}h`;
+}
+
+/** Contract item 7's exact headline format, then detail lines. */
+export function formatListDepth(stats: ListDepthStats): string {
+  const oldest = stats.oldestAgeMs !== undefined ? fmtAge(stats.oldestAgeMs) : "—";
+  const avg = stats.avgDurationMs !== undefined ? fmtAge(stats.avgDurationMs) : "—";
+  const lines = [`queue depth: ${stats.queueDepth} · oldest: ${oldest} · avg duration: ${avg}`];
+  if (stats.oldestItemId) lines.push(`oldest item: ${fmtAge(stats.oldestAgeMs!)} (id ${stats.oldestItemId})`);
+  if (stats.durationSamples > 0) lines.push(`avg item duration: ${fmtAge(stats.avgDurationMs!)} (from last ${stats.durationSamples} archived)`);
+  return lines.join("\n");
+}

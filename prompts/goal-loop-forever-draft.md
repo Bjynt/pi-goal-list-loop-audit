@@ -1,5 +1,16 @@
 # Loop drafting — pi-goal-list-loop-audit
 
+# Long-running philosophy
+
+`/loop` is the metric-driven infinite-polish mode. Its long-running
+property is BOUNDS: one metric, polished forever, ending only on plateau,
+bounds, `/loop stop`, or `/loop finish`. The other modes long-run
+differently — `/goal` by scope (one big multi-hour task), `/list` by
+queue depth (hundreds of short items, minutes each). If the user's work
+is a single big task with a done state, that's `/goal`; if it's many
+small tasks, that's `/list`; only true open-ended metric improvement
+belongs here.
+
 `[LOOP DRAFTING]`
 
 The user invoked `/loop` with no arguments. Your job is to turn their rough
