@@ -1031,8 +1031,8 @@ function fmtAge(ms: number): string {
   const mins = Math.round(ms / 60000);
   if (mins < 60) return `${mins}m`;
   const hours = Math.round(mins / 60);
-  if (hours < 48) return `${hours}h`;
-  return `${Math.round(hours / 24)}d ${Math.round((hours % 24))}h`;
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d ${Math.round(hours % 24)}h`;
 }
 
 /** Contract item 7's exact headline format, then detail lines. */

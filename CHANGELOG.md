@@ -1,6 +1,37 @@
 # Changelog
 
+## [0.25.3] — 2026-07-25
+
+### Changed — list-philosophy rework: the three modes long-run differently
+
+The user's mental model, made load-bearing: `/goal` long-runs by **scope**
+(one big multi-hour task), `/list` by **queue depth** (hundreds of short
+items, minutes each), `/loop` by **bounds** (metric-driven infinite
+polish). Prompts previously conflated `/list` with a small checklist of
+multi-hour items — two wrongs that look like one right.
+
+- **`# Long-running philosophy` block** at the top of
+  `goal-loop-draft.md` and `goal-loop-forever-draft.md` with the
+  three-mode table.
+- **`/list` drafting injection rewritten** — short-item framing
+  ("minutes, a single focused change", "queue depth, not item scope");
+  the "10 things / checklist of 50 tasks" framing is gone.
+- **Cross-recommend `/goal` ↔ `/list`** (`crossRecommendMode`):
+  aggregate seeds ("76 items, one commit each", "40 findings as a
+  tasklist") get steered to N short `items[]` with per-item contracts —
+  the 2026-07-24 wrapper-goal incidents (auto-committer squash →
+  literal count fails → auditor correctly disapproves finished work);
+  multi-hour seeds in `/list` get pointed at `/goal`; five-minute seeds
+  in `/goal` get pointed at `/list`.
+- **`/list depth`** — queue depth, oldest item age, average item
+  duration from archived list-policy goals.
+- **`LIST-PHILOSOPHY.md`** at the repo root (three-mode hierarchy +
+  the wrapper-goal anti-pattern); `INSTALL.md` gained a Modes section.
+
+10 new tests (328 → 338).
+
 ## [0.25.2] — 2026-07-25
+
 
 ### Added — `/glla stats`: per-project ledger rollups
 

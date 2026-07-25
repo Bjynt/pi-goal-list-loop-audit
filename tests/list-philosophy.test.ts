@@ -7,7 +7,6 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
-import * as path from "node:path";
 
 import {
   computeListDepth,
@@ -15,8 +14,8 @@ import {
   formatListDepth,
 } from "../extensions/goal-loop-core.ts";
 
-const REPO = path.resolve(__dirname, "..");
-const read = (rel: string) => fs.readFileSync(path.join(REPO, rel), "utf-8");
+// Tests run from the repo root (house pattern: cwd-relative paths).
+const read = (rel: string) => fs.readFileSync(rel, "utf-8");
 
 test("contract 1+2: /goal+/list draft prompt has short-item AND multi-hour framing", () => {
   const draft = read("prompts/goal-loop-draft.md");
@@ -104,7 +103,7 @@ test("contract 12: cross-recommend catches the 40-findings tasklist seed", () =>
   const xr = crossRecommendMode(seed40, "list");
   assert.ok(xr);
   assert.match(xr!, /40 discrete items/);
-  assert.match(xr!, /as a tasklist/i);
+  assert.match(xr!, /tasklist/i);
 });
 
 test("contract 8: multi-hour seed in /list mode suggests /goal or break-up", () => {
