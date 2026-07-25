@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.24.8] — 2026-07-25
+
+### Added — configurable auditor feedback length (community PR #1, thanks @Gan-Personal)
+
+Auditor disapproval feedback is no longer permanently hard-capped at 800
+characters. The new layered `auditFeedbackChars` setting preserves 800 as
+its default and can be changed with `/glla auditfeedbackchars=N` globally
+or per project; `0` returns the full report. The interactive settings UI,
+headless display, completions, save summary, and executor-facing labels
+all show the effective behavior; truncated reports now say so and point at
+`/goal status` for the full text. Merge also adds the 0.24.6 subagent keys
+to the headless settings display (missed in that release).
+
 ## [0.24.7] — 2026-07-25
 
 ### Fixed — list-mode indicator: a queue item is not a goal
