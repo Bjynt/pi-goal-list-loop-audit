@@ -2504,7 +2504,7 @@ function settingsProvenance(cwd: string): Record<keyof Settings, { value: unknow
   const glob = readSettingsFile(globalSettingsPath());
   const effective = loadSettings(cwd);
   const out: Record<string, { value: unknown; source: "project" | "global" | "default" }> = {};
-  const keys: Array<keyof Settings> = ["auditorModel", "auditorThinkingLevel", "notifyCmd", "tokenLimit", "wedgeAlertMinutes", "autoResume", "autoAcceptDrafts", "auditCap", "auditFeedbackChars", "subagentModelStrategy", "subagentModelOverrides"];
+  const keys: Array<keyof Settings> = ["auditorModel", "auditorThinkingLevel", "notifyCmd", "tokenLimit", "wedgeAlertMinutes", "autoResume", "autoAcceptDrafts", "auditCap", "auditFeedbackChars", "subagentModelStrategy", "subagentModelOverrides", "aggressiveMode", "quotaRetryMinutes", "stuckMaxInterventions"];
   for (const k of keys) {
     if ((proj as Record<string, unknown>)[k] !== undefined) out[k] = { value: (proj as any)[k], source: "project" };
     else if ((glob as Record<string, unknown>)[k] !== undefined) out[k] = { value: (glob as any)[k], source: "global" };
@@ -2604,6 +2604,9 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
           `Notify command — ${show("notifyCmd", "(off)")}`,
           `Token limit per goal — ${show("tokenLimit", "(off)")}`,
           `Wedge alert minutes — ${show("wedgeAlertMinutes", `(${WEDGE_ALERT_DEFAULT_MINUTES}m default)`)}`,
+          `Aggressive mode — ${show("aggressiveMode", "(off)")}`,
+          `Quota retry minutes — ${show("quotaRetryMinutes", `(${DEFAULT_QUOTA_RETRY_MINUTES}m default)`)}`,
+          `Stuck max interventions — ${show("stuckMaxInterventions", "(5 default)")}`,
           `Subagent model strategy — ${show("subagentModelStrategy", "(inherit-parent)")}`,
           `Subagent Explore model pin — ${loadSettings(ctx.cwd).subagentModelOverrides?.Explore ?? "(follows strategy)"}`,
           `Audit feedback characters — ${show("auditFeedbackChars", "(full report)")}`,
@@ -2639,6 +2642,31 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
           if (Number.isFinite(n) && n >= 0) saveSettings("global", ctx.cwd, { wedgeAlertMinutes: n });
           else if (!v.trim()) saveSettings("global", ctx.cwd, { wedgeAlertMinutes: undefined });
           else ctx.ui.notify(`Not a non-negative integer: ${v}`, "warning");
+        }
+      } else if (choice.startsWith("Aggressive mode")) {
+        const v = await ctx.ui.select("Aggressive mode (flips DEFAULTS toward keep-going — explicit per-key settings still win)", [
+          "off — current behavior: pause at the audit cap, wedge alerts on, manual resume",
+          "on — autoResume, audit cap 10, stuck max 10, wedge alerts off, quota auto-retry, cap disapprovals become a TODO list and the goal KEEPS GOING",
+        ]);
+        if (v) {
+          saveSettings("global", ctx.cwd, { aggressiveMode: v.startsWith("on") });
+          ctx.ui.notify(`Aggressive mode ${v.startsWith("on") ? "ON — goals keep going past the audit cap; objections become TODOs" : "off"}.`, "info");
+        }
+      } else if (choice.startsWith("Quota retry minutes")) {
+        const v = await ctx.ui.input("Minutes before auto-retrying a quota-exhausted auditor", `positive integer; empty = default ${DEFAULT_QUOTA_RETRY_MINUTES}`);
+        if (v !== undefined) {
+          const n = Number.parseInt(v.trim(), 10);
+          if (Number.isFinite(n) && n > 0) saveSettings("global", ctx.cwd, { quotaRetryMinutes: n });
+          else if (!v.trim()) saveSettings("global", ctx.cwd, { quotaRetryMinutes: undefined });
+          else ctx.ui.notify(`Not a positive integer: ${v}`, "warning");
+        }
+      } else if (choice.startsWith("Stuck max interventions")) {
+        const v = await ctx.ui.input("Consecutive stuck interventions before a loop stops", "positive integer; empty = default 5 (10 under aggressiveMode)");
+        if (v !== undefined) {
+          const n = Number.parseInt(v.trim(), 10);
+          if (Number.isFinite(n) && n > 0) saveSettings("global", ctx.cwd, { stuckMaxInterventions: n });
+          else if (!v.trim()) saveSettings("global", ctx.cwd, { stuckMaxInterventions: undefined });
+          else ctx.ui.notify(`Not a positive integer: ${v}`, "warning");
         }
       } else if (choice.startsWith("Subagent model strategy")) {
         const v = await ctx.ui.select("Subagent model (pi-subagents default agents)", [
@@ -2808,6 +2836,43 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
           ctx.ui.notify(`auditfeedbackchars must be a non-negative integer (0 = full report), got: ${value}`, "warning");
         }
       }
+    } else if (key === "aggressivemode" || key === "aggressive") {
+      if (["on", "true", "1", "yes"].includes(value)) {
+        patch.aggressiveMode = true;
+        changed = true;
+        ctx.ui.notify("aggressivemode=on: autoResume, audit cap 10, stuck max 10, wedge off, quota auto-retry — and audit-cap disapprovals become TODOs while the goal KEEPS GOING. Explicit per-key settings still win.", "warning");
+      } else if (["off", "false", "0", "no", "unset"].includes(value)) {
+        patch.aggressiveMode = undefined;
+        changed = true;
+      } else {
+        ctx.ui.notify(`aggressivemode must be on or off, got: ${value}`, "warning");
+      }
+    } else if (key === "quotaretryminutes") {
+      if (["unset", "default"].includes(value)) {
+        patch.quotaRetryMinutes = undefined;
+        changed = true;
+      } else {
+        const n = Number.parseInt(value, 10);
+        if (Number.isInteger(n) && n > 0) {
+          patch.quotaRetryMinutes = n;
+          changed = true;
+        } else {
+          ctx.ui.notify(`quotaretryminutes must be a positive integer, got: ${value}`, "warning");
+        }
+      }
+    } else if (key === "stuckmax" || key === "stuckmaxinterventions") {
+      if (["unset", "default"].includes(value)) {
+        patch.stuckMaxInterventions = undefined;
+        changed = true;
+      } else {
+        const n = Number.parseInt(value, 10);
+        if (Number.isInteger(n) && n > 0) {
+          patch.stuckMaxInterventions = n;
+          changed = true;
+        } else {
+          ctx.ui.notify(`stuckmax must be a positive integer, got: ${value}`, "warning");
+        }
+      }
     } else if (key === "thinking" || key === "auditorthinkinglevel") {
       if (["off", "minimal", "low", "medium", "high", "xhigh"].includes(value)) {
         patch.auditorThinkingLevel = value as Settings["auditorThinkingLevel"];
@@ -2818,7 +2883,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
     }
   }
   if (!changed) {
-    ctx.ui.notify("Nothing changed. Use key=value (model, thinking, notify, tokenlimit, autoresume, auditcap, auditfeedbackchars), optionally prefixed with 'project'.", "info");
+    ctx.ui.notify("Nothing changed. Use key=value (model, thinking, notify, tokenlimit, autoresume, auditcap, auditfeedbackchars, aggressivemode, quotaretryminutes, stuckmax), optionally prefixed with 'project'.", "info");
     return;
   }
   saveSettings(scope, ctx.cwd, patch);
@@ -2939,8 +3004,11 @@ export default function (pi: ExtensionAPI): void {
       ["notify=", "desktop push command: /glla notify='notify-send pi \"$1\"'"],
       ["tokenlimit=", "per-goal token budget (0 = off): /glla tokenlimit=2000000"],
       ["autoresume=", "on: auto-resume held goals/loops in fresh sessions"],
-      ["auditcap=", "N: pause goal after N consecutive auditor disapprovals (default 3, 0 = unlimited)"],
+      ["auditcap=", "N: pause goal after N consecutive auditor disapprovals (default 5, 0 = unlimited)"],
       ["auditfeedbackchars=", "cap on executor-visible disapproval report chars (0 = full report, the default)"],
+      ["aggressivemode=", "on: keep-going defaults — autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs"],
+      ["quotaretryminutes=", "N: minutes before auto-retrying a quota-exhausted auditor (default 60)"],
+      ["stuckmax=", "N: consecutive stuck interventions before a loop stops (default 5)"],
       ["autoaccept=", "on: drafts activate without the Confirm dialog (unattended rigs)"],
       ["project", "write a project override: /glla project key=value"],
     ]),
