@@ -3066,6 +3066,16 @@ export default function (pi: ExtensionAPI): void {
         loop.iterMetrics = metrics;
       }
     }
+    // v0.25.2: per-goal tool telemetry (/glla stats premature detection).
+    if (state.goal && state.goal.status === "active") {
+      const toolName = String(event?.toolName ?? "");
+      if (isLoopWriteTool(toolName) || toolName === "bash") {
+        const t = state.goal.telemetry ?? { turns: 0, fileWrites: 0, bashCalls: 0 };
+        if (isLoopWriteTool(toolName)) t.fileWrites++;
+        if (toolName === "bash") t.bashCalls++;
+        state.goal.telemetry = t;
+      }
+    }
     if (draftingTarget === null) return;
     if (askUserQuestionAnswered(String(event?.toolName ?? ""), event?.details)) {
       draftingUserReplies++;
@@ -3184,6 +3194,12 @@ export default function (pi: ExtensionAPI): void {
     // continuation loop.
     if (isForeignCtx(ctx)) return;
     noteActivity();
+    // v0.25.2: per-goal turn telemetry (/glla stats).
+    if (state.goal && state.goal.status === "active") {
+      const t = state.goal.telemetry ?? { turns: 0, fileWrites: 0, bashCalls: 0 };
+      t.turns++;
+      state.goal.telemetry = t;
+    }
     if (!registeredCtx) {
       registerAgentTools(pi, ctx);
       registeredCtx = ctx;

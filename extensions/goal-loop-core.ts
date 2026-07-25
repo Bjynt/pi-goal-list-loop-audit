@@ -157,6 +157,10 @@ export interface Goal {
   };
   createdAt: string;
   updatedAt: string;
+  /** v0.25.2: per-goal telemetry for /glla stats premature-success
+   * detection. Bumped live: turns on agent_end, fileWrites/bashCalls on
+   * tool_result while the goal is active. */
+  telemetry?: { turns: number; fileWrites: number; bashCalls: number };
 }
 
 /**
