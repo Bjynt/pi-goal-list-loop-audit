@@ -1,6 +1,35 @@
 # Changelog
 
+## [0.25.6] — 2026-07-25
+
+### Added — subagent polish
+
+- **Per-type pins for Plan + general-purpose** — embedded upstream
+  defaults for both (same drift-guard pattern as Explore), so
+  `subagentModelOverrides` can pin any of the three default agent types;
+  settings UI gained Plan + general-purpose pin editors (the Explore
+  editor generalized). Strategy-driven sync still writes ONLY Explore —
+  Plan/general-purpose pin nothing upstream, so inherit-parent needs no
+  file for them.
+- **Managed-override repair detection + notify** — a sync state file
+  tracks what glla wrote; a previously-managed override found missing or
+  altered externally is re-written AND surfaced ("glla repaired managed
+  subagent override(s): Explore") instead of silently restored.
+- **Effective-resolution display** — headless `/glla` now shows the
+  resolved model per agent type (`subagent Plan: minimax/MiniMax-M3
+  (per-type pin)` / `p/s (inherits session)` / `anthropic/
+  claude-haiku-4-5 (upstream pin)`).
+- **Subagent quota-error detection** — an Agent tool_result carrying a
+  quota error (the pi-subagents#175 shape: Explore's upstream haiku pin
+  403s on shared keys) triggers an immediate notify with the repair
+  path (re-spawn with explicit model=, work inline, or let the
+  inherit-parent strategy fix NEW sessions) + a `subagent_quota_error`
+  ledger event. Upstream tracking stays at tintinweb/pi-subagents#175.
+
+5 new tests + 2 updated for the new embedded types (348 → 353).
+
 ## [0.25.5] — 2026-07-25
+
 
 ### Added — completes the 0.25.4 auditor-polish contract (post-audit fix)
 

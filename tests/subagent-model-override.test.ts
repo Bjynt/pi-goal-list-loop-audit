@@ -53,7 +53,7 @@ test("build: with model → model pin written", () => {
 });
 
 test("build: unknown agent name throws", () => {
-  assert.throws(() => buildAgentOverrideMd("Plan"), /no embedded default config/);
+  assert.throws(() => buildAgentOverrideMd("Custom"), /no embedded default config/);
 });
 
 // ---- syncSubagentModelOverrides: writer safety contract ----
@@ -138,14 +138,14 @@ test("sync: override for a non-embedded agent type → skipped with note", () =>
   const r = syncSubagentModelOverrides({
     agentDir: dir,
     strategy: "inherit-parent",
-    overrides: { Plan: "minimax/MiniMax-M3" },
+    overrides: { Custom: "minimax/MiniMax-M3" },
   });
   // Explore still synced normally
   assert.deepEqual(r.written, ["Explore"]);
-  const planSkip = r.skipped.find(s => s.name === "Plan");
-  assert.ok(planSkip, "Plan override must be skipped");
-  assert.match(planSkip!.reason, /no embedded default config/);
-  assert.equal(readOverride(dir, "Plan"), undefined);
+  const customSkip = r.skipped.find(s => s.name === "Custom");
+  assert.ok(customSkip, "Custom override must be skipped");
+  assert.match(customSkip!.reason, /no embedded default config/);
+  assert.equal(readOverride(dir, "Custom"), undefined);
 });
 
 test("defaultAgentDir points at ~/.pi/agent", () => {
