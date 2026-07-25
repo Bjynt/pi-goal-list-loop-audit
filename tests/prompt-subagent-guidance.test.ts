@@ -17,7 +17,7 @@ const PROMPTS = [
 ];
 
 function readPrompt(name: string): string {
-  return fs.readFileSync(path.resolve(__dirname, "..", "prompts", name), "utf-8");
+  return fs.readFileSync(path.resolve("prompts", name), "utf-8");
 }
 
 for (const name of PROMPTS) {

@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 const prompt = fs.readFileSync(
-  path.resolve(__dirname, "..", "prompts", "goal-loop-continuation.md"),
+  path.resolve("prompts", "goal-loop-continuation.md"),
   "utf-8",
 );
 

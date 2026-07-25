@@ -17,7 +17,7 @@ import * as path from "node:path";
 import { isFullAuditObjective } from "../extensions/goal-loop-core.ts";
 
 const prompt = fs.readFileSync(
-  path.resolve(__dirname, "..", "prompts", "goal-loop-continuation.md"),
+  path.resolve("prompts", "goal-loop-continuation.md"),
   "utf-8",
 );
 
@@ -38,7 +38,7 @@ test("isFullAuditObjective classifies survey pivots (item 28)", () => {
 
 test("orchestrator injects the FULL-AUDIT directive conditionally (item 28)", () => {
   const src = fs.readFileSync(
-    path.resolve(__dirname, "..", "extensions", "loops", "goal.ts"),
+    path.resolve("extensions", "loops", "goal.ts"),
     "utf-8",
   );
   assert.match(src, /FULL-AUDIT MODE \(aggressiveMode \+ survey objective\)/);
