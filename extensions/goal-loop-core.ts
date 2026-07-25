@@ -145,6 +145,10 @@ export interface Goal {
   stopReason?: string;
   pauseReason?: string;
   pauseSuggestedAction?: string;
+  /** v0.25.0 (contract item 22): auditor objections extracted as TODOs when
+   * aggressiveMode keeps the goal active past the disapproval cap. Rendered
+   * into every continuation prompt until the next audit clears them. */
+  pendingTasks?: string[];
   activePath?: string;
   archivedPath?: string;
   usage: {

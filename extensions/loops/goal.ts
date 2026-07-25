@@ -384,12 +384,29 @@ function continuationPrompt(goal: Goal): string {
   } catch {
     tmpl = "[template-not-found]";
   }
+  // v0.25.0 (contract items 22/28): conditional directives — aggressiveMode
+  // TODOs from the audit cap, and the full-audit fan-out directive when the
+  // objective reads as a survey pivot.
+  const directives: string[] = [];
+  const effSettings = resolveEffectiveAggressiveSettings(loadSettings(ctxRef?.cwd ?? process.cwd()));
+  if (goal.pendingTasks && goal.pendingTasks.length > 0) {
+    directives.push(
+      `## AUDITOR TODO LIST (from ${goal.pauseReason?.includes("cap") ? "the disapproval cap" : "the last audit"})\n\nAddress these objections, in order, before re-calling complete_goal:\n${goal.pendingTasks.map((t, i) => `${i + 1}. ${t}`).join("\n")}`,
+    );
+  }
+  if (effSettings.aggressiveMode && isFullAuditObjective(goal.objective)) {
+    directives.push(
+      "## FULL-AUDIT MODE (aggressiveMode + survey objective)\n\nThis objective is a survey, not a single fix. Spawn 3+ `Explore` subagents NOW — one per subsystem, in a single message so they run in parallel — synthesize their findings, and call `propose_task_list` with the result. Do not start fixing before the task list exists.",
+    );
+  }
+  const dynamicDirectives = directives.length > 0 ? directives.join("\n\n") : "(no active directives)";
   return tmpl
     .replace(/\$\{GOAL_ID\}/g, goal.id)
     .replace(/\$\{OBJECTIVE\}/g, goal.objective)
     .replace(/\$\{VERIFICATION_CONTRACT\}/g, goal.verificationContract || "(none — auditor will decide based on objective)")
     .replace(/\$\{TASK_LIST\}/g, taskSummary)
-    .replace(/\$\{NEXT_PENDING_TASK_BLOCK\}/g, nextBlock);
+    .replace(/\$\{NEXT_PENDING_TASK_BLOCK\}/g, nextBlock)
+    .replace(/\$\{DYNAMIC_DIRECTIVES\}/g, dynamicDirectives);
 }
 
 // =================================================================
@@ -1534,7 +1551,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         appendLedger(ctx.cwd, "goal_tweaked", { via: "complete_goal.newObjective", from: oldObjective.slice(0, 200), to: cleanObj.slice(0, 200) });
         ctx.ui.notify(`Objective updated (complete_goal newObjective): ${cleanObj.slice(0, 80)}`, "info");
       }
-      updateGoal({ status: "auditing" }, ctx);
+      updateGoal({ status: "auditing", pendingTasks: undefined }, ctx);
       const settings = loadSettings(ctx.cwd);
       const { model: auditorModel, error: modelError, via } = resolveAuditorModel(ctx, settings.auditorModel);
       if (modelError) {
@@ -1625,6 +1642,29 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       // Bounded and surfaced: the goal pauses and the user decides.
       if (result.impossible) {
         const reason = result.impossibleReason || "(no reason given)";
+        // v0.25.0 (contract item 23): under aggressiveMode, a PARTIAL
+        // impossible (some items can't ship) keeps the loop going — the
+        // agent narrows to the remainder. A FULL impossible still pauses:
+        // auto-resuming a provably unwinnable objective just burns tokens.
+        const effectiveImp = resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd));
+        if (effectiveImp.aggressiveMode && classifyImpossibleReason(reason) === "partial") {
+          updateGoal({
+            status: "active",
+            auditHistory: history,
+            pauseReason: `auditor verdict: IMPOSSIBLE (partial) — ${reason}`,
+            pauseSuggestedAction: "Narrow the objective past the impossible part (complete_goal newObjective or /goal tweak) and continue",
+          }, ctx);
+          ctx.ui.notify(`Auditor: part of the goal is IMPOSSIBLE — ${reason.slice(0, 100)}. aggressiveMode: narrowing and continuing.`, "warning");
+          appendLedger(ctx.cwd, "impossible_partial_continue", { reason: reason.slice(0, 200) });
+          scheduleContinuation(ctx, true);
+          return {
+            content: [{
+              type: "text",
+              text: `The auditor says PART of this goal can never be satisfied: ${reason}\n\naggressiveMode is ON, so the goal stays ACTIVE. Do NOT keep attempting the impossible part. Narrow the objective to the remaining shippable items — pass newObjective to complete_goal at completion time (or pause_goal proposing /goal tweak if the narrowing needs the user's call) — and continue working the rest now.`,
+            }],
+            details: {},
+          };
+        }
         updateGoal({
           status: "paused",
           auditHistory: history,
@@ -1729,7 +1769,8 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       // goal the auditor can NEVER approve used to re-continue forever.
       // auditCap consecutive disapprovals → pause + notify, bounded and
       // surfaced like every other stop in this stack.
-      const auditCap = settings.auditCap ?? 3;
+      const effectiveCap = resolveEffectiveAggressiveSettings(settings);
+      const auditCap = effectiveCap.auditCap;
       const configuredFeedbackChars = settings.auditFeedbackChars;
       const auditFeedbackChars = Number.isInteger(configuredFeedbackChars) && configuredFeedbackChars! >= 0
         ? configuredFeedbackChars!
@@ -1744,6 +1785,32 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         : `\n\nReport truncated at the configured limit. /goal status shows the full report; change future feedback with /glla auditfeedbackchars=N (0 = full report).`;
       const trailingDisapprovals = countTrailingDisapprovals(history);
       if (auditCap > 0 && trailingDisapprovals >= auditCap) {
+        // v0.25.0 (contract item 22): aggressiveMode turns the cap into a
+        // TODO list and keeps going — the objections become pendingTasks
+        // rendered into every continuation until addressed. OFF preserves
+        // the pause (contract item 24 test 2).
+        if (effectiveCap.aggressiveMode) {
+          const pendingTasks = extractPendingTasks(result.output, 5);
+          updateGoal({
+            status: "active",
+            auditHistory: history,
+            pendingTasks,
+            pauseReason: `auditor disapproved ${trailingDisapprovals}× consecutively (cap ${auditCap}) — aggressiveMode: continuing with TODOs`,
+          }, ctx);
+          const todoBlock = pendingTasks.length > 0
+            ? pendingTasks.map((t, i) => ` ${i + 1}. ${t}`).join("\n")
+            : " (no discrete objections extracted — re-read the latest report in /goal status)";
+          ctx.ui.notify(`Auditor disapproved ${trailingDisapprovals}× (cap). Treating as TODOs:\n${todoBlock}`, "warning");
+          appendLedger(ctx.cwd, "audit_cap_keep_going", { trailingDisapprovals, auditCap, pendingTasks });
+          scheduleContinuation(ctx, true);
+          return {
+            content: [{
+              type: "text",
+              text: `The auditor has disapproved ${trailingDisapprovals} times in a row (cap ${auditCap}), but aggressiveMode is ON — the goal stays ACTIVE and the objections are now your TODO list:\n${todoBlock}\n\nLatest report (${auditFeedbackLabel}):\n${auditFeedback}\n\nWork the TODOs in order. If the auditor is WRONG about an objection, follow WHEN THE AUDITOR DISAPPROVES: investigate, quote its objection, compare against what you shipped, and present the user YOUR ASSESSMENT. If the objective itself has drifted, pass newObjective to complete_goal.`,
+            }],
+            details: {},
+          };
+        }
         updateGoal({
           status: "paused",
           auditHistory: history,
@@ -1756,7 +1823,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         return {
           content: [{
             type: "text",
-            text: `The auditor has now disapproved ${trailingDisapprovals} times in a row (cap ${auditCap}). The goal is PAUSED — continuing to re-attempt without addressing the pattern wastes tokens. Latest report (${auditFeedbackLabel}):\n${auditFeedback}\n\nDo not call complete_goal again. Summarize the repeated objections for the user and ask how to proceed (/goal status shows all reports; /goal resume resumes).`,
+            text: `The auditor has now disapproved ${trailingDisapprovals} times in a row (cap ${auditCap}). The goal is PAUSED — continuing to re-attempt without addressing the pattern wastes tokens.\n\nBefore asking the user, INVESTIGATE:\n1. Read the audit history (the auditor's previous reports — /goal status shows them; state.goal.auditHistory holds them).\n2. Identify the SPECIFIC objections — quote them.\n3. Compare against what you actually shipped (commits, diffs, test output, screenshots).\n4. Form a clear opinion: is the auditor right, wrong, or partially right?\n5. Present the user YOUR ASSESSMENT with quoted objections and shipped evidence — not a generic menu of options.\n\nLatest report (${auditFeedbackLabel}):\n${auditFeedback}\n\nDo not call complete_goal again until the pattern is addressed. /goal resume resumes; /goal tweak fixes a drifted objective.`,
           }],
           details: {},
         };
