@@ -2878,6 +2878,10 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
         fmt("aggressiveMode", "aggressiveMode"),
         fmt("quotaRetryMinutes", "quotaRetryMinutes"),
         fmt("stuckMaxInterventions", "stuckMaxInterventions"),
+        // v0.25.6: effective per-type subagent model resolution.
+        ...["Explore", "Plan", "general-purpose"].map(
+          (t) => `subagent ${t}: ${resolveEffectiveSubagentModel(t, loadSettings(ctx.cwd), getSessionModel())}`,
+        ),
         `\nglobal:  ${globalSettingsPath()}`,
         `project: ${projectSettingsPath(ctx.cwd)}`,
         `Set with: /glla key=value (global) · /glla project key=value (project override)`,
@@ -3284,6 +3288,15 @@ export default function (pi: ExtensionAPI): void {
       });
       for (const skip of sync.skipped) {
         ctx.ui.notify(`glla subagent override skipped [${skip.name}]: ${skip.reason}`, "warning");
+      }
+      // v0.25.6: notify-with-repair — a managed override that went missing
+      // or was altered externally (pi update, manual edit, sync churn) is
+      // re-written AND surfaced, not silently restored.
+      if (sync.repaired.length > 0) {
+        ctx.ui.notify(
+          `glla repaired managed subagent override(s): ${sync.repaired.join(", ")} — the file(s) were missing or altered externally; re-written per your subagent settings.`,
+          "warning",
+        );
       }
     } catch (err) {
       ctx.ui.notify(`glla subagent override sync failed: ${err instanceof Error ? err.message : String(err)}`, "warning");

@@ -213,8 +213,18 @@ export function syncSubagentModelOverrides(opts: {
   strategy: SubagentModelStrategy;
   overrides?: Record<string, string>;
 }): SubagentSyncResult {
-  const result: SubagentSyncResult = { written: [], removed: [], skipped: [] };
+  const result: SubagentSyncResult = { written: [], removed: [], skipped: [], repaired: [] };
   const overrides = opts.overrides ?? {};
+  // v0.25.6: load the previous sync state for repair detection — a file
+  // we wrote before that is now MISSING or CONTENT-CHANGED was touched
+  // externally; re-writing it is a repair the user should hear about.
+  let prevWritten: string[] = [];
+  try {
+    const prev = JSON.parse(fs.readFileSync(subagentSyncStatePath(opts.agentDir), "utf-8"));
+    if (Array.isArray(prev?.written)) prevWritten = prev.written.map(String);
+  } catch {
+    /* first sync or unreadable state */
+  }
   const names = new Set<string>([...KNOWN_PINNED_DEFAULT_AGENTS, ...Object.keys(overrides)]);
 
   for (const name of names) {
@@ -258,6 +268,31 @@ export function syncSubagentModelOverrides(opts: {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, desired);
     result.written.push(name);
+    if (prevWritten.includes(name)) result.repaired.push(name);
+  }
+  // Persist what we manage now (best-effort).
+  try {
+    fs.mkdirSync(path.join(opts.agentDir, "agents"), { recursive: true });
+    fs.writeFileSync(subagentSyncStatePath(opts.agentDir), JSON.stringify({ written: result.written, at: new Date().toISOString() }));
+  } catch {
+    /* repair detection is best-effort */
   }
   return result;
+}
+
+/** v0.25.6: effective model for an agent type, for the headless settings
+ * display. Per-type override wins; inherit-parent falls to the session
+ * model; agent-default means upstream's own resolution (Explore's haiku
+ * pin for Explore, session model for the others). */
+export function resolveEffectiveSubagentModel(
+  name: string,
+  settings: { subagentModelStrategy?: string; subagentModelOverrides?: Record<string, string> },
+  sessionModel?: string,
+): string {
+  const pin = settings.subagentModelOverrides?.[name];
+  if (pin) return `${pin} (per-type pin)`;
+  if ((settings.subagentModelStrategy ?? "inherit-parent") === "inherit-parent") {
+    return sessionModel ? `${sessionModel} (inherits session)` : "(session model)";
+  }
+  return name === "Explore" ? "anthropic/claude-haiku-4-5 (upstream pin)" : "(agent default)";
 }
