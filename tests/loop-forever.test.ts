@@ -436,3 +436,18 @@ test("resolveSpecFiles: returns all root specs in priority order (v0.24.4)", () 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---- v0.25.1: toolsamerepeat= kwarg (stuck-detection rework item 8) ----
+
+test("parseLoopStartArgs: toolsamerepeat=N parses; 0 disables the legacy check", () => {
+  const a = parseLoopStartArgs('"polish the UI" measure="echo 1" direction=min toolsamerepeat=0');
+  assert.equal(a.toolSameRepeat, 0);
+  const b = parseLoopStartArgs('"polish the UI" measure="echo 1" direction=min toolsamerepeat=7');
+  assert.equal(b.toolSameRepeat, 7);
+  // Absent = default (undefined → REPETITION.toolResultRepeat downstream):
+  const c = parseLoopStartArgs('"polish the UI" measure="echo 1" direction=min');
+  assert.equal(c.toolSameRepeat, undefined);
+  // Non-numeric garbage degrades to default, never throws:
+  const d = parseLoopStartArgs('"polish the UI" measure="echo 1" direction=min toolsamerepeat=abc');
+  assert.equal(d.toolSameRepeat, undefined);
+});
