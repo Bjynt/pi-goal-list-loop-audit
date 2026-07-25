@@ -19,7 +19,7 @@ import {
   AGGRESSIVE_STUCK_MAX_INTERVENTIONS,
   DEFAULT_QUOTA_RETRY_MINUTES,
 } from "../extensions/goal-loop-core.ts";
-import { saveSettings, loadSettings } from "../extensions/loops/goal-settings.ts";
+import { saveSettings, loadSettings } from "../extensions/goal-settings.ts";
 
 test("aggressiveMode persists through the settings file (item 8)", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-aggr-"));
