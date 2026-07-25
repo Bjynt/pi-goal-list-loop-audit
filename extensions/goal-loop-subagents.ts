@@ -82,18 +82,80 @@ export const EXPLORE_DEFAULT_TOOLS = "read, bash, grep, find, ls";
 interface EmbeddedAgentDefault {
   description: string;
   systemPrompt: string;
+  /** "" means "all tools" (upstream omits builtinToolNames). */
   tools: string;
 }
 
-/** Embedded copies keyed by agent name. Only agents in
- * KNOWN_PINNED_DEFAULT_AGENTS need entries. */
+export const PLAN_DEFAULT_DESCRIPTION = "Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.";
+
+export const PLAN_DEFAULT_SYSTEM_PROMPT = `# CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS
+You are a software architect and planning specialist.
+Your role is EXCLUSIVELY to explore the codebase and design implementation plans.
+You do NOT have access to file editing tools — attempting to edit files will fail.
+
+You are STRICTLY PROHIBITED from:
+- Creating new files
+- Modifying existing files
+- Deleting files
+- Moving or copying files
+- Creating temporary files anywhere, including /tmp
+- Using redirect operators (>, >>, |) or heredocs to write to files
+- Running ANY commands that change system state
+
+# Planning Process
+1. Understand requirements
+2. Explore thoroughly (read files, find patterns, understand architecture)
+3. Design solution based on your assigned perspective
+4. Detail the plan with step-by-step implementation strategy
+
+# Requirements
+- Consider trade-offs and architectural decisions
+- Identify dependencies and sequencing
+- Anticipate potential challenges
+- Follow existing patterns where appropriate
+
+# Tool Usage
+- Use the find tool for file pattern matching (NOT the bash find command)
+- Use the grep tool for content search (NOT bash grep/rg command)
+- Use the read tool for reading files (NOT bash cat/head/tail)
+- Use Bash ONLY for read-only operations
+
+# Output Format
+- Use absolute file paths
+- Do not use emojis
+- End your response with:
+
+### Critical Files for Implementation
+List 3-5 files most critical for implementing this plan:
+- /absolute/path/to/file.ts - [Brief reason]`;
+
+export const GENERAL_PURPOSE_DEFAULT_DESCRIPTION = "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you.";
+
+/** Embedded copies keyed by agent name. Explore needs an entry for the
+ * strategy-driven sync (KNOWN_PINNED_DEFAULT_AGENTS); Plan and
+ * general-purpose entries exist so users can pin them per-type via
+ * subagentModelOverrides (v0.25.6). */
 const EMBEDDED_DEFAULTS: Record<string, EmbeddedAgentDefault> = {
   Explore: {
     description: EXPLORE_DEFAULT_DESCRIPTION,
     systemPrompt: EXPLORE_DEFAULT_SYSTEM_PROMPT,
     tools: EXPLORE_DEFAULT_TOOLS,
   },
+  Plan: {
+    description: PLAN_DEFAULT_DESCRIPTION,
+    systemPrompt: PLAN_DEFAULT_SYSTEM_PROMPT,
+    tools: EXPLORE_DEFAULT_TOOLS, // same read-only set upstream
+  },
+  "general-purpose": {
+    description: GENERAL_PURPOSE_DEFAULT_DESCRIPTION,
+    systemPrompt: "", // upstream: empty prompt, promptMode append
+    tools: "", // upstream: all tools (builtinToolNames omitted)
+  },
 };
+
+/** v0.25.6: agent types the user can pin per-type via
+ * subagentModelOverrides (embedded defaults exist for each). */
+export const OVERRIDABLE_AGENT_TYPES = Object.keys(EMBEDDED_DEFAULTS);
 
 /** Default global agent dir (pi-subagents reads $PI_CODING_AGENT_DIR/agents,
  * default ~/.pi/agent/agents). Parameterized in sync for tests. */
@@ -107,12 +169,9 @@ export function buildAgentOverrideMd(name: string, model?: string): string {
   const def = EMBEDDED_DEFAULTS[name];
   if (!def) throw new Error(`no embedded default config for agent "${name}"`);
   const yamlDesc = "'" + def.description.replace(/'/g, "''") + "'";
-  const lines = [
-    "---",
-    `description: ${yamlDesc}`,
-    `tools: ${def.tools}`,
-    "prompt_mode: replace",
-  ];
+  const lines = ["---", `description: ${yamlDesc}`];
+  if (def.tools) lines.push(`tools: ${def.tools}`);
+  lines.push(def.systemPrompt ? "prompt_mode: replace" : "prompt_mode: append");
   if (model) lines.push(`model: ${model}`);
   lines.push(
     `x-managed-by: ${SUBAGENT_MANAGED_MARKER}`,
@@ -121,7 +180,7 @@ export function buildAgentOverrideMd(name: string, model?: string): string {
       : "x-glla-note: model pin removed (upstream default pins a fixed model) so this agent inherits the parent session model and its quota pool. Managed by glla — flip /glla subagent strategy to agent-default to restore upstream behavior.",
     "---",
     "",
-    def.systemPrompt,
+    def.systemPrompt || "(no system-prompt override — upstream default is an empty append-mode prompt)",
     "",
   );
   return lines.join("\n");
@@ -135,7 +194,16 @@ export interface SubagentSyncResult {
   written: string[];
   removed: string[];
   /** Files left untouched because the user owns them (no marker). */
-  skipped: Array<{ name: string; reason: string }>;
+  skipped: Array<{ name: string } & { reason: string }>;
+  /** v0.25.6: managed files that were expected (previously written) but
+   * found missing or altered, and got re-written — surface these to the
+   * user (external edit, pi update, or dracon-sync churn). */
+  repaired: string[];
+}
+
+/** State file tracking what the last sync wrote (repair detection). */
+export function subagentSyncStatePath(agentDir: string): string {
+  return path.join(agentDir, "agents", ".glla-subagent-sync.json");
 }
 
 /** Sync <agentDir>/agents/<Name>.md with the desired state. Idempotent:
@@ -159,11 +227,15 @@ export function syncSubagentModelOverrides(opts: {
       continue;
     }
     const file = path.join(opts.agentDir, "agents", `${name}.md`);
+    // v0.25.6: the strategy-driven (model-less) write applies ONLY to
+    // agents that pin a model upstream (Explore) — Plan/general-purpose
+    // don't pin, so inherit-parent needs no file for them; they get
+    // managed files only via an explicit per-type override.
     const desired = overrideModel
       ? buildAgentOverrideMd(name, overrideModel)
-      : opts.strategy === "inherit-parent"
+      : opts.strategy === "inherit-parent" && (KNOWN_PINNED_DEFAULT_AGENTS as readonly string[]).includes(name)
         ? buildAgentOverrideMd(name)
-        : undefined; // agent-default + no per-type override → file should be absent
+        : undefined; // agent-default / no pin upstream + no override → file should be absent
 
     const exists = fs.existsSync(file);
     const current = exists ? fs.readFileSync(file, "utf-8") : undefined;
