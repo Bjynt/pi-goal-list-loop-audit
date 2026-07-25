@@ -94,7 +94,6 @@ import { runGoalCompletionAuditor } from "../goal-loop-auditor.js";
 import {
   REPETITION,
   isActuallyStuck,
-  loopFinishStopReason,
   loopInterventionDirective,
   continueVariant,
   textFingerprint,
@@ -112,6 +111,7 @@ import {
   applyRefinement,
   loopBranchName,
   parseLoopStartArgs,
+  loopFinishStopReason,
   parseMetric,
   LOOP_DEFAULTS,
   resolveSpecFiles,
