@@ -72,6 +72,9 @@ export interface AuditDisplayProgress {
   currentTool?: string;
   label?: string;
   elapsedMs?: number;
+  /** v0.25.4: last progress-event time — the widget flags auditor-quiet
+   * stalls when this goes stale while the audit is in flight. */
+  lastEventAt?: number;
 }
 
 /**
@@ -175,7 +178,12 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   const lines = [head, `├─ ${isList ? "list item · " : ""}${statusWord} · ${fmtElapsed(now - Date.parse(g.createdAt))}${tokens}`];
   if (g.status === "auditing") {
     lines.push(`├─ auditor: ${audit?.label ?? "running"}${audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : ""}`);
-    if (audit?.elapsedMs) lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(audit.elapsedMs)} in isolated session`)}`);
+    // v0.25.4: auditor-quiet stall — progress events stopped arriving
+    // while the audit is in flight (hung model call, stuck tool).
+    const quietMs = audit?.lastEventAt !== undefined ? now - audit.lastEventAt : 0;
+    if (quietMs > 3 * 60_000) {
+      lines.push(`└─ ${paint(theme, "warning", `auditor quiet ${fmtElapsed(quietMs)} — may be stuck; Esc aborts, verdict is not counted`)}`);
+    } else if (audit?.elapsedMs) lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(audit.elapsedMs)} in isolated session`)}`);
     else lines.push(`└─ ${paint(theme, "dim", "isolated session, read-only tools")}`);
     return lines;
   }

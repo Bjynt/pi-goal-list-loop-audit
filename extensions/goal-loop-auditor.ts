@@ -159,7 +159,9 @@ function buildGoalAuditorPrompt(goal: Goal, completionSummary: string | null | u
       ? ["4. Verify that the executor has satisfied every item in the <verification_contract>. If any item is missing or weakly addressed, disapprove."]
       : []),
     "5. Explain missing or weak evidence, especially scaffold-vs-final quality gaps.",
-    "6. End with exactly <approved/> only if the objective is truly complete; <impossible>reason</impossible> if it can never be satisfied as stated; otherwise end with exactly <disapproved/>.",
+    "6. When you disapprove, end the report body with a '## Required fixes' section: one line per blocking gap, each an actionable instruction the executor can complete (most critical first). This tail is what the executor sees first — make it self-sufficient.",
+    "7. Write the report in English, and never emit <think> blocks or fragments — your reasoning stays private; the report is the verdict plus evidence.",
+    "8. End with exactly <approved/> only if the objective is truly complete; <impossible>reason</impossible> if it can never be satisfied as stated; otherwise end with exactly <disapproved/>.",
     ...(goal.verificationContract?.trim()
       ? [
           "",

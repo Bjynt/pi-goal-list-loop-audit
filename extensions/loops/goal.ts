@@ -1702,7 +1702,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       ctx.ui.notify(`Auditor running (isolated session, model: ${via ?? "setting"})…`, "info");
       // Esc during the audit aborts this tool's signal → threaded into the
       // auditor session, which aborts cleanly and returns "Auditor aborted."
-      latestAuditProgress = { label: "starting" };
+      latestAuditProgress = { label: "starting", lastEventAt: Date.now() };
       const result = await runGoalCompletionAuditor({
         ctx,
         goal: state.goal,
@@ -1716,6 +1716,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
             currentTool: progress.currentTool,
             label: progress.label,
             elapsedMs: progress.elapsedMs,
+            lastEventAt: Date.now(),
           };
           refreshUI(ctx);
         },
