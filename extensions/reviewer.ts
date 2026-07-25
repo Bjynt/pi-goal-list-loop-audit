@@ -150,6 +150,9 @@ export function writeReviewReport(cwd: string, report: ReviewReport): string {
 export interface ReviewerDeps {
   cwd: string;
   nowMs: number;
+  /** /review <id> manual invocation — bypasses fireOn/doNotFireOn gates,
+   * the refire window, and the day cap (the user asked explicitly). */
+  manual?: boolean;
   ledgerEntries: Array<{ type: string; at?: string; value?: any }>;
   /** Source texts for finding extraction (archive md, audit reports). */
   sources: Array<{ name: string; text: string }>;
@@ -177,19 +180,21 @@ export function runReviewer(
   deps: ReviewerDeps,
 ): ReviewerOutcome {
   const none = (suppressedReason: string): ReviewerOutcome => ({ fired: false, suppressedReason, enqueued: 0, proposed: 0 });
-  if (!config.enabled) return none("reviewer disabled");
+  if (!config.enabled && !deps.manual) return none("reviewer disabled");
   const event = source.kind === "goal" ? `${source.terminal}` : "list-complete";
-  if (config.doNotFireOn.includes(event)) return none(`doNotFireOn: ${event}`);
-  if (source.kind === "goal" && source.terminal !== "goal-complete") return none(`not a completion: ${source.terminal}`);
-  if (!config.fireOn.includes(source.kind === "goal" ? "goal-complete" : "list-complete")) return none("fireOn excludes this event");
-  if (reviewerFiredRecently(deps.ledgerEntries, REVIEWER_REFIRE_WINDOW_MS, deps.nowMs)) {
-    deps.ledger("reviewer_suppressed", { reason: "refire-window", goalId: source.goalId });
-    return none("reviewer fired within the last 5 minutes (runaway prevention)");
-  }
-  const today = reviewsToday(deps.ledgerEntries, deps.nowMs);
-  if (today >= config.maxReviewsPerDay) {
-    deps.ledger("reviewer_suppressed", { reason: "day-cap", count: today, cap: config.maxReviewsPerDay, goalId: source.goalId });
-    return none(`day cap reached (${today}/${config.maxReviewsPerDay})`);
+  if (!deps.manual) {
+    if (config.doNotFireOn.includes(event)) return none(`doNotFireOn: ${event}`);
+    if (source.kind === "goal" && source.terminal !== "goal-complete") return none(`not a completion: ${source.terminal}`);
+    if (!config.fireOn.includes(source.kind === "goal" ? "goal-complete" : "list-complete")) return none("fireOn excludes this event");
+    if (reviewerFiredRecently(deps.ledgerEntries, REVIEWER_REFIRE_WINDOW_MS, deps.nowMs)) {
+      deps.ledger("reviewer_suppressed", { reason: "refire-window", goalId: source.goalId });
+      return none("reviewer fired within the last 5 minutes (runaway prevention)");
+    }
+    const today = reviewsToday(deps.ledgerEntries, deps.nowMs);
+    if (today >= config.maxReviewsPerDay) {
+      deps.ledger("reviewer_suppressed", { reason: "day-cap", count: today, cap: config.maxReviewsPerDay, goalId: source.goalId });
+      return none(`day cap reached (${today}/${config.maxReviewsPerDay})`);
+    }
   }
 
   const findings = extractFindings(deps.sources, config.maxFindingsPerReview);

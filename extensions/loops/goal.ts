@@ -103,6 +103,12 @@ import {
   type Settings,
 } from "../goal-settings.js";
 import {
+  DEFAULT_REVIEWER_CONFIG,
+  resolveReviewerConfig,
+  runReviewer,
+  type ReviewerConfig,
+} from "../reviewer.js";
+import {
   discoverGllaProjects,
   parseLedgerEntries,
   filterPremature,
@@ -517,7 +523,73 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
   // (v0.2.0 bug: bare /list next silently consumed TWO items, found by the
   // pick-any-item verification in v0.10.0).
   if (goal.policy === "list" && status === "complete") {
-    activateNextListItem(ctx);
+    const advanced = activateNextListItem(ctx);
+    // v0.26.0: the queue just EMPTIED on a completion → list-complete.
+    if (!advanced) fireReviewer(ctx, { kind: "list", goalId: goal.id, objective: goal.objective, terminal: "goal-complete" });
+    return;
+  }
+  // v0.26.0: a /goal (non-list) reached a terminal state → maybe fire.
+  if (goal.policy !== "list") {
+    fireReviewer(ctx, { kind: "goal", goalId: goal.id, objective: goal.objective, terminal: status === "complete" ? "goal-complete" : status === "aborted" ? "goal-aborted" : "goal-paused" });
+  }
+}
+
+/**
+ * v0.26.0: bind the reviewer to the live session. Sources for finding
+ * extraction: the archived goal markdown + its audit reports + the
+ * durable audit log entries for this goal. List items are enqueued via
+ * the ONE enqueue path; /goal proposals go through the agent (which
+ * calls propose_goal_draft → the user's Confirm dialog).
+ */
+function fireReviewer(
+  ctx: ExtensionContext,
+  source: { kind: "goal" | "list"; goalId: string; objective: string; terminal: string },
+  opts: { manual?: boolean } = {},
+): void {
+  try {
+    const settings = loadSettings(ctx.cwd);
+    const config = resolveReviewerConfig(settings.reviewer as Partial<ReviewerConfig> | undefined);
+    const sources: Array<{ name: string; text: string }> = [];
+    try {
+      sources.push({ name: "archive", text: fs.readFileSync(archivedGoalPath(ctx.cwd, source.goalId), "utf-8") });
+    } catch {
+      /* archive md may not exist for manual review of a live goal */
+    }
+    const auditTexts = readAuditLog(ctx.cwd)
+      .filter((e) => e.goalId === source.goalId)
+      .map((e) => e.report);
+    for (const t of auditTexts) sources.push({ name: "audit", text: t });
+    let ledgerEntries: Array<{ type: string; at?: string; value?: any }> = [];
+    try {
+      ledgerEntries = parseLedgerEntries(fs.readFileSync(ledgerPath(ctx.cwd), "utf-8"));
+    } catch {
+      /* no ledger yet */
+    }
+    const outcome = runReviewer(config, source, {
+      cwd: ctx.cwd,
+      nowMs: Date.now(),
+      manual: opts.manual,
+      ledgerEntries,
+      sources,
+      enqueueListItems: (objectives) => enqueueItems(ctx, objectives, "reviewer"),
+      proposeGoal: (objective, reason) => {
+        try {
+          extensionApi?.sendUserMessage(
+            `[REVIEWER FOLLOW-UP — ${reason}. Propose this as a /goal via propose_goal_draft (the user Confirms or rejects): ${objective}]`,
+            { deliverAs: ctx.isIdle() ? "followUp" : "steer" },
+          );
+        } catch {
+          /* proposal best-effort */
+        }
+      },
+      notify: (message, level) => ctx.ui.notify(message, level),
+      ledger: (type, value) => appendLedger(ctx.cwd, type, value),
+    });
+    if (!outcome.fired && outcome.suppressedReason && opts.manual) {
+      ctx.ui.notify(`Reviewer suppressed: ${outcome.suppressedReason}`, "info");
+    }
+  } catch (err) {
+    ctx.ui.notify(`Reviewer failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`, "warning");
   }
 }
 

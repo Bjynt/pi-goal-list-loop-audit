@@ -60,6 +60,9 @@ export interface Settings {
    * override without the model pin so subagents share the session model and
    * its quota; "agent-default" restores upstream behavior. Applies to NEW
    * sessions (pi-subagents registers agents at session start). */
+  /** v0.26.0: reviewer (post-completion follow-up enqueuer) config —
+   * project-scoped; see extensions/reviewer.ts DEFAULT_REVIEWER_CONFIG. */
+  reviewer?: Record<string, unknown>;
   subagentModelStrategy?: SubagentModelStrategy;
   /** v0.24.6: per-agent-type model pin, e.g. { "Explore": "minimax/MiniMax-M3" }.
    * Always wins over subagentModelStrategy — the managed override is written
