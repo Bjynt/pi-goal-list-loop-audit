@@ -1,6 +1,35 @@
 # Changelog
 
+## [0.25.2] — 2026-07-25
+
+### Added — `/glla stats`: per-project ledger rollups
+
+One command, every project's glla telemetry — the empirical-evidence layer
+the spec-driven verifier hardening will consume.
+
+- **`/glla stats`** — markdown table, one row per discovered project:
+  goals, audits approved/disapproved/error, avg turns, avg writes,
+  premature count, token total, last active.
+- **`/glla stats json`** — same rollup machine-readable (schema matches
+  the table exactly).
+- **`/glla stats project=<path>`** — single-project scan.
+- **`/glla stats premature`** — only projects with premature successes,
+  sorted by premature ratio.
+- **Premature-success detection** — flags approved goals with
+  turns < 50 AND file writes < 5 AND bash calls < 8 (spec-driven verifier
+  design §3 thresholds). Goals archived before this release carry no
+  telemetry and are UNKNOWN, never back-convicted.
+- **Per-goal telemetry** — turns (agent_end), file writes, and bash calls
+  are now counted on the goal state and flow into archives.
+- **Project discovery** — session-dir cwd decode + targeted bounded walk
+  (~/Dev, ~/chat first, 2s budget) + cwd. New module
+  `extensions/goal-loop-stats.ts` (pure helpers, stdlib only).
+
+`total_cost` is token usage — no price data on this rig. 7 new tests
+(321 → 328).
+
 ## [0.25.1] — 2026-07-25
+
 
 ### Fixed — stuck-detection rework: the multi-signal "progress signals" gate
 

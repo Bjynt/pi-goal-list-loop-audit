@@ -198,3 +198,20 @@ ls .pi-glla/archive           # past goals
 Known v0.1.0 limitation: Esc during an audit aborts the pi turn but the auditor
 session may complete detached; the loop recovers via `agent_end`. pi-goal-x's
 Escape dialog is v0.2.0 scope.
+
+## Reading your glla telemetry (v0.25.2)
+
+`/glla stats` scans `.pi-glla/active.jsonl` across every project on the
+rig and prints a per-project rollup: goals created, audit verdicts
+(approved / disapproved / infra errors), average turns and file writes per
+goal, premature-success count, total tokens, and last activity.
+
+**Premature success** = an approved goal with < 50 turns AND < 5 file
+writes AND < 8 bash calls — the "claimed done in 12 turns with 0 file
+writes" pattern an auditor should have caught. `/glla stats premature`
+lists only those projects, worst ratio first. Goals archived before
+v0.25.2 have no telemetry and are never flagged retroactively.
+
+`/glla stats json` emits the same rows as JSON (pipe to `jq`);
+`/glla stats project=~/Dev/xyz` scopes to one project. `total_cost` is
+measured in tokens (this rig has no per-provider price table).
