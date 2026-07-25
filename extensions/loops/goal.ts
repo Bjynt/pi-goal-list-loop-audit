@@ -90,6 +90,14 @@ import {
   settingsProvenance,
   type Settings,
 } from "../goal-settings.js";
+import {
+  discoverGllaProjects,
+  filterPremature,
+  formatRollupJson,
+  formatRollupTable,
+  rollupProject,
+  type ProjectRollup,
+} from "../goal-loop-stats.js";
 import { runGoalCompletionAuditor } from "../goal-loop-auditor.js";
 import {
   REPETITION,
@@ -3017,6 +3025,7 @@ export default function (pi: ExtensionAPI): void {
       ["aggressivemode=", "on: keep-going defaults — autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs"],
       ["quotaretryminutes=", "N: minutes before auto-retrying a quota-exhausted auditor (default 60)"],
       ["stuckmax=", "N: consecutive stuck interventions before a loop stops (default 5)"],
+      ["stats", "per-project ledger rollups: /glla stats [json|premature|project=<path>]"],
       ["autoaccept=", "on: drafts activate without the Confirm dialog (unattended rigs)"],
       ["project", "write a project override: /glla project key=value"],
     ]),
