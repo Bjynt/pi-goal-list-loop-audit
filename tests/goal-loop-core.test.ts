@@ -276,7 +276,7 @@ test("mergeSettings: does not mutate the base", () => {
 });
 
 test("auditFeedbackExcerpt: bounds executor feedback at the configured character count", () => {
-  assert.equal(DEFAULT_AUDIT_FEEDBACK_CHARS, 800);
+  assert.equal(DEFAULT_AUDIT_FEEDBACK_CHARS, 0);
   assert.equal(auditFeedbackExcerpt("abcdefghij", 6), "abcdef");
 });
 

@@ -2282,7 +2282,7 @@ interface Settings {
   /** v0.24.2: pause the goal after N consecutive auditor disapprovals (0 = unlimited). Default 3. */
   auditCap?: number;
   /** Maximum auditor-report characters returned to the executor after a
-   * disapproval (0 = full report). Default 800. */
+   * disapproval (0 = full report). Default 0 (full report). */
   auditFeedbackChars?: number;
   /** on → propose_* drafts activate WITHOUT the Confirm dialog and the
    * interview floor is skipped — the seed carries the intent (unattended
@@ -2450,7 +2450,7 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
           `Wedge alert minutes — ${show("wedgeAlertMinutes", `(${WEDGE_ALERT_DEFAULT_MINUTES}m default)`)}`,
           `Subagent model strategy — ${show("subagentModelStrategy", "(inherit-parent)")}`,
           `Subagent Explore model pin — ${loadSettings(ctx.cwd).subagentModelOverrides?.Explore ?? "(follows strategy)"}`,
-          `Audit feedback characters — ${show("auditFeedbackChars", `(${DEFAULT_AUDIT_FEEDBACK_CHARS} default)`)}`,
+          `Audit feedback characters — ${show("auditFeedbackChars", "(full report)")}`,
           "Done",
         ],
       );
@@ -2505,7 +2505,7 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
           ctx.ui.notify("Explore model pin saved — applies to NEW pi sessions.", "info");
         }
       } else if (choice.startsWith("Audit feedback")) {
-        const v = await ctx.ui.input("Auditor feedback returned to the executor (characters)", `non-negative integer; 0 = full report, empty = default ${DEFAULT_AUDIT_FEEDBACK_CHARS}`);
+        const v = await ctx.ui.input("Auditor feedback returned to the executor (characters)", "non-negative integer cap; 0 or empty = full report (default)");
         if (v !== undefined) {
           const raw = v.trim();
           const n = Number(raw);
@@ -2784,7 +2784,7 @@ export default function (pi: ExtensionAPI): void {
       ["tokenlimit=", "per-goal token budget (0 = off): /glla tokenlimit=2000000"],
       ["autoresume=", "on: auto-resume held goals/loops in fresh sessions"],
       ["auditcap=", "N: pause goal after N consecutive auditor disapprovals (default 3, 0 = unlimited)"],
-      ["auditfeedbackchars=", `executor-visible disapproval report characters (default ${DEFAULT_AUDIT_FEEDBACK_CHARS}, 0 = full report)`],
+      ["auditfeedbackchars=", "cap on executor-visible disapproval report chars (0 = full report, the default)"],
       ["autoaccept=", "on: drafts activate without the Confirm dialog (unattended rigs)"],
       ["project", "write a project override: /glla project key=value"],
     ]),

@@ -287,8 +287,14 @@ export function mergeSettings<T extends Record<string, unknown>>(base: T, ...lay
   return out as T;
 }
 
-/** Backward-compatible default for executor-visible auditor feedback. */
-export const DEFAULT_AUDIT_FEEDBACK_CHARS = 800;
+/**
+ * Default for executor-visible auditor feedback. 0 = no cap: the executor
+ * gets the FULL disapproval report (v0.24.9 — truncating by default cut
+ * exactly the actionable tail of multi-item <evidence> blocks; a few KB of
+ * report is negligible next to a wasted re-attempt). Set a positive
+ * auditFeedbackChars to cap.
+ */
+export const DEFAULT_AUDIT_FEEDBACK_CHARS = 0;
 
 /**
  * Bound the auditor report returned to the executor after disapproval.
