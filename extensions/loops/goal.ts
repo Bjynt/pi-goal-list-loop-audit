@@ -122,6 +122,7 @@ import {
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
 import {
   defaultAgentDir,
+  resolveEffectiveSubagentModel,
   syncSubagentModelOverrides,
   type SubagentModelStrategy,
 } from "../goal-loop-subagents.js";
@@ -2666,6 +2667,8 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
           `Stuck max interventions — ${show("stuckMaxInterventions", "(5 default)")}`,
           `Subagent model strategy — ${show("subagentModelStrategy", "(inherit-parent)")}`,
           `Subagent Explore model pin — ${loadSettings(ctx.cwd).subagentModelOverrides?.Explore ?? "(follows strategy)"}`,
+          `Subagent Plan model pin — ${loadSettings(ctx.cwd).subagentModelOverrides?.Plan ?? "(follows strategy)"}`,
+          `Subagent general-purpose model pin — ${loadSettings(ctx.cwd).subagentModelOverrides?.["general-purpose"] ?? "(follows strategy)"}`,
           `Audit feedback characters — ${show("auditFeedbackChars", "(full report)")}`,
           "Done",
         ],
@@ -2735,15 +2738,16 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
           saveSettings("global", ctx.cwd, { subagentModelStrategy: strategy });
           ctx.ui.notify("Subagent model strategy saved — applies to NEW pi sessions (pi-subagents registers agents at session start).", "info");
         }
-      } else if (choice.startsWith("Subagent Explore model pin")) {
-        const v = await ctx.ui.input("Model pin for Explore subagents", "provider/model-id e.g. minimax/MiniMax-M3 — always wins over strategy; empty = follow strategy");
+      } else if (/^Subagent (Explore|Plan|general-purpose) model pin/.test(choice)) {
+        const agentType = choice.match(/^Subagent (Explore|Plan|general-purpose) model pin/)![1]!;
+        const v = await ctx.ui.input(`Model pin for ${agentType} subagents`, "provider/model-id e.g. minimax/MiniMax-M3 — always wins over strategy; empty = follow strategy");
         if (v !== undefined) {
           const current = loadSettings(ctx.cwd).subagentModelOverrides ?? {};
           const next = { ...current };
-          if (v.trim()) next.Explore = v.trim();
-          else delete next.Explore;
+          if (v.trim()) next[agentType] = v.trim();
+          else delete next[agentType];
           saveSettings("global", ctx.cwd, { subagentModelOverrides: Object.keys(next).length > 0 ? next : undefined });
-          ctx.ui.notify("Explore model pin saved — applies to NEW pi sessions.", "info");
+          ctx.ui.notify(`${agentType} model pin saved — applies to NEW pi sessions.`, "info");
         }
       } else if (choice.startsWith("Audit feedback")) {
         const v = await ctx.ui.input("Auditor feedback returned to the executor (characters)", "non-negative integer cap; 0 or empty = full report (default)");
@@ -2880,7 +2884,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
         fmt("stuckMaxInterventions", "stuckMaxInterventions"),
         // v0.25.6: effective per-type subagent model resolution.
         ...["Explore", "Plan", "general-purpose"].map(
-          (t) => `subagent ${t}: ${resolveEffectiveSubagentModel(t, loadSettings(ctx.cwd), getSessionModel())}`,
+          (t) => `subagent ${t}: ${resolveEffectiveSubagentModel(t, loadSettings(ctx.cwd), (ctx.model as any)?.id ? `${(ctx.model as any).provider}/${(ctx.model as any).id}` : undefined)}`,
         ),
         `\nglobal:  ${globalSettingsPath()}`,
         `project: ${projectSettingsPath(ctx.cwd)}`,
@@ -3255,6 +3259,18 @@ export default function (pi: ExtensionAPI): void {
         if (toolName === "bash") t.bashCalls++;
         state.goal.telemetry = t;
       }
+    }
+    // v0.25.6: subagent quota errors (the pi-subagents#175 shape —
+    // Explore's upstream haiku pin 403s on shared keys). Surface the
+    // repair path immediately; the continuation prompt's WHEN SUBAGENTS
+    // HIT QUOTA ERRORS section carries the full guidance.
+    if (isSubagentQuotaResult(String(event?.toolName ?? ""), Boolean(event?.isError ?? event?.error), event?.output ?? event?.result ?? event?.details ?? "")) {
+      const errText = typeof (event?.output ?? event?.result) === "string" ? (event?.output ?? event?.result) : JSON.stringify(event?.output ?? event?.result ?? event?.details ?? "");
+      appendLedger(registeredCtx?.cwd ?? process.cwd(), "subagent_quota_error", { error: String(errText).slice(0, 200) });
+      registeredCtx?.ui.notify(
+        "Subagent hit a quota error (403/limit). Repair: re-spawn with an explicit model= on your quota pool, or do the work inline — see the continuation prompt's WHEN SUBAGENTS HIT QUOTA ERRORS. Explore's upstream haiku pin is the usual cause (pi-subagents#175); glla's inherit-parent strategy removes it for NEW sessions.",
+        "warning",
+      );
     }
     if (draftingTarget === null) return;
     if (askUserQuestionAnswered(String(event?.toolName ?? ""), event?.details)) {

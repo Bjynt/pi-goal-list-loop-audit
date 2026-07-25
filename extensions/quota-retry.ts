@@ -88,3 +88,13 @@ export function scheduleQuotaRetry(
     "info",
   );
 }
+
+/** v0.25.6: detect a SUBAGENT quota failure in a tool_result — the
+ * pi-subagents#175 shape (Explore's upstream haiku pin 403s on shared
+ * keys). Tool must be an Agent spawn and the payload a quota error. */
+export function isSubagentQuotaResult(toolName: string, isError: boolean, payload: unknown): boolean {
+  if (!isError) return false;
+  if (toolName !== "Agent" && toolName !== "agent") return false;
+  const text = typeof payload === "string" ? payload : JSON.stringify(payload ?? "");
+  return isQuotaError(text);
+}
