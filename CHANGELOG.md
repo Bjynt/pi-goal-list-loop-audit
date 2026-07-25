@@ -1,6 +1,64 @@
 # Changelog
 
+## [0.25.0] — 2026-07-25
+
+### Added — eager-continuation contract (Sections A–H + J; Section I shipped in 0.24.6)
+
+The full eager-continuation contract: the loop keeps going unless it truly
+can't, subagents are the default execution strategy, quota errors are
+first-class, and the agent investigates before asking.
+
+- **Subagent fan-out prompts (A):** all four agent-facing prompts lead
+  with "Default to subagents" + eager-continuation guidance (`Agent`,
+  `Explore`/`general-purpose`/`Plan`, parallel spawn, single-writer rule).
+- **`aggressiveMode` setting (B):** `/glla aggressivemode=on` flips the
+  continuation DEFAULTS — autoResume on, auditCap 10, stuckMax 10, wedge
+  off, quota silent-retry. Explicit per-key settings always win. Base
+  auditCap default raised 3 → 5 for everyone (item 7). Every auto-event
+  announces itself ("Auto-resume fired (event: …)").
+- **Quota-aware retry (C):** new `extensions/quota-retry.ts` —
+  `isQuotaError` / `parseQuotaError` (Retry-After header + prose hints) /
+  `scheduleQuotaRetry`. A quota-exhausted auditor now PAUSES with a
+  one-shot auto-retry (default 60m, `/glla quotaretryminutes=N`) instead
+  of re-firing continuations forever. A user pause during the window is
+  never stomped.
+- **Objective drift (D):** the auditor prompt explicitly accepts justified
+  shifts ("do NOT rigidly disapprove"); the continuation prompt teaches
+  tweak-before-pivot; `complete_goal` gains a real `newObjective`
+  parameter — atomic objective update + audit in one call (ledgered
+  `goal_tweaked`).
+- **Agentic disagreement (E):** new continuation section WHEN THE AUDITOR
+  DISAPPROVES — investigate (read auditHistory, quote objections, compare
+  against shipped evidence, form an opinion) and present YOUR ASSESSMENT
+  instead of a generic options menu. The audit-cap pause message now
+  guides the same investigation.
+- **Keep-going under aggressiveMode (F):** the audit cap becomes a TODO
+  list — objections extracted to `pendingTasks`, goal stays ACTIVE, TODOs
+  render into every continuation. IMPOSSIBLE with a partial reason narrows
+  and continues; a full impossible still pauses.
+- **Pivot detection (G):** new PIVOT DETECTION section (full-audit →
+  propose_task_list immediately + parallel subsystem surveys); heartbeat
+  suppression when work shipped in the last 5 minutes (a transitioning
+  session is not a stalled one); aggressiveMode + survey objective injects
+  a FULL-AUDIT MODE directive into the continuation.
+- **Auto-committer forensics (H):** new DETACHED COMMIT DETECTION section
+  (reflog filter-branch / dracon-sync checks before self-diagnosing);
+  `pauseAutoCommit`/`resumeAutoCommit`/`isAutoCommitPaused` sentinel
+  helpers (`.pi-glla/.pause-auto-commit`); env-gated commit-survival e2e
+  (`GLLA_E2E_DAEMON=1`).
+- **Subagent quota errors (J):** new WHEN SUBAGENTS HIT QUOTA ERRORS
+  section — `Key limit exceeded` / 429 → inherit-parent or wait for reset;
+  never re-spawn the failed type.
+
+New settings keys: `aggressiveMode`, `quotaRetryMinutes`,
+`stuckMaxInterventions` (UI + headless `/glla key=value` + provenance).
+Settings layer extracted to `extensions/goal-settings.ts` for testability.
+
+38 new tests (262 → 300, one env-gated skip). Interpretation notes for the
+auditor are appended to the contract goal file.
+
 ## [0.24.9] — 2026-07-25
+
 
 ### Changed — auditor feedback defaults to the FULL report
 

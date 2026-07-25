@@ -49,6 +49,32 @@ Whatever you choose must work extension-less. Verify with:
 PI_CODING_AGENT_DIR=/tmp/bare-agent pi -p "say ok" --model "provider/model-id"
 ```
 
+## Quota handling + aggressive mode (v0.25.0)
+
+**Quota-aware retry.** When the auditor dies on a quota / rate-limit error
+(429, `Key limit exceeded`, `temporarily rate-limited upstream`, credits),
+that is infrastructure, not a verdict: the goal PAUSES with a one-shot
+auto-retry scheduled at the upstream's `Retry-After` hint (default 60m,
+`/glla quotaretryminutes=N`). Before v0.25.0 this re-fired the continuation
+forever against a window that only resets in an hour. `/goal resume`
+retries immediately; a user pause during the window is never stomped.
+
+**Aggressive mode** (`/glla aggressivemode=on` or Settings → Aggressive
+mode) flips the continuation DEFAULTS toward keep-going:
+
+| Key | default | aggressive |
+|---|---|---|
+| autoResume | off | on |
+| auditCap | 5 | 10 |
+| stuckMaxInterventions | 5 | 10 |
+| wedgeAlertMinutes | 30 | 0 (off) |
+
+Explicit per-key settings always win — aggressiveMode flips defaults, never
+your choices. Under aggressive mode an audit-cap disapproval streak does
+NOT pause: the auditor's objections become a TODO list (`pendingTasks`)
+rendered into every continuation, and the goal stays ACTIVE. Every
+auto-event announces itself with a one-line notify.
+
 ## Subagent model inheritance (v0.24.6)
 
 If you use `@tintinweb/pi-subagents`: its default `Explore` agent pins
