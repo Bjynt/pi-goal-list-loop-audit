@@ -241,3 +241,28 @@ reviews. `/glla audits` lists the last 10 verdicts, `/glla audits 30`
 shows more, `/glla audits full` prints the latest report. Reports are
 think-block-stripped; disapprovals end with a `## Required fixes`
 actionable tail, which is also what capped executor feedback keeps.
+
+## Reviewer (v0.26.0) — post-completion follow-up enqueuer
+
+When a `/goal` completes or a `/list` queue empties, the reviewer fires:
+it reads the archive + audit reports, extracts findings, classifies them
+by **leverage**, writes a report to `.pi-glla/reviews/<goal-id>-<ts>.md`,
+and cascades:
+
+| Finding class | Action | Confirm? |
+|---|---|---|
+| Bug (`TODO`, `FIXME`, `bug`, `regression`, `broken`) | `/list` items | No — fix-without-confirm |
+| Refactor (`duplicated`, `could be cleaner`, `left out`) | `/list` items | No |
+| Architectural (`rewrite`, `new dependency`, `schema change`) | `/goal` proposal | Yes |
+| Strategic (`should we…`, `deprecate`) | notify only | — |
+| Clean completion (no findings) | audit `/goal` proposal | Yes |
+
+The leverage principle: if you'd never say no to fixing a bug, the
+reviewer doesn't ask. Decisions stay with you.
+
+Safety: no firing on aborts/pauses, a 5-minute refire window blocks
+runaway recursion, `maxReviewsPerDay: 20` caps the day, and `/loop`
+never triggers it. Configure per-project via `/glla reviewer`
+(enable, leverage mode, fire-on, cascade steps, caps) — the block lives
+in `.pi-glla/settings.json`. Re-review any archived goal with
+`/review <goal-id>` (bypasses the trigger gates).

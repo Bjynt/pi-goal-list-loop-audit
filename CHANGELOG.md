@@ -1,6 +1,40 @@
 # Changelog
 
+## [0.26.0] — 2026-07-25
+
+### Added — the Reviewer: post-completion follow-up enqueuer
+
+The long-requested glue layer (user, 2026-07-24: "the reviewer should
+fire goal and lists after they end… maximize leverage… but it should be
+configurable"). Deterministic by design — no new tool calls, purely
+analytical, every side effect injectable.
+
+- **`extensions/reviewer.ts`** — the lifecycle: resolve config → gates
+  (enabled / fireOn / doNotFireOn / 5-min refire window / per-day cap) →
+  extract findings from the archive + audit reports → leverage
+  classification (strategic > architectural > bug > refactor) → review
+  report → cascade.
+- **Cascade** — bug/refactor findings become `/list` items via the ONE
+  enqueue path (fix-without-confirm, the leverage principle);
+  architectural findings are proposed as `/goal` through the agent's
+  Confirm dialog; clean completions fire a regression-scan audit
+  proposal (opt-in cascade step); strategic findings notify only.
+- **Review reports** at `.pi-glla/reviews/<goal-id>-<timestamp>.md`.
+- **Safety** — never fires on aborts/pauses or `/loop` endings;
+  `reviewer_fired` / `reviewer_suppressed` ledger events; 5-minute
+  refire window + `maxReviewsPerDay: 20`.
+- **`/review <goal-id>`** — manual re-review of any archived goal
+  (suffix match), bypassing the trigger gates.
+- **`/glla reviewer`** — project-scoped config menu (enable, leverage
+  mode, fire-on toggles, cascade steps, caps), headless JSON fallback;
+  the `reviewer` block lives in `.pi-glla/settings.json`.
+- **Trigger hooks** — `archiveCurrentGoal` fires goal-complete for
+  `/goal` and list-complete when the queue empties after a completion.
+
+12 new tests (353 → 365).
+
 ## [0.25.6] — 2026-07-25
+
 
 ### Added — subagent polish
 

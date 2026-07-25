@@ -60,4 +60,10 @@ Since v0.25.3 the drafting flow detects this shape ("N items" + "each" +
 "one commit") and steers you to `items[]` — see the cross-recommend
 block in `prompts/goal-loop-draft.md`.
 
+Since v0.26.0 the **Reviewer** is the post-completion glue layer across
+all three modes' terminal states: it converts completion findings into
+`/list` items (bug/refactor, no Confirm), proposes architectural work as
+`/goal` (Confirm), fires a regression-scan audit on clean completions,
+and notifies + idles otherwise. See `INSTALL.md` "Reviewer".
+
 See `INSTALL.md` for the command surface.
