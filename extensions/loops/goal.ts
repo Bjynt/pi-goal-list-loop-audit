@@ -32,7 +32,14 @@ import {
   buildTaskSummary,
   auditFeedbackExcerpt,
   DEFAULT_AUDIT_FEEDBACK_CHARS,
+  DEFAULT_QUOTA_RETRY_MINUTES,
   DEFAULT_TOKEN_LIMIT,
+  classifyImpossibleReason,
+  extractPendingTasks,
+  isFullAuditObjective,
+  lastShippedAtMs,
+  resolveEffectiveAggressiveSettings,
+  shouldSuppressHeartbeatForRecentShip,
   mergeSettings,
   parseListImport,
 
@@ -43,6 +50,13 @@ import {
   sumNewAssistantTokens,
   takeAt,
   countTrailingDisapprovals,
+} from "../goal-loop-core";
+import {
+  isQuotaError,
+  parseQuotaError,
+  scheduleQuotaRetry,
+  cancelQuotaRetry,
+} from "../quota-retry";
   goalArgsNeedDrafting,
   buildSeedGrillMessage,
   askUserQuestionAnswered,
@@ -2284,6 +2298,16 @@ interface Settings {
   /** Maximum auditor-report characters returned to the executor after a
    * disapproval (0 = full report). Default 0 (full report). */
   auditFeedbackChars?: number;
+  /** v0.25.0: flip the continuation defaults toward keep-going
+   * (contract item 5): autoResume on, auditCap 10, stuckMax 10, wedge off,
+   * quota errors auto-retry silently. Explicit per-key settings still win. */
+  aggressiveMode?: boolean;
+  /** Minutes to wait before auto-retrying a quota-exhausted auditor when
+   * the upstream gave no Retry-After hint (contract item 11). Default 60. */
+  quotaRetryMinutes?: number;
+  /** Consecutive stuck interventions before a loop stops (default 5,
+   * 10 under aggressiveMode). */
+  stuckMaxInterventions?: number;
   /** on → propose_* drafts activate WITHOUT the Confirm dialog and the
    * interview floor is skipped — the seed carries the intent (unattended
    * rigs). Default off: nothing activates before the user confirms. */
@@ -2311,6 +2335,10 @@ const DEFAULT_SETTINGS: Settings = {
   // pool, no surprise 403s from a pinned default agent's provider.
   subagentModelStrategy: "inherit-parent",
   auditFeedbackChars: DEFAULT_AUDIT_FEEDBACK_CHARS,
+  // v0.25.0 (contract Section B): keep-going is opt-in via aggressiveMode;
+  // the dial flips DEFAULTS, never explicit per-key user settings.
+  aggressiveMode: false,
+  quotaRetryMinutes: DEFAULT_QUOTA_RETRY_MINUTES,
 };
 
 // Two-tier config (v0.7.0): GLOBAL is the normal home — you set things once

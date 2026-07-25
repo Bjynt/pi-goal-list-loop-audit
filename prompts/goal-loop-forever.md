@@ -28,6 +28,12 @@ Start your reply with exactly one line: `HYPOTHESIS: <what you will change and w
 Then make **ONE** small, concrete change that moves the metric in the right
 direction. Then stop.
 
+**Default to subagents.** If identifying the change needs research, spawn an
+`Explore` `Agent` subagent (several in parallel for disjoint areas); if the
+change decomposes, use `general-purpose`. Eager continuation: if a subagent
+fails, retry with a different approach — just continue, don't stall the loop
+asking permission. You remain the single writer: apply the edit yourself.
+
 ${INTERVENTION_NOTE}
 ${REGRESSION_NOTE}
 ${STRATEGY_NOTE}
