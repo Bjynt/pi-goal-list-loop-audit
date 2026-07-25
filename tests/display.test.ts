@@ -92,13 +92,66 @@ test("widget truncation is width-aware (v0.22.2)", () => {
   assert.equal(tiny.length, narrow.length);
 });
 
-test("list depth shows for list policy", () => {
+test("list policy footer: queued count, no duplicated 'list'", () => {
   const s = buildStatusText(
     { goal: goalOf({ policy: "list" }), list: [{ id: "x", objective: "y", addedAt: "z" }] },
     null,
     NOW,
   )!;
-  assert.match(s, /list 1/);
+  // v0.24.7: was "glla: list ● 3m 00s · list 1" — policy label and queue
+  // counter both said "list".
+  assert.match(s, /^glla: list /);
+  assert.match(s, /· 1 queued$/);
+  assert.ok(!/list .+ list /.test(s), `no duplicated 'list … list': ${s}`);
+});
+
+test("goal policy footer keeps the bare 'list N' queue suffix", () => {
+  const s = buildStatusText(
+    { goal: goalOf(), list: [{ id: "x", objective: "y", addedAt: "z" }] },
+    null,
+    NOW,
+  )!;
+  assert.match(s, /^glla: goal /);
+  assert.match(s, /· list 1$/);
+});
+
+test("widget names a list item as such and points at /list, not /goal", () => {
+  const lines = buildWidgetLines(
+    {
+      goal: goalOf({ policy: "list", usage: undefined }),
+      list: [
+        { id: "a", objective: "one", addedAt: "z" },
+        { id: "b", objective: "two", addedAt: "z" },
+      ],
+    },
+    null,
+    NOW,
+  )!;
+  assert.match(lines[1]!, /^├─ list item · active /);
+  assert.equal(lines[lines.length - 1], "└─ 2 queued · /list · /glla");
+  assert.ok(!lines.some(l => l.includes("/goal status")), "list item must not hint /goal status");
+});
+
+test("widget list item, last in queue: no '0 queued'", () => {
+  const lines = buildWidgetLines(
+    { goal: goalOf({ policy: "list", usage: undefined }), list: [] },
+    null,
+    NOW,
+  )!;
+  assert.equal(lines[lines.length - 1], "└─ /list · /glla");
+});
+
+test("widget goal policy keeps /goal status hint + list N prefix", () => {
+  const lines = buildWidgetLines(
+    {
+      goal: goalOf({ usage: undefined }),
+      list: [{ id: "a", objective: "one", addedAt: "z" }],
+    },
+    null,
+    NOW,
+  )!;
+  assert.match(lines[1]!, /^├─ active /);
+  assert.equal(lines[lines.length - 1], "└─ list 1 · /goal status · /glla");
 });
 
 test("paused shows the reason", () => {

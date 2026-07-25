@@ -595,6 +595,8 @@ async function cmdStatus(ctx: ExtensionContext): Promise<void> {
   const lines = [
     `[${g.id}] ${statusLabel(g.status)}`,
     `Objective: ${g.objective}`,
+    // v0.24.7: name WHERE the work came from — a queue item is not a goal.
+    ...(g.policy === "list" ? [`Source: /list queue (${listQueue().length} waiting) — /list to manage`] : []),
     `Auto-continue: ${g.autoContinue ? "on" : "off"}`,
     `Iteration: ${iterationCounter}`,
     `Tokens: ${(g.usage?.tokensUsed ?? 0).toLocaleString()}${(g.usage?.tokensLimit ?? 0) > 0 ? ` / ${(g.usage!.tokensLimit).toLocaleString()}` : " (no cap — /glla tokenlimit=<n> to set)"}`,

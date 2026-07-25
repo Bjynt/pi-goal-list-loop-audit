@@ -101,7 +101,12 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     return `glla: ${paint(theme, pauseIsError(g) ? "error" : "warning", label)}`;
   }
   if (g.status === "active") {
-    const queue = state.list?.length ? ` · list ${state.list.length}` : "";
+    // v0.24.7: list policy gets its own wording — a queue item is not a goal.
+    // Before: "glla: list ● 3m 19s · list 29" (policy label AND queue counter
+    // both said "list"). After: "glla: list ● 3m 19s · 29 queued". Goal
+    // policy keeps the bare "list N" suffix (no duplication there).
+    const n = state.list?.length ?? 0;
+    const queue = n === 0 ? "" : g.policy === "list" ? ` · ${n} queued` : ` · list ${n}`;
     const tasks = g.taskList ? ` ${countDone(g)}/${countTotal(g)} tasks ·` : "";
     return `glla: ${g.policy} ${paint(theme, "success", "●")}${tasks} ${fmtElapsed(now - Date.parse(g.createdAt))}${queue}`;
   }
@@ -158,12 +163,16 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
         ? paint(theme, "accent", "⟡")
         : paint(theme, "success", "●");
   const head = `${icon} ${truncate(g.objective.replace(/\s+/g, " "), budgetFor(width, 3, 64))}`;
+  // v0.24.7: a list item is named as such and points at /list — before,
+  // the widget called it "active" and hinted "/goal status", reading as if
+  // queue work were a standalone goal.
+  const isList = g.policy === "list";
   const statusWord = g.status === "active" ? paint(theme, "success", "active") : g.status;
   // Token segment only when a budget is set (v0.22.0): the guard is opt-in,
   // and "0/0 tok" carried no information when off.
   const tokenLimit = g.usage?.tokensLimit ?? 0;
   const tokens = tokenLimit > 0 ? ` · ${paint(theme, "dim", `${fmtTokens(g.usage?.tokensUsed ?? 0)}/${fmtTokens(tokenLimit)} tok`)}` : "";
-  const lines = [head, `├─ ${statusWord} · ${fmtElapsed(now - Date.parse(g.createdAt))}${tokens}`];
+  const lines = [head, `├─ ${isList ? "list item · " : ""}${statusWord} · ${fmtElapsed(now - Date.parse(g.createdAt))}${tokens}`];
   if (g.status === "auditing") {
     lines.push(`├─ auditor: ${audit?.label ?? "running"}${audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : ""}`);
     if (audit?.elapsedMs) lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(audit.elapsedMs)} in isolated session`)}`);
@@ -178,7 +187,10 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   const next = nextPending(g);
   if (next) lines.push(`├─ next: ${truncate(next, budgetFor(width, 9, 56))}`);
   const queue = state.list?.length ?? 0;
-  lines.push(`└─ ${paint(theme, "dim", `${queue > 0 ? `list ${queue} · ` : ""}/goal status · /glla`)}`);
+  const footer = isList
+    ? `${queue > 0 ? `${queue} queued · ` : ""}/list · /glla`
+    : `${queue > 0 ? `list ${queue} · ` : ""}/goal status · /glla`;
+  lines.push(`└─ ${paint(theme, "dim", footer)}`);
   return lines;
 }
 
