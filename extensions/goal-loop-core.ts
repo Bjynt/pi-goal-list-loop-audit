@@ -1090,6 +1090,10 @@ export interface AuditLogEntry {
   report: string;
   impossibleReason?: string;
   error?: string;
+  /** v0.25.4 post-audit: how long the audit took, and whether the infra
+   * retry fired. */
+  durationMs?: number;
+  retriedOnce?: boolean;
 }
 
 export function auditLogPath(cwd: string): string {
@@ -1142,6 +1146,58 @@ export function formatAuditLog(entries: AuditLogEntry[]): string {
       const day = e.at.slice(5, 16).replace("T", " ");
       const firstLine = (e.report.split("\n").find((l) => l.trim()) ?? "").trim().slice(0, 90);
       return `${VERDICT_GLYPH[e.verdict]} ${day} [${e.goalId.slice(-6)}] ${e.model} — ${firstLine}`;
+    })
+    .join("\n");
+}
+
+// =================================================================
+// v0.25.4 (post-audit fix): infra-failure retry-once-with-backoff
+// =================================================================
+
+/** Which auditor infra errors are worth an automatic retry? User aborts
+ * and missing-model config are NOT — retrying can't help them. */
+export function isRetriableInfraError(error?: string): boolean {
+  if (!error) return false;
+  if (/aborted/i.test(error)) return false;
+  if (/no model/i.test(error)) return false;
+  return true;
+}
+
+export interface InfraRetryOutcome<T> {
+  result: T;
+  retriedOnce: boolean;
+}
+
+/** Run the auditor; on a retriable infra failure, wait `backoffMs` and
+ * retry EXACTLY once before reporting "auditor infrastructure error
+ * (retried once)". The failed pair is never a verdict on the work. */
+export async function runWithInfraRetry<T extends { error?: string; approved: boolean; disapproved: boolean }>(
+  run: () => Promise<T>,
+  opts: { backoffMs?: number; sleep?: (ms: number) => Promise<void>; onRetry?: (error: string) => void } = {},
+): Promise<InfraRetryOutcome<T>> {
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const first = await run();
+  if (first.approved || first.disapproved || !isRetriableInfraError(first.error)) {
+    return { result: first, retriedOnce: false };
+  }
+  opts.onRetry?.(first.error!);
+  await sleep(opts.backoffMs ?? 5000);
+  const second = await run();
+  return { result: second, retriedOnce: true };
+}
+
+/** /glla audits default view: the ACTIVE goal's own audit history (the
+ * surface the goal spec asked for), one line per verdict. */
+export function formatGoalAuditHistory(goal: { id: string; auditHistory?: Array<any> }): string {
+  const history = goal.auditHistory ?? [];
+  if (history.length === 0) return "(no audits on this goal yet)";
+  return history
+    .map((v) => {
+      const glyph = v.approved ? (v.regressionShieldPassed === false ? "🛡" : "✔") : v.impossible ? "⛔" : v.disapproved ? "✖" : "⚠";
+      const day = String(v.at ?? "").slice(5, 16).replace("T", " ");
+      const elapsed = v.durationMs ? ` · ${Math.round(v.durationMs / 60000)}m` : "";
+      const firstLine = (String(v.report ?? "").split("\n").find((l: string) => l.trim()) ?? "").trim().slice(0, 80);
+      return `${glyph} ${day} ${v.model ?? "?"}${elapsed} — ${firstLine}`;
     })
     .join("\n");
 }

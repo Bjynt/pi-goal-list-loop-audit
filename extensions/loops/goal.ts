@@ -42,6 +42,8 @@ import {
   appendAuditLog,
   computeListDepth,
   formatAuditLog,
+  formatGoalAuditHistory,
+  runWithInfraRetry,
   readAuditLog,
   stripThinkBlocks,
   type AuditLogEntry,
@@ -1703,24 +1705,38 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       // Esc during the audit aborts this tool's signal → threaded into the
       // auditor session, which aborts cleanly and returns "Auditor aborted."
       latestAuditProgress = { label: "starting", lastEventAt: Date.now() };
-      const result = await runGoalCompletionAuditor({
-        ctx,
-        goal: state.goal,
-        completionSummary: p.completionSummary,
-        verificationSummary: p.verificationSummary,
-        model: auditorModel,
-        thinkingLevel: settings.auditorThinkingLevel ?? getSessionThinkingLevel(),
-        signal: signal ?? undefined,
-        onProgress: (progress) => {
-          latestAuditProgress = {
-            currentTool: progress.currentTool,
-            label: progress.label,
-            elapsedMs: progress.elapsedMs,
-            lastEventAt: Date.now(),
-          };
+      const runAudit = () =>
+        runGoalCompletionAuditor({
+          ctx,
+          goal: state.goal!,
+          completionSummary: p.completionSummary,
+          verificationSummary: p.verificationSummary,
+          model: auditorModel,
+          thinkingLevel: settings.auditorThinkingLevel ?? getSessionThinkingLevel(),
+          signal: signal ?? undefined,
+          onProgress: (progress) => {
+            latestAuditProgress = {
+              currentTool: progress.currentTool,
+              label: progress.label,
+              elapsedMs: progress.elapsedMs,
+              lastEventAt: Date.now(),
+            };
+            refreshUI(ctx);
+          },
+        });
+      // v0.25.4 (post-audit fix): a retriable infra failure (stream error,
+      // auth blip — NOT user abort, NOT missing model) gets ONE automatic
+      // retry with backoff before we report "auditor infrastructure error
+      // (retried once)". Neither attempt is a verdict on the work.
+      const auditStartMs = Date.now();
+      const { result, retriedOnce } = await runWithInfraRetry(runAudit, {
+        onRetry: (err) => {
+          latestAuditProgress = { label: `infra error (${err.slice(0, 40)}) — retrying once`, lastEventAt: Date.now() };
           refreshUI(ctx);
+          appendLedger(ctx.cwd, "audit_infra_retry", { goalId: state.goal?.id, error: err.slice(0, 200) });
         },
       });
+      const auditDurationMs = Date.now() - auditStartMs;
       latestAuditProgress = null;
       // Audit history: record REAL verdicts only — a non-empty report is the
       // evidence the auditor actually inspected something. Empty-report runs
@@ -1746,7 +1762,8 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
           error: result.error,
           regressionShieldPassed: result.regressionShieldPassed,
           regressionShieldMissing: result.regressionShieldMissing,
-        });
+          durationMs: auditDurationMs,
+        } as any);
         // Cap history — 39 infra errors taught us unbounded growth is real.
         if (history.length > 20) history.splice(0, history.length - 20);
         // v0.25.4: durable append-only audit log — survives state-snapshot
@@ -1771,7 +1788,9 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
           report: cleanOutput,
           impossibleReason: result.impossibleReason,
           error: result.error,
-        });
+          durationMs: auditDurationMs,
+          retriedOnce,
+        } as AuditLogEntry);
       }
 
       // Escape hatch: the user aborted the audit (Esc). Offer the explicit
@@ -1897,14 +1916,14 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         updateGoal({
           status: "active",
           auditHistory: history,
-          pauseReason: `auditor infrastructure: ${result.error}`,
+          pauseReason: `auditor infrastructure${retriedOnce ? " (retried once)" : ""}: ${result.error}`,
           pauseSuggestedAction: "Fix the auditor model (/glla model=provider/id) and call complete_goal again — your work was NOT judged",
         }, ctx);
         scheduleContinuation(ctx, true);
         return {
           content: [{
             type: "text",
-            text: `The auditor could not run (infrastructure, NOT a verdict): ${result.error}\nYour completion claim was not evaluated. Fix the auditor model with /glla model=provider/id and call complete_goal again — do not change your deliverable for this.`,
+            text: `The auditor could not run (infrastructure, NOT a verdict${retriedOnce ? "; retried once with backoff, both attempts failed" : ""}): ${result.error}\nYour completion claim was not evaluated. Fix the auditor model with /glla model=provider/id and call complete_goal again — do not change your deliverable for this.`,
           }],
           details: {},
         };
@@ -2785,10 +2804,26 @@ function cmdStats(args: string, ctx: ExtensionContext): void {
  */
 function cmdAudits(args: string, ctx: ExtensionContext): void {
   const full = /\bfull\b/.test(args);
+  const all = /\b(?:all|global|log)\b/.test(args);
   const nMatch = args.match(/\b(\d+)\b/);
   if (full) {
+    // Latest report — active goal's history first, then the log.
+    const fromGoal = state.goal?.auditHistory?.at(-1);
+    if (fromGoal?.report) {
+      ctx.ui.notify(`Latest audit on this goal — ${fromGoal.model} (${fromGoal.at})\n${fromGoal.report}`, "info");
+      return;
+    }
     const latest = readAuditLog(ctx.cwd).at(-1);
     ctx.ui.notify(latest ? `Latest audit — ${latest.verdict} (${latest.model}, ${latest.at})\n${latest.report}` : "No audits logged yet.", "info");
+    return;
+  }
+  // Default: the ACTIVE goal's own audit history (with per-audit elapsed);
+  // "all"/"global"/"log" browses the durable cross-goal log.
+  if (!all && state.goal?.auditHistory && state.goal.auditHistory.length > 0) {
+    ctx.ui.notify(
+      `glla audits — this goal's history (${state.goal.auditHistory.length} verdict(s); /glla audits all for the project log)\n${formatGoalAuditHistory(state.goal)}`,
+      "info",
+    );
     return;
   }
   const n = nMatch ? Number(nMatch[1]) : 10;
