@@ -200,7 +200,10 @@ No external watchdog plugin needed.
 /glla tokenlimit=0                   # explicitly no cap (the default)
 /glla wedgealert=30                  # hung-command alert minutes (default: 30, 0 = off)
 /glla autoresume=on                  # held goals/loops auto-resume in fresh sessions (unattended rigs)
-/glla auditcap=5                     # pause the goal after N consecutive auditor disapprovals (default 3, 0 = unlimited)
+/glla auditcap=5                     # pause the goal after N consecutive auditor disapprovals (default 5, 0 = unlimited)
+/glla aggressivemode=on               # keep-going defaults: autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs
+/glla quotaretryminutes=60            # minutes before auto-retrying a quota-exhausted auditor
+/glla stuckmax=10                     # consecutive stuck interventions before a loop stops (default 5)
 /glla auditfeedbackchars=800         # cap the executor-visible auditor report (default 0 = full report)
 /glla autoaccept=on                  # drafts ACTIVATE without the Confirm dialog (unattended rigs)
 /glla project tokenlimit=500         # rare per-project override
