@@ -215,3 +215,20 @@ v0.25.2 have no telemetry and are never flagged retroactively.
 `/glla stats json` emits the same rows as JSON (pipe to `jq`);
 `/glla stats project=~/Dev/xyz` scopes to one project. `total_cost` is
 measured in tokens (this rig has no per-provider price table).
+
+## Modes (v0.25.3)
+
+The three loops are not redundant — each long-runs differently:
+
+| Mode | Item size | Long-running by |
+|---|---|---|
+| `/goal` | ONE big multi-hour task | Scope |
+| `/list` | N items × short (minutes each) | Queue depth |
+| `/loop` | 1 metric × infinite polish | Bounds |
+
+`/list` items should fit in a single agent run; hundreds of them in the
+queue is the right framing. `/list depth` shows queue depth, oldest item
+age, and average item duration. Drafting cross-recommends: multi-hour
+seeds in `/list` get pointed at `/goal`, aggregate "N items, one commit
+each" seeds get shaped into N short items. See **LIST-PHILOSOPHY.md**
+for the full hierarchy and the wrapper-goal anti-pattern it prevents.
