@@ -2528,7 +2528,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   //   /glla notify='cmd $1'      write to GLOBAL config
   //   /glla tokenlimit=2000000   write to GLOBAL config
   //   /glla wedgealert=30         hung-command alert minutes (0=off, unset=30)
-  //   /glla auditfeedbackchars=800 executor-visible disapproval report chars (0=full)
+  //   /glla auditfeedbackchars=800 cap executor-visible disapproval report (0=full, the default)
   //   /glla project model=...    write to PROJECT override (rare)
   //   /glla model=unset          remove key (from global; project model=unset for project)
   const trimmed = args.trim();

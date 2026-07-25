@@ -1,6 +1,18 @@
 # Changelog
 
+## [0.24.9] — 2026-07-25
+
+### Changed — auditor feedback defaults to the FULL report
+
+`auditFeedbackChars` default flipped 800 → 0 (no cap). A truncated
+disapproval report loses exactly the actionable tail — the later evidence
+items and the raw command output the executor needs to fix the gap — and a
+few KB of report is negligible next to a wasted re-attempt. The setting
+remains for users who want a cap (`/glla auditfeedbackchars=N`); explicit
+values already saved are respected.
+
 ## [0.24.8] — 2026-07-25
+
 
 ### Added — configurable auditor feedback length (community PR #1, thanks @Gan-Personal)
 
