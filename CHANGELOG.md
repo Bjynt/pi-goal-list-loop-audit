@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.24.7] — 2026-07-25
+
+### Fixed — list-mode indicator: a queue item is not a goal
+
+Spotted live on the hegemon session: a `/list` item's footer read
+`glla: list ● 3m 19s · list 29` — the policy label AND the queue counter
+both said "list" — and the widget called the item "active" with a
+`/goal status` hint, as if queue work were a standalone goal.
+
+- **Footer:** list policy → `glla: list ● 3m 19s · 29 queued`
+  (no duplicated "list"). Goal policy unchanged (`· list N` suffix kept —
+  no duplication there).
+- **Widget:** list item → `├─ list item · active 3m 19s` and footer hint
+  `└─ 29 queued · /list · /glla` (no `/goal status` hint for queue work;
+  no "0 queued" on the last item). Goal policy rendering unchanged.
+- **`/goal status`:** list items now name their source:
+  `Source: /list queue (N waiting) — /list to manage`.
+
+5 new display tests (256 → 260).
+
+(Takes the 0.24.7 number ahead of the planned stuck-detection rework;
+the roadmap items shift one patch.)
+
 ## [0.24.6] — 2026-07-25
 
 ### Fixed — subagent model inheritance (Section I of the eager-continuation contract, shipped early)
