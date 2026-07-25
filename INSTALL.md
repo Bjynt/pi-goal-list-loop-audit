@@ -74,6 +74,11 @@ Control it via `/glla` → Settings:
 Changes apply to NEW pi sessions (pi-subagents registers agents at its own
 session start).
 
+Release-workflow note: installing into the local extension tree
+(`~/.pi/agent/npm`) requires `--legacy-peer-deps` — a pre-existing
+`@pi-unipi/notify` peer pin on `@earendil-works/pi-coding-agent@^0.78.0`
+conflicts with the current pi release.
+
 ## Try it without installing
 
 ```bash
