@@ -96,6 +96,14 @@ export function loopFinishStopReason(reason?: string): string {
   return `completed: ${r || "finished by user"}`;
 }
 
+/** v0.25.1: tool names that count as file-write progress signals for the
+ * multi-signal stuck gate (item 3). */
+export const LOOP_WRITE_TOOLS = ["write", "edit", "multi_edit", "write_file"] as const;
+
+export function isLoopWriteTool(toolName: string): boolean {
+  return (LOOP_WRITE_TOOLS as readonly string[]).includes(toolName);
+}
+
 /** Scratch-branch name for branch=1 mode. Format pinned by tests. */
 export function loopBranchName(startedAtIso: string, target: string): string {
   const stamp = startedAtIso.replace(/[^0-9]/g, "").slice(0, 14);

@@ -112,6 +112,7 @@ import {
   loopBranchName,
   parseLoopStartArgs,
   loopFinishStopReason,
+  isLoopWriteTool,
   parseMetric,
   LOOP_DEFAULTS,
   resolveSpecFiles,
@@ -3059,7 +3060,7 @@ export default function (pi: ExtensionAPI): void {
       );
       // v0.25.1: file-write progress signal for the multi-signal stuck
       // gate — a loop that is WRITING files is shipping, not stuck.
-      if (["write", "edit", "multi_edit", "write_file"].includes(String(event?.toolName ?? ""))) {
+      if (isLoopWriteTool(String(event?.toolName ?? ""))) {
         const metrics = loop.iterMetrics ?? { fileWrites: 0 };
         metrics.fileWrites++;
         loop.iterMetrics = metrics;
