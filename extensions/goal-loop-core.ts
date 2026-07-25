@@ -835,7 +835,7 @@ export function extractPendingTasks(report: string, cap = 5): string[] {
  * goal or only part of it? Default "full" (safe — keeps the pause);
  * partial only on explicit subset language. */
 export function classifyImpossibleReason(reason: string): "partial" | "full" {
-  if (/\b(partial|some items|subset|remaining items|narrow|only .{0,30}(item|part|section)|rest of)\b/i.test(reason)) {
+  if (/\b(partial|some items|subset|remaining items|narrow|only .{0,30}(item|part|section)|the rest|rest of)\b/i.test(reason)) {
     return "partial";
   }
   return "full";

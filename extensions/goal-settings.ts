@@ -15,7 +15,7 @@ import {
   DEFAULT_QUOTA_RETRY_MINUTES,
   mergeSettings,
   piGlaDir,
-} from "./goal-loop-core.js";
+} from "./goal-loop-core.ts";
 import type { SubagentModelStrategy } from "./goal-loop-subagents.js";
 
 export interface Settings {
