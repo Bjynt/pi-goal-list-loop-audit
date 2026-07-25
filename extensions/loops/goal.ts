@@ -39,6 +39,10 @@ import {
   isFullAuditObjective,
   lastShippedAtMs,
   resolveEffectiveAggressiveSettings,
+  computeListDepth,
+  ledgerPath,
+  crossRecommendMode,
+  formatListDepth,
   shouldSuppressHeartbeatForRecentShip,
   mergeSettings,
   parseListImport,
@@ -92,6 +96,7 @@ import {
 } from "../goal-settings.js";
 import {
   discoverGllaProjects,
+  parseLedgerEntries,
   filterPremature,
   formatRollupJson,
   formatRollupTable,
@@ -562,7 +567,15 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
     if (target === "list") {
       tmpl = tmpl.replace(
         "[GOAL DRAFTING]",
-        "[GOAL DRAFTING — the confirmed goal goes into the /list LIST, it does not activate immediately. If the user wants MANY things added at once (a plan, a checklist, 'these 50 tasks'), propose them ALL AT ONCE with the items[] parameter — one Confirm for the whole batch, never 50 separate proposals.]",
+        "[LIST DRAFTING — the confirmed item goes into the /list LIST, it does not activate immediately. " +
+          "/list items are SHORT tasks, not multi-hour objectives: each item should fit comfortably in a single agent run " +
+          "(minutes of work, a single focused change). The list's long-running property is QUEUE DEPTH — hundreds of short " +
+          "items activated one at a time over days/weeks — never any single item's scope. " +
+          "If the user describes work that would take hours, propose breaking it into multiple /list items, or suggest /goal " +
+          "for the big version. When the user has many items to enqueue at once ('queue these 50 audits'), propose them ALL AT " +
+          "ONCE with the items[] parameter — one Confirm for the whole batch, never 50 separate proposals. Each items[] entry " +
+          "is still a SHORT task — never an aggregate wrapper ('land all N findings' with a '≥N commits' contract is the " +
+          "canonical anti-pattern: the auto-committer squashes, the count fails, the auditor disapproves finished work).]",
       );
     }
   } catch {
@@ -573,6 +586,12 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
   // is blocked until the user has replied at least once (see message_start).
   if (seed) {
     tmpl = buildSeedGrillMessage(tmpl, seed, tool);
+    // v0.25.3: cross-mode recommendation — catch wrapper-goal seeds and
+    // mode mismatches BEFORE the draft crystallizes.
+    if (target === "goal" || target === "list") {
+      const xr = crossRecommendMode(seed, target);
+      if (xr) tmpl += `\n\n${xr}`;
+    }
   }
   try {
     extensionApi?.sendUserMessage(tmpl, { deliverAs: ctx.isIdle() ? "followUp" : "steer" });
@@ -851,6 +870,20 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
   const parts = args.trim().split(/\s+/);
   const sub = (parts[0] ?? "").toLowerCase();
   const rest = args.trim().slice(sub.length).trim();
+
+  if (sub === "depth") {
+    // v0.25.3: long-running state at a glance — queue depth, oldest item
+    // age, average item duration from archived list-policy goals.
+    let entries: Array<{ type: string; value?: any }> = [];
+    try {
+      entries = parseLedgerEntries(fs.readFileSync(ledgerPath(ctx.cwd), "utf-8"));
+    } catch {
+      /* no ledger yet */
+    }
+    const stats = computeListDepth(listQueue(), entries, Date.now());
+    ctx.ui.notify(`/list depth: ${formatListDepth(stats)}`, "info");
+    return;
+  }
 
   if (sub === "resume") {
     // Resume the list's head. The head activates AS the active goal, so this
