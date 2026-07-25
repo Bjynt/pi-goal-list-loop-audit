@@ -309,8 +309,14 @@ export const DEFAULT_AUDIT_FEEDBACK_CHARS = 0;
  * Bound the auditor report returned to the executor after disapproval.
  * A limit of 0 explicitly means "show the full report".
  */
+/** Executor-visible excerpt of a disapproval report. Full by default
+ * (maxChars 0). When capped, keep the TAIL: since v0.25.4 the auditor
+ * ends disapprovals with the actionable `## Required fixes` section —
+ * head-slicing would cut exactly what the executor needs. */
 export function auditFeedbackExcerpt(output: string, maxChars: number): string {
-  return maxChars === 0 ? output : output.slice(0, maxChars);
+  if (maxChars === 0 || output.length <= maxChars) return output;
+  return `[head truncated — full report via /goal status]
+…${output.slice(-maxChars)}`;
 }
 
 export interface ListItem {
@@ -400,10 +406,19 @@ export interface State {
 /** v0.24.2: count TRAILING consecutive disapprovals (the disapproval-cap
  *  input). Shield-blocks (approved:true) and infra errors (neither flag)
  *  break the streak — they are not verdicts on the work. */
+/** v0.24.2: count TRAILING consecutive disapprovals (the disapproval-cap
+ *  input). Shield-blocks (approved:true) break the streak — the work was
+ *  judged good. v0.25.4: pure infra errors (error set, neither verdict
+ *  flag) are TRANSPARENT, not streak-breakers — the auditor never judged
+ *  the work, so D,D,infra,D is still 3 trailing disapprovals (before, 39
+ *  hegemon-style infra errors would reset the cap and re-open infinite
+ *  re-continuation). */
 export function countTrailingDisapprovals(history: AuditVerdict[]): number {
   let n = 0;
   for (let i = history.length - 1; i >= 0; i--) {
-    if (history[i]!.disapproved) n++;
+    const v = history[i]!;
+    if (v.disapproved) n++;
+    else if (v.error && !v.approved) continue; // infra: not a verdict
     else break;
   }
   return n;
@@ -1043,4 +1058,90 @@ export function formatListDepth(stats: ListDepthStats): string {
   if (stats.oldestItemId) lines.push(`oldest item: ${fmtAge(stats.oldestAgeMs!)} (id ${stats.oldestItemId})`);
   if (stats.durationSamples > 0) lines.push(`avg item duration: ${fmtAge(stats.avgDurationMs!)} (from last ${stats.durationSamples} archived)`);
   return lines.join("\n");
+}
+
+// =================================================================
+// v0.25.4: auditor polish — durable audit log, think-block hygiene,
+// actionable-tail slicing, infra-transparent streaks
+// =================================================================
+
+/** Strip think-block leakage from auditor reports before storage/display.
+ * Motivation (wild, 2026-07-25): MiniMax-M3 reports arrive with
+ * `<think>...</think>` bodies, stray `</think>` fragments, and non-English
+ * reasoning spillover — the executor's feedback should be the verdict,
+ * not the auditor's private monologue. */
+export function stripThinkBlocks(text: string): string {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<\/?think>/gi, "")
+    .replace(/<200b>/g, "") // stray partial-tag artifact seen in the wild
+    .replace(/^\s+/, "");
+}
+
+/** One durable audit-log entry — survives state-snapshot rotation, so
+ * /glla audits can answer "where are we weak" across the whole project. */
+export interface AuditLogEntry {
+  at: string;
+  goalId: string;
+  objective: string;
+  verdict: "approved" | "disapproved" | "impossible" | "shield_blocked" | "error";
+  model: string;
+  thinkingLevel: string;
+  report: string;
+  impossibleReason?: string;
+  error?: string;
+}
+
+export function auditLogPath(cwd: string): string {
+  return path.join(cwd, ".pi-glla", "audits.jsonl");
+}
+
+export function appendAuditLog(cwd: string, entry: AuditLogEntry): void {
+  try {
+    ensureDirs(cwd);
+    fs.appendFileSync(auditLogPath(cwd), JSON.stringify(entry) + "\n");
+  } catch {
+    /* log best-effort — never block the verdict path */
+  }
+}
+
+export function readAuditLog(cwd: string, limit?: number): AuditLogEntry[] {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(auditLogPath(cwd), "utf-8");
+  } catch {
+    return [];
+  }
+  const out: AuditLogEntry[] = [];
+  for (const line of raw.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    try {
+      const e = JSON.parse(t);
+      if (e && typeof e.goalId === "string" && typeof e.verdict === "string") out.push(e as AuditLogEntry);
+    } catch {
+      /* skip malformed */
+    }
+  }
+  return limit !== undefined ? out.slice(-limit) : out;
+}
+
+const VERDICT_GLYPH: Record<AuditLogEntry["verdict"], string> = {
+  approved: "✔",
+  disapproved: "✖",
+  impossible: "⛔",
+  shield_blocked: "🛡",
+  error: "⚠",
+};
+
+/** /glla audits list view: one line per verdict, newest last. */
+export function formatAuditLog(entries: AuditLogEntry[]): string {
+  if (entries.length === 0) return "(no audits logged yet — the log starts with the next verdict)";
+  return entries
+    .map((e) => {
+      const day = e.at.slice(5, 16).replace("T", " ");
+      const firstLine = (e.report.split("\n").find((l) => l.trim()) ?? "").trim().slice(0, 90);
+      return `${VERDICT_GLYPH[e.verdict]} ${day} [${e.goalId.slice(-6)}] ${e.model} — ${firstLine}`;
+    })
+    .join("\n");
 }
