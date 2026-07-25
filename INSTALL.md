@@ -49,6 +49,31 @@ Whatever you choose must work extension-less. Verify with:
 PI_CODING_AGENT_DIR=/tmp/bare-agent pi -p "say ok" --model "provider/model-id"
 ```
 
+## Subagent model inheritance (v0.24.6)
+
+If you use `@tintinweb/pi-subagents`: its default `Explore` agent pins
+`anthropic/claude-haiku-4-5`, so `Explore` subagents run on a **different
+provider and quota pool than your session** — a quota-capped key (e.g.
+OpenRouter) 403s after a few concurrent spawns even while the parent
+session is fine.
+
+glla fixes this by default: at session start it manages
+`~/.pi/agent/agents/Explore.md` (pi-subagents' native override mechanism)
+without the model pin, so subagents inherit your session model. Your own
+same-named files are never touched (glla only edits files carrying its
+`x-managed-by` marker).
+
+Control it via `/glla` → Settings:
+
+- **Subagent model strategy** — `inherit-parent` (default, subagents share
+  your session model + quota) or `agent-default` (upstream: Explore pins
+  haiku — cheap search, separate quota).
+- **Subagent Explore model pin** — e.g. `minimax/MiniMax-M3`; always wins
+  over strategy.
+
+Changes apply to NEW pi sessions (pi-subagents registers agents at its own
+session start).
+
 ## Try it without installing
 
 ```bash

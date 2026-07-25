@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.24.6] — 2026-07-25
+
+### Fixed — subagent model inheritance (Section I of the eager-continuation contract, shipped early)
+
+**Root cause:** pi-subagents v0.14.3's default `Explore` agent pins
+`anthropic/claude-haiku-4-5` (`default-agents.ts:40`). Its model resolution
+is explicit option > agent config > parent model (`agent-runner.ts:720`),
+so an `Explore` spawn NEVER inherits the session model — it silently routes
+to a different provider with a different quota pool. On rigs where the
+session model is local/alternative (e.g. MiniMax-M3) and claude-haiku-4-5
+resolves through a quota-capped key (OpenRouter), a few concurrent Explore
+spawns exhaust the key with `403 Key limit exceeded (total limit)` while
+the parent session is completely unaffected. Observed live on the polis
+session: 3 of 3 Explore subagents failed with the same 403 mid-audit.
+
+**Fix:** glla now manages `~/.pi/agent/agents/Explore.md` — pi-subagents'
+native user-override mechanism (a same-named `.md` fully replaces the
+default config; omitting `model:` falls through to the parent model).
+
+- New module `extensions/goal-loop-subagents.ts`:
+  `syncSubagentModelOverrides()` writes/updates/removes the managed
+  override at session_start. Idempotent; writes only on drift.
+- Writer safety contract: files without the
+  `x-managed-by: pi-goal-list-loop-audit` frontmatter marker are
+  user-owned — never modified, never deleted (a skip note is surfaced).
+- Only `Explore` is managed (the sole pinned default). Embedded verbatim
+  copy of the upstream Explore config; a drift test fails if tintinweb
+  changes it or pins another default.
+
+**New settings** (`/glla` → Settings, global or project):
+
+- `subagentModelStrategy` — `inherit-parent` (default): subagents share
+  your session model AND its quota pool (fixes separate-provider 403s;
+  search agents may run on a pricier model). `agent-default`: upstream
+  behavior (Explore pins haiku — cheap search, separate quota).
+- `subagentModelOverrides` — per-agent-type model pin, e.g.
+  `{ "Explore": "minimax/MiniMax-M3" }`. Always wins over strategy.
+
+Applies to NEW pi sessions (pi-subagents registers its agents at its own
+session start). 12 new tests (244 → 256).
+
 ## [0.24.5] — 2026-07-24
 
 ### Fixed — tool-visibility self-heal (modlist allowlist wipe)
