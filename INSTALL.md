@@ -49,6 +49,25 @@ Whatever you choose must work extension-less. Verify with:
 PI_CODING_AGENT_DIR=/tmp/bare-agent pi -p "say ok" --model "provider/model-id"
 ```
 
+## Loop behavior: the multi-signal stuck gate (v0.25.1)
+
+A `/loop` iteration is judged STUCK only when **every** progress signal is
+zero — no file writes (`write`/`edit`/`multi_edit`/`write_file` tool
+results), no git commits since the iteration began (HEAD advance), no
+`spec_item_progress` ledger events, and no *paired* forward transition
+("Next step (iter-N…)" text only counts when the same iteration also wrote
+a file or committed — narration alone is the narrate-but-don't-ship loop)
+— **and** the legacy same-tool-same-result check also fires.
+
+Why it changed: the v0.24.0 single-signal detector (same tool + same
+result hash 3×) killed two real user loops that were shipping work with
+stable verification output — stable verification is the GOAL state of a
+metricless loop, not the stuck state. Design doc:
+`audit/STUCK-DETECTION-REWORK-2026-07-24.md`. `/loop start toolsamerepeat=0`
+disables the legacy check entirely; `/loop finish [reason]` ends a loop
+cleanly with stopReason `completed: <reason>` (distinct from
+stuck/plateau/stopped-by-user).
+
 ## Quota handling + aggressive mode (v0.25.0)
 
 **Quota-aware retry.** When the auditor dies on a quota / rate-limit error

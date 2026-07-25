@@ -1,6 +1,40 @@
 # Changelog
 
+## [0.25.1] — 2026-07-25
+
+### Fixed — stuck-detection rework: the multi-signal "progress signals" gate
+
+Triggered by two wild-caught transcripts (design doc
+`audit/STUCK-DETECTION-REWORK-2026-07-24.md`): the v0.24.0 single-signal
+detector (same tool + same result hash 3×) killed loops that were SHIPPING
+work with stable verification output — stable verification is the goal
+state of a metricless loop, not the stuck state.
+
+- **`isActuallyStuck(input)`** replaces `detectLoopStuck` as the stuck
+  gate. An iteration is stuck ONLY when ALL progress signals are zero —
+  file writes (`write`/`edit`/`multi_edit`/`write_file` tool results),
+  git commits since iteration start (`rev-list --count startHead..HEAD`),
+  `spec_item_progress` ledger events, and a PAIRED forward transition —
+  and the legacy detector also fires. `detectLoopStuck` stays exported
+  for backward compat.
+- **`forwardTransitionMarker(text)`** — conservative word list + line-start
+  "Next:" detection. The marker only counts PAIRED with a write/commit in
+  the same iteration: pure-narration "next: implement X" loops are still
+  stuck (narrate-but-don't-ship).
+- **`/loop finish [reason]`** — end a loop cleanly with stopReason
+  `completed: <reason>` (distinct from stuck/plateau/stopped-by-user).
+  `/loop stop` is untouched.
+- **`/loop start toolsamerepeat=N`** — `0` disables the legacy
+  same-tool-same-result check entirely (new detector only); absent =
+  current behavior.
+
+21 new tests (300 → 321) including a transcript-replay suite: both
+wild-caught transcripts classify NOT stuck under the new gate while the
+old detector WOULD have flagged them — and the same texts without the
+shipped work still classify stuck.
+
 ## [0.25.0] — 2026-07-25
+
 
 ### Added — eager-continuation contract (Sections A–H + J; Section I shipped in 0.24.6)
 
