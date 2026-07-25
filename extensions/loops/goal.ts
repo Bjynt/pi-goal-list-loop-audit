@@ -2667,6 +2667,42 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
   }
 }
 
+/**
+ * v0.25.2: /glla stats — one command, every project's rollup. Args:
+ *   (none)            markdown table, all discovered projects
+ *   json              machine-readable rollup (same schema as the table)
+ *   premature         only projects with premature_success > 0, ratio-sorted
+ *   project=<path>    limit the scan to one project
+ */
+function cmdStats(args: string, ctx: ExtensionContext): void {
+  const asJson = /\bjson\b/.test(args);
+  const prematureOnly = /\bpremature\b/.test(args);
+  const projectMatch = args.match(/project=(\S+)/);
+  let rollups: ProjectRollup[] = [];
+  if (projectMatch) {
+    const p = projectMatch[1]!.replace(/^~/, os.homedir());
+    const r = rollupProject(p);
+    if (!r) {
+      ctx.ui.notify(`/glla stats: no .pi-glla/active.jsonl under ${p}`, "warning");
+      return;
+    }
+    rollups = [r];
+  } else {
+    const projects = discoverGllaProjects({ cwd: ctx.cwd });
+    for (const p of projects) {
+      const r = rollupProject(p);
+      if (r) rollups.push(r);
+    }
+    if (rollups.length === 0) {
+      ctx.ui.notify("/glla stats: no projects with .pi-glla/active.jsonl found on this rig.", "info");
+      return;
+    }
+  }
+  if (prematureOnly) rollups = filterPremature(rollups);
+  const out = asJson ? formatRollupJson(rollups) : formatRollupTable(rollups);
+  ctx.ui.notify(`glla stats — ${rollups.length} project(s)${prematureOnly ? " (premature filter)" : ""}\n${out}`, "info");
+}
+
 async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   // The plugin's ONE config surface — global by default, rarely opened.
   //   /glla                      show effective values + where each comes from
@@ -2678,7 +2714,13 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   //   /glla auditfeedbackchars=800 cap executor-visible disapproval report (0=full, the default)
   //   /glla project model=...    write to PROJECT override (rare)
   //   /glla model=unset          remove key (from global; project model=unset for project)
+  //   /glla stats [json|premature|project=<path>]   per-project ledger rollups (v0.25.2)
   const trimmed = args.trim();
+  // v0.25.2: /glla stats sub-mode — cross-project telemetry rollups.
+  if (/^stats\b/.test(trimmed)) {
+    cmdStats(trimmed.slice("stats".length).trim(), ctx);
+    return;
+  }
   if (!trimmed) {
     if (ctx.hasUI) {
       await openSettingsUI(ctx);
