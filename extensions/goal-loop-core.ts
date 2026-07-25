@@ -9,6 +9,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execSync } from "node:child_process";
 
 // =================================================================
 // Types
@@ -760,4 +761,156 @@ export type GllaToolName = (typeof GLLA_TOOL_NAMES)[number];
 export function missingGllaTools(activeNames: readonly string[]): readonly GllaToolName[] {
   const active = new Set(activeNames);
   return GLLA_TOOL_NAMES.filter((n) => !active.has(n));
+}
+
+// -----------------------------------------------------------------
+// v0.25.0 — eager-continuation contract helpers
+// -----------------------------------------------------------------
+
+/** Base defaults (aggressiveMode OFF). auditCap base raised 3 → 5 in
+ * v0.25.0 (contract item 7 — the "fairly eager" baseline). */
+export const BASE_AUDIT_CAP = 5;
+export const BASE_STUCK_MAX_INTERVENTIONS = 5;
+/** aggressiveMode defaults (contract item 5). Explicit per-key settings
+ * always win over these — aggressiveMode flips DEFAULTS, not user choices. */
+export const AGGRESSIVE_AUDIT_CAP = 10;
+export const AGGRESSIVE_STUCK_MAX_INTERVENTIONS = 10;
+export const DEFAULT_QUOTA_RETRY_MINUTES = 60;
+
+export interface EffectiveAggressiveSettings {
+  auditCap: number;
+  stuckMaxInterventions: number;
+  /** 0 = wedge alerts off. */
+  wedgeAlertMinutes: number;
+  autoResume: boolean;
+  aggressiveMode: boolean;
+}
+
+/** Layered resolution: explicit per-key value > aggressiveMode default >
+ * base default (contract items 5+7). Pure so tests can assert the matrix
+ * without a settings file. */
+export function resolveEffectiveAggressiveSettings(s: {
+  aggressiveMode?: boolean;
+  auditCap?: number;
+  stuckMaxInterventions?: number;
+  wedgeAlertMinutes?: number;
+  autoResume?: boolean;
+}): EffectiveAggressiveSettings {
+  const aggressiveMode = s.aggressiveMode === true;
+  return {
+    aggressiveMode,
+    auditCap: s.auditCap ?? (aggressiveMode ? AGGRESSIVE_AUDIT_CAP : BASE_AUDIT_CAP),
+    stuckMaxInterventions:
+      s.stuckMaxInterventions ?? (aggressiveMode ? AGGRESSIVE_STUCK_MAX_INTERVENTIONS : BASE_STUCK_MAX_INTERVENTIONS),
+    wedgeAlertMinutes: s.wedgeAlertMinutes ?? (aggressiveMode ? 0 : 30),
+    autoResume: s.autoResume ?? aggressiveMode,
+  };
+}
+
+/** Extract up to `cap` actionable objection lines from an auditor report
+ * (contract item 22): numbered/bulleted lines, most recent last-report
+ * wins, longest tails trimmed. Pure — the audit-cap branch and its test
+ * share this. */
+export function extractPendingTasks(report: string, cap = 5): string[] {
+  const out: string[] = [];
+  for (const raw of report.split("\n")) {
+    const line = raw.trim();
+    const m = line.match(/^(?:[-*•]|\d+[.)])\s+(.{8,200})$/);
+    if (!m) continue;
+    const text = m[1].trim();
+    // Skip pure-evidence bullets ("file X exists", "tests pass") — we want
+    // OBJECTIONS: missing/failing/not-done language.
+    if (!/miss|fail|not |no |lack|absent|doesn|didn|won|can'?t|remain|todo|fix|requir|incomplete|unverified/i.test(text)) continue;
+    if (!out.includes(text)) out.push(text);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
+/** Contract item 23: is the auditor's IMPOSSIBLE reason about the WHOLE
+ * goal or only part of it? Default "full" (safe — keeps the pause);
+ * partial only on explicit subset language. */
+export function classifyImpossibleReason(reason: string): "partial" | "full" {
+  if (/\b(partial|some items|subset|remaining items|narrow|only .{0,30}(item|part|section)|rest of)\b/i.test(reason)) {
+    return "partial";
+  }
+  return "full";
+}
+
+/** Contract items 25/28: does this objective read as a full-audit /
+ * survey pivot? */
+export function isFullAuditObjective(objective: string): boolean {
+  return /full audit|survey|find all|task ?list|enumerate|audit the (whole |entire )?project/i.test(objective);
+}
+
+// --- Auto-committer daemon sentinel (contract item 31) ---
+
+/** Sentinel the auto-committer (dracon-sync) filter checks: when present,
+ * the daemon must not rewrite/commit in this repo. The agent writes it
+ * after detecting filter-branch damage (see DETACHED COMMIT DETECTION in
+ * the continuation prompt). */
+export const PAUSE_AUTO_COMMIT_SENTINEL = ".pause-auto-commit";
+
+export function pauseAutoCommit(cwd: string, reason: string): string {
+  const dir = path.join(cwd, ".pi-glla");
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, PAUSE_AUTO_COMMIT_SENTINEL);
+  fs.writeFileSync(file, `pausedAt: ${nowIso()}\nreason: ${reason}\n`, "utf-8");
+  return file;
+}
+
+export function resumeAutoCommit(cwd: string): boolean {
+  const file = path.join(cwd, ".pi-glla", PAUSE_AUTO_COMMIT_SENTINEL);
+  try {
+    fs.unlinkSync(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function isAutoCommitPaused(cwd: string): boolean {
+  try {
+    fs.accessSync(path.join(cwd, ".pi-glla", PAUSE_AUTO_COMMIT_SENTINEL));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// --- Heartbeat ship-suppression (contract item 27) ---
+
+/** Suppress the heartbeat when work shipped very recently — a session
+ * that just committed is transitioning, not stalled. Pure; the tick
+ * gathers the timestamps. */
+export function shouldSuppressHeartbeatForRecentShip(args: {
+  nowMs: number;
+  lastShippedAtMs: number | null;
+  windowMs?: number;
+}): boolean {
+  const windowMs = args.windowMs ?? 5 * 60_000;
+  if (args.lastShippedAtMs === null) return false;
+  return args.nowMs - args.lastShippedAtMs < windowMs;
+}
+
+/** Best-effort "when did work last ship" for a repo: newest of the HEAD
+ * commit time and the .pi-glla state file mtime. Null when unknown. */
+export function lastShippedAtMs(cwd: string): number | null {
+  let best: number | null = null;
+  try {
+    const out = execSync("git log -1 --format=%ct", { cwd, stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+    const sec = Number(out);
+    if (Number.isFinite(sec) && sec > 0) best = sec * 1000;
+  } catch {
+    /* not a git repo or no commits */
+  }
+  try {
+    const mtime = fs.statSync(path.join(cwd, ".pi-glla", "active.jsonl")).mtimeMs;
+    if (best === null || mtime > best) best = mtime;
+  } catch {
+    /* no state file yet */
+  }
+  return best;
 }
