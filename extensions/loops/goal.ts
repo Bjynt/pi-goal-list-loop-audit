@@ -93,7 +93,8 @@ import {
 import { runGoalCompletionAuditor } from "../goal-loop-auditor.js";
 import {
   REPETITION,
-  detectLoopStuck,
+  isActuallyStuck,
+  loopFinishStopReason,
   loopInterventionDirective,
   continueVariant,
   textFingerprint,
@@ -1204,18 +1205,63 @@ async function runLoopTick(ctx: ExtensionContext, event?: any): Promise<void> {
   const toolsUsed = loop.toolsThisTurn ?? 0;
   loop.toolsThisTurn = 0;
   loop.toollessStreak = toolsUsed === 0 ? (loop.toollessStreak ?? 0) + 1 : 0;
+  // v0.25.1 multi-signal stuck gate: gather the iteration's progress
+  // signals BEFORE classifying — file writes (tool_result bumps), git
+  // commits since the iteration began (HEAD advance), spec_item_progress
+  // ledger events since the iteration began. ANY positive signal exempts
+  // the iteration: stable verification from a shipping loop is the goal
+  // state of a metricless loop, not the stuck state.
+  const iterStartHead = loop.iterMetrics?.iterationStartHead;
+  const iterStartAt = loop.iterMetrics?.iterationStartAt;
+  const currentHeadRes = await runGit(ctx, ["rev-parse", "HEAD"]);
+  const currentHead = currentHeadRes.ok ? currentHeadRes.stdout : undefined;
+  let gitCommits = 0;
+  if (iterStartHead && currentHead && iterStartHead !== currentHead) {
+    const countRes = await runGit(ctx, ["rev-list", "--count", `${iterStartHead}..HEAD`]);
+    const n = Number.parseInt(countRes.stdout, 10);
+    if (countRes.ok && Number.isFinite(n) && n > 0) gitCommits = n;
+  }
+  let specItemProgress = 0;
+  if (iterStartAt) {
+    try {
+      const ledgerPath = path.join(ctx.cwd, ".pi-glla", "active.jsonl");
+      const lines = fs.readFileSync(ledgerPath, "utf-8").split("\n");
+      for (const line of lines) {
+        if (!line.includes("spec_item_progress")) continue;
+        try {
+          const entry = JSON.parse(line) as { at?: string };
+          if (entry.at && entry.at >= iterStartAt) specItemProgress++;
+        } catch { /* malformed line */ }
+      }
+    } catch { /* no ledger yet */ }
+  }
+  const iterSignals = {
+    fileWrites: loop.iterMetrics?.fileWrites ?? 0,
+    gitCommits,
+    specItemProgress,
+    currentHead,
+  };
   const previousText = loop.recentTexts && loop.recentTexts.length > 0 ? loop.recentTexts[loop.recentTexts.length - 1] : undefined;
   if (lastAssistantText) {
     loop.recentPrints = pushRepetitionCapped(loop.recentPrints ?? [], textFingerprint(lastAssistantText), REPETITION.printWindow);
     loop.recentTexts = pushRepetitionCapped(loop.recentTexts ?? [], lastAssistantText, REPETITION.textWindow);
   }
-  const stuckReason = detectLoopStuck({
+  const stuckReason = isActuallyStuck({
     assistantText: lastAssistantText,
     recentPrints: loop.recentPrints ?? [],
     previousText,
     recentToolResults: loop.recentToolResults ?? [],
     toollessStreak: loop.toollessStreak ?? 0,
-  });
+    fileWriteCount: iterSignals.fileWrites,
+    gitCommitCount: iterSignals.gitCommits,
+    specItemProgressCount: iterSignals.specItemProgress,
+  }, loop.toolSameRepeat);
+  // Reset the accumulators so the NEXT iteration measures only itself.
+  loop.iterMetrics = {
+    fileWrites: 0,
+    iterationStartHead: iterSignals.currentHead ?? loop.iterMetrics?.iterationStartHead,
+    iterationStartAt: nowIso(),
+  };
   if (stuckReason) {
     loop.consecutiveStuck = (loop.consecutiveStuck ?? 0) + 1;
     loop.lastStuckReason = stuckReason;
@@ -1302,6 +1348,8 @@ interface LoopConfig {
   force?: boolean;
   timeLimitHours?: number;
   tokenBudget?: number;
+  /** v0.25.1: /loop start toolsamerepeat=N (0 = disable legacy check). */
+  toolSameRepeat?: number;
 }
 
 /** Shared loop-start path: /loop start AND propose_loop_draft (after Confirm). */
@@ -1365,6 +1413,8 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
       tokensUsed: 0,
       branchName,
       originalBranch,
+      toolSameRepeat: cfg.toolSameRepeat,
+      iterMetrics: { fileWrites: 0, iterationStartAt: nowIso() },
     },
   };
   persistState(ctx);
@@ -1472,6 +1522,27 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       "info",
     );
     notifyExternal(ctx, `Loop stopped by user after ${state.loop.iteration} iterations (best: ${state.loop.bestValue ?? "n/a"})`);
+    return;
+  }
+
+  // v0.25.1: a CLEAN end — "completed: <reason>", distinct from
+  // stuck/plateau/stopped-by-user. Additive: /loop stop is untouched.
+  if (sub === "finish") {
+    if (!state.loop) {
+      ctx.ui.notify("No loop to finish.", "info");
+      return;
+    }
+    clearLoopTimer();
+    const reason = loopFinishStopReason(rest);
+    state.loop = { ...state.loop, active: false, stopReason: reason };
+    persistState(ctx);
+    await finishLoopGit(ctx, state.loop);
+    appendLedger(ctx.cwd, "loop_stopped", { reason, iterations: state.loop.iteration, best: state.loop.bestValue });
+    ctx.ui.notify(
+      `Loop finished (${reason}) after ${state.loop.iteration} iterations. Best: ${state.loop.bestValue ?? "n/a"}.`,
+      "info",
+    );
+    notifyExternal(ctx, `Loop finished: ${reason}`);
     return;
   }
 
@@ -2927,6 +2998,7 @@ export default function (pi: ExtensionAPI): void {
       ["respec", "infinite metricless loop reconciling the codebase against the root SPEC.md"],
       ["status", "show metric, iteration, best/last values, stall count"],
       ["stop", "end the loop (keeps the best state)"],
+      ["finish", "end the loop cleanly: /loop finish [reason] → stopReason 'completed: <reason>'"],
     ]),
     handler: (args: string, ctx: ExtensionContext) => { rememberCtx(ctx); return cmdLoop(args, ctx); },
   });
@@ -2985,6 +3057,13 @@ export default function (pi: ExtensionAPI): void {
         { tool: String(event?.toolName ?? "?"), hash: textFingerprint(text), isError: Boolean(event?.isError ?? event?.error) },
         REPETITION.toolWindow,
       );
+      // v0.25.1: file-write progress signal for the multi-signal stuck
+      // gate — a loop that is WRITING files is shipping, not stuck.
+      if (["write", "edit", "multi_edit", "write_file"].includes(String(event?.toolName ?? ""))) {
+        const metrics = loop.iterMetrics ?? { fileWrites: 0 };
+        metrics.fileWrites++;
+        loop.iterMetrics = metrics;
+      }
     }
     if (draftingTarget === null) return;
     if (askUserQuestionAnswered(String(event?.toolName ?? ""), event?.details)) {
