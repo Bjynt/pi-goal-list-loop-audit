@@ -39,7 +39,12 @@ import {
   isFullAuditObjective,
   lastShippedAtMs,
   resolveEffectiveAggressiveSettings,
+  appendAuditLog,
   computeListDepth,
+  formatAuditLog,
+  readAuditLog,
+  stripThinkBlocks,
+  type AuditLogEntry,
   ledgerPath,
   crossRecommendMode,
   formatListDepth,
@@ -1723,6 +1728,11 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       const auditorRan = result.output.trim().length > 0;
       const history = state.goal.auditHistory ?? [];
       if (auditorRan) {
+        // v0.25.4: strip think-block leakage (MiniMax-M3 `</think>`
+        // fragments + reasoning spillover) before anything stores or
+        // displays the report.
+        const cleanOutput = stripThinkBlocks(result.output);
+        result.output = cleanOutput;
         history.push({
           at: nowIso(),
           approved: result.approved,
@@ -1731,13 +1741,36 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
           impossibleReason: result.impossibleReason,
           model: result.model,
           thinkingLevel: result.thinkingLevel,
-          report: result.output,
+          report: cleanOutput,
           error: result.error,
           regressionShieldPassed: result.regressionShieldPassed,
           regressionShieldMissing: result.regressionShieldMissing,
         });
         // Cap history — 39 infra errors taught us unbounded growth is real.
         if (history.length > 20) history.splice(0, history.length - 20);
+        // v0.25.4: durable append-only audit log — survives state-snapshot
+        // rotation; the review surface for "where are we weak".
+        const verdict: AuditLogEntry["verdict"] =
+          result.error && !result.approved && !result.disapproved
+            ? "error"
+            : result.approved && result.regressionShieldPassed === false
+              ? "shield_blocked"
+              : result.approved
+                ? "approved"
+                : result.impossible
+                  ? "impossible"
+                  : "disapproved";
+        appendAuditLog(ctx.cwd, {
+          at: nowIso(),
+          goalId: state.goal.id,
+          objective: state.goal.objective.slice(0, 200),
+          verdict,
+          model: result.model,
+          thinkingLevel: result.thinkingLevel ?? "(default)",
+          report: cleanOutput,
+          impossibleReason: result.impossibleReason,
+          error: result.error,
+        });
       }
 
       // Escape hatch: the user aborted the audit (Esc). Offer the explicit
@@ -2744,6 +2777,24 @@ function cmdStats(args: string, ctx: ExtensionContext): void {
   ctx.ui.notify(`glla stats — ${rollups.length} project(s)${prematureOnly ? " (premature filter)" : ""}\n${out}`, "info");
 }
 
+/**
+ * v0.25.4: /glla audits [N|full] — browse the durable per-project audit
+ * log (.pi-glla/audits.jsonl). Default: last 10 verdicts, one line each.
+ * "full" prints the latest report in full.
+ */
+function cmdAudits(args: string, ctx: ExtensionContext): void {
+  const full = /\bfull\b/.test(args);
+  const nMatch = args.match(/\b(\d+)\b/);
+  if (full) {
+    const latest = readAuditLog(ctx.cwd).at(-1);
+    ctx.ui.notify(latest ? `Latest audit — ${latest.verdict} (${latest.model}, ${latest.at})\n${latest.report}` : "No audits logged yet.", "info");
+    return;
+  }
+  const n = nMatch ? Number(nMatch[1]) : 10;
+  const entries = readAuditLog(ctx.cwd, n);
+  ctx.ui.notify(`glla audits — last ${entries.length} verdict(s) in ${ctx.cwd}\n${formatAuditLog(entries)}`, "info");
+}
+
 async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   // The plugin's ONE config surface — global by default, rarely opened.
   //   /glla                      show effective values + where each comes from
@@ -2760,6 +2811,10 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   // v0.25.2: /glla stats sub-mode — cross-project telemetry rollups.
   if (/^stats\b/.test(trimmed)) {
     cmdStats(trimmed.slice("stats".length).trim(), ctx);
+    return;
+  }
+  if (/^audits\b/.test(trimmed)) {
+    cmdAudits(trimmed.slice("audits".length).trim(), ctx);
     return;
   }
   if (!trimmed) {
@@ -3059,6 +3114,7 @@ export default function (pi: ExtensionAPI): void {
       ["quotaretryminutes=", "N: minutes before auto-retrying a quota-exhausted auditor (default 60)"],
       ["stuckmax=", "N: consecutive stuck interventions before a loop stops (default 5)"],
       ["stats", "per-project ledger rollups: /glla stats [json|premature|project=<path>]"],
+      ["audits", "audit-log browser: /glla audits [N|full] — recent verdicts from .pi-glla/audits.jsonl"],
       ["autoaccept=", "on: drafts activate without the Confirm dialog (unattended rigs)"],
       ["project", "write a project override: /glla project key=value"],
     ]),
