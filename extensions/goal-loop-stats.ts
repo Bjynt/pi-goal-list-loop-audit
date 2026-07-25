@@ -193,8 +193,11 @@ export function discoverGllaProjects(opts: { home?: string; cwd?: string; budget
     /* no sessions dir */
   }
 
-  // Source 2: bounded walk.
-  const PRUNE = new Set(["node_modules", ".git", ".pi", ".cache", ".npm", ".local", ".config"]);
+  // Source 2: bounded walk — targeted roots FIRST (~/Dev, ~/chat hold the
+  // rig's projects; polis sits at depth 5), the general home walk last
+  // with whatever budget remains. Deep/wide dirs that never hold projects
+  // are pruned.
+  const PRUNE = new Set(["node_modules", ".git", ".pi", ".cache", ".npm", ".local", ".config", "Downloads", "Pictures", "Videos", "Music", ".mozilla", ".vscode", "snap", ".steam", ".wine"]);
   const walk = (dir: string, depth: number): void => {
     if (depth > 6 || Date.now() > deadline) return;
     if (hasLedger(dir)) {
@@ -214,6 +217,10 @@ export function discoverGllaProjects(opts: { home?: string; cwd?: string; budget
       walk(path.join(dir, e.name), depth + 1);
     }
   };
+  for (const root of [path.join(home, "Dev"), path.join(home, "chat")]) {
+    if (Date.now() > deadline) break;
+    walk(root, 1);
+  }
   walk(home, 0);
 
   // Source 3: cwd.
