@@ -252,7 +252,7 @@ function heartbeatTick(): void {
   // the entire goal hostage; field-observed at 5,056s and 6,800s on the
   // same wedged tool call). Independent of the refire path, which only
   // watches idle sessions.
-  const wedgeMinutes = loadSettings(ctx.cwd).wedgeAlertMinutes ?? WEDGE_ALERT_DEFAULT_MINUTES;
+  const wedgeMinutes = resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).wedgeAlertMinutes ?? WEDGE_ALERT_DEFAULT_MINUTES;
   if (
     shouldWedgeAlert({
       supervising: isSupervising(),
@@ -269,6 +269,18 @@ function heartbeatTick(): void {
     notifyExternal(ctx, msg);
   }
   if (!fire) return;
+  // v0.25.0 (contract item 27): a session that SHIPPED in the last 5
+  // minutes (commit or ledger write) is transitioning, not stalled —
+  // suppress the refire so rapid iteration isn't interrupted.
+  if (
+    shouldSuppressHeartbeatForRecentShip({
+      nowMs: Date.now(),
+      lastShippedAtMs: lastShippedAtMs(ctx.cwd),
+    })
+  ) {
+    appendLedger(ctx.cwd, "heartbeat_suppressed", { reason: "recent ship (<5m)" });
+    return;
+  }
   noteActivity();
   appendLedger(ctx.cwd, "heartbeat_refire", { nudgesSoFar: heartbeatNudges });
   ctx.ui.notify("Heartbeat: supervisor active but session stalled — re-firing continuation.", "info");
@@ -388,7 +400,7 @@ function continuationPrompt(goal: Goal): string {
   // TODOs from the audit cap, and the full-audit fan-out directive when the
   // objective reads as a survey pivot.
   const directives: string[] = [];
-  const effSettings = resolveEffectiveAggressiveSettings(loadSettings(ctxRef?.cwd ?? process.cwd()));
+  const effSettings = resolveEffectiveAggressiveSettings(loadSettings(freshCtx()?.cwd ?? process.cwd()));
   if (goal.pendingTasks && goal.pendingTasks.length > 0) {
     directives.push(
       `## AUDITOR TODO LIST (from ${goal.pauseReason?.includes("cap") ? "the disapproval cap" : "the last audit"})\n\nAddress these objections, in order, before re-calling complete_goal:\n${goal.pendingTasks.map((t, i) => `${i + 1}. ${t}`).join("\n")}`,
@@ -1231,7 +1243,9 @@ async function runLoopTick(ctx: ExtensionContext, event?: any): Promise<void> {
   }
   // v0.24.0: the top of the stuck ladder — bounded and surfaced, same
   // philosophy as a plateau stop. The loop ends WITH the reason, not in silence.
-  if (outcome.kind !== "stop" && (loop.consecutiveStuck ?? 0) >= REPETITION.maxInterventions) {
+  // v0.25.0: aggressiveMode raises the ladder (default 5 → 10, explicit wins).
+  const maxStuckInterventions = resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).stuckMaxInterventions;
+  if (outcome.kind !== "stop" && (loop.consecutiveStuck ?? 0) >= maxStuckInterventions) {
     loop.active = false;
     loop.stopReason = `stuck — ${loop.lastStuckReason} (${loop.consecutiveStuck} consecutive interventions)`;
     persistState(ctx);
@@ -3052,7 +3066,15 @@ export default function (pi: ExtensionAPI): void {
     // starts working before you can even load your session. Sessions with
     // history ("resume"/"reload"/"fork") auto-resume; /glla autoresume=on
     // opts a project into auto-resume everywhere (unattended rigs).
-    const autoResume = shouldAutoResumeOnSessionStart(event?.reason, loadSettings(ctx.cwd).autoResume);
+    const autoResume = shouldAutoResumeOnSessionStart(event?.reason, resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).autoResume);
+    // v0.25.0 (contract item 6): aggressiveMode announces every auto-event.
+    if (
+      autoResume &&
+      resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).aggressiveMode &&
+      (isLoopActive() || (state.goal && state.goal.status === "active") || listQueue().length > 0)
+    ) {
+      ctx.ui.notify("Auto-resume fired (event: session start). Continue working.", "info");
+    }
     if (isLoopActive()) {
       const l = state.loop!;
       if (autoResume) {
