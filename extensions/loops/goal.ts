@@ -76,6 +76,11 @@ import {
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
 import {
+  defaultAgentDir,
+  syncSubagentModelOverrides,
+  type SubagentModelStrategy,
+} from "../goal-loop-subagents.js";
+import {
   applyMeasurement,
   applyMetriclessTick,
   applyRefinement,
@@ -2264,6 +2269,18 @@ interface Settings {
    * interview floor is skipped — the seed carries the intent (unattended
    * rigs). Default off: nothing activates before the user confirms. */
   autoAcceptDrafts?: boolean;
+  /** v0.24.6: subagent model strategy for pi-subagents default agents that
+   * pin a model (Explore pins claude-haiku-4-5, which silently routes
+   * subagents to a different provider/quota pool than the session).
+   * "inherit-parent" (default) writes a managed ~/.pi/agent/agents/Explore.md
+   * override without the model pin so subagents share the session model and
+   * its quota; "agent-default" restores upstream behavior. Applies to NEW
+   * sessions (pi-subagents registers agents at session start). */
+  subagentModelStrategy?: SubagentModelStrategy;
+  /** v0.24.6: per-agent-type model pin, e.g. { "Explore": "minimax/MiniMax-M3" }.
+   * Always wins over subagentModelStrategy — the managed override is written
+   * WITH this pin regardless of strategy. */
+  subagentModelOverrides?: Record<string, string>;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -2271,6 +2288,9 @@ const DEFAULT_SETTINGS: Settings = {
   // pi, auditor follows), floor "high" — the auditor is the verification
   // gate, depth is worth more there than speed. /glla thinking= overrides.
   auditorThinkingLevel: undefined,
+  // v0.24.6: subagents inherit the session model by default — one quota
+  // pool, no surprise 403s from a pinned default agent's provider.
+  subagentModelStrategy: "inherit-parent",
 };
 
 // Two-tier config (v0.7.0): GLOBAL is the normal home — you set things once
@@ -2408,6 +2428,8 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
           `Notify command — ${show("notifyCmd", "(off)")}`,
           `Token limit per goal — ${show("tokenLimit", "(off)")}`,
           `Wedge alert minutes — ${show("wedgeAlertMinutes", `(${WEDGE_ALERT_DEFAULT_MINUTES}m default)`)}`,
+          `Subagent model strategy — ${show("subagentModelStrategy", "(inherit-parent)")}`,
+          `Subagent Explore model pin — ${loadSettings(ctx.cwd).subagentModelOverrides?.Explore ?? "(follows strategy)"}`,
           "Done",
         ],
       );
@@ -2800,6 +2822,22 @@ export default function (pi: ExtensionAPI): void {
     ensureAgentToolsActive(pi, ctx);
     warnOnCommandCollision(ctx);
     warnIfAuditorProviderRisky(ctx);
+    // v0.24.6: sync the pi-subagents model override (managed Explore.md) with
+    // settings. Idempotent; applies to NEW sessions (pi-subagents registers
+    // its agents at its own session start).
+    try {
+      const s = loadSettings(ctx.cwd);
+      const sync = syncSubagentModelOverrides({
+        agentDir: defaultAgentDir(),
+        strategy: s.subagentModelStrategy ?? "inherit-parent",
+        overrides: s.subagentModelOverrides,
+      });
+      for (const skip of sync.skipped) {
+        ctx.ui.notify(`glla subagent override skipped [${skip.name}]: ${skip.reason}`, "warning");
+      }
+    } catch (err) {
+      ctx.ui.notify(`glla subagent override sync failed: ${err instanceof Error ? err.message : String(err)}`, "warning");
+    }
     // Restore gate (v0.21.0): a fresh session ("startup"/"new", or a pi too
     // old to report a reason) has no conversation context for the restored
     // work — HOLD instead of auto-firing, so opening pi in a folder never
