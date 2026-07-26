@@ -1,6 +1,31 @@
 # Changelog
 
+## [0.26.9] — 2026-07-26
+
+### Fixed — restore gate is now a tri-state: never auto-start on session LOAD
+
+0.26.8 flipped the default to auto-resume on EVERY session start — wrong:
+loading pi and seeing the held-goal popup immediately fire work is a
+surprise. The correct rule (user-specified): **don't auto-start on session
+load; continue forever DURING the session unless big stuck.**
+
+- **`shouldAutoResumeOnSessionStart` tri-state**: `on` = auto-resume on
+  every session start (unattended rigs); `off` = never; **default
+  (undefined)** = HOLD when a human loads a session (`startup`/`new`/
+  `resume`/no-reason — popup shows what's waiting, explicit resume),
+  auto-resume on in-session machinery (`reload`/`fork` — an extension
+  reload or session fork must never strand work).
+- Mid-session continuation (agent_end chains, heartbeat refires,
+  post-compaction, list/loop transitions) was never gated here — it
+  auto-continues forever unless a super-stuck brake (stall escalation,
+  stale-api terminal, pending-latch watchdog) stops it loudly.
+- Status shows `autoResume=default (hold on load)`; hold text offers the
+  explicit resume + the `autoresume=on` opt-in; README/INSTALL updated.
+
+3 gate tests rewritten + 3 source tests retargeted (412 → 413).
+
 ## [0.26.8] — 2026-07-26
+
 
 ### Changed — autoresume defaults ON: keep pushing forward unless super stuck
 

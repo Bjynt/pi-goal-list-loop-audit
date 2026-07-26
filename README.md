@@ -199,7 +199,7 @@ No external watchdog plugin needed.
 /glla tokenlimit=10000000            # per-goal token budget (default: off) → GLOBAL
 /glla tokenlimit=0                   # explicitly no cap (the default)
 /glla wedgealert=30                  # hung-command alert minutes (default: 30, 0 = off)
-/glla autoresume=on                  # held goals/loops auto-resume in fresh sessions (unattended rigs)
+/glla autoresume=on                  # auto-resume goals/loops on session LOAD too (default: hold on load, auto-resume on reload/fork; off: never)
 /glla auditcap=5                     # pause the goal after N consecutive auditor disapprovals (default 5, 0 = unlimited)
 /glla aggressivemode=on               # keep-going defaults: autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs
 /glla quotaretryminutes=60            # minutes before auto-retrying a quota-exhausted auditor

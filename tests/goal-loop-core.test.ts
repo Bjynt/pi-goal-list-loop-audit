@@ -337,24 +337,27 @@ test("piGlaDir migrates a legacy .pi-gla dir exactly once (v0.17.0)", () => {
 
 // ---- session-restore gate (v0.21.0) ----
 
-test("restore gate: default (v0.26.8) auto-resumes EVERY session start", () => {
-  // "Keep pushing forward unless super stuck" — a process restart is not a
-  // reason to hold work; the stall brakes stop the machine when it IS stuck.
-  for (const reason of ["startup", "new", "resume", "reload", "fork", undefined]) {
+test("restore gate (v0.26.9 default): loading a session HOLDS, machinery auto-resumes", () => {
+  // A human loading a session must not trigger work — show the held popup.
+  for (const reason of ["startup", "new", "resume", undefined]) {
+    assert.equal(shouldAutoResumeOnSessionStart(reason, undefined), false, String(reason));
+  }
+  // In-session machinery never strands work.
+  for (const reason of ["reload", "fork"]) {
     assert.equal(shouldAutoResumeOnSessionStart(reason, undefined), true, String(reason));
+  }
+});
+
+test("restore gate: autoresume=on auto-resumes everywhere (unattended rigs)", () => {
+  for (const reason of ["startup", "new", "resume", "reload", "fork", undefined]) {
     assert.equal(shouldAutoResumeOnSessionStart(reason, true), true, String(reason));
   }
 });
 
-test("restore gate: explicit autoresume=off holds fresh sessions (v0.21.0 gate)", () => {
-  for (const reason of ["resume", "reload", "fork"]) {
-    assert.equal(shouldAutoResumeOnSessionStart(reason, false), true, reason);
+test("restore gate: autoresume=off never auto-resumes", () => {
+  for (const reason of ["startup", "new", "resume", "reload", "fork", undefined]) {
+    assert.equal(shouldAutoResumeOnSessionStart(reason, false), false, String(reason));
   }
-  for (const reason of ["startup", "new"]) {
-    assert.equal(shouldAutoResumeOnSessionStart(reason, false), false, reason);
-  }
-  // Older pi builds report no reason → hold (safe direction: no surprise work).
-  assert.equal(shouldAutoResumeOnSessionStart(undefined, false), false);
 });
 
 

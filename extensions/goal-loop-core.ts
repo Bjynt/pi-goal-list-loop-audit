@@ -660,16 +660,21 @@ export function cloneGoal(goal: Goal): Goal {
  * setting for unattended restarts). One mechanical predicate; no heuristics.
  */
 export function shouldAutoResumeOnSessionStart(reason: string | undefined, autoResume: boolean | undefined): boolean {
-  // v0.26.8: default flipped to ON — keep pushing forward on every session
-  // start unless the user explicitly opts out (/glla autoresume=off). The
-  // "super stuck" brakes (stall escalation, stale-api terminal, pending-
-  // latch watchdog) still stop the machine loudly; a mere process restart
-  // is not a reason to hold work. Explicit off preserves the v0.21.0 gate:
-  // only sessions with history (resume/reload/fork) auto-resume.
-  if (autoResume === false) {
-    return reason === "resume" || reason === "reload" || reason === "fork";
-  }
-  return true;
+  // v0.26.9 tri-state:
+  //   true      → auto-resume on EVERY session start (unattended rigs).
+  //   false     → never auto-resume; always hold for an explicit resume.
+  //   undefined → DEFAULT: a human LOADING a session ("startup"/"new"/
+  //               "resume", or old pi reporting no reason) must not trigger
+  //               work — show the held popup, they resume explicitly.
+  //               In-session MACHINERY ("reload"/"fork") auto-resumes so an
+  //               extension reload or session fork never strands work.
+  // Mid-session continuation (agent_end chains, heartbeat refires,
+  // post-compaction, list/loop transitions) is not gated here at all — it
+  // auto-continues forever unless a super-stuck brake (stall escalation,
+  // stale-api terminal, pending-latch watchdog) stops it loudly.
+  if (autoResume === true) return true;
+  if (autoResume === false) return false;
+  return reason === "reload" || reason === "fork";
 }
 
 /**
