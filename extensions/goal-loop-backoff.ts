@@ -90,6 +90,44 @@ export const MEASURE_TIMEOUT_MS = 10 * 60_000;
  * disapprove, never hang the completion gate forever. */
 export const AUDITOR_STALL_MS = 10 * 60_000;
 
+/** v0.26.5: pending-latch watchdog threshold. Field-observed failure: a
+ * continuation sent right at compaction was ACCEPTED by pi (sendMessage
+ * returned) but the turn trigger was dropped — pi's pending-message flag
+ * then stayed set forever. sessionIdle (= isIdle && !hasPendingMessages)
+ * never went true, so the heartbeat refire path AND the stall escalation
+ * were both suppressed: 22 minutes of total silence until a manual nudge.
+ * The wedge alert was blind too (22m < 30m threshold, and its "hung
+ * command" framing would be wrong anyway). This watchdog owns that
+ * shape: idle + pending + silent >= threshold = the latch is stuck. */
+export const PENDING_LATCH_STUCK_MS = 3 * 60_000;
+
+export interface PendingLatchInput {
+  /** A goal is active (autoContinue) or a loop is running. */
+  supervising: boolean;
+  /** ctx.isIdle() — the session is NOT mid-turn. */
+  idle: boolean;
+  /** ctx.hasPendingMessages() — pi believes a message is still queued. */
+  pending: boolean;
+  /** A continuation or loop timer is already scheduled. */
+  timerPending: boolean;
+  /** Milliseconds since the last observed agent activity. */
+  silentMs: number;
+  /** Threshold in ms; 0 disables the watchdog. */
+  thresholdMs: number;
+}
+
+/** Should the pending-latch watchdog count a stall right now? It never
+ * re-sends: the message is ALREADY queued pi-side, and the hegemon
+ * zombie proved re-sends don't unstick a dropped trigger (619 sends,
+ * zero turns). Count + notify + escalate to a loud stop instead. */
+export function shouldFirePendingLatchWatchdog(input: PendingLatchInput): boolean {
+  if (!input.supervising) return false;
+  if (!input.idle || !input.pending) return false;
+  if (input.timerPending) return false;
+  if (input.thresholdMs <= 0) return false;
+  return input.silentMs >= input.thresholdMs;
+}
+
 export interface WedgeInput {
   /** A goal is active (autoContinue) or a loop is running. */
   supervising: boolean;

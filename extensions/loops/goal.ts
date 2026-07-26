@@ -160,6 +160,8 @@ import {
   MEASURE_TIMEOUT_MS,
   WEDGE_ALERT_DEFAULT_MINUTES,
   shouldWedgeAlert,
+  PENDING_LATCH_STUCK_MS,
+  shouldFirePendingLatchWatchdog,
 } from "../goal-loop-backoff.js";
 
 // =================================================================
@@ -280,13 +282,72 @@ function startUITicker(): void {
   uiTicker.unref?.();
 }
 
+/** v0.26.5: shared loud-stop for both stall paths (refire streak and
+ * pending-latch streak). Returns true when it escalated. */
+function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
+  if (!shouldEscalateStall(consecutiveStalls, threshold)) return false;
+  consecutiveStalls = 0;
+  appendLedger(ctx.cwd, "stall_escalated", { threshold, kind: isLoopActive() ? "loop" : "goal" });
+  if (isLoopActive()) {
+    clearLoopTimer();
+    state.loop = { ...state.loop!, active: false, stopReason: `stalled: ${threshold} continuation refires landed no turn — the session is not continuing (wedged message queue or stale API). Restart pi, then /loop start again.` };
+    persistState(ctx);
+    ctx.ui.notify(`Loop stopped: ${threshold} refires produced no turn — the continuation is not landing. Restart pi and /loop start.`, "warning");
+    notifyExternal(ctx, "Loop stopped: stalled (continuation not landing).");
+    return true;
+  }
+  if (state.goal && state.goal.status === "active") {
+    updateGoal({
+      status: "paused",
+      pauseReason: `stalled: ${threshold} continuation refires landed no turn`,
+      pauseSuggestedAction: "The continuation chain is broken in this process (wedged message queue or stale API). Restart pi, then /goal resume.",
+    }, ctx);
+    ctx.ui.notify(`Goal paused: ${threshold} refires produced no turn. Restart pi, then /goal resume.`, "warning");
+    notifyExternal(ctx, "Goal paused: stalled (continuation not landing).");
+    return true;
+  }
+  return true;
+}
+
 function heartbeatTick(): void {
   const ctx = freshCtx();
   if (!ctx) return;
-  let sessionIdle = false;
+  let idle = false;
+  let pending = false;
   try {
-    sessionIdle = ctx.isIdle() && !ctx.hasPendingMessages();
+    idle = ctx.isIdle();
+    pending = ctx.hasPendingMessages();
   } catch {
+    return;
+  }
+  const sessionIdle = idle && !pending;
+  // v0.26.5: pending-latch watchdog — a queued continuation whose turn
+  // trigger was dropped (field-observed post-compaction: continuation
+  // ACCEPTED at compact+0s, then 22 minutes of silence). The stuck latch
+  // keeps sessionIdle false, which suppresses the refire path AND the
+  // stall escalation below — without this branch the session is silent
+  // forever. We never re-send here (the message is already queued
+  // pi-side; hegemon proved re-sends don't unstick a dropped trigger) —
+  // count, notify, escalate to a loud stop.
+  const latchSilentMs = Date.now() - lastActivityAt;
+  if (
+    shouldFirePendingLatchWatchdog({
+      supervising: isSupervising(),
+      idle,
+      pending,
+      timerPending: continuationTimer !== null || loopTimer !== null,
+      silentMs: latchSilentMs,
+      thresholdMs: PENDING_LATCH_STUCK_MS,
+    })
+  ) {
+    consecutiveStalls++;
+    appendLedger(ctx.cwd, "pending_latch_stuck", { consecutiveStalls, silentMs: latchSilentMs });
+    noteActivity(); // re-arm the 3-minute cadence; never resets the stall streak
+    const stallEscalation = loadSettings(ctx.cwd).stallEscalationRefires ?? DEFAULT_STALL_ESCALATION_REFIRES;
+    if (escalateStallNow(ctx, stallEscalation)) return;
+    const msg = `Heartbeat: a queued continuation never started its turn for ${Math.round(latchSilentMs / 60_000)}m — pi's pending-message latch appears stuck (known post-compaction failure; stall ${consecutiveStalls}/${stallEscalation > 0 ? stallEscalation : "∞"}). If this repeats, restart pi.`;
+    ctx.ui.notify(msg, "warning");
+    notifyExternal(ctx, msg);
     return;
   }
   const fire = shouldHeartbeatRefire({
@@ -305,7 +366,9 @@ function heartbeatTick(): void {
   if (
     shouldWedgeAlert({
       supervising: isSupervising(),
-      sessionBusy: !sessionIdle,
+      // v0.26.5: !idle, not !sessionIdle — an idle session with a stuck
+      // pending latch is the watchdog's job above, not a "hung command".
+      sessionBusy: !idle,
       silentMs: Date.now() - lastActivityAt,
       msSinceLastAlert: Date.now() - lastWedgeAlertAt,
       thresholdMs: wedgeMinutes * 60_000,
@@ -338,28 +401,7 @@ function heartbeatTick(): void {
   // this — they count turns, and a zombie runs none. Escalate to a loud,
   // actionable stop instead of spinning silently forever.
   const stallEscalation = loadSettings(ctx.cwd).stallEscalationRefires ?? DEFAULT_STALL_ESCALATION_REFIRES;
-  if (shouldEscalateStall(consecutiveStalls, stallEscalation)) {
-    consecutiveStalls = 0;
-    appendLedger(ctx.cwd, "stall_escalated", { threshold: stallEscalation, kind: isLoopActive() ? "loop" : "goal" });
-    if (isLoopActive()) {
-      clearLoopTimer();
-      state.loop = { ...state.loop!, active: false, stopReason: `stalled: ${stallEscalation} continuation refires landed no turn — the session is not continuing (wedged message queue or stale API). Restart pi, then /loop start again.` };
-      persistState(ctx);
-      ctx.ui.notify(`Loop stopped: ${stallEscalation} refires produced no turn — the continuation is not landing. Restart pi and /loop start.`, "warning");
-      notifyExternal(ctx, "Loop stopped: stalled (continuation not landing).");
-      return;
-    }
-    if (state.goal && state.goal.status === "active") {
-      updateGoal({
-        status: "paused",
-        pauseReason: `stalled: ${stallEscalation} continuation refires landed no turn`,
-        pauseSuggestedAction: "The continuation chain is broken in this process (wedged message queue or stale API). Restart pi, then /goal resume.",
-      }, ctx);
-      ctx.ui.notify(`Goal paused: ${stallEscalation} refires produced no turn. Restart pi, then /goal resume.`, "warning");
-      notifyExternal(ctx, "Goal paused: stalled (continuation not landing).");
-      return;
-    }
-  }
+  if (escalateStallNow(ctx, stallEscalation)) return;
   ctx.ui.notify(`Heartbeat: supervisor active but session stalled — re-firing continuation (stall ${consecutiveStalls}/${stallEscalation > 0 ? stallEscalation : "∞"}).`, "info");
   if (isLoopActive()) {
     scheduleLoopTick(ctx);

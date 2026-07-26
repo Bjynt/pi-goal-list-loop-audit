@@ -80,7 +80,7 @@ const CLASS_PATTERNS: Array<{ class: FindingClass; re: RegExp }> = [
  * the reviewer's own report/config vocabulary. Observed false positives
  * from the 0.26.2 completion: a test("…architectural…") name, the
  * INSTALL.md mode-matrix row, and ship-doc prose. */
-const SKIP_LINE = /^\s*(test|it|describe|assert|expect)\s*\(|^\s*(const|let|var|function|import|export|require)\b|\{\s*\.\.\.\s*\}|,\s*\.\.\.$|^\s*\||^\s*[{\[\]}]|^\s*['"]/;
+const SKIP_LINE = /^\s*(test|it|describe|assert|expect)\s*\(|^\s*(const|let|var|function|import|export|require)\b|\{\s*\.\.\.\s*\}|,\s*\.\.\.$|^\s*\||^\s*[{\[\]}]|^\s*['"]|^\s*ℹ/; // ℹ = test-runner/status noise ("ℹ todo 0" was enqueued as a /list item by the 0.26.2 reviewer)
 const REVIEWER_VOCAB = /architectural-class|bug-class|refactor-class|strategic-class|reviewer found|cascade step|\*\*Mode\*\*|problems\s*\/\s*\(?(improvements|architectural)/i;
 
 export function classifyFindingText(line: string): FindingClass | undefined {
