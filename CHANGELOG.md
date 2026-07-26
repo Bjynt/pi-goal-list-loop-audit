@@ -1,6 +1,35 @@
 # Changelog
 
+## [0.26.8] — 2026-07-26
+
+### Changed — autoresume defaults ON: keep pushing forward unless super stuck
+
+The v0.21.0 restore gate held goals/loops on fresh session starts unless
+the project opted in with `/glla autoresume=on`. That default was wrong
+for unattended rigs: every pi restart stranded in-flight work behind a
+manual `/goal resume` (field-observed in dracon-utilities: after a
+max-output-token error killed the turn and the pre-0.26.1 silent-send
+bug spun refires for 8h, the user's restart *paused* the goal with
+"restored in a fresh session" instead of continuing it).
+
+- **`shouldAutoResumeOnSessionStart`** — default (`undefined`) now
+  auto-resumes on EVERY session start. Explicit `/glla autoresume=off`
+  preserves the v0.21.0 gate (fresh sessions hold; resume/reload/fork
+  still auto-resume).
+- **`/glla autoresume=off` now persists `false`** (was `undefined`) —
+  required for the opt-out to survive the new default.
+- **The "super stuck" brakes are unchanged**: stall escalation,
+  stale-api terminal stop, pending-latch watchdog, wedge alert all still
+  stop the machine loudly. A process restart is not stuck; a dead turn
+  trigger is.
+- Status line shows `autoResume=on (default)`; hold texts name the
+  opt-out as the cause.
+
+2 gate tests updated to the new semantics + 3 new source tests
+(410 → 412).
+
 ## [0.26.7] — 2026-07-26
+
 
 ### Fixed — stale extension api is now terminal-and-loud, not retried forever
 
