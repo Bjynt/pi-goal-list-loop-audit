@@ -33,6 +33,7 @@ import {
   auditFeedbackExcerpt,
   DEFAULT_AUDIT_FEEDBACK_CHARS,
   DEFAULT_QUOTA_RETRY_MINUTES,
+  DEFAULT_STALL_ESCALATION_REFIRES,
   DEFAULT_TOKEN_LIMIT,
   classifyImpossibleReason,
   extractPendingTasks,
@@ -50,6 +51,7 @@ import {
   ledgerPath,
   crossRecommendMode,
   formatListDepth,
+  shouldEscalateStall,
   shouldSuppressHeartbeatForRecentShip,
   mergeSettings,
   parseListImport,
@@ -231,10 +233,16 @@ const countedLoopTokenMessages = new Set<string>();
 let lastActivityAt = Date.now();
 let lastWedgeAlertAt = 0;
 let heartbeatNudges = 0;
+// v0.26.1: consecutive heartbeat refires that produced NO real agent turn.
+// Resets only on real activity (agent_end / tool_call) — never on the
+// refire's own noteActivity, which is what made the hegemon zombie spin
+// self-sustaining (619 refires / 23.5h / zero turns).
+let consecutiveStalls = 0;
 let heartbeatTimer: NodeJS.Timeout | null = null;
 
-function noteActivity(): void {
+function noteActivity(real = false): void {
   lastActivityAt = Date.now();
+  if (real) consecutiveStalls = 0;
 }
 
 function isSupervising(): boolean {
@@ -323,8 +331,36 @@ function heartbeatTick(): void {
     return;
   }
   noteActivity();
-  appendLedger(ctx.cwd, "heartbeat_refire", { nudgesSoFar: heartbeatNudges });
-  ctx.ui.notify("Heartbeat: supervisor active but session stalled — re-firing continuation.", "info");
+  consecutiveStalls++;
+  appendLedger(ctx.cwd, "heartbeat_refire", { nudgesSoFar: heartbeatNudges, consecutiveStalls });
+  // v0.26.1: a refire streak means the continuation is NOT landing (wedged
+  // message queue, stale API handle, dead turn trigger). Nudges can't catch
+  // this — they count turns, and a zombie runs none. Escalate to a loud,
+  // actionable stop instead of spinning silently forever.
+  const stallEscalation = loadSettings(ctx.cwd).stallEscalationRefires ?? DEFAULT_STALL_ESCALATION_REFIRES;
+  if (shouldEscalateStall(consecutiveStalls, stallEscalation)) {
+    consecutiveStalls = 0;
+    appendLedger(ctx.cwd, "stall_escalated", { threshold: stallEscalation, kind: isLoopActive() ? "loop" : "goal" });
+    if (isLoopActive()) {
+      clearLoopTimer();
+      state.loop = { ...state.loop!, active: false, stopReason: `stalled: ${stallEscalation} continuation refires landed no turn — the session is not continuing (wedged message queue or stale API). Restart pi, then /loop start again.` };
+      persistState(ctx);
+      ctx.ui.notify(`Loop stopped: ${stallEscalation} refires produced no turn — the continuation is not landing. Restart pi and /loop start.`, "warning");
+      notifyExternal(ctx, "Loop stopped: stalled (continuation not landing).");
+      return;
+    }
+    if (state.goal && state.goal.status === "active") {
+      updateGoal({
+        status: "paused",
+        pauseReason: `stalled: ${stallEscalation} continuation refires landed no turn`,
+        pauseSuggestedAction: "The continuation chain is broken in this process (wedged message queue or stale API). Restart pi, then /goal resume.",
+      }, ctx);
+      ctx.ui.notify(`Goal paused: ${stallEscalation} refires produced no turn. Restart pi, then /goal resume.`, "warning");
+      notifyExternal(ctx, "Goal paused: stalled (continuation not landing).");
+      return;
+    }
+  }
+  ctx.ui.notify(`Heartbeat: supervisor active but session stalled — re-firing continuation (stall ${consecutiveStalls}/${stallEscalation > 0 ? stallEscalation : "∞"}).`, "info");
   if (isLoopActive()) {
     scheduleLoopTick(ctx);
   } else {
@@ -3549,7 +3585,7 @@ export default function (pi: ExtensionAPI): void {
     // v0.23.8: a subagent finishing must not drive the main session's
     // continuation loop.
     if (isForeignCtx(ctx)) return;
-    noteActivity();
+    noteActivity(true);
     // v0.25.2: per-goal turn telemetry (/glla stats).
     if (state.goal && state.goal.status === "active") {
       const t = state.goal.telemetry ?? { turns: 0, fileWrites: 0, bashCalls: 0 };
@@ -3650,7 +3686,7 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on("tool_call", () => {
     toolCallsThisTurn++;
-    noteActivity();
+    noteActivity(true);
     // v0.24.0: count loop-iteration tool calls (narration-only detection).
     if (isLoopActive()) {
       state.loop!.toolsThisTurn = (state.loop!.toolsThisTurn ?? 0) + 1;

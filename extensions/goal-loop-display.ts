@@ -81,17 +81,20 @@ export interface AuditDisplayProgress {
  * One-line status for ctx.ui.setStatus("pi-glla", …).
  * Returns undefined when nothing is being supervised (clears the segment).
  */
-export function buildStatusText(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme): string | undefined {
+export function buildStatusText(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: { stalls?: number }): string | undefined {
   if (state.loop?.active) {
     const l = state.loop;
+    // v0.26.1: surface the refire streak — a spinning supervisor is the
+    // zombie signature (hegemon incident: 619 refires, 0 turns).
+    const stallSuffix = (extras?.stalls ?? 0) > 0 ? ` · ${paint(theme, "warning", `stalls:${extras!.stalls}`)}` : "";
     // v0.23.0: metricless spec loop — no arrow/best/stall, no plateau.
     if (!l.measureCmd) {
-      return `glla: loop ${paint(theme, "accent", "∞")} iter ${l.iteration}${l.maxIterations > 0 ? `/${l.maxIterations}` : ""} · metricless`;
+      return `glla: loop ${paint(theme, "accent", "∞")} iter ${l.iteration}${l.maxIterations > 0 ? `/${l.maxIterations}` : ""} · metricless${stallSuffix}`;
     }
     const arrow = paint(theme, "accent", l.direction === "min" ? "↓" : "↑");
     const stallText = `stall ${l.stallCount}/${l.plateauWindow}`;
     const stall = l.stallCount >= l.plateauWindow - 1 ? paint(theme, "warning", stallText) : stallText;
-    return `glla: loop ${arrow} iter ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"} · best ${l.bestValue ?? "n/a"} · ${stall}`;
+    return `glla: loop ${arrow} iter ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"} · best ${l.bestValue ?? "n/a"} · ${stall}${stallSuffix}`;
   }
   const g = state.goal;
   if (!g) return undefined;
@@ -146,8 +149,8 @@ function countTotal(g: Goal): number {
  * Widget lines for ctx.ui.setWidget("pi-glla", lines).
  * Returns undefined when nothing is worth showing.
  */
-export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, width?: number): string[] | undefined {
-  if (state.loop?.active) return loopLines(state.loop, now, theme, width);
+export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, width?: number, extras?: { stalls?: number }): string[] | undefined {
+  if (state.loop?.active) return loopLines(state.loop, now, theme, width, extras);
   const g = state.goal;
   if (!g) return undefined;
   if (g.status === "complete" || g.status === "aborted") return undefined;
@@ -202,12 +205,14 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   return lines;
 }
 
-function loopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: number): string[] {
+function loopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: number, extras?: { stalls?: number }): string[] {
+  // v0.26.1: the refire streak, shown only while nonzero.
+  const stallNote = (extras?.stalls ?? 0) > 0 ? ` · ${paint(theme, "warning", `stalls:${extras!.stalls}`)}` : "";
   // v0.23.0: metricless spec loop — no arrow/best/stall, no plateau.
   if (!l.measureCmd) {
     const lines = [
       `${paint(theme, "accent", "●")} ${truncate(l.target, budgetFor(width, 3, 64))}`,
-      `├─ loop ∞ iter ${l.iteration}${l.maxIterations > 0 ? `/${l.maxIterations}` : ""} · ${fmtElapsed(now - Date.parse(l.startedAt))}`,
+      `├─ loop ∞ iter ${l.iteration}${l.maxIterations > 0 ? `/${l.maxIterations}` : ""} · ${fmtElapsed(now - Date.parse(l.startedAt))}${stallNote}`,
       `└─ ${paint(theme, "dim", "metricless — work the spec (no plateau)")}`,
     ];
     if (l.branchName) lines.push(`⎇ ${paint(theme, "muted", truncate(l.branchName, budgetFor(width, 3, 50)))}`);

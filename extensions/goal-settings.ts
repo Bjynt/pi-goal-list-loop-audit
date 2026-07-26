@@ -49,6 +49,9 @@ export interface Settings {
   /** Consecutive stuck interventions before a loop stops (default 5,
    * 10 under aggressiveMode). */
   stuckMaxInterventions?: number;
+  /** v0.26.1: consecutive heartbeat refires without a real turn before
+   * the goal pauses / loop stops (default 5; 0 = never escalate). */
+  stallEscalationRefires?: number;
   /** on → propose_* drafts activate WITHOUT the Confirm dialog and the
    * interview floor is skipped — the seed carries the intent (unattended
    * rigs). Default off: nothing activates before the user confirms. */
@@ -127,6 +130,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "aggressiveMode",
   "quotaRetryMinutes",
   "stuckMaxInterventions",
+  "stallEscalationRefires",
 ];
 
 /** Where each effective setting comes from (for the /glla display). */

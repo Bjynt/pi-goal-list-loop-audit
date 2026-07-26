@@ -11,6 +11,17 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
 
+/** v0.26.1: consecutive heartbeat refires without a real agent turn
+ * before the supervisor gives up (pauses the goal / stops the loop).
+ * 0 = never escalate (legacy silent-spin behavior). */
+export const DEFAULT_STALL_ESCALATION_REFIRES = 5;
+
+/** v0.26.1: pure gate — has the refire streak hit the escalation
+ * threshold? threshold 0 disables escalation entirely. */
+export function shouldEscalateStall(consecutiveStalls: number, threshold: number): boolean {
+  return threshold > 0 && consecutiveStalls >= threshold;
+}
+
 // =================================================================
 // Types
 // =================================================================
