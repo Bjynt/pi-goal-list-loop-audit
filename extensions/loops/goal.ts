@@ -595,8 +595,12 @@ function fireReviewer(
     } catch {
       /* archive md may not exist for manual review of a live goal */
     }
+    // v0.26.4 source curation: an APPROVED audit report is the executor's
+    // own completion claims — meta-text with zero finding signal (the
+    // 0.26.2/0.26.3 misfires both mined it). Disapprovals/errors carry the
+    // independent auditor's required-fixes — the real findings.
     const auditTexts = readAuditLog(ctx.cwd)
-      .filter((e) => e.goalId === source.goalId)
+      .filter((e) => e.goalId === source.goalId && (e.verdict === "disapproved" || e.verdict === "error"))
       .map((e) => e.report);
     for (const t of auditTexts) sources.push({ name: "audit", text: t });
     let ledgerEntries: Array<{ type: string; at?: string; value?: any }> = [];

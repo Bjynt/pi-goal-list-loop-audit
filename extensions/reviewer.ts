@@ -80,8 +80,8 @@ const CLASS_PATTERNS: Array<{ class: FindingClass; re: RegExp }> = [
  * the reviewer's own report/config vocabulary. Observed false positives
  * from the 0.26.2 completion: a test("…architectural…") name, the
  * INSTALL.md mode-matrix row, and ship-doc prose. */
-const SKIP_LINE = /^\s*(test|it|describe|assert|expect)\s*\(|^\s*(const|let|var|function|import|export|require)\b|\{\s*\.\.\.\s*\}|,\s*\.\.\.$|^\s*\|/;
-const REVIEWER_VOCAB = /architectural-class|bug-class|refactor-class|strategic-class|reviewer found|cascade step|\*\*Mode\*\*|problems\s*\/\s*(improvements|architectural)/i;
+const SKIP_LINE = /^\s*(test|it|describe|assert|expect)\s*\(|^\s*(const|let|var|function|import|export|require)\b|\{\s*\.\.\.\s*\}|,\s*\.\.\.$|^\s*\||^\s*[{\[\]}]|^\s*['"]/;
+const REVIEWER_VOCAB = /architectural-class|bug-class|refactor-class|strategic-class|reviewer found|cascade step|\*\*Mode\*\*|problems\s*\/\s*\(?(improvements|architectural)/i;
 
 export function classifyFindingText(line: string): FindingClass | undefined {
   const t = line.trim();
@@ -93,12 +93,23 @@ export function classifyFindingText(line: string): FindingClass | undefined {
   return undefined;
 }
 
-/** Scan source texts line-by-line for finding-shaped content. */
+/** v0.26.4: remove fenced code blocks and inline code spans. Quoted
+ * code is how completion summaries leak vocabulary into extraction —
+ * the 0.26.3 misfire matched a backticked reviewer.ts line containing
+ * four architectural patterns. */
+export function stripCodeSpans(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`[^`\n]*`/g, " ");
+}
+
+/** Scan source texts line-by-line for finding-shaped content. Code
+ * spans are stripped first (v0.26.4) — findings live in prose. */
 export function extractFindings(sources: Array<{ name: string; text: string }>, max: number): Finding[] {
   const out: Finding[] = [];
   const seen = new Set<string>();
   for (const { name, text } of sources) {
-    for (const line of text.split("\n")) {
+    for (const line of stripCodeSpans(text).split("\n")) {
       const cls = classifyFindingText(line);
       if (!cls) continue;
       const clean = line.trim().replace(/^[-*>\s\[\]x]+/, "").slice(0, 200);
