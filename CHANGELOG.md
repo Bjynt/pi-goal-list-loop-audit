@@ -1,6 +1,35 @@
 # Changelog
 
+## [0.26.1] — 2026-07-26
+
+### Fixed — the zombie spin (stall handling)
+
+Incident: a hegemon spec loop produced zero turns while the heartbeat
+re-fired every 60s for 23.5h (619 `heartbeat_refire` events, exactly
+10/10min, zero gaps). The send path was silent, the nudge counter counts
+turns (zombies run none), and nothing hooked compaction.
+
+- **Send-path instrumentation** — `loop_turn_sent`,
+  `loop_turn_send_failed` (error text), `goal_continuation_sent`,
+  `goal_continuation_send_failed` ledger events. The previously silent
+  catch (`// stale API — next agent_end reschedules`) now leaves
+  evidence.
+- **Refire-streak escalation** — `consecutiveStalls` increments per
+  heartbeat refire and resets only on real activity (`agent_end` /
+  `tool_call`). At `stallEscalationRefires` (default 5, 0 = never) the
+  loop stops / the goal pauses with `stalled: continuation not landing`
+  + `stall_escalated` ledger + TUI warning + external notify.
+- **`session_compact` hook** — re-arms the continuation chain ~2s after
+  compaction when idle with nothing scheduled (`session_compact` /
+  `compaction_refire` ledger events).
+- **Stall surface** — status line + widget show `stalls:N` while the
+  streak is nonzero; the refire notify names the streak
+  (`stall 2/5`).
+
+8 new tests (365 → 373).
+
 ## [0.26.0] — 2026-07-25
+
 
 ### Added — the Reviewer: post-completion follow-up enqueuer
 

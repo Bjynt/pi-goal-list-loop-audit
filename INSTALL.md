@@ -266,3 +266,34 @@ never triggers it. Configure per-project via `/glla reviewer`
 (enable, leverage mode, fire-on, cascade steps, caps) — the block lives
 in `.pi-glla/settings.json`. Re-review any archived goal with
 `/review <goal-id>` (bypasses the trigger gates).
+
+## Stall handling (v0.26.1) — the zombie killer
+
+Motivating incident (hegemon, 2026-07-25/26): a metricless spec loop
+stopped producing turns; the heartbeat re-fired every 60s for **23.5
+hours** (619 refires, zero turns, zero tokens) while the status line
+still read "active". Three gaps made it invisible: the send path was
+silent, the nudge counter counts *turns* (a zombie runs none), and no
+compaction hook existed.
+
+What ships:
+
+- **Send-path ledger instrumentation** — `loop_turn_sent` /
+  `loop_turn_send_failed` (with the error text) and
+  `goal_continuation_sent` / `goal_continuation_send_failed` are now in
+  `.pi-glla/active.jsonl`. A stall is diagnosable from the ledger alone:
+  refires without matching `*_sent` = the send is throwing; `*_sent`
+  without a following turn = the turn trigger is dead.
+- **Refire-streak escalation** — consecutive heartbeat refires that
+  produce no real agent turn are counted (reset only by `agent_end` /
+  `tool_call`, never by the refire itself). At the threshold (default 5,
+  `/glla stallescalation=N`, 0 = never) the supervisor stops spinning:
+  the loop stops / the goal pauses with `stalled: continuation not
+  landing`, a `stall_escalated` ledger event, a TUI warning, and an
+  external notify. The fix on the box: restart pi, resume.
+- **Compaction hook** — `session_compact` now re-arms the continuation
+  chain ~2s after compaction when the session is idle with nothing
+  scheduled (`session_compact` + `compaction_refire` ledger events), so
+  post-compaction recovery no longer waits for the 60s heartbeat.
+- **Stall surface** — the status line and widget show `stalls:N` while
+  the streak is nonzero, so a spinning supervisor is visible at a glance.

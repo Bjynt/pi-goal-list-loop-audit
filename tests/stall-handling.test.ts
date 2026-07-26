@@ -1,0 +1,98 @@
+// pi-goal-list-loop-audit — v0.26.1
+// tests/stall-handling.test.ts
+//
+// Stall handling: send-path ledger instrumentation, refire-streak
+// escalation, compaction hook, widget surface. Motivating incident:
+// hegemon 2026-07-25/26 — 619 heartbeat_refires over 23.5h with zero
+// loop turns; the send path was silent and the nudge counter (which
+// counts TURNS) could never catch a zombie that runs none.
+
+import { test } from "node:test";
+import * as assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+
+import {
+  DEFAULT_STALL_ESCALATION_REFIRES,
+  shouldEscalateStall,
+} from "../extensions/goal-loop-core.ts";
+import { loadSettings, saveSettings } from "../extensions/goal-settings.ts";
+import { buildStatusText, buildWidgetLines } from "../extensions/goal-loop-display.ts";
+
+const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+
+test("escalation gate: threshold semantics (0 = never, N = fire at streak N)", () => {
+  assert.equal(shouldEscalateStall(5, 5), true);
+  assert.equal(shouldEscalateStall(4, 5), false);
+  assert.equal(shouldEscalateStall(6, 5), true);
+  assert.equal(shouldEscalateStall(999, 0), false, "0 disables escalation (legacy spin)");
+  assert.equal(DEFAULT_STALL_ESCALATION_REFIRES, 5);
+});
+
+test("send paths are ledgered: sent AND failed, loop and goal", () => {
+  for (const ev of ["loop_turn_sent", "loop_turn_send_failed", "goal_continuation_sent", "goal_continuation_send_failed"]) {
+    assert.ok(SRC.includes(`"${ev}"`), `missing ledger event ${ev}`);
+  }
+  // The failure branch must capture the error message (was: silent catch).
+  assert.match(SRC, /loop_turn_send_failed", \{ error: err instanceof Error/);
+});
+
+test("refire streak: incremented on refire, ledgered, reset only on REAL activity", () => {
+  assert.match(SRC, /consecutiveStalls\+\+;\n\s*appendLedger\(ctx\.cwd, "heartbeat_refire", \{ nudgesSoFar: heartbeatNudges, consecutiveStalls \}\)/);
+  // agent_end and tool_call are real activity:
+  assert.match(SRC, /if \(isForeignCtx\(ctx\)\) return;\n\s*noteActivity\(true\);/);
+  assert.match(SRC, /toolCallsThisTurn\+\+;\n\s*noteActivity\(true\);/);
+  // the heartbeat refire itself must NOT reset the streak:
+  const def = SRC.match(/function noteActivity\(real = false\): void \{[\s\S]*?\}/)![0];
+  assert.match(def, /if \(real\) consecutiveStalls = 0;/);
+});
+
+test("escalation: streak at threshold stops the loop / pauses the goal, loudly", () => {
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "stall_escalated", \{ threshold: stallEscalation/);
+  assert.match(SRC, /stalled: \$\{stallEscalation\} continuation refires landed no turn/);
+  assert.match(SRC, /notifyExternal\(ctx, "Loop stopped: stalled \(continuation not landing\)\."\)/);
+  assert.match(SRC, /notifyExternal\(ctx, "Goal paused: stalled \(continuation not landing\)\."\)/);
+  // the escalation return happens BEFORE the schedule (no more refires):
+  const escIdx = SRC.indexOf('"stall_escalated"');
+  const refireScheduleIdx = SRC.indexOf('re-firing continuation (stall');
+  assert.ok(escIdx < refireScheduleIdx, "escalation precedes the refire schedule");
+});
+
+test("session_compact hook: re-arms the chain when idle with no timer pending", () => {
+  assert.match(SRC, /pi\.on\("session_compact", async \(_event: any, ctx: ExtensionContext\) => \{/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "session_compact", \{\}\)/);
+  assert.match(SRC, /appendLedger\(c\.cwd, "compaction_refire", \{\}\)/);
+  // only when nothing is scheduled and the session is idle:
+  assert.match(SRC, /c\.isIdle\(\) && !c\.hasPendingMessages\(\) && continuationTimer === null && loopTimer === null && isSupervising\(\)/);
+});
+
+test("widget + status surface the streak only while nonzero", () => {
+  const loop = {
+    active: true, target: "reconcile the spec", measureCmd: "", iteration: 0,
+    maxIterations: 0, stallCount: 0, plateauWindow: 5, startedAt: new Date(Date.now() - 3600_000).toISOString(),
+    history: [],
+  };
+  const state: any = { loop, goal: undefined, list: [] };
+  const quiet = buildWidgetLines(state, null, Date.now(), undefined, undefined, { stalls: 0 })!;
+  const stalled = buildWidgetLines(state, null, Date.now(), undefined, undefined, { stalls: 3 })!;
+  assert.ok(!quiet.some((l) => l.includes("stalls:")), "no stalls note at 0");
+  assert.ok(stalled.some((l) => l.includes("stalls:3")), "stalls note at 3");
+  const statusQuiet = buildStatusText(state, null, Date.now(), undefined, { stalls: 0 })!;
+  const statusStalled = buildStatusText(state, null, Date.now(), undefined, { stalls: 7 })!;
+  assert.ok(!statusQuiet.includes("stalls:"));
+  assert.ok(statusStalled.includes("stalls:7"));
+});
+
+test("settings: stallEscalationRefires round-trips through save/load", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-stall-"));
+  saveSettings("project", dir, { stallEscalationRefires: 3 });
+  assert.equal(loadSettings(dir).stallEscalationRefires, 3);
+  saveSettings("project", dir, { stallEscalationRefires: 0 });
+  assert.equal(loadSettings(dir).stallEscalationRefires, 0, "0 persists (never-escalate opt-out)");
+});
+
+test("/glla surface: stallescalation completion + key=value parser branch", () => {
+  assert.match(SRC, /\["stallescalation=", "N: heartbeat refires without a turn/);
+  assert.match(SRC, /key === "stallescalation" \|\| key === "stallescalationrefires"/);
+});
