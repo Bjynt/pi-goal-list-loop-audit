@@ -1,6 +1,32 @@
 # Changelog
 
+## [0.26.6] — 2026-07-26
+
+### Fixed — heartbeat ship-suppression was self-sustaining (darklord 9.1h stall)
+
+Field-observed in darklord: after a post-compaction
+`goal_continuation_send_failed`, the heartbeat logged **2,184 consecutive
+`heartbeat_suppressed` ticks over 9.1 hours** while the finished list
+item sat uncompleted and 16 queued items waited. Root cause: the 0.25.0
+"recent ship (<5m)" suppression fed `lastShippedAtMs`, which read the
+`.pi-glla/active.jsonl` **mtime** — and the heartbeat's own
+suppressed-tick ledger writes refreshed that mtime every 15s.
+Suppression forever. (Under an auto-committing daemon the git-head term
+self-sustains identically.)
+
+- **Suppression removed from the heartbeat.** The legit windows it
+  meant to cover are already guarded precisely: busy mid-turn, pending
+  messages, scheduled timers.
+- **`completionAuditInFlight` flag** wraps the complete_goal auditor
+  call (try/finally) — the one real transition window, now detected
+  exactly instead of by wall-clock heuristic.
+- **`lastShippedAtMs` drops the ledger-mtime term** (git commit time
+  only); `shouldSuppressHeartbeatForRecentShip` kept but deprecated.
+
+6 new tests + 1 updated (400 → 405).
+
 ## [0.26.5] — 2026-07-26
+
 
 ### Fixed — pending-latch stall (post-compaction silence, field-observed)
 

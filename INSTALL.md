@@ -282,7 +282,9 @@ after a second live self-match on the 0.26.3 completion). Stalls are
 watched three ways: refire streaks and a pending-latch watchdog (a queued
 continuation whose turn trigger was dropped — seen post-compaction) both
 escalate to a loud pause/stop, and busy-session wedges alert at 30m
-(v0.26.5). In `auto` the 5-minute refire window is skipped for
+(v0.26.5). The heartbeat never suppresses itself on "recent ship" — that
+heuristic self-sustained via state-file mtime (v0.26.6, after a 9.1h
+darklord stall). In `auto` the 5-minute refire window is skipped for
 list-complete events (the queue emptying is the cascade's natural
 rhythm); the per-day cap (`maxReviewsPerDay`, default 20) still bounds
 everything.
