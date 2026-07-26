@@ -65,16 +65,28 @@ export interface Finding {
 /** Leverage classification (contract item 5). Order matters: strategic
  * and architectural win over bug/refactor — "should we rewrite this
  * broken schema" is a decision, not a fix. */
+// v0.26.3: the bare words "architectural"/"strategic" are REMOVED — they
+// self-matched the reviewer's own vocabulary ("architectural-class",
+// "architectural findings", the docs' mode matrix) and produced 3 junk
+// findings on the 0.26.2 completion, observed live.
 const CLASS_PATTERNS: Array<{ class: FindingClass; re: RegExp }> = [
-  { class: "strategic", re: /\bshould we\b|\bdeprecat|ship this\??|strategic/i },
-  { class: "architectural", re: /\brewrite\b|new dependency|schema change|architectural|redesign/i },
+  { class: "strategic", re: /\bshould we\b|\bdeprecat|ship this\??/i },
+  { class: "architectural", re: /\brewrite\b|new dependency|schema change|\bredesign\b/i },
   { class: "bug", re: /\bTODO\b|\bFIXME\b|\bbug\b|\bissue\b|regression|broken|\bfixme\b/i },
   { class: "refactor", re: /could be cleaner|consider refactoring|duplicat|refactor|left ?out|follow[\s-]?up|deferred|could be improved|improvement|enhancement|consider adding|would be nice|nice to have/i },
 ];
 
+/** v0.26.3: lines that never carry findings — code, markdown tables, and
+ * the reviewer's own report/config vocabulary. Observed false positives
+ * from the 0.26.2 completion: a test("…architectural…") name, the
+ * INSTALL.md mode-matrix row, and ship-doc prose. */
+const SKIP_LINE = /^\s*(test|it|describe|assert|expect)\s*\(|^\s*(const|let|var|function|import|export|require)\b|\{\s*\.\.\.\s*\}|,\s*\.\.\.$|^\s*\|/;
+const REVIEWER_VOCAB = /architectural-class|bug-class|refactor-class|strategic-class|reviewer found|cascade step|\*\*Mode\*\*|problems \/ improvements found/i;
+
 export function classifyFindingText(line: string): FindingClass | undefined {
   const t = line.trim();
   if (t.length < 8) return undefined;
+  if (SKIP_LINE.test(t) || REVIEWER_VOCAB.test(t)) return undefined;
   for (const { class: cls, re } of CLASS_PATTERNS) {
     if (re.test(t)) return cls;
   }
