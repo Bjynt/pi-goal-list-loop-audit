@@ -274,9 +274,11 @@ through everything it finds — problems, improvements ("consider
 adding…", "could be improved", "enhancement" are extracted too), then
 the regression-scan audit — until the findings run dry. Strategic
 findings (`should we…`) stay notify-only in every mode: decisions never
-auto-fire. Extraction ignores code lines, markdown tables, and the
-reviewer's own report vocabulary (v0.26.3 — after a live self-match on
-the 0.26.2 completion). In `auto` the 5-minute refire window is skipped for
+auto-fire. Extraction ignores code lines, markdown tables, code spans, and the
+reviewer's own report vocabulary (v0.26.3), and findings are mined only
+from the archive plus DISAPPROVED/error audit reports — an approved
+report is the executor's self-claims, zero finding signal (v0.26.4,
+after a second live self-match on the 0.26.3 completion). In `auto` the 5-minute refire window is skipped for
 list-complete events (the queue emptying is the cascade's natural
 rhythm); the per-day cap (`maxReviewsPerDay`, default 20) still bounds
 everything.

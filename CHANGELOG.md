@@ -1,6 +1,31 @@
 # Changelog
 
+## [0.26.4] — 2026-07-26
+
+### Fixed — reviewer source curation (stop mining meta-text)
+
+The 0.26.3 completion produced ANOTHER junk review (4 false
+"architectural" findings): the executor's own verification prose, a
+backticked `reviewer.ts` code line that slips every 0.26.3 line guard,
+and test fixtures quoting the previous false positives. Regex guards
+lose the arms race against meta-text — the fix is curating WHAT gets
+scanned.
+
+- **Approved audit reports are no longer finding sources.** An approved
+  report is the executor's self-claims — zero finding signal. Only
+  `disapproved` / `error` entries contribute (the independent auditor's
+  required-fixes — the highest-signal findings that exist).
+- **`stripCodeSpans`** — fenced blocks and inline code spans are removed
+  before extraction; quoted code was the vocabulary leak.
+- **Line guards extended** — brace-led (`{`, `[`, `}`) and quote-led
+  (`'`, `"`) lines are code-ish, never findings; the mode-matrix vocab
+  guard tolerates an opening paren.
+
+6 new tests (389 → 395) pinning the exact 4 lines from the live 0.26.3
+misfire.
+
 ## [0.26.3] — 2026-07-26
+
 
 ### Fixed — reviewer extraction false positives (observed live)
 
