@@ -49,8 +49,10 @@ test("refire streak: incremented on refire, ledgered, reset only on REAL activit
 });
 
 test("escalation: streak at threshold stops the loop / pauses the goal, loudly", () => {
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "stall_escalated", \{ threshold: stallEscalation/);
-  assert.match(SRC, /stalled: \$\{stallEscalation\} continuation refires landed no turn/);
+  // v0.26.5: the escalation block is shared via escalateStallNow(ctx, threshold):
+  assert.match(SRC, /function escalateStallNow\(ctx: ExtensionContext, threshold: number\): boolean/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "stall_escalated", \{ threshold, kind:/);
+  assert.match(SRC, /stalled: \$\{threshold\} continuation refires landed no turn/);
   assert.match(SRC, /notifyExternal\(ctx, "Loop stopped: stalled \(continuation not landing\)\."\)/);
   assert.match(SRC, /notifyExternal\(ctx, "Goal paused: stalled \(continuation not landing\)\."\)/);
   // the escalation return happens BEFORE the schedule (no more refires):

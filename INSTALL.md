@@ -278,7 +278,11 @@ auto-fire. Extraction ignores code lines, markdown tables, code spans, and the
 reviewer's own report vocabulary (v0.26.3), and findings are mined only
 from the archive plus DISAPPROVED/error audit reports — an approved
 report is the executor's self-claims, zero finding signal (v0.26.4,
-after a second live self-match on the 0.26.3 completion). In `auto` the 5-minute refire window is skipped for
+after a second live self-match on the 0.26.3 completion). Stalls are
+watched three ways: refire streaks and a pending-latch watchdog (a queued
+continuation whose turn trigger was dropped — seen post-compaction) both
+escalate to a loud pause/stop, and busy-session wedges alert at 30m
+(v0.26.5). In `auto` the 5-minute refire window is skipped for
 list-complete events (the queue emptying is the cascade's natural
 rhythm); the per-day cap (`maxReviewsPerDay`, default 20) still bounds
 everything.

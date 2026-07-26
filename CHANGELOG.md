@@ -1,6 +1,37 @@
 # Changelog
 
+## [0.26.5] — 2026-07-26
+
+### Fixed — pending-latch stall (post-compaction silence, field-observed)
+
+A continuation sent at compaction+0s was ACCEPTED by pi
+(`goal_continuation_sent` ledgered) but the turn trigger was dropped;
+pi's pending-message flag then stayed set for **22 minutes**.
+`sessionIdle` (= `isIdle && !hasPendingMessages`) never went true, which
+suppressed the heartbeat refire path AND the 0.26.1 stall escalation —
+and the wedge alert was blind too (22m < 30m threshold, and its "hung
+command" framing would have been wrong). Total silence until a manual
+nudge.
+
+- **New `pending_latch_stuck` watchdog** (`shouldFirePendingLatchWatchdog`,
+  `PENDING_LATCH_STUCK_MS = 3m` in goal-loop-backoff): supervising +
+  idle + pending + no timers + silent ≥ 3m → count a stall, ledger, warn.
+  It never re-sends — the message is already queued pi-side and the
+  hegemon zombie proved re-sends don't unstick a dropped trigger
+  (619 sends, zero turns). Stalls share the 0.26.1 escalation, now
+  factored as `escalateStallNow` — 5 strikes (~15 min) → loud
+  pause/stop with restart guidance instead of silence forever.
+- **Wedge alert re-scoped** to genuinely-busy sessions (`!idle`, not
+  `!sessionIdle`) — a stuck latch is not a hung command.
+- **Reviewer**: `ℹ`-led status lines never classify (the 0.26.2
+  reviewer enqueued the literal string "ℹ todo 0" as a /list item after
+  mining it from an approved audit report; list markers are also
+  stripped inside `classifyFindingText` for direct callers).
+
+6 new tests + 1 updated (395 → 400).
+
 ## [0.26.4] — 2026-07-26
+
 
 ### Fixed — reviewer source curation (stop mining meta-text)
 

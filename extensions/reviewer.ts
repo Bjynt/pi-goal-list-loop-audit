@@ -84,7 +84,9 @@ const SKIP_LINE = /^\s*(test|it|describe|assert|expect)\s*\(|^\s*(const|let|var|
 const REVIEWER_VOCAB = /architectural-class|bug-class|refactor-class|strategic-class|reviewer found|cascade step|\*\*Mode\*\*|problems\s*\/\s*\(?(improvements|architectural)/i;
 
 export function classifyFindingText(line: string): FindingClass | undefined {
-  const t = line.trim();
+  // Strip list markers here too (extractFindings already does, but direct
+  // callers/tests pass raw report lines like "- ℹ todo 0").
+  const t = line.trim().replace(/^[-*>\s\[\]x]+/, "");
   if (t.length < 8) return undefined;
   if (SKIP_LINE.test(t) || REVIEWER_VOCAB.test(t)) return undefined;
   for (const { class: cls, re } of CLASS_PATTERNS) {
