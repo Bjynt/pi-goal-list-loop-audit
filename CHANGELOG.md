@@ -1,6 +1,31 @@
 # Changelog
 
+## [0.26.7] — 2026-07-26
+
+### Fixed — stale extension api is now terminal-and-loud, not retried forever
+
+pi 0.82.x invalidates the extension runtime on session replacement
+(`ctx.newSession`/`fork`/`switchSession`/`reload`; the compaction path
+reaches the same `teardownCurrent → dispose → invalidate`). Once stale,
+EVERY `sendMessage` throws forever in-process (`staleMessage ??=` is
+never cleared). Field-observed in hegemon: `goal_continuation_send_failed`
+at every compaction with pi's exact stale error — a user-created goal
+never auto-started (the continuation send threw), and retries vanished
+into the suppression void (0.26.6 fixed the void; this fixes the retry).
+
+- **`isStaleApiError`** (goal-loop-core) matches pi's exact signature.
+- **`goStaleTerminal`** — first stale send: ledger `extension_api_stale`,
+  pause the goal / stop the loop with explicit "Restart pi (or reload
+  extensions), then /goal resume / /loop start" guidance, notify +
+  external notify. Single-fire — no re-spam.
+- **Send paths short-circuit** once stale (`sendContinuation` /
+  `sendLoopTurn`) — no retry-into-the-void.
+- **Factory re-init clears the flag** (extension reload recovery).
+
+5 new tests (405 → 410).
+
 ## [0.26.6] — 2026-07-26
+
 
 ### Fixed — heartbeat ship-suppression was self-sustaining (darklord 9.1h stall)
 

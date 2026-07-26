@@ -51,6 +51,7 @@ import {
   crossRecommendMode,
   formatListDepth,
   shouldEscalateStall,
+  isStaleApiError,
   mergeSettings,
   parseListImport,
 
@@ -183,11 +184,6 @@ let extensionApi: ExtensionAPI | null = null;
 // throws FOREVER in this process — retrying for hours is the hegemon
 // failure shape. Detect the stale signature once and go terminally loud.
 let extensionApiStale = false;
-
-/** pi's exact stale-runtime error signature (dist/core/extensions/loader.js). */
-export function isStaleApiError(err: unknown): boolean {
-  return err instanceof Error && err.message.includes("stale after session replacement");
-}
 
 /** v0.26.7: a stale api is terminal for this process — pause/stop loudly
  * with restart guidance instead of retrying sends that can never land. */

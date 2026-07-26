@@ -931,6 +931,15 @@ export function shouldSuppressHeartbeatForRecentShip(args: {
 
 /** Best-effort "when did work last ship" for a repo: newest of the HEAD
  * commit time and the .pi-glla state file mtime. Null when unknown. */
+/** v0.26.7: pi's exact stale-runtime error signature — thrown by every
+ * runtime-bound method after pi invalidates the extension on session
+ * replacement (newSession/fork/switchSession/reload; compaction reaches
+ * the same teardown in pi 0.82.x). See dist/core/extensions/loader.js
+ * createExtensionRuntime().invalidate. */
+export function isStaleApiError(err: unknown): boolean {
+  return err instanceof Error && err.message.includes("stale after session replacement");
+}
+
 export function lastShippedAtMs(cwd: string): number | null {
   // v0.26.6: the .pi-glla/active.jsonl MTIME term was REMOVED — the
   // heartbeat's own ledger writes refreshed it every 15s, which made the
