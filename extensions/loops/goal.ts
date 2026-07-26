@@ -583,11 +583,12 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
 function fireReviewer(
   ctx: ExtensionContext,
   source: { kind: "goal" | "list"; goalId: string; objective: string; terminal: string },
-  opts: { manual?: boolean } = {},
+  opts: { manual?: boolean; mode?: "default" | "auto" | "report" } = {},
 ): void {
   try {
     const settings = loadSettings(ctx.cwd);
     const config = resolveReviewerConfig(settings.reviewer as Partial<ReviewerConfig> | undefined);
+    if (opts.mode) config.mode = opts.mode;
     const sources: Array<{ name: string; text: string }> = [];
     try {
       sources.push({ name: "archive", text: fs.readFileSync(archivedGoalPath(ctx.cwd, source.goalId), "utf-8") });
@@ -2884,9 +2885,16 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
 
 /** v0.26.0: /review <archived-goal-id> — manual reviewer invocation. */
 async function cmdReview(args: string, ctx: ExtensionContext): Promise<void> {
-  const id = args.trim();
+  const parts = args.trim().split(/\s+/).filter(Boolean);
+  const id = parts[0] ?? "";
+  const modeArg = parts[1];
+  const mode = modeArg === "auto" || modeArg === "report" || modeArg === "default" ? modeArg : undefined;
+  if (modeArg && !mode) {
+    ctx.ui.notify(`Unknown mode "${modeArg}" — use auto | report | default.`, "warning");
+    return;
+  }
   if (!id) {
-    ctx.ui.notify("Usage: /review <goal-id> — see /goal archive for ids.", "info");
+    ctx.ui.notify("Usage: /review <goal-id> [auto|report|default] — see /goal archive for ids.", "info");
     return;
   }
   // Resolve the id against the archive (suffix match allowed).
@@ -2907,7 +2915,7 @@ async function cmdReview(args: string, ctx: ExtensionContext): Promise<void> {
     ctx.ui.notify(`No archive found for ${id}.`, "warning");
     return;
   }
-  fireReviewer(ctx, { kind: "goal", goalId, objective, terminal: "goal-complete" }, { manual: true });
+  fireReviewer(ctx, { kind: "goal", goalId, objective, terminal: "goal-complete" }, { manual: true, mode });
 }
 
 /** v0.26.0: /glla reviewer — the reviewer config menu (project-scoped). */
@@ -2930,6 +2938,7 @@ async function cmdReviewerSettings(ctx: ExtensionContext): Promise<void> {
     if (!choice || choice === "Done") return;
     try {
       if (choice.startsWith("Enabled")) save({ enabled: !cfg.enabled });
+      else if (choice.startsWith("Mode")) save({ mode: cfg.mode === "default" ? "auto" : cfg.mode === "auto" ? "report" : "default" });
       else if (choice.startsWith("Leverage mode")) save({ leverageMode: cfg.leverageMode === "fix-without-confirm" ? "confirm-all" : "fix-without-confirm" });
       else if (choice.startsWith("Fire on goal-complete")) save({ fireOn: cfg.fireOn.includes("goal-complete") ? cfg.fireOn.filter((e) => e !== "goal-complete") : [...cfg.fireOn, "goal-complete"] });
       else if (choice.startsWith("Fire on list-complete")) save({ fireOn: cfg.fireOn.includes("list-complete") ? cfg.fireOn.filter((e) => e !== "list-complete") : [...cfg.fireOn, "list-complete"] });
@@ -3368,7 +3377,7 @@ export default function (pi: ExtensionAPI): void {
     handler: settingsHandler,
   });
   pi.registerCommand("review", {
-    description: "Manually run the reviewer on an archived goal: /review <goal-id> — extracts findings, writes a report to .pi-glla/reviews/, enqueues bug-class fixes to /list, proposes architectural items as /goal. Bypasses the trigger gates (explicit user request).",
+    description: "Manually run the reviewer on an archived goal: /review <goal-id> [auto|report|default] — extracts findings, writes a report to .pi-glla/reviews/, cascades per the mode (auto = auto-loop, no Confirms). Bypasses the trigger gates (explicit user request).",
     handler: (args: string, ctx: ExtensionContext) => { rememberCtx(ctx); return cmdReview(args, ctx); },
   });
   pi.registerCommand("list", {
