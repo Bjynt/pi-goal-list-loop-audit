@@ -1,6 +1,30 @@
 # Changelog
 
+## [0.26.3] — 2026-07-26
+
+### Fixed — reviewer extraction false positives (observed live)
+
+The reviewer fired on the 0.26.2 completion and matched 3 junk
+"architectural" findings — a `test("…architectural…")` name, the
+INSTALL.md mode-matrix table row, and ship-doc prose — every one a
+reviewer-vocabulary self-match (the junk proposal was declined live and
+motivated this release).
+
+- **Bare words dropped** — "architectural" and "strategic" removed from
+  the class regexes (they self-matched "architectural-class",
+  "architectural findings", the docs' matrix). Architectural now matches
+  only actionable forms (rewrite, new dependency, schema change,
+  redesign); strategic only proposal forms (should we, deprecate, ship
+  this).
+- **Line guards** — extraction skips code lines (`test(`/`it(`/
+  `assert`/`const`/`import`/…), markdown table rows (`| … |`), and
+  reviewer-report vocabulary (`architectural-class`, `cascade step`,
+  `**Mode**`, `problems/architectural`, …).
+
+7 new tests (382 → 389) pinning the exact 3 live false-positive lines.
+
 ## [0.26.2] — 2026-07-26
+
 
 ### Added — reviewer modes + the auto-loop cascade
 

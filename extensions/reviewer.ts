@@ -81,7 +81,7 @@ const CLASS_PATTERNS: Array<{ class: FindingClass; re: RegExp }> = [
  * from the 0.26.2 completion: a test("…architectural…") name, the
  * INSTALL.md mode-matrix row, and ship-doc prose. */
 const SKIP_LINE = /^\s*(test|it|describe|assert|expect)\s*\(|^\s*(const|let|var|function|import|export|require)\b|\{\s*\.\.\.\s*\}|,\s*\.\.\.$|^\s*\|/;
-const REVIEWER_VOCAB = /architectural-class|bug-class|refactor-class|strategic-class|reviewer found|cascade step|\*\*Mode\*\*|problems \/ improvements found/i;
+const REVIEWER_VOCAB = /architectural-class|bug-class|refactor-class|strategic-class|reviewer found|cascade step|\*\*Mode\*\*|problems\s*\/\s*(improvements|architectural)/i;
 
 export function classifyFindingText(line: string): FindingClass | undefined {
   const t = line.trim();
