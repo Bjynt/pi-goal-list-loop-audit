@@ -260,6 +260,25 @@ and cascades:
 The leverage principle: if you'd never say no to fixing a bug, the
 reviewer doesn't ask. Decisions stay with you.
 
+**Modes** (`/glla reviewer` → Mode, or `/review <id> <mode>` for a
+one-shot override):
+
+| Mode | Problems / improvements found | Architectural | Clean completion |
+|---|---|---|---|
+| `default` | `/list` items, no Confirm | `/goal` proposal (Confirm) | audit `/goal` proposal (Confirm) |
+| `auto` | `/list` items, no Confirm | `/list` items, no Confirm | audit enqueued as a `/list` item, no Confirm |
+| `report` | report + notify only | report + notify only | report + notify only |
+
+`auto` is the **auto-loop**: run it once and the cascade keeps rolling
+through everything it finds — problems, improvements ("consider
+adding…", "could be improved", "enhancement" are extracted too), then
+the regression-scan audit — until the findings run dry. Strategic
+findings (`should we…`) stay notify-only in every mode: decisions never
+auto-fire. In `auto` the 5-minute refire window is skipped for
+list-complete events (the queue emptying is the cascade's natural
+rhythm); the per-day cap (`maxReviewsPerDay`, default 20) still bounds
+everything.
+
 Safety: no firing on aborts/pauses, a 5-minute refire window blocks
 runaway recursion, `maxReviewsPerDay: 20` caps the day, and `/loop`
 never triggers it. Configure per-project via `/glla reviewer`

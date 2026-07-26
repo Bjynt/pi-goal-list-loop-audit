@@ -1,6 +1,35 @@
 # Changelog
 
+## [0.26.2] — 2026-07-26
+
+### Added — reviewer modes + the auto-loop cascade
+
+User request (2026-07-26): "the review that we can trigger after goal or
+list with various defaults like auto loop into problems found or
+improvements found if we run it."
+
+- **`reviewer.mode`** — `default` (unchanged: Confirm-gated cascade),
+  `auto` (the auto-loop: bug/refactor/improvement AND architectural
+  findings all become `/list` items with zero Confirms; a clean
+  completion enqueues the regression-scan audit as a `/list` item;
+  strategic findings stay notify-only — decisions never auto-fire),
+  `report` (report + notify only).
+- **Improvement-class extraction** — "could be improved", "improvement",
+  "enhancement", "consider adding", "would be nice", "nice to have" now
+  extract into the enqueue-without-Confirm class.
+- **Auto-mode refire relaxation** — the 5-minute refire window no longer
+  applies to list-complete events in `auto` (the queue emptying is the
+  cascade's natural rhythm, not a runaway); the per-day cap still bounds
+  everything.
+- **`/glla reviewer` → Mode** — cycles default → auto → report.
+- **`/review <id> [auto|report|default]`** — one-shot mode override for
+  manual reviews; unknown modes rejected with usage.
+- Review reports name the mode (`**Mode**: auto`).
+
+9 new tests (373 → 382); the 0.26.0 menu test updated for the new row.
+
 ## [0.26.1] — 2026-07-26
+
 
 ### Fixed — the zombie spin (stall handling)
 
