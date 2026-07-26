@@ -3221,7 +3221,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
         patch.autoResume = true;
         changed = true;
       } else if (["off", "false", "0", "no", "unset"].includes(value)) {
-        patch.autoResume = undefined;
+        patch.autoResume = false; // v0.26.8: explicit off must persist — undefined now means ON
         changed = true;
       } else {
         ctx.ui.notify(`autoresume must be on or off, got: ${value}`, "warning");
@@ -3329,7 +3329,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   saveSettings(scope, ctx.cwd, patch);
   const effective = loadSettings(ctx.cwd);
   ctx.ui.notify(
-    `Saved to ${scope} config. Effective now: model=${effective.auditorModel ?? "(session model)"} thinking=${effective.auditorThinkingLevel ?? "(session)"} notify=${effective.notifyCmd ?? "(off)"} tokenLimit=${effective.tokenLimit ?? 0}${(effective.tokenLimit ?? 0) > 0 ? "" : " (off)"} autoResume=${effective.autoResume === true ? "on" : "off"} auditFeedbackChars=${effective.auditFeedbackChars ?? DEFAULT_AUDIT_FEEDBACK_CHARS}${(effective.auditFeedbackChars ?? DEFAULT_AUDIT_FEEDBACK_CHARS) === 0 ? " (full report)" : ""}\n` +
+    `Saved to ${scope} config. Effective now: model=${effective.auditorModel ?? "(session model)"} thinking=${effective.auditorThinkingLevel ?? "(session)"} notify=${effective.notifyCmd ?? "(off)"} tokenLimit=${effective.tokenLimit ?? 0}${(effective.tokenLimit ?? 0) > 0 ? "" : " (off)"} autoResume=${effective.autoResume === false ? "off" : "on (default)"} auditFeedbackChars=${effective.auditFeedbackChars ?? DEFAULT_AUDIT_FEEDBACK_CHARS}${(effective.auditFeedbackChars ?? DEFAULT_AUDIT_FEEDBACK_CHARS) === 0 ? " (full report)" : ""}\n` +
     `Note: the auditor runs without extensions — it must be a built-in provider, not an extension-registered one.`,
     "info",
   );
@@ -3444,7 +3444,7 @@ export default function (pi: ExtensionAPI): void {
       ["thinking=", "auditor thinking level: /glla thinking=high"],
       ["notify=", "desktop push command: /glla notify='notify-send pi \"$1\"'"],
       ["tokenlimit=", "per-goal token budget (0 = off): /glla tokenlimit=2000000"],
-      ["autoresume=", "on: auto-resume held goals/loops in fresh sessions"],
+      ["autoresume=", "on (default): auto-resume goals/loops on every session start; off: hold on fresh sessions"],
       ["auditcap=", "N: pause goal after N consecutive auditor disapprovals (default 5, 0 = unlimited)"],
       ["auditfeedbackchars=", "cap on executor-visible disapproval report chars (0 = full report, the default)"],
       ["aggressivemode=", "on: keep-going defaults — autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs"],
@@ -3641,12 +3641,12 @@ export default function (pi: ExtensionAPI): void {
     } catch (err) {
       ctx.ui.notify(`glla subagent override sync failed: ${err instanceof Error ? err.message : String(err)}`, "warning");
     }
-    // Restore gate (v0.21.0): a fresh session ("startup"/"new", or a pi too
-    // old to report a reason) has no conversation context for the restored
-    // work — HOLD instead of auto-firing, so opening pi in a folder never
-    // starts working before you can even load your session. Sessions with
-    // history ("resume"/"reload"/"fork") auto-resume; /glla autoresume=on
-    // opts a project into auto-resume everywhere (unattended rigs).
+    // Restore gate (v0.21.0, default flipped v0.26.8): auto-resume on EVERY
+    // session start by default — keep pushing forward unless super stuck
+    // (the stall escalation / stale-api / latch brakes still stop loudly).
+    // /glla autoresume=off restores the v0.21.0 gate: fresh sessions
+    // ("startup"/"new", or a pi too old to report a reason) HOLD, only
+    // sessions with history ("resume"/"reload"/"fork") auto-resume.
     const autoResume = shouldAutoResumeOnSessionStart(event?.reason, resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).autoResume);
     // v0.25.0 (contract item 6): aggressiveMode announces every auto-event.
     if (
@@ -3668,7 +3668,7 @@ export default function (pi: ExtensionAPI): void {
         state.loop = { ...l, active: false, stopReason: HELD_ON_RESTORE };
         persistState(ctx);
         ctx.ui.notify(
-          `Loop held on restore (fresh session, no work started): ${l.target.slice(0, 60)} — /loop to resume, /glla autoresume=on to auto-resume in this project.`,
+          `Loop held on restore (/glla autoresume=off): ${l.target.slice(0, 60)} — /loop to resume, /glla autoresume=on to auto-resume in this project.`,
           "info",
         );
       }
@@ -3687,7 +3687,7 @@ export default function (pi: ExtensionAPI): void {
         const resumeHint = `${resumeCmd} to continue${queued > 0 ? ` (+${queued} waiting in the list)` : ""} · /glla autoresume=on to auto-resume in this project`;
         updateGoal({
           status: "paused",
-          pauseReason: "restored in a fresh session — no work started",
+          pauseReason: "restored in a fresh session — held because /glla autoresume=off",
           pauseSuggestedAction: resumeHint,
         }, ctx);
         ctx.ui.notify(

@@ -660,8 +660,16 @@ export function cloneGoal(goal: Goal): Goal {
  * setting for unattended restarts). One mechanical predicate; no heuristics.
  */
 export function shouldAutoResumeOnSessionStart(reason: string | undefined, autoResume: boolean | undefined): boolean {
-  if (autoResume === true) return true;
-  return reason === "resume" || reason === "reload" || reason === "fork";
+  // v0.26.8: default flipped to ON — keep pushing forward on every session
+  // start unless the user explicitly opts out (/glla autoresume=off). The
+  // "super stuck" brakes (stall escalation, stale-api terminal, pending-
+  // latch watchdog) still stop the machine loudly; a mere process restart
+  // is not a reason to hold work. Explicit off preserves the v0.21.0 gate:
+  // only sessions with history (resume/reload/fork) auto-resume.
+  if (autoResume === false) {
+    return reason === "resume" || reason === "reload" || reason === "fork";
+  }
+  return true;
 }
 
 /**
