@@ -15,8 +15,15 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+export type ReviewerMode = "default" | "auto" | "report";
+
 export interface ReviewerConfig {
   enabled: boolean;
+  /** v0.26.2: default = Confirm-gated cascade; auto = auto-loop — every
+   * finding class (incl. architectural) and the clean-completion audit
+   * become /list items with zero Confirms (strategic stays notify-only —
+   * decisions never auto-fire); report = write the report + notify only. */
+  mode: ReviewerMode;
   fireOn: Array<"goal-complete" | "list-complete">;
   doNotFireOn: string[];
   cascade: Array<"convert-findings-to-list" | "queue-leftovers" | "fire-audit-on-clean" | "notify-and-idle">;
@@ -30,6 +37,7 @@ export interface ReviewerConfig {
 
 export const DEFAULT_REVIEWER_CONFIG: ReviewerConfig = {
   enabled: true,
+  mode: "default",
   fireOn: ["goal-complete", "list-complete"],
   doNotFireOn: ["goal-aborted", "goal-paused"],
   cascade: ["convert-findings-to-list", "queue-leftovers", "fire-audit-on-clean", "notify-and-idle"],
@@ -61,7 +69,7 @@ const CLASS_PATTERNS: Array<{ class: FindingClass; re: RegExp }> = [
   { class: "strategic", re: /\bshould we\b|\bdeprecat|ship this\??|strategic/i },
   { class: "architectural", re: /\brewrite\b|new dependency|schema change|architectural|redesign/i },
   { class: "bug", re: /\bTODO\b|\bFIXME\b|\bbug\b|\bissue\b|regression|broken|\bfixme\b/i },
-  { class: "refactor", re: /could be cleaner|consider refactoring|duplicat|refactor|left ?out|follow[\s-]?up|deferred/i },
+  { class: "refactor", re: /could be cleaner|consider refactoring|duplicat|refactor|left ?out|follow[\s-]?up|deferred|could be improved|improvement|enhancement|consider adding|would be nice|nice to have/i },
 ];
 
 export function classifyFindingText(line: string): FindingClass | undefined {
@@ -110,6 +118,7 @@ export interface ReviewReport {
   objective: string;
   findings: Finding[];
   cascadeStep: string;
+  mode: ReviewerMode;
   at: string;
 }
 
@@ -120,7 +129,7 @@ export function formatReviewReport(r: ReviewReport): string {
   return [
     `# Review — ${r.goalId}`,
     "",
-    `**Kind**: ${r.kind} · **At**: ${r.at}`,
+    `**Kind**: ${r.kind} · **At**: ${r.at} · **Mode**: ${r.mode}`,
     "",
     "## Summary",
     "",
@@ -186,7 +195,11 @@ export function runReviewer(
     if (config.doNotFireOn.includes(event)) return none(`doNotFireOn: ${event}`);
     if (source.kind === "goal" && source.terminal !== "goal-complete") return none(`not a completion: ${source.terminal}`);
     if (!config.fireOn.includes(source.kind === "goal" ? "goal-complete" : "list-complete")) return none("fireOn excludes this event");
-    if (reviewerFiredRecently(deps.ledgerEntries, REVIEWER_REFIRE_WINDOW_MS, deps.nowMs)) {
+    // v0.26.2: in auto mode the queue emptying is the cascade's natural
+    // rhythm, not a runaway — the refire window must not strangle it.
+    // (The per-day cap below still bounds everything.)
+    const refireWindowApplies = !(config.mode === "auto" && source.kind === "list");
+    if (refireWindowApplies && reviewerFiredRecently(deps.ledgerEntries, REVIEWER_REFIRE_WINDOW_MS, deps.nowMs)) {
       deps.ledger("reviewer_suppressed", { reason: "refire-window", goalId: source.goalId });
       return none("reviewer fired within the last 5 minutes (runaway prevention)");
     }
@@ -205,32 +218,47 @@ export function runReviewer(
   let enqueued = 0;
   let proposed = 0;
   let cascadeStep = "notify-and-idle";
+  const auto = config.mode === "auto";
+  const reportOnly = config.mode === "report";
 
   // Cascade: findings → list items (leverage: fix-without-confirm).
   const convertStep = source.kind === "goal" ? "convert-findings-to-list" : "queue-leftovers";
-  if (bugs.length > 0 && config.cascade.includes(convertStep)) {
+  if (bugs.length > 0 && config.cascade.includes(convertStep) && !reportOnly) {
     deps.enqueueListItems(bugs.map((f) => f.text));
     enqueued = bugs.length;
     cascadeStep = convertStep;
   }
-  // Architectural findings → /goal proposal WITH Confirm.
-  if (architectural.length > 0) {
-    deps.proposeGoal(
-      architectural.map((f) => f.text).join("; "),
-      `reviewer found ${architectural.length} architectural-class finding(s) — needs your Confirm`,
-    );
-    proposed += architectural.length;
-    cascadeStep = "propose-goal";
+  // Architectural findings: default mode → /goal proposal WITH Confirm;
+  // auto mode → /list items (the auto-loop rolls straight into them).
+  if (architectural.length > 0 && !reportOnly) {
+    if (auto) {
+      deps.enqueueListItems(architectural.map((f) => f.text));
+      enqueued += architectural.length;
+      cascadeStep = convertStep;
+    } else {
+      deps.proposeGoal(
+        architectural.map((f) => f.text).join("; "),
+        `reviewer found ${architectural.length} architectural-class finding(s) — needs your Confirm`,
+      );
+      proposed += architectural.length;
+      cascadeStep = "propose-goal";
+    }
   }
-  // Clean completion → audit /goal (opt-in cascade step).
-  if (findings.length === 0 && config.cascade.includes("fire-audit-on-clean")) {
-    deps.proposeGoal(
-      `Post-completion regression scan after ${source.goalId} (${config.auditScope})`,
-      "reviewer: completion looks clean — firing the audit step",
-    );
-    proposed++;
+  // Clean completion → audit: default mode proposes a /goal (Confirm);
+  // auto mode enqueues the audit as a /list item (no Confirm — the
+  // cascade keeps rolling until the findings run dry).
+  if (findings.length === 0 && config.cascade.includes("fire-audit-on-clean") && !reportOnly) {
+    const auditObjective = `Post-completion regression scan after ${source.goalId} (${config.auditScope})`;
+    if (auto) {
+      deps.enqueueListItems([auditObjective]);
+      enqueued++;
+    } else {
+      deps.proposeGoal(auditObjective, "reviewer: completion looks clean — firing the audit step");
+      proposed++;
+    }
     cascadeStep = "fire-audit-on-clean";
   }
+  if (reportOnly) cascadeStep = "report-only";
 
   const report: ReviewReport = {
     goalId: source.goalId,
@@ -238,6 +266,7 @@ export function runReviewer(
     objective: source.objective,
     findings,
     cascadeStep,
+    mode: config.mode,
     at: new Date(deps.nowMs).toISOString(),
   };
   const reportPath = writeReviewReport(deps.cwd, report);
@@ -265,6 +294,7 @@ export function runReviewer(
 export function reviewerMenuOptions(cfg: ReviewerConfig): string[] {
   return [
     `Enabled — ${cfg.enabled ? "ON" : "OFF"}`,
+    `Mode — ${cfg.mode} (default = Confirm-gated · auto = auto-loop, no Confirms · report = report only)`,
     `Leverage mode — ${cfg.leverageMode} (bug/refactor findings)`,
     `Fire on goal-complete — ${cfg.fireOn.includes("goal-complete") ? "ON" : "OFF"}`,
     `Fire on list-complete — ${cfg.fireOn.includes("list-complete") ? "ON" : "OFF"}`,
