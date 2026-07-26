@@ -264,8 +264,8 @@ function refreshUI(ctx: ExtensionContext): void {
     // Terminal width for truncation budgets: on wide terminals the widget
     // uses the room instead of cutting at fixed ~60-char floors.
     const width = process.stdout.columns || 80;
-    ctx.ui.setStatus("pi-glla", buildStatusText(state, latestAuditProgress, Date.now(), theme));
-    ctx.ui.setWidget("pi-glla", buildWidgetLines(state, latestAuditProgress, Date.now(), theme, width));
+    ctx.ui.setStatus("pi-glla", buildStatusText(state, latestAuditProgress, Date.now(), theme, { stalls: consecutiveStalls }));
+    ctx.ui.setWidget("pi-glla", buildWidgetLines(state, latestAuditProgress, Date.now(), theme, width, { stalls: consecutiveStalls }));
   } catch {
     // stale ctx — next event refreshes
   }
@@ -451,7 +451,9 @@ function sendContinuation(goalId: string): void {
       content: continuationPrompt(state.goal!),
       display: false,
     }, { triggerTurn: true, deliverAs: "followUp" });
-  } catch {
+    appendLedger(ctx.cwd, "goal_continuation_sent", { goalId });
+  } catch (err) {
+    appendLedger(ctx.cwd, "goal_continuation_send_failed", { goalId, error: err instanceof Error ? err.message : String(err) });
     // API went stale mid-flight; next agent_end/session_start will reschedule.
   }
 }
@@ -1336,8 +1338,13 @@ function sendLoopTurn(): void {
       content: loopPrompt(loop, regressionNote, strategyNote, boundsNote, interventionNote, variantNote),
       display: false,
     }, { triggerTurn: true, deliverAs: "followUp" });
-  } catch {
-    // stale API — next agent_end reschedules
+    // v0.26.1: the send path is ledgered — the hegemon zombie spun 619
+    // refires with zero visibility into whether sends were landing.
+    appendLedger(ctx.cwd, "loop_turn_sent", { iteration: loop.iteration });
+  } catch (err) {
+    // stale API — next agent_end reschedules (but if none comes, the
+    // heartbeat's stall escalation stops the spin — v0.26.1).
+    appendLedger(ctx.cwd, "loop_turn_send_failed", { error: err instanceof Error ? err.message : String(err) });
   }
 }
 
@@ -3189,6 +3196,19 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
           ctx.ui.notify(`quotaretryminutes must be a positive integer, got: ${value}`, "warning");
         }
       }
+    } else if (key === "stallescalation" || key === "stallescalationrefires") {
+      if (["unset", "default"].includes(value)) {
+        patch.stallEscalationRefires = undefined;
+        changed = true;
+      } else {
+        const n = Number.parseInt(value, 10);
+        if (Number.isInteger(n) && n >= 0) {
+          patch.stallEscalationRefires = n;
+          changed = true;
+        } else {
+          ctx.ui.notify(`stallescalation must be a non-negative integer (0 = never escalate), got: ${value}`, "warning");
+        }
+      }
     } else if (key === "stuckmax" || key === "stuckmaxinterventions") {
       if (["unset", "default"].includes(value)) {
         patch.stuckMaxInterventions = undefined;
@@ -3338,6 +3358,7 @@ export default function (pi: ExtensionAPI): void {
       ["aggressivemode=", "on: keep-going defaults — autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs"],
       ["quotaretryminutes=", "N: minutes before auto-retrying a quota-exhausted auditor (default 60)"],
       ["stuckmax=", "N: consecutive stuck interventions before a loop stops (default 5)"],
+      ["stallescalation=", "N: heartbeat refires without a turn before goal pauses / loop stops (default 5, 0 = never)"],
       ["stats", "per-project ledger rollups: /glla stats [json|premature|project=<path>]"],
       ["audits", "audit-log browser: /glla audits [N|full] — recent verdicts from .pi-glla/audits.jsonl"],
       ["autoaccept=", "on: drafts activate without the Confirm dialog (unattended rigs)"],
@@ -3402,6 +3423,30 @@ export default function (pi: ExtensionAPI): void {
       // Older pi without getActiveTools/setActiveTools — nothing we can do.
     }
   }
+
+  // v0.26.1: compaction ends WITHOUT an agent_end (the compaction turn is
+  // not an agent turn), so the continuation chain can dangle until the
+  // 60s heartbeat notices. Re-arm it as soon as pi settles post-compact.
+  pi.on("session_compact", async (_event: any, ctx: ExtensionContext) => {
+    if (isForeignCtx(ctx)) return;
+    rememberCtx(ctx);
+    if (!isSupervising()) return;
+    appendLedger(ctx.cwd, "session_compact", {});
+    const settle = setTimeout(() => {
+      const c = freshCtx();
+      if (!c) return;
+      try {
+        if (c.isIdle() && !c.hasPendingMessages() && continuationTimer === null && loopTimer === null && isSupervising()) {
+          appendLedger(c.cwd, "compaction_refire", {});
+          if (isLoopActive()) scheduleLoopTick(c);
+          else scheduleContinuation(c, true);
+        }
+      } catch {
+        /* settle race — the 60s heartbeat covers it */
+      }
+    }, 2000);
+    settle.unref?.();
+  });
 
   pi.on("message_start", async (event: any, _ctx: ExtensionContext) => {
     // v0.14.0 drafting floor: count real user replies while drafting. Our
