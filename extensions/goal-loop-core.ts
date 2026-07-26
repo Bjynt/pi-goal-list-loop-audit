@@ -917,6 +917,8 @@ export function isAutoCommitPaused(cwd: string): boolean {
 /** Suppress the heartbeat when work shipped very recently — a session
  * that just committed is transitioning, not stalled. Pure; the tick
  * gathers the timestamps. */
+/** @deprecated v0.26.6: no longer called by the heartbeat (self-sustaining
+ * under ledger writes / auto-commit daemons). Kept for API compatibility. */
 export function shouldSuppressHeartbeatForRecentShip(args: {
   nowMs: number;
   lastShippedAtMs: number | null;
@@ -930,6 +932,10 @@ export function shouldSuppressHeartbeatForRecentShip(args: {
 /** Best-effort "when did work last ship" for a repo: newest of the HEAD
  * commit time and the .pi-glla state file mtime. Null when unknown. */
 export function lastShippedAtMs(cwd: string): number | null {
+  // v0.26.6: the .pi-glla/active.jsonl MTIME term was REMOVED — the
+  // heartbeat's own ledger writes refreshed it every 15s, which made the
+  // 0.25.0 ship-suppression self-sustaining (darklord: 9.1h / 2,184
+  // suppressed ticks). Only a real git commit counts as a ship now.
   let best: number | null = null;
   try {
     const out = execSync("git log -1 --format=%ct", { cwd, stdio: ["ignore", "pipe", "ignore"] })
@@ -939,12 +945,6 @@ export function lastShippedAtMs(cwd: string): number | null {
     if (Number.isFinite(sec) && sec > 0) best = sec * 1000;
   } catch {
     /* not a git repo or no commits */
-  }
-  try {
-    const mtime = fs.statSync(path.join(cwd, ".pi-glla", "active.jsonl")).mtimeMs;
-    if (best === null || mtime > best) best = mtime;
-  } catch {
-    /* no state file yet */
   }
   return best;
 }

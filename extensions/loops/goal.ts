@@ -38,7 +38,6 @@ import {
   classifyImpossibleReason,
   extractPendingTasks,
   isFullAuditObjective,
-  lastShippedAtMs,
   resolveEffectiveAggressiveSettings,
   appendAuditLog,
   computeListDepth,
@@ -52,7 +51,6 @@ import {
   crossRecommendMode,
   formatListDepth,
   shouldEscalateStall,
-  shouldSuppressHeartbeatForRecentShip,
   mergeSettings,
   parseListImport,
 
@@ -240,6 +238,10 @@ let heartbeatNudges = 0;
 // refire's own noteActivity, which is what made the hegemon zombie spin
 // self-sustaining (619 refires / 23.5h / zero turns).
 let consecutiveStalls = 0;
+// v0.26.6: precise replacement for the removed ship-recency suppression —
+// set while complete_goal's isolated audit runs, so the heartbeat never
+// refires into an in-flight completion.
+let completionAuditInFlight = false;
 let heartbeatTimer: NodeJS.Timeout | null = null;
 
 function noteActivity(real = false): void {
@@ -381,18 +383,16 @@ function heartbeatTick(): void {
     notifyExternal(ctx, msg);
   }
   if (!fire) return;
-  // v0.25.0 (contract item 27): a session that SHIPPED in the last 5
-  // minutes (commit or ledger write) is transitioning, not stalled —
-  // suppress the refire so rapid iteration isn't interrupted.
-  if (
-    shouldSuppressHeartbeatForRecentShip({
-      nowMs: Date.now(),
-      lastShippedAtMs: lastShippedAtMs(ctx.cwd),
-    })
-  ) {
-    appendLedger(ctx.cwd, "heartbeat_suppressed", { reason: "recent ship (<5m)" });
-    return;
-  }
+  // v0.26.6: the 0.25.0 "recent ship (<5m)" suppression was REMOVED. It fed
+  // lastShippedAtMs, which read the state-file MTIME — and the heartbeat's
+  // own suppressed-tick ledger writes refreshed that mtime every 15s,
+  // making the suppression self-sustaining forever (field-observed in
+  // darklord: 2,184 suppressed ticks over 9.1h after a post-compaction
+  // send failure; the completed list item never closed). Under an
+  // auto-committing daemon the git-head term self-sustains too. The legit
+  // windows are already covered precisely — busy mid-turn, pending
+  // messages, scheduled timers — plus the audit-in-flight flag below.
+  if (completionAuditInFlight) return;
   noteActivity();
   consecutiveStalls++;
   appendLedger(ctx.cwd, "heartbeat_refire", { nudgesSoFar: heartbeatNudges, consecutiveStalls });
@@ -1894,13 +1894,20 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       // retry with backoff before we report "auditor infrastructure error
       // (retried once)". Neither attempt is a verdict on the work.
       const auditStartMs = Date.now();
-      const { result, retriedOnce } = await runWithInfraRetry(runAudit, {
-        onRetry: (err) => {
-          latestAuditProgress = { label: `infra error (${err.slice(0, 40)}) — retrying once`, lastEventAt: Date.now() };
-          refreshUI(ctx);
-          appendLedger(ctx.cwd, "audit_infra_retry", { goalId: state.goal?.id, error: err.slice(0, 200) });
-        },
-      });
+      completionAuditInFlight = true;
+      let result: Awaited<ReturnType<typeof runAudit>>;
+      let retriedOnce = false;
+      try {
+        ({ result, retriedOnce } = await runWithInfraRetry(runAudit, {
+          onRetry: (err) => {
+            latestAuditProgress = { label: `infra error (${err.slice(0, 40)}) — retrying once`, lastEventAt: Date.now() };
+            refreshUI(ctx);
+            appendLedger(ctx.cwd, "audit_infra_retry", { goalId: state.goal?.id, error: err.slice(0, 200) });
+          },
+        }));
+      } finally {
+        completionAuditInFlight = false;
+      }
       const auditDurationMs = Date.now() - auditStartMs;
       latestAuditProgress = null;
       // Audit history: record REAL verdicts only — a non-empty report is the

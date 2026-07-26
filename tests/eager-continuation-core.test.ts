@@ -82,7 +82,7 @@ test("shouldSuppressHeartbeatForRecentShip: recent ship suppresses, stale does n
   assert.equal(shouldSuppressHeartbeatForRecentShip({ nowMs: now, lastShippedAtMs: null }), false);
 });
 
-test("heartbeat tick calls the suppression check (item 27 wiring)", () => {
-  assert.match(goalSrc, /shouldSuppressHeartbeatForRecentShip\(\{\n\s+nowMs: Date\.now\(\),\n\s+lastShippedAtMs: lastShippedAtMs\(ctx\.cwd\),/);
-  assert.match(goalSrc, /heartbeat_suppressed/);
+test("heartbeat ship-suppression was removed in v0.26.6 (self-sustaining via ledger mtime)", () => {
+  assert.ok(!goalSrc.includes("shouldSuppressHeartbeatForRecentShip({"), "heartbeat must not call the suppression check");
+  assert.match(goalSrc, /if \(completionAuditInFlight\) return;/);
 });
