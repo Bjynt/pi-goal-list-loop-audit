@@ -177,6 +177,35 @@ const HELD_ON_RESTORE = "held: restored in a fresh session";
 // The ExtensionAPI captured in the factory. sendMessage lives on the API,
 // not on ExtensionContext, so continuation sends need it at module scope.
 let extensionApi: ExtensionAPI | null = null;
+// v0.26.7: pi invalidates the extension runtime on session replacement
+// (newSession/fork/switchSession/reload — and the compaction path reaches
+// it via teardownCurrent in pi 0.82.x). Once stale, every sendMessage
+// throws FOREVER in this process — retrying for hours is the hegemon
+// failure shape. Detect the stale signature once and go terminally loud.
+let extensionApiStale = false;
+
+/** pi's exact stale-runtime error signature (dist/core/extensions/loader.js). */
+export function isStaleApiError(err: unknown): boolean {
+  return err instanceof Error && err.message.includes("stale after session replacement");
+}
+
+/** v0.26.7: a stale api is terminal for this process — pause/stop loudly
+ * with restart guidance instead of retrying sends that can never land. */
+function goStaleTerminal(ctx: ExtensionContext, where: string): void {
+  if (extensionApiStale) return; // already terminal — don't re-spam
+  extensionApiStale = true;
+  appendLedger(ctx.cwd, "extension_api_stale", { where, kind: isLoopActive() ? "loop" : "goal" });
+  const guidance = "pi invalidated this session's extension handle (session replacement — compaction triggers it in pi 0.82.x). Sends can never land in this process. Restart pi (or reload extensions), then /goal resume / /loop start.";
+  if (isLoopActive()) {
+    clearLoopTimer();
+    state.loop = { ...state.loop!, active: false, stopReason: `extension api stale: ${guidance}` };
+    persistState(ctx);
+  } else if (state.goal && state.goal.status === "active") {
+    updateGoal({ status: "paused", pauseReason: "extension api stale (pi session replacement)", pauseSuggestedAction: guidance }, ctx);
+  }
+  ctx.ui.notify(`glla: ${guidance}`, "warning");
+  notifyExternal(ctx, `glla: extension api stale — restart pi. (${where})`);
+}
 
 // The most recent ExtensionContext seen from any event or command handler.
 // pi replaces sessions (newSession/fork/reload) and stale ctx throws on use,
@@ -486,7 +515,7 @@ function sendContinuation(goalId: string): void {
     continuationTimer.unref?.();
     return;
   }
-  if (!extensionApi) return;
+  if (!extensionApi || extensionApiStale) return;
   try {
     extensionApi.sendMessage({
       customType: GOAL_EVENT_ENTRY,
@@ -496,7 +525,9 @@ function sendContinuation(goalId: string): void {
     appendLedger(ctx.cwd, "goal_continuation_sent", { goalId });
   } catch (err) {
     appendLedger(ctx.cwd, "goal_continuation_send_failed", { goalId, error: err instanceof Error ? err.message : String(err) });
-    // API went stale mid-flight; next agent_end/session_start will reschedule.
+    // v0.26.7: stale runtime = terminal (sends can never land); anything
+    // else is transient — next agent_end/session_start reschedules.
+    if (isStaleApiError(err)) goStaleTerminal(ctx, "sendContinuation");
   }
 }
 
@@ -1268,7 +1299,7 @@ function isLoopActive(): boolean {
 
 /** Run the user's measure command. Orchestrator-side, never agent-side. */
 async function runMeasure(ctx: ExtensionContext, cmd: string): Promise<number | null> {
-  if (!extensionApi) return null;
+  if (!extensionApi || extensionApiStale) return null;
   try {
     const result = await extensionApi.exec("bash", ["-c", cmd], { cwd: ctx.cwd, timeout: MEASURE_TIMEOUT_MS });
     const stdout = (result as any)?.stdout ?? "";
@@ -1392,6 +1423,8 @@ function sendLoopTurn(): void {
     // stale API — next agent_end reschedules (but if none comes, the
     // heartbeat's stall escalation stops the spin — v0.26.1).
     appendLedger(ctx.cwd, "loop_turn_send_failed", { error: err instanceof Error ? err.message : String(err) });
+    // v0.26.7: stale runtime is terminal, not transient — go loud now.
+    if (isStaleApiError(err)) goStaleTerminal(ctx, "sendLoopTurn");
   }
 }
 
@@ -3380,6 +3413,7 @@ function warnOnCommandCollision(ctx: ExtensionContext): void {
 
 export default function (pi: ExtensionAPI): void {
   extensionApi = pi;
+  extensionApiStale = false; // a fresh factory run means a fresh runtime (reload path)
   startHeartbeat();
   startUITicker();
   // Four top-level commands, that's all (v0.8.0 consolidation):
