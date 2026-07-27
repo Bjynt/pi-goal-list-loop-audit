@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.27.6] — 2026-07-27
+
+### Changed — package.json scripts: `npm test` now uses bun (3x faster)
+
+`npm test` was `node --experimental-strip-types --test tests/*.test.ts`
+(~6–8s for 440 tests). Switched to `bun test` (~2.8s, 3x faster).
+`npm run test:node` keeps the node path for the env-gated daemon test
+that needs the slow runner. `npm run test:all` runs bun + tsc.
+
+### Added — chunk-near-context-full hint in goal-loop-continuation prompt
+
+The continuation prompt now warns the assistant: when the conversation
+is heavy (long-running audit, deep debug, big rollout), prefer smaller
+commits, smaller tool outputs, focused reasoning. glla's 0.27.2
+auto-continue fires on `stop_reason="length"` (the output-token cap)
+and will reschedule anyway; pre-empting by chunking is cheaper than
+recovering from the cap. Save large file writes for their own turns.
+
+### Noted — items already shipped in prior versions
+
+- **`modlist` removal**: there is no `/glla modlist` menu item in the
+  current code (`modlist` only appears in a doc comment about the
+  unrelated `pi-plugin-list-selector-modlist` package and a tool-heal
+  notify message). Already done.
+- **Per-project tool overrides**: the project settings file
+  (`<cwd>/.pi-glla/settings.json`) is the override mechanism. Reviewer
+  / post-audit / subagent-model / aggressive-mode / quota / stuck /
+  escalation / feedback / wedge / auto-resume / auto-accept / etc. all
+  read per-project settings. Already done.
+- **`no work started` mislabel**: the paused widget line is
+  `saved — N tok spent · M audits · resumes exactly here` (0.27.1); when
+  both N and M are 0 it degrades to `saved · resumes exactly here`. Done.
+
+1 new test (441 → 442).
+
 ## [0.27.5] — 2026-07-27
 
 ### Changed — surface the post-completion audit in interactive mode
