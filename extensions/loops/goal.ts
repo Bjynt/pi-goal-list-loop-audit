@@ -2903,6 +2903,8 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
       `Wedge alert minutes — ${show("wedgeAlertMinutes", `(${WEDGE_ALERT_DEFAULT_MINUTES})`)} — hung-command alert while the session is busy (0 = off)`,
       `Stuck max interventions — ${show("stuckMaxInterventions", "(5)")} — consecutive stuck interventions before a loop stops`,
       `Stall escalation refires — ${show("stallEscalationRefires", "(5)")} — heartbeat refires with no turn before the goal pauses / loop stops (0 = never)`,
+      `Stall short threshold — ${show("stallShortThreshold", `(${DEFAULT_STALL_SHORT_THRESHOLD})`)} — turns with no tools AND text shorter than this count as a nudge (chars)`,
+      `Stall similarity threshold — ${show("stallSimilarityThreshold", `(${DEFAULT_STALL_SIM_THRESHOLD})`)} — no-tool turns whose text is > this similar to the prior turn count as a nudge (0–1)`,
       "── Subagents ──",
       `Subagent model strategy — ${show("subagentModelStrategy", "(inherit-parent)")} — inherit-parent shares your session model+quota; agent-default pins haiku for Explore`,
       `Subagent Explore pin — ${settings.subagentModelOverrides?.Explore ?? "(follows strategy)"} — provider/model pin; always wins over strategy`,
@@ -3242,6 +3244,8 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
         fmt("stuckMaxInterventions", "stuckMaxInterventions"),
         fmt("stallEscalationRefires", "stallEscalation"),
         fmt("wedgeAlertMinutes", "wedgeAlert"),
+        fmt("stallShortThreshold", "stallShortThreshold"),
+        fmt("stallSimilarityThreshold", "stallSimilarityThreshold"),
         // v0.25.6: effective per-type subagent model resolution.
         ...["Explore", "Plan", "general-purpose"].map(
           (t) => `subagent ${t}: ${resolveEffectiveSubagentModel(t, loadSettings(ctx.cwd), (ctx.model as any)?.id ? `${(ctx.model as any).provider}/${(ctx.model as any).id}` : undefined)}`,
@@ -3392,6 +3396,32 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
           changed = true;
         } else {
           ctx.ui.notify(`stuckmax must be a positive integer, got: ${value}`, "warning");
+        }
+      }
+    } else if (key === "stallshort" || key === "stallshortthreshold") {
+      if (["unset", "default"].includes(value)) {
+        patch.stallShortThreshold = undefined;
+        changed = true;
+      } else {
+        const n = Number.parseInt(value, 10);
+        if (Number.isInteger(n) && n >= 1) {
+          patch.stallShortThreshold = n;
+          changed = true;
+        } else {
+          ctx.ui.notify(`stallshortthreshold must be a positive integer, got: ${value}`, "warning");
+        }
+      }
+    } else if (key === "stallsim" || key === "stallsimilaritythreshold") {
+      if (["unset", "default"].includes(value)) {
+        patch.stallSimilarityThreshold = undefined;
+        changed = true;
+      } else {
+        const n = Number.parseFloat(value);
+        if (Number.isFinite(n) && n >= 0 && n <= 1) {
+          patch.stallSimilarityThreshold = n;
+          changed = true;
+        } else {
+          ctx.ui.notify(`stallsimilaritythreshold must be between 0 and 1, got: ${value}`, "warning");
         }
       }
     } else if (key === "thinking" || key === "auditorthinkinglevel") {
