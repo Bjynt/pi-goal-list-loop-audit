@@ -42,7 +42,7 @@ function mkDeps(cwd: string, over: Partial<ReviewerDeps> = {}) {
 const GOAL_SRC = { kind: "goal" as const, goalId: "g1", objective: "audit screens", terminal: "goal-complete" };
 const LIST_SRC = { kind: "list" as const, goalId: "g9", objective: "last item", terminal: "goal-complete" };
 const AUTO = { ...resolveReviewerConfig(), mode: "auto" as const };
-const REPORT = { ...resolveReviewerConfig(), mode: "on" as const };
+const REPORT = undefined; // v0.27.9: legacy alias — `report` mode was removed in 0.27.9 (4-mode set: off | on | auto | aggressive). Kept as undefined so any stale references fail loudly.
 
 test("auto mode: architectural findings enqueue to /list — proposeGoal NEVER called", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-mode-"));
@@ -66,20 +66,14 @@ test("auto mode: clean completion enqueues the audit as a /list item (no Confirm
   assert.match(calls.enqueued[0]![0]!, /regression scan/i);
 });
 
-test("report mode: report written + notified, but nothing enqueued or proposed", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-mode-"));
-  const { deps, calls } = mkDeps(dir, {
-    sources: [{ name: "archive", text: "TODO: fix parser\nWe should rewrite the schema" }],
-  });
-  const out = runReviewer(REPORT, GOAL_SRC, deps);
-  assert.equal(out.fired, true);
-  assert.equal(out.report!.cascadeStep, "report-only");
-  assert.equal(out.enqueued, 0);
-  assert.equal(out.proposed, 0);
-  assert.equal(calls.enqueued.length, 0);
-  assert.equal(calls.proposed.length, 0);
-  assert.ok(out.reportPath && fs.existsSync(out.reportPath), "report still written");
-  assert.match(fs.readFileSync(out.reportPath!, "utf-8"), /\*\*Mode\*\*: report/);
+test("report mode: REMOVED in 0.27.9 (the 4-mode set `off | on | auto | aggressive` has no report branch)", () => {
+  // The 5-mode set `off | default | auto | aggressive | report` was
+  // re-shaped in 0.27.9 to the contract-mandated 4-mode set. The
+  // legacy `report` mode (write the report + notify only, no cascade)
+  // was dropped. This empty test exists to anchor the deletion so a
+  // future refactor doesn't quietly re-add a `report` mode.
+  const src = fs.readFileSync("extensions/reviewer.ts", "utf-8");
+  assert.doesNotMatch(src, /cascadeStep = "report-only"/);
 });
 
 test("improvement-class extraction: 'consider adding X' / 'could be improved' enqueue without Confirm", () => {

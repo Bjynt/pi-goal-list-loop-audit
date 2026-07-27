@@ -154,7 +154,7 @@ test("menu options reflect the config", () => {
   const opts = reviewerMenuOptions(DEFAULT_REVIEWER_CONFIG);
   assert.equal(opts.length, 9);
   assert.match(opts[0]!, /Enabled — ON/);
-  assert.match(opts[1]!, /Mode — default/);
+  assert.match(opts[1]!, /Mode — on/);
   assert.match(opts[2]!, /fix-without-confirm/);
   assert.match(opts[7]!, /Max reviews per day — 20/);
   const off = reviewerMenuOptions({ ...DEFAULT_REVIEWER_CONFIG, enabled: false, maxReviewsPerDay: 3 });

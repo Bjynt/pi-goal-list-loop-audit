@@ -45,9 +45,10 @@ test("Settings type accepts both reviewer and postaudit keys", () => {
   assert.match(SETTINGS_SRC, /\/\*\*[^*]*v0\.27\.5: post-completion audit config[\s\S]*?postaudit\?:\s*Record<string, unknown>;/);
 });
 
-test("SETTINGS_KEYS includes postaudit (not reviewer — legacy key is opaque)", () => {
-  // The display list pins the new key; legacy key is resolved via dual-read.
-  assert.match(SETTINGS_SRC, /SETTINGS_KEYS[\s\S]*?"postaudit",?\s*\]/);
+test("SETTINGS_KEYS includes postaudit and toolOverrides", () => {
+  // The display list pins both new keys; legacy `reviewer` is resolved
+  // via dual-read in fireReviewer but kept opaque in SETTINGS_KEYS.
+  assert.match(SETTINGS_SRC, /SETTINGS_KEYS[\s\S]*?"postaudit",?\s*\n\s*"toolOverrides",?\s*\]/);
 });
 
 test("/glla postaudit opens the same menu as /glla reviewer (no behavioral split)", () => {
