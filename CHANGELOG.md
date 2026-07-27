@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.27.9] — 2026-07-27
+
+### Changed — postaudit modes re-shaped to literal 4-mode contract
+
+`ReviewerMode` is now `"off" | "on" | "auto" | "aggressive"` (was
+`"off" | "default" | "auto" | "aggressive" | "report"`). The contract
+specified `off | on | auto | aggressive` with default `on`; `default`
+was renamed to `on`, `report` was dropped entirely (its "write report
+only, no cascade" behavior was already covered by `on` + a configurable
+`cascade` block). Existing settings files with `"default"` or `"report"`
+auto-migrate to `"on"` on first read via `resolveReviewerConfig`. Default
+is now `on` (was `default`). `/review <id> <mode>` accepts all four.
+`/glla postaudit=` (and the legacy `/glla reviewer=`) cycles through
+`off → on → auto → aggressive → off`.
+
+### Added — per-tool override subsystem (item 5)
+
+`.pi-glla/settings.json` now accepts a `toolOverrides` block:
+
+```json
+{
+  "toolOverrides": {
+    "allow": ["bash", "write_file"],
+    "hide": ["some_external_tool"],
+    "perToolConfig": {
+      "bash": { "timeout": 60 }
+    }
+  }
+}
+```
+
+`toolOverrides.allow` forces tools visible despite an external modlist;
+`toolOverrides.hide` forces tools hidden even when the session allows
+them. `perToolConfig` is an extensible record for tool-specific knobs
+(timeouts, formats, etc.). `/glla tooloverride <action>` opens the menu:
+
+- `list` — show current state
+- `allow <tool>` / `hide <tool>` / `unallow <tool>` / `unhide <tool>`
+- `set <tool> <key>=<value>` / `unset <tool> <key>`
+
+The existing tool-heal self-heal (`ensureAgentToolsActive`) now applies
+these lists on top of the missing-tools recovery. Unattended rigs can
+finally override modlist profiles without editing the global profile.
+
+### Changed — paused widget zero-telemetry wording
+
+The widget now renders `awaiting first turn — resumes exactly here` when
+`tokUsed === 0 && audits === 0` (restored-in-fresh-session before the
+first turn). With telemetry it still renders `saved — N tok spent · M
+audits · resumes exactly here`. The literal contract text is honored.
+
+### Added — chunk-near-context-full hint in completion-auditor prompt
+
+The chunking hint (previously only in `prompts/goal-loop-continuation.md`)
+now also sits in the isolated completion auditor's instruction array
+inside `extensions/goal-loop-auditor.ts` (`buildGoalAuditorPrompt`). The
+reviewer writes Markdown reports and has no inline prompt to add the
+hint to — the auditor is the relevant "reviewer/auditor prompt" target.
+Test in `tests/auditor-chunk-hint.test.ts` pins the hint inside the
+auditor prompt's instruction array.
+
+11 new tests (467 → 468). Updated 7 reviewer-modes / postaudit-surface /
+pause-informativeness / long-running-modes-parked / reviewer tests to
+match the contract surface.
+
 ## [0.27.8] — 2026-07-27
 
 ### Changed — `audit/LONG-RUNNING-MODES.md` is now the per-item evidence ledger

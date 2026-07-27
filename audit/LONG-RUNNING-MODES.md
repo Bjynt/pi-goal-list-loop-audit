@@ -70,14 +70,18 @@ is "in progress."
   - Raw run: `bun test` → `445 pass, 1 skip, 0 fail` in 2.71s. `npm run test:node` → same numbers in 3.05s.
   - No code changes needed — bun handles `.ts` natively via `bun:test` and the existing tests don't use relative `.js` imports that would break under node strip-types.
 
-### Item 5 — per-project tool overrides
+### Item 5 — per-project tool overrides (real subsystem shipped in 0.27.9)
 
-- **State**: shipped in 0.24.x (the per-project settings mechanism), noted-as-done. The contract's reference to `extensions/loop1-oracle.ts` was speculative — that file does not exist and never did. The real mechanism is the project settings file.
+- **State**: shipped in 0.27.9 as a first-class subsystem. The contract
+  referenced `extensions/loop1-oracle.ts` (a file that never existed);
+  the real implementation is the `toolOverrides` block in
+  `.pi-glla/settings.json` plus a `/glla tooloverride <action>` menu.
 - **Evidence**:
-  - File: `extensions/goal-settings.ts:103-145` — `loadSettings(cwd)` reads `<cwd>/.pi-glla/settings.json`; `saveSettings("project", cwd, ...)` writes back.
-  - Override surface: `autoResume`, `autoAcceptDrafts`, `aggressiveMode`, `subagentModelStrategy`, `subagentModelOverrides`, `postaudit` (alias of legacy `reviewer`), `stallShortWords`, `stallSimilarityThreshold`, `escalateFloor` / `escalateCap`, `autoaccept`, `autoResume`, `maxAuditorFeedbackChars`, etc. — all per-project-overridable via `/glla <key>=<value>`.
-  - Reference settings files: `/home/dracon/chat/pi/.pi-glla/settings.json` (chat/pi), `/home/dracon/Dev/dracon-platform/web/games/wip/hegemon/.pi-glla/settings.json` (hegemon — `{"autoResume": true}` for unattended rig).
-  - Existing tool-restoration mechanism (the closest the code comes to "per-tool config"): `extensions/loops/goal.ts:3656` (`pi.setActiveTools([...active, ...missing])`) auto-reactivates glla tools when an external allowlist hides them. Not a writer, but the read-side mechanism for project tool behavior.
+  - File: `extensions/goal-settings.ts` — `toolOverrides?: { allow?: string[]; hide?: string[]; perToolConfig?: Record<string, Record<string, unknown>> }` added to `Settings` and `SETTINGS_KEYS`.
+  - File: `extensions/loops/goal.ts:ensureAgentToolsActive` — reads `loadSettings(ctx.cwd).toolOverrides` and applies `.allow` (force visible) and `.hide` (force hidden) on top of the missing-tools self-heal.
+  - File: `extensions/loops/goal.ts:cmdToolOverride` — handler for `/glla tooloverride list | allow | hide | unallow | unhide | set | unset`. Parses `key=value` for boolean / number / JSON / string coercion.
+  - Test: `tests/tool-overrides.test.ts` (10 tests) pins the Settings shape, SETTINGS_KEYS, ensureAgentToolsActive wiring, /glla tooloverride routing, cmdToolOverride action matrix, parseToolOverrideValue branches.
+  - Unattended rigs can now override modlist profiles via project settings without editing the global profile.
 
 ### Item 6 — paused widget wording (item 6 of the contract)
 
@@ -131,12 +135,14 @@ Reframed the existing "reviewer" as a **post-completion auditor** that
 fires after goal/list terminates. Modes:
 
 - `off` ✅ — no post-audit (0.27.7)
-- `default` ✅ — Confirm-gated cascade (existed since 0.26.0, renamed to default in 0.27.7)
-- `auto` ✅ — on + auto-enqueue any tasks it produces into `/list` (existed since 0.26.2, kept)
+- `on` ✅ — Confirm-gated cascade (renamed from `default` in 0.27.9)
+- `auto` ✅ — on + auto-enqueue any tasks it produces into `/list` (0.27.7)
 - `aggressive` ✅ — auto + auto-relaunch goal if it proposes one (0.27.7)
-- `report` ✅ — write report only, no cascade (existed since 0.26.2, kept)
 
-Five-mode cycle: off → default → auto → aggressive → report → off.
+Four-mode cycle (0.27.9): off → on → auto → aggressive → off.
+Default is `on`. The legacy `report` mode was dropped (its write-only
+behavior was already covered by `on` + a configurable `cascade` block).
+Legacy `default` and `report` settings auto-migrate to `on` on first read.
 On-by-default surfacing shipped in 0.27.5 (silent reviewer → notify).
 
 ## Open threads

@@ -22,24 +22,24 @@ test("Item 1 — parking doc itself is committed to git", () => {
   assert.ok(stat.size > 3000, `expected >3000 bytes (got ${stat.size})`);
 });
 
-test("Item 2 — 0.27.5 postaudit surface is shipped, modes completed in 0.27.7", () => {
+test("Item 2 — 0.27.5 postaudit surface shipped, modes re-shaped to literal contract in 0.27.9", () => {
   assert.match(DOC, /Item 2.+pi-goal-list-loop-audit@0\.27\.5/s);
   assert.match(DOC, /22bbafa2.*0\.27\.5/);
   assert.match(DOC, /34d7ad4b.*0\.27\.7/);
   assert.match(DOC, /postaudit\?: Record<string, unknown>/);
   assert.match(DOC, /dual-read.*settings\.postaudit \?\? settings\.reviewer/);
-  // 5 modes all listed as shipped (search for the leading keyword in each line)
+  // 4 modes all listed as shipped (search for the leading keyword in each line)
   assert.match(DOC, /`off` .*no post-audit \(0\.27\.7\)/);
-  assert.match(DOC, /`default` .*Confirm-gated cascade/);
+  assert.match(DOC, /`on` .*Confirm-gated cascade/);
   assert.match(DOC, /`auto` .*auto-enqueue any tasks it produces into .\/list/);
   assert.match(DOC, /`aggressive` .*auto-relaunch goal if it proposes one/);
-  assert.match(DOC, /`report` .*write report only, no cascade/);
+  assert.doesNotMatch(DOC, /`report`/);
   // Source files exist
   assert.ok(fs.existsSync("extensions/loops/goal.ts"));
   assert.ok(fs.existsSync("extensions/goal-settings.ts"));
-  // The package was actually published
+  // The package was at 0.27.9+
   const pkg = JSON.parse(fs.readFileSync("package.json", "utf-8"));
-  assert.match(pkg.version, /^0\.27\.[78]$/, "local version is at 0.27.7+ (postaudit modes completed)");
+  assert.match(pkg.version, /^0\.27\.9$/, "local version is at 0.27.9 (4-mode contract)");
 });
 
 test("Item 3 — modlist removal: no /glla modlist menu item in code", () => {
@@ -59,14 +59,23 @@ test("Item 4 — bun test parallelization: package.json scripts use bun", () => 
   assert.match(pkg.scripts["test:all"], /bun test && tsc --noEmit/);
 });
 
-test("Item 5 — per-project tool overrides: loadSettings / saveSettings shipped", () => {
+test("Item 5 — per-tool override subsystem shipped in 0.27.9", () => {
   assert.match(DOC, /Item 5.+per-project tool overrides/s);
-  assert.match(DOC, /loadSettings\(cwd\)/);
-  assert.match(DOC, /saveSettings\("project", cwd, \.\.\.\)/);
-  // The mechanism file actually exists and exposes the API.
+  assert.match(DOC, /shipped in 0\.27\.9 as a first-class subsystem/);
+  // The Settings type + toolOverrides block + SETTINGS_KEYS entry
   const src = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
-  assert.match(src, /export function loadSettings/);
-  assert.match(src, /export function saveSettings/);
+  assert.match(src, /toolOverrides\?:\s*\{\s*\n\s*\/\*\* Tools that MUST be active/);
+  assert.match(src, /allow\?:\s*string\[\]/);
+  assert.match(src, /hide\?:\s*string\[\]/);
+  assert.match(src, /perToolConfig\?:\s*Record<string,\s*Record<string,\s*unknown>>/);
+  // SETTINGS_KEYS includes toolOverrides
+  assert.match(src, /SETTINGS_KEYS[\s\S]*?"toolOverrides",?\s*\]/);
+  // goal.ts wires toolOverrides into ensureAgentToolsActive
+  const goalSrc = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.match(goalSrc, /const overrides = loadSettings\(ctx\.cwd\)\.toolOverrides/);
+  assert.match(goalSrc, /cmdToolOverride/);
+  // Tool-override test file exists
+  assert.ok(fs.existsSync("tests/tool-overrides.test.ts"));
 });
 
 test("Item 6 — paused widget renders `awaiting first turn` for zero telemetry (literal contract)", () => {
