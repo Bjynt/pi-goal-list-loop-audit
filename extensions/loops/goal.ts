@@ -87,6 +87,12 @@ import {
   missingGllaTools,
 } from "../goal-loop-core.js";
 import {
+  LENGTH_CONTINUE_MAX,
+  LENGTH_CONTINUE_TEXT,
+  resetLengthContinue,
+  tickLengthContinue,
+} from "../length-continue.js";
+import {
   isQuotaError,
   isSubagentQuotaResult,
   parseQuotaError,
@@ -3778,6 +3784,23 @@ export default function (pi: ExtensionAPI): void {
     // continuation loop.
     if (isForeignCtx(ctx)) return;
     noteActivity(true);
+    // v0.27.2: folded-in length-continue (standalone pi-length-continue is
+    // deprecated). A response cut by the per-response output cap is NOT a
+    // completed turn (no telemetry), NOT a stall (no no-tool nudge), and
+    // must not run the loop measure or the normal goal continuation on half
+    // a response — re-trigger immediately with split-smaller guidance and
+    // skip ALL turn bookkeeping; the NEXT agent_end processes the run.
+    // Works with no goal active (plain sessions truncate too).
+    const lastA = [...(event.messages as any[])].reverse().find((m) => m.role === "assistant");
+    const lc = tickLengthContinue(lastA?.stopReason === "length");
+    if (lc.giveUpNow) {
+      ctx.ui.notify(`glla: response hit the output-token cap ${LENGTH_CONTINUE_MAX}× in a row — stepping aside. Ask the model to split the work into smaller pieces.`, "warning");
+      notifyExternal(ctx, "Response truncated 3× in a row — giving up auto-continue.");
+    }
+    if (lastA?.stopReason === "length") {
+      if (lc.fire && !ctx.hasPendingMessages) sendLengthContinue(ctx, lc.consecutive);
+      return;
+    }
     // v0.25.2: per-goal turn telemetry (/glla stats).
     if (state.goal && state.goal.status === "active") {
       const t = state.goal.telemetry ?? { turns: 0, fileWrites: 0, bashCalls: 0 };
