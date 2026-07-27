@@ -74,3 +74,21 @@ test("resolveReviewerConfig: postaudit and reviewer blocks merge equivalently", 
   assert.equal(ra.mode, "auto");
   assert.equal(ra.maxFindingsPerReview, 7);
 });
+
+test("goal-loop-continuation prompt carries the 0.27.5 chunk-near-context-full hint", () => {
+  const prompt = fs.readFileSync("prompts/goal-loop-continuation.md", "utf-8");
+  // Three independent assertions, not ordered — the prose may place
+  // "stop_reason=length" and "auto-continue" in either order; we only
+  // require the hint to live alongside the auto-continue reference.
+  const chunkIdx = prompt.indexOf("Chunk output near context-full");
+  const stopIdx = prompt.indexOf('stop_reason="length"');
+  const contIdx = prompt.indexOf("auto-continue");
+  assert.ok(chunkIdx > 0 && stopIdx > 0 && contIdx > 0, "all three anchors present in the prompt");
+  // chunking hint and the auto-continue reference should live in the
+  // same paragraph (within 800 chars of each other).
+  assert.ok(
+    Math.abs(chunkIdx - contIdx) < 800 && Math.abs(chunkIdx - stopIdx) < 800,
+    "the chunking hint sits next to the auto-continue / length reference",
+  );
+  assert.match(prompt, /split large file writes|focused reasoning|small commits/);
+});
