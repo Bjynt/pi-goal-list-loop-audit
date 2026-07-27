@@ -160,7 +160,7 @@ import {
   accountTurnForNudgesRich,
   BACKOFF_IDLE_RETRY_MS,
   DEFAULT_STALL_SIM_THRESHOLD,
-  DEFAULT_STALL_SHORT_THRESHOLD,
+  DEFAULT_STALL_SHORT_WORDS,
   HEARTBEAT_INTERVAL_MS,
   HEARTBEAT_MAX_NUDGES,
   HEARTBEAT_STALL_MS,
@@ -2903,7 +2903,7 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
       `Wedge alert minutes — ${show("wedgeAlertMinutes", `(${WEDGE_ALERT_DEFAULT_MINUTES})`)} — hung-command alert while the session is busy (0 = off)`,
       `Stuck max interventions — ${show("stuckMaxInterventions", "(5)")} — consecutive stuck interventions before a loop stops`,
       `Stall escalation refires — ${show("stallEscalationRefires", "(5)")} — heartbeat refires with no turn before the goal pauses / loop stops (0 = never)`,
-      `Stall short threshold — ${show("stallShortThreshold", `(${DEFAULT_STALL_SHORT_THRESHOLD})`)} — turns with no tools AND text shorter than this count as a nudge (chars)`,
+      `Stall short words — ${show("stallShortWords", `(${DEFAULT_STALL_SHORT_WORDS})`)} — turns with no tools AND fewer words than this count as a nudge`,
       `Stall similarity threshold — ${show("stallSimilarityThreshold", `(${DEFAULT_STALL_SIM_THRESHOLD})`)} — no-tool turns whose text is > this similar to the prior turn count as a nudge (0–1)`,
       "── Subagents ──",
       `Subagent model strategy — ${show("subagentModelStrategy", "(inherit-parent)")} — inherit-parent shares your session model+quota; agent-default pins haiku for Explore`,
@@ -3244,7 +3244,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
         fmt("stuckMaxInterventions", "stuckMaxInterventions"),
         fmt("stallEscalationRefires", "stallEscalation"),
         fmt("wedgeAlertMinutes", "wedgeAlert"),
-        fmt("stallShortThreshold", "stallShortThreshold"),
+        fmt("stallShortWords", "stallShortWords"),
         fmt("stallSimilarityThreshold", "stallSimilarityThreshold"),
         // v0.25.6: effective per-type subagent model resolution.
         ...["Explore", "Plan", "general-purpose"].map(
@@ -3398,17 +3398,17 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
           ctx.ui.notify(`stuckmax must be a positive integer, got: ${value}`, "warning");
         }
       }
-    } else if (key === "stallshort" || key === "stallshortthreshold") {
+    } else if (key === "stallshortwords" || key === "stallshort") {
       if (["unset", "default"].includes(value)) {
-        patch.stallShortThreshold = undefined;
+        patch.stallShortWords = undefined;
         changed = true;
       } else {
         const n = Number.parseInt(value, 10);
         if (Number.isInteger(n) && n >= 1) {
-          patch.stallShortThreshold = n;
+          patch.stallShortWords = n;
           changed = true;
         } else {
-          ctx.ui.notify(`stallshortthreshold must be a positive integer, got: ${value}`, "warning");
+          ctx.ui.notify(`stallshortwords must be a positive integer, got: ${value}`, "warning");
         }
       }
     } else if (key === "stallsim" || key === "stallsimilaritythreshold") {
@@ -3876,10 +3876,10 @@ export default function (pi: ExtensionAPI): void {
     // incident showed the tool-only check fired on real investigation work.
     if (isSupervising()) {
       const s = loadSettings(ctx.cwd);
-      const shortThr = s.stallShortThreshold ?? DEFAULT_STALL_SHORT_THRESHOLD;
+      const shortWordsThr = s.stallShortWords ?? DEFAULT_STALL_SHORT_WORDS;
       const simThr = s.stallSimilarityThreshold ?? DEFAULT_STALL_SIM_THRESHOLD;
       heartbeatNudges = accountTurnForNudgesRich(
-        { toolCalls: toolCallsThisTurn, text: lastA?.text ?? "", priorText: lastA?.priorText ?? "", shortThreshold: shortThr, simThreshold: simThr },
+        { toolCalls: toolCallsThisTurn, text: lastA?.text ?? "", priorText: lastA?.priorText ?? "", shortWords: shortWordsThr, simThreshold: simThr },
         heartbeatNudges,
       );
       if (heartbeatNudges >= HEARTBEAT_MAX_NUDGES) {

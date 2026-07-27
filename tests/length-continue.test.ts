@@ -38,7 +38,7 @@ test("continue text carries the root-cause mitigation (split large writes)", () 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 
 test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal gating", () => {
-  const handler = SRC.slice(SRC.indexOf('pi.on("agent_end"'), SRC.indexOf('pi.on("agent_end"') + 3500);
+  const handler = SRC.slice(SRC.indexOf('pi.on("agent_end"'), SRC.indexOf('pi.on("agent_end"') + 5000);
   const lengthIdx = handler.indexOf('tickLengthContinue(lastA?.stopReason === "length")');
   assert.ok(lengthIdx > 0, "length tick present");
   // before the no-tool nudge accounting (stall brake) …

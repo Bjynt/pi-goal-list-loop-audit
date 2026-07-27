@@ -184,16 +184,20 @@ export function accountTurnForNudges(toolCalls: number, currentNudges: number): 
 /**
  * v0.27.3: the pure nudge detector and richer accounting. A supervising turn
  * is a nudge (no real progress) iff it has NO tool calls AND its text is
- * either short (< DEFAULT_STALL_SHORT_THRESHOLD chars) OR highly similar to
+ * either short (< DEFAULT_STALL_SHORT_WORDS words) OR highly similar to
  * the prior assistant turn (3-gram Jaccard > DEFAULT_STALL_SIM_THRESHOLD).
- * Substantive analytical replies (long, novel) reset the counter even with
- * no tool calls — the polis-session incident ("3 consecutive turns with no
- * tool calls" tripped the brake on real investigation work, screenshot
- * 2026-07-27) showed the simple tool-only check is too coarse.
+ * Substantive analytical replies (≥ 15 words, novel) reset the counter
+ * even with no tool calls — the polis-session incident ("3 consecutive
+ * turns with no tool calls" tripped the brake on real investigation work,
+ * screenshot 2026-07-27) showed the simple tool-only check is too coarse.
+ *
+ * Word-count rather than char-count: "Working…" (1 word) is a nudge;
+ * "state-pump-dom.ts has zero references to hud." (8 words, one sentence)
+ * is not. A paragraph with at least one real sentence is > 15 words.
  *
  * Pure: no side effects, no state. Safe to unit-test with crafted inputs.
  */
-export const DEFAULT_STALL_SHORT_THRESHOLD = 200;
+export const DEFAULT_STALL_SHORT_WORDS = 15;
 export const DEFAULT_STALL_SIM_THRESHOLD = 0.6;
 
 export function trigramSimilarity(a: string, b: string): number {
@@ -226,13 +230,14 @@ export function isNudgeTurn(opts: {
   toolCalls: number;
   text: string;
   priorText: string;
-  shortThreshold?: number;
+  shortWords?: number;
   simThreshold?: number;
 }): boolean {
   if (opts.toolCalls > 0) return false;
-  const shortThr = opts.shortThreshold ?? DEFAULT_STALL_SHORT_THRESHOLD;
+  const shortThr = opts.shortWords ?? DEFAULT_STALL_SHORT_WORDS;
   const simThr = opts.simThreshold ?? DEFAULT_STALL_SIM_THRESHOLD;
-  if (opts.text.length < shortThr) return true;
+  const wordCount = (opts.text.trim().match(/\S+/g) ?? []).length;
+  if (wordCount < shortThr) return true;
   if (!opts.priorText) return false; // first turn in a streak — no similarity to compare to
   return trigramSimilarity(opts.text, opts.priorText) > simThr;
 }
@@ -242,7 +247,7 @@ export function accountTurnForNudgesRich(
     toolCalls: number;
     text: string;
     priorText: string;
-    shortThreshold?: number;
+    shortWords?: number;
     simThreshold?: number;
   },
   currentNudges: number,
