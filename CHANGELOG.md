@@ -1,6 +1,37 @@
 # Changelog
 
+## [0.27.2] — 2026-07-27
+
+### Added — auto-continue on output-token truncation, folded in
+
+The standalone **pi-length-continue** package is deprecated; the behavior
+now lives here (works in every session, goal or no goal):
+
+- When one assistant response exceeds the model's per-response output cap
+  (`stopReason: "length"`), agent_end immediately re-triggers with
+  "continue EXACTLY where you stopped — split large file writes into
+  smaller write/edit calls across turns" (the root-cause mitigation).
+- A truncated turn is **exempt from all turn bookkeeping**: no telemetry,
+  no no-tool nudge (it is NOT a stall), no loop measure, no normal goal
+  continuation on half a response. The next agent_end processes the run.
+- Guards: 3-consecutive cap with a one-time give-up notice, skip when
+  messages are pending, stale-api errors route to the 0.26.7 terminal
+  path. Ledger events: `length_continue_sent` /
+  `length_continue_send_failed`.
+
+4 new tests (422 → 426).
+
+### Also in this release window (ops, no code)
+
+- **autoResume scope fix**: the global settings file carried
+  `autoResume: true` (0.26.8 era), overriding the 0.26.9 hold-on-load
+  tri-state for EVERY project — interactive sessions (neonbreak) resumed
+  goals on load. Global override removed; `autoResume: true` now set
+  per-project only on the unattended rigs (hegemon, darklord, polis,
+  junk-runner, dracon-utilities).
+
 ## [0.27.1] — 2026-07-27
+
 
 ### Fixed — pauses now tell you what happened, what survived, and what to decide
 

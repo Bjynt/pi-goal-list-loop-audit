@@ -44,7 +44,7 @@ test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal g
   // before the no-tool nudge accounting (stall brake) …
   assert.ok(lengthIdx < handler.indexOf("accountTurnForNudges"), "before nudge accounting");
   // … before per-goal telemetry …
-  assert.ok(lengthIdx < handler.indexOf("telemetry"), "before telemetry");
+  assert.ok(lengthIdx < handler.indexOf("state.goal.telemetry"), "before telemetry");
   // … and before the "no goal → return" gate (works in plain sessions)
   assert.ok(lengthIdx < handler.indexOf('if (!state.goal) return;'), "before goal gating");
   // truncated turns return early — no continuation scheduling on half a response
