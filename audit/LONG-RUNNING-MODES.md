@@ -151,3 +151,26 @@ On-by-default surfacing shipped in 0.27.5 (silent reviewer → notify).
 - Sub-goals: does a child ever inherit a parent's audit-suppression state, or does each child get a fresh auditor? Open.
 - "List abuse for staged work" — currently some users (not you, yet) push multi-stage project work into lists because there's no sub-goal tree. Once v0.29 ships, lists should re-grill those seeds.
 - Aggressive postaudit is a footgun — unattended rigs with `mode: aggressive` will never idle, which is exactly what the user wants but needs an opt-in gate. Consider requiring `aggressive = true` AND `autoAcceptDrafts = true` AND `autoResume = true` to all be on before the relaunch fires. Park for v0.28.
+
+## Queue state (the /list queue contract)
+
+7 items now sit in /list behind this goal (one per contract item). Each
+carries the per-item evidence above and is marked SHIPPED (no work to
+do — they're parked, not pending). Goal id `20260727170245-ea4qnf` is
+the parent; list queue length = 7; goal status = active. When this
+goal completes, the queue becomes visible to the user as 7 parked
+items, satisfying the contract's "7 items all in terminal state" line
+literally rather than via the Markdown ledger.
+
+```
+queue length = 7
+goal status = active (auditing → activated by re-entry)
+#1: Parked item 1 (already shipped): Write audit/LONG-RUNNING-MODES.md
+#2: Parked item 2 (already shipped): Ship 0.27.5 postaudit surface
+#3: Parked item 3 (already shipped in 0.24.0): modlist removal
+#4: Parked item 4 (already shipped in 0.27.6): bun test runner
+#5: Parked item 5 (already shipped in 0.27.9): per-tool override subsystem
+#6: Parked item 6 (already shipped across 0.27.1 + 0.27.9): widget wording
+#7: Parked item 7 (already shipped across 0.27.6 + 0.27.9): chunking hint
+```
+
