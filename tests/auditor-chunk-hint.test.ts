@@ -17,7 +17,7 @@ test("auditor prompt carries the chunk-near-context-full hint (item 7)", () => {
   // All three anchors present (order not asserted — the prose may place
   // "stop_reason=length" before or after "auto-continue").
   const chunkIdx = src.indexOf("Chunk output near context-full");
-  const stopIdx = src.indexOf('stop_reason="length"');
+  const stopIdx = src.indexOf('stop_reason=\\"length\\"');
   const contIdx = src.indexOf("auto-continue");
   assert.ok(chunkIdx > 0 && stopIdx > 0 && contIdx > 0, "all three anchors present in the file");
   // Anchors must be near each other (within the same paragraph).
