@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.27.3] — 2026-07-27
+
+### Fixed — stall brake too aggressive on real investigation work
+
+The polis-session pause ("3 consecutive turns with no tool calls", screenshot
+2026-07-27) tripped on three substantive analytical paragraphs about
+`state-pump-dom.ts` after `cd/ls/grep` reads — real work, not a stall. The
+brake checked only `toolCalls > 0` and missed the case where the model is
+reasoning out loud across turns. Now a no-tool turn is a nudge only when it
+is also short (default < 15 words) OR highly similar to the prior assistant
+turn (3-gram Jaccard > 0.6 default). Substantive novel analysis resets the
+counter even without a tool call.
+
+New settings: `stallShortWords` (default 15) and `stallSimilarityThreshold`
+(default 0.6) — tunable per project. Pause reason now reads "3 consecutive
+unproductive turns (no tools, short or repetitive)".
+
+11 new tests (415 → 426). The stall brake still fires on real stalls
+("ok"/"Working…" repetition).
+
 ## [0.27.2] — 2026-07-27
 
 ### Added — auto-continue on output-token truncation, folded in

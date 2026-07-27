@@ -72,15 +72,17 @@ test("isNudgeTurn: tunable thresholds", () => {
 });
 
 test("accountTurnForNudgesRich: three substantive no-tool turns → stays 0 (the fix)", () => {
-  const turns = [
+  const turns: string[] = [
     "state-pump-dom.ts has zero references to hud. So hud.state is never populated. The HUD never renders. This is a real, latent bug.",
     "But wait, the screenshot earlier showed a HUD rendering with MONTH 24, POP=8, FOOD, GOLD. So something DID populate it once. Let me check the screenshot was from a previous boot.",
     "The 552 KB screenshot was the broken state with HUD visible. So either the HUD IS populating from somewhere, or the screenshot is from a previous browser tab or cache.",
   ];
   let n = 0;
   for (let i = 0; i < turns.length; i++) {
+    const text = turns[i] as string;
+    const prior = i > 0 ? (turns[i - 1] as string) : "";
     n = accountTurnForNudgesRich(
-      { toolCalls: 0, text: turns[i], priorText: turns[i - 1] ?? "" },
+      { toolCalls: 0, text, priorText: prior },
       n,
     );
   }
