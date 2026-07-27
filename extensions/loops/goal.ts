@@ -533,6 +533,25 @@ function sendContinuation(goalId: string): void {
   }
 }
 
+// v0.27.2: send the truncation-continue nudge. Same guards as
+// sendContinuation (stale api = terminal), independent of goal state —
+// plain sessions truncate too.
+function sendLengthContinue(ctx: ExtensionContext, consecutive: number): void {
+  if (!extensionApi || extensionApiStale) return;
+  try {
+    extensionApi.sendMessage({
+      customType: GOAL_EVENT_ENTRY,
+      content: LENGTH_CONTINUE_TEXT,
+      display: true,
+    }, { triggerTurn: true, deliverAs: "followUp" });
+    appendLedger(ctx.cwd, "length_continue_sent", { consecutive });
+    ctx.ui.notify(`Response hit the output-token cap — auto-continuing (${consecutive}/${LENGTH_CONTINUE_MAX})`, "warning");
+  } catch (err) {
+    appendLedger(ctx.cwd, "length_continue_send_failed", { consecutive, error: err instanceof Error ? err.message : String(err) });
+    if (isStaleApiError(err)) goStaleTerminal(ctx, "sendLengthContinue");
+  }
+}
+
 function continuationPrompt(goal: Goal): string {
   // Read the .md file as the template, then substitute {{tokens}}.
   // For v0.1.0 we inline-substitute so we don't need fs at runtime.
@@ -3469,6 +3488,7 @@ function warnOnCommandCollision(ctx: ExtensionContext): void {
 export default function (pi: ExtensionAPI): void {
   extensionApi = pi;
   extensionApiStale = false; // a fresh factory run means a fresh runtime (reload path)
+  resetLengthContinue(); // v0.27.2: fresh runtime, fresh truncation streak
   startHeartbeat();
   startUITicker();
   // Four top-level commands, that's all (v0.8.0 consolidation):
@@ -3798,7 +3818,7 @@ export default function (pi: ExtensionAPI): void {
       notifyExternal(ctx, "Response truncated 3× in a row — giving up auto-continue.");
     }
     if (lastA?.stopReason === "length") {
-      if (lc.fire && !ctx.hasPendingMessages) sendLengthContinue(ctx, lc.consecutive);
+      if (lc.fire && !ctx.hasPendingMessages()) sendLengthContinue(ctx, lc.consecutive);
       return;
     }
     // v0.25.2: per-goal turn telemetry (/glla stats).
