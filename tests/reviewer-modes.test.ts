@@ -42,7 +42,7 @@ function mkDeps(cwd: string, over: Partial<ReviewerDeps> = {}) {
 const GOAL_SRC = { kind: "goal" as const, goalId: "g1", objective: "audit screens", terminal: "goal-complete" };
 const LIST_SRC = { kind: "list" as const, goalId: "g9", objective: "last item", terminal: "goal-complete" };
 const AUTO = { ...resolveReviewerConfig(), mode: "auto" as const };
-const REPORT = { ...resolveReviewerConfig(), mode: "report" as const };
+const REPORT = { ...resolveReviewerConfig(), mode: "on" as const };
 
 test("auto mode: architectural findings enqueue to /list — proposeGoal NEVER called", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-mode-"));
@@ -117,31 +117,50 @@ test("auto mode: the per-day cap still bounds everything", () => {
   assert.match(out.suppressedReason!, /day cap/);
 });
 
-test("menu: Mode option lists the 5 modes (off, default, auto, aggressive, report)", () => {
+test("menu: Mode option lists the 4 modes (off, on, auto, aggressive)", () => {
   const def = reviewerMenuOptions(DEFAULT_REVIEWER_CONFIG);
-  assert.match(def[1]!, /Mode — default/);
+  assert.match(def[1]!, /Mode — on/);
   assert.match(def[1]!, /auto = auto-loop/);
   assert.match(def[1]!, /aggressive = auto \+ relaunch/);
-  assert.match(def[1]!, /report = report only/);
   assert.match(def[1]!, /off = silenced/);
+  assert.doesNotMatch(def[1]!, /report/);
   const off = reviewerMenuOptions({ ...DEFAULT_REVIEWER_CONFIG, mode: "off" });
   assert.match(off[1]!, /Mode — off/);
-  // the goal.ts handler cycles through 5 modes (off → default → auto → aggressive → report → off)
-  assert.match(SRC_GOAL, /order: Array<"off" \| "default" \| "auto" \| "aggressive" \| "report"> = \["off", "default", "auto", "aggressive", "report"\]/);
+  // the goal.ts handler cycles through 4 modes (off → on → auto → aggressive → off)
+  assert.match(SRC_GOAL, /order: Array<"off" \| "on" \| "auto" \| "aggressive"> = \["off", "on", "auto", "aggressive"\]/);
 });
 
-test("/review accepts all 5 modes and rejects unknown modes", () => {
-  assert.match(SRC_GOAL, /const validModes = \["off", "default", "auto", "aggressive", "report"\] as const/);
-  assert.match(SRC_GOAL, /Unknown mode "\$\{modeArg\}" — use off \| default \| auto \| aggressive \| report\./);
+test("/review accepts all 4 modes and rejects unknown modes", () => {
+  assert.match(SRC_GOAL, /const validModes = \["off", "on", "auto", "aggressive"\] as const/);
+  assert.match(SRC_GOAL, /Unknown mode "\$\{modeArg\}" — use off \| on \| auto \| aggressive\./);
   assert.match(SRC_GOAL, /\{ manual: true, mode \}\)/);
 });
 
-test("config: mode defaults to 'default' and merges from project settings", () => {
-  assert.equal(DEFAULT_REVIEWER_CONFIG.mode, "default");
+test("config: mode defaults to 'on' and merges from project settings", () => {
+  assert.equal(DEFAULT_REVIEWER_CONFIG.mode, "on");
   assert.equal(resolveReviewerConfig({ mode: "auto" }).mode, "auto");
   assert.equal(resolveReviewerConfig({ mode: "off" }).mode, "off");
   assert.equal(resolveReviewerConfig({ mode: "aggressive" }).mode, "aggressive");
-  assert.equal(resolveReviewerConfig().mode, "default");
+  assert.equal(resolveReviewerConfig().mode, "on");
+});
+
+test("config: legacy 'default' and 'report' modes auto-migrate to 'on'", () => {
+  // v0.27.9: existing settings files with the old 5-mode values should not
+  // silently fall back to defaults — they map to 'on'.
+  assert.equal(resolveReviewerConfig({ mode: "default" as any }).mode, "on");
+  assert.equal(resolveReviewerConfig({ mode: "report" as any }).mode, "on");
+});
+
+test("report-mode test removed: the 4-mode postaudit surface (`off | on | auto | aggressive`) has no report branch anymore (0.27.9)", () => {
+  // The legacy 5-mode set (`off | default | auto | aggressive | report`) was
+  // re-shaped to the contract-mandated 4-mode set in 0.27.9: `default` →
+  // `on`, `report` dropped entirely. This test exists so a future audit
+  // doesn't try to re-add a `report` mode silently — the surface is fixed
+  // by contract.
+  const src = fs.readFileSync("extensions/reviewer.ts", "utf-8");
+  assert.match(src, /export type ReviewerMode = "off" \| "on" \| "auto" \| "aggressive";/);
+  assert.doesNotMatch(src, /mode === "report"/);
+  assert.doesNotMatch(src, /mode: "report"/);
 });
 
 test("off mode: reviewer NEVER fires (equivalent to enabled=false, exposed via postaudit menu)", () => {
@@ -189,10 +208,10 @@ test("aggressive mode: clean completion → relaunch audit /goal (no Confirm)", 
   assert.match(out.cascadeStep!, /aggressive-relaunch/);
 });
 
-test("goal.ts fireReviewer opts.mode now accepts the 5-mode ReviewerMode union", () => {
+test("goal.ts fireReviewer opts.mode now accepts the 4-mode ReviewerMode union", () => {
   assert.match(
     SRC_GOAL,
-    /opts:\s*\{\s*manual\?\s*:\s*boolean;\s*mode\?\s*:\s*"off"\s*\|\s*"default"\s*\|\s*"auto"\s*\|\s*"aggressive"\s*\|\s*"report"\s*\}\s*=\s*\{\}/,
-    "fireReviewer's mode type widened to the 5-mode union",
+    /opts:\s*\{\s*manual\?\s*:\s*boolean;\s*mode\?\s*:\s*"off"\s*\|\s*"on"\s*\|\s*"auto"\s*\|\s*"aggressive"\s*\}\s*=\s*\{\}/,
+    "fireReviewer's mode type widened to the 4-mode union",
   );
 });

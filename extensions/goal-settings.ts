@@ -158,6 +158,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "stallShortWords",
   "stallSimilarityThreshold",
   "postaudit",
+  "toolOverrides",
 ];
 
 /** Where each effective setting comes from (for the /glla display). */

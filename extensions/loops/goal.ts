@@ -3101,6 +3101,98 @@ async function cmdReview(args: string, ctx: ExtensionContext): Promise<void> {
   fireReviewer(ctx, { kind: "goal", goalId, objective, terminal: "goal-complete" }, { manual: true, mode });
 }
 
+/** v0.27.9: /glla tooloverride <action> [args] — per-tool override menu.
+ * Actions:
+ *   list                                show current allow/hide/perToolConfig
+ *   allow <tool>                        force <tool> visible despite modlist
+ *   hide <tool>                         force <tool> hidden despite session
+ *   unallow <tool>                      remove from allow list
+ *   unhide <tool>                       remove from hide list
+ *   set <tool> <key>=<value>            write perToolConfig[tool][key]
+ *   unset <tool> <key>                  remove perToolConfig[tool][key]
+ * Example: /glla tooloverride allow bash hide write_file set bash timeout=60 */
+async function cmdToolOverride(args: string, ctx: ExtensionContext): Promise<void> {
+  const settings = loadSettings(ctx.cwd);
+  const current = settings.toolOverrides ?? {};
+  const parts = args.trim().split(/\s+/).filter(Boolean);
+  const action = parts[0];
+  if (!action || action === "list" || action === "show") {
+    const allow = current.allow ?? [];
+    const hide = current.hide ?? [];
+    const cfg = current.perToolConfig ?? {};
+    const out = `toolOverrides (project):\n  allow: ${allow.length ? allow.join(", ") : "(none)"}\n  hide: ${hide.length ? hide.join(", ") : "(none)"}\n  perToolConfig: ${Object.keys(cfg).length ? JSON.stringify(cfg) : "(none)"}`;
+    ctx.ui.notify(out, "info");
+    return;
+  }
+  const apply = (patch: Partial<NonNullable<Settings["toolOverrides"]>>) => {
+    saveSettings("project", ctx.cwd, { toolOverrides: { ...current, ...patch } });
+  };
+  if (action === "allow" || action === "hide" || action === "unallow" || action === "unhide") {
+    const tool = parts[1];
+    if (!tool) {
+      ctx.ui.notify(`Usage: /glla tooloverride ${action} <tool>`, "warning");
+      return;
+    }
+    if (action === "allow") {
+      const allow = current.allow ?? [];
+      if (!allow.includes(tool)) apply({ allow: [...allow, tool] });
+      ctx.ui.notify(`toolOverrides.allow += ${tool}`, "info");
+    } else if (action === "hide") {
+      const hide = current.hide ?? [];
+      if (!hide.includes(tool)) apply({ hide: [...hide, tool] });
+      ctx.ui.notify(`toolOverrides.hide += ${tool}`, "info");
+    } else if (action === "unallow") {
+      apply({ allow: (current.allow ?? []).filter((t) => t !== tool) });
+      ctx.ui.notify(`toolOverrides.allow -= ${tool}`, "info");
+    } else {
+      apply({ hide: (current.hide ?? []).filter((t) => t !== tool) });
+      ctx.ui.notify(`toolOverrides.hide -= ${tool}`, "info");
+    }
+    return;
+  }
+  if (action === "set" || action === "unset") {
+    const tool = parts[1];
+    const kv = parts[2];
+    if (!tool || !kv) {
+      ctx.ui.notify(`Usage: /glla tooloverride ${action} <tool> <key>[=<value>]`, "warning");
+      return;
+    }
+    const cfg = { ...(current.perToolConfig ?? {}) };
+    const toolCfg = { ...(cfg[tool] ?? {}) };
+    if (action === "set") {
+      const eq = kv.indexOf("=");
+      if (eq < 0) {
+        ctx.ui.notify(`set needs key=value: got "${kv}"`, "warning");
+        return;
+      }
+      const k = kv.slice(0, eq);
+      const v: unknown = parseToolOverrideValue(kv.slice(eq + 1));
+      toolCfg[k] = v;
+    } else {
+      delete toolCfg[kv];
+    }
+    cfg[tool] = toolCfg;
+    apply({ perToolConfig: cfg });
+    ctx.ui.notify(`toolOverrides.perToolConfig.${tool} ${action === "set" ? "set" : "unset"}`, "info");
+    return;
+  }
+  ctx.ui.notify(`Unknown tooloverride action: ${action}. Use: list | allow | hide | unallow | unhide | set | unset.`, "warning");
+}
+
+/** Parse a tool-override value: numbers, booleans, JSON objects/arrays, else string. */
+function parseToolOverrideValue(s: string): unknown {
+  const trimmed = s.trim();
+  if (trimmed === "true") return true;
+  if (trimmed === "false") return false;
+  if (trimmed === "null") return null;
+  if (/^-?\d+$/.test(trimmed)) return Number(trimmed);
+  if (/^-?\d+\.\d+$/.test(trimmed)) return Number(trimmed);
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try { return JSON.parse(trimmed); } catch { /* fall through */ }
+  }
+  return trimmed;
+}
+
 /** v0.27.5: /glla reviewer | postaudit — the post-completion audit config menu
  * (project-scoped). Reads the dual-write settings (postaudit wins over the
  * legacy reviewer key), and writes back to whichever key was read first —
@@ -3255,6 +3347,11 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   // key — the legacy `reviewer` label is kept for backwards compatibility.
   if (/^postaudit\b/.test(trimmed)) {
     await cmdReviewerSettings(ctx);
+    return;
+  }
+  // v0.27.9: per-tool overrides — sub-mode `tooloverride <action> <tool>`
+  if (/^tooloverride\b/.test(trimmed)) {
+    await cmdToolOverride(trimmed.slice("tooloverride".length).trim(), ctx);
     return;
   }
   if (!trimmed) {
@@ -3663,13 +3760,32 @@ export default function (pi: ExtensionAPI): void {
   // v0.24.5 tool-visibility self-heal: surface the notify exactly once
   // per session so the user learns about an external allowlist once and
   // can fix their profile to silence it.
+  // v0.27.9: also applies toolOverrides.allow / toolOverrides.hide from
+  // .pi-glla/settings.json — the project's per-tool policy wins over the
+  // external allowlist (allow) or over the session default (hide).
   let toolHealNotified = false;
   function ensureAgentToolsActive(pi: ExtensionAPI, ctx: ExtensionContext): void {
     try {
       const active = pi.getActiveTools();
       const missing = missingGllaTools(active);
-      if (missing.length === 0) return;
-      pi.setActiveTools([...active, ...missing]);
+      const overrides = loadSettings(ctx.cwd).toolOverrides;
+      let next = [...active, ...missing];
+      let changed = missing.length > 0;
+      // Apply per-tool allowlist — force tools visible despite an external modlist.
+      if (overrides?.allow && overrides.allow.length > 0) {
+        const toAdd = overrides.allow.filter((t) => !next.includes(t));
+        if (toAdd.length > 0) {
+          next = [...next, ...toAdd];
+          changed = true;
+        }
+      }
+      // Apply per-tool hide — force tools hidden even when the session allows them.
+      if (overrides?.hide && overrides.hide.length > 0) {
+        const before = next.length;
+        next = next.filter((t) => !overrides.hide!.includes(t));
+        if (next.length !== before) changed = true;
+      }
+      if (changed) pi.setActiveTools(next);
       if (!toolHealNotified) {
         toolHealNotified = true;
         const list = missing.join(", ");
