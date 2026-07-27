@@ -3529,10 +3529,21 @@ export default function (pi: ExtensionAPI): void {
   //   /loop  — the metric loop (draft|start|status|stop)
   //   /glla   — the settings UI (+ scriptable key=value)
   // v0.22.5: subcommand autocomplete for the /-menu.
+  // v0.27.4: pi's applyCompletion does NOT add a trailing space for argument
+  // completions (it does for the top-level /goal itself). Without a trailing
+  // space the user has to press Space before typing — and if they forget
+  // they end up with `/goal startasdahlasf` (goal.ts:3545 area). Items whose
+  // value ends in `=` (key=value pairs — the user types the value right
+  // after the `=`) get no space; everything else gets a single trailing
+  // space. `label` stays clean for the picker display.
   const completions = (items: Array<[string, string]>) => (prefix: string) =>
     items
       .filter(([value]) => value.startsWith(prefix))
-      .map(([value, description]) => ({ value, label: value, description }));
+      .map(([value, description]) => ({
+        value: value.endsWith("=") ? value : value + " ",
+        label: value,
+        description,
+      }));
 
   pi.registerCommand("goal", {
     description: "Set/draft a goal, or /goal status|pause|resume|cancel|tweak <text>|archive|start <objective>. Objectives without a 'Done when:' clause are grilled into a contract first; include the clause or use /goal start to skip the interview and activate instantly.",
