@@ -1,6 +1,30 @@
 # Changelog
 
+## [0.27.1] — 2026-07-27
+
+### Fixed — pauses now tell you what happened, what survived, and what to decide
+
+"We are pretty uninformative when the execution pauses." A decision-pause
+(pause_goal with a reason + suggested action) reached the user truncated at
+~60 chars — the actual choice ("(a) keep both… (b) regenerate…") was
+unreadable without /goal status.
+
+- **Widget paused card wraps**: reason and suggested action now wrap over
+  up to 3 width-aware lines each (new `wrap()` helper) instead of
+  truncating at ~60 chars. Overflow ends with "…" (full text is always in
+  the pause notification and /goal status).
+- **"saved · resumes exactly here" line**: the card now answers the first
+  question at any pause — did I lose the work? — with tokens spent and
+  audit count when nonzero (`saved — 41.2k tok spent · 3 audits · resumes
+  exactly here`).
+- **pause_goal notify carries the FULL contract**: reason + suggested
+  action (multi-line notification), and the external push includes both
+  (bounded at 200 chars). Before, the action never left /goal status.
+
+5 new tests (417 → 422).
+
 ## [0.27.0] — 2026-07-26
+
 
 ### Changed — /glla settings menu: every option, organized, self-documenting
 
