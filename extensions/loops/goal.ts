@@ -2254,8 +2254,12 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         pauseReason: p.reason,
         pauseSuggestedAction: p.suggestedAction,
       }, ctx);
-      ctx.ui.notify(`Goal paused: ${p.reason}`, "info");
-      notifyExternal(ctx, `Goal paused: ${p.reason.slice(0, 120)}`);
+      // v0.27.1: surface the FULL pause contract — reason AND suggested
+      // action. Before, the action only appeared in /goal status and the
+      // widget truncated both at ~60 chars, so decision-pauses ("choose a
+      // or b") reached the user as an unreadable fragment.
+      ctx.ui.notify(`Goal paused: ${p.reason}${p.suggestedAction ? `\n\n→ ${p.suggestedAction}` : ""}`, "info");
+      notifyExternal(ctx, `Goal paused: ${(p.suggestedAction ? `${p.reason} → ${p.suggestedAction}` : p.reason).slice(0, 200)}`);
       return { content: [{ type: "text", text: "Goal paused. /goal resume to continue." }], details: {} };
     },
   }));

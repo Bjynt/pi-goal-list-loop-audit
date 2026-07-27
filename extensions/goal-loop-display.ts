@@ -38,6 +38,34 @@ export function truncate(s: string, max: number): string {
 }
 
 /**
+ * Word-wrap to `width`, capped at `maxLines` (v0.27.1). A pause is the one
+ * state where the FULL text matters — the reason often carries a decision
+ * the user must make (dedup choices, impossible-verdict narrowing), and a
+ * 60-char truncate hid it. Over-long words are hard-split; when the cap
+ * cuts content the last line ends with "…" (the pause-time notification
+ * and /goal status always carry the full text).
+ */
+export function wrap(s: string, width: number, maxLines: number): string[] {
+  const norm = s.replace(/\s+/g, " ").trim();
+  const words = norm.split(" ").filter(Boolean);
+  const all: string[] = [];
+  let cur = "";
+  for (let w of words) {
+    const next = cur ? `${cur} ${w}` : w;
+    if (next.length <= width) { cur = next; continue; }
+    if (cur) all.push(cur);
+    while (w.length > width) { all.push(w.slice(0, width)); w = w.slice(width); }
+    cur = w;
+  }
+  if (cur) all.push(cur);
+  if (all.length === 0) all.push("");
+  if (all.length <= maxLines) return all;
+  const out = all.slice(0, maxLines);
+  out[maxLines - 1] = truncate(out[maxLines - 1]!, width);
+  return out;
+}
+
+/**
  * Width-aware truncation budget (v0.22.2). The hardcoded caps are FLOORS for
  * narrow terminals; when the terminal is wider, lines may use the available
  * width instead of being cut at a fixed ~60 chars (pi-tasks truncates at
@@ -191,8 +219,29 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     return lines;
   }
   if (g.status === "paused" && g.pauseReason) {
-    lines.push(`├─ ${paint(theme, pauseIsError(g) ? "error" : "warning", truncate(g.pauseReason, budgetFor(width, 3, 60)))}`);
-    if (g.pauseSuggestedAction) lines.push(`└─ ${paint(theme, "dim", truncate(g.pauseSuggestedAction, budgetFor(width, 3, 60)))}`);
+    const isErr = pauseIsError(g);
+    const budget = budgetFor(width, 3, 60);
+    // v0.27.1: wrap reason + suggested action over up to 3 lines each
+    // (see wrap()); before, both were truncated at ~60 chars and the actual
+    // question in a decision-pause never reached the user.
+    wrap(g.pauseReason, budget, 3).forEach((w, i) => {
+      lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, isErr ? "error" : "warning", w)}`);
+    });
+    // v0.27.1: what survives the pause — the first question at a pause is
+    // "did I lose the work?". Answer it on the card.
+    const spent: string[] = [];
+    const tokUsed = g.usage?.tokensUsed ?? 0;
+    if (tokUsed > 0) spent.push(`${fmtTokens(tokUsed)} tok spent`);
+    const audits = g.auditHistory?.length ?? 0;
+    if (audits > 0) spent.push(`${audits} audit${audits === 1 ? "" : "s"}`);
+    const savedLine = `saved${spent.length > 0 ? ` — ${spent.join(" · ")}` : ""} · resumes exactly here`;
+    if (g.pauseSuggestedAction) {
+      lines.push(`├─ ${paint(theme, "dim", truncate(savedLine, budget))}`);
+      const wrapped = wrap(g.pauseSuggestedAction, budget, 3);
+      wrapped.forEach((w, i) => lines.push(`${i === wrapped.length - 1 ? "└─" : "│ "} ${paint(theme, "dim", w)}`));
+    } else {
+      lines.push(`└─ ${paint(theme, "dim", truncate(savedLine, budget))}`);
+    }
     return lines;
   }
   const next = nextPending(g);
