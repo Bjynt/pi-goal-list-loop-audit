@@ -683,7 +683,12 @@ function fireReviewer(
 ): void {
   try {
     const settings = loadSettings(ctx.cwd);
-    const config = resolveReviewerConfig(settings.reviewer as Partial<ReviewerConfig> | undefined);
+    // v0.27.5: dual-read `reviewer` (legacy) and `postaudit` (new) settings
+    // keys. `postaudit` takes precedence when both are present — the
+    // existing settings file shape is preserved; the rename is purely
+    // vocabulary on the user-facing surface.
+    const reviewerBlock = (settings.postaudit ?? settings.reviewer) as Partial<ReviewerConfig> | undefined;
+    const config = resolveReviewerConfig(reviewerBlock);
     if (opts.mode) config.mode = opts.mode;
     const sources: Array<{ name: string; text: string }> = [];
     try {
@@ -727,6 +732,19 @@ function fireReviewer(
     });
     if (!outcome.fired && outcome.suppressedReason && opts.manual) {
       ctx.ui.notify(`Reviewer suppressed: ${outcome.suppressedReason}`, "info");
+    }
+    // v0.27.5: surface the silent review to interactive users. The internal
+    // runReviewer notify fires DURING the goal-completion handler, easy to
+    // miss because pi is busy transitioning state. The second notify
+    // arrives AFTER everything settles and points at the file directly.
+    // Skipped when manual=true (manual /review has its own UX already) and
+    // when the runner wasn't fired (suppressed / not applicable).
+    if (!opts.manual && outcome.fired && outcome.reportPath) {
+      const relPath = path.relative(ctx.cwd, outcome.reportPath) || outcome.reportPath;
+      ctx.ui.notify(
+        `↳ review written: ${relPath}${outcome.enqueued ? ` (${outcome.enqueued} enqueued to /list)` : ""}${outcome.proposed ? ` (${outcome.proposed} /goal proposed)` : ""}`,
+        "info",
+      );
     }
   } catch (err) {
     ctx.ui.notify(`Reviewer failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`, "warning");
@@ -3216,6 +3234,13 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
     await cmdReviewerSettings(ctx);
     return;
   }
+  // v0.27.5: postaudit is the new vocabulary (the post-completion auditor).
+  // Both keywords open the same config menu and resolve to the same settings
+  // key — the legacy `reviewer` label is kept for backwards compatibility.
+  if (/^postaudit\b/.test(trimmed)) {
+    await cmdReviewerSettings(ctx);
+    return;
+  }
   if (!trimmed) {
     if (ctx.hasUI) {
       await openSettingsUI(ctx);
@@ -3245,6 +3270,9 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
         fmt("wedgeAlertMinutes", "wedgeAlert"),
         fmt("stallShortWords", "stallShortWords"),
         fmt("stallSimilarityThreshold", "stallSimilarityThreshold"),
+        // v0.27.5: post-completion auditor config — read either the new
+        // `postaudit` key or the legacy `reviewer` key (postaudit wins).
+        `postaudit: ${JSON.stringify(loadSettings(ctx.cwd).postaudit ?? loadSettings(ctx.cwd).reviewer ?? {}) || '(unset — defaults)'}`,
         // v0.25.6: effective per-type subagent model resolution.
         ...["Explore", "Plan", "general-purpose"].map(
           (t) => `subagent ${t}: ${resolveEffectiveSubagentModel(t, loadSettings(ctx.cwd), (ctx.model as any)?.id ? `${(ctx.model as any).provider}/${(ctx.model as any).id}` : undefined)}`,
@@ -3576,7 +3604,8 @@ export default function (pi: ExtensionAPI): void {
       ["stats", "per-project ledger rollups: /glla stats [json|premature|project=<path>]"],
       ["audits", "audit-log browser: /glla audits [N|full] — recent verdicts from .pi-glla/audits.jsonl"],
       ["autoaccept=", "on: drafts activate without the Confirm dialog (unattended rigs)"],
-      ["reviewer", "reviewer config menu (post-completion follow-up enqueuer)"],
+      ["reviewer", "reviewer config menu (alias of postaudit — post-completion follow-up enqueuer)"],
+      ["postaudit", "post-completion audit config menu (the new name for /glla reviewer)"],
       ["project", "write a project override: /glla project key=value"],
     ]),
     handler: settingsHandler,

@@ -71,8 +71,13 @@ export interface Settings {
    * its quota; "agent-default" restores upstream behavior. Applies to NEW
    * sessions (pi-subagents registers agents at session start). */
   /** v0.26.0: reviewer (post-completion follow-up enqueuer) config —
-   * project-scoped; see extensions/reviewer.ts DEFAULT_REVIEWER_CONFIG. */
+   * project-scoped; see extensions/reviewer.ts DEFAULT_REVIEWER_CONFIG.
+   * v0.27.5: superseded by `postaudit` (same shape, terminology reflects
+   * the auditor-adjacent role). Both keys are read; `postaudit` wins
+   * when both are present. `reviewer` is kept for backwards compat. */
   reviewer?: Record<string, unknown>;
+  /** v0.27.5: post-completion audit config. Same shape as `reviewer`. */
+  postaudit?: Record<string, unknown>;
   subagentModelStrategy?: SubagentModelStrategy;
   /** v0.24.6: per-agent-type model pin, e.g. { "Explore": "minimax/MiniMax-M3" }.
    * Always wins over subagentModelStrategy — the managed override is written
@@ -140,6 +145,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "stallEscalationRefires",
   "stallShortWords",
   "stallSimilarityThreshold",
+  "postaudit",
 ];
 
 /** Where each effective setting comes from (for the /glla display). */
