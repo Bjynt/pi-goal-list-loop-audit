@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.27.5] — 2026-07-27
+
+### Changed — surface the post-completion audit in interactive mode
+
+The reviewer was firing silently: `runReviewer` called `ctx.ui.notify()`
+during the goal-completion handler, easy to miss because pi is busy
+transitioning state. Now `fireReviewer` adds a SECOND `ctx.ui.notify()`
+AFTER the cascade settles, pointing at the review file path:
+
+> ↳ review written: .pi-glla/reviews/<id>.md (N enqueued to /list)
+
+Skipped when `opts.manual === true` (the `/review` UX already notifies
+the result). In auto mode the second notification is harmless
+redundant — unattended rigs use `notify=` push and don't read it.
+
+### Added — `postaudit` settings key + CLI label
+
+The feature was internally called "reviewer"; user-facing label shifts to
+"postaudit" (post-completion audit, auditor-adjacent). Both keys are
+read; `postaudit` wins when both are present. `/glla postaudit` opens the
+same config menu as `/glla reviewer` — the rename is vocabulary only, no
+behavioral split. `extensions/reviewer.ts`, `runReviewer`, and
+`ReviewerConfig` keep their existing names (a 331-line file with 4
+test files; churn risk would outweigh the rename benefit).
+
+8 new tests (433 → 441).
+
 ## [0.27.4] — 2026-07-27
 
 ### Fixed — slash-command argument completions now add a trailing space

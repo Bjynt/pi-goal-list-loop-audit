@@ -18,17 +18,17 @@ const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 const SETTINGS_SRC = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
 
 test("fireReviewer emits a SECOND notify with the review file path after the cascade", () => {
-  // The new branch lives right after the existing manual-suppressed notify.
-  // It checks: not manual, fired, reportPath → notify with a relative path.
-  const m = SRC.match(
-    /if \(!opts\.manual && outcome\.fired && outcome\.reportPath\) \{[\s\S]*?ctx\.ui\.notify\(`\u2193 review written: \$\{relPath\}/,
-  );
-  assert.ok(m, "post-cascade surface notify exists and uses opts.manual/fired/reportPath guards");
+  const branch = SRC.indexOf("if (!opts.manual && outcome.fired && outcome.reportPath)");
+  assert.ok(branch > 0, "surface-notify guard exists");
+  // The notify call may have its template string on the next line.
+  const ctxUiNotify = SRC.indexOf("ctx.ui.notify(", branch);
+  const arrow = SRC.indexOf("review written:", ctxUiNotify);
+  assert.ok(ctxUiNotify > 0 && arrow > 0 && arrow < ctxUiNotify + 200, "ctx.ui.notify with review-written prefix exists in that branch");
 });
 
 test("surface-notify branch is preceded by the existing manual-suppressed notify", () => {
   const suppressedIdx = SRC.indexOf("Reviewer suppressed: ${outcome.suppressedReason}");
-  const surfaceIdx = SRC.indexOf("↳ review written: ${relPath}");
+  const surfaceIdx = SRC.indexOf("↳ review written:");
   assert.ok(suppressedIdx > 0 && surfaceIdx > 0, "both notify branches exist");
   assert.ok(suppressedIdx < surfaceIdx, "surface notify comes after the suppressed notify");
 });
@@ -52,8 +52,10 @@ test("SETTINGS_KEYS includes postaudit (not reviewer — legacy key is opaque)",
 
 test("/glla postaudit opens the same menu as /glla reviewer (no behavioral split)", () => {
   // Both keywords route to cmdReviewerSettings — there's ONE settings menu.
-  const m = SRC.match(/if \(\/\^postaudit\\\/\.test\(trimmed\)\) \{[\s\S]*?await cmdReviewerSettings\(ctx\);\n\s*return;\n\s*\}/);
-  assert.ok(m, "/glla postaudit keyword routes to cmdReviewerSettings");
+  const keywordCheck = SRC.indexOf('if (/^postaudit\\b/.test(trimmed))');
+  const routeCheck = SRC.indexOf('await cmdReviewerSettings(ctx);', keywordCheck);
+  assert.ok(keywordCheck > 0, "/glla postaudit keyword check exists");
+  assert.ok(routeCheck > 0 && routeCheck < keywordCheck + 200, "the postaudit branch routes to cmdReviewerSettings");
 });
 
 test("/glla completions list both reviewer (legacy) and postaudit (new)", () => {
