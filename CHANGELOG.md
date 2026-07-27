@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.27.4] — 2026-07-27
+
+### Fixed — slash-command argument completions now add a trailing space
+
+Pi's autocomplete `applyCompletion` adds a trailing space for the TOP-LEVEL
+command (`/goal `), but NOT for argument completions (`/goal start`,
+`/glla model=`). glla's `completions()` factory now embeds a trailing space
+in the suggestion `value` (label stays clean) — except for `key=value`
+items (`model=`, `tokenlimit=`, `notify=`, …) where the user types the value
+right after the `=` and a trailing space would break parsing. Now typing
+`/goal sta` → pick `start` → the line becomes `/goal start ` and you can
+type the objective immediately. No more `/goal startasdahlasf`.
+
+5 new tests (428 → 433).
+
 ## [0.27.3] — 2026-07-27
 
 ### Fixed — stall brake too aggressive on real investigation work

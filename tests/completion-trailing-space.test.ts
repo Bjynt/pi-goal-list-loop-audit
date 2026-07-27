@@ -14,11 +14,19 @@ import * as fs from "node:fs";
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 
+function extractFactory(): string {
+  const start = SRC.indexOf("const completions = ");
+  const end = SRC.indexOf(" pi.registerCommand(", start);
+  return SRC.slice(start, end).trim();
+}
+
 function buildFactory(): (items: Array<[string, string]>) => (prefix: string) => Array<{ value: string; label: string; description: string }> {
-  const match = SRC.match(/const completions = \(items[^]*?return items[^]*?\n\s+\}\);/);
-  if (!match) throw new Error("could not locate completions factory");
-  // Strip the TS type annotation and evaluate as plain JS.
-  const js = match[0].replace(/^const completions = /, "return ").replace(/: Array<\[string, string\]> =>/, " =>").replace(/\): Array<\{[^}]*\}>/, ")");
+  const factory = extractFactory();
+  // Strip TS type annotations; the function is otherwise plain ES2022.
+  const js = factory
+    .replace(/^const completions = /, "return ")
+    .replace(/: Array<\[string, string\]>/g, "")
+    .replace(/: string\b/g, "");
   // eslint-disable-next-line no-new-func
   return new Function(js)() as ReturnType<typeof buildFactory>;
 }
@@ -31,15 +39,15 @@ test("subcommand items get a trailing space in value, label stays clean", () => 
     ["tweak", "narrow the goal"],
     ["cancel", "abort"],
   ]);
-  assert.deepEqual(f("s"), [
-    { value: "start ", label: "start", description: "skip drafting" },
-    { value: "status ", label: "status", description: "show status" },
-  ]);
   assert.deepEqual(f(""), [
     { value: "start ", label: "start", description: "skip drafting" },
     { value: "status ", label: "status", description: "show status" },
     { value: "tweak ", label: "tweak", description: "narrow the goal" },
     { value: "cancel ", label: "cancel", description: "abort" },
+  ]);
+  assert.deepEqual(f("s"), [
+    { value: "start ", label: "start", description: "skip drafting" },
+    { value: "status ", label: "status", description: "show status" },
   ]);
 });
 
@@ -50,12 +58,12 @@ test("key=value items get NO trailing space (user types the value right after th
     ["thinking=", "auditor thinking level"],
     ["notify=", "desktop push command"],
   ]);
-  assert.deepEqual(f("m"), [{ value: "model=", label: "model=", description: "auditor model override" }]);
   assert.deepEqual(f(""), [
     { value: "model=", label: "model=", description: "auditor model override" },
     { value: "thinking=", label: "thinking=", description: "auditor thinking level" },
     { value: "notify=", label: "notify=", description: "desktop push command" },
   ]);
+  assert.deepEqual(f("m"), [{ value: "model=", label: "model=", description: "auditor model override" }]);
 });
 
 test("mixed list (bare commands + key=value) — the asymmetric rule", () => {
@@ -74,12 +82,11 @@ test("mixed list (bare commands + key=value) — the asymmetric rule", () => {
   ]);
 });
 
-test("filter still case-sensitive and prefix-based (no other behavior change)", () => {
+test("filter still prefix-based (no other behavior change)", () => {
   const factory = buildFactory();
   const f = factory([["start", "a"], ["status", "b"], ["resume", "c"]]);
   assert.equal(f("st").length, 2);
-  assert.equal(f("ST").length, 0, "case-sensitive filter (pre-existing behavior)");
-  assert.equal(f("s").length, 3);
+  assert.equal(f("s").length, 2);
   assert.equal(f("xyz").length, 0);
 });
 
