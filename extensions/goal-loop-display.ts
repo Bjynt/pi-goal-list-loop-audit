@@ -61,7 +61,9 @@ export function wrap(s: string, width: number, maxLines: number): string[] {
   if (all.length === 0) all.push("");
   if (all.length <= maxLines) return all;
   const out = all.slice(0, maxLines);
-  out[maxLines - 1] = truncate(out[maxLines - 1]!, width);
+  // The last kept line already fits within width — truncate() would leave it
+  // unmarked, so force the ellipsis to signal "more in /goal status".
+  out[maxLines - 1] = out[maxLines - 1]!.slice(0, Math.max(0, width - 1)) + "…";
   return out;
 }
 
