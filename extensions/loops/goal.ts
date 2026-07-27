@@ -2852,57 +2852,61 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
       const v = p.value === undefined ? fallback : String(p.value);
       return `${v}  [${p.source}]`;
     };
+    const settings = loadSettings(ctx.cwd);
+    // v0.27.0: every option on ONE screen, grouped into sections, each row
+    // carrying `label — value [provenance] — what it does` so the menu is
+    // also the documentation. Header rows are no-ops when selected.
+    const rows = [
+      "── Keep-going ──",
+      `Auto-resume on load — ${show("autoResume", "default")} — on: resume on session load too · off: never · default: hold on load, resume on reload/fork`,
+      `Auto-accept drafts — ${show("autoAcceptDrafts", "(off)")} — on: goal/loop drafts activate without the Confirm dialog (unattended rigs)`,
+      `Aggressive mode — ${show("aggressiveMode", "(off)")} — flips DEFAULTS toward keep-going (autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs); explicit per-key settings still win`,
+      "── Auditor ──",
+      `Auditor model — ${show("auditorModel", "(pi session model)")} — provider/model override for the isolated auditor`,
+      `Auditor thinking — ${show("auditorThinkingLevel", "(session, floor high)")} — thinking level for the auditor session`,
+      `Audit cap — ${show("auditCap", "(5)")} — pause the goal after N consecutive disapprovals (0 = unlimited)`,
+      `Audit feedback chars — ${show("auditFeedbackChars", "(full report)")} — cap the executor-visible disapproval report (0 = full report)`,
+      `Quota retry minutes — ${show("quotaRetryMinutes", `(${DEFAULT_QUOTA_RETRY_MINUTES})`)} — auto-retry a quota-exhausted auditor after N minutes`,
+      "── Stall brakes ──",
+      `Wedge alert minutes — ${show("wedgeAlertMinutes", `(${WEDGE_ALERT_DEFAULT_MINUTES})`)} — hung-command alert while the session is busy (0 = off)`,
+      `Stuck max interventions — ${show("stuckMaxInterventions", "(5)")} — consecutive stuck interventions before a loop stops`,
+      `Stall escalation refires — ${show("stallEscalationRefires", "(5)")} — heartbeat refires with no turn before the goal pauses / loop stops (0 = never)`,
+      "── Subagents ──",
+      `Subagent model strategy — ${show("subagentModelStrategy", "(inherit-parent)")} — inherit-parent shares your session model+quota; agent-default pins haiku for Explore`,
+      `Subagent Explore pin — ${settings.subagentModelOverrides?.Explore ?? "(follows strategy)"} — provider/model pin; always wins over strategy`,
+      `Subagent Plan pin — ${settings.subagentModelOverrides?.Plan ?? "(follows strategy)"} — provider/model pin; always wins over strategy`,
+      `Subagent general-purpose pin — ${settings.subagentModelOverrides?.["general-purpose"] ?? "(follows strategy)"} — provider/model pin; always wins over strategy`,
+      "── Other ──",
+      `Notify command — ${show("notifyCmd", "(off)")} — desktop push command; the event message is passed as $1`,
+      `Token limit per goal — ${show("tokenLimit", "(off)")} — per-goal token budget; pause when exceeded (0 = off)`,
+      `Reviewer config… — open the reviewer menu (post-completion follow-up enqueuer: mode, triggers, cascade, caps)`,
+      "Done",
+    ];
     let choice: string | undefined;
     try {
       choice = await ctx.ui.select(
         `pi-goal-list-loop-audit settings — global: ${globalSettingsPath()}`,
-        [
-          `Auditor model override — ${show("auditorModel", "(pi session model)")}`,
-          `Auditor thinking — ${show("auditorThinkingLevel", "(session, floor high)")}`,
-          `Notify command — ${show("notifyCmd", "(off)")}`,
-          `Token limit per goal — ${show("tokenLimit", "(off)")}`,
-          `Wedge alert minutes — ${show("wedgeAlertMinutes", `(${WEDGE_ALERT_DEFAULT_MINUTES}m default)`)}`,
-          `Aggressive mode — ${show("aggressiveMode", "(off)")}`,
-          `Quota retry minutes — ${show("quotaRetryMinutes", `(${DEFAULT_QUOTA_RETRY_MINUTES}m default)`)}`,
-          `Stuck max interventions — ${show("stuckMaxInterventions", "(5 default)")}`,
-          `Subagent model strategy — ${show("subagentModelStrategy", "(inherit-parent)")}`,
-          `Subagent Explore model pin — ${loadSettings(ctx.cwd).subagentModelOverrides?.Explore ?? "(follows strategy)"}`,
-          `Subagent Plan model pin — ${loadSettings(ctx.cwd).subagentModelOverrides?.Plan ?? "(follows strategy)"}`,
-          `Subagent general-purpose model pin — ${loadSettings(ctx.cwd).subagentModelOverrides?.["general-purpose"] ?? "(follows strategy)"}`,
-          `Audit feedback characters — ${show("auditFeedbackChars", "(full report)")}`,
-          "Done",
-        ],
+        rows,
       );
     } catch {
       return;
     }
     if (!choice || choice === "Done") return;
+    if (choice.startsWith("──")) continue; // section header — no-op
     try {
-      if (choice.startsWith("Auditor model")) {
-        const v = await ctx.ui.input("Auditor model override", "provider/model-id — empty keeps the pi session model");
-        if (v !== undefined) saveSettings("global", ctx.cwd, { auditorModel: v.trim() || undefined });
-      } else if (choice.startsWith("Auditor thinking")) {
-        const v = await ctx.ui.select("Auditor thinking level", ["off", "minimal", "low", "medium", "high", "xhigh"]);
-        if (v) saveSettings("global", ctx.cwd, { auditorThinkingLevel: v as Settings["auditorThinkingLevel"] });
-      } else if (choice.startsWith("Notify command")) {
-        const v = await ctx.ui.input("Notify command — the event message is passed as $1", "e.g. a desktop-notification or push command; empty = off");
-        if (v !== undefined) saveSettings("global", ctx.cwd, { notifyCmd: v.trim() || undefined });
-      } else if (choice.startsWith("Token limit")) {
-        const v = await ctx.ui.input("Per-goal token budget", "non-negative integer; 0 or empty = off (no cap)");
-        if (v !== undefined) {
-          const n = Number.parseInt(v.trim(), 10);
-          if (Number.isFinite(n) && n >= 0) saveSettings("global", ctx.cwd, { tokenLimit: n });
-          else if (!v.trim()) saveSettings("global", ctx.cwd, { tokenLimit: undefined });
-          else ctx.ui.notify(`Not a non-negative integer: ${v}`, "warning");
-        }
-      } else if (choice.startsWith("Wedge alert")) {
-        const v = await ctx.ui.input("Wedge alert threshold (minutes)", "non-negative integer; 0 = off, empty = default 30");
-        if (v !== undefined) {
-          const n = Number.parseInt(v.trim(), 10);
-          if (Number.isFinite(n) && n >= 0) saveSettings("global", ctx.cwd, { wedgeAlertMinutes: n });
-          else if (!v.trim()) saveSettings("global", ctx.cwd, { wedgeAlertMinutes: undefined });
-          else ctx.ui.notify(`Not a non-negative integer: ${v}`, "warning");
-        }
+      if (choice.startsWith("Auto-resume")) {
+        const v = await ctx.ui.select("Auto-resume goals/loops on session start", [
+          "default — HOLD when a session is loaded (popup shows what waits); auto-resume on reload/fork so machinery never strands work",
+          "on — auto-resume on EVERY session start (unattended rigs)",
+          "off — never auto-resume; always wait for an explicit resume",
+        ]);
+        if (v) saveSettings("global", ctx.cwd, { autoResume: v.startsWith("on") ? true : v.startsWith("off") ? false : undefined });
+      } else if (choice.startsWith("Auto-accept drafts")) {
+        const v = await ctx.ui.select("Auto-accept goal/loop drafts", [
+          "off — the Confirm dialog gates every draft",
+          "on — drafts activate immediately, no Confirm (unattended rigs)",
+        ]);
+        if (v) saveSettings("global", ctx.cwd, { autoAcceptDrafts: v.startsWith("on") ? true : undefined });
       } else if (choice.startsWith("Aggressive mode")) {
         const v = await ctx.ui.select("Aggressive mode (flips DEFAULTS toward keep-going — explicit per-key settings still win)", [
           "off — current behavior: pause at the audit cap, wedge alerts on, manual resume",
@@ -2912,6 +2916,29 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
           saveSettings("global", ctx.cwd, { aggressiveMode: v.startsWith("on") });
           ctx.ui.notify(`Aggressive mode ${v.startsWith("on") ? "ON — goals keep going past the audit cap; objections become TODOs" : "off"}.`, "info");
         }
+      } else if (choice.startsWith("Auditor model")) {
+        const v = await ctx.ui.input("Auditor model override", "provider/model-id — empty keeps the pi session model");
+        if (v !== undefined) saveSettings("global", ctx.cwd, { auditorModel: v.trim() || undefined });
+      } else if (choice.startsWith("Auditor thinking")) {
+        const v = await ctx.ui.select("Auditor thinking level", ["off", "minimal", "low", "medium", "high", "xhigh"]);
+        if (v) saveSettings("global", ctx.cwd, { auditorThinkingLevel: v as Settings["auditorThinkingLevel"] });
+      } else if (choice.startsWith("Audit cap")) {
+        const v = await ctx.ui.input("Consecutive auditor disapprovals before the goal pauses", "non-negative integer; 0 = unlimited, empty = default 5");
+        if (v !== undefined) {
+          const n = Number.parseInt(v.trim(), 10);
+          if (Number.isFinite(n) && n >= 0) saveSettings("global", ctx.cwd, { auditCap: n });
+          else if (!v.trim()) saveSettings("global", ctx.cwd, { auditCap: undefined });
+          else ctx.ui.notify(`Not a non-negative integer: ${v}`, "warning");
+        }
+      } else if (choice.startsWith("Audit feedback")) {
+        const v = await ctx.ui.input("Auditor feedback returned to the executor (characters)", "non-negative integer cap; 0 or empty = full report (default)");
+        if (v !== undefined) {
+          const raw = v.trim();
+          const n = Number(raw);
+          if (/^\d+$/.test(raw) && Number.isSafeInteger(n)) saveSettings("global", ctx.cwd, { auditFeedbackChars: n });
+          else if (!v.trim()) saveSettings("global", ctx.cwd, { auditFeedbackChars: undefined });
+          else ctx.ui.notify(`Not a non-negative integer: ${v}`, "warning");
+        }
       } else if (choice.startsWith("Quota retry minutes")) {
         const v = await ctx.ui.input("Minutes before auto-retrying a quota-exhausted auditor", `positive integer; empty = default ${DEFAULT_QUOTA_RETRY_MINUTES}`);
         if (v !== undefined) {
@@ -2920,6 +2947,14 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
           else if (!v.trim()) saveSettings("global", ctx.cwd, { quotaRetryMinutes: undefined });
           else ctx.ui.notify(`Not a positive integer: ${v}`, "warning");
         }
+      } else if (choice.startsWith("Wedge alert")) {
+        const v = await ctx.ui.input("Wedge alert threshold (minutes)", "non-negative integer; 0 = off, empty = default 30");
+        if (v !== undefined) {
+          const n = Number.parseInt(v.trim(), 10);
+          if (Number.isFinite(n) && n >= 0) saveSettings("global", ctx.cwd, { wedgeAlertMinutes: n });
+          else if (!v.trim()) saveSettings("global", ctx.cwd, { wedgeAlertMinutes: undefined });
+          else ctx.ui.notify(`Not a non-negative integer: ${v}`, "warning");
+        }
       } else if (choice.startsWith("Stuck max interventions")) {
         const v = await ctx.ui.input("Consecutive stuck interventions before a loop stops", "positive integer; empty = default 5 (10 under aggressiveMode)");
         if (v !== undefined) {
@@ -2927,6 +2962,14 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
           if (Number.isFinite(n) && n > 0) saveSettings("global", ctx.cwd, { stuckMaxInterventions: n });
           else if (!v.trim()) saveSettings("global", ctx.cwd, { stuckMaxInterventions: undefined });
           else ctx.ui.notify(`Not a positive integer: ${v}`, "warning");
+        }
+      } else if (choice.startsWith("Stall escalation")) {
+        const v = await ctx.ui.input("Heartbeat refires without a turn before the goal pauses / loop stops", "non-negative integer; 0 = never escalate, empty = default 5");
+        if (v !== undefined) {
+          const n = Number.parseInt(v.trim(), 10);
+          if (Number.isFinite(n) && n >= 0) saveSettings("global", ctx.cwd, { stallEscalationRefires: n });
+          else if (!v.trim()) saveSettings("global", ctx.cwd, { stallEscalationRefires: undefined });
+          else ctx.ui.notify(`Not a non-negative integer: ${v}`, "warning");
         }
       } else if (choice.startsWith("Subagent model strategy")) {
         const v = await ctx.ui.select("Subagent model (pi-subagents default agents)", [
@@ -2938,8 +2981,8 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
           saveSettings("global", ctx.cwd, { subagentModelStrategy: strategy });
           ctx.ui.notify("Subagent model strategy saved — applies to NEW pi sessions (pi-subagents registers agents at session start).", "info");
         }
-      } else if (/^Subagent (Explore|Plan|general-purpose) model pin/.test(choice)) {
-        const agentType = choice.match(/^Subagent (Explore|Plan|general-purpose) model pin/)![1]!;
+      } else if (/^Subagent (Explore|Plan|general-purpose) pin/.test(choice)) {
+        const agentType = choice.match(/^Subagent (Explore|Plan|general-purpose) pin/)![1]!;
         const v = await ctx.ui.input(`Model pin for ${agentType} subagents`, "provider/model-id e.g. minimax/MiniMax-M3 — always wins over strategy; empty = follow strategy");
         if (v !== undefined) {
           const current = loadSettings(ctx.cwd).subagentModelOverrides ?? {};
@@ -2949,15 +2992,19 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
           saveSettings("global", ctx.cwd, { subagentModelOverrides: Object.keys(next).length > 0 ? next : undefined });
           ctx.ui.notify(`${agentType} model pin saved — applies to NEW pi sessions.`, "info");
         }
-      } else if (choice.startsWith("Audit feedback")) {
-        const v = await ctx.ui.input("Auditor feedback returned to the executor (characters)", "non-negative integer cap; 0 or empty = full report (default)");
+      } else if (choice.startsWith("Notify command")) {
+        const v = await ctx.ui.input("Notify command — the event message is passed as $1", "e.g. a desktop-notification or push command; empty = off");
+        if (v !== undefined) saveSettings("global", ctx.cwd, { notifyCmd: v.trim() || undefined });
+      } else if (choice.startsWith("Token limit")) {
+        const v = await ctx.ui.input("Per-goal token budget", "non-negative integer; 0 or empty = off (no cap)");
         if (v !== undefined) {
-          const raw = v.trim();
-          const n = Number(raw);
-          if (/^\d+$/.test(raw) && Number.isSafeInteger(n)) saveSettings("global", ctx.cwd, { auditFeedbackChars: n });
-          else if (!v.trim()) saveSettings("global", ctx.cwd, { auditFeedbackChars: undefined });
+          const n = Number.parseInt(v.trim(), 10);
+          if (Number.isFinite(n) && n >= 0) saveSettings("global", ctx.cwd, { tokenLimit: n });
+          else if (!v.trim()) saveSettings("global", ctx.cwd, { tokenLimit: undefined });
           else ctx.ui.notify(`Not a non-negative integer: ${v}`, "warning");
         }
+      } else if (choice.startsWith("Reviewer config")) {
+        await cmdReviewerSettings(ctx);
       }
     } catch {
       return;
@@ -3161,6 +3208,8 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
         fmt("aggressiveMode", "aggressiveMode"),
         fmt("quotaRetryMinutes", "quotaRetryMinutes"),
         fmt("stuckMaxInterventions", "stuckMaxInterventions"),
+        fmt("stallEscalationRefires", "stallEscalation"),
+        fmt("wedgeAlertMinutes", "wedgeAlert"),
         // v0.25.6: effective per-type subagent model resolution.
         ...["Explore", "Plan", "general-purpose"].map(
           (t) => `subagent ${t}: ${resolveEffectiveSubagentModel(t, loadSettings(ctx.cwd), (ctx.model as any)?.id ? `${(ctx.model as any).provider}/${(ctx.model as any).id}` : undefined)}`,
