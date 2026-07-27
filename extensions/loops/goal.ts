@@ -679,7 +679,7 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
 function fireReviewer(
   ctx: ExtensionContext,
   source: { kind: "goal" | "list"; goalId: string; objective: string; terminal: string },
-  opts: { manual?: boolean; mode?: "default" | "auto" | "report" } = {},
+  opts: { manual?: boolean; mode?: "off" | "default" | "auto" | "aggressive" | "report" } = {},
 ): void {
   try {
     const settings = loadSettings(ctx.cwd);
@@ -3068,13 +3068,16 @@ async function cmdReview(args: string, ctx: ExtensionContext): Promise<void> {
   const parts = args.trim().split(/\s+/).filter(Boolean);
   const id = parts[0] ?? "";
   const modeArg = parts[1];
-  const mode = modeArg === "auto" || modeArg === "report" || modeArg === "default" ? modeArg : undefined;
+  const validModes = ["off", "default", "auto", "aggressive", "report"] as const;
+  const mode = (validModes as readonly string[]).includes(modeArg ?? "")
+    ? (modeArg as typeof validModes[number])
+    : undefined;
   if (modeArg && !mode) {
-    ctx.ui.notify(`Unknown mode "${modeArg}" — use auto | report | default.`, "warning");
+    ctx.ui.notify(`Unknown mode "${modeArg}" — use off | default | auto | aggressive | report.`, "warning");
     return;
   }
   if (!id) {
-    ctx.ui.notify("Usage: /review <goal-id> [auto|report|default] — see /goal archive for ids.", "info");
+    ctx.ui.notify(`Usage: /review <goal-id> [${validModes.join("|")}] — see /goal archive for ids.`, "info");
     return;
   }
   // Resolve the id against the archive (suffix match allowed).
@@ -3098,15 +3101,22 @@ async function cmdReview(args: string, ctx: ExtensionContext): Promise<void> {
   fireReviewer(ctx, { kind: "goal", goalId, objective, terminal: "goal-complete" }, { manual: true, mode });
 }
 
-/** v0.26.0: /glla reviewer — the reviewer config menu (project-scoped). */
+/** v0.27.5: /glla reviewer | postaudit — the post-completion audit config menu
+ * (project-scoped). Reads the dual-write settings (postaudit wins over the
+ * legacy reviewer key), and writes back to whichever key was read first —
+ * so we don't drift two parallel config blocks. */
 async function cmdReviewerSettings(ctx: ExtensionContext): Promise<void> {
+  const settings = loadSettings(ctx.cwd);
+  const block = (settings.postaudit ?? settings.reviewer) as Partial<ReviewerConfig> | undefined;
+  const settingsKey: "postaudit" | "reviewer" = settings.postaudit !== undefined ? "postaudit" : "reviewer";
   if (!ctx.hasUI) {
-    const cfg = resolveReviewerConfig(loadSettings(ctx.cwd).reviewer as Partial<ReviewerConfig> | undefined);
-    ctx.ui.notify(`reviewer (project): ${JSON.stringify(cfg, null, 2)}`, "info");
+    const cfg = resolveReviewerConfig(block);
+    ctx.ui.notify(`${settingsKey} (project): ${JSON.stringify(cfg, null, 2)}`, "info");
     return;
   }
-  const load = () => resolveReviewerConfig(loadSettings(ctx.cwd).reviewer as Partial<ReviewerConfig> | undefined);
-  const save = (patch: Partial<ReviewerConfig>) => saveSettings("project", ctx.cwd, { reviewer: { ...load(), ...patch } as Record<string, unknown> });
+  const load = () => resolveReviewerConfig(loadSettings(ctx.cwd)[settingsKey] as Partial<ReviewerConfig> | undefined);
+  const save = (patch: Partial<ReviewerConfig>) =>
+    saveSettings("project", ctx.cwd, { [settingsKey]: { ...load(), ...patch } as Record<string, unknown> });
   for (;;) {
     const cfg = load();
     let choice: string | undefined;
@@ -3118,7 +3128,13 @@ async function cmdReviewerSettings(ctx: ExtensionContext): Promise<void> {
     if (!choice || choice === "Done") return;
     try {
       if (choice.startsWith("Enabled")) save({ enabled: !cfg.enabled });
-      else if (choice.startsWith("Mode")) save({ mode: cfg.mode === "default" ? "auto" : cfg.mode === "auto" ? "report" : "default" });
+      else if (choice.startsWith("Mode")) {
+        // v0.27.5: 5-state cycle off → default → auto → aggressive → report → off
+        const order: Array<"off" | "default" | "auto" | "aggressive" | "report"> = ["off", "default", "auto", "aggressive", "report"];
+        const i = order.indexOf(cfg.mode as typeof order[number]);
+        const next = order[(i + 1) % order.length]!;
+        save({ mode: next });
+      }
       else if (choice.startsWith("Leverage mode")) save({ leverageMode: cfg.leverageMode === "fix-without-confirm" ? "confirm-all" : "fix-without-confirm" });
       else if (choice.startsWith("Fire on goal-complete")) save({ fireOn: cfg.fireOn.includes("goal-complete") ? cfg.fireOn.filter((e) => e !== "goal-complete") : [...cfg.fireOn, "goal-complete"] });
       else if (choice.startsWith("Fire on list-complete")) save({ fireOn: cfg.fireOn.includes("list-complete") ? cfg.fireOn.filter((e) => e !== "list-complete") : [...cfg.fireOn, "list-complete"] });

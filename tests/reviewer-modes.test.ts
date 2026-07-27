@@ -117,25 +117,82 @@ test("auto mode: the per-day cap still bounds everything", () => {
   assert.match(out.suppressedReason!, /day cap/);
 });
 
-test("menu: Mode option cycles default → auto → report", () => {
+test("menu: Mode option lists the 5 modes (off, default, auto, aggressive, report)", () => {
   const def = reviewerMenuOptions(DEFAULT_REVIEWER_CONFIG);
   assert.match(def[1]!, /Mode — default/);
   assert.match(def[1]!, /auto = auto-loop/);
-  const auto = reviewerMenuOptions({ ...DEFAULT_REVIEWER_CONFIG, mode: "auto" });
-  assert.match(auto[1]!, /Mode — auto/);
-  assert.equal(def.length, 9, "one new menu row");
-  // the goal.ts handler maps the Mode row to the cycle:
-  assert.match(SRC_GOAL, /choice\.startsWith\("Mode"\)\) save\(\{ mode: cfg\.mode === "default" \? "auto" : cfg\.mode === "auto" \? "report" : "default" \}\)/);
+  assert.match(def[1]!, /aggressive = auto \+ relaunch/);
+  assert.match(def[1]!, /report = report only/);
+  assert.match(def[1]!, /off = silenced/);
+  const off = reviewerMenuOptions({ ...DEFAULT_REVIEWER_CONFIG, mode: "off" });
+  assert.match(off[1]!, /Mode — off/);
+  // the goal.ts handler cycles through 5 modes (off → default → auto → aggressive → report → off)
+  assert.match(SRC_GOAL, /order: Array<"off" \| "default" \| "auto" \| "aggressive" \| "report"> = \["off", "default", "auto", "aggressive", "report"\]/);
 });
 
-test("/review accepts a mode override and rejects unknown modes", () => {
-  assert.match(SRC_GOAL, /const mode = modeArg === "auto" \|\| modeArg === "report" \|\| modeArg === "default" \? modeArg : undefined;/);
-  assert.match(SRC_GOAL, /Unknown mode "\$\{modeArg\}" — use auto \| report \| default\./);
+test("/review accepts all 5 modes and rejects unknown modes", () => {
+  assert.match(SRC_GOAL, /const validModes = \["off", "default", "auto", "aggressive", "report"\] as const/);
+  assert.match(SRC_GOAL, /Unknown mode "\$\{modeArg\}" — use off \| default \| auto \| aggressive \| report\./);
   assert.match(SRC_GOAL, /\{ manual: true, mode \}\)/);
 });
 
 test("config: mode defaults to 'default' and merges from project settings", () => {
   assert.equal(DEFAULT_REVIEWER_CONFIG.mode, "default");
   assert.equal(resolveReviewerConfig({ mode: "auto" }).mode, "auto");
+  assert.equal(resolveReviewerConfig({ mode: "off" }).mode, "off");
+  assert.equal(resolveReviewerConfig({ mode: "aggressive" }).mode, "aggressive");
   assert.equal(resolveReviewerConfig().mode, "default");
+});
+
+test("off mode: reviewer NEVER fires (equivalent to enabled=false, exposed via postaudit menu)", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-off-"));
+  const cfg = { ...resolveReviewerConfig(), mode: "off" as const };
+  // Should also fire when the source has findings (only enabled=false would skip)
+  const { deps, calls } = mkDeps(dir, {
+    sources: [{ name: "audit", text: "We should rewrite the schema to normalize events." }],
+  });
+  const out = runReviewer(cfg, GOAL_SRC, deps);
+  assert.equal(out.fired, false);
+  assert.match(out.suppressedReason!, /off/);
+  assert.equal(calls.enqueued.length, 0);
+  assert.equal(calls.proposed.length, 0);
+});
+
+test("aggressive mode: architectural findings enqueue AND the first one relaunches as /goal", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-aggr-"));
+  const cfg = { ...resolveReviewerConfig(), mode: "aggressive" as const };
+  const { deps, calls } = mkDeps(dir, {
+    sources: [
+      { name: "audit", text: "We should rewrite the schema to normalize events." },
+      { name: "audit", text: "Architectural: split the orchestrator into separate command and queue layers." },
+    ],
+  });
+  const out = runReviewer(cfg, GOAL_SRC, deps);
+  assert.equal(out.fired, true);
+  assert.equal(calls.enqueued.length, 1);
+  assert.equal(calls.enqueued[0]!.length, 2, "both architectural findings enqueued");
+  assert.equal(calls.proposed.length, 1, "first architectural finding relaunched as /goal");
+  assert.match(out.cascadeStep!, /aggressive-relaunch/);
+});
+
+test("aggressive mode: clean completion → relaunch audit /goal (no Confirm)", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-aggr-clean-"));
+  const cfg = { ...resolveReviewerConfig(), mode: "aggressive" as const };
+  const { deps, calls } = mkDeps(dir, {
+    sources: [{ name: "archive", text: "Goal completed cleanly. No findings." }],
+  });
+  const out = runReviewer(cfg, GOAL_SRC, deps);
+  assert.equal(out.fired, true);
+  assert.equal(calls.proposed.length, 1, "regression scan relaunched as /goal");
+  assert.match(calls.proposed[0]!, /Post-completion regression scan/);
+  assert.equal(calls.enqueued.length, 0, "aggressive clean does NOT enqueue — it relaunches");
+  assert.match(out.cascadeStep!, /aggressive-relaunch/);
+});
+
+test("goal.ts fireReviewer opts.mode now accepts the 5-mode ReviewerMode union", () => {
+  assert.match(
+    SRC_GOAL,
+    /opts:\s*\{\s*manual\?\s*:\s*boolean;\s*mode\?\s*:\s*"off"\s*\|\s*"default"\s*\|\s*"auto"\s*\|\s*"aggressive"\s*\|\s*"report"\s*\}\s*=\s*\{\}/,
+    "fireReviewer's mode type widened to the 5-mode union",
+  );
 });

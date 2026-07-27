@@ -15,7 +15,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-export type ReviewerMode = "default" | "auto" | "report";
+export type ReviewerMode = "off" | "default" | "auto" | "aggressive" | "report";
 
 export interface ReviewerConfig {
   enabled: boolean;
@@ -215,6 +215,9 @@ export function runReviewer(
 ): ReviewerOutcome {
   const none = (suppressedReason: string): ReviewerOutcome => ({ fired: false, suppressedReason, enqueued: 0, proposed: 0 });
   if (!config.enabled && !deps.manual) return none("reviewer disabled");
+  // v0.27.5: "off" mode is the user-friendly way to silence the postaudit
+  // — equivalent to enabled=false but exposed via the postaudit menu.
+  if (config.mode === "off" && !deps.manual) return none("postaudit mode = off");
   const event = source.kind === "goal" ? `${source.terminal}` : "list-complete";
   if (!deps.manual) {
     if (config.doNotFireOn.includes(event)) return none(`doNotFireOn: ${event}`);
@@ -243,7 +246,8 @@ export function runReviewer(
   let enqueued = 0;
   let proposed = 0;
   let cascadeStep = "notify-and-idle";
-  const auto = config.mode === "auto";
+  const auto = config.mode === "auto" || config.mode === "aggressive";
+  const aggressive = config.mode === "aggressive";
   const reportOnly = config.mode === "report";
 
   // Cascade: findings → list items (leverage: fix-without-confirm).
@@ -255,8 +259,22 @@ export function runReviewer(
   }
   // Architectural findings: default mode → /goal proposal WITH Confirm;
   // auto mode → /list items (the auto-loop rolls straight into them).
+  // aggressive mode → enqueue AND relaunch as the next active goal
+  // (skips both Confirm and the queue — the unattended rig never stops).
   if (architectural.length > 0 && !reportOnly) {
-    if (auto) {
+    if (aggressive) {
+      deps.enqueueListItems(architectural.map((f) => f.text));
+      // v0.27.5 aggressive: also propose the FIRST architectural finding
+      // as a relaunch so the queue gets burned through even when the
+      // unattended rig can't Confirm.
+      deps.proposeGoal(
+        architectural[0]!.text,
+        `aggressive postaudit: relaunching as /goal without Confirm (${architectural.length} architectural findings total)`,
+      );
+      enqueued += architectural.length;
+      proposed += 1;
+      cascadeStep = "aggressive-relaunch";
+    } else if (auto) {
       deps.enqueueListItems(architectural.map((f) => f.text));
       enqueued += architectural.length;
       cascadeStep = convertStep;
@@ -272,16 +290,22 @@ export function runReviewer(
   // Clean completion → audit: default mode proposes a /goal (Confirm);
   // auto mode enqueues the audit as a /list item (no Confirm — the
   // cascade keeps rolling until the findings run dry).
+  // aggressive mode → relaunch the audit goal directly (no Confirm).
   if (findings.length === 0 && config.cascade.includes("fire-audit-on-clean") && !reportOnly) {
     const auditObjective = `Post-completion regression scan after ${source.goalId} (${config.auditScope})`;
-    if (auto) {
+    if (aggressive) {
+      deps.proposeGoal(auditObjective, "aggressive postaudit: clean completion — relaunching the regression scan as /goal");
+      proposed++;
+      cascadeStep = "aggressive-relaunch";
+    } else if (auto) {
       deps.enqueueListItems([auditObjective]);
       enqueued++;
+      cascadeStep = "fire-audit-on-clean";
     } else {
       deps.proposeGoal(auditObjective, "reviewer: completion looks clean — firing the audit step");
       proposed++;
+      cascadeStep = "fire-audit-on-clean";
     }
-    cascadeStep = "fire-audit-on-clean";
   }
   if (reportOnly) cascadeStep = "report-only";
 
@@ -319,7 +343,7 @@ export function runReviewer(
 export function reviewerMenuOptions(cfg: ReviewerConfig): string[] {
   return [
     `Enabled — ${cfg.enabled ? "ON" : "OFF"}`,
-    `Mode — ${cfg.mode} (default = Confirm-gated · auto = auto-loop, no Confirms · report = report only)`,
+    `Mode — ${cfg.mode} (off = silenced · default = Confirm-gated · auto = auto-loop, no Confirms · aggressive = auto + relaunch · report = report only)`,
     `Leverage mode — ${cfg.leverageMode} (bug/refactor findings)`,
     `Fire on goal-complete — ${cfg.fireOn.includes("goal-complete") ? "ON" : "OFF"}`,
     `Fire on list-complete — ${cfg.fireOn.includes("list-complete") ? "ON" : "OFF"}`,
