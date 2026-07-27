@@ -48,9 +48,9 @@ test("paused card answers 'did I lose the work?' with a saved line", () => {
   const g = pausedGoal({ usage: { tokensUsed: 41200, tokensLimit: 0 }, auditHistory: [{ approved: true }, { approved: false }, { approved: true }] as any });
   const lines = buildWidgetLines(stateOf(g), null, Date.now(), undefined, 100)!;
   assert.ok(lines.some((l) => l.includes("saved — 41.2k tok spent · 3 audits · resumes exactly here")), JSON.stringify(lines));
-  // nothing spent yet → bare guarantee
+  // nothing spent yet → "awaiting first turn" (literal contract text)
   const bare = buildWidgetLines(stateOf(pausedGoal()), null, Date.now(), undefined, 100)!;
-  assert.ok(bare.some((l) => l.includes("saved · resumes exactly here")), JSON.stringify(bare));
+  assert.ok(bare.some((l) => l.includes("awaiting first turn — resumes exactly here")), JSON.stringify(bare));
 });
 
 test("paused card wraps the suggested action and closes the branch on its last line", () => {

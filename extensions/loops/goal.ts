@@ -679,7 +679,7 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
 function fireReviewer(
   ctx: ExtensionContext,
   source: { kind: "goal" | "list"; goalId: string; objective: string; terminal: string },
-  opts: { manual?: boolean; mode?: "off" | "default" | "auto" | "aggressive" | "report" } = {},
+  opts: { manual?: boolean; mode?: "off" | "on" | "auto" | "aggressive" } = {},
 ): void {
   try {
     const settings = loadSettings(ctx.cwd);
@@ -3068,12 +3068,12 @@ async function cmdReview(args: string, ctx: ExtensionContext): Promise<void> {
   const parts = args.trim().split(/\s+/).filter(Boolean);
   const id = parts[0] ?? "";
   const modeArg = parts[1];
-  const validModes = ["off", "default", "auto", "aggressive", "report"] as const;
+  const validModes = ["off", "on", "auto", "aggressive"] as const;
   const mode = (validModes as readonly string[]).includes(modeArg ?? "")
     ? (modeArg as typeof validModes[number])
     : undefined;
   if (modeArg && !mode) {
-    ctx.ui.notify(`Unknown mode "${modeArg}" — use off | default | auto | aggressive | report.`, "warning");
+    ctx.ui.notify(`Unknown mode "${modeArg}" — use off | on | auto | aggressive.`, "warning");
     return;
   }
   if (!id) {
@@ -3129,8 +3129,8 @@ async function cmdReviewerSettings(ctx: ExtensionContext): Promise<void> {
     try {
       if (choice.startsWith("Enabled")) save({ enabled: !cfg.enabled });
       else if (choice.startsWith("Mode")) {
-        // v0.27.5: 5-state cycle off → default → auto → aggressive → report → off
-        const order: Array<"off" | "default" | "auto" | "aggressive" | "report"> = ["off", "default", "auto", "aggressive", "report"];
+        // v0.27.9: 4-state cycle off → on → auto → aggressive → off
+        const order: Array<"off" | "on" | "auto" | "aggressive"> = ["off", "on", "auto", "aggressive"];
         const i = order.indexOf(cfg.mode as typeof order[number]);
         const next = order[(i + 1) % order.length]!;
         save({ mode: next });

@@ -79,16 +79,18 @@ is "in progress."
   - Reference settings files: `/home/dracon/chat/pi/.pi-glla/settings.json` (chat/pi), `/home/dracon/Dev/dracon-platform/web/games/wip/hegemon/.pi-glla/settings.json` (hegemon — `{"autoResume": true}` for unattended rig).
   - Existing tool-restoration mechanism (the closest the code comes to "per-tool config"): `extensions/loops/goal.ts:3656` (`pi.setActiveTools([...active, ...missing])`) auto-reactivates glla tools when an external allowlist hides them. Not a writer, but the read-side mechanism for project tool behavior.
 
-### Item 6 — paused widget "no work started" → "saved · resumes exactly here"
+### Item 6 — paused widget wording (item 6 of the contract)
 
-- **State**: shipped in 0.27.1, regression-pinned in `tests/pause-informativeness.test.ts`.
+- **State**: shipped across 0.27.1 + 0.27.9. The literal contract text is
+  honored: zero-telemetry renders `awaiting first turn — resumes exactly here`;
+  with telemetry renders `saved — N tok spent · M audits · resumes exactly here`.
 - **Evidence**:
-  - File: `extensions/goal-loop-display.ts:239` — `const savedLine = `saved${spent.length > 0 ? ` — ${spent.join(" · ")}` : ""} · resumes exactly here`;`
-  - File: `extensions/goal-loop-display.ts:236` — `if (tokUsed > 0) spent.push(`${fmtTokens(tokUsed)} tok spent`);`
+  - File: `extensions/goal-loop-display.ts:239-244` — `const hasTelemetry = spent.length > 0; const savedLine = hasTelemetry ? `saved — ${spent.join(" · ")} · resumes exactly here` : `awaiting first turn — resumes exactly here`;`
+  - File: `extensions/goal-loop-display.ts:236-238` — `if (tokUsed > 0) spent.push(...)` and `if (audits > 0) spent.push(...)`.
   - Rendered output (with telemetry): `saved — 41.2k tok spent · 3 audits · resumes exactly here`.
-  - Rendered output (no telemetry yet): `saved · resumes exactly here` (NOT "no work started").
-  - Test: `tests/pause-informativeness.test.ts:49` asserts the with-telemetry line; line 51 asserts the bare line.
-  - The strings "no work started" and "awaiting first turn" do NOT exist in any current source.
+  - Rendered output (zero telemetry, e.g. restored-in-fresh-session before first turn): `awaiting first turn — resumes exactly here` (the literal contract wording).
+  - Test: `tests/pause-informativeness.test.ts:49-54` — asserts both lines.
+  - The strings "no work started" do NOT exist in any current source.
 
 ### Item 7 — chunk-near-context-full hint
 

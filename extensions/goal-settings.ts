@@ -83,6 +83,18 @@ export interface Settings {
    * Always wins over subagentModelStrategy — the managed override is written
    * WITH this pin regardless of strategy. */
   subagentModelOverrides?: Record<string, string>;
+  /** v0.27.9: per-tool overrides — allowlist (force tools visible despite
+   * an external modlist), hidden (force tools hidden even when allowed by
+   * the session), and per-tool config (Record<toolName, Record<key, value>>
+   * — extensible for tool-specific knobs like timeouts, formats, etc.). */
+  toolOverrides?: {
+    /** Tools that MUST be active even when an external allowlist hides them. */
+    allow?: string[];
+    /** Tools that MUST be hidden even when the session allows them. */
+    hide?: string[];
+    /** Per-tool configuration knobs (extensible). */
+    perToolConfig?: Record<string, Record<string, unknown>>;
+  };
 }
 
 export const DEFAULT_SETTINGS: Settings = {

@@ -231,12 +231,19 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     });
     // v0.27.1: what survives the pause — the first question at a pause is
     // "did I lose the work?". Answer it on the card.
+    // v0.27.9: when the goal has no telemetry yet (restored-in-fresh-session
+    // before the first turn), render "awaiting first turn" instead of "saved"
+    // — the latter was misleading because no work was ever "saved" before the
+    // session ended.
     const spent: string[] = [];
     const tokUsed = g.usage?.tokensUsed ?? 0;
-    if (tokUsed > 0) spent.push(`${fmtTokens(tokUsed)} tok spent`);
     const audits = g.auditHistory?.length ?? 0;
+    if (tokUsed > 0) spent.push(`${fmtTokens(tokUsed)} tok spent`);
     if (audits > 0) spent.push(`${audits} audit${audits === 1 ? "" : "s"}`);
-    const savedLine = `saved${spent.length > 0 ? ` — ${spent.join(" · ")}` : ""} · resumes exactly here`;
+    const hasTelemetry = spent.length > 0;
+    const savedLine = hasTelemetry
+      ? `saved — ${spent.join(" · ")} · resumes exactly here`
+      : `awaiting first turn — resumes exactly here`;
     if (g.pauseSuggestedAction) {
       lines.push(`├─ ${paint(theme, "dim", truncate(savedLine, budget))}`);
       const wrapped = wrap(g.pauseSuggestedAction, budget, 3);

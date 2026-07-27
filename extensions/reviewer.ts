@@ -15,7 +15,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-export type ReviewerMode = "off" | "default" | "auto" | "aggressive" | "report";
+export type ReviewerMode = "off" | "on" | "auto" | "aggressive";
 
 export interface ReviewerConfig {
   enabled: boolean;
@@ -37,7 +37,7 @@ export interface ReviewerConfig {
 
 export const DEFAULT_REVIEWER_CONFIG: ReviewerConfig = {
   enabled: true,
-  mode: "default",
+  mode: "on",
   fireOn: ["goal-complete", "list-complete"],
   doNotFireOn: ["goal-aborted", "goal-paused"],
   cascade: ["convert-findings-to-list", "queue-leftovers", "fire-audit-on-clean", "notify-and-idle"],
@@ -49,9 +49,15 @@ export const DEFAULT_REVIEWER_CONFIG: ReviewerConfig = {
   maxReviewsPerDay: 20,
 };
 
-/** Merge a partial project-settings block over the defaults. */
+/** Merge a partial project-settings block over the defaults. v0.27.9:
+ * migrate legacy `"default"` / `"report"` mode values to `"on"` (the
+ * contract-compliant 4-mode set is now `off | on | auto | aggressive`). */
 export function resolveReviewerConfig(block?: Partial<ReviewerConfig>): ReviewerConfig {
-  return { ...DEFAULT_REVIEWER_CONFIG, ...(block ?? {}) };
+  const merged = { ...DEFAULT_REVIEWER_CONFIG, ...(block ?? {}) };
+  if ((merged.mode as string) === "default" || (merged.mode as string) === "report") {
+    merged.mode = "on";
+  }
+  return merged;
 }
 
 export type FindingClass = "bug" | "refactor" | "architectural" | "strategic";
@@ -250,11 +256,10 @@ export function runReviewer(
   let cascadeStep = "notify-and-idle";
   const auto = config.mode === "auto" || config.mode === "aggressive";
   const aggressive = config.mode === "aggressive";
-  const reportOnly = config.mode === "report";
 
   // Cascade: findings → list items (leverage: fix-without-confirm).
   const convertStep = source.kind === "goal" ? "convert-findings-to-list" : "queue-leftovers";
-  if (bugs.length > 0 && config.cascade.includes(convertStep) && !reportOnly) {
+  if (bugs.length > 0 && config.cascade.includes(convertStep)) {
     deps.enqueueListItems(bugs.map((f) => f.text));
     enqueued = bugs.length;
     cascadeStep = convertStep;
@@ -263,7 +268,7 @@ export function runReviewer(
   // auto mode → /list items (the auto-loop rolls straight into them).
   // aggressive mode → enqueue AND relaunch as the next active goal
   // (skips both Confirm and the queue — the unattended rig never stops).
-  if (architectural.length > 0 && !reportOnly) {
+  if (architectural.length > 0) {
     if (aggressive) {
       deps.enqueueListItems(architectural.map((f) => f.text));
       // v0.27.5 aggressive: also propose the FIRST architectural finding
@@ -293,7 +298,7 @@ export function runReviewer(
   // auto mode enqueues the audit as a /list item (no Confirm — the
   // cascade keeps rolling until the findings run dry).
   // aggressive mode → relaunch the audit goal directly (no Confirm).
-  if (findings.length === 0 && config.cascade.includes("fire-audit-on-clean") && !reportOnly) {
+  if (findings.length === 0 && config.cascade.includes("fire-audit-on-clean")) {
     const auditObjective = `Post-completion regression scan after ${source.goalId} (${config.auditScope})`;
     if (aggressive) {
       deps.proposeGoal(auditObjective, "aggressive postaudit: clean completion — relaunching the regression scan as /goal");
@@ -309,7 +314,6 @@ export function runReviewer(
       cascadeStep = "fire-audit-on-clean";
     }
   }
-  if (reportOnly) cascadeStep = "report-only";
 
   const report: ReviewReport = {
     goalId: source.goalId,
@@ -345,7 +349,7 @@ export function runReviewer(
 export function reviewerMenuOptions(cfg: ReviewerConfig): string[] {
   return [
     `Enabled — ${cfg.enabled ? "ON" : "OFF"}`,
-    `Mode — ${cfg.mode} (off = silenced · default = Confirm-gated · auto = auto-loop, no Confirms · aggressive = auto + relaunch · report = report only)`,
+    `Mode — ${cfg.mode} (off = silenced · on = Confirm-gated cascade · auto = auto-loop, no Confirms · aggressive = auto + relaunch)`,
     `Leverage mode — ${cfg.leverageMode} (bug/refactor findings)`,
     `Fire on goal-complete — ${cfg.fireOn.includes("goal-complete") ? "ON" : "OFF"}`,
     `Fire on list-complete — ${cfg.fireOn.includes("list-complete") ? "ON" : "OFF"}`,

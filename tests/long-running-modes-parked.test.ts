@@ -69,14 +69,13 @@ test("Item 5 — per-project tool overrides: loadSettings / saveSettings shipped
   assert.match(src, /export function saveSettings/);
 });
 
-test("Item 6 — paused widget renders 'saved · resumes exactly here', NOT 'no work started'", () => {
-  assert.match(DOC, /Item 6.+paused widget/s);
-  assert.match(DOC, /no work started.*do NOT exist in any current source/);
+test("Item 6 — paused widget renders `awaiting first turn` for zero telemetry (literal contract)", () => {
+  assert.match(DOC, /Item 6.+paused widget wording/s);
   const widgetSrc = fs.readFileSync("extensions/goal-loop-display.ts", "utf-8");
-  assert.match(widgetSrc, /saved\$\{spent\.length > 0/);
-  assert.match(widgetSrc, /resumes exactly here/);
+  assert.match(widgetSrc, /hasTelemetry\s*\?/);
+  assert.match(widgetSrc, /saved \u2014 \$\{spent\.join/);
+  assert.match(widgetSrc, /awaiting first turn \u2014 resumes exactly here/);
   assert.doesNotMatch(widgetSrc, /"no work started"/);
-  assert.doesNotMatch(widgetSrc, /"awaiting first turn"/);
 });
 
 test("Item 7 — chunk-near-context-full hint in continuation prompt", () => {
