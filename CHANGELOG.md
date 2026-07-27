@@ -1,6 +1,28 @@
 # Changelog
 
+## [0.27.0] — 2026-07-26
+
+### Changed — /glla settings menu: every option, organized, self-documenting
+
+Typing `/glla` now shows EVERY option on one screen, grouped into
+sections, each row `label — value [provenance] — what it does` so the
+menu is also the documentation (user request: "I want to see the option
+even when I type /glla… give some info about them on the right").
+
+- **Sections**: Keep-going (auto-resume tri-state, auto-accept drafts,
+  aggressive mode) · Auditor (model, thinking, cap, feedback chars,
+  quota retry) · Stall brakes (wedge alert, stuck max, stall escalation)
+  · Subagents (strategy + 3 pins) · Other (notify, token limit,
+  reviewer). Header rows are selectable no-ops.
+- **Newly editable from the menu** (were command-only): auto-resume
+  (default/on/off picker), auto-accept drafts, audit cap, stall
+  escalation refires, reviewer config (jumps to the reviewer menu).
+- Headless fallback (no-UI) now lists the stall brakes too.
+
+4 new tests (413 → 417).
+
 ## [0.26.9] — 2026-07-26
+
 
 ### Fixed — restore gate is now a tri-state: never auto-start on session LOAD
 
