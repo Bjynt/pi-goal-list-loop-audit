@@ -52,6 +52,13 @@ export interface Settings {
   /** v0.26.1: consecutive heartbeat refires without a real turn before
    * the goal pauses / loop stops (default 5; 0 = never escalate). */
   stallEscalationRefires?: number;
+  /** v0.27.3: a turn with no tool calls AND text shorter than this is a
+   * nudge. Default 200 chars. Lower = stricter (more pauses). */
+  stallShortThreshold?: number;
+  /** v0.27.3: a turn with no tool calls whose text trigram-similarity to
+   * the prior assistant turn exceeds this is a nudge. Default 0.6. Higher
+   * = stricter (more pauses). */
+  stallSimilarityThreshold?: number;
   /** on → propose_* drafts activate WITHOUT the Confirm dialog and the
    * interview floor is skipped — the seed carries the intent (unattended
    * rigs). Default off: nothing activates before the user confirms. */
@@ -131,6 +138,8 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "quotaRetryMinutes",
   "stuckMaxInterventions",
   "stallEscalationRefires",
+  "stallShortThreshold",
+  "stallSimilarityThreshold",
 ];
 
 /** Where each effective setting comes from (for the /glla display). */

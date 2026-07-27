@@ -180,3 +180,72 @@ export function shouldHeartbeatRefire(input: HeartbeatInput): boolean {
 export function accountTurnForNudges(toolCalls: number, currentNudges: number): number {
   return toolCalls > 0 ? 0 : currentNudges + 1;
 }
+
+/**
+ * v0.27.3: the pure nudge detector and richer accounting. A supervising turn
+ * is a nudge (no real progress) iff it has NO tool calls AND its text is
+ * either short (< DEFAULT_STALL_SHORT_THRESHOLD chars) OR highly similar to
+ * the prior assistant turn (3-gram Jaccard > DEFAULT_STALL_SIM_THRESHOLD).
+ * Substantive analytical replies (long, novel) reset the counter even with
+ * no tool calls — the polis-session incident ("3 consecutive turns with no
+ * tool calls" tripped the brake on real investigation work, screenshot
+ * 2026-07-27) showed the simple tool-only check is too coarse.
+ *
+ * Pure: no side effects, no state. Safe to unit-test with crafted inputs.
+ */
+export const DEFAULT_STALL_SHORT_THRESHOLD = 200;
+export const DEFAULT_STALL_SIM_THRESHOLD = 0.6;
+
+export function trigramSimilarity(a: string, b: string): number {
+  if (!a && !b) return 1;
+  if (!a || !b) return 0;
+  const grams = (s: string) => {
+    const g = new Map<string, number>();
+    const t = s.toLowerCase();
+    for (let i = 0; i <= t.length - 3; i++) {
+      const k = t.slice(i, i + 3);
+      g.set(k, (g.get(k) ?? 0) + 1);
+    }
+    return g;
+  };
+  const ga = grams(a);
+  const gb = grams(b);
+  let inter = 0;
+  let uni = 0;
+  const keys = new Set([...ga.keys(), ...gb.keys()]);
+  for (const k of keys) {
+    const va = ga.get(k) ?? 0;
+    const vb = gb.get(k) ?? 0;
+    inter += Math.min(va, vb);
+    uni += Math.max(va, vb);
+  }
+  return uni === 0 ? 0 : inter / uni;
+}
+
+export function isNudgeTurn(opts: {
+  toolCalls: number;
+  text: string;
+  priorText: string;
+  shortThreshold?: number;
+  simThreshold?: number;
+}): boolean {
+  if (opts.toolCalls > 0) return false;
+  const shortThr = opts.shortThreshold ?? DEFAULT_STALL_SHORT_THRESHOLD;
+  const simThr = opts.simThreshold ?? DEFAULT_STALL_SIM_THRESHOLD;
+  if (opts.text.length < shortThr) return true;
+  if (!opts.priorText) return false; // first turn in a streak — no similarity to compare to
+  return trigramSimilarity(opts.text, opts.priorText) > simThr;
+}
+
+export function accountTurnForNudgesRich(
+  opts: {
+    toolCalls: number;
+    text: string;
+    priorText: string;
+    shortThreshold?: number;
+    simThreshold?: number;
+  },
+  currentNudges: number,
+): number {
+  return isNudgeTurn(opts) ? currentNudges + 1 : 0;
+}

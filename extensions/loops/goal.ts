@@ -157,7 +157,10 @@ import {
 } from "../goal-loop-forever.js";
 import {
   accountTurnForNudges,
+  accountTurnForNudgesRich,
   BACKOFF_IDLE_RETRY_MS,
+  DEFAULT_STALL_SIM_THRESHOLD,
+  DEFAULT_STALL_SHORT_THRESHOLD,
   HEARTBEAT_INTERVAL_MS,
   HEARTBEAT_MAX_NUDGES,
   HEARTBEAT_STALL_MS,
@@ -3811,7 +3814,13 @@ export default function (pi: ExtensionAPI): void {
     // a response — re-trigger immediately with split-smaller guidance and
     // skip ALL turn bookkeeping; the NEXT agent_end processes the run.
     // Works with no goal active (plain sessions truncate too).
-    const lastA = [...(event.messages as any[])].reverse().find((m) => m.role === "assistant");
+    // v0.27.3: enrich lastA with text + priorText for the smarter nudge
+    // accounting below.
+    const assistants = (event.messages as any[]).filter((m: any) => m.role === "assistant");
+    const rawLastA = assistants.length ? assistants[assistants.length - 1] : null;
+    const rawPriorA = assistants.length >= 2 ? assistants[assistants.length - 2] : null;
+    const extractText = (m: any): string => (m && Array.isArray(m.content)) ? m.content.filter((p: any) => p.type === "text").map((p: any) => p.text).join("\n") : "";
+    const lastA = rawLastA ? { stopReason: rawLastA.stopReason, text: extractText(rawLastA), priorText: extractText(rawPriorA) } : null;
     const lc = tickLengthContinue(lastA?.stopReason === "length");
     if (lc.giveUpNow) {
       ctx.ui.notify(`glla: response hit the output-token cap ${LENGTH_CONTINUE_MAX}× in a row — stepping aside. Ask the model to split the work into smaller pieces.`, "warning");
@@ -3832,27 +3841,34 @@ export default function (pi: ExtensionAPI): void {
       registeredCtx = ctx;
     }
     ensureAgentToolsActive(pi, ctx);
-    // Nudge accounting: a supervising turn with zero tool calls is a nudge
-    // (no real progress); 3 consecutive → pause. Tool-use turns reset it.
+    // v0.27.3: nudge accounting — substantive analytical turns (long, novel
+    // text) reset the counter even with no tool calls. Polis-session
+    // incident showed the tool-only check fired on real investigation work.
     if (isSupervising()) {
-      heartbeatNudges = accountTurnForNudges(toolCallsThisTurn, heartbeatNudges);
+      const s = loadSettings(ctx.cwd);
+      const shortThr = s.stallShortThreshold ?? DEFAULT_STALL_SHORT_THRESHOLD;
+      const simThr = s.stallSimilarityThreshold ?? DEFAULT_STALL_SIM_THRESHOLD;
+      heartbeatNudges = accountTurnForNudgesRich(
+        { toolCalls: toolCallsThisTurn, text: lastA?.text ?? "", priorText: lastA?.priorText ?? "", shortThreshold: shortThr, simThreshold: simThr },
+        heartbeatNudges,
+      );
       if (heartbeatNudges >= HEARTBEAT_MAX_NUDGES) {
         heartbeatNudges = 0;
         if (isLoopActive()) {
           clearLoopTimer();
-          state.loop = { ...state.loop!, active: false, stopReason: `stalled: ${HEARTBEAT_MAX_NUDGES} consecutive turns with no tool calls` };
+          state.loop = { ...state.loop!, active: false, stopReason: `stalled: ${HEARTBEAT_MAX_NUDGES} consecutive unproductive turns (no tools, short or repetitive)` };
           persistState(ctx);
-          ctx.ui.notify(`Loop stopped: stalled (${HEARTBEAT_MAX_NUDGES} turns, no tools). /loop start to begin a new one.`, "warning");
+          ctx.ui.notify(`Loop stopped: stalled (${HEARTBEAT_MAX_NUDGES} unproductive turns). /loop start to begin a new one.`, "warning");
           notifyExternal(ctx, "Loop stopped: stalled (no tool calls).");
           return;
         }
         if (state.goal) {
           updateGoal({
             status: "paused",
-            pauseReason: `stalled: ${HEARTBEAT_MAX_NUDGES} consecutive turns with no tool calls`,
+            pauseReason: `stalled: ${HEARTBEAT_MAX_NUDGES} consecutive unproductive turns (no tools, short or repetitive)`,
             pauseSuggestedAction: "Inspect the goal — /goal resume to retry, /goal tweak to narrow it, /goal cancel to abort.",
           }, ctx);
-          ctx.ui.notify(`Goal paused: stalled (${HEARTBEAT_MAX_NUDGES} turns, no tools).`, "warning");
+          ctx.ui.notify(`Goal paused: stalled (${HEARTBEAT_MAX_NUDGES} unproductive turns).`, "warning");
           notifyExternal(ctx, "Goal paused: stalled (no tool calls).");
           return;
         }
