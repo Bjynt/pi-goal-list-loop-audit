@@ -164,7 +164,7 @@ test("aggressive mode: architectural findings enqueue AND the first one relaunch
   const { deps, calls } = mkDeps(dir, {
     sources: [
       { name: "audit", text: "We should rewrite the schema to normalize events." },
-      { name: "audit", text: "Architectural: split the orchestrator into separate command and queue layers." },
+      { name: "audit", text: "Architectural redesign: split the orchestrator into separate command and queue layers." },
     ],
   });
   const out = runReviewer(cfg, GOAL_SRC, deps);

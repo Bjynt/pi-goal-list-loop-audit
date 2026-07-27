@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.27.7] — 2026-07-27
+
+### Added — 5-mode postaudit (`off` / `default` / `auto` / `aggressive` / `report`)
+
+`/glla postaudit=` (and the legacy `/glla reviewer=`) now cycles through
+five modes instead of three:
+
+- **off** — silenced; never fires. Equivalent to `enabled=false` but
+  exposed via the menu.
+- **default** — Confirm-gated cascade (the original behavior).
+- **auto** — every actionable finding becomes a `/list` item, zero
+  Confirms (the auto-loop rolls straight through).
+- **aggressive** — `auto` behavior PLUS the FIRST architectural finding
+  is relaunched as a `/goal` directly (no Confirm). For unattended rigs
+  that can't click Confirm.
+- **report** — write the report + notify only, no cascade.
+
+The `ReviewerMode` type union widened to `"off" | "default" | "auto" |
+"aggressive" | "report"`. `/review <id> <mode>` accepts all five.
+`ReviewerOutcome` now exposes `cascadeStep` so tests can assert which
+branch fired. `cmdReviewerSettings` reads whichever key the user has
+configured (`postaudit` wins over the legacy `reviewer` key) and writes
+back to that same key — no parallel config drift.
+
+### Added — `audit/LONG-RUNNING-MODES.md` parking doc (committed to git)
+
+The long-running philosophy parking doc is now committed at
+`audit/LONG-RUNNING-MODES.md` (69 lines, 3055 bytes). Tabulates the
+corrected source-of-long-running axis (sub-goals, not mode nesting)
+and lists the parked items for v0.29+ (sub-goal tree, spec evolution,
+post-audit modes — the last of which is now partly shipped).
+
+3 new tests in `tests/reviewer-modes.test.ts` (off / aggressive-architectural /
+aggressive-clean / opts.mode union widening / menu-text / 5-mode cycle).
+
 ## [0.27.6] — 2026-07-27
 
 ### Changed — package.json scripts: `npm test` now uses bun (3x faster)

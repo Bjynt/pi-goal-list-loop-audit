@@ -203,6 +203,8 @@ export interface ReviewerOutcome {
   reportPath?: string;
   enqueued: number;
   proposed: number;
+  /** v0.27.5: the cascade step that actually fired (notify-and-idle | convert-findings-to-list | queue-leftovers | fire-audit-on-clean | propose-goal | aggressive-relaunch | report-only) — surfaces in /goal status and tests. */
+  cascadeStep?: string;
 }
 
 export const REVIEWER_REFIRE_WINDOW_MS = 5 * 60_000;
@@ -335,7 +337,7 @@ export function runReviewer(
   if (strategic.length > 0) {
     deps.notify(`Reviewer: ${strategic.length} strategic finding(s) need YOUR call — see the report's Strategic section.`, "warning");
   }
-  return { fired: true, report, reportPath, enqueued, proposed };
+  return { fired: true, report, reportPath, enqueued, proposed, cascadeStep };
 }
 
 /** /glla reviewer menu options, derived from the config — extracted so
