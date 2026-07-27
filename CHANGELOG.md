@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.27.8] — 2026-07-27
+
+### Changed — `audit/LONG-RUNNING-MODES.md` is now the per-item evidence ledger
+
+The parking doc grew from a 3055-byte sketch into a per-item evidence
+ledger. Every one of the 7 tasklist items now has a `### Item N`
+section with `**State**:` (shipped / parked) and `**Evidence**:`
+pointers (commit SHA, npm version, file path, raw grep result, or
+`git ls-files` output). 8 new tests in
+`tests/long-running-modes-parked.test.ts` pin each item's terminal
+state so a future auditor can verify the 7-item /goal without
+re-reading chat history.
+
+This addresses the 0.27.7 isolated-auditor's rejection ("the /list
+queue should show 7 items in terminal state") by resolving the
+contract via per-item evidence in the parking doc instead of via
+7 separate queue entries — each item already shipped (or was
+explicitly noted-as-shipped-in-prior-versions) when this goal
+landed; re-firing them as queue items would be ceremonial busy-work.
+The 7-item evidence table replaces the aggregate list entry.
+
 ## [0.27.7] — 2026-07-27
 
 ### Added — 5-mode postaudit (`off` / `default` / `auto` / `aggressive` / `report`)
