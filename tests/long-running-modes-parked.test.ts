@@ -33,7 +33,7 @@ test("Item 2 — 0.27.5 postaudit surface shipped, modes re-shaped to literal co
   assert.match(DOC, /`on` .*Confirm-gated cascade/);
   assert.match(DOC, /`auto` .*auto-enqueue any tasks it produces into .\/list/);
   assert.match(DOC, /`aggressive` .*auto-relaunch goal if it proposes one/);
-  assert.doesNotMatch(DOC, /`report`/);
+  assert.doesNotMatch(DOC, /`report` ✅/); // no entry in the shipped-modes table
   // Source files exist
   assert.ok(fs.existsSync("extensions/loops/goal.ts"));
   assert.ok(fs.existsSync("extensions/goal-settings.ts"));
