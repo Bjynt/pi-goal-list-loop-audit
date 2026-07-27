@@ -174,3 +174,21 @@ goal status = active (auditing → activated by re-entry)
 #7: Parked item 7 (already shipped across 0.27.6 + 0.27.9): chunking hint
 ```
 
+
+## Auditor cwd gotcha (NEW for 0.27.9 regression)
+
+The auditor session inherits `cwd = /home/dracon/chat/pi/` (the chat-thread
+working directory), NOT the project repo at `/home/dracon/Dev/pi-goal-loop-audit/`.
+`chat/pi/` is not a git repo and has no `package.json` or `tests/` dir.
+Any verification contract that runs `git ls-files` / `git cat-file` /
+`bun test` against a relative path will fail with ENOENT or "fatal: not a git
+repository". Two fixes available to the package author and the running agent:
+
+1. **For package author / contracts**: cite absolute paths
+   (`/home/dracon/Dev/pi-goal-loop-audit/...`) and prefix commands that
+   need a working-tree with `cd /home/dracon/Dev/pi-goal-loop-audit &&`.
+2. **For completion summary authors**: include a `cd`-prefixed
+   raw output line so the auditor can `cat` the same path.
+
+Captured 2026-07-27 after parked-item-4 disapprove was overturned by
+re-citing absolute paths.
