@@ -3179,7 +3179,9 @@ async function promptSettingsMenu(
  * Same handlers as v0.27.0's if/else chain — only the trigger changed from
  * `startsWith(label)` strings to stable ids.
  */
-async function handleSettingChoice(id: string, ctx: ExtensionContext): Promise<void> {
+// v0.28.7 (T4): exported for the behavioral settings-editor tests
+// (tests/settings-editors.test.ts drives each editor class end-to-end).
+export async function handleSettingChoice(id: string, ctx: ExtensionContext): Promise<void> {
   switch (id) {
     case "autoResume": {
       const v = await ctx.ui.select("Auto-resume goals/loops on session start", [
