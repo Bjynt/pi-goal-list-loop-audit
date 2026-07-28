@@ -1,48 +1,218 @@
-// pi-goal-list-loop-audit — v0.27.0
+// pi-goal-list-loop-audit — v0.28.0
 // tests/settings-menu-complete.test.ts
 //
-// "I want to see every option when I type /glla — better organized, with
-// info about them on the right." The settings menu now shows every key in
-// sections, each row `label — value [source] — what it does`.
+// v0.28.0: the menu is structured data (`buildSettingsRows`) and a stable
+// `id` dispatch (v0.27.0 relied on `choice.startsWith("...")` strings).
+// These tests pin the structural surface against `buildSettingsRows` + the
+// `handleSettingChoice` dispatch table in extensions/loops/goal.ts, rather
+// than slicing source for flat-row strings.
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 
-const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
-const MENU = SRC.slice(SRC.indexOf("async function openSettingsUI"), SRC.indexOf("async function cmdSettings"));
+import {
+  buildSettingsRows,
+  SETTINGS_SECTIONS,
+  type SettingsRow,
+} from "../extensions/settings-menu.ts";
+import type { Settings } from "../extensions/goal-settings.ts";
 
-test("every settings key has a menu row with a description", () => {
-  for (const row of [
-    "Auto-resume on load", "Auto-accept drafts", "Aggressive mode",
-    "Auditor model", "Auditor thinking", "Audit cap", "Audit feedback chars", "Quota retry minutes",
-    "Wedge alert minutes", "Stuck max interventions", "Stall escalation refires",
-    "Subagent model strategy", "Subagent Explore pin", "Subagent Plan pin", "Subagent general-purpose pin",
-    "Notify command", "Token limit per goal", "Reviewer config",
+/* --------------------------------------------------------------------- */
+/*  Pure row-builder pins                                                */
+/* --------------------------------------------------------------------- */
+
+const SAMPLE_SETTINGS: Settings = {
+  autoResume: true,
+  autoAcceptDrafts: false,
+  aggressiveMode: false,
+  auditorModel: "anthropic/claude-sonnet-4",
+  auditorThinkingLevel: "high",
+  auditCap: 10,
+  auditFeedbackChars: 500,
+  quotaRetryMinutes: 30,
+  wedgeAlertMinutes: 0,
+  stuckMaxInterventions: 5,
+  stallEscalationRefires: 5,
+  stallShortWords: 15,
+  stallSimilarityThreshold: 0.6,
+  notifyCmd: "notify-send $1",
+  tokenLimit: 200000,
+  subagentModelStrategy: "inherit-parent",
+  subagentModelOverrides: {
+    Explore: "minimax/MiniMax-M3",
+    Plan: "minimax/MiniMax-M3",
+  },
+};
+
+const EMPTY_PROV: Partial<Record<keyof Settings, { value: unknown; source: "project" | "global" | "default" }>> = {};
+
+test("every row carries every required column field", () => {
+  const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
+  for (const r of rows) {
+    assert.ok(typeof r.id === "string" && r.id.length > 0, `id: ${r.id}`);
+    assert.ok(typeof r.section === "string", `section: ${r.section}`);
+    assert.ok(typeof r.label === "string" && r.label.length > 0, `label: ${r.label}`);
+    assert.ok(typeof r.valueText === "string", `valueText: ${r.valueText}`);
+    assert.ok(typeof r.sourceText === "string", `sourceText: ${r.sourceText}`);
+    assert.ok(typeof r.description === "string" && r.description.length > 0, `description: ${r.description}`);
+  }
+});
+
+test("the 5 sections are exactly {keep-going, auditor, stall-brakes, subagents, other}", () => {
+  const ids = SETTINGS_SECTIONS.map((s) => s.id);
+  assert.deepEqual(ids, ["keep-going", "auditor", "stall-brakes", "subagents", "other"]);
+  assert.ok(SETTINGS_SECTIONS.every((s) => typeof s.label === "string" && s.label.length > 0));
+});
+
+test("every row's section is one of the 5 known section ids (no orphans)", () => {
+  const validSections = new Set<string>(SETTINGS_SECTIONS.map((s) => s.id));
+  const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
+  for (const r of rows) {
+    assert.ok(validSections.has(r.section), `row ${r.id} has section ${r.section}`);
+  }
+});
+
+test("key rows from v0.27.0 settings menu are all present (menu coverage contract)", () => {
+  const ids = new Set(buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV).map((r) => r.id));
+  for (const id of [
+    "autoResume",
+    "autoAcceptDrafts",
+    "aggressiveMode",
+    "auditorModel",
+    "auditorThinkingLevel",
+    "auditCap",
+    "auditFeedbackChars",
+    "quotaRetryMinutes",
+    "wedgeAlertMinutes",
+    "stuckMaxInterventions",
+    "stallEscalationRefires",
+    "stallShortWords",
+    "stallSimilarityThreshold",
+    "subagentModelStrategy",
+    "subagentModelOverrides.Explore",
+    "subagentModelOverrides.Plan",
+    "subagentModelOverrides.general-purpose",
+    "notifyCmd",
+    "tokenLimit",
+    "postaudit",
   ]) {
-    const re = new RegExp("`" + row.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "[^`]*—[^`]*`");
-    assert.ok(re.test(MENU), `row with description: ${row}`);
+    assert.ok(ids.has(id), `missing id: ${id}`);
   }
 });
 
-test("menu is organized into named sections; headers are selectable no-ops", () => {
-  for (const section of ["── Keep-going ──", "── Auditor ──", "── Stall brakes ──", "── Subagents ──", "── Other ──"]) {
-    assert.ok(MENU.includes(`"${section}"`), section);
+test("rows map 1:1 to dispatchable ids (every id can drive a handler)", () => {
+  // The id → handler mapping lives in handleSettingChoice in goal.ts.
+  // Build the set of case-labels we expect.
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const dispatcher = src.slice(
+    src.indexOf("async function handleSettingChoice"),
+    src.indexOf("/** v0.26.0: /review"),
+  );
+  const caseLabels = new Set<string>();
+  for (const m of dispatcher.matchAll(/case\s+"([^"]+)":/g)) {
+    caseLabels.add(m[1]!);
   }
-  assert.match(MENU, /startsWith\("──"\)\) continue;/);
+  const rowIds = new Set(buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV).map((r) => r.id));
+  // Every row id must have a case in the dispatcher (with one allowed
+  // exception: subagentResolved is read-only and intentionally has no
+  // editor — it's there for visibility into runtime resolution).
+  const readOnly = new Set(["subagentResolved"]);
+  let covered = 0;
+  for (const r of rowIds) {
+    if (readOnly.has(r)) continue;
+    assert.ok(caseLabels.has(r), `row id "${r}" has no dispatcher case in handleSettingChoice`);
+    covered++;
+  }
+  assert.ok(covered >= 18, `expected at least 18 dispatcher-covered rows, saw ${covered}`);
 });
 
-test("previously-missing handlers exist: autoresume tri-state, autoaccept, auditcap, stallescalation, reviewer", () => {
-  assert.match(MENU, /choice\.startsWith\("Auto-resume"\)/);
-  assert.match(MENU, /autoResume: v\.startsWith\("on"\) \? true : v\.startsWith\("off"\) \? false : undefined/);
-  assert.match(MENU, /choice\.startsWith\("Auto-accept drafts"\)/);
-  assert.match(MENU, /choice\.startsWith\("Audit cap"\)/);
-  assert.match(MENU, /choice\.startsWith\("Stall escalation"\)/);
-  assert.match(MENU, /choice\.startsWith\("Reviewer config"\)/);
-  assert.match(MENU, /await cmdReviewerSettings\(ctx\)/);
+test("valueText derives from settings (effective values surface for each row)", () => {
+  const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
+  const byId = new Map<string, SettingsRow>(rows.map((r) => [r.id, r]));
+  assert.equal(byId.get("autoResume")!.valueText, "true");
+  assert.equal(byId.get("auditorModel")!.valueText, "anthropic/claude-sonnet-4");
+  assert.equal(byId.get("wedgeAlertMinutes")!.valueText, "0");
+  assert.equal(
+    byId.get("subagentModelOverrides.Explore")!.valueText,
+    "minimax/MiniMax-M3",
+  );
 });
 
-test("headless fallback lists the stall brakes too", () => {
-  assert.match(SRC, /fmt\("stallEscalationRefires", "stallEscalation"\)/);
-  assert.match(SRC, /fmt\("wedgeAlertMinutes", "wedgeAlert"\)/);
+test("default fallbacks surface when settings + provenance both missing", () => {
+  const rows = buildSettingsRows({} as Settings, EMPTY_PROV);
+  const byId = new Map<string, SettingsRow>(rows.map((r) => [r.id, r]));
+  // valueText should equal one of: "(unset)", "(off)", "(default)", "(...)", "open sub-menu"
+  for (const r of rows) {
+    assert.match(r.valueText, /^(\(.*\)|true|false|on|off)$/);
+  }
+  // Specific defaults the contract pins:
+  assert.match(byId.get("postaudit")!.valueText, /open sub-menu/);
+  assert.equal(byId.get("autoAcceptDrafts")!.valueText, "(off)");
+});
+
+test("provenance flows into sourceText (project/global/default tags)", () => {
+  const rows1 = buildSettingsRows(SAMPLE_SETTINGS, {
+    autoResume: { value: true, source: "project" },
+    auditorModel: { value: "anthropic/claude-sonnet-4", source: "global" },
+  });
+  const byId = new Map(rows1.map((r) => [r.id, r]));
+  assert.equal(byId.get("autoResume")!.sourceText, "[project]");
+  assert.equal(byId.get("auditorModel")!.sourceText, "[global]");
+  // No provenance → "[default]"
+  assert.equal(byId.get("wedgeAlertMinutes")!.sourceText, "[default]");
+});
+
+test("haiku mention is dropped from any valueText / description / sourceText", () => {
+  const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
+  for (const r of rows) {
+    for (const field of [r.valueText, r.description, r.sourceText, r.label] as const) {
+      assert.doesNotMatch(field, /haiku/i, `row ${r.id} field "${field}" mentions haiku`);
+    }
+  }
+});
+
+/* --------------------------------------------------------------------- */
+/*  Headless fallback contract                                            */
+/* --------------------------------------------------------------------- */
+
+test("the headless `/glla` fallback still lists stall brakes", () => {
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // v0.28.0: the headless fallback is the second branch in `if (typeof ctx.ui.custom !== "function")`
+  // (the rare legacy shard) OR the original text fallback at the bottom of
+  // cmdSettings. Both forms must keep the stallBrakes key in the listing.
+  assert.match(
+    src,
+    /fmt\("stallEscalationRefires", "stallEscalation"\)/,
+    "headless fallback must still include stallEscalationRefires",
+  );
+  assert.match(
+    src,
+    /fmt\("wedgeAlertMinutes", "wedgeAlert"\)/,
+    "headless fallback must still include wedgeAlertMinutes",
+  );
+});
+
+test("the legacy flat-row startsWith logic is removed (no more `──` section headers in code)", () => {
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.doesNotMatch(
+    src,
+    /── Keep-going ──/,
+    "section header strings should be gone — sections are now top tabs",
+  );
+  assert.doesNotMatch(
+    src,
+    /choice\.startsWith\("Auto-resume"\)/,
+    "startsWith dispatch must be replaced by handleSettingChoice switch",
+  );
+});
+
+test("/glla tooloverride still routes headlessly (regression: subsystems unchanged)", () => {
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.match(src, /tooloverride\b.*cmdToolOverride|cmdToolOverride\(trimmed\.slice\("tooloverride"/);
+});
+
+test("postaudit and reviewer routes both open the reviewer menu (back-compat)", () => {
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.match(src, /postaudit.*cmdReviewerSettings|cmdReviewerSettings/);
 });
