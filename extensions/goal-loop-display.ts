@@ -137,6 +137,11 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     return `glla: ${paint(theme, pauseIsError(g) ? "error" : "warning", label)}`;
   }
   if (g.status === "active") {
+    // v0.28.1 (S1/S2): a stale-handle interrupt keeps the goal ACTIVE (the
+    // next fresh session auto-resumes it) — say so instead of looking healthy.
+    if (g.interruptedAt) {
+      return `glla: ${g.policy} ${paint(theme, "error", "⚠ interrupted — stale handle · auto-resumes on pi restart")}`;
+    }
     // v0.24.7: list policy gets its own wording — a queue item is not a goal.
     // Before: "glla: list ● 3m 19s · list 29" (policy label AND queue counter
     // both said "list"). After: "glla: list ● 3m 19s · 29 queued". Goal

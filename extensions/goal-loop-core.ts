@@ -156,6 +156,12 @@ export interface Goal {
   stopReason?: string;
   pauseReason?: string;
   pauseSuggestedAction?: string;
+  /** v0.28.1 (S1/S2): stale-handle interrupt marker. Set INSTEAD of pausing
+   * when pi invalidates the extension handle mid-goal — the goal stays
+   * active so a fresh session auto-resumes it via the restore gate. Cleared
+   * on that auto-resume. */
+  interruptedAt?: string;
+  interruptedReason?: string;
   /** v0.25.0 (contract item 22): auditor objections extracted as TODOs when
    * aggressiveMode keeps the goal active past the disapproval cap. Rendered
    * into every continuation prompt until the next audit clears them. */

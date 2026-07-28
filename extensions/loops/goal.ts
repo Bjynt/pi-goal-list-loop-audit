@@ -198,22 +198,55 @@ let extensionApi: ExtensionAPI | null = null;
 // failure shape. Detect the stale signature once and go terminally loud.
 let extensionApiStale = false;
 
-/** v0.26.7: a stale api is terminal for this process — pause/stop loudly
- * with restart guidance instead of retrying sends that can never land. */
+/** v0.26.7: a stale api is terminal for this process — go loudly with
+ * restart guidance instead of retrying sends that can never land.
+ * v0.28.1 (S1/S2): goals STAY ACTIVE with an interrupt marker instead of
+ * pausing — the restore gate only auto-resumes ACTIVE goals, so pausing
+ * here stranded goals until manual /goal resume (hegemon/sraaal shape).
+ * sendContinuation's extensionApiStale guard already stops further sends
+ * in this doomed process; the next fresh session auto-resumes. */
 function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   if (extensionApiStale) return; // already terminal — don't re-spam
   extensionApiStale = true;
   appendLedger(ctx.cwd, "extension_api_stale", { where, kind: isLoopActive() ? "loop" : "goal" });
-  const guidance = "pi invalidated this session's extension handle (session replacement — compaction triggers it in pi 0.82.x). Sends can never land in this process. Restart pi (or reload extensions), then /goal resume / /loop start.";
+  const guidance = "pi invalidated this session's extension handle (session replacement — compaction triggers it in pi 0.82.x). Sends can never land in this process. Restart pi (or reload extensions) — an active goal auto-resumes on the fresh session; loops need /loop start.";
   if (isLoopActive()) {
     clearLoopTimer();
     state.loop = { ...state.loop!, active: false, stopReason: `extension api stale: ${guidance}` };
     persistState(ctx);
   } else if (state.goal && state.goal.status === "active") {
-    updateGoal({ status: "paused", pauseReason: "extension api stale (pi session replacement)", pauseSuggestedAction: guidance }, ctx);
+    updateGoal({ interruptedAt: nowIso(), interruptedReason: `extension api stale (${where})` }, ctx);
   }
   ctx.ui.notify(`glla: ${guidance}`, "warning");
   notifyExternal(ctx, `glla: extension api stale — restart pi. (${where})`);
+}
+
+/** v0.28.1 (S3): side-effect-free staleness probe — getSessionName()
+ * routes through pi's assertActive() and throws the stale signature iff
+ * pi invalidated this factory handle (session replacement). A positive
+ * result is cached in extensionApiStale. */
+function probeExtensionApiStale(): boolean {
+  if (extensionApiStale) return true;
+  if (!extensionApi) return false;
+  try {
+    extensionApi.getSessionName();
+  } catch (err) {
+    if (isStaleApiError(err)) extensionApiStale = true;
+  }
+  return extensionApiStale;
+}
+
+/** v0.28.1 (S3): command-entry staleness probe + honest warning. Returns
+ * true when the handle is stale — callers must skip send-dependent paths
+ * and must NOT claim work started (S3's "created — starting now" lie). */
+function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
+  if (!probeExtensionApiStale()) return false;
+  appendLedger(ctx.cwd, "extension_api_stale", { where: `entry probe (${what})` });
+  ctx.ui.notify(
+    `glla: this session's extension handle is stale (pi session replacement) — ${what} can't send continuations in this process. State is safe in .pi-glla/ — restart pi and the active goal auto-resumes.`,
+    "warning",
+  );
+  return true;
 }
 
 // The most recent ExtensionContext seen from any event or command handler.
