@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.28.7] — 2026-07-28
+
+### Added — mock-ctx behavioral test harness (audit T7, T1–T5)
+
+From `audit/WRONG-OR-NOT-PREMIUM-2026-07-28.md` Stream 4. The root-gap fix:
+`tests/harness/mock-pi.ts` — a fake ExtensionAPI (captures registered
+tools/commands/event handlers; sync-throw `sendMessage`/`getSessionName`
+stale injection matching pi's real assertActive semantics) + stub
+ExtensionContext (captured notifies, scriptable ui.confirm/select/input).
+`tests/behavioral-orchestrator.test.ts` registers goal.ts on the fake and
+DRIVES it — the first tests that execute the orchestrator instead of
+regex-pinning its source. The harness caught TWO real production bugs on
+day one (below).
+
+### Fixed — caught by the new harness
+
+- **Restore-gate tri-state regression (T3, live since 0.28.3).**
+  `resolveEffectiveAggressiveSettings` coerced `autoResume: s.autoResume ??
+  aggressiveMode` → `false` when unset, so the session_start restore gate's
+  DEFAULT branch never fired: reload/fork HELD instead of auto-resuming,
+  and the 0.28.3 interrupted-goal rule (`!== false`) never triggered — the
+  exact capture-anime-girls scenario 0.28.3 claimed to fix. Now
+  `s.autoResume ?? (aggressiveMode ? true : undefined)` — unset stays
+  tri-state (hold on human loads, resume on reload/fork); aggressiveMode
+  still flips the default to always-resume. Behaviorally pinned: T3a HOLD
+  on human load, T3b reload auto-resume, T3c interrupted outranks the
+  default hold, T3d loop HELD_ON_RESTORE, T3e list-head auto-activate.
+- **Foreign-session guard gap (T5).** `complete_task`,
+  `update_task_status`, and `propose_task_list` mutated goal state with NO
+  foreign-session guard — a subagent session could rewrite the main
+  session's task list. All three now route through `foreignToolGuard`;
+  coverage pin scans every registered tool block and fails if any mutating
+  tool (or a future new/renamed one) lacks the guard.
+
+### Behavioral coverage converted from source pins
+
+- **T1 stale creation paths**: stale Confirm in propose_goal_draft →
+  NOT-a-rejection guidance + nothing created; stale /goal start → goal
+  persisted with interrupt marker + honest ".pi-glla" notify.
+- **T2 stale send → terminal**: agent_end continuation against a dead
+  handle → goal stays ACTIVE + interrupt marker + loud restart notify +
+  ledgered.
+- **T4 settings editors**: `tests/settings-editors.test.ts` executes
+  select/input editors end-to-end against the real global settings file
+  (snapshot/restore) — writes, clears, validation rejection, dismissed-
+  editor-no-write all pinned.
+- Test-only export `__testOnlyResetStaleFlag` (the stale flag is
+  process-terminal in production) + `handleSettingChoice` now exported.
+- 539 pass / 1 env-gated skip / 0 fail / 540 tests across 58 files.
+
 ## [0.28.6] — 2026-07-28
 
 ### Fixed — persistence integrity hardening (audit E1, T6)
