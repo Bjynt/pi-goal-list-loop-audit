@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.28.4] — 2026-07-28
+
+### Fixed — nudge before the stall brake; unclosed status in every continuation (audit P1–P3)
+
+From `audit/WRONG-OR-NOT-PREMIUM-2026-07-28.md` Stream 5. Field-observed in
+the game-dev sessions: done-but-unclosed goals got silently pause-stamped by
+the stall brake ("the goal paused itself out of nowhere") because the model
+narrated completion in prose instead of calling `complete_goal` — and nothing
+ever told it prose doesn't close goals.
+
+- **Graduated escalation entry (P1).** At nudge 1 and 2 (before the
+  `HEARTBEAT_MAX_NUDGES` brake), the goal receives an explicit
+  `[STALL WARNING n/3]` continuation: "if DONE call complete_goal NOW — prose
+  closes nothing; if BLOCKED call pause_goal; otherwise make a tool call;
+  N more unproductive turns pause the goal." Displayed to the user, ledgered
+  as `stall_escalation_nudge`, stale-aware like every autonomous send. Loops
+  keep their existing runLoopTick path.
+- **Unclosed-status block (P2).** `prompts/goal-loop-continuation.md` gains a
+  `## State` section at the top: "State: ACTIVE — not yet auditor-approved.
+  Prose closes nothing … a done-but-unclosed goal is a bug, not a resting
+  state." The STALLS section now names the graduated warning.
+- **Post-restore grace (P3).** The first 2 `agent_end` turns after a
+  session_start restore skip nudge accounting (ledgered as
+  `post_restore_grace`) — recovery chatter (orientation reads, plan
+  narration) no longer counts toward the brake and paused restored goals
+  mid-recovery.
+- Tests: 3 new pins in `stall-handling.test.ts`; `length-continue.test.ts`
+  window pin re-shaped (order is the contract, not a 5000-char distance).
+
 ## [0.28.3] — 2026-07-28
 
 ### Fixed — interrupted goals outrank the default restore HOLD (S2 completed)

@@ -38,7 +38,10 @@ test("continue text carries the root-cause mitigation (split large writes)", () 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 
 test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal gating", () => {
-  const handler = SRC.slice(SRC.indexOf('pi.on("agent_end"'), SRC.indexOf('pi.on("agent_end"') + 5000);
+  // Window sized generously: the contract is ORDER (length path first), not
+  // distance — prior 5000-char window broke when P1/P3 (0.28.4) added ~1100
+  // chars between the length path and the goal gate.
+  const handler = SRC.slice(SRC.indexOf('pi.on("agent_end"'), SRC.indexOf('pi.on("agent_end"') + 9000);
   const lengthIdx = handler.indexOf('tickLengthContinue(lastA?.stopReason === "length")');
   assert.ok(lengthIdx > 0, "length tick present");
   // before the no-tool nudge accounting (stall brake) …

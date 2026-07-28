@@ -98,3 +98,41 @@ test("/glla surface: stallescalation completion + key=value parser branch", () =
   assert.match(SRC, /\["stallescalation=", "N: heartbeat refires without a turn/);
   assert.match(SRC, /key === "stallescalation" \|\| key === "stallescalationrefires"/);
 });
+
+// =================================================================
+// v0.28.4 — P1–P3 (audit Stream 5): nudge before the brake; unclosed-status
+// block in every continuation; post-restore grace.
+// =================================================================
+
+const PROMPT = fs.readFileSync("prompts/goal-loop-continuation.md", "utf-8");
+
+test("P1: graduated stall escalation entry before the brake (sender + wiring)", () => {
+  assert.match(SRC, /function sendStallEscalation\(ctx: ExtensionContext, nudges: number\): void/);
+  assert.match(SRC, /\[STALL WARNING \$\{nudges\}\/\$\{HEARTBEAT_MAX_NUDGES\}\] The last turn produced no tool calls\./);
+  assert.match(SRC, /If the goal is DONE, call complete_goal NOW — prose closes nothing/);
+  assert.match(SRC, /If you are BLOCKED, call pause_goal with the blocker and a suggested action\./);
+  assert.match(SRC, /ONE more unproductive turn pauses the goal\./);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "stall_escalation_nudge", \{ nudges, remaining \}\)/);
+  // wired at nudge>=1 for active goals only (loops keep runLoopTick), and the
+  // send path is stale-aware like every other autonomous send:
+  assert.match(SRC, /if \(heartbeatNudges >= 1 && state\.goal && state\.goal\.status === "active" && !isLoopActive\(\)\)/);
+  assert.match(SRC, /goStaleTerminal\(ctx, "sendStallEscalation"\)/);
+});
+
+test("P2: every continuation carries the unclosed-status block", () => {
+  assert.match(PROMPT, /## State\n\n\*\*State: ACTIVE — not yet auditor-approved\.\*\*/);
+  assert.match(PROMPT, /Prose closes nothing/);
+  assert.match(PROMPT, /A done-but-unclosed goal is a bug, not a resting state\./);
+  // and the STALLS section names the graduated warning:
+  assert.match(PROMPT, /\[STALL WARNING n\/3\]/);
+});
+
+test("P3: post-restore grace — armed on restore resume, skips accounting, ledgered", () => {
+  assert.match(SRC, /let postRestoreGraceTurns = 0;/);
+  assert.match(SRC, /postRestoreGraceTurns = 2;\n        scheduleContinuation\(ctx, true\);/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "post_restore_grace", \{ remaining: postRestoreGraceTurns \}\)/);
+  // grace check sits BEFORE the accounting call:
+  const graceIdx = SRC.indexOf("if (postRestoreGraceTurns > 0) {");
+  const acctIdx = SRC.indexOf("heartbeatNudges = accountTurnForNudgesRich(");
+  assert.ok(graceIdx > 0 && graceIdx < acctIdx, "grace precedes nudge accounting");
+});

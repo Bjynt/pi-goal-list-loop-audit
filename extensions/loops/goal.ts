@@ -304,6 +304,9 @@ const countedLoopTokenMessages = new Set<string>();
 let lastActivityAt = Date.now();
 let lastWedgeAlertAt = 0;
 let heartbeatNudges = 0;
+// v0.28.4 (P3): skip nudge accounting for the first agent_end turns after a
+// session_start restore — recovery chatter is not a stall.
+let postRestoreGraceTurns = 0;
 // v0.26.1: consecutive heartbeat refires that produced NO real agent turn.
 // Resets only on real activity (agent_end / tool_call) — never on the
 // refire's own noteActivity, which is what made the hegemon zombie spin
@@ -570,6 +573,29 @@ function sendContinuation(goalId: string): void {
     // v0.26.7: stale runtime = terminal (sends can never land); anything
     // else is transient — next agent_end/session_start reschedules.
     if (isStaleApiError(err)) goStaleTerminal(ctx, "sendContinuation");
+  }
+}
+
+// v0.28.4 (P1): graduated escalation entry — sent at nudge 1 and 2, BEFORE
+// the HEARTBEAT_MAX_NUDGES brake can pause the goal. Tells the model exactly
+// what closes the turn: complete_goal if done, pause_goal if blocked, a tool
+// call otherwise. display: true — the user should see the warning too.
+function sendStallEscalation(ctx: ExtensionContext, nudges: number): void {
+  if (!extensionApi || extensionApiStale) return;
+  const remaining = HEARTBEAT_MAX_NUDGES - nudges;
+  const text = [
+    `[STALL WARNING ${nudges}/${HEARTBEAT_MAX_NUDGES}] The last turn produced no tool calls.`,
+    "If the goal is DONE, call complete_goal NOW — prose closes nothing; only an auditor-approved complete_goal call closes a goal.",
+    "If you are BLOCKED, call pause_goal with the blocker and a suggested action.",
+    "Otherwise make a tool call that advances the goal this turn.",
+    remaining === 1 ? "ONE more unproductive turn pauses the goal." : `${remaining} more unproductive turns pause the goal.`,
+  ].join(" ");
+  appendLedger(ctx.cwd, "stall_escalation_nudge", { nudges, remaining });
+  try {
+    extensionApi.sendMessage({ customType: GOAL_EVENT_ENTRY, content: text, display: true }, { triggerTurn: true, deliverAs: "followUp" });
+  } catch (err) {
+    appendLedger(ctx.cwd, "stall_escalation_nudge_failed", { error: err instanceof Error ? err.message : String(err) });
+    if (isStaleApiError(err)) goStaleTerminal(ctx, "sendStallEscalation");
   }
 }
 
@@ -4123,6 +4149,8 @@ export default function (pi: ExtensionAPI): void {
           `Resuming ${state.goal.policy === "list" ? "list item" : "goal"} [${state.goal.id}]: ${state.goal.objective.slice(0, 70)}${listQueue().length > 0 ? ` (+${listQueue().length} queued)` : ""}${wasInterrupted ? " — auto-resumed after the stale-handle interrupt" : ""}`,
           "info",
         );
+        // v0.28.4 (P3): skip nudge accounting for the first recovery turns.
+        postRestoreGraceTurns = 2;
         scheduleContinuation(ctx, true);
       } else {
         const queued = listQueue().length;
@@ -4206,6 +4234,13 @@ export default function (pi: ExtensionAPI): void {
     // text) reset the counter even with no tool calls. Polis-session
     // incident showed the tool-only check fired on real investigation work.
     if (isSupervising()) {
+      if (postRestoreGraceTurns > 0) {
+        // v0.28.4 (P3): the first turns after a session_start restore are
+        // recovery chatter (orientation reads, plan narration) — counting
+        // them toward the stall brake paused restored goals mid-recovery.
+        postRestoreGraceTurns--;
+        appendLedger(ctx.cwd, "post_restore_grace", { remaining: postRestoreGraceTurns });
+      } else {
       const s = loadSettings(ctx.cwd);
       const shortWordsThr = s.stallShortWords ?? DEFAULT_STALL_SHORT_WORDS;
       const simThr = s.stallSimilarityThreshold ?? DEFAULT_STALL_SIM_THRESHOLD;
@@ -4234,6 +4269,16 @@ export default function (pi: ExtensionAPI): void {
           return;
         }
       }
+      // v0.28.4 (P1): graduated escalation — before the brake can fire,
+      // tell the model exactly what closes the turn. A done-but-unclosed
+      // goal gets "call complete_goal NOW", not a silent count. Replaces
+      // this turn's normal continuation (the escalation IS the entry).
+      if (heartbeatNudges >= 1 && state.goal && state.goal.status === "active" && !isLoopActive()) {
+        toolCallsThisTurn = 0;
+        sendStallEscalation(ctx, heartbeatNudges);
+        return;
+      }
+      } // end post-restore grace else
     }
     toolCallsThisTurn = 0;
     // Loop 3 runs on the same heartbeat: measure after every agent turn.
