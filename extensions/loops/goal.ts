@@ -957,6 +957,13 @@ function listQueue(): NonNullable<State["list"]> {
 }
 
 function activateNextListItem(ctx: ExtensionContext, n = 1): boolean {
+  // v0.28.14: one-active-thing choke point — NO call site (session_start,
+  // completion cascade, /list next, list_activate, list-draft auto-activate)
+  // may activate a list item over a live loop, present or future.
+  if (isLoopActive()) {
+    appendLedger(ctx.cwd, "list_activation_blocked_loop", {});
+    return false;
+  }
   const queue = listQueue();
   const taken = takeAt(queue, n);
   if (!taken) return false;
@@ -1194,10 +1201,17 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
 }
 
 async function cmdCancel(ctx: ExtensionContext): Promise<void> {
-  if (!state.goal) return;
+  if (!state.goal) {
+    // v0.28.14: users reach for /goal cancel to kill a LOOP (no goal
+    // active) — point at the right verb instead of doing nothing silently.
+    if (isLoopActive()) {
+      ctx.ui.notify("No goal to cancel — a LOOP is active: /loop stop (or /loop cancel) ends it.", "info");
+    }
+    return;
+  }
   archiveCurrentGoal(ctx, "aborted", "user cancelled");
   ctx.abort();
-  ctx.ui.notify("Goal aborted.", "info");
+  ctx.ui.notify(`Goal aborted.${isLoopActive() ? " A loop is still active — /loop stop ends it." : ""}`, "info");
 }
 
 async function cmdGoals(ctx: ExtensionContext): Promise<void> {
@@ -2037,13 +2051,15 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     return;
   }
 
-  if (sub === "stop") {
+  // v0.28.14: /loop cancel is a first-class alias — users reached for
+  // /goal cancel to kill loops because "cancel" is the verb they know.
+  if (sub === "stop" || sub === "cancel") {
     if (!state.loop) {
       ctx.ui.notify("No loop to stop.", "info");
       return;
     }
     clearLoopTimer();
-    state.loop = { ...state.loop, active: false, stopReason: state.loop.stopReason ?? "stopped by user (/loop stop)" };
+    state.loop = { ...state.loop, active: false, stopReason: state.loop.stopReason ?? `stopped by user (/loop ${sub})` };
     persistState(ctx);
     await finishLoopGit(ctx, state.loop);
     appendLedger(ctx.cwd, "loop_stopped", { reason: "user", iterations: state.loop.iteration, best: state.loop.bestValue });
