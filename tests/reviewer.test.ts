@@ -123,7 +123,7 @@ test("per-day cap: the 21st fire is suppressed with a ledger entry", () => {
   const { deps, calls } = mkDeps(dir, { ledgerEntries: entries, nowMs: Date.parse(`${day}T23:30:00Z`) });
   const out = runReviewer(resolveReviewerConfig(), GOAL_SRC, deps);
   assert.equal(out.fired, false);
-  assert.match(out.suppressedReason!, /day cap/);
+  assert.match(out.suppressedReason!, /daily postaudit cap/);
   assert.ok(calls.ledgered.includes("reviewer_suppressed"));
 });
 

@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.28.11] — 2026-07-28
+
+### Changed — user-facing message humanize pass (audit U6–U11, E7)
+
+- **U6 tool-override confirmations speak outcomes**: `toolOverrides.allow
+  += bash` → `"bash" is now always visible to the agent (project override
+  saved).` — same for hide/unallow/unhide/set/unset. No more config-JSON
+  echoes.
+- **U7 reviewer suppression reasons humanized**: `doNotFireOn:
+  goal-complete` → `this event type (goal-complete) is excluded in /glla
+  postaudit → fire-on`; all 7 reasons rewritten (disabled, mode off,
+  excluded event, non-completion, refire window, day cap).
+- **U8 dracon-sync prompt section generalized** (published-package bug):
+  DETACHED COMMIT DETECTION now opens with "Skip this section entirely if
+  your rig has no auto-committer — most rigs don't", the git-reflog
+  forensics stay generic, and `dracon-sync` appears only as the
+  maintainer-rig example.
+- **U9 goal creation is objective-first**: `Goal <id> created — starting
+  now.` → `Goal started: <objective> — the auditor will verify on
+  completion. (id: <id>)`; the stale-creation variant likewise.
+- **U10 "list N" → "N queued" for goal policy** in both the status text
+  and the widget footer (v0.24.7 fixed list policy only).
+- **U11 one user-facing noun — "postaudit"**: menu title, suppression/
+  failure/proposal notifies, and the /review description all say
+  postaudit (`/review` stays the command verb; `reviewer` stays internal
+  code + report-file vocabulary).
+- **E7 reviewer-menu save failures are LOUD**: the swallowed
+  "non-fatal" catch → `Postaudit setting NOT saved: <err> — check
+  .pi-glla/settings.json permissions.` — the user no longer believes a
+  failed toggle landed.
+- 544 pass / 1 env-gated skip / 0 fail / 545 tests across 58 files.
+
 ## [0.28.10] — 2026-07-28
 
 ### Fixed — docs drift (audit U1–U5, U12, U13)

@@ -137,7 +137,7 @@ test("auto mode: the per-day cap still bounds everything", () => {
   const { deps } = mkDeps(dir, { ledgerEntries: entries, nowMs: Date.parse("2026-07-26T23:30:00Z") });
   const out = runReviewer(AUTO, LIST_SRC, deps);
   assert.equal(out.fired, false);
-  assert.match(out.suppressedReason!, /day cap/);
+  assert.match(out.suppressedReason!, /daily postaudit cap/);
 });
 
 test("menu: Mode option lists the 4 modes (off, on, auto, aggressive)", () => {
