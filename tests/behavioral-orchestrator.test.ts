@@ -180,6 +180,9 @@ test("T1a: stale Confirm in propose_goal_draft → NOT-a-rejection guidance, no 
   await pi.command("goal", "", ctx); // no args → drafting mode (seed send is a no-op now: stale)
   await pi.fire("message_start", { message: { role: "user" } }, ctx); // the seed itself (skipped)
   await pi.fire("message_start", { message: { role: "user" } }, ctx); // a real reply (counted)
+  ctx.ui.selectImpl = async () => {
+    throw staleError();
+  };
   ctx.ui.confirmImpl = async () => {
     throw staleError();
   };

@@ -2944,9 +2944,10 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
             liveCtx,
             "Confirm loop spec refinement",
           `Rationale: ${p.rationale}\n\nTarget:\n  old: ${loop.target.slice(0, 120)}\n  new: ${newTarget.slice(0, 120)}\n\nMeasure:\n  old: ${loop.measureCmd}\n  new: ${newMeasure}${newMeasure !== loop.measureCmd ? `\n  test-run: ${testOutput.slice(0, 120)} → ${newBaseline}` : ""}\n\nThe loop keeps running against the refined spec (iteration ${loop.iteration} so far). Apply?`,
-        );
-      } catch {
-        confirmed = false;
+          )) === "yes";
+        } catch {
+          confirmed = false;
+        }
       }
       if (!confirmed) {
         return { content: [{ type: "text", text: "Refinement rejected by the user. The loop continues against the current spec — keep improving the metric as defined." }], details: {} };
