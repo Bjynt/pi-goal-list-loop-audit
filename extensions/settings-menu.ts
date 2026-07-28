@@ -24,8 +24,6 @@
 
 import {
   type Component,
-  type KeybindingsManager,
-  type TUI,
   truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
@@ -354,6 +352,15 @@ export interface SettingsMenuTheme {
   bold(text: string): string;
 }
 
+/** Structural type for the KeybindingsManager — avoids pulling in the
+ * full class so callers can supply any compatible implementation.
+ * (Top-level and nested pi-tui ship separate KeybindingsManager classes
+ * with private fields; structural typing sidesteps the cross-package type
+ * incompatibility entirely.) */
+export interface KeybindingsManagerLike {
+  matches(data: string, key: string): boolean;
+}
+
 export interface SettingsMenuFactoryDeps {
   rows: SettingsRow[];
   title: string;
@@ -368,9 +375,9 @@ export interface SettingsMenuFactoryDeps {
 export class SettingsMenuComponent implements Component {
   private readonly rows: SettingsRow[];
   private readonly title: string;
-  private readonly tui: TUI;
+  private readonly requestRender: () => void;
   private readonly theme: SettingsMenuTheme;
-  private readonly keybindings: KeybindingsManager;
+  private readonly keybindings: KeybindingsManagerLike;
   private readonly done: (id: string | undefined) => void;
 
   private activeSectionIdx: number;
@@ -380,14 +387,14 @@ export class SettingsMenuComponent implements Component {
 
   constructor(
     deps: SettingsMenuFactoryDeps,
-    tui: TUI,
+    requestRender: () => void,
     theme: SettingsMenuTheme,
-    keybindings: KeybindingsManager,
+    keybindings: KeybindingsManagerLike,
     done: (id: string | undefined) => void,
   ) {
     this.rows = deps.rows;
     this.title = deps.title;
-    this.tui = tui;
+    this.requestRender = requestRender;
     this.theme = theme;
     this.keybindings = keybindings;
     this.done = done;
@@ -415,7 +422,7 @@ export class SettingsMenuComponent implements Component {
   private refresh(): void {
     this.cachedWidth = undefined;
     this.cachedLines = undefined;
-    this.tui.requestRender();
+    this.requestRender();
   }
 
   /** Move within the active section, wrapping at ends. Exposed for tests. */

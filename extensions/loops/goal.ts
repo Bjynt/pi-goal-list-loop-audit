@@ -2947,7 +2947,7 @@ async function promptSettingsMenu(
     return rows.find((r) => v.startsWith(r.label))?.id;
   }
   return await ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) => {
-    return new SettingsMenuComponent({ rows, title }, tui, theme, keybindings, done);
+    return new SettingsMenuComponent({ rows, title }, () => tui.requestRender(), theme, keybindings, done);
   });
 }
 
