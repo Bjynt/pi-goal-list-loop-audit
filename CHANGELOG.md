@@ -20,7 +20,7 @@
   position between 0.28.1 and 0.27.9; the fossil block (all items long
   shipped) deleted.
 - Root litter files `then`/`pass` verified absent (already cleaned).
-- 545 pass / 1 env-gated skip / 0 fail / 546 tests.
+- 544 pass / 1 env-gated skip / 0 fail / 545 tests.
 
 ## [0.28.9] — 2026-07-28
 
