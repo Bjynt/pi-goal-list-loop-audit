@@ -16,6 +16,13 @@ goal persisted fine (`goal_created` in that project's jsonl), but the first
 continuation send threw stale, `goStaleTerminal` paused it at 0s, and the
 final jsonl event is `status=active pauseReason=None` — a zombie.
 
+Rig context (why this severity): the rig runs long-lived pi processes —
+`ps -eo pid,etime,cmd` shows two `pi` processes at 6d9h and 4d uptime. pi
+0.82.x compaction replaces sessions on context-full, so multi-day sessions
+are near-guaranteed to go stale eventually. capture-anime-girls has NO
+`.pi-glla/settings.json` → default tri-state (HOLD on human loads) + no
+autoresume → S2's stall is guaranteed after every stale event on this rig.
+
 ### S1 [HIGH] — Fix the silent-zombie goal after resume-in-stale-session
 
 `extensions/loops/goal.ts:204` — `goStaleTerminal`'s anti-spam guard
