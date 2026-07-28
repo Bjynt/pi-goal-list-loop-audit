@@ -88,6 +88,67 @@ session)" in one honest step.
 
 ---
 
+## Stream 5 — Post-compaction stall misfires (user-reported 2026-07-28)
+
+User paste: three incidents across game-project sessions where goals whose
+compaction summaries claim closure ("Goal closed: P1 stats panel…", "Goal
+completed. F-01 fixed and approved.") ended `paused` with `stalled: 3
+consecutive unproductive turns` at 9m32s / 1h17m / 8m37s. User: "not sure
+its a stall really cause it was complete so perhaps we just forgot to close
+it." Both halves confirmed in code.
+
+Mechanism: work completes → model writes prose instead of calling
+complete_goal → compaction → session replacement → extension re-hydrates →
+continuations resume → model (now believing the summary's "closed" claim)
+replies with short tool-less "awaiting next goal" prose →
+`isNudgeTurn` (goal-loop-backoff.ts:229: 0 tools AND <15 words OR trigram
+>0.6 vs prior turn — defaults at `:200-201`) counts each → 3 strikes → brake.
+
+### P1 [HIGH] — Nudge the model before the stall brake fires
+
+`extensions/loops/goal.ts:4125-4129` — `heartbeatNudges` increments silently;
+NOTHING is sent to the model at strike 1 or 2. The first and only feedback is
+the brake itself (`HEARTBEAT_MAX_NUDGES = 3`, goal-loop-backoff.ts:70). The
+model never gets a course-correction chance.
+
+Premium: graduated escalation — at strike ≥1 send a visible entry (same
+customType channel as length-continue): "N no-tool turns. If the goal's work
+is DONE call complete_goal now; if blocked call pause_goal with a reason;
+otherwise act with tools. One more unproductive turn pauses the goal." Brake
+stays as the final backstop.
+
+### P2 [HIGH] — State "goal is ACTIVE and unclosed" in every continuation
+
+`prompts/goal-loop-continuation.md` + `continuationPrompt`
+(`extensions/loops/goal.ts:565+`) carry objective/contract/tasks/directives
+but never state the goal's lifecycle status. Post-compaction the model trusts
+the compaction summary's "Goal closed/completed" prose and answers the
+continuation with "awaiting next goal" instead of closing — strikes accrue
+on a done-but-unclosed goal. The prompt explains HOW to complete
+(`:122-140`, good) but not THAT completion has not happened.
+
+Premium: an explicit status block in every continuation: "State: ACTIVE —
+not yet auditor-approved. Prose claims of completion close nothing; only an
+approved complete_goal does. If the work is done, call complete_goal NOW."
+
+### P3 [MED] — Grace turns after session re-hydration before stall counting
+
+`heartbeatNudges` (`goal.ts:273`) is in-memory — it resets on re-hydration,
+but then immediately counts the post-compaction re-orientation prose turns
+that pi's own compaction flow produces. Premium: skip nudge accounting for
+the first 1-2 agent_end events after a session_start restore (re-orientation
+turns are tool-light by nature). Belt-and-braces behind P1.
+
+### P4 [LOW] — Distinguish "stalled" from "done-but-unclosed" in pause reason
+
+When the brake fires right after completion-signal text ("approved",
+"committed", "awaiting next goal"), `stalled:` misleads the user about a
+done goal. Premium: scan the last turn's text for completion signals → pause
+reason "appears complete but never closed — /goal resume then complete_goal,
+or /goal cancel". Mostly falls out of P1.
+
+---
+
 ## Stream 2 — Error handling (subagent)
 
 PENDING
