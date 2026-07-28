@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.28.5] — 2026-07-28
+
+### Fixed — bound the silent retry loops; honest error brake (audit E2, E3, E8)
+
+From `audit/WRONG-OR-NOT-PREMIUM-2026-07-28.md` Stream 2.
+
+- **Auditor infra errors bounded (E2).** A broken auditor model used to
+  retry forever — every infra failure rescheduled a continuation
+  unconditionally (the 39-error incident). New persisted
+  `auditInfraStreak` goal field counts trailing infra errors (survives
+  restarts; cleared by any real auditor run and by reaching quota); at 3
+  the goal PAUSES loudly — "the auditor model is likely broken …
+  /glla model=provider/id, then /goal resume. Your work was NOT judged" —
+  instead of spinning.
+- **Send-retry storms visible + bounded (E3).** The 50ms idle-retry re-arm
+  loop spun for hours with zero ledger events while the idle watchdogs
+  stayed suppressed. Re-arms are now counted (`send_rearm_start`, then
+  `send_rearm_storm` every 30s), and a 5-minute storm escalates
+  loud-terminal (`send_rearm_escalated`): goal paused / loop stopped with
+  restart guidance, same shape as `escalateStallNow`. A landed send clears
+  the streak.
+- **Error brake tells the truth + recovers (E8).** The consecutive-errors
+  brake paused with the literal reason "5 consecutive errors: error"
+  (stopReason, never the provider error — field-observed pausing THIS
+  audit's goal mid-run) and counted USER ABORTS as errors. Now: the pause
+  reason carries the real error text (`5 consecutive errors (last: …)`);
+  aborts brake separately ("5 consecutive aborts (user interrupted)") with
+  NO auto-resume (user intent); provider errors get ONE capped 60s
+  auto-resume via the quota-retry machinery (reason re-checked, user pause
+  not stomped) — a 60s flake no longer costs hours of manual resume.
+- `scheduleQuotaRetry` gains a `label` param (quota default unchanged).
+- Tests: new `tests/retry-bounds.test.ts` (7 pins).
+
 ## [0.28.4] — 2026-07-28
 
 ### Fixed — nudge before the stall brake; unclosed status in every continuation (audit P1–P3)
