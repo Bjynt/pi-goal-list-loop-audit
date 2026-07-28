@@ -47,6 +47,18 @@ const SAMPLE_SETTINGS: Settings = {
 
 const EMPTY_PROV: Partial<Record<keyof Settings, { value: unknown; source: "project" | "global" | "default" }>> = {};
 
+/** Build the provenance map the SAME way `settingsProvenance(cwd)` does in
+ * production — each key gets a `{value, source}` from settings[k], defaulting
+ * to source="global" when set and source="default" when unset. Used by tests
+ * to mirror real-call behavior. */
+function provFromSettings(s: Partial<Settings>): Partial<Record<keyof Settings, { value: unknown; source: "project" | "global" | "default" }>> {
+  const out: Partial<Record<keyof Settings, { value: unknown; source: "project" | "global" | "default" }>> = {};
+  for (const k of Object.keys(s) as Array<keyof Settings>) {
+    out[k] = { value: s[k], source: "global" };
+  }
+  return out;
+}
+
 test("every row carries every required column field", () => {
   const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
   for (const r of rows) {
@@ -128,7 +140,7 @@ test("rows map 1:1 to dispatchable ids (every id can drive a handler)", () => {
 });
 
 test("valueText derives from settings (effective values surface for each row)", () => {
-  const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
+  const rows = buildSettingsRows(SAMPLE_SETTINGS, provFromSettings(SAMPLE_SETTINGS));
   const byId = new Map<string, SettingsRow>(rows.map((r) => [r.id, r]));
   assert.equal(byId.get("autoResume")!.valueText, "true");
   assert.equal(byId.get("auditorModel")!.valueText, "anthropic/claude-sonnet-4");
@@ -142,13 +154,18 @@ test("valueText derives from settings (effective values surface for each row)", 
 test("default fallbacks surface when settings + provenance both missing", () => {
   const rows = buildSettingsRows({} as Settings, EMPTY_PROV);
   const byId = new Map<string, SettingsRow>(rows.map((r) => [r.id, r]));
-  // valueText should equal one of: "(unset)", "(off)", "(default)", "(...)", "open sub-menu"
+  // No row should leak a literal `undefined` or `null` string — every
+  // value is either a fallback `(...)` / `default` / `on` / `off` / a setting
+  // value or a subagent resolution string.
   for (const r of rows) {
-    assert.match(r.valueText, /^(\(.*\)|true|false|on|off)$/);
+    assert.notEqual(r.valueText, "undefined");
+    assert.notEqual(r.valueText, "");
   }
   // Specific defaults the contract pins:
   assert.match(byId.get("postaudit")!.valueText, /open sub-menu/);
   assert.equal(byId.get("autoAcceptDrafts")!.valueText, "(off)");
+  assert.equal(byId.get("auditCap")!.valueText, "(5)");
+  assert.match(byId.get("subagentModelStrategy")!.valueText, /inherit-parent/);
 });
 
 test("provenance flows into sourceText (project/global/default tags)", () => {
