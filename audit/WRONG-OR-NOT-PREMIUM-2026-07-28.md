@@ -102,7 +102,70 @@ PENDING
 
 ## Stream 4 — Test coverage gaps (subagent)
 
-PENDING
+Context: 53 test files split into (1) true unit tests of pure functions
+(goal-loop-core/-backoff/-shield/-forever/-repetition/-display/reviewer/
+settings-menu) and (2) source-grep tests that regex-match goal.ts text.
+**No test constructs a mock ExtensionContext/ExtensionAPI and behaviorally
+drives goal.ts's handlers.** Well-covered: auditor verdict parsing,
+regression_shield (22 tests), backoff/heartbeat/pending-latch math, list
+queue restore, loop-forever measurement.
+
+### T1 [HIGH] — Pin stale-session goal persistence on BOTH entry paths
+
+`extensions/loops/goal.ts:2408,2464-2470` (propose_goal_draft execute) and
+`:882-913` (cmdSet). Two distinct stale-session failure shapes, neither
+pinned: (a) tool path — stale `liveCtx.ui.confirm()` throws → caught →
+`confirmed = false` → tool returns "Draft rejected by the user" — goal
+silently never created, misleading tool result; (b) command path — `setGoal`
+persists (sync fs; `refreshUI` try/caught at `:302-313`) but `ctx.ui.notify`
+at `:912` can throw uncaught AFTER persist. Note the asymmetry with the
+sraaal incident: command ctx is fresh (ui works), only the captured factory
+`extensionApi` is stale (sendMessage dies) — which path throws depends on
+WHICH handle the entry point captured. No test asserts goal state lands in
+`.pi-glla/active.jsonl` when ctx UI methods throw.
+
+### T2 [HIGH] — Behaviorally test stale-detect → pause → notify
+
+`goal.ts:203-217` (goStaleTerminal), sends at `:539/:558/:1473`.
+tests/stale-api-terminal.test.ts only regex-matches source text; nothing
+executes the pause. The `sendLengthContinue` stale check (`:558`) isn't even
+grep-pinned. Regression = goal keeps "running" into a dead handle (the S1
+zombie) with all tests green.
+
+### T3 [HIGH] — Pin session_start restore/activate wiring
+
+`goal.ts:3960-4076`. Only `shouldAutoResumeOnSessionStart` is unit-tested;
+the handler's branches are not: auto-activate-head via `activateNextListItem`
+(`:4063-4068`, smoke.sh only), loop HOLD with HELD_ON_RESTORE persist (`:4026`,
+zero tests), held-goal resume hints (`:4041-4053`), unconditional `refreshUI`
+(`:4075`). Regression = unattended rigs restart with a queue and nothing runs.
+
+### T4 [MED] — Test handleSettingChoice per-key editors, not just the table
+
+`goal.ts:2960-3130` (21-case switch). v0.28.0 tests cover render/nav/cache
+and row/id completeness only; no test executes an editor (select/input/
+confirm → saveSettings with right scope/key/value). Regression = menu renders
+and navigates perfectly while edits silently don't save.
+
+### T5 [MED] — Pin the foreign-session tool guard on every mutating tool
+
+`goal.ts:250-256`, called at 8 tool sites. Only pure `classifySessionCtx` is
+tested. A new/renamed tool that forgets the guard lets a subagent session
+mutate goal state — no test would catch it.
+
+### T6 [MED] — Pin readState corruption tolerance
+
+`extensions/goal-loop-core.ts:491-510`. Malformed-line skipping is tested for
+the audit log and parseLedgerEntries but NOT for readState itself: a truncated
+final line in active.jsonl after crash-mid-append throws on session_start →
+goal/list/loop state lost on restart. Real data-loss-on-restart shape.
+
+### T7 [LOW] — Build a thin mock-ctx test harness (the enabler)
+
+~10 test files assert on goal.ts text. One harness (register tools on a fake
+`pi`, fire events with a stub ctx) converts T1-T3 and T5 into real behavioral
+pins and makes the regex tests redundant. Root-gap fix; do this FIRST among
+the test items.
 
 ---
 
