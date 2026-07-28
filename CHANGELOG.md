@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.28.14] — 2026-07-29
+
+### Added — lifecycle consolidation: one active thing, entirely
+
+The user report: stale goals/lists/loops lingered across sessions and got
+auto-resumed into confusion; there wasn't even a `/loop cancel` (loops were
+aborted via `/goal cancel`). Investigation found the confusion had a real
+engine underneath: **`setGoal` and `archiveCurrentGoal` rebuilt state as
+`{goal, list}` and silently nuked `state.loop`** — any held/active loop
+vanished whenever a goal was set or archived — and `setGoal` silently
+orphaned a paused goal it replaced.
+
+- **State-loss bugs fixed**: both reconstructions now spread `...state`
+  (loop + list preserved); a replaced paused/active goal is archived
+  honestly (`replaced by goal <id>`) instead of orphaned.
+- **One-active-thing by construction**: every activation path is now
+  guarded — `/loop` bare-resume refuses over an active goal;
+  `propose_loop_draft` refuses over an active goal (early, before the
+  measure test-runs); `propose_goal_draft` refuses over a live loop (early
+  AND post-confirm backstop); `list_activate` + `/list next` refuse over a
+  live loop; and `activateNextListItem` itself is the choke-point guard so
+  no present or future call site can stack a list item over a loop.
+- **`/loop cancel`** is a first-class alias of `/loop stop`; `/goal cancel`
+  now points at the right verb when a loop is the thing running.
+- **Carryover policy** — new `/glla carryover=resume|pause|clear` (default
+  `pause`): at session_start the stale leftovers (paused goal, waiting
+  list, held loop) are snapshotted; when NEW work activates, they're
+  surfaced in ONE summary (pause), dropped honestly with a ledger trail
+  (clear), or left to legacy silent stacking (resume).
+- Behavioral pins: both carryover policies end-to-end through the mock
+  harness, `/loop cancel` stop semantics, all three tool guards, and the
+  loop-preservation regression (goal set/archive no longer drops the loop).
+
 ## [0.28.13] — 2026-07-28
 
 ### Fixed — provider-error turns no longer feed the stall watchdog

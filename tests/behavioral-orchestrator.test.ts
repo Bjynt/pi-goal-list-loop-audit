@@ -393,6 +393,7 @@ test("one-active-thing tool guards: list_activate + propose_loop_draft + propose
   const cwd2 = tmpCwd();
   seedState(cwd2, { goal: seedGoal() });
   const ctx2 = await freshSession(cwd2, "reload");
+  await pi.command("loop", "", ctx2); // enter loop drafting (slash-bar gate)
   const r3 = await pi.runTool("propose_loop_draft", { target: "loop over goal", measureCmd: "none" }, ctx2);
   assert.match(r3.content[0]!.text, /A goal is active/, "propose_loop_draft blocked over live goal");
 });
