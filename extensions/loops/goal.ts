@@ -4424,6 +4424,14 @@ export default function (pi: ExtensionAPI): void {
         // them toward the stall brake paused restored goals mid-recovery.
         postRestoreGraceTurns--;
         appendLedger(ctx.cwd, "post_restore_grace", { remaining: postRestoreGraceTurns });
+      } else if (lastA?.stopReason === "error") {
+        // v0.28.13 (endless-td 429 incident 2026-07-28): provider-error
+        // turns (429 quota exhaustion, 5xx) are NOT model unproductivity —
+        // the model never got a say. Counting them tripped the brake on a
+        // healthy goal mid-CDP-capture (4 MiniMax-M3 429s → wrong
+        // "unproductive turns" pause). pi's own retry owns the backoff;
+        // the nudge counter neither increments nor resets on these turns.
+        appendLedger(ctx.cwd, "stall_nudge_exempt_error", { nudgesSoFar: heartbeatNudges });
       } else {
       const s = loadSettings(ctx.cwd);
       const shortWordsThr = s.stallShortWords ?? DEFAULT_STALL_SHORT_WORDS;

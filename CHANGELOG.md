@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.28.13] — 2026-07-28
+
+### Fixed — provider-error turns no longer feed the stall watchdog
+
+The endless-td 429 incident: MiniMax-M3's token plan ran out mid-goal,
+pi returned four consecutive `stopReason="error"` turns (zero content),
+and the stall watchdog counted each as an "unproductive turn" — pausing a
+healthy goal mid-CDP-capture with the wrong diagnosis ("stalled: 3
+consecutive unproductive turns"). A dead provider is not a lazy model:
+escalation warnings can't fire against it either, and pi's own retry owns
+the backoff.
+
+- Nudge accounting in the `agent_end` handler now exempts
+  `stopReason === "error"` turns entirely — the counter neither increments
+  nor resets on provider errors, and each exemption is ledgered
+  (`stall_nudge_exempt_error`).
+- Behavioral pins: 3 consecutive error turns leave the goal ACTIVE; a real
+  nudge before the errors still counts after they pass (the third real
+  nudge pauses, neither earlier nor later).
+
 ## [0.28.12] — 2026-07-28
 
 ### Added — auto-accept escape hatch in every draft-class dialog

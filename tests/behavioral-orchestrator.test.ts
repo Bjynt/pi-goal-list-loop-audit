@@ -261,3 +261,50 @@ test("source pin: all five draft-class dialogs route through confirmDraft with t
   assert.match(GOAL_SRC, /saveSettings\("project", ctx\.cwd, \{ autoAcceptDrafts: true \}\)/);
   assert.match(GOAL_SRC, /if \(isStaleApiError\(err\)\) return "stale";/, "stale fallback preserved inside the helper");
 });
+
+// ────────────────────────────────────────────────────────────────────
+// 429-exemption: provider-error turns must NOT feed the stall watchdog
+// (endless-td 2026-07-28: 4 MiniMax-M3 429s paused a healthy goal)
+// ────────────────────────────────────────────────────────────────────
+
+test("error turns: 3 consecutive stopReason=error agent_ends leave the goal ACTIVE + ledger the exemption", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "start behavioral 429 target — done when pinned", ctx);
+  await tick();
+  assert.equal((readState(cwd).goal as { status: string }).status, "active", "goal created and active");
+  const errTurn = { messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: "429: rate_limit_error" }] };
+  for (let i = 0; i < 3; i++) {
+    await pi.fire("agent_end", errTurn, ctx);
+    await tick();
+  }
+  const g = readState(cwd).goal as { status: string; pauseReason?: string };
+  assert.equal(g.status, "active", "3 consecutive provider-error turns must NOT pause the goal");
+  assert.ok(!g.pauseReason, "no stall pause reason recorded");
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
+  assert.ok(ledger.includes('"stall_nudge_exempt_error"'), "exemption ledgered");
+});
+
+test("error turns: a real nudge before the errors still counts after they pass (counter neither resets nor increments)", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "start behavioral mixed target — done when pinned", ctx);
+  await tick();
+  const nudgeTurn = { messages: [{ role: "assistant", content: [{ type: "text", text: "hmm" }], stopReason: "end_turn" }] };
+  const errTurn = { messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: "500 upstream" }] };
+  // 1 short nudge (count=1) → 2 error turns (exempt) → 2 more short nudges (count=2,3 → pause).
+  // If errors wrongly incremented, the pause would land one turn earlier;
+  // if they wrongly reset, it would never land here.
+  await pi.fire("agent_end", nudgeTurn, ctx); await tick();
+  await pi.fire("agent_end", errTurn, ctx); await tick();
+  await pi.fire("agent_end", errTurn, ctx); await tick();
+  assert.equal((readState(cwd).goal as { status: string }).status, "active", "still active after 1 nudge + 2 errors");
+  await pi.fire("agent_end", nudgeTurn, ctx); await tick();
+  assert.equal((readState(cwd).goal as { status: string }).status, "active", "still active at nudge count 2");
+  await pi.fire("agent_end", nudgeTurn, ctx); await tick();
+  const g = readState(cwd).goal as { status: string; pauseReason?: string };
+  assert.equal(g.status, "paused", "third real nudge pauses (errors neither reset nor incremented)");
+  assert.match(g.pauseReason ?? "", /unproductive turns/);
+});
