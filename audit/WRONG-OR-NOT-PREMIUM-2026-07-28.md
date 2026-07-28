@@ -155,6 +155,22 @@ Premium: notify + stale-api check in the catch.
 `goal.ts:3298-3310` — saveSettings throws swallowed as "non-fatal"; the user
 believes the toggle landed.
 
+### E8 [MED] — Make the consecutive-errors brake informative and recover from transient flakes
+
+`goal.ts:4190-4200` — `pauseReason: \`5 consecutive errors: ${stopReason}\``
+renders literally "5 consecutive errors: error" — the actual provider error
+is never surfaced, so the user can't tell rate-limit from auth failure from
+network. And a transient 5-flap burst permanently pauses the goal until
+manual /goal resume — no backoff-retry, no transient/persistent distinction.
+User-aborted turns (stopReason "aborted") count toward the same error
+counter. LIVE EVIDENCE: this audit's own goal (20260728100228-vgwfqd) paused
+at 10:07:49 during a provider hiccup; the session recovered minutes later and
+worked fine for 1.5h, but the goal sat paused and complete_goal was refused
+("No active goal"). Premium: include the real error text (truncated) +
+provider/model in the reason; auto-resume with capped backoff (~3 retries
+over ~10 min) before the permanent brake; don't count user-aborted turns as
+errors.
+
 ---
 
 ## Stream 3 — UX / premium polish (subagent)
@@ -389,11 +405,13 @@ goal with a verification contract when activated.
    status block in prompts/goal-loop-continuation.md ("ACTIVE — not yet
    auditor-approved; prose closes nothing"); 1-2 grace turns after
    session_start restore. Fixes the three post-compaction stall incidents.
-3. **Bound silent retry loops: auditor infra errors + send-retry timers —
-   HIGH · E2, E3.** Count trailing auditor infra errors in auditHistory and
-   pause loudly after ~3 (goal.ts:2167-2186); count + ledger the 50ms
-   send-retry re-arms and escalate via escalateStallNow past a threshold
-   (goal.ts:512-525, 1416-1422).
+3. **Bound silent retry loops; make error brakes informative and
+   self-recovering — HIGH · E2, E3, E8.** Count trailing auditor infra errors
+   in auditHistory and pause loudly after ~3 (goal.ts:2167-2186); count +
+   ledger the 50ms send-retry re-arms and escalate via escalateStallNow past
+   a threshold (goal.ts:512-525, 1416-1422); consecutive-errors brake carries
+   the real error text + auto-resumes with capped backoff before pausing
+   permanently (goal.ts:4190-4200).
 4. **Harden persistence integrity: guarded writes, degraded flag, tolerant
    readState — HIGH · E1, T6.** try/catch around ledger/state writes with a
    loud first-failure notify + TUI "persistence degraded" flag; never mutate
@@ -419,5 +437,5 @@ goal with a verification contract when activated.
    reviewer vocabulary; gate the dracon-sync section in the continuation
    prompt; report reviewer-menu settings-save failures.
 
-Totals: 35 findings — 12 HIGH, 15 MED, 8 LOW. Items 1-2 fix live incident
+Totals: 36 findings — 12 HIGH, 16 MED, 8 LOW. Items 1-2 fix live incident
 classes observed on this rig within the last 24h.
