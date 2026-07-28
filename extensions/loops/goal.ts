@@ -2645,6 +2645,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
           details: {},
         };
       }
+      const liveCtx = (execCtx as ExtensionContext | undefined) ?? ctx;
       // v0.14.0: the interview floor — no Confirm until the user replied.
       // v0.23.8: /glla autoaccept=on skips the floor AND the Confirm —
       // the seed carries the intent (unattended rigs). Default off.
@@ -2663,7 +2664,6 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
           details: {},
         };
       }
-      const liveCtx = (execCtx as ExtensionContext | undefined) ?? ctx;
       // v0.28.1 (S3): honest staleness warning before any Confirm attempt.
       warnIfStaleAtEntry(liveCtx, "goal drafting");
       // Multi-item list draft: one Confirm for the whole batch.

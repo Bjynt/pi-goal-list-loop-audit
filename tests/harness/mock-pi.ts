@@ -127,10 +127,10 @@ export class MockUi {
   notifies: MockNotify[] = [];
   statuses: Record<string, string | undefined> = {};
   widgets: Record<string, unknown> = {};
-  confirmImpl: (title: string, message: string) => Promise<boolean> = async () => true;
-  selectImpl: (title: string, options: string[]) => Promise<string | undefined> = async () => undefined;
-  inputImpl: (title: string, placeholder?: string) => Promise<string | undefined> = async () => undefined;
-  customImpl: (...args: unknown[]) => Promise<unknown> = async () => undefined;
+  confirmImpl: ((title: string, message: string) => Promise<boolean>) | undefined = async () => true;
+  selectImpl: ((title: string, options: string[]) => Promise<string | undefined>) | undefined = async () => undefined;
+  inputImpl: ((title: string, placeholder?: string) => Promise<string | undefined>) | undefined = async () => undefined;
+  customImpl: ((...args: unknown[]) => Promise<unknown>) | undefined = async () => undefined;
 
   notify(message: string, type?: string): void {
     this.notifies.push({ message, type });
@@ -142,16 +142,16 @@ export class MockUi {
     this.widgets[key] = lines;
   }
   confirm(title: string, message: string): Promise<boolean> {
-    return this.confirmImpl(title, message);
+    return this.confirmImpl ? this.confirmImpl(title, message) : Promise.resolve(true);
   }
   select(title: string, options: string[]): Promise<string | undefined> {
-    return this.selectImpl(title, options);
+    return this.selectImpl ? this.selectImpl(title, options) : Promise.resolve(undefined);
   }
   input(title: string, placeholder?: string): Promise<string | undefined> {
-    return this.inputImpl(title, placeholder);
+    return this.inputImpl ? this.inputImpl(title, placeholder) : Promise.resolve(undefined);
   }
   custom(...args: unknown[]): Promise<unknown> {
-    return this.customImpl(...args);
+    return this.customImpl ? this.customImpl(...args) : Promise.resolve(undefined);
   }
   get theme(): undefined {
     return undefined;
