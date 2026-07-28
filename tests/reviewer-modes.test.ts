@@ -44,6 +44,20 @@ const LIST_SRC = { kind: "list" as const, goalId: "g9", objective: "last item", 
 const AUTO = { ...resolveReviewerConfig(), mode: "auto" as const };
 const REPORT = undefined; // v0.27.9: legacy alias — `report` mode was removed in 0.27.9 (4-mode set: off | on | auto | aggressive). Kept as undefined so any stale references fail loudly.
 
+test("E4: a failed proposal send is NOT counted or reported (phantom-reviewer hole closed)", () => {
+  // goal.ts's proposeGoal callback returns false when sendUserMessage throws
+  // (stale handle etc.) and notifies loudly. The reviewer must not count it.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-e4-"));
+  const { deps, calls } = mkDeps(dir, {
+    sources: [{ name: "audit", text: "We should rewrite the schema to normalize events." }],
+    proposeGoal: () => false,
+  });
+  const out = runReviewer(resolveReviewerConfig(), GOAL_SRC, deps);
+  assert.equal(out.fired, true);
+  assert.equal(out.proposed, 0, "a failed send never counts as proposed — the '(N /goal proposed)' notify can no longer lie");
+  assert.equal(calls.proposed.length, 0, "the false-returning mock recorded no successful delivery");
+});
+
 test("auto mode: architectural findings enqueue to /list — proposeGoal NEVER called", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-mode-"));
   const { deps, calls } = mkDeps(dir, {

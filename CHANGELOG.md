@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.28.8] — 2026-07-28
+
+### Fixed — phantom reviewer proposals + measure-broken vs plateau (audit E4, E5)
+
+- **E4 phantom reviewer proposals.** The reviewer counted a /goal proposal
+  as "proposed" even when the `sendUserMessage` call THREW (stale handle
+  etc.) — the catch swallowed it and the completion notify still reported
+  "(1 /goal proposed)" for a message that never arrived. The `proposeGoal`
+  dep now returns boolean (true = actually delivered); `runReviewer` counts
+  only confirmed sends; goal.ts's callback returns false on throw AND
+  notifies loudly ("Reviewer /goal proposal NOT delivered … restart pi if
+  the session was just replaced") instead of the silent "best-effort"
+  comment. Pinned: a false-returning proposeGoal yields
+  `outcome.proposed === 0` (tests/reviewer-modes.test.ts E4 test).
+- **E5 measure-broken is no longer "plateau".** A measure command that
+  prints no number used to increment the plateau stall counter, so a broken
+  measure stopped the loop with the misleading "plateau — no improvement".
+  `LoopState.consecutiveNullMeasures` now tracks null outputs separately:
+  a null is NOT a stall (it says nothing about improvement), a numeric
+  value resets the streak, and `plateauWindow` consecutive nulls stop the
+  loop with "measure command broken — N consecutive iterations printed no
+  number (cmd: …). Fix the measure command, or /loop stop." Plateau stays
+  reserved for real non-improving numbers. 4 new pins in
+  tests/loop-forever.test.ts.
+- 543 pass / 1 env-gated skip / 0 fail / 544 tests across 58 files.
+
 ## [0.28.7] — 2026-07-28
 
 ### Added — mock-ctx behavioral test harness (audit T7, T1–T5)
