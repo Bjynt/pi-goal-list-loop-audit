@@ -143,7 +143,7 @@ Once installed, restart pi. The plugin contributes:
 npm test
 ```
 
-Expected output: 168 passing tests across 12 files (`goal-loop-core.test.ts`, `goal.schema.test.ts`, `extract-verification.test.ts`, `regression-shield.test.ts`, `list-import.test.ts`, `list-queue.test.ts`, `loop-forever.test.ts`, `display.test.ts`, `goal-route.test.ts`, `heartbeat.test.ts`, `task-list.test.ts`, `auditor-error-paths.test.ts`, plus `tests/README.md`).
+Expected output: 545 passing tests across 58 files (1 env-gated skip) (`goal-loop-core.test.ts`, `goal.schema.test.ts`, `extract-verification.test.ts`, `regression-shield.test.ts`, `list-import.test.ts`, `list-queue.test.ts`, `loop-forever.test.ts`, `display.test.ts`, `goal-route.test.ts`, `heartbeat.test.ts`, `task-list.test.ts`, `auditor-error-paths.test.ts`, plus `tests/README.md`).
 
 ## Run the type-check
 
@@ -242,7 +242,7 @@ shows more, `/glla audits full` prints the latest report. Reports are
 think-block-stripped; disapprovals end with a `## Required fixes`
 actionable tail, which is also what capped executor feedback keeps.
 
-## Reviewer (v0.26.0) — post-completion follow-up enqueuer
+## Reviewer (postaudit since v0.27.5) — post-completion follow-up enqueuer
 
 When a `/goal` completes or a `/list` queue empties, the reviewer fires:
 it reads the archive + audit reports, extracts findings, classifies them
@@ -260,19 +260,28 @@ and cascades:
 The leverage principle: if you'd never say no to fixing a bug, the
 reviewer doesn't ask. Decisions stay with you.
 
-**Modes** (`/glla reviewer` → Mode, or `/review <id> <mode>` for a
-one-shot override):
+**Modes** (`/glla postaudit` → Mode — `/glla reviewer` is a kept alias —
+or `/review <id> <mode>` for a one-shot override):
 
 | Mode | Problems / improvements found | Architectural | Clean completion |
 |---|---|---|---|
-| `default` | `/list` items, no Confirm | `/goal` proposal (Confirm) | audit `/goal` proposal (Confirm) |
+| `off` | reviewer never fires | — | — |
+| `on` (default) | `/list` items, no Confirm | `/goal` proposal (Confirm) | audit `/goal` proposal (Confirm) |
 | `auto` | `/list` items, no Confirm | `/list` items, no Confirm | audit enqueued as a `/list` item, no Confirm |
-| `report` | report + notify only | report + notify only | report + notify only |
+| `aggressive` | `/list` items, no Confirm | `/list` items + the first finding **relaunched as the next active `/goal`** | the regression-scan audit **relaunched as `/goal`** directly |
+
+(v0.27.9 replaced the old `default`/`report` modes with this 4-mode set:
+`default` → `on`; `report` was dropped — a silent report with no cascade
+was the do-nothing mode.)
 
 `auto` is the **auto-loop**: run it once and the cascade keeps rolling
 through everything it finds — problems, improvements ("consider
 adding…", "could be improved", "enhancement" are extracted too), then
-the regression-scan audit — until the findings run dry. Strategic
+the regression-scan audit — until the findings run dry. `aggressive`
+goes one step further: the queue is skipped for the headline item — the
+first architectural finding (or the clean-completion audit) relaunches
+as the next ACTIVE goal with no Confirm at all, so the unattended rig
+never stops. Strategic
 findings (`should we…`) stay notify-only in every mode: decisions never
 auto-fire. Extraction ignores code lines, markdown tables, code spans, and the
 reviewer's own report vocabulary (v0.26.3), and findings are mined only
@@ -291,9 +300,10 @@ everything.
 
 Safety: no firing on aborts/pauses, a 5-minute refire window blocks
 runaway recursion, `maxReviewsPerDay: 20` caps the day, and `/loop`
-never triggers it. Configure per-project via `/glla reviewer`
-(enable, leverage mode, fire-on, cascade steps, caps) — the block lives
-in `.pi-glla/settings.json`. Re-review any archived goal with
+never triggers it. Configure per-project via `/glla postaudit`
+(mode, triggers, cascade steps, caps) — the block lives
+in `.pi-glla/settings.json` under `postaudit` (the legacy `reviewer` key
+is still read). Re-review any archived goal with
 `/review <goal-id>` (bypasses the trigger gates).
 
 ## Stall handling (v0.26.1) — the zombie killer

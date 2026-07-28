@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.28.10] — 2026-07-28
+
+### Fixed — docs drift (audit U1–U5, U12, U13)
+
+- **/review help** now advertises the accepted modes: `[off|on|auto|aggressive]`
+  (the registration still showed the 0.27.9-rejected `auto|report|default`).
+- **README**: five top-level commands (was "four" — `/review` missing);
+  `/review` added to the quick-start; `/glla` line lists the real subcommand
+  surface (stats / audits / postaudit / autoaccept / key=value); the
+  quick-start fence bug fixed — the "Order is the default, not the law"
+  prose rendered INSIDE the code block; test count 168 → 545 / 58 files.
+- **INSTALL.md**: reviewer section rewritten for the 4-mode cycle
+  (off | on | auto | aggressive — the old default/auto/report table was
+  two renames stale), postaudit naming + `/glla postaudit` (reviewer alias),
+  aggressive-mode relaunch semantics documented; test count refreshed.
+- **CHANGELOG**: the 0.28.0 entry was stranded at the file's BOTTOM behind
+  a fossil "Unreleased → v0.2.0 plan" block — moved to its newest-first
+  position between 0.28.1 and 0.27.9; the fossil block (all items long
+  shipped) deleted.
+- Root litter files `then`/`pass` verified absent (already cleaned).
+- 545 pass / 1 env-gated skip / 0 fail / 546 tests.
+
 ## [0.28.9] — 2026-07-28
 
 ### Fixed — E4 completion (auditor-caught)
@@ -245,6 +267,76 @@ zombie (S1).
 - Schema + `Goal` type carry `interruptedAt`/`interruptedReason`.
 - Tests: new `tests/stale-interrupt-resume.test.ts` (10 pins);
   `stale-api-terminal.test.ts` updated to pin the active+marker shape.
+
+## [0.28.0] — 2026-07-28
+
+### Changed — `/glla` settings menu is now a real TUI table
+
+The pre-0.28.0 menu used `ctx.ui.select` with flat single-line rows
+formatted as `label — value [source] — description`. The 0.28.0 menu uses
+`ctx.ui.custom` with a Container/Text layout featuring:
+
+- a top **tabs row** listing all 5 sections (`Keep-going`, `Auditor`,
+  `Stall brakes`, `Subagents`, `Other`) — `←`/`→` (and `Tab`/`Shift+Tab`)
+  switch the active section;
+- a **4-column body** for the active section: `KEY | VALUE | SOURCE |
+  DESCRIPTION` — `↑`/`↓` move within the section, `Enter` drills into
+  the per-key editor, `Esc` exits.
+- column widths are computed from the actual content, capped per-column
+  (`MAX_KEY_W=32`, `MAX_VALUE_W=24`, `MAX_SOURCE_W=10`) and the
+  description column truncated with `…` on narrow terminals.
+
+Reorganized into a new module `extensions/settings-menu.ts` exporting:
+
+- `buildSettingsRows(settings, prov, subagent?, defaults?)` — pure builder
+  returning stable-id rows (e.g. `"autoResume"`, `"auditorModel"`,
+  `"subagentModelOverrides.Explore"`).
+- `SettingsMenuComponent` — the `Component` returned from
+  `ctx.ui.custom(...)`.
+
+### Changed — settings menu dispatch is now id-based, not `startsWith`-based
+
+The pre-0.28.0 dispatcher used `choice.startsWith(label)` strings against
+the displayed row text. The 0.28.0 dispatcher (`handleSettingChoice(id, ctx)`)
+uses a `switch (id)` against stable ids from `buildSettingsRows`. Same
+per-key handler bodies (the only behaviorally-test surface is identical);
+the trigger changed.
+
+### Added — per-key editor coverage for `stallShortWords` and `stallSimilarityThreshold`
+
+The 0.27.0 menu exposed these two keys as visible rows but had no editor
+handler. The 0.28.0 `handleSettingChoice` includes numeric-input handlers
+for both: `stallShortWords` accepts non-negative integers, and
+`stallSimilarityThreshold` accepts a decimal between 0 and 1.
+
+### Added — `Effective resolution` row (read-only)
+
+The subagents section now also shows a read-only `Effective resolution`
+row displaying the runtime-effective model for `Explore`, `Plan`, and
+`general-purpose` based on the current `subagentModelStrategy`,
+`subagentModelOverrides`, and the active session model. Selecting the row
+is a no-op (no editor opens).
+
+### Changed — dropped `haiku` mention from the `Subagent model strategy` description
+
+The pre-0.28.0 description said "agent-default pins haiku for Explore".
+The 0.28.0 description says "inherit-parent shares your session model +
+quota pool; agent-default uses the upstream pi-subagents default agents".
+The "haiku" label remains in diagnostic comments and runtime effective-
+model labels (`resolveEffectiveSubagentModel` returns
+`"anthropic/claude-haiku-4-5 (upstream pin)"` when the strategy is
+`agent-default` and no override is set) — those are useful when
+debugging the pi-subagents#175 quota bug, not user-facing config text.
+
+### Tests
+
+- `tests/settings-menu-complete.test.ts` rewritten to assert on the
+  `buildSettingsRows` + `handleSettingChoice` structural contract
+  (10 tests).
+- `tests/glla-table-menu.test.ts` (new) pins the table renderer
+  (rendering at widths 120/80/60, tab/arrow navigation, Enter/select,
+  truncation, cache invariants, `Component` shape) — 19 tests.
+- Net: 495 pass / 1 env-gated skip / 0 fail (up from 468 / 1 / 0).
 
 ## [0.27.9] — 2026-07-27
 
@@ -2561,80 +2653,3 @@ We deliberately **fork pi-goal-x 0.19.0** as the architectural basis. We **do no
 
 We **copy and adapt** the isolated auditor pattern (it's the architectural part that matters), but reduce the per-loop file count (no per-loop plugin files) and replace the hand-concat markdown renderer with structured JSON.
 
-## [Unreleased] → v0.2.0 plan
-
-- Drafting with structured Q&A (`/pi-gla`).
-- regression_shield auditor.
-- Native TUI form widget.
-- Loop 2 (list).
-- Live integration tests.
-
-## [0.28.0] — 2026-07-28
-
-### Changed — `/glla` settings menu is now a real TUI table
-
-The pre-0.28.0 menu used `ctx.ui.select` with flat single-line rows
-formatted as `label — value [source] — description`. The 0.28.0 menu uses
-`ctx.ui.custom` with a Container/Text layout featuring:
-
-- a top **tabs row** listing all 5 sections (`Keep-going`, `Auditor`,
-  `Stall brakes`, `Subagents`, `Other`) — `←`/`→` (and `Tab`/`Shift+Tab`)
-  switch the active section;
-- a **4-column body** for the active section: `KEY | VALUE | SOURCE |
-  DESCRIPTION` — `↑`/`↓` move within the section, `Enter` drills into
-  the per-key editor, `Esc` exits.
-- column widths are computed from the actual content, capped per-column
-  (`MAX_KEY_W=32`, `MAX_VALUE_W=24`, `MAX_SOURCE_W=10`) and the
-  description column truncated with `…` on narrow terminals.
-
-Reorganized into a new module `extensions/settings-menu.ts` exporting:
-
-- `buildSettingsRows(settings, prov, subagent?, defaults?)` — pure builder
-  returning stable-id rows (e.g. `"autoResume"`, `"auditorModel"`,
-  `"subagentModelOverrides.Explore"`).
-- `SettingsMenuComponent` — the `Component` returned from
-  `ctx.ui.custom(...)`.
-
-### Changed — settings menu dispatch is now id-based, not `startsWith`-based
-
-The pre-0.28.0 dispatcher used `choice.startsWith(label)` strings against
-the displayed row text. The 0.28.0 dispatcher (`handleSettingChoice(id, ctx)`)
-uses a `switch (id)` against stable ids from `buildSettingsRows`. Same
-per-key handler bodies (the only behaviorally-test surface is identical);
-the trigger changed.
-
-### Added — per-key editor coverage for `stallShortWords` and `stallSimilarityThreshold`
-
-The 0.27.0 menu exposed these two keys as visible rows but had no editor
-handler. The 0.28.0 `handleSettingChoice` includes numeric-input handlers
-for both: `stallShortWords` accepts non-negative integers, and
-`stallSimilarityThreshold` accepts a decimal between 0 and 1.
-
-### Added — `Effective resolution` row (read-only)
-
-The subagents section now also shows a read-only `Effective resolution`
-row displaying the runtime-effective model for `Explore`, `Plan`, and
-`general-purpose` based on the current `subagentModelStrategy`,
-`subagentModelOverrides`, and the active session model. Selecting the row
-is a no-op (no editor opens).
-
-### Changed — dropped `haiku` mention from the `Subagent model strategy` description
-
-The pre-0.28.0 description said "agent-default pins haiku for Explore".
-The 0.28.0 description says "inherit-parent shares your session model +
-quota pool; agent-default uses the upstream pi-subagents default agents".
-The "haiku" label remains in diagnostic comments and runtime effective-
-model labels (`resolveEffectiveSubagentModel` returns
-`"anthropic/claude-haiku-4-5 (upstream pin)"` when the strategy is
-`agent-default` and no override is set) — those are useful when
-debugging the pi-subagents#175 quota bug, not user-facing config text.
-
-### Tests
-
-- `tests/settings-menu-complete.test.ts` rewritten to assert on the
-  `buildSettingsRows` + `handleSettingChoice` structural contract
-  (10 tests).
-- `tests/glla-table-menu.test.ts` (new) pins the table renderer
-  (rendering at widths 120/80/60, tab/arrow navigation, Enter/select,
-  truncation, cache invariants, `Component` shape) — 19 tests.
-- Net: 495 pass / 1 env-gated skip / 0 fail (up from 468 / 1 / 0).

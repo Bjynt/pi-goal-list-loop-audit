@@ -4041,7 +4041,7 @@ export default function (pi: ExtensionAPI): void {
     handler: settingsHandler,
   });
   pi.registerCommand("review", {
-    description: "Manually run the reviewer on an archived goal: /review <goal-id> [auto|report|default] — extracts findings, writes a report to .pi-glla/reviews/, cascades per the mode (auto = auto-loop, no Confirms). Bypasses the trigger gates (explicit user request).",
+    description: "Manually run the reviewer on an archived goal: /review <goal-id> [off|on|auto|aggressive] — extracts findings, writes a report to .pi-glla/reviews/, cascades per the mode (auto/aggressive = no Confirms). Bypasses the trigger gates (explicit user request).",
     handler: (args: string, ctx: ExtensionContext) => { rememberCtx(ctx); return cmdReview(args, ctx); },
   });
   pi.registerCommand("list", {

@@ -27,7 +27,7 @@ Install:
 pi install npm:pi-goal-list-loop-audit
 ```
 
-Four top-level commands, that's all:
+Five top-level commands — `/goal`, `/list`, `/loop`, `/glla`, `/review`:
 
 ```
 /goal                              # drafting: agent grills, you Confirm
@@ -40,12 +40,13 @@ Four top-level commands, that's all:
 /goal cancel                       # abort
 /goal tweak "<new objective>"      # edit in place (Confirm dialog)
 /goal archive                      # archived goals, newest first
-/glla                               # open the settings UI (or /glla key=value)
+/glla                               # settings UI table · /glla key=value · /glla stats · /glla audits [N|full] · /glla postaudit · /glla autoaccept=on
 /list fix the login bug, add dark mode, write docs   # dump it — the agent shapes it into items, one Confirm
 /list plan.md                      # file detected → bulk import, one Confirm (sisyphus/Ralph style)
 /list <paste a checklist>          # multi-line paste → same batch flow
 /list "fix the flaky test. Done when: npm test green"   # explicit contract → added directly, no interview
 /list                              # show the list (add/import are optional no-op aliases — detection routes everything)
+```
 
 (Or just say it: "queue these 10 things…" — the agent manages the list too.)
 
@@ -53,6 +54,8 @@ Four top-level commands, that's all:
 `/list next <n>` or the agent's `list_activate` tool picks any item — with
 subagents, what gets worked next is a choice, not a position. Numbering always
 matches `/list show`.
+
+```
 /list                              # show active + waiting items
 /list next                         # skip current, activate next
 /list remove <n>                   # drop item n from the list
@@ -67,6 +70,7 @@ matches `/list show`.
 /loop start "keep improving SPEC.md" measure=none max=20   # metricless with an explicit cap (v0.23.0)
 /loop status                       # iteration, best, stall, recent values
 /loop stop                         # halt with summary
+/review <goal-id> [off|on|auto|aggressive]   # re-review an archived goal (bypasses the trigger gates)
 ```
 
 **Metricless loops** (`measure=none`): for genuinely endless work — an
@@ -311,7 +315,7 @@ prompts/
   goal-loop-forever-draft.md   # /loop drafting prompt
 scripts/
   smoke.sh                     # live integration harness (tmux + real models)
-tests/                         # 168 unit tests, no live pi required
+tests/                         # 545 tests across 58 files, no live pi required (mock-ctx harness drives the orchestrator)
 docs/DESIGN.md                 # architectural decisions
 PLAN.md                        # milestones, decisions, gates
 ```
