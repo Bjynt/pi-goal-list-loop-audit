@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.28.15] — 2026-07-29
+
+### Fixed — 0.28.14 audit gaps (carryover on the list path, resume pin, /loop cancel discoverability)
+
+The 0.28.14 auditor found three real holes:
+
+- **Carryover resolution now covers list activation**: the trigger is
+  `"goal" | "loop" | "list"` and `activateNextListItem` (the choke point —
+  `/list next`, `list_activate`, list-draft auto-activate, completion
+  cascade) resolves carryover BEFORE taking an item. Under `clear` the
+  stale queue is dropped first and nothing stale activates; under `pause`
+  the ONE summary precedes activation and the paused goal is archived as
+  `replaced by new list (carryover)`.
+- **`carryover=resume` pinned**: legacy silent stacking — no summary,
+  queue + held loop untouched.
+- **`/loop cancel` is discoverable**: added to the `/loop` command
+  description and slash-bar argument completions.
+
 ## [0.28.14] — 2026-07-29
 
 ### Added — lifecycle consolidation: one active thing, entirely

@@ -295,7 +295,7 @@ async function confirmDraft(ctx: ExtensionContext, title: string, body: string):
 // paused goal — honestly, with a ledger trail. resume: legacy silent
 // behavior. A new GOAL replacing a paused one archives it in every policy
 // (one-active-thing: state.goal holds exactly one goal).
-function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop"): void {
+function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop" | "list"): void {
   if (carryoverResolved || !carryoverSnapshot) return;
   carryoverResolved = true;
   const snap = carryoverSnapshot;
@@ -305,8 +305,9 @@ function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop"): void
   const done: string[] = [];
   const waiting: string[] = [];
   const pausedGoal = state.goal && state.goal.status === "paused" ? state.goal : null;
-  if (pausedGoal && (trigger === "goal" || policy === "clear")) {
-    archiveCurrentGoal(ctx, "aborted", trigger === "goal" ? "replaced by new goal (carryover)" : "carryover cleared");
+  // A new goal OR list item replaces the goal slot; a loop leaves it paused.
+  if (pausedGoal && (trigger === "goal" || trigger === "list" || policy === "clear")) {
+    archiveCurrentGoal(ctx, "aborted", trigger === "loop" ? "carryover cleared" : `replaced by new ${trigger} (carryover)`);
     done.push(`archived paused goal "${(snap.pausedGoal ?? pausedGoal.objective).slice(0, 60)}"`);
   } else if (snap.pausedGoal) {
     waiting.push(`paused goal "${snap.pausedGoal}" (/goal resume)`);
