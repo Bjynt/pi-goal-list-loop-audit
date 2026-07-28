@@ -743,7 +743,27 @@ function createGoal(objective: string, ctx: ExtensionContext, policy: "goal" | "
 
 function persistState(ctx: ExtensionContext): void {
   appendLedger(ctx.cwd, "state", { goal: state.goal, list: state.list ?? [], loop: state.loop ?? null });
+  notifyPersistenceState(ctx); // v0.28.6 (E1): loud on the first failure, all-clear on recovery
   refreshUI(ctx); // every state transition flows through here → the TUI is always current
+}
+
+// v0.28.6 (E1): persistence-degradation notify — once per failure streak,
+// once per recovery. The TUI flag (buildWidgetLines) carries the standing
+// state; these notifies are the LOUD part.
+let persistenceDegradedNotified = false;
+function notifyPersistenceState(ctx: ExtensionContext): void {
+  if (isPersistenceDegraded() && !persistenceDegradedNotified) {
+    persistenceDegradedNotified = true;
+    const err = lastPersistenceFailure();
+    ctx.ui.notify(
+      `⚠ Persistence degraded: ${err?.what ?? "disk write"} failed (${(err?.error ?? "unknown").slice(0, 80)}). State lives in RAM and re-syncs on the next successful write — .pi-glla may be missing recent entries. Fix the disk (space/permissions) and it self-heals.`,
+      "warning",
+    );
+    notifyExternal(ctx, "pi-goal-list-loop-audit: persistence degraded — .pi-glla writes failing.");
+  } else if (!isPersistenceDegraded() && persistenceDegradedNotified) {
+    persistenceDegradedNotified = false;
+    ctx.ui.notify("Persistence recovered — .pi-glla writes are landing again.", "info");
+  }
 }
 
 function setGoal(goal: Goal, ctx: ExtensionContext): void {
@@ -768,9 +788,16 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
   ensureDirs(ctx.cwd);
   const target = archivedGoalPath(ctx.cwd, goal.id);
   const md = renderGoalMarkdown({ ...goal, status, stopReason });
-  fs.writeFileSync(target, md);
-  // Remove active md file
-  try { fs.unlinkSync(goalMdPath(ctx.cwd, goal.id)); } catch {}
+  // v0.28.6 (E1): guarded — and the active md is only removed when the
+  // archive actually LANDED (degraded mode must not destroy the only copy).
+  const archived = runPersistStep("archiveCurrentGoal", () => {
+    ensureDirs(ctx.cwd);
+    fs.writeFileSync(target, md);
+    return true;
+  }) === true;
+  if (archived) {
+    try { fs.unlinkSync(goalMdPath(ctx.cwd, goal.id)); } catch {}
+  }
   state = { goal: { ...goal, status, archivedPath: path.relative(ctx.cwd, target) || target, stopReason }, list: state.list ?? [] };
   appendLedger(ctx.cwd, "goal_archived", { goalId: goal.id, status, stopReason });
   persistState(ctx);

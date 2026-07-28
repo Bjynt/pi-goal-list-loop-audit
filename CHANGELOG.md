@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.28.6] — 2026-07-28
+
+### Fixed — persistence integrity hardening (audit E1, T6)
+
+From `audit/WRONG-OR-NOT-PREMIUM-2026-07-28.md` Stream 2.
+
+- **Guarded writes (E1).** A disk failure (ENOSPC, EACCES, wedged mount)
+  used to THROW out of `appendLedger` / `writeGoalMd` /
+  `archiveCurrentGoal` mid-handler — killing the orchestrator turn and
+  silently diverging RAM from disk. Every persistence step now runs
+  through `runPersistStep` (goal-loop-core.ts): failures latch a
+  session-wide `persistenceDegraded` flag instead of throwing, and the
+  next SUCCESSFUL step auto-clears it (self-healing — the "dirty" marker
+  write-then-mutate ordering cannot otherwise provide; RAM stays
+  authoritative and re-syncs on the next landing write).
+- **Loud first failure + TUI flag (E1).** `persistState` (the choke point
+  every state transition flows through) now calls
+  `notifyPersistenceState`: one loud warning on the first failure
+  ("State lives in RAM and re-syncs on the next successful write …"),
+  one all-clear on recovery. `buildWidgetLines` prepends
+  `⚠ persistence degraded — .pi-glla writes failing (…); state in RAM`
+  as the first widget line on every render until a write lands.
+- **Archive no longer destroys the only copy (E1).**
+  `archiveCurrentGoal` removes the active goal md ONLY when the archive
+  write actually landed.
+- **Tolerant reads (E1/T6).** `readState` wraps the ledger read itself
+  (EACCES/EIO degrades loudly instead of crashing session_start); the
+  per-line JSON tolerance now has a REAL functional pin — a truncated
+  trailing `active.jsonl` line (mid-write kill) loads the last good
+  state.
+- **Schema-drift tripwire (T6).** New test asserts every
+  `goal.schema.json` property exists in the `Goal` interface.
+- Tests: new `tests/persistence-hardening.test.ts` (7 tests, incl. real
+  filesystem failure injection).
+
 ## [0.28.5] — 2026-07-28
 
 ### Fixed — bound the silent retry loops; honest error brake (audit E2, E3, E8)
