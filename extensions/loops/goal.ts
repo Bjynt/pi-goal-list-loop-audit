@@ -1993,6 +1993,7 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
     );
     return false;
   }
+  resolveCarryover(ctx, "loop"); // v0.28.14: surface/clear stale leftovers
   state = {
     ...state,
     loop: {
@@ -3916,6 +3917,14 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
       } else {
         ctx.ui.notify(`autoresume must be on or off, got: ${value}`, "warning");
       }
+    } else if (key === "carryover") {
+      if (["resume", "pause", "clear"].includes(value)) {
+        patch.carryover = value as "resume" | "pause" | "clear";
+        changed = true;
+        ctx.ui.notify(`carryover=${value}: ${value === "clear" ? "stale goals/lists/held-loops are dropped when new work activates" : value === "pause" ? "stale carryover is surfaced in one summary when new work activates (default)" : "legacy behavior — carryover stacks silently"}.`, "info");
+      } else {
+        ctx.ui.notify(`carryover must be resume, pause, or clear, got: ${value}`, "warning");
+      }
     } else if (key === "autoaccept") {
       if (["on", "true", "1", "yes"].includes(value)) {
         patch.autoAcceptDrafts = true;
@@ -4039,7 +4048,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
     }
   }
   if (!changed) {
-    ctx.ui.notify("Nothing changed. Use key=value (model, thinking, notify, tokenlimit, autoresume, auditcap, auditfeedbackchars, aggressivemode, quotaretryminutes, stuckmax), optionally prefixed with 'project'.", "info");
+    ctx.ui.notify("Nothing changed. Use key=value (model, thinking, notify, tokenlimit, autoresume, carryover, auditcap, auditfeedbackchars, aggressivemode, quotaretryminutes, stuckmax), optionally prefixed with 'project'.", "info");
     return;
   }
   saveSettings(scope, ctx.cwd, patch);
