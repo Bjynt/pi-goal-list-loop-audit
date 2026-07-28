@@ -226,27 +226,27 @@ export function runReviewer(
   deps: ReviewerDeps,
 ): ReviewerOutcome {
   const none = (suppressedReason: string): ReviewerOutcome => ({ fired: false, suppressedReason, enqueued: 0, proposed: 0 });
-  if (!config.enabled && !deps.manual) return none("reviewer disabled");
+  if (!config.enabled && !deps.manual) return none("the postaudit is disabled (/glla postaudit → Enabled)");
   // v0.27.5: "off" mode is the user-friendly way to silence the postaudit
   // — equivalent to enabled=false but exposed via the postaudit menu.
-  if (config.mode === "off" && !deps.manual) return none("postaudit mode = off");
+  if (config.mode === "off" && !deps.manual) return none("postaudit mode is off (/glla postaudit → Mode)");
   const event = source.kind === "goal" ? `${source.terminal}` : "list-complete";
   if (!deps.manual) {
-    if (config.doNotFireOn.includes(event)) return none(`doNotFireOn: ${event}`);
-    if (source.kind === "goal" && source.terminal !== "goal-complete") return none(`not a completion: ${source.terminal}`);
-    if (!config.fireOn.includes(source.kind === "goal" ? "goal-complete" : "list-complete")) return none("fireOn excludes this event");
+    if (config.doNotFireOn.includes(event)) return none(`this event type (${event}) is excluded in /glla postaudit → fire-on`);
+    if (source.kind === "goal" && source.terminal !== "goal-complete") return none(`the goal ended as ${source.terminal}, not a completion — no follow-up fires`);
+    if (!config.fireOn.includes(source.kind === "goal" ? "goal-complete" : "list-complete")) return none("this event type is excluded in /glla postaudit → fire-on");
     // v0.26.2: in auto mode the queue emptying is the cascade's natural
     // rhythm, not a runaway — the refire window must not strangle it.
     // (The per-day cap below still bounds everything.)
     const refireWindowApplies = !(config.mode === "auto" && source.kind === "list");
     if (refireWindowApplies && reviewerFiredRecently(deps.ledgerEntries, REVIEWER_REFIRE_WINDOW_MS, deps.nowMs)) {
       deps.ledger("reviewer_suppressed", { reason: "refire-window", goalId: source.goalId });
-      return none("reviewer fired within the last 5 minutes (runaway prevention)");
+      return none("a postaudit ran within the last 5 minutes (runaway prevention)");
     }
     const today = reviewsToday(deps.ledgerEntries, deps.nowMs);
     if (today >= config.maxReviewsPerDay) {
       deps.ledger("reviewer_suppressed", { reason: "day-cap", count: today, cap: config.maxReviewsPerDay, goalId: source.goalId });
-      return none(`day cap reached (${today}/${config.maxReviewsPerDay})`);
+      return none(`daily postaudit cap reached (${today}/${config.maxReviewsPerDay}) — /glla postaudit → Max reviews`);
     }
   }
 

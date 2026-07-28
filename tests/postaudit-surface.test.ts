@@ -27,7 +27,7 @@ test("fireReviewer emits a SECOND notify with the review file path after the cas
 });
 
 test("surface-notify branch is preceded by the existing manual-suppressed notify", () => {
-  const suppressedIdx = SRC.indexOf("Reviewer suppressed: ${outcome.suppressedReason}");
+  const suppressedIdx = SRC.indexOf("Postaudit suppressed: ${outcome.suppressedReason}");
   const surfaceIdx = SRC.indexOf("↳ review written:");
   assert.ok(suppressedIdx > 0 && surfaceIdx > 0, "both notify branches exist");
   assert.ok(suppressedIdx < surfaceIdx, "surface notify comes after the suppressed notify");

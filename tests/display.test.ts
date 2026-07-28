@@ -105,14 +105,14 @@ test("list policy footer: queued count, no duplicated 'list'", () => {
   assert.ok(!/list .+ list /.test(s), `no duplicated 'list … list': ${s}`);
 });
 
-test("goal policy footer keeps the bare 'list N' queue suffix", () => {
+test("goal policy footer says 'N queued' (v0.28.11 U10 — was the cryptic 'list N')", () => {
   const s = buildStatusText(
     { goal: goalOf(), list: [{ id: "x", objective: "y", addedAt: "z" }] },
     null,
     NOW,
   )!;
   assert.match(s, /^glla: goal /);
-  assert.match(s, /· list 1$/);
+  assert.match(s, /· 1 queued$/);
 });
 
 test("widget names a list item as such and points at /list, not /goal", () => {
@@ -151,7 +151,7 @@ test("widget goal policy keeps /goal status hint + list N prefix", () => {
     NOW,
   )!;
   assert.match(lines[1]!, /^├─ active /);
-  assert.equal(lines[lines.length - 1], "└─ list 1 · /goal status · /glla");
+  assert.equal(lines[lines.length - 1], "└─ 1 queued · /goal status · /glla");
 });
 
 test("paused shows the reason", () => {

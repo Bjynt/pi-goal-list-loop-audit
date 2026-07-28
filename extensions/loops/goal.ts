@@ -758,6 +758,9 @@ function persistState(ctx: ExtensionContext): void {
 // once per recovery. The TUI flag (buildWidgetLines) carries the standing
 // state; these notifies are the LOUD part.
 let persistenceDegradedNotified = false;
+
+/** v0.28.11 (U9): objective-first notifies — truncate long objectives. */
+const shortObj = (s: string): string => (s.length > 90 ? `${s.slice(0, 87)}…` : s);
 function notifyPersistenceState(ctx: ExtensionContext): void {
   if (isPersistenceDegraded() && !persistenceDegradedNotified) {
     persistenceDegradedNotified = true;
@@ -885,7 +888,7 @@ function fireReviewer(
           // to still count as "proposed" in the report + notify. Now the
           // failure is LOUD and the proposal goes uncounted.
           ctx.ui.notify(
-            `Reviewer /goal proposal NOT delivered: ${err instanceof Error ? err.message : String(err)} — the follow-up never reached the session. Restart pi if the session was just replaced.`,
+            `Postaudit /goal proposal NOT delivered: ${err instanceof Error ? err.message : String(err)} — the follow-up never reached the session. Restart pi if the session was just replaced.`,
             "warning",
           );
           return false;
@@ -895,7 +898,7 @@ function fireReviewer(
       ledger: (type, value) => appendLedger(ctx.cwd, type, value),
     });
     if (!outcome.fired && outcome.suppressedReason && opts.manual) {
-      ctx.ui.notify(`Reviewer suppressed: ${outcome.suppressedReason}`, "info");
+      ctx.ui.notify(`Postaudit suppressed: ${outcome.suppressedReason}`, "info");
     }
     // v0.27.5: surface the silent review to interactive users. The internal
     // runReviewer notify fires DURING the goal-completion handler, easy to
@@ -911,7 +914,7 @@ function fireReviewer(
       );
     }
   } catch (err) {
-    ctx.ui.notify(`Reviewer failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`, "warning");
+    ctx.ui.notify(`Postaudit failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`, "warning");
   }
 }
 
@@ -1088,10 +1091,10 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
     // v0.28.1 (S3): the goal is persisted — mark the interrupt so the next
     // fresh session auto-resumes, and tell the truth instead of "starting now".
     updateGoal({ interruptedAt: nowIso(), interruptedReason: "created in a stale session" }, ctx);
-    ctx.ui.notify(`Goal ${goal.id} created and safe in .pi-glla/ — this stale process can't send continuations. Restart pi and it auto-resumes.`, "warning");
+    ctx.ui.notify(`Goal saved: ${shortObj(goal.objective)} — safe in .pi-glla/, but this stale process can't send continuations. Restart pi and it auto-resumes. (id: ${goal.id})`, "warning");
     return;
   }
-  ctx.ui.notify(`Goal ${goal.id} created — starting now. Auditor will verify on completion.`, "info");
+  ctx.ui.notify(`Goal started: ${shortObj(goal.objective)} — the auditor will verify on completion. (id: ${goal.id})`, "info");
   scheduleContinuation(ctx, true);
 }
 
@@ -3453,17 +3456,17 @@ async function cmdToolOverride(args: string, ctx: ExtensionContext): Promise<voi
     if (action === "allow") {
       const allow = current.allow ?? [];
       if (!allow.includes(tool)) apply({ allow: [...allow, tool] });
-      ctx.ui.notify(`toolOverrides.allow += ${tool}`, "info");
+      ctx.ui.notify(`"${tool}" is now always visible to the agent (project override saved).`, "info");
     } else if (action === "hide") {
       const hide = current.hide ?? [];
       if (!hide.includes(tool)) apply({ hide: [...hide, tool] });
-      ctx.ui.notify(`toolOverrides.hide += ${tool}`, "info");
+      ctx.ui.notify(`"${tool}" is now always hidden from the agent (project override saved).`, "info");
     } else if (action === "unallow") {
       apply({ allow: (current.allow ?? []).filter((t) => t !== tool) });
-      ctx.ui.notify(`toolOverrides.allow -= ${tool}`, "info");
+      ctx.ui.notify(`"${tool}" visibility override removed — the session decides again.`, "info");
     } else {
       apply({ hide: (current.hide ?? []).filter((t) => t !== tool) });
-      ctx.ui.notify(`toolOverrides.hide -= ${tool}`, "info");
+      ctx.ui.notify(`"${tool}" hide override removed — the session decides again.`, "info");
     }
     return;
   }
@@ -3490,7 +3493,12 @@ async function cmdToolOverride(args: string, ctx: ExtensionContext): Promise<voi
     }
     cfg[tool] = toolCfg;
     apply({ perToolConfig: cfg });
-    ctx.ui.notify(`toolOverrides.perToolConfig.${tool} ${action === "set" ? "set" : "unset"}`, "info");
+    ctx.ui.notify(
+      action === "set"
+        ? `"${tool}" setting saved: ${kv.slice(0, kv.indexOf("="))} = ${JSON.stringify(toolCfg[kv.slice(0, kv.indexOf("="))])} (project override).`
+        : `"${tool}" setting "${kv}" removed — back to the built-in default.`,
+      "info",
+    );
     return;
   }
   ctx.ui.notify(`Unknown tooloverride action: ${action}. Use: list | allow | hide | unallow | unhide | set | unset.`, "warning");
@@ -3530,7 +3538,7 @@ async function cmdReviewerSettings(ctx: ExtensionContext): Promise<void> {
     const cfg = load();
     let choice: string | undefined;
     try {
-      choice = await ctx.ui.select("Reviewer — post-completion follow-up enqueuer (project settings)", reviewerMenuOptions(cfg));
+      choice = await ctx.ui.select("Postaudit — post-completion follow-up enqueuer (project settings)", reviewerMenuOptions(cfg));
     } catch {
       return;
     }
@@ -3557,8 +3565,10 @@ async function cmdReviewerSettings(ctx: ExtensionContext): Promise<void> {
         const n = Number(v?.trim());
         if (Number.isSafeInteger(n) && n >= 1 && n <= 100) save({ maxReviewsPerDay: n });
       }
-    } catch {
-      /* individual save failures are non-fatal */
+    } catch (err) {
+      // v0.28.11 (E7): a swallowed save failure made the user believe the
+      // toggle landed. Loud now.
+      ctx.ui.notify(`Postaudit setting NOT saved: ${err instanceof Error ? err.message : String(err)} — check .pi-glla/settings.json permissions.`, "warning");
     }
   }
 }
@@ -4041,7 +4051,7 @@ export default function (pi: ExtensionAPI): void {
     handler: settingsHandler,
   });
   pi.registerCommand("review", {
-    description: "Manually run the reviewer on an archived goal: /review <goal-id> [off|on|auto|aggressive] — extracts findings, writes a report to .pi-glla/reviews/, cascades per the mode (auto/aggressive = no Confirms). Bypasses the trigger gates (explicit user request).",
+    description: "Manually run the postaudit on an archived goal: /review <goal-id> [off|on|auto|aggressive] — extracts findings, writes a report to .pi-glla/reviews/, cascades per the mode (auto/aggressive = no Confirms). Bypasses the trigger gates (explicit user request).",
     handler: (args: string, ctx: ExtensionContext) => { rememberCtx(ctx); return cmdReview(args, ctx); },
   });
   pi.registerCommand("list", {

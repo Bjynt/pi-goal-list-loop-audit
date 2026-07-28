@@ -93,21 +93,28 @@ Do NOT spawn more subagents of the failed type until quota resets — you will j
 
 ## DETACHED COMMIT DETECTION
 
-If your commits keep getting rewritten away (same content, new SHA — or worse, content reverted), check the auto-committer daemon BEFORE diagnosing yourself as stuck or broken:
+If your commits keep getting rewritten away (same content, new SHA — or worse, content reverted), check for an **auto-commit daemon** BEFORE diagnosing yourself as stuck or broken. **Skip this section entirely if your rig has no auto-committer** — most rigs don't. (The maintainer's rigs run one called `dracon-sync`; yours may run a different one, or none.)
+
+Generic forensics (safe everywhere):
 
 ```bash
 git reflog --date=iso | grep -E "filter-branch|filter-repo"
 git reflog --date=iso | grep -E ": reset:"
+```
+
+If those show rewrites you didn't make, find the daemon (example for the maintainer's rig — adapt the pattern to yours):
+
+```bash
 ps -fea | grep -E "dracon-sync|filter-repo" | grep -v grep
 ```
 
-The auto-committer (`dracon-sync daemon`) may be running `auto_rewrite_large_blobs` on your commits. The fix is NOT to keep re-committing — it is to:
+An auto-committer may be rewriting your commits (e.g. `dracon-sync daemon` running `auto_rewrite_large_blobs`). The fix is NOT to keep re-committing — it is to:
 
-1. Pause the daemon (`dracon-sync pause`, or write the `.pi-glla/.pause-auto-commit` sentinel via the goal tools).
-2. Investigate the rewrite trigger (daemon config `max_push_blob_bytes`, `auto_rewrite_large_blobs`).
+1. Pause the daemon if one exists (on the maintainer's rigs: `dracon-sync pause`, or write the `.pi-glla/.pause-auto-commit` sentinel via the goal tools).
+2. Investigate the rewrite trigger (for `dracon-sync`: daemon config `max_push_blob_bytes`, `auto_rewrite_large_blobs`).
 3. Add `.pi-glla/` to the daemon's exclude list.
 
-Do NOT conclude "the loop is too eager" or "I am broken" before checking what the daemon is doing — the daemon rewriting your commits makes YOUR loop look broken when it is not.
+Do NOT conclude "the loop is too eager" or "I am broken" before checking what a daemon is doing — a daemon rewriting your commits makes YOUR loop look broken when it is not.
 
 ## TASK WORKFLOW
 

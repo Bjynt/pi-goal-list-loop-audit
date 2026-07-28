@@ -144,11 +144,11 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       return `glla: ${g.policy} ${paint(theme, "error", "⚠ interrupted — stale handle · auto-resumes on pi restart")}`;
     }
     // v0.24.7: list policy gets its own wording — a queue item is not a goal.
-    // Before: "glla: list ● 3m 19s · list 29" (policy label AND queue counter
-    // both said "list"). After: "glla: list ● 3m 19s · 29 queued". Goal
-    // policy keeps the bare "list N" suffix (no duplication there).
+    // v0.28.11 (U10): goal policy joins it — "list 29" read as a command
+    // fragment; "29 queued" says what the number IS. Both policies now
+    // render "… · N queued".
     const n = state.list?.length ?? 0;
-    const queue = n === 0 ? "" : g.policy === "list" ? ` · ${n} queued` : ` · list ${n}`;
+    const queue = n === 0 ? "" : ` · ${n} queued`;
     const tasks = g.taskList ? ` ${countDone(g)}/${countTotal(g)} tasks ·` : "";
     return `glla: ${g.policy} ${paint(theme, "success", "●")}${tasks} ${fmtElapsed(now - Date.parse(g.createdAt))}${queue}`;
   }
@@ -275,7 +275,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   const queue = state.list?.length ?? 0;
   const footer = isList
     ? `${queue > 0 ? `${queue} queued · ` : ""}/list · /glla`
-    : `${queue > 0 ? `list ${queue} · ` : ""}/goal status · /glla`;
+    : `${queue > 0 ? `${queue} queued · ` : ""}/goal status · /glla`;
   lines.push(`└─ ${paint(theme, "dim", footer)}`);
   return lines;
 }

@@ -56,7 +56,7 @@ test("S3: probes wired at cmdSet / cmdResume / cmdList / propose_goal_draft entr
 
 test("S3: stale creation marks the interrupt and tells the truth (no 'starting now' lie)", () => {
   assert.match(SRC, /updateGoal\(\{ interruptedAt: nowIso\(\), interruptedReason: "created in a stale session" \}, ctx\)/);
-  assert.match(SRC, /created and safe in \.pi-glla\/ — this stale process can't send continuations\. Restart pi and it auto-resumes\./);
+  assert.match(SRC, /safe in \.pi-glla\/, but this stale process can't send continuations\. Restart pi and it auto-resumes\./);
 });
 
 test("S1: stale resume persists active+marker, skips the misleading notify and the doomed send", () => {
