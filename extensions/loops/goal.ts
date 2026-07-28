@@ -2648,7 +2648,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       // v0.14.0: the interview floor — no Confirm until the user replied.
       // v0.23.8: /glla autoaccept=on skips the floor AND the Confirm —
       // the seed carries the intent (unattended rigs). Default off.
-      const autoAccept = loadSettings(ctx.cwd).autoAcceptDrafts === true;
+      const autoAccept = loadSettings(liveCtx.cwd).autoAcceptDrafts === true;
       if (!autoAccept) {
         if (draftingUserReplies === 0) draftingBlockedProposals++;
         const block = draftProposalBlock(draftingUserReplies, draftingBlockedProposals);
@@ -2839,7 +2839,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       // drafter path was still defaulting to 50 after v0.23.6 flipped the
       // CLI default.
       const max = p.max !== undefined && Number.isFinite(p.max) && p.max >= 0 ? Math.floor(p.max) : metricless ? 0 : 50;
-      const autoAccept = loadSettings(ctx.cwd).autoAcceptDrafts === true;
+      const autoAccept = loadSettings(liveCtx.cwd).autoAcceptDrafts === true;
       let confirmed = false;
       if (autoAccept) {
         confirmed = true;
@@ -3085,7 +3085,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         const subs = (t.subtasks ?? []).map((s, j) => `   ${i + 1}.${j + 1} ${s}`).join("\n");
         return `${i + 1}. ${t.title}` + (subs ? `\n${subs}` : "");
       }).join("\n");
-      const autoAcceptTasks = loadSettings(ctx.cwd).autoAcceptDrafts === true;
+      const autoAcceptTasks = loadSettings(liveCtx.cwd).autoAcceptDrafts === true;
       let confirmed = false;
       if (autoAcceptTasks) {
         confirmed = true;
