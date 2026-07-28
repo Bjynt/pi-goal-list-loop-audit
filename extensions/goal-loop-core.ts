@@ -162,6 +162,10 @@ export interface Goal {
    * on that auto-resume. */
   interruptedAt?: string;
   interruptedReason?: string;
+  /** v0.28.5 (E2): trailing auditor INFRA-structure errors (not verdicts).
+   * At 3 the goal pauses loudly — a broken auditor model must not spin a
+   * silent retry-forever loop. Cleared on any real auditor run. */
+  auditInfraStreak?: number;
   /** v0.25.0 (contract item 22): auditor objections extracted as TODOs when
    * aggressiveMode keeps the goal active past the disapproval cap. Rendered
    * into every continuation prompt until the next audit clears them. */

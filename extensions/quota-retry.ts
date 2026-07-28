@@ -65,12 +65,14 @@ export function cancelQuotaRetry(): void {
 /** Schedule a one-shot auto-resume after the quota window. The fire
  * callback re-checks the goal is STILL paused for the quota reason before
  * resuming (contract item 10/12 — a user /goal pause during the window
- * must not be stomped). */
+ * must not be stomped). v0.28.5: `label` generalizes the notify so the
+ * 5-consecutive-errors brake can reuse the same capped one-shot machinery. */
 export function scheduleQuotaRetry(
   ctx: ExtensionContext,
   retryAfterSec: number,
   reason: string,
   fire: () => void,
+  label = "Auditor quota exhausted — auto-retry",
 ): void {
   cancelQuotaRetry();
   const ms = Math.max(1_000, retryAfterSec * 1_000);
@@ -84,7 +86,7 @@ export function scheduleQuotaRetry(
   }, ms);
   quotaRetryTimer.unref?.();
   ctx.ui.notify(
-    `Auditor quota exhausted — auto-retry in ${Math.round(retryAfterSec / 60)}m (${reason.slice(0, 80)}). /goal resume retries now.`,
+    `${label} in ${Math.round(retryAfterSec / 60)}m (${reason.slice(0, 80)}). /goal resume retries now.`,
     "info",
   );
 }

@@ -360,6 +360,55 @@ function startUITicker(): void {
 
 /** v0.26.5: shared loud-stop for both stall paths (refire streak and
  * pending-latch streak). Returns true when it escalated. */
+// v0.28.5 (E3): send-retry re-arm accounting. The 50ms BACKOFF_IDLE_RETRY
+// re-arm loop used to spin for HOURS with zero ledger events while the idle
+// watchdogs stayed suppressed. Now: counted, ledgered (start + every 30s),
+// and escalated loudly past 5 minutes.
+let continuationRearmStreak = 0;
+let loopRearmStreak = 0;
+const SEND_REARM_LEDGER_EVERY = 600; // 600 × 50ms = 30s
+const SEND_REARM_ESCALATE_AT = 6000; // 6000 × 50ms = 5 minutes
+
+function accountSendRearm(ctx: ExtensionContext, kind: "continuation" | "loop"): void {
+  const streak = kind === "continuation" ? ++continuationRearmStreak : ++loopRearmStreak;
+  if (streak === 1) {
+    appendLedger(ctx.cwd, "send_rearm_start", { kind });
+    return;
+  }
+  if (streak % SEND_REARM_LEDGER_EVERY === 0) {
+    appendLedger(ctx.cwd, "send_rearm_storm", { kind, streak, minutes: Math.round((streak * BACKOFF_IDLE_RETRY_MS) / 60000) });
+  }
+  if (streak >= SEND_REARM_ESCALATE_AT) {
+    if (kind === "continuation") continuationRearmStreak = 0; else loopRearmStreak = 0;
+    escalateSendRearmStorm(ctx, kind);
+  }
+}
+
+function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "loop"): void {
+  // Same loud-terminal shape as escalateStallNow (v0.24.7): a 5-minute
+  // re-arm storm means the session never goes idle for us — wedged queue
+  // or a busy-forever session. Bounded and surfaced, not silent.
+  const mins = Math.round((SEND_REARM_ESCALATE_AT * BACKOFF_IDLE_RETRY_MS) / 60000);
+  appendLedger(ctx.cwd, "send_rearm_escalated", { kind, streak: SEND_REARM_ESCALATE_AT });
+  if (kind === "loop" && isLoopActive()) {
+    clearLoopTimer();
+    state.loop = { ...state.loop!, active: false, stopReason: `send-retry storm: ${mins}m of 50ms re-arms — the session never went idle for the loop turn. Restart pi, then /loop start again.` };
+    persistState(ctx);
+    ctx.ui.notify(`Loop stopped: send-retry storm (${mins}m). Restart pi and /loop start.`, "warning");
+    notifyExternal(ctx, "Loop stopped: send-retry storm.");
+    return;
+  }
+  if (state.goal && state.goal.status === "active") {
+    updateGoal({
+      status: "paused",
+      pauseReason: `send-retry storm: ${mins}m of 50ms re-arms — the session never went idle for the continuation`,
+      pauseSuggestedAction: "The session never went idle for the send (wedged queue or permanently busy). Restart pi, then /goal resume.",
+    }, ctx);
+    ctx.ui.notify(`Goal paused: send-retry storm (${mins}m). Restart pi, then /goal resume.`, "warning");
+    notifyExternal(ctx, "Goal paused: send-retry storm.");
+  }
+}
+
 function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
   if (!shouldEscalateStall(consecutiveStalls, threshold)) return false;
   consecutiveStalls = 0;
@@ -494,6 +543,9 @@ let continuationScheduledFor: string | null = null;
 let iterationCounter = 0;
 let toolCallsThisTurn = 0;
 let consecutiveErrorIterations = 0;
+// v0.28.5 (E8): user aborts are NOT provider errors — separate counter,
+// separate brake message, and no auto-resume (aborting is user intent).
+let consecutiveAbortIterations = 0;
 let consecutiveNoToolIterations = 0;
 
 // =================================================================
@@ -555,6 +607,8 @@ function sendContinuation(goalId: string): void {
     return;
   }
   if (!ctx.isIdle() || ctx.hasPendingMessages()) {
+    // v0.28.5 (E3): count + ledger + escalate the re-arm storm.
+    accountSendRearm(ctx, "continuation");
     continuationScheduledFor = goalId;
     continuationTimer = setTimeout(() => sendContinuation(goalId), BACKOFF_IDLE_RETRY_MS);
     continuationTimer.unref?.();
@@ -567,6 +621,7 @@ function sendContinuation(goalId: string): void {
       content: continuationPrompt(state.goal!),
       display: false,
     }, { triggerTurn: true, deliverAs: "followUp" });
+    continuationRearmStreak = 0; // v0.28.5 (E3): a landed send clears the storm
     appendLedger(ctx.cwd, "goal_continuation_sent", { goalId });
   } catch (err) {
     appendLedger(ctx.cwd, "goal_continuation_send_failed", { goalId, error: err instanceof Error ? err.message : String(err) });
@@ -834,6 +889,7 @@ function activateNextListItem(ctx: ExtensionContext, n = 1): boolean {
   setGoal(goal, ctx);
   iterationCounter = 0;
   consecutiveErrorIterations = 0;
+  consecutiveAbortIterations = 0;
   ctx.ui.notify(`List item #${n} activated (${rest.length} remaining): ${goal.objective.slice(0, 80)}`, "info");
   scheduleContinuation(ctx, true);
   return true;
@@ -981,6 +1037,7 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
   // Reset counters
   iterationCounter = 0;
   consecutiveErrorIterations = 0;
+  consecutiveAbortIterations = 0;
   consecutiveNoToolIterations = 0;
   if (staleEntry) {
     // v0.28.1 (S3): the goal is persisted — mark the interrupt so the next
@@ -1506,6 +1563,7 @@ function sendLoopTurn(): void {
   if (!isLoopActive() || !extensionApi) return;
   const ctx = freshCtx();
   if (!ctx || !ctx.isIdle() || ctx.hasPendingMessages()) {
+    if (ctx) accountSendRearm(ctx, "loop"); // v0.28.5 (E3)
     loopTimer = setTimeout(() => sendLoopTurn(), BACKOFF_IDLE_RETRY_MS);
     loopTimer.unref?.();
     return;
@@ -1553,6 +1611,7 @@ function sendLoopTurn(): void {
     }, { triggerTurn: true, deliverAs: "followUp" });
     // v0.26.1: the send path is ledgered — the hegemon zombie spun 619
     // refires with zero visibility into whether sends were landing.
+    loopRearmStreak = 0; // v0.28.5 (E3): a landed turn clears the storm
     appendLedger(ctx.cwd, "loop_turn_sent", { iteration: loop.iteration });
   } catch (err) {
     // stale API — next agent_end reschedules (but if none comes, the
@@ -2083,6 +2142,8 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       // (abort, auth failure, no model) are surfaced via pauseReason, not
       // logged as disapprovals.
       const auditorRan = result.output.trim().length > 0;
+      // v0.28.5 (E2): a REAL auditor run clears the infra-error streak.
+      if (auditorRan && (state.goal.auditInfraStreak ?? 0) > 0) updateGoal({ auditInfraStreak: undefined }, ctx);
       const history = state.goal.auditHistory ?? [];
       if (auditorRan) {
         // v0.25.4: strip think-block leakage (MiniMax-M3 `</think>`
@@ -2229,6 +2290,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
           updateGoal({
             status: "paused",
             auditHistory: history,
+            auditInfraStreak: undefined, // quota reached the auditor — infra streak broken
             pauseReason: `auditor quota: ${result.error}`,
             pauseSuggestedAction: `Quota auto-retry in ${retryMin}m — or /goal resume to retry now`,
           }, ctx);
@@ -2253,9 +2315,34 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
             details: {},
           };
         }
+        // v0.28.5 (E2): bound the silent retry-forever. Each infra error
+        // used to reschedule a continuation unconditionally — a broken
+        // auditor model spun forever (the 39-error incident). At 3 trailing
+        // infra errors the model is broken, not unlucky: pause LOUDLY.
+        const infraStreak = (state.goal.auditInfraStreak ?? 0) + 1;
+        if (infraStreak >= 3) {
+          updateGoal({
+            status: "paused",
+            auditHistory: history,
+            auditInfraStreak: infraStreak,
+            pauseReason: `auditor infrastructure failed ${infraStreak}× in a row — the auditor model is likely broken (last: ${result.error.slice(0, 120)})`,
+            pauseSuggestedAction: "Fix the auditor model (/glla model=provider/id) or restart pi, then /goal resume. Your work was NOT judged.",
+          }, ctx);
+          appendLedger(ctx.cwd, "goal_paused", { reason: `auditor infra streak ${infraStreak}: ${result.error.slice(0, 120)}` });
+          ctx.ui.notify(`Goal paused: auditor infrastructure failed ${infraStreak}× in a row. Fix the auditor model (/glla model=...), then /goal resume.`, "warning");
+          notifyExternal(ctx, `Goal paused: auditor infrastructure ${infraStreak}× — model likely broken.`);
+          return {
+            content: [{
+              type: "text",
+              text: `The auditor has now failed ${infraStreak} times in a row with infrastructure errors (NOT verdicts; last: ${result.error}). The goal is PAUSED — the retry-forever loop stops here. Fix the auditor model with /glla model=provider/id (or restart pi), then /goal resume and call complete_goal again. Do not change your deliverable for this.`,
+            }],
+            details: {},
+          };
+        }
         updateGoal({
           status: "active",
           auditHistory: history,
+          auditInfraStreak: infraStreak,
           pauseReason: `auditor infrastructure${retriedOnce ? " (retried once)" : ""}: ${result.error}`,
           pauseSuggestedAction: "Fix the auditor model (/glla model=provider/id) and call complete_goal again — your work was NOT judged",
         }, ctx);
@@ -2599,6 +2686,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       setGoal(goal, liveCtx);
       iterationCounter = 0;
       consecutiveErrorIterations = 0;
+      consecutiveAbortIterations = 0;
       scheduleContinuation(liveCtx, true);
       return {
         content: [{ type: "text", text: `Goal confirmed and activated (id ${goal.id}). Begin work now; call complete_goal only when the objective is genuinely satisfied.` }],
@@ -4318,20 +4406,56 @@ export default function (pi: ExtensionAPI): void {
       updateGoal({ usage: { tokensUsed: used, tokensLimit: limit } }, ctx);
     }
 
-    if (stopReason === "error" || stopReason === "aborted") {
+    if (stopReason === "error") {
       consecutiveErrorIterations++;
+      consecutiveAbortIterations = 0;
       if (consecutiveErrorIterations >= 5) {
+        // v0.28.5 (E8): carry the REAL error text — the pause used to say
+        // literally "5 consecutive errors: error" (stopReason, not the
+        // provider error). And give transient flakes ONE capped auto-resume
+        // (60s, reason re-checked) — the E8 incident lost 1.5h to a
+        // 60-second provider hiccup waiting on a manual /goal resume.
+        const detail = text.trim() ? ` (last: ${text.trim().replace(/\s+/g, " ").slice(0, 160)})` : "";
+        const reason = `5 consecutive errors${detail}`;
         updateGoal({
           status: "paused",
-          pauseReason: `5 consecutive errors: ${stopReason}`,
-          pauseSuggestedAction: "Use /goal resume to retry, or /goal cancel to abort.",
+          pauseReason: reason,
+          pauseSuggestedAction: "Transient provider flake? The goal auto-resumes once in 60s if still paused for this reason — or /goal resume now.",
         }, ctx);
-        ctx.ui.notify("Goal paused: 5 consecutive errors.", "warning");
-        notifyExternal(ctx, "Goal paused: 5 consecutive errors.");
+        ctx.ui.notify(`Goal paused: ${reason}.`, "warning");
+        notifyExternal(ctx, `Goal paused: ${reason}.`);
+        appendLedger(ctx.cwd, "goal_paused", { reason });
+        scheduleQuotaRetry(ctx, 60, reason, () => {
+          // Re-check: only auto-resume if STILL paused for the error brake
+          // (a user /goal pause during the window is not stomped).
+          if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("5 consecutive errors")) {
+            updateGoal({ status: "active" }, ctx);
+            appendLedger(ctx.cwd, "goal_resumed", { via: "error-brake-retry" });
+            ctx.ui.notify("Auto-resumed after the 5-error brake (60s cooldown).", "info");
+            scheduleContinuation(ctx, true);
+          }
+        }, "5 consecutive errors — auto-retry");
+        return;
+      }
+    } else if (stopReason === "aborted") {
+      // v0.28.5 (E8): user aborts are not provider errors. Separate brake,
+      // honest message, and NO auto-resume — aborting five turns in a row
+      // is the user telling the goal to stop; we stay stopped.
+      consecutiveAbortIterations++;
+      consecutiveErrorIterations = 0;
+      if (consecutiveAbortIterations >= 5) {
+        updateGoal({
+          status: "paused",
+          pauseReason: "5 consecutive aborts (user interrupted)",
+          pauseSuggestedAction: "You interrupted 5 turns in a row — the goal stays paused until you /goal resume (or /goal cancel).",
+        }, ctx);
+        ctx.ui.notify("Goal paused: 5 consecutive aborts (user interrupted).", "warning");
+        appendLedger(ctx.cwd, "goal_paused", { reason: "5 consecutive aborts (user interrupted)" });
         return;
       }
     } else {
       consecutiveErrorIterations = 0;
+      consecutiveAbortIterations = 0;
     }
 
     // No wall-clock cap by design: a goal ends via completion, explicit

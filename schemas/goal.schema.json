@@ -48,6 +48,7 @@
     "pauseSuggestedAction": { "type": "string" },
     "interruptedAt": { "type": "string" },
     "interruptedReason": { "type": "string" },
+    "auditInfraStreak": { "type": "number" },
     "activePath": { "type": "string" },
     "archivedPath": { "type": "string" },
     "usage": {
