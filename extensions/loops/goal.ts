@@ -259,6 +259,36 @@ function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
   return true;
 }
 
+/** v0.28.12: draft-class confirm with the auto-accept escape hatch SURFACED.
+ * The polis incident: a user sat through a 14-item batch Confirm having
+ * already reviewed every item during drafting, never knowing /glla
+ * autoaccept=on existed — the Yes/No dialog never mentioned it. Now every
+ * draft dialog is a 3-choice select; the ALWAYS choice persists project
+ * autoAcceptDrafts=true and accepts. Returns "stale" when the dialog can't
+ * render (session replacement) so call sites keep their NOT-a-rejection
+ * handling; falls back to the plain confirm if select is unavailable. */
+type DraftChoice = "yes" | "no" | "stale";
+async function confirmDraft(ctx: ExtensionContext, title: string, body: string): Promise<DraftChoice> {
+  const ALWAYS = "Yes — and always auto-accept drafts (sets autoAcceptDrafts for this project)";
+  try {
+    const choice = await ctx.ui.select(`${title}\n\n${body}`, ["Yes", ALWAYS, "No"]);
+    if (choice === ALWAYS) {
+      saveSettings("project", ctx.cwd, { autoAcceptDrafts: true });
+      appendLedger(ctx.cwd, "draft_autoaccept_enabled", { via: title });
+      ctx.ui.notify("Draft auto-accept ON for this project — future draft confirms are skipped. Undo: /glla autoaccept=off.", "info");
+      return "yes";
+    }
+    return choice === "Yes" ? "yes" : "no";
+  } catch (err) {
+    if (isStaleApiError(err)) return "stale";
+    try {
+      return (await ctx.ui.confirm(title, body)) ? "yes" : "no";
+    } catch (err2) {
+      return isStaleApiError(err2) ? "stale" : "no";
+    }
+  }
+}
+
 // The most recent ExtensionContext seen from any event or command handler.
 // pi replaces sessions (newSession/fork/reload) and stale ctx throws on use,
 // so timers must never capture a ctx — they read lastCtx at fire time.
@@ -2648,21 +2678,19 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
           liveCtx.ui.notify(`List batch auto-accepted (/glla autoaccept=on): ${p.items.length} items${batchActivates ? " — item 1 ACTIVATES now" : ""}.`, "info");
           appendLedger(liveCtx.cwd, "draft_autoaccepted", { kind: "batch", count: p.items.length });
         } else {
-          try {
-            batchConfirmed = await liveCtx.ui.confirm(
-              "Confirm list batch",
-              `${p.items.length} items:\n${preview}${batchActivates ? "\n\n(List is empty — confirming ACTIVATES item 1 immediately as the active goal.)" : ""}`,
-            );
-          } catch (err) {
-            // v0.28.1 (T1): a stale confirm is NOT a rejection — nothing was
+          const c = await confirmDraft(
+            liveCtx,
+            "Confirm list batch",
+            `${p.items.length} items:\n${preview}${batchActivates ? "\n\n(List is empty — confirming ACTIVATES item 1 immediately as the active goal.)" : ""}`,
+          );
+          if (c === "stale") {
+            // v0.28.1 (T1): a stale dialog is NOT a rejection — nothing was
             // refused; the dialog simply can't render in a doomed process.
-            if (isStaleApiError(err)) {
-              extensionApiStale = true;
-              appendLedger(liveCtx.cwd, "extension_api_stale", { where: "batch confirm" });
-              return { content: [{ type: "text", text: "The Confirm dialog could not render: pi invalidated this session's extension handle (session replacement). This is NOT a rejection — do NOT refine or re-propose. Tell the user to restart pi, then re-run the drafting flow." }], details: {} };
-            }
-            batchConfirmed = false;
+            extensionApiStale = true;
+            appendLedger(liveCtx.cwd, "extension_api_stale", { where: "batch confirm" });
+            return { content: [{ type: "text", text: "The Confirm dialog could not render: pi invalidated this session's extension handle (session replacement). This is NOT a rejection — do NOT refine or re-propose. Tell the user to restart pi, then re-run the drafting flow." }], details: {} };
           }
+          batchConfirmed = c === "yes";
         }
         if (!batchConfirmed) {
           return {
@@ -2699,17 +2727,14 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         liveCtx.ui.notify(`Draft auto-accepted (/glla autoaccept=on)${willActivate ? " — ACTIVATING now" : ""}: ${p.objective.trim().slice(0, 90)}`, "info");
         appendLedger(liveCtx.cwd, "draft_autoaccepted", { kind: isListDraft ? "list" : "goal", objective: p.objective.trim().slice(0, 200) });
       } else {
-        try {
-          confirmed = await liveCtx.ui.confirm(isListDraft ? "Confirm list item" : "Confirm goal", `${p.objective.trim()}${contractBlock}${activationNote}`);
-        } catch (err) {
-          // v0.28.1 (T1): a stale confirm is NOT "Draft rejected by the user".
-          if (isStaleApiError(err)) {
-            extensionApiStale = true;
-            appendLedger(liveCtx.cwd, "extension_api_stale", { where: "draft confirm" });
-            return { content: [{ type: "text", text: "The Confirm dialog could not render: pi invalidated this session's extension handle (session replacement). This is NOT a rejection — do NOT refine or re-propose. Tell the user to restart pi, then re-run the drafting flow." }], details: {} };
-          }
-          confirmed = false;
+        const c = await confirmDraft(liveCtx, isListDraft ? "Confirm list item" : "Confirm goal", `${p.objective.trim()}${contractBlock}${activationNote}`);
+        if (c === "stale") {
+          // v0.28.1 (T1): a stale dialog is NOT "Draft rejected by the user".
+          extensionApiStale = true;
+          appendLedger(liveCtx.cwd, "extension_api_stale", { where: "draft confirm" });
+          return { content: [{ type: "text", text: "The Confirm dialog could not render: pi invalidated this session's extension handle (session replacement). This is NOT a rejection — do NOT refine or re-propose. Tell the user to restart pi, then re-run the drafting flow." }], details: {} };
         }
+        confirmed = c === "yes";
       }
       if (!confirmed) {
         return {
@@ -2822,12 +2847,14 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         appendLedger(liveCtx.cwd, "draft_autoaccepted", { kind: "loop", target: p.target.trim().slice(0, 200), metricless });
       } else {
         try {
-          confirmed = await liveCtx.ui.confirm(
+          const c = await confirmDraft(
+          liveCtx,
           "Confirm loop",
           metricless
             ? `Target: ${p.target.trim()}\n\nMeasure: NONE — metricless spec loop. There is NO plateau stop: the loop ends only at ${max > 0 ? `${max} iterations` : "NO iteration cap"}${typeof p.time === "number" && p.time > 0 ? ` · Time bound: ${p.time}h` : ""}${typeof p.tokens === "number" && p.tokens > 0 ? ` · Token bound: ${p.tokens.toLocaleString()}` : ""} · /loop stop.${p.branch ? "\nbranch mode: scratch branch, every iteration committed (clean tree required)" : ""}\n\nEvery iteration must make ONE real, inspectable change — cosmetic churn is the known failure mode (doorknob-polishing). Start it?`
             : `Target: ${p.target.trim()}\n\nMeasure: ${p.measureCmd}\nTest-run output: ${rawOutput.slice(0, 200)}\nParsed number: ${parsed} (${p.direction === "min" ? "lower is better" : "higher is better"})\n\nPlateau stop: ${window} non-improving iterations · Cap: ${max > 0 ? `${max} iterations` : "none (unbounded)"}${typeof p.time === "number" && p.time > 0 ? ` · Time bound: ${p.time}h` : ""}${typeof p.tokens === "number" && p.tokens > 0 ? ` · Token bound: ${p.tokens.toLocaleString()}` : ""}${p.branch ? "\nbranch mode: scratch branch (clean tree required)" : ""}\n\nThe loop never completes — it runs until one of these bounds, plateau, or /loop stop. Start it?`,
           );
+          confirmed = c === "yes";
         } catch {
           confirmed = false;
         }
@@ -2907,9 +2934,15 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         }
       }
       let confirmed = false;
-      try {
-        confirmed = await liveCtx.ui.confirm(
-          "Confirm loop spec refinement",
+      if (loadSettings(liveCtx.cwd).autoAcceptDrafts === true) {
+        confirmed = true;
+        liveCtx.ui.notify("Loop spec refinement auto-accepted (/glla autoaccept=on).", "info");
+        appendLedger(liveCtx.cwd, "draft_autoaccepted", { kind: "loop-refine" });
+      } else {
+        try {
+          confirmed = (await confirmDraft(
+            liveCtx,
+            "Confirm loop spec refinement",
           `Rationale: ${p.rationale}\n\nTarget:\n  old: ${loop.target.slice(0, 120)}\n  new: ${newTarget.slice(0, 120)}\n\nMeasure:\n  old: ${loop.measureCmd}\n  new: ${newMeasure}${newMeasure !== loop.measureCmd ? `\n  test-run: ${testOutput.slice(0, 120)} → ${newBaseline}` : ""}\n\nThe loop keeps running against the refined spec (iteration ${loop.iteration} so far). Apply?`,
         );
       } catch {
@@ -3059,7 +3092,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         appendLedger(liveCtx.cwd, "draft_autoaccepted", { kind: "tasks", count: p.tasks.length });
       } else {
         try {
-          confirmed = await liveCtx.ui.confirm("Confirm task list", preview);
+          confirmed = (await confirmDraft(liveCtx, "Confirm task list", preview)) === "yes";
         } catch {
           confirmed = false;
         }
