@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.28.3] — 2026-07-28
+
+### Fixed — interrupted goals outrank the default restore HOLD (S2 completed)
+
+0.28.1's marker kept stale-interrupted goals ACTIVE, but the session_start
+restore gate still HOLDS active goals on a human session load when
+`autoresume` is unset (the v0.26.9 default) — so the auto-resume the marker
+promised only fired for `reload`/`fork` or `autoresume=on` rigs. An infra
+interrupt is not user intent: the restore gate now auto-resumes an
+interrupted goal whenever `autoresume` is unset (explicit
+`/glla autoresume=off` still holds), clears the marker, and names the
+recovery.
+
 ## [0.28.2] — 2026-07-28
 
 ### Fixed — release mechanics

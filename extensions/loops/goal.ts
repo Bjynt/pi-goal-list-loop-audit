@@ -4083,7 +4083,8 @@ export default function (pi: ExtensionAPI): void {
     // never auto-resumes. Once running, the chain auto-continues forever
     // unless a super-stuck brake (stall escalation / stale-api / latch)
     // stops it loudly.
-    const autoResume = shouldAutoResumeOnSessionStart(event?.reason, resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).autoResume);
+    const autoResumeSetting = resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).autoResume;
+    const autoResume = shouldAutoResumeOnSessionStart(event?.reason, autoResumeSetting);
     // v0.25.0 (contract item 6): aggressiveMode announces every auto-event.
     if (
       autoResume &&
@@ -4109,10 +4110,14 @@ export default function (pi: ExtensionAPI): void {
         );
       }
     } else if (state.goal && state.goal.status === "active" && state.goal.autoContinue) {
-      if (autoResume) {
+      // v0.28.3 (S2 completed): an infra interrupt outranks the DEFAULT
+      // hold — the goal never chose to stop; pi killed its handle. With
+      // autoresume unset, an interrupted goal auto-resumes even on a human
+      // session load; explicit /glla autoresume=off still holds.
+      const wasInterrupted = !!state.goal.interruptedAt;
+      if (autoResume || (wasInterrupted && autoResumeSetting !== false)) {
         // v0.28.1 (S2): clear the stale-handle interrupt marker — this IS
         // the auto-resume the marker promised.
-        const wasInterrupted = !!state.goal.interruptedAt;
         if (wasInterrupted) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
         ctx.ui.notify(
           `Resuming ${state.goal.policy === "list" ? "list item" : "goal"} [${state.goal.id}]: ${state.goal.objective.slice(0, 70)}${listQueue().length > 0 ? ` (+${listQueue().length} queued)` : ""}${wasInterrupted ? " — auto-resumed after the stale-handle interrupt" : ""}`,

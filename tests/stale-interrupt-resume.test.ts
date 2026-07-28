@@ -70,6 +70,11 @@ test("S2: restore gate clears the marker on auto-resume and names the recovery",
   assert.match(SRC, /auto-resumed after the stale-handle interrupt/);
 });
 
+test("S2 (0.28.3): the interrupt marker outranks the DEFAULT hold; explicit autoresume=off still holds", () => {
+  assert.match(SRC, /if \(autoResume \|\| \(wasInterrupted && autoResumeSetting !== false\)\) \{/);
+  assert.match(SRC, /const autoResumeSetting = resolveEffectiveAggressiveSettings\(loadSettings\(ctx\.cwd\)\)\.autoResume;/);
+});
+
 test("S1/S2: widget surfaces the interrupt on ACTIVE goals", () => {
   assert.match(DISPLAY, /if \(g\.interruptedAt\)/);
   assert.match(DISPLAY, /⚠ interrupted — stale handle · auto-resumes on pi restart/);
