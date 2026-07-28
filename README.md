@@ -209,7 +209,7 @@ No external watchdog plugin needed.
 /glla quotaretryminutes=60            # minutes before auto-retrying a quota-exhausted auditor
 /glla stuckmax=10                     # consecutive stuck interventions before a loop stops (default 5)
 /glla auditfeedbackchars=800         # cap the executor-visible auditor report (default 0 = full report)
-/glla autoaccept=on                  # drafts ACTIVATE without the Confirm dialog (unattended rigs)
+/glla autoaccept=on                  # drafts ACTIVATE without the Confirm dialo... (every draft dialog also offers "always auto-accept" inline)unattended rigs)
 /glla project tokenlimit=500         # rare per-project override
 ```
 

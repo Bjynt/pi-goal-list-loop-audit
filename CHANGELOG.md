@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.28.12] — 2026-07-28
+
+### Added — auto-accept escape hatch in every draft-class dialog
+
+The polis incident: a user sat through a 14-item batch Confirm having
+already reviewed every item during drafting, never knowing
+`/glla autoaccept=on` existed — the Yes/No dialog never mentioned it.
+
+- New `confirmDraft` helper: every draft-class dialog (goal / list item /
+  list batch / loop / loop spec refinement / task list) is now a 3-choice
+  select — **Yes / "Yes — and always auto-accept drafts (sets
+  autoAcceptDrafts for this project)" / No**. The ALWAYS choice persists
+  `autoAcceptDrafts: true` to PROJECT settings, notifies the undo path,
+  and accepts; future drafts skip the dialog entirely.
+- Loop spec refinement now ALSO honours `autoAcceptDrafts` (it confirmed
+  unconditionally before).
+- Stale-dialog handling preserved: the helper returns a tri-state
+  (`yes/no/stale`) so the 0.28.1 NOT-a-rejection guidance still fires; if
+  `select` is unavailable it falls back to the plain confirm.
+- Auto-accept reads now use `liveCtx.cwd` (the execution context's
+  project), not the closure ctx — same value in production, correct under
+  the mock harness.
+- Mock harness: `selectImpl`/`confirmImpl`/`inputImpl`/`customImpl` are
+  now nullable (tests can restore defaults with `= undefined`).
+- 3 new pins: ALWAYS persists + accepts (behavioral, on-disk settings
+  verified), later drafts skip the dialog (behavioral), all six draft
+  dialogs route through `confirmDraft` with the ALWAYS option (source).
+- 547 pass / 1 env-gated skip / 0 fail / 548 tests across 58 files.
+
 ## [0.28.11] — 2026-07-28
 
 ### Changed — user-facing message humanize pass (audit U6–U11, E7)
