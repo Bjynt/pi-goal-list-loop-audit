@@ -85,6 +85,9 @@ import {
   statusLabel,
   writeGoalMd,
   missingGllaTools,
+  runPersistStep,
+  isPersistenceDegraded,
+  lastPersistenceFailure,
 } from "../goal-loop-core.js";
 import {
   LENGTH_CONTINUE_MAX,

@@ -498,10 +498,60 @@ export function ensureDirs(cwd: string): void {
   fs.mkdirSync(archiveDir(cwd), { recursive: true });
 }
 
+// =================================================================
+// Persistence degradation (v0.28.6, audit E1)
+// =================================================================
+// A disk failure (ENOSPC, EACCES, a wedged mount) used to THROW out of
+// appendLedger/writeGoalMd mid-handler — killing the orchestrator turn and
+// silently diverging RAM from disk. Now every persistence step runs
+// through runPersistStep: failures are caught, the session-wide degraded
+// flag latches (the TUI shows it; the first failure notifies loudly), RAM
+// state stays authoritative, and the next SUCCESSFUL step auto-clears the
+// flag (self-healing — the "dirty" marker that write-then-mutate ordering
+// cannot otherwise provide).
+
+export interface PersistenceFailure {
+  what: string;
+  error: string;
+  at: string;
+}
+
+let persistenceDegraded = false;
+let lastFailure: PersistenceFailure | null = null;
+
+export function isPersistenceDegraded(): boolean {
+  return persistenceDegraded;
+}
+
+export function lastPersistenceFailure(): PersistenceFailure | null {
+  return lastFailure;
+}
+
+/** Run one persistence step. On failure: latch the degraded flag, remember
+ * the error, return undefined (NEVER throw into an orchestrator handler).
+ * On success: clear the flag — a landing write means the disk is back. */
+export function runPersistStep<T>(what: string, fn: () => T): T | undefined {
+  try {
+    const out = fn();
+    if (persistenceDegraded) {
+      persistenceDegraded = false;
+      lastFailure = null;
+    }
+    return out;
+  } catch (err) {
+    persistenceDegraded = true;
+    lastFailure = { what, error: err instanceof Error ? err.message : String(err), at: new Date().toISOString() };
+    return undefined;
+  }
+}
+
 export function readState(cwd: string): State {
   const file = ledgerPath(cwd);
-  if (!fs.existsSync(file)) return { ...DEFAULT_STATE };
-  const lines = fs.readFileSync(file, "utf-8").split("\n").filter(Boolean);
+  // v0.28.6 (E1): an unreadable ledger (EACCES, EIO) degrades loudly
+  // instead of throwing out of session_start.
+  const raw = runPersistStep("readState", () => (fs.existsSync(file) ? fs.readFileSync(file, "utf-8") : ""));
+  if (raw === undefined || raw === "") return { ...DEFAULT_STATE };
+  const lines = raw.split("\n").filter(Boolean);
   if (lines.length === 0) return { ...DEFAULT_STATE };
   let parsed: Partial<State> = {};
   for (const line of lines) {
@@ -509,7 +559,8 @@ export function readState(cwd: string): State {
       const evt = JSON.parse(line);
       if (evt.type === "state") parsed = { ...parsed, ...evt.value };
     } catch {
-      // skip malformed lines
+      // skip malformed lines — a truncated trailing line (mid-write kill)
+      // must not lose the rest of the state
     }
   }
   return {
@@ -520,16 +571,23 @@ export function readState(cwd: string): State {
 }
 
 export function appendLedger(cwd: string, type: string, value: unknown): void {
-  ensureDirs(cwd);
-  const line = JSON.stringify({ type, value, at: new Date().toISOString() });
-  fs.appendFileSync(ledgerPath(cwd), line + "\n");
+  // v0.28.6 (E1): guarded — a disk failure degrades loudly, never throws
+  // into an orchestrator handler.
+  runPersistStep("appendLedger", () => {
+    ensureDirs(cwd);
+    const line = JSON.stringify({ type, value, at: new Date().toISOString() });
+    fs.appendFileSync(ledgerPath(cwd), line + "\n");
+  });
 }
 
 export function writeGoalMd(cwd: string, goal: Goal): string {
-  ensureDirs(cwd);
   const file = goalMdPath(cwd, goal.id);
-  const md = renderGoalMarkdown(goal);
-  fs.writeFileSync(file, md);
+  runPersistStep("writeGoalMd", () => {
+    ensureDirs(cwd);
+    fs.writeFileSync(file, renderGoalMarkdown(goal));
+  });
+  // Return the intended path even on failure so activePath stays sane —
+  // the degraded flag carries the truth that the write did not land.
   return file;
 }
 

@@ -11,6 +11,7 @@
  */
 
 import type { Goal, State } from "./goal-loop-core.js";
+import { isPersistenceDegraded, lastPersistenceFailure } from "./goal-loop-core.js";
 import type { LoopState } from "./goal-loop-forever.js";
 
 // ---- formatters ----
@@ -185,6 +186,17 @@ function countTotal(g: Goal): number {
  * Returns undefined when nothing is worth showing.
  */
 export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, width?: number, extras?: { stalls?: number }): string[] | undefined {
+  const inner = buildWidgetLinesInner(state, audit, now, theme, width, extras);
+  // v0.28.6 (E1): a persistence failure outranks everything — first line,
+  // on every render, until a write lands again.
+  if (inner && isPersistenceDegraded()) {
+    const err = lastPersistenceFailure();
+    return [paint(theme, "error", `⚠ persistence degraded — .pi-glla writes failing (${truncate(err?.error ?? "disk error", 40)}); state in RAM`), ...inner];
+  }
+  return inner;
+}
+
+function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, width?: number, extras?: { stalls?: number }): string[] | undefined {
   if (state.loop?.active) return loopLines(state.loop, now, theme, width, extras);
   const g = state.goal;
   if (!g) return undefined;
