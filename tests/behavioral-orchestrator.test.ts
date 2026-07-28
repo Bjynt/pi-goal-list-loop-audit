@@ -206,3 +206,58 @@ test("T1b: stale /goal start → goal persisted to .pi-glla with interrupt marke
   assert.equal(g!.interruptedReason, "created in a stale session");
   assert.ok(ctx.ui.matching(".pi-glla").length >= 1, "honest 'state is safe' notify, not a 'starting now' lie");
 });
+
+// ── v0.28.12: auto-accept escape hatch in draft dialogs ────────────────
+// The polis incident: a 14-item batch Confirm gave no hint that /glla
+// autoaccept=on existed. Every draft-class dialog is now a 3-choice
+// select; the ALWAYS choice persists project autoAcceptDrafts and accepts.
+
+test("auto-accept escape hatch: ALWAYS choice persists project autoAcceptDrafts and accepts the draft", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "", ctx); // drafting mode
+  await pi.fire("message_start", { message: { role: "user" } }, ctx);
+  await pi.fire("message_start", { message: { role: "user" } }, ctx); // floor satisfied
+  let selectTitle = "";
+  ctx.ui.selectImpl = async (title: string) => {
+    selectTitle = title;
+    return "Yes — and always auto-accept drafts (sets autoAcceptDrafts for this project)";
+  };
+  const res = await pi.runTool("propose_goal_draft", { objective: "hatch objective — done when pinned", verificationContract: "pinned" }, ctx);
+  ctx.ui.selectImpl = undefined; // cleanup BEFORE asserts
+  assert.match(res.content[0]!.text, /Goal activated|activated|Begin work/i, "draft accepted, not rejected");
+  assert.match(selectTitle, /Confirm goal/, "the dialog rendered as the goal confirm");
+  const g = readState(cwd).goal as { status: string } | null;
+  assert.ok(g && g.status === "active", "goal created by the ALWAYS choice");
+  const onDisk = JSON.parse(fs.readFileSync(path.join(cwd, ".pi-glla", "settings.json"), "utf-8")) as { autoAcceptDrafts?: boolean };
+  assert.equal(onDisk.autoAcceptDrafts, true, "persisted to PROJECT settings (survives restart, project-scoped)");
+  assert.ok(ctx.ui.matching("auto-accept ON").length >= 1, "loud notify names the undo path");
+});
+
+test("escape hatch: a later draft skips the dialog entirely once autoAcceptDrafts landed", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ autoAcceptDrafts: true }));
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "", ctx);
+  await pi.fire("message_start", { message: { role: "user" } }, ctx);
+  let selectCalled = false;
+  ctx.ui.selectImpl = async () => { selectCalled = true; return "No"; };
+  const res = await pi.runTool("propose_goal_draft", { objective: "second objective — done when pinned", verificationContract: "pinned" }, ctx);
+  ctx.ui.selectImpl = undefined;
+  assert.equal(selectCalled, false, "no dialog once the setting is on");
+  assert.match(res.content[0]!.text, /activated|Begin work/i);
+  assert.ok(ctx.ui.matching("auto-accepted").length >= 1, "the auto-accept notify says why");
+});
+
+test("source pin: all five draft-class dialogs route through confirmDraft with the 3-choice ALWAYS option", () => {
+  const sites = ["Confirm list batch", "Confirm list item", "Confirm goal", "Confirm loop", "Confirm loop spec refinement", "Confirm task list"];
+  for (const s of sites) assert.ok(GOAL_SRC.includes(s), `dialog exists: ${s}`);
+  const callsites = GOAL_SRC.split("confirmDraft(").length - 1;
+  assert.ok(callsites >= 6, `helper + 5 call sites (got ${callsites})`);
+  assert.match(GOAL_SRC, /Yes — and always auto-accept drafts \(sets autoAcceptDrafts for this project\)/);
+  assert.match(GOAL_SRC, /saveSettings\("project", ctx\.cwd, \{ autoAcceptDrafts: true \}\)/);
+  assert.match(GOAL_SRC, /if \(isStaleApiError\(err\)\) return "stale";/, "stale fallback preserved inside the helper");
+});
