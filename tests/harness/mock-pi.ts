@@ -39,8 +39,12 @@ export class MockPi {
   commands = new Map<string, (args: string, ctx: unknown) => Promise<void>>();
   handlers = new Map<string, (...args: never[]) => Promise<void>>();
   sent: SentMessage[] = [];
-  /** When set, sendMessage throws it — the stale-handle injection knob. */
+  /** When set, sendMessage throws it SYNCHRONOUSLY — matching pi's real
+   * assertActive() semantics (stale = sync throw, not a rejected promise,
+   * so goal.ts's try/catch send paths observe it exactly as in prod). */
   sendMessageError: Error | null = null;
+  /** When set, getSessionName() throws it — trips the stale entry probe. */
+  sessionNameError: Error | null = null;
   sessionName = "mock-session";
   private activeTools: string[] = [];
   readonly api: ExtensionAPI;
@@ -57,11 +61,13 @@ export class MockPi {
       on(event: string, handler: (...args: never[]) => Promise<void>): void {
         self.handlers.set(event, handler);
       },
-      async sendMessage(message: SentMessage["message"], options: unknown): Promise<void> {
-        if (self.sendMessageError) throw self.sendMessageError;
+      sendMessage(message: SentMessage["message"], options: unknown): Promise<void> {
+        if (self.sendMessageError) throw self.sendMessageError; // sync throw, like pi's assertActive()
         self.sent.push({ message, options });
+        return Promise.resolve();
       },
       getSessionName(): string {
+        if (self.sessionNameError) throw self.sessionNameError;
         return self.sessionName;
       },
       getActiveTools(): string[] {
@@ -150,7 +156,7 @@ export class MockUi {
   }
 }
 
-export type MockCtx = ExtensionContext & { ui: MockUi };
+export type MockCtx = Omit<ExtensionContext, "ui"> & { ui: MockUi };
 
 export function makeMockCtx(cwd: string, opts: { sessionManager?: unknown; idle?: boolean; pending?: boolean } = {}): MockCtx {
   const ui = new MockUi();

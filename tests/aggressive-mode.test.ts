@@ -45,7 +45,9 @@ test("effective settings: OFF keeps base defaults; auditCap base is 5 (item 7)",
   assert.equal(BASE_AUDIT_CAP, 5);
   assert.equal(eff.stuckMaxInterventions, 5);
   assert.equal(eff.wedgeAlertMinutes, 30);
-  assert.equal(eff.autoResume, false);
+  // v0.28.7: OFF + unset = tri-state DEFAULT (undefined — hold on human
+  // loads, resume on reload/fork), NOT false (explicit never-resume).
+  assert.equal(eff.autoResume, undefined);
 });
 
 test("explicit per-key settings WIN over aggressiveMode (advisor semantics)", () => {

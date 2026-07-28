@@ -22,7 +22,7 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import activate from "../extensions/loops/goal.js";
+import activate, { __testOnlyResetStaleFlag } from "../extensions/loops/goal.js";
 import { readState } from "../extensions/goal-loop-core.js";
 import { MockPi, makeMockCtx, tmpCwd, seedState, seedGoal, seedLoop, staleError, tick, type MockCtx } from "./harness/mock-pi.js";
 
@@ -117,15 +117,30 @@ test("T5: mutating tools refuse a foreign (subagent) session ctx", async () => {
   const cwd = tmpCwd();
   await freshSession(cwd, "startup"); // owner = MAIN_SM (claimed in test 1)
   const foreign = makeMockCtx(cwd, { sessionManager: { name: "SUBAGENT-session-manager" } });
-  for (const tool of ["complete_goal", "pause_goal", "list_add", "propose_loop_draft"]) {
-    const res = await pi.runTool(tool, tool === "list_add" ? { items: ["x"] } : {}, foreign);
+  for (const tool of ["complete_goal", "pause_goal", "list_add", "propose_loop_draft", "complete_task"]) {
+    const res = await pi.runTool(tool, tool === "list_add" ? { items: ["x"] } : { id: "t-1" }, foreign);
     assert.match(res.content[0]!.text, /only the MAIN session owns/, `${tool} refuses foreign ctx`);
   }
 });
 
 test("T5: guard coverage pin — every mutating tool routes through foreignToolGuard", () => {
-  const guardSites = GOAL_SRC.match(/foreignToolGuard\(execCtx\)/g) ?? [];
-  assert.ok(guardSites.length >= 8, `expected >= 8 guard sites (one per mutating tool), found ${guardSites.length} — a new/renamed tool forgot the guard`);
+  // Per-tool block scan: a NEW or renamed mutating tool that forgets the
+  // guard fails this pin (the audit's T5 regression shape). list_status is
+  // read-only and explicitly exempt.
+  const MUTATING = ["complete_goal", "pause_goal", "complete_task", "update_task_status", "propose_goal_draft", "propose_loop_draft", "propose_loop_refine", "list_add", "list_activate", "propose_task_list"];
+  const blocks = GOAL_SRC.split("pi.registerTool(defineTool({").slice(1);
+  const byName = new Map<string, string>();
+  for (const block of blocks) {
+    const m = block.match(/name: "([a-z_]+)"/);
+    if (m) byName.set(m[1]!, block);
+  }
+  for (const tool of MUTATING) {
+    const block = byName.get(tool);
+    assert.ok(block, `tool ${tool} not found among registered tools`);
+    assert.ok(block!.includes("foreignToolGuard(execCtx)"), `mutating tool ${tool} is MISSING the foreign-session guard`);
+  }
+  assert.ok(byName.has("list_status"), "list_status still registered");
+  assert.ok(!byName.get("list_status")!.includes("foreignToolGuard"), "list_status is read-only — guard would be noise");
 });
 
 // ────────────────────────────────────────────────────────────────────
@@ -134,6 +149,7 @@ test("T5: guard coverage pin — every mutating tool routes through foreignToolG
 // ────────────────────────────────────────────────────────────────────
 
 test("T2: a stale send on agent_end continuation → goal ACTIVE + interrupt marker + loud notify", async () => {
+  __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   const ctx = await freshSession(cwd, "startup");
   await pi.command("goal", "start behavioral stale target — done when pinned", ctx);
@@ -143,6 +159,7 @@ test("T2: a stale send on agent_end continuation → goal ACTIVE + interrupt mar
   pi.sent.length = 0;
   await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "still working" }], stopReason: "end_turn" }] }, ctx);
   await tick();
+  pi.sendMessageError = null; // cleanup BEFORE asserts — a failed assert must not poison later tests
   const g = readState(cwd).goal as { status: string; interruptedAt?: string; interruptedReason?: string };
   assert.equal(g.status, "active", "stale terminal keeps the goal ACTIVE (auto-resumes on restart)");
   assert.ok(g.interruptedAt, "interrupt marker set");
@@ -150,7 +167,6 @@ test("T2: a stale send on agent_end continuation → goal ACTIVE + interrupt mar
   assert.ok(ctx.ui.matching("restart pi").length >= 1, "loud restart guidance");
   const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
   assert.ok(ledger.includes('"extension_api_stale"'), "stale terminal ledgered");
-  pi.sendMessageError = null; // sends no longer reach the API anyway (flag latched)
 });
 
 // ────────────────────────────────────────────────────────────────────
@@ -158,6 +174,7 @@ test("T2: a stale send on agent_end continuation → goal ACTIVE + interrupt mar
 // ────────────────────────────────────────────────────────────────────
 
 test("T1a: stale Confirm in propose_goal_draft → NOT-a-rejection guidance, no goal created", async () => {
+  __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   const ctx = await freshSession(cwd, "startup");
   await pi.command("goal", "", ctx); // no args → drafting mode (seed send is a no-op now: stale)
@@ -173,9 +190,12 @@ test("T1a: stale Confirm in propose_goal_draft → NOT-a-rejection guidance, no 
 });
 
 test("T1b: stale /goal start → goal persisted to .pi-glla with interrupt marker + honest notify", async () => {
+  __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   const ctx = await freshSession(cwd, "reload");
+  pi.sessionNameError = staleError(); // the entry probe trips on getSessionName
   await pi.command("goal", "start stale-created objective — done when pinned", ctx);
+  pi.sessionNameError = null; // cleanup BEFORE asserts
   const g = readState(cwd).goal as { status: string; interruptedAt?: string; interruptedReason?: string } | null;
   assert.ok(g, "goal persisted despite the doomed handle");
   assert.equal(g!.status, "active");

@@ -224,6 +224,13 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   notifyExternal(ctx, `glla: extension api stale — restart pi. (${where})`);
 }
 
+/** TEST-ONLY hook (tests/harness): the stale flag is process-terminal in
+ * production — only a pi restart clears it — so behavioral tests reset it
+ * between stale scenarios. Never called by production code. */
+export function __testOnlyResetStaleFlag(): void {
+  extensionApiStale = false;
+}
+
 /** v0.28.1 (S3): side-effect-free staleness probe — getSessionName()
  * routes through pi's assertActive() and throws the stale signature iff
  * pi invalidated this factory handle (session replacement). A positive
@@ -2528,6 +2535,8 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       id: Type.String({ description: "Task id to complete" }),
     }),
     async execute(_id, params) {
+      const foreign7 = foreignToolGuard(execCtx);
+      if (foreign7) return { content: [{ type: "text", text: foreign7 }], details: {} };
       const p = params as { id: string };
       if (!state.goal || !state.goal.taskList) {
         return { content: [{ type: "text", text: "No task list in this goal." }], details: {} };
@@ -2555,7 +2564,9 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       id: Type.String(),
       status: Type.Union([Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("complete")]),
     }),
-    async execute(_id, params) {
+    async execute(_id, params, _signal, _onUpdate, execCtx) {
+      const foreign8 = foreignToolGuard(execCtx);
+      if (foreign8) return { content: [{ type: "text", text: foreign8 }], details: {} };
       const p = params as { id: string; status: "pending" | "in_progress" | "complete" };
       if (!state.goal || !state.goal.taskList) {
         return { content: [{ type: "text", text: "No task list in this goal." }], details: {} };
@@ -3012,6 +3023,8 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       })),
     }),
     async execute(_id, params, _signal, _onUpdate, execCtx) {
+      const foreign9 = foreignToolGuard(execCtx);
+      if (foreign9) return { content: [{ type: "text", text: foreign9 }], details: {} };
       if (!state.goal || state.goal.status !== "active") {
         return { content: [{ type: "text", text: "No active goal to break down." }], details: {} };
       }

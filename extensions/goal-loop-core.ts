@@ -897,7 +897,12 @@ export interface EffectiveAggressiveSettings {
   stuckMaxInterventions: number;
   /** 0 = wedge alerts off. */
   wedgeAlertMinutes: number;
-  autoResume: boolean;
+  /** Tri-state: true = always auto-resume; false = never; undefined =
+   * DEFAULT (hold on human session loads, resume on reload/fork).
+   * v0.28.7: must stay tri-state here — coercing unset→false broke the
+   * restore gate's default branch (the 0.28.3 regression the behavioral
+   * harness caught). */
+  autoResume: boolean | undefined;
   aggressiveMode: boolean;
 }
 
@@ -918,7 +923,7 @@ export function resolveEffectiveAggressiveSettings(s: {
     stuckMaxInterventions:
       s.stuckMaxInterventions ?? (aggressiveMode ? AGGRESSIVE_STUCK_MAX_INTERVENTIONS : BASE_STUCK_MAX_INTERVENTIONS),
     wedgeAlertMinutes: s.wedgeAlertMinutes ?? (aggressiveMode ? 0 : 30),
-    autoResume: s.autoResume ?? aggressiveMode,
+    autoResume: s.autoResume ?? (aggressiveMode ? true : undefined),
   };
 }
 
