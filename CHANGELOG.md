@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.28.1] — 2026-07-28
+
+### Fixed — stale-interruption rework: auto-resume instead of stranded pause (audit S1–S4, E6, T1)
+
+From `audit/WRONG-OR-NOT-PREMIUM-2026-07-28.md` Stream 1. When pi invalidates
+the extension handle (session replacement — compaction triggers it in pi
+0.82.x), the old handling paused the goal; the session_start restore gate
+only auto-resumes ACTIVE goals, so every stale event stranded the goal until
+manual `/goal resume` ("starts paused and stuck"), and a resume attempted
+inside the still-stale session produced an active-in-ledger/dead-in-process
+zombie (S1).
+
+- **Goals STAY ACTIVE with an interrupt marker.** `goStaleTerminal` now sets
+  `interruptedAt`/`interruptedReason` on the goal instead of pausing it.
+  `sendContinuation`'s `extensionApiStale` guard already stops sends in the
+  doomed process, and the next fresh session auto-resumes the goal through
+  the existing restore gate — which now clears the marker and names the
+  recovery ("auto-resumed after the stale-handle interrupt"). Loops keep
+  the stop-on-stale behavior.
+- **Staleness probes at command entry (S3).** New side-effect-free probe
+  (`extensionApi.getSessionName()` routes through pi's `assertActive()`)
+  wired into `/goal` creation, `/goal resume`, `/list`, and
+  `propose_goal_draft`. Stale creation persists the goal with the marker
+  and says so ("created and safe in .pi-glla/ … restart pi and it
+  auto-resumes") instead of the "created — starting now" lie; stale resume
+  persists the resume for the next session and skips the misleading
+  "Resumed goal" notify and the doomed continuation send.
+- **Drafting-seed failure is loud (E6).** The `/goal` interview seed send
+  used to fail silently (Enter → nothing). It now notifies, and stale
+  handles get the restart guidance.
+- **Stale Confirm is not a rejection (T1).** Both the single-draft and
+  list-batch Confirm paths detect the stale signature and return "this is
+  NOT a rejection — restart pi" instead of "Draft rejected by the user".
+- **Widget surfaces the interrupt.** An interrupted-but-active goal renders
+  `⚠ interrupted — stale handle · auto-resumes on pi restart` instead of
+  looking healthy.
+- Schema + `Goal` type carry `interruptedAt`/`interruptedReason`.
+- Tests: new `tests/stale-interrupt-resume.test.ts` (10 pins);
+  `stale-api-terminal.test.ts` updated to pin the active+marker shape.
+
 ## [0.27.9] — 2026-07-27
 
 ### Changed — postaudit modes re-shaped to literal 4-mode contract

@@ -11,7 +11,8 @@
 // the user created never auto-started (continuation send threw); the
 // heartbeat retried into a void. Retrying a dead handle is the hegemon
 // failure shape — the fix detects the stale signature and goes
-// terminally loud (pause/stop + restart guidance) on FIRST detection.
+// terminally loud on FIRST detection (v0.28.1: goals STAY ACTIVE with an
+// interrupt marker so the next fresh session auto-resumes; loops stop).
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
@@ -40,12 +41,16 @@ test("both autonomous send paths detect staleness and go terminal", () => {
   assert.ok(loop > 0, "sendLoopTurn detects");
 });
 
-test("terminal path: ledger event, single-fire, goal pause / loop stop with restart guidance", () => {
+test("terminal path: ledger event, single-fire, goal ACTIVE+marker / loop stop with restart guidance", () => {
   assert.match(SRC, /let extensionApiStale = false;/);
   assert.match(SRC, /if \(extensionApiStale\) return; \/\/ already terminal/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "extension_api_stale", \{ where, kind:/);
-  assert.match(SRC, /pauseReason: "extension api stale \(pi session replacement\)"/);
-  assert.match(SRC, /Restart pi \(or reload extensions\), then \/goal resume \/ \/loop start\./);
+  // v0.28.1 (S1/S2): the stale goal branch keeps status ACTIVE and sets the
+  // interrupt marker — pausing here stranded goals (restore only
+  // auto-resumes active goals).
+  assert.match(SRC, /updateGoal\(\{ interruptedAt: nowIso\(\), interruptedReason: `extension api stale \(\$\{where\}\)` \}, ctx\)/);
+  assert.ok(!SRC.includes('pauseReason: "extension api stale (pi session replacement)"'), "old pause shape gone");
+  assert.match(SRC, /Restart pi \(or reload extensions\) — an active goal auto-resumes on the fresh session; loops need \/loop start\./);
   // guidance names the pi-side cause:
   assert.match(SRC, /session replacement — compaction triggers it in pi 0\.82\.x/);
 });

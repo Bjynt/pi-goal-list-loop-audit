@@ -875,8 +875,18 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
     draftingUserReplies = 0;
     draftingBlockedProposals = 0;
     draftingSeedInFlight = true; // our injected prompt also arrives as a user message — don't count it
-  } catch {
+  } catch (err) {
     draftingTarget = null;
+    // v0.28.1 (E6): the seed send used to fail SILENTLY — the user pressed
+    // Enter on /goal and nothing happened. Now: loud, and stale handles get
+    // the honest restart guidance.
+    if (isStaleApiError(err)) {
+      extensionApiStale = true;
+      appendLedger(ctx.cwd, "extension_api_stale", { where: "startDrafting seed" });
+      ctx.ui.notify("glla: can't start the drafting interview — this session's extension handle is stale (pi session replacement). Restart pi and re-run the command.", "warning");
+    } else {
+      ctx.ui.notify(`glla: couldn't start the drafting interview (${err instanceof Error ? err.message : String(err)}) — try again.`, "warning");
+    }
   }
 }
 
@@ -913,6 +923,10 @@ async function cmdGoal(args: string, ctx: ExtensionContext): Promise<void> {
 // =================================================================
 
 async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): Promise<void> {
+  // v0.28.1 (S3): probe at the creation entry — no "created — starting now"
+  // lie in a doomed process. (The draft path's seed send has its own loud
+  // stale handling — E6.)
+  const staleEntry = warnIfStaleAtEntry(ctx, "/goal");
   let raw = args.trim();
   // Users naturally quote the objective ("/goal \"do X\""); strip one layer of
   // surrounding matching quotes so they don't leak into the goal text.
@@ -942,6 +956,13 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
   iterationCounter = 0;
   consecutiveErrorIterations = 0;
   consecutiveNoToolIterations = 0;
+  if (staleEntry) {
+    // v0.28.1 (S3): the goal is persisted — mark the interrupt so the next
+    // fresh session auto-resumes, and tell the truth instead of "starting now".
+    updateGoal({ interruptedAt: nowIso(), interruptedReason: "created in a stale session" }, ctx);
+    ctx.ui.notify(`Goal ${goal.id} created and safe in .pi-glla/ — this stale process can't send continuations. Restart pi and it auto-resumes.`, "warning");
+    return;
+  }
   ctx.ui.notify(`Goal ${goal.id} created — starting now. Auditor will verify on completion.`, "info");
   scheduleContinuation(ctx, true);
 }
@@ -982,6 +1003,12 @@ async function cmdPause(ctx: ExtensionContext): Promise<void> {
 
 async function cmdResume(ctx: ExtensionContext): Promise<void> {
   if (!state.goal || state.goal.status !== "paused") return;
+  // v0.28.1 (S1/S3): resuming in a stale session used to flip status to
+  // active, claim "Resumed goal", then re-pause on the stale send failure
+  // (or zombie — S1). Now: persist the resume (the next fresh session
+  // auto-resumes ACTIVE goals), mark the interrupt, tell the truth, and
+  // skip the send that can never land.
+  const staleEntry = warnIfStaleAtEntry(ctx, "/goal resume");
   // v0.12.0: refresh the token cap from CURRENT settings on resume — goals
   // snapshot the cap at creation, so a goal paused under an old default
   // (e.g. 10M) would re-pause instantly even after the default changed.
@@ -989,7 +1016,8 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
   const usage = state.goal.usage
     ? { tokensUsed: state.goal.usage.tokensUsed, tokensLimit: freshLimit }
     : undefined;
-  updateGoal({ status: "active", pauseReason: undefined, pauseSuggestedAction: undefined, ...(usage ? { usage } : {}) }, ctx);
+  updateGoal({ status: "active", pauseReason: undefined, pauseSuggestedAction: undefined, ...(staleEntry ? { interruptedAt: nowIso(), interruptedReason: "resumed in a stale session" } : {}), ...(usage ? { usage } : {}) }, ctx);
+  if (staleEntry) return;
   // v0.22.5: say what was resumed — with a non-empty list this also resumes
   // the queue (the active goal IS the list's head item).
   // v0.22.7: name WHAT was resumed — list items resume through /list.
@@ -1144,6 +1172,8 @@ async function bulkAddFromFile(ctx: ExtensionContext, abs: string): Promise<void
 }
 
 async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
+  // v0.28.1 (S3): honest staleness warning; read-only subcommands still work.
+  warnIfStaleAtEntry(ctx, "/list");
   const parts = args.trim().split(/\s+/);
   const sub = (parts[0] ?? "").toLowerCase();
   const rest = args.trim().slice(sub.length).trim();
@@ -2440,6 +2470,8 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         };
       }
       const liveCtx = (execCtx as ExtensionContext | undefined) ?? ctx;
+      // v0.28.1 (S3): honest staleness warning before any Confirm attempt.
+      warnIfStaleAtEntry(liveCtx, "goal drafting");
       // Multi-item list draft: one Confirm for the whole batch.
       if (p.items && p.items.length > 0) {
         // v0.23.7: show ALL items in full — the user approves the whole
@@ -2457,7 +2489,14 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
               "Confirm list batch",
               `${p.items.length} items:\n${preview}${batchActivates ? "\n\n(List is empty — confirming ACTIVATES item 1 immediately as the active goal.)" : ""}`,
             );
-          } catch {
+          } catch (err) {
+            // v0.28.1 (T1): a stale confirm is NOT a rejection — nothing was
+            // refused; the dialog simply can't render in a doomed process.
+            if (isStaleApiError(err)) {
+              extensionApiStale = true;
+              appendLedger(liveCtx.cwd, "extension_api_stale", { where: "batch confirm" });
+              return { content: [{ type: "text", text: "The Confirm dialog could not render: pi invalidated this session's extension handle (session replacement). This is NOT a rejection — do NOT refine or re-propose. Tell the user to restart pi, then re-run the drafting flow." }], details: {} };
+            }
             batchConfirmed = false;
           }
         }
@@ -2498,7 +2537,13 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       } else {
         try {
           confirmed = await liveCtx.ui.confirm(isListDraft ? "Confirm list item" : "Confirm goal", `${p.objective.trim()}${contractBlock}${activationNote}`);
-        } catch {
+        } catch (err) {
+          // v0.28.1 (T1): a stale confirm is NOT "Draft rejected by the user".
+          if (isStaleApiError(err)) {
+            extensionApiStale = true;
+            appendLedger(liveCtx.cwd, "extension_api_stale", { where: "draft confirm" });
+            return { content: [{ type: "text", text: "The Confirm dialog could not render: pi invalidated this session's extension handle (session replacement). This is NOT a rejection — do NOT refine or re-propose. Tell the user to restart pi, then re-run the drafting flow." }], details: {} };
+          }
           confirmed = false;
         }
       }
@@ -4065,8 +4110,12 @@ export default function (pi: ExtensionAPI): void {
       }
     } else if (state.goal && state.goal.status === "active" && state.goal.autoContinue) {
       if (autoResume) {
+        // v0.28.1 (S2): clear the stale-handle interrupt marker — this IS
+        // the auto-resume the marker promised.
+        const wasInterrupted = !!state.goal.interruptedAt;
+        if (wasInterrupted) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
         ctx.ui.notify(
-          `Resuming ${state.goal.policy === "list" ? "list item" : "goal"} [${state.goal.id}]: ${state.goal.objective.slice(0, 70)}${listQueue().length > 0 ? ` (+${listQueue().length} queued)` : ""}`,
+          `Resuming ${state.goal.policy === "list" ? "list item" : "goal"} [${state.goal.id}]: ${state.goal.objective.slice(0, 70)}${listQueue().length > 0 ? ` (+${listQueue().length} queued)` : ""}${wasInterrupted ? " — auto-resumed after the stale-handle interrupt" : ""}`,
           "info",
         );
         scheduleContinuation(ctx, true);
