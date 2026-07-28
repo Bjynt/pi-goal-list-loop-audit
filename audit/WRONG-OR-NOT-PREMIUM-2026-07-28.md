@@ -96,7 +96,83 @@ PENDING
 
 ## Stream 3 — UX / premium polish (subagent)
 
-PENDING
+Clean categories (keep): pause reasons/suggested actions consistently name a
+concrete next command; settings table, widget pause card, drafting hints are
+genuinely premium; prompts otherwise in sync with v0.28.0. LIST-PHILOSOPHY.md
+spelling is correct.
+
+### U1 [HIGH] — Fix /review help advertising modes the code rejects
+
+`extensions/loops/goal.ts:3800` — registered description says `/review
+<goal-id> [auto|report|default]` but `cmdReview` (`:3143`) only accepts
+`off|on|auto|aggressive`. Following built-in help → `Unknown mode "report"`.
+
+### U2 [HIGH] — Rewrite INSTALL.md's dead reviewer-mode table
+
+INSTALL.md "Reviewer (v0.26.0)" lists `default | auto | report`; `report` was
+dropped and `default`→`on` in 0.27.9. Rewrite around off/on/auto/aggressive.
+
+### U3 [MED] — Update README's command surface
+
+README.md:32 — "Four top-level commands, that's all" is false (`/review`
+exists); config block lacks `/glla stats|audits|tooloverride|reviewer|
+postaudit`, `/loop finish`, `/list resume`, `/list depth`.
+
+### U4 [MED] — Fix README quick-start fence swallowing prose
+
+README.md:32-70 — the code fence swallows "(Or just say it…)", the bold
+"Order is the default" paragraph and a duplicated /list batch — visible `**`
+and backticks on GitHub.
+
+### U5 [MED] — Reorder CHANGELOG newest-first
+
+CHANGELOG.md — the 0.28.0 entry (a headline feature) sits at the file END
+(~line 2326); the top reads 0.27.9.
+
+### U6 [MED] — Make tool-override confirmations speak outcomes
+
+`goal.ts:3210-3250` — `toolOverrides.allow += bash` echoes internal paths.
+Premium: "bash is now always visible to the agent (project override saved)."
+
+### U7 [MED] — Humanize reviewer suppression reasons
+
+`extensions/reviewer.ts:225-245`, surfaced at `goal.ts:739` — `Reviewer
+suppressed: doNotFireOn: goal-complete` leaks raw config keys. Premium:
+"Suppressed: this event type is excluded in /glla postaudit → fire-on."
+
+### U8 [MED] — Gate the dracon-sync section in the continuation prompt
+
+`prompts/goal-loop-continuation.md:93-106` — "DETACHED COMMIT DETECTION"
+tells EVERY user's model to run `dracon-sync pause` and grep for a daemon
+that exists only on the maintainer's rig; burns tokens and misleads elsewhere.
+Published-package bug. Gate it or generalize it.
+
+### U9 [MED] — Lead goal creation with the objective, not the ID
+
+`goal.ts:912` — `Goal 20260728143012-a1b2c3 created — starting now.` leads
+with the opaque ID and never echoes the objective. The plugin's own
+convention elsewhere (cmdResume `:965`) is objective-first, ID trailing —
+and the rig's naming discipline (pi-discipline/naming.md) demands it.
+
+### U10 [LOW] — Fix the cryptic "list N" suffix for goal policy
+
+`goal-loop-display.ts:147` — `glla: goal ● 3m 19s · list 29`; v0.24.7 fixed
+this to "29 queued" for list policy but left "list 29" for goal policy.
+
+### U11 [LOW] — Pick one name for reviewer/postaudit/review
+
+`goal.ts:3264` menu title "Reviewer", settings row "Postaudit config…",
+command /review. Three names, one thing.
+
+### U12 [LOW] — Refresh stale doc numbers
+
+README.md:311 "168 unit tests across 12 files" (actual: 496/53); INSTALL.md
+title still "Install & try v0.1.0".
+
+### U13 [LOW] — Delete repo-root litter files `then` and `pass`
+
+Untracked 194B/106B files from botched shell redirects. Not in the npm
+tarball, not (yet) committed — but the auto-commit daemon may pick them up.
 
 ---
 
