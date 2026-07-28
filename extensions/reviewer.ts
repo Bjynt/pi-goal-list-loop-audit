@@ -311,16 +311,18 @@ export function runReviewer(
   if (findings.length === 0 && config.cascade.includes("fire-audit-on-clean")) {
     const auditObjective = `Post-completion regression scan after ${source.goalId} (${config.auditScope})`;
     if (aggressive) {
-      deps.proposeGoal(auditObjective, "aggressive postaudit: clean completion — relaunching the regression scan as /goal");
-      proposed++;
+      if (deps.proposeGoal(auditObjective, "aggressive postaudit: clean completion — relaunching the regression scan as /goal")) {
+        proposed++;
+      }
       cascadeStep = "aggressive-relaunch";
     } else if (auto) {
       deps.enqueueListItems([auditObjective]);
       enqueued++;
       cascadeStep = "fire-audit-on-clean";
     } else {
-      deps.proposeGoal(auditObjective, "reviewer: completion looks clean — firing the audit step");
-      proposed++;
+      if (deps.proposeGoal(auditObjective, "reviewer: completion looks clean — firing the audit step")) {
+        proposed++;
+      }
       cascadeStep = "fire-audit-on-clean";
     }
   }

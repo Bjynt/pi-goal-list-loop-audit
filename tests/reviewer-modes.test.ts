@@ -58,6 +58,21 @@ test("E4: a failed proposal send is NOT counted or reported (phantom-reviewer ho
   assert.equal(calls.proposed.length, 0, "the false-returning mock recorded no successful delivery");
 });
 
+test("E4: clean-completion branch also gates on delivery — default AND aggressive modes", () => {
+  // The 0.28.8 disapproval: fire-audit-on-clean incremented proposed++
+  // unconditionally in two of four branches. Both must gate on the boolean.
+  for (const mode of ["on", "aggressive"] as const) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-e4-clean-"));
+    const { deps } = mkDeps(dir, {
+      sources: [{ name: "archive", text: "All done. Tests pass." }], // clean — no findings
+      proposeGoal: () => false,
+    });
+    const out = runReviewer({ ...resolveReviewerConfig(), mode }, GOAL_SRC, deps);
+    assert.equal(out.fired, true);
+    assert.equal(out.proposed, 0, `${mode} mode: failed clean-completion proposal never counts`);
+  }
+});
+
 test("auto mode: architectural findings enqueue to /list — proposeGoal NEVER called", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-mode-"));
   const { deps, calls } = mkDeps(dir, {

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.28.9] — 2026-07-28
+
+### Fixed — E4 completion (auditor-caught)
+
+The 0.28.8 E4 fix gated two of the four `proposeGoal` call sites; the
+isolated auditor found the **fire-audit-on-clean** branch still incrementing
+`proposed` unconditionally in aggressive and default modes. Both now gate on
+the boolean return. New pin: clean completion + failing send yields
+`proposed === 0` in BOTH modes (tests/reviewer-modes.test.ts). 544 pass /
+0 fail / 545 tests.
+
 ## [0.28.8] — 2026-07-28
 
 ### Fixed — phantom reviewer proposals + measure-broken vs plateau (audit E4, E5)
