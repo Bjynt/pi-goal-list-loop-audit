@@ -43,6 +43,11 @@ export interface LoopState {
   maxIterations: number;
   plateauWindow: number;
   stallCount: number;
+  /** v0.28.8 (E5): consecutive iterations where the measure printed NO
+   * number. Tracked separately from stallCount — plateau judges movement
+   * (a real number that didn't improve); a broken measure says nothing
+   * about movement and must stop the loop with its own loud reason. */
+  consecutiveNullMeasures?: number;
   bestValue: number | null;
   lastValue: number | null;
   active: boolean;
@@ -172,14 +177,20 @@ export type LoopTickOutcome =
  */
 export function applyMeasurement(loop: LoopState, value: number | null, at: string): LoopTickOutcome {
   loop.iteration++;
+  // improved is judged BEFORE bestValue moves (post-mutation it would read false).
   const improved = value !== null && loop.direction !== undefined && isImprovement(loop.direction, value, loop.bestValue);
   if (value === null) {
-    loop.stallCount++;
-  } else if (improved) {
-    loop.bestValue = value;
-    loop.stallCount = 0;
+    // E5: a null measure is NOT a stall — it carries no information about
+    // improvement. Plateau stays reserved for real non-improving numbers.
+    loop.consecutiveNullMeasures = (loop.consecutiveNullMeasures ?? 0) + 1;
   } else {
-    loop.stallCount++;
+    loop.consecutiveNullMeasures = 0;
+    if (improved) {
+      loop.bestValue = value;
+      loop.stallCount = 0;
+    } else {
+      loop.stallCount++;
+    }
   }
   loop.lastValue = value;
   loop.history.push({ iteration: loop.iteration, value, improved, at });
@@ -196,6 +207,14 @@ export function applyMeasurement(loop: LoopState, value: number | null, at: stri
   if (loop.tokenBudget !== undefined && (loop.tokensUsed ?? 0) >= loop.tokenBudget) {
     loop.active = false;
     loop.stopReason = `token budget exhausted (${(loop.tokensUsed ?? 0).toLocaleString()} >= ${loop.tokenBudget.toLocaleString()}); best: ${loop.bestValue ?? "n/a"}`;
+    return { kind: "stop", reason: loop.stopReason };
+  }
+  // E5: a broken measure command gets its OWN loud stop — never the
+  // misleading "plateau — no improvement" (there was nothing to improve
+  // against; the metric itself is dead).
+  if ((loop.consecutiveNullMeasures ?? 0) >= loop.plateauWindow) {
+    loop.active = false;
+    loop.stopReason = `measure command broken — ${loop.consecutiveNullMeasures} consecutive iterations printed no number (cmd: \`${loop.measureCmd ?? "?"}\`). Fix the measure command, or /loop stop.`;
     return { kind: "stop", reason: loop.stopReason };
   }
   if (loop.stallCount >= loop.plateauWindow) {

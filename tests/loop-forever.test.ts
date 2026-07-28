@@ -107,12 +107,42 @@ test("applyMeasurement: non-improvement increments stall", () => {
   assert.equal(loop.stallCount, 1);
 });
 
-test("applyMeasurement: broken measure (null) is a stall", () => {
+test("applyMeasurement: broken measure (null) is NOT a stall — tracked separately (E5)", () => {
   const loop = freshLoop({ bestValue: 5, iteration: 1 });
   const out = applyMeasurement(loop, null, "t1");
   assert.equal(out.kind, "continue");
-  assert.equal(loop.stallCount, 1);
+  assert.equal(loop.stallCount, 0, "a null says nothing about improvement — plateau stays reserved for real numbers");
+  assert.equal(loop.consecutiveNullMeasures, 1);
   assert.equal(loop.lastValue, null);
+});
+
+test("applyMeasurement: a numeric value resets the null streak (E5)", () => {
+  const loop = freshLoop({ bestValue: 5, iteration: 1, consecutiveNullMeasures: 2 });
+  applyMeasurement(loop, 3, "t1"); // improves (min direction)
+  assert.equal(loop.consecutiveNullMeasures, 0);
+});
+
+test("applyMeasurement: plateauWindow consecutive nulls stop with 'measure command broken', NOT plateau (E5)", () => {
+  const loop = freshLoop({ bestValue: 5, iteration: 1, plateauWindow: 3 });
+  applyMeasurement(loop, null, "t1");
+  applyMeasurement(loop, null, "t2");
+  const out = applyMeasurement(loop, null, "t3");
+  assert.equal(out.kind, "stop");
+  assert.equal(loop.active, false);
+  assert.match(loop.stopReason!, /measure command broken/);
+  assert.match(loop.stopReason!, /3 consecutive iterations printed no number/);
+  assert.doesNotMatch(loop.stopReason!, /plateau/);
+});
+
+test("applyMeasurement: an interleaved null does not move the real stall count (E5)", () => {
+  const loop = freshLoop({ bestValue: 5, iteration: 1, stallCount: 1, plateauWindow: 3 });
+  applyMeasurement(loop, null, "t1"); // null — stall stays 1
+  assert.equal(loop.stallCount, 1);
+  applyMeasurement(loop, 9, "t2"); // real non-improvement — stall 2
+  assert.equal(loop.stallCount, 2);
+  const out = applyMeasurement(loop, 8, "t3"); // real non-improvement — stall 3 → plateau
+  assert.equal(out.kind, "stop");
+  assert.match(loop.stopReason!, /plateau/);
 });
 
 test("applyMeasurement: plateau stops the loop", () => {

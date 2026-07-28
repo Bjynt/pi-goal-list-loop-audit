@@ -71,7 +71,7 @@ test("full runReviewer over 0.26.2-style source text produces zero architectural
     ledgerEntries: [],
     sources: [{ name: "archive", text: LIVE_FALSE_POSITIVES.join("\n") }],
     enqueueListItems: (objs) => calls.enqueued.push(objs),
-    proposeGoal: (obj) => calls.proposed.push(obj),
+    proposeGoal: (obj) => { calls.proposed.push(obj); return true; },
     notify: () => {},
     ledger: () => {},
   };

@@ -31,7 +31,7 @@ function mkDeps(cwd: string, over: Partial<ReviewerDeps> = {}) {
     ledgerEntries: [],
     sources: [],
     enqueueListItems: (objs) => calls.enqueued.push(objs),
-    proposeGoal: (obj) => calls.proposed.push(obj),
+    proposeGoal: (obj) => { calls.proposed.push(obj); return true; },
     notify: (m) => calls.notified.push(m),
     ledger: (t) => calls.ledgered.push(t),
     ...over,

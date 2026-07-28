@@ -879,8 +879,16 @@ function fireReviewer(
             `[REVIEWER FOLLOW-UP — ${reason}. Propose this as a /goal via propose_goal_draft (the user Confirms or rejects): ${objective}]`,
             { deliverAs: ctx.isIdle() ? "followUp" : "steer" },
           );
-        } catch {
-          /* proposal best-effort */
+          return true;
+        } catch (err) {
+          // v0.28.8 (E4): the phantom-reviewer hole — a swallowed throw used
+          // to still count as "proposed" in the report + notify. Now the
+          // failure is LOUD and the proposal goes uncounted.
+          ctx.ui.notify(
+            `Reviewer /goal proposal NOT delivered: ${err instanceof Error ? err.message : String(err)} — the follow-up never reached the session. Restart pi if the session was just replaced.`,
+            "warning",
+          );
+          return false;
         }
       },
       notify: (message, level) => ctx.ui.notify(message, level),

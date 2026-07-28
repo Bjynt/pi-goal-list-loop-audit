@@ -197,7 +197,11 @@ export interface ReviewerDeps {
   /** Source texts for finding extraction (archive md, audit reports). */
   sources: Array<{ name: string; text: string }>;
   enqueueListItems: (objectives: string[]) => void;
-  proposeGoal: (objective: string, reason: string) => void;
+  /** Deliver a /goal proposal message to the session. Returns true when the
+   * message was actually sent; false when the send failed (the v0.28.8 E4
+   * contract — a failed send must NOT count as `proposed`, else the user is
+   * told about phantom proposals that never arrived). */
+  proposeGoal: (objective: string, reason: string) => boolean;
   notify: (message: string, level: "info" | "warning") => void;
   ledger: (type: string, value: Record<string, unknown>) => void;
 }
@@ -274,23 +278,29 @@ export function runReviewer(
       // v0.27.5 aggressive: also propose the FIRST architectural finding
       // as a relaunch so the queue gets burned through even when the
       // unattended rig can't Confirm.
-      deps.proposeGoal(
-        architectural[0]!.text,
-        `aggressive postaudit: relaunching as /goal without Confirm (${architectural.length} architectural findings total)`,
-      );
+      if (
+        deps.proposeGoal(
+          architectural[0]!.text,
+          `aggressive postaudit: relaunching as /goal without Confirm (${architectural.length} architectural findings total)`,
+        )
+      ) {
+        proposed += 1;
+      }
       enqueued += architectural.length;
-      proposed += 1;
       cascadeStep = "aggressive-relaunch";
     } else if (auto) {
       deps.enqueueListItems(architectural.map((f) => f.text));
       enqueued += architectural.length;
       cascadeStep = convertStep;
     } else {
-      deps.proposeGoal(
-        architectural.map((f) => f.text).join("; "),
-        `reviewer found ${architectural.length} architectural-class finding(s) — needs your Confirm`,
-      );
-      proposed += architectural.length;
+      if (
+        deps.proposeGoal(
+          architectural.map((f) => f.text).join("; "),
+          `reviewer found ${architectural.length} architectural-class finding(s) — needs your Confirm`,
+        )
+      ) {
+        proposed += architectural.length;
+      }
       cascadeStep = "propose-goal";
     }
   }
