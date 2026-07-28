@@ -39,6 +39,7 @@ export class MockPi {
   commands = new Map<string, (args: string, ctx: unknown) => Promise<void>>();
   handlers = new Map<string, (...args: never[]) => Promise<void>>();
   sent: SentMessage[] = [];
+  userMessages: Array<{ message: string; options: unknown }> = [];
   /** When set, sendMessage throws it SYNCHRONOUSLY — matching pi's real
    * assertActive() semantics (stale = sync throw, not a rejected promise,
    * so goal.ts's try/catch send paths observe it exactly as in prod). */
@@ -65,6 +66,13 @@ export class MockPi {
         if (self.sendMessageError) throw self.sendMessageError; // sync throw, like pi's assertActive()
         self.sent.push({ message, options });
         return Promise.resolve();
+      },
+      sendUserMessage(message: string, options: unknown): void {
+        if (self.sendMessageError) throw self.sendMessageError;
+        self.userMessages.push({ message, options });
+      },
+      getThinkingLevel(): string {
+        return "high";
       },
       getSessionName(): string {
         if (self.sessionNameError) throw self.sessionNameError;

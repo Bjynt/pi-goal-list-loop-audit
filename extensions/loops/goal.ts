@@ -2530,11 +2530,10 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
   pi.registerTool(defineTool({
     name: "complete_task",
     label: "Complete task",
-    description: "Mark a task in the active goal's task list as complete (does not stop the turn).",
-    parameters: Type.Object({
+    description: "Mark a task in the active goal's task list as complete (does not stop the turn).",    parameters: Type.Object({
       id: Type.String({ description: "Task id to complete" }),
     }),
-    async execute(_id, params) {
+    async execute(_id, params, _signal, _onUpdate, execCtx) {
       const foreign7 = foreignToolGuard(execCtx);
       if (foreign7) return { content: [{ type: "text", text: foreign7 }], details: {} };
       const p = params as { id: string };
