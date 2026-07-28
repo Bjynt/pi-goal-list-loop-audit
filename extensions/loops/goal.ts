@@ -1464,6 +1464,11 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
       ctx.ui.notify(`Usage: /list next [1-${listQueue().length || 1}]`, "info");
       return;
     }
+    // v0.28.14: one-active-thing — /list next must not jump a live loop.
+    if (isLoopActive()) {
+      ctx.ui.notify("A loop is active — /loop stop it before activating a list item.", "warning");
+      return;
+    }
     if (state.goal && state.goal.status === "active") {
       archiveCurrentGoal(ctx, "aborted", `skipped via /list next ${n > 1 ? n : ""}`.trim());
     }
@@ -1965,6 +1970,12 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     }
     const stored = state.loop;
     if (stored && !stored.active && stored.stopReason === HELD_ON_RESTORE) {
+      // v0.28.14: one-active-thing — a held loop must not resume over an
+      // active goal/list-item (this was the last unguarded stacking path).
+      if (state.goal && state.goal.status === "active") {
+        ctx.ui.notify("A goal is active — the held loop stays held. /goal pause or /goal cancel it first, then /loop to resume.", "warning");
+        return;
+      }
       state.loop = { ...stored, active: true, stopReason: undefined };
       persistState(ctx);
       scheduleLoopTick(ctx);
@@ -2745,6 +2756,10 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       const confirmedTarget = draftingTarget;
       draftingTarget = null;
       const full = p.objective.trim() + (normContract ? `\nDone when:\n${normContract}` : "");
+      // v0.28.14: one-active-thing — no goal/list activation over a live loop.
+      if (isLoopActive()) {
+        return { content: [{ type: "text", text: "A loop is active — one active thing at a time. The user must /loop stop it before a goal or list item can activate; do not re-propose until then." }], details: {} };
+      }
       // List drafting: the confirmed contract goes into the QUEUE, not active.
       if (confirmedTarget === "list") {
         const extracted = extractVerificationContract(full);
@@ -2810,6 +2825,12 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         return { content: [{ type: "text", text: 'direction=min|max is required for a measured loop (omit measureCmd or pass "none" for a metricless spec loop).' }], details: {} };
       }
       const liveCtx = (execCtx as ExtensionContext | undefined) ?? ctx;
+      // v0.28.14: one-active-thing — refuse to even test-run a loop measure
+      // while a goal/list-item is active (the /loop start COMMAND guards
+      // this; the tool path used to skip it and stack a loop over a goal).
+      if (state.goal && state.goal.status === "active") {
+        return { content: [{ type: "text", text: "A goal is active — one active thing at a time. The user must /goal pause or /goal cancel it before a loop can start; do not re-propose until then." }], details: {} };
+      }
       // THE TEST-RUN: orchestrator runs the proposed measure once. The user
       // sees the real number before a single iteration burns tokens.
       // (Metricless loops skip this — there is no measure to test-run.)
@@ -3019,6 +3040,10 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         return { content: [{ type: "text", text: "n must be a positive integer (1-based position)." }], details: {} };
       }
       const liveCtx = (execCtx as ExtensionContext | undefined) ?? ctx;
+      // v0.28.14: one-active-thing — a list item must not jump a live loop.
+      if (isLoopActive()) {
+        return { content: [{ type: "text", text: "A loop is active — one active thing at a time. The user must /loop stop it before a list item can activate." }], details: {} };
+      }
       if (state.goal && state.goal.status === "active") {
         archiveCurrentGoal(liveCtx, "aborted", "skipped via list_activate");
       }
