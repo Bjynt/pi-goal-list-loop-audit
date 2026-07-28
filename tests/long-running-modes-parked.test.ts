@@ -39,7 +39,7 @@ test("Item 2 — 0.27.5 postaudit surface shipped, modes re-shaped to literal co
   assert.ok(fs.existsSync("extensions/goal-settings.ts"));
   // The package was at 0.27.9+
   const pkg = JSON.parse(fs.readFileSync("package.json", "utf-8"));
-  assert.match(pkg.version, /^0\.(27\.9|28\.0)$/, "local version is at 0.27.9 (4-mode contract) or 0.28.0 (table menu release)");
+  assert.match(pkg.version, /^0\.(27\.9|[2-9]\d+\.\d+)$/, "local version is at 0.27.9 (4-mode contract) or later");
 });
 
 test("Item 3 — modlist removal: no /glla modlist menu item in code", () => {

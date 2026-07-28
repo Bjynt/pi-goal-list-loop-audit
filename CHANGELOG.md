@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.28.2] — 2026-07-28
+
+### Fixed — release mechanics
+
+`long-running-modes-parked.test.ts` pinned the package version to exactly
+`0.27.9|0.28.0`; re-shaped to the contract (0.27.9 or later) so routine
+version bumps stop failing it. (0.28.1 shipped the stale-interruption rework
+below; this patch only repairs that pin.)
+
 ## [0.28.1] — 2026-07-28
 
 ### Fixed — stale-interruption rework: auto-resume instead of stranded pause (audit S1–S4, E6, T1)
