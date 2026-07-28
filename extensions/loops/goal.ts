@@ -2736,6 +2736,12 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         };
       }
       const liveCtx = (execCtx as ExtensionContext | undefined) ?? ctx;
+      // v0.28.14: one-active-thing EARLY guard — refuse the whole interview
+      // when a loop is live (the post-confirm backstop below stays: state
+      // can change mid-interview).
+      if (isLoopActive()) {
+        return { content: [{ type: "text", text: "A loop is active — one active thing at a time. The user must /loop stop it before a goal or list item can activate; do not re-propose until then." }], details: {} };
+      }
       // v0.14.0: the interview floor — no Confirm until the user replied.
       // v0.23.8: /glla autoaccept=on skips the floor AND the Confirm —
       // the seed carries the intent (unattended rigs). Default off.
@@ -2889,6 +2895,11 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
           content: [{ type: "text", text: "You cannot start or draft a loop — only the user can, from the slash bar (the Confirm is the product). Do NOT write draft files or wait for the user to say 'start' in chat; that dead-ends. Instead hand the user the exact command: /loop start \"<target>\" (bare = infinite metricless; add measure=\"<cmd>\" direction=min|max for a metric loop), or /loop respec to reconcile against the root spec, or /loop with no args to draft interactively." }],
           details: {},
         };
+      }
+      // v0.28.14: one-active-thing EARLY guard — refuse before the
+      // interview floor (a live goal blocks any loop proposal).
+      if (state.goal && state.goal.status === "active") {
+        return { content: [{ type: "text", text: "A goal is active — one active thing at a time. The user must /goal pause or /goal cancel it before a loop can start; do not re-propose until then." }], details: {} };
       }
       // v0.14.0: the interview floor — no Confirm until the user replied.
       if (draftingUserReplies === 0) draftingBlockedProposals++;

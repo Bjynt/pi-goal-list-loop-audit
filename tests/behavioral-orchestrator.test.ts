@@ -339,8 +339,8 @@ test("carryover pause (default): new goal over stale paused goal+list+held loop 
   assert.ok(ledger.includes("replaced by new goal (carryover)"), "stale paused goal archived honestly, not orphaned");
   const notes = ctx.ui.matching("Carryover from before this session");
   assert.equal(notes.length, 1, "exactly ONE summary notify");
-  assert.match(notes[0]!, /2 waiting list item/);
-  assert.match(notes[0]!, /held loop/);
+  assert.match(notes[0]!.message, /2 waiting list item/);
+  assert.match(notes[0]!.message, /held loop/);
 });
 
 test("carryover=clear: new goal drops the queue, dismisses the held loop, archives the paused goal", async () => {
@@ -384,11 +384,8 @@ test("one-active-thing tool guards: list_activate + propose_loop_draft + propose
   const ctx = await freshSession(cwd, "reload");
   const r1 = await pi.runTool("list_activate", { n: 1 }, ctx);
   assert.match(r1.content[0]!.text, /A loop is active/, "list_activate blocked over live loop");
-  await pi.command("goal", "", ctx); // enter drafting
-  await pi.fire("message_start", { message: { role: "user" } }, ctx);
-  ctx.ui.selectImpl = async () => "Yes";
+  await pi.command("goal", "", ctx); // enter drafting (the early guard needs no interview)
   const r2 = await pi.runTool("propose_goal_draft", { objective: "goal over loop — done when pinned" }, ctx);
-  ctx.ui.selectImpl = undefined;
   assert.match(r2.content[0]!.text, /A loop is active/, "propose_goal_draft blocked over live loop");
   assert.equal((readState(cwd).loop as { active: boolean }).active, true, "loop untouched");
 
