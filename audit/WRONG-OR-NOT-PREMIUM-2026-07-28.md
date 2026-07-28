@@ -1,8 +1,8 @@
 # Wrong-or-Not-Premium Audit — 2026-07-28
 
-Scope: pi-goal-list-loop-audit v0.28.0. Four streams: stale-session handling
-(orchestrator), error handling (subagent), UX polish (subagent), test gaps
-(subagent). Every finding: verb-phrase title, file:line evidence, severity.
+Scope: pi-goal-list-loop-audit v0.28.0. Five streams: stale-session handling (orchestrator),
+post-compaction stall misfires (orchestrator), error handling (subagent),
+UX polish (subagent), test gaps (subagent). Every finding: verb-phrase title, file:line evidence, severity.
 
 Naming per `pi-discipline/naming.md`: verb phrase first, IDs/codes trailing.
 
@@ -88,70 +88,72 @@ session)" in one honest step.
 
 ---
 
-## Stream 5 — Post-compaction stall misfires (user-reported 2026-07-28)
-
-User paste: three incidents across game-project sessions where goals whose
-compaction summaries claim closure ("Goal closed: P1 stats panel…", "Goal
-completed. F-01 fixed and approved.") ended `paused` with `stalled: 3
-consecutive unproductive turns` at 9m32s / 1h17m / 8m37s. User: "not sure
-its a stall really cause it was complete so perhaps we just forgot to close
-it." Both halves confirmed in code.
-
-Mechanism: work completes → model writes prose instead of calling
-complete_goal → compaction → session replacement → extension re-hydrates →
-continuations resume → model (now believing the summary's "closed" claim)
-replies with short tool-less "awaiting next goal" prose →
-`isNudgeTurn` (goal-loop-backoff.ts:229: 0 tools AND <15 words OR trigram
->0.6 vs prior turn — defaults at `:200-201`) counts each → 3 strikes → brake.
-
-### P1 [HIGH] — Nudge the model before the stall brake fires
-
-`extensions/loops/goal.ts:4125-4129` — `heartbeatNudges` increments silently;
-NOTHING is sent to the model at strike 1 or 2. The first and only feedback is
-the brake itself (`HEARTBEAT_MAX_NUDGES = 3`, goal-loop-backoff.ts:70). The
-model never gets a course-correction chance.
-
-Premium: graduated escalation — at strike ≥1 send a visible entry (same
-customType channel as length-continue): "N no-tool turns. If the goal's work
-is DONE call complete_goal now; if blocked call pause_goal with a reason;
-otherwise act with tools. One more unproductive turn pauses the goal." Brake
-stays as the final backstop.
-
-### P2 [HIGH] — State "goal is ACTIVE and unclosed" in every continuation
-
-`prompts/goal-loop-continuation.md` + `continuationPrompt`
-(`extensions/loops/goal.ts:565+`) carry objective/contract/tasks/directives
-but never state the goal's lifecycle status. Post-compaction the model trusts
-the compaction summary's "Goal closed/completed" prose and answers the
-continuation with "awaiting next goal" instead of closing — strikes accrue
-on a done-but-unclosed goal. The prompt explains HOW to complete
-(`:122-140`, good) but not THAT completion has not happened.
-
-Premium: an explicit status block in every continuation: "State: ACTIVE —
-not yet auditor-approved. Prose claims of completion close nothing; only an
-approved complete_goal does. If the work is done, call complete_goal NOW."
-
-### P3 [MED] — Grace turns after session re-hydration before stall counting
-
-`heartbeatNudges` (`goal.ts:273`) is in-memory — it resets on re-hydration,
-but then immediately counts the post-compaction re-orientation prose turns
-that pi's own compaction flow produces. Premium: skip nudge accounting for
-the first 1-2 agent_end events after a session_start restore (re-orientation
-turns are tool-light by nature). Belt-and-braces behind P1.
-
-### P4 [LOW] — Distinguish "stalled" from "done-but-unclosed" in pause reason
-
-When the brake fires right after completion-signal text ("approved",
-"committed", "awaiting next goal"), `stalled:` misleads the user about a
-done goal. Premium: scan the last turn's text for completion signals → pause
-reason "appears complete but never closed — /goal resume then complete_goal,
-or /goal cancel". Mostly falls out of P1.
-
----
-
 ## Stream 2 — Error handling (subagent)
 
-PENDING
+Clean categories (keep): auditor-session failure handling is genuinely
+strong (stall watchdog → error-never-verdict, no-output/no-marker guards,
+tool-call floor, bounded single infra retry); quota/403 pauses with upstream
+Retry-After + notify; ~50 bare `catch {}` sites are justified probes.
+
+### E1 [HIGH] — Guard ledger/state writes against disk failures
+
+`goal-loop-core.ts:470-477` (appendLedger), `goal.ts:627-630` (persistState),
+`:644-651` (updateGoal/writeGoalMd), `:652-660` (archiveCurrentGoal). Every
+lifecycle transition calls these unguarded; disk-full/EACCES throws through
+~25 call sites AFTER in-memory `state.goal` was already mutated — RAM and
+ledger diverge silently, and readState (`core.ts:488-495`) silently drops the
+malformed trailing line on reload. State loss is undetectable after the fact.
+Premium: try/catch persist, loud notify on first failure, "persistence
+degraded" flag surfaced in TUI, never mutate in-memory before the write
+succeeds (or mark dirty).
+
+### E2 [HIGH] — Cap consecutive non-quota auditor infra errors
+
+`goal.ts:2167-2186`. A permanently broken auditor model (401, unknown
+provider, misconfigured `/glla model=`) returns infra-error → goal stays
+active → the tool result tells the agent "fix the model with /glla and call
+complete_goal again" — but /glla is a USER-only command; an unattended agent
+re-calls complete_goal forever. `countTrailingDisapprovals` treats infra as
+transparent; the 5-error brake (`:4190`) only watches `stopReason:"error"`
+turns. No brake ever fires. Premium: count trailing infra errors in
+auditHistory; pause loudly after ~3 with restart guidance.
+
+### E3 [HIGH] — Bound the 50ms send-retry timers; make them watchdog-visible
+
+`goal.ts:512-525` (sendContinuation no-ctx/busy retry), `:1416-1422`
+(sendLoopTurn). If lastCtx never refreshes or hasPendingMessages() latches
+true, the timer re-arms every 50ms FOREVER with zero ledger events — and the
+pending-latch watchdog + heartbeat refire are suppressed precisely because
+timerPending is true. The hegemon shape, still reachable on this path.
+Premium: count retries, ledger them, escalate via escalateStallNow past a
+threshold.
+
+### E4 [MED] — Don't report reviewer proposals that never sent
+
+`goal.ts:728-735` + reviewer.ts cascade. proposeGoal's
+`catch { /* best-effort */ }` drops sendUserMessage failures, yet runReviewer
+still counts `proposed++` → user notified "1 proposed as /goal" — a phantom.
+Premium: return success from the callback; count/notify confirmed sends only.
+
+### E5 [MED] — Distinguish "measure broke" from "plateau"
+
+`goal.ts:1345-1350` (runMeasure catch → null) + goal-loop-forever.ts:176-183,
+201-204. A measure command that starts failing mid-loop increments stallCount
+→ loop stops with "plateau — no improvement", misdiagnosing infra failure as
+stagnation. Premium: track consecutive null-measure iterations separately;
+stop with "measure command broken" + notify.
+
+### E6 [MED] — Surface drafting-seed send failures (stale-session shape)
+
+`goal.ts:843-847`. `catch { draftingTarget = null; }` silently cancels
+drafting when the seed sendUserMessage throws (stale api): user typed /goal,
+gets NOTHING, goStaleTerminal never consulted. Belongs with S3's entry probe.
+Premium: notify + stale-api check in the catch.
+
+### E7 [LOW] — Report settings-save failures in the reviewer menu
+
+`goal.ts:3298-3310` — saveSettings throws swallowed as "non-fatal"; the user
+believes the toggle landed.
 
 ---
 
@@ -306,36 +308,116 @@ the test items.
 
 ---
 
+## Stream 5 — Post-compaction stall misfires (user-reported 2026-07-28)
+
+User paste: three incidents across game-project sessions where goals whose
+compaction summaries claim closure ("Goal closed: P1 stats panel…", "Goal
+completed. F-01 fixed and approved.") ended `paused` with `stalled: 3
+consecutive unproductive turns` at 9m32s / 1h17m / 8m37s. User: "not sure
+its a stall really cause it was complete so perhaps we just forgot to close
+it." Both halves confirmed in code.
+
+Mechanism: work completes → model writes prose instead of calling
+complete_goal → compaction → session replacement → extension re-hydrates →
+continuations resume → model (now believing the summary's "closed" claim)
+replies with short tool-less "awaiting next goal" prose →
+`isNudgeTurn` (goal-loop-backoff.ts:229: 0 tools AND <15 words OR trigram
+>0.6 vs prior turn — defaults at `:200-201`) counts each → 3 strikes → brake.
+
+### P1 [HIGH] — Nudge the model before the stall brake fires
+
+`extensions/loops/goal.ts:4125-4129` — `heartbeatNudges` increments silently;
+NOTHING is sent to the model at strike 1 or 2. The first and only feedback is
+the brake itself (`HEARTBEAT_MAX_NUDGES = 3`, goal-loop-backoff.ts:70). The
+model never gets a course-correction chance.
+
+Premium: graduated escalation — at strike ≥1 send a visible entry (same
+customType channel as length-continue): "N no-tool turns. If the goal's work
+is DONE call complete_goal now; if blocked call pause_goal with a reason;
+otherwise act with tools. One more unproductive turn pauses the goal." Brake
+stays as the final backstop.
+
+### P2 [HIGH] — State "goal is ACTIVE and unclosed" in every continuation
+
+`prompts/goal-loop-continuation.md` + `continuationPrompt`
+(`extensions/loops/goal.ts:565+`) carry objective/contract/tasks/directives
+but never state the goal's lifecycle status. Post-compaction the model trusts
+the compaction summary's "Goal closed/completed" prose and answers the
+continuation with "awaiting next goal" instead of closing — strikes accrue
+on a done-but-unclosed goal. The prompt explains HOW to complete
+(`:122-140`, good) but not THAT completion has not happened.
+
+Premium: an explicit status block in every continuation: "State: ACTIVE —
+not yet auditor-approved. Prose claims of completion close nothing; only an
+approved complete_goal does. If the work is done, call complete_goal NOW."
+
+### P3 [MED] — Grace turns after session re-hydration before stall counting
+
+`heartbeatNudges` (`goal.ts:273`) is in-memory — it resets on re-hydration,
+but then immediately counts the post-compaction re-orientation prose turns
+that pi's own compaction flow produces. Premium: skip nudge accounting for
+the first 1-2 agent_end events after a session_start restore (re-orientation
+turns are tool-light by nature). Belt-and-braces behind P1.
+
+### P4 [LOW] — Distinguish "stalled" from "done-but-unclosed" in pause reason
+
+When the brake fires right after completion-signal text ("approved",
+"committed", "awaiting next goal"), `stalled:` misleads the user about a
+done goal. Premium: scan the last turn's text for completion signals → pause
+reason "appears complete but never closed — /goal resume then complete_goal,
+or /goal cancel". Mostly falls out of P1.
+
+---
+
 ## Queue plan
 
 Actionable findings → `list_add` items, verb-phrase titles, severity-ordered.
-Live-pain fixes first, then the test enabler that protects them, then polish.
-Error-handling stream may append one item.
+Live-pain fixes first, then the silent-retry and persistence hardening, then
+the test enabler that protects them all, then polish. Each item gets its own
+goal with a verification contract when activated.
 
 1. **Auto-resume stale-interrupted goals; probe staleness at command entry —
-   HIGH · S1–S4.** Keep status="active" + interrupt marker in goStaleTerminal
-   (goal.ts:204-217); surface marker in widget for active goals; probe
-   extensionApi in cmdGoal/cmdResume/cmdList/propose_goal_draft execute with
-   honest "restart pi — state is safe" messaging; fix the tool-path
-   "Draft rejected by the user" lie (goal.ts:2466-2471).
+   HIGH · S1–S4, E6.** Keep status="active" + interrupt marker in
+   goStaleTerminal (goal.ts:204-217); surface marker in the widget for active
+   goals; probe extensionApi in cmdGoal/cmdResume/cmdList/propose_goal_draft
+   execute with honest "restart pi — state is safe" messaging; fix the
+   tool-path "Draft rejected by the user" lie (goal.ts:2466-2471); notify on
+   drafting-seed send failure (goal.ts:843-847). Fixes the sraaal incident
+   class.
 2. **Nudge before the stall brake; mark goals unclosed in continuations —
    HIGH · P1–P3.** Graduated escalation entry at strike ≥1 (goal.ts:4125);
    status block in prompts/goal-loop-continuation.md ("ACTIVE — not yet
    auditor-approved; prose closes nothing"); 1-2 grace turns after
-   session_start restore.
-3. **Build mock-ctx harness for behavioral goal.ts tests — HIGH · T1–T7.**
-   Fake pi + stub ctx harness; convert stale paths, restore gate, tool
-   guards, readState corruption, settings editors from regex-pins to
-   behavioral pins. Retrofits real tests onto items 1-2.
-4. **Fix docs drift: /review help, INSTALL, README, CHANGELOG — MED ·
-   U1–U5,U12,U13.** /review description → off|on|auto|aggressive; INSTALL
+   session_start restore. Fixes the three post-compaction stall incidents.
+3. **Bound silent retry loops: auditor infra errors + send-retry timers —
+   HIGH · E2, E3.** Count trailing auditor infra errors in auditHistory and
+   pause loudly after ~3 (goal.ts:2167-2186); count + ledger the 50ms
+   send-retry re-arms and escalate via escalateStallNow past a threshold
+   (goal.ts:512-525, 1416-1422).
+4. **Harden persistence integrity: guarded writes, degraded flag, tolerant
+   readState — HIGH · E1, T6.** try/catch around ledger/state writes with a
+   loud first-failure notify + TUI "persistence degraded" flag; never mutate
+   in-memory state before the write succeeds; readState skips malformed
+   trailing lines instead of throwing (goal-loop-core.ts:491-510) — with
+   corruption-tolerance tests.
+5. **Build mock-ctx harness for behavioral goal.ts tests — HIGH · T1–T5,
+   T7.** Fake pi + stub ctx harness; convert stale paths, restore gate, tool
+   guards, settings editors from regex-pins to behavioral pins. Retrofits
+   real tests onto items 1-4.
+6. **Fix phantom reviewer proposals; distinguish measure-broken from
+   plateau — MED · E4, E5.** Only count/notify confirmed reviewer sends
+   (goal.ts:728-735); track consecutive null-measure iterations and stop with
+   "measure command broken" instead of "plateau" (goal-loop-forever.ts).
+7. **Fix docs drift: /review help, INSTALL, README, CHANGELOG — MED ·
+   U1–U5, U12, U13.** /review description → off|on|auto|aggressive; INSTALL
    reviewer section rewrite; README command surface + quick-start fence +
-   test counts; CHANGELOG 0.28.0 to top; delete root litter `then`/`pass`.
-5. **Humanize user-facing messages; gate rig-specific prompt section — MED ·
-   U6–U11.** tooloverride outcome language; reviewer suppression reasons;
-   objective-first creation message; "N queued" suffix; one reviewer
-   vocabulary; gate dracon-sync section in continuation prompt.
+   test counts; CHANGELOG 0.28.0 entry to top; delete root litter
+   `then`/`pass`.
+8. **Humanize user-facing messages; gate rig-specific prompt section — MED ·
+   U6–U11, E7.** tooloverride outcome language; reviewer suppression reasons;
+   objective-first creation message; "N queued" suffix for goal policy; one
+   reviewer vocabulary; gate the dracon-sync section in the continuation
+   prompt; report reviewer-menu settings-save failures.
 
-Each item gets its own goal with a verification contract when activated.
-Item 1 fixes the sraaal incident class; item 2 fixes the three
-post-compaction stall incidents.
+Totals: 35 findings — 12 HIGH, 15 MED, 8 LOW. Items 1-2 fix live incident
+classes observed on this rig within the last 24h.
