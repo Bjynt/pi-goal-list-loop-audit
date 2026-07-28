@@ -289,6 +289,56 @@ async function confirmDraft(ctx: ExtensionContext, title: string, body: string):
   }
 }
 
+// v0.28.14: ONE summary + policy application for stale carryover when NEW
+// work activates. pause (default): surface what's waiting, stack nothing
+// silently. clear: drop the queue, dismiss the held loop, archive the
+// paused goal — honestly, with a ledger trail. resume: legacy silent
+// behavior. A new GOAL replacing a paused one archives it in every policy
+// (one-active-thing: state.goal holds exactly one goal).
+function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop"): void {
+  if (carryoverResolved || !carryoverSnapshot) return;
+  carryoverResolved = true;
+  const snap = carryoverSnapshot;
+  carryoverSnapshot = null;
+  const policy = loadSettings(ctx.cwd).carryover ?? "pause";
+  if (policy === "resume") return; // legacy silent stacking
+  const done: string[] = [];
+  const waiting: string[] = [];
+  const pausedGoal = state.goal && state.goal.status === "paused" ? state.goal : null;
+  if (pausedGoal && (trigger === "goal" || policy === "clear")) {
+    archiveCurrentGoal(ctx, "aborted", trigger === "goal" ? "replaced by new goal (carryover)" : "carryover cleared");
+    done.push(`archived paused goal "${(snap.pausedGoal ?? pausedGoal.objective).slice(0, 60)}"`);
+  } else if (snap.pausedGoal) {
+    waiting.push(`paused goal "${snap.pausedGoal}" (/goal resume)`);
+  }
+  if (snap.listCount > 0) {
+    if (policy === "clear") {
+      state = { ...state, list: [] };
+      done.push(`dropped ${snap.listCount} waiting list item(s)`);
+    } else {
+      waiting.push(`${snap.listCount} waiting list item(s) (/list next)`);
+    }
+  }
+  if (snap.heldLoop) {
+    if (policy === "clear" && state.loop && !state.loop.active && state.loop.stopReason === HELD_ON_RESTORE) {
+      state.loop = { ...state.loop, stopReason: "cleared: carryover" };
+      done.push(`dismissed held loop "${snap.heldLoop}"`);
+    } else {
+      waiting.push(`held loop "${snap.heldLoop}" (/loop to resume)`);
+    }
+  }
+  persistState(ctx);
+  appendLedger(ctx.cwd, "carryover_resolved", { policy, trigger, cleared: done.length, waiting: waiting.length });
+  const summary = [...done.map((d) => `✂ ${d}`), ...waiting.map((w) => `⏸ ${w}`)].join(" · ");
+  if (!summary) return;
+  ctx.ui.notify(
+    policy === "clear"
+      ? `Carryover cleared (${trigger}): ${summary}`
+      : `Carryover from before this session: ${summary}${waiting.length > 0 ? " — /glla carryover=clear drops these automatically." : ""}`,
+    "info",
+  );
+}
+
 // The most recent ExtensionContext seen from any event or command handler.
 // pi replaces sessions (newSession/fork/reload) and stale ctx throws on use,
 // so timers must never capture a ctx — they read lastCtx at fire time.
@@ -352,6 +402,11 @@ let postRestoreGraceTurns = 0;
 // refire's own noteActivity, which is what made the hegemon zombie spin
 // self-sustaining (619 refires / 23.5h / zero turns).
 let consecutiveStalls = 0;
+// v0.28.14: carryover snapshot — unfinished work loaded from disk at
+// session_start (predates this session). Resolved ONCE per session at the
+// first NEW activation (new goal / new loop) per the carryover setting.
+let carryoverSnapshot: { pausedGoal?: string; listCount: number; heldLoop?: string } | null = null;
+let carryoverResolved = true;
 // v0.26.6: precise replacement for the removed ship-recency suppression —
 // set while complete_goal's isolated audit runs, so the heartbeat never
 // refires into an in-flight completion.
@@ -807,6 +862,12 @@ function notifyPersistenceState(ctx: ExtensionContext): void {
 }
 
 function setGoal(goal: Goal, ctx: ExtensionContext): void {
+  // v0.28.14: never silently orphan a live goal — a paused/active goal
+  // being replaced is archived honestly first (the old behavior left it in
+  // goals/ but untracked: "older goals lying around leading to confusion").
+  if (state.goal && state.goal.id !== goal.id && (state.goal.status === "active" || state.goal.status === "paused")) {
+    archiveCurrentGoal(ctx, "aborted", `replaced by goal ${goal.id}`);
+  }
   state = { goal, list: state.list ?? [] }; // preserve the list!
   const file = writeGoalMd(ctx.cwd, goal);
   state.goal!.activePath = path.relative(ctx.cwd, file) || file;
@@ -1117,6 +1178,7 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
     return;
   }
   draftingTarget = null; // explicit objective cancels any drafting session
+  resolveCarryover(ctx, "goal"); // v0.28.14: surface/clear stale leftovers
   const goal = createGoal(raw, ctx);
   setGoal(goal, ctx);
   // Reset counters
@@ -2776,6 +2838,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       if (isLoopActive()) {
         return { content: [{ type: "text", text: "A loop is active — one active thing at a time. The user must /loop stop it before a goal or list item can activate; do not re-propose until then." }], details: {} };
       }
+      resolveCarryover(liveCtx, "goal"); // v0.28.14: surface/clear stale leftovers
       // List drafting: the confirmed contract goes into the QUEUE, not active.
       if (confirmedTarget === "list") {
         const extracted = extractVerificationContract(full);
@@ -4294,6 +4357,15 @@ export default function (pi: ExtensionAPI): void {
     // a foreign session.
     if (isForeignCtx(ctx)) return;
     state = readState(ctx.cwd);
+    // v0.28.14: snapshot carryover BEFORE any restore logic mutates state —
+    // a paused goal, waiting list items, or a loop that was live/held when
+    // the last session ended. Resolved once at the first NEW activation.
+    carryoverSnapshot = {
+      pausedGoal: state.goal && state.goal.status === "paused" ? state.goal.objective.slice(0, 60) : undefined,
+      listCount: listQueue().length,
+      heldLoop: state.loop && (state.loop.active || state.loop.stopReason === HELD_ON_RESTORE) ? state.loop.target.slice(0, 60) : undefined,
+    };
+    carryoverResolved = !(carryoverSnapshot.pausedGoal || carryoverSnapshot.listCount > 0 || carryoverSnapshot.heldLoop);
     if (!registeredCtx) {
       registerAgentTools(pi, ctx);
       registeredCtx = ctx;

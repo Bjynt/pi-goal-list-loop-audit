@@ -33,6 +33,11 @@ export interface Settings {
   /** on → restored goals/loops/lists auto-resume even in fresh sessions
    * (unattended rigs). Default off: restore holds until /goal resume. */
   autoResume?: boolean;
+  /** v0.28.14: what happens to stale carryover (paused goal, waiting list,
+   * held loop from before this session) when NEW work activates.
+   * pause (default) = leave it + ONE summary; clear = drop it all honestly;
+   * resume = legacy silent stacking. */
+  carryover?: "resume" | "pause" | "clear";
   /** v0.24.2: pause the goal after N consecutive auditor disapprovals (0 = unlimited).
    * Default 5 (raised from 3 in v0.25.0, contract item 7). */
   auditCap?: number;
@@ -146,6 +151,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "tokenLimit",
   "wedgeAlertMinutes",
   "autoResume",
+  "carryover",
   "autoAcceptDrafts",
   "auditCap",
   "auditFeedbackChars",
