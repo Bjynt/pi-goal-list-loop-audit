@@ -397,3 +397,65 @@ test("one-active-thing tool guards: list_activate + propose_loop_draft + propose
   const r3 = await pi.runTool("propose_loop_draft", { target: "loop over goal", measureCmd: "none" }, ctx2);
   assert.match(r3.content[0]!.text, /A goal is active/, "propose_loop_draft blocked over live goal");
 });
+
+test("carryover via /list next (pause): summary fires BEFORE the stale item activates; paused goal archived, held loop kept", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    goal: seedGoal({ status: "paused", objective: "stale paused goal" }),
+    list: [seedListItem("carryover head item"), seedListItem("second item")],
+    loop: seedLoop({ active: false, stopReason: HELD, target: "stale held loop" }),
+  });
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("list", "next", ctx);
+  await tick();
+  const s = readState(cwd);
+  assert.equal((s.goal as { status: string; objective: string }).status, "active", "head item activated");
+  assert.match((s.goal as { objective: string }).objective, /carryover head item/);
+  assert.equal((s.list as unknown[]).length, 1, "one item consumed");
+  assert.equal((s.loop as { stopReason?: string })?.stopReason, HELD, "held loop kept under pause");
+  assert.equal(ctx.ui.matching("Carryover from before this session").length, 1, "ONE summary on the list path too");
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
+  assert.ok(ledger.includes("replaced by new list (carryover)"), "paused goal archived on the list path");
+});
+
+test("carryover via /list next (clear): the stale queue is dropped BEFORE activation — nothing activates", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ carryover: "clear" }));
+  seedState(cwd, {
+    goal: seedGoal({ status: "paused", objective: "stale paused goal" }),
+    list: [seedListItem("stale item one"), seedListItem("stale item two")],
+    loop: seedLoop({ active: false, stopReason: HELD, target: "stale held loop" }),
+  });
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("list", "next", ctx);
+  await tick();
+  const s = readState(cwd);
+  assert.ok(!s.goal || (s.goal as { status: string }).status !== "active", "NO stale item activated after clear");
+  assert.equal((s.list as unknown[]).length, 0, "queue dropped before activation");
+  assert.equal((s.loop as { stopReason?: string })?.stopReason, "cleared: carryover", "held loop dismissed");
+  assert.ok(ctx.ui.matching("Carryover cleared").length >= 1, "clear summary shown");
+  assert.ok(ctx.ui.matching("List is empty").length >= 1, "nothing-to-activate notice");
+});
+
+test("carryover=resume: legacy silent stacking — no summary, queue + held loop untouched", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ carryover: "resume" }));
+  seedState(cwd, {
+    goal: seedGoal({ status: "paused", objective: "stale paused goal" }),
+    list: [seedListItem("stale item one"), seedListItem("stale item two")],
+    loop: seedLoop({ active: false, stopReason: HELD, target: "stale held loop" }),
+  });
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "start fresh work — done when pinned", ctx);
+  await tick();
+  const s = readState(cwd);
+  assert.equal((s.goal as { status: string }).status, "active", "new goal active");
+  assert.equal((s.list as unknown[]).length, 2, "queue untouched (legacy stacking)");
+  assert.equal((s.loop as { stopReason?: string })?.stopReason, HELD, "held loop untouched");
+  assert.equal(ctx.ui.matching("Carryover").length, 0, "NO summary under resume (legacy silent)");
+});

@@ -1025,6 +1025,10 @@ function activateNextListItem(ctx: ExtensionContext, n = 1): boolean {
     appendLedger(ctx.cwd, "list_activation_blocked_loop", {});
     return false;
   }
+  // v0.28.14: carryover resolution runs BEFORE the item is taken — under
+  // carryover=clear the stale queue is dropped first and there is nothing
+  // to activate; under pause the ONE summary precedes the activation.
+  resolveCarryover(ctx, "list");
   const queue = listQueue();
   const taken = takeAt(queue, n);
   if (!taken) return false;
@@ -4226,12 +4230,13 @@ export default function (pi: ExtensionAPI): void {
     handler: (args: string, ctx: ExtensionContext) => { rememberCtx(ctx); return cmdList(args, ctx); },
   });
   pi.registerCommand("loop", {
-    description: "Loop 3: metric-driven process — it never completes. /loop <target> drafts the metric with you · /loop start \"<target>\" = infinite metricless loop (no plateau, no cap; ends at time=/tokens= or /loop stop) · /loop respec = infinite metricless reconcile against the root SPEC.md · add measure=\"<cmd>\" direction=min|max [window=5] [max=50] [branch=1] for a metric loop · /loop status · /loop stop. 'Improve until X' is a /goal, not a loop.",
+    description: "Loop 3: metric-driven process — it never completes. /loop <target> drafts the metric with you · /loop start \"<target>\" = infinite metricless loop (no plateau, no cap; ends at time=/tokens= or /loop stop) · /loop respec = infinite metricless reconcile against the root SPEC.md · add measure=\"<cmd>\" direction=min|max [window=5] [max=50] [branch=1] for a metric loop · /loop status · /loop stop (alias /loop cancel). 'Improve until X' is a /goal, not a loop.",
     getArgumentCompletions: completions([
       ["start", "skip drafting: /loop start \"<target>\" measure=\"<cmd>\" direction=min|max [window=5] [max=50]"],
       ["respec", "infinite metricless loop reconciling the codebase against the root SPEC.md"],
       ["status", "show metric, iteration, best/last values, stall count"],
       ["stop", "end the loop (keeps the best state)"],
+      ["cancel", "alias of /loop stop — end the loop"],
       ["finish", "end the loop cleanly: /loop finish [reason] → stopReason 'completed: <reason>'"],
     ]),
     handler: (args: string, ctx: ExtensionContext) => { rememberCtx(ctx); return cmdLoop(args, ctx); },
