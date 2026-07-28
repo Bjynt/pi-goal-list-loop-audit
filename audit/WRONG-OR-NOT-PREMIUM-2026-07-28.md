@@ -309,5 +309,33 @@ the test items.
 ## Queue plan
 
 Actionable findings → `list_add` items, verb-phrase titles, severity-ordered.
-S1+S2 combine into one fix goal (same function, same incident). S3 separate
-(touches command surface). Subagent findings triaged below once reported.
+Live-pain fixes first, then the test enabler that protects them, then polish.
+Error-handling stream may append one item.
+
+1. **Auto-resume stale-interrupted goals; probe staleness at command entry —
+   HIGH · S1–S4.** Keep status="active" + interrupt marker in goStaleTerminal
+   (goal.ts:204-217); surface marker in widget for active goals; probe
+   extensionApi in cmdGoal/cmdResume/cmdList/propose_goal_draft execute with
+   honest "restart pi — state is safe" messaging; fix the tool-path
+   "Draft rejected by the user" lie (goal.ts:2466-2471).
+2. **Nudge before the stall brake; mark goals unclosed in continuations —
+   HIGH · P1–P3.** Graduated escalation entry at strike ≥1 (goal.ts:4125);
+   status block in prompts/goal-loop-continuation.md ("ACTIVE — not yet
+   auditor-approved; prose closes nothing"); 1-2 grace turns after
+   session_start restore.
+3. **Build mock-ctx harness for behavioral goal.ts tests — HIGH · T1–T7.**
+   Fake pi + stub ctx harness; convert stale paths, restore gate, tool
+   guards, readState corruption, settings editors from regex-pins to
+   behavioral pins. Retrofits real tests onto items 1-2.
+4. **Fix docs drift: /review help, INSTALL, README, CHANGELOG — MED ·
+   U1–U5,U12,U13.** /review description → off|on|auto|aggressive; INSTALL
+   reviewer section rewrite; README command surface + quick-start fence +
+   test counts; CHANGELOG 0.28.0 to top; delete root litter `then`/`pass`.
+5. **Humanize user-facing messages; gate rig-specific prompt section — MED ·
+   U6–U11.** tooloverride outcome language; reviewer suppression reasons;
+   objective-first creation message; "N queued" suffix; one reviewer
+   vocabulary; gate dracon-sync section in continuation prompt.
+
+Each item gets its own goal with a verification contract when activated.
+Item 1 fixes the sraaal incident class; item 2 fixes the three
+post-compaction stall incidents.
