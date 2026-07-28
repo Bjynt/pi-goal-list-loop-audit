@@ -308,3 +308,94 @@ test("error turns: a real nudge before the errors still counts after they pass (
   assert.equal(g.status, "paused", "third real nudge pauses (errors neither reset nor incremented)");
   assert.match(g.pauseReason ?? "", /unproductive turns/);
 });
+
+// ────────────────────────────────────────────────────────────────────
+// v0.28.14 — lifecycle consolidation: carryover resolution + /loop cancel
+// + one-active-thing tool guards
+// ────────────────────────────────────────────────────────────────────
+
+const HELD = "held: restored in a fresh session";
+const seedListItem = (objective: string) => ({ id: `item-${Math.random().toString(36).slice(2, 8)}`, objective, addedAt: new Date().toISOString() });
+
+test("carryover pause (default): new goal over stale paused goal+list+held loop → ONE summary, goal archived, list+loop kept", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    goal: seedGoal({ status: "paused", objective: "stale paused goal from yesterday" }),
+    list: [seedListItem("stale list item one"), seedListItem("stale list item two")],
+    loop: seedLoop({ active: false, stopReason: HELD, target: "stale held loop" }),
+  });
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "start brand new goal — done when pinned", ctx);
+  await tick();
+  const s = readState(cwd);
+  const g = s.goal as { status: string; objective: string };
+  assert.equal(g.status, "active", "new goal active");
+  assert.match(g.objective, /brand new goal/);
+  assert.equal((s.list as unknown[]).length, 2, "pause policy KEEPS the waiting list");
+  assert.equal((s.loop as { stopReason?: string })?.stopReason, HELD, "pause policy KEEPS the held loop");
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
+  assert.ok(ledger.includes('"carryover_resolved"'), "resolution ledgered");
+  assert.ok(ledger.includes("replaced by new goal (carryover)"), "stale paused goal archived honestly, not orphaned");
+  const notes = ctx.ui.matching("Carryover from before this session");
+  assert.equal(notes.length, 1, "exactly ONE summary notify");
+  assert.match(notes[0]!, /2 waiting list item/);
+  assert.match(notes[0]!, /held loop/);
+});
+
+test("carryover=clear: new goal drops the queue, dismisses the held loop, archives the paused goal", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ carryover: "clear" }));
+  seedState(cwd, {
+    goal: seedGoal({ status: "paused", objective: "stale paused goal" }),
+    list: [seedListItem("stale list item")],
+    loop: seedLoop({ active: false, stopReason: HELD, target: "stale held loop" }),
+  });
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "start fresh work — done when pinned", ctx);
+  await tick();
+  const s = readState(cwd);
+  assert.equal((s.list as unknown[]).length, 0, "queue dropped");
+  assert.equal((s.loop as { stopReason?: string })?.stopReason, "cleared: carryover", "held loop dismissed");
+  assert.equal((s.goal as { status: string }).status, "active", "new goal active");
+  assert.ok(ctx.ui.matching("Carryover cleared").length >= 1, "clear summary shown");
+});
+
+test("/loop cancel: first-class alias stops the loop (stopReason recorded)", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, { loop: seedLoop({ active: true }) });
+  const ctx = await freshSession(cwd, "reload");
+  await pi.command("loop", "cancel", ctx);
+  await tick();
+  const loop = readState(cwd).loop as { active: boolean; stopReason?: string };
+  assert.equal(loop.active, false, "loop stopped");
+  assert.equal(loop.stopReason, "stopped by user (/loop cancel)", "cancel verb recorded");
+  assert.ok(ctx.ui.matching("Loop stopped").length >= 1, "stop summary shown");
+});
+
+test("one-active-thing tool guards: list_activate + propose_loop_draft + propose_goal_draft refuse over the wrong active kind", async () => {
+  __testOnlyResetStaleFlag();
+  // Active loop blocks list_activate and propose_goal_draft.
+  const cwd = tmpCwd();
+  seedState(cwd, { loop: seedLoop({ active: true }), list: [seedListItem("queued thing")] });
+  const ctx = await freshSession(cwd, "reload");
+  const r1 = await pi.runTool("list_activate", { n: 1 }, ctx);
+  assert.match(r1.content[0]!.text, /A loop is active/, "list_activate blocked over live loop");
+  await pi.command("goal", "", ctx); // enter drafting
+  await pi.fire("message_start", { message: { role: "user" } }, ctx);
+  ctx.ui.selectImpl = async () => "Yes";
+  const r2 = await pi.runTool("propose_goal_draft", { objective: "goal over loop — done when pinned" }, ctx);
+  ctx.ui.selectImpl = undefined;
+  assert.match(r2.content[0]!.text, /A loop is active/, "propose_goal_draft blocked over live loop");
+  assert.equal((readState(cwd).loop as { active: boolean }).active, true, "loop untouched");
+
+  // Active goal blocks propose_loop_draft (before the measure even test-runs).
+  const cwd2 = tmpCwd();
+  seedState(cwd2, { goal: seedGoal() });
+  const ctx2 = await freshSession(cwd2, "reload");
+  const r3 = await pi.runTool("propose_loop_draft", { target: "loop over goal", measureCmd: "none" }, ctx2);
+  assert.match(r3.content[0]!.text, /A goal is active/, "propose_loop_draft blocked over live goal");
+});

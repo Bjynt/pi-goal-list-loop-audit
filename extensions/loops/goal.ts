@@ -868,7 +868,7 @@ function setGoal(goal: Goal, ctx: ExtensionContext): void {
   if (state.goal && state.goal.id !== goal.id && (state.goal.status === "active" || state.goal.status === "paused")) {
     archiveCurrentGoal(ctx, "aborted", `replaced by goal ${goal.id}`);
   }
-  state = { goal, list: state.list ?? [] }; // preserve the list!
+  state = { ...state, goal }; // preserve list AND loop (v0.28.14: the bare reconstruction used to nuke a held/active loop whenever a goal was set)
   const file = writeGoalMd(ctx.cwd, goal);
   state.goal!.activePath = path.relative(ctx.cwd, file) || file;
   persistState(ctx);
@@ -899,7 +899,7 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
   if (archived) {
     try { fs.unlinkSync(goalMdPath(ctx.cwd, goal.id)); } catch {}
   }
-  state = { goal: { ...goal, status, archivedPath: path.relative(ctx.cwd, target) || target, stopReason }, list: state.list ?? [] };
+  state = { ...state, goal: { ...goal, status, archivedPath: path.relative(ctx.cwd, target) || target, stopReason } };
   appendLedger(ctx.cwd, "goal_archived", { goalId: goal.id, status, stopReason });
   persistState(ctx);
   // Loop 2: a list-sourced goal COMPLETED → auto-activate the next item.
