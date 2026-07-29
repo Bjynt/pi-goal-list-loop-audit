@@ -175,6 +175,7 @@ export function makeMockCtx(cwd: string, opts: { sessionManager?: unknown; idle?
     model: { provider: "anthropic", id: "mock-model" },
     isIdle: () => opts.idle ?? true,
     hasPendingMessages: () => opts.pending ?? false,
+    abort: () => {},
     ui,
   } as unknown as MockCtx;
 }

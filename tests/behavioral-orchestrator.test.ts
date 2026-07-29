@@ -551,18 +551,29 @@ test("/goal decide: content pick → decision sent to the agent + goal resumes",
   const ctx = await freshSession(cwd, "reload");
   await tick();
   assert.equal((readState(cwd).goal as { status: string }).status, "paused", "decision pause survives reload");
-  const ui = (ctx as { ui: { selectImpl?: (t: string, o: string[]) => Promise<string | undefined> } }).ui;
+  // Swap in content-only options (the seeded defaults are command options).
+  const g0 = readState(cwd).goal as unknown as Record<string, unknown>;
+  g0.pauseOptions = ["Surgical Done when: clause", "Deliver the missing polish (~2-3 hours)", "Reword the objective to accept SUPERSEDED"];
+  g0.pauseRecommended = 3;
+  const line = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8").trim().split("\n");
+  const entry = JSON.parse(line[line.length - 1]!);
+  entry.value.goal = g0;
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), JSON.stringify(entry) + "\n");
+  // Re-load so the module state picks up the content options.
+  const ctx2 = await freshSession(cwd, "reload");
+  await tick();
+  const ui = (ctx2 as { ui: { selectImpl?: (t: string, o: string[]) => Promise<string | undefined> } }).ui;
   let shownTitle = "";
   ui.selectImpl = (title, options) => {
     shownTitle = title;
-    return Promise.resolve(options[0]); // recommended content option
+    return Promise.resolve(options[0]); // a content option
   };
-  await pi.command("goal", "decide", ctx);
+  await pi.command("goal", "decide", ctx2);
   await tick();
   assert.match(shownTitle, /Decision needed — seeded test objective/);
   assert.match(shownTitle, /auditor disapproved completion/);
   const msgs = pi.userMessages.map((m) => m.message);
-  assert.ok(msgs.some((m) => /Decision for the paused goal .*Fix the disapproval gap, then continue/.test(m)), `decision message: ${msgs.join(" | ")}`);
+  assert.ok(msgs.some((m) => /Decision for the paused goal .*Surgical Done when: clause/.test(m)), `decision message: ${msgs.join(" | ")}`);
   const g = readState(cwd).goal as { status: string; pauseKind?: string; pauseOptions?: string[] };
   assert.equal(g.status, "active", "pick resumes the goal");
   assert.equal(g.pauseKind, undefined, "pause fields cleared on resume");

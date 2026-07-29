@@ -4311,6 +4311,7 @@ export default function (pi: ExtensionAPI): void {
       ["notify=", "desktop push command: /glla notify='notify-send pi \"$1\"'"],
       ["tokenlimit=", "per-goal token budget (0 = off): /glla tokenlimit=2000000"],
       ["autoresume=", "default: hold when a session is loaded, auto-resume on reload/fork; on: always auto-resume; off: never"],
+      ["decisionpopup=", "on|off: decision pauses pop the select() picker (default on; the widget card always lists the options, /goal decide reopens the picker)"],
       ["auditcap=", "N: pause goal after N consecutive auditor disapprovals (default 5, 0 = unlimited)"],
       ["auditfeedbackchars=", "cap on executor-visible disapproval report chars (0 = full report, the default)"],
       ["aggressivemode=", "on: keep-going defaults — autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs"],
