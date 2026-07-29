@@ -70,8 +70,11 @@ test("S2: restore gate clears the marker on auto-resume and names the recovery",
   assert.match(SRC, /auto-resumed after the stale-handle interrupt/);
 });
 
-test("S2 (0.28.3): the interrupt marker outranks the DEFAULT hold; explicit autoresume=off still holds", () => {
-  assert.match(SRC, /if \(autoResume \|\| \(wasInterrupted && autoResumeSetting !== false\)\) \{/);
+test("S2 (v0.28.21): the 0.28.3 interrupt exemption is SUPERSEDED — only autoresume=on auto-resumes", () => {
+  // Default flipped to hold-everything: interrupted goals hold like any
+  // other; the marker is cleared only inside the autoresume=on path.
+  assert.match(SRC, /if \(autoResume\) \{/);
+  assert.doesNotMatch(SRC, /autoResume \|\| \(wasInterrupted && autoResumeSetting !== false\)/);
   assert.match(SRC, /const autoResumeSetting = resolveEffectiveAggressiveSettings\(loadSettings\(ctx\.cwd\)\)\.autoResume;/);
 });
 

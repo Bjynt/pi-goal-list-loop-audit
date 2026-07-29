@@ -337,14 +337,12 @@ test("piGlaDir migrates a legacy .pi-gla dir exactly once (v0.17.0)", () => {
 
 // ---- session-restore gate (v0.21.0) ----
 
-test("restore gate (v0.26.9 default): loading a session HOLDS, machinery auto-resumes", () => {
-  // A human loading a session must not trigger work — show the held popup.
-  for (const reason of ["startup", "new", "resume", undefined]) {
+test("restore gate (v0.28.21 default): NOTHING auto-resumes on session load — the item loads HELD", () => {
+  // User directive: "load it on session load but not auto start it".
+  // The 0.26.9 reload/fork auto-resume default is gone; only the explicit
+  // autoresume=on setting (unattended rigs) auto-resumes.
+  for (const reason of ["startup", "new", "resume", "reload", "fork", undefined]) {
     assert.equal(shouldAutoResumeOnSessionStart(reason, undefined), false, String(reason));
-  }
-  // In-session machinery never strands work.
-  for (const reason of ["reload", "fork"]) {
-    assert.equal(shouldAutoResumeOnSessionStart(reason, undefined), true, String(reason));
   }
 });
 
