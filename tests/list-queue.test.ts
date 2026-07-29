@@ -175,3 +175,19 @@ test("v0.28.31: /glla reset — one confirmed command wipes live state (goal arc
   // already-clean short-circuit:
   assert.match(SRC, /glla state is already clean — no goal, no list, no loop\./);
 });
+
+test("v0.28.32: /glla resume + /glla cancel — type-blind verbs over the ONE live thing", () => {
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.match(SRC, /if \(\/\^resume\\b\/\.test\(trimmed\)\) \{/);
+  assert.match(SRC, /if \(\/\^cancel\\b\/\.test\(trimmed\)\) \{/);
+  assert.match(SRC, /async function cmdGllaResume\(ctx: ExtensionContext\): Promise<void>/);
+  assert.match(SRC, /async function cmdGllaCancel\(ctx: ExtensionContext\): Promise<void>/);
+  // paused-goal + held-loop ambiguity → decision picker (v0.28.23 pattern):
+  assert.match(SRC, /ctx\.ui\.select\("Two things can resume — which one\?"/);
+  // cancel is uniform: live goal/list item → cmdCancel; any loop → cmdLoop stop:
+  const cancelIdx = SRC.indexOf("async function cmdGllaCancel");
+  assert.match(SRC.slice(cancelIdx), /await cmdCancel\(ctx\);\s*\n\s*return;\s*\n\s*}\s*\n\s*if \(state\.loop\) \{\s*\n\s*await cmdLoop\("stop", ctx\);/);
+  // empty states guide to the typed verbs / power verbs:
+  assert.match(SRC, /Nothing to resume — no paused goal\/list-item, no held loop\./);
+  assert.match(SRC, /Nothing to cancel — no active\/paused goal\/list-item, no loop\./);
+});

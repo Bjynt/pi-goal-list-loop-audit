@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.28.32] — 2026-07-29
+
+### Added — `/glla resume` + `/glla cancel`: type-blind verbs over the ONE live thing
+
+User: "would it make sense to bundle resume and cancel into /glla so we
+don't have to check what type we are running — but this sucks if we need
+different commands or one command doesn't work for others." The split:
+
+- **Unified:** `resume` and `cancel` — their meaning is type-independent.
+  `/glla resume` resumes whatever is paused (goal or list item) or held
+  (loop); `/glla cancel` cancels the one live thing uniformly — goal/list
+  item archived as aborted, active or held loop stopped. Same outcome
+  shape regardless of the hidden type.
+- **Kept typed:** tweak/finish/next/decide/refine genuinely differ per
+  policy — folding them in is the trap the user named. `/list cancel`
+  (item + drop queue) and `/glla reset` (nuke all) remain the power verbs.
+
+Safe because one-active-thing is enforced (v0.28.14+): at most one thing
+is ACTIVE, so the only real ambiguity is paused-goal + held-loop
+coexisting (nothing running, two resumables — the polis state today) →
+the v0.28.23 decision picker ("Two things can resume — which one?").
+The existing one-active guards inside cmdResume/cmdLoop still apply, so
+resuming a goal over a live loop refuses with an explanation.
+
+Pins: routes, both dispatchers, the picker, the uniform cancel chain,
+empty-state guidance. 605 tests.
+
 ## [0.28.31] — 2026-07-29
 
 ### Added — `/glla reset`: one-shot clean slate for leftover-laden projects

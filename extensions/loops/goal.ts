@@ -4243,6 +4243,76 @@ async function cmdGllaReset(ctx: ExtensionContext): Promise<void> {
   notifyExternal(ctx, "glla state reset by user — clean slate.");
 }
 
+/**
+ * v0.28.32: /glla resume — resume WHATEVER is resumable, without the user
+ * needing to know whether they're supervising a goal, a list item, or a
+ * held loop. Safe because one-active-thing is enforced (v0.28.14+): at
+ * most one thing can be ACTIVE, so the only ambiguity is paused-goal +
+ * held-loop coexisting (nothing running, two resumables — e.g. polis
+ * today) → the v0.28.23 decision-picker pattern. Verbs whose semantics
+ * genuinely differ per type (tweak/finish/next/decide/refine) stay typed.
+ */
+async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
+  const g = state.goal;
+  const goalResumable = g && g.status === "paused";
+  const loopResumable = state.loop && !state.loop.active && state.loop.stopReason === HELD_ON_RESTORE;
+  if (goalResumable && loopResumable) {
+    if (ctx.hasUI) {
+      try {
+        const loopLabel = `Resume the held loop (iter ${state.loop!.iteration}, best ${state.loop!.bestValue ?? "n/a"}): ${state.loop!.target.replace(/\s+/g, " ").slice(0, 80)}`;
+        const pick = await ctx.ui.select("Two things can resume — which one?", [
+          `Resume the ${g!.policy === "list" ? "list item" : "goal"}: ${g!.objective.replace(/\s+/g, " ").slice(0, 80)}`,
+          loopLabel,
+        ]);
+        if (pick === undefined) {
+          ctx.ui.notify("Resume cancelled.", "info");
+          return;
+        }
+        if (pick === loopLabel) {
+          await cmdLoop("resume", ctx);
+          return;
+        }
+        await cmdResume(ctx);
+        return;
+      } catch {
+        // picker failed — fall through to goal-first
+      }
+    }
+    await cmdResume(ctx);
+    return;
+  }
+  if (goalResumable) {
+    await cmdResume(ctx);
+    return;
+  }
+  if (loopResumable) {
+    await cmdLoop("resume", ctx);
+    return;
+  }
+  ctx.ui.notify("Nothing to resume — no paused goal/list-item, no held loop. /goal, /list, or /loop to start something.", "info");
+}
+
+/**
+ * v0.28.32: /glla cancel — cancel the ONE live thing, uniformly: a goal or
+ * list item is archived as aborted (its queue is untouched), an active or
+ * held loop is stopped. Same outcome shape regardless of hidden type —
+ * the user's caveat ("this sucks if one command doesn't work for others")
+ * is why /list cancel (item + drop queue) and /glla reset (nuke all)
+ * remain the power verbs instead of being folded in.
+ */
+async function cmdGllaCancel(ctx: ExtensionContext): Promise<void> {
+  const g = state.goal;
+  if (g && (g.status === "active" || g.status === "paused" || g.status === "auditing")) {
+    await cmdCancel(ctx);
+    return;
+  }
+  if (state.loop) {
+    await cmdLoop("stop", ctx);
+    return;
+  }
+  ctx.ui.notify("Nothing to cancel — no active/paused goal/list-item, no loop. Queued list items: /list clear; everything: /glla reset.", "info");
+}
+
 function cmdAudits(args: string, ctx: ExtensionContext): void {
   const full = /\bfull\b/.test(args);
   const all = /\b(?:all|global|log)\b/.test(args);
@@ -4303,6 +4373,16 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   // v0.28.31: /glla reset — one-shot clean slate for leftover-laden projects.
   if (/^reset\b/.test(trimmed)) {
     await cmdGllaReset(ctx);
+    return;
+  }
+  // v0.28.32: /glla resume + /glla cancel — type-blind verbs over the ONE
+  // live thing ("so we don't have to check what type we are running").
+  if (/^resume\b/.test(trimmed)) {
+    await cmdGllaResume(ctx);
+    return;
+  }
+  if (/^cancel\b/.test(trimmed)) {
+    await cmdGllaCancel(ctx);
     return;
   }
   if (/^reviewer\b/.test(trimmed)) {
@@ -4697,6 +4777,8 @@ export default function (pi: ExtensionAPI): void {
       ["auditcap=", "N: pause goal after N consecutive auditor disapprovals (default 5, 0 = unlimited)"],
       ["log", "event-trail tail: /glla log [N] — who created/resumed/paused what, from where (v0.28.28)"],
       ["reset", "wipe live glla state (goal archived, list cleared, loop stopped) — one-shot cleanup for leftover-laden projects"],
+      ["resume", "resume WHATEVER is paused/held (goal, list item, or held loop) — no need to know the type"],
+      ["cancel", "cancel the ONE live thing uniformly (goal/list item archived, loop stopped) — queue untouched; /list clear or /glla reset for more"],
       ["auditfeedbackchars=", "cap on executor-visible disapproval report chars (0 = full report, the default)"],
       ["aggressivemode=", "on: keep-going defaults — autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs"],
       ["quotaretryminutes=", "N: minutes before auto-retrying a quota-exhausted auditor (default 60)"],
