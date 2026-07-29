@@ -2743,7 +2743,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
   pi.registerTool(defineTool({
     name: "pause_goal",
     label: "Pause goal",
-    description: "Pause the active goal with a reason and suggested action. Use when blocked on user input or unable to make progress. When the user must CHOOSE between options, pass kind=\"decision\" with the options list (recommended = 1-based index of the best one) — decision pauses render as a prominent DECISION NEEDED card. Time-gated waits (retry at a specific time) use kind=\"wait\" with resumeAt (ISO). Operational failures use kind=\"error\".",
+    description: "Pause the active goal with a reason and suggested action. Use when blocked on user input or unable to make progress. When the user must CHOOSE between options, pass kind=\"decision\" with the options list (recommended = 1-based index of the best one) — decision pauses render as a prominent DECISION NEEDED card. Time-gated waits (retry at a specific time) use kind=\"wait\" with resumeAt (ISO). Operational failures use kind=\"error\". VOCABULARY (v0.28.24): decision options and reasons must reference REAL commands only — /goal resume, /goal cancel, /goal tweak \"<new text>\", /list remove N, /list next, /list resume, /loop stop, /loop resume. These all act on the ACTIVE goal/item: there is NO /goal drop and NO command takes a goal id. Never show goal ids to the user — name the thing ('the active goal', 'list item \"<short name>\"'); ids are internal plumbing the user cannot act on.",
     parameters: Type.Object({
       reason: Type.String({ description: "Why the work is paused" }),
       suggestedAction: Type.Optional(Type.String({ description: "What the user should do next" })),

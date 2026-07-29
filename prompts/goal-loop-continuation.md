@@ -144,6 +144,8 @@ When the goal is genuinely blocked and you cannot make progress without user inp
 pause_goal({reason: "...", suggestedAction: "..."})
 ```
 
+When the user must CHOOSE between paths, use `pause_goal` with `kind="decision"`, an `options` list, and `recommended` (1-based index) — a prominent decision card renders and the user picks. **Vocabulary rules for reasons and options (v0.28.24):** reference only REAL commands — `/goal resume`, `/goal cancel`, `/goal tweak "<new text>"`, `/list remove N`, `/list next`, `/list resume`, `/loop stop`, `/loop resume` — all act on the ACTIVE goal/item; there is **no `/goal drop`** and **no command takes a goal id**. Never show goal ids (`20260729065635-gbtxsm`) in user-facing text — name the thing instead ("the active goal", "list item 'regression scan'"); ids are internal plumbing the user cannot act on.
+
 ## HARD RULES
 
 - **Do not modify the objective silently.** The objective is the user's; if it has drifted from what makes sense, use `complete_goal`'s `newObjective` at completion time, or `pause_goal` and propose a `/goal tweak` mid-flight — never just work on something else and claim the original.
