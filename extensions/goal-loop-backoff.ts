@@ -162,6 +162,8 @@ export interface HeartbeatInput {
   /** Milliseconds since the last observed agent activity. */
   msSinceActivity: number;
   stallMs?: number;
+  /** v0.28.25: consecutive stall refires so far — spaces refires exponentially. */
+  consecutiveStalls?: number;
 }
 
 /** Should the heartbeat re-fire the continuation right now? */
@@ -169,7 +171,15 @@ export function shouldHeartbeatRefire(input: HeartbeatInput): boolean {
   if (!input.supervising) return false;
   if (!input.sessionIdle) return false;
   if (input.timerPending) return false;
-  return input.msSinceActivity >= (input.stallMs ?? HEARTBEAT_STALL_MS);
+  // v0.28.25: exponential spacing between stall refires — 1m, 2m, 4m, 8m
+  // (cap 8×). Field-observed in junk-runner: the flat 60s gate burned all
+  // 5 refires in ~4 minutes into a just-compacted session, pausing a
+  // resumable goal instead of giving the provider/queue time to recover.
+  // noteActivity() runs at each refire, so msSinceActivity measures the
+  // silence SINCE the last refire — scaling the threshold scales the gap.
+  const stallMs = input.stallMs ?? HEARTBEAT_STALL_MS;
+  const scale = 2 ** Math.min(input.consecutiveStalls ?? 0, 3);
+  return input.msSinceActivity >= stallMs * scale;
 }
 
 /**

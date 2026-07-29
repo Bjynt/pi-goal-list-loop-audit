@@ -471,6 +471,17 @@ let loopRearmStreak = 0;
 // after the compact instead of giving pi room to recover.
 let compactionGraceUntil = 0;
 const COMPACTION_GRACE_MS = 3 * 60_000;
+// v0.28.25: provider-error retry cadence. Field-observed in dracon-utilities
+// (kimi, 19-session fleet on one provider account): a "concurrent request
+// limit" 403 storm got 5 retries BACK-TO-BACK (delay 0 after each errored
+// turn — the session is idle at agent_end, so scheduleContinuation fired
+// instantly) and the brake then cycled on a flat 60s cooldown for 1h 38m.
+// The condition clears on a minutes-to-fleet scale, not milliseconds:
+// ladder the inter-error retries (5s, 15s, 45s, 90s, 3m — the 5-retry
+// budget now spans ~5.5m) and escalate the brake cooldown per consecutive
+// brake (1m, 2m, 4m, 8m, 16m cap). A successful turn resets both.
+const ERROR_RETRY_LADDER_MS = [5_000, 15_000, 45_000, 90_000, 180_000];
+let errorBrakeStreak = 0;
 const SEND_REARM_LEDGER_EVERY = 600; // 600 × 50ms = 30s
 const SEND_REARM_ESCALATE_AT = 6000; // 6000 × 50ms = 5 minutes
 
@@ -592,6 +603,7 @@ function heartbeatTick(): void {
     timerPending: continuationTimer !== null || loopTimer !== null,
     msSinceActivity: Date.now() - lastActivityAt,
     stallMs: HEARTBEAT_STALL_MS,
+    consecutiveStalls,
   });
   // Wedge alert (v0.23.2): session BUSY but silent for the threshold —
   // the classic hung-command case (a test suite that never exits holds
@@ -688,7 +700,7 @@ function freshCtx(): ExtensionContext | null {
   }
 }
 
-function scheduleContinuation(ctx: ExtensionContext, force = false): void {
+function scheduleContinuation(ctx: ExtensionContext, force = false, delayMs?: number): void {
   if (!isActionableGoal()) return;
   rememberCtx(ctx);
   const goalId = state.goal!.id;
@@ -696,7 +708,7 @@ function scheduleContinuation(ctx: ExtensionContext, force = false): void {
   clearContinuationTimer();
   let delay = 0;
   try {
-    delay = ctx.isIdle() && !ctx.hasPendingMessages() ? 0 : BACKOFF_IDLE_RETRY_MS;
+    delay = delayMs ?? (ctx.isIdle() && !ctx.hasPendingMessages() ? 0 : BACKOFF_IDLE_RETRY_MS);
   } catch {
     return;
   }
@@ -4826,28 +4838,41 @@ export default function (pi: ExtensionAPI): void {
         // 60-second provider hiccup waiting on a manual /goal resume.
         const detail = text.trim() ? ` (last: ${text.trim().replace(/\s+/g, " ").slice(0, 160)})` : "";
         const reason = `5 consecutive errors${detail}`;
+        // v0.28.25: the cooldown escalates per CONSECUTIVE brake — a fleet-wide
+        // 403 window is not cleared by re-braking every 60 seconds.
+        const cooldownMs = 60_000 * 2 ** Math.min(errorBrakeStreak, 4);
+        const cooldownMin = Math.round(cooldownMs / 60_000);
+        errorBrakeStreak++;
         updateGoal({
           status: "paused",
           pauseKind: "wait",
-          pauseResumeAt: new Date(Date.now() + 60_000).toISOString(),
+          pauseResumeAt: new Date(Date.now() + cooldownMs).toISOString(),
           pauseReason: reason,
-          pauseSuggestedAction: "Transient provider flake? The goal auto-resumes once in 60s if still paused for this reason — or /goal resume now.",
+          pauseSuggestedAction: `Transient provider flake? The goal auto-resumes once in ${cooldownMin}m if still paused for this reason — or /goal resume now.`,
         }, ctx);
         ctx.ui.notify(`Goal paused: ${reason}.`, "warning");
         notifyExternal(ctx, `Goal paused: ${reason}.`);
         appendLedger(ctx.cwd, "goal_paused", { reason });
-        scheduleQuotaRetry(ctx, 60, reason, () => {
+        scheduleQuotaRetry(ctx, cooldownMs / 1000, reason, () => {
           // Re-check: only auto-resume if STILL paused for the error brake
           // (a user /goal pause during the window is not stomped).
           if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("5 consecutive errors")) {
             updateGoal({ status: "active" }, ctx);
             appendLedger(ctx.cwd, "goal_resumed", { via: "error-brake-retry" });
-            ctx.ui.notify("Auto-resumed after the 5-error brake (60s cooldown).", "info");
+            ctx.ui.notify("Auto-resumed after the 5-error brake (cooldown elapsed).", "info");
             scheduleContinuation(ctx, true);
           }
         }, "5 consecutive errors — auto-retry");
         return;
       }
+      // v0.28.25: under the brake, the retry rides the exponential ladder —
+      // NOT the immediate scheduleContinuation at the bottom of this handler
+      // (an errored turn leaves the session idle, so the default delay is 0:
+      // exactly how 5 retries fired back-to-back in dracon-utilities).
+      const retryDelayMs = ERROR_RETRY_LADDER_MS[Math.min(consecutiveErrorIterations - 1, ERROR_RETRY_LADDER_MS.length - 1)];
+      appendLedger(ctx.cwd, "error_retry_backoff", { attempt: consecutiveErrorIterations, delayMs: retryDelayMs });
+      scheduleContinuation(ctx, true, retryDelayMs);
+      return;
     } else if (stopReason === "aborted") {
       // v0.28.5 (E8): user aborts are not provider errors. Separate brake,
       // honest message, and NO auto-resume — aborting five turns in a row
@@ -4868,6 +4893,7 @@ export default function (pi: ExtensionAPI): void {
     } else {
       consecutiveErrorIterations = 0;
       consecutiveAbortIterations = 0;
+      errorBrakeStreak = 0; // v0.28.25: a healthy turn clears the brake cooldown
     }
 
     // No wall-clock cap by design: a goal ends via completion, explicit
