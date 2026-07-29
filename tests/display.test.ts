@@ -5,6 +5,7 @@
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
+import * as fs from "node:fs";
 
 import {
   buildStatusText,
@@ -371,4 +372,15 @@ test("legacy pause (no kind): flat card unchanged; error-regex still classifies 
   const g2 = goalOf({ status: "paused", pauseReason: "token limit exceeded (10 > 5)" });
   const s2 = buildStatusText({ goal: g2, list: [], loop: null } as never)!;
   assert.ok(s2.includes("action needed"), `legacy error reason → action needed: ${s2}`);
+});
+
+test("v0.28.30: the widget card status line ALWAYS names the type (goal · / list item ·)", () => {
+  // User note: "I don't always see the type — I'd need to scroll up to see
+  // if goal/list/loop." Before, only list items were named on the card.
+  const goalLines = buildWidgetLines({ goal: goalOf({}), list: [] }, null, NOW)!;
+  assert.match(goalLines[1]!, /^├─ goal · active /);
+  const listLines = buildWidgetLines({ goal: goalOf({ policy: "list" }), list: [] }, null, NOW)!;
+  assert.match(listLines[1]!, /^├─ list item · active /);
+  const SRC = fs.readFileSync("extensions/goal-loop-display.ts", "utf-8");
+  assert.match(SRC, /const typeWord = isList \? "list item · " : "goal · ";/);
 });

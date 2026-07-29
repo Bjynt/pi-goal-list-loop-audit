@@ -54,7 +54,7 @@ test("escalation: streak at threshold stops the loop / pauses the goal, loudly",
   assert.match(SRC, /appendLedger\(ctx\.cwd, "stall_escalated", \{ threshold, kind:/);
   assert.match(SRC, /stalled: \$\{threshold\} continuation refires landed no turn/);
   assert.match(SRC, /notifyExternal\(ctx, "Loop stopped: stalled \(continuation not landing\)\."\)/);
-  assert.match(SRC, /notifyExternal\(ctx, "Goal paused: stalled \(continuation not landing\)\."\)/);
+  assert.match(SRC, /notifyExternal\(ctx, `\$\{goalNoun\(\)\} paused: stalled \(continuation not landing\)\."?`?\)/);
   // the escalation return happens BEFORE the schedule (no more refires):
   const escIdx = SRC.indexOf('"stall_escalated"');
   const refireScheduleIdx = SRC.indexOf('re-firing continuation (stall');

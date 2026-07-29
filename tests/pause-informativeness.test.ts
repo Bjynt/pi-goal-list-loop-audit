@@ -60,9 +60,9 @@ test("paused card wraps the suggested action and closes the branch on its last l
 
 test("pause_goal tool notification carries the FULL reason AND suggested action", () => {
   const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
-  assert.match(src, /ctx\.ui\.notify\(`Goal paused: \$\{p\.reason\}\$\{p\.suggestedAction \? `\\n\\n→ \$\{p\.suggestedAction\}`/);
+  assert.match(src, /ctx\.ui\.notify\(`\$\{goalNoun\(\)\} paused: \$\{p\.reason\}\$\{p\.suggestedAction \? `\\n\\n→ \$\{p\.suggestedAction\}`/);
   // external push carries both too (bounded)
-  assert.match(src, /notifyExternal\(ctx, `Goal paused: \$\{\(p\.suggestedAction/);
+  assert.match(src, /notifyExternal\(ctx, `\$\{goalNoun\(\)\} paused: \$\{\(p\.suggestedAction/);
 });
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
