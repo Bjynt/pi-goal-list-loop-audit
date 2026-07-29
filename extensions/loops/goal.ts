@@ -4116,6 +4116,42 @@ function cmdStats(args: string, ctx: ExtensionContext): void {
  * log (.pi-glla/audits.jsonl). Default: last 10 verdicts, one line each.
  * "full" prints the latest report in full.
  */
+/**
+ * v0.28.28: /glla log [N] — human-readable tail of the event ledger (the
+ * forensic trail: who created/resumed/paused goals, from where). Skips the
+ * high-frequency noise entries (state snapshots, re-arm internals) unless
+ * "all" is passed. N defaults to 15.
+ */
+const LOG_NOISE = new Set(["state", "send_rearm_start", "heartbeat_suppressed_tick"]);
+function cmdLog(args: string, ctx: ExtensionContext): void {
+  const all = /\ball\b/.test(args);
+  const nMatch = args.match(/\b(\d+)\b/);
+  const n = Math.min(Math.max(parseInt(nMatch?.[1] ?? "15", 10) || 15, 1), 100);
+  let entries: Array<{ type: string; at?: string; value?: any }> = [];
+  try {
+    entries = parseLedgerEntries(fs.readFileSync(ledgerPath(ctx.cwd), "utf-8"));
+  } catch {
+    ctx.ui.notify("No ledger yet — .pi-glla/active.jsonl doesn't exist.", "info");
+    return;
+  }
+  const visible = all ? entries : entries.filter((e) => !LOG_NOISE.has(e.type));
+  const tail = visible.slice(-n);
+  if (tail.length === 0) {
+    ctx.ui.notify("Ledger is empty (no non-noise events yet).", "info");
+    return;
+  }
+  const lines = tail.map((e) => {
+    const t = (e.at ?? "").slice(11, 19);
+    const v = e.value ?? {};
+    const detail = Object.entries(v)
+      .filter(([k]) => k !== "goalId" && k !== "report")
+      .map(([k, val]) => `${k}=${typeof val === "string" ? val.slice(0, 60) : JSON.stringify(val)?.slice(0, 60)}`)
+      .join(" ");
+    return `${t}  ${e.type}${detail ? `  ${detail}` : ""}`;
+  });
+  ctx.ui.notify(`Ledger tail (last ${tail.length}${all ? "" : " non-noise"} events — /glla log <N> for more, /glla log all to include noise):\n${lines.join("\n")}`, "info");
+}
+
 function cmdAudits(args: string, ctx: ExtensionContext): void {
   const full = /\bfull\b/.test(args);
   const all = /\b(?:all|global|log)\b/.test(args);
@@ -4165,6 +4201,12 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   }
   if (/^audits\b/.test(trimmed)) {
     cmdAudits(trimmed.slice("audits".length).trim(), ctx);
+    return;
+  }
+  // v0.28.28: /glla log [N] — the raw event trail, human-readable. "Log it
+  // so we can look back and see where we are doing things wrong."
+  if (/^log\b/.test(trimmed)) {
+    cmdLog(trimmed.slice("log".length).trim(), ctx);
     return;
   }
   if (/^reviewer\b/.test(trimmed)) {
@@ -4557,6 +4599,7 @@ export default function (pi: ExtensionAPI): void {
       ["autoresume=", "default: hold when a session is loaded, auto-resume on reload/fork; on: always auto-resume; off: never"],
       ["decisionpopup=", "on|off: decision pauses pop the select() picker (default on; the widget card always lists the options, /goal decide reopens the picker)"],
       ["auditcap=", "N: pause goal after N consecutive auditor disapprovals (default 5, 0 = unlimited)"],
+      ["log", "event-trail tail: /glla log [N] — who created/resumed/paused what, from where (v0.28.28)"],
       ["auditfeedbackchars=", "cap on executor-visible disapproval report chars (0 = full report, the default)"],
       ["aggressivemode=", "on: keep-going defaults — autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs"],
       ["quotaretryminutes=", "N: minutes before auto-retrying a quota-exhausted auditor (default 60)"],
