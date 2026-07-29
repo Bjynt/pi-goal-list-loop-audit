@@ -293,14 +293,38 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     return lines;
   }
   if (g.status === "paused" && g.pauseReason) {
-    const isErr = pauseIsError(g);
+    const kind = pauseKind(g);
+    const isErr = kind === "error";
     const budget = budgetFor(width, 3, 60);
-    // v0.27.1: wrap reason + suggested action over up to 3 lines each
-    // (see wrap()); before, both were truncated at ~60 chars and the actual
-    // question in a decision-pause never reached the user.
-    wrap(g.pauseReason, budget, 3).forEach((w, i) => {
-      lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, isErr ? "error" : "warning", w)}`);
+    // v0.28.22: actionability banner — a decision pause, an operational
+    // failure, and a time-gated wait must not look alike (user report:
+    // "if something actionable is going on it can be hard to tell").
+    if (kind === "decision") lines.push(`├─ ${paint(theme, "accent", "decision needed — your call unblocks this")}`);
+    else if (kind === "error") lines.push(`├─ ${paint(theme, "error", "action needed — this won't fix itself")}`);
+    else if (kind === "wait") lines.push(`├─ ${paint(theme, "dim", "waiting — nothing for you to do")}`);
+    // v0.27.1: wrap reason + suggested action (see wrap()). v0.28.22:
+    // decision/wait reasons cap at 2 lines — the options/countdown below
+    // carry the actionable content; error reasons keep 3.
+    const reasonPaint = isErr ? "error" : kind === "wait" ? "dim" : "warning";
+    wrap(g.pauseReason, budget, kind === "decision" || kind === "wait" ? 2 : 3).forEach((w, i) => {
+      lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, reasonPaint, w)}`);
     });
+    // v0.28.22: decision options — one numbered line each (Claude Code /
+    // muselinn-Ask convention), the recommended one accented and flagged.
+    if (kind === "decision" && g.pauseOptions && g.pauseOptions.length > 0) {
+      g.pauseOptions.slice(0, 6).forEach((opt, i) => {
+        const rec = g.pauseRecommended === i + 1;
+        const text = `${i + 1}. ${truncate(opt, budget - 4)}${rec ? " ◂ recommended" : ""}`;
+        lines.push(`│  ${paint(theme, rec ? "accent" : "dim", text)}`);
+      });
+      if (g.pauseOptions.length > 6) lines.push(`│  ${paint(theme, "dim", `… and ${g.pauseOptions.length - 6} more`)}`);
+    }
+    // v0.28.22: wait countdown — when the pause lifts on its own.
+    if (kind === "wait" && g.pauseResumeAt) {
+      const ms = Date.parse(g.pauseResumeAt) - now;
+      const when = Number.isNaN(ms) ? g.pauseResumeAt : ms <= 0 ? "now" : `${shortClock(g.pauseResumeAt)} (in ${fmtElapsed(ms)})`;
+      lines.push(`├─ ${paint(theme, "dim", `resumes ${when} — or /goal resume now`)}`);
+    }
     // v0.27.1: what survives the pause — the first question at a pause is
     // "did I lose the work?". Answer it on the card.
     // v0.27.9: when the goal has no telemetry yet (restored-in-fresh-session
@@ -319,7 +343,9 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     if (g.pauseSuggestedAction) {
       lines.push(`├─ ${paint(theme, "dim", truncate(savedLine, budget))}`);
       const wrapped = wrap(g.pauseSuggestedAction, budget, 3);
-      wrapped.forEach((w, i) => lines.push(`${i === wrapped.length - 1 ? "└─" : "│ "} ${paint(theme, "dim", w)}`));
+      // v0.28.22: for ACTION NEEDED pauses the action is the point — pop it.
+      const actionPaint = kind === "error" ? "warning" : "dim";
+      wrapped.forEach((w, i) => lines.push(`${i === wrapped.length - 1 ? "└─" : "│ "} ${paint(theme, actionPaint, w)}`));
     } else {
       lines.push(`└─ ${paint(theme, "dim", truncate(savedLine, budget))}`);
     }
