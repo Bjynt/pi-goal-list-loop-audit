@@ -245,3 +245,69 @@ test("widget: loop lines include measure + metric state", () => {
   assert.ok(lines.some((l) => l.includes("best 2")));
   assert.ok(lines.some((l) => l.includes("pi-glla-loop/20260721-reduce-todos")));
 });
+
+// ---- v0.28.17: held loops are always visible ----
+
+function heldLoopOf(overrides: Partial<LoopState> = {}): LoopState {
+  return {
+    target: "improve search ranking",
+    measureCmd: "bun test --score",
+    direction: "max",
+    iteration: 7,
+    maxIterations: 0,
+    plateauWindow: 5,
+    stallCount: 0,
+    bestValue: 88,
+    lastValue: 85,
+    active: false,
+    stopReason: "held: restored in a fresh session",
+    history: [],
+    startedAt: "2026-07-21T10:00:00Z",
+    ...overrides,
+  };
+}
+
+test("held loop alone → status segment + widget card (before: BOTH vanished)", () => {
+  const state = { goal: null, list: [], loop: heldLoopOf() };
+  const s = buildStatusText(state, null, NOW)!;
+  assert.match(s, /loop ⏸ held/);
+  assert.match(s, /iter 7/);
+  assert.match(s, /\/loop to resume/);
+  const w = buildWidgetLines(state, null, NOW)!;
+  assert.ok(w, "widget shows the held-loop card");
+  assert.match(w[0]!, /improve search ranking/);
+  assert.match(w[1]!, /loop held · iter 7/);
+  assert.match(w[2]!, /restore gate/);
+});
+
+test("held loop + paused goal → both visible (status suffix + widget trailing line)", () => {
+  const state = { goal: goalOf({ status: "paused", pauseReason: "user paused" }), list: [], loop: heldLoopOf() };
+  const s = buildStatusText(state, null, NOW)!;
+  assert.match(s, /paused/);
+  assert.match(s, /loop⏸held/, "held-loop suffix rides the paused-goal status");
+  const w = buildWidgetLines(state, null, NOW)!;
+  assert.match(w.join("\n"), /loop held · iter 7 — \/loop to resume/);
+});
+
+test("held loop + active goal → status suffix present", () => {
+  const state = { goal: goalOf(), list: [], loop: heldLoopOf() };
+  const s = buildStatusText(state, null, NOW)!;
+  assert.match(s, /goal ●/);
+  assert.match(s, /loop⏸held/);
+});
+
+test("held loop + completed goal → held loop still shows (goal state clears)", () => {
+  const state = { goal: goalOf({ status: "complete" }), list: [], loop: heldLoopOf() };
+  assert.match(buildStatusText(state, null, NOW)!, /loop ⏸ held/);
+  assert.ok(buildWidgetLines(state, null, NOW)!.length >= 2);
+});
+
+test("active loop unchanged; stopped loop stays invisible", () => {
+  const active = { goal: null, list: [], loop: heldLoopOf({ active: true, stopReason: undefined }) };
+  const s = buildStatusText(active, null, NOW)!;
+  assert.match(s, /loop ↑ iter 7/, "active loop renders exactly as before");
+  assert.doesNotMatch(s, /held/);
+  const stopped = { goal: null, list: [], loop: heldLoopOf({ stopReason: "stopped by user (/loop stop)" }) };
+  assert.equal(buildStatusText(stopped, null, NOW), undefined, "a genuinely stopped loop stays invisible");
+  assert.equal(buildWidgetLines(stopped, null, NOW), undefined);
+});

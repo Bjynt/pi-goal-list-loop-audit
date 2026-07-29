@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.28.17] — 2026-07-29
+
+### Fixed — held loops are always visible (user report: "loops are the most immature")
+
+A loop parked by the session-restore gate (`HELD_ON_RESTORE`) rendered
+NOTHING in the always-on UI — `buildStatusText` and
+`buildWidgetLinesInner` only branched on `state.loop?.active`, so a reload
+made the loop vanish while paused goals and waiting lists stayed visible.
+
+- **Status segment**: held loop alone → `glla: loop ⏸ held · iter N —
+  /loop to resume`; with any goal state (active/paused/auditing/
+  interrupted) → a compact `· loop⏸held` suffix rides the goal text; a
+  completed/aborted goal no longer hides it either.
+- **Widget**: held loop alone → its own card (target, iter, elapsed,
+  "/loop to resume · /loop stop to drop"); with a visible goal → a
+  trailing `⏸ <target>` + "loop held" line rides the goal card.
+- Genuinely stopped loops (any other stopReason) stay invisible — the
+  marker is exported from `goal-loop-forever.js` as `HELD_ON_RESTORE`
+  (was a private const in `loops/goal.ts`) so the display layer keys off
+  the exact restore-gate state.
+- Pins: held alone / held + paused goal / held + active goal / held +
+  completed goal / active loop unchanged / stopped loop invisible.
+
 ## [0.28.16] — 2026-07-29
 
 ### Fixed — reviewer duplicate-scan dedupe (the scan-of-a-scan cascade)

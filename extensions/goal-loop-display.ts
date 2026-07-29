@@ -12,7 +12,17 @@
 
 import type { Goal, State } from "./goal-loop-core.js";
 import { isPersistenceDegraded, lastPersistenceFailure } from "./goal-loop-core.js";
-import type { LoopState } from "./goal-loop-forever.js";
+import { HELD_ON_RESTORE, type LoopState } from "./goal-loop-forever.js";
+
+/** v0.28.17: a loop parked by the session-restore gate (was active when the
+ * last session ended). Held loops must stay VISIBLE — before, only
+ * state.loop?.active rendered anything and a reload made the loop vanish
+ * from the always-on UI (user report 2026-07-29: "loops are the most
+ * immature"). Stopped loops (any other stopReason) stay invisible. */
+function heldLoop(state: State): LoopState | undefined {
+  const l = state.loop;
+  return l && !l.active && l.stopReason === HELD_ON_RESTORE ? l : undefined;
+}
 
 // ---- formatters ----
 
@@ -128,20 +138,26 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     return `glla: loop ${arrow} iter ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"} · best ${l.bestValue ?? "n/a"} · ${stall}${stallSuffix}`;
   }
   const g = state.goal;
-  if (!g) return undefined;
+  const held = heldLoop(state);
+  // v0.28.17: a held loop rides every goal state as a compact suffix.
+  const heldSuffix = held ? paint(theme, "warning", " · loop⏸held") : "";
+  if (!g) {
+    if (held) return `glla: loop ${paint(theme, "warning", "⏸ held")} · iter ${held.iteration} — /loop to resume`;
+    return undefined;
+  }
   if (g.status === "auditing") {
     const tool = audit?.currentTool ? ` · ${audit.currentTool}` : "";
-    return `glla: ${paint(theme, "accent", "auditing…")}${tool}`;
+    return `glla: ${paint(theme, "accent", "auditing…")}${tool}${heldSuffix}`;
   }
   if (g.status === "paused") {
     const label = `${g.policy} paused ⏸ ${truncate(g.pauseReason ?? "", 40)}`;
-    return `glla: ${paint(theme, pauseIsError(g) ? "error" : "warning", label)}`;
+    return `glla: ${paint(theme, pauseIsError(g) ? "error" : "warning", label)}${heldSuffix}`;
   }
   if (g.status === "active") {
     // v0.28.1 (S1/S2): a stale-handle interrupt keeps the goal ACTIVE (the
     // next fresh session auto-resumes it) — say so instead of looking healthy.
     if (g.interruptedAt) {
-      return `glla: ${g.policy} ${paint(theme, "error", "⚠ interrupted — stale handle · auto-resumes on pi restart")}`;
+      return `glla: ${g.policy} ${paint(theme, "error", "⚠ interrupted — stale handle · auto-resumes on pi restart")}${heldSuffix}`;
     }
     // v0.24.7: list policy gets its own wording — a queue item is not a goal.
     // v0.28.11 (U10): goal policy joins it — "list 29" read as a command
@@ -150,9 +166,11 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     const n = state.list?.length ?? 0;
     const queue = n === 0 ? "" : ` · ${n} queued`;
     const tasks = g.taskList ? ` ${countDone(g)}/${countTotal(g)} tasks ·` : "";
-    return `glla: ${g.policy} ${paint(theme, "success", "●")}${tasks} ${fmtElapsed(now - Date.parse(g.createdAt))}${queue}`;
+    return `glla: ${g.policy} ${paint(theme, "success", "●")}${tasks} ${fmtElapsed(now - Date.parse(g.createdAt))}${queue}${heldSuffix}`;
   }
-  return undefined; // complete/aborted → clear
+  // complete/aborted → clear — but a held loop still shows.
+  if (held) return `glla: loop ${paint(theme, "warning", "⏸ held")} · iter ${held.iteration} — /loop to resume`;
+  return undefined;
 }
 
 function countDone(g: Goal): number {
@@ -199,9 +217,27 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
 function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, width?: number, extras?: { stalls?: number }): string[] | undefined {
   if (state.loop?.active) return loopLines(state.loop, now, theme, width, extras);
   const g = state.goal;
-  if (!g) return undefined;
-  if (g.status === "complete" || g.status === "aborted") return undefined;
-  return goalLines(g, state, audit, now, theme, width);
+  const held = heldLoop(state);
+  if (!g || g.status === "complete" || g.status === "aborted") {
+    // v0.28.17: no visible goal — the held loop gets its own card.
+    return held ? heldLoopLines(held, now, theme, width) : undefined;
+  }
+  const lines = goalLines(g, state, audit, now, theme, width);
+  // v0.28.17: a held loop rides the goal card as a trailing line.
+  if (held) {
+    lines.push(`${paint(theme, "warning", "⏸")} ${truncate(held.target, budgetFor(width, 3, 64))}`);
+    lines.push(`└─ ${paint(theme, "dim", `loop held · iter ${held.iteration} — /loop to resume`)}`);
+  }
+  return lines;
+}
+
+/** v0.28.17: standalone card for a restore-held loop (no goal visible). */
+function heldLoopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: number): string[] {
+  return [
+    `${paint(theme, "warning", "⏸")} ${truncate(l.target, budgetFor(width, 3, 64))}`,
+    `├─ loop held · iter ${l.iteration} · ${fmtElapsed(now - Date.parse(l.startedAt))} so far`,
+    `└─ ${paint(theme, "dim", "held by the session-restore gate — /loop to resume, /loop stop to drop")}`,
+  ];
 }
 
 // Branch lines sit flush-left (pi-tasks convention): pi's widget renderer
