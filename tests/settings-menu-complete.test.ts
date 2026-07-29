@@ -163,7 +163,7 @@ test("default fallbacks surface when settings + provenance both missing", () => 
   }
   // Specific defaults the contract pins:
   assert.match(byId.get("postaudit")!.valueText, /open sub-menu/);
-  assert.equal(byId.get("autoAcceptDrafts")!.valueText, "(off)");
+  assert.equal(byId.get("autoAcceptDrafts")!.valueText, "off"); // v0.28.20: bare values
   assert.equal(byId.get("auditCap")!.valueText, "(5)");
   assert.match(byId.get("subagentModelStrategy")!.valueText, /inherit-parent/);
 });
@@ -176,8 +176,8 @@ test("provenance flows into sourceText (project/global/default tags)", () => {
   const byId = new Map(rows1.map((r) => [r.id, r]));
   assert.equal(byId.get("autoResume")!.sourceText, "[project]");
   assert.equal(byId.get("auditorModel")!.sourceText, "[global]");
-  // No provenance → "[default]"
-  assert.equal(byId.get("wedgeAlertMinutes")!.sourceText, "[default]");
+  // No provenance → "default" (v0.28.20: bare)
+  assert.equal(byId.get("wedgeAlertMinutes")!.sourceText, "default");
 });
 
 test("haiku mention is dropped from any valueText / description / sourceText", () => {

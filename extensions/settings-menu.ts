@@ -70,7 +70,7 @@ export interface SettingsRow {
   label: string;
   /** VALUE column — current effective value, e.g. `true` / `(off)` / `60`. */
   valueText: string;
-  /** SOURCE column — provenance tag, one of `[project]` / `[global]` / `[default]`. */
+  /** SOURCE column — provenance tag: `project` / `global` / `default` / `runtime` (v0.28.20: bare — brackets were chrome). */
   sourceText: string;
   /** DESCRIPTION column — one-line explanation; truncated with ellipsis when narrow. */
   description: string;
@@ -116,7 +116,7 @@ export function buildSettingsRows(
     const p = provFor(k);
     return p.value === undefined ? fallback : String(p.value);
   };
-  const src = (k: keyof Settings): string => `[${provFor(k).source}]`;
+  const src = (k: keyof Settings): string => provFor(k).source;
 
   const rows: SettingsRow[] = [];
 
@@ -135,7 +135,7 @@ export function buildSettingsRows(
       id: "autoAcceptDrafts",
       section: "keep-going",
       label: "Auto-accept drafts",
-      valueText: show("autoAcceptDrafts", "(off)"),
+      valueText: show("autoAcceptDrafts", "off"),
       sourceText: src("autoAcceptDrafts"),
       description: "on: goal/loop drafts activate without the Confirm dialog (unattended rigs)",
     },
@@ -143,7 +143,7 @@ export function buildSettingsRows(
       id: "aggressiveMode",
       section: "keep-going",
       label: "Aggressive mode",
-      valueText: show("aggressiveMode", "(off)"),
+      valueText: show("aggressiveMode", "off"),
       sourceText: src("aggressiveMode"),
       description:
         "flips DEFAULTS toward keep-going (autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs); explicit per-key settings still win",
@@ -156,7 +156,7 @@ export function buildSettingsRows(
       id: "auditorModel",
       section: "auditor",
       label: "Auditor model",
-      valueText: show("auditorModel", "(pi session model)"),
+      valueText: show("auditorModel", "pi session model"),
       sourceText: src("auditorModel"),
       description: "provider/model override for the isolated auditor",
     },
@@ -164,7 +164,7 @@ export function buildSettingsRows(
       id: "auditorThinkingLevel",
       section: "auditor",
       label: "Auditor thinking",
-      valueText: show("auditorThinkingLevel", "(session, floor high)"),
+      valueText: show("auditorThinkingLevel", "session, floor high"),
       sourceText: src("auditorThinkingLevel"),
       description: "thinking level for the auditor session",
     },
@@ -172,7 +172,7 @@ export function buildSettingsRows(
       id: "auditCap",
       section: "auditor",
       label: "Audit cap",
-      valueText: show("auditCap", `(${defaults.auditCap})`),
+      valueText: show("auditCap", `${defaults.auditCap}`),
       sourceText: src("auditCap"),
       description: "pause the goal after N consecutive disapprovals (0 = unlimited)",
     },
@@ -182,7 +182,7 @@ export function buildSettingsRows(
       label: "Audit feedback chars",
       valueText: show(
         "auditFeedbackChars",
-        DEFAULT_AUDIT_FEEDBACK_CHARS === 0 ? "(full report)" : `(${DEFAULT_AUDIT_FEEDBACK_CHARS})`,
+        DEFAULT_AUDIT_FEEDBACK_CHARS === 0 ? "full report" : `${DEFAULT_AUDIT_FEEDBACK_CHARS}`,
       ),
       sourceText: src("auditFeedbackChars"),
       description: "cap the executor-visible disapproval report (0 = full report)",
@@ -191,7 +191,7 @@ export function buildSettingsRows(
       id: "quotaRetryMinutes",
       section: "auditor",
       label: "Quota retry minutes",
-      valueText: show("quotaRetryMinutes", `(${DEFAULT_QUOTA_RETRY_MINUTES})`),
+      valueText: show("quotaRetryMinutes", `${DEFAULT_QUOTA_RETRY_MINUTES}`),
       sourceText: src("quotaRetryMinutes"),
       description: "auto-retry a quota-exhausted auditor after N minutes",
     },
@@ -203,7 +203,7 @@ export function buildSettingsRows(
       id: "wedgeAlertMinutes",
       section: "stall-brakes",
       label: "Wedge alert minutes",
-      valueText: show("wedgeAlertMinutes", `(${WEDGE_ALERT_DEFAULT_MINUTES})`),
+      valueText: show("wedgeAlertMinutes", `${WEDGE_ALERT_DEFAULT_MINUTES}`),
       sourceText: src("wedgeAlertMinutes"),
       description: "hung-command alert while the session is busy (0 = off)",
     },
@@ -211,7 +211,7 @@ export function buildSettingsRows(
       id: "stuckMaxInterventions",
       section: "stall-brakes",
       label: "Stuck max interventions",
-      valueText: show("stuckMaxInterventions", `(${defaults.stuckMaxInterventions})`),
+      valueText: show("stuckMaxInterventions", `${defaults.stuckMaxInterventions}`),
       sourceText: src("stuckMaxInterventions"),
       description: "consecutive stuck interventions before a loop stops",
     },
@@ -219,7 +219,7 @@ export function buildSettingsRows(
       id: "stallEscalationRefires",
       section: "stall-brakes",
       label: "Stall escalation refires",
-      valueText: show("stallEscalationRefires", `(${DEFAULT_STALL_ESCALATION_REFIRES})`),
+      valueText: show("stallEscalationRefires", `${DEFAULT_STALL_ESCALATION_REFIRES}`),
       sourceText: src("stallEscalationRefires"),
       description:
         "heartbeat refires with no turn before the goal pauses / loop stops (0 = never)",
@@ -228,7 +228,7 @@ export function buildSettingsRows(
       id: "stallShortWords",
       section: "stall-brakes",
       label: "Stall short words",
-      valueText: show("stallShortWords", `(${DEFAULT_STALL_SHORT_WORDS})`),
+      valueText: show("stallShortWords", `${DEFAULT_STALL_SHORT_WORDS}`),
       sourceText: src("stallShortWords"),
       description: "turns with no tools AND fewer words than this count as a nudge",
     },
@@ -236,7 +236,7 @@ export function buildSettingsRows(
       id: "stallSimilarityThreshold",
       section: "stall-brakes",
       label: "Stall similarity threshold",
-      valueText: show("stallSimilarityThreshold", `(${DEFAULT_STALL_SIM_THRESHOLD})`),
+      valueText: show("stallSimilarityThreshold", `${DEFAULT_STALL_SIM_THRESHOLD}`),
       sourceText: src("stallSimilarityThreshold"),
       description:
         "no-tool turns whose text is > this similar to the prior turn count as a nudge (0–1)",
@@ -249,7 +249,7 @@ export function buildSettingsRows(
       id: "subagentModelStrategy",
       section: "subagents",
       label: "Subagent model strategy",
-      valueText: show("subagentModelStrategy", "(inherit-parent)"),
+      valueText: show("subagentModelStrategy", "inherit-parent"),
       sourceText: src("subagentModelStrategy"),
       description:
         "inherit-parent shares your session model + quota pool; agent-default uses the upstream pi-subagents default agents",
@@ -258,45 +258,52 @@ export function buildSettingsRows(
       id: "subagentModelOverrides.Explore",
       section: "subagents",
       label: "Subagent Explore pin",
-      valueText: settings.subagentModelOverrides?.Explore ?? "(follows strategy)",
+      valueText: settings.subagentModelOverrides?.Explore ?? "follows strategy",
       sourceText:
         settings.subagentModelOverrides?.Explore !== undefined
           ? src("subagentModelOverrides")
-          : "[default]",
+          : "default",
       description: "provider/model pin; always wins over strategy",
     },
     {
       id: "subagentModelOverrides.Plan",
       section: "subagents",
       label: "Subagent Plan pin",
-      valueText: settings.subagentModelOverrides?.Plan ?? "(follows strategy)",
+      valueText: settings.subagentModelOverrides?.Plan ?? "follows strategy",
       sourceText:
         settings.subagentModelOverrides?.Plan !== undefined
           ? src("subagentModelOverrides")
-          : "[default]",
+          : "default",
       description: "provider/model pin; always wins over strategy",
     },
     {
       id: "subagentModelOverrides.general-purpose",
       section: "subagents",
       label: "Subagent general-purpose pin",
-      valueText: settings.subagentModelOverrides?.["general-purpose"] ?? "(follows strategy)",
+      valueText: settings.subagentModelOverrides?.["general-purpose"] ?? "follows strategy",
       sourceText:
         settings.subagentModelOverrides?.["general-purpose"] !== undefined
           ? src("subagentModelOverrides")
-          : "[default]",
+          : "default",
       description: "provider/model pin; always wins over strategy",
     },
     {
       id: "subagentResolved",
       section: "subagents",
       label: "Effective resolution",
-      valueText: [
-        resolveEffectiveSubagentModel("Explore", settings, subagent.sessionModel),
-        resolveEffectiveSubagentModel("Plan", settings, subagent.sessionModel),
-        resolveEffectiveSubagentModel("general-purpose", settings, subagent.sessionModel),
-      ].join(" · "),
-      sourceText: "[runtime]",
+      // v0.28.20: compact — strip the parenthesized qualifier (the
+      // DESCRIPTION column carries semantics) and dedupe identical
+      // resolutions; the old 3-part parenthesized composite never fit.
+      valueText: (() => {
+        const strip = (r: string) => r.replace(/ \([^)]*\)$/, "").replace(/^\((.*)\)$/, "$1");
+        const parts = [
+          resolveEffectiveSubagentModel("Explore", settings, subagent.sessionModel),
+          resolveEffectiveSubagentModel("Plan", settings, subagent.sessionModel),
+          resolveEffectiveSubagentModel("general-purpose", settings, subagent.sessionModel),
+        ].map(strip);
+        return parts.every((p) => p === parts[0]) ? parts[0]! : parts.join(" · ");
+      })(),
+      sourceText: "runtime",
       description: "effective Explore / Plan / general-purpose model given current settings",
     },
   );
@@ -307,7 +314,7 @@ export function buildSettingsRows(
       id: "notifyCmd",
       section: "other",
       label: "Notify command",
-      valueText: show("notifyCmd", "(off)"),
+      valueText: show("notifyCmd", "off"),
       sourceText: src("notifyCmd"),
       description: "desktop push command; the event message is passed as $1",
     },
@@ -315,16 +322,16 @@ export function buildSettingsRows(
       id: "tokenLimit",
       section: "other",
       label: "Token limit per goal",
-      valueText: show("tokenLimit", "(off)"),
+      valueText: show("tokenLimit", "off"),
       sourceText: src("tokenLimit"),
       description: "per-goal token budget; pause when exceeded (0 = off)",
     },
     {
       id: "postaudit",
       section: "other",
-      label: "Postaudit config…",
+      label: "Postaudit",
       valueText: "open sub-menu",
-      sourceText: "[—]",
+      sourceText: "—",
       description:
         "post-completion follow-up enqueuer: mode, triggers, cascade, caps (postaudit / reviewer)",
     },

@@ -304,8 +304,8 @@ test("render: column separators align across header, rule, and every row (prefix
 
 test("render: a too-long VALUE is truncated with … — it must NOT break the grid", () => {
   const rows: SettingsRow[] = [
-    { id: "a", section: "keep-going", label: "Short", valueText: "(off)", sourceText: "[default]", description: "short row" },
-    { id: "b", section: "keep-going", label: "Effective resolution", valueText: "(session model) · (session model) · (session model)", sourceText: "[runtime]", description: "long composite value" },
+    { id: "a", section: "keep-going", label: "Short", valueText: "off", sourceText: "default", description: "short row" },
+    { id: "b", section: "keep-going", label: "Effective resolution", valueText: "session model · session model · session model", sourceText: "runtime", description: "long composite value" },
   ];
   const { component } = makeComponent(rows, 120);
   const lines = component.render(120);
