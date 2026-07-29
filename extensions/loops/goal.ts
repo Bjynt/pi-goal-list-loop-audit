@@ -1142,7 +1142,7 @@ function fireReviewer(
       manual: opts.manual,
       ledgerEntries,
       sources,
-      enqueueListItems: (objectives) => enqueueItems(ctx, objectives, "reviewer"),
+      enqueueListItems: (objectives) => enqueueItems(ctx, objectives, "reviewer", { autoActivate: loadSettings(ctx.cwd).autoResume === true }),
       proposeGoal: (objective, reason) => {
         try {
           extensionApi?.sendUserMessage(
@@ -1631,7 +1631,7 @@ async function cmdTweak(args: string, ctx: ExtensionContext): Promise<void> {
  * contract extraction) → appended to the queue → persisted → first item
  * activated when nothing is running. Returns the count enqueued.
  */
-function enqueueItems(ctx: ExtensionContext, texts: string[], source: string): number {
+function enqueueItems(ctx: ExtensionContext, texts: string[], source: string, opts?: { autoActivate?: boolean }): number {
   const items = texts.map((text) => {
     const extracted = extractVerificationContract(text);
     return { id: newGoalId(), objective: extracted.objective, verificationContract: extracted.verificationContract || undefined, addedAt: nowIso() };
@@ -1640,7 +1640,16 @@ function enqueueItems(ctx: ExtensionContext, texts: string[], source: string): n
   persistState(ctx);
   appendLedger(ctx.cwd, "list_imported", { source, count: items.length });
   if (!state.goal || state.goal.status === "complete" || state.goal.status === "aborted") {
-    activateNextListItem(ctx);
+    // v0.28.28: unsolicited sources (the reviewer) do NOT auto-start the
+    // head unless autoResume is on — "I cancelled a goal and the next one
+    // started itself" was the field complaint. User-driven imports keep
+    // the immediate-start behavior (opts default true).
+    if (opts?.autoActivate === false) {
+      ctx.ui.notify(`Queued ${items.length} item(s) from ${source} — /list next when ready (auto-start is opt-in: /glla autoresume=on).`, "info");
+      appendLedger(ctx.cwd, "list_autoactivation_held", { source, count: items.length });
+    } else {
+      activateNextListItem(ctx);
+    }
   }
   return items.length;
 }
@@ -3167,13 +3176,34 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         persistState(liveCtx);
         appendLedger(liveCtx.cwd, "list_added", { id: item.id, objective: item.objective, drafted: true });
         if (!state.goal || state.goal.status === "complete" || state.goal.status === "aborted") {
+          // v0.28.28: an AUTO-ACCEPTED draft does not auto-start unless
+          // autoResume is on — accepting a draft is not consent to start.
+          if (autoAccept && loadSettings(liveCtx.cwd).autoResume !== true) {
+            liveCtx.ui.notify(`Auto-accepted and QUEUED (autoResume off — not auto-started): ${extracted.objective.slice(0, 80)} — /list next when ready.`, "info");
+            appendLedger(liveCtx.cwd, "list_autoactivation_held", { source: "draft-autoaccepted", count: 1 });
+            return { content: [{ type: "text", text: "Draft accepted and added to the list, but NOT started (the user's autoResume setting is off — auto-accepted drafts queue, they don't auto-start). Do NOT begin work. Tell the user: /list next starts it." }], details: {} };
+          }
           activateNextListItem(liveCtx);
           return { content: [{ type: "text", text: "Confirmed and activated (list was empty). Begin work now." }], details: {} };
         }
         return { content: [{ type: "text", text: `Confirmed and added to the list (${listQueue().length} waiting). It activates when the current goal completes.` }], details: {} };
       }
       const goal = createGoal(full, liveCtx);
-      setGoal(goal, liveCtx);
+      setGoal(goal, liveCtx, autoAccept ? "draft-autoaccepted" : "draft-confirmed");
+      // v0.28.28: auto-accepted goal drafts are created HELD when autoResume
+      // is off — auto-accept delegates the Confirm click, not the decision
+      // to start. Explicit user-confirmed drafts still start immediately.
+      if (autoAccept && loadSettings(liveCtx.cwd).autoResume !== true) {
+        updateGoal({
+          status: "paused",
+          pauseKind: "blocked",
+          pauseReason: "auto-accepted draft — held for the user's go-ahead (autoResume off)",
+          pauseSuggestedAction: "/goal resume to start · /goal cancel to drop · /glla autoresume=on starts auto-accepted drafts automatically",
+        }, liveCtx);
+        appendLedger(liveCtx.cwd, "draft_held", { goalId: goal.id, reason: "autoaccept-autoresume-off" });
+        liveCtx.ui.notify(`Draft auto-accepted and HELD (autoResume off): ${goal.objective.slice(0, 80)} — /goal resume to start, /goal cancel to drop.`, "info");
+        return { content: [{ type: "text", text: "Goal accepted but HELD (the user's autoResume setting is off — auto-accepted drafts do not auto-start). Do NOT begin work. Tell the user: /goal resume starts it, /goal cancel drops it." }], details: {} };
+      }
       iterationCounter = 0;
       consecutiveErrorIterations = 0;
       consecutiveAbortIterations = 0;
