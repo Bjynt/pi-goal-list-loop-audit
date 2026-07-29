@@ -463,6 +463,14 @@ function startUITicker(): void {
 // and escalated loudly past 5 minutes.
 let continuationRearmStreak = 0;
 let loopRearmStreak = 0;
+// v0.28.24: post-compaction grace — a just-replaced session gets 3 minutes
+// to settle (queue drain, provider recovery) before stall counting resumes.
+// Field-observed in junk-runner: a 196k-token compact finished, then the
+// heartbeat burned all 5 stall refires in the next 5 minutes into a session
+// whose turn trigger was still dead — pausing a resumable goal 4 minutes
+// after the compact instead of giving pi room to recover.
+let compactionGraceUntil = 0;
+const COMPACTION_GRACE_MS = 3 * 60_000;
 const SEND_REARM_LEDGER_EVERY = 600; // 600 × 50ms = 30s
 const SEND_REARM_ESCALATE_AT = 6000; // 6000 × 50ms = 5 minutes
 
@@ -545,6 +553,10 @@ function heartbeatTick(): void {
     return;
   }
   const sessionIdle = idle && !pending;
+  // v0.28.24: post-compaction grace — the whole stall/refire/watchdog
+  // machinery below stays quiet for 3 minutes while the replaced session
+  // settles (latch watchdog, wedge alert, refire counting all resume after).
+  if (Date.now() < compactionGraceUntil) return;
   // v0.26.5: pending-latch watchdog — a queued continuation whose turn
   // trigger was dropped (field-observed post-compaction: continuation
   // ACCEPTED at compact+0s, then 22 minutes of silence). The stuck latch
@@ -1205,10 +1217,10 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
     // v0.28.1 (S3): the goal is persisted — mark the interrupt so the next
     // fresh session LOADS it (held by default since v0.28.21), and tell the truth instead of "starting now".
     updateGoal({ interruptedAt: nowIso(), interruptedReason: "created in a stale session" }, ctx);
-    ctx.ui.notify(`Goal saved: ${shortObj(goal.objective)} — safe in .pi-glla/, but this stale process can't send continuations. Restart pi, then /goal resume (v0.28.21: session loads no longer auto-start by default). (id: ${goal.id})`, "warning");
+    ctx.ui.notify(`Goal saved: ${shortObj(goal.objective)} — safe in .pi-glla/, but this stale process can't send continuations. Restart pi, then /goal resume (v0.28.21: session loads no longer auto-start by default).`, "warning");
     return;
   }
-  ctx.ui.notify(`Goal started: ${shortObj(goal.objective)} — the auditor will verify on completion. (id: ${goal.id})`, "info");
+  ctx.ui.notify(`Goal started: ${shortObj(goal.objective)} — the auditor will verify on completion.`, "info");
   scheduleContinuation(ctx, true);
 }
 
@@ -1219,8 +1231,7 @@ async function cmdStatus(ctx: ExtensionContext): Promise<void> {
   }
   const g = state.goal;
   const lines = [
-    `[${g.id}] ${statusLabel(g.status)}`,
-    `Objective: ${g.objective}`,
+    `${statusLabel(g.status)}: ${g.objective}`,
     // v0.24.7: name WHERE the work came from — a queue item is not a goal.
     ...(g.policy === "list" ? [`Source: /list queue (${listQueue().length} waiting) — /list to manage`] : []),
     `Auto-continue: ${g.autoContinue ? "on" : "off"}`,
@@ -1240,10 +1251,10 @@ async function cmdPause(ctx: ExtensionContext): Promise<void> {
   // v0.22.7: name WHAT was paused — a list item resumes through /list.
   if (state.goal.policy === "list") {
     const queued = listQueue().length;
-    ctx.ui.notify(`List item ${state.goal.id} paused${queued > 0 ? ` (${queued} waiting in the list)` : ""}. /list resume to continue.`, "info");
+    ctx.ui.notify(`List item \"${shortObj(state.goal.objective)}\" paused${queued > 0 ? ` (${queued} waiting in the list)` : ""}. /list resume to continue.`, "info");
     return;
   }
-  ctx.ui.notify(`Goal ${state.goal.id} paused. /goal resume to continue.`, "info");
+  ctx.ui.notify(`Goal \"${shortObj(state.goal.objective)}\" paused. /goal resume to continue.`, "info");
 }
 
 async function cmdResume(ctx: ExtensionContext): Promise<void> {
@@ -4420,6 +4431,12 @@ export default function (pi: ExtensionAPI): void {
     rememberCtx(ctx);
     if (!isSupervising()) return;
     appendLedger(ctx.cwd, "session_compact", {});
+    // v0.28.24: a compaction is LEGITIMATE busy time — reset the send-rearm
+    // storm streaks (π-web nearly escalated a "send-retry storm" pause during
+    // a 3.5-minute compact) and open the post-compaction stall grace.
+    continuationRearmStreak = 0;
+    loopRearmStreak = 0;
+    compactionGraceUntil = Date.now() + COMPACTION_GRACE_MS;
     const settle = setTimeout(() => {
       const c = freshCtx();
       if (!c) return;

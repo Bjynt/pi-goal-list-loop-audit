@@ -111,17 +111,79 @@ export function stripCodeSpans(text: string): string {
     .replace(/`[^`\n]*`/g, " ");
 }
 
+/** v0.28.24: join hard-wrapped lines before classification. Completion
+ * summaries and transcripts arrive wrapped at ~70 cols, and line-by-line
+ * extraction sliced findings at the wrap point (field-observed in
+ * hellhunter: a list item whose ENTIRE objective was "Run a post-completion
+ * regression scan on the hellhunter codebase to" — the first visual line of
+ * a wrapped paragraph, enqueued by the convert-findings-to-list cascade).
+ * A line that doesn't end a sentence continues on the next line unless that
+ * line starts a new list item or heading. */
+export function unwrapHardWrappedLines(text: string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
+  for (const line of lines) {
+    const prev = out[out.length - 1];
+    const startsNewItem = /^\s*([-*•>]|\d+[.)]|#)/.test(line);
+    if (
+      prev !== undefined &&
+      prev.trim().length > 0 &&
+      line.trim().length > 0 &&
+      !startsNewItem &&
+      !/[.!?:;)"'\]]$/.test(prev.trimEnd())
+    ) {
+      out[out.length - 1] = `${prev.trimEnd()} ${line.trimStart()}`;
+    } else {
+      out.push(line);
+    }
+  }
+  return out.join("\n");
+}
+
+/** v0.28.24: a candidate ending in a dangling connector is a wrap/parse
+ * fragment, not a finding ("…codebase to", "…the settings and"). */
+const DANGLING_END = /\s(to|and|or|but|the|a|an|of|for|with|in|on|at|that|which|into|from|by|is|are|was|were|be|been|so|if|then|than|as|nor|yet|per|via)$/i;
+
+/** v0.28.24: cut at a clause boundary, never mid-word — the finding text IS
+ * the item's user-facing name once enqueued. */
+export function cutAtClauseBoundary(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const window = s.slice(0, max);
+  const clause = Math.max(
+    window.lastIndexOf(". "),
+    window.lastIndexOf("! "),
+    window.lastIndexOf("? "),
+    window.lastIndexOf("; "),
+    window.lastIndexOf(", "),
+    window.lastIndexOf(" — "),
+    window.lastIndexOf(": "),
+  );
+  if (clause >= Math.floor(max * 0.4)) return window.slice(0, clause + 1).trimEnd();
+  const space = window.lastIndexOf(" ");
+  return (space > 0 ? window.slice(0, space) : window).trimEnd();
+}
+
 /** Scan source texts line-by-line for finding-shaped content. Code
- * spans are stripped first (v0.26.4) — findings live in prose. */
-export function extractFindings(sources: Array<{ name: string; text: string }>, max: number): Finding[] {
+ * spans are stripped first (v0.26.4) — findings live in prose. Hard-wrapped
+ * lines are joined (v0.28.24) — findings are sentence-shaped, not
+ * visual-line-shaped. `completedObjective` (v0.28.24) dedupes findings that
+ * merely restate the just-completed goal (exact-match dedupe at v0.28.16 was
+ * too narrow — duplicates arrive as prefixes/paraphrases). */
+export function extractFindings(sources: Array<{ name: string; text: string }>, max: number, completedObjective?: string): Finding[] {
   const out: Finding[] = [];
   const seen = new Set<string>();
+  const completedNorm = completedObjective ? normalizeObjective(completedObjective) : "";
   for (const { name, text } of sources) {
-    for (const line of stripCodeSpans(text).split("\n")) {
+    for (const line of unwrapHardWrappedLines(stripCodeSpans(text)).split("\n")) {
       const cls = classifyFindingText(line);
       if (!cls) continue;
-      const clean = line.trim().replace(/^[-*>\s\[\]x]+/, "").slice(0, 200);
+      const clean = cutAtClauseBoundary(line.trim().replace(/^[-*>\s\[\]x]+/, ""), 200);
       if (clean.length < 8 || seen.has(clean)) continue;
+      if (DANGLING_END.test(clean) || /[,;:\u2014-]$/.test(clean)) continue; // v0.28.24: wrap/parse fragment
+      if (completedNorm) {
+        const nf = normalizeObjective(clean);
+        if (nf.length >= 24 && (completedNorm.startsWith(nf) || nf.startsWith(completedNorm))) continue; // v0.28.24: restates the completed goal
+      }
       seen.add(clean);
       out.push({ text: clean, source: name, class: cls });
       if (out.length >= max) return out;
@@ -260,7 +322,7 @@ export function runReviewer(
     }
   }
 
-  const findings = extractFindings(deps.sources, config.maxFindingsPerReview);
+  const findings = extractFindings(deps.sources, config.maxFindingsPerReview, source.objective);
   const bugs = findings.filter((f) => f.class === "bug" || f.class === "refactor");
   const architectural = findings.filter((f) => f.class === "architectural");
   const strategic = findings.filter((f) => f.class === "strategic");
