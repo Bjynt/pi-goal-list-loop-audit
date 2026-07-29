@@ -1251,10 +1251,10 @@ async function cmdPause(ctx: ExtensionContext): Promise<void> {
   // v0.22.7: name WHAT was paused — a list item resumes through /list.
   if (state.goal.policy === "list") {
     const queued = listQueue().length;
-    ctx.ui.notify(`List item \"${shortObj(state.goal.objective)}\" paused${queued > 0 ? ` (${queued} waiting in the list)` : ""}. /list resume to continue.`, "info");
+    ctx.ui.notify(`List item "${shortObj(state.goal.objective)}" paused${queued > 0 ? ` (${queued} waiting in the list)` : ""}. /list resume to continue.`, "info");
     return;
   }
-  ctx.ui.notify(`Goal \"${shortObj(state.goal.objective)}\" paused. /goal resume to continue.`, "info");
+  ctx.ui.notify(`Goal "${shortObj(state.goal.objective)}" paused. /goal resume to continue.`, "info");
 }
 
 async function cmdResume(ctx: ExtensionContext): Promise<void> {
@@ -4609,7 +4609,7 @@ export default function (pi: ExtensionAPI): void {
         // the auto-resume the marker promised.
         if (wasInterrupted) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
         ctx.ui.notify(
-          `Resuming ${state.goal.policy === "list" ? "list item" : "goal"} [${state.goal.id}]: ${state.goal.objective.slice(0, 70)}${listQueue().length > 0 ? ` (+${listQueue().length} queued)` : ""}${wasInterrupted ? " — auto-resumed after the stale-handle interrupt" : ""}`,
+          `Resuming ${state.goal.policy === "list" ? "list item" : "goal"}: ${state.goal.objective.slice(0, 70)}${listQueue().length > 0 ? ` (+${listQueue().length} queued)` : ""}${wasInterrupted ? " — auto-resumed after the stale-handle interrupt" : ""}`,
           "info",
         );
         // v0.28.4 (P3): skip nudge accounting for the first recovery turns.
@@ -4628,14 +4628,14 @@ export default function (pi: ExtensionAPI): void {
           pauseSuggestedAction: resumeHint,
         }, ctx);
         ctx.ui.notify(
-          `${isListItem ? "List item" : "Goal"} held on restore [${state.goal.id}]: ${state.goal.objective.slice(0, 70)}${queued > 0 ? ` (+${queued} waiting in the list)` : ""} — ${resumeCmd} to continue.`,
+          `${isListItem ? "List item" : "Goal"} held on restore: ${state.goal.objective.slice(0, 70)}${queued > 0 ? ` (+${queued} waiting in the list)` : ""} — ${resumeCmd} to continue.`,
           "info",
         );
       }
     } else if (state.goal && state.goal.status === "active") {
       // Active but autoContinue off: nothing auto-fires — just surface it.
       ctx.ui.notify(
-        `Restored ${state.goal.policy === "list" ? "list item" : "goal"} [${state.goal.id}]: ${state.goal.objective.slice(0, 70)}${listQueue().length > 0 ? ` (+${listQueue().length} queued)` : ""}`,
+        `Restored ${state.goal.policy === "list" ? "list item" : "goal"}: ${state.goal.objective.slice(0, 70)}${listQueue().length > 0 ? ` (+${listQueue().length} queued)` : ""}`,
         "info",
       );
     } else if ((!state.goal || state.goal.status === "complete" || state.goal.status === "aborted") && listQueue().length > 0) {
@@ -4661,7 +4661,7 @@ export default function (pi: ExtensionAPI): void {
         pauseSuggestedAction: "/loop to work the loop, or /loop stop then /goal resume to work the goal",
       }, ctx);
       ctx.ui.notify(
-        `Goal [${state.goal.id}] held — a loop also exists; one active thing at a time. /loop to resume the loop, or /loop stop then /goal resume.`,
+        `Goal held — a loop also exists; one active thing at a time. /loop to resume the loop, or /loop stop then /goal resume.`,
         "info",
       );
       maybeDecisionPopup(ctx);

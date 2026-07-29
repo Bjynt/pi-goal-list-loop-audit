@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.28.24] — 2026-07-29
+
+### Fixed — three field-observed failure classes (π-web, junk-runner, hellhunter)
+
+**1. Reviewer extraction: findings are sentence-shaped, not visual-line-shaped.**
+The convert-findings-to-list cascade harvested findings line-by-line from
+hard-wrapped (~70-col) completion prose, so a finding could be a mid-sentence
+fragment — hellhunter got a list item whose ENTIRE objective was "Run a
+post-completion regression scan on the hellhunter codebase to" (the first
+visual line of a wrapped paragraph, duplicating an already-approved goal;
+the rig then paused on a human decision to clear the phantom item).
+`extractFindings` now: joins hard-wrapped lines before classification
+(lowercase-start continuation = mid-sentence signal; punctuation-less
+uppercase items like TODO chains stay separate); rejects dangling-connector
+fragments ("…codebase to"); cuts overlong findings at a clause boundary,
+never mid-word; and dedupes findings that restate the just-completed goal
+(prefix/containment — the v0.28.16 exact-match dedupe was too narrow;
+duplicates arrive as prefixes).
+
+**2. Goal ids are internal plumbing — user-facing surfaces never show them.**
+The user: "is that even a goal, we have a list here" — and the agent's
+decision card offered `/goal drop 20260729065635-gbtxsm`, a command that
+does not exist, referencing an id the user cannot act on. Stripped the id
+tag from `/goal status`, the started/saved/paused notifies, and all four
+session-restore notifies (resuming/held/restored/loop-hold). `/goal archive`
+keeps ids — there they are the `/review <id>` handle. Agent-facing surfaces
+(tool results, ledger, prompts) keep them. `pause_goal`'s description and
+the continuation prompt now enumerate the REAL command surface for decision
+options (`/goal resume`, `/goal cancel`, `/goal tweak "<text>"`,
+`/list remove N`, `/list next`, `/loop stop|resume` — all act on the ACTIVE
+goal; there is NO `/goal drop` and NO command takes a goal id) and require
+naming things ("list item 'regression scan'") instead of showing ids.
+
+**3. Compaction hardening.** Two storm/stall false-positive shapes from the
+field: π-web's send-rearm streak climbed 3,600 during a legitimate
+3.5-minute compaction (5 minutes would have escalated a misleading
+"wedged queue" pause), and junk-runner burned all 5 stall refires in the
+5 minutes right after a 196k-token compact — pausing a resumable goal
+4 minutes post-compact instead of giving pi room to settle. Now:
+`session_compact` resets both send-rearm storm streaks (a compact is
+LEGITIMATE busy time, not a wedge signal) and opens a 3-minute
+post-compaction grace that suppresses the heartbeat's stall/refire/watchdog
+machinery (mirroring post_restore_grace).
+
+Pins: 5 extraction unit tests (wrap-join, TODO-chain separation, fragment
+rejection, completed-objective dedupe, clause-boundary cut), compaction
+source pins (streak reset inside the hook, grace gate precedes the refire
+path), behavioral id-strip tests (/goal status + /goal pause show no id),
+pause_goal description pin. 589 tests.
+
 ## [0.28.23] — 2026-07-29
 
 ### Added — decision picker popup (`ctx.ui.select`)
