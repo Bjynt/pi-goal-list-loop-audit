@@ -1138,6 +1138,13 @@ async function cmdGoal(args: string, ctx: ExtensionContext): Promise<void> {
     if (route.name === "pause") return cmdPause(ctx);
     if (route.name === "resume") return cmdResume(ctx);
     if (route.name === "cancel") return cmdCancel(ctx);
+    // v0.28.23: re-open the decision picker for a decision pause (the
+    // popup auto-opens when the pause lands; this is the on-demand path).
+    if (route.name === "decide") {
+      const shown = await showDecisionPrompt(ctx);
+      if (!shown) ctx.ui.notify("No pending decision — the goal isn't paused on a choice (or no UI).", "info");
+      return;
+    }
     if (route.name === "tweak") return cmdTweak(route.rest, ctx);
     if (route.name === "archive") return cmdGoals(ctx);
     // v0.16.0: /goal start <objective> — explicit skip-draft. Activates
