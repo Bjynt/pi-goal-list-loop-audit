@@ -147,3 +147,19 @@ test("timing defaults: wedge 30m, measure 10m, auditor stall 10m", () => {
     assert.ok(ms > 0 && ms <= 30 * 60_000, `bound out of range: ${ms}`);
   }
 });
+
+test("v0.28.25: stall refires space exponentially — 1m, 2m, 4m, 8m cap (junk-runner 5-in-4-minutes fix)", () => {
+  const base = { supervising: true, sessionIdle: true, timerPending: false };
+  // stalls=0 (first refire): unchanged flat behavior at 60s
+  assert.ok(shouldHeartbeatRefire({ ...base, msSinceActivity: HEARTBEAT_STALL_MS, consecutiveStalls: 0 }));
+  assert.ok(shouldHeartbeatRefire({ ...base, msSinceActivity: HEARTBEAT_STALL_MS }), "omitted streak = first refire");
+  // stalls=1: needs 2m of silence — 61s is NOT enough
+  assert.ok(!shouldHeartbeatRefire({ ...base, msSinceActivity: HEARTBEAT_STALL_MS + 1_000, consecutiveStalls: 1 }));
+  assert.ok(shouldHeartbeatRefire({ ...base, msSinceActivity: HEARTBEAT_STALL_MS * 2, consecutiveStalls: 1 }));
+  // stalls=2 → 4m; stalls=3 → 8m; stalls=9 → still 8m (cap 2^3)
+  assert.ok(!shouldHeartbeatRefire({ ...base, msSinceActivity: HEARTBEAT_STALL_MS * 3, consecutiveStalls: 2 }));
+  assert.ok(shouldHeartbeatRefire({ ...base, msSinceActivity: HEARTBEAT_STALL_MS * 4, consecutiveStalls: 2 }));
+  assert.ok(!shouldHeartbeatRefire({ ...base, msSinceActivity: HEARTBEAT_STALL_MS * 7, consecutiveStalls: 3 }));
+  assert.ok(shouldHeartbeatRefire({ ...base, msSinceActivity: HEARTBEAT_STALL_MS * 8, consecutiveStalls: 3 }));
+  assert.ok(shouldHeartbeatRefire({ ...base, msSinceActivity: HEARTBEAT_STALL_MS * 8, consecutiveStalls: 9 }), "cap holds at 8×");
+});

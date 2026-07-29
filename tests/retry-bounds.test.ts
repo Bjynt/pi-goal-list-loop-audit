@@ -79,10 +79,30 @@ test("E8: user aborts braked SEPARATELY — honest message, no auto-resume", () 
   assert.ok(!abortBranch.includes("scheduleQuotaRetry"), "no auto-resume for user aborts");
 });
 
-test("E8: provider-error brake gets ONE capped 60s auto-resume with reason re-check", () => {
-  assert.match(SRC, /scheduleQuotaRetry\(ctx, 60, reason, \(\) => \{/);
+test("E8: provider-error brake gets ONE capped escalating auto-resume with reason re-check (v0.28.25)", () => {
+  // v0.28.25: the cooldown escalates per consecutive brake — 60s, 2m, 4m,
+  // 8m, 16m cap. First brake is still 60s (60_000 * 2^0).
+  assert.match(SRC, /const cooldownMs = 60_000 \* 2 \*\* Math\.min\(errorBrakeStreak, 4\);/);
+  assert.match(SRC, /errorBrakeStreak\+\+;/);
+  assert.match(SRC, /scheduleQuotaRetry\(ctx, cooldownMs \/ 1000, reason, \(\) => \{/);
+  assert.match(SRC, /errorBrakeStreak = 0; \/\/ v0\.28\.25/, "a healthy turn clears the brake cooldown");
   assert.match(SRC, /\(state\.goal\.pauseReason \?\? ""\)\.startsWith\("5 consecutive errors"\)/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "goal_resumed", \{ via: "error-brake-retry" \}\)/);
   // scheduleQuotaRetry generalized with a label param (quota default intact):
   assert.match(QUOTA, /label = "Auditor quota exhausted — auto-retry",/);
+});
+
+test("v0.28.25: inter-error retries ride an exponential ladder, not the immediate continuation", () => {
+  // dracon-utilities: 5 concurrent-limit 403s retried back-to-back (delay 0
+  // at agent_end — the session is idle), then the brake cycled for 1h 38m.
+  assert.match(SRC, /const ERROR_RETRY_LADDER_MS = \[5_000, 15_000, 45_000, 90_000, 180_000\];/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "error_retry_backoff", \{ attempt: consecutiveErrorIterations, delayMs: retryDelayMs \}\);/);
+  assert.match(SRC, /scheduleContinuation\(ctx, true, retryDelayMs\);/);
+  // the ladder return sits inside the error branch, before the generic fall-through:
+  const ladderIdx = SRC.indexOf("scheduleContinuation(ctx, true, retryDelayMs);");
+  const abortBranch = SRC.indexOf('} else if (stopReason === "aborted") {');
+  assert.ok(ladderIdx > 0 && abortBranch > ladderIdx, "ladder return precedes the aborted branch");
+  // and scheduleContinuation honors an explicit delay:
+  assert.match(SRC, /function scheduleContinuation\(ctx: ExtensionContext, force = false, delayMs\?: number\): void \{/);
+  assert.match(SRC, /delay = delayMs \?\? \(ctx\.isIdle\(\)/);
 });
