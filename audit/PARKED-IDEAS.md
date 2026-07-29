@@ -11,5 +11,4 @@ A dedicated **drafter model** — like `auditorModel` but for the drafting/plann
 - Naming-enforcement prompt (rig naming discipline in the continuation prompt — currently only in AGENTS.md)
 - `session_start` auto-activate unit test (behavioral harness covers restore-gate branches; the auto-activate path itself is unpinned)
 - Negative-grep regression checks scoped to `extensions/` only (convention, not enforced)
-- SettingsMenuComponent.renderBody column-padding bug (cosmetic, pi-tui side)
 - Sub-goal tree — HOLD for v0.29+ (needs a real design pass, not a patch)
