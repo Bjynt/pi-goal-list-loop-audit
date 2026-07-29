@@ -107,6 +107,18 @@ const paint = (theme: DisplayTheme | undefined, color: DisplayColor, text: strin
 const ERROR_PAUSE = /token limit|stalled|infra|auditor.*fail/i;
 const pauseIsError = (g: Goal): boolean => ERROR_PAUSE.test(g.pauseReason ?? "");
 
+/** v0.28.22: the rendering class of a pause — declared kind wins; legacy
+ * pauses (no kind) fall back to the error-regex so old states still
+ * classify sensibly. */
+type PauseKind = "decision" | "error" | "wait" | "blocked";
+const pauseKind = (g: Goal): PauseKind | undefined => g.pauseKind ?? (pauseIsError(g) ? "error" : undefined);
+
+/** v0.28.22: "06:40 UTC" from an ISO string (wait-pause countdown). */
+const shortClock = (iso: string): string => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso.slice(0, 16) : d.toISOString().slice(11, 16) + " UTC";
+};
+
 // ---- status line (one-liner, always-on) ----
 
 export interface AuditDisplayProgress {
@@ -150,6 +162,13 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     return `glla: ${paint(theme, "accent", "auditing…")}${tool}${heldSuffix}`;
   }
   if (g.status === "paused") {
+    // v0.28.22: the status line names the ACTIONABILITY, not the reason —
+    // "decision needed" / "action needed" / "waiting" tell you at a glance
+    // whether the session needs you. Legacy pauses keep the reason dump.
+    const kind = pauseKind(g);
+    if (kind === "decision") return `glla: ${g.policy} ${paint(theme, "accent", "⏸ decision needed")}${heldSuffix}`;
+    if (kind === "error") return `glla: ${g.policy} ${paint(theme, "error", `⏸ action needed — ${truncate(g.pauseReason ?? "", 30)}`)}${heldSuffix}`;
+    if (kind === "wait") return `glla: ${g.policy} ${paint(theme, "dim", `⏳ waiting${g.pauseResumeAt ? ` · resumes ${shortClock(g.pauseResumeAt)}` : ""}`)}${heldSuffix}`;
     const label = `${g.policy} paused ⏸ ${truncate(g.pauseReason ?? "", 40)}`;
     return `glla: ${paint(theme, pauseIsError(g) ? "error" : "warning", label)}${heldSuffix}`;
   }

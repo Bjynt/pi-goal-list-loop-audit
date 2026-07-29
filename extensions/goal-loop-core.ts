@@ -156,6 +156,16 @@ export interface Goal {
   stopReason?: string;
   pauseReason?: string;
   pauseSuggestedAction?: string;
+  /** v0.28.22: pause classification — drives the widget/status rendering
+   * (a decision pause, an operational failure, a time-gated wait, and a
+   * generic block must not look alike). Undefined = legacy flat card. */
+  pauseKind?: "decision" | "error" | "wait" | "blocked";
+  /** v0.28.22: decision pauses — the options the user picks between. */
+  pauseOptions?: string[];
+  /** v0.28.22: 1-based index into pauseOptions the agent recommends. */
+  pauseRecommended?: number;
+  /** v0.28.22: ISO time a wait-pause becomes resumable (countdown shown). */
+  pauseResumeAt?: string;
   /** v0.28.1 (S1/S2): stale-handle interrupt marker. Set INSTEAD of pausing
    * when pi invalidates the extension handle mid-goal — the goal stays
    * active so a fresh session auto-resumes it via the restore gate. Cleared
