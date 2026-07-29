@@ -4177,7 +4177,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
     }
   }
   if (!changed) {
-    ctx.ui.notify("Nothing changed. Use key=value (model, thinking, notify, tokenlimit, autoresume, carryover, auditcap, auditfeedbackchars, aggressivemode, quotaretryminutes, stuckmax), optionally prefixed with 'project'.", "info");
+    ctx.ui.notify("Nothing changed. Use key=value (model, thinking, notify, tokenlimit, autoresume, decisionpopup, carryover, auditcap, auditfeedbackchars, aggressivemode, quotaretryminutes, stuckmax), optionally prefixed with 'project'.", "info");
     return;
   }
   saveSettings(scope, ctx.cwd, patch);

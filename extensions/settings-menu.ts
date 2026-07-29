@@ -129,7 +129,16 @@ export function buildSettingsRows(
       valueText: show("autoResume", "default"),
       sourceText: src("autoResume"),
       description:
-        "on: resume on session load too · off: never · default: hold on load, resume on reload/fork",
+        "on: resume on session load too · off: never · default: hold on EVERY load — explicit resume (v0.28.21)",
+    },
+    {
+      id: "decisionPopup",
+      section: "keep-going",
+      label: "Decision popup",
+      valueText: show("decisionPopup", "on"),
+      sourceText: src("decisionPopup"),
+      description:
+        "on: decision pauses pop the select() picker · off: widget card only — /goal decide reopens the picker (v0.28.23)",
     },
     {
       id: "autoAcceptDrafts",
