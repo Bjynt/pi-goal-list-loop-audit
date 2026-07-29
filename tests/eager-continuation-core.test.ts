@@ -65,7 +65,7 @@ test("audit-cap branch: aggressiveMode keeps ACTIVE + pendingTasks; OFF pauses (
   assert.match(goalSrc, /if \(effectiveCap\.aggressiveMode\) \{/);
   assert.match(goalSrc, /pendingTasks,\n\s+pauseReason: `auditor disapproved \$\{trailingDisapprovals\}× consecutively \(cap \$\{auditCap\}\) — aggressiveMode: continuing with TODOs`/);
   // non-aggressive path still pauses
-  assert.match(goalSrc, /status: "paused",\n\s+auditHistory: history,\n\s+pauseReason: `auditor disapproved \$\{trailingDisapprovals\}× consecutively \(cap \$\{auditCap\}\)`,/);
+  assert.match(goalSrc, /status: "paused",\n\s+auditHistory: history,\n\s+pauseKind: "decision",\n\s+pauseReason: `auditor disapproved \$\{trailingDisapprovals\}× consecutively \(cap \$\{auditCap\}\)`,/);
 });
 
 test("IMPOSSIBLE branch: aggressive partial stays active, full still pauses (item 24 tests 3-4)", () => {
