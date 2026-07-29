@@ -2574,6 +2574,9 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
             status: "paused",
             auditHistory: history,
             auditInfraStreak: undefined, // quota reached the auditor — infra streak broken
+            // v0.28.26: store the claim — the quota retry re-runs the
+            // auditor DIRECTLY with it (no agent turn to confuse).
+            pendingCompletion: { completionSummary: p.completionSummary, verificationSummary: p.verificationSummary, at: nowIso() },
             pauseKind: "wait",
             pauseResumeAt: new Date(Date.now() + quota.retryAfterSec * 1000).toISOString(),
             pauseReason: `auditor quota: ${result.error}`,
@@ -2584,6 +2587,13 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
             // Re-check: only auto-resume if STILL paused for the quota
             // reason (a user /goal pause during the window is not stomped).
             if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor quota:")) {
+              // v0.28.26: a stored claim retries the AUDITOR directly — the
+              // agent is not needed to re-submit an unchanged claim, and
+              // re-engaging it produced hallucinated-closure loops.
+              if (state.goal.pendingCompletion) {
+                void retryStoredCompletionAudit(ctx);
+                return;
+              }
               updateGoal({ status: "active" }, ctx);
               appendLedger(ctx.cwd, "goal_resumed", { via: "quota-retry" });
               if (resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).aggressiveMode) {

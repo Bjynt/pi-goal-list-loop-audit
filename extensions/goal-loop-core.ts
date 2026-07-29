@@ -176,6 +176,15 @@ export interface Goal {
    * At 3 the goal pauses loudly — a broken auditor model must not spin a
    * silent retry-forever loop. Cleared on any real auditor run. */
   auditInfraStreak?: number;
+  /** v0.28.26: the completion claim captured when an audit attempt is
+   * quota-blocked. The quota retry re-runs the AUDITOR directly with this
+   * stored claim instead of re-engaging the agent — re-engaging produced a
+   * hallucinated-closure repetition loop in the field (π-games 2026-07-29:
+   * the agent concluded the goal was closed, stopped calling complete_goal,
+   * and repeated the same essay until the stall brake fired). Cleared when
+   * the retry resolves. Only consumed while paused with an "auditor quota:"
+   * reason, so a stale value is unreachable by construction. */
+  pendingCompletion?: { completionSummary?: string; verificationSummary?: string; at: string };
   /** v0.25.0 (contract item 22): auditor objections extracted as TODOs when
    * aggressiveMode keeps the goal active past the disapproval cap. Rendered
    * into every continuation prompt until the next audit clears them. */
