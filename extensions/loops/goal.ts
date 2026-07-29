@@ -1239,6 +1239,13 @@ async function cmdPause(ctx: ExtensionContext): Promise<void> {
 
 async function cmdResume(ctx: ExtensionContext): Promise<void> {
   if (!state.goal || state.goal.status !== "paused") return;
+  // v0.28.21: one-active-thing — the LAST unguarded activation path. A
+  // paused goal/list-item must not resume over a live loop (covers
+  // /goal resume AND /list resume, which routes here).
+  if (isLoopActive()) {
+    ctx.ui.notify("A loop is active — one active thing at a time. /loop stop it first, then resume the goal.", "warning");
+    return;
+  }
   // v0.28.1 (S1/S3): resuming in a stale session used to flip status to
   // active, claim "Resumed goal", then re-pause on the stale send failure
   // (or zombie — S1). Now: persist the resume (the next fresh session
@@ -4460,12 +4467,13 @@ export default function (pi: ExtensionAPI): void {
         );
       }
     } else if (state.goal && state.goal.status === "active" && state.goal.autoContinue) {
-      // v0.28.3 (S2 completed): an infra interrupt outranks the DEFAULT
-      // hold — the goal never chose to stop; pi killed its handle. With
-      // autoresume unset, an interrupted goal auto-resumes even on a human
-      // session load; explicit /glla autoresume=off still holds.
       const wasInterrupted = !!state.goal.interruptedAt;
-      if (autoResume || (wasInterrupted && autoResumeSetting !== false)) {
+      // v0.28.21: the 0.28.3 interrupted-goal exemption is SUPERSEDED —
+      // the default is now hold-everything on session load (user directive:
+      // "load it but not auto start it"). Interrupted goals hold like
+      // everything else; autoresume=on (unattended rigs) still auto-resumes
+      // them, and the marker is cleared only on that promised auto-resume.
+      if (autoResume) {
         // v0.28.1 (S2): clear the stale-handle interrupt marker — this IS
         // the auto-resume the marker promised.
         if (wasInterrupted) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
@@ -4505,6 +4513,22 @@ export default function (pi: ExtensionAPI): void {
       } else {
         ctx.ui.notify(`List has ${listQueue().length} item(s) waiting — /list next to activate the head.`, "info");
       }
+    }
+    // v0.28.21: enforce one-active-thing at the restore boundary for DIRTY
+    // legacy states — pre-guard versions could persist an active goal AND
+    // an active/held loop; the chain above handles the loop first, and the
+    // goal would otherwise stay active and fire on agent_end. Pause it:
+    // at most one thing owns the active slot, and nothing auto-starts.
+    if (state.loop && state.goal && state.goal.status === "active") {
+      updateGoal({
+        status: "paused",
+        pauseReason: "held on session load — the loop owns the active slot (one active thing at a time)",
+        pauseSuggestedAction: "/loop to work the loop, or /loop stop then /goal resume to work the goal",
+      }, ctx);
+      ctx.ui.notify(
+        `Goal [${state.goal.id}] held — a loop also exists; one active thing at a time. /loop to resume the loop, or /loop stop then /goal resume.`,
+        "info",
+      );
     }
     // Always paint on session load (v0.22.1): the branches above only reach
     // refreshUI via persistState, so a goal that was ALREADY paused (or any

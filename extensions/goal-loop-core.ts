@@ -728,21 +728,21 @@ export function cloneGoal(goal: Goal): Goal {
  * setting for unattended restarts). One mechanical predicate; no heuristics.
  */
 export function shouldAutoResumeOnSessionStart(reason: string | undefined, autoResume: boolean | undefined): boolean {
-  // v0.26.9 tri-state:
-  //   true      → auto-resume on EVERY session start (unattended rigs).
+  // v0.28.21: the DEFAULT flipped to hold-everything (user directive:
+  // "load it on session load but not auto start it"). Tri-state:
+  //   true      → auto-resume on EVERY session start (unattended rigs;
+  //               /glla autoresume=on — this is the ONLY auto-resume path).
   //   false     → never auto-resume; always hold for an explicit resume.
-  //   undefined → DEFAULT: a human LOADING a session ("startup"/"new"/
-  //               "resume", or old pi reporting no reason) must not trigger
-  //               work — show the held popup, they resume explicitly.
-  //               In-session MACHINERY ("reload"/"fork") auto-resumes so an
-  //               extension reload or session fork never strands work.
+  //   undefined → DEFAULT: never auto-resume either — whatever the reason
+  //               ("startup"/"new"/"resume"/"reload"/"fork"/none), the
+  //               item is LOADED (visible, state intact) but HELD until an
+  //               explicit /goal resume, /list resume, or /loop.
   // Mid-session continuation (agent_end chains, heartbeat refires,
   // post-compaction, list/loop transitions) is not gated here at all — it
   // auto-continues forever unless a super-stuck brake (stall escalation,
   // stale-api terminal, pending-latch watchdog) stops it loudly.
-  if (autoResume === true) return true;
-  if (autoResume === false) return false;
-  return reason === "reload" || reason === "fork";
+  void reason; // retained for the signature; no reason auto-resumes by default anymore
+  return autoResume === true;
 }
 
 /**
