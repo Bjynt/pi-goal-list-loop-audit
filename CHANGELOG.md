@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.28.22] — 2026-07-29
+
+### Added — classified pause cards (decision / action-needed / waiting)
+
+User report (4 screenshots across junk-runner / ai-auto-writer /
+dracon-utilities): "if something actionable is going on it can be hard
+to tell" — a decision pause, an infra failure, and a time-gated wait all
+rendered as the same wall of text. Research pass first (Claude Code,
+Codex CLI, aider/Gemini, pi-muselinn-harness's Ask dialog, local
+plugins) — borrowed the 4-zone layout, numbered options, inline
+recommended flag, and actionability-first status line.
+
+**Structured pauses.** Goal gains `pauseKind`
+("decision"/"error"/"wait"/"blocked"), `pauseOptions[]`,
+`pauseRecommended` (1-based), `pauseResumeAt` (ISO). `pause_goal` accepts
+them; the tool description teaches when to use which kind.
+
+**Every extension-generated pause is classified at the source**: send-
+retry storm / stall refires / auditor-infra / token-limit → `error`;
+auditor IMPOSSIBLE / audit-cap / stall-nudges / loop-owns-the-slot →
+`decision`; auditor-quota (with retry timestamp) and the 60s transient-
+error auto-resume → `wait` + `pauseResumeAt`; restore-hold and user-
+abort pauses → `blocked`. Resume clears the new fields.
+
+**Rendering** (goal-loop-display):
+- `decision` — accent `decision needed — your call unblocks this`
+  banner, reason capped at 2 lines, options as numbered lines
+  (`1. … 2. …`), recommended option accented + `◂ recommended`.
+- `error` — `action needed — this won't fix itself` banner; the
+  suggested action is warning-painted (it's the point of the card).
+- `wait` — dim `waiting — nothing for you to do` banner + countdown
+  (`resumes 06:40 UTC (in 21h) — or /goal resume now`).
+- Status line names the ACTIONABILITY, not the reason:
+  `⏸ decision needed` / `⏸ action needed — <reason>` / `⏳ waiting ·
+  resumes 06:40`. Legacy pauses (no kind) keep the flat card; the
+  error-regex still classifies their status line.
+
+### Added — `/loop resume`
+
+Explicit verb for the held-loop resume (bare `/loop` still works).
+"No held loop to resume" now says so instead of opening the drafter.
+Held-loop hints updated to name `/loop resume`.
+
+Pins: 4 display tests (decision/error/wait/legacy), pause_goal param +
+callsite-classification source pins, T3-adjacent pin fix (pauseKind line
+adjacency in eager-continuation-core).
+
 ## [0.28.21] — 2026-07-29
 
 ### Changed — one active thing ENTIRELY + session loads never auto-start
