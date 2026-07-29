@@ -201,7 +201,7 @@ No external watchdog plugin needed.
 /glla                                # open the settings UI
 /glla model=provider/id              # auditor model override → GLOBAL
 /glla thinking=high                  # auditor thinking → GLOBAL
-/glla notify='cmd "$1"'              # push on complete/pause/stop → GLOBAL
+/glla notify='cmd "$1"'              # custom push cmd · unset = auto-detect (notify-send/osascript) · off = silent → GLOBAL
 /glla tokenlimit=10000000            # per-goal token budget (default: off) → GLOBAL
 /glla tokenlimit=0                   # explicitly no cap (the default)
 /glla wedgealert=30                  # hung-command alert minutes (default: 30, 0 = off)
@@ -233,15 +233,14 @@ activates the moment the agent proposes it, with a notification and a
 `draft_autoaccepted` ledger entry (auto-accept is never silent). The seed
 carries the intent. Pair with `autoresume=on` for fully unattended rigs.
 
-## Subagents (`@tintinweb/pi-subagents`)
+## Subagents
 
-Subagent sessions bind extensions too, so glla loads there — by design the
-**main session owns the goal/loop/list; subagents are workers** (v0.23.8):
+glla's guarantees here come from glla itself (session-handle
+discrimination), not from any specific subagent plugin — any Agent-tool
+provider gets them. Subagent sessions bind extensions too, so glla loads
+there — by design the **main session owns the goal/loop/list; subagents
+are workers** (v0.23.8):
 
-- Read-only agents (Explore, Plan) get no glla tools (pi-subagents gates
-  them); general-purpose agents see them but state-mutating calls
-  (`complete_goal`, `propose_*`, `list_add`, `pause_goal`, …) are refused
-  with "report back to the main agent".
 - A subagent session never clobbers the loop's session handle, never runs
   the restore gate, and never drives continuation — so the heartbeat,
   wedge alert, and auto-resume machinery always act on the main session.
@@ -249,6 +248,11 @@ Subagent sessions bind extensions too, so glla loads there — by design the
   is the discriminator.)
 - Subagent tool activity counts as activity for the wedge clock — a long
   subagent run is work, not a hang.
+- With `@tintinweb/pi-subagents` specifically (the one we test against):
+  read-only agents (Explore, Plan) get no glla tools; general-purpose
+  agents see them but state-mutating calls (`complete_goal`, `propose_*`,
+  `list_add`, `pause_goal`, …) are refused with "report back to the main
+  agent".
 
 ## Token guard
 
@@ -287,17 +291,25 @@ contradictory turns. One driver at a time:
   fine to keep, never run a ralph loop while a goal/list/loop is active.
 
 **Goes well with it**: `@juicesharp/rpiv-ask-user-question` (drafting uses its
-structured forms), `@tintinweb/pi-subagents` (spawn research/review subagents
-inside goal work), `@tintinweb/pi-tasks` (session-wide DAGs vs our goal-scoped
-task lists — different granularity), `pi-chrome` (the research/search path for
-goals — logged-in browsing with no extra services; standalone search skills
-like `mmx-cli`/`pi-search-skill` are optional conveniences for bulk queries,
-not requirements).
+structured forms), any subagent provider — e.g. `@tintinweb/pi-subagents` —
+(spawn research/review subagents inside goal work), `pi-chrome` (the
+research/search path for goals — logged-in browsing with no extra services;
+standalone search skills like `mmx-cli`/`pi-search-skill` are optional
+conveniences for bulk queries, not requirements).
+
+**Overlaps — pick one**: `@tintinweb/pi-tasks` is a second task list next to
+`/list`, and in practice the glla list *is* the task list (queue, statuses,
+per-item audit trail) while the todos end up the weaker copy. We ran both
+and removed pi-tasks. If you truly need session-wide dependency DAGs beyond
+one ordered queue, it exists — but installing both is not the ideal combo.
 
 **Two footnotes**: (1) extension-registered providers work in the main session
 but not the auditor's extension-less session — if audits fail auth, set the
-override once with `/glla model=`. (2) `pi-notify-agent` notifies on every turn;
-`/glla notify=` fires only on goal complete/pause/loop stop.
+override once with `/glla model=`. (2) `pi-notify-agent` notifies on every
+turn; glla pushes fire only where there is something to DO (pauses, verdicts,
+storms, wedge) and work out of the box — with no `notify=` configured glla
+auto-detects `notify-send`/`osascript`; `notify=off` silences, `notify='<cmd>'`
+customizes.
 
 ## Files
 

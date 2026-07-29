@@ -1932,15 +1932,44 @@ function addSingleItem(ctx: ExtensionContext, raw: string): void {
 }
 
 /**
- * Config-gated push notification: if settings.notifyCmd is set, shell out
- * with the message as $1. Fire-and-forget — a broken notify command never
- * blocks the loop. /glla notify='<cmd>' to configure.
+ * Push notification, folded IN by default (v0.28.34 — user: "leaving it to
+ * the user to set up sucks, cause then they won't have it"). Resolution:
+ *   notifyCmd === "off"   → silent (explicit opt-out)
+ *   notifyCmd set         → that command, message passed as $1
+ *   notifyCmd unset       → auto-detect ONCE per session: notify-send
+ *                           (Linux) or osascript (macOS); none → silent.
+ * Pushes fire only where there is something to DO — pauses, auditor
+ * verdicts, storms, wedge, persistence degradation — never per-turn noise.
+ * Fire-and-forget: a broken notifier never blocks the loop.
  */
+let autoNotifyCmd: string | null | undefined; // undefined = not probed yet
+
+function probeAutoNotify(ctx: ExtensionContext): void {
+  if (autoNotifyCmd !== undefined || !extensionApi) return;
+  autoNotifyCmd = null; // probing sentinel — drops at most the first push
+  void extensionApi
+    .exec("bash", ["-c", "command -v notify-send || command -v osascript || true"], { cwd: ctx.cwd })
+    .then((r) => {
+      const found = String((r as { stdout?: string }).stdout ?? "").trim();
+      if (found.endsWith("notify-send")) autoNotifyCmd = `notify-send "pi-goal-list-loop-audit" "$1"`;
+      // env-var handoff: the message never touches AppleScript quoting.
+      else if (found.endsWith("osascript")) autoNotifyCmd = `GLLA_MSG="$1" osascript -e 'display notification (system attribute "GLLA_MSG") with title "pi-goal-list-loop-audit"'`;
+      else autoNotifyCmd = null;
+    })
+    .catch(() => {
+      autoNotifyCmd = null;
+    });
+}
+
 function notifyExternal(ctx: ExtensionContext, message: string): void {
   try {
     const settings = loadSettings(ctx.cwd);
-    const cmd = settings.notifyCmd;
-    if (!cmd || !extensionApi) return;
+    if (settings.notifyCmd === "off" || !extensionApi) return;
+    const cmd = settings.notifyCmd ?? autoNotifyCmd;
+    if (!cmd) {
+      if (settings.notifyCmd === undefined && autoNotifyCmd === undefined) probeAutoNotify(ctx);
+      return;
+    }
     void extensionApi.exec("bash", ["-c", cmd, "pi-goal-list-loop-audit", message], { cwd: ctx.cwd }).catch(() => {});
   } catch {
     // non-fatal by design
@@ -3892,7 +3921,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       // current effective subagent models. Treat as no-op.
       return;
     case "notifyCmd": {
-      const v = await ctx.ui.input("Notify command — the event message is passed as $1", "e.g. a desktop-notification or push command; empty = off");
+      const v = await ctx.ui.input("Notify command — the event message is passed as $1", "custom command · empty = auto-detect (notify-send/osascript) · 'off' = silent");
       if (v !== undefined) saveSettings("global", ctx.cwd, { notifyCmd: v.trim() || undefined });
       return;
     }

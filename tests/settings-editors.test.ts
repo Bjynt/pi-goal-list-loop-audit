@@ -127,3 +127,25 @@ test("T4: the switch has no confirm-class editors (select + input only)", () => 
   const switchBody = sw.slice(0, sw.indexOf("\n}\n"));
   assert.equal((switchBody.match(/ctx\.ui\.confirm/g) ?? []).length, 0, "a new confirm-class editor appeared — extend these tests");
 });
+
+test("v0.28.34: notify folds a default IN — auto-detect notify-send/osascript, 'off' silences, custom overrides", () => {
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // resolution order: explicit off → custom → auto-probe:
+  assert.match(SRC, /if \(settings\.notifyCmd === "off" \|\| !extensionApi\) return;/);
+  assert.match(SRC, /const cmd = settings\.notifyCmd \?\? autoNotifyCmd;/);
+  assert.match(SRC, /command -v notify-send \|\| command -v osascript/);
+  assert.match(SRC, /autoNotifyCmd = `notify-send "pi-goal-list-loop-audit" "\$1"`;/);
+  assert.match(SRC, /GLLA_MSG="\$1" osascript/);
+  // pushes stay actionable-only (no per-turn site exists):
+  assert.match(SRC, /Pushes fire only where there is something to DO/);
+  const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
+  assert.match(MENU, /unset = auto-detect notify-send\/osascript · 'off' = silent/);
+  // README decoupling (user: "too married to our own eco"):
+  const README = fs.readFileSync("README.md", "utf-8");
+  assert.match(README, /^## Subagents$/m);
+  assert.doesNotMatch(README, /## Subagents \(`@tintinweb\/pi-subagents`\)/);
+  assert.match(README, /any subagent provider — e\.g\. `@tintinweb\/pi-subagents` —/);
+  assert.match(README, /Overlaps — pick one/);
+  assert.match(README, /We ran both and removed pi-tasks\./);
+  assert.match(README, /auto-detects `notify-send`\/`osascript`; `notify=off` silences/);
+});

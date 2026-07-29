@@ -323,9 +323,9 @@ export function buildSettingsRows(
       id: "notifyCmd",
       section: "other",
       label: "Notify command",
-      valueText: show("notifyCmd", "off"),
+      valueText: show("notifyCmd", "auto"),
       sourceText: src("notifyCmd"),
-      description: "desktop push command; the event message is passed as $1",
+      description: "custom command ($1 = message) · unset = auto-detect notify-send/osascript · 'off' = silent",
     },
     {
       id: "tokenLimit",
