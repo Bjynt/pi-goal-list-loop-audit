@@ -3481,6 +3481,14 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       if (v) saveSettings("global", ctx.cwd, { autoAcceptDrafts: v.startsWith("on") ? true : undefined });
       return;
     }
+    case "decisionPopup": {
+      const v = await ctx.ui.select("Decision popup (v0.28.23 — decision pauses pop the select() picker)", [
+        "on — a decision pause opens the picker; the widget card is the Escape fallback",
+        "off — widget card only; /goal decide opens the picker on demand",
+      ]);
+      if (v) saveSettings("global", ctx.cwd, { decisionPopup: v.startsWith("off") ? false : undefined });
+      return;
+    }
     case "aggressiveMode": {
       const v = await ctx.ui.select("Aggressive mode (flips DEFAULTS toward keep-going — explicit per-key settings still win)", [
         "off — current behavior: pause at the audit cap, wedge alerts on, manual resume",
