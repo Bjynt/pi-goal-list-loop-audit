@@ -1317,6 +1317,30 @@ async function cmdGoal(args: string, ctx: ExtensionContext): Promise<void> {
       if (!shown) ctx.ui.notify("No pending decision — the goal isn't paused on a choice (or no UI).", "info");
       return;
     }
+    // v0.28.27: /goal audit — run the isolated auditor on the current goal
+    // RIGHT NOW, without engaging the agent. The user's "the work looks
+    // done — just verify it" handle (and the manual counterpart of the
+    // v0.28.26 stored-claim quota retry). Seeds a synthesized claim so a
+    // quota block falls into the same pendingCompletion retry machinery.
+    if (route.name === "audit") {
+      if (!state.goal) {
+        ctx.ui.notify("No active goal — /goal audit needs a goal to verify.", "warning");
+        return;
+      }
+      if (completionAuditInFlight) {
+        ctx.ui.notify("An audit is already running…", "info");
+        return;
+      }
+      updateGoal({
+        pendingCompletion: {
+          completionSummary: "Manual audit requested by the user via /goal audit (no agent completion claim). Verify the objective against the repo directly.",
+          at: nowIso(),
+        },
+      }, ctx);
+      appendLedger(ctx.cwd, "manual_audit_requested", { goalId: state.goal.id });
+      void retryStoredCompletionAudit(ctx, "manual");
+      return;
+    }
     if (route.name === "tweak") return cmdTweak(route.rest, ctx);
     if (route.name === "archive") return cmdGoals(ctx);
     // v0.16.0: /goal start <objective> — explicit skip-draft. Activates

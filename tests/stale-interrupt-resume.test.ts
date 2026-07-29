@@ -96,3 +96,36 @@ test("T1: stale Confirm is NOT a rejection — both single and batch paths", () 
   assert.match(SRC, /appendLedger\(liveCtx\.cwd, "extension_api_stale", \{ where: "draft confirm" \}\)/);
   assert.match(SRC, /appendLedger\(liveCtx\.cwd, "extension_api_stale", \{ where: "batch confirm" \}\)/);
 });
+
+test("v0.28.27: stale handle silences ALL stall machinery — refiring into a dead process misleads, and the stall escalation would PAUSE an interrupted goal (killing restart auto-resume)", () => {
+  // junk-runner field observation: compaction replaced the session mid-goal;
+  // the footer promised "auto-resumes on pi restart" while the heartbeat
+  // kept printing "re-firing continuation (stall 4/5)" into a process where
+  // sends can never land — marching toward a stall-escalation pause that
+  // would silently cancel that promise (paused restores load-held).
+  const tick = SRC.indexOf("function heartbeatTick(): void {");
+  const grace = SRC.indexOf("if (Date.now() < compactionGraceUntil) return;");
+  const stale = SRC.indexOf("if (extensionApiStale) return;");
+  const watchdog = SRC.indexOf("pending-latch watchdog");
+  assert.ok(tick > 0 && grace > tick && stale > grace, "stale bail inside heartbeatTick, after the grace gate");
+  assert.ok(stale < SRC.indexOf("const fire = shouldHeartbeatRefire({"), "stale bail precedes the refire path");
+  assert.ok(stale < watchdog, "stale bail precedes the latch watchdog too");
+});
+
+test("v0.28.27: /goal audit — manual auditor invocation with a synthesized claim, wired into the pendingCompletion machinery", () => {
+  // Route: exact sub in the core router.
+  const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
+  assert.match(CORE, /"decide", "audit"\]/);
+  assert.match(CORE, /\| "audit" \| "tweak"/);
+  // Dispatch: guards (no goal, audit in flight), seeds the synthesized
+  // claim, ledgered, delegates to the shared engine with origin "manual".
+  assert.match(SRC, /if \(route\.name === "audit"\) \{/);
+  assert.match(SRC, /No active goal — \/goal audit needs a goal to verify\./);
+  assert.match(SRC, /Manual audit requested by the user via \/goal audit \(no agent completion claim\)/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "manual_audit_requested", \{ goalId: state\.goal\.id \}\);/);
+  assert.match(SRC, /void retryStoredCompletionAudit\(ctx, "manual"\);/);
+  // Engine parametrized: origin flows into ledger + notifies + archive reason.
+  assert.match(SRC, /origin: "quota-retry" \| "manual" = "quota-retry"/);
+  assert.match(SRC, /via: origin === "manual" \? "manual-audit" : "quota-retry-direct-audit"/);
+  assert.match(SRC, /approved \$\{origin === "manual" \? "on \/goal audit" : "on the quota retry"\}/.source.replace(" $", "\\$") ? /approved/ : /never/);
+});
