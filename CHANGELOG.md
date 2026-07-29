@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.28.27] — 2026-07-29
+
+### Added — `/goal audit`: manual isolated-auditor invocation (no agent turn)
+
+The user's question, answered as a command: "the work looks done — can't we
+just run the auditor?" `/goal audit` seeds a synthesized completion claim
+("verify the objective against the repo directly") and runs the SAME
+v0.28.26 direct-audit engine: approved → close + cascade; quota-blocked →
+pauses with the claim stored and auto-retries through the pendingCompletion
+machinery; any other verdict → resumes and hands the verdict to the agent.
+Exact sub in the goal router (`/goal audit`, no args); guards for no-goal
+and audit-already-running; ledgered `manual_audit_requested`.
+
+### Fixed — stale handle now silences ALL stall machinery
+
+Field-observed in junk-runner: compaction replaced the session mid-goal;
+the footer promised "interrupted — auto-resumes on pi restart" while the
+heartbeat kept printing "re-firing continuation (stall 4/5)" into a
+process where sends can never land. Worse than misleading: at the stall
+threshold the escalation would have PAUSED the goal — silently cancelling
+the interruptedAt → auto-resume-on-restart promise (a paused goal restores
+load-held). `heartbeatTick` now bails right after the compaction-grace
+gate when the handle is stale: no refires, no wedge alerts, no latch
+watchdog, no escalation — the goal stays active and waits for the restart.
+
+Pins: stale bail placement (inside heartbeatTick, after grace, before the
+latch watchdog and refire path); `/goal audit` route in the core router,
+dispatch guards, synthesized claim, ledger event, engine delegation with
+origin "manual"; origin flows into ledger/notifies/archive reason.
+595 tests.
+
 ## [0.28.26] — 2026-07-29
 
 ### Fixed — quota-blocked audits no longer re-engage the agent (stored-claim direct auditor retry)
