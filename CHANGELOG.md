@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.28.18] — 2026-07-29
+
+### Changed — the /glla settings menu is a real table now
+
+User report (screenshots, 2026-07-29): "we want to look more like a
+table". Three grid bugs fixed + the table look the user picked
+(│ separators + header rule; every tab bracketed):
+
+- **Prefix counted in KEY width** — rows render `▶ `/`  ` + label but
+  keyW was computed from labels alone, so every row's VALUE column sat
+  2 chars right of the header's VALUE.
+- **VALUE truncated to its column** — a long value (Subagents'
+  effective-resolution composite) overflowed and shoved SOURCE/
+  DESCRIPTION right on that row only. KEY/VALUE/SOURCE all
+  `truncateToWidth` with `…` now.
+- **Widths computed across ALL sections** — the grid no longer reflows
+  on every tab switch (it was per-active-section before).
+- **Table chrome**: columns joined by dim `│` separators, a `─┼─`
+  header rule under the column titles, and the tab bar brackets EVERY
+  tab (active = accent, inactive = dim) — bare words read as floating
+  text, not tabs. Selected-row separators join plain so the accent
+  wrap isn't cut short by a nested dim reset.
+
+### Fixed — suite hermeticity for global settings
+
+Setting `autoAcceptDrafts` in the REAL global settings file
+(`~/.pi/agent/pi-goal-list-loop-audit.settings.json`) made two
+behavioral draft tests fail — `loadSettings` read the developer's own
+config. `globalSettingsPath()` now honors `GLLA_GLOBAL_SETTINGS_PATH`,
+and a new `bunfig.toml [test].preload` (`tests/harness/setup.ts`)
+redirects it to a per-process tmp file for the whole suite.
+
+Pins: bracket-all-tabs, header rule, separator alignment across header/
+rule/rows, long-VALUE truncation keeps the grid, widths stable across
+tab switches.
+
 ## [0.28.17] — 2026-07-29
 
 ### Fixed — held loops are always visible (user report: "loops are the most immature")
