@@ -185,6 +185,10 @@ export interface Goal {
    * the retry resolves. Only consumed while paused with an "auditor quota:"
    * reason, so a stale value is unreachable by construction. */
   pendingCompletion?: { completionSummary?: string; verificationSummary?: string; at: string };
+  /** v0.28.28: provenance — who created this goal ("user", "list-cascade",
+   * "draft-confirmed", "draft-autoaccepted"). Ledgered on goal_created so
+   * "where did this come from" is answerable after the fact. */
+  createdVia?: string;
   /** v0.25.0 (contract item 22): auditor objections extracted as TODOs when
    * aggressiveMode keeps the goal active past the disapproval cap. Rendered
    * into every continuation prompt until the next audit clears them. */

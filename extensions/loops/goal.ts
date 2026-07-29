@@ -895,18 +895,19 @@ function notifyPersistenceState(ctx: ExtensionContext): void {
   }
 }
 
-function setGoal(goal: Goal, ctx: ExtensionContext): void {
+function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): void {
   // v0.28.14: never silently orphan a live goal — a paused/active goal
   // being replaced is archived honestly first (the old behavior left it in
   // goals/ but untracked: "older goals lying around leading to confusion").
   if (state.goal && state.goal.id !== goal.id && (state.goal.status === "active" || state.goal.status === "paused")) {
     archiveCurrentGoal(ctx, "aborted", `replaced by goal ${goal.id}`);
   }
+  goal.createdVia = via; // v0.28.28: provenance — answerable from the ledger + /glla log
   state = { ...state, goal }; // preserve list AND loop (v0.28.14: the bare reconstruction used to nuke a held/active loop whenever a goal was set)
   const file = writeGoalMd(ctx.cwd, goal);
   state.goal!.activePath = path.relative(ctx.cwd, file) || file;
   persistState(ctx);
-  appendLedger(ctx.cwd, "goal_created", { goalId: goal.id, objective: goal.objective, policy: goal.policy });
+  appendLedger(ctx.cwd, "goal_created", { goalId: goal.id, objective: goal.objective, policy: goal.policy, via });
 }
 
 function updateGoal(patch: Partial<Goal>, ctx: ExtensionContext): void {
@@ -1212,7 +1213,7 @@ function activateNextListItem(ctx: ExtensionContext, n = 1): boolean {
   state = { ...state, list: rest };
   const goal = createGoal(next.objective, ctx, "list");
   if (next.verificationContract) goal.verificationContract = next.verificationContract;
-  setGoal(goal, ctx);
+  setGoal(goal, ctx, "list-cascade");
   iterationCounter = 0;
   consecutiveErrorIterations = 0;
   consecutiveAbortIterations = 0;
