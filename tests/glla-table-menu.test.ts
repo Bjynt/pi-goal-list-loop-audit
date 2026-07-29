@@ -106,7 +106,7 @@ test("render: tabs row lists all 5 sections", () => {
   }
 });
 
-test("render: at width=120, the keep-going section renders 3 rows", () => {
+test("render: at width=120, the keep-going section renders its rows (v0.28.23: +decisionPopup)", () => {
   const { component } = makeComponent(SAMPLE_ROWS, 120);
   // activeSectionIdx starts at 0 (keep-going).
   const lines = component.render(120);
@@ -115,6 +115,7 @@ test("render: at width=120, the keep-going section renders 3 rows", () => {
   // The 3 keep-going rows must be visible somewhere between line 3 and the footer.
   const body = lines.slice(3, -1).join("\n");
   assert.match(body, /Auto-resume on load/);
+  assert.match(body, /Decision popup/);
   assert.match(body, /Auto-accept drafts/);
   assert.match(body, /Aggressive mode/);
 });
@@ -160,8 +161,9 @@ test("nav: Down arrow moves to the next visible row", () => {
 
 test("nav: Down wrapping at the end of a section wraps to 0", () => {
   const { component } = makeComponent(SAMPLE_ROWS);
-  // Keep-going has 3 rows; press down 5 times — should wrap to 5 % 3 = 2.
-  for (let i = 0; i < 5; i++) component.handleInput("down");
+  // Press down (rows+2) times — wraps to 2 whatever the section size.
+  const n = SAMPLE_ROWS.filter((r) => r.section === "keep-going").length;
+  for (let i = 0; i < n + 2; i++) component.handleInput("down");
   assert.equal(component.getSelectedIdx(), 2);
 });
 

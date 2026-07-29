@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.28.23] — 2026-07-29
+
+### Added — decision picker popup (`ctx.ui.select`)
+
+Follow-up to v0.28.22's classified pause cards, from the user's verdict on
+them: "your suggestion is still bad — we are literally cutting off the
+decision and asked to pick." The widget card is a SUMMARY (truncates by
+design); a decision pause is actionable, so the decision itself now gets a
+real picker — the Claude Code / muselinn-Ask pattern, full text, nothing
+cut.
+
+**The popup.** When a decision pause lands (agent `pause_goal` with
+kind=decision + options, or any extension-synthesized decision pause), a
+`select()` modal opens with the FULL option text and the recommended
+option flagged. Escape leaves the widget card as the fallback. Picking:
+
+- **content option** ("Deliver the missing polish") → the choice is sent
+  to the agent (`Decision for the paused goal …: <choice> — continue on
+  this path.`) and the goal resumes;
+- **command option** ("Cancel the goal (/goal cancel)") → the command
+  RUNS — /goal resume, /goal cancel, /loop stop, /loop resume. Options
+  with placeholders (`…`, `<arg>`) fall through to the message path.
+
+**Every extension decision pause now ships options**: auditor IMPOSSIBLE
+(tweak / cancel), audit-cap disapprovals (fix-and-resume / tweak / cancel),
+stall-nudge pause (retry / tweak / cancel), and the session-load
+loop-owns-the-slot hold (stop-loop-then-resume / cancel-goal).
+
+**`/goal decide`** re-opens the picker for the current decision pause at
+any time (the auto-popup is a moment; the command is the durable path —
+e.g. junk-runner's A/B/C decision after a restart). No pending decision →
+an explain-notify, not silence.
+
+**Opt-out**: `/glla decisionpopup=off` (or the settings-menu Keep-going →
+Decision popup row) — widget card only. Unattended rigs (no UI) never pop
+regardless. Also fixed the autoResume row's stale description (default
+changed in v0.28.21).
+
+Pins: 4 behavioral tests (content pick → message + resume; Escape → stays
+paused; command pick → runs the command, no message; no-decision →
+notify), menu dispatch + render pins, mock ctx gains `abort()`.
+
 ## [0.28.22] — 2026-07-29
 
 ### Added — classified pause cards (decision / action-needed / waiting)
