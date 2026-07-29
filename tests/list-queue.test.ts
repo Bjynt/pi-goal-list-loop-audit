@@ -115,3 +115,46 @@ test("takeAt: out of range returns null", () => {
   assert.equal(takeAt([], 1), null);
   assert.equal(takeAt(["a"], 1.5), null);
 });
+
+test("v0.28.28: unsolicited enqueue (reviewer) does not auto-start the head unless autoResume is on", () => {
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // junk-runner hydra: user cancelled a goal and the next reviewer-enqueued
+  // item started itself (twice). Enqueue is not consent to start.
+  assert.match(SRC, /function enqueueItems\(ctx: ExtensionContext, texts: string\[\], source: string, opts\?: \{ autoActivate\?: boolean \}\): number/);
+  assert.match(SRC, /opts\?\.autoActivate === false/);
+  assert.match(SRC, /Queued \$\{items\.length\} item\(s\) from \$\{source\} — \/list next when ready \(auto-start is opt-in: \/glla autoresume=on\)\./);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "list_autoactivation_held", \{ source, count: items\.length \}\);/);
+  // the reviewer call site passes the gate; user-driven imports keep default:
+  assert.match(SRC, /enqueueItems\(ctx, objectives, "reviewer", \{ autoActivate: loadSettings\(ctx\.cwd\)\.autoResume === true \}\)/);
+});
+
+test("v0.28.28: auto-accepted drafts (goal + list) are created HELD when autoResume is off", () => {
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // autoAcceptDrafts delegates the Confirm click, not the decision to start.
+  assert.match(SRC, /auto-accepted draft — held for the user's go-ahead \(autoResume off\)/);
+  assert.match(SRC, /appendLedger\(liveCtx\.cwd, "draft_held", \{ goalId: goal\.id, reason: "autoaccept-autoresume-off" \}\);/);
+  assert.match(SRC, /Auto-accepted and QUEUED \(autoResume off — not auto-started\)/);
+  assert.match(SRC, /if \(autoAccept && loadSettings\(liveCtx\.cwd\)\.autoResume !== true\)/);
+});
+
+test("v0.28.28: goal provenance — setGoal threads `via` into the record + goal_created ledger", () => {
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.match(SRC, /function setGoal\(goal: Goal, ctx: ExtensionContext, via = "user"\): void/);
+  assert.match(SRC, /goal\.createdVia = via;/);
+  assert.match(SRC, /"goal_created", \{ goalId: goal\.id, objective: goal\.objective, policy: goal\.policy, via \}/);
+  assert.match(SRC, /setGoal\(goal, ctx, "list-cascade"\);/);
+  assert.match(SRC, /setGoal\(goal, liveCtx, autoAccept \? "draft-autoaccepted" : "draft-confirmed"\);/);
+  const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
+  assert.match(CORE, /createdVia\?: string;/);
+  const SCHEMA = fs.readFileSync("schemas/goal.schema.json", "utf-8");
+  assert.match(SCHEMA, /"createdVia": \{ "type": "string" \}/);
+});
+
+test("v0.28.28: /glla log [N] — human-readable ledger tail, noise-filtered", () => {
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.match(SRC, /if \(\/\^log\\b\/\.test\(trimmed\)\) \{/);
+  assert.match(SRC, /function cmdLog\(args: string, ctx: ExtensionContext\): void/);
+  assert.match(SRC, /const LOG_NOISE = new Set\(\["state", "send_rearm_start", "heartbeat_suppressed_tick"\]\);/);
+  assert.match(SRC, /entries\.filter\(\(e\) => !LOG_NOISE\.has\(e\.type\)\)/);
+  assert.match(SRC, /parseInt\(nMatch\?\.\[1\] \?\? "15", 10\)/);
+});

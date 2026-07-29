@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.28.28] — 2026-07-29
+
+### Fixed — unsolicited work no longer auto-starts (the junk-runner hydra)
+
+Field-observed: after a full-audit goal completed, the user had to cancel
+THREE auto-started goals in a row. The ledger showed each head had a
+different source: an agent-proposed draft auto-accepted by
+`autoAcceptDrafts` (same second as the completion), then reviewer-enqueued
+list items auto-activating on an empty slot. Enqueue is not consent to
+start — and neither is auto-accepting a draft.
+
+- **Reviewer enqueues hold.** `enqueueItems` gains `opts.autoActivate`;
+  the reviewer call site passes `autoResume === true`. With autoResume off
+  (the default), reviewer findings QUEUE with a notify
+  ("/list next when ready — auto-start is opt-in") instead of starting.
+  Ledgered `list_autoactivation_held`. User-driven `/list` imports keep
+  immediate-start.
+- **Auto-accepted drafts hold.** With `autoResume` off, an auto-accepted
+  GOAL draft is created paused/blocked ("held for the user's go-ahead" —
+  /goal resume starts, /goal cancel drops) and an auto-accepted LIST draft
+  queues without activating. Explicit user-confirmed drafts still start
+  immediately. Ledgered `draft_held`. Unattended rigs
+  (`autoAcceptDrafts` + `autoResume` both on) keep the old flow.
+
+### Added — goal provenance + `/glla log`
+
+"Log it so we can look back and see where we are doing things wrong."
+
+- `setGoal` threads a `via` ("user", "list-cascade", "draft-confirmed",
+  "draft-autoaccepted") into `goal.createdVia` (typed + schematized) and
+  the `goal_created` ledger entry — "where did this come from" is now
+  answerable after the fact.
+- **`/glla log [N]`** — human-readable tail of the event ledger
+  (`HH:MM:SS type key=value` lines), filtering high-frequency noise
+  (state snapshots, re-arm internals) unless `all` is passed. N defaults
+  to 15, caps at 100.
+
+Pins: enqueue gate + reviewer call site + held ledgers; both draft-hold
+branches; setGoal signature/record/ledger threading + type + schema;
+cmdLog route, noise set, default N. 599 tests.
+
 ## [0.28.27] — 2026-07-29
 
 ### Added — `/goal audit`: manual isolated-auditor invocation (no agent turn)
