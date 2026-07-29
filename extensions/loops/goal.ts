@@ -1194,7 +1194,7 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
   consecutiveNoToolIterations = 0;
   if (staleEntry) {
     // v0.28.1 (S3): the goal is persisted — mark the interrupt so the next
-    // fresh session auto-resumes, and tell the truth instead of "starting now".
+    // fresh session LOADS it (held by default since v0.28.21), and tell the truth instead of "starting now".
     updateGoal({ interruptedAt: nowIso(), interruptedReason: "created in a stale session" }, ctx);
     ctx.ui.notify(`Goal saved: ${shortObj(goal.objective)} — safe in .pi-glla/, but this stale process can't send continuations. Restart pi, then /goal resume (v0.28.21: session loads no longer auto-start by default). (id: ${goal.id})`, "warning");
     return;
