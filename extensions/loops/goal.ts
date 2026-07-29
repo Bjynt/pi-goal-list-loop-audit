@@ -519,7 +519,7 @@ function accountSendRearm(ctx: ExtensionContext, kind: "continuation" | "loop"):
   const since = kind === "continuation" ? continuationRearmSince : loopRearmSince;
   const elapsed = Date.now() - since;
   const milestone = kind === "continuation" ? continuationRearmMilestone : loopRearmMilestone;
-  if (milestone < SEND_REARM_LEDGER_MILESTONES_MS.length && elapsed >= SEND_REARM_LEDGER_MILESTONES_MS[milestone]) {
+  if (milestone < SEND_REARM_LEDGER_MILESTONES_MS.length && elapsed >= SEND_REARM_LEDGER_MILESTONES_MS[milestone]!) {
     if (kind === "continuation") continuationRearmMilestone++; else loopRearmMilestone++;
     appendLedger(ctx.cwd, "send_rearm_storm", { kind, streak, minutes: Math.round(elapsed / 60000) });
   }
@@ -780,7 +780,7 @@ function sendContinuation(goalId: string): void {
       content: continuationPrompt(state.goal!),
       display: false,
     }, { triggerTurn: true, deliverAs: "followUp" });
-    continuationRearmStreak = 0; // v0.28.5 (E3): a landed send clears the storm
+    continuationRearmStreak = 0; continuationRearmSince = 0; // v0.28.5 (E3): a landed send clears the storm
     appendLedger(ctx.cwd, "goal_continuation_sent", { goalId });
   } catch (err) {
     appendLedger(ctx.cwd, "goal_continuation_send_failed", { goalId, error: err instanceof Error ? err.message : String(err) });
@@ -2089,7 +2089,7 @@ function sendLoopTurn(): void {
     }, { triggerTurn: true, deliverAs: "followUp" });
     // v0.26.1: the send path is ledgered — the hegemon zombie spun 619
     // refires with zero visibility into whether sends were landing.
-    loopRearmStreak = 0; // v0.28.5 (E3): a landed turn clears the storm
+    loopRearmStreak = 0; loopRearmSince = 0; // v0.28.5 (E3): a landed turn clears the storm
     appendLedger(ctx.cwd, "loop_turn_sent", { iteration: loop.iteration });
   } catch (err) {
     // stale API — next agent_end reschedules (but if none comes, the

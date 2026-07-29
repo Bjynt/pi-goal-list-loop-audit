@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.28.29] — 2026-07-29
+
+### Fixed — send-retry storm no longer fires on a legitimately busy session (the polis false positive)
+
+Field-observed (polis): "send-retry storm: 5m of 50ms re-arms — the
+session never went idle for the continuation" paused a goal while the
+session was simply BUSY (user conversing / long subagent turns). The
+v0.28.5 machinery conflated busy with wedged: a flat 50ms re-arm spun
+6,000 times in 5 minutes and then escalated.
+
+- **Backing-off cadence.** The busy re-arm now ladders 50ms ×4 → 250ms ×4
+  → 1s ×4 → 5s → 15s → 30s cap (`sendRearmDelayMs`) on both the
+  continuation and loop-turn paths. agent_end reschedules independently,
+  so pickup right after a turn ends is still instant; a long busy stretch
+  now costs ~30 ledger-quiet spins instead of 6,000.
+- **Time-based, activity-gated escalation.** The count-based constants
+  (`SEND_REARM_LEDGER_EVERY`/`SEND_REARM_ESCALATE_AT`) are gone. A storm
+  escalates only after **15 minutes of failed sends AND no session
+  activity for the last 5 minutes** — a wedged queue shows zero events;
+  a busy one streams constantly and simply waits at the capped cadence.
+  Ledger milestones at 2/5/10 minutes replace the every-600-spins entry.
+- **Texts** now say what was measured: "Nm of re-arms with no session
+  activity for Mm — the session is wedged".
+- Streak-since timestamps reset everywhere the streak resets (landed
+  send/turn, session start, compaction).
+
+Pins reworked in retry-bounds (cadence ladder, time+activity gate,
+milestones, constants gone) and stall-handling (compaction reset block).
+601 tests.
+
 ## [0.28.28] — 2026-07-29
 
 ### Fixed — unsolicited work no longer auto-starts (the junk-runner hydra)
