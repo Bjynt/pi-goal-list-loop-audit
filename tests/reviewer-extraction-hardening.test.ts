@@ -93,3 +93,57 @@ test("extraction dedupe + cap still work after hardening", () => {
   assert.equal(findings.length, 2, "duplicates collapse");
   assert.ok(findings.every((f) => f.class === "bug"));
 });
+
+// ---- v0.28.24: wrap-aware extraction — findings are sentence-shaped, not visual-line-shaped ----
+
+test("hard-wrapped finding joins into ONE full-sentence finding (hellhunter regression)", () => {
+  const wrapped =
+    "Run a post-completion regression scan on the hellhunter codebase to\n" +
+    "check for bugs in the movement system after the refactor.";
+  const findings = extractFindings([{ name: "x", text: wrapped }], 10);
+  assert.equal(findings.length, 1, "the wrapped paragraph is ONE finding");
+  assert.match(findings[0]!.text, /codebase to check for bugs/, "full sentence, no mid-sentence cut");
+});
+
+test("uppercase-start lines do NOT join — punctuation-less items stay separate", () => {
+  const findings = extractFindings(
+    [{ name: "x", text: "TODO: fix the parser null deref\nTODO: fix the cache key" }],
+    10,
+  );
+  assert.equal(findings.length, 2, "TODO chains are not wrapped paragraphs");
+});
+
+test("dangling-connector fragments are rejected", () => {
+  const findings = extractFindings(
+    [{ name: "x", text: "- Fix the regression in the codebase to" }],
+    10,
+  );
+  assert.equal(findings.length, 0, "a candidate ending in 'to' is a fragment, not a finding");
+});
+
+test("completedObjective prefix-dedupe: a finding restating the completed goal is skipped", () => {
+  const completed = "Run a post-completion regression scan on the hellhunter codebase to check for bugs after the refactor";
+  const findings = extractFindings(
+    [{ name: "x", text: `- ${completed.slice(0, 67)}` }], // the hellhunter fragment shape
+    10,
+    completed,
+  );
+  assert.equal(findings.length, 0, "prefix of the completed objective is a duplicate");
+  // and a genuinely NEW finding survives the same call:
+  const fresh = extractFindings(
+    [{ name: "x", text: "- Fix the null deref in the projectile collision system" }],
+    10,
+    completed,
+  );
+  assert.equal(fresh.length, 1, "unrelated findings are unaffected by the dedupe");
+});
+
+test("cutAtClauseBoundary: long findings cut at a clause, never mid-word", () => {
+  const long = `Fix the parser: it drops frames when the input is malformed, and the cache layer keys on stale state, ${"x".repeat(220)}`;
+  const cut = cutAtClauseBoundary(long, 200);
+  assert.ok(cut.length <= 200);
+  assert.match(cut, /[.,;:]$|^.{0,199}\S$/, "ends at a boundary");
+  assert.ok(!/\s(to|and|the|of)$/i.test(cut), "never ends on a dangling connector mid-word");
+  // short text passes through untouched:
+  assert.equal(cutAtClauseBoundary("short finding", 200), "short finding");
+});

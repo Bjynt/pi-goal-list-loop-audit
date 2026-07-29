@@ -136,3 +136,18 @@ test("P3: post-restore grace — armed on restore resume, skips accounting, ledg
   const acctIdx = SRC.indexOf("heartbeatNudges = accountTurnForNudgesRich(");
   assert.ok(graceIdx > 0 && graceIdx < acctIdx, "grace precedes nudge accounting");
 });
+
+test("v0.28.24: session_compact resets the send-rearm storm streaks + opens the post-compaction grace", () => {
+  // π-web nearly escalated a "send-retry storm" pause during a legitimate
+  // 3.5-minute compaction; junk-runner burned all 5 stall refires in the 5
+  // minutes right after a 196k-token compact. Both are fixed at the hook:
+  const hookIdx = SRC.indexOf('pi.on("session_compact"');
+  const resetIdx = SRC.indexOf("continuationRearmStreak = 0;\n    loopRearmStreak = 0;\n    compactionGraceUntil = Date.now() + COMPACTION_GRACE_MS;");
+  assert.ok(hookIdx > 0 && resetIdx > hookIdx, "streak reset + grace arm inside the session_compact hook");
+  assert.match(SRC, /const COMPACTION_GRACE_MS = 3 \* 60_000;/);
+  // the grace check gates the heartbeat's stall/refire machinery:
+  assert.match(SRC, /if \(Date\.now\(\) < compactionGraceUntil\) return;/);
+  const graceGate = SRC.indexOf("if (Date.now() < compactionGraceUntil) return;");
+  const refire = SRC.indexOf('appendLedger(ctx.cwd, "heartbeat_refire"');
+  assert.ok(graceGate > 0 && graceGate < refire, "grace gate precedes the refire path");
+});
