@@ -81,7 +81,7 @@ test("pause_goal tool: structured kind/options/recommended/resumeAt persist to t
   const pairs: Array<[string, string]> = [
     ["pauseReason: `send-retry storm", "error"],
     ["pauseReason: `stalled: ${threshold} continuation refires", "error"],
-    ["pauseReason: `auditor verdict: IMPOSSIBLE", "decision"],
+    ["pauseReason: `auditor verdict: IMPOSSIBLE —", "decision"],
     ["pauseReason: `auditor quota:", "wait"],
     ["pauseReason: `auditor infrastructure failed", "error"],
     ["pauseReason: `auditor disapproved ${trailingDisapprovals}× consecutively", "decision"],
@@ -89,10 +89,8 @@ test("pause_goal tool: structured kind/options/recommended/resumeAt persist to t
     ["pauseReason: \"5 consecutive aborts", "blocked"],
     ["pauseReason: \"restored on session load", "blocked"],
   ];
-  for (const [reason, kind] of pairs) {
-    const idx = SRC.indexOf(reason);
-    assert.ok(idx > -1, `callsite in source: ${reason}`);
-    const window = SRC.slice(Math.max(0, idx - 200), idx);
-    assert.ok(window.includes(`pauseKind: "${kind}"`), `${reason} → pauseKind ${kind}`);
+  for (const [anchor, kind] of pairs) {
+    const esc = anchor.replace(/[.*+?^$()[\]\\|]/g, "\\$&");
+    assert.match(SRC, new RegExp(`pauseKind: "${kind}",[\\s\\S]{0,200}?${esc}`), `${anchor} → pauseKind ${kind}`);
   }
 });
