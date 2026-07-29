@@ -438,6 +438,36 @@ test("one-active-thing tool guards: list_activate + propose_loop_draft + propose
   assert.match(r3.content[0]!.text, /A goal is active/, "propose_loop_draft blocked over live goal");
 });
 
+test("one-active-thing: /goal resume refuses over a live loop (v0.28.21 — the last unguarded path)", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    loop: seedLoop({ active: true }),
+    goal: seedGoal({ status: "paused", objective: "paused goal — done when pinned" }),
+  });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ autoResume: true })); // keep the loop ACTIVE through the reload
+  const ctx = await freshSession(cwd, "reload");
+  await tick();
+  await pi.command("goal", "resume", ctx);
+  assert.ok(ctx.ui.matching("A loop is active — one active thing").length >= 1, "resume refused over live loop");
+  assert.equal((readState(cwd).goal as { status: string }).status, "paused", "goal still paused");
+  assert.equal((readState(cwd).loop as { active: boolean }).active, true, "loop untouched");
+});
+
+test("one-active-thing at restore: dirty state (active loop + active goal) → goal held, loop owns the slot (v0.28.21)", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, { loop: seedLoop({ active: true }), goal: seedGoal() });
+  pi.sent.length = 0;
+  const ctx = await freshSession(cwd, "startup");
+  await tick();
+  const s = readState(cwd);
+  assert.equal((s.goal as { status: string }).status, "paused", "goal held — the loop owns the slot");
+  assert.equal((s.loop as { active: boolean }).active, false, "loop held on restore too (default hold-everything)");
+  assert.ok(ctx.ui.matching("one active thing at a time").length >= 1, "enforce notify");
+  assert.equal(pi.sent.length, 0, "nothing fired");
+});
+
 test("carryover via /list next (pause): summary fires BEFORE the stale item activates; paused goal archived, held loop kept", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
