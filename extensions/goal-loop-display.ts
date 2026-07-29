@@ -276,11 +276,16 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // queue work were a standalone goal.
   const isList = g.policy === "list";
   const statusWord = g.status === "active" ? paint(theme, "success", "active") : g.status;
+  // v0.28.30: the status line ALWAYS names the type (user note: "I don't
+  // always see the type — I'd need to scroll up to see if goal/list/loop").
+  // Before, only list items were named; a plain goal's card said "paused ·
+  // 3m" with no type word. The loop surface has its own card.
+  const typeWord = isList ? "list item · " : "goal · ";
   // Token segment only when a budget is set (v0.22.0): the guard is opt-in,
   // and "0/0 tok" carried no information when off.
   const tokenLimit = g.usage?.tokensLimit ?? 0;
   const tokens = tokenLimit > 0 ? ` · ${paint(theme, "dim", `${fmtTokens(g.usage?.tokensUsed ?? 0)}/${fmtTokens(tokenLimit)} tok`)}` : "";
-  const lines = [head, `├─ ${isList ? "list item · " : ""}${statusWord} · ${fmtElapsed(now - Date.parse(g.createdAt))}${tokens}`];
+  const lines = [head, `├─ ${typeWord}${statusWord} · ${fmtElapsed(now - Date.parse(g.createdAt))}${tokens}`];
   if (g.status === "auditing") {
     lines.push(`├─ auditor: ${audit?.label ?? "running"}${audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : ""}`);
     // v0.25.4: auditor-quiet stall — progress events stopped arriving

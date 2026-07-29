@@ -551,8 +551,8 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
       pauseReason: `send-retry storm: ${mins}m of re-arms with no session activity for ${silent}m — the session never went idle for the continuation`,
       pauseSuggestedAction: "The session produced no events while the send retried (wedged queue). Restart pi, then /goal resume.",
     }, ctx);
-    ctx.ui.notify(`Goal paused: send-retry storm (${mins}m, session silent ${silent}m). Restart pi, then /goal resume.`, "warning");
-    notifyExternal(ctx, "Goal paused: send-retry storm.");
+    ctx.ui.notify(`${goalNoun()} paused: send-retry storm (${mins}m, session silent ${silent}m). Restart pi, then /goal resume.`, "warning");
+    notifyExternal(ctx, `${goalNoun()} paused: send-retry storm.`);
   }
 }
 
@@ -575,8 +575,8 @@ function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
       pauseReason: `stalled: ${threshold} continuation refires landed no turn`,
       pauseSuggestedAction: "The continuation chain is broken in this process (wedged message queue or stale API). Restart pi, then /goal resume.",
     }, ctx);
-    ctx.ui.notify(`Goal paused: ${threshold} refires produced no turn. Restart pi, then /goal resume.`, "warning");
-    notifyExternal(ctx, "Goal paused: stalled (continuation not landing).");
+    ctx.ui.notify(`${goalNoun()} paused: ${threshold} refires produced no turn. Restart pi, then /goal resume.`, "warning");
+    notifyExternal(ctx, `${goalNoun()} paused: stalled (continuation not landing).`);
     return true;
   }
   return true;
@@ -659,7 +659,7 @@ function heartbeatTick(): void {
     })
   ) {
     lastWedgeAlertAt = Date.now();
-    const msg = `Goal appears wedged: no activity for ${Math.round((Date.now() - lastActivityAt) / 60_000)}m while the session is busy — likely a hung command (test/build/dev server without a timeout). Check the session; Esc kills a stuck tool call.`;
+    const msg = `${goalNoun()} appears wedged: no activity for ${Math.round((Date.now() - lastActivityAt) / 60_000)}m while the session is busy — likely a hung command (test/build/dev server without a timeout). Check the session; Esc kills a stuck tool call.`;
     appendLedger(ctx.cwd, "wedge_alert", { silentMs: Date.now() - lastActivityAt });
     ctx.ui.notify(msg, "warning");
     notifyExternal(ctx, msg);
@@ -910,6 +910,9 @@ let persistenceDegradedNotified = false;
 
 /** v0.28.11 (U9): objective-first notifies — truncate long objectives. */
 const shortObj = (s: string): string => (s.length > 90 ? `${s.slice(0, 87)}…` : s);
+/** v0.28.30: terminology — a list item is not a goal (user note: "we seem
+ * to call everything goal"). User-facing pause/abort notifies name the policy. */
+const goalNoun = (): string => (state.goal?.policy === "list" ? "List item" : "Goal");
 function notifyPersistenceState(ctx: ExtensionContext): void {
   if (isPersistenceDegraded() && !persistenceDegradedNotified) {
     persistenceDegradedNotified = true;
@@ -1521,7 +1524,7 @@ async function cmdCancel(ctx: ExtensionContext): Promise<void> {
   }
   archiveCurrentGoal(ctx, "aborted", "user cancelled");
   ctx.abort();
-  ctx.ui.notify(`Goal aborted.${isLoopActive() ? " A loop is still active — /loop stop ends it." : ""}`, "info");
+  ctx.ui.notify(`${goalNoun()} aborted.${isLoopActive() ? " A loop is still active — /loop stop ends it." : ""}`, "info");
 }
 
 // ---- v0.28.23: decision picker popup ----
@@ -2837,8 +2840,8 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
             pauseSuggestedAction: "Fix the auditor model (/glla model=provider/id) or restart pi, then /goal resume. Your work was NOT judged.",
           }, ctx);
           appendLedger(ctx.cwd, "goal_paused", { reason: `auditor infra streak ${infraStreak}: ${result.error.slice(0, 120)}` });
-          ctx.ui.notify(`Goal paused: auditor infrastructure failed ${infraStreak}× in a row. Fix the auditor model (/glla model=...), then /goal resume.`, "warning");
-          notifyExternal(ctx, `Goal paused: auditor infrastructure ${infraStreak}× — model likely broken.`);
+          ctx.ui.notify(`${goalNoun()} paused: auditor infrastructure failed ${infraStreak}× in a row. Fix the auditor model (/glla model=...), then /goal resume.`, "warning");
+          notifyExternal(ctx, `${goalNoun()} paused: auditor infrastructure ${infraStreak}× — model likely broken.`);
           return {
             content: [{
               type: "text",
@@ -2945,7 +2948,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
           pauseReason: `auditor disapproved ${trailingDisapprovals}× consecutively (cap ${auditCap})`,
           pauseSuggestedAction: "Read the audit history (/goal status), fix the actual gap or /goal tweak the objective, then /goal resume. Raise the cap with /glla auditcap=N.",
         }, ctx);
-        ctx.ui.notify(`Goal paused: auditor disapproved ${trailingDisapprovals}× consecutively (cap ${auditCap}). /goal status for the reports; /goal resume to continue.`, "warning");
+        ctx.ui.notify(`${goalNoun()} paused: auditor disapproved ${trailingDisapprovals}× consecutively (cap ${auditCap}). /goal status for the reports; /goal resume to continue.`, "warning");
           maybeDecisionPopup(ctx);
         appendLedger(ctx.cwd, "goal_paused", { reason: `disapproval cap: ${trailingDisapprovals} consecutive (cap ${auditCap})` });
         notifyExternal(ctx, `Goal paused: ${trailingDisapprovals} consecutive auditor disapprovals`);
@@ -3005,8 +3008,8 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       // action. Before, the action only appeared in /goal status and the
       // widget truncated both at ~60 chars, so decision-pauses ("choose a
       // or b") reached the user as an unreadable fragment.
-      ctx.ui.notify(`Goal paused: ${p.reason}${p.suggestedAction ? `\n\n→ ${p.suggestedAction}` : ""}`, "info");
-      notifyExternal(ctx, `Goal paused: ${(p.suggestedAction ? `${p.reason} → ${p.suggestedAction}` : p.reason).slice(0, 200)}`);
+      ctx.ui.notify(`${goalNoun()} paused: ${p.reason}${p.suggestedAction ? `\n\n→ ${p.suggestedAction}` : ""}`, "info");
+      notifyExternal(ctx, `${goalNoun()} paused: ${(p.suggestedAction ? `${p.reason} → ${p.suggestedAction}` : p.reason).slice(0, 200)}`);
       return { content: [{ type: "text", text: "Goal paused. /goal resume to continue." }], details: {} };
     },
   }));
@@ -5057,7 +5060,7 @@ export default function (pi: ExtensionAPI): void {
             pauseReason: `stalled: ${HEARTBEAT_MAX_NUDGES} consecutive unproductive turns (no tools, short or repetitive)`,
             pauseSuggestedAction: "Inspect the goal — /goal resume to retry, /goal tweak to narrow it, /goal cancel to abort.",
           }, ctx);
-          ctx.ui.notify(`Goal paused: stalled (${HEARTBEAT_MAX_NUDGES} unproductive turns).`, "warning");
+          ctx.ui.notify(`${goalNoun()} paused: stalled (${HEARTBEAT_MAX_NUDGES} unproductive turns).`, "warning");
           maybeDecisionPopup(ctx);
           notifyExternal(ctx, "Goal paused: stalled (no tool calls).");
           return;
@@ -5106,7 +5109,7 @@ export default function (pi: ExtensionAPI): void {
           pauseReason: `token limit exceeded (${used.toLocaleString()} > ${limit.toLocaleString()})`,
           pauseSuggestedAction: "/glla tokenlimit=<n> to raise the cap (or 0 to disable), then /goal resume",
         }, ctx);
-        ctx.ui.notify(`Goal paused: token limit exceeded (${used.toLocaleString()} > ${limit.toLocaleString()}). /glla tokenlimit=<n> to raise, 0 to disable.`, "warning");
+        ctx.ui.notify(`${goalNoun()} paused: token limit exceeded (${used.toLocaleString()} > ${limit.toLocaleString()}). /glla tokenlimit=<n> to raise, 0 to disable.`, "warning");
         notifyExternal(ctx, `Goal paused: token limit exceeded (${used} > ${limit}).`);
         return;
       }
