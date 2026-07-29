@@ -64,3 +64,32 @@ test("pause_goal tool notification carries the FULL reason AND suggested action"
   // external push carries both too (bounded)
   assert.match(src, /notifyExternal\(ctx, `Goal paused: \$\{\(p\.suggestedAction/);
 });
+
+test("pause_goal tool: structured kind/options/recommended/resumeAt persist to the goal (v0.28.22)", () => {
+  // Source pin — the behavioral harness's runTool writes through the
+  // registration ctx, not the test ctx, so a full e2e persistence assert
+  // is order-fragile. The rendering half is pinned in display.test.ts.
+  assert.match(SRC, /pauseKind: p\.kind,/);
+  assert.match(SRC, /pauseOptions: p\.kind === "decision" && p\.options && p\.options\.length > 0 \? p\.options : undefined,/);
+  assert.match(SRC, /pauseRecommended: p\.kind === "decision" && p\.recommended && p\.recommended >= 1 \? Math\.floor\(p\.recommended\) : undefined,/);
+  assert.match(SRC, /pauseResumeAt: p\.kind === "wait" && p\.resumeAt \? p\.resumeAt : undefined,/);
+  // Resume clears the new fields alongside the old ones.
+  assert.match(SRC, /pauseKind: undefined, pauseOptions: undefined, pauseRecommended: undefined, pauseResumeAt: undefined/);
+  // The extension's own pauses are classified at the source.
+  for (const [reason, kind] of [
+    ["send-retry storm", "error"],
+    ["continuation refires landed no turn", "error"],
+    ["auditor verdict: IMPOSSIBLE", "decision"],
+    ["auditor quota:", "wait"],
+    ["auditor infrastructure failed", "error"],
+    ["consecutively (cap", "decision"],
+    ["token limit exceeded", "error"],
+    ["consecutive aborts", "blocked"],
+    ["restored on session load", "blocked"],
+  ]) {
+    const idx = SRC.indexOf(reason);
+    assert.ok(idx > -1, `reason in source: ${reason}`);
+    const window = SRC.slice(Math.max(0, idx - 200), idx);
+    assert.ok(window.includes(`pauseKind: "${kind}"`), `${reason} → pauseKind ${kind}`);
+  }
+});
