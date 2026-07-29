@@ -125,11 +125,16 @@ export function unwrapHardWrappedLines(text: string): string {
   for (const line of lines) {
     const prev = out[out.length - 1];
     const startsNewItem = /^\s*([-*•>]|\d+[.)]|#)/.test(line);
+    // v0.28.24: join only when the continuation starts LOWERCASE — the
+    // mid-sentence signal. Punctuation-less standalone items ("TODO: fix x")
+    // start uppercase/keyword and must NOT merge with the next item.
+    const continuesSentence = /^[a-z]/.test(line.trimStart());
     if (
       prev !== undefined &&
       prev.trim().length > 0 &&
       line.trim().length > 0 &&
       !startsNewItem &&
+      continuesSentence &&
       !/[.!?:;)"'\]]$/.test(prev.trimEnd())
     ) {
       out[out.length - 1] = `${prev.trimEnd()} ${line.trimStart()}`;
