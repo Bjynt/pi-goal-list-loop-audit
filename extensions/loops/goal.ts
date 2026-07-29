@@ -1291,6 +1291,68 @@ async function cmdCancel(ctx: ExtensionContext): Promise<void> {
   ctx.ui.notify(`Goal aborted.${isLoopActive() ? " A loop is still active — /loop stop ends it." : ""}`, "info");
 }
 
+// ---- v0.28.23: decision picker popup ----
+// A decision pause is ACTIONABLE — the widget card summarizes (and
+// truncates) it, but picking from a truncated wall was the user's
+// complaint. Borrow Claude Code / muselinn-Ask: a real select() modal
+// with the FULL option text, pick → act. Escape leaves the card as the
+// fallback; /goal decide re-opens the picker at any time.
+
+let decisionPromptOpen = false;
+
+/** True when the goal is paused on a user decision with options. */
+function pendingDecision(): Goal | null {
+  const g = state.goal;
+  return g && g.status === "paused" && g.pauseKind === "decision" && g.pauseOptions && g.pauseOptions.length > 0 ? g : null;
+}
+
+/** Open the decision picker for the current decision pause. Returns true
+ * when a picker was shown (false → caller notifies "no pending decision"). */
+async function showDecisionPrompt(ctx: ExtensionContext): Promise<boolean> {
+  const g = pendingDecision();
+  if (!g || !ctx.hasUI || decisionPromptOpen) return false;
+  decisionPromptOpen = true;
+  try {
+    const title = `Decision needed — ${g.objective.replace(/\s+/g, " ").slice(0, 72)}${g.pauseReason ? ` · ${g.pauseReason.slice(0, 80)}` : ""}`;
+    const options = g.pauseOptions!.map((o, i) => (g.pauseRecommended === i + 1 ? `${o}  (recommended)` : o));
+    const pick = await ctx.ui.select(title, options);
+    if (!pick) return true; // Escape — the widget card remains the fallback
+    const idx = options.indexOf(pick);
+    const label = g.pauseOptions![idx] ?? pick.replace(/ {2}\(recommended\)$/, "");
+    // Executable options — "Label (/goal cancel)" — RUN the command.
+    // Placeholder commands (…/<arg>) fall through to the message path.
+    const cmdMatch = label.match(/\(\/(goal|list|loop) ([a-z]+)\)\s*$/);
+    if (cmdMatch && !label.includes("…") && !label.includes("<")) {
+      const [, group, verb] = cmdMatch;
+      if (group === "goal" && verb === "resume") await cmdResume(ctx);
+      else if (group === "goal" && verb === "cancel") await cmdCancel(ctx);
+      else if (group === "loop" && verb === "stop") await cmdLoop("stop", ctx);
+      else if (group === "loop" && verb === "resume") await cmdLoop("resume", ctx);
+      else {
+        extensionApi?.sendUserMessage(`Decision for the paused goal "${g.objective}": ${label} — continue on this path.`);
+        await cmdResume(ctx);
+      }
+      return true;
+    }
+    // Content choice — deliver to the agent, then resume.
+    extensionApi?.sendUserMessage(`Decision for the paused goal "${g.objective}": ${label} — continue on this path.`);
+    await cmdResume(ctx);
+    return true;
+  } finally {
+    decisionPromptOpen = false;
+  }
+}
+
+/** Pop the picker after a decision pause lands — deferred so the current
+ * turn finishes first (pi serializes dialogs). No-ops without a UI, when
+ * disabled (/glla decisionpopup=off), or when one is already open. */
+function maybeDecisionPopup(ctx: ExtensionContext): void {
+  if (!ctx.hasUI || loadSettings(ctx.cwd).decisionPopup === false) return;
+  setTimeout(() => {
+    void showDecisionPrompt(ctx).catch(() => {});
+  }, 600);
+}
+
 async function cmdGoals(ctx: ExtensionContext): Promise<void> {
   const dir = archiveDir(ctx.cwd);
   if (!fs.existsSync(dir)) {
