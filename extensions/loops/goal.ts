@@ -568,6 +568,12 @@ function heartbeatTick(): void {
   // machinery below stays quiet for 3 minutes while the replaced session
   // settles (latch watchdog, wedge alert, refire counting all resume after).
   if (Date.now() < compactionGraceUntil) return;
+  // v0.28.27: a stale (session-replaced) handle can never land a send —
+  // the terminal warning already fired once. ALL stall machinery stays
+  // quiet from here on: refiring into a dead process is misleading, and
+  // worse, the stall escalation would PAUSE the goal — silently cancelling
+  // the interruptedAt → auto-resume-on-restart promise the footer shows.
+  if (extensionApiStale) return;
   // v0.26.5: pending-latch watchdog — a queued continuation whose turn
   // trigger was dropped (field-observed post-compaction: continuation
   // ACCEPTED at compact+0s, then 22 minutes of silence). The stuck latch
@@ -963,15 +969,17 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
  * infra) → hand back to the agent: resume active + continuation, verdict
  * durable in auditHistory.
  */
-async function retryStoredCompletionAudit(ctx: ExtensionContext): Promise<void> {
+async function retryStoredCompletionAudit(ctx: ExtensionContext, origin: "quota-retry" | "manual" = "quota-retry"): Promise<void> {
   const goal = state.goal;
   if (!goal?.pendingCompletion) return;
   if (completionAuditInFlight) return;
   const liveCtx = freshCtx() ?? ctx;
   const claim = goal.pendingCompletion;
   updateGoal({ status: "auditing" }, liveCtx);
-  appendLedger(liveCtx.cwd, "goal_resumed", { via: "quota-retry-direct-audit" });
-  liveCtx.ui.notify("Auditor quota window elapsed — retrying the audit with your stored completion claim (no agent turn needed).", "info");
+  appendLedger(liveCtx.cwd, "goal_resumed", { via: origin === "manual" ? "manual-audit" : "quota-retry-direct-audit" });
+  liveCtx.ui.notify(origin === "manual"
+    ? "Manual /goal audit — running the isolated auditor now (no agent turn needed)."
+    : "Auditor quota window elapsed — retrying the audit with your stored completion claim (no agent turn needed).", "info");
   const settings = loadSettings(liveCtx.cwd);
   const { model: auditorModel, error: modelError, via } = resolveAuditorModel(liveCtx, settings.auditorModel);
   if (modelError) liveCtx.ui.notify(`Auditor model issue: ${modelError}`, "warning");
@@ -1027,9 +1035,9 @@ async function retryStoredCompletionAudit(ctx: ExtensionContext): Promise<void> 
   if (result.approved) {
     updateGoal({ auditHistory: history, pendingCompletion: undefined }, liveCtx);
     const objective = state.goal.objective;
-    archiveCurrentGoal(liveCtx, "complete", `auditor ${result.model} approved (quota-retry)`);
-    liveCtx.ui.notify(`Goal complete — auditor ${result.model} approved on the quota retry.`, "info");
-    notifyExternal(liveCtx, `Goal complete (auditor approved on quota-retry): ${objective.slice(0, 120)}`);
+    archiveCurrentGoal(liveCtx, "complete", `auditor ${result.model} approved (${origin})`);
+    liveCtx.ui.notify(`Goal complete — auditor ${result.model} approved${origin === "manual" ? " on /goal audit" : " on the quota retry"}.`, "info");
+    notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${objective.slice(0, 120)}`);
     return;
   }
 
@@ -1051,7 +1059,7 @@ async function retryStoredCompletionAudit(ctx: ExtensionContext): Promise<void> 
     liveCtx.ui.notify(`Auditor still quota-limited — next auto-retry in ${retryMin}m (your completion claim is stored; no action needed).`, "warning");
     scheduleQuotaRetry(liveCtx, quota.retryAfterSec, result.error, () => {
       if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor quota:") && state.goal.pendingCompletion) {
-        void retryStoredCompletionAudit(liveCtx);
+        void retryStoredCompletionAudit(liveCtx, origin);
       }
     });
     return;
@@ -1072,10 +1080,10 @@ async function retryStoredCompletionAudit(ctx: ExtensionContext): Promise<void> 
   }, liveCtx);
   liveCtx.ui.notify(
     result.disapproved
-      ? `Auditor (quota-retry) DISAPPROVED — resuming; the report is in /goal status.`
+      ? `Auditor (${origin}) DISAPPROVED — resuming; the report is in /goal status.`
       : result.impossible
-        ? `Auditor (quota-retry): goal IMPOSSIBLE — ${(result.impossibleReason ?? "").slice(0, 100)}. Resuming; consider /goal tweak.`
-        : `Auditor (quota-retry) hit an infrastructure error — resuming; re-call complete_goal when ready.`,
+        ? `Auditor (${origin}): goal IMPOSSIBLE — ${(result.impossibleReason ?? "").slice(0, 100)}. Resuming; consider /goal tweak.`
+        : `Auditor (${origin}) hit an infrastructure error — resuming; re-call complete_goal when ready.`,
     "warning",
   );
   appendLedger(liveCtx.cwd, "quota_retry_audit_verdict", {

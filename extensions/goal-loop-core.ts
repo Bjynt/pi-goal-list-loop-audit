@@ -212,9 +212,9 @@ export interface Goal {
 export type GoalRoute =
   | { kind: "draft" }
   | { kind: "set"; text: string }
-  | { kind: "sub"; name: "status" | "pause" | "resume" | "cancel" | "decide" | "tweak" | "archive" | "start"; rest: string };
+  | { kind: "sub"; name: "status" | "pause" | "resume" | "cancel" | "decide" | "audit" | "tweak" | "archive" | "start"; rest: string };
 
-const GOAL_EXACT_SUBS = new Set(["status", "pause", "resume", "cancel", "decide"]);
+const GOAL_EXACT_SUBS = new Set(["status", "pause", "resume", "cancel", "decide", "audit"]);
 const GOAL_ARG_SUBS = new Set(["tweak", "archive", "start"]);
 
 export function routeGoalArgs(raw: string): GoalRoute {
