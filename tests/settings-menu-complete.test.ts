@@ -164,7 +164,7 @@ test("default fallbacks surface when settings + provenance both missing", () => 
   // Specific defaults the contract pins:
   assert.match(byId.get("postaudit")!.valueText, /open sub-menu/);
   assert.equal(byId.get("autoAcceptDrafts")!.valueText, "off"); // v0.28.20: bare values
-  assert.equal(byId.get("auditCap")!.valueText, "(5)");
+  assert.equal(byId.get("auditCap")!.valueText, "5"); // v0.28.20: bare
   assert.match(byId.get("subagentModelStrategy")!.valueText, /inherit-parent/);
 });
 
@@ -174,8 +174,8 @@ test("provenance flows into sourceText (project/global/default tags)", () => {
     auditorModel: { value: "anthropic/claude-sonnet-4", source: "global" },
   });
   const byId = new Map(rows1.map((r) => [r.id, r]));
-  assert.equal(byId.get("autoResume")!.sourceText, "[project]");
-  assert.equal(byId.get("auditorModel")!.sourceText, "[global]");
+  assert.equal(byId.get("autoResume")!.sourceText, "project"); // v0.28.20: bare
+  assert.equal(byId.get("auditorModel")!.sourceText, "global"); // v0.28.20: bare
   // No provenance → "default" (v0.28.20: bare)
   assert.equal(byId.get("wedgeAlertMinutes")!.sourceText, "default");
 });
