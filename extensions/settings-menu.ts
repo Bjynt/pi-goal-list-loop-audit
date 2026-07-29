@@ -482,13 +482,13 @@ export class SettingsMenuComponent implements Component {
 
     lines.push(this.theme.fg("accent", this.theme.bold(this.title)));
 
-    // v0.28.18: EVERY tab is bracketed (active = accent, inactive = dim) —
-    // bare words read as floating text, not tabs.
+    // v0.28.19: color-only tabs (user call: "dropping the brackets") —
+    // active = accent + bold, inactive = dim. No bracket chrome.
     lines.push(
       SETTINGS_SECTIONS.map((s, i) =>
         i === this.activeSectionIdx
-          ? this.theme.fg("accent", `[${s.label}]`)
-          : this.theme.fg("dim", `[${s.label}]`),
+          ? this.theme.fg("accent", this.theme.bold(s.label))
+          : this.theme.fg("dim", s.label),
       ).join("  "),
     );
 

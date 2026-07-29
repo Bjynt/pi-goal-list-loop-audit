@@ -277,12 +277,13 @@ test("structural: buildSettingsRows returns ≥20 rows across all 5 sections (co
 /*  Pin 1b: table-grid rendering (v0.28.18)                              */
 /* --------------------------------------------------------------------- */
 
-test("render: EVERY tab is bracketed in the tab bar (active = accent)", () => {
+test("render: tab bar is color-only (v0.28.19: brackets dropped), all sections present", () => {
   const { component } = makeComponent(SAMPLE_ROWS, 120);
   const tabs = component.render(120)[1]!;
   for (const s of SETTINGS_SECTIONS) {
-    assert.ok(tabs.includes(`[${s.label}]`), `tab bar must bracket ${s.label}: ${tabs}`);
+    assert.ok(tabs.includes(s.label), `tab bar must name ${s.label}: ${tabs}`);
   }
+  assert.doesNotMatch(tabs, /\[/, "no bracket chrome on tabs (color-only)");
 });
 
 test("render: a header rule with ┼ junctions follows the header row", () => {

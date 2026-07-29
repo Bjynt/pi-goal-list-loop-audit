@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.28.19] — 2026-07-29
+
+### Changed — color-only settings tabs
+
+User call ("dropping the brackets"): the /glla tab bar no longer wraps
+tabs in `[...]` — active tab is accent+bold, inactive dim. The
+4-column table grid from 0.28.18 is unchanged.
+
 ## [0.28.18] — 2026-07-29
 
 ### Changed — the /glla settings menu is a real table now
