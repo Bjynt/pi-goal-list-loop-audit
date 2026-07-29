@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.28.16] — 2026-07-29
+
+### Fixed — reviewer duplicate-scan dedupe (the scan-of-a-scan cascade)
+
+On 2026-07-28 the reviewer proposed the identical "Post-completion
+regression scan" follow-up twice in a row: scan `24ewt8` completed →
+proposed scan `pii8tt` → `pii8tt` completed → proposed scan-of-`pii8tt`
+AGAIN. Each proposal was literally unique (the goal-id differs), so no
+existing guard caught it.
+
+- `runReviewer`'s fire-audit-on-clean branch now normalized-compares the
+  proposal against the just-completed goal's own objective (`source` IS
+  the most recent completion): lowercase, goal-ids (`yyyyMMddHHmmss-xxx`)
+  → `<id>`, whitespace collapsed. A match means the completed goal was
+  itself this same scan — the proposal/enqueue is suppressed in all three
+  modes (on / auto / aggressive), the suppression is ledgered
+  (`reviewer_suppressed` reason `duplicate-scan`), and the report's
+  cascade step is `duplicate-suppressed` so `/goal status` shows why no
+  follow-up fired. The review report still writes.
+- New `normalizeObjective` export.
+- Pin: completing "Post-completion regression scan after <id>" proposes
+  NOTHING in on/auto mode, while a genuinely different clean completion
+  still fires the scan. The 0.27.9 negative pin banning the retired
+  `report-only` vocabulary stays green — the new step has its own name.
+
 ## [0.28.15] — 2026-07-29
 
 ### Fixed — 0.28.14 audit gaps (carryover on the list path, resume pin, /loop cancel discoverability)
