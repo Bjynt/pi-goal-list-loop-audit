@@ -203,9 +203,9 @@ export interface Goal {
 export type GoalRoute =
   | { kind: "draft" }
   | { kind: "set"; text: string }
-  | { kind: "sub"; name: "status" | "pause" | "resume" | "cancel" | "tweak" | "archive" | "start"; rest: string };
+  | { kind: "sub"; name: "status" | "pause" | "resume" | "cancel" | "decide" | "tweak" | "archive" | "start"; rest: string };
 
-const GOAL_EXACT_SUBS = new Set(["status", "pause", "resume", "cancel"]);
+const GOAL_EXACT_SUBS = new Set(["status", "pause", "resume", "cancel", "decide"]);
 const GOAL_ARG_SUBS = new Set(["tweak", "archive", "start"]);
 
 export function routeGoalArgs(raw: string): GoalRoute {
@@ -215,7 +215,7 @@ export function routeGoalArgs(raw: string): GoalRoute {
   const first = (space === -1 ? trimmed : trimmed.slice(0, space)).toLowerCase();
   const rest = space === -1 ? "" : trimmed.slice(space + 1).trim();
   if (GOAL_EXACT_SUBS.has(first) && rest === "") {
-    return { kind: "sub", name: first as "status" | "pause" | "resume" | "cancel", rest: "" };
+    return { kind: "sub", name: first as "status" | "pause" | "resume" | "cancel" | "decide", rest: "" };
   }
   if (GOAL_ARG_SUBS.has(first)) {
     return { kind: "sub", name: first as "tweak" | "archive" | "start", rest };

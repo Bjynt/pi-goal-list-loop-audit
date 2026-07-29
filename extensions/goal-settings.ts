@@ -33,6 +33,10 @@ export interface Settings {
   /** on → restored goals/loops/lists auto-resume even in fresh sessions
    * (unattended rigs). Default off: restore holds until /goal resume. */
   autoResume?: boolean;
+  /** v0.28.23: off → decision pauses don't pop the select() picker (the
+   * widget card still shows the options; /goal decide opens it on demand).
+   * Default on; unattended rigs have no UI so this never fires there. */
+  decisionPopup?: boolean;
   /** v0.28.14: what happens to stale carryover (paused goal, waiting list,
    * held loop from before this session) when NEW work activates.
    * pause (default) = leave it + ONE summary; clear = drop it all honestly;
@@ -156,6 +160,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "tokenLimit",
   "wedgeAlertMinutes",
   "autoResume",
+  "decisionPopup",
   "carryover",
   "autoAcceptDrafts",
   "auditCap",

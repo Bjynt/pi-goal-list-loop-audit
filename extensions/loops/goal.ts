@@ -2516,10 +2516,13 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
           status: "paused",
           auditHistory: history,
           pauseKind: "decision",
+          pauseOptions: ["Tweak the objective — /goal tweak <new text>", "Cancel the goal (/goal cancel)"],
+          pauseRecommended: 1,
           pauseReason: `auditor verdict: IMPOSSIBLE — ${reason}`,
           pauseSuggestedAction: "The auditor says this goal can never be satisfied as stated. /goal tweak the objective (or /goal cancel), then /goal resume.",
         }, ctx);
         ctx.ui.notify(`Auditor: goal IMPOSSIBLE — ${reason}. Goal paused; /goal tweak or /goal cancel, then /goal resume.`, "warning");
+        maybeDecisionPopup(ctx);
         appendLedger(ctx.cwd, "goal_paused", { reason: `auditor impossible: ${reason}` });
         notifyExternal(ctx, `Goal paused (auditor: impossible): ${reason.slice(0, 120)}`);
         return {
@@ -2692,10 +2695,13 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
           status: "paused",
           auditHistory: history,
           pauseKind: "decision",
+          pauseOptions: ["Fix the disapproval gap, then continue (/goal resume)", "Tweak the objective — /goal tweak <new text>", "Cancel the goal (/goal cancel)"],
+          pauseRecommended: 1,
           pauseReason: `auditor disapproved ${trailingDisapprovals}× consecutively (cap ${auditCap})`,
           pauseSuggestedAction: "Read the audit history (/goal status), fix the actual gap or /goal tweak the objective, then /goal resume. Raise the cap with /glla auditcap=N.",
         }, ctx);
         ctx.ui.notify(`Goal paused: auditor disapproved ${trailingDisapprovals}× consecutively (cap ${auditCap}). /goal status for the reports; /goal resume to continue.`, "warning");
+          maybeDecisionPopup(ctx);
         appendLedger(ctx.cwd, "goal_paused", { reason: `disapproval cap: ${trailingDisapprovals} consecutive (cap ${auditCap})` });
         notifyExternal(ctx, `Goal paused: ${trailingDisapprovals} consecutive auditor disapprovals`);
         return {
@@ -2749,6 +2755,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         pauseRecommended: p.kind === "decision" && p.recommended && p.recommended >= 1 ? Math.floor(p.recommended) : undefined,
         pauseResumeAt: p.kind === "wait" && p.resumeAt ? p.resumeAt : undefined,
       }, ctx);
+      if (p.kind === "decision" && p.options && p.options.length > 0) maybeDecisionPopup(ctx);
       // v0.27.1: surface the FULL pause contract — reason AND suggested
       // action. Before, the action only appeared in /goal status and the
       // widget truncated both at ~60 chars, so decision-pauses ("choose a
@@ -4029,6 +4036,16 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
       } else {
         ctx.ui.notify(`autoresume must be on or off, got: ${value}`, "warning");
       }
+    } else if (key === "decisionpopup") {
+      if (["on", "true", "1", "yes"].includes(value)) {
+        patch.decisionPopup = true;
+        changed = true;
+      } else if (["off", "false", "0", "no"].includes(value)) {
+        patch.decisionPopup = false;
+        changed = true;
+      } else {
+        ctx.ui.notify(`decisionpopup must be on or off, got: ${value}`, "warning");
+      }
     } else if (key === "carryover") {
       if (["resume", "pause", "clear"].includes(value)) {
         patch.carryover = value as "resume" | "pause" | "clear";
@@ -4612,6 +4629,8 @@ export default function (pi: ExtensionAPI): void {
       updateGoal({
         status: "paused",
         pauseKind: "decision",
+        pauseOptions: ["Stop the loop, then resume the goal (/loop stop)", "Cancel the goal (/goal cancel) — the loop keeps running"],
+        pauseRecommended: 1,
         pauseReason: "held on session load — the loop owns the active slot (one active thing at a time)",
         pauseSuggestedAction: "/loop to work the loop, or /loop stop then /goal resume to work the goal",
       }, ctx);
@@ -4619,6 +4638,7 @@ export default function (pi: ExtensionAPI): void {
         `Goal [${state.goal.id}] held — a loop also exists; one active thing at a time. /loop to resume the loop, or /loop stop then /goal resume.`,
         "info",
       );
+      maybeDecisionPopup(ctx);
     }
     // Always paint on session load (v0.22.1): the branches above only reach
     // refreshUI via persistState, so a goal that was ALREADY paused (or any
@@ -4708,10 +4728,13 @@ export default function (pi: ExtensionAPI): void {
           updateGoal({
             status: "paused",
             pauseKind: "decision",
+            pauseOptions: ["Retry — /goal resume", "Tweak the objective — /goal tweak <new text>", "Cancel the goal (/goal cancel)"],
+            pauseRecommended: 1,
             pauseReason: `stalled: ${HEARTBEAT_MAX_NUDGES} consecutive unproductive turns (no tools, short or repetitive)`,
             pauseSuggestedAction: "Inspect the goal — /goal resume to retry, /goal tweak to narrow it, /goal cancel to abort.",
           }, ctx);
           ctx.ui.notify(`Goal paused: stalled (${HEARTBEAT_MAX_NUDGES} unproductive turns).`, "warning");
+          maybeDecisionPopup(ctx);
           notifyExternal(ctx, "Goal paused: stalled (no tool calls).");
           return;
         }
