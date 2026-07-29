@@ -104,3 +104,13 @@ test("pause_goal description: teaches the real command surface + no-id vocabular
   assert.match(desc, /no command takes a goal id|NO command takes a goal id/i);
   assert.match(desc, /never show goal ids/i);
 });
+
+test("v0.28.30: pause/abort notifies name the policy (List item vs Goal) via goalNoun", () => {
+  // User note: "we seem to call everything goal". A list item is not a goal.
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.match(src, /const goalNoun = \(\): string => \(state\.goal\?\.policy === "list" \? "List item" : "Goal"\);/);
+  const occurrences = src.split("${goalNoun()}").length - 1;
+  assert.ok(occurrences >= 10, `goalNoun used across the notify surface (${occurrences} sites)`);
+  assert.match(src, /`\$\{goalNoun\(\)\} aborted\./);
+  assert.match(src, /`\$\{goalNoun\(\)\} appears wedged/);
+});

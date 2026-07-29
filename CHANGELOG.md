@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.28.30] — 2026-07-29
+
+### Fixed — type visibility + terminology (user notes sweep)
+
+From the user's field notes (the /glla settings explanation + look items
+were already shipped in v0.28.15–19 — those sessions run old builds):
+
+- **The widget card always names the type.** The status line read
+  "paused · 3m" for a plain goal and "list item · paused" for a list
+  item — the user had to scroll up to know which thing was active. Now
+  every card says "goal · …" or "list item · …" (the loop surface always
+  had its own card). The footer already named the policy everywhere.
+- **Pause/abort notifies name the policy.** "Goal paused: 5 consecutive
+  errors" / "Goal aborted." fired verbatim for list items (user note:
+  "we seem to call everything goal"). New `goalNoun()` helper —
+  "List item" when policy==="list", "Goal" otherwise — swept across the
+  send-retry storm, stall-refire, wedge-alert, abort, auditor-infra,
+  disapproval-cap, pause_goal, stalled, and token-limit notifies.
+
+Pins: typeWord in the card + behavioral goal/list card assertions;
+goalNoun helper + ≥10-site sweep + aborted/wedged wording. 603 tests.
+
 ## [0.28.29] — 2026-07-29
 
 ### Fixed — send-retry storm no longer fires on a legitimately busy session (the polis false positive)
