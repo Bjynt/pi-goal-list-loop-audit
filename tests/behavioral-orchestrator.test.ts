@@ -58,28 +58,54 @@ test("T3a: active goal + human load (startup) + default settings → HELD for ex
   assert.ok(ctx.ui.matching("held on restore").length >= 1, "held notify shown");
 });
 
-test("T3c: interrupted goal outranks the DEFAULT hold — auto-resumes on human load", async () => {
+test("T3c (v0.28.21): interrupted goal HELDS by default — the 0.28.3 exemption is superseded; autoresume=on auto-resumes", async () => {
+  // Default: even an infra-interrupted goal loads HELD (user directive:
+  // "load it on session load but not auto start it"). The marker STAYS.
   const cwd = tmpCwd();
   seedState(cwd, { goal: seedGoal({ interruptedAt: new Date().toISOString(), interruptedReason: "extension api stale (sendContinuation)" }) });
   pi.sent.length = 0;
   const ctx = await freshSession(cwd, "startup");
   await tick();
   const g = readState(cwd).goal as { status: string; interruptedAt?: string };
-  assert.equal(g.status, "active", "still active (not held)");
-  assert.equal(g.interruptedAt, undefined, "interrupt marker cleared by the auto-resume it promised");
-  assert.ok(ctx.ui.matching("auto-resumed after the stale-handle interrupt").length >= 1, "interrupt-resume notify");
+  assert.equal(g.status, "paused", "held like everything else by default");
+  assert.ok(g.interruptedAt, "interrupt marker PRESERVED (no auto-resume happened)");
+  assert.ok(ctx.ui.matching("held on restore").length >= 1, "held notify");
+  assert.equal(pi.sent.length, 0, "no continuation fired");
+
+  // Opt-in: autoresume=on keeps the 0.28.3 recovery semantics.
+  const cwd2 = tmpCwd();
+  seedState(cwd2, { goal: seedGoal({ interruptedAt: new Date().toISOString(), interruptedReason: "extension api stale (sendContinuation)" }) });
+  fs.writeFileSync(path.join(cwd2, ".pi-glla", "settings.json"), JSON.stringify({ autoResume: true }));
+  pi.sent.length = 0;
+  const ctx2 = await freshSession(cwd2, "startup");
+  await tick();
+  const g2 = readState(cwd2).goal as { status: string; interruptedAt?: string };
+  assert.equal(g2.status, "active", "autoresume=on auto-resumes");
+  assert.equal(g2.interruptedAt, undefined, "interrupt marker cleared by the auto-resume it promised");
+  assert.ok(ctx2.ui.matching("auto-resumed after the stale-handle interrupt").length >= 1, "interrupt-resume notify");
   assert.ok(pi.sent.length >= 1, "continuation actually sent");
 });
 
-test("T3b: active goal + reload → auto-resumes (in-session machinery never strands work)", async () => {
+test("T3b (v0.28.21): active goal + reload → HELD by default; autoresume=on → auto-resumes", async () => {
   const cwd = tmpCwd();
   seedState(cwd, { goal: seedGoal() });
   pi.sent.length = 0;
   const ctx = await freshSession(cwd, "reload");
   await tick();
   const g = readState(cwd).goal as { status: string };
-  assert.equal(g.status, "active");
-  assert.ok(ctx.ui.matching("resuming goal").length >= 1, "resume notify");
+  assert.equal(g.status, "paused", "reload HOLDS by default now");
+  assert.ok(ctx.ui.matching("held on restore").length >= 1, "held notify");
+  assert.equal(pi.sent.length, 0, "no continuation fired");
+
+  const cwd2 = tmpCwd();
+  seedState(cwd2, { goal: seedGoal() });
+  fs.writeFileSync(path.join(cwd2, ".pi-glla", "settings.json"), JSON.stringify({ autoResume: true }));
+  pi.sent.length = 0;
+  const ctx2 = await freshSession(cwd2, "reload");
+  await tick();
+  const g2 = readState(cwd2).goal as { status: string };
+  assert.equal(g2.status, "active");
+  assert.ok(ctx2.ui.matching("resuming goal").length >= 1, "resume notify");
   assert.ok(pi.sent.length >= 1, "continuation actually sent");
 });
 
@@ -93,19 +119,30 @@ test("T3d: active loop + human load → HELD_ON_RESTORE (loop deactivated loudly
   assert.ok(ctx.ui.matching("loop held on restore").length >= 1, "held notify names the loop");
 });
 
-test("T3e: no active goal + queued list + reload → head item auto-activates", async () => {
+test("T3e (v0.28.21): no active goal + queued list + reload → NOT activated by default; autoresume=on → head activates", async () => {
   const cwd = tmpCwd();
   seedState(cwd, { list: [{ id: "item-1", objective: "queued head objective — done when pinned", addedAt: new Date().toISOString() }] });
   pi.sent.length = 0;
   const ctx = await freshSession(cwd, "reload");
   await tick();
   const s = readState(cwd);
-  const g = s.goal as { status: string; objective: string; policy: string } | null;
+  assert.equal(s.goal, null, "nothing activated by default");
+  assert.ok(ctx.ui.matching("waiting").length >= 1, "waiting notify names the queue");
+  assert.equal(pi.sent.length, 0, "no continuation fired");
+
+  const cwd2 = tmpCwd();
+  seedState(cwd2, { list: [{ id: "item-1", objective: "queued head objective — done when pinned", addedAt: new Date().toISOString() }] });
+  fs.writeFileSync(path.join(cwd2, ".pi-glla", "settings.json"), JSON.stringify({ autoResume: true }));
+  pi.sent.length = 0;
+  const ctx2 = await freshSession(cwd2, "reload");
+  await tick();
+  const s2 = readState(cwd2);
+  const g = s2.goal as { status: string; objective: string; policy: string } | null;
   assert.ok(g, "a goal exists after restore");
   assert.equal(g!.objective, "queued head objective — done when pinned");
   assert.equal(g!.policy, "list");
   assert.equal(g!.status, "active");
-  assert.ok(ctx.ui.matching("activated").length >= 1, "activation notify");
+  assert.ok(ctx2.ui.matching("activated").length >= 1, "activation notify");
   assert.ok(pi.sent.length >= 1, "continuation sent for the activated head");
 });
 
@@ -367,6 +404,7 @@ test("/loop cancel: first-class alias stops the loop (stopReason recorded)", asy
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   seedState(cwd, { loop: seedLoop({ active: true }) });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ autoResume: true })); // v0.28.21: reload holds by default; this test needs the loop ACTIVE
   const ctx = await freshSession(cwd, "reload");
   await pi.command("loop", "cancel", ctx);
   await tick();
@@ -381,6 +419,7 @@ test("one-active-thing tool guards: list_activate + propose_loop_draft + propose
   // Active loop blocks list_activate and propose_goal_draft.
   const cwd = tmpCwd();
   seedState(cwd, { loop: seedLoop({ active: true }), list: [seedListItem("queued thing")] });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ autoResume: true })); // v0.28.21: keep the loop ACTIVE through the reload
   const ctx = await freshSession(cwd, "reload");
   const r1 = await pi.runTool("list_activate", { n: 1 }, ctx);
   assert.match(r1.content[0]!.text, /A loop is active/, "list_activate blocked over live loop");
@@ -392,6 +431,7 @@ test("one-active-thing tool guards: list_activate + propose_loop_draft + propose
   // Active goal blocks propose_loop_draft (before the measure even test-runs).
   const cwd2 = tmpCwd();
   seedState(cwd2, { goal: seedGoal() });
+  fs.writeFileSync(path.join(cwd2, ".pi-glla", "settings.json"), JSON.stringify({ autoResume: true })); // v0.28.21: keep the goal ACTIVE through the reload
   const ctx2 = await freshSession(cwd2, "reload");
   await pi.command("loop", "", ctx2); // enter loop drafting (slash-bar gate)
   const r3 = await pi.runTool("propose_loop_draft", { target: "loop over goal", measureCmd: "none" }, ctx2);
