@@ -39,6 +39,7 @@ Five top-level commands — `/goal`, `/list`, `/loop`, `/glla`, `/review`:
 /goal resume                       # resume
 /goal cancel                       # abort
 /goal decide                       # re-open the decision picker (v0.28.23)
+/goal audit                        # run the isolated auditor on the current goal now — no agent turn (v0.28.27)
 /goal tweak "<new objective>"      # edit in place (Confirm dialog)
 /goal archive                      # archived goals, newest first
 /glla                               # settings UI table · /glla key=value · /glla stats · /glla audits [N|full] · /glla postaudit · /glla autoaccept=on

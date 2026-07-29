@@ -120,7 +120,7 @@ test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUD
   const legacyIdx = SRC.indexOf('appendLedger(ctx.cwd, "goal_resumed", { via: "quota-retry" });');
   assert.ok(legacyIdx > directIdx, "agent-resume is the FALLBACK (no stored claim), not the default");
   // 3. the retry function re-runs the auditor with the stored claim:
-  assert.match(SRC, /async function retryStoredCompletionAudit\(ctx: ExtensionContext\): Promise<void> \{/);
+  assert.match(SRC, /async function retryStoredCompletionAudit\(ctx: ExtensionContext, origin: "quota-retry" \| "manual" = "quota-retry"\): Promise<void> \{/);
   assert.match(SRC, /completionSummary: claim\.completionSummary,/);
   assert.match(SRC, /verificationSummary: claim\.verificationSummary,/);
   // 4. approved → archive (cascade inside archiveCurrentGoal); claim cleared:
