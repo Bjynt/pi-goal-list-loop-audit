@@ -4185,6 +4185,64 @@ function cmdLog(args: string, ctx: ExtensionContext): void {
   ctx.ui.notify(`Ledger tail (last ${tail.length}${all ? "" : " non-noise"} events — /glla log <N> for more, /glla log all to include noise):\n${lines.join("\n")}`, "info");
 }
 
+/**
+ * v0.28.31: /glla reset — ONE confirmed command that leaves a project with
+ * zero live glla state. User directive: "make sure we only have one goal or
+ * loop or list at a time — many of my older projects have leftovers" (the
+ * fleet scan found queued lists up to 56 deep, held loops at iter 50, and
+ * paused goals across ~10 projects). The goal is archived HONESTLY (aborted
+ * — lands in goals/ + the archive, reviewer's abort-suppression applies),
+ * the list is cleared, the loop record is wiped after a graceful stop.
+ * History stays in .pi-glla; only the live state goes.
+ */
+async function cmdGllaReset(ctx: ExtensionContext): Promise<void> {
+  const g = state.goal;
+  const live = g && (g.status === "active" || g.status === "paused" || g.status === "auditing");
+  const n = listQueue().length;
+  const loop = state.loop;
+  if (!g && n === 0 && !loop) {
+    ctx.ui.notify("glla state is already clean — no goal, no list, no loop.", "info");
+    return;
+  }
+  const parts: string[] = [];
+  if (live) parts.push(`goal archived as aborted: ${g!.objective.replace(/\s+/g, " ").slice(0, 70)}`);
+  else if (g) parts.push(`terminal goal record cleared (${g.status})`);
+  if (n > 0) parts.push(`list cleared (${n} item${n === 1 ? "" : "s"})`);
+  if (loop) parts.push(`loop ${loop.active ? "stopped" : "cleared"} (iter ${loop.iteration}${loop.bestValue !== null && loop.bestValue !== undefined ? `, best ${loop.bestValue}` : ""})`);
+  if (ctx.hasUI) {
+    try {
+      const ok = await ctx.ui.confirm("Reset glla state?", `${parts.map((p) => `  ${p}`).join("\n")}\n\nHistory stays in .pi-glla (archive + ledger); the live state is wiped.`);
+      if (!ok) {
+        ctx.ui.notify("Reset cancelled.", "info");
+        return;
+      }
+    } catch {
+      ctx.ui.notify("Reset cancelled.", "info");
+      return;
+    }
+  }
+  appendLedger(ctx.cwd, "glla_reset", { goalId: live ? g!.id : undefined, listCleared: n, loop: loop ? { iteration: loop.iteration, active: loop.active } : undefined });
+  if (live) {
+    archiveCurrentGoal(ctx, "aborted", "user reset (/glla reset)");
+    ctx.abort();
+  } else if (g) {
+    state = { ...state, goal: null };
+  }
+  if (n > 0) {
+    state = { ...state, list: [] };
+    appendLedger(ctx.cwd, "list_cleared", { via: "glla_reset" });
+  }
+  if (loop) {
+    clearLoopTimer();
+    state.loop = undefined;
+    await finishLoopGit(ctx, loop);
+    appendLedger(ctx.cwd, "loop_stopped", { reason: "user reset (/glla reset)", iterations: loop.iteration, best: loop.bestValue });
+  }
+  persistState(ctx);
+  ctx.ui.notify(`glla reset done: ${parts.join(" · ")}. Clean slate.`, "info");
+  notifyExternal(ctx, "glla state reset by user — clean slate.");
+}
+
 function cmdAudits(args: string, ctx: ExtensionContext): void {
   const full = /\bfull\b/.test(args);
   const all = /\b(?:all|global|log)\b/.test(args);
@@ -4240,6 +4298,11 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   // so we can look back and see where we are doing things wrong."
   if (/^log\b/.test(trimmed)) {
     cmdLog(trimmed.slice("log".length).trim(), ctx);
+    return;
+  }
+  // v0.28.31: /glla reset — one-shot clean slate for leftover-laden projects.
+  if (/^reset\b/.test(trimmed)) {
+    await cmdGllaReset(ctx);
     return;
   }
   if (/^reviewer\b/.test(trimmed)) {
@@ -4633,6 +4696,7 @@ export default function (pi: ExtensionAPI): void {
       ["decisionpopup=", "on|off: decision pauses pop the select() picker (default on; the widget card always lists the options, /goal decide reopens the picker)"],
       ["auditcap=", "N: pause goal after N consecutive auditor disapprovals (default 5, 0 = unlimited)"],
       ["log", "event-trail tail: /glla log [N] — who created/resumed/paused what, from where (v0.28.28)"],
+      ["reset", "wipe live glla state (goal archived, list cleared, loop stopped) — one-shot cleanup for leftover-laden projects"],
       ["auditfeedbackchars=", "cap on executor-visible disapproval report chars (0 = full report, the default)"],
       ["aggressivemode=", "on: keep-going defaults — autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs"],
       ["quotaretryminutes=", "N: minutes before auto-retrying a quota-exhausted auditor (default 60)"],

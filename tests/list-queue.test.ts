@@ -158,3 +158,20 @@ test("v0.28.28: /glla log [N] — human-readable ledger tail, noise-filtered", (
   assert.match(SRC, /entries\.filter\(\(e\) => !LOG_NOISE\.has\(e\.type\)\)/);
   assert.match(SRC, /parseInt\(nMatch\?\.\[1\] \?\? "15", 10\)/);
 });
+
+test("v0.28.31: /glla reset — one confirmed command wipes live state (goal archived, list cleared, loop stopped)", () => {
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.match(SRC, /if \(\/\^reset\\b\/\.test\(trimmed\)\) \{/);
+  assert.match(SRC, /async function cmdGllaReset\(ctx: ExtensionContext\): Promise<void>/);
+  // destructive → Confirm dialog with the full summary:
+  assert.match(SRC, /await ctx\.ui\.confirm\("Reset glla state\?"/);
+  assert.match(SRC, /History stays in \.pi-glla \(archive \+ ledger\); the live state is wiped\./);
+  // honest close-out: goal archived (not dropped), list + loop ledgered:
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "glla_reset", \{ goalId: live/);
+  assert.match(SRC, /archiveCurrentGoal\(ctx, "aborted", "user reset \(\/glla reset\)"\);/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "list_cleared", \{ via: "glla_reset" \}\);/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "loop_stopped", \{ reason: "user reset \(\/glla reset\)"/);
+  assert.match(SRC, /state\.loop = undefined;/);
+  // already-clean short-circuit:
+  assert.match(SRC, /glla state is already clean — no goal, no list, no loop\./);
+});

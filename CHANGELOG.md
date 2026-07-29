@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.28.31] — 2026-07-29
+
+### Added — `/glla reset`: one-shot clean slate for leftover-laden projects
+
+User directive: "make sure we only have one goal or loop or list at a time
+— many of my older projects have many leftovers." A fleet-wide scan (22
+`.pi-glla` dirs) confirmed the pile: queued lists up to 56 deep (pully),
+36 (virtual-pet), 18 (neonbreak), held loops at iter 11–50 across seven
+projects, and paused goals in ~10. The one-active-thing guard (v0.28.14+)
+prevents NEW overlap but can't retract history — and cleaning a project
+meant three commands (`/goal cancel` + `/list clear` + `/loop stop`).
+
+`/glla reset` is the single consent gate:
+
+- **Confirms first** with a full itemized summary ("goal archived as
+  aborted: … · list cleared (56 items) · loop stopped (iter 50, best …)")
+  and the reminder that history stays in `.pi-glla`.
+- The goal is archived HONESTLY (`aborted`, reason "user reset") — it
+  lands in goals/ + the archive; the reviewer's abort-suppression keeps
+  it quiet. A terminal goal record is just cleared.
+- The list is emptied (`list_cleared {via:"glla_reset"}`), the loop is
+  stopped gracefully (`finishLoopGit` + `loop_stopped`) and its record
+  wiped — a true clean slate, ledgered `glla_reset`.
+- Already-clean projects get "already clean" instead of a dialog.
+
+Pins: route, confirm gate + summary, honest archive, all three ledger
+events, loop wipe, clean short-circuit. 604 tests.
+
 ## [0.28.30] — 2026-07-29
 
 ### Fixed — type visibility + terminology (user notes sweep)
