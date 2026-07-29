@@ -2050,10 +2050,10 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
   const sub = (parts[0] ?? "").toLowerCase();
   const rest = args.trim().slice(sub.length).trim();
 
-  if (!sub) {
-    // /loop with no args → resume a held loop if one is waiting; otherwise
-    // draft the loop config (metric design is the whole game for a
-    // long-running loop; never start one blind).
+  if (!sub || sub === "resume") {
+    // /loop with no args (or /loop resume, v0.28.22) → resume a held loop
+    // if one is waiting; otherwise draft the loop config (metric design is
+    // the whole game for a long-running loop; never start one blind).
     if (isLoopActive()) {
       ctx.ui.notify("A loop is already active — /loop status to inspect, /loop stop to end it.", "info");
       return;
@@ -2063,7 +2063,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       // v0.28.14: one-active-thing — a held loop must not resume over an
       // active goal/list-item (this was the last unguarded stacking path).
       if (state.goal && state.goal.status === "active") {
-        ctx.ui.notify("A goal is active — the held loop stays held. /goal pause or /goal cancel it first, then /loop to resume.", "warning");
+        ctx.ui.notify("A goal is active — the held loop stays held. /goal pause or /goal cancel it first, then /loop resume.", "warning");
         return;
       }
       state.loop = { ...stored, active: true, stopReason: undefined };
@@ -2073,6 +2073,10 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
         `Loop resumed: iteration ${stored.iteration}/${stored.maxIterations > 0 ? stored.maxIterations : "∞"} · best ${stored.bestValue ?? "n/a"} — ${stored.target.slice(0, 60)}`,
         "info",
       );
+      return;
+    }
+    if (sub === "resume") {
+      ctx.ui.notify("No held loop to resume. /loop to draft one, or /loop start \"<target>\" for an infinite metricless loop.", "info");
       return;
     }
     await startDrafting(ctx, "loop");
@@ -4462,7 +4466,7 @@ export default function (pi: ExtensionAPI): void {
         state.loop = { ...l, active: false, stopReason: HELD_ON_RESTORE };
         persistState(ctx);
         ctx.ui.notify(
-          `Loop held on restore: ${l.target.slice(0, 60)} — /loop to resume, /glla autoresume=on to auto-resume on session load in this project.`,
+          `Loop held on restore: ${l.target.slice(0, 60)} — /loop resume to continue, /glla autoresume=on to auto-resume on session load in this project.`,
           "info",
         );
       }
