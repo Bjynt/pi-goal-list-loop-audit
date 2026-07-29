@@ -79,19 +79,19 @@ test("pause_goal tool: structured kind/options/recommended/resumeAt persist to t
   assert.match(SRC, /pauseKind: undefined, pauseOptions: undefined, pauseRecommended: undefined, pauseResumeAt: undefined/);
   // The extension's own pauses are classified at the source.
   const pairs: Array<[string, string]> = [
-    ["send-retry storm", "error"],
-    ["continuation refires landed no turn", "error"],
-    ["auditor verdict: IMPOSSIBLE", "decision"],
-    ["auditor quota:", "wait"],
-    ["auditor infrastructure failed", "error"],
-    ["consecutively (cap", "decision"],
-    ["token limit exceeded", "error"],
-    ["consecutive aborts", "blocked"],
-    ["restored on session load", "blocked"],
+    ["pauseReason: `send-retry storm", "error"],
+    ["pauseReason: `stalled: ${threshold} continuation refires", "error"],
+    ["pauseReason: `auditor verdict: IMPOSSIBLE", "decision"],
+    ["pauseReason: `auditor quota:", "wait"],
+    ["pauseReason: `auditor infrastructure failed", "error"],
+    ["pauseReason: `auditor disapproved ${trailingDisapprovals}× consecutively", "decision"],
+    ["pauseReason: `token limit exceeded", "error"],
+    ["pauseReason: \"5 consecutive aborts", "blocked"],
+    ["pauseReason: \"restored on session load", "blocked"],
   ];
   for (const [reason, kind] of pairs) {
     const idx = SRC.indexOf(reason);
-    assert.ok(idx > -1, `reason in source: ${reason}`);
+    assert.ok(idx > -1, `callsite in source: ${reason}`);
     const window = SRC.slice(Math.max(0, idx - 200), idx);
     assert.ok(window.includes(`pauseKind: "${kind}"`), `${reason} → pauseKind ${kind}`);
   }
