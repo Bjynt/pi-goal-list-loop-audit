@@ -482,35 +482,65 @@ const COMPACTION_GRACE_MS = 3 * 60_000;
 // brake (1m, 2m, 4m, 8m, 16m cap). A successful turn resets both.
 const ERROR_RETRY_LADDER_MS = [5_000, 15_000, 45_000, 90_000, 180_000];
 let errorBrakeStreak = 0;
-const SEND_REARM_LEDGER_EVERY = 600; // 600 × 50ms = 30s
-const SEND_REARM_ESCALATE_AT = 6000; // 6000 × 50ms = 5 minutes
+const SEND_REARM_LEDGER_MILESTONES_MS = [2 * 60_000, 5 * 60_000, 10 * 60_000];
+// v0.28.29: escalation is TIME-based and ACTIVITY-gated. A busy session is
+// NORMAL — the user conversing, or one long subagent turn — and the old
+// flat-50ms × 6000-count rule misread 5 minutes of busy as "wedged" and
+// paused the goal (the polis field report). Escalate only after 15 minutes
+// of failed sends AND no session activity in the last 5 minutes (a wedged
+// queue shows no events at all; a busy one streams constantly).
+const SEND_REARM_ESCALATE_AFTER_MS = 15 * 60_000;
+const SEND_REARM_ESCALATE_SILENT_MS = 5 * 60_000;
+let continuationRearmSince = 0;
+let loopRearmSince = 0;
+let continuationRearmMilestone = 0;
+let loopRearmMilestone = 0;
+
+/** v0.28.29: busy-retry cadence backs off — 50ms for the first beats
+ * (instant pickup right after a turn ends), then 250ms, 1s, 5s, 15s, 30s
+ * cap. agent_end reschedules independently, so the slow tail costs nothing
+ * in the common case; it only caps the ledger/CPU spam of a long busy stretch. */
+function sendRearmDelayMs(streak: number): number {
+  if (streak <= 4) return 50;
+  if (streak <= 8) return 250;
+  if (streak <= 12) return 1_000;
+  if (streak === 13) return 5_000;
+  if (streak === 14) return 15_000;
+  return 30_000;
+}
 
 function accountSendRearm(ctx: ExtensionContext, kind: "continuation" | "loop"): void {
   const streak = kind === "continuation" ? ++continuationRearmStreak : ++loopRearmStreak;
   if (streak === 1) {
+    if (kind === "continuation") { continuationRearmSince = Date.now(); continuationRearmMilestone = 0; } else { loopRearmSince = Date.now(); loopRearmMilestone = 0; }
     appendLedger(ctx.cwd, "send_rearm_start", { kind });
     return;
   }
-  if (streak % SEND_REARM_LEDGER_EVERY === 0) {
-    appendLedger(ctx.cwd, "send_rearm_storm", { kind, streak, minutes: Math.round((streak * BACKOFF_IDLE_RETRY_MS) / 60000) });
+  const since = kind === "continuation" ? continuationRearmSince : loopRearmSince;
+  const elapsed = Date.now() - since;
+  const milestone = kind === "continuation" ? continuationRearmMilestone : loopRearmMilestone;
+  if (milestone < SEND_REARM_LEDGER_MILESTONES_MS.length && elapsed >= SEND_REARM_LEDGER_MILESTONES_MS[milestone]) {
+    if (kind === "continuation") continuationRearmMilestone++; else loopRearmMilestone++;
+    appendLedger(ctx.cwd, "send_rearm_storm", { kind, streak, minutes: Math.round(elapsed / 60000) });
   }
-  if (streak >= SEND_REARM_ESCALATE_AT) {
-    if (kind === "continuation") continuationRearmStreak = 0; else loopRearmStreak = 0;
+  if (elapsed >= SEND_REARM_ESCALATE_AFTER_MS && Date.now() - lastActivityAt >= SEND_REARM_ESCALATE_SILENT_MS) {
+    if (kind === "continuation") { continuationRearmStreak = 0; continuationRearmSince = 0; } else { loopRearmStreak = 0; loopRearmSince = 0; }
     escalateSendRearmStorm(ctx, kind);
   }
 }
 
 function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "loop"): void {
-  // Same loud-terminal shape as escalateStallNow (v0.24.7): a 5-minute
-  // re-arm storm means the session never goes idle for us — wedged queue
-  // or a busy-forever session. Bounded and surfaced, not silent.
-  const mins = Math.round((SEND_REARM_ESCALATE_AT * BACKOFF_IDLE_RETRY_MS) / 60000);
-  appendLedger(ctx.cwd, "send_rearm_escalated", { kind, streak: SEND_REARM_ESCALATE_AT });
+  // Same loud-terminal shape as escalateStallNow (v0.24.7). v0.28.29: this
+  // only fires on a REAL wedge now (15m of failed sends + 5m of zero
+  // session activity) — busy-but-alive sessions never reach it.
+  const mins = Math.round(SEND_REARM_ESCALATE_AFTER_MS / 60000);
+  const silent = Math.round(SEND_REARM_ESCALATE_SILENT_MS / 60000);
+  appendLedger(ctx.cwd, "send_rearm_escalated", { kind, afterMinutes: mins, silentMinutes: silent });
   if (kind === "loop" && isLoopActive()) {
     clearLoopTimer();
-    state.loop = { ...state.loop!, active: false, stopReason: `send-retry storm: ${mins}m of 50ms re-arms — the session never went idle for the loop turn. Restart pi, then /loop start again.` };
+    state.loop = { ...state.loop!, active: false, stopReason: `send-retry storm: ${mins}m of re-arms with no session activity for ${silent}m — the session is wedged. Restart pi, then /loop start again.` };
     persistState(ctx);
-    ctx.ui.notify(`Loop stopped: send-retry storm (${mins}m). Restart pi and /loop start.`, "warning");
+    ctx.ui.notify(`Loop stopped: send-retry storm (${mins}m, session silent ${silent}m). Restart pi and /loop start.`, "warning");
     notifyExternal(ctx, "Loop stopped: send-retry storm.");
     return;
   }
@@ -518,10 +548,10 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
     updateGoal({
       status: "paused",
       pauseKind: "error",
-      pauseReason: `send-retry storm: ${mins}m of 50ms re-arms — the session never went idle for the continuation`,
-      pauseSuggestedAction: "The session never went idle for the send (wedged queue or permanently busy). Restart pi, then /goal resume.",
+      pauseReason: `send-retry storm: ${mins}m of re-arms with no session activity for ${silent}m — the session never went idle for the continuation`,
+      pauseSuggestedAction: "The session produced no events while the send retried (wedged queue). Restart pi, then /goal resume.",
     }, ctx);
-    ctx.ui.notify(`Goal paused: send-retry storm (${mins}m). Restart pi, then /goal resume.`, "warning");
+    ctx.ui.notify(`Goal paused: send-retry storm (${mins}m, session silent ${silent}m). Restart pi, then /goal resume.`, "warning");
     notifyExternal(ctx, "Goal paused: send-retry storm.");
   }
 }
@@ -736,10 +766,10 @@ function sendContinuation(goalId: string): void {
     return;
   }
   if (!ctx.isIdle() || ctx.hasPendingMessages()) {
-    // v0.28.5 (E3): count + ledger + escalate the re-arm storm.
     accountSendRearm(ctx, "continuation");
     continuationScheduledFor = goalId;
-    continuationTimer = setTimeout(() => sendContinuation(goalId), BACKOFF_IDLE_RETRY_MS);
+    // v0.28.29: backing-off cadence (was flat 50ms — 6,000 spins in 5m).
+    continuationTimer = setTimeout(() => sendContinuation(goalId), sendRearmDelayMs(continuationRearmStreak));
     continuationTimer.unref?.();
     return;
   }
@@ -2011,8 +2041,8 @@ function sendLoopTurn(): void {
   if (!isLoopActive() || !extensionApi) return;
   const ctx = freshCtx();
   if (!ctx || !ctx.isIdle() || ctx.hasPendingMessages()) {
-    if (ctx) accountSendRearm(ctx, "loop"); // v0.28.5 (E3)
-    loopTimer = setTimeout(() => sendLoopTurn(), BACKOFF_IDLE_RETRY_MS);
+    if (ctx) accountSendRearm(ctx, "loop");
+    loopTimer = setTimeout(() => sendLoopTurn(), sendRearmDelayMs(loopRearmStreak)); // v0.28.29: backing-off cadence
     loopTimer.unref?.();
     return;
   }
@@ -4702,8 +4732,8 @@ export default function (pi: ExtensionAPI): void {
     // v0.28.24: a compaction is LEGITIMATE busy time — reset the send-rearm
     // storm streaks (π-web nearly escalated a "send-retry storm" pause during
     // a 3.5-minute compact) and open the post-compaction stall grace.
-    continuationRearmStreak = 0;
-    loopRearmStreak = 0;
+    continuationRearmStreak = 0; continuationRearmSince = 0;
+    loopRearmStreak = 0; loopRearmSince = 0;
     compactionGraceUntil = Date.now() + COMPACTION_GRACE_MS;
     const settle = setTimeout(() => {
       const c = freshCtx();

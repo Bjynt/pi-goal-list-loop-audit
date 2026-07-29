@@ -44,24 +44,41 @@ test("E2: 3 trailing auditor infra errors pause LOUDLY (no more retry-forever)",
 });
 
 test("E3: send-retry re-arms counted, ledgered, escalated", () => {
-  assert.match(SRC, /const SEND_REARM_LEDGER_EVERY = 600;/);
-  assert.match(SRC, /const SEND_REARM_ESCALATE_AT = 6000;/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "send_rearm_start", \{ kind \}\)/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "send_rearm_storm", \{ kind, streak/);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "send_rearm_escalated", \{ kind, streak: SEND_REARM_ESCALATE_AT \}\)/);
   // wired into both send paths' re-arm sites:
   assert.match(SRC, /accountSendRearm\(ctx, "continuation"\);/);
   assert.match(SRC, /if \(ctx\) accountSendRearm\(ctx, "loop"\);/);
   // a landed send clears the storm:
-  assert.match(SRC, /continuationRearmStreak = 0; \/\/ v0\.28\.5 \(E3\)/);
-  assert.match(SRC, /loopRearmStreak = 0; \/\/ v0\.28\.5 \(E3\)/);
+  assert.match(SRC, /continuationRearmStreak = 0; continuationRearmSince = 0; \/\/ v0\.28\.5 \(E3\)/);
+  assert.match(SRC, /loopRearmStreak = 0; loopRearmSince = 0; \/\/ v0\.28\.5 \(E3\)/);
+});
+
+test("v0.28.29: busy-retry cadence backs off (no more flat 50ms spins)", () => {
+  assert.match(SRC, /function sendRearmDelayMs\(streak: number\): number/);
+  assert.match(SRC, /if \(streak <= 4\) return 50;/);
+  assert.match(SRC, /if \(streak <= 8\) return 250;/);
+  assert.match(SRC, /if \(streak <= 12\) return 1_000;/);
+  assert.match(SRC, /return 30_000;/);
+  assert.match(SRC, /setTimeout\(\(\) => sendContinuation\(goalId\), sendRearmDelayMs\(continuationRearmStreak\)\)/);
+  assert.match(SRC, /setTimeout\(\(\) => sendLoopTurn\(\), sendRearmDelayMs\(loopRearmStreak\)\)/);
+});
+
+test("v0.28.29: escalation is TIME-based and ACTIVITY-gated (busy ≠ wedged — the polis false positive)", () => {
+  assert.match(SRC, /const SEND_REARM_ESCALATE_AFTER_MS = 15 \* 60_000;/);
+  assert.match(SRC, /const SEND_REARM_ESCALATE_SILENT_MS = 5 \* 60_000;/);
+  assert.match(SRC, /elapsed >= SEND_REARM_ESCALATE_AFTER_MS && Date\.now\(\) - lastActivityAt >= SEND_REARM_ESCALATE_SILENT_MS/);
+  assert.match(SRC, /const SEND_REARM_LEDGER_MILESTONES_MS = \[2 \* 60_000, 5 \* 60_000, 10 \* 60_000\];/);
+  assert.match(SRC, /"send_rearm_escalated", \{ kind, afterMinutes: mins, silentMinutes: silent \}/);
+  assert.ok(!SRC.includes("SEND_REARM_ESCALATE_AT"), "count-based escalation constant gone");
+  assert.ok(!SRC.includes("SEND_REARM_LEDGER_EVERY"), "count-based ledger constant gone");
 });
 
 test("E3: escalation is loud-terminal (goal pause / loop stop with restart guidance)", () => {
   assert.match(SRC, /function escalateSendRearmStorm\(ctx: ExtensionContext, kind: "continuation" \| "loop"\): void/);
-  assert.match(SRC, /send-retry storm: \$\{mins\}m of 50ms re-arms — the session never went idle for the continuation/);
+  assert.match(SRC, /send-retry storm: \$\{mins\}m of re-arms with no session activity for \$\{silent\}m — the session never went idle for the continuation/);
   assert.match(SRC, /Restart pi, then \/goal resume\./);
-  assert.match(SRC, /send-retry storm: \$\{mins\}m of 50ms re-arms — the session never went idle for the loop turn\. Restart pi, then \/loop start again\./);
+  assert.match(SRC, /send-retry storm: \$\{mins\}m of re-arms with no session activity for \$\{silent\}m — the session is wedged\. Restart pi, then \/loop start again\./);
 });
 
 test("E8: the error brake carries the REAL error text, not stopReason", () => {
