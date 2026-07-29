@@ -14,6 +14,7 @@ import * as path from "node:path";
 
 import {
   classifyFindingText,
+  cutAtClauseBoundary,
   extractFindings,
   resolveReviewerConfig,
   runReviewer,
@@ -131,7 +132,7 @@ test("completedObjective prefix-dedupe: a finding restating the completed goal i
   assert.equal(findings.length, 0, "prefix of the completed objective is a duplicate");
   // and a genuinely NEW finding survives the same call:
   const fresh = extractFindings(
-    [{ name: "x", text: "- Fix the null deref in the projectile collision system" }],
+    [{ name: "x", text: "- Fix the regression in the projectile collision system" }],
     10,
     completed,
   );

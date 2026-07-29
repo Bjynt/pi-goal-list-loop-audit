@@ -618,3 +618,33 @@ test("/goal decide: no pending decision → notify, no picker", async () => {
   const ui = ctx.ui as unknown as { matching(sub: string): Array<{ message: string }> };
   assert.ok(ui.matching("No pending decision").length > 0, "explains why no picker opened");
 });
+
+// ---- v0.28.24: goal ids are internal plumbing — user-facing surfaces never show them ----
+
+test("/goal status + /goal pause: no goal id in user-facing text (v0.28.24)", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal() });
+  const ctx = await freshSession(cwd, "reload");
+  await tick();
+  const g = readState(cwd).goal as { id: string; objective: string };
+  const ui = ctx.ui as unknown as { matching(sub: string): Array<{ message: string }> };
+
+  await pi.command("goal", "status", ctx);
+  const statusMsgs = ui.matching("seeded test objective");
+  assert.ok(statusMsgs.length > 0, "status shows the objective");
+  assert.ok(!statusMsgs.some((m) => m.message.includes(g.id)), `status must not show the id ${g.id}`);
+  assert.ok(!statusMsgs.some((m) => m.message.startsWith("[20")), "no [id] tag prefix");
+
+  await pi.command("goal", "pause", ctx);
+  const pauseMsgs = ui.matching("paused");
+  assert.ok(pauseMsgs.length > 0, "pause notifies");
+  assert.ok(!pauseMsgs.some((m) => m.message.includes(g.id)), "pause notify names the objective, not the id");
+  assert.ok(pauseMsgs.some((m) => /paused/.test(m.message) && /seeded test objective/.test(m.message)), "pause notify carries the short objective");
+});
+
+test("goal-start notify has no (id: …) suffix (v0.28.24 source pin)", () => {
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.ok(!src.includes("(id: ${goal.id})"), "started/saved notifies dropped the id suffix");
+  assert.ok(!src.includes("List item ${state.goal.id} paused"), "list-pause notify names the item");
+});

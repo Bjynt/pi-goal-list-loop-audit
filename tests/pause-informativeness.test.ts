@@ -94,3 +94,13 @@ test("pause_goal tool: structured kind/options/recommended/resumeAt persist to t
     assert.match(SRC, new RegExp(`pauseKind: "${kind}",[\\s\\S]{0,500}?${esc}`), `${anchor} → pauseKind ${kind}`);
   }
 });
+
+test("pause_goal description: teaches the real command surface + no-id vocabulary (v0.28.24)", () => {
+  const m = SRC.match(/name: "pause_goal",[\s\S]{0,1400}?parameters:/);
+  assert.ok(m, "pause_goal registration found");
+  const desc = m![0];
+  assert.match(desc, /\/list remove N/, "enumerates the real /list command");
+  assert.match(desc, /NO \/goal drop|no \/goal drop/i, "kills the hallucinated command");
+  assert.match(desc, /no command takes a goal id|NO command takes a goal id/i);
+  assert.match(desc, /never show goal ids/i);
+});
