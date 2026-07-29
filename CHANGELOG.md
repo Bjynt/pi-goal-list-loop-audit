@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.28.26] — 2026-07-29
+
+### Fixed — quota-blocked audits no longer re-engage the agent (stored-claim direct auditor retry)
+
+Field-observed in π-games (free-tier model): `complete_goal` was called and
+the AUDITOR was quota-blocked (two "auditor quota: retry in 3600s" pauses).
+The quota retry then resumed the goal with a normal continuation — asking
+the AGENT to re-submit an unchanged completion claim. The model instead
+hallucinated closure ("the auditor accepted it, complete_goal returns No
+active goal" — ledger shows zero approvals), repeated the same essay
+verbatim turn after turn, stormed continuations (9 sends in 63 seconds),
+compacted 14× in 35 minutes, and burned the stall brake.
+
+Root design gap: an audit RETRY does not need the agent — the claim was
+already submitted. Now:
+
+- When an audit attempt is quota-blocked, the completion claim
+  (`completionSummary` + `verificationSummary`) is persisted on the goal as
+  `pendingCompletion` (typed, schematized, survives restarts).
+- When the quota window elapses, `retryStoredCompletionAudit` re-runs the
+  ISOLATED AUDITOR directly with the stored claim — no agent turn, nothing
+  new for a weak model to get confused by. Approved → close + cascade
+  (archiveCurrentGoal handles list advance + reviewer); still quota'd →
+  re-pause with the claim preserved and another scheduled retry; any other
+  verdict (disapproved, impossible, infra) → resume active + continuation,
+  verdict durable in auditHistory (ledger: quota_retry_audit_verdict).
+- Goals paused before this version have no stored claim — their quota
+  retry keeps the legacy resume+continuation path.
+
+Pins: claim persisted at the quota block; callback prefers the direct-audit
+branch (agent-resume is the no-claim fallback); retry invokes the auditor
+with the stored claim; approval archives + clears the claim; quota-again
+preserves it; type + schema pins. 593 tests.
+
 ## [0.28.25] — 2026-07-29
 
 ### Fixed — flat-cadence retry budgets burn in minutes against hour-scale provider conditions

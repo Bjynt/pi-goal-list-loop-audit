@@ -106,3 +106,35 @@ test("v0.28.25: inter-error retries ride an exponential ladder, not the immediat
   assert.match(SRC, /function scheduleContinuation\(ctx: ExtensionContext, force = false, delayMs\?: number\): void \{/);
   assert.match(SRC, /delay = delayMs \?\? \(ctx\.isIdle\(\)/);
 });
+
+test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUDITOR directly (no agent turn)", () => {
+  // π-games incident: quota-blocked complete_goal → resume re-engaged the
+  // agent → the model hallucinated closure and repeated itself into a
+  // continuation storm + 14 compactions in 35 minutes.
+  // 1. the claim is persisted at the quota block:
+  assert.match(SRC, /pendingCompletion: \{ completionSummary: p\.completionSummary, verificationSummary: p\.verificationSummary, at: nowIso\(\) \},/);
+  // 2. the quota-retry callback prefers the direct-audit path:
+  const cbIdx = SRC.indexOf('(state.goal.pauseReason ?? "").startsWith("auditor quota:")');
+  const directIdx = SRC.indexOf("void retryStoredCompletionAudit(ctx);");
+  assert.ok(cbIdx > 0 && directIdx > cbIdx, "direct-audit branch inside the quota callback");
+  const legacyIdx = SRC.indexOf('appendLedger(ctx.cwd, "goal_resumed", { via: "quota-retry" });');
+  assert.ok(legacyIdx > directIdx, "agent-resume is the FALLBACK (no stored claim), not the default");
+  // 3. the retry function re-runs the auditor with the stored claim:
+  assert.match(SRC, /async function retryStoredCompletionAudit\(ctx: ExtensionContext\): Promise<void> \{/);
+  assert.match(SRC, /completionSummary: claim\.completionSummary,/);
+  assert.match(SRC, /verificationSummary: claim\.verificationSummary,/);
+  // 4. approved → archive (cascade inside archiveCurrentGoal); claim cleared:
+  assert.match(SRC, /archiveCurrentGoal\(liveCtx, "complete", `auditor \$\{result\.model\} approved \(quota-retry\)`\)/);
+  assert.match(SRC, /updateGoal\(\{ auditHistory: history, pendingCompletion: undefined \}, liveCtx\)/);
+  // 5. quota-again → re-pause with the claim PRESERVED + another scheduled retry:
+  assert.match(SRC, /auditor quota: retry in \$\{quota\.retryAfterSec\}s \(stored-claim retry\)/);
+  // 6. any other verdict hands back to the agent:
+  assert.match(SRC, /appendLedger\(liveCtx\.cwd, "quota_retry_audit_verdict", \{/);
+});
+
+test("v0.28.26: pendingCompletion typed + schematized", () => {
+  const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
+  assert.match(CORE, /pendingCompletion\?: \{ completionSummary\?: string; verificationSummary\?: string; at: string \};/);
+  const SCHEMA = fs.readFileSync("schemas/goal.schema.json", "utf-8");
+  assert.match(SCHEMA, /"pendingCompletion": \{ "type": "object" \}/);
+});
