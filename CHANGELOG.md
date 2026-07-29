@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.28.21] — 2026-07-29
+
+### Changed — one active thing ENTIRELY + session loads never auto-start
+
+User directive: "only one goal/list/loop — not each, but entirely — and
+we load it on session load but not auto start it."
+
+**One active thing, last gap closed.** `/goal resume` and `/list resume`
+(which routes through the same `cmdResume`) now refuse over a live loop
+("A loop is active — one active thing at a time. /loop stop it first.").
+This was the final unguarded activation path; every transition
+(propose_goal_draft, propose_loop_draft, /loop start, /loop bare-resume,
+list_activate, /list next, activateNextListItem, and now resume) enforces
+the invariant.
+
+**Restore boundary enforces the invariant on dirty legacy states.** A
+persisted state with BOTH an active goal and an active/held loop
+(possible from pre-guard versions) used to leave the goal active — it
+would fire on agent_end while the loop was held. Session load now pauses
+the goal: "held — the loop owns the active slot".
+
+**Session load = load, never start (default flipped).**
+`shouldAutoResumeOnSessionStart` with autoresume UNSET now returns false
+for EVERY reason — the 0.26.9 reload/fork auto-resume default is gone.
+Whatever is waiting (goal, list head, loop) is restored visible but HELD
+until an explicit `/goal resume`, `/list resume`, or `/loop`. The only
+auto-resume path left is the explicit opt-in `/glla autoresume=on`
+(unattended rigs) — its behavior is unchanged.
+
+**0.28.3 interrupted-goal exemption SUPERSEDED.** An infra-interrupted
+goal no longer auto-resumes on a human load under the default — it holds
+like everything else, marker preserved. Under autoresume=on the marker
+still drives the auto-resume and is cleared by it. The stale-creation
+notify now says "Restart pi, then /goal resume" instead of promising an
+auto-resume.
+
+⚠️ **Operational note**: after this ships, EVERY restart/reload holds work
+by default in every project. Unattended rigs that relied on reload
+auto-resume must opt in: `/glla autoresume=on` (project or global).
+
+Pins: core gate (all reasons false by default), T3b/T3c/T3e rewritten
+(default-hold + autoresume=on variants keep the auto-resume path
+covered), S2 source pin flipped to the supersession, 2 new behavioral
+tests (resume-over-loop refusal, dirty-state enforcement).
+
 ## [0.28.20] — 2026-07-29
 
 ### Changed — settings table de-chromed
