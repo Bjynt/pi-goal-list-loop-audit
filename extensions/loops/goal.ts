@@ -948,6 +948,146 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
 }
 
 /**
+ * v0.28.26: quota-window retry for a STORED completion claim. The auditor
+ * was quota-blocked at complete_goal time; the claim (completionSummary +
+ * verificationSummary) was persisted on the goal, and when the quota window
+ * elapses we re-run the AUDITOR directly — no agent turn. Re-engaging the
+ * agent to re-submit an unchanged claim produced a hallucinated-closure
+ * repetition loop in the field (π-games: the model concluded the goal was
+ * closed, repeated the same essay 4×+, stormed continuations, compacted 14×
+ * in 35 minutes, and burned the stall brake).
+ *
+ * Outcomes: approved → close + cascade (archiveCurrentGoal handles list
+ * advance + reviewer); quota again → re-pause with a fresh scheduled retry
+ * (claim preserved); anything else (disapproved, impossible, non-quota
+ * infra) → hand back to the agent: resume active + continuation, verdict
+ * durable in auditHistory.
+ */
+async function retryStoredCompletionAudit(ctx: ExtensionContext): Promise<void> {
+  const goal = state.goal;
+  if (!goal?.pendingCompletion) return;
+  if (completionAuditInFlight) return;
+  const liveCtx = freshCtx() ?? ctx;
+  const claim = goal.pendingCompletion;
+  updateGoal({ status: "auditing" }, liveCtx);
+  appendLedger(liveCtx.cwd, "goal_resumed", { via: "quota-retry-direct-audit" });
+  liveCtx.ui.notify("Auditor quota window elapsed — retrying the audit with your stored completion claim (no agent turn needed).", "info");
+  const settings = loadSettings(liveCtx.cwd);
+  const { model: auditorModel, error: modelError, via } = resolveAuditorModel(liveCtx, settings.auditorModel);
+  if (modelError) liveCtx.ui.notify(`Auditor model issue: ${modelError}`, "warning");
+  latestAuditProgress = { label: "quota-retry", lastEventAt: Date.now() };
+  completionAuditInFlight = true;
+  const auditStartMs = Date.now();
+  let result: Awaited<ReturnType<typeof runGoalCompletionAuditor>>;
+  try {
+    ({ result } = await runWithInfraRetry(
+      () =>
+        runGoalCompletionAuditor({
+          ctx: liveCtx,
+          goal: state.goal!,
+          completionSummary: claim.completionSummary,
+          verificationSummary: claim.verificationSummary,
+          model: auditorModel,
+          thinkingLevel: settings.auditorThinkingLevel ?? getSessionThinkingLevel(),
+          onProgress: (progress) => {
+            latestAuditProgress = { currentTool: progress.currentTool, label: progress.label, elapsedMs: progress.elapsedMs, lastEventAt: Date.now() };
+            refreshUI(liveCtx);
+          },
+        }),
+      { onRetry: (err) => appendLedger(liveCtx.cwd, "audit_infra_retry", { goalId: state.goal?.id, error: err.slice(0, 200) }) },
+    ));
+  } finally {
+    completionAuditInFlight = false;
+    latestAuditProgress = null;
+  }
+  if (!state.goal) return; // aborted mid-audit
+
+  // Record the run in history (same compact shape as the tool path).
+  const auditorRan = result.output.trim().length > 0;
+  const history = state.goal.auditHistory ?? [];
+  if (auditorRan) {
+    result.output = stripThinkBlocks(result.output);
+    history.push({
+      at: nowIso(),
+      approved: result.approved,
+      disapproved: result.disapproved,
+      impossible: result.impossible,
+      impossibleReason: result.impossibleReason,
+      model: result.model,
+      thinkingLevel: result.thinkingLevel,
+      report: result.output,
+      error: result.error,
+      regressionShieldPassed: result.regressionShieldPassed,
+      regressionShieldMissing: result.regressionShieldMissing,
+      durationMs: Date.now() - auditStartMs,
+    } as any);
+    if (history.length > 20) history.splice(0, history.length - 20);
+  }
+
+  if (result.approved) {
+    updateGoal({ auditHistory: history, pendingCompletion: undefined }, liveCtx);
+    const objective = state.goal.objective;
+    archiveCurrentGoal(liveCtx, "complete", `auditor ${result.model} approved (quota-retry)`);
+    liveCtx.ui.notify(`Goal complete — auditor ${result.model} approved on the quota retry.`, "info");
+    notifyExternal(liveCtx, `Goal complete (auditor approved on quota-retry): ${objective.slice(0, 120)}`);
+    return;
+  }
+
+  if (result.error && !result.disapproved && isQuotaError(result.error)) {
+    // Still quota'd — re-pause with a fresh window, claim preserved.
+    const settingsNow = loadSettings(liveCtx.cwd);
+    const defaultSec = (settingsNow.quotaRetryMinutes ?? DEFAULT_QUOTA_RETRY_MINUTES) * 60;
+    const quota = parseQuotaError(result.error, defaultSec);
+    const retryMin = Math.max(1, Math.round(quota.retryAfterSec / 60));
+    updateGoal({
+      status: "paused",
+      auditHistory: history,
+      pauseKind: "wait",
+      pauseResumeAt: new Date(Date.now() + quota.retryAfterSec * 1000).toISOString(),
+      pauseReason: `auditor quota: ${result.error}`,
+      pauseSuggestedAction: `Quota auto-retry in ${retryMin}m — or /goal resume to retry now`,
+    }, liveCtx);
+    appendLedger(liveCtx.cwd, "goal_paused", { reason: `auditor quota: retry in ${quota.retryAfterSec}s (stored-claim retry)` });
+    liveCtx.ui.notify(`Auditor still quota-limited — next auto-retry in ${retryMin}m (your completion claim is stored; no action needed).`, "warning");
+    scheduleQuotaRetry(liveCtx, quota.retryAfterSec, result.error, () => {
+      if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor quota:") && state.goal.pendingCompletion) {
+        void retryStoredCompletionAudit(liveCtx);
+      }
+    });
+    return;
+  }
+
+  // Any other outcome — disapproved, impossible, non-quota infra — belongs
+  // to the agent: resume and let the continuation drive the next step. The
+  // verdict is durable in auditHistory + /goal status.
+  updateGoal({
+    status: "active",
+    auditHistory: history,
+    pendingCompletion: undefined,
+    pauseReason: result.disapproved
+      ? `auditor disapproved on quota-retry — see /goal status`
+      : result.impossible
+        ? `auditor verdict: IMPOSSIBLE on quota-retry — ${(result.impossibleReason ?? "").slice(0, 120)}`
+        : `auditor infrastructure error on quota-retry: ${(result.error ?? "").slice(0, 120)}`,
+  }, liveCtx);
+  liveCtx.ui.notify(
+    result.disapproved
+      ? `Auditor (quota-retry) DISAPPROVED — resuming; the report is in /goal status.`
+      : result.impossible
+        ? `Auditor (quota-retry): goal IMPOSSIBLE — ${(result.impossibleReason ?? "").slice(0, 100)}. Resuming; consider /goal tweak.`
+        : `Auditor (quota-retry) hit an infrastructure error — resuming; re-call complete_goal when ready.`,
+    "warning",
+  );
+  appendLedger(liveCtx.cwd, "quota_retry_audit_verdict", {
+    approved: false,
+    disapproved: result.disapproved,
+    impossible: result.impossible,
+    error: result.error?.slice(0, 160),
+  });
+  scheduleContinuation(liveCtx, true);
+}
+
+/**
  * v0.26.0: bind the reviewer to the live session. Sources for finding
  * extraction: the archived goal markdown + its audit reports + the
  * durable audit log entries for this goal. List items are enqueued via
