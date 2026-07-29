@@ -310,7 +310,16 @@ export function runReviewer(
   // aggressive mode → relaunch the audit goal directly (no Confirm).
   if (findings.length === 0 && config.cascade.includes("fire-audit-on-clean")) {
     const auditObjective = `Post-completion regression scan after ${source.goalId} (${config.auditScope})`;
-    if (aggressive) {
+    // v0.28.16: duplicate-scan dedupe — the reviewer fires ON completion,
+    // so source.objective IS the most recent completion. If the goal that
+    // just completed was itself this same scan (normalized: goal-ids
+    // stripped), the proposal would be a scan-of-a-scan — the cascade loop
+    // that fired twice on 2026-07-28. Suppress the proposal/enqueue (the
+    // report is still written; the ledger records the reason).
+    if (normalizeObjective(source.objective) === normalizeObjective(auditObjective)) {
+      deps.ledger("reviewer_suppressed", { reason: "duplicate-scan", goalId: source.goalId, objective: auditObjective });
+      cascadeStep = "report-only";
+    } else if (aggressive) {
       if (deps.proposeGoal(auditObjective, "aggressive postaudit: clean completion — relaunching the regression scan as /goal")) {
         proposed++;
       }
