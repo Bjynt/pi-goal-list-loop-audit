@@ -498,6 +498,7 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
   if (state.goal && state.goal.status === "active") {
     updateGoal({
       status: "paused",
+      pauseKind: "error",
       pauseReason: `send-retry storm: ${mins}m of 50ms re-arms — the session never went idle for the continuation`,
       pauseSuggestedAction: "The session never went idle for the send (wedged queue or permanently busy). Restart pi, then /goal resume.",
     }, ctx);
@@ -521,6 +522,7 @@ function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
   if (state.goal && state.goal.status === "active") {
     updateGoal({
       status: "paused",
+      pauseKind: "error",
       pauseReason: `stalled: ${threshold} continuation refires landed no turn`,
       pauseSuggestedAction: "The continuation chain is broken in this process (wedged message queue or stale API). Restart pi, then /goal resume.",
     }, ctx);
@@ -1259,7 +1261,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
   const usage = state.goal.usage
     ? { tokensUsed: state.goal.usage.tokensUsed, tokensLimit: freshLimit }
     : undefined;
-  updateGoal({ status: "active", pauseReason: undefined, pauseSuggestedAction: undefined, ...(staleEntry ? { interruptedAt: nowIso(), interruptedReason: "resumed in a stale session" } : {}), ...(usage ? { usage } : {}) }, ctx);
+  updateGoal({ status: "active", pauseReason: undefined, pauseSuggestedAction: undefined, pauseKind: undefined, pauseOptions: undefined, pauseRecommended: undefined, pauseResumeAt: undefined, ...(staleEntry ? { interruptedAt: nowIso(), interruptedReason: "resumed in a stale session" } : {}), ...(usage ? { usage } : {}) }, ctx);
   if (staleEntry) return;
   // v0.22.5: say what was resumed — with a non-empty list this also resumes
   // the queue (the active goal IS the list's head item).
@@ -2444,6 +2446,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         updateGoal({
           status: "paused",
           auditHistory: history,
+          pauseKind: "decision",
           pauseReason: `auditor verdict: IMPOSSIBLE — ${reason}`,
           pauseSuggestedAction: "The auditor says this goal can never be satisfied as stated. /goal tweak the objective (or /goal cancel), then /goal resume.",
         }, ctx);
@@ -2476,6 +2479,8 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
             status: "paused",
             auditHistory: history,
             auditInfraStreak: undefined, // quota reached the auditor — infra streak broken
+            pauseKind: "wait",
+            pauseResumeAt: new Date(Date.now() + quota.retryAfterSec * 1000).toISOString(),
             pauseReason: `auditor quota: ${result.error}`,
             pauseSuggestedAction: `Quota auto-retry in ${retryMin}m — or /goal resume to retry now`,
           }, ctx);
@@ -2510,6 +2515,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
             status: "paused",
             auditHistory: history,
             auditInfraStreak: infraStreak,
+            pauseKind: "error",
             pauseReason: `auditor infrastructure failed ${infraStreak}× in a row — the auditor model is likely broken (last: ${result.error.slice(0, 120)})`,
             pauseSuggestedAction: "Fix the auditor model (/glla model=provider/id) or restart pi, then /goal resume. Your work was NOT judged.",
           }, ctx);
@@ -2616,6 +2622,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         updateGoal({
           status: "paused",
           auditHistory: history,
+          pauseKind: "decision",
           pauseReason: `auditor disapproved ${trailingDisapprovals}× consecutively (cap ${auditCap})`,
           pauseSuggestedAction: "Read the audit history (/goal status), fix the actual gap or /goal tweak the objective, then /goal resume. Raise the cap with /glla auditcap=N.",
         }, ctx);
@@ -2650,20 +2657,28 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
   pi.registerTool(defineTool({
     name: "pause_goal",
     label: "Pause goal",
-    description: "Pause the active goal with a reason and suggested action. Use when blocked on user input or unable to make progress.",
+    description: "Pause the active goal with a reason and suggested action. Use when blocked on user input or unable to make progress. When the user must CHOOSE between options, pass kind=\"decision\" with the options list (recommended = 1-based index of the best one) — decision pauses render as a prominent DECISION NEEDED card. Time-gated waits (retry at a specific time) use kind=\"wait\" with resumeAt (ISO). Operational failures use kind=\"error\".",
     parameters: Type.Object({
       reason: Type.String({ description: "Why the work is paused" }),
       suggestedAction: Type.Optional(Type.String({ description: "What the user should do next" })),
+      kind: Type.Optional(Type.Union([Type.Literal("decision"), Type.Literal("error"), Type.Literal("wait"), Type.Literal("blocked")], { description: "Pause class: decision (user picks an option), error (operational failure), wait (time-gated), blocked (generic)" })),
+      options: Type.Optional(Type.Array(Type.String(), { description: "For kind=decision: the options the user picks between (one line each)" })),
+      recommended: Type.Optional(Type.Number({ description: "For kind=decision: 1-based index of the recommended option" })),
+      resumeAt: Type.Optional(Type.String({ description: "For kind=wait: ISO time the pause lifts (countdown is shown)" })),
     }),
     async execute(_id, params, _signal, _onUpdate, execCtx) {
       const foreign1 = foreignToolGuard(execCtx);
       if (foreign1) return { content: [{ type: "text", text: foreign1 }], details: {} };
-      const p = params as { reason: string; suggestedAction?: string };
+      const p = params as { reason: string; suggestedAction?: string; kind?: "decision" | "error" | "wait" | "blocked"; options?: string[]; recommended?: number; resumeAt?: string };
       if (!state.goal) return { content: [{ type: "text", text: "No active goal." }], details: {} };
       updateGoal({
         status: "paused",
         pauseReason: p.reason,
         pauseSuggestedAction: p.suggestedAction,
+        pauseKind: p.kind,
+        pauseOptions: p.kind === "decision" && p.options && p.options.length > 0 ? p.options : undefined,
+        pauseRecommended: p.kind === "decision" && p.recommended && p.recommended >= 1 ? Math.floor(p.recommended) : undefined,
+        pauseResumeAt: p.kind === "wait" && p.resumeAt ? p.resumeAt : undefined,
       }, ctx);
       // v0.27.1: surface the FULL pause contract — reason AND suggested
       // action. Before, the action only appeared in /goal status and the
@@ -4496,6 +4511,7 @@ export default function (pi: ExtensionAPI): void {
         const resumeHint = `${resumeCmd} to continue${queued > 0 ? ` (+${queued} waiting in the list)` : ""} · /glla autoresume=on to auto-resume in this project`;
         updateGoal({
           status: "paused",
+          pauseKind: "blocked",
           pauseReason: "restored on session load — held for explicit resume",
           pauseSuggestedAction: resumeHint,
         }, ctx);
@@ -4526,6 +4542,7 @@ export default function (pi: ExtensionAPI): void {
     if (state.loop && state.goal && state.goal.status === "active") {
       updateGoal({
         status: "paused",
+        pauseKind: "decision",
         pauseReason: "held on session load — the loop owns the active slot (one active thing at a time)",
         pauseSuggestedAction: "/loop to work the loop, or /loop stop then /goal resume to work the goal",
       }, ctx);
@@ -4621,6 +4638,7 @@ export default function (pi: ExtensionAPI): void {
         if (state.goal) {
           updateGoal({
             status: "paused",
+            pauseKind: "decision",
             pauseReason: `stalled: ${HEARTBEAT_MAX_NUDGES} consecutive unproductive turns (no tools, short or repetitive)`,
             pauseSuggestedAction: "Inspect the goal — /goal resume to retry, /goal tweak to narrow it, /goal cancel to abort.",
           }, ctx);
@@ -4668,6 +4686,7 @@ export default function (pi: ExtensionAPI): void {
         updateGoal({
           usage: { tokensUsed: used, tokensLimit: limit },
           status: "paused",
+          pauseKind: "error",
           pauseReason: `token limit exceeded (${used.toLocaleString()} > ${limit.toLocaleString()})`,
           pauseSuggestedAction: "/glla tokenlimit=<n> to raise the cap (or 0 to disable), then /goal resume",
         }, ctx);
@@ -4691,6 +4710,8 @@ export default function (pi: ExtensionAPI): void {
         const reason = `5 consecutive errors${detail}`;
         updateGoal({
           status: "paused",
+          pauseKind: "wait",
+          pauseResumeAt: new Date(Date.now() + 60_000).toISOString(),
           pauseReason: reason,
           pauseSuggestedAction: "Transient provider flake? The goal auto-resumes once in 60s if still paused for this reason — or /goal resume now.",
         }, ctx);
@@ -4718,6 +4739,7 @@ export default function (pi: ExtensionAPI): void {
       if (consecutiveAbortIterations >= 5) {
         updateGoal({
           status: "paused",
+          pauseKind: "blocked",
           pauseReason: "5 consecutive aborts (user interrupted)",
           pauseSuggestedAction: "You interrupted 5 turns in a row — the goal stays paused until you /goal resume (or /goal cancel).",
         }, ctx);
