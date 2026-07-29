@@ -118,6 +118,11 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 export function globalSettingsPath(): string {
+  // v0.28.18: test/embedding override — the suite must be hermetic from
+  // the developer's real global settings file (a user setting autoAccept
+  // globally once made draft-Confirm tests auto-accept and fail).
+  const override = process.env.GLLA_GLOBAL_SETTINGS_PATH;
+  if (override) return override;
   return path.join(os.homedir(), ".pi", "agent", "pi-goal-list-loop-audit.settings.json");
 }
 
