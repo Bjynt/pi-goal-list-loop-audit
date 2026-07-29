@@ -176,3 +176,34 @@ test("config block: partial project settings merge over defaults", () => {
   assert.equal(cfg.maxReviewsPerDay, 20); // default preserved
   assert.deepEqual(extractFindings([{ name: "x", text: "TODO: fix alpha\nTODO: fix beta\nTODO: fix gamma\nTODO: fix delta" }], 3).length, 3);
 });
+
+test("v0.28.16 duplicate-scan dedupe: completing a regression scan does NOT propose another scan (report-only)", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-rev-"));
+  // The 2026-07-28 cascade: scan 24ewt8 completed → proposed scan pii8tt →
+  // pii8tt completed → proposed scan-of-pii8tt AGAIN. Normalized compare
+  // (goal-ids stripped) catches it: the completed objective IS the proposal.
+  const SCAN_SRC = {
+    kind: "goal" as const,
+    goalId: "20260728225553-pii8tt",
+    objective: "Post-completion regression scan after 20260728224245-24ewt8 (regression-scan)",
+    terminal: "goal-complete",
+  };
+  const { deps, calls } = mkDeps(dir, { sources: [{ name: "archive", text: "All green. 548 tests pass." }] });
+  const out = runReviewer(resolveReviewerConfig(), SCAN_SRC, deps);
+  assert.equal(out.fired, true, "the review report still writes");
+  assert.equal(out.proposed, 0, "no scan-of-a-scan proposal (on mode)");
+  assert.equal(calls.proposed.length, 0);
+  assert.equal(out.report!.cascadeStep, "duplicate-suppressed");
+  assert.ok(calls.ledgered.includes("reviewer_suppressed"), "suppression is ledgered");
+  // auto mode: the enqueue path is deduped too.
+  const { deps: depsA, calls: callsA } = mkDeps(dir, { sources: [] });
+  const outA = runReviewer({ ...resolveReviewerConfig(), mode: "auto" }, SCAN_SRC, depsA);
+  assert.equal(outA.enqueued, 0, "no scan-of-a-scan enqueue (auto mode)");
+  assert.equal(callsA.enqueued.length, 0);
+  assert.equal(outA.report!.cascadeStep, "duplicate-suppressed");
+  // A genuinely different follow-up still fires:
+  const { deps: deps2, calls: calls2 } = mkDeps(dir, { sources: [] });
+  const out2 = runReviewer(resolveReviewerConfig(), { ...GOAL_SRC, objective: "ship the held-loop display fix" }, deps2);
+  assert.equal(calls2.proposed.length, 1, "non-duplicate clean completion still proposes");
+  assert.equal(out2.report!.cascadeStep, "fire-audit-on-clean");
+});

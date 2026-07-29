@@ -213,11 +213,21 @@ export interface ReviewerOutcome {
   reportPath?: string;
   enqueued: number;
   proposed: number;
-  /** v0.27.5: the cascade step that actually fired (notify-and-idle | convert-findings-to-list | queue-leftovers | fire-audit-on-clean | propose-goal | aggressive-relaunch | report-only) — surfaces in /goal status and tests. */
+  /** v0.27.5: the cascade step that actually fired (notify-and-idle | convert-findings-to-list | queue-leftovers | fire-audit-on-clean | propose-goal | aggressive-relaunch | duplicate-suppressed) — surfaces in /goal status and tests. v0.28.16: "duplicate-suppressed" = the clean completion WAS a regression scan, so the follow-up scan was deduped. */
   cascadeStep?: string;
 }
 
 export const REVIEWER_REFIRE_WINDOW_MS = 5 * 60_000;
+
+/** v0.28.16: normalize an objective for duplicate-compare — lowercase,
+ * goal-ids (yyyyMMddHHmmss-xxxxxx) become <id>, whitespace collapses. */
+export function normalizeObjective(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\b\d{14}-[a-z0-9]{6}\b/g, "<id>")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 /** The reviewer lifecycle (contract item 1). */
 export function runReviewer(
@@ -318,7 +328,7 @@ export function runReviewer(
     // report is still written; the ledger records the reason).
     if (normalizeObjective(source.objective) === normalizeObjective(auditObjective)) {
       deps.ledger("reviewer_suppressed", { reason: "duplicate-scan", goalId: source.goalId, objective: auditObjective });
-      cascadeStep = "report-only";
+      cascadeStep = "duplicate-suppressed";
     } else if (aggressive) {
       if (deps.proposeGoal(auditObjective, "aggressive postaudit: clean completion — relaunching the regression scan as /goal")) {
         proposed++;
