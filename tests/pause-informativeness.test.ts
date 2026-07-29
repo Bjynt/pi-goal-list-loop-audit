@@ -65,6 +65,8 @@ test("pause_goal tool notification carries the FULL reason AND suggested action"
   assert.match(src, /notifyExternal\(ctx, `Goal paused: \$\{\(p\.suggestedAction/);
 });
 
+const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+
 test("pause_goal tool: structured kind/options/recommended/resumeAt persist to the goal (v0.28.22)", () => {
   // Source pin — the behavioral harness's runTool writes through the
   // registration ctx, not the test ctx, so a full e2e persistence assert
@@ -76,7 +78,7 @@ test("pause_goal tool: structured kind/options/recommended/resumeAt persist to t
   // Resume clears the new fields alongside the old ones.
   assert.match(SRC, /pauseKind: undefined, pauseOptions: undefined, pauseRecommended: undefined, pauseResumeAt: undefined/);
   // The extension's own pauses are classified at the source.
-  for (const [reason, kind] of [
+  const pairs: Array<[string, string]> = [
     ["send-retry storm", "error"],
     ["continuation refires landed no turn", "error"],
     ["auditor verdict: IMPOSSIBLE", "decision"],
@@ -86,7 +88,8 @@ test("pause_goal tool: structured kind/options/recommended/resumeAt persist to t
     ["token limit exceeded", "error"],
     ["consecutive aborts", "blocked"],
     ["restored on session load", "blocked"],
-  ]) {
+  ];
+  for (const [reason, kind] of pairs) {
     const idx = SRC.indexOf(reason);
     assert.ok(idx > -1, `reason in source: ${reason}`);
     const window = SRC.slice(Math.max(0, idx - 200), idx);
