@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.28.20] — 2026-07-29
+
+### Changed — settings table de-chromed
+
+User report with 4 screenshots: "extra brackets and some don't even
+fit". Every decorative wrapper is gone:
+
+- SOURCE column: `[default]` → `default`, `[runtime]` → `runtime`,
+  `[—]` → `—` (bare words; the column header already says SOURCE).
+- VALUE column: all paren-wrapped fallbacks are bare — `(off)` → `off`,
+  `(5)` → `5`, `(pi session model)` → `pi session model`,
+  `(follows strategy)` → `follows strategy`, etc. The parens used to
+  signal "default"; the SOURCE column carries that now, and the mix of
+  parenthesized defaults vs bare set-values was inconsistent.
+- "Postaudit config…" label → "Postaudit" — the ellipsis was a literal
+  character meaning "opens a sub-menu" but read as truncation.
+- "Effective resolution" composite compacted: parenthesized qualifiers
+  stripped (`kimi/k3 (inherits session)` → `kimi/k3`) and identical
+  resolutions deduped to one value — the old
+  `(session model) · (sess…` truncated composite never fit.
+
+Pins updated + a new guard test fails if paren/bracket chrome returns.
+The headless `/glla` fallback already stripped brackets, unchanged.
+
 ## [0.28.19] — 2026-07-29
 
 ### Changed — color-only settings tabs

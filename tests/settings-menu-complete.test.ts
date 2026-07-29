@@ -233,3 +233,26 @@ test("postaudit and reviewer routes both open the reviewer menu (back-compat)", 
   const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   assert.match(src, /postaudit.*cmdReviewerSettings|cmdReviewerSettings/);
 });
+
+test("v0.28.20: no bracket/paren chrome — VALUE and SOURCE render bare", () => {
+  const rows = buildSettingsRows(SAMPLE_SETTINGS, {});
+  for (const r of rows) {
+    assert.doesNotMatch(
+      r.sourceText,
+      /^\[.*\]$/,
+      `SOURCE must be a bare word (${r.id}): ${r.sourceText}`,
+    );
+    assert.doesNotMatch(
+      r.valueText,
+      /^\(.*\)$/,
+      `VALUE must not be paren-wrapped (${r.id}): ${r.valueText}`,
+    );
+  }
+  // The "Effective resolution" composite compacts identical resolutions to one.
+  const eff = rows.find((r) => r.id === "subagentResolved")!;
+  assert.ok(
+    !eff.valueText.includes("·") || eff.valueText.split("·").length > 1,
+    "composite either deduped or a real multi-part join",
+  );
+  assert.doesNotMatch(eff.valueText, /\(|\)/, `no parens in composite: ${eff.valueText}`);
+});
