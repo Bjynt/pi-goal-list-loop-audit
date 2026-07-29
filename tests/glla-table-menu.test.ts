@@ -272,3 +272,59 @@ test("structural: buildSettingsRows returns ≥20 rows across all 5 sections (co
   const rows = buildSettingsRows({} as Settings, {});
   assert.ok(rows.length >= 20, `expected ≥20 rows, got ${rows.length}`);
 });
+
+/* --------------------------------------------------------------------- */
+/*  Pin 1b: table-grid rendering (v0.28.18)                              */
+/* --------------------------------------------------------------------- */
+
+test("render: EVERY tab is bracketed in the tab bar (active = accent)", () => {
+  const { component } = makeComponent(SAMPLE_ROWS, 120);
+  const tabs = component.render(120)[1]!;
+  for (const s of SETTINGS_SECTIONS) {
+    assert.ok(tabs.includes(`[${s.label}]`), `tab bar must bracket ${s.label}: ${tabs}`);
+  }
+});
+
+test("render: a header rule with ┼ junctions follows the header row", () => {
+  const { component } = makeComponent(SAMPLE_ROWS, 120);
+  const lines = component.render(120);
+  assert.match(lines[3]!, /─+┼─+┼─+┼─+/, `line 3 must be the header rule: ${lines[3]}`);
+});
+
+test("render: column separators align across header, rule, and every row (prefix counted)", () => {
+  const { component } = makeComponent(SAMPLE_ROWS, 120);
+  const lines = component.render(120);
+  const grid = [lines[2]!, lines[3]!, ...lines.slice(4, -1)];
+  const firstSeps = grid.map((l) => l.indexOf("│") !== -1 ? l.indexOf("│") : l.indexOf("┼"));
+  for (const pos of firstSeps) {
+    assert.equal(pos, firstSeps[0], `first column boundary must align: ${JSON.stringify(firstSeps)}`);
+  }
+});
+
+test("render: a too-long VALUE is truncated with … — it must NOT break the grid", () => {
+  const rows: SettingsRow[] = [
+    { id: "a", section: "keep-going", label: "Short", valueText: "(off)", sourceText: "[default]", description: "short row" },
+    { id: "b", section: "keep-going", label: "Effective resolution", valueText: "(session model) · (session model) · (session model)", sourceText: "[runtime]", description: "long composite value" },
+  ];
+  const { component } = makeComponent(rows, 120);
+  const lines = component.render(120);
+  const body = lines.slice(4, -1);
+  const longRow = body.find((l) => l.includes("Effective resolution"))!;
+  assert.ok(longRow.includes("…"), `long value must be truncated with ellipsis: ${longRow}`);
+  const shortRow = body.find((l) => l.includes("Short"))!;
+  assert.equal(
+    longRow.indexOf("│"), shortRow.indexOf("│"),
+    "the long value must not push its row's separators right",
+  );
+});
+
+test("render: column widths are stable across tab switches (no grid reflow)", () => {
+  const { component } = makeComponent(SAMPLE_ROWS, 120);
+  const headerA = component.render(120)[2]!;
+  component.switchSection(+1); // auditor
+  const headerB = component.render(120)[2]!;
+  component.switchSection(+2); // subagents
+  const headerC = component.render(120)[2]!;
+  assert.equal(headerB, headerA, "header must not reflow on tab switch");
+  assert.equal(headerC, headerA, "header must not reflow on tab switch");
+});
