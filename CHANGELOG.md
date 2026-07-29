@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.28.25] — 2026-07-29
+
+### Fixed — flat-cadence retry budgets burn in minutes against hour-scale provider conditions
+
+Two field-observed instances of the same design flaw — retry budgets spent
+back-to-back, then a pause:
+
+**1. Inter-error retries ride an exponential ladder** (dracon-utilities,
+kimi, 19-session fleet on one provider account): a "concurrent request
+limit" 403 storm got 5 retries BACK-TO-BACK — an errored turn leaves the
+session idle, so `scheduleContinuation` fired with delay 0 after each
+`agent_end`. The fleet-wide limit clears on a minutes scale, not
+milliseconds. Retries between consecutive error turns now wait
+5s → 15s → 45s → 90s → 3m (`ERROR_RETRY_LADDER_MS`, ledgered as
+`error_retry_backoff`), so the 5-retry budget spans ~5.5 minutes instead
+of ~0.25 seconds.
+
+**2. The 5-consecutive-errors brake cooldown escalates per consecutive
+brake**: 1m → 2m → 4m → 8m → 16m cap (was a flat 60s — dracon-utilities
+re-braked on it for 1h 38m: resume, 5 instant 403s, pause, repeat). A
+healthy turn resets the escalation. First-brake behavior is unchanged
+(60s, reason re-checked, one auto-resume per brake).
+
+**3. Stall refires space exponentially** (junk-runner): the heartbeat's
+refire gate was a flat 60s of silence — all 5 refires landed in ~4 minutes
+into a just-compacted session whose turn trigger was dead, pausing a
+resumable goal. `shouldHeartbeatRefire` now scales the required silence by
+`2^min(consecutiveStalls, 3)`: refires at 1m, 2m, 4m, 8m, 8m — the budget
+spans ~23 minutes, giving the provider/queue real recovery time.
+
+Pins: refire-spacing unit tests (1m/2m/4m/8m/cap + unchanged first-refire
+behavior), brake-cooldown source pins, ladder pins (constant, ledger entry,
+placement before the aborted branch, scheduleContinuation delayMs param).
+591 tests.
+
 ## [0.28.24] — 2026-07-29
 
 ### Fixed — three field-observed failure classes (π-web, junk-runner, hellhunter)

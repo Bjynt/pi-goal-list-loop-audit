@@ -4833,8 +4833,8 @@ export default function (pi: ExtensionAPI): void {
       if (consecutiveErrorIterations >= 5) {
         // v0.28.5 (E8): carry the REAL error text — the pause used to say
         // literally "5 consecutive errors: error" (stopReason, not the
-        // provider error). And give transient flakes ONE capped auto-resume
-        // (60s, reason re-checked) — the E8 incident lost 1.5h to a
+        // provider error). And give transient flakes ONE auto-resume per brake
+        // (escalating cooldown, reason re-checked) — the E8 incident lost 1.5h to a
         // 60-second provider hiccup waiting on a manual /goal resume.
         const detail = text.trim() ? ` (last: ${text.trim().replace(/\s+/g, " ").slice(0, 160)})` : "";
         const reason = `5 consecutive errors${detail}`;
