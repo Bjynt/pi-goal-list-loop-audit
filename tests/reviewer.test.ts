@@ -197,13 +197,13 @@ test("v0.28.16 duplicate-scan dedupe: completing a regression scan does NOT prop
   assert.ok(calls.ledgered.includes("reviewer_suppressed"), "suppression is ledgered");
   // auto mode: the enqueue path is deduped too.
   const { deps: depsA, calls: callsA } = mkDeps(dir, { sources: [] });
-  const outA = runReviewer({ ...resolveReviewerConfig(), mode: "auto" }, SCAN_SRC, depsA);
+  const outA = runReviewer({ ...resolveReviewerConfig(), mode: "auto", cascade: [...resolveReviewerConfig().cascade, "fire-audit-on-clean" as const] }, SCAN_SRC, depsA);
   assert.equal(outA.enqueued, 0, "no scan-of-a-scan enqueue (auto mode)");
   assert.equal(callsA.enqueued.length, 0);
   assert.equal(outA.report!.cascadeStep, "duplicate-suppressed");
   // A genuinely different follow-up still fires:
   const { deps: deps2, calls: calls2 } = mkDeps(dir, { sources: [] });
-  const out2 = runReviewer(resolveReviewerConfig(), { ...GOAL_SRC, objective: "ship the held-loop display fix" }, deps2);
+  const out2 = runReviewer({ ...resolveReviewerConfig(), cascade: [...resolveReviewerConfig().cascade, "fire-audit-on-clean" as const] }, { ...GOAL_SRC, objective: "ship the held-loop display fix" }, deps2);
   assert.equal(calls2.proposed.length, 1, "non-duplicate clean completion still proposes");
   assert.equal(out2.report!.cascadeStep, "fire-audit-on-clean");
 });

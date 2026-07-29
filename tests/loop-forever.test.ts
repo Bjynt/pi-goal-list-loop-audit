@@ -21,6 +21,9 @@ import {
   resolveSpecFile,
   resolveSpecFiles,
   respecTarget,
+  auditMeasureCmd,
+  auditTarget,
+  AUDIT_FINDINGS_REL,
   type LoopState,
 } from "../extensions/goal-loop-forever.ts";
 
@@ -480,4 +483,41 @@ test("parseLoopStartArgs: toolsamerepeat=N parses; 0 disables the legacy check",
   // Non-numeric garbage degrades to default, never throws:
   const d = parseLoopStartArgs('"polish the UI" measure="echo 1" direction=min toolsamerepeat=abc');
   assert.equal(d.toolSameRepeat, undefined);
+});
+
+test("v0.29.0: /loop audit — metric loop over open findings; plateau = the well is dry", () => {
+  // User design (2026-07-29): "the looper running audits to see where to
+  // progress and what to fix" — the thing that fires at the end of goals
+  // and lists. Unlike respec (metricless) this has an HONEST metric: the
+  // orchestrator counts open findings, so the plateau stop terminates it.
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.match(SRC, /if \(sub === "audit"\) \{/);
+  assert.match(SRC, /target: auditTarget\(\),\s*\n\s*measureCmd: auditMeasureCmd\(\),\s*\n\s*direction: "min",/);
+  // guards: no stacking over an active goal or loop:
+  const auditIdx = SRC.indexOf('if (sub === "audit")');
+  assert.match(SRC.slice(auditIdx, auditIdx + 1600), /A goal is active — \/goal cancel or \/goal pause it before starting a loop\./);
+  assert.match(SRC.slice(auditIdx, auditIdx + 1600), /A loop is already active\. \/loop stop first\./);
+  // drain suggestion (suggestion, not auto-start — consent per v0.28.28):
+  assert.match(SRC, /List complete\. \/loop audit to sweep the project for the next batch of work\./);
+  // the measure is orchestrator-counted and single-number in all file states:
+  const F = fs.readFileSync("extensions/goal-loop-forever.ts", "utf-8");
+  assert.match(F, /export const AUDIT_FINDINGS_REL = "\.pi-glla\/audit-loop\/findings\.md";/);
+  assert.match(F, /export function auditMeasureCmd\(\): string/);
+  assert.match(F, /export function auditTarget\(\): string/);
+  assert.match(auditMeasureCmd(), /grep -cE '\^- \\\[ \\\\]' \.pi-glla\/audit-loop\/findings\.md/);
+  assert.match(auditMeasureCmd(), /echo \$\{c:-0\}/);
+  // the target carries the honesty laws:
+  const t = auditTarget();
+  assert.match(t, /Append every NEW finding as one checkbox line/);
+  assert.match(t, /never delete, rewrite, or reorder existing lines/);
+  assert.match(t, /never fabricate findings to look busy/);
+  assert.match(t, /never mark a finding fixed without the fix commit existing/);
+  assert.match(t, /plateau stop ends the loop when the well is dry/);
+  // reviewer: fire-audit-on-clean is OPT-IN, not default (the auditor already
+  // verified the work — a reflexive re-scan pays for verification twice):
+  const R = fs.readFileSync("extensions/reviewer.ts", "utf-8");
+  const defaultIdx = R.indexOf("export const DEFAULT_REVIEWER_CONFIG");
+  const defaultBlock = R.slice(defaultIdx, defaultIdx + 900);
+  assert.match(defaultBlock, /cascade: \["convert-findings-to-list", "queue-leftovers", "notify-and-idle"\]/);
+  assert.doesNotMatch(defaultBlock, /fire-audit-on-clean/);
 });
