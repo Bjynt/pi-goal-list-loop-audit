@@ -150,7 +150,7 @@ test("widget goal policy keeps /goal status hint + list N prefix", () => {
     null,
     NOW,
   )!;
-  assert.match(lines[1]!, /^├─ active /);
+  assert.match(lines[1]!, /^├─ goal · active /);
   assert.equal(lines[lines.length - 1], "└─ 1 queued · /goal status · /glla");
 });
 
