@@ -311,3 +311,64 @@ test("active loop unchanged; stopped loop stays invisible", () => {
   assert.equal(buildStatusText(stopped, null, NOW), undefined, "a genuinely stopped loop stays invisible");
   assert.equal(buildWidgetLines(stopped, null, NOW), undefined);
 });
+
+// ---- v0.28.22: pause-kind rendering (decision / error / wait) ----
+
+test("decision pause: banner + numbered options + recommended flagged (widget + status)", () => {
+  const g = goalOf({
+    status: "paused",
+    pauseKind: "decision",
+    pauseReason: "The auditor disapproved completion — SUPERSEDED rows don't match the objective text.",
+    pauseOptions: ["surgical Done when: clause", "deliver the missing polish (~2-3 hours)", "reword objective to accept SUPERSEDED"],
+    pauseRecommended: 3,
+    pauseSuggestedAction: "Pick one, then /goal resume.",
+  });
+  const state = { goal: g, list: [], loop: null };
+  const w = buildWidgetLines(state as never)!;
+  assert.ok(w.some((l) => l.includes("decision needed — your call unblocks this")), `decision banner: ${w.join("\n")}`);
+  assert.ok(w.some((l) => l.includes("1. surgical Done when: clause")), "option 1 numbered");
+  assert.ok(w.some((l) => l.includes("3. reword objective to accept SUPERSEDED ◂ recommended")), "recommended flagged");
+  const s = buildStatusText(state as never)!;
+  assert.ok(s.includes("decision needed"), `status: ${s}`);
+  assert.ok(!s.includes("SUPERSEDED rows"), "status names the actionability, not the reason");
+});
+
+test("error pause: ACTION NEEDED banner, action line popped (widget + status)", () => {
+  const g = goalOf({
+    status: "paused",
+    pauseKind: "error",
+    pauseReason: "send-retry storm: 5m of 50ms re-arms — the session never went idle",
+    pauseSuggestedAction: "Restart pi, then /goal resume.",
+  });
+  const state = { goal: g, list: [], loop: null };
+  const w = buildWidgetLines(state as never)!;
+  assert.ok(w.some((l) => l.includes("action needed — this won't fix itself")), `error banner: ${w.join("\n")}`);
+  const s = buildStatusText(state as never)!;
+  assert.ok(s.includes("action needed"), `status: ${s}`);
+});
+
+test("wait pause: quiet banner + resume countdown (widget + status)", () => {
+  const g = goalOf({
+    status: "paused",
+    pauseKind: "wait",
+    pauseReason: "auditor quota: rate limited",
+    pauseResumeAt: new Date(Date.now() + 23 * 3600_000).toISOString(),
+    pauseSuggestedAction: "Quota auto-retry — or /goal resume now",
+  });
+  const state = { goal: g, list: [], loop: null };
+  const w = buildWidgetLines(state as never)!;
+  assert.ok(w.some((l) => l.includes("waiting — nothing for you to do")), `wait banner: ${w.join("\n")}`);
+  assert.ok(w.some((l) => /resumes .*\(in 23h/.test(l)), `countdown: ${w.join("\n")}`);
+  const s = buildStatusText(state as never)!;
+  assert.ok(s.includes("waiting") && s.includes("resumes"), `status: ${s}`);
+});
+
+test("legacy pause (no kind): flat card unchanged; error-regex still classifies the status line", () => {
+  const g = goalOf({ status: "paused", pauseReason: "user paused for review", pauseSuggestedAction: "/goal resume" });
+  const state = { goal: g, list: [], loop: null };
+  const w = buildWidgetLines(state as never)!;
+  assert.ok(!w.some((l) => l.includes("unblocks this") || l.includes("won't fix itself") || l.includes("nothing for you to do")), "no banner without a kind");
+  const g2 = goalOf({ status: "paused", pauseReason: "token limit exceeded (10 > 5)" });
+  const s2 = buildStatusText({ goal: g2, list: [], loop: null } as never)!;
+  assert.ok(s2.includes("action needed"), `legacy error reason → action needed: ${s2}`);
+});

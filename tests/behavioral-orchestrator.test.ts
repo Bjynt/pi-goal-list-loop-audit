@@ -529,3 +529,29 @@ test("carryover=resume: legacy silent stacking — no summary, queue + held loop
   assert.equal((s.loop as { stopReason?: string })?.stopReason, HELD, "held loop untouched");
   assert.equal(ctx.ui.matching("Carryover").length, 0, "NO summary under resume (legacy silent)");
 });
+
+test("pause_goal: structured kind/options/recommended/resumeAt persist (v0.28.22)", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal() });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ autoResume: true }));
+  const ctx = await freshSession(cwd, "reload");
+  await tick();
+  const res = await pi.runTool("pause_goal", {
+    reason: "auditor disapproved — pick a path",
+    kind: "decision",
+    options: ["tweak the objective", "deliver the polish"],
+    recommended: 1,
+    resumeAt: "ignored-for-decision",
+    suggestedAction: "Pick one, then /goal resume.",
+  }, ctx);
+  assert.match(res.content[0]!.text, /Goal paused/);
+  const g = readState(cwd).goal as {
+    status: string; pauseKind?: string; pauseOptions?: string[]; pauseRecommended?: number; pauseResumeAt?: string;
+  };
+  assert.equal(g.status, "paused");
+  assert.equal(g.pauseKind, "decision");
+  assert.deepEqual(g.pauseOptions, ["tweak the objective", "deliver the polish"]);
+  assert.equal(g.pauseRecommended, 1);
+  assert.equal(g.pauseResumeAt, undefined, "resumeAt is dropped for non-wait kinds");
+});
