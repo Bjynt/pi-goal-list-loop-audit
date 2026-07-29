@@ -161,6 +161,7 @@ import {
   LOOP_DEFAULTS,
   resolveSpecFiles,
   respecTarget,
+  HELD_ON_RESTORE,
   type LoopState,
 } from "../goal-loop-forever.js";
 import {
@@ -184,8 +185,8 @@ import {
 // =================================================================
 
 const GOAL_EVENT_ENTRY = "goal-event";
-/** stopReason marker for a loop held (not stopped) by the fresh-session restore gate. */
-const HELD_ON_RESTORE = "held: restored in a fresh session";
+// HELD_ON_RESTORE (stopReason marker for a restore-held loop) lives in
+// goal-loop-forever.js since v0.28.17 — the display layer imports it too.
 
 // =================================================================
 // Module-level state (one per session)

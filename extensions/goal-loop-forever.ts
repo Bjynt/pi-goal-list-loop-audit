@@ -31,6 +31,13 @@ export interface LoopRefinement {
   newMeasureCmd: string;
 }
 
+/** v0.28.17: stopReason marking a loop parked by the session-restore gate
+ * (it was active when the last session ended; the fresh session holds it
+ * until the user resumes with /loop). Exported so the display layer can
+ * recognize held loops — they must stay VISIBLE in the status/widget,
+ * unlike stopped loops which are genuinely gone. */
+export const HELD_ON_RESTORE = "held: restored in a fresh session";
+
 export interface LoopState {
   target: string;
   /** v0.23.0: optional — a metricless "spec loop" (measure=none) has no
