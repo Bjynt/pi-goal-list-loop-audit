@@ -66,6 +66,7 @@ matches `/list show`.
 /loop                              # draft the loop (agent grills; measure is test-run before you confirm)
 /loop start "keep polishing the UI"                          # infinite metricless loop (v0.23.6): no plateau, no cap — ends at time=/tokens= or /loop stop
 /loop respec                                                  # infinite metricless loop reconciling the codebase against the root SPEC.md / spec.md (v0.24.3) — 2 specs = you pick, 0 specs = drafting, 1 spec = auto-start (v0.24.4)
+/loop audit                                                    # project-audit loop (v0.29.0): each iteration audits fresh, appends findings to .pi-glla/audit-loop/findings.md, fixes the top ones — the orchestrator counts open findings and the plateau stop ends it when the well is dry
 /loop start "reduce TODOs" measure="grep -c TODO src.txt | head -1" direction=min
 /loop start "shrink the bundle" measure="..." direction=min time=4 tokens=500000   # arbitrary bounds
 /loop start "reduce TODOs" measure="..." direction=min branch=1   # scratch-branch mode

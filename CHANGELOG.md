@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.29.0] — 2026-07-29
+
+### Added — `/loop audit`: the project-audit loop (the reviewer's reflexive scan is now opt-in)
+
+User design session (2026-07-29): "the reviewer is not a reviewer of work
+happened but a reviewer of the PROJECT … if we are already firing an audit
+all the way through then does the final audit make sense separately? … the
+best for this would be the looper — running audits to see where to
+progress and what to fix."
+
+**The architecture that makes sense** (user-approved):
+
+1. **Auditor = work verifier** — per completion, all the way through.
+   Unchanged; this is the verification spine.
+2. **Reviewer = project strategist** — holes, next steps, drift. The
+   reflexive `fire-audit-on-clean` cascade step is REMOVED from the
+   default config: the auditor already verified the work, so re-firing a
+   regression scan after every clean completion paid for verification
+   twice (and was hydra fuel — scan goals spawning scan proposals). The
+   step still exists for rigs that opt into it explicitly; the duplicate-
+   scan dedupe and E4 delivery-gating behavior are pinned with it
+   explicitly enabled.
+3. **Project audit = the looper's job** — `/loop audit`:
+
+   - Each iteration runs a FRESH audit pass (Explore subagents for
+     breadth), appends every NEW finding as a checkbox line to
+     `.pi-glla/audit-loop/findings.md` (append-only; never rewrite
+     history), fixes the highest-severity open finding(s), and checks
+     them off with the fix commit.
+   - **It is a METRIC loop** — the one thing respec (metricless) and the
+     reviewer cascade (no termination) both lacked: the orchestrator
+     counts open findings (`grep -c '^- [ ]'`, single number in every
+     file state — verified), direction=min, and the **plateau stop is
+     the termination**: audits that stop surfacing new findings = the
+     well is dry = the loop ends. No doorknob-polishing.
+   - Honesty laws in the target: never fabricate findings to look busy;
+     never check a box without the fix commit existing.
+   - Same start rules as respec: typed command = the act; refuses to
+     stack over an active goal or loop.
+
+4. **List-drain pointer**: when a list's last item completes and the
+   queue empties, the completion path now suggests `/loop audit` — a
+   suggestion, never an auto-start (consent per v0.28.28).
+
+Pins: routing + guards + drain suggestion; measure/target/file constants;
+target honesty laws; reviewer default cascade without the step (opt-in
+behavior tests explicitly enable it). 607 tests.
+
 ## [0.28.34] — 2026-07-29
 
 ### Changed — notify folds a default IN; README decouples from the tintinweb eco
