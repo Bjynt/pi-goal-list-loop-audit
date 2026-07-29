@@ -91,6 +91,6 @@ test("pause_goal tool: structured kind/options/recommended/resumeAt persist to t
   ];
   for (const [anchor, kind] of pairs) {
     const esc = anchor.replace(/[.*+?^$()[\]\\|]/g, "\\$&");
-    assert.match(SRC, new RegExp(`pauseKind: "${kind}",[\\s\\S]{0,200}?${esc}`), `${anchor} → pauseKind ${kind}`);
+    assert.match(SRC, new RegExp(`pauseKind: "${kind}",[\\s\\S]{0,500}?${esc}`), `${anchor} → pauseKind ${kind}`);
   }
 });

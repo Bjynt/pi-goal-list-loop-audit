@@ -530,3 +530,80 @@ test("carryover=resume: legacy silent stacking — no summary, queue + held loop
   assert.equal(ctx.ui.matching("Carryover").length, 0, "NO summary under resume (legacy silent)");
 });
 
+
+// ---- v0.28.23: decision picker popup (/goal decide) ----
+
+function seedDecisionGoal(): Record<string, unknown> {
+  return seedGoal({
+    status: "paused",
+    pauseKind: "decision",
+    pauseReason: "auditor disapproved completion — pick a path",
+    pauseOptions: ["Fix the disapproval gap, then continue (/goal resume)", "Tweak the objective — /goal tweak <new text>", "Cancel the goal (/goal cancel)"],
+    pauseRecommended: 1,
+    pauseSuggestedAction: "Pick one, then /goal resume.",
+  });
+}
+
+test("/goal decide: content pick → decision sent to the agent + goal resumes", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedDecisionGoal() });
+  const ctx = await freshSession(cwd, "reload");
+  await tick();
+  assert.equal((readState(cwd).goal as { status: string }).status, "paused", "decision pause survives reload");
+  const ui = (ctx as { ui: { selectImpl?: (t: string, o: string[]) => Promise<string | undefined> } }).ui;
+  let shownTitle = "";
+  ui.selectImpl = (title, options) => {
+    shownTitle = title;
+    return Promise.resolve(options[0]); // recommended content option
+  };
+  await pi.command("goal", "decide", ctx);
+  await tick();
+  assert.match(shownTitle, /Decision needed — seeded test objective/);
+  assert.match(shownTitle, /auditor disapproved completion/);
+  const msgs = pi.userMessages.map((m) => m.message);
+  assert.ok(msgs.some((m) => /Decision for the paused goal .*Fix the disapproval gap, then continue/.test(m)), `decision message: ${msgs.join(" | ")}`);
+  const g = readState(cwd).goal as { status: string; pauseKind?: string; pauseOptions?: string[] };
+  assert.equal(g.status, "active", "pick resumes the goal");
+  assert.equal(g.pauseKind, undefined, "pause fields cleared on resume");
+});
+
+test("/goal decide: Escape (undefined) → goal stays paused, nothing sent", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedDecisionGoal() });
+  const ctx = await freshSession(cwd, "reload");
+  await tick();
+  const before = pi.userMessages.length;
+  await pi.command("goal", "decide", ctx); // mock select returns undefined by default = Escape
+  await tick();
+  assert.equal((readState(cwd).goal as { status: string }).status, "paused");
+  assert.equal(pi.userMessages.length, before, "no decision message on Escape");
+});
+
+test("/goal decide: command option (/goal cancel) runs the command, not a message", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedDecisionGoal() });
+  const ctx = await freshSession(cwd, "reload");
+  await tick();
+  const ui = (ctx as { ui: { selectImpl?: (t: string, o: string[]) => Promise<string | undefined> } }).ui;
+  ui.selectImpl = (_t, options) => Promise.resolve(options[2]); // "Cancel the goal (/goal cancel)"
+  const before = pi.userMessages.length;
+  await pi.command("goal", "decide", ctx);
+  await tick();
+  const g = readState(cwd).goal as { status: string } | null;
+  assert.ok(!g || g.status === "aborted", `goal aborted via command pick, got ${g?.status}`);
+  assert.equal(pi.userMessages.length, before, "command picks don't message the agent");
+});
+
+test("/goal decide: no pending decision → notify, no picker", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal() }); // active, no pause
+  const ctx = await freshSession(cwd, "reload");
+  await tick();
+  await pi.command("goal", "decide", ctx);
+  const ui = ctx.ui as unknown as { matching(sub: string): Array<{ message: string }> };
+  assert.ok(ui.matching("No pending decision").length > 0, "explains why no picker opened");
+});
