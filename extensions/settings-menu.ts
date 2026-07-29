@@ -337,8 +337,10 @@ export function buildSettingsRows(
 // TUI table component
 // =================================================================
 
-/** Padding + gutter between columns. */
-const COL_GUTTER = 2;
+/** Column separator (v0.28.18: box-drawing — the menu reads as a table). */
+const COL_SEP = " │ ";
+/** Header-rule junction matching COL_SEP's visible width. */
+const COL_RULE_SEP = "─┼─";
 
 /** Maximum width for each fixed column before truncation kicks in. */
 const MAX_KEY_W = 32;
@@ -450,15 +452,20 @@ export class SettingsMenuComponent implements Component {
     let keyW = visibleWidth(this.theme.bold("KEY"));
     let valueW = visibleWidth(this.theme.bold("VALUE"));
     let sourceW = visibleWidth(this.theme.bold("SOURCE"));
-    for (const r of this.visibleRows()) {
-      if (visibleWidth(r.label) > keyW) keyW = visibleWidth(r.label);
+    // v0.28.18: widths are computed across ALL sections (not just the
+    // active one) so the grid does NOT reflow on tab switch — a table's
+    // columns stay put. The 2-char selection prefix ("▶ "/"  ") counts
+    // toward the KEY column (before, rows overflowed keyW by 2 and the
+    // whole VALUE column sat 2 chars right of the header's VALUE).
+    for (const r of this.rows) {
+      if (visibleWidth(r.label) + 2 > keyW) keyW = visibleWidth(r.label) + 2;
       if (visibleWidth(r.valueText) > valueW) valueW = visibleWidth(r.valueText);
       if (visibleWidth(r.sourceText) > sourceW) sourceW = visibleWidth(r.sourceText);
     }
     keyW = Math.min(keyW, MAX_KEY_W);
     valueW = Math.min(valueW, MAX_VALUE_W);
     sourceW = Math.min(sourceW, MAX_SOURCE_W);
-    const descW = Math.max(MIN_DESC_W, width - keyW - valueW - sourceW - 3 * COL_GUTTER);
+    const descW = Math.max(MIN_DESC_W, width - keyW - valueW - sourceW - 3 * visibleWidth(COL_SEP));
     return { keyW, valueW, sourceW, descW };
   }
 
@@ -469,17 +476,19 @@ export class SettingsMenuComponent implements Component {
 
   private renderBody(width: number): string[] {
     const { keyW, valueW, sourceW, descW } = this.widths(width);
-    const gutter = " ".repeat(COL_GUTTER);
+    const sep = this.theme.fg("dim", COL_SEP);
 
     const lines: string[] = [];
 
     lines.push(this.theme.fg("accent", this.theme.bold(this.title)));
 
+    // v0.28.18: EVERY tab is bracketed (active = accent, inactive = dim) —
+    // bare words read as floating text, not tabs.
     lines.push(
       SETTINGS_SECTIONS.map((s, i) =>
         i === this.activeSectionIdx
           ? this.theme.fg("accent", `[${s.label}]`)
-          : this.theme.fg("dim", s.label),
+          : this.theme.fg("dim", `[${s.label}]`),
       ).join("  "),
     );
 
@@ -489,7 +498,14 @@ export class SettingsMenuComponent implements Component {
         this.padEnd(this.theme.bold("VALUE"), valueW),
         this.padEnd(this.theme.bold("SOURCE"), sourceW),
         this.theme.bold("DESCRIPTION"),
-      ].join(gutter),
+      ].join(sep),
+    );
+    // Header rule — the grid line that makes it read as a table.
+    lines.push(
+      this.theme.fg(
+        "dim",
+        ["─".repeat(keyW), "─".repeat(valueW), "─".repeat(sourceW), "─".repeat(descW)].join(COL_RULE_SEP),
+      ),
     );
 
     const vs = this.visibleRows();
@@ -499,12 +515,18 @@ export class SettingsMenuComponent implements Component {
       vs.forEach((r, i) => {
         const selected = i === this.selectedIdx;
         const prefix = selected ? "▶ " : "  ";
+        // v0.28.18: KEY (incl. prefix) and VALUE are truncated to their
+        // column — before, an over-long VALUE (e.g. the subagent effective-
+        // resolution composite) overflowed and shoved SOURCE/DESCRIPTION
+        // right on that row only, breaking the grid.
         const row = [
-          this.padEnd(prefix + r.label, keyW),
-          this.padEnd(r.valueText, valueW),
-          this.padEnd(r.sourceText, sourceW),
+          this.padEnd(truncateToWidth(prefix + r.label, keyW, "…"), keyW),
+          this.padEnd(truncateToWidth(r.valueText, valueW, "…"), valueW),
+          this.padEnd(truncateToWidth(r.sourceText, sourceW, "…"), sourceW),
           truncateToWidth(r.description, descW, "…"),
-        ].join(gutter);
+        // Selected row: plain separators — the whole row gets one accent
+        // wrap; a nested dim separator's reset code would end it early.
+        ].join(selected ? COL_SEP : sep);
         lines.push(selected ? this.theme.fg("accent", row) : row);
       });
     }
