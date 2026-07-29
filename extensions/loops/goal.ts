@@ -161,6 +161,8 @@ import {
   LOOP_DEFAULTS,
   resolveSpecFiles,
   respecTarget,
+  auditMeasureCmd,
+  auditTarget,
   HELD_ON_RESTORE,
   type LoopState,
 } from "../goal-loop-forever.js";
@@ -978,7 +980,12 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
   if (goal.policy === "list" && status === "complete") {
     const advanced = activateNextListItem(ctx);
     // v0.26.0: the queue just EMPTIED on a completion → list-complete.
-    if (!advanced) fireReviewer(ctx, { kind: "list", goalId: goal.id, objective: goal.objective, terminal: "goal-complete" });
+    if (!advanced) {
+      fireReviewer(ctx, { kind: "list", goalId: goal.id, objective: goal.objective, terminal: "goal-complete" });
+      // v0.29.0: the well ran dry — point at the project-audit loop. A
+      // suggestion, not an action: consent, never auto-start (v0.28.28).
+      ctx.ui.notify("List complete. /loop audit to sweep the project for the next batch of work.", "info");
+    }
     return;
   }
   // v0.26.0: a /goal (non-list) reached a terminal state → maybe fire.
@@ -2507,6 +2514,34 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       "info",
     );
     notifyExternal(ctx, `Loop finished: ${reason}`);
+    return;
+  }
+
+  if (sub === "audit") {
+    // v0.29.0: the project-audit loop (user design: "the looper running
+    // audits to see where to progress and what to fix — the thing that
+    // fires at the end of goals and lists"). Unlike respec this is a
+    // METRIC loop: the orchestrator counts open findings every iteration,
+    // direction=min, and the plateau stop is the termination — audits that
+    // stop surfacing new findings = the well is dry. User typed the
+    // command = the act (same auto-start rule as respec).
+    if (state.goal && state.goal.status === "active") {
+      ctx.ui.notify("A goal is active — /goal cancel or /goal pause it before starting a loop.", "warning");
+      return;
+    }
+    if (isLoopActive()) {
+      ctx.ui.notify("A loop is already active. /loop stop first.", "warning");
+      return;
+    }
+    await startLoopFromConfig(ctx, {
+      target: auditTarget(),
+      measureCmd: auditMeasureCmd(),
+      direction: "min",
+      plateauWindow: LOOP_DEFAULTS.plateauWindow,
+      maxIterations: 0,
+      branch: false,
+      force: false,
+    });
     return;
   }
 
@@ -4850,6 +4885,7 @@ export default function (pi: ExtensionAPI): void {
     getArgumentCompletions: completions([
       ["start", "skip drafting: /loop start \"<target>\" measure=\"<cmd>\" direction=min|max [window=5] [max=50]"],
       ["respec", "infinite metricless loop reconciling the codebase against the root SPEC.md"],
+      ["audit", "project-audit loop: each iteration audits fresh, appends findings, fixes the top ones — plateau stops when the well is dry (v0.29.0)"],
       ["status", "show metric, iteration, best/last values, stall count"],
       ["stop", "end the loop (keeps the best state)"],
       ["cancel", "alias of /loop stop — end the loop"],

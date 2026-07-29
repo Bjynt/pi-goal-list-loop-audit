@@ -67,7 +67,7 @@ test("E4: clean-completion branch also gates on delivery — default AND aggress
       sources: [{ name: "archive", text: "All done. Tests pass." }], // clean — no findings
       proposeGoal: () => false,
     });
-    const out = runReviewer({ ...resolveReviewerConfig(), mode }, GOAL_SRC, deps);
+    const out = runReviewer({ ...resolveReviewerConfig(), mode, cascade: [...resolveReviewerConfig().cascade, "fire-audit-on-clean" as const] }, GOAL_SRC, deps);
     assert.equal(out.fired, true);
     assert.equal(out.proposed, 0, `${mode} mode: failed clean-completion proposal never counts`);
   }
@@ -88,7 +88,7 @@ test("auto mode: architectural findings enqueue to /list — proposeGoal NEVER c
 test("auto mode: clean completion enqueues the audit as a /list item (no Confirm)", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-mode-"));
   const { deps, calls } = mkDeps(dir, { sources: [{ name: "archive", text: "All done. Tests pass." }] });
-  const out = runReviewer(AUTO, GOAL_SRC, deps);
+  const out = runReviewer({ ...AUTO, cascade: [...AUTO.cascade, "fire-audit-on-clean" as const] }, GOAL_SRC, deps);
   assert.equal(out.report!.cascadeStep, "fire-audit-on-clean");
   assert.equal(calls.proposed.length, 0);
   assert.equal(calls.enqueued.length, 1);
@@ -219,7 +219,7 @@ test("aggressive mode: architectural findings enqueue AND the first one relaunch
 
 test("aggressive mode: clean completion → relaunch audit /goal (no Confirm)", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-aggr-clean-"));
-  const cfg = { ...resolveReviewerConfig(), mode: "aggressive" as const };
+  const cfg = { ...resolveReviewerConfig(), mode: "aggressive" as const, cascade: [...resolveReviewerConfig().cascade, "fire-audit-on-clean" as const] };
   const { deps, calls } = mkDeps(dir, {
     sources: [{ name: "archive", text: "Goal completed cleanly. No findings." }],
   });

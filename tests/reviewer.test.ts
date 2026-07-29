@@ -90,7 +90,7 @@ test("classification order: strategic > architectural > bug > refactor", () => {
 test("clean completion fires the audit step; strategic-only notifies", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-rev-"));
   const { deps, calls } = mkDeps(dir, { sources: [{ name: "archive", text: "Everything done. All tests pass." }] });
-  const out = runReviewer(resolveReviewerConfig(), GOAL_SRC, deps);
+  const out = runReviewer({ ...resolveReviewerConfig(), cascade: [...resolveReviewerConfig().cascade, "fire-audit-on-clean" as const] }, GOAL_SRC, deps);
   assert.equal(out.report!.cascadeStep, "fire-audit-on-clean");
   assert.equal(calls.proposed.length, 1);
   assert.match(calls.proposed[0]!, /regression scan/i);
@@ -189,7 +189,7 @@ test("v0.28.16 duplicate-scan dedupe: completing a regression scan does NOT prop
     terminal: "goal-complete",
   };
   const { deps, calls } = mkDeps(dir, { sources: [{ name: "archive", text: "All green. 548 tests pass." }] });
-  const out = runReviewer(resolveReviewerConfig(), SCAN_SRC, deps);
+  const out = runReviewer({ ...resolveReviewerConfig(), cascade: [...resolveReviewerConfig().cascade, "fire-audit-on-clean" as const] }, SCAN_SRC, deps);
   assert.equal(out.fired, true, "the review report still writes");
   assert.equal(out.proposed, 0, "no scan-of-a-scan proposal (on mode)");
   assert.equal(calls.proposed.length, 0);

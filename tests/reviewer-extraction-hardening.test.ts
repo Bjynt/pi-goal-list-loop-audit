@@ -79,11 +79,12 @@ test("full runReviewer over 0.26.2-style source text produces zero architectural
   const out = runReviewer(resolveReviewerConfig(), { kind: "goal", goalId: "g1", objective: "ship 0.26.2", terminal: "goal-complete" }, deps);
   assert.equal(out.fired, true);
   assert.equal(out.report!.findings.length, 0, "the live junk lines produce no findings at all");
-  // Zero findings = clean completion → the audit cascade step fires BY
-  // DESIGN; the invariant is that it is the ONLY proposal (no junk
-  // architectural /goal proposals from the false-positive lines).
-  assert.equal(calls.proposed.length, 1);
-  assert.match(calls.proposed[0]!, /regression scan/i);
+  // Zero findings = clean completion. Since v0.29.0 the fire-audit-on-clean
+  // step is OPT-IN (removed from the default cascade — the auditor already
+  // verified the work; a reflexive re-scan pays for verification twice).
+  // With the default config NOTHING is proposed — and the real invariant
+  // holds: no junk architectural /goal proposals from false-positive lines.
+  assert.equal(calls.proposed.length, 0);
 });
 
 test("extraction dedupe + cap still work after hardening", () => {

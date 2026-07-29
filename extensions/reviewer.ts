@@ -40,7 +40,7 @@ export const DEFAULT_REVIEWER_CONFIG: ReviewerConfig = {
   mode: "on",
   fireOn: ["goal-complete", "list-complete"],
   doNotFireOn: ["goal-aborted", "goal-paused"],
-  cascade: ["convert-findings-to-list", "queue-leftovers", "fire-audit-on-clean", "notify-and-idle"],
+  cascade: ["convert-findings-to-list", "queue-leftovers", "notify-and-idle"],
   auditCadence: "every-clean-completion",
   auditScope: "regression-scan",
   leverageMode: "fix-without-confirm",
