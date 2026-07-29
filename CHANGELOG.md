@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.28.34] — 2026-07-29
+
+### Changed — notify folds a default IN; README decouples from the tintinweb eco
+
+User: "we are too married to our own eco … leaving notify setup to the
+user sucks, cause then they won't have it" and "i removed pi-tasks — our
+list is our tasklist, the todos were the weaker copy".
+
+- **Push notifications work out of the box.** `notifyCmd` unset no longer
+  means silent: glla auto-detects `notify-send` (Linux) or `osascript`
+  (macOS) once per session and pushes through it. `notify=off` is the
+  explicit opt-out; `notify='<cmd>'` stays the custom override. Pushes
+  still fire only where there is something to DO — pauses, auditor
+  verdicts, storms, wedge, persistence degradation — never per-turn
+  noise. The settings row reads "auto" when unset.
+- **README decoupled.** "Subagents (`@tintinweb/pi-subagents`)" →
+  "Subagents": the guarantees come from glla's session-handle
+  discrimination, not any plugin; tintinweb is "the one we test against",
+  not a requirement. Compatibility list names "any subagent provider".
+- **pi-tasks reframed as overlap, not complement** — "Overlaps — pick
+  one": the glla `/list` IS the task list; two task lists is not the
+  ideal combo. (The author's rig uninstalled it the same day.)
+
+Pins: resolution order (off → custom → auto), probe command, both
+notifier command lines, actionable-only comment, settings-row text,
+README retitle + decoupling + notify footnote. 606 tests.
+
 ## [0.28.33] — 2026-07-29
 
 ### Changed — `/glla reset` renamed to `/glla wipe`

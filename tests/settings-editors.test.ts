@@ -146,6 +146,6 @@ test("v0.28.34: notify folds a default IN — auto-detect notify-send/osascript,
   assert.doesNotMatch(README, /## Subagents \(`@tintinweb\/pi-subagents`\)/);
   assert.match(README, /any subagent provider — e\.g\. `@tintinweb\/pi-subagents` —/);
   assert.match(README, /Overlaps — pick one/);
-  assert.match(README, /We ran both and removed pi-tasks\./);
+  assert.match(README, /We ran both\s+and removed pi-tasks\./);
   assert.match(README, /auto-detects `notify-send`\/`osascript`; `notify=off` silences/);
 });
