@@ -4186,7 +4186,7 @@ function cmdLog(args: string, ctx: ExtensionContext): void {
 }
 
 /**
- * v0.28.31: /glla reset — ONE confirmed command that leaves a project with
+ * v0.28.31 (renamed v0.28.33): /glla wipe — ONE confirmed command that leaves a project with
  * zero live glla state. User directive: "make sure we only have one goal or
  * loop or list at a time — many of my older projects have leftovers" (the
  * fleet scan found queued lists up to 56 deep, held loops at iter 50, and
@@ -4195,7 +4195,7 @@ function cmdLog(args: string, ctx: ExtensionContext): void {
  * the list is cleared, the loop record is wiped after a graceful stop.
  * History stays in .pi-glla; only the live state goes.
  */
-async function cmdGllaReset(ctx: ExtensionContext): Promise<void> {
+async function cmdGllaWipe(ctx: ExtensionContext): Promise<void> {
   const g = state.goal;
   const live = g && (g.status === "active" || g.status === "paused" || g.status === "auditing");
   const n = listQueue().length;
@@ -4211,36 +4211,36 @@ async function cmdGllaReset(ctx: ExtensionContext): Promise<void> {
   if (loop) parts.push(`loop ${loop.active ? "stopped" : "cleared"} (iter ${loop.iteration}${loop.bestValue !== null && loop.bestValue !== undefined ? `, best ${loop.bestValue}` : ""})`);
   if (ctx.hasUI) {
     try {
-      const ok = await ctx.ui.confirm("Reset glla state?", `${parts.map((p) => `  ${p}`).join("\n")}\n\nHistory stays in .pi-glla (archive + ledger); the live state is wiped.`);
+      const ok = await ctx.ui.confirm("Wipe glla state?", `${parts.map((p) => `  ${p}`).join("\n")}\n\nHistory stays in .pi-glla (archive + ledger); the live state is wiped.`);
       if (!ok) {
-        ctx.ui.notify("Reset cancelled.", "info");
+        ctx.ui.notify("Wipe cancelled.", "info");
         return;
       }
     } catch {
-      ctx.ui.notify("Reset cancelled.", "info");
+      ctx.ui.notify("Wipe cancelled.", "info");
       return;
     }
   }
-  appendLedger(ctx.cwd, "glla_reset", { goalId: live ? g!.id : undefined, listCleared: n, loop: loop ? { iteration: loop.iteration, active: loop.active } : undefined });
+  appendLedger(ctx.cwd, "glla_wipe", { goalId: live ? g!.id : undefined, listCleared: n, loop: loop ? { iteration: loop.iteration, active: loop.active } : undefined });
   if (live) {
-    archiveCurrentGoal(ctx, "aborted", "user reset (/glla reset)");
+    archiveCurrentGoal(ctx, "aborted", "user wipe (/glla wipe)");
     ctx.abort();
   } else if (g) {
     state = { ...state, goal: null };
   }
   if (n > 0) {
     state = { ...state, list: [] };
-    appendLedger(ctx.cwd, "list_cleared", { via: "glla_reset" });
+    appendLedger(ctx.cwd, "list_cleared", { via: "glla_wipe" });
   }
   if (loop) {
     clearLoopTimer();
     state.loop = undefined;
     await finishLoopGit(ctx, loop);
-    appendLedger(ctx.cwd, "loop_stopped", { reason: "user reset (/glla reset)", iterations: loop.iteration, best: loop.bestValue });
+    appendLedger(ctx.cwd, "loop_stopped", { reason: "user wipe (/glla wipe)", iterations: loop.iteration, best: loop.bestValue });
   }
   persistState(ctx);
-  ctx.ui.notify(`glla reset done: ${parts.join(" · ")}. Clean slate.`, "info");
-  notifyExternal(ctx, "glla state reset by user — clean slate.");
+  ctx.ui.notify(`glla wipe done: ${parts.join(" · ")}. Clean slate.`, "info");
+  notifyExternal(ctx, "glla state wiped by user — clean slate.");
 }
 
 /**
@@ -4297,7 +4297,7 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
  * list item is archived as aborted (its queue is untouched), an active or
  * held loop is stopped. Same outcome shape regardless of hidden type —
  * the user's caveat ("this sucks if one command doesn't work for others")
- * is why /list cancel (item + drop queue) and /glla reset (nuke all)
+ * is why /list cancel (item + drop queue) and /glla wipe (nuke all)
  * remain the power verbs instead of being folded in.
  */
 async function cmdGllaCancel(ctx: ExtensionContext): Promise<void> {
@@ -4310,7 +4310,7 @@ async function cmdGllaCancel(ctx: ExtensionContext): Promise<void> {
     await cmdLoop("stop", ctx);
     return;
   }
-  ctx.ui.notify("Nothing to cancel — no active/paused goal/list-item, no loop. Queued list items: /list clear; everything: /glla reset.", "info");
+  ctx.ui.notify("Nothing to cancel — no active/paused goal/list-item, no loop. Queued list items: /list clear; everything: /glla wipe.", "info");
 }
 
 function cmdAudits(args: string, ctx: ExtensionContext): void {
@@ -4370,9 +4370,15 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
     cmdLog(trimmed.slice("log".length).trim(), ctx);
     return;
   }
-  // v0.28.31: /glla reset — one-shot clean slate for leftover-laden projects.
+  // v0.28.33: renamed reset → wipe — "reset" sat at edit-distance 2 from
+  // "resume" in the same namespace, and it's the destructive one (user
+  // catch, same day it shipped, before any muscle memory formed).
+  if (/^wipe\b/.test(trimmed)) {
+    await cmdGllaWipe(ctx);
+    return;
+  }
   if (/^reset\b/.test(trimmed)) {
-    await cmdGllaReset(ctx);
+    ctx.ui.notify("/glla reset is now /glla wipe (renamed — too close to /glla resume). Nothing was done.", "info");
     return;
   }
   // v0.28.32: /glla resume + /glla cancel — type-blind verbs over the ONE
@@ -4776,9 +4782,9 @@ export default function (pi: ExtensionAPI): void {
       ["decisionpopup=", "on|off: decision pauses pop the select() picker (default on; the widget card always lists the options, /goal decide reopens the picker)"],
       ["auditcap=", "N: pause goal after N consecutive auditor disapprovals (default 5, 0 = unlimited)"],
       ["log", "event-trail tail: /glla log [N] — who created/resumed/paused what, from where (v0.28.28)"],
-      ["reset", "wipe live glla state (goal archived, list cleared, loop stopped) — one-shot cleanup for leftover-laden projects"],
+      ["wipe", "WIPE live glla state (goal archived, list cleared, loop stopped) — one-shot cleanup for leftover-laden projects"],
       ["resume", "resume WHATEVER is paused/held (goal, list item, or held loop) — no need to know the type"],
-      ["cancel", "cancel the ONE live thing uniformly (goal/list item archived, loop stopped) — queue untouched; /list clear or /glla reset for more"],
+      ["cancel", "cancel the ONE live thing uniformly (goal/list item archived, loop stopped) — queue untouched; /list clear or /glla wipe for more"],
       ["auditfeedbackchars=", "cap on executor-visible disapproval report chars (0 = full report, the default)"],
       ["aggressivemode=", "on: keep-going defaults — autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs"],
       ["quotaretryminutes=", "N: minutes before auto-retrying a quota-exhausted auditor (default 60)"],

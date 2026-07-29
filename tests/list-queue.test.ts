@@ -159,23 +159,24 @@ test("v0.28.28: /glla log [N] — human-readable ledger tail, noise-filtered", (
   assert.match(SRC, /parseInt\(nMatch\?\.\[1\] \?\? "15", 10\)/);
 });
 
-test("v0.28.31: /glla reset — one confirmed command wipes live state (goal archived, list cleared, loop stopped)", () => {
+test("v0.28.33: /glla wipe — renamed from reset (too close to /glla resume); reset redirects without acting", () => {
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
-  assert.match(SRC, /if \(\/\^reset\\b\/\.test\(trimmed\)\) \{/);
-  assert.match(SRC, /async function cmdGllaReset\(ctx: ExtensionContext\): Promise<void>/);
+  assert.match(SRC, /if \(\/\^wipe\\b\/\.test\(trimmed\)\) \{/);
+  assert.match(SRC, /async function cmdGllaWipe\(ctx: ExtensionContext\): Promise<void>/);
   // destructive → Confirm dialog with the full summary:
-  assert.match(SRC, /await ctx\.ui\.confirm\("Reset glla state\?"/);
+  assert.match(SRC, /await ctx\.ui\.confirm\("Wipe glla state\?"/);
   assert.match(SRC, /History stays in \.pi-glla \(archive \+ ledger\); the live state is wiped\./);
   // honest close-out: goal archived (not dropped), list + loop ledgered:
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "glla_reset", \{ goalId: live/);
-  assert.match(SRC, /archiveCurrentGoal\(ctx, "aborted", "user reset \(\/glla reset\)"\);/);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "list_cleared", \{ via: "glla_reset" \}\);/);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "loop_stopped", \{ reason: "user reset \(\/glla reset\)"/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "glla_wipe", \{ goalId: live/);
+  assert.match(SRC, /archiveCurrentGoal\(ctx, "aborted", "user wipe \(\/glla wipe\)"\);/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "list_cleared", \{ via: "glla_wipe" \}\);/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "loop_stopped", \{ reason: "user wipe \(\/glla wipe\)"/);
   assert.match(SRC, /state\.loop = undefined;/);
   // already-clean short-circuit:
   assert.match(SRC, /glla state is already clean — no goal, no list, no loop\./);
+  // the typo trap: /glla reset redirects WITHOUT executing:
+  assert.match(SRC, /\/glla reset is now \/glla wipe \(renamed — too close to \/glla resume\)\. Nothing was done\./);
 });
-
 test("v0.28.32: /glla resume + /glla cancel — type-blind verbs over the ONE live thing", () => {
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   assert.match(SRC, /if \(\/\^resume\\b\/\.test\(trimmed\)\) \{/);

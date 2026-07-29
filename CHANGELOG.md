@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.28.33] — 2026-07-29
+
+### Changed — `/glla reset` renamed to `/glla wipe`
+
+User catch, same day the command shipped: "reset" sits at edit-distance
+2 from "resume" in the same namespace, and it's the destructive one —
+the Confirm dialog catches a fat-finger, but the hazard class shouldn't
+exist. Renamed before any muscle memory formed:
+
+- **`/glla wipe`** is the one-shot clean slate (unchanged behavior:
+  confirm gate, honest goal archive, list cleared, loop stopped,
+  `glla_wipe` ledger event).
+- **`/glla reset`** now prints "renamed to /glla wipe … Nothing was
+  done." and does NOT execute — the ambiguous word can never act.
+
 ## [0.28.32] — 2026-07-29
 
 ### Added — `/glla resume` + `/glla cancel`: type-blind verbs over the ONE live thing
