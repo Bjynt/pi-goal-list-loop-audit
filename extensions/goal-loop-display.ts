@@ -392,7 +392,7 @@ function loopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: numb
     // raw grep reads like leaked internals ("that weird line"). Name what
     // it measures instead; user-authored measures still show raw.
     `└─ ${paint(theme, "dim", l.kind === "audit"
-      ? truncate("metric: closed findings — count of '- [x]' in .pi-glla/audit-loop/findings.md", budgetFor(width, 3, 56))
+      ? "metric: closed findings ('- [x]' count)"
       : truncate(l.measureCmd, budgetFor(width, 3, 56)))}`,
   ];
   if (l.branchName) lines.push(`⎇ ${paint(theme, "muted", truncate(l.branchName, budgetFor(width, 3, 50)))}`);

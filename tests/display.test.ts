@@ -213,7 +213,7 @@ test("v0.29.15 — audit-loop widget names the metric instead of showing the raw
   };
   const lines = buildWidgetLines({ goal: null, list: [], loop: auditLoop }, null, NOW)!;
   const joined = lines.join("\n");
-  assert.match(joined, /metric: closed findings — count of '- \[x\]' in \.pi-glla\/audit-loop\/findings\.md/);
+  assert.match(joined, /metric: closed findings \('- \[x\]' count\)/);
   assert.ok(!joined.includes("grep -cE"), "raw shell hidden for audit loops");
 });
 
