@@ -151,3 +151,50 @@ test("v0.28.24: session_compact resets the send-rearm storm streaks + opens the 
   const refire = SRC.indexOf('appendLedger(ctx.cwd, "heartbeat_refire"');
   assert.ok(graceGate > 0 && graceGate < refire, "grace gate precedes the refire path");
 });
+
+test("v0.29.1: completion lifecycle survives the wedged-queue window (storm suppression + stranded recovery + brake cap)", () => {
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // 1. The storm escalation NEVER pauses the audit lifecycle — an isolated
+  //    auditor's minutes of silence is the storm detector's exact trigger
+  //    shape (pully/hellhunter/junk-runner: "complete ending in a pause
+  //    retry storm"). The audit lifecycle owns its own pauses.
+  const escIdx = src.indexOf("function escalateSendRearmStorm");
+  const esc = src.slice(escIdx, escIdx + 3000);
+  assert.ok(esc.indexOf('status === "auditing" || completionAuditInFlight || state.goal.pendingCompletion') < esc.indexOf('state.goal.status === "active"'),
+    "the audit-lifecycle suppression precedes the active-goal pause");
+  assert.match(esc, /send_rearm_escalated_suppressed/);
+  // 2. Stranded-audit watchdog: "auditing" with no in-flight audit = the
+  //    result never landed (pully: 12h+ stuck). Stored claim → direct
+  //    auditor retry; else resume active so the agent re-completes.
+  const hbIdx = src.indexOf("function heartbeatTick");
+  const hb = src.slice(hbIdx, hbIdx + 4200);
+  assert.match(hb, /stranded_audit_recovered/);
+  assert.match(hb, /state\.goal\?\.status === "auditing" &&\s*\n\s*!completionAuditInFlight/);
+  assert.match(hb, /retryStoredCompletionAudit\(ctx, "quota-retry"\)/);
+  assert.ok(hb.indexOf("stranded_audit_recovered") < hb.indexOf("pending_latch_stuck"),
+    "stranded-audit recovery runs before the latch watchdog");
+  // 3. Error-brake cycle cap: the v0.28.25 ladder slows the thrash but never
+  //    stops it (4+ pause↔retry cycles in all three incident ledgers).
+  assert.match(src, /if \(errorBrakeStreak >= 6\) \{/);
+  assert.match(src, /error_brake_capped/);
+  assert.match(src, /6 error-brakes in a row; the provider has been erroring for an extended window/);
+});
+
+test("v0.29.1: zombie-twin guard — drafts/enqueues duplicating a goal completed <24h ago are refused loudly", () => {
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // Junk-runner field case: the just-approved close re-drafted itself 3
+  // minutes later and autoaccept waved it in (9h of storm for nothing).
+  assert.match(src, /const DUPLICATE_LOOKBACK_MS = 24 \* 60 \* 60 \* 1000;/);
+  assert.match(src, /function recentlyCompletedObjectives\(cwd: string\)/);
+  // goal_archived carries the objective going forward (retro fallback reads
+  // the archived file's ## Objective section):
+  assert.match(src, /appendLedger\(ctx\.cwd, "goal_archived", \{ goalId: goal\.id, status, stopReason, objective: goal\.objective\.slice\(0, 300\) \}\)/);
+  assert.match(src, /md\.split\("## Objective"\)/);
+  // enqueue path filters + reports:
+  assert.match(src, /list_duplicate_skipped/);
+  assert.match(src, /Skipped \$\{skipped\} item\(s\) duplicating work COMPLETED in the last 24h/);
+  // draft path refuses before activation (autoaccept OR confirmed alike):
+  const draftIdx = src.indexOf("draft_duplicate_skipped");
+  assert.ok(draftIdx > -1 && src.slice(draftIdx - 1600, draftIdx).includes("recentlyCompletedObjectives(liveCtx.cwd).has(normalizeObjective(p.objective.trim()))"));
+  assert.match(src, /This draft duplicates a goal that was COMPLETED within the last 24 hours/);
+});

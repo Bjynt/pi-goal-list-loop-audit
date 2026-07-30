@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.29.1] — 2026-07-30
+
+### Fixed — the completion lifecycle survives the wedged-queue window (the "complete ending in a pause retry storm" class, field-observed in THREE projects in one day)
+
+Incident triage across junk-runner, hellhunter, and pully ledgers
+(2026-07-29/30): goals whose work was DONE — auditor-approved, commits
+pushed — kept ending up paused with "send-retry storm" cards, stranded for
+3–12h. Three holes, one root window (provider errors + wedged send queue
+while the isolated auditor runs its minutes-long pass):
+
+1. **Storm escalation no longer pauses the audit lifecycle.** An isolated
+   auditor run takes minutes and the main session is EXPECTED silent
+   during it — 15m of wedged re-arms + that silence was the storm
+   detector's exact trigger shape, so completing a goal under a wedged
+   queue guaranteed a mid-audit pause. `escalateSendRearmStorm` now
+   suppresses the pause when status is `auditing`, an audit is in flight,
+   or a completion claim is stored (ledger:
+   `send_rearm_escalated_suppressed`); the audit lifecycle's own pauses
+   (quota etc.) still work.
+
+2. **Stranded-audit watchdog.** A goal left `auditing` with no in-flight
+   audit means the auditor's result never landed (pully: 12h+ stuck while
+   the model had already confabulated the closure). The heartbeat now
+   recovers after 90s: a stored claim re-runs the auditor DIRECTLY (no
+   agent turn); otherwise the goal resumes active so the agent re-calls
+   `complete_goal`. Ledger: `stranded_audit_recovered`.
+
+3. **Error-brake cycle cap.** The v0.28.25 escalating ladder (1m→16m)
+   slowed the pause↔error-brake-retry thrash but never stopped it — all
+   three ledgers show 4+ cycles against provider windows lasting hours.
+   After 6 consecutive brakes the goal now PARKS (no more auto-retries)
+   with a loud "check the provider, then /goal resume" card. Ledger:
+   `error_brake_capped`.
+
+### Fixed — zombie-twin guard (duplicate of just-completed work can't be drafted or enqueued)
+
+Junk-runner: the INFRA-NEW-18 close was re-drafted as a list item THREE
+MINUTES after the auditor approved it; `autoaccept=on` waved the twin
+straight in, where it stormed for 9h against a dead provider — while the
+user believed the work was closed. Now: `goal_archived` ledger entries
+carry the objective (retro fallback parses the archived file's
+`## Objective`), and both the draft path (auto-accepted OR confirmed — the
+Confirm dialog never said it was a duplicate) and `enqueueItems` refuse
+objectives that normalized-match a goal completed within 24h. Loud, never
+silent: `draft_duplicate_skipped` / `list_duplicate_skipped` + a warning
+naming the completed work.
+
+Terminology note (user decision): `/loop audit` stays a /loop subcommand —
+"not a different function type", just a loop with an honest metric and a
+plateau stop.
+
+Pins: 2 new consolidated tests (storm suppression ordering, stranded
+watchdog ordering, brake cap, guard sites). 609 tests.
+
 ## [0.29.0] — 2026-07-29
 
 ### Added — `/loop audit`: the project-audit loop (the reviewer's reflexive scan is now opt-in)
