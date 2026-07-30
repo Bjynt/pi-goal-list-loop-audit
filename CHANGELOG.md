@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.29.9] — 2026-07-30
+
+### Changed — the error-brake park now probes at the top of each hour
+
+Field evidence (pully 2026-07-30): a MiniMax token-plan 429 wall produced
+six brake cycles in ~30m, then the v0.29.1 cap parked the goal with "no
+more auto-retries" — dead until a human noticed, even though coding-plan
+rate-limit windows typically expire on clock-hour boundaries.
+
+User design (2026-07-30): "we are simply adding an hourly retry — just to
+pick up work faster assuming the retry expired or would take long to
+resume." The park now schedules a probe for the **next top-of-hour + 60s
+grace**: if the window has opened, the resume sails through and the whole
+error cycle resets; if not, one free dunk (429s are rejected pre-billing)
+and the brake re-parks with the next hourly probe. One transcript line per
+hour, no classification machinery, pi's own retry config irrelevant —
+stock 5-retry users get the full gain.
+
+The probe only fires while the goal is *still* error-parked
+(`pauseKind: "error"` + the brake-cap reason) — user pauses, resumes,
+cancels, and completions are never stomped. Ledger: `hourly_rate_probe`,
+`goal_resumed via: "hourly-rate-probe"`.
+
+616 tests.
+
 ## [0.29.8] — 2026-07-30
 
 ### Added — `/goal audit [focus]`: the one-shot project audit; `/glla status`: the unified view

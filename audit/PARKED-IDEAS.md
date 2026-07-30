@@ -99,3 +99,9 @@ as user-abort getting its own class in v0.29.4).
 
 Trigger to promote: one more field incident of brake-churn or a bogus
 wedged-queue pause whose root cause is a plan-window 429.
+
+**PARTIALLY SHIPPED 2026-07-30 (v0.29.9)**: the clock-aligned hourly probe
+(item 2's core, simplified — top-of-hour + 60s grace, park-level only, no
+signature classification) is live. Still parked: rate-limit signature
+classification, brake/stall accounting exemptions, the storm-detector
+carve-out, and the config knob.
