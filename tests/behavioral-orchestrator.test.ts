@@ -18,11 +18,21 @@
 // Every test uses its own tmp cwd; session_start re-reads state from that
 // cwd's .pi-glla, so tests stay independent despite shared module state.
 
-import { test } from "node:test";
+import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import activate, { __testOnlyResetStaleFlag } from "../extensions/loops/goal.js";
+
+// v0.29.5: autoResume is GLOBAL-only now — tests opt in by writing the
+// harness's global settings path, and afterEach resets it so the opt-in
+// never leaks into later tests (module state is shared process-wide).
+const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
+function setGlobalAutoResume(v: boolean): void {
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(v ? { autoResume: true } : {}));
+}
+afterEach(() => setGlobalAutoResume(false));
+
 import { readState } from "../extensions/goal-loop-core.js";
 import { MockPi, makeMockCtx, tmpCwd, seedState, seedGoal, seedLoop, staleError, tick, type MockCtx } from "./harness/mock-pi.js";
 
@@ -75,7 +85,7 @@ test("T3c (v0.28.21): interrupted goal HELDS by default — the 0.28.3 exemption
   // Opt-in: autoresume=on keeps the 0.28.3 recovery semantics.
   const cwd2 = tmpCwd();
   seedState(cwd2, { goal: seedGoal({ interruptedAt: new Date().toISOString(), interruptedReason: "extension api stale (sendContinuation)" }) });
-  fs.writeFileSync(path.join(cwd2, ".pi-glla", "settings.json"), JSON.stringify({ autoResume: true }));
+  setGlobalAutoResume(true);
   pi.sent.length = 0;
   const ctx2 = await freshSession(cwd2, "startup");
   await tick();
@@ -99,7 +109,7 @@ test("T3b (v0.28.21): active goal + reload → HELD by default; autoresume=on �
 
   const cwd2 = tmpCwd();
   seedState(cwd2, { goal: seedGoal() });
-  fs.writeFileSync(path.join(cwd2, ".pi-glla", "settings.json"), JSON.stringify({ autoResume: true }));
+  setGlobalAutoResume(true);
   pi.sent.length = 0;
   const ctx2 = await freshSession(cwd2, "reload");
   await tick();
@@ -132,7 +142,7 @@ test("T3e (v0.28.21): no active goal + queued list + reload → NOT activated by
 
   const cwd2 = tmpCwd();
   seedState(cwd2, { list: [{ id: "item-1", objective: "queued head objective — done when pinned", addedAt: new Date().toISOString() }] });
-  fs.writeFileSync(path.join(cwd2, ".pi-glla", "settings.json"), JSON.stringify({ autoResume: true }));
+  setGlobalAutoResume(true);
   pi.sent.length = 0;
   const ctx2 = await freshSession(cwd2, "reload");
   await tick();
@@ -404,7 +414,7 @@ test("/loop cancel: first-class alias stops the loop (stopReason recorded)", asy
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   seedState(cwd, { loop: seedLoop({ active: true }) });
-  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ autoResume: true })); // v0.28.21: reload holds by default; this test needs the loop ACTIVE
+  setGlobalAutoResume(true); // v0.28.21: reload holds by default; this test needs the loop ACTIVE
   const ctx = await freshSession(cwd, "reload");
   await pi.command("loop", "cancel", ctx);
   await tick();
@@ -419,7 +429,7 @@ test("one-active-thing tool guards: list_activate + propose_loop_draft + propose
   // Active loop blocks list_activate and propose_goal_draft.
   const cwd = tmpCwd();
   seedState(cwd, { loop: seedLoop({ active: true }), list: [seedListItem("queued thing")] });
-  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ autoResume: true })); // v0.28.21: keep the loop ACTIVE through the reload
+  setGlobalAutoResume(true); // v0.28.21: keep the loop ACTIVE through the reload
   const ctx = await freshSession(cwd, "reload");
   const r1 = await pi.runTool("list_activate", { n: 1 }, ctx);
   assert.match(r1.content[0]!.text, /A loop is active/, "list_activate blocked over live loop");
@@ -431,7 +441,7 @@ test("one-active-thing tool guards: list_activate + propose_loop_draft + propose
   // Active goal blocks propose_loop_draft (before the measure even test-runs).
   const cwd2 = tmpCwd();
   seedState(cwd2, { goal: seedGoal() });
-  fs.writeFileSync(path.join(cwd2, ".pi-glla", "settings.json"), JSON.stringify({ autoResume: true })); // v0.28.21: keep the goal ACTIVE through the reload
+  setGlobalAutoResume(true); // v0.28.21: keep the goal ACTIVE through the reload
   const ctx2 = await freshSession(cwd2, "reload");
   await pi.command("loop", "", ctx2); // enter loop drafting (slash-bar gate)
   const r3 = await pi.runTool("propose_loop_draft", { target: "loop over goal", measureCmd: "none" }, ctx2);
@@ -445,7 +455,7 @@ test("one-active-thing: /goal resume refuses over a live loop (v0.28.21 — the 
     loop: seedLoop({ active: true }),
     goal: seedGoal({ status: "paused", objective: "paused goal — done when pinned" }),
   });
-  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ autoResume: true })); // keep the loop ACTIVE through the reload
+  setGlobalAutoResume(true); // keep the loop ACTIVE through the reload
   const ctx = await freshSession(cwd, "reload");
   await tick();
   await pi.command("goal", "resume", ctx);

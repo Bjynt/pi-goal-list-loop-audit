@@ -125,7 +125,7 @@ test("v0.28.28: unsolicited enqueue (reviewer) does not auto-start the head unle
   assert.match(SRC, /Queued \$\{items\.length\} item\(s\) from \$\{source\} — \/list next when ready \(auto-start is opt-in: \/glla autoresume=on\)\./);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "list_autoactivation_held", \{ source, count: items\.length \}\);/);
   // the reviewer call site passes the gate; user-driven imports keep default:
-  assert.match(SRC, /enqueueItems\(ctx, objectives, "reviewer", \{ autoActivate: loadSettings\(ctx\.cwd\)\.autoResume === true \}\)/);
+  assert.match(SRC, /enqueueItems\(ctx, objectives, "reviewer", \{ autoActivate: loadGlobalSettings\(\)\.autoResume === true \}\)/); // v0.29.5: global-only
 });
 
 test("v0.29.4: auto-accepted drafts START (supersedes the 0.28.28 autoResume hold)", () => {

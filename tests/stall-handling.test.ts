@@ -254,3 +254,27 @@ test("v0.29.4: user aborts stand the chain down and never count toward stalls (t
   // 3. The 5-abort loud pause remains as the backstop:
   assert.match(block, /5 consecutive aborts \(user interrupted\)/);
 });
+
+test("v0.29.5: the stand-down survives the heartbeat + autoResume is GLOBAL-only", () => {
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const settings = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
+  // 1. Without a stand-down flag the 60s heartbeat refire would defeat the
+  //    0.29.4 abort stand-down within a minute (isSupervising + idle + no
+  //    timer = refire, and the goal stays ACTIVE while standing down):
+  assert.match(src, /let abortedStandDown = false;/);
+  assert.match(src, /abortedStandDown = true; \/\/ v0\.29\.5: heartbeat\/compaction refires must not resurrect/);
+  assert.match(src, /if \(abortedStandDown\) return;\n  if \(!fire\) return;/);
+  // 2. Any explicit schedule ends the stand-down (resume/activate):
+  assert.match(src, /abortedStandDown = false; \/\/ v0\.29\.5: any explicit schedule ends the stand-down/);
+  // 3. The post-compaction refire also respects it:
+  assert.match(src, /isSupervising\(\) && !abortedStandDown\) \{/);
+  // 4. autoResume is GLOBAL-only (user directive: "not supporting project
+  //    level setting for it now, just global") — the restore gate and the
+  //    reviewer enqueue gate read loadGlobalSettings(), never the project
+  //    cascade. junk-runner had a stale project-local opt-in that kept
+  //    auto-firing its list at every bare pi launch.
+  assert.match(settings, /export function loadGlobalSettings\(\): Settings \{/);
+  assert.match(src, /resolveEffectiveAggressiveSettings\(loadGlobalSettings\(\)\)\.autoResume/);
+  assert.match(src, /autoActivate: loadGlobalSettings\(\)\.autoResume === true/);
+  assert.ok(!src.includes("resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).autoResume"), "no project-cascade autoResume read remains");
+});
