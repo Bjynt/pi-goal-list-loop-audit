@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.29.13] — 2026-07-30
+
+### Added — stale-handle AUTO-RECOVERY: tmux keystroke self-heal
+
+User ask: "can we make it automatic" — pi walls every runtime method
+(`sendUserMessage`, `getSessionName`, even `ctx.reload()`) behind
+`assertActive()`, so a disposed-session zombie cannot recover through
+pi's API. But fs/child_process are extension-side and keep working.
+
+- On the stale terminal, when pi runs inside tmux (`$TMUX` + a
+  shape-validated `$TMUX_PANE`), glla injects `/reload` as keystrokes
+  into its own pane (`tmux send-keys … -l '/reload' … Enter`). Pi
+  rebuilds the extension runtime in place; the fresh instance loads
+  .pi-glla state and holds — `/glla resume` continues (fully hands-off
+  with autoresume=on). `auto_reload_injected` ledgered.
+- Outside tmux nothing changes: the manual `/reload` warning stands.
+- Opt out per project or globally: `autoReloadOnStale: false`.
+
+622 tests.
+
 ## [0.29.12] — 2026-07-30
 
 ### Fixed — stale-handle recovery is /reload-first (no pi restart), and /glla resume is zombie-aware
