@@ -180,6 +180,34 @@ test("v0.29.1: completion lifecycle survives the wedged-queue window (storm supp
   assert.match(src, /6 error-brakes in a row; the provider has been erroring for an extended window/);
 });
 
+test("v0.29.9: hourly top-of-hour probe — the park keeps retrying on clock-hour boundaries", () => {
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // The park is no longer terminal: a probe is scheduled for the next
+  // top-of-hour boundary (+60s grace) via the shared quota-retry timer.
+  assert.match(src, /const probeMs = msUntilNextHourBoundary\(Date\.now\(\)\);/);
+  assert.ok(src.includes('"Hourly rate-limit probe"'));
+  assert.match(src, /hourly_rate_probe/);
+  assert.match(src, /via: "hourly-rate-probe"/);
+  // The probe ONLY fires while still error-parked (user pauses/resumes/
+  // cancels are never stomped), and it re-checks kind + reason.
+  assert.match(src, /state\.goal\.pauseKind === "error"\s*\n\s*&& \(state\.goal\.pauseReason \?\? ""\)\.includes\("error-brakes in a row"\)/);
+  // The park messaging names the hourly probe (no more "no more auto-retries").
+  assert.match(src, /Probing at the top of each hour — rate-limit windows typically expire on clock-hour boundaries/);
+  assert.ok(!src.includes("no more auto-retries"), "park is no longer terminal");
+});
+
+test("v0.29.9: msUntilNextHourBoundary — next clock-hour + grace, correct across the day", async () => {
+  const { msUntilNextHourBoundary } = await import("../extensions/goal-loop-backoff.ts");
+  // 10:47:30 → 11:01:00 = 12.5 minutes + 60s grace.
+  const t = new Date("2026-07-30T10:47:30").getTime();
+  assert.equal(msUntilNextHourBoundary(t), (12 * 60 + 30 + 60) * 1000);
+  // Exactly on the hour → the NEXT hour + grace (never 0/negative).
+  const onHour = new Date("2026-07-30T10:00:00").getTime();
+  assert.equal(msUntilNextHourBoundary(onHour), (60 * 60 + 60) * 1000);
+  // Custom grace.
+  assert.equal(msUntilNextHourBoundary(t, 0), (12 * 60 + 30) * 1000);
+});
+
 test("v0.29.1: zombie-twin guard — drafts/enqueues duplicating a goal completed <24h ago are refused loudly", () => {
   const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   // Junk-runner field case: the just-approved close re-drafted itself 3
