@@ -15,6 +15,7 @@
  */
 
 import * as fs from "node:fs";
+import { exec } from "node:child_process";
 import * as os from "node:os";
 import * as path from "node:path";
 
@@ -229,6 +230,29 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   }
   ctx.ui.notify(`glla: ${guidance}`, "warning");
   notifyExternal(ctx, `glla: extension api stale — restart pi. (${where})`);
+  attemptTmuxAutoReload(ctx, where);
+}
+
+/** v0.29.13: automatic recovery — the zombie handle can't call ctx.reload()
+ * (pi walls EVERY runtime method behind assertActive), but fs/child_process
+ * are extension-side and still work. When pi runs inside tmux (this rig's
+ * shape), inject /reload as keystrokes into our own pane: pi rebuilds the
+ * extension runtime in place, the fresh instance loads .pi-glla state and
+ * holds (autoresume=on resumes for you). Opt out: autoReloadOnStale=false.
+ * Best-effort: the manual warning already fired, so failures cost nothing. */
+function attemptTmuxAutoReload(ctx: ExtensionContext, where: string): void {
+  try {
+    if (loadSettings(ctx.cwd).autoReloadOnStale === false) return;
+    const pane = process.env.TMUX_PANE;
+    if (!process.env.TMUX || !pane || !/^%\d+$/.test(pane)) return;
+    appendLedger(ctx.cwd, "auto_reload_injected", { where, pane });
+    ctx.ui.notify("glla: injecting /reload into this pane via tmux — extensions rebuild in place and the fresh instance holds state. /glla resume after (automatic with autoresume=on).", "info");
+    // Escape dismisses any overlay; the dead session sits at an empty prompt.
+    const cmd = `tmux send-keys -t ${pane} Escape && sleep 0.3 && tmux send-keys -t ${pane} -l '/reload' && tmux send-keys -t ${pane} Enter`;
+    exec(cmd, () => { /* best-effort */ });
+  } catch {
+    /* never let recovery take the warning path down */
+  }
 }
 
 /** TEST-ONLY hook (tests/harness): the stale flag is process-terminal in

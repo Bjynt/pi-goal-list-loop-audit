@@ -58,6 +58,11 @@ export interface Settings {
   /** Consecutive stuck interventions before a loop stops (default 5,
    * 10 under aggressiveMode). */
   stuckMaxInterventions?: number;
+  /** v0.29.13: on a stale-handle terminal, inject /reload into our own
+   * tmux pane (keystroke self-heal; pi walls ctx.reload() behind
+   * assertActive). Default true; only acts when TMUX and TMUX_PANE are
+   * set — pi outside tmux just gets the manual warning. */
+  autoReloadOnStale?: boolean;
   /** v0.26.1: consecutive heartbeat refires without a real turn before
    * the goal pauses / loop stops (default 5; 0 = never escalate). */
   stallEscalationRefires?: number;
@@ -186,6 +191,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "quotaRetryMinutes",
   "stuckMaxInterventions",
   "stallEscalationRefires",
+  "autoReloadOnStale",
   "stallShortWords",
   "stallSimilarityThreshold",
   "postaudit",

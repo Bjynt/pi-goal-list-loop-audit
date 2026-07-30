@@ -80,6 +80,23 @@ test("v0.29.12 — /glla resume is stale-aware (the zombie must not say 'Nothing
   assert.ok(!SRC.includes("compaction triggers it in pi 0.82.x"), "compaction blame removed — compaction never disposes (pi 0.83.0 source-verified)");
 });
 
+test("v0.29.13 — automatic recovery: tmux keystroke self-heal (opt-out via autoReloadOnStale=false)", () => {
+  // pi walls ctx.reload() behind assertActive() — the zombie can't
+  // self-reload through the API. But fs/child_process are extension-side:
+  // when pi runs inside tmux, inject /reload as keystrokes into our own
+  // pane; the fresh instance then loads state and holds (autoresume=on
+  // resumes for you). Outside tmux the manual warning stands alone.
+  const SETTINGS = fs.readFileSync(new URL("../extensions/goal-settings.ts", import.meta.url), "utf8");
+  assert.match(SRC, /function attemptTmuxAutoReload\(ctx: ExtensionContext, where: string\): void/);
+  assert.match(SRC, /loadSettings\(ctx\.cwd\)\.autoReloadOnStale === false/);
+  assert.ok(SRC.includes("process.env.TMUX_PANE"));
+  assert.ok(SRC.includes("/^%\\d+$/"), "pane shape validated before shell use");
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "auto_reload_injected"/);
+  assert.ok(SRC.includes("tmux send-keys -t ${pane} Escape"));
+  assert.ok(SRC.includes("-l '/reload'"));
+  assert.ok(SETTINGS.includes("autoReloadOnStale?: boolean"));
+});
+
 test("send paths short-circuit once stale (no retry-into-the-void)", () => {
   assert.match(SRC, /if \(!extensionApi \|\| extensionApiStale\) return;/, "sendContinuation guard");
   assert.match(SRC, /if \(!extensionApi \|\| extensionApiStale\) return null;/, "sendLoopTurn guard");
