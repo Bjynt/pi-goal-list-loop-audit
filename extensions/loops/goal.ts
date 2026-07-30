@@ -5471,6 +5471,17 @@ export default function (pi: ExtensionAPI): void {
       persistState(ctx);
       appendLedger(ctx.cwd, "audit_loop_metric_migrated", { from: "open-count/min", to: "closed-count/max" });
     }
+    // v0.29.18: migrate live/held audit loops to the FIX-FIRST target —
+    // the audit-every-iteration template made discovery (8-12/iter)
+    // outpace fixes (1/iter) and allowed "no new action" iterations with
+    // open boxes (field: hegemon iter 26 — the user watched it find and
+    // present instead of fix). Target-only swap: the metric (closed
+    // count/max) is unchanged, so best/stall stay.
+    if (state.loop?.kind === "audit" && state.loop.target?.includes("Every iteration: (1) run a FRESH audit pass")) {
+      state.loop = { ...state.loop, target: auditTarget() };
+      persistState(ctx);
+      appendLedger(ctx.cwd, "audit_loop_target_migrated", { from: "audit-every-iteration", to: "fix-first" });
+    }
     if (isLoopActive()) {
       const l = state.loop!;
       if (autoResume) {

@@ -562,6 +562,20 @@ test("v0.29.0: /loop audit — metric loop over open findings; plateau = the wel
   assert.match(t, /never fabricate findings to look busy/);
   assert.match(t, /never mark a finding fixed without the fix commit existing/);
   assert.match(t, /plateau stop ends the loop when the well is dry/);
+  // v0.29.18: FIX-FIRST — the backlog drains before new hunting (hegemon
+  // iter 26: discovery 8-12/iter vs fixes 1/iter + "no new action" turns
+  // with 18 open boxes). Fix is step 1; re-audit runs on cadence only;
+  // a zero-closure iteration with open boxes is explicitly unacceptable.
+  assert.match(t, /FIX-FIRST: the open backlog comes down before new hunting/);
+  assert.match(t, /Every iteration: \(1\) FIX the highest-severity OPEN finding/);
+  assert.match(t, /RE-AUDIT on cadence, not every iteration/);
+  assert.match(t, /ONLY when no OPEN findings remain, when roughly ten iterations have passed/);
+  assert.match(t, /"no new action this turn" is never an acceptable iteration while open boxes exist/);
+  // the old audit-every-iteration template is gone:
+  assert.ok(!t.includes("Every iteration: (1) run a FRESH audit pass"), "old template superseded");
+  // live-loop migration pins (goal.ts):
+  assert.match(SRC, /audit_loop_target_migrated/);
+  assert.match(SRC, /state\.loop\?\.kind === "audit" && state\.loop\.target\?\.includes\("Every iteration: \(1\) run a FRESH audit pass"\)/);
   // reviewer: fire-audit-on-clean is OPT-IN, not default (the auditor already
   // verified the work — a reflexive re-scan pays for verification twice):
   const R = readFileSync("extensions/reviewer.ts", "utf-8");

@@ -150,6 +150,34 @@ test("v0.29.14: live audit loop on open-count/min migrates to closed-count/max o
   assert.equal(l.kind, "audit");
 });
 
+test("v0.29.18: live audit loop on the audit-every-iteration target migrates to FIX-FIRST on load", async () => {
+  // Field (hegemon iter 26, 2026-07-30): the audit-every-iteration target
+  // made discovery (8-12 findings/iter) outpace fixes (1/iter) and allowed
+  // "no new action this turn" iterations with 18 open boxes — the user
+  // watched it find and present instead of fix ("the goal would be audit
+  // to fix then audit then fix again no?"). Target-only swap: metric is
+  // unchanged, so best/stall survive.
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, { loop: seedLoop({
+    active: false,
+    stopReason: HELD,
+    kind: "audit",
+    direction: "max",
+    bestValue: 70,
+    stallCount: 2,
+    target: "Audit the project for real problems and fix them, iteration by iteration. Every iteration: (1) run a FRESH audit pass over the codebase — spawn Explore subagents for breadth — hunting real issues.",
+  }) });
+  await freshSession(cwd, "startup");
+  const l = readState(cwd).loop as { target?: string; bestValue: number | null; stallCount: number };
+  assert.ok(l.target!.includes("FIX-FIRST"), "target swapped to the fix-first template");
+  assert.ok(!l.target!.includes("Every iteration: (1) run a FRESH audit pass"), "old template gone");
+  assert.equal(l.bestValue, 70, "metric unchanged — best survives");
+  assert.equal(l.stallCount, 2, "stall streak survives");
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
+  assert.ok(ledger.includes("audit_loop_target_migrated"), "migration ledgered");
+});
+
 test("T3e (v0.28.21): no active goal + queued list + reload → NOT activated by default; autoresume=on → head activates", async () => {
   const cwd = tmpCwd();
   seedState(cwd, { list: [{ id: "item-1", objective: "queued head objective — done when pinned", addedAt: new Date().toISOString() }] });
