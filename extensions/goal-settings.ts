@@ -152,6 +152,21 @@ export function loadSettings(cwd: string): Settings {
   ) as unknown as Settings;
 }
 
+/**
+ * v0.29.5: autoResume is GLOBAL-only (user directive 2026-07-30: "we are
+ * not supporting project level setting for it now, just global"). Launch-
+ * time restore reads this, never the project file — a stale autoResume
+ * key in a project's settings.json is ignored (junk-runner field case: a
+ * project-local opt-in from the unattended-audit era kept auto-firing the
+ * list at every bare `pi` launch after the global default flipped off).
+ */
+export function loadGlobalSettings(): Settings {
+  return mergeSettings(
+    DEFAULT_SETTINGS as unknown as Record<string, unknown>,
+    readSettingsFile(globalSettingsPath()) as Record<string, unknown>,
+  ) as unknown as Settings;
+}
+
 /** Every provenance-tracked key (the /glla headless display + UI). */
 export const SETTINGS_KEYS: Array<keyof Settings> = [
   "auditorModel",
