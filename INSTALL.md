@@ -83,7 +83,7 @@ mode) flips the continuation DEFAULTS toward keep-going:
 
 | Key | default | aggressive |
 |---|---|---|
-| autoResume | default (hold on session load) | on |
+| autoResume | default (hold on session load) | on (GLOBAL-only since v0.29.5 — project keys inert) |
 | auditCap | 5 | 10 |
 | stuckMaxInterventions | 5 | 10 |
 | wedgeAlertMinutes | 30 | 0 (off) |

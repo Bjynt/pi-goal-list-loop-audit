@@ -42,7 +42,7 @@ Five top-level commands — `/goal`, `/list`, `/loop`, `/glla`, `/review`:
 /goal audit                        # run the isolated auditor on the current goal now — no agent turn (v0.28.27)
 /goal tweak "<new objective>"      # edit in place (Confirm dialog)
 /goal archive                      # archived goals, newest first
-/glla                               # settings UI table · /glla key=value · /glla stats · /glla audits [N|full] · /glla postaudit · /glla autoaccept=on
+/glla                               # settings UI table · /glla key=value · /glla stats · /glla audits [N|full] · /glla postaudit · /glla wipe (nuclear reset, Confirm-gated) · /glla autoaccept=on
 /list fix the login bug, add dark mode, write docs   # dump it — the agent shapes it into items, one Confirm
 /list plan.md                      # file detected → bulk import, one Confirm (sisyphus/Ralph style)
 /list <paste a checklist>          # multi-line paste → same batch flow
@@ -194,7 +194,29 @@ running, you can see it — no command needed.
 A 15s heartbeat detects the precise stall condition — active goal/loop + idle
 session + nothing scheduled + quiet for 60s — and re-fires the continuation
 itself. Three consecutive zero-tool turns pause the goal / stop the loop.
-No external watchdog plugin needed.
+No external watchdog plugin needed. It also recovers **stranded audits**
+(v0.29.1): a goal stuck in `auditing` with no auditor session alive re-runs
+the stored claim after 90s instead of black-holing. Storm protection: the
+send→pause→notify path rearms once per cycle and loud-stops after a 6-error
+brake streak, so a broken provider can't spin forever.
+
+**User aborts mean STOP** (v0.29.4): Esc-aborting a turn stands the chain
+down with a named notify (`/goal resume` to continue) — it does NOT count
+toward stall warnings, does NOT auto re-fire, and the stand-down survives
+the heartbeat (v0.29.5). Five consecutive aborts still pause loudly as a
+backstop. A queued steer interrupt (`length`/`toolResult` races) is not an
+abort and resumes normally.
+
+## One active thing (auto-arbitrated)
+
+At most one goal/list-item/loop owns the active slot — activation guards
+refuse a second live thing in-session, and **session loads auto-arbitrate
+dirty stacked state** (v0.29.6): if a pre-guard project persisted a live
+loop AND a live goal, the one with the most recent activity keeps the slot
+and the loser is ARCHIVED (recoverable under `.pi-glla/archive/` / `/loop
+status`), never silently wiped. No picker, no per-start arbitration chores.
+The queued list is a backlog, not a second live thing — untouched.
+`/glla wipe` remains the manual, Confirm-gated clean slate.
 
 ## Config (one global place, rarely opened)
 
@@ -206,17 +228,21 @@ No external watchdog plugin needed.
 /glla tokenlimit=10000000            # per-goal token budget (default: off) → GLOBAL
 /glla tokenlimit=0                   # explicitly no cap (the default)
 /glla wedgealert=30                  # hung-command alert minutes (default: 30, 0 = off)
-/glla autoresume=on                  # auto-resume goals/loops on ANY session start (default: load HELD, never auto-start — explicit /goal resume, /list resume, or /loop; off: never)
+/glla autoresume=on                  # auto-resume goals/loops on ANY session start (default: load HELD, never auto-start — explicit /goal resume, /list resume, or /loop; off: never) — GLOBAL-only (v0.29.5): project-level keys are inert
 /glla auditcap=5                     # pause the goal after N consecutive auditor disapprovals (default 5, 0 = unlimited)
 /glla aggressivemode=on               # keep-going defaults: autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs
 /glla quotaretryminutes=60            # minutes before auto-retrying a quota-exhausted auditor
 /glla stuckmax=10                     # consecutive stuck interventions before a loop stops (default 5)
 /glla auditfeedbackchars=800         # cap the executor-visible auditor report (default 0 = full report)
-/glla autoaccept=on                  # drafts ACTIVATE without the Confirm dialo... (every draft dialog also offers "always auto-accept" inline)unattended rigs)
+/glla autoaccept=on                  # drafts ACTIVATE without the Confirm dialog (v0.29.4: they start immediately — autoResume no longer gates drafts; every draft dialog also offers "always auto-accept" inline)
 /glla project tokenlimit=500         # rare per-project override
 ```
 
-Resolution per key: **project > global > defaults**. The auditor defaults to
+Resolution per key: **project > global > defaults** — EXCEPT `autoResume`,
+which is **global-only** (v0.29.5): per-project opt-ins from old versions
+silently overrode the global hold at launch (the junk-runner incident), so
+the launch-restore gate and the reviewer-enqueue gate read only the global
+file now. The auditor defaults to
 your pi session model. When the session provider is extension-registered the
 auditor can't auth it — you're told once (info level) with the fix:
 `/glla model=provider/id`, set once, rarely touched again. The plugin never
@@ -232,7 +258,12 @@ history and is available through `/goal status` regardless.
 floor — every `propose_*` draft (goal, list batch, loop, task list)
 activates the moment the agent proposes it, with a notification and a
 `draft_autoaccepted` ledger entry (auto-accept is never silent). The seed
-carries the intent. Pair with `autoresume=on` for fully unattended rigs.
+carries the intent. Since v0.29.4 auto-accepted drafts **start immediately**
+— the draft path is decoupled from `autoResume`, which gates ONLY
+launch-time restore of persisted state ("load it but don't auto-start it").
+For fully unattended rigs you typically want both on; for attended rigs,
+`autoaccept=on` + `autoresume=off` is the sweet spot (new drafts go, old
+state holds).
 
 ## Subagents
 
@@ -330,7 +361,7 @@ prompts/
   goal-loop-forever-draft.md   # /loop drafting prompt
 scripts/
   smoke.sh                     # live integration harness (tmux + real models)
-tests/                         # 545 tests across 58 files, no live pi required (mock-ctx harness drives the orchestrator)
+tests/                         # 613 tests across 58 files, no live pi required (mock-ctx harness drives the orchestrator)
 docs/DESIGN.md                 # architectural decisions
 PLAN.md                        # milestones, decisions, gates
 ```

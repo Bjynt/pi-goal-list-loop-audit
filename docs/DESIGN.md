@@ -44,6 +44,52 @@ below; later releases append addenda rather than rewrite history.
 - **`notify=<cmd>`**: fire-and-forget shell-out on goal complete / goal pause /
   loop stop, message as `$1`. Settings parser is quote-aware.
 
+## Addendum v0.5.0–v0.29.6 (current state — the long-session era)
+
+The v0.4.0 addendum closed the scaffold era. v0.5.0 through v0.29.6 are 25+
+releases of unattended-rig hardening; the full record is CHANGELOG.md. The
+architectural decisions that changed the SHAPE of the system:
+
+- **Self-watchdog is baked in** (v0.5.0): a 15s heartbeat owns liveness —
+  supervising + idle + nothing scheduled + 60s quiet → re-fire. External
+  liveness plugins are retired.
+- **The restore gate** (v0.26.9 tri-state; hardened v0.28.30, v0.29.4): a
+  bare `pi` start HOLDS everything and paints it — nothing auto-starts from
+  persisted state. In-session reload/fork/compaction continues automatically.
+  `autoResume` (on → any session start resumes; off → never) is **global-only**
+  (v0.29.5) after a stale per-project opt-in silently overrode the global hold.
+- **Drafts and restores are decoupled** (v0.29.4): `autoAcceptDrafts` is the
+  pre-consent for in-session drafts — they START immediately. `autoResume`
+  gates only launch-time restore. "The session auto-starts in some cases ok;
+  launching pi must not."
+- **User aborts mean STOP** (v0.29.4/0.29.5): an aborted turn is exempt from
+  stall accounting, stands the chain down with no auto re-fire, and the
+  stand-down gates the heartbeat + post-compaction refires. The 5-abort loud
+  pause is the backstop.
+- **One active thing, auto-arbitrated** (v0.28.21 guards; v0.29.6 load-time
+  arbitration): at most one live artifact. Dirty stacked states at load are
+  resolved deterministically — most recent activity keeps the slot, the loser
+  is archived (recoverable), no picker. `/glla wipe` (v0.28.31) is the manual,
+  Confirm-gated clean slate.
+- **The completion lifecycle owns its pauses** (v0.29.1): storm/stall
+  escalation never pauses `auditing` goals; a stranded `auditing` state (no
+  live auditor, 90s stale) re-runs the stored claim; send/pause/notify storms
+  rearm once per cycle; the provider-error brake (v0.28.13) keeps cross-cycle
+  memory and parks after 6 consecutive errors.
+- **The audit loop is the project reviewer** (v0.29.0): `/loop audit` runs
+  fresh audit passes every iteration, appends findings to
+  `.pi-glla/audit-loop/findings.md`, fixes the top open ones; the orchestrator
+  counts open boxes as the measure and the plateau stop ends it. The
+  reviewer's reflexive fire-audit-on-clean cascade is opt-in (it paid for
+  verification twice and was hydra fuel).
+- **Git discipline is prompt-law** (v0.29.2): continuation/draft prompts
+  forbid inventing git identities or branches (field incidents: agents
+  committing as `phase-e-agent <phase-e@local>`).
+- **Reviewer = strategist, not verifier** (v0.24.6–v0.29.0): the reviewer
+  scans sources and proposes list items through the standard drafting +
+  Confirm path; it never audits work — the isolated auditor is the only
+  verifier.
+
 ## Addendum v0.4.0 (completion)
 
 - **Auditor compaction enabled** (flaw #3 — the last open one). Safety:
