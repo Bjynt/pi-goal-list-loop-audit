@@ -424,6 +424,15 @@ const countedLoopTokenMessages = new Set<string>();
 
 // Heartbeat self-watchdog state: liveness is the loop's own job.
 let lastActivityAt = Date.now();
+// v0.29.16: zombie-run watchdog clock — updated ONLY by genuine pi stream
+// events (message_update / tool_call / agent_start / turn_start /
+// agent_end), never by heartbeat-internal bookkeeping. A session pi
+// reports as BUSY with zero stream events for N min is a hung provider
+// stream (pi has no read timeout): continuations queue into the void and
+// the busy flag conceals the wedge from every other watchdog (field:
+// hellhunter + hegemon 2026-07-30, MiniMax streams died silently).
+let lastStreamActivityAt = Date.now();
+let lastZombieAlertAt = 0;
 let lastWedgeAlertAt = 0;
 let heartbeatNudges = 0;
 // v0.28.4 (P3): skip nudge accounting for the first agent_end turns after a
@@ -444,6 +453,9 @@ let carryoverResolved = true;
 // refires into an in-flight completion.
 let completionAuditInFlight = false;
 let heartbeatTimer: NodeJS.Timeout | null = null;
+
+const ZOMBIE_RUN_SILENT_MS = 20 * 60_000;
+const ZOMBIE_RUN_ALERT_THROTTLE_MS = 10 * 60_000;
 
 function noteActivity(real = false): void {
   lastActivityAt = Date.now();
@@ -653,6 +665,20 @@ function heartbeatTick(): void {
   // escalation would PAUSE the goal — silently cancelling the
   // interruptedAt → hold-on-restart promise the footer shows.
   if (probeExtensionApiStale()) { goStaleTerminal(ctx, "heartbeat probe"); return; }
+  // v0.29.16: zombie-run watchdog. pi reports BUSY (a run is "active") but
+  // zero stream events for 20 min = the provider stream hung silently —
+  // queued continuations can't land, and every other watchdog stays quiet
+  // because busy≠wedged. Detection + loud guidance only: aborting a turn
+  // is the user's call (consent line); Esc frees the queue and the
+  // heartbeat refires the goal/loop by itself.
+  const streamSilentMs = Date.now() - lastStreamActivityAt;
+  if (isSupervising() && !idle && streamSilentMs >= ZOMBIE_RUN_SILENT_MS && Date.now() - lastZombieAlertAt >= ZOMBIE_RUN_ALERT_THROTTLE_MS) {
+    lastZombieAlertAt = Date.now();
+    appendLedger(ctx.cwd, "zombie_run_suspected", { streamSilentMs, pending });
+    ctx.ui.notify(`glla: the session has been BUSY with zero stream activity for ${Math.round(streamSilentMs / 60000)} min — the provider stream is hung (pi never times it out; queued continuations can't land). Press Esc to abort the zombie turn — the goal/loop refires itself.`, "warning");
+    notifyExternal(ctx, `glla: zombie run suspected (${Math.round(streamSilentMs / 60000)} min busy-silent) — press Esc to abort.`);
+    return;
+  }
   // v0.29.1: stranded-audit recovery. A goal left in "auditing" with NO
   // in-flight audit means the auditor's result never landed (wedged queue
   // ate the tool result; compaction/restart mid-audit). Field-observed in
@@ -5467,6 +5493,7 @@ export default function (pi: ExtensionAPI): void {
     // continuation loop.
     if (isForeignCtx(ctx)) return;
     noteActivity(true);
+    lastStreamActivityAt = Date.now();
     // v0.27.2: folded-in length-continue (standalone pi-length-continue is
     // deprecated). A response cut by the per-response output cap is NOT a
     // completed turn (no telemetry), NOT a stall (no no-tool nudge), and
@@ -5734,9 +5761,22 @@ export default function (pi: ExtensionAPI): void {
   pi.on("tool_call", () => {
     toolCallsThisTurn++;
     noteActivity(true);
+    lastStreamActivityAt = Date.now();
     // v0.24.0: count loop-iteration tool calls (narration-only detection).
     if (isLoopActive()) {
       state.loop!.toolsThisTurn = (state.loop!.toolsThisTurn ?? 0) + 1;
     }
+  });
+
+  // v0.29.16: stream liveness for the zombie-run watchdog — deltas, run
+  // starts, and turn starts all prove the provider stream is alive.
+  pi.on("message_update", () => {
+    lastStreamActivityAt = Date.now();
+  });
+  pi.on("agent_start", () => {
+    lastStreamActivityAt = Date.now();
+  });
+  pi.on("turn_start", () => {
+    lastStreamActivityAt = Date.now();
   });
 }
