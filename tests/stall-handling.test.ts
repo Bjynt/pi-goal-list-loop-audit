@@ -245,7 +245,7 @@ test("v0.29.4: user aborts stand the chain down and never count toward stalls (t
   // 2. An abort stands the chain DOWN — no fall-through to
   //    scheduleContinuation. The stand-down return sits inside the aborted
   //    branch, before the healthy-turn else:
-  const abortIdx = src.indexOf('stopReason === "aborted"');
+  const abortIdx = src.indexOf('else if (stopReason === "aborted")');
   const block = src.slice(abortIdx, abortIdx + 2200);
   assert.match(block, /abort_stand_down/);
   assert.match(block, /standing down — turn aborted by user \(not counted toward stalls\)/);

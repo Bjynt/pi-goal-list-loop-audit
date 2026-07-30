@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.29.4] — 2026-07-30
+
+### Fixed — the Esc-spam loop: user aborts stand the chain down and never count toward stalls
+
+Pully field case (2026-07-30): a bare `pi` launch auto-fired the queued
+list, the user pressed Esc — and EVERY abort was answered by a fresh
+continuation under their hands (the aborted branch fell through to
+`scheduleContinuation`), while each aborted turn ALSO counted as an
+"unproductive turn" → STALL WARNING 1/3, 2/3 → a bogus "stalled" pause
+punishing the user's own interrupt. Two changes:
+
+1. **Aborted turns are exempt from the stall accounting** (same shape as
+   the 0.28.13 provider-error exemption — ledger
+   `stall_nudge_exempt_aborted`; neither increment nor reset).
+2. **An abort stands the chain DOWN** — no auto re-fire. Notify: "standing
+   down — turn aborted by user (not counted toward stalls). /goal resume
+   to continue, /goal cancel to stop." The 5-consecutive-aborts loud pause
+   remains as the backstop (now reached only via resume→abort cycles).
+
+### Changed — autoResume decoupled from draft starts (it gates launch-time restore ONLY)
+
+The same launch fired because the global `autoResume: true` (set for the
+held-draft complaint) also governs session-restore — resurrecting queued
+work at every bare `pi` start ("the session auto starts in some cases …
+launching pi with an active goal auto triggered"). The semantics are now
+split the way the user actually means them:
+
+- **Auto-accepted drafts START** (supersedes the 0.28.28 hold):
+  `autoAcceptDrafts` is the pre-consent for drafts the user asks for
+  in-session. The 0.29.1 zombie-twin guard refuses duplicates of
+  just-completed work upstream, so starting is safe. `draft_held` is gone.
+- **`autoResume` gates ONLY launch-time restore** of persisted state
+  ("load it but not auto start it", 0.28.21) — per-project opt-in for
+  unattended rigs. Global setting flipped back to `false`; the in-session
+  chain (compaction/reload/fork) still auto-continues.
+
+Pins: 1 consolidated abort test + the draft-hold pin inverted (0.28.28 →
+0.29.4). 612 tests.
+
 ## [0.29.3] — 2026-07-30
 
 ### Fixed — empty allowlist warning; the session-load arbitration offers the wipe escape
