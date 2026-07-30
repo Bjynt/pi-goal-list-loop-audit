@@ -63,3 +63,39 @@ structure):**
 Option 1 is just docs/discoverability; options 2–3 are real loop-policy
 features. Decide when promoted — likely as `/loop polish` = option 1 first,
 with 2/3 as flags if the organic interleave proves sloppy in the field.
+
+---
+
+## Rate-limit as a third error class (parked 2026-07-30, user "just saying")
+
+Field evidence (pully, 2026-07-30, pre-0.29.x): a MiniMax "Token Plan usage
+limit reached" 429 wall produced (a) error-brake churn — 429 → "paused: 5
+consecutive errors" → auto-resume → instant 429 again, on repeat; and (b) a
+wedged-queue misclassification — pi's own send-retry (12/15, 3015s backoff;
+the user's pi-level retry bump from 5 → 15 is what kept the send alive) held
+the session busy, so the storm detector saw "no events while the send
+retried" and demanded "Restart pi, then /goal resume" — but pi was not
+wedged, it was CORRECTLY backing off. (208k tok list item saved; resumes
+exactly where it paused.)
+
+**Design when promoted**: a 429 is not an error — it's a clock (same move
+as user-abort getting its own class in v0.29.4).
+
+1. **Signature match** (`rate_limit_error`, http 429, "usage limit reached",
+   quota-exceeded family) on executor-side errors → excluded from the error
+   brake's consecutive-error count and from stall accounting.
+2. **Rate-limit pause with a window-aligned `resumeAt`**: parse
+   retry-after / "try again in Xs" when present; default 60m with growth
+   (60 → 120 → 240, capped near the observed plan window); silent auto-
+   resume on the timer; widget shows "rate-limited — resumes HH:MM";
+   ledger `rate_limit_pause {resumeAt, signature, attempt}`.
+3. **Storm/wedged detector carve-out**: if the last session error matches
+   the rate-limit signature AND pi's send is inside its own retry backoff,
+   classify as waiting-not-wedged — no restart demand, no "action needed".
+4. Applies symmetrically to goals, list items, and loops; auditor-side
+   429s already have their own path (quota-retry.ts, v0.28.26) — this is
+   the EXECUTOR-side counterpart.
+5. Optional knob: `/glla ratelimitwindowminutes=60`.
+
+Trigger to promote: one more field incident of brake-churn or a bogus
+wedged-queue pause whose root cause is a plan-window 429.
