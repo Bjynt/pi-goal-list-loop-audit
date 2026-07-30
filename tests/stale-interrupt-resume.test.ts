@@ -128,7 +128,7 @@ test("v0.28.27/0.29.8: /goal verify (renamed from /goal audit) — manual audito
   // Engine parametrized: origin flows into ledger + notifies + archive reason.
   assert.match(SRC, /origin: "quota-retry" \| "manual" = "quota-retry"/);
   assert.match(SRC, /via: origin === "manual" \? "manual-audit" : "quota-retry-direct-audit"/);
-  assert.ok(SRC.includes('origin === "manual" ? "on /goal verify" : "on the quota retry"'));
+  assert.ok(SRC.includes('origin === "manual" ? " on /goal verify" : " on the quota retry"'));
 });
 
 test("v0.29.8: /goal audit [focus] — the one-shot project audit; /glla status — the unified view", () => {

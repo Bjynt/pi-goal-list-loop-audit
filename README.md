@@ -39,10 +39,11 @@ Five top-level commands — `/goal`, `/list`, `/loop`, `/glla`, `/review`:
 /goal resume                       # resume
 /goal cancel                       # abort
 /goal decide                       # re-open the decision picker (v0.28.23)
-/goal audit                        # run the isolated auditor on the current goal now — no agent turn (v0.28.27)
+/goal audit ["focus on payments"]    # one-shot project audit (v0.29.8): fix the non-decisions, present the decisions — findings in .pi-glla/audit-loop/findings.md
+/goal verify                       # run the isolated auditor on the current goal now — no agent turn (v0.28.27, renamed from /goal audit in v0.29.8)
 /goal tweak "<new objective>"      # edit in place (Confirm dialog)
 /goal archive                      # archived goals, newest first
-/glla                               # settings UI table · /glla key=value · /glla stats · /glla audits [N|full] · /glla postaudit · /glla wipe (nuclear reset, Confirm-gated) · /glla autoaccept=on
+/glla                               # settings UI table · /glla status (unified what's-running view) · /glla key=value · /glla stats · /glla audits [N|full] · /glla postaudit · /glla wipe (nuclear reset, Confirm-gated) · /glla autoaccept=on
 /list fix the login bug, add dark mode, write docs   # dump it — the agent shapes it into items, one Confirm
 /list plan.md                      # file detected → bulk import, one Confirm (sisyphus/Ralph style)
 /list <paste a checklist>          # multi-line paste → same batch flow
@@ -66,7 +67,7 @@ matches `/list show`.
 /loop                              # draft the loop (agent grills; measure is test-run before you confirm)
 /loop start "keep polishing the UI"                          # infinite metricless loop (v0.23.6): no plateau, no cap — ends at time=/tokens= or /loop stop
 /loop respec                                                  # infinite metricless loop reconciling the codebase against the root SPEC.md / spec.md (v0.24.3) — 2 specs = you pick, 0 specs = drafting, 1 spec = auto-start (v0.24.4)
-/loop audit                                                    # project-audit loop (v0.29.0): each iteration audits fresh, appends findings to .pi-glla/audit-loop/findings.md, fixes the top ones — the orchestrator counts open findings and the plateau stop ends it when the well is dry
+/loop audit                                                    # project-audit loop (v0.29.0): each iteration audits fresh, appends findings to .pi-glla/audit-loop/findings.md, fixes the top ones — the orchestrator counts open findings and the plateau stop ends it when the well is dry (one-shot version: /goal audit)
 /loop start "reduce TODOs" measure="grep -c TODO src.txt | head -1" direction=min
 /loop start "shrink the bundle" measure="..." direction=min time=4 tokens=500000   # arbitrary bounds
 /loop start "reduce TODOs" measure="..." direction=min branch=1   # scratch-branch mode
@@ -361,7 +362,7 @@ prompts/
   goal-loop-forever-draft.md   # /loop drafting prompt
 scripts/
   smoke.sh                     # live integration harness (tmux + real models)
-tests/                         # 613 tests across 58 files, no live pi required (mock-ctx harness drives the orchestrator)
+tests/                         # 614 tests across 58 files, no live pi required (mock-ctx harness drives the orchestrator)
 docs/DESIGN.md                 # architectural decisions
 PLAN.md                        # milestones, decisions, gates
 ```

@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.29.8] — 2026-07-30
+
+### Added — `/goal audit [focus]`: the one-shot project audit; `/glla status`: the unified view
+
+User design session (2026-07-30): "/loop audit keeps firing — this would
+be fire and address what you can, present what is to be decided; whether
+to fix a bug is not a decision." And on naming: "/goal audit IS the audit
+goal — we are not auditing the current goal, that happens automatically."
+
+**`/goal audit [focus]`** starts a one-shot project-audit GOAL (a loop is
+the wrong vehicle — this has a finish line the isolated auditor verifies):
+
+- One fresh audit pass (Explore fan-out for breadth); new findings go to
+  the same `.pi-glla/audit-loop/findings.md` the audit loop uses — one
+  findings ledger per project.
+- **The triage law**: `FIX` findings (bugs, polish — nobody would say
+  "leave that bug in") are fixed autonomously, committed, checked off.
+  `DECIDE` findings (`- [?]` lines — direction, trade-offs, scope; two
+  reasonable answers exist) are presented in the completion report and
+  NEVER touched — and never inflate the loop's open-findings measure.
+- Explicit Done-when: pass complete · every new FIX finding has its fix
+  commit and a checked box · DECIDE findings listed and presented.
+
+**Rename**: the v0.28.27 manual current-goal auditor trigger moves from
+`/goal audit` to **`/goal verify`** ("the work looks done — just verify
+it"). Completion audits were always automatic; this is the on-demand
+handle. Same pendingCompletion machinery, same ledger event.
+
+**`/glla status`** — the unified what's-running view (user: "now we need
+to type goal status [to check] — that command at least is missing for
+checking on whatever active process we have"). One read-only aggregate:
+goal (policy/status/tokens/pause reason) · list queue + head · loop
+(active/held, iteration, best, stall) · pending decision pointer —
+plus pointers to the deep surfaces.
+
+614 tests.
+
 ## [0.29.7] — 2026-07-30
 
 ### Changed — docs cleanup (README, DESIGN, INSTALL, PLAN)
