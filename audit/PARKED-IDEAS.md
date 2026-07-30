@@ -57,7 +57,9 @@ structure):**
    This is the version most like "how spec works" (implement→audit alternation
    in the spec loop's continuation guidance, goal-loop-forever.ts:386).
 
-**Open question** (the user's own): does it need a specific rule at all?
+**RESOLVED 2026-07-30 (user): `/loop audit` already covers the intent — "that is what i meant."** No new command or rule. Options 2/3 below stay parked as field contingencies only.
+
+~~**Open question**~~ (was the user's own): does it need a specific rule at all?
 Option 1 is just docs/discoverability; options 2–3 are real loop-policy
 features. Decide when promoted — likely as `/loop polish` = option 1 first,
 with 2/3 as flags if the organic interleave proves sloppy in the field.
