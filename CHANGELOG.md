@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.29.12] — 2026-07-30
+
+### Fixed — stale-handle recovery is /reload-first (no pi restart), and /glla resume is zombie-aware
+
+User pushback + a pi 0.83.0 source audit settled two things:
+
+- **Compaction never invalidates the extension handle.** Verified in pi
+  dist: the only `invalidate()` caller is `AgentSession.dispose()`,
+  reachable solely via session replacement (new/switch/fork/quit);
+  manual, auto, and overflow compaction all rebuild context in place.
+  The v0.28.1-era "compaction triggers it" claim was correlation — field
+  forensics (endless-td: 10 stale events in 4 days, repeatedly ~3 min
+  after compactions with no new session file and zombie command handlers
+  still answering) point at a pi-side replacement that disposes without
+  re-running factories. Reportable upstream.
+- **/reload recovers in place.** It rebuilds the extension runtime in
+  the same process — the fresh instance loads .pi-glla state and holds.
+  Recovery is `/reload`, then `/glla resume`; a full pi restart is only
+  the fallback if /reload itself fails. The terminal guidance, the
+  entry-probe warning, and the interrupted footer all now say so.
+
+- **`/glla resume` probes staleness at entry.** Field (endless-td): the
+  zombie instance answered with a misleading "Nothing to resume". It now
+  names the real recovery instead.
+
+621 tests.
+
 ## [0.29.11] — 2026-07-30
 
 ### Fixed — stale-handle sessions: probe before refiring, hold loops for resume, and recovery text that names the real verbs

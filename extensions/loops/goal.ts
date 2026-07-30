@@ -260,7 +260,7 @@ function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
   if (!probeExtensionApiStale()) return false;
   appendLedger(ctx.cwd, "extension_api_stale", { where: `entry probe (${what})` });
   ctx.ui.notify(
-    `glla: this session's extension handle is stale (pi session replacement) — ${what} can't send continuations in this process. State is safe in .pi-glla/ — run /reload (extensions rebuild in place), then /glla resume. Restart pi only if /reload fails.`
+    `glla: this session's extension handle is stale (pi session replacement) — ${what} can't send continuations in this process. State is safe in .pi-glla/ — run /reload (extensions rebuild in place), then /glla resume. Restart pi only if /reload fails.`,
     "warning",
   );
   return true;

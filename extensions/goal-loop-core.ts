@@ -1045,10 +1045,15 @@ export function shouldSuppressHeartbeatForRecentShip(args: {
 /** Best-effort "when did work last ship" for a repo: newest of the HEAD
  * commit time and the .pi-glla state file mtime. Null when unknown. */
 /** v0.26.7: pi's exact stale-runtime error signature — thrown by every
- * runtime-bound method after pi invalidates the extension on session
- * replacement (newSession/fork/switchSession/reload; compaction reaches
- * the same teardown in pi 0.82.x). See dist/core/extensions/loader.js
- * createExtensionRuntime().invalidate. */
+ * runtime-bound method after pi invalidates the extension. v0.29.12 source
+ * audit (pi 0.83.0 dist): the ONLY invalidate() caller is AgentSession
+ * .dispose(), reachable solely via session replacement (newSession/
+ * switchSession/fork/quit). COMPACTION NEVER DISPOSES — manual, auto, and
+ * overflow compaction all rebuild context in place. Field note 2026-07-30:
+ * 10 stale events in 4 days in endless-td, repeatedly ~3 min after
+ * compactions with NO new session file and zombie command handlers still
+ * answering — a replacement that disposed but never re-ran factories (or
+ * a same-file switchSession); the disposing path is unidentified pi-side. */
 export function isStaleApiError(err: unknown): boolean {
   return err instanceof Error && err.message.includes("stale after session replacement");
 }

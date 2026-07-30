@@ -50,9 +50,9 @@ test("terminal path: ledger event, single-fire, goal ACTIVE+marker / loop stop w
   // auto-resumes active goals).
   assert.match(SRC, /updateGoal\(\{ interruptedAt: nowIso\(\), interruptedReason: `extension api stale \(\$\{where\}\)` \}, ctx\)/);
   assert.ok(!SRC.includes('pauseReason: "extension api stale (pi session replacement)"'), "old pause shape gone");
-  assert.match(SRC, /Restart pi \(or reload extensions\) — the goal\/loop holds on the fresh session: \/glla resume continues it \(autoresume=on resumes for you\)\./);
+  assert.match(SRC, /Run \/reload — extensions rebuild IN PLACE, no pi restart needed — then \/glla resume \(autoresume=on resumes for you\)\. Restart pi only if \/reload itself fails\./);
   // guidance names the pi-side cause:
-  assert.match(SRC, /session replacement — compaction triggers it in pi 0\.82\.x/);
+  assert.match(SRC, /session replacement — the session was disposed and this process's sends can never land/);
 });
 
 test("v0.29.11 — heartbeat PROBES staleness before burning stall refires", () => {
@@ -70,6 +70,14 @@ test("v0.29.11 — stale/stall-stopped loops HOLD on next load (resume, not rest
   assert.match(SRC, /Restart pi, then \/loop resume \(the loop holds on restore\)\./);
   assert.ok(!SRC.includes("loops need /loop start"), "stale guidance no longer discards loop state");
   assert.ok(!SRC.includes("then /loop start again"), "stall escalation no longer discards loop state");
+});
+
+test("v0.29.12 — /glla resume is stale-aware (the zombie must not say 'Nothing to resume')", () => {
+  // Field (endless-td 2026-07-30): the zombie instance answered /glla
+  // resume with "Nothing to resume" — misleading. The entry probe now
+  // names the real recovery: /reload rebuilds extensions in place.
+  assert.match(SRC, /warnIfStaleAtEntry\(ctx, "\/glla resume"\)/);
+  assert.ok(!SRC.includes("compaction triggers it in pi 0.82.x"), "compaction blame removed — compaction never disposes (pi 0.83.0 source-verified)");
 });
 
 test("send paths short-circuit once stale (no retry-into-the-void)", () => {

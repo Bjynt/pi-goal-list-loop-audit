@@ -43,7 +43,7 @@ test("S3 probe: side-effect-free getSessionName() probe caches the positive", ()
 
 test("S3 warn helper: honest 'state is safe' messaging + ledger", () => {
   assert.match(SRC, /function warnIfStaleAtEntry\(ctx: ExtensionContext, what: string\): boolean/);
-  assert.match(SRC, /State is safe in \.pi-glla\/ — restart pi, then \/glla resume \(autoresume=on resumes for you\)\./);
+  assert.match(SRC, /State is safe in \.pi-glla\/ — run \/reload \(extensions rebuild in place\), then \/glla resume\. Restart pi only if \/reload fails\./);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "extension_api_stale", \{ where: `entry probe \(\$\{what\}\)` \}\)/);
 });
 
@@ -80,7 +80,7 @@ test("S2 (v0.28.21): the 0.28.3 interrupt exemption is SUPERSEDED — only autor
 
 test("S1/S2: widget surfaces the interrupt on ACTIVE goals", () => {
   assert.match(DISPLAY, /if \(g\.interruptedAt\)/);
-  assert.match(DISPLAY, /⚠ interrupted — stale handle · restart pi → \/glla resume/);
+  assert.match(DISPLAY, /⚠ interrupted — stale handle · \/reload → \/glla resume/);
 });
 
 test("E6: drafting-seed send failure is loud and stale-aware (was silent)", () => {
