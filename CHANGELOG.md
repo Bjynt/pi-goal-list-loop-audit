@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.29.10] — 2026-07-30
+
+### Fixed — the audit loop's degenerate baseline stalled every iteration and the prompt cried REGRESSED on real progress
+
+Field evidence (hegemon + junk-runner 2026-07-30): `/loop audit` seeded
+`bestValue` from a pre-discovery baseline of **0** (no findings file yet).
+Since improvement requires beating best and no count can go below 0,
+*every* iteration stalled — the loop would plateau-stop mid-work at the
+window — and the regression note fired on any non-improving iteration:
+junk-runner's agent correctly closed a finding (17→16) and the prompt
+demanded **"Your last change REGRESSED the metric. Undo it first."** The
+agent refused ("I'll trust the file"); a less stubborn one would have
+reverted good work.
+
+- **Deferred baseline** (`deferBaseline`): the audit loop no longer seeds
+  best from the pre-work measure — the first REAL measurement (post-
+  discovery) becomes the baseline. Discovery is not a stall, fixing beats
+  best honestly, and flat zeros at the dry well still plateau-stop.
+- **True-regression detection**: the REGRESSED note now fires only when
+  the last two measurements actually moved the wrong direction — a stall
+  is not a regression. Audit loops get their own wording: a rising count
+  means new findings or an unlanded fix, keep fixing highest-severity OPEN.
+- **Live-loop migration**: on session load, an audit loop pinned on the
+  degenerate 0 is reseeded (`bestValue → null`, stall reset,
+  `audit_loop_baseline_reseeded` ledgered) — junk-runner's running loop
+  heals on its next pi restart, no wipe needed.
+
+618 tests.
+
 ## [0.29.9] — 2026-07-30
 
 ### Changed — the error-brake park now probes at the top of each hour
