@@ -177,7 +177,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     // v0.29.11: the fresh session HOLDS it (hold-everything restore gate;
     // autoresume=on resumes for you) — name the verb, don't promise auto.
     if (g.interruptedAt) {
-      return `glla: ${g.policy} ${paint(theme, "error", "⚠ interrupted — stale handle · restart pi → /glla resume")}${heldSuffix}`;
+      return `glla: ${g.policy} ${paint(theme, "error", "⚠ interrupted — stale handle · /reload → /glla resume")}${heldSuffix}`;
     }
     // v0.24.7: list policy gets its own wording — a queue item is not a goal.
     // v0.28.11 (U10): goal policy joins it — "list 29" read as a command

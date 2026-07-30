@@ -219,7 +219,7 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   if (extensionApiStale) return; // already terminal — don't re-spam
   extensionApiStale = true;
   appendLedger(ctx.cwd, "extension_api_stale", { where, kind: isLoopActive() ? "loop" : "goal" });
-  const guidance = "pi invalidated this session's extension handle (session replacement — compaction triggers it in pi 0.82.x). Sends can never land in this process. Restart pi (or reload extensions) — the goal/loop holds on the fresh session: /glla resume continues it (autoresume=on resumes for you).";
+  const guidance = "pi invalidated this session's extension handle (session replacement — the session was disposed and this process's sends can never land). Run /reload — extensions rebuild IN PLACE, no pi restart needed — then /glla resume (autoresume=on resumes for you). Restart pi only if /reload itself fails.";
   if (isLoopActive()) {
     clearLoopTimer();
     state.loop = { ...state.loop!, active: false, stopReason: `extension api stale: ${guidance}` };
@@ -260,7 +260,7 @@ function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
   if (!probeExtensionApiStale()) return false;
   appendLedger(ctx.cwd, "extension_api_stale", { where: `entry probe (${what})` });
   ctx.ui.notify(
-    `glla: this session's extension handle is stale (pi session replacement) — ${what} can't send continuations in this process. State is safe in .pi-glla/ — restart pi, then /glla resume (autoresume=on resumes for you).`,
+    `glla: this session's extension handle is stale (pi session replacement) — ${what} can't send continuations in this process. State is safe in .pi-glla/ — run /reload (extensions rebuild in place), then /glla resume. Restart pi only if /reload fails.`
     "warning",
   );
   return true;
@@ -4503,6 +4503,10 @@ async function cmdGllaWipe(ctx: ExtensionContext): Promise<void> {
  * genuinely differ per type (tweak/finish/next/decide/refine) stay typed.
  */
 async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
+  // v0.29.12: a zombie instance (handle dead after session replacement)
+  // used to answer "Nothing to resume" — the resume path must name the
+  // real recovery (/reload rebuilds extensions in place), not mislead.
+  if (warnIfStaleAtEntry(ctx, "/glla resume")) return;
   const g = state.goal;
   const goalResumable = g && g.status === "paused";
   const loopResumable = state.loop && !state.loop.active && state.loop.stopReason === HELD_ON_RESTORE;
