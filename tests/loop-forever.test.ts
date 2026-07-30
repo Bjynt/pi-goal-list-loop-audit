@@ -127,12 +127,14 @@ test("v0.29.10 — audit loop source pins: deferred baseline, true-regression no
   assert.ok(src.includes("trueRegression"), "true-regression detection present");
   assert.ok(!src.includes("regressedLast"), "old any-stall-is-regression trigger gone");
   assert.ok(
-    src.includes("The open-findings count went UP last iteration — either the fresh audit pass found new problems"),
-    "audit loops get audit-flavoured regression wording",
+    src.includes("The closed-findings count went DOWN last iteration — a checked finding was reopened or findings.md was rewritten (both forbidden)"),
+    "audit loops get audit-flavoured regression wording (v0.29.14: closed-count/max semantics)",
   );
-  // Live loops pinned on the degenerate 0 get reseeded on session load.
-  assert.ok(src.includes('audit-loop/findings.md") && state.loop.bestValue === 0'), "migration detects pinned audit loops");
-  assert.ok(src.includes("audit_loop_baseline_reseeded"), "migration ledgers the reseed");
+  // v0.29.14: live loops on the open-count/min metric migrate to
+  // closed-count/max on session load (supersedes the baseline-0 reseed).
+  assert.ok(src.includes("audit_loop_metric_migrated"), "migration ledgers the metric flip");
+  assert.ok(src.includes('from: "open-count/min", to: "closed-count/max"'), "migration names both metrics");
+  assert.ok(!src.includes("audit_loop_baseline_reseeded"), "v0.29.10 reseed superseded");
 });
 
 
@@ -538,7 +540,7 @@ test("v0.29.0: /loop audit — metric loop over open findings; plateau = the wel
   // orchestrator counts open findings, so the plateau stop terminates it.
   const SRC = readFileSync("extensions/loops/goal.ts", "utf-8");
   assert.match(SRC, /if \(sub === "audit"\) \{/);
-  assert.match(SRC, /target: auditTarget\(\),\s*\n\s*measureCmd: auditMeasureCmd\(\),\s*\n\s*direction: "min",/);
+  assert.match(SRC, /target: auditTarget\(\),\s*\n\s*measureCmd: auditMeasureCmd\(\),\s*\n\s*direction: "max",/);
   // guards: no stacking over an active goal or loop:
   const auditIdx = SRC.indexOf('if (sub === "audit")');
   assert.match(SRC.slice(auditIdx, auditIdx + 1600), /A goal is active — \/goal cancel or \/goal pause it before starting a loop\./);
@@ -551,7 +553,7 @@ test("v0.29.0: /loop audit — metric loop over open findings; plateau = the wel
   assert.match(F, /export function auditMeasureCmd\(\): string/);
   assert.match(F, /export function auditTarget\(\): string/);
   const measureCmd = auditMeasureCmd();
-  assert.ok(measureCmd.includes("grep -cE '^- \\[ \\]' .pi-glla/audit-loop/findings.md"), measureCmd);
+  assert.ok(measureCmd.includes("grep -cE '^- \\[[xX]\\]' .pi-glla/audit-loop/findings.md"), measureCmd);
   assert.ok(measureCmd.includes("echo ${c:-0}"), measureCmd);
   // the target carries the honesty laws:
   const t = auditTarget();

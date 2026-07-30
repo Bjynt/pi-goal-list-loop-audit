@@ -2280,7 +2280,7 @@ function sendLoopTurn(): void {
     (loop.direction === "min" ? lastHistValue > prevValue : lastHistValue < prevValue);
   const regressionNote = trueRegression
     ? loop.kind === "audit"
-      ? "**The open-findings count went UP last iteration — either the fresh audit pass found new problems, or your fix didn't land. Check findings.md, then keep fixing the highest-severity OPEN items.**"
+      ? "**The closed-findings count went DOWN last iteration — a checked finding was reopened or findings.md was rewritten (both forbidden). Restore the closed entries, then keep fixing the highest-severity OPEN items.**"
       : "**Your last change REGRESSED the metric. Undo it first, then try a different small change.**"
     : "";
   // Strategy rotation (from pi-loop-mode's one good idea): one stall before
@@ -2723,10 +2723,11 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     // v0.29.0: the project-audit loop (user design: "the looper running
     // audits to see where to progress and what to fix — the thing that
     // fires at the end of goals and lists"). Unlike respec this is a
-    // METRIC loop: the orchestrator counts open findings every iteration,
-    // direction=min, and the plateau stop is the termination — audits that
-    // stop surfacing new findings = the well is dry. User typed the
-    // command = the act (same auto-start rule as respec).
+    // METRIC loop: the orchestrator counts CLOSED findings every iteration,
+    // direction=max (v0.29.14 — open-count/min punished discovery), and the
+    // plateau stop is the termination — no fixes landing for the window =
+    // the well is dry. User typed the command = the act (same auto-start
+    // rule as respec).
     if (state.goal && state.goal.status === "active") {
       ctx.ui.notify("A goal is active — /goal cancel or /goal pause it before starting a loop.", "warning");
       return;
@@ -2738,7 +2739,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     await startLoopFromConfig(ctx, {
       target: auditTarget(),
       measureCmd: auditMeasureCmd(),
-      direction: "min",
+      direction: "max",
       plateauWindow: LOOP_DEFAULTS.plateauWindow,
       maxIterations: 0,
       branch: false,
@@ -5370,15 +5371,18 @@ export default function (pi: ExtensionAPI): void {
       state.loop = { ...state.loop, stopReason: HELD_ON_RESTORE };
       persistState(ctx);
     }
-    // v0.29.10: reseed live/held audit loops stuck on the degenerate
-    // pre-discovery baseline-0 — best can never go below 0, so every
-    // iteration stalls and the prompt cries REGRESSED on real progress
-    // (junk-runner ran pinned like this). Null best = the next measurement
-    // becomes the honest baseline; stall streak resets with it.
-    if (state.loop && state.loop.measureCmd?.includes("audit-loop/findings.md") && state.loop.bestValue === 0) {
-      state.loop = { ...state.loop, bestValue: null, stallCount: 0, kind: state.loop.kind ?? "audit" };
+    // v0.29.14: migrate live/held audit loops off the open-count/min
+    // metric — it punished DISCOVERY (11 new real findings read as a
+    // regression; iter 27→38→37 nearly plateau-stopped mid-work). Flip to
+    // closed-count/max, null the pinned best (the next closed-count
+    // measure becomes the honest baseline), reset the stall streak. This
+    // supersedes the v0.29.10 baseline-0 reseed (every old-measure loop
+    // gets nulled here).
+    if (state.loop && state.loop.measureCmd?.includes("audit-loop/findings.md") && state.loop.measureCmd?.includes("\\[ \\]")
+      && state.loop.direction !== "max") {
+      state.loop = { ...state.loop, measureCmd: auditMeasureCmd(), direction: "max", bestValue: null, stallCount: 0, kind: state.loop.kind ?? "audit" };
       persistState(ctx);
-      appendLedger(ctx.cwd, "audit_loop_baseline_reseeded", { from: 0 });
+      appendLedger(ctx.cwd, "audit_loop_metric_migrated", { from: "open-count/min", to: "closed-count/max" });
     }
     if (isLoopActive()) {
       const l = state.loop!;

@@ -404,14 +404,16 @@ export function respecTarget(specName: string): string {
 export const AUDIT_FINDINGS_REL = ".pi-glla/audit-loop/findings.md";
 
 /**
- * The audit-loop measure command: count open findings. Prints exactly one
- * number in every file state (missing file / zero matches → 0). This is
- * what respec (metricless) and the reviewer cascade (no termination) both
- * lacked: an honest metric the plateau stop can believe — audits that stop
- * surfacing new findings = the well is dry = the loop ends.
- */
+ * The audit-loop measure command: count CLOSED findings. Prints exactly one
+ * number in every file state (missing file / zero matches → 0). v0.29.14:
+ * flipped from open-count/min — the open count PUNISHES DISCOVERY (a fresh
+ * audit finding 11 real issues read as a regression: endless-td-style iter
+ * 6 went 27→38→37 and nearly plateau-stopped mid-work). The closed count
+ * is monotonic under the honesty law (a checked box requires a fix commit):
+ * discovery alone doesn't move it, landing fixes does — so the plateau
+ * stop fires only when NO FIXES LAND for the window: the honest dry well. */
 export function auditMeasureCmd(): string {
-  return `c=$(grep -cE '^- \\[ \\]' ${AUDIT_FINDINGS_REL} 2>/dev/null); echo \${c:-0}`;
+  return `c=$(grep -cE '^- \\[[xX]\\]' ${AUDIT_FINDINGS_REL} 2>/dev/null); echo \${c:-0}`;
 }
 
 /**
@@ -425,7 +427,7 @@ export function auditMeasureCmd(): string {
  * identity, on the current branch — no invented identities or branches).
  */
 export function auditTarget(): string {
-  return `Audit the project for real problems and fix them, iteration by iteration. Every iteration: (1) run a FRESH audit pass over the codebase — spawn Explore subagents for breadth — hunting real issues: bugs, broken flows, regressions, drift between docs and code, dead code, security holes. Not style nits, not speculative refactors. (2) Append every NEW finding as one checkbox line "- [ ] SEVERITY: short description (file:line)" to ${AUDIT_FINDINGS_REL} (create the file on the first finding; append-only — never delete, rewrite, or reorder existing lines; never re-report a finding already listed). (3) Fix the highest-severity OPEN finding(s) — real fixes, committed — then check the box: "- [x] … — fixed in <commit>". (4) Honesty law: never fabricate findings to look busy; never mark a finding fixed without the fix commit existing. When a full audit pass surfaces nothing new AND no open findings remain, say so plainly — the orchestrator counts open findings every iteration and the plateau stop ends the loop when the well is dry.`;
+  return `Audit the project for real problems and fix them, iteration by iteration. Every iteration: (1) run a FRESH audit pass over the codebase — spawn Explore subagents for breadth — hunting real issues: bugs, broken flows, regressions, drift between docs and code, dead code, security holes. Not style nits, not speculative refactors. (2) Append every NEW finding as one checkbox line "- [ ] SEVERITY: short description (file:line)" to ${AUDIT_FINDINGS_REL} (create the file on the first finding; append-only — never delete, rewrite, or reorder existing lines; never re-report a finding already listed). (3) Fix the highest-severity OPEN finding(s) — real fixes, committed — then check the box: "- [x] … — fixed in <commit>". (4) Honesty law: never fabricate findings to look busy; never mark a finding fixed without the fix commit existing. The orchestrator counts CLOSED findings every iteration (direction=max): discovery alone does not move the metric — landing fixes does. When a full audit pass surfaces nothing new AND no open findings remain, say so plainly — the plateau stop ends the loop when the well is dry.`;
 }
 
 // ---- /goal audit-project (v0.29.8) ----

@@ -129,6 +129,27 @@ test("T3d: active loop + human load → HELD_ON_RESTORE (loop deactivated loudly
   assert.ok(ctx.ui.matching("loop held on restore").length >= 1, "held notify names the loop");
 });
 
+test("v0.29.14: live audit loop on open-count/min migrates to closed-count/max on load (discovery no longer reads as regression)", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, { loop: seedLoop({
+    active: false,
+    stopReason: HELD,
+    kind: "audit",
+    direction: "min",
+    bestValue: 20,
+    stallCount: 4,
+    measureCmd: "c=$(grep -cE '^- \\[ \\]' .pi-glla/audit-loop/findings.md 2>/dev/null); echo ${c:-0}",
+  }) });
+  await freshSession(cwd, "startup");
+  const l = readState(cwd).loop as { direction?: string; measureCmd?: string; bestValue: number | null; stallCount: number; kind?: string };
+  assert.equal(l.direction, "max", "direction flipped to max");
+  assert.ok(l.measureCmd!.includes("\\[[xX]\\]"), "closed-count measure");
+  assert.equal(l.bestValue, null, "pinned best nulled — next measure is the honest baseline");
+  assert.equal(l.stallCount, 0, "plateau stall streak reset");
+  assert.equal(l.kind, "audit");
+});
+
 test("T3e (v0.28.21): no active goal + queued list + reload → NOT activated by default; autoresume=on → head activates", async () => {
   const cwd = tmpCwd();
   seedState(cwd, { list: [{ id: "item-1", objective: "queued head objective — done when pinned", addedAt: new Date().toISOString() }] });

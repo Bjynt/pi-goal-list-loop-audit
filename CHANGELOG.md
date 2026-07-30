@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.29.14] — 2026-07-30
+
+### Fixed — audit-loop metric no longer punishes discovery (closed-count/max)
+
+Field (user's session): iteration 6 ran a fresh audit, found 11 genuinely
+new real issues AND closed a CRITICAL — and the metric read 27→38→37 as
+regression (best 20, stall 4/5, one discovery iteration from a plateau
+stop mid-work). The open-findings count/min metric treated DISCOVERY —
+the loop's core job — as regressing.
+
+- The audit measure now counts CLOSED findings (`- [x]`), direction=max.
+  Closed-count is monotonic under the honesty law (a checked box requires
+  a fix commit): discovery alone doesn't move the metric, landing fixes
+  does. Iteration 6 above scores +1 = improvement = stall reset.
+- The plateau stop now fires only when NO FIXES LAND for the window —
+  the honest dry-well, replacing the "audits stop surfacing new findings"
+  proxy that confused finding work with regressing.
+- Live/held audit loops migrate on session load: old open-count/min
+  measure → closed-count/max, pinned best nulled (next measure is the
+  honest baseline), stall streak reset. `audit_loop_metric_migrated`
+  ledgered; supersedes the v0.29.10 baseline-0 reseed.
+- The regression note matches the new semantics: a true regression is the
+  closed count going DOWN = a reopened finding or a rewritten findings.md
+  (both forbidden) — never "you found new problems".
+
+623 tests.
+
 ## [0.29.13] — 2026-07-30
 
 ### Added — stale-handle AUTO-RECOVERY: tmux keystroke self-heal
