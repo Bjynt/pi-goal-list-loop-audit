@@ -112,20 +112,40 @@ test("v0.28.27: stale handle silences ALL stall machinery — refiring into a de
   assert.ok(stale < watchdog, "stale bail precedes the latch watchdog too");
 });
 
-test("v0.28.27: /goal audit — manual auditor invocation with a synthesized claim, wired into the pendingCompletion machinery", () => {
-  // Route: exact sub in the core router.
+test("v0.28.27/0.29.8: /goal verify (renamed from /goal audit) — manual auditor invocation with a synthesized claim, wired into the pendingCompletion machinery", () => {
+  // Route: "verify" is an exact sub; "audit" moved to ARG subs (v0.29.8 —
+  // /goal audit [focus] is now the one-shot project audit).
   const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
-  assert.match(CORE, /"decide", "audit"\]/);
-  assert.match(CORE, /\| "audit" \| "tweak"/);
+  assert.match(CORE, /"decide", "verify"\]/);
+  assert.ok(CORE.includes('"audit", "tweak", "archive", "start"'));
   // Dispatch: guards (no goal, audit in flight), seeds the synthesized
   // claim, ledgered, delegates to the shared engine with origin "manual".
-  assert.match(SRC, /if \(route\.name === "audit"\) \{/);
-  assert.match(SRC, /No active goal — \/goal audit needs a goal to verify\./);
-  assert.match(SRC, /Manual audit requested by the user via \/goal audit \(no agent completion claim\)/);
+  assert.match(SRC, /if \(route\.name === "verify"\) \{/);
+  assert.match(SRC, /No active goal — \/goal verify needs a goal to verify\./);
+  assert.match(SRC, /Manual audit requested by the user via \/goal verify \(no agent completion claim\)/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "manual_audit_requested", \{ goalId: state\.goal\.id \}\);/);
   assert.match(SRC, /void retryStoredCompletionAudit\(ctx, "manual"\);/);
   // Engine parametrized: origin flows into ledger + notifies + archive reason.
   assert.match(SRC, /origin: "quota-retry" \| "manual" = "quota-retry"/);
   assert.match(SRC, /via: origin === "manual" \? "manual-audit" : "quota-retry-direct-audit"/);
-  assert.match(SRC, /approved \$\{origin === "manual" \? "on \/goal audit" : "on the quota retry"\}/.source.replace(" $", "\\$") ? /approved/ : /never/);
+  assert.ok(SRC.includes('origin === "manual" ? "on /goal verify" : "on the quota retry"'));
+});
+
+test("v0.29.8: /goal audit [focus] — the one-shot project audit; /glla status — the unified view", () => {
+  // The canned target: triage law (FIX is not a decision; DECIDE is
+  // presented, untouched), shared findings file, explicit Done-when.
+  const FOREVER = fs.readFileSync("extensions/goal-loop-forever.ts", "utf-8");
+  assert.ok(FOREVER.includes("export function projectAuditTarget(focus?: string): string {"));
+  assert.ok(FOREVER.includes('whether to fix these is NOT a decision'));
+  assert.ok(FOREVER.includes('"- [?] DECIDE:'));
+  assert.ok(FOREVER.includes("never silently turn a DECIDE into a fix"));
+  assert.ok(FOREVER.includes("Done when: the audit pass is complete, every new FIX finding has a fix commit"));
+  // Dispatch: /goal audit goes through cmdSet with skipDraft (explicit
+  // command → starts immediately), focus flows through.
+  assert.ok(SRC.includes("return cmdSet(projectAuditTarget(route.rest || undefined), ctx, true);"));
+  // /glla status aggregates the ONE state + pointers.
+  assert.ok(SRC.includes("function cmdGllaStatus(ctx: ExtensionContext): void {"));
+  assert.ok(SRC.includes("decision pending (${g.pauseOptions.length} options) — /goal decide"));
+  assert.ok(SRC.includes("deep: /goal status · /list · /loop status · /glla stats · /glla audits · /glla log"));
+  assert.ok(SRC.includes('if (/^status\\b/.test(trimmed)) {'));
 });
