@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.29.11] — 2026-07-30
+
+### Fixed — stale-handle sessions: probe before refiring, hold loops for resume, and recovery text that names the real verbs
+
+Field evidence (polis + endless-td 2026-07-30): compaction replaced the
+session (pi 0.82.x invalidates the extension handle), and the heartbeat
+burned stall refires into the dead process (stall 3/5, stall 1/5) before
+a send happened to throw and trip the terminal warning. The warning then
+said "loops need /loop start" — discarding iteration/best/history — and
+the footer promised "auto-resumes on pi restart", which is only true
+with autoresume=on (hold-everything is the default).
+
+- **Heartbeat probes staleness first**: the first tick after session
+  replacement calls the side-effect-free staleness probe and goes
+  terminal immediately — no more refires into the void racing the
+  terminal detector.
+- **Stale/stalled/storm-stopped loops HOLD on next load**: stopReasons
+  from the stale terminal, the stall escalation, and the send-rearm
+  storm now become HELD_ON_RESTORE on session load — `/loop resume`
+  continues from saved state (iteration/best/history intact) instead of
+  restarting from scratch. `loop_held_for_resume` ledgered.
+- **Recovery text names the real verbs**: guidance, entry-probe warning,
+  footer, stall and storm notifications all now say "restart pi, then
+  /glla resume (autoresume=on resumes for you)" / "→ /loop resume (the
+  loop holds on restore)" instead of promising auto-resume or demanding
+  /loop start.
+
+620 tests.
+
 ## [0.29.10] — 2026-07-30
 
 ### Fixed — the audit loop's degenerate baseline stalled every iteration and the prompt cried REGRESSED on real progress
