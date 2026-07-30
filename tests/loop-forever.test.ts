@@ -114,7 +114,7 @@ test("v0.29.10 — applyMeasurement: null best (deferred audit baseline) seeds o
 });
 
 test("v0.29.10 — audit loop source pins: deferred baseline, true-regression note, live-loop reseed migration", () => {
-  const src = fs.readFileSync(new URL("../extensions/loops/goal.ts", import.meta.url), "utf-8");
+  const src = readFileSync(new URL("../extensions/loops/goal.ts", import.meta.url), "utf-8");
   // The /loop audit route defers the baseline and tags the loop kind.
   assert.ok(src.includes("deferBaseline: true,"), "audit route defers the baseline");
   assert.ok(src.includes('kind: "audit",'), "audit route tags the loop kind");
