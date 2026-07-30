@@ -50,9 +50,26 @@ test("terminal path: ledger event, single-fire, goal ACTIVE+marker / loop stop w
   // auto-resumes active goals).
   assert.match(SRC, /updateGoal\(\{ interruptedAt: nowIso\(\), interruptedReason: `extension api stale \(\$\{where\}\)` \}, ctx\)/);
   assert.ok(!SRC.includes('pauseReason: "extension api stale (pi session replacement)"'), "old pause shape gone");
-  assert.match(SRC, /Restart pi \(or reload extensions\) — an active goal auto-resumes on the fresh session; loops need \/loop start\./);
+  assert.match(SRC, /Restart pi \(or reload extensions\) — the goal\/loop holds on the fresh session: \/glla resume continues it \(autoresume=on resumes for you\)\./);
   // guidance names the pi-side cause:
   assert.match(SRC, /session replacement — compaction triggers it in pi 0\.82\.x/);
+});
+
+test("v0.29.11 — heartbeat PROBES staleness before burning stall refires", () => {
+  // Field (polis stall 3/5, endless-td stall 1/5, 2026-07-30): the
+  // heartbeat refired into a session-replaced handle until a send happened
+  // to throw. Now the first tick after replacement goes terminal at once.
+  assert.match(SRC, /if \(probeExtensionApiStale\(\)\) \{ goStaleTerminal\(ctx, "heartbeat probe"\); return; \}/);
+});
+
+test("v0.29.11 — stale/stall-stopped loops HOLD on next load (resume, not restart-from-scratch)", () => {
+  // "loops need /loop start" discarded iteration/best/history; the loop
+  // now holds on restore and /loop resume continues from the saved state.
+  assert.match(SRC, /stopReason\?\.startsWith\("extension api stale"\) \|\| state\.loop\.stopReason\?\.startsWith\("stalled:"\)/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "loop_held_for_resume"/);
+  assert.match(SRC, /Restart pi, then \/loop resume \(the loop holds on restore\)\./);
+  assert.ok(!SRC.includes("loops need /loop start"), "stale guidance no longer discards loop state");
+  assert.ok(!SRC.includes("then /loop start again"), "stall escalation no longer discards loop state");
 });
 
 test("send paths short-circuit once stale (no retry-into-the-void)", () => {

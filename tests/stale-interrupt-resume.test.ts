@@ -43,7 +43,7 @@ test("S3 probe: side-effect-free getSessionName() probe caches the positive", ()
 
 test("S3 warn helper: honest 'state is safe' messaging + ledger", () => {
   assert.match(SRC, /function warnIfStaleAtEntry\(ctx: ExtensionContext, what: string\): boolean/);
-  assert.match(SRC, /State is safe in \.pi-glla\/ — restart pi and the active goal auto-resumes\./);
+  assert.match(SRC, /State is safe in \.pi-glla\/ — restart pi, then \/glla resume \(autoresume=on resumes for you\)\./);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "extension_api_stale", \{ where: `entry probe \(\$\{what\}\)` \}\)/);
 });
 
@@ -80,7 +80,7 @@ test("S2 (v0.28.21): the 0.28.3 interrupt exemption is SUPERSEDED — only autor
 
 test("S1/S2: widget surfaces the interrupt on ACTIVE goals", () => {
   assert.match(DISPLAY, /if \(g\.interruptedAt\)/);
-  assert.match(DISPLAY, /⚠ interrupted — stale handle · auto-resumes on pi restart/);
+  assert.match(DISPLAY, /⚠ interrupted — stale handle · restart pi → \/glla resume/);
 });
 
 test("E6: drafting-seed send failure is loud and stale-aware (was silent)", () => {
@@ -99,7 +99,8 @@ test("T1: stale Confirm is NOT a rejection — both single and batch paths", () 
 
 test("v0.28.27: stale handle silences ALL stall machinery — refiring into a dead process misleads, and the stall escalation would PAUSE an interrupted goal (killing restart auto-resume)", () => {
   // junk-runner field observation: compaction replaced the session mid-goal;
-  // the footer promised "auto-resumes on pi restart" while the heartbeat
+  // the footer promised "auto-resumes on pi restart" (a lie under
+  // hold-everything; v0.29.11 names /glla resume instead) while the heartbeat
   // kept printing "re-firing continuation (stall 4/5)" into a process where
   // sends can never land — marching toward a stall-escalation pause that
   // would silently cancel that promise (paused restores load-held).

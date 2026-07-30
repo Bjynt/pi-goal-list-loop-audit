@@ -219,7 +219,7 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   if (extensionApiStale) return; // already terminal — don't re-spam
   extensionApiStale = true;
   appendLedger(ctx.cwd, "extension_api_stale", { where, kind: isLoopActive() ? "loop" : "goal" });
-  const guidance = "pi invalidated this session's extension handle (session replacement — compaction triggers it in pi 0.82.x). Sends can never land in this process. Restart pi (or reload extensions) — an active goal auto-resumes on the fresh session; loops need /loop start.";
+  const guidance = "pi invalidated this session's extension handle (session replacement — compaction triggers it in pi 0.82.x). Sends can never land in this process. Restart pi (or reload extensions) — the goal/loop holds on the fresh session: /glla resume continues it (autoresume=on resumes for you).";
   if (isLoopActive()) {
     clearLoopTimer();
     state.loop = { ...state.loop!, active: false, stopReason: `extension api stale: ${guidance}` };
@@ -260,7 +260,7 @@ function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
   if (!probeExtensionApiStale()) return false;
   appendLedger(ctx.cwd, "extension_api_stale", { where: `entry probe (${what})` });
   ctx.ui.notify(
-    `glla: this session's extension handle is stale (pi session replacement) — ${what} can't send continuations in this process. State is safe in .pi-glla/ — restart pi and the active goal auto-resumes.`,
+    `glla: this session's extension handle is stale (pi session replacement) — ${what} can't send continuations in this process. State is safe in .pi-glla/ — restart pi, then /glla resume (autoresume=on resumes for you).`,
     "warning",
   );
   return true;
@@ -583,9 +583,9 @@ function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
   appendLedger(ctx.cwd, "stall_escalated", { threshold, kind: isLoopActive() ? "loop" : "goal" });
   if (isLoopActive()) {
     clearLoopTimer();
-    state.loop = { ...state.loop!, active: false, stopReason: `stalled: ${threshold} continuation refires landed no turn — the session is not continuing (wedged message queue or stale API). Restart pi, then /loop start again.` };
+    state.loop = { ...state.loop!, active: false, stopReason: `stalled: ${threshold} continuation refires landed no turn — the session is not continuing (wedged message queue or stale API). Restart pi, then /loop resume (the loop holds on restore).` };
     persistState(ctx);
-    ctx.ui.notify(`Loop stopped: ${threshold} refires produced no turn — the continuation is not landing. Restart pi and /loop start.`, "warning");
+    ctx.ui.notify(`Loop stopped: ${threshold} refires produced no turn — the continuation is not landing. Restart pi, then /loop resume (the loop holds on restore).`, "warning");
     notifyExternal(ctx, "Loop stopped: stalled (continuation not landing).");
     return true;
   }
@@ -619,12 +619,16 @@ function heartbeatTick(): void {
   // machinery below stays quiet for 3 minutes while the replaced session
   // settles (latch watchdog, wedge alert, refire counting all resume after).
   if (Date.now() < compactionGraceUntil) return;
-  // v0.28.27: a stale (session-replaced) handle can never land a send —
-  // the terminal warning already fired once. ALL stall machinery stays
-  // quiet from here on: refiring into a dead process is misleading, and
-  // worse, the stall escalation would PAUSE the goal — silently cancelling
-  // the interruptedAt → auto-resume-on-restart promise the footer shows.
-  if (extensionApiStale) return;
+  // v0.29.11: PROBE the handle before the stall machinery runs — a
+  // session-replaced handle can never land a refire, so detect it on the
+  // first tick after replacement and go terminal immediately, instead of
+  // burning refires into the void until a send happens to throw (field:
+  // polis stall 3/5, endless-td stall 1/5 before the warning fired).
+  // v0.28.27: once terminal, ALL stall machinery stays quiet from here
+  // on: refiring into a dead process is misleading, and worse, the stall
+  // escalation would PAUSE the goal — silently cancelling the
+  // interruptedAt → hold-on-restart promise the footer shows.
+  if (probeExtensionApiStale()) { goStaleTerminal(ctx, "heartbeat probe"); return; }
   // v0.29.1: stranded-audit recovery. A goal left in "auditing" with NO
   // in-flight audit means the auditor's result never landed (wedged queue
   // ate the tool result; compaction/restart mid-audit). Field-observed in
@@ -5327,6 +5331,16 @@ export default function (pi: ExtensionAPI): void {
       (isLoopActive() || (state.goal && state.goal.status === "active") || listQueue().length > 0)
     ) {
       ctx.ui.notify("Auto-resume fired (event: session start). Continue working.", "info");
+    }
+    // v0.29.11: loops stopped by the stale-handle terminal or the stall
+    // escalation told the user "restart pi, then /loop start" — but a
+    // fresh start discards iteration/best/history. Hold them on load like
+    // any restore-held loop: /loop resume continues from the saved state.
+    if (state.loop && !state.loop.active &&
+        (state.loop.stopReason?.startsWith("extension api stale") || state.loop.stopReason?.startsWith("stalled:"))) {
+      appendLedger(ctx.cwd, "loop_held_for_resume", { was: (state.loop.stopReason ?? "").slice(0, 40) });
+      state.loop = { ...state.loop, stopReason: HELD_ON_RESTORE };
+      persistState(ctx);
     }
     // v0.29.10: reseed live/held audit loops stuck on the degenerate
     // pre-discovery baseline-0 — best can never go below 0, so every
