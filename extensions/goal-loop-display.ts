@@ -388,7 +388,12 @@ function loopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: numb
     `${paint(theme, "accent", "●")} ${truncate(l.target, budgetFor(width, 3, 64))}`,
     `├─ loop ${arrow} iter ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"} · ${fmtElapsed(now - Date.parse(l.startedAt))}`,
     `├─ best ${best} · last ${l.lastValue ?? "n/a"} · ${stall}`,
-    `└─ ${paint(theme, "dim", truncate(l.measureCmd, budgetFor(width, 3, 56)))}`,
+    // v0.29.15: the audit loop's measure is orchestrator-owned shell — the
+    // raw grep reads like leaked internals ("that weird line"). Name what
+    // it measures instead; user-authored measures still show raw.
+    `└─ ${paint(theme, "dim", l.kind === "audit"
+      ? truncate("metric: closed findings — count of '- [x]' in .pi-glla/audit-loop/findings.md", budgetFor(width, 3, 56))
+      : truncate(l.measureCmd, budgetFor(width, 3, 56)))}`,
   ];
   if (l.branchName) lines.push(`⎇ ${paint(theme, "muted", truncate(l.branchName, budgetFor(width, 3, 50)))}`);
   return lines;

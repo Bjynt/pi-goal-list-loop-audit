@@ -192,6 +192,31 @@ test("active loop shows iteration + best + stall", () => {
   assert.match(s, /stall 2\/5/);
 });
 
+test("v0.29.15 — audit-loop widget names the metric instead of showing the raw grep (\"that weird line\")", () => {
+  // The audit measure is orchestrator-owned shell (c=$(grep -cE ...) —
+  // unreadable as widget furniture. kind:"audit" gets a friendly label;
+  // user-authored measures keep showing raw.
+  const auditLoop: LoopState = {
+    target: "audit the project",
+    measureCmd: "c=$(grep -cE '^- \\[[xX]\\]' .pi-glla/audit-loop/findings.md 2>/dev/null); echo ${c:-0}",
+    direction: "max",
+    iteration: 1,
+    maxIterations: 0,
+    plateauWindow: 5,
+    stallCount: 0,
+    bestValue: null,
+    lastValue: 4,
+    active: true,
+    kind: "audit",
+    history: [],
+    startedAt: "2026-07-30T11:00:00Z",
+  };
+  const lines = buildWidgetLines({ goal: null, list: [], loop: auditLoop }, null, NOW)!;
+  const joined = lines.join("\n");
+  assert.match(joined, /metric: closed findings — count of '- \[x\]' in \.pi-glla\/audit-loop\/findings\.md/);
+  assert.ok(!joined.includes("grep -cE"), "raw shell hidden for audit loops");
+});
+
 // ---- buildWidgetLines ----
 
 test("widget: nothing supervised → undefined", () => {
