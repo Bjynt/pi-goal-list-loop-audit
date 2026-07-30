@@ -1003,6 +1003,43 @@ function updateGoal(patch: Partial<Goal>, ctx: ExtensionContext): void {
   persistState(ctx);
 }
 
+// v0.29.6: stacked-state auto-arbitration (user directive: "auto archive /
+// wipe extra goals/loops/lists … make sure that we only have one"). Dirty
+// pre-guard states can persist a live loop AND a live goal; the 0.28.21
+// decision picker asked the user to arbitrate artifacts they didn't
+// remember at every pi start. Now deterministic: MOST RECENT ACTIVITY
+// keeps the slot; the loser is ARCHIVED (recoverable), never wiped. The
+// queued list is a backlog, not a live artifact — untouched.
+function autoArbitrateStackedState(ctx: ExtensionContext): void {
+  const loop = state.loop?.active ? state.loop : undefined;
+  const goal = state.goal && state.goal.status !== "complete" && state.goal.status !== "aborted" ? state.goal : undefined;
+  if (!loop || !goal) return; // at most one live artifact — the invariant holds
+  const lastMeasure = loop.history.length > 0 ? loop.history[loop.history.length - 1] : undefined;
+  const loopMs = Date.parse(lastMeasure?.at ?? loop.startedAt ?? "") || 0;
+  const goalMs = Date.parse(goal.updatedAt ?? goal.createdAt ?? "") || 0;
+  const keepGoal = goalMs > loopMs; // tie → the loop keeps the slot (0.28.21 default)
+  appendLedger(ctx.cwd, "stacked_state_auto_arbitrated", {
+    kept: keepGoal ? "goal" : "loop",
+    goalId: goal.id,
+    goalMs,
+    loopMs,
+    loopIteration: loop.iteration,
+    loopTarget: loop.target.slice(0, 120),
+  });
+  if (keepGoal) {
+    // Same shape as /loop stop: the loop record stays in state (inactive)
+    // with an honest reason — /loop status still shows it.
+    state = { ...state, loop: { ...loop, active: false, stopReason: "auto-arbitrated on session load: the goal was more recent (one active thing)" } };
+    persistState(ctx);
+  } else {
+    archiveCurrentGoal(ctx, "aborted", "auto-arbitrated on session load: the loop was more recent (one active thing)");
+  }
+  ctx.ui.notify(
+    `Stacked state auto-arbitrated (one active thing): kept the ${keepGoal ? "goal" : "loop"} — more recent activity — and archived the ${keepGoal ? `loop (iter ${loop.iteration}, best ${loop.bestValue ?? "n/a"})` : `goal (${goal.id})`}. Recoverable: /loop status · .pi-glla/archive/ · /glla wipe for a clean slate.`,
+    "info",
+  );
+}
+
 function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: string): void {
   if (!state.goal) return;
   const goal = state.goal;
@@ -5192,6 +5229,9 @@ export default function (pi: ExtensionAPI): void {
     } catch (err) {
       ctx.ui.notify(`glla subagent override sync failed: ${err instanceof Error ? err.message : String(err)}`, "warning");
     }
+    // v0.29.6: stacked-state auto-arbitration FIRST — one live artifact
+    // survives before the restore gate decides hold-vs-resume for it.
+    autoArbitrateStackedState(ctx);
     // Restore gate (v0.26.9 tri-state): a human LOADING a session
     // ("startup"/"new"/"resume", or no reason) HOLDS — the popup shows what
     // is waiting and nothing starts until they resume explicitly. In-session
@@ -5276,31 +5316,10 @@ export default function (pi: ExtensionAPI): void {
         ctx.ui.notify(`List has ${listQueue().length} item(s) waiting — /list next to activate the head.`, "info");
       }
     }
-    // v0.28.21: enforce one-active-thing at the restore boundary for DIRTY
-    // legacy states — pre-guard versions could persist an active goal AND
-    // an active/held loop; the chain above handles the loop first, and the
-    // goal would otherwise stay active and fire on agent_end. Pause it:
-    // at most one thing owns the active slot, and nothing auto-starts.
-    if (state.loop && state.goal && state.goal.status === "active") {
-      updateGoal({
-        status: "paused",
-        pauseKind: "decision",
-        // v0.29.3: third option — the wipe escape. Old projects stack a
-        // goal AND a loop AND a list from pre-guard versions; arbitrating
-        // between two artifacts the user doesn't even remember is the odd
-        // part — "i feel like wipe does [make sense]". Wipe keeps its own
-        // Confirm (destructive), so picking it is safe to offer.
-        pauseOptions: ["Stop the loop, then resume the goal (/loop stop)", "Cancel the goal (/goal cancel) — the loop keeps running", "Wipe everything — clean slate for stale leftovers (/glla wipe)"],
-        pauseRecommended: 1,
-        pauseReason: "held on session load — the loop owns the active slot (one active thing at a time)",
-        pauseSuggestedAction: "/loop to work the loop, or /loop stop then /goal resume to work the goal",
-      }, ctx);
-      ctx.ui.notify(
-        `Goal held — a loop also exists; one active thing at a time. /loop to resume the loop, or /loop stop then /goal resume.`,
-        "info",
-      );
-      maybeDecisionPopup(ctx);
-    }
+    // v0.29.6: the 0.28.21 loop-vs-goal decision picker is SUPERSEDED by
+    // auto-arbitration above — stacked states resolve deterministically
+    // (most recent activity keeps the slot; the loser is archived) before
+    // the restore gate, so a live loop and a live goal cannot coexist here.
     // Always paint on session load (v0.22.1): the branches above only reach
     // refreshUI via persistState, so a goal that was ALREADY paused (or any
     // state that doesn't mutate on load) rendered nothing — "can't tell if
