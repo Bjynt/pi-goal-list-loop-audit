@@ -114,6 +114,7 @@ import {
 } from "../goal-settings.js";
 import {
   DEFAULT_REVIEWER_CONFIG,
+  normalizeObjective,
   resolveReviewerConfig,
   reviewerMenuOptions,
   runReviewer,
@@ -546,6 +547,21 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
     notifyExternal(ctx, "Loop stopped: send-retry storm.");
     return;
   }
+  if (
+    state.goal &&
+    (state.goal.status === "auditing" || completionAuditInFlight || state.goal.pendingCompletion)
+  ) {
+    // v0.29.1: NEVER storm-pause the completion lifecycle. An isolated
+    // auditor run takes minutes and the main session is EXPECTED to be
+    // silent while it works — 15m of wedged re-arms + that silence is the
+    // exact trigger shape, so completing a goal under a wedged queue used
+    // to guarantee a mid-audit pause (field-observed in pully + hellhunter
+    // + junk-runner: "complete ending in a pause retry storm"). The audit
+    // lifecycle owns its own pauses (quota etc.).
+    appendLedger(ctx.cwd, "send_rearm_escalated_suppressed", { reason: "audit-lifecycle" });
+    ctx.ui.notify("Send-retry storm during the completion audit — NOT pausing; the auditor's silence is expected. If pi is wedged, restart; the stored claim survives.", "info");
+    return;
+  }
   if (state.goal && state.goal.status === "active") {
     updateGoal({
       status: "paused",
@@ -606,6 +622,30 @@ function heartbeatTick(): void {
   // worse, the stall escalation would PAUSE the goal — silently cancelling
   // the interruptedAt → auto-resume-on-restart promise the footer shows.
   if (extensionApiStale) return;
+  // v0.29.1: stranded-audit recovery. A goal left in "auditing" with NO
+  // in-flight audit means the auditor's result never landed (wedged queue
+  // ate the tool result; compaction/restart mid-audit). Field-observed in
+  // pully: 12h+ stuck "auditing" while the model had already confabulated
+  // the closure narrative. The audit silence is expected ONLY while
+  // completionAuditInFlight — its absence here means the run is orphaned.
+  // Recover: a stored claim re-runs the auditor directly; otherwise resume
+  // active so the agent re-calls complete_goal.
+  if (
+    state.goal?.status === "auditing" &&
+    !completionAuditInFlight &&
+    Date.now() - lastActivityAt >= 90_000
+  ) {
+    appendLedger(ctx.cwd, "stranded_audit_recovered", { goalId: state.goal.id, via: state.goal.pendingCompletion ? "stored-claim" : "resume-active" });
+    if (state.goal.pendingCompletion) {
+      ctx.ui.notify("Recovering a completion audit whose result never landed — re-running the auditor with the stored claim.", "info");
+      void retryStoredCompletionAudit(ctx, "quota-retry");
+    } else {
+      updateGoal({ status: "active" }, ctx);
+      ctx.ui.notify("A completion audit was interrupted (its result never landed). Resuming — re-call complete_goal when the deliverable still stands.", "warning");
+      scheduleContinuation(ctx, true);
+    }
+    return;
+  }
   // v0.26.5: pending-latch watchdog — a queued continuation whose turn
   // trigger was dropped (field-observed post-compaction: continuation
   // ACCEPTED at compact+0s, then 22 minutes of silence). The stuck latch
@@ -970,7 +1010,7 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
     try { fs.unlinkSync(goalMdPath(ctx.cwd, goal.id)); } catch {}
   }
   state = { ...state, goal: { ...goal, status, archivedPath: path.relative(ctx.cwd, target) || target, stopReason } };
-  appendLedger(ctx.cwd, "goal_archived", { goalId: goal.id, status, stopReason });
+  appendLedger(ctx.cwd, "goal_archived", { goalId: goal.id, status, stopReason, objective: goal.objective.slice(0, 300) });
   persistState(ctx);
   // Loop 2: a list-sourced goal COMPLETED → auto-activate the next item.
   // Aborts are user actions (/list next, /goal cancel, list_activate) which
@@ -1672,8 +1712,57 @@ async function cmdTweak(args: string, ctx: ExtensionContext): Promise<void> {
  * contract extraction) → appended to the queue → persisted → first item
  * activated when nothing is running. Returns the count enqueued.
  */
+// v0.29.1: zombie-twin guard. A draft/enqueue whose objective matches a
+// goal COMPLETED in the last 24h re-creates just-finished work — field-
+// observed in junk-runner: the INFRA-NEW-18 close was re-drafted 3 minutes
+// after the auditor approved it and autoaccept waved the twin straight in,
+// where it stormed for 9h against a dead provider. Normalized compare (goal
+// ids stripped), 24h lookback, loud skip — never silent.
+const DUPLICATE_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+const LEDGER_TAIL_BYTES = 256 * 1024;
+function recentlyCompletedObjectives(cwd: string): Set<string> {
+  const done = new Set<string>();
+  try {
+    const p = ledgerPath(cwd);
+    const size = fs.statSync(p).size;
+    const buf = Buffer.alloc(Math.min(size, LEDGER_TAIL_BYTES));
+    const fd = fs.openSync(p, "r");
+    fs.readSync(fd, buf, 0, buf.length, Math.max(0, size - buf.length));
+    fs.closeSync(fd);
+    const cutoff = Date.now() - DUPLICATE_LOOKBACK_MS;
+    for (const line of buf.toString("utf-8").split("\n")) {
+      if (!line.includes('"goal_archived"') || !line.includes('"complete"')) continue;
+      try {
+        const e = JSON.parse(line);
+        if (e?.type !== "goal_archived" || e.value?.status !== "complete") continue;
+        if (!(Date.parse(e.ts ?? "") >= cutoff)) continue;
+        // v0.29.1+ entries carry the objective inline; older entries fall
+        // back to the archived goal file (## Objective → "> …" line).
+        let objective = typeof e.value?.objective === "string" ? e.value.objective : "";
+        if (!objective && e.value?.goalId) {
+          try {
+            const md = fs.readFileSync(archivedGoalPath(cwd, e.value.goalId), "utf-8");
+            objective = md.split("## Objective")[1]?.split("\n").find((l: string) => l.startsWith("> "))?.slice(2) ?? "";
+          } catch { /* archived file gone — skip */ }
+        }
+        if (objective) done.add(normalizeObjective(objective));
+      } catch { /* malformed line — skip */ }
+    }
+  } catch { /* no ledger yet */ }
+  return done;
+}
+
 function enqueueItems(ctx: ExtensionContext, texts: string[], source: string, opts?: { autoActivate?: boolean }): number {
-  const items = texts.map((text) => {
+  const recentlyDone = recentlyCompletedObjectives(ctx.cwd);
+  const fresh = texts.filter((t) => !recentlyDone.has(normalizeObjective(extractVerificationContract(t).objective)));
+  const skipped = texts.length - fresh.length;
+  if (skipped > 0) {
+    const first = texts.find((t) => recentlyDone.has(normalizeObjective(extractVerificationContract(t).objective))) ?? "";
+    appendLedger(ctx.cwd, "list_duplicate_skipped", { source, count: skipped, objective: first.slice(0, 200) });
+    ctx.ui.notify(`Skipped ${skipped} item(s) duplicating work COMPLETED in the last 24h (zombie-twin guard): ${first.slice(0, 90)}`, "warning");
+  }
+  if (fresh.length === 0) return 0;
+  const items = fresh.map((text) => {
     const extracted = extractVerificationContract(text);
     return { id: newGoalId(), objective: extracted.objective, verificationContract: extracted.verificationContract || undefined, addedAt: nowIso() };
   });
@@ -3255,6 +3344,20 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       if (!confirmed) {
         return {
           content: [{ type: "text", text: "Draft rejected by the user. Ask what to change, refine, and propose again. Do not repeat the identical draft." }],
+          details: {},
+        };
+      }
+      // v0.29.1: zombie-twin guard — a draft (auto-accepted OR confirmed)
+      // whose objective duplicates a goal COMPLETED in the last 24h is
+      // re-creating finished work. The Confirm dialog never said it was a
+      // duplicate, so the gate belongs here. Junk-runner field case: the
+      // just-approved INFRA-NEW-18 close re-drafted itself 3 minutes later.
+      if (recentlyCompletedObjectives(liveCtx.cwd).has(normalizeObjective(p.objective.trim()))) {
+        draftingTarget = null;
+        appendLedger(liveCtx.cwd, "draft_duplicate_skipped", { kind: isListDraft ? "list" : "goal", objective: p.objective.trim().slice(0, 200) });
+        liveCtx.ui.notify(`Draft REJECTED (zombie-twin guard): this objective matches a goal completed in the last 24h. Tell the user the work is already done.`, "warning");
+        return {
+          content: [{ type: "text", text: "This draft duplicates a goal that was COMPLETED within the last 24 hours (normalized objective match). Do NOT re-propose the same work. Report to the user that the objective is already done (see /glla audits or the archive) and ask what genuinely new work to take on instead." }],
           details: {},
         };
       }
@@ -5344,6 +5447,22 @@ export default function (pi: ExtensionAPI): void {
         // 60-second provider hiccup waiting on a manual /goal resume.
         const detail = text.trim() ? ` (last: ${text.trim().replace(/\s+/g, " ").slice(0, 160)})` : "";
         const reason = `5 consecutive errors${detail}`;
+        // v0.29.1: brake-cycle CAP. The v0.28.25 ladder slows the thrash
+        // (1m→16m) but never STOPS it — junk-runner/hellhunter/pully each
+        // burned 4+ pause↔retry cycles against provider windows that last
+        // hours. After 6 consecutive brakes: park, no more auto-retries.
+        if (errorBrakeStreak >= 6) {
+          updateGoal({
+            status: "paused",
+            pauseKind: "error",
+            pauseReason: `${reason} — 6 error-brakes in a row; the provider has been erroring for an extended window`,
+            pauseSuggestedAction: "Check the provider/account (quota, outage), then /goal resume. No more automatic retries.",
+          }, ctx);
+          ctx.ui.notify(`${goalNoun()} parked: ${reason} — 6 brakes in a row, no more auto-retries. Check the provider, then /goal resume.`, "warning");
+          notifyExternal(ctx, `${goalNoun()} parked: provider erroring across 6 error-brake cycles.`);
+          appendLedger(ctx.cwd, "error_brake_capped", { streak: errorBrakeStreak, reason });
+          return;
+        }
         // v0.28.25: the cooldown escalates per CONSECUTIVE brake — a fleet-wide
         // 403 window is not cleared by re-braking every 60 seconds.
         const cooldownMs = 60_000 * 2 ** Math.min(errorBrakeStreak, 4);
