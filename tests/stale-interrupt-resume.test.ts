@@ -106,7 +106,7 @@ test("v0.28.27: stale handle silences ALL stall machinery — refiring into a de
   // would silently cancel that promise (paused restores load-held).
   const tick = SRC.indexOf("function heartbeatTick(): void {");
   const grace = SRC.indexOf("if (Date.now() < compactionGraceUntil) return;");
-  const stale = SRC.indexOf("if (extensionApiStale) return;", grace); // line 213 has an earlier, unrelated terminal bail
+  const stale = SRC.indexOf("if (probeExtensionApiStale()) { goStaleTerminal(ctx, \"heartbeat probe\"); return; }", grace); // v0.29.11: the probe IS the bail (terminal when stale, quiet once terminal)
   const watchdog = SRC.indexOf("pending-latch watchdog");
   assert.ok(tick > 0 && grace > tick && stale > grace, "stale bail inside heartbeatTick, after the grace gate");
   assert.ok(stale < SRC.indexOf("const fire = shouldHeartbeatRefire({"), "stale bail precedes the refire path");

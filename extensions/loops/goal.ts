@@ -544,9 +544,9 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
   appendLedger(ctx.cwd, "send_rearm_escalated", { kind, afterMinutes: mins, silentMinutes: silent });
   if (kind === "loop" && isLoopActive()) {
     clearLoopTimer();
-    state.loop = { ...state.loop!, active: false, stopReason: `send-retry storm: ${mins}m of re-arms with no session activity for ${silent}m — the session is wedged. Restart pi, then /loop start again.` };
+    state.loop = { ...state.loop!, active: false, stopReason: `send-retry storm: ${mins}m of re-arms with no session activity for ${silent}m — the session is wedged. Restart pi, then /loop resume (the loop holds on restore).` };
     persistState(ctx);
-    ctx.ui.notify(`Loop stopped: send-retry storm (${mins}m, session silent ${silent}m). Restart pi and /loop start.`, "warning");
+    ctx.ui.notify(`Loop stopped: send-retry storm (${mins}m, session silent ${silent}m). Restart pi, then /loop resume (the loop holds on restore).`, "warning");
     notifyExternal(ctx, "Loop stopped: send-retry storm.");
     return;
   }
@@ -5337,7 +5337,7 @@ export default function (pi: ExtensionAPI): void {
     // fresh start discards iteration/best/history. Hold them on load like
     // any restore-held loop: /loop resume continues from the saved state.
     if (state.loop && !state.loop.active &&
-        (state.loop.stopReason?.startsWith("extension api stale") || state.loop.stopReason?.startsWith("stalled:"))) {
+        (state.loop.stopReason?.startsWith("extension api stale") || state.loop.stopReason?.startsWith("stalled:") || state.loop.stopReason?.startsWith("send-retry storm:"))) {
       appendLedger(ctx.cwd, "loop_held_for_resume", { was: (state.loop.stopReason ?? "").slice(0, 40) });
       state.loop = { ...state.loop, stopReason: HELD_ON_RESTORE };
       persistState(ctx);

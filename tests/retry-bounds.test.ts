@@ -78,7 +78,7 @@ test("E3: escalation is loud-terminal (goal pause / loop stop with restart guida
   assert.match(SRC, /function escalateSendRearmStorm\(ctx: ExtensionContext, kind: "continuation" \| "loop"\): void/);
   assert.match(SRC, /send-retry storm: \$\{mins\}m of re-arms with no session activity for \$\{silent\}m — the session never went idle for the continuation/);
   assert.match(SRC, /Restart pi, then \/goal resume\./);
-  assert.match(SRC, /send-retry storm: \$\{mins\}m of re-arms with no session activity for \$\{silent\}m — the session is wedged\. Restart pi, then \/loop start again\./);
+  assert.match(SRC, /send-retry storm: \$\{mins\}m of re-arms with no session activity for \$\{silent\}m — the session is wedged\. Restart pi, then \/loop resume \(the loop holds on restore\)\./);
 });
 
 test("E8: the error brake carries the REAL error text, not stopReason", () => {
