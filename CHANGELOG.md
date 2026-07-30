@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.29.7] — 2026-07-30
+
+### Changed — docs cleanup (README, DESIGN, INSTALL, PLAN)
+
+Docs had drifted across the v0.28–v0.29 hardening arc; brought back in
+line with shipped behavior:
+
+- **README**: `/glla wipe` in the command map; `autoResume` documented as
+  **global-only** (v0.29.5) with the resolution carve-out; auto-accepted
+  drafts **start immediately** (v0.29.4 decoupling — "pair with
+  autoresume" advice replaced by the attended-rig sweet spot); new
+  "One active thing (auto-arbitrated)" section (v0.29.6); self-watchdog
+  section covers stranded-audit recovery, storm rearm/brake, and the
+  user-abort stand-down; garbled `autoaccept` config line fixed; test
+  count 545 → 613.
+- **docs/DESIGN.md**: new "Addendum v0.5.0–v0.29.6 (current state)"
+  summarizing the shape-changing decisions of the long-session era
+  (restore gate, draft/restore decoupling, abort stand-down, auto-
+  arbitration, completion-lifecycle pause ownership, `/loop audit` as the
+  project reviewer, git-discipline prompt-law).
+- **INSTALL.md**: aggressive-mode table notes autoResume is global-only.
+- **PLAN.md**: header points at CHANGELOG + the DESIGN addendum as the
+  canonical current record.
+
+No behavior changes.
+
 ## [0.29.6] — 2026-07-30
 
 ### Changed — stacked states AUTO-ARBITRATE at session load (the picker is gone)
