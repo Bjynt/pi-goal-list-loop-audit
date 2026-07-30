@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.29.17] — 2026-07-30
+
+### Added — /model-style fuzzy picker for model settings + loud session-model fallback
+
+Field: the auditor ran on `openrouter/anthropic/claude-sonnet-4.5` (set
+globally by an AI session weeks ago) until the OpenRouter key hit its
+TOTAL limit — every audit fleet-wide 403'd into quota parks. Fixing it
+meant hand-typing provider/model into a bare `ctx.ui.input`, and the
+user asked for the /model interaction shape instead.
+
+- New `ModelPickerComponent` (extensions/model-picker.ts): search line +
+  fuzzy-filtered list (pi-tui `fuzzyFilter`), hosted via `ctx.ui.custom`
+  like the v0.28.0 settings table. Items: "session model — clear the
+  override" first, every configured-auth model sorted by provider/id,
+  "type manually…" escape hatch last. Models come from
+  `ctx.modelRegistry.getAvailable()` filtered by `hasConfiguredAuth` —
+  a pick from this list can never be a dead provider.
+- Wired into the settings menu for **Auditor model** and the three
+  **subagent model pins** (Explore / Plan / general-purpose). Headless
+  runtimes (no `ctx.ui.custom`) keep the typed input as the hatch.
+- **Fallback**: a configured `auditorModel` that is unavailable (unknown
+  id, or provider with no configured auth) now falls back LOUDLY to the
+  session model — warning notify + `auditor_model_fallback` ledger —
+  instead of hard-failing the audit. The v0.9.12 no-SILENT-substitution
+  law stands; quota-exhausted keys stay on the quota-retry path (the
+  model is available there, the key's window is the failure).
+
+632 tests.
+
 ## [0.29.16] — 2026-07-30
 
 ### Added — zombie-run watchdog: busy-but-silent = hung provider stream
