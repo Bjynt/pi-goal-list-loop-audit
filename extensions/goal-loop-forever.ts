@@ -423,3 +423,22 @@ export function auditMeasureCmd(): string {
 export function auditTarget(): string {
   return `Audit the project for real problems and fix them, iteration by iteration. Every iteration: (1) run a FRESH audit pass over the codebase — spawn Explore subagents for breadth — hunting real issues: bugs, broken flows, regressions, drift between docs and code, dead code, security holes. Not style nits, not speculative refactors. (2) Append every NEW finding as one checkbox line "- [ ] SEVERITY: short description (file:line)" to ${AUDIT_FINDINGS_REL} (create the file on the first finding; append-only — never delete, rewrite, or reorder existing lines; never re-report a finding already listed). (3) Fix the highest-severity OPEN finding(s) — real fixes, committed — then check the box: "- [x] … — fixed in <commit>". (4) Honesty law: never fabricate findings to look busy; never mark a finding fixed without the fix commit existing. When a full audit pass surfaces nothing new AND no open findings remain, say so plainly — the orchestrator counts open findings every iteration and the plateau stop ends the loop when the well is dry.`;
 }
+
+// ---- /goal audit-project (v0.29.8) ----
+
+/**
+ * The one-shot project audit (user design 2026-07-30): "/loop audit keeps
+ * firing — this would be fire and address what you can, present what is to
+ * be decided; whether to fix a bug is not a decision." Same findings file
+ * as the audit loop (one ledger per project — the loop can keep working
+ * what the one-shot surfaced), but exactly ONE pass with a finish line the
+ * isolated auditor verifies, and the triage law the loop doesn't have:
+ * FIX findings (bugs, polish — nobody would say "leave that bug in") are
+ * fixed autonomously; DECIDE findings (direction, trade-offs — two
+ * reasonable answers exist) are presented, never touched. DECIDE lines use
+ * "- [?]" so they never inflate the loop's open-findings measure.
+ */
+export function projectAuditTarget(focus?: string): string {
+  const scope = focus && focus.trim() ? focus.trim() : "the whole project";
+  return `Run ONE project audit pass and leave the project in a known state. Scope: ${scope}. (1) Run a FRESH audit pass over the codebase — spawn Explore subagents for breadth — hunting real problems: bugs, broken flows, regressions, drift between docs and code, dead code, security holes. Not style nits, not speculative refactors. (2) Append every NEW finding to ${AUDIT_FINDINGS_REL} (create the file on the first finding; append-only — never delete, rewrite, or reorder existing lines; never re-report a finding already listed), classified: "- [ ] FIX: SEVERITY: short description (file:line)" for bugs and polish — whether to fix these is NOT a decision — and "- [?] DECIDE: short description (what the choice is, what each side costs)" for direction, trade-offs, and scope questions where two reasonable answers exist. (3) Fix every NEW FIX finding from this pass — real fixes, committed with the repo's configured identity on the current branch (no invented identities or branches) — then check the box: "- [x] … — fixed in <commit>". (4) Change NOTHING for DECIDE findings — present them in the completion report instead. (5) Honesty law: never fabricate findings to look busy; never check a box without the fix commit existing; never silently turn a DECIDE into a fix. Done when: the audit pass is complete, every new FIX finding has a fix commit and a checked box in ${AUDIT_FINDINGS_REL}, and every DECIDE finding is listed in the file and presented in the completion report.`;
+}
