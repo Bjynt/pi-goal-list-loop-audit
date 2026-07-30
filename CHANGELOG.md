@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.29.18] — 2026-07-30
+
+### Changed — /loop audit is now FIX-FIRST (re-audit on cadence, not every iteration)
+
+Field (hegemon iter 26, 2026-07-30): the audit-every-iteration target
+made discovery (8-12 findings/iter) outpace fixes (1/iter) — the open
+backlog grew while the visible output read as "find things and present
+them". Worse, the agent burned a whole iteration on "no new action this
+turn" with 18 open boxes. User: "the goal would be audit to fix then
+audit then fix again no?"
+
+- New target order: (1) FIX the highest-severity OPEN finding(s) every
+  iteration — an iteration that closes nothing while open boxes exist is
+  a wasted iteration ("no new action this turn" is explicitly
+  unacceptable; blocked → name the blocker, work the first unblocked
+  one). (2) RE-AUDIT on cadence: fresh pass with Explore fan-out ONLY
+  when no open findings remain, ~10 iterations since the last pass, or
+  your own fixes plausibly broke something. (3) append findings,
+  (4) honesty law — unchanged, as is the closed-count/max metric.
+- Live-loop migration on load: audit loops still carrying the
+  audit-every-iteration target get the fix-first target swapped in
+  (ledger `audit_loop_target_migrated`); best/stall survive — the
+  metric is unchanged.
+
+633 tests.
+
 ## [0.29.17] — 2026-07-30
 
 ### Added — /model-style fuzzy picker for model settings + loud session-model fallback
