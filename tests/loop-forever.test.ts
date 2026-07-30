@@ -90,6 +90,52 @@ test("isImprovement: max direction", () => {
 
 // ---- applyMeasurement ----
 
+test("v0.29.10 — applyMeasurement: null best (deferred audit baseline) seeds on first real measurement", () => {
+  // The audit loop's pre-discovery baseline is degenerate (0 open findings
+  // just means findings.md doesn't exist yet). With best pinned at 0 no
+  // iteration could ever improve — junk-runner/hegemon 2026-07-30 stalled
+  // on real progress and the prompt cried REGRESSED. deferBaseline leaves
+  // bestValue null; the first REAL measurement becomes the baseline.
+  const loop = freshLoop({ bestValue: null, lastValue: null, kind: "audit" });
+  let out = applyMeasurement(loop, 23, "t1"); // discovery iteration
+  assert.equal(out.kind, "continue");
+  if (out.kind === "continue") assert.equal(out.improved, true); // null best = baseline, always "improved"
+  assert.equal(loop.bestValue, 23);
+  assert.equal(loop.stallCount, 0); // discovery is NOT a stall
+  out = applyMeasurement(loop, 20, "t2"); // fixing iteration — real improvement
+  if (out.kind === "continue") assert.equal(out.improved, true);
+  assert.equal(loop.bestValue, 20);
+  out = applyMeasurement(loop, 20, "t3"); // flat — now an honest stall
+  if (out.kind === "continue") assert.equal(out.improved, false);
+  assert.equal(loop.stallCount, 1);
+  out = applyMeasurement(loop, 0, "t4"); // well dry — 0 IS an improvement once best is real
+  if (out.kind === "continue") assert.equal(out.improved, true);
+  assert.equal(loop.bestValue, 0);
+});
+
+test("v0.29.10 — audit loop source pins: deferred baseline, true-regression note, live-loop reseed migration", () => {
+  const src = fs.readFileSync(new URL("../extensions/loops/goal.ts", import.meta.url), "utf-8");
+  // The /loop audit route defers the baseline and tags the loop kind.
+  assert.ok(src.includes("deferBaseline: true,"), "audit route defers the baseline");
+  assert.ok(src.includes('kind: "audit",'), "audit route tags the loop kind");
+  // startLoopFromConfig honours the flag (no baseline measure, null best).
+  assert.ok(src.includes("metricless || cfg.deferBaseline ? null : await runMeasure"), "deferred baseline skips the start measure");
+  assert.ok(src.includes("bestValue: cfg.deferBaseline ? null : baseline,"), "deferred baseline seeds null best");
+  assert.ok(src.includes("deferred — the first real measurement seeds it"), "banner names the deferred baseline");
+  // The regression note fires only on a TRUE regression (last two
+  // measurements moved the wrong way) — never on a mere stall.
+  assert.ok(src.includes("trueRegression"), "true-regression detection present");
+  assert.ok(!src.includes("regressedLast"), "old any-stall-is-regression trigger gone");
+  assert.ok(
+    src.includes("The open-findings count went UP last iteration — either the fresh audit pass found new problems"),
+    "audit loops get audit-flavoured regression wording",
+  );
+  // Live loops pinned on the degenerate 0 get reseeded on session load.
+  assert.ok(src.includes('audit-loop/findings.md") && state.loop.bestValue === 0'), "migration detects pinned audit loops");
+  assert.ok(src.includes("audit_loop_baseline_reseeded"), "migration ledgers the reseed");
+});
+
+
 test("applyMeasurement: improvement resets stall, records best", () => {
   const loop = freshLoop();
   let out = applyMeasurement(loop, 10, "t1");

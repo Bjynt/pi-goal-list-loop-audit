@@ -2240,9 +2240,20 @@ function sendLoopTurn(): void {
     return;
   }
   const loop = state.loop!;
-  const regressedLast = loop.history.length > 0 && !loop.history[loop.history.length - 1]!.improved && loop.lastValue !== null;
-  const regressionNote = regressedLast
-    ? "**Your last change REGRESSED the metric. Undo it first, then try a different small change.**"
+  // v0.29.10: "regressed" = the last two measurements moved the WRONG way
+  // — not merely "didn't beat best". The old trigger (any non-improving
+  // iteration) cried REGRESSED on stalls and on the audit loop's
+  // degenerate baseline-0, telling agents to undo GOOD fixes (junk-runner
+  // 2026-07-30: 17→16 was real progress; the prompt demanded a revert).
+  const hist = loop.history;
+  const prevValue = hist.length >= 2 ? hist[hist.length - 2]!.value : null;
+  const lastHistValue = hist.length >= 1 ? hist[hist.length - 1]!.value : null;
+  const trueRegression = prevValue !== null && lastHistValue !== null && loop.direction !== undefined &&
+    (loop.direction === "min" ? lastHistValue > prevValue : lastHistValue < prevValue);
+  const regressionNote = trueRegression
+    ? loop.kind === "audit"
+      ? "**The open-findings count went UP last iteration — either the fresh audit pass found new problems, or your fix didn't land. Check findings.md, then keep fixing the highest-severity OPEN items.**"
+      : "**Your last change REGRESSED the metric. Undo it first, then try a different small change.**"
     : "";
   // Strategy rotation (from pi-loop-mode's one good idea): one stall before
   // the plateau window closes, stop polishing and change approach entirely.

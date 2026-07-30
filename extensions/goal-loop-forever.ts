@@ -57,6 +57,10 @@ export interface LoopState {
   consecutiveNullMeasures?: number;
   bestValue: number | null;
   lastValue: number | null;
+  /** v0.29.10: audit loops (measure counts open findings) get a deferred
+   * baseline (first REAL measurement seeds best — the pre-discovery 0 is
+   * degenerate) and audit-flavoured regression wording. */
+  kind?: "audit";
   active: boolean;
   stopReason?: string;
   history: LoopMeasure[];
