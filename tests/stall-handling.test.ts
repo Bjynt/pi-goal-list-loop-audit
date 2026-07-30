@@ -217,3 +217,18 @@ test("v0.29.2: git discipline law — no invented identities or branches, in eve
   const forever = fs.readFileSync("extensions/goal-loop-forever.ts", "utf-8");
   assert.match(forever, /repo's configured\s*\n?\s*\*?\s*identity, on the current branch — no invented/);
 });
+
+test("v0.29.3: no empty allowlist warning; the session-load arbitration offers the wipe escape", () => {
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // 1. The tool-heal warn used to fire with "0 agent tool(s) … re-activated
+  //    ()" at every pi start (darklord screenshot). Warn only on a real heal.
+  assert.match(src, /if \(!toolHealNotified && missing\.length > 0\) \{/);
+  // 2. Loop-vs-goal arbitration on session load now offers wipe — for
+  //    pre-guard stacked leftovers, arbitrating between two artifacts the
+  //    user doesn't remember was the odd part ("i feel like wipe does").
+  assert.match(src, /"Wipe everything — clean slate for stale leftovers \(\/glla wipe\)"/);
+  // 3. The decision prompt executes wipe options (cmdGllaWipe keeps its own
+  //    Confirm — destructive actions keep their gate).
+  assert.ok(src.includes("/\\(\\/glla wipe\\)\\s*$/.test(label)"));
+  assert.match(src, /await cmdGllaWipe\(ctx\);\s*\n\s*return true;/);
+});

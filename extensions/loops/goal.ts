@@ -1602,6 +1602,12 @@ async function showDecisionPrompt(ctx: ExtensionContext): Promise<boolean> {
     if (!pick) return true; // Escape — the widget card remains the fallback
     const idx = options.indexOf(pick);
     const label = g.pauseOptions![idx] ?? pick.replace(/ {2}\(recommended\)$/, "");
+    // v0.29.3: the wipe escape — "… (/glla wipe)" options run the wipe
+    // (which Confirms on its own — destructive actions keep their gate).
+    if (/\(\/glla wipe\)\s*$/.test(label)) {
+      await cmdGllaWipe(ctx);
+      return true;
+    }
     // Executable options — "Label (/goal cancel)" — RUN the command.
     // Placeholder commands (…/<arg>) fall through to the message path.
     const cmdMatch = label.match(/\(\/(goal|list|loop) ([a-z]+)\)\s*$/);
@@ -5031,7 +5037,10 @@ export default function (pi: ExtensionAPI): void {
         if (next.length !== before) changed = true;
       }
       if (changed) pi.setActiveTools(next);
-      if (!toolHealNotified) {
+      if (!toolHealNotified && missing.length > 0) {
+        // v0.29.3: the notify used to fire even when NOTHING was missing —
+        // "glla: 0 agent tool(s) were hidden … re-activated ()" at every pi
+        // start (field-observed in darklord). Warn only on a real heal.
         toolHealNotified = true;
         const list = missing.join(", ");
         ctx.ui.notify(
@@ -5276,7 +5285,12 @@ export default function (pi: ExtensionAPI): void {
       updateGoal({
         status: "paused",
         pauseKind: "decision",
-        pauseOptions: ["Stop the loop, then resume the goal (/loop stop)", "Cancel the goal (/goal cancel) — the loop keeps running"],
+        // v0.29.3: third option — the wipe escape. Old projects stack a
+        // goal AND a loop AND a list from pre-guard versions; arbitrating
+        // between two artifacts the user doesn't even remember is the odd
+        // part — "i feel like wipe does [make sense]". Wipe keeps its own
+        // Confirm (destructive), so picking it is safe to offer.
+        pauseOptions: ["Stop the loop, then resume the goal (/loop stop)", "Cancel the goal (/goal cancel) — the loop keeps running", "Wipe everything — clean slate for stale leftovers (/glla wipe)"],
         pauseRecommended: 1,
         pauseReason: "held on session load — the loop owns the active slot (one active thing at a time)",
         pauseSuggestedAction: "/loop to work the loop, or /loop stop then /goal resume to work the goal",

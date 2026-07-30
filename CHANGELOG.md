@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.29.3] — 2026-07-30
+
+### Fixed — empty allowlist warning; the session-load arbitration offers the wipe escape
+
+Field report (darklord, at bare `pi` start): "older projects may have
+multiple goals/loops/lists instead of one total overall … getting this in
+pi start … i feel like wipe does [make sense]".
+
+1. **No more `glla: 0 agent tool(s) were hidden … re-activated ()`.** The
+   v0.24.5 tool-heal notify fired unconditionally once per session, even
+   when nothing was missing. It now warns only on a real heal
+   (`missing.length > 0`).
+
+2. **Wipe is now an option in the loop-vs-goal arbitration picker.** The
+   v0.28.21 session-load guard pauses the goal with a two-option decision
+   when a dirty legacy state has both an active goal and a loop — but for
+   pre-guard stacked leftovers, arbitrating between two artifacts the user
+   doesn't remember was the odd part. Third option added: "Wipe everything
+   — clean slate for stale leftovers (/glla wipe)". The decision prompt
+   executes it via `cmdGllaWipe`, which keeps its own Confirm listing
+   exactly what goes (goal archived as aborted, list cleared, loop
+   stopped) — destructive actions keep their gate; history stays in
+   `.pi-glla`.
+
+Pin: 1 consolidated test (notify guard, option text, wipe dispatch).
+611 tests.
+
 ## [0.29.2] — 2026-07-30
 
 ### Fixed — git discipline law: agents stop inventing identities and branches
