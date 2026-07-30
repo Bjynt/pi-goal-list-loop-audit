@@ -153,6 +153,11 @@ import {
   type SettingsRow,
 } from "../settings-menu.js";
 import {
+  buildModelPickItems,
+  ModelPickerComponent,
+  type ModelPickItem,
+} from "../model-picker.js";
+import {
   applyMeasurement,
   applyMetriclessTick,
   applyRefinement,
@@ -3955,7 +3960,7 @@ function resolveAuditorModel(ctx: ExtensionContext, ref?: string): { model: any;
   }
   const sessionModel = ctx.model as any;
   if (sessionModel) return { model: sessionModel, via: "session" };
-  return { model: undefined, error: "no session model and no auditorModel configured — set one with /glla model=provider/id" };
+  return { model: undefined, error: "no session model and no auditorModel configured — set one with /glla → Auditor model" };
 }
 
 // (v0.9.12) The auto-fallback apparatus was REMOVED: no tier ranking, no
@@ -4032,6 +4037,43 @@ async function promptSettingsMenu(
  */
 // v0.28.7 (T4): exported for the behavioral settings-editor tests
 // (tests/settings-editors.test.ts drives each editor class end-to-end).
+/**
+ * v0.29.17: /model-style fuzzy picker for model-valued settings. Builds the
+ * item list from the registry (configured-auth providers only — a pick
+ * from this list can never be a dead provider) and hosts the picker via
+ * ctx.ui.custom. Falls back to the typed input when the runtime has no
+ * custom shard (headless) — typing stays the emergency hatch there.
+ * Returns { kind: "session" } to clear the override, { kind: "ref" } with
+ * provider/id, or undefined for cancel.
+ */
+async function promptModelRef(
+  ctx: ExtensionContext,
+  title: string,
+  emptyLabel: string,
+): Promise<{ kind: "session" } | { kind: "ref"; ref: string } | undefined> {
+  if (typeof (ctx.ui as { custom?: unknown }).custom !== "function" || !ctx.modelRegistry) {
+    const v = await ctx.ui.input(title, "provider/model-id — empty keeps the default");
+    if (v === undefined) return undefined;
+    return v.trim() ? { kind: "ref", ref: v.trim() } : { kind: "session" };
+  }
+  const sessionModel = ctx.model as any;
+  const sessionLabel = sessionModel ? `${sessionModel.provider}/${sessionModel.id}` : "pi session model";
+  const models = ctx.modelRegistry
+    .getAvailable()
+    .filter((m: any) => ctx.modelRegistry.hasConfiguredAuth(m));
+  const items = buildModelPickItems(models, sessionLabel);
+  const pick = await ctx.ui.custom<ModelPickItem | undefined>((tui, theme, keybindings, done) => {
+    return new ModelPickerComponent({ title, items }, () => tui.requestRender(), theme, keybindings, done);
+  });
+  if (!pick) return undefined;
+  if (pick.kind === "session") return { kind: "session" };
+  if (pick.kind === "model" && pick.ref) return { kind: "ref", ref: pick.ref };
+  // manual escape hatch — typed provider/model, validated like before
+  const v = await ctx.ui.input(title, emptyLabel);
+  if (v === undefined) return undefined;
+  return v.trim() ? { kind: "ref", ref: v.trim() } : { kind: "session" };
+}
+
 export async function handleSettingChoice(id: string, ctx: ExtensionContext): Promise<void> {
   switch (id) {
     case "autoResume": {
@@ -4071,8 +4113,10 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "auditorModel": {
-      const v = await ctx.ui.input("Auditor model override", "provider/model-id — empty keeps the pi session model");
-      if (v !== undefined) saveSettings("global", ctx.cwd, { auditorModel: v.trim() || undefined });
+      const pick = await promptModelRef(ctx, "Auditor model override", "provider/model-id — empty keeps the pi session model");
+      if (pick === undefined) return;
+      saveSettings("global", ctx.cwd, { auditorModel: pick.kind === "session" ? undefined : pick.ref });
+      if (pick.kind === "session") ctx.ui.notify("Auditor model override cleared — the auditor follows the pi session model.", "info");
       return;
     }
     case "auditorThinkingLevel": {
@@ -4177,15 +4221,14 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     case "subagentModelOverrides.Plan":
     case "subagentModelOverrides.general-purpose": {
       const agentType = id.slice("subagentModelOverrides.".length);
-      const v = await ctx.ui.input(`Model pin for ${agentType} subagents`, "provider/model-id e.g. minimax/MiniMax-M3 — always wins over strategy; empty = follow strategy");
-      if (v !== undefined) {
-        const current = loadSettings(ctx.cwd).subagentModelOverrides ?? {};
-        const next = { ...current };
-        if (v.trim()) next[agentType] = v.trim();
-        else delete next[agentType];
-        saveSettings("global", ctx.cwd, { subagentModelOverrides: Object.keys(next).length > 0 ? next : undefined });
-        ctx.ui.notify(`${agentType} model pin saved — applies to NEW pi sessions.`, "info");
-      }
+      const pick = await promptModelRef(ctx, `Model pin for ${agentType} subagents`, "provider/model-id e.g. minimax/MiniMax-M3 — always wins over strategy; empty = follow strategy");
+      if (pick === undefined) return;
+      const current = loadSettings(ctx.cwd).subagentModelOverrides ?? {};
+      const next = { ...current };
+      if (pick.kind === "ref") next[agentType] = pick.ref;
+      else delete next[agentType];
+      saveSettings("global", ctx.cwd, { subagentModelOverrides: Object.keys(next).length > 0 ? next : undefined });
+      ctx.ui.notify(`${agentType} model pin saved — applies to NEW pi sessions.`, "info");
       return;
     }
     case "subagentResolved":
