@@ -3948,15 +3948,33 @@ function getSessionThinkingLevel(): "off" | "minimal" | "low" | "medium" | "high
 function resolveAuditorModel(ctx: ExtensionContext, ref?: string): { model: any; error?: string; via?: string } {
   if (ref && ref.trim()) {
     const trimmed = ref.trim();
+    // v0.29.17: an unavailable configured model (unknown id, or a provider
+    // with no configured auth) falls back LOUDLY to the session model —
+    // user request: "fall back to the session if unavailable". The v0.9.12
+    // no-SILENT-substitution law stands: the fallback notifies + ledgers.
+    // (Quota-exhausted keys stay on the quota-retry path — the model IS
+    // available there; the key's window is the failure, not the model.)
+    const fail = (reason: string) => {
+      const sessionModel = ctx.model as any;
+      if (sessionModel) {
+        appendLedger(ctx.cwd, "auditor_model_fallback", { configured: trimmed, reason });
+        ctx.ui.notify(`Auditor model "${trimmed}" is unavailable (${reason}) — falling back to the session model. Fix via /glla → Auditor model.`, "warning");
+        return { model: sessionModel, via: "session-fallback" };
+      }
+      return { model: undefined, error: `${reason}: ${trimmed}` };
+    };
     const slash = trimmed.indexOf("/");
     if (slash > 0) {
       const provider = trimmed.slice(0, slash);
       const id = trimmed.slice(slash + 1);
       const model = ctx.modelRegistry.find(provider, id);
-      return model ? { model, via: "setting" } : { model: undefined, error: `model not found: ${trimmed}` };
+      if (!model) return fail("model not found");
+      if (!ctx.modelRegistry.hasConfiguredAuth(model)) return fail(`no configured auth for ${provider}`);
+      return { model, via: "setting" };
     }
     const matches = ctx.modelRegistry.getAvailable().filter((m: any) => m.id === trimmed || m.name === trimmed);
-    return matches[0] ? { model: matches[0], via: "setting" } : { model: undefined, error: `no available model matching: ${trimmed}` };
+    if (matches[0]) return { model: matches[0], via: "setting" };
+    return fail("no available model matching");
   }
   const sessionModel = ctx.model as any;
   if (sessionModel) return { model: sessionModel, via: "session" };
