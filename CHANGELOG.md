@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.29.16] — 2026-07-30
+
+### Added — zombie-run watchdog: busy-but-silent = hung provider stream
+
+Field (hellhunter + hegemon, 2026-07-30): MiniMax streams died silently —
+no error, no timeout, and pi has no read timeout, so `_isAgentRunActive`
+stayed true forever. Every continuation queued into the void (sends
+resolve, nothing reaches the session log), and the busy flag concealed
+the wedge from EVERY existing watchdog: the heartbeat refire needs idle,
+the latch watchdog needs a glla-side timer, the stall counter needs
+refires. Both loops sat frozen with state intact and zero alerts.
+
+- New stream-liveness clock fed ONLY by genuine pi events
+  (message_update / tool_call / agent_start / turn_start / agent_end) —
+  heartbeat-internal bookkeeping never touches it.
+- Supervising + pi reports busy + zero stream events for 20 min → loud
+  `zombie_run_suspected` warning: the provider stream is hung, press Esc
+  to abort the zombie turn — the heartbeat refires the goal/loop itself.
+  Throttled to one alert per 10 min.
+- Detection + guidance only: aborting a turn is the user's call (consent
+  line). Auto-abort stays parked until the false-positive rate is known.
+
+625 tests.
+
 ## [0.29.15] — 2026-07-30
 
 ### Fixed — the audit-loop widget names its metric instead of showing raw shell

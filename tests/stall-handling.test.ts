@@ -167,7 +167,7 @@ test("v0.29.1: completion lifecycle survives the wedged-queue window (storm supp
   //    result never landed (pully: 12h+ stuck). Stored claim → direct
   //    auditor retry; else resume active so the agent re-completes.
   const hbIdx = src.indexOf("function heartbeatTick");
-  const hb = src.slice(hbIdx, hbIdx + 4200);
+  const hb = src.slice(hbIdx, hbIdx + 6000);
   assert.match(hb, /stranded_audit_recovered/);
   assert.match(hb, /state\.goal\?\.status === "auditing" &&\s*\n\s*!completionAuditInFlight/);
   assert.match(hb, /retryStoredCompletionAudit\(ctx, "quota-retry"\)/);
