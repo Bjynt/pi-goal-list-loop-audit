@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.29.6] — 2026-07-30
+
+### Changed — stacked states AUTO-ARBITRATE at session load (the picker is gone)
+
+User directive: "auto archive / wipe extra goals/loops/lists … make sure
+that we only have one". Dirty pre-guard states can persist a live loop
+AND a live goal (darklord/hegemon/pully field cases); the 0.28.21
+decision picker asked the user to arbitrate artifacts they didn't
+remember at every pi start, and 0.29.3 added a wipe escape to it. Now
+deterministic — no picker at all:
+
+- **Most recent activity keeps the slot** (goal `updatedAt` vs the loop's
+  last measure/`startedAt`; ties keep the loop, the 0.28.21 default).
+- **The loser is ARCHIVED, never wiped** — goals go through the standard
+  archive path (`.pi-glla/archive/*.md` + `goal_archived` ledger); loops
+  stop in place with an honest `stopReason` (visible in `/loop status`).
+  Ledger: `stacked_state_auto_arbitrated {kept, goalMs, loopMs, …}`.
+- The notify names the recoveries: `/loop status` · `.pi-glla/archive/` ·
+  `/glla wipe` for a full clean slate.
+- **The queued list is a backlog, not a live artifact — untouched.**
+
+Arbitration runs BEFORE the restore gate, so the survivor then follows
+the normal hold-vs-resume policy. The one-active-thing guards (pause a
+goal → start a loop → /goal resume refuses) are untouched for in-session
+combos. Behavioral pins rewritten: both arbitration branches (loop-newer
+→ goal archived; goal-newer → loop stopped) + the guard-source pin.
+613 tests.
+
 ## [0.29.5] — 2026-07-30
 
 ### Fixed — the stand-down survives the heartbeat; autoResume is GLOBAL-only

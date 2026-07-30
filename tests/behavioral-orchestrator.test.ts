@@ -448,34 +448,59 @@ test("one-active-thing tool guards: list_activate + propose_loop_draft + propose
   assert.match(r3.content[0]!.text, /A goal is active/, "propose_loop_draft blocked over live goal");
 });
 
-test("one-active-thing: /goal resume refuses over a live loop (v0.28.21 — the last unguarded path)", async () => {
+test("one-active-thing: /goal resume guard remains; the load-time combo is auto-arbitrated (v0.29.6)", async () => {
   __testOnlyResetStaleFlag();
+  // The 0.28.21 behavioral setup (paused goal + live loop after a reload)
+  // is unreachable now: v0.29.6 arbitration resolves the stack AT LOAD.
+  // The in-session guard stays (pause a goal → start a loop → /goal resume):
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.match(SRC, /A loop is active — one active thing/);
   const cwd = tmpCwd();
   seedState(cwd, {
-    loop: seedLoop({ active: true }),
-    goal: seedGoal({ status: "paused", objective: "paused goal — done when pinned" }),
+    loop: seedLoop({ active: true, startedAt: "2026-07-30T00:00:00.000Z" }),
+    goal: seedGoal({ status: "paused", objective: "paused goal — done when pinned", updatedAt: "2026-07-29T00:00:00.000Z" }),
   });
-  setGlobalAutoResume(true); // keep the loop ACTIVE through the reload
+  setGlobalAutoResume(true); // keep the surviving loop ACTIVE through the reload
   const ctx = await freshSession(cwd, "reload");
   await tick();
-  await pi.command("goal", "resume", ctx);
-  assert.ok(ctx.ui.matching("A loop is active — one active thing").length >= 1, "resume refused over live loop");
-  assert.equal((readState(cwd).goal as { status: string }).status, "paused", "goal still paused");
-  assert.equal((readState(cwd).loop as { active: boolean }).active, true, "loop untouched");
+  const s = readState(cwd);
+  assert.equal((s.goal as { status: string }).status, "aborted", "older goal auto-archived at load");
+  assert.equal((s.loop as { active: boolean }).active, true, "the surviving loop resumed");
+  assert.ok(ctx.ui.matching("Stacked state auto-arbitrated").length >= 1, "arbitration notify");
 });
 
-test("one-active-thing at restore: dirty state (active loop + active goal) → goal held, loop owns the slot (v0.28.21)", async () => {
+test("v0.29.6: stacked state at load is AUTO-ARBITRATED — most recent activity keeps the slot, loser archived (supersedes the 0.28.21 picker)", async () => {
   __testOnlyResetStaleFlag();
+  // (a) loop more recent → goal archived; the surviving loop is then held
+  // by the restore gate (default hold-everything).
   const cwd = tmpCwd();
-  seedState(cwd, { loop: seedLoop({ active: true }), goal: seedGoal() });
+  seedState(cwd, {
+    loop: seedLoop({ active: true, startedAt: "2026-07-30T00:00:00.000Z" }),
+    goal: seedGoal({ updatedAt: "2026-07-29T00:00:00.000Z" }),
+  });
   pi.sent.length = 0;
   const ctx = await freshSession(cwd, "startup");
   await tick();
   const s = readState(cwd);
-  assert.equal((s.goal as { status: string }).status, "paused", "goal held — the loop owns the slot");
-  assert.equal((s.loop as { active: boolean }).active, false, "loop held on restore too (default hold-everything)");
-  assert.ok(ctx.ui.matching("one active thing at a time").length >= 1, "enforce notify");
+  assert.equal((s.goal as { status: string }).status, "aborted", "the older goal was auto-archived");
+  assert.equal((s.loop as { active: boolean }).active, false, "the surviving loop is then held by the restore gate");
+  assert.ok(ctx.ui.matching("Stacked state auto-arbitrated").length >= 1, "arbitration notify");
   assert.equal(pi.sent.length, 0, "nothing fired");
+
+  // (b) goal more recent → loop stopped with an honest reason; the goal survives (held).
+  const cwd2 = tmpCwd();
+  seedState(cwd2, {
+    loop: seedLoop({ active: true, startedAt: "2026-07-28T00:00:00.000Z", iteration: 7 }),
+    goal: seedGoal({ updatedAt: "2026-07-30T00:00:00.000Z" }),
+  });
+  pi.sent.length = 0;
+  const ctx2 = await freshSession(cwd2, "startup");
+  await tick();
+  const s2 = readState(cwd2);
+  assert.equal((s2.loop as { active: boolean; stopReason?: string }).active, false, "loop stopped");
+  assert.match((s2.loop as { stopReason?: string }).stopReason ?? "", /auto-arbitrated/, "honest stop reason");
+  assert.ok(s2.goal && (s2.goal as { status: string }).status !== "aborted", "the newer goal survives");
+  assert.ok(ctx2.ui.matching("Stacked state auto-arbitrated").length >= 1, "arbitration notify");
 });
 
 test("carryover via /list next (pause): summary fires BEFORE the stale item activates; paused goal archived, held loop kept", async () => {

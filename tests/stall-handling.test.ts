@@ -218,17 +218,21 @@ test("v0.29.2: git discipline law — no invented identities or branches, in eve
   assert.match(forever, /repo's configured\s*\n?\s*\*?\s*identity, on the current branch — no invented/);
 });
 
-test("v0.29.3: no empty allowlist warning; the session-load arbitration offers the wipe escape", () => {
+test("v0.29.3/0.29.6: no empty allowlist warning; stacked states AUTO-ARBITRATE (picker superseded)", () => {
   const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   // 1. The tool-heal warn used to fire with "0 agent tool(s) … re-activated
   //    ()" at every pi start (darklord screenshot). Warn only on a real heal.
   assert.match(src, /if \(!toolHealNotified && missing\.length > 0\) \{/);
-  // 2. Loop-vs-goal arbitration on session load now offers wipe — for
-  //    pre-guard stacked leftovers, arbitrating between two artifacts the
-  //    user doesn't remember was the odd part ("i feel like wipe does").
-  assert.match(src, /"Wipe everything — clean slate for stale leftovers \(\/glla wipe\)"/);
-  // 3. The decision prompt executes wipe options (cmdGllaWipe keeps its own
-  //    Confirm — destructive actions keep their gate).
+  // 2. v0.29.6: the arbitration picker is GONE — stacked states resolve
+  //    deterministically at load (most recent activity keeps the slot;
+  //    the loser is archived, never wiped). The notify names /glla wipe
+  //    for users who want the full clean slate.
+  assert.match(src, /Stacked state auto-arbitrated \(one active thing\)/);
+  assert.ok(src.includes("stacked_state_auto_arbitrated"));
+  assert.ok(!src.includes("Wipe everything — clean slate for stale leftovers"), "the picker's wipe option is superseded by auto-arbitration");
+  // 3. The decision prompt still executes wipe-labelled options if a
+  //    future pause offers one (cmdGllaWipe keeps its own Confirm —
+  //    destructive actions keep their gate).
   assert.ok(src.includes("/\\(\\/glla wipe\\)\\s*$/.test(label)"));
   assert.match(src, /await cmdGllaWipe\(ctx\);\s*\n\s*return true;/);
 });
