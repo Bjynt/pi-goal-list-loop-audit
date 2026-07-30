@@ -2473,6 +2473,14 @@ interface LoopConfig {
   tokenBudget?: number;
   /** v0.25.1: /loop start toolsamerepeat=N (0 = disable legacy check). */
   toolSameRepeat?: number;
+  /** v0.29.10: don't seed bestValue from the pre-work baseline measure —
+   * the first REAL measurement becomes the baseline. For loops whose
+   * metric is created BY the first iteration (the audit loop: 0 open
+   * findings just means findings.md doesn't exist yet); a seeded 0 pins
+   * best at a value no iteration can beat, stalling every iteration. */
+  deferBaseline?: boolean;
+  /** v0.29.10: audit loops get audit-flavoured regression wording. */
+  kind?: "audit";
 }
 
 /** Shared loop-start path: /loop start AND propose_loop_draft (after Confirm). */
@@ -2508,8 +2516,8 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
   // v0.23.0: metricless loops skip the baseline entirely — there is no
   // measure to run, and no plateau to protect.
   const metricless = !cfg.measureCmd;
-  const baseline = metricless ? null : await runMeasure(ctx, cfg.measureCmd);
-  if (!metricless && baseline === null && !(cfg as { force?: boolean }).force) {
+  const baseline = metricless || cfg.deferBaseline ? null : await runMeasure(ctx, cfg.measureCmd);
+  if (!metricless && !cfg.deferBaseline && baseline === null && !(cfg as { force?: boolean }).force) {
     ctx.ui.notify(
       `/loop start refused: the measure produced no number.\nCommand: ${cfg.measureCmd}\nFix it so it prints exactly one number, or re-run with force=1 if it only works after the agent builds something first.\n(Non-numeric goal — research, docs, features? Use /goal: the independent auditor verifies semantically. /loop only believes a number.)`,
       "warning",
@@ -2527,8 +2535,9 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
       maxIterations: cfg.maxIterations,
       plateauWindow: cfg.plateauWindow,
       stallCount: 0,
-      bestValue: baseline,
-      lastValue: baseline,
+      bestValue: cfg.deferBaseline ? null : baseline,
+      lastValue: cfg.deferBaseline ? null : baseline,
+      kind: cfg.kind,
       active: true,
       history: [],
       startedAt: nowIso(),
@@ -2547,7 +2556,7 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
     metricless
       ? `Loop started (metricless spec loop — NO plateau stop): ${cfg.target.slice(0, 60)}\nEnds only at ${cfg.maxIterations > 0 ? `max ${cfg.maxIterations} iterations` : "no iteration cap"}${cfg.timeLimitHours ? ` · ${cfg.timeLimitHours}h` : ""}${cfg.tokenBudget ? ` · ${cfg.tokenBudget.toLocaleString()} tokens` : ""} · /loop stop. Every iteration must make ONE real, inspectable change — cosmetic churn is the doorknob failure.` +
         (branchName ? `\nbranch mode: committing each iteration to ${branchName}` : "")
-      : `Loop started: ${cfg.target.slice(0, 60)}\nBaseline: ${baseline ?? "(forced without a number — first turn must produce one)"} · direction ${cfg.direction} · window ${cfg.plateauWindow} · ${cfg.maxIterations > 0 ? `max ${cfg.maxIterations}` : "no iteration cap"}` +
+      : `Loop started: ${cfg.target.slice(0, 60)}\nBaseline: ${cfg.deferBaseline ? "deferred — the first real measurement seeds it" : (baseline ?? "(forced without a number — first turn must produce one)")} · direction ${cfg.direction} · window ${cfg.plateauWindow} · ${cfg.maxIterations > 0 ? `max ${cfg.maxIterations}` : "no iteration cap"}` +
         (branchName ? `\nbranch mode: committing improvements to ${branchName}` : ""),
     "info",
   );
@@ -2706,6 +2715,11 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       maxIterations: 0,
       branch: false,
       force: false,
+      // v0.29.10: the audit loop's metric is CREATED by iteration 1 —
+      // seeding best from the pre-discovery 0 stalls every iteration and
+      // plateau-stops mid-work at the window. Defer the baseline.
+      deferBaseline: true,
+      kind: "audit",
     });
     return;
   }
@@ -5313,6 +5327,16 @@ export default function (pi: ExtensionAPI): void {
       (isLoopActive() || (state.goal && state.goal.status === "active") || listQueue().length > 0)
     ) {
       ctx.ui.notify("Auto-resume fired (event: session start). Continue working.", "info");
+    }
+    // v0.29.10: reseed live/held audit loops stuck on the degenerate
+    // pre-discovery baseline-0 — best can never go below 0, so every
+    // iteration stalls and the prompt cries REGRESSED on real progress
+    // (junk-runner ran pinned like this). Null best = the next measurement
+    // becomes the honest baseline; stall streak resets with it.
+    if (state.loop && state.loop.measureCmd?.includes("audit-loop/findings.md") && state.loop.bestValue === 0) {
+      state.loop = { ...state.loop, bestValue: null, stallCount: 0, kind: state.loop.kind ?? "audit" };
+      persistState(ctx);
+      appendLedger(ctx.cwd, "audit_loop_baseline_reseeded", { from: 0 });
     }
     if (isLoopActive()) {
       const l = state.loop!;
