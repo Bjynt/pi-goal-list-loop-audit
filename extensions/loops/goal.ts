@@ -165,6 +165,7 @@ import {
   respecTarget,
   auditMeasureCmd,
   auditTarget,
+  projectAuditTarget,
   HELD_ON_RESTORE,
   type LoopState,
 } from "../goal-loop-forever.js";
@@ -1106,7 +1107,7 @@ async function retryStoredCompletionAudit(ctx: ExtensionContext, origin: "quota-
   updateGoal({ status: "auditing" }, liveCtx);
   appendLedger(liveCtx.cwd, "goal_resumed", { via: origin === "manual" ? "manual-audit" : "quota-retry-direct-audit" });
   liveCtx.ui.notify(origin === "manual"
-    ? "Manual /goal audit — running the isolated auditor now (no agent turn needed)."
+    ? "Manual /goal verify — running the isolated auditor now (no agent turn needed)."
     : "Auditor quota window elapsed — retrying the audit with your stored completion claim (no agent turn needed).", "info");
   const settings = loadSettings(liveCtx.cwd);
   const { model: auditorModel, error: modelError, via } = resolveAuditorModel(liveCtx, settings.auditorModel);
@@ -1445,14 +1446,24 @@ async function cmdGoal(args: string, ctx: ExtensionContext): Promise<void> {
       if (!shown) ctx.ui.notify("No pending decision — the goal isn't paused on a choice (or no UI).", "info");
       return;
     }
-    // v0.28.27: /goal audit — run the isolated auditor on the current goal
+    // v0.29.8: /goal audit [focus] — the ONE-SHOT project audit (user:
+    // "/goal audit IS the audit goal — we are not auditing the current
+    // goal, that happens automatically"). Fire-and-address: one audit
+    // pass, FIX findings fixed autonomously (a bug is not a decision),
+    // DECIDE findings presented, untouched. Runs as a normal goal through
+    // cmdSet — the isolated auditor verifies the finish line.
+    if (route.name === "audit") {
+      return cmdSet(projectAuditTarget(route.rest || undefined), ctx, true);
+    }
+    // v0.28.27 (renamed /goal audit → /goal verify in v0.29.8): run the
+    // isolated auditor on the current goal
     // RIGHT NOW, without engaging the agent. The user's "the work looks
     // done — just verify it" handle (and the manual counterpart of the
     // v0.28.26 stored-claim quota retry). Seeds a synthesized claim so a
     // quota block falls into the same pendingCompletion retry machinery.
-    if (route.name === "audit") {
+    if (route.name === "verify") {
       if (!state.goal) {
-        ctx.ui.notify("No active goal — /goal audit needs a goal to verify.", "warning");
+        ctx.ui.notify("No active goal — /goal verify needs a goal to verify.", "warning");
         return;
       }
       if (completionAuditInFlight) {
@@ -1461,7 +1472,7 @@ async function cmdGoal(args: string, ctx: ExtensionContext): Promise<void> {
       }
       updateGoal({
         pendingCompletion: {
-          completionSummary: "Manual audit requested by the user via /goal audit (no agent completion claim). Verify the objective against the repo directly.",
+          completionSummary: "Manual audit requested by the user via /goal verify (no agent completion claim). Verify the objective against the repo directly.",
           at: nowIso(),
         },
       }, ctx);
@@ -4551,6 +4562,37 @@ function cmdAudits(args: string, ctx: ExtensionContext): void {
   ctx.ui.notify(`glla audits — last ${entries.length} verdict(s) in ${ctx.cwd}\n${formatAuditLog(entries)}`, "info");
 }
 
+// v0.29.8: /glla status — the unified "what's running" surface (user: "we
+// need to type goal status [to check], so that command at least is missing
+// for checking on whatever active process we have"). Read-only aggregate of
+// the ONE state — goal, list queue, loop, pending decisions — with pointers
+// to the deep surfaces.
+function cmdGllaStatus(ctx: ExtensionContext): void {
+  const lines: string[] = [];
+  const g = state.goal;
+  if (g) {
+    const tok = (g.usage?.tokensUsed ?? 0) > 0 ? ` · ${g.usage!.tokensUsed} tok` : "";
+    const audit = g.status === "auditing" ? " (auditor running…)" : "";
+    const pause = g.status === "paused" && g.pauseReason ? ` — ${g.pauseReason.slice(0, 90)}` : "";
+    lines.push(`goal [${g.policy}] ${g.status}${audit}${tok}: ${g.objective.slice(0, 90)}${pause}`);
+  } else {
+    lines.push("goal: none");
+  }
+  const q = listQueue();
+  lines.push(`list: ${q.length === 0 ? "empty" : `${q.length} queued — head: ${q[0].slice(0, 70)}`}`);
+  const l = state.loop;
+  if (l) {
+    lines.push(`loop: ${l.active ? "ACTIVE" : `held/stopped — ${l.stopReason ?? "n/a"}`} · iter ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"} · best ${l.bestValue ?? "n/a"} · stall ${l.stallCount} — ${l.target.slice(0, 60)}`);
+  } else {
+    lines.push("loop: none");
+  }
+  if (g?.status === "paused" && g.pauseKind === "decision" && g.pauseOptions?.length) {
+    lines.push(`decision pending (${g.pauseOptions.length} options) — /goal decide`);
+  }
+  lines.push("deep: /goal status · /list · /loop status · /glla stats · /glla audits · /glla log");
+  ctx.ui.notify(`glla status\n${lines.join("\n")}`, "info");
+}
+
 async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   // The plugin's ONE config surface — global by default, rarely opened.
   //   /glla                      show effective values + where each comes from
@@ -4571,6 +4613,11 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   }
   if (/^audits\b/.test(trimmed)) {
     cmdAudits(trimmed.slice("audits".length).trim(), ctx);
+    return;
+  }
+  // v0.29.8: /glla status — the unified what's-running view.
+  if (/^status\b/.test(trimmed)) {
+    cmdGllaStatus(ctx);
     return;
   }
   // v0.28.28: /glla log [N] — the raw event trail, human-readable. "Log it
@@ -4970,10 +5017,13 @@ export default function (pi: ExtensionAPI): void {
     description: "Set/draft a goal, or /goal status|pause|resume|cancel|tweak <text>|archive|start <objective>. Objectives without a 'Done when:' clause are grilled into a contract first; include the clause or use /goal start to skip the interview and activate instantly.",
     getArgumentCompletions: completions([
       ["start", "skip drafting — /goal start <objective> activates immediately"],
+      ["audit", "one-shot project audit goal: /goal audit [focus] — fix the non-decisions, present the decisions (v0.29.8)"],
+      ["verify", "run the isolated auditor on the current goal NOW (v0.28.27, renamed from /goal audit)"],
       ["status", "show the active goal and its task list"],
       ["pause", "pause the active goal"],
       ["resume", "resume a paused goal (and the list, when items are queued)"],
       ["cancel", "abort the active goal"],
+      ["decide", "re-open the decision picker for a decision pause"],
       ["tweak", "change the objective: /goal tweak <text>"],
       ["archive", "list archived goals"],
     ]),
@@ -4990,6 +5040,7 @@ export default function (pi: ExtensionAPI): void {
       ["autoresume=", "default: hold when a session is loaded, auto-resume on reload/fork; on: always auto-resume; off: never"],
       ["decisionpopup=", "on|off: decision pauses pop the select() picker (default on; the widget card always lists the options, /goal decide reopens the picker)"],
       ["auditcap=", "N: pause goal after N consecutive auditor disapprovals (default 5, 0 = unlimited)"],
+      ["status", "unified what's-running view: goal + list queue + loop + pending decisions (v0.29.8)"],
       ["log", "event-trail tail: /glla log [N] — who created/resumed/paused what, from where (v0.28.28)"],
       ["wipe", "WIPE live glla state (goal archived, list cleared, loop stopped) — one-shot cleanup for leftover-laden projects"],
       ["resume", "resume WHATEVER is paused/held (goal, list item, or held loop) — no need to know the type"],
