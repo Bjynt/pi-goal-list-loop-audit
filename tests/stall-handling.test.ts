@@ -198,3 +198,22 @@ test("v0.29.1: zombie-twin guard — drafts/enqueues duplicating a goal complete
   assert.ok(draftIdx > -1 && src.slice(draftIdx - 1600, draftIdx).includes("recentlyCompletedObjectives(liveCtx.cwd).has(normalizeObjective(p.objective.trim()))"));
   assert.match(src, /This draft duplicates a goal that was COMPLETED within the last 24 hours/);
 });
+
+test("v0.29.2: git discipline law — no invented identities or branches, in every execution prompt", () => {
+  // Field-observed 2026-07-30: a phase agent branded itself
+  // "phase-e-agent <phase-e@local>" on main-history commits; other projects
+  // gained invented local git configs (darklord-dev@dracon.local). The
+  // global identity was correct all along — agents just improvised.
+  const cont = fs.readFileSync("prompts/goal-loop-continuation.md", "utf-8");
+  assert.match(cont, /Git discipline: never touch identity or branches/);
+  assert.match(cont, /no `git config user\.\*`/);
+  assert.match(cont, /phase-e-agent <phase-e@local>/);
+  assert.match(cont, /never invent one/);
+  const metric = fs.readFileSync("prompts/goal-loop-forever.md", "utf-8");
+  assert.match(metric, /Git discipline: commit with the repo's configured identity as-is/);
+  assert.match(metric, /never invent `<task>-agent/);
+  const metricless = fs.readFileSync("prompts/goal-loop-forever-metricless.md", "utf-8");
+  assert.match(metricless, /Git discipline: commit with the repo's configured identity as-is/);
+  const forever = fs.readFileSync("extensions/goal-loop-forever.ts", "utf-8");
+  assert.match(forever, /repo's configured\s*\n?\s*\*?\s*identity, on the current branch — no invented/);
+});

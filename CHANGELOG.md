@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.29.2] — 2026-07-30
+
+### Fixed — git discipline law: agents stop inventing identities and branches
+
+Field-observed 2026-07-30: the hellhunter Phase-E agent branded itself
+`phase-e-agent <phase-e@local>` on main-history commits (via per-commit
+identity overrides), and several other projects gained invented LOCAL git
+configs (`darklord-dev <darklord@dracon.local>`, `dracon <dracon@local>`)
+while the global identity was correct all along. The prompts simply never
+said not to. Now every execution prompt carries the law:
+
+- `goal-loop-continuation.md` HARD RULES: commit with the repo's
+  configured identity exactly as-is — no `git config user.*`, no per-commit
+  `-c user.name=…` overrides, no `<task>-agent <…@local>` inventions; no
+  creating/switching branches (commit on the branch you found, push to its
+  upstream); if git refuses for a missing identity, STOP and ask the user.
+- `goal-loop-forever.md` / `goal-loop-forever-metricless.md` hard rules:
+  same law, loop-phrased.
+- `/loop audit`'s target honesty laws: fix commits land with the repo's
+  configured identity on the current branch.
+
+Pin: 1 consolidated test across all three prompts + the audit target.
+610 tests.
+
 ## [0.29.1] — 2026-07-30
 
 ### Fixed — the completion lifecycle survives the wedged-queue window (the "complete ending in a pause retry storm" class, field-observed in THREE projects in one day)

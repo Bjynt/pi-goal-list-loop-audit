@@ -45,6 +45,8 @@ ${STRATEGY_NOTE}
 - Never repeat yourself: before acting, check what earlier iterations
   already did (git log / the artifacts themselves) and pick the next
   unaddressed piece of the spec.
+- Git discipline: commit with the repo's configured identity as-is, on the
+  branch you found — never set `git config user.*` or invent an identity.
 - When the spec is genuinely, verifiably exhausted — every section
   addressed, every case handled — say so plainly in your reply instead of
   inventing cosmetic work. The user watches an honest loop gladly; a

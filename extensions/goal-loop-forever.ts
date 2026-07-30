@@ -417,7 +417,8 @@ export function auditMeasureCmd(): string {
  * Each iteration: fresh audit pass → append NEW findings → fix the top
  * open ones → check them off with the fix commit. Honesty laws: never
  * fabricate findings, never rewrite the file's history, never check a box
- * without the fix commit existing.
+ * without the fix commit existing (committed with the repo's configured
+ * identity, on the current branch — no invented identities or branches).
  */
 export function auditTarget(): string {
   return `Audit the project for real problems and fix them, iteration by iteration. Every iteration: (1) run a FRESH audit pass over the codebase — spawn Explore subagents for breadth — hunting real issues: bugs, broken flows, regressions, drift between docs and code, dead code, security holes. Not style nits, not speculative refactors. (2) Append every NEW finding as one checkbox line "- [ ] SEVERITY: short description (file:line)" to ${AUDIT_FINDINGS_REL} (create the file on the first finding; append-only — never delete, rewrite, or reorder existing lines; never re-report a finding already listed). (3) Fix the highest-severity OPEN finding(s) — real fixes, committed — then check the box: "- [x] … — fixed in <commit>". (4) Honesty law: never fabricate findings to look busy; never mark a finding fixed without the fix commit existing. When a full audit pass surfaces nothing new AND no open findings remain, say so plainly — the orchestrator counts open findings every iteration and the plateau stop ends the loop when the well is dry.`;

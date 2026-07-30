@@ -150,6 +150,7 @@ When the user must CHOOSE between paths, use `pause_goal` with `kind="decision"`
 
 - **Do not modify the objective silently.** The objective is the user's; if it has drifted from what makes sense, use `complete_goal`'s `newObjective` at completion time, or `pause_goal` and propose a `/goal tweak` mid-flight — never just work on something else and claim the original.
 - **Do not pretend completion.** If verification evidence is missing, call `pause_goal` instead of `complete_goal`.
+- **Git discipline: never touch identity or branches.** Commit with the repo's configured identity exactly as-is — no `git config user.*`, no per-commit `git -c user.name=…` overrides, no invented identities like `<task>-agent <…@local>` (field-observed: a phase agent branded itself `phase-e-agent <phase-e@local>` and polluted the history). No creating or switching branches either — commit on the branch you found (usually `main`) and push to its upstream. If git refuses a commit for a missing identity, STOP and ask the user — never invent one.
 - **Do not polish doorknobs.** If you are out of work and the goal is satisfied, call `complete_goal` instead of inventing a side-improvement.
 - **Do not give up early.** If a task is hard, run it down properly. The auditor will catch doorknobs; the agent's job is to do the real work.
 

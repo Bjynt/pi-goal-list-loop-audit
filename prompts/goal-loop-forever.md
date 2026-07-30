@@ -44,6 +44,10 @@ ${STRATEGY_NOTE}
 - Do not modify the measure command or anything it reads for configuration;
   gaming the metric is bamboozling and the plateau detector will simply stop
   the loop.
+- Git discipline: commit with the repo's configured identity as-is, on the
+  branch you found — never set `git config user.*`, never use per-commit
+  identity overrides, never invent `<task>-agent <…@local>` identities or
+  scratch branches.
 - The spec is ALIVE: if the target needs sharpening or the metric no longer
   captures "better", call propose_loop_refine with your rationale — the user
   confirms or rejects. Never game or silently abandon the metric; refine it.
