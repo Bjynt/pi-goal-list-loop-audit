@@ -4579,7 +4579,7 @@ function cmdGllaStatus(ctx: ExtensionContext): void {
     lines.push("goal: none");
   }
   const q = listQueue();
-  lines.push(`list: ${q.length === 0 ? "empty" : `${q.length} queued — head: ${q[0].objective.slice(0, 70)}`}`);
+  lines.push(`list: ${q.length === 0 ? "empty" : `${q.length} queued — head: ${(q[0]?.objective ?? "").slice(0, 70)}`}`);
   const l = state.loop;
   if (l) {
     lines.push(`loop: ${l.active ? "ACTIVE" : `held/stopped — ${l.stopReason ?? "n/a"}`} · iter ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"} · best ${l.bestValue ?? "n/a"} · stall ${l.stallCount} — ${l.target.slice(0, 60)}`);
