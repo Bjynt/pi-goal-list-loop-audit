@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.29.5] — 2026-07-30
+
+### Fixed — the stand-down survives the heartbeat; autoResume is GLOBAL-only
+
+Two follow-ups from the first field run of 0.29.4 (junk-runner launch,
+2026-07-30):
+
+1. **The stand-down flag.** The 0.29.4 abort stand-down left the goal
+   ACTIVE with no timer — exactly the heartbeat refire's trigger shape
+   (`isSupervising + idle + no timer + 60s quiet`), so the chain would
+   have re-fired under the user's hands within a minute. New module-level
+   `abortedStandDown`: set by the abort stand-down, gates the heartbeat
+   refire AND the post-compaction refire, cleared by any explicit
+   `scheduleContinuation` (resume/activate/next turn).
+2. **autoResume reads are global-only** (user directive: "we are not
+   supporting project level setting for it now, just global"). The
+   junk-runner launch auto-fired because a stale PROJECT-LOCAL
+   `.pi-glla/settings.json` (`autoResume: true` from the unattended-audit
+   era) overrode the freshly-flipped global default. New
+   `loadGlobalSettings()`; the session-restore gate and the reviewer
+   enqueue gate read it exclusively — project-level `autoResume` keys are
+   now inert. Restore-hold hint strings updated ("global setting", was
+   "in this project").
+
+Behavioral tests that opted into autoresume via the project file now
+write the harness global settings path (with `afterEach` cleanup — module
+state is process-wide). Pins: 1 consolidated test. 613 tests.
+
 ## [0.29.4] — 2026-07-30
 
 ### Fixed — the Esc-spam loop: user aborts stand the chain down and never count toward stalls
