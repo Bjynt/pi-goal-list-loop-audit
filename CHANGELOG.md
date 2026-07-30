@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.29.15] — 2026-07-30
+
+### Fixed — the audit-loop widget names its metric instead of showing raw shell
+
+Field (user, twice): "we are still seeing that weird line" — the loop
+widget's fourth line rendered the audit measure verbatim
+(`c=$(grep -cE '^- \[[xX]\]' … 2>/dev/null); echo ${c:-0}`), shell
+escapes and all. For an orchestrator-owned measure that's leaked
+internals, not information. kind:"audit" loops now show
+`metric: closed findings ('- [x]' count)`; user-authored measures
+(/loop start measure="…") still show raw — there the command IS the
+user's own spec.
+
+624 tests.
+
 ## [0.29.14] — 2026-07-30
 
 ### Fixed — audit-loop metric no longer punishes discovery (closed-count/max)
