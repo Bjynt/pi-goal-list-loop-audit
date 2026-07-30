@@ -106,6 +106,7 @@ import {
   DEFAULT_SETTINGS,
   SETTINGS_KEYS,
   globalSettingsPath,
+  loadGlobalSettings,
   loadSettings,
   projectSettingsPath,
   saveSettings,
@@ -706,6 +707,10 @@ function heartbeatTick(): void {
     ctx.ui.notify(msg, "warning");
     notifyExternal(ctx, msg);
   }
+  // v0.29.5: user-abort stand-down — the chain stays DOWN until the
+  // user resumes. Without this guard the 60s heartbeat re-fired the
+  // continuation and defeated the 0.29.4 stand-down within a minute.
+  if (abortedStandDown) return;
   if (!fire) return;
   // v0.26.6: the 0.25.0 "recent ship (<5m)" suppression was REMOVED. It fed
   // lastShippedAtMs, which read the state-file MTIME — and the heartbeat's
@@ -747,6 +752,10 @@ let consecutiveErrorIterations = 0;
 // v0.28.5 (E8): user aborts are NOT provider errors — separate counter,
 // separate brake message, and no auto-resume (aborting is user intent).
 let consecutiveAbortIterations = 0;
+// v0.29.5: set when a user abort stands the chain down (0.29.4) — the
+// heartbeat refire + post-compaction refire must NOT resurrect it; only
+// an explicit schedule (resume/activate/next turn) clears it.
+let abortedStandDown = false;
 let consecutiveNoToolIterations = 0;
 
 // =================================================================
@@ -779,6 +788,7 @@ function freshCtx(): ExtensionContext | null {
 }
 
 function scheduleContinuation(ctx: ExtensionContext, force = false, delayMs?: number): void {
+  abortedStandDown = false; // v0.29.5: any explicit schedule ends the stand-down
   if (!isActionableGoal()) return;
   rememberCtx(ctx);
   const goalId = state.goal!.id;
@@ -1223,7 +1233,7 @@ function fireReviewer(
       manual: opts.manual,
       ledgerEntries,
       sources,
-      enqueueListItems: (objectives) => enqueueItems(ctx, objectives, "reviewer", { autoActivate: loadSettings(ctx.cwd).autoResume === true }),
+      enqueueListItems: (objectives) => enqueueItems(ctx, objectives, "reviewer", { autoActivate: loadGlobalSettings().autoResume === true }),
       proposeGoal: (objective, reason) => {
         try {
           extensionApi?.sendUserMessage(
@@ -5060,7 +5070,7 @@ export default function (pi: ExtensionAPI): void {
       const c = freshCtx();
       if (!c) return;
       try {
-        if (c.isIdle() && !c.hasPendingMessages() && continuationTimer === null && loopTimer === null && isSupervising()) {
+        if (c.isIdle() && !c.hasPendingMessages() && continuationTimer === null && loopTimer === null && isSupervising() && !abortedStandDown) {
           appendLedger(c.cwd, "compaction_refire", {});
           if (isLoopActive()) scheduleLoopTick(c);
           else scheduleContinuation(c, true);
@@ -5185,12 +5195,13 @@ export default function (pi: ExtensionAPI): void {
     // Restore gate (v0.26.9 tri-state): a human LOADING a session
     // ("startup"/"new"/"resume", or no reason) HOLDS — the popup shows what
     // is waiting and nothing starts until they resume explicitly. In-session
-    // machinery ("reload"/"fork") auto-resumes. /glla autoresume=on opts a
-    // project into auto-resume everywhere (unattended rigs); autoresume=off
-    // never auto-resumes. Once running, the chain auto-continues forever
-    // unless a super-stuck brake (stall escalation / stale-api / latch)
-    // stops it loudly.
-    const autoResumeSetting = resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).autoResume;
+    // machinery ("reload"/"fork") auto-resumes. /glla autoresume=on opts
+    // into auto-resume everywhere (unattended rigs); autoresume=off never
+    // auto-resumes. v0.29.5: the setting is GLOBAL-only — project-level
+    // autoResume keys are ignored. Once running, the chain auto-continues
+    // forever unless a super-stuck brake (stall escalation / stale-api /
+    // latch) stops it loudly.
+    const autoResumeSetting = resolveEffectiveAggressiveSettings(loadGlobalSettings()).autoResume;
     const autoResume = shouldAutoResumeOnSessionStart(event?.reason, autoResumeSetting);
     // v0.25.0 (contract item 6): aggressiveMode announces every auto-event.
     if (
@@ -5212,7 +5223,7 @@ export default function (pi: ExtensionAPI): void {
         state.loop = { ...l, active: false, stopReason: HELD_ON_RESTORE };
         persistState(ctx);
         ctx.ui.notify(
-          `Loop held on restore: ${l.target.slice(0, 60)} — /loop resume to continue, /glla autoresume=on to auto-resume on session load in this project.`,
+          `Loop held on restore: ${l.target.slice(0, 60)} — /loop resume to continue, /glla autoresume=on to auto-resume on session load (global setting).`,
           "info",
         );
       }
@@ -5239,7 +5250,7 @@ export default function (pi: ExtensionAPI): void {
         // v0.22.7: name WHAT is held — a list head resumes through /list.
         const isListItem = state.goal.policy === "list";
         const resumeCmd = isListItem ? "/list resume" : "/goal resume";
-        const resumeHint = `${resumeCmd} to continue${queued > 0 ? ` (+${queued} waiting in the list)` : ""} · /glla autoresume=on to auto-resume in this project`;
+        const resumeHint = `${resumeCmd} to continue${queued > 0 ? ` (+${queued} waiting in the list)` : ""} · /glla autoresume=on to auto-resume on load (global setting)`;
         updateGoal({
           status: "paused",
           pauseKind: "blocked",
@@ -5529,6 +5540,7 @@ export default function (pi: ExtensionAPI): void {
       // was answered by another turn under the user's hands ("it auto
       // triggered and I kept spamming esc on it" — pully, 2026-07-30).
       ctx.ui.notify(`${goalNoun()} standing down — turn aborted by user (not counted toward stalls). /goal resume to continue, /goal cancel to stop.`, "info");
+      abortedStandDown = true; // v0.29.5: heartbeat/compaction refires must not resurrect the chain
       appendLedger(ctx.cwd, "abort_stand_down", { consecutiveAborts: consecutiveAbortIterations });
       return;
     } else {
