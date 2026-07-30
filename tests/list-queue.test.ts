@@ -128,13 +128,16 @@ test("v0.28.28: unsolicited enqueue (reviewer) does not auto-start the head unle
   assert.match(SRC, /enqueueItems\(ctx, objectives, "reviewer", \{ autoActivate: loadSettings\(ctx\.cwd\)\.autoResume === true \}\)/);
 });
 
-test("v0.28.28: auto-accepted drafts (goal + list) are created HELD when autoResume is off", () => {
+test("v0.29.4: auto-accepted drafts START (supersedes the 0.28.28 autoResume hold)", () => {
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
-  // autoAcceptDrafts delegates the Confirm click, not the decision to start.
-  assert.match(SRC, /auto-accepted draft — held for the user's go-ahead \(autoResume off\)/);
-  assert.match(SRC, /appendLedger\(liveCtx\.cwd, "draft_held", \{ goalId: goal\.id, reason: "autoaccept-autoresume-off" \}\);/);
-  assert.match(SRC, /Auto-accepted and QUEUED \(autoResume off — not auto-started\)/);
-  assert.match(SRC, /if \(autoAccept && loadSettings\(liveCtx\.cwd\)\.autoResume !== true\)/);
+  // User decision 2026-07-30: the held draft was "not desired behavior" —
+  // autoAcceptDrafts is the pre-consent for in-session drafts; autoResume
+  // now gates ONLY launch-time restore. The zombie-twin guard (0.29.1)
+  // refuses duplicates upstream, so starting is safe.
+  assert.match(SRC, /auto-accepted drafts START \(autoAcceptDrafts is the/);
+  assert.match(SRC, /an auto-accepted draft STARTS — autoAcceptDrafts is the/);
+  assert.ok(!SRC.includes("autoaccept-autoresume-off"), "the autoResume draft-hold is gone");
+  assert.ok(!SRC.includes('appendLedger(liveCtx.cwd, "draft_held"'), "no draft_held ledger event remains");
 });
 
 test("v0.28.28: goal provenance — setGoal threads `via` into the record + goal_created ledger", () => {

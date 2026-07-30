@@ -232,3 +232,25 @@ test("v0.29.3: no empty allowlist warning; the session-load arbitration offers t
   assert.ok(src.includes("/\\(\\/glla wipe\\)\\s*$/.test(label)"));
   assert.match(src, /await cmdGllaWipe\(ctx\);\s*\n\s*return true;/);
 });
+
+test("v0.29.4: user aborts stand the chain down and never count toward stalls (the Esc-spam loop)", () => {
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // Pully field case 2026-07-30: launch auto-fired, the user Esc-spammed,
+  // every abort re-fired the continuation AND counted toward the stall
+  // brake — STALL WARNING 1/3, 2/3, then a bogus "stalled" pause.
+  // 1. Aborted turns are exempt from the unproductive-turn accounting
+  //    (same shape as the 0.28.13 provider-error exemption):
+  assert.match(src, /else if \(lastA\?\.stopReason === "aborted"\) \{/);
+  assert.match(src, /stall_nudge_exempt_aborted/);
+  // 2. An abort stands the chain DOWN — no fall-through to
+  //    scheduleContinuation. The stand-down return sits inside the aborted
+  //    branch, before the healthy-turn else:
+  const abortIdx = src.indexOf('stopReason === "aborted"');
+  const block = src.slice(abortIdx, abortIdx + 2200);
+  assert.match(block, /abort_stand_down/);
+  assert.match(block, /standing down — turn aborted by user \(not counted toward stalls\)/);
+  assert.ok(block.indexOf("abort_stand_down") < block.indexOf("} else {"),
+    "the stand-down returns before the healthy-turn branch — no re-fire");
+  // 3. The 5-abort loud pause remains as the backstop:
+  assert.match(block, /5 consecutive aborts \(user interrupted\)/);
+});

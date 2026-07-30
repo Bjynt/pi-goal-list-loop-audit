@@ -3383,13 +3383,11 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         persistState(liveCtx);
         appendLedger(liveCtx.cwd, "list_added", { id: item.id, objective: item.objective, drafted: true });
         if (!state.goal || state.goal.status === "complete" || state.goal.status === "aborted") {
-          // v0.28.28: an AUTO-ACCEPTED draft does not auto-start unless
-          // autoResume is on — accepting a draft is not consent to start.
-          if (autoAccept && loadSettings(liveCtx.cwd).autoResume !== true) {
-            liveCtx.ui.notify(`Auto-accepted and QUEUED (autoResume off — not auto-started): ${extracted.objective.slice(0, 80)} — /list next when ready.`, "info");
-            appendLedger(liveCtx.cwd, "list_autoactivation_held", { source: "draft-autoaccepted", count: 1 });
-            return { content: [{ type: "text", text: "Draft accepted and added to the list, but NOT started (the user's autoResume setting is off — auto-accepted drafts queue, they don't auto-start). Do NOT begin work. Tell the user: /list next starts it." }], details: {} };
-          }
+          // v0.29.4: an auto-accepted draft STARTS — autoAcceptDrafts is the
+          // pre-consent (the user asked for the draft in-session). The
+          // 0.28.28 autoResume hold is lifted: that setting now gates ONLY
+          // launch-time restore. The 0.29.1 zombie-twin guard already
+          // refused duplicates of just-completed work upstream.
           activateNextListItem(liveCtx);
           return { content: [{ type: "text", text: "Confirmed and activated (list was empty). Begin work now." }], details: {} };
         }
@@ -3397,20 +3395,11 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       }
       const goal = createGoal(full, liveCtx);
       setGoal(goal, liveCtx, autoAccept ? "draft-autoaccepted" : "draft-confirmed");
-      // v0.28.28: auto-accepted goal drafts are created HELD when autoResume
-      // is off — auto-accept delegates the Confirm click, not the decision
-      // to start. Explicit user-confirmed drafts still start immediately.
-      if (autoAccept && loadSettings(liveCtx.cwd).autoResume !== true) {
-        updateGoal({
-          status: "paused",
-          pauseKind: "blocked",
-          pauseReason: "auto-accepted draft — held for the user's go-ahead (autoResume off)",
-          pauseSuggestedAction: "/goal resume to start · /goal cancel to drop · /glla autoresume=on starts auto-accepted drafts automatically",
-        }, liveCtx);
-        appendLedger(liveCtx.cwd, "draft_held", { goalId: goal.id, reason: "autoaccept-autoresume-off" });
-        liveCtx.ui.notify(`Draft auto-accepted and HELD (autoResume off): ${goal.objective.slice(0, 80)} — /goal resume to start, /goal cancel to drop.`, "info");
-        return { content: [{ type: "text", text: "Goal accepted but HELD (the user's autoResume setting is off — auto-accepted drafts do not auto-start). Do NOT begin work. Tell the user: /goal resume starts it, /goal cancel drops it." }], details: {} };
-      }
+      // v0.29.4: auto-accepted drafts START (autoAcceptDrafts is the
+      // pre-consent — the user asked for the draft in-session). autoResume
+      // no longer gates draft starts; it gates ONLY launch-time restore of
+      // persisted state ("load it but not auto start it"). Zombie twins of
+      // just-completed work are refused upstream (0.29.1).
       iterationCounter = 0;
       consecutiveErrorIterations = 0;
       consecutiveAbortIterations = 0;
@@ -5367,6 +5356,12 @@ export default function (pi: ExtensionAPI): void {
         // "unproductive turns" pause). pi's own retry owns the backoff;
         // the nudge counter neither increments nor resets on these turns.
         appendLedger(ctx.cwd, "stall_nudge_exempt_error", { nudgesSoFar: heartbeatNudges });
+      } else if (lastA?.stopReason === "aborted") {
+        // v0.29.4: user aborts are not model unproductivity either — the
+        // user pressed Esc. Counting the interrupt tripped the stall brake
+        // on the USER's action (pully field case: Esc-spam → STALL WARNING
+        // 1/3, 2/3 → a bogus "stalled" pause). Neither increment nor reset.
+        appendLedger(ctx.cwd, "stall_nudge_exempt_aborted", { nudgesSoFar: heartbeatNudges });
       } else {
       const s = loadSettings(ctx.cwd);
       const shortWordsThr = s.stallShortWords ?? DEFAULT_STALL_SHORT_WORDS;
@@ -5529,6 +5524,13 @@ export default function (pi: ExtensionAPI): void {
         appendLedger(ctx.cwd, "goal_paused", { reason: "5 consecutive aborts (user interrupted)" });
         return;
       }
+      // v0.29.4: an abort stands the chain DOWN — no auto re-fire. The old
+      // fall-through re-fired the continuation immediately, so every Esc
+      // was answered by another turn under the user's hands ("it auto
+      // triggered and I kept spamming esc on it" — pully, 2026-07-30).
+      ctx.ui.notify(`${goalNoun()} standing down — turn aborted by user (not counted toward stalls). /goal resume to continue, /goal cancel to stop.`, "info");
+      appendLedger(ctx.cwd, "abort_stand_down", { consecutiveAborts: consecutiveAbortIterations });
+      return;
     } else {
       consecutiveErrorIterations = 0;
       consecutiveAbortIterations = 0;
