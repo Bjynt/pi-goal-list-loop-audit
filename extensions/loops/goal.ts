@@ -183,6 +183,7 @@ import {
   shouldWedgeAlert,
   PENDING_LATCH_STUCK_MS,
   shouldFirePendingLatchWatchdog,
+  msUntilNextHourBoundary,
 } from "../goal-loop-backoff.js";
 
 // =================================================================
@@ -5542,15 +5543,37 @@ export default function (pi: ExtensionAPI): void {
         // burned 4+ pause↔retry cycles against provider windows that last
         // hours. After 6 consecutive brakes: park, no more auto-retries.
         if (errorBrakeStreak >= 6) {
+          // v0.29.9: park — but keep probing at the top of each hour
+          // (user: "simply adding an hourly retry … just to pick up work
+          // faster assuming the retry expired"). Coding-plan rate-limit
+          // windows typically expire on clock-hour boundaries, so a probe
+          // scheduled for :01 catches the reset within seconds. One dunk
+          // per hour, free (429s are rejected pre-billing); a successful
+          // probe resets the whole error cycle. If the wall is something
+          // else (auth, outage), the hourly probe is a harmless failed
+          // resume attempt that re-parks via the same brake.
           updateGoal({
             status: "paused",
             pauseKind: "error",
             pauseReason: `${reason} — 6 error-brakes in a row; the provider has been erroring for an extended window`,
-            pauseSuggestedAction: "Check the provider/account (quota, outage), then /goal resume. No more automatic retries.",
+            pauseSuggestedAction: "Probing at the top of each hour — rate-limit windows typically expire on clock-hour boundaries. /goal resume retries now.",
           }, ctx);
-          ctx.ui.notify(`${goalNoun()} parked: ${reason} — 6 brakes in a row, no more auto-retries. Check the provider, then /goal resume.`, "warning");
-          notifyExternal(ctx, `${goalNoun()} parked: provider erroring across 6 error-brake cycles.`);
+          ctx.ui.notify(`${goalNoun()} parked: ${reason} — 6 brakes in a row. Hourly top-of-hour probes will pick work back up when the window opens; /goal resume retries now.`, "warning");
+          notifyExternal(ctx, `${goalNoun()} parked: provider erroring across 6 error-brake cycles — hourly top-of-hour probes scheduled.`);
           appendLedger(ctx.cwd, "error_brake_capped", { streak: errorBrakeStreak, reason });
+          const probeMs = msUntilNextHourBoundary(Date.now());
+          scheduleQuotaRetry(ctx, probeMs / 1000, reason, () => {
+            // Re-check: only probe if STILL parked by the error-brake cap —
+            // a user pause/resume/cancel meanwhile is never stomped.
+            if (state.goal && state.goal.status === "paused" && state.goal.pauseKind === "error"
+              && (state.goal.pauseReason ?? "").includes("error-brakes in a row")) {
+              appendLedger(ctx.cwd, "hourly_rate_probe", { goalId: state.goal.id, streak: errorBrakeStreak });
+              updateGoal({ status: "active" }, ctx);
+              appendLedger(ctx.cwd, "goal_resumed", { via: "hourly-rate-probe" });
+              ctx.ui.notify("Hourly probe: resuming (rate-limit windows typically expire at the top of the hour).", "info");
+              scheduleContinuation(ctx, true);
+            }
+          }, "Hourly rate-limit probe");
           return;
         }
         // v0.28.25: the cooldown escalates per CONSECUTIVE brake — a fleet-wide
