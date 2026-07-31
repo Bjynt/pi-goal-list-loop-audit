@@ -35,6 +35,8 @@ fails, retry with a different approach — just continue, don't stall the loop
 asking permission. You remain the single writer: apply the edit yourself.
 
 ${INTERVENTION_NOTE}
+${HYPOTHESIS_NOTE}
+${REFINE_HINT}
 ${REGRESSION_NOTE}
 ${STRATEGY_NOTE}
 

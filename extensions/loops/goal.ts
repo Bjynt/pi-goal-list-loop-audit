@@ -2617,7 +2617,7 @@ async function runGit(ctx: ExtensionContext, args: string[]): Promise<{ ok: bool
   }
 }
 
-function loopPrompt(loop: LoopState, regressionNote: string, strategyNote: string, boundsNote: string, interventionNote = "", variantNote = ""): string {
+function loopPrompt(loop: LoopState, regressionNote: string, strategyNote: string, boundsNote: string, interventionNote = "", variantNote = "", hypothesisNote = "", refineHintNote = ""): string {
   // v0.23.0: metricless loops get their own prompt — no metric section,
   // anti-doorknob rules instead of anti-gaming rules.
   const metricless = !loop.measureCmd;
@@ -2644,7 +2644,9 @@ function loopPrompt(loop: LoopState, regressionNote: string, strategyNote: strin
     .replace(/\$\{STRATEGY_NOTE\}/g, strategyNote)
     .replace(/\$\{BOUNDS_NOTE\}/g, boundsNote)
     .replace(/\$\{INTERVENTION_NOTE\}/g, interventionNote)
-    .replace(/\$\{VARIANT_NOTE\}/g, variantNote);
+    .replace(/\$\{VARIANT_NOTE\}/g, variantNote)
+    .replace(/\$\{HYPOTHESIS_NOTE\}/g, hypothesisNote)
+    .replace(/\$\{REFINE_HINT\}/g, refineHintNote);
 }
 
 function scheduleLoopTick(ctx: ExtensionContext): void {
@@ -2733,12 +2735,19 @@ function sendLoopTurn(): void {
   // v0.24.0: identical prompts invite identical answers — rotate the base
   // instruction (metricless loops; metric loops already vary via values).
   const variantNote = metricless ? continueVariant(loop.iteration) : "";
+  // v0.33.2: one-shot prompt payloads, consumed on use.
+  const hypothesisNote = loop.hypothesisFeedback ?? "";
+  if (hypothesisNote) loop.hypothesisFeedback = undefined;
+  const refineHintNote = loop.refineHint
+    ? `**The operator suggests refining the spec:** ${loop.refineHint} — if the current spec no longer captures "better", call propose_loop_refine (target and/or measureCmd${loop.specFile ? " and/or specText/specAppend" : ""}); if it still stands, say why in one line and keep working.`
+    : "";
+  if (refineHintNote) loop.refineHint = undefined;
   try {
     let loopResync = "";
     if (postCompactResyncPending) { try { loopResync = buildPostCompactResync(); } catch { loopResync = ""; } } // v0.33.1
     extensionApi.sendMessage({
       customType: GOAL_EVENT_ENTRY,
-      content: loopResync + loopPrompt(loop, regressionNote, strategyNote, boundsNote, interventionNote, variantNote),
+      content: loopResync + loopPrompt(loop, regressionNote, strategyNote, boundsNote, interventionNote, variantNote, hypothesisNote, refineHintNote),
       display: false,
     }, { triggerTurn: true, deliverAs: "followUp" });
     if (loopResync) postCompactResyncPending = false; // consumed only by a landed send
@@ -2809,6 +2818,23 @@ async function runLoopTick(ctx: ExtensionContext, event?: any): Promise<void> {
       }
     } catch { /* no ledger yet */ }
   }
+  // v0.33.2: respec spec drift + checkbox progress — hash compared per
+  // tick (external edits ledger spec_updated); newly checked boxes emit
+  // the spec_item_progress signal the stuck gate already consumes (it was
+  // consumed-but-never-emitted until now).
+  if (loop.specFile) {
+    const hash = specFileHash(loop.specFile);
+    if (hash && loop.specHash && loop.specHash !== hash) {
+      appendLedger(ctx.cwd, "spec_updated", { via: "external", iteration: loop.iteration });
+      ctx.ui.notify("Spec file changed mid-loop — drift ledgered (spec_updated).", "info");
+    }
+    if (hash) loop.specHash = hash;
+    const checked = countCheckedSpecItems(loop.specFile);
+    if (checked !== null && loop.specChecked !== undefined && checked > loop.specChecked) {
+      appendLedger(ctx.cwd, "spec_item_progress", { iteration: loop.iteration, newlyChecked: checked - loop.specChecked, totalChecked: checked });
+    }
+    if (checked !== null) loop.specChecked = checked;
+  }
   const iterSignals = {
     fileWrites: loop.iterMetrics?.fileWrites ?? 0,
     gitCommits,
@@ -2848,6 +2874,26 @@ async function runLoopTick(ctx: ExtensionContext, event?: any): Promise<void> {
     loop.lastStuckReason = undefined;
   }
   let outcome: LoopTickOutcome = metricless ? applyMetriclessTick(loop, nowIso()) : applyMeasurement(loop, value, nowIso());
+  // v0.33.2: close the hypothesis feedback loop — the prediction went into
+  // the ledger; now the VERDICT rides the next iteration's prompt.
+  if (loop.lastHypothesis) {
+    const h = loop.history;
+    const cur = h.length >= 1 ? h[h.length - 1]!.value : null;
+    const prev = h.length >= 2 ? h[h.length - 2]!.value : null;
+    if (metricless || cur === null) {
+      loop.hypothesisFeedback = `Last iteration you predicted: "${loop.lastHypothesis}". ${metricless ? "Metricless loop — no number to verify it against; say honestly whether the prediction landed." : "The measure printed no number — the prediction is unverifiable."}`;
+    } else {
+      const moved = prev === null
+        ? `first measurement ${cur}`
+        : cur === prev
+          ? `flat at ${cur}`
+          : loop.direction === "min"
+            ? (cur < prev ? `improved ${prev} → ${cur}` : `regressed ${prev} → ${cur}`)
+            : (cur > prev ? `improved ${prev} → ${cur}` : `regressed ${prev} → ${cur}`);
+      loop.hypothesisFeedback = `Last iteration you predicted: "${loop.lastHypothesis}". Result: metric ${moved} (best ${loop.bestValue}).`;
+    }
+  }
+  loop.lastHypothesis = hypothesis;
   persistState(ctx);
   appendLedger(ctx.cwd, "loop_measured", {
     iteration: loop.iteration,
@@ -3151,6 +3197,28 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
 
   // v0.28.14: /loop cancel is a first-class alias — users reached for
   // /goal cancel to kill loops because "cancel" is the verb they know.
+  if (sub === "refine" || sub === "polish") {
+    // v0.33.2: the operator's respec verb. The refine flow stays
+    // agent-proposed + user-confirmed (propose_loop_refine) — this command
+    // queues the operator's suggestion into the next iteration's prompt.
+    // ("polish" accepted as an alias: the widget footer advertised it
+    // before the command existed — now it does.)
+    if (!isLoopActive()) {
+      ctx.ui.notify("No active loop to refine — /loop start first.", "warning");
+      return;
+    }
+    const hint = rest.trim();
+    if (!hint) {
+      ctx.ui.notify("Usage: /loop refine <what the spec should capture better> — the suggestion rides the next iteration's prompt; the agent proposes via propose_loop_refine and you confirm.", "info");
+      return;
+    }
+    state.loop!.refineHint = hint.slice(0, 300);
+    persistState(ctx);
+    appendLedger(ctx.cwd, "loop_refine_hint", { iteration: state.loop!.iteration, hint: state.loop!.refineHint });
+    ctx.ui.notify("Refine hint queued — it rides the next iteration's prompt.", "info");
+    return;
+  }
+
   if (sub === "stop" || sub === "cancel") {
     if (!state.loop) {
       ctx.ui.notify("No loop to stop.", "info");
@@ -4141,12 +4209,14 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
     parameters: Type.Object({
       target: Type.Optional(Type.String({ description: "The sharpened target text (omit to keep the current target)" })),
       measureCmd: Type.Optional(Type.String({ description: "The new measure command printing ONE number (omit to keep the current metric)" })),
+      specText: Type.Optional(Type.String({ description: "v0.33.2: full replacement text for the loop's spec file (respec loops only) — the orchestrator owns the write on user confirm" })),
+      specAppend: Type.Optional(Type.String({ description: "v0.33.2: lines to append to the loop's spec file (respec loops only)" })),
       rationale: Type.String({ description: "Why the current spec no longer captures 'better' — shown to the user in the Confirm dialog" }),
     }),
     async execute(_id, params, _signal, _onUpdate, execCtx) {
       const foreign4 = foreignToolGuard(execCtx);
       if (foreign4) return { content: [{ type: "text", text: foreign4 }], details: {} };
-      const p = params as { target?: string; measureCmd?: string; rationale: string };
+      const p = params as { target?: string; measureCmd?: string; specText?: string; specAppend?: string; rationale: string };
       const liveCtx = (execCtx as ExtensionContext | undefined) ?? ctx;
       const loop = state.loop;
       if (!loop?.active) {
@@ -4159,8 +4229,12 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       if (!loop.measureCmd && p.measureCmd?.trim()) {
         return { content: [{ type: "text", text: "This loop is metricless — refining it into a measured loop isn't supported. /loop stop, then /loop start with a metric." }], details: {} };
       }
-      if (newTarget === loop.target && newMeasure === loop.measureCmd) {
-        return { content: [{ type: "text", text: "Refinement proposed no changes — provide a new target, a new measureCmd, or both." }], details: {} };
+      const specChange = (p.specText?.trim() || p.specAppend?.trim()) ? true : false;
+      if (specChange && !loop.specFile) {
+        return { content: [{ type: "text", text: "This loop has no spec file (specText/specAppend apply to /loop respec loops). Refine the target instead." }], details: {} };
+      }
+      if (newTarget === loop.target && newMeasure === loop.measureCmd && !specChange) {
+        return { content: [{ type: "text", text: "Refinement proposed no changes — provide a new target, a new measureCmd, a spec change, or any combination." }], details: {} };
       }
       // Measure change → orchestrator test-runs the new command first.
       let newBaseline: number | null = null;
@@ -4191,7 +4265,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
           confirmed = (await confirmDraft(
             liveCtx,
             "Confirm loop spec refinement",
-          `Rationale: ${p.rationale}\n\nTarget:\n  old: ${loop.target.slice(0, 120)}\n  new: ${newTarget.slice(0, 120)}\n\nMeasure:\n  old: ${loop.measureCmd}\n  new: ${newMeasure}${newMeasure !== loop.measureCmd ? `\n  test-run: ${testOutput.slice(0, 120)} → ${newBaseline}` : ""}\n\nThe loop keeps running against the refined spec (iteration ${loop.iteration} so far). Apply?`,
+          `Rationale: ${p.rationale}\n\nTarget:\n  old: ${loop.target.slice(0, 120)}\n  new: ${newTarget.slice(0, 120)}\n\nMeasure:\n  old: ${loop.measureCmd}\n  new: ${newMeasure}${newMeasure !== loop.measureCmd ? `\n  test-run: ${testOutput.slice(0, 120)} → ${newBaseline}` : ""}${specChange ? `\n\nSpec file (${loop.specFile}):\n  ${p.specText?.trim() ? `REPLACE with ${p.specText!.trim().length} chars` : ""}${p.specText?.trim() && p.specAppend?.trim() ? " + " : ""}${p.specAppend?.trim() ? `APPEND: ${p.specAppend!.trim().slice(0, 120)}` : ""}` : ""}\n\nThe loop keeps running against the refined spec (iteration ${loop.iteration} so far). Apply?`,
           )) === "yes";
         } catch {
           confirmed = false;
@@ -4208,9 +4282,22 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         oldMeasureCmd: loop.measureCmd ?? "",
         newMeasureCmd: newMeasure,
       }, newBaseline);
+      // v0.33.2: the orchestrator owns the spec write (honesty stays
+      // inspectable — the agent never edits the spec it's judged against
+      // outside a confirmed refine).
+      if (specChange && loop.specFile) {
+        try {
+          if (p.specText?.trim()) fs.writeFileSync(loop.specFile, p.specText.trim() + "\n");
+          if (p.specAppend?.trim()) fs.appendFileSync(loop.specFile, (p.specText?.trim() ? "" : "\n") + p.specAppend.trim() + "\n");
+          loop.specHash = specFileHash(loop.specFile) ?? undefined;
+          appendLedger(liveCtx.cwd, "spec_updated", { via: "refine", iteration: loop.iteration, replaced: Boolean(p.specText?.trim()), appended: Boolean(p.specAppend?.trim()) });
+        } catch (e) {
+          return { content: [{ type: "text", text: `Spec file write failed: ${String(e).slice(0, 200)}. The target/measure refinement was applied; re-propose the spec change.` }], details: {} };
+        }
+      }
       persistState(liveCtx);
-      appendLedger(liveCtx.cwd, "loop_refined", { iteration: loop.iteration, newTarget, newMeasureCmd: newMeasure, newBaseline });
-      liveCtx.ui.notify(`Loop spec refined at iteration ${loop.iteration}.${newBaseline !== null ? ` New baseline: ${newBaseline}.` : ""}`, "info");
+      appendLedger(liveCtx.cwd, "loop_refined", { iteration: loop.iteration, newTarget, newMeasureCmd: newMeasure, newBaseline, specChanged: specChange || undefined });
+      liveCtx.ui.notify(`Loop spec refined at iteration ${loop.iteration}.${newBaseline !== null ? ` New baseline: ${newBaseline}.` : ""}${specChange ? " Spec file updated." : ""}`, "info");
       return { content: [{ type: "text", text: "Refinement confirmed and applied. Continue improving against the NEW spec — one small change per turn." }], details: {} };
     },
   }));

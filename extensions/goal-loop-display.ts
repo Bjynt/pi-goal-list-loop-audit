@@ -449,7 +449,7 @@ function loopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: numb
     lines.push(`├─ ${paint(theme, act.ok ? "success" : "error", act.ok ? "✓" : "✗")} ${act.name}${act.arg ? ` ${paint(theme, "dim", truncate(act.arg, 24))}` : ""}${act.ms > 0 ? ` ${paint(theme, "dim", `(${fmtElapsed(act.ms)})`)}` : ""}`);
   }
   const footer = !l.measureCmd
-    ? "metricless (no plateau) · /loop stop · /loop polish"
+    ? "metricless (no plateau) · /loop stop · /loop refine" // v0.33.2: the verb exists now
     : `${l.kind === "audit" ? "metric: closed findings" : truncate(l.measureCmd, budgetFor(width, 3, 30))} · /loop stop`;
   lines.push(`└─ ${paint(theme, "dim", footer)}`);
   if (l.branchName) lines.push(`⎇ ${paint(theme, "muted", truncate(l.branchName, budgetFor(width, 3, 50)))}`);
