@@ -31,7 +31,7 @@ export interface Settings {
    * the first-order defense either way; diversity is the second-order one
    * the user may deliberately trade away. */
   auditorSameSessionSwap?: boolean;
-  auditorThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  auditorThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   /** Shell command run on goal complete / goal pause / loop stop; message passed as $1. */
   notifyCmd?: string;
   /** Per-goal token budget; crossing it pauses the goal. Off by default
