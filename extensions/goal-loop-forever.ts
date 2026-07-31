@@ -478,6 +478,75 @@ export function countOpenAuditFindings(cwd: string): number {
  * reasonable answers exist) are presented, never touched. DECIDE lines use
  * "- [?]" so they never inflate the loop's open-findings measure.
  */
+/** v0.31.0: /list audit — the collect-then-drain audit (user design
+ * 2026-07-31: "this command could run a project audit, collect a bunch of
+ * tasks, then do them all too"). Division of labor:
+ *   /goal audit — one audited unit: audit + fix in the SAME pass (small scopes).
+ *   /list audit — audit once, then every open finding becomes its own queued,
+ *                 individually-audited list item (the actionables stop living
+ *                 only inside findings.md — the user's "audits don't make a
+ *                 list of actionables" pain).
+ *   /loop audit — forever fix-first cadence for living codebases.
+ * The collection item FIXES NOTHING: every fix lands as its own list item with
+ * its own isolated audit trail. DECIDE findings are presented at collection
+ * completion, never queued — a decision is not a task (the agent can't "do" it).
+ * The marker survives restarts inside the objective itself (no schema change):
+ * the completion fan-out matches on it.
+ */
+export const LIST_AUDIT_COLLECT_MARKER = "[LIST-AUDIT-COLLECT]";
+
+export function listAuditCollectTarget(focus?: string): string {
+  const scope = focus && focus.trim() ? focus.trim() : "the whole project";
+  return `${LIST_AUDIT_COLLECT_MARKER} Run ONE project audit pass that COLLECTS work — the follow-up fixes are queued as separate list items, so this pass changes no code. Scope: ${scope}. (1) Run a FRESH audit pass over the codebase — spawn Explore subagents for breadth — hunting real problems: bugs, broken flows, regressions, drift between docs and code, dead code, security holes. Not style nits, not speculative refactors. (2) Append every NEW finding to ${AUDIT_FINDINGS_REL} (create the file on the first finding; append-only — never delete, rewrite, or reorder existing lines; never re-report a finding already listed), classified: "- [ ] FIX: SEVERITY: short description (file:line)" for bugs and polish — and "- [?] DECIDE: short description (what the choice is, what each side costs)" for direction, trade-offs, and scope questions where two reasonable answers exist. (3) Change NOTHING — no fixes, no refactors, no drive-by edits: the orchestrator queues each open FIX finding as its own list item after this pass completes, and each fix lands with its own commit and its own audit. (4) DECIDE findings are listed in the completion report — they are presented to the user, never queued and never silently fixed. (5) Honesty law: never fabricate findings to look busy; if the pass is genuinely clean, say so plainly — an empty findings set is a success, not a failure. Done when: the audit pass is complete and every finding it surfaced is appended to ${AUDIT_FINDINGS_REL} with the right classification (or the report states plainly that nothing was found).`;
+}
+
+/** One parsed open finding from the audit findings file. */
+export interface AuditFindingLine {
+  /** Raw finding text with the checkbox + optional "FIX:" prefix stripped. */
+  text: string;
+  /** Severity rank for sorting: 0 = CRITICAL … 4 = unclassified. */
+  rank: number;
+}
+
+const AUDIT_SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+
+/** v0.31.0: parse findings.md into the fan-out shape — OPEN boxes become
+ * actionable findings (severity-sorted, stable within a rank), DECIDE boxes
+ * ("- [?]") are returned separately for presentation (never queued). Tolerates
+ * the /loop audit format (no "FIX:" prefix): any open box that isn't a
+ * decision is actionable.
+ */
+export function parseAuditFindingsForFanout(md: string): { open: AuditFindingLine[]; decisions: string[] } {
+  const open: AuditFindingLine[] = [];
+  const decisions: string[] = [];
+  md.split("\n").forEach((line, idx) => {
+    const decide = line.match(/^\s*-\s*\[\?\]\s*(.*)$/);
+    if (decide) {
+      const text = (decide[1] ?? "").replace(/^DECIDE:\s*/i, "").trim();
+      if (text) decisions.push(text);
+      return;
+    }
+    const box = line.match(/^\s*-\s*\[ \]\s*(.*)$/);
+    if (!box) return;
+    const text = (box[1] ?? "").replace(/^FIX:\s*/i, "").trim();
+    if (!text) return;
+    const sev = text.match(/^([A-Z]+)\s*:/);
+    const rank = sev ? AUDIT_SEVERITY_ORDER.indexOf(sev[1]!) : -1;
+    open.push({ text, rank: rank >= 0 ? rank : AUDIT_SEVERITY_ORDER.length + (idx / 100000) });
+  });
+  // Severity first; stable within a rank (file order) via the fractional idx.
+  open.sort((a, b) => a.rank - b.rank);
+  return { open, decisions };
+}
+
+/** v0.31.0: the list-item text for one finding — short objective + a checkable
+ * Done when (the fix commit exists AND the box is checked with its hash, so
+ * findings.md stays honest as the drain proceeds).
+ */
+export function listAuditFanoutItemText(finding: string): string {
+  return `Fix audit finding: ${finding} — Done when: the fix is committed on the current branch with the repo's configured identity, and this finding's box in ${AUDIT_FINDINGS_REL} is checked ("- [x] … — fixed in <commit>").`;
+}
+
 export function projectAuditTarget(focus?: string): string {
   const scope = focus && focus.trim() ? focus.trim() : "the whole project";
   return `Run ONE project audit pass and leave the project in a known state. Scope: ${scope}. (1) Run a FRESH audit pass over the codebase — spawn Explore subagents for breadth — hunting real problems: bugs, broken flows, regressions, drift between docs and code, dead code, security holes. Not style nits, not speculative refactors. (2) Append every NEW finding to ${AUDIT_FINDINGS_REL} (create the file on the first finding; append-only — never delete, rewrite, or reorder existing lines; never re-report a finding already listed), classified: "- [ ] FIX: SEVERITY: short description (file:line)" for bugs and polish — whether to fix these is NOT a decision — and "- [?] DECIDE: short description (what the choice is, what each side costs)" for direction, trade-offs, and scope questions where two reasonable answers exist. (3) Fix every NEW FIX finding from this pass — real fixes, committed with the repo's configured identity on the current branch (no invented identities or branches) — then check the box: "- [x] … — fixed in <commit>". (4) Change NOTHING for DECIDE findings — present them in the completion report instead. (5) Honesty law: never fabricate findings to look busy; never check a box without the fix commit existing; never silently turn a DECIDE into a fix. Done when: the audit pass is complete, every new FIX finding has a fix commit and a checked box in ${AUDIT_FINDINGS_REL}, and every DECIDE finding is listed in the file and presented in the completion report.`;
