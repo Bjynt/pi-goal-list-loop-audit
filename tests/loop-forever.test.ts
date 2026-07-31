@@ -542,7 +542,9 @@ test("v0.29.0: /loop audit — metric loop over open findings; plateau = the wel
   assert.match(SRC, /if \(sub === "audit"\) \{/);
   assert.match(SRC, /target: auditTarget\(\),\s*\n\s*measureCmd: auditMeasureCmd\(\),\s*\n\s*direction: "max",/);
   // guards: no stacking over an active goal or loop:
-  const auditIdx = SRC.indexOf('if (sub === "audit")');
+  // v0.31.0: /list audit added its own route ABOVE cmdLoop — anchor on the
+  // /loop audit route (the one that seeds the metric loop), not the first.
+  const auditIdx = SRC.indexOf('if (sub === "audit")', SRC.indexOf("async function cmdLoop"));
   assert.match(SRC.slice(auditIdx, auditIdx + 1600), /A goal is active — \/goal cancel or \/goal pause it before starting a loop\./);
   assert.match(SRC.slice(auditIdx, auditIdx + 1600), /A loop is already active\. \/loop stop first\./);
   // drain suggestion (suggestion, not auto-start — consent per v0.28.28):

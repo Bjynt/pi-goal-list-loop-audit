@@ -615,6 +615,24 @@ test("carryover=resume: legacy silent stacking — no summary, queue + held loop
 });
 
 
+test("/list audit: queues a collect-only audit item with the restart-safe marker", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("list", "audit the renderer", ctx);
+  await tick();
+  const s = readState(cwd);
+  const active = s.goal as { objective: string; policy: string } | null;
+  const queued = s.list as Array<{ objective: string }>;
+  const text = (active?.objective ?? "") + "|" + queued.map((i) => i.objective).join("|");
+  assert.ok(text.includes("[LIST-AUDIT-COLLECT]"), `collect marker in the item: ${text.slice(0, 160)}`);
+  assert.ok(text.includes("Scope: the renderer"), "focus threaded through");
+  assert.ok(
+    ctx.ui.matching("CHANGES NO CODE").length >= 1,
+    "the route notify states the collect-only contract",
+  );
+});
+
 // ---- v0.28.23: decision picker popup (/goal decide) ----
 
 function seedDecisionGoal(): Record<string, unknown> {
