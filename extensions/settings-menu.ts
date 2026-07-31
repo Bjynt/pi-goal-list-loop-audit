@@ -173,9 +173,9 @@ export function buildSettingsRows(
       id: "auditorThinkingLevel",
       section: "auditor",
       label: "Auditor thinking",
-      valueText: show("auditorThinkingLevel", "session, floor high"),
+      valueText: show("auditorThinkingLevel", "high (fixed — never the session coding dial)"),
       sourceText: src("auditorThinkingLevel"),
-      description: "thinking level for the auditor session",
+      description: "thinking level for the auditor session — unset = high (the verification gate does not ride the session thinking dial)",
     },
     {
       id: "auditCap",

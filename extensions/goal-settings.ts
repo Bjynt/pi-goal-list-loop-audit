@@ -112,9 +112,10 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  // Unset = follow the pi session thinking level (user selects thinking in
-  // pi, auditor follows), floor "high" — the auditor is the verification
-  // gate, depth is worth more there than speed. /glla thinking= overrides.
+  // Unset = "high" at the call site (v0.31.2). The auditor is the
+  // verification gate: its depth must NOT ride the session's coding-speed
+  // thinking dial (user 2026-07-31: "we should also select its thinking
+  // level — we don't keep switching it"). /glla thinking= overrides.
   auditorThinkingLevel: undefined,
   // v0.24.6: subagents inherit the session model by default — one quota
   // pool, no surprise 403s from a pinned default agent's provider.

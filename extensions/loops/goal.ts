@@ -154,6 +154,7 @@ import {
 } from "../settings-menu.js";
 import {
   buildModelPickItems,
+  pickDiverseAuditorModel,
   ModelPickerComponent,
   type ModelPickItem,
 } from "../model-picker.js";
@@ -1380,7 +1381,7 @@ async function retryStoredCompletionAudit(ctx: ExtensionContext, origin: "quota-
           completionSummary: claim.completionSummary,
           verificationSummary: claim.verificationSummary,
           model: auditorModel,
-          thinkingLevel: settings.auditorThinkingLevel ?? getSessionThinkingLevel(),
+          thinkingLevel: settings.auditorThinkingLevel ?? "high",
           onProgress: (progress) => {
             latestAuditProgress = { currentTool: progress.currentTool, label: progress.label, elapsedMs: progress.elapsedMs, lastEventAt: Date.now() };
             refreshUI(liveCtx);
@@ -3188,7 +3189,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
           completionSummary: p.completionSummary,
           verificationSummary: p.verificationSummary,
           model: auditorModel,
-          thinkingLevel: settings.auditorThinkingLevel ?? getSessionThinkingLevel(),
+          thinkingLevel: settings.auditorThinkingLevel ?? "high",
           signal: signal ?? undefined,
           onProgress: (progress) => {
             latestAuditProgress = {
@@ -4207,18 +4208,6 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
  * the thinking level the user selected in pi; if none is set, audits run at
  * "high" — the auditor is the verification gate, depth beats speed there.
  */
-function getSessionThinkingLevel(): "off" | "minimal" | "low" | "medium" | "high" | "xhigh" {
-  try {
-    const level = extensionApi?.getThinkingLevel?.();
-    if (level && ["off", "minimal", "low", "medium", "high", "xhigh"].includes(level)) {
-      return level as "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-    }
-  } catch {
-    // fall through to the floor
-  }
-  return "high";
-}
-
 /**
  * Resolve the auditor model (v0.6.2). The principle: **the user selects the
  * model in pi; the auditor uses it.** The plugin never picks a model itself.
@@ -4235,6 +4224,24 @@ function getSessionThinkingLevel(): "off" | "minimal" | "low" | "medium" | "high
 function resolveAuditorModel(ctx: ExtensionContext, ref?: string): { model: any; error?: string; via?: string } {
   if (ref && ref.trim()) {
     const trimmed = ref.trim();
+    // v0.31.2: "diverse" — the cross-vendor auditor (user design 2026-07-31:
+    // "there is benefit to have a different auditor"). Independent blind
+    // spots + a separate quota pool; the fresh auditor session shares no
+    // prompt cache anyway, so cross-vendor costs nothing extra.
+    if (trimmed.toLowerCase() === "diverse") {
+      const sessionModel = ctx.model as any;
+      const available = ctx.modelRegistry
+        .getAvailable()
+        .filter((m: any) => ctx.modelRegistry.hasConfiguredAuth(m));
+      const pick = pickDiverseAuditorModel(available, sessionModel?.provider);
+      if (pick) return { model: pick, via: "diverse" };
+      if (sessionModel) {
+        appendLedger(ctx.cwd, "auditor_model_fallback", { configured: "diverse", reason: "no configured-auth model outside the session's provider" });
+        ctx.ui.notify("Auditor model \"diverse\" found no model outside the session's provider — falling back to the session model (LOUD fallback; pin one via /glla → Auditor model).", "warning");
+        return { model: sessionModel, via: "session-fallback" };
+      }
+      return { model: undefined, error: "auditorModel \"diverse\": no configured-auth model at all" };
+    }
     // v0.29.17: an unavailable configured model (unknown id, or a provider
     // with no configured auth) falls back LOUDLY to the session model —
     // user request: "fall back to the session if unavailable". The v0.9.12
@@ -4355,6 +4362,7 @@ async function promptModelRef(
   ctx: ExtensionContext,
   title: string,
   emptyLabel: string,
+  extraTop: ModelPickItem[] = [],
 ): Promise<{ kind: "session" } | { kind: "ref"; ref: string } | undefined> {
   if (typeof (ctx.ui as { custom?: unknown }).custom !== "function" || !ctx.modelRegistry) {
     const v = await ctx.ui.input(title, "provider/model-id — empty keeps the default");
@@ -4366,7 +4374,7 @@ async function promptModelRef(
   const models = ctx.modelRegistry
     .getAvailable()
     .filter((m: any) => ctx.modelRegistry.hasConfiguredAuth(m));
-  const items = buildModelPickItems(models, sessionLabel);
+  const items = buildModelPickItems(models, sessionLabel, extraTop);
   const pick = await ctx.ui.custom<ModelPickItem | undefined>((tui, theme, keybindings, done) => {
     return new ModelPickerComponent({ title, items }, () => tui.requestRender(), theme, keybindings, done);
   });
@@ -4418,10 +4426,21 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "auditorModel": {
-      const pick = await promptModelRef(ctx, "Auditor model override", "provider/model-id — empty keeps the pi session model");
+      // v0.31.2: "diverse" sits at the top — the cross-vendor auditor
+      // (independent blind spots + a separate quota pool from the coding
+      // session). Picked like a model; resolution happens per-audit so
+      // provider availability is re-checked every time.
+      const diverseItem: ModelPickItem = {
+        kind: "model",
+        ref: "diverse",
+        label: "diverse — cross-vendor auditor: a different provider than the session, picked fresh per audit (Recommended)",
+        searchText: "diverse cross vendor independent different provider quota strategy recommended",
+      };
+      const pick = await promptModelRef(ctx, "Auditor model override", "provider/model-id — empty keeps the pi session model", [diverseItem]);
       if (pick === undefined) return;
       saveSettings("global", ctx.cwd, { auditorModel: pick.kind === "session" ? undefined : pick.ref });
       if (pick.kind === "session") ctx.ui.notify("Auditor model override cleared — the auditor follows the pi session model.", "info");
+      if (pick.kind === "ref" && pick.ref === "diverse") ctx.ui.notify("Auditor model: DIVERSE — each audit picks a configured model outside the session's provider (deepseek ↔ MiniMax first).", "info");
       return;
     }
     case "auditorThinkingLevel": {
