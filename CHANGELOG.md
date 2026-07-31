@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.30.0] — 2026-07-31
+
+### Changed — rebind-first session-replacement survival: no more forced reloads for the common cases
+
+User challenge (2026-07-31): "we don't want to be forced to run reloads —
+investigate how others do it; this seems super hacky; no other goal
+plugin or coding CLI made me reload." The investigation (pi docs
+lifecycle + dist-verified): other plugins never hit staleness because
+they don't run an autonomous in-process pump — glla is alone in holding
+a send-capable state machine for hours. pi's sanctioned survival pattern
+was there all along (`session_shutdown` → cleanup, `session_start` →
+re-establish with the NEW ctx; the stale error text itself says to move
+post-replacement work into `withSession`). glla treated every stale
+handle as terminal ("run /reload") when the three replacement shapes
+need three different responses:
+
+- **Switch (resume/new/fork)**: pi rebinds THIS module to the new
+  session — `session_start` delivers a fresh ctx. glla now resets the
+  stale flag via a re-probe (`stale_flag_reset_on_rebind {stillStale}`),
+  claims ownership, and continues silently. No user action, no warning.
+  A new 60s rebind window (opened by the `session_shutdown` handler)
+  absorbs stale probes that land in the invalidate→rebind gap
+  (`stale_awaiting_rebind`) instead of screaming.
+- **/reload**: pi re-imports the extension modules — a SUCCESSOR
+  instance owns the cwd in the same process. The old module now detects
+  the successor via `.pi-glla/owner.json` (`instanceId = pid:startedAt`,
+  written on every `session_start`) and STANDS DOWN silently
+  (`zombie_stood_down`) — no warning, no /reload injection (v0.29.22's
+  self-heal was right for orphans, pure churn here). Stood-down zombies
+  never tick again.
+- **Orphan**: the session died with NO replacement (hegemon 2026-07-31:
+  handle dead ~06:03, zero ledger events for 5h — unattributable then).
+  This is the ONLY case that still warns + self-heals
+  (goStaleTerminal + v0.29.22's WezTerm/tmux injection).
+
+- New `session_shutdown` handler ledgers pi's `reason`
+  (reload/resume/new/fork/quit) — the next unexplained disposal is
+  attributable from the ledger alone.
+- The entry probe absorbs superseded staleness softly ("a refreshed
+  instance owns this session — handled there; nothing to do") instead of
+  demanding a reload the fresh instance already made unnecessary.
+
+644 tests (the decide-picker test now rewrites the last STATE ledger
+entry in place — session_start ledgering made last-line ≠ last-state).
+
 ## [0.29.23] — 2026-07-31
 
 ### Fixed — wedge-class pause guidance is Escape/reload-first, not restart-first (the "retry storm" note)

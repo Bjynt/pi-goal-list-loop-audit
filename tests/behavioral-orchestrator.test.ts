@@ -639,10 +639,17 @@ test("/goal decide: content pick → decision sent to the agent + goal resumes",
   const g0 = readState(cwd).goal as unknown as Record<string, unknown>;
   g0.pauseOptions = ["Surgical Done when: clause", "Deliver the missing polish (~2-3 hours)", "Reword the objective to accept SUPERSEDED"];
   g0.pauseRecommended = 3;
-  const line = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8").trim().split("\n");
-  const entry = JSON.parse(line[line.length - 1]!);
+  // v0.30.0: rewrite the last STATE entry in place — session_start now
+  // also ledgers session_rebound, so the last line is no longer
+  // guaranteed to be a state entry (and truncating the ledger drops
+  // history readState still needs).
+  const lines = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8").trim().split("\n");
+  const stateIdx = lines.map((l) => (JSON.parse(l) as { type?: string }).type).lastIndexOf("state");
+  assert.ok(stateIdx >= 0, "a state entry exists to rewrite");
+  const entry = JSON.parse(lines[stateIdx]!);
   entry.value.goal = g0;
-  fs.writeFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), JSON.stringify(entry) + "\n");
+  lines[stateIdx] = JSON.stringify(entry);
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), lines.join("\n") + "\n");
   // Re-load so the module state picks up the content options.
   const ctx2 = await freshSession(cwd, "reload");
   await tick();
