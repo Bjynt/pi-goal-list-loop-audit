@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.31.2] — 2026-07-31
+
+### Added — the cross-vendor auditor: `auditorModel: "diverse"` + sticky-high thinking
+
+User design (2026-07-31): "there is benefit to have a different auditor —
+M3's auditor could be deepseek and vice versa; and we should select its
+thinking level since we don't keep switching it."
+
+- **`/glla → Auditor model → "diverse" (Recommended)`**: each audit picks a
+  configured-auth model OUTSIDE the session's provider, fresh per audit —
+  session on MiniMax → deepseek via openrouter; session on openrouter →
+  MiniMax-M3; then kimi/xai/opencode/zenmux; the session's provider is
+  excluded entirely (provider-granularity — openrouter's catalogue is too
+  mixed for family-level reasoning). Two independent wins: (1) the auditor
+  reads the executor's claims with INDEPENDENT blind spots — same-family
+  models share failure modes; (2) audits spend a DIFFERENT provider's quota
+  pool — they stop eating the coding session's MiniMax window. No cache
+  cost: the auditor is already a fresh extension-less session, so
+  cross-vendor shares nothing either way. Nothing outside the session's
+  provider → the same LOUD session-fallback as any unavailable configured
+  model (`auditor_model_fallback`, never silent — v0.9.12 law).
+- **Auditor thinking defaults to sticky `high`** — decoupled from the
+  session dial. The bad design the user smelled: unset followed the pi
+  session's thinking level, so dialing the session to `low` for fast coding
+  silently weakened the verification gate. `getSessionThinkingLevel` is
+  gone; `/glla → Auditor thinking` / `/glla thinking=` still overrides.
+- Selection is a pure exported function (`pickDiverseAuditorModel` +
+  `DIVERSE_AUDITOR_PREFERENCE`) with unit tests on the reciprocal mapping.
+
+661 tests.
+
 ## [0.31.1] — 2026-07-31
 
 ### Added — audit-initiative stacking guards (junk-runner field confusion)
