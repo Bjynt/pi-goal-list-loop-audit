@@ -271,6 +271,13 @@ export function __testOnlyResetStaleFlag(): void {
   extensionApiStale = false;
 }
 
+/** Test-only: release the claimed session owner so a later test file can
+ * drive agent_end with its own sessionManager identity (ownerSession is
+ * process-wide module state; behavioral-orchestrator claims it first). */
+export function __testOnlyResetOwnerSession(): void {
+  ownerSession = null;
+}
+
 /** v0.28.1 (S3): side-effect-free staleness probe — getSessionName()
  * routes through pi's assertActive() and throws the stale signature iff
  * pi invalidated this factory handle (session replacement). A positive

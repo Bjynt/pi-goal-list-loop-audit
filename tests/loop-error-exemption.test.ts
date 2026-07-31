@@ -12,7 +12,7 @@ import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import activate, { __testOnlyResetStaleFlag } from "../extensions/loops/goal.js";
+import activate, { __testOnlyResetStaleFlag, __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
 import { readState } from "../extensions/goal-loop-core.js";
 import { auditMeasureCmd, AUDIT_FINDINGS_REL } from "../extensions/goal-loop-forever.js";
 import { MockPi, makeMockCtx, tmpCwd, seedState, seedLoop, tick, type MockCtx } from "./harness/mock-pi.js";
@@ -28,12 +28,14 @@ function setGlobalAutoResume(v: boolean): void {
 afterEach(() => {
   setGlobalAutoResume(false);
   pi.execHandler = null;
+  __testOnlyResetOwnerSession(); // release the claim so later files are unaffected
 });
 
 function ownerCtx(cwd: string): MockCtx {
   return makeMockCtx(cwd, { sessionManager: MAIN_SM });
 }
 async function freshSession(cwd: string, reason: string): Promise<MockCtx> {
+  __testOnlyResetOwnerSession(); // behavioral-orchestrator's owner claim precedes this file
   const ctx = ownerCtx(cwd);
   await pi.fire("session_start", { reason }, ctx);
   return ctx;
