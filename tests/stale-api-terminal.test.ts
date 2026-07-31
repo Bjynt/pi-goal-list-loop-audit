@@ -59,7 +59,40 @@ test("v0.29.11 — heartbeat PROBES staleness before burning stall refires", () 
   // Field (polis stall 3/5, endless-td stall 1/5, 2026-07-30): the
   // heartbeat refired into a session-replaced handle until a send happened
   // to throw. Now the first tick after replacement goes terminal at once.
-  assert.match(SRC, /if \(probeExtensionApiStale\(\)\) \{ goStaleTerminal\(ctx, "heartbeat probe"\); return; \}/);
+  // v0.30.0: terminal only for ORPHANS — rebind-window and
+  // successor-instance cases are absorbed silently first.
+  assert.match(SRC, /if \(!absorbStaleIfSuperseded\(ctx\)\) goStaleTerminal\(ctx, "heartbeat probe"\);/);
+});
+
+test("v0.30.0 — rebind-first survival: session_shutdown attribution, session_start rebind, zombie stand-down", () => {
+  // User challenge 2026-07-31: "we don't want to be forced to run
+  // reloads — investigate how others do it, this seems super hacky." pi's
+  // sanctioned pattern (docs/extensions.md + the stale error text):
+  // session_shutdown → cleanup, session_start → re-establish with the new
+  // ctx. Three replacement shapes get three responses: switch = silent
+  // rebind; /reload = successor instance owns the cwd → stand down;
+  // orphan = the only case that still warns + self-heals.
+  assert.match(SRC, /pi\.on\("session_shutdown", async \(event: any, ctx: ExtensionContext\) => \{/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "session_shutdown", \{ reason: shutdownReason \}\);/);
+  assert.match(SRC, /sessionReplacementUntil = Date\.now\(\) \+ SESSION_REBIND_GRACE_MS;/);
+  assert.ok(SRC.includes('appendLedger(ctx.cwd, "session_rebound", { reason: startReason });'), "rebind ledgered");
+  assert.ok(SRC.includes("writeOwnerFile(ctx.cwd);"), "session_start claims ownership");
+  assert.ok(SRC.includes("owner.json"), "owner file name");
+  assert.ok(SRC.includes("`${process.pid}:${instanceStartedAt}`"), "instanceId distinguishes a re-imported successor");
+  assert.ok(SRC.includes('appendLedger(ctx.cwd, "stale_flag_reset_on_rebind", { reason: startReason, stillStale });'), "stale flag reset via re-probe on rebind");
+  assert.ok(SRC.includes('appendLedger(ctx.cwd, "zombie_stood_down", { owner: owner.instanceId });'), "successor stand-down ledgered");
+  assert.ok(SRC.includes('appendLedger(ctx.cwd, "stale_awaiting_rebind", {});'), "rebind window absorbs stale probes");
+  assert.ok(SRC.includes("owner.instanceId !== instanceId"), "stand-down only when a DIFFERENT instance owns the cwd");
+  assert.ok(SRC.includes("owner.pid === process.pid"), "stand-down is same-process only (cross-process twins untouched)");
+  const tickIdx = SRC.indexOf("function heartbeatTick(): void {");
+  assert.ok(SRC.indexOf("if (zombieStoodDown) return;") === tickIdx + "function heartbeatTick(): void {\n  ".length - 2 || SRC.slice(tickIdx, tickIdx + 200).includes("if (zombieStoodDown) return;"), "stood-down zombie never ticks again");
+  const entryIdx = SRC.indexOf("function warnIfStaleAtEntry");
+  const entryBlock = SRC.slice(entryIdx, entryIdx + 900);
+  assert.ok(entryBlock.includes("absorbStaleIfSuperseded(ctx)"), "entry probe absorbs superseded stale softly");
+  assert.ok(entryBlock.includes("is handled there; nothing to do"), "superseded entry probe says nothing-to-do");
+  // The orphan path (goStaleTerminal + self-heal) survives.
+  assert.match(SRC, /function goStaleTerminal\(ctx: ExtensionContext, where: string\): void/);
+  assert.match(SRC, /function attemptAutoReload\(ctx: ExtensionContext, where: string\): void/);
 });
 
 test("v0.29.11 — stale/stall-stopped loops HOLD on next load (resume, not restart-from-scratch)", () => {
