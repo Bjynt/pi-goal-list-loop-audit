@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.29.19] — 2026-07-31
+
+### Fixed — dead turns no longer kill loops (provider-error exemption everywhere) + audit plateau gate
+
+Field (2026-07-31, overnight MiniMax token-plan 429 storm): every fleet
+loop died on DEAD turns, not on the work. The v0.28.13/v0.29.4 exemptions
+only covered the goal nudge counter — the loop's own accounting counted
+429 corpses: hegemon plateau-stopped at best 74 with **13 open findings**,
+polis at best 46 with 3+, hellhunter stuck-stopped at iter 93 on
+"narration only" turns that were really error turns.
+
+- **Error/abort turns are not iterations**: `agent_end` with stopReason
+  `error`/`aborted` now skips the loop's measure + stuck + stall accounting
+  entirely and refires (ledger `loop_turn_exempt_error`). Bounded: 6
+  consecutive error turns stop the loop with the honest
+  `provider errors — 6 consecutive error turns (iteration N preserved)`;
+  3 consecutive user aborts stop it with `stopped by user —` (user aborts
+  mean STOP). Both resumable via `/loop resume`.
+- **Audit plateau gate**: an audit loop's plateau stop now only fires when
+  the well is ACTUALLY dry (orchestrator counts open `- [ ]` boxes in
+  findings.md). Plateauing with open findings stands the stop down
+  (`audit_plateau_reprieve`), resets the stall, and shoves the next
+  iteration with "K findings still OPEN — close one NOW". Bounded by 2
+  reprieves; the third plateau stops with the honest
+  `no closure in W×3 iterations despite K open findings` (resumable).
+- **`/loop resume` generalised**: held, provider-error, user-abort,
+  blocked-plateau, and stuck-ladder stops are all resumable; an explicit
+  resume re-arms the counters (stall window, dead-turn/stuck streaks,
+  reprieves) — the user saying "push again" wins over the ladder's memory.
+- Test harness: MockPi exec is now programmable per-test; new
+  `__testOnlyResetOwnerSession` releases the session-owner claim between
+  test files.
+
+639 tests.
+
 ## [0.29.18] — 2026-07-30
 
 ### Changed — /loop audit is now FIX-FIRST (re-audit on cadence, not every iteration)
