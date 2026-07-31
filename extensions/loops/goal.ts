@@ -175,6 +175,7 @@ import {
   countOpenAuditFindings,
   AUDIT_FINDINGS_REL,
   projectAuditTarget,
+  type LoopTickOutcome,
   HELD_ON_RESTORE,
   type LoopState,
 } from "../goal-loop-forever.js";
@@ -2346,9 +2347,13 @@ function sendLoopTurn(): void {
   }
   // v0.24.0: a stuck intervention REPLACES the pep talk — the rotating
   // directive names why the loop is stuck and what rung of the ladder it's on.
-  const interventionNote = (loop.consecutiveStuck ?? 0) > 0 && loop.lastStuckReason
+  // v0.29.19: a plateau reprieve's one-shot shove takes priority over the
+  // stuck directive (they can't both be meaningful in the same iteration).
+  const reprieveNote = loop.auditReprieveNote ?? "";
+  if (reprieveNote) loop.auditReprieveNote = undefined;
+  const interventionNote = reprieveNote || ((loop.consecutiveStuck ?? 0) > 0 && loop.lastStuckReason
     ? loopInterventionDirective(loop.consecutiveStuck!, loop.lastStuckReason, loop.recentTexts ?? [])
-    : "";
+    : "");
   // v0.24.0: identical prompts invite identical answers — rotate the base
   // instruction (metricless loops; metric loops already vary via values).
   const variantNote = metricless ? continueVariant(loop.iteration) : "";
@@ -2463,7 +2468,7 @@ async function runLoopTick(ctx: ExtensionContext, event?: any): Promise<void> {
     loop.consecutiveStuck = 0;
     loop.lastStuckReason = undefined;
   }
-  const outcome: LoopTickOutcome = metricless ? applyMetriclessTick(loop, nowIso()) : applyMeasurement(loop, value, nowIso());
+  let outcome: LoopTickOutcome = metricless ? applyMetriclessTick(loop, nowIso()) : applyMeasurement(loop, value, nowIso());
   persistState(ctx);
   appendLedger(ctx.cwd, "loop_measured", {
     iteration: loop.iteration,
@@ -2527,7 +2532,7 @@ async function runLoopTick(ctx: ExtensionContext, event?: any): Promise<void> {
         const honest = `plateau — no closure in ${loop.plateauWindow}×${reprieves} iterations despite ${open} open findings (treat as blocked; /loop resume to push again)`;
         loop.stopReason = honest;
         persistState(ctx);
-        outcome = { kind: "stop", reason: honest } as LoopTickOutcome;
+        outcome = { kind: "stop", reason: honest };
       }
     }
     await finishLoopGit(ctx, loop);
