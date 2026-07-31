@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.31.8] — 2026-07-31
+
+### Fixed — the auditor thinking options now come from the PICKED MODEL
+
+User (2026-07-31): "there is still no max setting — we are not using the
+model information cause it has no max." The select was a hardcoded ladder
+that stopped at xhigh. It now replicates pi's own rule (pi-ai
+`getSupportedThinkingLevels`) inline against the picked model at runtime:
+
+- `xhigh`/`max` appear only when the model maps them (`thinkingLevelMap`)
+- a level mapped to `null` is hidden
+- a non-reasoning model gets NO select — the flow tells you "this model
+  exposes no thinking levels (auditor runs with thinking off)" and moves on
+- each option carries pi's own description (~1k/~2k/~8k/~32k tokens, max)
+- `/glla thinking=` accepts `max`; the settings union includes it
+
+The saved `max` is passed through with a cast — the user's installed pi
+(≥0.83) understands it; the extension's older pi-ai dev-types predate it
+(which is also why the fields are read at runtime, not imported).
+
+662 tests.
+
 ## [0.31.7] — 2026-07-31
 
 ### Fixed — the auditor-thinking select was indistinguishable from pi's own
