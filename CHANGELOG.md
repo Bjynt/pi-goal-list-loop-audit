@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.33.5] — 2026-07-31
+
+### Changed — docs only (newcomer pass)
+
+- **INSTALL.md rewritten for first-timers**: npm install first, a 60-second
+  first-goal walkthrough (draft → loop → isolated audit), then the other two
+  modes; developer prerequisites and from-source install moved down;
+  historical version-stamped sections framed as operator notes; stale
+  "v0.1.0" title and the outdated auditor-override wording fixed.
+- **README**: the `/loop` decision rule now covers metricless spec loops and
+  `/loop audit` (it still claimed numeric-only + redirect-to-/goal); the
+  three-loops table row updated.
+- **PLAN.md**: newcomer pointer to README/INSTALL at the top.
+
 ## [0.33.4] — 2026-07-31
 
 ### Changed — docs only

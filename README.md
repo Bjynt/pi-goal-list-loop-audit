@@ -148,17 +148,19 @@ your `Done when:` contract with quoted evidence.
 or just say "queue these 10 things". Order is the default, not the law:
 `/list next <n>` picks any item.
 
-**`/loop`** — one thing, judged *numerically*, as a **process that never
-completes**. ONLY when a shell command can print a number that honestly
-tracks progress: test failures, TODO count, bundle size, coverage %, lint
-warnings, build time, dep count. The metric IS the auditor here — there is
-no semantic judge, so a fake metric (word count, file exists) is worse than
-no loop. There is no finish line (`done=` was removed in v0.15.0 — "improve
-until X" is a `/goal`); the loop runs until you stop it, the metric plateaus,
-or a time/token bound trips. `/loop` with no args drafts one for you:
-the agent proposes a measure, the orchestrator **test-runs it and shows you
-the real number** before you confirm; if no honest metric exists it will
-redirect you to `/goal`.
+**`/loop`** — one thing, as a **process that never completes**. Three
+flavors: **metric loops** (a shell command prints a number that honestly
+tracks progress — test failures, TODO count, bundle size, coverage %; the
+metric IS the auditor here, so a fake metric is worse than no loop, and the
+drafting step **test-runs your measure and shows you the real number**
+before you confirm), **metricless spec loops** (no honest number exists —
+the loop works a spec file with checkboxes instead; no plateau stop, ends
+only at your bounds or `/loop stop`), and **`/loop audit`** (a forever
+project-audit cadence that finds and fixes its own work). There is no
+finish line ("improve until X" is a `/goal`); a loop runs until you stop
+it, the metric plateaus, or a time/token bound trips. `/loop` with no args
+drafts one for you — and if a loop is the wrong shape entirely, drafting
+redirects you to `/goal`.
 
 ## Three loops on one state machine
 
@@ -166,7 +168,7 @@ redirect you to `/goal`.
 |---|---|---|
 | 1. Single ordered goal | `/goal "<objective>"` | **shipped v0.1.0** |
 | 2. List of goals (a pool, not a FIFO) | `/list [show\|next\|remove\|clear]` | **shipped v0.2.0** |
-| 3. Metric-driven process loop | `/loop start\|status\|stop` | **shipped v0.3.0** |
+| 3. Process loops (metric, metricless-spec, audit) | `/loop start\|status\|stop\|audit` | **shipped v0.3.0** |
 
 Each loop is a different policy class on the same status machine.
 

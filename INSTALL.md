@@ -1,12 +1,57 @@
-# Install & try v0.1.0
+# Install & try
 
-## Prerequisites
+## Install (the usual way)
 
-- Node 22+ (uses `--experimental-strip-types` for tests)
-- pi-coding-agent installed (`npm i -g @earendil-works/pi-coding-agent`)
-- TypeScript 5.9+ (for `tsc --noEmit` type-check)
+```bash
+pi install npm:pi-goal-list-loop-audit
+```
 
-## Install from source
+That's it — pi loads the extension into every session (run `/reload` in any
+session that was already open).
+
+> **Persistence note**: `pi update` can overwrite `~/.pi/agent/npm/node_modules/`.
+> If the plugin disappears after an update, re-run `pi install`. For a permanent
+> install, copy the package into your project's `.pi/extensions/` directory instead.
+
+## Your first goal in 60 seconds
+
+In any pi session, in the project you want worked on:
+
+```
+/goal "Fix the login timeout bug. Done when: `npm test` passes"
+```
+
+What happens:
+
+1. **Draft + Confirm** — glla shows the goal contract (objective + Done-when);
+   nothing activates unconfirmed.
+2. **The loop drives** — after every agent turn, glla nudges the work forward;
+   the widget (bottom-left) shows the goal, elapsed time, and last action.
+3. **Verified completion** — when the agent calls `complete_goal`, an
+   **isolated auditor** (a fresh pi session with no extensions) re-runs your
+   checks and demands raw output per contract item. Done sticks only when the
+   auditor approves with evidence.
+
+Then the other two modes:
+
+```
+/list add "refactor the cache layer" "add tests for the parser"   # an audited queue
+/loop audit                                                       # forever project-audit cadence
+```
+
+## What you should see
+
+- **Commands**: `/goal`, `/list`, `/loop`, `/glla` (settings), `/review`.
+- **Widget**: live goal/loop status — objective, elapsed time, last tool action.
+- **State on disk**: `.pi-glla/` in your project — ledger `active.jsonl`,
+  goal markdown in `goals/`, finished goals in `archive/`.
+- **Tools for the agent** (only while a goal is active): `complete_goal`,
+  `pause_goal`, `complete_task`, `update_task_status`.
+
+## Install from source (developers)
+
+Prerequisites: Node 22+ (tests use `--experimental-strip-types`),
+pi-coding-agent, TypeScript 5.9+ (for `tsc --noEmit`).
 
 ```bash
 git clone https://github.com/DraconDev/pi-goal-list-loop-audit.git   # or use the local dir
@@ -14,15 +59,18 @@ cd pi-goal-list-loop-audit
 pi install .                                               # installs from local path
 ```
 
-## Install from npm (after publish)
+## Try it without installing
 
 ```bash
-pi install npm:pi-goal-list-loop-audit
+pi -e /home/dracon/Dev/pi-goal-list-loop-audit
 ```
 
-> **Persistence note**: `pi update` can overwrite `~/.pi/agent/npm/node_modules/`.
-> If the plugin disappears after an update, re-run `pi install`. For a permanent
-> install, copy the package into your project's `.pi/extensions/` directory instead.
+---
+
+## Operator notes (by release)
+
+Everything below is reference material written as features landed — you don't
+need it to get started.
 
 ## Auditor model: the built-in-provider rule
 
@@ -31,7 +79,7 @@ The auditor runs in a **fresh session with no extensions**, so it can only use
 You select the model in pi; the auditor uses it. The plugin never picks a
 model itself. The resolution is just:
 
-1. your explicit `/glla model=provider/id` override (rare), else
+1. your explicit auditor pick — `/glla → Auditor model` (or `/glla model=provider/id`), else
 2. the pi session model — whatever you selected in pi.
 
 If your session model's provider is extension-registered, the auditor's
@@ -123,19 +171,6 @@ Release-workflow note: installing into the local extension tree
 (`~/.pi/agent/npm`) requires `--legacy-peer-deps` — a pre-existing
 `@pi-unipi/notify` peer pin on `@earendil-works/pi-coding-agent@^0.78.0`
 conflicts with the current pi release.
-
-## Try it without installing
-
-```bash
-pi -e /home/dracon/Dev/pi-goal-list-loop-audit
-```
-
-## What you should see
-
-Once installed, restart pi. The plugin contributes:
-
-- **Commands**: `/goal`, `/list`, `/loop`, `/glla` (settings).
-- **Tools available to the agent** (only when a goal is active): `complete_goal`, `pause_goal`, `complete_task`, `update_task_status`.
 
 ## Run the tests
 

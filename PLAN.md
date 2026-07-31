@@ -1,6 +1,8 @@
 # PLAN — pi-goal-list-loop-audit
 
 Living plan for the project. Update this file as decisions land or milestones close.
+New here? Start with README.md and INSTALL.md — this file is the historical
+plan, not the onboarding path.
 Last updated: v0.29.6 (header refresh). The milestones
 below cover the v0.1.0–v0.7.0 scaffold era; later decisions live in CHANGELOG.md
 (current through v0.29.6) and the current-state addendum in docs/DESIGN.md.
