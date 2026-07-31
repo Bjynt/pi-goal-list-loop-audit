@@ -175,6 +175,10 @@ import {
   countOpenAuditFindings,
   AUDIT_FINDINGS_REL,
   projectAuditTarget,
+  LIST_AUDIT_COLLECT_MARKER,
+  listAuditCollectTarget,
+  parseAuditFindingsForFanout,
+  listAuditFanoutItemText,
   type LoopTickOutcome,
   HELD_ON_RESTORE,
   type LoopState,
@@ -1228,6 +1232,62 @@ function autoArbitrateStackedState(ctx: ExtensionContext): void {
   );
 }
 
+/** v0.31.0: /list audit completion fan-out — read the audit findings file,
+ * queue every OPEN finding as its own list item (severity-sorted, deduped
+ * against the live queue), present DECIDE findings without queueing them.
+ * Confirm-gated like every bulk import (v0.23.7: the user reads what lands
+ * in the queue); a decline leaves the findings open for a later re-run.
+ */
+async function fanOutListAuditFindings(ctx: ExtensionContext): Promise<void> {
+  let md = "";
+  try {
+    md = fs.readFileSync(path.join(ctx.cwd, AUDIT_FINDINGS_REL), "utf-8");
+  } catch {
+    /* no findings file — the audit was clean or never wrote */
+  }
+  const { open, decisions } = parseAuditFindingsForFanout(md);
+  // Dedupe against the live queue (a re-run must not double-queue a finding
+  // that's already waiting) — match on the finding text's first 60 chars.
+  const queuedText = listQueue().map((i) => i.objective).join("\n");
+  const fresh = open.filter((f) => !queuedText.includes(f.text.slice(0, 60)));
+  const alreadyQueued = open.length - fresh.length;
+  const decideNote =
+    decisions.length > 0
+      ? `\n${decisions.length} DECIDE finding(s) need YOU (not queued — a decision is not a task):\n` +
+        decisions.slice(0, 10).map((d) => `  ? ${d.slice(0, 110)}`).join("\n")
+      : "";
+  if (fresh.length === 0) {
+    ctx.ui.notify(
+      open.length > 0
+        ? `Audit collected ${open.length} open finding(s) — all already queued.${decideNote}`
+        : `Audit complete — no open findings; the project is clean, nothing to queue.${decideNote}`,
+      "info",
+    );
+    appendLedger(ctx.cwd, "list_audit_fanout_empty", { open: open.length, decisions: decisions.length });
+    return;
+  }
+  const preview = fresh.map((f, i) => `  ${i + 1}. ${f.text.slice(0, 110)}`).join("\n");
+  let confirmed = true;
+  if (ctx.hasUI) {
+    try {
+      confirmed = await ctx.ui.confirm(`Queue ${fresh.length} audit finding(s) as list items?`, preview);
+    } catch {
+      confirmed = false;
+    }
+  }
+  if (!confirmed) {
+    appendLedger(ctx.cwd, "list_audit_fanout_declined", { findings: fresh.length });
+    ctx.ui.notify(`Fan-out declined — the findings stay open in ${AUDIT_FINDINGS_REL}; /list audit re-queues them any time.`, "info");
+    return;
+  }
+  const n = enqueueItems(ctx, fresh.map((f) => listAuditFanoutItemText(f.text)), "list audit fan-out");
+  appendLedger(ctx.cwd, "list_audit_fanout", { queued: n, alreadyQueued, decisions: decisions.length });
+  ctx.ui.notify(
+    `Queued ${n} finding(s) — the list drains them fix by fix, each with its own audited commit.${alreadyQueued > 0 ? ` (${alreadyQueued} already queued.)` : ""}${decideNote}`,
+    "info",
+  );
+}
+
 function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: string): void {
   if (!state.goal) return;
   const goal = state.goal;
@@ -1253,9 +1313,15 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
   // (v0.2.0 bug: bare /list next silently consumed TWO items, found by the
   // pick-any-item verification in v0.10.0).
   if (goal.policy === "list" && status === "complete") {
+    // v0.31.0: a /list audit collection item completed → fan the open
+    // findings out into the queue (async — Confirm-gated). When the queue
+    // was empty, enqueueItems activates the first fix itself, so the
+    // list-complete / reviewer noise below must NOT fire for this item.
+    const isListAuditCollect = goal.objective.includes(LIST_AUDIT_COLLECT_MARKER);
+    if (isListAuditCollect) void fanOutListAuditFindings(ctx);
     const advanced = activateNextListItem(ctx);
     // v0.26.0: the queue just EMPTIED on a completion → list-complete.
-    if (!advanced) {
+    if (!advanced && !isListAuditCollect) {
       fireReviewer(ctx, { kind: "list", goalId: goal.id, objective: goal.objective, terminal: "goal-complete" });
       // v0.29.0: the well ran dry — point at the project-audit loop. A
       // suggestion, not an action: consent, never auto-start (v0.28.28).
@@ -2083,6 +2149,26 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
   const parts = args.trim().split(/\s+/);
   const sub = (parts[0] ?? "").toLowerCase();
   const rest = args.trim().slice(sub.length).trim();
+
+  if (sub === "audit") {
+    // v0.31.0: /list audit [focus] — collect-then-drain (user design
+    // 2026-07-31: "run a project audit, collect a bunch of tasks, then do
+    // them all too"). The audit item COLLECTS findings (changes no code);
+    // its completion fans each open finding out into the queue and the
+    // list drains them fix by fix, each with its own isolated audit.
+    // Distinct from /goal audit (fix-in-pass, one audited unit) and
+    // /loop audit (forever fix-first cadence).
+    const objective = listAuditCollectTarget(rest || undefined);
+    const n = enqueueItems(ctx, [objective], "/list audit");
+    if (n === 0) return; // zombie-twin guard already explained itself
+    ctx.ui.notify(
+      "Audit collection item queued — it CHANGES NO CODE: it appends findings to " +
+        AUDIT_FINDINGS_REL +
+        ", and on completion each open finding becomes its own list item (fixes drain one audited commit at a time). DECIDE findings are presented to you, never queued.",
+      "info",
+    );
+    return;
+  }
 
   if (sub === "depth") {
     // v0.25.3: long-running state at a glance — queue depth, oldest item
@@ -5382,9 +5468,10 @@ export default function (pi: ExtensionAPI): void {
     handler: (args: string, ctx: ExtensionContext) => { rememberCtx(ctx); return cmdReview(args, ctx); },
   });
   pi.registerCommand("list", {
-    description: "Loop 2: the list of audited goals — order is the default, not the law. /list <describe tasks or name a plan file> (dumps get shaped into items, files import, 'Done when:' adds directly) | /list show | /list resume | /list next [n] | /list remove <n> | /list clear | /list cancel",
+    description: "Loop 2: the list of audited goals — order is the default, not the law. /list <describe tasks or name a plan file> (dumps get shaped into items, files import, 'Done when:' adds directly) | /list audit [focus] (collect findings, then drain them as items) | /list show | /list resume | /list next [n] | /list remove <n> | /list clear | /list cancel",
     getArgumentCompletions: completions([
       ["show", "display the waiting items"],
+      ["audit", "collect-then-drain: audit the project, queue every finding as its own item"],
       ["resume", "resume the paused list item (the list's head)"],
       ["next", "activate the next item (or /list next <n> for position n)"],
       ["remove", "remove an item: /list remove <n>"],
