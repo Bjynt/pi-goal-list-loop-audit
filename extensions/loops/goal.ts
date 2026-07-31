@@ -2682,7 +2682,8 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       r === HELD_ON_RESTORE ||
       !!r?.startsWith("provider errors —") ||
       !!r?.startsWith("stopped by user —") ||
-      !!r?.startsWith("plateau — no closure in");
+      !!r?.startsWith("plateau — no closure in") ||
+      !!r?.startsWith("stuck —");
     if (stored && !stored.active && RESUMABLE_STOP(stored.stopReason)) {
       // v0.28.14: one-active-thing — a held loop must not resume over an
       // active goal/list-item (this was the last unguarded stacking path).
@@ -2690,7 +2691,10 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
         ctx.ui.notify("A goal is active — the held loop stays held. /goal pause or /goal cancel it first, then /loop resume.", "warning");
         return;
       }
-      state.loop = { ...stored, active: true, stopReason: undefined, consecutiveErrors: 0 };
+      // An explicit resume re-arms the counters: fresh stall window,
+      // cleared dead-turn/stuck streaks, reprieves restored — the user
+      // saying "push again" wins over the ladder's memory (v0.29.19).
+      state.loop = { ...stored, active: true, stopReason: undefined, consecutiveErrors: 0, consecutiveStuck: 0, lastStuckReason: undefined, stallCount: 0, auditPlateauReprieves: 0 };
       persistState(ctx);
       scheduleLoopTick(ctx);
       ctx.ui.notify(
