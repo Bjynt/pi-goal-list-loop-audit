@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.33.2] — 2026-07-31
+
+### Changed — loop proactiveness + respec machinery (two-lens design analysis)
+
+A two-agent analysis of the loop logic found the loop **reactive, not
+proactive** (intervention reasons specific, strategies generic; never
+suggested a refine even when holding the evidence) plus two honesty bugs
+and a termination leak for metricless loops. All closed:
+
+**Proactiveness**
+- **The plateau reprieve names the finding**: was "N findings open, pick
+  the smallest" — now splices the top OPEN line from findings.md into
+  the note (`countOpenAuditFindings` already parsed the file).
+- **Saturated metric → the loop suggests the refine itself**: when the
+  strategy note fires and lastValue == bestValue, it now says "the
+  metric has been flat at best — call propose_loop_refine". The loop
+  holds the evidence; it was silent.
+- **Hypothesis feedback loop**: the HYPOTHESIS line went into the ledger
+  but the prompt never reflected it. The next iteration now carries the
+  verdict: "Last iteration you predicted X. Result: metric improved
+  17 → 16 (best 16)."
+- **Cosmetic-churn detection** (metricless doorknob leak): the stuck
+  gate exempted ANY iteration with a file write — endless cosmetic edits
+  burned forever. A write-exempted iteration whose reply is ~identical
+  to the previous one now classifies as churn (note-only first rung;
+  any genuinely different iteration resets it).
+
+**Respec / spec evolution**
+- **`/loop refine <text>`** is a real command (and `/loop polish` works
+  as an alias — the widget footer advertised it before it existed). The
+  operator's suggestion rides the next iteration's prompt; the agent
+  proposes via propose_loop_refine, the user confirms.
+- **`propose_loop_refine` gains `specText`/`specAppend`** (respec loops):
+  the orchestrator owns the spec-file write on confirm — the agent never
+  edits the spec it's judged against outside a confirmed refine.
+- **Spec drift detection**: respec loops carry a spec hash, compared
+  every tick — external edits ledger `spec_updated` + notify.
+- **`spec_item_progress` is now emitted** (was consumed by the stuck
+  gate but emitted NOWHERE — a dead signal making the gate look
+  stronger than it is): newly checked spec checkboxes emit the event.
+
+669 tests.
+
 ## [0.33.1] — 2026-07-31
 
 ### Fixed — post-release audit batch (three parallel read-only audits)

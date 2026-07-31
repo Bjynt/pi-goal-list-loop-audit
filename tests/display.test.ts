@@ -448,7 +448,7 @@ test("v0.33.0: slim card — meter rounding guard, folded status segments, last-
   } as any }, null, NOW, undefined, 120, { recent: [{ name: "read", arg: "tiles.ts", ms: 8_000, ok: true }] })!;
   assert.match(loopLines[0]!, /^∞ endless-td audit · iter 12\/100 ▰▱▱▱▱ · /);
   assert.match(loopLines[1]!, /^├─ ✓ read tiles\.ts \(8s\)/);
-  assert.match(loopLines[2]!, /^└─ metricless \(no plateau\) · \/loop stop · \/loop polish/);
+  assert.match(loopLines[2]!, /^└─ metricless \(no plateau\) · \/loop stop · \/loop refine/); // v0.33.2: /loop refine is a real verb now
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   assert.match(SRC, /noteToolCall\(event\); \/\/ v0\.33\.0/);
   assert.match(SRC, /noteToolResult\(event\); \/\/ v0\.33\.0/);
@@ -486,4 +486,40 @@ test("v0.33.1: audit-batch — sanitize, head fits width, last restored, flag li
   // sweep-F4: the auditor's abort listener is removed in finally.
   const AUD = fs.readFileSync("extensions/goal-loop-auditor.ts", "utf-8");
   assert.match(AUD, /removeEventListener\("abort", abort\)/);
+});
+
+test("v0.33.2: loop proactiveness + respec machinery", () => {
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // Reprieve names the top open finding, not just the count.
+  assert.match(SRC, /topOpenAuditFinding\(ctx\.cwd\)/);
+  assert.match(SRC, /Top open: \$\{topFinding\}/);
+  // Saturated metric → the loop suggests propose_loop_refine itself.
+  assert.match(SRC, /flat at best — if the spec no longer captures 'better'/);
+  // Hypothesis feedback closes the loop into the next prompt.
+  assert.match(SRC, /Last iteration you predicted: /);
+  assert.match(SRC, /loop\.lastHypothesis = hypothesis;/);
+  // /loop refine is a real subcommand (the footer's verb exists).
+  assert.match(SRC, /if \(sub === "refine" \|\| sub === "polish"\)/);
+  assert.match(SRC, /state\.loop!\.refineHint = hint\.slice\(0, 300\);/);
+  // propose_loop_refine carries specText/specAppend; the orchestrator owns the write.
+  assert.match(SRC, /specText: Type\.Optional/);
+  assert.match(SRC, /fs\.writeFileSync\(loop\.specFile/);
+  // Spec drift detection + checkbox progress emission (spec_item_progress is now emitted).
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "spec_updated", \{ via: "external"/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "spec_item_progress", \{ iteration: loop\.iteration, newlyChecked/);
+  // LoopState carries the spec + feedback fields.
+  const FOREVER = fs.readFileSync("extensions/goal-loop-forever.ts", "utf-8");
+  assert.match(FOREVER, /specFile\?: string;/);
+  assert.match(FOREVER, /hypothesisFeedback\?: string;/);
+  assert.match(FOREVER, /refineHint\?: string;/);
+  // Cosmetic-churn detection in the write-exemption (metricless doorknob leak).
+  const REP = fs.readFileSync("extensions/goal-loop-repetition.ts", "utf-8");
+  assert.match(REP, /cosmetic churn: wrote files but the reply is ~/);
+  // Prompts carry the new placeholders.
+  const METRIC = fs.readFileSync("prompts/goal-loop-forever.md", "utf-8");
+  assert.match(METRIC, /\$\{HYPOTHESIS_NOTE\}/);
+  assert.match(METRIC, /\$\{REFINE_HINT\}/);
+  const ML = fs.readFileSync("prompts/goal-loop-forever-metricless.md", "utf-8");
+  assert.match(ML, /\$\{HYPOTHESIS_NOTE\}/);
+  assert.match(ML, /\$\{REFINE_HINT\}/);
 });
