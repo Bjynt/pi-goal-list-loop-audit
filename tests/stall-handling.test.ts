@@ -144,6 +144,26 @@ test("v0.28.24: session_compact resets the send-rearm storm streaks + opens the 
   const hookIdx = SRC.indexOf('pi.on("session_compact"');
   const resetIdx = SRC.indexOf("continuationRearmStreak = 0; continuationRearmSince = 0;\n    loopRearmStreak = 0; loopRearmSince = 0;\n    compactionGraceUntil = Date.now() + COMPACTION_GRACE_MS;");
   assert.ok(hookIdx > 0 && resetIdx > hookIdx, "streak reset + grace arm inside the session_compact hook");
+});
+
+test("v0.29.21: session_compact arms a SECOND settle refire at grace expiry", () => {
+  // Field (hellhunter 2026-07-31): auto-compact at 195.8k after two
+  // output-limit turns → zero continuation rearm attempts after the
+  // compact event → ~4 min of apparent death until the post-grace
+  // heartbeat recovered (04:31 → 04:34:48). The 2s settle almost always
+  // loses (pi is mid-compact then); the grace-expiry settle fires the
+  // moment the machinery un-suppresses instead of waiting a heartbeat
+  // interval.
+  const hookIdx = SRC.indexOf('pi.on("session_compact"');
+  const graceSettleIdx = SRC.indexOf("const graceSettle = setTimeout(() => {");
+  assert.ok(hookIdx > 0 && graceSettleIdx > hookIdx, "grace settle inside the session_compact hook, after it starts");
+  const block = SRC.slice(graceSettleIdx, graceSettleIdx + 900);
+  assert.match(block, /appendLedger\(c\.cwd, "compaction_grace_refire", \{\}\)/, "ledger event names the recovery");
+  assert.match(block, /isLoopActive\(\) \? scheduleLoopTick\(c\) : scheduleContinuation\(c, true\)/.source.replace("?", "\?"), "refires loop tick or goal continuation");
+  assert.match(block, /COMPACTION_GRACE_MS \+ 2_000/, "fires at grace expiry (+2s epsilon)");
+  assert.match(block, /c\.isIdle\(\) && !c\.hasPendingMessages\(\) && continuationTimer === null && loopTimer === null/, "same guards as the 2s settle");
+  assert.match(block, /!abortedStandDown/, "user stand-down still wins");
+  assert.ok(SRC.indexOf("graceSettle.unref?.();") > graceSettleIdx, "timer unref'd");
   assert.match(SRC, /const COMPACTION_GRACE_MS = 3 \* 60_000;/);
   // the grace check gates the heartbeat's stall/refire machinery:
   assert.match(SRC, /if \(Date\.now\(\) < compactionGraceUntil\) return;/);

@@ -5375,6 +5375,28 @@ export default function (pi: ExtensionAPI): void {
       }
     }, 2000);
     settle.unref?.();
+    // v0.29.21: a SECOND settle at grace expiry. The 2s settle almost
+    // always loses (pi is mid-compact / mid-resumed-turn then), and the
+    // heartbeat's first post-grace tick lands up to one interval late —
+    // meanwhile the continuation chain can dangle with ZERO rearm
+    // attempts (field: hellhunter 2026-07-31 — auto-compact 04:31 at
+    // 195.8k after two output-limit turns, zero rearms after the compact
+    // event, recovery only at 04:34:48 via the post-grace heartbeat;
+    // ~4 min that read as a stoppage). Refire the moment the grace ends.
+    const graceSettle = setTimeout(() => {
+      const c = freshCtx();
+      if (!c) return;
+      try {
+        if (c.isIdle() && !c.hasPendingMessages() && continuationTimer === null && loopTimer === null && isSupervising() && !abortedStandDown) {
+          appendLedger(c.cwd, "compaction_grace_refire", {});
+          if (isLoopActive()) scheduleLoopTick(c);
+          else scheduleContinuation(c, true);
+        }
+      } catch {
+        /* settle race — the 60s heartbeat covers it */
+      }
+    }, COMPACTION_GRACE_MS + 2_000);
+    graceSettle.unref?.();
   });
 
   pi.on("message_start", async (event: any, _ctx: ExtensionContext) => {
