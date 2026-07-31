@@ -1380,7 +1380,7 @@ async function retryStoredCompletionAudit(ctx: ExtensionContext, origin: "quota-
           completionSummary: claim.completionSummary,
           verificationSummary: claim.verificationSummary,
           model: auditorModel,
-          thinkingLevel: settings.auditorThinkingLevel ?? "high",
+          thinkingLevel: (settings.auditorThinkingLevel ?? "high") as any, // may be "max" — pi ≥0.83 understands it; the dev-types predate it
           onProgress: (progress) => {
             latestAuditProgress = { currentTool: progress.currentTool, label: progress.label, elapsedMs: progress.elapsedMs, lastEventAt: Date.now() };
             refreshUI(liveCtx);
@@ -3188,7 +3188,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
           completionSummary: p.completionSummary,
           verificationSummary: p.verificationSummary,
           model: auditorModel,
-          thinkingLevel: settings.auditorThinkingLevel ?? "high",
+          thinkingLevel: (settings.auditorThinkingLevel ?? "high") as any, // may be "max" — pi ≥0.83 understands it; the dev-types predate it
           signal: signal ?? undefined,
           onProgress: (progress) => {
             latestAuditProgress = {
@@ -4229,6 +4229,24 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
  * bought; it lasted one version). Every hop is LOUD (ledger + notify): the
  * v0.9.12 no-SILENT-substitution law.
  */
+/** v0.31.8: the auditor thinking options are derived from the PICKED
+ * model, not a hardcoded list — same rule as pi's own thinking selector
+ * (pi-ai getSupportedThinkingLevels): non-reasoning models expose only
+ * "off"; xhigh/max exist only when the model maps them (thinkingLevelMap).
+ * Replicated inline so the extension's older pi-ai dev-types don't matter —
+ * the fields are read at runtime from the user's installed pi. */
+function auditorThinkingLevels(model: any): string[] {
+  const ALL = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+  if (!model?.reasoning) return ["off"];
+  const map = model.thinkingLevelMap as Record<string, string | null> | undefined;
+  return ALL.filter((level) => {
+    const mapped = map?.[level];
+    if (mapped === null) return false;
+    if (level === "xhigh" || level === "max") return mapped !== undefined;
+    return true;
+  });
+}
+
 function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: string, sameSessionSwap = true): { model: any; error?: string; via?: string } {
   const sessionModel = ctx.model as any;
   const tryRef = (trimmed: string): { model?: any; reason?: string } => {
@@ -4443,17 +4461,26 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       // v0.31.7: the select must be UNMISTAKABLY the auditor's — the user
       // Esc'd through it because it read like pi's own (general) thinking
       // dialog, and nothing was ever saved.
+      // v0.31.8: the options come from the PICKED MODEL's info (user: "we
+      // are not using the model information cause it has no max") — a model
+      // that maps xhigh/max offers them; a non-reasoning model is told, not asked.
+      let pickedModel: any = pick.kind === "session" ? (ctx.model as any) : undefined;
+      if (pick.kind === "ref" && pick.ref) {
+        const parts = pick.ref.split("/");
+        try {
+          pickedModel = parts.length === 2 ? (ctx.modelRegistry?.find?.(parts[0]!, parts[1]!) as any) : (ctx.modelRegistry?.getAvailable?.().filter((m: any) => m.id === pick.ref)[0] as any);
+        } catch { pickedModel = undefined; } // levels fall back to the full ladder below
+      }
       const curThinking = loadSettings(ctx.cwd).auditorThinkingLevel;
+      const levels = auditorThinkingLevels(pickedModel);
+      if (levels.length <= 1) {
+        ctx.ui.notify(`Auditor model: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref} — this model exposes no thinking levels (auditor runs with thinking off).`, "info");
+        return;
+      }
+      const DESCR: Record<string, string> = { off: "no reasoning", minimal: "~1k tokens", low: "~2k tokens", medium: "~8k tokens", high: "the default; the gate must not ride the session's coding dial", xhigh: "~32k tokens", max: "maximum reasoning" };
       const t = await ctx.ui.select(
         "Auditor thinking — ISOLATED auditor session ONLY (your session model's thinking is untouched)",
-        [
-          `high — the default; the gate must not ride the session's coding dial${curThinking === undefined || curThinking === "high" ? " (current)" : ""}`,
-          `medium${curThinking === "medium" ? " (current)" : ""}`,
-          `low${curThinking === "low" ? " (current)" : ""}`,
-          `minimal${curThinking === "minimal" ? " (current)" : ""}`,
-          `xhigh${curThinking === "xhigh" ? " (current)" : ""}`,
-          `off${curThinking === "off" ? " (current)" : ""}`,
-        ],
+        levels.map((lv) => `${lv} — ${DESCR[lv] ?? ""}${lv === "high" && curThinking === undefined ? " (current)" : curThinking === lv ? " (current)" : ""}`),
       );
       if (t) saveSettings("global", ctx.cwd, { auditorThinkingLevel: t.split(" ")[0] as Settings["auditorThinkingLevel"] });
       ctx.ui.notify(`Auditor model: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref}${t ? ` · thinking ${t.split(" ")[0]}` : ""}`, "info");
@@ -5370,7 +5397,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
         }
       }
     } else if (key === "thinking" || key === "auditorthinkinglevel") {
-      if (["off", "minimal", "low", "medium", "high", "xhigh"].includes(value)) {
+      if (["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(value)) {
         patch.auditorThinkingLevel = value as Settings["auditorThinkingLevel"];
         changed = true;
       } else {

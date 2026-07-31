@@ -148,7 +148,8 @@ test("v0.29.17 wiring: model-valued settings use the fuzzy picker; unavailable a
 
 test("v0.31.2/0.31.3: auditor thinking defaults to sticky high — never the session dial", () => {
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
-  assert.equal(SRC.match(/thinkingLevel: settings\.auditorThinkingLevel \?\? "high",/g)!.length, 2, "both audit call sites floor at high");
+  // v0.31.8: cast — the saved level may be "max" (pi ≥0.83; dev-types predate it)
+  assert.equal(SRC.match(/thinkingLevel: \(settings\.auditorThinkingLevel \?\? "high"\) as any,/g)!.length, 2, "both audit call sites floor at high");
   assert.ok(!SRC.includes("getSessionThinkingLevel"), "the session-dial follower is gone");
   const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
   // v0.31.4: no standalone thinking ROW — thinking is chained into the
@@ -205,4 +206,17 @@ test("v0.31.6: same-model swap toggle — default ON, off = same-model audits st
   const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
   assert.match(MENU, /id: "auditorSameSessionSwap"/);
   assert.match(MENU, /valueText: show\("auditorSameSessionSwap", "on"\)/);
+});
+
+test("v0.31.8: thinking options come from the PICKED MODEL — xhigh/max only when the model maps them", () => {
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.match(SRC, /function auditorThinkingLevels\(model: any\): string\[\] \{/);
+  assert.match(SRC, /if \(!model\?\.reasoning\) return \["off"\];/);
+  assert.match(SRC, /if \(level === "xhigh" \|\| level === "max"\) return mapped !== undefined;/);
+  assert.match(SRC, /const levels = auditorThinkingLevels\(pickedModel\);/);
+  // non-reasoning model → told, not asked:
+  assert.match(SRC, /if \(levels\.length <= 1\) \{/);
+  assert.match(SRC, /this model exposes no thinking levels \(auditor runs with thinking off\)/);
+  const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
+  assert.match(SETTINGS, /auditorThinkingLevel\?: "off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max";/);
 });
