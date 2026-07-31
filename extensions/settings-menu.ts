@@ -173,9 +173,9 @@ export function buildSettingsRows(
       id: "auditorModelFallback",
       section: "auditor",
       label: "Auditor fallback model",
-      valueText: show("auditorModelFallback", "none"),
+      valueText: show("auditorModelFallback", "session model (last resort)"),
       sourceText: src("auditorModelFallback"),
-      description: "auto-swap target when the session model IS the auditor model — the verifier should differ from the executor",
+      description: "walked when the primary is unavailable OR IS the session model (the verifier should differ) — unset = the session model is the last resort",
     },
     {
       id: "auditCap",

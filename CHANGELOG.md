@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.31.5] — 2026-07-31
+
+### Changed — the unset fallback displays as what it is: "session model (last resort)"
+
+User (2026-07-31): "maybe have a def fallback to session." Unset
+`auditorModelFallback` was never "none" — the cascade always ends at the
+session model. The menu row now says so, and the description spells out
+both walk conditions (primary unavailable OR primary == session model).
+Display-only; resolution unchanged.
+
+660 tests.
+
 ## [0.31.4] — 2026-07-31
 
 ### Changed — auditor thinking is chosen WITH the model; the standalone row is gone

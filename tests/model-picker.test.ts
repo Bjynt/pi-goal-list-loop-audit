@@ -156,7 +156,9 @@ test("v0.31.2/0.31.3: auditor thinking defaults to sticky high — never the ses
   // the model"); terse valueTexts: "session model" / "none".
   assert.ok(!MENU.includes('id: "auditorThinkingLevel"'), "standalone thinking row removed");
   assert.match(MENU, /valueText: show\("auditorModel", "session model"\)/);
-  assert.match(MENU, /valueText: show\("auditorModelFallback", "none"\)/);
+  // v0.31.5: unset fallback displays as what it semantically IS — the
+  // cascade's last rung ("maybe have a def fallback to session").
+  assert.match(MENU, /valueText: show\("auditorModelFallback", "session model \(last resort\)"\)/);
   const caseIdx2 = SRC.indexOf('case "auditorModel": {');
   assert.match(SRC.slice(caseIdx2, caseIdx2 + 1500), /ctx\.ui\.select\("Auditor thinking level \(the verification gate/);
   assert.ok(!SRC.includes('case "auditorThinkingLevel"'), "dead menu case removed");
