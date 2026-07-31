@@ -1,8 +1,8 @@
 # pi-goal-list-loop-audit
 
-> **Goal. Loop. Audit. Done.**
+> **Mission control for autonomous pi.**
 
-A pi-coding-agent extension that supervises long-running work to verified completion. The plugin writes a durable goal to disk, drives the agent through an `agent_end`-driven loop, and on each `complete_goal` — spawns an **isolated auditor in a fresh pi session** to verify the work is genuinely done.
+Interview-drafted goals, an audited task queue, and forever-loops (metric, spec, project-audit) that run for hours. Every goal starts as a **drafted contract you confirm** — nothing activates sight-unseen. The plugin then writes a durable goal to disk, drives the agent through an `agent_end`-driven loop, and on each `complete_goal` spawns an **isolated auditor in a fresh pi session** to verify the work is genuinely done. Stall recovery, structured decision pauses, and consent gates keep you in charge while it works.
 
 The auditor runs in a fresh session with no extensions, no skills, no prompts, no editor. It has only `read` / `grep` / `find` / `ls` / `bash`. It cannot see the implementing conversation. It cannot plant evidence. The implementer cannot fool it.
 

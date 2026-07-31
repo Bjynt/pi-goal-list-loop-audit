@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.33.4] — 2026-07-31
+
+### Changed — docs only
+
+New package description / README lead: "Mission control for autonomous pi"
+— covers the full surface (interview-drafted + confirmed goals, audited
+queue, forever-loops, isolated auditor, stall recovery, decision pauses,
+consent gates) instead of the old em-dash tagline that registry listings
+truncated mid-sentence.
+
 ## [0.33.3] — 2026-07-31
 
 ### Changed — DECIDE findings are raised as real questions (hegemon field report)
