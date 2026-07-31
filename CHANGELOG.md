@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.31.6] — 2026-07-31
+
+### Added — Same-model swap toggle (default ON)
+
+User (2026-07-31): "we also need a toggle to decide whether we want to
+skip the model if the same as the session model — default can be on." The
+diversity trade-off is now explicit, not imposed:
+
+- **`/glla → Same-model swap`** (`auditorSameSessionSwap`, default ON):
+  when the pinned auditor IS the session model, walk the fallback pin so
+  the verifier differs from the executor. **Off** = same-model audits
+  stand, no swap, no nudge — an informed choice, so it stays quiet.
+- Either way the FIRST-order defense is untouched: the auditor is always
+  an isolated extension-less session with the evidence contract. Diversity
+  (independent blind spots — a same-family model shares the executor's
+  failure modes when reading its claims) is the second-order layer this
+  toggle trades.
+
+661 tests.
+
 ## [0.31.5] — 2026-07-31
 
 ### Changed — the unset fallback displays as what it is: "session model (last resort)"

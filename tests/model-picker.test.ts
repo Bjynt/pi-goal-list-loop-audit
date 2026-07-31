@@ -178,9 +178,9 @@ test("v0.31.3: the auditor chain — pinned primary → pinned fallback → sess
   assert.match(SRC, /if \(sameSessionSwap && isSession\(r\.model\) && i \+ 1 < pins\.length\) \{/);
   assert.match(SRC, /auditor_model_same_as_session/);
   assert.match(SRC, /pin a different \/glla → Auditor fallback model so the verifier can differ/);
-  // Both audit call sites pass the fallback pin:
-  assert.match(SRC, /resolveAuditorModel\(liveCtx, settings\.auditorModel, settings\.auditorModelFallback\)/);
-  assert.match(SRC, /resolveAuditorModel\(ctx, settings\.auditorModel, settings\.auditorModelFallback\)/);
+  // Both audit call sites pass the fallback pin (v0.31.6: + the swap toggle):
+  assert.match(SRC, /resolveAuditorModel\(liveCtx, settings\.auditorModel, settings\.auditorModelFallback, settings\.auditorSameSessionSwap !== false\)/);
+  assert.match(SRC, /resolveAuditorModel\(ctx, settings\.auditorModel, settings\.auditorModelFallback, settings\.auditorSameSessionSwap !== false\)/);
   // The settings key + menu row + editor case:
   const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
   assert.match(SETTINGS, /auditorModelFallback\?: string;/);
