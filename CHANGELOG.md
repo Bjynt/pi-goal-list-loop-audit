@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.31.3] — 2026-07-31
+
+### Changed — the auditor chain replaces "diverse": pinned primary → pinned fallback → session model LAST
+
+User course-correction (2026-07-31): "we might over-complicate this —
+complexity cost likely outweighs benefit… it can be the primary auditor and
+the session model is always the last; we can have a fallback auditor too.
+If the session model is the same as the auditor we auto fallback." The
+v0.31.2 diverse strategy (preference table, provider exclusion, per-audit
+strategy resolution) is REMOVED after one version — two explicit pins and a
+cascade do the same job with a tenth of the machinery.
+
+- **`/glla → Auditor fallback model`** (new pin): walked when the primary
+  pin is unavailable OR when the primary IS the session model (the verifier
+  must differ from the executor — the auto-swap is loud:
+  `auditor_model_same_as_session` + notify).
+- **Session model is always the LAST resort**: all pins exhausted → the
+  existing loud `auditor_model_fallback` session fallback. Nothing pinned →
+  session model, as before. A last-pin == session stands with a one-line
+  nudge to wire the swap.
+- New `via` values in audit notices: `fallback-pin`, `session-fallback`.
+- Kept from 0.31.2: auditor thinking defaults to sticky `high` (never the
+  session's coding dial).
+- Nothing is pinned for you: set your pair via `/glla → Auditor model` +
+  `Auditor fallback model`.
+
+660 tests.
+
 ## [0.31.2] — 2026-07-31
 
 ### Added — the cross-vendor auditor: `auditorModel: "diverse"` + sticky-high thinking
