@@ -178,6 +178,14 @@ export function buildSettingsRows(
       description: "walked when the primary is unavailable OR IS the session model (the verifier should differ) — unset = the session model is the last resort",
     },
     {
+      id: "auditorSameSessionSwap",
+      section: "auditor",
+      label: "Same-model swap",
+      valueText: show("auditorSameSessionSwap", "on"),
+      sourceText: src("auditorSameSessionSwap"),
+      description: "when the pinned auditor IS the session model, walk the fallback pin (verifier ≠ executor) — off = same-model audits stand",
+    },
+    {
       id: "auditCap",
       section: "auditor",
       label: "Audit cap",

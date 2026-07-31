@@ -1365,7 +1365,7 @@ async function retryStoredCompletionAudit(ctx: ExtensionContext, origin: "quota-
     ? "Manual /goal verify — running the isolated auditor now (no agent turn needed)."
     : "Auditor quota window elapsed — retrying the audit with your stored completion claim (no agent turn needed).", "info");
   const settings = loadSettings(liveCtx.cwd);
-  const { model: auditorModel, error: modelError, via } = resolveAuditorModel(liveCtx, settings.auditorModel, settings.auditorModelFallback);
+  const { model: auditorModel, error: modelError, via } = resolveAuditorModel(liveCtx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
   if (modelError) liveCtx.ui.notify(`Auditor model issue: ${modelError}`, "warning");
   latestAuditProgress = { label: "quota-retry", lastEventAt: Date.now() };
   completionAuditInFlight = true;
@@ -3173,7 +3173,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       }
       updateGoal({ status: "auditing", pendingTasks: undefined }, ctx);
       const settings = loadSettings(ctx.cwd);
-      const { model: auditorModel, error: modelError, via } = resolveAuditorModel(ctx, settings.auditorModel, settings.auditorModelFallback);
+      const { model: auditorModel, error: modelError, via } = resolveAuditorModel(ctx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
       if (modelError) {
         ctx.ui.notify(`Auditor model issue: ${modelError}`, "warning");
       }
@@ -4229,7 +4229,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
  * bought; it lasted one version). Every hop is LOUD (ledger + notify): the
  * v0.9.12 no-SILENT-substitution law.
  */
-function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: string): { model: any; error?: string; via?: string } {
+function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: string, sameSessionSwap = true): { model: any; error?: string; via?: string } {
   const sessionModel = ctx.model as any;
   const tryRef = (trimmed: string): { model?: any; reason?: string } => {
     const slash = trimmed.indexOf("/");
@@ -4257,14 +4257,14 @@ function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: 
       ctx.ui.notify(`Auditor model "${pin}" is unavailable (${r.reason}) — ${i + 1 < pins.length ? "trying the fallback pin" : "falling back to the session model"}. Fix via /glla → Auditor model.`, "warning");
       continue;
     }
-    if (isSession(r.model) && i + 1 < pins.length) {
+    if (sameSessionSwap && isSession(r.model) && i + 1 < pins.length) {
       // The pin IS the session model — the verifier would be the executor's
       // own model; auto-swap down the chain (the user's move).
       appendLedger(ctx.cwd, "auditor_model_same_as_session", { model: `${r.model.provider}/${r.model.id}`, fallback: pins[i + 1] });
       ctx.ui.notify(`Session model IS the pinned auditor (${r.model.provider}/${r.model.id}) — auditor auto-swapped to ${pins[i + 1]} so the verifier differs.`, "info");
       continue;
     }
-    if (isSession(r.model) && !fallbackRef?.trim()) {
+    if (sameSessionSwap && isSession(r.model) && !fallbackRef?.trim()) {
       // Last resort reached and it IS the session model, with no fallback
       // ever pinned — the model stands (the session IS the last resort);
       // one loud nudge so the user can wire the swap.
@@ -4453,6 +4453,14 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       if (pick === undefined) return;
       saveSettings("global", ctx.cwd, { auditorModelFallback: pick.kind === "session" ? undefined : pick.ref });
       if (pick.kind === "session") ctx.ui.notify("Auditor fallback cleared — a session on the pinned auditor model keeps that model.", "info");
+      return;
+    }
+    case "auditorSameSessionSwap": {
+      const v = await ctx.ui.select("Same-model swap — when the pinned auditor IS the session model, walk the fallback pin", [
+        "on — the verifier differs from the executor (default; a same-family model shares the executor's blind spots)",
+        "off — same-model audits stand (you accept the executor's model as its own verifier; isolation + evidence contract still apply)",
+      ]);
+      if (v) saveSettings("global", ctx.cwd, { auditorSameSessionSwap: v.startsWith("off") ? false : undefined });
       return;
     }
     case "auditCap": {

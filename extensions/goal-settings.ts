@@ -25,6 +25,12 @@ export interface Settings {
    * the verifier should differ from the executor. Unset = same model stands
    * (with a loud one-line nudge). */
   auditorModelFallback?: string;
+  /** v0.31.6: when the pinned auditor IS the session model, walk the
+   * fallback pin (verifier ≠ executor). Default ON (undefined); false =
+   * same-model audits stand — the isolated session + evidence contract is
+   * the first-order defense either way; diversity is the second-order one
+   * the user may deliberately trade away. */
+  auditorSameSessionSwap?: boolean;
   auditorThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   /** Shell command run on goal complete / goal pause / loop stop; message passed as $1. */
   notifyCmd?: string;
