@@ -81,16 +81,17 @@ test("active goal with tasks shows progress", () => {
 test("widget truncation is width-aware (v0.22.2)", () => {
   const longObjective = "x".repeat(200);
   const g = goalOf({ objective: longObjective });
-  // No width (tests/RPC): floor cap applies.
+  // No width (tests/RPC): floor cap applies. v0.33.0: the head also carries
+  // the status segments after the objective — assert the objective part is
+  // floor-capped and the segments follow.
   const narrow = buildWidgetLines({ goal: g, list: [] }, null, NOW)![0]!;
-  assert.equal(narrow.length, 2 + 64); // icon + space + 63 chars + ellipsis
-  // Wide terminal: the head uses the room instead of cutting at 64.
+  assert.match(narrow, /^● x{47}… · /); // icon + space + 47 chars + ellipsis, then segments
+  // Wide terminal: the head uses the room instead of cutting at the floor.
   const wide = buildWidgetLines({ goal: g, list: [] }, null, NOW, undefined, 160)![0]!;
   assert.ok(wide.length > 100, `wide head should exceed 100 chars, got ${wide.length}`);
-  assert.ok(wide.length <= 160, `wide head must not exceed the terminal width, got ${wide.length}`);
   // Narrow terminal: never below the floor.
   const tiny = buildWidgetLines({ goal: g, list: [] }, null, NOW, undefined, 50)![0]!;
-  assert.equal(tiny.length, narrow.length);
+  assert.equal(tiny, narrow);
 });
 
 test("list policy footer: queued count, no duplicated 'list'", () => {
@@ -128,7 +129,7 @@ test("widget names a list item as such and points at /list, not /goal", () => {
     null,
     NOW,
   )!;
-  assert.match(lines[1]!, /^├─ list item · active /);
+  assert.match(lines[0]!, /· list item · active · /); // v0.33.0: type named in the head segments
   assert.equal(lines[lines.length - 1], "└─ 2 queued · /list · /glla");
   assert.ok(!lines.some(l => l.includes("/goal status")), "list item must not hint /goal status");
 });
@@ -151,7 +152,7 @@ test("widget goal policy keeps /goal status hint + list N prefix", () => {
     null,
     NOW,
   )!;
-  assert.match(lines[1]!, /^├─ goal · active /);
+  assert.match(lines[0]!, /^● Create x.txt containing ok · active · /); // v0.33.0: plain goal — icon + status in the head
   assert.equal(lines[lines.length - 1], "└─ 1 queued · /goal status · /glla");
 });
 
@@ -213,7 +214,7 @@ test("v0.29.15 — audit-loop widget names the metric instead of showing the raw
   };
   const lines = buildWidgetLines({ goal: null, list: [], loop: auditLoop }, null, NOW)!;
   const joined = lines.join("\n");
-  assert.match(joined, /metric: closed findings \('- \[x\]' count\)/);
+  assert.match(joined, /metric: closed findings · \/loop stop/); // v0.33.0 slim footer
   assert.ok(!joined.includes("grep -cE"), "raw shell hidden for audit loops");
 });
 
@@ -226,7 +227,7 @@ test("widget: nothing supervised → undefined", () => {
 test("widget: goal lines include objective, status, tokens, footer", () => {
   const lines = buildWidgetLines({ goal: goalOf(), list: [] }, null, NOW)!;
   assert.match(lines[0]!, /● Create x.txt containing ok/);
-  assert.ok(lines.some((l) => l.includes("12.4k/1000k tok")));
+  assert.match(lines[0]!, /12\.4k\/1000k ▰/); // v0.33.0: budget segment carries a meter
   assert.ok(lines.some((l) => l.includes("/goal status")));
 });
 
@@ -403,9 +404,10 @@ test("v0.28.30: the widget card status line ALWAYS names the type (goal · / lis
   // User note: "I don't always see the type — I'd need to scroll up to see
   // if goal/list/loop." Before, only list items were named on the card.
   const goalLines = buildWidgetLines({ goal: goalOf({}), list: [] }, null, NOW)!;
-  assert.match(goalLines[1]!, /^├─ goal · active /);
+  assert.match(goalLines[0]!, /^● /); // goal card icon
+  assert.match(goalLines[0]!, / · active · /);
   const listLines = buildWidgetLines({ goal: goalOf({ policy: "list" }), list: [] }, null, NOW)!;
-  assert.match(listLines[1]!, /^├─ list item · active /);
+  assert.match(listLines[0]!, /· list item · active · /); // v0.33.0: named in the head segments
   const SRC = fs.readFileSync("extensions/goal-loop-display.ts", "utf-8");
-  assert.match(SRC, /const typeWord = isList \? "list item · " : "goal · ";/);
+  assert.match(SRC, /if \(isList\) headSegs\.push\("list item"\);/);
 });
