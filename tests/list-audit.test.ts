@@ -11,7 +11,11 @@ import * as fs from "node:fs";
 
 import {
   AUDIT_FINDINGS_REL,
+  GOAL_AUDIT_ONESHOT_MARKER,
+  LOOP_AUDIT_MARKER,
   LIST_AUDIT_COLLECT_MARKER,
+  auditTarget,
+  projectAuditTarget,
   listAuditCollectTarget,
   listAuditFanoutItemText,
   parseAuditFindingsForFanout,
@@ -100,4 +104,31 @@ test("fan-out: dedupe vs the live queue, Confirm gate, decline keeps findings op
 test("help surface: /list audit appears in the command description + completions", () => {
   assert.match(SRC, /\/list audit \[focus\] \(collect findings, then drain them as items\)/);
   assert.match(SRC, /\["audit", "collect-then-drain: audit the project, queue every finding as its own item"\]/);
+});
+
+// ---------- v0.31.1: audit-initiative stacking guards ----------
+
+test("markers: the built targets still contain what the guards match on", () => {
+  assert.ok(projectAuditTarget().includes(GOAL_AUDIT_ONESHOT_MARKER), "one-shot marker in the one-shot target");
+  assert.ok(auditTarget().includes(LOOP_AUDIT_MARKER), "loop marker in the audit-loop target");
+});
+
+test("/loop audit warns when a one-shot audit goal exists (paused or active)", () => {
+  assert.match(SRC, /state\.goal && state\.goal\.objective\.includes\(GOAL_AUDIT_ONESHOT_MARKER\)/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "audit_stack_warn", \{ have: "goal", starting: "loop", goalStatus: state\.goal\.status \}\)/);
+  assert.match(SRC, /the audit loop SUPERSEDES it \(one pass \+ fixes IS the loop's job\)/);
+});
+
+test("/goal audit + /list audit warn when an audit loop is already running", () => {
+  assert.equal(SRC.match(/state\.loop\?\.active && state\.loop\.target\.includes\(LOOP_AUDIT_MARKER\)/g)!.length >= 2, true, "both routes check the live loop");
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "audit_stack_warn", \{ have: "loop", starting: "goal" \}\)/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "audit_stack_warn", \{ have: "loop", starting: "list" \}\)/);
+  assert.match(SRC, /a one-shot \/goal audit duplicates its work/);
+  assert.match(SRC, /\/list audit would double-hunt the same ground/);
+});
+
+test("restore-hold names the supersession in the widget surface", () => {
+  assert.match(SRC, /const auditSuperseded =/);
+  assert.match(SRC, /restored on session load — SUPERSEDED by the audit loop in this session/);
+  assert.match(SRC, /\/goal cancel clears it \(the loop already owns the audit\)/);
 });

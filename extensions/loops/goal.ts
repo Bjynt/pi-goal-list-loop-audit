@@ -176,6 +176,8 @@ import {
   AUDIT_FINDINGS_REL,
   projectAuditTarget,
   LIST_AUDIT_COLLECT_MARKER,
+  GOAL_AUDIT_ONESHOT_MARKER,
+  LOOP_AUDIT_MARKER,
   listAuditCollectTarget,
   parseAuditFindingsForFanout,
   listAuditFanoutItemText,
@@ -1706,6 +1708,15 @@ async function cmdGoal(args: string, ctx: ExtensionContext): Promise<void> {
     // DECIDE findings presented, untouched. Runs as a normal goal through
     // cmdSet — the isolated auditor verifies the finish line.
     if (route.name === "audit") {
+      // v0.31.1: an active audit loop already owns auditing here — the
+      // one-shot duplicates it (same stacking confusion as junk-runner).
+      if (state.loop?.active && state.loop.target.includes(LOOP_AUDIT_MARKER)) {
+        appendLedger(ctx.cwd, "audit_stack_warn", { have: "loop", starting: "goal" });
+        ctx.ui.notify(
+          "An audit loop is already running here — a one-shot /goal audit duplicates its work. /loop status to see it; /loop stop first if you want the one-shot instead.",
+          "warning",
+        );
+      }
       return cmdSet(projectAuditTarget(route.rest || undefined), ctx, true);
     }
     // v0.28.27 (renamed /goal audit → /goal verify in v0.29.8): run the
@@ -2158,6 +2169,12 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     // list drains them fix by fix, each with its own isolated audit.
     // Distinct from /goal audit (fix-in-pass, one audited unit) and
     // /loop audit (forever fix-first cadence).
+    // v0.31.1: an active audit loop is already draining this findings file —
+    // a collect pass would double-hunt the same ground.
+    if (state.loop?.active && state.loop.target.includes(LOOP_AUDIT_MARKER)) {
+      appendLedger(ctx.cwd, "audit_stack_warn", { have: "loop", starting: "list" });
+      ctx.ui.notify("An audit loop is already draining findings here — /list audit would double-hunt the same ground. /loop status to see it.", "warning");
+    }
     const objective = listAuditCollectTarget(rest || undefined);
     const n = enqueueItems(ctx, [objective], "/list audit");
     if (n === 0) return; // zombie-twin guard already explained itself
@@ -3020,6 +3037,18 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     if (state.goal && state.goal.status === "active") {
       ctx.ui.notify("A goal is active — /goal cancel or /goal pause it before starting a loop.", "warning");
       return;
+    }
+    // v0.31.1: a paused/active one-shot audit goal + this loop = two stacked
+    // audit initiatives (junk-runner 2026-07-31: the held one-shot read as
+    // "stalled" for 8h while the loop did all the work — the agent conflated
+    // them and proposed completing the goal for the loop's work). Warn, name
+    // the supersession, don't block — the user's agency, the user's call.
+    if (state.goal && state.goal.objective.includes(GOAL_AUDIT_ONESHOT_MARKER)) {
+      appendLedger(ctx.cwd, "audit_stack_warn", { have: "goal", starting: "loop", goalStatus: state.goal.status });
+      ctx.ui.notify(
+        `Heads up: a ${state.goal.status} one-shot audit goal exists in this session — the audit loop SUPERSEDES it (one pass + fixes IS the loop's job). /goal cancel clears it; one audit initiative per session.`,
+        "warning",
+      );
     }
     if (isLoopActive()) {
       ctx.ui.notify("A loop is already active. /loop stop first.", "warning");
@@ -5834,11 +5863,24 @@ export default function (pi: ExtensionAPI): void {
         const isListItem = state.goal.policy === "list";
         const resumeCmd = isListItem ? "/list resume" : "/goal resume";
         const resumeHint = `${resumeCmd} to continue${queued > 0 ? ` (+${queued} waiting in the list)` : ""} · /glla autoresume=on to auto-resume on load (global setting)`;
+        // v0.31.1: name the supersession — a held one-shot audit whose work a
+        // live audit loop now owns reads as "stalled" for HOURS otherwise
+        // (junk-runner: 8h21m of "held for explicit resume" on a goal the
+        // loop had superseded). The widget surface must say so.
+        const auditSuperseded =
+          state.goal.objective.includes(GOAL_AUDIT_ONESHOT_MARKER) &&
+          !!state.loop &&
+          (state.loop.active || state.loop.stopReason === HELD_ON_RESTORE) &&
+          !!state.loop.target?.includes(LOOP_AUDIT_MARKER);
         updateGoal({
           status: "paused",
           pauseKind: "blocked",
-          pauseReason: "restored on session load — held for explicit resume",
-          pauseSuggestedAction: resumeHint,
+          pauseReason: auditSuperseded
+            ? "restored on session load — SUPERSEDED by the audit loop in this session"
+            : "restored on session load — held for explicit resume",
+          pauseSuggestedAction: auditSuperseded
+            ? `/goal cancel clears it (the loop already owns the audit) · ${resumeHint} if you disagree`
+            : resumeHint,
         }, ctx);
         ctx.ui.notify(
           `${isListItem ? "List item" : "Goal"} held on restore: ${state.goal.objective.slice(0, 70)}${queued > 0 ? ` (+${queued} waiting in the list)` : ""} — ${resumeCmd} to continue.`,
