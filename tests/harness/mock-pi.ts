@@ -46,6 +46,9 @@ export class MockPi {
   sendMessageError: Error | null = null;
   /** When set, getSessionName() throws it — trips the stale entry probe. */
   sessionNameError: Error | null = null;
+  /** v0.29.19: programmable exec (loop measure commands). Default keeps
+   * the historical empty-stdout behavior so existing tests are unaffected. */
+  execHandler: ((cmd: string, args: string[], opts: unknown) => { code: number; stdout: string; stderr: string }) | null = null;
   sessionName = "mock-session";
   private activeTools: string[] = [];
   readonly api: ExtensionAPI;
@@ -87,7 +90,8 @@ export class MockPi {
       getCommands(): Array<{ name: string }> {
         return [...self.commands.keys()].map((name) => ({ name }));
       },
-      async exec(): Promise<{ code: number; stdout: string; stderr: string }> {
+      async exec(cmd: string, args: string[], opts: unknown): Promise<{ code: number; stdout: string; stderr: string }> {
+        if (self.execHandler) return self.execHandler(cmd, args, opts);
         return { code: 0, stdout: "", stderr: "" };
       },
     } as unknown as ExtensionAPI;
