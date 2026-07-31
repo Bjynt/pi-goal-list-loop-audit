@@ -173,6 +173,7 @@ import {
   auditTarget,
   AUDIT_PLATEAU_MAX_REPRIEVES,
   countOpenAuditFindings,
+  AUDIT_FINDINGS_REL,
   projectAuditTarget,
   HELD_ON_RESTORE,
   type LoopState,
@@ -463,6 +464,11 @@ let heartbeatTimer: NodeJS.Timeout | null = null;
 
 const ZOMBIE_RUN_SILENT_MS = 20 * 60_000;
 const ZOMBIE_RUN_ALERT_THROTTLE_MS = 10 * 60_000;
+// v0.29.19: dead-turn caps (agent_end exemption path). 6 consecutive
+// provider-error turns = a real outage, not bad luck — stop honestly.
+// 3 consecutive user aborts = the user means it (user aborts mean STOP).
+const LOOP_MAX_CONSECUTIVE_ERRORS = 6;
+const LOOP_MAX_CONSECUTIVE_ABORTS = 3;
 
 function noteActivity(real = false): void {
   lastActivityAt = Date.now();
@@ -2457,7 +2463,7 @@ async function runLoopTick(ctx: ExtensionContext, event?: any): Promise<void> {
     loop.consecutiveStuck = 0;
     loop.lastStuckReason = undefined;
   }
-  const outcome = metricless ? applyMetriclessTick(loop, nowIso()) : applyMeasurement(loop, value, nowIso());
+  const outcome: LoopTickOutcome = metricless ? applyMetriclessTick(loop, nowIso()) : applyMeasurement(loop, value, nowIso());
   persistState(ctx);
   appendLedger(ctx.cwd, "loop_measured", {
     iteration: loop.iteration,
@@ -2496,6 +2502,34 @@ async function runLoopTick(ctx: ExtensionContext, event?: any): Promise<void> {
     return;
   }
   if (outcome.kind === "stop") {
+    // v0.29.19: an audit loop's plateau is only honest when the well is
+    // ACTUALLY dry. Plateauing with open findings means the agent fumbled
+    // (or the provider ate) N turns — not "nothing left" (field: hegemon
+    // stopped at best 74 with 13 OPEN boxes; polis at best 46 with 3+).
+    // Stand the stop down with a strategy shove — bounded: the plateau
+    // after the last reprieve stops with an honest blocked-named reason.
+    if (loop.kind === "audit" && outcome.reason.startsWith("plateau —")) {
+      const open = countOpenAuditFindings(ctx.cwd);
+      if (open > 0) {
+        const reprieves = (loop.auditPlateauReprieves ?? 0) + 1;
+        if (reprieves <= AUDIT_PLATEAU_MAX_REPRIEVES) {
+          loop.active = true;
+          loop.stopReason = undefined;
+          loop.stallCount = 0;
+          loop.auditPlateauReprieves = reprieves;
+          loop.auditReprieveNote = `PLATEAU REPRIEVE (${reprieves}/${AUDIT_PLATEAU_MAX_REPRIEVES}): ${open} finding(s) still OPEN in ${AUDIT_FINDINGS_REL} — the plateau stop does not fire while the well isn't dry. Stop hunting and stop narrating: pick the smallest OPEN finding and CLOSE it this iteration (fix commit + checked box). ${AUDIT_PLATEAU_MAX_REPRIEVES - reprieves} reprieve(s) remain.`;
+          persistState(ctx);
+          appendLedger(ctx.cwd, "audit_plateau_reprieve", { open, reprieves, best: loop.bestValue });
+          ctx.ui.notify(`Audit loop plateau reprieve (${reprieves}/${AUDIT_PLATEAU_MAX_REPRIEVES}): ${open} open findings — the well isn't dry, continuing.`, "info");
+          scheduleLoopTick(ctx);
+          return;
+        }
+        const honest = `plateau — no closure in ${loop.plateauWindow}×${reprieves} iterations despite ${open} open findings (treat as blocked; /loop resume to push again)`;
+        loop.stopReason = honest;
+        persistState(ctx);
+        outcome = { kind: "stop", reason: honest } as LoopTickOutcome;
+      }
+    }
     await finishLoopGit(ctx, loop);
     ctx.ui.notify(`Loop stopped: ${outcome.reason}. ${loop.history.length} iterations recorded.`, "info");
     appendLedger(ctx.cwd, "loop_stopped", { reason: outcome.reason, iterations: loop.iteration, best: loop.bestValue });
@@ -5679,6 +5713,36 @@ export default function (pi: ExtensionAPI): void {
     // Loop 3 runs on the same heartbeat: measure after every agent turn.
     if (isLoopActive()) {
       clearLoopTimer();
+      // v0.29.19: provider-error / user-abort turns are NOT iterations —
+      // the model never got a say, so a dead turn carries no stall/stuck/
+      // plateau signal (field 2026-07-31, MiniMax token-plan 429 storm:
+      // hegemon false-plateau'd with 13 open findings, polis with 3+,
+      // hellhunter stuck-stopped at iter 93 — every counted turn was a
+      // dead 429 turn; the v0.28.13/v0.29.4 exemptions only covered the
+      // goal nudge counter). Skip the measure and refire — bounded, so a
+      // real outage stops the loop honestly instead of burning turns.
+      const sr = lastA?.stopReason;
+      if (sr === "error" || sr === "aborted") {
+        const loop = state.loop!;
+        loop.consecutiveErrors = (loop.consecutiveErrors ?? 0) + 1;
+        persistState(ctx);
+        appendLedger(ctx.cwd, "loop_turn_exempt_error", { stopReason: sr, consecutive: loop.consecutiveErrors, iteration: loop.iteration });
+        const cap = sr === "aborted" ? LOOP_MAX_CONSECUTIVE_ABORTS : LOOP_MAX_CONSECUTIVE_ERRORS;
+        if (loop.consecutiveErrors >= cap) {
+          loop.active = false;
+          loop.stopReason = sr === "aborted"
+            ? `stopped by user — ${loop.consecutiveErrors} consecutive aborts (iteration ${loop.iteration} preserved; /loop resume to continue)`
+            : `provider errors — ${loop.consecutiveErrors} consecutive error turns (iteration ${loop.iteration} preserved; /loop resume when the provider recovers)`;
+          persistState(ctx);
+          ctx.ui.notify(`Loop stopped: ${loop.stopReason}`, "warning");
+          appendLedger(ctx.cwd, "loop_stopped", { reason: loop.stopReason, iterations: loop.iteration, best: loop.bestValue });
+          notifyExternal(ctx, `Loop stopped: ${sr === "aborted" ? "user aborts" : "provider errors"} (${loop.consecutiveErrors}×)`);
+          return;
+        }
+        scheduleLoopTick(ctx);
+        return;
+      }
+      if ((state.loop!.consecutiveErrors ?? 0) > 0) state.loop!.consecutiveErrors = 0; // a real turn clears the streak (runLoopTick persists)
       await runLoopTick(ctx, event);
       return;
     }
