@@ -173,8 +173,9 @@ test("v0.31.3: the auditor chain — pinned primary → pinned fallback → sess
   assert.match(SRC, /via: i === 0 \? "setting" : "fallback-pin"/);
   assert.match(SRC, /All pinned auditor models are unavailable — falling back to the session model/);
   // Same-as-session swap (the user's move): swap only when a next pin exists;
-  // last-pin == session stands with one loud nudge:
-  assert.match(SRC, /if \(isSession\(r\.model\) && i \+ 1 < pins\.length\) \{/);
+  // last-pin == session stands with one loud nudge. v0.31.6: both gated on
+  // the auditorSameSessionSwap toggle (default ON).
+  assert.match(SRC, /if \(sameSessionSwap && isSession\(r\.model\) && i \+ 1 < pins\.length\) \{/);
   assert.match(SRC, /auditor_model_same_as_session/);
   assert.match(SRC, /pin a different \/glla → Auditor fallback model so the verifier can differ/);
   // Both audit call sites pass the fallback pin:
@@ -189,4 +190,19 @@ test("v0.31.3: the auditor chain — pinned primary → pinned fallback → sess
   assert.match(SRC, /case "auditorModelFallback": \{/);
   // The v0.31.2 "diverse" machinery is gone (complexity cost > benefit):
   assert.ok(!SRC.includes("pickDiverseAuditorModel") && !SRC.includes('"diverse"'), "diverse strategy removed");
+});
+
+test("v0.31.6: same-model swap toggle — default ON, off = same-model audits stand", () => {
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.match(SRC, /sameSessionSwap = true\): \{ model: any; error\?: string; via\?: string \}/);
+  assert.equal(SRC.match(/settings\.auditorSameSessionSwap !== false/g)!.length, 2, "both audit call sites pass the toggle (undefined = on)");
+  assert.match(SRC, /if \(sameSessionSwap && isSession\(r\.model\) && !fallbackRef\?\.trim\(\)\) \{/);
+  assert.match(SRC, /case "auditorSameSessionSwap": \{/);
+  assert.match(SRC, /off — same-model audits stand \(you accept the executor's model as its own verifier/);
+  const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
+  assert.match(SETTINGS, /auditorSameSessionSwap\?: boolean;/);
+  assert.match(SETTINGS, /Default ON \(undefined\)/);
+  const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
+  assert.match(MENU, /id: "auditorSameSessionSwap"/);
+  assert.match(MENU, /valueText: show\("auditorSameSessionSwap", "on"\)/);
 });
