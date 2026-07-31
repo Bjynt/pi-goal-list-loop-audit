@@ -223,6 +223,14 @@ let extensionApi: ExtensionAPI | null = null;
 // throws FOREVER in this process — retrying for hours is the hegemon
 // failure shape. Detect the stale signature once and go terminally loud.
 let extensionApiStale = false;
+// v0.32.0: CRITICAL — goStaleTerminal must gate on its OWN flag, not
+// extensionApiStale: probeExtensionApiStale() sets extensionApiStale on
+// detection, so the heartbeat's `probe → goStaleTerminal` sequence always
+// found the flag already true and returned silently — orphan-stale recovery
+// (ledger, loop stop, interruptedAt, warn, AUTO-RELOAD SELF-HEAL) was dead
+// code since v0.29.11. Field proof: hegemon sat stale for days and the
+// wezterm self-heal never fired.
+let staleTerminalDone = false;
 
 /** v0.26.7: a stale api is terminal for this process — go loudly with
  * restart guidance instead of retrying sends that can never land.
@@ -292,16 +300,24 @@ function absorbStaleIfSuperseded(ctx: ExtensionContext): boolean {
     extensionApiStale = true; // silence the send paths WITHOUT the terminal theatre
     clearLoopTimer();
     if (continuationTimer) { clearTimeout(continuationTimer); continuationTimer = null; }
+    // v0.32.0: the superseded module's heartbeat + UI ticker were IMMORTAL
+    // (clearInterval appeared nowhere) — N /reloads = N×2 zombie tickers.
+    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+    if (uiTicker) { clearInterval(uiTicker); uiTicker = null; }
     return true;
   }
   return false;
 }
 
 function goStaleTerminal(ctx: ExtensionContext, where: string): void {
-  if (extensionApiStale) return; // already terminal — don't re-spam
+  if (staleTerminalDone) return; // already terminal — don't re-spam
+  staleTerminalDone = true;
   extensionApiStale = true;
   appendLedger(ctx.cwd, "extension_api_stale", { where, kind: isLoopActive() ? "loop" : "goal" });
   const guidance = "pi invalidated this session's extension handle (session replacement — the session was disposed and this process's sends can never land). Run /reload — extensions rebuild IN PLACE, no pi restart needed — then /glla resume (autoresume=on resumes for you). Restart pi only if /reload itself fails.";
+  // v0.32.0: kill the continuation re-arm too — otherwise an orphaned goal
+  // keeps spinning a flat 50ms retry below every watchdog.
+  if (continuationTimer) { clearTimeout(continuationTimer); continuationTimer = null; continuationScheduledFor = null; }
   if (isLoopActive()) {
     clearLoopTimer();
     state.loop = { ...state.loop!, active: false, stopReason: `extension api stale: ${guidance}` };
@@ -400,6 +416,12 @@ function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
   // v0.30.0: a successor may already own this session (e.g. /reload
   // re-imported the modules) — the user's command belongs to the fresh
   // instance; say so softly instead of demanding a reload.
+  // v0.32.0: the rebind window means a fresh instance is COMING, not here —
+  // the old message claimed "handled there" while nothing owned the session.
+  if (Date.now() < sessionReplacementUntil) {
+    ctx.ui.notify(`glla: this session is rebinding after /reload — ${what} will be handled by the refreshed instance; retry in a moment if it doesn't.`, "info");
+    return true;
+  }
   if (absorbStaleIfSuperseded(ctx)) {
     ctx.ui.notify(`glla: a refreshed instance owns this session — ${what} is handled there; nothing to do.`, "info");
     return true;
@@ -579,6 +601,8 @@ let carryoverResolved = true;
 // set while complete_goal's isolated audit runs, so the heartbeat never
 // refires into an in-flight completion.
 let completionAuditInFlight = false;
+// v0.32.0: consecutive stored-claim quota retries (capped at 5, then hold).
+let quotaRetryStreak = 0;
 let heartbeatTimer: NodeJS.Timeout | null = null;
 
 const ZOMBIE_RUN_SILENT_MS = 20 * 60_000;
@@ -1005,6 +1029,9 @@ function sendContinuation(goalId: string): void {
   if (!isActionableGoal()) return;
   const ctx = freshCtx();
   if (!ctx) {
+    // v0.32.0: a stale handle must not spin a flat 50ms re-arm below every
+    // watchdog — the heartbeat's terminal path does the theatre; we just stop.
+    if (probeExtensionApiStale()) return;
     // No live ctx — retry shortly; the next session event will refresh it.
     continuationScheduledFor = goalId;
     continuationTimer = setTimeout(() => sendContinuation(goalId), BACKOFF_IDLE_RETRY_MS);
@@ -1251,7 +1278,9 @@ async function fanOutListAuditFindings(ctx: ExtensionContext): Promise<void> {
   // Dedupe against the live queue (a re-run must not double-queue a finding
   // that's already waiting) — match on the finding text's first 60 chars.
   const queuedText = listQueue().map((i) => i.objective).join("\n");
-  const fresh = open.filter((f) => !queuedText.includes(f.text.slice(0, 60)));
+  // v0.32.0: cap one fan-out — a runaway findings file must not enqueue
+  // hundreds of items on a single Confirm.
+  const fresh = open.filter((f) => !queuedText.includes(f.text.slice(0, 60))).slice(0, 50);
   const alreadyQueued = open.length - fresh.length;
   const decideNote =
     decisions.length > 0
@@ -1440,6 +1469,14 @@ async function retryStoredCompletionAudit(ctx: ExtensionContext, origin: "quota-
       pauseSuggestedAction: `Quota auto-retry in ${retryMin}m — or /goal resume to retry now`,
     }, liveCtx);
     appendLedger(liveCtx.cwd, "goal_paused", { reason: `auditor quota: retry in ${quota.retryAfterSec}s (stored-claim retry)` });
+    // v0.32.0: terminal cap — a permanently dead auditor key must not spawn
+    // one auditor per hour forever. 5 consecutive quota retries → hold.
+    quotaRetryStreak++;
+    if (quotaRetryStreak >= 5) {
+      appendLedger(liveCtx.cwd, "quota_retry_capped", { streak: quotaRetryStreak });
+      liveCtx.ui.notify(`Auditor quota retry gave up after ${quotaRetryStreak} consecutive attempts — the claim stays stored; /goal resume retries by hand.`, "warning");
+      return;
+    }
     liveCtx.ui.notify(`Auditor still quota-limited — next auto-retry in ${retryMin}m (your completion claim is stored; no action needed).`, "warning");
     scheduleQuotaRetry(liveCtx, quota.retryAfterSec, result.error, () => {
       if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor quota:") && state.goal.pendingCompletion) {
@@ -1452,6 +1489,7 @@ async function retryStoredCompletionAudit(ctx: ExtensionContext, origin: "quota-
   // Any other outcome — disapproved, impossible, non-quota infra — belongs
   // to the agent: resume and let the continuation drive the next step. The
   // verdict is durable in auditHistory + /goal status.
+  quotaRetryStreak = 0;
   updateGoal({
     status: "active",
     auditHistory: history,
@@ -4265,35 +4303,45 @@ function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: 
     return matches[0] ? { model: matches[0] } : { reason: "no available model matching" };
   };
   const isSession = (m: any) => sessionModel && m.provider === sessionModel.provider && m.id === sessionModel.id;
-  const pins = [ref, fallbackRef].map((r) => r?.trim()).filter((r): r is string => !!r);
+  // v0.32.0: per-pin source labels — when the primary is unset, pins[0] IS
+  // the fallback and the old i===0→"setting" map mislabeled it.
+  const pins: Array<{ pin: string; src: "setting" | "fallback-pin" }> = [];
+  if (ref?.trim()) pins.push({ pin: ref.trim(), src: "setting" });
+  if (fallbackRef?.trim()) pins.push({ pin: fallbackRef.trim(), src: "fallback-pin" });
   for (let i = 0; i < pins.length; i++) {
-    const pin = pins[i]!;
+    const { pin } = pins[i]!;
     const r = tryRef(pin);
     if (!r.model) {
       // Unavailable pin → cascade: next pin, then the session model (LOUD).
       appendLedger(ctx.cwd, "auditor_model_fallback", { configured: pin, reason: r.reason });
-      ctx.ui.notify(`Auditor model "${pin}" is unavailable (${r.reason}) — ${i + 1 < pins.length ? "trying the fallback pin" : "falling back to the session model"}. Fix via /glla → Auditor model.`, "warning");
+      // v0.32.0: the last pin no longer pre-announces the session fallback —
+      // the post-loop block does that (it notified twice before).
+      ctx.ui.notify(`Auditor model "${pin}" is unavailable (${r.reason})${i + 1 < pins.length ? " — trying the fallback pin" : ""}. Fix via /glla → Auditor model.`, "warning");
       continue;
     }
     if (sameSessionSwap && isSession(r.model) && i + 1 < pins.length) {
       // The pin IS the session model — the verifier would be the executor's
       // own model; auto-swap down the chain (the user's move).
-      appendLedger(ctx.cwd, "auditor_model_same_as_session", { model: `${r.model.provider}/${r.model.id}`, fallback: pins[i + 1] });
-      ctx.ui.notify(`Session model IS the pinned auditor (${r.model.provider}/${r.model.id}) — auditor auto-swapped to ${pins[i + 1]} so the verifier differs.`, "info");
+      appendLedger(ctx.cwd, "auditor_model_same_as_session", { model: `${r.model.provider}/${r.model.id}`, fallback: pins[i + 1]!.pin });
+      ctx.ui.notify(`Session model IS the pinned auditor (${r.model.provider}/${r.model.id}) — auditor auto-swapped to ${pins[i + 1]!.pin} so the verifier differs.`, "info");
       continue;
     }
-    if (sameSessionSwap && isSession(r.model) && !fallbackRef?.trim()) {
+    // v0.32.0: the nudge must fire when the LAST pin stands on the session
+    // model — the old `!fallbackRef` guard went SILENT when the fallback pin
+    // itself resolved to the session model (verifier == executor, and hop 0's
+    // notify had just claimed "auto-swapped so the verifier differs" — false).
+    if (sameSessionSwap && isSession(r.model) && i + 1 >= pins.length) {
       // Last resort reached and it IS the session model, with no fallback
       // ever pinned — the model stands (the session IS the last resort);
       // one loud nudge so the user can wire the swap.
       appendLedger(ctx.cwd, "auditor_model_same_as_session", { model: `${r.model.provider}/${r.model.id}`, fallback: null });
       ctx.ui.notify(`The session model IS the pinned auditor (${r.model.provider}/${r.model.id}) — pin a different /glla → Auditor fallback model so the verifier can differ.`, "warning");
     }
-    return { model: r.model, via: i === 0 ? "setting" : "fallback-pin" };
+    return { model: r.model, via: pins[i]!.src };
   }
   if (sessionModel) {
     if (pins.length > 0) {
-      appendLedger(ctx.cwd, "auditor_model_fallback", { configured: pins.join(" → "), reason: "all pins exhausted" });
+      appendLedger(ctx.cwd, "auditor_model_fallback", { configured: pins.map((p) => p.pin).join(" → "), reason: "all pins exhausted" });
       ctx.ui.notify("All pinned auditor models are unavailable — falling back to the session model. Fix via /glla → Auditor model.", "warning");
       return { model: sessionModel, via: "session-fallback" };
     }

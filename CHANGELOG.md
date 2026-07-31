@@ -1,5 +1,62 @@
 # Changelog
 
+## [0.32.0] — 2026-07-31
+
+Opportunistic plugin audit (three parallel read-only lenses over the
+extension) — one CRITICAL, eight smaller fixes.
+
+### Fixed — CRITICAL: orphan-stale recovery was dead code since v0.29.11
+
+`goStaleTerminal` gated on `extensionApiStale`, but the heartbeat's own
+staleness PROBE sets that flag on detection — so `probe → terminal`
+always bailed on the first line. Orphaned sessions (process alive, pi
+handle invalidated) got: no `extension_api_stale` ledger event, no loop
+stop, no `interruptedAt`, no warning, and **the v0.29.13/22 self-heal
+auto-reload NEVER FIRED** (its only caller is `goStaleTerminal`). Field
+proof was hiding in plain sight: hegemon sat stale for days and the
+wezterm self-heal never logged once. The terminal path now gates on a
+dedicated `staleTerminalDone` flag. The regex-pin tests pinned the call
+shape but never executed the ordering — the suite literally pinned the
+bug in; the pins now assert the dedicated flag.
+
+### Fixed — audit findings
+
+- **Orphan 50ms spin**: a stale handle with no live ctx re-armed the
+  continuation timer at flat 50ms below every watchdog. The no-ctx send
+  path now probes staleness and stops; `goStaleTerminal` clears the
+  continuation timer.
+- **Immortal zombie tickers**: `heartbeatTimer`/`uiTicker` were never
+  cleared anywhere (N /reloads = N×2 zombie intervals). Cleared in the
+  zombie stand-down.
+- **Auditor session leak**: every `complete_goal` leaked one AgentSession
+  (never disposed). Now `session.dispose?.()` in the finally.
+- **Menu rows lied**: `auditorModelFallback`/`auditorSameSessionSwap`
+  were missing from `SETTINGS_KEYS` — pinned values rendered as
+  `[default]`. Both keys added.
+- **Silent verifier==executor**: the same-session nudge required no
+  fallback pin, so the FALLBACK hop landing on the session model stood
+  silently — after hop 0's notify claimed "auto-swapped so the verifier
+  differs". Now last-pin-guarded; per-pin `via` labels (pins[0] may BE
+  the fallback when the primary is unset); duplicate exhaustion notify
+  dropped.
+- **Quota retry cap**: stored-claim quota retries re-armed forever (a
+  dead key = one auditor spawn/hour forever). 5 consecutive → hold,
+  loud, `/goal resume` retries by hand.
+- **Fan-out cap**: one `/list audit` fan-out caps at 50 queued findings.
+- **Entry probe honesty**: the rebind window now says "rebinding — retry
+  in a moment" instead of claiming a successor already owns the session.
+
+### Parked (audit's bigger finds, deliberate)
+
+- Cross-process owner liveness (two pi processes on one cwd both pass
+  all guards) — needs design, not a patch.
+- Ledger JSONL rotation (unbounded growth, whole-file reparse per
+  session start).
+- `quotaRetryTimer` reload-survival dedupe; `GLLA_AUDITOR=1` env
+  sentinel for auditor-spawned bash (v0.31.9's prompt-law stands).
+
+663 tests.
+
 ## [0.31.9] — 2026-07-31
 
 ### Added — the fork-bomb lesson is now prompt-law

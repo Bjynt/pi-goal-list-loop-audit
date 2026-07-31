@@ -170,8 +170,9 @@ test("v0.31.2/0.31.3: auditor thinking defaults to sticky high — never the ses
 test("v0.31.3: the auditor chain — pinned primary → pinned fallback → session LAST; same-as-session auto-swap", () => {
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   // The cascade: two pins walked in order, session model after the loop:
-  assert.match(SRC, /const pins = \[ref, fallbackRef\]/);
-  assert.match(SRC, /via: i === 0 \? "setting" : "fallback-pin"/);
+  assert.match(SRC, /const pins: Array<\{ pin: string; src: "setting" \| "fallback-pin" \}> = \[\]/);
+  assert.match(SRC, /via: pins\[i\]!\.src/); // v0.32.0: per-pin source labels (pins[0] may BE the fallback)
+  assert.match(SRC, /pins\.push\(\{ pin: fallbackRef\.trim\(\), src: "fallback-pin" \}\)/);
   assert.match(SRC, /All pinned auditor models are unavailable — falling back to the session model/);
   // Same-as-session swap (the user's move): swap only when a next pin exists;
   // last-pin == session stands with one loud nudge. v0.31.6: both gated on
@@ -197,7 +198,7 @@ test("v0.31.6: same-model swap toggle — default ON, off = same-model audits st
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   assert.match(SRC, /sameSessionSwap = true\): \{ model: any; error\?: string; via\?: string \}/);
   assert.equal(SRC.match(/settings\.auditorSameSessionSwap !== false/g)!.length, 2, "both audit call sites pass the toggle (undefined = on)");
-  assert.match(SRC, /if \(sameSessionSwap && isSession\(r\.model\) && !fallbackRef\?\.trim\(\)\) \{/);
+  assert.match(SRC, /if \(sameSessionSwap && isSession\(r\.model\) && i \+ 1 >= pins\.length\) \{/); // v0.32.0: last-pin guard — the fallback hop landing on the session model nudges too
   assert.match(SRC, /case "auditorSameSessionSwap": \{/);
   assert.match(SRC, /off — same-model audits stand \(you accept the executor's model as its own verifier/);
   const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");

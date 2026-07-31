@@ -188,6 +188,8 @@ export function loadGlobalSettings(): Settings {
 /** Every provenance-tracked key (the /glla headless display + UI). */
 export const SETTINGS_KEYS: Array<keyof Settings> = [
   "auditorModel",
+  "auditorModelFallback",
+  "auditorSameSessionSwap",
   "auditorThinkingLevel",
   "notifyCmd",
   "tokenLimit",

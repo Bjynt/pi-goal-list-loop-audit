@@ -43,7 +43,14 @@ test("both autonomous send paths detect staleness and go terminal", () => {
 
 test("terminal path: ledger event, single-fire, goal ACTIVE+marker / loop stop with restart guidance", () => {
   assert.match(SRC, /let extensionApiStale = false;/);
-  assert.match(SRC, /if \(extensionApiStale\) return; \/\/ already terminal/);
+  // v0.32.0: CRITICAL regression fix — the terminal path gates on its OWN flag;
+  // extensionApiStale is set by the PROBE, so gating on it made the heartbeat's
+  // probe→terminal sequence dead code (self-heal auto-reload never fired).
+  assert.match(SRC, /let staleTerminalDone = false;/);
+  assert.match(SRC, /if \(staleTerminalDone\) return; \/\/ already terminal/);
+  assert.match(SRC, /if \(probeExtensionApiStale\(\)\) return;/); // no-ctx send path must not spin a 50ms re-arm
+  assert.match(SRC, /clearInterval\(heartbeatTimer\)/); // zombie stand-down clears the immortal tickers
+  assert.match(SRC, /clearInterval\(uiTicker\)/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "extension_api_stale", \{ where, kind:/);
   // v0.28.1 (S1/S2): the stale goal branch keeps status ACTIVE and sets the
   // interrupt marker — pausing here stranded goals (restore only
@@ -172,4 +179,18 @@ test("send paths short-circuit once stale (no retry-into-the-void)", () => {
 
 test("a fresh factory run clears the stale flag (extension reload recovery)", () => {
   assert.match(SRC, /export default function \(pi: ExtensionAPI\): void \{\n  extensionApi = pi;\n  extensionApiStale = false;/);
+});
+
+test("v0.32.0: audit-opportunistic fix batch — dispose, keys, caps, message", () => {
+  const AUD = fs.readFileSync("extensions/goal-loop-auditor.ts", "utf-8");
+  assert.match(AUD, /dispose\?\.\(\)/); // auditor session no longer leaked per complete_goal
+  const GS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
+  assert.match(GS, /"auditorModelFallback",/); // provenance-tracked — menu row shows pinned value
+  assert.match(GS, /"auditorSameSessionSwap",/);
+  const GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.match(GOAL, /slice\(0, 50\)/); // fan-out cap
+  assert.match(GOAL, /quotaRetryStreak >= 5/); // quota retry terminal cap
+  assert.match(GOAL, /quotaRetryStreak = 0;/); // streak resets on any non-quota outcome
+  assert.match(GOAL, /rebinding after \/reload — /); // entry probe names the rebind window honestly
+  assert.match(GOAL, /clearTimeout\(continuationTimer\); continuationTimer = null; continuationScheduledFor = null;/); // terminal kills the re-arm
 });
