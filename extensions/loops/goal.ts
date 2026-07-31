@@ -4220,68 +4220,67 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
  * clear explanation (switch pi's model to a built-in provider, or set the
  * override) — we do NOT silently substitute a different model.
  */
-/** v0.31.3: when the session model IS the pinned auditor model, auto-swap
- * the auditor to settings.auditorModelFallback so the verifier differs from
- * the executor (user move: "if the session model is the same as the auditor
- * we auto fallback"). One pinned auditor + one pinned fallback — no
- * preference tables (the v0.31.2 "diverse" machinery cost more complexity
- * than it bought). The swap is LOUD — ledgered + notified like every model
- * substitution (the v0.9.12 no-SILENT-substitution law).
+/** v0.31.3: the auditor model chain — pinned primary, pinned fallback,
+ * session model LAST (user design 2026-07-31: "it can be the primary auditor
+ * and the session model is always the last; we can have a fallback auditor
+ * too" + "if the session model is the same as the auditor we auto fallback").
+ * Two explicit pins and a cascade — no preference tables, no strategy
+ * resolution (the v0.31.2 "diverse" machinery cost more complexity than it
+ * bought; it lasted one version). Every hop is LOUD (ledger + notify): the
+ * v0.9.12 no-SILENT-substitution law.
  */
-function sameSessionSwap(ctx: ExtensionContext, model: any, fallbackRef?: string): { model: any; via: string } {
-  const session = ctx.model as any;
-  if (!session || session.provider !== model.provider || session.id !== model.id) {
-    return { model, via: "setting" };
-  }
-  const fb = fallbackRef?.trim();
-  appendLedger(ctx.cwd, "auditor_model_same_as_session", { model: `${model.provider}/${model.id}`, fallback: fb ?? null });
-  if (!fb) {
-    ctx.ui.notify(`The session model IS the pinned auditor model (${model.provider}/${model.id}) — pin a different one via /glla → Auditor fallback model so the verifier differs from the executor.`, "warning");
-    return { model, via: "setting" };
-  }
-  const slash = fb.indexOf("/");
-  const fbModel = slash > 0 ? ctx.modelRegistry.find(fb.slice(0, slash), fb.slice(slash + 1)) : undefined;
-  if (fbModel && ctx.modelRegistry.hasConfiguredAuth(fbModel)) {
-    ctx.ui.notify(`Session model IS the pinned auditor (${model.provider}/${model.id}) — auditor auto-swapped to ${fb} so the verifier differs.`, "info");
-    return { model: fbModel, via: "same-session-fallback" };
-  }
-  ctx.ui.notify(`Auditor fallback "${fb}" is unavailable — the auditor stays on the session's own model this time. Fix via /glla → Auditor fallback model.`, "warning");
-  return { model, via: "setting" };
-}
-
 function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: string): { model: any; error?: string; via?: string } {
-  if (ref && ref.trim()) {
-    const trimmed = ref.trim();
-    // v0.29.17: an unavailable configured model (unknown id, or a provider
-    // with no configured auth) falls back LOUDLY to the session model —
-    // user request: "fall back to the session if unavailable". The v0.9.12
-    // no-SILENT-substitution law stands: the fallback notifies + ledgers.
-    // (Quota-exhausted keys stay on the quota-retry path — the model IS
-    // available there; the key's window is the failure, not the model.)
-    const fail = (reason: string) => {
-      const sessionModel = ctx.model as any;
-      if (sessionModel) {
-        appendLedger(ctx.cwd, "auditor_model_fallback", { configured: trimmed, reason });
-        ctx.ui.notify(`Auditor model "${trimmed}" is unavailable (${reason}) — falling back to the session model. Fix via /glla → Auditor model.`, "warning");
-        return { model: sessionModel, via: "session-fallback" };
-      }
-      return { model: undefined, error: `${reason}: ${trimmed}` };
-    };
+  const sessionModel = ctx.model as any;
+  const tryRef = (trimmed: string): { model?: any; reason?: string } => {
     const slash = trimmed.indexOf("/");
     if (slash > 0) {
       const provider = trimmed.slice(0, slash);
-      const id = trimmed.slice(slash + 1);
-      const model = ctx.modelRegistry.find(provider, id);
-      if (!model) return fail("model not found");
-      if (!ctx.modelRegistry.hasConfiguredAuth(model)) return fail(`no configured auth for ${provider}`);
-      return sameSessionSwap(ctx, model, fallbackRef);
+      const model = ctx.modelRegistry.find(provider, trimmed.slice(slash + 1));
+      if (!model) return { reason: "model not found" };
+      // v0.29.17: an unkeyed provider counts as unavailable. (Quota-exhausted
+      // keys stay on the quota-retry path — the model IS available there;
+      // the key's window is the failure, not the model.)
+      if (!ctx.modelRegistry.hasConfiguredAuth(model)) return { reason: `no configured auth for ${provider}` };
+      return { model };
     }
     const matches = ctx.modelRegistry.getAvailable().filter((m: any) => m.id === trimmed || m.name === trimmed);
-    if (matches[0]) return sameSessionSwap(ctx, matches[0], fallbackRef);
-    return fail("no available model matching");
+    return matches[0] ? { model: matches[0] } : { reason: "no available model matching" };
+  };
+  const isSession = (m: any) => sessionModel && m.provider === sessionModel.provider && m.id === sessionModel.id;
+  const pins = [ref, fallbackRef].map((r) => r?.trim()).filter((r): r is string => !!r);
+  for (let i = 0; i < pins.length; i++) {
+    const pin = pins[i]!;
+    const r = tryRef(pin);
+    if (!r.model) {
+      // Unavailable pin → cascade: next pin, then the session model (LOUD).
+      appendLedger(ctx.cwd, "auditor_model_fallback", { configured: pin, reason: r.reason });
+      ctx.ui.notify(`Auditor model "${pin}" is unavailable (${r.reason}) — ${i + 1 < pins.length ? "trying the fallback pin" : "falling back to the session model"}. Fix via /glla → Auditor model.`, "warning");
+      continue;
+    }
+    if (isSession(r.model) && i + 1 < pins.length) {
+      // The pin IS the session model — the verifier would be the executor's
+      // own model; auto-swap down the chain (the user's move).
+      appendLedger(ctx.cwd, "auditor_model_same_as_session", { model: `${r.model.provider}/${r.model.id}`, fallback: pins[i + 1] });
+      ctx.ui.notify(`Session model IS the pinned auditor (${r.model.provider}/${r.model.id}) — auditor auto-swapped to ${pins[i + 1]} so the verifier differs.`, "info");
+      continue;
+    }
+    if (isSession(r.model) && !fallbackRef?.trim()) {
+      // Last resort reached and it IS the session model, with no fallback
+      // ever pinned — the model stands (the session IS the last resort);
+      // one loud nudge so the user can wire the swap.
+      appendLedger(ctx.cwd, "auditor_model_same_as_session", { model: `${r.model.provider}/${r.model.id}`, fallback: null });
+      ctx.ui.notify(`The session model IS the pinned auditor (${r.model.provider}/${r.model.id}) — pin a different /glla → Auditor fallback model so the verifier can differ.`, "warning");
+    }
+    return { model: r.model, via: i === 0 ? "setting" : "fallback-pin" };
   }
-  const sessionModel = ctx.model as any;
-  if (sessionModel) return { model: sessionModel, via: "session" };
+  if (sessionModel) {
+    if (pins.length > 0) {
+      appendLedger(ctx.cwd, "auditor_model_fallback", { configured: pins.join(" → "), reason: "all pins exhausted" });
+      ctx.ui.notify("All pinned auditor models are unavailable — falling back to the session model. Fix via /glla → Auditor model.", "warning");
+      return { model: sessionModel, via: "session-fallback" };
+    }
+    return { model: sessionModel, via: "session" };
+  }
   return { model: undefined, error: "no session model and no auditorModel configured — set one with /glla → Auditor model" };
 }
 

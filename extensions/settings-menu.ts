@@ -171,8 +171,9 @@ export function buildSettingsRows(
     },
     {
       id: "auditorModelFallback",
+      section: "auditor",
       label: "Auditor fallback model",
-      valueText: show("auditorModelFallback", "(none — same-model sessions keep the pinned auditor)"),
+      valueText: show("auditorModelFallback", "none — same-model sessions keep the pinned auditor"),
       sourceText: src("auditorModelFallback"),
       description: "auto-swap target when the session model IS the auditor model — the verifier should differ from the executor",
     },
