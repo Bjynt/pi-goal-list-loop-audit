@@ -41,7 +41,7 @@ export interface RegistryModelLike {
 /** Build the picker's static item list from registry models (already
  * filtered to configured-auth providers by the caller). Session row first,
  * manual-entry row last; models sorted by provider then id. */
-export function buildModelPickItems(models: RegistryModelLike[], sessionLabel: string): ModelPickItem[] {
+export function buildModelPickItems(models: RegistryModelLike[], sessionLabel: string, extraTop: ModelPickItem[] = []): ModelPickItem[] {
   const sorted = [...models].sort((a, b) =>
     a.provider === b.provider ? a.id.localeCompare(b.id) : a.provider.localeCompare(b.provider),
   );
@@ -51,6 +51,7 @@ export function buildModelPickItems(models: RegistryModelLike[], sessionLabel: s
       label: `session model (${sessionLabel}) — clear the override`,
       searchText: "session model default clear override follow",
     },
+    ...extraTop,
     ...sorted.map((m) => {
       const ref = `${m.provider}/${m.id}`;
       return {
@@ -206,3 +207,47 @@ export class ModelPickerComponent {
 
 // Re-export for callers that only need the width helper's type signature.
 export { visibleWidth };
+
+/** v0.31.2: provider preference for the "diverse" auditor strategy (user
+ * design 2026-07-31: "there is benefit to have a different auditor — M3's
+ * auditor could be deepseek and vice versa"). A cross-vendor auditor reads
+ * the executor's claims with INDEPENDENT blind spots (same-family models
+ * share failure modes), and it spends a DIFFERENT provider's quota pool —
+ * audits stop eating the coding session's MiniMax window. The auditor is
+ * already a fresh session (no prompt-cache sharing), so cross-vendor costs
+ * nothing in cache terms.
+ *
+ * Order: deepseek-via-openrouter first, MiniMax second, then the other
+ * providers seen on this rig. The session's own provider is EXCLUDED
+ * entirely (openrouter hosts everything — family-level reasoning about its
+ * catalogue isn't reliable, so exclusion is at provider granularity).
+ */
+export const DIVERSE_AUDITOR_PREFERENCE: Array<{ provider: string; match?: string }> = [
+  { provider: "openrouter", match: "deepseek/deepseek-chat" },
+  { provider: "openrouter", match: "deepseek" },
+  { provider: "minimax", match: "MiniMax-M3" },
+  { provider: "minimax" },
+  { provider: "kimi-coding" },
+  { provider: "kimi" },
+  { provider: "xai-auth" },
+  { provider: "opencode" },
+  { provider: "zenmux" },
+];
+
+/** Pure selection: the first preference entry (outside the session's
+ * provider) with at least one available model wins; within an entry the
+ * models arrive pre-filtered (auth checked by the caller) and sorted.
+ * Returns undefined when nothing outside the session provider is available
+ * — the caller falls back LOUDLY to the session model.
+ */
+export function pickDiverseAuditorModel(
+  models: RegistryModelLike[],
+  sessionProvider: string | undefined,
+): RegistryModelLike | undefined {
+  for (const pref of DIVERSE_AUDITOR_PREFERENCE) {
+    if (pref.provider === sessionProvider) continue;
+    const hit = models.find((m) => m.provider === pref.provider && (!pref.match || m.id.includes(pref.match)));
+    if (hit) return hit;
+  }
+  return undefined;
+}
