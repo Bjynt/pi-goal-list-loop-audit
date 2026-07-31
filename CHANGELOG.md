@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.31.4] — 2026-07-31
+
+### Changed — auditor thinking is chosen WITH the model; the standalone row is gone
+
+User (2026-07-31, looking at the menu): "not sure we want an auditor
+thinking option — we are setting the thinking when we select the model now
+or we should." A separate thinking row is a dial you can forget to set;
+the level is a property OF the model choice.
+
+- `/glla → Auditor model` now chains: pick the model → pick its thinking
+  level (high recommended, Esc keeps the current level) → both saved in
+  one flow. One confirm line: "Auditor model: X · thinking high".
+- The standalone **Auditor thinking** menu row (and its dead case) is
+  removed. `/glla thinking=` remains as the direct power path; unset still
+  floors at sticky `high` at the call sites.
+- Terse value texts per the screenshot review: Auditor model unset shows
+  "session model"; fallback unset shows "none".
+
+660 tests.
+
 ## [0.31.3] — 2026-07-31
 
 ### Changed — the auditor chain replaces "diverse": pinned primary → pinned fallback → session model LAST

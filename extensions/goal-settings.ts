@@ -119,7 +119,9 @@ export const DEFAULT_SETTINGS: Settings = {
   // Unset = "high" at the call site (v0.31.2). The auditor is the
   // verification gate: its depth must NOT ride the session's coding-speed
   // thinking dial (user 2026-07-31: "we should also select its thinking
-  // level — we don't keep switching it"). /glla thinking= overrides.
+  // level — we don't keep switching it"). v0.31.4: picked alongside the
+  // model in /glla → Auditor model (no standalone menu row); /glla
+  // thinking= remains the direct path.
   auditorThinkingLevel: undefined,
   // v0.24.6: subagents inherit the session model by default — one quota
   // pool, no surprise 403s from a pinned default agent's provider.

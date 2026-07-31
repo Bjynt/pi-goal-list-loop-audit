@@ -151,7 +151,15 @@ test("v0.31.2/0.31.3: auditor thinking defaults to sticky high — never the ses
   assert.equal(SRC.match(/thinkingLevel: settings\.auditorThinkingLevel \?\? "high",/g)!.length, 2, "both audit call sites floor at high");
   assert.ok(!SRC.includes("getSessionThinkingLevel"), "the session-dial follower is gone");
   const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
-  assert.match(MENU, /high \(fixed — never the session coding dial\)/);
+  // v0.31.4: no standalone thinking ROW — thinking is chained into the
+  // Auditor model drill-in ("we are setting the thinking when we select
+  // the model"); terse valueTexts: "session model" / "none".
+  assert.ok(!MENU.includes('id: "auditorThinkingLevel"'), "standalone thinking row removed");
+  assert.match(MENU, /valueText: show\("auditorModel", "session model"\)/);
+  assert.match(MENU, /valueText: show\("auditorModelFallback", "none"\)/);
+  const caseIdx2 = SRC.indexOf('case "auditorModel": {');
+  assert.match(SRC.slice(caseIdx2, caseIdx2 + 1500), /ctx\.ui\.select\("Auditor thinking level \(the verification gate/);
+  assert.ok(!SRC.includes('case "auditorThinkingLevel"'), "dead menu case removed");
   const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
   assert.match(SETTINGS, /must NOT ride the session's coding-speed/);
 });

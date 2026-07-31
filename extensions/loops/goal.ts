@@ -4437,7 +4437,15 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const pick = await promptModelRef(ctx, "Auditor model override", "provider/model-id — empty keeps the pi session model");
       if (pick === undefined) return;
       saveSettings("global", ctx.cwd, { auditorModel: pick.kind === "session" ? undefined : pick.ref });
-      if (pick.kind === "session") ctx.ui.notify("Auditor model override cleared — the auditor follows the pi session model.", "info");
+      // v0.31.4: thinking is chosen WITH the model (user: "we are setting
+      // the thinking when we select the model now or we should") — there is
+      // no standalone thinking row to forget about. Esc keeps the level.
+      const t = await ctx.ui.select("Auditor thinking level (the verification gate — depth over speed)", [
+        "high — recommended: the gate must not ride the session's coding dial",
+        "medium", "low", "minimal", "xhigh", "off",
+      ]);
+      if (t) saveSettings("global", ctx.cwd, { auditorThinkingLevel: t.split(" ")[0] as Settings["auditorThinkingLevel"] });
+      ctx.ui.notify(`Auditor model: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref}${t ? ` · thinking ${t.split(" ")[0]}` : ""}`, "info");
       return;
     }
     case "auditorModelFallback": {
@@ -4445,11 +4453,6 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       if (pick === undefined) return;
       saveSettings("global", ctx.cwd, { auditorModelFallback: pick.kind === "session" ? undefined : pick.ref });
       if (pick.kind === "session") ctx.ui.notify("Auditor fallback cleared — a session on the pinned auditor model keeps that model.", "info");
-      return;
-    }
-    case "auditorThinkingLevel": {
-      const v = await ctx.ui.select("Auditor thinking level", ["off", "minimal", "low", "medium", "high", "xhigh"]);
-      if (v) saveSettings("global", ctx.cwd, { auditorThinkingLevel: v as Settings["auditorThinkingLevel"] });
       return;
     }
     case "auditCap": {

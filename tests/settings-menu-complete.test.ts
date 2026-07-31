@@ -92,7 +92,6 @@ test("key rows from v0.27.0 settings menu are all present (menu coverage contrac
     "autoAcceptDrafts",
     "aggressiveMode",
     "auditorModel",
-    "auditorThinkingLevel",
     "auditCap",
     "auditFeedbackChars",
     "quotaRetryMinutes",
