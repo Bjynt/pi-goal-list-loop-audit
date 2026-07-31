@@ -160,7 +160,7 @@ test("v0.31.2/0.31.3: auditor thinking defaults to sticky high — never the ses
   // cascade's last rung ("maybe have a def fallback to session").
   assert.match(MENU, /valueText: show\("auditorModelFallback", "session model \(last resort\)"\)/);
   const caseIdx2 = SRC.indexOf('case "auditorModel": {');
-  assert.match(SRC.slice(caseIdx2, caseIdx2 + 1500), /ctx\.ui\.select\("Auditor thinking level \(the verification gate/);
+  assert.match(SRC.slice(caseIdx2, caseIdx2 + 1500), /Auditor thinking — ISOLATED auditor session ONLY/);
   assert.ok(!SRC.includes('case "auditorThinkingLevel"'), "dead menu case removed");
   const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
   assert.match(SETTINGS, /must NOT ride the session's coding-speed/);

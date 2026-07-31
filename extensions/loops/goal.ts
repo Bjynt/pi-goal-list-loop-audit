@@ -4440,10 +4440,21 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       // v0.31.4: thinking is chosen WITH the model (user: "we are setting
       // the thinking when we select the model now or we should") — there is
       // no standalone thinking row to forget about. Esc keeps the level.
-      const t = await ctx.ui.select("Auditor thinking level (the verification gate — depth over speed)", [
-        "high — recommended: the gate must not ride the session's coding dial",
-        "medium", "low", "minimal", "xhigh", "off",
-      ]);
+      // v0.31.7: the select must be UNMISTAKABLY the auditor's — the user
+      // Esc'd through it because it read like pi's own (general) thinking
+      // dialog, and nothing was ever saved.
+      const curThinking = loadSettings(ctx.cwd).auditorThinkingLevel;
+      const t = await ctx.ui.select(
+        "Auditor thinking — ISOLATED auditor session ONLY (your session model's thinking is untouched)",
+        [
+          `high — the default; the gate must not ride the session's coding dial${curThinking === undefined || curThinking === "high" ? " (current)" : ""}`,
+          `medium${curThinking === "medium" ? " (current)" : ""}`,
+          `low${curThinking === "low" ? " (current)" : ""}`,
+          `minimal${curThinking === "minimal" ? " (current)" : ""}`,
+          `xhigh${curThinking === "xhigh" ? " (current)" : ""}`,
+          `off${settings.auditorThinkingLevel === "off" ? " (current)" : ""}`,
+        ],
+      );
       if (t) saveSettings("global", ctx.cwd, { auditorThinkingLevel: t.split(" ")[0] as Settings["auditorThinkingLevel"] });
       ctx.ui.notify(`Auditor model: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref}${t ? ` · thinking ${t.split(" ")[0]}` : ""}`, "info");
       return;
