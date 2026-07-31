@@ -364,7 +364,7 @@ test("error pause: ACTION NEEDED banner, action line popped (widget + status)", 
     status: "paused",
     pauseKind: "error",
     pauseReason: "send-retry storm: 5m of 50ms re-arms — the session never went idle",
-    pauseSuggestedAction: "Restart pi, then /goal resume.",
+    pauseSuggestedAction: "Press Escape, then /goal resume.",
   });
   const state = { goal: g, list: [], loop: null };
   const w = buildWidgetLines(state as never)!;

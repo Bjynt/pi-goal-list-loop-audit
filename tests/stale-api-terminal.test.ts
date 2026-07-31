@@ -67,7 +67,7 @@ test("v0.29.11 — stale/stall-stopped loops HOLD on next load (resume, not rest
   // now holds on restore and /loop resume continues from the saved state.
   assert.match(SRC, /stopReason\?\.startsWith\("extension api stale"\) \|\| state\.loop\.stopReason\?\.startsWith\("stalled:"\)/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "loop_held_for_resume"/);
-  assert.match(SRC, /Restart pi, then \/loop resume \(the loop holds on restore\)\./);
+  assert.match(SRC, /then \/loop resume — the loop holds on restore\./);
   assert.ok(!SRC.includes("loops need /loop start"), "stale guidance no longer discards loop state");
   assert.ok(!SRC.includes("then /loop start again"), "stall escalation no longer discards loop state");
 });

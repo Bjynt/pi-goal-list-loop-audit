@@ -633,9 +633,9 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
   appendLedger(ctx.cwd, "send_rearm_escalated", { kind, afterMinutes: mins, silentMinutes: silent });
   if (kind === "loop" && isLoopActive()) {
     clearLoopTimer();
-    state.loop = { ...state.loop!, active: false, stopReason: `send-retry storm: ${mins}m of re-arms with no session activity for ${silent}m — the session is wedged. Restart pi, then /loop resume (the loop holds on restore).` };
+    state.loop = { ...state.loop!, active: false, stopReason: `send-retry storm: ${mins}m of re-arms with no session activity for ${silent}m — the session is wedged. Press Escape to cancel the stuck run (pi's own rate-limit retry holds it; pi prints "escape to cancel"), then /loop resume — the loop holds on restore. If still wedged: /reload rebuilds extensions in place, then /loop resume again. Restart pi only if /reload itself fails.` };
     persistState(ctx);
-    ctx.ui.notify(`Loop stopped: send-retry storm (${mins}m, session silent ${silent}m). Restart pi, then /loop resume (the loop holds on restore).`, "warning");
+    ctx.ui.notify(`Loop stopped: send-retry storm (${mins}m, session silent ${silent}m). Escape cancels the stuck run, then /loop resume (the loop holds on restore). /reload if it persists; restart pi only if /reload fails.`, "warning");
     notifyExternal(ctx, "Loop stopped: send-retry storm.");
     return;
   }
@@ -651,7 +651,7 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
     // + junk-runner: "complete ending in a pause retry storm"). The audit
     // lifecycle owns its own pauses (quota etc.).
     appendLedger(ctx.cwd, "send_rearm_escalated_suppressed", { reason: "audit-lifecycle" });
-    ctx.ui.notify("Send-retry storm during the completion audit — NOT pausing; the auditor's silence is expected. If pi is wedged, restart; the stored claim survives.", "info");
+    ctx.ui.notify("Send-retry storm during the completion audit — NOT pausing; the auditor's silence is expected. If pi is wedged, Escape cancels the stuck run; the stored claim survives.", "info");
     return;
   }
   if (state.goal && state.goal.status === "active") {
@@ -659,9 +659,9 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
       status: "paused",
       pauseKind: "error",
       pauseReason: `send-retry storm: ${mins}m of re-arms with no session activity for ${silent}m — the session never went idle for the continuation`,
-      pauseSuggestedAction: "The session produced no events while the send retried (wedged queue). Restart pi, then /goal resume.",
+      pauseSuggestedAction: "The session produced no events while the send retried (wedged queue — often pi's own rate-limit retry holding the run; pi prints 'escape to cancel'). Press Escape, then /goal resume. If still wedged: /reload rebuilds extensions in place, then /goal resume again. Restart pi only if /reload fails.",
     }, ctx);
-    ctx.ui.notify(`${goalNoun()} paused: send-retry storm (${mins}m, session silent ${silent}m). Restart pi, then /goal resume.`, "warning");
+    ctx.ui.notify(`${goalNoun()} paused: send-retry storm (${mins}m, session silent ${silent}m). Escape cancels the stuck run, then /goal resume. /reload if it persists; restart pi only if /reload fails.`, "warning");
     notifyExternal(ctx, `${goalNoun()} paused: send-retry storm.`);
   }
 }
@@ -672,9 +672,9 @@ function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
   appendLedger(ctx.cwd, "stall_escalated", { threshold, kind: isLoopActive() ? "loop" : "goal" });
   if (isLoopActive()) {
     clearLoopTimer();
-    state.loop = { ...state.loop!, active: false, stopReason: `stalled: ${threshold} continuation refires landed no turn — the session is not continuing (wedged message queue or stale API). Restart pi, then /loop resume (the loop holds on restore).` };
+    state.loop = { ...state.loop!, active: false, stopReason: `stalled: ${threshold} continuation refires landed no turn — the session is not continuing (wedged message queue or stale API). Press Escape to cancel any stuck run, then /loop resume — the loop holds on restore. If the handle is stale, /reload rebuilds extensions in place; restart pi only if /reload fails.` };
     persistState(ctx);
-    ctx.ui.notify(`Loop stopped: ${threshold} refires produced no turn — the continuation is not landing. Restart pi, then /loop resume (the loop holds on restore).`, "warning");
+    ctx.ui.notify(`Loop stopped: ${threshold} refires produced no turn — the continuation is not landing. Escape cancels a stuck run, then /loop resume (the loop holds on restore). /reload if stale; restart pi only if /reload fails.`, "warning");
     notifyExternal(ctx, "Loop stopped: stalled (continuation not landing).");
     return true;
   }
@@ -683,9 +683,9 @@ function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
       status: "paused",
       pauseKind: "error",
       pauseReason: `stalled: ${threshold} continuation refires landed no turn`,
-      pauseSuggestedAction: "The continuation chain is broken in this process (wedged message queue or stale API). Restart pi, then /goal resume.",
+      pauseSuggestedAction: "The continuation chain is broken in this process (wedged message queue or stale API). Press Escape to cancel any stuck run, then /goal resume. If the handle is stale, /reload rebuilds extensions in place — restart pi only if /reload fails.",
     }, ctx);
-    ctx.ui.notify(`${goalNoun()} paused: ${threshold} refires produced no turn. Restart pi, then /goal resume.`, "warning");
+    ctx.ui.notify(`${goalNoun()} paused: ${threshold} refires produced no turn. Escape cancels a stuck run, then /goal resume. /reload if stale; restart pi only if /reload fails.`, "warning");
     notifyExternal(ctx, `${goalNoun()} paused: stalled (continuation not landing).`);
     return true;
   }
@@ -1392,7 +1392,7 @@ function fireReviewer(
           // to still count as "proposed" in the report + notify. Now the
           // failure is LOUD and the proposal goes uncounted.
           ctx.ui.notify(
-            `Postaudit /goal proposal NOT delivered: ${err instanceof Error ? err.message : String(err)} — the follow-up never reached the session. Restart pi if the session was just replaced.`,
+            `Postaudit /goal proposal NOT delivered: ${err instanceof Error ? err.message : String(err)} — the follow-up never reached the session. Run /reload if the session was just replaced (extensions rebuild in place), then retry.`,
             "warning",
           );
           return false;
@@ -1528,7 +1528,7 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
     if (isStaleApiError(err)) {
       extensionApiStale = true;
       appendLedger(ctx.cwd, "extension_api_stale", { where: "startDrafting seed" });
-      ctx.ui.notify("glla: can't start the drafting interview — this session's extension handle is stale (pi session replacement). Restart pi and re-run the command.", "warning");
+      ctx.ui.notify("glla: can't start the drafting interview — this session's extension handle is stale (pi session replacement). Run /reload (extensions rebuild in place), then re-run the command. Restart pi only if /reload fails.", "warning");
     } else {
       ctx.ui.notify(`glla: couldn't start the drafting interview (${err instanceof Error ? err.message : String(err)}) — try again.`, "warning");
     }
@@ -1648,7 +1648,7 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
     // v0.28.1 (S3): the goal is persisted — mark the interrupt so the next
     // fresh session LOADS it (held by default since v0.28.21), and tell the truth instead of "starting now".
     updateGoal({ interruptedAt: nowIso(), interruptedReason: "created in a stale session" }, ctx);
-    ctx.ui.notify(`Goal saved: ${shortObj(goal.objective)} — safe in .pi-glla/, but this stale process can't send continuations. Restart pi, then /goal resume (v0.28.21: session loads no longer auto-start by default).`, "warning");
+    ctx.ui.notify(`Goal saved: ${shortObj(goal.objective)} — safe in .pi-glla/, but this stale process can't send continuations. Run /reload (extensions rebuild in place, state survives), then /goal resume. Restart pi only if /reload itself fails.`, "warning");
     return;
   }
   ctx.ui.notify(`Goal started: ${shortObj(goal.objective)} — the auditor will verify on completion.`, "info");

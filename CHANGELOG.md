@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.29.23] — 2026-07-31
+
+### Fixed — wedge-class pause guidance is Escape/reload-first, not restart-first (the "retry storm" note)
+
+Field (junk-runner + pully 2026-07-31, user note: "retry storm is another
+one"): the send-retry-storm and stall-escalation pauses still said
+"Restart pi, then /goal resume" — the v0.29.12 /reload-first mandate had
+only reached the stale-handle paths. Worse, restart-first was the WRONG
+verb for the common wedge shape: pi's own provider retry loop
+("Retrying (13/15) in 2875s… escape to cancel") holds the session busy
+so the continuation can never land — the correct first move is Escape
+(pi cancels its wedged run), not a restart.
+
+- Send-retry storm (goal + loop), stall escalation (goal + loop),
+  audit-lifecycle storm notice, stale-goal-save, drafting-seed-stale,
+  and postaudit-proposal-undelivered surfaces all now say: Escape
+  cancels the stuck run → /goal resume or /loop resume → /reload if it
+  persists → restart pi only if /reload itself fails.
+- Every remaining "Restart pi" in the extension is the conditional
+  "only if /reload fails" form.
+
+643 tests.
+
 ## [0.29.22] — 2026-07-31
 
 ### Fixed — the stale-handle self-heal actually fires on this rig (WezTerm), and can no longer kill work
