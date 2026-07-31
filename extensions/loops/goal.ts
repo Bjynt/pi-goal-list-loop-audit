@@ -639,13 +639,17 @@ function summarizeToolArg(name: string, input: any): string | undefined {
   if (!input || typeof input !== "object") return undefined;
   const v = input.file_path ?? input.path ?? input.command ?? input.pattern ?? input.query ?? input.url ?? input.title;
   if (typeof v !== "string" || v.length === 0) return undefined;
-  const base = name === "bash" ? v : v.split("/").pop() || v;
+  // v0.33.1: strip control chars BEFORE truncating — a raw \n breaks the
+  // widget card into un-prefixed lines (footer spoof), a raw ESC corrupts
+  // the TUI. The objective path was already whitespace-collapsed; this
+  // path was the gap.
+  const base = (name === "bash" ? v : v.split("/").pop() || v).replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/\s+/g, " ").trim();
   return base.length <= 24 ? base : base.slice(0, 23) + "…";
 }
 function noteToolCall(event: any): void {
   const name = String(event?.toolName ?? "?");
   const id = String(event?.toolCallId ?? event?.id ?? `anon-${Date.now()}`);
-  if (inFlightToolCalls.size > 20) inFlightToolCalls.delete(inFlightToolCalls.keys().next().value!);
+  if (inFlightToolCalls.size >= 20) inFlightToolCalls.delete(inFlightToolCalls.keys().next().value!); // v0.33.1: evict BEFORE the 21st
   inFlightToolCalls.set(id, { name, arg: summarizeToolArg(name, event?.input ?? event?.args), at: Date.now() });
 }
 function noteToolResult(event: any): void {
@@ -864,6 +868,14 @@ function heartbeatTick(): void {
     // successor-instance cases; only orphans go terminal.
     if (!absorbStaleIfSuperseded(ctx)) goStaleTerminal(ctx, "heartbeat probe");
     return;
+  }
+  // v0.33.1: nothing supervised → the compact debt/resync belong to a dead
+  // goal/loop. Discharge here so a later goal can't inherit a bogus RESYNC
+  // block or a spurious forced refire (the old in-guard `else` was
+  // unreachable — isSupervising() ≡ isLoopActive() || isActionableGoal()).
+  if (!isSupervising() && (postCompactResumeOwed || postCompactResyncPending)) {
+    postCompactResumeOwed = false;
+    postCompactResyncPending = false;
   }
   // v0.32.1: post-compaction resume debt — retry on every heartbeat tick
   // past grace until a turn actually starts. Fixed-offset settles alone
@@ -1104,7 +1116,10 @@ function sendContinuation(goalId: string): void {
   }
   if (!extensionApi || extensionApiStale) return;
   try {
-    const resync = postCompactResyncPending ? buildPostCompactResync() : "";
+    let resync = "";
+    // v0.33.1: a builder throw (corrupt restored state) must not masquerade
+    // as a transport failure — send without the block instead.
+    if (postCompactResyncPending) { try { resync = buildPostCompactResync(); } catch { resync = ""; } }
     extensionApi.sendMessage({
       customType: GOAL_EVENT_ENTRY,
       content: resync + continuationPrompt(state.goal!),
@@ -1279,6 +1294,14 @@ function notifyPersistenceState(ctx: ExtensionContext): void {
 }
 
 function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): void {
+  // v0.33.1: per-goal module state resets at activation — a new goal must
+  // not inherit the previous goal's compact debt/resync, quota streak,
+  // token-message dedupe set, or widget action feed.
+  postCompactResumeOwed = false;
+  postCompactResyncPending = false;
+  quotaRetryStreak = 0;
+  countedTokenMessages.clear();
+  recentActions.length = 0;
   // v0.28.14: never silently orphan a live goal — a paused/active goal
   // being replaced is archived honestly first (the old behavior left it in
   // goals/ but untracked: "older goals lying around leading to confusion").
@@ -1397,6 +1420,8 @@ async function fanOutListAuditFindings(ctx: ExtensionContext): Promise<void> {
 }
 
 function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: string): void {
+  postCompactResumeOwed = false; // v0.33.1: the dead goal's compact debt/resync dies with it
+  postCompactResyncPending = false;
   if (!state.goal) return;
   const goal = state.goal;
   ensureDirs(ctx.cwd);
@@ -2638,7 +2663,13 @@ function sendLoopTurn(): void {
   if (!isLoopActive() || !extensionApi) return;
   const ctx = freshCtx();
   if (!ctx || !ctx.isIdle() || ctx.hasPendingMessages()) {
-    if (ctx) accountSendRearm(ctx, "loop");
+    if (!ctx) {
+      // v0.33.1: mirror sendContinuation — probe the handle (terminal exit)
+      // and advance the streak so the cadence backs off instead of spinning
+      // a flat 50ms below every watchdog.
+      if (probeExtensionApiStale()) return;
+      loopRearmStreak++;
+    } else accountSendRearm(ctx, "loop");
     loopTimer = setTimeout(() => sendLoopTurn(), sendRearmDelayMs(loopRearmStreak)); // v0.28.29: backing-off cadence
     loopTimer.unref?.();
     return;
@@ -2694,7 +2725,8 @@ function sendLoopTurn(): void {
   // instruction (metricless loops; metric loops already vary via values).
   const variantNote = metricless ? continueVariant(loop.iteration) : "";
   try {
-    const loopResync = postCompactResyncPending ? buildPostCompactResync() : "";
+    let loopResync = "";
+    if (postCompactResyncPending) { try { loopResync = buildPostCompactResync(); } catch { loopResync = ""; } } // v0.33.1
     extensionApi.sendMessage({
       customType: GOAL_EVENT_ENTRY,
       content: loopResync + loopPrompt(loop, regressionNote, strategyNote, boundsNote, interventionNote, variantNote),
@@ -5920,6 +5952,9 @@ export default function (pi: ExtensionAPI): void {
     writeOwnerFile(ctx.cwd);
     sessionReplacementUntil = 0;
     zombieStoodDown = false;
+    staleTerminalDone = false; // v0.33.1: a rebound session must be able to go terminal AGAIN (was: one-shot for the process lifetime)
+    postCompactResumeOwed = false; // v0.33.1: a compact from a previous session must not resync THIS one
+    postCompactResyncPending = false;
     const startReason = typeof event?.reason === "string" ? event.reason : "unknown";
     appendLedger(ctx.cwd, "session_rebound", { reason: startReason });
     if (extensionApiStale) {

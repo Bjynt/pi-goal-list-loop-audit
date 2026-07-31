@@ -48,6 +48,12 @@ export function truncate(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, Math.max(0, max - 1)) + "…";
 }
 
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+/** v0.33.1: painted strings measure by their VISIBLE width. */
+function visibleLen(s: string): number {
+  return s.replace(ANSI_RE, "").length;
+}
+
 /** v0.33.0: 5-cell meter with a rounding guard (command-code's rule — never
  * shows empty or full unless the value truly is 0 or 1). */
 export function meter(frac: number, cells = 5): string {
@@ -296,7 +302,6 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       : g.status === "auditing"
         ? paint(theme, "accent", "⟡")
         : paint(theme, "success", "●");
-  const headBase = `${icon} ${truncate(g.objective.replace(/\s+/g, " "), budgetFor(width, 3, 48))}`;
   // v0.24.7: a list item is named as such and points at /list — before,
   // the widget called it "active" and hinted "/goal status", reading as if
   // queue work were a standalone goal.
@@ -325,7 +330,12 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // ∞/↓/↑ loop, ⟡ auditing, ⏸ paused) + the type-named footer verbs.
   // Token segment only when a budget is set (v0.22.0): the guard is opt-in,
   // and "0/0 tok" carried no information when off.
-  const head = `${headBase} ${paint(theme, "dim", "·")} ${headSegs.join(` ${paint(theme, "dim", "·")} `)}`;
+  // v0.33.1: the head must FIT the terminal — the segments are fixed, so
+  // the objective absorbs whatever room is left (was: objective budgeted
+  // alone, segments appended unbudgeted → 140-col heads at width 100).
+  const segsText = headSegs.join(` ${paint(theme, "dim", "·")} `);
+  const objBudget = width && width > 0 ? Math.max(16, width - 1 - 2 - 3 - visibleLen(segsText)) : 48;
+  const head = `${icon} ${truncate(g.objective.replace(/\s+/g, " "), objBudget)} ${paint(theme, "dim", "·")} ${segsText}`;
   const lines = [head];
   if (g.status === "auditing") {
     lines.push(`├─ auditor: ${audit?.label ?? "running"}${audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : ""}`);
@@ -427,10 +437,13 @@ function loopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: numb
   segs.push(fmtElapsed(now - Date.parse(l.startedAt)));
   if (l.measureCmd) {
     segs.push(`best ${paint(theme, "success", `${l.bestValue ?? "n/a"}`)}`);
+    segs.push(`last ${l.lastValue ?? "n/a"}`); // v0.33.1: a plateauing loop's current reading stays visible
     const stallText = `stall ${l.stallCount}/${l.plateauWindow}`;
     segs.push(l.stallCount >= l.plateauWindow - 1 ? paint(theme, "warning", stallText) : stallText);
   }
-  const lines = [`${icon} ${truncate(l.target, budgetFor(width, 3, 44))} ${paint(theme, "dim", "·")} ${segs.join(` ${paint(theme, "dim", "·")} `)}${stallNote}`];
+  const segsText = segs.join(` ${paint(theme, "dim", "·")} `);
+  const targetBudget = width && width > 0 ? Math.max(16, width - 1 - 2 - 3 - visibleLen(segsText) - visibleLen(stallNote)) : 44;
+  const lines = [`${icon} ${truncate(l.target, targetBudget)} ${paint(theme, "dim", "·")} ${segsText}${stallNote}`];
   const act = extras?.recent?.[extras.recent.length - 1];
   if (act) {
     lines.push(`├─ ${paint(theme, act.ok ? "success" : "error", act.ok ? "✓" : "✗")} ${act.name}${act.arg ? ` ${paint(theme, "dim", truncate(act.arg, 24))}` : ""}${act.ms > 0 ? ` ${paint(theme, "dim", `(${fmtElapsed(act.ms)})`)}` : ""}`);

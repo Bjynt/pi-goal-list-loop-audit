@@ -338,6 +338,7 @@ export async function runGoalCompletionAuditor(args: {
     } finally {
       clearInterval(stallTimer);
       unsub();
+      args.signal?.removeEventListener("abort", abort); // v0.33.1: don't retain the session via the signal
       // v0.32.0: dispose the auditor session — each complete_goal leaked one
       // session's subscriptions/stream resources for the parent's lifetime.
       (session as any).dispose?.();

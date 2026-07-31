@@ -211,6 +211,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "stallSimilarityThreshold",
   "postaudit",
   "toolOverrides",
+  "reviewer", // v0.33.1: legacy alias — menu saves can write it; provenance must know it exists
 ];
 
 /** Where each effective setting comes from (for the /glla display). */

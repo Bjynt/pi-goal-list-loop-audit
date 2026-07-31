@@ -90,9 +90,11 @@ test("widget truncation is width-aware (v0.22.2)", () => {
   // Wide terminal: the head uses the room instead of cutting at the floor.
   const wide = buildWidgetLines({ goal: g, list: [] }, null, NOW, undefined, 160)![0]!;
   assert.ok(wide.length > 100, `wide head should exceed 100 chars, got ${wide.length}`);
-  // Narrow terminal: never below the floor.
+  // Narrow terminal: v0.33.1 — the objective budget shrinks to fit the
+  // fixed segments (floor 16), so a tiny width yields a shorter head.
   const tiny = buildWidgetLines({ goal: g, list: [] }, null, NOW, undefined, 50)![0]!;
-  assert.equal(tiny, narrow);
+  assert.ok(tiny.length < narrow.length, `tiny (${tiny.length}) should be narrower than narrow (${narrow.length})`);
+  assert.ok(tiny.length <= 70, `tiny head must stay near the terminal width, got ${tiny.length}`);
 });
 
 test("list policy footer: queued count, no duplicated 'list'", () => {
@@ -421,7 +423,7 @@ test("v0.33.0: slim card — meter rounding guard, folded status segments, last-
   assert.equal(meter(0.99), "▰▰▰▰▱");
   assert.equal(meter(0.5), "▰▰▰▱▱"); // round(2.5)=3
   // Slim head: status + tasks meter fold into the head line as middot segments.
-  const g = goalOf({ taskList: { tasks: [
+  const g = goalOf({ taskList: { version: 1, tasks: [
     { id: "t1", title: "done one", status: "complete" },
     { id: "t2", title: "fix the thing", status: "pending" },
     { id: "t3", title: "another", status: "pending" },
