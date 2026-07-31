@@ -105,3 +105,4 @@ wedged-queue pause whose root cause is a plan-window 429.
 signature classification) is live. Still parked: rate-limit signature
 classification, brake/stall accounting exemptions, the storm-detector
 carve-out, and the config knob.
+- **Auditor blind spot (2026-07-31)**: the hegemon auditor APPROVED a test that spawns `bun test src/lib` from inside src/lib — an unbounded fork bomb (521 procs, load 28, 24G, system crash). Fixed with a `HEGEMON_FLOOR_NO_RECURSE` env sentinel. Consider: the auditor prompt should name recursive suite-spawn as a reject-class pattern (any test that runs the whole runner from inside the suite).
