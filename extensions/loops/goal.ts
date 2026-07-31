@@ -668,6 +668,16 @@ let loopRearmStreak = 0;
 // whose turn trigger was still dead — pausing a resumable goal 4 minutes
 // after the compact instead of giving pi room to recover.
 let compactionGraceUntil = 0;
+// v0.32.1 (pi-goal-x's lesson — "recover from compacts smarter"): a compact
+// leaves a RESUME DEBT, not just two fixed-offset settle probes that can both
+// lose (field: hellhunter 4-min dangle 2026-07-31; polis stall same day).
+// postCompactResumeOwed discharges only when a real turn starts (agent_start);
+// every heartbeat tick past grace retries it. postCompactResyncPending arms a
+// deterministic [POST-COMPACTION RESYNC] block on the next continuation/loop
+// message (pi-goal-x's #5) so the compacted agent re-anchors on artifact
+// state instead of lost chat history.
+let postCompactResumeOwed = false;
+let postCompactResyncPending = false;
 const COMPACTION_GRACE_MS = 3 * 60_000;
 // v0.28.25: provider-error retry cadence. Field-observed in dracon-utilities
 // (kimi, 19-session fleet on one provider account): a "concurrent request
@@ -826,6 +836,24 @@ function heartbeatTick(): void {
     // successor-instance cases; only orphans go terminal.
     if (!absorbStaleIfSuperseded(ctx)) goStaleTerminal(ctx, "heartbeat probe");
     return;
+  }
+  // v0.32.1: post-compaction resume debt — retry on every heartbeat tick
+  // past grace until a turn actually starts. Fixed-offset settles alone
+  // can both lose (pi busy at 2s AND at grace+2s = a dangling chain).
+  if (postCompactResumeOwed && isSupervising() && !abortedStandDown) {
+    try {
+      if (ctx.isIdle() && !ctx.hasPendingMessages() && continuationTimer === null && loopTimer === null) {
+        if (isLoopActive()) {
+          appendLedger(ctx.cwd, "compaction_resume_owed_refire", { kind: "loop" });
+          scheduleLoopTick(ctx);
+        } else if (isActionableGoal()) {
+          appendLedger(ctx.cwd, "compaction_resume_owed_refire", { kind: "goal" });
+          scheduleContinuation(ctx, true);
+        } else {
+          postCompactResumeOwed = false; // nothing to resume — discharge
+        }
+      }
+    } catch { /* next tick */ }
   }
   // v0.29.16: zombie-run watchdog. pi reports BUSY (a run is "active") but
   // zero stream events for 20 min = the provider stream hung silently —
@@ -1048,11 +1076,13 @@ function sendContinuation(goalId: string): void {
   }
   if (!extensionApi || extensionApiStale) return;
   try {
+    const resync = postCompactResyncPending ? buildPostCompactResync() : "";
     extensionApi.sendMessage({
       customType: GOAL_EVENT_ENTRY,
-      content: continuationPrompt(state.goal!),
+      content: resync + continuationPrompt(state.goal!),
       display: false,
     }, { triggerTurn: true, deliverAs: "followUp" });
+    if (resync) postCompactResyncPending = false; // consumed only by a landed send
     continuationRearmStreak = 0; continuationRearmSince = 0; // v0.28.5 (E3): a landed send clears the storm
     appendLedger(ctx.cwd, "goal_continuation_sent", { goalId });
   } catch (err) {
@@ -1103,6 +1133,25 @@ function sendLengthContinue(ctx: ExtensionContext, consecutive: number): void {
     appendLedger(ctx.cwd, "length_continue_send_failed", { consecutive, error: err instanceof Error ? err.message : String(err) });
     if (isStaleApiError(err)) goStaleTerminal(ctx, "sendLengthContinue");
   }
+}
+
+/** v0.32.1: deterministic post-compaction re-anchor (pi-goal-x's #5) —
+ * prepended to the first continuation/loop message after a compact. */
+function buildPostCompactResync(): string {
+  const lines: string[] = [
+    "[POST-COMPACTION RESYNC] The transcript was just compacted. Trust the artifacts on disk and .pi-glla/ state — NOT your memory of the prior chat. Re-read files before editing them.",
+  ];
+  if (state.goal) {
+    lines.push(`Goal ${state.goal.id} — status ${state.goal.status}`);
+    lines.push(`Objective: ${state.goal.objective.slice(0, 200)}`);
+    const next = findNextPendingTask(state.goal.taskList?.tasks ?? []);
+    if (next) lines.push(`Next pending task: \`${next.id}\` — ${next.title}`);
+    const lastAudit = state.goal.auditHistory?.[state.goal.auditHistory.length - 1];
+    if (lastAudit) lines.push(`Last audit: ${lastAudit.approved ? "APPROVED" : lastAudit.impossible ? "IMPOSSIBLE" : "disapproved"} (${lastAudit.at})`);
+  } else if (state.loop?.active) {
+    lines.push(`Loop: ${state.loop.target.slice(0, 160)} — iteration ${state.loop.iteration}`);
+  }
+  return lines.join("\n") + "\n\n";
 }
 
 function continuationPrompt(goal: Goal): string {
@@ -2617,11 +2666,13 @@ function sendLoopTurn(): void {
   // instruction (metricless loops; metric loops already vary via values).
   const variantNote = metricless ? continueVariant(loop.iteration) : "";
   try {
+    const loopResync = postCompactResyncPending ? buildPostCompactResync() : "";
     extensionApi.sendMessage({
       customType: GOAL_EVENT_ENTRY,
-      content: loopPrompt(loop, regressionNote, strategyNote, boundsNote, interventionNote, variantNote),
+      content: loopResync + loopPrompt(loop, regressionNote, strategyNote, boundsNote, interventionNote, variantNote),
       display: false,
     }, { triggerTurn: true, deliverAs: "followUp" });
+    if (loopResync) postCompactResyncPending = false; // consumed only by a landed send
     // v0.26.1: the send path is ledgered — the hegemon zombie spun 619
     // refires with zero visibility into whether sends were landing.
     loopRearmStreak = 0; loopRearmSince = 0; // v0.28.5 (E3): a landed turn clears the storm
@@ -5708,6 +5759,11 @@ export default function (pi: ExtensionAPI): void {
     continuationRearmStreak = 0; continuationRearmSince = 0;
     loopRearmStreak = 0; loopRearmSince = 0;
     compactionGraceUntil = Date.now() + COMPACTION_GRACE_MS;
+    // v0.32.1: arm the resume debt + the resync block (the settle probes
+    // below stay as the fast path; the heartbeat now retries the debt on
+    // EVERY post-grace tick until agent_start discharges it).
+    postCompactResumeOwed = true;
+    postCompactResyncPending = true;
     const settle = setTimeout(() => {
       const c = freshCtx();
       if (!c) return;
@@ -6351,6 +6407,9 @@ export default function (pi: ExtensionAPI): void {
   });
   pi.on("agent_start", () => {
     lastStreamActivityAt = Date.now();
+    // v0.32.1: a real turn started — the post-compaction resume debt is
+    // discharged (the heartbeat stops retrying it).
+    postCompactResumeOwed = false;
   });
   pi.on("turn_start", () => {
     lastStreamActivityAt = Date.now();

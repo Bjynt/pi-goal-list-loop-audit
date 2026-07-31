@@ -355,3 +355,17 @@ test("v0.29.16 — zombie-run watchdog: busy + zero stream events for 20 min = h
   const noteBody = SRC.slice(noteIdx, noteIdx + 220);
   assert.ok(!noteBody.includes("lastStreamActivityAt"), "noteActivity never touches the stream clock");
 });
+
+test("v0.32.1: post-compaction resume debt + deterministic resync (pi-goal-x's lesson)", () => {
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.match(SRC, /let postCompactResumeOwed = false;/);
+  assert.match(SRC, /let postCompactResyncPending = false;/);
+  assert.match(SRC, /postCompactResumeOwed = true;/); // armed in session_compact
+  assert.match(SRC, /compaction_resume_owed_refire/); // heartbeat retries the debt every post-grace tick
+  assert.match(SRC, /\[POST-COMPACTION RESYNC\]/); // deterministic re-anchor block
+  assert.match(SRC, /content: resync \+ continuationPrompt/); // goal path prepends
+  assert.match(SRC, /content: loopResync \+ loopPrompt/); // loop path prepends
+  assert.match(SRC, /if \(resync\) postCompactResyncPending = false; \/\/ consumed only by a landed send/);
+  // discharged by a real turn start (agent_start), not by the send itself
+  assert.match(SRC, /pi\.on\("agent_start", \(\) => \{\n    lastStreamActivityAt = Date\.now\(\);\n    \/\/ v0\.32\.1/);
+});

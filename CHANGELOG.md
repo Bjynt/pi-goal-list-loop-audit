@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.32.1] — 2026-07-31
+
+### Added — smarter post-compaction recovery (pi-goal-x's lesson)
+
+Field: compactions still dangled the continuation chain (hellhunter's
+4-minute dead window; a polis goal sitting stalled after compact+output-
+limit turns). The two fixed-offset settle probes (2s, grace+2s) can both
+lose if pi is busy at exactly those moments. pi-goal-x handled this
+class well — adopted its two core ideas, adapted:
+
+- **Resume debt, not probes.** `session_compact` now arms
+  `postCompactResumeOwed`; every heartbeat tick past the grace retries
+  the continuation/loop refire until a REAL turn starts (`agent_start`
+  discharges it). Ledger: `compaction_resume_owed_refire {kind}`. The
+  2s/grace settle probes stay as the fast path.
+- **Deterministic `[POST-COMPACTION RESYNC]` block** prepended to the
+  first continuation/loop message after a compact: goal id + status,
+  objective, next pending task, last audit verdict (or loop target +
+  iteration), and "trust artifacts on disk, not memory of the prior
+  chat". Consumed only by a landed send (a failed send keeps it armed).
+
+665 tests.
+
 ## [0.32.0] — 2026-07-31
 
 Opportunistic plugin audit (three parallel read-only lenses over the
