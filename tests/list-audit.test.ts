@@ -70,7 +70,7 @@ test("listAuditCollectTarget: collect-only — marker, no-fix law, honest-empty 
   assert.ok(t.includes(LIST_AUDIT_COLLECT_MARKER), "restart-safe marker present");
   assert.match(t, /Scope: the renderer/);
   assert.match(t, /Change NOTHING/, "the collection pass fixes nothing — fixes are the follow-up items");
-  assert.match(t, /DECIDE findings are listed in the completion report/, "decisions presented, not queued");
+  assert.match(t, /the orchestrator raises them to the user as questions/, "v0.33.3: decisions are raised as questions, not queued");
   assert.match(t, /empty findings set is a success/, "honesty law against fabricated findings");
   assert.match(t, /Done when:/);
   assert.ok(t.includes(AUDIT_FINDINGS_REL));
@@ -98,7 +98,13 @@ test("fan-out: dedupe vs the live queue, Confirm gate, decline keeps findings op
   assert.match(SRC, /ctx\.ui\.confirm\(`Queue \$\{fresh\.length\} audit finding\(s\) as list items\?`, preview\)/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "list_audit_fanout_declined", \{ findings: fresh\.length \}\)/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "list_audit_fanout", \{ queued: n, alreadyQueued, decisions: decisions\.length \}\)/);
-  assert.match(SRC, /DECIDE finding\(s\) need YOU \(not queued — a decision is not a task\)/);
+  // v0.33.3: DECIDE findings raised to the user as real questions.
+  assert.match(SRC, /DECIDE finding\(s\) need YOU — raising them as questions now \(not queued — a decision is not a task\)/);
+  assert.match(SRC, /\[DECIDE FINDINGS — user decisions needed\]/, "the agent steer carries the full findings");
+  assert.match(SRC, /ask_user_question — one question per finding/, "the raise protocol names the question tool");
+  assert.match(SRC, /- \[x\] DECIDED: <what was chosen>/, "resolutions recorded so they stop re-surfacing");
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "list_audit_decisions_raised", \{ decisions: decisions\.length \}\)/);
+  assert.ok(SRC.indexOf("list_audit_decisions_raised") < SRC.indexOf("list_audit_fanout_empty"), "decision-raising hoisted BEFORE the empty early-return");
 });
 
 test("help surface: /list audit appears in the command description + completions", () => {
@@ -131,4 +137,11 @@ test("restore-hold names the supersession in the widget surface", () => {
   assert.match(SRC, /const auditSuperseded =/);
   assert.match(SRC, /restored on session load — SUPERSEDED by the audit loop in this session/);
   assert.match(SRC, /\/goal cancel clears it \(the loop already owns the audit\)/);
+});
+
+test("v0.33.3: one-shot audit raises DECIDE findings as questions before completing", () => {
+  const t = projectAuditTarget("the gods");
+  assert.match(t, /ask_user_question BEFORE calling complete_goal/, "the one-shot agent raises questions itself (still in its turn)");
+  assert.match(t, /- \[x\] DECIDED: <what was chosen>/);
+  assert.match(t, /raised to the user and recorded as DECIDED\/DEFERRED/, "Done when: covers the raise + record");
 });

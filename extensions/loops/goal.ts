@@ -1385,10 +1385,24 @@ async function fanOutListAuditFindings(ctx: ExtensionContext): Promise<void> {
   // hundreds of items on a single Confirm.
   const fresh = open.filter((f) => !queuedText.includes(f.text.slice(0, 60))).slice(0, 50);
   const alreadyQueued = open.length - fresh.length;
+  // v0.33.3: DECIDE findings are RAISED TO THE USER as real questions
+  // (hegemon 2026-07-31: a truncated notify left the user typing "decide
+  // what" into the void). The orchestrator can't call ask_user_question —
+  // the agent can — so the full untruncated findings go to the agent as a
+  // steer with the raise + record protocol. Fires BEFORE the queueing
+  // early-returns below: decisions need answers even when nothing new
+  // queued or the fan-out was declined.
+  if (decisions.length > 0) {
+    const decList = decisions.slice(0, 8).map((d, i) => `${i + 1}. ${d.slice(0, 500)}`).join("\n");
+    extensionApi?.sendUserMessage(
+      `[DECIDE FINDINGS — user decisions needed] The audit surfaced ${decisions.length} DECIDE finding(s) — direction calls only the user can make (a decision is not a task, so they were NOT queued):\n${decList}\nRaise them to the user NOW with ask_user_question — one question per finding, options from the finding's own two sides plus "Defer" (prose numbered list if ask_user_question is unavailable; Esc = Defer). Then record every answer in ${AUDIT_FINDINGS_REL}: replace the "- [?]" line with "- [x] DECIDED: <what was chosen> (<date>)" (or "- [x] DEFERRED") so it stops re-surfacing, and queue any chosen work with list_add — do NOT start the work inline.`,
+      { deliverAs: ctx.isIdle() ? "followUp" : "steer" },
+    );
+    appendLedger(ctx.cwd, "list_audit_decisions_raised", { decisions: decisions.length });
+  }
   const decideNote =
     decisions.length > 0
-      ? `\n${decisions.length} DECIDE finding(s) need YOU (not queued — a decision is not a task):\n` +
-        decisions.slice(0, 10).map((d) => `  ? ${d.slice(0, 110)}`).join("\n")
+      ? ` ${decisions.length} DECIDE finding(s) need YOU — raising them as questions now (not queued — a decision is not a task).`
       : "";
   if (fresh.length === 0) {
     ctx.ui.notify(

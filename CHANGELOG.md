@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.33.3] — 2026-07-31
+
+### Changed — DECIDE findings are raised as real questions (hegemon field report)
+
+The post-audit DECIDE block was a passive notify — truncated at 110 chars,
+user-only, with nobody whose job it was to get the findings answered
+(hegemon: the user typed "decide what" into the void while the drain ran
+on). A decision is not a task — but it IS a question:
+
+- **`/list audit` fan-out**: when DECIDE findings exist, the orchestrator
+  now steers the agent with the FULL untruncated findings and a raise +
+  record protocol: ask_user_question — one question per finding, options
+  from the finding's own two sides plus "Defer" (prose fallback; Esc =
+  Defer) — then record each answer in findings.md (`- [x] DECIDED: …` /
+  `- [x] DEFERRED`) so decided items stop re-surfacing, and queue chosen
+  work via list_add. Fires even when nothing new queued or the fan-out was
+  declined. Ledger: `list_audit_decisions_raised`.
+- **One-shot `/goal audit`**: the agent raises the questions itself BEFORE
+  calling complete_goal (it's still in its turn); Done when now requires
+  every DECIDE finding raised + recorded.
+- The notify keeps a one-line pointer ("raising them as questions now")
+  instead of the truncated `? …` dump.
+
+670 tests.
+
 ## [0.33.2] — 2026-07-31
 
 ### Changed — loop proactiveness + respec machinery (two-lens design analysis)
