@@ -50,7 +50,8 @@ function workTurn() {
   // unique text per turn — identical narration trips the v0.24.0 repetition
   // detector ("same response 3+ times") before the plateau can fire.
   workSeq++;
-  const unique = `turn ${workSeq}: ${["inspect","adjust","verify"," tighten","document","measure"][workSeq % 6]} different aspect ${"abcxyz"[workSeq % 6].repeat(workSeq % 5 + 1)}`;
+  const words = ["inspect", "adjust", "verify", "tighten", "document", "measure"];
+  const unique = `turn ${workSeq}: ${words[workSeq % 6] ?? "polish"} different aspect ${"abcxyz".charAt(workSeq % 6).repeat(workSeq % 5 + 1)}`;
   return { messages: [{ role: "assistant", content: [{ type: "text", text: `did ${unique} on the loop target` }], stopReason: "end_turn" }] };
 }
 async function fireWork(ctx: MockCtx): Promise<void> {
