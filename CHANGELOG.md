@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.31.0] — 2026-07-31
+
+### Added — /list audit [focus]: the collect-then-drain project audit
+
+User design (2026-07-31): "this command could run a project audit, collect a
+bunch of tasks, then do them all too" — and the underlying pain: "my audits
+don't seem to be making a list of actionables if found." The three audit
+verbs now have an honest split:
+
+- `/goal audit` — one audited unit: audit + fix in the SAME pass (small
+  scopes; DECIDE findings presented at completion).
+- `/list audit` — audit once, COLLECT only (the item changes no code), then
+  every open finding becomes its own queued list item — each fix lands with
+  its own commit and its own isolated audit. The actionables stop living
+  only inside findings.md.
+- `/loop audit` — forever fix-first cadence for living codebases.
+
+- The collection objective carries a restart-safe `[LIST-AUDIT-COLLECT]`
+  marker (no schema change); on its approved completion the orchestrator
+  parses .pi-glla/audit-loop/findings.md, severity-sorts the open boxes
+  (CRITICAL → LOW, stable within a rank), dedupes against the live queue,
+  and Confirm-gates the fan-out like every bulk import (v0.23.7). A decline
+  leaves the findings open — re-run any time.
+- Each queued item carries a checkable Done when: the fix is committed on
+  the current branch with the repo's configured identity AND the finding's
+  box is checked with the commit hash — findings.md stays honest as the
+  drain proceeds.
+- DECIDE findings ("- [?]") are presented at collection completion, never
+  queued — a decision is not a task the agent can "do".
+- Tolerates the /loop audit findings format (open boxes without the FIX:
+  prefix are actionable).
+- No spurious "List complete" while the fan-out is still Confirm-gated;
+  ledgers list_audit_fanout / _declined / _empty.
+
+654 tests (the /loop audit pin now anchors inside cmdLoop — /list audit's
+route shadows the first `sub === "audit"` occurrence).
+
 ## [0.30.0] — 2026-07-31
 
 ### Changed — rebind-first session-replacement survival: no more forced reloads for the common cases
