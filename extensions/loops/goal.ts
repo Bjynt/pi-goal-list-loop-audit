@@ -225,6 +225,72 @@ let extensionApiStale = false;
  * here stranded goals until manual /goal resume (hegemon/sraaal shape).
  * sendContinuation's extensionApiStale guard already stops further sends
  * in this doomed process; the next fresh session auto-resumes. */
+/** v0.30.0: rebind-first session-replacement survival. pi's sanctioned
+ * pattern (docs/extensions.md lifecycle + the stale error text itself):
+ * session_shutdown → cleanup, session_start → re-establish with the NEW
+ * ctx. glla used to treat every stale handle as terminal ("run /reload"),
+ * but three replacement shapes need three responses:
+ *  (a) switch (resume/new/fork): pi rebinds THIS module to the new
+ *      session — session_start delivers a fresh ctx. No user action, no
+ *      warning; reset the stale flag via a re-probe and continue.
+ *  (b) /reload: pi re-imports the extension modules — a SUCCESSOR
+ *      instance owns this cwd in the same process. The old module stands
+ *      down silently (owner-file check) instead of screaming + injecting
+ *      /reload (v0.29.22's injection is right for orphans, wrong here).
+ *  (c) orphan: the session died with NO replacement (hegemon 2026-07-31:
+ *      handle dead ~06:03, zero ledger events for 5h). Only a rebuild
+ *      revives extension function — goStaleTerminal's warning + self-heal
+ *      stays for this case ONLY.
+ * session_shutdown is now ledgered with pi's reason, so the next
+ * unexplained disposal is attributable from the ledger alone. */
+const SESSION_REBIND_GRACE_MS = 60_000;
+let sessionReplacementUntil = 0;
+const instanceStartedAt = Date.now();
+const instanceId = `${process.pid}:${instanceStartedAt}`;
+let zombieStoodDown = false;
+
+function ownerFilePath(cwd: string): string {
+  return path.join(cwd, ".pi-glla", "owner.json");
+}
+
+function writeOwnerFile(cwd: string): void {
+  try {
+    fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+    fs.writeFileSync(ownerFilePath(cwd), JSON.stringify({ instanceId, pid: process.pid, at: Date.now() }));
+  } catch {
+    /* owner file is advisory — never block activation on it */
+  }
+}
+
+function readOwnerFile(cwd: string): { instanceId?: string; pid?: number; at?: number } | null {
+  try {
+    return JSON.parse(fs.readFileSync(ownerFilePath(cwd), "utf8")) as { instanceId?: string; pid?: number; at?: number };
+  } catch {
+    return null;
+  }
+}
+
+/** A stale probe is terminal only for ORPHANS. Returns true when the
+ * stale sighting was absorbed (a rebind window is open, or a successor
+ * instance owns this cwd and we stand down silently), false when the
+ * caller should go terminal (orphan — no replacement came). */
+function absorbStaleIfSuperseded(ctx: ExtensionContext): boolean {
+  if (Date.now() < sessionReplacementUntil) {
+    appendLedger(ctx.cwd, "stale_awaiting_rebind", {});
+    return true;
+  }
+  const owner = readOwnerFile(ctx.cwd);
+  if (owner && owner.pid === process.pid && typeof owner.instanceId === "string" && owner.instanceId !== instanceId) {
+    appendLedger(ctx.cwd, "zombie_stood_down", { owner: owner.instanceId });
+    zombieStoodDown = true;
+    extensionApiStale = true; // silence the send paths WITHOUT the terminal theatre
+    clearLoopTimer();
+    if (continuationTimer) { clearTimeout(continuationTimer); continuationTimer = null; }
+    return true;
+  }
+  return false;
+}
+
 function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   if (extensionApiStale) return; // already terminal — don't re-spam
   extensionApiStale = true;
@@ -325,6 +391,13 @@ function probeExtensionApiStale(): boolean {
  * and must NOT claim work started (S3's "created — starting now" lie). */
 function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
   if (!probeExtensionApiStale()) return false;
+  // v0.30.0: a successor may already own this session (e.g. /reload
+  // re-imported the modules) — the user's command belongs to the fresh
+  // instance; say so softly instead of demanding a reload.
+  if (absorbStaleIfSuperseded(ctx)) {
+    ctx.ui.notify(`glla: a refreshed instance owns this session — ${what} is handled there; nothing to do.`, "info");
+    return true;
+  }
   appendLedger(ctx.cwd, "extension_api_stale", { where: `entry probe (${what})` });
   ctx.ui.notify(
     `glla: this session's extension handle is stale (pi session replacement) — ${what} can't send continuations in this process. State is safe in .pi-glla/ — run /reload (extensions rebuild in place), then /glla resume. Restart pi only if /reload fails.`,
@@ -693,6 +766,7 @@ function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
 }
 
 function heartbeatTick(): void {
+  if (zombieStoodDown) return; // v0.30.0: a superseded instance stays silent forever
   const ctx = freshCtx();
   if (!ctx) return;
   let idle = false;
@@ -717,7 +791,12 @@ function heartbeatTick(): void {
   // on: refiring into a dead process is misleading, and worse, the stall
   // escalation would PAUSE the goal — silently cancelling the
   // interruptedAt → hold-on-restart promise the footer shows.
-  if (probeExtensionApiStale()) { goStaleTerminal(ctx, "heartbeat probe"); return; }
+  if (probeExtensionApiStale()) {
+    // v0.30.0: stale ≠ terminal — absorb the rebind-window and
+    // successor-instance cases; only orphans go terminal.
+    if (!absorbStaleIfSuperseded(ctx)) goStaleTerminal(ctx, "heartbeat probe");
+    return;
+  }
   // v0.29.16: zombie-run watchdog. pi reports BUSY (a run is "active") but
   // zero stream events for 20 min = the provider stream hung silently —
   // queued continuations can't land, and every other watchdog stays quiet
@@ -5493,12 +5572,43 @@ export default function (pi: ExtensionAPI): void {
     }
   });
 
+  pi.on("session_shutdown", async (event: any, ctx: ExtensionContext) => {
+    if (isForeignCtx(ctx)) return;
+    // v0.30.0: attribution + rebind window. pi announces WHY the session
+    // is being replaced (reload/resume/new/fork/quit) — the ledger can
+    // now answer "what killed the handle?" without guesswork (hegemon's
+    // 5-hour orphan silence 2026-07-31 was unattributable). The window
+    // tells the stale probe that a rebind (session_start) is imminent.
+    const shutdownReason = typeof event?.reason === "string" ? event.reason : "unknown";
+    appendLedger(ctx.cwd, "session_shutdown", { reason: shutdownReason });
+    sessionReplacementUntil = Date.now() + SESSION_REBIND_GRACE_MS;
+  });
+
   pi.on("session_start", async (event: any, ctx: ExtensionContext) => {
     rememberCtx(ctx);
     // v0.23.8: subagent sessions (pi-subagents binds extensions there too)
     // are workers — never run the restore gate or reschedule the loop from
     // a foreign session.
     if (isForeignCtx(ctx)) return;
+    // v0.30.0: rebind bookkeeping — claim ownership, close any replacement
+    // window, and reset a stale flag left over from the PREVIOUS session's
+    // invalidation. pi rebinds THIS module to the new session (switch) or
+    // re-imports it (/reload — fresh module, flag already false); either
+    // way the fresh ctx makes the old poison flag wrong. Re-probe to
+    // confirm the new handle actually works.
+    writeOwnerFile(ctx.cwd);
+    sessionReplacementUntil = 0;
+    zombieStoodDown = false;
+    const startReason = typeof event?.reason === "string" ? event.reason : "unknown";
+    appendLedger(ctx.cwd, "session_rebound", { reason: startReason });
+    if (extensionApiStale) {
+      extensionApiStale = false; // fresh ctx delivered — re-probe
+      const stillStale = probeExtensionApiStale();
+      appendLedger(ctx.cwd, "stale_flag_reset_on_rebind", { reason: startReason, stillStale });
+      if (stillStale) {
+        ctx.ui.notify("glla: session rebound but the extension handle is still stale — run /reload (extensions rebuild in place), then /glla resume.", "warning");
+      }
+    }
     state = readState(ctx.cwd);
     // v0.28.14: snapshot carryover BEFORE any restore logic mutates state —
     // a paused goal, waiting list items, or a loop that was live/held when
