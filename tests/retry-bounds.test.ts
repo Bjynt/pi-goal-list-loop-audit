@@ -49,8 +49,7 @@ test("E3: send-retry re-arms counted, ledgered, escalated", () => {
   // wired into both send paths' re-arm sites:
   assert.match(SRC, /accountSendRearm\(ctx, "continuation"\);/);
   assert.match(SRC, /\} else accountSendRearm\(ctx, "loop"\);/); // v0.33.1: null-ctx probes + backs off
-  assert.match(SRC, /if \(probeExtensionApiStale\(\)\) return;
-      loopRearmStreak\+\+;/); // v0.33.1
+  assert.match(SRC, /if \(probeExtensionApiStale\(\)\) return;\s*\n\s*loopRearmStreak\+\+;/); // v0.33.1
   // a landed send clears the storm:
   assert.match(SRC, /continuationRearmStreak = 0; continuationRearmSince = 0; \/\/ v0\.28\.5 \(E3\)/);
   assert.match(SRC, /loopRearmStreak = 0; loopRearmSince = 0; \/\/ v0\.28\.5 \(E3\)/);

@@ -21,7 +21,7 @@ test("Settings type accepts toolOverrides (allow / hide / perToolConfig)", () =>
 
 test("SETTINGS_KEYS includes toolOverrides for provenance tracking", () => {
   const src = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
-  assert.match(src, /SETTINGS_KEYS[\s\S]*?"toolOverrides",[\s\S]*?\]/ // v0.33.1: "reviewer" legacy alias follows);
+  assert.match(src, /SETTINGS_KEYS[\s\S]*?"toolOverrides",[\s\S]*?"reviewer"[\s\S]*?\]/);
 });
 
 test("goal.ts ensureAgentToolsActive applies toolOverrides.allow and .hide", () => {

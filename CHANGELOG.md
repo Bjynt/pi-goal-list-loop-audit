@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.33.1] — 2026-07-31
+
+### Fixed — post-release audit batch (three parallel read-only audits)
+
+- **HIGH — control-character injection into the widget**: tool args
+  (bash commands, file paths) flowed raw into widget lines — a `\n`
+  broke the card into un-prefixed lines that could spoof a footer; an
+  ESC sequence corrupted the TUI. `summarizeToolArg` now strips
+  C0/C1 control chars and collapses whitespace before truncating.
+- **HIGH — `staleTerminalDone` was one-shot for the process lifetime**:
+  after a session rebound (switch session instead of /reload), a second
+  orphan invalidation hit the done-gate and produced no ledger, no
+  interruptedAt marker, and no self-heal — the exact dead-code shape of
+  the v0.32.0 CRITICAL, one gate deeper. Reset on rebind.
+- **MEDIUM — widget head could exceed terminal width**: the objective
+  was budgeted alone and ~45 cols of status segments appended
+  unbudgeted (140-col heads at width 100). Segments are measured by
+  visible width first; the objective absorbs what remains.
+- **MEDIUM — `sendLoopTurn` null-ctx re-arm spun a flat 50ms** below
+  every watchdog (the goal path got the v0.32.0 probe + accounting; the
+  loop path didn't). Now probes the handle and advances the backoff
+  streak.
+- **MEDIUM — post-compaction flags leaked across goals/sessions**:
+  `postCompactResyncPending`/`postCompactResumeOwed` cleared only by a
+  landed send or `agent_start` — a goal that completed after a compact
+  left a bogus `[POST-COMPACTION RESYNC]` block and a spurious forced
+  refire for the NEXT goal (the heartbeat's discharge `else` was
+  unreachable: `isSupervising() ≡ isLoopActive() || isActionableGoal()`).
+  Now cleared at goal activation/archival, on session rebind, and by a
+  hoisted heartbeat discharge when nothing is supervised.
+- **LOW**: resync-builder exceptions no longer masquerade as transport
+  failures (guarded, sends without the block); the auditor's abort
+  listener is removed in `finally` (session no longer retained by the
+  signal); metric loops show `last` again alongside `best`; legacy
+  `reviewer` settings key added to provenance; per-goal module state
+  (`quotaRetryStreak`, `countedTokenMessages`, `recentActions`) resets
+  at activation; in-flight tool map evicts before the 21st entry.
+
+668 tests.
+
 ## [0.33.0] — 2026-07-31
 
 ### Changed — slim widget card (research-informed redesign)

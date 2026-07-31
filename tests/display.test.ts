@@ -453,3 +453,37 @@ test("v0.33.0: slim card — meter rounding guard, folded status segments, last-
   assert.match(SRC, /noteToolCall\(event\); \/\/ v0\.33\.0/);
   assert.match(SRC, /noteToolResult\(event\); \/\/ v0\.33\.0/);
 });
+
+test("v0.33.1: audit-batch — sanitize, head fits width, last restored, flag lifecycle", () => {
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // A1: tool args are control-char-stripped before reaching a widget line.
+  assert.match(SRC, /\[\\x00-\\x1f\\x7f-\\x9f\]\/g/);
+  // sweep-F1: a rebound session can go terminal again.
+  assert.match(SRC, /staleTerminalDone = false; \/\/ v0\.33\.1/);
+  // sweep-F2: the loop path's null-ctx re-arm probes + backs off (was a flat 50ms spin).
+  assert.match(SRC, /if \(probeExtensionApiStale\(\)\) return;\s*\n\s*loopRearmStreak\+\+;/);
+  // compact F1/F2 + sweep-F3: the compact debt/resync die with the goal/loop and on rebind.
+  assert.match(SRC, /if \(!isSupervising\(\) && \(postCompactResumeOwed \|\| postCompactResyncPending\)\)/);
+  assert.match(SRC, /postCompactResumeOwed = false; \/\/ v0\.33\.1: a compact from a previous session/);
+  // compact-F3: builder throws are contained.
+  assert.match(SRC, /try \{ resync = buildPostCompactResync\(\); \} catch/);
+  // sweep-F6: per-goal module state resets at activation.
+  assert.match(SRC, /countedTokenMessages\.clear\(\);\n  recentActions\.length = 0;/);
+  // B1: the head fits the terminal — wide width yields a longer objective than narrow.
+  const longObjective = "y".repeat(200);
+  const g = goalOf({ objective: longObjective });
+  const w100 = buildWidgetLines({ goal: g, list: [] }, null, NOW, undefined, 100)![0]!;
+  const w160 = buildWidgetLines({ goal: g, list: [] }, null, NOW, undefined, 160)![0]!;
+  assert.ok(w160.length > w100.length, "objective absorbs the extra width");
+  assert.ok(w100.length <= 110, `head at width 100 stays near the terminal, got ${w100.length}`);
+  // B3a: metric loops show best AND last again.
+  const loopLines = buildWidgetLines({ goal: null, list: [], loop: {
+    active: true, target: "audit", iteration: 3, maxIterations: 0, measureCmd: "m",
+    bestValue: 4, lastValue: 5, stallCount: 2, plateauWindow: 5,
+    startedAt: "2026-07-21T11:57:00Z", history: [], direction: "min",
+  } as any }, null, NOW, undefined, 120)!;
+  assert.match(loopLines[0]!, /best 4 · last 5 · stall 2\/5/);
+  // sweep-F4: the auditor's abort listener is removed in finally.
+  const AUD = fs.readFileSync("extensions/goal-loop-auditor.ts", "utf-8");
+  assert.match(AUD, /removeEventListener\("abort", abort\)/);
+});
