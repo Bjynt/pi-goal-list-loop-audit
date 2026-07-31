@@ -190,7 +190,19 @@ export function forwardTransitionPaired(input: LoopStuckInput): boolean {
  * (new detector only), undefined = REPETITION.toolResultRepeat.
  */
 export function isActuallyStuck(input: LoopStuckInput, toolSameRepeat?: number): string | undefined {
-  if ((input.fileWriteCount ?? 0) > 0) return undefined;
+  if ((input.fileWriteCount ?? 0) > 0) {
+    // v0.33.2: write-exemption abuse — endless cosmetic edits with a
+    // near-identical reply are churn, not progress (the metricless
+    // doorknob leak). The stuck ladder's first rung is a prompt note;
+    // any genuinely different iteration resets it.
+    if (input.previousText && input.assistantText && normalizeForPrint(input.assistantText).length > REPETITION.minSimilarLength) {
+      const sim = trigramSimilarity(input.assistantText, input.previousText);
+      if (sim >= REPETITION.similarityThreshold) {
+        return `cosmetic churn: wrote files but the reply is ~${Math.round(sim * 100)}% identical to the previous iteration`;
+      }
+    }
+    return undefined;
+  }
   if ((input.gitCommitCount ?? 0) > 0) return undefined;
   if ((input.specItemProgressCount ?? 0) > 0) return undefined;
   if (forwardTransitionPaired(input)) return undefined;

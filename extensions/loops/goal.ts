@@ -169,6 +169,9 @@ import {
   LOOP_DEFAULTS,
   resolveSpecFiles,
   respecTarget,
+  topOpenAuditFinding,
+  specFileHash,
+  countCheckedSpecItems,
   auditMeasureCmd,
   auditTarget,
   AUDIT_PLATEAU_MAX_REPRIEVES,
@@ -2693,7 +2696,13 @@ function sendLoopTurn(): void {
   // Strategy rotation (from pi-loop-mode's one good idea): one stall before
   // the plateau window closes, stop polishing and change approach entirely.
   const strategyNote = loop.stallCount >= loop.plateauWindow - 1 && loop.stallCount > 0
-    ? "**You are one stall from a plateau stop. Small tweaks are not working — try a FUNDAMENTALLY different approach: different file, different technique, or revert and rethink the angle of attack.**"
+    ? "**You are one stall from a plateau stop. Small tweaks are not working — try a FUNDAMENTALLY different approach: different file, different technique, or revert and rethink the angle of attack.**" +
+      // v0.33.2: a metric flat AT BEST may mean the spec stopped capturing
+      // "better" — the loop holds the evidence, so it says so (was: the
+      // prompt said "call propose_loop_refine" but the loop never suggested it).
+      (loop.lastValue !== null && loop.lastValue === loop.bestValue
+        ? " **The metric has been flat at best — if the spec no longer captures 'better' (saturated metric, drifted target), call propose_loop_refine.**"
+        : "")
     : "";
   // v0.15.0: arbitrary bounds (never "completion") — surface what's armed.
   // v0.23.0: for metricless loops the bounds are the ONLY stop (no
@@ -2892,7 +2901,8 @@ async function runLoopTick(ctx: ExtensionContext, event?: any): Promise<void> {
           loop.stopReason = undefined;
           loop.stallCount = 0;
           loop.auditPlateauReprieves = reprieves;
-          loop.auditReprieveNote = `PLATEAU REPRIEVE (${reprieves}/${AUDIT_PLATEAU_MAX_REPRIEVES}): ${open} finding(s) still OPEN in ${AUDIT_FINDINGS_REL} — the plateau stop does not fire while the well isn't dry. Stop hunting and stop narrating: pick the smallest OPEN finding and CLOSE it this iteration (fix commit + checked box). ${AUDIT_PLATEAU_MAX_REPRIEVES - reprieves} reprieve(s) remain.`;
+          const topFinding = topOpenAuditFinding(ctx.cwd); // v0.33.2: name what to close, not just the count
+          loop.auditReprieveNote = `PLATEAU REPRIEVE (${reprieves}/${AUDIT_PLATEAU_MAX_REPRIEVES}): ${open} finding(s) still OPEN in ${AUDIT_FINDINGS_REL} — the plateau stop does not fire while the well isn't dry. Stop hunting and stop narrating: pick the smallest OPEN finding and CLOSE it this iteration (fix commit + checked box).${topFinding ? ` Top open: ${topFinding}` : ""} ${AUDIT_PLATEAU_MAX_REPRIEVES - reprieves} reprieve(s) remain.`;
           persistState(ctx);
           appendLedger(ctx.cwd, "audit_plateau_reprieve", { open, reprieves, best: loop.bestValue });
           ctx.ui.notify(`Audit loop plateau reprieve (${reprieves}/${AUDIT_PLATEAU_MAX_REPRIEVES}): ${open} open findings — the well isn't dry, continuing.`, "info");
@@ -2951,6 +2961,9 @@ interface LoopConfig {
   deferBaseline?: boolean;
   /** v0.29.10: audit loops get audit-flavoured regression wording. */
   kind?: "audit";
+  /** v0.33.2: respec loops carry their spec file (drift detection,
+   * checkbox progress, refine specText writes). */
+  specFile?: string;
 }
 
 /** Shared loop-start path: /loop start AND propose_loop_draft (after Confirm). */
@@ -3017,6 +3030,9 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
       branchName,
       originalBranch,
       toolSameRepeat: cfg.toolSameRepeat,
+      specFile: cfg.specFile,
+      specHash: cfg.specFile ? specFileHash(cfg.specFile) ?? undefined : undefined,
+      specChecked: cfg.specFile ? countCheckedSpecItems(cfg.specFile) ?? undefined : undefined,
       iterMetrics: { fileWrites: 0, iterationStartAt: nowIso() },
     },
   };
@@ -3273,6 +3289,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       maxIterations: 0,
       branch: false,
       force: false,
+      specFile: specPath, // v0.33.2
     });
     return;
   }

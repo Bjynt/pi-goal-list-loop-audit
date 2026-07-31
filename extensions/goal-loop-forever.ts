@@ -10,6 +10,7 @@
  * self-reports progress.
  */
 
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
@@ -110,6 +111,20 @@ export interface LoopState {
   /** v0.25.1: /loop start toolsamerepeat=N — legacy same-tool-same-result
    * check window. 0 disables it (multi-signal detector only). */
   toolSameRepeat?: number;
+  /** v0.33.2: respec loops carry their spec file — drift detection
+   * (specHash compared per tick), checkbox progress (specChecked →
+   * spec_item_progress events), and the refine tool's specText write path. */
+  specFile?: string;
+  specHash?: string;
+  specChecked?: number;
+  /** v0.33.2: hypothesis feedback loop — the last turn's HYPOTHESIS line
+   * plus the verdict computed against the metric movement, injected into
+   * the next iteration's prompt. */
+  lastHypothesis?: string;
+  hypothesisFeedback?: string;
+  /** v0.33.2: /loop refine <text> — the operator's respec suggestion rides
+   * the next iteration's prompt; the agent proposes via propose_loop_refine. */
+  refineHint?: string;
   /** v0.25.1: per-iteration progress-signal accumulators for the
    * multi-signal stuck gate. fileWrites bumps on write/edit tool results;
    * iterationStartHead/At snapshot when the iteration BEGAN so the tick can
@@ -461,6 +476,37 @@ export function countOpenAuditFindings(cwd: string): number {
     return readFileSync(p, "utf-8").split("\n").filter((l) => /^- \[ \]/.test(l)).length;
   } catch {
     return 0;
+  }
+}
+
+/** v0.33.2: the first OPEN finding's text — the reprieve note names what
+ * to close, not just how many remain. */
+export function topOpenAuditFinding(cwd: string): string | null {
+  try {
+    const p = join(cwd, AUDIT_FINDINGS_REL);
+    if (!existsSync(p)) return null;
+    const line = readFileSync(p, "utf-8").split("\n").find((l) => /^- \[ \]/.test(l));
+    return line ? line.replace(/^- \[ \]\s*/, "").trim().slice(0, 120) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** v0.33.2: spec drift detection — short sha256 of the spec file. */
+export function specFileHash(p: string): string | null {
+  try {
+    return createHash("sha256").update(readFileSync(p, "utf-8")).digest("hex").slice(0, 16);
+  } catch {
+    return null;
+  }
+}
+
+/** v0.33.2: checked checkbox count in a spec file (spec_item_progress). */
+export function countCheckedSpecItems(p: string): number | null {
+  try {
+    return readFileSync(p, "utf-8").split("\n").filter((l) => /^- \[x\]/i.test(l)).length;
+  } catch {
+    return null;
   }
 }
 
