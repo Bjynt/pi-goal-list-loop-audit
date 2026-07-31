@@ -48,6 +48,31 @@ export function truncate(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, Math.max(0, max - 1)) + "…";
 }
 
+/** v0.33.0: 5-cell meter with a rounding guard (command-code's rule — never
+ * shows empty or full unless the value truly is 0 or 1). */
+export function meter(frac: number, cells = 5): string {
+  if (!Number.isFinite(frac) || frac <= 0) return "▱".repeat(cells);
+  if (frac >= 1) return "▰".repeat(cells);
+  let filled = Math.round(frac * cells);
+  if (filled === 0) filled = 1;
+  if (filled === cells) filled = cells - 1;
+  return "▰".repeat(filled) + "▱".repeat(cells - filled);
+}
+
+/** v0.33.0: one finished tool call, for the slim card's "last action" line. */
+export interface RecentActionDisplay {
+  name: string;
+  arg?: string;
+  ms: number;
+  ok: boolean;
+}
+
+/** v0.33.0: widget extras — the refire streak plus the recent-action feed. */
+export interface WidgetExtras {
+  stalls?: number;
+  recent?: RecentActionDisplay[];
+}
+
 /**
  * Word-wrap to `width`, capped at `maxLines` (v0.27.1). A pause is the one
  * state where the FULL text matters — the reason often carries a decision
@@ -134,7 +159,7 @@ export interface AuditDisplayProgress {
  * One-line status for ctx.ui.setStatus("pi-glla", …).
  * Returns undefined when nothing is being supervised (clears the segment).
  */
-export function buildStatusText(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: { stalls?: number }): string | undefined {
+export function buildStatusText(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras): string | undefined {
   if (state.loop?.active) {
     const l = state.loop;
     // v0.26.1: surface the refire streak — a spinning supervisor is the
@@ -223,7 +248,7 @@ function countTotal(g: Goal): number {
  * Widget lines for ctx.ui.setWidget("pi-glla", lines).
  * Returns undefined when nothing is worth showing.
  */
-export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, width?: number, extras?: { stalls?: number }): string[] | undefined {
+export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, width?: number, extras?: WidgetExtras): string[] | undefined {
   const inner = buildWidgetLinesInner(state, audit, now, theme, width, extras);
   // v0.28.6 (E1): a persistence failure outranks everything — first line,
   // on every render, until a write lands again.
@@ -234,7 +259,7 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
   return inner;
 }
 
-function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, width?: number, extras?: { stalls?: number }): string[] | undefined {
+function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, width?: number, extras?: WidgetExtras): string[] | undefined {
   if (state.loop?.active) return loopLines(state.loop, now, theme, width, extras);
   const g = state.goal;
   const held = heldLoop(state);
@@ -271,22 +296,32 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       : g.status === "auditing"
         ? paint(theme, "accent", "⟡")
         : paint(theme, "success", "●");
-  const head = `${icon} ${truncate(g.objective.replace(/\s+/g, " "), budgetFor(width, 3, 64))}`;
+  const headBase = `${icon} ${truncate(g.objective.replace(/\s+/g, " "), budgetFor(width, 3, 48))}`;
   // v0.24.7: a list item is named as such and points at /list — before,
   // the widget called it "active" and hinted "/goal status", reading as if
   // queue work were a standalone goal.
   const isList = g.policy === "list";
   const statusWord = g.status === "active" ? paint(theme, "success", "active") : g.status;
-  // v0.28.30: the status line ALWAYS names the type (user note: "I don't
-  // always see the type — I'd need to scroll up to see if goal/list/loop").
-  // Before, only list items were named; a plain goal's card said "paused ·
-  // 3m" with no type word. The loop surface has its own card.
-  const typeWord = isList ? "list item · " : "goal · ";
+  // v0.33.0: slim card — status folds INTO the head line as middot segments
+  // (filter(Boolean).join, the universal CLI idiom). Line 2 is the live
+  // "last action · next task" line; the footer stays the hint line.
+  const headSegs: string[] = [];
+  if (isList) headSegs.push("list item");
+  headSegs.push(statusWord);
+  headSegs.push(fmtElapsed(now - Date.parse(g.createdAt)));
+  const taskTotal = countTotal(g);
+  if (taskTotal > 0) headSegs.push(`${countDone(g)}/${taskTotal} ${paint(theme, "dim", meter(countDone(g) / taskTotal))}`);
+  const tokUsed0 = g.usage?.tokensUsed ?? 0;
+  if (tokenLimit > 0) headSegs.push(paint(theme, "dim", `${fmtTokens(tokUsed0)}/${fmtTokens(tokenLimit)} ${meter(tokUsed0 / tokenLimit)}`));
+  else if (tokUsed0 > 0) headSegs.push(paint(theme, "dim", `${fmtTokens(tokUsed0)} tok`));
+  // v0.28.30: the type stays visible — v0.33.0 names it via the "list item"
+  // header segment (list policy) and the distinct card icons (● goal,
+  // ∞/↓/↑ loop, ⟡ auditing, ⏸ paused) + the type-named footer verbs.
   // Token segment only when a budget is set (v0.22.0): the guard is opt-in,
   // and "0/0 tok" carried no information when off.
   const tokenLimit = g.usage?.tokensLimit ?? 0;
-  const tokens = tokenLimit > 0 ? ` · ${paint(theme, "dim", `${fmtTokens(g.usage?.tokensUsed ?? 0)}/${fmtTokens(tokenLimit)} tok`)}` : "";
-  const lines = [head, `├─ ${typeWord}${statusWord} · ${fmtElapsed(now - Date.parse(g.createdAt))}${tokens}`];
+  const head = `${headBase} ${paint(theme, "dim", "·")} ${headSegs.join(` ${paint(theme, "dim", "·")} `)}`;
+  const lines = [head];
   if (g.status === "auditing") {
     lines.push(`├─ auditor: ${audit?.label ?? "running"}${audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : ""}`);
     // v0.25.4: auditor-quiet stall — progress events stopped arriving
@@ -357,8 +392,16 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     }
     return lines;
   }
+  // v0.33.0: "last action · next task" — Claude's done-row format meets the
+  // pending queue. Segments join with a dim middot; missing ones drop out.
+  const act = extras?.recent?.[extras.recent.length - 1];
+  const mid: string[] = [];
+  if (act) {
+    mid.push(`${paint(theme, act.ok ? "success" : "error", act.ok ? "✓" : "✗")} ${act.name}${act.arg ? ` ${paint(theme, "dim", truncate(act.arg, 24))}` : ""}${act.ms > 0 ? ` ${paint(theme, "dim", `(${fmtElapsed(act.ms)})`)}` : ""}`);
+  }
   const next = nextPending(g);
-  if (next) lines.push(`├─ next: ${truncate(next, budgetFor(width, 9, 56))}`);
+  if (next) mid.push(`next: ${truncate(next, budgetFor(width, 9, 40))}`);
+  if (mid.length > 0) lines.push(`├─ ${mid.join(` ${paint(theme, "dim", "·")} `)}`);
   const queue = state.list?.length ?? 0;
   const footer = isList
     ? `${queue > 0 ? `${queue} queued · ` : ""}/list · /glla`
@@ -367,34 +410,30 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   return lines;
 }
 
-function loopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: number, extras?: { stalls?: number }): string[] {
-  // v0.26.1: the refire streak, shown only while nonzero.
-  const stallNote = (extras?.stalls ?? 0) > 0 ? ` · ${paint(theme, "warning", `stalls:${extras!.stalls}`)}` : "";
-  // v0.23.0: metricless spec loop — no arrow/best/stall, no plateau.
-  if (!l.measureCmd) {
-    const lines = [
-      `${paint(theme, "accent", "●")} ${truncate(l.target, budgetFor(width, 3, 64))}`,
-      `├─ loop ∞ iter ${l.iteration}${l.maxIterations > 0 ? `/${l.maxIterations}` : ""} · ${fmtElapsed(now - Date.parse(l.startedAt))}${stallNote}`,
-      `└─ ${paint(theme, "dim", "metricless — work the spec (no plateau)")}`,
-    ];
-    if (l.branchName) lines.push(`⎇ ${paint(theme, "muted", truncate(l.branchName, budgetFor(width, 3, 50)))}`);
-    return lines;
+function loopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: number, extras?: WidgetExtras): string[] {
+  // v0.33.0: slim loop card — header icon names the kind (∞ metricless,
+  // ↓/↑ metric), all state folds into middot segments; line 2 is the live
+  // "last action" line; footer is hints. The old per-line "loop ∞ iter" /
+  // "best/last/stall" rows collapse into the header.
+  const stallNote = (extras?.stalls ?? 0) > 0 ? ` ${paint(theme, "dim", "·")} ${paint(theme, "warning", `stalls:${extras!.stalls}`)}` : "";
+  const icon = !l.measureCmd ? paint(theme, "accent", "∞") : paint(theme, "accent", l.direction === "min" ? "↓" : "↑");
+  const segs: string[] = [];
+  segs.push(`iter ${l.iteration}${l.maxIterations > 0 ? `/${l.maxIterations} ${paint(theme, "dim", meter(l.iteration / l.maxIterations))}` : ""}`);
+  segs.push(fmtElapsed(now - Date.parse(l.startedAt)));
+  if (l.measureCmd) {
+    segs.push(`best ${paint(theme, "success", `${l.bestValue ?? "n/a"}`)}`);
+    const stallText = `stall ${l.stallCount}/${l.plateauWindow}`;
+    segs.push(l.stallCount >= l.plateauWindow - 1 ? paint(theme, "warning", stallText) : stallText);
   }
-  const arrow = paint(theme, "accent", l.direction === "min" ? "↓" : "↑");
-  const best = paint(theme, "success", `${l.bestValue ?? "n/a"}`);
-  const stallText = `stall ${l.stallCount}/${l.plateauWindow}`;
-  const stall = l.stallCount >= l.plateauWindow - 1 ? paint(theme, "warning", stallText) : stallText;
-  const lines = [
-    `${paint(theme, "accent", "●")} ${truncate(l.target, budgetFor(width, 3, 64))}`,
-    `├─ loop ${arrow} iter ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"} · ${fmtElapsed(now - Date.parse(l.startedAt))}`,
-    `├─ best ${best} · last ${l.lastValue ?? "n/a"} · ${stall}`,
-    // v0.29.15: the audit loop's measure is orchestrator-owned shell — the
-    // raw grep reads like leaked internals ("that weird line"). Name what
-    // it measures instead; user-authored measures still show raw.
-    `└─ ${paint(theme, "dim", l.kind === "audit"
-      ? "metric: closed findings ('- [x]' count)"
-      : truncate(l.measureCmd, budgetFor(width, 3, 56)))}`,
-  ];
+  const lines = [`${icon} ${truncate(l.target, budgetFor(width, 3, 44))} ${paint(theme, "dim", "·")} ${segs.join(` ${paint(theme, "dim", "·")} `)}${stallNote}`];
+  const act = extras?.recent?.[extras.recent.length - 1];
+  if (act) {
+    lines.push(`├─ ${paint(theme, act.ok ? "success" : "error", act.ok ? "✓" : "✗")} ${act.name}${act.arg ? ` ${paint(theme, "dim", truncate(act.arg, 24))}` : ""}${act.ms > 0 ? ` ${paint(theme, "dim", `(${fmtElapsed(act.ms)})`)}` : ""}`);
+  }
+  const footer = !l.measureCmd
+    ? "metricless (no plateau) · /loop stop · /loop polish"
+    : `${l.kind === "audit" ? "metric: closed findings" : truncate(l.measureCmd, budgetFor(width, 3, 30))} · /loop stop`;
+  lines.push(`└─ ${paint(theme, "dim", footer)}`);
   if (l.branchName) lines.push(`⎇ ${paint(theme, "muted", truncate(l.branchName, budgetFor(width, 3, 50)))}`);
   return lines;
 }
