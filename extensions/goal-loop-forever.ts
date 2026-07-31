@@ -10,7 +10,7 @@
  * self-reports progress.
  */
 
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 export type LoopDirection = "min" | "max";
@@ -55,6 +55,22 @@ export interface LoopState {
    * (a real number that didn't improve); a broken measure says nothing
    * about movement and must stop the loop with its own loud reason. */
   consecutiveNullMeasures?: number;
+  /** v0.29.19: consecutive provider-error/user-abort turns. Exempt from
+   * stall/stuck/plateau accounting (the model never got a say — a dead
+   * turn is not evidence about the work); capped so an outage stops the
+   * loop with an honest reason instead of burning turns forever. Field
+   * 2026-07-31 (MiniMax token-plan 429 storm): hegemon false-plateau'd
+   * with 13 open findings, polis with 3+, hellhunter stuck-stopped at
+   * iter 93 — every counted turn was a dead 429 turn. */
+  consecutiveErrors?: number;
+  /** v0.29.19: audit plateau reprieves used so far (open findings remain
+   * = the well isn't dry, so the plateau stop stands down). Bounded by
+   * AUDIT_PLATEAU_MAX_REPRIEVES — the next plateau stop stands, honestly
+   * named. */
+  auditPlateauReprieves?: number;
+  /** v0.29.19: one-shot shove injected into the next iteration's prompt
+   * after a plateau reprieve; cleared on use. */
+  auditReprieveNote?: string;
   bestValue: number | null;
   lastValue: number | null;
   /** v0.29.10: audit loops (measure counts open findings) get a deferred
@@ -428,6 +444,24 @@ export function auditMeasureCmd(): string {
  */
 export function auditTarget(): string {
   return `Audit the project for real problems and fix them, iteration by iteration — FIX-FIRST: the open backlog comes down before new hunting (user design 2026-07-30: "audit to fix then audit then fix again" — not find-and-present). Every iteration: (1) FIX the highest-severity OPEN finding(s) in ${AUDIT_FINDINGS_REL} — real fixes, committed — then check the box: "- [x] … — fixed in <commit>". An iteration that closes nothing while OPEN findings remain is a wasted iteration: if the top findings are genuinely blocked, say what blocks them in one line and work the first unblocked one — "no new action this turn" is never an acceptable iteration while open boxes exist. (2) RE-AUDIT on cadence, not every iteration — run a fresh audit pass (spawn Explore subagents for breadth; hunting real issues: bugs, broken flows, regressions, drift between docs and code, dead code, security holes; not style nits, not speculative refactors) ONLY when no OPEN findings remain, when roughly ten iterations have passed since the last pass, or when your own fixes plausibly broke something. (3) Append every NEW finding as one checkbox line "- [ ] SEVERITY: short description (file:line)" to ${AUDIT_FINDINGS_REL} (create the file on the first finding; append-only — never delete, rewrite, or reorder existing lines; never re-report a finding already listed). (4) Honesty law: never fabricate findings to look busy; never mark a finding fixed without the fix commit existing. The orchestrator counts CLOSED findings every iteration (direction=max): discovery alone does not move the metric — landing fixes does. When a full audit pass surfaces nothing new AND no open findings remain, say so plainly — the plateau stop ends the loop when the well is dry.`;
+}
+
+/** v0.29.19: how many times an audit loop's plateau stop stands down
+ * while open findings remain. The plateau after the last reprieve stops
+ * the loop with the honest "no closure despite K open findings" reason. */
+export const AUDIT_PLATEAU_MAX_REPRIEVES = 2;
+
+/** v0.29.19: orchestrator-side count of OPEN audit findings — the honest
+ * "is the well dry" signal for audit-loop plateau decisions. The plateau
+ * stop means "the well is dry"; with K open boxes it is objectively not. */
+export function countOpenAuditFindings(cwd: string): number {
+  try {
+    const p = join(cwd, AUDIT_FINDINGS_REL);
+    if (!existsSync(p)) return 0;
+    return readFileSync(p, "utf-8").split("\n").filter((l) => /^- \[ \]/.test(l)).length;
+  } catch {
+    return 0;
+  }
 }
 
 // ---- /goal audit-project (v0.29.8) ----
