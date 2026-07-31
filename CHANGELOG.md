@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.29.22] — 2026-07-31
+
+### Fixed — the stale-handle self-heal actually fires on this rig (WezTerm), and can no longer kill work
+
+Field (polis + hegemon 2026-07-31, user: "stopping and told to reload is
+common — investigate the cause"): the v0.29.13 tmux self-heal had NEVER
+fired fleet-wide (`auto_reload_injected` absent from every ledger) —
+this rig runs **WezTerm** (`TERM_PROGRAM=WezTerm`, `WEZTERM_PANE` set, no
+`TMUX`), so the tmux gate failed silently 100% of the time and every
+stale handle fell back to the manual warning. Root cause of the
+staleness itself, pi-dist-verified: `session.dispose()` (the only
+invalidator) fires on /reload, /resume, /new, /fork, /quit — i.e. the
+fleet's own /reload maintenance rounds; compaction is in-place and never
+disposes (the stale-after-compact sightings are detection timing: the
+post-compact heartbeat is just the first glla activity that notices).
+
+- `attemptTmuxAutoReload` → `attemptAutoReload`: tmux transport kept,
+  WezTerm transport added (`wezterm cli send-text --pane-id $WEZTERM_PANE
+  --no-paste '/reload\r'` — /bin/sh-safe, no bash-isms). Ledger
+  `auto_reload_injected {where, transport, pane}`; a no-multiplexer env
+  ledgers `auto_reload_skipped` instead of failing silently.
+- **Non-destructive by design** (user pushback: "the operation kills the
+  session"): the leading Escape keystroke is GONE from both transports —
+  a late zombie probe can fire after a fresh instance already resumed
+  and started a turn, and Escape would abort that turn without consent.
+  /reload alone lands at a dead prompt and queues harmlessly mid-turn
+  (pi refuses the reload itself while streaming).
+- The entry probe deliberately does NOT self-heal: it fires when the
+  user is actively typing a /glla command, and injected keystrokes would
+  race their input. User-present cases keep the manual warning.
+- External notify on stale now says "/reload, then /glla resume" (the
+  old "restart pi" text predated v0.29.12).
+
+643 tests.
+
 ## [0.29.21] — 2026-07-31
 
 ### Fixed — post-compaction recovery no longer waits on the heartbeat's phase
