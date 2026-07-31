@@ -10,6 +10,7 @@ import * as fs from "node:fs";
 import {
   buildStatusText,
   buildWidgetLines,
+  meter,
   fmtElapsed,
   fmtTokens,
   truncate,
@@ -410,4 +411,43 @@ test("v0.28.30: the widget card status line ALWAYS names the type (goal · / lis
   assert.match(listLines[0]!, /· list item · active · /); // v0.33.0: named in the head segments
   const SRC = fs.readFileSync("extensions/goal-loop-display.ts", "utf-8");
   assert.match(SRC, /if \(isList\) headSegs\.push\("list item"\);/);
+});
+
+test("v0.33.0: slim card — meter rounding guard, folded status segments, last-action line", () => {
+  // Meter guard (command-code's rule): never empty unless 0, never full unless 1.
+  assert.equal(meter(0), "▱▱▱▱▱");
+  assert.equal(meter(1), "▰▰▰▰▰");
+  assert.equal(meter(0.01), "▰▱▱▱▱");
+  assert.equal(meter(0.99), "▰▰▰▰▱");
+  assert.equal(meter(0.5), "▰▰▰▱▱"); // round(2.5)=3
+  // Slim head: status + tasks meter fold into the head line as middot segments.
+  const g = goalOf({ taskList: { tasks: [
+    { id: "t1", title: "done one", status: "complete" },
+    { id: "t2", title: "fix the thing", status: "pending" },
+    { id: "t3", title: "another", status: "pending" },
+  ] } });
+  const lines = buildWidgetLines({ goal: g, list: [] }, null, NOW, undefined, 120, {
+    recent: [{ name: "edit", arg: "goal.ts", ms: 12_000, ok: true }],
+  })!;
+  assert.match(lines[0]!, / · active · /);
+  assert.match(lines[0]!, /1\/3 ▰▱▱▱▱/);
+  // Last-action line: Claude's done-row format + the next pending task.
+  assert.match(lines[1]!, /^├─ ✓ edit goal\.ts \(12s\) · next: fix the thing/);
+  assert.match(lines[lines.length - 1]!, /^└─ /);
+  // Failed action renders ✗; no ms → no time suffix.
+  const failed = buildWidgetLines({ goal: g, list: [] }, null, NOW, undefined, 120, {
+    recent: [{ name: "bash", arg: "bun test", ms: 0, ok: false }],
+  })!;
+  assert.match(failed[1]!, /^├─ ✗ bash bun test(?! \()/);
+  // Slim loop card: ∞ icon + folded iter/meter segments + metricless footer.
+  const loopLines = buildWidgetLines({ goal: null, list: [], loop: {
+    active: true, target: "endless-td audit", iteration: 12, maxIterations: 100,
+    stallCount: 0, plateauWindow: 5, startedAt: "2026-07-21T11:57:00Z", history: [],
+  } as any }, null, NOW, undefined, 120, { recent: [{ name: "read", arg: "tiles.ts", ms: 8_000, ok: true }] })!;
+  assert.match(loopLines[0]!, /^∞ endless-td audit · iter 12\/100 ▰▱▱▱▱ · /);
+  assert.match(loopLines[1]!, /^├─ ✓ read tiles\.ts \(8s\)/);
+  assert.match(loopLines[2]!, /^└─ metricless \(no plateau\) · \/loop stop · \/loop polish/);
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.match(SRC, /noteToolCall\(event\); \/\/ v0\.33\.0/);
+  assert.match(SRC, /noteToolResult\(event\); \/\/ v0\.33\.0/);
 });
