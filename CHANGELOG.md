@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.31.1] — 2026-07-31
+
+### Added — audit-initiative stacking guards (junk-runner field confusion)
+
+Field report (2026-07-31, junk-runner): "not sure the goal audit is working
+as hoped." The audit WORK was the loop's best field result ever (135 real
+bugs closed in 126 iterations — wrong-slot cargo sales, legacy-save crashes,
+RNG determinism breaks); the SESSION SURFACE was broken: a `/goal audit`
+one-shot launched at 03:57 got held on a reload and sat in the widget for
+8h21m ("paused — held for explicit resume") while the older `/loop audit`
+did all the visible work. Two stacked audit initiatives, and the agent
+conflated them — it proposed calling complete_goal for the loop's work.
+Non-destructive guards (warn + ledger `audit_stack_warn`, never block):
+
+- `/loop audit` with a paused/active one-shot audit goal present → "the
+  audit loop SUPERSEDES it — /goal cancel clears it; one audit initiative
+  per session."
+- `/goal audit` while an audit loop is active → "a one-shot duplicates the
+  loop's work — /loop status; /loop stop first if you want the one-shot."
+- `/list audit` while an audit loop is active → "would double-hunt the same
+  ground."
+- The restore-hold surface itself now names the supersession: a held
+  one-shot audit whose loop is live (active or held) pauses with
+  "SUPERSEDED by the audit loop in this session — /goal cancel clears it
+  (the loop already owns the audit)" instead of the bare "held for explicit
+  resume" that read as stalled for 8 hours.
+- Detection via exported markers (GOAL_AUDIT_ONESHOT_MARKER /
+  LOOP_AUDIT_MARKER) with unit pins that the built targets still contain
+  them — the guards can't silently rot against a target-text edit.
+
+658 tests (the /loop audit pin slice widened past the new guard; the
+pauseKind pin window widened past the supersession branch).
+
 ## [0.31.0] — 2026-07-31
 
 ### Added — /list audit [focus]: the collect-then-drain project audit
