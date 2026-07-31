@@ -57,3 +57,5 @@ ${STRATEGY_NOTE}
   when the metric plateaus. Keep making real improvements.
 - If the measure command itself is broken (errors, no number), fix whatever
   your last change broke — that counts as a stall.
+
+- **Never run the suite from inside the suite.** A test must not spawn the project's whole test runner (`bun test`, `npm test`, `pytest`…) from a file the runner itself collects — unbounded recursion is a fork bomb (field-observed 2026-07-31: 521 processes, load 28, a full system crash). Count test files or parse manifests; never re-invoke the runner on its own suite.

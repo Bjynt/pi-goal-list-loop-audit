@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.31.9] — 2026-07-31
+
+### Added — the fork-bomb lesson is now prompt-law
+
+Field incident (2026-07-31): an audit-loop agent wrote a test that ran
+`bun test src/lib` from inside src/lib — unbounded recursion, 521
+processes, load 28, 24G RAM, a full system crash — and **the isolated
+auditor approved it**. Two prompt-law lines, no machinery:
+
+- **Auditor rule 9**: suite-in-suite runner spawns are a reject-class
+  pattern; disapprove unless provably depth-capped (e.g. an env
+  sentinel). Names the timeout fallacy (kills processes, not depth).
+- **Executor hard rule** (goal continuation + both loop prompts):
+  "Never run the suite from inside the suite" — count files or parse
+  manifests instead.
+
+The agent writing a bad test is the agent's business; the gate
+approving it was ours. OS-level blast-radius caps (`ulimit -u`) stay a
+rig-level concern, not the extension's.
+
+663 tests.
+
 ## [0.31.8] — 2026-07-31
 
 ### Fixed — the auditor thinking options now come from the PICKED MODEL

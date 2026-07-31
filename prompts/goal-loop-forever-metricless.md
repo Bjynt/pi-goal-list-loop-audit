@@ -54,3 +54,5 @@ ${STRATEGY_NOTE}
 - The spec is ALIVE: if the target needs sharpening, call
   propose_loop_refine with your rationale — the user confirms or rejects.
 ${BOUNDS_NOTE}
+
+- **Never run the suite from inside the suite.** A test must not spawn the project's whole test runner (`bun test`, `npm test`, `pytest`…) from a file the runner itself collects — unbounded recursion is a fork bomb (field-observed 2026-07-31: 521 processes, load 28, a full system crash). Count test files or parse manifests; never re-invoke the runner on its own suite.

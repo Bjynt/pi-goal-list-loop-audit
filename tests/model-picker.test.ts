@@ -220,3 +220,14 @@ test("v0.31.8: thinking options come from the PICKED MODEL — xhigh/max only wh
   const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
   assert.match(SETTINGS, /auditorThinkingLevel\?: "off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max";/);
 });
+
+test("v0.31.9: fork-bomb lesson is prompt-law — auditor reject-class + executor hard rule", () => {
+  const AUD = fs.readFileSync("extensions/goal-loop-auditor.ts", "utf-8");
+  assert.match(AUD, /Reject-class pattern \(v0\.31\.9, field-observed fork bomb\)/);
+  assert.match(AUD, /a `timeout` wrapper kills processes, not recursion depth/);
+  assert.match(AUD, /provably depth-capped \(e\.g\. an env sentinel/);
+  for (const f of ["prompts/goal-loop-continuation.md", "prompts/goal-loop-forever.md", "prompts/goal-loop-forever-metricless.md"]) {
+    const t = fs.readFileSync(f, "utf-8");
+    assert.match(t, /Never run the suite from inside the suite/, f);
+  }
+});
