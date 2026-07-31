@@ -91,7 +91,6 @@ test("v0.29.13 — automatic recovery: tmux keystroke self-heal (opt-out via aut
   assert.ok(SRC.includes("process.env.TMUX_PANE"));
   assert.ok(SRC.includes("/^%\\d+$/"), "pane shape validated before shell use");
   assert.match(SRC, /appendLedger\(ctx\.cwd, "auto_reload_injected"/);
-  assert.ok(SRC.includes("tmux send-keys -t ${pane} Escape"));
   assert.ok(SRC.includes("-l '/reload'"));
   assert.ok(SETTINGS.includes("autoReloadOnStale?: boolean"));
 });
@@ -111,11 +110,26 @@ test("v0.29.22 — self-heal transport-generalized to WezTerm + fires from the e
   assert.ok(SRC.includes("'/reload\\r'"), "reload command + carriage return");
   assert.ok(SRC.includes('appendLedger(ctx.cwd, "auto_reload_injected", { where, transport, pane })'), "ledger names the transport");
   assert.ok(SRC.includes('"auto_reload_skipped"'), "no-multiplexer path ledgered, not silent");
-  const entryIdx = SRC.indexOf("function warnIfStaleAtEntry");
-  const healIdx = SRC.indexOf('attemptAutoReload(ctx, `entry probe (${what})`);');
-  assert.ok(entryIdx > 0 && healIdx > entryIdx, "entry probe self-heals too");
   assert.ok(SRC.includes("glla: extension api stale — run /reload, then /glla resume."), "external notify says /reload, not restart pi");
   assert.ok(!SRC.includes("extension api stale — restart pi"), "stale 'restart pi' external messaging gone");
+});
+
+test("v0.29.22 — self-heal is non-destructive: no Escape keystroke, no entry-probe injection", () => {
+  // User pushback 2026-07-31: "we just introduced a real bug — the
+  // operation aborts/kills the session". Two consent-line hazards removed:
+  // (1) a leading Escape could ABORT a fresh turn — a late zombie probe
+  // can fire after a new instance already resumed and started working;
+  // (2) injecting /reload from the ENTRY probe races the user's own
+  // keystrokes (they are typing a /glla command by definition there).
+  assert.ok(!SRC.includes("send-keys -t ${pane} Escape"), "no tmux Escape");
+  assert.ok(!SRC.includes("'\\x1b'"), "no wezterm Escape byte");
+  const entryIdx = SRC.indexOf("function warnIfStaleAtEntry");
+  const entryEnd = SRC.indexOf("}", SRC.indexOf("return true;", entryIdx));
+  const entryBlock = SRC.slice(entryIdx, entryEnd);
+  assert.ok(!entryBlock.includes("attemptAutoReload"), "entry probe does NOT self-heal (user is present)");
+  // Autonomous paths still self-heal.
+  const gstIdx = SRC.indexOf("function goStaleTerminal");
+  assert.ok(SRC.indexOf("attemptAutoReload(ctx, where);") > gstIdx, "goStaleTerminal self-heals");
 });
 
 test("send paths short-circuit once stale (no retry-into-the-void)", () => {
