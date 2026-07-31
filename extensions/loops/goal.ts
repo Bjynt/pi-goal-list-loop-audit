@@ -4225,7 +4225,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
  * and the session model is always the last; we can have a fallback auditor
  * too" + "if the session model is the same as the auditor we auto fallback").
  * Two explicit pins and a cascade — no preference tables, no strategy
- * resolution (the v0.31.2 "diverse" machinery cost more complexity than it
+ * resolution (the v0.31.2 diverse-strategy machinery cost more complexity than it
  * bought; it lasted one version). Every hop is LOUD (ledger + notify): the
  * v0.9.12 no-SILENT-substitution law.
  */

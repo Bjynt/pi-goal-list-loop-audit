@@ -126,8 +126,7 @@ test("model-picker: render stays within width and shows the filter hint", () => 
 test("v0.29.17 wiring: model-valued settings use the fuzzy picker; unavailable auditor models fall back LOUDLY to the session model", () => {
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   // The picker hosts via ctx.ui.custom over buildModelPickItems:
-  // v0.31.2: the picker accepts strategy top-items (the auditor's "diverse").
-  assert.match(SRC, /buildModelPickItems\(models, sessionLabel, extraTop\)/);
+  assert.match(SRC, /buildModelPickItems\(models, sessionLabel\)/);
   assert.match(SRC, /new ModelPickerComponent\(\{ title, items \}/);
   // Configured-auth filter — a pick from the list can never be a dead provider:
   assert.match(SRC, /hasConfiguredAuth\(m\)/);
@@ -155,4 +154,29 @@ test("v0.31.2/0.31.3: auditor thinking defaults to sticky high — never the ses
   assert.match(MENU, /high \(fixed — never the session coding dial\)/);
   const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
   assert.match(SETTINGS, /must NOT ride the session's coding-speed/);
+});
+
+test("v0.31.3: the auditor chain — pinned primary → pinned fallback → session LAST; same-as-session auto-swap", () => {
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // The cascade: two pins walked in order, session model after the loop:
+  assert.match(SRC, /const pins = \[ref, fallbackRef\]/);
+  assert.match(SRC, /via: i === 0 \? "setting" : "fallback-pin"/);
+  assert.match(SRC, /All pinned auditor models are unavailable — falling back to the session model/);
+  // Same-as-session swap (the user's move): swap only when a next pin exists;
+  // last-pin == session stands with one loud nudge:
+  assert.match(SRC, /if \(isSession\(r\.model\) && i \+ 1 < pins\.length\) \{/);
+  assert.match(SRC, /auditor_model_same_as_session/);
+  assert.match(SRC, /pin a different \/glla → Auditor fallback model so the verifier can differ/);
+  // Both audit call sites pass the fallback pin:
+  assert.match(SRC, /resolveAuditorModel\(liveCtx, settings\.auditorModel, settings\.auditorModelFallback\)/);
+  assert.match(SRC, /resolveAuditorModel\(ctx, settings\.auditorModel, settings\.auditorModelFallback\)/);
+  // The settings key + menu row + editor case:
+  const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
+  assert.match(SETTINGS, /auditorModelFallback\?: string;/);
+  const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
+  assert.match(MENU, /id: "auditorModelFallback"/);
+  assert.match(MENU, /section: "auditor",[\s\S]{0,200}?Auditor fallback model/);
+  assert.match(SRC, /case "auditorModelFallback": \{/);
+  // The v0.31.2 "diverse" machinery is gone (complexity cost > benefit):
+  assert.ok(!SRC.includes("pickDiverseAuditorModel") && !SRC.includes('"diverse"'), "diverse strategy removed");
 });
