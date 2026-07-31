@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.31.7] — 2026-07-31
+
+### Fixed — the auditor-thinking select was indistinguishable from pi's own
+
+User (2026-07-31): "pretty sure we didn't open the model's thinking
+setting but a general thinking setting" — confirmed: `auditorModel` saved
+but `auditorThinkingLevel` never was; the thinking dialog the user
+remembered was pi's GENERAL session-model thinking select, and ours got
+Esc'd through as a look-alike. The chained select now:
+
+- titles itself **"Auditor thinking — ISOLATED auditor session ONLY (your
+  session model's thinking is untouched)"** — no mistaking which dial it is
+- marks the current value `(current)` in the options (default = high)
+
+`max` thinking is NOT offered yet: the extension compiles against its own
+pi-ai dev-types which predate `"max"` (pi ≥0.83 has it); offering it would
+break compile against older pi. Follows when the dev-types catch up.
+
+661 tests.
+
 ## [0.31.6] — 2026-07-31
 
 ### Added — Same-model swap toggle (default ON)

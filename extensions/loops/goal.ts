@@ -4452,7 +4452,6 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
           `low${curThinking === "low" ? " (current)" : ""}`,
           `minimal${curThinking === "minimal" ? " (current)" : ""}`,
           `xhigh${curThinking === "xhigh" ? " (current)" : ""}`,
-          `max${curThinking === "max" ? " (current)" : ""}`,
           `off${curThinking === "off" ? " (current)" : ""}`,
         ],
       );
@@ -5371,7 +5370,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
         }
       }
     } else if (key === "thinking" || key === "auditorthinkinglevel") {
-      if (["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(value)) {
+      if (["off", "minimal", "low", "medium", "high", "xhigh"].includes(value)) {
         patch.auditorThinkingLevel = value as Settings["auditorThinkingLevel"];
         changed = true;
       } else {
