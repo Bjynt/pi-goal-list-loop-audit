@@ -267,7 +267,7 @@ function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null
     // v0.28.17: no visible goal — the held loop gets its own card.
     return held ? heldLoopLines(held, now, theme, width) : undefined;
   }
-  const lines = goalLines(g, state, audit, now, theme, width);
+  const lines = goalLines(g, state, audit, now, theme, width, extras);
   // v0.28.17: a held loop rides the goal card as a trailing line.
   if (held) {
     lines.push(`${paint(theme, "warning", "⏸")} ${truncate(held.target, budgetFor(width, 3, 64))}`);
@@ -287,7 +287,7 @@ function heldLoopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: 
 
 // Branch lines sit flush-left (pi-tasks convention): pi's widget renderer
 // adds its own one-space gutter, so any indent here doubles up.
-function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | undefined, now: number, theme?: DisplayTheme, width?: number): string[] {
+function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | undefined, now: number, theme?: DisplayTheme, width?: number, extras?: WidgetExtras): string[] {
   // Head glyph is ● (not ◆): U+25C6 renders as a color-emoji diamond in some
   // terminal fonts and ignores ANSI color; ● takes the paint everywhere.
   const icon =
@@ -305,6 +305,12 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // v0.33.0: slim card — status folds INTO the head line as middot segments
   // (filter(Boolean).join, the universal CLI idiom). Line 2 is the live
   // "last action · next task" line; the footer stays the hint line.
+  // v0.28.30: the type stays visible — v0.33.0 names it via the "list item"
+  // header segment (list policy) and the distinct card icons (● goal,
+  // ∞/↓/↑ loop, ⟡ auditing, ⏸ paused) + the type-named footer verbs.
+  // Token segment only when a budget is set (v0.22.0): the guard is opt-in,
+  // and "0/0 tok" carried no information when off.
+  const tokenLimit = g.usage?.tokensLimit ?? 0;
   const headSegs: string[] = [];
   if (isList) headSegs.push("list item");
   headSegs.push(statusWord);
@@ -319,7 +325,6 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // ∞/↓/↑ loop, ⟡ auditing, ⏸ paused) + the type-named footer verbs.
   // Token segment only when a budget is set (v0.22.0): the guard is opt-in,
   // and "0/0 tok" carried no information when off.
-  const tokenLimit = g.usage?.tokensLimit ?? 0;
   const head = `${headBase} ${paint(theme, "dim", "·")} ${headSegs.join(` ${paint(theme, "dim", "·")} `)}`;
   const lines = [head];
   if (g.status === "auditing") {

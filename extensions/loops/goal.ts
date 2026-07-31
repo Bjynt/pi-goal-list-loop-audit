@@ -630,6 +630,34 @@ function isSupervising(): boolean {
 let latestAuditProgress: AuditDisplayProgress | null = null;
 let uiTicker: NodeJS.Timeout | null = null;
 
+// v0.33.0: slim widget "last action" feed — a tiny ring of finished tool
+// calls {name, arg, ms, ok} captured from the tool_call/tool_result stream.
+// Display-only, never persisted; cleared implicitly as new actions land.
+const recentActions: import("../goal-loop-display.js").RecentActionDisplay[] = [];
+const inFlightToolCalls = new Map<string, { name: string; arg?: string; at: number }>();
+function summarizeToolArg(name: string, input: any): string | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const v = input.file_path ?? input.path ?? input.command ?? input.pattern ?? input.query ?? input.url ?? input.title;
+  if (typeof v !== "string" || v.length === 0) return undefined;
+  const base = name === "bash" ? v : v.split("/").pop() || v;
+  return base.length <= 24 ? base : base.slice(0, 23) + "…";
+}
+function noteToolCall(event: any): void {
+  const name = String(event?.toolName ?? "?");
+  const id = String(event?.toolCallId ?? event?.id ?? `anon-${Date.now()}`);
+  if (inFlightToolCalls.size > 20) inFlightToolCalls.delete(inFlightToolCalls.keys().next().value!);
+  inFlightToolCalls.set(id, { name, arg: summarizeToolArg(name, event?.input ?? event?.args), at: Date.now() });
+}
+function noteToolResult(event: any): void {
+  const id = String(event?.toolCallId ?? event?.id ?? "");
+  const f = id ? inFlightToolCalls.get(id) : undefined;
+  if (id) inFlightToolCalls.delete(id);
+  const ok = !Boolean(event?.isError ?? event?.error);
+  const name = f?.name ?? String(event?.toolName ?? "?");
+  recentActions.push({ name, arg: f?.arg ?? summarizeToolArg(name, event?.input ?? event?.args), ms: f ? Date.now() - f.at : 0, ok });
+  if (recentActions.length > 3) recentActions.shift();
+}
+
 function refreshUI(ctx: ExtensionContext): void {
   if (!ctx.hasUI) return;
   try {
@@ -638,7 +666,7 @@ function refreshUI(ctx: ExtensionContext): void {
     // uses the room instead of cutting at fixed ~60-char floors.
     const width = process.stdout.columns || 80;
     ctx.ui.setStatus("pi-glla", buildStatusText(state, latestAuditProgress, Date.now(), theme, { stalls: consecutiveStalls }));
-    ctx.ui.setWidget("pi-glla", buildWidgetLines(state, latestAuditProgress, Date.now(), theme, width, { stalls: consecutiveStalls }));
+    ctx.ui.setWidget("pi-glla", buildWidgetLines(state, latestAuditProgress, Date.now(), theme, width, { stalls: consecutiveStalls, recent: recentActions }));
   } catch {
     // stale ctx — next event refreshes
   }
@@ -5817,6 +5845,7 @@ export default function (pi: ExtensionAPI): void {
   // v0.15.1: ask_user_question answers arrive as tool results, not chat
   // messages — count answered (non-cancelled) questionnaires as replies too.
   pi.on("tool_result", async (event: any) => {
+    noteToolResult(event); // v0.33.0: slim widget "last action" feed
     // v0.24.0: roll loop tool-result fingerprints (same-tool-same-result
     // detection) — recorded for ANY tool result while a loop is active.
     if (isLoopActive()) {
@@ -6390,10 +6419,11 @@ export default function (pi: ExtensionAPI): void {
     scheduleContinuation(ctx, false);
   });
 
-  pi.on("tool_call", () => {
+  pi.on("tool_call", (event: any) => {
     toolCallsThisTurn++;
     noteActivity(true);
     lastStreamActivityAt = Date.now();
+    noteToolCall(event); // v0.33.0
     // v0.24.0: count loop-iteration tool calls (narration-only detection).
     if (isLoopActive()) {
       state.loop!.toolsThisTurn = (state.loop!.toolsThisTurn ?? 0) + 1;
