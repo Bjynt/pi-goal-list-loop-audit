@@ -2720,6 +2720,23 @@ function sendLoopTurn(): void {
         ? " **The metric has been flat at best — if the spec no longer captures 'better' (saturated metric, drifted target), call propose_loop_refine.**"
         : "")
     : "";
+  // v0.34.0: divergence bail (pi-auto-review's one good idea) — N consecutive
+  // iterations moving the metric the WRONG way means the changes themselves
+  // are hurting (audit loops: fixes breaking things / findings reopening).
+  // Note-only: the agent reassesses; nothing auto-stops.
+  let trailingRegressions = 0;
+  if (loop.direction) {
+    for (let i = hist.length - 1; i > 0; i--) {
+      const a = hist[i - 1]!.value, b = hist[i]!.value;
+      if (a === null || b === null) break; // metricless ticks carry no value
+      const regressed = loop.direction === "min" ? b > a : b < a;
+      if (regressed) trailingRegressions++; else break;
+    }
+  }
+  const divergenceNote = trailingRegressions >= 3
+    ? `**${trailingRegressions} consecutive regressions — every recent change moved the metric the WRONG way. Stop making small edits and reassess the whole approach: are the fixes breaking things, or is the measure being gamed? If the target itself is drifting, call propose_loop_refine or recommend /loop stop.**`
+    : "";
+  const strategyNote2 = strategyNote + (strategyNote && divergenceNote ? " " : "") + divergenceNote;
   // v0.15.0: arbitrary bounds (never "completion") — surface what's armed.
   // v0.23.0: for metricless loops the bounds are the ONLY stop (no
   // plateau), so the note names that — and an unbounded metricless loop
@@ -2761,7 +2778,7 @@ function sendLoopTurn(): void {
     if (postCompactResyncPending) { try { loopResync = buildPostCompactResync(); } catch { loopResync = ""; } } // v0.33.1
     extensionApi.sendMessage({
       customType: GOAL_EVENT_ENTRY,
-      content: loopResync + loopPrompt(loop, regressionNote, strategyNote, boundsNote, interventionNote, variantNote, hypothesisNote, refineHintNote),
+      content: loopResync + loopPrompt(loop, regressionNote, strategyNote2, boundsNote, interventionNote, variantNote, hypothesisNote, refineHintNote),
       display: false,
     }, { triggerTurn: true, deliverAs: "followUp" });
     if (loopResync) postCompactResyncPending = false; // consumed only by a landed send
