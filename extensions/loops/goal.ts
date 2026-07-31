@@ -238,26 +238,49 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
     updateGoal({ interruptedAt: nowIso(), interruptedReason: `extension api stale (${where})` }, ctx);
   }
   ctx.ui.notify(`glla: ${guidance}`, "warning");
-  notifyExternal(ctx, `glla: extension api stale — restart pi. (${where})`);
-  attemptTmuxAutoReload(ctx, where);
+  notifyExternal(ctx, `glla: extension api stale — run /reload, then /glla resume. (${where})`);
+  attemptAutoReload(ctx, where);
 }
 
 /** v0.29.13: automatic recovery — the zombie handle can't call ctx.reload()
  * (pi walls EVERY runtime method behind assertActive), but fs/child_process
- * are extension-side and still work. When pi runs inside tmux (this rig's
- * shape), inject /reload as keystrokes into our own pane: pi rebuilds the
- * extension runtime in place, the fresh instance loads .pi-glla state and
- * holds (autoresume=on resumes for you). Opt out: autoReloadOnStale=false.
- * Best-effort: the manual warning already fired, so failures cost nothing. */
-function attemptTmuxAutoReload(ctx: ExtensionContext, where: string): void {
+ * are extension-side and still work. Inject /reload as keystrokes into our
+ * own terminal pane: pi rebuilds the extension runtime in place, the fresh
+ * instance loads .pi-glla state and holds (autoresume=on resumes for you).
+ * v0.29.22: transport-generalized — tmux OR WezTerm. Field: this rig runs
+ * WezTerm (TERM_PROGRAM=WezTerm, WEZTERM_PANE set, no TMUX), so the
+ * tmux-only gate failed silently 100% of the time — auto_reload_injected
+ * never fired fleet-wide, and every stale handle fell back to the manual
+ * warning (user: "stopping and told to reload is common"). v0.29.22 also
+ * fires from the entry-probe path (the most common stale discovery).
+ * Opt out: autoReloadOnStale=false. Best-effort: the manual warning
+ * already fired, so failures cost nothing. */
+function attemptAutoReload(ctx: ExtensionContext, where: string): void {
   try {
     if (loadSettings(ctx.cwd).autoReloadOnStale === false) return;
-    const pane = process.env.TMUX_PANE;
-    if (!process.env.TMUX || !pane || !/^%\d+$/.test(pane)) return;
-    appendLedger(ctx.cwd, "auto_reload_injected", { where, pane });
-    ctx.ui.notify("glla: injecting /reload into this pane via tmux — extensions rebuild in place and the fresh instance holds state. /glla resume after (automatic with autoresume=on).", "info");
-    // Escape dismisses any overlay; the dead session sits at an empty prompt.
-    const cmd = `tmux send-keys -t ${pane} Escape && sleep 0.3 && tmux send-keys -t ${pane} -l '/reload' && tmux send-keys -t ${pane} Enter`;
+    const tmuxPane = process.env.TMUX_PANE;
+    const wezPane = process.env.WEZTERM_PANE;
+    let transport: "tmux" | "wezterm";
+    let cmd: string;
+    let pane: string;
+    if (process.env.TMUX && tmuxPane && /^%\d+$/.test(tmuxPane)) {
+      transport = "tmux";
+      pane = tmuxPane;
+      // Escape dismisses any overlay; the dead session sits at an empty prompt.
+      cmd = `tmux send-keys -t ${pane} Escape && sleep 0.3 && tmux send-keys -t ${pane} -l '/reload' && tmux send-keys -t ${pane} Enter`;
+    } else if (wezPane && /^\d+$/.test(wezPane)) {
+      transport = "wezterm";
+      pane = wezPane;
+      // wezterm cli send-text --no-paste delivers bytes as keystrokes:
+      // ESC dismisses any overlay, then /reload + CR. Literal bytes inside
+      // single quotes — no bash-isms (exec uses /bin/sh).
+      cmd = `wezterm cli send-text --pane-id ${pane} --no-paste '\x1b' && sleep 0.3 && wezterm cli send-text --pane-id ${pane} --no-paste '/reload\r'`;
+    } else {
+      appendLedger(ctx.cwd, "auto_reload_skipped", { where, reason: "no supported multiplexer (tmux/WezTerm) in env" });
+      return;
+    }
+    appendLedger(ctx.cwd, "auto_reload_injected", { where, transport, pane });
+    ctx.ui.notify("glla: injecting /reload into this pane — extensions rebuild in place and the fresh instance holds state. /glla resume after (automatic with autoresume=on).", "info");
     exec(cmd, () => { /* best-effort */ });
   } catch {
     /* never let recovery take the warning path down */
@@ -303,6 +326,10 @@ function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
     `glla: this session's extension handle is stale (pi session replacement) — ${what} can't send continuations in this process. State is safe in .pi-glla/ — run /reload (extensions rebuild in place), then /glla resume. Restart pi only if /reload fails.`,
     "warning",
   );
+  // v0.29.22: the entry probe is the most COMMON stale discovery (user
+  // types /glla resume or /list) — self-heal from here too, not just from
+  // the heartbeat/send paths.
+  attemptAutoReload(ctx, `entry probe (${what})`);
   return true;
 }
 

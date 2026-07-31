@@ -87,7 +87,6 @@ test("v0.29.13 — automatic recovery: tmux keystroke self-heal (opt-out via aut
   // pane; the fresh instance then loads state and holds (autoresume=on
   // resumes for you). Outside tmux the manual warning stands alone.
   const SETTINGS = fs.readFileSync(new URL("../extensions/goal-settings.ts", import.meta.url), "utf8");
-  assert.match(SRC, /function attemptTmuxAutoReload\(ctx: ExtensionContext, where: string\): void/);
   assert.match(SRC, /loadSettings\(ctx\.cwd\)\.autoReloadOnStale === false/);
   assert.ok(SRC.includes("process.env.TMUX_PANE"));
   assert.ok(SRC.includes("/^%\\d+$/"), "pane shape validated before shell use");
@@ -95,6 +94,28 @@ test("v0.29.13 — automatic recovery: tmux keystroke self-heal (opt-out via aut
   assert.ok(SRC.includes("tmux send-keys -t ${pane} Escape"));
   assert.ok(SRC.includes("-l '/reload'"));
   assert.ok(SETTINGS.includes("autoReloadOnStale?: boolean"));
+});
+
+test("v0.29.22 — self-heal transport-generalized to WezTerm + fires from the entry probe", () => {
+  // Field (polis 2026-07-31, user: "stopping and told to reload is
+  // common"): this rig runs WezTerm (TERM_PROGRAM=WezTerm, WEZTERM_PANE
+  // set, NO TMUX) — the tmux-only gate failed silently 100% of the time
+  // (auto_reload_injected had never fired fleet-wide). And the entry
+  // probe — the most common stale discovery (/glla resume, /list) —
+  // never attempted the self-heal at all.
+  assert.match(SRC, /function attemptAutoReload\(ctx: ExtensionContext, where: string\): void/);
+  assert.ok(!SRC.includes("attemptTmuxAutoReload"), "tmux-only helper renamed/removed");
+  assert.ok(SRC.includes("process.env.WEZTERM_PANE"), "wezterm pane env read");
+  assert.ok(SRC.includes("/^\\d+$/"), "wezterm pane id validated before shell use");
+  assert.ok(SRC.includes("wezterm cli send-text --pane-id ${pane} --no-paste"), "wezterm keystroke injection");
+  assert.ok(SRC.includes("'/reload\\r'"), "reload command + carriage return");
+  assert.ok(SRC.includes('appendLedger(ctx.cwd, "auto_reload_injected", { where, transport, pane })'), "ledger names the transport");
+  assert.ok(SRC.includes('"auto_reload_skipped"'), "no-multiplexer path ledgered, not silent");
+  const entryIdx = SRC.indexOf("function warnIfStaleAtEntry");
+  const healIdx = SRC.indexOf('attemptAutoReload(ctx, `entry probe (${what})`);');
+  assert.ok(entryIdx > 0 && healIdx > entryIdx, "entry probe self-heals too");
+  assert.ok(SRC.includes("glla: extension api stale — run /reload, then /glla resume."), "external notify says /reload, not restart pi");
+  assert.ok(!SRC.includes("extension api stale — restart pi"), "stale 'restart pi' external messaging gone");
 });
 
 test("send paths short-circuit once stale (no retry-into-the-void)", () => {
