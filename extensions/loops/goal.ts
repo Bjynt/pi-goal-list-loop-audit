@@ -2685,11 +2685,15 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       return;
     }
     const stored = state.loop;
+    // v0.29.20: plain plateau stops are resumable too — pre-gate plateaus
+    // could be false (hegemon/polis stopped 2026-07-31 with open findings
+    // on 429-dead turns), and an explicit resume is the user's call; the
+    // v0.29.19 gate + re-armed counters make the resumed run honest.
     const RESUMABLE_STOP = (r?: string): boolean =>
       r === HELD_ON_RESTORE ||
       !!r?.startsWith("provider errors —") ||
       !!r?.startsWith("stopped by user —") ||
-      !!r?.startsWith("plateau — no closure in") ||
+      !!r?.startsWith("plateau —") ||
       !!r?.startsWith("stuck —");
     if (stored && !stored.active && RESUMABLE_STOP(stored.stopReason)) {
       // v0.28.14: one-active-thing — a held loop must not resume over an

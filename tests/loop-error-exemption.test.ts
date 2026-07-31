@@ -193,6 +193,22 @@ test("v0.29.19: audit plateau with OPEN findings stands down (reprieve), then st
   assert.equal(r.stallCount, 0, "explicit resume re-arms the stall window");
 });
 
+test("v0.29.20: a plain plateau stop is resumable (pre-gate false plateaus recover)", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  pi.execHandler = () => ({ code: 0, stdout: "74\n", stderr: "" });
+  const ctx = await sessionWithLoop(cwd, { measureCmd: "echo 74", direction: "max", bestValue: 74, lastValue: 74, stallCount: 4 });
+  await fireWork(ctx); // stall 5 → plain plateau stop (non-audit loop)
+  const l = loop(cwd);
+  assert.equal(l.active, false);
+  assert.match(l.stopReason ?? "", /^plateau — no improvement/);
+  await pi.command("loop", "resume", ctx);
+  await tick();
+  const r = loop(cwd);
+  assert.equal(r.active, true, "plateau-stopped loop resumed");
+  assert.equal(r.stallCount, 0, "stall window re-armed");
+});
+
 test("v0.29.19: audit plateau with ZERO open findings stops normally — the well is dry", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.29.20] — 2026-07-31
+
+### Fixed — plain plateau stops are resumable
+
+The v0.29.19 resumable classes covered the new stop reasons but not the
+plain `plateau — no improvement …` stop — which is exactly what the two
+pre-gate false plateaus carry (hegemon best 74 / 13 open, polis best 46 /
+3+ open, 2026-07-31). `/loop resume` now accepts any plateau stop: with
+the stall window re-armed, reprieves fresh, and the audit plateau gate
+live, a resumed false plateau runs honestly and a resumed dry well just
+re-plateaus.
+
+640 tests.
+
 ## [0.29.19] — 2026-07-31
 
 ### Fixed — dead turns no longer kill loops (provider-error exemption everywhere) + audit plateau gate
