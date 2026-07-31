@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.33.0] — 2026-07-31
+
+### Changed — slim widget card (research-informed redesign)
+
+The above-editor widget is rebuilt on patterns mined from seven CLIs on
+a real rig (Codex, Claude Code, Kimi, qwen-code, command-code,
+context-mode, cline — full catalog in the commit). Design laws adopted:
+
+- **Status folds into the head line** as middot segments
+  (`filter(Boolean).join(" · ")`, the universal idiom):
+  `● objective · active · 3m 00s · 1/3 ▰▰▱▱▱ · 12.4k/1000k ▰▱▱▱▱`.
+- **5-cell meters with a rounding guard** (command-code's rule: never
+  shows empty/full unless truly 0/100%) for task completion and token
+  budgets — parse at a glance, correct at any task count.
+- **"last action · next task" live line** — Claude's done-row format
+  (`✓ edit goal.ts (12s)`) fed by a new tool_call/tool_result ring
+  buffer, joined with the next pending task. Failures render `✗`.
+- **Slim loop card**: kind-named icon (∞ metricless / ↓↑ metric), iter +
+  bounds meter + elapsed + best/stall folded into one header, last-action
+  line, hint footer (`metricless (no plateau) · /loop stop · /loop polish`).
+- Type visibility law (v0.28.30) kept: list items get a `list item`
+  head segment; distinct icons per surface (● ∞ ↓↑ ⟡ ⏸); footers keep
+  the type-named verbs.
+- Paused/decision cards and the auditor-progress card keep their shape —
+  numbered decision options were already best-in-class.
+
+666 tests.
+
 ## [0.32.1] — 2026-07-31
 
 ### Added — smarter post-compaction recovery (pi-goal-x's lesson)

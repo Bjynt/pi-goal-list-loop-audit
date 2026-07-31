@@ -430,7 +430,7 @@ test("v0.33.0: slim card — meter rounding guard, folded status segments, last-
     recent: [{ name: "edit", arg: "goal.ts", ms: 12_000, ok: true }],
   })!;
   assert.match(lines[0]!, / · active · /);
-  assert.match(lines[0]!, /1\/3 ▰▱▱▱▱/);
+  assert.match(lines[0]!, /1\/3 ▰▰▱▱▱/); // round(1.67)=2
   // Last-action line: Claude's done-row format + the next pending task.
   assert.match(lines[1]!, /^├─ ✓ edit goal\.ts \(12s\) · next: fix the thing/);
   assert.match(lines[lines.length - 1]!, /^└─ /);
