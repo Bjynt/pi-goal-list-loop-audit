@@ -170,6 +170,13 @@ export function buildSettingsRows(
       description: "provider/model override for the isolated auditor",
     },
     {
+      id: "auditorModelFallback",
+      label: "Auditor fallback model",
+      valueText: show("auditorModelFallback", "(none — same-model sessions keep the pinned auditor)"),
+      sourceText: src("auditorModelFallback"),
+      description: "auto-swap target when the session model IS the auditor model — the verifier should differ from the executor",
+    },
+    {
       id: "auditorThinkingLevel",
       section: "auditor",
       label: "Auditor thinking",

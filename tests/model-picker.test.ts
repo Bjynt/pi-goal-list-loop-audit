@@ -14,7 +14,7 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 
-import { buildModelPickItems, ModelPickerComponent, pickDiverseAuditorModel, DIVERSE_AUDITOR_PREFERENCE } from "../extensions/model-picker.ts";
+import { buildModelPickItems, ModelPickerComponent } from "../extensions/model-picker.ts";
 
 const THEME = {
   fg: (_c: string, t: string) => t,
@@ -147,40 +147,7 @@ test("v0.29.17 wiring: model-valued settings use the fuzzy picker; unavailable a
   assert.match(SRC, /no configured auth for \$\{provider\}/, "unkeyed provider counts as unavailable");
 });
 
-test("v0.31.2: pickDiverseAuditorModel — reciprocal cross-vendor selection", () => {
-  const models = [
-    { provider: "minimax", id: "MiniMax-M3" },
-    { provider: "openrouter", id: "ai21/jamba-large-1.7" },
-    { provider: "openrouter", id: "deepseek/deepseek-chat-v3-0324" },
-    { provider: "kimi", id: "k2" },
-  ];
-  // session on minimax → deepseek via openrouter first:
-  assert.equal(pickDiverseAuditorModel(models, "minimax")!.id, "deepseek/deepseek-chat-v3-0324");
-  // session on openrouter → MiniMax-M3 (openrouter excluded entirely):
-  assert.equal(pickDiverseAuditorModel(models, "openrouter")!.id, "MiniMax-M3");
-  // no deepseek → minimax next when session is on openrouter; session on
-  // BOTH preference heads → first non-session provider:
-  assert.equal(pickDiverseAuditorModel(models, "kimi")!.id, "deepseek/deepseek-chat-v3-0324");
-  // nothing outside the session provider → undefined (caller falls back LOUDLY):
-  assert.equal(pickDiverseAuditorModel([{ provider: "minimax", id: "MiniMax-M3" }], "minimax"), undefined);
-  assert.equal(pickDiverseAuditorModel([], "minimax"), undefined);
-  // preference table sanity: deepseek head, minimax second:
-  assert.deepEqual(
-    DIVERSE_AUDITOR_PREFERENCE.slice(0, 4).map((p) => `${p.provider}:${p.match ?? "*"}`),
-    ["openrouter:deepseek/deepseek-chat", "openrouter:deepseek", "minimax:MiniMax-M3", "minimax:*"],
-  );
-});
-
-test("v0.31.2: wiring — diverse branch in resolveAuditorModel + menu entry + loud fallback", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
-  assert.match(SRC, /if \(trimmed\.toLowerCase\(\) === "diverse"\) \{/);
-  assert.match(SRC, /pickDiverseAuditorModel\(available, sessionModel\?\.provider\)/);
-  assert.match(SRC, /via: "diverse"/);
-  assert.match(SRC, /configured: "diverse", reason: "no configured-auth model outside the session's provider"/);
-  assert.match(SRC, /ref: "diverse",[\s\S]{0,300}?cross-vendor auditor: a different provider than the session/);
-});
-
-test("v0.31.2: auditor thinking defaults to sticky high — never the session dial", () => {
+test("v0.31.2/0.31.3: auditor thinking defaults to sticky high — never the session dial", () => {
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   assert.equal(SRC.match(/thinkingLevel: settings\.auditorThinkingLevel \?\? "high",/g)!.length, 2, "both audit call sites floor at high");
   assert.ok(!SRC.includes("getSessionThinkingLevel"), "the session-dial follower is gone");

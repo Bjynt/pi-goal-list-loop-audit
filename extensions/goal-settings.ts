@@ -21,6 +21,10 @@ import type { SubagentModelStrategy } from "./goal-loop-subagents.js";
 export interface Settings {
   /** "provider/model-id" or bare "model-id". Unset → session model. */
   auditorModel?: string;
+  /** v0.31.3: auto-swap target when the session model IS auditorModel —
+   * the verifier should differ from the executor. Unset = same model stands
+   * (with a loud one-line nudge). */
+  auditorModelFallback?: string;
   auditorThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   /** Shell command run on goal complete / goal pause / loop stop; message passed as $1. */
   notifyCmd?: string;

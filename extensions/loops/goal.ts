@@ -154,7 +154,6 @@ import {
 } from "../settings-menu.js";
 import {
   buildModelPickItems,
-  pickDiverseAuditorModel,
   ModelPickerComponent,
   type ModelPickItem,
 } from "../model-picker.js";
@@ -1366,7 +1365,7 @@ async function retryStoredCompletionAudit(ctx: ExtensionContext, origin: "quota-
     ? "Manual /goal verify — running the isolated auditor now (no agent turn needed)."
     : "Auditor quota window elapsed — retrying the audit with your stored completion claim (no agent turn needed).", "info");
   const settings = loadSettings(liveCtx.cwd);
-  const { model: auditorModel, error: modelError, via } = resolveAuditorModel(liveCtx, settings.auditorModel);
+  const { model: auditorModel, error: modelError, via } = resolveAuditorModel(liveCtx, settings.auditorModel, settings.auditorModelFallback);
   if (modelError) liveCtx.ui.notify(`Auditor model issue: ${modelError}`, "warning");
   latestAuditProgress = { label: "quota-retry", lastEventAt: Date.now() };
   completionAuditInFlight = true;
@@ -3174,7 +3173,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       }
       updateGoal({ status: "auditing", pendingTasks: undefined }, ctx);
       const settings = loadSettings(ctx.cwd);
-      const { model: auditorModel, error: modelError, via } = resolveAuditorModel(ctx, settings.auditorModel);
+      const { model: auditorModel, error: modelError, via } = resolveAuditorModel(ctx, settings.auditorModel, settings.auditorModelFallback);
       if (modelError) {
         ctx.ui.notify(`Auditor model issue: ${modelError}`, "warning");
       }
@@ -4221,27 +4220,38 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
  * clear explanation (switch pi's model to a built-in provider, or set the
  * override) — we do NOT silently substitute a different model.
  */
-function resolveAuditorModel(ctx: ExtensionContext, ref?: string): { model: any; error?: string; via?: string } {
+/** v0.31.3: when the session model IS the pinned auditor model, auto-swap
+ * the auditor to settings.auditorModelFallback so the verifier differs from
+ * the executor (user move: "if the session model is the same as the auditor
+ * we auto fallback"). One pinned auditor + one pinned fallback — no
+ * preference tables (the v0.31.2 "diverse" machinery cost more complexity
+ * than it bought). The swap is LOUD — ledgered + notified like every model
+ * substitution (the v0.9.12 no-SILENT-substitution law).
+ */
+function sameSessionSwap(ctx: ExtensionContext, model: any, fallbackRef?: string): { model: any; via: string } {
+  const session = ctx.model as any;
+  if (!session || session.provider !== model.provider || session.id !== model.id) {
+    return { model, via: "setting" };
+  }
+  const fb = fallbackRef?.trim();
+  appendLedger(ctx.cwd, "auditor_model_same_as_session", { model: `${model.provider}/${model.id}`, fallback: fb ?? null });
+  if (!fb) {
+    ctx.ui.notify(`The session model IS the pinned auditor model (${model.provider}/${model.id}) — pin a different one via /glla → Auditor fallback model so the verifier differs from the executor.`, "warning");
+    return { model, via: "setting" };
+  }
+  const slash = fb.indexOf("/");
+  const fbModel = slash > 0 ? ctx.modelRegistry.find(fb.slice(0, slash), fb.slice(slash + 1)) : undefined;
+  if (fbModel && ctx.modelRegistry.hasConfiguredAuth(fbModel)) {
+    ctx.ui.notify(`Session model IS the pinned auditor (${model.provider}/${model.id}) — auditor auto-swapped to ${fb} so the verifier differs.`, "info");
+    return { model: fbModel, via: "same-session-fallback" };
+  }
+  ctx.ui.notify(`Auditor fallback "${fb}" is unavailable — the auditor stays on the session's own model this time. Fix via /glla → Auditor fallback model.`, "warning");
+  return { model, via: "setting" };
+}
+
+function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: string): { model: any; error?: string; via?: string } {
   if (ref && ref.trim()) {
     const trimmed = ref.trim();
-    // v0.31.2: "diverse" — the cross-vendor auditor (user design 2026-07-31:
-    // "there is benefit to have a different auditor"). Independent blind
-    // spots + a separate quota pool; the fresh auditor session shares no
-    // prompt cache anyway, so cross-vendor costs nothing extra.
-    if (trimmed.toLowerCase() === "diverse") {
-      const sessionModel = ctx.model as any;
-      const available = ctx.modelRegistry
-        .getAvailable()
-        .filter((m: any) => ctx.modelRegistry.hasConfiguredAuth(m));
-      const pick = pickDiverseAuditorModel(available, sessionModel?.provider);
-      if (pick) return { model: pick, via: "diverse" };
-      if (sessionModel) {
-        appendLedger(ctx.cwd, "auditor_model_fallback", { configured: "diverse", reason: "no configured-auth model outside the session's provider" });
-        ctx.ui.notify("Auditor model \"diverse\" found no model outside the session's provider — falling back to the session model (LOUD fallback; pin one via /glla → Auditor model).", "warning");
-        return { model: sessionModel, via: "session-fallback" };
-      }
-      return { model: undefined, error: "auditorModel \"diverse\": no configured-auth model at all" };
-    }
     // v0.29.17: an unavailable configured model (unknown id, or a provider
     // with no configured auth) falls back LOUDLY to the session model —
     // user request: "fall back to the session if unavailable". The v0.9.12
@@ -4264,10 +4274,10 @@ function resolveAuditorModel(ctx: ExtensionContext, ref?: string): { model: any;
       const model = ctx.modelRegistry.find(provider, id);
       if (!model) return fail("model not found");
       if (!ctx.modelRegistry.hasConfiguredAuth(model)) return fail(`no configured auth for ${provider}`);
-      return { model, via: "setting" };
+      return sameSessionSwap(ctx, model, fallbackRef);
     }
     const matches = ctx.modelRegistry.getAvailable().filter((m: any) => m.id === trimmed || m.name === trimmed);
-    if (matches[0]) return { model: matches[0], via: "setting" };
+    if (matches[0]) return sameSessionSwap(ctx, matches[0], fallbackRef);
     return fail("no available model matching");
   }
   const sessionModel = ctx.model as any;
@@ -4362,7 +4372,6 @@ async function promptModelRef(
   ctx: ExtensionContext,
   title: string,
   emptyLabel: string,
-  extraTop: ModelPickItem[] = [],
 ): Promise<{ kind: "session" } | { kind: "ref"; ref: string } | undefined> {
   if (typeof (ctx.ui as { custom?: unknown }).custom !== "function" || !ctx.modelRegistry) {
     const v = await ctx.ui.input(title, "provider/model-id — empty keeps the default");
@@ -4374,7 +4383,7 @@ async function promptModelRef(
   const models = ctx.modelRegistry
     .getAvailable()
     .filter((m: any) => ctx.modelRegistry.hasConfiguredAuth(m));
-  const items = buildModelPickItems(models, sessionLabel, extraTop);
+  const items = buildModelPickItems(models, sessionLabel);
   const pick = await ctx.ui.custom<ModelPickItem | undefined>((tui, theme, keybindings, done) => {
     return new ModelPickerComponent({ title, items }, () => tui.requestRender(), theme, keybindings, done);
   });
@@ -4426,21 +4435,17 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "auditorModel": {
-      // v0.31.2: "diverse" sits at the top — the cross-vendor auditor
-      // (independent blind spots + a separate quota pool from the coding
-      // session). Picked like a model; resolution happens per-audit so
-      // provider availability is re-checked every time.
-      const diverseItem: ModelPickItem = {
-        kind: "model",
-        ref: "diverse",
-        label: "diverse — cross-vendor auditor: a different provider than the session, picked fresh per audit (Recommended)",
-        searchText: "diverse cross vendor independent different provider quota strategy recommended",
-      };
-      const pick = await promptModelRef(ctx, "Auditor model override", "provider/model-id — empty keeps the pi session model", [diverseItem]);
+      const pick = await promptModelRef(ctx, "Auditor model override", "provider/model-id — empty keeps the pi session model");
       if (pick === undefined) return;
       saveSettings("global", ctx.cwd, { auditorModel: pick.kind === "session" ? undefined : pick.ref });
       if (pick.kind === "session") ctx.ui.notify("Auditor model override cleared — the auditor follows the pi session model.", "info");
-      if (pick.kind === "ref" && pick.ref === "diverse") ctx.ui.notify("Auditor model: DIVERSE — each audit picks a configured model outside the session's provider (deepseek ↔ MiniMax first).", "info");
+      return;
+    }
+    case "auditorModelFallback": {
+      const pick = await promptModelRef(ctx, "Auditor fallback model (used when the session model IS the auditor)", "provider/model-id — empty clears the fallback");
+      if (pick === undefined) return;
+      saveSettings("global", ctx.cwd, { auditorModelFallback: pick.kind === "session" ? undefined : pick.ref });
+      if (pick.kind === "session") ctx.ui.notify("Auditor fallback cleared — a session on the pinned auditor model keeps that model.", "info");
       return;
     }
     case "auditorThinkingLevel": {
