@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.29.21] — 2026-07-31
+
+### Fixed — post-compaction recovery no longer waits on the heartbeat's phase
+
+Field (hellhunter 2026-07-31, user: "we def have compaction related
+stoppage"): two output-token-limit turns → auto-compaction at 195.8k →
+**zero continuation rearm attempts after the compact event** → ~4 minutes
+that read as a stoppage; recovery came only at 04:34:48 via the first
+post-grace heartbeat tick (the user's /glla resume prods landed seconds
+earlier and looked like the fix). The compaction WAS an accomplice, via
+pi's no-agent_end-on-compact, but the machinery recovered inside its
+designed tolerances — the grace (3 min) + heartbeat interval just made
+the dead window look permanent.
+
+- The `session_compact` handler now arms a SECOND settle refire at grace
+  expiry (`COMPACTION_GRACE_MS + 2s`), same guards as the 2s settle
+  (idle, no pending, no timers, supervising, not stood-down). The 2s
+  settle almost always loses (pi is mid-compact / mid-resumed-turn then);
+  the grace-expiry settle fires the moment the machinery un-suppresses
+  instead of landing up to one heartbeat interval late. Ledger
+  `compaction_grace_refire`.
+- Not a bug, confirmed while here: the output-token-limit turns
+  ("Model stopped because it reached the maximum output token limit")
+  are handled by v0.27.2 length-continue (re-issue with split-smaller
+  guidance, loud give-up after 3 consecutive). Under ~196k context
+  MiniMax-M3 emits multi-thousand-line edit payloads that hit the
+  per-response cap — model-side behavior, not a glla wedge.
+
+641 tests.
+
 ## [0.29.20] — 2026-07-31
 
 ### Fixed — plain plateau stops are resumable

@@ -159,7 +159,8 @@ test("v0.29.21: session_compact arms a SECOND settle refire at grace expiry", ()
   assert.ok(hookIdx > 0 && graceSettleIdx > hookIdx, "grace settle inside the session_compact hook, after it starts");
   const block = SRC.slice(graceSettleIdx, graceSettleIdx + 900);
   assert.match(block, /appendLedger\(c\.cwd, "compaction_grace_refire", \{\}\)/, "ledger event names the recovery");
-  assert.match(block, /isLoopActive\(\) \? scheduleLoopTick\(c\) : scheduleContinuation\(c, true\)/.source.replace("?", "\?"), "refires loop tick or goal continuation");
+  assert.ok(block.includes("if (isLoopActive()) scheduleLoopTick(c);"), "loop refire line");
+  assert.ok(block.includes("else scheduleContinuation(c, true);"), "goal refire line");
   assert.match(block, /COMPACTION_GRACE_MS \+ 2_000/, "fires at grace expiry (+2s epsilon)");
   assert.match(block, /c\.isIdle\(\) && !c\.hasPendingMessages\(\) && continuationTimer === null && loopTimer === null/, "same guards as the 2s settle");
   assert.match(block, /!abortedStandDown/, "user stand-down still wins");
