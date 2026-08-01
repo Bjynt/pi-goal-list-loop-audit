@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.34.7] — 2026-08-01
+
+### Fixed — SEV-1: a stale ctx during the DECIDE fan-out CRASHED pi outright
+
+Darklord, 2026-08-01: a `/reload` landed 58 minutes into a list-audit
+collect; when the goal completed, `archiveCurrentGoal` (sync) floated
+`fanOutListAuditFindings`, whose DECIDE-raise `sendUserMessage` hit pi's
+`assertActive` stale-ctx throw; the floating promise turned it into an
+uncaughtException and **pi exited mid-audit**. Two layers of fix:
+
+- **`safeSteerUser(ctx, text)`** — every orchestrator-path
+  `sendUserMessage` (DECIDE raise, reviewer follow-up, drafting seed,
+  decide-answer) now probes staleness first and catches anyway; a stale
+  send becomes a `steer_skipped_stale` ledger entry, never a crash. A pin
+  asserts the helper's own send line is the real API call (a regex edit
+  briefly rewrote it into infinite recursion — every steer silently
+  no-opped; the /goal decide behavioral test caught it).
+- **The float carries a catch** — `void fanOutListAuditFindings(ctx)` is
+  now `.catch(...)`-guarded with a `list_audit_fanout_error` ledger event,
+  so ANY rejection there is a ledger line, not a process exit.
+
+### Fixed — the re-kick clears the stale-handle banner
+
+Junk-runner + polis + neonbreak, 2026-08-01: all three actively working
+post-reload with `⚠ interrupted — stale handle` still screaming. The
+v0.34.2 clear lived only in the paused-resume path; the v0.34.3 re-kick
+bypassed it. Both re-kick branches (`/glla resume` and `/goal resume`) now
+clear `interruptedAt`/`interruptedReason` — a manual resume in a fresh
+session fulfills the marker's promise no matter which path it takes.
+
 ## [0.34.6] — 2026-08-01
 
 ### Added — the subagent strategy grows up: resume-don't-respawn + the restart law

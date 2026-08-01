@@ -166,3 +166,40 @@ test("v0.34.2: cmdResume clears interruptedAt/interruptedReason on a fresh-sessi
     "the staleEntry re-mark spreads AFTER the clear, so it still wins",
   );
 });
+
+// ---------- v0.34.7: stale-ctx crash guard + re-kick marker clear ----------
+
+test("v0.34.7: safeSteerUser wraps every orchestrator sendUserMessage (darklord crash)", () => {
+  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  assert.match(g, /function safeSteerUser\(ctx: ExtensionContext, text: string\): boolean/, "the helper exists");
+  // The helper's OWN send line must be the real API call, not a self-call
+  // (a regex conversion once rewrote it into infinite recursion — every
+  // steer silently no-opped; caught by the /goal decide behavioral test).
+  const helper = g.slice(g.indexOf("function safeSteerUser"), g.indexOf("function safeSteerUser") + 900);
+  assert.match(helper, /extensionApi\?\.sendUserMessage\(text, \{ deliverAs: ctx\.isIdle\(\)/, "the helper sends for real");
+  assert.ok(!/safeSteerUser\(ctx, text\)/.test(helper), "no recursive self-call inside the helper");
+  assert.match(helper, /probeExtensionApiStale\(\)/, "probe before send");
+  assert.match(helper, /steer_skipped_stale/, "skips are ledger-visible");
+  // No raw orchestrator-path sends remain outside the helper.
+  const raw = [...g.matchAll(/extensionApi\?\.sendUserMessage\(/g)].length;
+  assert.equal(raw, 1, `exactly one raw sendUserMessage (inside the helper), got ${raw}`);
+});
+
+test("v0.34.7: the fan-out float carries a catch (rejection ≠ process exit)", () => {
+  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  assert.match(g, /void fanOutListAuditFindings\(ctx\)\.catch\(/);
+  assert.match(g, /list_audit_fanout_error/);
+});
+
+test("v0.34.7: re-kick clears the stale-handle marker (banner must not survive a working session)", () => {
+  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  const gllaResume = g.slice(g.indexOf("async function cmdGllaResume"));
+  const rek = gllaResume.indexOf('g.status === "active"');
+  const clear = gllaResume.indexOf("updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx)", rek);
+  const notify = gllaResume.indexOf("ACTIVE but idle", rek);
+  assert.ok(rek > -1 && clear > rek && clear < notify, "cmdGllaResume re-kick clears interruptedAt before notifying");
+  const cmdResume = g.slice(g.indexOf("async function cmdResume"));
+  const rek2 = cmdResume.indexOf('state.goal.status === "active"');
+  const clear2 = cmdResume.indexOf("updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx)", rek2);
+  assert.ok(rek2 > -1 && clear2 > rek2, "cmdResume re-kick clears interruptedAt too");
+});
