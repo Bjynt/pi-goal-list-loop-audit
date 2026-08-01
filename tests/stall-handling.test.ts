@@ -478,5 +478,6 @@ test("v0.34.16: queue-stuck probe — a send queued-without-a-turn is reported w
   assert.match(g, /if \(!ctx\.hasPendingMessages\(\)\) return;/, "consumed message = healthy — even an instant 429 consumes");
   assert.match(g, /if \(!ctx\.isIdle\(\)\) return;/, "running turn = healthy");
   assert.match(g, /if \(!isSupervising\(\)\) return;/, "paused/completed disarms");
-  assert.ok((g.match(/armQueueStuckProbe\(ctx, lastContinuationSentAt\);/g) ?? []).length === 2, "armed on BOTH goal + loop sends");
+  assert.ok((g.match(/armQueueStuckProbe\(lastContinuationSentAt\);/g) ?? []).length === 2, "armed on BOTH goal + loop sends");
+  assert.match(g, /const ctx = freshCtx\(\);\n      if \(!ctx\) return;.*no fresh lifecycle context/s, "probe resolves a fresh ctx at fire time instead of retaining the sender ctx");
 });

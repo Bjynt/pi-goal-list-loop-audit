@@ -220,8 +220,7 @@ const GOAL_EVENT_ENTRY = "goal-event";
 // not on ExtensionContext, so continuation sends need it at module scope.
 let extensionApi: ExtensionAPI | null = null;
 // v0.26.7: pi invalidates the extension runtime on session replacement
-// (newSession/fork/switchSession/reload — and the compaction path reaches
-// it via teardownCurrent in pi 0.82.x). Once stale, every sendMessage
+// (newSession/fork/switchSession/reload). Once stale, every sendMessage
 // throws FOREVER in this process — retrying for hours is the hegemon
 // failure shape. Detect the stale signature once and go terminally loud.
 let extensionApiStale = false;
@@ -241,24 +240,13 @@ let staleTerminalDone = false;
  * here stranded goals until manual /goal resume (hegemon/sraaal shape).
  * sendContinuation's extensionApiStale guard already stops further sends
  * in this doomed process; the next fresh session auto-resumes. */
-/** v0.30.0: rebind-first session-replacement survival. pi's sanctioned
- * pattern (docs/extensions.md lifecycle + the stale error text itself):
- * session_shutdown → cleanup, session_start → re-establish with the NEW
- * ctx. glla used to treat every stale handle as terminal ("run /reload"),
- * but three replacement shapes need three responses:
- *  (a) switch (resume/new/fork): pi rebinds THIS module to the new
- *      session — session_start delivers a fresh ctx. No user action, no
- *      warning; reset the stale flag via a re-probe and continue.
- *  (b) /reload: pi re-imports the extension modules — a SUCCESSOR
- *      instance owns this cwd in the same process. The old module stands
- *      down silently (owner-file check) instead of screaming + injecting
- *      /reload (v0.29.22's injection is right for orphans, wrong here).
- *  (c) orphan: the session died with NO replacement (hegemon 2026-07-31:
- *      handle dead ~06:03, zero ledger events for 5h). Only a rebuild
- *      revives extension function — goStaleTerminal's warning + self-heal
- *      stays for this case ONLY.
- * session_shutdown is now ledgered with pi's reason, so the next
- * unexplained disposal is attributable from the ledger alone. */
+/** v0.34.16: lifecycle-first session-replacement survival. pi's
+ * sanctioned pattern (docs/extensions.md lifecycle + the stale error text):
+ * session_shutdown → persist handoff debt + stop old timers,
+ * session_start → re-establish with the NEW ctx and consume the debt.
+ * A successor module may still stand down via the owner file. An orphan with
+ * no replacement is reported honestly: an invalid extension cannot repair its
+ * own pi host, so glla never injects terminal keystrokes. */
 const SESSION_REBIND_GRACE_MS = 60_000;
 let sessionReplacementUntil = 0;
 const instanceStartedAt = Date.now();
@@ -464,11 +452,11 @@ function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
     ctx.ui.notify(`glla: this session is handing off to a fresh pi context — ${what} will be handled after session_start.`, "info");
     return true;
   }
-  // v0.30.0: a successor may already own this session (e.g. /reload
-  // re-imported the modules) — the user's command belongs to the fresh
-  // instance; say so softly instead of demanding a reload.
+  // v0.30.0: a successor may already own this session (e.g. a module
+  // re-import) — the user's command belongs to the fresh instance; say so
+  // softly instead of claiming the old handle can recover it.
   // v0.32.0: the rebind window means a fresh instance is COMING, not here —
-  // the old message claimed "handled there" while nothing owned the session.
+  // the message names that handoff rather than pretending a send landed.
   if (Date.now() < sessionReplacementUntil) {
     ctx.ui.notify(`glla: this session is rebinding after /reload — ${what} will be handled by the refreshed instance; retry in a moment if it doesn't.`, "info");
     return true;
@@ -482,11 +470,9 @@ function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
     `glla: this session's extension handle is stale (pi session replacement) — ${what} can't send continuations in this process. State is safe in .pi-glla/. A fresh session_start will resume it; if pi does not create one, restart pi normally and restore the saved work.`,
     "warning",
   );
-  // v0.29.22: deliberately NO self-heal from the entry probe — it fires
-  // when the user is ACTIVELY typing a /glla command, and injected
-  // keystrokes would race their input. User-present cases keep the manual
-  // warning; the self-heal stays on the autonomous paths (heartbeat
-  // probe, send paths) where no one is at the keyboard.
+  // Entry probes never mutate the terminal. The only recovery boundary is
+  // pi's own session lifecycle; user-present commands keep an honest warning
+  // and the durable state remains available to the fresh session.
   return true;
 }
 
@@ -1228,12 +1214,13 @@ function queueStuckProbeMs(): number {
   return Number(process.env.GLLA_QUEUE_STUCK_MS ?? 45_000);
 }
 let queueStuckProbe: ReturnType<typeof setTimeout> | null = null;
-function armQueueStuckProbe(ctx: ExtensionContext, sentAt: number): void {
+function armQueueStuckProbe(sentAt: number): void {
   if (queueStuckProbe) clearTimeout(queueStuckProbe);
   queueStuckProbe = scheduleSessionTimeout(() => {
     queueStuckProbe = null;
     try {
-      if (isForeignCtx(ctx)) return; // stale instance — the live one probes
+      const ctx = freshCtx();
+      if (!ctx) return; // no fresh lifecycle context — do not touch a stale one
       if (!isSupervising()) return; // paused/completed meanwhile
       if (lastContinuationSentAt !== sentAt) return; // a newer send armed its own probe
       if (lastRealActivityAt > sentAt) return; // the turn started and worked
@@ -1302,7 +1289,7 @@ function sendContinuation(goalId: string): void {
     continuationRearmStreak = 0; continuationRearmSince = 0; // v0.28.5 (E3): a landed send clears the storm
     appendLedger(ctx.cwd, "goal_continuation_sent", { goalId });
     lastContinuationSentAt = Date.now();
-    armQueueStuckProbe(ctx, lastContinuationSentAt);
+    armQueueStuckProbe(lastContinuationSentAt);
   } catch (err) {
     appendLedger(ctx.cwd, "goal_continuation_send_failed", { goalId, error: err instanceof Error ? err.message : String(err) });
     // v0.26.7: stale runtime = terminal (sends can never land); anything
@@ -2314,8 +2301,11 @@ async function showDecisionPrompt(ctx: ExtensionContext): Promise<boolean> {
  * disabled (/glla decisionpopup=off), or when one is already open. */
 function maybeDecisionPopup(ctx: ExtensionContext): void {
   if (!ctx.hasUI || loadSettings(ctx.cwd).decisionPopup === false) return;
+  const cwd = ctx.cwd;
   scheduleSessionTimeout(() => {
-    void showDecisionPrompt(ctx).catch(() => {});
+    const fresh = freshCtx();
+    if (!fresh || fresh.cwd !== cwd) return;
+    void showDecisionPrompt(fresh).catch(() => {});
   }, 600);
 }
 
@@ -2984,7 +2974,7 @@ function sendLoopTurn(): void {
     loopRearmStreak = 0; loopRearmSince = 0; // v0.28.5 (E3): a landed turn clears the storm
     appendLedger(ctx.cwd, "loop_turn_sent", { iteration: loop.iteration });
     lastContinuationSentAt = Date.now();
-    armQueueStuckProbe(ctx, lastContinuationSentAt);
+    armQueueStuckProbe(lastContinuationSentAt);
   } catch (err) {
     // stale API — next agent_end reschedules (but if none comes, the
     // heartbeat's stall escalation stops the spin — v0.26.1).
@@ -6441,13 +6431,12 @@ export default function (pi: ExtensionAPI): void {
       persistState(ctx);
       appendLedger(ctx.cwd, "audit_loop_target_migrated", { from: "audit-every-iteration", to: "fix-first" });
     }
-    // v0.34.13: an auto-recovery /reload carries its own resume consent —
-    // the sidecar marker overrides autoresume=off for THIS restore only.
+    // v0.34.15 compatibility: consume one legacy recovery marker if an older
+    // process wrote it before this lifecycle-first build landed.
     const recoveryResume = consumeRecoveryResume(ctx.cwd);
     // v0.34.16: a same-process lifecycle handoff is explicit continuation
     // debt, so it resumes independently of the cold-boot autoResume setting.
-    // v0.34.14: a /reload rebind (same pi pid) ALWAYS resumes — the session
-    // is live mid-work; holding is the "list is not continuing" bug.
+    // A same-pid owner rebind is the second same-process signal.
     const rebindResume = claimSessionOwnerAndDetectRebind(ctx.cwd);
     if (rebindResume) appendLedger(ctx.cwd, "rebind_resume", { pid: process.pid });
     if (isLoopActive()) {
