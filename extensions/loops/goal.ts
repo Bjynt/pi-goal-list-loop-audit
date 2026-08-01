@@ -411,6 +411,26 @@ function probeExtensionApiStale(): boolean {
   return extensionApiStale;
 }
 
+/** v0.34.7: orchestrator-path sendUserMessage that can NEVER crash the
+ * process. Darklord 2026-08-01: fanOutListAuditFindings ran on a stale
+ * handle (a /reload landed mid-collect), assertActive threw, the floating
+ * promise from sync archiveCurrentGoal turned it into an uncaughtException
+ * and pi EXITED mid-audit. Probe first, catch anyway, ledger the skip. */
+function safeSteerUser(ctx: ExtensionContext, text: string): boolean {
+  if (probeExtensionApiStale()) {
+    appendLedger(ctx.cwd, "steer_skipped_stale", { chars: text.length });
+    return false;
+  }
+  try {
+    safeSteerUser(ctx, text);
+    return true;
+  } catch (err) {
+    if (isStaleApiError(err)) extensionApiStale = true;
+    appendLedger(ctx.cwd, "steer_skipped_stale", { chars: text.length, threw: true });
+    return false;
+  }
+}
+
 /** v0.28.1 (S3): command-entry staleness probe + honest warning. Returns
  * true when the handle is stale — callers must skip send-dependent paths
  * and must NOT claim work started (S3's "created — starting now" lie). */
@@ -1407,11 +1427,9 @@ async function fanOutListAuditFindings(ctx: ExtensionContext): Promise<void> {
   // queued or the fan-out was declined.
   if (decisions.length > 0) {
     const decList = decisions.slice(0, 8).map((d, i) => `${i + 1}. ${d.slice(0, 500)}`).join("\n");
-    extensionApi?.sendUserMessage(
-      `[DECIDE FINDINGS — user decisions needed] The audit surfaced ${decisions.length} DECIDE finding(s) — direction calls only the user can make (a decision is not a task, so they were NOT queued):\n${decList}\nRaise them to the user NOW with ask_user_question — one question per finding, options from the finding's own two sides plus "Defer" (prose numbered list if ask_user_question is unavailable; Esc = Defer). Then record every answer in ${AUDIT_FINDINGS_REL}: replace the "- [?]" line with "- [x] DECIDED: <what was chosen> (<date>)" (or "- [x] DEFERRED") so it stops re-surfacing, and queue any chosen work with list_add — do NOT start the work inline.`,
-      { deliverAs: ctx.isIdle() ? "followUp" : "steer" },
-    );
-    appendLedger(ctx.cwd, "list_audit_decisions_raised", { decisions: decisions.length });
+    if (safeSteerUser(ctx,
+      `[DECIDE FINDINGS — user decisions needed] The audit surfaced ${decisions.length} DECIDE finding(s) — direction calls only the user can make (a decision is not a task, so they were NOT queued):\n${decList}\nRaise them to the user NOW with ask_user_question — one question per finding, options from the finding's own two sides plus "Defer" (prose numbered list if ask_user_question is unavailable; Esc = Defer). Then record every answer in ${AUDIT_FINDINGS_REL}: replace the "- [?]" line with "- [x] DECIDED: <what was chosen> (<date>)" (or "- [x] DEFERRED") so it stops re-surfacing, and queue any chosen work with list_add — do NOT start the work inline.`))
+      appendLedger(ctx.cwd, "list_audit_decisions_raised", { decisions: decisions.length });
   }
   const decideNote =
     decisions.length > 0
@@ -1481,7 +1499,12 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
     // was empty, enqueueItems activates the first fix itself, so the
     // list-complete / reviewer noise below must NOT fire for this item.
     const isListAuditCollect = goal.objective.includes(LIST_AUDIT_COLLECT_MARKER);
-    if (isListAuditCollect) void fanOutListAuditFindings(ctx);
+    // v0.34.7: the float gets a catch — ANY rejection here used to become
+    // an uncaughtException and kill pi (darklord 2026-08-01).
+    if (isListAuditCollect)
+      void fanOutListAuditFindings(ctx).catch((err) => {
+        appendLedger(ctx.cwd, "list_audit_fanout_error", { error: String(err).slice(0, 200) });
+      });
     const advanced = activateNextListItem(ctx);
     // v0.26.0: the queue just EMPTIED on a completion → list-complete.
     if (!advanced && !isListAuditCollect) {
@@ -1699,10 +1722,8 @@ function fireReviewer(
       enqueueListItems: (objectives) => enqueueItems(ctx, objectives, "reviewer", { autoActivate: loadGlobalSettings().autoResume === true }),
       proposeGoal: (objective, reason) => {
         try {
-          extensionApi?.sendUserMessage(
-            `[REVIEWER FOLLOW-UP — ${reason}. Propose this as a /goal via propose_goal_draft (the user Confirms or rejects): ${objective}]`,
-            { deliverAs: ctx.isIdle() ? "followUp" : "steer" },
-          );
+          safeSteerUser(ctx, 
+            `[REVIEWER FOLLOW-UP — ${reason}. Propose this as a /goal via propose_goal_draft (the user Confirms or rejects): ${objective}]`);
           return true;
         } catch (err) {
           // v0.28.8 (E4): the phantom-reviewer hole — a swallowed throw used
@@ -1833,7 +1854,7 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
     }
   }
   try {
-    extensionApi?.sendUserMessage(tmpl, { deliverAs: ctx.isIdle() ? "followUp" : "steer" });
+    safeSteerUser(ctx, tmpl);
     draftingUserReplies = 0;
     draftingBlockedProposals = 0;
     draftingSeedInFlight = true; // our injected prompt also arrives as a user message — don't count it
@@ -2025,6 +2046,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
       return;
     }
     appendLedger(ctx.cwd, "resume_rekick", { goalId: state.goal.id, policy: state.goal.policy, via: "/goal resume" });
+    if (state.goal.interruptedAt) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx); // v0.34.7: same marker law here
     ctx.ui.notify(
       `The ${state.goal.policy === "list" ? "list item" : "goal"} is ACTIVE but idle — re-firing its continuation: ${state.goal.objective.replace(/\s+/g, " ").slice(0, 70)}`,
       "info",
@@ -2134,13 +2156,13 @@ async function showDecisionPrompt(ctx: ExtensionContext): Promise<boolean> {
       else if (group === "loop" && verb === "stop") await cmdLoop("stop", ctx);
       else if (group === "loop" && verb === "resume") await cmdLoop("resume", ctx);
       else {
-        extensionApi?.sendUserMessage(`Decision for the paused goal "${g.objective}": ${label} — continue on this path.`);
+        safeSteerUser(ctx, `Decision for the paused goal "${g.objective}": ${label} — continue on this path.`);
         await cmdResume(ctx);
       }
       return true;
     }
     // Content choice — deliver to the agent, then resume.
-    extensionApi?.sendUserMessage(`Decision for the paused goal "${g.objective}": ${label} — continue on this path.`);
+    safeSteerUser(ctx, `Decision for the paused goal "${g.objective}": ${label} — continue on this path.`);
     await cmdResume(ctx);
     return true;
   } finally {
@@ -5352,6 +5374,12 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
   // resume"). Re-kick the continuation instead of shrugging.
   if (g && g.status === "active") {
     appendLedger(ctx.cwd, "resume_rekick", { goalId: g.id, policy: g.policy });
+    // v0.34.7: the re-kick fulfills the stale-handle marker's promise too
+    // (junk-runner/polis/neonbreak 2026-08-01: actively working with the
+    // ⚠ interrupted banner still screaming — the v0.34.2 clear only lived
+    // in the paused-resume path; the staleness entry-guard above already
+    // filtered out a stale session reaching this branch).
+    if (g.interruptedAt) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
     ctx.ui.notify(
       `The ${g.policy === "list" ? "list item" : "goal"} is ACTIVE but idle — re-firing its continuation: ${g.objective.replace(/\s+/g, " ").slice(0, 70)}`,
       "info",
