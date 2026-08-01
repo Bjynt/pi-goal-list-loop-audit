@@ -312,6 +312,35 @@ stuck backoff caps at 5 minutes then pauses, measure commands get a 10m
 hard timeout, and the auditor aborts after 10m with zero session activity
 (infrastructure error, never a verdict).
 
+## Recommended companions
+
+glla is the goal plane — it drives, verifies, and notifies. It does not
+try to be the whole rig. Four plugins round it out (all optional; glla
+works without any of them):
+
+- **`@tintinweb/pi-subagents`** — the `Agent` tool: parallel Explore /
+  Plan / general-purpose subagents. glla's prompts teach fan-out with ROI
+  (parallelize real work, never ceremony spawning) and brief discipline,
+  and big audit collects genuinely assume this exists. glla's subagent
+  guarantees (the main session owns the goal; workers can't clobber it)
+  are plugin-agnostic, but this is the provider we test against.
+- **`@juicesharp/rpiv-advisor`** — a second opinion the executor model
+  can request mid-flight: the whole conversation branch is forwarded to a
+  stronger reviewer model, which answers with a plan, a correction, or a
+  stop signal. Drive the session with a cheap/fast model and buy strong
+  judgment per call. Role clarity: the advisor is *advisory*, never
+  verification — glla's isolated auditor remains the only completion
+  gate.
+- **`@juicesharp/rpiv-ask-user-question`** — structured questions with
+  multi-select and markdown previews. glla's drafting interviews and
+  DECIDE findings render through it when installed (plain prompts
+  otherwise).
+- **`@pi-unipi/notify`** — push beyond the desktop: Telegram, Gotify,
+  ntfy, with per-event routing. glla's built-in pushes cover the local
+  desktop case and fire only where there is something to DO; add this
+  for away-from-desk alerts — route it to critical events only, or every
+  glla pause/verdict pings twice.
+
 ## Compatibility (what goes well, what conflicts)
 
 **The Two-Driver Rule**: any plugin that drives agent turns on `agent_end`
@@ -325,12 +354,10 @@ contradictory turns. One driver at a time:
 - **Installed-but-don't-run-simultaneously**: `@tmustier/pi-ralph-wiggum` —
   fine to keep, never run a ralph loop while a goal/list/loop is active.
 
-**Goes well with it**: `@juicesharp/rpiv-ask-user-question` (drafting uses its
-structured forms), any subagent provider — e.g. `@tintinweb/pi-subagents` —
-(spawn research/review subagents inside goal work), `pi-chrome` (the
-research/search path for goals — logged-in browsing with no extra services;
-standalone search skills like `mmx-cli`/`pi-search-skill` are optional
-conveniences for bulk queries, not requirements).
+**Goes well with it**: see **Recommended companions** above. `pi-chrome` too
+(the research/search path for goals — logged-in browsing with no extra
+services; standalone search skills like `mmx-cli`/`pi-search-skill` are
+optional conveniences for bulk queries, not requirements).
 
 **Overlaps — pick one**: `@tintinweb/pi-tasks` is a second task list next to
 `/list`, and in practice the glla list *is* the task list (queue, statuses,

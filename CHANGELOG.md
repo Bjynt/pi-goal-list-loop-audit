@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.34.8] — 2026-08-01
+
+### Docs — Recommended companions
+
+New README section: the four plugins that round glla out into a full rig
+— `@tintinweb/pi-subagents` (the Agent tool glla's fan-out prompts assume),
+`@juicesharp/rpiv-advisor` (mid-flight second opinion; advisory only, the
+isolated auditor remains the only completion gate),
+`@juicesharp/rpiv-ask-user-question` (structured drafting/DECIDE forms),
+and `@pi-unipi/notify` (remote push beyond glla's built-in desktop
+notifications — route it to critical events only or every pause pings
+twice). The Compatibility section's "goes well with it" paragraph now
+points at it instead of repeating a partial list.
+
 ## [0.34.7] — 2026-08-01
 
 ### Fixed — SEV-1: a stale ctx during the DECIDE fan-out CRASHED pi outright
