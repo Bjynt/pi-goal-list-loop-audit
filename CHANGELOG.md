@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.34.3] — 2026-08-01
+
+### Fixed — resume re-kicks an ACTIVE-but-idle goal instead of "Nothing to resume"
+
+Hellhunter, 2026-08-01: the widget said `list item · active`, the agent sat
+idle (a prose-only turn ended the previous item; the continuation that
+should drive the new head never landed — continuation debt), and
+`/glla resume` answered "Nothing to resume — no paused goal/list-item, no
+held loop". Technically true, practically wrong: an ACTIVE-but-idle goal is
+exactly what a user means by "resume".
+
+- `/glla resume` now re-kicks: active goal → re-fires its continuation
+  (steer when busy, followUp when idle); active loop → re-fires its tick;
+  auditing → an informative "wait for the verdict" instead of a shrug.
+- `/goal resume` (and `/list resume`, which routes there) does the same —
+  was: a SILENT return on an active goal, so the user got literally nothing.
+- One-active-thing is preserved: an active loop still wins over a goal
+  re-kick with the usual warning.
+- New ledger event `resume_rekick` — watch it to count how often the
+  continuation-driving machinery drops the ball in the field; a hot count
+  is evidence for a deeper driver-side fix.
+
 ## [0.34.2] — 2026-08-01
 
 ### Fixed — manual resume clears the stale-handle interrupt marker

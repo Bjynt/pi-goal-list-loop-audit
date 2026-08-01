@@ -2002,6 +2002,23 @@ async function cmdPause(ctx: ExtensionContext): Promise<void> {
 }
 
 async function cmdResume(ctx: ExtensionContext): Promise<void> {
+  // v0.34.3: /goal resume on an ACTIVE-but-idle goal re-kicks its
+  // continuation (was: silent return — the user got NOTHING while the
+  // widget said "active"). One-active-thing still holds: an active loop
+  // wins over the re-kick.
+  if (state.goal && state.goal.status === "active") {
+    if (isLoopActive()) {
+      ctx.ui.notify("A loop is active — one active thing at a time. /loop stop it first, then resume the goal.", "warning");
+      return;
+    }
+    appendLedger(ctx.cwd, "resume_rekick", { goalId: state.goal.id, policy: state.goal.policy, via: "/goal resume" });
+    ctx.ui.notify(
+      `The ${state.goal.policy === "list" ? "list item" : "goal"} is ACTIVE but idle — re-firing its continuation: ${state.goal.objective.replace(/\s+/g, " ").slice(0, 70)}`,
+      "info",
+    );
+    scheduleContinuation(ctx, true);
+    return;
+  }
   if (!state.goal || state.goal.status !== "paused") return;
   // v0.28.21: one-active-thing — the LAST unguarded activation path. A
   // paused goal/list-item must not resume over a live loop (covers
@@ -5313,6 +5330,30 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
   }
   if (loopResumable) {
     await cmdLoop("resume", ctx);
+    return;
+  }
+  // v0.34.3: an ACTIVE-but-idle goal is exactly what the user means by
+  // "resume" (hellhunter 2026-08-01: widget said "list item · active", the
+  // agent sat idle after a prose-only turn — the continuation that should
+  // drive the new head never landed — and /glla resume shrugged "Nothing to
+  // resume"). Re-kick the continuation instead of shrugging.
+  if (g && g.status === "active") {
+    appendLedger(ctx.cwd, "resume_rekick", { goalId: g.id, policy: g.policy });
+    ctx.ui.notify(
+      `The ${g.policy === "list" ? "list item" : "goal"} is ACTIVE but idle — re-firing its continuation: ${g.objective.replace(/\s+/g, " ").slice(0, 70)}`,
+      "info",
+    );
+    scheduleContinuation(ctx, true);
+    return;
+  }
+  if (g && g.status === "auditing") {
+    ctx.ui.notify("An audit is in flight — wait for the isolated auditor's verdict (the status line shows auditing…).", "info");
+    return;
+  }
+  if (state.loop?.active) {
+    appendLedger(ctx.cwd, "resume_rekick", { loop: true, iteration: state.loop.iteration });
+    ctx.ui.notify(`The loop is ACTIVE — re-firing its tick (iteration ${state.loop.iteration}). If it wedges again, /loop status for the diagnostics.`, "info");
+    scheduleLoopTick(ctx);
     return;
   }
   ctx.ui.notify("Nothing to resume — no paused goal/list-item, no held loop. /goal, /list, or /loop to start something.", "info");
