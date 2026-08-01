@@ -411,6 +411,30 @@ function attemptAutoRecovery(ctx: ExtensionContext, where: string): boolean {
   return true;
 }
 
+/** v0.34.14: /reload rebind detector. The extension runs INSIDE pi, so
+ * process.pid IS pi's pid: an instance that boots and finds its OWN pid
+ * already in the owner file is a /reload rebuild of a live session, not a
+ * cold boot. Rebinds always resume active goals/loops — holding mid-work
+ * after an in-place rebuild is pure friction (user directive: keep going
+ * unless we must stop; "the list is not continuing" after /reload,
+ * hellhunter 2026-08-01). Cold boots (new pid) still honor autoresume=off.
+ * Sidecar, not the ledger: read-before-write must be atomic-ish and the
+ * ledger is append-only. */
+const SESSION_OWNER_FILE = "session-owner.json";
+function claimSessionOwnerAndDetectRebind(cwd: string): boolean {
+  try {
+    const p = path.join(piGlaDir(cwd), SESSION_OWNER_FILE);
+    let prevPid: number | null = null;
+    try {
+      prevPid = (JSON.parse(fs.readFileSync(p, "utf-8")) as { pid?: number }).pid ?? null;
+    } catch { /* absent or corrupt — first boot */ }
+    fs.writeFileSync(p, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
+    return prevPid !== null && prevPid === process.pid;
+  } catch {
+    return false;
+  }
+}
+
 /** v0.34.13: consume the sidecar marker on session restore. Single-use,
  * freshness-bounded — a stale marker from an abandoned recovery must not
  * surprise-resume a later session. */
@@ -3679,7 +3703,13 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       // logged as disapprovals.
       const auditorRan = result.output.trim().length > 0;
       // v0.28.5 (E2): a REAL auditor run clears the infra-error streak.
-      if (auditorRan && (state.goal.auditInfraStreak ?? 0) > 0) updateGoal({ auditInfraStreak: undefined }, ctx);
+      // v0.34.14: …but only a CLEAN one. A STALLED run returns the partial
+      // output it streamed before the abort — non-empty, so auditorRan is
+      // true — while result.error still marks it an infrastructure failure.
+      // Clearing the streak on those meant the 3-strike breaker at :3874
+      // NEVER engaged: pully 2026-08-01 looped 10-min stall cycles for 4h
+      // (the auditor hung on an ssh/sudo verification every attempt).
+      if (auditorRan && !result.error && (state.goal.auditInfraStreak ?? 0) > 0) updateGoal({ auditInfraStreak: undefined }, ctx);
       const history = state.goal.auditHistory ?? [];
       if (auditorRan) {
         // v0.25.4: strip think-block leakage (MiniMax-M3 `</think>`
@@ -3878,11 +3908,11 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
             auditHistory: history,
             auditInfraStreak: infraStreak,
             pauseKind: "error",
-            pauseReason: `auditor infrastructure failed ${infraStreak}× in a row — the auditor model is likely broken (last: ${result.error.slice(0, 120)})`,
+            pauseReason: `auditor infrastructure failed ${infraStreak}× in a row — the auditor model is likely broken OR a verification command is hanging (ssh/sudo/long test runs stall the stream) (last: ${result.error.slice(0, 120)})`,
             pauseSuggestedAction: "Fix the auditor model (/glla model=provider/id) or restart pi, then /goal resume. Your work was NOT judged.",
           }, ctx);
           appendLedger(ctx.cwd, "goal_paused", { reason: `auditor infra streak ${infraStreak}: ${result.error.slice(0, 120)}` });
-          ctx.ui.notify(`${goalNoun()} paused: auditor infrastructure failed ${infraStreak}× in a row. Fix the auditor model (/glla model=...), then /goal resume.`, "warning");
+          ctx.ui.notify(`${goalNoun()} paused: auditor infrastructure failed ${infraStreak}× in a row — model broken or a verification command hanging (ssh/sudo/long runs). Fix with /glla model=... or unblock the command, then /goal resume.`, "warning");
           notifyExternal(ctx, `${goalNoun()} paused: auditor infrastructure ${infraStreak}× — model likely broken.`);
           return {
             content: [{
@@ -6418,9 +6448,13 @@ export default function (pi: ExtensionAPI): void {
     // v0.34.13: an auto-recovery /reload carries its own resume consent —
     // the sidecar marker overrides autoresume=off for THIS restore only.
     const recoveryResume = consumeRecoveryResume(ctx.cwd);
+    // v0.34.14: a /reload rebind (same pi pid) ALWAYS resumes — the session
+    // is live mid-work; holding is the "list is not continuing" bug.
+    const rebindResume = claimSessionOwnerAndDetectRebind(ctx.cwd);
+    if (rebindResume) appendLedger(ctx.cwd, "rebind_resume", { pid: process.pid });
     if (isLoopActive()) {
       const l = state.loop!;
-      if (autoResume || recoveryResume) {
+      if (autoResume || recoveryResume || rebindResume) {
         ctx.ui.notify(
           `Resuming loop (iteration ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"}, best ${l.bestValue ?? "n/a"}, stall ${l.stallCount}/${l.plateauWindow}): ${l.target.slice(0, 60)}`,
           "info",
@@ -6441,7 +6475,7 @@ export default function (pi: ExtensionAPI): void {
       // "load it but not auto start it"). Interrupted goals hold like
       // everything else; autoresume=on (unattended rigs) still auto-resumes
       // them, and the marker is cleared only on that promised auto-resume.
-      if (autoResume || recoveryResume) {
+      if (autoResume || recoveryResume || rebindResume) {
         // v0.28.1 (S2): clear the stale-handle interrupt marker — this IS
         // the auto-resume the marker promised.
         if (wasInterrupted) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
