@@ -87,6 +87,24 @@ test("v0.34.18: blank startup waits for the transcript before autoresume, while 
     await tick();
     assert.ok(pi.sent.length >= 1, "explicit /goal resume releases the startup barrier");
 
+    const listCwd = tmpCwd();
+    seedState(listCwd, { list: [{ id: "blank-head", objective: "queued blank-start item — done when pinned", addedAt: new Date().toISOString() }] });
+    pi.sent.length = 0;
+    await freshSession(listCwd, "startup");
+    await tick();
+    const listState = readState(listCwd);
+    assert.equal(listState.goal, null, "blank startup does not activate the queue head");
+    assert.equal(listState.list.length, 1, "blank startup preserves the queued item");
+    assert.equal(pi.sent.length, 0, "blank startup sends no list continuation");
+
+    const loopCwd = tmpCwd();
+    seedState(loopCwd, { loop: seedLoop() });
+    pi.sent.length = 0;
+    await freshSession(loopCwd, "startup");
+    await tick();
+    assert.equal((readState(loopCwd).loop as { active: boolean }).active, true, "blank startup does not deactivate the loop");
+    assert.equal(pi.sent.length, 0, "blank startup sends no loop continuation");
+
     session.buildSessionContext = () => ({ messages: [{ role: "user", content: "restored" }] });
     const loadedCwd = tmpCwd();
     seedState(loadedCwd, { goal: seedGoal() });
