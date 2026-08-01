@@ -15,7 +15,6 @@
  */
 
 import * as fs from "node:fs";
-import { exec } from "node:child_process";
 import * as os from "node:os";
 import * as path from "node:path";
 
@@ -317,10 +316,10 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   staleTerminalDone = true;
   extensionApiStale = true;
   appendLedger(ctx.cwd, "extension_api_stale", { where, kind: isLoopActive() ? "loop" : "goal" });
-  const guidance = "pi invalidated this session's extension handle (session replacement — the session was disposed and this process's sends can never land). Run /reload — extensions rebuild IN PLACE, no pi restart needed — then /glla resume (autoresume=on resumes for you). Restart pi only if /reload itself fails.";
+  const guidance = "pi invalidated this session's extension handle without delivering a replacement session. glla stopped stale sends and kept the work safe in .pi-glla/. A fresh session_start will resume it; if pi does not create one, restart pi normally and glla will restore the saved work.";
   // v0.32.0: kill the continuation re-arm too — otherwise an orphaned goal
   // keeps spinning a flat 50ms retry below every watchdog.
-  if (continuationTimer) { clearTimeout(continuationTimer); continuationTimer = null; continuationScheduledFor = null; }
+  clearSessionOwnedTimers();
   if (isLoopActive()) {
     clearLoopTimer();
     state.loop = { ...state.loop!, active: false, stopReason: `extension api stale: ${guidance}` };
@@ -329,86 +328,43 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
     updateGoal({ interruptedAt: nowIso(), interruptedReason: `extension api stale (${where})` }, ctx);
   }
   ctx.ui.notify(`glla: ${guidance}`, "warning");
-  notifyExternal(ctx, `glla: extension api stale — run /reload, then /glla resume. (${where})`);
-  attemptAutoReload(ctx, where);
+  notifyExternal(ctx, `glla: extension api stale — waiting for a fresh session_start; restart pi normally only if no replacement arrives. (${where})`);
 }
 
-/** v0.29.13: automatic recovery — the zombie handle can't call ctx.reload()
- * (pi walls EVERY runtime method behind assertActive), but fs/child_process
- * are extension-side and still work. Inject /reload as keystrokes into our
- * own terminal pane: pi rebuilds the extension runtime in place, the fresh
- * instance loads .pi-glla state and holds (autoresume=on resumes for you).
- * v0.29.22: transport-generalized — tmux OR WezTerm. Field: this rig runs
- * WezTerm (TERM_PROGRAM=WezTerm, WEZTERM_PANE set, no TMUX), so the
- * tmux-only gate failed silently 100% of the time — auto_reload_injected
- * never fired fleet-wide, and every stale handle fell back to the manual
- * warning (user: "stopping and told to reload is common"). v0.29.22 also
- * fires from the entry-probe path (the most common stale discovery).
- * Opt out: autoReloadOnStale=false. Best-effort: the manual warning
- * already fired, so failures cost nothing. */
-function attemptAutoReload(ctx: ExtensionContext, where: string): boolean {
+/** v0.34.16: lifecycle handoff replaces terminal keystroke injection. A
+ * stale extension cannot call pi, so recovery must cross the lifecycle
+ * boundary: session_shutdown records durable resume debt, clears every timer
+ * that could retain the old context, and session_start consumes the debt from
+ * a fresh context. */
+const SESSION_HANDOFF_FILE = "session-handoff.json";
+const SESSION_HANDOFF_FRESH_MS = 300_000;
+function sessionHandoffPath(cwd: string): string {
+  return path.join(piGlaDir(cwd), SESSION_HANDOFF_FILE);
+}
+function writeSessionHandoff(ctx: ExtensionContext, reason: string): boolean {
+  if (!isSupervising()) return false;
   try {
-    if (loadSettings(ctx.cwd).autoReloadOnStale === false) return false;
-    const tmuxPane = process.env.TMUX_PANE;
-    const wezPane = process.env.WEZTERM_PANE;
-    let transport: "tmux" | "wezterm";
-    let cmd: string;
-    let pane: string;
-    if (process.env.TMUX && tmuxPane && /^%\d+$/.test(tmuxPane)) {
-      transport = "tmux";
-      pane = tmuxPane;
-      // v0.29.22: NO leading Escape — a late zombie probe can fire AFTER a
-      // fresh instance already resumed and started a turn, and Escape
-      // would abort that turn without consent (the consent line). /reload
-      // alone lands at a dead prompt and queues harmlessly mid-turn (pi
-      // refuses the reload itself if a response is streaming).
-      cmd = `tmux send-keys -t ${pane} -l '/reload' && tmux send-keys -t ${pane} Enter`;
-    } else if (wezPane && /^\d+$/.test(wezPane)) {
-      transport = "wezterm";
-      pane = wezPane;
-      // wezterm cli send-text --no-paste delivers bytes as keystrokes.
-      // /reload + CR only — no Escape (see above). Literal CR byte inside
-      // single quotes — no bash-isms (exec uses /bin/sh).
-      cmd = `wezterm cli send-text --pane-id ${pane} --no-paste '/reload\r'`;
-    } else {
-      appendLedger(ctx.cwd, "auto_reload_skipped", { where, reason: "no supported multiplexer (tmux/WezTerm) in env" });
-      return false;
-    }
-    appendLedger(ctx.cwd, "auto_reload_injected", { where, transport, pane });
-    ctx.ui.notify("glla: injecting /reload into this pane — extensions rebuild in place and the fresh instance holds state. /glla resume after (automatic with autoresume=on).", "info");
-    exec(cmd, () => { /* best-effort */ });
+    fs.mkdirSync(piGlaDir(ctx.cwd), { recursive: true });
+    fs.writeFileSync(sessionHandoffPath(ctx.cwd), JSON.stringify({ pid: process.pid, at: new Date().toISOString(), reason }));
+    appendLedger(ctx.cwd, "session_handoff_pending", { reason, pid: process.pid });
     return true;
   } catch {
-    /* never let recovery take the warning path down */
+    appendLedger(ctx.cwd, "session_handoff_write_failed", { reason });
     return false;
   }
 }
-
-/** v0.34.13: one rung of the auto-recovery ladder. Returns true when a
- * /reload was injected (caller should NOT also pause/alert the manual
- * cure). Writes the sidecar resume marker FIRST so the fresh instance
- * resumes the goal/loop even with autoresume=off. Throttled — a second
- * wedge inside the window is the pi-restart class and must reach the
- * user as a loud stop, not another reload. */
-let lastAutoRecoveryAt = 0;
-function attemptAutoRecovery(ctx: ExtensionContext, where: string): boolean {
-  if (loadSettings(ctx.cwd).autoRecovery === false) return false;
-  const now = Date.now();
-  if (now - lastAutoRecoveryAt < AUTO_RECOVERY_THROTTLE_MS) return false;
-  // Inject FIRST — the throttle stamp + marker must reflect a real
-  // recovery, not a no-transport skip (else the watchdog would mislabel
-  // the next wedge as the pi-restart class).
-  if (!attemptAutoReload(ctx, where)) return false;
-  lastAutoRecoveryAt = now;
+function consumeSessionHandoff(cwd: string): boolean {
   try {
-    fs.writeFileSync(
-      path.join(piGlaDir(ctx.cwd), RECOVERY_RESUME_MARKER),
-      JSON.stringify({ at: new Date(now).toISOString(), where }),
-    );
-  } catch { /* best-effort — the reload still helps; restore just holds */ }
-  appendLedger(ctx.cwd, "auto_recovery_reload", { where });
-  ctx.ui.notify(`glla auto-recovery: ${where} — the ${isLoopActive() ? "loop" : "goal/list item"} resumes ITSELF after the rebuild (no /glla resume needed; the sidecar marker carries the consent). If this recurs within ${Math.round(AUTO_RECOVERY_THROTTLE_MS / 60_000)}m it's the pi-restart class and you'll get a loud stop.`, "warning");
-  return true;
+    const p = sessionHandoffPath(cwd);
+    if (!fs.existsSync(p)) return false;
+    const raw = fs.readFileSync(p, "utf-8");
+    fs.unlinkSync(p);
+    const data = JSON.parse(raw) as { pid?: number; at?: string };
+    const at = Date.parse(data.at ?? "");
+    return data.pid === process.pid && !Number.isNaN(at) && Date.now() - at < SESSION_HANDOFF_FRESH_MS;
+  } catch {
+    return false;
+  }
 }
 
 /** v0.34.14: /reload rebind detector. The extension runs INSIDE pi, so
@@ -616,6 +572,11 @@ function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop" | "lis
 // pi replaces sessions (newSession/fork/reload) and stale ctx throws on use,
 // so timers must never capture a ctx — they read lastCtx at fire time.
 let lastCtx: ExtensionContext | null = null;
+// v0.34.16: shutdown sets this before pi invalidates the old context. Any
+// timer or late event that reaches the old module must stand down until the
+// fresh session_start rebinds it.
+let sessionHandoffPending = false;
+const sessionTimeouts = new Set<NodeJS.Timeout>();
 // v0.23.8: the session that OWNS the loop (its sessionManager). Subagent
 // sessions (pi-subagents binds extensions there too) fire our handlers
 // with their own ctx — they must never take over lastCtx (a headless
@@ -718,15 +679,9 @@ const CONTINUATION_UNANSWERED_THROTTLE_MS = 300_000;
 // cycle. Sending 2.5s AFTER agent_end lets teardown settle; the send lands
 // and the next turn starts immediately. 2.5s per turn beats 60s per turn.
 const EAGER_CONTINUATION_SETTLE_MS = Number(process.env.GLLA_EAGER_SETTLE_MS ?? 2_500);
-// v0.34.13: auto-recovery ladder ("keep going unless we MUST stop — a
-// question, or done" — user directive 2026-08-01). A wedge that only a
-// /reload cures should /reload ITSELF: inject the keystrokes (v0.29.13
-// transport) with a sidecar marker so the fresh instance RESUMES even when
-// autoresume=off (the consent came from autoRecovery at recovery time, not
-// the restore-time setting). Throttled to one attempt per window: a
-// recurrence inside the window is the transcript-writer-dead class, which
-// only a pi restart cures — that one stays a loud stop for the human.
-const AUTO_RECOVERY_THROTTLE_MS = 600_000;
+// v0.34.16: retain the old recovery marker for one compatibility window so
+// an in-flight v0.34.15 reload can still resume once. New recovery debt uses
+// the session lifecycle handoff below and never injects terminal keystrokes.
 const RECOVERY_RESUME_MARKER = "recovery-resume.json";
 const RECOVERY_RESUME_FRESH_MS = 300_000;
 // v0.29.19: dead-turn caps (agent_end exemption path). 6 consecutive
@@ -1241,11 +1196,37 @@ function clearContinuationTimer(): void {
   continuationScheduledFor = null;
 }
 
+function scheduleSessionTimeout(callback: () => void, delayMs: number): NodeJS.Timeout {
+  let timer: NodeJS.Timeout;
+  timer = setTimeout(() => {
+    sessionTimeouts.delete(timer);
+    callback();
+  }, delayMs);
+  sessionTimeouts.add(timer);
+  timer.unref?.();
+  return timer;
+}
+
+function clearSessionOwnedTimers(): void {
+  sessionHandoffPending = true;
+  clearContinuationTimer();
+  clearLoopTimer();
+  if (queueStuckProbe) { clearTimeout(queueStuckProbe); queueStuckProbe = null; }
+  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  if (uiTicker) { clearInterval(uiTicker); uiTicker = null; }
+  for (const timer of sessionTimeouts) clearTimeout(timer);
+  sessionTimeouts.clear();
+  cancelQuotaRetry();
+  lastCtx = null;
+  ownerSession = null;
+}
+
 function isActionableGoal(): boolean {
   return !!state.goal && state.goal.status === "active" && state.goal.autoContinue;
 }
 
 function freshCtx(): ExtensionContext | null {
+  if (sessionHandoffPending) return null;
   // A captured ctx throws "stale" after session replacement. Probe cheaply;
   // on stale, drop it and wait for the next event to hand us a fresh one.
   if (!lastCtx) return null;
@@ -1271,7 +1252,7 @@ function queueStuckProbeMs(): number {
 let queueStuckProbe: ReturnType<typeof setTimeout> | null = null;
 function armQueueStuckProbe(ctx: ExtensionContext, sentAt: number): void {
   if (queueStuckProbe) clearTimeout(queueStuckProbe);
-  queueStuckProbe = setTimeout(() => {
+  queueStuckProbe = scheduleSessionTimeout(() => {
     queueStuckProbe = null;
     try {
       if (isForeignCtx(ctx)) return; // stale instance — the live one probes
@@ -1281,14 +1262,11 @@ function armQueueStuckProbe(ctx: ExtensionContext, sentAt: number): void {
       if (!ctx.isIdle()) return; // a turn is running — healthy
       if (!ctx.hasPendingMessages()) return; // consumed — even an instant 429 consumes
       appendLedger(ctx.cwd, "queue_stuck_detected", { waitedMs: Date.now() - sentAt });
-      if (!attemptAutoRecovery(ctx, "queue-stuck continuation")) {
-        const msg = `${goalNoun()}: the continuation is QUEUED but pi won't start a turn — the turn trigger is dead (re-sends only queue). Cure: /reload — the goal resumes itself after the rebuild (autoresume off? /glla resume).`;
-        ctx.ui.notify(msg, "warning");
-        notifyExternal(ctx, msg);
-      }
+      const msg = `${goalNoun()}: the continuation is QUEUED but pi won't start a turn — the turn trigger is dead (re-sends only queue). glla will resume from a fresh session_start; if no replacement arrives, restart pi normally and restore the saved work.`;
+      ctx.ui.notify(msg, "warning");
+      notifyExternal(ctx, msg);
     } catch { /* stale ctx — the live instance owns the probe now */ }
   }, queueStuckProbeMs());
-  queueStuckProbe.unref?.();
 }
 
 function scheduleContinuation(ctx: ExtensionContext, force = false, delayMs?: number): void {
