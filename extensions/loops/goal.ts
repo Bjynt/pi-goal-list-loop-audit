@@ -630,15 +630,30 @@ let heartbeatTimer: NodeJS.Timeout | null = null;
 
 const ZOMBIE_RUN_SILENT_MS = 20 * 60_000;
 const ZOMBIE_RUN_ALERT_THROTTLE_MS = 10 * 60_000;
+// v0.34.11: unanswered-continuation watchdog. Hellhunter 2026-08-01: at a
+// list-transition completion boundary pi ACCEPTED every continuation
+// (sendMessage never threw; session reported idle) but started NO turn —
+// transcript frozen, tokens flat, 10+ minutes of refires into the void.
+// Same family as the post-compaction dropped trigger (v0.26.5), but the
+// pending-latch watchdog needs idle&&pending and pi reported no pending
+// here, and the zombie watchdog needs busy — this shape falls between both
+// chairs. Disarm signal = real activity (agent_end/tool_call) AFTER the
+// last send; a landed turn — even a lazy text-only one — disarms it.
+const CONTINUATION_UNANSWERED_MS = 150_000;
+const CONTINUATION_UNANSWERED_THROTTLE_MS = 300_000;
 // v0.29.19: dead-turn caps (agent_end exemption path). 6 consecutive
 // provider-error turns = a real outage, not bad luck — stop honestly.
 // 3 consecutive user aborts = the user means it (user aborts mean STOP).
 const LOOP_MAX_CONSECUTIVE_ERRORS = 6;
 const LOOP_MAX_CONSECUTIVE_ABORTS = 3;
 
+let lastRealActivityAt = 0;
+let lastContinuationSentAt = 0;
+let lastUnansweredAlertAt = 0;
+
 function noteActivity(real = false): void {
   lastActivityAt = Date.now();
-  if (real) consecutiveStalls = 0;
+  if (real) { consecutiveStalls = 0; lastRealActivityAt = lastActivityAt; }
 }
 
 function isSupervising(): boolean {
@@ -932,6 +947,25 @@ function heartbeatTick(): void {
     notifyExternal(ctx, `glla: zombie run suspected (${Math.round(streamSilentMs / 60000)} min busy-silent) — press Esc to abort.`);
     return;
   }
+  // v0.34.11: unanswered-continuation watchdog — pi took the send but no
+  // turn started (no agent_end, no tool call, no stream). Re-sends don't
+  // unstick a dropped trigger (hegemon law) — this alert's job is to say
+  // the cure LOUDLY at ~2.5 min instead of leaving a silent 20-30 min gap
+  // before the zombie/wedge alerts. Does NOT return: the heartbeat refire
+  // below keeps sending underneath in case pi unsticks by itself.
+  if (
+    isSupervising() &&
+    lastContinuationSentAt > 0 &&
+    lastRealActivityAt < lastContinuationSentAt &&
+    Date.now() - lastContinuationSentAt >= CONTINUATION_UNANSWERED_MS &&
+    Date.now() - lastUnansweredAlertAt >= CONTINUATION_UNANSWERED_THROTTLE_MS
+  ) {
+    lastUnansweredAlertAt = Date.now();
+    appendLedger(ctx.cwd, "continuation_unanswered", { silentMs: Date.now() - lastContinuationSentAt });
+    const msg = `glla: pi accepted the continuation ${Math.round((Date.now() - lastContinuationSentAt) / 60_000)}m ago but NO turn has started — no tool calls, no tokens, transcript frozen (the turn trigger is wedged; same pi failure family as the post-compaction blackhole). Re-sends don't unstick it. Cure: /reload — autoresume re-fires the ${isLoopActive() ? "loop" : "goal/list item"} automatically.`;
+    ctx.ui.notify(msg, "warning");
+    notifyExternal(ctx, msg);
+  }
   // v0.29.1: stranded-audit recovery. A goal left in "auditing" with NO
   // in-flight audit means the auditor's result never landed (wedged queue
   // ate the tool result; compaction/restart mid-audit). Field-observed in
@@ -1164,6 +1198,7 @@ function sendContinuation(goalId: string): void {
     if (resync) postCompactResyncPending = false; // consumed only by a landed send
     continuationRearmStreak = 0; continuationRearmSince = 0; // v0.28.5 (E3): a landed send clears the storm
     appendLedger(ctx.cwd, "goal_continuation_sent", { goalId });
+    lastContinuationSentAt = Date.now();
   } catch (err) {
     appendLedger(ctx.cwd, "goal_continuation_send_failed", { goalId, error: err instanceof Error ? err.message : String(err) });
     // v0.26.7: stale runtime = terminal (sends can never land); anything
@@ -2845,6 +2880,7 @@ function sendLoopTurn(): void {
     // refires with zero visibility into whether sends were landing.
     loopRearmStreak = 0; loopRearmSince = 0; // v0.28.5 (E3): a landed turn clears the storm
     appendLedger(ctx.cwd, "loop_turn_sent", { iteration: loop.iteration });
+    lastContinuationSentAt = Date.now();
   } catch (err) {
     // stale API — next agent_end reschedules (but if none comes, the
     // heartbeat's stall escalation stops the spin — v0.26.1).
