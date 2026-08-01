@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.34.15] — 2026-08-01
+
+Hegemon field evidence: an evening where every safety layer fired correctly
+(two stale-reload cycles, two `auto_recovery_reload`s, the error-brake
+ladder) yet the tab still needed manual babysitting — because of three
+gaps, all fixed here.
+
+### Fixed — the error-brake ladder resets on every /reload
+
+`errorBrakeStreak` was module state, so each auto-recovery `/reload` zeroed
+it: the escalating cooldown restarted at 1 minute and the 6-brake park +
+hourly top-of-hour probes (v0.29.9, built for exactly multi-hour quota
+walls) could never engage. A hard-exhausted MiniMax plan churned 1-minute
+probes for an hour. The rung now persists **on the goal**
+(`errorBrakeStreak`, type + schema), cleared by a healthy turn as before —
+the park and hourly probes finally work across reloads.
+
+### Fixed — quota walls are classified on the pause card
+
+The brake carried the raw 429 JSON in `detail` (v0.28.5) but the card never
+said what it MEANT — the user kept resuming into a dead plan. When the
+error text matches rate-limit/quota patterns, the pause reason, suggested
+action, and notifications now say plainly: **"Provider quota/rate-limit
+wall — resuming won't help until the window resets. Switch /model to a
+different provider to continue now."**
+
+### Added — queue-stuck probe: dead triggers confirmed in ~45s, not ~10min
+
+New wedge shape from the same evening: pi **accepted** the continuation
+(footer "1 queued") but the turn trigger was dead — the message sat queued
+while pi idled. The 0.34.11 watchdog gates on "pi reported NO pending"
+(by design, it hunts the other hole), and the stall ladder needs 5 stalls
+over ~10 minutes to escalate. A send that lands queued-without-a-turn is a
+CONFIRMED dead trigger (hegemon law), so a one-shot probe now fires ~45s
+(`GLLA_QUEUE_STUCK_MS` override) after every landed goal/loop send: still
+queued + still idle + zero real activity → `queue_stuck_detected` →
+auto-recovery `/reload` immediately (loud fallback when recovery is
+unavailable). A consumed message — even an instant-429 error turn consumes
+it — or any real activity disarms the probe, so quota churn and healthy
+turns never false-trigger.
+
 ## [0.34.14] — 2026-08-01
 
 ### Fixed — the 4-hour audit loop: stalled audits reset their own circuit breaker
