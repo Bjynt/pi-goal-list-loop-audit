@@ -57,7 +57,7 @@ test("terminal path: ledger event, single-fire, goal ACTIVE+marker / loop stop w
   // auto-resumes active goals).
   assert.match(SRC, /updateGoal\(\{ interruptedAt: nowIso\(\), interruptedReason: `extension api stale \(\$\{where\}\)` \}, ctx\)/);
   assert.ok(!SRC.includes('pauseReason: "extension api stale (pi session replacement)"'), "old pause shape gone");
-  assert.match(SRC, /Run \/reload — extensions rebuild IN PLACE, no pi restart needed — then \/glla resume \(autoresume=on resumes for you\)\. Restart pi only if \/reload itself fails\./);
+  assert.match(SRC, /without delivering a replacement session\. glla stopped stale sends and kept the work safe in \.pi-glla\//);
   // guidance names the pi-side cause:
   assert.match(SRC, /session replacement — the session was disposed and this process's sends can never land/);
 });
@@ -72,34 +72,25 @@ test("v0.29.11 — heartbeat PROBES staleness before burning stall refires", () 
 });
 
 test("v0.30.0 — rebind-first survival: session_shutdown attribution, session_start rebind, zombie stand-down", () => {
-  // User challenge 2026-07-31: "we don't want to be forced to run
-  // reloads — investigate how others do it, this seems super hacky." pi's
-  // sanctioned pattern (docs/extensions.md + the stale error text):
-  // session_shutdown → cleanup, session_start → re-establish with the new
-  // ctx. Three replacement shapes get three responses: switch = silent
-  // rebind; /reload = successor instance owns the cwd → stand down;
-  // orphan = the only case that still warns + self-heals.
+  // Pi's sanctioned lifecycle is the recovery boundary: persist debt before
+  // shutdown, stop old timers, then resume from a fresh session_start ctx.
   assert.match(SRC, /pi\.on\("session_shutdown", async \(event: any, ctx: ExtensionContext\) => \{/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "session_shutdown", \{ reason: shutdownReason \}\);/);
+  assert.match(SRC, /writeSessionHandoff\(ctx, shutdownReason\);/);
+  assert.match(SRC, /clearSessionOwnedTimers\(\);/);
   assert.match(SRC, /sessionReplacementUntil = Date\.now\(\) \+ SESSION_REBIND_GRACE_MS;/);
-  assert.ok(SRC.includes('appendLedger(ctx.cwd, "session_rebound", { reason: startReason });'), "rebind ledgered");
+  assert.ok(SRC.includes('appendLedger(ctx.cwd, "session_handoff_pending", { reason, pid: process.pid });'), "handoff debt is ledgered");
+  assert.ok(SRC.includes('appendLedger(ctx.cwd, "session_handoff_resumed", { pid: process.pid, reason: startReason });'), "handoff consumption is ledgered");
+  assert.ok(SRC.includes("sessionHandoffPending = false;"), "fresh session reopens the runtime");
+  assert.ok(SRC.includes("startHeartbeat();") && SRC.includes("startUITicker();"), "fresh session restarts timers");
   assert.ok(SRC.includes("writeOwnerFile(ctx.cwd);"), "session_start claims ownership");
-  assert.ok(SRC.includes("owner.json"), "owner file name");
-  assert.ok(SRC.includes("`${process.pid}:${instanceStartedAt}`"), "instanceId distinguishes a re-imported successor");
-  assert.ok(SRC.includes('appendLedger(ctx.cwd, "stale_flag_reset_on_rebind", { reason: startReason, stillStale });'), "stale flag reset via re-probe on rebind");
   assert.ok(SRC.includes('appendLedger(ctx.cwd, "zombie_stood_down", { owner: owner.instanceId });'), "successor stand-down ledgered");
   assert.ok(SRC.includes('appendLedger(ctx.cwd, "stale_awaiting_rebind", {});'), "rebind window absorbs stale probes");
   assert.ok(SRC.includes("owner.instanceId !== instanceId"), "stand-down only when a DIFFERENT instance owns the cwd");
   assert.ok(SRC.includes("owner.pid === process.pid"), "stand-down is same-process only (cross-process twins untouched)");
-  const tickIdx = SRC.indexOf("function heartbeatTick(): void {");
-  assert.ok(SRC.indexOf("if (zombieStoodDown) return;") === tickIdx + "function heartbeatTick(): void {\n  ".length - 2 || SRC.slice(tickIdx, tickIdx + 200).includes("if (zombieStoodDown) return;"), "stood-down zombie never ticks again");
-  const entryIdx = SRC.indexOf("function warnIfStaleAtEntry");
-  const entryBlock = SRC.slice(entryIdx, entryIdx + 900);
-  assert.ok(entryBlock.includes("absorbStaleIfSuperseded(ctx)"), "entry probe absorbs superseded stale softly");
-  assert.ok(entryBlock.includes("is handled there; nothing to do"), "superseded entry probe says nothing-to-do");
-  // The orphan path (goStaleTerminal + self-heal) survives.
   assert.match(SRC, /function goStaleTerminal\(ctx: ExtensionContext, where: string\): void/);
-  assert.match(SRC, /function attemptAutoReload\(ctx: ExtensionContext, where: string\): boolean/);
+  assert.ok(!SRC.includes("function attemptAutoReload"), "terminal transport was removed");
+  assert.ok(!SRC.includes("auto_reload_injected"), "no terminal keystroke ledger remains");
 });
 
 test("v0.29.11 — stale/stall-stopped loops HOLD on next load (resume, not restart-from-scratch)", () => {
@@ -120,56 +111,35 @@ test("v0.29.12 — /glla resume is stale-aware (the zombie must not say 'Nothing
   assert.ok(!SRC.includes("compaction triggers it in pi 0.82.x"), "compaction blame removed — compaction never disposes (pi 0.83.0 source-verified)");
 });
 
-test("v0.29.13 — automatic recovery: tmux keystroke self-heal (opt-out via autoReloadOnStale=false)", () => {
-  // pi walls ctx.reload() behind assertActive() — the zombie can't
-  // self-reload through the API. But fs/child_process are extension-side:
-  // when pi runs inside tmux, inject /reload as keystrokes into our own
-  // pane; the fresh instance then loads state and holds (autoresume=on
-  // resumes for you). Outside tmux the manual warning stands alone.
+test("v0.34.16 — lifecycle handoff replaces terminal keystroke recovery", () => {
   const SETTINGS = fs.readFileSync(new URL("../extensions/goal-settings.ts", import.meta.url), "utf8");
-  assert.match(SRC, /loadSettings\(ctx\.cwd\)\.autoReloadOnStale === false/);
-  assert.ok(SRC.includes("process.env.TMUX_PANE"));
-  assert.ok(SRC.includes("/^%\\d+$/"), "pane shape validated before shell use");
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "auto_reload_injected"/);
-  assert.ok(SRC.includes("-l '/reload'"));
-  assert.ok(SETTINGS.includes("autoReloadOnStale?: boolean"));
+  assert.match(SRC, /const SESSION_HANDOFF_FILE = "session-handoff\.json";/);
+  assert.match(SRC, /function writeSessionHandoff\(ctx: ExtensionContext, reason: string\): boolean/);
+  assert.match(SRC, /function consumeSessionHandoff\(cwd: string\): boolean/);
+  assert.match(SRC, /scheduleSessionTimeout\(callback: \(\) => void, delayMs: number\): NodeJS\.Timeout/);
+  assert.match(SRC, /for \(const timer of sessionTimeouts\) clearTimeout\(timer\);/);
+  assert.ok(!SRC.includes("process.env.TMUX_PANE"), "no tmux keystroke transport");
+  assert.ok(!SRC.includes("process.env.WEZTERM_PANE"), "no WezTerm keystroke transport");
+  assert.ok(!SRC.includes("auto_reload_injected"), "no automatic /reload ledger event");
+  assert.match(SETTINGS, /@deprecated v0\.34\.16/);
 });
 
-test("v0.29.22 — self-heal transport-generalized to WezTerm + fires from the entry probe", () => {
-  // Field (polis 2026-07-31, user: "stopping and told to reload is
-  // common"): this rig runs WezTerm (TERM_PROGRAM=WezTerm, WEZTERM_PANE
-  // set, NO TMUX) — the tmux-only gate failed silently 100% of the time
-  // (auto_reload_injected had never fired fleet-wide). And the entry
-  // probe — the most common stale discovery (/glla resume, /list) —
-  // never attempted the self-heal at all.
-  assert.match(SRC, /function attemptAutoReload\(ctx: ExtensionContext, where: string\): boolean/);
-  assert.ok(!SRC.includes("attemptTmuxAutoReload"), "tmux-only helper renamed/removed");
-  assert.ok(SRC.includes("process.env.WEZTERM_PANE"), "wezterm pane env read");
-  assert.ok(SRC.includes("/^\\d+$/"), "wezterm pane id validated before shell use");
-  assert.ok(SRC.includes("wezterm cli send-text --pane-id ${pane} --no-paste"), "wezterm keystroke injection");
-  assert.ok(SRC.includes("'/reload\\r'"), "reload command + carriage return");
-  assert.ok(SRC.includes('appendLedger(ctx.cwd, "auto_reload_injected", { where, transport, pane })'), "ledger names the transport");
-  assert.ok(SRC.includes('"auto_reload_skipped"'), "no-multiplexer path ledgered, not silent");
-  assert.ok(SRC.includes("glla: extension api stale — run /reload, then /glla resume."), "external notify says /reload, not restart pi");
-  assert.ok(!SRC.includes("extension api stale — restart pi"), "stale 'restart pi' external messaging gone");
+test("v0.34.16 — lifecycle recovery has no multiplexer dependency", () => {
+  assert.ok(!SRC.includes("attemptTmuxAutoReload"), "old tmux helper is gone");
+  assert.ok(!SRC.includes("process.env.WEZTERM_PANE"), "no WezTerm pane transport");
+  assert.ok(!SRC.includes("wezterm cli send-text"), "no WezTerm keystroke injection");
+  assert.ok(!SRC.includes("tmux send-keys"), "no tmux keystroke injection");
+  assert.ok(SRC.includes("waiting for a fresh session_start"), "orphan guidance names the lifecycle boundary");
 });
 
-test("v0.29.22 — self-heal is non-destructive: no Escape keystroke, no entry-probe injection", () => {
-  // User pushback 2026-07-31: "we just introduced a real bug — the
-  // operation aborts/kills the session". Two consent-line hazards removed:
-  // (1) a leading Escape could ABORT a fresh turn — a late zombie probe
-  // can fire after a new instance already resumed and started working;
-  // (2) injecting /reload from the ENTRY probe races the user's own
-  // keystrokes (they are typing a /glla command by definition there).
-  assert.ok(!SRC.includes("send-keys -t ${pane} Escape"), "no tmux Escape");
-  assert.ok(!SRC.includes("'\\x1b'"), "no wezterm Escape byte");
+test("v0.34.16 — stale paths never inject terminal input", () => {
+  assert.ok(!SRC.includes("send-keys"), "no terminal keystrokes");
+  assert.ok(!SRC.includes("'\\x1b'"), "no Escape byte");
   const entryIdx = SRC.indexOf("function warnIfStaleAtEntry");
   const entryEnd = SRC.indexOf("}", SRC.indexOf("return true;", entryIdx));
   const entryBlock = SRC.slice(entryIdx, entryEnd);
-  assert.ok(!entryBlock.includes("attemptAutoReload"), "entry probe does NOT self-heal (user is present)");
-  // Autonomous paths still self-heal.
-  const gstIdx = SRC.indexOf("function goStaleTerminal");
-  assert.ok(SRC.indexOf("attemptAutoReload(ctx, where);") > gstIdx, "goStaleTerminal self-heals");
+  assert.ok(!entryBlock.includes("exec("), "entry probe has no transport side effect");
+  assert.ok(!SRC.includes("attemptAutoReload"), "no stale self-reload helper");
 });
 
 test("send paths short-circuit once stale (no retry-into-the-void)", () => {
@@ -191,6 +161,6 @@ test("v0.32.0: audit-opportunistic fix batch — dispose, keys, caps, message", 
   assert.match(GOAL, /slice\(0, 50\)/); // fan-out cap
   assert.match(GOAL, /quotaRetryStreak >= 5/); // quota retry terminal cap
   assert.match(GOAL, /quotaRetryStreak = 0;/); // streak resets on any non-quota outcome
-  assert.match(GOAL, /rebinding after \/reload — /); // entry probe names the rebind window honestly
-  assert.match(GOAL, /clearTimeout\(continuationTimer\); continuationTimer = null; continuationScheduledFor = null;/); // terminal kills the re-arm
+  assert.match(GOAL, /handing off to a fresh pi context — /); // entry probe names the lifecycle handoff honestly
+  assert.match(GOAL, /function clearSessionOwnedTimers\(\): void/); // terminal kills all old-session timers
 });

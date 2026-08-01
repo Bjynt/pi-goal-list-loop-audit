@@ -394,7 +394,7 @@ test("v0.34.11: unanswered-continuation watchdog (accepted send, no turn — hel
   assert.match(g, /appendLedger\(ctx\.cwd, "loop_turn_sent", \{ iteration: loop\.iteration \}\);\n    lastContinuationSentAt = Date\.now\(\);/);
   // Loud + actionable + ledger-visible; re-sends explicitly don't unstick (hegemon law).
   assert.match(g, /continuation_unanswered/);
-  assert.match(g, /Cure: \/reload — autoresume re-fires/);
+  assert.match(g, /A fresh session_start will rebind the \$\{isLoopActive\(\) \? "loop" : "goal\/list item"\}/);
 });
 
 // ---------- v0.34.12: eager-continuation settle + wait countdown ----------
@@ -417,26 +417,16 @@ test("v0.34.12: wait-pause status line counts down live + ticker survives the wa
 
 // ---------- v0.34.13: auto-recovery ladder ("keep going unless we MUST stop") ----------
 
-test("v0.34.13: wedges self-/reload and self-resume — the user only sees genuine stops", () => {
+test("v0.34.16: wedges hand off through pi lifecycle — no terminal self-reload", () => {
   const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
-  assert.match(g, /const AUTO_RECOVERY_THROTTLE_MS = 600_000;/, "one auto-recovery per 10min");
-  assert.match(g, /const RECOVERY_RESUME_MARKER = "recovery-resume\.json";/, "sidecar resume marker");
-  // Inject-first ordering: a no-transport skip must NOT stamp the throttle
-  // (else the next wedge gets mislabeled as the pi-restart class).
-  assert.match(g, /if \(!attemptAutoReload\(ctx, where\)\) return false;\n  lastAutoRecoveryAt = now;/, "stamp after successful injection only");
-  // The 2.5min watchdog recovers first; only failure modes alert.
-  assert.match(g, /if \(!attemptAutoRecovery\(ctx, "continuation unanswered"\)\)/, "watchdog recovers before alerting");
-  assert.match(g, /only a pi RESTART cures it: restart pi in this tab/, "restart-class loud stop names the real cure");
-  // Storm + stall loud-stops try recovery before spending user attention.
-  assert.ok((g.match(/send_rearm_escalated_suppressed", \{ reason: "auto-recovery reload" \}\)/g) ?? []).length >= 2, "both storm branches recover first");
-  assert.match(g, /stall_escalated_suppressed", \{ reason: "auto-recovery reload"/, "stall escalation recovers first");
-  // The sidecar marker carries resume consent across the reload, even with
-  // autoresume=off — for goals AND loops.
-  assert.match(g, /const recoveryResume = consumeRecoveryResume\(ctx\.cwd\);/, "restore consumes the marker");
-  assert.ok((g.match(/if \(autoResume \|\| recoveryResume \|\| rebindResume\) \{/g) ?? []).length >= 2, "goal + loop restore branches honor it");
-  assert.match(g, /Date\.now\(\) - at < RECOVERY_RESUME_FRESH_MS/, "stale markers can't surprise-resume");
-  const st = fs.readFileSync(path.resolve("extensions/goal-settings.ts"), "utf-8");
-  assert.match(st, /autoRecovery\?: boolean;/, "setting exists (default on, opt-out)");
+  assert.match(g, /const SESSION_HANDOFF_FILE = "session-handoff\.json";/, "durable handoff marker");
+  assert.match(g, /writeSessionHandoff\(ctx, shutdownReason\);/, "shutdown persists resume debt");
+  assert.match(g, /clearSessionOwnedTimers\(\);/, "shutdown clears old-context timers");
+  assert.match(g, /const handoffResume = consumeSessionHandoff\(ctx\.cwd\);/, "fresh session consumes debt");
+  assert.ok(!g.includes("attemptAutoReload"), "no terminal transport");
+  assert.ok(!g.includes("auto_reload_injected"), "no reload injection ledger");
+  assert.match(g, /A fresh session_start will rebind the/, "watchdogs explain the lifecycle cure");
+  assert.match(g, /const recoveryResume = consumeRecoveryResume\(ctx\.cwd\);/, "old markers remain one-release compatible");
 });
 
 // ---------- v0.34.14: /reload rebind always resumes + auditor streak law ----------
@@ -447,8 +437,9 @@ test("v0.34.14: /reload rebind resumes mid-work — the 'list is not continuing'
   assert.match(g, /return prevPid !== null && prevPid === process\.pid;/, "same pid = /reload rebind, not cold boot");
   assert.match(g, /const rebindResume = claimSessionOwnerAndDetectRebind\(ctx\.cwd\);/, "restore detects rebind");
   assert.match(g, /appendLedger\(ctx\.cwd, "rebind_resume", \{ pid: process\.pid \}\);/, "rebind resumes are ledger-visible");
-  // Cold boots (new pid) still honor autoresume=off — the OR-chain gates all three.
-  assert.ok((g.match(/if \(autoResume \|\| recoveryResume \|\| rebindResume\) \{/g) ?? []).length >= 2, "goal + loop branches");
+  // Cold boots (new pid) still honor autoresume=off; lifecycle handoff and
+  // same-pid rebind are explicit same-process continuations.
+  assert.ok((g.match(/if \(autoResume \|\| recoveryResume \|\| rebindResume \|\| handoffResume\) \{/g) ?? []).length >= 2, "goal + loop branches");
 });
 
 test("v0.34.14: 3-strike pause names the hanging-verification cause (pully ssh/sudo stall)", () => {
@@ -477,11 +468,11 @@ test("v0.34.15: quota walls are CLASSIFIED on the card — resuming won't help, 
   assert.ok((g.match(/quotaWall/g) ?? []).length >= 5, "both pause branches + notifies classify");
 });
 
-test("v0.34.15: queue-stuck probe — a send queued-without-a-turn ~45s = confirmed dead trigger → auto-recovery NOW", () => {
+test("v0.34.16: queue-stuck probe — a send queued-without-a-turn is reported without terminal injection", () => {
   const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
   assert.match(g, /GLLA_QUEUE_STUCK_MS \?\? 45_000/);
   assert.match(g, /appendLedger\(ctx\.cwd, "queue_stuck_detected"/);
-  assert.match(g, /attemptAutoRecovery\(ctx, "queue-stuck continuation"\)/);
+  assert.match(g, /A fresh session_start will rebind the/);
   assert.match(g, /if \(lastRealActivityAt > sentAt\) return;/, "real work disarms");
   assert.match(g, /if \(!ctx\.hasPendingMessages\(\)\) return;/, "consumed message = healthy — even an instant 429 consumes");
   assert.match(g, /if \(!ctx\.isIdle\(\)\) return;/, "running turn = healthy");

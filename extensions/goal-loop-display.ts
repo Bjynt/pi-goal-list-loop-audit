@@ -215,10 +215,11 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
   }
   if (g.status === "active") {
     // v0.28.1 (S1/S2): a stale-handle interrupt keeps the goal ACTIVE.
-    // v0.29.11: the fresh session HOLDS it (hold-everything restore gate;
-    // autoresume=on resumes for you) — name the verb, don't promise auto.
+    // v0.34.16: a fresh session_start owns the handoff. A cold boot still
+    // follows the global autoResume setting, so the widget names the actual
+    // lifecycle rather than promising terminal keystroke recovery.
     if (g.interruptedAt) {
-      return `glla: ${paint(theme, "error", "⚠ interrupted — stale handle · /reload → /glla resume")}${heldSuffix}`;
+      return `glla: ${paint(theme, "error", "⚠ interrupted — stale handle · fresh session_start resumes")}${heldSuffix}`;
     }
     // v0.24.7: list policy gets its own wording — a queue item is not a goal.
     // v0.28.11 (U10): goal policy joins it — "list 29" read as a command

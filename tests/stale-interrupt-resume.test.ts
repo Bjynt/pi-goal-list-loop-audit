@@ -44,7 +44,7 @@ test("S3 probe: side-effect-free getSessionName() probe caches the positive", ()
 
 test("S3 warn helper: honest 'state is safe' messaging + ledger", () => {
   assert.match(SRC, /function warnIfStaleAtEntry\(ctx: ExtensionContext, what: string\): boolean/);
-  assert.match(SRC, /State is safe in \.pi-glla\/ — run \/reload \(extensions rebuild in place\), then \/glla resume\. Restart pi only if \/reload fails\./);
+  assert.match(SRC, /State is safe in \.pi-glla\/\. A fresh session_start will resume it; if pi does not create one, restart pi normally and restore the saved work\./);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "extension_api_stale", \{ where: `entry probe \(\$\{what\}\)` \}\)/);
 });
 
@@ -57,7 +57,7 @@ test("S3: probes wired at cmdSet / cmdResume / cmdList / propose_goal_draft entr
 
 test("S3: stale creation marks the interrupt and tells the truth (no 'starting now' lie)", () => {
   assert.match(SRC, /updateGoal\(\{ interruptedAt: nowIso\(\), interruptedReason: "created in a stale session" \}, ctx\)/);
-  assert.match(SRC, /safe in \.pi-glla\/, but this stale process can't send continuations\. Run \/reload \(extensions rebuild in place, state survives\), then \/goal resume/);
+  assert.match(SRC, /safe in \.pi-glla\/, but this stale process can't send continuations\. A fresh session_start will resume it; if no replacement arrives, restart pi normally/);
 });
 
 test("S1: stale resume persists active+marker, skips the misleading notify and the doomed send", () => {
@@ -81,7 +81,7 @@ test("S2 (v0.28.21): the 0.28.3 interrupt exemption is SUPERSEDED — only autor
 
 test("S1/S2: widget surfaces the interrupt on ACTIVE goals", () => {
   assert.match(DISPLAY, /if \(g\.interruptedAt\)/);
-  assert.match(DISPLAY, /⚠ interrupted — stale handle · \/reload → \/glla resume/);
+  assert.match(DISPLAY, /⚠ interrupted — stale handle · fresh session_start resumes/);
 });
 
 test("E6: drafting-seed send failure is loud and stale-aware (was silent)", () => {
@@ -91,7 +91,7 @@ test("E6: drafting-seed send failure is loud and stale-aware (was silent)", () =
 });
 
 test("T1: stale Confirm is NOT a rejection — both single and batch paths", () => {
-  const honest = /This is NOT a rejection — do NOT refine or re-propose\. Tell the user to restart pi, then re-run the drafting flow\./;
+  const honest = /This is NOT a rejection — do NOT refine or re-propose\. Wait for a fresh session_start, then re-run the drafting flow\./;
   const matches = SRC.match(new RegExp(honest.source, "g")) ?? [];
   assert.equal(matches.length, 2, "single + batch confirm paths");
   assert.match(SRC, /appendLedger\(liveCtx\.cwd, "extension_api_stale", \{ where: "draft confirm" \}\)/);
