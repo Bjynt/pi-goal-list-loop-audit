@@ -64,8 +64,8 @@ test("v0.28.29: busy-retry cadence backs off (no more flat 50ms spins)", () => {
   assert.match(SRC, /if \(streak <= 8\) return 250;/);
   assert.match(SRC, /if \(streak <= 12\) return 1_000;/);
   assert.match(SRC, /return 30_000;/);
-  assert.match(SRC, /setTimeout\(\(\) => sendContinuation\(goalId\), sendRearmDelayMs\(continuationRearmStreak\)\)/);
-  assert.match(SRC, /setTimeout\(\(\) => sendLoopTurn\(\), sendRearmDelayMs\(loopRearmStreak\)\)/);
+  assert.match(SRC, /scheduleSessionTimeout\(\(\) => sendContinuation\(goalId\), sendRearmDelayMs\(continuationRearmStreak\)\)/);
+  assert.match(SRC, /scheduleSessionTimeout\(\(\) => sendLoopTurn\(\), sendRearmDelayMs\(loopRearmStreak\)\)/);
 });
 
 test("v0.28.29: escalation is TIME-based and ACTIVITY-gated (busy ≠ wedged — the polis false positive)", () => {

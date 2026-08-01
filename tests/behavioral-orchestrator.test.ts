@@ -284,7 +284,7 @@ test("T1a: stale Confirm in propose_goal_draft → NOT-a-rejection guidance, no 
   };
   const res = await pi.runTool("propose_goal_draft", { objective: "drafted objective — done when x", verificationContract: "x" }, ctx);
   assert.match(res.content[0]!.text, /NOT a rejection — do NOT refine or re-propose/);
-  assert.match(res.content[0]!.text, /Tell the user to restart pi/);
+  assert.match(res.content[0]!.text, /Wait for a fresh session_start/);
   assert.equal(readState(cwd).goal, null, "nothing was created — and nothing was REFUSED either");
 });
 
