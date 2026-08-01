@@ -68,6 +68,39 @@ test("T3a: active goal + human load (startup) + default settings → HELD for ex
   assert.ok(ctx.ui.matching("held on restore").length >= 1, "held notify shown");
 });
 
+test("v0.34.18: blank startup waits for the transcript before autoresume, while explicit resume and loaded history still work", async () => {
+  const session = MAIN_SM as { buildSessionContext?: () => { messages: unknown[] } };
+  session.buildSessionContext = () => ({ messages: [] });
+  try {
+    const cwd = tmpCwd();
+    seedState(cwd, { goal: seedGoal() });
+    setGlobalAutoResume(true);
+    pi.sent.length = 0;
+    const ctx = await freshSession(cwd, "startup");
+    await tick();
+    assert.equal((readState(cwd).goal as { status: string }).status, "active", "the blank startup does not pause or mutate the saved goal");
+    assert.equal(pi.sent.length, 0, "blank startup sends no continuation");
+    assert.ok(ctx.ui.matching("has not loaded a conversation yet").length >= 1, "the initialization barrier is visible");
+    assert.ok(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes('"session_waiting_for_load"'), "the wait is ledgered");
+
+    await pi.command("goal", "resume", ctx);
+    await tick();
+    assert.ok(pi.sent.length >= 1, "explicit /goal resume releases the startup barrier");
+
+    session.buildSessionContext = () => ({ messages: [{ role: "user", content: "restored" }] });
+    const loadedCwd = tmpCwd();
+    seedState(loadedCwd, { goal: seedGoal() });
+    pi.sent.length = 0;
+    const loaded = await freshSession(loadedCwd, "startup");
+    await tick();
+    assert.equal((readState(loadedCwd).goal as { status: string }).status, "active", "loaded startup history permits autoresume");
+    assert.ok(loaded.ui.matching("resuming goal").length >= 1, "loaded startup announces autoresume");
+    assert.ok(pi.sent.length >= 1, "loaded startup sends the continuation");
+  } finally {
+    delete session.buildSessionContext;
+  }
+});
+
 test("T3c (v0.28.21): interrupted goal HELDS by default — the 0.28.3 exemption is superseded; autoresume=on auto-resumes", async () => {
   // Default: even an infra-interrupted goal loads HELD (user directive:
   // "load it on session load but not auto start it"). The marker STAYS.

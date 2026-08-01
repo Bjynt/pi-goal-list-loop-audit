@@ -1945,6 +1945,9 @@ function listQueue(): NonNullable<State["list"]> {
 }
 
 function activateNextListItem(ctx: ExtensionContext, n = 1): boolean {
+  // An explicit list activation is user consent even when pi initially
+  // reported a blank startup context; automatic restore never reaches here.
+  releaseInitialSessionLoadBarrier();
   // v0.28.14: one-active-thing choke point — NO call site (session_start,
   // completion cascade, /list next, list_activate, list-draft auto-activate)
   // may activate a list item over a live loop, present or future.
@@ -2132,6 +2135,7 @@ async function cmdGoal(args: string, ctx: ExtensionContext): Promise<void> {
 // =================================================================
 
 async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): Promise<void> {
+  releaseInitialSessionLoadBarrier();
   // v0.28.1 (S3): probe at the creation entry — no "created — starting now"
   // lie in a doomed process. (The draft path's seed send has its own loud
   // stale handling — E6.)
@@ -2212,6 +2216,7 @@ async function cmdPause(ctx: ExtensionContext): Promise<void> {
 }
 
 async function cmdResume(ctx: ExtensionContext): Promise<void> {
+  releaseInitialSessionLoadBarrier();
   // v0.34.3: /goal resume on an ACTIVE-but-idle goal re-kicks its
   // continuation (was: silent return — the user got NOTHING while the
   // widget said "active"). One-active-thing still holds: an active loop
@@ -3287,6 +3292,7 @@ interface LoopConfig {
 
 /** Shared loop-start path: /loop start AND propose_loop_draft (after Confirm). */
 async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Promise<boolean> {
+  releaseInitialSessionLoadBarrier();
   // branch=1 mode: scratch branch ONLY. Refuse on non-git or dirty tree —
   // we never mix uncommitted user work into the loop's branch.
   let branchName: string | undefined;
@@ -3375,6 +3381,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
   const rest = args.trim().slice(sub.length).trim();
 
   if (!sub || sub === "resume") {
+    releaseInitialSessionLoadBarrier();
     // /loop with no args (or /loop resume, v0.28.22) → resume a held loop
     // if one is waiting; otherwise draft the loop config (metric design is
     // the whole game for a long-running loop; never start one blind).
@@ -4314,6 +4321,9 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       const confirmedTarget = draftingTarget;
       draftingTarget = null;
       const full = p.objective.trim() + (normContract ? `\nDone when:\n${normContract}` : "");
+      // The user has just confirmed this activation; release the blank-start
+      // barrier before the direct goal path schedules its first continuation.
+      releaseInitialSessionLoadBarrier();
       // v0.28.14: one-active-thing — no goal/list activation over a live loop.
       if (isLoopActive()) {
         return { content: [{ type: "text", text: "A loop is active — one active thing at a time. The user must /loop stop it before a goal or list item can activate; do not re-propose until then." }], details: {} };
@@ -5520,6 +5530,7 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
   // used to answer "Nothing to resume" — the resume path must name the
   // real recovery (/reload rebuilds extensions in place), not mislead.
   if (warnIfStaleAtEntry(ctx, "/glla resume")) return;
+  releaseInitialSessionLoadBarrier();
   const g = state.goal;
   const goalResumable = g && g.status === "paused";
   const loopResumable = state.loop && !state.loop.active && state.loop.stopReason === HELD_ON_RESTORE;
