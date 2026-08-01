@@ -150,3 +150,19 @@ test("v0.29.8: /goal audit [focus] — the one-shot project audit; /glla status 
   assert.ok(SRC.includes("deep: /goal status · /list · /loop status · /glla stats · /glla audits · /glla log"));
   assert.ok(SRC.includes('if (/^status\\b/.test(trimmed)) {'));
 });
+
+// ---------- v0.34.2: manual resume clears the marker too ----------
+
+test("v0.34.2: cmdResume clears interruptedAt/interruptedReason on a fresh-session resume", () => {
+  // The autoResume restore path (:6227-ish) was the ONLY clear-site — with
+  // autoresume=off a manually resumed goal kept the red interrupted banner
+  // forever while actively working (hegemon, 2026-08-01).
+  const resumeCall = SRC.match(/updateGoal\(\{ status: "active", pauseReason: undefined[^\n]*\n?/);
+  assert.ok(resumeCall, "cmdResume updateGoal call found");
+  assert.match(resumeCall[0], /interruptedAt: undefined, interruptedReason: undefined/, "manual resume clears the marker");
+  // …and the stale-session re-mark still wins when the resume itself is stale.
+  assert.ok(
+    resumeCall[0].indexOf("interruptedAt: undefined") < resumeCall[0].indexOf('interruptedReason: "resumed in a stale session"'),
+    "the staleEntry re-mark spreads AFTER the clear, so it still wins",
+  );
+});

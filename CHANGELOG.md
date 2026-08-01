@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.34.2] — 2026-08-01
+
+### Fixed — manual resume clears the stale-handle interrupt marker
+
+Hegemon, 2026-08-01: autoresume=off, goal held on restore, user resumed it
+manually — and the status line kept screaming
+`⚠ interrupted — stale handle · /reload → /glla resume` in error red while
+the goal was actively working 22 minutes in. The marker's only clear-site
+was the AUTORESUME restore path (v0.28.1); `cmdResume` cleared every pause
+field but not `interruptedAt`. A manual resume fulfills the marker's promise
+("a fresh session will resume you") exactly as an automatic one does, so it
+now clears `interruptedAt`/`interruptedReason` too — the stale-session
+re-mark (`resumed in a stale session`) still spreads after the clear and
+still wins when the resume itself is stale. If a pre-fix flag is stuck on
+disk: `/goal pause` then `/goal resume` clears it.
+
 ## [0.34.1] — 2026-08-01
 
 ### Fixed — status line no longer doubles the widget's type chip

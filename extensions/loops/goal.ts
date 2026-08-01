@@ -2023,7 +2023,14 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
   const usage = state.goal.usage
     ? { tokensUsed: state.goal.usage.tokensUsed, tokensLimit: freshLimit }
     : undefined;
-  updateGoal({ status: "active", pauseReason: undefined, pauseSuggestedAction: undefined, pauseKind: undefined, pauseOptions: undefined, pauseRecommended: undefined, pauseResumeAt: undefined, ...(staleEntry ? { interruptedAt: nowIso(), interruptedReason: "resumed in a stale session" } : {}), ...(usage ? { usage } : {}) }, ctx);
+  // v0.34.2: clear the stale-handle interrupt marker on a MANUAL resume too —
+  // the only clear-site used to be the autoResume restore path, so with
+  // autoresume=off a resumed goal kept the red "⚠ interrupted — stale handle"
+  // status line forever while actively working (hegemon, 2026-08-01). The
+  // marker's promise ("a fresh session will resume you") is fulfilled by a
+  // manual resume exactly as by an automatic one. (staleEntry still re-marks
+  // below — a resume inside a stale session is a NEW interrupt.)
+  updateGoal({ status: "active", pauseReason: undefined, pauseSuggestedAction: undefined, pauseKind: undefined, pauseOptions: undefined, pauseRecommended: undefined, pauseResumeAt: undefined, interruptedAt: undefined, interruptedReason: undefined, ...(staleEntry ? { interruptedAt: nowIso(), interruptedReason: "resumed in a stale session" } : {}), ...(usage ? { usage } : {}) }, ctx);
   if (staleEntry) return;
   // v0.22.5: say what was resumed — with a non-empty list this also resumes
   // the queue (the active goal IS the list's head item).
