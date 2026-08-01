@@ -300,12 +300,7 @@ function absorbStaleIfSuperseded(ctx: ExtensionContext): boolean {
     appendLedger(ctx.cwd, "zombie_stood_down", { owner: owner.instanceId });
     zombieStoodDown = true;
     extensionApiStale = true; // silence the send paths WITHOUT the terminal theatre
-    clearLoopTimer();
-    if (continuationTimer) { clearTimeout(continuationTimer); continuationTimer = null; }
-    // v0.32.0: the superseded module's heartbeat + UI ticker were IMMORTAL
-    // (clearInterval appeared nowhere) — N /reloads = N×2 zombie tickers.
-    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
-    if (uiTicker) { clearInterval(uiTicker); uiTicker = null; }
+    clearSessionOwnedTimers();
     return true;
   }
   return false;
@@ -905,15 +900,9 @@ function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
   if (!shouldEscalateStall(consecutiveStalls, threshold)) return false;
   consecutiveStalls = 0;
   appendLedger(ctx.cwd, "stall_escalated", { threshold, kind: isLoopActive() ? "loop" : "goal" });
-  // v0.34.13: recovery before stop — usually throttled (the 2.5min
-  // watchdog already tried), in which case the stop proceeds as today.
-  if (attemptAutoRecovery(ctx, "stall escalation")) {
-    appendLedger(ctx.cwd, "stall_escalated_suppressed", { reason: "auto-recovery reload", threshold });
-    return true;
-  }
   if (isLoopActive()) {
     clearLoopTimer();
-    state.loop = { ...state.loop!, active: false, stopReason: `stalled: ${threshold} continuation refires landed no turn — the session is not continuing (wedged message queue or stale API). Press Escape to cancel any stuck run, then /loop resume — the loop holds on restore. If the handle is stale, /reload rebuilds extensions in place; restart pi only if /reload fails.` };
+    state.loop = { ...state.loop!, active: false, stopReason: `stalled: ${threshold} continuation refires landed no turn — the session is not continuing (wedged message queue or stale API). Press Escape to cancel any stuck run, then /loop resume — the loop holds on restore. A fresh session_start rebinds the loop or goal; restart pi normally only if no replacement arrives.` };
     persistState(ctx);
     ctx.ui.notify(`Loop stopped: ${threshold} refires produced no turn — the continuation is not landing. Escape cancels a stuck run, then /loop resume (the loop holds on restore). /reload if stale; restart pi only if /reload fails.`, "warning");
     notifyExternal(ctx, "Loop stopped: stalled (continuation not landing).");
@@ -926,7 +915,7 @@ function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
       pauseReason: `stalled: ${threshold} continuation refires landed no turn`,
       pauseSuggestedAction: "The continuation chain is broken in this process (wedged message queue or stale API). Press Escape to cancel any stuck run, then /goal resume. If the handle is stale, /reload rebuilds extensions in place — restart pi only if /reload fails.",
     }, ctx);
-    ctx.ui.notify(`${goalNoun()} paused: ${threshold} refires produced no turn. Escape cancels a stuck run, then /goal resume. /reload if stale; restart pi only if /reload fails.`, "warning");
+    ctx.ui.notify(`${goalNoun()} paused: ${threshold} refires produced no turn. Escape cancels a stuck run, then /goal resume. A fresh session_start rebinds it; restart pi normally only if no replacement arrives.`, "warning");
     notifyExternal(ctx, `${goalNoun()} paused: stalled (continuation not landing).`);
     return true;
   }
@@ -1020,17 +1009,10 @@ function heartbeatTick(): void {
   ) {
     lastUnansweredAlertAt = Date.now();
     appendLedger(ctx.cwd, "continuation_unanswered", { silentMs: Date.now() - lastContinuationSentAt });
-    // v0.34.13: recover, don't just report. Only the failure modes reach
-    // the user: throttled (a reload already failed to cure → the
-    // pi-restart class) or recovery unavailable (setting off / no pane).
-    if (!attemptAutoRecovery(ctx, "continuation unanswered")) {
-      const mins = Math.round((Date.now() - lastContinuationSentAt) / 60_000);
-      const msg = lastAutoRecoveryAt > 0
-        ? `glla: auto-recovery /reload did NOT unstick this session — still no turn ${mins}m after the continuation. This class kills pi's transcript writer; only a pi RESTART cures it: restart pi in this tab, then /glla resume (the goal holds in .pi-glla state).`
-        : `glla: pi accepted the continuation ${mins}m ago but NO turn has started — no tool calls, no tokens, transcript frozen (the turn trigger is wedged). Cure: /reload — autoresume re-fires the ${isLoopActive() ? "loop" : "goal/list item"}. (auto-recovery is off or no tmux/WezTerm pane — /glla settings autoRecovery=on enables the automatic form.)`;
-      ctx.ui.notify(msg, "warning");
-      notifyExternal(ctx, msg);
-    }
+    const mins = Math.round((Date.now() - lastContinuationSentAt) / 60_000);
+    const msg = `glla: pi accepted the continuation ${mins}m ago but NO turn has started — no tool calls, no tokens, transcript frozen (the turn trigger is wedged). Re-sends do not unstick it. A fresh session_start will rebind the ${isLoopActive() ? "loop" : "goal/list item"}; if no replacement arrives, restart pi normally and restore the saved work.`;
+    ctx.ui.notify(msg, "warning");
+    notifyExternal(ctx, msg);
   }
   // v0.29.1: stranded-audit recovery. A goal left in "auditing" with NO
   // in-flight audit means the auditor's result never landed (wedged queue
@@ -2332,7 +2314,7 @@ async function showDecisionPrompt(ctx: ExtensionContext): Promise<boolean> {
  * disabled (/glla decisionpopup=off), or when one is already open. */
 function maybeDecisionPopup(ctx: ExtensionContext): void {
   if (!ctx.hasUI || loadSettings(ctx.cwd).decisionPopup === false) return;
-  setTimeout(() => {
+  scheduleSessionTimeout(() => {
     void showDecisionPrompt(ctx).catch(() => {});
   }, 600);
 }
@@ -6212,7 +6194,7 @@ export default function (pi: ExtensionAPI): void {
     // EVERY post-grace tick until agent_start discharges it).
     postCompactResumeOwed = true;
     postCompactResyncPending = true;
-    const settle = setTimeout(() => {
+    scheduleSessionTimeout(() => {
       const c = freshCtx();
       if (!c) return;
       try {
@@ -6225,7 +6207,6 @@ export default function (pi: ExtensionAPI): void {
         /* settle race — the 60s heartbeat covers it */
       }
     }, 2000);
-    settle.unref?.();
     // v0.29.21: a SECOND settle at grace expiry. The 2s settle almost
     // always loses (pi is mid-compact / mid-resumed-turn then), and the
     // heartbeat's first post-grace tick lands up to one interval late —
@@ -6234,7 +6215,7 @@ export default function (pi: ExtensionAPI): void {
     // 195.8k after two output-limit turns, zero rearms after the compact
     // event, recovery only at 04:34:48 via the post-grace heartbeat;
     // ~4 min that read as a stoppage). Refire the moment the grace ends.
-    const graceSettle = setTimeout(() => {
+    scheduleSessionTimeout(() => {
       const c = freshCtx();
       if (!c) return;
       try {
@@ -6247,7 +6228,6 @@ export default function (pi: ExtensionAPI): void {
         /* settle race — the 60s heartbeat covers it */
       }
     }, COMPACTION_GRACE_MS + 2_000);
-    graceSettle.unref?.();
   });
 
   pi.on("message_start", async (event: any, _ctx: ExtensionContext) => {
@@ -6322,15 +6302,23 @@ export default function (pi: ExtensionAPI): void {
     // tells the stale probe that a rebind (session_start) is imminent.
     const shutdownReason = typeof event?.reason === "string" ? event.reason : "unknown";
     appendLedger(ctx.cwd, "session_shutdown", { reason: shutdownReason });
+    writeSessionHandoff(ctx, shutdownReason);
     sessionReplacementUntil = Date.now() + SESSION_REBIND_GRACE_MS;
+    clearSessionOwnedTimers();
+    registeredCtx = null;
+    toolHealNotified = false;
   });
 
   pi.on("session_start", async (event: any, ctx: ExtensionContext) => {
-    rememberCtx(ctx);
     // v0.23.8: subagent sessions (pi-subagents binds extensions there too)
     // are workers — never run the restore gate or reschedule the loop from
     // a foreign session.
     if (isForeignCtx(ctx)) return;
+    extensionApi = pi;
+    sessionHandoffPending = false;
+    rememberCtx(ctx);
+    startHeartbeat();
+    startUITicker();
     // v0.30.0: rebind bookkeeping — claim ownership, close any replacement
     // window, and reset a stale flag left over from the PREVIOUS session's
     // invalidation. pi rebinds THIS module to the new session (switch) or
@@ -6354,6 +6342,8 @@ export default function (pi: ExtensionAPI): void {
       }
     }
     state = readState(ctx.cwd);
+    const handoffResume = consumeSessionHandoff(ctx.cwd);
+    if (handoffResume) appendLedger(ctx.cwd, "session_handoff_resumed", { pid: process.pid, reason: startReason });
     // v0.28.14: snapshot carryover BEFORE any restore logic mutates state —
     // a paused goal, waiting list items, or a loop that was live/held when
     // the last session ended. Resolved once at the first NEW activation.
@@ -6454,6 +6444,8 @@ export default function (pi: ExtensionAPI): void {
     // v0.34.13: an auto-recovery /reload carries its own resume consent —
     // the sidecar marker overrides autoresume=off for THIS restore only.
     const recoveryResume = consumeRecoveryResume(ctx.cwd);
+    // v0.34.16: a same-process lifecycle handoff is explicit continuation
+    // debt, so it resumes independently of the cold-boot autoResume setting.
     // v0.34.14: a /reload rebind (same pi pid) ALWAYS resumes — the session
     // is live mid-work; holding is the "list is not continuing" bug.
     const rebindResume = claimSessionOwnerAndDetectRebind(ctx.cwd);
