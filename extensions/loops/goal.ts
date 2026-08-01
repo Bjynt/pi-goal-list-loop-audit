@@ -4200,7 +4200,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
             // refused; the dialog simply can't render in a doomed process.
             extensionApiStale = true;
             appendLedger(liveCtx.cwd, "extension_api_stale", { where: "batch confirm" });
-            return { content: [{ type: "text", text: "The Confirm dialog could not render: pi invalidated this session's extension handle (session replacement). This is NOT a rejection — do NOT refine or re-propose. Tell the user to restart pi, then re-run the drafting flow." }], details: {} };
+            return { content: [{ type: "text", text: "The Confirm dialog could not render: pi invalidated this session's extension handle (session replacement). This is NOT a rejection — do NOT refine or re-propose. Wait for a fresh session_start, then re-run the drafting flow." }], details: {} };
           }
           batchConfirmed = c === "yes";
         }
@@ -4244,7 +4244,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
           // v0.28.1 (T1): a stale dialog is NOT "Draft rejected by the user".
           extensionApiStale = true;
           appendLedger(liveCtx.cwd, "extension_api_stale", { where: "draft confirm" });
-          return { content: [{ type: "text", text: "The Confirm dialog could not render: pi invalidated this session's extension handle (session replacement). This is NOT a rejection — do NOT refine or re-propose. Tell the user to restart pi, then re-run the drafting flow." }], details: {} };
+          return { content: [{ type: "text", text: "The Confirm dialog could not render: pi invalidated this session's extension handle (session replacement). This is NOT a rejection — do NOT refine or re-propose. Wait for a fresh session_start, then re-run the drafting flow." }], details: {} };
         }
         confirmed = c === "yes";
       }

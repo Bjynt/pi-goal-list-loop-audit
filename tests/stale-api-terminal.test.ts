@@ -58,8 +58,8 @@ test("terminal path: ledger event, single-fire, goal ACTIVE+marker / loop stop w
   assert.match(SRC, /updateGoal\(\{ interruptedAt: nowIso\(\), interruptedReason: `extension api stale \(\$\{where\}\)` \}, ctx\)/);
   assert.ok(!SRC.includes('pauseReason: "extension api stale (pi session replacement)"'), "old pause shape gone");
   assert.match(SRC, /without delivering a replacement session\. glla stopped stale sends and kept the work safe in \.pi-glla\//);
-  // guidance names the pi-side cause:
-  assert.match(SRC, /session replacement — the session was disposed and this process's sends can never land/);
+  // guidance names the lifecycle handoff and the genuine orphan case:
+  assert.match(SRC, /without delivering a replacement session/);
 });
 
 test("v0.29.11 — heartbeat PROBES staleness before burning stall refires", () => {
