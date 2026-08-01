@@ -379,3 +379,20 @@ test("v0.34.5: wedge alert names a subagent wait when the in-flight call is one"
   assert.match(g, /tool-use\/token counters have stopped moving between checks is hung, not thinking/, "the liveness check is in the message");
   assert.match(g, /subagentWait: subWaits\.size > 0/, "ledger marks subagent waits distinctly");
 });
+
+// ---------- v0.34.11: unanswered-continuation watchdog ----------
+
+test("v0.34.11: unanswered-continuation watchdog (accepted send, no turn — hellhunter list-transition wedge)", () => {
+  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  assert.match(g, /const CONTINUATION_UNANSWERED_MS = 150_000;/, "2.5min threshold");
+  assert.match(g, /const CONTINUATION_UNANSWERED_THROTTLE_MS = 300_000;/, "5min re-alert throttle");
+  // Disarm signal: real activity (agent_end/tool_call via noteActivity(true)) AFTER the last send.
+  assert.match(g, /if \(real\) \{ consecutiveStalls = 0; lastRealActivityAt = lastActivityAt; \}/, "real activity stamps lastRealActivityAt");
+  assert.match(g, /lastRealActivityAt < lastContinuationSentAt/, "armed only when no activity since the send");
+  // Both send paths stamp the send time (goal continuations AND loop turns).
+  assert.match(g, /appendLedger\(ctx\.cwd, "goal_continuation_sent", \{ goalId \}\);\n    lastContinuationSentAt = Date\.now\(\);/);
+  assert.match(g, /appendLedger\(ctx\.cwd, "loop_turn_sent", \{ iteration: loop\.iteration \}\);\n    lastContinuationSentAt = Date\.now\(\);/);
+  // Loud + actionable + ledger-visible; re-sends explicitly don't unstick (hegemon law).
+  assert.match(g, /continuation_unanswered/);
+  assert.match(g, /Re-sends don't unstick it\. Cure: \/reload/);
+});

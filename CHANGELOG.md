@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.34.11] — 2026-08-01
+
+### Added — unanswered-continuation watchdog (the "keeps stopping with lists" killer)
+
+Hellhunter, 2026-08-01: at a list-transition completion boundary pi
+ACCEPTED every continuation (`sendMessage` never threw, the session
+reported idle) but started NO turn — transcript frozen, token counter
+flat, 10+ minutes of heartbeat refires into the void. This shape fell
+between every existing net: the pending-latch watchdog needs
+idle&&pending (pi reported no pending), the zombie-run watchdog needs
+busy (pi reported idle), the wedge alert needs 30 minutes. New watchdog:
+a continuation was sent and **no real activity** (`agent_end`/`tool_call`)
+has occurred since — armed at 2.5 minutes, re-alerting every 5. The alert
+says the cure out loud ("Re-sends don't unstick it. Cure: /reload —
+autoresume re-fires the goal/list item automatically") since re-sends are
+hegemon-proven not to unstick a dropped trigger; the heartbeat keeps
+refiring underneath in case pi self-recovers. A landed turn — even a lazy
+text-only one — disarms it, so no false positives on slow models.
+
+### Fixed
+
+- The v0.34.7 pin file referenced `path` without importing it — bun's
+  runner doesn't typecheck so it sailed through three releases; tsc is
+  green again.
+
 ## [0.34.10] — 2026-08-01
 
 ### Docs — companions moved up the storefront
