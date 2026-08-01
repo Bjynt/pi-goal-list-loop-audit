@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.34.1] — 2026-08-01
+
+### Fixed — status line no longer doubles the widget's type chip
+
+Field screenshot (endless-td, 2026-08-01): the footer status line read
+`glla: list ● 1h 44m` while the widget head right above it read
+`· list item · active · 1h 44m` — the list-ness shown twice. The status line
+now owns STATE only; the widget owns TYPE naming (the v0.24.7 "list item"
+chip stays). The policy word (`list` / `goal`) is dropped from every goal
+status-line state — active, paused (decision/error/wait/legacy), and
+interrupted: `glla: ● 1h 44m · 17 queued`, `glla: ⏸ decision needed`,
+`glla: ⚠ interrupted — …`. The `· N queued` suffix still hints list context
+when the widget has scrolled away. Loop status lines are unchanged
+(`glla: loop ↓ iter …` carries loop-specifics the widget layout doesn't).
+
 ## [0.34.0] — 2026-07-31
 
 ### Changed — eager subagents, with ROI (research-backed; user: "parallel execution, not spawning guys for no reason")

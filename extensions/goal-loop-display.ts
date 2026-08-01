@@ -196,11 +196,14 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     // v0.28.22: the status line names the ACTIONABILITY, not the reason —
     // "decision needed" / "action needed" / "waiting" tell you at a glance
     // whether the session needs you. Legacy pauses keep the reason dump.
+    // v0.34.1: the policy word leaves the status line — the widget's head
+    // chip already names the type ("list item"), so "glla: list ⏸ …" doubled
+    // it. Status line = state/actionability only.
     const kind = pauseKind(g);
-    if (kind === "decision") return `glla: ${g.policy} ${paint(theme, "accent", "⏸ decision needed")}${heldSuffix}`;
-    if (kind === "error") return `glla: ${g.policy} ${paint(theme, "error", `⏸ action needed — ${truncate(g.pauseReason ?? "", 30)}`)}${heldSuffix}`;
-    if (kind === "wait") return `glla: ${g.policy} ${paint(theme, "dim", `⏳ waiting${g.pauseResumeAt ? ` · resumes ${shortClock(g.pauseResumeAt)}` : ""}`)}${heldSuffix}`;
-    const label = `${g.policy} paused ⏸ ${truncate(g.pauseReason ?? "", 40)}`;
+    if (kind === "decision") return `glla: ${paint(theme, "accent", "⏸ decision needed")}${heldSuffix}`;
+    if (kind === "error") return `glla: ${paint(theme, "error", `⏸ action needed — ${truncate(g.pauseReason ?? "", 30)}`)}${heldSuffix}`;
+    if (kind === "wait") return `glla: ${paint(theme, "dim", `⏳ waiting${g.pauseResumeAt ? ` · resumes ${shortClock(g.pauseResumeAt)}` : ""}`)}${heldSuffix}`;
+    const label = `paused ⏸ ${truncate(g.pauseReason ?? "", 40)}`;
     return `glla: ${paint(theme, pauseIsError(g) ? "error" : "warning", label)}${heldSuffix}`;
   }
   if (g.status === "active") {
@@ -208,7 +211,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     // v0.29.11: the fresh session HOLDS it (hold-everything restore gate;
     // autoresume=on resumes for you) — name the verb, don't promise auto.
     if (g.interruptedAt) {
-      return `glla: ${g.policy} ${paint(theme, "error", "⚠ interrupted — stale handle · /reload → /glla resume")}${heldSuffix}`;
+      return `glla: ${paint(theme, "error", "⚠ interrupted — stale handle · /reload → /glla resume")}${heldSuffix}`;
     }
     // v0.24.7: list policy gets its own wording — a queue item is not a goal.
     // v0.28.11 (U10): goal policy joins it — "list 29" read as a command
@@ -217,7 +220,10 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     const n = state.list?.length ?? 0;
     const queue = n === 0 ? "" : ` · ${n} queued`;
     const tasks = g.taskList ? ` ${countDone(g)}/${countTotal(g)} tasks ·` : "";
-    return `glla: ${g.policy} ${paint(theme, "success", "●")}${tasks} ${fmtElapsed(now - Date.parse(g.createdAt))}${queue}${heldSuffix}`;
+    // v0.34.1: no policy word here either — "glla: list ●" duplicated the
+    // widget's "list item" chip (field screenshot 2026-08-01). The queue
+    // suffix still hints list context when the widget is scrolled away.
+    return `glla: ${paint(theme, "success", "●")}${tasks} ${fmtElapsed(now - Date.parse(g.createdAt))}${queue}${heldSuffix}`;
   }
   // complete/aborted → clear — but a held loop still shows.
   if (held) return `glla: loop ${paint(theme, "warning", "⏸ held")} · iter ${held.iteration} — /loop to resume`;

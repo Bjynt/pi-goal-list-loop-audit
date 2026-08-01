@@ -62,7 +62,8 @@ test("empty state → undefined (segment cleared)", () => {
 
 test("active goal shows pulse + elapsed", () => {
   const s = buildStatusText({ goal: goalOf(), list: [] }, null, NOW)!;
-  assert.match(s, /glla: goal ●/);
+  assert.match(s, /glla: ●/);
+  assert.doesNotMatch(s, /glla: goal/, 'v0.34.1: the status line drops the policy word — the widget owns type naming');
   assert.match(s, /3m/);
 });
 
@@ -105,7 +106,8 @@ test("list policy footer: queued count, no duplicated 'list'", () => {
   )!;
   // v0.24.7: was "glla: list ● 3m 00s · list 1" — policy label and queue
   // counter both said "list".
-  assert.match(s, /^glla: list /);
+  assert.match(s, /^glla: /);
+  assert.doesNotMatch(s, /^glla: list /, 'v0.34.1: policy word dropped — no list/list-item doubling with the widget chip');
   assert.match(s, /· 1 queued$/);
   assert.ok(!/list .+ list /.test(s), `no duplicated 'list … list': ${s}`);
 });
@@ -116,7 +118,8 @@ test("goal policy footer says 'N queued' (v0.28.11 U10 — was the cryptic 'list
     null,
     NOW,
   )!;
-  assert.match(s, /^glla: goal /);
+  assert.match(s, /^glla: /);
+  assert.doesNotMatch(s, /^glla: goal /, 'v0.34.1: policy word dropped');
   assert.match(s, /· 1 queued$/);
 });
 
@@ -322,7 +325,7 @@ test("held loop + paused goal → both visible (status suffix + widget trailing 
 test("held loop + active goal → status suffix present", () => {
   const state = { goal: goalOf(), list: [], loop: heldLoopOf() };
   const s = buildStatusText(state, null, NOW)!;
-  assert.match(s, /goal ●/);
+  assert.match(s, /glla: ●/); // v0.34.1: policy word dropped from the status line
   assert.match(s, /loop⏸held/);
 });
 
