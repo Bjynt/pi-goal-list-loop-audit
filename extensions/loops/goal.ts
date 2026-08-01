@@ -359,13 +359,14 @@ function consumeSessionHandoff(cwd: string): boolean {
 
 /** v0.34.14: /reload rebind detector. The extension runs INSIDE pi, so
  * process.pid IS pi's pid: an instance that boots and finds its OWN pid
- * already in the owner file is a /reload rebuild of a live session, not a
- * cold boot. Rebinds always resume active goals/loops — holding mid-work
+ * already in the owner file is normally a same-process rebuild, not a cold
+ * boot. A non-quit rebind resumes active goals/loops — holding mid-work
  * after an in-place rebuild is pure friction (user directive: keep going
  * unless we must stop; "the list is not continuing" after /reload,
- * hellhunter 2026-08-01). Cold boots (new pid) still honor autoresume=off.
- * Sidecar, not the ledger: read-before-write must be atomic-ish and the
- * ledger is append-only. */
+ * hellhunter 2026-08-01). An explicit quit is stamped in the sidecar and
+ * does not receive this implicit consent; cold boots (new pid) still honor
+ * autoresume=off. Sidecar, not the ledger: read-before-write must be
+ * atomic-ish and the ledger is append-only. */
 const SESSION_OWNER_FILE = "session-owner.json";
 function markSessionOwnerShutdown(cwd: string, reason: string): void {
   try {
@@ -385,7 +386,7 @@ function claimSessionOwnerAndDetectRebind(cwd: string): boolean {
     } catch { /* absent or corrupt — first boot */ }
     fs.writeFileSync(p, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
     const quit = previous.shutdownReason?.trim().toLowerCase() === "quit";
-    return previous.pid !== null && previous.pid === process.pid && !quit;
+    return previous.pid === process.pid && !quit;
   } catch {
     return false;
   }
