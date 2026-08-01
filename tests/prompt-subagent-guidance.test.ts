@@ -116,3 +116,23 @@ test("v0.34.4: forever prompts carry the one-line brief law", () => {
     assert.match(readPrompt(f), /Briefs are TIGHT \(named files\/dirs, ~30-40 tool uses, ~150-line report cap/, f);
   }
 });
+
+// ---------- v0.34.6: resume-dont-respawn + restart law ----------
+
+test("v0.34.6: subagent failure law is RESUME, DON'T RESPAWN (session survives death)", () => {
+  const c = readPrompt("goal-loop-continuation.md");
+  assert.match(c, /WHEN SUBAGENTS DIE: RESUME, DON'T RESPAWN/);
+  assert.match(c, /Agent\(resume: "<id>"/, "the resume call shape is named");
+  assert.match(c, /no status guard/, "the verified source fact is cited");
+  assert.match(c, /SPLIT into 2 narrower agents or ABSORB/, "split/absorb remains the fallback");
+  assert.match(c, /not found/, "the unresumable case is named");
+});
+
+test("v0.34.6: the restart law — in-process agents die silently, goals survive", () => {
+  const c = readPrompt("goal-loop-continuation.md");
+  assert.match(c, /AFTER A SESSION RESTART: YOUR SUBAGENTS ARE DEAD/);
+  assert.match(c, /in-process/i);
+  assert.match(c, /no failure event/, "the silence is named");
+  assert.match(c, /do NOT sit waiting for results that can never arrive/, "the sitting-duck failure mode is banned");
+  assert.match(c, /long fan-out passes belong under a glla goal\/list item/, "the goal-plane survival argument");
+});

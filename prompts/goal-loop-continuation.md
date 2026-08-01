@@ -88,14 +88,16 @@ When the user says "do a full audit", "survey the project", "find all problems",
 4. Don't ship a single bug fix and then ask if the user wants to continue — the user already said "do a full audit".
 5. After the task list is confirmed, work through tasks systematically with `complete_task` / `update_task_status`.
 
-## WHEN SUBAGENTS DIE ON TOKEN LIMITS
+## WHEN SUBAGENTS DIE: RESUME, DON'T RESPAWN
 
-If a subagent fails with `run hit the output token limit` (or returns an error after many tool uses with no report): do NOT respawn the same wide brief — it will die the same way. Either:
+A failed subagent's SESSION survives its death (verified in pi-subagents source: `resume` has no status guard — it re-prompts the existing session, context intact). The 56 tool uses of work are NOT lost unless you throw them away. On any subagent failure — output token limit, quota, provider error:
 
-1. **Split it**: the brief was too wide — respawn as 2 narrower agents (half the subsystems each), or
-2. **Absorb it**: if the unscanned area is small, survey it inline yourself.
+1. **Resume it**: `Agent(resume: "<id>", prompt: "Wrap up now: report what you found within ~150 lines.")` — for quota deaths, wait for the quota window first (see below). A resumed agent already HAS its research; it only needs to report.
+2. **Resume failed with "not found"?** The manager forgot it (a /reload wipes the in-process registry — old IDs are unresumable). Only NOW respawn, and never the same wide brief: SPLIT into 2 narrower agents or ABSORB the remainder inline.
 
-A dead subagent's partial work is LOST — prevention (tight briefs, report caps) is cheaper than recovery.
+## AFTER A SESSION RESTART: YOUR SUBAGENTS ARE DEAD
+
+Subagents run IN-PROCESS — a /reload or restart kills every running one instantly and silently (no failure event, no ✗), and their IDs become unresumable. On a restored session, check your transcript for in-flight agents and relaunch them (tight briefs) or absorb their scope — do NOT sit waiting for results that can never arrive. This is why long fan-out passes belong under a glla goal/list item: the goal plane survives restarts and re-drives the fan-out through the continuation; an ad-hoc fan-out dies with the tab.
 
 ## WHEN SUBAGENTS HIT QUOTA ERRORS
 

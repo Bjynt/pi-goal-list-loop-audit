@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.34.6] — 2026-08-01
+
+### Added — the subagent strategy grows up: resume-don't-respawn + the restart law
+
+Two field findings, one morning:
+
+1. **A failed subagent's work is recoverable.** Verified in pi-subagents
+   source: `resume()` has no status guard — it re-prompts the FAILED
+   agent's existing session, context intact. The old law ("respawn
+   narrower") threw away every dead agent's partial work — darklord's 56
+   tool uses, junk-runner's 29+65. New law: RESUME first
+   (`Agent(resume: "<id>", prompt: "Wrap up: report within ~150 lines")` —
+   the agent already HAS its research, it only needs to report); respawn
+   only on "not found".
+2. **A restart kills subagents silently and forever.** π-games 2026-08-01:
+   /reload mid-collect, 4 background Explore agents vanished — no ✗, no
+   event, IDs unresumable (the manager registry is in-process RAM). The
+   session sat idle "like we never had it" — and because the fan-out was
+   ad-hoc (no glla goal — the ledger proves it), nothing re-drove it. New
+   law: after a restart, check the transcript for in-flight agents and
+   relaunch/absorb — never sit waiting for results that can never arrive —
+   and put long fan-out passes under a goal/list item, because the goal
+   plane is the ONLY thing that survives restarts.
+
 ## [0.34.5] — 2026-08-01
 
 ### Changed — the wedge alert is subagent-aware
