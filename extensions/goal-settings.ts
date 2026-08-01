@@ -73,6 +73,14 @@ export interface Settings {
    * assertActive). Default true; only acts when TMUX and TMUX_PANE are
    * set — pi outside tmux just gets the manual warning. */
   autoReloadOnStale?: boolean;
+  /** v0.34.13: auto-recovery ladder — when a wedge is detected that only a
+   * /reload cures (unanswered continuation, send-retry storm), inject the
+   * /reload ITSELF via the v0.29.13 tmux/WezTerm transport and resume the
+   * goal/loop after the rebuild (sidecar marker — autoresume=off is a
+   * restore-time setting, not a recovery veto). Default true. The one
+   * class it does NOT cross: pi restart (transcript-writer dead) — that
+   * stays a loud stop for the human. */
+  autoRecovery?: boolean;
   /** v0.26.1: consecutive heartbeat refires without a real turn before
    * the goal pauses / loop stops (default 5; 0 = never escalate). */
   stallEscalationRefires?: number;
@@ -207,6 +215,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "stuckMaxInterventions",
   "stallEscalationRefires",
   "autoReloadOnStale",
+  "autoRecovery",
   "stallShortWords",
   "stallSimilarityThreshold",
   "postaudit",

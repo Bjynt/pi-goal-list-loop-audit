@@ -346,9 +346,9 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
  * fires from the entry-probe path (the most common stale discovery).
  * Opt out: autoReloadOnStale=false. Best-effort: the manual warning
  * already fired, so failures cost nothing. */
-function attemptAutoReload(ctx: ExtensionContext, where: string): void {
+function attemptAutoReload(ctx: ExtensionContext, where: string): boolean {
   try {
-    if (loadSettings(ctx.cwd).autoReloadOnStale === false) return;
+    if (loadSettings(ctx.cwd).autoReloadOnStale === false) return false;
     const tmuxPane = process.env.TMUX_PANE;
     const wezPane = process.env.WEZTERM_PANE;
     let transport: "tmux" | "wezterm";
@@ -372,13 +372,54 @@ function attemptAutoReload(ctx: ExtensionContext, where: string): void {
       cmd = `wezterm cli send-text --pane-id ${pane} --no-paste '/reload\r'`;
     } else {
       appendLedger(ctx.cwd, "auto_reload_skipped", { where, reason: "no supported multiplexer (tmux/WezTerm) in env" });
-      return;
+      return false;
     }
     appendLedger(ctx.cwd, "auto_reload_injected", { where, transport, pane });
     ctx.ui.notify("glla: injecting /reload into this pane — extensions rebuild in place and the fresh instance holds state. /glla resume after (automatic with autoresume=on).", "info");
     exec(cmd, () => { /* best-effort */ });
+    return true;
   } catch {
     /* never let recovery take the warning path down */
+    return false;
+  }
+}
+
+/** v0.34.13: one rung of the auto-recovery ladder. Returns true when a
+ * /reload was injected (caller should NOT also pause/alert the manual
+ * cure). Writes the sidecar resume marker FIRST so the fresh instance
+ * resumes the goal/loop even with autoresume=off. Throttled — a second
+ * wedge inside the window is the pi-restart class and must reach the
+ * user as a loud stop, not another reload. */
+let lastAutoRecoveryAt = 0;
+function attemptAutoRecovery(ctx: ExtensionContext, where: string): boolean {
+  if (loadSettings(ctx.cwd).autoRecovery === false) return false;
+  const now = Date.now();
+  if (now - lastAutoRecoveryAt < AUTO_RECOVERY_THROTTLE_MS) return false;
+  lastAutoRecoveryAt = now;
+  try {
+    fs.writeFileSync(
+      path.join(piGlaDir(ctx.cwd), RECOVERY_RESUME_MARKER),
+      JSON.stringify({ at: new Date(now).toISOString(), where }),
+    );
+  } catch { /* best-effort — the reload still helps; restore just holds */ }
+  appendLedger(ctx.cwd, "auto_recovery_reload", { where });
+  ctx.ui.notify(`glla auto-recovery: ${where} — injecting /reload to rebuild the extension plane; the ${isLoopActive() ? "loop" : "goal/list item"} resumes itself after the rebuild (no /glla resume needed). If this recurs within ${Math.round(AUTO_RECOVERY_THROTTLE_MS / 60_000)}m, it's the pi-restart class and you'll get a loud stop.`, "warning");
+  return attemptAutoReload(ctx, where);
+}
+
+/** v0.34.13: consume the sidecar marker on session restore. Single-use,
+ * freshness-bounded — a stale marker from an abandoned recovery must not
+ * surprise-resume a later session. */
+function consumeRecoveryResume(cwd: string): boolean {
+  try {
+    const p = path.join(piGlaDir(cwd), RECOVERY_RESUME_MARKER);
+    if (!fs.existsSync(p)) return false;
+    const raw = fs.readFileSync(p, "utf-8");
+    fs.unlinkSync(p);
+    const at = Date.parse((JSON.parse(raw) as { at?: string }).at ?? "");
+    return !Number.isNaN(at) && Date.now() - at < RECOVERY_RESUME_FRESH_MS;
+  } catch {
+    return false;
   }
 }
 
@@ -649,6 +690,17 @@ const CONTINUATION_UNANSWERED_THROTTLE_MS = 300_000;
 // cycle. Sending 2.5s AFTER agent_end lets teardown settle; the send lands
 // and the next turn starts immediately. 2.5s per turn beats 60s per turn.
 const EAGER_CONTINUATION_SETTLE_MS = Number(process.env.GLLA_EAGER_SETTLE_MS ?? 2_500);
+// v0.34.13: auto-recovery ladder ("keep going unless we MUST stop — a
+// question, or done" — user directive 2026-08-01). A wedge that only a
+// /reload cures should /reload ITSELF: inject the keystrokes (v0.29.13
+// transport) with a sidecar marker so the fresh instance RESUMES even when
+// autoresume=off (the consent came from autoRecovery at recovery time, not
+// the restore-time setting). Throttled to one attempt per window: a
+// recurrence inside the window is the transcript-writer-dead class, which
+// only a pi restart cures — that one stays a loud stop for the human.
+const AUTO_RECOVERY_THROTTLE_MS = 600_000;
+const RECOVERY_RESUME_MARKER = "recovery-resume.json";
+const RECOVERY_RESUME_FRESH_MS = 300_000;
 // v0.29.19: dead-turn caps (agent_end exemption path). 6 consecutive
 // provider-error turns = a real outage, not bad luck — stop honestly.
 // 3 consecutive user aborts = the user means it (user aborts mean STOP).
@@ -825,6 +877,10 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
   const silent = Math.round(SEND_REARM_ESCALATE_SILENT_MS / 60000);
   appendLedger(ctx.cwd, "send_rearm_escalated", { kind, afterMinutes: mins, silentMinutes: silent });
   if (kind === "loop" && isLoopActive()) {
+    if (attemptAutoRecovery(ctx, "send-retry storm")) {
+      appendLedger(ctx.cwd, "send_rearm_escalated_suppressed", { reason: "auto-recovery reload" });
+      return;
+    }
     clearLoopTimer();
     state.loop = { ...state.loop!, active: false, stopReason: `send-retry storm: ${mins}m of re-arms with no session activity for ${silent}m — the session is wedged. Press Escape to cancel the stuck run (pi's own rate-limit retry holds it; pi prints "escape to cancel"), then /loop resume — the loop holds on restore. If still wedged: /reload rebuilds extensions in place, then /loop resume again. Restart pi only if /reload itself fails.` };
     persistState(ctx);
@@ -848,6 +904,14 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
     return;
   }
   if (state.goal && state.goal.status === "active") {
+    // v0.34.13: keep going unless we MUST stop — try the auto-recovery
+    // /reload before spending the user's attention on a pause. A reload
+    // that fails to cure throttles the next attempt, and the pause below
+    // fires then as today.
+    if (attemptAutoRecovery(ctx, "send-retry storm")) {
+      appendLedger(ctx.cwd, "send_rearm_escalated_suppressed", { reason: "auto-recovery reload" });
+      return;
+    }
     updateGoal({
       status: "paused",
       pauseKind: "error",
@@ -863,6 +927,12 @@ function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
   if (!shouldEscalateStall(consecutiveStalls, threshold)) return false;
   consecutiveStalls = 0;
   appendLedger(ctx.cwd, "stall_escalated", { threshold, kind: isLoopActive() ? "loop" : "goal" });
+  // v0.34.13: recovery before stop — usually throttled (the 2.5min
+  // watchdog already tried), in which case the stop proceeds as today.
+  if (attemptAutoRecovery(ctx, "stall escalation")) {
+    appendLedger(ctx.cwd, "stall_escalated_suppressed", { reason: "auto-recovery reload", threshold });
+    return true;
+  }
   if (isLoopActive()) {
     clearLoopTimer();
     state.loop = { ...state.loop!, active: false, stopReason: `stalled: ${threshold} continuation refires landed no turn — the session is not continuing (wedged message queue or stale API). Press Escape to cancel any stuck run, then /loop resume — the loop holds on restore. If the handle is stale, /reload rebuilds extensions in place; restart pi only if /reload fails.` };
@@ -972,9 +1042,17 @@ function heartbeatTick(): void {
   ) {
     lastUnansweredAlertAt = Date.now();
     appendLedger(ctx.cwd, "continuation_unanswered", { silentMs: Date.now() - lastContinuationSentAt });
-    const msg = `glla: pi accepted the continuation ${Math.round((Date.now() - lastContinuationSentAt) / 60_000)}m ago but NO turn has started — no tool calls, no tokens, transcript frozen (the turn trigger is wedged; same pi failure family as the post-compaction blackhole). Re-sends don't unstick it. Cure: /reload — autoresume re-fires the ${isLoopActive() ? "loop" : "goal/list item"} automatically.`;
-    ctx.ui.notify(msg, "warning");
-    notifyExternal(ctx, msg);
+    // v0.34.13: recover, don't just report. Only the failure modes reach
+    // the user: throttled (a reload already failed to cure → the
+    // pi-restart class) or recovery unavailable (setting off / no pane).
+    if (!attemptAutoRecovery(ctx, "continuation unanswered")) {
+      const mins = Math.round((Date.now() - lastContinuationSentAt) / 60_000);
+      const msg = lastAutoRecoveryAt > 0
+        ? `glla: auto-recovery /reload did NOT unstick this session — still no turn ${mins}m after the continuation. This class kills pi's transcript writer; only a pi RESTART cures it: restart pi in this tab, then /glla resume (the goal holds in .pi-glla state).`
+        : `glla: pi accepted the continuation ${mins}m ago but NO turn has started — no tool calls, no tokens, transcript frozen (the turn trigger is wedged). Cure: /reload — autoresume re-fires the ${isLoopActive() ? "loop" : "goal/list item"}. (auto-recovery is off or no tmux/WezTerm pane — /glla settings autoRecovery=on enables the automatic form.)`;
+      ctx.ui.notify(msg, "warning");
+      notifyExternal(ctx, msg);
+    }
   }
   // v0.29.1: stranded-audit recovery. A goal left in "auditing" with NO
   // in-flight audit means the auditor's result never landed (wedged queue
@@ -6333,9 +6411,12 @@ export default function (pi: ExtensionAPI): void {
       persistState(ctx);
       appendLedger(ctx.cwd, "audit_loop_target_migrated", { from: "audit-every-iteration", to: "fix-first" });
     }
+    // v0.34.13: an auto-recovery /reload carries its own resume consent —
+    // the sidecar marker overrides autoresume=off for THIS restore only.
+    const recoveryResume = consumeRecoveryResume(ctx.cwd);
     if (isLoopActive()) {
       const l = state.loop!;
-      if (autoResume) {
+      if (autoResume || recoveryResume) {
         ctx.ui.notify(
           `Resuming loop (iteration ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"}, best ${l.bestValue ?? "n/a"}, stall ${l.stallCount}/${l.plateauWindow}): ${l.target.slice(0, 60)}`,
           "info",
@@ -6356,7 +6437,7 @@ export default function (pi: ExtensionAPI): void {
       // "load it but not auto start it"). Interrupted goals hold like
       // everything else; autoresume=on (unattended rigs) still auto-resumes
       // them, and the marker is cleared only on that promised auto-resume.
-      if (autoResume) {
+      if (autoResume || recoveryResume) {
         // v0.28.1 (S2): clear the stale-handle interrupt marker — this IS
         // the auto-resume the marker promised.
         if (wasInterrupted) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
