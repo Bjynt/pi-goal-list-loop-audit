@@ -315,9 +315,17 @@ hard timeout, and the auditor aborts after 10m with zero session activity
 ## Recommended companions
 
 glla is the goal plane — it drives, verifies, and notifies. It does not
-try to be the whole rig. Four plugins round it out (all optional; glla
-works without any of them):
+try to be the whole rig. Four plugins round it out. The first is
+**effectively required** — glla's drafting interviews, DECIDE findings,
+and confirm dialogs are built around structured questions (it degrades
+to plain-text prompts without it, but that is the fallback path, not the
+product). The other three are optional; glla works without them:
 
+- **`@juicesharp/rpiv-ask-user-question`** — **install this one.**
+  Structured questions with multi-select and markdown previews: the
+  /goal drafting interview, DECIDE findings, and every confirm dialog
+  render through it. Without it you get prose fallbacks — functional,
+  but not the intended UX.
 - **`@tintinweb/pi-subagents`** — the `Agent` tool: parallel Explore /
   Plan / general-purpose subagents. glla's prompts teach fan-out with ROI
   (parallelize real work, never ceremony spawning) and brief discipline,
@@ -331,10 +339,6 @@ works without any of them):
   judgment per call. Role clarity: the advisor is *advisory*, never
   verification — glla's isolated auditor remains the only completion
   gate.
-- **`@juicesharp/rpiv-ask-user-question`** — structured questions with
-  multi-select and markdown previews. glla's drafting interviews and
-  DECIDE findings render through it when installed (plain prompts
-  otherwise).
 - **`@pi-unipi/notify`** — push beyond the desktop: Telegram, Gotify,
   ntfy, with per-event routing. glla's built-in pushes cover the local
   desktop case and fire only where there is something to DO; add this

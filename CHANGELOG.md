@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.34.9] — 2026-08-01
+
+### Docs — rpiv-ask-user-question promoted to effectively required
+
+The Recommended companions section now leads with
+`@juicesharp/rpiv-ask-user-question` as **install this one**: the /goal
+drafting interview, DECIDE findings, and every confirm dialog are built
+around its structured multi-select/preview questions; the prose fallback
+without it is functional but not the product.
+
 ## [0.34.8] — 2026-08-01
 
 ### Docs — Recommended companions
