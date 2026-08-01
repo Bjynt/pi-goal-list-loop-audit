@@ -227,10 +227,9 @@ let extensionApiStale = false;
 // v0.32.0: CRITICAL — goStaleTerminal must gate on its OWN flag, not
 // extensionApiStale: probeExtensionApiStale() sets extensionApiStale on
 // detection, so the heartbeat's `probe → goStaleTerminal` sequence always
-// found the flag already true and returned silently — orphan-stale recovery
-// (ledger, loop stop, interruptedAt, warn, AUTO-RELOAD SELF-HEAL) was dead
-// code since v0.29.11. Field proof: hegemon sat stale for days and the
-// wezterm self-heal never fired.
+// found the flag already true and returned silently. The terminal orphan
+// path must still ledger the stale handle, stop stale work, and preserve the
+// interrupt marker so a later fresh lifecycle can restore it.
 let staleTerminalDone = false;
 
 /** v0.26.7: a stale api is terminal for this process — go loudly with
@@ -239,7 +238,7 @@ let staleTerminalDone = false;
  * pausing — the restore gate only auto-resumes ACTIVE goals, so pausing
  * here stranded goals until manual /goal resume (hegemon/sraaal shape).
  * sendContinuation's extensionApiStale guard already stops further sends
- * in this doomed process; the next fresh session auto-resumes. */
+ * in this doomed process; the next fresh session can restore the work. */
 /** v0.34.16: lifecycle-first session-replacement survival. pi's
  * sanctioned pattern (docs/extensions.md lifecycle + the stale error text):
  * session_shutdown → persist handoff debt + stop old timers,
@@ -326,6 +325,14 @@ function sessionHandoffPath(cwd: string): string {
 }
 function writeSessionHandoff(ctx: ExtensionContext, reason: string): boolean {
   if (!isSupervising()) return false;
+  // A user quit is an explicit stop, not a replacement boundary. Do not
+  // leave debt that could silently resume the work on a later startup;
+  // global autoResume may still apply by its own explicit policy.
+  if (reason.trim().toLowerCase() === "quit") {
+    try { fs.rmSync(sessionHandoffPath(ctx.cwd), { force: true }); } catch { /* advisory cleanup */ }
+    appendLedger(ctx.cwd, "session_handoff_suppressed", { reason });
+    return false;
+  }
   try {
     fs.mkdirSync(piGlaDir(ctx.cwd), { recursive: true });
     fs.writeFileSync(sessionHandoffPath(ctx.cwd), JSON.stringify({ pid: process.pid, at: new Date().toISOString(), reason }));
@@ -342,9 +349,9 @@ function consumeSessionHandoff(cwd: string): boolean {
     if (!fs.existsSync(p)) return false;
     const raw = fs.readFileSync(p, "utf-8");
     fs.unlinkSync(p);
-    const data = JSON.parse(raw) as { pid?: number; at?: string };
+    const data = JSON.parse(raw) as { pid?: number; at?: string; reason?: string };
     const at = Date.parse(data.at ?? "");
-    return data.pid === process.pid && !Number.isNaN(at) && Date.now() - at < SESSION_HANDOFF_FRESH_MS;
+    return data.pid === process.pid && data.reason?.trim().toLowerCase() !== "quit" && !Number.isNaN(at) && Date.now() - at < SESSION_HANDOFF_FRESH_MS;
   } catch {
     return false;
   }

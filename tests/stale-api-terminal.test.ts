@@ -80,6 +80,8 @@ test("v0.30.0 — rebind-first survival: session_shutdown attribution, session_s
   assert.match(SRC, /clearSessionOwnedTimers\(\);/);
   assert.match(SRC, /sessionReplacementUntil = Date\.now\(\) \+ SESSION_REBIND_GRACE_MS;/);
   assert.ok(SRC.includes('appendLedger(ctx.cwd, "session_handoff_pending", { reason, pid: process.pid });'), "handoff debt is ledgered");
+  assert.ok(SRC.includes('appendLedger(ctx.cwd, "session_handoff_suppressed", { reason });'), "explicit quit does not create resume debt");
+  assert.match(SRC, /data\.reason\?\.trim\(\)\.toLowerCase\(\) !== "quit"/, "legacy quit debt cannot bypass consent");
   assert.ok(SRC.includes('appendLedger(ctx.cwd, "session_handoff_resumed", { pid: process.pid, reason: startReason });'), "handoff consumption is ledgered");
   assert.ok(SRC.includes("sessionHandoffPending = false;"), "fresh session reopens the runtime");
   assert.ok(SRC.includes("startHeartbeat();") && SRC.includes("startUITicker();"), "fresh session restarts timers");
