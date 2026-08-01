@@ -704,7 +704,7 @@ const ZOMBIE_RUN_ALERT_THROTTLE_MS = 10 * 60_000;
 // (sendMessage never threw; session reported idle) but started NO turn —
 // transcript frozen, tokens flat, 10+ minutes of refires into the void.
 // Same family as the post-compaction dropped trigger (v0.26.5), but the
-// pending-latch watchdog needs idle&&pending and pi reported no pending
+// the pending latch needs idle&&pending and pi reported no pending
 // here, and the zombie watchdog needs busy — this shape falls between both
 // chairs. Disarm signal = real activity (agent_end/tool_call) AFTER the
 // last send; a landed turn — even a lazy text-only one — disarms it.

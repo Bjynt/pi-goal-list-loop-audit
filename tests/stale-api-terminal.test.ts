@@ -99,7 +99,7 @@ test("v0.30.0 — rebind-first survival: session_shutdown attribution, session_s
   assert.ok(entryBlock.includes("is handled there; nothing to do"), "superseded entry probe says nothing-to-do");
   // The orphan path (goStaleTerminal + self-heal) survives.
   assert.match(SRC, /function goStaleTerminal\(ctx: ExtensionContext, where: string\): void/);
-  assert.match(SRC, /function attemptAutoReload\(ctx: ExtensionContext, where: string\): void/);
+  assert.match(SRC, /function attemptAutoReload\(ctx: ExtensionContext, where: string\): boolean/);
 });
 
 test("v0.29.11 — stale/stall-stopped loops HOLD on next load (resume, not restart-from-scratch)", () => {
@@ -142,7 +142,7 @@ test("v0.29.22 — self-heal transport-generalized to WezTerm + fires from the e
   // (auto_reload_injected had never fired fleet-wide). And the entry
   // probe — the most common stale discovery (/glla resume, /list) —
   // never attempted the self-heal at all.
-  assert.match(SRC, /function attemptAutoReload\(ctx: ExtensionContext, where: string\): void/);
+  assert.match(SRC, /function attemptAutoReload\(ctx: ExtensionContext, where: string\): boolean/);
   assert.ok(!SRC.includes("attemptTmuxAutoReload"), "tmux-only helper renamed/removed");
   assert.ok(SRC.includes("process.env.WEZTERM_PANE"), "wezterm pane env read");
   assert.ok(SRC.includes("/^\\d+$/"), "wezterm pane id validated before shell use");

@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.34.14] — 2026-08-01
+
+### Fixed — the 4-hour audit loop: stalled audits reset their own circuit breaker
+
+Pully field evidence: a goal spent **4h06m** in `auditing`, cycling a
+10-minute stall → abort → resubmit → stall loop ~24 times. Root cause: a
+stalled auditor returns the partial output it streamed before the abort —
+non-empty, so `auditorRan` was true — and the v0.28.5 streak-clear fired on
+it, resetting `auditInfraStreak` every cycle. The 3-strike loud-pause
+breaker could never engage. (The hang itself: the auditor's verification
+commands — ssh/sudo fleet checks — blocked its stream; every healthy rig's
+audits complete in minutes.) The streak now clears only on a **clean** run
+(`auditorRan && !result.error`) — 3 consecutive infrastructure failures
+pause loudly as designed, and the pause text now names BOTH causes: model
+broken **or a verification command hanging**.
+
+### Fixed — /reload rebind always resumes ("the list is not continuing")
+
+After a manual `/reload`, an active goal held for `/glla resume` when
+`autoresume=off` — a full stop in the middle of live work, against the
+keep-going directive. The extension runs inside pi, so `process.pid` IS
+pi's pid: a new instance that finds its own pid in the `session-owner.json`
+sidecar is a `/reload` rebuild of a LIVE session, not a cold boot — and
+rebinds now always resume active goals/loops (ledger `rebind_resume`).
+Cold boots (new pid) still honor `autoresume=off`. This composes with the
+0.34.13 recovery marker: marker → recovery consent, pid → rebind consent,
+neither → the autoresume setting decides.
+
+### Test-suite hygiene
+
+Four pins broke silently across the last releases (slice windows as
+`heartbeatTick` grows, a comment shadowing an `indexOf` ordering pin, a
+README rephrase from the 0.34.8 companions arc) — all fixed, and the
+verification habit tightened: explicit pass/fail counts, never a bare
+tail line.
+
 ## [0.34.13] — 2026-08-01
 
 ### Added — auto-recovery ladder: keep going unless we MUST stop

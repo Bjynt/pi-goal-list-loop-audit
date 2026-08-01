@@ -39,7 +39,10 @@ test("E2: 3 trailing auditor infra errors pause LOUDLY (no more retry-forever)",
   // below the threshold the streak persists across turns (survives restarts):
   assert.match(SRC, /auditInfraStreak: infraStreak,/);
   // a real auditor run clears it; reaching quota also clears it:
-  assert.match(SRC, /if \(auditorRan && \(state\.goal\.auditInfraStreak \?\? 0\) > 0\) updateGoal\(\{ auditInfraStreak: undefined \}, ctx\);/);
+  // v0.34.14: only a CLEAN run clears — a stalled run returns partial output
+  // (auditorRan true) WITH result.error set; clearing on those meant the
+  // 3-strike breaker never engaged (pully: 4h of 10-min stall cycles).
+  assert.match(SRC, /if \(auditorRan && !result\.error && \(state\.goal\.auditInfraStreak \?\? 0\) > 0\) updateGoal\(\{ auditInfraStreak: undefined \}, ctx\);/);
   assert.match(SRC, /auditInfraStreak: undefined, \/\/ quota reached the auditor — infra streak broken/);
 });
 

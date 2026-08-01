@@ -144,7 +144,7 @@ test("v0.28.34: notify folds a default IN — auto-detect notify-send/osascript,
   const README = fs.readFileSync("README.md", "utf-8");
   assert.match(README, /^## Subagents$/m);
   assert.doesNotMatch(README, /## Subagents \(`@tintinweb\/pi-subagents`\)/);
-  assert.match(README, /any subagent provider — e\.g\. `@tintinweb\/pi-subagents` —/);
+  assert.match(README, /any Agent-tool\s+provider gets them/);
   assert.match(README, /Overlaps — pick one/);
   assert.match(README, /We ran both\s+and removed pi-tasks\./);
   assert.match(README, /auto-detects `notify-send`\/`osascript`; `notify=off` silences/);

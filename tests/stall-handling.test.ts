@@ -45,7 +45,7 @@ test("refire streak: incremented on refire, ledgered, reset only on REAL activit
   assert.match(SRC, /toolCallsThisTurn\+\+;\n\s*noteActivity\(true\);/);
   // the heartbeat refire itself must NOT reset the streak:
   const def = SRC.match(/function noteActivity\(real = false\): void \{[\s\S]*?\}/)![0];
-  assert.match(def, /if \(real\) consecutiveStalls = 0;/);
+  assert.match(def, /if \(real\) \{ consecutiveStalls = 0;/);
 });
 
 test("escalation: streak at threshold stops the loop / pauses the goal, loudly", () => {
@@ -188,7 +188,7 @@ test("v0.29.1: completion lifecycle survives the wedged-queue window (storm supp
   //    result never landed (pully: 12h+ stuck). Stored claim → direct
   //    auditor retry; else resume active so the agent re-completes.
   const hbIdx = src.indexOf("function heartbeatTick");
-  const hb = src.slice(hbIdx, hbIdx + 7000); // v0.33.1: heartbeat grew (compact-flag discharge hoist)
+  const hb = src.slice(hbIdx, hbIdx + 12000); // v0.34.14: heartbeat grew again (0.33.1 discharge, 0.34.11 watchdog, 0.34.13 recovery)
   assert.match(hb, /stranded_audit_recovered/);
   assert.match(hb, /state\.goal\?\.status === "auditing" &&\s*\n\s*!completionAuditInFlight/);
   assert.match(hb, /retryStoredCompletionAudit\(ctx, "quota-retry"\)/);
@@ -394,7 +394,7 @@ test("v0.34.11: unanswered-continuation watchdog (accepted send, no turn — hel
   assert.match(g, /appendLedger\(ctx\.cwd, "loop_turn_sent", \{ iteration: loop\.iteration \}\);\n    lastContinuationSentAt = Date\.now\(\);/);
   // Loud + actionable + ledger-visible; re-sends explicitly don't unstick (hegemon law).
   assert.match(g, /continuation_unanswered/);
-  assert.match(g, /Re-sends don't unstick it\. Cure: \/reload/);
+  assert.match(g, /Cure: \/reload — autoresume re-fires/);
 });
 
 // ---------- v0.34.12: eager-continuation settle + wait countdown ----------
@@ -433,8 +433,26 @@ test("v0.34.13: wedges self-/reload and self-resume — the user only sees genui
   // The sidecar marker carries resume consent across the reload, even with
   // autoresume=off — for goals AND loops.
   assert.match(g, /const recoveryResume = consumeRecoveryResume\(ctx\.cwd\);/, "restore consumes the marker");
-  assert.ok((g.match(/if \(autoResume \|\| recoveryResume\) \{/g) ?? []).length >= 2, "goal + loop restore branches honor it");
+  assert.ok((g.match(/if \(autoResume \|\| recoveryResume \|\| rebindResume\) \{/g) ?? []).length >= 2, "goal + loop restore branches honor it");
   assert.match(g, /Date\.now\(\) - at < RECOVERY_RESUME_FRESH_MS/, "stale markers can't surprise-resume");
   const st = fs.readFileSync(path.resolve("extensions/goal-settings.ts"), "utf-8");
   assert.match(st, /autoRecovery\?: boolean;/, "setting exists (default on, opt-out)");
+});
+
+// ---------- v0.34.14: /reload rebind always resumes + auditor streak law ----------
+
+test("v0.34.14: /reload rebind resumes mid-work — the 'list is not continuing' fix (hellhunter)", () => {
+  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  assert.match(g, /const SESSION_OWNER_FILE = "session-owner\.json";/, "pid sidecar");
+  assert.match(g, /return prevPid !== null && prevPid === process\.pid;/, "same pid = /reload rebind, not cold boot");
+  assert.match(g, /const rebindResume = claimSessionOwnerAndDetectRebind\(ctx\.cwd\);/, "restore detects rebind");
+  assert.match(g, /appendLedger\(ctx\.cwd, "rebind_resume", \{ pid: process\.pid \}\);/, "rebind resumes are ledger-visible");
+  // Cold boots (new pid) still honor autoresume=off — the OR-chain gates all three.
+  assert.ok((g.match(/if \(autoResume \|\| recoveryResume \|\| rebindResume\) \{/g) ?? []).length >= 2, "goal + loop branches");
+});
+
+test("v0.34.14: 3-strike pause names the hanging-verification cause (pully ssh/sudo stall)", () => {
+  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  assert.match(g, /a verification command is hanging \(ssh\/sudo\/long test runs stall the stream\)/, "pauseReason names both causes");
+  assert.match(g, /model broken or a verification command hanging/, "notify names both causes");
 });
