@@ -202,7 +202,14 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     const kind = pauseKind(g);
     if (kind === "decision") return `glla: ${paint(theme, "accent", "⏸ decision needed")}${heldSuffix}`;
     if (kind === "error") return `glla: ${paint(theme, "error", `⏸ action needed — ${truncate(g.pauseReason ?? "", 30)}`)}${heldSuffix}`;
-    if (kind === "wait") return `glla: ${paint(theme, "dim", `⏳ waiting${g.pauseResumeAt ? ` · resumes ${shortClock(g.pauseResumeAt)}` : ""}`)}${heldSuffix}`;
+    if (kind === "wait") {
+      // v0.34.12: live countdown (the UI ticker keeps rendering through a
+      // timed wait) — "resumes in 23m" beats a static clock time, and a
+      // passed resumeAt says "resuming…" instead of lying about the past.
+      const rms = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) - now : Number.NaN;
+      const when = Number.isNaN(rms) ? "" : rms <= 0 ? " · resuming…" : ` · resumes in ${fmtElapsed(rms)}`;
+      return `glla: ${paint(theme, "dim", `⏳ waiting${when}`)}${heldSuffix}`;
+    }
     const label = `paused ⏸ ${truncate(g.pauseReason ?? "", 40)}`;
     return `glla: ${paint(theme, pauseIsError(g) ? "error" : "warning", label)}${heldSuffix}`;
   }

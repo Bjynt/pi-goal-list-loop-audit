@@ -641,6 +641,14 @@ const ZOMBIE_RUN_ALERT_THROTTLE_MS = 10 * 60_000;
 // last send; a landed turn — even a lazy text-only one — disarms it.
 const CONTINUATION_UNANSWERED_MS = 150_000;
 const CONTINUATION_UNANSWERED_THROTTLE_MS = 300_000;
+// v0.34.12: eager-continuation settle delay. Hellhunter 2026-08-01 (post-
+// restart): every turn cycle paid a 60s heartbeat tax because the eager
+// continuation fires AT agent_end — exactly pi's turn-teardown blackhole
+// window — so it vanished and the 60s heartbeat refire did the real work.
+// Ledger showed the tell: goal_continuation_sent pairs + a refire per
+// cycle. Sending 2.5s AFTER agent_end lets teardown settle; the send lands
+// and the next turn starts immediately. 2.5s per turn beats 60s per turn.
+const EAGER_CONTINUATION_SETTLE_MS = 2_500;
 // v0.29.19: dead-turn caps (agent_end exemption path). 6 consecutive
 // provider-error turns = a real outage, not bad luck — stop honestly.
 // 3 consecutive user aborts = the user means it (user aborts mean STOP).
@@ -718,7 +726,9 @@ function startUITicker(): void {
   if (uiTicker) return;
   uiTicker = setInterval(() => {
     const ctx = freshCtx();
-    if (ctx && isSupervising()) refreshUI(ctx);
+    // v0.34.12: keep ticking during a timed wait-pause too — the status
+    // line counts down to resumeAt live (pully field request 2026-08-01).
+    if (ctx && (isSupervising() || (state.goal?.status === "paused" && !!state.goal.pauseResumeAt))) refreshUI(ctx);
   }, 1_000);
   uiTicker.unref?.();
 }
@@ -6711,7 +6721,8 @@ export default function (pi: ExtensionAPI): void {
     // pause/cancel, the stall watchdog, the 5-consecutive-errors pause, or
     // the token guard — never via an elapsed-time cutoff.
 
-    scheduleContinuation(ctx, false);
+    // v0.34.12: NOT immediately — agent_end is the blackhole boundary.
+    scheduleContinuation(ctx, false, EAGER_CONTINUATION_SETTLE_MS);
   });
 
   pi.on("tool_call", (event: any) => {
