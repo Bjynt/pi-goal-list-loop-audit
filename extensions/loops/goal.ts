@@ -442,6 +442,10 @@ function probeExtensionApiStale(): boolean {
  * promise from sync archiveCurrentGoal turned it into an uncaughtException
  * and pi EXITED mid-audit. Probe first, catch anyway, ledger the skip. */
 function safeSteerUser(ctx: ExtensionContext, text: string): boolean {
+  if (sessionHandoffPending) {
+    appendLedger(ctx.cwd, "steer_skipped_handoff", { chars: text.length });
+    return false;
+  }
   if (probeExtensionApiStale()) {
     appendLedger(ctx.cwd, "steer_skipped_stale", { chars: text.length });
     return false;
@@ -461,6 +465,10 @@ function safeSteerUser(ctx: ExtensionContext, text: string): boolean {
  * and must NOT claim work started (S3's "created — starting now" lie). */
 function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
   if (!probeExtensionApiStale()) return false;
+  if (sessionHandoffPending) {
+    ctx.ui.notify(`glla: this session is handing off to a fresh pi context — ${what} will be handled after session_start.`, "info");
+    return true;
+  }
   // v0.30.0: a successor may already own this session (e.g. /reload
   // re-imported the modules) — the user's command belongs to the fresh
   // instance; say so softly instead of demanding a reload.
@@ -476,7 +484,7 @@ function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
   }
   appendLedger(ctx.cwd, "extension_api_stale", { where: `entry probe (${what})` });
   ctx.ui.notify(
-    `glla: this session's extension handle is stale (pi session replacement) — ${what} can't send continuations in this process. State is safe in .pi-glla/ — run /reload (extensions rebuild in place), then /glla resume. Restart pi only if /reload fails.`,
+    `glla: this session's extension handle is stale (pi session replacement) — ${what} can't send continuations in this process. State is safe in .pi-glla/. A fresh session_start will resume it; if pi does not create one, restart pi normally and restore the saved work.`,
     "warning",
   );
   // v0.29.22: deliberately NO self-heal from the entry probe — it fires
@@ -859,14 +867,10 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
   const silent = Math.round(SEND_REARM_ESCALATE_SILENT_MS / 60000);
   appendLedger(ctx.cwd, "send_rearm_escalated", { kind, afterMinutes: mins, silentMinutes: silent });
   if (kind === "loop" && isLoopActive()) {
-    if (attemptAutoRecovery(ctx, "send-retry storm")) {
-      appendLedger(ctx.cwd, "send_rearm_escalated_suppressed", { reason: "auto-recovery reload" });
-      return;
-    }
     clearLoopTimer();
-    state.loop = { ...state.loop!, active: false, stopReason: `send-retry storm: ${mins}m of re-arms with no session activity for ${silent}m — the session is wedged. Press Escape to cancel the stuck run (pi's own rate-limit retry holds it; pi prints "escape to cancel"), then /loop resume — the loop holds on restore. If still wedged: /reload rebuilds extensions in place, then /loop resume again. Restart pi only if /reload itself fails.` };
+    state.loop = { ...state.loop!, active: false, stopReason: `send-retry storm: ${mins}m of re-arms with no session activity for ${silent}m — the session is wedged. Press Escape to cancel the stuck run (pi's own rate-limit retry holds it; pi prints "escape to cancel"), then /loop resume — the loop holds on restore. A fresh session_start rebinds the loop; restart pi normally only if no replacement arrives.` };
     persistState(ctx);
-    ctx.ui.notify(`Loop stopped: send-retry storm (${mins}m, session silent ${silent}m). Escape cancels the stuck run, then /loop resume (the loop holds on restore). /reload if it persists; restart pi only if /reload fails.`, "warning");
+    ctx.ui.notify(`Loop stopped: send-retry storm (${mins}m, session silent ${silent}m). Escape cancels the stuck run, then /loop resume (the loop holds on restore). A fresh session_start rebinds it; restart pi normally only if no replacement arrives.`, "warning");
     notifyExternal(ctx, "Loop stopped: send-retry storm.");
     return;
   }
@@ -886,21 +890,13 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
     return;
   }
   if (state.goal && state.goal.status === "active") {
-    // v0.34.13: keep going unless we MUST stop — try the auto-recovery
-    // /reload before spending the user's attention on a pause. A reload
-    // that fails to cure throttles the next attempt, and the pause below
-    // fires then as today.
-    if (attemptAutoRecovery(ctx, "send-retry storm")) {
-      appendLedger(ctx.cwd, "send_rearm_escalated_suppressed", { reason: "auto-recovery reload" });
-      return;
-    }
     updateGoal({
       status: "paused",
       pauseKind: "error",
       pauseReason: `send-retry storm: ${mins}m of re-arms with no session activity for ${silent}m — the session never went idle for the continuation`,
-      pauseSuggestedAction: "The session produced no events while the send retried (wedged queue — often pi's own rate-limit retry holding the run; pi prints 'escape to cancel'). Press Escape, then /goal resume. If still wedged: /reload rebuilds extensions in place, then /goal resume again. Restart pi only if /reload fails.",
+      pauseSuggestedAction: "The session produced no events while the send retried (wedged queue — often pi's own rate-limit retry holding the run; pi prints 'escape to cancel'). Press Escape, then /goal resume. A fresh session_start rebinds the goal; restart pi normally only if no replacement arrives.",
     }, ctx);
-    ctx.ui.notify(`${goalNoun()} paused: send-retry storm (${mins}m, session silent ${silent}m). Escape cancels the stuck run, then /goal resume. /reload if it persists; restart pi only if /reload fails.`, "warning");
+    ctx.ui.notify(`${goalNoun()} paused: send-retry storm (${mins}m, session silent ${silent}m). Escape cancels the stuck run, then /goal resume. A fresh session_start rebinds it; restart pi normally only if no replacement arrives.`, "warning");
     notifyExternal(ctx, `${goalNoun()} paused: send-retry storm.`);
   }
 }
@@ -1270,6 +1266,7 @@ function armQueueStuckProbe(ctx: ExtensionContext, sentAt: number): void {
 }
 
 function scheduleContinuation(ctx: ExtensionContext, force = false, delayMs?: number): void {
+  if (sessionHandoffPending) return;
   abortedStandDown = false; // v0.29.5: any explicit schedule ends the stand-down
   if (!isActionableGoal()) return;
   rememberCtx(ctx);
@@ -1283,11 +1280,11 @@ function scheduleContinuation(ctx: ExtensionContext, force = false, delayMs?: nu
     return;
   }
   continuationScheduledFor = goalId;
-  continuationTimer = setTimeout(() => sendContinuation(goalId), delay);
-  continuationTimer.unref?.();
+  continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), delay);
 }
 
 function sendContinuation(goalId: string): void {
+  if (sessionHandoffPending) return;
   continuationTimer = null;
   continuationScheduledFor = null;
   if (!isActionableGoal()) return;
@@ -1298,16 +1295,14 @@ function sendContinuation(goalId: string): void {
     if (probeExtensionApiStale()) return;
     // No live ctx — retry shortly; the next session event will refresh it.
     continuationScheduledFor = goalId;
-    continuationTimer = setTimeout(() => sendContinuation(goalId), BACKOFF_IDLE_RETRY_MS);
-    continuationTimer.unref?.();
+    continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), BACKOFF_IDLE_RETRY_MS);
     return;
   }
   if (!ctx.isIdle() || ctx.hasPendingMessages()) {
     accountSendRearm(ctx, "continuation");
     continuationScheduledFor = goalId;
     // v0.28.29: backing-off cadence (was flat 50ms — 6,000 spins in 5m).
-    continuationTimer = setTimeout(() => sendContinuation(goalId), sendRearmDelayMs(continuationRearmStreak));
-    continuationTimer.unref?.();
+    continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), sendRearmDelayMs(continuationRearmStreak));
     return;
   }
   if (!extensionApi || extensionApiStale) return;
@@ -1339,7 +1334,7 @@ function sendContinuation(goalId: string): void {
 // what closes the turn: complete_goal if done, pause_goal if blocked, a tool
 // call otherwise. display: true — the user should see the warning too.
 function sendStallEscalation(ctx: ExtensionContext, nudges: number): void {
-  if (!extensionApi || extensionApiStale) return;
+  if (sessionHandoffPending || !extensionApi || extensionApiStale) return;
   const remaining = HEARTBEAT_MAX_NUDGES - nudges;
   const text = [
     `[STALL WARNING ${nudges}/${HEARTBEAT_MAX_NUDGES}] The last turn produced no tool calls.`,
@@ -1361,7 +1356,7 @@ function sendStallEscalation(ctx: ExtensionContext, nudges: number): void {
 // sendContinuation (stale api = terminal), independent of goal state —
 // plain sessions truncate too.
 function sendLengthContinue(ctx: ExtensionContext, consecutive: number): void {
-  if (!extensionApi || extensionApiStale) return;
+  if (sessionHandoffPending || !extensionApi || extensionApiStale) return;
   try {
     extensionApi.sendMessage({
       customType: GOAL_EVENT_ENTRY,
@@ -2885,7 +2880,7 @@ function loopPrompt(loop: LoopState, regressionNote: string, strategyNote: strin
 }
 
 function scheduleLoopTick(ctx: ExtensionContext): void {
-  if (!isLoopActive()) return;
+  if (sessionHandoffPending || !isLoopActive()) return;
   rememberCtx(ctx);
   clearLoopTimer();
   let delay = 0;
@@ -2894,11 +2889,11 @@ function scheduleLoopTick(ctx: ExtensionContext): void {
   } catch {
     return;
   }
-  loopTimer = setTimeout(() => sendLoopTurn(), delay);
-  loopTimer.unref?.();
+  loopTimer = scheduleSessionTimeout(() => sendLoopTurn(), delay);
 }
 
 function sendLoopTurn(): void {
+  if (sessionHandoffPending) return;
   loopTimer = null;
   if (!isLoopActive() || !extensionApi) return;
   const ctx = freshCtx();
@@ -2910,8 +2905,7 @@ function sendLoopTurn(): void {
       if (probeExtensionApiStale()) return;
       loopRearmStreak++;
     } else accountSendRearm(ctx, "loop");
-    loopTimer = setTimeout(() => sendLoopTurn(), sendRearmDelayMs(loopRearmStreak)); // v0.28.29: backing-off cadence
-    loopTimer.unref?.();
+    loopTimer = scheduleSessionTimeout(() => sendLoopTurn(), sendRearmDelayMs(loopRearmStreak)); // v0.28.29: backing-off cadence
     return;
   }
   const loop = state.loop!;
