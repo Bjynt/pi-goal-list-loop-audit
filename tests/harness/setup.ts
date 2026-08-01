@@ -15,3 +15,8 @@ process.env.GLLA_GLOBAL_SETTINGS_PATH ??= path.join(
   os.tmpdir(),
   `glla-test-global-settings-${process.pid}.json`,
 );
+
+// v0.34.12: the eager continuation settles 2.5s past agent_end in production
+// (pi's turn-teardown blackhole window); tests flush with tick() and must not
+// wait real seconds — zero the settle for the whole suite.
+process.env.GLLA_EAGER_SETTLE_MS ??= "0";

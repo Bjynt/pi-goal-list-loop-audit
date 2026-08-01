@@ -396,3 +396,21 @@ test("v0.34.11: unanswered-continuation watchdog (accepted send, no turn — hel
   assert.match(g, /continuation_unanswered/);
   assert.match(g, /Re-sends don't unstick it\. Cure: \/reload/);
 });
+
+// ---------- v0.34.12: eager-continuation settle + wait countdown ----------
+
+test("v0.34.12: eager continuation settles 2.5s past agent_end (hellhunter 60s-per-turn blackhole tax)", () => {
+  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  assert.match(g, /const EAGER_CONTINUATION_SETTLE_MS = Number\(process\.env\.GLLA_EAGER_SETTLE_MS \?\? 2_500\);/, "2.5s default, env-overridable");
+  assert.match(g, /scheduleContinuation\(ctx, false, EAGER_CONTINUATION_SETTLE_MS\);\n  \}\);/, "agent_end eager path settles");
+  // Test harness zeroes it so tick() flushes keep working.
+  const setup = fs.readFileSync(path.resolve("tests/harness/setup.ts"), "utf-8");
+  assert.match(setup, /process\.env\.GLLA_EAGER_SETTLE_MS \?\?= "0";/);
+});
+
+test("v0.34.12: wait-pause status line counts down live + ticker survives the wait (pully field request)", () => {
+  const d = fs.readFileSync(path.resolve("extensions/goal-loop-display.ts"), "utf-8");
+  assert.match(d, /rms <= 0 \? " · resuming…" : ` · resumes in \$\{fmtElapsed\(rms\)\}`;/, "live countdown, honest past-resumeAt");
+  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  assert.match(g, /isSupervising\(\) \|\| \(state\.goal\?\.status === "paused" && !!state\.goal\.pauseResumeAt\)/, "ticker keeps rendering through a timed wait");
+});

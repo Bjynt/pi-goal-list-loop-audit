@@ -648,7 +648,7 @@ const CONTINUATION_UNANSWERED_THROTTLE_MS = 300_000;
 // Ledger showed the tell: goal_continuation_sent pairs + a refire per
 // cycle. Sending 2.5s AFTER agent_end lets teardown settle; the send lands
 // and the next turn starts immediately. 2.5s per turn beats 60s per turn.
-const EAGER_CONTINUATION_SETTLE_MS = 2_500;
+const EAGER_CONTINUATION_SETTLE_MS = Number(process.env.GLLA_EAGER_SETTLE_MS ?? 2_500);
 // v0.29.19: dead-turn caps (agent_end exemption path). 6 consecutive
 // provider-error turns = a real outage, not bad luck — stop honestly.
 // 3 consecutive user aborts = the user means it (user aborts mean STOP).
