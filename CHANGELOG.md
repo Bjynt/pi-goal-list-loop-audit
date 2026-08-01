@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.34.18] — 2026-08-01
+
+### Fixed — autoresume waits for the initial transcript
+
+A blank initial `startup` runtime is now an initialization barrier: global
+`autoResume` cannot activate a persisted goal, list head, or loop before pi
+has loaded a conversation. The wait is visible and ledgered, while an explicit
+`/goal resume`, `/list` activation, or `/loop` start remains a deliberate
+escape hatch. Startup sessions that already contain conversation history keep
+autoresuming normally.
+
 ## [0.34.17] — 2026-08-01
 
 ### Fixed — stale runtimes never call the old pi API
