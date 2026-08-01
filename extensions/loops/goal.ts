@@ -6433,7 +6433,18 @@ export default function (pi: ExtensionAPI): void {
     // Consume ownership markers before the startup barrier so a later loaded
     // session cannot mistake this placeholder runtime for a rebind.
     const recoveryResume = consumeRecoveryResume(ctx.cwd);
-    const rebindResume = claimSessionOwner
+    const rebindResume = claimSessionOwnerAndDetectRebind(ctx.cwd);
+    if (rebindResume) appendLedger(ctx.cwd, "rebind_resume", { pid: process.pid });
+    const explicitRecovery = handoffResume || recoveryResume || rebindResume;
+    if (initialSessionLoadPending && !explicitRecovery) {
+      appendLedger(ctx.cwd, "session_waiting_for_load", { reason: startReason });
+      ctx.ui.notify("glla: pi has not loaded a conversation yet — waiting before auto-resume. Load/resume the session, or explicitly run /goal resume or /loop start.", "info");
+      return;
+    }
+    // An explicit lifecycle handoff/rebind is continuation consent even if
+    // pi reported a blank startup context. Release the barrier before any
+    // scheduling path below can observe it.
+    initialSessionLoadPending = false;
     // v0.29.6: stacked-state auto-arbitration FIRST — one live artifact
     // survives before the restore gate decides hold-vs-resume for it.
     autoArbitrateStackedState(ctx);
