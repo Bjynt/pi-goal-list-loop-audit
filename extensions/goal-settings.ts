@@ -68,18 +68,12 @@ export interface Settings {
   /** Consecutive stuck interventions before a loop stops (default 5,
    * 10 under aggressiveMode). */
   stuckMaxInterventions?: number;
-  /** v0.29.13: on a stale-handle terminal, inject /reload into our own
-   * tmux pane (keystroke self-heal; pi walls ctx.reload() behind
-   * assertActive). Default true; only acts when TMUX and TMUX_PANE are
-   * set — pi outside tmux just gets the manual warning. */
+  /** @deprecated v0.34.16: retained so older settings files deserialize, but
+   * ignored. Recovery now uses session_shutdown/session_start handoff and
+   * never injects terminal keystrokes. */
   autoReloadOnStale?: boolean;
-  /** v0.34.13: auto-recovery ladder — when a wedge is detected that only a
-   * /reload cures (unanswered continuation, send-retry storm), inject the
-   * /reload ITSELF via the v0.29.13 tmux/WezTerm transport and resume the
-   * goal/loop after the rebuild (sidecar marker — autoresume=off is a
-   * restore-time setting, not a recovery veto). Default true. The one
-   * class it does NOT cross: pi restart (transcript-writer dead) — that
-   * stays a loud stop for the human. */
+  /** @deprecated v0.34.16: retained for settings-file compatibility, but
+   * ignored. Lifecycle handoff is always enabled. */
   autoRecovery?: boolean;
   /** v0.26.1: consecutive heartbeat refires without a real turn before
    * the goal pauses / loop stops (default 5; 0 = never escalate). */
@@ -214,8 +208,6 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "quotaRetryMinutes",
   "stuckMaxInterventions",
   "stallEscalationRefires",
-  "autoReloadOnStale",
-  "autoRecovery",
   "stallShortWords",
   "stallSimilarityThreshold",
   "postaudit",

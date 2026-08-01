@@ -904,7 +904,7 @@ function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
     clearLoopTimer();
     state.loop = { ...state.loop!, active: false, stopReason: `stalled: ${threshold} continuation refires landed no turn — the session is not continuing (wedged message queue or stale API). Press Escape to cancel any stuck run, then /loop resume — the loop holds on restore. A fresh session_start rebinds the loop or goal; restart pi normally only if no replacement arrives.` };
     persistState(ctx);
-    ctx.ui.notify(`Loop stopped: ${threshold} refires produced no turn — the continuation is not landing. Escape cancels a stuck run, then /loop resume (the loop holds on restore). /reload if stale; restart pi only if /reload fails.`, "warning");
+    ctx.ui.notify(`Loop stopped: ${threshold} refires produced no turn — the continuation is not landing. Escape cancels a stuck run, then /loop resume (the loop holds on restore). A fresh session_start rebinds it; restart pi normally only if no replacement arrives.`, "warning");
     notifyExternal(ctx, "Loop stopped: stalled (continuation not landing).");
     return true;
   }
@@ -913,7 +913,7 @@ function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
       status: "paused",
       pauseKind: "error",
       pauseReason: `stalled: ${threshold} continuation refires landed no turn`,
-      pauseSuggestedAction: "The continuation chain is broken in this process (wedged message queue or stale API). Press Escape to cancel any stuck run, then /goal resume. If the handle is stale, /reload rebuilds extensions in place — restart pi only if /reload fails.",
+      pauseSuggestedAction: "The continuation chain is broken in this process (wedged message queue or stale API). Press Escape to cancel any stuck run, then /goal resume. A fresh session_start rebinds the goal; restart pi normally only if no replacement arrives.",
     }, ctx);
     ctx.ui.notify(`${goalNoun()} paused: ${threshold} refires produced no turn. Escape cancels a stuck run, then /goal resume. A fresh session_start rebinds it; restart pi normally only if no replacement arrives.`, "warning");
     notifyExternal(ctx, `${goalNoun()} paused: stalled (continuation not landing).`);
@@ -1869,7 +1869,7 @@ function fireReviewer(
           // to still count as "proposed" in the report + notify. Now the
           // failure is LOUD and the proposal goes uncounted.
           ctx.ui.notify(
-            `Postaudit /goal proposal NOT delivered: ${err instanceof Error ? err.message : String(err)} — the follow-up never reached the session. Run /reload if the session was just replaced (extensions rebuild in place), then retry.`,
+            `Postaudit /goal proposal NOT delivered: ${err instanceof Error ? err.message : String(err)} — the follow-up never reached the session. Wait for a fresh session_start, then retry.`,
             "warning",
           );
           return false;
@@ -2005,7 +2005,7 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
     if (isStaleApiError(err)) {
       extensionApiStale = true;
       appendLedger(ctx.cwd, "extension_api_stale", { where: "startDrafting seed" });
-      ctx.ui.notify("glla: can't start the drafting interview — this session's extension handle is stale (pi session replacement). Run /reload (extensions rebuild in place), then re-run the command. Restart pi only if /reload fails.", "warning");
+      ctx.ui.notify("glla: can't start the drafting interview — this session's extension handle is stale (pi session replacement). A fresh session_start will rebind it; if no replacement arrives, restart pi normally, then re-run the command.", "warning");
     } else {
       ctx.ui.notify(`glla: couldn't start the drafting interview (${err instanceof Error ? err.message : String(err)}) — try again.`, "warning");
     }
@@ -2134,7 +2134,7 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
     // v0.28.1 (S3): the goal is persisted — mark the interrupt so the next
     // fresh session LOADS it (held by default since v0.28.21), and tell the truth instead of "starting now".
     updateGoal({ interruptedAt: nowIso(), interruptedReason: "created in a stale session" }, ctx);
-    ctx.ui.notify(`Goal saved: ${shortObj(goal.objective)} — safe in .pi-glla/, but this stale process can't send continuations. Run /reload (extensions rebuild in place, state survives), then /goal resume. Restart pi only if /reload itself fails.`, "warning");
+    ctx.ui.notify(`Goal saved: ${shortObj(goal.objective)} — safe in .pi-glla/, but this stale process can't send continuations. A fresh session_start will resume it; if no replacement arrives, restart pi normally, then /goal resume if autoresume is off.`, "warning");
     return;
   }
   ctx.ui.notify(`Goal started: ${shortObj(goal.objective)} — the auditor will verify on completion.`, "info");
@@ -6338,7 +6338,7 @@ export default function (pi: ExtensionAPI): void {
       const stillStale = probeExtensionApiStale();
       appendLedger(ctx.cwd, "stale_flag_reset_on_rebind", { reason: startReason, stillStale });
       if (stillStale) {
-        ctx.ui.notify("glla: session rebound but the extension handle is still stale — run /reload (extensions rebuild in place), then /glla resume.", "warning");
+        ctx.ui.notify("glla: session rebound but the extension handle is still stale — waiting for another fresh session_start; restart pi normally only if no replacement arrives, then /glla resume.", "warning");
       }
     }
     state = readState(ctx.cwd);
@@ -6452,7 +6452,7 @@ export default function (pi: ExtensionAPI): void {
     if (rebindResume) appendLedger(ctx.cwd, "rebind_resume", { pid: process.pid });
     if (isLoopActive()) {
       const l = state.loop!;
-      if (autoResume || recoveryResume || rebindResume) {
+      if (autoResume || recoveryResume || rebindResume || handoffResume) {
         ctx.ui.notify(
           `Resuming loop (iteration ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"}, best ${l.bestValue ?? "n/a"}, stall ${l.stallCount}/${l.plateauWindow}): ${l.target.slice(0, 60)}`,
           "info",
@@ -6473,7 +6473,7 @@ export default function (pi: ExtensionAPI): void {
       // "load it but not auto start it"). Interrupted goals hold like
       // everything else; autoresume=on (unattended rigs) still auto-resumes
       // them, and the marker is cleared only on that promised auto-resume.
-      if (autoResume || recoveryResume || rebindResume) {
+      if (autoResume || recoveryResume || rebindResume || handoffResume) {
         // v0.28.1 (S2): clear the stale-handle interrupt marker — this IS
         // the auto-resume the marker promised.
         if (wasInterrupted) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
