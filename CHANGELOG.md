@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.34.5] — 2026-08-01
+
+### Changed — the wedge alert is subagent-aware
+
+Junk-runner, 2026-08-01: two Explore agents sat at "thinking…" for 31+
+minutes (alive — counters kept moving — but indistinguishable from hung).
+The 30-minute wedge alert covered the shape, but its message diagnosed a
+"hung command (test/build/dev server)" — wrong advice when the in-flight
+call is `get_subagent_result`/`Agent`. The alert now names the SUBAGENT
+WAIT and carries the liveness protocol: a child whose tool-use/token
+counters have stopped moving between checks is hung, not thinking (hard
+failures — quota 429s, output-token-limit deaths — already surface as
+✗ failed in the Agents panel and return the parent's wait; a HANG is the
+silent case). Esc interrupts the wait; collect the survivors and absorb
+the dead scope inline. The `wedge_alert` ledger event gains
+`subagentWait: true|false` so the fleet can count the shape.
+
 ## [0.34.4] — 2026-08-01
 
 ### Fixed — subagent brief discipline (the zero-text death was systematic, not an outlier)

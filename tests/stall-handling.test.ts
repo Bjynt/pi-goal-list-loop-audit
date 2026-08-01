@@ -369,3 +369,13 @@ test("v0.32.1: post-compaction resume debt + deterministic resync (pi-goal-x's l
   // discharged by a real turn start (agent_start), not by the send itself
   assert.match(SRC, /pi\.on\("agent_start", \(\) => \{\n    lastStreamActivityAt = Date\.now\(\);\n    \/\/ v0\.32\.1/);
 });
+
+// ---------- v0.34.5: subagent-aware wedge alert ----------
+
+test("v0.34.5: wedge alert names a subagent wait when the in-flight call is one", () => {
+  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  assert.match(g, /SUBAGENT WAIT/, "the alert names the wait type");
+  assert.match(g, /t\.name === "get_subagent_result" \|\| t\.name === "Agent"/, "detects both wait shapes");
+  assert.match(g, /tool-use\/token counters have stopped moving between checks is hung, not thinking/, "the liveness check is in the message");
+  assert.match(g, /subagentWait: subWaits\.size > 0/, "ledger marks subagent waits distinctly");
+});

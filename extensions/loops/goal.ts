@@ -991,8 +991,21 @@ function heartbeatTick(): void {
     })
   ) {
     lastWedgeAlertAt = Date.now();
-    const msg = `${goalNoun()} appears wedged: no activity for ${Math.round((Date.now() - lastActivityAt) / 60_000)}m while the session is busy — likely a hung command (test/build/dev server without a timeout). Check the session; Esc kills a stuck tool call.`;
-    appendLedger(ctx.cwd, "wedge_alert", { silentMs: Date.now() - lastActivityAt });
+    // v0.34.5: a wedge while blocked on a subagent wait is a DIFFERENT animal
+    // from a hung bash command (junk-runner 2026-08-01: 2 Explore agents
+    // "thinking…" 31 minutes — working, but indistinguishable from hung
+    // without this hint). Name the wait and give the liveness check: a child
+    // whose tool-use counter stops moving is hung, not thinking.
+    const subWaits = new Set(
+      [...inFlightToolCalls.values()]
+        .filter((t) => t.name === "get_subagent_result" || t.name === "Agent")
+        .map((t) => t.name),
+    );
+    const subHint = subWaits.size > 0
+      ? ` The in-flight call is a SUBAGENT WAIT (${[...subWaits].join("/")}) — check the Agents panel: a child whose tool-use/token counters have stopped moving between checks is hung, not thinking (hard failures surface as ✗ failed + the wait returns; a HANG is silent). Esc interrupts the wait — then collect the survivors with get_subagent_result and absorb the dead scope inline.`
+      : "";
+    const msg = `${goalNoun()} appears wedged: no activity for ${Math.round((Date.now() - lastActivityAt) / 60_000)}m while the session is busy — likely a hung command (test/build/dev server without a timeout).${subHint} Check the session; Esc kills a stuck tool call.`;
+    appendLedger(ctx.cwd, "wedge_alert", { silentMs: Date.now() - lastActivityAt, subagentWait: subWaits.size > 0 });
     ctx.ui.notify(msg, "warning");
     notifyExternal(ctx, msg);
   }
