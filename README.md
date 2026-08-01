@@ -25,6 +25,7 @@ Most pi goal extensions — `pi-goal`, `pi-goal-x`, `pi-loop-mode`, `ralphi`, `t
 Install:
 ```bash
 pi install npm:pi-goal-list-loop-audit
+pi install npm:@juicesharp/rpiv-ask-user-question   # effectively required — see Recommended companions
 ```
 
 Five top-level commands — `/goal`, `/list`, `/loop`, `/glla`, `/review`:
@@ -137,6 +138,39 @@ dry, not "done"), `max=` iterations, or the arbitrary bounds `time=<hours>` /
 `tokens=<budget>`. And the spec is **alive**: mid-loop the agent can call
 `propose_loop_refine` to sharpen the target or swap the measure — you confirm,
 the orchestrator test-runs and re-baselines, and both eras stay in history.
+
+## Recommended companions
+
+glla is the goal plane — it drives, verifies, and notifies. It does not
+try to be the whole rig. Four plugins round it out. The first is
+**effectively required** — glla's drafting interviews, DECIDE findings,
+and confirm dialogs are built around structured questions (it degrades
+to plain-text prompts without it, but that is the fallback path, not the
+product). The other three are optional; glla works without them:
+
+- **`@juicesharp/rpiv-ask-user-question`** — **install this one.**
+  Structured questions with multi-select and markdown previews: the
+  /goal drafting interview, DECIDE findings, and every confirm dialog
+  render through it. Without it you get prose fallbacks — functional,
+  but not the intended UX.
+- **`@tintinweb/pi-subagents`** — the `Agent` tool: parallel Explore /
+  Plan / general-purpose subagents. glla's prompts teach fan-out with ROI
+  (parallelize real work, never ceremony spawning) and brief discipline,
+  and big audit collects genuinely assume this exists. glla's subagent
+  guarantees (the main session owns the goal; workers can't clobber it)
+  are plugin-agnostic, but this is the provider we test against.
+- **`@juicesharp/rpiv-advisor`** — a second opinion the executor model
+  can request mid-flight: the whole conversation branch is forwarded to a
+  stronger reviewer model, which answers with a plan, a correction, or a
+  stop signal. Drive the session with a cheap/fast model and buy strong
+  judgment per call. Role clarity: the advisor is *advisory*, never
+  verification — glla's isolated auditor remains the only completion
+  gate.
+- **`@pi-unipi/notify`** — push beyond the desktop: Telegram, Gotify,
+  ntfy, with per-event routing. glla's built-in pushes cover the local
+  desktop case and fire only where there is something to DO; add this
+  for away-from-desk alerts — route it to critical events only, or every
+  glla pause/verdict pings twice.
 
 ## Which loop? (the decision rule)
 
@@ -311,39 +345,6 @@ Every other wait is bounded too: continuation retries are milliseconds,
 stuck backoff caps at 5 minutes then pauses, measure commands get a 10m
 hard timeout, and the auditor aborts after 10m with zero session activity
 (infrastructure error, never a verdict).
-
-## Recommended companions
-
-glla is the goal plane — it drives, verifies, and notifies. It does not
-try to be the whole rig. Four plugins round it out. The first is
-**effectively required** — glla's drafting interviews, DECIDE findings,
-and confirm dialogs are built around structured questions (it degrades
-to plain-text prompts without it, but that is the fallback path, not the
-product). The other three are optional; glla works without them:
-
-- **`@juicesharp/rpiv-ask-user-question`** — **install this one.**
-  Structured questions with multi-select and markdown previews: the
-  /goal drafting interview, DECIDE findings, and every confirm dialog
-  render through it. Without it you get prose fallbacks — functional,
-  but not the intended UX.
-- **`@tintinweb/pi-subagents`** — the `Agent` tool: parallel Explore /
-  Plan / general-purpose subagents. glla's prompts teach fan-out with ROI
-  (parallelize real work, never ceremony spawning) and brief discipline,
-  and big audit collects genuinely assume this exists. glla's subagent
-  guarantees (the main session owns the goal; workers can't clobber it)
-  are plugin-agnostic, but this is the provider we test against.
-- **`@juicesharp/rpiv-advisor`** — a second opinion the executor model
-  can request mid-flight: the whole conversation branch is forwarded to a
-  stronger reviewer model, which answers with a plan, a correction, or a
-  stop signal. Drive the session with a cheap/fast model and buy strong
-  judgment per call. Role clarity: the advisor is *advisory*, never
-  verification — glla's isolated auditor remains the only completion
-  gate.
-- **`@pi-unipi/notify`** — push beyond the desktop: Telegram, Gotify,
-  ntfy, with per-event routing. glla's built-in pushes cover the local
-  desktop case and fire only where there is something to DO; add this
-  for away-from-desk alerts — route it to critical events only, or every
-  glla pause/verdict pings twice.
 
 ## Compatibility (what goes well, what conflicts)
 

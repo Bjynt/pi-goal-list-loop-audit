@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.34.10] — 2026-08-01
+
+### Docs — companions moved up the storefront
+
+Recommended companions now sits immediately after Quick start (it was
+buried below Config/Subagents/Token guard/Wedge alert — an
+effectively-required dependency has no business at line 315), and the
+Quick start install block carries the `rpiv-ask-user-question` install
+line directly, so a newcomer gets both packages in one copy-paste.
+
 ## [0.34.9] — 2026-08-01
 
 ### Docs — rpiv-ask-user-question promoted to effectively required
