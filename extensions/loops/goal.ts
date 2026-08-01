@@ -583,12 +583,43 @@ let lastCtx: ExtensionContext | null = null;
 // timer or late event that reaches the old module must stand down until the
 // fresh session_start rebinds it.
 let sessionHandoffPending = false;
+// v0.34.18: pi's initial `session_start` fires before interactive mode
+// renders the selected transcript. A plain `pi` startup is also a fresh,
+// empty session; do not let project-scoped autoResume launch work into that
+// placeholder before the user has loaded a real session.
+let initialSessionLoadPending = false;
 const sessionTimeouts = new Set<NodeJS.Timeout>();
 // v0.23.8: the session that OWNS the loop (its sessionManager). Subagent
 // sessions (pi-subagents binds extensions there too) fire our handlers
 // with their own ctx — they must never take over lastCtx (a headless
 // subagent ctx would silently kill the heartbeat/wedge machinery).
 let ownerSession: unknown = null;
+
+function sessionHasConversation(ctx: ExtensionContext): boolean | undefined {
+  try {
+    const manager = ctx.sessionManager as unknown as {
+      buildSessionContext?: () => { messages?: unknown[] };
+    };
+    if (typeof manager.buildSessionContext !== "function") return undefined;
+    return (manager.buildSessionContext().messages?.length ?? 0) > 0;
+  } catch {
+    // Older pi contexts and test doubles may not expose the session reader;
+    // preserve their existing behavior rather than guessing that they are blank.
+    return undefined;
+  }
+}
+
+function isBlankInitialStartup(ctx: ExtensionContext, reason: string): boolean {
+  if (reason !== "startup" && reason !== "unknown") return false;
+  return sessionHasConversation(ctx) === false;
+}
+
+function releaseInitialSessionLoadBarrier(): void {
+  initialSessionLoadPending = false;
+  // The factory starts the heartbeat, but a future pi/context may not. This
+  // is idempotent and makes an explicit /goal resume or /loop start usable.
+  startHeartbeat();
+}
 
 function rememberCtx(ctx: ExtensionContext): void {
   let ownerLive = false;
@@ -927,7 +958,7 @@ function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
 }
 
 function heartbeatTick(): void {
-  if (zombieStoodDown) return; // v0.30.0: a superseded instance stays silent forever
+  if (zombieStoodDown || initialSessionLoadPending) return; // blank startup waits for pi to bind a real session
   const ctx = freshCtx();
   if (!ctx) return;
   let idle = false;
@@ -1191,6 +1222,7 @@ function scheduleSessionTimeout(callback: () => void, delayMs: number): NodeJS.T
 
 function clearSessionOwnedTimers(): void {
   sessionHandoffPending = true;
+  initialSessionLoadPending = false;
   clearContinuationTimer();
   clearLoopTimer();
   if (queueStuckProbe) { clearTimeout(queueStuckProbe); queueStuckProbe = null; }
@@ -1208,7 +1240,7 @@ function isActionableGoal(): boolean {
 }
 
 function freshCtx(): ExtensionContext | null {
-  if (sessionHandoffPending) return null;
+  if (sessionHandoffPending || initialSessionLoadPending) return null;
   // A captured ctx throws "stale" after session replacement. Probe cheaply;
   // on stale, drop it and wait for the next event to hand us a fresh one.
   if (!lastCtx) return null;
@@ -1253,7 +1285,7 @@ function armQueueStuckProbe(sentAt: number): void {
 }
 
 function scheduleContinuation(ctx: ExtensionContext, force = false, delayMs?: number): void {
-  if (sessionHandoffPending) return;
+  if (sessionHandoffPending || initialSessionLoadPending) return;
   abortedStandDown = false; // v0.29.5: any explicit schedule ends the stand-down
   if (!isActionableGoal()) return;
   rememberCtx(ctx);
@@ -1271,7 +1303,7 @@ function scheduleContinuation(ctx: ExtensionContext, force = false, delayMs?: nu
 }
 
 function sendContinuation(goalId: string): void {
-  if (sessionHandoffPending) return;
+  if (sessionHandoffPending || initialSessionLoadPending) return;
   continuationTimer = null;
   continuationScheduledFor = null;
   if (!isActionableGoal()) return;
@@ -1321,7 +1353,7 @@ function sendContinuation(goalId: string): void {
 // what closes the turn: complete_goal if done, pause_goal if blocked, a tool
 // call otherwise. display: true — the user should see the warning too.
 function sendStallEscalation(ctx: ExtensionContext, nudges: number): void {
-  if (sessionHandoffPending || !extensionApi || extensionApiStale) return;
+  if (sessionHandoffPending || initialSessionLoadPending || !extensionApi || extensionApiStale) return;
   const remaining = HEARTBEAT_MAX_NUDGES - nudges;
   const text = [
     `[STALL WARNING ${nudges}/${HEARTBEAT_MAX_NUDGES}] The last turn produced no tool calls.`,
@@ -1343,7 +1375,7 @@ function sendStallEscalation(ctx: ExtensionContext, nudges: number): void {
 // sendContinuation (stale api = terminal), independent of goal state —
 // plain sessions truncate too.
 function sendLengthContinue(ctx: ExtensionContext, consecutive: number): void {
-  if (sessionHandoffPending || !extensionApi || extensionApiStale) return;
+  if (sessionHandoffPending || initialSessionLoadPending || !extensionApi || extensionApiStale) return;
   try {
     extensionApi.sendMessage({
       customType: GOAL_EVENT_ENTRY,
@@ -2873,7 +2905,7 @@ function loopPrompt(loop: LoopState, regressionNote: string, strategyNote: strin
 }
 
 function scheduleLoopTick(ctx: ExtensionContext): void {
-  if (sessionHandoffPending || !isLoopActive()) return;
+  if (sessionHandoffPending || initialSessionLoadPending || !isLoopActive()) return;
   rememberCtx(ctx);
   clearLoopTimer();
   let delay = 0;
@@ -2886,7 +2918,7 @@ function scheduleLoopTick(ctx: ExtensionContext): void {
 }
 
 function sendLoopTurn(): void {
-  if (sessionHandoffPending) return;
+  if (sessionHandoffPending || initialSessionLoadPending) return;
   loopTimer = null;
   if (!isLoopActive() || !extensionApi) return;
   const ctx = freshCtx();
@@ -6328,6 +6360,8 @@ export default function (pi: ExtensionAPI): void {
     if (isForeignCtx(ctx)) return;
     extensionApi = pi;
     sessionHandoffPending = false;
+    const startReason = typeof event?.reason === "string" ? event.reason : "unknown";
+    initialSessionLoadPending = isBlankInitialStartup(ctx, startReason);
     rememberCtx(ctx);
     startHeartbeat();
     startUITicker();
@@ -6343,7 +6377,6 @@ export default function (pi: ExtensionAPI): void {
     staleTerminalDone = false; // v0.33.1: a rebound session must be able to go terminal AGAIN (was: one-shot for the process lifetime)
     postCompactResumeOwed = false; // v0.33.1: a compact from a previous session must not resync THIS one
     postCompactResyncPending = false;
-    const startReason = typeof event?.reason === "string" ? event.reason : "unknown";
     appendLedger(ctx.cwd, "session_rebound", { reason: startReason });
     if (extensionApiStale) {
       extensionApiStale = false; // fresh ctx delivered — re-probe
@@ -6397,6 +6430,10 @@ export default function (pi: ExtensionAPI): void {
     } catch (err) {
       ctx.ui.notify(`glla subagent override sync failed: ${err instanceof Error ? err.message : String(err)}`, "warning");
     }
+    // Consume ownership markers before the startup barrier so a later loaded
+    // session cannot mistake this placeholder runtime for a rebind.
+    const recoveryResume = consumeRecoveryResume(ctx.cwd);
+    const rebindResume = claimSessionOwner
     // v0.29.6: stacked-state auto-arbitration FIRST — one live artifact
     // survives before the restore gate decides hold-vs-resume for it.
     autoArbitrateStackedState(ctx);
@@ -6453,14 +6490,8 @@ export default function (pi: ExtensionAPI): void {
       persistState(ctx);
       appendLedger(ctx.cwd, "audit_loop_target_migrated", { from: "audit-every-iteration", to: "fix-first" });
     }
-    // v0.34.15 compatibility: consume one legacy recovery marker if an older
-    // process wrote it before this lifecycle-first build landed.
-    const recoveryResume = consumeRecoveryResume(ctx.cwd);
-    // v0.34.16: a same-process lifecycle handoff is explicit continuation
-    // debt, so it resumes independently of the cold-boot autoResume setting.
-    // A same-pid owner rebind is the second same-process signal.
-    const rebindResume = claimSessionOwnerAndDetectRebind(ctx.cwd);
-    if (rebindResume) appendLedger(ctx.cwd, "rebind_resume", { pid: process.pid });
+    // v0.34.15 compatibility: the legacy recovery marker and v0.34.16
+    // rebind marker were consumed before the startup barrier above.
     if (isLoopActive()) {
       const l = state.loop!;
       if (autoResume || recoveryResume || rebindResume || handoffResume) {
