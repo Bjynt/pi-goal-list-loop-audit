@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.34.17] — 2026-08-01
+
+### Fixed — stale runtimes never call the old pi API
+
+`notifyExternal` now exits before reading notification settings or calling
+`pi.exec` when the extension is stale or a lifecycle handoff is pending. The
+orphan warning remains best-effort through the local UI, but an invalidated
+runtime cannot accidentally invoke its old `pi` handle.
+
 ## [0.34.16] — 2026-08-01
 
 ### Changed — stale recovery crosses pi's lifecycle, not the terminal

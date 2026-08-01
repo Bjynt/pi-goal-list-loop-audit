@@ -2776,6 +2776,9 @@ function probeAutoNotify(ctx: ExtensionContext): void {
 
 function notifyExternal(ctx: ExtensionContext, message: string): void {
   try {
+    // A stale or handoff-bound runtime has no valid pi exec API. The TUI
+    // warning may still be best-effort, but never call the old pi handle.
+    if (sessionHandoffPending || extensionApiStale) return;
     const settings = loadSettings(ctx.cwd);
     if (settings.notifyCmd === "off" || !extensionApi) return;
     const cmd = settings.notifyCmd ?? autoNotifyCmd;
