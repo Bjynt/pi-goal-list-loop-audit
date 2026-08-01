@@ -235,7 +235,27 @@ No external watchdog plugin needed. It also recovers **stranded audits**
 (v0.29.1): a goal stuck in `auditing` with no auditor session alive re-runs
 the stored claim after 90s instead of black-holing. Storm protection: the
 send→pause→notify path rearms once per cycle and loud-stops after a 6-error
-brake streak, so a broken provider can't spin forever.
+brake streak, so a broken provider can't spin forever. A confirmed queued
+continuation with no turn is reported by the queue-stuck probe; it does not
+inject terminal input.
+
+## Session replacement and stale handles
+
+Recovery crosses pi's lifecycle boundary. On `session_shutdown`, glla records
+`.pi-glla/session-handoff.json` for a supervising, non-quit replacement,
+ledgering the reason and stopping every session-owned timer. On the fresh
+`session_start`, the new context consumes only fresh, same-process debt and
+continues the saved goal or loop. Timers resolve a fresh context when they fire;
+they do not retain an old `ctx` or `pi` handle.
+
+A user quit is not continuation consent: `reason: "quit"` is ledgered as
+`session_handoff_suppressed`, leaves no handoff debt, and does not receive
+same-pid rebind consent. An orphan with no fresh lifecycle event is reported
+honestly because an invalidated extension cannot repair its own pi host; if the
+warning says no replacement arrived, restart pi normally and let the saved
+`.pi-glla/` state restore. There are no automatic `/reload` keystrokes and no
+mux dependency. The legacy `autoReloadOnStale` and `autoRecovery` fields remain
+only as deprecated settings-file compatibility fields; they are ignored.
 
 **User aborts mean STOP** (v0.29.4): Esc-aborting a turn stands the chain
 down with a named notify (`/goal resume` to continue) — it does NOT count

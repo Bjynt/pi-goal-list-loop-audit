@@ -194,6 +194,7 @@ test("v0.34.16: lifecycle handoff resumes same-process replacement but quit does
   await pi.fire("session_start", { reason: "reload" }, replacement);
   await tick();
   assert.equal((readState(cwd).goal as { status: string }).status, "active", "same-process replacement consumes handoff debt");
+  assert.equal(fs.existsSync(handoffPath), false, "handoff debt is single-use");
   const replacementLedger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
   assert.ok(replacementLedger.includes('"session_handoff_resumed"'), "handoff consumption is ledger-visible");
 
@@ -212,6 +213,15 @@ test("v0.34.16: lifecycle handoff resumes same-process replacement but quit does
   assert.match(quitGoal.pauseReason ?? "", /held for explicit resume/);
   const quitLedger = fs.readFileSync(path.join(quitCwd, ".pi-glla", "active.jsonl"), "utf8");
   assert.ok(quitLedger.includes('"session_handoff_suppressed"'), "quit suppression is ledger-visible");
+
+  const foreignCwd = tmpCwd();
+  seedState(foreignCwd, { goal: seedGoal() });
+  fs.writeFileSync(path.join(foreignCwd, ".pi-glla", "session-handoff.json"), JSON.stringify({ pid: process.pid + 1, at: new Date().toISOString(), reason: "reload" }));
+  const foreignSession = await freshSession(foreignCwd, "startup");
+  const foreignGoal = readState(foreignCwd).goal as { status: string };
+  assert.equal(foreignGoal.status, "paused", "foreign-process debt cannot resume a cold session");
+  assert.equal(fs.existsSync(path.join(foreignCwd, ".pi-glla", "session-handoff.json")), false, "foreign debt is consumed and discarded");
+  assert.ok(foreignSession.ui.matching("held on restore").length >= 1, "foreign debt falls back to the normal restore gate");
 });
 
 test("T3e (v0.28.21): no active goal + queued list + reload → NOT activated by default; autoresume=on → head activates", async () => {

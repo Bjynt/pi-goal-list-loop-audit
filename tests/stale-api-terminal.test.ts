@@ -45,7 +45,8 @@ test("terminal path: ledger event, single-fire, goal ACTIVE+marker / loop stop w
   assert.match(SRC, /let extensionApiStale = false;/);
   // v0.32.0: CRITICAL regression fix — the terminal path gates on its OWN flag;
   // extensionApiStale is set by the PROBE, so gating on it made the heartbeat's
-  // probe→terminal sequence dead code (self-heal auto-reload never fired).
+  // probe→terminal sequence dead code. The orphan path must still preserve
+  // state and explain the lifecycle boundary.
   assert.match(SRC, /let staleTerminalDone = false;/);
   assert.match(SRC, /if \(staleTerminalDone\) return; \/\/ already terminal/);
   assert.match(SRC, /if \(probeExtensionApiStale\(\)\) return;/); // no-ctx send path must not spin a 50ms re-arm
@@ -108,7 +109,8 @@ test("v0.29.11 — stale/stall-stopped loops HOLD on next load (resume, not rest
 test("v0.29.12 — /glla resume is stale-aware (the zombie must not say 'Nothing to resume')", () => {
   // Field (endless-td 2026-07-30): the zombie instance answered /glla
   // resume with "Nothing to resume" — misleading. The entry probe now
-  // names the real recovery: /reload rebuilds extensions in place.
+  // names the real recovery: wait for lifecycle replacement, or restart pi
+  // normally if this is a true orphan.
   assert.match(SRC, /warnIfStaleAtEntry\(ctx, "\/glla resume"\)/);
   assert.ok(!SRC.includes("compaction triggers it in pi 0.82.x"), "compaction blame removed — compaction never disposes (pi 0.83.0 source-verified)");
 });

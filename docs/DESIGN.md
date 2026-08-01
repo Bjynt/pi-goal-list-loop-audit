@@ -90,6 +90,26 @@ architectural decisions that changed the SHAPE of the system:
   Confirm path; it never audits work — the isolated auditor is the only
   verifier.
 
+## Addendum v0.34.16 (lifecycle handoff)
+
+- **Recovery crosses pi's lifecycle, never the terminal**: `session_shutdown`
+  persists fresh same-process continuation debt in
+  `.pi-glla/session-handoff.json`, records the shutdown reason, and clears all
+  session-owned timers. A fresh `session_start` consumes matching debt and
+  continues from its new context. No stale callback is allowed to use the old
+  `ctx` or `pi` reference.
+- **Quit is not implicit resume consent**: a shutdown with `reason: "quit"`
+  removes any handoff debt, records `session_handoff_suppressed`, and marks
+  the owner sidecar so the next same-pid startup is not mistaken for a
+  replacement rebind. The global `autoResume` policy remains independent and
+  explicit.
+- **True orphans stay honest**: once pi invalidates an extension without a
+  fresh lifecycle event, the extension cannot repair its host. glla stops
+  stale work, preserves the artifact, and tells the user to restart pi only
+  when no replacement arrives. `autoReloadOnStale` and `autoRecovery` remain
+  deprecated deserialization compatibility fields; they do not select a
+  transport.
+
 ## Addendum v0.4.0 (completion)
 
 - **Auditor compaction enabled** (flaw #3 — the last open one). Safety:

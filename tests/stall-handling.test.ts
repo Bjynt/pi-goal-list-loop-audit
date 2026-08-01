@@ -416,7 +416,7 @@ test("v0.34.12: wait-pause status line counts down live + ticker survives the wa
   assert.match(g, /isSupervising\(\) \|\| \(state\.goal\?\.status === "paused" && !!state\.goal\.pauseResumeAt\)/, "ticker keeps rendering through a timed wait");
 });
 
-// ---------- v0.34.13: auto-recovery ladder ("keep going unless we MUST stop") ----------
+// ---------- v0.34.16: lifecycle recovery ("keep going unless we MUST stop") ----------
 
 test("v0.34.16: wedges hand off through pi lifecycle — no terminal self-reload", () => {
   const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");

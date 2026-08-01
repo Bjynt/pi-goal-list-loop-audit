@@ -1225,8 +1225,8 @@ function freshCtx(): ExtensionContext | null {
 // pi idled. The 0.34.11 watchdog gates on "pi reported NO pending" and the
 // stall ladder takes ~10 minutes; a send that lands queued-without-a-turn is
 // a CONFIRMED dead trigger (hegemon law), so probe once, ~45s after every
-// landed send, and go straight to auto-recovery. A consumed message (even an
-// instant-429 turn consumes it) or any real activity disarms the probe.
+// landed send, and report it without terminal input. A consumed message (even
+// an instant-429 turn consumes it) or any real activity disarms the probe.
 function queueStuckProbeMs(): number {
   return Number(process.env.GLLA_QUEUE_STUCK_MS ?? 45_000);
 }
