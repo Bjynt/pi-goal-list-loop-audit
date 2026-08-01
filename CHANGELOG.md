@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.34.13] — 2026-08-01
+
+### Added — auto-recovery ladder: keep going unless we MUST stop
+
+User directive: "we would want to keep going unless we must stop like a
+question or we are done." Every wedge class that used to end in
+"tell the user to /glla resume" now tries to heal itself first:
+
+- **Unanswered continuation (2.5min watchdog)** → glla injects `/reload`
+  into its own tmux/WezTerm pane (v0.29.13 transport), writing a sidecar
+  `recovery-resume.json` marker first. The fresh instance consumes the
+  marker and **resumes the goal/loop even when autoresume=off** — the
+  consent came from the recovery act, not the restore-time setting.
+  Markers are single-use and 5-minute-fresh, so an abandoned recovery
+  can't surprise-resume a later session.
+- **Send-retry storm (both loop + goal branches)** and **stall
+  escalation** → same recovery attempt before the loud pause/stop. Only
+  if recovery is unavailable (setting off, no multiplexer) or already
+  throttled does the pause fire as before.
+- **Throttled to one auto-recovery per 10 minutes.** A wedge recurring
+  inside the window is the transcript-writer-dead class — the one failure
+  a `/reload` genuinely cannot cure — and THAT reaches you as a loud stop
+  naming the real cure: restart pi in the tab, then `/glla resume`.
+- Throttle stamp happens only after a successful injection (a
+  no-transport skip must not mislabel the next wedge as restart-class).
+- New setting `autoRecovery` (default **on**, opt-out via
+  `/glla settings` file) alongside `autoReloadOnStale`.
+- Ledgers: `auto_recovery_reload {where}`,
+  `send_rearm_escalated_suppressed {reason: "auto-recovery reload"}`,
+  `stall_escalated_suppressed {reason: "auto-recovery reload"}`.
+
+What still stops for a human, by design: DECIDE questions, done goals,
+5-consecutive user aborts, error brakes, and the pi-restart class above.
+
 ## [0.34.12] — 2026-08-01
 
 ### Fixed — the 60-seconds-per-turn blackhole tax ("keeps stopping with lists")
