@@ -82,3 +82,37 @@ test("v0.34.0: divergence bail — 3+ trailing regressions append a reassessment
   assert.match(g, /if \(a === null \|\| b === null\) break;/, "metricless ticks carry no value — the walk stops");
   assert.match(g, /strategyNote2 = strategyNote/, "note rides the strategy channel (note-only, nothing auto-stops)");
 });
+
+// ---------- v0.34.4: brief discipline (darklord + junk-runner zero-text deaths) ----------
+
+test("v0.34.4: continuation prompt — brief discipline law", () => {
+  const c = readPrompt("goal-loop-continuation.md");
+  assert.match(c, /Brief discipline/, "the law is named");
+  assert.match(c, /TIGHT scope \(specific directories\/files/, "scope must be named, not subsystem-clouds");
+  assert.match(c, /tool-use budget \(~30-40 calls\)/, "tool-use budget");
+  assert.match(c, /report within ~150 lines/, "report cap");
+  assert.match(c, /STOP exploring and report what you have/, "report-early escape hatch");
+  assert.match(c, /died at the output token limit with ZERO report/, "the field case is cited");
+});
+
+test("v0.34.4: continuation prompt — token-limit death handling (narrow, never respawn wide)", () => {
+  const c = readPrompt("goal-loop-continuation.md");
+  assert.match(c, /WHEN SUBAGENTS DIE ON TOKEN LIMITS/);
+  assert.match(c, /do NOT respawn the same wide brief/, "the reflex being banned");
+  assert.match(c, /Split it/, "split path");
+  assert.match(c, /Absorb it/, "inline-absorb path");
+});
+
+test("v0.34.4: audit templates carry brief discipline in the fan-out clause (both)", () => {
+  const collect = listAuditCollectTarget("x");
+  const oneshot = projectAuditTarget("x");
+  for (const [name, t] of [["collect", collect], ["oneshot", oneshot]] as const) {
+    assert.match(t, /TIGHT brief: named directories, a ~30-40 tool-use budget, and a ~150-line report cap/, name);
+  }
+});
+
+test("v0.34.4: forever prompts carry the one-line brief law", () => {
+  for (const f of ["goal-loop-forever.md", "goal-loop-forever-metricless.md"]) {
+    assert.match(readPrompt(f), /Briefs are TIGHT \(named files\/dirs, ~30-40 tool uses, ~150-line report cap/, f);
+  }
+});

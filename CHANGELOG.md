@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.34.4] — 2026-08-01
+
+### Fixed — subagent brief discipline (the zero-text death was systematic, not an outlier)
+
+Two field sightings, same shape, within minutes: darklord's audit fan-out
+lost an Explore agent (56 tool uses, 258s) to `run hit the output token
+limit before producing any text`; junk-runner lost TWO of four (29 and 65
+tool uses — total losses), the survivors burning 320k+/140k+ tokens each.
+The v0.34.0 law demanded the parallel fan-out shape but said nothing about
+brief quality, so agents wrote subsystem-cloud briefs ("audit audio + dev +
+tests + docs") and then tried to dump every finding into one giant final
+report that blows the per-response output cap.
+
+- **Brief discipline law** (continuation + both forever prompts + both audit
+  templates): every subagent brief names a TIGHT scope (specific
+  directories/files, not subsystem-clouds), a tool-use budget (~30-40
+  calls), and a report cap (~150 lines) with the escape hatch "if you near
+  the token limit, STOP exploring and report what you have — a partial
+  report beats a dead one".
+- **New section: WHEN SUBAGENTS DIE ON TOKEN LIMITS** — do NOT respawn the
+  same wide brief (it dies the same way); SPLIT it into narrower agents or
+  ABSORB the small remainder inline.
+
 ## [0.34.3] — 2026-08-01
 
 ### Fixed — resume re-kicks an ACTIVE-but-idle goal instead of "Nothing to resume"
