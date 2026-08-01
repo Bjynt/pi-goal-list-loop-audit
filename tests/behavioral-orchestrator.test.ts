@@ -178,6 +178,42 @@ test("v0.29.18: live audit loop on the audit-every-iteration target migrates to 
   assert.ok(ledger.includes("audit_loop_target_migrated"), "migration ledgered");
 });
 
+test("v0.34.16: lifecycle handoff resumes same-process replacement but quit does not bypass restore consent", async () => {
+  setGlobalAutoResume(false);
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal() });
+  const first = await freshSession(cwd, "startup");
+  await pi.command("goal", "resume", first);
+  await tick();
+  assert.equal((readState(cwd).goal as { status: string }).status, "active", "fixture is actively supervising before replacement");
+
+  await pi.fire("session_shutdown", { reason: "reload" }, first);
+  const handoffPath = path.join(cwd, ".pi-glla", "session-handoff.json");
+  assert.equal(JSON.parse(fs.readFileSync(handoffPath, "utf8")).reason, "reload", "replacement debt records its lifecycle reason");
+  const replacement = ownerCtx(cwd);
+  await pi.fire("session_start", { reason: "reload" }, replacement);
+  await tick();
+  assert.equal((readState(cwd).goal as { status: string }).status, "active", "same-process replacement consumes handoff debt");
+  const replacementLedger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.ok(replacementLedger.includes('"session_handoff_resumed"'), "handoff consumption is ledger-visible");
+
+  const quitCwd = tmpCwd();
+  seedState(quitCwd, { goal: seedGoal() });
+  const quitSession = await freshSession(quitCwd, "startup");
+  await pi.command("goal", "resume", quitSession);
+  await tick();
+  await pi.fire("session_shutdown", { reason: "quit" }, quitSession);
+  const quitHandoff = path.join(quitCwd, ".pi-glla", "session-handoff.json");
+  assert.equal(fs.existsSync(quitHandoff), false, "explicit quit leaves no continuation debt");
+  const afterQuit = ownerCtx(quitCwd);
+  await pi.fire("session_start", { reason: "startup" }, afterQuit);
+  const quitGoal = readState(quitCwd).goal as { status: string; pauseReason?: string };
+  assert.equal(quitGoal.status, "paused", "quit does not get same-pid rebind consent");
+  assert.match(quitGoal.pauseReason ?? "", /held for explicit resume/);
+  const quitLedger = fs.readFileSync(path.join(quitCwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.ok(quitLedger.includes('"session_handoff_suppressed"'), "quit suppression is ledger-visible");
+});
+
 test("T3e (v0.28.21): no active goal + queued list + reload → NOT activated by default; autoresume=on → head activates", async () => {
   const cwd = tmpCwd();
   seedState(cwd, { list: [{ id: "item-1", objective: "queued head objective — done when pinned", addedAt: new Date().toISOString() }] });

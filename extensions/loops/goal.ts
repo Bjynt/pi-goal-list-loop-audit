@@ -367,15 +367,25 @@ function consumeSessionHandoff(cwd: string): boolean {
  * Sidecar, not the ledger: read-before-write must be atomic-ish and the
  * ledger is append-only. */
 const SESSION_OWNER_FILE = "session-owner.json";
+function markSessionOwnerShutdown(cwd: string, reason: string): void {
+  try {
+    const p = path.join(piGlaDir(cwd), SESSION_OWNER_FILE);
+    const owner = JSON.parse(fs.readFileSync(p, "utf-8")) as { pid?: number; at?: string };
+    if (owner.pid === process.pid) {
+      fs.writeFileSync(p, JSON.stringify({ ...owner, shutdownReason: reason, shutdownAt: new Date().toISOString() }));
+    }
+  } catch { /* advisory sidecar — lifecycle cleanup must not throw */ }
+}
 function claimSessionOwnerAndDetectRebind(cwd: string): boolean {
   try {
     const p = path.join(piGlaDir(cwd), SESSION_OWNER_FILE);
-    let prevPid: number | null = null;
+    let previous: { pid?: number; shutdownReason?: string } = {};
     try {
-      prevPid = (JSON.parse(fs.readFileSync(p, "utf-8")) as { pid?: number }).pid ?? null;
+      previous = JSON.parse(fs.readFileSync(p, "utf-8")) as { pid?: number; shutdownReason?: string };
     } catch { /* absent or corrupt — first boot */ }
     fs.writeFileSync(p, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
-    return prevPid !== null && prevPid === process.pid;
+    const quit = previous.shutdownReason?.trim().toLowerCase() === "quit";
+    return previous.pid !== null && previous.pid === process.pid && !quit;
   } catch {
     return false;
   }
@@ -6299,6 +6309,7 @@ export default function (pi: ExtensionAPI): void {
     // tells the stale probe that a rebind (session_start) is imminent.
     const shutdownReason = typeof event?.reason === "string" ? event.reason : "unknown";
     appendLedger(ctx.cwd, "session_shutdown", { reason: shutdownReason });
+    markSessionOwnerShutdown(ctx.cwd, shutdownReason);
     writeSessionHandoff(ctx, shutdownReason);
     sessionReplacementUntil = Date.now() + SESSION_REBIND_GRACE_MS;
     clearSessionOwnedTimers();

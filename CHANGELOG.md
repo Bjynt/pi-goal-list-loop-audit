@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.34.16] — 2026-08-01
+
+### Changed — stale recovery crosses pi's lifecycle, not the terminal
+
+The automatic `/reload` transport is gone. When pi announces
+`session_shutdown`, glla now records a fresh, same-process continuation debt in
+`.pi-glla/session-handoff.json`, records the shutdown reason, and clears every
+session-owned timer (continuations, loop ticks, queue probes, heartbeat/UI
+intervals, quota retry, and settle callbacks). A fresh `session_start` rebinds
+the new context and consumes only matching, fresh debt; the old context cannot
+send after handoff.
+
+`reason: "quit"` is explicit user stop: it is ledgered as
+`session_handoff_suppressed`, leaves no debt, and does not receive same-pid
+rebind consent. A true orphan still gets an honest warning — the invalidated
+extension cannot repair its own pi host, so restart pi normally if no fresh
+lifecycle event arrives. The retained `autoReloadOnStale` and `autoRecovery`
+settings are deprecated compatibility fields and no longer select a transport.
+
+The queue-stuck probe also resolves a fresh context when it fires instead of
+retaining the sender context. This keeps the confirmed queued-without-a-turn
+wedge visible without allowing a stale timer to touch an invalid handle.
+
 ## [0.34.15] — 2026-08-01
 
 Hegemon field evidence: an evening where every safety layer fired correctly

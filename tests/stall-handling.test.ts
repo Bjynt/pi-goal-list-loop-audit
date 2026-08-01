@@ -435,7 +435,9 @@ test("v0.34.16: wedges hand off through pi lifecycle — no terminal self-reload
 test("v0.34.14: /reload rebind resumes mid-work — the 'list is not continuing' fix (hellhunter)", () => {
   const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
   assert.match(g, /const SESSION_OWNER_FILE = "session-owner\.json";/, "pid sidecar");
-  assert.match(g, /return prevPid !== null && prevPid === process\.pid;/, "same pid = /reload rebind, not cold boot");
+  assert.match(g, /function markSessionOwnerShutdown\(cwd: string, reason: string\): void/, "shutdown reason is persisted for the next lifecycle");
+  assert.match(g, /const quit = previous\.shutdownReason\?\.trim\(\)\.toLowerCase\(\) === "quit";/, "explicit quit is not treated as a rebind consent");
+  assert.match(g, /return previous\.pid === process\.pid && !quit;/, "same pid + non-quit = rebind, not cold boot");
   assert.match(g, /const rebindResume = claimSessionOwnerAndDetectRebind\(ctx\.cwd\);/, "restore detects rebind");
   assert.match(g, /appendLedger\(ctx\.cwd, "rebind_resume", \{ pid: process\.pid \}\);/, "rebind resumes are ledger-visible");
   // Cold boots (new pid) still honor autoresume=off; lifecycle handoff and
