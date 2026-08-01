@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.34.12] — 2026-08-01
+
+### Fixed — the 60-seconds-per-turn blackhole tax ("keeps stopping with lists")
+
+Hellhunter field evidence: after its pi restart, every turn cycle paid a
+~60s heartbeat tax. The eager continuation fires AT `agent_end` — exactly
+pi's turn-teardown blackhole window — so it vanished, and the 60-second
+heartbeat refire did the real work. The ledger showed the tell:
+`goal_continuation_sent` pairs with a refire in between, one micro-turn per
+cycle. The eager send now settles **2.5s past agent_end** — teardown
+completes, the send lands, the next turn starts immediately. 2.5s per turn
+instead of 60. (Test-suite override: `GLLA_EAGER_SETTLE_MS=0` in the
+preload, so `tick()` flushes are unaffected.) The 0.34.11
+unanswered-continuation watchdog remains the net underneath for the cases
+the settle doesn't dodge.
+
+### Added — live countdown on timed wait-pauses
+
+The status line now counts down (`⏳ waiting · resumes in 23m`, then
+`resuming…` once the moment passes) instead of showing a static clock time
+— and the 1s UI ticker keeps rendering through a timed wait-pause so the
+countdown actually ticks. (Pully field request 2026-08-01: "we could use a
+countdown — it should have resumed by now.")
+
 ## [0.34.11] — 2026-08-01
 
 ### Added — unanswered-continuation watchdog (the "keeps stopping with lists" killer)
