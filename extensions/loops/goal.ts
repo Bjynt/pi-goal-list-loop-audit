@@ -395,6 +395,10 @@ function attemptAutoRecovery(ctx: ExtensionContext, where: string): boolean {
   if (loadSettings(ctx.cwd).autoRecovery === false) return false;
   const now = Date.now();
   if (now - lastAutoRecoveryAt < AUTO_RECOVERY_THROTTLE_MS) return false;
+  // Inject FIRST — the throttle stamp + marker must reflect a real
+  // recovery, not a no-transport skip (else the watchdog would mislabel
+  // the next wedge as the pi-restart class).
+  if (!attemptAutoReload(ctx, where)) return false;
   lastAutoRecoveryAt = now;
   try {
     fs.writeFileSync(
@@ -403,8 +407,8 @@ function attemptAutoRecovery(ctx: ExtensionContext, where: string): boolean {
     );
   } catch { /* best-effort — the reload still helps; restore just holds */ }
   appendLedger(ctx.cwd, "auto_recovery_reload", { where });
-  ctx.ui.notify(`glla auto-recovery: ${where} — injecting /reload to rebuild the extension plane; the ${isLoopActive() ? "loop" : "goal/list item"} resumes itself after the rebuild (no /glla resume needed). If this recurs within ${Math.round(AUTO_RECOVERY_THROTTLE_MS / 60_000)}m, it's the pi-restart class and you'll get a loud stop.`, "warning");
-  return attemptAutoReload(ctx, where);
+  ctx.ui.notify(`glla auto-recovery: ${where} — the ${isLoopActive() ? "loop" : "goal/list item"} resumes ITSELF after the rebuild (no /glla resume needed; the sidecar marker carries the consent). If this recurs within ${Math.round(AUTO_RECOVERY_THROTTLE_MS / 60_000)}m it's the pi-restart class and you'll get a loud stop.`, "warning");
+  return true;
 }
 
 /** v0.34.13: consume the sidecar marker on session restore. Single-use,

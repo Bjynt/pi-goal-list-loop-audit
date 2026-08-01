@@ -414,3 +414,27 @@ test("v0.34.12: wait-pause status line counts down live + ticker survives the wa
   const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
   assert.match(g, /isSupervising\(\) \|\| \(state\.goal\?\.status === "paused" && !!state\.goal\.pauseResumeAt\)/, "ticker keeps rendering through a timed wait");
 });
+
+// ---------- v0.34.13: auto-recovery ladder ("keep going unless we MUST stop") ----------
+
+test("v0.34.13: wedges self-/reload and self-resume — the user only sees genuine stops", () => {
+  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  assert.match(g, /const AUTO_RECOVERY_THROTTLE_MS = 600_000;/, "one auto-recovery per 10min");
+  assert.match(g, /const RECOVERY_RESUME_MARKER = "recovery-resume\.json";/, "sidecar resume marker");
+  // Inject-first ordering: a no-transport skip must NOT stamp the throttle
+  // (else the next wedge gets mislabeled as the pi-restart class).
+  assert.match(g, /if \(!attemptAutoReload\(ctx, where\)\) return false;\n  lastAutoRecoveryAt = now;/, "stamp after successful injection only");
+  // The 2.5min watchdog recovers first; only failure modes alert.
+  assert.match(g, /if \(!attemptAutoRecovery\(ctx, "continuation unanswered"\)\)/, "watchdog recovers before alerting");
+  assert.match(g, /only a pi RESTART cures it: restart pi in this tab/, "restart-class loud stop names the real cure");
+  // Storm + stall loud-stops try recovery before spending user attention.
+  assert.ok((g.match(/send_rearm_escalated_suppressed", \{ reason: "auto-recovery reload" \}\)/g) ?? []).length >= 2, "both storm branches recover first");
+  assert.match(g, /stall_escalated_suppressed", \{ reason: "auto-recovery reload"/, "stall escalation recovers first");
+  // The sidecar marker carries resume consent across the reload, even with
+  // autoresume=off — for goals AND loops.
+  assert.match(g, /const recoveryResume = consumeRecoveryResume\(ctx\.cwd\);/, "restore consumes the marker");
+  assert.ok((g.match(/if \(autoResume \|\| recoveryResume\) \{/g) ?? []).length >= 2, "goal + loop restore branches honor it");
+  assert.match(g, /Date\.now\(\) - at < RECOVERY_RESUME_FRESH_MS/, "stale markers can't surprise-resume");
+  const st = fs.readFileSync(path.resolve("extensions/goal-settings.ts"), "utf-8");
+  assert.match(st, /autoRecovery\?: boolean;/, "setting exists (default on, opt-out)");
+});
