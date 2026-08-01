@@ -849,7 +849,6 @@ const COMPACTION_GRACE_MS = 3 * 60_000;
 // budget now spans ~5.5m) and escalate the brake cooldown per consecutive
 // brake (1m, 2m, 4m, 8m, 16m cap). A successful turn resets both.
 const ERROR_RETRY_LADDER_MS = [5_000, 15_000, 45_000, 90_000, 180_000];
-let errorBrakeStreak = 0;
 const SEND_REARM_LEDGER_MILESTONES_MS = [2 * 60_000, 5 * 60_000, 10 * 60_000];
 // v0.28.29: escalation is TIME-based and ACTIVITY-gated. A busy session is
 // NORMAL — the user conversing, or one long subagent turn — and the old
@@ -1259,6 +1258,39 @@ function freshCtx(): ExtensionContext | null {
   }
 }
 
+// v0.34.15 (hegemon 2026-08-01): pi ACCEPTED the continuation — footer showed
+// "1 queued" — but the turn trigger was dead, so the message sat queued while
+// pi idled. The 0.34.11 watchdog gates on "pi reported NO pending" and the
+// stall ladder takes ~10 minutes; a send that lands queued-without-a-turn is
+// a CONFIRMED dead trigger (hegemon law), so probe once, ~45s after every
+// landed send, and go straight to auto-recovery. A consumed message (even an
+// instant-429 turn consumes it) or any real activity disarms the probe.
+function queueStuckProbeMs(): number {
+  return Number(process.env.GLLA_QUEUE_STUCK_MS ?? 45_000);
+}
+let queueStuckProbe: ReturnType<typeof setTimeout> | null = null;
+function armQueueStuckProbe(ctx: ExtensionContext, sentAt: number): void {
+  if (queueStuckProbe) clearTimeout(queueStuckProbe);
+  queueStuckProbe = setTimeout(() => {
+    queueStuckProbe = null;
+    try {
+      if (isForeignCtx(ctx)) return; // stale instance — the live one probes
+      if (!isSupervising()) return; // paused/completed meanwhile
+      if (lastContinuationSentAt !== sentAt) return; // a newer send armed its own probe
+      if (lastRealActivityAt > sentAt) return; // the turn started and worked
+      if (!ctx.isIdle()) return; // a turn is running — healthy
+      if (!ctx.hasPendingMessages()) return; // consumed — even an instant 429 consumes
+      appendLedger(ctx.cwd, "queue_stuck_detected", { waitedMs: Date.now() - sentAt });
+      if (!attemptAutoRecovery(ctx, "queue-stuck continuation")) {
+        const msg = `${goalNoun()}: the continuation is QUEUED but pi won't start a turn — the turn trigger is dead (re-sends only queue). Cure: /reload — the goal resumes itself after the rebuild (autoresume off? /glla resume).`;
+        ctx.ui.notify(msg, "warning");
+        notifyExternal(ctx, msg);
+      }
+    } catch { /* stale ctx — the live instance owns the probe now */ }
+  }, queueStuckProbeMs());
+  queueStuckProbe.unref?.();
+}
+
 function scheduleContinuation(ctx: ExtensionContext, force = false, delayMs?: number): void {
   abortedStandDown = false; // v0.29.5: any explicit schedule ends the stand-down
   if (!isActionableGoal()) return;
@@ -1315,6 +1347,7 @@ function sendContinuation(goalId: string): void {
     continuationRearmStreak = 0; continuationRearmSince = 0; // v0.28.5 (E3): a landed send clears the storm
     appendLedger(ctx.cwd, "goal_continuation_sent", { goalId });
     lastContinuationSentAt = Date.now();
+    armQueueStuckProbe(ctx, lastContinuationSentAt);
   } catch (err) {
     appendLedger(ctx.cwd, "goal_continuation_send_failed", { goalId, error: err instanceof Error ? err.message : String(err) });
     // v0.26.7: stale runtime = terminal (sends can never land); anything
@@ -2997,6 +3030,7 @@ function sendLoopTurn(): void {
     loopRearmStreak = 0; loopRearmSince = 0; // v0.28.5 (E3): a landed turn clears the storm
     appendLedger(ctx.cwd, "loop_turn_sent", { iteration: loop.iteration });
     lastContinuationSentAt = Date.now();
+    armQueueStuckProbe(ctx, lastContinuationSentAt);
   } catch (err) {
     // stale API — next agent_end reschedules (but if none comes, the
     // heartbeat's stall escalation stops the spin — v0.26.1).
@@ -6731,12 +6765,22 @@ export default function (pi: ExtensionAPI): void {
         // 60-second provider hiccup waiting on a manual /goal resume.
         const detail = text.trim() ? ` (last: ${text.trim().replace(/\s+/g, " ").slice(0, 160)})` : "";
         const reason = `5 consecutive errors${detail}`;
+        // v0.34.15: the streak now lives ON THE GOAL so it survives the
+        // auto-recovery /reloads that used to zero the module counter —
+        // hegemon 2026-08-01: a hard-exhausted MiniMax plan churned 1-minute
+        // probes for an hour because every reload reset the ladder to rung 1
+        // and the 6-brake park (v0.29.9) could never engage.
+        const brakeStreak = state.goal!.errorBrakeStreak ?? 0;
+        // v0.34.15: a quota/rate-limit wall is NOT a flake — the card must
+        // say "resuming won't help; switch /model or wait out the window"
+        // (the raw 429 text was in `detail` but nobody parses JSON on a card).
+        const quotaWall = /rate.?limit|usage limit|quota|insufficient|credits/i.test(detail);
         // v0.29.1: brake-cycle CAP. The v0.28.25 ladder slows the thrash
         // (1m→16m) but never STOPS it — junk-runner/hellhunter/pully each
         // burned 4+ pause↔retry cycles against provider windows that last
         // hours. After 6 consecutive brakes: park. v0.29.9: the park keeps
         // probing at the top of each hour (clock-aligned window resets).
-        if (errorBrakeStreak >= 6) {
+        if (brakeStreak >= 6) {
           // v0.29.9: park — but keep probing at the top of each hour
           // (user: "simply adding an hourly retry … just to pick up work
           // faster assuming the retry expired"). Coding-plan rate-limit
@@ -6750,18 +6794,20 @@ export default function (pi: ExtensionAPI): void {
             status: "paused",
             pauseKind: "error",
             pauseReason: `${reason} — 6 error-brakes in a row; the provider has been erroring for an extended window`,
-            pauseSuggestedAction: "Probing at the top of each hour — rate-limit windows typically expire on clock-hour boundaries. /goal resume retries now.",
+            pauseSuggestedAction: quotaWall
+              ? "Provider quota/rate-limit wall — resuming won't help until the window resets. Hourly top-of-hour probes will pick work back up; switch /model to a different provider to continue immediately."
+              : "Probing at the top of each hour — rate-limit windows typically expire on clock-hour boundaries. /goal resume retries now.",
           }, ctx);
-          ctx.ui.notify(`${goalNoun()} parked: ${reason} — 6 brakes in a row. Hourly top-of-hour probes will pick work back up when the window opens; /goal resume retries now.`, "warning");
+          ctx.ui.notify(`${goalNoun()} parked: ${reason} — 6 brakes in a row. ${quotaWall ? "Quota/rate-limit wall — switching /model continues immediately; otherwise hourly" : "Hourly"} top-of-hour probes will pick work back up when the window opens.`, "warning");
           notifyExternal(ctx, `${goalNoun()} parked: provider erroring across 6 error-brake cycles — hourly top-of-hour probes scheduled.`);
-          appendLedger(ctx.cwd, "error_brake_capped", { streak: errorBrakeStreak, reason });
+          appendLedger(ctx.cwd, "error_brake_capped", { streak: brakeStreak, reason });
           const probeMs = msUntilNextHourBoundary(Date.now());
           scheduleQuotaRetry(ctx, probeMs / 1000, reason, () => {
             // Re-check: only probe if STILL parked by the error-brake cap —
             // a user pause/resume/cancel meanwhile is never stomped.
             if (state.goal && state.goal.status === "paused" && state.goal.pauseKind === "error"
               && (state.goal.pauseReason ?? "").includes("error-brakes in a row")) {
-              appendLedger(ctx.cwd, "hourly_rate_probe", { goalId: state.goal.id, streak: errorBrakeStreak });
+              appendLedger(ctx.cwd, "hourly_rate_probe", { goalId: state.goal.id, streak: state.goal.errorBrakeStreak ?? 0 });
               updateGoal({ status: "active" }, ctx);
               appendLedger(ctx.cwd, "goal_resumed", { via: "hourly-rate-probe" });
               ctx.ui.notify("Hourly probe: resuming (rate-limit windows typically expire at the top of the hour).", "info");
@@ -6772,17 +6818,19 @@ export default function (pi: ExtensionAPI): void {
         }
         // v0.28.25: the cooldown escalates per CONSECUTIVE brake — a fleet-wide
         // 403 window is not cleared by re-braking every 60 seconds.
-        const cooldownMs = 60_000 * 2 ** Math.min(errorBrakeStreak, 4);
+        const cooldownMs = 60_000 * 2 ** Math.min(brakeStreak, 4);
         const cooldownMin = Math.round(cooldownMs / 60_000);
-        errorBrakeStreak++;
         updateGoal({
           status: "paused",
           pauseKind: "wait",
           pauseResumeAt: new Date(Date.now() + cooldownMs).toISOString(),
           pauseReason: reason,
-          pauseSuggestedAction: `Transient provider flake? The goal auto-resumes once in ${cooldownMin}m if still paused for this reason — or /goal resume now.`,
+          errorBrakeStreak: brakeStreak + 1,
+          pauseSuggestedAction: quotaWall
+            ? `Provider quota/rate-limit wall — resuming won't help until the window resets. Switch /model to a different provider to continue now, or let the probe auto-resume in ${cooldownMin}m.`
+            : `Transient provider flake? The goal auto-resumes once in ${cooldownMin}m if still paused for this reason — or /goal resume now.`,
         }, ctx);
-        ctx.ui.notify(`Goal paused: ${reason}.`, "warning");
+        ctx.ui.notify(`Goal paused: ${reason}.${quotaWall ? " Quota/rate-limit wall — resuming won't help until the window resets; switch /model to continue now." : ""}`, "warning");
         notifyExternal(ctx, `Goal paused: ${reason}.`);
         appendLedger(ctx.cwd, "goal_paused", { reason });
         scheduleQuotaRetry(ctx, cooldownMs / 1000, reason, () => {
@@ -6833,7 +6881,8 @@ export default function (pi: ExtensionAPI): void {
     } else {
       consecutiveErrorIterations = 0;
       consecutiveAbortIterations = 0;
-      errorBrakeStreak = 0; // v0.28.25: a healthy turn clears the brake cooldown
+      // v0.28.25/v0.34.15: a healthy turn clears the (now persisted) brake streak
+      if ((state.goal?.errorBrakeStreak ?? 0) > 0) updateGoal({ errorBrakeStreak: undefined }, ctx);
     }
 
     // No wall-clock cap by design: a goal ends via completion, explicit

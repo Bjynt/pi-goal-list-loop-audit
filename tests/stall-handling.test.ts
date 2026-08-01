@@ -196,7 +196,7 @@ test("v0.29.1: completion lifecycle survives the wedged-queue window (storm supp
     "stranded-audit recovery runs before the latch watchdog");
   // 3. Error-brake cycle cap: the v0.28.25 ladder slows the thrash but never
   //    stops it (4+ pause↔retry cycles in all three incident ledgers).
-  assert.match(src, /if \(errorBrakeStreak >= 6\) \{/);
+  assert.match(src, /if \(brakeStreak >= 6\) \{/);
   assert.match(src, /error_brake_capped/);
   assert.match(src, /6 error-brakes in a row; the provider has been erroring for an extended window/);
 });
@@ -455,4 +455,36 @@ test("v0.34.14: 3-strike pause names the hanging-verification cause (pully ssh/s
   const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
   assert.match(g, /a verification command is hanging \(ssh\/sudo\/long test runs stall the stream\)/, "pauseReason names both causes");
   assert.match(g, /model broken or a verification command hanging/, "notify names both causes");
+});
+
+// ---------- v0.34.15: persisted error brake + quota cards + queue-stuck probe ----------
+
+test("v0.34.15: errorBrakeStreak persists ON THE GOAL — the 6-brake park survives /reload (hegemon 429 churn)", () => {
+  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  const core = fs.readFileSync(path.resolve("extensions/goal-loop-core.ts"), "utf-8");
+  const schema = fs.readFileSync(path.resolve("schemas/goal.schema.json"), "utf-8");
+  assert.match(core, /errorBrakeStreak\?: number;/);
+  assert.match(schema, /"errorBrakeStreak": \{ "type": "number" \}/);
+  assert.match(g, /const brakeStreak = state\.goal!\.errorBrakeStreak \?\? 0;/);
+  assert.match(g, /errorBrakeStreak: brakeStreak \+ 1,/);
+  assert.ok(!g.includes("let errorBrakeStreak"), "module-state streak gone — reloads no longer reset the ladder");
+});
+
+test("v0.34.15: quota walls are CLASSIFIED on the card — resuming won't help, switch /model", () => {
+  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  assert.match(g, /const quotaWall = \/rate\.\?limit\|usage limit\|quota\|insufficient\|credits\/i\.test\(detail\);/);
+  assert.match(g, /Provider quota\/rate-limit wall — resuming won't help until the window resets\. Switch \/model/);
+  assert.ok((g.match(/quotaWall/g) ?? []).length >= 5, "both pause branches + notifies classify");
+});
+
+test("v0.34.15: queue-stuck probe — a send queued-without-a-turn ~45s = confirmed dead trigger → auto-recovery NOW", () => {
+  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  assert.match(g, /GLLA_QUEUE_STUCK_MS \?\? 45_000/);
+  assert.match(g, /appendLedger\(ctx\.cwd, "queue_stuck_detected"/);
+  assert.match(g, /attemptAutoRecovery\(ctx, "queue-stuck continuation"\)/);
+  assert.match(g, /if \(lastRealActivityAt > sentAt\) return;/, "real work disarms");
+  assert.match(g, /if \(!ctx\.hasPendingMessages\(\)\) return;/, "consumed message = healthy — even an instant 429 consumes");
+  assert.match(g, /if \(!ctx\.isIdle\(\)\) return;/, "running turn = healthy");
+  assert.match(g, /if \(!isSupervising\(\)\) return;/, "paused/completed disarms");
+  assert.ok((g.match(/armQueueStuckProbe\(ctx, lastContinuationSentAt\);/g) ?? []).length === 2, "armed on BOTH goal + loop sends");
 });

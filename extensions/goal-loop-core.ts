@@ -176,6 +176,8 @@ export interface Goal {
    * At 3 the goal pauses loudly — a broken auditor model must not spin a
    * silent retry-forever loop. Cleared on any real auditor run. */
   auditInfraStreak?: number;
+  /** v0.34.15: persisted error-brake rung — survives /reload so the 6-brake park can engage. */
+  errorBrakeStreak?: number;
   /** v0.28.26: the completion claim captured when an audit attempt is
    * quota-blocked. The quota retry re-runs the AUDITOR directly with this
    * stored claim instead of re-engaging the agent — re-engaging produced a

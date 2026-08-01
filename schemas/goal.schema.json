@@ -53,6 +53,7 @@
     "interruptedAt": { "type": "string" },
     "interruptedReason": { "type": "string" },
     "auditInfraStreak": { "type": "number" },
+    "errorBrakeStreak": { "type": "number" },
     "pendingCompletion": { "type": "object" },
     "createdVia": { "type": "string" },
     "activePath": { "type": "string" },
