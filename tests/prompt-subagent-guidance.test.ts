@@ -95,12 +95,11 @@ test("v0.34.4: continuation prompt — brief discipline law", () => {
   assert.match(c, /died at the output token limit with ZERO report/, "the field case is cited");
 });
 
-test("v0.34.4: continuation prompt — token-limit death handling (narrow, never respawn wide)", () => {
+test("v0.34.4/0.34.6: token-limit death handling — resume first; split/absorb, never respawn wide", () => {
   const c = readPrompt("goal-loop-continuation.md");
-  assert.match(c, /WHEN SUBAGENTS DIE ON TOKEN LIMITS/);
-  assert.match(c, /do NOT respawn the same wide brief/, "the reflex being banned");
-  assert.match(c, /Split it/, "split path");
-  assert.match(c, /Absorb it/, "inline-absorb path");
+  assert.match(c, /WHEN SUBAGENTS DIE: RESUME, DON'T RESPAWN/, "v0.34.6 renamed the section resume-first");
+  assert.match(c, /never the same wide brief/, "the reflex being banned");
+  assert.match(c, /SPLIT into 2 narrower agents or ABSORB/, "split/absorb fallback paths");
 });
 
 test("v0.34.4: audit templates carry brief discipline in the fan-out clause (both)", () => {

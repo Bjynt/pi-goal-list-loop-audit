@@ -422,7 +422,7 @@ function safeSteerUser(ctx: ExtensionContext, text: string): boolean {
     return false;
   }
   try {
-    safeSteerUser(ctx, text);
+    extensionApi?.sendUserMessage(text, { deliverAs: ctx.isIdle() ? "followUp" : "steer" });
     return true;
   } catch (err) {
     if (isStaleApiError(err)) extensionApiStale = true;
