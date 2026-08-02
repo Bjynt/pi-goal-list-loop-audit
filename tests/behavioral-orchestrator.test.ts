@@ -94,7 +94,7 @@ test("v0.34.18: blank startup waits for the transcript before autoresume, while 
     await tick();
     const listState = readState(listCwd);
     assert.equal(listState.goal, null, "blank startup does not activate the queue head");
-    assert.equal(listState.list.length, 1, "blank startup preserves the queued item");
+    assert.equal(listState.list?.length, 1, "blank startup preserves the queued item");
     assert.equal(pi.sent.length, 0, "blank startup sends no list continuation");
 
     const loopCwd = tmpCwd();

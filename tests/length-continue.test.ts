@@ -53,7 +53,7 @@ test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal g
   // Window sized generously: the contract is ORDER (length path first), not
   // distance — prior 5000-char window broke when P1/P3 (0.28.4) added ~1100
   // chars between the length path and the goal gate.
-  const handler = SRC.slice(SRC.indexOf('pi.on("agent_end"'), SRC.indexOf('pi.on("agent_end"') + 9000);
+  const handler = SRC.slice(SRC.indexOf('pi.on("agent_end"'), SRC.indexOf('pi.on("agent_end"') + 12000);
   const lengthIdx = handler.indexOf('tickLengthContinue(lastA?.stopReason === "length" && !contextStarvedLength)');
   assert.ok(lengthIdx > 0, "length tick present");
   assert.ok(handler.indexOf("isContextStarvedLengthStop(rawLastA, contextUsage)") < lengthIdx, "context-starvation classification runs before the tracker");
