@@ -29,7 +29,7 @@ test("v0.34.3: /glla resume re-kicks an ACTIVE loop too", () => {
   const gllaResume = SRC.slice(SRC.indexOf("async function cmdGllaResume"));
   assert.match(gllaResume, /state\.loop\?\.active/);
   assert.match(gllaResume, /scheduleLoopTick\(ctx\)/);
-  assert.match(gllaResume, /An audit is in flight/, "auditing gets an informative answer, not a re-kick");
+  assert.match(gllaResume, /detached completion auditor is in flight/, "auditing gets an informative answer, not a re-kick");
 });
 
 test("v0.34.3: /goal resume (/list resume) re-kicks instead of silently returning", () => {

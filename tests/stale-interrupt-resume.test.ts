@@ -131,7 +131,7 @@ test("v0.28.27/0.29.8: /goal verify (renamed from /goal audit) — manual audito
   assert.match(SRC, /origin: CompletionAuditOrigin = "quota-retry"/);
   assert.match(SRC, /via: origin === "manual" \? "manual-audit" : "quota-retry-direct-audit"/);
   assert.match(SRC, /const approvalVia = origin === "manual" \? " on \/goal verify" : origin === "session-recovery"/);
-  assert.ok(SRC.includes("Manual /goal verify — running the isolated auditor now"));
+  assert.ok(SRC.includes("Manual /goal verify — starting the detached auditor now"));
 });
 
 test("v0.29.8: /goal audit [focus] — the one-shot project audit; /glla status — the unified view", () => {

@@ -6839,7 +6839,11 @@ export default function (pi: ExtensionAPI): void {
     // tells the stale probe that a rebind (session_start) is imminent.
     const shutdownReason = typeof event?.reason === "string" ? event.reason : "unknown";
     if (state.goal?.status === "auditing" && state.goal.pendingCompletion) {
+      const oldAttemptId = state.goal.pendingCompletion.attemptId;
       markCompletionAuditRecoveryPending(ctx, `session_shutdown:${shutdownReason}`);
+      if (oldAttemptId && cancelDetachedGoalCompletionAuditor(ctx.cwd, oldAttemptId)) {
+        appendLedger(ctx.cwd, "audit_worker_cancelled", { goalId: state.goal.id, attemptId: oldAttemptId, reason: shutdownReason });
+      }
       completionAuditRecoveryArmed = false;
     }
     appendLedger(ctx.cwd, "session_shutdown", { reason: shutdownReason });
