@@ -64,3 +64,22 @@ test("v0.34.20: generic infra retry supports a lifecycle guard before and after 
   assert.match(CORE, /if \(opts\.shouldRetry\) \{/);
   assert.match(CORE, /if \(!opts\.shouldRetry\(\)\) return \{ result: first, retriedOnce: false \}/);
 });
+
+test("v0.34.20: manual resume consumes a stored completion claim directly", () => {
+  const resume = between(GOAL, "async function cmdResume", "async function cmdCancel");
+  assert.match(resume, /const storedCompletion = state\.goal\.pendingCompletion/);
+  assert.match(resume, /if \(storedCompletion\) \{/);
+  assert.match(resume, /void retryStoredCompletionAudit\(ctx, "manual"\)/);
+});
+
+test("v0.34.20: loop measurement and branch cleanup rebind after async work", () => {
+  const tick = between(GOAL, "async function runLoopTick", "async function finishLoopGit");
+  assert.match(tick, /const generation = sessionGeneration/);
+  assert.match(tick, /const rebind = \(\): boolean =>/);
+  assert.match(tick, /await runMeasure\(ctx, loop\.measureCmd!\);\n  if \(!rebind\(\)\) return;/);
+  assert.match(tick, /await runGit\(ctx, \["rev-parse", "HEAD"\]\);\n  if \(!rebind\(\)\) return;/);
+  assert.match(tick, /await finishLoopGit\(ctx, loop\);\n    if \(!rebind\(\)\) return;/);
+  const finish = between(GOAL, "async function finishLoopGit", "interface LoopConfig");
+  assert.match(finish, /const afterReset = freshCtxForGeneration\(generation\)/);
+  assert.match(finish, /const afterCheckout = freshCtxForGeneration\(generation\)/);
+});

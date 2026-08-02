@@ -140,12 +140,12 @@ test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUD
   assert.match(SRC, /pendingCompletion: \{ completionSummary: p\.completionSummary, verificationSummary: p\.verificationSummary, at: nowIso\(\) \},/);
   // 2. the quota-retry callback prefers the direct-audit path:
   const cbIdx = SRC.indexOf('(state.goal.pauseReason ?? "").startsWith("auditor quota:")');
-  const directIdx = SRC.indexOf("void retryStoredCompletionAudit(fresh);");
+  const directIdx = SRC.indexOf("void retryStoredCompletionAudit();");
   assert.ok(cbIdx > 0 && directIdx > cbIdx, "direct-audit branch inside the quota callback");
   const legacyIdx = SRC.indexOf('appendLedger(fresh.cwd, "goal_resumed", { via: "quota-retry" });');
   assert.ok(legacyIdx > directIdx, "agent-resume is the FALLBACK (no stored claim), not the default");
   // 3. the retry function re-runs the auditor with the stored claim:
-  assert.match(SRC, /async function retryStoredCompletionAudit\(ctx: ExtensionContext, origin: "quota-retry" \| "manual" = "quota-retry"\): Promise<void> \{/);
+  assert.match(SRC, /async function retryStoredCompletionAudit\(origin: "quota-retry" \| "manual" = "quota-retry"\): Promise<void> \{/);
   assert.match(SRC, /completionSummary: claim\.completionSummary,/);
   assert.match(SRC, /verificationSummary: claim\.verificationSummary,/);
   // 4. approved → archive (cascade inside archiveCurrentGoal); claim cleared:

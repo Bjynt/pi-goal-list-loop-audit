@@ -1079,7 +1079,7 @@ function heartbeatTick(): void {
     appendLedger(ctx.cwd, "stranded_audit_recovered", { goalId: state.goal.id, via: state.goal.pendingCompletion ? "stored-claim" : "resume-active" });
     if (state.goal.pendingCompletion) {
       ctx.ui.notify("Recovering a completion audit whose result never landed — re-running the auditor with the stored claim.", "info");
-      void retryStoredCompletionAudit(ctx, "quota-retry");
+      void retryStoredCompletionAudit("quota-retry");
     } else {
       updateGoal({ status: "active" }, ctx);
       ctx.ui.notify("A completion audit was interrupted (its result never landed). Resuming — re-call complete_goal when the deliverable still stands.", "warning");
@@ -1799,22 +1799,15 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
  * infra) → hand back to the agent: resume active + continuation, verdict
  * durable in auditHistory.
  */
-async function retryStoredCompletionAudit(ctx: ExtensionContext, origin: "quota-retry" | "manual" = "quota-retry"): Promise<void> {
+async function retryStoredCompletionAudit(origin: "quota-retry" | "manual" = "quota-retry"): Promise<void> {
   const goal = state.goal;
   if (!goal?.pendingCompletion) return;
   if (completionAuditInFlight) return;
   const generation = sessionGeneration;
-  const reboundCtx = freshCtxForGeneration(generation);
-  let liveCtx: ExtensionContext;
-  if (reboundCtx) {
-    liveCtx = reboundCtx;
-  } else {
-    // Tool/heartbeat entry can arrive before rememberCtx has run, but a
-    // handoff/stale flag must never fall back to its captured context.
-    if (sessionHandoffPending || initialSessionLoadPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
-    try { ctx.isIdle(); } catch { return; }
-    liveCtx = ctx;
-  }
+  // Delayed audit recovery has no safe fallback: if the current generation
+  // cannot be proven live, the fresh session must rehydrate the durable claim.
+  const liveCtx = freshCtxForGeneration(generation);
+  if (!liveCtx) return;
   const claim = goal.pendingCompletion;
   updateGoal({ status: "auditing" }, liveCtx);
   appendLedger(liveCtx.cwd, "goal_resumed", { via: origin === "manual" ? "manual-audit" : "quota-retry-direct-audit" });
@@ -1917,7 +1910,7 @@ async function retryStoredCompletionAudit(ctx: ExtensionContext, origin: "quota-
     liveCtx.ui.notify(`Auditor still quota-limited — next auto-retry in ${retryMin}m (your completion claim is stored; no action needed).`, "warning");
     scheduleQuotaRetryForSession(liveCtx, quota.retryAfterSec, result.error, (fresh) => {
       if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor quota:") && state.goal.pendingCompletion) {
-        void retryStoredCompletionAudit(fresh, origin);
+        void retryStoredCompletionAudit(origin);
       }
     });
     return;
@@ -2217,7 +2210,7 @@ async function cmdGoal(args: string, ctx: ExtensionContext): Promise<void> {
         },
       }, ctx);
       appendLedger(ctx.cwd, "manual_audit_requested", { goalId: state.goal.id });
-      void retryStoredCompletionAudit(ctx, "manual");
+      void retryStoredCompletionAudit("manual");
       return;
     }
     if (route.name === "tweak") return cmdTweak(route.rest, ctx);
@@ -2377,7 +2370,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
   // pause/resume with an ACTIVE goal that no timer would ever consume.
   if (storedCompletion) {
     ctx.ui.notify("Resuming the stored completion claim — running the isolated auditor directly (no agent turn needed).", "info");
-    void retryStoredCompletionAudit(ctx, "manual");
+    void retryStoredCompletionAudit("manual");
     return;
   }
   // v0.22.5: say what was resumed — with a non-empty list this also resumes
@@ -4121,7 +4114,7 @@ function registerAgentTools(pi: any): void {
               // agent is not needed to re-submit an unchanged claim, and
               // re-engaging it produced hallucinated-closure loops.
               if (state.goal.pendingCompletion) {
-                void retryStoredCompletionAudit(fresh);
+                void retryStoredCompletionAudit();
                 return;
               }
               updateGoal({ status: "active" }, fresh);
