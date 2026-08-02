@@ -27,10 +27,11 @@ What happens:
    nothing activates unconfirmed.
 2. **The loop drives** — after every agent turn, glla nudges the work forward;
    the widget (bottom-left) shows the goal, elapsed time, and last action.
-3. **Verified completion** — when the agent calls `complete_goal`, an
-   **isolated auditor** (a fresh pi session with no extensions) re-runs your
-   checks and demands raw output per contract item. Done sticks only when the
-   auditor approves with evidence.
+3. **Verified completion** — when the agent calls `complete_goal`, glla
+   persists the claim and queues a **detached auditor worker process** (a
+   fresh pi RPC session with no extensions). It re-runs your checks and
+   demands raw output per contract item without holding the main pi turn.
+   Done sticks only when the auditor approves with evidence.
 
 Then the other two modes:
 
@@ -74,8 +75,7 @@ need it to get started.
 
 ## Auditor model: the built-in-provider rule
 
-The auditor runs in a **fresh session with no extensions**, so it can only use
-**built-in providers** (opencode, openrouter, minimax, google, anthropic, …).
+The auditor runs in a **detached fresh pi RPC process with no extensions**, so it can only use **built-in providers** (opencode, openrouter, minimax, google, anthropic, …).
 You select the model in pi; the auditor uses it. The plugin never picks a
 model itself. The resolution is just:
 
@@ -204,8 +204,8 @@ After installing:
    ```
 2. The orchestrator creates `.pi-glla/goals/<id>.md`, schedules continuation, and the agent starts.
 3. The agent reads the goal, makes the change, runs the verification, and calls `complete_goal`.
-4. The orchestrator spawns the isolated auditor.
-5. The auditor inspects files, runs `curl`, reads `git log`.
+4. The orchestrator queues a detached auditor worker and returns control to the main turn.
+5. The worker inspects files, runs `curl`, reads `git log`, and writes an identity-checked result.
 6. Either `<approved/>` → goal archived; or `<disapproved/>` → loop continues.
 
 ## Reading the state
@@ -230,9 +230,10 @@ ls .pi-glla/archive           # past goals
 - [x] Stale-ctx safety after session replacement (lastCtx pattern).
 - [x] `npm test` 24/24. `npm run check` clean.
 
-Known v0.1.0 limitation: Esc during an audit aborts the pi turn but the auditor
-session may complete detached; the loop recovers via `agent_end`. pi-goal-x's
-Escape dialog is v0.2.0 scope.
+Current behavior: completion audits are detached from the main pi process.
+Use `/goal status` to distinguish queued/running/recovery-pending work and
+`/goal cancel` to discard a pending claim; a fresh `/goal resume` starts a new
+attempt after lifecycle replacement.
 
 ## Reading your glla telemetry (v0.25.2)
 

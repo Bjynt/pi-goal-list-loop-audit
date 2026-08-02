@@ -234,7 +234,7 @@ A 15s heartbeat detects the precise stall condition — active goal/loop + idle
 session + nothing scheduled + quiet for 60s — and re-fires the continuation
 itself. Three consecutive zero-tool turns pause the goal / stop the loop.
 No external watchdog plugin needed. It also recovers **stranded audits**
-(v0.29.1): a goal stuck in `auditing` with no auditor session alive re-runs
+(v0.29.1): a goal stuck in `auditing` with no detached worker alive re-runs
 the stored claim after 90s instead of black-holing. Storm protection: the
 send→pause→notify path rearms once per cycle and loud-stops after a 6-error
 brake streak, so a broken provider can't spin forever. A confirmed queued
@@ -365,11 +365,11 @@ it persists. Tune with `/glla wedgealert=<minutes>` (0 = off).
 
 Every other wait is bounded too: continuation retries are milliseconds,
 stuck backoff caps at 5 minutes then pauses, measure commands get a 10m
-hard timeout, and the auditor aborts after 10m with no activity while no
+hard timeout, and the detached auditor aborts after 10m with no activity while no
 read-only tool is running. A long-running verification tool is allowed to
-finish, but the isolated audit has a 30m wall-clock safety cap. Both paths
-are infrastructure errors, never verdicts; interrupted claims remain stored
-for a direct retry after `/goal resume`.
+finish, but the worker has a 30m wall-clock safety cap. Both paths are
+infrastructure errors, never verdicts; interrupted claims remain stored for a
+direct retry after `/goal resume`.
 
 ## Compatibility (what goes well, what conflicts)
 

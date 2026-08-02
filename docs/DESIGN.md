@@ -129,6 +129,32 @@ architectural decisions that changed the SHAPE of the system:
   infrastructure failures, never verdicts, and the stored claim remains
   retryable.
 
+## Addendum v0.34.22 (detached completion auditor)
+
+- **Completion verification is process-isolated, not nested**: `complete_goal`
+  persists the claim and job request, then returns immediately. A detached
+  extension-less worker launches `pi --mode rpc` with only `read`, `grep`,
+  `find`, `ls`, and `bash`; it never receives the parent `ExtensionContext`,
+  never loads glla extensions or project context files, and never writes goal
+  state. This removes the previous nested `AgentSession` from the main pi
+  process and prevents a provider stall in the auditor from occupying the
+  executor's turn.
+- **Durable job protocol**: request, progress, lock, and result files live
+  under `.pi-glla/audit-jobs/<attemptId>/`. Requests and results are hashed and
+  atomically written. The parent validates attempt/request identity, verdict
+  markers, read-tool use, and `regression_shield` before applying any result.
+  A result from a stale generation is ignored; fresh lifecycle recovery creates
+  a new attempt. Cancellation clears the pending claim and best-effort stops
+  the worker.
+- **Truthful asynchronous UI**: `auditor queued`, `auditor running`, and
+  `audit recovery pending` are distinct. The main session can continue
+  rendering and accepting input while the worker audits; completion/archive or
+  disapproval/continuation happens only after durable result consumption.
+- **Bounded worker liveness**: no session event for 10 minutes while no
+  read-only tool is active aborts the worker; a 30-minute wall-clock bound
+  always wins. Both are infrastructure failures, never verdicts, and the claim
+  remains retryable.
+
 ## Addendum v0.4.0 (completion)
 
 - **Auditor compaction enabled** (flaw #3 — the last open one). Safety:
@@ -156,10 +182,10 @@ Single loop only — **loop 1**, the single ordered goal.
 
 The single most important property of this plugin is that the implementing agent cannot bamboozle the verifier. The way to achieve this structurally:
 
-1. The auditor runs in a **fresh pi agent session**.
-2. The auditor has **no extensions, no skills, no prompts, no themes**.
+1. The auditor runs in a **detached pi RPC process with a fresh agent session**.
+2. The auditor has **no extensions, no skills, no prompts, no themes, and no context files**.
 3. The auditor has only **read-only tools**: `read`, `grep`, `find`, `ls`, `bash` (and `bash` is for re-running user's verifier scripts, not arbitrary).
-4. The auditor **cannot see the implementing conversation**.
+4. The auditor **cannot see the implementing conversation or mutate glla state**.
 
 This is borrowed directly from `pi-goal-x/extensions/goal-auditor.ts:148-156`. The pattern is sound; we don't improve on it in v0.1.0, we just **fork the proven source and add regression_shield**.
 
@@ -224,7 +250,9 @@ This is a **clean break** by decision of the user. We do not interop with `pi-go
 | `extensions/loops/goal.ts` | Loops 1+2 (single goal + list of goals) | shipped |
 | `extensions/loops/forever.ts` | Loop 3 (metric loop helpers) | shipped |
 | `extensions/goal-loop-core.ts` | Shared state machine, types, JSONL | shipped |
-| `extensions/goal-loop-auditor.ts` | Isolated auditor with regression_shield | shipped |
+| `extensions/goal-loop-auditor.ts` | Auditor prompt + compatibility helper | shipped |
+| `extensions/goal-loop-auditor-process.ts` | Detached worker protocol, IPC, and shield revalidation | shipped |
+| `scripts/goal-auditor-worker.mjs` | Extension-less RPC auditor child | shipped |
 | `extensions/goal-loop-display.ts` | Status line + /goal status rendering | shipped |
 | `prompts/goal-loop-continuation.md` | Templated continuation prompt | ~80 |
 | `prompts/goal-loop-auditor.md` | Templated auditor prompt | ~80 |
@@ -245,7 +273,7 @@ type Status =
 
 States owned by the orchestrator:
 - `active` → next iteration
-- `auditing` → auditor running
+- `auditing` → detached auditor queued/running (or recovery pending)
 - `complete` → archived
 - `paused` → user-resumable
 - `aborted` → user-cancelled
@@ -272,7 +300,7 @@ This protects against model-generated summaries losing fidelity.
 
 | Trigger | Action |
 |---|---|
-| `Esc` during auditor | Pause; user picks "complete without audit" or "continue" |
+| Detached auditor running | Main turn remains free; `/goal cancel` discards the pending claim and stops the worker best-effort |
 | `Esc` during agent turn | Pause |
 | User `/goal pause` | Pause |
 | User `/goal cancel` | Abort (wipes active goal) |

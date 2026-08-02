@@ -2547,7 +2547,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
   // Keeping the claim while merely scheduling a continuation left manual
   // pause/resume with an ACTIVE goal that no timer would ever consume.
   if (storedCompletion) {
-    ctx.ui.notify("Resuming the stored completion claim — running the isolated auditor directly (no agent turn needed).", "info");
+    ctx.ui.notify("Resuming the stored completion claim — starting a detached auditor (no agent turn needed).", "info");
     void retryStoredCompletionAudit("manual");
     return;
   }
@@ -6488,13 +6488,12 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
 const OUR_COMMANDS = ["goal", "glla", "list", "loop"];
 let collisionWarned = false;
 
-// Providers known to pi core. The auditor inherits the already-resolved
-// Model object from this session (in-process createAgentSession), so a
-// provider defined in ~/.pi/agent/models.json with auth.json credentials
-// works even though it is not "built-in". Unknown providers get a soft
-// one-time conditional notice: if audits error with auth failures, an
-// explicit /glla model= override is the fix. (v0.22.0: reworded from the
-// stale "extension-registered → auditor fails auth" premise.)
+// Providers known to pi core. The detached worker receives only provider/id
+// and resolves credentials in its extension-less child process. A provider
+// defined in ~/.pi/agent/models.json with auth.json credentials works; a
+// provider registered only in the parent extension runtime may not. Unknown
+// providers get a soft one-time conditional notice: if audits error with auth
+// failures, an explicit /glla model= override is the fix.
 const KNOWN_BUILTIN_PROVIDERS = new Set([
   "anthropic", "google", "google-vertex", "google-gemini-cli", "openai", "openai-codex",
   "openrouter", "opencode", "azure-openai-responses", "groq", "cerebras", "xai", "zai",
