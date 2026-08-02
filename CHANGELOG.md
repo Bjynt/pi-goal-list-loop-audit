@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.34.21 — 2026-08-02
+
+### Fixed — completion audits expose and recover their lifecycle
+
+Completion claims now persist an explicit auditor phase and attempt metadata.
+A fresh session converts an interrupted or legacy claim to
+`recovery-pending`, displays that state instead of falsely saying the auditor
+is running, and immediately retries it when lifecycle/auto-resume consent is
+present. Cold startup with auto-resume off waits for `/goal resume`; old
+attempts cannot finalize or archive a replacement goal.
+
+The isolated auditor still aborts after 10 minutes with no events while no
+read-only tool is active, permits a long-running verification tool to finish,
+and now has a 30-minute wall-clock safety cap. These are infrastructure
+failures, never verdicts; stored claims remain available for direct retry.
+
+### Added — lifecycle and watchdog regression coverage
+
+Behavioral replacement/recovery tests, recovery-pending display tests, schema
+compatibility checks, and watchdog timing tests cover the new paths.
+
 ## 0.34.20 — 2026-08-02
 
 ### Fixed — delayed work rebinds instead of using registration-time contexts

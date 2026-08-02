@@ -910,7 +910,7 @@ test("goal-start notify has no (id: …) suffix (v0.28.24 source pin)", () => {
 // catch wiring drift; these tests hold an actual async operation across a
 // replacement and prove the old generation cannot mutate the new session.
 
- test("v0.34.20 lifecycle: completion audit from a replaced generation leaves the stored claim intact", async () => {
+ test("v0.34.21 lifecycle: completion audit from a replaced generation leaves the stored claim intact", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   const first = await freshSession(cwd, "startup");
@@ -926,25 +926,56 @@ test("goal-start notify has no (id: …) suffix (v0.28.24 source pin)", () => {
       verificationSummary: "The replacement session must retain this claim.",
     }, first);
     await Promise.resolve();
-    const claimed = readState(cwd).goal as { status: string; pendingCompletion?: { completionSummary?: string } };
+    const claimed = readState(cwd).goal as { status: string; pendingCompletion?: { completionSummary?: string; phase?: string; attemptId?: string } };
     assert.equal(claimed.status, "auditing", "the claim is persisted before the auditor starts");
     assert.equal(claimed.pendingCompletion?.completionSummary, "The lifecycle regression is covered.");
+    assert.equal(claimed.pendingCompletion?.phase, "running", "the durable claim records an active audit attempt");
+    assert.ok(claimed.pendingCompletion?.attemptId, "the attempt has a durable id");
 
     const replacement = ownerCtx(cwd);
     await pi.fire("session_start", { reason: "reload" }, replacement);
     const result = await audit;
     assert.match(result.content[0]!.text, /session replacement|stale context/i, "old audit reports a lifecycle handoff, not a verdict");
 
-    const after = readState(cwd).goal as { status: string; pendingCompletion?: { completionSummary?: string } };
-    assert.equal(after.status, "auditing", "the old audit did not finalize the replacement state");
+    const after = readState(cwd).goal as { status: string; pendingCompletion?: { completionSummary?: string; phase?: string } };
+    assert.ok(["auditing", "paused"].includes(after.status), "the replacement keeps the audit lifecycle recoverable");
     assert.equal(after.pendingCompletion?.completionSummary, "The lifecycle regression is covered.", "the durable claim survived");
+    assert.ok(["running", "recovery-pending"].includes(after.pendingCompletion?.phase ?? ""), "the fresh lifecycle uses an explicit phase");
     const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+    assert.match(ledger, /"audit_recovery_pending"/, "replacement marks the old attempt as recovery-pending");
+    assert.match(ledger, /"audit_recovery_started"/, "replacement starts a fresh stored-claim attempt immediately");
     assert.doesNotMatch(ledger, /"goal_archived"/, "the stale audit did not archive the goal");
     assert.equal(first.ui.matching("Goal complete").length, 0, "the old UI did not receive a completion notice");
     await pi.fire("session_shutdown", { reason: "quit" }, replacement);
   } finally {
     (first as unknown as { model: unknown }).model = originalModel;
   }
+});
+
+test("v0.34.21 lifecycle: cold startup holds a recovered claim until explicit resume", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    goal: seedGoal({
+      status: "auditing",
+      pendingCompletion: {
+        completionSummary: "saved claim",
+        verificationSummary: "saved evidence",
+        at: new Date().toISOString(),
+        phase: "running",
+        attemptId: "old-attempt",
+      },
+    }),
+  });
+  const ctx = await freshSession(cwd, "startup");
+  await tick();
+  const goal = readState(cwd).goal as { status: string; pendingCompletion?: { phase?: string } };
+  assert.equal(goal.status, "auditing", "cold startup does not auto-run the stored audit");
+  assert.equal(goal.pendingCompletion?.phase, "recovery-pending", "old running attempt is made explicit");
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.doesNotMatch(ledger, /"audit_recovery_started"/, "no recovery starts without lifecycle/explicit consent");
+  assert.ok(ctx.ui.matching("Completion audit recovery is pending").length >= 1, "the hold is explained");
+  assert.ok((ctx.ui.widgets["pi-glla"] as string[]).some((line) => line.includes("recovery pending")), "the widget does not claim the auditor is running");
 });
 
 test("v0.34.20 lifecycle: fan-out confirmation from the old generation cannot queue into its replacement", async () => {

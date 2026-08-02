@@ -363,8 +363,11 @@ it persists. Tune with `/glla wedgealert=<minutes>` (0 = off).
 
 Every other wait is bounded too: continuation retries are milliseconds,
 stuck backoff caps at 5 minutes then pauses, measure commands get a 10m
-hard timeout, and the auditor aborts after 10m with zero session activity
-(infrastructure error, never a verdict).
+hard timeout, and the auditor aborts after 10m with no activity while no
+read-only tool is running. A long-running verification tool is allowed to
+finish, but the isolated audit has a 30m wall-clock safety cap. Both paths
+are infrastructure errors, never verdicts; interrupted claims remain stored
+for a direct retry after `/goal resume`.
 
 ## Compatibility (what goes well, what conflicts)
 
