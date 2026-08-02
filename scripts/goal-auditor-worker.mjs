@@ -133,6 +133,12 @@ async function main() {
     await progress("complete").catch(() => {});
   };
 
+  // The parent may cancel the detached job after the goal is archived. Cleanly
+  // terminate the nested RPC child too, rather than leaving it orphaned.
+  process.once("SIGTERM", () => {
+    void finish(false, "Auditor aborted.").catch(() => {});
+  });
+
   try {
     if (Date.now() >= request.wallDeadlineAt) {
       await finish(false, "Auditor exceeded its wall-clock bound and was aborted before launch.");

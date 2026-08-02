@@ -49,6 +49,18 @@ const PROTOCOL_VERSION = 1;
 const DEFAULT_WALL_TIMEOUT_MS = 30 * 60_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
 const ATTEMPT_ID_RE = /^[A-Za-z0-9._-]{1,100}$/;
+const activeChildren = new Map<string, ChildProcess>();
+
+function childKey(cwd: string, attemptId: string): string {
+  return `${path.resolve(cwd)}\u0000${attemptId}`;
+}
+
+/** Best-effort cancellation used after the owning goal is archived/cancelled. */
+export function cancelDetachedGoalCompletionAuditor(cwd: string, attemptId: string): boolean {
+  const child = activeChildren.get(childKey(cwd, attemptId));
+  if (!child || !childAlive(child)) return false;
+  try { return child.kill("SIGTERM"); } catch { return false; }
+}
 
 interface AuditorRequest {
   protocolVersion: number;
@@ -274,6 +286,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
       stdio: "ignore",
       env,
     } satisfies SpawnOptions);
+    activeChildren.set(childKey(args.cwd, attemptId), child);
     child.unref();
 
     const abort = () => { if (child && childAlive(child)) child.kill("SIGTERM"); };
@@ -339,6 +352,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
   } catch (error) {
     return infra(model, thinkingLevel, error instanceof Error ? error.message : String(error));
   } finally {
+    activeChildren.delete(childKey(args.cwd, attemptId));
     if (lockHeld) await fs.unlink(lockPath).catch(() => {});
   }
 }

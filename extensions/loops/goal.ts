@@ -131,7 +131,10 @@ import {
   rollupProject,
   type ProjectRollup,
 } from "../goal-loop-stats.js";
-import { runDetachedGoalCompletionAuditor } from "../goal-loop-auditor-process.js";
+import {
+  cancelDetachedGoalCompletionAuditor,
+  runDetachedGoalCompletionAuditor,
+} from "../goal-loop-auditor-process.js";
 import {
   REPETITION,
   isActuallyStuck,
@@ -1752,6 +1755,7 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
   postCompactResyncPending = false;
   if (!state.goal) return;
   const goal = state.goal;
+  const pendingAttemptId = goal.pendingCompletion?.attemptId;
   ensureDirs(ctx.cwd);
   const target = archivedGoalPath(ctx.cwd, goal.id);
   const md = renderGoalMarkdown({ ...goal, status, stopReason });
@@ -1765,7 +1769,18 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
   if (archived) {
     try { fs.unlinkSync(goalMdPath(ctx.cwd, goal.id)); } catch {}
   }
-  state = { ...state, goal: { ...goal, status, archivedPath: path.relative(ctx.cwd, target) || target, stopReason } };
+  state = {
+    ...state,
+    goal: {
+      ...goal,
+      status,
+      archivedPath: path.relative(ctx.cwd, target) || target,
+      stopReason,
+      // A cancelled/archived goal cannot accept a late detached worker result.
+      pendingCompletion: undefined,
+    },
+  };
+  if (pendingAttemptId) cancelDetachedGoalCompletionAuditor(ctx.cwd, pendingAttemptId);
   appendLedger(ctx.cwd, "goal_archived", { goalId: goal.id, status, stopReason, objective: goal.objective.slice(0, 300) });
   persistState(ctx);
   // Loop 2: a list-sourced goal COMPLETED → auto-activate the next item.
@@ -1893,10 +1908,10 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     appendLedger(liveCtx.cwd, "goal_resumed", { via: origin === "manual" ? "manual-audit" : "quota-retry-direct-audit" });
   }
   liveCtx.ui.notify(origin === "manual"
-    ? "Manual /goal verify — running the isolated auditor now (no agent turn needed)."
+    ? "Manual /goal verify — starting the detached auditor now (no agent turn needed)."
     : origin === "session-recovery"
-      ? "Fresh session recovered the interrupted completion audit — retrying the stored claim now."
-      : "Auditor quota window elapsed — retrying the audit with your stored completion claim (no agent turn needed).", "info");
+      ? "Fresh session recovered the interrupted completion audit — starting a detached retry for the stored claim."
+      : "Auditor quota window elapsed — starting a detached retry with your stored completion claim (no agent turn needed).", "info");
   const settings = loadSettings(liveCtx.cwd);
   const { model: auditorModel, error: modelError, via } = resolveAuditorModel(liveCtx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
   if (modelError) liveCtx.ui.notify(`Auditor model issue: ${modelError}`, "warning");
@@ -2478,11 +2493,11 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
   }
   if (state.goal?.status === "auditing") {
     if (!state.goal.pendingCompletion) {
-      ctx.ui.notify("An audit is in flight — wait for the isolated auditor's verdict (the status line shows auditing…).", "info");
+      ctx.ui.notify("A detached completion auditor is in flight — wait for its verdict (the status line shows auditor running). /goal cancel discards the pending claim.", "info");
       return;
     }
     if (completionAuditInFlight) {
-      ctx.ui.notify("The completion auditor is already running — wait for its verdict or press Escape to abort it.", "info");
+      ctx.ui.notify("The detached completion auditor is already running — wait for its verdict or /goal cancel to discard the pending claim.", "info");
       return;
     }
     if (isLoopActive()) {
@@ -2493,7 +2508,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
     if (staleEntry) return;
     markCompletionAuditRecoveryPending(ctx, "manual-resume");
     completionAuditRecoveryArmed = true;
-    ctx.ui.notify("Resuming the stored completion claim — running the isolated auditor directly (no agent turn needed).", "info");
+    ctx.ui.notify("Resuming the stored completion claim — starting a detached auditor (no agent turn needed).", "info");
     void retryStoredCompletionAudit("manual");
     return;
   }
@@ -6036,16 +6051,16 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
   }
   if (g && g.status === "auditing") {
     if (!g.pendingCompletion) {
-      ctx.ui.notify("An audit is in flight — wait for the isolated auditor's verdict (the status line shows auditing…).", "info");
+      ctx.ui.notify("A detached completion auditor is in flight — wait for its verdict (the status line shows auditor running). /glla cancel discards the pending claim.", "info");
       return;
     }
     if (completionAuditInFlight) {
-      ctx.ui.notify("The completion auditor is already running — wait for its verdict or press Escape to abort it.", "info");
+      ctx.ui.notify("The detached completion auditor is already running — wait for its verdict or /glla cancel to discard the pending claim.", "info");
       return;
     }
     markCompletionAuditRecoveryPending(ctx, "manual-resume");
     completionAuditRecoveryArmed = true;
-    ctx.ui.notify("Resuming the stored completion claim — running the isolated auditor directly (no agent turn needed).", "info");
+    ctx.ui.notify("Resuming the stored completion claim — starting a detached auditor (no agent turn needed).", "info");
     void retryStoredCompletionAudit("manual");
     return;
   }
