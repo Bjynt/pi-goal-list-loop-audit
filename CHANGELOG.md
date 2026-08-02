@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.34.19] — 2026-08-02
+
+### Fixed — stale sessions fail closed across compaction and lifecycle gaps
+
+Delayed glla callbacks now carry a session generation and cannot re-arm after
+shutdown, stale-handle termination, or `/reload`. Late `session_compact`,
+`agent_end`, and `tool_result` events from a disposed session cannot reclaim the
+old context or schedule another continuation. Stale terminal handling paints
+the interrupted state immediately, and the widget explicitly says the host
+session was lost and points to `/reload` plus the appropriate resume command.
+Ephemeral watchdog counters reset on a fresh session so a stale boundary cannot
+leak a false stall count into the next run. The exact stale-before-compaction,
+no-`session_start` field ordering is covered behaviorally.
+
+### Fixed — context-starved length stops yield to pi compaction
+
+A tiny `length` stop at a nearly full context is classified as context
+starvation rather than a real output cap. glla records the deferral and lets pi
+compact instead of sending a redundant one-token continuation into the full
+context. Older pi/test doubles without context-usage support retain the legacy
+path.
+
 ## [0.34.18] — 2026-08-01
 
 ### Fixed — autoresume waits for the initial transcript
