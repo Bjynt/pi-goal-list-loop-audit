@@ -137,7 +137,7 @@ test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUD
   // agent → the model hallucinated closure and repeated itself into a
   // continuation storm + 14 compactions in 35 minutes.
   // 1. the claim is persisted at the quota block:
-  assert.match(SRC, /pendingCompletion: \{ completionSummary: p\.completionSummary, verificationSummary: p\.verificationSummary, at: nowIso\(\) \},/);
+  assert.match(SRC, /pendingCompletion: \{ \.\.\.completionClaim, phase: "quota-waiting"/);
   // 2. the quota-retry callback prefers the direct-audit path:
   const cbIdx = SRC.indexOf('(state.goal.pauseReason ?? "").startsWith("auditor quota:")');
   const directIdx = SRC.indexOf("void retryStoredCompletionAudit();");
@@ -145,7 +145,7 @@ test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUD
   const legacyIdx = SRC.indexOf('appendLedger(fresh.cwd, "goal_resumed", { via: "quota-retry" });');
   assert.ok(legacyIdx > directIdx, "agent-resume is the FALLBACK (no stored claim), not the default");
   // 3. the retry function re-runs the auditor with the stored claim:
-  assert.match(SRC, /async function retryStoredCompletionAudit\(origin: "quota-retry" \| "manual" = "quota-retry"\): Promise<void> \{/);
+  assert.match(SRC, /async function retryStoredCompletionAudit\(origin: CompletionAuditOrigin = "quota-retry"\): Promise<void> \{/);
   assert.match(SRC, /completionSummary: claim\.completionSummary,/);
   assert.match(SRC, /verificationSummary: claim\.verificationSummary,/);
   // 4. approved → archive (cascade inside archiveCurrentGoal); claim cleared:
@@ -159,7 +159,9 @@ test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUD
 
 test("v0.28.26: pendingCompletion typed + schematized", () => {
   const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
-  assert.match(CORE, /pendingCompletion\?: \{ completionSummary\?: string; verificationSummary\?: string; at: string \};/);
+  assert.match(CORE, /export interface PendingCompletion/);
+  assert.match(CORE, /pendingCompletion\?: PendingCompletion;/);
   const SCHEMA = fs.readFileSync("schemas/goal.schema.json", "utf-8");
-  assert.match(SCHEMA, /"pendingCompletion": \{ "type": "object" \}/);
+  assert.match(SCHEMA, /"pendingCompletion": \{ "\$ref": "#\/definitions\/pendingCompletion" \}/);
+  assert.match(SCHEMA, /"phase": \{ "type": "string", "enum": \["running", "recovery-pending", "quota-waiting"\] \}/);
 });

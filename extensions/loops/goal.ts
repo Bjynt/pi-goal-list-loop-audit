@@ -2031,9 +2031,33 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     return;
   }
 
-  // Any other outcome — disapproved, impossible, non-quota infra — belongs
-  // to the agent: resume and let the continuation drive the next step. The
-  // verdict is durable in auditHistory + /goal status.
+  // Any remaining infrastructure failure on a stored-claim retry keeps the
+  // exact claim recoverable. Re-engaging the agent to recreate an unchanged
+  // claim is the repetition-loop failure this direct-audit path exists to
+  // prevent. The user fixes the model/command, then /goal resume retries.
+  if (result.error && !result.disapproved) {
+    const pending: PendingCompletion = {
+      ...claim,
+      phase: "recovery-pending",
+      recoveryAt: nowIso(),
+      recoveryReason: "auditor-infrastructure",
+    };
+    updateGoal({
+      status: "paused",
+      auditHistory: history,
+      pendingCompletion: pending,
+      pauseKind: "error",
+      pauseReason: `completion auditor infrastructure failure — ${result.error}`,
+      pauseSuggestedAction: "Fix the auditor model or verification command, then /goal resume to retry the stored claim.",
+    }, liveCtx);
+    appendLedger(liveCtx.cwd, "audit_infra_waiting", { goalId, attemptId: claim.attemptId, error: result.error.slice(0, 240) });
+    liveCtx.ui.notify("Completion auditor infrastructure failed (not a verdict). The stored claim is safe; fix the model/command and /goal resume.", "warning");
+    return;
+  }
+
+  // Any other outcome — disapproved or impossible — belongs to the agent:
+  // resume and let the continuation drive the next step. The verdict is
+  // durable in auditHistory + /goal status.
   quotaRetryStreak = 0;
   updateGoal({
     status: "active",

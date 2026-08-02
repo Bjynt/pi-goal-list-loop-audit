@@ -192,7 +192,7 @@ test("v0.29.1: completion lifecycle survives the wedged-queue window (storm supp
   const hb = src.slice(hbIdx, hbIdx + 12000); // v0.34.14: heartbeat grew again (0.33.1 discharge, 0.34.11 watchdog, 0.34.13 recovery)
   assert.match(hb, /stranded_audit_recovered/);
   assert.match(hb, /state\.goal\?\.status === "auditing" &&\s*\n\s*!completionAuditInFlight/);
-  assert.match(hb, /retryStoredCompletionAudit\("quota-retry"\)/);
+  assert.match(hb, /retryStoredCompletionAudit\("session-recovery"\)/);
   assert.ok(hb.indexOf("stranded_audit_recovered") < hb.indexOf("pending_latch_stuck"),
     "stranded-audit recovery runs before the latch watchdog");
   // 3. Error-brake cycle cap: the v0.28.25 ladder slows the thrash but never

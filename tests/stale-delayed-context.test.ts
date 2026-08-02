@@ -48,17 +48,20 @@ test("v0.34.20: detached fan-out revalidates after user confirmation", () => {
   assert.doesNotMatch(GOAL, /fanOutListAuditFindings\(ctx\)/);
 });
 
-test("v0.34.20: completion audits persist claims and stop retrying after replacement", () => {
+test("v0.34.21: completion audits persist lifecycle claims and stop retrying after replacement", () => {
   const complete = between(GOAL, 'name: "complete_goal"', 'name: "pause_goal"');
-  const claim = complete.indexOf("pendingCompletion: {");
+  const claim = complete.indexOf("beginCompletionAudit(ctx");
   const auditor = complete.indexOf("runGoalCompletionAuditor");
   assert.ok(claim >= 0 && auditor > claim, "the completion claim is durable before the auditor starts");
+  assert.match(GOAL, /function beginCompletionAudit\(ctx: ExtensionContext/);
+  assert.match(GOAL, /phase: "running"/);
+  assert.match(GOAL, /wallDeadlineAt/);
   assert.match(complete, /shouldRetry: \(\) => freshCtxForGeneration\(auditGeneration\) !== null/);
   assert.match(complete, /completionAuditGeneration = auditGeneration/);
   assert.match(complete, /const auditContextAfterRun = freshCtxForGeneration\(auditGeneration\)/);
   assert.match(complete, /if \(!auditContextAfterRun \|\| !state\.goal \|\| state\.goal\.id !== auditGoalId\)/);
   assert.match(GOAL, /shouldRetry: \(\) => freshCtxForGeneration\(generation\) !== null/);
-  assert.match(GOAL, /async function retryStoredCompletionAudit\(origin: "quota-retry" \| "manual" = "quota-retry"\)/);
+  assert.match(GOAL, /async function retryStoredCompletionAudit\(origin: CompletionAuditOrigin = "quota-retry"\)/);
   assert.doesNotMatch(GOAL, /retryStoredCompletionAudit\(ctx,/);
 });
 
