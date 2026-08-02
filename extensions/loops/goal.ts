@@ -596,7 +596,7 @@ function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop" | "lis
   // A new goal OR list item replaces the goal slot; a loop leaves it paused.
   if (pausedGoal && (trigger === "goal" || trigger === "list" || policy === "clear")) {
     archiveCurrentGoal(ctx, "aborted", trigger === "loop" ? "carryover cleared" : `replaced by new ${trigger} (carryover)`);
-    done.push(`archived paused goal "${(snap.pausedGoal ?? pausedGoal.objective).slice(0, 60)}"`);
+    done.push(`archived paused goal "${displaySlice(snap.pausedGoal ?? pausedGoal.objective, 60)}"`);
   } else if (snap.pausedGoal) {
     waiting.push(`paused goal "${snap.pausedGoal}" (/goal resume)`);
   }
@@ -1308,6 +1308,7 @@ function clearContinuationStartWatchdog(): void {
     continuationStartTimer = null;
   }
   pendingContinuationDispatch = null;
+  lastContinuationSentAt = 0;
 }
 
 function dispatchLabel(record: ContinuationDispatch): string {
@@ -1816,8 +1817,14 @@ function persistState(ctx: ExtensionContext): void {
 // state; these notifies are the LOUD part.
 let persistenceDegradedNotified = false;
 
-/** v0.28.11 (U9): objective-first notifies — truncate long objectives. */
-const shortObj = (s: string): string => (s.length > 90 ? `${s.slice(0, 87)}…` : s);
+/** v0.28.11 (U9): objective-first notifies — truncate long objectives.
+ * v0.34.24: this is a display projection; persisted objective text stays raw.
+ */
+const shortObj = (s: string): string => {
+  const safe = compactDisplayText(s);
+  return safe.length > 90 ? `${safe.slice(0, 87)}…` : safe;
+};
+const displaySlice = (s: string, max: number): string => compactDisplayText(s).slice(0, max);
 /** v0.28.30: terminology — a list item is not a goal (user note: "we seem
  * to call everything goal"). User-facing pause/abort notifies name the policy. */
 const goalNoun = (): string => (state.goal?.policy === "list" ? "List item" : "Goal");
@@ -2222,7 +2229,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     const approvalVia = origin === "manual" ? " on /goal verify" : origin === "session-recovery" ? " after session recovery" : " on the quota retry";
     archiveCurrentGoal(liveCtx, "complete", `auditor ${result.model} approved (${origin})`);
     liveCtx.ui.notify(`Goal complete — auditor ${result.model} approved${approvalVia}.`, "info");
-    notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${objective.slice(0, 120)}`);
+    notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${displaySlice(objective, 120)}`);
     return;
   }
 
@@ -2460,7 +2467,7 @@ function activateNextListItem(ctx: ExtensionContext, n = 1): boolean {
   iterationCounter = 0;
   consecutiveErrorIterations = 0;
   consecutiveAbortIterations = 0;
-  ctx.ui.notify(`List item #${n} activated (${rest.length} remaining): ${goal.objective.slice(0, 80)}`, "info");
+  ctx.ui.notify(`List item #${n} activated (${rest.length} remaining): ${displaySlice(goal.objective, 80)}`, "info");
   scheduleContinuation(ctx, true);
   return true;
 }
@@ -2679,7 +2686,7 @@ async function cmdStatus(ctx: ExtensionContext): Promise<void> {
   }
   const g = state.goal;
   const lines = [
-    `${statusLabel(g.status)}: ${g.objective}`,
+    `${statusLabel(g.status)}: ${sanitizeDisplayText(g.objective)}`,
     // v0.24.7: name WHERE the work came from — a queue item is not a goal.
     ...(g.policy === "list" ? [`Source: /list queue (${listQueue().length} waiting) — /list to manage`] : []),
     `Auto-continue: ${g.autoContinue ? "on" : "off"}`,
@@ -2722,7 +2729,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
     appendLedger(ctx.cwd, "resume_rekick", { goalId: state.goal.id, policy: state.goal.policy, via: "/goal resume" });
     if (state.goal.interruptedAt) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx); // v0.34.7: same marker law here
     ctx.ui.notify(
-      `The ${state.goal.policy === "list" ? "list item" : "goal"} is ACTIVE but idle — re-firing its continuation: ${state.goal.objective.replace(/\s+/g, " ").slice(0, 70)}`,
+      `The ${state.goal.policy === "list" ? "list item" : "goal"} is ACTIVE but idle — re-firing its continuation: ${displaySlice(state.goal.objective, 70)}`,
       "info",
     );
     scheduleContinuation(ctx, true);
@@ -2795,8 +2802,8 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
   const isListItem = state.goal.policy === "list";
   ctx.ui.notify(
     isListItem
-      ? `Resumed list item [${state.goal.id}]: ${state.goal.objective.replace(/\s+/g, " ").slice(0, 70)}${queued > 0 ? ` (+${queued} waiting in the list)` : ""}`
-      : `Resumed goal [${state.goal.id}]: ${state.goal.objective.replace(/\s+/g, " ").slice(0, 70)}${queued > 0 ? ` (+${queued} waiting in the list — resuming the list's head)` : ""}`,
+      ? `Resumed list item [${state.goal.id}]: ${displaySlice(state.goal.objective, 70)}${queued > 0 ? ` (+${queued} waiting in the list)` : ""}`
+      : `Resumed goal [${state.goal.id}]: ${displaySlice(state.goal.objective, 70)}${queued > 0 ? ` (+${queued} waiting in the list — resuming the list's head)` : ""}`,
     "info",
   );
   scheduleContinuation(ctx, true);
@@ -2838,7 +2845,7 @@ async function showDecisionPrompt(ctx: ExtensionContext): Promise<boolean> {
   if (!g || !ctx.hasUI || decisionPromptOpen) return false;
   decisionPromptOpen = true;
   try {
-    const title = `Decision needed — ${g.objective.replace(/\s+/g, " ").slice(0, 72)}${g.pauseReason ? ` · ${g.pauseReason.slice(0, 80)}` : ""}`;
+    const title = `Decision needed — ${displaySlice(g.objective, 72)}${g.pauseReason ? ` · ${displaySlice(g.pauseReason, 80)}` : ""}`;
     const options = g.pauseOptions!.map((o, i) => (g.pauseRecommended === i + 1 ? `${o}  (recommended)` : o));
     const pick = await ctx.ui.select(title, options);
     if (!pick) return true; // Escape — the widget card remains the fallback
@@ -2860,13 +2867,13 @@ async function showDecisionPrompt(ctx: ExtensionContext): Promise<boolean> {
       else if (group === "loop" && verb === "stop") await cmdLoop("stop", ctx);
       else if (group === "loop" && verb === "resume") await cmdLoop("resume", ctx);
       else {
-        safeSteerUser(ctx, `Decision for the paused goal "${g.objective}": ${label} — continue on this path.`);
+        safeSteerUser(ctx, `Decision for the paused goal "${displaySlice(g.objective, 240)}": ${sanitizeDisplayText(label)} — continue on this path.`);
         await cmdResume(ctx);
       }
       return true;
     }
     // Content choice — deliver to the agent, then resume.
-    safeSteerUser(ctx, `Decision for the paused goal "${g.objective}": ${label} — continue on this path.`);
+    safeSteerUser(ctx, `Decision for the paused goal "${displaySlice(g.objective, 240)}": ${sanitizeDisplayText(label)} — continue on this path.`);
     await cmdResume(ctx);
     return true;
   } finally {
@@ -2937,8 +2944,8 @@ async function cmdTweak(args: string, ctx: ExtensionContext): Promise<void> {
   try {
     confirmed = await ctx.ui.confirm(
       "Tweak goal?",
-      `CURRENT:\n${current.objective}\n\nNEW:\n${newObjective}` +
-      (newContract ? `\n\nNew contract:\n${newContract}` : "\n\n(New text carries no contract; old contract is dropped.)"),
+      `CURRENT:\n${sanitizeDisplayText(current.objective)}\n\nNEW:\n${sanitizeDisplayText(newObjective)}` +
+      (newContract ? `\n\nNew contract:\n${sanitizeDisplayText(newContract)}` : "\n\n(New text carries no contract; old contract is dropped.)"),
     );
   } catch {
     confirmed = false;
@@ -3346,7 +3353,7 @@ function notifyExternal(ctx: ExtensionContext, message: string): void {
       if (settings.notifyCmd === undefined && autoNotifyCmd === undefined) probeAutoNotify(ctx);
       return;
     }
-    void extensionApi.exec("bash", ["-c", cmd, "pi-goal-list-loop-audit", message], { cwd: ctx.cwd }).catch(() => {});
+    void extensionApi.exec("bash", ["-c", cmd, "pi-goal-list-loop-audit", sanitizeDisplayText(message)], { cwd: ctx.cwd }).catch(() => {});
   } catch {
     // non-fatal by design
   }
