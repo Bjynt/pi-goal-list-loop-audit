@@ -71,9 +71,10 @@ test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal g
 
 test("sendLengthContinue: stale-api terminal guard + ledger + factory reset", () => {
   assert.match(SRC, /function sendLengthContinue\(ctx: ExtensionContext, consecutive: number\)/);
-  assert.match(SRC, /if \(sessionHandoffPending \|\| initialSessionLoadPending \|\| !extensionApi \|\| extensionApiStale\) return;/, "lifecycle handoff, blank-start barrier, and stale-runtime guards short-circuit the send");
-  assert.match(SRC, /try \{\s*\n\s*extensionApi\.sendMessage\(\{\s*\n\s*customType: GOAL_EVENT_ENTRY,\s*\n\s*content: LENGTH_CONTINUE_TEXT/);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "length_continue_sent", \{ consecutive \}\)/);
+  assert.match(SRC, /if \(sessionHandoffPending \|\| initialSessionLoadPending \|\| !extensionApi \|\| extensionApiStale \|\| continuationDispatchStoodDown \|\| pendingContinuationDispatch\) return;/, "lifecycle, blank-start, stale-runtime, and in-flight dispatch guards short-circuit the send");
+  assert.match(SRC, /kind: "length",\s*\n\s*marker: LENGTH_CONTINUE_TEXT\.slice\(0, 80\)/, "length sends use the dispatch proof state machine");
+  assert.match(SRC, /extensionApi\.sendMessage\(\{\s*\n\s*customType: GOAL_EVENT_ENTRY,\s*\n\s*content: LENGTH_CONTINUE_TEXT/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "length_continue_sent", \{ consecutive, attemptId: attempt\.id \}\)/);
   assert.match(SRC, /if \(isStaleApiError\(err\)\) goStaleTerminal\(ctx, "sendLengthContinue"\);/);
   assert.match(SRC, /resetLengthContinue\(\); \/\/ v0\.27\.2/);
   // give-up is surfaced once via notify + external push
