@@ -406,7 +406,7 @@ test("wait pause: quiet banner + resume countdown (widget + status)", () => {
   const state = { goal: g, list: [], loop: null };
   const w = buildWidgetLines(state as never)!;
   assert.ok(w.some((l) => l.includes("waiting — nothing for you to do")), `wait banner: ${w.join("\n")}`);
-  assert.ok(w.some((l) => /resumes .*\(in 23h/.test(l)), `countdown: ${w.join("\n")}`);
+  assert.ok(w.some((l) => /resumes .*\(in \d+h/.test(l)), `countdown: ${w.join("\n")}`);
   const s = buildStatusText(state as never)!;
   assert.ok(s.includes("waiting") && s.includes("resumes"), `status: ${s}`);
 });

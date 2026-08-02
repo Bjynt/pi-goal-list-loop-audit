@@ -109,10 +109,10 @@ test("E8: provider-error brake gets ONE capped escalating auto-resume with reaso
   // 8m, 16m cap. First brake is still 60s (60_000 * 2^0).
   assert.match(SRC, /const cooldownMs = 60_000 \* 2 \*\* Math\.min\(brakeStreak, 4\);/);
   assert.match(SRC, /errorBrakeStreak: brakeStreak \+ 1,/, "v0.34.15: the rung is stamped ON THE GOAL (survives /reload)");
-  assert.match(SRC, /scheduleQuotaRetry\(ctx, cooldownMs \/ 1000, reason, \(\) => \{/);
+  assert.match(SRC, /scheduleQuotaRetryForSession\(ctx, cooldownMs \/ 1000, reason, \(fresh\) => \{/);
   assert.match(SRC, /if \(\(state\.goal\?\.errorBrakeStreak \?\? 0\) > 0\) updateGoal\(\{ errorBrakeStreak: undefined \}, ctx\);/, "a healthy turn clears the persisted brake streak");
   assert.match(SRC, /\(state\.goal\.pauseReason \?\? ""\)\.startsWith\("5 consecutive errors"\)/);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "goal_resumed", \{ via: "error-brake-retry" \}\)/);
+  assert.match(SRC, /appendLedger\(fresh\.cwd, "goal_resumed", \{ via: "error-brake-retry" \}\)/);
   // scheduleQuotaRetry generalized with a label param (quota default intact):
   assert.match(QUOTA, /label = "Auditor quota exhausted — auto-retry",/);
 });
@@ -140,9 +140,9 @@ test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUD
   assert.match(SRC, /pendingCompletion: \{ completionSummary: p\.completionSummary, verificationSummary: p\.verificationSummary, at: nowIso\(\) \},/);
   // 2. the quota-retry callback prefers the direct-audit path:
   const cbIdx = SRC.indexOf('(state.goal.pauseReason ?? "").startsWith("auditor quota:")');
-  const directIdx = SRC.indexOf("void retryStoredCompletionAudit(ctx);");
+  const directIdx = SRC.indexOf("void retryStoredCompletionAudit(fresh);");
   assert.ok(cbIdx > 0 && directIdx > cbIdx, "direct-audit branch inside the quota callback");
-  const legacyIdx = SRC.indexOf('appendLedger(ctx.cwd, "goal_resumed", { via: "quota-retry" });');
+  const legacyIdx = SRC.indexOf('appendLedger(fresh.cwd, "goal_resumed", { via: "quota-retry" });');
   assert.ok(legacyIdx > directIdx, "agent-resume is the FALLBACK (no stored claim), not the default");
   // 3. the retry function re-runs the auditor with the stored claim:
   assert.match(SRC, /async function retryStoredCompletionAudit\(ctx: ExtensionContext, origin: "quota-retry" \| "manual" = "quota-retry"\): Promise<void> \{/);

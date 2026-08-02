@@ -63,9 +63,9 @@ test("classifyImpossibleReason: partial vs full (item 23)", () => {
 test("audit-cap branch: aggressiveMode keeps ACTIVE + pendingTasks; OFF pauses (item 24 tests 1-2)", () => {
   // aggressive branch
   assert.match(goalSrc, /if \(effectiveCap\.aggressiveMode\) \{/);
-  assert.match(goalSrc, /pendingTasks,\n\s+pauseReason: `auditor disapproved \$\{trailingDisapprovals\}× consecutively \(cap \$\{auditCap\}\) — aggressiveMode: continuing with TODOs`/);
+  assert.match(goalSrc, /pendingCompletion: undefined,\n\s+pendingTasks,\n\s+pauseReason: `auditor disapproved \$\{trailingDisapprovals\}× consecutively \(cap \$\{auditCap\}\) — aggressiveMode: continuing with TODOs`/);
   // non-aggressive path still pauses
-  assert.match(goalSrc, /status: "paused",\n\s+auditHistory: history,\n\s+pauseKind: "decision",[\s\S]{0,500}?pauseReason: `auditor disapproved \$\{trailingDisapprovals\}× consecutively \(cap \$\{auditCap\}\)`,/);
+  assert.match(goalSrc, /status: "paused",\n\s+auditHistory: history,\n\s+pendingCompletion: undefined,\n\s+pauseKind: "decision",[\s\S]{0,500}?pauseReason: `auditor disapproved \$\{trailingDisapprovals\}× consecutively \(cap \$\{auditCap\}\)`,/);
 });
 
 test("IMPOSSIBLE branch: aggressive partial stays active, full still pauses (item 24 tests 3-4)", () => {

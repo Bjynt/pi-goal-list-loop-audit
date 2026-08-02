@@ -88,22 +88,22 @@ test("/list audit route: builds the collect target and enqueues it", () => {
 
 test("completion fan-out: collect items fan out + suppress the list-complete noise", () => {
   assert.match(SRC, /const isListAuditCollect = goal\.objective\.includes\(LIST_AUDIT_COLLECT_MARKER\);/);
-  assert.match(SRC, /if \(isListAuditCollect\)\s+void fanOutListAuditFindings\(ctx\)\.catch\(/, "v0.34.7: the float carries a catch — a rejection must never become an uncaughtException (darklord crash)");
+  assert.match(SRC, /if \(isListAuditCollect\) \{[\s\S]*?void fanOutListAuditFindings\(fanoutCwd, fanoutGeneration\)\.catch\(/, "v0.34.20: the detached fan-out carries a catch and immutable handoff inputs");
   assert.match(SRC, /if \(!advanced && !isListAuditCollect\) \{/, "no spurious 'List complete' while the fan-out is still Confirm-gated");
-  assert.match(SRC, /async function fanOutListAuditFindings\(ctx: ExtensionContext\): Promise<void> \{/);
+  assert.match(SRC, /async function fanOutListAuditFindings\(cwd: string, generation: number\): Promise<void> \{/);
 });
 
 test("fan-out: dedupe vs the live queue, Confirm gate, decline keeps findings open", () => {
   assert.match(SRC, /!queuedText\.includes\(f\.text\.slice\(0, 60\)\)/, "60-char dedupe against queued items");
-  assert.match(SRC, /ctx\.ui\.confirm\(`Queue \$\{fresh\.length\} audit finding\(s\) as list items\?`, preview\)/);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "list_audit_fanout_declined", \{ findings: fresh\.length \}\)/);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "list_audit_fanout", \{ queued: n, alreadyQueued, decisions: decisions\.length \}\)/);
+  assert.match(SRC, /beforeConfirm\.ui\.confirm\(`Queue \$\{fresh\.length\} audit finding\(s\) as list items\?`, preview\)/);
+  assert.match(SRC, /appendLedger\(cwd, "list_audit_fanout_declined", \{ findings: fresh\.length \}\)/);
+  assert.match(SRC, /appendLedger\(cwd, "list_audit_fanout", \{ queued: n, alreadyQueued, decisions: decisions\.length \}\)/);
   // v0.33.3: DECIDE findings raised to the user as real questions.
   assert.match(SRC, /DECIDE finding\(s\) need YOU — raising them as questions now \(not queued — a decision is not a task\)/);
   assert.match(SRC, /\[DECIDE FINDINGS — user decisions needed\]/, "the agent steer carries the full findings");
   assert.match(SRC, /ask_user_question — one question per finding/, "the raise protocol names the question tool");
   assert.match(SRC, /- \[x\] DECIDED: <what was chosen>/, "resolutions recorded so they stop re-surfacing");
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "list_audit_decisions_raised", \{ decisions: decisions\.length \}\)/);
+  assert.match(SRC, /appendLedger\(cwd, "list_audit_decisions_raised", \{ decisions: decisions\.length \}\)/);
   assert.ok(SRC.indexOf("list_audit_decisions_raised") < SRC.indexOf("list_audit_fanout_empty"), "decision-raising hoisted BEFORE the empty early-return");
 });
 
