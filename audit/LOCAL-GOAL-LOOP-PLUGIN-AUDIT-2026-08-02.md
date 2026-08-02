@@ -11,13 +11,13 @@ Only these goal/loop-adjacent packages are currently loaded globally:
 
 The other installed goal/loop packages are not loaded by the current settings, so they cannot be competing lifecycle handlers in the screenshot's session.
 
-Important deployment finding: the previously loaded npm copy reported **0.34.20** and had no `goal-loop-auditor-process.ts`; the checkout contains the detached-auditor work and is now **0.34.23**. The global package entry now points at that local checkout, so the detached/rebind fixes will become active on the next pi `/reload`; the current process still has the old module loaded.
+Important deployment finding: the previously loaded npm copy reported **0.34.20** and had no `goal-loop-auditor-process.ts`; the checkout now contains the detached-auditor, replacement-rebind, and dispatch-proof work at **0.34.24**. The global package entry points at that local checkout, so the fixes become active on the next pi `/reload`; the current process still has the old module loaded.
 
 ## Comparison against the failure modes
 
 | Local plugin | Accepted-but-no-start proof | Replacement/stale handling | Durable state | Completion/quality gate | Verdict |
 |---|---|---|---|---|---|
-| `pi-goal-list-loop-audit` | Detects unanswered/refired continuations, but `triggerTurn` itself is not an acknowledgement | Strong generation/handoff logic; v0.34.23 fixes host replacement with a new `SessionManager` | `.pi-glla` JSONL, goals, lists, loops, audit claims | Detached extensionless auditor in checkout; old installed 0.34.20 still uses an in-process auditor | Best fit, but needs the live package upgrade and the pi trigger gap remains upstream |
+| `pi-goal-list-loop-audit` | v0.34.24 persists a generation/owner-bound dispatch and requires before-agent/agent/turn-start proof; timeout fails closed without blind re-sends | Strong generation/handoff logic; v0.34.23 fixed host replacement with a new `SessionManager` | `.pi-glla` JSONL, goals, lists, loops, audit claims, dispatch sidecar | Detached extensionless auditor in checkout; old installed 0.34.20 still uses an in-process auditor | Best fit; one reload is needed, and pi still owns replacement-session creation |
 | `pi-continue` 0.7.1 | **Best direct match**: persists a pending dispatch and times out unless the next run starts | Handles continuation shutdown/failure; not a general replacement owner | Structured continuation proof/ledger | Verifies handoff mechanics, not task correctness | Borrow its start-ack/proof state machine; not a goal replacement |
 | `pi-dgoal` 0.7.7 | Idle/pending polling and failure clearing, but no post-send `agent_start` proof | Session-start/tree/compact resync, generation-bound continuation and audit results | Session custom entries | Revision/session-generation-aware `phase_check`/`goal_check` | Strongest goal-oriented alternative; still does not prove a trigger started |
 | `pi-goal-x` / `@capyup/pi-goal` | Idle/pending guards, no start acknowledgement | Disk reconciliation and stale checkpoint guards | Disk goal files | Separate auditor in the implementation | Useful auditor/state ideas; continuation remains trigger-assumption based |
@@ -46,12 +46,12 @@ The checkout has no call that disposes, reloads, forks, or replaces the host ses
 
 ### Remaining upstream pi gap
 
-`sendMessage(..., { triggerTurn: true })` can resolve while no turn starts. glla detects this and fails closed rather than injecting terminal input or retrying forever. That is honest and safe, but it cannot make an invalidated pi host create a replacement `session_start`. `pi-continue` has the best reusable design for this one subproblem: pending dispatch, explicit start observation, timeout, and durable failure state. No local competitor combines that proof with glla's list/audit semantics.
+`sendMessage(..., { triggerTurn: true })` can still resolve while no turn starts. v0.34.24 now records the dispatch before sending, observes owner/generation-bound start proof, persists an unresolved sidecar, and stops automatic retries after a bounded timeout. This prevents the blind queue storm, but it cannot make an invalidated pi host create a replacement `session_start`; that remains pi's lifecycle responsibility. No local competitor combines this proof with glla's list/audit semantics.
 
 ## Recommended conclusion
 
 1. Keep glla as the goal/list/loop layer.
 2. Activate the detached glla package from a stable local source or a published pinned release; the currently loaded 0.34.20 copy is not the audited checkout.
-3. Retain the v0.34.23 replacement-manager fix.
-4. Add a `triggerTurn` start-acknowledgement state machine modeled on `pi-continue`, without adopting its manual/non-goal behavior.
+3. Retain the v0.34.23 replacement-manager fix and activate v0.34.24.
+4. Treat an accepted-but-unstarted dispatch as a bounded, explicit stand-down requiring fresh lifecycle or manual resume.
 5. Do not load another full goal plugin alongside glla; the current settings already avoid that collision.

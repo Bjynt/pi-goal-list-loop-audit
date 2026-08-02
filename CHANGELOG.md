@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.34.24 — 2026-08-02
+
+### Fixed — accepted continuation dispatches now require start proof
+
+Goal, loop, stall-warning, and output-length follow-ups now persist a
+versioned, generation/owner-bound dispatch record before calling
+`sendMessage({ triggerTurn: true })`. A successful API return is treated as
+accepted—not started—until `before_agent_start` or a compatible low-level start
+signal arrives. An accepted dispatch that never starts times out, records a
+durable unresolved sidecar, stops automatic re-sends, and leaves the work safe
+for a fresh session or explicit resume. Older stale-context and lifecycle
+handoff behavior remains unchanged.
+
+### Fixed — control characters stay out of display projections
+
+Objective, loop-target, pause, status, widget, confirmation, and notification
+projections now remove terminal and zero-width formatting controls without
+mutating persisted objective, contract, prompt, ledger, or audit data.
+
+### Added — dispatch and display regression coverage
+
+Added atomic dispatch-sidecar/state-machine tests, owner/generation start-proof
+coverage, behavioral acknowledgement coverage, and control-character display
+regressions.
+
 ## 0.34.23 — 2026-08-02
 
 ### Fixed — host replacement rebinds across a new SessionManager
