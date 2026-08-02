@@ -904,3 +904,118 @@ test("goal-start notify has no (id: …) suffix (v0.28.24 source pin)", () => {
   assert.ok(!src.includes("(id: ${goal.id})"), "started/saved notifies dropped the id suffix");
   assert.ok(!src.includes("List item ${state.goal.id} paused"), "list-pause notify names the item");
 });
+
+// ────────────────────────────────────────────────────────────────────
+// v0.34.20: behavioral lifecycle coverage for delayed work. The source pins
+// catch wiring drift; these tests hold an actual async operation across a
+// replacement and prove the old generation cannot mutate the new session.
+
+ test("v0.34.20 lifecycle: completion audit from a replaced generation leaves the stored claim intact", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const first = await freshSession(cwd, "startup");
+  await pi.command("goal", "start lifecycle completion target — done when pinned", first);
+  await tick();
+  const originalModel = (first as unknown as { model: unknown }).model;
+  try {
+    // No model makes the isolated auditor return immediately without a
+    // provider call; the replacement is delivered at its await boundary.
+    (first as unknown as { model: unknown }).model = undefined;
+    const audit = pi.runTool("complete_goal", {
+      completionSummary: "The lifecycle regression is covered.",
+      verificationSummary: "The replacement session must retain this claim.",
+    }, first);
+    await Promise.resolve();
+    const claimed = readState(cwd).goal as { status: string; pendingCompletion?: { completionSummary?: string } };
+    assert.equal(claimed.status, "auditing", "the claim is persisted before the auditor starts");
+    assert.equal(claimed.pendingCompletion?.completionSummary, "The lifecycle regression is covered.");
+
+    const replacement = ownerCtx(cwd);
+    await pi.fire("session_start", { reason: "reload" }, replacement);
+    const result = await audit;
+    assert.match(result.content[0]!.text, /session replacement|stale context/i, "old audit reports a lifecycle handoff, not a verdict");
+
+    const after = readState(cwd).goal as { status: string; pendingCompletion?: { completionSummary?: string } };
+    assert.equal(after.status, "auditing", "the old audit did not finalize the replacement state");
+    assert.equal(after.pendingCompletion?.completionSummary, "The lifecycle regression is covered.", "the durable claim survived");
+    const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+    assert.doesNotMatch(ledger, /"goal_archived"/, "the stale audit did not archive the goal");
+    assert.equal(first.ui.matching("Goal complete").length, 0, "the old UI did not receive a completion notice");
+    await pi.fire("session_shutdown", { reason: "quit" }, replacement);
+  } finally {
+    (first as unknown as { model: unknown }).model = originalModel;
+  }
+});
+
+test("v0.34.20 lifecycle: fan-out confirmation from the old generation cannot queue into its replacement", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const first = await freshSession(cwd, "startup");
+  const findingsDir = path.join(cwd, ".pi-glla", "audit-loop");
+  fs.mkdirSync(findingsDir, { recursive: true });
+  fs.writeFileSync(path.join(findingsDir, "findings.md"), "- [ ] HIGH: lifecycle finding (goal.ts:1)\n");
+
+  let confirmEntered = false;
+  let releaseConfirm!: (value: boolean) => void;
+  const confirmation = new Promise<boolean>((resolve) => { releaseConfirm = resolve; });
+  first.ui.confirmImpl = async () => {
+    confirmEntered = true;
+    return confirmation;
+  };
+  const fanout = __testOnlyRunFanOutListAuditFindings(cwd);
+  for (let i = 0; i < 50 && !confirmEntered; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(confirmEntered, true, "fan-out reached the confirmation boundary");
+
+  const replacement = ownerCtx(cwd);
+  await pi.fire("session_start", { reason: "reload" }, replacement);
+  releaseConfirm(true);
+  await fanout;
+
+  const after = readState(cwd);
+  assert.equal(after.list?.length ?? 0, 0, "old confirmation did not enqueue into the replacement session");
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.doesNotMatch(ledger, /"list_audit_fanout"/, "no stale fan-out mutation was ledgered");
+  assert.equal(replacement.ui.matching("Queued ").length, 0, "replacement UI did not claim the old consent landed");
+  await pi.fire("session_shutdown", { reason: "quit" }, replacement);
+});
+
+test("v0.34.20 lifecycle: loop measurement abandons the old generation after replacement", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, { loop: seedLoop({ active: true, measureCmd: "echo 7" }) });
+  setGlobalAutoResume(true); // keep the seeded loop active through reload
+  let measureStarted = false;
+  let releaseMeasure!: () => void;
+  const measureGate = new Promise<void>((resolve) => { releaseMeasure = resolve; });
+  let calls = 0;
+  pi.execHandler = async () => {
+    calls++;
+    measureStarted = true;
+    await measureGate;
+    return { code: 0, stdout: "7", stderr: "" };
+  };
+  try {
+    const first = await freshSession(cwd, "reload");
+    const oldTick = pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "measured" }], stopReason: "end_turn" }] }, first);
+    for (let i = 0; i < 50 && !measureStarted; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(measureStarted, true, "loop tick reached the asynchronous measure");
+
+    const replacement = ownerCtx(cwd);
+    await pi.fire("session_start", { reason: "reload" }, replacement);
+    // Prevent the replacement's restore scheduling from starting another turn;
+    // the assertion is about the already-running old tick.
+    await pi.fire("session_shutdown", { reason: "quit" }, replacement);
+    releaseMeasure();
+    await oldTick;
+
+    const loop = readState(cwd).loop as { iteration: number; lastValue?: number | null };
+    assert.equal(loop.iteration, 1, "the old tick did not advance the persisted loop");
+    assert.equal(loop.lastValue, null, "the old measure did not update loop state");
+    const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+    assert.equal((ledger.match(/"loop_measured"/g) ?? []).length, 0, "the old tick did not persist a measurement");
+    assert.equal(calls, 1, "replacement cleanup prevented a second old-generation measure");
+  } finally {
+    releaseMeasure();
+    pi.execHandler = null;
+  }
+});
