@@ -1072,6 +1072,11 @@ function heartbeatTick(): void {
     if (!absorbStaleIfSuperseded(ctx)) goStaleTerminal(ctx, "heartbeat probe");
     return;
   }
+  // v0.34.24: an accepted dispatch with no start proof owns the watchdog
+  // until its bounded timeout. Do not let the generic heartbeat create a
+  // second blind send underneath it; explicit resume or a fresh session
+  // releases the stand-down latch.
+  if (continuationDispatchStoodDown || pendingContinuationDispatch) return;
   // v0.33.1: nothing supervised → the compact debt/resync belong to a dead
   // goal/loop. Discharge here so a later goal can't inherit a bogus RESYNC
   // block or a spurious forced refire (the old in-guard `else` was
@@ -1193,7 +1198,7 @@ function heartbeatTick(): void {
   const fire = shouldHeartbeatRefire({
     supervising: isSupervising(),
     sessionIdle,
-    timerPending: continuationTimer !== null || loopTimer !== null,
+    timerPending: continuationTimer !== null || loopTimer !== null || continuationStartTimer !== null || pendingContinuationDispatch !== null,
     msSinceActivity: Date.now() - lastActivityAt,
     stallMs: HEARTBEAT_STALL_MS,
     consecutiveStalls,
@@ -1297,6 +1302,143 @@ function clearContinuationTimer(): void {
   continuationScheduledFor = null;
 }
 
+function clearContinuationStartWatchdog(): void {
+  if (continuationStartTimer) {
+    clearTimeout(continuationStartTimer);
+    continuationStartTimer = null;
+  }
+  pendingContinuationDispatch = null;
+}
+
+function dispatchLabel(record: ContinuationDispatch): string {
+  return record.kind === "loop" ? `loop iteration ${record.iteration ?? "?"}` : `${state.goal?.policy === "list" ? "list item" : "goal"}${record.goalId ? ` ${record.goalId}` : ""}`;
+}
+
+function dispatchPrepare(
+  ctx: ExtensionContext,
+  input: Omit<Parameters<typeof createContinuationDispatch>[0], "id" | "sentAt">,
+): ContinuationDispatch | null {
+  const record = createContinuationDispatch({
+    ...input,
+    id: `${instanceId}:${input.generation}:${newGoalId()}`,
+  });
+  // Persist ownership BEFORE asking pi to enqueue the follow-up. If this
+  // fails, an accepted send would be impossible to reconcile after a reload.
+  if (!persistDispatchRecord(ctx.cwd, record)) {
+    continuationDispatchStoodDown = true;
+    appendLedger(ctx.cwd, "continuation_dispatch_persistence_failed", { id: record.id, phase: record.phase, generation: record.generation });
+    ctx.ui.notify("glla: could not persist the continuation dispatch record, so no automatic turn was sent. Fix .pi-glla storage, then resume explicitly.", "error");
+    return null;
+  }
+  pendingContinuationDispatch = record;
+  appendLedger(ctx.cwd, "continuation_dispatch_prepared", {
+    id: record.id,
+    kind: record.kind,
+    goalId: record.goalId,
+    iteration: record.iteration,
+    generation: record.generation,
+    ownerSessionId: record.ownerSessionId,
+    resync: record.resync,
+  });
+  return record;
+}
+
+function dispatchFailed(ctx: ExtensionContext, record: ContinuationDispatch, reason: string): void {
+  if (pendingContinuationDispatch !== record) return;
+  const failed = transitionDispatch(record, "failed");
+  pendingContinuationDispatch = failed;
+  persistDispatchRecord(ctx.cwd, failed);
+  appendLedger(ctx.cwd, "continuation_dispatch_failed", { id: record.id, kind: record.kind, generation: record.generation, reason });
+  clearContinuationStartWatchdog();
+}
+
+function dispatchStartAcknowledged(ctx: ExtensionContext, source: string, prompt?: unknown): boolean {
+  const record = pendingContinuationDispatch;
+  if (!record || sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return false;
+  if (record.generation !== sessionGeneration || isForeignCtx(ctx)) return false;
+  if (!dispatchMatchesOwner(record, sessionGeneration, sessionManagerId(ctx))) return false;
+  // before_agent_start is the strongest proof: it must carry this exact
+  // dispatch marker. Later low-level events are accepted as compatibility
+  // proofs because older pi builds may not expose the prompt there.
+  if (source === "before_agent_start" && !dispatchPromptMatches(record, prompt)) return false;
+  const started = transitionDispatch(record, "started");
+  pendingContinuationDispatch = started;
+  persistDispatchRecord(ctx.cwd, started);
+  clearContinuationStartWatchdog();
+  clearDispatchRecord(ctx.cwd);
+  lastContinuationSentAt = 0;
+  if (record.resync) postCompactResyncPending = false;
+  noteActivity(true);
+  appendLedger(ctx.cwd, "continuation_start_acknowledged", {
+    id: record.id,
+    kind: record.kind,
+    goalId: record.goalId,
+    iteration: record.iteration,
+    generation: record.generation,
+    source,
+  });
+  return true;
+}
+
+function dispatchStartUnacknowledged(ctx: ExtensionContext, record: ContinuationDispatch): void {
+  if (pendingContinuationDispatch !== record || record.phase !== "accepted") return;
+  const unacknowledged = transitionDispatch(record, "unacknowledged");
+  persistDispatchRecord(ctx.cwd, unacknowledged);
+  clearContinuationStartWatchdog();
+  continuationDispatchStoodDown = true;
+  lastContinuationSentAt = 0;
+  const reason = `continuation start acknowledgement timed out (${record.id})`;
+  appendLedger(ctx.cwd, "continuation_start_unacknowledged", {
+    id: record.id,
+    kind: record.kind,
+    goalId: record.goalId,
+    iteration: record.iteration,
+    generation: record.generation,
+    timeoutMs: CONTINUATION_START_TIMEOUT_MS,
+  });
+  if (state.goal && state.goal.status === "active" && record.kind === "goal") {
+    updateGoal({ interruptedAt: nowIso(), interruptedReason: reason }, ctx);
+  }
+  const msg = `glla: pi accepted the ${dispatchLabel(record)} continuation, but no observable turn-start event arrived within ${Math.round(CONTINUATION_START_TIMEOUT_MS / 1000)}s. Automatic re-sends are stopped to avoid a blind queue storm. The work is safe in .pi-glla; start a fresh session or use /goal resume, /list resume, or /loop resume to retry explicitly.`;
+  ctx.ui.notify(msg, "warning");
+  notifyExternal(ctx, sanitizeDisplayText(msg));
+  refreshUI(ctx);
+}
+
+function armContinuationStartWatchdog(ctx: ExtensionContext, record: ContinuationDispatch): void {
+  if (pendingContinuationDispatch !== record || record.phase !== "accepted") return;
+  if (continuationStartTimer) clearTimeout(continuationStartTimer);
+  const generation = record.generation;
+  continuationStartTimer = scheduleSessionTimeout(() => {
+    continuationStartTimer = null;
+    if (pendingContinuationDispatch !== record || record.phase !== "accepted") return;
+    const current = freshCtxForGeneration(generation);
+    if (!current) return;
+    if (dispatchTimedOut(record, Date.now(), CONTINUATION_START_TIMEOUT_MS)) {
+      dispatchStartUnacknowledged(current, record);
+    }
+  }, CONTINUATION_START_TIMEOUT_MS);
+}
+
+function dispatchAccepted(ctx: ExtensionContext, record: ContinuationDispatch): boolean {
+  // A synchronous before_agent_start can acknowledge while sendMessage is
+  // still on the stack. Do not overwrite that proof with "accepted".
+  if (pendingContinuationDispatch !== record) return true;
+  const accepted = transitionDispatch(record, "accepted");
+  pendingContinuationDispatch = accepted;
+  if (!persistDispatchRecord(ctx.cwd, accepted)) {
+    dispatchStartUnacknowledged(ctx, accepted);
+    return false;
+  }
+  armContinuationStartWatchdog(ctx, accepted);
+  return true;
+}
+
+function releaseContinuationDispatchStandDown(): void {
+  continuationDispatchStoodDown = false;
+  clearContinuationStartWatchdog();
+}
+
 function scheduleSessionTimeout(callback: () => void, delayMs: number): NodeJS.Timeout {
   const generation = sessionGeneration;
   let timer: NodeJS.Timeout;
@@ -1323,6 +1465,7 @@ function clearSessionOwnedTimers(): void {
   sessionGeneration++;
   initialSessionLoadPending = false;
   clearContinuationTimer();
+  clearContinuationStartWatchdog();
   clearLoopTimer();
   if (queueStuckProbe) { clearTimeout(queueStuckProbe); queueStuckProbe = null; }
   if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
@@ -1432,6 +1575,9 @@ function armQueueStuckProbe(sentAt: number): void {
 
 function scheduleContinuation(ctx: ExtensionContext, force = false, delayMs?: number): void {
   if (sessionHandoffPending || initialSessionLoadPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
+  if (pendingContinuationDispatch) return;
+  if (continuationDispatchStoodDown && !force) return;
+  if (force) releaseContinuationDispatchStandDown();
   abortedStandDown = false; // v0.29.5: any explicit schedule ends the stand-down
   if (!isActionableGoal()) return;
   rememberCtx(ctx);
