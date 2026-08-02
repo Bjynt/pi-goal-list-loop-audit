@@ -33,6 +33,19 @@ test("infra-flavored returns (no model / aborted) are not disapprovals", () => {
   }
 });
 
+test("auditor watchdog exits are infrastructure failures, never verdicts", () => {
+  assert.match(SRC, /toolActive: Boolean\(progress\.currentTool\)/, "long active read-only tools bypass inactivity only");
+  assert.match(SRC, /AUDITOR_WALL_TIMEOUT_MS/);
+  for (const marker of ["watchdogFailure === \"wall\"", "watchdogFailure === \"inactivity\""]) {
+    const idx = SRC.indexOf(marker);
+    assert.ok(idx >= 0, `watchdog branch exists: ${marker}`);
+    const window = SRC.slice(idx, idx + 650);
+    assert.match(window, /approved:\s*false/);
+    assert.match(window, /disapproved:\s*false/);
+    assert.match(window, /infrastructure failure, not a verdict/);
+  }
+});
+
 test("semantic verdict-quality failures stay disapproved (no-tool, shield)", () => {
   assert.match(SRC, /treated as disapproved\./);
   assert.match(SRC, /regression_shield: approved but/);

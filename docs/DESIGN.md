@@ -73,7 +73,8 @@ architectural decisions that changed the SHAPE of the system:
   Confirm-gated clean slate.
 - **The completion lifecycle owns its pauses** (v0.29.1): storm/stall
   escalation never pauses `auditing` goals; a stranded `auditing` state (no
-  live auditor, 90s stale) re-runs the stored claim; send/pause/notify storms
+  live auditor; lifecycle rebinds retry stored claims immediately (the 90s
+  heartbeat path is only a fallback); send/pause/notify storms
   rearm once per cycle; the provider-error brake (v0.28.13) keeps cross-cycle
   memory and parks after 6 consecutive errors.
 - **The audit loop is the project reviewer** (v0.29.0): `/loop audit` runs
@@ -109,6 +110,24 @@ architectural decisions that changed the SHAPE of the system:
   when no replacement arrives. `autoReloadOnStale` and `autoRecovery` remain
   deprecated deserialization compatibility fields; they do not select a
   transport.
+
+## Addendum v0.34.21 (completion-audit lifecycle observability)
+
+- **The durable claim owns recovery state**: `pendingCompletion.phase` is
+  `running`, `recovery-pending`, or `quota-waiting`. Missing phase is legacy
+  state and is treated as recovery-pending after a fresh lifecycle event.
+  The isolated attempt id and wall deadline prevent an old generation from
+  finalizing a newer attempt.
+- **Rebind recovery is immediate but consent-aware**: a replacement
+  `session_start` converts an old running claim to recovery-pending and
+  retries it immediately when the lifecycle handoff or global `autoResume`
+  supplies consent. A cold startup with autoResume off paints the pending
+  claim and waits for `/goal resume`.
+- **Auditor bounds have two layers**: no-event inactivity aborts after 10m
+  only when no read-only tool is active; a live verification tool may finish,
+  but the complete isolated run has a 30m wall-clock cap. Both outcomes are
+  infrastructure failures, never verdicts, and the stored claim remains
+  retryable.
 
 ## Addendum v0.4.0 (completion)
 
