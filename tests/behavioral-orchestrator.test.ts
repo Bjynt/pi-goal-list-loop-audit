@@ -53,6 +53,33 @@ async function freshSession(cwd: string, reason: string): Promise<MockCtx> {
   return ctx;
 }
 
+async function waitUntil(predicate: () => boolean, timeoutMs = 4_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("timed out waiting for detached-auditor state");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+function writeFakeAuditor(cwd: string, verdict: "approved" | "disapproved", delayMs = 0): string {
+  const script = path.join(cwd, "fake-auditor-pi.mjs");
+  fs.writeFileSync(script, `#!/usr/bin/env node
+let input = "";
+process.stdin.on("data", (chunk) => { input += chunk; });
+process.stdin.on("end", async () => {
+  await new Promise((resolve) => setTimeout(resolve, ${delayMs}));
+  const emit = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+  const report = ${JSON.stringify(verdict === "approved" ? "<evidence>\\npinned\\n</evidence>\\n<approved/>" : "## Required fixes\\n- fix the pinned gap\\n<disapproved/>")};
+  emit({ type: "tool_execution_start", toolCallId: "fake-read", toolName: "read", args: { path: "README.md" } });
+  emit({ type: "tool_execution_end", toolCallId: "fake-read" });
+  emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: report } });
+  emit({ type: "agent_settled" });
+});
+`);
+  fs.chmodSync(script, 0o700);
+  return script;
+}
+
 // ────────────────────────────────────────────────────────────────────
 // T3 — session_start restore-gate branches (goal.ts session_start handler)
 // ────────────────────────────────────────────────────────────────────
@@ -950,6 +977,94 @@ test("goal-start notify has no (id: …) suffix (v0.28.24 source pin)", () => {
     await pi.fire("session_shutdown", { reason: "quit" }, replacement);
   } finally {
     (first as unknown as { model: unknown }).model = originalModel;
+  }
+});
+
+test("v0.34.22: complete_goal returns while a detached auditor finishes and archives approval", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const fakePi = writeFakeAuditor(cwd, "approved", 350);
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = fakePi;
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    await pi.command("goal", "start detached approval target — done when pinned", ctx);
+    await tick();
+    const started = Date.now();
+    const result = await pi.runTool("complete_goal", {
+      completionSummary: "The detached completion path is covered.",
+      verificationSummary: "The fake auditor will inspect the pinned artifact.",
+    }, ctx);
+    const elapsed = Date.now() - started;
+    assert.match(result.content[0]!.text, /detached auditor queued/i);
+    assert.ok(elapsed < 300, `complete_goal waited ${elapsed}ms for the worker`);
+    const claimed = readState(cwd).goal as { status: string; pendingCompletion?: { phase?: string } };
+    assert.equal(claimed.status, "auditing", "claim is durable before the detached result");
+    assert.equal(claimed.pendingCompletion?.phase, "running");
+    await waitUntil(() => readState(cwd).goal === null);
+    assert.ok(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes('"goal_archived"'), "approval archived the goal");
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  } finally {
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
+test("v0.34.22: detached disapproval resumes the goal with a durable report", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const fakePi = writeFakeAuditor(cwd, "disapproved", 0);
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = fakePi;
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    await pi.command("goal", "start detached disapproval target — done when pinned", ctx);
+    await tick();
+    await pi.runTool("complete_goal", { completionSummary: "Claim", verificationSummary: "Evidence" }, ctx);
+    await waitUntil(() => {
+      const goal = readState(cwd).goal as { status?: string; pendingCompletion?: unknown; auditHistory?: unknown[] } | null;
+      return goal?.status === "active" && !goal.pendingCompletion && (goal.auditHistory?.length ?? 0) > 0;
+    });
+    const goal = readState(cwd).goal as { status: string; auditHistory?: Array<{ disapproved?: boolean }> };
+    assert.equal(goal.status, "active");
+    assert.equal(goal.auditHistory?.at(-1)?.disapproved, true);
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  } finally {
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
+test("v0.34.22: an old detached result cannot archive after session replacement", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const fakePi = writeFakeAuditor(cwd, "approved", 450);
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = fakePi;
+  try {
+    const first = await freshSession(cwd, "startup");
+    await pi.command("goal", "detached stale result target — done when pinned", first);
+    await tick();
+    await pi.runTool("complete_goal", { completionSummary: "old claim", verificationSummary: "old evidence" }, first);
+    const before = readState(cwd).goal as { status: string; pendingCompletion?: { attemptId?: string } };
+    assert.equal(before.status, "auditing");
+    const oldAttempt = before.pendingCompletion?.attemptId;
+    assert.ok(oldAttempt);
+
+    await pi.fire("session_shutdown", { reason: "quit" }, first);
+    const replacement = await freshSession(cwd, "startup");
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    const after = readState(cwd).goal as { status: string; pendingCompletion?: { attemptId?: string; phase?: string } } | null;
+    assert.ok(after, "replacement retained the goal instead of archiving it");
+    assert.equal(after?.pendingCompletion?.attemptId, oldAttempt, "cold replacement kept the stored claim for explicit resume");
+    assert.equal(after?.pendingCompletion?.phase, "recovery-pending");
+    assert.notEqual(after?.status, "complete");
+    const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+    assert.doesNotMatch(ledger, /"goal_archived"/, "the old worker result cannot archive after replacement");
+    await pi.fire("session_shutdown", { reason: "quit" }, replacement);
+  } finally {
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
   }
 });
 
