@@ -310,17 +310,24 @@ function heldLoopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: 
 function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | undefined, now: number, theme?: DisplayTheme, width?: number, extras?: WidgetExtras): string[] {
   // Head glyph is ● (not ◆): U+25C6 renders as a color-emoji diamond in some
   // terminal fonts and ignores ANSI color; ● takes the paint everywhere.
+  const interrupted = g.status === "active" && !!g.interruptedAt;
   const icon =
-    g.status === "paused"
-      ? paint(theme, pauseIsError(g) ? "error" : "warning", "⏸")
-      : g.status === "auditing"
-        ? paint(theme, "accent", "⟡")
-        : paint(theme, "success", "●");
+    interrupted
+      ? paint(theme, "error", "⚠")
+      : g.status === "paused"
+        ? paint(theme, pauseIsError(g) ? "error" : "warning", "⏸")
+        : g.status === "auditing"
+          ? paint(theme, "accent", "⟡")
+          : paint(theme, "success", "●");
   // v0.24.7: a list item is named as such and points at /list — before,
   // the widget called it "active" and hinted "/goal status", reading as if
   // queue work were a standalone goal.
   const isList = g.policy === "list";
-  const statusWord = g.status === "active" ? paint(theme, "success", "active") : g.status;
+  const statusWord = interrupted
+    ? paint(theme, "error", "interrupted")
+    : g.status === "active"
+      ? paint(theme, "success", "active")
+      : g.status;
   // v0.33.0: slim card — status folds INTO the head line as middot segments
   // (filter(Boolean).join, the universal CLI idiom). Line 2 is the live
   // "last action · next task" line; the footer stays the hint line.
@@ -351,6 +358,12 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   const objBudget = width && width > 0 ? Math.max(16, width - 1 - 2 - 3 - visibleLen(segsText)) : 48;
   const head = `${icon} ${truncate(g.objective.replace(/\s+/g, " "), objBudget)} ${paint(theme, "dim", "·")} ${segsText}`;
   const lines = [head];
+  if (interrupted) {
+    const resumeCmd = isList ? "/list resume" : "/goal resume";
+    lines.push(`├─ ${paint(theme, "error", "host session lost — waiting for fresh session_start")}`);
+    lines.push(`└─ ${paint(theme, "warning", `/reload to rebind · ${resumeCmd} if it does not resume`)}`);
+    return lines;
+  }
   if (g.status === "auditing") {
     lines.push(`├─ auditor: ${audit?.label ?? "running"}${audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : ""}`);
     // v0.25.4: auditor-quiet stall — progress events stopped arriving

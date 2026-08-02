@@ -80,6 +80,21 @@ test("active goal with tasks shows progress", () => {
   assert.match(buildStatusText({ goal: g, list: [] }, null, NOW)!, /1\/2 tasks/);
 });
 
+test("stale interrupted goal is visibly orphaned, not normally active", () => {
+  const g = goalOf({
+    policy: "list",
+    interruptedAt: "2026-07-21T11:59:00Z",
+    interruptedReason: "extension api stale (heartbeat probe)",
+  });
+  const status = buildStatusText({ goal: g, list: [{ id: "next", objective: "next", addedAt: "z" }] }, null, NOW)!;
+  assert.match(status, /interrupted — stale handle/);
+  const lines = buildWidgetLines({ goal: g, list: [{ id: "next", objective: "next", addedAt: "z" }] }, null, NOW)!;
+  assert.match(lines[0]!, /⚠ .* · interrupted · /);
+  assert.ok(lines.some((line) => line.includes("host session lost — waiting for fresh session_start")));
+  assert.ok(lines.some((line) => line.includes("/reload to rebind") && line.includes("/list resume")));
+  assert.ok(!lines.some((line) => /· active ·/.test(line)), "stale work must not look normally active");
+});
+
 test("widget truncation is width-aware (v0.22.2)", () => {
   const longObjective = "x".repeat(200);
   const g = goalOf({ objective: longObjective });

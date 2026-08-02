@@ -232,6 +232,11 @@ let extensionApiStale = false;
 // path must still ledger the stale handle, stop stale work, and preserve the
 // interrupt marker so a later fresh lifecycle can restore it.
 let staleTerminalDone = false;
+// v0.34.19: delayed session-owned callbacks capture this generation. A
+// clearTimeout can race a callback already queued by Node; without a
+// generation check, an old compaction/refire callback can run after /reload
+// and schedule work against the fresh session.
+let sessionGeneration = 0;
 
 /** v0.26.7: a stale api is terminal for this process — go loudly with
  * restart guidance instead of retrying sends that can never land.
@@ -310,6 +315,10 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   } else if (state.goal && state.goal.status === "active") {
     updateGoal({ interruptedAt: nowIso(), interruptedReason: `extension api stale (${where})` }, ctx);
   }
+  // The stale process loses its ticker immediately, so paint the durable
+  // interrupted state synchronously while the old UI handle can still accept
+  // updates. The next session_start paints it again from disk.
+  refreshUI(ctx);
   ctx.ui.notify(`glla: ${guidance}`, "warning");
   notifyExternal(ctx, `glla: extension api stale — waiting for a fresh session_start; restart pi normally only if no replacement arrives. (${where})`);
 }
@@ -623,6 +632,10 @@ function releaseInitialSessionLoadBarrier(): void {
 }
 
 function rememberCtx(ctx: ExtensionContext): void {
+  // Late events from a disposed session must never reclaim lastCtx after the
+  // lifecycle handoff has been declared. Only session_start clears these
+  // gates and may bind a fresh context.
+  if (sessionHandoffPending || staleTerminalDone || zombieStoodDown) return;
   let ownerLive = false;
   if (ownerSession && lastCtx) {
     try { lastCtx.isIdle(); ownerLive = true; } catch { /* owner went stale (session replaced) */ }
@@ -1211,9 +1224,19 @@ function clearContinuationTimer(): void {
 }
 
 function scheduleSessionTimeout(callback: () => void, delayMs: number): NodeJS.Timeout {
+  const generation = sessionGeneration;
   let timer: NodeJS.Timeout;
   timer = setTimeout(() => {
     sessionTimeouts.delete(timer);
+    // clearTimeout is not enough when the callback is already queued. Do not
+    // let an old session's callback re-arm work after stale/shutdown/reload.
+    if (
+      generation !== sessionGeneration ||
+      sessionHandoffPending ||
+      extensionApiStale ||
+      staleTerminalDone ||
+      zombieStoodDown
+    ) return;
     callback();
   }, delayMs);
   sessionTimeouts.add(timer);
@@ -1223,6 +1246,7 @@ function scheduleSessionTimeout(callback: () => void, delayMs: number): NodeJS.T
 
 function clearSessionOwnedTimers(): void {
   sessionHandoffPending = true;
+  sessionGeneration++;
   initialSessionLoadPending = false;
   clearContinuationTimer();
   clearLoopTimer();
@@ -1286,7 +1310,7 @@ function armQueueStuckProbe(sentAt: number): void {
 }
 
 function scheduleContinuation(ctx: ExtensionContext, force = false, delayMs?: number): void {
-  if (sessionHandoffPending || initialSessionLoadPending) return;
+  if (sessionHandoffPending || initialSessionLoadPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
   abortedStandDown = false; // v0.29.5: any explicit schedule ends the stand-down
   if (!isActionableGoal()) return;
   rememberCtx(ctx);
@@ -1304,7 +1328,7 @@ function scheduleContinuation(ctx: ExtensionContext, force = false, delayMs?: nu
 }
 
 function sendContinuation(goalId: string): void {
-  if (sessionHandoffPending || initialSessionLoadPending) return;
+  if (sessionHandoffPending || initialSessionLoadPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
   continuationTimer = null;
   continuationScheduledFor = null;
   if (!isActionableGoal()) return;
@@ -2911,7 +2935,7 @@ function loopPrompt(loop: LoopState, regressionNote: string, strategyNote: strin
 }
 
 function scheduleLoopTick(ctx: ExtensionContext): void {
-  if (sessionHandoffPending || initialSessionLoadPending || !isLoopActive()) return;
+  if (sessionHandoffPending || initialSessionLoadPending || extensionApiStale || staleTerminalDone || zombieStoodDown || !isLoopActive()) return;
   rememberCtx(ctx);
   clearLoopTimer();
   let delay = 0;
@@ -2924,7 +2948,7 @@ function scheduleLoopTick(ctx: ExtensionContext): void {
 }
 
 function sendLoopTurn(): void {
-  if (sessionHandoffPending || initialSessionLoadPending) return;
+  if (sessionHandoffPending || initialSessionLoadPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
   loopTimer = null;
   if (!isLoopActive() || !extensionApi) return;
   const ctx = freshCtx();
@@ -6235,6 +6259,9 @@ export default function (pi: ExtensionAPI): void {
   // 60s heartbeat notices. Re-arm it as soon as pi settles post-compact.
   pi.on("session_compact", async (_event: any, ctx: ExtensionContext) => {
     if (isForeignCtx(ctx)) return;
+    // A late compact event can arrive after pi has already invalidated this
+    // extension. It must not reclaim the old ctx or schedule settle refires.
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
     rememberCtx(ctx);
     if (!isSupervising()) return;
     appendLedger(ctx.cwd, "session_compact", {});
@@ -6300,6 +6327,7 @@ export default function (pi: ExtensionAPI): void {
   // v0.15.1: ask_user_question answers arrive as tool results, not chat
   // messages — count answered (non-cancelled) questionnaires as replies too.
   pi.on("tool_result", async (event: any) => {
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
     noteToolResult(event); // v0.33.0: slim widget "last action" feed
     // v0.24.0: roll loop tool-result fingerprints (same-tool-same-result
     // detection) — recorded for ANY tool result while a loop is active.
@@ -6372,6 +6400,11 @@ export default function (pi: ExtensionAPI): void {
     if (isForeignCtx(ctx)) return;
     extensionApi = pi;
     sessionHandoffPending = false;
+    // Reset terminal ownership before rememberCtx: this is the only event
+    // allowed to bind a context after a stale/shutdown handoff.
+    staleTerminalDone = false;
+    zombieStoodDown = false;
+    sessionGeneration++;
     const startReason = typeof event?.reason === "string" ? event.reason : "unknown";
     initialSessionLoadPending = isBlankInitialStartup(ctx, startReason);
     rememberCtx(ctx);
@@ -6385,8 +6418,6 @@ export default function (pi: ExtensionAPI): void {
     // confirm the new handle actually works.
     writeOwnerFile(ctx.cwd);
     sessionReplacementUntil = 0;
-    zombieStoodDown = false;
-    staleTerminalDone = false; // v0.33.1: a rebound session must be able to go terminal AGAIN (was: one-shot for the process lifetime)
     postCompactResumeOwed = false; // v0.33.1: a compact from a previous session must not resync THIS one
     postCompactResyncPending = false;
     appendLedger(ctx.cwd, "session_rebound", { reason: startReason });
@@ -6606,6 +6637,10 @@ export default function (pi: ExtensionAPI): void {
   });
 
   pi.on("agent_end", async (event: any, ctx: ExtensionContext) => {
+    // A late agent_end from the disposed session is not a fresh turn. Do not
+    // account it, run length continuation, or schedule another send after a
+    // stale terminal/handoff.
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
     rememberCtx(ctx);
     // v0.23.8: a subagent finishing must not drive the main session's
     // continuation loop.
