@@ -3929,12 +3929,11 @@ function registerAgentTools(pi: any): void {
         ({ result, retriedOnce } = await runWithInfraRetry(runAudit, {
           shouldRetry: () => freshCtxForGeneration(auditGeneration) !== null,
           onRetry: (err) => {
-            latestAuditProgress = { label: `infra error (${err.slice(0, 40)}) — retrying once`, lastEventAt: Date.now() };
             const current = freshCtxForGeneration(auditGeneration);
-            if (current) {
-              refreshUI(current);
-              appendLedger(current.cwd, "audit_infra_retry", { goalId: auditGoalId, error: err.slice(0, 200) });
-            }
+            if (!current) return;
+            latestAuditProgress = { label: `infra error (${err.slice(0, 40)}) — retrying once`, lastEventAt: Date.now() };
+            refreshUI(current);
+            appendLedger(current.cwd, "audit_infra_retry", { goalId: auditGoalId, error: err.slice(0, 200) });
           },
         }));
       } finally {

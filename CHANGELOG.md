@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.34.20] — 2026-08-02
+
+### Fixed — delayed work rebinds instead of using registration-time contexts
+
+Agent tools now resolve the invocation's current `ExtensionContext` instead of
+retaining the context from their first registration. Quota retries, completion
+audits, audit fan-out confirmation, loop measurements, and branch cleanup carry
+a session generation and fail closed when it changes. Completion claims are
+persisted before auditing, manual resume consumes stored claims through the
+isolated auditor directly, and old auditor finalizers cannot clear a fresh
+session's in-flight state.
+
+### Added — stale delayed-context regression coverage
+
+Added behavioral and source-level checks for replacement-context tool calls,
+generation-guarded quota/audit/fan-out paths, stored-claim recovery, loop async
+cleanup, and the no-old-context rule.
+
 ## [0.34.19] — 2026-08-02
 
 ### Fixed — stale sessions fail closed across compaction and lifecycle gaps

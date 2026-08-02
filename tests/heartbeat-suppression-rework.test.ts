@@ -43,7 +43,7 @@ test("heartbeat never calls the suppression check; audit-in-flight flag guards t
   assert.match(SRC_GOAL, /if \(completionAuditInFlight\) return;/);
   // flag wraps the auditor call with finally-clear:
   assert.match(SRC_GOAL, /completionAuditInFlight = true;/);
-  assert.match(SRC_GOAL, /\} finally \{\s*\n?\s*completionAuditInFlight = false;/);
+  assert.match(SRC_GOAL, /\} finally \{[\s\S]{0,180}completionAuditInFlight = false;/);
 });
 
 test("the deprecated pure fn remains exported (API compat) but marked deprecated", () => {
