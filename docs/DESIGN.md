@@ -155,6 +155,28 @@ architectural decisions that changed the SHAPE of the system:
   always wins. Both are infrastructure failures, never verdicts, and the claim
   remains retryable.
 
+## Addendum v0.34.24 (dispatch proof and display projection safety)
+
+- **Accepted is not started**: every automated follow-up records a versioned,
+  generation/owner-bound dispatch in `.pi-glla/continuation-dispatch.json`
+  before calling `sendMessage({ triggerTurn: true })`. `before_agent_start`
+  with the matching marker is the strongest proof; compatible low-level start
+  events are accepted for older pi builds. The sidecar is cleared only after
+  proof or an explicit terminal send outcome.
+- **No blind trigger storm**: an accepted dispatch has one bounded start-proof
+  timer. If no start event arrives, glla records an unresolved dispatch, keeps
+  the goal/list item durable, stands down automatic sends, and tells the user
+  how to use a fresh lifecycle or explicit resume. It does not inject terminal
+  input, restart pi, or treat a successful API return as a turn.
+- **Generation-safe recovery**: replacement/shutdown clears in-memory pending
+  state; a new session records and clears any old sidecar, then the existing
+  restore/autoResume consent rules decide whether to retry. Late foreign or
+  old-generation events cannot acknowledge a new dispatch.
+- **Display-only sanitization**: terminal/ANSI/OSC, bidi, and zero-width
+  controls are removed from status, widget, notification, confirmation, and
+  status-tool projections. Persisted objectives, contracts, prompts, ledger
+  values, and auditor inputs remain unchanged.
+
 ## Addendum v0.4.0 (completion)
 
 - **Auditor compaction enabled** (flaw #3 — the last open one). Safety:
