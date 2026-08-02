@@ -374,6 +374,34 @@ test("T3e (v0.28.21): no active goal + queued list + reload → NOT activated by
 });
 
 // ────────────────────────────────────────────────────────────────────
+// v0.34.24 — accepted dispatch is not start proof
+// ────────────────────────────────────────────────────────────────────
+
+test("v0.34.24: continuation dispatch waits for owner start proof and clears its sidecar", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  pi.sent.length = 0;
+  await pi.command("goal", "start dispatch proof target — done when pinned", ctx);
+  await tick();
+  assert.equal(pi.sent.length, 1, "the initial continuation was dispatched once");
+  const content = pi.sent[0]!.message.content ?? "";
+  const sidecar = path.join(cwd, ".pi-glla", "continuation-dispatch.json");
+  assert.ok(fs.existsSync(sidecar), "accepted dispatch remains durably pending until a start proof");
+
+  const foreign = makeMockCtx(cwd, { sessionManager: { name: "dispatch-proof-subagent" } });
+  await pi.fire("before_agent_start", { prompt: content }, foreign);
+  assert.ok(fs.existsSync(sidecar), "foreign-session start cannot acknowledge the main dispatch");
+
+  await pi.fire("before_agent_start", { prompt: content }, ctx);
+  assert.equal(fs.existsSync(sidecar), false, "owner before_agent_start acknowledges and clears the sidecar");
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.match(ledger, /continuation_start_acknowledged/);
+  assert.match(ledger, /"source":"before_agent_start"/);
+  await pi.command("goal", "pause", ctx);
+});
+
+// ────────────────────────────────────────────────────────────────────
 // T5 — foreign-session tool guard (subagent ctx must not mutate state)
 // ────────────────────────────────────────────────────────────────────
 

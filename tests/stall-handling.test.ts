@@ -366,9 +366,11 @@ test("v0.32.1: post-compaction resume debt + deterministic resync (pi-goal-x's l
   assert.match(SRC, /\[POST-COMPACTION RESYNC\]/); // deterministic re-anchor block
   assert.match(SRC, /content: resync \+ continuationPrompt/); // goal path prepends
   assert.match(SRC, /content: loopResync \+ loopPrompt/); // loop path prepends
-  assert.match(SRC, /if \(resync\) postCompactResyncPending = false; \/\/ consumed only by a landed send/);
+  assert.match(SRC, /resync: Boolean\(resync\)/, "dispatch records whether resync was sent");
+  assert.match(SRC, /if \(record\.resync\) postCompactResyncPending = false;/, "resync is consumed only after start acknowledgement");
   // discharged by a real turn start (agent_start), not by the send itself
-  assert.match(SRC, /pi\.on\("agent_start", \(\) => \{\n    lastStreamActivityAt = Date\.now\(\);\n    \/\/ v0\.32\.1/);
+  assert.match(SRC, /pi\.on\("agent_start", \(_event: any, ctx: ExtensionContext\) => \{\n    lastStreamActivityAt = Date\.now\(\);\n    \/\/ v0\.32\.1/);
+  assert.match(SRC, /dispatchStartAcknowledged\(ctx, "agent_start"\)/, "agent_start acknowledges an accepted dispatch");
 });
 
 // ---------- v0.34.5: subagent-aware wedge alert ----------

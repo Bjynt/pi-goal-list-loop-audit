@@ -1986,6 +1986,8 @@ async function fanOutListAuditFindings(cwd: string, generation: number): Promise
 }
 
 function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: string): void {
+  releaseContinuationDispatchStandDown();
+  clearDispatchRecord(ctx.cwd);
   postCompactResumeOwed = false; // v0.33.1: the dead goal's compact debt/resync dies with it
   postCompactResyncPending = false;
   if (!state.goal) return;
@@ -2697,6 +2699,8 @@ async function cmdStatus(ctx: ExtensionContext): Promise<void> {
 
 async function cmdPause(ctx: ExtensionContext): Promise<void> {
   if (!state.goal) return;
+  releaseContinuationDispatchStandDown();
+  clearDispatchRecord(ctx.cwd);
   updateGoal({ status: "paused" }, ctx);
   // v0.22.7: name WHAT was paused — a list item resumes through /list.
   if (state.goal.policy === "list") {
