@@ -6362,7 +6362,9 @@ export default function (pi: ExtensionAPI): void {
   // Tool registration is lazy: done on the first session event, when a
   // context exists. Tools show even without an active goal (and return
   // "no active goal" if called).
-  let registeredCtx: ExtensionContext | null = null;
+  // Tool definitions are re-registered at lifecycle boundaries; the current
+  // invocation context is resolved inside each execute handler.
+  let toolsRegistered = false;
 
   // v0.24.5 tool-visibility self-heal: surface the notify exactly once
   // per session so the user learns about an external allowlist once and
@@ -6547,7 +6549,7 @@ export default function (pi: ExtensionAPI): void {
     writeSessionHandoff(ctx, shutdownReason);
     sessionReplacementUntil = Date.now() + SESSION_REBIND_GRACE_MS;
     clearSessionOwnedTimers();
-    registeredCtx = null;
+    toolsRegistered = false;
     toolHealNotified = false;
   });
 
@@ -6604,9 +6606,9 @@ export default function (pi: ExtensionAPI): void {
       heldLoop: state.loop && (state.loop.active || state.loop.stopReason === HELD_ON_RESTORE) ? state.loop.target.slice(0, 60) : undefined,
     };
     carryoverResolved = !(carryoverSnapshot.pausedGoal || carryoverSnapshot.listCount > 0 || carryoverSnapshot.heldLoop);
-    if (!registeredCtx) {
+    if (!toolsRegistered) {
       registerAgentTools(pi);
-      registeredCtx = ctx;
+      toolsRegistered = true;
     }
     ensureAgentToolsActive(pi, ctx);
     warnOnCommandCollision(ctx);
@@ -6862,9 +6864,9 @@ export default function (pi: ExtensionAPI): void {
       t.turns++;
       state.goal.telemetry = t;
     }
-    if (!registeredCtx) {
+    if (!toolsRegistered) {
       registerAgentTools(pi);
-      registeredCtx = ctx;
+      toolsRegistered = true;
     }
     ensureAgentToolsActive(pi, ctx);
     // v0.27.3: nudge accounting — substantive analytical turns (long, novel
