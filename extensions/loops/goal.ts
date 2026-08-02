@@ -3653,7 +3653,11 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     clearLoopTimer();
     state.loop = { ...state.loop, active: false, stopReason: state.loop.stopReason ?? `stopped by user (/loop ${sub})` };
     persistState(ctx);
+    const stopGeneration = sessionGeneration;
     await finishLoopGit(ctx, state.loop);
+    const afterFinish = freshCtxForGeneration(stopGeneration);
+    if (!afterFinish) return;
+    ctx = afterFinish;
     appendLedger(ctx.cwd, "loop_stopped", { reason: "user", iterations: state.loop.iteration, best: state.loop.bestValue });
     ctx.ui.notify(
       `Loop stopped after ${state.loop.iteration} iterations. Best: ${state.loop.bestValue ?? "n/a"}.`,
@@ -3674,7 +3678,11 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     const reason = loopFinishStopReason(rest);
     state.loop = { ...state.loop, active: false, stopReason: reason };
     persistState(ctx);
+    const finishGeneration = sessionGeneration;
     await finishLoopGit(ctx, state.loop);
+    const afterFinish = freshCtxForGeneration(finishGeneration);
+    if (!afterFinish) return;
+    ctx = afterFinish;
     appendLedger(ctx.cwd, "loop_stopped", { reason, iterations: state.loop.iteration, best: state.loop.bestValue });
     ctx.ui.notify(
       `Loop finished (${reason}) after ${state.loop.iteration} iterations. Best: ${state.loop.bestValue ?? "n/a"}.`,
@@ -3875,6 +3883,9 @@ function registerAgentTools(pi: any): void {
           at: nowIso(),
         },
       }, ctx);
+      const auditGoal = state.goal;
+      if (!auditGoal) return staleToolResult();
+      const auditGoalId = auditGoal.id;
       const settings = loadSettings(ctx.cwd);
       const { model: auditorModel, error: modelError, via } = resolveAuditorModel(ctx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
       if (modelError) {
@@ -3887,21 +3898,22 @@ function registerAgentTools(pi: any): void {
       const runAudit = () =>
         runGoalCompletionAuditor({
           ctx,
-          goal: state.goal!,
+          goal: auditGoal,
           completionSummary: p.completionSummary,
           verificationSummary: p.verificationSummary,
           model: auditorModel,
           thinkingLevel: (settings.auditorThinkingLevel ?? "high") as any, // may be "max" — pi ≥0.83 understands it; the dev-types predate it
           signal: signal ?? undefined,
           onProgress: (progress) => {
+            const current = freshCtxForGeneration(auditGeneration);
+            if (!current) return;
             latestAuditProgress = {
               currentTool: progress.currentTool,
               label: progress.label,
               elapsedMs: progress.elapsedMs,
               lastEventAt: Date.now(),
             };
-            const current = freshCtxForGeneration(auditGeneration);
-            if (current) refreshUI(current);
+            refreshUI(current);
           },
         });
       // v0.25.4 (post-audit fix): a retriable infra failure (stream error,
@@ -3910,6 +3922,7 @@ function registerAgentTools(pi: any): void {
       // (retried once)". Neither attempt is a verdict on the work.
       const auditStartMs = Date.now();
       completionAuditInFlight = true;
+      completionAuditGeneration = auditGeneration;
       let result: Awaited<ReturnType<typeof runAudit>>;
       let retriedOnce = false;
       try {
@@ -3920,16 +3933,20 @@ function registerAgentTools(pi: any): void {
             const current = freshCtxForGeneration(auditGeneration);
             if (current) {
               refreshUI(current);
-              appendLedger(current.cwd, "audit_infra_retry", { goalId: state.goal?.id, error: err.slice(0, 200) });
+              appendLedger(current.cwd, "audit_infra_retry", { goalId: auditGoalId, error: err.slice(0, 200) });
             }
           },
         }));
       } finally {
-        completionAuditInFlight = false;
+        if (completionAuditGeneration === auditGeneration) {
+          completionAuditInFlight = false;
+          completionAuditGeneration = null;
+          latestAuditProgress = null;
+        }
       }
       const auditContextAfterRun = freshCtxForGeneration(auditGeneration);
-      if (!auditContextAfterRun) {
-        latestAuditProgress = null;
+      if (!auditContextAfterRun || !state.goal || state.goal.id !== auditGoalId) {
+        if (completionAuditGeneration === auditGeneration) latestAuditProgress = null;
         return staleToolResult();
       }
       ctx = auditContextAfterRun;
@@ -5734,7 +5751,11 @@ async function cmdGllaWipe(ctx: ExtensionContext): Promise<void> {
   if (loop) {
     clearLoopTimer();
     state.loop = undefined;
+    const wipeGeneration = sessionGeneration;
     await finishLoopGit(ctx, loop);
+    const afterFinish = freshCtxForGeneration(wipeGeneration);
+    if (!afterFinish) return;
+    ctx = afterFinish;
     appendLedger(ctx.cwd, "loop_stopped", { reason: "user wipe (/glla wipe)", iterations: loop.iteration, best: loop.bestValue });
   }
   persistState(ctx);

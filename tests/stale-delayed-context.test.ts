@@ -54,9 +54,12 @@ test("v0.34.20: completion audits persist claims and stop retrying after replace
   const auditor = complete.indexOf("runGoalCompletionAuditor");
   assert.ok(claim >= 0 && auditor > claim, "the completion claim is durable before the auditor starts");
   assert.match(complete, /shouldRetry: \(\) => freshCtxForGeneration\(auditGeneration\) !== null/);
+  assert.match(complete, /completionAuditGeneration = auditGeneration/);
   assert.match(complete, /const auditContextAfterRun = freshCtxForGeneration\(auditGeneration\)/);
   assert.match(complete, /if \(!auditContextAfterRun\) \{/);
   assert.match(GOAL, /shouldRetry: \(\) => freshCtxForGeneration\(generation\) !== null/);
+  assert.match(GOAL, /async function retryStoredCompletionAudit\(origin: "quota-retry" \| "manual" = "quota-retry"\)/);
+  assert.doesNotMatch(GOAL, /retryStoredCompletionAudit\(ctx,/);
 });
 
 test("v0.34.20: generic infra retry supports a lifecycle guard before and after backoff", () => {
@@ -82,4 +85,5 @@ test("v0.34.20: loop measurement and branch cleanup rebind after async work", ()
   const finish = between(GOAL, "async function finishLoopGit", "interface LoopConfig");
   assert.match(finish, /const afterReset = freshCtxForGeneration\(generation\)/);
   assert.match(finish, /const afterCheckout = freshCtxForGeneration\(generation\)/);
+  assert.match(GOAL, /let completionAuditGeneration: number \| null = null/);
 });
