@@ -185,7 +185,7 @@ test("paused shows the reason", () => {
 test("auditing shows the auditor's current tool", () => {
   const g = goalOf({ status: "auditing" });
   const s = buildStatusText({ goal: g, list: [] }, { currentTool: "read" }, NOW)!;
-  assert.match(s, /auditing…/);
+  assert.match(s, /auditor running/);
   assert.match(s, /read/);
 });
 
@@ -269,7 +269,7 @@ test("widget: auditing shows auditor progress", () => {
   assert.ok(lines.some((l) => l.includes("verifying contract")));
   assert.ok(lines.some((l) => l.includes("grep")));
   assert.ok(lines.some((l) => l.includes("42s")));
-  assert.match(buildStatusText({ goal: g, list: [] }, { currentTool: "grep" }, NOW)!, /auditing… · grep/);
+  assert.match(buildStatusText({ goal: g, list: [] }, { currentTool: "grep" }, NOW)!, /auditor running · grep/);
 });
 
 test("widget: interrupted completion claims render recovery-pending, not auditor-running", () => {

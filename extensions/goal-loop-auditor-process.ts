@@ -14,7 +14,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { Goal } from "./goal-loop-core.js";
-import { renderGoalMarkdown } from "./goal-loop-core.js";
+import { buildGoalAuditorPrompt } from "./goal-loop-auditor.js";
 import { checkRegressionShield, parseAuditorVerdict } from "./goal-loop-shield.js";
 
 export interface GoalAuditorResult {
@@ -46,7 +46,7 @@ export type AuditorModel = string | { provider: string; id: string };
 
 export const READ_ONLY_TOOLS = ["read", "grep", "find", "ls", "bash"] as const;
 const PROTOCOL_VERSION = 1;
-const DEFAULT_WALL_TIMEOUT_MS = 10 * 60_000;
+const DEFAULT_WALL_TIMEOUT_MS = 30 * 60_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
 const ATTEMPT_ID_RE = /^[A-Za-z0-9._-]{1,100}$/;
 
@@ -131,29 +131,7 @@ function modelLabel(model: AuditorModel | undefined): string {
 }
 
 function buildPrompt(goal: Goal, completionSummary?: string | null, verificationSummary?: string | null): string {
-  const shieldGaps = [...(goal.auditHistory ?? [])].reverse().find((v) => v.regressionShieldPassed === false)?.regressionShieldMissing;
-  return [
-    "You are the independent completion auditor for pi-goal-list-loop-audit.",
-    "The executor claims the goal is complete. Decide whether the user's objective is actually satisfied.",
-    "Be skeptical and semantic. Inspect real artifacts with read/grep/find/ls/bash. Never modify files.",
-    "Do not approve a scaffold, shallow draft, paperwork-only claim, or weakly verified requirement.",
-    "Return a concise report. The final line MUST be exactly one of:",
-    "<approved/>",
-    "<disapproved/>",
-    "<impossible>one-line reason</impossible>",
-    "Use <impossible> only when the objective can never be satisfied as stated.",
-    "When disapproving, end with ## Required fixes and one actionable line per blocking gap.",
-    ...(goal.verificationContract?.trim() ? [
-      "Because this goal has a verification contract, an approval MUST include an <evidence> block.",
-      "For every contract item, name the item and paste raw output from a read-only tool (not a paraphrase).",
-    ] : []),
-    ...(shieldGaps?.length ? ["A previous approval lacked evidence for:", ...shieldGaps.map((item) => `- ${item}`)] : []),
-    "",
-    "<goal>", renderGoalMarkdown(goal), "</goal>",
-    "<completion_summary>", completionSummary?.trim() || "(none provided)", "</completion_summary>",
-    ...(verificationSummary?.trim() ? ["<verification_summary>", verificationSummary.trim(), "</verification_summary>"] : []),
-    ...(goal.verificationContract?.trim() ? ["<verification_contract>", goal.verificationContract.trim(), "</verification_contract>"] : []),
-  ].join("\n");
+  return buildGoalAuditorPrompt(goal, completionSummary, verificationSummary);
 }
 
 function assertAttemptId(attemptId: string): void {

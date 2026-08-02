@@ -935,7 +935,7 @@ test("goal-start notify has no (id: …) suffix (v0.28.24 source pin)", () => {
     const replacement = ownerCtx(cwd);
     await pi.fire("session_start", { reason: "reload" }, replacement);
     const result = await audit;
-    assert.match(result.content[0]!.text, /session replacement|stale context/i, "old audit reports a lifecycle handoff, not a verdict");
+    assert.match(result.content[0]!.text, /detached auditor queued|verdict will be applied asynchronously/i, "complete_goal returns without waiting on the old generation");
 
     const after = readState(cwd).goal as { status: string; pendingCompletion?: { completionSummary?: string; phase?: string } };
     assert.ok(["auditing", "paused"].includes(after.status), "the replacement keeps the audit lifecycle recoverable");
@@ -946,6 +946,7 @@ test("goal-start notify has no (id: …) suffix (v0.28.24 source pin)", () => {
     assert.match(ledger, /"audit_recovery_started"/, "replacement starts a fresh stored-claim attempt immediately");
     assert.doesNotMatch(ledger, /"goal_archived"/, "the stale audit did not archive the goal");
     assert.equal(first.ui.matching("Goal complete").length, 0, "the old UI did not receive a completion notice");
+    assert.equal(first.ui.matching("auditor approved").length, 0, "the old generation did not apply a detached result");
     await pi.fire("session_shutdown", { reason: "quit" }, replacement);
   } finally {
     (first as unknown as { model: unknown }).model = originalModel;

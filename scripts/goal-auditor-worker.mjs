@@ -171,8 +171,11 @@ async function main() {
     let settledSeen = false;
     const handleRpcLine = (line) => {
       if (finalized || !line) return;
+      // The RPC contract is LF-delimited but permits a trailing CR for
+      // conventional CRLF producers. Any other raw CR is transport damage.
+      if (line.endsWith("\r")) line = line.slice(0, -1);
       if (line.includes("\r")) {
-        void finish(false, "RPC stream contained a raw CR; expected strict LF-only JSONL").catch(() => {});
+        void finish(false, "RPC stream contained a raw CR; expected LF-delimited JSONL").catch(() => {});
         return;
       }
       let event;
@@ -220,10 +223,6 @@ async function main() {
     pi.stdout.on("data", (chunk) => {
       if (finalized) return;
       stdoutBuffer += String(chunk);
-      if (stdoutBuffer.includes("\r")) {
-        void finish(false, "RPC stream contained a raw CR; expected strict LF-only JSONL").catch(() => {});
-        return;
-      }
       let newline;
       while (!finalized && (newline = stdoutBuffer.indexOf("\n")) >= 0) {
         const line = stdoutBuffer.slice(0, newline);

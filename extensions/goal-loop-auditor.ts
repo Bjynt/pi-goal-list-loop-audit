@@ -97,7 +97,7 @@ function makeAuditorResourceLoader(): ResourceLoader {
 // Auditor prompt
 // =================================================================
 
-function buildGoalAuditorPrompt(goal: Goal, completionSummary: string | null | undefined, verificationSummary: string | null | undefined): string {
+export function buildGoalAuditorPrompt(goal: Goal, completionSummary: string | null | undefined, verificationSummary: string | null | undefined): string {
   const goalMd = renderGoalMarkdown(goal);
   // v0.22.6: if a previous audit APPROVED but the regression shield blocked
   // it, tell THIS run exactly which contract items went unreferenced — the
