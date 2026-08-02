@@ -663,6 +663,25 @@ function isForeignCtx(ctx: ExtensionContext): boolean {
   return ownerSession !== null && ctx.sessionManager !== ownerSession;
 }
 
+/**
+ * Host-owned replacement events are the one exception to the foreign-session
+ * guard. A same-process /new, /resume, /fork, or /reload can deliver
+ * session_start with a NEW SessionManager and (on the affected pi paths)
+ * without a preceding session_shutdown. Treating that event as a subagent
+ * leaves the old owner in place forever and discards the only rebind event.
+ *
+ * pi-subagents creates fresh sessions with the default `startup` event, so
+ * keeping `startup` foreign preserves the subagent isolation guard. The
+ * previousSessionFile field is an additional host-runtime signal for future
+ * replacement reasons.
+ */
+function isHostLifecycleSessionStart(event: unknown): boolean {
+  const candidate = event as { reason?: unknown; previousSessionFile?: unknown } | null;
+  const reason = typeof candidate?.reason === "string" ? candidate.reason.trim().toLowerCase() : "";
+  return ["new", "resume", "fork", "reload"].includes(reason)
+    || typeof candidate?.previousSessionFile === "string";
+}
+
 const FOREIGN_SESSION_TOOL_MESSAGE =
   "This tool changes goal/loop/list state, which only the MAIN session owns — you are running in a subagent session. Report back to the main agent; it owns the goal and can call this tool.";
 
@@ -6860,8 +6879,21 @@ export default function (pi: ExtensionAPI): void {
   pi.on("session_start", async (event: any, ctx: ExtensionContext) => {
     // v0.23.8: subagent sessions (pi-subagents binds extensions there too)
     // are workers — never run the restore gate or reschedule the loop from
-    // a foreign session.
-    if (isForeignCtx(ctx)) return;
+    // a foreign session. Host replacement events are the exception: pi can
+    // deliver /new, /resume, /fork, or /reload with a new SessionManager and
+    // no session_shutdown, so rejecting them here would permanently lose the
+    // only fresh context that can rebind the loop (v0.34.23).
+    const hostLifecycleStart = isHostLifecycleSessionStart(event);
+    if (isForeignCtx(ctx) && !hostLifecycleStart) return;
+    if (hostLifecycleStart && ownerSession !== null && ctx.sessionManager !== ownerSession) {
+      // No shutdown means the old timers were not cleared by pi. Clear them
+      // before claiming the replacement, then reopen the handoff gate below.
+      clearSessionOwnedTimers();
+      sessionHandoffPending = false;
+      appendLedger(ctx.cwd, "session_rebind_without_shutdown", {
+        reason: typeof event?.reason === "string" ? event.reason : "unknown",
+      });
+    }
     extensionApi = pi;
     sessionHandoffPending = false;
     // Reset terminal ownership before rememberCtx: this is the only event

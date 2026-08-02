@@ -302,6 +302,33 @@ test("v0.34.16: lifecycle handoff resumes same-process replacement but quit does
   assert.ok(foreignSession.ui.matching("held on restore").length >= 1, "foreign debt falls back to the normal restore gate");
 });
 
+test("v0.34.23: host replacement with a new SessionManager is not rejected as foreign", async () => {
+  __testOnlyResetStaleFlag();
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal() });
+  const first = await freshSession(cwd, "startup");
+  await pi.command("goal", "resume", first);
+  await tick();
+
+  const replacement = makeMockCtx(cwd, { sessionManager: { name: "replacement-session-manager" } });
+  pi.sent.length = 0;
+  await pi.fire("session_start", { reason: "resume", previousSessionFile: "/tmp/previous-session.json" }, replacement);
+  await tick();
+
+  assert.ok(replacement.ui.matching("resuming goal").length >= 1, "replacement session ran the restore gate");
+  assert.ok(pi.sent.length >= 1, "replacement session sent the continuation");
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.ok(ledger.includes('"session_rebind_without_shutdown"'), "replacement without shutdown is ledgered");
+
+  // A normal subagent startup with a different manager must still be ignored.
+  const foreign = makeMockCtx(cwd, { sessionManager: { name: "subagent-session-manager" } });
+  pi.sent.length = 0;
+  await pi.fire("session_start", { reason: "startup" }, foreign);
+  await tick();
+  assert.equal(pi.sent.length, 0, "subagent startup did not steal host ownership");
+});
+
 test("v0.34.20: registered tools use the replacement invocation context without session_shutdown", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
