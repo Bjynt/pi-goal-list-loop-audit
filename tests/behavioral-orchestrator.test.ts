@@ -363,6 +363,37 @@ test("T2: a stale send on agent_end continuation → goal ACTIVE + interrupt mar
 });
 
 // ────────────────────────────────────────────────────────────────────
+test("T2b: stale before compaction → no late rebind, refire, or misleading active UI", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "stale then compact — done when pinned", ctx);
+  await tick();
+  pi.sendMessageError = staleError();
+  const before = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "boundary" }], stopReason: "end_turn" }] }, ctx);
+  pi.sendMessageError = null;
+  // Reproduce the field ordering: pi invalidates the extension first, then
+  // emits/finishes compaction, but never delivers session_start.
+  await pi.fire("session_compact", {}, ctx);
+  await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "late old event" }], stopReason: "end_turn" }] }, ctx);
+  await tick(2_200);
+  const after = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  const g = readState(cwd).goal as { status: string; interruptedAt?: string };
+  assert.equal(g.status, "active", "persisted goal remains recoverable");
+  assert.ok(g.interruptedAt, "stale marker survives the later compact");
+  assert.equal((after.match(/"extension_api_stale"/g) ?? []).length, 1, "stale terminal fires once");
+  assert.doesNotMatch(after, /"compaction_refire"/, "late compact cannot schedule a refire");
+  assert.doesNotMatch(after, /"compaction_grace_refire"/, "late compact cannot schedule a grace refire");
+  assert.equal(pi.sent.length, 0, "no continuation is sent after stale terminal");
+  const status = ctx.ui.statuses["pi-glla"] ?? "";
+  assert.match(status, /interrupted — stale handle/);
+  const widget = (ctx.ui.widgets["pi-glla"] as string[] | undefined) ?? [];
+  assert.ok(widget.some((line) => line.includes("host session lost")), "widget identifies the orphaned host session");
+  assert.ok(widget.some((line) => line.includes("/reload to rebind")), "widget gives lifecycle recovery guidance");
+  assert.notEqual(after, before, "terminal marker and ledger are durably written");
+});
+
 // T1 — stale paths on the two creation entry points (flag latched from T2)
 // ────────────────────────────────────────────────────────────────────
 
