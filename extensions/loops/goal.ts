@@ -1789,7 +1789,15 @@ async function retryStoredCompletionAudit(ctx: ExtensionContext, origin: "quota-
   const goal = state.goal;
   if (!goal?.pendingCompletion) return;
   if (completionAuditInFlight) return;
-  const liveCtx = freshCtx() ?? ctx;
+  const generation = sessionGeneration;
+  let liveCtx = freshCtxForGeneration(generation);
+  if (!liveCtx) {
+    // Tool/heartbeat entry can arrive before rememberCtx has run, but a
+    // handoff/stale flag must never fall back to its captured context.
+    if (sessionHandoffPending || initialSessionLoadPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
+    try { ctx.isIdle(); } catch { return; }
+    liveCtx = ctx;
+  }
   const claim = goal.pendingCompletion;
   updateGoal({ status: "auditing" }, liveCtx);
   appendLedger(liveCtx.cwd, "goal_resumed", { via: origin === "manual" ? "manual-audit" : "quota-retry-direct-audit" });
@@ -1815,16 +1823,25 @@ async function retryStoredCompletionAudit(ctx: ExtensionContext, origin: "quota-
           thinkingLevel: (settings.auditorThinkingLevel ?? "high") as any, // may be "max" — pi ≥0.83 understands it; the dev-types predate it
           onProgress: (progress) => {
             latestAuditProgress = { currentTool: progress.currentTool, label: progress.label, elapsedMs: progress.elapsedMs, lastEventAt: Date.now() };
-            refreshUI(liveCtx);
+            const current = freshCtxForGeneration(generation);
+            if (current) refreshUI(current);
           },
         }),
-      { onRetry: (err) => appendLedger(liveCtx.cwd, "audit_infra_retry", { goalId: state.goal?.id, error: err.slice(0, 200) }) },
+      {
+        shouldRetry: () => freshCtxForGeneration(generation) !== null,
+        onRetry: (err) => {
+          const current = freshCtxForGeneration(generation);
+          if (current) appendLedger(current.cwd, "audit_infra_retry", { goalId: state.goal?.id, error: err.slice(0, 200) });
+        },
+      },
     ));
   } finally {
     completionAuditInFlight = false;
     latestAuditProgress = null;
   }
-  if (!state.goal) return; // aborted mid-audit
+  const currentAfterAudit = freshCtxForGeneration(generation);
+  if (!currentAfterAudit || !state.goal) return; // replacement/stale boundary — fresh session rebinds durable state
+  liveCtx = currentAfterAudit;
 
   // Record the run in history (same compact shape as the tool path).
   const auditorRan = result.output.trim().length > 0;
@@ -1881,9 +1898,9 @@ async function retryStoredCompletionAudit(ctx: ExtensionContext, origin: "quota-
       return;
     }
     liveCtx.ui.notify(`Auditor still quota-limited — next auto-retry in ${retryMin}m (your completion claim is stored; no action needed).`, "warning");
-    scheduleQuotaRetry(liveCtx, quota.retryAfterSec, result.error, () => {
+    scheduleQuotaRetryForSession(liveCtx, quota.retryAfterSec, result.error, (fresh) => {
       if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor quota:") && state.goal.pendingCompletion) {
-        void retryStoredCompletionAudit(liveCtx, origin);
+        void retryStoredCompletionAudit(fresh, origin);
       }
     });
     return;
