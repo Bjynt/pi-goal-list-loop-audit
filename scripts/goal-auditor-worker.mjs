@@ -135,7 +135,7 @@ async function main() {
 
   try {
     if (Date.now() >= request.wallDeadlineAt) {
-      await finish(false, "auditor deadline expired before launch");
+      await finish(false, "Auditor exceeded its wall-clock bound and was aborted before launch.");
       return;
     }
     await progress("starting");
