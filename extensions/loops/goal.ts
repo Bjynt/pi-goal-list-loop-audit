@@ -1806,8 +1806,9 @@ async function retryStoredCompletionAudit(origin: "quota-retry" | "manual" = "qu
   const generation = sessionGeneration;
   // Delayed audit recovery has no safe fallback: if the current generation
   // cannot be proven live, the fresh session must rehydrate the durable claim.
-  const liveCtx = freshCtxForGeneration(generation);
-  if (!liveCtx) return;
+  const initialCtx = freshCtxForGeneration(generation);
+  if (!initialCtx) return;
+  let liveCtx: ExtensionContext = initialCtx;
   const claim = goal.pendingCompletion;
   updateGoal({ status: "auditing" }, liveCtx);
   appendLedger(liveCtx.cwd, "goal_resumed", { via: origin === "manual" ? "manual-audit" : "quota-retry-direct-audit" });

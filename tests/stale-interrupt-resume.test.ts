@@ -126,7 +126,7 @@ test("v0.28.27/0.29.8: /goal verify (renamed from /goal audit) — manual audito
   assert.match(SRC, /No active goal — \/goal verify needs a goal to verify\./);
   assert.match(SRC, /Manual audit requested by the user via \/goal verify \(no agent completion claim\)/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "manual_audit_requested", \{ goalId: state\.goal\.id \}\);/);
-  assert.match(SRC, /void retryStoredCompletionAudit\(ctx, "manual"\);/);
+  assert.match(SRC, /void retryStoredCompletionAudit\("manual"\);/);
   // Engine parametrized: origin flows into ledger + notifies + archive reason.
   assert.match(SRC, /origin: "quota-retry" \| "manual" = "quota-retry"/);
   assert.match(SRC, /via: origin === "manual" \? "manual-audit" : "quota-retry-direct-audit"/);

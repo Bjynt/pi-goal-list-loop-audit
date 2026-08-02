@@ -69,7 +69,7 @@ test("v0.34.20: manual resume consumes a stored completion claim directly", () =
   const resume = between(GOAL, "async function cmdResume", "async function cmdCancel");
   assert.match(resume, /const storedCompletion = state\.goal\.pendingCompletion/);
   assert.match(resume, /if \(storedCompletion\) \{/);
-  assert.match(resume, /void retryStoredCompletionAudit\(ctx, "manual"\)/);
+  assert.match(resume, /void retryStoredCompletionAudit\("manual"\)/);
 });
 
 test("v0.34.20: loop measurement and branch cleanup rebind after async work", () => {
