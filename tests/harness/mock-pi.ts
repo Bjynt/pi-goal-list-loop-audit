@@ -47,8 +47,10 @@ export class MockPi {
   /** When set, getSessionName() throws it — trips the stale entry probe. */
   sessionNameError: Error | null = null;
   /** v0.29.19: programmable exec (loop measure commands). Default keeps
-   * the historical empty-stdout behavior so existing tests are unaffected. */
-  execHandler: ((cmd: string, args: string[], opts: unknown) => { code: number; stdout: string; stderr: string }) | null = null;
+   * the historical empty-stdout behavior so existing tests are unaffected.
+   * A Promise result lets lifecycle tests suspend an async measure while a
+   * replacement session is delivered. */
+  execHandler: ((cmd: string, args: string[], opts: unknown) => { code: number; stdout: string; stderr: string } | Promise<{ code: number; stdout: string; stderr: string }>) | null = null;
   sessionName = "mock-session";
   private activeTools: string[] = [];
   readonly api: ExtensionAPI;

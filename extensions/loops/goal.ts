@@ -432,6 +432,14 @@ export function __testOnlyResetOwnerSession(): void {
   ownerSession = null;
 }
 
+/** Lifecycle regression hook: drive the detached list-audit fan-out from the behavioral
+ * harness. The production path passes the immutable cwd + generation from
+ * archiveCurrentGoal; this hook uses the current generation so the test can
+ * replace the session while the confirmation is suspended. */
+export async function __testOnlyRunFanOutListAuditFindings(cwd: string): Promise<void> {
+  await fanOutListAuditFindings(cwd, sessionGeneration);
+}
+
 /** v0.28.1 (S3): side-effect-free staleness probe — getSessionName()
  * routes through pi's assertActive() and throws the stale signature iff
  * pi invalidated this factory handle (session replacement). A positive
