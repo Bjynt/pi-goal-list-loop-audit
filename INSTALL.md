@@ -183,7 +183,7 @@ conflicts with the current pi release.
 npm test
 ```
 
-Expected output at v0.34.22: 727 passing tests across 64 files (1 env-gated skip). Counts change as bounded regressions are added; use the command output as the source of truth.
+Expected output at v0.34.22: 728 passing tests across 64 files (1 env-gated skip). Counts change as bounded regressions are added; use the command output as the source of truth.
 
 ## Run the type-check
 
