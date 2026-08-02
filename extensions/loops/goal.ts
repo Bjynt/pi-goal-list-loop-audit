@@ -2915,7 +2915,7 @@ async function cmdGoals(ctx: ExtensionContext): Promise<void> {
       stop = content.match(/\*\*Stop reason\*\*:\s*(.+)/)?.[1]?.trim() ?? "";
       obj = content.match(/## Objective\s+>\s*(.+)/)?.[1]?.trim() ?? "";
     } catch { /* unreadable file — show name only */ }
-    return `${f.replace(/\.md$/, "")} [${status}] ${obj.slice(0, 60)}${stop ? ` — ${stop.slice(0, 40)}` : ""}`;
+    return `${f.replace(/\.md$/, "")} [${status}] ${displaySlice(obj, 60)}${stop ? ` — ${displaySlice(stop, 40)}` : ""}`;
   });
   ctx.ui.notify(
     `Archived goals (${files.length}${files.length > 20 ? ", showing 20" : ""}):\n` + lines.join("\n"),
@@ -5273,7 +5273,7 @@ function registerAgentTools(pi: any): void {
           confirmed = (await confirmDraft(
             liveCtx,
             "Confirm loop spec refinement",
-          `Rationale: ${p.rationale}\n\nTarget:\n  old: ${loop.target.slice(0, 120)}\n  new: ${newTarget.slice(0, 120)}\n\nMeasure:\n  old: ${loop.measureCmd}\n  new: ${newMeasure}${newMeasure !== loop.measureCmd ? `\n  test-run: ${testOutput.slice(0, 120)} → ${newBaseline}` : ""}${specChange ? `\n\nSpec file (${loop.specFile}):\n  ${p.specText?.trim() ? `REPLACE with ${p.specText!.trim().length} chars` : ""}${p.specText?.trim() && p.specAppend?.trim() ? " + " : ""}${p.specAppend?.trim() ? `APPEND: ${p.specAppend!.trim().slice(0, 120)}` : ""}` : ""}\n\nThe loop keeps running against the refined spec (iteration ${loop.iteration} so far). Apply?`,
+          `Rationale: ${sanitizeDisplayText(p.rationale)}\n\nTarget:\n  old: ${displaySlice(loop.target, 120)}\n  new: ${displaySlice(newTarget, 120)}\n\nMeasure:\n  old: ${sanitizeDisplayText(loop.measureCmd ?? "none")}\n  new: ${sanitizeDisplayText(newMeasure)}${newMeasure !== loop.measureCmd ? `\n  test-run: ${sanitizeDisplayText(testOutput).slice(0, 120)} → ${newBaseline}` : ""}${specChange ? `\n\nSpec file (${sanitizeDisplayText(loop.specFile ?? "")}:\n  ${p.specText?.trim() ? `REPLACE with ${p.specText!.trim().length} chars` : ""}${p.specText?.trim() && p.specAppend?.trim() ? " + " : ""}${p.specAppend?.trim() ? `APPEND: ${sanitizeDisplayText(p.specAppend!.trim()).slice(0, 120)}` : ""}` : ""}\n\nThe loop keeps running against the refined spec (iteration ${loop.iteration} so far). Apply?`,
           )) === "yes";
         } catch {
           confirmed = false;
@@ -6401,7 +6401,7 @@ function cmdGllaStatus(ctx: ExtensionContext): void {
     const audit = g.status === "auditing"
       ? isCompletionAuditRecoveryPending(g) ? " (audit recovery pending)" : completionAuditInFlight && latestAuditProgress?.label === "queued" ? " (detached auditor queued)" : completionAuditInFlight ? " (detached auditor running…)" : " (audit awaiting lifecycle recovery)"
       : "";
-    const pause = g.status === "paused" && g.pauseReason ? ` — ${g.pauseReason.slice(0, 90)}` : "";
+    const pause = g.status === "paused" && g.pauseReason ? ` — ${displaySlice(g.pauseReason, 90)}` : "";
     lines.push(`goal [${g.policy}] ${g.status}${audit}${tok}: ${displaySlice(g.objective, 90)}${pause}`);
   } else {
     lines.push("goal: none");
@@ -7313,7 +7313,7 @@ export default function (pi: ExtensionAPI): void {
       const l = state.loop!;
       if (autoResume || recoveryResume || rebindResume || handoffResume) {
         ctx.ui.notify(
-          `Resuming loop (iteration ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"}, best ${l.bestValue ?? "n/a"}, stall ${l.stallCount}/${l.plateauWindow}): ${l.target.slice(0, 60)}`,
+          `Resuming loop (iteration ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"}, best ${l.bestValue ?? "n/a"}, stall ${l.stallCount}/${l.plateauWindow}): ${displaySlice(l.target, 60)}`,
           "info",
         );
         scheduleLoopTick(ctx);
@@ -7321,7 +7321,7 @@ export default function (pi: ExtensionAPI): void {
         state.loop = { ...l, active: false, stopReason: HELD_ON_RESTORE };
         persistState(ctx);
         ctx.ui.notify(
-          `Loop held on restore: ${l.target.slice(0, 60)} — /loop resume to continue, /glla autoresume=on to auto-resume on session load (global setting).`,
+          `Loop held on restore: ${displaySlice(l.target, 60)} — /loop resume to continue, /glla autoresume=on to auto-resume on session load (global setting).`
           "info",
         );
       }
@@ -7337,7 +7337,7 @@ export default function (pi: ExtensionAPI): void {
         // the auto-resume the marker promised.
         if (wasInterrupted) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
         ctx.ui.notify(
-          `Resuming ${state.goal.policy === "list" ? "list item" : "goal"}: ${state.goal.objective.slice(0, 70)}${listQueue().length > 0 ? ` (+${listQueue().length} queued)` : ""}${wasInterrupted ? " — auto-resumed after the stale-handle interrupt" : ""}`,
+          `Resuming ${state.goal.policy === "list" ? "list item" : "goal"}: ${displaySlice(state.goal.objective, 70)}${listQueue().length > 0 ? ` (+${listQueue().length} queued)` : ""}${wasInterrupted ? " — auto-resumed after the stale-handle interrupt" : ""}`,
           "info",
         );
         // v0.28.4 (P3): skip nudge accounting for the first recovery turns.
@@ -7369,14 +7369,14 @@ export default function (pi: ExtensionAPI): void {
             : resumeHint,
         }, ctx);
         ctx.ui.notify(
-          `${isListItem ? "List item" : "Goal"} held on restore: ${state.goal.objective.slice(0, 70)}${queued > 0 ? ` (+${queued} waiting in the list)` : ""} — ${resumeCmd} to continue.`,
+          `${isListItem ? "List item" : "Goal"} held on restore: ${displaySlice(state.goal.objective, 70)}${queued > 0 ? ` (+${queued} waiting in the list)` : ""} — ${resumeCmd} to continue.`
           "info",
         );
       }
     } else if (state.goal && state.goal.status === "active") {
       // Active but autoContinue off: nothing auto-fires — just surface it.
       ctx.ui.notify(
-        `Restored ${state.goal.policy === "list" ? "list item" : "goal"}: ${state.goal.objective.slice(0, 70)}${listQueue().length > 0 ? ` (+${listQueue().length} queued)` : ""}`,
+        `Restored ${state.goal.policy === "list" ? "list item" : "goal"}: ${displaySlice(state.goal.objective, 70)}${listQueue().length > 0 ? ` (+${listQueue().length} queued)` : ""}`,
         "info",
       );
     } else if ((!state.goal || state.goal.status === "complete" || state.goal.status === "aborted") && listQueue().length > 0) {
