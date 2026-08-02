@@ -1804,8 +1804,11 @@ async function retryStoredCompletionAudit(ctx: ExtensionContext, origin: "quota-
   if (!goal?.pendingCompletion) return;
   if (completionAuditInFlight) return;
   const generation = sessionGeneration;
-  let liveCtx = freshCtxForGeneration(generation);
-  if (!liveCtx) {
+  const reboundCtx = freshCtxForGeneration(generation);
+  let liveCtx: ExtensionContext;
+  if (reboundCtx) {
+    liveCtx = reboundCtx;
+  } else {
     // Tool/heartbeat entry can arrive before rememberCtx has run, but a
     // handoff/stale flag must never fall back to its captured context.
     if (sessionHandoffPending || initialSessionLoadPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
@@ -3800,8 +3803,9 @@ function registerAgentTools(pi: any): void {
     async execute(_id, params, signal, _onUpdate, execCtx) {
       const foreign0 = foreignToolGuard(execCtx);
       if (foreign0) return { content: [{ type: "text", text: foreign0 }], details: {} };
-      let ctx = currentToolContext(execCtx);
-      if (!ctx) return staleToolResult();
+      const toolCtx = currentToolContext(execCtx);
+      if (!toolCtx) return staleToolResult();
+      let ctx: ExtensionContext = toolCtx;
       const auditGeneration = sessionGeneration;
       if (!state.goal || state.goal.status !== "active") {
         return { content: [{ type: "text", text: "No active goal." }], details: {} };
@@ -4003,7 +4007,7 @@ function registerAgentTools(pi: any): void {
             status: "active",
             auditHistory: history,
             pendingCompletion: undefined,
-            pauseReason: `auditor verdict: IMPOSSIBLE (partial) — ${reason}`,},{
+            pauseReason: `auditor verdict: IMPOSSIBLE (partial) — ${reason}`,
             pauseSuggestedAction: "Narrow the objective past the impossible part (complete_goal newObjective or /goal tweak) and continue",
           }, ctx);
           ctx.ui.notify(`Auditor: part of the goal is IMPOSSIBLE — ${reason.slice(0, 100)}. aggressiveMode: narrowing and continuing.`, "warning");
@@ -4301,7 +4305,7 @@ function registerAgentTools(pi: any): void {
       if (foreign7) return { content: [{ type: "text", text: foreign7 }], details: {} };
       const ctx = currentToolContext(execCtx);
       if (!ctx) return staleToolResult();
-      const p = params as { id: string };{
+      const p = params as { id: string };
       if (!state.goal || !state.goal.taskList) {
         return { content: [{ type: "text", text: "No task list in this goal." }], details: {} };
       }
