@@ -54,7 +54,7 @@
     "interruptedReason": { "type": "string" },
     "auditInfraStreak": { "type": "number" },
     "errorBrakeStreak": { "type": "number" },
-    "pendingCompletion": { "type": "object" },
+    "pendingCompletion": { "$ref": "#/definitions/pendingCompletion" },
     "createdVia": { "type": "string" },
     "activePath": { "type": "string" },
     "archivedPath": { "type": "string" },
@@ -70,6 +70,22 @@
     "updatedAt": { "type": "string", "format": "date-time" }
   },
   "definitions": {
+    "pendingCompletion": {
+      "type": "object",
+      "required": ["at"],
+      "description": "Durable completion claim and isolated-auditor lifecycle. Legacy claims may omit phase and are treated as recovery-pending after a fresh session.",
+      "properties": {
+        "completionSummary": { "type": "string" },
+        "verificationSummary": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" },
+        "phase": { "type": "string", "enum": ["running", "recovery-pending", "quota-waiting"] },
+        "attemptId": { "type": "string", "minLength": 1 },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "wallDeadlineAt": { "type": "string", "format": "date-time" },
+        "recoveryAt": { "type": "string", "format": "date-time" },
+        "recoveryReason": { "type": "string" }
+      }
+    },
     "task": {
       "type": "object",
       "required": ["id", "title", "status"],

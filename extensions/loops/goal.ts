@@ -1852,6 +1852,10 @@ function isAuditorTimeoutError(error: string | undefined): boolean {
   return !!error && (/^Auditor exceeded its .* wall-clock bound/i.test(error) || /^Auditor stalled —/i.test(error));
 }
 
+function isCompletionAuditRecoveryPending(goal: Goal | null | undefined): boolean {
+  return !!goal?.pendingCompletion && goal.pendingCompletion.phase !== "running";
+}
+
 /**
  * v0.28.26: quota-window retry for a STORED completion claim. The auditor
  * was quota-blocked at complete_goal time; the claim (completionSummary +
@@ -2409,6 +2413,9 @@ async function cmdStatus(ctx: ExtensionContext): Promise<void> {
   if (g.auditHistory && g.auditHistory.length > 0) {
     lines.push(`Audits: ${g.auditHistory.length} (${g.auditHistory.filter((v) => v.approved).length} approved)`);
   }
+  if (g.status === "auditing") {
+    lines.push(`Completion audit: ${isCompletionAuditRecoveryPending(g) ? "recovery pending — /goal resume retries the stored claim" : completionAuditInFlight ? "running in an isolated session" : "awaiting lifecycle recovery"}`);
+  }
   if (g.pauseReason) lines.push(`Paused: ${g.pauseReason}`);
   ctx.ui.notify(lines.join("\n"), "info");
 }
@@ -2443,6 +2450,27 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
       "info",
     );
     scheduleContinuation(ctx, true);
+    return;
+  }
+  if (state.goal?.status === "auditing") {
+    if (!state.goal.pendingCompletion) {
+      ctx.ui.notify("An audit is in flight — wait for the isolated auditor's verdict (the status line shows auditing…).", "info");
+      return;
+    }
+    if (completionAuditInFlight) {
+      ctx.ui.notify("The completion auditor is already running — wait for its verdict or press Escape to abort it.", "info");
+      return;
+    }
+    if (isLoopActive()) {
+      ctx.ui.notify("A loop is active — one active thing at a time. /loop stop it first, then resume the completion audit.", "warning");
+      return;
+    }
+    const staleEntry = warnIfStaleAtEntry(ctx, "/goal resume");
+    if (staleEntry) return;
+    markCompletionAuditRecoveryPending(ctx, "manual-resume");
+    completionAuditRecoveryArmed = true;
+    ctx.ui.notify("Resuming the stored completion claim — running the isolated auditor directly (no agent turn needed).", "info");
+    void retryStoredCompletionAudit("manual");
     return;
   }
   if (!state.goal || state.goal.status !== "paused") return;
@@ -5963,7 +5991,18 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
     return;
   }
   if (g && g.status === "auditing") {
-    ctx.ui.notify("An audit is in flight — wait for the isolated auditor's verdict (the status line shows auditing…).", "info");
+    if (!g.pendingCompletion) {
+      ctx.ui.notify("An audit is in flight — wait for the isolated auditor's verdict (the status line shows auditing…).", "info");
+      return;
+    }
+    if (completionAuditInFlight) {
+      ctx.ui.notify("The completion auditor is already running — wait for its verdict or press Escape to abort it.", "info");
+      return;
+    }
+    markCompletionAuditRecoveryPending(ctx, "manual-resume");
+    completionAuditRecoveryArmed = true;
+    ctx.ui.notify("Resuming the stored completion claim — running the isolated auditor directly (no agent turn needed).", "info");
+    void retryStoredCompletionAudit("manual");
     return;
   }
   if (state.loop?.active) {
@@ -6035,7 +6074,9 @@ function cmdGllaStatus(ctx: ExtensionContext): void {
   const g = state.goal;
   if (g) {
     const tok = (g.usage?.tokensUsed ?? 0) > 0 ? ` · ${g.usage!.tokensUsed} tok` : "";
-    const audit = g.status === "auditing" ? " (auditor running…)" : "";
+    const audit = g.status === "auditing"
+      ? isCompletionAuditRecoveryPending(g) ? " (audit recovery pending)" : completionAuditInFlight ? " (auditor running…)" : " (audit awaiting lifecycle recovery)"
+      : "";
     const pause = g.status === "paused" && g.pauseReason ? ` — ${g.pauseReason.slice(0, 90)}` : "";
     lines.push(`goal [${g.policy}] ${g.status}${audit}${tok}: ${g.objective.slice(0, 90)}${pause}`);
   } else {
@@ -6992,6 +7033,20 @@ export default function (pi: ExtensionAPI): void {
         activateNextListItem(ctx);
       } else {
         ctx.ui.notify(`List has ${listQueue().length} item(s) waiting — /list next to activate the head.`, "info");
+      }
+    }
+    // v0.34.21: an interrupted stored completion claim is its own lifecycle,
+    // not a generic "auditor running" state. Rebinds (or global autoResume)
+    // have continuation consent and retry immediately; a cold startup with
+    // autoResume off paints recovery-pending and waits for /goal resume.
+    if (state.goal?.status === "auditing" && state.goal.pendingCompletion) {
+      markCompletionAuditRecoveryPending(ctx, `session_start:${startReason}`);
+      const canRecoverNow = explicitRecovery || autoResume;
+      if (canRecoverNow) {
+        completionAuditRecoveryArmed = true;
+        void retryStoredCompletionAudit("session-recovery");
+      } else {
+        ctx.ui.notify("Completion audit recovery is pending — the stored claim is safe; /goal resume retries the isolated auditor.", "info");
       }
     }
     // v0.29.6: the 0.28.21 loop-vs-goal decision picker is SUPERSEDED by
