@@ -6,12 +6,12 @@ Inspected the installed packages under `/home/dracon/.pi/agent/npm/node_modules`
 
 Only these goal/loop-adjacent packages are currently loaded globally:
 
-- `npm:pi-goal-list-loop-audit`
+- `/home/dracon/Dev/pi-goal-loop-audit`
 - `npm:@tintinweb/pi-subagents` (delegation, not a goal loop)
 
 The other installed goal/loop packages are not loaded by the current settings, so they cannot be competing lifecycle handlers in the screenshot's session.
 
-Important deployment finding: the active installed glla copy currently reports **0.34.20** and has no `goal-loop-auditor-process.ts`; the checkout contains the detached-auditor work and is now **0.34.23**. A local npm override was reverted by the package-manager state still pinned to the old npm package, so the detached fix is not active until the package source/pin is changed and pi is reloaded.
+Important deployment finding: the previously loaded npm copy reported **0.34.20** and had no `goal-loop-auditor-process.ts`; the checkout contains the detached-auditor work and is now **0.34.23**. The global package entry now points at that local checkout, so the detached/rebind fixes will become active on the next pi `/reload`; the current process still has the old module loaded.
 
 ## Comparison against the failure modes
 
