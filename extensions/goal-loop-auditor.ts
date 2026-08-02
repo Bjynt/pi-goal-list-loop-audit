@@ -25,7 +25,11 @@ import {
 
 import type { Goal } from "./goal-loop-core.js";
 import { renderGoalMarkdown } from "./goal-loop-core.js";
-import { AUDITOR_STALL_MS } from "./goal-loop-backoff.js";
+import {
+  AUDITOR_STALL_MS,
+  AUDITOR_WALL_TIMEOUT_MS,
+  auditorWatchdogAction,
+} from "./goal-loop-backoff.js";
 
 // =================================================================
 // Result type
@@ -260,10 +264,16 @@ export async function runGoalCompletionAuditor(args: {
     // and never let the completion gate hang forever (the pi-goal-x
     // failure shape: unbounded silent waits).
     let lastEventAt = Date.now();
-    let stalled = false;
+    let watchdogFailure: "inactivity" | "wall" | null = null;
     const stallTimer = setInterval(() => {
-      if (Date.now() - lastEventAt > AUDITOR_STALL_MS) {
-        stalled = true;
+      const action = auditorWatchdogAction({
+        nowMs: Date.now(),
+        startedAtMs: startedAt,
+        lastEventAtMs: lastEventAt,
+        toolActive: Boolean(progress.currentTool),
+      });
+      if (action !== "none") {
+        watchdogFailure = action;
         void session.abort();
       }
     }, 15_000);
@@ -344,14 +354,24 @@ export async function runGoalCompletionAuditor(args: {
       (session as any).dispose?.();
     }
 
-    if (stalled) {
+    if (watchdogFailure === "wall") {
       return {
         approved: false,
         disapproved: false,
         output: outputParts.join("\n\n"),
         model: modelLabel(model),
         thinkingLevel,
-        error: `Auditor stalled — no session activity for ${Math.round(AUDITOR_STALL_MS / 60_000)}m, aborted. This is an infrastructure failure, not a verdict; retry completion (check the auditor model with /glla model=).`,
+        error: `Auditor exceeded its ${Math.round(AUDITOR_WALL_TIMEOUT_MS / 60_000)}m wall-clock bound and was aborted. This is an infrastructure failure, not a verdict; retry completion (check long-running verification commands and the auditor model).`,
+      };
+    }
+    if (watchdogFailure === "inactivity") {
+      return {
+        approved: false,
+        disapproved: false,
+        output: outputParts.join("\n\n"),
+        model: modelLabel(model),
+        thinkingLevel,
+        error: `Auditor stalled — no session activity for ${Math.round(AUDITOR_STALL_MS / 60_000)}m while no read-only tool was running, so it was aborted. This is an infrastructure failure, not a verdict; retry completion (check the auditor model with /glla model=).`,
       };
     }
 

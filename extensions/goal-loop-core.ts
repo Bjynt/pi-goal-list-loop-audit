@@ -144,6 +144,29 @@ export function sumNewAssistantTokens(messages: unknown[], seen: Set<string>): n
   return total;
 }
 
+export type CompletionAuditPhase = "running" | "recovery-pending" | "quota-waiting";
+
+/** Durable completion claim metadata. The claim itself is the user's exact
+ * completion assertion; the lifecycle fields make an interrupted isolated
+ * audit distinguishable from one that is actively running. Fields beyond
+ * `at` are optional so v0.34.20 and older claims remain recoverable. */
+export interface PendingCompletion {
+  completionSummary?: string;
+  verificationSummary?: string;
+  /** When the completion claim was first persisted. */
+  at: string;
+  /** Current audit lifecycle. Missing = legacy claim, treated as recovery-pending. */
+  phase?: CompletionAuditPhase;
+  /** Identifies the isolated-auditor attempt, not the goal. */
+  attemptId?: string;
+  /** Start/deadline for the current isolated-auditor attempt. */
+  startedAt?: string;
+  wallDeadlineAt?: string;
+  /** Why the claim is waiting for a fresh attempt. */
+  recoveryAt?: string;
+  recoveryReason?: string;
+}
+
 export interface Goal {
   id: string;
   objective: string;
@@ -186,7 +209,7 @@ export interface Goal {
    * and repeated the same essay until the stall brake fired). Cleared when
    * the retry resolves. Only consumed while paused with an "auditor quota:"
    * reason, so a stale value is unreachable by construction. */
-  pendingCompletion?: { completionSummary?: string; verificationSummary?: string; at: string };
+  pendingCompletion?: PendingCompletion;
   /** v0.28.28: provenance — who created this goal ("user", "list-cascade",
    * "draft-confirmed", "draft-autoaccepted"). Ledgered on goal_created so
    * "where did this come from" is answerable after the fact. */
@@ -642,6 +665,11 @@ export function renderGoalMarkdown(goal: Goal): string {
   if (goal.stopReason) lines.push(`**Stop reason**: ${goal.stopReason}`);
   if (goal.pauseReason) lines.push(`**Pause reason**: ${goal.pauseReason}`);
   if (goal.pauseSuggestedAction) lines.push(`**Agent suggests**: ${goal.pauseSuggestedAction}`);
+  if (goal.pendingCompletion) {
+    const phase = goal.pendingCompletion.phase ?? "recovery-pending";
+    lines.push(`**Completion audit**: ${phase}`);
+    if (goal.pendingCompletion.attemptId) lines.push(`**Completion audit attempt**: \`${goal.pendingCompletion.attemptId}\``);
+  }
   lines.push("");
   lines.push("## Objective");
   lines.push("");

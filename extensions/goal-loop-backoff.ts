@@ -101,6 +101,31 @@ export const MEASURE_TIMEOUT_MS = 10 * 60_000;
  * no events for this long is wedged — abort and report an error, never
  * disapprove, never hang the completion gate forever. */
 export const AUDITOR_STALL_MS = 10 * 60_000;
+/** v0.34.21: inactivity is not enough when a single read-only tool is
+ * legitimately running. Keep a hard wall bound so a provider/tool pair can
+ * never hold completion forever, while the normal 10m inactivity guard still
+ * catches a dead stream much sooner. */
+export const AUDITOR_WALL_TIMEOUT_MS = 30 * 60_000;
+
+export type AuditorWatchdogAction = "none" | "inactivity" | "wall";
+
+/** Pure watchdog decision used by the isolated auditor and its regressions.
+ * A running read-only tool suppresses only the inactivity branch; the wall
+ * deadline always wins. */
+export function auditorWatchdogAction(input: {
+  nowMs: number;
+  startedAtMs: number;
+  lastEventAtMs: number;
+  toolActive: boolean;
+  inactivityMs?: number;
+  wallTimeoutMs?: number;
+}): AuditorWatchdogAction {
+  const inactivity = input.inactivityMs ?? AUDITOR_STALL_MS;
+  const wall = input.wallTimeoutMs ?? AUDITOR_WALL_TIMEOUT_MS;
+  if (input.nowMs - input.startedAtMs >= wall) return "wall";
+  if (!input.toolActive && input.nowMs - input.lastEventAtMs > inactivity) return "inactivity";
+  return "none";
+}
 
 /** v0.26.5: pending-latch watchdog threshold. Field-observed failure: a
  * continuation sent right at compaction was ACCEPTED by pi (sendMessage

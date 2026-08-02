@@ -144,6 +144,12 @@ const pauseIsError = (g: Goal): boolean => ERROR_PAUSE.test(g.pauseReason ?? "")
 type PauseKind = "decision" | "error" | "wait" | "blocked";
 const pauseKind = (g: Goal): PauseKind | undefined => g.pauseKind ?? (pauseIsError(g) ? "error" : undefined);
 
+/** A pending claim without the new `running` marker is a legacy or
+ * replacement-interrupted audit. It must never render as an active auditor. */
+function auditRecoveryPending(g: Goal): boolean {
+  return g.status === "auditing" && !!g.pendingCompletion && g.pendingCompletion.phase !== "running";
+}
+
 /** v0.28.22: "06:40 UTC" from an ISO string (wait-pause countdown). */
 const shortClock = (iso: string): string => {
   const d = new Date(iso);
@@ -189,6 +195,9 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     return undefined;
   }
   if (g.status === "auditing") {
+    if (auditRecoveryPending(g)) {
+      return `glla: ${paint(theme, "warning", "audit recovery pending")}${heldSuffix}`;
+    }
     const tool = audit?.currentTool ? ` · ${audit.currentTool}` : "";
     return `glla: ${paint(theme, "accent", "auditing…")}${tool}${heldSuffix}`;
   }
@@ -365,6 +374,11 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     return lines;
   }
   if (g.status === "auditing") {
+    if (auditRecoveryPending(g)) {
+      lines.push(`├─ auditor: ${paint(theme, "warning", "recovery pending — previous audit was interrupted")}`);
+      lines.push(`└─ ${paint(theme, "dim", "stored completion claim is safe; a fresh session will retry it")}`);
+      return lines;
+    }
     lines.push(`├─ auditor: ${audit?.label ?? "running"}${audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : ""}`);
     // v0.25.4: auditor-quiet stall — progress events stopped arriving
     // while the audit is in flight (hung model call, stuck tool).
