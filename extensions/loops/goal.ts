@@ -3773,7 +3773,7 @@ function currentToolContext(execCtx: unknown): ExtensionContext | null {
   return freshCtx();
 }
 
-function registerAgentTools(pi: any, ctx: ExtensionContext): void {
+function registerAgentTools(pi: any): void {
   pi.registerTool(defineTool({
     name: "complete_goal",
     label: "Complete goal",
@@ -4038,7 +4038,7 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
             pauseSuggestedAction: `Quota auto-retry in ${retryMin}m — or /goal resume to retry now`,
           }, ctx);
           appendLedger(ctx.cwd, "goal_paused", { reason: `auditor quota: retry in ${quota.retryAfterSec}s (${quota.fromUpstream ? "upstream hint" : "default"})` });
-          scheduleQuotaRetry(ctx, quota.retryAfterSec, result.error, () => {
+          scheduleQuotaRetryForSession(ctx, quota.retryAfterSec, result.error, (fresh) => {
             // Re-check: only auto-resume if STILL paused for the quota
             // reason (a user /goal pause during the window is not stomped).
             if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor quota:")) {
@@ -4046,15 +4046,15 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
               // agent is not needed to re-submit an unchanged claim, and
               // re-engaging it produced hallucinated-closure loops.
               if (state.goal.pendingCompletion) {
-                void retryStoredCompletionAudit(ctx);
+                void retryStoredCompletionAudit(fresh);
                 return;
               }
-              updateGoal({ status: "active" }, ctx);
-              appendLedger(ctx.cwd, "goal_resumed", { via: "quota-retry" });
-              if (resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).aggressiveMode) {
-                ctx.ui.notify("Auto-resume fired (event: auditor quota window elapsed). Continue working.", "info");
+              updateGoal({ status: "active" }, fresh);
+              appendLedger(fresh.cwd, "goal_resumed", { via: "quota-retry" });
+              if (resolveEffectiveAggressiveSettings(loadSettings(fresh.cwd)).aggressiveMode) {
+                fresh.ui.notify("Auto-resume fired (event: auditor quota window elapsed). Continue working.", "info");
               }
-              scheduleContinuation(ctx, true);
+              scheduleContinuation(fresh, true);
             }
           });
           return {
@@ -4265,7 +4265,9 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
     async execute(_id, params, _signal, _onUpdate, execCtx) {
       const foreign7 = foreignToolGuard(execCtx);
       if (foreign7) return { content: [{ type: "text", text: foreign7 }], details: {} };
-      const p = params as { id: string };
+      const ctx = currentToolContext(execCtx);
+      if (!ctx) return staleToolResult();
+      const p = params as { id: string };{
       if (!state.goal || !state.goal.taskList) {
         return { content: [{ type: "text", text: "No task list in this goal." }], details: {} };
       }
@@ -4295,6 +4297,8 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
     async execute(_id, params, _signal, _onUpdate, execCtx) {
       const foreign8 = foreignToolGuard(execCtx);
       if (foreign8) return { content: [{ type: "text", text: foreign8 }], details: {} };
+      const ctx = currentToolContext(execCtx);
+      if (!ctx) return staleToolResult();
       const p = params as { id: string; status: "pending" | "in_progress" | "complete" };
       if (!state.goal || !state.goal.taskList) {
         return { content: [{ type: "text", text: "No task list in this goal." }], details: {} };
@@ -4327,13 +4331,14 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       const foreign2 = foreignToolGuard(execCtx);
       if (foreign2) return { content: [{ type: "text", text: foreign2 }], details: {} };
       const p = params as { objective: string; verificationContract?: string; items?: string[] };
+      const liveCtx = currentToolContext(execCtx);
+      if (!liveCtx) return staleToolResult();
       if (draftingTarget !== "goal" && draftingTarget !== "list") {
         return {
           content: [{ type: "text", text: "Not in goal drafting mode. The user starts drafting with /goal or /list add (no args), or activates directly with /goal <objective>." }],
           details: {},
         };
       }
-      const liveCtx = (execCtx as ExtensionContext | undefined) ?? ctx;
       // v0.28.14: one-active-thing EARLY guard — refuse the whole interview
       // when a loop is live (the post-confirm backstop below stays: state
       // can change mid-interview).
@@ -4515,6 +4520,8 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       const foreign3 = foreignToolGuard(execCtx);
       if (foreign3) return { content: [{ type: "text", text: foreign3 }], details: {} };
       const p = params as { target: string; measureCmd?: string; direction?: "min" | "max"; window?: number; max?: number; time?: number; tokens?: number; branch?: boolean };
+      const liveCtx = currentToolContext(execCtx);
+      if (!liveCtx) return staleToolResult();
       if (draftingTarget !== "loop") {
         return {
           content: [{ type: "text", text: "You cannot start or draft a loop — only the user can, from the slash bar (the Confirm is the product). Do NOT write draft files or wait for the user to say 'start' in chat; that dead-ends. Instead hand the user the exact command: /loop start \"<target>\" (bare = infinite metricless; add measure=\"<cmd>\" direction=min|max for a metric loop), or /loop respec to reconcile against the root spec, or /loop with no args to draft interactively." }],
@@ -4540,7 +4547,6 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       if (!metricless && p.direction !== "min" && p.direction !== "max") {
         return { content: [{ type: "text", text: 'direction=min|max is required for a measured loop (omit measureCmd or pass "none" for a metricless spec loop).' }], details: {} };
       }
-      const liveCtx = (execCtx as ExtensionContext | undefined) ?? ctx;
       // v0.28.14: one-active-thing — refuse to even test-run a loop measure
       // while a goal/list-item is active (the /loop start COMMAND guards
       // this; the tool path used to skip it and stack a loop over a goal).
@@ -4638,7 +4644,8 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       const foreign4 = foreignToolGuard(execCtx);
       if (foreign4) return { content: [{ type: "text", text: foreign4 }], details: {} };
       const p = params as { target?: string; measureCmd?: string; specText?: string; specAppend?: string; rationale: string };
-      const liveCtx = (execCtx as ExtensionContext | undefined) ?? ctx;
+      const liveCtx = currentToolContext(execCtx);
+      if (!liveCtx) return staleToolResult();
       const loop = state.loop;
       if (!loop?.active) {
         return { content: [{ type: "text", text: "No active loop to refine. propose_loop_refine is only valid while a loop is running." }], details: {} };
@@ -4734,6 +4741,8 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       const foreign5 = foreignToolGuard(execCtx);
       if (foreign5) return { content: [{ type: "text", text: foreign5 }], details: {} };
       const p = params as { items: string[] };
+      const liveCtx = currentToolContext(execCtx);
+      if (!liveCtx) return staleToolResult();
       if (listMutationBlocked(draftingTarget)) {
         return { content: [{ type: "text", text: LIST_DRAFTING_BLOCK_MESSAGE }], details: {} };
       }
@@ -4741,7 +4750,6 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         return { content: [{ type: "text", text: "No items given." }], details: {} };
       }
       const clean = p.items.map((t) => t.trim()).filter((t) => t.length > 0);
-      const liveCtx = (execCtx as ExtensionContext | undefined) ?? ctx;
       const wasIdle = !state.goal || state.goal.status === "complete" || state.goal.status === "aborted";
       const n = enqueueItems(liveCtx, clean, "agent list_add");
       return {
@@ -4767,6 +4775,8 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       const foreign6 = foreignToolGuard(execCtx);
       if (foreign6) return { content: [{ type: "text", text: foreign6 }], details: {} };
       const p = params as { n: number };
+      const liveCtx = currentToolContext(execCtx);
+      if (!liveCtx) return staleToolResult();
       if (listMutationBlocked(draftingTarget)) {
         return { content: [{ type: "text", text: LIST_DRAFTING_BLOCK_MESSAGE }], details: {} };
       }
@@ -4774,7 +4784,6 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       if (!Number.isInteger(n) || n < 1) {
         return { content: [{ type: "text", text: "n must be a positive integer (1-based position)." }], details: {} };
       }
-      const liveCtx = (execCtx as ExtensionContext | undefined) ?? ctx;
       // v0.28.14: one-active-thing — a list item must not jump a live loop.
       if (isLoopActive()) {
         return { content: [{ type: "text", text: "A loop is active — one active thing at a time. The user must /loop stop it before a list item can activate." }], details: {} };
@@ -4836,11 +4845,12 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
         return { content: [{ type: "text", text: "A task list already exists. Use update_task_status / complete_task to work it." }], details: {} };
       }
       const p = params as { tasks: TaskProposal[] };
+      const liveCtx = currentToolContext(execCtx);
+      if (!liveCtx) return staleToolResult();
       const invalid = validateTaskProposal(p.tasks);
       if (invalid) {
         return { content: [{ type: "text", text: invalid }], details: {} };
       }
-      const liveCtx = (execCtx as ExtensionContext | undefined) ?? ctx;
       const preview = p.tasks.map((t, i) => {
         const subs = (t.subtasks ?? []).map((s, j) => `   ${i + 1}.${j + 1} ${s}`).join("\n");
         return `${i + 1}. ${t.title}` + (subs ? `\n${subs}` : "");
