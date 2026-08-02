@@ -1650,11 +1650,13 @@ function autoArbitrateStackedState(ctx: ExtensionContext): void {
  * against the live queue), present DECIDE findings without queueing them.
  * Confirm-gated like every bulk import (v0.23.7: the user reads what lands
  * in the queue); a decline leaves the findings open for a later re-run.
+ * v0.34.20: this detached operation retains only cwd + generation. Every
+ * context use after the confirmation await must come from the fresh session.
  */
-async function fanOutListAuditFindings(ctx: ExtensionContext): Promise<void> {
+async function fanOutListAuditFindings(cwd: string, generation: number): Promise<void> {
   let md = "";
   try {
-    md = fs.readFileSync(path.join(ctx.cwd, AUDIT_FINDINGS_REL), "utf-8");
+    md = fs.readFileSync(path.join(cwd, AUDIT_FINDINGS_REL), "utf-8");
   } catch {
     /* no findings file — the audit was clean or never wrote */
   }
@@ -1666,6 +1668,8 @@ async function fanOutListAuditFindings(ctx: ExtensionContext): Promise<void> {
   // hundreds of items on a single Confirm.
   const fresh = open.filter((f) => !queuedText.includes(f.text.slice(0, 60))).slice(0, 50);
   const alreadyQueued = open.length - fresh.length;
+  const current = freshCtxForGeneration(generation);
+  if (!current) return;
   // v0.33.3: DECIDE findings are RAISED TO THE USER as real questions
   // (hegemon 2026-07-31: a truncated notify left the user typing "decide
   // what" into the void). The orchestrator can't call ask_user_question —
@@ -1675,41 +1679,48 @@ async function fanOutListAuditFindings(ctx: ExtensionContext): Promise<void> {
   // queued or the fan-out was declined.
   if (decisions.length > 0) {
     const decList = decisions.slice(0, 8).map((d, i) => `${i + 1}. ${d.slice(0, 500)}`).join("\n");
-    if (safeSteerUser(ctx,
+    if (safeSteerUser(current,
       `[DECIDE FINDINGS — user decisions needed] The audit surfaced ${decisions.length} DECIDE finding(s) — direction calls only the user can make (a decision is not a task, so they were NOT queued):\n${decList}\nRaise them to the user NOW with ask_user_question — one question per finding, options from the finding's own two sides plus "Defer" (prose numbered list if ask_user_question is unavailable; Esc = Defer). Then record every answer in ${AUDIT_FINDINGS_REL}: replace the "- [?]" line with "- [x] DECIDED: <what was chosen> (<date>)" (or "- [x] DEFERRED") so it stops re-surfacing, and queue any chosen work with list_add — do NOT start the work inline.`))
-      appendLedger(ctx.cwd, "list_audit_decisions_raised", { decisions: decisions.length });
+      appendLedger(cwd, "list_audit_decisions_raised", { decisions: decisions.length });
   }
   const decideNote =
     decisions.length > 0
       ? ` ${decisions.length} DECIDE finding(s) need YOU — raising them as questions now (not queued — a decision is not a task).`
       : "";
   if (fresh.length === 0) {
-    ctx.ui.notify(
+    const afterDecision = freshCtxForGeneration(generation);
+    if (!afterDecision) return;
+    afterDecision.ui.notify(
       open.length > 0
         ? `Audit collected ${open.length} open finding(s) — all already queued.${decideNote}`
         : `Audit complete — no open findings; the project is clean, nothing to queue.${decideNote}`,
       "info",
     );
-    appendLedger(ctx.cwd, "list_audit_fanout_empty", { open: open.length, decisions: decisions.length });
+    appendLedger(cwd, "list_audit_fanout_empty", { open: open.length, decisions: decisions.length });
     return;
   }
   const preview = fresh.map((f, i) => `  ${i + 1}. ${f.text.slice(0, 110)}`).join("\n");
   let confirmed = true;
-  if (ctx.hasUI) {
+  const beforeConfirm = freshCtxForGeneration(generation);
+  if (!beforeConfirm) return;
+  if (beforeConfirm.hasUI) {
     try {
-      confirmed = await ctx.ui.confirm(`Queue ${fresh.length} audit finding(s) as list items?`, preview);
+      confirmed = await beforeConfirm.ui.confirm(`Queue ${fresh.length} audit finding(s) as list items?`, preview);
     } catch {
       confirmed = false;
     }
   }
+  // A confirm result from an old session is not consent for the replacement.
+  const afterConfirm = freshCtxForGeneration(generation);
+  if (!afterConfirm) return;
   if (!confirmed) {
-    appendLedger(ctx.cwd, "list_audit_fanout_declined", { findings: fresh.length });
-    ctx.ui.notify(`Fan-out declined — the findings stay open in ${AUDIT_FINDINGS_REL}; /list audit re-queues them any time.`, "info");
+    appendLedger(cwd, "list_audit_fanout_declined", { findings: fresh.length });
+    afterConfirm.ui.notify(`Fan-out declined — the findings stay open in ${AUDIT_FINDINGS_REL}; /list audit re-queues them any time.`, "info");
     return;
   }
-  const n = enqueueItems(ctx, fresh.map((f) => listAuditFanoutItemText(f.text)), "list audit fan-out");
-  appendLedger(ctx.cwd, "list_audit_fanout", { queued: n, alreadyQueued, decisions: decisions.length });
-  ctx.ui.notify(
+  const n = enqueueItems(afterConfirm, fresh.map((f) => listAuditFanoutItemText(f.text)), "list audit fan-out");
+  appendLedger(cwd, "list_audit_fanout", { queued: n, alreadyQueued, decisions: decisions.length });
+  afterConfirm.ui.notify(
     `Queued ${n} finding(s) — the list drains them fix by fix, each with its own audited commit.${alreadyQueued > 0 ? ` (${alreadyQueued} already queued.)` : ""}${decideNote}`,
     "info",
   );
@@ -1749,10 +1760,13 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
     const isListAuditCollect = goal.objective.includes(LIST_AUDIT_COLLECT_MARKER);
     // v0.34.7: the float gets a catch — ANY rejection here used to become
     // an uncaughtException and kill pi (darklord 2026-08-01).
-    if (isListAuditCollect)
-      void fanOutListAuditFindings(ctx).catch((err) => {
-        appendLedger(ctx.cwd, "list_audit_fanout_error", { error: String(err).slice(0, 200) });
+    if (isListAuditCollect) {
+      const fanoutCwd = ctx.cwd;
+      const fanoutGeneration = sessionGeneration;
+      void fanOutListAuditFindings(fanoutCwd, fanoutGeneration).catch((err) => {
+        appendLedger(fanoutCwd, "list_audit_fanout_error", { error: String(err).slice(0, 200) });
       });
+    }
     const advanced = activateNextListItem(ctx);
     // v0.26.0: the queue just EMPTIED on a completion → list-complete.
     if (!advanced && !isListAuditCollect) {
@@ -3804,7 +3818,19 @@ function registerAgentTools(pi: any): void {
         appendLedger(ctx.cwd, "goal_tweaked", { via: "complete_goal.newObjective", from: oldObjective.slice(0, 200), to: cleanObj.slice(0, 200) });
         ctx.ui.notify(`Objective updated (complete_goal newObjective): ${cleanObj.slice(0, 80)}`, "info");
       }
-      updateGoal({ status: "auditing", pendingTasks: undefined }, ctx);
+      // v0.34.20: persist the completion claim BEFORE the isolated auditor
+      // starts. If session replacement lands during the audit, a fresh
+      // session can recover the exact claim instead of leaving an untracked
+      // goal stuck in `auditing`.
+      updateGoal({
+        status: "auditing",
+        pendingTasks: undefined,
+        pendingCompletion: {
+          completionSummary: p.completionSummary,
+          verificationSummary: p.verificationSummary,
+          at: nowIso(),
+        },
+      }, ctx);
       const settings = loadSettings(ctx.cwd);
       const { model: auditorModel, error: modelError, via } = resolveAuditorModel(ctx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
       if (modelError) {
@@ -3931,7 +3957,7 @@ function registerAgentTools(pi: any): void {
       // Escape hatch: the user aborted the audit (Esc). Offer the explicit
       // choice — complete WITHOUT audit, or keep working. (pi-goal-x parity.)
       if (result.error === "Auditor aborted.") {
-        updateGoal({ status: "active", auditHistory: history, pauseReason: "audit aborted by user (Esc)" }, ctx);
+        updateGoal({ status: "active", auditHistory: history, pendingCompletion: undefined, pauseReason: "audit aborted by user (Esc)" }, ctx);
         let completeAnyway = false;
         try {
           completeAnyway = await ctx.ui.confirm(
@@ -3954,7 +3980,7 @@ function registerAgentTools(pi: any): void {
       }
 
       if (result.approved) {
-        updateGoal({ auditHistory: history }, ctx);
+        updateGoal({ auditHistory: history, pendingCompletion: undefined }, ctx);
         const objective = state.goal.objective;
         archiveCurrentGoal(ctx, "complete", `auditor ${result.model} approved`);
         notifyExternal(ctx, `Goal complete (auditor approved): ${objective.slice(0, 120)}`);
@@ -3976,7 +4002,8 @@ function registerAgentTools(pi: any): void {
           updateGoal({
             status: "active",
             auditHistory: history,
-            pauseReason: `auditor verdict: IMPOSSIBLE (partial) — ${reason}`,
+            pendingCompletion: undefined,
+            pauseReason: `auditor verdict: IMPOSSIBLE (partial) — ${reason}`,},{
             pauseSuggestedAction: "Narrow the objective past the impossible part (complete_goal newObjective or /goal tweak) and continue",
           }, ctx);
           ctx.ui.notify(`Auditor: part of the goal is IMPOSSIBLE — ${reason.slice(0, 100)}. aggressiveMode: narrowing and continuing.`, "warning");
@@ -3993,6 +4020,7 @@ function registerAgentTools(pi: any): void {
         updateGoal({
           status: "paused",
           auditHistory: history,
+          pendingCompletion: undefined,
           pauseKind: "decision",
           pauseOptions: ["Tweak the objective — /goal tweak <new text>", "Cancel the goal (/goal cancel)"],
           pauseRecommended: 1,
@@ -4074,6 +4102,7 @@ function registerAgentTools(pi: any): void {
           updateGoal({
             status: "paused",
             auditHistory: history,
+            pendingCompletion: undefined,
             auditInfraStreak: infraStreak,
             pauseKind: "error",
             pauseReason: `auditor infrastructure failed ${infraStreak}× in a row — the auditor model is likely broken OR a verification command is hanging (ssh/sudo/long test runs stall the stream) (last: ${result.error.slice(0, 120)})`,
@@ -4093,6 +4122,7 @@ function registerAgentTools(pi: any): void {
         updateGoal({
           status: "active",
           auditHistory: history,
+          pendingCompletion: undefined,
           auditInfraStreak: infraStreak,
           pauseReason: `auditor infrastructure${retriedOnce ? " (retried once)" : ""}: ${result.error}`,
           pauseSuggestedAction: "Fix the auditor model (/glla model=provider/id) and call complete_goal again — your work was NOT judged",
@@ -4117,6 +4147,7 @@ function registerAgentTools(pi: any): void {
         updateGoal({
           status: "active",
           auditHistory: history,
+          pendingCompletion: undefined,
           pauseReason: `regression shield: auditor approved, but evidence never referenced ${missing.length} contract item(s)`,
           pauseSuggestedAction: "call complete_goal again — the next auditor run is told exactly which items to quote evidence for",
         }, ctx);
@@ -4162,6 +4193,7 @@ function registerAgentTools(pi: any): void {
           updateGoal({
             status: "active",
             auditHistory: history,
+            pendingCompletion: undefined,
             pendingTasks,
             pauseReason: `auditor disapproved ${trailingDisapprovals}× consecutively (cap ${auditCap}) — aggressiveMode: continuing with TODOs`,
           }, ctx);
@@ -4182,6 +4214,7 @@ function registerAgentTools(pi: any): void {
         updateGoal({
           status: "paused",
           auditHistory: history,
+          pendingCompletion: undefined,
           pauseKind: "decision",
           pauseOptions: ["Fix the disapproval gap, then continue (/goal resume)", "Tweak the objective — /goal tweak <new text>", "Cancel the goal (/goal cancel)"],
           pauseRecommended: 1,
@@ -4203,6 +4236,7 @@ function registerAgentTools(pi: any): void {
       updateGoal({
         status: "active",
         auditHistory: history,
+        pendingCompletion: undefined,
         pauseReason: "auditor disapproved",
         pauseSuggestedAction: "Inspect auditor feedback and fix the actual gap before calling complete_goal again",
       }, ctx);
