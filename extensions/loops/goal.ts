@@ -255,6 +255,24 @@ let staleTerminalDone = false;
 // and schedule work against the fresh session.
 let sessionGeneration = 0;
 
+// v0.34.24: sendMessage(triggerTurn) returning without throwing is only an
+// accepted dispatch, not proof that pi started a turn. Keep one immutable
+// attempt bound to the session generation and owner identity until a real
+// before_agent_start/agent_start/turn_start event acknowledges it.
+const CONTINUATION_START_TIMEOUT_MS = Number(process.env.GLLA_CONTINUATION_START_TIMEOUT_MS ?? 150_000);
+let pendingContinuationDispatch: ContinuationDispatch | null = null;
+let continuationStartTimer: NodeJS.Timeout | null = null;
+let continuationDispatchStoodDown = false;
+
+function sessionManagerId(ctx: ExtensionContext): string {
+  try {
+    const getId = (ctx.sessionManager as { getSessionId?: () => string }).getSessionId;
+    return typeof getId === "function" ? String(getId.call(ctx.sessionManager)) : "unknown-session";
+  } catch {
+    return "unknown-session";
+  }
+}
+
 /** v0.26.7: a stale api is terminal for this process — go loudly with
  * restart guidance instead of retrying sends that can never land.
  * v0.28.1 (S1/S2): goals STAY ACTIVE with an interrupt marker instead of
