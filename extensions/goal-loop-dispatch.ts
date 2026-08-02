@@ -112,10 +112,13 @@ export function readDispatchRecord(cwd: string): ContinuationDispatch | null {
       parsed.version !== DISPATCH_RECORD_VERSION ||
       typeof parsed.id !== "string" ||
       typeof parsed.generation !== "number" ||
+      !Number.isFinite(parsed.generation) ||
       typeof parsed.ownerSessionId !== "string" ||
       !["goal", "loop", "stall", "length"].includes(String(parsed.kind)) ||
       typeof parsed.marker !== "string" ||
       typeof parsed.sentAt !== "number" ||
+      !Number.isFinite(parsed.sentAt) ||
+      typeof parsed.resync !== "boolean" ||
       !["prepared", "accepted", "started", "failed", "unacknowledged"].includes(String(parsed.phase))
     ) return null;
     return parsed as ContinuationDispatch;

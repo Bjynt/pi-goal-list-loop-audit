@@ -56,7 +56,7 @@ test("truncate", () => {
 
 test("display projections remove terminal and zero-width control characters without changing stored state", () => {
   const hostile = "safe\u001b[31m\nspoof\u0007\u202Ehidden\u200B";
-  assert.equal(truncate(hostile, 200), "safe [31m spoof hidden");
+  assert.equal(truncate(hostile, 200), "safe spoof hidden");
   const g = goalOf({ objective: hostile, pauseReason: hostile });
   const lines = buildWidgetLines({ goal: g, list: [] }, null, NOW)!;
   const rendered = lines.join("\n");
