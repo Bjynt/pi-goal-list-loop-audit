@@ -48,10 +48,10 @@ test("v0.34.20: detached fan-out revalidates after user confirmation", () => {
   assert.doesNotMatch(GOAL, /fanOutListAuditFindings\(ctx\)/);
 });
 
-test("v0.34.21: completion audits persist lifecycle claims and stop retrying after replacement", () => {
+test("v0.34.22: detached completion audits persist lifecycle claims and stop applying after replacement", () => {
   const complete = between(GOAL, 'name: "complete_goal"', 'name: "pause_goal"');
   const claim = complete.indexOf("beginCompletionAudit(ctx");
-  const auditor = complete.indexOf("runGoalCompletionAuditor");
+  const auditor = complete.indexOf("runDetachedGoalCompletionAuditor");
   assert.ok(claim >= 0 && auditor > claim, "the completion claim is durable before the auditor starts");
   assert.match(GOAL, /function beginCompletionAudit\(ctx: ExtensionContext/);
   assert.match(GOAL, /phase: "running"/);

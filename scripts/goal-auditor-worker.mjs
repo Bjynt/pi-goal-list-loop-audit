@@ -91,6 +91,9 @@ async function main() {
   let finalized = false;
   let pi;
   let deadlineTimer;
+  let inactivityTimer;
+  let lastActivityAt = Date.now();
+  const AUDITOR_STALL_MS = 10 * 60_000;
 
   const progress = async (phase = "running") => {
     const file = {
@@ -99,6 +102,7 @@ async function main() {
       requestHash: request.requestHash,
       phase,
       elapsedMs: Date.now() - startedAt,
+      lastActivityAt,
       recentOutput: recentOutput.slice(-8),
       toolCalls: toolCalls.slice(),
       ...(currentTool ? { currentTool } : {}),
@@ -112,6 +116,7 @@ async function main() {
     if (finalized) return;
     finalized = true;
     if (deadlineTimer) clearTimeout(deadlineTimer);
+    if (inactivityTimer) clearInterval(inactivityTimer);
     if (pi && pi.exitCode === null) pi.kill("SIGTERM");
     const result = {
       protocolVersion: PROTOCOL_VERSION,
@@ -156,10 +161,18 @@ async function main() {
     });
 
     const remaining = Math.max(1, request.wallDeadlineAt - Date.now());
+    const wallMinutes = Math.max(1, Math.round((request.wallDeadlineAt - startedAt) / 60_000));
     deadlineTimer = setTimeout(() => {
-      void finish(false, "auditor wall-clock deadline exceeded");
+      void finish(false, `Auditor exceeded its ${wallMinutes}m wall-clock bound and was aborted.`).catch(() => {});
     }, remaining);
     deadlineTimer.unref?.();
+    inactivityTimer = setInterval(() => {
+      if (finalized || currentTool) return;
+      if (Date.now() - lastActivityAt >= AUDITOR_STALL_MS) {
+        void finish(false, "Auditor stalled — no session activity for 10m while no read-only tool was running, so it was aborted.").catch(() => {});
+      }
+    }, 15_000);
+    inactivityTimer.unref?.();
 
     // RPC is a strict LF-delimited JSON stream. Do not use readline here:
     // its CRLF normalization accepts transport corruption that the worker
@@ -171,6 +184,8 @@ async function main() {
     let settledSeen = false;
     const handleRpcLine = (line) => {
       if (finalized || !line) return;
+      lastActivityAt = Date.now();
+      void progress("running").catch(() => {});
       // The RPC contract is LF-delimited but permits a trailing CR for
       // conventional CRLF producers. Any other raw CR is transport damage.
       if (line.endsWith("\r")) line = line.slice(0, -1);

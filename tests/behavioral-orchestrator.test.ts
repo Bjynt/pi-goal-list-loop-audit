@@ -1001,7 +1001,7 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
     const claimed = readState(cwd).goal as { status: string; pendingCompletion?: { phase?: string } };
     assert.equal(claimed.status, "auditing", "claim is durable before the detached result");
     assert.equal(claimed.pendingCompletion?.phase, "running");
-    await waitUntil(() => readState(cwd).goal === null);
+    await waitUntil(() => (readState(cwd).goal as { status?: string } | null)?.status === "complete");
     assert.ok(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes('"goal_archived"'), "approval archived the goal");
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   } finally {
