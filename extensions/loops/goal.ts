@@ -6443,7 +6443,7 @@ export default function (pi: ExtensionAPI): void {
 
   // v0.15.1: ask_user_question answers arrive as tool results, not chat
   // messages — count answered (non-cancelled) questionnaires as replies too.
-  pi.on("tool_result", async (event: any) => {
+  pi.on("tool_result", async (event: any, eventCtx: ExtensionContext) => {
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
     noteToolResult(event); // v0.33.0: slim widget "last action" feed
     // v0.24.0: roll loop tool-result fingerprints (same-tool-same-result
@@ -6481,11 +6481,14 @@ export default function (pi: ExtensionAPI): void {
     // HIT QUOTA ERRORS section carries the full guidance.
     if (isSubagentQuotaResult(String(event?.toolName ?? ""), Boolean(event?.isError ?? event?.error), event?.output ?? event?.result ?? event?.details ?? "")) {
       const errText = typeof (event?.output ?? event?.result) === "string" ? (event?.output ?? event?.result) : JSON.stringify(event?.output ?? event?.result ?? event?.details ?? "");
-      appendLedger(registeredCtx?.cwd ?? process.cwd(), "subagent_quota_error", { error: String(errText).slice(0, 200) });
-      registeredCtx?.ui.notify(
-        "Subagent hit a quota error (403/limit). Repair: re-spawn with an explicit model= on your quota pool, or do the work inline — see the continuation prompt's WHEN SUBAGENTS HIT QUOTA ERRORS. Explore's upstream haiku pin is the usual cause (pi-subagents#175); glla's inherit-parent strategy removes it for NEW sessions.",
-        "warning",
-      );
+      const current = currentToolContext(eventCtx);
+      if (current) {
+        appendLedger(current.cwd, "subagent_quota_error", { error: String(errText).slice(0, 200) });
+        current.ui.notify(
+          "Subagent hit a quota error (403/limit). Repair: re-spawn with an explicit model= on your quota pool, or do the work inline — see the continuation prompt's WHEN SUBAGENTS HIT QUOTA ERRORS. Explore's upstream haiku pin is the usual cause (pi-subagents#175); glla's inherit-parent strategy removes it for NEW sessions.",
+          "warning",
+        );
+      }
     }
     if (draftingTarget === null) return;
     if (askUserQuestionAnswered(String(event?.toolName ?? ""), event?.details)) {
@@ -6564,7 +6567,7 @@ export default function (pi: ExtensionAPI): void {
     };
     carryoverResolved = !(carryoverSnapshot.pausedGoal || carryoverSnapshot.listCount > 0 || carryoverSnapshot.heldLoop);
     if (!registeredCtx) {
-      registerAgentTools(pi, ctx);
+      registerAgentTools(pi);
       registeredCtx = ctx;
     }
     ensureAgentToolsActive(pi, ctx);
@@ -6822,7 +6825,7 @@ export default function (pi: ExtensionAPI): void {
       state.goal.telemetry = t;
     }
     if (!registeredCtx) {
-      registerAgentTools(pi, ctx);
+      registerAgentTools(pi);
       registeredCtx = ctx;
     }
     ensureAgentToolsActive(pi, ctx);
