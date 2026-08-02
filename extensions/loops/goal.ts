@@ -131,7 +131,7 @@ import {
   rollupProject,
   type ProjectRollup,
 } from "../goal-loop-stats.js";
-import { runGoalCompletionAuditor } from "../goal-loop-auditor.js";
+import { runDetachedGoalCompletionAuditor } from "../goal-loop-auditor-process.js";
 import {
   REPETITION,
   isActuallyStuck,
@@ -1904,12 +1904,12 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
   completionAuditInFlight = true;
   completionAuditGeneration = generation;
   const auditStartMs = Date.now();
-  let result: Awaited<ReturnType<typeof runGoalCompletionAuditor>>;
+  let result: Awaited<ReturnType<typeof runDetachedGoalCompletionAuditor>>;
   try {
     ({ result } = await runWithInfraRetry(
       () =>
-        runGoalCompletionAuditor({
-          ctx: liveCtx,
+        runDetachedGoalCompletionAuditor({
+          cwd: liveCtx.cwd,
           goal: auditGoal,
           completionSummary: claim.completionSummary,
           verificationSummary: claim.verificationSummary,
@@ -4043,19 +4043,22 @@ function registerAgentTools(pi: any): void {
       if (modelError) {
         ctx.ui.notify(`Auditor model issue: ${modelError}`, "warning");
       }
-      ctx.ui.notify(`Auditor running (isolated session, model: ${via ?? "setting"})…`, "info");
-      // Esc during the audit aborts this tool's signal → threaded into the
-      // auditor session, which aborts cleanly and returns "Auditor aborted."
-      latestAuditProgress = { label: "starting", lastEventAt: Date.now() };
+      ctx.ui.notify(`Auditor queued (detached worker, model: ${via ?? "setting"}) — the claim is durable; verdict will arrive asynchronously.`, "info");
+      // The detached worker must not keep complete_goal's pi turn open. The
+      // rest of this callback deliberately runs after the tool has returned;
+      // every state/UI access below rebinds through the generation guard.
+      latestAuditProgress = { label: "queued", lastEventAt: Date.now() };
+      completionAuditInFlight = true;
+      completionAuditGeneration = auditGeneration;
+      void (async () => {
       const runAudit = () =>
-        runGoalCompletionAuditor({
-          ctx,
+        runDetachedGoalCompletionAuditor({
+          cwd: ctx.cwd,
           goal: auditGoal,
           completionSummary: p.completionSummary,
           verificationSummary: p.verificationSummary,
           model: auditorModel,
           thinkingLevel: (settings.auditorThinkingLevel ?? "high") as any, // may be "max" — pi ≥0.83 understands it; the dev-types predate it
-          signal: signal ?? undefined,
           onProgress: (progress) => {
             const current = freshCtxForGeneration(auditGeneration);
             if (!current) return;
@@ -4493,6 +4496,23 @@ function registerAgentTools(pi: any): void {
           type: "text",
           text: `Auditor disapproved. Report (${auditFeedbackLabel}):\n${auditFeedback}${auditFeedbackTruncationHint}${noContractHint}`,
         }],
+        details: {},
+      };
+      })().catch((error) => {
+        const current = freshCtxForGeneration(auditGeneration);
+        if (!current || !state.goal || state.goal.id !== auditGoalId || state.goal.pendingCompletion?.attemptId !== auditAttemptId) return;
+        updateGoal({
+          status: "paused",
+          pendingCompletion: { ...completionClaim, phase: "recovery-pending", recoveryAt: nowIso(), recoveryReason: "auditor-infrastructure" },
+          pauseKind: "error",
+          pauseReason: `completion auditor infrastructure failure — ${error instanceof Error ? error.message : String(error)}`,
+          pauseSuggestedAction: "Fix the auditor worker/model, then /goal resume to retry the stored claim.",
+        }, current);
+        appendLedger(current.cwd, "audit_infra_waiting", { goalId: auditGoalId, attemptId: auditAttemptId, error: String(error).slice(0, 240) });
+        current.ui.notify("Completion auditor worker failed to settle (infrastructure, not a verdict). The stored claim is safe; /goal resume retries it.", "warning");
+      });
+      return {
+        content: [{ type: "text", text: `Completion claim persisted; detached auditor queued (model: ${via ?? "setting"}). The verdict will be applied asynchronously.` }],
         details: {},
       };
     },
