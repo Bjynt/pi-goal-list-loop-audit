@@ -1093,7 +1093,7 @@ function heartbeatTick(): void {
   if (
     state.goal?.status === "auditing" &&
     !completionAuditInFlight &&
-    completionAuditRecoveryArmed &&
+    (!state.goal.pendingCompletion || completionAuditRecoveryArmed) &&
     Date.now() - lastActivityAt >= 90_000
   ) {
     appendLedger(ctx.cwd, "stranded_audit_recovered", { goalId: state.goal.id, via: state.goal.pendingCompletion ? "stored-claim" : "resume-active" });
