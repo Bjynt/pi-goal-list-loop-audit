@@ -163,6 +163,23 @@ test("runWithInfraRetry: retriable infra failure retried exactly once", async ()
   assert.equal((await runWithInfraRetry(aborted, { sleep: noSleep })).retriedOnce, false);
 });
 
+test("runWithInfraRetry: lifecycle guard prevents a second attempt", async () => {
+  const { runWithInfraRetry } = await import("../extensions/goal-loop-core.ts");
+  type R = { error?: string; approved: boolean; disapproved: boolean; output: string };
+  let calls = 0;
+  let live = true;
+  const run = async (): Promise<R> => {
+    calls++;
+    return { error: "stream error", approved: false, disapproved: false, output: "" };
+  };
+  const out = await runWithInfraRetry(run, {
+    sleep: async () => { live = false; },
+    shouldRetry: () => live,
+  });
+  assert.equal(out.retriedOnce, false);
+  assert.equal(calls, 1, "replacement during the retry wait must not call the old run again");
+});
+
 test("formatGoalAuditHistory: one line per verdict with elapsed", async () => {
   const { formatGoalAuditHistory } = await import("../extensions/goal-loop-core.ts");
   const goal = {

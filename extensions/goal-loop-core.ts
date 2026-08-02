@@ -1313,15 +1313,42 @@ export interface InfraRetryOutcome<T> {
  * (retried once)". The failed pair is never a verdict on the work. */
 export async function runWithInfraRetry<T extends { error?: string; approved: boolean; disapproved: boolean }>(
   run: () => Promise<T>,
-  opts: { backoffMs?: number; sleep?: (ms: number) => Promise<void>; onRetry?: (error: string) => void } = {},
+  opts: {
+    backoffMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+    onRetry?: (error: string) => void;
+    /**
+     * v0.34.20: delayed retry callers can fail closed across a session
+     * replacement. The first attempt may finish after its ExtensionContext
+     * was invalidated; never launch the second attempt unless the caller can
+     * prove that its session/generation is still live.
+     */
+    shouldRetry?: () => boolean;
+  } = {},
 ): Promise<InfraRetryOutcome<T>> {
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const first = await run();
   if (first.approved || first.disapproved || !isRetriableInfraError(first.error)) {
     return { result: first, retriedOnce: false };
   }
+  if (opts.shouldRetry) {
+    try {
+      if (!opts.shouldRetry()) return { result: first, retriedOnce: false };
+    } catch {
+      // A lifecycle probe that cannot establish liveness is a hard stop, not
+      // permission to retry an old session.
+      return { result: first, retriedOnce: false };
+    }
+  }
   opts.onRetry?.(first.error!);
   await sleep(opts.backoffMs ?? 5000);
+  if (opts.shouldRetry) {
+    try {
+      if (!opts.shouldRetry()) return { result: first, retriedOnce: false };
+    } catch {
+      return { result: first, retriedOnce: false };
+    }
+  }
   const second = await run();
   return { result: second, retriedOnce: true };
 }

@@ -1278,6 +1278,53 @@ function freshCtx(): ExtensionContext | null {
   }
 }
 
+/**
+ * v0.34.20: a timer can already be queued when clearSessionOwnedTimers()
+ * runs, and an async audit can finish after a replacement without a queued
+ * timer at all. Delayed work must prove both facts before touching pi:
+ * generation identity is unchanged and the context probe succeeds. A null
+ * result is a normal fail-closed handoff, not a reason to use the caller's
+ * captured context as a fallback.
+ */
+function freshCtxForGeneration(generation: number): ExtensionContext | null {
+  if (
+    generation !== sessionGeneration ||
+    sessionHandoffPending ||
+    initialSessionLoadPending ||
+    extensionApiStale ||
+    staleTerminalDone ||
+    zombieStoodDown
+  ) return null;
+  return freshCtx();
+}
+
+/**
+ * v0.34.20: the generic quota helper owns only the wall-clock timer and the
+ * immediate notification. This adapter owns the session boundary: callbacks
+ * receive a context proven fresh at fire time and may not close over the
+ * scheduling event's ctx.
+ */
+function scheduleQuotaRetryForSession(
+  ctx: ExtensionContext,
+  retryAfterSec: number,
+  reason: string,
+  fire: (ctx: ExtensionContext) => void | Promise<void>,
+  label?: string,
+): void {
+  const generation = sessionGeneration;
+  scheduleQuotaRetry(ctx, retryAfterSec, reason, () => {
+    const current = freshCtxForGeneration(generation);
+    if (!current) return;
+    try {
+      void Promise.resolve(fire(current)).catch((err) => {
+        if (isStaleApiError(err)) extensionApiStale = true;
+      });
+    } catch (err) {
+      if (isStaleApiError(err)) extensionApiStale = true;
+    }
+  }, label);
+}
+
 // v0.34.15 (hegemon 2026-08-01): pi ACCEPTED the continuation — footer showed
 // "1 queued" — but the turn trigger was dead, so the message sat queued while
 // pi idled. The 0.34.11 watchdog gates on "pi reported NO pending" and the
@@ -6894,16 +6941,16 @@ export default function (pi: ExtensionAPI): void {
           notifyExternal(ctx, `${goalNoun()} parked: provider erroring across 6 error-brake cycles — hourly top-of-hour probes scheduled.`);
           appendLedger(ctx.cwd, "error_brake_capped", { streak: brakeStreak, reason });
           const probeMs = msUntilNextHourBoundary(Date.now());
-          scheduleQuotaRetry(ctx, probeMs / 1000, reason, () => {
+          scheduleQuotaRetryForSession(ctx, probeMs / 1000, reason, (fresh) => {
             // Re-check: only probe if STILL parked by the error-brake cap —
             // a user pause/resume/cancel meanwhile is never stomped.
             if (state.goal && state.goal.status === "paused" && state.goal.pauseKind === "error"
               && (state.goal.pauseReason ?? "").includes("error-brakes in a row")) {
-              appendLedger(ctx.cwd, "hourly_rate_probe", { goalId: state.goal.id, streak: state.goal.errorBrakeStreak ?? 0 });
-              updateGoal({ status: "active" }, ctx);
-              appendLedger(ctx.cwd, "goal_resumed", { via: "hourly-rate-probe" });
-              ctx.ui.notify("Hourly probe: resuming (rate-limit windows typically expire at the top of the hour).", "info");
-              scheduleContinuation(ctx, true);
+              appendLedger(fresh.cwd, "hourly_rate_probe", { goalId: state.goal.id, streak: state.goal.errorBrakeStreak ?? 0 });
+              updateGoal({ status: "active" }, fresh);
+              appendLedger(fresh.cwd, "goal_resumed", { via: "hourly-rate-probe" });
+              fresh.ui.notify("Hourly probe: resuming (rate-limit windows typically expire at the top of the hour).", "info");
+              scheduleContinuation(fresh, true);
             }
           }, "Hourly rate-limit probe");
           return;
@@ -6925,14 +6972,14 @@ export default function (pi: ExtensionAPI): void {
         ctx.ui.notify(`Goal paused: ${reason}.${quotaWall ? " Quota/rate-limit wall — resuming won't help until the window resets; switch /model to continue now." : ""}`, "warning");
         notifyExternal(ctx, `Goal paused: ${reason}.`);
         appendLedger(ctx.cwd, "goal_paused", { reason });
-        scheduleQuotaRetry(ctx, cooldownMs / 1000, reason, () => {
+        scheduleQuotaRetryForSession(ctx, cooldownMs / 1000, reason, (fresh) => {
           // Re-check: only auto-resume if STILL paused for the error brake
           // (a user /goal pause during the window is not stomped).
           if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("5 consecutive errors")) {
-            updateGoal({ status: "active" }, ctx);
-            appendLedger(ctx.cwd, "goal_resumed", { via: "error-brake-retry" });
-            ctx.ui.notify("Auto-resumed after the 5-error brake (cooldown elapsed).", "info");
-            scheduleContinuation(ctx, true);
+            updateGoal({ status: "active" }, fresh);
+            appendLedger(fresh.cwd, "goal_resumed", { via: "error-brake-retry" });
+            fresh.ui.notify("Auto-resumed after the 5-error brake (cooldown elapsed).", "info");
+            scheduleContinuation(fresh, true);
           }
         }, "5 consecutive errors — auto-retry");
         return;
