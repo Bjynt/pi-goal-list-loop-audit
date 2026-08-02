@@ -13,6 +13,7 @@ import * as fs from "node:fs";
 import {
   LENGTH_CONTINUE_MAX,
   LENGTH_CONTINUE_TEXT,
+  isContextStarvedLengthStop,
   makeLengthContinueTracker,
 } from "../extensions/length-continue.ts";
 
@@ -35,6 +36,17 @@ test("continue text carries the root-cause mitigation (split large writes)", () 
   assert.match(LENGTH_CONTINUE_TEXT, /split large file writes/i);
 });
 
+test("v0.34.19: tiny-output length at a nearly full context is context starvation, not a real output cap", () => {
+  const message = { stopReason: "length", usage: { output: 1 } };
+  assert.equal(isContextStarvedLengthStop(message, { tokens: 198_116, contextWindow: 200_000, percent: 99.058 }), true);
+  assert.equal(isContextStarvedLengthStop(message, { tokens: 198_116, contextWindow: 200_000, percent: null }), true, "derives percent from tokens/contextWindow");
+  assert.equal(isContextStarvedLengthStop(message, { tokens: 180_000, contextWindow: 200_000, percent: 90 }), true, "90% threshold is inclusive");
+  assert.equal(isContextStarvedLengthStop(message, { tokens: 179_999, contextWindow: 200_000, percent: 89.9995 }), false);
+  assert.equal(isContextStarvedLengthStop({ stopReason: "length", usage: { output: 4_096 } }, { percent: 99.1 }), false, "a large output means the model really hit its response cap");
+  assert.equal(isContextStarvedLengthStop({ stopReason: "length" }, { percent: 99.1 }), false, "missing output usage fails open to legacy length-continue");
+  assert.equal(isContextStarvedLengthStop({ stopReason: "stop", usage: { output: 1 } }, { percent: 99.1 }), false);
+});
+
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 
 test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal gating", () => {
@@ -42,8 +54,10 @@ test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal g
   // distance — prior 5000-char window broke when P1/P3 (0.28.4) added ~1100
   // chars between the length path and the goal gate.
   const handler = SRC.slice(SRC.indexOf('pi.on("agent_end"'), SRC.indexOf('pi.on("agent_end"') + 9000);
-  const lengthIdx = handler.indexOf('tickLengthContinue(lastA?.stopReason === "length")');
+  const lengthIdx = handler.indexOf('tickLengthContinue(lastA?.stopReason === "length" && !contextStarvedLength)');
   assert.ok(lengthIdx > 0, "length tick present");
+  assert.ok(handler.indexOf("isContextStarvedLengthStop(rawLastA, contextUsage)") < lengthIdx, "context-starvation classification runs before the tracker");
+  assert.ok(handler.indexOf('length_continue_deferred_context_full') > lengthIdx, "context-starvation ledger is emitted by the defer path");
   // before the no-tool nudge accounting (stall brake) …
   assert.ok(lengthIdx < handler.indexOf("accountTurnForNudges"), "before nudge accounting");
   // … before per-goal telemetry …
@@ -51,8 +65,8 @@ test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal g
   // … and before the "no goal → return" gate (works in plain sessions)
   assert.ok(lengthIdx < handler.indexOf('if (!state.goal) return;'), "before goal gating");
   // truncated turns return early — no continuation scheduling on half a response
-  const early = handler.slice(lengthIdx, lengthIdx + 500);
-  assert.match(early, /if \(lc\.fire && !ctx\.hasPendingMessages\(\)\) sendLengthContinue\(ctx, lc\.consecutive\);\s*\n\s*return;/);
+  const early = handler.slice(lengthIdx, lengthIdx + 2200);
+  assert.match(early, /if \(lastA\?\.stopReason === "length"\) \{\s*\n\s*if \(lc\.fire && !ctx\.hasPendingMessages\(\)\) sendLengthContinue\(ctx, lc\.consecutive\);\s*\n\s*return;\s*\n\s*\}/);
 });
 
 test("sendLengthContinue: stale-api terminal guard + ledger + factory reset", () => {

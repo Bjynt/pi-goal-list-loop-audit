@@ -92,6 +92,7 @@ import {
 import {
   LENGTH_CONTINUE_MAX,
   LENGTH_CONTINUE_TEXT,
+  isContextStarvedLengthStop,
   resetLengthContinue,
   tickLengthContinue,
 } from "../length-continue.js";
@@ -6625,7 +6626,30 @@ export default function (pi: ExtensionAPI): void {
     const rawPriorA = assistants.length >= 2 ? assistants[assistants.length - 2] : null;
     const extractText = (m: any): string => (m && Array.isArray(m.content)) ? m.content.filter((p: any) => p.type === "text").map((p: any) => p.text).join("\n") : "";
     const lastA = rawLastA ? { stopReason: rawLastA.stopReason, text: extractText(rawLastA), priorText: extractText(rawPriorA) } : null;
-    const lc = tickLengthContinue(lastA?.stopReason === "length");
+    // v0.34.19: pi-ai clamps max_tokens to the remaining context before the
+    // provider call. At ~99% context that clamp can be 1 token, which the
+    // provider reports as stopReason "length" — but this is NOT an overlong
+    // assistant response. Extension agent_end runs BEFORE pi's own
+    // auto-compaction check (agent-session.js _handlePostAgentRun), so sending
+    // LENGTH_CONTINUE_TEXT here queues another 1-token request and delays the
+    // real cure. Defer to pi compaction; session_compact's resume debt owns
+    // the next continuation. Older pi/test doubles without getContextUsage()
+    // fail open to the legacy true-length path.
+    const contextUsage = (() => {
+      try { return typeof ctx.getContextUsage === "function" ? ctx.getContextUsage() : undefined; } catch { return undefined; }
+    })();
+    const contextStarvedLength = isContextStarvedLengthStop(rawLastA, contextUsage);
+    const lc = tickLengthContinue(lastA?.stopReason === "length" && !contextStarvedLength);
+    if (contextStarvedLength) {
+      appendLedger(ctx.cwd, "length_continue_deferred_context_full", {
+        outputTokens: rawLastA?.usage?.output,
+        contextTokens: contextUsage?.tokens ?? null,
+        contextWindow: contextUsage?.contextWindow ?? null,
+        contextPercent: contextUsage?.percent ?? null,
+      });
+      ctx.ui.notify("glla: output-token stop was context starvation (tiny output at a nearly full context) — yielding to pi auto-compaction instead of re-sending.", "info");
+      return;
+    }
     if (lc.giveUpNow) {
       ctx.ui.notify(`glla: response hit the output-token cap ${LENGTH_CONTINUE_MAX}× in a row — stepping aside. Ask the model to split the work into smaller pieces.`, "warning");
       notifyExternal(ctx, "Response truncated 3× in a row — giving up auto-continue.");
