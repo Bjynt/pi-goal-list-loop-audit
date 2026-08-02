@@ -3151,7 +3151,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     const queue = listQueue();
     const lines: string[] = [];
     if (state.goal) {
-      lines.push(`Active: [${state.goal.policy}] ${state.goal.objective.slice(0, 80)} (${statusLabel(state.goal.status)})`);
+      lines.push(`Active: [${state.goal.policy}] ${displaySlice(state.goal.objective, 80)} (${statusLabel(state.goal.status)})`);
     } else {
       lines.push("Active: (none)");
     }
@@ -3160,7 +3160,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     } else {
       lines.push(`List (${queue.length}):`);
       const PAGE = 15;
-      queue.slice(0, PAGE).forEach((item, i) => lines.push(`  ${i + 1}. ${item.objective.slice(0, 90)}`));
+      queue.slice(0, PAGE).forEach((item, i) => lines.push(`  ${i + 1}. ${displaySlice(item.objective, 90)}`));
       if (queue.length > PAGE) {
         lines.push(`  … and ${queue.length - PAGE} more. /list remove <n> to prune, /list clear to empty.`);
       }
@@ -3267,7 +3267,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     state = { ...state, list: queue.filter((_, i) => i !== n - 1) };
     persistState(ctx);
     appendLedger(ctx.cwd, "list_removed", { id: removed.id, objective: removed.objective });
-    ctx.ui.notify(`Removed: ${removed.objective.slice(0, 80)}`, "info");
+    ctx.ui.notify(`Removed: ${displaySlice(removed.objective, 80)}`, "info");
     return;
   }
 
@@ -3307,7 +3307,7 @@ function addSingleItem(ctx: ExtensionContext, raw: string): void {
   if (!state.goal || state.goal.status === "complete" || state.goal.status === "aborted") {
     activateNextListItem(ctx);
   } else {
-    ctx.ui.notify(`Added to the list (${listQueue().length} waiting): ${objective.slice(0, 80)}`, "info");
+    ctx.ui.notify(`Added to the list (${listQueue().length} waiting): ${displaySlice(objective, 80)}`, "info");
   }
 }
 
@@ -3440,7 +3440,7 @@ function loopPrompt(loop: LoopState, regressionNote: string, strategyNote: strin
 }
 
 function scheduleLoopTick(ctx: ExtensionContext): void {
-  if (sessionHandoffPending || initialSessionLoadPending || extensionApiStale || staleTerminalDone || zombieStoodDown || !isLoopActive()) return;
+  if (sessionHandoffPending || initialSessionLoadPending || extensionApiStale || staleTerminalDone || zombieStoodDown || continuationDispatchStoodDown || pendingContinuationDispatch || !isLoopActive()) return;
   rememberCtx(ctx);
   clearLoopTimer();
   let delay = 0;
@@ -3935,9 +3935,9 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
   appendLedger(ctx.cwd, "loop_started", { target: cfg.target, measureCmd: cfg.measureCmd || "none", direction: cfg.direction ?? "none", baseline, branch: branchName, timeLimitHours: cfg.timeLimitHours, tokenBudget: cfg.tokenBudget });
   ctx.ui.notify(
     metricless
-      ? `Loop started (metricless spec loop — NO plateau stop): ${cfg.target.slice(0, 60)}\nEnds only at ${cfg.maxIterations > 0 ? `max ${cfg.maxIterations} iterations` : "no iteration cap"}${cfg.timeLimitHours ? ` · ${cfg.timeLimitHours}h` : ""}${cfg.tokenBudget ? ` · ${cfg.tokenBudget.toLocaleString()} tokens` : ""} · /loop stop. Every iteration must make ONE real, inspectable change — cosmetic churn is the doorknob failure.` +
+      ? `Loop started (metricless spec loop — NO plateau stop): ${displaySlice(cfg.target, 60)}\nEnds only at ${cfg.maxIterations > 0 ? `max ${cfg.maxIterations} iterations` : "no iteration cap"}${cfg.timeLimitHours ? ` · ${cfg.timeLimitHours}h` : ""}${cfg.tokenBudget ? ` · ${cfg.tokenBudget.toLocaleString()} tokens` : ""} · /loop stop. Every iteration must make ONE real, inspectable change — cosmetic churn is the doorknob failure.` +
         (branchName ? `\nbranch mode: committing each iteration to ${branchName}` : "")
-      : `Loop started: ${cfg.target.slice(0, 60)}\nBaseline: ${cfg.deferBaseline ? "deferred — the first real measurement seeds it" : (baseline ?? "(forced without a number — first turn must produce one)")} · direction ${cfg.direction} · window ${cfg.plateauWindow} · ${cfg.maxIterations > 0 ? `max ${cfg.maxIterations}` : "no iteration cap"}` +
+      : `Loop started: ${displaySlice(cfg.target, 60)}\nBaseline: ${cfg.deferBaseline ? "deferred — the first real measurement seeds it" : (baseline ?? "(forced without a number — first turn must produce one)")} · direction ${cfg.direction} · window ${cfg.plateauWindow} · ${cfg.maxIterations > 0 ? `max ${cfg.maxIterations}` : "no iteration cap"}` +
         (branchName ? `\nbranch mode: committing improvements to ${branchName}` : ""),
     "info",
   );
@@ -3991,7 +3991,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       releaseContinuationDispatchStandDown();
       scheduleLoopTick(ctx);
       ctx.ui.notify(
-        `Loop resumed: iteration ${stored.iteration}/${stored.maxIterations > 0 ? stored.maxIterations : "∞"} · best ${stored.bestValue ?? "n/a"} — ${stored.target.slice(0, 60)}`,
+        `Loop resumed: iteration ${stored.iteration}/${stored.maxIterations > 0 ? stored.maxIterations : "∞"} · best ${stored.bestValue ?? "n/a"} — ${displaySlice(stored.target, 60)}`, 
         "info",
       );
       return;
@@ -4011,7 +4011,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       return;
     }
     const lines = [
-      `Loop: ${loop.active ? "active" : "stopped"} — ${loop.target.slice(0, 80)}`,
+      `Loop: ${loop.active ? "active" : "stopped"} — ${displaySlice(loop.target, 80)}`, 
       `Metric: ${loop.measureCmd ? `${loop.measureCmd} (${loop.direction})` : "none — metricless spec loop (no plateau)"}`,
       `Iteration ${loop.iteration}/${loop.maxIterations > 0 ? loop.maxIterations : "∞"} · best ${loop.bestValue ?? "n/a"} · last ${loop.lastValue ?? "n/a"} · stall ${loop.stallCount}/${loop.plateauWindow}`,
     ];
@@ -4486,7 +4486,7 @@ function registerAgentTools(pi: any): void {
         updateGoal({ auditHistory: history, pendingCompletion: undefined }, ctx);
         const objective = state.goal.objective;
         archiveCurrentGoal(ctx, "complete", `auditor ${result.model} approved`);
-        notifyExternal(ctx, `Goal complete (auditor approved): ${objective.slice(0, 120)}`);
+        notifyExternal(ctx, `Goal complete (auditor approved): ${displaySlice(objective, 120)}`);
         return { content: [{ type: "text", text: `Goal approved by auditor ${result.model}.` }], details: {} };
       }
 
@@ -6200,7 +6200,7 @@ async function cmdGllaWipe(ctx: ExtensionContext): Promise<void> {
     return;
   }
   const parts: string[] = [];
-  if (live) parts.push(`goal archived as aborted: ${g!.objective.replace(/\s+/g, " ").slice(0, 70)}`);
+  if (live) parts.push(`goal archived as aborted: ${displaySlice(g!.objective, 70)}`);
   else if (g) parts.push(`terminal goal record cleared (${g.status})`);
   if (n > 0) parts.push(`list cleared (${n} item${n === 1 ? "" : "s"})`);
   if (loop) parts.push(`loop ${loop.active ? "stopped" : "cleared"} (iter ${loop.iteration}${loop.bestValue !== null && loop.bestValue !== undefined ? `, best ${loop.bestValue}` : ""})`);
@@ -6263,9 +6263,9 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
   if (goalResumable && loopResumable) {
     if (ctx.hasUI) {
       try {
-        const loopLabel = `Resume the held loop (iter ${state.loop!.iteration}, best ${state.loop!.bestValue ?? "n/a"}): ${state.loop!.target.replace(/\s+/g, " ").slice(0, 80)}`;
+        const loopLabel = `Resume the held loop (iter ${state.loop!.iteration}, best ${state.loop!.bestValue ?? "n/a"}): ${displaySlice(state.loop!.target, 80)}`;
         const pick = await ctx.ui.select("Two things can resume — which one?", [
-          `Resume the ${g!.policy === "list" ? "list item" : "goal"}: ${g!.objective.replace(/\s+/g, " ").slice(0, 80)}`,
+          `Resume the ${g!.policy === "list" ? "list item" : "goal"}: ${displaySlice(g!.objective, 80)}`, 
           loopLabel,
         ]);
         if (pick === undefined) {
@@ -6307,7 +6307,7 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
     // filtered out a stale session reaching this branch).
     if (g.interruptedAt) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
     ctx.ui.notify(
-      `The ${g.policy === "list" ? "list item" : "goal"} is ACTIVE but idle — re-firing its continuation: ${g.objective.replace(/\s+/g, " ").slice(0, 70)}`,
+      `The ${g.policy === "list" ? "list item" : "goal"} is ACTIVE but idle — re-firing its continuation: ${displaySlice(g.objective, 70)}`,
       "info",
     );
     scheduleContinuation(ctx, true);
@@ -6330,6 +6330,7 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
   }
   if (state.loop?.active) {
     appendLedger(ctx.cwd, "resume_rekick", { loop: true, iteration: state.loop.iteration });
+    if (continuationDispatchStoodDown) releaseContinuationDispatchStandDown();
     ctx.ui.notify(`The loop is ACTIVE — re-firing its tick (iteration ${state.loop.iteration}). If it wedges again, /loop status for the diagnostics.`, "info");
     scheduleLoopTick(ctx);
     return;
@@ -6401,15 +6402,15 @@ function cmdGllaStatus(ctx: ExtensionContext): void {
       ? isCompletionAuditRecoveryPending(g) ? " (audit recovery pending)" : completionAuditInFlight && latestAuditProgress?.label === "queued" ? " (detached auditor queued)" : completionAuditInFlight ? " (detached auditor running…)" : " (audit awaiting lifecycle recovery)"
       : "";
     const pause = g.status === "paused" && g.pauseReason ? ` — ${g.pauseReason.slice(0, 90)}` : "";
-    lines.push(`goal [${g.policy}] ${g.status}${audit}${tok}: ${g.objective.slice(0, 90)}${pause}`);
+    lines.push(`goal [${g.policy}] ${g.status}${audit}${tok}: ${displaySlice(g.objective, 90)}${pause}`);
   } else {
     lines.push("goal: none");
   }
   const q = listQueue();
-  lines.push(`list: ${q.length === 0 ? "empty" : `${q.length} queued — head: ${(q[0]?.objective ?? "").slice(0, 70)}`}`);
+  lines.push(`list: ${q.length === 0 ? "empty" : `${q.length} queued — head: ${displaySlice(q[0]?.objective ?? "", 70)}`}`);
   const l = state.loop;
   if (l) {
-    lines.push(`loop: ${l.active ? "ACTIVE" : `held/stopped — ${l.stopReason ?? "n/a"}`} · iter ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"} · best ${l.bestValue ?? "n/a"} · stall ${l.stallCount} — ${l.target.slice(0, 60)}`);
+    lines.push(`loop: ${l.active ? "ACTIVE" : `held/stopped — ${sanitizeDisplayText(l.stopReason ?? "n/a")}`} · iter ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"} · best ${l.bestValue ?? "n/a"} · stall ${l.stallCount} — ${displaySlice(l.target, 60)}`);
   } else {
     lines.push("loop: none");
   }
