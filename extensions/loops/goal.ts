@@ -3962,6 +3962,9 @@ function registerAgentTools(pi: any): void {
       // choice — complete WITHOUT audit, or keep working. (pi-goal-x parity.)
       if (result.error === "Auditor aborted.") {
         updateGoal({ status: "active", auditHistory: history, pendingCompletion: undefined, pauseReason: "audit aborted by user (Esc)" }, ctx);
+        const abortConfirmCtx = freshCtxForGeneration(auditGeneration);
+        if (!abortConfirmCtx) return staleToolResult();
+        ctx = abortConfirmCtx;
         let completeAnyway = false;
         try {
           completeAnyway = await ctx.ui.confirm(
@@ -3971,8 +3974,11 @@ function registerAgentTools(pi: any): void {
         } catch {
           completeAnyway = false;
         }
+        const afterAbortConfirmCtx = freshCtxForGeneration(auditGeneration);
+        if (!afterAbortConfirmCtx) return staleToolResult();
+        ctx = afterAbortConfirmCtx;
         if (completeAnyway) {
-          updateGoal({ auditHistory: history }, ctx);
+          updateGoal({ auditHistory: history, pendingCompletion: undefined }, ctx);
           archiveCurrentGoal(ctx, "complete", "completed without audit (user choice after Esc)");
           return { content: [{ type: "text", text: "Goal marked complete without audit (user choice)." }], details: {} };
         }
