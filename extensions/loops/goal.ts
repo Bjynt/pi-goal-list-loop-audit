@@ -781,16 +781,10 @@ let heartbeatTimer: NodeJS.Timeout | null = null;
 
 const ZOMBIE_RUN_SILENT_MS = 20 * 60_000;
 const ZOMBIE_RUN_ALERT_THROTTLE_MS = 10 * 60_000;
-// v0.34.11: unanswered-continuation watchdog. Hellhunter 2026-08-01: at a
-// list-transition completion boundary pi ACCEPTED every continuation
-// (sendMessage never threw; session reported idle) but started NO turn —
-// transcript frozen, tokens flat, 10+ minutes of refires into the void.
-// Same family as the post-compaction dropped trigger (v0.26.5), but the
-// the pending latch needs idle&&pending and pi reported no pending
-// here, and the zombie watchdog needs busy — this shape falls between both
-// chairs. Disarm signal = real activity (agent_end/tool_call) AFTER the
-// last send; a landed turn — even a lazy text-only one — disarms it.
-const CONTINUATION_UNANSWERED_MS = 150_000;
+// v0.34.11/v0.34.24: compatibility alias for the old unanswered-send
+// watchdog. The bounded dispatch-start timer is now the primary proof path;
+// this value remains named for older ledger/tests and fallback diagnostics.
+const CONTINUATION_UNANSWERED_MS = CONTINUATION_START_TIMEOUT_MS;
 const CONTINUATION_UNANSWERED_THROTTLE_MS = 300_000;
 // v0.34.12: eager-continuation settle delay. Hellhunter 2026-08-01 (post-
 // restart): every turn cycle paid a 60s heartbeat tax because the eager
@@ -1117,12 +1111,10 @@ function heartbeatTick(): void {
     notifyExternal(ctx, `glla: zombie run suspected (${Math.round(streamSilentMs / 60000)} min busy-silent) — press Esc to abort.`);
     return;
   }
-  // v0.34.11: unanswered-continuation watchdog — pi took the send but no
-  // turn started (no agent_end, no tool call, no stream). Re-sends don't
-  // unstick a dropped trigger (hegemon law) — this alert's job is to say
-  // the cure LOUDLY at ~2.5 min instead of leaving a silent 20-30 min gap
-  // before the zombie/wedge alerts. Does NOT return: the heartbeat refire
-  // below keeps sending underneath in case pi unsticks by itself.
+  // v0.34.11: legacy unanswered-continuation diagnostics. The new
+  // generation-bound dispatch watchdog returns above while a dispatch is
+  // pending, so this branch is only a compatibility fallback for state that
+  // predates the dispatch sidecar. It never initiates a second send.
   if (
     isSupervising() &&
     lastContinuationSentAt > 0 &&
@@ -7422,8 +7414,8 @@ export default function (pi: ExtensionAPI): void {
     // v0.23.8: a subagent finishing must not drive the main session's
     // continuation loop.
     if (isForeignCtx(ctx)) return;
-    dispatchStartAcknowledged(ctx, "agent_end");
     noteActivity(true);
+    dispatchStartAcknowledged(ctx, "agent_end");
     lastStreamActivityAt = Date.now();
     // v0.27.2: folded-in length-continue (standalone pi-length-continue is
     // deprecated). A response cut by the per-response output cap is NOT a
@@ -7784,10 +7776,10 @@ export default function (pi: ExtensionAPI): void {
   });
   pi.on("agent_start", (_event: any, ctx: ExtensionContext) => {
     lastStreamActivityAt = Date.now();
-    if (!isForeignCtx(ctx)) dispatchStartAcknowledged(ctx, "agent_start");
     // v0.32.1: a real turn started — the post-compaction resume debt is
     // discharged (the heartbeat stops retrying it).
     postCompactResumeOwed = false;
+    if (!isForeignCtx(ctx)) dispatchStartAcknowledged(ctx, "agent_start");
   });
   pi.on("turn_start", (_event: any, ctx: ExtensionContext) => {
     lastStreamActivityAt = Date.now();

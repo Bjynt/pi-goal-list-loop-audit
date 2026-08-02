@@ -45,7 +45,7 @@ export function fmtTokens(n: number): string {
 }
 
 export function truncate(s: string, max: number): string {
-  const safe = sanitizeDisplayText(s);
+  const safe = compactDisplayText(s);
   return safe.length <= max ? safe : safe.slice(0, Math.max(0, max - 1)) + "…";
 }
 

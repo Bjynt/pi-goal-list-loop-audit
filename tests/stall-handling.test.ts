@@ -385,17 +385,15 @@ test("v0.34.5: wedge alert names a subagent wait when the in-flight call is one"
 
 test("v0.34.11: unanswered-continuation watchdog (accepted send, no turn — hellhunter list-transition wedge)", () => {
   const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
-  assert.match(g, /const CONTINUATION_UNANSWERED_MS = 150_000;/, "2.5min threshold");
-  assert.match(g, /const CONTINUATION_UNANSWERED_THROTTLE_MS = 300_000;/, "5min re-alert throttle");
+  assert.match(g, /const CONTINUATION_START_TIMEOUT_MS = Number\(process\.env\.GLLA_CONTINUATION_START_TIMEOUT_MS \?\? 150_000\);/, "bounded start-proof timeout");
+  assert.match(g, /const CONTINUATION_UNANSWERED_THROTTLE_MS = 300_000;/, "legacy re-alert throttle remains documented");
   // Disarm signal: real activity (agent_end/tool_call via noteActivity(true)) AFTER the last send.
   assert.match(g, /if \(real\) \{ consecutiveStalls = 0; lastRealActivityAt = lastActivityAt; \}/, "real activity stamps lastRealActivityAt");
-  assert.match(g, /lastRealActivityAt < lastContinuationSentAt/, "armed only when no activity since the send");
-  // Both send paths stamp the send time (goal continuations AND loop turns).
-  assert.match(g, /appendLedger\(ctx\.cwd, "goal_continuation_sent", \{ goalId \}\);\n    lastContinuationSentAt = Date\.now\(\);/);
-  assert.match(g, /appendLedger\(ctx\.cwd, "loop_turn_sent", \{ iteration: loop\.iteration \}\);\n    lastContinuationSentAt = Date\.now\(\);/);
-  // Loud + actionable + ledger-visible; re-sends explicitly don't unstick (hegemon law).
-  assert.match(g, /continuation_unanswered/);
-  assert.match(g, /A fresh session_start will rebind the \$\{isLoopActive\(\) \? "loop" : "goal\/list item"\}/);
+  assert.match(g, /pendingContinuationDispatch/, "accepted dispatch owns the watchdog before a generic heartbeat refire");
+  assert.match(g, /dispatchStartAcknowledged\(ctx, "before_agent_start", event\?\.prompt\)/, "prompt-specific start proof");
+  assert.match(g, /dispatchStartUnacknowledged/, "missing proof fails closed");
+  assert.match(g, /continuation_start_unacknowledged/);
+  assert.match(g, /Automatic re-sends are stopped/, "no blind resend storm");
 });
 
 // ---------- v0.34.12: eager-continuation settle + wait countdown ----------
@@ -480,6 +478,6 @@ test("v0.34.16: queue-stuck probe — a send queued-without-a-turn is reported w
   assert.match(g, /if \(!ctx\.hasPendingMessages\(\)\) return;/, "consumed message = healthy — even an instant 429 consumes");
   assert.match(g, /if \(!ctx\.isIdle\(\)\) return;/, "running turn = healthy");
   assert.match(g, /if \(!isSupervising\(\)\) return;/, "paused/completed disarms");
-  assert.ok((g.match(/armQueueStuckProbe\(lastContinuationSentAt\);/g) ?? []).length === 2, "armed on BOTH goal + loop sends");
+  assert.ok((g.match(/armQueueStuckProbe\(lastContinuationSentAt\);/g) ?? []).length >= 2, "armed on goal + loop sends (and stall escalation)");
   assert.match(g, /const ctx = freshCtx\(\);\n      if \(!ctx\) return;.*no fresh lifecycle context/s, "probe resolves a fresh ctx at fire time instead of retaining the sender ctx");
 });
