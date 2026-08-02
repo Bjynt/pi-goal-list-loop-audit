@@ -35,6 +35,48 @@ export interface LengthContinueTick {
   consecutive: number;
 }
 
+export interface ContextUsageLike {
+  tokens?: number | null;
+  contextWindow?: number;
+  percent?: number | null;
+}
+
+export interface AssistantLengthMessageLike {
+  stopReason?: string;
+  usage?: {
+    output?: number;
+  };
+}
+
+export const LENGTH_CONTINUE_CONTEXT_STARVED_PERCENT = 90;
+export const LENGTH_CONTINUE_CONTEXT_STARVED_MAX_OUTPUT = 8;
+
+/**
+ * v0.34.19: distinguish a REAL overlong assistant response from pi's
+ * context-safety clamp. Near the configured context ceiling,
+ * pi-ai's clampMaxTokensToContext() can reduce max_tokens to 1; MiniMax then
+ * returns stopReason "length" with ~1 output token. That is context
+ * starvation: auto-compaction must own recovery. Sending LENGTH_CONTINUE_TEXT
+ * here queues another 1-token request before pi's post-agent_end compaction
+ * check and delays the actual cure (field: darklord 2026-08-02, 198,116 /
+ * 198,179 total tokens of a 200,000 window, output=1 twice).
+ */
+export function isContextStarvedLengthStop(
+  message: AssistantLengthMessageLike | null | undefined,
+  contextUsage: ContextUsageLike | null | undefined,
+): boolean {
+  if (message?.stopReason !== "length") return false;
+  const output = message.usage?.output;
+  if (typeof output !== "number" || !Number.isFinite(output)) return false;
+  if (output > LENGTH_CONTINUE_CONTEXT_STARVED_MAX_OUTPUT) return false;
+  const percent = typeof contextUsage?.percent === "number"
+    ? contextUsage.percent
+    : typeof contextUsage?.tokens === "number" && typeof contextUsage?.contextWindow === "number" && contextUsage.contextWindow > 0
+      ? (contextUsage.tokens / contextUsage.contextWindow) * 100
+      : null;
+  return percent !== null && Number.isFinite(percent) && percent >= LENGTH_CONTINUE_CONTEXT_STARVED_PERCENT;
+}
+
 export function makeLengthContinueTracker(max: number = LENGTH_CONTINUE_MAX) {
   let consecutive = 0;
   let gaveUp = false;
