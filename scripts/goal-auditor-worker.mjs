@@ -89,6 +89,7 @@ async function main() {
   let currentToolArgs;
   let currentToolStartedAt;
   let finalized = false;
+  let streamError;
   let pi;
   let deadlineTimer;
   let inactivityTimer;
@@ -205,6 +206,14 @@ async function main() {
         void finish(false, "RPC stream contained invalid JSON").catch(() => {});
         return;
       }
+      if (event.type === "error" || event.type === "extension_error" || event.type === "auto_retry_start" || event.type === "auto_retry_end") {
+        const message = event.errorMessage ?? event.message ?? event.finalError ?? event.error;
+        if (typeof message === "string" && message.trim()) streamError = message.slice(0, 500);
+      }
+      if (event.type === "message_end" && event.message?.role === "assistant" && event.message.stopReason === "error") {
+        const message = event.message.errorMessage;
+        if (typeof message === "string" && message.trim()) streamError = message.slice(0, 500);
+      }
       if (event.type === "message_update") {
         const update = event.assistantMessageEvent;
         if (update?.type === "text_delta" && typeof update.delta === "string") {
@@ -238,7 +247,9 @@ async function main() {
       }
       if (event.type === "agent_settled") {
         settledSeen = true;
-        void finish(true).catch(() => {});
+        const output = outputParts.join("\n");
+        const hasVerdict = /<(?:approved\/|disapproved\/|impossible>)/i.test(output);
+        void finish(!streamError || hasVerdict, hasVerdict ? "" : streamError || "auditor session settled without a verdict").catch(() => {});
       }
       // agent_end is progress only; never finalize on it.
     };
@@ -263,7 +274,7 @@ async function main() {
 
     pi.on("error", (error) => { void finish(false, `pi launch failed: ${error.message}`).catch(() => {}); });
     pi.on("exit", (code, signal) => {
-      if (!finalized) void finish(false, `pi exited before audit completion (code=${code ?? "?"}, signal=${signal ?? "?"})`).catch(() => {});
+      if (!finalized) void finish(false, streamError || `pi exited before audit completion (code=${code ?? "?"}, signal=${signal ?? "?"})`).catch(() => {});
     });
 
     // Exactly one LF-terminated JSONL prompt. JSON.stringify escapes embedded
