@@ -1311,7 +1311,10 @@ function clearContinuationStartWatchdog(): void {
 }
 
 function dispatchLabel(record: ContinuationDispatch): string {
-  return record.kind === "loop" ? `loop iteration ${record.iteration ?? "?"}` : `${state.goal?.policy === "list" ? "list item" : "goal"}${record.goalId ? ` ${record.goalId}` : ""}`;
+  if (record.kind === "loop") return `loop iteration ${record.iteration ?? "?"}`;
+  if (record.kind === "stall") return "stall warning";
+  if (record.kind === "length") return "length continuation";
+  return `${state.goal?.policy === "list" ? "list item" : "goal"}${record.goalId ? ` ${record.goalId}` : ""}`;
 }
 
 function dispatchPrepare(
@@ -1595,7 +1598,7 @@ function scheduleContinuation(ctx: ExtensionContext, force = false, delayMs?: nu
 }
 
 function sendContinuation(goalId: string): void {
-  if (sessionHandoffPending || initialSessionLoadPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
+  if (sessionHandoffPending || initialSessionLoadPending || extensionApiStale || staleTerminalDone || zombieStoodDown || continuationDispatchStoodDown || pendingContinuationDispatch) return;
   continuationTimer = null;
   continuationScheduledFor = null;
   if (!isActionableGoal()) return;
@@ -1622,17 +1625,28 @@ function sendContinuation(goalId: string): void {
     // v0.33.1: a builder throw (corrupt restored state) must not masquerade
     // as a transport failure — send without the block instead.
     if (postCompactResyncPending) { try { resync = buildPostCompactResync(); } catch { resync = ""; } }
+    const attempt = dispatchPrepare(ctx, {
+      generation: sessionGeneration,
+      ownerSessionId: sessionManagerId(ctx),
+      kind: "goal",
+      goalId,
+      marker: `[GOAL CHECKPOINT goalId=${goalId}]`,
+      resync: Boolean(resync),
+    });
+    if (!attempt) return;
     extensionApi.sendMessage({
       customType: GOAL_EVENT_ENTRY,
       content: resync + continuationPrompt(state.goal!),
       display: false,
     }, { triggerTurn: true, deliverAs: "followUp" });
-    if (resync) postCompactResyncPending = false; // consumed only by a landed send
-    continuationRearmStreak = 0; continuationRearmSince = 0; // v0.28.5 (E3): a landed send clears the storm
-    appendLedger(ctx.cwd, "goal_continuation_sent", { goalId });
-    lastContinuationSentAt = Date.now();
+    if (!dispatchAccepted(ctx, attempt)) return;
+    continuationRearmStreak = 0; continuationRearmSince = 0; // v0.28.5 (E3): an accepted dispatch clears the storm
+    appendLedger(ctx.cwd, "goal_continuation_sent", { goalId, attemptId: attempt.id, generation: attempt.generation });
+    if (pendingContinuationDispatch === null) return; // before_agent_start acked synchronously
+    lastContinuationSentAt = attempt.sentAt;
     armQueueStuckProbe(lastContinuationSentAt);
   } catch (err) {
+    if (pendingContinuationDispatch) dispatchFailed(ctx, pendingContinuationDispatch, err instanceof Error ? err.message : String(err));
     appendLedger(ctx.cwd, "goal_continuation_send_failed", { goalId, error: err instanceof Error ? err.message : String(err) });
     // v0.26.7: stale runtime = terminal (sends can never land); anything
     // else is transient — next agent_end/session_start reschedules.
@@ -1645,7 +1659,7 @@ function sendContinuation(goalId: string): void {
 // what closes the turn: complete_goal if done, pause_goal if blocked, a tool
 // call otherwise. display: true — the user should see the warning too.
 function sendStallEscalation(ctx: ExtensionContext, nudges: number): void {
-  if (sessionHandoffPending || initialSessionLoadPending || !extensionApi || extensionApiStale) return;
+  if (sessionHandoffPending || initialSessionLoadPending || !extensionApi || extensionApiStale || continuationDispatchStoodDown || pendingContinuationDispatch) return;
   const remaining = HEARTBEAT_MAX_NUDGES - nudges;
   const text = [
     `[STALL WARNING ${nudges}/${HEARTBEAT_MAX_NUDGES}] The last turn produced no tool calls.`,
@@ -1655,9 +1669,24 @@ function sendStallEscalation(ctx: ExtensionContext, nudges: number): void {
     remaining === 1 ? "ONE more unproductive turn pauses the goal." : `${remaining} more unproductive turns pause the goal.`,
   ].join(" ");
   appendLedger(ctx.cwd, "stall_escalation_nudge", { nudges, remaining });
+  const attempt = dispatchPrepare(ctx, {
+    generation: sessionGeneration,
+    ownerSessionId: sessionManagerId(ctx),
+    kind: "stall",
+    goalId: state.goal?.id,
+    marker: `[STALL WARNING ${nudges}/${HEARTBEAT_MAX_NUDGES}]`,
+    resync: false,
+  });
+  if (!attempt) return;
   try {
     extensionApi.sendMessage({ customType: GOAL_EVENT_ENTRY, content: text, display: true }, { triggerTurn: true, deliverAs: "followUp" });
+    if (!dispatchAccepted(ctx, attempt)) return;
+    appendLedger(ctx.cwd, "stall_escalation_dispatched", { nudges, remaining, attemptId: attempt.id });
+    if (pendingContinuationDispatch === null) return;
+    lastContinuationSentAt = attempt.sentAt;
+    armQueueStuckProbe(lastContinuationSentAt);
   } catch (err) {
+    if (pendingContinuationDispatch) dispatchFailed(ctx, pendingContinuationDispatch, err instanceof Error ? err.message : String(err));
     appendLedger(ctx.cwd, "stall_escalation_nudge_failed", { error: err instanceof Error ? err.message : String(err) });
     if (isStaleApiError(err)) goStaleTerminal(ctx, "sendStallEscalation");
   }
@@ -3406,7 +3435,7 @@ function scheduleLoopTick(ctx: ExtensionContext): void {
 }
 
 function sendLoopTurn(): void {
-  if (sessionHandoffPending || initialSessionLoadPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
+  if (sessionHandoffPending || initialSessionLoadPending || extensionApiStale || staleTerminalDone || zombieStoodDown || continuationDispatchStoodDown || pendingContinuationDispatch) return;
   loopTimer = null;
   if (!isLoopActive() || !extensionApi) return;
   const ctx = freshCtx();
@@ -3504,21 +3533,32 @@ function sendLoopTurn(): void {
   try {
     let loopResync = "";
     if (postCompactResyncPending) { try { loopResync = buildPostCompactResync(); } catch { loopResync = ""; } } // v0.33.1
+    const attempt = dispatchPrepare(ctx, {
+      generation: sessionGeneration,
+      ownerSessionId: sessionManagerId(ctx),
+      kind: "loop",
+      iteration: loop.iteration + 1,
+      marker: `[LOOP ITERATION ${loop.iteration + 1}]`,
+      resync: Boolean(loopResync),
+    });
+    if (!attempt) return;
     extensionApi.sendMessage({
       customType: GOAL_EVENT_ENTRY,
       content: loopResync + loopPrompt(loop, regressionNote, strategyNote2, boundsNote, interventionNote, variantNote, hypothesisNote, refineHintNote),
       display: false,
     }, { triggerTurn: true, deliverAs: "followUp" });
-    if (loopResync) postCompactResyncPending = false; // consumed only by a landed send
+    if (!dispatchAccepted(ctx, attempt)) return;
     // v0.26.1: the send path is ledgered — the hegemon zombie spun 619
     // refires with zero visibility into whether sends were landing.
-    loopRearmStreak = 0; loopRearmSince = 0; // v0.28.5 (E3): a landed turn clears the storm
-    appendLedger(ctx.cwd, "loop_turn_sent", { iteration: loop.iteration });
-    lastContinuationSentAt = Date.now();
+    loopRearmStreak = 0; loopRearmSince = 0; // v0.28.5 (E3): an accepted dispatch clears the storm
+    appendLedger(ctx.cwd, "loop_turn_sent", { iteration: loop.iteration, attemptId: attempt.id, generation: attempt.generation });
+    if (pendingContinuationDispatch === null) return; // before_agent_start acked synchronously
+    lastContinuationSentAt = attempt.sentAt;
     armQueueStuckProbe(lastContinuationSentAt);
   } catch (err) {
     // stale API — next agent_end reschedules (but if none comes, the
     // heartbeat's stall escalation stops the spin — v0.26.1).
+    if (pendingContinuationDispatch) dispatchFailed(ctx, pendingContinuationDispatch, err instanceof Error ? err.message : String(err));
     appendLedger(ctx.cwd, "loop_turn_send_failed", { error: err instanceof Error ? err.message : String(err) });
     // v0.26.7: stale runtime is terminal, not transient — go loud now.
     if (isStaleApiError(err)) goStaleTerminal(ctx, "sendLoopTurn");

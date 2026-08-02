@@ -16,7 +16,7 @@ import { runPersistStep } from "./goal-loop-core.js";
 export const DISPATCH_RECORD_VERSION = 1;
 export const DISPATCH_RECORD_FILE = "continuation-dispatch.json";
 
-export type DispatchKind = "goal" | "loop";
+export type DispatchKind = "goal" | "loop" | "stall" | "length";
 export type DispatchPhase = "prepared" | "accepted" | "started" | "failed" | "unacknowledged";
 
 export interface ContinuationDispatch {
@@ -113,7 +113,7 @@ export function readDispatchRecord(cwd: string): ContinuationDispatch | null {
       typeof parsed.id !== "string" ||
       typeof parsed.generation !== "number" ||
       typeof parsed.ownerSessionId !== "string" ||
-      (parsed.kind !== "goal" && parsed.kind !== "loop") ||
+      !["goal", "loop", "stall", "length"].includes(String(parsed.kind)) ||
       typeof parsed.marker !== "string" ||
       typeof parsed.sentAt !== "number" ||
       !["prepared", "accepted", "started", "failed", "unacknowledged"].includes(String(parsed.phase))
