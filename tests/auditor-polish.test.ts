@@ -116,7 +116,7 @@ test("widget flags auditor-quiet stalls after 3 minutes", () => {
   const quietLine = stale.find((l) => l.includes("auditor quiet"));
   assert.ok(quietLine, "stale progress flags the stall");
   assert.match(quietLine!, /auditor quiet 7m/);
-  assert.match(quietLine!, /Esc aborts/);
+  assert.match(quietLine!, /\/goal cancel discards the claim/);
 });
 
 test("auditor prompt requires the Required-fixes tail + no think blocks", () => {

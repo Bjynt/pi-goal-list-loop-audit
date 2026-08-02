@@ -2,8 +2,10 @@
  * pi-goal-list-loop-audit — v0.1.0
  * extensions/goal-loop-auditor.ts
  *
- * Isolated completion auditor. Runs in a fresh pi agent session with no
- * extensions, no skills, no prompts, no themes, no editor. Only read tools.
+ * Legacy in-process completion-auditor helper and shared prompt/verdict
+ * machinery. The production completion path uses
+ * goal-loop-auditor-process.ts, which runs this contract in a detached pi RPC
+ * worker. This helper remains exported for compatibility and focused tests.
  *
  * Two enforced floors: the auditor must call at least one read tool before
  * <approved/>, and regression_shield (goal-loop-shield.ts) requires the

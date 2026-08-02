@@ -97,6 +97,11 @@ Whatever you choose must work extension-less. Verify with:
 PI_CODING_AGENT_DIR=/tmp/bare-agent pi -p "say ok" --model "provider/model-id"
 ```
 
+The detached worker resolves `pi` from `PATH` and inherits the normal
+`PI_CODING_AGENT_DIR`/provider environment. Set `GLLA_PI_BINARY=/absolute/path/to/pi`
+when the CLI is not on the worker's PATH; credentials are never written into
+`.pi-glla/audit-jobs/` or command arguments.
+
 ## Loop behavior: the multi-signal stuck gate (v0.25.1)
 
 A `/loop` iteration is judged STUCK only when **every** progress signal is

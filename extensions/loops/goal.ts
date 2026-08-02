@@ -5489,7 +5489,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       }
       const DESCR: Record<string, string> = { off: "no reasoning", minimal: "~1k tokens", low: "~2k tokens", medium: "~8k tokens", high: "the default; the gate must not ride the session's coding dial", xhigh: "~32k tokens", max: "maximum reasoning" };
       const t = await ctx.ui.select(
-        "Auditor thinking — ISOLATED auditor session ONLY (your session model's thinking is untouched)",
+        "Auditor thinking — DETACHED auditor worker ONLY (your session model's thinking is untouched)",
         levels.map((lv) => `${lv} — ${DESCR[lv] ?? ""}${lv === "high" && curThinking === undefined ? " (current)" : curThinking === lv ? " (current)" : ""}`),
       );
       if (t) saveSettings("global", ctx.cwd, { auditorThinkingLevel: t.split(" ")[0] as Settings["auditorThinkingLevel"] });

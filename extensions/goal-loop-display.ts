@@ -385,9 +385,9 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     // while the audit is in flight (hung model call, stuck tool).
     const quietMs = audit?.lastEventAt !== undefined ? now - audit.lastEventAt : 0;
     if (quietMs > 3 * 60_000) {
-      lines.push(`└─ ${paint(theme, "warning", `auditor quiet ${fmtElapsed(quietMs)} — may be stuck; Esc aborts, verdict is not counted`)}`);
-    } else if (audit?.elapsedMs) lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(audit.elapsedMs)} in isolated session`)}`);
-    else lines.push(`└─ ${paint(theme, "dim", "isolated session, read-only tools")}`);
+      lines.push(`└─ ${paint(theme, "warning", `auditor quiet ${fmtElapsed(quietMs)} — may be stuck; /goal cancel discards the claim`)}`);
+    } else if (audit?.elapsedMs) lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(audit.elapsedMs)} in detached worker`)}`);
+    else lines.push(`└─ ${paint(theme, "dim", "detached worker, read-only tools")}`);
     return lines;
   }
   if (g.status === "paused" && g.pauseReason) {
