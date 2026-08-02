@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.34.23 — 2026-08-02
+
+### Fixed — host replacement rebinds across a new SessionManager
+
+A host `session_start` for `/new`, `/resume`, `/fork`, or `/reload` is no
+longer discarded as a foreign subagent event merely because pi supplied a new
+`SessionManager`. When pi omits the preceding `session_shutdown`, glla clears
+old timers, claims the fresh context, and records the rebind. Ordinary
+subagent `startup` events remain isolated.
+
+### Added — replacement-without-shutdown regression coverage
+
+Behavioral coverage now proves that a replacement with a different
+`SessionManager` resumes the goal and that a foreign subagent startup cannot
+steal ownership.
+
 ## 0.34.22 — 2026-08-02
 
 ### Changed — completion auditing leaves the main pi turn free
