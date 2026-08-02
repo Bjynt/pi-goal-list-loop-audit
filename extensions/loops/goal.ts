@@ -598,7 +598,7 @@ function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop" | "lis
     archiveCurrentGoal(ctx, "aborted", trigger === "loop" ? "carryover cleared" : `replaced by new ${trigger} (carryover)`);
     done.push(`archived paused goal "${displaySlice(snap.pausedGoal ?? pausedGoal.objective, 60)}"`);
   } else if (snap.pausedGoal) {
-    waiting.push(`paused goal "${snap.pausedGoal}" (/goal resume)`);
+    waiting.push(`paused goal "${displaySlice(snap.pausedGoal, 60)}" (/goal resume)`);
   }
   if (snap.listCount > 0) {
     if (policy === "clear") {
@@ -611,9 +611,9 @@ function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop" | "lis
   if (snap.heldLoop) {
     if (policy === "clear" && state.loop && !state.loop.active && state.loop.stopReason === HELD_ON_RESTORE) {
       state.loop = { ...state.loop, stopReason: "cleared: carryover" };
-      done.push(`dismissed held loop "${snap.heldLoop}"`);
+      done.push(`dismissed held loop "${displaySlice(snap.heldLoop, 60)}"`);
     } else {
-      waiting.push(`held loop "${snap.heldLoop}" (/loop to resume)`);
+      waiting.push(`held loop "${displaySlice(snap.heldLoop, 60)}" (/loop to resume)`);
     }
   }
   persistState(ctx);
@@ -7321,7 +7321,7 @@ export default function (pi: ExtensionAPI): void {
         state.loop = { ...l, active: false, stopReason: HELD_ON_RESTORE };
         persistState(ctx);
         ctx.ui.notify(
-          `Loop held on restore: ${displaySlice(l.target, 60)} — /loop resume to continue, /glla autoresume=on to auto-resume on session load (global setting).`
+          `Loop held on restore: ${displaySlice(l.target, 60)} — /loop resume to continue, /glla autoresume=on to auto-resume on session load (global setting).`,
           "info",
         );
       }
@@ -7369,7 +7369,7 @@ export default function (pi: ExtensionAPI): void {
             : resumeHint,
         }, ctx);
         ctx.ui.notify(
-          `${isListItem ? "List item" : "Goal"} held on restore: ${displaySlice(state.goal.objective, 70)}${queued > 0 ? ` (+${queued} waiting in the list)` : ""} — ${resumeCmd} to continue.`
+          `${isListItem ? "List item" : "Goal"} held on restore: ${displaySlice(state.goal.objective, 70)}${queued > 0 ? ` (+${queued} waiting in the list)` : ""} — ${resumeCmd} to continue.`,
           "info",
         );
       }

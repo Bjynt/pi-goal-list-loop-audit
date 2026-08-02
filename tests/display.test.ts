@@ -54,6 +54,17 @@ test("truncate", () => {
   assert.equal(truncate("a much longer string", 8), "a much …");
 });
 
+test("display projections remove terminal and zero-width control characters without changing stored state", () => {
+  const hostile = "safe\u001b[31m\nspoof\u0007\u202Ehidden\u200B";
+  assert.equal(truncate(hostile, 200), "safe [31m spoof hidden ");
+  const g = goalOf({ objective: hostile, pauseReason: hostile });
+  const lines = buildWidgetLines({ goal: g, list: [] }, null, NOW)!;
+  const rendered = lines.join("\n");
+  assert.ok(!/[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/.test(rendered));
+  assert.ok(!rendered.includes("\u001b"));
+  assert.equal(g.objective, hostile, "display rendering must not mutate persisted objective data");
+});
+
 // ---- buildStatusText ----
 
 test("empty state → undefined (segment cleared)", () => {
