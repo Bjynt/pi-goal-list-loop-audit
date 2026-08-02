@@ -2481,7 +2481,7 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
   const [file, label, tool] = prompts[target]!;
   const seededHint =
     target === "list"
-      ? `${label}: the objective has no "Done when:" clause — the agent will grill you about it first (nothing activates until you confirm). Add directly instead: include a "Done when:" clause.`
+      ? `${label}: free-text is valid without a "Done when:" clause — the agent will turn it into short list items and grill for concrete per-item contracts (nothing activates until you confirm). To skip drafting, include a per-item "Done when:" clause.`
       : target === "loop"
         ? `${label}: a loop target needs a metric and a direction — the agent will help you design them first (nothing activates until you confirm). Skip the interview entirely: /loop start "<target>" (bare = infinite metricless) or /loop start "<target>" measure="<cmd>" direction=min|max [window=5] [max=50] [time=h] [tokens=n] [branch=1].`
         : `${label}: the objective has no "Done when:" clause — the agent will grill you about it first (nothing activates until you confirm). Skip the interview entirely: /goal start <objective>.`;
