@@ -706,6 +706,9 @@ let carryoverResolved = true;
 // set while complete_goal's isolated audit runs, so the heartbeat never
 // refires into an in-flight completion.
 let completionAuditInFlight = false;
+// v0.34.20: an old auditor's finally block must not clear the in-flight
+// marker belonging to a fresh lifecycle generation.
+let completionAuditGeneration: number | null = null;
 // v0.32.0: consecutive stored-claim quota retries (capped at 5, then hold).
 let quotaRetryStreak = 0;
 let heartbeatTimer: NodeJS.Timeout | null = null;
@@ -1802,6 +1805,7 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
 async function retryStoredCompletionAudit(origin: "quota-retry" | "manual" = "quota-retry"): Promise<void> {
   const goal = state.goal;
   if (!goal?.pendingCompletion) return;
+  const goalId = goal.id;
   if (completionAuditInFlight) return;
   const generation = sessionGeneration;
   // Delayed audit recovery has no safe fallback: if the current generation
@@ -1820,6 +1824,7 @@ async function retryStoredCompletionAudit(origin: "quota-retry" | "manual" = "qu
   if (modelError) liveCtx.ui.notify(`Auditor model issue: ${modelError}`, "warning");
   latestAuditProgress = { label: "quota-retry", lastEventAt: Date.now() };
   completionAuditInFlight = true;
+  completionAuditGeneration = generation;
   const auditStartMs = Date.now();
   let result: Awaited<ReturnType<typeof runGoalCompletionAuditor>>;
   try {
@@ -1827,31 +1832,35 @@ async function retryStoredCompletionAudit(origin: "quota-retry" | "manual" = "qu
       () =>
         runGoalCompletionAuditor({
           ctx: liveCtx,
-          goal: state.goal!,
+          goal,
           completionSummary: claim.completionSummary,
           verificationSummary: claim.verificationSummary,
           model: auditorModel,
           thinkingLevel: (settings.auditorThinkingLevel ?? "high") as any, // may be "max" — pi ≥0.83 understands it; the dev-types predate it
           onProgress: (progress) => {
-            latestAuditProgress = { currentTool: progress.currentTool, label: progress.label, elapsedMs: progress.elapsedMs, lastEventAt: Date.now() };
             const current = freshCtxForGeneration(generation);
-            if (current) refreshUI(current);
+            if (!current) return;
+            latestAuditProgress = { currentTool: progress.currentTool, label: progress.label, elapsedMs: progress.elapsedMs, lastEventAt: Date.now() };
+            refreshUI(current);
           },
         }),
       {
         shouldRetry: () => freshCtxForGeneration(generation) !== null,
         onRetry: (err) => {
           const current = freshCtxForGeneration(generation);
-          if (current) appendLedger(current.cwd, "audit_infra_retry", { goalId: state.goal?.id, error: err.slice(0, 200) });
+          if (current) appendLedger(current.cwd, "audit_infra_retry", { goalId, error: err.slice(0, 200) });
         },
       },
     ));
   } finally {
-    completionAuditInFlight = false;
-    latestAuditProgress = null;
+    if (completionAuditGeneration === generation) {
+      completionAuditInFlight = false;
+      completionAuditGeneration = null;
+      latestAuditProgress = null;
+    }
   }
   const currentAfterAudit = freshCtxForGeneration(generation);
-  if (!currentAfterAudit || !state.goal) return; // replacement/stale boundary — fresh session rebinds durable state
+  if (!currentAfterAudit || !state.goal || state.goal.id !== goalId) return; // replacement/stale/goal boundary — fresh session rebinds durable state
   liveCtx = currentAfterAudit;
 
   // Record the run in history (same compact shape as the tool path).
@@ -6602,6 +6611,11 @@ export default function (pi: ExtensionAPI): void {
     staleTerminalDone = false; // v0.33.1: a rebound session can go terminal again
     zombieStoodDown = false;
     sessionGeneration++;
+    // An auditor belonging to the disposed generation cannot block the fresh
+    // session's recovery gate; its finally block is generation-guarded too.
+    completionAuditInFlight = false;
+    completionAuditGeneration = null;
+    latestAuditProgress = null;
     // Ephemeral watchdog counters belong to the old session, not the
     // persisted goal. Reset them so a stale boundary cannot make the next
     // fresh session inherit a false stall count.
