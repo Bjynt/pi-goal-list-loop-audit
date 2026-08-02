@@ -13,9 +13,9 @@ import { createHash, randomUUID } from "node:crypto";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { Goal } from "./goal-loop-core.js";
-import { renderGoalMarkdown } from "./goal-loop-core.js";
-import { checkRegressionShield, parseAuditorVerdict } from "./goal-loop-shield.js";
+import type { Goal } from "./goal-loop-core.ts";
+import { renderGoalMarkdown } from "./goal-loop-core.ts";
+import { checkRegressionShield, parseAuditorVerdict } from "./goal-loop-shield.ts";
 
 export interface GoalAuditorResult {
   approved: boolean;
@@ -117,7 +117,7 @@ export function stableJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
   const record = value as Record<string, unknown>;
-  return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(",`)}}`;
+  return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(",")}}`;
 }
 
 export function requestHash(requestWithoutHash: Omit<AuditorRequest, "requestHash">): string {
