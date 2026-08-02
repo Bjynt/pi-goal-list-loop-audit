@@ -264,11 +264,32 @@ test("widget: paused goal shows reason + suggestion", () => {
 });
 
 test("widget: auditing shows auditor progress", () => {
-  const g = goalOf({ status: "auditing" });
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-1" } });
   const lines = buildWidgetLines({ goal: g, list: [] }, { label: "verifying contract", currentTool: "grep", elapsedMs: 42_000 }, NOW)!;
   assert.ok(lines.some((l) => l.includes("verifying contract")));
   assert.ok(lines.some((l) => l.includes("grep")));
   assert.ok(lines.some((l) => l.includes("42s")));
+  assert.match(buildStatusText({ goal: g, list: [] }, { currentTool: "grep" }, NOW)!, /auditing… · grep/);
+});
+
+test("widget: interrupted completion claims render recovery-pending, not auditor-running", () => {
+  const claim = { at: "2026-07-21T11:59:00Z", completionSummary: "done" };
+  const g = goalOf({ status: "auditing", pendingCompletion: claim }); // legacy claim has no phase
+  const state = { goal: g, list: [] };
+  const status = buildStatusText(state, null, NOW)!;
+  assert.match(status, /audit recovery pending/);
+  assert.doesNotMatch(status, /auditing…/);
+  const lines = buildWidgetLines(state, null, NOW)!;
+  assert.ok(lines.some((l) => l.includes("recovery pending — previous audit was interrupted")));
+  assert.ok(lines.some((l) => l.includes("stored completion claim is safe")));
+  assert.ok(!lines.some((l) => l.includes("auditor: running")));
+});
+
+test("widget: explicit running phase remains active even without a progress callback", () => {
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-2" } });
+  const lines = buildWidgetLines({ goal: g, list: [] }, null, NOW)!;
+  assert.ok(lines.some((l) => l.includes("auditor: running")));
+  assert.ok(!lines.some((l) => l.includes("recovery pending")));
 });
 
 test("widget: loop lines include measure + metric state", () => {

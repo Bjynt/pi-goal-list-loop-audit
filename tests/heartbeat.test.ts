@@ -19,6 +19,8 @@ import {
   WEDGE_ALERT_DEFAULT_MINUTES,
   MEASURE_TIMEOUT_MS,
   AUDITOR_STALL_MS,
+  AUDITOR_WALL_TIMEOUT_MS,
+  auditorWatchdogAction,
 } from "../extensions/goal-loop-backoff.ts";
 
 // ---- shouldHeartbeatRefire ----
@@ -137,15 +139,24 @@ test("shouldWedgeAlert: threshold 0 disables", () => {
 
 // ---- v0.23.3: timing defaults stay tight (regression guards) ----
 
-test("timing defaults: wedge 30m, measure 10m, auditor stall 10m", () => {
+test("timing defaults: wedge 30m, measure 10m, auditor inactivity 10m, auditor wall 30m", () => {
   assert.equal(WEDGE_ALERT_DEFAULT_MINUTES, 30);
   assert.equal(MEASURE_TIMEOUT_MS, 10 * 60_000);
   assert.equal(AUDITOR_STALL_MS, 10 * 60_000);
+  assert.equal(AUDITOR_WALL_TIMEOUT_MS, 30 * 60_000);
   // The family invariant: every wait has a bound, every bound is minutes
   // not hours, and no bound is infinite.
-  for (const ms of [HEARTBEAT_INTERVAL_MS, HEARTBEAT_STALL_MS, MEASURE_TIMEOUT_MS, AUDITOR_STALL_MS, BACKOFF_HARD_CAP_MS]) {
+  for (const ms of [HEARTBEAT_INTERVAL_MS, HEARTBEAT_STALL_MS, MEASURE_TIMEOUT_MS, AUDITOR_STALL_MS, AUDITOR_WALL_TIMEOUT_MS, BACKOFF_HARD_CAP_MS]) {
     assert.ok(ms > 0 && ms <= 30 * 60_000, `bound out of range: ${ms}`);
   }
+});
+
+test("auditor watchdog: inactivity aborts only without a tool; wall bound always wins", () => {
+  const base = { startedAtMs: 0, lastEventAtMs: 0 };
+  assert.equal(auditorWatchdogAction({ ...base, nowMs: AUDITOR_STALL_MS + 1, toolActive: false }), "inactivity");
+  assert.equal(auditorWatchdogAction({ ...base, nowMs: AUDITOR_STALL_MS + 1, toolActive: true }), "none", "a long read-only tool may run past inactivity");
+  assert.equal(auditorWatchdogAction({ ...base, nowMs: AUDITOR_WALL_TIMEOUT_MS, lastEventAtMs: AUDITOR_WALL_TIMEOUT_MS - 1, toolActive: true }), "wall", "the hard wall still bounds a live tool");
+  assert.equal(auditorWatchdogAction({ ...base, nowMs: 5 * 60_000, lastEventAtMs: 5 * 60_000, toolActive: false }), "none");
 });
 
 test("v0.28.25: stall refires space exponentially — 1m, 2m, 4m, 8m cap (junk-runner 5-in-4-minutes fix)", () => {
