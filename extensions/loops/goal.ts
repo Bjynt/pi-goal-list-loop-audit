@@ -96,6 +96,7 @@ import {
   dispatchMatchesOwner,
   dispatchPromptMatches,
   dispatchTimedOut,
+  dispatchRecordPath,
   clearDispatchRecord,
   persistDispatchRecord,
   readDispatchRecord,
@@ -4999,10 +5000,10 @@ function registerAgentTools(pi: any): void {
       let confirmed = false;
       if (autoAccept) {
         confirmed = true;
-        liveCtx.ui.notify(`Draft auto-accepted (/glla autoaccept=on)${willActivate ? " — ACTIVATING now" : ""}: ${p.objective.trim().slice(0, 90)}`, "info");
+        liveCtx.ui.notify(`Draft auto-accepted (/glla autoaccept=on)${willActivate ? " — ACTIVATING now" : ""}: ${displaySlice(p.objective.trim(), 90)}`, "info");
         appendLedger(liveCtx.cwd, "draft_autoaccepted", { kind: isListDraft ? "list" : "goal", objective: p.objective.trim().slice(0, 200) });
       } else {
-        const c = await confirmDraft(liveCtx, isListDraft ? "Confirm list item" : "Confirm goal", `${p.objective.trim()}${contractBlock}${activationNote}`);
+        const c = await confirmDraft(liveCtx, isListDraft ? "Confirm list item" : "Confirm goal", `${sanitizeDisplayText(p.objective.trim())}${sanitizeDisplayText(contractBlock)}${activationNote}`);
         if (c === "stale") {
           // v0.28.1 (T1): a stale dialog is NOT "Draft rejected by the user".
           extensionApiStale = true;
@@ -5162,7 +5163,7 @@ function registerAgentTools(pi: any): void {
       let confirmed = false;
       if (autoAccept) {
         confirmed = true;
-        liveCtx.ui.notify(`Loop draft auto-accepted (/glla autoaccept=on): ${p.target.trim().slice(0, 90)}`, "info");
+        liveCtx.ui.notify(`Loop draft auto-accepted (/glla autoaccept=on): ${displaySlice(p.target.trim(), 90)}`, "info");
         appendLedger(liveCtx.cwd, "draft_autoaccepted", { kind: "loop", target: p.target.trim().slice(0, 200), metricless });
       } else {
         try {
@@ -5382,7 +5383,7 @@ function registerAgentTools(pi: any): void {
     async execute() {
       const lines: string[] = [];
       if (state.goal) {
-        lines.push(`Active [${state.goal.policy}] (${statusLabel(state.goal.status)}): ${state.goal.objective}`);
+        lines.push(`Active [${state.goal.policy}] (${statusLabel(state.goal.status)}): ${sanitizeDisplayText(state.goal.objective)}`);
       } else {
         lines.push("Active: (none)");
       }
@@ -5391,11 +5392,11 @@ function registerAgentTools(pi: any): void {
         lines.push("List: empty.");
       } else {
         lines.push(`List (${queue.length}):`);
-        queue.slice(0, 20).forEach((item, i) => lines.push(`${i + 1}. ${item.objective}`));
+        queue.slice(0, 20).forEach((item, i) => lines.push(`${i + 1}. ${sanitizeDisplayText(item.objective)}`));
         if (queue.length > 20) lines.push(`… and ${queue.length - 20} more`);
       }
       if (state.loop) {
-        lines.push(`Loop: ${state.loop.active ? "active" : "stopped"} — ${state.loop.target} (best ${state.loop.bestValue ?? "n/a"}, iteration ${state.loop.iteration})`);
+        lines.push(`Loop: ${state.loop.active ? "active" : "stopped"} — ${sanitizeDisplayText(state.loop.target)} (best ${state.loop.bestValue ?? "n/a"}, iteration ${state.loop.iteration})`);
       }
       return { content: [{ type: "text", text: lines.join("\n") }], details: {} };
     },
@@ -7187,6 +7188,9 @@ export default function (pi: ExtensionAPI): void {
         kind: recoveredDispatch.kind,
         generation: recoveredDispatch.generation,
       });
+      clearDispatchRecord(ctx.cwd);
+    } else if (fs.existsSync(dispatchRecordPath(ctx.cwd))) {
+      appendLedger(ctx.cwd, "continuation_dispatch_invalid", {});
       clearDispatchRecord(ctx.cwd);
     }
     const handoffResume = consumeSessionHandoff(ctx.cwd);
