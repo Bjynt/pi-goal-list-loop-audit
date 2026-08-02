@@ -1,0 +1,132 @@
+/**
+ * Generation-bound continuation dispatch state.
+ *
+ * A pi `sendMessage({ triggerTurn: true })` call is only a dispatch
+ * acknowledgement. It is not proof that an agent turn started. This module
+ * keeps that distinction explicit and persists the one in-flight dispatch so
+ * a replacement session can recover without treating an old send as a live
+ * turn.
+ */
+
+import * as fs from "node:fs";
+import * as path from "node:path";
+
+import { runPersistStep } from "./goal-loop-core.js";
+
+export const DISPATCH_RECORD_VERSION = 1;
+export const DISPATCH_RECORD_FILE = "continuation-dispatch.json";
+
+export type DispatchKind = "goal" | "loop";
+export type DispatchPhase = "prepared" | "accepted" | "started" | "failed" | "unacknowledged";
+
+export interface ContinuationDispatch {
+  version: typeof DISPATCH_RECORD_VERSION;
+  id: string;
+  generation: number;
+  ownerSessionId: string;
+  kind: DispatchKind;
+  goalId?: string;
+  iteration?: number;
+  marker: string;
+  sentAt: number;
+  phase: DispatchPhase;
+  resync: boolean;
+}
+
+export function dispatchRecordPath(cwd: string): string {
+  return path.join(cwd, ".pi-glla", DISPATCH_RECORD_FILE);
+}
+
+export function createContinuationDispatch(input: {
+  id: string;
+  generation: number;
+  ownerSessionId: string;
+  kind: DispatchKind;
+  goalId?: string;
+  iteration?: number;
+  marker: string;
+  resync: boolean;
+  sentAt?: number;
+}): ContinuationDispatch {
+  return {
+    version: DISPATCH_RECORD_VERSION,
+    id: input.id,
+    generation: input.generation,
+    ownerSessionId: input.ownerSessionId,
+    kind: input.kind,
+    ...(input.goalId === undefined ? {} : { goalId: input.goalId }),
+    ...(input.iteration === undefined ? {} : { iteration: input.iteration }),
+    marker: input.marker,
+    sentAt: input.sentAt ?? Date.now(),
+    phase: "prepared",
+    resync: input.resync,
+  };
+}
+
+export function transitionDispatch(record: ContinuationDispatch, phase: DispatchPhase): ContinuationDispatch {
+  return { ...record, phase };
+}
+
+export function dispatchMatchesOwner(
+  record: ContinuationDispatch,
+  generation: number,
+  ownerSessionId: string,
+): boolean {
+  return record.generation === generation && record.ownerSessionId === ownerSessionId;
+}
+
+export function dispatchPromptMatches(record: ContinuationDispatch, prompt: unknown): boolean {
+  return typeof prompt === "string" && prompt.includes(record.marker);
+}
+
+export function dispatchTimedOut(record: ContinuationDispatch, now: number, timeoutMs: number): boolean {
+  return record.phase === "accepted" && now - record.sentAt >= timeoutMs;
+}
+
+/**
+ * Write-before-send is deliberate: an accepted dispatch must have a durable
+ * identity before it can be allowed to trigger a turn. The temp+rename keeps
+ * a killed process from leaving half a JSON document behind.
+ */
+export function persistDispatchRecord(cwd: string, record: ContinuationDispatch): boolean {
+  return runPersistStep("writeContinuationDispatch", () => {
+    const dir = path.dirname(dispatchRecordPath(cwd));
+    fs.mkdirSync(dir, { recursive: true });
+    const target = dispatchRecordPath(cwd);
+    const temp = `${target}.tmp-${process.pid}-${Date.now()}`;
+    fs.writeFileSync(temp, JSON.stringify(record) + "\n");
+    fs.renameSync(temp, target);
+    return true;
+  }) === true;
+}
+
+export function readDispatchRecord(cwd: string): ContinuationDispatch | null {
+  const raw = runPersistStep("readContinuationDispatch", () => {
+    const file = dispatchRecordPath(cwd);
+    return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+  });
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<ContinuationDispatch>;
+    if (
+      parsed.version !== DISPATCH_RECORD_VERSION ||
+      typeof parsed.id !== "string" ||
+      typeof parsed.generation !== "number" ||
+      typeof parsed.ownerSessionId !== "string" ||
+      (parsed.kind !== "goal" && parsed.kind !== "loop") ||
+      typeof parsed.marker !== "string" ||
+      typeof parsed.sentAt !== "number" ||
+      !["prepared", "accepted", "started", "failed", "unacknowledged"].includes(String(parsed.phase))
+    ) return null;
+    return parsed as ContinuationDispatch;
+  } catch {
+    return null;
+  }
+}
+
+export function clearDispatchRecord(cwd: string): boolean {
+  return runPersistStep("clearContinuationDispatch", () => {
+    fs.rmSync(dispatchRecordPath(cwd), { force: true });
+    return true;
+  }) === true;
+}

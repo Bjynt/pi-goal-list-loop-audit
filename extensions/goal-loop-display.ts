@@ -11,7 +11,7 @@
  */
 
 import type { Goal, State } from "./goal-loop-core.js";
-import { isPersistenceDegraded, lastPersistenceFailure } from "./goal-loop-core.js";
+import { compactDisplayText, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText } from "./goal-loop-core.js";
 import { HELD_ON_RESTORE, type LoopState } from "./goal-loop-forever.js";
 
 /** v0.28.17: a loop parked by the session-restore gate (was active when the
@@ -45,7 +45,8 @@ export function fmtTokens(n: number): string {
 }
 
 export function truncate(s: string, max: number): string {
-  return s.length <= max ? s : s.slice(0, Math.max(0, max - 1)) + "…";
+  const safe = sanitizeDisplayText(s);
+  return safe.length <= max ? safe : safe.slice(0, Math.max(0, max - 1)) + "…";
 }
 
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
@@ -88,7 +89,7 @@ export interface WidgetExtras {
  * and /goal status always carry the full text).
  */
 export function wrap(s: string, width: number, maxLines: number): string[] {
-  const norm = s.replace(/\s+/g, " ").trim();
+  const norm = compactDisplayText(s);
   const words = norm.split(" ").filter(Boolean);
   const all: string[] = [];
   let cur = "";

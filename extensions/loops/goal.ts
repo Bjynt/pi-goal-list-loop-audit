@@ -74,6 +74,8 @@ import {
   goalMdPath,
   newGoalId,
   nowIso,
+  compactDisplayText,
+  sanitizeDisplayText,
   piGlaDir,
   normalizeDraftContract,
   draftContractItemCount,
@@ -89,6 +91,17 @@ import {
   isPersistenceDegraded,
   lastPersistenceFailure,
 } from "../goal-loop-core.js";
+import {
+  createContinuationDispatch,
+  dispatchMatchesOwner,
+  dispatchPromptMatches,
+  dispatchTimedOut,
+  clearDispatchRecord,
+  persistDispatchRecord,
+  readDispatchRecord,
+  transitionDispatch,
+  type ContinuationDispatch,
+} from "../goal-loop-dispatch.js";
 import {
   LENGTH_CONTINUE_MAX,
   LENGTH_CONTINUE_TEXT,

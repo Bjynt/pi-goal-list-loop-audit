@@ -728,6 +728,22 @@ export function statusLabel(status: Status | null | undefined): string {
 // ID generation
 // =================================================================
 
+/**
+ * Strip terminal/control formatting from text before it crosses a user-facing
+ * display boundary. This is deliberately projection-only: persisted
+ * objectives, verification contracts, prompts, and audit inputs retain the
+ * user's exact text.
+ */
+const DISPLAY_CONTROL_CHARS = /[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
+export function sanitizeDisplayText(value: string): string {
+  return value.replace(DISPLAY_CONTROL_CHARS, " ");
+}
+
+/** Inline display projection used by notifications and one-line status text. */
+export function compactDisplayText(value: string): string {
+  return sanitizeDisplayText(value).replace(/\s+/g, " ").trim();
+}
+
 export function nowIso(): string {
   return new Date().toISOString();
 }
