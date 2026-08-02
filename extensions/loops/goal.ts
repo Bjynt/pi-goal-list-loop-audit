@@ -3158,7 +3158,20 @@ function sendLoopTurn(): void {
 }
 
 /** agent_end hook for loop 3: measure → judge → continue or stop. */
-async function runLoopTick(ctx: ExtensionContext, event?: any): Promise<void> {
+async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<void> {
+  // v0.34.20: measurement/git work is asynchronous. Rebind the local
+  // context after every await or abandon the tick; never let a replacement
+  // session inherit the agent_end context.
+  const generation = sessionGeneration;
+  const initial = freshCtxForGeneration(generation);
+  if (!initial) return;
+  let ctx: ExtensionContext = initial;
+  const rebind = (): boolean => {
+    const current = freshCtxForGeneration(generation);
+    if (!current) return false;
+    ctx = current;
+    return true;
+  };
   const loop = state.loop!;
   // v0.15.0: token budget is an arbitrary bound; accumulate orchestrator-side.
   if (event?.messages) {
@@ -3166,6 +3179,7 @@ async function runLoopTick(ctx: ExtensionContext, event?: any): Promise<void> {
   }
   const metricless = !loop.measureCmd;
   const value = metricless ? null : await runMeasure(ctx, loop.measureCmd!);
+  if (!rebind()) return;
   // Hypothesis line (pi-autoresearch's good idea): the agent's stated intent
   // for the turn goes into the ledger, making loop history auditable.
   let hypothesis: string | undefined;
@@ -3190,10 +3204,12 @@ async function runLoopTick(ctx: ExtensionContext, event?: any): Promise<void> {
   const iterStartHead = loop.iterMetrics?.iterationStartHead;
   const iterStartAt = loop.iterMetrics?.iterationStartAt;
   const currentHeadRes = await runGit(ctx, ["rev-parse", "HEAD"]);
+  if (!rebind()) return;
   const currentHead = currentHeadRes.ok ? currentHeadRes.stdout : undefined;
   let gitCommits = 0;
   if (iterStartHead && currentHead && iterStartHead !== currentHead) {
     const countRes = await runGit(ctx, ["rev-list", "--count", `${iterStartHead}..HEAD`]);
+    if (!rebind()) return;
     const n = Number.parseInt(countRes.stdout, 10);
     if (countRes.ok && Number.isFinite(n) && n > 0) gitCommits = n;
   }
@@ -3302,10 +3318,13 @@ async function runLoopTick(ctx: ExtensionContext, event?: any): Promise<void> {
   if (loop.branchName && outcome.kind === "continue") {
     if (metricless || outcome.improved) {
       await runGit(ctx, ["add", "-A"]);
+      if (!rebind()) return;
       const committed = await runGit(ctx, ["commit", "-m", metricless ? `pi-glla-loop: iteration ${loop.iteration}` : `pi-glla-loop: iteration ${loop.iteration} (${loop.direction}=${loop.bestValue})`]);
+      if (!rebind()) return;
       appendLedger(ctx.cwd, "loop_git", { action: "commit", iteration: loop.iteration, ok: committed.ok });
     } else {
       const reset = await runGit(ctx, ["reset", "--hard", "HEAD"]);
+      if (!rebind()) return;
       appendLedger(ctx.cwd, "loop_git", { action: "reset", iteration: loop.iteration, ok: reset.ok });
     }
     persistState(ctx);
@@ -3319,6 +3338,7 @@ async function runLoopTick(ctx: ExtensionContext, event?: any): Promise<void> {
     loop.stopReason = `stuck — ${loop.lastStuckReason} (${loop.consecutiveStuck} consecutive interventions)`;
     persistState(ctx);
     await finishLoopGit(ctx, loop);
+    if (!rebind()) return;
     ctx.ui.notify(`Loop stopped: ${loop.stopReason}. ${loop.history.length} iterations recorded.`, "warning");
     appendLedger(ctx.cwd, "loop_stopped", { reason: loop.stopReason, iterations: loop.iteration, best: loop.bestValue });
     notifyExternal(ctx, `Loop stopped: ${loop.stopReason}`);
@@ -3355,6 +3375,7 @@ async function runLoopTick(ctx: ExtensionContext, event?: any): Promise<void> {
       }
     }
     await finishLoopGit(ctx, loop);
+    if (!rebind()) return;
     ctx.ui.notify(`Loop stopped: ${outcome.reason}. ${loop.history.length} iterations recorded.`, "info");
     appendLedger(ctx.cwd, "loop_stopped", { reason: outcome.reason, iterations: loop.iteration, best: loop.bestValue });
     notifyExternal(ctx, `Loop stopped: ${outcome.reason}`);
@@ -3367,10 +3388,17 @@ async function runLoopTick(ctx: ExtensionContext, event?: any): Promise<void> {
  * where the work lives and how to merge it. Scratch branch is never deleted. */
 async function finishLoopGit(ctx: ExtensionContext, loop: LoopState): Promise<void> {
   if (!loop.branchName) return;
+  const generation = sessionGeneration;
   // Uncommitted remnants (final stalled iterations were reset already, but be safe).
   await runGit(ctx, ["reset", "--hard", "HEAD"]);
+  const afterReset = freshCtxForGeneration(generation);
+  if (!afterReset) return;
+  ctx = afterReset;
   if (loop.originalBranch) {
     await runGit(ctx, ["checkout", loop.originalBranch]);
+    const afterCheckout = freshCtxForGeneration(generation);
+    if (!afterCheckout) return;
+    ctx = afterCheckout;
   }
   ctx.ui.notify(
     `Loop work is on branch ${loop.branchName} (${loop.iteration} iterations, best ${loop.bestValue ?? "n/a"}).\nMerge with: git merge ${loop.branchName} — or delete with: git branch -D ${loop.branchName}`,
