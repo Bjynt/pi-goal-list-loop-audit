@@ -13,9 +13,9 @@ import { createHash, randomUUID } from "node:crypto";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { Goal } from "./goal-loop-core.ts";
-import { renderGoalMarkdown } from "./goal-loop-core.ts";
-import { checkRegressionShield, parseAuditorVerdict } from "./goal-loop-shield.ts";
+import type { Goal } from "./goal-loop-core.js";
+import { renderGoalMarkdown } from "./goal-loop-core.js";
+import { checkRegressionShield, parseAuditorVerdict } from "./goal-loop-shield.js";
 
 export interface GoalAuditorResult {
   approved: boolean;

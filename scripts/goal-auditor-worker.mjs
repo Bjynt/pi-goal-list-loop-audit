@@ -10,7 +10,6 @@ import { createHash } from "node:crypto";
 import { lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { createInterface } from "node:readline";
 import path from "node:path";
 
 const PROTOCOL_VERSION = 1;
@@ -162,11 +161,25 @@ async function main() {
     }, remaining);
     deadlineTimer.unref?.();
 
-    const stdout = createInterface({ input: pi.stdout, crlfDelay: Infinity });
-    stdout.on("line", (line) => {
+    // RPC is a strict LF-delimited JSON stream. Do not use readline here:
+    // its CRLF normalization accepts transport corruption that the worker
+    // protocol deliberately rejects, and it can obscure an unterminated final
+    // record. Buffer arbitrary chunks, reject raw CR, and process only complete
+    // LF-terminated records. agent_end is intentionally not terminal: Pi may
+    // retry/compact/follow up after it. agent_settled is the completion event.
+    let stdoutBuffer = "";
+    let settledSeen = false;
+    const handleRpcLine = (line) => {
       if (finalized || !line) return;
+      if (line.includes("\r")) {
+        void finish(false, "RPC stream contained a raw CR; expected strict LF-only JSONL").catch(() => {});
+        return;
+      }
       let event;
-      try { event = JSON.parse(line); } catch { return; }
+      try { event = JSON.parse(line); } catch {
+        void finish(false, "RPC stream contained invalid JSON").catch(() => {});
+        return;
+      }
       if (event.type === "message_update") {
         const update = event.assistantMessageEvent;
         if (update?.type === "text_delta" && typeof update.delta === "string") {
@@ -198,10 +211,33 @@ async function main() {
         }
         return;
       }
-      if (event.type === "agent_end") void finish(true).catch(() => {});
+      if (event.type === "agent_settled") {
+        settledSeen = true;
+        void finish(true).catch(() => {});
+      }
+      // agent_end is progress only; never finalize on it.
+    };
+    pi.stdout.on("data", (chunk) => {
+      if (finalized) return;
+      stdoutBuffer += String(chunk);
+      if (stdoutBuffer.includes("\r")) {
+        void finish(false, "RPC stream contained a raw CR; expected strict LF-only JSONL").catch(() => {});
+        return;
+      }
+      let newline;
+      while (!finalized && (newline = stdoutBuffer.indexOf("\n")) >= 0) {
+        const line = stdoutBuffer.slice(0, newline);
+        stdoutBuffer = stdoutBuffer.slice(newline + 1);
+        handleRpcLine(line);
+      }
     });
-    stdout.on("close", () => {
-      if (!finalized) void finish(false, "pi exited without an agent_end RPC event").catch(() => {});
+    pi.stdout.on("end", () => {
+      if (finalized) return;
+      if (stdoutBuffer.length > 0) {
+        void finish(false, "RPC stream ended with an unterminated LF record").catch(() => {});
+      } else if (!settledSeen) {
+        void finish(false, "pi exited without an agent_settled RPC event").catch(() => {});
+      }
     });
 
     pi.on("error", (error) => { void finish(false, `pi launch failed: ${error.message}`).catch(() => {}); });

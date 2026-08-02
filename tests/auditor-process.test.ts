@@ -128,6 +128,7 @@ process.stdin.on("end", async () => {
   out({ type: "tool_execution_end", toolCallId: "1" });
   out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "<approved/>" } });
   out({ type: "agent_end" });
+  out({ type: "agent_settled" });
 });
 `;
   await writeFile(fakePi, `#!/usr/bin/env node\n${piSource}`);
