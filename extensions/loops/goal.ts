@@ -1399,7 +1399,7 @@ function dispatchStartUnacknowledged(ctx: ExtensionContext, record: Continuation
     generation: record.generation,
     timeoutMs: CONTINUATION_START_TIMEOUT_MS,
   });
-  if (state.goal && state.goal.status === "active" && record.kind === "goal") {
+  if (state.goal && state.goal.status === "active" && (record.kind === "goal" || record.kind === "stall")) {
     updateGoal({ interruptedAt: nowIso(), interruptedReason: reason }, ctx);
   }
   const msg = `glla: pi accepted the ${dispatchLabel(record)} continuation, but no observable turn-start event arrived within ${Math.round(CONTINUATION_START_TIMEOUT_MS / 1000)}s. Automatic re-sends are stopped to avoid a blind queue storm. The work is safe in .pi-glla; start a fresh session or use /goal resume, /list resume, or /loop resume to retry explicitly.`;
@@ -1696,16 +1696,26 @@ function sendStallEscalation(ctx: ExtensionContext, nudges: number): void {
 // sendContinuation (stale api = terminal), independent of goal state —
 // plain sessions truncate too.
 function sendLengthContinue(ctx: ExtensionContext, consecutive: number): void {
-  if (sessionHandoffPending || initialSessionLoadPending || !extensionApi || extensionApiStale) return;
+  if (sessionHandoffPending || initialSessionLoadPending || !extensionApi || extensionApiStale || continuationDispatchStoodDown || pendingContinuationDispatch) return;
+  const attempt = dispatchPrepare(ctx, {
+    generation: sessionGeneration,
+    ownerSessionId: sessionManagerId(ctx),
+    kind: "length",
+    marker: LENGTH_CONTINUE_TEXT.slice(0, 80),
+    resync: false,
+  });
+  if (!attempt) return;
   try {
     extensionApi.sendMessage({
       customType: GOAL_EVENT_ENTRY,
       content: LENGTH_CONTINUE_TEXT,
       display: true,
     }, { triggerTurn: true, deliverAs: "followUp" });
-    appendLedger(ctx.cwd, "length_continue_sent", { consecutive });
+    if (!dispatchAccepted(ctx, attempt)) return;
+    appendLedger(ctx.cwd, "length_continue_sent", { consecutive, attemptId: attempt.id });
     ctx.ui.notify(`Response hit the output-token cap — auto-continuing (${consecutive}/${LENGTH_CONTINUE_MAX})`, "warning");
   } catch (err) {
+    if (pendingContinuationDispatch) dispatchFailed(ctx, pendingContinuationDispatch, err instanceof Error ? err.message : String(err));
     appendLedger(ctx.cwd, "length_continue_send_failed", { consecutive, error: err instanceof Error ? err.message : String(err) });
     if (isStaleApiError(err)) goStaleTerminal(ctx, "sendLengthContinue");
   }
@@ -1832,6 +1842,7 @@ function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): void {
   // token-message dedupe set, or widget action feed.
   postCompactResumeOwed = false;
   postCompactResyncPending = false;
+  releaseContinuationDispatchStandDown();
   quotaRetryStreak = 0;
   countedTokenMessages.clear();
   recentActions.length = 0;
@@ -3884,6 +3895,7 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
     return false;
   }
   resolveCarryover(ctx, "loop"); // v0.28.14: surface/clear stale leftovers
+  releaseContinuationDispatchStandDown();
   state = {
     ...state,
     loop: {
@@ -3937,7 +3949,13 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     // if one is waiting; otherwise draft the loop config (metric design is
     // the whole game for a long-running loop; never start one blind).
     if (isLoopActive()) {
-      ctx.ui.notify("A loop is already active — /loop status to inspect, /loop stop to end it.", "info");
+      if (continuationDispatchStoodDown) {
+        releaseContinuationDispatchStandDown();
+        scheduleLoopTick(ctx);
+        ctx.ui.notify("Loop dispatch stand-down cleared — retrying one continuation explicitly.", "info");
+      } else {
+        ctx.ui.notify("A loop is already active — /loop status to inspect, /loop stop to end it.", "info");
+      }
       return;
     }
     const stored = state.loop;
@@ -3963,6 +3981,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       // saying "push again" wins over the ladder's memory (v0.29.19).
       state.loop = { ...stored, active: true, stopReason: undefined, consecutiveErrors: 0, consecutiveStuck: 0, lastStuckReason: undefined, stallCount: 0, auditPlateauReprieves: 0 };
       persistState(ctx);
+      releaseContinuationDispatchStandDown();
       scheduleLoopTick(ctx);
       ctx.ui.notify(
         `Loop resumed: iteration ${stored.iteration}/${stored.maxIterations > 0 ? stored.maxIterations : "∞"} · best ${stored.bestValue ?? "n/a"} — ${stored.target.slice(0, 60)}`,
@@ -7154,6 +7173,18 @@ export default function (pi: ExtensionAPI): void {
       }
     }
     state = readState(ctx.cwd);
+    continuationDispatchStoodDown = false;
+    clearContinuationStartWatchdog();
+    const recoveredDispatch = readDispatchRecord(ctx.cwd);
+    if (recoveredDispatch) {
+      appendLedger(ctx.cwd, "continuation_dispatch_recovered", {
+        id: recoveredDispatch.id,
+        phase: recoveredDispatch.phase,
+        kind: recoveredDispatch.kind,
+        generation: recoveredDispatch.generation,
+      });
+      clearDispatchRecord(ctx.cwd);
+    }
     const handoffResume = consumeSessionHandoff(ctx.cwd);
     if (handoffResume) appendLedger(ctx.cwd, "session_handoff_resumed", { pid: process.pid, reason: startReason });
     // v0.28.14: snapshot carryover BEFORE any restore logic mutates state —
@@ -7383,6 +7414,7 @@ export default function (pi: ExtensionAPI): void {
     // v0.23.8: a subagent finishing must not drive the main session's
     // continuation loop.
     if (isForeignCtx(ctx)) return;
+    dispatchStartAcknowledged(ctx, "agent_end");
     noteActivity(true);
     lastStreamActivityAt = Date.now();
     // v0.27.2: folded-in length-continue (standalone pi-length-continue is
@@ -7731,16 +7763,26 @@ export default function (pi: ExtensionAPI): void {
 
   // v0.29.16: stream liveness for the zombie-run watchdog — deltas, run
   // starts, and turn starts all prove the provider stream is alive.
-  pi.on("message_update", () => {
-    lastStreamActivityAt = Date.now();
+  // v0.34.24: before_agent_start is the strongest dispatch proof because
+  // pi exposes the follow-up prompt itself. The low-level start events below
+  // remain compatibility proofs for older pi builds and for custom messages.
+  pi.on("before_agent_start", (event: any, ctx: ExtensionContext) => {
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
+    dispatchStartAcknowledged(ctx, "before_agent_start", event?.prompt);
   });
-  pi.on("agent_start", () => {
+  pi.on("message_update", (_event: any, ctx: ExtensionContext) => {
     lastStreamActivityAt = Date.now();
+    if (!isForeignCtx(ctx)) dispatchStartAcknowledged(ctx, "message_update");
+  });
+  pi.on("agent_start", (_event: any, ctx: ExtensionContext) => {
+    lastStreamActivityAt = Date.now();
+    if (!isForeignCtx(ctx)) dispatchStartAcknowledged(ctx, "agent_start");
     // v0.32.1: a real turn started — the post-compaction resume debt is
     // discharged (the heartbeat stops retrying it).
     postCompactResumeOwed = false;
   });
-  pi.on("turn_start", () => {
+  pi.on("turn_start", (_event: any, ctx: ExtensionContext) => {
     lastStreamActivityAt = Date.now();
+    if (!isForeignCtx(ctx)) dispatchStartAcknowledged(ctx, "turn_start");
   });
 }
