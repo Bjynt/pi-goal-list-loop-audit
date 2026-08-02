@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.34.20] — 2026-08-02
+## 0.34.20 — 2026-08-02
 
 ### Fixed — delayed work rebinds instead of using registration-time contexts
 
