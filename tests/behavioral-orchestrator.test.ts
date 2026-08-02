@@ -369,9 +369,11 @@ test("T2b: stale before compaction → no late rebind, refire, or misleading act
   const ctx = await freshSession(cwd, "startup");
   await pi.command("goal", "stale then compact — done when pinned", ctx);
   await tick();
+  pi.sent.length = 0;
   pi.sendMessageError = staleError();
   const before = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
   await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "boundary" }], stopReason: "end_turn" }] }, ctx);
+  await tick();
   pi.sendMessageError = null;
   // Reproduce the field ordering: pi invalidates the extension first, then
   // emits/finishes compaction, but never delivers session_start.

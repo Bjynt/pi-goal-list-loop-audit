@@ -6402,9 +6402,14 @@ export default function (pi: ExtensionAPI): void {
     sessionHandoffPending = false;
     // Reset terminal ownership before rememberCtx: this is the only event
     // allowed to bind a context after a stale/shutdown handoff.
-    staleTerminalDone = false;
+    staleTerminalDone = false; // v0.33.1: a rebound session can go terminal again
     zombieStoodDown = false;
     sessionGeneration++;
+    // Ephemeral watchdog counters belong to the old session, not the
+    // persisted goal. Reset them so a stale boundary cannot make the next
+    // fresh session inherit a false stall count.
+    heartbeatNudges = 0;
+    consecutiveStalls = 0;
     const startReason = typeof event?.reason === "string" ? event.reason : "unknown";
     initialSessionLoadPending = isBlankInitialStartup(ctx, startReason);
     rememberCtx(ctx);
