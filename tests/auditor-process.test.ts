@@ -157,7 +157,10 @@ process.stdin.on("end", async () => {
       };
       void poll();
     });
-    await new Promise<void>((resolve) => child.once("exit", () => resolve()));
+    await new Promise<void>((resolve) => {
+      if (child.exitCode !== null) { resolve(); return; }
+      child.once("exit", () => resolve());
+    });
     const result = JSON.parse(await readFile(resultPath, "utf8"));
     const log = JSON.parse(await readFile(piLog, "utf8"));
     assert.equal(result.ok, true);

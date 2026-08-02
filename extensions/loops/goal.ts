@@ -2438,7 +2438,7 @@ async function cmdStatus(ctx: ExtensionContext): Promise<void> {
     lines.push(`Audits: ${g.auditHistory.length} (${g.auditHistory.filter((v) => v.approved).length} approved)`);
   }
   if (g.status === "auditing") {
-    lines.push(`Completion audit: ${isCompletionAuditRecoveryPending(g) ? "recovery pending — /goal resume retries the stored claim" : completionAuditInFlight ? "running in an isolated session" : "awaiting lifecycle recovery"}`);
+    lines.push(`Completion audit: ${isCompletionAuditRecoveryPending(g) ? "recovery pending — /goal resume retries the stored claim" : completionAuditInFlight && latestAuditProgress?.label === "queued" ? "detached auditor queued" : completionAuditInFlight ? "detached auditor running" : "awaiting lifecycle recovery"}`);
   }
   if (g.pauseReason) lines.push(`Paused: ${g.pauseReason}`);
   ctx.ui.notify(lines.join("\n"), "info");
@@ -6119,7 +6119,7 @@ function cmdGllaStatus(ctx: ExtensionContext): void {
   if (g) {
     const tok = (g.usage?.tokensUsed ?? 0) > 0 ? ` · ${g.usage!.tokensUsed} tok` : "";
     const audit = g.status === "auditing"
-      ? isCompletionAuditRecoveryPending(g) ? " (audit recovery pending)" : completionAuditInFlight ? " (auditor running…)" : " (audit awaiting lifecycle recovery)"
+      ? isCompletionAuditRecoveryPending(g) ? " (audit recovery pending)" : completionAuditInFlight && latestAuditProgress?.label === "queued" ? " (detached auditor queued)" : completionAuditInFlight ? " (detached auditor running…)" : " (audit awaiting lifecycle recovery)"
       : "";
     const pause = g.status === "paused" && g.pauseReason ? ` — ${g.pauseReason.slice(0, 90)}` : "";
     lines.push(`goal [${g.policy}] ${g.status}${audit}${tok}: ${g.objective.slice(0, 90)}${pause}`);

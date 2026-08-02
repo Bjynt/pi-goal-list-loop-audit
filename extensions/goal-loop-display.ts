@@ -198,8 +198,9 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     if (auditRecoveryPending(g)) {
       return `glla: ${paint(theme, "warning", "audit recovery pending")}${heldSuffix}`;
     }
+    const label = audit?.label === "queued" ? "auditor queued" : "auditor running";
     const tool = audit?.currentTool ? ` · ${audit.currentTool}` : "";
-    return `glla: ${paint(theme, "accent", "auditing…")}${tool}${heldSuffix}`;
+    return `glla: ${paint(theme, "accent", label)}${tool}${heldSuffix}`;
   }
   if (g.status === "paused") {
     // v0.28.22: the status line names the ACTIONABILITY, not the reason —
@@ -379,7 +380,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       lines.push(`└─ ${paint(theme, "dim", "stored completion claim is safe; a fresh session will retry it")}`);
       return lines;
     }
-    lines.push(`├─ auditor: ${audit?.label ?? "running"}${audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : ""}`);
+    lines.push(`├─ auditor: ${audit?.label === "queued" ? "queued" : audit?.label ?? "running"}${audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : ""}`);
     // v0.25.4: auditor-quiet stall — progress events stopped arriving
     // while the audit is in flight (hung model call, stuck tool).
     const quietMs = audit?.lastEventAt !== undefined ? now - audit.lastEventAt : 0;
