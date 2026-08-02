@@ -2,15 +2,17 @@
 
 > **Mission control for autonomous pi.**
 
-Interview-drafted goals, an audited task queue, and forever-loops (metric, spec, project-audit) that run for hours. Every goal starts as a **drafted contract you confirm** — nothing activates sight-unseen. The plugin then writes a durable goal to disk, drives the agent through an `agent_end`-driven loop, and on each `complete_goal` spawns an **isolated auditor in a fresh pi session** to verify the work is genuinely done. Stall recovery, structured decision pauses, and consent gates keep you in charge while it works.
+Interview-drafted goals, an audited task queue, and forever-loops (metric, spec, project-audit) that run for hours. Every goal starts as a **drafted contract you confirm** — nothing activates sight-unseen. The plugin then writes a durable goal to disk, drives the agent through an `agent_end`-driven loop, and on each `complete_goal` queues a **detached auditor worker process** to verify the work without holding the main pi turn open. Stall recovery, structured decision pauses, and consent gates keep you in charge while it works.
 
-The auditor runs in a fresh session with no extensions, no skills, no prompts, no editor. It has only `read` / `grep` / `find` / `ls` / `bash`. It cannot see the implementing conversation. It cannot plant evidence. The implementer cannot fool it.
+The auditor runs in a fresh extension-less pi RPC process with no extensions, skills, prompts, themes, or context files. It has only `read` / `grep` / `find` / `ls` / `bash`. It cannot see the implementing conversation, cannot mutate glla state, and cannot plant evidence. Its durable result is identity-checked and revalidated by the parent before it can archive a goal.
+
+This is a detached process, not a nested session in the main pi process. `complete_goal` returns after writing the claim and job request; the status surface shows `auditor queued`, `auditor running`, or `audit recovery pending` while the worker runs or awaits a fresh lifecycle.
 
 ## Why this exists
 
 Most pi goal extensions — `pi-goal`, `pi-goal-x`, `pi-loop-mode`, `ralphi`, `tmustier-pi-ralph-wiggum` — let the same agent that did the work also be the verifier. **That's the bamboozle trap.** The agent that wrote the implementation also says "I'm done", and the loop trusts them.
 
-`pi-goal-list-loop-audit` separates **implementation** from **verification**. Two independent sessions, two independent read paths, two perspectives.
+`pi-goal-list-loop-audit` separates **implementation** from **verification**. Two independent processes, two independent read paths, two perspectives.
 
 ### Architectural guarantee
 
@@ -18,7 +20,7 @@ Most pi goal extensions — `pi-goal`, `pi-goal-x`, `pi-loop-mode`, `ralphi`, `t
 |---|---|
 | Goal intake | Drafting + Confirm/Reject dialog; nothing activates unconfirmed |
 | Implementation | `agent_end`-driven continuation loop with 5-minute hard backoff cap |
-| Completion | Isolated auditor session + **regression_shield**: raw command output required per verification-contract item, enforced orchestrator-side |
+| Completion | Detached extension-less auditor process + **regression_shield**: raw command output required per verification-contract item, enforced orchestrator-side |
 
 ## Quick start
 
@@ -41,7 +43,7 @@ Five top-level commands — `/goal`, `/list`, `/loop`, `/glla`, `/review`:
 /goal cancel                       # abort
 /goal decide                       # re-open the decision picker (v0.28.23)
 /goal audit ["focus on payments"]    # one-shot project audit (v0.29.8): fix the non-decisions, present the decisions — findings in .pi-glla/audit-loop/findings.md
-/goal verify                       # run the isolated auditor on the current goal now — no agent turn (v0.28.27, renamed from /goal audit in v0.29.8)
+/goal verify                       # queue a detached auditor for the current goal — no agent turn (v0.28.27, renamed from /goal audit in v0.29.8)
 /goal tweak "<new objective>"      # edit in place (Confirm dialog)
 /goal archive                      # archived goals, newest first
 /glla                               # settings UI table · /glla status (unified what's-running view) · /glla key=value · /glla stats · /glla audits [N|full] · /glla postaudit · /glla wipe (nuclear reset, Confirm-gated) · /glla autoaccept=on
@@ -215,7 +217,7 @@ Each loop is a different policy class on the same status machine.
 | Auditor can rubber-stamp after `bash true` | **regression_shield** (shipped v0.2.0): auditor must quote raw tool output per verification-contract item; orchestrator rejects evidence-free approvals |
 | `pause_goal` is fire-and-forget | Clear `pauseReason` surfaced in status + agent feedback |
 | Vague objective + weak auditor = rubber-stamp | Drafting phase with Confirm dialog + isolated auditor + shield |
-| Esc mid-audit just dies | Escape dialog: complete-without-audit / continue (shipped v0.2.0) |
+| Auditor holds the main turn open | Detached worker returns control immediately; `/goal cancel` discards the pending claim |
 | Auditor can't compact — context exhaustion mid-audit | Compaction enabled (v0.4.0); safe because the shield is orchestrator-side |
 | Agent can grow subtasks indefinitely | `propose_task_list` with 20/5 caps + Confirm dialog (v0.3.0) |
 
@@ -299,7 +301,7 @@ Resolution per key: **project > global > defaults** — EXCEPT `autoResume`,
 which is **global-only** (v0.29.5): per-project opt-ins from old versions
 silently overrode the global hold at launch (the junk-runner incident), so
 the launch-restore gate and the reviewer-enqueue gate read only the global
-file now. The auditor defaults to
+file now. The detached auditor defaults to
 your pi session model. When the session provider is extension-registered the
 auditor can't auth it — you're told once (info level) with the fix:
 `/glla model=provider/id`, set once, rarely touched again. The plugin never
@@ -407,7 +409,8 @@ customizes.
 extensions/
   loops/goal.ts                # /goal + /list commands, agent tools, loop driver
   goal-loop-core.ts            # types, JSONL state, pure helpers
-  goal-loop-auditor.ts         # isolated auditor (fresh session, no extensions)
+  goal-loop-auditor.ts         # auditor prompt + legacy in-process helper
+  goal-loop-auditor-process.ts # detached worker protocol + shield revalidation
   goal-loop-shield.ts          # regression_shield (pure, dependency-free)
   goal-loop-display.ts         # status line + /goal status rendering
   goal-loop-forever.ts         # /loop measure/parse/plateau helpers
@@ -418,8 +421,9 @@ prompts/
   goal-loop-forever.md         # /loop driver prompt
   goal-loop-forever-draft.md   # /loop drafting prompt
 scripts/
+  goal-auditor-worker.mjs      # extension-less RPC auditor child process
   smoke.sh                     # live integration harness (tmux + real models)
-tests/                         # 614 tests across 58 files, no live pi required (mock-ctx harness drives the orchestrator)
+tests/                         # current test count is reported by `bun test`; no live pi required for the suite
 docs/DESIGN.md                 # architectural decisions
 PLAN.md                        # milestones, decisions, gates
 ```

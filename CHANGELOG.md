@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.34.22 — 2026-08-02
+
+### Changed — completion auditing leaves the main pi turn free
+
+`complete_goal` now persists the claim and queues an extension-less auditor in
+an external worker process. The main pi tool returns immediately instead of
+awaiting a nested `AgentSession`; durable request/progress/result files and
+attempt hashes let a fresh lifecycle consume the result without trusting a
+stale generation. The worker launches RPC pi with only `read`, `grep`, `find`,
+`ls`, and `bash`, inherits provider authentication without copying secrets,
+and never mutates goal state.
+
+Auditor status now distinguishes detached queued/running work from recovery
+pending. Goal cancellation clears the pending claim and best-effort terminates
+the worker. Worker inactivity remains a 10-minute no-event bound (unless a
+read-only tool is active), and the total audit remains capped at 30 minutes;
+these are infrastructure failures, never verdicts.
+
+### Added — detached-worker lifecycle coverage
+
+Added transport protocol/identity tests and behavioral coverage proving that
+`complete_goal` returns before a worker result, approvals archive, disapprovals
+resume, and old-generation results cannot archive after replacement.
+
 ## 0.34.21 — 2026-08-02
 
 ### Fixed — completion audits expose and recover their lifecycle
