@@ -56,7 +56,7 @@ test("v0.34.20: completion audits persist claims and stop retrying after replace
   assert.match(complete, /shouldRetry: \(\) => freshCtxForGeneration\(auditGeneration\) !== null/);
   assert.match(complete, /completionAuditGeneration = auditGeneration/);
   assert.match(complete, /const auditContextAfterRun = freshCtxForGeneration\(auditGeneration\)/);
-  assert.match(complete, /if \(!auditContextAfterRun\) \{/);
+  assert.match(complete, /if \(!auditContextAfterRun \|\| !state\.goal \|\| state\.goal\.id !== auditGoalId\)/);
   assert.match(GOAL, /shouldRetry: \(\) => freshCtxForGeneration\(generation\) !== null/);
   assert.match(GOAL, /async function retryStoredCompletionAudit\(origin: "quota-retry" \| "manual" = "quota-retry"\)/);
   assert.doesNotMatch(GOAL, /retryStoredCompletionAudit\(ctx,/);
