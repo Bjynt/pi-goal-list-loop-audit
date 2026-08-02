@@ -1,0 +1,66 @@
+// pi-goal-list-loop-audit — v0.34.20
+// Regression pins for delayed work crossing a pi session replacement.
+
+import { test } from "node:test";
+import * as assert from "node:assert/strict";
+import * as fs from "node:fs";
+
+const GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf8");
+const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf8");
+
+function between(source: string, start: string, end: string): string {
+  const a = source.indexOf(start);
+  const b = source.indexOf(end, a + start.length);
+  assert.ok(a >= 0, `missing start marker: ${start}`);
+  assert.ok(b > a, `missing end marker: ${end}`);
+  return source.slice(a, b);
+}
+
+test("v0.34.20: registered agent tools resolve the invocation context", () => {
+  assert.match(GOAL, /function registerAgentTools\(pi: any\): void/);
+  assert.match(GOAL, /function currentToolContext\(execCtx: unknown\): ExtensionContext \| null/);
+  assert.match(GOAL, /const toolCtx = currentToolContext\(execCtx\)/);
+  assert.match(GOAL, /const ctx = currentToolContext\(execCtx\)/);
+  assert.match(GOAL, /let toolsRegistered = false/);
+  assert.doesNotMatch(GOAL, /registeredCtx/);
+  assert.doesNotMatch(GOAL, /registeredCtx\?\./);
+});
+
+test("v0.34.20: quota timers have one session-boundary adapter", () => {
+  const directCalls = GOAL.match(/scheduleQuotaRetry\(/g) ?? [];
+  assert.equal(directCalls.length, 1, "goal.ts may call the generic timer only through its adapter");
+  assert.match(GOAL, /function scheduleQuotaRetryForSession\(/);
+  assert.match(GOAL, /const generation = sessionGeneration;/);
+  assert.match(GOAL, /const current = freshCtxForGeneration\(generation\);/);
+  assert.match(GOAL, /fire: \(ctx: ExtensionContext\) => void \| Promise<void>/);
+  assert.match(GOAL, /scheduleQuotaRetryForSession\(ctx, quota\.retryAfterSec, result\.error, \(fresh\) =>/);
+  assert.match(GOAL, /scheduleQuotaRetryForSession\(ctx, cooldownMs \/ 1000, reason, \(fresh\) =>/);
+});
+
+test("v0.34.20: detached fan-out revalidates after user confirmation", () => {
+  const fanout = between(GOAL, "async function fanOutListAuditFindings", "function archiveCurrentGoal");
+  assert.match(fanout, /async function fanOutListAuditFindings\(cwd: string, generation: number\)/);
+  assert.match(fanout, /freshCtxForGeneration\(generation\)/);
+  const confirm = fanout.indexOf("await beforeConfirm.ui.confirm");
+  const after = fanout.indexOf("const afterConfirm = freshCtxForGeneration(generation)");
+  assert.ok(confirm >= 0 && after > confirm, "confirmation result is checked against the same session generation");
+  assert.match(GOAL, /fanOutListAuditFindings\(fanoutCwd, fanoutGeneration\)/);
+  assert.doesNotMatch(GOAL, /fanOutListAuditFindings\(ctx\)/);
+});
+
+test("v0.34.20: completion audits persist claims and stop retrying after replacement", () => {
+  const complete = between(GOAL, 'name: "complete_goal"', 'name: "pause_goal"');
+  const claim = complete.indexOf("pendingCompletion: {");
+  const auditor = complete.indexOf("runGoalCompletionAuditor");
+  assert.ok(claim >= 0 && auditor > claim, "the completion claim is durable before the auditor starts");
+  assert.match(complete, /shouldRetry: \(\) => freshCtxForGeneration\(auditGeneration\) !== null/);
+  assert.match(complete, /const auditContextAfterRun = freshCtxForGeneration\(auditGeneration\)/);
+  assert.match(complete, /if \(!auditContextAfterRun\) \{/);
+  assert.match(GOAL, /shouldRetry: \(\) => freshCtxForGeneration\(generation\) !== null/);
+});
+
+test("v0.34.20: generic infra retry supports a lifecycle guard before and after backoff", () => {
+  assert.match(CORE, /shouldRetry\?: \(\) => boolean/);
+  assert.match(CORE, /if \(opts\.shouldRetry\) \{/);
+  assert.match(CORE, /if \(!opts\.shouldRetry\(\)\) return \{ result: first, retriedOnce: false \}/);
+});

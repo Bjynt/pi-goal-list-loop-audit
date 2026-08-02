@@ -275,6 +275,23 @@ test("v0.34.16: lifecycle handoff resumes same-process replacement but quit does
   assert.ok(foreignSession.ui.matching("held on restore").length >= 1, "foreign debt falls back to the normal restore gate");
 });
 
+test("v0.34.20: registered tools use the replacement invocation context without session_shutdown", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal() });
+  const first = await freshSession(cwd, "startup");
+  await pi.command("goal", "resume", first);
+  await tick();
+  const replacement = ownerCtx(cwd);
+  // Some pi replacement paths deliver session_start without a preceding
+  // session_shutdown. The tool registry must not retain the first ctx.
+  await pi.fire("session_start", { reason: "reload" }, replacement);
+  const result = await pi.runTool("pause_goal", { reason: "replacement context probe", kind: "blocked" }, replacement);
+  assert.match(result.content[0]!.text, /Goal paused/);
+  assert.ok(replacement.ui.matching("replacement context probe").length >= 1, "replacement UI received the tool result");
+  assert.equal(first.ui.matching("replacement context probe").length, 0, "registration-time UI was not reused");
+});
+
 test("T3e (v0.28.21): no active goal + queued list + reload → NOT activated by default; autoresume=on → head activates", async () => {
   const cwd = tmpCwd();
   seedState(cwd, { list: [{ id: "item-1", objective: "queued head objective — done when pinned", addedAt: new Date().toISOString() }] });

@@ -188,7 +188,7 @@ test("v0.34.7: safeSteerUser wraps every orchestrator sendUserMessage (darklord 
 
 test("v0.34.7: the fan-out float carries a catch (rejection ≠ process exit)", () => {
   const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
-  assert.match(g, /void fanOutListAuditFindings\(ctx\)\.catch\(/);
+  assert.match(g, /void fanOutListAuditFindings\(fanoutCwd, fanoutGeneration\)\.catch\(/);
   assert.match(g, /list_audit_fanout_error/);
 });
 
