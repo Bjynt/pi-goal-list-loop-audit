@@ -1795,6 +1795,53 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
   }
 }
 
+/** v0.34.21: durable completion-audit lifecycle helpers. A claim without
+ * an explicit phase is legacy state and is treated as recovery-pending after
+ * a fresh lifecycle event; it is never silently presented as an active run. */
+type PendingCompletion = NonNullable<Goal["pendingCompletion"]>;
+
+type CompletionAuditOrigin = "complete-goal" | "quota-retry" | "manual" | "session-recovery";
+
+function newCompletionAuditAttemptId(): string {
+  return `audit-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, origin: CompletionAuditOrigin): PendingCompletion {
+  const startedMs = Date.now();
+  const pending: PendingCompletion = {
+    ...claim,
+    phase: "running",
+    attemptId: newCompletionAuditAttemptId(),
+    startedAt: new Date(startedMs).toISOString(),
+    wallDeadlineAt: new Date(startedMs + AUDITOR_WALL_TIMEOUT_MS).toISOString(),
+    recoveryAt: undefined,
+    recoveryReason: undefined,
+  };
+  updateGoal({ status: "auditing", pendingCompletion: pending }, ctx);
+  appendLedger(ctx.cwd, "audit_started", { goalId: state.goal?.id, attemptId: pending.attemptId, origin, wallDeadlineAt: pending.wallDeadlineAt });
+  return pending;
+}
+
+function markCompletionAuditRecoveryPending(ctx: ExtensionContext, reason: string): boolean {
+  const goal = state.goal;
+  const claim = goal?.pendingCompletion;
+  if (!goal || goal.status !== "auditing" || !claim) return false;
+  if (claim.phase === "recovery-pending") return false;
+  const pending: PendingCompletion = {
+    ...claim,
+    phase: "recovery-pending",
+    recoveryAt: nowIso(),
+    recoveryReason: reason,
+  };
+  updateGoal({ pendingCompletion: pending }, ctx);
+  appendLedger(ctx.cwd, "audit_recovery_pending", { goalId: goal.id, attemptId: claim.attemptId, reason });
+  return true;
+}
+
+function isAuditorTimeoutError(error: string | undefined): boolean {
+  return !!error && (/^Auditor exceeded its .* wall-clock bound/i.test(error) || /^Auditor stalled —/i.test(error));
+}
+
 /**
  * v0.28.26: quota-window retry for a STORED completion claim. The auditor
  * was quota-blocked at complete_goal time; the claim (completionSummary +
@@ -1811,7 +1858,7 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
  * infra) → hand back to the agent: resume active + continuation, verdict
  * durable in auditHistory.
  */
-async function retryStoredCompletionAudit(origin: "quota-retry" | "manual" = "quota-retry"): Promise<void> {
+async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota-retry"): Promise<void> {
   const goal = state.goal;
   if (!goal?.pendingCompletion) return;
   const goalId = goal.id;
@@ -1822,16 +1869,23 @@ async function retryStoredCompletionAudit(origin: "quota-retry" | "manual" = "qu
   const initialCtx = freshCtxForGeneration(generation);
   if (!initialCtx) return;
   let liveCtx: ExtensionContext = initialCtx;
-  const claim = goal.pendingCompletion;
-  updateGoal({ status: "auditing" }, liveCtx);
-  appendLedger(liveCtx.cwd, "goal_resumed", { via: origin === "manual" ? "manual-audit" : "quota-retry-direct-audit" });
+  const claim = beginCompletionAudit(liveCtx, goal.pendingCompletion, origin);
+  const auditGoal = state.goal;
+  if (!auditGoal || auditGoal.id !== goalId) return;
+  if (origin === "session-recovery") {
+    appendLedger(liveCtx.cwd, "audit_recovery_started", { goalId, attemptId: claim.attemptId });
+  } else {
+    appendLedger(liveCtx.cwd, "goal_resumed", { via: origin === "manual" ? "manual-audit" : "quota-retry-direct-audit" });
+  }
   liveCtx.ui.notify(origin === "manual"
     ? "Manual /goal verify — running the isolated auditor now (no agent turn needed)."
-    : "Auditor quota window elapsed — retrying the audit with your stored completion claim (no agent turn needed).", "info");
+    : origin === "session-recovery"
+      ? "Fresh session recovered the interrupted completion audit — retrying the stored claim now."
+      : "Auditor quota window elapsed — retrying the audit with your stored completion claim (no agent turn needed).", "info");
   const settings = loadSettings(liveCtx.cwd);
   const { model: auditorModel, error: modelError, via } = resolveAuditorModel(liveCtx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
   if (modelError) liveCtx.ui.notify(`Auditor model issue: ${modelError}`, "warning");
-  latestAuditProgress = { label: "quota-retry", lastEventAt: Date.now() };
+  latestAuditProgress = { label: origin === "session-recovery" ? "recovery starting" : origin === "manual" ? "manual verify" : "quota retry", lastEventAt: Date.now() };
   completionAuditInFlight = true;
   completionAuditGeneration = generation;
   const auditStartMs = Date.now();
@@ -1841,7 +1895,7 @@ async function retryStoredCompletionAudit(origin: "quota-retry" | "manual" = "qu
       () =>
         runGoalCompletionAuditor({
           ctx: liveCtx,
-          goal,
+          goal: auditGoal,
           completionSummary: claim.completionSummary,
           verificationSummary: claim.verificationSummary,
           model: auditorModel,
@@ -1870,6 +1924,7 @@ async function retryStoredCompletionAudit(origin: "quota-retry" | "manual" = "qu
   }
   const currentAfterAudit = freshCtxForGeneration(generation);
   if (!currentAfterAudit || !state.goal || state.goal.id !== goalId) return; // replacement/stale/goal boundary — fresh session rebinds durable state
+  if (state.goal.pendingCompletion?.attemptId !== claim.attemptId) return; // a newer attempt owns the durable claim
   liveCtx = currentAfterAudit;
 
   // Record the run in history (same compact shape as the tool path).
@@ -1897,8 +1952,9 @@ async function retryStoredCompletionAudit(origin: "quota-retry" | "manual" = "qu
   if (result.approved) {
     updateGoal({ auditHistory: history, pendingCompletion: undefined }, liveCtx);
     const objective = state.goal.objective;
+    const approvalVia = origin === "manual" ? " on /goal verify" : origin === "session-recovery" ? " after session recovery" : " on the quota retry";
     archiveCurrentGoal(liveCtx, "complete", `auditor ${result.model} approved (${origin})`);
-    liveCtx.ui.notify(`Goal complete — auditor ${result.model} approved${origin === "manual" ? " on /goal verify" : " on the quota retry"}.`, "info");
+    liveCtx.ui.notify(`Goal complete — auditor ${result.model} approved${approvalVia}.`, "info");
     notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${objective.slice(0, 120)}`);
     return;
   }
@@ -1912,6 +1968,7 @@ async function retryStoredCompletionAudit(origin: "quota-retry" | "manual" = "qu
     updateGoal({
       status: "paused",
       auditHistory: history,
+      pendingCompletion: { ...claim, phase: "quota-waiting", recoveryAt: undefined, recoveryReason: undefined },
       pauseKind: "wait",
       pauseResumeAt: new Date(Date.now() + quota.retryAfterSec * 1000).toISOString(),
       pauseReason: `auditor quota: ${result.error}`,
@@ -1932,6 +1989,30 @@ async function retryStoredCompletionAudit(origin: "quota-retry" | "manual" = "qu
         void retryStoredCompletionAudit(origin);
       }
     });
+    return;
+  }
+
+  // A watchdog timeout is infrastructure, but unlike a normal one-shot
+  // provider error it must keep the exact completion claim available for an
+  // explicit retry. The goal is paused loudly; /goal resume re-enters the
+  // direct-audit path instead of asking the agent to recreate the claim.
+  if (result.error && !result.disapproved && isAuditorTimeoutError(result.error)) {
+    const pending: PendingCompletion = {
+      ...claim,
+      phase: "recovery-pending",
+      recoveryAt: nowIso(),
+      recoveryReason: result.error.startsWith("Auditor exceeded") ? "wall-timeout" : "inactivity-timeout",
+    };
+    updateGoal({
+      status: "paused",
+      auditHistory: history,
+      pendingCompletion: pending,
+      pauseKind: "error",
+      pauseReason: `completion audit timed out — ${result.error}`,
+      pauseSuggestedAction: "The claim is stored. Check long-running verification commands, then /goal resume to retry the isolated auditor.",
+    }, liveCtx);
+    appendLedger(liveCtx.cwd, result.error.startsWith("Auditor exceeded") ? "audit_wall_timeout" : "audit_inactivity_timeout", { goalId, attemptId: claim.attemptId, error: result.error.slice(0, 240) });
+    liveCtx.ui.notify("Completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and /goal resume to retry it.", "warning");
     return;
   }
 
