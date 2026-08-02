@@ -718,6 +718,10 @@ let completionAuditInFlight = false;
 // v0.34.20: an old auditor's finally block must not clear the in-flight
 // marker belonging to a fresh lifecycle generation.
 let completionAuditGeneration: number | null = null;
+// v0.34.21: durable recovery is only auto-fired when the lifecycle event or
+// an explicit /goal resume supplied continuation consent. A cold startup with
+// autoResume off may display a recovery-pending claim without launching it.
+let completionAuditRecoveryArmed = false;
 // v0.32.0: consecutive stored-claim quota retries (capped at 5, then hold).
 let quotaRetryStreak = 0;
 let heartbeatTimer: NodeJS.Timeout | null = null;
@@ -1082,16 +1086,21 @@ function heartbeatTick(): void {
   // the closure narrative. The audit silence is expected ONLY while
   // completionAuditInFlight — its absence here means the run is orphaned.
   // Recover: a stored claim re-runs the auditor directly; otherwise resume
-  // active so the agent re-calls complete_goal.
+  // active so the agent re-calls complete_goal. A cold startup with
+  // autoResume off deliberately leaves recovery-pending claims alone until
+  // /goal resume supplies explicit consent; lifecycle rebinds arm recovery
+  // immediately rather than waiting for this 90s fallback.
   if (
     state.goal?.status === "auditing" &&
     !completionAuditInFlight &&
+    completionAuditRecoveryArmed &&
     Date.now() - lastActivityAt >= 90_000
   ) {
     appendLedger(ctx.cwd, "stranded_audit_recovered", { goalId: state.goal.id, via: state.goal.pendingCompletion ? "stored-claim" : "resume-active" });
     if (state.goal.pendingCompletion) {
+      markCompletionAuditRecoveryPending(ctx, "heartbeat-recovery");
       ctx.ui.notify("Recovering a completion audit whose result never landed — re-running the auditor with the stored claim.", "info");
-      void retryStoredCompletionAudit("quota-retry");
+      void retryStoredCompletionAudit("session-recovery");
     } else {
       updateGoal({ status: "active" }, ctx);
       ctx.ui.notify("A completion audit was interrupted (its result never landed). Resuming — re-call complete_goal when the deliverable still stands.", "warning");
@@ -1807,6 +1816,7 @@ function newCompletionAuditAttemptId(): string {
 }
 
 function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, origin: CompletionAuditOrigin): PendingCompletion {
+  completionAuditRecoveryArmed = true;
   const startedMs = Date.now();
   const pending: PendingCompletion = {
     ...claim,
@@ -1868,6 +1878,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
   // cannot be proven live, the fresh session must rehydrate the durable claim.
   const initialCtx = freshCtxForGeneration(generation);
   if (!initialCtx) return;
+  completionAuditRecoveryArmed = true;
   let liveCtx: ExtensionContext = initialCtx;
   const claim = beginCompletionAudit(liveCtx, goal.pendingCompletion, origin);
   const auditGoal = state.goal;
@@ -3960,22 +3971,21 @@ function registerAgentTools(pi: any): void {
         appendLedger(ctx.cwd, "goal_tweaked", { via: "complete_goal.newObjective", from: oldObjective.slice(0, 200), to: cleanObj.slice(0, 200) });
         ctx.ui.notify(`Objective updated (complete_goal newObjective): ${cleanObj.slice(0, 80)}`, "info");
       }
-      // v0.34.20: persist the completion claim BEFORE the isolated auditor
-      // starts. If session replacement lands during the audit, a fresh
-      // session can recover the exact claim instead of leaving an untracked
-      // goal stuck in `auditing`.
-      updateGoal({
-        status: "auditing",
-        pendingTasks: undefined,
-        pendingCompletion: {
-          completionSummary: p.completionSummary,
-          verificationSummary: p.verificationSummary,
-          at: nowIso(),
-        },
-      }, ctx);
+      // v0.34.20/v0.34.21: persist the completion claim AND an explicit
+      // running-attempt record BEFORE the isolated auditor starts. If session
+      // replacement lands during the audit, a fresh session can immediately
+      // distinguish the interrupted claim from an active run and retry the
+      // exact claim without allowing the old generation to archive anything.
+      const completionClaim = beginCompletionAudit(ctx, {
+        completionSummary: p.completionSummary,
+        verificationSummary: p.verificationSummary,
+        at: nowIso(),
+      }, "complete-goal");
+      updateGoal({ pendingTasks: undefined }, ctx);
       const auditGoal = state.goal;
       if (!auditGoal) return staleToolResult();
       const auditGoalId = auditGoal.id;
+      const auditAttemptId = completionClaim.attemptId;
       const settings = loadSettings(ctx.cwd);
       const { model: auditorModel, error: modelError, via } = resolveAuditorModel(ctx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
       if (modelError) {
@@ -4036,6 +4046,9 @@ function registerAgentTools(pi: any): void {
       const auditContextAfterRun = freshCtxForGeneration(auditGeneration);
       if (!auditContextAfterRun || !state.goal || state.goal.id !== auditGoalId) {
         if (completionAuditGeneration === auditGeneration) latestAuditProgress = null;
+        return staleToolResult();
+      }
+      if (state.goal.pendingCompletion?.attemptId !== auditAttemptId) {
         return staleToolResult();
       }
       ctx = auditContextAfterRun;
@@ -4200,6 +4213,32 @@ function registerAgentTools(pi: any): void {
       // The wild-caught case: 6 silent "disapprovals" that were really a dead
       // auditor model. The agent must be able to tell the difference.
       if (result.error && !result.disapproved) {
+        // Watchdog timeouts are infrastructure failures, but retain the exact
+        // completion claim so /goal resume can retry the isolated auditor
+        // directly. A timeout is not a verdict and must not be fed back into
+        // the normal agent continuation path.
+        if (isAuditorTimeoutError(result.error)) {
+          const pending: PendingCompletion = {
+            ...completionClaim,
+            phase: "recovery-pending",
+            recoveryAt: nowIso(),
+            recoveryReason: result.error.startsWith("Auditor exceeded") ? "wall-timeout" : "inactivity-timeout",
+          };
+          updateGoal({
+            status: "paused",
+            auditHistory: history,
+            pendingCompletion: pending,
+            pauseKind: "error",
+            pauseReason: `completion audit timed out — ${result.error}`,
+            pauseSuggestedAction: "The claim is stored. Check long-running verification commands, then /goal resume to retry the isolated auditor.",
+          }, ctx);
+          appendLedger(ctx.cwd, result.error.startsWith("Auditor exceeded") ? "audit_wall_timeout" : "audit_inactivity_timeout", { goalId: auditGoalId, attemptId: auditAttemptId, error: result.error.slice(0, 240) });
+          ctx.ui.notify("Completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and /goal resume to retry it.", "warning");
+          return {
+            content: [{ type: "text", text: "The completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and /goal resume to retry it." }],
+            details: {},
+          };
+        }
         // v0.25.0 (contract Section C): quota errors used to re-fire the
         // continuation FOREVER against a window that resets in an hour.
         // Now: pause with a one-shot scheduled retry at the upstream's own
@@ -4215,7 +4254,7 @@ function registerAgentTools(pi: any): void {
             auditInfraStreak: undefined, // quota reached the auditor — infra streak broken
             // v0.28.26: store the claim — the quota retry re-runs the
             // auditor DIRECTLY with it (no agent turn to confuse).
-            pendingCompletion: { completionSummary: p.completionSummary, verificationSummary: p.verificationSummary, at: nowIso() },
+            pendingCompletion: { ...completionClaim, phase: "quota-waiting", recoveryAt: undefined, recoveryReason: undefined },
             pauseKind: "wait",
             pauseResumeAt: new Date(Date.now() + quota.retryAfterSec * 1000).toISOString(),
             pauseReason: `auditor quota: ${result.error}`,
@@ -6700,6 +6739,10 @@ export default function (pi: ExtensionAPI): void {
     // 5-hour orphan silence 2026-07-31 was unattributable). The window
     // tells the stale probe that a rebind (session_start) is imminent.
     const shutdownReason = typeof event?.reason === "string" ? event.reason : "unknown";
+    if (state.goal?.status === "auditing" && state.goal.pendingCompletion) {
+      markCompletionAuditRecoveryPending(ctx, `session_shutdown:${shutdownReason}`);
+      completionAuditRecoveryArmed = false;
+    }
     appendLedger(ctx.cwd, "session_shutdown", { reason: shutdownReason });
     markSessionOwnerShutdown(ctx.cwd, shutdownReason);
     writeSessionHandoff(ctx, shutdownReason);
@@ -6725,6 +6768,7 @@ export default function (pi: ExtensionAPI): void {
     // session's recovery gate; its finally block is generation-guarded too.
     completionAuditInFlight = false;
     completionAuditGeneration = null;
+    completionAuditRecoveryArmed = false;
     latestAuditProgress = null;
     // Ephemeral watchdog counters belong to the old session, not the
     // persisted goal. Reset them so a stale boundary cannot make the next
