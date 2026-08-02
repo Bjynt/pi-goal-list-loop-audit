@@ -3746,6 +3746,33 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
 // Tools exposed to the agent
 // =================================================================
 
+const STALE_TOOL_CONTEXT_MESSAGE =
+  "This tool call crossed a session replacement before it could run. No stale context was used; wait for a fresh session_start and retry.";
+
+function staleToolResult(): { content: Array<{ type: "text"; text: string }>; details: Record<string, never> } {
+  return { content: [{ type: "text", text: STALE_TOOL_CONTEXT_MESSAGE }], details: {} };
+}
+
+/**
+ * v0.34.20: registerAgentTools runs once per extension instance, but pi
+ * invokes the registered tool with the current event context. Never use the
+ * context captured when the tools were registered after a reload/rebind.
+ * Prefer the invocation context, validate it cheaply, and fall back only to
+ * the current fresh context — never to the registration-time ctx.
+ */
+function currentToolContext(execCtx: unknown): ExtensionContext | null {
+  const candidate = execCtx as ExtensionContext | undefined;
+  if (candidate) {
+    try {
+      candidate.isIdle();
+      return candidate;
+    } catch {
+      // The invocation itself may be a late event; try the current binding.
+    }
+  }
+  return freshCtx();
+}
+
 function registerAgentTools(pi: any, ctx: ExtensionContext): void {
   pi.registerTool(defineTool({
     name: "complete_goal",
@@ -3759,6 +3786,9 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
     async execute(_id, params, signal, _onUpdate, execCtx) {
       const foreign0 = foreignToolGuard(execCtx);
       if (foreign0) return { content: [{ type: "text", text: foreign0 }], details: {} };
+      let ctx = currentToolContext(execCtx);
+      if (!ctx) return staleToolResult();
+      const auditGeneration = sessionGeneration;
       if (!state.goal || state.goal.status !== "active") {
         return { content: [{ type: "text", text: "No active goal." }], details: {} };
       }
@@ -3800,7 +3830,8 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
               elapsedMs: progress.elapsedMs,
               lastEventAt: Date.now(),
             };
-            refreshUI(ctx);
+            const current = freshCtxForGeneration(auditGeneration);
+            if (current) refreshUI(current);
           },
         });
       // v0.25.4 (post-audit fix): a retriable infra failure (stream error,
@@ -3813,15 +3844,25 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
       let retriedOnce = false;
       try {
         ({ result, retriedOnce } = await runWithInfraRetry(runAudit, {
+          shouldRetry: () => freshCtxForGeneration(auditGeneration) !== null,
           onRetry: (err) => {
             latestAuditProgress = { label: `infra error (${err.slice(0, 40)}) — retrying once`, lastEventAt: Date.now() };
-            refreshUI(ctx);
-            appendLedger(ctx.cwd, "audit_infra_retry", { goalId: state.goal?.id, error: err.slice(0, 200) });
+            const current = freshCtxForGeneration(auditGeneration);
+            if (current) {
+              refreshUI(current);
+              appendLedger(current.cwd, "audit_infra_retry", { goalId: state.goal?.id, error: err.slice(0, 200) });
+            }
           },
         }));
       } finally {
         completionAuditInFlight = false;
       }
+      const auditContextAfterRun = freshCtxForGeneration(auditGeneration);
+      if (!auditContextAfterRun) {
+        latestAuditProgress = null;
+        return staleToolResult();
+      }
+      ctx = auditContextAfterRun;
       const auditDurationMs = Date.now() - auditStartMs;
       latestAuditProgress = null;
       // Audit history: record REAL verdicts only — a non-empty report is the
@@ -4191,6 +4232,8 @@ function registerAgentTools(pi: any, ctx: ExtensionContext): void {
     async execute(_id, params, _signal, _onUpdate, execCtx) {
       const foreign1 = foreignToolGuard(execCtx);
       if (foreign1) return { content: [{ type: "text", text: foreign1 }], details: {} };
+      const ctx = currentToolContext(execCtx);
+      if (!ctx) return staleToolResult();
       const p = params as { reason: string; suggestedAction?: string; kind?: "decision" | "error" | "wait" | "blocked"; options?: string[]; recommended?: number; resumeAt?: string };
       if (!state.goal) return { content: [{ type: "text", text: "No active goal." }], details: {} };
       updateGoal({
