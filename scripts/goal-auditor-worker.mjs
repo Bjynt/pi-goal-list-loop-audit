@@ -93,7 +93,8 @@ async function main() {
   let deadlineTimer;
   let inactivityTimer;
   let lastActivityAt = Date.now();
-  const AUDITOR_STALL_MS = 10 * 60_000;
+  const configuredStallMs = Number(process.env.GLLA_AUDITOR_STALL_MS ?? 10 * 60_000);
+  const AUDITOR_STALL_MS = Number.isFinite(configuredStallMs) ? Math.max(50, configuredStallMs) : 10 * 60_000;
 
   const progress = async (phase = "running") => {
     const file = {
@@ -177,7 +178,7 @@ async function main() {
       if (Date.now() - lastActivityAt >= AUDITOR_STALL_MS) {
         void finish(false, "Auditor stalled — no session activity for 10m while no read-only tool was running, so it was aborted.").catch(() => {});
       }
-    }, 15_000);
+    }, Math.min(15_000, Math.max(10, Math.floor(AUDITOR_STALL_MS / 4))));
     inactivityTimer.unref?.();
 
     // RPC is a strict LF-delimited JSON stream. Do not use readline here:

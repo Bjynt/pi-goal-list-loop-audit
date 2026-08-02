@@ -1758,7 +1758,7 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
   const pendingAttemptId = goal.pendingCompletion?.attemptId;
   ensureDirs(ctx.cwd);
   const target = archivedGoalPath(ctx.cwd, goal.id);
-  const md = renderGoalMarkdown({ ...goal, status, stopReason });
+  const md = renderGoalMarkdown({ ...goal, status, stopReason, pendingCompletion: undefined });
   // v0.28.6 (E1): guarded — and the active md is only removed when the
   // archive actually LANDED (degraded mode must not destroy the only copy).
   const archived = runPersistStep("archiveCurrentGoal", () => {
@@ -4010,7 +4010,7 @@ function registerAgentTools(pi: any): void {
   pi.registerTool(defineTool({
     name: "complete_goal",
     label: "Complete goal",
-    description: "Mark the active goal as complete. Spawns an isolated auditor to verify. Use only when the objective is genuinely satisfied.",
+    description: "Mark the active goal as complete. Queues a detached auditor worker to verify without holding the main pi turn. Use only when the objective is genuinely satisfied.",
     parameters: Type.Object({
       completionSummary: Type.Optional(Type.String({ description: "1-paragraph completion claim" })),
       verificationSummary: Type.Optional(Type.String({ description: "Per-item evidence for the verification contract" })),

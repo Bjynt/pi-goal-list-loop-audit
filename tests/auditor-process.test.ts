@@ -111,6 +111,33 @@ test("request hashing is stable and excludes no runtime secret or API key field"
   assert.equal("apiKey" in request, false);
 });
 
+test("detached worker treats silent provider time as infrastructure, not a verdict", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-stall-"));
+  const fakePi = path.join(dir, "silent-pi.mjs");
+  await writeFile(fakePi, "#!/usr/bin/env node\\nprocess.stdin.resume(); setInterval(() => {}, 1000);\\n");
+  await chmod(fakePi, 0o700);
+  try {
+    const result = await runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "high",
+      runtime: {
+        workerPath: path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs"),
+        env: { GLLA_PI_BINARY: fakePi, GLLA_AUDITOR_STALL_MS: "60" },
+        attemptId: () => "attempt-silent",
+        pollIntervalMs: 10,
+        wallTimeoutMs: 2_000,
+      },
+    });
+    assert.equal(result.approved, false);
+    assert.equal(result.disapproved, false);
+    assert.match(result.error ?? "", /Auditor stalled/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("worker launches pi with the exact read-only RPC contract and one LF JSONL prompt", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-worker-"));
   const piLog = path.join(dir, "pi-log.json");

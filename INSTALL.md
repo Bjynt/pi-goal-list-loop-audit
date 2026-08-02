@@ -183,7 +183,7 @@ conflicts with the current pi release.
 npm test
 ```
 
-Expected output: 545 passing tests across 58 files (1 env-gated skip) (`goal-loop-core.test.ts`, `goal.schema.test.ts`, `extract-verification.test.ts`, `regression-shield.test.ts`, `list-import.test.ts`, `list-queue.test.ts`, `loop-forever.test.ts`, `display.test.ts`, `goal-route.test.ts`, `heartbeat.test.ts`, `task-list.test.ts`, `auditor-error-paths.test.ts`, plus `tests/README.md`).
+Expected output at v0.34.22: 727 passing tests across 64 files (1 env-gated skip). Counts change as bounded regressions are added; use the command output as the source of truth.
 
 ## Run the type-check
 
