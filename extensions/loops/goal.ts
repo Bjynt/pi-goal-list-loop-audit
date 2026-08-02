@@ -2369,8 +2369,17 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
   // marker's promise ("a fresh session will resume you") is fulfilled by a
   // manual resume exactly as by an automatic one. (staleEntry still re-marks
   // below — a resume inside a stale session is a NEW interrupt.)
+  const storedCompletion = state.goal.pendingCompletion;
   updateGoal({ status: "active", pauseReason: undefined, pauseSuggestedAction: undefined, pauseKind: undefined, pauseOptions: undefined, pauseRecommended: undefined, pauseResumeAt: undefined, interruptedAt: undefined, interruptedReason: undefined, ...(staleEntry ? { interruptedAt: nowIso(), interruptedReason: "resumed in a stale session" } : {}), ...(usage ? { usage } : {}) }, ctx);
   if (staleEntry) return;
+  // A stored completion claim is a direct-audit resume, not an agent turn.
+  // Keeping the claim while merely scheduling a continuation left manual
+  // pause/resume with an ACTIVE goal that no timer would ever consume.
+  if (storedCompletion) {
+    ctx.ui.notify("Resuming the stored completion claim — running the isolated auditor directly (no agent turn needed).", "info");
+    void retryStoredCompletionAudit(ctx, "manual");
+    return;
+  }
   // v0.22.5: say what was resumed — with a non-empty list this also resumes
   // the queue (the active goal IS the list's head item).
   // v0.22.7: name WHAT was resumed — list items resume through /list.
