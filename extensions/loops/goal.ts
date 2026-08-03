@@ -2224,8 +2224,8 @@ export async function runDetachedCompletionWithFallback(
  * Outcomes: approved → close + cascade (archiveCurrentGoal handles list
  * advance + reviewer); quota again → re-pause with a fresh scheduled retry
  * (claim preserved); anything else (disapproved, impossible, non-quota
- * infra) → hand back to the agent: resume active + continuation, verdict
- * durable in auditHistory.
+ * infra) → preserve the claim and pause for explicit `/goal resume`, while
+ * semantic verdicts remain durable in auditHistory.
  */
 async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota-retry"): Promise<void> {
   const goal = state.goal;
