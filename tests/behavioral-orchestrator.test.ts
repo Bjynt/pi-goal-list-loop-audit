@@ -709,6 +709,36 @@ test("v0.34.27: stale host recovery absorbs the first replacement contact across
   __testOnlyResetOwnerSession();
 });
 
+test("v0.34.27: plain startup from a dead file-backed successor is not rejected as a subagent", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "startup successor — done when rebound", ctx);
+  await tick();
+  // Simulate pi replacing the host before it emits the successor's ordinary
+  // startup event. The old manager is dead, but no stale terminal was needed
+  // to make the lifecycle boundary real.
+  (ctx as any).isIdle = () => { throw staleError(); };
+  const successorCtx = makeMockCtx(cwd, {
+    sessionManager: {
+      name: "startup-successor",
+      getSessionFile: () => path.join(cwd, "startup-successor.jsonl"),
+      getSessionId: () => "startup-successor-1",
+    },
+  });
+  await pi.fire("session_start", { reason: "startup" }, successorCtx);
+  await tick(200);
+  const g = readState(cwd).goal as { status: string; interruptedAt?: string };
+  assert.equal(g.status, "active", "the file-backed host successor rebinds in place");
+  assert.equal(g.interruptedAt, undefined);
+  assert.ok(pi.sent.length >= 1, "rebound session can continue the goal");
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.match(ledger, /session_rebind_without_shutdown/);
+  __testOnlyResetOwnerSession();
+});
+
 // v0.34.27 — output-token-limit exhaustion: durable explicit failure state.
 
 test("v0.34.26: repeated output-token truncation pauses the goal durably with re-scope guidance and a fresh resume budget", async () => {
