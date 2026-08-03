@@ -220,7 +220,7 @@ test("v0.31.6: same-model swap toggle — default ON, off = same-model audits st
   assert.equal(SRC.match(/settings\.auditorSameSessionSwap !== false/g)!.length, 2, "both audit call sites pass the toggle (undefined = on)");
   assert.match(SRC, /if \(sameSessionSwap && isSession\(r\.model\) && i \+ 1 >= pins\.length\) \{/); // v0.32.0: last-pin guard — the fallback hop landing on the session model nudges too
   assert.match(SRC, /case "auditorSameSessionSwap": \{/);
-  assert.match(SRC, /off — same-model audits stand \(you accept the executor's model as its own verifier/);
+  assert.match(SRC, /off — same-model audits stand; isolation \+ evidence contract still apply/);
   const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
   assert.match(SETTINGS, /auditorSameSessionSwap\?: boolean;/);
   assert.match(SETTINGS, /Default ON \(undefined\)/);

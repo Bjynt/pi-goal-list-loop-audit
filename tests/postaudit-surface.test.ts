@@ -59,9 +59,13 @@ test("/glla postaudit opens the same menu as /glla reviewer (no behavioral split
   assert.ok(routeCheck > 0 && routeCheck < keywordCheck + 200, "the postaudit branch routes to cmdReviewerSettings");
 });
 
-test("/glla completions list both reviewer (legacy) and postaudit (new)", () => {
-  assert.match(SRC, /\["reviewer", "[^"]*post-completion[^"]*"\]/);
-  assert.match(SRC, /\["postaudit", "[^"]*post-completion[^"]*"\]/);
+test("/glla routes reviewer (legacy) and postaudit (new) without completion rows", () => {
+  // v0.34.25: both keywords still ROUTE to the one postaudit menu, but they
+  // are no longer autocomplete entries (verb-only picker, group narrowing).
+  assert.doesNotMatch(SRC, /\["reviewer",/);
+  assert.doesNotMatch(SRC, /\["postaudit",/);
+  assert.match(SRC, /\^postaudit\\b/);
+  assert.match(SRC, /\^reviewer\\b/);
 });
 
 test("resolveReviewerConfig: postaudit and reviewer blocks merge equivalently", () => {

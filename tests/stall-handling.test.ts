@@ -94,9 +94,12 @@ test("settings: stallEscalationRefires round-trips through save/load", () => {
   assert.equal(loadSettings(dir).stallEscalationRefires, 0, "0 persists (never-escalate opt-out)");
 });
 
-test("/glla surface: grouped settings completion preserves key=value parser routes", () => {
-  assert.match(SRC, /\["stall-brakes", "grouped stall and wedge settings"\]/);
+test("/glla surface: settings groups route without completion rows; key=value parser survives", () => {
+  // v0.34.25: the section groups are typed routes into the tabbed table,
+  // not autocomplete entries (picker noise); per-key aliases never were.
+  assert.doesNotMatch(SRC, /\["stall-brakes",/);
   assert.doesNotMatch(SRC, /\["stallescalation=",/);
+  assert.match(SRC, /\^\(keep-going\|auditor\|stall-brakes\|subagents\|other\)\\b/);
   assert.match(SRC, /key === "stallescalation" \|\| key === "stallescalationrefires"/);
 });
 
