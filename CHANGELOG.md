@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.34.37 — 2026-08-03
+
+### Hardened — continuation and auditor recovery
+
+- A loop whose accepted continuation never produces a start proof now stops
+  durably as stalled instead of remaining falsely active; `/loop resume`
+  explicitly re-arms it.
+- Compaction is covered end-to-end: a timed-out dispatch is released for one
+  post-compaction resync attempt rather than remaining hidden behind the
+  dispatch stand-down.
+- Output-token-limit detection includes provider error metadata, not only
+  visible assistant text, so max-output failures receive deterministic-wall
+  handling.
+- Stored completion-audit retries now persist the consecutive infrastructure
+  failure streak instead of resetting the breaker on every manual retry.
+- Detached workers handle nested RPC stream errors and early child exits so
+  infrastructure failures publish an atomic result instead of dying before
+  `result.json`.
+
 ## 0.34.36 — 2026-08-03
 
 ### Hardened — detached auditor telemetry and verdict boundaries

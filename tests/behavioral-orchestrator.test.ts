@@ -432,7 +432,8 @@ test("v0.34.36: compaction releases a timed-out dispatch for one fresh resync at
     await waitUntil(() => pi.sent.length >= 2, 3_500);
     const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
     assert.match(ledger, /compaction_refire/);
-    assert.match(ledger, /POST-COMPACTION RESYNC/);
+    const resyncContent = pi.sent[1]!.message.content ?? "";
+    assert.match(resyncContent, /POST-COMPACTION RESYNC/);
     await pi.command("goal", "pause", ctx);
   } finally {
     __testOnlySetContinuationStartTimeout(null);
