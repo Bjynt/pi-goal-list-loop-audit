@@ -22,7 +22,7 @@ import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import activate, { __testOnlyResetStaleFlag, __testOnlyRunFanOutListAuditFindings } from "../extensions/loops/goal.js";
+import activate, { __testOnlyResetStaleFlag, __testOnlyRunFanOutListAuditFindings, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
 
 // v0.29.5: autoResume is GLOBAL-only now — tests opt in by writing the
 // harness's global settings path, and afterEach resets it so the opt-in
@@ -1224,4 +1224,39 @@ test("v0.34.20 lifecycle: loop measurement abandons the old generation after rep
     releaseMeasure();
     pi.execHandler = null;
   }
+});
+
+test("v0.34.25: a resolved auditor model failure advances to the session fallback without a verdict", async () => {
+  const calls: string[] = [];
+  const result = await runDetachedCompletionWithFallback(
+    [
+      { model: "provider/primary", via: "setting" },
+      { model: "provider/session", via: "session-fallback" },
+    ],
+    async (candidate) => {
+      calls.push(candidate.model as string);
+      if (candidate.via === "setting") {
+        return {
+          approved: false,
+          disapproved: false,
+          output: "",
+          model: candidate.model as string,
+          thinkingLevel: "high",
+          error: "pi exited without an agent_settled RPC event",
+        };
+      }
+      return {
+        approved: true,
+        disapproved: false,
+        output: "<evidence>fallback read</evidence>\\n<approved/>",
+        model: candidate.model as string,
+        thinkingLevel: "high",
+      };
+    },
+    { sleep: async () => {}, shouldRetry: () => true },
+  );
+  assert.deepEqual(calls, ["provider/primary", "provider/primary", "provider/session"], "the primary is retried once, then the session fallback is detached");
+  assert.equal(result.result.approved, true);
+  assert.equal(result.fallbackUsed, true);
+  assert.equal(result.via, "session-fallback");
 });

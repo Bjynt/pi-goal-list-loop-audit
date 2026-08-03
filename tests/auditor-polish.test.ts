@@ -132,6 +132,7 @@ test("isRetriableInfraError: aborts and missing-model are NOT retried", async ()
   assert.equal(isRetriableInfraError(undefined), false);
   assert.equal(isRetriableInfraError("Auditor aborted."), false);
   assert.equal(isRetriableInfraError("no model (session model also unset)"), false);
+  assert.equal(isRetriableInfraError("no auditor model"), false);
   assert.equal(isRetriableInfraError("stream error: connection reset"), true);
   assert.equal(isRetriableInfraError("403 Forbidden (quota?)"), true);
 });

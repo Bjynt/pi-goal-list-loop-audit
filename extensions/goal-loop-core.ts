@@ -1344,7 +1344,7 @@ export function formatAuditLog(entries: AuditLogEntry[]): string {
 export function isRetriableInfraError(error?: string): boolean {
   if (!error) return false;
   if (/aborted/i.test(error)) return false;
-  if (/no model/i.test(error)) return false;
+  if (/no (?:auditor )?model/i.test(error)) return false;
   return true;
 }
 
