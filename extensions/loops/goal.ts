@@ -1149,12 +1149,6 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
     void recoverMainModelFromSendStorm(ctx, kind);
     return;
   }
-  /* legacy loop-storm branch retained only as historical context
-    state.loop = { ...state.loop!, active: false, stopReason: `send-retry storm: ${mins}m of re-arms with no session activity for ${silent}m — the session is wedged. Press Escape to cancel the stuck run (pi's own rate-limit retry holds it; pi prints "escape to cancel"), then /loop resume — the loop holds on restore. A fresh session_start rebinds the loop; restart pi normally only if no replacement arrives.` };
-    persistState(ctx);
-    ctx.ui.notify(`Loop stopped: send-retry storm (${mins}m, session silent ${silent}m). Escape cancels the stuck run, then /loop resume (the loop holds on restore). A fresh session_start rebinds it; restart pi normally only if no replacement arrives.`, "warning");
-    notifyExternal(ctx, "Loop stopped: send-retry storm.");
-  */
   if (
     state.goal &&
     (state.goal.status === "auditing" || completionAuditInFlight || state.goal.pendingCompletion)
@@ -1221,6 +1215,7 @@ function heartbeatTick(): void {
   if (zombieStoodDown || initialSessionLoadPending) return; // blank startup waits for pi to bind a real session
   const ctx = freshCtx();
   if (!ctx) return;
+  if (mainModelRecoveryActive()) return;
   let idle = false;
   let pending = false;
   try {
@@ -8648,6 +8643,8 @@ export default function (pi: ExtensionAPI): void {
     dispatchStartAcknowledged(ctx, "before_agent_start", event?.prompt);
   });
   pi.on("model_select", (_event: any, ctx: ExtensionContext) => {
+    if (tryAbsorbHostSuccessor(ctx, "model_select")) return;
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     if (mainModelSwitchInFlight || !state.mainModelRecovery) return;
     clearMainModelRecoveryTimer();
     state.mainModelRecovery = undefined;
