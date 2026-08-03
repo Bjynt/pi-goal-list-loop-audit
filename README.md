@@ -289,6 +289,8 @@ The queued list is a backlog, not a second live thing — untouched.
 /glla tokenlimit=0                   # explicitly no cap (the default)
 /glla wedgealert=30                  # hung-command alert minutes (default: 30, 0 = off)
 /glla autoresume=on                  # auto-resume goals/loops on ANY session start (default: load HELD, never auto-start — explicit /goal resume, /list resume, or /loop; off: never) — GLOBAL-only (v0.29.5): project-level keys are inert
+/glla mainmodelbackups='provider/model-a,provider/model-b'  # ordered MAIN-session backups → GLOBAL
+/glla mainmodelretryminutes=15        # recovery probes: 15m → 30m → hourly forever
 /glla auditcap=5                     # pause the goal after N consecutive auditor disapprovals (default 5, 0 = unlimited)
 /glla aggressivemode=on               # keep-going defaults: autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs
 /glla quotaretryminutes=60            # minutes before auto-retrying a quota-exhausted auditor
@@ -302,7 +304,12 @@ Resolution per key: **project > global > defaults** — EXCEPT `autoResume`,
 which is **global-only** (v0.29.5): per-project opt-ins from old versions
 silently overrode the global hold at launch (the junk-runner incident), so
 the launch-restore gate and the reviewer-enqueue gate read only the global
-file now. The detached auditor uses an explicit cascade: primary
+file now. Main-session backups are global and ordered: a quota/provider error
+switches to the next authenticated candidate before another supervised turn;
+when every candidate is down, glla cancels the provider-held retry and keeps a
+durable 15m → 30m → hourly probe running. A quota window returning two hours
+later therefore resumes the saved work without a manual `/goal resume`; no
+blind 50ms resend loop is introduced. The detached auditor uses an explicit cascade: primary
 `auditorModel` → optional fallback pin → the pi session model. If a selected
 model fails after launch, the worker retries it once and then advances through
 that same cascade; every candidate is still audited in a detached,

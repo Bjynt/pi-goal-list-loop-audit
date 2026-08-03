@@ -1146,13 +1146,15 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
   const silent = Math.round(SEND_REARM_ESCALATE_SILENT_MS / 60000);
   appendLedger(ctx.cwd, "send_rearm_escalated", { kind, afterMinutes: mins, silentMinutes: silent });
   if (kind === "loop" && isLoopActive()) {
-    clearLoopTimer();
+    void recoverMainModelFromSendStorm(ctx, kind);
+    return;
+  }
+  /* legacy loop-storm branch retained only as historical context
     state.loop = { ...state.loop!, active: false, stopReason: `send-retry storm: ${mins}m of re-arms with no session activity for ${silent}m — the session is wedged. Press Escape to cancel the stuck run (pi's own rate-limit retry holds it; pi prints "escape to cancel"), then /loop resume — the loop holds on restore. A fresh session_start rebinds the loop; restart pi normally only if no replacement arrives.` };
     persistState(ctx);
     ctx.ui.notify(`Loop stopped: send-retry storm (${mins}m, session silent ${silent}m). Escape cancels the stuck run, then /loop resume (the loop holds on restore). A fresh session_start rebinds it; restart pi normally only if no replacement arrives.`, "warning");
     notifyExternal(ctx, "Loop stopped: send-retry storm.");
-    return;
-  }
+  */
   if (
     state.goal &&
     (state.goal.status === "auditing" || completionAuditInFlight || state.goal.pendingCompletion)
@@ -1738,7 +1740,7 @@ function mainModelFallbackRefs(ctx: ExtensionContext): string[] {
   try { return normalizeModelRefs(loadGlobalSettings().mainModelFallbacks); } catch { return []; }
 }
 
-function mainModelRecoveryActive(): boolean { return state.mainModelRecovery !== undefined; }
+function mainModelRecoveryActive(): boolean { return !!state.mainModelRecovery?.retryAt; }
 
 function mainModelRecoveryKind(): "goal" | "loop" { return state.loop?.active ? "loop" : "goal"; }
 
@@ -1761,6 +1763,7 @@ async function tryMainModelFallback(ctx: ExtensionContext, failure: MainModelFai
   if (refs.length === 0) return false;
   const current = modelRef(ctx.model);
   if (!current) return false;
+  const generation = sessionGeneration;
   const existing = state.mainModelRecovery;
   const recovery: MainModelRecovery = existing ?? {
     primary: current,
@@ -1787,6 +1790,7 @@ async function tryMainModelFallback(ctx: ExtensionContext, failure: MainModelFai
     mainModelSwitchInFlight = true;
     try {
       const accepted = await extensionApi?.setModel(candidate);
+      if (generation !== sessionGeneration || !freshCtxForGeneration(generation)) return false;
       if (!accepted) {
         appendLedger(ctx.cwd, "main_model_fallback_unavailable", { ref: candidateRef, reason: "no configured auth" });
         continue;
@@ -1848,15 +1852,34 @@ function scheduleMainModelRecoveryTimer(ctx: ExtensionContext, delayMs: number):
 }
 
 async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
+  const generation = sessionGeneration;
   const recovery = state.mainModelRecovery;
   if (!recovery) return;
   const current = modelRef(ctx.model);
   const refs = [recovery.primary, ...mainModelFallbackRefs(ctx)];
   const target = refs.find((ref) => ref !== current);
   if (!target) {
-    const delay = mainModelRetryDelayMs(recovery.attempts + 1, loadGlobalSettings().mainModelRetryMinutes);
-    setMainModelRecoveryPause(ctx, { ...recovery, attempts: recovery.attempts + 1, attempted: current ? [current] : [] }, delay);
-    scheduleMainModelRecoveryTimer(ctx, delay);
+    if (!current) {
+      const delay = mainModelRetryDelayMs(recovery.attempts + 1, loadGlobalSettings().mainModelRetryMinutes);
+      setMainModelRecoveryPause(ctx, { ...recovery, attempts: recovery.attempts + 1, attempted: [] }, delay);
+      scheduleMainModelRecoveryTimer(ctx, delay);
+      return;
+    }
+    // No backup is configured (or every backup has already been tried):
+    // retry the currently selected model itself. This is the critical probe
+    // that notices a quota window returning after an otherwise quiet hour.
+    state.mainModelRecovery = { ...recovery, active: current, attempted: [current], retryAt: undefined };
+    continuationDispatchStoodDown = false;
+    if (recovery.kind === "goal" && state.goal?.status === "paused" && (state.goal.pauseReason ?? "").startsWith("main model recovery")) {
+      updateGoal({ status: "active", pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined }, ctx);
+      scheduleContinuation(ctx, true, 1_000);
+    } else if (recovery.kind === "loop" && state.loop && !state.loop.active && (state.loop.stopReason ?? "").startsWith("main model recovery")) {
+      state.loop = { ...state.loop, active: true, stopReason: undefined };
+      persistState(ctx);
+      scheduleLoopTick(ctx);
+    }
+    appendLedger(ctx.cwd, "main_model_probe", { from: current, to: current, attempts: recovery.attempts });
+    ctx.ui.notify(`Main model recovery probe: retrying ${current} without rotating models.`, "info");
     return;
   }
   const candidate = resolveMainModel(ctx, target);
@@ -1870,6 +1893,7 @@ async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
   mainModelSwitchInFlight = true;
   try {
     const accepted = await extensionApi?.setModel(candidate);
+    if (generation !== sessionGeneration || !freshCtxForGeneration(generation)) return;
     if (!accepted) throw new Error(`no configured auth for ${target}`);
     state.mainModelRecovery = { ...recovery, active: target, attempted: current ? [current, target] : [target], retryAt: undefined };
     persistState(ctx);
@@ -1896,10 +1920,8 @@ async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
   }
 }
 
-async function recoverMainModelFromSendStorm(ctx: ExtensionContext, kind: "continuation" | "loop"): Promise<void> {
+function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainModelFailure): void {
   if (!isSupervising() || mainModelRecoveryActive()) return;
-  const failure = classifyMainModelFailure("429 rate limit: pi held the provider retry with no stream activity");
-  const switched = await tryMainModelFallback(ctx, failure);
   const current = modelRef(ctx.model);
   if (!current) return;
   const existing = state.mainModelRecovery ?? {
@@ -1908,13 +1930,71 @@ async function recoverMainModelFromSendStorm(ctx: ExtensionContext, kind: "conti
     attempted: [current],
     attempts: 0,
     reason: mainModelRecoveryReason(failure),
-    kind,
+    kind: mainModelRecoveryKind(),
   } satisfies MainModelRecovery;
-  const delay = switched ? 1_000 : mainModelRetryDelayMs(existing.attempts + 1, loadGlobalSettings().mainModelRetryMinutes);
-  setMainModelRecoveryPause(ctx, { ...existing, active: modelRef(ctx.model), attempts: existing.attempts + (switched ? 0 : 1), reason: mainModelRecoveryReason(failure) }, delay);
+  const delay = mainModelRetryDelayMs(existing.attempts + 1, loadGlobalSettings().mainModelRetryMinutes);
+  setMainModelRecoveryPause(ctx, { ...existing, active: current, attempts: existing.attempts + 1, reason: mainModelRecoveryReason(failure) }, delay);
   mainModelAbortForRecovery = true;
   try { ctx.abort(); } catch { /* abort is best effort; the recovery guard prevents re-send storms */ }
   scheduleMainModelRecoveryTimer(ctx, delay);
+}
+
+async function recoverMainModelFromSendStorm(ctx: ExtensionContext, kind: "continuation" | "loop"): Promise<void> {
+  if (!isSupervising() || mainModelRecoveryActive()) return;
+  const failure = classifyMainModelFailure("429 rate limit: pi held the provider retry with no stream activity");
+  const switched = await tryMainModelFallback(ctx, failure);
+  if (switched) {
+    const current = modelRef(ctx.model);
+    if (!current) return;
+    const recovery = state.mainModelRecovery;
+    if (!recovery) return;
+    setMainModelRecoveryPause(ctx, { ...recovery, kind: kind === "loop" ? "loop" : "goal", active: current }, 1_000);
+    mainModelAbortForRecovery = true;
+    try { ctx.abort(); } catch { /* best effort; recovery guard prevents re-send storms */ }
+    scheduleMainModelRecoveryTimer(ctx, 1_000);
+    return;
+  }
+  parkMainModelAfterFailure(ctx, failure);
+}
+
+function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
+  const recovery = state.mainModelRecovery;
+  if (!recovery) return;
+  clearMainModelRecoveryTimer();
+  state.mainModelRecovery = undefined;
+  lastMainModelFailure = null;
+  mainModelAbortForRecovery = false;
+  continuationDispatchStoodDown = false;
+  appendLedger(ctx.cwd, "main_model_recovered", { model: modelRef(ctx.model), attempts: recovery.attempts });
+  persistState(ctx);
+  ctx.ui.notify(`Main session model recovered on ${modelRef(ctx.model) ?? "the active model"}; automatic recovery is cleared.`, "info");
+}
+
+/** Handle a provider error before loop/goal bookkeeping can mistake it for
+ * an unproductive turn. Returns true when recovery owns this agent_end. */
+async function handleMainModelAgentEnd(ctx: ExtensionContext, rawLastA: any, lastA: any): Promise<boolean> {
+  if (lastA?.stopReason === "aborted" && mainModelAbortForRecovery) {
+    mainModelAbortForRecovery = false;
+    appendLedger(ctx.cwd, "main_model_recovery_abort_settled", { model: modelRef(ctx.model) });
+    return true;
+  }
+  if (lastA?.stopReason === "error") {
+    const rawError = [rawLastA?.errorMessage, lastA.text].filter((v): v is string => typeof v === "string" && v.trim().length > 0).join(" — ");
+    const failure = classifyMainModelFailure(rawError);
+    lastMainModelFailure = failure;
+    if (failure.kind !== "non-recoverable") {
+      const switched = await tryMainModelFallback(ctx, failure);
+      if (switched) return true; // pi's core retry now uses the selected backup
+      const backupRefs = mainModelFallbackRefs(ctx);
+      if ((failure.kind === "quota" && state.goal?.status === "active") || backupRefs.length > 0) {
+        parkMainModelAfterFailure(ctx, failure);
+        if (mainModelRecoveryActive() || state.mainModelRecovery) return true;
+      }
+    }
+  } else if (lastA && state.mainModelRecovery && !state.mainModelRecovery.retryAt) {
+    mainModelRecoverySucceeded(ctx);
+  }
+  return false;
 }
 
 // v0.34.15 (hegemon 2026-08-01): pi ACCEPTED the continuation — footer showed
@@ -2180,7 +2260,7 @@ function createGoal(objective: string, ctx: ExtensionContext, policy: "goal" | "
 }
 
 function persistState(ctx: ExtensionContext): void {
-  appendLedger(ctx.cwd, "state", { goal: state.goal, list: state.list ?? [], loop: state.loop ?? null });
+  appendLedger(ctx.cwd, "state", { goal: state.goal, list: state.list ?? [], loop: state.loop ?? null, mainModelRecovery: state.mainModelRecovery });
   notifyPersistenceState(ctx); // v0.28.6 (E1): loud on the first failure, all-clear on recovery
   refreshUI(ctx); // every state transition flows through here → the TUI is always current
 }
@@ -2409,6 +2489,11 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
     },
   };
   if (pendingAttemptId) cancelDetachedGoalCompletionAuditor(ctx.cwd, pendingAttemptId);
+  if (state.mainModelRecovery?.kind === "goal") {
+    clearMainModelRecoveryTimer();
+    state.mainModelRecovery = undefined;
+    mainModelAbortForRecovery = false;
+  }
   appendLedger(ctx.cwd, "goal_archived", { goalId: goal.id, status, stopReason, objective: goal.objective.slice(0, 300) });
   persistState(ctx);
   // Loop 2: a list-sourced goal COMPLETED → auto-activate the next item.
@@ -3203,6 +3288,11 @@ async function cmdStatus(ctx: ExtensionContext): Promise<void> {
 
 async function cmdPause(ctx: ExtensionContext): Promise<void> {
   if (!state.goal) return;
+  if (state.mainModelRecovery?.kind === "goal") {
+    clearMainModelRecoveryTimer();
+    state.mainModelRecovery = undefined;
+    mainModelAbortForRecovery = false;
+  }
   releaseContinuationDispatchStandDown();
   clearDispatchRecord(ctx.cwd);
   updateGoal({ status: "paused" }, ctx);
@@ -3217,6 +3307,13 @@ async function cmdPause(ctx: ExtensionContext): Promise<void> {
 
 async function cmdResume(ctx: ExtensionContext): Promise<void> {
   releaseInitialSessionLoadBarrier();
+  if (state.mainModelRecovery?.retryAt) {
+    clearMainModelRecoveryTimer();
+    continuationDispatchStoodDown = false;
+    ctx.ui.notify("Retrying the saved main-model recovery now — one provider probe, then the configured backups if needed.", "info");
+    void probeMainModelRecovery(ctx);
+    return;
+  }
   // v0.34.3: /goal resume on an ACTIVE-but-idle goal re-kicks its
   // continuation (was: silent return — the user got NOTHING while the
   // widget said "active"). One-active-thing still holds: an active loop
@@ -4454,6 +4551,13 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
 
   if (!sub || sub === "resume") {
     releaseInitialSessionLoadBarrier();
+    if (state.mainModelRecovery?.retryAt && state.mainModelRecovery.kind === "loop") {
+      clearMainModelRecoveryTimer();
+      continuationDispatchStoodDown = false;
+      ctx.ui.notify("Retrying the saved main-model recovery now — one provider probe, then the configured backups if needed.", "info");
+      void probeMainModelRecovery(ctx);
+      return;
+    }
     // /loop with no args (or /loop resume, v0.28.22) → resume a held loop
     // if one is waiting; otherwise draft the loop config (metric design is
     // the whole game for a long-running loop; never start one blind).
@@ -4584,6 +4688,12 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       return;
     }
     clearLoopTimer();
+    if (state.mainModelRecovery?.kind === "loop") {
+      clearMainModelRecoveryTimer();
+      state.mainModelRecovery = undefined;
+      mainModelAbortForRecovery = false;
+      continuationDispatchStoodDown = false;
+    }
     state.loop = { ...state.loop, active: false, stopReason: state.loop.stopReason ?? `stopped by user (/loop ${sub})` };
     persistState(ctx);
     const stopGeneration = sessionGeneration;
@@ -4608,6 +4718,12 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       return;
     }
     clearLoopTimer();
+    if (state.mainModelRecovery?.kind === "loop") {
+      clearMainModelRecoveryTimer();
+      state.mainModelRecovery = undefined;
+      mainModelAbortForRecovery = false;
+      continuationDispatchStoodDown = false;
+    }
     const reason = loopFinishStopReason(rest);
     state.loop = { ...state.loop, active: false, stopReason: reason };
     persistState(ctx);
@@ -6267,6 +6383,29 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       }
       return;
     }
+    case "mainModelFallbacks": {
+      const current = normalizeModelRefs(loadGlobalSettings().mainModelFallbacks);
+      const v = await ctx.ui.input(
+        "Main session model backups — ordered, comma-separated provider/model refs",
+        current.length ? current.join(",") : "provider/model-a,provider/model-b — empty clears backups",
+      );
+      if (v === undefined) return;
+      const refs = normalizeModelRefs(v);
+      saveSettings("global", ctx.cwd, { mainModelFallbacks: refs });
+      ctx.ui.notify(refs.length ? `Main model backups saved in order: ${refs.join(" → ")}` : "Main model backups cleared — quota recovery will keep probing the current model.", "info");
+      return;
+    }
+    case "mainModelRetryMinutes": {
+      const v = await ctx.ui.input("Main session model recovery wait", "positive integer minutes; empty = default 15 (backs off to hourly)");
+      if (v !== undefined) {
+        const raw = v.trim();
+        const n = Number.parseInt(raw, 10);
+        if (Number.isInteger(n) && n > 0) saveSettings("global", ctx.cwd, { mainModelRetryMinutes: n });
+        else if (!raw) saveSettings("global", ctx.cwd, { mainModelRetryMinutes: undefined });
+        else ctx.ui.notify(`main model retry minutes must be a positive integer, got: ${v}`, "warning");
+      }
+      return;
+    }
     case "auditorModel": {
       const pick = await promptModelRef(ctx, "Auditor model override", "provider/model-id — empty keeps the pi session model");
       if (pick === undefined) return;
@@ -6799,6 +6938,13 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
   // real recovery (/reload rebuilds extensions in place), not mislead.
   if (warnIfStaleAtEntry(ctx, "/glla resume")) return;
   releaseInitialSessionLoadBarrier();
+  if (state.mainModelRecovery?.retryAt) {
+    clearMainModelRecoveryTimer();
+    continuationDispatchStoodDown = false;
+    ctx.ui.notify("Retrying the saved main-model recovery now — one provider probe, then the configured backups if needed.", "info");
+    void probeMainModelRecovery(ctx);
+    return;
+  }
   const g = state.goal;
   const goalResumable = g && g.status === "paused";
   const loopResumable = state.loop && !state.loop.active && state.loop.stopReason === HELD_ON_RESTORE;
@@ -7059,6 +7205,8 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
     };
     ctx.ui.notify(
       [
+        fmt("mainModelFallbacks", "mainModelBackups"),
+        fmt("mainModelRetryMinutes", "mainModelRetryMinutes"),
         fmt("auditorModel", "auditorModel"),
         fmt("auditorThinkingLevel", "thinking"),
         fmt("notifyCmd", "notify"),
@@ -7105,7 +7253,31 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   while ((m = kvRe.exec(rest)) !== null) {
     const key = m[1]!.toLowerCase();
     const value = m[2] ?? m[3] ?? m[4] ?? "";
-    if (key === "model" || key === "auditormodel") {
+    if (key === "mainmodelbackups" || key === "mainmodelfallbacks" || key === "sessionmodelbackups") {
+      if (scope === "project") {
+        ctx.ui.notify("mainmodelbackups is GLOBAL-only — use /glla mainmodelbackups=... without the project prefix.", "warning");
+        continue;
+      }
+      patch.mainModelFallbacks = ["unset", "default"].includes(value.toLowerCase()) ? undefined : normalizeModelRefs(value);
+      changed = true;
+    } else if (key === "mainmodelretryminutes") {
+      if (scope === "project") {
+        ctx.ui.notify("mainmodelretryminutes is GLOBAL-only — use /glla mainmodelretryminutes=... without the project prefix.", "warning");
+        continue;
+      }
+      if (["unset", "default"].includes(value.toLowerCase())) {
+        patch.mainModelRetryMinutes = undefined;
+        changed = true;
+      } else {
+        const n = Number.parseInt(value, 10);
+        if (Number.isInteger(n) && n > 0) {
+          patch.mainModelRetryMinutes = n;
+          changed = true;
+        } else {
+          ctx.ui.notify(`mainmodelretryminutes must be a positive integer, got: ${value}`, "warning");
+        }
+      }
+    } else if (key === "model" || key === "auditormodel") {
       patch.auditorModel = value === "unset" ? undefined : value;
       changed = true;
     } else if (key === "notify" || key === "notifycmd") {
@@ -7283,13 +7455,13 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
     }
   }
   if (!changed) {
-    ctx.ui.notify("Nothing changed. Use key=value (model, thinking, notify, tokenlimit, autoresume, decisionpopup, carryover, auditcap, auditfeedbackchars, aggressivemode, quotaretryminutes, stuckmax), optionally prefixed with 'project'.", "info");
+    ctx.ui.notify("Nothing changed. Use key=value (mainmodelbackups, mainmodelretryminutes, model, thinking, notify, tokenlimit, autoresume, decisionpopup, carryover, auditcap, auditfeedbackchars, aggressivemode, quotaretryminutes, stuckmax), optionally prefixed with 'project'.", "info");
     return;
   }
   saveSettings(scope, ctx.cwd, patch);
   const effective = loadSettings(ctx.cwd);
   ctx.ui.notify(
-    `Saved to ${scope} config. Effective now: model=${effective.auditorModel ?? "(session model)"} thinking=${effective.auditorThinkingLevel ?? "(session)"} notify=${effective.notifyCmd ?? "(off)"} tokenLimit=${effective.tokenLimit ?? 0}${(effective.tokenLimit ?? 0) > 0 ? "" : " (off)"} autoResume=${effective.autoResume === true ? "on" : effective.autoResume === false ? "off" : "default (hold on load)"} auditFeedbackChars=${effective.auditFeedbackChars ?? DEFAULT_AUDIT_FEEDBACK_CHARS}${(effective.auditFeedbackChars ?? DEFAULT_AUDIT_FEEDBACK_CHARS) === 0 ? " (full report)" : ""}\n` +
+    `Saved to ${scope} config. Effective now: mainModelBackups=${effective.mainModelFallbacks?.join(" → ") || "(none)"} retry=${effective.mainModelRetryMinutes ?? 15}m model=${effective.auditorModel ?? "(session model)"} thinking=${effective.auditorThinkingLevel ?? "(session)"} notify=${effective.notifyCmd ?? "(off)"} tokenLimit=${effective.tokenLimit ?? 0}${(effective.tokenLimit ?? 0) > 0 ? "" : " (off)"} autoResume=${effective.autoResume === true ? "on" : effective.autoResume === false ? "off" : "default (hold on load)"} auditFeedbackChars=${effective.auditFeedbackChars ?? DEFAULT_AUDIT_FEEDBACK_CHARS}${(effective.auditFeedbackChars ?? DEFAULT_AUDIT_FEEDBACK_CHARS) === 0 ? " (full report)" : ""}\n` +
     `Note: the auditor runs without extensions — it must be a built-in provider, not an extension-registered one.`,
     "info",
   );
@@ -7748,6 +7920,9 @@ export default function (pi: ExtensionAPI): void {
       }
     }
     state = readState(ctx.cwd);
+    clearMainModelRecoveryTimer();
+    mainModelAbortForRecovery = false;
+    lastMainModelFailure = null;
     continuationDispatchStoodDown = false;
     clearContinuationStartWatchdog();
     const recoveredDispatch = readDispatchRecord(ctx.cwd);
@@ -7835,6 +8010,19 @@ export default function (pi: ExtensionAPI): void {
     // latch) stops it loudly.
     const autoResumeSetting = resolveEffectiveAggressiveSettings(loadGlobalSettings()).autoResume;
     const autoResume = shouldAutoResumeOnSessionStart(event?.reason, autoResumeSetting);
+    const mainRecovery = state.mainModelRecovery;
+    if (mainRecovery?.retryAt) {
+      const retryAtMs = Date.parse(mainRecovery.retryAt);
+      const recoveryConsent = autoResume || explicitRecovery;
+      if (recoveryConsent) {
+        const delay = Number.isFinite(retryAtMs) ? Math.max(0, retryAtMs - Date.now()) : 0;
+        ctx.ui.notify(`Restored main-model recovery (${mainRecovery.kind}) — ${delay > 0 ? `next probe in ${Math.max(1, Math.ceil(delay / 60_000))}m` : "probe is due now"}.`, "info");
+        if (delay > 0) scheduleMainModelRecoveryTimer(ctx, delay);
+        else void probeMainModelRecovery(ctx);
+      } else {
+        ctx.ui.notify(`Main-model recovery is waiting with the work safe — ${mainRecovery.kind === "loop" ? "/loop resume" : "/goal resume"} retries the provider, or set /glla autoresume=on globally.`, "info");
+      }
+    }
     // v0.25.0 (contract item 6): aggressiveMode announces every auto-event.
     if (
       autoResume &&
@@ -8074,6 +8262,7 @@ export default function (pi: ExtensionAPI): void {
       if (lc.fire && !ctx.hasPendingMessages()) sendLengthContinue(ctx, lc.consecutive);
       return;
     }
+    if (await handleMainModelAgentEnd(ctx, rawLastA, lastA)) return;
     // v0.25.2: per-goal turn telemetry (/glla stats).
     if (state.goal && state.goal.status === "active") {
       const t = state.goal.telemetry ?? { turns: 0, fileWrites: 0, bashCalls: 0 };
@@ -8173,6 +8362,10 @@ export default function (pi: ExtensionAPI): void {
         appendLedger(ctx.cwd, "loop_turn_exempt_error", { stopReason: sr, consecutive: loop.consecutiveErrors, iteration: loop.iteration });
         const cap = sr === "aborted" ? LOOP_MAX_CONSECUTIVE_ABORTS : LOOP_MAX_CONSECUTIVE_ERRORS;
         if (loop.consecutiveErrors >= cap) {
+          if (sr === "error" && lastMainModelFailure?.kind === "quota") {
+            parkMainModelAfterFailure(ctx, lastMainModelFailure);
+            if (state.mainModelRecovery) return;
+          }
           loop.active = false;
           loop.stopReason = sr === "aborted"
             ? `stopped by user — ${loop.consecutiveErrors} consecutive aborts (iteration ${loop.iteration} preserved; /loop resume to continue)`
@@ -8383,6 +8576,21 @@ export default function (pi: ExtensionAPI): void {
     scheduleContinuation(ctx, false, EAGER_CONTINUATION_SETTLE_MS);
   });
 
+  // A model switch can happen on an agent_end before pi's core decides
+  // whether its own retry budget will continue. If that budget is disabled
+  // or already exhausted, settled is the safe point for exactly one fresh
+  // supervised continuation — never queue it while the old run is alive.
+  pi.on("agent_settled", async (_event: any, ctx: ExtensionContext) => {
+    if (tryAbsorbHostSuccessor(ctx, "agent_settled")) return;
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
+    if (!state.mainModelRecovery || state.mainModelRecovery.retryAt || !lastMainModelFailure) return;
+    if (!isSupervising()) return;
+    lastMainModelFailure = null;
+    appendLedger(ctx.cwd, "main_model_failover_continuation", { model: modelRef(ctx.model) });
+    if (isLoopActive()) scheduleLoopTick(ctx);
+    else if (isActionableGoal()) scheduleContinuation(ctx, true, EAGER_CONTINUATION_SETTLE_MS);
+  });
+
   pi.on("tool_call", (event: any, ctx: ExtensionContext) => {
     // v0.34.27: ordinary tool activity can be the first observable event
     // after pi replaces a host without session_start. A file-backed,
@@ -8411,6 +8619,16 @@ export default function (pi: ExtensionAPI): void {
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     dispatchStartAcknowledged(ctx, "before_agent_start", event?.prompt);
   });
+  pi.on("model_select", (_event: any, ctx: ExtensionContext) => {
+    if (mainModelSwitchInFlight || !state.mainModelRecovery) return;
+    clearMainModelRecoveryTimer();
+    state.mainModelRecovery = undefined;
+    continuationDispatchStoodDown = false;
+    appendLedger(ctx.cwd, "main_model_recovery_cancelled", { via: "manual-model-select", model: modelRef(ctx.model) });
+    persistState(ctx);
+    ctx.ui.notify("Manual model selection cancelled the automatic main-model recovery cycle. Resume the goal when ready.", "info");
+  });
+
   pi.on("message_update", (_event: any, ctx: ExtensionContext) => {
     if (tryAbsorbHostSuccessor(ctx, "message_update")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;

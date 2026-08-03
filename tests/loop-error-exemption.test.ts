@@ -113,7 +113,7 @@ test("v0.29.19: a real turn after errors clears the streak and measures normally
   assert.equal(l.stallCount, 1, "non-improving real turn counts the stall");
 });
 
-test("v0.29.19: 6 consecutive error turns stop the loop honestly — provider errors, resumable", async () => {
+test("v0.34.31: extended quota errors enter durable main-model recovery", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   const ctx = await sessionWithLoop(cwd, { measureCmd: "echo 74", direction: "max", bestValue: 74, iteration: 41 });
@@ -122,16 +122,16 @@ test("v0.29.19: 6 consecutive error turns stop the loop honestly — provider er
     await tick();
   }
   const l = loop(cwd);
-  assert.equal(l.active, false, "bounded: a real outage stops the loop");
-  assert.match(l.stopReason ?? "", /^provider errors — 6 consecutive error turns/, "honest reason");
-  assert.ok(l.stopReason!.includes("iteration 41 preserved"), "iteration preserved in the reason");
-  // /loop resume works on the provider-error class and re-arms the counters:
+  assert.equal(l.active, false, "extended quota outage parks the loop safely");
+  assert.match(l.stopReason ?? "", /^main model recovery — retrying in /, "honest recovery reason");
+  assert.ok(readState(cwd).mainModelRecovery?.retryAt, "the next probe is durable");
+  assert.equal(l.iteration, 41, "iteration preserved across recovery");
+  // /loop resume probes the current model rather than abandoning the loop.
   await pi.command("loop", "resume", ctx);
   await tick();
   const r = loop(cwd);
-  assert.equal(r.active, true, "resumed");
+  assert.equal(r.active, true, "manual resume starts one recovery probe");
   assert.equal(r.iteration, 41, "iteration preserved across resume");
-  assert.equal(r.consecutiveErrors ?? 0, 0, "error streak re-armed");
 });
 
 test("v0.29.19: 3 consecutive user aborts stop the loop — user aborts mean STOP", async () => {

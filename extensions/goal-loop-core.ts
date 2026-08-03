@@ -638,6 +638,7 @@ export function readState(cwd: string): State {
     goal: parsed.goal ?? null,
     list: Array.isArray(parsed.list) ? parsed.list : [],
     loop: parsed.loop && typeof parsed.loop === "object" ? parsed.loop as State["loop"] : undefined,
+    mainModelRecovery: parsed.mainModelRecovery && typeof parsed.mainModelRecovery === "object" ? parsed.mainModelRecovery as State["mainModelRecovery"] : undefined,
   };
 }
 

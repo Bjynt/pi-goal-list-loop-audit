@@ -166,6 +166,22 @@ export function buildSettingsRows(
       description:
         "flips DEFAULTS toward keep-going (autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs); explicit per-key settings still win",
     },
+    {
+      id: "mainModelFallbacks",
+      section: "keep-going",
+      label: "Main model backups",
+      valueText: settings.mainModelFallbacks?.length ? settings.mainModelFallbacks.join(" → ") : "none",
+      sourceText: src("mainModelFallbacks"),
+      description: "ordered provider/model refs; quota/provider errors rotate here, then retry the primary forever without abandoning supervised work",
+    },
+    {
+      id: "mainModelRetryMinutes",
+      section: "keep-going",
+      label: "Main model retry minutes",
+      valueText: show("mainModelRetryMinutes", "15"),
+      sourceText: src("mainModelRetryMinutes"),
+      description: "first recovery wait; backs off to 30m then hourly probes (no retry storm)",
+    },
   );
 
   // ── Auditor ──

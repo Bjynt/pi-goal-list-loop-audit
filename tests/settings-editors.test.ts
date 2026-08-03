@@ -103,6 +103,24 @@ test("T4: select options stay concise — rationale lives in the title, not the 
   }
 });
 
+test("T4: input editor — main model backups preserve order and retry cadence", async () => {
+  try {
+    const ctx = makeMockCtx(tmpCwd());
+    ctx.ui.inputImpl = async (title) => title.startsWith("Main session model backups") ? "openai/gpt-5, minimax/MiniMax-M2" : "15";
+    await handleSettingChoice("mainModelFallbacks", ctx as unknown as ExtensionContext);
+    assert.deepEqual(readGlobal().mainModelFallbacks, ["openai/gpt-5", "minimax/MiniMax-M2"]);
+
+    await handleSettingChoice("mainModelRetryMinutes", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().mainModelRetryMinutes, 15);
+
+    ctx.ui.inputImpl = async () => "   ";
+    await handleSettingChoice("mainModelFallbacks", ctx as unknown as ExtensionContext);
+    assert.deepEqual(readGlobal().mainModelFallbacks, [], "empty input clears backups");
+  } finally {
+    restoreGlobal();
+  }
+});
+
 test("T4: input editor — auditorModel set / cleared on empty", async () => {
   try {
     const ctx = makeMockCtx(tmpCwd());

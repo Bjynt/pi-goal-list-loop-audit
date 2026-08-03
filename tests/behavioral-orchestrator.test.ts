@@ -901,7 +901,7 @@ test("source pin: all five draft-class dialogs route through confirmDraft with t
 // (endless-td 2026-07-28: 4 MiniMax-M3 429s paused a healthy goal)
 // ────────────────────────────────────────────────────────────────────
 
-test("error turns: 3 consecutive stopReason=error agent_ends leave the goal ACTIVE + ledger the exemption", async () => {
+test("quota error turns enter durable main-model recovery instead of a resend storm", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   const ctx = await freshSession(cwd, "startup");
@@ -913,11 +913,12 @@ test("error turns: 3 consecutive stopReason=error agent_ends leave the goal ACTI
     await pi.fire("agent_end", errTurn, ctx);
     await tick();
   }
-  const g = readState(cwd).goal as { status: string; pauseReason?: string };
-  assert.equal(g.status, "active", "3 consecutive provider-error turns must NOT pause the goal");
-  assert.ok(!g.pauseReason, "no stall pause reason recorded");
+  const snapshot = readState(cwd) as { goal: { status: string; pauseReason?: string }; mainModelRecovery?: { retryAt?: string } };
+  assert.equal(snapshot.goal.status, "paused", "a quota wall pauses into a durable wait, not blind re-sends");
+  assert.match(snapshot.goal.pauseReason ?? "", /main model recovery/);
+  assert.ok(snapshot.mainModelRecovery?.retryAt, "recovery probe time persisted");
   const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
-  assert.ok(ledger.includes('"stall_nudge_exempt_error"'), "exemption ledgered");
+  assert.ok(ledger.includes('"main_model_recovery_wait"'), "recovery wait ledgered");
 });
 
 test("error turns: a real nudge before the errors still counts after they pass (counter neither resets nor increments)", async () => {

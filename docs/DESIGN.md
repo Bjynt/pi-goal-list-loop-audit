@@ -178,6 +178,25 @@ architectural decisions that changed the SHAPE of the system:
   status-tool projections. Persisted objectives, contracts, prompts, ledger
   values, and auditor inputs remain unchanged.
 
+## Addendum v0.34.31 (main-session model recovery)
+
+- **Ordered global backups**: `mainModelFallbacks` is an explicit ordered list
+  of `provider/model` references. A provider/quota error can rotate the MAIN
+  session through authenticated candidates; the detached auditor's model
+  cascade remains a separate subsystem.
+- **No accepted-send inference**: model rotation occurs only after a provider
+  failure is observed (or after a 15-minute, five-minute-silent provider-held
+  retry storm). A successful `sendMessage()` return is never treated as a
+  started turn.
+- **Durable recovery instead of abandonment**: when all candidates fail,
+  `.pi-glla/active.jsonl` stores the primary, active candidate, attempted set,
+  retry time, and supervisor kind. Recovery probes back off 15m → 30m →
+  hourly forever (configurable base), while a paused goal/held loop remains
+  resumable. A fresh startup obeys the existing `autoResume` consent gate.
+- **Successful-turn reset**: a real non-error agent end clears the recovery
+  cycle. Manual model selection cancels it; goal/list/loop cancellation clears
+  its timer and durable state.
+
 ## Addendum v0.4.0 (completion)
 
 - **Auditor compaction enabled** (flaw #3 — the last open one). Safety:

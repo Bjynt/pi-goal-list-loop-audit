@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.34.31 — 2026-08-03
+
+### Added — main-session model backups and durable quota recovery
+
+The main session can now be configured with ordered global backup models via
+`mainmodelbackups` / the settings table. Provider and quota failures rotate to
+the next authenticated candidate without treating a retry acceptance as a
+started turn. If every candidate is unavailable, supervised work is parked in
+a durable recovery wait that probes at 15m, 30m, then hourly forever. A
+provider-held send-retry storm is cancelled and enters the same recovery path,
+so a quota window returning hours later resumes saved work without manual
+intervention or blind resend spinning.
+
 ## 0.34.30 — 2026-08-03
 
 ### Fixed — auditor verdicts no longer look like missing verdicts
