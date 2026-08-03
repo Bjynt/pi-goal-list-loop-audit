@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.34.27 — 2026-08-03
+
+### Fixed — host-session recovery no longer parks on the wrong boundary
+
+The screenshots from the fleet exposed two different failures that had been
+rendered as the same red "host session lost" state:
+
+- An accepted continuation whose trigger never produced a turn-start event is
+  now shown as **turn start not observed**. Automatic re-sends remain stopped
+  after the bounded proof timeout, but `/goal resume` or `/list resume` is the
+  truthful one-shot recovery path; `/reload` is no longer implied unless the
+  handle is actually stale.
+- A stale host handle can now rebind when the first successor contact is
+  `session_start`, `message_start`, `tool_result`, `tool_call`,
+  `before_agent_start`, `message_update`, `agent_start`, or `turn_start`.
+  Plain `startup` is accepted only for a same-workspace, file-backed successor
+  with a dead recorded owner; in-memory pi-subagent sessions and different
+  worktrees remain fail-closed. The generation and durable dispatch guards
+  still prevent late old-context sends or duplicate recovery turns.
+- Recovery state keeps the owner workspace with the dead-owner identity, so a
+  file-backed context from another project cannot claim the parked goal plane.
+
+Added behavioral coverage for every first-contact boundary, plain-startup
+successor rebinding, subagent refusal, and truthful no-turn-start display.
+
 ## 0.34.26 — 2026-08-03
 
 ### Fixed — output-token-limit exhaustion is a durable, explicit failure state
