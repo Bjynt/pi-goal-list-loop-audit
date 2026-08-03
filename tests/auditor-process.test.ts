@@ -254,7 +254,10 @@ test("request hashing is stable and excludes no runtime secret or API key field"
 test("an early RPC child exit still publishes an atomic infrastructure result", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-early-rpc-exit-"));
   const fakePi = path.join(dir, "early-exit-pi.mjs");
-  await writeFile(fakePi, "#!/usr/bin/env node\\nprocess.stdin.destroy(); setTimeout(() => process.exit(17), 25);\\n");
+  await writeFile(fakePi, `#!/usr/bin/env node
+process.stdin.destroy();
+setTimeout(() => process.exit(17), 25);
+`);
   await chmod(fakePi, 0o700);
   try {
     const result = await runDetachedGoalCompletionAuditor({
@@ -272,7 +275,7 @@ test("an early RPC child exit still publishes an atomic infrastructure result", 
     });
     assert.equal(result.approved, false);
     assert.equal(result.disapproved, false);
-    assert.match(result.error ?? "", /RPC stdin stream failed|pi exited before audit completion|RPC stream ended/);
+    assert.match(result.error ?? "", /RPC stdin stream failed|pi exited before audit completion|pi exited without an agent_settled|RPC stream ended/);
     assert.doesNotMatch(result.error ?? "", /worker exited without an atomic result/);
   } finally {
     await rm(dir, { recursive: true, force: true });
