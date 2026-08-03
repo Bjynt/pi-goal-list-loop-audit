@@ -146,8 +146,11 @@ test("worker launches pi with the exact read-only RPC contract and one LF JSONL 
   const piSource = `
 import { readFile, writeFile } from "node:fs/promises";
 let input = "";
-process.stdin.on("data", (chunk) => input += chunk);
-process.stdin.on("end", async () => {
+let handled = false;
+process.stdin.on("data", async (chunk) => {
+  input += chunk;
+  if (handled || !input.includes("\\n")) return;
+  handled = true;
   await writeFile(process.env.PI_LOG, JSON.stringify({ args: process.argv.slice(2), input }));
   const out = (x) => process.stdout.write(JSON.stringify(x) + "\\n");
   out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "<evidence>\\nartifact exists\\ntests pass\\n</evidence>\\n" } });
@@ -157,6 +160,9 @@ process.stdin.on("end", async () => {
   out({ type: "agent_end" });
   out({ type: "agent_settled" });
 });
+// EOF is a shutdown request in pi RPC mode. If the client closes stdin before
+// the asynchronous result, this fake exits without an agent_settled event.
+process.stdin.on("end", () => { process.exitCode = 41; });
 `;
   await writeFile(fakePi, `#!/usr/bin/env node\n${piSource}`);
   await chmod(fakePi, 0o700);

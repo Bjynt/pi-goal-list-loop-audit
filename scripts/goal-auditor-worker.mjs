@@ -214,6 +214,12 @@ async function main() {
         const message = event.message.errorMessage;
         if (typeof message === "string" && message.trim()) streamError = message.slice(0, 500);
       }
+      if (event.type === "response" && event.command === "prompt" && event.success === false) {
+        const message = event.error ?? event.errorMessage ?? "RPC prompt was rejected before acceptance";
+        streamError = String(message).slice(0, 500);
+        void finish(false, `RPC prompt rejected: ${streamError}`).catch(() => {});
+        return;
+      }
       if (event.type === "message_update") {
         const update = event.assistantMessageEvent;
         if (update?.type === "text_delta" && typeof update.delta === "string") {
@@ -272,9 +278,16 @@ async function main() {
       }
     });
 
+    pi.stderr.on("data", (chunk) => {
+      const text = String(chunk).trim();
+      if (text) streamError = text.slice(-500);
+    });
     pi.on("error", (error) => { void finish(false, `pi launch failed: ${error.message}`).catch(() => {}); });
     pi.on("exit", (code, signal) => {
-      if (!finalized) void finish(false, streamError || `pi exited before audit completion (code=${code ?? "?"}, signal=${signal ?? "?"})`).catch(() => {});
+      if (!finalized) {
+        const detail = streamError ? `: ${streamError}` : "";
+        void finish(false, `pi exited before audit completion (code=${code ?? "?"}, signal=${signal ?? "?"})${detail}`).catch(() => {});
+      }
     });
 
     // Exactly one LF-terminated JSONL prompt. JSON.stringify escapes embedded
@@ -282,7 +295,10 @@ async function main() {
     const promptLine = JSON.stringify({ type: "prompt", message: request.prompt });
     if (promptLine.includes("\r") || promptLine.includes("\n")) throw new Error("prompt JSONL encoding is not strict LF-only");
     pi.stdin.write(`${promptLine}\n`, "utf8");
-    pi.stdin.end();
+    // Keep RPC stdin open. Pi's RPC mode treats stdin EOF as an explicit
+    // shutdown request; closing it immediately after the prompt can terminate
+    // the session before the asynchronous prompt reaches the model or emits
+    // agent_settled. finish() terminates the child after settlement instead.
     await progress("running");
   } catch (error) {
     await finish(false, error instanceof Error ? error.message : String(error));

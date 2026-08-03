@@ -2088,7 +2088,20 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
     recoveryAt: undefined,
     recoveryReason: undefined,
   };
-  updateGoal({ status: "auditing", pendingCompletion: pending }, ctx);
+  // A stored claim may be retried after a previous infrastructure pause.
+  // Clear that old operational note before rebuilding the immutable auditor
+  // prompt; otherwise the detached auditor sees stale EEXIST/model-error
+  // text and the UI/request snapshot describes the previous attempt.
+  updateGoal({
+    status: "auditing",
+    pendingCompletion: pending,
+    pauseReason: undefined,
+    pauseSuggestedAction: undefined,
+    pauseKind: undefined,
+    pauseOptions: undefined,
+    pauseRecommended: undefined,
+    pauseResumeAt: undefined,
+  }, ctx);
   appendLedger(ctx.cwd, "audit_started", { goalId: state.goal?.id, attemptId: pending.attemptId, origin, wallDeadlineAt: pending.wallDeadlineAt });
   return pending;
 }

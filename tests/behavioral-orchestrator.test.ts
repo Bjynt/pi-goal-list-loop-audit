@@ -65,8 +65,11 @@ function writeFakeAuditor(cwd: string, verdict: "approved" | "disapproved", dela
   const script = path.join(cwd, "fake-auditor-pi.mjs");
   fs.writeFileSync(script, `#!/usr/bin/env node
 let input = "";
-process.stdin.on("data", (chunk) => { input += chunk; });
-process.stdin.on("end", async () => {
+let handled = false;
+process.stdin.on("data", async (chunk) => {
+  input += chunk;
+  if (handled || !input.includes("\\n")) return;
+  handled = true;
   await new Promise((resolve) => setTimeout(resolve, ${delayMs}));
   const emit = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
   const report = ${JSON.stringify(verdict === "approved" ? "<evidence>\\npinned\\n</evidence>\\n<approved/>" : "## Required fixes\\n- fix the pinned gap\\n<disapproved/>")};
@@ -75,6 +78,7 @@ process.stdin.on("end", async () => {
   emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: report } });
   emit({ type: "agent_settled" });
 });
+// Keep stdin open: pi RPC treats EOF as shutdown, not end-of-prompt.
 `);
   fs.chmodSync(script, 0o700);
   return script;
