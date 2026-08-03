@@ -539,6 +539,128 @@ test("T2b: stale before compaction → no late rebind, refire, or misleading act
   assert.notEqual(after, before, "terminal marker and ledger are durably written");
 });
 
+// v0.34.25 — silent session swap (deathrun/hegemon/pulis "host session lost"
+// park-forever): pi invalidates the extension and NEVER delivers session_start,
+// but the replacement host session is alive and reaches glla through ordinary
+// tool calls and events. A file-backed foreign ctx with a provably dead owner
+// IS the replacement host session — absorb it. In-memory subagent workers keep
+// failing closed.
+
+test("v0.34.25: silent swap — live file-backed successor is absorbed via a tool call and the work auto-resumes", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "swap survival — done when absorbed", ctx);
+  await tick();
+  pi.sent.length = 0;
+  pi.sendMessageError = staleError();
+  await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "boundary" }], stopReason: "end_turn" }] }, ctx);
+  await tick();
+  pi.sendMessageError = null;
+  const parked = readState(cwd).goal as { interruptedAt?: string };
+  assert.ok(parked.interruptedAt, "stale terminal parked the goal (the field state)");
+  assert.equal(pi.sent.length, 0, "no sends from the dead handle");
+  // pi silently swaps the session: no session_shutdown, no session_start —
+  // the replacement session reaches the extension through an ordinary tool call.
+  const successorCtx = makeMockCtx(cwd, {
+    sessionManager: {
+      name: "successor-session-manager",
+      getSessionFile: () => path.join(cwd, "successor-session.jsonl"),
+      getSessionId: () => "successor-1",
+    },
+  });
+  const res = await pi.runTool("list_add", { items: ["post-swap follow-up"] }, successorCtx);
+  assert.doesNotMatch(res.content[0]!.text, /only the MAIN session owns/, "successor tool call is absorbed, not refused");
+  await tick(200);
+  const g = readState(cwd).goal as { status: string; interruptedAt?: string };
+  assert.equal(g.status, "active", "goal stays active through the absorption");
+  assert.ok(!g.interruptedAt, "stale marker cleared on absorb");
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.match(ledger, /"session_rebind_via_live_ctx"/, "absorption is ledgered loudly");
+  assert.match(ledger, /"via":"tool-call"/);
+  assert.ok(pi.sent.length >= 1, "one recovery continuation is scheduled after absorb");
+});
+
+test("v0.34.25: silent swap — in-memory (subagent) ctx is still refused and the park stays honest", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "swap refusal — done when refused", ctx);
+  await tick();
+  pi.sendMessageError = staleError();
+  await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "boundary" }], stopReason: "end_turn" }] }, ctx);
+  await tick();
+  pi.sendMessageError = null;
+  // pi-subagents workers are SessionManager.inMemory — no session file, both shapes:
+  for (const sm of [{ name: "SUBAGENT-a", getSessionFile: () => undefined }, { name: "SUBAGENT-b" }]) {
+    const res = await pi.runTool("complete_task", { id: "1" }, makeMockCtx(cwd, { sessionManager: sm }));
+    assert.match(res.content[0]!.text, /only the MAIN session owns/, "ephemeral worker stays refused");
+  }
+  const g = readState(cwd).goal as { interruptedAt?: string };
+  assert.ok(g.interruptedAt, "subagent ctx does not clear the park");
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.doesNotMatch(ledger, /"session_rebind_via_live_ctx"/, "no absorption for ephemeral workers");
+});
+
+test("v0.34.25: the field ordering — stale before compaction, then the successor's compact event absorbs in place", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "compact swap — done when absorbed", ctx);
+  await tick();
+  pi.sent.length = 0;
+  pi.sendMessageError = staleError();
+  await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "boundary" }], stopReason: "end_turn" }] }, ctx);
+  await tick();
+  pi.sendMessageError = null;
+  assert.ok((readState(cwd).goal as { interruptedAt?: string }).interruptedAt, "parked (T2b state)");
+  // pi finishes the compaction and delivers session_compact on the REPLACEMENT
+  // session — the classic post-compaction contact in the field.
+  const successorCtx = makeMockCtx(cwd, {
+    sessionManager: {
+      name: "successor-session-manager",
+      getSessionFile: () => path.join(cwd, "successor-session.jsonl"),
+      getSessionId: () => "successor-2",
+    },
+  });
+  await pi.fire("session_compact", {}, successorCtx);
+  await tick(200);
+  const g = readState(cwd).goal as { status: string; interruptedAt?: string };
+  assert.equal(g.status, "active");
+  assert.ok(!g.interruptedAt, "compact from the live successor clears the park");
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.match(ledger, /"session_rebind_via_live_ctx"/);
+  assert.match(ledger, /"via":"session_compact"/);
+  assert.match(ledger, /"session_compact"/, "the successor's compact is legitimate busy time again");
+  assert.ok(pi.sent.length >= 1, "recovery continuation scheduled after the compact absorb");
+});
+
+test("v0.34.25: dead owner + ephemeral ctx cannot claim the plane (subagent lockout fix)", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "claim guard — done when pinned", ctx);
+  await tick();
+  // The owner quietly dies (no stale terminal yet — the heartbeat has not
+  // probed). Old code rebound the plane to ANY arriving ctx — a subagent
+  // worker claiming it would lock the real host out of its own plane.
+  (ctx as any).isIdle = () => { throw new Error("This extension ctx is stale after session replacement or reload."); };
+  await pi.command("goal", "status", makeMockCtx(cwd, { sessionManager: { name: "SUBAGENT-worker" } }));
+  // The real successor must STILL be absorbable — if the subagent claimed the
+  // plane, the successor would now be refused as foreign.
+  const successorCtx = makeMockCtx(cwd, {
+    sessionManager: {
+      name: "successor-session-manager",
+      getSessionFile: () => path.join(cwd, "successor-session.jsonl"),
+      getSessionId: () => "successor-3",
+    },
+  });
+  const res = await pi.runTool("list_add", { items: ["post-swap follow-up"] }, successorCtx);
+  assert.doesNotMatch(res.content[0]!.text, /only the MAIN session owns/, "subagent did not claim the plane; the host successor absorbs");
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.match(ledger, /"session_rebind_via_live_ctx"/);
+});
+
 // T1 — stale paths on the two creation entry points (flag latched from T2)
 // ────────────────────────────────────────────────────────────────────
 
