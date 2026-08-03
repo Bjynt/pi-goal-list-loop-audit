@@ -1828,6 +1828,60 @@ function mainModelRecoveryReason(failure: MainModelFailure): string {
   return `main model ${failure.kind}${detail ? `: ${detail}` : " failure"}`;
 }
 
+function withMainModelRecoveryWindow(recovery: MainModelRecovery, now = Date.now()): MainModelRecovery {
+  const firstMs = recovery.firstFailureAt ? Date.parse(recovery.firstFailureAt) : Number.NaN;
+  const firstFailureAt = Number.isFinite(firstMs) ? recovery.firstFailureAt : new Date(now).toISOString();
+  const untilMs = recovery.autoRetryUntil ? Date.parse(recovery.autoRetryUntil) : Number.NaN;
+  const autoRetryUntil = Number.isFinite(untilMs) && untilMs > (Number.isFinite(firstMs) ? firstMs : now)
+    ? recovery.autoRetryUntil
+    : mainModelAutoRetryUntil(Number.isFinite(firstMs) ? firstMs : now, MAIN_MODEL_AUTO_RETRY_HORIZON_MS);
+  return { ...recovery, firstFailureAt, autoRetryUntil };
+}
+
+function mainModelHintExceedsProbeBudget(failure: MainModelFailure): boolean {
+  return failure.kind === "quota"
+    && failure.retryFromUpstream === true
+    && Number.isFinite(failure.retryAfterSec)
+    && failure.retryAfterSec! * 1_000 > MAIN_MODEL_MAX_RETRY_DELAY_MS;
+}
+
+/** Stop automatic probing honestly when a provider says the reset is longer
+ * than the five-hour probe budget or the durable recovery window is spent. */
+function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModelRecovery, why: string): void {
+  const normalized = withMainModelRecoveryWindow(recovery);
+  clearMainModelRecoveryTimer();
+  clearContinuationTimer();
+  clearLoopTimer();
+  continuationDispatchStoodDown = true;
+  state.mainModelRecovery = { ...normalized, retryAt: undefined, manualResumeRequired: true };
+  const resumeCmd = state.goal?.policy === "list" ? "/list resume" : normalized.kind === "loop" ? "/loop resume" : "/goal resume";
+  const pauseReason = `main model recovery — automatic probes stopped (${why})`;
+  const action = `No automatic provider probes remain. Check the provider reset/billing state or switch /model, then ${resumeCmd} to start a fresh recovery window; /goal cancel stops it.`;
+  if (normalized.kind === "goal" && state.goal) {
+    updateGoal({
+      status: "paused",
+      pauseKind: "blocked",
+      pauseResumeAt: undefined,
+      pauseReason,
+      pauseSuggestedAction: action,
+    }, ctx);
+  } else if (normalized.kind === "loop" && state.loop) {
+    state.loop = { ...state.loop, active: false, stopReason: `${pauseReason}; ${resumeCmd} to retry manually` };
+    persistState(ctx);
+  } else {
+    persistState(ctx);
+  }
+  appendLedger(ctx.cwd, "main_model_recovery_manual_hold", {
+    kind: normalized.kind,
+    attempts: normalized.attempts,
+    autoRetryUntil: normalized.autoRetryUntil,
+    resetAt: normalized.resetAt,
+    why,
+  });
+  ctx.ui.notify(`Main-model recovery stopped automatic probes: ${why}. Work is saved; check the provider or switch /model, then ${resumeCmd}.`, "warning");
+  notifyExternal(ctx, `Main-model recovery requires manual resume: ${why}.`);
+}
+
 /** Resolve a configured provider/model using only the public registry API. */
 function resolveMainModel(ctx: ExtensionContext, ref: string): any | undefined {
   const parts = splitModelRef(ref);
@@ -1844,14 +1898,15 @@ async function tryMainModelFallback(ctx: ExtensionContext, failure: MainModelFai
   if (!current) return false;
   const generation = sessionGeneration;
   const existing = state.mainModelRecovery;
-  const recovery: MainModelRecovery = existing ?? {
+  const recovery: MainModelRecovery = withMainModelRecoveryWindow(existing ?? {
     primary: current,
     active: current,
     attempted: [current],
     attempts: 0,
     reason: mainModelRecoveryReason(failure),
+    resetAt: failure.resetAt,
     kind: mainModelRecoveryKind(),
-  };
+  });
   if (!recovery.attempted.includes(current)) recovery.attempted.push(current);
   for (;;) {
     const candidateRef = nextUntriedModelRef(current, refs, recovery.attempted);
@@ -1891,32 +1946,43 @@ async function tryMainModelFallback(ctx: ExtensionContext, failure: MainModelFai
   }
 }
 
-function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainModelRecovery, delayMs: number): void {
-  const retryAt = new Date(Date.now() + delayMs).toISOString();
-  const minutes = Math.max(1, Math.round(delayMs / 60_000));
-  state.mainModelRecovery = { ...recovery, retryAt };
+function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainModelRecovery, delayMs: number): boolean {
+  const normalized = withMainModelRecoveryWindow(recovery);
+  const now = Date.now();
+  const deadlineMs = normalized.autoRetryUntil ? Date.parse(normalized.autoRetryUntil) : Number.NaN;
+  const requestedDelayMs = Math.max(1_000, delayMs);
+  if (normalized.manualResumeRequired || (Number.isFinite(deadlineMs) && (now >= deadlineMs || now + requestedDelayMs > deadlineMs))) {
+    holdMainModelRecovery(ctx, normalized, Number.isFinite(deadlineMs) && now >= deadlineMs
+      ? "the 24h automatic recovery horizon was reached"
+      : "the automatic recovery horizon would be exceeded");
+    return false;
+  }
+  const retryAt = new Date(now + requestedDelayMs).toISOString();
+  const minutes = Math.max(1, Math.round(requestedDelayMs / 60_000));
+  state.mainModelRecovery = { ...normalized, retryAt, manualResumeRequired: undefined };
   clearMainModelRecoveryTimer();
   clearContinuationTimer();
   clearLoopTimer();
   continuationDispatchStoodDown = true;
-  const resumeCmd = state.goal?.policy === "list" ? "/list resume" : recovery.kind === "loop" ? "/loop resume" : "/goal resume";
-  if (recovery.kind === "goal" && state.goal?.status === "active") {
+  const resumeCmd = state.goal?.policy === "list" ? "/list resume" : normalized.kind === "loop" ? "/loop resume" : "/goal resume";
+  if (normalized.kind === "goal" && state.goal) {
     updateGoal({
       status: "paused",
       pauseKind: "wait",
       pauseResumeAt: retryAt,
-      pauseReason: `main model recovery — retrying in ${minutes}m (${recovery.reason})`,
+      pauseReason: `main model recovery — retrying in ${minutes}m (${normalized.reason})`,
       pauseSuggestedAction: `The provider/quota wall is being retried automatically; configured backup models are tried in order. ${resumeCmd} retries immediately; /goal cancel stops it.`,
     }, ctx);
-  } else if (recovery.kind === "loop" && state.loop?.active) {
-    state.loop = { ...state.loop, active: false, stopReason: `main model recovery — retrying in ${minutes}m (${recovery.reason}); /loop resume retries immediately` };
+  } else if (normalized.kind === "loop" && state.loop) {
+    state.loop = { ...state.loop, active: false, stopReason: `main model recovery — retrying in ${minutes}m (${normalized.reason}); /loop resume retries immediately` };
     persistState(ctx);
   } else {
     persistState(ctx);
   }
-  appendLedger(ctx.cwd, "main_model_recovery_wait", { kind: recovery.kind, retryAt, attempts: recovery.attempts, reason: recovery.reason });
-  ctx.ui.notify(`Main model recovery: ${recovery.reason}. Trying again in ${minutes}m; work is saved and will not be abandoned.`, "warning");
+  appendLedger(ctx.cwd, "main_model_recovery_wait", { kind: normalized.kind, retryAt, attempts: normalized.attempts, autoRetryUntil: normalized.autoRetryUntil, resetAt: normalized.resetAt, reason: normalized.reason });
+  ctx.ui.notify(`Main model recovery: ${normalized.reason}. Trying again in ${minutes}m; work is saved and will not be abandoned.`, "warning");
   notifyExternal(ctx, `Main model recovery scheduled in ${minutes}m — work remains saved.`);
+  return true;
 }
 
 function scheduleMainModelRecoveryTimer(ctx: ExtensionContext, delayMs: number): void {
@@ -1956,8 +2022,9 @@ async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
   if (!target) {
     if (!current) {
       const delay = mainModelRetryDelayMs(recovery.attempts + 1, loadGlobalSettings().mainModelRetryMinutes);
-      setMainModelRecoveryPause(ctx, { ...recovery, attempts: recovery.attempts + 1, attempted: [] }, delay);
-      scheduleMainModelRecoveryTimer(ctx, delay);
+      if (setMainModelRecoveryPause(ctx, { ...withMainModelRecoveryWindow(recovery), attempts: recovery.attempts + 1, attempted: [] }, delay)) {
+        scheduleMainModelRecoveryTimer(ctx, delay);
+      }
       return;
     }
     // No backup is configured (or every backup has already been tried):
@@ -1981,8 +2048,9 @@ async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
   if (!candidate) {
     appendLedger(ctx.cwd, "main_model_fallback_unavailable", { ref: target, reason: "recovery probe not in registry" });
     const delay = mainModelRetryDelayMs(recovery.attempts + 1, loadGlobalSettings().mainModelRetryMinutes);
-    setMainModelRecoveryPause(ctx, { ...recovery, attempts: recovery.attempts + 1, attempted: [...(current ? [current] : []), target] }, delay);
-    scheduleMainModelRecoveryTimer(ctx, delay);
+    if (setMainModelRecoveryPause(ctx, { ...withMainModelRecoveryWindow(recovery), attempts: recovery.attempts + 1, attempted: [...(current ? [current] : []), target] }, delay)) {
+      scheduleMainModelRecoveryTimer(ctx, delay);
+    }
     return;
   }
   mainModelSwitchInFlight = true;
@@ -2006,10 +2074,13 @@ async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
   } catch (err) {
     appendLedger(ctx.cwd, "main_model_probe_failed", { ref: target, error: err instanceof Error ? err.message : String(err) });
     const failure = classifyMainModelFailure(err instanceof Error ? err.message : String(err));
-    const next = { ...recovery, attempts: recovery.attempts + 1, attempted: [...(current ? [current] : []), target], reason: mainModelRecoveryReason(failure) };
-    const delay = mainModelRetryDelayMs(next.attempts, loadGlobalSettings().mainModelRetryMinutes);
-    setMainModelRecoveryPause(ctx, next, delay);
-    scheduleMainModelRecoveryTimer(ctx, delay);
+    const next = withMainModelRecoveryWindow({ ...recovery, attempts: recovery.attempts + 1, attempted: [...(current ? [current] : []), target], reason: mainModelRecoveryReason(failure), resetAt: failure.resetAt ?? recovery.resetAt });
+    if (mainModelHintExceedsProbeBudget(failure)) {
+      holdMainModelRecovery(ctx, next, `provider supplied a reset beyond the 5h automatic probe budget${failure.resetAt ? ` (reset ${failure.resetAt})` : ""}`);
+    } else {
+      const delay = mainModelFailureDelayMs(failure, next.attempts, loadGlobalSettings().mainModelRetryMinutes);
+      if (setMainModelRecoveryPause(ctx, next, delay)) scheduleMainModelRecoveryTimer(ctx, delay);
+    }
   } finally {
     mainModelSwitchInFlight = false;
   }
@@ -2019,16 +2090,30 @@ function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainModelFail
   if (!isSupervising() || mainModelRecoveryActive()) return;
   const current = modelRef(ctx.model);
   if (!current) return;
-  const existing = state.mainModelRecovery ?? {
+  const existing = withMainModelRecoveryWindow(state.mainModelRecovery ?? {
     primary: current,
     active: current,
     attempted: [current],
     attempts: 0,
     reason: mainModelRecoveryReason(failure),
+    resetAt: failure.resetAt,
     kind: mainModelRecoveryKind(),
-  } satisfies MainModelRecovery;
-  const delay = mainModelRetryDelayMs(existing.attempts + 1, loadGlobalSettings().mainModelRetryMinutes);
-  setMainModelRecoveryPause(ctx, { ...existing, active: current, attempts: existing.attempts + 1, reason: mainModelRecoveryReason(failure) }, delay);
+  } satisfies MainModelRecovery);
+  const nextRecovery = withMainModelRecoveryWindow({
+    ...existing,
+    active: current,
+    attempts: existing.attempts + 1,
+    reason: mainModelRecoveryReason(failure),
+    resetAt: failure.resetAt ?? existing.resetAt,
+  });
+  if (mainModelHintExceedsProbeBudget(failure)) {
+    holdMainModelRecovery(ctx, nextRecovery, `provider supplied a reset beyond the 5h automatic probe budget${failure.resetAt ? ` (reset ${failure.resetAt})` : ""}`);
+    mainModelAbortForRecovery = true;
+    try { ctx.abort(); } catch { /* abort is best effort */ }
+    return;
+  }
+  const delay = mainModelFailureDelayMs(failure, nextRecovery.attempts, loadGlobalSettings().mainModelRetryMinutes);
+  if (!setMainModelRecoveryPause(ctx, nextRecovery, delay)) return;
   mainModelAbortForRecovery = true;
   try { ctx.abort(); } catch { /* abort is best effort; the recovery guard prevents re-send storms */ }
   scheduleMainModelRecoveryTimer(ctx, delay);
