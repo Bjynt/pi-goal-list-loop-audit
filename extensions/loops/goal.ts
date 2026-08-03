@@ -7356,10 +7356,8 @@ export default function (pi: ExtensionAPI): void {
   pi.registerCommand("glla", {
     description: "Open the settings UI for goals, loops, lists, and the auditor. `/glla` opens settings; arguments are reserved for actions.",
     getArgumentCompletions: completions([
-      // Verbs + scope prefixes ONLY — the five section groups still route
-      // when typed (`/glla stall-brakes`) but are not completion entries:
-      // bare /glla opens the tabbed table one Tab away from every section,
-      // so group rows were pure noise in the picker (v0.34.25).
+      // Operational verbs only. Settings and section navigation belong in
+      // the bare `/glla` table, so they do not compete with action completion.
       ["status", "show goal, list, loop, and pending decisions"],
       ["log", "show the recent event trail"],
       ["resume", "resume the paused or held live thing"],
