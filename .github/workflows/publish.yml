@@ -29,6 +29,11 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: npm
 
+      - name: Install the test runner
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
       - name: Use a trusted-publishing-capable npm
         run: npm install --global npm@latest
 
