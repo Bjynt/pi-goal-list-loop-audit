@@ -477,7 +477,9 @@ export function __testOnlyResetStaleFlag(): void {
  * process-wide module state; behavioral-orchestrator claims it first). */
 export function __testOnlyResetOwnerSession(): void {
   ownerSession = null;
+  ownerCwd = null;
   deadOwnerSession = null;
+  deadOwnerCwd = null;
 }
 
 /** Lifecycle regression hook: drive the detached list-audit fan-out from the behavioral
@@ -660,11 +662,13 @@ const sessionTimeouts = new Set<NodeJS.Timeout>();
 // with their own ctx — they must never take over lastCtx (a headless
 // subagent ctx would silently kill the heartbeat/wedge machinery).
 let ownerSession: unknown = null;
+let ownerCwd: string | null = null;
 // v0.34.25: clearSessionOwnedTimers nulls ownerSession at the stale terminal,
 // erasing the very identity a successor-absorption decision needs. Keep the
 // dead owner here so a live file-backed ctx can still be recognized as the
 // replacement HOST session (vs an in-memory subagent worker) after the park.
 let deadOwnerSession: unknown = null;
+let deadOwnerCwd: string | null = null;
 
 function sessionHasConversation(ctx: ExtensionContext): boolean | undefined {
   try {
@@ -713,6 +717,21 @@ function isHostSuccessorCtx(ctx: ExtensionContext): boolean {
   }
 }
 
+/** v0.34.27: a file-backed context is a successor only when it is from the
+ * same workspace as the dead owner. The file-backed test separates host
+ * sessions from pi-subagents' in-memory workers; the cwd test also prevents
+ * a different project/worktree context from claiming this process-wide goal
+ * plane. Owner liveness remains fail-closed unless this instance has already
+ * declared the old handle terminal. */
+function isHostSuccessorContact(ctx: ExtensionContext): boolean {
+  const recordedOwner = ownerSession ?? deadOwnerSession;
+  if (recordedOwner === null || ctx.sessionManager === recordedOwner) return false;
+  if (!isHostSuccessorCtx(ctx)) return false;
+  const recordedCwd = ownerSession !== null ? ownerCwd : deadOwnerCwd;
+  if (recordedCwd && ctx.cwd !== recordedCwd) return false;
+  return staleTerminalDone || !ownerProbeLive();
+}
+
 /** v0.34.25: same-host successor absorption. pi can replace the host session
  * WITHOUT delivering session_start (the silent swap around compaction —
  * deathrun/hegemon/pulis sessions parked forever as "host session lost"
@@ -726,12 +745,11 @@ function isHostSuccessorCtx(ctx: ExtensionContext): boolean {
  * failing closed; a zombie-stood-down instance never reclaims the plane. */
 function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   if (zombieStoodDown) return false; // a successor INSTANCE owns owner.json — this instance stands down forever
-  const recordedOwner = ownerSession ?? deadOwnerSession;
-  if (recordedOwner === null || ctx.sessionManager === recordedOwner) return false;
-  if (!isHostSuccessorCtx(ctx)) return false; // ephemeral worker — refuse
-  if (!staleTerminalDone && ownerProbeLive()) return false; // owner alive — ambiguity fails closed
+  if (!isHostSuccessorContact(ctx)) return false;
   ownerSession = ctx.sessionManager;
+  ownerCwd = ctx.cwd;
   deadOwnerSession = null;
+  deadOwnerCwd = null;
   lastCtx = ctx;
   extensionApiStale = false;
   staleTerminalDone = false;
@@ -766,8 +784,9 @@ function rememberCtx(ctx: ExtensionContext): void {
   // an in-memory subagent worker, locking the real host out of its own goal
   // plane. Only a file-backed host successor may claim (absorption above).
   const recordedOwner = ownerSession ?? deadOwnerSession;
-  if (recordedOwner && ctx.sessionManager !== recordedOwner && !isHostSuccessorCtx(ctx)) return;
+  if (recordedOwner && ctx.sessionManager !== recordedOwner && !isHostSuccessorContact(ctx)) return;
   ownerSession = ctx.sessionManager;
+  ownerCwd = ctx.cwd;
   lastCtx = ctx;
 }
 
@@ -811,7 +830,7 @@ function foreignToolGuard(execCtx: unknown): string | null {
   // Post-park the owner is nulled; the dead-owner record means only the
   // file-backed successor may act — ephemeral workers stay refused instead of
   // slipping through the null-owner gap (pre-v0.34.25 hole).
-  if (!ownerSession && deadOwnerSession && c.sessionManager !== deadOwnerSession && !isHostSuccessorCtx(c)) {
+  if (!ownerSession && deadOwnerSession && c.sessionManager !== deadOwnerSession && !isHostSuccessorContact(c)) {
     return FOREIGN_SESSION_TOOL_MESSAGE;
   }
   return null;
@@ -1564,9 +1583,13 @@ function clearSessionOwnedTimers(): void {
   for (const timer of sessionTimeouts) clearTimeout(timer);
   sessionTimeouts.clear();
   cancelQuotaRetry();
-  if (ownerSession) deadOwnerSession = ownerSession; // v0.34.25: keep the dead identity for successor absorption
+  if (ownerSession) {
+    deadOwnerSession = ownerSession; // v0.34.25: keep the dead identity for successor absorption
+    deadOwnerCwd = ownerCwd ?? lastCtx?.cwd ?? null;
+  }
   lastCtx = null;
   ownerSession = null;
+  ownerCwd = null;
 }
 
 function isActionableGoal(): boolean {
@@ -7262,7 +7285,11 @@ export default function (pi: ExtensionAPI): void {
     }, COMPACTION_GRACE_MS + 2_000);
   });
 
-  pi.on("message_start", async (event: any, _ctx: ExtensionContext) => {
+  pi.on("message_start", async (event: any, ctx: ExtensionContext) => {
+    // v0.34.27: a replacement may first become visible on the user's next
+    // message. Absorb it before the drafting-only handler can ignore it.
+    if (tryAbsorbHostSuccessor(ctx, "message_start")) return;
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     // v0.14.0 drafting floor: count real user replies while drafting. Our
     // own injected draft prompt arrives as a user message — skip that one.
     if (draftingTarget === null) return;
@@ -7277,7 +7304,11 @@ export default function (pi: ExtensionAPI): void {
   // v0.15.1: ask_user_question answers arrive as tool results, not chat
   // messages — count answered (non-cancelled) questionnaires as replies too.
   pi.on("tool_result", async (event: any, eventCtx: ExtensionContext) => {
-    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
+    // v0.34.27: tool results are another valid first contact after a silent
+    // host swap; absorb before stale/foreign filtering and never let a worker
+    // session mutate the main loop's repetition/telemetry state.
+    if (tryAbsorbHostSuccessor(eventCtx, "tool_result")) return;
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(eventCtx)) return;
     noteToolResult(event); // v0.33.0: slim widget "last action" feed
     // v0.24.0: roll loop tool-result fingerprints (same-tool-same-result
     // detection) — recorded for ANY tool result while a loop is active.
@@ -7361,7 +7392,10 @@ export default function (pi: ExtensionAPI): void {
     // deliver /new, /resume, /fork, or /reload with a new SessionManager and
     // no session_shutdown, so rejecting them here would permanently lose the
     // only fresh context that can rebind the loop (v0.34.23).
-    const hostLifecycleStart = isHostLifecycleSessionStart(event);
+    // v0.34.27: a real file-backed successor can report plain `startup`
+    // after pi invalidated the old handle. Recognize that contact before the
+    // foreign-session gate; in-memory subagent startup remains refused.
+    const hostLifecycleStart = isHostLifecycleSessionStart(event) || isHostSuccessorContact(ctx);
     if (isForeignCtx(ctx) && !hostLifecycleStart) return;
     if (hostLifecycleStart && ownerSession !== null && ctx.sessionManager !== ownerSession) {
       // No shutdown means the old timers were not cleared by pi. Clear them
@@ -7379,6 +7413,7 @@ export default function (pi: ExtensionAPI): void {
     staleTerminalDone = false; // v0.33.1: a rebound session can go terminal again
     zombieStoodDown = false;
     deadOwnerSession = null; // v0.34.25: a real session_start supersedes the silent-swap record
+    deadOwnerCwd = null;
     sessionGeneration++;
     // An auditor belonging to the disposed generation cannot block the fresh
     // session's recovery gate; its finally block is generation-guarded too.
