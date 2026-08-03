@@ -373,7 +373,7 @@ export async function runGoalCompletionAuditor(args: {
         output: outputParts.join("\n\n"),
         model: modelLabel(model),
         thinkingLevel,
-        error: `Auditor stalled — no session activity for ${Math.round(AUDITOR_STALL_MS / 60_000)}m while no read-only tool was running, so it was aborted. This is an infrastructure failure, not a verdict; retry completion (check the auditor model with /glla model=).`,
+        error: `Auditor stalled — no session activity for ${Math.round(AUDITOR_STALL_MS / 60_000)}m while no read-only tool was running, so it was aborted. This is an infrastructure failure, not a verdict; retry completion after checking the auditor model in /glla settings.`, 
       };
     }
 
@@ -390,7 +390,7 @@ export async function runGoalCompletionAuditor(args: {
         output,
         model: modelLabel(model),
         thinkingLevel,
-        error: `Auditor produced no output${streamError ? `: ${streamError}` : " — the auditor session likely failed (check the model's auth/quota, or set a working one with /glla model=provider/id)"}`,
+        error: `Auditor produced no output${streamError ? `: ${streamError}` : " — the auditor session likely failed (check the model's auth/quota in /glla settings)"}`, 
       };
     }
 

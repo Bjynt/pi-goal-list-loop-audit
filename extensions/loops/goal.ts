@@ -11,7 +11,7 @@
  *   /goal "<objective>" | /goal (draft) | /goal status|pause|resume|cancel|tweak <text>|archive
  *   /list add|show|next|remove|clear
  *   /loop (draft) | /loop start|status|stop
- *   /glla (settings UI) | /glla key=value | /glla project key=value
+ *   /glla (settings UI) | /glla <action>
  */
 
 import * as fs from "node:fs";
@@ -588,7 +588,7 @@ async function confirmDraft(ctx: ExtensionContext, title: string, body: string):
     if (choice === ALWAYS) {
       saveSettings("project", ctx.cwd, { autoAcceptDrafts: true });
       appendLedger(ctx.cwd, "draft_autoaccept_enabled", { via: title });
-      ctx.ui.notify("Draft auto-accept ON for this project — future draft confirms are skipped. Undo: /glla autoaccept=off.", "info");
+      ctx.ui.notify("Draft auto-accept ON for this project — future draft confirms are skipped. Undo in /glla settings: Auto-accept drafts = off.", "info");
       return "yes";
     }
     return choice === "Yes" ? "yes" : "no";
@@ -3502,7 +3502,7 @@ async function showDecisionPrompt(ctx: ExtensionContext): Promise<boolean> {
 
 /** Pop the picker after a decision pause lands — deferred so the current
  * turn finishes first (pi serializes dialogs). No-ops without a UI, when
- * disabled (/glla decisionpopup=off), or when one is already open. */
+ * disabled (set Decision popup = off in /glla settings), or when one is already open. */
 function maybeDecisionPopup(ctx: ExtensionContext): void {
   if (!ctx.hasUI || loadSettings(ctx.cwd).decisionPopup === false) return;
   const cwd = ctx.cwd;
@@ -3652,7 +3652,7 @@ function enqueueItems(ctx: ExtensionContext, texts: string[], source: string, op
     // started itself" was the field complaint. User-driven imports keep
     // the immediate-start behavior (opts default true).
     if (opts?.autoActivate === false) {
-      ctx.ui.notify(`Queued ${items.length} item(s) from ${source} — /list next when ready (auto-start is opt-in: /glla autoresume=on).`, "info");
+      ctx.ui.notify(`Queued ${items.length} item(s) from ${source} — /list next when ready (auto-start is opt-in: enable Auto-resume in /glla settings).`, "info");
       appendLedger(ctx.cwd, "list_autoactivation_held", { source, count: items.length });
     } else {
       activateNextListItem(ctx);
@@ -5580,7 +5580,8 @@ function registerAgentTools(pi: any): void {
         return { content: [{ type: "text", text: "A loop is active — one active thing at a time. The user must /loop stop it before a goal or list item can activate; do not re-propose until then." }], details: {} };
       }
       // v0.14.0: the interview floor — no Confirm until the user replied.
-      // v0.23.8: /glla autoaccept=on skips the floor AND the Confirm —
+      // v0.23.8: Auto-accept drafts = on in /glla settings skips the floor
+      // AND the Confirm —
       // the seed carries the intent (unattended rigs). Default off.
       const autoAccept = loadSettings(liveCtx.cwd).autoAcceptDrafts === true;
       if (!autoAccept) {
@@ -5608,7 +5609,7 @@ function registerAgentTools(pi: any): void {
         let batchConfirmed = false;
         if (autoAccept) {
           batchConfirmed = true;
-          liveCtx.ui.notify(`List batch auto-accepted (/glla autoaccept=on): ${p.items.length} items${batchActivates ? " — item 1 ACTIVATES now" : ""}.`, "info");
+          liveCtx.ui.notify(`List batch auto-accepted (Auto-accept drafts = on in /glla settings): ${p.items.length} items${batchActivates ? " — item 1 ACTIVATES now" : ""}.`, "info");
           appendLedger(liveCtx.cwd, "draft_autoaccepted", { kind: "batch", count: p.items.length });
         } else {
           const c = await confirmDraft(
@@ -5657,7 +5658,7 @@ function registerAgentTools(pi: any): void {
       let confirmed = false;
       if (autoAccept) {
         confirmed = true;
-        liveCtx.ui.notify(`Draft auto-accepted (/glla autoaccept=on)${willActivate ? " — ACTIVATING now" : ""}: ${displaySlice(p.objective.trim(), 90)}`, "info");
+        liveCtx.ui.notify(`Draft auto-accepted (Auto-accept drafts = on in /glla settings)${willActivate ? " — ACTIVATING now" : ""}: ${displaySlice(p.objective.trim(), 90)}`, "info");
         appendLedger(liveCtx.cwd, "draft_autoaccepted", { kind: isListDraft ? "list" : "goal", objective: p.objective.trim().slice(0, 200) });
       } else {
         const c = await confirmDraft(liveCtx, isListDraft ? "Confirm list item" : "Confirm goal", `${sanitizeDisplayText(p.objective.trim())}${sanitizeDisplayText(contractBlock)}${activationNote}`);
@@ -5820,7 +5821,7 @@ function registerAgentTools(pi: any): void {
       let confirmed = false;
       if (autoAccept) {
         confirmed = true;
-        liveCtx.ui.notify(`Loop draft auto-accepted (/glla autoaccept=on): ${displaySlice(p.target.trim(), 90)}`, "info");
+        liveCtx.ui.notify(`Loop draft auto-accepted (Auto-accept drafts = on in /glla settings): ${displaySlice(p.target.trim(), 90)}`, "info");
         appendLedger(liveCtx.cwd, "draft_autoaccepted", { kind: "loop", target: p.target.trim().slice(0, 200), metricless });
       } else {
         try {
@@ -5920,7 +5921,7 @@ function registerAgentTools(pi: any): void {
       let confirmed = false;
       if (loadSettings(liveCtx.cwd).autoAcceptDrafts === true) {
         confirmed = true;
-        liveCtx.ui.notify("Loop spec refinement auto-accepted (/glla autoaccept=on).", "info");
+        liveCtx.ui.notify("Loop spec refinement auto-accepted (Auto-accept drafts = on in /glla settings).", "info");
         appendLedger(liveCtx.cwd, "draft_autoaccepted", { kind: "loop-refine" });
       } else {
         try {
@@ -6093,7 +6094,7 @@ function registerAgentTools(pi: any): void {
       let confirmed = false;
       if (autoAcceptTasks) {
         confirmed = true;
-        liveCtx.ui.notify(`Task list auto-accepted (/glla autoaccept=on): ${p.tasks.length} tasks.`, "info");
+        liveCtx.ui.notify(`Task list auto-accepted (Auto-accept drafts = on in /glla settings): ${p.tasks.length} tasks.`, "info");
         appendLedger(liveCtx.cwd, "draft_autoaccepted", { kind: "tasks", count: p.tasks.length });
       } else {
         try {
@@ -6127,7 +6128,8 @@ function registerAgentTools(pi: any): void {
  */
 /**
  * Resolve the ordered auditor model candidates. The user controls the pins:
- * primary `/glla model=provider/id`, optional fallback pin, then the pi
+ * primary auditor model from `/glla` settings, optional fallback pin, then
+ * the pi
  * session model as the final candidate. Runtime failures advance through the
  * same list in `runDetachedCompletionWithFallback`; the plugin never silently
  * invents a provider or falls back into the parent in-process session.
@@ -6250,8 +6252,8 @@ function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: 
 /**
  * The /glla interactive settings UI (v0.8.0): a menu loop over pi's dialog
  * primitives. Pick a setting → edit it → saved to GLOBAL → back to the menu.
- * Done/Esc exits. Rarely opened by design; scriptable /glla key=value remains
- * for tmux/headless.
+ * Done/Esc exits. Settings are edited here; `/glla <action>` is reserved for
+ * operational commands such as status, resume, stats, and audits.
  */
 /**
  * v0.28.0: open the /glla settings menu as a TUI table (top tabs row +
@@ -7132,359 +7134,60 @@ function cmdGllaStatus(ctx: ExtensionContext): void {
 }
 
 async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
-  // The plugin's ONE config surface — global by default, rarely opened.
-  //   /glla                      show effective values + where each comes from
-  //   /glla model=provider/id    write to GLOBAL config
-  //   /glla thinking=high        write to GLOBAL config
-  //   /glla notify='cmd $1'      write to GLOBAL config
-  //   /glla tokenlimit=2000000   write to GLOBAL config
-  //   /glla wedgealert=30         hung-command alert minutes (0=off, unset=30)
-  //   /glla auditfeedbackchars=800 cap executor-visible disapproval report (0=full, the default)
-  //   /glla project model=...    write to PROJECT override (rare)
-  //   /glla model=unset          remove key (from global; project model=unset for project)
-  //   /glla stats [json|premature|project=<path>]   per-project ledger rollups (v0.25.2)
+  // `/glla` is the settings surface. Arguments belong to the action namespace
+  // handled below (status, resume, stats, etc.); settings are edited in the
+  // table rather than through noisy `/glla key=value` assignments.
   const trimmed = args.trim();
-  // Grouped settings entry points keep autocomplete focused while preserving
-  // every headless key=value route below. Each group opens the same table at
-  // its matching tab, so users do not have to scan unrelated settings first.
-  const settingsGroup = /^(keep-going|auditor|stall-brakes|subagents|other)\b/i.exec(trimmed)?.[1]?.toLowerCase() as SettingsSectionId | undefined;
-  if (settingsGroup) {
-    if (!ctx.hasUI) {
-      ctx.ui.notify("Grouped settings need the interactive UI. Headless mode remains available with /glla key=value or /glla project key=value.", "info");
-      return;
-    }
-    await openSettingsUI(ctx, settingsGroup);
-    return;
-  }
-  // v0.25.2: /glla stats sub-mode — cross-project telemetry rollups.
-  if (/^stats\b/.test(trimmed)) {
-    cmdStats(trimmed.slice("stats".length).trim(), ctx);
-    return;
-  }
-  if (/^audits\b/.test(trimmed)) {
-    cmdAudits(trimmed.slice("audits".length).trim(), ctx);
-    return;
-  }
-  // v0.29.8: /glla status — the unified what's-running view.
-  if (/^status\b/.test(trimmed)) {
-    cmdGllaStatus(ctx);
-    return;
-  }
-  // v0.28.28: /glla log [N] — the raw event trail, human-readable. "Log it
-  // so we can look back and see where we are doing things wrong."
-  if (/^log\b/.test(trimmed)) {
-    cmdLog(trimmed.slice("log".length).trim(), ctx);
-    return;
-  }
-  // v0.28.33: renamed reset → wipe — "reset" sat at edit-distance 2 from
-  // "resume" in the same namespace, and it's the destructive one (user
-  // catch, same day it shipped, before any muscle memory formed).
-  if (/^wipe\b/.test(trimmed)) {
-    await cmdGllaWipe(ctx);
-    return;
-  }
-  if (/^reset\b/.test(trimmed)) {
-    ctx.ui.notify("/glla reset is now /glla wipe (renamed — too close to /glla resume). Nothing was done.", "info");
-    return;
-  }
-  // v0.28.32: /glla resume + /glla cancel — type-blind verbs over the ONE
-  // live thing ("so we don't have to check what type we are running").
-  if (/^resume\b/.test(trimmed)) {
-    await cmdGllaResume(ctx);
-    return;
-  }
-  if (/^cancel\b/.test(trimmed)) {
-    await cmdGllaCancel(ctx);
-    return;
-  }
-  if (/^reviewer\b/.test(trimmed)) {
-    await cmdReviewerSettings(ctx);
-    return;
-  }
-  // v0.27.5: postaudit is the new vocabulary (the post-completion auditor).
-  // Both keywords open the same config menu and resolve to the same settings
-  // key — the legacy `reviewer` label is kept for backwards compatibility.
-  if (/^postaudit\b/.test(trimmed)) {
-    await cmdReviewerSettings(ctx);
-    return;
-  }
-  // v0.27.9: per-tool overrides — sub-mode `tooloverride <action> <tool>`
-  if (/^tooloverride\b/.test(trimmed)) {
-    await cmdToolOverride(trimmed.slice("tooloverride".length).trim(), ctx);
-    return;
-  }
-  if (!trimmed) {
-    if (ctx.hasUI) {
-      await openSettingsUI(ctx);
-      return;
-    }
-    // Headless fallback: text display with provenance.
-    const prov = settingsProvenance(ctx.cwd);
-    const fmt = (k: keyof Settings, label: string) => {
-      const p = prov[k];
-      const v = p.value === undefined ? "(unset)" : String(p.value);
-      return `${label}: ${v}  [${p.source}]`;
-    };
+  if (trimmed) {
     ctx.ui.notify(
-      [
-        fmt("mainModelFallbacks", "mainModelBackups"),
-        fmt("mainModelRetryMinutes", "mainModelRetryMinutes"),
-        fmt("auditorModel", "auditorModel"),
-        fmt("auditorThinkingLevel", "thinking"),
-        fmt("notifyCmd", "notify"),
-        fmt("tokenLimit", "tokenLimit"),
-        fmt("autoResume", "autoResume"),
-        fmt("autoAcceptDrafts", "autoAccept"),
-        fmt("auditCap", "auditCap"),
-        fmt("auditFeedbackChars", "auditFeedbackChars"),
-        fmt("aggressiveMode", "aggressiveMode"),
-        fmt("quotaRetryMinutes", "quotaRetryMinutes"),
-        fmt("stuckMaxInterventions", "stuckMaxInterventions"),
-        fmt("stallEscalationRefires", "stallEscalation"),
-        fmt("wedgeAlertMinutes", "wedgeAlert"),
-        fmt("stallShortWords", "stallShortWords"),
-        fmt("stallSimilarityThreshold", "stallSimilarityThreshold"),
-        // v0.27.5: post-completion auditor config — read either the new
-        // `postaudit` key or the legacy `reviewer` key (postaudit wins).
-        `postaudit: ${JSON.stringify(loadSettings(ctx.cwd).postaudit ?? loadSettings(ctx.cwd).reviewer ?? {}) || '(unset — defaults)'}`,
-        // v0.25.6: effective per-type subagent model resolution.
-        ...["Explore", "Plan", "general-purpose"].map(
-          (t) => `subagent ${t}: ${resolveEffectiveSubagentModel(t, loadSettings(ctx.cwd), (ctx.model as any)?.id ? `${(ctx.model as any).provider}/${(ctx.model as any).id}` : undefined)}`,
-        ),
-        `\nglobal:  ${globalSettingsPath()}`,
-        `project: ${projectSettingsPath(ctx.cwd)}`,
-        `Set with: /glla key=value (global) · /glla project key=value (project override)`,
-      ].join("\n"),
-      "info",
+      `Unknown /glla action "${trimmed}". Use /glla to open settings; command arguments are reserved for actions.`,
+      "warning",
     );
     return;
   }
-  // Optional scope prefix: "project" writes the project override; default is global.
-  let scope: "global" | "project" = "global";
-  let rest = trimmed;
-  if (/^project\s+/i.test(rest)) {
-    scope = "project";
-    rest = rest.replace(/^project\s+/i, "");
-  }
-  const patch: Partial<Settings> = {};
-  let changed = false;
-  // Quote-aware key=value parsing: notify='echo $1 >> /tmp/log' must survive
-  // with its spaces intact (naive whitespace splitting mangled it to "'echo").
-  const kvRe = /(\w+)=(?:"([^"]*)"|'([^']*)'|(\S+))/g;
-  let m: RegExpExecArray | null;
-  while ((m = kvRe.exec(rest)) !== null) {
-    const key = m[1]!.toLowerCase();
-    const value = m[2] ?? m[3] ?? m[4] ?? "";
-    if (key === "mainmodelbackups" || key === "mainmodelfallbacks" || key === "sessionmodelbackups") {
-      if (scope === "project") {
-        ctx.ui.notify("mainmodelbackups is GLOBAL-only — use /glla mainmodelbackups=... without the project prefix.", "warning");
-        continue;
-      }
-      patch.mainModelFallbacks = ["unset", "default"].includes(value.toLowerCase()) ? undefined : normalizeModelRefs(value);
-      changed = true;
-    } else if (key === "mainmodelretryminutes") {
-      if (scope === "project") {
-        ctx.ui.notify("mainmodelretryminutes is GLOBAL-only — use /glla mainmodelretryminutes=... without the project prefix.", "warning");
-        continue;
-      }
-      if (["unset", "default"].includes(value.toLowerCase())) {
-        patch.mainModelRetryMinutes = undefined;
-        changed = true;
-      } else {
-        const n = Number.parseInt(value, 10);
-        if (Number.isInteger(n) && n > 0) {
-          patch.mainModelRetryMinutes = n;
-          changed = true;
-        } else {
-          ctx.ui.notify(`mainmodelretryminutes must be a positive integer, got: ${value}`, "warning");
-        }
-      }
-    } else if (key === "model" || key === "auditormodel") {
-      patch.auditorModel = value === "unset" ? undefined : value;
-      changed = true;
-    } else if (key === "notify" || key === "notifycmd") {
-      patch.notifyCmd = value === "unset" ? undefined : value;
-      changed = true;
-    } else if (key === "tokenlimit") {
-      const n = Number.parseInt(value, 10);
-      if (Number.isFinite(n) && n > 0) {
-        patch.tokenLimit = n;
-        changed = true;
-      } else {
-        ctx.ui.notify(`tokenlimit must be a positive integer, got: ${value}`, "warning");
-      }
-    } else if (key === "wedgealert") {
-      if (value === "unset") {
-        patch.wedgeAlertMinutes = undefined;
-        changed = true;
-      } else {
-        const n = Number.parseInt(value, 10);
-        if (Number.isFinite(n) && n >= 0) {
-          patch.wedgeAlertMinutes = n; // 0 = off; unset = default 30
-          changed = true;
-        } else {
-          ctx.ui.notify(`wedgealert must be a non-negative integer (minutes, 0 = off), got: ${value}`, "warning");
-        }
-      }
-    } else if (key === "autoresume") {
-      if (["on", "true", "1", "yes"].includes(value)) {
-        patch.autoResume = true;
-        changed = true;
-      } else if (["off", "false", "0", "no", "unset"].includes(value)) {
-        patch.autoResume = false; // v0.26.8: explicit off must persist — undefined now means ON
-        changed = true;
-      } else {
-        ctx.ui.notify(`autoresume must be on or off, got: ${value}`, "warning");
-      }
-    } else if (key === "decisionpopup") {
-      if (["on", "true", "1", "yes"].includes(value)) {
-        patch.decisionPopup = true;
-        changed = true;
-      } else if (["off", "false", "0", "no"].includes(value)) {
-        patch.decisionPopup = false;
-        changed = true;
-      } else {
-        ctx.ui.notify(`decisionpopup must be on or off, got: ${value}`, "warning");
-      }
-    } else if (key === "carryover") {
-      if (["resume", "pause", "clear"].includes(value)) {
-        patch.carryover = value as "resume" | "pause" | "clear";
-        changed = true;
-        ctx.ui.notify(`carryover=${value}: ${value === "clear" ? "stale goals/lists/held-loops are dropped when new work activates" : value === "pause" ? "stale carryover is surfaced in one summary when new work activates (default)" : "legacy behavior — carryover stacks silently"}.`, "info");
-      } else {
-        ctx.ui.notify(`carryover must be resume, pause, or clear, got: ${value}`, "warning");
-      }
-    } else if (key === "autoaccept") {
-      if (["on", "true", "1", "yes"].includes(value)) {
-        patch.autoAcceptDrafts = true;
-        changed = true;
-        ctx.ui.notify("autoaccept=on: drafts will ACTIVATE without the Confirm dialog (the interview floor is skipped too — the seed is the intent). /glla autoaccept=off restores the gate.", "warning");
-      } else if (["off", "false", "0", "no", "unset"].includes(value)) {
-        patch.autoAcceptDrafts = undefined;
-        changed = true;
-      } else {
-        ctx.ui.notify(`autoaccept must be on or off, got: ${value}`, "warning");
-      }
-    } else if (key === "auditcap") {
-      if (["off", "unset", "default"].includes(value)) {
-        patch.auditCap = undefined;
-        changed = true;
-      } else {
-        const n = Number.parseInt(value, 10);
-        if (Number.isInteger(n) && n >= 0) {
-          patch.auditCap = n;
-          changed = true;
-        } else {
-          ctx.ui.notify(`auditcap must be a non-negative integer (0 = unlimited), got: ${value}`, "warning");
-        }
-      }
-    } else if (key === "auditfeedbackchars") {
-      if (["unset", "default"].includes(value)) {
-        patch.auditFeedbackChars = undefined;
-        changed = true;
-      } else {
-        const n = Number(value);
-        if (/^\d+$/.test(value) && Number.isSafeInteger(n)) {
-          patch.auditFeedbackChars = n;
-          changed = true;
-        } else {
-          ctx.ui.notify(`auditfeedbackchars must be a non-negative integer (0 = full report), got: ${value}`, "warning");
-        }
-      }
-    } else if (key === "aggressivemode" || key === "aggressive") {
-      if (["on", "true", "1", "yes"].includes(value)) {
-        patch.aggressiveMode = true;
-        changed = true;
-        ctx.ui.notify("aggressivemode=on: autoResume, audit cap 10, stuck max 10, wedge off, quota auto-retry — and audit-cap disapprovals become TODOs while the goal KEEPS GOING. Explicit per-key settings still win.", "warning");
-      } else if (["off", "false", "0", "no", "unset"].includes(value)) {
-        patch.aggressiveMode = undefined;
-        changed = true;
-      } else {
-        ctx.ui.notify(`aggressivemode must be on or off, got: ${value}`, "warning");
-      }
-    } else if (key === "quotaretryminutes") {
-      if (["unset", "default"].includes(value)) {
-        patch.quotaRetryMinutes = undefined;
-        changed = true;
-      } else {
-        const n = Number.parseInt(value, 10);
-        if (Number.isInteger(n) && n > 0) {
-          patch.quotaRetryMinutes = n;
-          changed = true;
-        } else {
-          ctx.ui.notify(`quotaretryminutes must be a positive integer, got: ${value}`, "warning");
-        }
-      }
-    } else if (key === "stallescalation" || key === "stallescalationrefires") {
-      if (["unset", "default"].includes(value)) {
-        patch.stallEscalationRefires = undefined;
-        changed = true;
-      } else {
-        const n = Number.parseInt(value, 10);
-        if (Number.isInteger(n) && n >= 0) {
-          patch.stallEscalationRefires = n;
-          changed = true;
-        } else {
-          ctx.ui.notify(`stallescalation must be a non-negative integer (0 = never escalate), got: ${value}`, "warning");
-        }
-      }
-    } else if (key === "stuckmax" || key === "stuckmaxinterventions") {
-      if (["unset", "default"].includes(value)) {
-        patch.stuckMaxInterventions = undefined;
-        changed = true;
-      } else {
-        const n = Number.parseInt(value, 10);
-        if (Number.isInteger(n) && n > 0) {
-          patch.stuckMaxInterventions = n;
-          changed = true;
-        } else {
-          ctx.ui.notify(`stuckmax must be a positive integer, got: ${value}`, "warning");
-        }
-      }
-    } else if (key === "stallshortwords" || key === "stallshort") {
-      if (["unset", "default"].includes(value)) {
-        patch.stallShortWords = undefined;
-        changed = true;
-      } else {
-        const n = Number.parseInt(value, 10);
-        if (Number.isInteger(n) && n >= 1) {
-          patch.stallShortWords = n;
-          changed = true;
-        } else {
-          ctx.ui.notify(`stallshortwords must be a positive integer, got: ${value}`, "warning");
-        }
-      }
-    } else if (key === "stallsim" || key === "stallsimilaritythreshold") {
-      if (["unset", "default"].includes(value)) {
-        patch.stallSimilarityThreshold = undefined;
-        changed = true;
-      } else {
-        const n = Number.parseFloat(value);
-        if (Number.isFinite(n) && n >= 0 && n <= 1) {
-          patch.stallSimilarityThreshold = n;
-          changed = true;
-        } else {
-          ctx.ui.notify(`stallsimilaritythreshold must be between 0 and 1, got: ${value}`, "warning");
-        }
-      }
-    } else if (key === "thinking" || key === "auditorthinkinglevel") {
-      if (["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(value)) {
-        patch.auditorThinkingLevel = value as Settings["auditorThinkingLevel"];
-        changed = true;
-      } else {
-        ctx.ui.notify(`Unknown thinking level: ${value}`, "warning");
-      }
-    }
-  }
-  if (!changed) {
-    ctx.ui.notify("Nothing changed. Use key=value (mainmodelbackups, mainmodelretryminutes, model, thinking, notify, tokenlimit, autoresume, decisionpopup, carryover, auditcap, auditfeedbackchars, aggressivemode, quotaretryminutes, stuckmax), optionally prefixed with 'project'.", "info");
+  if (ctx.hasUI) {
+    await openSettingsUI(ctx);
     return;
   }
-  saveSettings(scope, ctx.cwd, patch);
-  const effective = loadSettings(ctx.cwd);
+  // Headless fallback: read-only effective values with provenance. Writes
+  // require the interactive settings table so the command namespace stays
+  // unambiguous and action-oriented.
+  const prov = settingsProvenance(ctx.cwd);
+  const fmt = (k: keyof Settings, label: string) => {
+    const p = prov[k];
+    const v = p.value === undefined ? "(unset)" : String(p.value);
+    return `${label}: ${v}  [${p.source}]`;
+  };
   ctx.ui.notify(
-    `Saved to ${scope} config. Effective now: mainModelBackups=${effective.mainModelFallbacks?.join(" → ") || "(none)"} retry=${effective.mainModelRetryMinutes ?? 15}m model=${effective.auditorModel ?? "(session model)"} thinking=${effective.auditorThinkingLevel ?? "(session)"} notify=${effective.notifyCmd ?? "(off)"} tokenLimit=${effective.tokenLimit ?? 0}${(effective.tokenLimit ?? 0) > 0 ? "" : " (off)"} autoResume=${effective.autoResume === true ? "on" : effective.autoResume === false ? "off" : "default (hold on load)"} auditFeedbackChars=${effective.auditFeedbackChars ?? DEFAULT_AUDIT_FEEDBACK_CHARS}${(effective.auditFeedbackChars ?? DEFAULT_AUDIT_FEEDBACK_CHARS) === 0 ? " (full report)" : ""}\n` +
-    `Note: the auditor runs without extensions — it must be a built-in provider, not an extension-registered one.`,
+    [
+      fmt("mainModelFallbacks", "mainModelBackups"),
+      fmt("mainModelRetryMinutes", "mainModelRetryMinutes"),
+      fmt("auditorModel", "auditorModel"),
+      fmt("auditorThinkingLevel", "thinking"),
+      fmt("notifyCmd", "notify"),
+      fmt("tokenLimit", "tokenLimit"),
+      fmt("autoResume", "autoResume"),
+      fmt("autoAcceptDrafts", "autoAccept"),
+      fmt("auditCap", "auditCap"),
+      fmt("auditFeedbackChars", "auditFeedbackChars"),
+      fmt("aggressiveMode", "aggressiveMode"),
+      fmt("quotaRetryMinutes", "quotaRetryMinutes"),
+      fmt("stuckMaxInterventions", "stuckMaxInterventions"),
+      fmt("stallEscalationRefires", "stallEscalation"),
+      fmt("wedgeAlertMinutes", "wedgeAlert"),
+      fmt("stallShortWords", "stallShortWords"),
+      fmt("stallSimilarityThreshold", "stallSimilarityThreshold"),
+      // v0.27.5: post-completion auditor config — read either the new
+      // `postaudit` key or the legacy `reviewer` key (postaudit wins).
+      `postaudit: ${JSON.stringify(loadSettings(ctx.cwd).postaudit ?? loadSettings(ctx.cwd).reviewer ?? {}) || '(unset — defaults)'}`,
+      // v0.25.6: effective per-type subagent model resolution.
+      ...["Explore", "Plan", "general-purpose"].map(
+        (t) => `subagent ${t}: ${resolveEffectiveSubagentModel(t, loadSettings(ctx.cwd), (ctx.model as any)?.id ? `${(ctx.model as any).provider}/${(ctx.model as any).id}` : undefined)}`,
+      ),
+      `\nglobal:  ${globalSettingsPath()}`,
+      `project: ${projectSettingsPath(ctx.cwd)}`,
+      "Edit settings by opening /glla in an interactive session.",
+    ].join("\n"),
     "info",
   );
 }
@@ -7506,7 +7209,7 @@ let collisionWarned = false;
 // defined in ~/.pi/agent/models.json with auth.json credentials works; a
 // provider registered only in the parent extension runtime may not. Unknown
 // providers get a soft one-time conditional notice: if audits error with auth
-// failures, an explicit /glla model= override is the fix.
+// failures, choose an explicit auditor model in the /glla settings table.
 const KNOWN_BUILTIN_PROVIDERS = new Set([
   "anthropic", "google", "google-vertex", "google-gemini-cli", "openai", "openai-codex",
   "openrouter", "opencode", "azure-openai-responses", "groq", "cerebras", "xai", "zai",
@@ -7523,7 +7226,7 @@ function warnIfAuditorProviderRisky(ctx: ExtensionContext): void {
     const provider = (ctx.model as any)?.provider as string | undefined;
     if (!provider || KNOWN_BUILTIN_PROVIDERS.has(provider)) return;
     ctx.ui.notify(
-      `pi-goal-list-loop-audit: session provider "${provider}" is not a known built-in. The auditor inherits the resolved model in-process, so this usually works — but if audits error with auth/provider failures, set an explicit override once: /glla model=provider/id`,
+      `pi-goal-list-loop-audit: session provider "${provider}" is not a known built-in. The auditor inherits the resolved model in-process, so this usually works — but if audits error with auth/provider failures, choose an explicit auditor model in /glla settings.`, 
       "info",
     );
   } catch {
@@ -7570,15 +7273,15 @@ export default function (pi: ExtensionAPI): void {
   //   /goal  — set/draft + status|pause|resume|cancel|tweak|archive subcommands
   //   /list — the list (add|show|next|remove|clear)
   //   /loop  — the metric loop (draft|start|status|stop)
-  //   /glla   — the settings UI (+ scriptable key=value)
+  //   /glla   — the settings UI; nonempty arguments are actions
   // v0.22.5: subcommand autocomplete for the /-menu.
   // v0.27.4: pi's applyCompletion does NOT add a trailing space for argument
   // completions (it does for the top-level /goal itself). Without a trailing
   // space the user has to press Space before typing — and if they forget
   // they end up with `/goal startasdahlasf` (goal.ts:3545 area). Items whose
-  // value ends in `=` (key=value pairs — the user types the value right
-  // after the `=`) get no space; everything else gets a single trailing
-  // space. `label` stays clean for the picker display.
+  // value ends in `=` get no space; everything else gets a single trailing
+  // space. `label` stays clean for the picker display. The glla namespace
+  // itself exposes actions only; settings live in the `/glla` table.
   const completions = (items: Array<[string, string]>) => (prefix: string) =>
     items
       .filter(([value]) => value.startsWith(prefix))
@@ -7606,7 +7309,7 @@ export default function (pi: ExtensionAPI): void {
   });
   const settingsHandler = (args: string, ctx: ExtensionContext) => { rememberCtx(ctx); return cmdSettings(args, ctx); };
   pi.registerCommand("glla", {
-    description: "Open the settings UI for goals, loops, lists, and the auditor. Scriptable form: /glla key=value · /glla project key=value",
+    description: "Open the settings UI for goals, loops, lists, and the auditor. `/glla` opens settings; arguments are reserved for actions.",
     getArgumentCompletions: completions([
       // Verbs + scope prefixes ONLY — the five section groups still route
       // when typed (`/glla stall-brakes`) but are not completion entries:
@@ -7620,7 +7323,8 @@ export default function (pi: ExtensionAPI): void {
       ["stats", "show per-project ledger rollups"],
       ["audits", "browse the audit log"],
       ["tooloverride", "configure agent-tool visibility"],
-      ["project", "prefix a headless key=value update with project"],
+      ["reviewer", "open post-completion reviewer settings"],
+      ["postaudit", "open post-completion auditor settings"],
     ]),
     handler: settingsHandler,
   });
@@ -8024,7 +7728,8 @@ export default function (pi: ExtensionAPI): void {
     // Restore gate (v0.26.9 tri-state): a human LOADING a session
     // ("startup"/"new"/"resume", or no reason) HOLDS — the popup shows what
     // is waiting and nothing starts until they resume explicitly. In-session
-    // machinery ("reload"/"fork") auto-resumes. /glla autoresume=on opts
+    // machinery ("reload"/"fork") auto-resumes. Enable Auto-resume in
+    // /glla settings to opt into startup auto-resume.
     // into auto-resume everywhere (unattended rigs); autoresume=off never
     // auto-resumes. v0.29.5: the setting is GLOBAL-only — project-level
     // autoResume keys are ignored. Once running, the chain auto-continues
@@ -8043,7 +7748,7 @@ export default function (pi: ExtensionAPI): void {
         else void probeMainModelRecovery(ctx);
       } else {
         const recoveryResumeCmd = mainRecovery.kind === "loop" ? "/loop resume" : state.goal?.policy === "list" ? "/list resume" : "/goal resume";
-        ctx.ui.notify(`Main-model recovery is waiting with the work safe — ${recoveryResumeCmd} retries the provider, or set /glla autoresume=on globally.`, "info");
+        ctx.ui.notify(`Main-model recovery is waiting with the work safe — ${recoveryResumeCmd} retries the provider, or enable Auto-resume in /glla settings.`, "info");
       }
     }
     // v0.25.0 (contract item 6): aggressiveMode announces every auto-event.
@@ -8102,7 +7807,7 @@ export default function (pi: ExtensionAPI): void {
         state.loop = { ...l, active: false, stopReason: HELD_ON_RESTORE };
         persistState(ctx);
         ctx.ui.notify(
-          `Loop held on restore: ${displaySlice(l.target, 60)} — /loop resume to continue, /glla autoresume=on to auto-resume on session load (global setting).`,
+          `Loop held on restore: ${displaySlice(l.target, 60)} — /loop resume to continue, or enable Auto-resume in /glla settings for session-load recovery.`, 
           "info",
         );
       }
@@ -8129,7 +7834,7 @@ export default function (pi: ExtensionAPI): void {
         // v0.22.7: name WHAT is held — a list head resumes through /list.
         const isListItem = state.goal.policy === "list";
         const resumeCmd = isListItem ? "/list resume" : "/goal resume";
-        const resumeHint = `${resumeCmd} to continue${queued > 0 ? ` (+${queued} waiting in the list)` : ""} · /glla autoresume=on to auto-resume on load (global setting)`;
+        const resumeHint = `${resumeCmd} to continue${queued > 0 ? ` (+${queued} waiting in the list)` : ""} · enable Auto-resume in /glla settings for load-time recovery`;
         // v0.31.1: name the supersession — a held one-shot audit whose work a
         // live audit loop now owns reads as "stalled" for HOURS otherwise
         // (junk-runner: 8h21m of "held for explicit resume" on a goal the

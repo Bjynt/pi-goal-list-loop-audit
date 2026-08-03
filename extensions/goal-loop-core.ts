@@ -820,14 +820,15 @@ export function cloneGoal(goal: Goal): Goal {
  * history ("resume" | "reload" | "fork") IS the goal's own context —
  * auto-resuming work there is natural. A fresh session ("startup" | "new",
  * or an older pi that reports no reason) has no context — restored state
- * HOLDS until an explicit /goal resume (or /glla autoresume=on, the rig
- * setting for unattended restarts). One mechanical predicate; no heuristics.
+ * HOLDS until an explicit /goal resume (or Auto-resume = on in the /glla
+ * settings table, for unattended restarts). One mechanical predicate; no heuristics.
  */
 export function shouldAutoResumeOnSessionStart(reason: string | undefined, autoResume: boolean | undefined): boolean {
   // v0.28.21: the DEFAULT flipped to hold-everything (user directive:
   // "load it on session load but not auto start it"). Tri-state:
   //   true      → auto-resume on EVERY session start (unattended rigs;
-  //               /glla autoresume=on — this is the ONLY auto-resume path).
+  //               /glla settings → Auto-resume = on — this is the ONLY
+  //               auto-resume path).
   //   false     → never auto-resume; always hold for an explicit resume.
   //   undefined → DEFAULT: never auto-resume either — whatever the reason
   //               ("startup"/"new"/"resume"/"reload"/"fork"/none), the
