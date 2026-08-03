@@ -44,6 +44,7 @@ import {
   formatAuditLog,
   formatGoalAuditHistory,
   runWithInfraRetry,
+  isRetriableInfraError,
   readAuditLog,
   stripThinkBlocks,
   type AuditLogEntry,
@@ -2128,6 +2129,84 @@ function isAuditorTimeoutError(error: string | undefined): boolean {
 
 function isCompletionAuditRecoveryPending(goal: Goal | null | undefined): boolean {
   return !!goal?.pendingCompletion && goal.pendingCompletion.phase !== "running";
+}
+
+type AuditorModelCandidate = { model: any; via: string };
+type DetachedAuditResult = Awaited<ReturnType<typeof runDetachedGoalCompletionAuditor>>;
+
+function auditorCandidateLabel(candidate: AuditorModelCandidate): string {
+  const model = candidate.model;
+  const modelName = typeof model === "string"
+    ? model
+    : model && typeof model === "object" && typeof model.provider === "string" && typeof model.id === "string"
+      ? `${model.provider}/${model.id}`
+      : "(unset)";
+  return `${modelName} (${candidate.via})`;
+}
+
+/**
+ * Run a detached audit through a bounded model cascade. Model selection has a
+ * primary, optional pinned fallback, and the session model as the last rung.
+ * A resolved primary can still fail after launch (provider auth, RPC startup,
+ * or a dead stream), so selection-time fallback alone is insufficient. Retry
+ * the same model once, then advance to the next candidate at most once per
+ * candidate. The worker remains detached for every rung; this is a model
+ * fallback, never an in-process/session fallback.
+ */
+async function runDetachedCompletionWithFallback(
+  candidates: AuditorModelCandidate[],
+  run: (candidate: AuditorModelCandidate) => Promise<DetachedAuditResult>,
+  opts: {
+    shouldRetry?: () => boolean;
+    onRetry?: (candidate: AuditorModelCandidate, error: string) => void;
+    onFallback?: (from: AuditorModelCandidate, to: AuditorModelCandidate, error: string) => void;
+  } = {},
+): Promise<{ result: DetachedAuditResult; retriedOnce: boolean; fallbackUsed: boolean; via: string }> {
+  // Preserve the normal "no model" diagnostic when resolution found no
+  // candidate; that error is intentionally not retried or cascaded.
+  const sequence = candidates.length > 0 ? candidates : [{ model: undefined, via: "unset" }];
+  let retriedOnce = false;
+  let fallbackUsed = false;
+
+  for (let i = 0; i < sequence.length; i++) {
+    const candidate = sequence[i]!;
+    const outcome = await runWithInfraRetry(
+      () => run(candidate),
+      {
+        shouldRetry: opts.shouldRetry,
+        onRetry: (error) => opts.onRetry?.(candidate, error),
+      },
+    );
+    retriedOnce ||= outcome.retriedOnce;
+    const result = outcome.result;
+    const canAdvance = Boolean(
+      result.error
+      && !result.approved
+      && !result.disapproved
+      && !result.impossible
+      && isRetriableInfraError(result.error)
+      && i + 1 < sequence.length,
+    );
+    if (!canAdvance) return { result, retriedOnce, fallbackUsed, via: candidate.via };
+
+    // A replacement may have invalidated the parent between the retry and
+    // this boundary. Do not launch a fallback worker from that old generation.
+    if (opts.shouldRetry) {
+      try {
+        if (!opts.shouldRetry()) return { result, retriedOnce, fallbackUsed, via: candidate.via };
+      } catch {
+        return { result, retriedOnce, fallbackUsed, via: candidate.via };
+      }
+    }
+    const next = sequence[i + 1]!;
+    fallbackUsed = true;
+    opts.onFallback?.(candidate, next, result.error!);
+  }
+
+  // The loop always returns from the final candidate, but keep a defensive
+  // result for future edits that alter the sequence construction.
+  const last = sequence.at(-1)!;
+  return { result: await run(last), retriedOnce, fallbackUsed, via: last.via };
 }
 
 /**
