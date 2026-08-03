@@ -207,19 +207,23 @@ const pauseKind = (g: Goal): PauseKind | undefined => g.pauseKind ?? (pauseIsErr
 function isQuotaWall(g: Goal): boolean {
   const reason = g.pauseReason ?? "";
   if (/token limit exceeded/i.test(reason)) return false;
-  return /quota|rate.?limit|usage.?limit|token.?plan|credits?|main model recovery/i.test(reason);
+  // `main model recovery` alone is not a quota proof: auth, billing, and
+  // transient provider failures can use the same recovery machinery. Require
+  // explicit classifier vocabulary in the durable reason instead.
+  return /429|quota|rate.?limit|usage.?limit|token.?plan|plan.?limit|credits?\s+(?:exhausted|depleted|used\s+up)|insufficient\s+(?:credits?|balance)/i.test(reason);
 }
 
 function quotaWallDetail(g: Goal): string {
   const reason = g.pauseReason ?? "";
-  if (/token.?plan/i.test(reason)) return "Token Plan usage limit";
+  if (/credits?|balance|billing/i.test(reason)) return "provider billing/credit limit";
+  if (/token.?plan|plan.?limit/i.test(reason)) return "Token Plan usage limit";
   if (/rate.?limit|429/i.test(reason)) return "provider rate limit";
   return "provider quota wall";
 }
 
 function quotaResumeText(g: Goal, now: number): string {
   const ms = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) - now : Number.NaN;
-  if (!Number.isFinite(ms)) return "retry schedule is durable";
+  if (!Number.isFinite(ms)) return "manual resume required";
   return ms <= 0 ? "retrying now" : `next probe in ${fmtElapsed(ms)}`;
 }
 
@@ -502,7 +506,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     const kind = pauseKind(g);
     if (kind === "decision") return `glla: ${paint(theme, "accent", "⏸ decision needed")}${heldSuffix}`;
     if (kind === "error") return `glla: ${paint(theme, "error", `⏸ action needed — ${truncate(g.pauseReason ?? "", 30)}`)}${heldSuffix}`;
-    if (kind === "wait") {
+    if (kind === "wait" || kind === "blocked") {
       // v0.34.12: live countdown (the UI ticker keeps rendering through a
       // timed wait) — "resumes in 23m" beats a static clock time, and a
       // passed resumeAt says "resuming…" instead of lying about the past.
@@ -514,6 +518,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
         const queue = queued > 0 ? ` · ${queued} queued` : "";
         return `glla: ${stateBadge(`QUOTA WALL · ${quotaResumeText(g, now)}`, "⏳", theme, "warning")}${queue}${heldSuffix}`;
       }
+      if (kind === "blocked") return `glla: ${paint(theme, "warning", "⏸ action needed")}${heldSuffix}`;
       const rms = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) - now : Number.NaN;
       const when = Number.isNaN(rms) ? "" : rms <= 0 ? " · resuming…" : ` · resumes in ${fmtElapsed(rms)}`;
       return `glla: ${paint(theme, "dim", `⏳ waiting${when}`)}${heldSuffix}`;
@@ -802,17 +807,17 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     // and the ledger while the user sees the recovery contract.
     if (kind === "decision") lines.push(`├─ ${paint(theme, "accent", "decision needed — your call unblocks this")}`);
     else if (kind === "error") lines.push(`├─ ${paint(theme, "error", "action needed — this won't fix itself")}`);
-    else if (kind === "wait" && isQuotaWall(g)) {
+    else if ((kind === "wait" || kind === "blocked") && isQuotaWall(g)) {
       const queued = state.list?.length ?? 0;
       const queue = queued > 0 ? ` · ${queued} waiting in list` : "";
       lines.push(`├─ ${paint(theme, "warning", `QUOTA WALL · ${quotaWallDetail(g)}${queue}`)}`);
-      lines.push(`├─ ${paint(theme, "dim", `waiting — nothing for you to do · ${quotaResumeText(g, now)}`)}`);
+      lines.push(`├─ ${paint(theme, "dim", kind === "blocked" ? `automatic retries stopped · ${quotaResumeText(g, now)}` : `waiting — nothing for you to do · ${quotaResumeText(g, now)}`)}`);
     } else if (kind === "wait") lines.push(`├─ ${paint(theme, "dim", "waiting — nothing for you to do")}`);
     // v0.27.1: wrap reason + suggested action (see wrap()). v0.28.22:
     // decision/wait reasons cap at 2 lines — the options/countdown below
     // carry the actionable content; error reasons keep 3.
     const reasonPaint = isErr ? "error" : kind === "wait" ? "dim" : "warning";
-    if (!(kind === "wait" && isQuotaWall(g))) {
+    if (!((kind === "wait" || kind === "blocked") && isQuotaWall(g))) {
       wrap(g.pauseReason, budget, kind === "decision" || kind === "wait" ? 2 : 3).forEach((w, i) => {
         lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, reasonPaint, w)}`);
       });

@@ -2021,6 +2021,33 @@ function scheduleMainModelRecoveryTimer(ctx: ExtensionContext, delayMs: number):
   void ctx;
 }
 
+/** An explicit resume is consent to start a fresh automatic window after the
+ * five-hour/24-hour safety hold. It does not silently reset the window during
+ * reload or heartbeat recovery. */
+function manuallyResumeMainModelRecovery(ctx: ExtensionContext): boolean {
+  const recovery = state.mainModelRecovery;
+  if (!recovery?.manualResumeRequired) return false;
+  const current = modelRef(ctx.model);
+  const now = Date.now();
+  state.mainModelRecovery = {
+    ...recovery,
+    active: current ?? recovery.active,
+    attempted: current ? [current] : [],
+    attempts: 0,
+    firstFailureAt: new Date(now).toISOString(),
+    autoRetryUntil: mainModelAutoRetryUntil(now, MAIN_MODEL_AUTO_RETRY_HORIZON_MS),
+    retryAt: undefined,
+    manualResumeRequired: undefined,
+    resumeCurrent: undefined,
+  };
+  clearMainModelRecoveryTimer();
+  continuationDispatchStoodDown = false;
+  persistState(ctx);
+  ctx.ui.notify("Manual resume starts a fresh bounded main-model recovery window — one provider probe, then configured backups if needed.", "info");
+  void probeMainModelRecovery(ctx);
+  return true;
+}
+
 async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
   const generation = sessionGeneration;
   const recovery = state.mainModelRecovery;
@@ -3536,6 +3563,7 @@ async function cmdPause(ctx: ExtensionContext): Promise<void> {
 
 async function cmdResume(ctx: ExtensionContext): Promise<void> {
   releaseInitialSessionLoadBarrier();
+  if (manuallyResumeMainModelRecovery(ctx)) return;
   if (state.mainModelRecovery?.retryAt) {
     clearMainModelRecoveryTimer();
     continuationDispatchStoodDown = false;
@@ -4780,6 +4808,10 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
 
   if (!sub || sub === "resume") {
     releaseInitialSessionLoadBarrier();
+    if (state.mainModelRecovery?.manualResumeRequired && state.mainModelRecovery.kind === "loop") {
+      manuallyResumeMainModelRecovery(ctx);
+      return;
+    }
     if (state.mainModelRecovery?.retryAt && state.mainModelRecovery.kind === "loop") {
       clearMainModelRecoveryTimer();
       continuationDispatchStoodDown = false;
