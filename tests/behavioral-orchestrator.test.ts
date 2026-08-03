@@ -721,6 +721,9 @@ test("v0.34.27: plain startup from a dead file-backed successor is not rejected 
   // startup event. The old manager is dead, but no stale terminal was needed
   // to make the lifecycle boundary real.
   (ctx as any).isIdle = () => { throw staleError(); };
+  const subagentCtx = makeMockCtx(cwd, { sessionManager: { name: "SUBAGENT-startup" } });
+  await pi.fire("session_start", { reason: "startup" }, subagentCtx);
+  assert.ok((readState(cwd).goal as { status: string }).status === "active", "subagent startup cannot consume the host recovery boundary");
   const successorCtx = makeMockCtx(cwd, {
     sessionManager: {
       name: "startup-successor",

@@ -7395,8 +7395,15 @@ export default function (pi: ExtensionAPI): void {
     // v0.34.27: a real file-backed successor can report plain `startup`
     // after pi invalidated the old handle. Recognize that contact before the
     // foreign-session gate; in-memory subagent startup remains refused.
-    const hostLifecycleStart = isHostLifecycleSessionStart(event) || isHostSuccessorContact(ctx);
-    if (isForeignCtx(ctx) && !hostLifecycleStart) return;
+    const hostSuccessorStart = isHostSuccessorContact(ctx);
+    const hostLifecycleStart = isHostLifecycleSessionStart(event) || hostSuccessorStart;
+    // `ownerSession` is intentionally nulled at a stale/shutdown terminal,
+    // so isForeignCtx() alone cannot protect the parked plane. Compare with
+    // the retained dead owner too: an in-memory subagent startup must not
+    // consume the recovery event and erase the host's successor proof.
+    const recordedOwner = ownerSession ?? deadOwnerSession;
+    const foreignRecordedSession = recordedOwner !== null && ctx.sessionManager !== recordedOwner;
+    if (foreignRecordedSession && !hostLifecycleStart) return;
     if (hostLifecycleStart && ownerSession !== null && ctx.sessionManager !== ownerSession) {
       // No shutdown means the old timers were not cleared by pi. Clear them
       // before claiming the replacement, then reopen the handoff gate below.
