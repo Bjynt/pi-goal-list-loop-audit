@@ -62,12 +62,44 @@ test("T4: select editor — autoResume writes on/off/default with the right key"
 test("T4: select editor — aggressiveMode writes the boolean + notifies", async () => {
   try {
     const ctx = makeMockCtx(tmpCwd());
-    ctx.ui.selectImpl = async () => "on — autoResume, audit cap 10, stuck max 10, wedge alerts off, quota auto-retry, cap disapprovals become a TODO list and the goal KEEPS GOING";
+    ctx.ui.selectImpl = async () => "on — keep-going defaults; the goal does not park at the audit cap";
     await handleSettingChoice("aggressiveMode", ctx as unknown as ExtensionContext);
     assert.equal(readGlobal().aggressiveMode, true);
     assert.ok(ctx.ui.matching("aggressive mode on").length >= 1, "mode flip announced");
   } finally {
     restoreGlobal();
+  }
+});
+
+test("T4: select editor — carryover writes clear/resume, pause removes the key (v0.34.25)", async () => {
+  try {
+    const ctx = makeMockCtx(tmpCwd());
+    ctx.ui.selectImpl = async () => "clear — also drop the stale queue and dismiss the held loop";
+    await handleSettingChoice("carryover", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().carryover, "clear");
+
+    ctx.ui.selectImpl = async () => "resume — legacy silent stacking, no summary";
+    await handleSettingChoice("carryover", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().carryover, "resume");
+
+    ctx.ui.selectImpl = async () => "pause — one summary; archive the stale goal, keep the list + held loop (default)";
+    await handleSettingChoice("carryover", ctx as unknown as ExtensionContext);
+    assert.ok(!("carryover" in readGlobal()), "pause is the default — the key is removed (tri-state)");
+  } finally {
+    restoreGlobal();
+  }
+});
+
+test("T4: select options stay concise — rationale lives in the title, not the option rows (v0.34.25)", async () => {
+  const ctx = makeMockCtx(tmpCwd());
+  for (const id of ["autoResume", "carryover", "aggressiveMode", "auditorSameSessionSwap", "decisionPopup", "autoAcceptDrafts"]) {
+    let seen: string[] = [];
+    ctx.ui.selectImpl = async (_t, options) => { seen = options ?? []; return undefined; };
+    await handleSettingChoice(id, ctx as unknown as ExtensionContext);
+    assert.ok(seen.length >= 2, `${id} offers a select`);
+    for (const o of seen) {
+      assert.ok(o.length <= 100, `${id} option is menu noise (${o.length} chars): ${o.slice(0, 70)}…`);
+    }
   }
 });
 
