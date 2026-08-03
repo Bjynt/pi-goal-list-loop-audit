@@ -151,7 +151,16 @@ export class ModelPickerComponent {
         const idx = start + i;
         const it = window[i]!;
         const row = truncateToWidth(it.label, w - 2, "…");
-        lines.push(idx === sel ? this.theme.fg("accent", `→ ${row}`) : `  ${row}`);
+        if (idx === sel) {
+          // Use the available horizontal space for a high-contrast active
+          // state. Accent-only text was easy to miss in dark terminals and
+          // left the selected model indistinguishable from its neighbours.
+          const selectedRow = this.theme.bold(`→ ${row}`);
+          const paddedRow = selectedRow + " ".repeat(Math.max(0, w - visibleWidth(selectedRow)));
+          lines.push(this.theme.bg("selectedBg", paddedRow));
+        } else {
+          lines.push(`  ${row}`);
+        }
       }
       const remaining = filtered.length - (start + window.length);
       if (remaining > 0) lines.push(this.theme.fg("dim", `  ↓ ${remaining} more`));
