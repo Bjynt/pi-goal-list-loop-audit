@@ -22,7 +22,7 @@ import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import activate, { __testOnlyResetStaleFlag, __testOnlyRunFanOutListAuditFindings, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
+import activate, { __testOnlyResetStaleFlag, __testOnlyRunFanOutListAuditFindings, __testOnlySetContinuationStartTimeout, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
 
 // v0.29.5: autoResume is GLOBAL-only now — tests opt in by writing the
 // harness's global settings path, and afterEach resets it so the opt-in
@@ -403,6 +403,48 @@ test("v0.34.24: continuation dispatch waits for owner start proof and clears its
   assert.match(ledger, /continuation_start_acknowledged/);
   assert.match(ledger, /"source":"before_agent_start"/);
   await pi.command("goal", "pause", ctx);
+});
+
+test("v0.34.24: missing start proof stands down durably and explicit resume sends one fresh attempt", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlySetContinuationStartTimeout(25);
+  try {
+    const cwd = tmpCwd();
+    const ctx = await freshSession(cwd, "startup");
+    pi.sent.length = 0;
+    await pi.command("goal", "start bounded dispatch target — done when pinned", ctx);
+    await tick();
+    assert.equal(pi.sent.length, 1, "the first dispatch is sent once");
+    const firstContent = pi.sent[0]!.message.content ?? "";
+    const sidecar = path.join(cwd, ".pi-glla", "continuation-dispatch.json");
+    await waitUntil(() => {
+      try {
+        return fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes("continuation_start_unacknowledged");
+      } catch {
+        return false;
+      }
+    }, 1_000);
+    const stoodDown = JSON.parse(fs.readFileSync(sidecar, "utf8")) as { phase: string; id: string };
+    assert.equal(stoodDown.phase, "unacknowledged", "the failed proof is durable");
+    assert.equal(pi.sent.length, 1, "the watchdog does not re-arm a second send");
+    assert.ok(ctx.ui.matching("Automatic re-sends are stopped").length >= 1, "the stand-down is loud");
+    assert.match(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8"), /"continuation_start_unacknowledged"/);
+
+    await pi.command("goal", "resume", ctx);
+    await tick();
+    assert.equal(pi.sent.length, 2, "explicit resume releases the stand-down exactly once");
+    const secondContent = pi.sent[1]!.message.content ?? "";
+    const retried = JSON.parse(fs.readFileSync(sidecar, "utf8")) as { phase: string; id: string };
+    assert.equal(retried.phase, "accepted");
+    assert.notEqual(retried.id, stoodDown.id, "resume gets a new dispatch identity");
+    assert.notEqual(secondContent, firstContent, "the resumed dispatch is a fresh message");
+
+    await pi.fire("before_agent_start", { prompt: secondContent }, ctx);
+    assert.equal(fs.existsSync(sidecar), false, "the resumed dispatch clears after owner start proof");
+    await pi.command("goal", "pause", ctx);
+  } finally {
+    __testOnlySetContinuationStartTimeout(null);
+  }
 });
 
 // ────────────────────────────────────────────────────────────────────

@@ -262,6 +262,14 @@ let sessionGeneration = 0;
 // attempt bound to the session generation and owner identity until a real
 // before_agent_start/agent_start/turn_start event acknowledges it.
 const CONTINUATION_START_TIMEOUT_MS = Number(process.env.GLLA_CONTINUATION_START_TIMEOUT_MS ?? 150_000);
+let continuationStartTimeoutOverrideMs: number | null = null;
+function continuationStartTimeoutMs(): number {
+  return continuationStartTimeoutOverrideMs ?? CONTINUATION_START_TIMEOUT_MS;
+}
+/** Test-only: make the bounded start-proof watchdog observable without waiting 150s. */
+export function __testOnlySetContinuationStartTimeout(timeoutMs: number | null): void {
+  continuationStartTimeoutOverrideMs = timeoutMs;
+}
 let pendingContinuationDispatch: ContinuationDispatch | null = null;
 let continuationStartTimer: NodeJS.Timeout | null = null;
 let continuationDispatchStoodDown = false;
@@ -1392,12 +1400,12 @@ function dispatchStartUnacknowledged(ctx: ExtensionContext, record: Continuation
     goalId: record.goalId,
     iteration: record.iteration,
     generation: record.generation,
-    timeoutMs: CONTINUATION_START_TIMEOUT_MS,
+    timeoutMs: continuationStartTimeoutMs(),
   });
   if (state.goal && state.goal.status === "active" && (record.kind === "goal" || record.kind === "stall")) {
     updateGoal({ interruptedAt: nowIso(), interruptedReason: reason }, ctx);
   }
-  const msg = `glla: pi accepted the ${dispatchLabel(record)} continuation, but no observable turn-start event arrived within ${Math.round(CONTINUATION_START_TIMEOUT_MS / 1000)}s. Automatic re-sends are stopped to avoid a blind queue storm. The work is safe in .pi-glla; start a fresh session or use /goal resume, /list resume, or /loop resume to retry explicitly.`;
+  const msg = `glla: pi accepted the ${dispatchLabel(record)} continuation, but no observable turn-start event arrived within ${Math.round(continuationStartTimeoutMs() / 1000)}s. Automatic re-sends are stopped to avoid a blind queue storm. The work is safe in .pi-glla; start a fresh session or use /goal resume, /list resume, or /loop resume to retry explicitly.`;
   ctx.ui.notify(msg, "warning");
   notifyExternal(ctx, sanitizeDisplayText(msg));
   refreshUI(ctx);
@@ -1412,10 +1420,10 @@ function armContinuationStartWatchdog(ctx: ExtensionContext, record: Continuatio
     if (pendingContinuationDispatch !== record || record.phase !== "accepted") return;
     const current = freshCtxForGeneration(generation);
     if (!current) return;
-    if (dispatchTimedOut(record, Date.now(), CONTINUATION_START_TIMEOUT_MS)) {
+    if (dispatchTimedOut(record, Date.now(), continuationStartTimeoutMs())) {
       dispatchStartUnacknowledged(current, record);
     }
-  }, CONTINUATION_START_TIMEOUT_MS);
+  }, continuationStartTimeoutMs());
 }
 
 function dispatchAccepted(ctx: ExtensionContext, record: ContinuationDispatch): boolean {
