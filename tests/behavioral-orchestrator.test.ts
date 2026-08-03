@@ -1395,6 +1395,10 @@ test("v0.34.22: detached disapproval resumes the goal with a durable report", as
     const goal = readState(cwd).goal as { status: string; auditHistory?: Array<{ disapproved?: boolean }> };
     assert.equal(goal.status, "active");
     assert.equal(goal.auditHistory?.at(-1)?.disapproved, true);
+    assert.ok(
+      ctx.ui.matching("Report excerpt").some((n) => n.message.includes("fix the pinned gap")),
+      "the disapproval report is notified directly, not only returned to a continuation turn",
+    );
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   } finally {
     if (previous === undefined) delete process.env.GLLA_PI_BINARY;

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.34.34 — 2026-08-03
+
+### Fixed — disapproval feedback is never empty
+
+Detached auditor disapprovals now notify a bounded report excerpt directly and
+keep the actionable `Required fixes` tail on the always-visible attention card.
+This remains useful when the host accepts a continuation but never starts the
+turn that would otherwise receive the returned report. Regression-shield gaps
+also notify their missing contract items directly.
+
 ## 0.34.33 — 2026-08-03
 
 ### Fixed — widget lines stay inside their TUI box
