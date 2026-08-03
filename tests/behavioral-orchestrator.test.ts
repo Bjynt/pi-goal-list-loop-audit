@@ -345,6 +345,11 @@ test("v0.34.20: registered tools use the replacement invocation context without 
   // Some pi replacement paths deliver session_start without a preceding
   // session_shutdown. The tool registry must not retain the first ctx.
   await pi.fire("session_start", { reason: "reload" }, replacement);
+  // Reload holds the goal for explicit consent; resume it before exercising
+  // the replacement invocation context so the pause tool sees a valid active
+  // lifecycle rather than a late duplicate pause.
+  await pi.command("goal", "resume", replacement);
+  await tick();
   const result = await pi.runTool("pause_goal", { reason: "replacement context probe", kind: "blocked" }, replacement);
   assert.match(result.content[0]!.text, /Goal paused/);
   assert.ok(replacement.ui.matching("replacement context probe").length >= 1, "replacement UI received the tool result");
