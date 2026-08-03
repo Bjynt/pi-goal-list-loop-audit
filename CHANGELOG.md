@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.34.29 — 2026-08-03
+
+### Fixed — audit fan-out honors draft auto-acceptance
+
+When `autoAcceptDrafts` is enabled, the `/list audit` completion fan-out now
+queues generated finding items without opening a second confirmation dialog.
+The default remains Confirm-gated, and the fan-out ledger plus notification
+record when the explicit auto-accept setting was used.
+
 ## 0.34.28 — 2026-08-03
 
 ### Fixed — active work and detached-auditor progress no longer look green or vanish
