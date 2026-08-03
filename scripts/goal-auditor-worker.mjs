@@ -65,8 +65,66 @@ function identity(request, attemptId) {
   if (!Number.isFinite(request.wallDeadlineAt)) throw new Error("auditor request deadline is invalid");
 }
 
+const MAX_TOOL_ARGS_CHARS = 120;
+const MAX_TOOL_ARG_VALUE_CHARS = 80;
+const MAX_RECENT_OUTPUT_ITEMS = 8;
+const MAX_RECENT_OUTPUT_ITEM_CHARS = 240;
+const MAX_TOOL_CALLS = 64;
+
+function clipTelemetryString(value, max) {
+  if (value.length <= max) return value;
+  // Preserve the basename/end of paths and the useful tail of commands while
+  // keeping the JSON argument prefix valid for the parent's safe-target parser.
+  return `…${value.slice(-(max - 1))}`;
+}
+
 function toolArgsPrefix(args) {
-  try { return JSON.stringify(args ?? {}).slice(0, 120); } catch { return ""; }
+  try {
+    if (!args || typeof args !== "object" || Array.isArray(args)) return JSON.stringify(args ?? {});
+    const preferred = ["path", "file_path", "command", "pattern", "query", "url", "title"];
+    const source = args;
+    const keys = Object.keys(source);
+    const orderedKeys = [...preferred.filter((key) => key in source), ...keys.filter((key) => !preferred.includes(key))];
+    const bounded = {};
+    for (const key of orderedKeys.slice(0, 8)) {
+      const value = source[key];
+      bounded[key] = typeof value === "string"
+        ? clipTelemetryString(value, MAX_TOOL_ARG_VALUE_CHARS)
+        : (value === null || typeof value === "number" || typeof value === "boolean" ? value : "[omitted]");
+      const serialized = JSON.stringify(bounded);
+      if (serialized.length > MAX_TOOL_ARGS_CHARS) {
+        delete bounded[key];
+        break;
+      }
+    }
+    const serialized = JSON.stringify(bounded);
+    return serialized.length <= MAX_TOOL_ARGS_CHARS ? serialized : JSON.stringify({ args: "[omitted]" });
+  } catch {
+    return "";
+  }
+}
+
+function appendRecentOutput(text) {
+  for (const raw of text.split("\n")) {
+    if (!raw) continue;
+    recentOutput.push(raw.length <= MAX_RECENT_OUTPUT_ITEM_CHARS
+      ? raw
+      : `${raw.slice(0, MAX_RECENT_OUTPUT_ITEM_CHARS - 1)}…`);
+  }
+  while (recentOutput.length > MAX_RECENT_OUTPUT_ITEMS) recentOutput.shift();
+}
+
+function setCurrentToolFromActive() {
+  const active = [...activeTools.values()].at(-1);
+  if (!active) {
+    currentTool = undefined;
+    currentToolArgs = undefined;
+    currentToolStartedAt = undefined;
+    return;
+  }
+  currentTool = active.name;
+  currentToolArgs = active.argsPrefix;
+  currentToolStartedAt = active.startedAt;
 }
 
 async function main() {
@@ -110,8 +168,8 @@ async function main() {
       phase,
       elapsedMs: Date.now() - startedAt,
       ...(lastActivityAt !== undefined ? { lastActivityAt } : {}),
-      recentOutput: recentOutput.slice(-8),
-      toolCalls: toolCalls.slice(),
+      recentOutput: recentOutput.slice(-MAX_RECENT_OUTPUT_ITEMS),
+      toolCalls: toolCalls.slice(-MAX_TOOL_CALLS),
       ...(currentTool ? { currentTool } : {}),
       ...(currentToolArgs ? { currentToolArgs } : {}),
       ...(currentToolStartedAt ? { currentToolStartedAt } : {}),
@@ -139,11 +197,14 @@ async function main() {
       output: outputParts.join(""),
       model: request.model,
       thinkingLevel: request.thinkingLevel,
-      toolCalls,
+      toolCalls: toolCalls.slice(-MAX_TOOL_CALLS),
       ...(error ? { error: error.slice(0, 500) } : {}),
     };
-    await atomicJson(resultPath, result);
+    // Publish the terminal worker phase before the result. The parent polls
+    // progress first, so it cannot return on result.json while the TUI still
+    // shows an older tool/report phase.
     await progress("complete").catch(() => {});
+    await atomicJson(resultPath, result);
   };
 
   // The parent may cancel the detached job after the goal is archived. Cleanly
@@ -185,10 +246,13 @@ async function main() {
       void finish(false, `Auditor exceeded its ${wallMinutes}m wall-clock bound and was aborted.`).catch(() => {});
     }, remaining);
     deadlineTimer.unref?.();
+    const stallLabel = AUDITOR_STALL_MS >= 60_000
+      ? `${Math.max(1, Math.round(AUDITOR_STALL_MS / 60_000))}m`
+      : `${Math.max(1, Math.round(AUDITOR_STALL_MS / 1_000))}s`;
     inactivityTimer = setInterval(() => {
-      if (finalized || currentTool) return;
+      if (finalized || activeTools.size > 0) return;
       if (Date.now() - lastActivityProbeAt >= AUDITOR_STALL_MS) {
-        void finish(false, "Auditor stalled — no session activity for 10m while no read-only tool was running, so it was aborted.").catch(() => {});
+        void finish(false, `Auditor stalled — no session activity for ${stallLabel} while no read-only tool was running, so it was aborted.`).catch(() => {});
       }
     }, Math.min(15_000, Math.max(10, Math.floor(AUDITOR_STALL_MS / 4))));
     inactivityTimer.unref?.();
@@ -245,7 +309,7 @@ async function main() {
       if (event.type === "message_update") {
         if (update?.type === "text_delta" && typeof update.delta === "string") {
           outputParts.push(update.delta);
-          recentOutput.push(...update.delta.split("\n").filter(Boolean));
+          appendRecentOutput(update.delta);
           void progress(phase).catch(() => {});
         } else {
           void progress("thinking").catch(() => {});
@@ -253,11 +317,9 @@ async function main() {
         return;
       }
       if (event.type === "tool_execution_start" && READ_ONLY_TOOLS.has(event.toolName)) {
-        const key = String(event.toolCallId ?? `${event.toolName}:${toolCalls.length}:${Date.now()}`);
-        activeTools.set(key, { name: event.toolName, argsPrefix: toolArgsPrefix(event.args) });
-        currentTool = event.toolName;
-        currentToolArgs = toolArgsPrefix(event.args);
-        currentToolStartedAt = Date.now();
+        const key = String(event.toolCallId ?? `${event.toolName}:${activeTools.size}:${Date.now()}`);
+        activeTools.set(key, { name: event.toolName, argsPrefix: toolArgsPrefix(event.args), startedAt: Date.now() });
+        setCurrentToolFromActive();
         void progress(phase).catch(() => {});
         return;
       }
@@ -265,18 +327,18 @@ async function main() {
         const key = String(event.toolCallId ?? "");
         const active = activeTools.get(key);
         if (active) {
-          toolCalls.push({ ...active, finishedAt: Date.now() });
+          const { startedAt: _startedAt, ...toolCall } = active;
+          toolCalls.push({ ...toolCall, finishedAt: Date.now() });
+          while (toolCalls.length > MAX_TOOL_CALLS) toolCalls.shift();
           activeTools.delete(key);
-          currentTool = undefined;
-          currentToolArgs = undefined;
-          currentToolStartedAt = undefined;
+          setCurrentToolFromActive();
         }
         void progress(phase).catch(() => {});
         return;
       }
       if (event.type === "agent_settled") {
         settledSeen = true;
-        const output = outputParts.join("\n");
+        const output = outputParts.join("");
         const hasVerdict = /<(?:approved\/|disapproved\/|impossible>)/i.test(output);
         void finish(!streamError || hasVerdict, hasVerdict ? "" : streamError || "auditor session settled without a verdict").catch(() => {});
         return;
