@@ -96,18 +96,36 @@ test("stream-proven work pulses; busy and queued states do not pretend to work",
   const state = { goal: goalOf({ policy: "list" }), list: [{ id: "next", objective: "next", addedAt: "z" }] };
   const stream = { activity: "working" as const, lastStreamActivityAt: NOW - 1_000 };
   const status = buildStatusText(state, null, NOW, undefined, stream)!;
-  assert.match(status, /glla: [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] working/);
+  assert.match(status, /glla: ⟦[▁▂▃▅▇]+ LIVE · WORKING⟧/);
   assert.match(status, /last stream 1s ago/);
   const lines = buildWidgetLines(state, null, NOW, undefined, undefined, stream)!;
-  assert.match(lines[0]!, /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] /);
-  assert.ok(lines.some((line) => line.includes("live work confirmed")));
+  assert.match(lines[0]!, /^[◐◓◑◒] /);
+  assert.ok(lines.some((line) => line.includes("LIVE WORK")));
+  assert.ok(lines.some((line) => line.includes("last stream 1s ago")));
 
   const busy = buildStatusText(state, null, NOW, undefined, { activity: "busy", lastStreamActivityAt: NOW - 20_000 })!;
-  assert.match(busy, /busy · last stream 20s ago/);
-  assert.doesNotMatch(busy, /working/);
+  assert.match(busy, /⟦◌ busy⟧ · last stream 20s ago/);
+  assert.doesNotMatch(busy, /WORKING/);
   const queued = buildStatusText(state, null, NOW, undefined, { activity: "queued" })!;
-  assert.match(queued, /◌ queued/);
-  assert.doesNotMatch(queued, /working/);
+  assert.match(queued, /⟦◌ queued⟧/);
+  assert.doesNotMatch(queued, /WORKING/);
+});
+
+test("live badges animate without implying completion percentage", () => {
+  const state = { goal: goalOf(), list: [] };
+  const first = buildStatusText(state, null, NOW, undefined, {
+    activity: "working",
+    lastStreamActivityAt: NOW - 1_000,
+  })!;
+  const next = buildStatusText(state, null, NOW + 350, undefined, {
+    activity: "working",
+    lastStreamActivityAt: NOW - 650,
+  })!;
+  const firstWave = first.match(/⟦([^ ]+) LIVE · WORKING⟧/)?.[1];
+  const nextWave = next.match(/⟦([^ ]+) LIVE · WORKING⟧/)?.[1];
+  assert.ok(firstWave && nextWave, "live wave badge is present");
+  assert.notEqual(firstWave, nextWave, "the wave advances on the UI ticker");
+  assert.doesNotMatch(first, /%|complete|progress/i, "the wave is not a fake completion meter");
 });
 
 test("active goal with tasks shows progress", () => {
@@ -425,7 +443,7 @@ test("auditor widget shows concrete worker observations without exposing think b
     currentTool: "read",
     lastActivityAt: NOW - 1_000,
   }, NOW)!;
-  assert.match(liveAuditStatus, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] auditor tool executing · read/);
+  assert.match(liveAuditStatus, /auditor tool executing ⟦[▁▂▃▅▇]+ DETACHED · LIVE⟧ · read/);
 
   const streamedThink = buildWidgetLines({ goal: g, list: [] }, {
     phase: "thinking",

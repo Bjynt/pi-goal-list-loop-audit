@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.34.39 — 2026-08-03
+
+### Improved — live activity has a visual language
+
+- Replaced the tiny spinner with an animated terminal wave badge for
+  evidence-backed live work.
+- Active cards now use distinct `LIVE · WORKING`, `BUSY`, and `QUEUED` badges
+  while preserving truthful stream/tool semantics.
+- Detached verification now has a dedicated `AUDITOR · DETACHED · READ-ONLY`
+  badge, with the live wave shown only when worker telemetry is fresh.
+
 ## 0.34.38 — 2026-08-03
 
 ### Improved — truthful live-work display

@@ -485,7 +485,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     if (activity === "idle") {
       return `glla: ${stateBadge("idle", "◌", theme, "warning")}${hostLastActivity(extras, now)}${heldSuffix}`;
     }
-    // v0.34.38: distinguish durable state from evidence of a live host turn.
+    // v0.34.39: distinguish durable state from evidence of a live host turn.
     // A spinner is reserved for recent stream/tool evidence; BUSY without
     // that evidence is deliberately static so a hung provider cannot look
     // like progress. Queued work is neither idle nor currently executing.
