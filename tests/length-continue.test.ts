@@ -52,8 +52,9 @@ const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal gating", () => {
   // Window sized generously: the contract is ORDER (length path first), not
   // distance — prior 5000-char window broke when P1/P3 (0.28.4) added ~1100
-  // chars between the length path and the goal gate.
-  const handler = SRC.slice(SRC.indexOf('pi.on("agent_end"'), SRC.indexOf('pi.on("agent_end"') + 12000);
+  // chars between the length path and the goal gate; v0.34.25/26 added ~2000
+  // more (silent-swap absorb branch + durable exhaustion pause).
+  const handler = SRC.slice(SRC.indexOf('pi.on("agent_end"'), SRC.indexOf('pi.on("agent_end"') + 16000);
   const lengthIdx = handler.indexOf('tickLengthContinue(lastA?.stopReason === "length" && !contextStarvedLength)');
   assert.ok(lengthIdx > 0, "length tick present");
   assert.ok(handler.indexOf("isContextStarvedLengthStop(rawLastA, contextUsage)") < lengthIdx, "context-starvation classification runs before the tracker");
@@ -65,7 +66,7 @@ test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal g
   // … and before the "no goal → return" gate (works in plain sessions)
   assert.ok(lengthIdx < handler.indexOf('if (!state.goal) return;'), "before goal gating");
   // truncated turns return early — no continuation scheduling on half a response
-  const early = handler.slice(lengthIdx, lengthIdx + 2200);
+  const early = handler.slice(lengthIdx, lengthIdx + 3400);
   assert.match(early, /if \(lastA\?\.stopReason === "length"\) \{\s*\n\s*if \(lc\.fire && !ctx\.hasPendingMessages\(\)\) sendLengthContinue\(ctx, lc\.consecutive\);\s*\n\s*return;\s*\n\s*\}/);
 });
 
