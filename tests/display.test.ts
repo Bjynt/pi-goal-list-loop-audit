@@ -104,10 +104,10 @@ test("stream-proven work pulses; busy and queued states do not pretend to work",
   assert.ok(lines.some((line) => line.includes("last stream 1s ago")));
 
   const busy = buildStatusText(state, null, NOW, undefined, { activity: "busy", lastStreamActivityAt: NOW - 20_000 })!;
-  assert.match(busy, /⟦◌ busy⟧ · last stream 20s ago/);
+  assert.match(busy, /⟦◌ BUSY⟧ · last stream 20s ago/);
   assert.doesNotMatch(busy, /WORKING/);
   const queued = buildStatusText(state, null, NOW, undefined, { activity: "queued" })!;
-  assert.match(queued, /⟦◌ queued⟧/);
+  assert.match(queued, /⟦◌ QUEUED⟧/);
   assert.doesNotMatch(queued, /WORKING/);
 });
 
@@ -452,6 +452,22 @@ test("auditor widget shows concrete worker observations without exposing think b
     lastActivityAt: NOW - 1_000,
   }, NOW)!;
   assert.doesNotMatch(streamedThink.join("\n"), /private streamed reasoning/);
+});
+
+test("stale auditor snapshots show the last tool, not a fake current tool", () => {
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-stale" } });
+  const lines = buildWidgetLines({ goal: g, list: [] }, {
+    phase: "tool_executing",
+    currentTool: "read",
+    currentToolArgs: JSON.stringify({ path: "/repo/README.md" }),
+    currentToolStartedAt: NOW - 20_000,
+    lastActivityAt: NOW - 20_000,
+  }, NOW)!;
+  const joined = lines.join("\n");
+  assert.match(joined, /auditor: last observed tool/);
+  assert.match(joined, /last tool: read/);
+  assert.doesNotMatch(joined, /tool: read → README\.md/);
+  assert.doesNotMatch(joined, /READ-ONLY · LIVE/);
 });
 
 test("auditor startup does not claim worker activity before the first RPC event", () => {

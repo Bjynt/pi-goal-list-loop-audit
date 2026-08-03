@@ -346,6 +346,15 @@ function auditorObservedPhase(audit: AuditDisplayProgress | null | undefined, ph
   }
 }
 
+function auditorPhaseForDisplay(audit: AuditDisplayProgress | null | undefined, phase: AuditorDisplayPhase, live: boolean): string {
+  // Once a worker timestamp exists, a stale tool snapshot is historical
+  // context, not a claim that the detached process is still in that call.
+  if (!live && phase === "running" && audit?.lastActivityAt !== undefined && audit.currentTool) {
+    return "last observed tool";
+  }
+  return auditorObservedPhase(audit, phase);
+}
+
 function auditorHasLiveEvidence(audit: AuditDisplayProgress | null | undefined, phase: AuditorDisplayPhase, now: number): boolean {
   if (phase !== "running" || audit?.lastActivityAt === undefined || !Number.isFinite(audit.lastActivityAt)) return false;
   return now - audit.lastActivityAt <= LIVE_ACTIVITY_MS;
@@ -436,7 +445,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     }
     const phase = auditorDisplayPhase(g, audit, now);
     const live = auditorHasLiveEvidence(audit, phase, now);
-    const phaseText = `auditor ${auditorObservedPhase(audit, phase)}`;
+    const phaseText = `auditor ${auditorPhaseForDisplay(audit, phase, live)}`;
     const color = phase === "blocked" || phase === "quiet" ? "warning" : live ? "success" : "accent";
     const label = live
       ? `${paint(theme, "success", phaseText)} ${activityBadge("DETACHED · LIVE", now, theme)}`
@@ -480,10 +489,10 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     }
     const activity = goalDisplayActivity(g, extras);
     if (activity === "awaiting-first-turn") {
-      return `glla: ${stateBadge("awaiting first turn", "◌", theme, "warning")}${heldSuffix}`;
+      return `glla: ${stateBadge("AWAITING FIRST TURN", "◌", theme, "warning")}${heldSuffix}`;
     }
     if (activity === "idle") {
-      return `glla: ${stateBadge("idle", "◌", theme, "warning")}${hostLastActivity(extras, now)}${heldSuffix}`;
+      return `glla: ${stateBadge("IDLE", "◌", theme, "warning")}${hostLastActivity(extras, now)}${heldSuffix}`;
     }
     // v0.34.39: distinguish durable state from evidence of a live host turn.
     // A spinner is reserved for recent stream/tool evidence; BUSY without
@@ -492,7 +501,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     if (activity === "busy") {
       const busyQueue = (state.list?.length ?? 0) > 0 ? ` · ${state.list!.length} queued` : "";
       const busyTasks = g.taskList ? ` ${countDone(g)}/${countTotal(g)} tasks ·` : "";
-      return `glla: ${stateBadge("busy", "◌", theme, "warning")}${hostLastStream(extras, now)}${busyTasks}${busyQueue}${heldSuffix}`;
+      return `glla: ${stateBadge("BUSY", "◌", theme, "warning")}${hostLastStream(extras, now)}${busyTasks}${busyQueue}${heldSuffix}`;
     }
     // v0.34.16: a fresh session_start owns the handoff. A cold boot still
     // follows the global autoResume setting, so the widget names the actual
@@ -510,7 +519,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     const marker = live
       ? activityBadge("LIVE · WORKING", now, theme)
       : queued
-        ? stateBadge("queued", "◌", theme, "warning")
+        ? stateBadge("QUEUED", "◌", theme, "warning")
         : "●";
     const stream = live ? hostLastStream(extras, now) : "";
     // v0.34.1: no policy word here either — "glla: list ●" duplicated the
@@ -633,15 +642,15 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       ? paint(theme, attention.color, attention.label)
       : g.status === "active"
         ? activity === "awaiting-first-turn"
-          ? stateBadge("awaiting first turn", "◌", theme, "warning")
+          ? stateBadge("AWAITING FIRST TURN", "◌", theme, "warning")
           : activity === "idle"
-            ? stateBadge("idle", "◌", theme, "warning")
+            ? stateBadge("IDLE", "◌", theme, "warning")
             : activity === "busy"
-              ? stateBadge("busy", "◌", theme, "warning")
+              ? stateBadge("BUSY", "◌", theme, "warning")
               : activity === "queued"
-                ? stateBadge("queued", "◌", theme, "warning")
+                ? stateBadge("QUEUED", "◌", theme, "warning")
                 : activity === "working"
-                  ? activityBadge("LIVE · working", now, theme)
+                  ? activityBadge("LIVE · WORKING", now, theme)
                   : paint(theme, "success", "active")
         : g.status;
   // v0.33.0: slim card — status folds INTO the head line as middot segments
@@ -712,7 +721,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     }
     const phase = auditorDisplayPhase(g, audit, now);
     const phaseLive = auditorHasLiveEvidence(audit, phase, now);
-    const phaseLabel = auditorObservedPhase(audit, phase);
+    const phaseLabel = auditorPhaseForDisplay(audit, phase, phaseLive);
     const detail = audit?.label && audit.label !== "queued" && audit.label !== "running"
       ? ` · ${truncate(audit.label, 30)}`
       : "";
@@ -725,14 +734,17 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     // This is the difference between “the timer moved” and “I can see what
     // the detached worker last did.”
     const observations: string[] = [];
-    if (phase === "running" && audit?.currentTool) {
+    // A stale progress snapshot must not keep presenting its old tool as
+    // currently executing. Only fresh worker telemetry earns the present
+    // tense; otherwise show it as the last observed tool and omit duration.
+    if (phase === "running" && phaseLive && audit?.currentTool) {
       const target = auditorToolTarget(audit.currentToolArgs);
       const duration = audit.currentToolStartedAt !== undefined && Number.isFinite(audit.currentToolStartedAt)
         ? ` · ${fmtElapsed(now - audit.currentToolStartedAt)}`
         : "";
       observations.push(`tool: ${truncate(audit.currentTool, 30)}${target ? ` → ${target}` : ""}${duration}`);
     } else {
-      const lastTool = lastAuditorTool(audit);
+      const lastTool = lastAuditorTool(audit) ?? (audit?.currentTool ? truncate(audit.currentTool, 30) : undefined);
       if (lastTool) observations.push(`last tool: ${lastTool}`);
     }
     const latest = latestAuditorOutput(audit);
