@@ -13,7 +13,7 @@
 import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth } from "@earendil-works/pi-tui";
 
 import type { Goal, State } from "./goal-loop-core.js";
-import { compactDisplayText, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText } from "./goal-loop-core.js";
+import { compactDisplayText, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
 import { HELD_ON_RESTORE, type LoopState } from "./goal-loop-forever.js";
 
 /** v0.28.17: a loop parked by the session-restore gate (was active when the
@@ -242,9 +242,16 @@ const shortClock = (iso: string): string => {
 
 export interface AuditDisplayProgress {
   currentTool?: string;
+  /** JSON-safe tool arguments from the detached worker; display only a safe target summary. */
+  currentToolArgs?: string;
+  currentToolStartedAt?: number;
   label?: string;
   phase?: "starting" | "running" | "thinking" | "tool_executing" | "producing_report" | "complete";
   elapsedMs?: number;
+  /** Latest non-verdict text observed from the worker's report stream. */
+  recentOutput?: string[];
+  /** Completed read-only calls retained by the worker for live context. */
+  toolCalls?: Array<{ name: string; argsPrefix: string; finishedAt: number }>;
   /** Parent-observed progress-file change; useful for legacy callers. */
   lastEventAt?: number;
   /** Worker-side activity, excluding parent polls and UI refreshes. */
@@ -258,14 +265,18 @@ const AUDITOR_QUIET_MS = 3 * 60_000;
  * for older callers/tests that only know when a progress file was observed. */
 function auditorActivityAge(audit: AuditDisplayProgress | null | undefined, now: number): number | undefined {
   if (!audit) return undefined;
-  const at = audit.lastActivityAt ?? (audit.label === "queued" ? undefined : audit.lastEventAt);
+  // A detached progress record with a phase but no worker timestamp is the
+  // pre-RPC/startup state. Do not turn the parent's poll time into fake
+  // evidence that the worker has already done work. Keep the lastEventAt
+  // fallback only for legacy callers that never supplied a phase.
+  const at = audit.lastActivityAt ?? (audit.phase === undefined && audit.label !== "queued" ? audit.lastEventAt : undefined);
   if (at === undefined || !Number.isFinite(at)) return undefined;
   return Math.max(0, now - at);
 }
 
 function auditorLastActivity(audit: AuditDisplayProgress | null | undefined, now: number): string {
   if (!audit?.lastActivityAt || !Number.isFinite(audit.lastActivityAt)) return "";
-  return ` · last activity ${fmtElapsed(Math.max(0, now - audit.lastActivityAt))} ago`;
+  return ` · worker activity ${fmtElapsed(Math.max(0, now - audit.lastActivityAt))} ago`;
 }
 
 /** Project the detached worker's raw progress into the five user-facing
@@ -290,6 +301,55 @@ function auditorPhaseLabel(phase: AuditorDisplayPhase): string {
     case "blocked": return "blocked";
     case "awaiting-verdict": return "awaiting verdict";
   }
+}
+
+/** Keep the broad liveness phase for compatibility, but expose the worker's
+ * observed sub-phase so `running` does not look like a frozen icon/timer. */
+function auditorObservedPhase(audit: AuditDisplayProgress | null | undefined, phase: AuditorDisplayPhase): string {
+  if (phase !== "running") return auditorPhaseLabel(phase);
+  switch (audit?.phase) {
+    case "starting": return "starting";
+    case "thinking": return "thinking";
+    case "tool_executing": return "tool executing";
+    case "producing_report": return "producing report";
+    case "complete": return "awaiting verdict";
+    default: return "running";
+  }
+}
+
+/** The worker's JSON argument prefix may contain a full command or path. Only
+ * expose a basename-like target in the TUI; never dump arbitrary arguments. */
+function auditorToolTarget(args: string | undefined): string | undefined {
+  if (!args) return undefined;
+  try {
+    const parsed = JSON.parse(args) as Record<string, unknown>;
+    const value = parsed.path ?? parsed.file_path;
+    if (typeof value !== "string" || value.trim().length === 0) return undefined;
+    const clean = compactDisplayText(value);
+    const target = clean.split(/[\\/]/).filter(Boolean).at(-1);
+    return target ? truncate(target, 32) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Return one safe, compact report-stream line. Think blocks and verdict-only
+ * markers are intentionally omitted: this is activity telemetry, not a
+ * second verdict surface. */
+function latestAuditorOutput(audit: AuditDisplayProgress | null | undefined): string | undefined {
+  const entries = audit?.recentOutput ?? [];
+  for (const entry of [...entries].reverse()) {
+    const clean = compactDisplayText(stripThinkBlocks(sanitizeDisplayText(entry)))
+      .replace(/<\/?(?:approved|disapproved|impossible)(?:\s[^>]*)?\/?>(?:\s*)/gi, "")
+      .trim();
+    if (clean) return truncate(clean, 180);
+  }
+  return undefined;
+}
+
+function lastAuditorTool(audit: AuditDisplayProgress | null | undefined): string | undefined {
+  const name = audit?.toolCalls?.at(-1)?.name;
+  return typeof name === "string" && name.trim() ? truncate(name, 30) : undefined;
 }
 
 function goalDisplayActivity(g: Goal, extras?: WidgetExtras): GoalDisplayActivity {
@@ -335,8 +395,8 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       return `glla: ${paint(theme, "warning", "audit recovery pending")}${heldSuffix}`;
     }
     const phase = auditorDisplayPhase(g, audit, now);
-    const label = `auditor ${auditorPhaseLabel(phase)}`;
-    const tool = phase === "running" && audit?.currentTool ? ` · ${audit.currentTool}` : "";
+    const label = `auditor ${auditorObservedPhase(audit, phase)}`;
+    const tool = phase === "running" && audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : "";
     const color = phase === "blocked" || phase === "quiet" ? "warning" : "accent";
     return `glla: ${paint(theme, color, label)}${tool}${heldSuffix}`;
   }
@@ -572,12 +632,32 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       return lines;
     }
     const phase = auditorDisplayPhase(g, audit, now);
-    const phaseLabel = auditorPhaseLabel(phase);
+    const phaseLabel = auditorObservedPhase(audit, phase);
     const detail = audit?.label && audit.label !== "queued" && audit.label !== "running"
       ? ` · ${truncate(audit.label, 30)}`
       : "";
-    const tool = phase === "running" && audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : "";
-    lines.push(`├─ auditor: ${phaseLabel}${detail}${tool}`);
+    lines.push(`├─ auditor: ${phaseLabel}${detail}`);
+
+    // Show observed worker facts, not a made-up percentage or semantic claim.
+    // This is the difference between “the timer moved” and “I can see what
+    // the detached worker last did.”
+    const observations: string[] = [];
+    if (phase === "running" && audit?.currentTool) {
+      const target = auditorToolTarget(audit.currentToolArgs);
+      const duration = audit.currentToolStartedAt !== undefined && Number.isFinite(audit.currentToolStartedAt)
+        ? ` · ${fmtElapsed(now - audit.currentToolStartedAt)}`
+        : "";
+      observations.push(`tool: ${truncate(audit.currentTool, 30)}${target ? ` → ${target}` : ""}${duration}`);
+    } else {
+      const lastTool = lastAuditorTool(audit);
+      if (lastTool) observations.push(`last tool: ${lastTool}`);
+    }
+    const latest = latestAuditorOutput(audit);
+    if (latest) observations.push(`latest: ${latest}`);
+    observations.forEach((observation, i) => {
+      lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, "dim", observation)}`);
+    });
+
     const activity = auditorActivityAge(audit, now);
     const last = auditorLastActivity(audit, now);
     if (phase === "quiet") {
@@ -590,9 +670,10 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     } else if (phase === "queued") {
       lines.push(`└─ ${paint(theme, "dim", "detached worker queued — completion claim is durable")}`);
     } else if (audit?.elapsedMs) {
-      lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(audit.elapsedMs)} in detached worker${last}`)}`);
+      const firstEvent = audit.lastActivityAt === undefined ? " · waiting for first worker event" : "";
+      lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(audit.elapsedMs)} in detached worker${firstEvent}${last}`)}`);
     } else {
-      lines.push(`└─ ${paint(theme, "dim", `detached worker, read-only tools${last}`)}`);
+      lines.push(`└─ ${paint(theme, "dim", `detached worker, read-only tools${last || " · waiting for first worker event"}`)}`);
     }
     return lines;
   }
