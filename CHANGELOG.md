@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.34.38 — 2026-08-03
+
+### Improved — truthful live-work display
+
+- Active goals now distinguish durable `active` state from `working`, `busy`,
+  and `queued` host states.
+- A green animated pulse appears only after recent real pi stream/tool
+  evidence; a busy-but-silent provider is shown statically with its last stream
+  time instead of looking productive.
+- Detached auditors use the same evidence-bound pulse and retain their special
+  auditor identity, phase, worker-activity age, and read-only tool details.
+
 ## 0.34.37 — 2026-08-03
 
 ### Hardened — continuation and auditor recovery

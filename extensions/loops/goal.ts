@@ -1083,7 +1083,7 @@ function displayActivityFor(ctx: ExtensionContext): {
   // A spinner means pi is busy AND we have recent stream/tool evidence. A
   // busy host with no fresh evidence gets a static BUSY label instead, so a
   // hung provider cannot masquerade as progress.
-  if (!idle && (streamFresh || toolActive)) {
+  if (toolActive || (!idle && streamFresh)) {
     return { activity: "working", lastActivityAt, lastStreamActivityAt: streamAt };
   }
   if (!idle) return { activity: "busy", lastActivityAt, lastStreamActivityAt: streamAt };
