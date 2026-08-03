@@ -152,10 +152,26 @@ const paint = (theme: DisplayTheme | undefined, color: DisplayColor, text: strin
  * A live-work pulse is only rendered when the host/worker supplied real
  * activity evidence. It is deliberately not tied to elapsed time alone: a
  * durable active state can outlive a dead or merely queued turn.
+ *
+ * The wave is deliberately decorative, not a progress meter. It says only
+ * "fresh evidence is arriving"; it never implies a percentage complete.
  */
-const WORKING_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+const WORKING_FRAMES = ["◐", "◓", "◑", "◒"] as const;
+const LIVE_WAVE_FRAMES = [
+  "▁▂▃▅▃▂", "▂▃▅▇▅▃", "▃▅▇▅▃▂", "▅▇▅▃▂▁",
+  "▇▅▃▂▁▂", "▅▃▂▁▂▃", "▃▂▁▂▃▅", "▂▁▂▃▅▇",
+] as const;
 function workingFrame(now: number): string {
   return WORKING_FRAMES[Math.floor(Math.max(0, now) / 250) % WORKING_FRAMES.length]!;
+}
+function liveWaveFrame(now: number): string {
+  return LIVE_WAVE_FRAMES[Math.floor(Math.max(0, now) / 350) % LIVE_WAVE_FRAMES.length]!;
+}
+function activityBadge(label: string, now: number, theme?: DisplayTheme): string {
+  return paint(theme, "success", `⟦${liveWaveFrame(now)} ${label}⟧`);
+}
+function stateBadge(label: string, glyph: string, theme: DisplayTheme | undefined, color: DisplayColor): string {
+  return paint(theme, color, `⟦${glyph} ${label}⟧`);
 }
 
 /** Pause reasons that mean "something broke", not "waiting on the user". */
@@ -420,10 +436,13 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     }
     const phase = auditorDisplayPhase(g, audit, now);
     const live = auditorHasLiveEvidence(audit, phase, now);
-    const label = `${live ? `${workingFrame(now)} ` : ""}auditor ${auditorObservedPhase(audit, phase)}`;
-    const tool = phase === "running" && audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : "";
+    const phaseText = `auditor ${auditorObservedPhase(audit, phase)}`;
     const color = phase === "blocked" || phase === "quiet" ? "warning" : live ? "success" : "accent";
-    return `glla: ${paint(theme, color, label)}${tool}${live ? auditorLastActivity(audit, now) : ""}${heldSuffix}`;
+    const label = live
+      ? `${paint(theme, "success", phaseText)} ${activityBadge("DETACHED · LIVE", now, theme)}`
+      : paint(theme, color, phaseText);
+    const tool = phase === "running" && audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : "";
+    return `glla: ${label}${tool}${live ? auditorLastActivity(audit, now) : ""}${heldSuffix}`;
   }
   if (g.status === "paused") {
     // v0.28.22: the status line names the ACTIONABILITY, not the reason —
@@ -461,10 +480,10 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     }
     const activity = goalDisplayActivity(g, extras);
     if (activity === "awaiting-first-turn") {
-      return `glla: ${paint(theme, "warning", "awaiting first turn")}${heldSuffix}`;
+      return `glla: ${stateBadge("awaiting first turn", "◌", theme, "warning")}${heldSuffix}`;
     }
     if (activity === "idle") {
-      return `glla: ${paint(theme, "warning", `idle${hostLastActivity(extras, now)}`)}${heldSuffix}`;
+      return `glla: ${stateBadge("idle", "◌", theme, "warning")}${hostLastActivity(extras, now)}${heldSuffix}`;
     }
     // v0.34.38: distinguish durable state from evidence of a live host turn.
     // A spinner is reserved for recent stream/tool evidence; BUSY without
@@ -473,7 +492,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     if (activity === "busy") {
       const busyQueue = (state.list?.length ?? 0) > 0 ? ` · ${state.list!.length} queued` : "";
       const busyTasks = g.taskList ? ` ${countDone(g)}/${countTotal(g)} tasks ·` : "";
-      return `glla: ${paint(theme, "warning", `busy${hostLastStream(extras, now)}`)}${busyTasks}${busyQueue}${heldSuffix}`;
+      return `glla: ${stateBadge("busy", "◌", theme, "warning")}${hostLastStream(extras, now)}${busyTasks}${busyQueue}${heldSuffix}`;
     }
     // v0.34.16: a fresh session_start owns the handoff. A cold boot still
     // follows the global autoResume setting, so the widget names the actual
@@ -488,13 +507,16 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     const elapsed = fmtElapsed(now - Date.parse(g.createdAt));
     const live = activity === "working";
     const queued = activity === "queued";
-    const marker = live ? `${workingFrame(now)} working` : queued ? "◌ queued" : "●";
-    const markerColor = live ? "success" : queued ? "warning" : "success";
+    const marker = live
+      ? activityBadge("LIVE · WORKING", now, theme)
+      : queued
+        ? stateBadge("queued", "◌", theme, "warning")
+        : "●";
     const stream = live ? hostLastStream(extras, now) : "";
     // v0.34.1: no policy word here either — "glla: list ●" duplicated the
     // widget's "list item" chip (field screenshot 2026-08-01). The queue
     // suffix still hints list context when the widget is scrolled away.
-    return `glla: ${paint(theme, markerColor, marker)}${tasks} ${elapsed}${stream}${queue}${heldSuffix}`;
+    return `glla: ${marker}${tasks} ${elapsed}${stream}${queue}${heldSuffix}`;
   }
   // complete/aborted → clear — but a held loop still shows.
   if (held) return `glla: loop ${paint(theme, "warning", "⏸ held")} · iter ${held.iteration} — /loop to resume`;
@@ -611,15 +633,15 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       ? paint(theme, attention.color, attention.label)
       : g.status === "active"
         ? activity === "awaiting-first-turn"
-          ? paint(theme, "warning", "awaiting first turn")
+          ? stateBadge("awaiting first turn", "◌", theme, "warning")
           : activity === "idle"
-            ? paint(theme, "warning", "idle")
+            ? stateBadge("idle", "◌", theme, "warning")
             : activity === "busy"
-              ? paint(theme, "warning", "busy")
+              ? stateBadge("busy", "◌", theme, "warning")
               : activity === "queued"
-                ? paint(theme, "warning", "queued")
+                ? stateBadge("queued", "◌", theme, "warning")
                 : activity === "working"
-                  ? paint(theme, "success", "working")
+                  ? activityBadge("LIVE · working", now, theme)
                   : paint(theme, "success", "active")
         : g.status;
   // v0.33.0: slim card — status folds INTO the head line as middot segments
@@ -676,11 +698,11 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     return lines;
   }
   if (g.status === "active" && activity === "working") {
-    lines.push(`├─ ${paint(theme, "success", `${workingFrame(now)} live work confirmed${hostLastStream(extras, now)}`)}`);
+    lines.push(`├─ ${activityBadge("LIVE WORK", now, theme)}${hostLastStream(extras, now)}`);
   } else if (g.status === "active" && activity === "busy") {
-    lines.push(`├─ ${paint(theme, "warning", `busy — pi is not idle, but no recent stream event was observed${hostLastStream(extras, now)}`)}`);
+    lines.push(`├─ ${stateBadge("BUSY", "◌", theme, "warning")} pi is not idle, but no recent stream event was observed${hostLastStream(extras, now)}`);
   } else if (g.status === "active" && activity === "queued") {
-    lines.push(`├─ ${paint(theme, "warning", "queued — waiting for pi to start the next turn")}`);
+    lines.push(`├─ ${stateBadge("QUEUED", "◌", theme, "warning")} waiting for pi to start the next turn`);
   }
   if (g.status === "auditing") {
     if (auditRecoveryPending(g)) {
@@ -694,7 +716,10 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     const detail = audit?.label && audit.label !== "queued" && audit.label !== "running"
       ? ` · ${truncate(audit.label, 30)}`
       : "";
-    lines.push(`├─ auditor: ${phaseLabel}${phaseLive ? ` ${workingFrame(now)} live` : ""}${detail}`);
+    const auditorBadge = phaseLive
+      ? activityBadge("AUDITOR · DETACHED · READ-ONLY · LIVE", now, theme)
+      : stateBadge("AUDITOR · DETACHED · READ-ONLY", "⟡", theme, phase === "blocked" || phase === "quiet" ? "warning" : "accent");
+    lines.push(`├─ auditor: ${phaseLabel} ${auditorBadge}${detail}`);
 
     // Show observed worker facts, not a made-up percentage or semantic claim.
     // This is the difference between “the timer moved” and “I can see what
