@@ -155,7 +155,7 @@ test("v0.28.28: goal provenance — setGoal threads `via` into the record + goal
 
 test("v0.28.28: /glla log [N] — human-readable ledger tail, noise-filtered", () => {
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
-  assert.match(SRC, /if \(\/\^log\\b\/\.test\(trimmed\)\) \{/);
+  assert.match(SRC, /if \(\/\^log\(\?:\\s\|\$\)\/\.test\(trimmed\)\) \{/);
   assert.match(SRC, /function cmdLog\(args: string, ctx: ExtensionContext\): void/);
   assert.match(SRC, /const LOG_NOISE = new Set\(\["state", "send_rearm_start", "heartbeat_suppressed_tick"\]\);/);
   assert.match(SRC, /entries\.filter\(\(e\) => !LOG_NOISE\.has\(e\.type\)\)/);
@@ -164,7 +164,7 @@ test("v0.28.28: /glla log [N] — human-readable ledger tail, noise-filtered", (
 
 test("v0.28.33: /glla wipe — renamed from reset (too close to /glla resume); reset redirects without acting", () => {
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
-  assert.match(SRC, /if \(\/\^wipe\\b\/\.test\(trimmed\)\) \{/);
+  assert.match(SRC, /if \(\/\^wipe\(\?:\\s\|\$\)\/\.test\(trimmed\)\) \{/);
   assert.match(SRC, /async function cmdGllaWipe\(ctx: ExtensionContext\): Promise<void>/);
   // destructive → Confirm dialog with the full summary:
   assert.match(SRC, /await ctx\.ui\.confirm\("Wipe glla state\?"/);
@@ -182,8 +182,8 @@ test("v0.28.33: /glla wipe — renamed from reset (too close to /glla resume); r
 });
 test("v0.28.32: /glla resume + /glla cancel — type-blind verbs over the ONE live thing", () => {
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
-  assert.match(SRC, /if \(\/\^resume\\b\/\.test\(trimmed\)\) \{/);
-  assert.match(SRC, /if \(\/\^cancel\\b\/\.test\(trimmed\)\) \{/);
+  assert.match(SRC, /if \(\/\^resume\(\?:\\s\|\$\)\/\.test\(trimmed\)\) \{/);
+  assert.match(SRC, /if \(\/\^cancel\(\?:\\s\|\$\)\/\.test\(trimmed\)\) \{/);
   assert.match(SRC, /async function cmdGllaResume\(ctx: ExtensionContext\): Promise<void>/);
   assert.match(SRC, /async function cmdGllaCancel\(ctx: ExtensionContext\): Promise<void>/);
   // paused-goal + held-loop ambiguity → decision picker (v0.28.23 pattern):

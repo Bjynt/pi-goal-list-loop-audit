@@ -7139,47 +7139,47 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   // rather than through noisy inline assignments.
   const trimmed = args.trim();
   // v0.25.2: /glla stats sub-mode — cross-project telemetry rollups.
-  if (/^stats\b/.test(trimmed)) {
+  if (/^stats(?:\s|$)/.test(trimmed)) {
     cmdStats(trimmed.slice("stats".length).trim(), ctx);
     return;
   }
-  if (/^audits\b/.test(trimmed)) {
+  if (/^audits(?:\s|$)/.test(trimmed)) {
     cmdAudits(trimmed.slice("audits".length).trim(), ctx);
     return;
   }
-  if (/^status\b/.test(trimmed)) {
+  if (/^status(?:\s|$)/.test(trimmed)) {
     cmdGllaStatus(ctx);
     return;
   }
-  if (/^log\b/.test(trimmed)) {
+  if (/^log(?:\s|$)/.test(trimmed)) {
     cmdLog(trimmed.slice("log".length).trim(), ctx);
     return;
   }
-  if (/^wipe\b/.test(trimmed)) {
+  if (/^wipe(?:\s|$)/.test(trimmed)) {
     await cmdGllaWipe(ctx);
     return;
   }
-  if (/^reset\b/.test(trimmed)) {
+  if (/^reset(?:\s|$)/.test(trimmed)) {
     ctx.ui.notify("/glla reset is now /glla wipe (renamed — too close to /glla resume). Nothing was done.", "info");
     return;
   }
-  if (/^resume\b/.test(trimmed)) {
+  if (/^resume(?:\s|$)/.test(trimmed)) {
     await cmdGllaResume(ctx);
     return;
   }
-  if (/^cancel\b/.test(trimmed)) {
+  if (/^cancel(?:\s|$)/.test(trimmed)) {
     await cmdGllaCancel(ctx);
     return;
   }
-  if (/^reviewer\b/.test(trimmed)) {
+  if (/^reviewer(?:\s|$)/.test(trimmed)) {
     await cmdReviewerSettings(ctx);
     return;
   }
-  if (/^postaudit\b/.test(trimmed)) {
+  if (/^postaudit(?:\s|$)/.test(trimmed)) {
     await cmdReviewerSettings(ctx);
     return;
   }
-  if (/^tooloverride\b/.test(trimmed)) {
+  if (/^tooloverride(?:\s|$)/.test(trimmed)) {
     await cmdToolOverride(trimmed.slice("tooloverride".length).trim(), ctx);
     return;
   }

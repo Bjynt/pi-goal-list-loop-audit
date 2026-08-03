@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.34.32 — 2026-08-03
+
+### Changed — `/glla` cleanly separates settings from actions
+
+`/glla` with no arguments opens the settings table. Nonempty arguments are
+reserved for operational actions such as `status`, `resume`, `stats`, and
+`audits`; the old top-level `/glla key=value` setting syntax is rejected with a
+clear message. Settings are edited through the table, avoiding noisy inline
+assignment commands.
+
 ## 0.34.31 — 2026-08-03
 
 ### Added — main-session model backups and durable quota recovery
