@@ -172,7 +172,7 @@ export function buildSettingsRows(
       label: "Main model backups",
       valueText: settings.mainModelFallbacks?.length ? settings.mainModelFallbacks.join(" → ") : "none",
       sourceText: src("mainModelFallbacks"),
-      description: "ordered provider/model refs; quota/provider errors rotate here, then retry the primary forever without abandoning supervised work",
+      description: "ordered provider/model refs; quota/provider errors rotate here, then use a bounded 5h-capped, 24h recovery window"
     },
     {
       id: "mainModelRetryMinutes",
@@ -180,7 +180,7 @@ export function buildSettingsRows(
       label: "Main model retry minutes",
       valueText: show("mainModelRetryMinutes", "15"),
       sourceText: src("mainModelRetryMinutes"),
-      description: "first recovery wait; backs off to 30m then hourly probes (no retry storm)",
+      description: "first recovery wait; backs off to 30m, 1h, 2h, 4h, 5h; automatic probes stop after 24h"
     },
   );
 

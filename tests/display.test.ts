@@ -729,12 +729,13 @@ test("quota manual hold stays distinct and does not show raw provider detail", (
   const g = goalOf({
     status: "paused",
     pauseKind: "blocked",
-    pauseReason: "main model recovery — automatic probes stopped (provider supplied a reset beyond the 5h automatic probe budget)",
+    pauseReason: "main model recovery — automatic probes stopped (provider supplied a reset beyond the 5h automatic probe budget) · main model quota: 429 reset in 1 week",
     pauseSuggestedAction: "Check the provider reset, then /goal resume to start a fresh bounded window.",
   });
   const state = { goal: g, list: [], loop: null };
   const w = buildWidgetLines(state as never)!;
-  assert.ok(w.some((l) => l.includes("QUOTA WALL") && l.includes("manual resume required")), `hold: ${w.join("\\n")}`);
+  assert.ok(w.some((l) => l.includes("QUOTA WALL")), `quota hold: ${w.join("\\n")}`);
+  assert.ok(w.some((l) => l.includes("manual resume required")), `manual action: ${w.join("\\n")}`);
   assert.doesNotMatch(w.join("\\n"), /automatic probes stopped \(provider supplied/);
 });
 

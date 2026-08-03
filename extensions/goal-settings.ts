@@ -21,7 +21,7 @@ import type { SubagentModelStrategy } from "./goal-loop-subagents.js";
 export interface Settings {
   /** Ordered provider/model refs to use when the MAIN session model hits a provider wall. */
   mainModelFallbacks?: string[];
-  /** Minutes before the main-session recovery probe; the cadence caps at 60m. */
+  /** Minutes before the main-session recovery probe; the cadence caps at 5h and the automatic window at 24h. */
   mainModelRetryMinutes?: number;
   /** "provider/model-id" or bare "model-id". Unset → session model. */
   auditorModel?: string;

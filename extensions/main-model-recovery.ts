@@ -96,9 +96,10 @@ export function nextUntriedModelRef(current: string | undefined, refs: string[],
 }
 
 /**
- * Retry slowly rather than spin: 15m → 30m → 60m, then hourly forever.
- * A quota that returns two hours later is therefore observed without a
- * manual resume, while a dead provider is not hammered every few seconds.
+ * Retry slowly rather than spin: 15m → 30m → 1h → 2h → 4h → 5h, then hold
+ * after the 24h automatic window. A quota that returns within that window is
+ * observed without a manual resume, while a week-long cap requires an
+ * explicit resume instead of hidden unattended probes.
  */
 export function mainModelRetryDelayMs(attempt: number, baseMinutes = 15): number {
   const base = Number.isFinite(baseMinutes) && baseMinutes > 0 ? baseMinutes : 15;
