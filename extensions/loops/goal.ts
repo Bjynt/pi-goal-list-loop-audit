@@ -2551,7 +2551,16 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
       pendingCompletion: undefined,
     },
   };
-  if (pendingAttemptId) cancelDetachedGoalCompletionAuditor(ctx.cwd, pendingAttemptId);
+  if (pendingAttemptId) {
+    // Drop the ephemeral widget projection immediately; the detached worker
+    // may still emit a final callback while its SIGTERM is settling.
+    latestAuditProgress = null;
+    if (ownsDetachedAudit(sessionGeneration, goal.id, pendingAttemptId)) {
+      completionAuditInFlight = false;
+      completionAuditGeneration = null;
+    }
+    cancelDetachedGoalCompletionAuditor(ctx.cwd, pendingAttemptId);
+  }
   if (state.mainModelRecovery?.kind === "goal") {
     clearMainModelRecoveryTimer();
     state.mainModelRecovery = undefined;
@@ -5030,8 +5039,6 @@ function registerAgentTools(pi: any): void {
       // retry with backoff before we report "auditor infrastructure error
       // (retried once)". Neither attempt is a verdict on the work.
       const auditStartMs = Date.now();
-      completionAuditInFlight = true;
-      completionAuditGeneration = auditGeneration;
       let result: Awaited<ReturnType<typeof runAudit>>;
       let retriedOnce = false;
       let fallbackUsed = false;
