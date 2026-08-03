@@ -1820,13 +1820,14 @@ function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainModelRec
   clearContinuationTimer();
   clearLoopTimer();
   continuationDispatchStoodDown = true;
+  const resumeCmd = state.goal?.policy === "list" ? "/list resume" : recovery.kind === "loop" ? "/loop resume" : "/goal resume";
   if (recovery.kind === "goal" && state.goal?.status === "active") {
     updateGoal({
       status: "paused",
       pauseKind: "wait",
       pauseResumeAt: retryAt,
       pauseReason: `main model recovery — retrying in ${minutes}m (${recovery.reason})`,
-      pauseSuggestedAction: "The provider/quota wall is being retried automatically; configured backup models are tried in order. /goal resume retries immediately, /goal cancel stops it.",
+      pauseSuggestedAction: `The provider/quota wall is being retried automatically; configured backup models are tried in order. ${resumeCmd} retries immediately; /goal cancel stops it.`,
     }, ctx);
   } else if (recovery.kind === "loop" && state.loop?.active) {
     state.loop = { ...state.loop, active: false, stopReason: `main model recovery — retrying in ${minutes}m (${recovery.reason}); /loop resume retries immediately` };
@@ -8046,7 +8047,8 @@ export default function (pi: ExtensionAPI): void {
         if (delay > 0) scheduleMainModelRecoveryTimer(ctx, delay);
         else void probeMainModelRecovery(ctx);
       } else {
-        ctx.ui.notify(`Main-model recovery is waiting with the work safe — ${mainRecovery.kind === "loop" ? "/loop resume" : "/goal resume"} retries the provider, or set /glla autoresume=on globally.`, "info");
+        const recoveryResumeCmd = mainRecovery.kind === "loop" ? "/loop resume" : state.goal?.policy === "list" ? "/list resume" : "/goal resume";
+        ctx.ui.notify(`Main-model recovery is waiting with the work safe — ${recoveryResumeCmd} retries the provider, or set /glla autoresume=on globally.`, "info");
       }
     }
     // v0.25.0 (contract item 6): aggressiveMode announces every auto-event.
