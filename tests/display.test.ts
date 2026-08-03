@@ -402,6 +402,11 @@ test("auditor widget shows concrete worker observations without exposing think b
   assert.match(joined, /latest: inspected README\.md/);
   assert.doesNotMatch(joined, /private reasoning|do not display this/);
   assert.match(joined, /worker activity 1s ago/);
+  assert.match(buildStatusText({ goal: g, list: [] }, {
+    phase: "tool_executing",
+    currentTool: "read",
+    lastActivityAt: NOW - 1_000,
+  }, NOW)!, /auditor tool executing · read/);
 });
 
 test("auditor startup does not claim worker activity before the first RPC event", () => {

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.34.35 — 2026-08-03
+
+### Fixed — detached auditor work is visible
+
+The live widget now surfaces observed detached-worker phases (`starting`,
+`thinking`, `tool executing`, and `producing report`), the current or last
+read-only tool, a safe file target, and the latest sanitized report-stream
+line. The parent preserves this telemetry instead of reducing every run to a
+moving timer and `auditor: running`. Startup no longer renders a fake
+`last activity 0s ago`, and worker progress snapshots are serialized so an
+older generic snapshot cannot overwrite a newer tool phase.
+
 ## 0.34.34 — 2026-08-03
 
 ### Fixed — disapproval feedback is never empty
