@@ -97,14 +97,19 @@ test("registerCommand: /goal, /glla, /list, /loop all use the shared factory", (
   }
 });
 
-test("/glla completions stay concise by grouping settings, while key=value remains headless", () => {
+test("/glla completions stay concise: verbs only, settings grouped in the table, key=value headless", () => {
   const start = SRC.indexOf('pi.registerCommand("glla"');
   const end = SRC.indexOf('pi.registerCommand("review"', start);
   const glla = SRC.slice(start, end);
+  // v0.34.25: the five section groups ROUTE when typed but are not
+  // completion entries — bare /glla opens the tabbed table one Tab away
+  // from every section, so group rows were pure picker noise.
   for (const group of ["keep-going", "auditor", "stall-brakes", "subagents", "other"]) {
-    assert.match(glla, new RegExp(`\\["${group}",`), `${group} group is discoverable`);
+    assert.ok(!glla.includes(`["${group}",`), `${group} group stays out of the completion list`);
   }
-  assert.ok((glla.match(/\["[^"]+",/g) ?? []).length <= 16, "glla autocomplete should not list every setting key");
+  assert.match(SRC, /\^\(keep-going\|auditor\|stall-brakes\|subagents\|other\)\\b/, "typed group routes still open the table at that section");
+  assert.ok((glla.match(/\["[^"]+",/g) ?? []).length <= 10, "glla autocomplete lists verbs + scope prefixes only, not setting groups");
+  assert.ok(!/\["[a-zA-Z]+=",/.test(glla), "no per-key key= aliases in autocomplete (headless kv route only)");
   assert.match(glla, /key=value/);
   assert.match(SRC, /key === "stallescalation" \|\| key === "stallescalationrefires"/);
 });

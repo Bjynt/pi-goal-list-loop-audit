@@ -129,7 +129,7 @@ export function buildSettingsRows(
       valueText: show("autoResume", "default"),
       sourceText: src("autoResume"),
       description:
-        "on: resume on session load too · off: never · default: hold on EVERY load — explicit resume (v0.28.21)",
+        "on: resume on session load too · off: never · default: hold on EVERY load — explicit resume",
     },
     {
       id: "decisionPopup",
@@ -138,7 +138,16 @@ export function buildSettingsRows(
       valueText: show("decisionPopup", "on"),
       sourceText: src("decisionPopup"),
       description:
-        "on: decision pauses pop the select() picker · off: widget card only — /goal decide reopens the picker (v0.28.23)",
+        "on: decision pauses pop the select() picker · off: widget card only — /goal decide reopens the picker",
+    },
+    {
+      id: "carryover",
+      section: "keep-going",
+      label: "Carryover policy",
+      valueText: show("carryover", "pause"),
+      sourceText: src("carryover"),
+      description:
+        "new goal over stale paused work — pause: one summary, archive the stale goal, keep list+loop · clear: drop the stale queue too · resume: silent stack",
     },
     {
       id: "autoAcceptDrafts",

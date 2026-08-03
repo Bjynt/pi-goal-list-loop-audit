@@ -90,6 +90,7 @@ test("key rows from v0.27.0 settings menu are all present (menu coverage contrac
   for (const id of [
     "autoResume",
     "autoAcceptDrafts",
+    "carryover",
     "aggressiveMode",
     "auditorModel",
     "auditCap",
@@ -109,6 +110,15 @@ test("key rows from v0.27.0 settings menu are all present (menu coverage contrac
     "postaudit",
   ]) {
     assert.ok(ids.has(id), `missing id: ${id}`);
+  }
+});
+
+test("descriptions and values carry no version-tag chrome (v0.34.25)", () => {
+  // Release tags like "(v0.28.21") belong in CHANGELOG.md, not in the menu
+  // grid — they padded the noisiest column for zero in-menu value.
+  for (const r of buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV)) {
+    assert.doesNotMatch(r.description, /\(v0\.\d+\.\d+\)/, `${r.id} description carries a version tag`);
+    assert.doesNotMatch(r.valueText, /\(v0\.\d+\.\d+\)/, `${r.id} value carries a version tag`);
   }
 });
 

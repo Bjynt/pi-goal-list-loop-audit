@@ -5764,11 +5764,14 @@ async function promptSettingsMenu(
     // Headless / no custom shard — fall back to the legacy flat-row select
     // for any environment that lacks the new primitive. This is rare and
     // effectively an emergency hatch; the new UI is the supported path.
-    const flat = rows.map((r) => `${r.label} — ${r.valueText} [${r.sourceText.replace(/^\[|\]$/g, "")}] — ${r.description}`);
+    const flat = rows.map((r) => `[${r.section}] ${r.label} — ${r.valueText} [${r.sourceText.replace(/^\[|\]$/g, "")}] — ${r.description}`);
     flat.push("Done");
     const v = await ctx.ui.select(title, flat);
     if (!v || v === "Done") return undefined;
-    return rows.find((r) => v.startsWith(r.label))?.id;
+    // v0.34.25: resolve by the full constructed prefix (section + label),
+    // not a bare startsWith(label) — a label-prefix collision used to be
+    // able to open the wrong editor silently.
+    return rows.find((r) => v.startsWith(`[${r.section}] ${r.label} —`))?.id;
   }
   return await ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) => {
     return new SettingsMenuComponent({ rows, title, initialSection }, () => tui.requestRender(), theme, keybindings, done);
@@ -5823,12 +5826,21 @@ async function promptModelRef(
 export async function handleSettingChoice(id: string, ctx: ExtensionContext): Promise<void> {
   switch (id) {
     case "autoResume": {
-      const v = await ctx.ui.select("Auto-resume goals/loops on session start", [
-        "default — HOLD when a session is loaded (popup shows what waits); auto-resume on reload/fork so machinery never strands work",
+      const v = await ctx.ui.select("Auto-resume on session start — a LOADED session waits for an explicit resume; on reload/fork the machinery still rebinds so work never strands", [
+        "default — hold on load, rebind on reload/fork",
         "on — auto-resume on EVERY session start (unattended rigs)",
-        "off — never auto-resume; always wait for an explicit resume",
+        "off — never auto-resume; explicit resume only",
       ]);
       if (v) saveSettings("global", ctx.cwd, { autoResume: v.startsWith("on") ? true : v.startsWith("off") ? false : undefined });
+      return;
+    }
+    case "carryover": {
+      const v = await ctx.ui.select("Carryover — a NEW goal/loop meets stale paused work from a previous session", [
+        "pause — one summary; archive the stale goal, keep the list + held loop (default)",
+        "clear — also drop the stale queue and dismiss the held loop",
+        "resume — legacy silent stacking, no summary",
+      ]);
+      if (v) saveSettings("global", ctx.cwd, { carryover: v.startsWith("clear") ? "clear" : v.startsWith("resume") ? "resume" : undefined });
       return;
     }
     case "autoAcceptDrafts": {
@@ -5840,7 +5852,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "decisionPopup": {
-      const v = await ctx.ui.select("Decision popup (v0.28.23 — decision pauses pop the select() picker)", [
+      const v = await ctx.ui.select("Decision popup — what a decision-class pause does", [
         "on — a decision pause opens the picker; the widget card is the Escape fallback",
         "off — widget card only; /goal decide opens the picker on demand",
       ]);
@@ -5848,9 +5860,9 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "aggressiveMode": {
-      const v = await ctx.ui.select("Aggressive mode (flips DEFAULTS toward keep-going — explicit per-key settings still win)", [
-        "off — current behavior: pause at the audit cap, wedge alerts on, manual resume",
-        "on — autoResume, audit cap 10, stuck max 10, wedge alerts off, quota auto-retry, cap disapprovals become a TODO list and the goal KEEPS GOING",
+      const v = await ctx.ui.select("Aggressive mode — flips DEFAULTS: autoResume, audit cap 10, stuck max 10, wedge alerts off, quota auto-retry, cap objections become a TODO list (explicit per-key settings still win)", [
+        "off — current behavior: pause at the audit cap, wedge alerts, manual resume",
+        "on — keep-going defaults; the goal does not park at the audit cap",
       ]);
       if (v) {
         saveSettings("global", ctx.cwd, { aggressiveMode: v.startsWith("on") });
@@ -5887,7 +5899,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const DESCR: Record<string, string> = { off: "no reasoning", minimal: "~1k tokens", low: "~2k tokens", medium: "~8k tokens", high: "the default; the gate must not ride the session's coding dial", xhigh: "~32k tokens", max: "maximum reasoning" };
       const t = await ctx.ui.select(
         "Auditor thinking — DETACHED auditor worker ONLY (your session model's thinking is untouched)",
-        levels.map((lv) => `${lv} — ${DESCR[lv] ?? ""}${lv === "high" && curThinking === undefined ? " (current)" : curThinking === lv ? " (current)" : ""}`),
+        levels.map((lv) => `${lv} — ${DESCR[lv] ?? ""}${lv === (curThinking ?? "high") ? " (current)" : ""}`),
       );
       if (t) saveSettings("global", ctx.cwd, { auditorThinkingLevel: t.split(" ")[0] as Settings["auditorThinkingLevel"] });
       ctx.ui.notify(`Auditor model: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref}${t ? ` · thinking ${t.split(" ")[0]}` : ""}`, "info");
@@ -5901,9 +5913,9 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "auditorSameSessionSwap": {
-      const v = await ctx.ui.select("Same-model swap — when the pinned auditor IS the session model, walk the fallback pin", [
-        "on — the verifier differs from the executor (default; a same-family model shares the executor's blind spots)",
-        "off — same-model audits stand (you accept the executor's model as its own verifier; isolation + evidence contract still apply)",
+      const v = await ctx.ui.select("Same-model swap — when the pinned auditor IS the session model, walk the fallback pin (a same-family model shares the executor's blind spots)", [
+        "on — the verifier differs from the executor (default)",
+        "off — same-model audits stand; isolation + evidence contract still apply",
       ]);
       if (v) saveSettings("global", ctx.cwd, { auditorSameSessionSwap: v.startsWith("off") ? false : undefined });
       return;
@@ -7005,11 +7017,10 @@ export default function (pi: ExtensionAPI): void {
   pi.registerCommand("glla", {
     description: "Open the settings UI for goals, loops, lists, and the auditor. Scriptable form: /glla key=value · /glla project key=value",
     getArgumentCompletions: completions([
-      ["keep-going", "grouped keep-going settings"],
-      ["auditor", "grouped auditor settings"],
-      ["stall-brakes", "grouped stall and wedge settings"],
-      ["subagents", "grouped subagent settings"],
-      ["other", "grouped notification, token, and postaudit settings"],
+      // Verbs + scope prefixes ONLY — the five section groups still route
+      // when typed (`/glla stall-brakes`) but are not completion entries:
+      // bare /glla opens the tabbed table one Tab away from every section,
+      // so group rows were pure noise in the picker (v0.34.25).
       ["status", "show goal, list, loop, and pending decisions"],
       ["log", "show the recent event trail"],
       ["resume", "resume the paused or held live thing"],
