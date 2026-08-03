@@ -972,6 +972,43 @@ function noteToolResult(event: any): void {
   if (recentActions.length > 3) recentActions.shift();
 }
 
+function displayActivityFor(ctx: ExtensionContext): {
+  activity?: import("../goal-loop-display.js").GoalDisplayActivity;
+  lastActivityAt?: number;
+} {
+  const goal = state.goal;
+  if (!goal || goal.status !== "active") return {};
+  const telemetry = goal.telemetry;
+  const goalStartedAt = Date.parse(goal.createdAt);
+  const hasRealActivity = lastRealActivityAt > 0
+    && (!Number.isFinite(goalStartedAt) || lastRealActivityAt >= goalStartedAt);
+  const noTurnYet = !telemetry
+    && !hasRealActivity
+    && (goal.usage?.tokensUsed ?? 0) === 0
+    && pendingContinuationDispatch === null;
+  if (noTurnYet) return { activity: "awaiting-first-turn" };
+  let idle = false;
+  let pending = false;
+  try {
+    idle = ctx.isIdle();
+    pending = ctx.hasPendingMessages();
+  } catch {
+    return { activity: "working" };
+  }
+  const scheduled = continuationTimer !== null || pendingContinuationDispatch !== null || continuationDispatchStoodDown;
+  const lastActivityAt = lastRealActivityAt > 0
+    && (!Number.isFinite(goalStartedAt) || lastRealActivityAt >= goalStartedAt)
+    ? lastRealActivityAt
+    : undefined;
+  // A short idle gap is normal between agent_end and the settled eager
+  // continuation. Only surface idle after a real minute with no queued send;
+  // otherwise the card would flicker into a false stop between every turn.
+  if (idle && !pending && !scheduled && (lastActivityAt === undefined || Date.now() - lastActivityAt >= 60_000)) {
+    return { activity: "idle", lastActivityAt };
+  }
+  return { activity: "working", lastActivityAt };
+}
+
 function refreshUI(ctx: ExtensionContext): void {
   if (!ctx.hasUI) return;
   try {
@@ -979,8 +1016,10 @@ function refreshUI(ctx: ExtensionContext): void {
     // Terminal width for truncation budgets: on wide terminals the widget
     // uses the room instead of cutting at fixed ~60-char floors.
     const width = process.stdout.columns || 80;
-    ctx.ui.setStatus("pi-glla", buildStatusText(state, latestAuditProgress, Date.now(), theme, { stalls: consecutiveStalls }));
-    ctx.ui.setWidget("pi-glla", buildWidgetLines(state, latestAuditProgress, Date.now(), theme, width, { stalls: consecutiveStalls, recent: recentActions }));
+    const activity = displayActivityFor(ctx);
+    const extras = { stalls: consecutiveStalls, recent: recentActions, ...activity };
+    ctx.ui.setStatus("pi-glla", buildStatusText(state, latestAuditProgress, Date.now(), theme, extras));
+    ctx.ui.setWidget("pi-glla", buildWidgetLines(state, latestAuditProgress, Date.now(), theme, width, extras));
   } catch {
     // stale ctx — next event refreshes
   }

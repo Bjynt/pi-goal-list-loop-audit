@@ -79,6 +79,19 @@ test("active goal shows pulse + elapsed", () => {
   assert.match(s, /3m/);
 });
 
+test("active status does not make first-turn or long-idle gaps look green", () => {
+  const state = { goal: goalOf(), list: [] };
+  const awaiting = buildWidgetLines(state, null, NOW, undefined, undefined, { activity: "awaiting-first-turn" })!;
+  assert.match(buildStatusText(state, null, NOW, undefined, { activity: "awaiting-first-turn" })!, /awaiting first turn/);
+  assert.ok(awaiting.some((line) => line.includes("awaiting first turn")));
+  assert.ok(!awaiting.some((line) => line.includes("· active ·")));
+
+  const idle = buildWidgetLines(state, null, NOW, undefined, undefined, { activity: "idle", lastActivityAt: NOW - 2 * 60_000 })!;
+  assert.match(buildStatusText(state, null, NOW, undefined, { activity: "idle", lastActivityAt: NOW - 2 * 60_000 })!, /idle/);
+  assert.ok(idle.some((line) => line.includes("idle — no agent turn is currently running")));
+  assert.ok(idle.some((line) => line.includes("last activity 2m")));
+});
+
 test("active goal with tasks shows progress", () => {
   const g = goalOf({
     taskList: {
