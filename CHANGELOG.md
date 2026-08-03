@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.34.41 — 2026-08-03
+
+### Improved — neon live-work pulse
+
+- Replaced the plain equalizer wave with a looping comet that visibly travels
+  through the activity badge without implying completion progress.
+- Added layered semantic colors for the animated rails, spark, and LIVE label
+  so the single status-bar HUD reads as an intentional visual effect.
+
 ## 0.34.40 — 2026-08-03
 
 ### Improved — one activity HUD

@@ -157,15 +157,34 @@ const paint = (theme: DisplayTheme | undefined, color: DisplayColor, text: strin
  * The wave is deliberately decorative, not a progress meter. It says only
  * "fresh evidence is arriving"; it never implies a percentage complete.
  */
+// A small comet travels across a soft equalizer bed. This is a liveness
+// ornament, not a progress meter: it loops forever and says nothing about
+// completion percentage or remaining work.
 const LIVE_WAVE_FRAMES = [
-  "▁▂▃▅▃▂", "▂▃▅▇▅▃", "▃▅▇▅▃▂", "▅▇▅▃▂▁",
-  "▇▅▃▂▁▂", "▅▃▂▁▂▃", "▃▂▁▂▃▅", "▂▁▂▃▅▇",
+  "✦▂▃▅▃▂", "▁✦▃▅▃▂", "▁▂✦▅▃▂", "▁▂▃✦▃▂", "▁▂▃▅✦▂",
+  "▁▂▃▅▃✦", "▂▃▅▃✦▂", "▂▃▅✦▃▂", "▂▃✦▅▃▂", "▂✦▅▃▂▁",
 ] as const;
 function liveWaveFrame(now: number): string {
-  return LIVE_WAVE_FRAMES[Math.floor(Math.max(0, now) / 350) % LIVE_WAVE_FRAMES.length]!;
+  return LIVE_WAVE_FRAMES[Math.floor(Math.max(0, now) / 220) % LIVE_WAVE_FRAMES.length]!;
+}
+function paintLiveWave(frame: string, theme?: DisplayTheme): string {
+  if (!theme) return frame;
+  return Array.from(frame).map((cell) => {
+    const color: DisplayColor = cell === "✦" || cell === "▅" ? "success" : cell === "▃" ? "accent" : "muted";
+    return paint(theme, color, cell);
+  }).join("");
+}
+function paintActivityLabel(label: string, theme?: DisplayTheme): string {
+  if (!theme) return label;
+  return label.split(" · ").map((part) => {
+    const color: DisplayColor = part === "LIVE" ? "success" : part === "WORKING" ? "accent" : "accent";
+    return paint(theme, color, part);
+  }).join(` ${paint(theme, "dim", "·")} `);
 }
 function activityBadge(label: string, now: number, theme?: DisplayTheme): string {
-  return paint(theme, "success", `⟦${liveWaveFrame(now)} ${label}⟧`);
+  const frame = liveWaveFrame(now);
+  if (!theme) return `⟦${frame} ${label}⟧`;
+  return `${paint(theme, "accent", "⟦")}${paintLiveWave(frame, theme)} ${paintActivityLabel(label, theme)}${paint(theme, "accent", "⟧")}`;
 }
 function stateBadge(label: string, glyph: string, theme: DisplayTheme | undefined, color: DisplayColor): string {
   return paint(theme, color, `⟦${glyph} ${label}⟧`);
