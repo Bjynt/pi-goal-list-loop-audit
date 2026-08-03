@@ -319,9 +319,10 @@ history and is available through `/goal status` regardless.
 
 `autoaccept=on` skips BOTH the Confirm dialog and the drafting interview
 floor — every `propose_*` draft (goal, list batch, loop, task list)
-activates the moment the agent proposes it, with a notification and a
-`draft_autoaccepted` ledger entry (auto-accept is never silent). The seed
-carries the intent. Since v0.29.4 auto-accepted drafts **start immediately**
+activates the moment the agent proposes it, and a completed `/list audit`
+fan-out queues its generated finding items without a second confirmation.
+Both paths notify loudly; auto-accept is never silent. The seed carries the
+intent. Since v0.29.4 auto-accepted drafts **start immediately**
 — the draft path is decoupled from `autoResume`, which gates ONLY
 launch-time restore of persisted state ("load it but don't auto-start it").
 For fully unattended rigs you typically want both on; for attended rigs,

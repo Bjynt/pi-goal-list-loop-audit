@@ -59,9 +59,10 @@ architectural decisions that changed the SHAPE of the system:
   `autoResume` (on → any session start resumes; off → never) is **global-only**
   (v0.29.5) after a stale per-project opt-in silently overrode the global hold.
 - **Drafts and restores are decoupled** (v0.29.4): `autoAcceptDrafts` is the
-  pre-consent for in-session drafts — they START immediately. `autoResume`
-  gates only launch-time restore. "The session auto-starts in some cases ok;
-  launching pi must not."
+  pre-consent for in-session drafts — they START immediately — and for the
+  generated finding batch at the end of `/list audit`. Direct bulk imports
+  remain Confirm-gated. `autoResume` gates only launch-time restore. "The
+  session auto-starts in some cases ok; launching pi must not."
 - **User aborts mean STOP** (v0.29.4/0.29.5): an aborted turn is exempt from
   stall accounting, stands the chain down with no auto re-fire, and the
   stand-down gates the heartbeat + post-compaction refires. The 5-abort loud
