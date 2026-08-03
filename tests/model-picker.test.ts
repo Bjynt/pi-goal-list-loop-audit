@@ -21,6 +21,10 @@ const THEME = {
   bg: (_c: string, t: string) => t,
   bold: (t: string) => t,
 };
+const HIGHLIGHT_THEME = {
+  ...THEME,
+  bg: (_c: string, t: string) => `<selected>${t}</selected>`,
+};
 const KB = {
   matches: (data: string, key: string) =>
     (key === "tui.select.confirm" && data === "\r") ||
@@ -122,6 +126,21 @@ test("model-picker: render stays within width and shows the filter hint", () => 
   assert.ok(text.includes("Auditor model override"));
   assert.ok(text.includes("type to filter"));
   assert.ok(text.includes("minimax/MiniMax-M3"));
+});
+
+test("model-picker: active model row uses the available width for selection", () => {
+  const items = buildModelPickItems(MODELS, "minimax/MiniMax-M3");
+  const component = new ModelPickerComponent(
+    { title: "Auditor model override", items },
+    () => undefined,
+    HIGHLIGHT_THEME,
+    KB,
+    () => undefined,
+  );
+  const line = component.render(60)[4]!;
+  assert.match(line, /^<selected>→ /);
+  assert.ok(line.endsWith("</selected>"));
+  assert.equal(line.slice("<selected>".length, -"</selected>".length).length, 58);
 });
 
 test("v0.29.17 wiring: model-valued settings use the fuzzy picker; unavailable auditor models fall back LOUDLY to the session model", () => {
