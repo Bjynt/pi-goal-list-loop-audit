@@ -134,6 +134,7 @@ process.stdin.on("data", async (chunk) => {
   out({ type: "tool_execution_end", toolCallId: "grep-2" });
   await sleep(30);
   out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "<evidence>\\nartifact exists; tests pass\\n</evidence>\\n<approved/>" } });
+  await sleep(50);
   out({ type: "agent_settled" });
 });
 `;
@@ -159,7 +160,7 @@ process.stdin.on("data", async (chunk) => {
     assert.ok(phases.includes("starting"));
     assert.ok(phases.includes("thinking"));
     assert.ok(phases.includes("tool_executing"));
-    assert.ok(phases.includes("producing_report"));
+    assert.ok(phases.includes("producing_report"), `observed phases: ${phases.join(", ")}`);
     assert.ok(phases.indexOf("tool_executing") < phases.indexOf("producing_report"));
     const tool = reports.find((progress) => progress.currentTool === "read");
     assert.ok(tool, "parent observed the real worker's active tool");
