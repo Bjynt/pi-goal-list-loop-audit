@@ -83,12 +83,12 @@ test("pause_goal tool: structured kind/options/recommended/resumeAt persist to t
     ["pauseReason: `stalled: ${threshold} continuation refires", "error"],
     ["pauseReason: `auditor verdict: IMPOSSIBLE —", "decision"],
     ["pauseReason: `auditor quota:", "wait"],
-    ["pauseReason: `auditor infrastructure failed", "error"],
     ["pauseReason: `auditor disapproved ${trailingDisapprovals}× consecutively", "decision"],
     ["pauseReason: `token limit exceeded", "error"],
     ["pauseReason: \"5 consecutive aborts", "blocked"],
     ["\"restored on session load — held for explicit resume\"", "blocked"],
   ];
+  assert.match(SRC, /const pauseReason = reachedInfraCap[\s\S]{0,300}?auditor infrastructure failed/);
   for (const [anchor, kind] of pairs) {
     const esc = anchor.replace(/[.*+?^$()[\]\\|]/g, "\\$&");
     assert.match(SRC, new RegExp(`pauseKind: "${kind}",[\\s\\S]{0,900}?${esc}`), `${anchor} → pauseKind ${kind}`);
