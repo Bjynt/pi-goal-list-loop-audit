@@ -145,6 +145,18 @@ const pauseIsError = (g: Goal): boolean => ERROR_PAUSE.test(g.pauseReason ?? "")
 type PauseKind = "decision" | "error" | "wait" | "blocked";
 const pauseKind = (g: Goal): PauseKind | undefined => g.pauseKind ?? (pauseIsError(g) ? "error" : undefined);
 
+/** Active goals can carry an operational warning while the agent is being
+ * re-engaged. Do not render those as an ordinary green `active` card: a
+ * failed detached auditor is not progress, and a missing turn-start proof is
+ * not work. */
+function activeAttention(g: Goal): { label: string; color: DisplayColor } | undefined {
+  if (g.status !== "active" || !g.pauseReason) return undefined;
+  if (/auditor|completion audit|regression shield/i.test(g.pauseReason)) {
+    return { label: "auditor blocked — no verdict", color: "error" };
+  }
+  return { label: "attention needed", color: pauseIsError(g) ? "error" : "warning" };
+}
+
 /** A pending claim without the new `running` marker is a legacy or
  * replacement-interrupted audit. It must never render as an active auditor. */
 function auditRecoveryPending(g: Goal): boolean {
@@ -225,6 +237,10 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     return `glla: ${paint(theme, pauseIsError(g) ? "error" : "warning", label)}${heldSuffix}`;
   }
   if (g.status === "active") {
+    const attention = activeAttention(g);
+    if (attention) {
+      return `glla: ${paint(theme, attention.color, `⚠ ${attention.label}`)}${heldSuffix}`;
+    }
     // v0.28.1 (S1/S2): a stale-handle interrupt keeps the goal ACTIVE.
     // v0.34.16: a fresh session_start owns the handoff. A cold boot still
     // follows the global autoResume setting, so the widget names the actual
@@ -322,23 +338,28 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // Head glyph is ● (not ◆): U+25C6 renders as a color-emoji diamond in some
   // terminal fonts and ignores ANSI color; ● takes the paint everywhere.
   const interrupted = g.status === "active" && !!g.interruptedAt;
+  const attention = activeAttention(g);
   const icon =
     interrupted
       ? paint(theme, "error", "⚠")
-      : g.status === "paused"
-        ? paint(theme, pauseIsError(g) ? "error" : "warning", "⏸")
-        : g.status === "auditing"
-          ? paint(theme, "accent", "⟡")
-          : paint(theme, "success", "●");
+      : attention
+        ? paint(theme, attention.color, "⚠")
+        : g.status === "paused"
+          ? paint(theme, pauseIsError(g) ? "error" : "warning", "⏸")
+          : g.status === "auditing"
+            ? paint(theme, "accent", "⟡")
+            : paint(theme, "success", "●");
   // v0.24.7: a list item is named as such and points at /list — before,
   // the widget called it "active" and hinted "/goal status", reading as if
   // queue work were a standalone goal.
   const isList = g.policy === "list";
   const statusWord = interrupted
     ? paint(theme, "error", "interrupted")
-    : g.status === "active"
-      ? paint(theme, "success", "active")
-      : g.status;
+    : attention
+      ? paint(theme, attention.color, attention.label)
+      : g.status === "active"
+        ? paint(theme, "success", "active")
+        : g.status;
   // v0.33.0: slim card — status folds INTO the head line as middot segments
   // (filter(Boolean).join, the universal CLI idiom). Line 2 is the live
   // "last action · next task" line; the footer stays the hint line.
@@ -447,6 +468,24 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       wrapped.forEach((w, i) => lines.push(`${i === wrapped.length - 1 ? "└─" : "│ "} ${paint(theme, actionPaint, w)}`));
     } else {
       lines.push(`└─ ${paint(theme, "dim", truncate(savedLine, budget))}`);
+    }
+    return lines;
+  }
+  if (attention) {
+    const budget = budgetFor(width, 3, 60);
+    const detail = attention.label === "auditor blocked — no verdict"
+      ? "completion claim was not evaluated"
+      : "the active work needs attention";
+    lines.push(`├─ ${paint(theme, attention.color, detail)}`);
+    wrap(g.pauseReason!, budget, 3).forEach((w, i) => {
+      lines.push(`${i === 0 ? "│ " : "│ "} ${paint(theme, attention.color, w)}`);
+    });
+    if (g.pauseSuggestedAction) {
+      wrap(g.pauseSuggestedAction, budget, 2).forEach((w, i, all) => {
+        lines.push(`${i === all.length - 1 ? "└─" : "│ "} ${paint(theme, "warning", w)}`);
+      });
+    } else {
+      lines.push(`└─ ${paint(theme, "dim", "inspect /goal status before continuing")}`);
     }
     return lines;
   }

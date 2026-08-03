@@ -2068,6 +2068,14 @@ function newCompletionAuditAttemptId(): string {
   return `audit-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** A logical completion claim can be retried after its old worker has left a
+ * durable job directory behind. Each detached process attempt therefore gets
+ * its own filesystem identity; the claim's `pendingCompletion.attemptId`
+ * remains the parent-generation identity used for stale-result rejection. */
+function newDetachedAuditJobAttemptId(logicalAttemptId: string): string {
+  return `${logicalAttemptId}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, origin: CompletionAuditOrigin): PendingCompletion {
   completionAuditRecoveryArmed = true;
   const startedMs = Date.now();
@@ -2168,7 +2176,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
           verificationSummary: claim.verificationSummary,
           model: auditorModel,
           thinkingLevel: (settings.auditorThinkingLevel ?? "high") as any, // may be "max" — pi ≥0.83 understands it; the dev-types predate it
-          runtime: { attemptId: () => claim.attemptId!, wallTimeoutMs: AUDITOR_WALL_TIMEOUT_MS },
+          runtime: { attemptId: () => newDetachedAuditJobAttemptId(claim.attemptId!), wallTimeoutMs: AUDITOR_WALL_TIMEOUT_MS },
           onProgress: (progress) => {
             const current = freshCtxForGeneration(generation);
             if (!current) return;
@@ -4334,7 +4342,7 @@ function registerAgentTools(pi: any): void {
           verificationSummary: p.verificationSummary,
           model: auditorModel,
           thinkingLevel: (settings.auditorThinkingLevel ?? "high") as any, // may be "max" — pi ≥0.83 understands it; the dev-types predate it
-          runtime: { attemptId: () => completionClaim.attemptId!, wallTimeoutMs: AUDITOR_WALL_TIMEOUT_MS },
+          runtime: { attemptId: () => newDetachedAuditJobAttemptId(completionClaim.attemptId!), wallTimeoutMs: AUDITOR_WALL_TIMEOUT_MS },
           onProgress: (progress) => {
             const current = freshCtxForGeneration(auditGeneration);
             if (!current) return;

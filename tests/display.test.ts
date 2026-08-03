@@ -428,6 +428,22 @@ test("error pause: ACTION NEEDED banner, action line popped (widget + status)", 
   assert.ok(s.includes("action needed"), `status: ${s}`);
 });
 
+test("active auditor infrastructure failure is visible as blocked, not green progress", () => {
+  const g = goalOf({
+    status: "active",
+    pauseReason: "auditor infrastructure (retried once): pi exited without an agent_settled RPC event",
+    pauseSuggestedAction: "Fix the auditor model, then /goal resume.",
+  });
+  const state = { goal: g, list: [], loop: null };
+  const w = buildWidgetLines(state as never)!;
+  assert.match(w[0]!, /auditor blocked — no verdict/);
+  assert.ok(w.some((l) => l.includes("completion claim was not evaluated")), `widget: ${w.join("\n")}`);
+  assert.ok(w.some((l) => l.includes("Fix the auditor model")), `action: ${w.join("\n")}`);
+  const s = buildStatusText(state as never)!;
+  assert.match(s, /auditor blocked — no verdict/);
+  assert.doesNotMatch(s, /glla: ●/);
+});
+
 test("wait pause: quiet banner + resume countdown (widget + status)", () => {
   const g = goalOf({
     status: "paused",
