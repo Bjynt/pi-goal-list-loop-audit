@@ -8097,7 +8097,10 @@ export default function (pi: ExtensionAPI): void {
     const autoResumeSetting = resolveEffectiveAggressiveSettings(loadGlobalSettings()).autoResume;
     const autoResume = shouldAutoResumeOnSessionStart(event?.reason, autoResumeSetting);
     const mainRecovery = state.mainModelRecovery;
-    if (mainRecovery?.retryAt) {
+    if (mainRecovery?.manualResumeRequired) {
+      const recoveryResumeCmd = mainRecovery.kind === "loop" ? "/loop resume" : state.goal?.policy === "list" ? "/list resume" : "/goal resume";
+      ctx.ui.notify(`Main-model recovery stopped automatic probes — the work is safe; ${recoveryResumeCmd} starts a fresh bounded window after you check the provider.`, "warning");
+    } else if (mainRecovery?.retryAt) {
       const retryAtMs = Date.parse(mainRecovery.retryAt);
       const recoveryConsent = autoResume || explicitRecovery;
       if (recoveryConsent) {

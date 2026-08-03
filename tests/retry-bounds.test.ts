@@ -182,7 +182,8 @@ test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUD
   // agent → the model hallucinated closure and repeated itself into a
   // continuation storm + 14 compactions in 35 minutes.
   // 1. the claim is persisted at the quota block:
-  assert.match(SRC, /pendingCompletion: \{ \.\.\.completionClaim, phase: "quota-waiting"/);
+  assert.match(SRC, /pendingCompletion: pending/);
+  assert.match(SRC, /phase: "quota-waiting" as const/);
   // 2. the quota-retry callback prefers the direct-audit path:
   const cbIdx = SRC.indexOf('(state.goal.pauseReason ?? "").startsWith("auditor quota:")');
   const directIdx = SRC.indexOf("void retryStoredCompletionAudit();");
@@ -197,7 +198,8 @@ test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUD
   assert.match(SRC, /archiveCurrentGoal\(liveCtx, "complete", `auditor \$\{result\.model\} approved \(\$\{origin\}\)`\)/);
   assert.match(SRC, /updateGoal\(\{ auditHistory: history, pendingCompletion: undefined \}, liveCtx\)/);
   // 5. quota-again → re-pause with the claim PRESERVED + another scheduled retry:
-  assert.match(SRC, /auditor quota: retry in \$\{quota\.retryAfterSec\}s \(stored-claim retry\)/);
+  assert.match(SRC, /auditor quota: retry in \$\{plan\.retryAfterSec\}s \(stored-claim retry\)/);
+  assert.match(SRC, /quotaAutoRetryUntil: plan\.autoRetryUntil/);
   // 6. any other verdict hands back to the agent:
   assert.match(SRC, /appendLedger\(liveCtx\.cwd, "quota_retry_audit_verdict", \{/);
 });
