@@ -4739,45 +4739,38 @@ function registerAgentTools(pi: any): void {
             details: {},
           };
         }
-        // v0.28.5 (E2): bound the silent retry-forever. Each infra error
-        // used to reschedule a continuation unconditionally — a broken
-        // auditor model spun forever (the 39-error incident). At 3 trailing
-        // infra errors the model is broken, not unlucky: pause LOUDLY.
+        // v0.34.25: once the bounded model cascade is exhausted, preserve the
+        // exact claim and pause immediately. Re-engaging the coding agent to
+        // recreate an unchanged claim was the source of repeated completion
+        // attempts in the screenshot; /goal resume now retries the stored
+        // auditor directly and never schedules another agent turn here.
         const infraStreak = (state.goal.auditInfraStreak ?? 0) + 1;
-        if (infraStreak >= 3) {
-          updateGoal({
-            status: "paused",
-            auditHistory: history,
-            pendingCompletion: undefined,
-            auditInfraStreak: infraStreak,
-            pauseKind: "error",
-            pauseReason: `auditor infrastructure failed ${infraStreak}× in a row — the auditor model is likely broken OR a verification command is hanging (ssh/sudo/long test runs stall the stream) (last: ${result.error.slice(0, 120)})`,
-            pauseSuggestedAction: "Fix the auditor model (/glla model=provider/id) or restart pi, then /goal resume. Your work was NOT judged.",
-          }, ctx);
-          appendLedger(ctx.cwd, "goal_paused", { reason: `auditor infra streak ${infraStreak}: ${result.error.slice(0, 120)}` });
-          ctx.ui.notify(`${goalNoun()} paused: auditor infrastructure failed ${infraStreak}× in a row — model broken or a verification command hanging (ssh/sudo/long runs). Fix with /glla model=... or unblock the command, then /goal resume.`, "warning");
-          notifyExternal(ctx, `${goalNoun()} paused: auditor infrastructure ${infraStreak}× — model likely broken.`);
-          return {
-            content: [{
-              type: "text",
-              text: `The auditor has now failed ${infraStreak} times in a row with infrastructure errors (NOT verdicts; last: ${result.error}). The goal is PAUSED — the retry-forever loop stops here. Fix the auditor model with /glla model=provider/id (or restart pi), then /goal resume and call complete_goal again. Do not change your deliverable for this.`,
-            }],
-            details: {},
-          };
-        }
+        const pending: PendingCompletion = {
+          ...completionClaim,
+          phase: "recovery-pending",
+          recoveryAt: nowIso(),
+          recoveryReason: "auditor-infrastructure",
+        };
+        const reachedInfraCap = infraStreak >= 3;
+        const pauseReason = reachedInfraCap
+          ? `auditor infrastructure failed ${infraStreak}× in a row — the auditor model is likely broken OR a verification command is hanging (last: ${result.error.slice(0, 120)})`
+          : `completion auditor infrastructure failure${fallbackUsed ? " after trying the configured/session fallback" : ""}: ${result.error}`;
         updateGoal({
-          status: "active",
+          status: "paused",
           auditHistory: history,
-          pendingCompletion: undefined,
+          pendingCompletion: pending,
           auditInfraStreak: infraStreak,
-          pauseReason: `auditor infrastructure${retriedOnce ? " (retried once)" : ""}: ${result.error}`,
-          pauseSuggestedAction: "Fix the auditor model (/glla model=provider/id) and call complete_goal again — your work was NOT judged",
+          pauseKind: "error",
+          pauseReason,
+          pauseSuggestedAction: "The completion claim is stored and was not judged. Fix the auditor model/command, then /goal resume to retry the detached audit.",
         }, ctx);
-        scheduleContinuation(ctx, true);
+        appendLedger(ctx.cwd, "goal_paused", { reason: pauseReason, attemptId: auditAttemptId, fallbackUsed });
+        ctx.ui.notify(`${goalNoun()} paused: the completion auditor failed (infrastructure, not a verdict). The claim is stored; fix the model/command, then /goal resume.`, "warning");
+        notifyExternal(ctx, `${goalNoun()} paused: completion auditor infrastructure failure; stored claim awaits /goal resume.`);
         return {
           content: [{
             type: "text",
-            text: `The auditor could not run (infrastructure, NOT a verdict${retriedOnce ? "; retried once with backoff, both attempts failed" : ""}): ${result.error}\nYour completion claim was not evaluated. Fix the auditor model with /glla model=provider/id and call complete_goal again — do not change your deliverable for this.`,
+            text: `${reachedInfraCap ? `The auditor has failed ${infraStreak} times in a row` : "The completion auditor could not run"} with infrastructure errors (NOT a verdict; last: ${result.error}). The goal is PAUSED and the exact completion claim is stored. Fix the auditor model/command, then /goal resume; do not change your deliverable for this.`,
           }],
           details: {},
         };

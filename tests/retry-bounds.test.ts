@@ -30,12 +30,13 @@ test("E2: persisted auditInfraStreak field (type + schema)", () => {
   assert.match(SCHEMA, /"auditInfraStreak": \{ "type": "number" \}/);
 });
 
-test("E2: 3 trailing auditor infra errors pause LOUDLY (no more retry-forever)", () => {
+test("E2: auditor infra errors pause with the stored claim (no retry-forever)", () => {
   assert.match(SRC, /const infraStreak = \(state\.goal\.auditInfraStreak \?\? 0\) \+ 1;/);
-  assert.match(SRC, /if \(infraStreak >= 3\) \{/);
+  assert.match(SRC, /const reachedInfraCap = infraStreak >= 3;/);
   assert.match(SRC, /auditor infrastructure failed \$\{infraStreak\}× in a row — the auditor model is likely broken/);
-  assert.match(SRC, /The goal is PAUSED — the retry-forever loop stops here/);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "goal_paused", \{ reason: `auditor infra streak \$\{infraStreak\}/);
+  assert.match(SRC, /The completion claim is stored and was not judged/);
+  assert.match(SRC, /pendingCompletion: pending,/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "goal_paused", \{ reason: pauseReason/);
   // below the threshold the streak persists across turns (survives restarts):
   assert.match(SRC, /auditInfraStreak: infraStreak,/);
   // a real auditor run clears it; reaching quota also clears it:
