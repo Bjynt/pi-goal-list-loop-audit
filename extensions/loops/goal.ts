@@ -648,7 +648,7 @@ function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop" | "lis
   ctx.ui.notify(
     policy === "clear"
       ? `Carryover cleared (${trigger}): ${summary}`
-      : `Carryover from before this session: ${summary}${waiting.length > 0 ? " — /glla carryover=clear drops these automatically." : ""}`,
+      : `Carryover from before this session: ${summary}${waiting.length > 0 ? " — set Carryover = clear in /glla settings to drop these automatically." : ""}`,
     "info",
   );
 }
@@ -3290,7 +3290,7 @@ async function cmdStatus(ctx: ExtensionContext): Promise<void> {
     ...(g.policy === "list" ? [`Source: /list queue (${listQueue().length} waiting) — /list to manage`] : []),
     `Auto-continue: ${g.autoContinue ? "on" : "off"}`,
     `Iteration: ${iterationCounter}`,
-    `Tokens: ${(g.usage?.tokensUsed ?? 0).toLocaleString()}${(g.usage?.tokensLimit ?? 0) > 0 ? ` / ${(g.usage!.tokensLimit).toLocaleString()}` : " (no cap — /glla tokenlimit=<n> to set)"}`,
+    `Tokens: ${(g.usage?.tokensUsed ?? 0).toLocaleString()}${(g.usage?.tokensLimit ?? 0) > 0 ? ` / ${(g.usage!.tokensLimit).toLocaleString()}` : " (no cap — set Token limit in /glla settings)"}`, 
   ];
   if (g.auditHistory && g.auditHistory.length > 0) {
     lines.push(`Audits: ${g.auditHistory.length} (${g.auditHistory.filter((v) => v.approved).length} approved)`);
@@ -5269,7 +5269,7 @@ function registerAgentTools(pi: any): void {
           return {
             content: [{
               type: "text",
-              text: `The auditor hit a QUOTA / rate-limit error (infrastructure, NOT a verdict): ${result.error}\nThe goal is PAUSED with an automatic retry scheduled in ${retryMin} minute(s)${quota.fromUpstream ? " (upstream Retry-After hint)" : " (default window — /glla quotaretryminutes=N to change)"}. Your completion claim was not evaluated; do not change your deliverable for this. /goal resume retries immediately.`,
+              text: `The auditor hit a QUOTA / rate-limit error (infrastructure, NOT a verdict): ${result.error}\nThe goal is PAUSED with an automatic retry scheduled in ${retryMin} minute(s)${quota.fromUpstream ? " (upstream Retry-After hint)" : " (default window — edit Quota retry minutes in /glla settings)"}. Your completion claim was not evaluated; do not change your deliverable for this. /goal resume retries immediately.`, 
             }],
             details: {},
           };
@@ -5358,7 +5358,7 @@ function registerAgentTools(pi: any): void {
         : `last ${auditFeedbackChars} chars (Required-fixes tail)`;
       const auditFeedbackTruncationHint = auditFeedbackIsFull
         ? ""
-        : `\n\nReport truncated at the configured limit. /goal status shows the full report; change future feedback with /glla auditfeedbackchars=N (0 = full report).`;
+        : `\n\nReport truncated at the configured limit. /goal status shows the full report; change Audit feedback chars in /glla settings (0 = full report).`; 
       const trailingDisapprovals = countTrailingDisapprovals(history);
       if (auditCap > 0 && trailingDisapprovals >= auditCap) {
         // v0.25.0 (contract item 22): aggressiveMode turns the cap into a
@@ -5396,7 +5396,7 @@ function registerAgentTools(pi: any): void {
           pauseOptions: ["Fix the disapproval gap, then continue (/goal resume)", "Tweak the objective — /goal tweak <new text>", "Cancel the goal (/goal cancel)"],
           pauseRecommended: 1,
           pauseReason: `auditor disapproved ${trailingDisapprovals}× consecutively (cap ${auditCap})`,
-          pauseSuggestedAction: "Read the audit history (/goal status), fix the actual gap or /goal tweak the objective, then /goal resume. Raise the cap with /glla auditcap=N.",
+          pauseSuggestedAction: "Read the audit history (/goal status), fix the actual gap or /goal tweak the objective, then /goal resume. Raise Audit cap in /glla settings.",
         }, ctx);
         ctx.ui.notify(`${goalNoun()} paused: auditor disapproved ${trailingDisapprovals}× consecutively (cap ${auditCap}). /goal status for the reports; /goal resume to continue.`, "warning");
           maybeDecisionPopup(ctx);
@@ -8122,7 +8122,7 @@ export default function (pi: ExtensionAPI): void {
 
     // Token accounting + cost guard: accumulate this turn's assistant tokens
     // (deduped — agent_end may replay seen messages). Crossing the goal's
-    // token limit pauses it; /glla tokenlimit=<n> to raise.
+    // token limit pauses it; raise Token limit in /glla settings.
     const newTokens = sumNewAssistantTokens(event.messages as unknown[], countedTokenMessages);
     if (newTokens > 0) {
       const used = (state.goal.usage?.tokensUsed ?? 0) + newTokens;
@@ -8134,9 +8134,9 @@ export default function (pi: ExtensionAPI): void {
           status: "paused",
           pauseKind: "error",
           pauseReason: `token limit exceeded (${used.toLocaleString()} > ${limit.toLocaleString()})`,
-          pauseSuggestedAction: "/glla tokenlimit=<n> to raise the cap (or 0 to disable), then /goal resume",
+          pauseSuggestedAction: "Raise Token limit in /glla settings (or set 0 to disable), then /goal resume",
         }, ctx);
-        ctx.ui.notify(`${goalNoun()} paused: token limit exceeded (${used.toLocaleString()} > ${limit.toLocaleString()}). /glla tokenlimit=<n> to raise, 0 to disable.`, "warning");
+        ctx.ui.notify(`${goalNoun()} paused: token limit exceeded (${used.toLocaleString()} > ${limit.toLocaleString()}). Raise Token limit in /glla settings, or set it to 0 to disable.`, "warning");
         notifyExternal(ctx, `Goal paused: token limit exceeded (${used} > ${limit}).`);
         return;
       }

@@ -94,13 +94,14 @@ test("settings: stallEscalationRefires round-trips through save/load", () => {
   assert.equal(loadSettings(dir).stallEscalationRefires, 0, "0 persists (never-escalate opt-out)");
 });
 
-test("/glla surface: settings groups route without completion rows; key=value parser survives", () => {
-  // v0.34.25: the section groups are typed routes into the tabbed table,
-  // not autocomplete entries (picker noise); per-key aliases never were.
+test("/glla surface: bare command opens settings; arguments are actions", () => {
+  // Settings are edited in the table; the nonempty namespace is reserved for
+  // operational verbs and must not expose section or key=value routes.
   assert.doesNotMatch(SRC, /\["stall-brakes",/);
   assert.doesNotMatch(SRC, /\["stallescalation=",/);
-  assert.match(SRC, /\^\(keep-going\|auditor\|stall-brakes\|subagents\|other\)\\b/);
-  assert.match(SRC, /key === "stallescalation" \|\| key === "stallescalationrefires"/);
+  assert.doesNotMatch(SRC, /\^\(keep-going\|auditor\|stall-brakes\|subagents\|other\)\\b/);
+  assert.match(SRC, /Unknown \/glla action/);
+  assert.doesNotMatch(SRC, /const kvRe =/);
 });
 
 // =================================================================

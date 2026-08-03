@@ -352,8 +352,8 @@ are workers** (v0.23.8):
 ## Token guard
 
 Every goal tracks real token usage; crossing the budget pauses the goal.
-Off by default (opt-in) — set a budget with `/glla tokenlimit=<n>`. A high
-value like 10000000 is a runaway threshold, not a big-goal threshold
+Off by default (opt-in) — set Token limit in the `/glla` settings table. A
+high value like 10000000 is a runaway threshold, not a big-goal threshold
 (real research/feature goals legitimately burn 2-4M). Loop 3 doesn't need
 this cap — it has its own brakes
 (max iterations + plateau).
@@ -365,7 +365,7 @@ but silent for a long stretch because ONE unbounded command (a test suite
 that never exits, a dev server) is holding the whole goal hostage. The
 heartbeat watches the wall clock: busy + no activity for 30 minutes →
 in-session warning + your configured notify push, once per interval while
-it persists. Tune with `/glla wedgealert=<minutes>` (0 = off).
+it persists. Tune Wedge alert minutes in the `/glla` settings table (0 = off).
 
 Every other wait is bounded too: continuation retries are milliseconds,
 stuck backoff caps at 5 minutes then pauses, measure commands get a 10m

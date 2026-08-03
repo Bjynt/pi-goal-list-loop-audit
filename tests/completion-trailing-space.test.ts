@@ -97,19 +97,15 @@ test("registerCommand: /goal, /glla, /list, /loop all use the shared factory", (
   }
 });
 
-test("/glla completions stay concise: verbs only, settings grouped in the table, key=value headless", () => {
+test("/glla completions stay concise: actions only; settings live in the table", () => {
   const start = SRC.indexOf('pi.registerCommand("glla"');
   const end = SRC.indexOf('pi.registerCommand("review"', start);
   const glla = SRC.slice(start, end);
-  // v0.34.25: the five section groups ROUTE when typed but are not
-  // completion entries — bare /glla opens the tabbed table one Tab away
-  // from every section, so group rows were pure picker noise.
-  for (const group of ["keep-going", "auditor", "stall-brakes", "subagents", "other"]) {
-    assert.ok(!glla.includes(`["${group}",`), `${group} group stays out of the completion list`);
-  }
-  assert.match(SRC, /\^\(keep-going\|auditor\|stall-brakes\|subagents\|other\)\\b/, "typed group routes still open the table at that section");
-  assert.ok((glla.match(/\["[^"]+",/g) ?? []).length <= 10, "glla autocomplete lists verbs + scope prefixes only, not setting groups");
-  assert.ok(!/\["[a-zA-Z]+=",/.test(glla), "no per-key key= aliases in autocomplete (headless kv route only)");
-  assert.match(glla, /key=value/);
-  assert.match(SRC, /key === "stallescalation" \|\| key === "stallescalationrefires"/);
+  // Settings are edited through the bare `/glla` table. The completion list
+  // therefore contains operational verbs only; no setting aliases or section
+  // navigation routes compete with the action namespace.
+  assert.ok((glla.match(/\["[^"]+",/g) ?? []).length <= 10, "glla autocomplete stays concise");
+  assert.ok(!/\["[a-zA-Z]+=",/.test(glla), "no key=value setting aliases in autocomplete");
+  assert.doesNotMatch(glla, /key=value|project key/);
+  assert.doesNotMatch(SRC, /\^\(keep-going\|auditor\|stall-brakes\|subagents\|other\)\\b/);
 });

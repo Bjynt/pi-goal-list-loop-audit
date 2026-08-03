@@ -362,8 +362,8 @@ What ships:
   without a following turn = the turn trigger is dead.
 - **Refire-streak escalation** — consecutive heartbeat refires that
   produce no real agent turn are counted (reset only by `agent_end` /
-  `tool_call`, never by the refire itself). At the threshold (default 5,
-  `/glla stallescalation=N`, 0 = never) the supervisor stops spinning:
+  `tool_call`, never by the refire itself). At the threshold (default 5;
+  edit Stall escalation refires in `/glla`, 0 = never) the supervisor stops spinning:
   the loop stops / the goal pauses with `stalled: continuation not
   landing`, a `stall_escalated` ledger event, a TUI warning, and an
   external notify. The fix on the box: restart pi, resume.
