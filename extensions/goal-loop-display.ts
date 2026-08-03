@@ -165,6 +165,26 @@ interface ActiveAttention {
   label: string;
   color: DisplayColor;
   detail: string;
+  /** A concise, durable excerpt survives when the continuation turn never starts. */
+  feedback?: string;
+}
+
+function latestAuditFeedback(g: Goal): string | undefined {
+  const verdict = [...(g.auditHistory ?? [])].reverse().find((entry) =>
+    (entry.disapproved || (entry.approved && entry.regressionShieldPassed === false))
+    && typeof entry.report === "string"
+    && entry.report.trim().length > 0,
+  );
+  if (!verdict?.report) return undefined;
+  // Keep the actionable tail when the report has one. Verdict markers alone
+  // are not feedback; naming that explicitly is better than rendering a
+  // blank-looking disapproval card.
+  const report = sanitizeDisplayText(verdict.report)
+    .replace(/<\/?(?:approved|disapproved|impossible)(?:\s[^>]*)?\s*\/?>(?:\s*)/gi, "")
+    .trim();
+  if (!report) return undefined;
+  const requiredFixes = report.match(/(?:^|\n)\s*(?:#{1,6}\s*)?required fixes\b[\s\S]*/i)?.[0];
+  return truncate(requiredFixes ?? report.slice(-320), 320);
 }
 
 function activeAttention(g: Goal): ActiveAttention | undefined {
@@ -174,6 +194,7 @@ function activeAttention(g: Goal): ActiveAttention | undefined {
       label: "regression shield — evidence gap",
       color: "error",
       detail: "auditor approved; regression shield found missing evidence",
+      feedback: latestAuditFeedback(g),
     };
   }
   if (/auditor disapproved/i.test(g.pauseReason)) {
@@ -181,6 +202,7 @@ function activeAttention(g: Goal): ActiveAttention | undefined {
       label: "auditor disapproved — fix the gap",
       color: "error",
       detail: "auditor verdict: disapproved",
+      feedback: latestAuditFeedback(g),
     };
   }
   if (/auditor|completion audit/i.test(g.pauseReason)) {
@@ -636,9 +658,18 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   if (attention) {
     const budget = budgetFor(width, 3, 60);
     lines.push(`├─ ${paint(theme, attention.color, attention.detail)}`);
-    wrap(g.pauseReason!, budget, 3).forEach((w, i) => {
-      lines.push(`${i === 0 ? "│ " : "│ "} ${paint(theme, attention.color, w)}`);
-    });
+    if (attention.feedback) {
+      // The detached result may arrive after the host continuation has
+      // stalled. Keep the actionable report on the always-visible card; do
+      // not make the user rely on a turn that may never start.
+      wrap(`latest audit feedback: ${attention.feedback}`, budget, 3).forEach((w) => {
+        lines.push(`│  ${paint(theme, attention.color, w)}`);
+      });
+    } else {
+      wrap(g.pauseReason!, budget, 3).forEach((w) => {
+        lines.push(`│  ${paint(theme, attention.color, w)}`);
+      });
+    }
     if (g.pauseSuggestedAction) {
       wrap(g.pauseSuggestedAction, budget, 2).forEach((w, i, all) => {
         lines.push(`${i === all.length - 1 ? "└─" : "│ "} ${paint(theme, "warning", w)}`);
