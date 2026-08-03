@@ -113,15 +113,21 @@ import {
   tickLengthContinue,
 } from "../length-continue.js";
 import {
+  capQuotaRetrySeconds,
   isQuotaError,
   isSubagentQuotaResult,
   parseQuotaError,
+  quotaRetryDelaySeconds,
   scheduleQuotaRetry,
   cancelQuotaRetry,
 } from "../quota-retry.js";
 import {
   classifyMainModelFailure,
+  mainModelAutoRetryUntil,
+  mainModelFailureDelayMs,
   mainModelRetryDelayMs,
+  MAIN_MODEL_AUTO_RETRY_HORIZON_MS,
+  MAIN_MODEL_MAX_RETRY_DELAY_MS,
   modelRef,
   nextUntriedModelRef,
   normalizeModelRefs,

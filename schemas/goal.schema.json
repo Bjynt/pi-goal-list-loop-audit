@@ -83,7 +83,10 @@
         "startedAt": { "type": "string", "format": "date-time" },
         "wallDeadlineAt": { "type": "string", "format": "date-time" },
         "recoveryAt": { "type": "string", "format": "date-time" },
-        "recoveryReason": { "type": "string" }
+        "recoveryReason": { "type": "string" },
+        "quotaAttempts": { "type": "integer", "minimum": 0 },
+        "quotaFirstAt": { "type": "string", "format": "date-time" },
+        "quotaAutoRetryUntil": { "type": "string", "format": "date-time" }
       }
     },
     "task": {

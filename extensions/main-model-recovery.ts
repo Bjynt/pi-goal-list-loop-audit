@@ -5,14 +5,19 @@
 // configured candidates, classifies provider failures, and computes a
 // bounded-but-persistent retry cadence.
 
-import { isQuotaError } from "./quota-retry.js";
+import { isBillingError, isQuotaError, parseQuotaError } from "./quota-retry.js";
 
-export type MainModelFailureKind = "quota" | "auth" | "transient" | "unknown" | "non-recoverable";
+export const MAIN_MODEL_MAX_RETRY_DELAY_MS = 5 * 60 * 60_000;
+export const MAIN_MODEL_AUTO_RETRY_HORIZON_MS = 24 * 60 * 60_000;
+
+export type MainModelFailureKind = "quota" | "billing" | "auth" | "transient" | "unknown" | "non-recoverable";
 
 export interface MainModelFailure {
   kind: MainModelFailureKind;
   raw: string;
   retryAfterSec?: number;
+  retryFromUpstream?: boolean;
+  resetAt?: string;
 }
 
 /** Return a canonical provider/model reference for a pi model-like object. */
@@ -65,9 +70,16 @@ export function classifyMainModelFailure(error: string | undefined): MainModelFa
   if (/context|output[ -]?token|max_?tokens|length limit|too many tokens|prompt too large|context window/.test(text)) {
     return { kind: "non-recoverable", raw };
   }
-  // Quota/rate-limit errors are the important long-lived case. The runtime
-  // supplies the exact retry window when it can; the caller owns the timer.
-  if (isQuotaError(raw)) return { kind: "quota", raw };
+  // Billing/credit exhaustion is not evidence of a future reset. It may be
+  // solved by a configured backup, but with no backup it needs user action.
+  if (isBillingError(raw)) return { kind: "billing", raw };
+  // Quota/rate-limit errors are the important long-lived case. Preserve the
+  // provider's hint when it exists; the orchestration layer caps the automatic
+  // wait and the total recovery horizon.
+  if (isQuotaError(raw)) {
+    const parsed = parseQuotaError(raw);
+    return { kind: "quota", raw, retryAfterSec: parsed.retryAfterSec, retryFromUpstream: parsed.fromUpstream, resetAt: parsed.resetAt };
+  }
   if (/401|403|unauthori[sz]ed|forbidden|invalid (?:api|access) key|authentication|no api key|credential/.test(text)) {
     return { kind: "auth", raw };
   }
@@ -90,6 +102,25 @@ export function nextUntriedModelRef(current: string | undefined, refs: string[],
  */
 export function mainModelRetryDelayMs(attempt: number, baseMinutes = 15): number {
   const base = Number.isFinite(baseMinutes) && baseMinutes > 0 ? baseMinutes : 15;
-  const minutes = Math.min(base * 2 ** Math.max(0, attempt - 1), 60);
+  const minutes = Math.min(base * 2 ** Math.max(0, attempt - 1), MAIN_MODEL_MAX_RETRY_DELAY_MS / 60_000);
   return Math.round(minutes * 60_000);
+}
+
+/** Return the durable end of one automatic recovery window. Manual resume
+ * starts a fresh window; a week-long provider cap therefore cannot cause a
+ * week of unattended probes. */
+export function mainModelAutoRetryUntil(firstFailureAtMs = Date.now(), horizonMs = MAIN_MODEL_AUTO_RETRY_HORIZON_MS): string {
+  const first = Number.isFinite(firstFailureAtMs) ? firstFailureAtMs : Date.now();
+  const horizon = Number.isFinite(horizonMs) && horizonMs > 0 ? horizonMs : MAIN_MODEL_AUTO_RETRY_HORIZON_MS;
+  return new Date(first + horizon).toISOString();
+}
+
+/** Honor an explicit provider hint when it fits the five-hour probe budget;
+ * otherwise use glla's bounded exponential cadence. */
+export function mainModelFailureDelayMs(failure: MainModelFailure, attempt: number, baseMinutes = 15): number {
+  if (failure.kind === "quota" && failure.retryFromUpstream && Number.isFinite(failure.retryAfterSec)) {
+    const hinted = Math.max(1_000, Math.round(failure.retryAfterSec! * 1_000));
+    if (hinted <= MAIN_MODEL_MAX_RETRY_DELAY_MS) return hinted;
+  }
+  return mainModelRetryDelayMs(attempt, baseMinutes);
 }

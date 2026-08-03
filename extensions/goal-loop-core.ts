@@ -165,6 +165,10 @@ export interface PendingCompletion {
   /** Why the claim is waiting for a fresh attempt. */
   recoveryAt?: string;
   recoveryReason?: string;
+  /** Durable quota recovery accounting; survives reloads and worker restarts. */
+  quotaAttempts?: number;
+  quotaFirstAt?: string;
+  quotaAutoRetryUntil?: string;
 }
 
 export interface Goal {
@@ -477,10 +481,18 @@ export interface MainModelRecovery {
   attempted: string[];
   /** Next safe probe time; persisted so reloads do not forget the wait. */
   retryAt?: string;
-  /** Number of completed recovery waits; drives the 15m → 30m → hourly cadence. */
+  /** Number of completed recovery waits; drives the bounded exponential cadence. */
   attempts: number;
   /** Human-readable provider failure excerpt. */
   reason: string;
+  /** First failure in this automatic recovery window. */
+  firstFailureAt?: string;
+  /** Automatic probes stop at this durable deadline; manual resume starts a new window. */
+  autoRetryUntil?: string;
+  /** A long provider hint or exhausted horizon requires explicit resume. */
+  manualResumeRequired?: boolean;
+  /** Provider reset hint retained for truthful status/ledger output. */
+  resetAt?: string;
   /** Storm failover can resume the selected backup before probing primary. */
   resumeCurrent?: boolean;
   /** Whether the suspended supervisor is a goal/list item or a loop. */
