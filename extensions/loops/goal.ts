@@ -160,6 +160,7 @@ import {
   cancelDetachedGoalCompletionAuditor,
   newDetachedAuditJobAttemptId,
   runDetachedGoalCompletionAuditor,
+  type AuditorProgress,
 } from "../goal-loop-auditor-process.js";
 import {
   REPETITION,
@@ -958,6 +959,53 @@ function isSupervising(): boolean {
 
 let latestAuditProgress: AuditDisplayProgress | null = null;
 let uiTicker: NodeJS.Timeout | null = null;
+
+/**
+ * Completion-auditor progress is ephemeral, but it still has an owner. A
+ * session generation alone is not enough: a cancelled goal can be replaced
+ * by a new goal without a session replacement, and the old detached worker
+ * may report one last progress snapshot after cancellation.
+ */
+function ownsDetachedAudit(generation: number, goalId: string, attemptId: string): boolean {
+  return completionAuditGeneration === generation
+    && state.goal?.id === goalId
+    && state.goal.pendingCompletion?.attemptId === attemptId;
+}
+
+function detachedAuditContext(generation: number, goalId: string, attemptId: string): ExtensionContext | null {
+  if (!ownsDetachedAudit(generation, goalId, attemptId)) return null;
+  return freshCtxForGeneration(generation);
+}
+
+function publishDetachedAuditProgress(
+  generation: number,
+  goalId: string,
+  attemptId: string,
+  progress: AuditorProgress,
+): boolean {
+  const current = detachedAuditContext(generation, goalId, attemptId);
+  if (!current) return false;
+  latestAuditProgress = {
+    currentTool: progress.currentTool,
+    currentToolArgs: progress.currentToolArgs,
+    currentToolStartedAt: progress.currentToolStartedAt,
+    label: progress.label,
+    phase: progress.phase,
+    elapsedMs: progress.elapsedMs,
+    recentOutput: progress.recentOutput,
+    toolCalls: progress.toolCalls,
+    lastEventAt: Date.now(),
+    lastActivityAt: progress.lastActivityAt,
+  };
+  refreshUI(current);
+  return true;
+}
+
+function clearDetachedAuditProgress(generation: number, goalId: string, attemptId: string): void {
+  if (!ownsDetachedAudit(generation, goalId, attemptId)) return;
+  latestAuditProgress = null;
+}
+
 
 // v0.33.0: slim widget "last action" feed — a tiny ring of finished tool
 // calls {name, arg, ms, ok} captured from the tool_call/tool_result stream.
@@ -2742,13 +2790,13 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
   const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(liveCtx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
   if (modelError) liveCtx.ui.notify(`Auditor model issue: ${modelError}`, "warning");
   const auditorCandidates: AuditorModelCandidate[] = [{ model: auditorModel, via: via ?? "unset" }, ...(fallbackModels ?? [])];
+  completionAuditInFlight = true;
+  completionAuditGeneration = generation;
   latestAuditProgress = {
     label: origin === "session-recovery" ? "recovery starting" : origin === "manual" ? "manual verify" : "quota retry",
     phase: "starting",
     lastEventAt: Date.now(),
   };
-  completionAuditInFlight = true;
-  completionAuditGeneration = generation;
   const auditStartMs = Date.now();
   let result: Awaited<ReturnType<typeof runDetachedGoalCompletionAuditor>>;
   let fallbackUsed = false;
@@ -2765,31 +2813,17 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
           thinkingLevel: (settings.auditorThinkingLevel ?? "high") as any, // may be "max" — pi ≥0.83 understands it; the dev-types predate it
           runtime: { attemptId: () => newDetachedAuditJobAttemptId(claim.attemptId!), wallTimeoutMs: AUDITOR_WALL_TIMEOUT_MS },
           onProgress: (progress) => {
-            const current = freshCtxForGeneration(generation);
-            if (!current) return;
-            latestAuditProgress = {
-              currentTool: progress.currentTool,
-              currentToolArgs: progress.currentToolArgs,
-              currentToolStartedAt: progress.currentToolStartedAt,
-              label: progress.label,
-              phase: progress.phase,
-              elapsedMs: progress.elapsedMs,
-              recentOutput: progress.recentOutput,
-              toolCalls: progress.toolCalls,
-              lastEventAt: Date.now(),
-              lastActivityAt: progress.lastActivityAt,
-            };
-            refreshUI(current);
+            publishDetachedAuditProgress(generation, goalId, claim.attemptId!, progress);
           },
         }),
       {
-        shouldRetry: () => freshCtxForGeneration(generation) !== null,
+        shouldRetry: () => detachedAuditContext(generation, goalId, claim.attemptId!) !== null,
         onRetry: (candidate, err) => {
-          const current = freshCtxForGeneration(generation);
+          const current = detachedAuditContext(generation, goalId, claim.attemptId!);
           if (current) appendLedger(current.cwd, "audit_infra_retry", { goalId, model: auditorCandidateLabel(candidate), error: err.slice(0, 200) });
         },
         onFallback: (from, to, err) => {
-          const current = freshCtxForGeneration(generation);
+          const current = detachedAuditContext(generation, goalId, claim.attemptId!);
           if (!current) return;
           appendLedger(current.cwd, "auditor_runtime_model_fallback", { goalId, from: auditorCandidateLabel(from), to: auditorCandidateLabel(to), error: err.slice(0, 200) });
           current.ui.notify(`Detached auditor failed on ${auditorCandidateLabel(from)} — retrying with ${auditorCandidateLabel(to)}. This is infrastructure, not a verdict.`, "warning");
@@ -2797,10 +2831,10 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       },
     ));
   } finally {
-    if (completionAuditGeneration === generation) {
+    if (ownsDetachedAudit(generation, goalId, claim.attemptId!)) {
+      clearDetachedAuditProgress(generation, goalId, claim.attemptId!);
       completionAuditInFlight = false;
       completionAuditGeneration = null;
-      latestAuditProgress = null;
     }
   }
   const currentAfterAudit = freshCtxForGeneration(generation);
@@ -4974,10 +5008,10 @@ function registerAgentTools(pi: any): void {
       // The detached worker must not keep complete_goal's pi turn open. The
       // rest of this callback deliberately runs after the tool has returned;
       // every state/UI access below rebinds through the generation guard.
-      latestAuditProgress = { label: "queued", lastEventAt: Date.now() };
-      refreshUI(ctx);
       completionAuditInFlight = true;
       completionAuditGeneration = auditGeneration;
+      latestAuditProgress = { label: "queued", lastEventAt: Date.now() };
+      refreshUI(ctx);
       void (async () => {
       const runAudit = (candidate: AuditorModelCandidate) =>
         runDetachedGoalCompletionAuditor({
@@ -4989,21 +5023,7 @@ function registerAgentTools(pi: any): void {
           thinkingLevel: (settings.auditorThinkingLevel ?? "high") as any, // may be "max" — pi ≥0.83 understands it; the dev-types predate it
           runtime: { attemptId: () => newDetachedAuditJobAttemptId(completionClaim.attemptId!), wallTimeoutMs: AUDITOR_WALL_TIMEOUT_MS },
           onProgress: (progress) => {
-            const current = freshCtxForGeneration(auditGeneration);
-            if (!current) return;
-            latestAuditProgress = {
-              currentTool: progress.currentTool,
-              currentToolArgs: progress.currentToolArgs,
-              currentToolStartedAt: progress.currentToolStartedAt,
-              label: progress.label,
-              phase: progress.phase,
-              elapsedMs: progress.elapsedMs,
-              recentOutput: progress.recentOutput,
-              toolCalls: progress.toolCalls,
-              lastEventAt: Date.now(),
-              lastActivityAt: progress.lastActivityAt,
-            };
-            refreshUI(current);
+            publishDetachedAuditProgress(auditGeneration, auditGoalId, auditAttemptId, progress);
           },
         });
       // v0.25.4 (post-audit fix): a retriable infra failure (stream error,
@@ -5018,31 +5038,31 @@ function registerAgentTools(pi: any): void {
       let fallbackUsed = false;
       try {
         ({ result, retriedOnce, fallbackUsed } = await runDetachedCompletionWithFallback(auditorCandidates, runAudit, {
-          shouldRetry: () => freshCtxForGeneration(auditGeneration) !== null,
+          shouldRetry: () => detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId) !== null,
           onRetry: (candidate, err) => {
-            const current = freshCtxForGeneration(auditGeneration);
+            const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
             if (!current) return;
             latestAuditProgress = { label: `infra error (${err.slice(0, 40)}) — retrying once`, lastEventAt: Date.now() };
             refreshUI(current);
             appendLedger(current.cwd, "audit_infra_retry", { goalId: auditGoalId, model: auditorCandidateLabel(candidate), error: err.slice(0, 200) });
           },
           onFallback: (from, to, err) => {
-            const current = freshCtxForGeneration(auditGeneration);
+            const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
             if (!current) return;
             appendLedger(current.cwd, "auditor_runtime_model_fallback", { goalId: auditGoalId, from: auditorCandidateLabel(from), to: auditorCandidateLabel(to), error: err.slice(0, 200) });
             current.ui.notify(`Detached auditor failed on ${auditorCandidateLabel(from)} — retrying with ${auditorCandidateLabel(to)}. This is infrastructure, not a verdict.`, "warning");
           },
         }));
       } finally {
-        if (completionAuditGeneration === auditGeneration) {
+        if (ownsDetachedAudit(auditGeneration, auditGoalId, auditAttemptId)) {
+          clearDetachedAuditProgress(auditGeneration, auditGoalId, auditAttemptId);
           completionAuditInFlight = false;
           completionAuditGeneration = null;
-          latestAuditProgress = null;
         }
       }
       const auditContextAfterRun = freshCtxForGeneration(auditGeneration);
       if (!auditContextAfterRun || !state.goal || state.goal.id !== auditGoalId) {
-        if (completionAuditGeneration === auditGeneration) latestAuditProgress = null;
+        clearDetachedAuditProgress(auditGeneration, auditGoalId, auditAttemptId);
         return staleToolResult();
       }
       if (state.goal.pendingCompletion?.attemptId !== auditAttemptId) {
