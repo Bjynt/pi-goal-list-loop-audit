@@ -94,8 +94,9 @@ test("settings: stallEscalationRefires round-trips through save/load", () => {
   assert.equal(loadSettings(dir).stallEscalationRefires, 0, "0 persists (never-escalate opt-out)");
 });
 
-test("/glla surface: stallescalation completion + key=value parser branch", () => {
-  assert.match(SRC, /\["stallescalation=", "N: heartbeat refires without a turn/);
+test("/glla surface: grouped settings completion preserves key=value parser routes", () => {
+  assert.match(SRC, /\["stall-brakes", "grouped stall and wedge settings"\]/);
+  assert.doesNotMatch(SRC, /\["stallescalation=",/);
   assert.match(SRC, /key === "stallescalation" \|\| key === "stallescalationrefires"/);
 });
 

@@ -392,6 +392,8 @@ export interface KeybindingsManagerLike {
 export interface SettingsMenuFactoryDeps {
   rows: SettingsRow[];
   title: string;
+  /** Optional section to open first when launched from a grouped command. */
+  initialSection?: SettingsSectionId;
 }
 
 /**
@@ -426,7 +428,10 @@ export class SettingsMenuComponent implements Component {
     this.theme = theme;
     this.keybindings = keybindings;
     this.done = done;
-    this.activeSectionIdx = 0;
+    this.activeSectionIdx = Math.max(
+      0,
+      SETTINGS_SECTIONS.findIndex((section) => section.id === deps.initialSection),
+    );
     this.selectedIdx = 0;
   }
 

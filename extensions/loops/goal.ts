@@ -170,6 +170,7 @@ import {
   buildSettingsRows,
   SettingsMenuComponent,
   type SettingsRow,
+  type SettingsSectionId,
 } from "../settings-menu.js";
 import {
   buildModelPickItems,
@@ -5728,12 +5729,15 @@ function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: 
  * switch is contract-equal in behavior and unit-testable via
  * extensions/settings-menu.ts.
  */
-async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
+async function openSettingsUI(ctx: ExtensionContext, initialSection?: SettingsSectionId): Promise<void> {
   for (;;) {
     const settings = loadSettings(ctx.cwd);
     const prov = settingsProvenance(ctx.cwd);
     const rows = buildSettingsRows(settings, prov);
-    const id = await promptSettingsMenu(ctx, rows);
+    const id = await promptSettingsMenu(ctx, rows, initialSection);
+    // The section is only an entry-point hint; after the first render the
+    // table owns navigation and keeps all grouped settings available.
+    initialSection = undefined;
     if (!id) return;
     try {
       await handleSettingChoice(id, ctx);
@@ -5753,6 +5757,7 @@ async function openSettingsUI(ctx: ExtensionContext): Promise<void> {
 async function promptSettingsMenu(
   ctx: ExtensionContext,
   rows: SettingsRow[],
+  initialSection?: SettingsSectionId,
 ): Promise<string | undefined> {
   const title = `pi-goal-list-loop-audit settings — global: ${globalSettingsPath()}`;
   if (typeof (ctx.ui as { custom?: unknown }).custom !== "function") {
@@ -5766,7 +5771,7 @@ async function promptSettingsMenu(
     return rows.find((r) => v.startsWith(r.label))?.id;
   }
   return await ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) => {
-    return new SettingsMenuComponent({ rows, title }, () => tui.requestRender(), theme, keybindings, done);
+    return new SettingsMenuComponent({ rows, title, initialSection }, () => tui.requestRender(), theme, keybindings, done);
   });
 }
 
@@ -6562,6 +6567,18 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   //   /glla model=unset          remove key (from global; project model=unset for project)
   //   /glla stats [json|premature|project=<path>]   per-project ledger rollups (v0.25.2)
   const trimmed = args.trim();
+  // Grouped settings entry points keep autocomplete focused while preserving
+  // every headless key=value route below. Each group opens the same table at
+  // its matching tab, so users do not have to scan unrelated settings first.
+  const settingsGroup = /^(keep-going|auditor|stall-brakes|subagents|other)\b/i.exec(trimmed)?.[1]?.toLowerCase() as SettingsSectionId | undefined;
+  if (settingsGroup) {
+    if (!ctx.hasUI) {
+      ctx.ui.notify("Grouped settings need the interactive UI. Headless mode remains available with /glla key=value or /glla project key=value.", "info");
+      return;
+    }
+    await openSettingsUI(ctx, settingsGroup);
+    return;
+  }
   // v0.25.2: /glla stats sub-mode — cross-project telemetry rollups.
   if (/^stats\b/.test(trimmed)) {
     cmdStats(trimmed.slice("stats".length).trim(), ctx);
@@ -6988,29 +7005,20 @@ export default function (pi: ExtensionAPI): void {
   pi.registerCommand("glla", {
     description: "Open the settings UI for goals, loops, lists, and the auditor. Scriptable form: /glla key=value · /glla project key=value",
     getArgumentCompletions: completions([
-      ["model=", "auditor model override: /glla model=provider/id"],
-      ["thinking=", "auditor thinking level: /glla thinking=high"],
-      ["notify=", "desktop push command: /glla notify='notify-send pi \"$1\"'"],
-      ["tokenlimit=", "per-goal token budget (0 = off): /glla tokenlimit=2000000"],
-      ["autoresume=", "default: hold when a session is loaded, auto-resume on reload/fork; on: always auto-resume; off: never"],
-      ["decisionpopup=", "on|off: decision pauses pop the select() picker (default on; the widget card always lists the options, /goal decide reopens the picker)"],
-      ["auditcap=", "N: pause goal after N consecutive auditor disapprovals (default 5, 0 = unlimited)"],
-      ["status", "unified what's-running view: goal + list queue + loop + pending decisions (v0.29.8)"],
-      ["log", "event-trail tail: /glla log [N] — who created/resumed/paused what, from where (v0.28.28)"],
-      ["wipe", "WIPE live glla state (goal archived, list cleared, loop stopped) — one-shot cleanup for leftover-laden projects"],
-      ["resume", "resume WHATEVER is paused/held (goal, list item, or held loop) — no need to know the type"],
-      ["cancel", "cancel the ONE live thing uniformly (goal/list item archived, loop stopped) — queue untouched; /list clear or /glla wipe for more"],
-      ["auditfeedbackchars=", "cap on executor-visible disapproval report chars (0 = full report, the default)"],
-      ["aggressivemode=", "on: keep-going defaults — autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs"],
-      ["quotaretryminutes=", "N: minutes before auto-retrying a quota-exhausted auditor (default 60)"],
-      ["stuckmax=", "N: consecutive stuck interventions before a loop stops (default 5)"],
-      ["stallescalation=", "N: heartbeat refires without a turn before goal pauses / loop stops (default 5, 0 = never)"],
-      ["stats", "per-project ledger rollups: /glla stats [json|premature|project=<path>]"],
-      ["audits", "audit-log browser: /glla audits [N|full] — recent verdicts from .pi-glla/audits.jsonl"],
-      ["autoaccept=", "on: drafts activate without the Confirm dialog (unattended rigs)"],
-      ["reviewer", "reviewer config menu (alias of postaudit — post-completion follow-up enqueuer)"],
-      ["postaudit", "post-completion audit config menu (the new name for /glla reviewer)"],
-      ["project", "write a project override: /glla project key=value"],
+      ["keep-going", "grouped keep-going settings"],
+      ["auditor", "grouped auditor settings"],
+      ["stall-brakes", "grouped stall and wedge settings"],
+      ["subagents", "grouped subagent settings"],
+      ["other", "grouped notification, token, and postaudit settings"],
+      ["status", "show goal, list, loop, and pending decisions"],
+      ["log", "show the recent event trail"],
+      ["resume", "resume the paused or held live thing"],
+      ["cancel", "cancel the one live thing"],
+      ["wipe", "wipe goal, list, and loop state"],
+      ["stats", "show per-project ledger rollups"],
+      ["audits", "browse the audit log"],
+      ["tooloverride", "configure agent-tool visibility"],
+      ["project", "prefix a headless key=value update with project"],
     ]),
     handler: settingsHandler,
   });

@@ -107,6 +107,19 @@ test("render: title row", () => {
   assert.equal(lines[0], "test — glla settings table");
 });
 
+test("grouped entry points can open a specific settings section", () => {
+  const rows = buildSettingsRows({} as Settings, {});
+  const component = new SettingsMenuComponent(
+    { rows, title: "test", initialSection: "stall-brakes" },
+    () => undefined,
+    THEME,
+    KB,
+    () => undefined,
+  );
+  assert.equal(component.getActiveSectionIdx(), SETTINGS_SECTIONS.findIndex((s) => s.id === "stall-brakes"));
+  assert.ok(component.visibleRows().every((row) => row.section === "stall-brakes"));
+});
+
 test("render: tabs row lists all 5 sections", () => {
   const { component } = makeComponent(SAMPLE_ROWS);
   const lines = component.render(120);
