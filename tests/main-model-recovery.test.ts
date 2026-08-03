@@ -30,6 +30,7 @@ test("main model fallback candidates are ordered and never retried in a cycle", 
 
 test("main model errors distinguish quota recovery from deterministic prompt walls", () => {
   assert.equal(classifyMainModelFailure("429 usage limit; retry in 2 hours").kind, "quota");
+  assert.equal(classifyMainModelFailure("Token Plan usage limit reached").kind, "quota");
   assert.equal(classifyMainModelFailure("401 invalid API key").kind, "auth");
   assert.equal(classifyMainModelFailure("503 upstream overloaded").kind, "transient");
   assert.equal(classifyMainModelFailure("max_tokens exceeds context window").kind, "non-recoverable");

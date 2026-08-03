@@ -481,6 +481,8 @@ export interface MainModelRecovery {
   attempts: number;
   /** Human-readable provider failure excerpt. */
   reason: string;
+  /** Storm failover can resume the selected backup before probing primary. */
+  resumeCurrent?: boolean;
   /** Whether the suspended supervisor is a goal/list item or a loop. */
   kind: "goal" | "loop";
 }

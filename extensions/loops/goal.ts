@@ -1857,6 +1857,21 @@ async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
   if (!recovery) return;
   const current = modelRef(ctx.model);
   const refs = [recovery.primary, ...mainModelFallbackRefs(ctx)];
+  if (recovery.resumeCurrent && current) {
+    state.mainModelRecovery = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: undefined };
+    continuationDispatchStoodDown = false;
+    if (recovery.kind === "goal" && state.goal?.status === "paused" && (state.goal.pauseReason ?? "").startsWith("main model recovery")) {
+      updateGoal({ status: "active", pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined }, ctx);
+      scheduleContinuation(ctx, true, 1_000);
+    } else if (recovery.kind === "loop" && state.loop && !state.loop.active && (state.loop.stopReason ?? "").startsWith("main model recovery")) {
+      state.loop = { ...state.loop, active: true, stopReason: undefined };
+      persistState(ctx);
+      scheduleLoopTick(ctx);
+    }
+    appendLedger(ctx.cwd, "main_model_probe", { from: current, to: current, attempts: recovery.attempts, mode: "resume-backup" });
+    ctx.ui.notify(`Main model recovery probe: continuing on ${current}; primary will be tested after this supervised turn.`, "info");
+    return;
+  }
   const target = refs.find((ref) => ref !== current);
   if (!target) {
     if (!current) {
@@ -1868,7 +1883,7 @@ async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
     // No backup is configured (or every backup has already been tried):
     // retry the currently selected model itself. This is the critical probe
     // that notices a quota window returning after an otherwise quiet hour.
-    state.mainModelRecovery = { ...recovery, active: current, attempted: [current], retryAt: undefined };
+    state.mainModelRecovery = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: undefined };
     continuationDispatchStoodDown = false;
     if (recovery.kind === "goal" && state.goal?.status === "paused" && (state.goal.pauseReason ?? "").startsWith("main model recovery")) {
       updateGoal({ status: "active", pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined }, ctx);
@@ -1948,7 +1963,7 @@ async function recoverMainModelFromSendStorm(ctx: ExtensionContext, kind: "conti
     if (!current) return;
     const recovery = state.mainModelRecovery;
     if (!recovery) return;
-    setMainModelRecoveryPause(ctx, { ...recovery, kind: kind === "loop" ? "loop" : "goal", active: current }, 1_000);
+    setMainModelRecoveryPause(ctx, { ...recovery, kind: kind === "loop" ? "loop" : "goal", active: current, resumeCurrent: true }, 1_000);
     mainModelAbortForRecovery = true;
     try { ctx.abort(); } catch { /* best effort; recovery guard prevents re-send storms */ }
     scheduleMainModelRecoveryTimer(ctx, 1_000);
@@ -1991,8 +2006,9 @@ async function handleMainModelAgentEnd(ctx: ExtensionContext, rawLastA: any, las
         if (mainModelRecoveryActive() || state.mainModelRecovery) return true;
       }
     }
-  } else if (lastA && state.mainModelRecovery && !state.mainModelRecovery.retryAt) {
-    mainModelRecoverySucceeded(ctx);
+  } else if (lastA) {
+    if (state.mainModelRecovery && !state.mainModelRecovery.retryAt) mainModelRecoverySucceeded(ctx);
+    else lastMainModelFailure = null;
   }
   return false;
 }
@@ -2302,6 +2318,10 @@ function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): void {
   // token-message dedupe set, or widget action feed.
   postCompactResumeOwed = false;
   postCompactResyncPending = false;
+  clearMainModelRecoveryTimer();
+  state.mainModelRecovery = undefined;
+  mainModelAbortForRecovery = false;
+  lastMainModelFailure = null;
   releaseContinuationDispatchStandDown();
   quotaRetryStreak = 0;
   countedTokenMessages.clear();
@@ -3295,7 +3315,13 @@ async function cmdPause(ctx: ExtensionContext): Promise<void> {
   }
   releaseContinuationDispatchStandDown();
   clearDispatchRecord(ctx.cwd);
-  updateGoal({ status: "paused" }, ctx);
+  updateGoal({
+    status: "paused",
+    pauseKind: "blocked",
+    pauseReason: "paused by user",
+    pauseSuggestedAction: state.goal.policy === "list" ? "/list resume to continue" : "/goal resume to continue",
+    pauseResumeAt: undefined,
+  }, ctx);
   // v0.22.7: name WHAT was paused — a list item resumes through /list.
   if (state.goal.policy === "list") {
     const queued = listQueue().length;

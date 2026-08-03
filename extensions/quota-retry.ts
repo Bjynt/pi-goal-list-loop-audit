@@ -20,11 +20,11 @@ export interface QuotaError {
 }
 
 /** Match 429, "quota", "rate limit", "temporarily rate-limited upstream",
- * credit exhaustion — the shapes we have caught in the wild (OpenRouter,
- * MiniMax, Anthropic). */
+ * credit/usage-plan exhaustion — the shapes we have caught in the wild
+ * (OpenRouter, MiniMax, Anthropic, opencode). */
 export function isQuotaError(error: string | undefined): boolean {
   if (!error) return false;
-  return /429|quota|rate.?limit|temporarily|credits?|key limit exceeded|insufficient.?balance|too many requests/i.test(error);
+  return /429|quota|rate.?limit|usage.?limit|token.?plan|temporarily|credits?|key limit exceeded|insufficient.?balance|too many requests/i.test(error);
 }
 
 /** Parse the retry window out of an error string. Understands:
