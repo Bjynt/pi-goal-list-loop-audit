@@ -59,6 +59,8 @@ test("v0.34.22: detached completion audits persist lifecycle claims and stop app
   assert.match(complete, /shouldRetry: \(\) => freshCtxForGeneration\(auditGeneration\) !== null/);
   assert.match(complete, /completionAuditGeneration = auditGeneration/);
   assert.match(complete, /const auditContextAfterRun = freshCtxForGeneration\(auditGeneration\)/);
+  assert.match(complete, /publishDetachedAuditProgress\(auditGeneration, auditGoalId, auditAttemptId, progress\)/);
+  assert.match(complete, /detachedAuditContext\(auditGeneration, auditGoalId, auditAttemptId\)/);
   assert.match(complete, /if \(!auditContextAfterRun \|\| !state\.goal \|\| state\.goal\.id !== auditGoalId\)/);
   assert.match(GOAL, /shouldRetry: \(\) => freshCtxForGeneration\(generation\) !== null/);
   assert.match(GOAL, /async function retryStoredCompletionAudit\(origin: CompletionAuditOrigin = "quota-retry"\)/);
@@ -89,4 +91,6 @@ test("v0.34.20: loop measurement and branch cleanup rebind after async work", ()
   assert.match(finish, /const afterReset = freshCtxForGeneration\(generation\)/);
   assert.match(finish, /const afterCheckout = freshCtxForGeneration\(generation\)/);
   assert.match(GOAL, /let completionAuditGeneration: number \| null = null/);
+  assert.match(GOAL, /function ownsDetachedAudit\(generation: number, goalId: string, attemptId: string\)/);
+  assert.match(GOAL, /state\.goal\.pendingCompletion\?\.attemptId === attemptId/);
 });

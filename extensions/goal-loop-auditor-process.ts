@@ -36,8 +36,6 @@ export interface AuditorProgress {
   elapsedMs: number;
   /** Timestamp of the last real RPC/session event observed by the worker. */
   lastActivityAt?: number;
-  label?: string;
-  percentage?: number;
   currentTool?: string;
   currentToolArgs?: string;
   currentToolStartedAt?: number;

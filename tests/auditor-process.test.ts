@@ -127,7 +127,11 @@ process.stdin.on("data", async (chunk) => {
   await sleep(30);
   out({ type: "tool_execution_start", toolCallId: "read-1", toolName: "read", args: { path: "/repo/README.md" } });
   await sleep(30);
+  out({ type: "tool_execution_start", toolCallId: "grep-2", toolName: "grep", args: { pattern: "artifact", path: "/repo/src" } });
+  await sleep(30);
   out({ type: "tool_execution_end", toolCallId: "read-1" });
+  await sleep(30);
+  out({ type: "tool_execution_end", toolCallId: "grep-2" });
   await sleep(30);
   out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "<evidence>\\nartifact exists; tests pass\\n</evidence>\\n<approved/>" } });
   out({ type: "agent_settled" });
@@ -160,6 +164,10 @@ process.stdin.on("data", async (chunk) => {
     const tool = reports.find((progress) => progress.currentTool === "read");
     assert.ok(tool, "parent observed the real worker's active tool");
     assert.equal(tool?.currentToolArgs, JSON.stringify({ path: "/repo/README.md" }));
+    assert.ok(
+      reports.some((progress) => progress.currentTool === "grep" && progress.toolCalls.some((call) => call.name === "read")),
+      "ending one overlapping tool does not erase the other active tool",
+    );
     assert.ok(reports.some((progress) => progress.phase === "complete"));
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -249,6 +257,8 @@ test("detached worker treats silent provider time as infrastructure, not a verdi
     assert.equal(result.approved, false);
     assert.equal(result.disapproved, false);
     assert.match(result.error ?? "", /Auditor stalled/);
+    assert.match(result.error ?? "", /for 1s/);
+    assert.doesNotMatch(result.error ?? "", /for 10m/);
     const progress = JSON.parse(await readFile(path.join(dir, ".pi-glla", "audit-jobs", "attempt-silent", "progress.json"), "utf8")) as Record<string, unknown>;
     assert.equal("lastActivityAt" in progress, false, "startup silence is not rendered as worker activity");
   } finally {

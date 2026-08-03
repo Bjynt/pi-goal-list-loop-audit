@@ -989,7 +989,6 @@ function publishDetachedAuditProgress(
     currentTool: progress.currentTool,
     currentToolArgs: progress.currentToolArgs,
     currentToolStartedAt: progress.currentToolStartedAt,
-    label: progress.label,
     phase: progress.phase,
     elapsedMs: progress.elapsedMs,
     recentOutput: progress.recentOutput,
