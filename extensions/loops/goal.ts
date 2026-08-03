@@ -2007,7 +2007,7 @@ async function handleMainModelAgentEnd(ctx: ExtensionContext, rawLastA: any, las
       }
     }
   } else if (lastA) {
-    if (state.mainModelRecovery && !state.mainModelRecovery.retryAt) mainModelRecoverySucceeded(ctx);
+    if (state.mainModelRecovery) mainModelRecoverySucceeded(ctx);
     else lastMainModelFailure = null;
   }
   return false;
