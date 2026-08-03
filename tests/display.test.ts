@@ -82,12 +82,12 @@ test("active goal shows pulse + elapsed", () => {
 test("active status does not make first-turn or long-idle gaps look green", () => {
   const state = { goal: goalOf(), list: [] };
   const awaiting = buildWidgetLines(state, null, NOW, undefined, undefined, { activity: "awaiting-first-turn" })!;
-  assert.match(buildStatusText(state, null, NOW, undefined, { activity: "awaiting-first-turn" })!, /awaiting first turn/);
+  assert.match(buildStatusText(state, null, NOW, undefined, { activity: "awaiting-first-turn" })!, /AWAITING FIRST TURN/);
   assert.ok(awaiting.some((line) => line.includes("awaiting first turn")));
   assert.ok(!awaiting.some((line) => line.includes("· active ·")));
 
   const idle = buildWidgetLines(state, null, NOW, undefined, undefined, { activity: "idle", lastActivityAt: NOW - 2 * 60_000 })!;
-  assert.match(buildStatusText(state, null, NOW, undefined, { activity: "idle", lastActivityAt: NOW - 2 * 60_000 })!, /idle/);
+  assert.match(buildStatusText(state, null, NOW, undefined, { activity: "idle", lastActivityAt: NOW - 2 * 60_000 })!, /IDLE/);
   assert.ok(idle.some((line) => line.includes("idle — no agent turn is currently running")));
   assert.ok(idle.some((line) => line.includes("last activity 2m")));
 });
@@ -404,7 +404,7 @@ test("auditor progress phases are explicit and retain worker activity", () => {
     elapsedMs: 42_000,
     lastActivityAt: NOW - 30_000,
   }, NOW)!;
-  assert.ok(running.some((l) => l.includes("auditor: tool executing")));
+  assert.ok(running.some((l) => l.includes("auditor: last observed tool")));
   assert.ok(running.some((l) => l.includes("tool: grep")));
   assert.ok(running.some((l) => l.includes("worker activity 30s ago")));
 
