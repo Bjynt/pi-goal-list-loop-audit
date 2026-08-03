@@ -14,8 +14,11 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
 import {
+  capQuotaRetrySeconds,
+  isBillingError,
   isQuotaError,
   parseQuotaError,
+  quotaRetryDelaySeconds,
   scheduleQuotaRetry,
   cancelQuotaRetry,
   isQuotaRetryPending,
@@ -39,6 +42,33 @@ test("parseQuotaError: prose hints (retry in 2m / retry after 30 seconds)", () =
   assert.equal(parseQuotaError("temporarily rate-limited upstream, retry in 2m").retryAfterSec, 120);
   assert.equal(parseQuotaError("retry after 30 seconds").retryAfterSec, 30);
   assert.equal(parseQuotaError("Retry in 1h please").retryAfterSec, 3600);
+  assert.equal(parseQuotaError("plan limit; retry in 1 week").retryAfterSec, 7 * 24 * 3600);
+});
+
+test("quota classification stays conservative around ambiguous provider errors", () => {
+  assert.equal(isQuotaError("503 temporarily unavailable"), false);
+  assert.equal(isQuotaError("403 forbidden"), false);
+  assert.equal(isQuotaError("429 Too Many Requests"), true);
+  assert.equal(isBillingError("insufficient credits"), true);
+  assert.equal(isBillingError("429 Too Many Requests"), false);
+});
+
+test("parseQuotaError: JSON reset fields and HTTP-date reset are understood", () => {
+  const now = Date.parse("2026-08-03T00:00:00Z");
+  const json = parseQuotaError('{"error":{"reset_at":"2026-08-03T02:00:00Z"}}', 3600, now);
+  assert.equal(json.retryAfterSec, 2 * 3600);
+  assert.equal(json.resetAt, "2026-08-03T02:00:00.000Z");
+  const http = parseQuotaError("429\nRetry-After: Mon, 03 Aug 2026 02:00:00 GMT", 3600, now);
+  assert.equal(http.retryAfterSec, 2 * 3600);
+  assert.equal(http.fromUpstream, true);
+});
+
+test("quota retry cadence caps at five hours instead of retrying for a week", () => {
+  assert.equal(quotaRetryDelaySeconds(1, 60), 60 * 60);
+  assert.equal(quotaRetryDelaySeconds(2, 60), 2 * 60 * 60);
+  assert.equal(quotaRetryDelaySeconds(3, 60), 4 * 60 * 60);
+  assert.equal(quotaRetryDelaySeconds(4, 60), 5 * 60 * 60);
+  assert.equal(capQuotaRetrySeconds(7 * 24 * 3600), 5 * 60 * 60);
 });
 
 test("isQuotaError: wild-caught shapes", () => {

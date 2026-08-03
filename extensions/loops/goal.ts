@@ -2800,8 +2800,11 @@ function newCompletionAuditAttemptId(): string {
 function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, origin: CompletionAuditOrigin): PendingCompletion {
   completionAuditRecoveryArmed = true;
   const startedMs = Date.now();
+  const claimForAttempt = origin === "manual"
+    ? { ...claim, quotaAttempts: undefined, quotaFirstAt: undefined, quotaAutoRetryUntil: undefined }
+    : claim;
   const pending: PendingCompletion = {
-    ...claim,
+    ...claimForAttempt,
     phase: "running",
     attemptId: newCompletionAuditAttemptId(),
     startedAt: new Date(startedMs).toISOString(),
@@ -2849,6 +2852,30 @@ function isAuditorTimeoutError(error: string | undefined): boolean {
 
 function isCompletionAuditRecoveryPending(goal: Goal | null | undefined): boolean {
   return !!goal?.pendingCompletion && goal.pendingCompletion.phase !== "running";
+}
+
+const MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS = 5;
+
+function auditorQuotaRetryPlan(claim: PendingCompletion, quota: ReturnType<typeof parseQuotaError>, baseMinutes: number): {
+  attempt: number;
+  retryAfterSec: number;
+  firstAt: string;
+  autoRetryUntil: string;
+  automatic: boolean;
+  requestedSec: number;
+} {
+  const now = Date.now();
+  const firstMs = claim.quotaFirstAt ? Date.parse(claim.quotaFirstAt) : Number.NaN;
+  const firstAtMs = Number.isFinite(firstMs) ? firstMs : now;
+  const firstAt = new Date(firstAtMs).toISOString();
+  const untilMs = claim.quotaAutoRetryUntil && Number.isFinite(Date.parse(claim.quotaAutoRetryUntil))
+    ? Date.parse(claim.quotaAutoRetryUntil)
+    : firstAtMs + MAIN_MODEL_AUTO_RETRY_HORIZON_MS;
+  const attempt = (claim.quotaAttempts ?? 0) + 1;
+  const requestedSec = quota.fromUpstream ? quota.retryAfterSec : quotaRetryDelaySeconds(attempt, baseMinutes);
+  const retryAfterSec = capQuotaRetrySeconds(requestedSec);
+  const automatic = attempt < MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS && now + retryAfterSec * 1_000 <= untilMs;
+  return { attempt, retryAfterSec, firstAt, autoRetryUntil: new Date(untilMs).toISOString(), automatic, requestedSec };
 }
 
 export type AuditorModelCandidate = { model: any; via: string };
