@@ -104,7 +104,7 @@ function toolArgsPrefix(args) {
   }
 }
 
-function appendRecentOutput(text) {
+function appendRecentOutput(recentOutput, text) {
   for (const raw of text.split("\n")) {
     if (!raw) continue;
     recentOutput.push(raw.length <= MAX_RECENT_OUTPUT_ITEM_CHARS
@@ -112,19 +112,6 @@ function appendRecentOutput(text) {
       : `${raw.slice(0, MAX_RECENT_OUTPUT_ITEM_CHARS - 1)}…`);
   }
   while (recentOutput.length > MAX_RECENT_OUTPUT_ITEMS) recentOutput.shift();
-}
-
-function setCurrentToolFromActive() {
-  const active = [...activeTools.values()].at(-1);
-  if (!active) {
-    currentTool = undefined;
-    currentToolArgs = undefined;
-    currentToolStartedAt = undefined;
-    return;
-  }
-  currentTool = active.name;
-  currentToolArgs = active.argsPrefix;
-  currentToolStartedAt = active.startedAt;
 }
 
 async function main() {
@@ -146,6 +133,18 @@ async function main() {
   let currentTool;
   let currentToolArgs;
   let currentToolStartedAt;
+  const setCurrentToolFromActive = () => {
+    const active = [...activeTools.values()].at(-1);
+    if (!active) {
+      currentTool = undefined;
+      currentToolArgs = undefined;
+      currentToolStartedAt = undefined;
+      return;
+    }
+    currentTool = active.name;
+    currentToolArgs = active.argsPrefix;
+    currentToolStartedAt = active.startedAt;
+  };
   let finalized = false;
   let streamError;
   let pi;
@@ -309,7 +308,7 @@ async function main() {
       if (event.type === "message_update") {
         if (update?.type === "text_delta" && typeof update.delta === "string") {
           outputParts.push(update.delta);
-          appendRecentOutput(update.delta);
+          appendRecentOutput(recentOutput, update.delta);
           void progress(phase).catch(() => {});
         } else {
           void progress("thinking").catch(() => {});

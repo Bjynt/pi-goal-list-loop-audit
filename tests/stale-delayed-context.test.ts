@@ -56,7 +56,7 @@ test("v0.34.22: detached completion audits persist lifecycle claims and stop app
   assert.match(GOAL, /function beginCompletionAudit\(ctx: ExtensionContext/);
   assert.match(GOAL, /phase: "running"/);
   assert.match(GOAL, /wallDeadlineAt/);
-  assert.match(complete, /shouldRetry: \(\) => freshCtxForGeneration\(auditGeneration\) !== null/);
+  assert.match(complete, /shouldRetry: \(\) => detachedAuditContext\(auditGeneration, auditGoalId, auditAttemptId\) !== null/);
   assert.match(complete, /completionAuditGeneration = auditGeneration/);
   assert.match(complete, /const auditContextAfterRun = freshCtxForGeneration\(auditGeneration\)/);
   assert.match(complete, /publishDetachedAuditProgress\(auditGeneration, auditGoalId, auditAttemptId, progress\)/);

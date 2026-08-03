@@ -4996,7 +4996,7 @@ function registerAgentTools(pi: any): void {
       const auditGoal = state.goal;
       if (!auditGoal) return staleToolResult();
       const auditGoalId = auditGoal.id;
-      const auditAttemptId = completionClaim.attemptId;
+      const auditAttemptId = completionClaim.attemptId!;
       const settings = loadSettings(ctx.cwd);
       const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(ctx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
       if (modelError) {
