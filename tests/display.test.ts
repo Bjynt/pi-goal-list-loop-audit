@@ -92,6 +92,24 @@ test("active status does not make first-turn or long-idle gaps look green", () =
   assert.ok(idle.some((line) => line.includes("last activity 2m")));
 });
 
+test("stream-proven work pulses; busy and queued states do not pretend to work", () => {
+  const state = { goal: goalOf({ policy: "list" }), list: [{ id: "next", objective: "next", addedAt: "z" }] };
+  const stream = { activity: "working" as const, lastStreamActivityAt: NOW - 1_000 };
+  const status = buildStatusText(state, null, NOW, undefined, stream)!;
+  assert.match(status, /glla: [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] working/);
+  assert.match(status, /last stream 1s ago/);
+  const lines = buildWidgetLines(state, null, NOW, undefined, undefined, stream)!;
+  assert.match(lines[0]!, /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] /);
+  assert.ok(lines.some((line) => line.includes("live work confirmed")));
+
+  const busy = buildStatusText(state, null, NOW, undefined, { activity: "busy", lastStreamActivityAt: NOW - 20_000 })!;
+  assert.match(busy, /busy · last stream 20s ago/);
+  assert.doesNotMatch(busy, /working/);
+  const queued = buildStatusText(state, null, NOW, undefined, { activity: "queued" })!;
+  assert.match(queued, /◌ queued/);
+  assert.doesNotMatch(queued, /working/);
+});
+
 test("active goal with tasks shows progress", () => {
   const g = goalOf({
     taskList: {
@@ -402,11 +420,12 @@ test("auditor widget shows concrete worker observations without exposing think b
   assert.match(joined, /latest: inspected README\.md/);
   assert.doesNotMatch(joined, /private reasoning|do not display this/);
   assert.match(joined, /worker activity 1s ago/);
-  assert.match(buildStatusText({ goal: g, list: [] }, {
+  const liveAuditStatus = buildStatusText({ goal: g, list: [] }, {
     phase: "tool_executing",
     currentTool: "read",
     lastActivityAt: NOW - 1_000,
-  }, NOW)!, /auditor tool executing · read/);
+  }, NOW)!;
+  assert.match(liveAuditStatus, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] auditor tool executing · read/);
 
   const streamedThink = buildWidgetLines({ goal: g, list: [] }, {
     phase: "thinking",

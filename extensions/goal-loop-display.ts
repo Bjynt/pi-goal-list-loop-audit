@@ -471,7 +471,9 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     // that evidence is deliberately static so a hung provider cannot look
     // like progress. Queued work is neither idle nor currently executing.
     if (activity === "busy") {
-      return `glla: ${paint(theme, "warning", `busy${hostLastStream(extras, now)}`)}${heldSuffix}`;
+      const busyQueue = (state.list?.length ?? 0) > 0 ? ` · ${state.list!.length} queued` : "";
+      const busyTasks = g.taskList ? ` ${countDone(g)}/${countTotal(g)} tasks ·` : "";
+      return `glla: ${paint(theme, "warning", `busy${hostLastStream(extras, now)}`)}${busyTasks}${busyQueue}${heldSuffix}`;
     }
     // v0.34.16: a fresh session_start owns the handoff. A cold boot still
     // follows the global autoResume setting, so the widget names the actual
