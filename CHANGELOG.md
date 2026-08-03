@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.34.25 — 2026-08-03
+
+### Fixed — silent host-session swap: same-host successor absorbed, work auto-resumes
+
+pi can replace the host session WITHOUT delivering `session_start` (the silent
+swap around compaction): the extension handle goes stale, the goal parked
+forever as "host session lost — waiting for fresh session_start", and the live
+replacement session's own tool calls were refused as foreign — the user had to
+`/reload` by hand to recover (observed fleet-wide: deathrun, hegemon, pulis,
+and the maintainer's own session).
+
+The replacement host session is alive and reaches glla through ordinary tool
+calls and events — that contact IS the liveness signal:
+
+- `tryAbsorbHostSuccessor(ctx, via)`: a foreign ctx that is file-backed
+  (`sessionManager.getSessionFile()` truthy — pi-subagents workers are
+  `SessionManager.inMemory` and stay refused) while the recorded owner is
+  provably dead is absorbed as the goal-plane owner: rebind, generation bump,
+  stale-terminal state cleared, loud `session_rebind_via_live_ctx` ledger +
+  notify, heartbeat restart, and the interrupted goal/list item auto-resumes
+  with lifecycle-rebind consent semantics (one forced continuation dispatch —
+  the 0.34.24 start-proof watchdog still stands down durably if it goes
+  silent). Absorption runs at every contact point: tool calls, `rememberCtx`,
+  `session_compact` (the field's most common post-swap contact), `agent_end`.
+- `deadOwnerSession`: `clearSessionOwnedTimers` nulls `ownerSession` at the
+  stale terminal; the dead identity is now kept so absorption can still tell
+  "replacement host session" from "ephemeral worker" after the park — and so
+  the null-owner gap no longer lets any live subagent ctx mutate a parked
+  plane (fail-closed preserved and tightened).
+- Ambiguity fails closed: owner still probe-live → no absorption; a
+  zombie-stood-down instance never reclaims the plane; `session_start`
+  (healthy lifecycle path) supersedes the silent-swap record.
+
+Four behavioral tests pin it: tool-call absorption with auto-resume, in-memory
+subagent refusal while parked, the field ordering (stale before compaction,
+then the successor's `session_compact` absorbs in place), and the dead-owner
+ephemeral-claim lockout.
+
 ## 0.34.24 — 2026-08-02
 
 ### Fixed — accepted continuation dispatches now require start proof
