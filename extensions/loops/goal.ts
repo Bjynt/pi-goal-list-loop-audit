@@ -2742,7 +2742,11 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
   const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(liveCtx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
   if (modelError) liveCtx.ui.notify(`Auditor model issue: ${modelError}`, "warning");
   const auditorCandidates: AuditorModelCandidate[] = [{ model: auditorModel, via: via ?? "unset" }, ...(fallbackModels ?? [])];
-  latestAuditProgress = { label: origin === "session-recovery" ? "recovery starting" : origin === "manual" ? "manual verify" : "quota retry", lastEventAt: Date.now() };
+  latestAuditProgress = {
+    label: origin === "session-recovery" ? "recovery starting" : origin === "manual" ? "manual verify" : "quota retry",
+    phase: "starting",
+    lastEventAt: Date.now(),
+  };
   completionAuditInFlight = true;
   completionAuditGeneration = generation;
   const auditStartMs = Date.now();
@@ -2765,9 +2769,13 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
             if (!current) return;
             latestAuditProgress = {
               currentTool: progress.currentTool,
+              currentToolArgs: progress.currentToolArgs,
+              currentToolStartedAt: progress.currentToolStartedAt,
               label: progress.label,
               phase: progress.phase,
               elapsedMs: progress.elapsedMs,
+              recentOutput: progress.recentOutput,
+              toolCalls: progress.toolCalls,
               lastEventAt: Date.now(),
               lastActivityAt: progress.lastActivityAt,
             };
@@ -4985,9 +4993,13 @@ function registerAgentTools(pi: any): void {
             if (!current) return;
             latestAuditProgress = {
               currentTool: progress.currentTool,
+              currentToolArgs: progress.currentToolArgs,
+              currentToolStartedAt: progress.currentToolStartedAt,
               label: progress.label,
               phase: progress.phase,
               elapsedMs: progress.elapsedMs,
+              recentOutput: progress.recentOutput,
+              toolCalls: progress.toolCalls,
               lastEventAt: Date.now(),
               lastActivityAt: progress.lastActivityAt,
             };

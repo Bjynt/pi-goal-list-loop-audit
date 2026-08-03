@@ -93,25 +93,33 @@ async function main() {
   let pi;
   let deadlineTimer;
   let inactivityTimer;
-  let lastActivityAt = Date.now();
+  // `lastActivityAt` is user-visible and must remain unset until a real RPC
+  // event arrives. The separate probe clock keeps the inactivity brake armed
+  // while the provider is silent during startup/thinking.
+  let lastActivityAt;
+  let lastActivityProbeAt = Date.now();
+  let progressWrite = Promise.resolve();
   const configuredStallMs = Number(process.env.GLLA_AUDITOR_STALL_MS ?? 10 * 60_000);
   const AUDITOR_STALL_MS = Number.isFinite(configuredStallMs) ? Math.max(50, configuredStallMs) : 10 * 60_000;
 
-  const progress = async (phase = "running") => {
+  const progress = (phase = "running") => {
     const file = {
       protocolVersion: PROTOCOL_VERSION,
       attemptId,
       requestHash: request.requestHash,
       phase,
       elapsedMs: Date.now() - startedAt,
-      lastActivityAt,
+      ...(lastActivityAt !== undefined ? { lastActivityAt } : {}),
       recentOutput: recentOutput.slice(-8),
       toolCalls: toolCalls.slice(),
       ...(currentTool ? { currentTool } : {}),
       ...(currentToolArgs ? { currentToolArgs } : {}),
       ...(currentToolStartedAt ? { currentToolStartedAt } : {}),
     };
-    await atomicJson(progressPath, file);
+    // Event handlers publish asynchronously. Serialize snapshots so a slow
+    // older write can never overwrite a newer tool/report phase on disk.
+    progressWrite = progressWrite.catch(() => {}).then(() => atomicJson(progressPath, file));
+    return progressWrite;
   };
 
   const finish = async (ok, error = "") => {
@@ -179,7 +187,7 @@ async function main() {
     deadlineTimer.unref?.();
     inactivityTimer = setInterval(() => {
       if (finalized || currentTool) return;
-      if (Date.now() - lastActivityAt >= AUDITOR_STALL_MS) {
+      if (Date.now() - lastActivityProbeAt >= AUDITOR_STALL_MS) {
         void finish(false, "Auditor stalled — no session activity for 10m while no read-only tool was running, so it was aborted.").catch(() => {});
       }
     }, Math.min(15_000, Math.max(10, Math.floor(AUDITOR_STALL_MS / 4))));
