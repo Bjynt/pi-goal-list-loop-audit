@@ -8119,6 +8119,28 @@ export default function (pi: ExtensionAPI): void {
         ctx.ui.notify(`Main-model recovery is waiting with the work safe — ${recoveryResumeCmd} retries the provider, or enable Auto-resume in /glla settings.`, "info");
       }
     }
+    // Stored completion-auditor quota waits are also durable. The old timer
+    // dies with the session, so a reload must restore only the same bounded
+    // probe when auto-resume/rebind consent exists; otherwise the claim waits
+    // for an explicit /goal resume.
+    const quotaClaim = state.goal?.pendingCompletion;
+    if (state.goal?.status === "paused" && quotaClaim?.phase === "quota-waiting" && state.goal.pauseKind === "wait" && state.goal.pauseResumeAt) {
+      const quotaConsent = autoResume || explicitRecovery;
+      const quotaResumeCmd = state.goal.policy === "list" ? "/list resume" : "/goal resume";
+      const quotaAtMs = Date.parse(state.goal.pauseResumeAt);
+      if (quotaConsent) {
+        const delay = Number.isFinite(quotaAtMs) ? Math.max(0, quotaAtMs - Date.now()) : 0;
+        if (delay > 0) {
+          scheduleQuotaRetryForSession(ctx, delay / 1_000, state.goal.pauseReason ?? "auditor quota", () => {
+            if (state.goal?.status === "paused" && state.goal.pendingCompletion?.phase === "quota-waiting") void retryStoredCompletionAudit("session-recovery");
+          });
+        } else {
+          void retryStoredCompletionAudit("session-recovery");
+        }
+      } else {
+        ctx.ui.notify(`Stored completion claim is waiting on an auditor quota probe — ${quotaResumeCmd} retries it, or enable Auto-resume in /glla settings.`, "info");
+      }
+    }
     // v0.25.0 (contract item 6): aggressiveMode announces every auto-event.
     if (
       autoResume &&
