@@ -85,6 +85,13 @@ test("tail-aware excerpt: capped output keeps the Required-fixes tail", () => {
   assert.equal(auditFeedbackExcerpt("short", 100), "short");
 });
 
+test("disapproval feedback is surfaced even when the continuation turn never starts", () => {
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.match(src, /returned tool text reaches the executor only if a continuation/);
+  assert.match(src, /ctx\.ui\.notify\(`Auditor disapproved\. Report excerpt:/);
+  assert.match(src, /no actionable feedback returned; use \/glla audits full/);
+});
+
 test("infra errors are transparent to the disapproval streak (not breakers)", () => {
   const v = (over: object) => ({ at: "x", approved: false, disapproved: false, model: "m", report: "r", ...over });
   // D, D, infra, D → 3 trailing (infra is not a verdict):

@@ -179,12 +179,12 @@ function latestAuditFeedback(g: Goal): string | undefined {
   // Keep the actionable tail when the report has one. Verdict markers alone
   // are not feedback; naming that explicitly is better than rendering a
   // blank-looking disapproval card.
-  const report = sanitizeDisplayText(verdict.report)
+  const requiredFixes = verdict.report.match(/(?:^|\n)\s*(?:#{1,6}\s*)?required fixes\b[\s\S]*/i)?.[0];
+  const report = sanitizeDisplayText(requiredFixes ?? verdict.report.slice(-320))
     .replace(/<\/?(?:approved|disapproved|impossible)(?:\s[^>]*)?\s*\/?>(?:\s*)/gi, "")
     .trim();
   if (!report) return undefined;
-  const requiredFixes = report.match(/(?:^|\n)\s*(?:#{1,6}\s*)?required fixes\b[\s\S]*/i)?.[0];
-  return truncate(requiredFixes ?? report.slice(-320), 320);
+  return truncate(report, 320);
 }
 
 function activeAttention(g: Goal): ActiveAttention | undefined {

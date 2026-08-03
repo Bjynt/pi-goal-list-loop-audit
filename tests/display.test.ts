@@ -540,11 +540,19 @@ test("active auditor verdicts never masquerade as infrastructure no-verdict", ()
     status: "active",
     pauseReason: "auditor disapproved",
     pauseSuggestedAction: "Inspect auditor feedback and fix the actual gap before calling complete_goal again",
+    auditHistory: [{
+      at: "2026-07-21T11:59:30Z",
+      approved: false,
+      disapproved: true,
+      model: "auditor",
+      report: "## Required fixes\n- update assets-manifest to v1.0.0-image-regen\n<disapproved/>",
+    }],
   });
   const disapprovalState = { goal: disapproved, list: [], loop: null };
   const disapprovalWidget = buildWidgetLines(disapprovalState as never)!;
   assert.match(disapprovalWidget[0]!, /auditor disapproved — fix the gap/);
   assert.ok(disapprovalWidget.some((l) => l.includes("auditor verdict: disapproved")), `disapproval: ${disapprovalWidget.join("\\n")}`);
+  assert.ok(disapprovalWidget.some((l) => l.includes("v1.0.0-image-regen")), `feedback: ${disapprovalWidget.join("\\n")}`);
   assert.doesNotMatch(disapprovalWidget.join("\\n"), /no verdict|claim was not evaluated/);
   assert.match(buildStatusText(disapprovalState as never)!, /auditor disapproved — fix the gap/);
 });

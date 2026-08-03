@@ -5328,6 +5328,10 @@ function registerAgentTools(pi: any): void {
           pauseReason: `regression shield: auditor approved, but evidence never referenced ${missing.length} contract item(s)`,
           pauseSuggestedAction: "call complete_goal again — the next auditor run is told exactly which items to quote evidence for",
         }, ctx);
+        ctx.ui.notify(
+          `Regression shield blocked completion: the auditor approved, but its evidence did not reference these contract items:\n${missing.map((item) => `- ${item}`).join("\n")}\n\nCall complete_goal again; the next audit will be told to quote raw evidence for each item.`,
+          "warning",
+        );
         scheduleContinuation(ctx, true);
         return {
           content: [{
@@ -5417,6 +5421,15 @@ function registerAgentTools(pi: any): void {
         pauseReason: "auditor disapproved",
         pauseSuggestedAction: "Inspect auditor feedback and fix the actual gap before calling complete_goal again",
       }, ctx);
+      // The returned tool text reaches the executor only if a continuation
+      // turn starts. Surface a bounded report directly as well, so a missing
+      // turn-start acknowledgement cannot turn a real disapproval into an
+      // apparently empty red card.
+      const userFeedback = auditFeedbackExcerpt(result.output, 1200)
+        .replace(/<\/?(?:approved|disapproved|impossible)\s*\/?>/gi, "")
+        .trim()
+        || "(no actionable feedback returned; use /glla audits full to inspect the raw report)";
+      ctx.ui.notify(`Auditor disapproved. Report excerpt:\n${userFeedback}`, "warning");
       scheduleContinuation(ctx, true);
       return {
         content: [{
