@@ -18,6 +18,7 @@
 // Every test uses its own tmp cwd; session_start re-reads state from that
 // cwd's .pi-glla, so tests stay independent despite shared module state.
 
+import { resetLengthContinue } from "../extensions/length-continue.js";
 import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -663,6 +664,63 @@ test("v0.34.25: dead owner + ephemeral ctx cannot claim the plane (subagent lock
   const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
   assert.match(ledger, /"session_rebind_via_live_ctx"/);
   __testOnlyResetOwnerSession(); // restore the MAIN_SM claim invariant for later tests
+});
+
+// v0.34.26 — output-token-limit exhaustion: durable explicit failure state.
+
+test("v0.34.26: repeated output-token truncation pauses the goal durably with re-scope guidance and a fresh resume budget", async () => {
+  __testOnlyResetStaleFlag();
+  resetLengthContinue();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "chunked work — done when durable", ctx);
+  await tick();
+  pi.sent.length = 0;
+  const lengthEnd = { messages: [{ role: "assistant", content: [{ type: "text", text: "partial artifact…" }], stopReason: "length" }] };
+  for (let i = 0; i < 3; i++) {
+    await pi.fire("agent_end", lengthEnd, ctx);
+    await tick();
+  }
+  assert.equal(pi.sent.length, 3, "three auto-continues fire before the cap");
+  await pi.fire("agent_end", lengthEnd, ctx);
+  await tick();
+  const g = readState(cwd).goal as { status: string; pauseKind?: string; pauseReason?: string; pauseSuggestedAction?: string };
+  assert.equal(g.status, "paused", "goal pauses durably on exhaustion — no green-active idle");
+  assert.equal(g.pauseKind, "error");
+  assert.match(g.pauseReason ?? "", /output-token limit — 3 responses in a row were truncated mid-artifact/);
+  assert.match(g.pauseSuggestedAction ?? "", /\/goal resume/);
+  assert.equal(pi.sent.length, 3, "no fourth auto-continue fires");
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.match(ledger, /"length_continue_exhausted"/, "exhaustion is ledgered");
+  // Explicit recovery gets a fresh truncation budget (the sticky gaveUp flag
+  // must not make the resumed turn silently dead on the first truncation):
+  await pi.command("goal", "resume", ctx);
+  await tick();
+  const afterResume = pi.sent.length;
+  await pi.fire("agent_end", lengthEnd, ctx);
+  await tick();
+  assert.ok(pi.sent.length > afterResume, "a truncation after resume fires an auto-continue again");
+});
+
+test("v0.34.26: output-token-limit provider errors pause with the named wall, not generic provider-error text", async () => {
+  __testOnlyResetStaleFlag();
+  resetLengthContinue();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "wall classification — done when named", ctx);
+  await tick();
+  const errEnd = { messages: [{ role: "assistant", content: [{ type: "text", text: "Error: 400 max_tokens exceeded — output length limit reached" }], stopReason: "error" }] };
+  for (let i = 0; i < 5; i++) {
+    await pi.fire("agent_end", errEnd, ctx);
+    await tick(50);
+  }
+  const g = readState(cwd).goal as { status: string; pauseKind?: string; pauseReason?: string; pauseResumeAt?: string; pauseSuggestedAction?: string };
+  assert.equal(g.status, "paused", "deterministic wall pauses the goal");
+  assert.equal(g.pauseKind, "error");
+  assert.match(g.pauseReason ?? "", /output-token limit — the provider rejected \d+ overlong responses/);
+  assert.doesNotMatch(g.pauseReason ?? "", /5 consecutive errors/, "generic provider-error text replaced");
+  assert.ok(!g.pauseResumeAt, "no wait-timer — blind retries never help a deterministic wall");
+  assert.match(g.pauseSuggestedAction ?? "", /Re-scope the work into smaller pieces/);
 });
 
 // T1 — stale paths on the two creation entry points (flag latched from T2)
