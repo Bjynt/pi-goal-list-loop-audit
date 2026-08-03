@@ -157,6 +157,13 @@ function activeAttention(g: Goal): { label: string; color: DisplayColor } | unde
   return { label: "attention needed", color: pauseIsError(g) ? "error" : "warning" };
 }
 
+/** v0.34.27: an accepted dispatch with no start proof is a trigger/queue
+ * failure, not proof that the host session disappeared. Keep the red
+ * interrupted presentation, but tell the user which recovery is safe. */
+function interruptedForNoStart(g: Goal): boolean {
+  return /continuation start acknowledgement timed out/i.test(g.interruptedReason ?? "");
+}
+
 /** A pending claim without the new `running` marker is a legacy or
  * replacement-interrupted audit. It must never render as an active auditor. */
 function auditRecoveryPending(g: Goal): boolean {
@@ -240,7 +247,10 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     // v0.28.1 (S1/S2): a stale-handle interrupt keeps the goal ACTIVE.
     // It outranks any older operational note on the same state snapshot.
     if (g.interruptedAt) {
-      return `glla: ${paint(theme, "error", "⚠ interrupted — stale handle · fresh session_start resumes")}${heldSuffix}`;
+      const label = interruptedForNoStart(g)
+        ? "⚠ turn start not observed — automatic retry held"
+        : "⚠ interrupted — stale handle · fresh session_start resumes";
+      return `glla: ${paint(theme, "error", label)}${heldSuffix}`;
     }
     const attention = activeAttention(g);
     if (attention) {
@@ -393,8 +403,13 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   const lines = [head];
   if (interrupted) {
     const resumeCmd = isList ? "/list resume" : "/goal resume";
-    lines.push(`├─ ${paint(theme, "error", "host session lost — waiting for fresh session_start")}`);
-    lines.push(`└─ ${paint(theme, "warning", `/reload to rebind · ${resumeCmd} if it does not resume`)}`);
+    if (interruptedForNoStart(g)) {
+      lines.push(`├─ ${paint(theme, "error", "continuation was accepted, but pi did not start a turn")}`);
+      lines.push(`└─ ${paint(theme, "warning", `automatic re-sends are stopped · ${resumeCmd} to retry once`)}`);
+    } else {
+      lines.push(`├─ ${paint(theme, "error", "host session lost — waiting for fresh session_start")}`);
+      lines.push(`└─ ${paint(theme, "warning", `/reload to rebind · ${resumeCmd} if it does not resume`)}`);
+    }
     return lines;
   }
   if (g.status === "auditing") {

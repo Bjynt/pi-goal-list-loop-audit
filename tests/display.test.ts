@@ -107,6 +107,21 @@ test("stale interrupted goal is visibly orphaned, not normally active", () => {
   assert.ok(!lines.some((line) => /· active ·/.test(line)), "stale work must not look normally active");
 });
 
+test("accepted continuation without a turn-start proof is not mislabeled as a lost host session", () => {
+  const g = goalOf({
+    policy: "list",
+    interruptedAt: "2026-07-21T11:59:00Z",
+    interruptedReason: "continuation start acknowledgement timed out (dispatch-1)",
+  });
+  const status = buildStatusText({ goal: g, list: [] }, null, NOW)!;
+  assert.match(status, /turn start not observed — automatic retry held/);
+  assert.doesNotMatch(status, /stale handle/);
+  const lines = buildWidgetLines({ goal: g, list: [] }, null, NOW)!;
+  assert.ok(lines.some((line) => line.includes("continuation was accepted, but pi did not start a turn")));
+  assert.ok(lines.some((line) => line.includes("automatic re-sends are stopped") && line.includes("/list resume")));
+  assert.ok(!lines.some((line) => line.includes("host session lost")), "trigger failure must not claim the host disappeared");
+});
+
 test("widget truncation is width-aware (v0.22.2)", () => {
   const longObjective = "x".repeat(200);
   const g = goalOf({ objective: longObjective });

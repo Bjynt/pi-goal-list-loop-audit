@@ -8086,7 +8086,12 @@ export default function (pi: ExtensionAPI): void {
     scheduleContinuation(ctx, false, EAGER_CONTINUATION_SETTLE_MS);
   });
 
-  pi.on("tool_call", (event: any) => {
+  pi.on("tool_call", (event: any, ctx: ExtensionContext) => {
+    // v0.34.27: ordinary tool activity can be the first observable event
+    // after pi replaces a host without session_start. A file-backed,
+    // same-workspace successor is absorbed; an in-memory worker is refused.
+    if (tryAbsorbHostSuccessor(ctx, "tool_call")) return;
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     toolCallsThisTurn++;
     noteActivity(true);
     lastStreamActivityAt = Date.now();
@@ -8103,22 +8108,31 @@ export default function (pi: ExtensionAPI): void {
   // pi exposes the follow-up prompt itself. The low-level start events below
   // remain compatibility proofs for older pi builds and for custom messages.
   pi.on("before_agent_start", (event: any, ctx: ExtensionContext) => {
+    // v0.34.27: absorb before the stale/foreign gates. This is the strongest
+    // replacement contact because pi exposes the prompt itself.
+    if (tryAbsorbHostSuccessor(ctx, "before_agent_start")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     dispatchStartAcknowledged(ctx, "before_agent_start", event?.prompt);
   });
   pi.on("message_update", (_event: any, ctx: ExtensionContext) => {
+    if (tryAbsorbHostSuccessor(ctx, "message_update")) return;
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     lastStreamActivityAt = Date.now();
-    if (!isForeignCtx(ctx)) dispatchStartAcknowledged(ctx, "message_update");
+    dispatchStartAcknowledged(ctx, "message_update");
   });
   pi.on("agent_start", (_event: any, ctx: ExtensionContext) => {
+    if (tryAbsorbHostSuccessor(ctx, "agent_start")) return;
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     lastStreamActivityAt = Date.now();
     // v0.32.1: a real turn started — the post-compaction resume debt is
     // discharged (the heartbeat stops retrying it).
     postCompactResumeOwed = false;
-    if (!isForeignCtx(ctx)) dispatchStartAcknowledged(ctx, "agent_start");
+    dispatchStartAcknowledged(ctx, "agent_start");
   });
   pi.on("turn_start", (_event: any, ctx: ExtensionContext) => {
+    if (tryAbsorbHostSuccessor(ctx, "turn_start")) return;
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     lastStreamActivityAt = Date.now();
-    if (!isForeignCtx(ctx)) dispatchStartAcknowledged(ctx, "turn_start");
+    dispatchStartAcknowledged(ctx, "turn_start");
   });
 }

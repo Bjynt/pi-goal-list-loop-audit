@@ -666,7 +666,50 @@ test("v0.34.25: dead owner + ephemeral ctx cannot claim the plane (subagent lock
   __testOnlyResetOwnerSession(); // restore the MAIN_SM claim invariant for later tests
 });
 
-// v0.34.26 — output-token-limit exhaustion: durable explicit failure state.
+// v0.34.27 — every real successor contact can rebind after a stale terminal.
+
+test("v0.34.27: stale host recovery absorbs the first replacement contact across lifecycle and stream boundaries", async () => {
+  const contacts: Array<{ via: string; event: string; payload: unknown }> = [
+    { via: "message_start", event: "message_start", payload: { message: { role: "user" } } },
+    { via: "tool_result", event: "tool_result", payload: { toolName: "read", output: "ok" } },
+    { via: "tool_call", event: "tool_call", payload: { toolName: "read", input: {} } },
+    { via: "before_agent_start", event: "before_agent_start", payload: { prompt: "[GOAL CHECKPOINT]" } },
+    { via: "message_update", event: "message_update", payload: {} },
+    { via: "agent_start", event: "agent_start", payload: {} },
+    { via: "turn_start", event: "turn_start", payload: {} },
+  ];
+  for (const [index, contact] of contacts.entries()) {
+    __testOnlyResetStaleFlag();
+    __testOnlyResetOwnerSession();
+    const cwd = tmpCwd();
+    const ctx = await freshSession(cwd, "startup");
+    await pi.command("goal", `successor contact ${index} — done when absorbed`, ctx);
+    await tick();
+    pi.sent.length = 0;
+    pi.sendMessageError = staleError();
+    await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "boundary" }], stopReason: "end_turn" }] }, ctx);
+    await tick();
+    pi.sendMessageError = null;
+    const successorCtx = makeMockCtx(cwd, {
+      sessionManager: {
+        name: `successor-${contact.via}`,
+        getSessionFile: () => path.join(cwd, `${contact.via}.jsonl`),
+        getSessionId: () => `successor-${contact.via}`,
+      },
+    });
+    await pi.fire(contact.event, contact.payload, successorCtx);
+    await tick(200);
+    const g = readState(cwd).goal as { status: string; interruptedAt?: string };
+    assert.equal(g.status, "active", `${contact.via}: goal remains supervised after absorption`);
+    assert.equal(g.interruptedAt, undefined, `${contact.via}: stale marker is cleared`);
+    assert.ok(pi.sent.length >= 1, `${contact.via}: exactly a recovery path, not a permanent park`);
+    const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+    assert.match(ledger, new RegExp(`\\"via\\":\\"${contact.via}\\"`), `${contact.via}: rebind is ledgered`);
+  }
+  __testOnlyResetOwnerSession();
+});
+
+// v0.34.27 — output-token-limit exhaustion: durable explicit failure state.
 
 test("v0.34.26: repeated output-token truncation pauses the goal durably with re-scope guidance and a fresh resume budget", async () => {
   __testOnlyResetStaleFlag();
