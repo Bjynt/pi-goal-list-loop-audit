@@ -92,8 +92,36 @@ test("E3: escalation is loud-terminal (goal pause / loop stop with restart guida
 
 test("E8: the error brake carries the REAL error text, not stopReason", () => {
   assert.match(SRC, /const detail = text\.trim\(\) \? ` \(last: \$\{text\.trim\(\)/);
-  assert.match(SRC, /const reason = `5 consecutive errors\$\{detail\}`;/);
+  // v0.34.26: generic errors keep the exact legacy reason; output-token-limit
+  // walls get their own named reason via the ternary.
+  assert.match(SRC, /const reason = outputLimitWall\n\s+\? `output-token limit — the provider rejected \$\{consecutiveErrorIterations\} overlong responses\$\{detail\}`\n\s+: `5 consecutive errors\$\{detail\}`;/);
   assert.ok(!SRC.includes('pauseReason: `5 consecutive errors: ${stopReason}`'), "old literal-'error' shape gone");
+});
+
+test("v0.34.26: output-token-limit provider errors are classified as a deterministic wall, not a flake", () => {
+  assert.match(SRC, /const outputLimitWall = \/output\[ -\]\?token\|max_\?tokens\|length limit\|output length\|too many tokens\/i\.test\(detail\);/);
+  // the deterministic branch pauses with pauseKind error and never schedules
+  // the flake ladder or hourly probes — it sits BEFORE the 6-brake park:
+  const wallIdx = SRC.indexOf("if (outputLimitWall) {");
+  const capIdx = SRC.indexOf("if (brakeStreak >= 6) {");
+  assert.ok(wallIdx > 0 && capIdx > wallIdx, "output-limit branch precedes the 6-brake park");
+  const wallBranch = SRC.slice(wallIdx, capIdx);
+  assert.match(wallBranch, /pauseKind: "error",/);
+  assert.match(wallBranch, /Deterministic wall — the provider rejects this response shape every time/);
+  assert.match(wallBranch, /\/goal resume\./);
+  assert.ok(!wallBranch.includes("scheduleQuotaRetryForSession"), "no flake auto-resume for a deterministic wall");
+  assert.ok(!wallBranch.includes("pauseResumeAt"), "no wait-timer for a deterministic wall");
+});
+
+test("v0.34.26: length-continue exhaustion is a durable paused state, not a transient notify", () => {
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "length_continue_exhausted", \{ consecutive: lc\.consecutive \}\);/);
+  assert.match(SRC, /pauseReason: `output-token limit — \$\{LENGTH_CONTINUE_MAX\} responses in a row were truncated mid-artifact; auto-continue exhausted`,/);
+  assert.match(SRC, /pauseKind: "error",/);
+  assert.match(SRC, /then \/goal resume — the truncation budget restarts fresh\./);
+  // the sticky gaveUp tracker resets so an explicit resume gets a fresh budget:
+  assert.match(SRC, /resetLengthContinue\(\);/);
+  // loop path: explicit stop reason with preserved iteration:
+  assert.match(SRC, /state\.loop\.stopReason = `output-token limit — \$\{LENGTH_CONTINUE_MAX\} consecutive truncated responses \(iteration \$\{state\.loop\.iteration\} preserved/);
 });
 
 test("E8: user aborts braked SEPARATELY — honest message, no auto-resume", () => {
