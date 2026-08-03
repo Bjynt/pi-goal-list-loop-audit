@@ -34,6 +34,8 @@ export interface AuditorProgress {
   recentOutput: string[];
   phase: "starting" | "running" | "thinking" | "tool_executing" | "producing_report" | "complete";
   elapsedMs: number;
+  /** Timestamp of the last real RPC/session event observed by the worker. */
+  lastActivityAt?: number;
   label?: string;
   percentage?: number;
   currentTool?: string;
@@ -122,6 +124,8 @@ interface AuditorProgressFile {
   requestHash: string;
   phase: AuditorProgress["phase"];
   elapsedMs: number;
+  /** Worker-side activity, not merely a parent poll or UI refresh. */
+  lastActivityAt?: number;
   recentOutput: string[];
   toolCalls: AuditorToolCall[];
   currentTool?: string;
@@ -219,6 +223,7 @@ function asProgress(file: AuditorProgressFile, startedAt: number): AuditorProgre
   return {
     phase: file.phase,
     elapsedMs: Math.max(file.elapsedMs, Date.now() - startedAt),
+    ...(file.lastActivityAt !== undefined ? { lastActivityAt: file.lastActivityAt } : {}),
     recentOutput: file.recentOutput,
     toolCalls: file.toolCalls,
     ...(file.currentTool ? { currentTool: file.currentTool } : {}),

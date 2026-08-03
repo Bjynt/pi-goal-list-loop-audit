@@ -181,10 +181,53 @@ const shortClock = (iso: string): string => {
 export interface AuditDisplayProgress {
   currentTool?: string;
   label?: string;
+  phase?: "starting" | "running" | "thinking" | "tool_executing" | "producing_report" | "complete";
   elapsedMs?: number;
-  /** v0.25.4: last progress-event time — the widget flags auditor-quiet
-   * stalls when this goes stale while the audit is in flight. */
+  /** Parent-observed progress-file change; useful for legacy callers. */
   lastEventAt?: number;
+  /** Worker-side activity, excluding parent polls and UI refreshes. */
+  lastActivityAt?: number;
+}
+
+type AuditorDisplayPhase = "queued" | "running" | "quiet" | "blocked" | "awaiting-verdict";
+const AUDITOR_QUIET_MS = 3 * 60_000;
+
+/** Use worker activity for liveness. Fall back to the parent event timestamp
+ * for older callers/tests that only know when a progress file was observed. */
+function auditorActivityAge(audit: AuditDisplayProgress | null | undefined, now: number): number | undefined {
+  if (!audit) return undefined;
+  const at = audit.lastActivityAt ?? (audit.label === "queued" ? undefined : audit.lastEventAt);
+  if (at === undefined || !Number.isFinite(at)) return undefined;
+  return Math.max(0, now - at);
+}
+
+function auditorLastActivity(audit: AuditDisplayProgress | null | undefined, now: number): string {
+  if (!audit?.lastActivityAt || !Number.isFinite(audit.lastActivityAt)) return "";
+  return ` · last activity ${fmtElapsed(Math.max(0, now - audit.lastActivityAt))} ago`;
+}
+
+/** Project the detached worker's raw progress into the five user-facing
+ * phases. A durable running claim without an observed progress event is not
+ * green proof of work: it is explicitly waiting for a verdict. */
+function auditorDisplayPhase(g: Goal, audit: AuditDisplayProgress | null | undefined, now: number): AuditorDisplayPhase {
+  const label = audit?.label?.toLowerCase() ?? "";
+  if (label === "queued") return "queued";
+  if (/infra|error|failed|blocked|no verdict/.test(label)) return "blocked";
+  if (audit?.phase === "complete") return "awaiting-verdict";
+  const age = auditorActivityAge(audit, now);
+  if (age !== undefined && age > AUDITOR_QUIET_MS) return "quiet";
+  if (!audit && g.pendingCompletion?.phase === "running") return "awaiting-verdict";
+  return "running";
+}
+
+function auditorPhaseLabel(phase: AuditorDisplayPhase): string {
+  switch (phase) {
+    case "queued": return "queued";
+    case "running": return "running";
+    case "quiet": return "quiet";
+    case "blocked": return "blocked";
+    case "awaiting-verdict": return "awaiting verdict";
+  }
 }
 
 /**
@@ -218,9 +261,11 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     if (auditRecoveryPending(g)) {
       return `glla: ${paint(theme, "warning", "audit recovery pending")}${heldSuffix}`;
     }
-    const label = audit?.label === "queued" ? "auditor queued" : "auditor running";
-    const tool = audit?.currentTool ? ` · ${audit.currentTool}` : "";
-    return `glla: ${paint(theme, "accent", label)}${tool}${heldSuffix}`;
+    const phase = auditorDisplayPhase(g, audit, now);
+    const label = `auditor ${auditorPhaseLabel(phase)}`;
+    const tool = phase === "running" && audit?.currentTool ? ` · ${audit.currentTool}` : "";
+    const color = phase === "blocked" || phase === "quiet" ? "warning" : "accent";
+    return `glla: ${paint(theme, color, label)}${tool}${heldSuffix}`;
   }
   if (g.status === "paused") {
     // v0.28.22: the status line names the ACTIONABILITY, not the reason —
@@ -418,14 +463,29 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       lines.push(`└─ ${paint(theme, "dim", "stored completion claim is safe; a fresh session will retry it")}`);
       return lines;
     }
-    lines.push(`├─ auditor: ${audit?.label === "queued" ? "queued" : audit?.label ?? "running"}${audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : ""}`);
-    // v0.25.4: auditor-quiet stall — progress events stopped arriving
-    // while the audit is in flight (hung model call, stuck tool).
-    const quietMs = audit?.lastEventAt !== undefined ? now - audit.lastEventAt : 0;
-    if (quietMs > 3 * 60_000) {
-      lines.push(`└─ ${paint(theme, "warning", `auditor quiet ${fmtElapsed(quietMs)} — may be stuck; /goal cancel discards the claim`)}`);
-    } else if (audit?.elapsedMs) lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(audit.elapsedMs)} in detached worker`)}`);
-    else lines.push(`└─ ${paint(theme, "dim", "detached worker, read-only tools")}`);
+    const phase = auditorDisplayPhase(g, audit, now);
+    const phaseLabel = auditorPhaseLabel(phase);
+    const detail = audit?.label && audit.label !== "queued" && audit.label !== "running"
+      ? ` · ${truncate(audit.label, 30)}`
+      : "";
+    const tool = phase === "running" && audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : "";
+    lines.push(`├─ auditor: ${phaseLabel}${detail}${tool}`);
+    const activity = auditorActivityAge(audit, now);
+    const last = auditorLastActivity(audit, now);
+    if (phase === "quiet") {
+      const quietMs = activity ?? 0;
+      lines.push(`└─ ${paint(theme, "warning", `auditor quiet ${fmtElapsed(quietMs)}${last} — may be stuck; /goal cancel discards the claim`)}`);
+    } else if (phase === "blocked") {
+      lines.push(`└─ ${paint(theme, "warning", `auditor blocked${audit?.label ? ` — ${truncate(audit.label, 44)}` : ""}${last}`)}`);
+    } else if (phase === "awaiting-verdict") {
+      lines.push(`└─ ${paint(theme, "dim", `waiting for detached verdict${last}`)}`);
+    } else if (phase === "queued") {
+      lines.push(`└─ ${paint(theme, "dim", "detached worker queued — completion claim is durable")}`);
+    } else if (audit?.elapsedMs) {
+      lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(audit.elapsedMs)} in detached worker${last}`)}`);
+    } else {
+      lines.push(`└─ ${paint(theme, "dim", `detached worker, read-only tools${last}`)}`);
+    }
     return lines;
   }
   if (g.status === "paused" && g.pauseReason) {
