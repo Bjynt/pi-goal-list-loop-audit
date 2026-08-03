@@ -183,7 +183,9 @@ process.stdin.on("data", async (chunk) => {
   out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "<evidence>\\nartifact exists\\ntests pass\\n</evidence>\\n" } });
   out({ type: "tool_execution_start", toolCallId: "1", toolName: "read", args: { path: "artifact" } });
   out({ type: "tool_execution_end", toolCallId: "1" });
-  out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "<approved/>" } });
+  // Verdict markers may be split across arbitrary stream fragments.
+  out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "<approved" } });
+  out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "/>" } });
   out({ type: "agent_end" });
   out({ type: "agent_settled" });
 });
@@ -224,6 +226,7 @@ process.stdin.on("end", () => { process.exitCode = 41; });
     const result = JSON.parse(await readFile(resultPath, "utf8"));
     const log = JSON.parse(await readFile(piLog, "utf8"));
     assert.equal(result.ok, true);
+    assert.match(result.output, /<approved\/>$/);
     assert.equal(result.toolCalls[0].name, "read");
     assert.deepEqual(log.args, [
       "--mode", "rpc", "--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates",

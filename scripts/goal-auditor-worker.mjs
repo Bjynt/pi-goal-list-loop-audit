@@ -125,7 +125,10 @@ async function main() {
       attemptId,
       requestHash: request.requestHash,
       ok,
-      output: outputParts.join("\n"),
+      // text_delta events are arbitrary stream fragments, not lines. Preserve
+      // their exact order/content so verdict markers cannot be split by an
+      // inserted newline (for example: "<approved" + "/>" ).
+      output: outputParts.join(""),
       model: request.model,
       thinkingLevel: request.thinkingLevel,
       toolCalls,
