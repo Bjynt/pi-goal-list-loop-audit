@@ -45,7 +45,8 @@
     "check": "tsc --noEmit",
     "test": "bun test",
     "test:node": "node --experimental-strip-types --test tests/*.test.ts",
-    "test:all": "bun test && tsc --noEmit"
+    "test:all": "bun test && tsc --noEmit",
+    "release:check": "npm run test:all && npm pack --dry-run"
   },
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "*",

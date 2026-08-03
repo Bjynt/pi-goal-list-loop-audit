@@ -42,7 +42,7 @@ Five top-level commands — `/goal`, `/list`, `/loop`, `/glla`, `/review`:
 /goal resume                       # resume
 /goal cancel                       # abort
 /goal decide                       # re-open the decision picker (v0.28.23)
-/goal audit ["focus on payments"]    # one-shot project audit (v0.29.8): fix the non-decisions, present the decisions — findings in .pi-glla/audit-loop/findings.md
+/goal audit "focus on payments"      # one-shot project audit; optional focus text
 /goal verify                       # queue a detached auditor for the current goal — no agent turn (v0.28.27, renamed from /goal audit in v0.29.8)
 /goal tweak "<new objective>"      # edit in place (Confirm dialog)
 /goal archive                      # archived goals, newest first
@@ -247,14 +247,23 @@ Activity is evidence-gated and intentionally honest:
 | `QUOTA WALL` | The provider rejected the request for a quota/plan window; saved work is waiting for a durable probe. |
 
 Quota walls deliberately do **not** get more blind request retries. pi's
-request-local retry counter is bounded; glla owns the longer recovery window,
-persisting the next probe with a `15m → 30m → hourly` cadence and no attempt
-cap. With global `autoResume=on`, the probe is restored after a session reload;
-with it off, the saved item waits for `/list resume` (or `/goal resume`). If a
-quota reset time is known, a manual resume after that time is safe. For
-continuous work, configure ordered **Main model backups** in `/glla` using a
-model from a different provider or billing/quota pool — another model on the
-same exhausted plan is not a real fallback.
+request-local retry counter is bounded; glla owns the longer recovery window:
+`15m → 30m → 1h → 2h → 4h → 5h`, then it stops automatic probes after 24h.
+A provider hint is honored when it is within the five-hour probe budget; a
+week-long hint is shown and held for manual action instead of scheduling a
+hidden week-long timer. With global `autoResume=on`, pending probes survive a
+session reload. After the safety horizon, `/list resume`, `/goal resume`, or
+`/loop resume` explicitly starts a fresh bounded window. For continuous work,
+configure ordered **Main model backups** in `/glla` using a model from a
+different provider or billing/quota pool — another model on the same exhausted
+plan is not a real fallback.
+
+Classification is conservative: explicit 429/rate-limit/plan-limit/token-plan
+signals are quota walls; ordinary `503 temporarily unavailable`, `403
+forbidden`, auth failures, and ambiguous provider prose are not relabeled as
+quota. Credit/billing exhaustion gets a manual-action hold. The raw provider
+message remains in the ledger/durable state for diagnosis, while the card
+shows the classified reason and recovery action.
 
 The quota-specific card hides raw provider JSON while preserving it in durable
 state and the ledger:
@@ -267,7 +276,8 @@ glla: ⟦⏳ QUOTA WALL · next probe in 10m 48s⟧ · 1 queued
 
 Increasing pi's per-request retry count is usually the wrong fix for a
 multi-hour plan cap: it prolongs the 429 noise and delays the durable pause;
-it does not make the provider reset sooner.
+it does not make the provider reset sooner. A provider that says "reset in a
+week" therefore does not cause a week of unattended probes.
 
 For long-running `/list` work, the card adds a compact queue trail with the
 immediate next item and its truthful wait age while `/list` remains the
@@ -355,10 +365,13 @@ silently overrode the global hold at launch (the junk-runner incident), so
 the launch-restore gate and the reviewer-enqueue gate read only the global
 file now. Main-session backups are global and ordered: a quota/provider error
 switches to the next authenticated candidate before another supervised turn;
-when every candidate is down, glla cancels the provider-held retry and keeps a
-durable 15m → 30m → hourly probe running. A quota window returning two hours
-later therefore resumes the saved work without a manual `/goal resume`; no
-blind 50ms resend loop is introduced. The detached auditor uses an explicit cascade: primary
+when every candidate is down, glla cancels the provider-held retry and uses a
+bounded `15m → 30m → 1h → 2h → 4h → 5h` probe ladder. Automatic recovery stops
+at 24h (or earlier when the provider supplies a reset beyond the five-hour
+budget), preserves the saved work, and requires an explicit `/goal resume`,
+`/list resume`, or `/loop resume` to start a fresh window. A quota window
+returning within that horizon therefore resumes saved work without manual
+intervention; no blind 50ms resend loop is introduced. The detached auditor uses an explicit cascade: primary
 `auditorModel` → optional fallback pin → the pi session model. If a selected
 model fails after launch, the worker retries it once and then advances through
 that same cascade; every candidate is still audited in a detached,
