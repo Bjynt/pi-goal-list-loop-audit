@@ -274,6 +274,23 @@ test("widget names a list item as such and points at /list, not /goal", () => {
   assert.ok(!lines.some(l => l.includes("/goal status")), "list item must not hint /goal status");
 });
 
+test("long-running list card shows a truthful queue trail and immediate next item", () => {
+  const lines = buildWidgetLines(
+    {
+      goal: goalOf({ policy: "list", usage: undefined }),
+      list: [
+        { id: "a", objective: "write the next focused improvement", addedAt: "2026-07-21T11:55:00Z" },
+        { id: "b", objective: "later item", addedAt: "2026-07-21T11:58:00Z" },
+      ],
+    },
+    null,
+    NOW,
+  )!;
+  assert.ok(lines.some((line) => line.includes("↳ 2 waiting · up next: write the next focused improvement")));
+  assert.ok(lines.some((line) => line.includes("waiting 5m")), "valid queue timestamps get a wait age");
+  assert.equal(lines[lines.length - 1], "└─ 2 queued · /list · /glla");
+});
+
 test("widget list item, last in queue: no '0 queued'", () => {
   const lines = buildWidgetLines(
     { goal: goalOf({ policy: "list", usage: undefined }), list: [] },

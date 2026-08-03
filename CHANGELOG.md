@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.34.43 — 2026-08-03
+
+### Improved — long-running list queue trail
+
+- Added a compact above-editor queue trail for active `/list` items showing
+  the waiting count, immediate next item, and valid wait age.
+- Documented the evidence-gated aurora activity HUD, BUSY/QUEUED/IDLE states,
+  and long-running list visuals in the README.
+
 ## 0.34.42 — 2026-08-03
 
 ### Improved — aurora orbit activity HUD

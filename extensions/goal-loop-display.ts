@@ -853,6 +853,21 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   if (next) mid.push(`next: ${truncate(next, budgetFor(width, 9, 40))}`);
   if (mid.length > 0) lines.push(`├─ ${mid.join(` ${paint(theme, "dim", "·")} `)}`);
   const queue = state.list?.length ?? 0;
+  // v0.34.43: a long-running list needs one concrete glimpse beyond the
+  // counter. Keep it compact and truthful: state.list is the waiting queue,
+  // so show only its immediate next item and how long it has waited. The
+  // complete queue remains available through /list; this is a visual trail,
+  // not a second queue surface.
+  if (isList && queue > 0) {
+    const nextItem = state.list?.[0];
+    if (nextItem) {
+      const added = Date.parse(nextItem.addedAt);
+      const age = Number.isFinite(added) ? ` · waiting ${fmtElapsed(now - added)}` : "";
+      const prefix = `↳ ${queue} waiting · up next: `;
+      const objectiveBudget = budgetFor(width, visibleLen(`├─ ${prefix}`) + visibleLen(age), 40);
+      lines.push(`├─ ${paint(theme, "accent", "↳")} ${queue} waiting · up next: ${truncate(nextItem.objective, objectiveBudget)}${paint(theme, "dim", age)}`);
+    }
+  }
   const footer = isList
     ? `${queue > 0 ? `${queue} queued · ` : ""}/list · /glla`
     : `${queue > 0 ? `${queue} queued · ` : ""}/goal status · /glla`;

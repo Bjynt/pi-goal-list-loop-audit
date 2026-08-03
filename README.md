@@ -224,9 +224,42 @@ Each loop is a different policy class on the same status machine.
 ## Live TUI (always know it's on)
 
 A persistent `glla:` status segment + an above-editor widget show the current
-goal/loop at all times: objective, status, elapsed, tokens, next task or loop
-metric, pause reason, and live auditor progress during audits. If something is
-running, you can see it — no command needed.
+goal/list item/loop at all times: objective, durable state, elapsed time,
+tokens, next task or loop metric, pause reason, and live auditor progress
+during audits. If something is running, you can see it — no command needed.
+
+The status bar is the single activity HUD. Its animated **aurora orbit** is an
+indeterminate liveness signal, never a completion meter:
+
+```text
+glla: ◜·▰✦··◝ LIVE · WORKING 42m 08s · last stream 1s ago · 23 queued
+```
+
+Activity is evidence-gated and intentionally honest:
+
+| Indicator | Meaning |
+|---|---|
+| `LIVE · WORKING` | Fresh stream/tool evidence is arriving; the orbit animates. |
+| `BUSY` | pi is occupied, but no fresh stream evidence justifies a live pulse. |
+| `QUEUED` | A continuation is waiting to start; no work is fabricated. |
+| `IDLE` | The durable item remains active, but no recent work is observed. |
+| `auditor …` | A detached, extension-less verifier is queued, running, quiet, or waiting for its verdict. |
+
+For long-running `/list` work, the card adds a compact queue trail with the
+immediate next item and its truthful wait age while `/list` remains the
+canonical full queue view:
+
+```text
+● Fix the current issue · list item · active · 42m
+├─ ✓ bash tests/display.test.ts (35s) · next: update docs
+├─ ↳ 23 waiting · up next: refresh the release notes · waiting 12m 04s
+└─ 23 queued · /list · /glla
+```
+
+The card does not duplicate the animated activity badge. This keeps the
+visual surface calm while still making a long-running list feel alive and
+answering the useful questions: **what is active, is it really moving, and
+what is next?**
 
 ## Self-watchdog (liveness is built in)
 
