@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.34.40 — 2026-08-03
+
+### Improved — one activity HUD
+
+- Centralized LIVE, BUSY, QUEUED, IDLE, and stream-age indicators in the
+  persistent status bar instead of repeating them in the above-editor card.
+- Kept the card focused on the objective, durable state, recent action, queue,
+  and concrete detached-auditor observations.
+- Retained the animated evidence-backed wave as the single live-work pulse.
+
 ## 0.34.39 — 2026-08-03
 
 ### Improved — live activity has a visual language

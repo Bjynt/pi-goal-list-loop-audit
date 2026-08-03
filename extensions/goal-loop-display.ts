@@ -149,21 +149,18 @@ export interface DisplayTheme {
 const paint = (theme: DisplayTheme | undefined, color: DisplayColor, text: string): string => (theme ? theme.fg(color, text) : text);
 
 /**
- * A live-work pulse is only rendered when the host/worker supplied real
- * activity evidence. It is deliberately not tied to elapsed time alone: a
- * durable active state can outlive a dead or merely queued turn.
+ * A live-work pulse is only rendered in the persistent status bar when the
+ * host/worker supplied real activity evidence. It is deliberately not tied
+ * to elapsed time alone: a durable active state can outlive a dead or merely
+ * queued turn.
  *
  * The wave is deliberately decorative, not a progress meter. It says only
  * "fresh evidence is arriving"; it never implies a percentage complete.
  */
-const WORKING_FRAMES = ["◐", "◓", "◑", "◒"] as const;
 const LIVE_WAVE_FRAMES = [
   "▁▂▃▅▃▂", "▂▃▅▇▅▃", "▃▅▇▅▃▂", "▅▇▅▃▂▁",
   "▇▅▃▂▁▂", "▅▃▂▁▂▃", "▃▂▁▂▃▅", "▂▁▂▃▅▇",
 ] as const;
-function workingFrame(now: number): string {
-  return WORKING_FRAMES[Math.floor(Math.max(0, now) / 250) % WORKING_FRAMES.length]!;
-}
 function liveWaveFrame(now: number): string {
   return LIVE_WAVE_FRAMES[Math.floor(Math.max(0, now) / 350) % LIVE_WAVE_FRAMES.length]!;
 }
@@ -615,9 +612,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // terminal fonts and ignores ANSI color; ● takes the paint everywhere.
   const interrupted = g.status === "active" && !!g.interruptedAt;
   const attention = activeAttention(g);
-  const activity = goalDisplayActivity(g, extras);
   const auditorPhase = g.status === "auditing" ? auditorDisplayPhase(g, audit, now) : undefined;
-  const auditorLive = g.status === "auditing" && auditorHasLiveEvidence(audit, auditorPhase!, now);
   const icon =
     interrupted
       ? paint(theme, "error", "⚠")
@@ -626,12 +621,8 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
         : g.status === "paused"
           ? paint(theme, pauseIsError(g) ? "error" : "warning", "⏸")
           : g.status === "auditing"
-            ? paint(theme, auditorLive ? "success" : "accent", auditorLive ? workingFrame(now) : "⟡")
-            : activity === "awaiting-first-turn" || activity === "idle" || activity === "busy" || activity === "queued"
-              ? paint(theme, "warning", "◌")
-              : activity === "working"
-                ? paint(theme, "success", workingFrame(now))
-                : paint(theme, "success", "●");
+            ? paint(theme, "accent", "⟡")
+            : paint(theme, "success", "●");
   // v0.24.7: a list item is named as such and points at /list — before,
   // the widget called it "active" and hinted "/goal status", reading as if
   // queue work were a standalone goal.
@@ -641,17 +632,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     : attention
       ? paint(theme, attention.color, attention.label)
       : g.status === "active"
-        ? activity === "awaiting-first-turn"
-          ? stateBadge("AWAITING FIRST TURN", "◌", theme, "warning")
-          : activity === "idle"
-            ? stateBadge("IDLE", "◌", theme, "warning")
-            : activity === "busy"
-              ? stateBadge("BUSY", "◌", theme, "warning")
-              : activity === "queued"
-                ? stateBadge("QUEUED", "◌", theme, "warning")
-                : activity === "working"
-                  ? activityBadge("LIVE · WORKING", now, theme)
-                  : paint(theme, "success", "active")
+        ? paint(theme, "success", "active")
         : g.status;
   // v0.33.0: slim card — status folds INTO the head line as middot segments
   // (filter(Boolean).join, the universal CLI idiom). Line 2 is the live
@@ -696,23 +677,10 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     }
     return lines;
   }
-  if (g.status === "active" && activity === "awaiting-first-turn") {
-    lines.push(`├─ ${paint(theme, "warning", "awaiting first turn — continuation is queued")}`);
-    lines.push(`└─ ${paint(theme, "dim", "no real agent activity yet; the goal remains durable")}`);
-    return lines;
-  }
-  if (g.status === "active" && activity === "idle") {
-    lines.push(`├─ ${paint(theme, "warning", `idle — no agent turn is currently running${hostLastActivity(extras, now)}`)}`);
-    lines.push(`└─ ${paint(theme, "dim", "the active goal is durable; inspect /goal status if this persists")}`);
-    return lines;
-  }
-  if (g.status === "active" && activity === "working") {
-    lines.push(`├─ ${activityBadge("LIVE WORK", now, theme)}${hostLastStream(extras, now)}`);
-  } else if (g.status === "active" && activity === "busy") {
-    lines.push(`├─ ${stateBadge("BUSY", "◌", theme, "warning")} pi is not idle, but no recent stream event was observed${hostLastStream(extras, now)}`);
-  } else if (g.status === "active" && activity === "queued") {
-    lines.push(`├─ ${stateBadge("QUEUED", "◌", theme, "warning")} waiting for pi to start the next turn`);
-  }
+  // Activity is intentionally a single-surface HUD: the persistent status
+  // bar owns LIVE/BUSY/QUEUED/IDLE and stream age. The card stays about the
+  // goal and its durable recent action, avoiding the duplicated live badge
+  // that made the above-editor panel look noisy.
   if (g.status === "auditing") {
     if (auditRecoveryPending(g)) {
       lines.push(`├─ auditor: ${paint(theme, "warning", "recovery pending — previous audit was interrupted")}`);
@@ -725,10 +693,10 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     const detail = audit?.label && audit.label !== "queued" && audit.label !== "running"
       ? ` · ${truncate(audit.label, 30)}`
       : "";
-    const auditorBadge = phaseLive
-      ? activityBadge("AUDITOR · DETACHED · READ-ONLY · LIVE", now, theme)
-      : stateBadge("AUDITOR · DETACHED · READ-ONLY", "⟡", theme, phase === "blocked" || phase === "quiet" ? "warning" : "accent");
-    lines.push(`├─ auditor: ${phaseLabel} ${auditorBadge}${detail}`);
+    // The status bar is the single activity HUD. Keep the widget's audit line
+    // factual and compact; the ⟡ head icon plus this phase identify the
+    // detached verifier without repeating the animated status badge.
+    lines.push(`├─ auditor: ${phaseLabel}${detail}`);
 
     // Show observed worker facts, not a made-up percentage or semantic claim.
     // This is the difference between “the timer moved” and “I can see what

@@ -83,25 +83,25 @@ test("active status does not make first-turn or long-idle gaps look green", () =
   const state = { goal: goalOf(), list: [] };
   const awaiting = buildWidgetLines(state, null, NOW, undefined, undefined, { activity: "awaiting-first-turn" })!;
   assert.match(buildStatusText(state, null, NOW, undefined, { activity: "awaiting-first-turn" })!, /AWAITING FIRST TURN/);
-  assert.ok(awaiting.some((line) => line.includes("awaiting first turn")));
-  assert.ok(!awaiting.some((line) => line.includes("· active ·")));
+  assert.ok(awaiting.some((line) => line.includes("· active ·")));
+  assert.doesNotMatch(awaiting.join("\n"), /AWAITING FIRST TURN|LIVE WORK/);
 
   const idle = buildWidgetLines(state, null, NOW, undefined, undefined, { activity: "idle", lastActivityAt: NOW - 2 * 60_000 })!;
   assert.match(buildStatusText(state, null, NOW, undefined, { activity: "idle", lastActivityAt: NOW - 2 * 60_000 })!, /IDLE/);
-  assert.ok(idle.some((line) => line.includes("idle — no agent turn is currently running")));
-  assert.ok(idle.some((line) => line.includes("last activity 2m")));
+  assert.ok(idle.some((line) => line.includes("· active ·")));
+  assert.doesNotMatch(idle.join("\n"), /IDLE|last activity 2m/);
 });
 
-test("stream-proven work pulses; busy and queued states do not pretend to work", () => {
+test("stream-proven work pulses in one status-bar HUD; the card stays quiet", () => {
   const state = { goal: goalOf({ policy: "list" }), list: [{ id: "next", objective: "next", addedAt: "z" }] };
   const stream = { activity: "working" as const, lastStreamActivityAt: NOW - 1_000 };
   const status = buildStatusText(state, null, NOW, undefined, stream)!;
   assert.match(status, /glla: ⟦[▁▂▃▅▇]+ LIVE · WORKING⟧/);
   assert.match(status, /last stream 1s ago/);
   const lines = buildWidgetLines(state, null, NOW, undefined, undefined, stream)!;
-  assert.match(lines[0]!, /^[◐◓◑◒] /);
-  assert.ok(lines.some((line) => line.includes("LIVE WORK")));
-  assert.ok(lines.some((line) => line.includes("last stream 1s ago")));
+  assert.match(lines[0]!, /^● /);
+  assert.match(lines[0]!, /· active ·/);
+  assert.doesNotMatch(lines.join("\n"), /LIVE WORK|last stream 1s ago/);
 
   const busy = buildStatusText(state, null, NOW, undefined, { activity: "busy", lastStreamActivityAt: NOW - 20_000 })!;
   assert.match(busy, /⟦◌ BUSY⟧ · last stream 20s ago/);
