@@ -141,7 +141,7 @@ test("v0.29.17 wiring: model-valued settings use the fuzzy picker; unavailable a
   assert.match(pinBody, /promptModelRef\(ctx, `Model pin for \$\{agentType\} subagents`/);
   // Fallback: unavailable configured model → session model, notified + ledgered:
   assert.match(SRC, /auditor_model_fallback/);
-  assert.match(SRC, /via: "session-fallback"/);
+  assert.match(SRC, /addCandidate\(sessionModel, pins\.length > 0 \? "session-fallback" : "session"\)/);
   assert.match(SRC, /falling back to the session model\. Fix via \/glla → Auditor model/);
   assert.match(SRC, /no configured auth for \$\{provider\}/, "unkeyed provider counts as unavailable");
 });
@@ -171,7 +171,7 @@ test("v0.31.3: the auditor chain — pinned primary → pinned fallback → sess
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   // The cascade: two pins walked in order, session model after the loop:
   assert.match(SRC, /const pins: Array<\{ pin: string; src: "setting" \| "fallback-pin" \}> = \[\]/);
-  assert.match(SRC, /via: pins\[i\]!\.src/); // v0.32.0: per-pin source labels (pins[0] may BE the fallback)
+  assert.match(SRC, /addCandidate\(r\.model, pins\[i\]!\.src\)/); // v0.32.0: per-pin source labels (pins[0] may BE the fallback)
   assert.match(SRC, /pins\.push\(\{ pin: fallbackRef\.trim\(\), src: "fallback-pin" \}\)/);
   assert.match(SRC, /All pinned auditor models are unavailable — falling back to the session model/);
   // Same-as-session swap (the user's move): swap only when a next pin exists;
@@ -196,7 +196,7 @@ test("v0.31.3: the auditor chain — pinned primary → pinned fallback → sess
 
 test("v0.31.6: same-model swap toggle — default ON, off = same-model audits stand", () => {
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
-  assert.match(SRC, /sameSessionSwap = true\): \{ model: any; error\?: string; via\?: string \}/);
+  assert.match(SRC, /sameSessionSwap = true\): \{ model: any; error\?: string; via\?: string; fallbackModels\?: AuditorModelCandidate\[\]\s*\}/);
   assert.equal(SRC.match(/settings\.auditorSameSessionSwap !== false/g)!.length, 2, "both audit call sites pass the toggle (undefined = on)");
   assert.match(SRC, /if \(sameSessionSwap && isSession\(r\.model\) && i \+ 1 >= pins\.length\) \{/); // v0.32.0: last-pin guard — the fallback hop landing on the session model nudges too
   assert.match(SRC, /case "auditorSameSessionSwap": \{/);
