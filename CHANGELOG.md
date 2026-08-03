@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.34.26 — 2026-08-03
+
+### Fixed — output-token-limit exhaustion is a durable, explicit failure state
+
+Repeated truncation used to end in a transient notify while the goal stayed
+green-active: the sticky give-up flag meant every heartbeat re-kick silently
+truncated again with no state, no card, and no way out.
+
+- Length-continue exhaustion (stopReason "length" 3× in a row) now durably
+  pauses an active goal/list item with `pauseKind: "error"`, a reason naming
+  the output-token limit, and actionable guidance (re-scope into smaller
+  pieces, then `/goal resume`); the tracker resets so the explicit resume
+  gets a fresh truncation budget. A running loop stops with an explicit
+  output-token-limit reason (iteration preserved). Plain chat keeps the
+  transient notify — there is nothing to pause. Ledger:
+  `length_continue_exhausted`.
+- The 5-consecutive-error brake now classifies provider error text matching
+  `/output[ -]?token|max_?tokens|length limit|output length|too many tokens/i`
+  as a deterministic output-token-limit wall: the pause names the real wall
+  instead of generic "5 consecutive errors", and there is no flake
+  auto-resume ladder, no wait-timer, and no hourly probes — blind retries
+  never help a deterministic rejection; only re-scoping does.
+
 ## 0.34.25 — 2026-08-03
 
 ### Fixed — silent host-session swap: same-host successor absorbed, work auto-resumes
