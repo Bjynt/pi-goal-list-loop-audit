@@ -251,6 +251,34 @@ test("request hashing is stable and excludes no runtime secret or API key field"
   assert.equal("apiKey" in request, false);
 });
 
+test("an early RPC child exit still publishes an atomic infrastructure result", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-early-rpc-exit-"));
+  const fakePi = path.join(dir, "early-exit-pi.mjs");
+  await writeFile(fakePi, "#!/usr/bin/env node\\nprocess.stdin.destroy(); setTimeout(() => process.exit(17), 25);\\n");
+  await chmod(fakePi, 0o700);
+  try {
+    const result = await runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "high",
+      runtime: {
+        workerPath: path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs"),
+        env: { GLLA_PI_BINARY: fakePi },
+        attemptId: () => "attempt-early-rpc-exit",
+        pollIntervalMs: 10,
+        wallTimeoutMs: 2_000,
+      },
+    });
+    assert.equal(result.approved, false);
+    assert.equal(result.disapproved, false);
+    assert.match(result.error ?? "", /RPC stdin stream failed|pi exited before audit completion|RPC stream ended/);
+    assert.doesNotMatch(result.error ?? "", /worker exited without an atomic result/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("detached worker treats silent provider time as infrastructure, not a verdict", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-stall-"));
   const fakePi = path.join(dir, "silent-pi.mjs");

@@ -375,6 +375,19 @@ async function main() {
       const text = String(chunk).trim();
       if (text) streamError = text.slice(-500);
     });
+    const handlePiStreamError = (stream, error) => {
+      if (finalized) return;
+      const message = error instanceof Error ? error.message : String(error);
+      streamError = message.slice(-500);
+      void finish(false, `RPC ${stream} stream failed: ${streamError}`).catch(() => {});
+    };
+    // A provider/auth failure can make pi close RPC stdin before the prompt
+    // write completes. Without an error listener, Node treats EPIPE as an
+    // uncaught stream error and kills this worker before it can publish the
+    // atomic infrastructure result the parent is waiting for.
+    pi.stdin.on("error", (error) => handlePiStreamError("stdin", error));
+    pi.stdout.on("error", (error) => handlePiStreamError("stdout", error));
+    pi.stderr.on("error", (error) => handlePiStreamError("stderr", error));
     pi.on("error", (error) => { void finish(false, `pi launch failed: ${error.message}`).catch(() => {}); });
     pi.on("exit", (code, signal) => {
       if (!finalized) {
