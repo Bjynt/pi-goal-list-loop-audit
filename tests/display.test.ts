@@ -692,20 +692,24 @@ test("active auditor verdicts never masquerade as infrastructure no-verdict", ()
   assert.match(buildStatusText(disapprovalState as never)!, /auditor disapproved — fix the gap/);
 });
 
-test("wait pause: quiet banner + resume countdown (widget + status)", () => {
+test("quota wait gets a distinct recovery HUD without raw provider JSON", () => {
   const g = goalOf({
     status: "paused",
+    policy: "list",
     pauseKind: "wait",
-    pauseReason: "auditor quota: rate limited",
+    pauseReason: 'main model recovery — retrying in 15m (main model quota: 429 {"message":"Token Plan usage limit reached"})',
     pauseResumeAt: new Date(Date.now() + 23 * 3600_000).toISOString(),
-    pauseSuggestedAction: "Quota auto-retry — or /goal resume now",
+    pauseSuggestedAction: "The provider/quota wall is being retried automatically; /list resume retries immediately.",
   });
-  const state = { goal: g, list: [], loop: null };
+  const state = { goal: g, list: [{ id: "next", objective: "later", addedAt: "z" }], loop: null };
   const w = buildWidgetLines(state as never)!;
-  assert.ok(w.some((l) => l.includes("waiting — nothing for you to do")), `wait banner: ${w.join("\n")}`);
-  assert.ok(w.some((l) => /resumes .*\(in \d+h/.test(l)), `countdown: ${w.join("\n")}`);
+  assert.ok(w.some((l) => l.includes("QUOTA WALL · Token Plan usage limit · 1 waiting in list")), `quota banner: ${w.join("\n")}`);
+  assert.ok(w.some((l) => l.includes("waiting — nothing for you to do") && l.includes("next probe in")), `countdown: ${w.join("\n")}`);
+  assert.ok(w.some((l) => l.includes("saved —")), `saved state: ${w.join("\n")}`);
+  assert.doesNotMatch(w.join("\n"), /main model quota: 429|Token Plan usage limit reached.*message/, "raw provider JSON stays out of the card");
   const s = buildStatusText(state as never)!;
-  assert.ok(s.includes("waiting") && s.includes("resumes"), `status: ${s}`);
+  assert.match(s, /QUOTA WALL/);
+  assert.match(s, /1 queued/);
 });
 
 test("legacy pause (no kind): flat card unchanged; error-regex still classifies the status line", () => {

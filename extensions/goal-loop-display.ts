@@ -812,9 +812,11 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     // decision/wait reasons cap at 2 lines — the options/countdown below
     // carry the actionable content; error reasons keep 3.
     const reasonPaint = isErr ? "error" : kind === "wait" ? "dim" : "warning";
-    wrap(g.pauseReason, budget, kind === "decision" || kind === "wait" ? 2 : 3).forEach((w, i) => {
-      lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, reasonPaint, w)}`);
-    });
+    if (!(kind === "wait" && isQuotaWall(g))) {
+      wrap(g.pauseReason, budget, kind === "decision" || kind === "wait" ? 2 : 3).forEach((w, i) => {
+        lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, reasonPaint, w)}`);
+      });
+    }
     // v0.28.22: decision options — one numbered line each (Claude Code /
     // muselinn-Ask convention), the recommended one accented and flagged.
     if (kind === "decision" && g.pauseOptions && g.pauseOptions.length > 0) {
@@ -826,7 +828,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       if (g.pauseOptions.length > 6) lines.push(`│  ${paint(theme, "dim", `… and ${g.pauseOptions.length - 6} more`)}`);
     }
     // v0.28.22: wait countdown — when the pause lifts on its own.
-    if (kind === "wait" && g.pauseResumeAt) {
+    if (kind === "wait" && g.pauseResumeAt && !isQuotaWall(g)) {
       const ms = Date.parse(g.pauseResumeAt) - now;
       const when = Number.isNaN(ms) ? g.pauseResumeAt : ms <= 0 ? "now" : `${shortClock(g.pauseResumeAt)} (in ${fmtElapsed(ms)})`;
       lines.push(`├─ ${paint(theme, "dim", `resumes ${when} — or /goal resume now`)}`);

@@ -244,6 +244,30 @@ Activity is evidence-gated and intentionally honest:
 | `QUEUED` | A continuation is waiting to start; no work is fabricated. |
 | `IDLE` | The durable item remains active, but no recent work is observed. |
 | `auditor …` | A detached, extension-less verifier is queued, running, quiet, or waiting for its verdict. |
+| `QUOTA WALL` | The provider rejected the request for a quota/plan window; saved work is waiting for a durable probe. |
+
+Quota walls deliberately do **not** get more blind request retries. pi's
+request-local retry counter is bounded; glla owns the longer recovery window,
+persisting the next probe with a `15m → 30m → hourly` cadence and no attempt
+cap. With global `autoResume=on`, the probe is restored after a session reload;
+with it off, the saved item waits for `/list resume` (or `/goal resume`). If a
+quota reset time is known, a manual resume after that time is safe. For
+continuous work, configure ordered **Main model backups** in `/glla` using a
+model from a different provider or billing/quota pool — another model on the
+same exhausted plan is not a real fallback.
+
+The quota-specific card hides raw provider JSON while preserving it in durable
+state and the ledger:
+
+```text
+glla: ⟦⏳ QUOTA WALL · next probe in 10m 48s⟧ · 1 queued
+├─ QUOTA WALL · Token Plan usage limit · 1 waiting in list
+├─ waiting — nothing for you to do · next probe in 10m 48s
+```
+
+Increasing pi's per-request retry count is usually the wrong fix for a
+multi-hour plan cap: it prolongs the 429 noise and delays the durable pause;
+it does not make the provider reset sooner.
 
 For long-running `/list` work, the card adds a compact queue trail with the
 immediate next item and its truthful wait age while `/list` remains the
