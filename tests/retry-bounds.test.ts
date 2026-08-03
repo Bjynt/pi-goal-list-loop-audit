@@ -79,13 +79,15 @@ test("v0.28.29: escalation is TIME-based and ACTIVITY-gated (busy ≠ wedged —
   assert.ok(!SRC.includes("SEND_REARM_LEDGER_EVERY"), "count-based ledger constant gone");
 });
 
-test("E3: escalation is loud-terminal (goal pause / loop stop with restart guidance)", () => {
+test("E3: provider-held send storms enter durable main-model recovery", () => {
   assert.match(SRC, /function escalateSendRearmStorm\(ctx: ExtensionContext, kind: "continuation" \| "loop"\): void/);
   assert.match(SRC, /send-retry storm: \$\{mins\}m of re-arms with no session activity for \$\{silent\}m — the session never went idle for the continuation/);
-  // v0.29.23: wedge-class pauses guide Escape-first (pi's own retry holds
-  // the run — pi prints "escape to cancel"), then resume, then /reload.
-  assert.match(SRC, /Press Escape, then \/goal resume\./);
-  assert.match(SRC, /Press Escape to cancel the stuck run \(pi's own rate-limit retry holds it; pi prints "escape to cancel"\), then \/loop resume — the loop holds on restore\./);
+  // v0.34.31: a supervising goal/loop rotates through configured backups and
+  // installs a durable retry probe instead of making Escape the recovery plan.
+  assert.match(SRC, /void recoverMainModelFromSendStorm\(ctx, kind\);/);
+  assert.match(SRC, /backup when possible, and install a durable recovery probe/);
+  // The old restart-first guidance must not be the active loop-storm path.
+  assert.ok(!SRC.includes("Press Escape to cancel the stuck run (pi's own rate-limit retry holds it; pi prints"));
   assert.ok(!SRC.includes("Restart pi, then /goal resume."), "restart-first storm guidance gone");
   assert.ok(!SRC.includes("Restart pi, then /loop resume"), "restart-first loop guidance gone");
 });
