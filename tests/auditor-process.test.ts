@@ -112,6 +112,60 @@ test("detached parent forwards live worker telemetry to its progress callback", 
   }
 });
 
+test("the real worker forwards ordered tool and report phases to the parent", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-live-telemetry-"));
+  const fakePi = path.join(dir, "phase-pi.mjs");
+  const reports: AuditorProgress[] = [];
+  const fakePiSource = `
+import { setTimeout as sleep } from "node:timers/promises";
+let handled = false;
+process.stdin.on("data", async (chunk) => {
+  if (handled || !String(chunk).includes("\\n")) return;
+  handled = true;
+  const out = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+  out({ type: "agent_start" });
+  await sleep(30);
+  out({ type: "tool_execution_start", toolCallId: "read-1", toolName: "read", args: { path: "/repo/README.md" } });
+  await sleep(30);
+  out({ type: "tool_execution_end", toolCallId: "read-1" });
+  await sleep(30);
+  out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "<evidence>\\nartifact exists; tests pass\\n</evidence>\\n<approved/>" } });
+  out({ type: "agent_settled" });
+});
+`;
+  await writeFile(fakePi, `#!/usr/bin/env node\n${fakePiSource}`);
+  await chmod(fakePi, 0o700);
+  try {
+    const result = await runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "high",
+      onProgress: (progress) => reports.push(progress),
+      runtime: {
+        workerPath: path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs"),
+        env: { GLLA_PI_BINARY: fakePi },
+        attemptId: () => "attempt-real-telemetry",
+        pollIntervalMs: 5,
+        wallTimeoutMs: 2_000,
+      },
+    });
+    assert.equal(result.approved, true);
+    const phases = reports.map((progress) => progress.phase);
+    assert.ok(phases.includes("starting"));
+    assert.ok(phases.includes("thinking"));
+    assert.ok(phases.includes("tool_executing"));
+    assert.ok(phases.includes("producing_report"));
+    assert.ok(phases.indexOf("tool_executing") < phases.indexOf("producing_report"));
+    const tool = reports.find((progress) => progress.currentTool === "read");
+    assert.ok(tool, "parent observed the real worker's active tool");
+    assert.equal(tool?.currentToolArgs, JSON.stringify({ path: "/repo/README.md" }));
+    assert.ok(reports.some((progress) => progress.phase === "complete"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("approval without a read-only tool is a semantic disapproval", async () => {
   const dir = await setup();
   try {

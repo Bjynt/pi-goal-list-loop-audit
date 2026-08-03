@@ -407,6 +407,14 @@ test("auditor widget shows concrete worker observations without exposing think b
     currentTool: "read",
     lastActivityAt: NOW - 1_000,
   }, NOW)!, /auditor tool executing · read/);
+
+  const streamedThink = buildWidgetLines({ goal: g, list: [] }, {
+    phase: "thinking",
+    recentOutput: ["<think>", "private streamed reasoning"],
+    elapsedMs: 42_000,
+    lastActivityAt: NOW - 1_000,
+  }, NOW)!;
+  assert.doesNotMatch(streamedThink.join("\n"), /private streamed reasoning/);
 });
 
 test("auditor startup does not claim worker activity before the first RPC event", () => {

@@ -1280,7 +1280,7 @@ export function formatListDepth(stats: ListDepthStats): string {
  * not the auditor's private monologue. */
 export function stripThinkBlocks(text: string): string {
   return text
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, "")
     .replace(/<\/?think>/gi, "")
     .replace(/<200b>/g, "") // stray partial-tag artifact seen in the wild
     .replace(/^\s+/, "");

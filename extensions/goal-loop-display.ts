@@ -335,13 +335,13 @@ function auditorToolTarget(args: string | undefined): string | undefined {
 
 /** Return one safe, compact report-stream line. Think blocks and verdict-only
  * markers are intentionally omitted: this is activity telemetry, not a
- * second verdict surface. */
+ * second verdict surface. Join the retained fragments before stripping so an
+ * unterminated streamed `<think>` block suppresses its later fragments too. */
 function latestAuditorOutput(audit: AuditDisplayProgress | null | undefined): string | undefined {
-  const entries = audit?.recentOutput ?? [];
-  for (const entry of [...entries].reverse()) {
-    const clean = compactDisplayText(stripThinkBlocks(sanitizeDisplayText(entry)))
-      .replace(/<\/?(?:approved|disapproved|impossible)(?:\s[^>]*)?\/?>(?:\s*)/gi, "")
-      .trim();
+  const stream = stripThinkBlocks((audit?.recentOutput ?? []).join("\n"))
+    .replace(/<\/?(?:approved|disapproved|impossible)(?:\s[^>]*)?\/?>(?:\s*)/gi, "");
+  for (const entry of stream.split("\n").reverse()) {
+    const clean = compactDisplayText(sanitizeDisplayText(entry)).trim();
     if (clean) return truncate(clean, 180);
   }
   return undefined;

@@ -32,6 +32,9 @@ test("stripThinkBlocks removes think bodies, fragments, and artifacts", () => {
   assert.equal(stripThinkBlocks("</think> </think> </think> Verifying the cited lines."), "Verifying the cited lines.");
   // Partial-tag artifact:
   assert.equal(stripThinkBlocks("<200b>卧槽，不对劲 done.\nReport body."), "卧槽，不对劲 done.\nReport body.");
+  // An unterminated streamed block is private reasoning too; do not leak its
+  // body into the widget/report if the provider never emitted the close tag.
+  assert.equal(stripThinkBlocks("<think>partial private reasoning"), "");
   // Clean text untouched:
   assert.equal(stripThinkBlocks("## Audit result\nAll good."), "## Audit result\nAll good.");
 });
