@@ -919,7 +919,8 @@ let completionAuditGeneration: number | null = null;
 // an explicit /goal resume supplied continuation consent. A cold startup with
 // autoResume off may display a recovery-pending claim without launching it.
 let completionAuditRecoveryArmed = false;
-// v0.32.0: consecutive stored-claim quota retries (capped at 5, then hold).
+// v0.32.0 compatibility mirror: durable pendingCompletion.quotaAttempts is
+// authoritative; this display/ledger counter survives only within a process.
 let quotaRetryStreak = 0;
 let heartbeatTimer: NodeJS.Timeout | null = null;
 
@@ -2126,6 +2127,10 @@ async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
   } catch (err) {
     appendLedger(ctx.cwd, "main_model_probe_failed", { ref: target, error: err instanceof Error ? err.message : String(err) });
     const failure = classifyMainModelFailure(err instanceof Error ? err.message : String(err));
+    if (failure.kind === "billing") {
+      pauseMainModelForManualAction(ctx, failure);
+      return;
+    }
     const next = withMainModelRecoveryWindow({ ...recovery, attempts: recovery.attempts + 1, attempted: [...(current ? [current] : []), target], reason: mainModelRecoveryReason(failure), resetAt: failure.resetAt ?? recovery.resetAt });
     if (mainModelHintExceedsProbeBudget(failure)) {
       holdMainModelRecovery(ctx, next, `provider supplied a reset beyond the 5h automatic probe budget${failure.resetAt ? ` (reset ${failure.resetAt})` : ""}`);

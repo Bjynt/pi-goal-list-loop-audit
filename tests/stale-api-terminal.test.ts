@@ -163,7 +163,7 @@ test("v0.32.0: audit-opportunistic fix batch — dispose, keys, caps, message", 
   assert.match(GS, /"auditorSameSessionSwap",/);
   const GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   assert.match(GOAL, /slice\(0, 50\)/); // fan-out cap
-  assert.match(GOAL, /quotaRetryStreak >= 5/); // quota retry terminal cap
+  assert.match(GOAL, /MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS = 5/); // durable quota retry terminal cap
   assert.match(GOAL, /quotaRetryStreak = 0;/); // streak resets on any non-quota outcome
   assert.match(GOAL, /handing off to a fresh pi context — /); // entry probe names the lifecycle handoff honestly
   assert.match(GOAL, /function clearSessionOwnedTimers\(\): void/); // terminal kills all old-session timers
