@@ -1847,6 +1847,30 @@ function mainModelHintExceedsProbeBudget(failure: MainModelFailure): boolean {
 
 /** Stop automatic probing honestly when a provider says the reset is longer
  * than the five-hour probe budget or the durable recovery window is spent. */
+function pauseMainModelForManualAction(ctx: ExtensionContext, failure: MainModelFailure): void {
+  clearMainModelRecoveryTimer();
+  clearContinuationTimer();
+  clearLoopTimer();
+  state.mainModelRecovery = undefined;
+  mainModelAbortForRecovery = false;
+  continuationDispatchStoodDown = true;
+  const detail = failure.raw.replace(/\s+/g, " ").trim().slice(0, 180);
+  const reason = `main model billing wall${detail ? `: ${detail}` : ""}`;
+  const action = "The provider reports credits/balance or billing exhaustion, not a timed quota reset. Fix billing or switch /model, then /goal resume (or /loop resume); blind retries are stopped.";
+  if (state.goal?.status === "active") {
+    updateGoal({ status: "paused", pauseKind: "error", pauseResumeAt: undefined, pauseReason: reason, pauseSuggestedAction: action }, ctx);
+  } else if (state.loop?.active) {
+    state.loop = { ...state.loop, active: false, stopReason: `${reason}; fix billing or switch /model, then /loop resume` };
+    persistState(ctx);
+  } else {
+    persistState(ctx);
+  }
+  appendLedger(ctx.cwd, "main_model_billing_hold", { kind: mainModelRecoveryKind(), error: detail });
+  ctx.ui.notify(`Main-model billing/credit exhaustion — automatic retries stopped. Fix billing or switch /model, then resume.`, "warning");
+  notifyExternal(ctx, "Main-model billing/credit exhaustion requires manual action.");
+  try { ctx.abort(); } catch { /* best effort */ }
+}
+
 function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModelRecovery, why: string): void {
   const normalized = withMainModelRecoveryWindow(recovery);
   clearMainModelRecoveryTimer();
@@ -2128,10 +2152,11 @@ async function recoverMainModelFromSendStorm(ctx: ExtensionContext, kind: "conti
     if (!current) return;
     const recovery = state.mainModelRecovery;
     if (!recovery) return;
-    setMainModelRecoveryPause(ctx, { ...recovery, kind: kind === "loop" ? "loop" : "goal", active: current, resumeCurrent: true }, 1_000);
-    mainModelAbortForRecovery = true;
-    try { ctx.abort(); } catch { /* best effort; recovery guard prevents re-send storms */ }
-    scheduleMainModelRecoveryTimer(ctx, 1_000);
+    if (setMainModelRecoveryPause(ctx, { ...recovery, kind: kind === "loop" ? "loop" : "goal", active: current, resumeCurrent: true }, 1_000)) {
+      mainModelAbortForRecovery = true;
+      try { ctx.abort(); } catch { /* best effort; recovery guard prevents re-send storms */ }
+      scheduleMainModelRecoveryTimer(ctx, 1_000);
+    }
     return;
   }
   parkMainModelAfterFailure(ctx, failure);
@@ -2165,6 +2190,10 @@ async function handleMainModelAgentEnd(ctx: ExtensionContext, rawLastA: any, las
     if (failure.kind !== "non-recoverable") {
       const switched = await tryMainModelFallback(ctx, failure);
       if (switched) return true; // pi's core retry now uses the selected backup
+      if (failure.kind === "billing") {
+        pauseMainModelForManualAction(ctx, failure);
+        return true;
+      }
       const backupRefs = mainModelFallbackRefs(ctx);
       if ((failure.kind === "quota" && state.goal?.status === "active") || backupRefs.length > 0) {
         parkMainModelAfterFailure(ctx, failure);
