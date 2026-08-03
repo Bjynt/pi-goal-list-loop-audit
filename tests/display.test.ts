@@ -312,11 +312,41 @@ test("widget: interrupted completion claims render recovery-pending, not auditor
   assert.ok(!lines.some((l) => l.includes("auditor: running")));
 });
 
-test("widget: explicit running phase remains active even without a progress callback", () => {
+test("widget: a durable running claim without observed progress says awaiting verdict", () => {
   const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-2" } });
-  const lines = buildWidgetLines({ goal: g, list: [] }, null, NOW)!;
-  assert.ok(lines.some((l) => l.includes("auditor: running")));
+  const state = { goal: g, list: [] };
+  const lines = buildWidgetLines(state, null, NOW)!;
+  assert.ok(lines.some((l) => l.includes("auditor: awaiting verdict")));
+  assert.ok(lines.some((l) => l.includes("waiting for detached verdict")));
+  assert.match(buildStatusText(state, null, NOW)!, /auditor awaiting verdict/);
   assert.ok(!lines.some((l) => l.includes("recovery pending")));
+});
+
+test("auditor progress phases are explicit and retain worker activity", () => {
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-3" } });
+  const queued = buildWidgetLines({ goal: g, list: [] }, { label: "queued" }, NOW)!;
+  assert.ok(queued.some((l) => l.includes("auditor: queued")));
+  assert.ok(queued.some((l) => l.includes("completion claim is durable")));
+
+  const running = buildWidgetLines({ goal: g, list: [] }, {
+    phase: "tool_executing",
+    currentTool: "grep",
+    elapsedMs: 42_000,
+    lastActivityAt: NOW - 30_000,
+  }, NOW)!;
+  assert.ok(running.some((l) => l.includes("auditor: running") && l.includes("grep")));
+  assert.ok(running.some((l) => l.includes("last activity 30s ago")));
+
+  const quiet = buildWidgetLines({ goal: g, list: [] }, {
+    phase: "thinking",
+    elapsedMs: 600_000,
+    lastActivityAt: NOW - 7 * 60_000,
+  }, NOW)!;
+  assert.ok(quiet.some((l) => l.includes("auditor: quiet")));
+  assert.ok(quiet.some((l) => l.includes("auditor quiet 7m") && l.includes("last activity 7m")));
+
+  const blocked = buildStatusText({ goal: g, list: [] }, { label: "infra error — retrying once" }, NOW)!;
+  assert.match(blocked, /auditor blocked/);
 });
 
 test("widget: loop lines include measure + metric state", () => {

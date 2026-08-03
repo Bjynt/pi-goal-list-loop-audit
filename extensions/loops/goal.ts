@@ -2390,7 +2390,14 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
           onProgress: (progress) => {
             const current = freshCtxForGeneration(generation);
             if (!current) return;
-            latestAuditProgress = { currentTool: progress.currentTool, label: progress.label, elapsedMs: progress.elapsedMs, lastEventAt: Date.now() };
+            latestAuditProgress = {
+              currentTool: progress.currentTool,
+              label: progress.label,
+              phase: progress.phase,
+              elapsedMs: progress.elapsedMs,
+              lastEventAt: Date.now(),
+              lastActivityAt: progress.lastActivityAt,
+            };
             refreshUI(current);
           },
         }),
@@ -4548,6 +4555,7 @@ function registerAgentTools(pi: any): void {
       // rest of this callback deliberately runs after the tool has returned;
       // every state/UI access below rebinds through the generation guard.
       latestAuditProgress = { label: "queued", lastEventAt: Date.now() };
+      refreshUI(ctx);
       completionAuditInFlight = true;
       completionAuditGeneration = auditGeneration;
       void (async () => {
@@ -4566,8 +4574,10 @@ function registerAgentTools(pi: any): void {
             latestAuditProgress = {
               currentTool: progress.currentTool,
               label: progress.label,
+              phase: progress.phase,
               elapsedMs: progress.elapsedMs,
               lastEventAt: Date.now(),
+              lastActivityAt: progress.lastActivityAt,
             };
             refreshUI(current);
           },
