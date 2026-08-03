@@ -105,6 +105,10 @@ test("pause_goal description: teaches the real command surface + no-id vocabular
   assert.match(desc, /never show goal ids/i);
 });
 
+test("late pause calls cannot overwrite a paused or auditing lifecycle", () => {
+  assert.match(SRC, /if \(state\.goal\.status !== "active"\) \{[\s\S]{0,240}pause request ignored/);
+});
+
 test("v0.28.30: pause/abort notifies name the policy (List item vs Goal) via goalNoun", () => {
   // User note: "we seem to call everything goal". A list item is not a goal.
   const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");

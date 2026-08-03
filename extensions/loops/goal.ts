@@ -5052,6 +5052,12 @@ function registerAgentTools(pi: any): void {
       if (!ctx) return staleToolResult();
       const p = params as { reason: string; suggestedAction?: string; kind?: "decision" | "error" | "wait" | "blocked"; options?: string[]; recommended?: number; resumeAt?: string };
       if (!state.goal) return { content: [{ type: "text", text: "No active goal." }], details: {} };
+      // A late model/tool call from the previous turn must not overwrite a
+      // paused or auditing lifecycle. That race made a genuine stop look
+      // repeatable and could erase an in-flight detached-auditor state.
+      if (state.goal.status !== "active") {
+        return { content: [{ type: "text", text: `Goal is already ${state.goal.status}; pause request ignored.` }], details: {} };
+      }
       updateGoal({
         status: "paused",
         pauseReason: p.reason,
