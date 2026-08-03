@@ -76,7 +76,7 @@ export interface RecentActionDisplay {
 }
 
 /** v0.33.0: widget extras — the refire streak plus the recent-action feed. */
-export type GoalDisplayActivity = "active" | "awaiting-first-turn" | "working" | "idle";
+export type GoalDisplayActivity = "active" | "awaiting-first-turn" | "working" | "busy" | "queued" | "idle";
 
 export interface WidgetExtras {
   stalls?: number;
@@ -85,6 +85,8 @@ export interface WidgetExtras {
   activity?: GoalDisplayActivity;
   /** Last real host stream activity, excluding timer/UI ticks. */
   lastActivityAt?: number;
+  /** Last stream event used as proof for the live-work indicator. */
+  lastStreamActivityAt?: number;
 }
 
 /**
@@ -145,6 +147,16 @@ export interface DisplayTheme {
   fg(color: DisplayColor, text: string): string;
 }
 const paint = (theme: DisplayTheme | undefined, color: DisplayColor, text: string): string => (theme ? theme.fg(color, text) : text);
+
+/**
+ * A live-work pulse is only rendered when the host/worker supplied real
+ * activity evidence. It is deliberately not tied to elapsed time alone: a
+ * durable active state can outlive a dead or merely queued turn.
+ */
+const WORKING_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+function workingFrame(now: number): string {
+  return WORKING_FRAMES[Math.floor(Math.max(0, now) / 250) % WORKING_FRAMES.length]!;
+}
 
 /** Pause reasons that mean "something broke", not "waiting on the user". */
 const ERROR_PAUSE = /token limit|stalled|infra|auditor.*fail/i;
@@ -260,6 +272,7 @@ export interface AuditDisplayProgress {
 
 type AuditorDisplayPhase = "queued" | "running" | "quiet" | "blocked" | "awaiting-verdict";
 const AUDITOR_QUIET_MS = 3 * 60_000;
+const LIVE_ACTIVITY_MS = 15_000;
 
 /** Use worker activity for liveness. Fall back to the parent event timestamp
  * for older callers/tests that only know when a progress file was observed. */
@@ -317,6 +330,11 @@ function auditorObservedPhase(audit: AuditDisplayProgress | null | undefined, ph
   }
 }
 
+function auditorHasLiveEvidence(audit: AuditDisplayProgress | null | undefined, phase: AuditorDisplayPhase, now: number): boolean {
+  if (phase !== "running" || audit?.lastActivityAt === undefined || !Number.isFinite(audit.lastActivityAt)) return false;
+  return now - audit.lastActivityAt <= LIVE_ACTIVITY_MS;
+}
+
 /** The worker's JSON argument prefix may contain a full command or path. Only
  * expose a basename-like target in the TUI; never dump arbitrary arguments. */
 function auditorToolTarget(args: string | undefined): string | undefined {
@@ -361,6 +379,12 @@ function hostLastActivity(extras: WidgetExtras | undefined, now: number): string
   const at = extras?.lastActivityAt;
   if (at === undefined || !Number.isFinite(at)) return "";
   return ` · last activity ${fmtElapsed(Math.max(0, now - at))} ago`;
+}
+
+function hostLastStream(extras: WidgetExtras | undefined, now: number): string {
+  const at = extras?.lastStreamActivityAt;
+  if (at === undefined || !Number.isFinite(at)) return "";
+  return ` · last stream ${fmtElapsed(Math.max(0, now - at))} ago`;
 }
 
 /**
@@ -441,6 +465,13 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     if (activity === "idle") {
       return `glla: ${paint(theme, "warning", `idle${hostLastActivity(extras, now)}`)}${heldSuffix}`;
     }
+    // v0.34.38: distinguish durable state from evidence of a live host turn.
+    // A spinner is reserved for recent stream/tool evidence; BUSY without
+    // that evidence is deliberately static so a hung provider cannot look
+    // like progress. Queued work is neither idle nor currently executing.
+    if (activity === "busy") {
+      return `glla: ${paint(theme, "warning", `busy${hostLastStream(extras, now)}`)}${heldSuffix}`;
+    }
     // v0.34.16: a fresh session_start owns the handoff. A cold boot still
     // follows the global autoResume setting, so the widget names the actual
     // lifecycle rather than promising terminal keystroke recovery.
@@ -451,10 +482,16 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     const n = state.list?.length ?? 0;
     const queue = n === 0 ? "" : ` · ${n} queued`;
     const tasks = g.taskList ? ` ${countDone(g)}/${countTotal(g)} tasks ·` : "";
+    const elapsed = fmtElapsed(now - Date.parse(g.createdAt));
+    const live = activity === "working";
+    const queued = activity === "queued";
+    const marker = live ? `${workingFrame(now)} working` : queued ? "◌ queued" : "●";
+    const markerColor = live ? "success" : queued ? "warning" : "success";
+    const stream = live ? hostLastStream(extras, now) : "";
     // v0.34.1: no policy word here either — "glla: list ●" duplicated the
     // widget's "list item" chip (field screenshot 2026-08-01). The queue
     // suffix still hints list context when the widget is scrolled away.
-    return `glla: ${paint(theme, "success", "●")}${tasks} ${fmtElapsed(now - Date.parse(g.createdAt))}${queue}${heldSuffix}`;
+    return `glla: ${paint(theme, markerColor, marker)}${tasks} ${elapsed}${stream}${queue}${heldSuffix}`;
   }
   // complete/aborted → clear — but a held loop still shows.
   if (held) return `glla: loop ${paint(theme, "warning", "⏸ held")} · iter ${held.iteration} — /loop to resume`;
