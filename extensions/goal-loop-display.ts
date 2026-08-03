@@ -75,9 +75,15 @@ export interface RecentActionDisplay {
 }
 
 /** v0.33.0: widget extras — the refire streak plus the recent-action feed. */
+export type GoalDisplayActivity = "active" | "awaiting-first-turn" | "working" | "idle";
+
 export interface WidgetExtras {
   stalls?: number;
   recent?: RecentActionDisplay[];
+  /** Ephemeral host-session projection; never persisted as goal state. */
+  activity?: GoalDisplayActivity;
+  /** Last real host stream activity, excluding timer/UI ticks. */
+  lastActivityAt?: number;
 }
 
 /**
@@ -230,6 +236,17 @@ function auditorPhaseLabel(phase: AuditorDisplayPhase): string {
   }
 }
 
+function goalDisplayActivity(g: Goal, extras?: WidgetExtras): GoalDisplayActivity {
+  if (g.status !== "active") return "active";
+  return extras?.activity ?? "active";
+}
+
+function hostLastActivity(extras: WidgetExtras | undefined, now: number): string {
+  const at = extras?.lastActivityAt;
+  if (at === undefined || !Number.isFinite(at)) return "";
+  return ` · last activity ${fmtElapsed(Math.max(0, now - at))} ago`;
+}
+
 /**
  * One-line status for ctx.ui.setStatus("pi-glla", …).
  * Returns undefined when nothing is being supervised (clears the segment).
@@ -300,6 +317,13 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     const attention = activeAttention(g);
     if (attention) {
       return `glla: ${paint(theme, attention.color, `⚠ ${attention.label}`)}${heldSuffix}`;
+    }
+    const activity = goalDisplayActivity(g, extras);
+    if (activity === "awaiting-first-turn") {
+      return `glla: ${paint(theme, "warning", "awaiting first turn")}${heldSuffix}`;
+    }
+    if (activity === "idle") {
+      return `glla: ${paint(theme, "warning", `idle${hostLastActivity(extras, now)}`)}${heldSuffix}`;
     }
     // v0.34.16: a fresh session_start owns the handoff. A cold boot still
     // follows the global autoResume setting, so the widget names the actual
@@ -395,6 +419,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // terminal fonts and ignores ANSI color; ● takes the paint everywhere.
   const interrupted = g.status === "active" && !!g.interruptedAt;
   const attention = activeAttention(g);
+  const activity = goalDisplayActivity(g, extras);
   const icon =
     interrupted
       ? paint(theme, "error", "⚠")
@@ -404,7 +429,9 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
           ? paint(theme, pauseIsError(g) ? "error" : "warning", "⏸")
           : g.status === "auditing"
             ? paint(theme, "accent", "⟡")
-            : paint(theme, "success", "●");
+            : activity === "awaiting-first-turn" || activity === "idle"
+              ? paint(theme, "warning", "◌")
+              : paint(theme, "success", "●");
   // v0.24.7: a list item is named as such and points at /list — before,
   // the widget called it "active" and hinted "/goal status", reading as if
   // queue work were a standalone goal.
@@ -414,7 +441,11 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     : attention
       ? paint(theme, attention.color, attention.label)
       : g.status === "active"
-        ? paint(theme, "success", "active")
+        ? activity === "awaiting-first-turn"
+          ? paint(theme, "warning", "awaiting first turn")
+          : activity === "idle"
+            ? paint(theme, "warning", "idle")
+            : paint(theme, "success", "active")
         : g.status;
   // v0.33.0: slim card — status folds INTO the head line as middot segments
   // (filter(Boolean).join, the universal CLI idiom). Line 2 is the live
@@ -455,6 +486,16 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       lines.push(`├─ ${paint(theme, "error", "host session lost — waiting for fresh session_start")}`);
       lines.push(`└─ ${paint(theme, "warning", `/reload to rebind · ${resumeCmd} if it does not resume`)}`);
     }
+    return lines;
+  }
+  if (g.status === "active" && activity === "awaiting-first-turn") {
+    lines.push(`├─ ${paint(theme, "warning", "awaiting first turn — continuation is queued")}`);
+    lines.push(`└─ ${paint(theme, "dim", "no real agent activity yet; the goal remains durable")}`);
+    return lines;
+  }
+  if (g.status === "active" && activity === "idle") {
+    lines.push(`├─ ${paint(theme, "warning", `idle — no agent turn is currently running${hostLastActivity(extras, now)}`)}`);
+    lines.push(`└─ ${paint(theme, "dim", "the active goal is durable; inspect /goal status if this persists")}`);
     return lines;
   }
   if (g.status === "auditing") {
