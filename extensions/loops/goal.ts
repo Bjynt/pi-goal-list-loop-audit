@@ -7900,7 +7900,14 @@ export default function (pi: ExtensionAPI): void {
         // (escalating cooldown, reason re-checked) — the E8 incident lost 1.5h to a
         // 60-second provider hiccup waiting on a manual /goal resume.
         const detail = text.trim() ? ` (last: ${text.trim().replace(/\s+/g, " ").slice(0, 160)})` : "";
-        const reason = `5 consecutive errors${detail}`;
+        // v0.34.26: an output-token-limit rejection is NOT a generic provider
+        // flake — the same prompt shape deterministically fails, so
+        // "transient flake auto-resume" and "switch provider / wait out the
+        // window" guidance are both wrong for it. Name the real wall.
+        const outputLimitWall = /output[ -]?token|max_?tokens|length limit|output length|too many tokens/i.test(detail);
+        const reason = outputLimitWall
+          ? `output-token limit — the provider rejected ${consecutiveErrorIterations} overlong responses${detail}`
+          : `5 consecutive errors${detail}`;
         // v0.34.15: the streak now lives ON THE GOAL so it survives the
         // auto-recovery /reloads that used to zero the module counter —
         // hegemon 2026-08-01: a hard-exhausted MiniMax plan churned 1-minute
@@ -7911,6 +7918,21 @@ export default function (pi: ExtensionAPI): void {
         // say "resuming won't help; switch /model or wait out the window"
         // (the raw 429 text was in `detail` but nobody parses JSON on a card).
         const quotaWall = /rate.?limit|usage limit|quota|insufficient|credits/i.test(detail);
+        // v0.34.26: deterministic output-limit wall — durable error pause,
+        // no flake ladder, no hourly probes. Only re-scoping the work helps.
+        if (outputLimitWall) {
+          updateGoal({
+            status: "paused",
+            pauseKind: "error",
+            pauseReason: reason,
+            errorBrakeStreak: brakeStreak + 1,
+            pauseSuggestedAction: "Deterministic wall — the provider rejects this response shape every time, so blind retries never help. Re-scope the work into smaller pieces (several smaller write/edit calls across turns), then /goal resume.",
+          }, ctx);
+          ctx.ui.notify(`Goal paused: ${reason}. Re-scope into smaller pieces, then /goal resume.`, "warning");
+          notifyExternal(ctx, `Goal paused: ${reason}.`);
+          appendLedger(ctx.cwd, "goal_paused", { reason });
+          return;
+        }
         // v0.29.1: brake-cycle CAP. The v0.28.25 ladder slows the thrash
         // (1m→16m) but never STOPS it — junk-runner/hellhunter/pully each
         // burned 4+ pause↔retry cycles against provider windows that last
