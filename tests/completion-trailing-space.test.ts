@@ -96,3 +96,15 @@ test("registerCommand: /goal, /glla, /list, /loop all use the shared factory", (
     assert.ok(m, `${cmd} registers with the completions factory`);
   }
 });
+
+test("/glla completions stay concise by grouping settings, while key=value remains headless", () => {
+  const start = SRC.indexOf('pi.registerCommand("glla"');
+  const end = SRC.indexOf('pi.registerCommand("review"', start);
+  const glla = SRC.slice(start, end);
+  for (const group of ["keep-going", "auditor", "stall-brakes", "subagents", "other"]) {
+    assert.match(glla, new RegExp(`\\["${group}",`), `${group} group is discoverable`);
+  }
+  assert.ok((glla.match(/\["[^"]+",/g) ?? []).length <= 16, "glla autocomplete should not list every setting key");
+  assert.match(glla, /key=value/);
+  assert.match(SRC, /key === "stallescalation" \|\| key === "stallescalationrefires"/);
+});
