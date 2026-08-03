@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.34.28 — 2026-08-03
+
+### Fixed — active work and detached-auditor progress no longer look green or vanish
+
+- The live status/widget now distinguishes **awaiting first turn**, **working**,
+  and long-lived **idle** gaps instead of presenting every active snapshot as
+  green progress. Idle display is delayed long enough to avoid flickering during
+  normal eager-continuation handoff.
+- Detached completion audits now surface **queued**, **running**, **quiet**,
+  **blocked**, and **awaiting verdict** phases. The worker's real activity
+  timestamp is carried through the parent transport and shown separately from
+  UI polling; queued state is rendered immediately before worker progress.
+- Late `pause_goal` calls can no longer overwrite an already paused or auditing
+  lifecycle, preventing repeated false stops from stale turn/tool callbacks.
+- Added display and behavioral regressions for first-turn/idle rendering,
+  auditor phase transitions, worker activity, queued visibility, and late-pause
+  protection.
+
 ## 0.34.27 — 2026-08-03
 
 ### Fixed — host-session recovery no longer parks on the wrong boundary
