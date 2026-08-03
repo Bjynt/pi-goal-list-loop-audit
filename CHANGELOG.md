@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.34.30 — 2026-08-03
+
+### Fixed — auditor verdicts no longer look like missing verdicts
+
+Active goals now distinguish a genuine auditor disapproval and a regression
+shield evidence rejection from an auditor infrastructure failure. The former
+show the verdict and the required fix; only the latter says **blocked — no
+verdict** and **completion claim was not evaluated**. Added display regressions
+for both screenshot cases.
+
 ## 0.34.29 — 2026-08-03
 
 ### Fixed — audit fan-out honors draft auto-acceptance

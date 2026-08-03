@@ -154,13 +154,42 @@ const pauseKind = (g: Goal): PauseKind | undefined => g.pauseKind ?? (pauseIsErr
 /** Active goals can carry an operational warning while the agent is being
  * re-engaged. Do not render those as an ordinary green `active` card: a
  * failed detached auditor is not progress, and a missing turn-start proof is
- * not work. */
-function activeAttention(g: Goal): { label: string; color: DisplayColor } | undefined {
+ * not work. A disapproval or regression-shield rejection is different:
+ * the claim WAS evaluated, so never call either one "no verdict". */
+interface ActiveAttention {
+  label: string;
+  color: DisplayColor;
+  detail: string;
+}
+
+function activeAttention(g: Goal): ActiveAttention | undefined {
   if (g.status !== "active" || !g.pauseReason) return undefined;
-  if (/auditor|completion audit|regression shield/i.test(g.pauseReason)) {
-    return { label: "auditor blocked — no verdict", color: "error" };
+  if (/regression shield/i.test(g.pauseReason)) {
+    return {
+      label: "regression shield — evidence gap",
+      color: "error",
+      detail: "auditor approved; regression shield found missing evidence",
+    };
   }
-  return { label: "attention needed", color: pauseIsError(g) ? "error" : "warning" };
+  if (/auditor disapproved/i.test(g.pauseReason)) {
+    return {
+      label: "auditor disapproved — fix the gap",
+      color: "error",
+      detail: "auditor verdict: disapproved",
+    };
+  }
+  if (/auditor|completion audit/i.test(g.pauseReason)) {
+    return {
+      label: "auditor blocked — no verdict",
+      color: "error",
+      detail: "completion claim was not evaluated",
+    };
+  }
+  return {
+    label: "attention needed",
+    color: pauseIsError(g) ? "error" : "warning",
+    detail: "the active work needs attention",
+  };
 }
 
 /** v0.34.27: an accepted dispatch with no start proof is a trigger/queue
@@ -590,10 +619,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   }
   if (attention) {
     const budget = budgetFor(width, 3, 60);
-    const detail = attention.label === "auditor blocked — no verdict"
-      ? "completion claim was not evaluated"
-      : "the active work needs attention";
-    lines.push(`├─ ${paint(theme, attention.color, detail)}`);
+    lines.push(`├─ ${paint(theme, attention.color, attention.detail)}`);
     wrap(g.pauseReason!, budget, 3).forEach((w, i) => {
       lines.push(`${i === 0 ? "│ " : "│ "} ${paint(theme, attention.color, w)}`);
     });

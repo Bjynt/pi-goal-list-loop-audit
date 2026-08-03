@@ -502,6 +502,32 @@ test("active auditor infrastructure failure is visible as blocked, not green pro
   assert.doesNotMatch(s, /glla: ●/);
 });
 
+test("active auditor verdicts never masquerade as infrastructure no-verdict", () => {
+  const shield = goalOf({
+    status: "active",
+    pauseReason: "regression shield: auditor approved, but evidence never referenced 1 contract item(s)",
+    pauseSuggestedAction: "Call complete_goal again with evidence for the missing item.",
+  });
+  const shieldState = { goal: shield, list: [], loop: null };
+  const shieldWidget = buildWidgetLines(shieldState as never)!;
+  assert.match(shieldWidget[0]!, /regression shield — evidence gap/);
+  assert.ok(shieldWidget.some((l) => l.includes("auditor approved; regression shield found missing evidence")), `shield: ${shieldWidget.join("\\n")}`);
+  assert.doesNotMatch(shieldWidget.join("\\n"), /no verdict|claim was not evaluated/);
+  assert.match(buildStatusText(shieldState as never)!, /regression shield — evidence gap/);
+
+  const disapproved = goalOf({
+    status: "active",
+    pauseReason: "auditor disapproved",
+    pauseSuggestedAction: "Inspect auditor feedback and fix the actual gap before calling complete_goal again",
+  });
+  const disapprovalState = { goal: disapproved, list: [], loop: null };
+  const disapprovalWidget = buildWidgetLines(disapprovalState as never)!;
+  assert.match(disapprovalWidget[0]!, /auditor disapproved — fix the gap/);
+  assert.ok(disapprovalWidget.some((l) => l.includes("auditor verdict: disapproved")), `disapproval: ${disapprovalWidget.join("\\n")}`);
+  assert.doesNotMatch(disapprovalWidget.join("\\n"), /no verdict|claim was not evaluated/);
+  assert.match(buildStatusText(disapprovalState as never)!, /auditor disapproved — fix the gap/);
+});
+
 test("wait pause: quiet banner + resume countdown (widget + status)", () => {
   const g = goalOf({
     status: "paused",
