@@ -372,9 +372,13 @@ test("v0.32.1: post-compaction resume debt + deterministic resync (pi-goal-x's l
   assert.match(SRC, /content: loopResync \+ loopPrompt/); // loop path prepends
   assert.match(SRC, /resync: Boolean\(resync\)/, "dispatch records whether resync was sent");
   assert.match(SRC, /if \(record\.resync\) postCompactResyncPending = false;/, "resync is consumed only after start acknowledgement");
-  // discharged by a real turn start (agent_start), not by the send itself
-  assert.match(SRC, /pi\.on\("agent_start", \(_event: any, ctx: ExtensionContext\) => \{\n    lastStreamActivityAt = Date\.now\(\);\n    \/\/ v0\.32\.1/);
-  assert.match(SRC, /dispatchStartAcknowledged\(ctx, "agent_start"\)/, "agent_start acknowledges an accepted dispatch");
+  // discharged by a real turn start (agent_start), not by the send itself.
+  // v0.34.27 may absorb a file-backed replacement before the stream clock;
+  // pin the behavior inside the handler rather than obsolete adjacency.
+  const agentStart = SRC.slice(SRC.indexOf('pi.on("agent_start"'), SRC.indexOf('pi.on("agent_start"') + 900);
+  assert.match(agentStart, /lastStreamActivityAt = Date\.now\(\);/, "agent_start updates the stream clock");
+  assert.match(agentStart, /postCompactResumeOwed = false;/, "agent_start discharges compaction debt");
+  assert.match(agentStart, /dispatchStartAcknowledged\(ctx, "agent_start"\)/, "agent_start acknowledges an accepted dispatch");
 });
 
 // ---------- v0.34.5: subagent-aware wedge alert ----------
