@@ -7203,6 +7203,7 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
   // real recovery (/reload rebuilds extensions in place), not mislead.
   if (warnIfStaleAtEntry(ctx, "/glla resume")) return;
   releaseInitialSessionLoadBarrier();
+  if (manuallyResumeMainModelRecovery(ctx)) return;
   if (state.mainModelRecovery?.retryAt) {
     clearMainModelRecoveryTimer();
     continuationDispatchStoodDown = false;

@@ -4,6 +4,8 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import {
   classifyMainModelFailure,
+  mainModelAutoRetryUntil,
+  mainModelFailureDelayMs,
   mainModelRetryDelayMs,
   modelRef,
   nextUntriedModelRef,
@@ -31,6 +33,8 @@ test("main model fallback candidates are ordered and never retried in a cycle", 
 test("main model errors distinguish quota recovery from deterministic prompt walls", () => {
   assert.equal(classifyMainModelFailure("429 usage limit; retry in 2 hours").kind, "quota");
   assert.equal(classifyMainModelFailure("Token Plan usage limit reached").kind, "quota");
+  assert.equal(classifyMainModelFailure("503 temporarily unavailable").kind, "transient");
+  assert.equal(classifyMainModelFailure("insufficient credits — buy credits").kind, "billing");
   assert.equal(classifyMainModelFailure("401 invalid API key").kind, "auth");
   assert.equal(classifyMainModelFailure("503 upstream overloaded").kind, "transient");
   assert.equal(classifyMainModelFailure("max_tokens exceeds context window").kind, "non-recoverable");
@@ -41,7 +45,13 @@ test("main model recovery backs off without giving up", () => {
   assert.equal(mainModelRetryDelayMs(1, 15), 15 * 60_000);
   assert.equal(mainModelRetryDelayMs(2, 15), 30 * 60_000);
   assert.equal(mainModelRetryDelayMs(3, 15), 60 * 60_000);
-  assert.equal(mainModelRetryDelayMs(20, 15), 60 * 60_000);
+  assert.equal(mainModelRetryDelayMs(4, 15), 2 * 60 * 60_000);
+  assert.equal(mainModelRetryDelayMs(5, 15), 4 * 60 * 60_000);
+  assert.equal(mainModelRetryDelayMs(6, 15), 5 * 60 * 60_000);
+  assert.equal(mainModelRetryDelayMs(20, 15), 5 * 60 * 60_000);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 rate limit; retry in 2 hours"), 1), 2 * 60 * 60_000);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 rate limit; retry in 1 week"), 1), 15 * 60_000);
+  assert.equal(mainModelAutoRetryUntil(Date.parse("2026-08-03T00:00:00Z")), "2026-08-04T00:00:00.000Z");
   assert.equal(modelRef({ provider: "openai", id: "gpt" }), "openai/gpt");
   assert.equal(modelRef({ provider: "openai" }), undefined);
 });
