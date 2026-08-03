@@ -29,8 +29,18 @@ const THEME = {
   fg(_color: "accent" | "muted" | "dim" | "warning" | "success", text: string) {
     return text; // strip colors for deterministic snapshots
   },
+  bg(_color: "selectedBg", text: string) {
+    return text; // strip colors for deterministic snapshots
+  },
   bold(text: string) {
     return text;
+  },
+};
+
+const HIGHLIGHT_THEME = {
+  ...THEME,
+  bg(_color: "selectedBg", text: string) {
+    return `<selected>${text}</selected>`;
   },
 };
 
@@ -118,6 +128,27 @@ test("render: at width=120, the keep-going section renders its rows (v0.28.23: +
   assert.match(body, /Decision popup/);
   assert.match(body, /Auto-accept drafts/);
   assert.match(body, /Aggressive mode/);
+});
+
+test("render: active row uses a full-width selected background", () => {
+  const done = () => undefined;
+  const component = new SettingsMenuComponent(
+    { rows: SAMPLE_ROWS, title: "test — glla settings table" },
+    () => undefined,
+    HIGHLIGHT_THEME,
+    KB,
+    done,
+  );
+  const line = component.render(120)[4]!;
+  assert.match(line, /^<selected>▶ Auto-resume on load/);
+  assert.ok(line.endsWith("</selected>"));
+
+  const inner = line.slice("<selected>".length, -"</selected>".length);
+  assert.equal(
+    visibleWidthFromTui(inner),
+    120,
+    "the selected background should consume the available table width",
+  );
 });
 
 test("render: header row has KEY, VALUE, SOURCE, DESCRIPTION columns", () => {

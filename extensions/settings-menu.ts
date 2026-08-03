@@ -375,6 +375,8 @@ const MIN_DESC_W = 12;
 /** A minimal subset of pi-tui's Theme interface used by the renderer. */
 export interface SettingsMenuTheme {
   fg(color: "accent" | "muted" | "dim" | "warning" | "success", text: string): string;
+  /** Background used for the full-width active row. */
+  bg(color: "selectedBg", text: string): string;
   bold(text: string): string;
 }
 
@@ -547,11 +549,18 @@ export class SettingsMenuComponent implements Component {
           this.padEnd(truncateToWidth(prefix + r.label, keyW, "…"), keyW),
           this.padEnd(truncateToWidth(r.valueText, valueW, "…"), valueW),
           this.padEnd(truncateToWidth(r.sourceText, sourceW, "…"), sourceW),
-          truncateToWidth(r.description, descW, "…"),
-        // Selected row: plain separators — the whole row gets one accent
+          // Keep the active background visible across the whole table width,
+          // including otherwise-empty description space. This is intentionally
+          // display-only; row values and persisted settings remain unchanged.
+          this.padEnd(truncateToWidth(r.description, descW, "…"), descW),
+        // Selected row: plain separators — the whole row gets one selected-bg
         // wrap; a nested dim separator's reset code would end it early.
         ].join(selected ? COL_SEP : sep);
-        lines.push(selected ? this.theme.fg("accent", row) : row);
+        lines.push(
+          selected
+            ? this.theme.bg("selectedBg", this.theme.bold(row))
+            : row,
+        );
       });
     }
 

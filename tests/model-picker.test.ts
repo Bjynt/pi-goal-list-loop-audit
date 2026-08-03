@@ -18,6 +18,7 @@ import { buildModelPickItems, ModelPickerComponent } from "../extensions/model-p
 
 const THEME = {
   fg: (_c: string, t: string) => t,
+  bg: (_c: string, t: string) => t,
   bold: (t: string) => t,
 };
 const KB = {
