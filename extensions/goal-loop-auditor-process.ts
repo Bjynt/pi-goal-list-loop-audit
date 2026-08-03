@@ -13,7 +13,7 @@ import { createHash, randomUUID } from "node:crypto";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { Goal } from "./goal-loop-core.js";
+import { stripThinkBlocks, type Goal } from "./goal-loop-core.js";
 import { buildGoalAuditorPrompt } from "./goal-loop-auditor.js";
 import { checkRegressionShield, parseAuditorVerdict } from "./goal-loop-shield.js";
 
@@ -343,8 +343,8 @@ export async function runDetachedGoalCompletionAuditor(args: {
           if (result.protocolVersion !== PROTOCOL_VERSION || result.attemptId !== attemptId || result.requestHash !== request.requestHash) {
             return infra(model, thinkingLevel, "auditor result identity/request-hash mismatch");
           }
-          if (!result.ok) return infra(model, thinkingLevel, result.error || "detached auditor failed", result.output);
-          const output = result.output;
+          const output = stripThinkBlocks(result.output);
+          if (!result.ok) return infra(model, thinkingLevel, result.error || "detached auditor failed", output);
           if (!output.trim()) return infra(model, thinkingLevel, "auditor produced no output");
           const parsed = parseAuditorVerdict(output);
           if (!parsed.approved && !parsed.disapproved && !parsed.impossible) return infra(model, thinkingLevel, "auditor produced no verdict marker");

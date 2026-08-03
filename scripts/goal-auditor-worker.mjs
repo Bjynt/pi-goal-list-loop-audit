@@ -337,7 +337,7 @@ async function main() {
           activeTools.delete(key);
           setCurrentToolFromActive();
         }
-        void progress(phase).catch(() => {});
+        void progress(activeTools.size > 0 ? "tool_executing" : "thinking").catch(() => {});
         return;
       }
       if (event.type === "agent_settled") {

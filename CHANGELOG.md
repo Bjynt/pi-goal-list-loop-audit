@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.34.36 — 2026-08-03
+
+### Hardened — detached auditor telemetry and verdict boundaries
+
+- Detached progress is now owned by the goal ID and logical audit attempt, so
+  cancelled or replaced goals cannot repaint the live widget from a late worker
+  callback.
+- Overlapping read-only tools keep the remaining active tool visible and keep
+  the worker watchdog from treating active work as silence.
+- Progress and tool-history telemetry are bounded, terminal progress is written
+  before the result, and long path arguments remain valid/safely targetable.
+- Verdict parsing strips private `<think>` blocks first; a marker inside a
+  reasoning block cannot approve a completion. Unterminated streamed blocks are
+  suppressed from display too.
+- Added a real parent/worker phase-transition test, overlap coverage, stale
+  ownership pins, and configurable-stall messaging coverage.
+
 ## 0.34.35 — 2026-08-03
 
 ### Fixed — detached auditor work is visible

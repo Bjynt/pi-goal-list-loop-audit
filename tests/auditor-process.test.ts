@@ -166,7 +166,7 @@ process.stdin.on("data", async (chunk) => {
     assert.ok(tool, "parent observed the real worker's active tool");
     assert.equal(tool?.currentToolArgs, JSON.stringify({ path: "/repo/README.md" }));
     assert.ok(
-      reports.some((progress) => progress.currentTool === "grep" && progress.toolCalls.some((call) => call.name === "read")),
+      reports.some((progress) => progress.phase === "tool_executing" && progress.currentTool === "grep" && progress.toolCalls.some((call) => call.name === "read")),
       "ending one overlapping tool does not erase the other active tool",
     );
     assert.ok(reports.some((progress) => progress.phase === "complete"));
@@ -182,6 +182,21 @@ test("approval without a read-only tool is a semantic disapproval", async () => 
     assert.equal(result.approved, false);
     assert.equal(result.disapproved, true);
     assert.match(result.error ?? "", /read-only tool/);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("a verdict marker inside a think block is not accepted", async () => {
+  const dir = await setup();
+  try {
+    const result = await run(dir, {
+      FAKE_AUDIT_OUTPUT: "<think><approved/></think>",
+      FAKE_TOOL: "yes",
+    });
+    assert.equal(result.approved, false);
+    assert.equal(result.disapproved, false);
+    assert.match(result.error ?? "", /no output/);
   } finally {
     await cleanup(dir);
   }
