@@ -7709,8 +7709,34 @@ export default function (pi: ExtensionAPI): void {
       return;
     }
     if (lc.giveUpNow) {
+      // v0.34.26: exhaustion is a DURABLE failure state, not a transient
+      // notify. Pre-fix the goal stayed green-active while every heartbeat
+      // re-kick silently truncated again (the tracker stays gaveUp, so no
+      // fire, no state, no card) — an invisible infinite ping-pong.
+      appendLedger(ctx.cwd, "length_continue_exhausted", { consecutive: lc.consecutive });
       ctx.ui.notify(`glla: response hit the output-token cap ${LENGTH_CONTINUE_MAX}× in a row — stepping aside. Ask the model to split the work into smaller pieces.`, "warning");
-      notifyExternal(ctx, "Response truncated 3× in a row — giving up auto-continue.");
+      if (state.goal && state.goal.status === "active") {
+        notifyExternal(ctx, `Response truncated ${LENGTH_CONTINUE_MAX}× in a row — ${goalNoun()} paused; split the work, then /goal resume.`);
+        updateGoal({
+          status: "paused",
+          pauseKind: "error",
+          pauseReason: `output-token limit — ${LENGTH_CONTINUE_MAX} responses in a row were truncated mid-artifact; auto-continue exhausted`,
+          pauseSuggestedAction: "Re-scope the current artifact into smaller pieces (several smaller write/edit calls across turns instead of one giant response), then /goal resume — the truncation budget restarts fresh.",
+        }, ctx);
+        // The pause is the durable record; an explicit recovery gets a full
+        // fresh truncation budget (otherwise the sticky gaveUp flag would
+        // make the resumed turn silently dead on the first truncation).
+        resetLengthContinue();
+      } else if (state.loop?.active) {
+        notifyExternal(ctx, `Response truncated ${LENGTH_CONTINUE_MAX}× in a row — loop stopped; /loop resume after re-scoping.`);
+        state.loop.active = false;
+        state.loop.stopReason = `output-token limit — ${LENGTH_CONTINUE_MAX} consecutive truncated responses (iteration ${state.loop.iteration} preserved; /loop resume after re-scoping the work into smaller pieces)`;
+        persistState(ctx);
+        appendLedger(ctx.cwd, "loop_stopped", { reason: state.loop.stopReason, iterations: state.loop.iteration, best: state.loop.bestValue });
+        resetLengthContinue();
+      } else {
+        notifyExternal(ctx, "Response truncated 3× in a row — giving up auto-continue.");
+      }
     }
     if (lastA?.stopReason === "length") {
       if (lc.fire && !ctx.hasPendingMessages()) sendLengthContinue(ctx, lc.consecutive);
