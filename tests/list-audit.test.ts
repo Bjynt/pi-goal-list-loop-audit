@@ -93,11 +93,14 @@ test("completion fan-out: collect items fan out + suppress the list-complete noi
   assert.match(SRC, /async function fanOutListAuditFindings\(cwd: string, generation: number\): Promise<void> \{/);
 });
 
-test("fan-out: dedupe vs the live queue, Confirm gate, decline keeps findings open", () => {
+test("fan-out: dedupe, optional auto-accept, and decline keeps findings open", () => {
   assert.match(SRC, /!queuedText\.includes\(f\.text\.slice\(0, 60\)\)/, "60-char dedupe against queued items");
+  assert.match(SRC, /const autoAccepted = beforeConfirm\.hasUI && loadSettings\(cwd\)\.autoAcceptDrafts === true/, "auto-accept setting covers generated audit batches");
+  assert.match(SRC, /beforeConfirm\.hasUI && !autoAccepted/);
   assert.match(SRC, /beforeConfirm\.ui\.confirm\(`Queue \$\{fresh\.length\} audit finding\(s\) as list items\?`, preview\)/);
   assert.match(SRC, /appendLedger\(cwd, "list_audit_fanout_declined", \{ findings: fresh\.length \}\)/);
-  assert.match(SRC, /appendLedger\(cwd, "list_audit_fanout", \{ queued: n, alreadyQueued, decisions: decisions\.length \}\)/);
+  assert.match(SRC, /appendLedger\(cwd, "list_audit_fanout", \{/);
+  assert.match(SRC, /autoAccepted,/, "the ledger records why the gate was bypassed");
   // v0.33.3: DECIDE findings raised to the user as real questions.
   assert.match(SRC, /DECIDE finding\(s\) need YOU — raising them as questions now \(not queued — a decision is not a task\)/);
   assert.match(SRC, /\[DECIDE FINDINGS — user decisions needed\]/, "the agent steer carries the full findings");

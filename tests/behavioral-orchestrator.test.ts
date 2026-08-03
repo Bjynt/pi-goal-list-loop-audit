@@ -1460,6 +1460,33 @@ test("v0.34.21 lifecycle: cold startup holds a recovered claim until explicit re
   assert.ok((ctx.ui.widgets["pi-glla"] as string[]).some((line) => line.includes("recovery pending")), "the widget does not claim the auditor is running");
 });
 
+test("v0.34.29: audit fan-out honors autoAcceptDrafts without opening confirmation", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ autoAcceptDrafts: true }));
+  seedState(cwd, { goal: seedGoal({ status: "paused" }) });
+  const ctx = await freshSession(cwd, "startup");
+  const findingsDir = path.join(cwd, ".pi-glla", "audit-loop");
+  fs.mkdirSync(findingsDir, { recursive: true });
+  fs.writeFileSync(path.join(findingsDir, "findings.md"), "- [ ] HIGH: auto-accepted finding (goal.ts:1)\\n");
+
+  let confirmCalled = false;
+  ctx.ui.confirmImpl = async () => {
+    confirmCalled = true;
+    return false;
+  };
+  await __testOnlyRunFanOutListAuditFindings(cwd);
+
+  assert.equal(confirmCalled, false, "autoAcceptDrafts skips the fan-out confirmation");
+  assert.equal((readState(cwd).list ?? []).length, 1, "the finding is queued despite no dialog");
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.match(ledger, /\"list_audit_fanout\"/);
+  assert.match(ledger, /\"autoAccepted\":true/);
+  assert.ok(ctx.ui.matching("Auto-accepted by autoAcceptDrafts").length >= 1, "the bypass is visible");
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
+
 test("v0.34.20 lifecycle: fan-out confirmation from the old generation cannot queue into its replacement", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();

@@ -2066,7 +2066,8 @@ function autoArbitrateStackedState(ctx: ExtensionContext): void {
  * queue every OPEN finding as its own list item (severity-sorted, deduped
  * against the live queue), present DECIDE findings without queueing them.
  * Confirm-gated like every bulk import (v0.23.7: the user reads what lands
- * in the queue); a decline leaves the findings open for a later re-run.
+ * in the queue) unless autoAcceptDrafts is enabled; a decline leaves the
+ * findings open for a later re-run.
  * v0.34.20: this detached operation retains only cwd + generation. Every
  * context use after the confirmation await must come from the fresh session.
  */
@@ -2117,10 +2118,14 @@ async function fanOutListAuditFindings(cwd: string, generation: number): Promise
     return;
   }
   const preview = fresh.map((f, i) => `  ${i + 1}. ${f.text.slice(0, 110)}`).join("\n");
-  let confirmed = true;
   const beforeConfirm = freshCtxForGeneration(generation);
   if (!beforeConfirm) return;
-  if (beforeConfirm.hasUI) {
+  // v0.34.29: autoAcceptDrafts is explicit pre-consent for generated list
+  // batches too. Keep the normal confirmation for users who have not opted
+  // in; the project override wins through loadSettings(cwd).
+  const autoAccepted = beforeConfirm.hasUI && loadSettings(cwd).autoAcceptDrafts === true;
+  let confirmed = true;
+  if (beforeConfirm.hasUI && !autoAccepted) {
     try {
       confirmed = await beforeConfirm.ui.confirm(`Queue ${fresh.length} audit finding(s) as list items?`, preview);
     } catch {
@@ -2136,9 +2141,14 @@ async function fanOutListAuditFindings(cwd: string, generation: number): Promise
     return;
   }
   const n = enqueueItems(afterConfirm, fresh.map((f) => listAuditFanoutItemText(f.text)), "list audit fan-out");
-  appendLedger(cwd, "list_audit_fanout", { queued: n, alreadyQueued, decisions: decisions.length });
+  appendLedger(cwd, "list_audit_fanout", {
+    queued: n,
+    alreadyQueued,
+    decisions: decisions.length,
+    autoAccepted,
+  });
   afterConfirm.ui.notify(
-    `Queued ${n} finding(s) — the list drains them fix by fix, each with its own audited commit.${alreadyQueued > 0 ? ` (${alreadyQueued} already queued.)` : ""}${decideNote}`,
+    `Queued ${n} finding(s) — the list drains them fix by fix, each with its own audited commit.${alreadyQueued > 0 ? ` (${alreadyQueued} already queued.)` : ""}${autoAccepted ? " Auto-accepted by autoAcceptDrafts." : ""}${decideNote}`,
     "info",
   );
 }
