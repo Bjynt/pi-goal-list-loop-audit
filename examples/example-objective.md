@@ -96,13 +96,16 @@ Off by default. Set a per-goal budget and crossing it pauses the goal:
 
 ## The auditor model rule
 
-The plugin never picks a model: the auditor uses your pi session model, and
-you can pin an explicit override once:
+The detached auditor uses an explicit bounded cascade: an optional primary
+pin, an optional fallback pin, then your pi session model. A model that fails
+at runtime is retried once and the next detached candidate is tried; the
+plugin never falls back into the parent in-process session.
 
 ```
 /glla model=provider/model-id
 ```
 
-If audits ever error with auth/provider failures, the session-start notice
-tells you to set that override — the auditor session has no extensions, so
+If every candidate errors with auth/provider failures, the stored completion
+claim pauses and `/goal resume` retries it after you fix the model — the
+auditor session has no extensions, so
 providers that only exist via an extension may be unavailable to it.

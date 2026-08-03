@@ -281,8 +281,9 @@ The queued list is a backlog, not a second live thing — untouched.
 
 ```
 /glla                                # open the settings UI
-/glla model=provider/id              # auditor model override → GLOBAL
+/glla model=provider/id              # primary auditor model override → GLOBAL
 /glla thinking=high                  # auditor thinking → GLOBAL
+# Auditor fallback model is configured from the /glla settings UI → GLOBAL
 /glla notify='cmd "$1"'              # custom push cmd · unset = auto-detect (notify-send/osascript) · off = silent → GLOBAL
 /glla tokenlimit=10000000            # per-goal token budget (default: off) → GLOBAL
 /glla tokenlimit=0                   # explicitly no cap (the default)
@@ -301,11 +302,14 @@ Resolution per key: **project > global > defaults** — EXCEPT `autoResume`,
 which is **global-only** (v0.29.5): per-project opt-ins from old versions
 silently overrode the global hold at launch (the junk-runner incident), so
 the launch-restore gate and the reviewer-enqueue gate read only the global
-file now. The detached auditor defaults to
-your pi session model. When the session provider is extension-registered the
-auditor can't auth it — you're told once (info level) with the fix:
-`/glla model=provider/id`, set once, rarely touched again. The plugin never
-picks a model itself. Thinking follows the session too (floor `high`).
+file now. The detached auditor uses an explicit cascade: primary
+`auditorModel` → optional fallback pin → the pi session model. If a selected
+model fails after launch, the worker retries it once and then advances through
+that same cascade; every candidate is still audited in a detached,
+extension-less process. There is no in-process fallback into the parent
+session. If the bounded cascade is exhausted, the exact completion claim is
+stored and the goal pauses for `/goal resume`; infrastructure is never treated
+as a verdict.
 
 On disapproval, the executor receives the full auditor report by default
 (`auditFeedbackChars=0`, since v0.24.9 — a truncated report loses exactly the

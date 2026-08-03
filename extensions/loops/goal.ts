@@ -5582,17 +5582,15 @@ function registerAgentTools(pi: any): void {
  * "high" — the auditor is the verification gate, depth beats speed there.
  */
 /**
- * Resolve the auditor model (v0.6.2). The principle: **the user selects the
- * model in pi; the auditor uses it.** The plugin never picks a model itself.
+ * Resolve the ordered auditor model candidates. The user controls the pins:
+ * primary `/glla model=provider/id`, optional fallback pin, then the pi
+ * session model as the final candidate. Runtime failures advance through the
+ * same list in `runDetachedCompletionWithFallback`; the plugin never silently
+ * invents a provider or falls back into the parent in-process session.
  *
- * Chain:
- *   1. Explicit `/glla model=provider/id` override (rare).
- *   2. The pi session model (ctx.model) — whatever the user selected.
- *
- * If the session model's provider is extension-registered, the auditor's
- * extension-less session cannot auth it; that failure is surfaced with a
- * clear explanation (switch pi's model to a built-in provider, or set the
- * override) — we do NOT silently substitute a different model.
+ * If the session model's provider is extension-registered, the detached
+ * extension-less worker may not be able to auth it; that failure remains a
+ * loud, bounded infrastructure result with the exact model-fix guidance.
  */
 /** v0.31.3: the auditor model chain — pinned primary, pinned fallback,
  * session model LAST (user design 2026-07-31: "it can be the primary auditor
@@ -5699,12 +5697,11 @@ function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: 
   return { model: undefined, error: "no session model and no auditorModel configured — set one with /glla → Auditor model" };
 }
 
-// (v0.9.12) The auto-fallback apparatus was REMOVED: no tier ranking, no
-// candidate chains, no dead-model caches. The plugin never picks a model —
-// you select it in pi (session model) or in /glla (explicit override). When
-// neither works, the failure surfaces plainly (see the three-way split in
-// the complete_goal handler) with the exact fix; nothing is substituted
-// silently.
+// Model selection is explicit and bounded: primary pin → optional fallback
+// pin → session model. A resolved primary can still fail after launch, so the
+// completion path walks the same ordered candidates after one same-model
+// retry; every candidate remains a detached extension-less audit. There is
+// no in-process fallback into the parent session and no silent tier ranking.
 
 /**
  * The /glla interactive settings UI (v0.8.0): a menu loop over pi's dialog
@@ -5884,7 +5881,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "auditorModelFallback": {
-      const pick = await promptModelRef(ctx, "Auditor fallback model (used when the session model IS the auditor)", "provider/model-id — empty clears the fallback");
+      const pick = await promptModelRef(ctx, "Auditor fallback model (runtime failure or same-session swap)", "provider/model-id — empty clears the fallback");
       if (pick === undefined) return;
       saveSettings("global", ctx.cwd, { auditorModelFallback: pick.kind === "session" ? undefined : pick.ref });
       if (pick.kind === "session") ctx.ui.notify("Auditor fallback cleared — a session on the pinned auditor model keeps that model.", "info");
