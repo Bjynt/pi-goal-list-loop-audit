@@ -51,6 +51,16 @@ const DEFAULT_POLL_INTERVAL_MS = 250;
 const ATTEMPT_ID_RE = /^[A-Za-z0-9._-]{1,100}$/;
 const activeChildren = new Map<string, ChildProcess>();
 
+/**
+ * Give each detached filesystem/child attempt a fresh identity while keeping
+ * the logical completion claim visible as its prefix. A retried worker must
+ * not collide with a stale job directory, and the parent still uses the
+ * logical claim ID for stale-result rejection.
+ */
+export function newDetachedAuditJobAttemptId(logicalAttemptId: string): string {
+  return `${logicalAttemptId}-${Date.now().toString(36)}-${randomUUID().replaceAll("-", "").slice(0, 8)}`;
+}
+
 function childKey(cwd: string, attemptId: string): string {
   return `${path.resolve(cwd)}\u0000${attemptId}`;
 }

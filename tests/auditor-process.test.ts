@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
 import {
+  newDetachedAuditJobAttemptId,
   requestHash,
   runDetachedGoalCompletionAuditor,
   stableJson,
@@ -46,14 +47,18 @@ async function cleanup(dir: string): Promise<void> {
   await rm(workerPath, { force: true });
 }
 
-async function run(dir: string, env: NodeJS.ProcessEnv = {}) {
+async function runWithAttempt(dir: string, attemptId: string, env: NodeJS.ProcessEnv = {}) {
   return runDetachedGoalCompletionAuditor({
     cwd: dir,
     goal,
     model: "test/provider-model" satisfies AuditorModel,
     thinkingLevel: "high",
-    runtime: { workerPath, env, attemptId: () => "attempt-test", pollIntervalMs: 10, wallTimeoutMs: 2_000 },
+    runtime: { workerPath, env, attemptId: () => attemptId, pollIntervalMs: 10, wallTimeoutMs: 2_000 },
   });
+}
+
+async function run(dir: string, env: NodeJS.ProcessEnv = {}) {
+  return runWithAttempt(dir, "attempt-test", env);
 }
 
 test("detached parent accepts an identity-checked result and applies regression_shield", async () => {
@@ -79,6 +84,28 @@ test("approval without a read-only tool is a semantic disapproval", async () => 
     assert.equal(result.approved, false);
     assert.equal(result.disapproved, true);
     assert.match(result.error ?? "", /read-only tool/);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("detached retry identities create unique job directories with the logical claim as prefix", async () => {
+  const dir = await setup();
+  const logicalAttemptId = "audit-logical-claim";
+  const firstAttemptId = newDetachedAuditJobAttemptId(logicalAttemptId);
+  const secondAttemptId = newDetachedAuditJobAttemptId(logicalAttemptId);
+  try {
+    assert.notEqual(firstAttemptId, secondAttemptId, "each retry gets a unique filesystem identity");
+    assert.ok(firstAttemptId.startsWith(`${logicalAttemptId}-`));
+    assert.ok(secondAttemptId.startsWith(`${logicalAttemptId}-`));
+    await runWithAttempt(dir, firstAttemptId, { FAKE_AUDIT_OUTPUT: "<disapproved/>" });
+    await runWithAttempt(dir, secondAttemptId, { FAKE_AUDIT_OUTPUT: "<disapproved/>" });
+    const jobs = (await readdir(path.join(dir, ".pi-glla", "audit-jobs"))).sort();
+    assert.deepEqual(jobs, [firstAttemptId, secondAttemptId].sort(), "retries do not collide on the old job directory");
+    const firstRequest = JSON.parse(await readFile(path.join(dir, ".pi-glla", "audit-jobs", firstAttemptId, "request.json"), "utf8")) as { attemptId: string };
+    const secondRequest = JSON.parse(await readFile(path.join(dir, ".pi-glla", "audit-jobs", secondAttemptId, "request.json"), "utf8")) as { attemptId: string };
+    assert.equal(firstRequest.attemptId, firstAttemptId);
+    assert.equal(secondRequest.attemptId, secondAttemptId);
   } finally {
     await cleanup(dir);
   }

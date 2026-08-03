@@ -148,6 +148,7 @@ import {
 } from "../goal-loop-stats.js";
 import {
   cancelDetachedGoalCompletionAuditor,
+  newDetachedAuditJobAttemptId,
   runDetachedGoalCompletionAuditor,
 } from "../goal-loop-auditor-process.js";
 import {
@@ -2078,13 +2079,9 @@ function newCompletionAuditAttemptId(): string {
 }
 
 /** A logical completion claim can be retried after its old worker has left a
- * durable job directory behind. Each detached process attempt therefore gets
- * its own filesystem identity; the claim's `pendingCompletion.attemptId`
- * remains the parent-generation identity used for stale-result rejection. */
-function newDetachedAuditJobAttemptId(logicalAttemptId: string): string {
-  return `${logicalAttemptId}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
+ * durable job directory behind. Each detached process attempt gets its own
+ * filesystem identity; the claim's `pendingCompletion.attemptId` remains the
+ * parent-generation identity used for stale-result rejection. */
 function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, origin: CompletionAuditOrigin): PendingCompletion {
   completionAuditRecoveryArmed = true;
   const startedMs = Date.now();
