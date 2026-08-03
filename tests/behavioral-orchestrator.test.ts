@@ -22,7 +22,7 @@ import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import activate, { __testOnlyResetStaleFlag, __testOnlyRunFanOutListAuditFindings, __testOnlySetContinuationStartTimeout, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
+import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyRunFanOutListAuditFindings, __testOnlySetContinuationStartTimeout, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
 
 // v0.29.5: autoResume is GLOBAL-only now — tests opt in by writing the
 // harness's global settings path, and afterEach resets it so the opt-in
@@ -579,6 +579,7 @@ test("v0.34.25: silent swap — live file-backed successor is absorbed via a too
   assert.match(ledger, /"session_rebind_via_live_ctx"/, "absorption is ledgered loudly");
   assert.match(ledger, /"via":"tool-call"/);
   assert.ok(pi.sent.length >= 1, "one recovery continuation is scheduled after absorb");
+  __testOnlyResetOwnerSession(); // restore the MAIN_SM claim invariant for later tests
 });
 
 test("v0.34.25: silent swap — in-memory (subagent) ctx is still refused and the park stays honest", async () => {
@@ -600,6 +601,7 @@ test("v0.34.25: silent swap — in-memory (subagent) ctx is still refused and th
   assert.ok(g.interruptedAt, "subagent ctx does not clear the park");
   const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
   assert.doesNotMatch(ledger, /"session_rebind_via_live_ctx"/, "no absorption for ephemeral workers");
+  __testOnlyResetOwnerSession(); // restore the MAIN_SM claim invariant for later tests
 });
 
 test("v0.34.25: the field ordering — stale before compaction, then the successor's compact event absorbs in place", async () => {
@@ -633,6 +635,7 @@ test("v0.34.25: the field ordering — stale before compaction, then the success
   assert.match(ledger, /"via":"session_compact"/);
   assert.match(ledger, /"session_compact"/, "the successor's compact is legitimate busy time again");
   assert.ok(pi.sent.length >= 1, "recovery continuation scheduled after the compact absorb");
+  __testOnlyResetOwnerSession(); // restore the MAIN_SM claim invariant for later tests
 });
 
 test("v0.34.25: dead owner + ephemeral ctx cannot claim the plane (subagent lockout fix)", async () => {
@@ -659,6 +662,7 @@ test("v0.34.25: dead owner + ephemeral ctx cannot claim the plane (subagent lock
   assert.doesNotMatch(res.content[0]!.text, /only the MAIN session owns/, "subagent did not claim the plane; the host successor absorbs");
   const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
   assert.match(ledger, /"session_rebind_via_live_ctx"/);
+  __testOnlyResetOwnerSession(); // restore the MAIN_SM claim invariant for later tests
 });
 
 // T1 — stale paths on the two creation entry points (flag latched from T2)
