@@ -2251,22 +2251,25 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       ? "Fresh session recovered the interrupted completion audit — starting a detached retry for the stored claim."
       : "Auditor quota window elapsed — starting a detached retry with your stored completion claim (no agent turn needed).", "info");
   const settings = loadSettings(liveCtx.cwd);
-  const { model: auditorModel, error: modelError, via } = resolveAuditorModel(liveCtx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
+  const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(liveCtx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
   if (modelError) liveCtx.ui.notify(`Auditor model issue: ${modelError}`, "warning");
+  const auditorCandidates: AuditorModelCandidate[] = [{ model: auditorModel, via: via ?? "unset" }, ...(fallbackModels ?? [])];
   latestAuditProgress = { label: origin === "session-recovery" ? "recovery starting" : origin === "manual" ? "manual verify" : "quota retry", lastEventAt: Date.now() };
   completionAuditInFlight = true;
   completionAuditGeneration = generation;
   const auditStartMs = Date.now();
   let result: Awaited<ReturnType<typeof runDetachedGoalCompletionAuditor>>;
+  let fallbackUsed = false;
   try {
-    ({ result } = await runWithInfraRetry(
-      () =>
+    ({ result, fallbackUsed } = await runDetachedCompletionWithFallback(
+      auditorCandidates,
+      (candidate) =>
         runDetachedGoalCompletionAuditor({
           cwd: liveCtx.cwd,
           goal: auditGoal,
           completionSummary: claim.completionSummary,
           verificationSummary: claim.verificationSummary,
-          model: auditorModel,
+          model: candidate.model,
           thinkingLevel: (settings.auditorThinkingLevel ?? "high") as any, // may be "max" — pi ≥0.83 understands it; the dev-types predate it
           runtime: { attemptId: () => newDetachedAuditJobAttemptId(claim.attemptId!), wallTimeoutMs: AUDITOR_WALL_TIMEOUT_MS },
           onProgress: (progress) => {
@@ -2278,9 +2281,15 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
         }),
       {
         shouldRetry: () => freshCtxForGeneration(generation) !== null,
-        onRetry: (err) => {
+        onRetry: (candidate, err) => {
           const current = freshCtxForGeneration(generation);
-          if (current) appendLedger(current.cwd, "audit_infra_retry", { goalId, error: err.slice(0, 200) });
+          if (current) appendLedger(current.cwd, "audit_infra_retry", { goalId, model: auditorCandidateLabel(candidate), error: err.slice(0, 200) });
+        },
+        onFallback: (from, to, err) => {
+          const current = freshCtxForGeneration(generation);
+          if (!current) return;
+          appendLedger(current.cwd, "auditor_runtime_model_fallback", { goalId, from: auditorCandidateLabel(from), to: auditorCandidateLabel(to), error: err.slice(0, 200) });
+          current.ui.notify(`Detached auditor failed on ${auditorCandidateLabel(from)} — retrying with ${auditorCandidateLabel(to)}. This is infrastructure, not a verdict.`, "warning");
         },
       },
     ));
@@ -2321,7 +2330,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
   if (result.approved) {
     updateGoal({ auditHistory: history, pendingCompletion: undefined }, liveCtx);
     const objective = state.goal.objective;
-    const approvalVia = origin === "manual" ? " on /goal verify" : origin === "session-recovery" ? " after session recovery" : " on the quota retry";
+    const approvalVia = `${origin === "manual" ? " on /goal verify" : origin === "session-recovery" ? " after session recovery" : " on the quota retry"}${fallbackUsed ? " after an auditor-model fallback" : ""}`;
     archiveCurrentGoal(liveCtx, "complete", `auditor ${result.model} approved (${origin})`);
     liveCtx.ui.notify(`Goal complete — auditor ${result.model} approved${approvalVia}.`, "info");
     notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${displaySlice(objective, 120)}`);
@@ -4414,10 +4423,11 @@ function registerAgentTools(pi: any): void {
       const auditGoalId = auditGoal.id;
       const auditAttemptId = completionClaim.attemptId;
       const settings = loadSettings(ctx.cwd);
-      const { model: auditorModel, error: modelError, via } = resolveAuditorModel(ctx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
+      const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(ctx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
       if (modelError) {
         ctx.ui.notify(`Auditor model issue: ${modelError}`, "warning");
       }
+      const auditorCandidates: AuditorModelCandidate[] = [{ model: auditorModel, via: via ?? "unset" }, ...(fallbackModels ?? [])];
       ctx.ui.notify(`Auditor queued (detached worker, model: ${via ?? "setting"}) — the claim is durable; verdict will arrive asynchronously.`, "info");
       // The detached worker must not keep complete_goal's pi turn open. The
       // rest of this callback deliberately runs after the tool has returned;
@@ -4426,13 +4436,13 @@ function registerAgentTools(pi: any): void {
       completionAuditInFlight = true;
       completionAuditGeneration = auditGeneration;
       void (async () => {
-      const runAudit = () =>
+      const runAudit = (candidate: AuditorModelCandidate) =>
         runDetachedGoalCompletionAuditor({
           cwd: ctx.cwd,
           goal: auditGoal,
           completionSummary: p.completionSummary,
           verificationSummary: p.verificationSummary,
-          model: auditorModel,
+          model: candidate.model,
           thinkingLevel: (settings.auditorThinkingLevel ?? "high") as any, // may be "max" — pi ≥0.83 understands it; the dev-types predate it
           runtime: { attemptId: () => newDetachedAuditJobAttemptId(completionClaim.attemptId!), wallTimeoutMs: AUDITOR_WALL_TIMEOUT_MS },
           onProgress: (progress) => {
@@ -4456,15 +4466,22 @@ function registerAgentTools(pi: any): void {
       completionAuditGeneration = auditGeneration;
       let result: Awaited<ReturnType<typeof runAudit>>;
       let retriedOnce = false;
+      let fallbackUsed = false;
       try {
-        ({ result, retriedOnce } = await runWithInfraRetry(runAudit, {
+        ({ result, retriedOnce, fallbackUsed } = await runDetachedCompletionWithFallback(auditorCandidates, runAudit, {
           shouldRetry: () => freshCtxForGeneration(auditGeneration) !== null,
-          onRetry: (err) => {
+          onRetry: (candidate, err) => {
             const current = freshCtxForGeneration(auditGeneration);
             if (!current) return;
             latestAuditProgress = { label: `infra error (${err.slice(0, 40)}) — retrying once`, lastEventAt: Date.now() };
             refreshUI(current);
-            appendLedger(current.cwd, "audit_infra_retry", { goalId: auditGoalId, error: err.slice(0, 200) });
+            appendLedger(current.cwd, "audit_infra_retry", { goalId: auditGoalId, model: auditorCandidateLabel(candidate), error: err.slice(0, 200) });
+          },
+          onFallback: (from, to, err) => {
+            const current = freshCtxForGeneration(auditGeneration);
+            if (!current) return;
+            appendLedger(current.cwd, "auditor_runtime_model_fallback", { goalId: auditGoalId, from: auditorCandidateLabel(from), to: auditorCandidateLabel(to), error: err.slice(0, 200) });
+            current.ui.notify(`Detached auditor failed on ${auditorCandidateLabel(from)} — retrying with ${auditorCandidateLabel(to)}. This is infrastructure, not a verdict.`, "warning");
           },
         }));
       } finally {
@@ -5608,7 +5625,7 @@ function auditorThinkingLevels(model: any): string[] {
   });
 }
 
-function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: string, sameSessionSwap = true): { model: any; error?: string; via?: string } {
+function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: string, sameSessionSwap = true): { model: any; error?: string; via?: string; fallbackModels?: AuditorModelCandidate[] } {
   const sessionModel = ctx.model as any;
   const tryRef = (trimmed: string): { model?: any; reason?: string } => {
     const slash = trimmed.indexOf("/");
@@ -5626,6 +5643,18 @@ function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: 
     return matches[0] ? { model: matches[0] } : { reason: "no available model matching" };
   };
   const isSession = (m: any) => sessionModel && m.provider === sessionModel.provider && m.id === sessionModel.id;
+  const modelKey = (m: any): string => {
+    if (!m || typeof m !== "object") return String(m ?? "(unset)");
+    return `${m.provider ?? ""}/${m.id ?? ""}`;
+  };
+  const candidates: AuditorModelCandidate[] = [];
+  const seen = new Set<string>();
+  const addCandidate = (model: any, via: string): void => {
+    const key = modelKey(model);
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push({ model, via });
+  };
   // v0.32.0: per-pin source labels — when the primary is unset, pins[0] IS
   // the fallback and the old i===0→"setting" map mislabeled it.
   const pins: Array<{ pin: string; src: "setting" | "fallback-pin" }> = [];
@@ -5660,15 +5689,16 @@ function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: 
       appendLedger(ctx.cwd, "auditor_model_same_as_session", { model: `${r.model.provider}/${r.model.id}`, fallback: null });
       ctx.ui.notify(`The session model IS the pinned auditor (${r.model.provider}/${r.model.id}) — pin a different /glla → Auditor fallback model so the verifier can differ.`, "warning");
     }
-    return { model: r.model, via: pins[i]!.src };
+    addCandidate(r.model, pins[i]!.src);
   }
-  if (sessionModel) {
-    if (pins.length > 0) {
-      appendLedger(ctx.cwd, "auditor_model_fallback", { configured: pins.map((p) => p.pin).join(" → "), reason: "all pins exhausted" });
+  if (sessionModel) addCandidate(sessionModel, pins.length > 0 ? "session-fallback" : "session");
+  if (candidates.length > 0) {
+    const first = candidates[0]!;
+    if (first.via === "session-fallback") {
+      appendLedger(ctx.cwd, "auditor_model_fallback", { configured: pins.map((p) => p.pin).join(" → ") || "(none)", reason: "all pins exhausted" });
       ctx.ui.notify("All pinned auditor models are unavailable — falling back to the session model. Fix via /glla → Auditor model.", "warning");
-      return { model: sessionModel, via: "session-fallback" };
     }
-    return { model: sessionModel, via: "session" };
+    return { model: first.model, via: first.via, fallbackModels: candidates.slice(1) };
   }
   return { model: undefined, error: "no session model and no auditorModel configured — set one with /glla → Auditor model" };
 }
