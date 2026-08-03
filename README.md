@@ -514,6 +514,17 @@ cd pi-goal-list-loop-audit
 pi install .
 ```
 
+## Publishing for other users
+
+The npm package is public, but `publishConfig.access=public` does not publish
+it by itself. Maintainers should configure npm Trusted Publishing for
+`.github/workflows/publish.yml`, run `npm run release:check`, push a matching
+`v<version>` tag, and publish a GitHub Release. That workflow then runs the
+full checks and `npm publish --provenance --access public` without a long-lived
+npm token. See [`docs/RELEASING.md`](docs/RELEASING.md); verify the result with
+`npm view pi-goal-list-loop-audit version dist-tags.latest` before telling
+users to upgrade.
+
 ## License
 
 MIT

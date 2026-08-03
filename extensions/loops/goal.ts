@@ -1879,7 +1879,8 @@ function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModelRecover
   continuationDispatchStoodDown = true;
   state.mainModelRecovery = { ...normalized, retryAt: undefined, manualResumeRequired: true };
   const resumeCmd = state.goal?.policy === "list" ? "/list resume" : normalized.kind === "loop" ? "/loop resume" : "/goal resume";
-  const pauseReason = `main model recovery — automatic probes stopped (${why})`;
+  const quotaMarker = /quota|rate.?limit|usage.?limit|token.?plan|plan.?limit/i.test(normalized.reason) ? ` · ${normalized.reason}` : "";
+  const pauseReason = `main model recovery — automatic probes stopped (${why})${quotaMarker}`;
   const action = `No automatic provider probes remain. Check the provider reset/billing state or switch /model, then ${resumeCmd} to start a fresh recovery window; /goal cancel stops it.`;
   if (normalized.kind === "goal" && state.goal) {
     updateGoal({

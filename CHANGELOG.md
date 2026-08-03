@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.34.45 — 2026-08-03
+
+### Improved — bounded quota recovery and npm release discipline
+
+- Classify quota walls conservatively; ambiguous transient, auth, and billing
+  messages no longer masquerade as timed quota resets.
+- Parse provider retry/reset hints, cap automatic probes at five hours, and
+  stop the automatic recovery window after 24 hours with durable manual-resume
+  guidance. Recovery metadata survives reloads.
+- Apply the bounded plan to stored completion-auditor claims as well as the
+  main supervised model.
+- Add a GitHub Release → npm Trusted Publishing workflow, package inspection
+  script, and maintainer release checklist.
+- Clarify `/goal audit "focus"` syntax and the quota/recovery behavior in the
+  README.
+
 ## 0.34.44 — 2026-08-03
 
 ### Improved — quota-wall recovery HUD

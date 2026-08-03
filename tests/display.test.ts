@@ -712,6 +712,32 @@ test("quota wait gets a distinct recovery HUD without raw provider JSON", () => 
   assert.match(s, /1 queued/);
 });
 
+test("ambiguous provider recovery is not mislabeled as a quota wall", () => {
+  const g = goalOf({
+    status: "paused",
+    pauseKind: "wait",
+    pauseReason: "main model recovery — retrying in 15m (main model transient: 503 temporarily unavailable)",
+    pauseResumeAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+  });
+  const state = { goal: g, list: [], loop: null };
+  const w = buildWidgetLines(state as never)!;
+  assert.doesNotMatch(w.join("\\n"), /QUOTA WALL/);
+  assert.match(buildStatusText(state as never)!, /waiting/);
+});
+
+test("quota manual hold stays distinct and does not show raw provider detail", () => {
+  const g = goalOf({
+    status: "paused",
+    pauseKind: "blocked",
+    pauseReason: "main model recovery — automatic probes stopped (provider supplied a reset beyond the 5h automatic probe budget)",
+    pauseSuggestedAction: "Check the provider reset, then /goal resume to start a fresh bounded window.",
+  });
+  const state = { goal: g, list: [], loop: null };
+  const w = buildWidgetLines(state as never)!;
+  assert.ok(w.some((l) => l.includes("QUOTA WALL") && l.includes("manual resume required")), `hold: ${w.join("\\n")}`);
+  assert.doesNotMatch(w.join("\\n"), /automatic probes stopped \(provider supplied/);
+});
+
 test("legacy pause (no kind): flat card unchanged; error-regex still classifies the status line", () => {
   const g = goalOf({ status: "paused", pauseReason: "user paused for review", pauseSuggestedAction: "/goal resume" });
   const state = { goal: g, list: [], loop: null };
