@@ -93,7 +93,8 @@ test("E3: provider-held send storms enter durable main-model recovery", () => {
 });
 
 test("E8: the error brake carries the REAL error text, not stopReason", () => {
-  assert.match(SRC, /const detail = text\.trim\(\) \? ` \(last: \$\{text\.trim\(\)/);
+  assert.match(SRC, /const rawErrorText = \[rawLastA\?\.errorMessage, text\]/, "provider error metadata is included with visible text");
+  assert.match(SRC, /const detail = rawErrorText \? ` \(last: \$\{rawErrorText\.replace/);
   // v0.34.26: generic errors keep the exact legacy reason; output-token-limit
   // walls get their own named reason via the ternary.
   assert.match(SRC, /const reason = outputLimitWall\n\s+\? `output-token limit — the provider rejected \$\{consecutiveErrorIterations\} overlong responses\$\{detail\}`\n\s+: `5 consecutive errors\$\{detail\}`;/);
@@ -113,6 +114,19 @@ test("v0.34.26: output-token-limit provider errors are classified as a determini
   assert.match(wallBranch, /\/goal resume\./);
   assert.ok(!wallBranch.includes("scheduleQuotaRetryForSession"), "no flake auto-resume for a deterministic wall");
   assert.ok(!wallBranch.includes("pauseResumeAt"), "no wait-timer for a deterministic wall");
+});
+
+test("v0.34.36: a loop whose continuation never starts is durably stopped and resumable", () => {
+  assert.match(SRC, /if \(record\.kind === "loop" && state\.loop\?\.active\)/);
+  assert.match(SRC, /stopReason: `stalled: continuation start acknowledgement timed out/);
+  assert.match(SRC, /!!r\?\.startsWith\("stalled:"\)/);
+});
+
+test("v0.34.36: stored-claim auditor retries persist the infrastructure streak", () => {
+  const retry = SRC.slice(SRC.indexOf("async function retryStoredCompletionAudit"));
+  assert.match(retry, /const infraStreak = \(state\.goal\.auditInfraStreak \?\? 0\) \+ 1;/);
+  assert.match(retry, /auditInfraStreak: infraStreak,/);
+  assert.match(retry, /audit_infra_waiting.*infraStreak/);
 });
 
 test("v0.34.26: length-continue exhaustion is a durable paused state, not a transient notify", () => {

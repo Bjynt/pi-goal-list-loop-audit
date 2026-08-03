@@ -1617,6 +1617,15 @@ function dispatchStartUnacknowledged(ctx: ExtensionContext, record: Continuation
     generation: record.generation,
     timeoutMs: continuationStartTimeoutMs(),
   });
+  if (record.kind === "loop" && state.loop?.active) {
+    clearLoopTimer();
+    state.loop = {
+      ...state.loop,
+      active: false,
+      stopReason: `stalled: continuation start acknowledgement timed out (${record.id}) — /loop resume to retry explicitly`,
+    };
+    persistState(ctx);
+  }
   if (state.goal && state.goal.status === "active" && (record.kind === "goal" || record.kind === "stall")) {
     updateGoal({ interruptedAt: nowIso(), interruptedReason: reason }, ctx);
   }
@@ -2944,22 +2953,28 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
   // claim is the repetition-loop failure this direct-audit path exists to
   // prevent. The user fixes the model/command, then /goal resume retries.
   if (result.error && !result.disapproved) {
+    const infraStreak = (state.goal.auditInfraStreak ?? 0) + 1;
+    const reachedInfraCap = infraStreak >= 3;
     const pending: PendingCompletion = {
       ...claim,
       phase: "recovery-pending",
       recoveryAt: nowIso(),
       recoveryReason: "auditor-infrastructure",
     };
+    const pauseReason = reachedInfraCap
+      ? `auditor infrastructure failed ${infraStreak}× in a row — the auditor model is likely broken OR a verification command is hanging (last: ${result.error.slice(0, 120)})`
+      : `completion auditor infrastructure failure — ${result.error}`;
     updateGoal({
       status: "paused",
       auditHistory: history,
       pendingCompletion: pending,
+      auditInfraStreak: infraStreak,
       pauseKind: "error",
-      pauseReason: `completion auditor infrastructure failure — ${result.error}`,
+      pauseReason,
       pauseSuggestedAction: "Fix the auditor model or verification command, then /goal resume to retry the stored claim.",
     }, liveCtx);
-    appendLedger(liveCtx.cwd, "audit_infra_waiting", { goalId, attemptId: claim.attemptId, error: result.error.slice(0, 240) });
-    liveCtx.ui.notify("Completion auditor infrastructure failed (not a verdict). The stored claim is safe; fix the model/command and /goal resume.", "warning");
+    appendLedger(liveCtx.cwd, "audit_infra_waiting", { goalId, attemptId: claim.attemptId, error: result.error.slice(0, 240), infraStreak });
+    liveCtx.ui.notify(`Completion auditor infrastructure failed (not a verdict).${reachedInfraCap ? " Repeated failures suggest a broken model or hanging verification command." : ""} The stored claim is safe; fix the model/command and /goal resume.`, "warning");
     return;
   }
 
@@ -4653,6 +4668,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       !!r?.startsWith("provider errors —") ||
       !!r?.startsWith("stopped by user —") ||
       !!r?.startsWith("plateau —") ||
+      !!r?.startsWith("stalled:") ||
       !!r?.startsWith("stuck —");
     if (stored && !stored.active && RESUMABLE_STOP(stored.stopReason)) {
       // v0.28.14: one-active-thing — a held loop must not resume over an
@@ -8244,7 +8260,10 @@ export default function (pi: ExtensionAPI): void {
         // provider error). And give transient flakes ONE auto-resume per brake
         // (escalating cooldown, reason re-checked) — the E8 incident lost 1.5h to a
         // 60-second provider hiccup waiting on a manual /goal resume.
-        const detail = text.trim() ? ` (last: ${text.trim().replace(/\s+/g, " ").slice(0, 160)})` : "";
+        const rawErrorText = [rawLastA?.errorMessage, text]
+          .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+          .join(" — ");
+        const detail = rawErrorText ? ` (last: ${rawErrorText.replace(/\s+/g, " ").slice(0, 160)})` : "";
         // v0.34.26: an output-token-limit rejection is NOT a generic provider
         // flake — the same prompt shape deterministically fails, so
         // "transient flake auto-resume" and "switch provider / wait out the

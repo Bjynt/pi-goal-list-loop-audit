@@ -790,7 +790,7 @@ test("v0.34.26: output-token-limit provider errors pause with the named wall, no
   const ctx = await freshSession(cwd, "startup");
   await pi.command("goal", "wall classification — done when named", ctx);
   await tick();
-  const errEnd = { messages: [{ role: "assistant", content: [{ type: "text", text: "Error: 400 max_tokens exceeded — output length limit reached" }], stopReason: "error" }] };
+  const errEnd = { messages: [{ role: "assistant", content: [{ type: "text", text: "provider stopped" }], errorMessage: "Model stopped because it reached the maximum output-token limit", stopReason: "error" }] };
   for (let i = 0; i < 5; i++) {
     await pi.fire("agent_end", errEnd, ctx);
     await tick(50);
