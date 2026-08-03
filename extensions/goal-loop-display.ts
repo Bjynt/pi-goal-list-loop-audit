@@ -673,6 +673,13 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     lines.push(`└─ ${paint(theme, "dim", "the active goal is durable; inspect /goal status if this persists")}`);
     return lines;
   }
+  if (g.status === "active" && activity === "working") {
+    lines.push(`├─ ${paint(theme, "success", `${workingFrame(now)} live work confirmed${hostLastStream(extras, now)}`)}`);
+  } else if (g.status === "active" && activity === "busy") {
+    lines.push(`├─ ${paint(theme, "warning", `busy — pi is not idle, but no recent stream event was observed${hostLastStream(extras, now)}`)}`);
+  } else if (g.status === "active" && activity === "queued") {
+    lines.push(`├─ ${paint(theme, "warning", "queued — waiting for pi to start the next turn")}`);
+  }
   if (g.status === "auditing") {
     if (auditRecoveryPending(g)) {
       lines.push(`├─ auditor: ${paint(theme, "warning", "recovery pending — previous audit was interrupted")}`);

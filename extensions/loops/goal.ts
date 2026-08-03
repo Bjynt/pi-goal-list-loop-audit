@@ -882,6 +882,10 @@ let lastActivityAt = Date.now();
 // the busy flag conceals the wedge from every other watchdog (field:
 // hellhunter + hegemon 2026-07-30, MiniMax streams died silently).
 let lastStreamActivityAt = Date.now();
+// A fresh UI session starts without stream proof. The clock still has a
+// startup value for the zombie watchdog, but the live-work pulse must wait
+// for a real host stream event in this session.
+let streamActivityObserved = false;
 let lastZombieAlertAt = 0;
 let lastWedgeAlertAt = 0;
 let heartbeatNudges = 0;
@@ -959,6 +963,7 @@ function isSupervising(): boolean {
 
 let latestAuditProgress: AuditDisplayProgress | null = null;
 let uiTicker: NodeJS.Timeout | null = null;
+const LIVE_STREAM_PROOF_MS = 15_000;
 
 /**
  * Completion-auditor progress is ephemeral, but it still has an owner. A
@@ -1041,6 +1046,7 @@ function noteToolResult(event: any): void {
 function displayActivityFor(ctx: ExtensionContext): {
   activity?: import("../goal-loop-display.js").GoalDisplayActivity;
   lastActivityAt?: number;
+  lastStreamActivityAt?: number;
 } {
   const goal = state.goal;
   if (!goal || goal.status !== "active") return {};
@@ -1059,20 +1065,36 @@ function displayActivityFor(ctx: ExtensionContext): {
     idle = ctx.isIdle();
     pending = ctx.hasPendingMessages();
   } catch {
-    return { activity: "working" };
+    // A stale/unknown host state is not proof of work. Keep the durable
+    // active marker, but do not animate it.
+    return { activity: "active" };
   }
   const scheduled = continuationTimer !== null || pendingContinuationDispatch !== null || continuationDispatchStoodDown;
   const lastActivityAt = lastRealActivityAt > 0
     && (!Number.isFinite(goalStartedAt) || lastRealActivityAt >= goalStartedAt)
     ? lastRealActivityAt
     : undefined;
+  const streamAt = streamActivityObserved
+    && (!Number.isFinite(goalStartedAt) || lastStreamActivityAt >= goalStartedAt)
+    ? lastStreamActivityAt
+    : undefined;
+  const streamFresh = streamAt !== undefined && Date.now() - streamAt <= LIVE_STREAM_PROOF_MS;
+  const toolActive = inFlightToolCalls.size > 0;
+  // A spinner means pi is busy AND we have recent stream/tool evidence. A
+  // busy host with no fresh evidence gets a static BUSY label instead, so a
+  // hung provider cannot masquerade as progress.
+  if (!idle && (streamFresh || toolActive)) {
+    return { activity: "working", lastActivityAt, lastStreamActivityAt: streamAt };
+  }
+  if (!idle) return { activity: "busy", lastActivityAt, lastStreamActivityAt: streamAt };
+  if (pending || scheduled) return { activity: "queued", lastActivityAt, lastStreamActivityAt: streamAt };
   // A short idle gap is normal between agent_end and the settled eager
   // continuation. Only surface idle after a real minute with no queued send;
-  // otherwise the card would flicker into a false stop between every turn.
-  if (idle && !pending && !scheduled && (lastActivityAt === undefined || Date.now() - lastActivityAt >= 60_000)) {
-    return { activity: "idle", lastActivityAt };
+  // otherwise keep the durable state neutral rather than inventing work.
+  if (lastActivityAt === undefined || Date.now() - lastActivityAt >= 60_000) {
+    return { activity: "idle", lastActivityAt, lastStreamActivityAt: streamAt };
   }
-  return { activity: "working", lastActivityAt };
+  return { activity: "active", lastActivityAt, lastStreamActivityAt: streamAt };
 }
 
 function refreshUI(ctx: ExtensionContext): void {
@@ -7724,6 +7746,7 @@ export default function (pi: ExtensionAPI): void {
     completionAuditGeneration = null;
     completionAuditRecoveryArmed = false;
     latestAuditProgress = null;
+    streamActivityObserved = false;
     // Ephemeral watchdog counters belong to the old session, not the
     // persisted goal. Reset them so a stale boundary cannot make the next
     // fresh session inherit a false stall count.
@@ -8026,6 +8049,7 @@ export default function (pi: ExtensionAPI): void {
     noteActivity(true);
     dispatchStartAcknowledged(ctx, "agent_end");
     lastStreamActivityAt = Date.now();
+    streamActivityObserved = true;
     // v0.27.2: folded-in length-continue (standalone pi-length-continue is
     // deprecated). A response cut by the per-response output cap is NOT a
     // completed turn (no telemetry), NOT a stall (no no-tool nudge), and
@@ -8439,6 +8463,7 @@ export default function (pi: ExtensionAPI): void {
     toolCallsThisTurn++;
     noteActivity(true);
     lastStreamActivityAt = Date.now();
+    streamActivityObserved = true;
     noteToolCall(event); // v0.33.0
     // v0.24.0: count loop-iteration tool calls (narration-only detection).
     if (isLoopActive()) {
@@ -8474,12 +8499,14 @@ export default function (pi: ExtensionAPI): void {
     if (tryAbsorbHostSuccessor(ctx, "message_update")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     lastStreamActivityAt = Date.now();
+    streamActivityObserved = true;
     dispatchStartAcknowledged(ctx, "message_update");
   });
   pi.on("agent_start", (_event: any, ctx: ExtensionContext) => {
     if (tryAbsorbHostSuccessor(ctx, "agent_start")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     lastStreamActivityAt = Date.now();
+    streamActivityObserved = true;
     // v0.32.1: a real turn started — the post-compaction resume debt is
     // discharged (the heartbeat stops retrying it).
     postCompactResumeOwed = false;
@@ -8489,6 +8516,7 @@ export default function (pi: ExtensionAPI): void {
     if (tryAbsorbHostSuccessor(ctx, "turn_start")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     lastStreamActivityAt = Date.now();
+    streamActivityObserved = true;
     dispatchStartAcknowledged(ctx, "turn_start");
   });
 }
