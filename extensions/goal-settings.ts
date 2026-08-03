@@ -19,6 +19,10 @@ import {
 import type { SubagentModelStrategy } from "./goal-loop-subagents.js";
 
 export interface Settings {
+  /** Ordered provider/model refs to use when the MAIN session model hits a provider wall. */
+  mainModelFallbacks?: string[];
+  /** Minutes before the main-session recovery probe; the cadence caps at 60m. */
+  mainModelRetryMinutes?: number;
   /** "provider/model-id" or bare "model-id". Unset → session model. */
   auditorModel?: string;
   /** v0.31.3/v0.34.25: next detached auditor candidate when the primary
@@ -124,6 +128,11 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  // Main-model backups are opt-in: an empty list preserves pi's normal
+  // session model behavior, while the recovery cadence still protects an
+  // active supervised goal from a temporary quota wall.
+  mainModelFallbacks: [],
+  mainModelRetryMinutes: 15,
   // Unset = "high" at the call site (v0.31.2). The auditor is the
   // verification gate: its depth must NOT ride the session's coding-speed
   // thinking dial (user 2026-07-31: "we should also select its thinking
@@ -189,6 +198,8 @@ export function loadGlobalSettings(): Settings {
 
 /** Every provenance-tracked key (the /glla headless display + UI). */
 export const SETTINGS_KEYS: Array<keyof Settings> = [
+  "mainModelFallbacks",
+  "mainModelRetryMinutes",
   "auditorModel",
   "auditorModelFallback",
   "auditorSameSessionSwap",

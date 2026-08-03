@@ -468,12 +468,31 @@ export function takeAt<T>(items: T[], n: number): [T, T[]] | null {
   return [taken, items.filter((_, i) => i !== n - 1)];
 }
 
+export interface MainModelRecovery {
+  /** The model selected when the provider wall was first observed. */
+  primary: string;
+  /** The model currently selected after one or more failovers. */
+  active?: string;
+  /** Candidates already tried in this recovery cycle. */
+  attempted: string[];
+  /** Next safe probe time; persisted so reloads do not forget the wait. */
+  retryAt?: string;
+  /** Number of completed recovery waits; drives the 15m → 30m → hourly cadence. */
+  attempts: number;
+  /** Human-readable provider failure excerpt. */
+  reason: string;
+  /** Whether the suspended supervisor is a goal/list item or a loop. */
+  kind: "goal" | "loop";
+}
+
 export interface State {
   goal: Goal | null;
   /** Loop 2: list of pending goal items. Activated one at a time. */
   list?: ListItem[];
   /** Loop 3: metric-driven forever loop. */
   loop?: import("./goal-loop-forever.js").LoopState;
+  /** Main-session provider recovery; independent of detached auditor quota state. */
+  mainModelRecovery?: MainModelRecovery;
 }
 
 /** v0.24.2: count TRAILING consecutive disapprovals (the disapproval-cap

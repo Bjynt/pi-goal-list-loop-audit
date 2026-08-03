@@ -24,6 +24,7 @@ import { Type } from "typebox";
 import {
   type Goal,
   type State,
+  type MainModelRecovery,
   type Status,
   appendLedger,
   archiveDir,
@@ -118,6 +119,15 @@ import {
   scheduleQuotaRetry,
   cancelQuotaRetry,
 } from "../quota-retry.js";
+import {
+  classifyMainModelFailure,
+  mainModelRetryDelayMs,
+  modelRef,
+  nextUntriedModelRef,
+  normalizeModelRefs,
+  splitModelRef,
+  type MainModelFailure,
+} from "../main-model-recovery.js";
 import {
   DEFAULT_SETTINGS,
   SETTINGS_KEYS,
@@ -837,6 +847,15 @@ function foreignToolGuard(execCtx: unknown): string | null {
 }
 
 let state: State = { goal: null };
+
+// Main-session model recovery is separate from detached-auditor quota retry.
+// It is opt-in for model rotation (via mainModelFallbacks), but the durable
+// wait also protects a supervised goal when every configured model is
+// temporarily quota-blocked. One timer, one probe, no blind resend storm.
+let mainModelRecoveryTimer: NodeJS.Timeout | null = null;
+let mainModelSwitchInFlight = false;
+let mainModelAbortForRecovery = false;
+let lastMainModelFailure: MainModelFailure | null = null;
 
 // Drafting mode: a no-arg loop command starts a clarification turn; the agent
 // must call propose_goal_draft / propose_loop_draft, which opens the user's
