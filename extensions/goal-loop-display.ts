@@ -200,6 +200,29 @@ const pauseIsError = (g: Goal): boolean => ERROR_PAUSE.test(g.pauseReason ?? "")
 type PauseKind = "decision" | "error" | "wait" | "blocked";
 const pauseKind = (g: Goal): PauseKind | undefined => g.pauseKind ?? (pauseIsError(g) ? "error" : undefined);
 
+/** A provider quota wall is an expected wait, not a generic failure. Keep
+ * raw 429/JSON detail out of the visual card while preserving it in durable
+ * state and the ledger. Local token-budget pauses intentionally do not match.
+ */
+function isQuotaWall(g: Goal): boolean {
+  const reason = g.pauseReason ?? "";
+  if (/token limit exceeded/i.test(reason)) return false;
+  return /quota|rate.?limit|usage.?limit|token.?plan|credits?|main model recovery/i.test(reason);
+}
+
+function quotaWallDetail(g: Goal): string {
+  const reason = g.pauseReason ?? "";
+  if (/token.?plan/i.test(reason)) return "Token Plan usage limit";
+  if (/rate.?limit|429/i.test(reason)) return "provider rate limit";
+  return "provider quota wall";
+}
+
+function quotaResumeText(g: Goal, now: number): string {
+  const ms = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) - now : Number.NaN;
+  if (!Number.isFinite(ms)) return "retry schedule is durable";
+  return ms <= 0 ? "retrying now" : `next probe in ${fmtElapsed(ms)}`;
+}
+
 /** Active goals can carry an operational warning while the agent is being
  * re-engaged. Do not render those as an ordinary green `active` card: a
  * failed detached auditor is not progress, and a missing turn-start proof is
@@ -483,6 +506,14 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       // v0.34.12: live countdown (the UI ticker keeps rendering through a
       // timed wait) — "resumes in 23m" beats a static clock time, and a
       // passed resumeAt says "resuming…" instead of lying about the past.
+      // v0.34.44: quota walls get a distinct amber badge. The retry budget in
+      // pi's current request is not the recovery plan; this label tells the
+      // user that the durable probe owns the wait.
+      if (isQuotaWall(g)) {
+        const queued = state.list?.length ?? 0;
+        const queue = queued > 0 ? ` · ${queued} queued` : "";
+        return `glla: ${stateBadge(`QUOTA WALL · ${quotaResumeText(g, now)}`, "⏳", theme, "warning")}${queue}${heldSuffix}`;
+      }
       const rms = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) - now : Number.NaN;
       const when = Number.isNaN(rms) ? "" : rms <= 0 ? " · resuming…" : ` · resumes in ${fmtElapsed(rms)}`;
       return `glla: ${paint(theme, "dim", `⏳ waiting${when}`)}${heldSuffix}`;
@@ -766,9 +797,17 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     // v0.28.22: actionability banner — a decision pause, an operational
     // failure, and a time-gated wait must not look alike (user report:
     // "if something actionable is going on it can be hard to tell").
+    // v0.34.44: quota walls get a dedicated visual treatment. Do not dump
+    // the provider's raw 429 JSON into the card; it remains in durable state
+    // and the ledger while the user sees the recovery contract.
     if (kind === "decision") lines.push(`├─ ${paint(theme, "accent", "decision needed — your call unblocks this")}`);
     else if (kind === "error") lines.push(`├─ ${paint(theme, "error", "action needed — this won't fix itself")}`);
-    else if (kind === "wait") lines.push(`├─ ${paint(theme, "dim", "waiting — nothing for you to do")}`);
+    else if (kind === "wait" && isQuotaWall(g)) {
+      const queued = state.list?.length ?? 0;
+      const queue = queued > 0 ? ` · ${queued} waiting in list` : "";
+      lines.push(`├─ ${paint(theme, "warning", `QUOTA WALL · ${quotaWallDetail(g)}${queue}`)}`);
+      lines.push(`├─ ${paint(theme, "dim", `waiting — nothing for you to do · ${quotaResumeText(g, now)}`)}`);
+    } else if (kind === "wait") lines.push(`├─ ${paint(theme, "dim", "waiting — nothing for you to do")}`);
     // v0.27.1: wrap reason + suggested action (see wrap()). v0.28.22:
     // decision/wait reasons cap at 2 lines — the options/countdown below
     // carry the actionable content; error reasons keep 3.
