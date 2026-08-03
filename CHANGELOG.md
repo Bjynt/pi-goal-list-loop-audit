@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.34.44 — 2026-08-03
+
+### Improved — quota-wall recovery HUD
+
+- Added a distinct `QUOTA WALL` status/card treatment with a live next-probe
+  countdown, queued-item context, and saved-work guidance.
+- Kept raw provider 429/plan JSON out of the visual card while retaining the
+  durable reason and ledger evidence.
+- Documented why bounded request retries plus durable `15m → 30m → hourly`
+  probes are safer than increasing blind retries for multi-hour plan caps.
+
 ## 0.34.43 — 2026-08-03
 
 ### Improved — long-running list queue trail
