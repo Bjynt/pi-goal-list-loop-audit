@@ -4753,7 +4753,7 @@ function registerAgentTools(pi: any): void {
         };
         const reachedInfraCap = infraStreak >= 3;
         const pauseReason = reachedInfraCap
-          ? `auditor infrastructure failed ${infraStreak}× in a row — the auditor model is likely broken OR a verification command is hanging (last: ${result.error.slice(0, 120)})`
+          ? `auditor infrastructure failed ${infraStreak}× in a row — the auditor model is likely broken OR a verification command is hanging (ssh/sudo/long test runs stall the stream) (last: ${result.error.slice(0, 120)})`
           : `completion auditor infrastructure failure${fallbackUsed ? " after trying the configured/session fallback" : ""}: ${result.error}`;
         updateGoal({
           status: "paused",
@@ -4765,7 +4765,10 @@ function registerAgentTools(pi: any): void {
           pauseSuggestedAction: "The completion claim is stored and was not judged. Fix the auditor model/command, then /goal resume to retry the detached audit.",
         }, ctx);
         appendLedger(ctx.cwd, "goal_paused", { reason: pauseReason, attemptId: auditAttemptId, fallbackUsed });
-        ctx.ui.notify(`${goalNoun()} paused: the completion auditor failed (infrastructure, not a verdict). The claim is stored; fix the model/command, then /goal resume.`, "warning");
+        const infraCapHint = reachedInfraCap
+          ? " Possible causes: model broken or a verification command hanging."
+          : "";
+        ctx.ui.notify(`${goalNoun()} paused: the completion auditor failed (infrastructure, not a verdict).${infraCapHint} The claim is stored; fix the model/command, then /goal resume.`, "warning");
         notifyExternal(ctx, `${goalNoun()} paused: completion auditor infrastructure failure; stored claim awaits /goal resume.`);
         return {
           content: [{
