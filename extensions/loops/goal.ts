@@ -2131,7 +2131,7 @@ function isCompletionAuditRecoveryPending(goal: Goal | null | undefined): boolea
   return !!goal?.pendingCompletion && goal.pendingCompletion.phase !== "running";
 }
 
-type AuditorModelCandidate = { model: any; via: string };
+export type AuditorModelCandidate = { model: any; via: string };
 type DetachedAuditResult = Awaited<ReturnType<typeof runDetachedGoalCompletionAuditor>>;
 
 function auditorCandidateLabel(candidate: AuditorModelCandidate): string {
@@ -2153,11 +2153,12 @@ function auditorCandidateLabel(candidate: AuditorModelCandidate): string {
  * candidate. The worker remains detached for every rung; this is a model
  * fallback, never an in-process/session fallback.
  */
-async function runDetachedCompletionWithFallback(
+export async function runDetachedCompletionWithFallback(
   candidates: AuditorModelCandidate[],
   run: (candidate: AuditorModelCandidate) => Promise<DetachedAuditResult>,
   opts: {
     shouldRetry?: () => boolean;
+    sleep?: (ms: number) => Promise<void>;
     onRetry?: (candidate: AuditorModelCandidate, error: string) => void;
     onFallback?: (from: AuditorModelCandidate, to: AuditorModelCandidate, error: string) => void;
   } = {},
@@ -2174,6 +2175,7 @@ async function runDetachedCompletionWithFallback(
       () => run(candidate),
       {
         shouldRetry: opts.shouldRetry,
+        sleep: opts.sleep,
         onRetry: (error) => opts.onRetry?.(candidate, error),
       },
     );
@@ -4562,6 +4564,7 @@ function registerAgentTools(pi: any): void {
           error: result.error,
           durationMs: auditDurationMs,
           retriedOnce,
+          fallbackUsed,
         } as AuditLogEntry);
       }
 
