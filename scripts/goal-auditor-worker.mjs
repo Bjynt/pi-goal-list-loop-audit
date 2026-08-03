@@ -220,7 +220,7 @@ async function main() {
         ? "producing_report"
         : event.type === "tool_execution_start" && READ_ONLY_TOOLS.has(event.toolName)
           ? "tool_executing"
-          : event.type === "tool_execution_end" || event.type === "agent_start" || event.type === "message_start" || event.type === "agent_end"
+          : event.type === "tool_execution_end" || event.type === "agent_start" || event.type === "message_start" || event.type === "message_end" || event.type === "response" || event.type === "agent_end"
             ? "thinking"
             : "running";
       const observedAt = Date.now();

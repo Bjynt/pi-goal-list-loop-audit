@@ -396,7 +396,7 @@ test("auditor widget shows concrete worker observations without exposing think b
     elapsedMs: 42_000,
     lastActivityAt: NOW - 1_000,
   }, NOW)!;
-  const joined = lines.join("\\n");
+  const joined = lines.join("\n");
   assert.match(joined, /auditor: tool executing/);
   assert.match(joined, /tool: read → README\.md/);
   assert.match(joined, /latest: inspected README\.md/);
@@ -407,7 +407,7 @@ test("auditor widget shows concrete worker observations without exposing think b
 test("auditor startup does not claim worker activity before the first RPC event", () => {
   const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-starting" } });
   const lines = buildWidgetLines({ goal: g, list: [] }, { phase: "starting", elapsedMs: 2_000 }, NOW)!;
-  const joined = lines.join("\\n");
+  const joined = lines.join("\n");
   assert.match(joined, /auditor: starting/);
   assert.match(joined, /waiting for first worker event/);
   assert.doesNotMatch(joined, /last activity|worker activity/);

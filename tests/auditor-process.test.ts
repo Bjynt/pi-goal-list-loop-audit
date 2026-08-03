@@ -11,6 +11,7 @@ import {
   runDetachedGoalCompletionAuditor,
   stableJson,
   type AuditorModel,
+  type AuditorProgress,
 } from "../extensions/goal-loop-auditor-process.ts";
 
 const workerPath = path.resolve(process.cwd(), "tests/fixtures/auditor-fake-worker.mjs");
@@ -18,7 +19,18 @@ const workerSource = `
 import { readFile, writeFile } from "node:fs/promises";
 const dir = process.argv[process.argv.indexOf("--job-dir") + 1];
 const request = JSON.parse(await readFile(dir + "/request.json", "utf8"));
-const progress = { protocolVersion: 1, attemptId: request.attemptId, requestHash: request.requestHash, phase: "running", elapsedMs: 1, recentOutput: [], toolCalls: [] };
+const progress = {
+  protocolVersion: 1, attemptId: request.attemptId, requestHash: request.requestHash,
+  phase: "running", elapsedMs: 1,
+  ...(process.env.FAKE_TELEMETRY === "yes" ? {
+    lastActivityAt: Date.now(),
+    recentOutput: ["inspected README.md"],
+    currentTool: "read",
+    currentToolArgs: JSON.stringify({ path: "/repo/README.md" }),
+    currentToolStartedAt: Date.now() - 20,
+    toolCalls: [{ name: "grep", argsPrefix: "{}", finishedAt: Date.now() - 30 }],
+  } : { recentOutput: [], toolCalls: [] }),
+};
 await writeFile(dir + "/progress.json", JSON.stringify(progress));
 await writeFile(dir + "/result.json", JSON.stringify({ protocolVersion: 1, attemptId: request.attemptId, requestHash: request.requestHash, ok: true, output: process.env.FAKE_AUDIT_OUTPUT || "<disapproved/>", model: request.model, thinkingLevel: request.thinkingLevel, toolCalls: process.env.FAKE_TOOL === "yes" ? [{ name: "read", argsPrefix: "{}", finishedAt: Date.now() }] : [] }));
 `;
@@ -72,6 +84,29 @@ test("detached parent accepts an identity-checked result and applies regression_
     assert.equal(result.disapproved, false);
     assert.equal(result.regressionShieldPassed, true);
     assert.equal(result.model, "test/provider-model");
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test("detached parent forwards live worker telemetry to its progress callback", async () => {
+  const dir = await setup();
+  const reports: AuditorProgress[] = [];
+  try {
+    await runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "high",
+      onProgress: (progress) => reports.push(progress),
+      runtime: { workerPath, env: { FAKE_TELEMETRY: "yes" }, attemptId: () => "attempt-telemetry", pollIntervalMs: 10, wallTimeoutMs: 2_000 },
+    });
+    const live = reports.find((progress) => progress.currentTool === "read");
+    assert.ok(live, "the detached progress file reaches the parent");
+    assert.equal(live?.currentToolArgs, JSON.stringify({ path: "/repo/README.md" }));
+    assert.deepEqual(live?.recentOutput, ["inspected README.md"]);
+    assert.equal(live?.toolCalls[0]?.name, "grep");
+    assert.ok(live?.lastActivityAt);
   } finally {
     await cleanup(dir);
   }
@@ -160,6 +195,8 @@ test("detached worker treats silent provider time as infrastructure, not a verdi
     assert.equal(result.approved, false);
     assert.equal(result.disapproved, false);
     assert.match(result.error ?? "", /Auditor stalled/);
+    const progress = JSON.parse(await readFile(path.join(dir, ".pi-glla", "audit-jobs", "attempt-silent", "progress.json"), "utf8")) as Record<string, unknown>;
+    assert.equal("lastActivityAt" in progress, false, "startup silence is not rendered as worker activity");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
