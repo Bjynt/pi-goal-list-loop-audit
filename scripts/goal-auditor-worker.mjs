@@ -80,7 +80,12 @@ function clipTelemetryString(value, max) {
 
 function toolArgsPrefix(args) {
   try {
-    if (!args || typeof args !== "object" || Array.isArray(args)) return JSON.stringify(args ?? {});
+    if (!args || typeof args !== "object" || Array.isArray(args)) {
+      const serialized = JSON.stringify(args ?? {});
+      return serialized.length <= MAX_TOOL_ARGS_CHARS
+        ? serialized
+        : JSON.stringify({ args: clipTelemetryString(String(args), MAX_TOOL_ARG_VALUE_CHARS) });
+    }
     const preferred = ["path", "file_path", "command", "pattern", "query", "url", "title"];
     const source = args;
     const keys = Object.keys(source);
