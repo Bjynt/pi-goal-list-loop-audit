@@ -7135,9 +7135,54 @@ function cmdGllaStatus(ctx: ExtensionContext): void {
 
 async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   // `/glla` is the settings surface. Arguments belong to the action namespace
-  // handled below (status, resume, stats, etc.); settings are edited in the
-  // table rather than through noisy inline assignments.
+  // below (status, resume, stats, etc.); settings are edited in the table
+  // rather than through noisy inline assignments.
   const trimmed = args.trim();
+  // v0.25.2: /glla stats sub-mode — cross-project telemetry rollups.
+  if (/^stats\b/.test(trimmed)) {
+    cmdStats(trimmed.slice("stats".length).trim(), ctx);
+    return;
+  }
+  if (/^audits\b/.test(trimmed)) {
+    cmdAudits(trimmed.slice("audits".length).trim(), ctx);
+    return;
+  }
+  if (/^status\b/.test(trimmed)) {
+    cmdGllaStatus(ctx);
+    return;
+  }
+  if (/^log\b/.test(trimmed)) {
+    cmdLog(trimmed.slice("log".length).trim(), ctx);
+    return;
+  }
+  if (/^wipe\b/.test(trimmed)) {
+    await cmdGllaWipe(ctx);
+    return;
+  }
+  if (/^reset\b/.test(trimmed)) {
+    ctx.ui.notify("/glla reset is now /glla wipe (renamed — too close to /glla resume). Nothing was done.", "info");
+    return;
+  }
+  if (/^resume\b/.test(trimmed)) {
+    await cmdGllaResume(ctx);
+    return;
+  }
+  if (/^cancel\b/.test(trimmed)) {
+    await cmdGllaCancel(ctx);
+    return;
+  }
+  if (/^reviewer\b/.test(trimmed)) {
+    await cmdReviewerSettings(ctx);
+    return;
+  }
+  if (/^postaudit\b/.test(trimmed)) {
+    await cmdReviewerSettings(ctx);
+    return;
+  }
+  if (/^tooloverride\b/.test(trimmed)) {
+    await cmdToolOverride(trimmed.slice("tooloverride".length).trim(), ctx);
+    return;
+  }
   if (trimmed) {
     ctx.ui.notify(
       `Unknown /glla action "${trimmed}". Use /glla to open settings; command arguments are reserved for actions.`,

@@ -14,12 +14,15 @@ import * as fs from "node:fs";
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 
 test("/glla settings persists explicit auto-resume off (tri-state, not undefined)", () => {
-  assert.match(SRC, /patch\.autoResume = false; \/\/ v0\.26\.8: explicit off must persist/);
-  assert.doesNotMatch(SRC, /patch\.autoResume = undefined;/);
+  assert.match(SRC, /saveSettings\("global", ctx\.cwd, \{ autoResume: v\.startsWith\("on"\) \? true : v\.startsWith\("off"\) \? false : undefined \}\)/);
+  assert.doesNotMatch(SRC, /\/glla autoresume=/);
 });
 
-test("status display shows the tri-state honestly", () => {
-  assert.match(SRC, /autoResume=\$\{effective\.autoResume === true \? "on" : effective\.autoResume === false \? "off" : "default \(hold on load\)"\}/);
+test("settings table shows the tri-state honestly", () => {
+  const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
+  assert.match(MENU, /valueText: show\("autoResume", "default"\)/);
+  assert.match(MENU, /default: hold on EVERY load/);
+  assert.match(SRC, /default — hold on load, rebind on reload\/fork/);
 });
 
 test("hold-on-load text offers the explicit resume + the on opt-in", () => {
