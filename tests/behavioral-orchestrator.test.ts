@@ -411,6 +411,62 @@ test("v0.34.24: continuation dispatch waits for owner start proof and clears its
   await pi.command("goal", "pause", ctx);
 });
 
+test("v0.34.36: compaction releases a timed-out dispatch for one fresh resync attempt", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlySetContinuationStartTimeout(300);
+  try {
+    const cwd = tmpCwd();
+    const ctx = await freshSession(cwd, "startup");
+    pi.sent.length = 0;
+    await pi.command("goal", "compaction recovery target — done when pinned", ctx);
+    await tick();
+    await waitUntil(() => {
+      try {
+        return fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes("continuation_start_unacknowledged");
+      } catch {
+        return false;
+      }
+    }, 1_000);
+    assert.equal(pi.sent.length, 1, "the missing-start watchdog sent no blind retry");
+    await pi.fire("session_compact", {}, ctx);
+    await waitUntil(() => pi.sent.length >= 2, 3_500);
+    const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+    assert.match(ledger, /compaction_refire/);
+    assert.match(ledger, /POST-COMPACTION RESYNC/);
+    await pi.command("goal", "pause", ctx);
+  } finally {
+    __testOnlySetContinuationStartTimeout(null);
+  }
+});
+
+test("v0.34.36: a loop missing start proof stops durably and /loop resume re-arms it", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlySetContinuationStartTimeout(300);
+  try {
+    const cwd = tmpCwd();
+    setGlobalAutoResume(true);
+    seedState(cwd, { loop: seedLoop({ active: true }) });
+    const ctx = await freshSession(cwd, "reload");
+    await tick();
+    await waitUntil(() => {
+      try {
+        return fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes("continuation_start_unacknowledged");
+      } catch {
+        return false;
+      }
+    }, 1_000);
+    const stopped = readState(cwd).loop as { active: boolean; stopReason?: string };
+    assert.equal(stopped.active, false, "a loop cannot remain green-active after its continuation never starts");
+    assert.match(stopped.stopReason ?? "", /stalled: continuation start acknowledgement timed out/);
+    await pi.command("loop", "resume", ctx);
+    await tick();
+    const resumed = readState(cwd).loop as { active: boolean };
+    assert.equal(resumed.active, true, "explicit /loop resume re-arms the stopped loop");
+  } finally {
+    __testOnlySetContinuationStartTimeout(null);
+  }
+});
+
 test("v0.34.24: missing start proof stands down durably and explicit resume sends one fresh attempt", async () => {
   __testOnlyResetStaleFlag();
   __testOnlySetContinuationStartTimeout(300);
