@@ -57,9 +57,23 @@ function childKey(cwd: string, attemptId: string): string {
 
 /** Best-effort cancellation used after the owning goal is archived/cancelled. */
 export function cancelDetachedGoalCompletionAuditor(cwd: string, attemptId: string): boolean {
-  const child = activeChildren.get(childKey(cwd, attemptId));
-  if (!child || !childAlive(child)) return false;
-  try { return child.kill("SIGTERM"); } catch { return false; }
+  const root = path.resolve(cwd);
+  const exact = childKey(root, attemptId);
+  const retryPrefix = `${exact}-`;
+  let killed = false;
+  // Completion state keeps the logical claim attempt ID, while each detached
+  // retry owns a unique filesystem/child identity (`<logical>-<nonce>`). Kill
+  // both the exact legacy identity and every live retry for this claim.
+  for (const [key, child] of activeChildren) {
+    if (key !== exact && !key.startsWith(retryPrefix)) continue;
+    if (!childAlive(child)) continue;
+    try {
+      killed = child.kill("SIGTERM") || killed;
+    } catch {
+      /* best effort — the worker's wall bound remains the final brake */
+    }
+  }
+  return killed;
 }
 
 interface AuditorRequest {
