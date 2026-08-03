@@ -53,7 +53,7 @@ test("SETTINGS_KEYS includes postaudit and toolOverrides", () => {
 
 test("/glla postaudit opens the same menu as /glla reviewer (no behavioral split)", () => {
   // Both keywords route to cmdReviewerSettings — there's ONE settings menu.
-  const keywordCheck = SRC.indexOf('if (/^postaudit\\b/.test(trimmed))');
+  const keywordCheck = SRC.indexOf('if (/^postaudit(?:\\s|$)/.test(trimmed))');
   const routeCheck = SRC.indexOf('await cmdReviewerSettings(ctx);', keywordCheck);
   assert.ok(keywordCheck > 0, "/glla postaudit keyword check exists");
   assert.ok(routeCheck > 0 && routeCheck < keywordCheck + 200, "the postaudit branch routes to cmdReviewerSettings");
@@ -64,8 +64,8 @@ test("/glla routes reviewer (legacy) and postaudit (new) without completion rows
   // are no longer autocomplete entries (verb-only picker, group narrowing).
   assert.doesNotMatch(SRC, /\["reviewer",/);
   assert.doesNotMatch(SRC, /\["postaudit",/);
-  assert.match(SRC, /\^postaudit\\b/);
-  assert.match(SRC, /\^reviewer\\b/);
+  assert.match(SRC, /\^postaudit\(\?:\\s\|\$\)/);
+  assert.match(SRC, /\^reviewer\(\?:\\s\|\$\)/);
 });
 
 test("resolveReviewerConfig: postaudit and reviewer blocks merge equivalently", () => {

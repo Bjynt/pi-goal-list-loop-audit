@@ -152,7 +152,7 @@ test("v0.29.8: /goal audit [focus] — the one-shot project audit; /glla status 
   assert.ok(SRC.includes("function cmdGllaStatus(ctx: ExtensionContext): void {"));
   assert.ok(SRC.includes("decision pending (${g.pauseOptions.length} options) — /goal decide"));
   assert.ok(SRC.includes("deep: /goal status · /list · /loop status · /glla stats · /glla audits · /glla log"));
-  assert.ok(SRC.includes('if (/^status\\b/.test(trimmed)) {'));
+  assert.ok(SRC.includes('if (/^status(?:\\s|$)/.test(trimmed)) {'));
 });
 
 // ---------- v0.34.2: manual resume clears the marker too ----------

@@ -7366,8 +7366,6 @@ export default function (pi: ExtensionAPI): void {
       ["stats", "show per-project ledger rollups"],
       ["audits", "browse the audit log"],
       ["tooloverride", "configure agent-tool visibility"],
-      ["reviewer", "open post-completion reviewer settings"],
-      ["postaudit", "open post-completion auditor settings"],
     ]),
     handler: settingsHandler,
   });

@@ -36,7 +36,7 @@ test("goal.ts ensureAgentToolsActive applies toolOverrides.allow and .hide", () 
 
 test("/glla tooloverride keyword routes to cmdToolOverride", () => {
   const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
-  assert.match(src, /if \(\/\^tooloverride\\b\/\.test\(trimmed\)\) \{/);
+  assert.match(src, /if \(\/\^tooloverride\(\?:\\s\|\$\)\/\.test\(trimmed\)\) \{/);
   assert.match(src, /cmdToolOverride\(trimmed\.slice\("tooloverride"\.length\)\.trim\(\), ctx\)/);
 });
 
