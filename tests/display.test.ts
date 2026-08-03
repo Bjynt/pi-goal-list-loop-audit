@@ -153,6 +153,27 @@ test("widget truncation is width-aware (v0.22.2)", () => {
   assert.ok(tiny.length <= 70, `tiny head must stay near the terminal width, got ${tiny.length}`);
 });
 
+test("widget lines reserve pi-tui's horizontal padding", () => {
+  const g = goalOf({
+    status: "auditing",
+    policy: "list",
+    objective: "x".repeat(240),
+    createdAt: "2026-07-21T11:59:10Z",
+  });
+  const lines = buildWidgetLines(
+    { goal: g, list: [] },
+    { phase: "running", label: "running", currentTool: "bash" },
+    NOW,
+    undefined,
+    80,
+  )!;
+  // pi wraps string-array widget lines inside Text(paddingX=1), so the
+  // extension must keep every source line within width - 2.
+  assert.ok(lines.every((line) => line.length <= 78), lines.join("\\n"));
+  assert.match(lines[0]!, / · list item · auditing · 50s/);
+  assert.ok(!lines.includes("50s"), "elapsed segment must not wrap onto its own line");
+});
+
 test("list policy footer: queued count, no duplicated 'list'", () => {
   const s = buildStatusText(
     { goal: goalOf({ policy: "list" }), list: [{ id: "x", objective: "y", addedAt: "z" }] },

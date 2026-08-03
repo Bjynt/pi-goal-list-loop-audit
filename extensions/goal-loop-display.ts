@@ -10,6 +10,8 @@
  * ctx.ui.setStatus/setWidget with whatever these return.
  */
 
+import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth } from "@earendil-works/pi-tui";
+
 import type { Goal, State } from "./goal-loop-core.js";
 import { compactDisplayText, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText } from "./goal-loop-core.js";
 import { HELD_ON_RESTORE, type LoopState } from "./goal-loop-forever.js";
@@ -49,10 +51,9 @@ export function truncate(s: string, max: number): string {
   return safe.length <= max ? safe : safe.slice(0, Math.max(0, max - 1)) + "…";
 }
 
-const ANSI_RE = /\x1b\[[0-9;]*m/g;
-/** v0.33.1: painted strings measure by their VISIBLE width. */
+/** v0.33.1: painted strings measure by their terminal-cell width. */
 function visibleLen(s: string): number {
-  return s.replace(ANSI_RE, "").length;
+  return tuiVisibleWidth(s);
 }
 
 /** v0.33.0: 5-cell meter with a rounding guard (command-code's rule — never
@@ -121,11 +122,15 @@ export function wrap(s: string, width: number, maxLines: number): string[] {
  * narrow terminals; when the terminal is wider, lines may use the available
  * width instead of being cut at a fixed ~60 chars (pi-tasks truncates at
  * tui.terminal.columns — match that behavior). `prefixCols` is the visible
- * width of the static prefix on the line (branch glyph + pi's 1-col gutter).
+ * width of the static prefix on the line. String-array widgets are rendered by
+ * pi's Text component with one cell of left and right padding, so reserve both
+ * cells here; otherwise a final word can wrap onto an unexpected extra line.
  */
+const WIDGET_HORIZONTAL_MARGIN = 2;
+
 function budgetFor(width: number | undefined, prefixCols: number, floor: number): number {
   if (!width || width <= 0) return floor;
-  return Math.max(floor, width - 1 - prefixCols);
+  return Math.max(floor, width - WIDGET_HORIZONTAL_MARGIN - prefixCols);
 }
 
 function sinceIso(iso: string): number {
@@ -408,11 +413,20 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
   const inner = buildWidgetLinesInner(state, audit, now, theme, width, extras);
   // v0.28.6 (E1): a persistence failure outranks everything — first line,
   // on every render, until a write lands again.
+  let lines: string[] | undefined = inner;
   if (inner && isPersistenceDegraded()) {
     const err = lastPersistenceFailure();
-    return [paint(theme, "error", `⚠ persistence degraded — .pi-glla writes failing (${truncate(err?.error ?? "disk error", 40)}); state in RAM`), ...inner];
+    lines = [paint(theme, "error", `⚠ persistence degraded — .pi-glla writes failing (${truncate(err?.error ?? "disk error", 40)}); state in RAM`), ...inner];
   }
-  return inner;
+  // String-array widgets are wrapped by pi-tui's Text component, whose
+  // paddingX=1 consumes one cell on each side. Keep every emitted line inside
+  // that content width so long detail/status strings never wrap a trailing
+  // segment (for example, `50s`) into a stray next line.
+  if (lines && width && width > 0) {
+    const contentWidth = Math.max(1, width - WIDGET_HORIZONTAL_MARGIN);
+    return lines.map((line) => tuiTruncateToWidth(line, contentWidth, "…"));
+  }
+  return lines;
 }
 
 function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, width?: number, extras?: WidgetExtras): string[] | undefined {
@@ -503,7 +517,9 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // the objective absorbs whatever room is left (was: objective budgeted
   // alone, segments appended unbudgeted → 140-col heads at width 100).
   const segsText = headSegs.join(` ${paint(theme, "dim", "·")} `);
-  const objBudget = width && width > 0 ? Math.max(16, width - 1 - 2 - 3 - visibleLen(segsText)) : 48;
+  const objBudget = width && width > 0
+    ? Math.max(16, width - WIDGET_HORIZONTAL_MARGIN - 2 - 3 - visibleLen(segsText))
+    : 48;
   const head = `${icon} ${truncate(g.objective.replace(/\s+/g, " "), objBudget)} ${paint(theme, "dim", "·")} ${segsText}`;
   const lines = [head];
   if (interrupted) {
@@ -667,7 +683,9 @@ function loopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: numb
     segs.push(l.stallCount >= l.plateauWindow - 1 ? paint(theme, "warning", stallText) : stallText);
   }
   const segsText = segs.join(` ${paint(theme, "dim", "·")} `);
-  const targetBudget = width && width > 0 ? Math.max(16, width - 1 - 2 - 3 - visibleLen(segsText) - visibleLen(stallNote)) : 44;
+  const targetBudget = width && width > 0
+    ? Math.max(16, width - WIDGET_HORIZONTAL_MARGIN - 2 - 3 - visibleLen(segsText) - visibleLen(stallNote))
+    : 44;
   const lines = [`${icon} ${truncate(l.target, targetBudget)} ${paint(theme, "dim", "·")} ${segsText}${stallNote}`];
   const act = extras?.recent?.[extras.recent.length - 1];
   if (act) {
