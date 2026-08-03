@@ -122,7 +122,7 @@ test("v0.28.28: unsolicited enqueue (reviewer) does not auto-start the head unle
   // item started itself (twice). Enqueue is not consent to start.
   assert.match(SRC, /function enqueueItems\(ctx: ExtensionContext, texts: string\[\], source: string, opts\?: \{ autoActivate\?: boolean \}\): number/);
   assert.match(SRC, /opts\?\.autoActivate === false/);
-  assert.match(SRC, /Queued \$\{items\.length\} item\(s\) from \$\{source\} — \/list next when ready \(auto-start is opt-in: \/glla autoresume=on\)\./);
+  assert.match(SRC, /Queued \$\{items\.length\} item\(s\) from \$\{source\} — \/list next when ready \(auto-start is opt-in: enable Auto-resume in \/glla settings\)\./);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "list_autoactivation_held", \{ source, count: items\.length \}\);/);
   // the reviewer call site passes the gate; user-driven imports keep default:
   assert.match(SRC, /enqueueItems\(ctx, objectives, "reviewer", \{ autoActivate: loadGlobalSettings\(\)\.autoResume === true \}\)/); // v0.29.5: global-only

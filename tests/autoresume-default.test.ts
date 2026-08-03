@@ -13,7 +13,7 @@ import * as fs from "node:fs";
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 
-test("/glla autoresume=off persists explicit false (tri-state, not undefined)", () => {
+test("/glla settings persists explicit auto-resume off (tri-state, not undefined)", () => {
   assert.match(SRC, /patch\.autoResume = false; \/\/ v0\.26\.8: explicit off must persist/);
   assert.doesNotMatch(SRC, /patch\.autoResume = undefined;/);
 });
@@ -24,5 +24,5 @@ test("status display shows the tri-state honestly", () => {
 
 test("hold-on-load text offers the explicit resume + the on opt-in", () => {
   assert.match(SRC, /restored on session load — held for explicit resume/);
-  assert.match(SRC, /\/glla autoresume=on to auto-resume/);
+  assert.match(SRC, /enable Auto-resume in \/glla settings/);
 });

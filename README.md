@@ -46,7 +46,7 @@ Five top-level commands — `/goal`, `/list`, `/loop`, `/glla`, `/review`:
 /goal verify                       # queue a detached auditor for the current goal — no agent turn (v0.28.27, renamed from /goal audit in v0.29.8)
 /goal tweak "<new objective>"      # edit in place (Confirm dialog)
 /goal archive                      # archived goals, newest first
-/glla                               # settings UI table · /glla status (unified what's-running view) · /glla key=value · /glla stats · /glla audits [N|full] · /glla postaudit · /glla wipe (nuclear reset, Confirm-gated) · /glla autoaccept=on
+/glla                               # settings UI table · arguments are actions: /glla status · /glla stats · /glla audits [N|full] · /glla postaudit · /glla wipe (nuclear reset, Confirm-gated)
 /list fix the login bug, add dark mode, write docs   # dump it — the agent shapes it into items, one Confirm
 /list plan.md                      # file detected → bulk import, one Confirm (sisyphus/Ralph style)
 /list <paste a checklist>          # multi-line paste → same batch flow
@@ -279,26 +279,18 @@ The queued list is a backlog, not a second live thing — untouched.
 
 ## Config (one global place, rarely opened)
 
-```
-/glla                                # open the settings UI
-/glla model=provider/id              # primary auditor model override → GLOBAL
-/glla thinking=high                  # auditor thinking → GLOBAL
-# Auditor fallback model is configured from the /glla settings UI → GLOBAL
-/glla notify='cmd "$1"'              # custom push cmd · unset = auto-detect (notify-send/osascript) · off = silent → GLOBAL
-/glla tokenlimit=10000000            # per-goal token budget (default: off) → GLOBAL
-/glla tokenlimit=0                   # explicitly no cap (the default)
-/glla wedgealert=30                  # hung-command alert minutes (default: 30, 0 = off)
-/glla autoresume=on                  # auto-resume goals/loops on ANY session start (default: load HELD, never auto-start — explicit /goal resume, /list resume, or /loop; off: never) — GLOBAL-only (v0.29.5): project-level keys are inert
-/glla mainmodelbackups='provider/model-a,provider/model-b'  # ordered MAIN-session backups → GLOBAL
-/glla mainmodelretryminutes=15        # recovery probes: 15m → 30m → hourly forever
-/glla auditcap=5                     # pause the goal after N consecutive auditor disapprovals (default 5, 0 = unlimited)
-/glla aggressivemode=on               # keep-going defaults: autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs
-/glla quotaretryminutes=60            # minutes before auto-retrying a quota-exhausted auditor
-/glla stuckmax=10                     # consecutive stuck interventions before a loop stops (default 5)
-/glla auditfeedbackchars=800         # cap the executor-visible auditor report (default 0 = full report)
-/glla autoaccept=on                  # drafts ACTIVATE without the Confirm dialog (v0.29.4: they start immediately — autoResume no longer gates drafts; every draft dialog also offers "always auto-accept" inline)
-/glla project tokenlimit=500         # rare per-project override
-```
+Open `/glla` to edit these settings in the table (the rows show effective values and provenance):
+
+- Auditor model and thinking level
+- Auditor fallback model
+- Notify command, token limit, and wedge-alert minutes
+- Auto-resume, auto-accept drafts, decision popup, and carryover policy
+- Ordered main-session backups and recovery cadence
+- Audit cap/report size, aggressive mode, quota retry, and stall brakes
+
+The argument namespace is reserved for actions such as `/glla status`, `/glla
+resume`, `/glla stats`, `/glla audits`, `/glla tooloverride`, and `/glla wipe`.
+There is no top-level `/glla key=value` setting syntax.
 
 Resolution per key: **project > global > defaults** — EXCEPT `autoResume`,
 which is **global-only** (v0.29.5): per-project opt-ins from old versions
@@ -408,10 +400,10 @@ and removed pi-tasks. If you truly need session-wide dependency DAGs beyond
 one ordered queue, it exists — but installing both is not the ideal combo.
 
 **Two footnotes**: (1) extension-registered providers work in the main session
-but not the auditor's extension-less session — if audits fail auth, set the
-override once with `/glla model=`. (2) `pi-notify-agent` notifies on every
+but not the auditor's extension-less session — if audits fail auth, choose
+an auditor model in `/glla` settings. (2) `pi-notify-agent` notifies on every
 turn; glla pushes fire only where there is something to DO (pauses, verdicts,
-storms, wedge) and work out of the box — with no `notify=` configured glla
+storms, wedge) and work out of the box — with no notify command configured glla
 auto-detects `notify-send`/`osascript`; `notify=off` silences, `notify='<cmd>'`
 customizes.
 

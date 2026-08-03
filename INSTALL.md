@@ -79,17 +79,13 @@ The auditor runs in a **detached fresh pi RPC process with no extensions**, so i
 You select the model in pi; the auditor uses it. The plugin never picks a
 model itself. The resolution is just:
 
-1. your explicit auditor pick — `/glla → Auditor model` (or `/glla model=provider/id`), else
+1. your explicit auditor pick — `/glla → Auditor model`, else
 2. the pi session model — whatever you selected in pi.
 
 If your session model's provider is extension-registered, the auditor's
 extension-less session cannot auth it and the plugin says so at session start,
-with the two fixes: switch pi's model to a built-in provider, or set the
-override:
-
-```
-/glla model=provider/model-id
-```
+with the two fixes: switch pi's model to a built-in provider, or choose a
+working auditor model in `/glla → Auditor model`.
 
 Whatever you choose must work extension-less. Verify with:
 
@@ -126,13 +122,13 @@ stuck/plateau/stopped-by-user).
 **Quota-aware retry.** When the auditor dies on a quota / rate-limit error
 (429, `Key limit exceeded`, `temporarily rate-limited upstream`, credits),
 that is infrastructure, not a verdict: the goal PAUSES with a one-shot
-auto-retry scheduled at the upstream's `Retry-After` hint (default 60m,
-`/glla quotaretryminutes=N`). Before v0.25.0 this re-fired the continuation
-forever against a window that only resets in an hour. `/goal resume`
-retries immediately; a user pause during the window is never stomped.
+auto-retry scheduled at the upstream's `Retry-After` hint (default 60m;
+edit Quota retry minutes in `/glla`). Before v0.25.0 this re-fired the
+continuation forever against a window that only resets in an hour. `/goal
+resume` retries immediately; a user pause during the window is never stomped.
 
-**Aggressive mode** (`/glla aggressivemode=on` or Settings → Aggressive
-mode) flips the continuation DEFAULTS toward keep-going:
+**Aggressive mode** (Settings → Aggressive mode in `/glla`) flips the
+continuation DEFAULTS toward keep-going:
 
 | Key | default | aggressive |
 |---|---|---|

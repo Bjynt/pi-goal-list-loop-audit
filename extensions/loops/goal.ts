@@ -7136,7 +7136,7 @@ function cmdGllaStatus(ctx: ExtensionContext): void {
 async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   // `/glla` is the settings surface. Arguments belong to the action namespace
   // handled below (status, resume, stats, etc.); settings are edited in the
-  // table rather than through noisy `/glla key=value` assignments.
+  // table rather than through noisy inline assignments.
   const trimmed = args.trim();
   if (trimmed) {
     ctx.ui.notify(
