@@ -157,20 +157,21 @@ const paint = (theme: DisplayTheme | undefined, color: DisplayColor, text: strin
  * The wave is deliberately decorative, not a progress meter. It says only
  * "fresh evidence is arriving"; it never implies a percentage complete.
  */
-// A small comet travels across a soft equalizer bed. This is a liveness
+// A small aurora orbit travels around a compact capsule. This is a liveness
 // ornament, not a progress meter: it loops forever and says nothing about
-// completion percentage or remaining work.
-const LIVE_WAVE_FRAMES = [
-  "✦▂▃▅▃▂", "▁✦▃▅▃▂", "▁▂✦▅▃▂", "▁▂▃✦▃▂", "▁▂▃▅✦▂",
-  "▁▂▃▅▃✦", "▂▃▅▃✦▂", "▂▃▅✦▃▂", "▂▃✦▅▃▂", "▂✦▅▃▂▁",
+// completion percentage or remaining work. Its curved corners make the live
+// badge visually distinct from static ⟦…⟧ state badges.
+const LIVE_ORBIT_FRAMES = [
+  "◜·▰✦··◝", "◝··▰✦·◞", "◞···▰✦◟", "◟···✦▰◜",
+  "◜··✦▰·◝", "◝·✦▰··◞", "◞✦▰···◟", "◟▰✦···◜",
 ] as const;
-function liveWaveFrame(now: number): string {
-  return LIVE_WAVE_FRAMES[Math.floor(Math.max(0, now) / 220) % LIVE_WAVE_FRAMES.length]!;
+function liveOrbitFrame(now: number): string {
+  return LIVE_ORBIT_FRAMES[Math.floor(Math.max(0, now) / 250) % LIVE_ORBIT_FRAMES.length]!;
 }
-function paintLiveWave(frame: string, theme?: DisplayTheme): string {
+function paintLiveOrbit(frame: string, theme?: DisplayTheme): string {
   if (!theme) return frame;
   return Array.from(frame).map((cell) => {
-    const color: DisplayColor = cell === "✦" || cell === "▅" ? "success" : cell === "▃" ? "accent" : "muted";
+    const color: DisplayColor = cell === "✦" ? "success" : cell === "▰" ? "accent" : cell === "·" ? "muted" : "accent";
     return paint(theme, color, cell);
   }).join("");
 }
@@ -182,9 +183,8 @@ function paintActivityLabel(label: string, theme?: DisplayTheme): string {
   }).join(` ${paint(theme, "dim", "·")} `);
 }
 function activityBadge(label: string, now: number, theme?: DisplayTheme): string {
-  const frame = liveWaveFrame(now);
-  if (!theme) return `⟦${frame} ${label}⟧`;
-  return `${paint(theme, "accent", "⟦")}${paintLiveWave(frame, theme)} ${paintActivityLabel(label, theme)}${paint(theme, "accent", "⟧")}`;
+  const frame = liveOrbitFrame(now);
+  return `${paintLiveOrbit(frame, theme)} ${paintActivityLabel(label, theme)}`;
 }
 function stateBadge(label: string, glyph: string, theme: DisplayTheme | undefined, color: DisplayColor): string {
   return paint(theme, color, `⟦${glyph} ${label}⟧`);

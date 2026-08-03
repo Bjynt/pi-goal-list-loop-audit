@@ -96,7 +96,7 @@ test("stream-proven work pulses in one status-bar HUD; the card stays quiet", ()
   const state = { goal: goalOf({ policy: "list" }), list: [{ id: "next", objective: "next", addedAt: "z" }] };
   const stream = { activity: "working" as const, lastStreamActivityAt: NOW - 1_000 };
   const status = buildStatusText(state, null, NOW, undefined, stream)!;
-  assert.match(status, /glla: ⟦[▁▂▃▅▇✦]+ LIVE · WORKING⟧/);
+  assert.match(status, /glla: [◜◝◞◟·▰✦]+ LIVE · WORKING/);
   assert.match(status, /last stream 1s ago/);
   const lines = buildWidgetLines(state, null, NOW, undefined, undefined, stream)!;
   assert.match(lines[0]!, /^● /);
@@ -111,7 +111,7 @@ test("stream-proven work pulses in one status-bar HUD; the card stays quiet", ()
   assert.doesNotMatch(queued, /WORKING/);
 });
 
-test("live badges animate as a comet without implying completion percentage", () => {
+test("live badges animate as an aurora orbit without implying completion percentage", () => {
   const state = { goal: goalOf(), list: [] };
   const first = buildStatusText(state, null, NOW, undefined, {
     activity: "working",
@@ -121,11 +121,11 @@ test("live badges animate as a comet without implying completion percentage", ()
     activity: "working",
     lastStreamActivityAt: NOW - 650,
   })!;
-  const firstWave = first.match(/⟦([^ ]+) LIVE · WORKING⟧/)?.[1];
-  const nextWave = next.match(/⟦([^ ]+) LIVE · WORKING⟧/)?.[1];
-  assert.ok(firstWave && nextWave, "live wave badge is present");
-  assert.notEqual(firstWave, nextWave, "the wave advances on the UI ticker");
-  assert.doesNotMatch(first, /%|complete|progress/i, "the comet is not a fake completion meter");
+  const firstOrbit = first.match(/([◜◝◞◟·▰✦]+) LIVE · WORKING/)?.[1];
+  const nextOrbit = next.match(/([◜◝◞◟·▰✦]+) LIVE · WORKING/)?.[1];
+  assert.ok(firstOrbit && nextOrbit, "live orbit badge is present");
+  assert.notEqual(firstOrbit, nextOrbit, "the orbit advances on the UI ticker");
+  assert.doesNotMatch(first, /%|complete|progress/i, "the orbit is not a fake completion meter");
 });
 
 test("live HUD gets layered semantic color for a neon effect", () => {
@@ -143,11 +143,11 @@ test("live HUD gets layered semantic color for a neon effect", () => {
     theme,
     { activity: "working", lastStreamActivityAt: NOW - 1_000 },
   )!;
-  assert.match(status, /<accent>⟦<\/accent>/);
+  assert.match(status, /<accent>[◜◝◞◟]<\/accent>/);
   assert.match(status, /✦/);
-  assert.ok(calls.some((call) => call.startsWith("success:")), "the comet/Live label is highlighted");
-  assert.ok(calls.some((call) => call.startsWith("accent:")), "the rails and working label use the accent color");
-  assert.ok(calls.some((call) => call.startsWith("muted:")), "the equalizer bed has a muted layer");
+  assert.ok(calls.some((call) => call.startsWith("success:")), "the orbit spark/Live label is highlighted");
+  assert.ok(calls.some((call) => call.startsWith("accent:")), "the orbit rails and working label use the accent color");
+  assert.ok(calls.some((call) => call.startsWith("muted:")), "the orbit dots have a muted layer");
 });
 
 test("active goal with tasks shows progress", () => {
@@ -465,7 +465,7 @@ test("auditor widget shows concrete worker observations without exposing think b
     currentTool: "read",
     lastActivityAt: NOW - 1_000,
   }, NOW)!;
-  assert.match(liveAuditStatus, /auditor tool executing ⟦[▁▂▃▅▇✦]+ DETACHED · LIVE⟧ · read/);
+  assert.match(liveAuditStatus, /auditor tool executing [◜◝◞◟·▰✦]+ DETACHED · LIVE · read/);
 
   const streamedThink = buildWidgetLines({ goal: g, list: [] }, {
     phase: "thinking",

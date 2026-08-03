@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.34.42 — 2026-08-03
+
+### Improved — aurora orbit activity HUD
+
+- Replaced the comet badge with a compact curved-corner orbit that cycles a
+  spark through an indeterminate live-work capsule.
+- Added layered semantic colors for the orbit, spark, separators, and phase
+  labels while keeping the status bar as the single activity surface.
+
 ## 0.34.41 — 2026-08-03
 
 ### Improved — neon live-work pulse
