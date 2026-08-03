@@ -368,8 +368,9 @@ test("auditor progress phases are explicit and retain worker activity", () => {
     elapsedMs: 42_000,
     lastActivityAt: NOW - 30_000,
   }, NOW)!;
-  assert.ok(running.some((l) => l.includes("auditor: running") && l.includes("grep")));
-  assert.ok(running.some((l) => l.includes("last activity 30s ago")));
+  assert.ok(running.some((l) => l.includes("auditor: tool executing")));
+  assert.ok(running.some((l) => l.includes("tool: grep")));
+  assert.ok(running.some((l) => l.includes("worker activity 30s ago")));
 
   const quiet = buildWidgetLines({ goal: g, list: [] }, {
     phase: "thinking",
@@ -377,10 +378,39 @@ test("auditor progress phases are explicit and retain worker activity", () => {
     lastActivityAt: NOW - 7 * 60_000,
   }, NOW)!;
   assert.ok(quiet.some((l) => l.includes("auditor: quiet")));
-  assert.ok(quiet.some((l) => l.includes("auditor quiet 7m") && l.includes("last activity 7m")));
+  assert.ok(quiet.some((l) => l.includes("auditor quiet 7m") && l.includes("worker activity 7m")));
 
   const blocked = buildStatusText({ goal: g, list: [] }, { label: "infra error — retrying once" }, NOW)!;
   assert.match(blocked, /auditor blocked/);
+});
+
+test("auditor widget shows concrete worker observations without exposing think blocks", () => {
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-live" } });
+  const lines = buildWidgetLines({ goal: g, list: [] }, {
+    phase: "tool_executing",
+    currentTool: "read",
+    currentToolArgs: JSON.stringify({ path: "/repo/README.md", command: "do not display this" }),
+    currentToolStartedAt: NOW - 2_000,
+    recentOutput: ["<think>private reasoning</think>", "inspected README.md"],
+    toolCalls: [{ name: "grep", argsPrefix: "{}", finishedAt: NOW - 3_000 }],
+    elapsedMs: 42_000,
+    lastActivityAt: NOW - 1_000,
+  }, NOW)!;
+  const joined = lines.join("\\n");
+  assert.match(joined, /auditor: tool executing/);
+  assert.match(joined, /tool: read → README\.md/);
+  assert.match(joined, /latest: inspected README\.md/);
+  assert.doesNotMatch(joined, /private reasoning|do not display this/);
+  assert.match(joined, /worker activity 1s ago/);
+});
+
+test("auditor startup does not claim worker activity before the first RPC event", () => {
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-starting" } });
+  const lines = buildWidgetLines({ goal: g, list: [] }, { phase: "starting", elapsedMs: 2_000 }, NOW)!;
+  const joined = lines.join("\\n");
+  assert.match(joined, /auditor: starting/);
+  assert.match(joined, /waiting for first worker event/);
+  assert.doesNotMatch(joined, /last activity|worker activity/);
 });
 
 test("widget: loop lines include measure + metric state", () => {

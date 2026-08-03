@@ -203,8 +203,6 @@ async function main() {
     let settledSeen = false;
     const handleRpcLine = (line) => {
       if (finalized || !line) return;
-      lastActivityAt = Date.now();
-      void progress("running").catch(() => {});
       // The RPC contract is LF-delimited but permits a trailing CR for
       // conventional CRLF producers. Any other raw CR is transport damage.
       if (line.endsWith("\r")) line = line.slice(0, -1);
@@ -217,6 +215,19 @@ async function main() {
         void finish(false, "RPC stream contained invalid JSON").catch(() => {});
         return;
       }
+      const update = event.type === "message_update" ? event.assistantMessageEvent : undefined;
+      const phase = event.type === "message_update" && update?.type === "text_delta"
+        ? "producing_report"
+        : event.type === "tool_execution_start" && READ_ONLY_TOOLS.has(event.toolName)
+          ? "tool_executing"
+          : event.type === "tool_execution_end" || event.type === "agent_start" || event.type === "message_start" || event.type === "agent_end"
+            ? "thinking"
+            : "running";
+      const observedAt = Date.now();
+      // Only a parsed RPC event counts as worker activity. Startup writes use
+      // the separate probe clock and must not render `last activity 0s ago`.
+      lastActivityAt = observedAt;
+      lastActivityProbeAt = observedAt;
       if (event.type === "error" || event.type === "extension_error" || event.type === "auto_retry_start" || event.type === "auto_retry_end") {
         const message = event.errorMessage ?? event.message ?? event.finalError ?? event.error;
         if (typeof message === "string" && message.trim()) streamError = message.slice(0, 500);
@@ -232,11 +243,12 @@ async function main() {
         return;
       }
       if (event.type === "message_update") {
-        const update = event.assistantMessageEvent;
         if (update?.type === "text_delta" && typeof update.delta === "string") {
           outputParts.push(update.delta);
           recentOutput.push(...update.delta.split("\n").filter(Boolean));
-          void progress("producing_report").catch(() => {});
+          void progress(phase).catch(() => {});
+        } else {
+          void progress("thinking").catch(() => {});
         }
         return;
       }
@@ -246,7 +258,7 @@ async function main() {
         currentTool = event.toolName;
         currentToolArgs = toolArgsPrefix(event.args);
         currentToolStartedAt = Date.now();
-        void progress("tool_executing").catch(() => {});
+        void progress(phase).catch(() => {});
         return;
       }
       if (event.type === "tool_execution_end") {
@@ -258,8 +270,8 @@ async function main() {
           currentTool = undefined;
           currentToolArgs = undefined;
           currentToolStartedAt = undefined;
-          void progress("running").catch(() => {});
         }
+        void progress(phase).catch(() => {});
         return;
       }
       if (event.type === "agent_settled") {
@@ -267,8 +279,12 @@ async function main() {
         const output = outputParts.join("\n");
         const hasVerdict = /<(?:approved\/|disapproved\/|impossible>)/i.test(output);
         void finish(!streamError || hasVerdict, hasVerdict ? "" : streamError || "auditor session settled without a verdict").catch(() => {});
+        return;
       }
-      // agent_end is progress only; never finalize on it.
+      // agent_end is progress only; never finalize on it. Its `thinking`
+      // phase is still published, so a moving worker is visible without
+      // pretending that hidden model reasoning is available.
+      void progress(phase).catch(() => {});
     };
     pi.stdout.on("data", (chunk) => {
       if (finalized) return;
