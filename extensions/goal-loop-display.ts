@@ -419,10 +419,11 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       return `glla: ${paint(theme, "warning", "audit recovery pending")}${heldSuffix}`;
     }
     const phase = auditorDisplayPhase(g, audit, now);
-    const label = `auditor ${auditorObservedPhase(audit, phase)}`;
+    const live = auditorHasLiveEvidence(audit, phase, now);
+    const label = `${live ? `${workingFrame(now)} ` : ""}auditor ${auditorObservedPhase(audit, phase)}`;
     const tool = phase === "running" && audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : "";
-    const color = phase === "blocked" || phase === "quiet" ? "warning" : "accent";
-    return `glla: ${paint(theme, color, label)}${tool}${heldSuffix}`;
+    const color = phase === "blocked" || phase === "quiet" ? "warning" : live ? "success" : "accent";
+    return `glla: ${paint(theme, color, label)}${tool}${live ? auditorLastActivity(audit, now) : ""}${heldSuffix}`;
   }
   if (g.status === "paused") {
     // v0.28.22: the status line names the ACTIONABILITY, not the reason —
@@ -582,6 +583,8 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   const interrupted = g.status === "active" && !!g.interruptedAt;
   const attention = activeAttention(g);
   const activity = goalDisplayActivity(g, extras);
+  const auditorPhase = g.status === "auditing" ? auditorDisplayPhase(g, audit, now) : undefined;
+  const auditorLive = g.status === "auditing" && auditorHasLiveEvidence(audit, auditorPhase!, now);
   const icon =
     interrupted
       ? paint(theme, "error", "⚠")
@@ -590,10 +593,12 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
         : g.status === "paused"
           ? paint(theme, pauseIsError(g) ? "error" : "warning", "⏸")
           : g.status === "auditing"
-            ? paint(theme, "accent", "⟡")
-            : activity === "awaiting-first-turn" || activity === "idle"
+            ? paint(theme, auditorLive ? "success" : "accent", auditorLive ? workingFrame(now) : "⟡")
+            : activity === "awaiting-first-turn" || activity === "idle" || activity === "busy" || activity === "queued"
               ? paint(theme, "warning", "◌")
-              : paint(theme, "success", "●");
+              : activity === "working"
+                ? paint(theme, "success", workingFrame(now))
+                : paint(theme, "success", "●");
   // v0.24.7: a list item is named as such and points at /list — before,
   // the widget called it "active" and hinted "/goal status", reading as if
   // queue work were a standalone goal.
@@ -607,7 +612,13 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
           ? paint(theme, "warning", "awaiting first turn")
           : activity === "idle"
             ? paint(theme, "warning", "idle")
-            : paint(theme, "success", "active")
+            : activity === "busy"
+              ? paint(theme, "warning", "busy")
+              : activity === "queued"
+                ? paint(theme, "warning", "queued")
+                : activity === "working"
+                  ? paint(theme, "success", "working")
+                  : paint(theme, "success", "active")
         : g.status;
   // v0.33.0: slim card — status folds INTO the head line as middot segments
   // (filter(Boolean).join, the universal CLI idiom). Line 2 is the live
@@ -669,11 +680,12 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       return lines;
     }
     const phase = auditorDisplayPhase(g, audit, now);
+    const phaseLive = auditorHasLiveEvidence(audit, phase, now);
     const phaseLabel = auditorObservedPhase(audit, phase);
     const detail = audit?.label && audit.label !== "queued" && audit.label !== "running"
       ? ` · ${truncate(audit.label, 30)}`
       : "";
-    lines.push(`├─ auditor: ${phaseLabel}${detail}`);
+    lines.push(`├─ auditor: ${phaseLabel}${phaseLive ? ` ${workingFrame(now)} live` : ""}${detail}`);
 
     // Show observed worker facts, not a made-up percentage or semantic claim.
     // This is the difference between “the timer moved” and “I can see what
