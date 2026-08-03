@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.34.33 — 2026-08-03
+
+### Fixed — widget lines stay inside their TUI box
+
+String-array widgets reserve pi-tui's left and right padding when budgeting
+objectives, loop targets, and detail lines. Every emitted widget line is also
+cell-width clamped, so long objectives no longer wrap a trailing elapsed
+segment such as `50s` onto a stray line.
+
 ## 0.34.32 — 2026-08-03
 
 ### Changed — `/glla` cleanly separates settings from actions
