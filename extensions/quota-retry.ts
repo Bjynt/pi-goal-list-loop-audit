@@ -33,7 +33,7 @@ export interface QuotaError {
 const RATE_LIMIT = /\b429\b|too many requests|rate[\s_-]*limit|throttl(?:e|ed|ing)|requests?\s+per\s+(?:second|minute)|\b(?:rpm|tpm)\b/i;
 const PLAN_QUOTA = /(?:quota|usage[\s_-]*limit|token[\s_-]*plan|plan[\s_-]*limit|monthly\s+limit|daily\s+limit|weekly\s+limit|key\s+limit\s+exceeded|limit\s+(?:reached|exceeded|exhausted|depleted)).{0,80}(?:quota|usage|token|plan|limit|reached|exceeded|exhausted|depleted)?/i;
 const PLAN_QUOTA_REVERSE = /(?:quota|usage|token[\s_-]*plan|plan|monthly|daily|weekly|key).{0,80}(?:limit\s+(?:reached|exceeded|exhausted|depleted)|exhausted|depleted)/i;
-const BILLING = /insufficient\s+(?:credits?|balance|quota)|(?:credits?|balance)\s+(?:exhausted|depleted|used\s+up)|billing\s+(?:required|issue|failure)|payment\s+required|buy\s+credits?/i;
+const BILLING = /insufficient[\s_-]+(?:credits?|balance|quota)|(?:credits?|balance)\s+(?:exhausted|depleted|used\s+up)|billing\s+(?:required|issue|failure)|payment\s+required|buy\s+credits?/i;
 
 /** Return the strongest explicit provider signal, or undefined for an
  * ambiguous/transient message. Specific account/plan walls must win over a

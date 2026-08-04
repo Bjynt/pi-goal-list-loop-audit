@@ -993,7 +993,7 @@ test("a successful core retry clears the quota wall and resumes the parked goal"
 
   const success = { messages: [{ role: "assistant", content: [{ type: "text", text: "recovered" }], stopReason: "end_turn" }] };
   await pi.fire("agent_end", success, ctx);
-  await tick();
+  await tick(350);
   const recovered = readState(cwd) as { goal: { status: string; pauseReason?: string }; mainModelRecovery?: unknown };
   assert.equal(recovered.goal.status, "active", "a successful provider retry must not leave the goal parked");
   assert.equal(recovered.goal.pauseReason, undefined);
