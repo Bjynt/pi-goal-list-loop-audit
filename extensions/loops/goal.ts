@@ -8502,18 +8502,18 @@ export default function (pi: ExtensionAPI): void {
         ctx.ui.notify(`List has ${listQueue().length} item(s) waiting — /list next to activate the head.`, "info");
       }
     }
-    // v0.34.21: an interrupted stored completion claim is its own lifecycle,
-    // not a generic "auditor running" state. Rebinds (or global autoResume)
-    // have continuation consent and retry immediately; a cold startup with
-    // autoResume off paints recovery-pending and waits for /goal resume.
+    // v0.35.x: an interrupted stored completion claim is released from the
+    // MAIN's auditing wait before any recovery policy is considered. A valid
+    // handoff/rebind or global autoResume may then start one fresh attempt;
+    // cold/manual sessions remain paused until /goal resume.
     if (state.goal?.status === "auditing" && state.goal.pendingCompletion) {
       markCompletionAuditRecoveryPending(ctx, `session_start:${startReason}`);
       const canRecoverNow = explicitRecovery || autoResume;
-      if (canRecoverNow) {
+      if (canRecoverNow && state.goal?.status === "paused" && state.goal.pendingCompletion) {
         completionAuditRecoveryArmed = true;
         void retryStoredCompletionAudit("session-recovery");
       } else {
-        ctx.ui.notify("Completion audit recovery is pending — the stored claim is safe; /goal resume retries the isolated auditor.", "info");
+        ctx.ui.notify("Completion audit blocked — no verdict. The stored claim is safe; /goal resume retries the isolated auditor.", "warning");
       }
     }
     // v0.29.6: the 0.28.21 loop-vs-goal decision picker is SUPERSEDED by
