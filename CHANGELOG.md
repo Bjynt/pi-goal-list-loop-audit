@@ -2,6 +2,15 @@
 
 ## 0.34.48 — 2026-08-04
 
+### Fixed — detached completion-auditor recovery
+
+- Release the MAIN when a detached completion auditor times out, exits, or
+  loses its session without a verdict, while preserving the completion claim.
+- Persist infrastructure `blocked — no verdict` state and require explicit
+  resume for exactly one fresh audit dispatch instead of retrying blindly.
+- Make the HUD distinguish the attached MAIN host from the detached auditor
+  and add regressions for stale callbacks, silent host loss, and recovery.
+
 ### Fixed — quota recovery state
 
 - Persisted an explicit empty main-model recovery slot so a successful retry
