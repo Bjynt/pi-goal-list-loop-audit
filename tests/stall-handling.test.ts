@@ -432,7 +432,7 @@ test("v0.34.16: wedges hand off through pi lifecycle — no terminal self-reload
   assert.match(g, /const SESSION_HANDOFF_FILE = "session-handoff\.json";/, "durable handoff marker");
   assert.match(g, /writeSessionHandoff\(ctx, shutdownReason\);/, "shutdown persists resume debt");
   assert.match(g, /clearSessionOwnedTimers\(\);/, "shutdown clears old-context timers");
-  assert.match(g, /const handoffResume = consumeSessionHandoff\(ctx\.cwd\);/, "fresh session consumes debt");
+  assert.match(g, /const handoffResume = consumeSessionHandoff\(ctx\.cwd, ownerClaim\.previousGeneration, ownerClaim\.previousOwnerSessionId\);/, "fresh session consumes matching debt");
   assert.ok(!g.includes("attemptAutoReload"), "no terminal transport");
   assert.ok(!g.includes("auto_reload_injected"), "no reload injection ledger");
   assert.match(g, /A fresh session_start will rebind the/, "watchdogs explain the lifecycle cure");
@@ -445,9 +445,9 @@ test("v0.34.14: /reload rebind resumes mid-work — the 'list is not continuing'
   const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
   assert.match(g, /const SESSION_OWNER_FILE = "session-owner\.json";/, "pid sidecar");
   assert.match(g, /function markSessionOwnerShutdown\(cwd: string, reason: string\): void/, "shutdown reason is persisted for the next lifecycle");
-  assert.match(g, /const quit = previous\.shutdownReason\?\.trim\(\)\.toLowerCase\(\) === "quit";/, "explicit quit is not treated as a rebind consent");
-  assert.match(g, /return previous\.pid === process\.pid && !quit;/, "same pid + non-quit = rebind, not cold boot");
-  assert.match(g, /const rebindResume = claimSessionOwnerAndDetectRebind\(ctx\.cwd\);/, "restore detects rebind");
+  assert.match(g, /const shutdownReason = previous\.shutdownReason\?\.trim\(\)\.toLowerCase\(\);/, "shutdown reason is classified");
+  assert.match(g, /rebind: previous\.pid === process\.pid && !hadShutdown,/, "proper shutdown requires matching handoff consent");
+  assert.match(g, /const ownerClaim = claimSessionOwnerAndDetectRebind\(ctx\.cwd, sessionGeneration, sessionManagerId\(ctx\)\);/, "restore claims the generation-bound owner");
   assert.match(g, /appendLedger\(ctx\.cwd, "rebind_resume", \{ pid: process\.pid \}\);/, "rebind resumes are ledger-visible");
   // Cold boots (new pid) still honor autoresume=off; lifecycle handoff and
   // same-pid rebind are explicit same-process continuations.

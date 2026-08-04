@@ -331,7 +331,13 @@ test("v0.34.23: host replacement with a new SessionManager is not rejected as fo
   await pi.command("goal", "resume", first);
   await tick();
 
-  const replacement = makeMockCtx(cwd, { sessionManager: { name: "replacement-session-manager" } });
+  const replacement = makeMockCtx(cwd, {
+    sessionManager: {
+      name: "replacement-session-manager",
+      getSessionFile: () => path.join(cwd, "replacement-session.jsonl"),
+      getSessionId: () => "replacement-session-1",
+    },
+  });
   pi.sent.length = 0;
   await pi.fire("session_start", { reason: "resume", previousSessionFile: "/tmp/previous-session.json" }, replacement);
   await tick();

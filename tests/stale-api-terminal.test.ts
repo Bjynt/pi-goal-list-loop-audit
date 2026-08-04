@@ -80,9 +80,11 @@ test("v0.30.0 — rebind-first survival: session_shutdown attribution, session_s
   assert.match(SRC, /writeSessionHandoff\(ctx, shutdownReason\);/);
   assert.match(SRC, /clearSessionOwnedTimers\(\);/);
   assert.match(SRC, /sessionReplacementUntil = Date\.now\(\) \+ SESSION_REBIND_GRACE_MS;/);
-  assert.ok(SRC.includes('appendLedger(ctx.cwd, "session_handoff_pending", { reason, pid: process.pid });'), "handoff debt is ledgered");
+  assert.ok(SRC.includes('appendLedger(ctx.cwd, "session_handoff_pending", { reason, pid: process.pid, generation: sessionGeneration });'), "handoff debt is ledgered with its generation");
   assert.ok(SRC.includes('appendLedger(ctx.cwd, "session_handoff_suppressed", { reason });'), "explicit quit does not create resume debt");
   assert.match(SRC, /data\.reason\?\.trim\(\)\.toLowerCase\(\) !== "quit"/, "legacy quit debt cannot bypass consent");
+  assert.match(SRC, /data\.generation === expectedGeneration/, "handoff must match the predecessor generation");
+  assert.match(SRC, /data\.ownerSessionId === expectedOwnerSessionId/, "handoff must match the predecessor owner");
   assert.ok(SRC.includes('appendLedger(ctx.cwd, "session_handoff_resumed", { pid: process.pid, reason: startReason });'), "handoff consumption is ledgered");
   assert.ok(SRC.includes("sessionHandoffPending = false;"), "fresh session reopens the runtime");
   assert.ok(SRC.includes("startHeartbeat();") && SRC.includes("startUITicker();"), "fresh session restarts timers");
@@ -119,7 +121,7 @@ test("v0.34.16 — lifecycle handoff replaces terminal keystroke recovery", () =
   const SETTINGS = fs.readFileSync(new URL("../extensions/goal-settings.ts", import.meta.url), "utf8");
   assert.match(SRC, /const SESSION_HANDOFF_FILE = "session-handoff\.json";/);
   assert.match(SRC, /function writeSessionHandoff\(ctx: ExtensionContext, reason: string\): boolean/);
-  assert.match(SRC, /function consumeSessionHandoff\(cwd: string\): boolean/);
+  assert.match(SRC, /function consumeSessionHandoff\(\n  cwd: string,\n  expectedGeneration: number \| null,\n  expectedOwnerSessionId: string \| null,\n\): boolean/);
   assert.match(SRC, /scheduleSessionTimeout\(callback: \(\) => void, delayMs: number\): NodeJS\.Timeout/);
   assert.match(SRC, /for \(const timer of sessionTimeouts\) clearTimeout\(timer\);/);
   assert.ok(!SRC.includes("process.env.TMUX_PANE"), "no tmux keystroke transport");
