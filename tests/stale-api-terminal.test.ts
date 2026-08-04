@@ -69,7 +69,7 @@ test("v0.29.11 — heartbeat PROBES staleness before burning stall refires", () 
   // to throw. Now the first tick after replacement goes terminal at once.
   // v0.30.0: terminal only for ORPHANS — rebind-window and
   // successor-instance cases are absorbed silently first.
-  assert.match(SRC, /if \(!absorbStaleIfSuperseded\(ctx\)\) goStaleTerminal\(ctx, "heartbeat probe"\);/);
+  assert.match(SRC, /const knownCtx = lastCtx;[\s\S]*if \(probeExtensionApiStale\(\)\) \{[\s\S]*if \(knownCtx && !absorbStaleIfSuperseded\(knownCtx\)\) goStaleTerminal\(knownCtx, "heartbeat probe"\);/);
 });
 
 test("v0.30.0 — rebind-first survival: session_shutdown attribution, session_start rebind, zombie stand-down", () => {

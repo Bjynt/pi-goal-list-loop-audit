@@ -695,6 +695,54 @@ test("T2b: stale before compaction → no late rebind, refire, or misleading act
 // IS the replacement host session — absorb it. In-memory subagent workers keep
 // failing closed.
 
+test("v0.34.48: host-session loss without replacement session_start parks durably and rejects late callbacks", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  try {
+    await pi.command("goal", "orphaned host target — done when pinned", ctx);
+  await tick();
+  assert.equal(pi.sent.length, 1, "the host sent the initial continuation");
+  const initialPrompt = pi.sent[0]!.message.content ?? "";
+  await pi.fire("before_agent_start", { prompt: initialPrompt }, ctx);
+  pi.sent.length = 0;
+
+  // The lifecycle harness invalidates BOTH the captured host context and the
+  // ExtensionAPI. Deliberately emit no successor session_start afterward.
+  invalidateHostSession(pi, ctx);
+  __testOnlyHeartbeatTick();
+  // Clean the mock transport before assertions; the module's stale latch
+  // remains set until the next explicit session_start, just like pi.
+  pi.sendMessageError = null;
+  pi.sessionNameError = null;
+
+  const parked = readState(cwd).goal as { status: string; interruptedAt?: string; interruptedReason?: string };
+  assert.equal(parked.status, "active", "orphan handling keeps the goal recoverable");
+  assert.ok(parked.interruptedAt, "host loss writes a durable interruption marker");
+  assert.match(parked.interruptedReason ?? "", /extension api stale/);
+  const terminal = readLedger(cwd);
+  assert.equal(terminal.filter((entry) => entry.type === "session_rebound").length, 1, "no replacement session_start was emitted");
+  assert.equal(terminal.filter((entry) => entry.type === "extension_api_stale").length, 1, "orphan terminal is recorded once");
+  assert.match(ctx.ui.statuses["pi-glla"] ?? "", /interrupted — stale handle/);
+  assert.ok(((ctx.ui.widgets["pi-glla"] as string[] | undefined) ?? []).some((line) => line.includes("host session lost")), "the widget names host loss");
+
+  const beforeLate = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  await pi.fire("session_compact", {}, ctx);
+  await pi.fire("message_update", {}, ctx);
+  await pi.fire("before_agent_start", { prompt: initialPrompt }, ctx);
+  await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "late stale callback" }], stopReason: "end_turn" }] }, ctx);
+  await tick(2_200);
+  const afterLate = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.equal(afterLate, beforeLate, "late callbacks from the invalidated host cannot mutate the ledger");
+  assert.equal(pi.sent.length, 0, "late callbacks cannot enqueue a replacement continuation");
+    assert.doesNotMatch(afterLate, /"compaction_refire"/, "late compaction cannot re-arm work");
+    assert.doesNotMatch(afterLate, /"compaction_grace_refire"/, "late compaction cannot re-arm grace work");
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+  }
+});
+
 test("v0.34.25: silent swap — live file-backed successor is absorbed via a tool call and the work auto-resumes", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
