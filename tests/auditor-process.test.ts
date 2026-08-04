@@ -186,7 +186,10 @@ process.stdin.on("data", async (chunk) => {
   if (handled || !String(chunk).includes("\\n")) return;
   handled = true;
   const out = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
-  for (const delta of ["Audit summary", ":", " checked", "\\nNext line", " now", "\\n<disapproved/>"]) {
+  // ne and ys are deliberately standalone provider chunks inside two
+  // logical lines. They must join the buffered current line, never become
+  // independent latest entries in the progress HUD.
+  for (const delta of ["Audit summary: checked\\nNext li", "ne", ": anal", "ys", "is", "\\n<disapproved/>"]) {
     out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta } });
     await sleep(25);
   }
@@ -211,18 +214,18 @@ process.stdin.on("data", async (chunk) => {
       },
     });
     assert.equal(result.disapproved, true);
-    assert.equal(result.output, "Audit summary: checked\nNext line now\n<disapproved/>");
+    assert.equal(result.output, "Audit summary: checked\nNext line: analysis\n<disapproved/>");
     assert.ok(
       reports.some((progress) => progress.recentOutput.includes("Audit summary: checked")),
       "the parent receives the cumulative current report line",
     );
     assert.ok(
-      reports.some((progress) => progress.recentOutput.includes("Next line now")),
+      reports.some((progress) => progress.recentOutput.includes("Next line: analysis")),
       "the parent receives a later logical line as one item",
     );
     assert.ok(
-      reports.every((progress) => !progress.recentOutput.some((line) => [":", " checked", " now"].includes(line))),
-      "arbitrary text fragments are never presented as separate report lines",
+      reports.every((progress) => !progress.recentOutput.some((line) => ["ne", "ys"].includes(line))),
+      "word fragments are never presented as separate report lines",
     );
   } finally {
     await rm(dir, { recursive: true, force: true });
