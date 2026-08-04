@@ -191,13 +191,14 @@ test("v0.29.1: completion lifecycle survives the wedged-queue window (storm supp
     "the audit-lifecycle suppression precedes the active-goal pause");
   assert.match(esc, /send_rearm_escalated_suppressed/);
   // 2. Stranded-audit watchdog: "auditing" with no in-flight audit = the
-  //    result never landed (pully: 12h+ stuck). Stored claim → direct
-  //    auditor retry; else resume active so the agent re-completes.
+  //    result never landed (pully: 12h+ stuck). Release the stored claim as
+  //    infrastructure/no-verdict; a heartbeat must not launch a blind retry.
   const hbIdx = src.indexOf("function heartbeatTick");
-  const hb = src.slice(hbIdx, hbIdx + 12000); // v0.34.14: heartbeat grew again (0.33.1 discharge, 0.34.11 watchdog, 0.34.13 recovery)
+  const hb = src.slice(hbIdx, hbIdx + 12000); // v0.35.x: heartbeat releases stranded audits before latch handling
   assert.match(hb, /stranded_audit_recovered/);
   assert.match(hb, /state\.goal\?\.status === "auditing" &&\s*\n\s*!completionAuditInFlight/);
-  assert.match(hb, /retryStoredCompletionAudit\("session-recovery"\)/);
+  assert.match(hb, /Completion audit blocked — no verdict/);
+  assert.doesNotMatch(hb, /retryStoredCompletionAudit\("session-recovery"\)/);
   assert.ok(hb.indexOf("stranded_audit_recovered") < hb.indexOf("pending_latch_stuck"),
     "stranded-audit recovery runs before the latch watchdog");
   // 3. Error-brake cycle cap: the v0.28.25 ladder slows the thrash but never
