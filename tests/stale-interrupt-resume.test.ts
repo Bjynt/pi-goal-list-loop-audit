@@ -106,10 +106,12 @@ test("v0.28.27: stale handle silences ALL stall machinery — refiring into a de
   // sends can never land — marching toward a stall-escalation pause that
   // would silently cancel that promise (paused restores load-held).
   const tick = SRC.indexOf("function heartbeatTick(): void {");
-  const grace = SRC.indexOf("if (Date.now() < compactionGraceUntil) return;");
-  const stale = SRC.indexOf('if (!absorbStaleIfSuperseded(ctx)) goStaleTerminal(ctx, "heartbeat probe");', grace); // v0.29.11/0.30.0: the probe IS the bail (terminal for orphans, absorbed on rebind/supersede)
+  const knownCtx = SRC.indexOf("const knownCtx = lastCtx;", tick);
+  const probe = SRC.indexOf("if (probeExtensionApiStale())", knownCtx);
+  const stale = SRC.indexOf('if (knownCtx && !absorbStaleIfSuperseded(knownCtx)) goStaleTerminal(knownCtx, "heartbeat probe");', probe); // v0.34.48: probe the API before freshCtx() can discard the orphan context.
+  const grace = SRC.indexOf("if (Date.now() < compactionGraceUntil) return;", stale);
   const watchdog = SRC.indexOf("pending-latch watchdog");
-  assert.ok(tick > 0 && grace > tick && stale > grace, "stale bail inside heartbeatTick, after the grace gate");
+  assert.ok(tick > 0 && knownCtx > tick && probe > knownCtx && stale > probe && grace > stale, "stale bail inside heartbeatTick precedes the grace gate");
   assert.ok(stale < SRC.indexOf("const fire = shouldHeartbeatRefire({"), "stale bail precedes the refire path");
   assert.ok(stale < watchdog, "stale bail precedes the latch watchdog too");
 });
