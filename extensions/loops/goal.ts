@@ -4120,7 +4120,15 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     // Resume the list's head. The head activates AS the active goal, so this
     // is the same motion as /goal resume — named for the surface the user is
     // looking at (v0.22.7: "we would just unpause, and that is next").
-    if (!state.goal || state.goal.status !== "paused") {
+    // An unacknowledged continuation leaves a list item ACTIVE with an
+    // interruption marker (the work was not user-paused). Treat that exact
+    // recovery state as resumable here; otherwise /list resume would reject
+    // the one command that can release its dispatch stand-down.
+    const listDispatchRecovery = state.goal
+      && state.goal.policy === "list"
+      && state.goal.status === "active"
+      && (!!state.goal.interruptedAt || continuationDispatchStoodDown);
+    if (!state.goal || (state.goal.status !== "paused" && !listDispatchRecovery)) {
       ctx.ui.notify("No paused list item to resume. /list show to see the list.", "info");
       return;
     }

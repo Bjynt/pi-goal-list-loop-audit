@@ -465,15 +465,19 @@ test("v0.34.36: compaction releases a timed-out dispatch for one fresh resync at
   }
 });
 
-test("v0.34.36: a loop missing start proof stops durably and /loop resume re-arms it", async () => {
+test("v0.34.36: a loop missing start proof stops durably and /loop resume re-arms it exactly once", async () => {
   __testOnlyResetStaleFlag();
   __testOnlySetContinuationStartTimeout(300);
   try {
     const cwd = tmpCwd();
     setGlobalAutoResume(true);
+    pi.sent.length = 0;
     seedState(cwd, { loop: seedLoop({ active: true }) });
     const ctx = await freshSession(cwd, "reload");
     await tick();
+    assert.equal(pi.sent.length, 1, "the loop made one initial dispatch");
+    const sidecar = path.join(cwd, ".pi-glla", "continuation-dispatch.json");
+    const stoodDown = JSON.parse(fs.readFileSync(sidecar, "utf8")) as { phase: string; id: string };
     await waitUntil(() => {
       try {
         return fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes("continuation_start_unacknowledged");
@@ -481,13 +485,63 @@ test("v0.34.36: a loop missing start proof stops durably and /loop resume re-arm
         return false;
       }
     }, 1_000);
+    assert.equal(stoodDown.phase, "accepted", "the initial loop dispatch was accepted before its proof timed out");
     const stopped = readState(cwd).loop as { active: boolean; stopReason?: string };
     assert.equal(stopped.active, false, "a loop cannot remain green-active after its continuation never starts");
     assert.match(stopped.stopReason ?? "", /stalled: continuation start acknowledgement timed out/);
+    assert.equal(pi.sent.length, 1, "the timeout does not re-arm a loop dispatch");
+
     await pi.command("loop", "resume", ctx);
     await tick();
-    const resumed = readState(cwd).loop as { active: boolean };
-    assert.equal(resumed.active, true, "explicit /loop resume re-arms the stopped loop");
+    assert.equal(pi.sent.length, 2, "explicit /loop resume creates exactly one fresh dispatch");
+    const secondContent = pi.sent[1]!.message.content ?? "";
+    const retried = JSON.parse(fs.readFileSync(sidecar, "utf8")) as { phase: string; id: string };
+    assert.equal(retried.phase, "accepted");
+    assert.notEqual(retried.id, stoodDown.id, "loop resume clears the stand-down and gets a new identity");
+    await pi.fire("before_agent_start", { prompt: secondContent }, ctx);
+    assert.equal(fs.existsSync(sidecar), false, "the resumed loop dispatch settles on owner start proof");
+    await pi.command("loop", "stop", ctx);
+  } finally {
+    __testOnlySetContinuationStartTimeout(null);
+  }
+});
+
+test("v0.34.48: /list resume releases an unacknowledged dispatch exactly once", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlySetContinuationStartTimeout(300);
+  try {
+    const cwd = tmpCwd();
+    setGlobalAutoResume(true);
+    pi.sent.length = 0;
+    seedState(cwd, { goal: seedGoal({ policy: "list" }) });
+    const ctx = await freshSession(cwd, "reload");
+    await tick();
+    assert.equal(pi.sent.length, 1, "the list item made one initial dispatch");
+    const sidecar = path.join(cwd, ".pi-glla", "continuation-dispatch.json");
+    const stoodDown = JSON.parse(fs.readFileSync(sidecar, "utf8")) as { phase: string; id: string };
+    await waitUntil(() => {
+      try {
+        return fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes("continuation_start_unacknowledged");
+      } catch {
+        return false;
+      }
+    }, 1_000);
+    const interrupted = readState(cwd).goal as { status: string; policy: string; interruptedAt?: string };
+    assert.equal(interrupted.status, "active", "an unacknowledged list dispatch remains active but interrupted");
+    assert.equal(interrupted.policy, "list");
+    assert.ok(interrupted.interruptedAt, "the list item exposes its explicit-recovery marker");
+    assert.equal(pi.sent.length, 1, "the timeout does not re-arm a list dispatch");
+
+    await pi.command("list", "resume", ctx);
+    await tick();
+    assert.equal(pi.sent.length, 2, "explicit /list resume creates exactly one fresh dispatch");
+    const secondContent = pi.sent[1]!.message.content ?? "";
+    const retried = JSON.parse(fs.readFileSync(sidecar, "utf8")) as { phase: string; id: string };
+    assert.equal(retried.phase, "accepted");
+    assert.notEqual(retried.id, stoodDown.id, "list resume clears the stand-down and gets a new identity");
+    await pi.fire("before_agent_start", { prompt: secondContent }, ctx);
+    assert.equal(fs.existsSync(sidecar), false, "the resumed list dispatch settles on owner start proof");
+    await pi.command("goal", "pause", ctx);
   } finally {
     __testOnlySetContinuationStartTimeout(null);
   }
@@ -526,7 +580,7 @@ test("v0.34.24: missing start proof stands down durably and explicit resume send
 
     await pi.command("goal", "resume", ctx);
     await tick();
-    assert.equal(pi.sent.length, 2, "explicit resume releases the stand-down exactly once");
+    assert.equal(pi.sent.length, 2, "explicit /goal resume creates exactly one fresh dispatch");
     const secondContent = pi.sent[1]!.message.content ?? "";
     const retried = JSON.parse(fs.readFileSync(sidecar, "utf8")) as { phase: string; id: string };
     assert.equal(retried.phase, "accepted");
