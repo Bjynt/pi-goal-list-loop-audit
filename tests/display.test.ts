@@ -445,7 +445,7 @@ test("widget: a durable running claim without observed progress says awaiting ve
 test("auditor progress phases are explicit and retain worker activity", () => {
   const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-3" } });
   const queued = buildWidgetLines({ goal: g, list: [] }, { label: "queued" }, NOW)!;
-  assert.ok(queued.some((l) => l.includes("auditor: queued")));
+  assert.ok(queued.some((l) => l.includes("MAIN HOST · SUPERVISING · auditor: queued")));
   assert.ok(queued.some((l) => l.includes("completion claim is durable")));
 
   const running = buildWidgetLines({ goal: g, list: [] }, {
@@ -503,6 +503,7 @@ test("auditor widget shows concrete worker observations without exposing think b
     currentTool: "read",
     lastActivityAt: NOW - 1_000,
   }, NOW)!;
+  assert.match(liveAuditStatus, /MAIN HOST · SUPERVISING/);
   assert.match(liveAuditStatus, /auditor tool executing \[[▁▂▄▆█]{6} AUDITOR · DETACHED · LIVE\] · read/);
 
   const streamedThink = buildWidgetLines({ goal: g, list: [] }, {

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.34.50 — 2026-08-04
+
+### Fixed — make the host/auditor boundary explicit
+
+- Active auditing HUDs now identify both sides of the lifecycle: `MAIN HOST ·
+  SUPERVISING` and `AUDITOR · DETACHED · LIVE`.
+- The widget card and status bar no longer leave the operator to infer whether
+  the visible pi session itself became detached; only the read-only auditor
+  worker is detached.
+- Added display regressions for queued and live auditor states.
+
 ## 0.34.49 — 2026-08-04
 
 ### Fixed — detached-auditor report display

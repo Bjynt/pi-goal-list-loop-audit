@@ -502,8 +502,9 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     return undefined;
   }
   if (g.status === "auditing") {
+    const host = paint(theme, "accent", "MAIN HOST · SUPERVISING");
     if (auditRecoveryPending(g)) {
-      return `glla: ${paint(theme, "warning", "audit recovery pending")}${heldSuffix}`;
+      return `glla: ${host} · ${paint(theme, "warning", "audit recovery pending")}${heldSuffix}`;
     }
     const phase = auditorDisplayPhase(g, audit, now);
     const live = auditorHasLiveEvidence(audit, phase, now);
@@ -513,7 +514,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       ? `${paint(theme, "success", phaseText)} ${activityBadge("AUDITOR · DETACHED · LIVE", now, theme)}`
       : paint(theme, color, phaseText);
     const tool = phase === "running" && audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : "";
-    return `glla: ${label}${tool}${live ? auditorLastActivity(audit, now) : ""}${heldSuffix}`;
+    return `glla: ${host} · ${label}${tool}${live ? auditorLastActivity(audit, now) : ""}${heldSuffix}`;
   }
   if (g.status === "paused") {
     // v0.28.22: the status line names the ACTIONABILITY, not the reason —
@@ -770,8 +771,9 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // goal and its durable recent action, avoiding the duplicated live badge
   // that made the above-editor panel look noisy.
   if (g.status === "auditing") {
+    const host = paint(theme, "accent", "MAIN HOST · SUPERVISING");
     if (auditRecoveryPending(g)) {
-      lines.push(`├─ auditor: ${paint(theme, "warning", "recovery pending — previous audit was interrupted")}`);
+      lines.push(`├─ ${host} · auditor: ${paint(theme, "warning", "recovery pending — previous audit was interrupted")}`);
       lines.push(`└─ ${paint(theme, "dim", "stored completion claim is safe; a fresh session will retry it")}`);
       return lines;
     }
@@ -784,7 +786,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     // The status bar is the single activity HUD. Keep the widget's audit line
     // factual and compact; the ⟡ head icon plus this phase identify the
     // detached verifier without repeating the animated status badge.
-    lines.push(`├─ auditor: ${phaseLabel}${detail}`);
+    lines.push(`├─ ${host} · auditor: ${phaseLabel}${detail}`);
 
     // Show observed worker facts, not a made-up percentage or semantic claim.
     // This is the difference between “the timer moved” and “I can see what
