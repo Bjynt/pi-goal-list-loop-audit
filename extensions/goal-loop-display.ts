@@ -153,18 +153,44 @@ const paint = (theme: DisplayTheme | undefined, color: DisplayColor, text: strin
  * host/worker supplied real activity evidence. It is deliberately not tied
  * to elapsed time alone: a durable active state can outlive a dead or merely
  * queued turn. The stream age beside it is the evidence freshness signal.
+ *
+ * The pulse is a liveness accent, not a progress meter. It is only reachable
+ * after real stream/tool evidence has been observed, and it never claims a
+ * completion percentage or remaining-work estimate.
  */
-// Keep the activity marker compact and textual. A moving ornament consumed
-// useful terminal width and made a stale snapshot look more alive than the
-// words beside it. The capsule is the liveness signal; the stream age is the
-// proof.
-function activityBadge(label: string, _now: number, theme?: DisplayTheme): string {
+const LIVE_SIGNAL_FRAMES = [
+  "▁▂▄▆█▆",
+  "▂▄▆█▆▄",
+  "▄▆█▆▄▂",
+  "▆█▆▄▂▁",
+  "█▆▄▂▁▂",
+  "▆▄▂▁▂▄",
+  "▄▂▁▂▄▆",
+  "▂▁▂▄▆█",
+] as const;
+const LIVE_SIGNAL_FRAME_MS = 750;
+
+function liveSignalFrame(now: number): string {
+  const index = Math.floor(Math.max(0, now) / LIVE_SIGNAL_FRAME_MS) % LIVE_SIGNAL_FRAMES.length;
+  return LIVE_SIGNAL_FRAMES[index]!;
+}
+
+function paintLiveSignal(frame: string, theme?: DisplayTheme): string {
+  if (!theme) return frame;
+  return Array.from(frame).map((cell) => {
+    const color: DisplayColor = cell === "█" ? "success" : cell === "▁" ? "muted" : "accent";
+    return paint(theme, color, cell);
+  }).join("");
+}
+
+function activityBadge(label: string, now: number, theme?: DisplayTheme): string {
   const parts = label.split(" · ").map((part) => {
     const color: DisplayColor = part === "LIVE" ? "success" : part === "WORKING" ? "accent" : "accent";
     return paint(theme, color, part);
   });
   const separator = paint(theme, "dim", " · ");
-  return `${paint(theme, "dim", "[")}${parts.join(separator)}${paint(theme, "dim", "]")}`;
+  const signal = paintLiveSignal(liveSignalFrame(now), theme);
+  return `${paint(theme, "dim", "[")}${signal}${paint(theme, "dim", " ")}${parts.join(separator)}${paint(theme, "dim", "]")}`;
 }
 function activityStateBadge(label: string, theme: DisplayTheme | undefined, color: DisplayColor): string {
   return paint(theme, color, `[${label}]`);

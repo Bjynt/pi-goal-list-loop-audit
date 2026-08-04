@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.34.47 — 2026-08-04
+
+### Improved — live activity signal
+
+- Added a compact animated pulse waveform inside the live status capsule so
+  active work is visually obvious at a glance.
+- Kept the waveform evidence-gated: it appears only with fresh stream/tool
+  activity and never represents completion percentage.
+- Added coverage for signal animation, semantic peak/body colors, and detached
+  auditor live badges.
+
 ## 0.34.46 — 2026-08-04
 
 ### Improved — compact activity HUD

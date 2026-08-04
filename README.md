@@ -228,20 +228,22 @@ goal/list item/loop at all times: objective, durable state, elapsed time,
 tokens, next task or loop metric, pause reason, and live auditor progress
 during audits. If something is running, you can see it — no command needed.
 
-The status bar is the single activity HUD. It uses compact, stable state
-capsules so the words remain scannable and the terminal width stays available
-for useful context. Fresh stream age is the proof of live work:
+The status bar is the single activity HUD. It uses compact state capsules plus
+an animated pulse waveform so live work is obvious at a glance without turning
+the line into a progress meter. Fresh stream age is the proof of live work:
 
 ```text
-glla: [LIVE · WORKING] 1m 09s · last stream 11s ago · 3 queued
+glla: [▁▂▄▆█▆ LIVE · WORKING] 1m 09s · last stream 11s ago · 3 queued
 glla: [QUEUED] 44s · 18 queued
 ```
 
-Activity is evidence-gated and intentionally honest:
+The waveform is evidence-gated and indeterminate: it moves only while fresh
+stream/tool activity is present, and says nothing about completion percentage.
+Activity is otherwise intentionally honest:
 
 | Indicator | Meaning |
 |---|---|
-| `LIVE · WORKING` | Fresh stream/tool evidence is arriving; `last stream` gives its age. |
+| `LIVE · WORKING` | Fresh stream/tool evidence is arriving; the pulse and `last stream` age make that visible. |
 | `BUSY` | pi is occupied, but no fresh stream evidence justifies a live pulse. |
 | `QUEUED` | A continuation is waiting to start; no work is fabricated. |
 | `IDLE` | The durable item remains active, but no recent work is observed. |

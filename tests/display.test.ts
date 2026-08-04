@@ -98,7 +98,7 @@ test("stream-proven work uses one compact status-bar HUD; the card stays quiet",
   };
   const stream = { activity: "working" as const, lastStreamActivityAt: NOW - 11_000 };
   const status = buildStatusText(state, null, NOW, undefined, stream)!;
-  assert.equal(status, "glla: [LIVE · WORKING] 1m 09s · last stream 11s ago · 3 queued");
+  assert.match(status, /^glla: \[[▁▂▄▆█]{6} LIVE · WORKING\] 1m 09s · last stream 11s ago · 3 queued$/);
   const lines = buildWidgetLines(state, null, NOW, undefined, undefined, stream)!;
   assert.match(lines[0]!, /^● /);
   assert.match(lines[0]!, /· active ·/);
@@ -122,21 +122,21 @@ test("stream-proven work uses one compact status-bar HUD; the card stays quiet",
   );
 });
 
-test("live capsule stays stable and leaves room for truthful freshness text", () => {
+test("live capsule shows a compact animated signal and truthful freshness text", () => {
   const state = { goal: goalOf(), list: [] };
   const first = buildStatusText(state, null, NOW, undefined, {
     activity: "working",
     lastStreamActivityAt: NOW - 1_000,
   })!;
-  const next = buildStatusText(state, null, NOW + 350, undefined, {
+  const next = buildStatusText(state, null, NOW + 751, undefined, {
     activity: "working",
-    lastStreamActivityAt: NOW - 650,
+    lastStreamActivityAt: NOW - 249,
   })!;
-  assert.match(first, /glla: \[LIVE · WORKING\]/);
-  assert.match(next, /glla: \[LIVE · WORKING\]/);
-  assert.doesNotMatch(first, /[◜◝◞◟▰✦]/, "the live HUD no longer spends width on an animated ornament");
+  assert.match(first, /glla: \[[▁▂▄▆█]{6} LIVE · WORKING\]/);
+  assert.match(next, /glla: \[[▁▂▄▆█]{6} LIVE · WORKING\]/);
+  assert.notEqual(first.slice(0, first.indexOf(" LIVE")), next.slice(0, next.indexOf(" LIVE")), "the signal visibly advances while live");
   assert.match(first, /last stream 1s ago/);
-  assert.doesNotMatch(first, /%|complete|progress/i, "the capsule is not a fake completion meter");
+  assert.doesNotMatch(first, /%|complete|progress/i, "the signal is not a fake completion meter");
 });
 
 test("live capsule keeps semantic colors without decorative noise", () => {
@@ -154,10 +154,11 @@ test("live capsule keeps semantic colors without decorative noise", () => {
     theme,
     { activity: "working", lastStreamActivityAt: NOW - 1_000 },
   )!;
-  assert.match(status, /<dim>\[<\/dim><success>LIVE<\/success><dim> · <\/dim><accent>WORKING<\/accent><dim>\]<\/dim>/);
+  assert.match(status, /<dim>\[<\/dim>(?:<muted>[▁]<\/muted>|<accent>[▂▄▆]<\/accent>|<success>[█]<\/success>){6}<dim> <\/dim><success>LIVE<\/success><dim> · <\/dim><accent>WORKING<\/accent><dim>\]<\/dim>/);
   assert.ok(calls.some((call) => call.startsWith("success:LIVE")), "LIVE remains semantically highlighted");
   assert.ok(calls.some((call) => call.startsWith("accent:WORKING")), "WORKING remains semantically highlighted");
-  assert.ok(!calls.some((call) => call.startsWith("muted:")), "no decorative orbit layer remains");
+  assert.ok(calls.some((call) => call.startsWith("success:█")), "the signal peak is semantically highlighted");
+  assert.ok(calls.some((call) => call.startsWith("accent:▆")), "the signal body remains visible");
 });
 
 test("active goal with tasks shows progress", () => {
@@ -492,7 +493,7 @@ test("auditor widget shows concrete worker observations without exposing think b
     currentTool: "read",
     lastActivityAt: NOW - 1_000,
   }, NOW)!;
-  assert.match(liveAuditStatus, /auditor tool executing \[DETACHED · LIVE\] · read/);
+  assert.match(liveAuditStatus, /auditor tool executing \[[▁▂▄▆█]{6} DETACHED · LIVE\] · read/);
 
   const streamedThink = buildWidgetLines({ goal: g, list: [] }, {
     phase: "thinking",
