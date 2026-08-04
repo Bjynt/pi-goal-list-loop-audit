@@ -72,11 +72,10 @@ test("empty state → undefined (segment cleared)", () => {
   assert.equal(buildStatusText({ goal: null, list: [] }, null, NOW), undefined);
 });
 
-test("active goal shows pulse + elapsed", () => {
+test("active goal shows a compact state capsule + elapsed", () => {
   const s = buildStatusText({ goal: goalOf(), list: [] }, null, NOW)!;
-  assert.match(s, /glla: ●/);
+  assert.match(s, /glla: \[ACTIVE\] 3m/);
   assert.doesNotMatch(s, /glla: goal/, 'v0.34.1: the status line drops the policy word — the widget owns type naming');
-  assert.match(s, /3m/);
 });
 
 test("active status does not make first-turn or long-idle gaps look green", () => {
@@ -92,26 +91,38 @@ test("active status does not make first-turn or long-idle gaps look green", () =
   assert.doesNotMatch(idle.join("\n"), /IDLE|last activity 2m/);
 });
 
-test("stream-proven work pulses in one status-bar HUD; the card stays quiet", () => {
-  const state = { goal: goalOf({ policy: "list" }), list: [{ id: "next", objective: "next", addedAt: "z" }] };
-  const stream = { activity: "working" as const, lastStreamActivityAt: NOW - 1_000 };
+test("stream-proven work uses one compact status-bar HUD; the card stays quiet", () => {
+  const state = {
+    goal: goalOf({ policy: "list", createdAt: "2026-07-21T11:58:51Z" }),
+    list: [1, 2, 3].map((id) => ({ id: `next-${id}`, objective: `next ${id}`, addedAt: "z" })),
+  };
+  const stream = { activity: "working" as const, lastStreamActivityAt: NOW - 11_000 };
   const status = buildStatusText(state, null, NOW, undefined, stream)!;
-  assert.match(status, /glla: [◜◝◞◟·▰✦]+ LIVE · WORKING/);
-  assert.match(status, /last stream 1s ago/);
+  assert.equal(status, "glla: [LIVE · WORKING] 1m 09s · last stream 11s ago · 3 queued");
   const lines = buildWidgetLines(state, null, NOW, undefined, undefined, stream)!;
   assert.match(lines[0]!, /^● /);
   assert.match(lines[0]!, /· active ·/);
-  assert.doesNotMatch(lines.join("\n"), /LIVE WORK|last stream 1s ago/);
+  assert.doesNotMatch(lines.join("\n"), /LIVE WORK|last stream 11s ago/);
 
   const busy = buildStatusText(state, null, NOW, undefined, { activity: "busy", lastStreamActivityAt: NOW - 20_000 })!;
-  assert.match(busy, /⟦◌ BUSY⟧ · last stream 20s ago/);
+  assert.match(busy, /glla: \[BUSY\] 1m 09s · last stream 20s ago · 3 queued/);
   assert.doesNotMatch(busy, /WORKING/);
+
   const queued = buildStatusText(state, null, NOW, undefined, { activity: "queued" })!;
-  assert.match(queued, /⟦◌ QUEUED⟧/);
+  assert.match(queued, /glla: \[QUEUED\] 1m 09s · 3 queued/);
   assert.doesNotMatch(queued, /WORKING/);
+
+  const goldenQueued = {
+    goal: goalOf({ createdAt: "2026-07-21T11:59:16Z" }),
+    list: Array.from({ length: 18 }, (_, i) => ({ id: `queued-${i}`, objective: "queued", addedAt: "z" })),
+  };
+  assert.equal(
+    buildStatusText(goldenQueued, null, NOW, undefined, { activity: "queued" }),
+    "glla: [QUEUED] 44s · 18 queued",
+  );
 });
 
-test("live badges animate as an aurora orbit without implying completion percentage", () => {
+test("live capsule stays stable and leaves room for truthful freshness text", () => {
   const state = { goal: goalOf(), list: [] };
   const first = buildStatusText(state, null, NOW, undefined, {
     activity: "working",
@@ -121,14 +132,14 @@ test("live badges animate as an aurora orbit without implying completion percent
     activity: "working",
     lastStreamActivityAt: NOW - 650,
   })!;
-  const firstOrbit = first.match(/([◜◝◞◟·▰✦]+) LIVE · WORKING/)?.[1];
-  const nextOrbit = next.match(/([◜◝◞◟·▰✦]+) LIVE · WORKING/)?.[1];
-  assert.ok(firstOrbit && nextOrbit, "live orbit badge is present");
-  assert.notEqual(firstOrbit, nextOrbit, "the orbit advances on the UI ticker");
-  assert.doesNotMatch(first, /%|complete|progress/i, "the orbit is not a fake completion meter");
+  assert.match(first, /glla: \[LIVE · WORKING\]/);
+  assert.match(next, /glla: \[LIVE · WORKING\]/);
+  assert.doesNotMatch(first, /[◜◝◞◟▰✦]/, "the live HUD no longer spends width on an animated ornament");
+  assert.match(first, /last stream 1s ago/);
+  assert.doesNotMatch(first, /%|complete|progress/i, "the capsule is not a fake completion meter");
 });
 
-test("live HUD gets layered semantic color for a neon effect", () => {
+test("live capsule keeps semantic colors without decorative noise", () => {
   const calls: string[] = [];
   const theme = {
     fg(color: string, text: string) {
@@ -143,11 +154,10 @@ test("live HUD gets layered semantic color for a neon effect", () => {
     theme,
     { activity: "working", lastStreamActivityAt: NOW - 1_000 },
   )!;
-  assert.match(status, /<accent>[◜◝◞◟]<\/accent>/);
-  assert.match(status, /✦/);
-  assert.ok(calls.some((call) => call.startsWith("success:")), "the orbit spark/Live label is highlighted");
-  assert.ok(calls.some((call) => call.startsWith("accent:")), "the orbit rails and working label use the accent color");
-  assert.ok(calls.some((call) => call.startsWith("muted:")), "the orbit dots have a muted layer");
+  assert.match(status, /<dim>\[<\/dim><success>LIVE<\/success><dim> · <\/dim><accent>WORKING<\/accent><dim>\]<\/dim>/);
+  assert.ok(calls.some((call) => call.startsWith("success:LIVE")), "LIVE remains semantically highlighted");
+  assert.ok(calls.some((call) => call.startsWith("accent:WORKING")), "WORKING remains semantically highlighted");
+  assert.ok(!calls.some((call) => call.startsWith("muted:")), "no decorative orbit layer remains");
 });
 
 test("active goal with tasks shows progress", () => {
@@ -482,7 +492,7 @@ test("auditor widget shows concrete worker observations without exposing think b
     currentTool: "read",
     lastActivityAt: NOW - 1_000,
   }, NOW)!;
-  assert.match(liveAuditStatus, /auditor tool executing [◜◝◞◟·▰✦]+ DETACHED · LIVE · read/);
+  assert.match(liveAuditStatus, /auditor tool executing \[DETACHED · LIVE\] · read/);
 
   const streamedThink = buildWidgetLines({ goal: g, list: [] }, {
     phase: "thinking",
@@ -587,7 +597,7 @@ test("held loop + paused goal → both visible (status suffix + widget trailing 
 test("held loop + active goal → status suffix present", () => {
   const state = { goal: goalOf(), list: [], loop: heldLoopOf() };
   const s = buildStatusText(state, null, NOW)!;
-  assert.match(s, /glla: ●/); // v0.34.1: policy word dropped from the status line
+  assert.match(s, /glla: \[ACTIVE\]/); // v0.34.1: policy word dropped from the status line
   assert.match(s, /loop⏸held/);
 });
 
