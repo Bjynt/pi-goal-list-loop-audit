@@ -327,6 +327,7 @@ test("v0.34.49: fresh MAIN session_start resets stale state and rejects the old 
   setGlobalAutoResume(false);
   const cwd = tmpCwd();
   const first = await freshSession(cwd, "startup");
+  pi.sent.length = 0;
   await pi.command("goal", "start fresh-main rebind target — done when pinned", first);
   await tick();
   assert.equal(pi.sent.length, 1, "the old generation dispatched once");
