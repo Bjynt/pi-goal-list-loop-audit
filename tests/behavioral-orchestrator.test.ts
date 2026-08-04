@@ -1132,6 +1132,58 @@ test("T1b: stale /goal start → goal persisted to .pi-glla with interrupt marke
   assert.ok(ctx.ui.matching(".pi-glla").length >= 1, "honest 'state is safe' notify, not a 'starting now' lie");
 });
 
+test("drafting state is not left behind by a stale seed, and old confirmations cannot mutate a replacement session", async () => {
+  __testOnlyResetStaleFlag();
+  pi.sendMessageError = null;
+  pi.sessionNameError = null;
+  const listCwd = tmpCwd();
+  const listCtx = await freshSession(listCwd, "startup");
+  pi.sessionNameError = staleError();
+  pi.sendMessageError = staleError();
+  await pi.command("list", "", listCtx);
+  pi.sessionNameError = null;
+  pi.sendMessageError = null;
+  __testOnlyResetStaleFlag();
+  const added = await pi.runTool("list_add", { items: ["fresh list item — done when pinned"] }, listCtx);
+  assert.match(added.content[0]!.text, /item\(s\) added|item.*active/i, "a stale seed did not leave the list-drafting mutation gate latched");
+  await pi.command("list", "cancel", listCtx);
+
+  const goalCwd = tmpCwd();
+  const goalCtx = await freshSession(goalCwd, "startup");
+  pi.sessionNameError = staleError();
+  pi.sendMessageError = staleError();
+  await pi.command("goal", "", goalCtx);
+  pi.sessionNameError = null;
+  pi.sendMessageError = null;
+  __testOnlyResetStaleFlag();
+  const staleProposal = await pi.runTool("propose_goal_draft", { objective: "old draft — done when pinned", verificationContract: "pinned" }, goalCtx);
+  assert.match(staleProposal.content[0]!.text, /Not in goal drafting mode/, "a stale goal seed does not leave the interview floor active");
+
+  const confirmCwd = tmpCwd();
+  const first = await freshSession(confirmCwd, "startup");
+  await pi.command("goal", "", first);
+  await pi.fire("message_start", { message: { role: "user" } }, first);
+  await pi.fire("message_start", { message: { role: "user" } }, first);
+  let resolveConfirm!: (choice: string) => void;
+  first.ui.selectImpl = () => new Promise<string>((resolve) => { resolveConfirm = resolve; });
+  const pending = pi.runTool("propose_goal_draft", { objective: "late draft — done when pinned", verificationContract: "pinned" }, first);
+  await tick(20);
+  const replacement = makeMockCtx(confirmCwd, {
+    sessionManager: {
+      name: "draft-replacement",
+      getSessionFile: () => path.join(confirmCwd, "draft-replacement.jsonl"),
+      getSessionId: () => "draft-replacement-1",
+    },
+  });
+  await pi.fire("session_start", { reason: "reload", previousSessionFile: path.join(confirmCwd, "old.jsonl") }, replacement);
+  resolveConfirm("Yes");
+  const late = await pending;
+  assert.match(late.content[0]!.text, /session replacement|NOT a rejection/i, "a late old-session confirmation is not presented as a user rejection");
+  assert.equal(readState(confirmCwd).goal, null, "late confirmation cannot create a goal in the replacement session");
+  first.ui.selectImpl = undefined;
+  __testOnlyResetOwnerSession();
+});
+
 // ── v0.28.12: auto-accept escape hatch in draft dialogs ────────────────
 // The polis incident: a 14-item batch Confirm gave no hint that /glla
 // autoaccept=on existed. Every draft-class dialog is now a 3-choice
