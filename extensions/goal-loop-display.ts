@@ -209,6 +209,16 @@ const pauseIsError = (g: Goal): boolean => ERROR_PAUSE.test(g.pauseReason ?? "")
 type PauseKind = "decision" | "error" | "wait" | "blocked";
 const pauseKind = (g: Goal): PauseKind | undefined => g.pauseKind ?? (pauseIsError(g) ? "error" : undefined);
 
+/** A released completion claim is infrastructure debt, not a semantic verdict.
+ * Keep the MAIN/worker roles explicit so a dead detached auditor cannot make
+ * the host look detached or leave the user staring at an indefinite wait. */
+function isCompletionAuditNoVerdict(g: Goal): boolean {
+  return g.status === "paused"
+    && !!g.pendingCompletion
+    && g.pendingCompletion.phase === "recovery-pending"
+    && /audit|verdict/i.test(g.pauseReason ?? "");
+}
+
 /** A provider quota wall is an expected wait, not a generic failure. Keep
  * raw 429/JSON detail out of the visual card while preserving it in durable
  * state and the ledger. Local token-budget pauses intentionally do not match.
@@ -500,7 +510,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     const phaseText = `auditor ${auditorPhaseForDisplay(audit, phase, live)}`;
     const color = phase === "blocked" || phase === "quiet" ? "warning" : live ? "success" : "accent";
     const label = live
-      ? `${paint(theme, "success", phaseText)} ${activityBadge("DETACHED · LIVE", now, theme)}`
+      ? `${paint(theme, "success", phaseText)} ${activityBadge("AUDITOR · DETACHED · LIVE", now, theme)}`
       : paint(theme, color, phaseText);
     const tool = phase === "running" && audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : "";
     return `glla: ${label}${tool}${live ? auditorLastActivity(audit, now) : ""}${heldSuffix}`;
@@ -512,6 +522,9 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     // v0.34.1: the policy word leaves the status line — the widget's head
     // chip already names the type ("list item"), so "glla: list ⏸ …" doubled
     // it. Status line = state/actionability only.
+    if (isCompletionAuditNoVerdict(g)) {
+      return `glla: ${paint(theme, "warning", "MAIN HOST · auditor blocked — no verdict")}${heldSuffix}`;
+    }
     const kind = pauseKind(g);
     if (kind === "decision") return `glla: ${paint(theme, "accent", "⏸ decision needed")}${heldSuffix}`;
     if (kind === "error") return `glla: ${paint(theme, "error", `⏸ action needed — ${truncate(g.pauseReason ?? "", 30)}`)}${heldSuffix}`;
@@ -816,6 +829,12 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     return lines;
   }
   if (g.status === "paused" && g.pauseReason) {
+    if (isCompletionAuditNoVerdict(g)) {
+      lines.push(`├─ ${paint(theme, "error", "auditor: blocked — no verdict")}`);
+      lines.push(`├─ ${paint(theme, "dim", "MAIN host remains attached; the completion claim was not evaluated")}`);
+      lines.push(`└─ ${paint(theme, "warning", g.pauseSuggestedAction ?? "The claim is safe; /goal resume starts one fresh auditor.")}`);
+      return lines;
+    }
     const kind = pauseKind(g);
     const isErr = kind === "error";
     const budget = budgetFor(width, 3, 60);
