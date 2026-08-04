@@ -489,6 +489,14 @@ export function __testOnlyResetStaleFlag(): void {
   extensionApiStale = false;
 }
 
+/** Test-only lifecycle driver: exercise the orphan watchdog without waiting
+ * for the production 15-second heartbeat interval. This never ships as a
+ * runtime command; it only lets the mock host reproduce an invalidated
+ * context with no successor session_start. */
+export function __testOnlyHeartbeatTick(): void {
+  heartbeatTick();
+}
+
 /** Test-only: release the claimed session owner so a later test file can
  * drive agent_end with its own sessionManager identity (ownerSession is
  * process-wide module state; behavioral-orchestrator claims it first). */
@@ -1289,6 +1297,17 @@ function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
 
 function heartbeatTick(): void {
   if (zombieStoodDown || initialSessionLoadPending) return; // blank startup waits for pi to bind a real session
+  // Probe the ExtensionAPI BEFORE probing the captured context. When pi
+  // invalidates both handles and emits no replacement session_start,
+  // freshCtx() deliberately returns null; probing it first used to make the
+  // orphan watchdog silently return forever, leaving the goal green without
+  // a durable interruption marker. Keep the last context long enough for the
+  // terminal path to persist the honest orphan state.
+  const knownCtx = lastCtx;
+  if (probeExtensionApiStale()) {
+    if (knownCtx && !absorbStaleIfSuperseded(knownCtx)) goStaleTerminal(knownCtx, "heartbeat probe");
+    return;
+  }
   const ctx = freshCtx();
   if (!ctx) return;
   if (mainModelRecoveryActive()) return;
@@ -1305,21 +1324,6 @@ function heartbeatTick(): void {
   // machinery below stays quiet for 3 minutes while the replaced session
   // settles (latch watchdog, wedge alert, refire counting all resume after).
   if (Date.now() < compactionGraceUntil) return;
-  // v0.29.11: PROBE the handle before the stall machinery runs — a
-  // session-replaced handle can never land a refire, so detect it on the
-  // first tick after replacement and go terminal immediately, instead of
-  // burning refires into the void until a send happens to throw (field:
-  // polis stall 3/5, endless-td stall 1/5 before the warning fired).
-  // v0.28.27: once terminal, ALL stall machinery stays quiet from here
-  // on: refiring into a dead process is misleading, and worse, the stall
-  // escalation would PAUSE the goal — silently cancelling the
-  // interruptedAt → hold-on-restart promise the footer shows.
-  if (probeExtensionApiStale()) {
-    // v0.30.0: stale ≠ terminal — absorb the rebind-window and
-    // successor-instance cases; only orphans go terminal.
-    if (!absorbStaleIfSuperseded(ctx)) goStaleTerminal(ctx, "heartbeat probe");
-    return;
-  }
   // v0.34.24: an accepted dispatch with no start proof owns the watchdog
   // until its bounded timeout. Do not let the generic heartbeat create a
   // second blind send underneath it; explicit resume or a fresh session

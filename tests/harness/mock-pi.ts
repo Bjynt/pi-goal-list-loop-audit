@@ -29,6 +29,18 @@ export function staleError(): Error {
   return new Error(`This extension's context is ${STALE_ERROR_MESSAGE}`);
 }
 
+/** Reproduce pi invalidating the host runtime without delivering a successor
+ * session_start. Both the captured context probes and the ExtensionAPI fail
+ * with pi's stale signature; tests intentionally decide when (or whether) a
+ * replacement lifecycle event is emitted afterward. */
+export function invalidateHostSession(pi: MockPi, ctx: MockCtx): void {
+  const error = staleError();
+  pi.sendMessageError = error;
+  pi.sessionNameError = error;
+  ctx.isIdle = () => { throw error; };
+  ctx.hasPendingMessages = () => { throw error; };
+}
+
 export interface SentMessage {
   message: { customType?: string; content?: string; display?: boolean };
   options: unknown;
