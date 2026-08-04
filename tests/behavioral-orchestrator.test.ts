@@ -66,7 +66,7 @@ function readLedger(cwd: string): Array<{ type: string; value: Record<string, un
   const file = path.join(cwd, ".pi-glla", "active.jsonl");
   return fs.readFileSync(file, "utf8")
     .trim()
-    .split("\\n")
+    .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line) as { type: string; value: Record<string, unknown> });
 }
