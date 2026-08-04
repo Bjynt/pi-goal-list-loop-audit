@@ -1804,7 +1804,7 @@ test("v0.35.x: stale host loss releases an in-flight completion audit without a 
       status: string;
       pauseKind?: string;
       pauseReason?: string;
-      pendingCompletion?: { phase?: string; completionSummary?: string };
+      pendingCompletion?: { phase?: string; attemptId?: string; completionSummary?: string };
     };
     assert.equal(released.status, "paused", "host loss releases MAIN instead of leaving it auditing");
     assert.equal(released.pauseKind, "blocked");
@@ -1831,6 +1831,16 @@ test("v0.35.x: stale host loss releases an in-flight completion audit without a 
     assert.equal(afterSuccessor.pendingCompletion?.phase, "recovery-pending");
     const afterLedger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
     assert.doesNotMatch(afterLedger, /"audit_recovery_started"/, "successor does not launch a blind retry");
+
+    const startsBeforeResume = (afterLedger.match(/"audit_started"/g) ?? []).length;
+    await pi.command("goal", "resume", successor);
+    await waitUntil(() => {
+      const resumed = readState(cwd).goal as { status?: string; pendingCompletion?: { attemptId?: string } } | null;
+      return resumed?.status === "auditing" && resumed.pendingCompletion?.attemptId !== released.pendingCompletion?.attemptId;
+    });
+    const resumedLedger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+    assert.equal((resumedLedger.match(/"audit_started"/g) ?? []).length, startsBeforeResume + 1, "explicit resume creates exactly one fresh audit dispatch");
+    await pi.fire("session_shutdown", { reason: "quit" }, successor);
     await audit;
     __testOnlyResetOwnerSession();
   } finally {

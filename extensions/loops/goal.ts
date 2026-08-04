@@ -8318,6 +8318,14 @@ export default function (pi: ExtensionAPI): void {
     if (rebindResume) appendLedger(ctx.cwd, "rebind_resume", { pid: process.pid });
     const explicitRecovery = handoffResume || recoveryResume || rebindResume;
     if (initialSessionLoadPending && !explicitRecovery) {
+      // Even a blank startup must not leave a stored completion claim in the
+      // old AUDITING state: there is no worker verdict to wait for after a
+      // session boundary. Release it before the transcript-load barrier;
+      // the later explicit /goal resume can retry from the durable claim.
+      if (state.goal?.status === "auditing" && state.goal.pendingCompletion) {
+        markCompletionAuditRecoveryPending(ctx, "session_start:blank-load");
+        ctx.ui.notify("Completion audit blocked — no verdict. The claim is safe; load the session, then /goal resume to retry.", "warning");
+      }
       appendLedger(ctx.cwd, "session_waiting_for_load", { reason: startReason });
       ctx.ui.notify("glla: pi has not loaded a conversation yet — waiting before auto-resume. Load/resume the session, or explicitly run /goal resume or /loop start.", "info");
       return;
