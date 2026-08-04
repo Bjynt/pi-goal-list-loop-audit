@@ -369,6 +369,12 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   extensionApiStale = true;
   appendLedger(ctx.cwd, "extension_api_stale", { where, kind: isLoopActive() ? "loop" : "goal" });
   const guidance = "pi invalidated this session's extension handle without delivering a replacement session. glla stopped stale sends and kept the work safe in .pi-glla/. A fresh session_start will resume it; if pi does not create one, restart pi normally and glla will restore the saved work.";
+  // v0.35.x: an orphaned detached completion audit is not allowed to leave
+  // the durable goal in AUDITING. Release the MAIN-side wait immediately and
+  // preserve the exact claim as infrastructure/no-verdict recovery debt.
+  if (state.goal?.status === "auditing") {
+    markCompletionAuditRecoveryPending(ctx, `extension_api_stale:${where}`);
+  }
   // v0.32.0: kill the continuation re-arm too — otherwise an orphaned goal
   // keeps spinning a flat 50ms retry below every watchdog.
   clearSessionOwnedTimers();
@@ -407,7 +413,11 @@ function sessionHandoffPath(cwd: string): string {
   return path.join(piGlaDir(cwd), SESSION_HANDOFF_FILE);
 }
 function writeSessionHandoff(ctx: ExtensionContext, reason: string): boolean {
-  if (!isSupervising()) return false;
+  // A stored completion claim is a lifecycle owner even though it is not a
+  // normal supervisor. Keep a handoff record for it after we release the
+  // MAIN-side audit wait; the successor may then apply its normal recovery
+  // policy without treating the old detached worker as live.
+  if (!isSupervising() && !(state.goal?.pendingCompletion && isCompletionAuditRecoveryPending(state.goal))) return false;
   // A user quit is an explicit stop, not a replacement boundary. Do not
   // leave debt that could silently resume the work on a later startup;
   // global autoResume may still apply by its own explicit policy.
@@ -853,6 +863,7 @@ function isHostSuccessorContact(ctx: ExtensionContext): boolean {
 function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   if (zombieStoodDown) return false; // a successor INSTANCE owns owner.json — this instance stands down forever
   if (!isHostSuccessorContact(ctx)) return false;
+  const interruptedAudit = state.goal?.status === "auditing" && !!state.goal.pendingCompletion;
   ownerSession = ctx.sessionManager;
   ownerCwd = ctx.cwd;
   deadOwnerSession = null;
@@ -863,6 +874,13 @@ function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   sessionHandoffPending = false;
   sessionGeneration++; // a dead generation's delayed callbacks must not fire into the new owner
   appendLedger(ctx.cwd, "session_rebind_via_live_ctx", { via, generation: sessionGeneration });
+  if (interruptedAudit) {
+    // The old generation's detached worker/result handler is now stale. Do
+    // not let its finally block leave completionAuditInFlight latched in the
+    // successor; release the MAIN and require explicit recovery consent.
+    markCompletionAuditRecoveryPending(ctx, `silent-host-successor:${via}`);
+    ctx.ui.notify("glla: detached completion auditor lost with the old host — no verdict was reached; the MAIN is released. /goal resume retries the stored claim.", "warning");
+  }
   ctx.ui.notify("glla: pi replaced this session without delivering session_start — absorbed the live replacement as the goal-plane owner (in-memory subagent sessions stay refused).", "info");
   startHeartbeat();
   if (state.goal && state.goal.status === "active" && state.goal.interruptedAt) {
@@ -1475,11 +1493,10 @@ function heartbeatTick(): void {
   // pully: 12h+ stuck "auditing" while the model had already confabulated
   // the closure narrative. The audit silence is expected ONLY while
   // completionAuditInFlight — its absence here means the run is orphaned.
-  // Recover: a stored claim re-runs the auditor directly; otherwise resume
-  // active so the agent re-calls complete_goal. A cold startup with
-  // autoResume off deliberately leaves recovery-pending claims alone until
-  // /goal resume supplies explicit consent; lifecycle rebinds arm recovery
-  // immediately rather than waiting for this 90s fallback.
+  // Release a stranded completion claim to the MAIN as infrastructure/no-
+  // verdict. A heartbeat must never silently launch another detached worker;
+  // /goal resume (or the mode-correct list/loop resume route) is the explicit
+  // one-fresh-dispatch gate.
   if (
     state.goal?.status === "auditing" &&
     !completionAuditInFlight &&
@@ -1489,12 +1506,15 @@ function heartbeatTick(): void {
     appendLedger(ctx.cwd, "stranded_audit_recovered", { goalId: state.goal.id, via: state.goal.pendingCompletion ? "stored-claim" : "resume-active" });
     if (state.goal.pendingCompletion) {
       markCompletionAuditRecoveryPending(ctx, "heartbeat-recovery");
-      ctx.ui.notify("Recovering a completion audit whose result never landed — re-running the auditor with the stored claim.", "info");
-      void retryStoredCompletionAudit("session-recovery");
+      ctx.ui.notify("Completion audit blocked — no verdict. The stored claim is safe; /goal resume starts exactly one fresh auditor.", "warning");
     } else {
-      updateGoal({ status: "active" }, ctx);
-      ctx.ui.notify("A completion audit was interrupted (its result never landed). Resuming — re-call complete_goal when the deliverable still stands.", "warning");
-      scheduleContinuation(ctx, true);
+      updateGoal({
+        status: "paused",
+        pauseKind: "blocked",
+        pauseReason: "completion audit interrupted — no verdict",
+        pauseSuggestedAction: "The completion attempt was not evaluated. /goal resume returns to the work so it can call complete_goal again.",
+      }, ctx);
+      ctx.ui.notify("Completion audit interrupted — no verdict. MAIN released; /goal resume to continue.", "warning");
     }
     return;
   }
@@ -2959,6 +2979,16 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
  * a fresh lifecycle event; it is never silently presented as an active run. */
 type PendingCompletion = NonNullable<Goal["pendingCompletion"]>;
 
+/** Release all process-local ownership of a detached audit. The worker is
+ * already detached, so a stale MAIN must not keep the in-flight latch merely
+ * because its old generation never reached the normal finally block. */
+function clearDetachedAuditRuntime(): void {
+  latestAuditProgress = null;
+  completionAuditInFlight = false;
+  completionAuditGeneration = null;
+  completionAuditRecoveryArmed = false;
+}
+
 type CompletionAuditOrigin = "complete-goal" | "quota-retry" | "manual" | "session-recovery";
 
 function newCompletionAuditAttemptId(): string {
@@ -3005,16 +3035,40 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
 function markCompletionAuditRecoveryPending(ctx: ExtensionContext, reason: string): boolean {
   const goal = state.goal;
   const claim = goal?.pendingCompletion;
-  if (!goal || goal.status !== "auditing" || !claim) return false;
-  if (claim.phase === "recovery-pending") return false;
+  if (!goal || goal.status !== "auditing" || !claim) {
+    // A legacy/corrupt in-memory audit can still hold the process latch even
+    // when its durable claim is absent. Fail closed for the MAIN as well.
+    if (goal?.status === "auditing") clearDetachedAuditRuntime();
+    return false;
+  }
   const pending: PendingCompletion = {
     ...claim,
     phase: "recovery-pending",
     recoveryAt: nowIso(),
     recoveryReason: reason,
   };
-  updateGoal({ pendingCompletion: pending }, ctx);
-  appendLedger(ctx.cwd, "audit_recovery_pending", { goalId: goal.id, attemptId: claim.attemptId, reason });
+  // Kill any child still owned by this process before releasing the durable
+  // claim. Its late result is rejected by the attempt/generation checks, and
+  // it must not keep the user-facing state looking like an active audit.
+  if (claim.attemptId) cancelDetachedGoalCompletionAuditor(ctx.cwd, claim.attemptId);
+  clearDetachedAuditRuntime();
+  updateGoal({
+    status: "paused",
+    pendingCompletion: pending,
+    pauseKind: "blocked",
+    pauseResumeAt: undefined,
+    pauseReason: `completion audit blocked — no verdict: ${reason}`,
+    pauseSuggestedAction: "The completion claim is stored and was not judged. Fix the auditor/session issue, then /goal resume to start exactly one fresh audit.",
+    pauseOptions: undefined,
+    pauseRecommended: undefined,
+  }, ctx);
+  appendLedger(ctx.cwd, "audit_recovery_pending", {
+    goalId: goal.id,
+    attemptId: claim.attemptId,
+    reason,
+    mainReleased: true,
+    verdict: "none",
+  });
   return true;
 }
 
