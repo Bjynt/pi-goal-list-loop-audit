@@ -978,6 +978,29 @@ test("quota error turns enter durable main-model recovery instead of a resend st
   assert.ok(ledger.includes('"main_model_recovery_wait"'), "recovery wait ledgered");
 });
 
+test("a successful core retry clears the quota wall and resumes the parked goal", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "start recovery resume target — done when pinned", ctx);
+  await tick();
+  const errTurn = { messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: "429: rate_limit_error" }] };
+  await pi.fire("agent_end", errTurn, ctx); await tick();
+  const parked = readState(cwd) as { goal: { status: string; pauseKind?: string }; mainModelRecovery?: unknown };
+  assert.equal(parked.goal.status, "paused");
+  assert.equal(parked.goal.pauseKind, "wait");
+  assert.ok(parked.mainModelRecovery, "the test starts from a durable recovery wait");
+
+  const success = { messages: [{ role: "assistant", content: [{ type: "text", text: "recovered" }], stopReason: "end_turn" }] };
+  await pi.fire("agent_end", success, ctx);
+  await tick();
+  const recovered = readState(cwd) as { goal: { status: string; pauseReason?: string }; mainModelRecovery?: unknown };
+  assert.equal(recovered.goal.status, "active", "a successful provider retry must not leave the goal parked");
+  assert.equal(recovered.goal.pauseReason, undefined);
+  assert.equal(recovered.mainModelRecovery, undefined);
+  assert.match(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8"), /"main_model_recovered".*"resumed":"goal"/);
+});
+
 test("error turns: a real nudge before the errors still counts after they pass (counter neither resets nor increments)", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();

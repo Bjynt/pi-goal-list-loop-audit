@@ -33,6 +33,8 @@ test("main model fallback candidates are ordered and never retried in a cycle", 
 test("main model errors distinguish quota recovery from deterministic prompt walls", () => {
   assert.equal(classifyMainModelFailure("429 usage limit; retry in 2 hours").kind, "quota");
   assert.equal(classifyMainModelFailure("Token Plan usage limit reached").kind, "quota");
+  assert.equal(classifyMainModelFailure("Token Plan rate limit reached (2062)").quotaSignal, "plan-quota");
+  assert.equal(classifyMainModelFailure("429 Too Many Requests").quotaSignal, "rate-limit");
   assert.equal(classifyMainModelFailure("503 temporarily unavailable").kind, "transient");
   assert.equal(classifyMainModelFailure("insufficient credits — buy credits").kind, "billing");
   assert.equal(classifyMainModelFailure("401 invalid API key").kind, "auth");
