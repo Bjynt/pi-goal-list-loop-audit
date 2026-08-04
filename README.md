@@ -257,7 +257,9 @@ For example, MiniMax's `Token Plan rate limit reached … (2062)` asks for an
 upgrade or pay-as-you-go billing and is not the same thing as a per-minute
 throttle. Output/context-token stops are handled separately and never become a
 quota wall. pi's request-local retry counter is bounded; glla owns the longer
-recovery window: `15m → 30m → 1h → 2h → 4h → 5h`, then it stops automatic probes after 24h.
+recovery window: generic throttles use `15m → 30m → 1h → 2h → 4h → 5h`; a
+plan wall with no reset hint starts at `1h → 2h → 4h → 5h`. Automatic probes
+stop after 24h.
 A provider hint is honored when it is within the five-hour probe budget; a
 week-long hint is shown and held for manual action instead of scheduling a
 hidden week-long timer. With global `autoResume=on`, pending probes survive a

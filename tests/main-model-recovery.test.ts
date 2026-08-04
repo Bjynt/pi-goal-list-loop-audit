@@ -53,6 +53,8 @@ test("main model recovery backs off without giving up", () => {
   assert.equal(mainModelRetryDelayMs(20, 15), 5 * 60 * 60_000);
   assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 rate limit; retry in 2 hours"), 1), 2 * 60 * 60_000);
   assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 rate limit; retry in 1 week"), 1), 15 * 60_000);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("Token Plan rate limit reached (2062)"), 1), 60 * 60_000);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("Token Plan rate limit reached (2062)"), 2), 2 * 60 * 60_000);
   assert.equal(mainModelAutoRetryUntil(Date.parse("2026-08-03T00:00:00Z")), "2026-08-04T00:00:00.000Z");
   assert.equal(modelRef({ provider: "openai", id: "gpt" }), "openai/gpt");
   assert.equal(modelRef({ provider: "openai" }), undefined);

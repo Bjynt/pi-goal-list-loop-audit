@@ -126,11 +126,16 @@ export function mainModelAutoRetryUntil(firstFailureAtMs = Date.now(), horizonMs
 }
 
 /** Honor an explicit provider hint when it fits the five-hour probe budget;
- * otherwise use glla's bounded exponential cadence. */
+ * otherwise use glla's bounded exponential cadence. A plan/entitlement wall
+ * without a reset hint starts at one hour: it is durable recovery, not a
+ * per-minute throttle, and probing it every 15m only creates noisy failures. */
 export function mainModelFailureDelayMs(failure: MainModelFailure, attempt: number, baseMinutes = 15): number {
   if (failure.kind === "quota" && failure.retryFromUpstream && Number.isFinite(failure.retryAfterSec)) {
     const hinted = Math.max(1_000, Math.round(failure.retryAfterSec! * 1_000));
     if (hinted <= MAIN_MODEL_MAX_RETRY_DELAY_MS) return hinted;
   }
-  return mainModelRetryDelayMs(attempt, baseMinutes);
+  const cadenceBase = failure.kind === "quota" && failure.quotaSignal === "plan-quota"
+    ? Math.max(baseMinutes, 60)
+    : baseMinutes;
+  return mainModelRetryDelayMs(attempt, cadenceBase);
 }

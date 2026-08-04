@@ -9,7 +9,8 @@
 - A successful provider retry now reactivates work that glla itself parked,
   while leaving user decision/error pauses untouched.
 - Classified specific plan/billing quota messages before generic `429` text;
-  MiniMax Token Plan code 2062 is no longer treated as an ordinary throttle.
+  MiniMax Token Plan code 2062 is no longer treated as an ordinary throttle;
+  no-hint plan walls start with slower hourly probes.
 - Added regression coverage for plan-vs-rate-limit precedence, output-token
   separation, and recovery resumption.
 
