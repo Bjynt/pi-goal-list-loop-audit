@@ -157,14 +157,16 @@ test("defaultAgentDir points at ~/.pi/agent", () => {
 // default agent), this test fails and prompts re-syncing the embedded copies
 // in extensions/goal-loop-subagents.ts.
 
-test("drift: embedded Explore copy matches installed pi-subagents default", (t) => {
+test("drift: embedded Explore copy matches installed pi-subagents default", () => {
   const candidates = [
     path.join(os.homedir(), ".pi", "agent", "npm", "node_modules", "@tintinweb", "pi-subagents", "src", "default-agents.ts"),
     process.env.PI_SUBAGENTS_DEFAULT_AGENTS ?? "",
   ].filter(Boolean);
   const src = candidates.find(p => fs.existsSync(p));
   if (!src) {
-    t.skip("pi-subagents not installed in this environment — drift check skipped");
+    // Bun's node:test compatibility does not implement t.skip(). This is an
+    // optional drift guard: the package's CI image does not install pi itself.
+    assert.ok(true, "pi-subagents not installed in this environment — drift check skipped");
     return;
   }
   const content = fs.readFileSync(src, "utf-8");
@@ -181,7 +183,7 @@ test("drift: embedded Explore copy matches installed pi-subagents default", (t) 
       [...KNOWN_PINNED_DEFAULT_AGENTS], [],
       "upstream no longer pins any default agent model — empty KNOWN_PINNED_DEFAULT_AGENTS",
     );
-    t.skip("upstream removed model pins");
+    assert.ok(true, "upstream removed model pins — no pinned Explore body to compare");
     return;
   }
 
