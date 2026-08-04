@@ -393,7 +393,16 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
  * that could retain the old context, and session_start consumes the debt from
  * a fresh context. */
 const SESSION_HANDOFF_FILE = "session-handoff.json";
+const SESSION_HANDOFF_VERSION = 1;
 const SESSION_HANDOFF_FRESH_MS = 300_000;
+interface SessionHandoffRecord {
+  version: typeof SESSION_HANDOFF_VERSION;
+  pid: number;
+  at: string;
+  reason: string;
+  generation: number;
+  ownerSessionId: string;
+}
 function sessionHandoffPath(cwd: string): string {
   return path.join(piGlaDir(cwd), SESSION_HANDOFF_FILE);
 }
@@ -409,23 +418,56 @@ function writeSessionHandoff(ctx: ExtensionContext, reason: string): boolean {
   }
   try {
     fs.mkdirSync(piGlaDir(ctx.cwd), { recursive: true });
-    fs.writeFileSync(sessionHandoffPath(ctx.cwd), JSON.stringify({ pid: process.pid, at: new Date().toISOString(), reason }));
-    appendLedger(ctx.cwd, "session_handoff_pending", { reason, pid: process.pid });
+    const handoff: SessionHandoffRecord = {
+      version: SESSION_HANDOFF_VERSION,
+      pid: process.pid,
+      at: new Date().toISOString(),
+      reason,
+      generation: sessionGeneration,
+      ownerSessionId: sessionManagerId(ctx),
+    };
+    fs.writeFileSync(sessionHandoffPath(ctx.cwd), JSON.stringify(handoff));
+    appendLedger(ctx.cwd, "session_handoff_pending", { reason, pid: process.pid, generation: sessionGeneration });
     return true;
   } catch {
     appendLedger(ctx.cwd, "session_handoff_write_failed", { reason });
     return false;
   }
 }
-function consumeSessionHandoff(cwd: string): boolean {
+function consumeSessionHandoff(
+  cwd: string,
+  expectedGeneration: number | null,
+  expectedOwnerSessionId: string | null,
+): boolean {
   try {
     const p = sessionHandoffPath(cwd);
     if (!fs.existsSync(p)) return false;
     const raw = fs.readFileSync(p, "utf-8");
+    // Consume before validation: a stale, foreign, malformed, or mismatched
+    // handoff must never be retried by a later session as if it were fresh.
     fs.unlinkSync(p);
-    const data = JSON.parse(raw) as { pid?: number; at?: string; reason?: string };
+    const data = JSON.parse(raw) as Partial<SessionHandoffRecord>;
     const at = Date.parse(data.at ?? "");
-    return data.pid === process.pid && data.reason?.trim().toLowerCase() !== "quit" && !Number.isNaN(at) && Date.now() - at < SESSION_HANDOFF_FRESH_MS;
+    const fresh = !Number.isNaN(at) && Date.now() - at < SESSION_HANDOFF_FRESH_MS;
+    const matches = data.version === SESSION_HANDOFF_VERSION
+      && data.pid === process.pid
+      && data.reason?.trim().toLowerCase() !== "quit"
+      && typeof data.generation === "number"
+      && Number.isFinite(data.generation)
+      && expectedGeneration !== null
+      && data.generation === expectedGeneration
+      && typeof data.ownerSessionId === "string"
+      && expectedOwnerSessionId !== null
+      && data.ownerSessionId === expectedOwnerSessionId;
+    if (!fresh || !matches) {
+      appendLedger(cwd, "session_handoff_rejected", {
+        reason: !fresh ? "stale-or-invalid" : "identity-mismatch",
+        expectedGeneration,
+        actualGeneration: typeof data.generation === "number" ? data.generation : null,
+      });
+      return false;
+    }
+    return true;
   } catch {
     return false;
   }
@@ -442,27 +484,67 @@ function consumeSessionHandoff(cwd: string): boolean {
  * autoresume=off. Sidecar, not the ledger: read-before-write must be
  * atomic-ish and the ledger is append-only. */
 const SESSION_OWNER_FILE = "session-owner.json";
+interface SessionOwnerRecord {
+  pid?: number;
+  at?: string;
+  generation?: number;
+  ownerSessionId?: string;
+  shutdownReason?: string;
+  shutdownAt?: string;
+}
+interface SessionOwnerClaim {
+  rebind: boolean;
+  generation: number;
+  previousGeneration: number | null;
+  previousOwnerSessionId: string | null;
+}
 function markSessionOwnerShutdown(cwd: string, reason: string): void {
   try {
     const p = path.join(piGlaDir(cwd), SESSION_OWNER_FILE);
-    const owner = JSON.parse(fs.readFileSync(p, "utf-8")) as { pid?: number; at?: string };
+    const owner = JSON.parse(fs.readFileSync(p, "utf-8")) as SessionOwnerRecord;
     if (owner.pid === process.pid) {
       fs.writeFileSync(p, JSON.stringify({ ...owner, shutdownReason: reason, shutdownAt: new Date().toISOString() }));
     }
   } catch { /* advisory sidecar — lifecycle cleanup must not throw */ }
 }
-function claimSessionOwnerAndDetectRebind(cwd: string): boolean {
+function claimSessionOwnerAndDetectRebind(
+  cwd: string,
+  currentGeneration: number,
+  ownerSessionId: string,
+): SessionOwnerClaim {
   try {
     const p = path.join(piGlaDir(cwd), SESSION_OWNER_FILE);
-    let previous: { pid?: number; shutdownReason?: string } = {};
+    let previous: SessionOwnerRecord = {};
     try {
-      previous = JSON.parse(fs.readFileSync(p, "utf-8")) as { pid?: number; shutdownReason?: string };
+      previous = JSON.parse(fs.readFileSync(p, "utf-8")) as SessionOwnerRecord;
     } catch { /* absent or corrupt — first boot */ }
-    fs.writeFileSync(p, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
-    const quit = previous.shutdownReason?.trim().toLowerCase() === "quit";
-    return previous.pid === process.pid && !quit;
+    const previousGeneration = typeof previous.generation === "number" && Number.isFinite(previous.generation)
+      ? previous.generation
+      : null;
+    const generation = previousGeneration === null
+      ? currentGeneration
+      : Math.max(currentGeneration, previousGeneration + 1);
+    fs.writeFileSync(p, JSON.stringify({
+      pid: process.pid,
+      at: new Date().toISOString(),
+      generation,
+      ownerSessionId,
+    } satisfies SessionOwnerRecord));
+    const shutdownReason = previous.shutdownReason?.trim().toLowerCase();
+    const hadShutdown = typeof shutdownReason === "string" && shutdownReason.length > 0;
+    return {
+      rebind: previous.pid === process.pid && !hadShutdown,
+      generation,
+      previousGeneration,
+      previousOwnerSessionId: typeof previous.ownerSessionId === "string" ? previous.ownerSessionId : null,
+    };
   } catch {
-    return false;
+    return {
+      rebind: false,
+      generation: currentGeneration,
+      previousGeneration: null,
+      previousOwnerSessionId: null,
+    };
   }
 }
 
@@ -8040,7 +8122,13 @@ export default function (pi: ExtensionAPI): void {
     // after pi invalidated the old handle. Recognize that contact before the
     // foreign-session gate; in-memory subagent startup remains refused.
     const hostSuccessorStart = isHostSuccessorContact(ctx);
-    const hostLifecycleStart = isHostLifecycleSessionStart(event) || hostSuccessorStart;
+    const lifecycleSignal = isHostLifecycleSessionStart(event);
+    const sameOwnerStart = ownerSession !== null && ctx.sessionManager === ownerSession;
+    // A lifecycle reason is evidence from pi, not proof that an arbitrary
+    // in-memory SessionManager is the MAIN host. New managers must still be
+    // file-backed (the pi host shape); subagent workers remain refused even
+    // if they manufacture a reload/resume-looking event.
+    const hostLifecycleStart = hostSuccessorStart || sameOwnerStart || (lifecycleSignal && isHostSuccessorCtx(ctx));
     // `ownerSession` is intentionally nulled at a stale/shutdown terminal,
     // so isForeignCtx() alone cannot protect the parked plane. Compare with
     // the retained dead owner too: an in-memory subagent startup must not
@@ -8121,8 +8209,6 @@ export default function (pi: ExtensionAPI): void {
       appendLedger(ctx.cwd, "continuation_dispatch_invalid", {});
       clearDispatchRecord(ctx.cwd);
     }
-    const handoffResume = consumeSessionHandoff(ctx.cwd);
-    if (handoffResume) appendLedger(ctx.cwd, "session_handoff_resumed", { pid: process.pid, reason: startReason });
     // v0.28.14: snapshot carryover BEFORE any restore logic mutates state —
     // a paused goal, waiting list items, or a loop that was live/held when
     // the last session ended. Resolved once at the first NEW activation.
@@ -8165,9 +8251,16 @@ export default function (pi: ExtensionAPI): void {
       ctx.ui.notify(`glla subagent override sync failed: ${err instanceof Error ? err.message : String(err)}`, "warning");
     }
     // Consume ownership markers before the startup barrier so a later loaded
-    // session cannot mistake this placeholder runtime for a rebind.
+    // session cannot mistake this placeholder runtime for a rebind. The
+    // owner sidecar carries the predecessor generation and identity that the
+    // handoff must match; a proper shutdown never gets the looser same-pid
+    // rebind consent on its own.
     const recoveryResume = consumeRecoveryResume(ctx.cwd);
-    const rebindResume = claimSessionOwnerAndDetectRebind(ctx.cwd);
+    const ownerClaim = claimSessionOwnerAndDetectRebind(ctx.cwd, sessionGeneration, sessionManagerId(ctx));
+    sessionGeneration = ownerClaim.generation;
+    const handoffResume = consumeSessionHandoff(ctx.cwd, ownerClaim.previousGeneration, ownerClaim.previousOwnerSessionId);
+    if (handoffResume) appendLedger(ctx.cwd, "session_handoff_resumed", { pid: process.pid, reason: startReason });
+    const rebindResume = ownerClaim.rebind;
     if (rebindResume) appendLedger(ctx.cwd, "rebind_resume", { pid: process.pid });
     const explicitRecovery = handoffResume || recoveryResume || rebindResume;
     if (initialSessionLoadPending && !explicitRecovery) {
