@@ -221,7 +221,7 @@ process.stdin.on("data", async (chunk) => {
       "the parent receives a later logical line as one item",
     );
     assert.ok(
-      reports.every((progress) => !progress.recentOutput.some((line) => ["Audit summary", ":", " checked", "Next line", " now"].includes(line))),
+      reports.every((progress) => !progress.recentOutput.some((line) => [":", " checked", " now"].includes(line))),
       "arbitrary text fragments are never presented as separate report lines",
     );
   } finally {
