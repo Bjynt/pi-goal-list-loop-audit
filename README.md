@@ -250,9 +250,14 @@ Activity is otherwise intentionally honest:
 | `auditor …` | A detached, extension-less verifier is queued, running, quiet, or waiting for its verdict. |
 | `QUOTA WALL` | The provider rejected the request for a quota/plan window; saved work is waiting for a durable probe. |
 
-Quota walls deliberately do **not** get more blind request retries. pi's
-request-local retry counter is bounded; glla owns the longer recovery window:
-`15m → 30m → 1h → 2h → 4h → 5h`, then it stops automatic probes after 24h.
+Quota walls deliberately do **not** get more blind request retries. A bare
+429/rate-limit response is treated as a transient throttle; explicit plan,
+usage, billing, reset, and provider-code language is classified more strongly.
+For example, MiniMax's `Token Plan rate limit reached … (2062)` asks for an
+upgrade or pay-as-you-go billing and is not the same thing as a per-minute
+throttle. Output/context-token stops are handled separately and never become a
+quota wall. pi's request-local retry counter is bounded; glla owns the longer
+recovery window: `15m → 30m → 1h → 2h → 4h → 5h`, then it stops automatic probes after 24h.
 A provider hint is honored when it is within the five-hour probe budget; a
 week-long hint is shown and held for manual action instead of scheduling a
 hidden week-long timer. With global `autoResume=on`, pending probes survive a

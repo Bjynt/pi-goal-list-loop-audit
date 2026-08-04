@@ -2529,7 +2529,10 @@ function createGoal(objective: string, ctx: ExtensionContext, policy: "goal" | "
 }
 
 function persistState(ctx: ExtensionContext): void {
-  appendLedger(ctx.cwd, "state", { goal: state.goal, list: state.list ?? [], loop: state.loop ?? null, mainModelRecovery: state.mainModelRecovery });
+  // Persist explicit null for the optional top-level recovery slot. JSON
+  // omits undefined, while readState intentionally merges state snapshots;
+  // omission would resurrect an older quota wall after a successful retry.
+  appendLedger(ctx.cwd, "state", { goal: state.goal, list: state.list ?? [], loop: state.loop ?? null, mainModelRecovery: state.mainModelRecovery ?? null });
   notifyPersistenceState(ctx); // v0.28.6 (E1): loud on the first failure, all-clear on recovery
   refreshUI(ctx); // every state transition flows through here → the TUI is always current
 }

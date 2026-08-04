@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.34.48 — 2026-08-04
+
+### Fixed — quota recovery state
+
+- Persisted an explicit empty main-model recovery slot so a successful retry
+  cannot resurrect an older `QUOTA WALL` after reload or state reconstruction.
+- A successful provider retry now reactivates work that glla itself parked,
+  while leaving user decision/error pauses untouched.
+- Classified specific plan/billing quota messages before generic `429` text;
+  MiniMax Token Plan code 2062 is no longer treated as an ordinary throttle.
+- Added regression coverage for plan-vs-rate-limit precedence, output-token
+  separation, and recovery resumption.
+
 ## 0.34.47 — 2026-08-04
 
 ### Improved — live activity signal
