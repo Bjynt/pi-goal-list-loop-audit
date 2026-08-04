@@ -365,8 +365,8 @@ test("v0.34.49: fresh MAIN session_start resets stale state and rejects the old 
   assert.notEqual(newDispatch.id, oldDispatch.id, "the replacement dispatch has a fresh identity");
 
   // A late start proof from the disposed generation cannot acknowledge the
-  // replacement dispatch, even though it reaches the live MAIN context.
-  await pi.fire("before_agent_start", { prompt: oldPrompt }, replacement);
+  // replacement dispatch, even when the old callback arrives after rebind.
+  await pi.fire("before_agent_start", { prompt: oldPrompt }, first);
   assert.equal(fs.existsSync(path.join(cwd, ".pi-glla", "continuation-dispatch.json")), true, "old-generation proof leaves the new sidecar pending");
   await pi.fire("before_agent_start", { prompt: newPrompt }, replacement);
   assert.equal(fs.existsSync(path.join(cwd, ".pi-glla", "continuation-dispatch.json")), false, "matching generation proof settles the replacement");
