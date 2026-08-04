@@ -371,6 +371,7 @@ test("v0.34.49: fresh MAIN session_start resets stale state and rejects the old 
   await pi.fire("before_agent_start", { prompt: newPrompt }, replacement);
   assert.equal(fs.existsSync(path.join(cwd, ".pi-glla", "continuation-dispatch.json")), false, "matching generation proof settles the replacement");
   await pi.command("goal", "pause", replacement);
+  __testOnlyResetOwnerSession(); // the next fixture claims a fresh MAIN owner
 });
 
 test("v0.34.49: a handoff is one-shot and only matching predecessor identity can resume", async () => {
@@ -431,6 +432,7 @@ test("v0.34.23: host replacement with a new SessionManager is not rejected as fo
   await pi.fire("session_start", { reason: "startup" }, foreign);
   await tick();
   assert.equal(pi.sent.length, 0, "subagent startup did not steal host ownership");
+  __testOnlyResetOwnerSession(); // keep later behavioral fixtures independent
 });
 
 test("v0.34.20: registered tools use the replacement invocation context without session_shutdown", async () => {
