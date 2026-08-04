@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.34.49 — 2026-08-04
+
+### Fixed — detached-auditor report display
+
+- Assemble streamed auditor text deltas into cumulative logical lines before
+  exposing them to the live HUD, so punctuation and words no longer appear as
+  separate `latest:` entries while preserving the exact verdict output.
+- Keep the auditor compact and evidence-gated like the MAIN activity HUD: the
+  detached role remains explicit, while report telemetry follows MAIN's
+  cumulative streaming semantics.
+- Added worker, parent, and widget regressions for split report fragments and
+  think-block-safe display.
+
+### Fixed — drafting recovery after session replacement
+
+- Clear ephemeral goal/list/loop drafting state when a MAIN session shuts down,
+  rebinds, or is silently replaced.
+- Stale drafting seeds now abort cleanly instead of leaving the interview gate
+  latched and making later list mutations look disallowed until restart.
+- Late confirmations from a disposed generation cannot create goals or list
+  items in the replacement session; stale dialogs remain infrastructure
+  interruptions, not user rejections.
+
 ## 0.34.48 — 2026-08-04
 
 ### Fixed — detached completion-auditor recovery
