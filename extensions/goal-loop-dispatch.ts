@@ -19,6 +19,19 @@ export const DISPATCH_RECORD_FILE = "continuation-dispatch.json";
 export type DispatchKind = "goal" | "loop" | "stall" | "length";
 export type DispatchPhase = "prepared" | "accepted" | "started" | "failed" | "unacknowledged";
 
+/** Optional lifecycle timestamps are persisted on the sidecar when a send
+ * crosses each boundary. The phase alone is not enough to explain whether a
+ * provider accepted the enqueue, whether pi proved a turn start, or why the
+ * attempt settled. */
+export interface DispatchLifecycleTimestamps {
+  acceptedAt?: number;
+  startedAt?: number;
+  timedOutAt?: number;
+  settledAt?: number;
+  startProofSource?: string;
+  timeoutMs?: number;
+}
+
 export interface ContinuationDispatch {
   version: typeof DISPATCH_RECORD_VERSION;
   id: string;
@@ -31,6 +44,13 @@ export interface ContinuationDispatch {
   sentAt: number;
   phase: DispatchPhase;
   resync: boolean;
+  /** v0.34.48: durable evidence for the accepted/start/settled boundaries. */
+  acceptedAt?: number;
+  startedAt?: number;
+  timedOutAt?: number;
+  settledAt?: number;
+  startProofSource?: string;
+  timeoutMs?: number;
 }
 
 export function dispatchRecordPath(cwd: string): string {
@@ -108,6 +128,7 @@ export function readDispatchRecord(cwd: string): ContinuationDispatch | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Partial<ContinuationDispatch>;
+    const optionalFinite = (value: unknown): boolean => value === undefined || (typeof value === "number" && Number.isFinite(value));
     if (
       parsed.version !== DISPATCH_RECORD_VERSION ||
       typeof parsed.id !== "string" ||
@@ -119,7 +140,13 @@ export function readDispatchRecord(cwd: string): ContinuationDispatch | null {
       typeof parsed.sentAt !== "number" ||
       !Number.isFinite(parsed.sentAt) ||
       typeof parsed.resync !== "boolean" ||
-      !["prepared", "accepted", "started", "failed", "unacknowledged"].includes(String(parsed.phase))
+      !["prepared", "accepted", "started", "failed", "unacknowledged"].includes(String(parsed.phase)) ||
+      !optionalFinite(parsed.acceptedAt) ||
+      !optionalFinite(parsed.startedAt) ||
+      !optionalFinite(parsed.timedOutAt) ||
+      !optionalFinite(parsed.settledAt) ||
+      !optionalFinite(parsed.timeoutMs) ||
+      (parsed.startProofSource !== undefined && typeof parsed.startProofSource !== "string")
     ) return null;
     return parsed as ContinuationDispatch;
   } catch {

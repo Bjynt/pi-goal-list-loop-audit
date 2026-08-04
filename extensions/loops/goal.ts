@@ -1564,14 +1564,39 @@ function dispatchLabel(record: ContinuationDispatch): string {
   return `${state.goal?.policy === "list" ? "list item" : "goal"}${record.goalId ? ` ${record.goalId}` : ""}`;
 }
 
+/**
+ * Keep the dispatch lifecycle facts together in every ledger boundary. The
+ * sidecar phase is useful for recovery, but a ledger reader also needs to
+ * distinguish enqueue acknowledgement, start proof, timeout, and settlement
+ * without inferring one from a neighboring event.
+ */
+function dispatchLedgerValue(record: ContinuationDispatch, facts: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: record.id,
+    kind: record.kind,
+    ...(record.goalId === undefined ? {} : { goalId: record.goalId }),
+    ...(record.iteration === undefined ? {} : { iteration: record.iteration }),
+    generation: record.generation,
+    ownerSessionId: record.ownerSessionId,
+    marker: record.marker,
+    sentAt: record.sentAt,
+    phase: record.phase,
+    timeoutMs: record.timeoutMs ?? continuationStartTimeoutMs(),
+    ...facts,
+  };
+}
+
 function dispatchPrepare(
   ctx: ExtensionContext,
   input: Omit<Parameters<typeof createContinuationDispatch>[0], "id" | "sentAt">,
 ): ContinuationDispatch | null {
-  const record = createContinuationDispatch({
-    ...input,
-    id: `${instanceId}:${input.generation}:${newGoalId()}`,
-  });
+  const record: ContinuationDispatch = {
+    ...createContinuationDispatch({
+      ...input,
+      id: `${instanceId}:${input.generation}:${newGoalId()}`,
+    }),
+    timeoutMs: continuationStartTimeoutMs(),
+  };
   // Persist ownership BEFORE asking pi to enqueue the follow-up. If this
   // fails, an accepted send would be impossible to reconcile after a reload.
   if (!persistDispatchRecord(ctx.cwd, record)) {
@@ -1581,24 +1606,31 @@ function dispatchPrepare(
     return null;
   }
   pendingContinuationDispatch = record;
-  appendLedger(ctx.cwd, "continuation_dispatch_prepared", {
-    id: record.id,
-    kind: record.kind,
-    goalId: record.goalId,
-    iteration: record.iteration,
-    generation: record.generation,
-    ownerSessionId: record.ownerSessionId,
+  appendLedger(ctx.cwd, "continuation_dispatch_prepared", dispatchLedgerValue(record, {
+    acknowledgement: "pending",
+    startProofSource: null,
+    settlement: "pending",
     resync: record.resync,
-  });
+  }));
   return record;
 }
 
 function dispatchFailed(ctx: ExtensionContext, record: ContinuationDispatch, reason: string): void {
   if (pendingContinuationDispatch !== record) return;
-  const failed = transitionDispatch(record, "failed");
+  const settledAt = Date.now();
+  const failed: ContinuationDispatch = {
+    ...transitionDispatch(record, "failed"),
+    settledAt,
+  };
   pendingContinuationDispatch = failed;
   persistDispatchRecord(ctx.cwd, failed);
-  appendLedger(ctx.cwd, "continuation_dispatch_failed", { id: record.id, kind: record.kind, generation: record.generation, reason });
+  appendLedger(ctx.cwd, "continuation_dispatch_failed", dispatchLedgerValue(failed, {
+    acknowledgement: "rejected",
+    startProofSource: null,
+    settlement: "failed",
+    settledAt,
+    reason,
+  }));
   clearContinuationStartWatchdog();
 }
 
@@ -1611,7 +1643,13 @@ function dispatchStartAcknowledged(ctx: ExtensionContext, source: string, prompt
   // dispatch marker. Later low-level events are accepted as compatibility
   // proofs because older pi builds may not expose the prompt there.
   if (source === "before_agent_start" && !dispatchPromptMatches(record, prompt)) return false;
-  const started = transitionDispatch(record, "started");
+  const settledAt = Date.now();
+  const started: ContinuationDispatch = {
+    ...transitionDispatch(record, "started"),
+    startedAt: settledAt,
+    settledAt,
+    startProofSource: source,
+  };
   pendingContinuationDispatch = started;
   persistDispatchRecord(ctx.cwd, started);
   clearContinuationStartWatchdog();
@@ -1619,33 +1657,36 @@ function dispatchStartAcknowledged(ctx: ExtensionContext, source: string, prompt
   lastContinuationSentAt = 0;
   if (record.resync) postCompactResyncPending = false;
   noteActivity(true);
-  appendLedger(ctx.cwd, "continuation_start_acknowledged", {
-    id: record.id,
-    kind: record.kind,
-    goalId: record.goalId,
-    iteration: record.iteration,
-    generation: record.generation,
-    source,
-  });
+  appendLedger(ctx.cwd, "continuation_start_acknowledged", dispatchLedgerValue(started, {
+    acknowledgement: "accepted",
+    startProofSource: source,
+    settlement: "started",
+    startedAt: started.startedAt,
+    settledAt,
+  }));
   return true;
 }
 
 function dispatchStartUnacknowledged(ctx: ExtensionContext, record: ContinuationDispatch): void {
   if (pendingContinuationDispatch !== record || record.phase !== "accepted") return;
-  const unacknowledged = transitionDispatch(record, "unacknowledged");
+  const timedOutAt = Date.now();
+  const unacknowledged: ContinuationDispatch = {
+    ...transitionDispatch(record, "unacknowledged"),
+    timedOutAt,
+    settledAt: timedOutAt,
+  };
   persistDispatchRecord(ctx.cwd, unacknowledged);
   clearContinuationStartWatchdog();
   continuationDispatchStoodDown = true;
   lastContinuationSentAt = 0;
   const reason = `continuation start acknowledgement timed out (${record.id})`;
-  appendLedger(ctx.cwd, "continuation_start_unacknowledged", {
-    id: record.id,
-    kind: record.kind,
-    goalId: record.goalId,
-    iteration: record.iteration,
-    generation: record.generation,
-    timeoutMs: continuationStartTimeoutMs(),
-  });
+  appendLedger(ctx.cwd, "continuation_start_unacknowledged", dispatchLedgerValue(unacknowledged, {
+    acknowledgement: "accepted",
+    startProofSource: null,
+    settlement: "unacknowledged",
+    timedOutAt,
+    settledAt: timedOutAt,
+  }));
   if (record.kind === "loop" && state.loop?.active) {
     clearLoopTimer();
     state.loop = {
@@ -1673,18 +1714,28 @@ function armContinuationStartWatchdog(ctx: ExtensionContext, record: Continuatio
     if (pendingContinuationDispatch !== record || record.phase !== "accepted") return;
     const current = freshCtxForGeneration(generation);
     if (!current) return;
-    if (dispatchTimedOut(record, Date.now(), continuationStartTimeoutMs())) {
+    if (dispatchTimedOut(record, Date.now(), record.timeoutMs ?? continuationStartTimeoutMs())) {
       dispatchStartUnacknowledged(current, record);
     }
-  }, continuationStartTimeoutMs());
+  }, record.timeoutMs ?? continuationStartTimeoutMs());
 }
 
 function dispatchAccepted(ctx: ExtensionContext, record: ContinuationDispatch): boolean {
   // A synchronous before_agent_start can acknowledge while sendMessage is
   // still on the stack. Do not overwrite that proof with "accepted".
   if (pendingContinuationDispatch !== record) return true;
-  const accepted = transitionDispatch(record, "accepted");
+  const acceptedAt = Date.now();
+  const accepted: ContinuationDispatch = {
+    ...transitionDispatch(record, "accepted"),
+    acceptedAt,
+  };
   pendingContinuationDispatch = accepted;
+  appendLedger(ctx.cwd, "continuation_dispatch_accepted", dispatchLedgerValue(accepted, {
+    acknowledgement: "accepted",
+    startProofSource: null,
+    settlement: "pending",
+    acceptedAt,
+  }));
   if (!persistDispatchRecord(ctx.cwd, accepted)) {
     dispatchStartUnacknowledged(ctx, accepted);
     return false;
