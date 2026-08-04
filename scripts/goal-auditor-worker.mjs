@@ -109,12 +109,29 @@ function toolArgsPrefix(args) {
   }
 }
 
-function appendRecentOutput(recentOutput, text) {
-  for (const raw of text.split("\n")) {
-    if (!raw) continue;
-    recentOutput.push(raw.length <= MAX_RECENT_OUTPUT_ITEM_CHARS
-      ? raw
-      : `${raw.slice(0, MAX_RECENT_OUTPUT_ITEM_CHARS - 1)}…`);
+function appendRecentOutput(recentOutput, reportLine, text, flush = false) {
+  // text_delta fragments are arbitrary provider chunks, not logical lines.
+  // Assemble them exactly like MAIN's cumulative assistant renderer; treating
+  // each fragment as a line made the HUD show one word or punctuation mark at
+  // a time (for example, `Audit summary` followed by `:`). The exact audit
+  // result remains in outputParts and is deliberately unaffected by this
+  // bounded display telemetry.
+  const combined = `${reportLine.value}${text}`;
+  const parts = combined.split("\n");
+  reportLine.value = parts.pop() ?? "";
+  for (const raw of parts) {
+    const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+    if (!line) continue;
+    recentOutput.push(line.length <= MAX_RECENT_OUTPUT_ITEM_CHARS
+      ? line
+      : `${line.slice(0, MAX_RECENT_OUTPUT_ITEM_CHARS - 1)}…`);
+  }
+  if (flush && reportLine.value) {
+    const line = reportLine.value;
+    recentOutput.push(line.length <= MAX_RECENT_OUTPUT_ITEM_CHARS
+      ? line
+      : `${line.slice(0, MAX_RECENT_OUTPUT_ITEM_CHARS - 1)}…`);
+    reportLine.value = "";
   }
   while (recentOutput.length > MAX_RECENT_OUTPUT_ITEMS) recentOutput.shift();
 }
@@ -134,6 +151,7 @@ async function main() {
   const toolCalls = [];
   const recentOutput = [];
   const outputParts = [];
+  const recentReportLine = { value: "" };
   const activeTools = new Map();
   let currentTool;
   let currentToolArgs;
@@ -172,7 +190,12 @@ async function main() {
       phase,
       elapsedMs: Date.now() - startedAt,
       ...(lastActivityAt !== undefined ? { lastActivityAt } : {}),
-      recentOutput: recentOutput.slice(-MAX_RECENT_OUTPUT_ITEMS),
+      recentOutput: [
+        ...recentOutput.slice(-MAX_RECENT_OUTPUT_ITEMS),
+        ...(recentReportLine.value ? [recentReportLine.value.length <= MAX_RECENT_OUTPUT_ITEM_CHARS
+          ? recentReportLine.value
+          : `${recentReportLine.value.slice(0, MAX_RECENT_OUTPUT_ITEM_CHARS - 1)}…`] : []),
+      ].slice(-MAX_RECENT_OUTPUT_ITEMS),
       toolCalls: toolCalls.slice(-MAX_TOOL_CALLS),
       ...(currentTool ? { currentTool } : {}),
       ...(currentToolArgs ? { currentToolArgs } : {}),
@@ -187,6 +210,9 @@ async function main() {
   const finish = async (ok, error = "") => {
     if (finalized) return;
     finalized = true;
+    // Preserve a final unterminated report line in the last progress snapshot
+    // without changing the exact result output used for verdict parsing.
+    appendRecentOutput(recentOutput, recentReportLine, "", true);
     if (deadlineTimer) clearTimeout(deadlineTimer);
     if (inactivityTimer) clearInterval(inactivityTimer);
     if (pi && pi.exitCode === null) pi.kill("SIGTERM");
@@ -313,7 +339,7 @@ async function main() {
       if (event.type === "message_update") {
         if (update?.type === "text_delta" && typeof update.delta === "string") {
           outputParts.push(update.delta);
-          appendRecentOutput(recentOutput, update.delta);
+          appendRecentOutput(recentOutput, recentReportLine, update.delta);
           void progress(phase).catch(() => {});
         } else {
           void progress("thinking").catch(() => {});

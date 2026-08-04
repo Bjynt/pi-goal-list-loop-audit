@@ -982,6 +982,19 @@ let draftingUserReplies = 0;
 let draftingBlockedProposals = 0; // v0.15.1: stuck-gate escape hatch
 let draftingSeedInFlight = false;
 
+/** Drafting is ephemeral session state, not durable goal/list state. A stale
+ * seed or an in-flight Confirm must never leave the next MAIN session behind
+ * the old interview gate. */
+function clearDraftingState(): void {
+  draftingTarget = null;
+  draftingUserReplies = 0;
+  draftingBlockedProposals = 0;
+  draftingSeedInFlight = false;
+}
+
+const DRAFT_SESSION_INTERRUPTED_MESSAGE =
+  "The drafting flow was interrupted by a pi session replacement. This is NOT a rejection — do not refine or re-propose from the old turn. Wait for a fresh session_start, then run the drafting command again.";
+
 // Dedup set for token accounting (agent_end may replay seen messages).
 const countedTokenMessages = new Set<string>();
 const countedLoopTokenMessages = new Set<string>();
@@ -3580,7 +3593,14 @@ function activateNextListItem(ctx: ExtensionContext, n = 1): boolean {
 // Drafting: /goal with no args → clarify → Confirm dialog → activate
 // =================================================================
 
-async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "loop", seed?: string): Promise<void> {
+async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "loop", seed?: string): Promise<boolean> {
+  // A stale/handoff-bound MAIN cannot deliver the seed. Do not leave the
+  // module in drafting mode: that orphaned gate makes later list_add and
+  // propose_goal_draft calls look like user disapprovals until restart.
+  if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || probeExtensionApiStale()) {
+    clearDraftingState();
+    return false;
+  }
   draftingTarget = target;
   const prompts: Record<string, [string, string, string]> = {
     goal: ["goal-loop-draft.md", "Goal drafting", "propose_goal_draft"],
@@ -3594,12 +3614,6 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
       : target === "loop"
         ? `${label}: a loop target needs a metric and a direction — the agent will help you design them first (nothing activates until you confirm). Skip the interview entirely: /loop start "<target>" (bare = infinite metricless) or /loop start "<target>" measure="<cmd>" direction=min|max [window=5] [max=50] [time=h] [tokens=n] [branch=1].`
         : `${label}: the objective has no "Done when:" clause — the agent will grill you about it first (nothing activates until you confirm). Skip the interview entirely: /goal start <objective>.`;
-  ctx.ui.notify(
-    seed
-      ? seededHint
-      : `${label} started. The agent will grill until the contract is concrete, then ${tool} opens a Confirm dialog. No work begins before confirmation.`,
-    "info",
-  );
   const tmplPath = path.resolve(__dirname, "..", "..", "prompts", file);
   let tmpl: string;
   try {
@@ -3634,12 +3648,30 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
     }
   }
   try {
-    safeSteerUser(ctx, tmpl);
+    ctx.ui.notify(
+      seed
+        ? seededHint
+        : `${label} started. The agent will grill until the contract is concrete, then ${tool} opens a Confirm dialog. No work begins before confirmation.`,
+      "info",
+    );
+    const wasStale = extensionApiStale;
+    const sent = safeSteerUser(ctx, tmpl);
+    if (!sent) {
+      clearDraftingState();
+      // safeSteerUser deliberately catches stale API errors, so its caller
+      // must handle a false result explicitly rather than relying on catch.
+      if (extensionApiStale && !wasStale) {
+        appendLedger(ctx.cwd, "extension_api_stale", { where: "startDrafting seed" });
+        ctx.ui.notify("glla: can't start the drafting interview — this session's extension handle is stale (pi session replacement). A fresh session_start will rebind it; if no replacement arrives, restart pi normally, then re-run the command.", "warning");
+      }
+      return false;
+    }
     draftingUserReplies = 0;
     draftingBlockedProposals = 0;
     draftingSeedInFlight = true; // our injected prompt also arrives as a user message — don't count it
+    return true;
   } catch (err) {
-    draftingTarget = null;
+    clearDraftingState();
     // v0.28.1 (E6): the seed send used to fail SILENTLY — the user pressed
     // Enter on /goal and nothing happened. Now: loud, and stale handles get
     // the honest restart guidance.
@@ -3650,6 +3682,7 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
     } else {
       ctx.ui.notify(`glla: couldn't start the drafting interview (${err instanceof Error ? err.message : String(err)}) — try again.`, "warning");
     }
+    return false;
   }
 }
 
