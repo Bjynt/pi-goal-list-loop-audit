@@ -6220,6 +6220,7 @@ function registerAgentTools(pi: any): void {
           if (c === "stale") {
             // v0.28.1 (T1): a stale dialog is NOT a rejection — nothing was
             // refused; the dialog simply can't render in a doomed process.
+            clearDraftingState();
             extensionApiStale = true;
             appendLedger(liveCtx.cwd, "extension_api_stale", { where: "batch confirm" });
             return { content: [{ type: "text", text: "The Confirm dialog could not render: pi invalidated this session's extension handle (session replacement). This is NOT a rejection — do NOT refine or re-propose. Wait for a fresh session_start, then re-run the drafting flow." }], details: {} };
@@ -6270,6 +6271,7 @@ function registerAgentTools(pi: any): void {
         liveCtx = afterConfirm;
         if (c === "stale") {
           // v0.28.1 (T1): a stale dialog is NOT "Draft rejected by the user".
+          clearDraftingState();
           extensionApiStale = true;
           appendLedger(liveCtx.cwd, "extension_api_stale", { where: "draft confirm" });
           return { content: [{ type: "text", text: "The Confirm dialog could not render: pi invalidated this session's extension handle (session replacement). This is NOT a rejection — do NOT refine or re-propose. Wait for a fresh session_start, then re-run the drafting flow." }], details: {} };
@@ -6363,6 +6365,10 @@ function registerAgentTools(pi: any): void {
       const p = params as { target: string; measureCmd?: string; direction?: "min" | "max"; window?: number; max?: number; time?: number; tokens?: number; branch?: boolean };
       const liveCtx = currentToolContext(execCtx);
       if (!liveCtx) return staleToolResult();
+      if (warnIfStaleAtEntry(liveCtx, "loop drafting")) {
+        clearDraftingState();
+        return { content: [{ type: "text", text: DRAFT_SESSION_INTERRUPTED_MESSAGE }], details: {} };
+      }
       if (draftingTarget !== "loop") {
         return {
           content: [{ type: "text", text: "You cannot start or draft a loop — only the user can, from the slash bar (the Confirm is the product). Do NOT write draft files or wait for the user to say 'start' in chat; that dead-ends. Instead hand the user the exact command: /loop start \"<target>\" (bare = infinite metricless; add measure=\"<cmd>\" direction=min|max for a metric loop), or /loop respec to reconcile against the root spec, or /loop with no args to draft interactively." }],
