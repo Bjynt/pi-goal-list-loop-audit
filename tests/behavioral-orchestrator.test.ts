@@ -322,6 +322,83 @@ test("v0.34.16: lifecycle handoff resumes same-process replacement but quit does
   assert.ok(foreignSession.ui.matching("held on restore").length >= 1, "foreign debt falls back to the normal restore gate");
 });
 
+test("v0.34.49: fresh MAIN session_start resets stale state and rejects the old dispatch generation", async () => {
+  __testOnlyResetStaleFlag();
+  setGlobalAutoResume(false);
+  const cwd = tmpCwd();
+  const first = await freshSession(cwd, "startup");
+  await pi.command("goal", "start fresh-main rebind target — done when pinned", first);
+  await tick();
+  assert.equal(pi.sent.length, 1, "the old generation dispatched once");
+  const oldPrompt = pi.sent[0]!.message.content ?? "";
+  const oldDispatch = JSON.parse(fs.readFileSync(path.join(cwd, ".pi-glla", "continuation-dispatch.json"), "utf8")) as { generation: number; id: string };
+
+  // Invalidate the old MAIN handle and let the production heartbeat park it.
+  // The replacement arrives through a fresh host lifecycle event afterward.
+  invalidateHostSession(pi, first);
+  __testOnlyHeartbeatTick();
+  pi.sendMessageError = null;
+  pi.sessionNameError = null;
+  pi.sent.length = 0;
+  const replacement = makeMockCtx(cwd, {
+    sessionManager: {
+      name: "fresh-main-session-manager",
+      getSessionFile: () => path.join(cwd, "fresh-main-session.jsonl"),
+      getSessionId: () => "fresh-main-session-1",
+    },
+  });
+  await pi.fire("session_start", { reason: "reload", previousSessionFile: path.join(cwd, "old-session.jsonl") }, replacement);
+  await tick();
+
+  const rebound = readState(cwd).goal as { status: string; interruptedAt?: string };
+  assert.equal(rebound.status, "active", "fresh MAIN rebind keeps the goal active");
+  assert.equal(rebound.interruptedAt, undefined, "fresh rebind clears the stale interrupt marker");
+  const reboundLedger = readLedger(cwd);
+  assert.ok(reboundLedger.some((entry) => entry.type === "stale_flag_reset_on_rebind"), "fresh session resets the stale API latch");
+  assert.ok(reboundLedger.some((entry) => entry.type === "session_rebound"), "fresh session rebind is durable");
+  assert.equal(pi.sent.length, 1, "rebind schedules exactly one fresh continuation");
+
+  const newPrompt = pi.sent[0]!.message.content ?? "";
+  const newDispatch = JSON.parse(fs.readFileSync(path.join(cwd, ".pi-glla", "continuation-dispatch.json"), "utf8")) as { generation: number; id: string };
+  assert.ok(newDispatch.generation > oldDispatch.generation, "the replacement dispatch belongs to a newer generation");
+  assert.notEqual(newDispatch.id, oldDispatch.id, "the replacement dispatch has a fresh identity");
+
+  // A late start proof from the disposed generation cannot acknowledge the
+  // replacement dispatch, even though it reaches the live MAIN context.
+  await pi.fire("before_agent_start", { prompt: oldPrompt }, replacement);
+  assert.equal(fs.existsSync(path.join(cwd, ".pi-glla", "continuation-dispatch.json")), true, "old-generation proof leaves the new sidecar pending");
+  await pi.fire("before_agent_start", { prompt: newPrompt }, replacement);
+  assert.equal(fs.existsSync(path.join(cwd, ".pi-glla", "continuation-dispatch.json")), false, "matching generation proof settles the replacement");
+  await pi.command("goal", "pause", replacement);
+});
+
+test("v0.34.49: a handoff is one-shot and only matching predecessor identity can resume", async () => {
+  __testOnlyResetStaleFlag();
+  setGlobalAutoResume(false);
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal() });
+  const first = await freshSession(cwd, "startup");
+  await pi.command("goal", "resume", first);
+  await tick();
+  await pi.fire("session_shutdown", { reason: "reload" }, first);
+  const handoffPath = path.join(cwd, ".pi-glla", "session-handoff.json");
+  const handoff = JSON.parse(fs.readFileSync(handoffPath, "utf8")) as { generation: number; ownerSessionId: string };
+  fs.writeFileSync(handoffPath, JSON.stringify({ ...handoff, generation: handoff.generation + 1, ownerSessionId: "wrong-predecessor" }));
+
+  const replacement = ownerCtx(cwd);
+  pi.sent.length = 0;
+  await pi.fire("session_start", { reason: "reload" }, replacement);
+  await tick();
+  const held = readState(cwd).goal as { status: string; pauseReason?: string };
+  assert.equal(held.status, "paused", "a mismatched handoff cannot bypass the restore gate");
+  assert.match(held.pauseReason ?? "", /held for explicit resume/);
+  assert.equal(pi.sent.length, 0, "mismatched handoff does not send a continuation");
+  assert.equal(fs.existsSync(handoffPath), false, "mismatched handoff is consumed once");
+  const ledger = readLedger(cwd);
+  assert.ok(ledger.some((entry) => entry.type === "session_handoff_rejected"), "mismatch is ledgered");
+  assert.equal(ledger.filter((entry) => entry.type === "session_handoff_resumed").length, 0, "mismatch never records a resume");
+});
+
 test("v0.34.23: host replacement with a new SessionManager is not rejected as foreign", async () => {
   __testOnlyResetStaleFlag();
   setGlobalAutoResume(true);
