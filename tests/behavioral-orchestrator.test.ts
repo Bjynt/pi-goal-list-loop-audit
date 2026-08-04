@@ -432,6 +432,20 @@ test("v0.34.23: host replacement with a new SessionManager is not rejected as fo
   await pi.fire("session_start", { reason: "startup" }, foreign);
   await tick();
   assert.equal(pi.sent.length, 0, "subagent startup did not steal host ownership");
+
+  // Event-shaped lifecycle reasons are not enough for an in-memory worker to
+  // claim the MAIN plane; only a file-backed host replacement may rebind.
+  const foreignLifecycle = makeMockCtx(cwd, {
+    sessionManager: {
+      name: "subagent-lifecycle-manager",
+      getSessionFile: () => undefined,
+      getSessionId: () => "subagent-lifecycle-1",
+    },
+  });
+  await pi.fire("session_start", { reason: "reload", previousSessionFile: "/tmp/fake-host-session.jsonl" }, foreignLifecycle);
+  await tick();
+  assert.equal(pi.sent.length, 0, "subagent lifecycle-shaped start did not steal host ownership");
+  assert.equal(foreignLifecycle.ui.matching("resuming goal").length, 0, "foreign lifecycle-shaped start did not run restore");
   __testOnlyResetOwnerSession(); // keep later behavioral fixtures independent
 });
 
