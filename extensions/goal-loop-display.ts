@@ -149,42 +149,25 @@ export interface DisplayTheme {
 const paint = (theme: DisplayTheme | undefined, color: DisplayColor, text: string): string => (theme ? theme.fg(color, text) : text);
 
 /**
- * A live-work pulse is only rendered in the persistent status bar when the
+ * A live-work capsule is only rendered in the persistent status bar when the
  * host/worker supplied real activity evidence. It is deliberately not tied
  * to elapsed time alone: a durable active state can outlive a dead or merely
- * queued turn.
- *
- * The wave is deliberately decorative, not a progress meter. It says only
- * "fresh evidence is arriving"; it never implies a percentage complete.
+ * queued turn. The stream age beside it is the evidence freshness signal.
  */
-// A small aurora orbit travels around a compact capsule. This is a liveness
-// ornament, not a progress meter: it loops forever and says nothing about
-// completion percentage or remaining work. Its curved corners make the live
-// badge visually distinct from static ⟦…⟧ state badges.
-const LIVE_ORBIT_FRAMES = [
-  "◜·▰✦··◝", "◝··▰✦·◞", "◞···▰✦◟", "◟···✦▰◜",
-  "◜··✦▰·◝", "◝·✦▰··◞", "◞✦▰···◟", "◟▰✦···◜",
-] as const;
-function liveOrbitFrame(now: number): string {
-  return LIVE_ORBIT_FRAMES[Math.floor(Math.max(0, now) / 250) % LIVE_ORBIT_FRAMES.length]!;
-}
-function paintLiveOrbit(frame: string, theme?: DisplayTheme): string {
-  if (!theme) return frame;
-  return Array.from(frame).map((cell) => {
-    const color: DisplayColor = cell === "✦" ? "success" : cell === "▰" ? "accent" : cell === "·" ? "muted" : "accent";
-    return paint(theme, color, cell);
-  }).join("");
-}
-function paintActivityLabel(label: string, theme?: DisplayTheme): string {
-  if (!theme) return label;
-  return label.split(" · ").map((part) => {
+// Keep the activity marker compact and textual. A moving ornament consumed
+// useful terminal width and made a stale snapshot look more alive than the
+// words beside it. The capsule is the liveness signal; the stream age is the
+// proof.
+function activityBadge(label: string, _now: number, theme?: DisplayTheme): string {
+  const parts = label.split(" · ").map((part) => {
     const color: DisplayColor = part === "LIVE" ? "success" : part === "WORKING" ? "accent" : "accent";
     return paint(theme, color, part);
-  }).join(` ${paint(theme, "dim", "·")} `);
+  });
+  const separator = paint(theme, "dim", " · ");
+  return `${paint(theme, "dim", "[")}${parts.join(separator)}${paint(theme, "dim", "]")}`;
 }
-function activityBadge(label: string, now: number, theme?: DisplayTheme): string {
-  const frame = liveOrbitFrame(now);
-  return `${paintLiveOrbit(frame, theme)} ${paintActivityLabel(label, theme)}`;
+function activityStateBadge(label: string, theme: DisplayTheme | undefined, color: DisplayColor): string {
+  return paint(theme, color, `[${label}]`);
 }
 function stateBadge(label: string, glyph: string, theme: DisplayTheme | undefined, color: DisplayColor): string {
   return paint(theme, color, `⟦${glyph} ${label}⟧`);
@@ -541,19 +524,28 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     }
     const activity = goalDisplayActivity(g, extras);
     if (activity === "awaiting-first-turn") {
-      return `glla: ${stateBadge("AWAITING FIRST TURN", "◌", theme, "warning")}${heldSuffix}`;
+      return `glla: ${activityStateBadge("AWAITING FIRST TURN", theme, "warning")}${heldSuffix}`;
     }
     if (activity === "idle") {
-      return `glla: ${stateBadge("IDLE", "◌", theme, "warning")}${hostLastActivity(extras, now)}${heldSuffix}`;
+      const idleDetails = [
+        fmtElapsed(now - Date.parse(g.createdAt)),
+        hostLastActivity(extras, now).replace(/^ · /, ""),
+        (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "",
+      ].filter(Boolean);
+      return `glla: ${activityStateBadge("IDLE", theme, "warning")}${idleDetails.length > 0 ? ` ${idleDetails.join(" · ")}` : ""}${heldSuffix}`;
     }
     // v0.34.39: distinguish durable state from evidence of a live host turn.
     // A spinner is reserved for recent stream/tool evidence; BUSY without
     // that evidence is deliberately static so a hung provider cannot look
     // like progress. Queued work is neither idle nor currently executing.
     if (activity === "busy") {
-      const busyQueue = (state.list?.length ?? 0) > 0 ? ` · ${state.list!.length} queued` : "";
-      const busyTasks = g.taskList ? ` ${countDone(g)}/${countTotal(g)} tasks ·` : "";
-      return `glla: ${stateBadge("BUSY", "◌", theme, "warning")}${hostLastStream(extras, now)}${busyTasks}${busyQueue}${heldSuffix}`;
+      const busyDetails = [
+        fmtElapsed(now - Date.parse(g.createdAt)),
+        g.taskList ? `${countDone(g)}/${countTotal(g)} tasks` : "",
+        hostLastStream(extras, now).replace(/^ · /, ""),
+        (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "",
+      ].filter(Boolean);
+      return `glla: ${activityStateBadge("BUSY", theme, "warning")}${busyDetails.length > 0 ? ` ${busyDetails.join(" · ")}` : ""}${heldSuffix}`;
     }
     // v0.34.16: a fresh session_start owns the handoff. A cold boot still
     // follows the global autoResume setting, so the widget names the actual
@@ -563,21 +555,23 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     // fragment; "29 queued" says what the number IS. Both policies now
     // render "… · N queued".
     const n = state.list?.length ?? 0;
-    const queue = n === 0 ? "" : ` · ${n} queued`;
-    const tasks = g.taskList ? ` ${countDone(g)}/${countTotal(g)} tasks ·` : "";
-    const elapsed = fmtElapsed(now - Date.parse(g.createdAt));
     const live = activity === "working";
     const queued = activity === "queued";
     const marker = live
       ? activityBadge("LIVE · WORKING", now, theme)
       : queued
-        ? stateBadge("QUEUED", "◌", theme, "warning")
-        : "●";
-    const stream = live ? hostLastStream(extras, now) : "";
-    // v0.34.1: no policy word here either — "glla: list ●" duplicated the
-    // widget's "list item" chip (field screenshot 2026-08-01). The queue
-    // suffix still hints list context when the widget is scrolled away.
-    return `glla: ${marker}${tasks} ${elapsed}${stream}${queue}${heldSuffix}`;
+        ? activityStateBadge("QUEUED", theme, "warning")
+        : activityStateBadge("ACTIVE", theme, "accent");
+    // Keep the screenshot-proven order: state, elapsed, freshness, then
+    // queue/task context. It scans like a compact instrument readout and
+    // remains useful when the above-editor card is hidden or scrolled away.
+    const details = [
+      fmtElapsed(now - Date.parse(g.createdAt)),
+      g.taskList ? `${countDone(g)}/${countTotal(g)} tasks` : "",
+      live ? hostLastStream(extras, now).replace(/^ · /, "") : "",
+      n > 0 ? `${n} queued` : "",
+    ].filter(Boolean);
+    return `glla: ${marker}${details.length > 0 ? ` ${details.join(" · ")}` : ""}${heldSuffix}`;
   }
   // complete/aborted → clear — but a held loop still shows.
   if (held) return `glla: loop ${paint(theme, "warning", "⏸ held")} · iter ${held.iteration} — /loop to resume`;
