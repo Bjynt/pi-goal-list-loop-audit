@@ -259,7 +259,12 @@ interface ActiveAttention {
   feedback?: string;
 }
 
-function latestAuditFeedback(g: Goal): string | undefined {
+interface LatestAuditFeedback {
+  label: "auditor disapproved" | "regression shield";
+  text: string;
+}
+
+function latestAuditFeedback(g: Goal): LatestAuditFeedback | undefined {
   const verdict = [...(g.auditHistory ?? [])].reverse().find((entry) =>
     (entry.disapproved || (entry.approved && entry.regressionShieldPassed === false))
     && typeof entry.report === "string"
@@ -274,7 +279,10 @@ function latestAuditFeedback(g: Goal): string | undefined {
     .replace(/<\/?(?:approved|disapproved|impossible)(?:\s[^>]*)?\s*\/?>(?:\s*)/gi, "")
     .trim();
   if (!report) return undefined;
-  return truncate(report, 320);
+  return {
+    label: verdict.disapproved ? "auditor disapproved" : "regression shield",
+    text: truncate(report, 320),
+  };
 }
 
 function activeAttention(g: Goal): ActiveAttention | undefined {
@@ -284,7 +292,7 @@ function activeAttention(g: Goal): ActiveAttention | undefined {
       label: "regression shield — evidence gap",
       color: "error",
       detail: "auditor approved; regression shield found missing evidence",
-      feedback: latestAuditFeedback(g),
+      feedback: latestAuditFeedback(g)?.text,
     };
   }
   if (/auditor disapproved/i.test(g.pauseReason)) {
@@ -292,7 +300,7 @@ function activeAttention(g: Goal): ActiveAttention | undefined {
       label: "auditor disapproved — fix the gap",
       color: "error",
       detail: "auditor verdict: disapproved",
-      feedback: latestAuditFeedback(g),
+      feedback: latestAuditFeedback(g)?.text,
     };
   }
   if (/auditor|completion audit/i.test(g.pauseReason)) {
@@ -759,11 +767,24 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     const resumeCmd = isList ? "/list resume" : "/goal resume";
     if (interruptedForNoStart(g)) {
       lines.push(`├─ ${paint(theme, "error", "continuation was accepted, but pi did not start a turn")}`);
-      lines.push(`└─ ${paint(theme, "warning", `automatic re-sends are stopped · ${resumeCmd} to retry once`)}`);
     } else {
       lines.push(`├─ ${paint(theme, "error", "host session lost — waiting for fresh session_start")}`);
-      lines.push(`└─ ${paint(theme, "warning", `/reload to rebind · ${resumeCmd} if it does not resume`)}`);
     }
+    // Lifecycle interruption must not hide a semantic verdict that already
+    // landed. The continuation may be gone, but auditHistory is durable and
+    // its required-fixes excerpt is the work the user must act on next.
+    const feedback = latestAuditFeedback(g);
+    if (feedback) {
+      const feedbackColor: DisplayColor = feedback.label === "auditor disapproved" ? "error" : "warning";
+      lines.push(`├─ ${paint(theme, feedbackColor, `${feedback.label} — durable required fixes`)}`);
+      wrap(`latest audit feedback: ${feedback.text}`, budgetFor(width, 3, 60), 3).forEach((w) => {
+        lines.push(`│  ${paint(theme, feedbackColor, w)}`);
+      });
+    }
+    const recovery = interruptedForNoStart(g)
+      ? `automatic re-sends are stopped · ${resumeCmd} to retry once`
+      : `/reload to rebind · ${resumeCmd} if it does not resume`;
+    lines.push(`└─ ${paint(theme, "warning", recovery)}`);
     return lines;
   }
   // Activity is intentionally a single-surface HUD: the persistent status

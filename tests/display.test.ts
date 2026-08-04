@@ -204,6 +204,33 @@ test("accepted continuation without a turn-start proof is not mislabeled as a lo
   assert.ok(!lines.some((line) => line.includes("host session lost")), "trigger failure must not claim the host disappeared");
 });
 
+test("lifecycle interruption keeps durable auditor disapproval feedback visible", () => {
+  const report = "## Required fixes\n- preserve this required-fixes excerpt after lifecycle failure\n<disapproved/>";
+  for (const [interruptedReason, lifecycleText] of [
+    ["continuation start acknowledgement timed out (dispatch-1)", "continuation was accepted, but pi did not start a turn"],
+    ["extension api stale (heartbeat probe)", "host session lost — waiting for fresh session_start"],
+  ] as const) {
+    const g = goalOf({
+      interruptedAt: "2026-07-21T11:59:00Z",
+      interruptedReason,
+      pauseReason: "auditor disapproved",
+      auditHistory: [{
+        at: "2026-07-21T11:58:30Z",
+        approved: false,
+        disapproved: true,
+        model: "auditor",
+        report,
+      }],
+    });
+    const widget = buildWidgetLines({ goal: g, list: [] }, null, NOW)!;
+    const rendered = widget.join("\\n");
+    assert.ok(rendered.includes(lifecycleText), `lifecycle marker missing: ${rendered}`);
+    assert.ok(rendered.includes("auditor disapproved — durable required fixes"), rendered);
+    assert.ok(rendered.includes("required-fixes excerpt after lifecycle failure"), rendered);
+    assert.ok(rendered.includes("/goal resume"), rendered);
+  }
+});
+
 test("widget truncation is width-aware (v0.22.2)", () => {
   const longObjective = "x".repeat(200);
   const g = goalOf({ objective: longObjective });

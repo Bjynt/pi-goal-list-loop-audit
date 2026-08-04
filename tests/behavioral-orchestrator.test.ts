@@ -843,6 +843,45 @@ test("v0.34.48: host-session loss without replacement session_start parks durabl
   }
 });
 
+test("v0.35.x: host loss keeps durable auditor disapproval feedback visible", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    goal: seedGoal({
+      pauseReason: "auditor disapproved",
+      pauseSuggestedAction: "Inspect the required fixes, then /goal resume.",
+      auditHistory: [{
+        at: "2026-07-21T11:58:30Z",
+        approved: false,
+        disapproved: true,
+        model: "auditor",
+        report: "## Required fixes\\n- fix the pinned gap\\n<disapproved/>",
+      }],
+    }),
+  });
+  setGlobalAutoResume(true);
+  const first = await freshSession(cwd, "startup");
+  try {
+    await tick();
+    invalidateHostSession(pi, first);
+    __testOnlyHeartbeatTick();
+
+    const goal = readState(cwd).goal as { status: string; interruptedAt?: string; auditHistory?: Array<{ disapproved?: boolean }> };
+    assert.equal(goal.status, "active", "host loss leaves the goal recoverable");
+    assert.ok(goal.interruptedAt, "host loss writes the lifecycle marker");
+    assert.equal(goal.auditHistory?.at(-1)?.disapproved, true, "the semantic disapproval survives the lifecycle patch");
+    const widget = (first.ui.widgets["pi-glla"] as string[] | undefined) ?? [];
+    const rendered = widget.join("\\n");
+    assert.ok(rendered.includes("host session lost — waiting for fresh session_start"), rendered);
+    assert.ok(rendered.includes("auditor disapproved — durable required fixes"), rendered);
+    assert.ok(rendered.includes("fix the pinned gap"), rendered);
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    __testOnlyResetOwnerSession();
+  }
+});
+
 test("v0.34.25: silent swap — live file-backed successor is absorbed via a tool call and the work auto-resumes", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
