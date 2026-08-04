@@ -175,6 +175,60 @@ process.stdin.on("data", async (chunk) => {
   }
 });
 
+test("worker assembles streamed report fragments into cumulative display lines without changing the exact result", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-fragment-telemetry-"));
+  const fakePi = path.join(dir, "fragment-pi.mjs");
+  const reports: AuditorProgress[] = [];
+  const fakePiSource = `
+import { setTimeout as sleep } from "node:timers/promises";
+let handled = false;
+process.stdin.on("data", async (chunk) => {
+  if (handled || !String(chunk).includes("\\n")) return;
+  handled = true;
+  const out = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+  for (const delta of ["Audit summary", ":", " checked", "\\nNext line", " now", "\\n<disapproved/>"]) {
+    out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta } });
+    await sleep(25);
+  }
+  out({ type: "agent_settled" });
+});
+`;
+  await writeFile(fakePi, `#!/usr/bin/env node\n${fakePiSource}`);
+  await chmod(fakePi, 0o700);
+  try {
+    const result = await runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "high",
+      onProgress: (progress) => reports.push(progress),
+      runtime: {
+        workerPath: path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs"),
+        env: { GLLA_PI_BINARY: fakePi },
+        attemptId: () => "attempt-fragment-telemetry",
+        pollIntervalMs: 5,
+        wallTimeoutMs: 2_000,
+      },
+    });
+    assert.equal(result.disapproved, true);
+    assert.equal(result.output, "Audit summary: checked\nNext line now\n<disapproved/>");
+    assert.ok(
+      reports.some((progress) => progress.recentOutput.includes("Audit summary: checked")),
+      "the parent receives the cumulative current report line",
+    );
+    assert.ok(
+      reports.some((progress) => progress.recentOutput.includes("Next line now")),
+      "the parent receives a later logical line as one item",
+    );
+    assert.ok(
+      reports.every((progress) => !progress.recentOutput.some((line) => ["Audit summary", ":", " checked", "Next line", " now"].includes(line))),
+      "arbitrary text fragments are never presented as separate report lines",
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("approval without a read-only tool is a semantic disapproval", async () => {
   const dir = await setup();
   try {

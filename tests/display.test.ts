@@ -488,6 +488,16 @@ test("auditor widget shows concrete worker observations without exposing think b
   assert.match(joined, /latest: inspected README\.md/);
   assert.doesNotMatch(joined, /private reasoning|do not display this/);
   assert.match(joined, /worker activity 1s ago/);
+
+  const cumulativeReport = buildWidgetLines({ goal: g, list: [] }, {
+    phase: "producing_report",
+    recentOutput: ["Audit summary: checked", "Next line now"],
+    elapsedMs: 42_000,
+    lastActivityAt: NOW - 1_000,
+  }, NOW)!;
+  assert.match(cumulativeReport.join("\\n"), /latest: Next line now/);
+  assert.doesNotMatch(cumulativeReport.join("\\n"), /latest: (?:checked|:)/);
+
   const liveAuditStatus = buildStatusText({ goal: g, list: [] }, {
     phase: "tool_executing",
     currentTool: "read",
