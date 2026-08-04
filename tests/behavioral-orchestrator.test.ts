@@ -62,6 +62,21 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 4_000): Promise<v
   }
 }
 
+function readLedger(cwd: string): Array<{ type: string; value: Record<string, unknown> }> {
+  const file = path.join(cwd, ".pi-glla", "active.jsonl");
+  return fs.readFileSync(file, "utf8")
+    .trim()
+    .split("\\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as { type: string; value: Record<string, unknown> });
+}
+
+function ledgerEvent(cwd: string, type: string): { type: string; value: Record<string, unknown> } {
+  const event = readLedger(cwd).find((entry) => entry.type === type);
+  assert.ok(event, `ledger event ${type} exists`);
+  return event!;
+}
+
 function writeFakeAuditor(cwd: string, verdict: "approved" | "disapproved", delayMs = 0): string {
   const script = path.join(cwd, "fake-auditor-pi.mjs");
   fs.writeFileSync(script, `#!/usr/bin/env node
@@ -405,9 +420,19 @@ test("v0.34.24: continuation dispatch waits for owner start proof and clears its
 
   await pi.fire("before_agent_start", { prompt: content }, ctx);
   assert.equal(fs.existsSync(sidecar), false, "owner before_agent_start acknowledges and clears the sidecar");
-  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
-  assert.match(ledger, /continuation_start_acknowledged/);
-  assert.match(ledger, /"source":"before_agent_start"/);
+  const prepared = ledgerEvent(cwd, "continuation_dispatch_prepared").value;
+  const accepted = ledgerEvent(cwd, "continuation_dispatch_accepted").value;
+  const started = ledgerEvent(cwd, "continuation_start_acknowledged").value;
+  assert.equal(prepared.id, accepted.id, "dispatch ID is stable across prepare and acceptance");
+  assert.equal(accepted.id, started.id, "dispatch ID is stable through start proof");
+  assert.equal(accepted.generation, started.generation, "generation is retained through settlement");
+  assert.equal(typeof accepted.ownerSessionId, "string", "owner identity is recorded");
+  assert.equal(accepted.acknowledgement, "accepted", "send acknowledgement is explicit");
+  assert.equal(accepted.startProofSource, null, "acceptance does not masquerade as start proof");
+  assert.equal(typeof accepted.timeoutMs, "number", "the configured timeout is recorded");
+  assert.equal(started.startProofSource, "before_agent_start", "start-proof source is explicit");
+  assert.equal(started.settlement, "started", "started is a distinct settlement");
+  assert.equal(typeof started.settledAt, "number", "settlement time is recorded");
   await pi.command("goal", "pause", ctx);
 });
 
@@ -490,6 +515,13 @@ test("v0.34.24: missing start proof stands down durably and explicit resume send
     assert.equal(stoodDown.phase, "unacknowledged", "the failed proof is durable");
     assert.equal(pi.sent.length, 1, "the watchdog does not re-arm a second send");
     assert.ok(ctx.ui.matching("Automatic re-sends are stopped").length >= 1, "the stand-down is loud");
+    const timedOut = ledgerEvent(cwd, "continuation_start_unacknowledged").value;
+    assert.equal(timedOut.id, stoodDown.id, "timeout settles the same dispatch identity");
+    assert.equal(timedOut.acknowledgement, "accepted", "timeout preserves the enqueue acknowledgement");
+    assert.equal(timedOut.startProofSource, null, "timeout records that no start proof arrived");
+    assert.equal(typeof timedOut.timeoutMs, "number", "timeout budget is recorded");
+    assert.equal(timedOut.settlement, "unacknowledged", "timeout settlement is explicit");
+    assert.equal(typeof timedOut.timedOutAt, "number", "timeout time is recorded");
     assert.match(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8"), /"continuation_start_unacknowledged"/);
 
     await pi.command("goal", "resume", ctx);

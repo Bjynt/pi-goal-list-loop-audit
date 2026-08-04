@@ -32,7 +32,7 @@ export interface DispatchLifecycleTimestamps {
   timeoutMs?: number;
 }
 
-export interface ContinuationDispatch {
+export interface ContinuationDispatch extends DispatchLifecycleTimestamps {
   version: typeof DISPATCH_RECORD_VERSION;
   id: string;
   generation: number;
@@ -44,13 +44,6 @@ export interface ContinuationDispatch {
   sentAt: number;
   phase: DispatchPhase;
   resync: boolean;
-  /** v0.34.48: durable evidence for the accepted/start/settled boundaries. */
-  acceptedAt?: number;
-  startedAt?: number;
-  timedOutAt?: number;
-  settledAt?: number;
-  startProofSource?: string;
-  timeoutMs?: number;
 }
 
 export function dispatchRecordPath(cwd: string): string {
