@@ -873,6 +873,7 @@ function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   staleTerminalDone = false;
   sessionHandoffPending = false;
   sessionGeneration++; // a dead generation's delayed callbacks must not fire into the new owner
+  clearDraftingState(); // the old interview belongs to the disposed generation
   appendLedger(ctx.cwd, "session_rebind_via_live_ctx", { via, generation: sessionGeneration });
   if (interruptedAudit) {
     // The old generation's detached worker/result handler is now stale. Do
@@ -3648,12 +3649,6 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
     }
   }
   try {
-    ctx.ui.notify(
-      seed
-        ? seededHint
-        : `${label} started. The agent will grill until the contract is concrete, then ${tool} opens a Confirm dialog. No work begins before confirmation.`,
-      "info",
-    );
     const wasStale = extensionApiStale;
     const sent = safeSteerUser(ctx, tmpl);
     if (!sent) {
@@ -3666,6 +3661,12 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
       }
       return false;
     }
+    ctx.ui.notify(
+      seed
+        ? seededHint
+        : `${label} started. The agent will grill until the contract is concrete, then ${tool} opens a Confirm dialog. No work begins before confirmation.`,
+      "info",
+    );
     draftingUserReplies = 0;
     draftingBlockedProposals = 0;
     draftingSeedInFlight = true; // our injected prompt also arrives as a user message — don't count it
@@ -3781,6 +3782,9 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
     raw = raw.slice(1, -1).trim();
   }
   if (!raw) {
+    // A stale MAIN cannot deliver the interview seed. Do not create an
+    // orphaned drafting gate after the entry warning has fired.
+    if (staleEntry) return;
     await startDrafting(ctx, "goal");
     return;
   }
@@ -3793,6 +3797,7 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
   // Include an explicit "Done when: …" clause to activate instantly.
   // v0.16.0: /goal start bypasses this by explicit user command.
   if (!skipDraft && goalArgsNeedDrafting(raw)) {
+    if (staleEntry) return;
     await startDrafting(ctx, "goal", raw);
     return;
   }
@@ -6148,13 +6153,21 @@ function registerAgentTools(pi: any): void {
       const foreign2 = foreignToolGuard(execCtx);
       if (foreign2) return { content: [{ type: "text", text: foreign2 }], details: {} };
       const p = params as { objective: string; verificationContract?: string; items?: string[] };
-      const liveCtx = currentToolContext(execCtx);
+      let liveCtx = currentToolContext(execCtx);
       if (!liveCtx) return staleToolResult();
       if (draftingTarget !== "goal" && draftingTarget !== "list") {
         return {
           content: [{ type: "text", text: "Not in goal drafting mode. The user starts drafting with /goal or /list add (no args), or activates directly with /goal <objective>." }],
           details: {},
         };
+      }
+      const draftGeneration = sessionGeneration;
+      const staleDraftEntry = draftingTarget === "list"
+        ? warnIfStaleAtEntry(liveCtx, "list drafting")
+        : warnIfStaleAtEntry(liveCtx, "goal drafting");
+      if (staleDraftEntry) {
+        clearDraftingState();
+        return { content: [{ type: "text", text: DRAFT_SESSION_INTERRUPTED_MESSAGE }], details: {} };
       }
       // v0.28.14: one-active-thing EARLY guard — refuse the whole interview
       // when a loop is live (the post-confirm backstop below stays: state
@@ -6181,8 +6194,6 @@ function registerAgentTools(pi: any): void {
           details: {},
         };
       }
-      // v0.28.1 (S3): honest staleness warning before any Confirm attempt.
-      warnIfStaleAtEntry(liveCtx, "goal drafting");
       // Multi-item list draft: one Confirm for the whole batch.
       if (p.items && p.items.length > 0) {
         // v0.23.7: show ALL items in full — the user approves the whole
@@ -6200,6 +6211,12 @@ function registerAgentTools(pi: any): void {
             "Confirm list batch",
             `${p.items.length} items:\n${preview}${batchActivates ? "\n\n(List is empty — confirming ACTIVATES item 1 immediately as the active goal.)" : ""}`,
           );
+          const afterConfirm = freshCtxForGeneration(draftGeneration);
+          if (!afterConfirm) {
+            clearDraftingState();
+            return { content: [{ type: "text", text: DRAFT_SESSION_INTERRUPTED_MESSAGE }], details: {} };
+          }
+          liveCtx = afterConfirm;
           if (c === "stale") {
             // v0.28.1 (T1): a stale dialog is NOT a rejection — nothing was
             // refused; the dialog simply can't render in a doomed process.
@@ -6245,6 +6262,12 @@ function registerAgentTools(pi: any): void {
         appendLedger(liveCtx.cwd, "draft_autoaccepted", { kind: isListDraft ? "list" : "goal", objective: p.objective.trim().slice(0, 200) });
       } else {
         const c = await confirmDraft(liveCtx, isListDraft ? "Confirm list item" : "Confirm goal", `${sanitizeDisplayText(p.objective.trim())}${sanitizeDisplayText(contractBlock)}${activationNote}`);
+        const afterConfirm = freshCtxForGeneration(draftGeneration);
+        if (!afterConfirm) {
+          clearDraftingState();
+          return { content: [{ type: "text", text: DRAFT_SESSION_INTERRUPTED_MESSAGE }], details: {} };
+        }
+        liveCtx = afterConfirm;
         if (c === "stale") {
           // v0.28.1 (T1): a stale dialog is NOT "Draft rejected by the user".
           extensionApiStale = true;
@@ -8193,6 +8216,7 @@ export default function (pi: ExtensionAPI): void {
     markSessionOwnerShutdown(ctx.cwd, shutdownReason);
     writeSessionHandoff(ctx, shutdownReason);
     sessionReplacementUntil = Date.now() + SESSION_REBIND_GRACE_MS;
+    clearDraftingState();
     clearSessionOwnedTimers();
     toolsRegistered = false;
     toolHealNotified = false;
@@ -8241,6 +8265,7 @@ export default function (pi: ExtensionAPI): void {
     deadOwnerSession = null; // v0.34.25: a real session_start supersedes the silent-swap record
     deadOwnerCwd = null;
     sessionGeneration++;
+    clearDraftingState();
     // An auditor belonging to the disposed generation cannot block the fresh
     // session's recovery gate; its finally block is generation-guarded too.
     completionAuditInFlight = false;
