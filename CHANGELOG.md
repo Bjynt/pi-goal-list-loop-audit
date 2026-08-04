@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.34.46 — 2026-08-04
+
+### Improved — compact activity HUD
+
+- Replaced the animated live orbit with stable `[LIVE · WORKING]`,
+  `[QUEUED]`, `[BUSY]`, `[IDLE]`, and `[ACTIVE]` capsules.
+- Kept stream age, elapsed time, task progress, and queue counts visible in a
+  screenshot-friendly order; no liveness is inferred from animation.
+- Added golden coverage for the compact queued/live readouts and updated the
+  README examples.
+
 ## 0.34.45 — 2026-08-03
 
 ### Improved — bounded quota recovery and npm release discipline
