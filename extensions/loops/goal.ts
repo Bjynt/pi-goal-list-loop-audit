@@ -2203,9 +2203,35 @@ function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
   lastMainModelFailure = null;
   mainModelAbortForRecovery = false;
   continuationDispatchStoodDown = false;
-  appendLedger(ctx.cwd, "main_model_recovered", { model: modelRef(ctx.model), attempts: recovery.attempts });
-  persistState(ctx);
-  ctx.ui.notify(`Main session model recovered on ${modelRef(ctx.model) ?? "the active model"}; automatic recovery is cleared.`, "info");
+
+  // A pi-core retry can succeed after glla has already parked the goal. The
+  // old code cleared only the recovery record, leaving the goal durably
+  // paused (the next screenshot then looked like a stale QUOTA WALL). Resume
+  // only our own recovery wait — never a user decision/error pause.
+  const recoveryPause = state.goal
+    && state.goal.status === "paused"
+    && state.goal.pauseKind === "wait"
+    && (state.goal.pauseReason ?? "").startsWith("main model recovery —");
+  const recoveryLoop = state.loop
+    && !state.loop.active
+    && (state.loop.stopReason ?? "").startsWith("main model recovery —");
+  const resumed = recovery.kind === "goal" && recoveryPause
+    ? "goal"
+    : recovery.kind === "loop" && recoveryLoop
+      ? "loop"
+      : undefined;
+  appendLedger(ctx.cwd, "main_model_recovered", { model: modelRef(ctx.model), attempts: recovery.attempts, resumed });
+  if (resumed === "goal") {
+    updateGoal({ status: "active", pauseKind: undefined, pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined }, ctx);
+    scheduleContinuation(ctx, true, 1_000);
+  } else if (resumed === "loop") {
+    state.loop = { ...state.loop!, active: true, stopReason: undefined };
+    persistState(ctx);
+    scheduleLoopTick(ctx);
+  } else {
+    persistState(ctx);
+  }
+  ctx.ui.notify(`Main session model recovered on ${modelRef(ctx.model) ?? "the active model"}; automatic recovery is cleared${resumed ? ` and the ${resumed} is resuming` : ""}.`, "info");
 }
 
 /** Handle a provider error before loop/goal bookkeeping can mistake it for

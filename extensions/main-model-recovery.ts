@@ -5,7 +5,7 @@
 // configured candidates, classifies provider failures, and computes a
 // bounded-but-persistent retry cadence.
 
-import { isBillingError, isQuotaError, parseQuotaError } from "./quota-retry.js";
+import { isBillingError, isQuotaError, parseQuotaError, type QuotaSignal } from "./quota-retry.js";
 
 export const MAIN_MODEL_MAX_RETRY_DELAY_MS = 5 * 60 * 60_000;
 export const MAIN_MODEL_AUTO_RETRY_HORIZON_MS = 24 * 60 * 60_000;
@@ -18,6 +18,8 @@ export interface MainModelFailure {
   retryAfterSec?: number;
   retryFromUpstream?: boolean;
   resetAt?: string;
+  /** More specific quota family; plan walls must not be treated as generic 429s. */
+  quotaSignal?: QuotaSignal;
 }
 
 /** Return a canonical provider/model reference for a pi model-like object. */
@@ -78,7 +80,14 @@ export function classifyMainModelFailure(error: string | undefined): MainModelFa
   // wait and the total recovery horizon.
   if (isQuotaError(raw)) {
     const parsed = parseQuotaError(raw);
-    return { kind: "quota", raw, retryAfterSec: parsed.retryAfterSec, retryFromUpstream: parsed.fromUpstream, resetAt: parsed.resetAt };
+    return {
+      kind: "quota",
+      raw,
+      retryAfterSec: parsed.retryAfterSec,
+      retryFromUpstream: parsed.fromUpstream,
+      resetAt: parsed.resetAt,
+      quotaSignal: parsed.signal,
+    };
   }
   if (/401|403|unauthori[sz]ed|forbidden|invalid (?:api|access) key|authentication|no api key|credential/.test(text)) {
     return { kind: "auth", raw };

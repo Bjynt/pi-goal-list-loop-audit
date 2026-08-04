@@ -18,6 +18,7 @@ import {
   isBillingError,
   isQuotaError,
   parseQuotaError,
+  quotaSignal,
   quotaRetryDelaySeconds,
   scheduleQuotaRetry,
   cancelQuotaRetry,
@@ -51,6 +52,15 @@ test("quota classification stays conservative around ambiguous provider errors",
   assert.equal(isQuotaError("429 Too Many Requests"), true);
   assert.equal(isBillingError("insufficient credits"), true);
   assert.equal(isBillingError("429 Too Many Requests"), false);
+});
+
+test("specific plan and billing walls outrank a generic 429", () => {
+  const minimax = "429 {\"error\":{\"type\":\"rate_limit_error\",\"message\":\"Token Plan rate limit reached: Upgrade your Token Plan or switch to pay-as-you-go API usage. (2062)\"}}";
+  assert.equal(quotaSignal(minimax), "plan-quota");
+  assert.equal(parseQuotaError(minimax).signal, "plan-quota");
+  assert.equal(quotaSignal("429 insufficient_quota"), "billing");
+  assert.equal(quotaSignal("temporarily rate-limited upstream"), "rate-limit");
+  assert.equal(quotaSignal("Model stopped because it reached the maximum output token limit"), undefined);
 });
 
 test("parseQuotaError: JSON reset fields and HTTP-date reset are understood", () => {
