@@ -1781,6 +1781,64 @@ test("v0.34.21 lifecycle: cold startup holds a recovered claim until explicit re
   assert.ok((ctx.ui.widgets["pi-glla"] as string[]).some((line) => line.includes("MAIN host remains attached")), "the widget names the live MAIN host");
 });
 
+test("v0.35.x: stale host loss releases an in-flight completion audit without a verdict", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const fakePi = writeFakeAuditor(cwd, "approved", 5_000);
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = fakePi;
+  try {
+    const first = await freshSession(cwd, "startup");
+    await pi.command("goal", "start no-verdict host-loss target — done when pinned", first);
+    await tick();
+    const audit = pi.runTool("complete_goal", {
+      completionSummary: "The claim must survive a dead auditor host.",
+      verificationSummary: "No semantic verdict is allowed when the host disappears.",
+    }, first);
+    await waitUntil(() => (readState(cwd).goal as { status?: string } | null)?.status === "auditing");
+
+    invalidateHostSession(pi, first);
+    __testOnlyHeartbeatTick();
+
+    const released = readState(cwd).goal as {
+      status: string;
+      pauseKind?: string;
+      pauseReason?: string;
+      pendingCompletion?: { phase?: string; completionSummary?: string };
+    };
+    assert.equal(released.status, "paused", "host loss releases MAIN instead of leaving it auditing");
+    assert.equal(released.pauseKind, "blocked");
+    assert.match(released.pauseReason ?? "", /completion audit blocked — no verdict/);
+    assert.equal(released.pendingCompletion?.phase, "recovery-pending");
+    assert.equal(released.pendingCompletion?.completionSummary, "The claim must survive a dead auditor host.");
+    const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+    assert.match(ledger, /"audit_recovery_pending"/);
+    assert.match(ledger, /"mainReleased":true/);
+
+    // A live file-backed successor may reclaim MAIN ownership, but it must
+    // not mistake the old detached worker for a live audit or auto-resend it.
+    const successor = makeMockCtx(cwd, {
+      sessionManager: {
+        name: "audit-successor-session-manager",
+        getSessionFile: () => path.join(cwd, "audit-successor-session.jsonl"),
+        getSessionId: () => "audit-successor-1",
+      },
+    });
+    const res = await pi.runTool("list_add", { items: ["after no-verdict recovery"] }, successor);
+    assert.doesNotMatch(res.content[0]!.text, /only the MAIN session owns/);
+    const afterSuccessor = readState(cwd).goal as { status: string; pendingCompletion?: { phase?: string } };
+    assert.equal(afterSuccessor.status, "paused", "successor keeps the no-verdict hold visible");
+    assert.equal(afterSuccessor.pendingCompletion?.phase, "recovery-pending");
+    const afterLedger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+    assert.doesNotMatch(afterLedger, /"audit_recovery_started"/, "successor does not launch a blind retry");
+    await audit;
+    __testOnlyResetOwnerSession();
+  } finally {
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
 test("v0.34.29: audit fan-out honors autoAcceptDrafts without opening confirmation", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();

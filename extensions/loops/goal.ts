@@ -8509,7 +8509,8 @@ export default function (pi: ExtensionAPI): void {
     if (state.goal?.status === "auditing" && state.goal.pendingCompletion) {
       markCompletionAuditRecoveryPending(ctx, `session_start:${startReason}`);
       const canRecoverNow = explicitRecovery || autoResume;
-      if (canRecoverNow && state.goal?.status === "paused" && state.goal.pendingCompletion) {
+      const recoveredClaim = state.goal?.pendingCompletion;
+      if (canRecoverNow && recoveredClaim) {
         completionAuditRecoveryArmed = true;
         void retryStoredCompletionAudit("session-recovery");
       } else {

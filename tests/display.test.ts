@@ -493,7 +493,7 @@ test("auditor widget shows concrete worker observations without exposing think b
     currentTool: "read",
     lastActivityAt: NOW - 1_000,
   }, NOW)!;
-  assert.match(liveAuditStatus, /auditor tool executing \[[▁▂▄▆█]{6} DETACHED · LIVE\] · read/);
+  assert.match(liveAuditStatus, /auditor tool executing \[[▁▂▄▆█]{6} AUDITOR · DETACHED · LIVE\] · read/);
 
   const streamedThink = buildWidgetLines({ goal: g, list: [] }, {
     phase: "thinking",
@@ -667,6 +667,29 @@ test("active auditor infrastructure failure is visible as blocked, not green pro
   const s = buildStatusText(state as never)!;
   assert.match(s, /auditor blocked — no verdict/);
   assert.doesNotMatch(s, /glla: ●/);
+});
+
+test("released auditor no-verdict state names the attached MAIN host", () => {
+  const g = goalOf({
+    status: "paused",
+    pauseKind: "blocked",
+    pauseReason: "completion audit blocked — no verdict: silent host successor",
+    pauseSuggestedAction: "The completion claim is stored; /goal resume starts exactly one fresh auditor.",
+    pendingCompletion: {
+      at: "2026-07-21T11:59:00Z",
+      phase: "recovery-pending",
+      attemptId: "audit-no-verdict",
+      completionSummary: "stored claim",
+    },
+  });
+  const state = { goal: g, list: [], loop: null };
+  const widget = buildWidgetLines(state as never)!;
+  assert.ok(widget.some((line) => line.includes("auditor: blocked — no verdict")), widget.join("\\n"));
+  assert.ok(widget.some((line) => line.includes("MAIN host remains attached")), widget.join("\\n"));
+  assert.ok(widget.some((line) => line.includes("/goal resume")), widget.join("\\n"));
+  const status = buildStatusText(state as never)!;
+  assert.match(status, /MAIN HOST · auditor blocked — no verdict/);
+  assert.doesNotMatch(status, /DETACHED · LIVE/);
 });
 
 test("active auditor verdicts never masquerade as infrastructure no-verdict", () => {
