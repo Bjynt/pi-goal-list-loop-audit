@@ -1799,6 +1799,10 @@ test("v0.35.x: stale host loss releases an in-flight completion audit without a 
 
     invalidateHostSession(pi, first);
     __testOnlyHeartbeatTick();
+    // The replacement is a fresh host transport; clear the mock's injected
+    // stale errors before exercising its explicit recovery command.
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
 
     const released = readState(cwd).goal as {
       status: string;
@@ -1844,6 +1848,9 @@ test("v0.35.x: stale host loss releases an in-flight completion audit without a 
     await audit;
     __testOnlyResetOwnerSession();
   } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    __testOnlyResetOwnerSession();
     if (previous === undefined) delete process.env.GLLA_PI_BINARY;
     else process.env.GLLA_PI_BINARY = previous;
   }
