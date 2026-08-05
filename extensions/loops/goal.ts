@@ -9,7 +9,7 @@
  *
  * Command surface (v0.8.0 — four top-level commands):
  *   /goal "<objective>" | /goal (draft) | /goal status|pause|resume|cancel|tweak <text>|archive
- *   /list add|show|next|remove|clear
+ *   /list add|show|tweak|next|remove|clear
  *   /loop (draft) | /loop start|status|stop
  *   /glla (settings UI) | /glla <action>
  */
@@ -4108,9 +4108,16 @@ async function cmdGoals(ctx: ExtensionContext): Promise<void> {
   );
 }
 
-async function cmdTweak(args: string, ctx: ExtensionContext): Promise<void> {
-  if (!state.goal || state.goal.status !== "active") {
-    ctx.ui.notify("No active goal to tweak. /goal <objective> to start one.", "info");
+async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "list" = "goal"): Promise<void> {
+  const current = state.goal;
+  const expectedStatus = mode === "list" ? "paused" : "active";
+  if (!current || current.status !== expectedStatus || (mode === "list" && current.policy !== "list")) {
+    ctx.ui.notify(
+      mode === "list"
+        ? "No paused list item to tweak. /list tweak <replacement objective, optional 'Done when: ...' clause>"
+        : "No active goal to tweak. /goal <objective> to start one.",
+      "info",
+    );
     return;
   }
   let raw = args.trim();
@@ -4118,17 +4125,21 @@ async function cmdTweak(args: string, ctx: ExtensionContext): Promise<void> {
     raw = raw.slice(1, -1).trim();
   }
   if (!raw) {
-    ctx.ui.notify("Usage: /goal tweak <replacement objective, optional 'Done when: ...' clause>", "info");
+    ctx.ui.notify(
+      mode === "list"
+        ? "Usage: /list tweak <replacement objective, optional 'Done when: ...' clause>"
+        : "Usage: /goal tweak <replacement objective, optional 'Done when: ...' clause>",
+      "info",
+    );
     return;
   }
-  const current = state.goal;
   const proposed = extractVerificationContract(raw);
   const newObjective = proposed.objective;
   const newContract = proposed.verificationContract;
   let confirmed = false;
   try {
     confirmed = await ctx.ui.confirm(
-      "Tweak goal?",
+      mode === "list" ? "Tweak list item?" : "Tweak goal?",
       `CURRENT:\n${sanitizeDisplayText(current.objective)}\n\nNEW:\n${sanitizeDisplayText(newObjective)}` +
       (newContract ? `\n\nNew contract:\n${sanitizeDisplayText(newContract)}` : "\n\n(New text carries no contract; old contract is dropped.)"),
     );
@@ -4140,7 +4151,15 @@ async function cmdTweak(args: string, ctx: ExtensionContext): Promise<void> {
     return;
   }
   updateGoal({ objective: newObjective, verificationContract: newContract }, ctx);
-  appendLedger(ctx.cwd, "goal_tweaked", { goalId: current.id, objective: newObjective });
+  appendLedger(ctx.cwd, "goal_tweaked", {
+    goalId: current.id,
+    objective: newObjective,
+    via: mode === "list" ? "/list tweak" : "/goal tweak",
+  });
+  if (mode === "list") {
+    ctx.ui.notify("List item tweaked; it remains paused. /list resume to continue.", "info");
+    return;
+  }
   ctx.ui.notify("Goal tweaked. The loop continues against the new objective.", "info");
   scheduleContinuation(ctx, true);
 }
@@ -4313,6 +4332,11 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     }
     const stats = computeListDepth(listQueue(), entries, Date.now());
     ctx.ui.notify(`/list depth: ${formatListDepth(stats)}`, "info");
+    return;
+  }
+
+  if (sub === "tweak") {
+    await cmdTweak(rest, ctx, "list");
     return;
   }
 
@@ -7963,7 +7987,7 @@ export default function (pi: ExtensionAPI): void {
   startUITicker();
   // Four top-level commands, that's all (v0.8.0 consolidation):
   //   /goal  — set/draft + status|pause|resume|cancel|tweak|archive subcommands
-  //   /list — the list (add|show|next|remove|clear)
+  //   /list — the list (add|show|tweak|next|remove|clear)
   //   /loop  — the metric loop (draft|start|status|stop)
   //   /glla   — the settings UI; nonempty arguments are actions
   // v0.22.5: subcommand autocomplete for the /-menu.
@@ -8021,11 +8045,12 @@ export default function (pi: ExtensionAPI): void {
     handler: (args: string, ctx: ExtensionContext) => { rememberCtx(ctx); return cmdReview(args, ctx); },
   });
   pi.registerCommand("list", {
-    description: "Loop 2: the list of audited goals — order is the default, not the law. /list <describe tasks or name a plan file> (dumps get shaped into items, files import, 'Done when:' adds directly) | /list audit [focus] (collect findings, then drain them as items) | /list show | /list resume | /list next [n] | /list remove <n> | /list clear | /list cancel",
+    description: "Loop 2: the list of audited goals — order is the default, not the law. /list <describe tasks or name a plan file> (dumps get shaped into items, files import, 'Done when:' adds directly) | /list audit [focus] (collect findings, then drain them as items) | /list show | /list resume | /list tweak <text> | /list next [n] | /list remove <n> | /list clear | /list cancel",
     getArgumentCompletions: completions([
       ["show", "display the waiting items"],
       ["audit", "collect-then-drain: audit the project, queue every finding as its own item"],
       ["resume", "resume the paused list item (the list's head)"],
+      ["tweak", "change the paused list item: /list tweak <text>"],
       ["next", "activate the next item (or /list next <n> for position n)"],
       ["remove", "remove an item: /list remove <n>"],
       ["clear", "empty the list"],
