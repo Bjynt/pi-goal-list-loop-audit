@@ -348,6 +348,27 @@ export const LIST_DRAFTING_BLOCK_MESSAGE =
   "LIST DRAFTING IN PROGRESS — do not add items one by one. Decompose the request into an items[] array and call propose_goal_draft ONCE: the user confirms the whole batch in a single dialog. list_add / list_activate work again after the drafting session ends.";
 
 /**
+ * v0.34.51: /list subcommands that persist or activate work — refused on a
+ * stale extension handle by cmdList's entry probe. Read-only verbs (show,
+ * depth, status) stay available so the user can still inspect the queue
+ * while the lifecycle replacement is pending. The natural-language dump
+ * fallthrough is always mutating and is gated separately at the call site.
+ */
+export const LIST_MUTATING_SUBCOMMANDS = new Set([
+  "audit",
+  "tweak",
+  "pause",
+  "resume",
+  "add",
+  "import",
+  "clear",
+  "cancel",
+  "next",
+  "remove",
+  "rm",
+]);
+
+/**
  * Route natural-language text handed to `/list` with no subcommand verb
  * (v0.18.0). The user typed a dump — "fix x, do y, write docs" — not a
  * command. Flexible by detection, never a usage error:

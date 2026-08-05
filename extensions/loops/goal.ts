@@ -67,6 +67,7 @@ import {
   routeListText,
   listMutationBlocked,
   LIST_DRAFTING_BLOCK_MESSAGE,
+  LIST_MUTATING_SUBCOMMANDS,
   sumNewAssistantTokens,
   takeAt,
   countTrailingDisapprovals,
@@ -4273,10 +4274,22 @@ async function bulkAddFromFile(ctx: ExtensionContext, abs: string): Promise<void
 
 async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
   // v0.28.1 (S3): honest staleness warning; read-only subcommands still work.
-  warnIfStaleAtEntry(ctx, "/list");
+  const staleEntry = warnIfStaleAtEntry(ctx, "/list");
   const parts = args.trim().split(/\s+/);
   const sub = (parts[0] ?? "").toLowerCase();
   const rest = args.trim().slice(sub.length).trim();
+
+  // v0.34.51: mutating subcommands are REFUSED on a stale handle. An
+  // add/clear/cancel/next/remove in a doomed process would persist state the
+  // stale session can neither announce nor run — an idle-queue add even
+  // activates a goal that can never start, without the interrupt marker
+  // goStaleTerminal stamps on send failures. The entry probe already printed
+  // the honest recovery result; the user's command belongs to the fresh
+  // instance after the lifecycle replacement.
+  if (staleEntry && LIST_MUTATING_SUBCOMMANDS.has(sub)) {
+    appendLedger(ctx.cwd, "list_mutation_refused_stale", { sub });
+    return;
+  }
 
   if (sub === "audit") {
     // v0.31.0: /list audit [focus] — collect-then-drain (user design
@@ -4499,6 +4512,11 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
   let raw = args.trim();
   if (raw.length >= 2 && ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'")))) {
     raw = raw.slice(1, -1).trim();
+  }
+  // The dump fallthrough is always mutating — refuse it on a stale handle.
+  if (staleEntry) {
+    appendLedger(ctx.cwd, "list_mutation_refused_stale", { sub: "dump" });
+    return;
   }
   const route = routeListText(ctx.cwd, raw);
   if (route.kind === "file") {
