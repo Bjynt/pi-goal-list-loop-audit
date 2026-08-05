@@ -72,6 +72,9 @@ function modelResolveRegisteredCommands(exts: ModelExt[]): ModelCommand[] {
   return commands.map((c) => {
     const occurrence = (seen.get(c.name) ?? 0) + 1;
     seen.set(c.name, occurrence);
+    // Shipped semantics (runner.js resolveRegisteredCommands): a name with
+    // count > 1 gives EVERY occurrence a suffixed invocation name — the
+    // FIRST is `name:1`, not bare `name`. The bare name is owned by nobody.
     let invocationName = (counts.get(c.name) ?? 0) > 1 ? `${c.name}:${occurrence}` : c.name;
     if (takenInvocationNames.has(invocationName)) {
       let suffix = occurrence;
@@ -90,7 +93,7 @@ function modelGetCommand(resolved: ModelCommand[], name: string): ModelCommand |
   return resolved.find((c) => c.invocationName === name);
 }
 
-test("v0.34.55: model — the first registrant in load order wins the bare name; duplicates get :N suffixes", () => {
+test("v0.34.55: model — a collided name is suffixed for EVERY registrant; the bare name becomes unowned", () => {
   const table = modelResolveRegisteredCommands([
     { id: "ext-a", commands: ["list", "glla"] },
     { id: "ext-b", commands: ["list"] },
@@ -98,13 +101,15 @@ test("v0.34.55: model — the first registrant in load order wins the bare name;
   ]);
   assert.deepEqual(
     table.map((c) => `${c.ext}->${c.invocationName}`),
-    ["ext-a->list", "ext-a->glla", "ext-b->list:2", "ext-c->glla:2", "ext-c->list:3"],
-    "first registrant keeps the bare name; later ones are silently suffixed in occurrence order",
+    ["ext-a->list:1", "ext-a->glla:1", "ext-b->list:2", "ext-c->glla:2", "ext-c->list:3"],
+    "shipped semantics: EVERY occurrence of a duplicated name gets a :N suffix, the first included",
   );
-  const winner = modelGetCommand(table, "list")!;
-  assert.equal(winner.ext, "ext-a", "dispatch resolves the bare name to the FIRST registration");
-  assert.equal(modelGetCommand(table, "glla")!.ext, "ext-a", "same for glla");
-  assert.equal(modelGetCommand(table, "list:2")!.ext, "ext-b", "the suffix names still route to their registrants");
+  // The killer consequence: the BARE name is owned by nobody under a
+  // collision — dispatch (getCommand) cannot route `/list` at all.
+  assert.equal(modelGetCommand(table, "list"), undefined, "bare /list is unroutable when two extensions register it");
+  assert.equal(modelGetCommand(table, "glla"), undefined, "bare /glla is unroutable when two extensions register it");
+  assert.equal(modelGetCommand(table, "list:1")!.ext, "ext-a", "the earliest registrant owns list:1");
+  assert.equal(modelGetCommand(table, "glla:1")!.ext, "ext-a", "the earliest registrant owns glla:1");
   assert.equal(modelGetCommand(table, "loop"), undefined, "an unregistered name has no handler");
 });
 
@@ -115,10 +120,11 @@ test("v0.34.55: model — within-extension re-registration is last-wins (Map.set
   ]);
   assert.deepEqual(
     table.map((c) => `${c.ext}->${c.invocationName}`),
-    ["ext-a->list", "ext-a->glla", "ext-b->list:2"],
-    "the duplicate registerCommand within one extension collapses to one entry",
+    ["ext-a->list:1", "ext-a->glla", "ext-b->list:2"],
+    "the duplicate registerCommand within one extension collapses to one entry (no self-collision)",
   );
-  assert.equal(modelGetCommand(table, "list")!.ext, "ext-a");
+  assert.equal(modelGetCommand(table, "glla")!.ext, "ext-a", "a singly-registered name keeps its bare command");
+  assert.equal(modelGetCommand(table, "list"), undefined, "a cross-extension duplicate still unowns the bare name");
 });
 
 // ────────────────────────────────────────────────────────────────────
@@ -321,7 +327,9 @@ test("v0.34.55: live rig — the routing table records duplicate-command routing
     }
     assert.equal(row.registrants, row.registrants, "self-consistent count");
     assert.match(recorded, new RegExp(`\\| ${command} \\|`), `report records ${command}`);
-    if (row.winner.entry.startsWith(repoRoot) || row.winner.source.includes("pi-goal-loop-audit")) {      assert.ok(row.suffixed.length === 0, `on this rig the repo is the SOLE registrant of /${command} — bare name, no suffix`);
+    if (row.winner.entry.startsWith(repoRoot) || row.winner.source.includes("pi-goal-loop-audit")) {
+      assert.ok(row.bareOwned, `on this rig the repo is the SOLE registrant of /${command} — the bare name is owned and routes`);
+      assert.ok(row.suffixed.length === 1, `no suffixed shadow names for /${command}`);
     } else {
       // A different earlier registrant won — the honest record names it;
       // the assertion documents that pi routes the bare name to it.
