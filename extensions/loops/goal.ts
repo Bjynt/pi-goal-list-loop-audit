@@ -4505,6 +4505,21 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     return;
   }
 
+  // v0.34.53: /list settings is not a list verb — it used to fall into the
+  // natural-language dump and start a drafting interview with seed
+  // "settings". Settings live under /glla: the bare command opens the
+  // settings table and the action verbs (status, resume, wipe, …) live
+  // there too. Redirect explicitly — never draft from a settings query.
+  // Read-only: works on a stale handle too, like the /glla read-only actions.
+  if (sub === "settings") {
+    appendLedger(ctx.cwd, "list_settings_redirect", {});
+    ctx.ui.notify(
+      "Settings are under /glla, not /list — bare /glla opens the settings table (status/log/stats/audits and the actions live there too).",
+      "info",
+    );
+    return;
+  }
+
   // v0.18.0: an unknown first word isn't an error — it's a natural-language
   // dump. "/list fix the login bug, add dark mode, write docs" should MAKE
   // a list, not print usage. Detection chain: file → batch → contract →
@@ -8040,9 +8055,10 @@ export default function (pi: ExtensionAPI): void {
     handler: (args: string, ctx: ExtensionContext) => { rememberCtx(ctx); return cmdReview(args, ctx); },
   });
   pi.registerCommand("list", {
-    description: "Loop 2: the list of audited goals — order is the default, not the law. /list <describe tasks or name a plan file> (dumps get shaped into items, files import, 'Done when:' adds directly) | /list audit [focus] (collect findings, then drain them as items) | /list show | /list resume | /list tweak <text> | /list next [n] | /list remove <n> | /list clear | /list cancel",
+    description: "Loop 2: the list of audited goals — order is the default, not the law. /list <describe tasks or name a plan file> (dumps get shaped into items, files import, 'Done when:' adds directly) | /list audit [focus] (collect findings, then drain them as items) | /list show | /list resume | /list tweak <text> | /list next [n] | /list remove <n> | /list clear | /list cancel. Settings are under /glla, not /list — bare /glla opens the settings table.",
     getArgumentCompletions: completions([
       ["show", "display the waiting items"],
+      ["settings", "settings live under /glla — bare /glla opens the settings table"],
       ["audit", "collect-then-drain: audit the project, queue every finding as its own item"],
       ["resume", "resume the paused list item (the list's head)"],
       ["tweak", "change the paused list item: /list tweak <text>"],
