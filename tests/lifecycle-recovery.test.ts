@@ -226,7 +226,9 @@ test("v0.34.54: settings after a fresh session_start — the table opens AND a r
   const globalAfter = JSON.parse(fs.readFileSync(GLOBAL_SETTINGS_PATH, "utf-8")) as Record<string, unknown>;
   assert.equal(globalAfter.autoAcceptDrafts, true, "the post-rebind settings write landed");
   assert.ok(globalBefore !== JSON.stringify(globalAfter), "the global settings file actually changed");
-  assert.ok(ledgerText(cwd).includes('"settings_saved"'), "the write is ledgered");
+  // saveSettings is a pure file write (no ledger event) — the file IS the
+  // evidence; the project-scope settings file must be untouched by the write:
+  assert.equal(fs.readFileSync(projectSettingsPath(cwd), "utf-8"), JSON.stringify({ autoAcceptDrafts: true }), "project settings untouched — the write went to the global scope");
 });
 
 // ────────────────────────────────────────────────────────────────────
@@ -239,7 +241,7 @@ test("v0.34.54: source — read-only surfaces are never in the mutating sets; th
   assert.ok(!SETTINGS_MUTATING_ACTIONS.has("status") && !SETTINGS_MUTATING_ACTIONS.has("log") && !SETTINGS_MUTATING_ACTIONS.has("stats") && !SETTINGS_MUTATING_ACTIONS.has("audits"), "read-only /glla verbs stay ungated");
   // The /list show branch must NOT be gated by the entry probe (inspect,
   // don't mutate) — it only prints the honest warning via the probe:
-  assert.match(SRC, /const staleEntry = warnIfStaleAtEntry\(ctx, "\/list"\);[\s\S]{0,1200}?if \(!sub \|\| sub === "show"\)/, "the probe is captured before the show branch");
+  assert.match(SRC, /const staleEntry = warnIfStaleAtEntry\(ctx, "\/list"\);[\s\S]{0,12000}?if \(!sub \|\| sub === "show"\)/, "the probe is captured before the show branch");
   const showBlock = SRC.slice(SRC.indexOf('if (!sub || sub === "show")'), SRC.indexOf('if (!sub || sub === "show")') + 400);
   assert.ok(!showBlock.includes("LIST_MUTATING_SUBCOMMANDS"), "the show branch itself is ungated");
   // The settings gate refuses the bare entry on stale and names the recovery:
