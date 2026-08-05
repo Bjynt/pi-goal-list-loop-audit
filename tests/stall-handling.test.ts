@@ -462,7 +462,7 @@ test("v0.34.51: the hanging-verification cause is named by the timeout branch (p
   // an explicit resume.
   assert.match(g, /Check long-running verification commands, then \$\{activeGoalSurfaceCommand\("resume"\)\} to retry the isolated auditor\./, "timeout action names long-running commands");
   assert.match(g, /completion audit timed out — \$\{result\.error\}/, "timeout reason keeps the raw error");
-  assert.match(g, /A watchdog timeout is infrastructure, but unlike a normal one-shot/, "timeout branch keeps its identity comment");
+  assert.match(g, /Watchdog timeouts are infrastructure failures, but retain the exact/, "timeout branch keeps its identity comment");
   assert.ok(!g.includes("a verification command is hanging (ssh/sudo/long test runs stall the stream)"), "3-strike pauseReason gone");
   assert.ok(!g.includes("model broken or a verification command hanging"), "3-strike notify gone");
 });
