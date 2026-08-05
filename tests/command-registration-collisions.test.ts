@@ -10,28 +10,32 @@
 //   1. A hermetic MODEL of pi's command merge semantics (read from the
 //      installed pi core's loader, never modified): each extension keeps its
 //      own commands Map (within-extension re-registration = last wins);
-//      resolveRegisteredCommands() flattens extensions IN LOAD ORDER and,
-//      when N registrations share a name, the FIRST keeps the bare name and
-//      later ones are silently renamed `name:2`, `name:3`, …; dispatch
-//      (getCommand) find()s the FIRST — so the winner is the earliest
-//      registrant in the load order. Duplicate registrations are never
-//      reported by pi itself (commandDiagnostics is reset but never
-//      populated) — this test is the recording diagnostic pi lacks.
+//      resolveRegisteredCommands() flattens extensions IN LOAD ORDER and
+//      suffixes EVERY registration of a duplicated name (`name:1`, `name:2`,
+//      …) — the BARE command name becomes owned by NOBODY, so dispatch
+//      (getCommand) cannot route `/list` at all while a collision exists.
+//      A singly-registered name keeps its bare command. Duplicate
+//      registrations are never reported by pi itself (commandDiagnostics is
+//      reset but never populated) — this test is the recording diagnostic pi
+//      lacks.
 //   2. A LIVE RIG SCAN: resolves the real extension load order (project
 //      .pi/extensions → agent dir extensions → project packages → global
 //      settings.json packages), scans every loaded extension's entry source
 //      for registerCommand("list"|"glla"|"goal"|"loop"), computes the
-//      routing table with the model's winner rule, and RECORDS it to
+//      routing table with the model's rule, and RECORDS it to
 //      audit/command-registration-routing.md. Skips (t.skip) when the pi
 //      agent dir is absent (CI / non-pi rigs); never writes to pi core.
 //
 // 2026-08-05 live finding: the only loaded registrant of goal/glla/list/loop
-// is this repo (packages[10] = /home/dracon/Dev/pi-goal-loop-audit). The
-// installed-but-unconfigured goal plugins (@fractaal/pi-goal-x,
-// @narumitw/pi-goal, pi-codex-goal, the npm copy of this package) are NOT in
-// settings.json packages, so pi never loads them — no collision today. The
-// report records them as a hazard: adding one BEFORE this package to the
-// packages list would silently hand it /list and /glla (first-wins).
+// is this repo (global packages[10] = /home/dracon/Dev/pi-goal-loop-audit)
+// — every command is singly registered, so all four bare names route to it.
+// The installed-but-unconfigured goal plugins (@fractaal/pi-goal-x,
+// @narumitw/pi-goal, @capyup/pi-goal, @misunders2d/pi-goal, pi-goal-x,
+// pi-codex-goal, the npm copies of this package) are NOT in settings.json
+// packages, so pi never loads them — no collision today. The report records
+// them as a hazard: adding ANY one of them to the packages list would
+// SUFFIX BOTH registrations — /list and /glla would stop routing entirely
+// (bare name unowned), and the model would only see `list:1`, `glla:1`, ….
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
@@ -253,16 +257,20 @@ test("v0.34.55: live rig — the routing table records duplicate-command routing
     }
   }
 
-  // Winner rule (Part 1 model): first registrant in load order keeps the
-  // bare name; later ones would be suffixed :2, :3 and unreachable bare.
+  // Winner rule (Part 1 model): a singly-registered name keeps its bare
+  // command (owned by its one registrant). A duplicated name suffixes EVERY
+  // registration `name:1..N` — the bare name is owned by nobody and the
+  // earliest registrant is only reachable as `name:1`.
   const routing = [...perCommand.entries()].map(([command, regs]) => {
     const winner = regs[0]!; // regs is non-empty: it came from perCommand entries
-    const duplicates = regs.slice(1);
     return {
       command,
       registrants: regs.length,
+      bareOwned: regs.length === 1,
       winner: { source: winner.source, entry: winner.entry },
-      suffixed: duplicates.map((d) => `${command}:${duplicates.indexOf(d) + 2}`),
+      // Renaming only applies under a collision; a single registrant keeps
+      // its bare name with no shadow names.
+      suffixed: regs.length === 1 ? [] : regs.map((_, i) => `${command}:${i + 1}`),
     };
   });
   routing.sort((a, b) => a.command.localeCompare(b.command));
@@ -274,23 +282,23 @@ test("v0.34.55: live rig — the routing table records duplicate-command routing
     `- Recorded: ${new Date().toISOString()}`,
     `- Agent dir: ${AGENT_DIR}`,
     `- Loaded extensions scanned: ${loaded.length}`,
-    `- Winner rule (pi resolveRegisteredCommands): the FIRST registrant in load order keeps the bare command name; duplicates get \`:N\` suffixes and are unreachable via the bare name. Within one extension, re-registration is last-wins (Map).`,
+    `- Winner rule (pi resolveRegisteredCommands): a SINGLY-registered name keeps its bare command (that registrant wins). A DUPLICATED name suffixes EVERY registration — \`name:1\`, \`name:2\`, … — the bare command becomes owned by nobody and dispatch stops routing it. Within one extension, re-registration is last-wins (Map).`,
     "",
     "## Routing table",
     "",
-    "| command | registrants | winner (source) | winner (entry) | suffixed duplicates |",
-    "|---|---|---|---|---|",
+    "| command | registrants | bare name owned? | winner (source) | winner (entry) | suffixed names |",
+    "|---|---|---|---|---|---|",
   ];
   for (const r of routing) {
-    lines.push(`| ${r.command} | ${r.registrants} | ${r.winner.source} | ${r.winner.entry} | ${r.suffixed.join(", ") || "—"} |`);
+    lines.push(`| ${r.command} | ${r.registrants} | ${r.bareOwned ? "yes" : "NO — unroutable"} | ${r.winner.source} | ${r.winner.entry} | ${r.suffixed.join(", ")} |`);
   }
   if (routing.length === 0) {
     lines.push("| — | 0 | — | — | — |");
   }
 
   // Hazard list: goal-family registrants installed under the agent npm dir
-  // but NOT in the configured packages — they would win only if added to
-  // the packages list before the current winner.
+  // but NOT in the configured packages — adding any of them to the packages
+  // list would suffix BOTH registrations and unown the bare command names.
   const configuredSources = new Set([...projectPkgs, ...globalPkgs]);
   const npmRoot = path.join(AGENT_DIR, "npm", "node_modules");
   const hazards: string[] = [];
