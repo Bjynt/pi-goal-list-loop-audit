@@ -775,8 +775,7 @@ test("MAIN activity is never represented as detached — the detached marker bel
   // live auditor activity badge; the host projection is MAIN HOST · SUPERVISING.
   const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-host-invariant" } });
   const state = { goal: g, list: [], loop: null };
-  const audit = { phase: "tool_executing", currentTool: "read", lastActivityAt: NOW - 1_000 };
-  const status = buildStatusText(state as never, audit, NOW)!;
+  const status = buildStatusText(state as never, { phase: "tool_executing", currentTool: "read", lastActivityAt: NOW - 1_000 }, NOW)!;
   assert.match(status, /MAIN HOST · SUPERVISING/);
   const detachedCount = (status.match(/DETACHED/g) ?? []).length;
   assert.equal(detachedCount, 1, `exactly one detached marker, inside the auditor badge: ${status}`);
