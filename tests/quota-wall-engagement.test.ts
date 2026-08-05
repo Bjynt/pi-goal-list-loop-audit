@@ -51,10 +51,11 @@ import {
 // ---------------------------------------------------------------------------
 
 test("v0.34.57: a fresh long-lived failure shortens storm escalation to 3m", () => {
-  const now = 1_000_000;
+  const now = 2_000_000_000_000;
   assert.equal(sendStormEscalateMs(now - 1_000, now), SEND_REARM_QUOTA_ESCALATE_MS);
   assert.equal(sendStormEscalateMs(now - LONG_LIVED_FAILURE_KNOWLEDGE_MS + 1, now), SEND_REARM_QUOTA_ESCALATE_MS);
   assert.equal(sendStormEscalateMs(now - LONG_LIVED_FAILURE_KNOWLEDGE_MS, now), SEND_REARM_GENERIC_ESCALATE_MS);
+  assert.equal(sendStormEscalateMs(now - LONG_LIVED_FAILURE_KNOWLEDGE_MS - 1, now), SEND_REARM_GENERIC_ESCALATE_MS);
 });
 
 test("v0.34.57: no knowledge ever falls back to the generic 15m threshold", () => {
