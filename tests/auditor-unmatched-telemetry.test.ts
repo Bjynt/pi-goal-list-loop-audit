@@ -113,16 +113,19 @@ test("v0.34.56: a serial ANONYMOUS stream (both sides missing toolCallId) still 
   assert.equal(t.unmatchedToolEnds.length, 0);
 });
 
-test("v0.34.56: an anonymous end with TWO anonymous starts open is unmatched — pairing would be a guess", () => {
+test("v0.34.56: an anonymous end closes the CURRENT anonymous start; a replaced anonymous start stays an explicit unmatched fact", () => {
   const t = fresh();
   applyToolExecutionEvent(t, start(undefined, "read"), 1000);
   applyToolExecutionEvent(t, start(undefined, "grep"), 1100);
+  // The replaced anonymous start is already recorded as an unmatched fact;
+  // in a serial stream an end arriving after grep's start can only close
+  // grep — pairing it with read would be the false pair.
+  assert.deepEqual(t.unmatchedToolStarts, [{ name: "read", argsPrefix: "", startedAt: 1000, toolCallId: undefined }]);
+  assert.equal(t.currentTool, "grep", "the last start is open");
   applyToolExecutionEvent(t, end(undefined), 2000);
-  assert.deepEqual(t.toolCalls, [], "cannot know which anonymous start the end closes");
-  assert.equal(t.currentTool, "grep", "the last start remains open");
-  assert.equal(t.unmatchedToolEnds.length, 1);
-  assert.equal(t.unmatchedToolStarts.length, 1, "the replaced 'read' start is an explicit unmatched start");
-  assert.equal(t.unmatchedToolStarts[0]!.name, "read");
+  assert.deepEqual(t.toolCalls, [{ name: "grep", argsPrefix: "", finishedAt: 2000 }]);
+  assert.equal(t.unmatchedToolEnds.length, 0, "the end closed the current start truthfully");
+  assert.equal(t.unmatchedToolStarts.length, 1, "the replaced start remains an explicit unmatched fact");
 });
 
 test("v0.34.56: a new start replacing an open start records the ORPHANED start explicitly (name, args, id preserved)", () => {
@@ -157,7 +160,7 @@ test("v0.34.56: same-id restart updates the slot without an unmatched fact; an e
 // ── the in-process harness delegates to the pure function ──────────
 
 test("v0.34.56: the session handler delegates pairing to applyToolExecutionEvent (no inline slot mutation)", () => {
-  const subscribeSection = AUDITOR_SRC.slice(AUDITOR_SRC.indexOf("session.subscribe"), AUDITOR_SRC.indexOf("const unsub ="));
+  const subscribeSection = AUDITOR_SRC.slice(AUDITOR_SRC.indexOf("session.subscribe"), AUDITOR_SRC.indexOf("const abort = () =>"));
   assert.ok(subscribeSection.includes("applyToolExecutionEvent(progress,"), "handler calls the pure pairing function");
   assert.ok(subscribeSection.includes('type: "tool_execution_start"'), "start branch present");
   assert.ok(subscribeSection.includes('type: "tool_execution_end"'), "end branch present");

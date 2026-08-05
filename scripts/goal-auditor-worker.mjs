@@ -397,9 +397,14 @@ async function main() {
           setCurrentToolFromActive();
         } else {
           // v0.34.56: an end that provably closes nothing is an EXPLICIT
-          // unmatched fact — never silently dropped.
-          unmatchedToolEnds.push({ toolCallId: id, toolName: event.toolName, at: Date.now() });
-          if (unmatchedToolEnds.length > MAX_UNMATCHED_EVENTS) unmatchedToolEnds.shift();
+          // unmatched fact — never silently dropped. Only telemetry-relevant
+          // (read-only) tools are tracked, so only their stray ends are
+          // surfaced; ends of untracked tools are outside the telemetry
+          // scope by design.
+          if (!event.toolName || READ_ONLY_TOOLS.has(event.toolName)) {
+            unmatchedToolEnds.push({ toolCallId: id, toolName: event.toolName, at: Date.now() });
+            if (unmatchedToolEnds.length > MAX_UNMATCHED_EVENTS) unmatchedToolEnds.shift();
+          }
         }
         void progress(activeTools.size > 0 ? "tool_executing" : "thinking").catch(() => {});
         return;
