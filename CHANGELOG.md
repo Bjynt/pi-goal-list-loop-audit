@@ -1,8 +1,11 @@
 # Changelog
 
-## Unreleased (work since v0.34.50 — release gate pending)
+## 0.34.57 — 2026-08-05
 
-Version labels below match the in-repo milestone markers (test-file headers, DESIGN.md addenda). The next npm release consolidates them; the release commit renames this section to the released version per docs/RELEASING.md.
+The first release since v0.34.50 consolidates the unreleased milestone work
+(v0.34.51–v0.34.57) into one published version; no intermediate version was
+ever tagged or published. Section labels below match the in-repo milestone
+markers (test-file headers, DESIGN.md addenda).
 
 ### 0.34.51 — uniform provider-failure envelope; /list stale-context honesty; contract-text semantics; mode-aware guidance
 
