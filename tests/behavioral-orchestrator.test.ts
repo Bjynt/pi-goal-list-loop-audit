@@ -313,6 +313,7 @@ test("v0.35.x: /list tweak amends a paused list item without activating it or ch
   await pi.command("list", "tweak new paused list item. Done when: new check", ctx);
 
   const updated = readState(cwd).goal as {
+    id: string;
     status: string;
     policy: string;
     objective: string;
