@@ -2731,6 +2731,8 @@ const displaySlice = (s: string, max: number): string => compactDisplayText(s).s
 const goalNoun = (): string => (state.goal?.policy === "list" ? "List item" : "Goal");
 const activeGoalCommand = (command: ModeCommand): string => modeCommand(state.goal?.policy, command);
 const activeGoalRoot = (): "/goal" | "/list" => workCommandRoot(state.goal?.policy) as "/goal" | "/list";
+const activeGoalSurfaceCommand = (command: string): string => workCommand(state.goal?.policy, command);
+const activeGoalStatusCommand = (): string => state.goal?.policy === "list" ? `${activeGoalRoot()} show` : `${activeGoalRoot()} status`;
 function notifyPersistenceState(ctx: ExtensionContext): void {
   if (isPersistenceDegraded() && !persistenceDegradedNotified) {
     persistenceDegradedNotified = true;
@@ -3930,11 +3932,11 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
   }
   if (state.goal?.status === "auditing") {
     if (!state.goal.pendingCompletion) {
-      ctx.ui.notify("A detached completion auditor is in flight — wait for its verdict (the status line shows auditor running). /goal cancel discards the pending claim.", "info");
+      ctx.ui.notify(`A detached completion auditor is in flight — wait for its verdict (the status line shows auditor running). ${activeGoalSurfaceCommand("cancel")} discards the pending claim.`, "info");
       return;
     }
     if (completionAuditInFlight) {
-      ctx.ui.notify("The detached completion auditor is already running — wait for its verdict or /goal cancel to discard the pending claim.", "info");
+      ctx.ui.notify(`The detached completion auditor is already running — wait for its verdict or ${activeGoalSurfaceCommand("cancel")} to discard the pending claim.`, "info");
       return;
     }
     if (isLoopActive()) {
@@ -4345,6 +4347,18 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
 
   if (sub === "tweak") {
     await cmdTweak(rest, ctx, "list");
+    return;
+  }
+
+  if (sub === "pause") {
+    if (!state.goal || state.goal.policy !== "list") {
+      ctx.ui.notify(
+        state.goal ? "The active work is a standalone goal — /goal pause to pause it." : "No active list item to pause. /list show to see the list.",
+        "info",
+      );
+      return;
+    }
+    await cmdPause(ctx);
     return;
   }
 
