@@ -120,7 +120,6 @@ import {
 } from "../length-continue.js";
 import {
   capQuotaRetrySeconds,
-  isQuotaError,
   isSubagentQuotaResult,
   parseQuotaError,
   quotaRetryDelaySeconds,
@@ -2023,32 +2022,6 @@ function mainModelHintExceedsProbeBudget(failure: MainModelFailure): boolean {
     && failure.retryAfterSec! * 1_000 > MAIN_MODEL_MAX_RETRY_DELAY_MS;
 }
 
-/** Stop automatic probing honestly when a provider says the reset is longer
- * than the five-hour probe budget or the durable recovery window is spent. */
-function pauseMainModelForManualAction(ctx: ExtensionContext, failure: MainModelFailure): void {
-  clearMainModelRecoveryTimer();
-  clearContinuationTimer();
-  clearLoopTimer();
-  state.mainModelRecovery = undefined;
-  mainModelAbortForRecovery = false;
-  continuationDispatchStoodDown = true;
-  const detail = failure.raw.replace(/\s+/g, " ").trim().slice(0, 180);
-  const reason = `main model billing wall${detail ? `: ${detail}` : ""}`;
-  const action = `The provider reports credits/balance or billing exhaustion, not a timed quota reset. Fix billing or switch /model, then ${activeGoalSurfaceCommand("resume")} (or /loop resume); blind retries are stopped.`;
-  if (state.goal?.status === "active") {
-    updateGoal({ status: "paused", pauseKind: "error", pauseResumeAt: undefined, pauseReason: reason, pauseSuggestedAction: action }, ctx);
-  } else if (state.loop?.active) {
-    state.loop = { ...state.loop, active: false, stopReason: `${reason}; fix billing or switch /model, then /loop resume` };
-    persistState(ctx);
-  } else {
-    persistState(ctx);
-  }
-  appendLedger(ctx.cwd, "main_model_billing_hold", { kind: mainModelRecoveryKind(), error: detail });
-  ctx.ui.notify(`Main-model billing/credit exhaustion — automatic retries stopped. Fix billing or switch /model, then resume.`, "warning");
-  notifyExternal(ctx, "Main-model billing/credit exhaustion requires manual action.");
-  try { ctx.abort(); } catch { /* best effort */ }
-}
-
 function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModelRecovery, why: string): void {
   const normalized = withMainModelRecoveryWindow(recovery);
   clearMainModelRecoveryTimer();
@@ -2304,10 +2277,9 @@ async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
   } catch (err) {
     appendLedger(ctx.cwd, "main_model_probe_failed", { ref: target, error: err instanceof Error ? err.message : String(err) });
     const failure = classifyMainModelFailure(err instanceof Error ? err.message : String(err));
-    if (failure.kind === "billing") {
-      pauseMainModelForManualAction(ctx, failure);
-      return;
-    }
+    // v0.34.51: no billing special case — every provider failure retries on
+    // the uniform durable envelope (credits can be topped up; a miss-classified
+    // quota wall must not become a manual-action stop).
     const next = withMainModelRecoveryWindow({ ...recovery, attempts: recovery.attempts + 1, attempted: [...(current ? [current] : []), target], reason: mainModelRecoveryReason(failure), resetAt: failure.resetAt ?? recovery.resetAt });
     if (mainModelHintExceedsProbeBudget(failure)) {
       holdMainModelRecovery(ctx, next, `provider supplied a reset beyond the 5h automatic probe budget${failure.resetAt ? ` (reset ${failure.resetAt})` : ""}`);
@@ -2426,12 +2398,10 @@ async function handleMainModelAgentEnd(ctx: ExtensionContext, rawLastA: any, las
     if (failure.kind !== "non-recoverable") {
       const switched = await tryMainModelFallback(ctx, failure);
       if (switched) return true; // pi's core retry now uses the selected backup
-      if (failure.kind === "billing") {
-        pauseMainModelForManualAction(ctx, failure);
-        return true;
-      }
       const backupRefs = mainModelFallbackRefs(ctx);
-      if ((failure.kind === "quota" && state.goal?.status === "active") || backupRefs.length > 0) {
+      // v0.34.51: no kind gate — ANY provider failure parks into the durable
+      // recovery envelope (billing and auth retry like quota now).
+      if (state.goal?.status === "active" || backupRefs.length > 0) {
         parkMainModelAfterFailure(ctx, failure);
         if (mainModelRecoveryActive() || state.mainModelRecovery) return true;
       }
@@ -3358,8 +3328,36 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     return;
   }
 
-  if (result.error && !result.disapproved && isQuotaError(result.error)) {
-    // Still quota'd — preserve the claim, but use a durable bounded plan.
+  if (result.error && !result.disapproved && isAuditorTimeoutError(result.error)) {
+    // Watchdog timeouts stay ahead of the durable retry branch: a hanging
+    // verification command will hang again, so pause loudly and let
+    // /goal resume re-enter the direct-audit path with the stored claim.
+    const pending: PendingCompletion = {
+      ...claim,
+      phase: "recovery-pending",
+      recoveryAt: nowIso(),
+      recoveryReason: result.error.startsWith("Auditor exceeded") ? "wall-timeout" : "inactivity-timeout",
+    };
+    updateGoal({
+      status: "paused",
+      auditHistory: history,
+      pendingCompletion: pending,
+      pauseKind: "error",
+      pauseReason: `completion audit timed out — ${result.error}`,
+      pauseSuggestedAction: `The claim is stored. Check long-running verification commands, then ${activeGoalSurfaceCommand("resume")} to retry the isolated auditor.`,
+    }, liveCtx);
+    appendLedger(liveCtx.cwd, result.error.startsWith("Auditor exceeded") ? "audit_wall_timeout" : "audit_inactivity_timeout", { goalId, attemptId: claim.attemptId, error: result.error.slice(0, 240) });
+    liveCtx.ui.notify(`Completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and ${activeGoalSurfaceCommand("resume")} to retry it.`, "warning");
+    return;
+  }
+
+  // v0.34.51: ANY infrastructure failure enters the durable bounded retry
+  // plan — error text is not trusted to pick quota vs other failures (a
+  // miss-classified quota wall is the common case), so "still failing"
+  // preserves the claim on a bounded one-shot schedule instead of stopping
+  // after three strikes.
+  if (result.error && !result.disapproved) {
+    // Preserve the claim, but use a durable bounded plan.
     const settingsNow = loadSettings(liveCtx.cwd);
     const defaultMinutes = settingsNow.quotaRetryMinutes ?? DEFAULT_QUOTA_RETRY_MINUTES;
     const quota = parseQuotaError(result.error, defaultMinutes * 60);
@@ -3382,11 +3380,11 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
         pendingCompletion: pending,
         pauseKind: "blocked",
         pauseResumeAt: undefined,
-        pauseReason: `auditor quota: automatic retry horizon reached (${plan.attempt} attempts)`,
+        pauseReason: `auditor retry: automatic retry horizon reached (${plan.attempt} attempts)`,
         pauseSuggestedAction: `The completion claim is stored, but automatic auditor probes are stopped. Check the provider reset/billing state, then ${activeGoalSurfaceCommand("resume")} to start a fresh bounded window.`,
       }, liveCtx);
-      appendLedger(liveCtx.cwd, "quota_retry_capped", { streak: plan.attempt, autoRetryUntil: plan.autoRetryUntil, requestedSec: plan.requestedSec });
-      liveCtx.ui.notify(`Auditor quota recovery stopped after ${plan.attempt} bounded attempts — the claim stays stored; check the provider, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
+      appendLedger(liveCtx.cwd, "auditor_retry_capped", { streak: plan.attempt, autoRetryUntil: plan.autoRetryUntil, requestedSec: plan.requestedSec });
+      liveCtx.ui.notify(`Automatic auditor retries stopped after ${plan.attempt} bounded attempts — the claim stays stored; check the provider, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
       return;
     }
     const retryMin = Math.max(1, Math.round(plan.retryAfterSec / 60));
@@ -3396,72 +3394,20 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       pendingCompletion: pending,
       pauseKind: "wait",
       pauseResumeAt: new Date(Date.now() + plan.retryAfterSec * 1000).toISOString(),
-      pauseReason: `auditor quota: ${result.error}`,
-      pauseSuggestedAction: `Quota auto-retry in ${retryMin}m${providerHint} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
+      pauseReason: `auditor retry: ${result.error}`,
+      pauseSuggestedAction: `Auto-retry in ${retryMin}m${providerHint} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
     }, liveCtx);
-    appendLedger(liveCtx.cwd, "goal_paused", { reason: `auditor quota: retry in ${plan.retryAfterSec}s (stored-claim retry)`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil });
-    liveCtx.ui.notify(`Auditor still quota-limited — next auto-retry in ${retryMin}m${providerHint} (your completion claim is stored; no action needed).`, "warning");
+    appendLedger(liveCtx.cwd, "goal_paused", { reason: `auditor retry: retry in ${plan.retryAfterSec}s (stored-claim retry)`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil });
+    liveCtx.ui.notify(`Auditor still failing — next auto-retry in ${retryMin}m${providerHint} (your completion claim is stored; no action needed).`, "warning");
     scheduleQuotaRetryForSession(liveCtx, plan.retryAfterSec, result.error, (fresh) => {
-      if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor quota:") && state.goal.pendingCompletion) {
+      if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor retry:") && state.goal.pendingCompletion) {
         void retryStoredCompletionAudit(origin);
       }
     });
     return;
   }
 
-  // A watchdog timeout is infrastructure, but unlike a normal one-shot
-  // provider error it must keep the exact completion claim available for an
-  // explicit retry. The goal is paused loudly; /goal resume re-enters the
-  // direct-audit path instead of asking the agent to recreate the claim.
-  if (result.error && !result.disapproved && isAuditorTimeoutError(result.error)) {
-    const pending: PendingCompletion = {
-      ...claim,
-      phase: "recovery-pending",
-      recoveryAt: nowIso(),
-      recoveryReason: result.error.startsWith("Auditor exceeded") ? "wall-timeout" : "inactivity-timeout",
-    };
-    updateGoal({
-      status: "paused",
-      auditHistory: history,
-      pendingCompletion: pending,
-      pauseKind: "error",
-      pauseReason: `completion audit timed out — ${result.error}`,
-      pauseSuggestedAction: `The claim is stored. Check long-running verification commands, then ${activeGoalSurfaceCommand("resume")} to retry the isolated auditor.`,
-    }, liveCtx);
-    appendLedger(liveCtx.cwd, result.error.startsWith("Auditor exceeded") ? "audit_wall_timeout" : "audit_inactivity_timeout", { goalId, attemptId: claim.attemptId, error: result.error.slice(0, 240) });
-    liveCtx.ui.notify(`Completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and ${activeGoalSurfaceCommand("resume")} to retry it.`, "warning");
-    return;
-  }
 
-  // Any remaining infrastructure failure on a stored-claim retry keeps the
-  // exact claim recoverable. Re-engaging the agent to recreate an unchanged
-  // claim is the repetition-loop failure this direct-audit path exists to
-  // prevent. The user fixes the model/command, then /goal resume retries.
-  if (result.error && !result.disapproved) {
-    const infraStreak = (state.goal.auditInfraStreak ?? 0) + 1;
-    const reachedInfraCap = infraStreak >= 3;
-    const pending: PendingCompletion = {
-      ...claim,
-      phase: "recovery-pending",
-      recoveryAt: nowIso(),
-      recoveryReason: "auditor-infrastructure",
-    };
-    const pauseReason = reachedInfraCap
-      ? `auditor infrastructure failed ${infraStreak}× in a row — the auditor model is likely broken OR a verification command is hanging (last: ${result.error.slice(0, 120)})`
-      : `completion auditor infrastructure failure — ${result.error}`;
-    updateGoal({
-      status: "paused",
-      auditHistory: history,
-      pendingCompletion: pending,
-      auditInfraStreak: infraStreak,
-      pauseKind: "error",
-      pauseReason,
-      pauseSuggestedAction: `Fix the auditor model or verification command, then ${activeGoalSurfaceCommand("resume")} to retry the stored claim.`,
-    }, liveCtx);
-    appendLedger(liveCtx.cwd, "audit_infra_waiting", { goalId, attemptId: claim.attemptId, error: result.error.slice(0, 240), infraStreak });
-    liveCtx.ui.notify(`Completion auditor infrastructure failed (not a verdict).${reachedInfraCap ? " Repeated failures suggest a broken model or hanging verification command." : ""} The stored claim is safe; fix the model/command and ${activeGoalSurfaceCommand("resume")}.`, "warning");
-    return;
-  }
 
   // Any other outcome — disapproved or impossible — belongs to the agent:
   // resume and let the continuation drive the next step. The verdict is
@@ -5870,11 +5816,12 @@ function registerAgentTools(pi: any): void {
             details: {},
           };
         }
-        // v0.25.0 (contract Section C): quota errors used to re-fire the
-        // continuation FOREVER against a window that resets in an hour.
-        // Now: pause with a one-shot scheduled retry at the upstream's own
-        // Retry-After hint (default quotaRetryMinutes).
-        if (isQuotaError(result.error)) {
+        // v0.34.51: ANY infrastructure failure enters the durable bounded
+        // retry plan — error text is not trusted to pick quota vs other
+        // failures (a miss-classified quota wall is the common case), so
+        // "still failing" pauses with a one-shot scheduled retry at the
+        // upstream's own Retry-After hint (default quotaRetryMinutes).
+        if (result.error && !result.disapproved) {
           const settingsNow = loadSettings(ctx.cwd);
           const defaultMinutes = settingsNow.quotaRetryMinutes ?? DEFAULT_QUOTA_RETRY_MINUTES;
           const quota = parseQuotaError(result.error, defaultMinutes * 60);
@@ -5898,13 +5845,13 @@ function registerAgentTools(pi: any): void {
               pendingCompletion: pending,
               pauseKind: "blocked",
               pauseResumeAt: undefined,
-              pauseReason: `auditor quota: automatic retry horizon reached (${plan.attempt} attempts)`,
+              pauseReason: `auditor retry: automatic retry horizon reached (${plan.attempt} attempts)`,
               pauseSuggestedAction: `The completion claim is stored, but automatic auditor probes are stopped. Check the provider reset/billing state, then ${activeGoalSurfaceCommand("resume")} to start a fresh bounded window.`,
             }, ctx);
-            appendLedger(ctx.cwd, "quota_retry_capped", { streak: plan.attempt, autoRetryUntil: plan.autoRetryUntil, requestedSec: plan.requestedSec });
-            ctx.ui.notify(`Auditor quota recovery stopped after ${plan.attempt} bounded attempts — the claim stays stored; check the provider, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
+            appendLedger(ctx.cwd, "auditor_retry_capped", { streak: plan.attempt, autoRetryUntil: plan.autoRetryUntil, requestedSec: plan.requestedSec });
+            ctx.ui.notify(`Automatic auditor retries stopped after ${plan.attempt} bounded attempts — the claim stays stored; check the provider, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
             return {
-              content: [{ type: "text", text: `The auditor hit a quota/rate-limit wall (infrastructure, NOT a verdict). Automatic probes stopped after ${plan.attempt} bounded attempts; the exact completion claim is stored. Check the provider, then ${activeGoalSurfaceCommand("resume")}.` }],
+              content: [{ type: "text", text: `The auditor hit an infrastructure wall (NOT a verdict). Automatic probes stopped after ${plan.attempt} bounded attempts; the exact completion claim is stored. Check the provider, then ${activeGoalSurfaceCommand("resume")}.` }],
               details: {},
             };
           }
@@ -5912,20 +5859,20 @@ function registerAgentTools(pi: any): void {
           updateGoal({
             status: "paused",
             auditHistory: history,
-            auditInfraStreak: undefined, // quota reached the auditor — infra streak broken
-            // v0.28.26: store the claim — the quota retry re-runs the
-            // auditor DIRECTLY with it (no agent turn to confuse).
+            auditInfraStreak: undefined, // durable retry owns the wait — infra streak broken
+            // v0.28.26: store the claim — the retry re-runs the auditor
+            // DIRECTLY with it (no agent turn to confuse).
             pendingCompletion: pending,
             pauseKind: "wait",
             pauseResumeAt: new Date(Date.now() + quota.retryAfterSec * 1000).toISOString(),
-            pauseReason: `auditor quota: ${result.error}`,
-            pauseSuggestedAction: `Quota auto-retry in ${retryMin}m${providerHint} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
+            pauseReason: `auditor retry: ${result.error}`,
+            pauseSuggestedAction: `Auto-retry in ${retryMin}m${providerHint} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
           }, ctx);
-          appendLedger(ctx.cwd, "goal_paused", { reason: `auditor quota: retry in ${quota.retryAfterSec}s (${quota.fromUpstream ? "upstream hint" : "bounded default"})`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil });
+          appendLedger(ctx.cwd, "goal_paused", { reason: `auditor retry: retry in ${quota.retryAfterSec}s (${quota.fromUpstream ? "upstream hint" : "bounded default"})`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil });
           scheduleQuotaRetryForSession(ctx, quota.retryAfterSec, result.error, (fresh) => {
-            // Re-check: only auto-resume if STILL paused for the quota
+            // Re-check: only auto-resume if STILL paused for the retry
             // reason (a user /goal pause during the window is not stomped).
-            if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor quota:")) {
+            if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor retry:")) {
               // v0.28.26: a stored claim retries the AUDITOR directly — the
               // agent is not needed to re-submit an unchanged claim, and
               // re-engaging it produced hallucinated-closure loops.
@@ -5944,49 +5891,15 @@ function registerAgentTools(pi: any): void {
           return {
             content: [{
               type: "text",
-              text: `The auditor hit a QUOTA / rate-limit error (infrastructure, NOT a verdict): ${result.error}\nThe goal is PAUSED with an automatic retry scheduled in ${retryMin} minute(s)${quota.fromUpstream ? " (upstream hint)" : " (bounded default — edit Quota retry minutes in /glla settings)"}${providerHint}. Your completion claim was not evaluated; do not change your deliverable for this. ${activeGoalSurfaceCommand("resume")} retries immediately.`,
+              text: `The auditor hit an infrastructure error (NOT a verdict): ${result.error}\nThe goal is PAUSED with an automatic retry scheduled in ${retryMin} minute(s)${quota.fromUpstream ? " (upstream hint)" : " (bounded default — edit Quota retry minutes in /glla settings)"}${providerHint}. Your completion claim was not evaluated; do not change your deliverable for this. ${activeGoalSurfaceCommand("resume")} retries immediately.`,
             }],
             details: {},
           };
         }
-        // v0.34.25: once the bounded model cascade is exhausted, preserve the
-        // exact claim and pause immediately. Re-engaging the coding agent to
-        // recreate an unchanged claim was the source of repeated completion
-        // attempts in the screenshot; /goal resume now retries the stored
-        // auditor directly and never schedules another agent turn here.
-        const infraStreak = (state.goal.auditInfraStreak ?? 0) + 1;
-        const pending: PendingCompletion = {
-          ...completionClaim,
-          phase: "recovery-pending",
-          recoveryAt: nowIso(),
-          recoveryReason: "auditor-infrastructure",
-        };
-        const reachedInfraCap = infraStreak >= 3;
-        const pauseReason = reachedInfraCap
-          ? `auditor infrastructure failed ${infraStreak}× in a row — the auditor model is likely broken OR a verification command is hanging (ssh/sudo/long test runs stall the stream) (last: ${result.error.slice(0, 120)})`
-          : `completion auditor infrastructure failure${fallbackUsed ? " after trying the configured/session fallback" : ""}: ${result.error}`;
-        updateGoal({
-          status: "paused",
-          auditHistory: history,
-          pendingCompletion: pending,
-          auditInfraStreak: infraStreak,
-          pauseKind: "error",
-          pauseReason,
-          pauseSuggestedAction: `The completion claim is stored and was not judged. Fix the auditor model/command, then ${activeGoalSurfaceCommand("resume")} to retry the detached audit.`,
-        }, ctx);
-        appendLedger(ctx.cwd, "goal_paused", { reason: pauseReason, attemptId: auditAttemptId, fallbackUsed });
-        const infraCapHint = reachedInfraCap
-          ? " Possible causes: model broken or a verification command hanging."
-          : "";
-        ctx.ui.notify(`${goalNoun()} paused: the completion auditor failed (infrastructure, not a verdict).${infraCapHint} The claim is stored; fix the model/command, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
-        notifyExternal(ctx, `${goalNoun()} paused: completion auditor infrastructure failure; stored claim awaits ${activeGoalSurfaceCommand("resume")}.`);
-        return {
-          content: [{
-            type: "text",
-            text: `${reachedInfraCap ? `The auditor has failed ${infraStreak} times in a row` : "The completion auditor could not run"} with infrastructure errors (NOT a verdict; last: ${result.error}). The goal is PAUSED and the exact completion claim is stored. Fix the auditor model/command, then ${activeGoalSurfaceCommand("resume")}; do not change your deliverable for this.`,
-          }],
-          details: {},
-        };
+        // v0.34.51: the durable bounded retry plan above owns ALL infra
+        // failures now (timeouts keep their own branch). The old 3-strike
+        // "auditor model is likely broken" stop is gone: "keep retrying"
+        // until the plan's horizon, then the blocked pause asks the user.
       }
 
       // Shield-blocked approval (v0.22.6): the auditor APPROVED but the
@@ -8899,7 +8812,9 @@ export default function (pi: ExtensionAPI): void {
         appendLedger(ctx.cwd, "loop_turn_exempt_error", { stopReason: sr, consecutive: loop.consecutiveErrors, iteration: loop.iteration });
         const cap = sr === "aborted" ? LOOP_MAX_CONSECUTIVE_ABORTS : LOOP_MAX_CONSECUTIVE_ERRORS;
         if (loop.consecutiveErrors >= cap) {
-          if (sr === "error" && lastMainModelFailure?.kind === "quota") {
+          if (sr === "error" && lastMainModelFailure && lastMainModelFailure.kind !== "non-recoverable") {
+            // v0.34.51: any provider failure parks into durable recovery, not
+            // just quota — error text is not trusted to gate the envelope.
             parkMainModelAfterFailure(ctx, lastMainModelFailure);
             if (state.mainModelRecovery) return;
           }

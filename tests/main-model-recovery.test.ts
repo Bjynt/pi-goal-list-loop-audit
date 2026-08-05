@@ -53,8 +53,17 @@ test("main model recovery backs off without giving up", () => {
   assert.equal(mainModelRetryDelayMs(20, 15), 5 * 60 * 60_000);
   assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 rate limit; retry in 2 hours"), 1), 2 * 60 * 60_000);
   assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 rate limit; retry in 1 week"), 1), 15 * 60_000);
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("Token Plan rate limit reached (2062)"), 1), 60 * 60_000);
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("Token Plan rate limit reached (2062)"), 2), 2 * 60 * 60_000);
+  // v0.34.51: ONE uniform envelope — error text does not pick the cadence.
+  // A plan wall starts at the same 15m base as a 503 or an auth failure.
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("Token Plan rate limit reached (2062)"), 1), 15 * 60_000);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("Token Plan rate limit reached (2062)"), 2), 30 * 60_000);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("503 temporarily unavailable"), 1), 15 * 60_000);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("insufficient credits — buy credits"), 1), 15 * 60_000);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("401 invalid API key"), 1), 15 * 60_000);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("mysterious provider prose with no hint"), 1), 15 * 60_000);
+  // ...and the upstream hint (a factual provider fact) still outranks it,
+  // even on a plan wall:
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("Token Plan rate limit reached (2062); retry after 3 hours"), 1), 3 * 60 * 60_000);
   assert.equal(mainModelAutoRetryUntil(Date.parse("2026-08-03T00:00:00Z")), "2026-08-04T00:00:00.000Z");
   assert.equal(modelRef({ provider: "openai", id: "gpt" }), "openai/gpt");
   assert.equal(modelRef({ provider: "openai" }), undefined);

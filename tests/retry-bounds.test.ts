@@ -30,21 +30,26 @@ test("E2: persisted auditInfraStreak field (type + schema)", () => {
   assert.match(SCHEMA, /"auditInfraStreak": \{ "type": "number" \}/);
 });
 
-test("E2: auditor infra errors pause with the stored claim (no retry-forever)", () => {
-  assert.match(SRC, /const infraStreak = \(state\.goal\.auditInfraStreak \?\? 0\) \+ 1;/);
-  assert.match(SRC, /const reachedInfraCap = infraStreak >= 3;/);
-  assert.match(SRC, /auditor infrastructure failed \$\{infraStreak\}× in a row — the auditor model is likely broken/);
-  assert.match(SRC, /The completion claim is stored and was not judged/);
-  assert.match(SRC, /pendingCompletion: pending,/);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "goal_paused", \{ reason: pauseReason/);
-  // below the threshold the streak persists across turns (survives restarts):
-  assert.match(SRC, /auditInfraStreak: infraStreak,/);
-  // a real auditor run clears it; reaching quota also clears it:
+test("E2: auditor infra errors enter the durable bounded retry plan (v0.34.51 — no 3-strike stop)", () => {
+  // The 3-strike breaker is GONE: every non-timeout infrastructure failure
+  // preserves the claim on the durable bounded one-shot schedule. Bounds are
+  // the plan's 5h probe cap + 24h horizon, not "we decided it's broken".
+  assert.ok(!SRC.includes("const infraStreak = (state.goal.auditInfraStreak ?? 0) + 1;"), "3-strike streak counter gone");
+  assert.ok(!SRC.includes("const reachedInfraCap = infraStreak >= 3;"), "3-strike cap gone");
+  assert.ok(!SRC.includes("auditor infrastructure failed ${infraStreak}× in a row"), "3-strike wording gone");
+  assert.ok(!SRC.includes("audit_infra_waiting"), "3-strike ledger event gone");
+  assert.ok(!SRC.includes("The completion claim is stored and was not judged"), "3-strike action gone");
+  // The durable plan owns the wait: quota-waiting phase, wait-kind pause,
+  // horizon-capped blocked stop, and a re-checked auto-resume callback.
+  assert.match(SRC, /phase: "quota-waiting" as const/);
+  assert.match(SRC, /auditor retry: automatic retry horizon reached \(\$\{plan\.attempt\} attempts\)/);
+  assert.match(SRC, /startsWith\("auditor retry:"\)/);
+  // a real auditor run still clears the persisted streak:
   // v0.34.14: only a CLEAN run clears — a stalled run returns partial output
   // (auditorRan true) WITH result.error set; clearing on those meant the
-  // 3-strike breaker never engaged (pully: 4h of 10-min stall cycles).
+  // old 3-strike breaker never engaged (pully: 4h of 10-min stall cycles).
   assert.match(SRC, /if \(auditorRan && !result\.error && \(state\.goal\.auditInfraStreak \?\? 0\) > 0\) updateGoal\(\{ auditInfraStreak: undefined \}, ctx\);/);
-  assert.match(SRC, /auditInfraStreak: undefined, \/\/ quota reached the auditor — infra streak broken/);
+  assert.match(SRC, /auditInfraStreak: undefined, \/\/ durable retry owns the wait — infra streak broken/);
 });
 
 test("E3: send-retry re-arms counted, ledgered, escalated", () => {
@@ -122,11 +127,15 @@ test("v0.34.36: a loop whose continuation never starts is durably stopped and re
   assert.match(SRC, /!!r\?\.startsWith\("stalled:"\)/);
 });
 
-test("v0.34.36: stored-claim auditor retries persist the infrastructure streak", () => {
+test("v0.34.51: stored-claim auditor retries enter the durable plan on ANY infra error", () => {
   const retry = SRC.slice(SRC.indexOf("async function retryStoredCompletionAudit"));
-  assert.match(retry, /const infraStreak = \(state\.goal\.auditInfraStreak \?\? 0\) \+ 1;/);
-  assert.match(retry, /auditInfraStreak: infraStreak,/);
-  assert.match(retry, /audit_infra_waiting.*infraStreak/);
+  // timeout branch first (a hanging command keeps its loud pause)…
+  assert.match(retry, /isAuditorTimeoutError\(result\.error\)\) \{[\s\S]{0,160}?Watchdog timeouts stay ahead/);
+  // …then the widened durable branch — no kind gate, neutral wording:
+  assert.match(retry, /v0\.34\.51: ANY infrastructure failure enters the durable bounded retry/);
+  assert.match(retry, /phase: "quota-waiting" as const/);
+  assert.match(retry, /startsWith\("auditor retry:"\)/);
+  assert.ok(!retry.includes("audit_infra_waiting"), "3-strike stop gone from stored-claim retries");
 });
 
 test("v0.34.26: length-continue exhaustion is a durable paused state, not a transient notify", () => {
@@ -184,8 +193,9 @@ test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUD
   // 1. the claim is persisted at the quota block:
   assert.match(SRC, /pendingCompletion: pending/);
   assert.match(SRC, /phase: "quota-waiting" as const/);
-  // 2. the quota-retry callback prefers the direct-audit path:
-  const cbIdx = SRC.indexOf('(state.goal.pauseReason ?? "").startsWith("auditor quota:")');
+  // 2. the retry callback prefers the direct-audit path (v0.34.51: any
+  //    infra error, not just quota):
+  const cbIdx = SRC.indexOf('(state.goal.pauseReason ?? "").startsWith("auditor retry:")');
   const directIdx = SRC.indexOf("void retryStoredCompletionAudit();");
   assert.ok(cbIdx > 0 && directIdx > cbIdx, "direct-audit branch inside the quota callback");
   const legacyIdx = SRC.indexOf('appendLedger(fresh.cwd, "goal_resumed", { via: "quota-retry" });');
@@ -197,8 +207,8 @@ test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUD
   // 4. approved → archive (cascade inside archiveCurrentGoal); claim cleared:
   assert.match(SRC, /archiveCurrentGoal\(liveCtx, "complete", `auditor \$\{result\.model\} approved \(\$\{origin\}\)`\)/);
   assert.match(SRC, /updateGoal\(\{ auditHistory: history, pendingCompletion: undefined \}, liveCtx\)/);
-  // 5. quota-again → re-pause with the claim PRESERVED + another scheduled retry:
-  assert.match(SRC, /auditor quota: retry in \$\{plan\.retryAfterSec\}s \(stored-claim retry\)/);
+  // 5. still-failing → re-pause with the claim PRESERVED + another scheduled retry:
+  assert.match(SRC, /auditor retry: retry in \$\{plan\.retryAfterSec\}s \(stored-claim retry\)/);
   assert.match(SRC, /quotaAutoRetryUntil: plan\.autoRetryUntil/);
   // 6. any other verdict hands back to the agent:
   assert.match(SRC, /appendLedger\(liveCtx\.cwd, "quota_retry_audit_verdict", \{/);

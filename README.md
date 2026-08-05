@@ -248,33 +248,37 @@ Activity is otherwise intentionally honest:
 | `QUEUED` | A continuation is waiting to start; no work is fabricated. |
 | `IDLE` | The durable item remains active, but no recent work is observed. |
 | `auditor …` | A detached, extension-less verifier is queued, running, quiet, or waiting for its verdict. |
-| `QUOTA WALL` | The provider rejected the request for a quota/plan window; saved work is waiting for a durable probe. |
+| `QUOTA WALL` | The provider rejected the request for a quota/plan window (by its own wording); saved work is waiting for a durable probe. |
 
-Quota walls deliberately do **not** get more blind request retries. A bare
-429/rate-limit response is treated as a transient throttle; explicit plan,
-usage, billing, reset, and provider-code language is classified more strongly.
-For example, MiniMax's `Token Plan rate limit reached … (2062)` asks for an
-upgrade or pay-as-you-go billing and is not the same thing as a per-minute
-throttle. Output/context-token stops are handled separately and never become a
-quota wall. pi's request-local retry counter is bounded; glla owns the longer
-recovery window: generic throttles use `15m → 30m → 1h → 2h → 4h → 5h`; a
-plan wall with no reset hint starts at `1h → 2h → 4h → 5h`. Automatic probes
-stop after 24h.
-A provider hint is honored when it is within the five-hour probe budget; a
-week-long hint is shown and held for manual action instead of scheduling a
-hidden week-long timer. With global `autoResume=on`, pending probes survive a
-session reload. After the safety horizon, `/list resume`, `/goal resume`, or
-`/loop resume` explicitly starts a fresh bounded window. For continuous work,
-configure ordered **Main model backups** in `/glla` using a model from a
-different provider or billing/quota pool — another model on the same exhausted
-plan is not a real fallback.
+## Provider failures: one retry envelope, bounded (v0.34.51)
 
-Classification is conservative: explicit 429/rate-limit/plan-limit/token-plan
-signals are quota walls; ordinary `503 temporarily unavailable`, `403
-forbidden`, auth failures, and ambiguous provider prose are not relabeled as
-quota. Credit/billing exhaustion gets a manual-action hold. The raw provider
-message remains in the ledger/durable state for diagnosis, while the card
-shows the classified reason and recovery action.
+Error text is **not trusted** to pick a retry policy: we only know that an
+error came, and provider messages vary. Every main-model failure — quota,
+rate limit, billing/credits, auth, transient, or unclassifiable — rides the
+same durable recovery envelope `15m → 30m → 1h → 2h → 4h → 5h` (probe cap
+5h, automatic window 24h, then an explicit `/goal resume`/`/list resume`/
+`/loop resume` starts a fresh window). The only failures that do not auto-retry
+are the ones identified by *positive evidence* as futile: context/output-token
+limits and user aborts (`non-recoverable`), plus auditor watchdog timeouts
+(a hanging verification command will hang again — the stored claim waits for
+an explicit resume).
+A provider hint (`retry_after`/`reset_at`) is honored when it fits the
+five-hour probe budget; a week-long hint is shown and held instead of
+scheduling a hidden week-long timer. With global `autoResume=on`, pending
+probes survive a session reload. For continuous work, configure ordered
+**Main model backups** in `/glla` using a model from a different provider or
+billing/quota pool — another model on the same exhausted plan is not a real
+fallback.
+
+Classification still exists, but it only *labels*: the card and badge show
+what the provider said (quota wall, billing, rate limit) so the reason is
+diagnosable, and `QUOTA WALL` is only shown when the provider's own words say
+quota — ambiguous prose is never relabeled. The raw provider message stays in
+the ledger/durable state; the card shows the classified reason and recovery
+action. Detached-auditor failures get the same treatment: any infrastructure
+error on a stored completion claim pauses the goal with a durable bounded
+one-shot retry (`auditor retry: …`), and only the plan's 24h horizon stops
+automatic probes.
 
 The quota-specific card hides raw provider JSON while preserving it in durable
 state and the ledger:

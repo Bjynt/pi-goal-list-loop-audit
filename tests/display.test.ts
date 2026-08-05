@@ -811,6 +811,19 @@ test("quota manual hold stays distinct and does not show raw provider detail", (
   assert.doesNotMatch(w.join("\\n"), /automatic probes stopped \(provider supplied/);
 });
 
+test("v0.34.51: a passed quota resumeAt says resuming…, never the old 'retrying now'", () => {
+  const g = goalOf({
+    status: "paused",
+    pauseKind: "wait",
+    pauseReason: "main model recovery — retrying in 15m (main model quota: 429 Token Plan usage limit)",
+    pauseResumeAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+  });
+  const state = { goal: g, list: [], loop: null };
+  const s = buildStatusText(state as never)!;
+  assert.match(s, /resuming…/);
+  assert.doesNotMatch(s, /retrying now/);
+});
+
 test("legacy pause (no kind): flat card unchanged; error-regex still classifies the status line", () => {
   const g = goalOf({ status: "paused", pauseReason: "user paused for review", pauseSuggestedAction: "/goal resume" });
   const state = { goal: g, list: [], loop: null };

@@ -243,7 +243,10 @@ function quotaWallDetail(g: Goal): string {
 function quotaResumeText(g: Goal, now: number): string {
   const ms = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) - now : Number.NaN;
   if (!Number.isFinite(ms)) return "manual resume required";
-  return ms <= 0 ? "retrying now" : `next probe in ${fmtElapsed(ms)}`;
+  // v0.34.51: the pause is a WAIT for the durable probe — nothing retries at
+  // render time, so a passed resumeAt says "resuming…" (the timer owns it),
+  // never the old lie "retrying now".
+  return ms <= 0 ? "resuming…" : `next probe in ${fmtElapsed(ms)}`;
 }
 
 /** Active goals can carry an operational warning while the agent is being

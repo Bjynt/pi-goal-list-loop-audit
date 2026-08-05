@@ -82,13 +82,15 @@ test("pause_goal tool: structured kind/options/recommended/resumeAt persist to t
     ["pauseReason: `send-retry storm", "error"],
     ["pauseReason: `stalled: ${threshold} continuation refires", "error"],
     ["pauseReason: `auditor verdict: IMPOSSIBLE —", "decision"],
-    ["pauseReason: `auditor quota:", "wait"],
+    ["pauseReason: `auditor retry:", "wait"],
     ["pauseReason: `auditor disapproved ${trailingDisapprovals}× consecutively", "decision"],
     ["pauseReason: `token limit exceeded", "error"],
     ["pauseReason: \"5 consecutive aborts", "blocked"],
     ["\"restored on session load — held for explicit resume\"", "blocked"],
   ];
-  assert.match(SRC, /const pauseReason = reachedInfraCap[\s\S]{0,300}?auditor infrastructure failed/);
+  // v0.34.51: the 3-strike "reachedInfraCap / auditor infrastructure failed"
+  // stop is gone — every infra failure enters the durable bounded retry plan.
+  assert.match(SRC, /auditor retry: automatic retry horizon reached \(\$\{plan\.attempt\} attempts\)/);
   for (const [anchor, kind] of pairs) {
     const esc = anchor.replace(/[.*+?^$()[\]\\|]/g, "\\$&");
     assert.match(SRC, new RegExp(`pauseKind: "${kind}",[\\s\\S]{0,900}?${esc}`), `${anchor} → pauseKind ${kind}`);
