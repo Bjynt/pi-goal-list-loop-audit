@@ -855,7 +855,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     if (isCompletionAuditNoVerdict(g)) {
       lines.push(`├─ ${paint(theme, "error", "auditor: blocked — no verdict")}`);
       lines.push(`├─ ${paint(theme, "dim", "MAIN host remains attached; the completion claim was not evaluated")}`);
-      lines.push(`└─ ${paint(theme, "warning", g.pauseSuggestedAction ?? "The claim is safe; /goal resume starts one fresh auditor.")}`);
+      lines.push(`└─ ${paint(theme, "warning", g.pauseSuggestedAction ?? `The claim is safe; ${isList ? "/list resume" : "/goal resume"} starts one fresh auditor.`)}`);
       return lines;
     }
     const kind = pauseKind(g);
@@ -898,7 +898,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     if (kind === "wait" && g.pauseResumeAt && !isQuotaWall(g)) {
       const ms = Date.parse(g.pauseResumeAt) - now;
       const when = Number.isNaN(ms) ? g.pauseResumeAt : ms <= 0 ? "now" : `${shortClock(g.pauseResumeAt)} (in ${fmtElapsed(ms)})`;
-      lines.push(`├─ ${paint(theme, "dim", `resumes ${when} — or /goal resume now`)}`);
+      lines.push(`├─ ${paint(theme, "dim", `resumes ${when} — or ${isList ? "/list resume" : "/goal resume"} now`)}`);
     }
     // v0.27.1: what survives the pause — the first question at a pause is
     // "did I lose the work?". Answer it on the card.

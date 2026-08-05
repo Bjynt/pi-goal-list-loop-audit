@@ -23,6 +23,7 @@ import { Type } from "typebox";
 
 import {
   type Goal,
+  type Policy,
   type State,
   type MainModelRecovery,
   type Status,
@@ -735,7 +736,7 @@ function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop" | "lis
     archiveCurrentGoal(ctx, "aborted", trigger === "loop" ? "carryover cleared" : `replaced by new ${trigger} (carryover)`);
     done.push(`archived paused goal "${displaySlice(snap.pausedGoal ?? pausedGoal.objective, 60)}"`);
   } else if (snap.pausedGoal) {
-    waiting.push(`paused goal "${displaySlice(snap.pausedGoal, 60)}" (/goal resume)`);
+    waiting.push(`paused goal "${displaySlice(snap.pausedGoal, 60)}" (${workCommand(snap.pausedGoalPolicy, "resume")})`);
   }
   if (snap.listCount > 0) {
     if (policy === "clear") {
@@ -885,7 +886,7 @@ function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
     // not let its finally block leave completionAuditInFlight latched in the
     // successor; release the MAIN and require explicit recovery consent.
     markCompletionAuditRecoveryPending(ctx, `silent-host-successor:${via}`);
-    ctx.ui.notify("glla: detached completion auditor lost with the old host — no verdict was reached; the MAIN is released. /goal resume retries the stored claim.", "warning");
+    ctx.ui.notify(`glla: detached completion auditor lost with the old host — no verdict was reached; the MAIN is released. ${activeGoalSurfaceCommand("resume")} retries the stored claim.`, "warning");
   }
   ctx.ui.notify("glla: pi replaced this session without delivering session_start — absorbed the live replacement as the goal-plane owner (in-memory subagent sessions stay refused).", "info");
   startHeartbeat();
@@ -1033,7 +1034,7 @@ let consecutiveStalls = 0;
 // v0.28.14: carryover snapshot — unfinished work loaded from disk at
 // session_start (predates this session). Resolved ONCE per session at the
 // first NEW activation (new goal / new loop) per the carryover setting.
-let carryoverSnapshot: { pausedGoal?: string; listCount: number; heldLoop?: string } | null = null;
+let carryoverSnapshot: { pausedGoal?: string; pausedGoalPolicy?: Policy; listCount: number; heldLoop?: string } | null = null;
 let carryoverResolved = true;
 // v0.26.6: precise replacement for the removed ship-recency suppression —
 // set while complete_goal's isolated audit runs, so the heartbeat never
@@ -1381,9 +1382,9 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
       status: "paused",
       pauseKind: "error",
       pauseReason: `send-retry storm: ${mins}m of re-arms with no session activity for ${silent}m — the session never went idle for the continuation`,
-      pauseSuggestedAction: "The session produced no events while the send retried (wedged queue — often pi's own rate-limit retry holding the run; pi prints 'escape to cancel'). Press Escape, then /goal resume. A fresh session_start rebinds the goal; restart pi normally only if no replacement arrives.",
+      pauseSuggestedAction: `The session produced no events while the send retried (wedged queue — often pi's own rate-limit retry holding the run; pi prints 'escape to cancel'). Press Escape, then ${activeGoalSurfaceCommand("resume")}. A fresh session_start rebinds the goal; restart pi normally only if no replacement arrives.`,
     }, ctx);
-    ctx.ui.notify(`${goalNoun()} paused: send-retry storm (${mins}m, session silent ${silent}m). Escape cancels the stuck run, then /goal resume. A fresh session_start rebinds it; restart pi normally only if no replacement arrives.`, "warning");
+    ctx.ui.notify(`${goalNoun()} paused: send-retry storm (${mins}m, session silent ${silent}m). Escape cancels the stuck run, then ${activeGoalSurfaceCommand("resume")}. A fresh session_start rebinds it; restart pi normally only if no replacement arrives.`, "warning");
     notifyExternal(ctx, `${goalNoun()} paused: send-retry storm.`);
   }
 }
@@ -1405,9 +1406,9 @@ function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
       status: "paused",
       pauseKind: "error",
       pauseReason: `stalled: ${threshold} continuation refires landed no turn`,
-      pauseSuggestedAction: "The continuation chain is broken in this process (wedged message queue or stale API). Press Escape to cancel any stuck run, then /goal resume. A fresh session_start rebinds the goal; restart pi normally only if no replacement arrives.",
+      pauseSuggestedAction: `The continuation chain is broken in this process (wedged message queue or stale API). Press Escape to cancel any stuck run, then ${activeGoalSurfaceCommand("resume")}. A fresh session_start rebinds the goal; restart pi normally only if no replacement arrives.`,
     }, ctx);
-    ctx.ui.notify(`${goalNoun()} paused: ${threshold} refires produced no turn. Escape cancels a stuck run, then /goal resume. A fresh session_start rebinds it; restart pi normally only if no replacement arrives.`, "warning");
+    ctx.ui.notify(`${goalNoun()} paused: ${threshold} refires produced no turn. Escape cancels a stuck run, then ${activeGoalSurfaceCommand("resume")}. A fresh session_start rebinds it; restart pi normally only if no replacement arrives.`, "warning");
     notifyExternal(ctx, `${goalNoun()} paused: stalled (continuation not landing).`);
     return true;
   }
@@ -1525,15 +1526,15 @@ function heartbeatTick(): void {
     appendLedger(ctx.cwd, "stranded_audit_recovered", { goalId: state.goal.id, via: state.goal.pendingCompletion ? "stored-claim" : "resume-active" });
     if (state.goal.pendingCompletion) {
       markCompletionAuditRecoveryPending(ctx, "heartbeat-recovery");
-      ctx.ui.notify("Completion audit blocked — no verdict. The stored claim is safe; /goal resume starts exactly one fresh auditor.", "warning");
+      ctx.ui.notify(`Completion audit blocked — no verdict. The stored claim is safe; ${activeGoalSurfaceCommand("resume")} starts exactly one fresh auditor.`, "warning");
     } else {
       updateGoal({
         status: "paused",
         pauseKind: "blocked",
         pauseReason: "completion audit interrupted — no verdict",
-        pauseSuggestedAction: "The completion attempt was not evaluated. /goal resume returns to the work so it can call complete_goal again.",
+        pauseSuggestedAction: `The completion attempt was not evaluated. ${activeGoalSurfaceCommand("resume")} returns to the work so it can call complete_goal again.`,
       }, ctx);
-      ctx.ui.notify("Completion audit interrupted — no verdict. MAIN released; /goal resume to continue.", "warning");
+      ctx.ui.notify(`Completion audit interrupted — no verdict. MAIN released; ${activeGoalSurfaceCommand("resume")} to continue.`, "warning");
     }
     return;
   }
@@ -2033,7 +2034,7 @@ function pauseMainModelForManualAction(ctx: ExtensionContext, failure: MainModel
   continuationDispatchStoodDown = true;
   const detail = failure.raw.replace(/\s+/g, " ").trim().slice(0, 180);
   const reason = `main model billing wall${detail ? `: ${detail}` : ""}`;
-  const action = "The provider reports credits/balance or billing exhaustion, not a timed quota reset. Fix billing or switch /model, then /goal resume (or /loop resume); blind retries are stopped.";
+  const action = `The provider reports credits/balance or billing exhaustion, not a timed quota reset. Fix billing or switch /model, then ${activeGoalSurfaceCommand("resume")} (or /loop resume); blind retries are stopped.`;
   if (state.goal?.status === "active") {
     updateGoal({ status: "paused", pauseKind: "error", pauseResumeAt: undefined, pauseReason: reason, pauseSuggestedAction: action }, ctx);
   } else if (state.loop?.active) {
@@ -2058,7 +2059,7 @@ function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModelRecover
   const resumeCmd = state.goal?.policy === "list" ? "/list resume" : normalized.kind === "loop" ? "/loop resume" : "/goal resume";
   const quotaMarker = /quota|rate.?limit|usage.?limit|token.?plan|plan.?limit/i.test(normalized.reason) ? ` · ${normalized.reason}` : "";
   const pauseReason = `main model recovery — automatic probes stopped (${why})${quotaMarker}`;
-  const action = `No automatic provider probes remain. Check the provider reset/billing state or switch /model, then ${resumeCmd} to start a fresh recovery window; /goal cancel stops it.`;
+  const action = `No automatic provider probes remain. Check the provider reset/billing state or switch /model, then ${resumeCmd} to start a fresh recovery window; ${activeGoalSurfaceCommand("cancel")} stops it.`;
   if (normalized.kind === "goal" && state.goal) {
     updateGoal({
       status: "paused",
@@ -2173,7 +2174,7 @@ function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainModelRec
       pauseKind: "wait",
       pauseResumeAt: retryAt,
       pauseReason: `main model recovery — retrying in ${minutes}m (${normalized.reason})`,
-      pauseSuggestedAction: `The provider/quota wall is being retried automatically; configured backup models are tried in order. ${resumeCmd} retries immediately; /goal cancel stops it.`,
+      pauseSuggestedAction: `The provider/quota wall is being retried automatically; configured backup models are tried in order. ${resumeCmd} retries immediately; ${activeGoalSurfaceCommand("cancel")} stops it.`,
     }, ctx);
   } else if (normalized.kind === "loop" && state.loop) {
     state.loop = { ...state.loop, active: false, stopReason: `main model recovery — retrying in ${minutes}m (${normalized.reason}); /loop resume retries immediately` };
@@ -3081,7 +3082,7 @@ function markCompletionAuditRecoveryPending(ctx: ExtensionContext, reason: strin
     pauseKind: "blocked",
     pauseResumeAt: undefined,
     pauseReason: `completion audit blocked — no verdict: ${reason}`,
-    pauseSuggestedAction: "The completion claim is stored and was not judged. Fix the auditor/session issue, then /goal resume to start exactly one fresh audit.",
+    pauseSuggestedAction: `The completion claim is stored and was not judged. Fix the auditor/session issue, then ${activeGoalSurfaceCommand("resume")} to start exactly one fresh audit.`,
     pauseOptions: undefined,
     pauseRecommended: undefined,
   }, ctx);
@@ -3382,10 +3383,10 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
         pauseKind: "blocked",
         pauseResumeAt: undefined,
         pauseReason: `auditor quota: automatic retry horizon reached (${plan.attempt} attempts)`,
-        pauseSuggestedAction: "The completion claim is stored, but automatic auditor probes are stopped. Check the provider reset/billing state, then /goal resume to start a fresh bounded window.",
+        pauseSuggestedAction: `The completion claim is stored, but automatic auditor probes are stopped. Check the provider reset/billing state, then ${activeGoalSurfaceCommand("resume")} to start a fresh bounded window.`,
       }, liveCtx);
       appendLedger(liveCtx.cwd, "quota_retry_capped", { streak: plan.attempt, autoRetryUntil: plan.autoRetryUntil, requestedSec: plan.requestedSec });
-      liveCtx.ui.notify(`Auditor quota recovery stopped after ${plan.attempt} bounded attempts — the claim stays stored; check the provider, then /goal resume.`, "warning");
+      liveCtx.ui.notify(`Auditor quota recovery stopped after ${plan.attempt} bounded attempts — the claim stays stored; check the provider, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
       return;
     }
     const retryMin = Math.max(1, Math.round(plan.retryAfterSec / 60));
@@ -3396,7 +3397,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       pauseKind: "wait",
       pauseResumeAt: new Date(Date.now() + plan.retryAfterSec * 1000).toISOString(),
       pauseReason: `auditor quota: ${result.error}`,
-      pauseSuggestedAction: `Quota auto-retry in ${retryMin}m${providerHint} — or /goal resume to retry now`,
+      pauseSuggestedAction: `Quota auto-retry in ${retryMin}m${providerHint} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
     }, liveCtx);
     appendLedger(liveCtx.cwd, "goal_paused", { reason: `auditor quota: retry in ${plan.retryAfterSec}s (stored-claim retry)`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil });
     liveCtx.ui.notify(`Auditor still quota-limited — next auto-retry in ${retryMin}m${providerHint} (your completion claim is stored; no action needed).`, "warning");
@@ -3425,10 +3426,10 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       pendingCompletion: pending,
       pauseKind: "error",
       pauseReason: `completion audit timed out — ${result.error}`,
-      pauseSuggestedAction: "The claim is stored. Check long-running verification commands, then /goal resume to retry the isolated auditor.",
+      pauseSuggestedAction: `The claim is stored. Check long-running verification commands, then ${activeGoalSurfaceCommand("resume")} to retry the isolated auditor.`,
     }, liveCtx);
     appendLedger(liveCtx.cwd, result.error.startsWith("Auditor exceeded") ? "audit_wall_timeout" : "audit_inactivity_timeout", { goalId, attemptId: claim.attemptId, error: result.error.slice(0, 240) });
-    liveCtx.ui.notify("Completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and /goal resume to retry it.", "warning");
+    liveCtx.ui.notify(`Completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and ${activeGoalSurfaceCommand("resume")} to retry it.`, "warning");
     return;
   }
 
@@ -3455,10 +3456,10 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       auditInfraStreak: infraStreak,
       pauseKind: "error",
       pauseReason,
-      pauseSuggestedAction: "Fix the auditor model or verification command, then /goal resume to retry the stored claim.",
+      pauseSuggestedAction: `Fix the auditor model or verification command, then ${activeGoalSurfaceCommand("resume")} to retry the stored claim.`,
     }, liveCtx);
     appendLedger(liveCtx.cwd, "audit_infra_waiting", { goalId, attemptId: claim.attemptId, error: result.error.slice(0, 240), infraStreak });
-    liveCtx.ui.notify(`Completion auditor infrastructure failed (not a verdict).${reachedInfraCap ? " Repeated failures suggest a broken model or hanging verification command." : ""} The stored claim is safe; fix the model/command and /goal resume.`, "warning");
+    liveCtx.ui.notify(`Completion auditor infrastructure failed (not a verdict).${reachedInfraCap ? " Repeated failures suggest a broken model or hanging verification command." : ""} The stored claim is safe; fix the model/command and ${activeGoalSurfaceCommand("resume")}.`, "warning");
     return;
   }
 
@@ -3471,16 +3472,16 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     auditHistory: history,
     pendingCompletion: undefined,
     pauseReason: result.disapproved
-      ? `auditor disapproved on quota-retry — see /goal status`
+      ? `auditor disapproved on quota-retry — see ${activeGoalStatusCommand()}`
       : result.impossible
         ? `auditor verdict: IMPOSSIBLE on quota-retry — ${(result.impossibleReason ?? "").slice(0, 120)}`
         : `auditor infrastructure error on quota-retry: ${(result.error ?? "").slice(0, 120)}`,
   }, liveCtx);
   liveCtx.ui.notify(
     result.disapproved
-      ? `Auditor (${origin}) DISAPPROVED — resuming; the report is in /goal status.`
+      ? `Auditor (${origin}) DISAPPROVED — resuming; the report is in ${activeGoalStatusCommand()}.`
       : result.impossible
-        ? `Auditor (${origin}): goal IMPOSSIBLE — ${(result.impossibleReason ?? "").slice(0, 100)}. Resuming; consider /goal tweak.`
+        ? `Auditor (${origin}): goal IMPOSSIBLE — ${(result.impossibleReason ?? "").slice(0, 100)}. Resuming; consider ${activeGoalSurfaceCommand("tweak")}.`
         : `Auditor (${origin}) hit an infrastructure error — resuming; re-call complete_goal when ready.`,
     "warning",
   );
@@ -3844,7 +3845,7 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
     // v0.28.1 (S3): the goal is persisted — mark the interrupt so the next
     // fresh session LOADS it (held by default since v0.28.21), and tell the truth instead of "starting now".
     updateGoal({ interruptedAt: nowIso(), interruptedReason: "created in a stale session" }, ctx);
-    ctx.ui.notify(`Goal saved: ${shortObj(goal.objective)} — safe in .pi-glla/, but this stale process can't send continuations. A fresh session_start will resume it; if no replacement arrives, restart pi normally, then /goal resume if autoresume is off.`, "warning");
+    ctx.ui.notify(`Goal saved: ${shortObj(goal.objective)} — safe in .pi-glla/, but this stale process can't send continuations. A fresh session_start will resume it; if no replacement arrives, restart pi normally, then ${activeGoalSurfaceCommand("resume")} if autoresume is off.`, "warning");
     return;
   }
   ctx.ui.notify(`Goal started: ${shortObj(goal.objective)} — the auditor will verify on completion.`, "info");
@@ -3869,7 +3870,7 @@ async function cmdStatus(ctx: ExtensionContext): Promise<void> {
     lines.push(`Audits: ${g.auditHistory.length} (${g.auditHistory.filter((v) => v.approved).length} approved)`);
   }
   if (g.status === "auditing") {
-    lines.push(`Completion audit: ${isCompletionAuditRecoveryPending(g) ? "recovery pending — /goal resume retries the stored claim" : completionAuditInFlight && latestAuditProgress?.label === "queued" ? "detached auditor queued" : completionAuditInFlight ? "detached auditor running" : "awaiting lifecycle recovery"}`);
+    lines.push(`Completion audit: ${isCompletionAuditRecoveryPending(g) ? `recovery pending — ${activeGoalSurfaceCommand("resume")} retries the stored claim` : completionAuditInFlight && latestAuditProgress?.label === "queued" ? "detached auditor queued" : completionAuditInFlight ? "detached auditor running" : "awaiting lifecycle recovery"}`);
   }
   if (g.pauseReason) lines.push(`Paused: ${g.pauseReason}`);
   ctx.ui.notify(lines.join("\n"), "info");
@@ -4386,7 +4387,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
       return;
     }
     if (state.goal.policy !== "list") {
-      ctx.ui.notify("The paused goal didn't come from the list — /goal resume to continue it.", "info");
+      ctx.ui.notify(`The paused goal didn't come from the list — ${activeGoalSurfaceCommand("resume")} to continue it.`, "info");
       return;
     }
     await cmdResume(ctx);
@@ -4451,7 +4452,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     state = { ...state, list: [] };
     persistState(ctx);
     appendLedger(ctx.cwd, "list_cleared", {});
-    ctx.ui.notify("List cleared. Active goal (if any) is untouched — /goal cancel for that, /list cancel to stop the whole list.", "info");
+    ctx.ui.notify(`List cleared. Active goal (if any) is untouched — ${activeGoalSurfaceCommand("cancel")} for that, /list cancel to stop the whole list.`, "info");
     return;
   }
 
@@ -4462,7 +4463,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     const waiting = listQueue().length;
     const activeIsListItem = state.goal?.policy === "list" && (state.goal.status === "active" || state.goal.status === "paused");
     if (waiting === 0 && !activeIsListItem) {
-      ctx.ui.notify("No list to cancel — nothing waiting, and the active goal (if any) isn't a list item. /goal cancel aborts a standalone goal.", "info");
+      ctx.ui.notify(`No list to cancel — nothing waiting, and the active goal (if any) isn't a list item. ${activeGoalSurfaceCommand("cancel")} aborts a standalone goal.`, "info");
       return;
     }
     const dropped = waiting;
@@ -4474,7 +4475,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     }
     appendLedger(ctx.cwd, "list_cancelled", { abortedActive: activeIsListItem, dropped });
     ctx.ui.notify(
-      `List cancelled: ${activeIsListItem ? "active item aborted + " : ""}${dropped} waiting item(s) dropped.${!activeIsListItem && state.goal && state.goal.status === "active" ? " Active goal is not a list item — untouched (/goal cancel for that)." : ""}`,
+      `List cancelled: ${activeIsListItem ? "active item aborted + " : ""}${dropped} waiting item(s) dropped.${!activeIsListItem && state.goal && state.goal.status === "active" ? ` Active goal is not a list item — untouched (${activeGoalSurfaceCommand("cancel")} for that).` : ""}`,
       "info",
     );
     return;
@@ -5241,7 +5242,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       // v0.28.14: one-active-thing — a held loop must not resume over an
       // active goal/list-item (this was the last unguarded stacking path).
       if (state.goal && state.goal.status === "active") {
-        ctx.ui.notify("A goal is active — the held loop stays held. /goal pause or /goal cancel it first, then /loop resume.", "warning");
+        ctx.ui.notify(`A goal is active — the held loop stays held. ${activeGoalSurfaceCommand("pause")} or ${activeGoalSurfaceCommand("cancel")} it first, then /loop resume.`, "warning");
         return;
       }
       // An explicit resume re-arms the counters: fresh stall window,
@@ -5292,7 +5293,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
 
   if (sub === "start") {
     if (state.goal && state.goal.status === "active") {
-      ctx.ui.notify("A goal is active — /goal cancel or /goal pause it before starting a loop.", "warning");
+      ctx.ui.notify(`A goal is active — ${activeGoalSurfaceCommand("cancel")} or ${activeGoalSurfaceCommand("pause")} it before starting a loop.`, "warning");
       return;
     }
     if (isLoopActive()) {
@@ -5406,7 +5407,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     // the well is dry. User typed the command = the act (same auto-start
     // rule as respec).
     if (state.goal && state.goal.status === "active") {
-      ctx.ui.notify("A goal is active — /goal cancel or /goal pause it before starting a loop.", "warning");
+      ctx.ui.notify(`A goal is active — ${activeGoalSurfaceCommand("cancel")} or ${activeGoalSurfaceCommand("pause")} it before starting a loop.`, "warning");
       return;
     }
     // v0.31.1: a paused/active one-shot audit goal + this loop = two stacked
@@ -5417,7 +5418,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     if (state.goal && state.goal.objective.includes(GOAL_AUDIT_ONESHOT_MARKER)) {
       appendLedger(ctx.cwd, "audit_stack_warn", { have: "goal", starting: "loop", goalStatus: state.goal.status });
       ctx.ui.notify(
-        `Heads up: a ${state.goal.status} one-shot audit goal exists in this session — the audit loop SUPERSEDES it (one pass + fixes IS the loop's job). /goal cancel clears it; one audit initiative per session.`,
+        `Heads up: a ${state.goal.status} one-shot audit goal exists in this session — the audit loop SUPERSEDES it (one pass + fixes IS the loop's job). ${activeGoalSurfaceCommand("cancel")} clears it; one audit initiative per session.`,
         "warning",
       );
     }
@@ -5448,7 +5449,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     // that IS the act); metricless + unbounded by design. No limit-nagging:
     // bounds exist on /loop start for whoever wants them.
     if (state.goal && state.goal.status === "active") {
-      ctx.ui.notify("A goal is active — /goal cancel or /goal pause it before starting a loop.", "warning");
+      ctx.ui.notify(`A goal is active — ${activeGoalSurfaceCommand("cancel")} or ${activeGoalSurfaceCommand("pause")} it before starting a loop.`, "warning");
       return;
     }
     if (isLoopActive()) {
@@ -5780,7 +5781,7 @@ function registerAgentTools(pi: any): void {
             auditHistory: history,
             pendingCompletion: undefined,
             pauseReason: `auditor verdict: IMPOSSIBLE (partial) — ${reason}`,
-            pauseSuggestedAction: "Narrow the objective past the impossible part (complete_goal newObjective or /goal tweak) and continue",
+            pauseSuggestedAction: `Narrow the objective past the impossible part (complete_goal newObjective or ${activeGoalSurfaceCommand("tweak")}) and continue`,
           }, ctx);
           ctx.ui.notify(`Auditor: part of the goal is IMPOSSIBLE — ${reason.slice(0, 100)}. aggressiveMode: narrowing and continuing.`, "warning");
           appendLedger(ctx.cwd, "impossible_partial_continue", { reason: reason.slice(0, 200) });
@@ -5788,7 +5789,7 @@ function registerAgentTools(pi: any): void {
           return {
             content: [{
               type: "text",
-              text: `The auditor says PART of this goal can never be satisfied: ${reason}\n\naggressiveMode is ON, so the goal stays ACTIVE. Do NOT keep attempting the impossible part. Narrow the objective to the remaining shippable items — pass newObjective to complete_goal at completion time (or pause_goal proposing /goal tweak if the narrowing needs the user's call) — and continue working the rest now.`,
+              text: `The auditor says PART of this goal can never be satisfied: ${reason}\n\naggressiveMode is ON, so the goal stays ACTIVE. Do NOT keep attempting the impossible part. Narrow the objective to the remaining shippable items — pass newObjective to complete_goal at completion time (or pause_goal proposing ${activeGoalSurfaceCommand("tweak")} if the narrowing needs the user's call) — and continue working the rest now.`,
             }],
             details: {},
           };
@@ -5798,19 +5799,19 @@ function registerAgentTools(pi: any): void {
           auditHistory: history,
           pendingCompletion: undefined,
           pauseKind: "decision",
-          pauseOptions: ["Tweak the objective — /goal tweak <new text>", "Cancel the goal (/goal cancel)"],
+          pauseOptions: [`Tweak the objective — ${activeGoalSurfaceCommand("tweak")} <new text>`, `Cancel the goal (${activeGoalSurfaceCommand("cancel")})`],
           pauseRecommended: 1,
           pauseReason: `auditor verdict: IMPOSSIBLE — ${reason}`,
-          pauseSuggestedAction: "The auditor says this goal can never be satisfied as stated. /goal tweak the objective (or /goal cancel), then /goal resume.",
+          pauseSuggestedAction: `The auditor says this goal can never be satisfied as stated. ${activeGoalSurfaceCommand("tweak")} the objective (or ${activeGoalSurfaceCommand("cancel")}), then ${activeGoalSurfaceCommand("resume")}.`,
         }, ctx);
-        ctx.ui.notify(`Auditor: goal IMPOSSIBLE — ${reason}. Goal paused; /goal tweak or /goal cancel, then /goal resume.`, "warning");
+        ctx.ui.notify(`Auditor: goal IMPOSSIBLE — ${reason}. Goal paused; ${activeGoalSurfaceCommand("tweak")} or ${activeGoalSurfaceCommand("cancel")}, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
         maybeDecisionPopup(ctx);
         appendLedger(ctx.cwd, "goal_paused", { reason: `auditor impossible: ${reason}` });
         notifyExternal(ctx, `Goal paused (auditor: impossible): ${reason.slice(0, 120)}`);
         return {
           content: [{
             type: "text",
-            text: `The auditor's verdict is IMPOSSIBLE: ${reason}\n\nThis is not a disapproval — the auditor says the objective can never be satisfied as stated. The goal is now PAUSED. Do not call complete_goal again. Report the verdict to the user and suggest /goal tweak (narrow or correct the objective) or /goal cancel.`,
+            text: `The auditor's verdict is IMPOSSIBLE: ${reason}\n\nThis is not a disapproval — the auditor says the objective can never be satisfied as stated. The goal is now PAUSED. Do not call complete_goal again. Report the verdict to the user and suggest ${activeGoalSurfaceCommand("tweak")} (narrow or correct the objective) or ${activeGoalSurfaceCommand("cancel")}.`,
           }],
           details: {},
         };
@@ -5837,12 +5838,12 @@ function registerAgentTools(pi: any): void {
             pendingCompletion: pending,
             pauseKind: "error",
             pauseReason: `completion audit timed out — ${result.error}`,
-            pauseSuggestedAction: "The claim is stored. Check long-running verification commands, then /goal resume to retry the isolated auditor.",
+            pauseSuggestedAction: `The claim is stored. Check long-running verification commands, then ${activeGoalSurfaceCommand("resume")} to retry the isolated auditor.`,
           }, ctx);
           appendLedger(ctx.cwd, result.error.startsWith("Auditor exceeded") ? "audit_wall_timeout" : "audit_inactivity_timeout", { goalId: auditGoalId, attemptId: auditAttemptId, error: result.error.slice(0, 240) });
-          ctx.ui.notify("Completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and /goal resume to retry it.", "warning");
+          ctx.ui.notify(`Completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and ${activeGoalSurfaceCommand("resume")} to retry it.`, "warning");
           return {
-            content: [{ type: "text", text: "The completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and /goal resume to retry it." }],
+            content: [{ type: "text", text: `The completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and ${activeGoalSurfaceCommand("resume")} to retry it.` }],
             details: {},
           };
         }
@@ -5875,12 +5876,12 @@ function registerAgentTools(pi: any): void {
               pauseKind: "blocked",
               pauseResumeAt: undefined,
               pauseReason: `auditor quota: automatic retry horizon reached (${plan.attempt} attempts)`,
-              pauseSuggestedAction: "The completion claim is stored, but automatic auditor probes are stopped. Check the provider reset/billing state, then /goal resume to start a fresh bounded window.",
+              pauseSuggestedAction: `The completion claim is stored, but automatic auditor probes are stopped. Check the provider reset/billing state, then ${activeGoalSurfaceCommand("resume")} to start a fresh bounded window.`,
             }, ctx);
             appendLedger(ctx.cwd, "quota_retry_capped", { streak: plan.attempt, autoRetryUntil: plan.autoRetryUntil, requestedSec: plan.requestedSec });
-            ctx.ui.notify(`Auditor quota recovery stopped after ${plan.attempt} bounded attempts — the claim stays stored; check the provider, then /goal resume.`, "warning");
+            ctx.ui.notify(`Auditor quota recovery stopped after ${plan.attempt} bounded attempts — the claim stays stored; check the provider, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
             return {
-              content: [{ type: "text", text: `The auditor hit a quota/rate-limit wall (infrastructure, NOT a verdict). Automatic probes stopped after ${plan.attempt} bounded attempts; the exact completion claim is stored. Check the provider, then /goal resume.` }],
+              content: [{ type: "text", text: `The auditor hit a quota/rate-limit wall (infrastructure, NOT a verdict). Automatic probes stopped after ${plan.attempt} bounded attempts; the exact completion claim is stored. Check the provider, then ${activeGoalSurfaceCommand("resume")}.` }],
               details: {},
             };
           }
@@ -5895,7 +5896,7 @@ function registerAgentTools(pi: any): void {
             pauseKind: "wait",
             pauseResumeAt: new Date(Date.now() + quota.retryAfterSec * 1000).toISOString(),
             pauseReason: `auditor quota: ${result.error}`,
-            pauseSuggestedAction: `Quota auto-retry in ${retryMin}m${providerHint} — or /goal resume to retry now`,
+            pauseSuggestedAction: `Quota auto-retry in ${retryMin}m${providerHint} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
           }, ctx);
           appendLedger(ctx.cwd, "goal_paused", { reason: `auditor quota: retry in ${quota.retryAfterSec}s (${quota.fromUpstream ? "upstream hint" : "bounded default"})`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil });
           scheduleQuotaRetryForSession(ctx, quota.retryAfterSec, result.error, (fresh) => {
@@ -5920,7 +5921,7 @@ function registerAgentTools(pi: any): void {
           return {
             content: [{
               type: "text",
-              text: `The auditor hit a QUOTA / rate-limit error (infrastructure, NOT a verdict): ${result.error}\nThe goal is PAUSED with an automatic retry scheduled in ${retryMin} minute(s)${quota.fromUpstream ? " (upstream hint)" : " (bounded default — edit Quota retry minutes in /glla settings)"}${providerHint}. Your completion claim was not evaluated; do not change your deliverable for this. /goal resume retries immediately.`,
+              text: `The auditor hit a QUOTA / rate-limit error (infrastructure, NOT a verdict): ${result.error}\nThe goal is PAUSED with an automatic retry scheduled in ${retryMin} minute(s)${quota.fromUpstream ? " (upstream hint)" : " (bounded default — edit Quota retry minutes in /glla settings)"}${providerHint}. Your completion claim was not evaluated; do not change your deliverable for this. ${activeGoalSurfaceCommand("resume")} retries immediately.`,
             }],
             details: {},
           };
@@ -5948,18 +5949,18 @@ function registerAgentTools(pi: any): void {
           auditInfraStreak: infraStreak,
           pauseKind: "error",
           pauseReason,
-          pauseSuggestedAction: "The completion claim is stored and was not judged. Fix the auditor model/command, then /goal resume to retry the detached audit.",
+          pauseSuggestedAction: `The completion claim is stored and was not judged. Fix the auditor model/command, then ${activeGoalSurfaceCommand("resume")} to retry the detached audit.`,
         }, ctx);
         appendLedger(ctx.cwd, "goal_paused", { reason: pauseReason, attemptId: auditAttemptId, fallbackUsed });
         const infraCapHint = reachedInfraCap
           ? " Possible causes: model broken or a verification command hanging."
           : "";
-        ctx.ui.notify(`${goalNoun()} paused: the completion auditor failed (infrastructure, not a verdict).${infraCapHint} The claim is stored; fix the model/command, then /goal resume.`, "warning");
-        notifyExternal(ctx, `${goalNoun()} paused: completion auditor infrastructure failure; stored claim awaits /goal resume.`);
+        ctx.ui.notify(`${goalNoun()} paused: the completion auditor failed (infrastructure, not a verdict).${infraCapHint} The claim is stored; fix the model/command, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
+        notifyExternal(ctx, `${goalNoun()} paused: completion auditor infrastructure failure; stored claim awaits ${activeGoalSurfaceCommand("resume")}.`);
         return {
           content: [{
             type: "text",
-            text: `${reachedInfraCap ? `The auditor has failed ${infraStreak} times in a row` : "The completion auditor could not run"} with infrastructure errors (NOT a verdict; last: ${result.error}). The goal is PAUSED and the exact completion claim is stored. Fix the auditor model/command, then /goal resume; do not change your deliverable for this.`,
+            text: `${reachedInfraCap ? `The auditor has failed ${infraStreak} times in a row` : "The completion auditor could not run"} with infrastructure errors (NOT a verdict; last: ${result.error}). The goal is PAUSED and the exact completion claim is stored. Fix the auditor model/command, then ${activeGoalSurfaceCommand("resume")}; do not change your deliverable for this.`,
           }],
           details: {},
         };
@@ -5998,7 +5999,7 @@ function registerAgentTools(pi: any): void {
 
       const noContractHint = state.goal.verificationContract?.trim()
         ? ""
-        : "\n\nNote: this goal has no verification contract, so the auditor inferred done-criteria from the objective text. For sharper verdicts, /goal tweak the objective to add a 'Done when: ...' clause.";
+        : `\n\nNote: this goal has no verification contract, so the auditor inferred done-criteria from the objective text. For sharper verdicts, ${activeGoalSurfaceCommand("tweak")} the objective to add a 'Done when: ...' clause.`;
       // v0.24.2 (Claude-Code lesson — their stop-hook blocks cap at 8): a
       // goal the auditor can NEVER approve used to re-continue forever.
       // auditCap consecutive disapprovals → pause + notify, bounded and
@@ -6016,7 +6017,7 @@ function registerAgentTools(pi: any): void {
         : `last ${auditFeedbackChars} chars (Required-fixes tail)`;
       const auditFeedbackTruncationHint = auditFeedbackIsFull
         ? ""
-        : `\n\nReport truncated at the configured limit. /goal status shows the full report; change Audit feedback chars in /glla settings (0 = full report).`; 
+        : `\n\nReport truncated at the configured limit. ${activeGoalStatusCommand()} shows the full report; change Audit feedback chars in /glla settings (0 = full report).`; 
       const trailingDisapprovals = countTrailingDisapprovals(history);
       if (auditCap > 0 && trailingDisapprovals >= auditCap) {
         // v0.25.0 (contract item 22): aggressiveMode turns the cap into a
@@ -6034,7 +6035,7 @@ function registerAgentTools(pi: any): void {
           }, ctx);
           const todoBlock = pendingTasks.length > 0
             ? pendingTasks.map((t, i) => ` ${i + 1}. ${t}`).join("\n")
-            : " (no discrete objections extracted — re-read the latest report in /goal status)";
+            : " (no discrete objections extracted — re-read the latest report in ${activeGoalStatusCommand()})";
           ctx.ui.notify(`Auditor disapproved ${trailingDisapprovals}× (cap). Treating as TODOs:\n${todoBlock}`, "warning");
           appendLedger(ctx.cwd, "audit_cap_keep_going", { trailingDisapprovals, auditCap, pendingTasks });
           scheduleContinuation(ctx, true);
@@ -6051,19 +6052,19 @@ function registerAgentTools(pi: any): void {
           auditHistory: history,
           pendingCompletion: undefined,
           pauseKind: "decision",
-          pauseOptions: ["Fix the disapproval gap, then continue (/goal resume)", "Tweak the objective — /goal tweak <new text>", "Cancel the goal (/goal cancel)"],
+          pauseOptions: [`Fix the disapproval gap, then continue (${activeGoalSurfaceCommand("resume")})`, `Tweak the objective — ${activeGoalSurfaceCommand("tweak")} <new text>`, `Cancel the goal (${activeGoalSurfaceCommand("cancel")})`],
           pauseRecommended: 1,
           pauseReason: `auditor disapproved ${trailingDisapprovals}× consecutively (cap ${auditCap})`,
-          pauseSuggestedAction: "Read the audit history (/goal status), fix the actual gap or /goal tweak the objective, then /goal resume. Raise Audit cap in /glla settings.",
+          pauseSuggestedAction: `Read the audit history (${activeGoalStatusCommand()}), fix the actual gap or ${activeGoalSurfaceCommand("tweak")} the objective, then ${activeGoalSurfaceCommand("resume")}. Raise Audit cap in /glla settings.`,
         }, ctx);
-        ctx.ui.notify(`${goalNoun()} paused: auditor disapproved ${trailingDisapprovals}× consecutively (cap ${auditCap}). /goal status for the reports; /goal resume to continue.`, "warning");
+        ctx.ui.notify(`${goalNoun()} paused: auditor disapproved ${trailingDisapprovals}× consecutively (cap ${auditCap}). ${activeGoalStatusCommand()} for the reports; ${activeGoalSurfaceCommand("resume")} to continue.`, "warning");
           maybeDecisionPopup(ctx);
         appendLedger(ctx.cwd, "goal_paused", { reason: `disapproval cap: ${trailingDisapprovals} consecutive (cap ${auditCap})` });
         notifyExternal(ctx, `Goal paused: ${trailingDisapprovals} consecutive auditor disapprovals`);
         return {
           content: [{
             type: "text",
-            text: `The auditor has now disapproved ${trailingDisapprovals} times in a row (cap ${auditCap}). The goal is PAUSED — continuing to re-attempt without addressing the pattern wastes tokens.\n\nBefore asking the user, INVESTIGATE:\n1. Read the audit history (the auditor's previous reports — /goal status shows them; state.goal.auditHistory holds them).\n2. Identify the SPECIFIC objections — quote them.\n3. Compare against what you actually shipped (commits, diffs, test output, screenshots).\n4. Form a clear opinion: is the auditor right, wrong, or partially right?\n5. Present the user YOUR ASSESSMENT with quoted objections and shipped evidence — not a generic menu of options.\n\nLatest report (${auditFeedbackLabel}):\n${auditFeedback}\n\nDo not call complete_goal again until the pattern is addressed. /goal resume resumes; /goal tweak fixes a drifted objective.`,
+            text: `The auditor has now disapproved ${trailingDisapprovals} times in a row (cap ${auditCap}). The goal is PAUSED — continuing to re-attempt without addressing the pattern wastes tokens.\n\nBefore asking the user, INVESTIGATE:\n1. Read the audit history (the auditor's previous reports — ${activeGoalStatusCommand()} shows them; state.goal.auditHistory holds them).\n2. Identify the SPECIFIC objections — quote them.\n3. Compare against what you actually shipped (commits, diffs, test output, screenshots).\n4. Form a clear opinion: is the auditor right, wrong, or partially right?\n5. Present the user YOUR ASSESSMENT with quoted objections and shipped evidence — not a generic menu of options.\n\nLatest report (${auditFeedbackLabel}):\n${auditFeedback}\n\nDo not call complete_goal again until the pattern is addressed. ${activeGoalSurfaceCommand("resume")} resumes; ${activeGoalSurfaceCommand("tweak")} fixes a drifted objective.`,
           }],
           details: {},
         };
@@ -6100,10 +6101,10 @@ function registerAgentTools(pi: any): void {
           pendingCompletion: { ...completionClaim, phase: "recovery-pending", recoveryAt: nowIso(), recoveryReason: "auditor-infrastructure" },
           pauseKind: "error",
           pauseReason: `completion auditor infrastructure failure — ${error instanceof Error ? error.message : String(error)}`,
-          pauseSuggestedAction: "Fix the auditor worker/model, then /goal resume to retry the stored claim.",
+          pauseSuggestedAction: `Fix the auditor worker/model, then ${activeGoalSurfaceCommand("resume")} to retry the stored claim.`,
         }, current);
         appendLedger(current.cwd, "audit_infra_waiting", { goalId: auditGoalId, attemptId: auditAttemptId, error: String(error).slice(0, 240) });
-        current.ui.notify("Completion auditor worker failed to settle (infrastructure, not a verdict). The stored claim is safe; /goal resume retries it.", "warning");
+        current.ui.notify(`Completion auditor worker failed to settle (infrastructure, not a verdict). The stored claim is safe; ${activeGoalSurfaceCommand("resume")} retries it.`, "warning");
       });
       return {
         content: [{ type: "text", text: `Completion claim persisted; detached auditor queued (model: ${via ?? "setting"}). The verdict will be applied asynchronously.` }],
@@ -6153,7 +6154,7 @@ function registerAgentTools(pi: any): void {
       // or b") reached the user as an unreadable fragment.
       ctx.ui.notify(`${goalNoun()} paused: ${p.reason}${p.suggestedAction ? `\n\n→ ${p.suggestedAction}` : ""}`, "info");
       notifyExternal(ctx, `${goalNoun()} paused: ${(p.suggestedAction ? `${p.reason} → ${p.suggestedAction}` : p.reason).slice(0, 200)}`);
-      return { content: [{ type: "text", text: "Goal paused. /goal resume to continue." }], details: {} };
+      return { content: [{ type: "text", text: `Goal paused. ${activeGoalSurfaceCommand("resume")} to continue.` }], details: {} };
     },
   }));
 
@@ -6457,7 +6458,7 @@ function registerAgentTools(pi: any): void {
       // v0.28.14: one-active-thing EARLY guard — refuse before the
       // interview floor (a live goal blocks any loop proposal).
       if (state.goal && state.goal.status === "active") {
-        return { content: [{ type: "text", text: "A goal is active — one active thing at a time. The user must /goal pause or /goal cancel it before a loop can start; do not re-propose until then." }], details: {} };
+        return { content: [{ type: "text", text: `A goal is active — one active thing at a time. The user must ${activeGoalSurfaceCommand("pause")} or ${activeGoalSurfaceCommand("cancel")} it before a loop can start; do not re-propose until then.` }], details: {} };
       }
       // v0.14.0: the interview floor — no Confirm until the user replied.
       if (draftingUserReplies === 0) draftingBlockedProposals++;
@@ -6477,7 +6478,7 @@ function registerAgentTools(pi: any): void {
       // while a goal/list-item is active (the /loop start COMMAND guards
       // this; the tool path used to skip it and stack a loop over a goal).
       if (state.goal && state.goal.status === "active") {
-        return { content: [{ type: "text", text: "A goal is active — one active thing at a time. The user must /goal pause or /goal cancel it before a loop can start; do not re-propose until then." }], details: {} };
+        return { content: [{ type: "text", text: `A goal is active — one active thing at a time. The user must ${activeGoalSurfaceCommand("pause")} or ${activeGoalSurfaceCommand("cancel")} it before a loop can start; do not re-propose until then.` }], details: {} };
       }
       // THE TEST-RUN: orchestrator runs the proposed measure once. The user
       // sees the real number before a single iteration burns tokens.
@@ -7083,7 +7084,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     case "decisionPopup": {
       const v = await ctx.ui.select("Decision popup — what a decision-class pause does", [
         "on — a decision pause opens the picker; the widget card is the Escape fallback",
-        "off — widget card only; /goal decide opens the picker on demand",
+        `off — widget card only; ${activeGoalSurfaceCommand("decide")} opens the picker on demand`,
       ]);
       if (v) saveSettings("global", ctx.cwd, { decisionPopup: v.startsWith("off") ? false : undefined });
       return;
@@ -7820,7 +7821,7 @@ function cmdGllaStatus(ctx: ExtensionContext): void {
     lines.push("loop: none");
   }
   if (g?.status === "paused" && g.pauseKind === "decision" && g.pauseOptions?.length) {
-    lines.push(`decision pending (${g.pauseOptions.length} options) — /goal decide`);
+    lines.push(`decision pending (${g.pauseOptions.length} options) — ${activeGoalSurfaceCommand("decide")}`);
   }
   lines.push("deep: /goal status · /list · /loop status · /glla stats · /glla audits · /glla log");
   ctx.ui.notify(`glla status\n${lines.join("\n")}`, "info");
@@ -8413,6 +8414,7 @@ export default function (pi: ExtensionAPI): void {
     // the last session ended. Resolved once at the first NEW activation.
     carryoverSnapshot = {
       pausedGoal: state.goal && state.goal.status === "paused" ? state.goal.objective.slice(0, 60) : undefined,
+      pausedGoalPolicy: state.goal && state.goal.status === "paused" ? state.goal.policy : undefined,
       listCount: listQueue().length,
       heldLoop: state.loop && (state.loop.active || state.loop.stopReason === HELD_ON_RESTORE) ? state.loop.target.slice(0, 60) : undefined,
     };
@@ -8469,10 +8471,10 @@ export default function (pi: ExtensionAPI): void {
       // the later explicit /goal resume can retry from the durable claim.
       if (state.goal?.status === "auditing" && state.goal.pendingCompletion) {
         markCompletionAuditRecoveryPending(ctx, "session_start:blank-load");
-        ctx.ui.notify("Completion audit blocked — no verdict. The claim is safe; load the session, then /goal resume to retry.", "warning");
+        ctx.ui.notify(`Completion audit blocked — no verdict. The claim is safe; load the session, then ${activeGoalSurfaceCommand("resume")} to retry.`, "warning");
       }
       appendLedger(ctx.cwd, "session_waiting_for_load", { reason: startReason });
-      ctx.ui.notify("glla: pi has not loaded a conversation yet — waiting before auto-resume. Load/resume the session, or explicitly run /goal resume or /loop start.", "info");
+      ctx.ui.notify(`glla: pi has not loaded a conversation yet — waiting before auto-resume. Load/resume the session, or explicitly run ${activeGoalSurfaceCommand("resume")} or /loop start.`, "info");
       return;
     }
     // An explicit lifecycle handoff/rebind is continuation consent even if
@@ -8633,7 +8635,7 @@ export default function (pi: ExtensionAPI): void {
             ? "restored on session load — SUPERSEDED by the audit loop in this session"
             : "restored on session load — held for explicit resume",
           pauseSuggestedAction: auditSuperseded
-            ? `/goal cancel clears it (the loop already owns the audit) · ${resumeHint} if you disagree`
+            ? `${activeGoalSurfaceCommand("cancel")} clears it (the loop already owns the audit) · ${resumeHint} if you disagree`
             : resumeHint,
         }, ctx);
         ctx.ui.notify(
@@ -8667,7 +8669,7 @@ export default function (pi: ExtensionAPI): void {
         completionAuditRecoveryArmed = true;
         void retryStoredCompletionAudit("session-recovery");
       } else {
-        ctx.ui.notify("Completion audit blocked — no verdict. The stored claim is safe; /goal resume retries the isolated auditor.", "warning");
+        ctx.ui.notify(`Completion audit blocked — no verdict. The stored claim is safe; ${activeGoalSurfaceCommand("resume")} retries the isolated auditor.`, "warning");
       }
     }
     // v0.29.6: the 0.28.21 loop-vs-goal decision picker is SUPERSEDED by
@@ -8748,12 +8750,12 @@ export default function (pi: ExtensionAPI): void {
       appendLedger(ctx.cwd, "length_continue_exhausted", { consecutive: lc.consecutive });
       ctx.ui.notify(`glla: response hit the output-token cap ${LENGTH_CONTINUE_MAX}× in a row — stepping aside. Ask the model to split the work into smaller pieces.`, "warning");
       if (state.goal && state.goal.status === "active") {
-        notifyExternal(ctx, `Response truncated ${LENGTH_CONTINUE_MAX}× in a row — ${goalNoun()} paused; split the work, then /goal resume.`);
+        notifyExternal(ctx, `Response truncated ${LENGTH_CONTINUE_MAX}× in a row — ${goalNoun()} paused; split the work, then ${activeGoalSurfaceCommand("resume")}.`);
         updateGoal({
           status: "paused",
           pauseKind: "error",
           pauseReason: `output-token limit — ${LENGTH_CONTINUE_MAX} responses in a row were truncated mid-artifact; auto-continue exhausted`,
-          pauseSuggestedAction: "Re-scope the current artifact into smaller pieces (several smaller write/edit calls across turns instead of one giant response), then /goal resume — the truncation budget restarts fresh.",
+          pauseSuggestedAction: `Re-scope the current artifact into smaller pieces (several smaller write/edit calls across turns instead of one giant response), then ${activeGoalSurfaceCommand("resume")} — the truncation budget restarts fresh.`,
         }, ctx);
         // The pause is the durable record; an explicit recovery gets a full
         // fresh truncation budget (otherwise the sticky gaveUp flag would
@@ -8832,10 +8834,10 @@ export default function (pi: ExtensionAPI): void {
           updateGoal({
             status: "paused",
             pauseKind: "decision",
-            pauseOptions: ["Retry — /goal resume", "Tweak the objective — /goal tweak <new text>", "Cancel the goal (/goal cancel)"],
+            pauseOptions: [`Retry — ${activeGoalSurfaceCommand("resume")}`, `Tweak the objective — ${activeGoalSurfaceCommand("tweak")} <new text>`, `Cancel the goal (${activeGoalSurfaceCommand("cancel")})`],
             pauseRecommended: 1,
             pauseReason: `stalled: ${HEARTBEAT_MAX_NUDGES} consecutive unproductive turns (no tools, short or repetitive)`,
-            pauseSuggestedAction: "Inspect the goal — /goal resume to retry, /goal tweak to narrow it, /goal cancel to abort.",
+            pauseSuggestedAction: `Inspect the goal — ${activeGoalSurfaceCommand("resume")} to retry, ${activeGoalSurfaceCommand("tweak")} to narrow it, ${activeGoalSurfaceCommand("cancel")} to abort.`,
           }, ctx);
           ctx.ui.notify(`${goalNoun()} paused: stalled (${HEARTBEAT_MAX_NUDGES} unproductive turns).`, "warning");
           maybeDecisionPopup(ctx);
@@ -8918,7 +8920,7 @@ export default function (pi: ExtensionAPI): void {
           status: "paused",
           pauseKind: "error",
           pauseReason: `token limit exceeded (${used.toLocaleString()} > ${limit.toLocaleString()})`,
-          pauseSuggestedAction: "Raise Token limit in /glla settings (or set 0 to disable), then /goal resume",
+          pauseSuggestedAction: `Raise Token limit in /glla settings (or set 0 to disable), then ${activeGoalSurfaceCommand("resume")}`,
         }, ctx);
         ctx.ui.notify(`${goalNoun()} paused: token limit exceeded (${used.toLocaleString()} > ${limit.toLocaleString()}). Raise Token limit in /glla settings, or set it to 0 to disable.`, "warning");
         notifyExternal(ctx, `Goal paused: token limit exceeded (${used} > ${limit}).`);
@@ -8966,9 +8968,9 @@ export default function (pi: ExtensionAPI): void {
             pauseKind: "error",
             pauseReason: reason,
             errorBrakeStreak: brakeStreak + 1,
-            pauseSuggestedAction: "Deterministic wall — the provider rejects this response shape every time, so blind retries never help. Re-scope the work into smaller pieces (several smaller write/edit calls across turns), then /goal resume.",
+            pauseSuggestedAction: `Deterministic wall — the provider rejects this response shape every time, so blind retries never help. Re-scope the work into smaller pieces (several smaller write/edit calls across turns), then ${activeGoalSurfaceCommand("resume")}.`,
           }, ctx);
-          ctx.ui.notify(`Goal paused: ${reason}. Re-scope into smaller pieces, then /goal resume.`, "warning");
+          ctx.ui.notify(`Goal paused: ${reason}. Re-scope into smaller pieces, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
           notifyExternal(ctx, `Goal paused: ${reason}.`);
           appendLedger(ctx.cwd, "goal_paused", { reason });
           return;
@@ -8994,7 +8996,7 @@ export default function (pi: ExtensionAPI): void {
             pauseReason: `${reason} — 6 error-brakes in a row; the provider has been erroring for an extended window`,
             pauseSuggestedAction: quotaWall
               ? "Provider quota/rate-limit wall — resuming won't help until the window resets. Hourly top-of-hour probes will pick work back up; switch /model to a different provider to continue immediately."
-              : "Probing at the top of each hour — rate-limit windows typically expire on clock-hour boundaries. /goal resume retries now.",
+              : `Probing at the top of each hour — rate-limit windows typically expire on clock-hour boundaries. ${activeGoalSurfaceCommand("resume")} retries now.`,
           }, ctx);
           ctx.ui.notify(`${goalNoun()} parked: ${reason} — 6 brakes in a row. ${quotaWall ? "Quota/rate-limit wall — switching /model continues immediately; otherwise hourly" : "Hourly"} top-of-hour probes will pick work back up when the window opens.`, "warning");
           notifyExternal(ctx, `${goalNoun()} parked: provider erroring across 6 error-brake cycles — hourly top-of-hour probes scheduled.`);
@@ -9026,7 +9028,7 @@ export default function (pi: ExtensionAPI): void {
           errorBrakeStreak: brakeStreak + 1,
           pauseSuggestedAction: quotaWall
             ? `Provider quota/rate-limit wall — resuming won't help until the window resets. Switch /model to a different provider to continue now, or let the probe auto-resume in ${cooldownMin}m.`
-            : `Transient provider flake? The goal auto-resumes once in ${cooldownMin}m if still paused for this reason — or /goal resume now.`,
+            : `Transient provider flake? The goal auto-resumes once in ${cooldownMin}m if still paused for this reason — or ${activeGoalSurfaceCommand("resume")} now.`,
         }, ctx);
         ctx.ui.notify(`Goal paused: ${reason}.${quotaWall ? " Quota/rate-limit wall — resuming won't help until the window resets; switch /model to continue now." : ""}`, "warning");
         notifyExternal(ctx, `Goal paused: ${reason}.`);
@@ -9062,7 +9064,7 @@ export default function (pi: ExtensionAPI): void {
           status: "paused",
           pauseKind: "blocked",
           pauseReason: "5 consecutive aborts (user interrupted)",
-          pauseSuggestedAction: "You interrupted 5 turns in a row — the goal stays paused until you /goal resume (or /goal cancel).",
+          pauseSuggestedAction: `You interrupted 5 turns in a row — the goal stays paused until you ${activeGoalSurfaceCommand("resume")} (or ${activeGoalSurfaceCommand("cancel")}).`,
         }, ctx);
         ctx.ui.notify("Goal paused: 5 consecutive aborts (user interrupted).", "warning");
         appendLedger(ctx.cwd, "goal_paused", { reason: "5 consecutive aborts (user interrupted)" });
@@ -9072,7 +9074,7 @@ export default function (pi: ExtensionAPI): void {
       // fall-through re-fired the continuation immediately, so every Esc
       // was answered by another turn under the user's hands ("it auto
       // triggered and I kept spamming esc on it" — pully, 2026-07-30).
-      ctx.ui.notify(`${goalNoun()} standing down — turn aborted by user (not counted toward stalls). /goal resume to continue, /goal cancel to stop.`, "info");
+      ctx.ui.notify(`${goalNoun()} standing down — turn aborted by user (not counted toward stalls). ${activeGoalSurfaceCommand("resume")} to continue, ${activeGoalSurfaceCommand("cancel")} to stop.`, "info");
       abortedStandDown = true; // v0.29.5: heartbeat/compaction refires must not resurrect the chain
       appendLedger(ctx.cwd, "abort_stand_down", { consecutiveAborts: consecutiveAbortIterations });
       return;

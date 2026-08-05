@@ -158,7 +158,8 @@ test("v0.29.8: /goal audit [focus] — the one-shot project audit; /glla status 
   assert.ok(SRC.includes("return cmdSet(projectAuditTarget(route.rest || undefined), ctx, true);"));
   // /glla status aggregates the ONE state + pointers.
   assert.ok(SRC.includes("function cmdGllaStatus(ctx: ExtensionContext): void {"));
-  assert.ok(SRC.includes("decision pending (${g.pauseOptions.length} options) — /goal decide"));
+  assert.ok(SRC.includes("decision pending (${g.pauseOptions.length} options) — ${activeGoalSurfaceCommand(\"decide\")}"));
+  // v0.34.51: the /glla status decision line is mode-aware (goal vs list policy).
   assert.ok(SRC.includes("deep: /goal status · /list · /loop status · /glla stats · /glla audits · /glla log"));
   assert.ok(SRC.includes('if (/^status(?:\\s|$)/.test(trimmed)) {'));
 });
