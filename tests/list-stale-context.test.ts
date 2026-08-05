@@ -231,6 +231,7 @@ test("v0.34.51: the honest recovery result — the refreshed session owns the co
 
 test("v0.34.51: list_add and list_activate tools return the stale-context recovery result without mutating", async () => {
   __testOnlyResetStaleFlag();
+  setGlobalAutoResume(true); // seeded ACTIVE goal must survive session_start (HOLD default pauses it)
   const cwd = tmpCwd();
   seedState(cwd, {
     goal: {
@@ -276,7 +277,10 @@ test("v0.34.51: source — cmdList captures the entry probe and gates every muta
   assert.match(SRC, /if \(staleEntry && LIST_MUTATING_SUBCOMMANDS\.has\(sub\)\) \{/, "top-level mutation gate");
   assert.match(SRC, /appendLedger\(ctx\.cwd, "list_mutation_refused_stale", \{ sub \}\)/, "refusal is ledgered with the verb");
   assert.match(SRC, /if \(staleEntry\) \{\n    appendLedger\(ctx\.cwd, "list_mutation_refused_stale", \{ sub: "dump" \}\);\n    return;\n  \}/, "dump fallthrough is gated");
-  assert.ok(!SRC.includes("const staleEntry = warnIfStaleAtEntry(ctx, \"/list\");\n  const parts"), "probe precedes parsing (gate runs first)");
+  // Probe runs before the gate, and the gate runs after sub parsing:
+  const probeIdx = SRC.indexOf("const staleEntry = warnIfStaleAtEntry(ctx, \"/list\");");
+  const gateIdx = SRC.indexOf("if (staleEntry && LIST_MUTATING_SUBCOMMANDS.has(sub))");
+  assert.ok(probeIdx > 0 && gateIdx > probeIdx, "entry probe precedes the mutation gate");
   assert.match(CORE, /LIST_MUTATING_SUBCOMMANDS = new Set\(\[/, "the verb set lives in core next to listMutationBlocked");
   for (const verb of ["audit", "tweak", "pause", "resume", "add", "import", "clear", "cancel", "next", "remove", "rm"]) {
     assert.ok(CORE.includes(`"${verb}"`), `set covers ${verb}`);
