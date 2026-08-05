@@ -39,7 +39,15 @@ export interface AuditorProgress {
   currentTool?: string;
   currentToolArgs?: string;
   currentToolStartedAt?: number;
+  /** v0.34.56: the toolCallId of the open start (undefined when the start
+   * event carried none — the missing-toolCallId shape). */
+  currentToolId?: string;
   toolCalls: Array<{ name: string; argsPrefix: string; finishedAt: number }>;
+  /** v0.34.56: explicitly unmatched tool starts/ends — see
+   * applyToolExecutionEvent (goal-loop-auditor.ts) and the worker's mirror
+   * in scripts/goal-auditor-worker.mjs. Never dropped, never falsely paired. */
+  unmatchedToolStarts: Array<{ name: string; argsPrefix: string; startedAt: number; toolCallId?: string }>;
+  unmatchedToolEnds: Array<{ toolCallId?: string; toolName?: string; at: number }>;
 }
 
 export type AuditorModel = string | { provider: string; id: string };
@@ -131,8 +139,8 @@ interface AuditorProgressFile {
   currentToolStartedAt?: number;
   /** v0.34.56: explicitly unmatched tool telemetry facts (see
    * applyToolExecutionEvent in goal-loop-auditor.ts). */
-  unmatchedToolStarts?: AuditProgress["unmatchedToolStarts"];
-  unmatchedToolEnds?: AuditProgress["unmatchedToolEnds"];
+  unmatchedToolStarts?: AuditorProgress["unmatchedToolStarts"];
+  unmatchedToolEnds?: AuditorProgress["unmatchedToolEnds"];
 }
 
 export interface AuditorProcessRuntime {
@@ -228,6 +236,8 @@ function asProgress(file: AuditorProgressFile, startedAt: number): AuditorProgre
     ...(file.lastActivityAt !== undefined ? { lastActivityAt: file.lastActivityAt } : {}),
     recentOutput: file.recentOutput,
     toolCalls: file.toolCalls,
+    unmatchedToolStarts: file.unmatchedToolStarts ?? [],
+    unmatchedToolEnds: file.unmatchedToolEnds ?? [],
     ...(file.currentTool ? { currentTool: file.currentTool } : {}),
     ...(file.currentToolArgs ? { currentToolArgs: file.currentToolArgs } : {}),
     ...(file.currentToolStartedAt ? { currentToolStartedAt: file.currentToolStartedAt } : {}),
@@ -370,10 +380,10 @@ export async function runDetachedGoalCompletionAuditor(args: {
                 regressionShieldPassed: false, regressionShieldMissing: shield.missingItems,
               };
             }
-            args.onProgress?.({ phase: "complete", elapsedMs: now() - startedAt, recentOutput: output.split("\n").filter(Boolean).slice(-8), toolCalls: result.toolCalls });
+            args.onProgress?.({ phase: "complete", elapsedMs: now() - startedAt, recentOutput: output.split("\n").filter(Boolean).slice(-8), toolCalls: result.toolCalls, unmatchedToolStarts: [], unmatchedToolEnds: [] });
             return { approved: true, disapproved: false, output, model, thinkingLevel, regressionShieldPassed: true };
           }
-          args.onProgress?.({ phase: "complete", elapsedMs: now() - startedAt, recentOutput: output.split("\n").filter(Boolean).slice(-8), toolCalls: result.toolCalls });
+          args.onProgress?.({ phase: "complete", elapsedMs: now() - startedAt, recentOutput: output.split("\n").filter(Boolean).slice(-8), toolCalls: result.toolCalls, unmatchedToolStarts: [], unmatchedToolEnds: [] });
           return { approved: parsed.approved, disapproved: parsed.disapproved, impossible: parsed.impossible, impossibleReason: parsed.impossibleReason, output, model, thinkingLevel };
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") return infra(model, thinkingLevel, `invalid auditor result: ${error instanceof Error ? error.message : String(error)}`);
