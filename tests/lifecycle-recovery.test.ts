@@ -181,7 +181,8 @@ test("v0.34.54: /list show after a fresh session_start — renders clean, zero s
   assert.ok(fresh.ui.matching("List (1)").some((n) => n.message.includes("queued item one")), "the queue renders after rebind");
   assert.equal(fresh.ui.matching(RECOVERY).length, 0, "no stale warning — the handle is alive again");
   assert.equal(after.split("\n").length, before.split("\n").length, "no probe trail — warnIfStaleAtEntry never fired");
-  assert.ok(!after.includes('"extension_api_stale"'), "no staleness ledgered after rebind");
+  const staleLines = (t: string) => t.split("\n").filter((l) => l.includes('"extension_api_stale"')).length;
+  assert.equal(staleLines(after), staleLines(before), "no NEW staleness ledgered after rebind (phase-1 history stays untouched)");
 });
 
 test("v0.34.54: settings after a fresh session_start — the table opens AND a real write lands", async () => {
@@ -208,7 +209,9 @@ test("v0.34.54: settings after a fresh session_start — the table opens AND a r
   await pi.command("glla", "", fresh);
   await tick();
   assert.equal(uiOpened, 1, "the settings table opens after rebind");
-  assert.ok(!ledgerText(cwd).includes('"settings_mutation_refused_stale"'), "no refusal after rebind");
+  const afterLedger = ledgerText(cwd);
+  const refusals = (t: string) => t.split("\n").filter((l) => l.includes('"settings_mutation_refused_stale"')).length;
+  assert.equal(refusals(afterLedger), refusals(beforeLedger), "no NEW refusal after rebind (phase-1 refusal stays in history)");
 
   // (b) a REAL settings write lands through the menu: pick the
   // autoAcceptDrafts row, answer "on" — the global settings file must
@@ -235,8 +238,8 @@ test("v0.34.54: source — read-only surfaces are never in the mutating sets; th
   assert.ok(!SETTINGS_MUTATING_ACTIONS.has("status") && !SETTINGS_MUTATING_ACTIONS.has("log") && !SETTINGS_MUTATING_ACTIONS.has("stats") && !SETTINGS_MUTATING_ACTIONS.has("audits"), "read-only /glla verbs stay ungated");
   // The /list show branch must NOT be gated by the entry probe (inspect,
   // don't mutate) — it only prints the honest warning via the probe:
-  assert.match(SRC, /const staleEntry = warnIfStaleAtEntry\(ctx, "\/list"\);[\s\S]{0,1200}?if \(sub === "show"\)/, "the probe is captured before the show branch");
-  const showBlock = SRC.slice(SRC.indexOf('if (sub === "show")'), SRC.indexOf('if (sub === "show")') + 400);
+  assert.match(SRC, /const staleEntry = warnIfStaleAtEntry\(ctx, "\/list"\);[\s\S]{0,1200}?if \(!sub \|\| sub === "show"\)/, "the probe is captured before the show branch");
+  const showBlock = SRC.slice(SRC.indexOf('if (!sub || sub === "show")'), SRC.indexOf('if (!sub || sub === "show")') + 400);
   assert.ok(!showBlock.includes("LIST_MUTATING_SUBCOMMANDS"), "the show branch itself is ungated");
   // The settings gate refuses the bare entry on stale and names the recovery:
   assert.match(SRC, /staleEntry && \(verb === "ui" \|\| SETTINGS_MUTATING_ACTIONS\.has\(verb\)\)/, "the settings gate refuses the entry + mutating verbs on stale");
