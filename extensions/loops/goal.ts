@@ -3328,17 +3328,20 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     return;
   }
 
-  if (result.regressionShieldPassed === false && result.regressionShieldMissing && result.regressionShieldMissing.length > 0) {
-    const missing = result.regressionShieldMissing;
+  if (result.regressionShieldPassed === false) {
+    const missing = result.regressionShieldMissing ?? [];
+    const detail = missing.length > 0
+      ? `its evidence did not reference these contract items:\n${missing.map((item) => `- ${item}`).join("\n")}`
+      : "its report did not include a valid <evidence> block";
     updateGoal({
       status: "active",
       auditHistory: history,
       pendingCompletion: undefined,
-      pauseReason: "regression shield: auditor approved, but evidence never referenced contract items",
-      pauseSuggestedAction: "Call complete_goal again — the next auditor run is told exactly which items to quote evidence for.",
+      pauseReason: "regression shield: auditor approved, but the evidence contract was not satisfied",
+      pauseSuggestedAction: "Call complete_goal again — the next auditor run is told exactly which evidence the shield requires.",
     }, liveCtx);
     liveCtx.ui.notify(
-      `Regression shield blocked completion: the auditor approved, but its evidence did not reference these contract items:\n${missing.map((item) => `- ${item}`).join("\n")}\n\nCall complete_goal again; the next audit will be told to quote raw evidence for each item.`,
+      `Regression shield blocked completion: the auditor approved, but ${detail}.\n\nCall complete_goal again; the next audit will be told to quote raw evidence for each item.`,
       "warning",
     );
     appendLedger(liveCtx.cwd, "audit_shield_blocked", { goalId, attemptId: claim.attemptId, missing });
@@ -5913,24 +5916,27 @@ function registerAgentTools(pi: any): void {
       // referenced. NOT a verdict on the work — the next audit is told
       // exactly what to quote. (The hegemon case: three genuine approvals
       // shield-blocked on vocabulary mismatches read as a "parser bug".)
-      if (result.regressionShieldPassed === false && result.regressionShieldMissing && result.regressionShieldMissing.length > 0) {
-        const missing = result.regressionShieldMissing;
+      if (result.regressionShieldPassed === false) {
+        const missing = result.regressionShieldMissing ?? [];
+        const detail = missing.length > 0
+          ? `the report's evidence never referenced these contract items:\n${missing.map((i) => `- ${i}`).join("\n")}`
+          : "the report did not include a valid <evidence> block";
         updateGoal({
           status: "active",
           auditHistory: history,
           pendingCompletion: undefined,
-          pauseReason: `regression shield: auditor approved, but evidence never referenced ${missing.length} contract item(s)`,
-          pauseSuggestedAction: "call complete_goal again — the next auditor run is told exactly which items to quote evidence for",
+          pauseReason: "regression shield: auditor approved, but the evidence contract was not satisfied",
+          pauseSuggestedAction: "call complete_goal again — the next auditor run is told exactly which evidence the shield requires",
         }, ctx);
         ctx.ui.notify(
-          `Regression shield blocked completion: the auditor approved, but its evidence did not reference these contract items:\n${missing.map((item) => `- ${item}`).join("\n")}\n\nCall complete_goal again; the next audit will be told to quote raw evidence for each item.`,
+          `Regression shield blocked completion: the auditor approved, but ${detail}.\n\nCall complete_goal again; the next audit will be told to quote raw evidence for each item.`,
           "warning",
         );
         scheduleContinuation(ctx, true);
         return {
           content: [{
             type: "text",
-            text: `The auditor APPROVED, but the orchestrator's regression shield blocked completion: the report's evidence never referenced these contract items:\n${missing.map((i) => `- ${i}`).join("\n")}\n\nThis is NOT a verdict on your work — do not change your deliverable for this. Call complete_goal again; the next auditor run is explicitly told to quote raw evidence for each of these items.`,
+            text: `The auditor APPROVED, but the orchestrator's regression shield blocked completion: ${detail}.\n\nThis is NOT a verdict on your work — do not change your deliverable for this. Call complete_goal again; the next audit is explicitly told to quote raw evidence for each of these items.`,
           }],
           details: {},
         };
