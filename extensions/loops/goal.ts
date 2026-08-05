@@ -5765,7 +5765,7 @@ function registerAgentTools(pi: any): void {
       // THREE-WAY SPLIT (v0.9.9): infrastructure failure is NOT a verdict.
       // The wild-caught case: 6 silent "disapprovals" that were really a dead
       // auditor model. The agent must be able to tell the difference.
-      if (result.error && !result.disapproved) {
+      if (result.error && !result.disapproved && result.regressionShieldPassed !== false) {
         // Watchdog timeouts are infrastructure failures, but retain the exact
         // completion claim so /goal resume can retry the isolated auditor
         // directly. A timeout is not a verdict and must not be fed back into
