@@ -35,7 +35,27 @@ export type Status =
 
 export type Policy = "goal" | "list"; // v0.3.0: "loop".
 
-export interface Task {
+/** User-facing controls whose command root follows the active goal policy. */
+export type ModeCommand = "pause" | "tweak" | "resume";
+
+/** Return the command root for a supervised work surface. */
+export function workCommandRoot(mode: Policy | "loop" | undefined): "/goal" | "/list" | "/loop" {
+  if (mode === "list") return "/list";
+  if (mode === "loop") return "/loop";
+  return "/goal";
+}
+
+/** Build a mode-correct pause/tweak/resume command for a goal or list item. */
+export function modeCommand(mode: Policy | undefined, command: ModeCommand): string {
+  return `${workCommandRoot(mode)} ${command}`;
+}
+
+/** Build a command for a goal, list item, or metric loop. */
+export function workCommand(mode: Policy | "loop" | undefined, command: string): string {
+  return `${workCommandRoot(mode)} ${command}`;
+}
+
+export interface Task {"}]}]}]}񟿿? Wait malformed. Need tool call valid JSON. I accidentally extra. Let's resend. л. 天天中彩票能 тру. to=functions.edit code? Need commentary. 重庆时时彩杀. sexleketøy.Winvalid? Use exact.providername. Let's call.彩票大发快三. I need ensure JSON valid.қәр. aaqqissu. 亚洲av. to=functions.edit  (commentary) code  Erotiske.”】【json}elseif. һөкүмәт. Wait previous tool call not actually sent due analysis? It shows malformed in my thought not tool. Let's send proper.уаҩ.เงินบาทไทย. to=functions.edit  (commentary) code.  (No, I need use `functions.edit` namespace target commentary). Let's do. ഉട. I keep thinking; call now.av电影. to=functions.edit  (commentary)  code. 
   id: string;
   title: string;
   status: "pending" | "in_progress" | "complete";

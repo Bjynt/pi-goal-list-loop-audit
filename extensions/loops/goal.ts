@@ -26,6 +26,10 @@ import {
   type State,
   type MainModelRecovery,
   type Status,
+  type ModeCommand,
+  modeCommand,
+  workCommand,
+  workCommandRoot,
   appendLedger,
   archiveDir,
   archivedGoalPath,
@@ -2725,6 +2729,8 @@ const displaySlice = (s: string, max: number): string => compactDisplayText(s).s
 /** v0.28.30: terminology — a list item is not a goal (user note: "we seem
  * to call everything goal"). User-facing pause/abort notifies name the policy. */
 const goalNoun = (): string => (state.goal?.policy === "list" ? "List item" : "Goal");
+const activeGoalCommand = (command: ModeCommand): string => modeCommand(state.goal?.policy, command);
+const activeGoalRoot = (): "/goal" | "/list" => workCommandRoot(state.goal?.policy) as "/goal" | "/list";
 function notifyPersistenceState(ctx: ExtensionContext): void {
   if (isPersistenceDegraded() && !persistenceDegradedNotified) {
     persistenceDegradedNotified = true;
@@ -3876,24 +3882,26 @@ async function cmdPause(ctx: ExtensionContext): Promise<void> {
   }
   releaseContinuationDispatchStandDown();
   clearDispatchRecord(ctx.cwd);
+  const resumeCommand = activeGoalCommand("resume");
   updateGoal({
     status: "paused",
     pauseKind: "blocked",
     pauseReason: "paused by user",
-    pauseSuggestedAction: state.goal.policy === "list" ? "/list resume to continue" : "/goal resume to continue",
+    pauseSuggestedAction: `${resumeCommand} to continue`,
     pauseResumeAt: undefined,
   }, ctx);
   // v0.22.7: name WHAT was paused — a list item resumes through /list.
   if (state.goal.policy === "list") {
     const queued = listQueue().length;
-    ctx.ui.notify(`List item "${shortObj(state.goal.objective)}" paused${queued > 0 ? ` (${queued} waiting in the list)` : ""}. /list resume to continue.`, "info");
+    ctx.ui.notify(`List item "${shortObj(state.goal.objective)}" paused${queued > 0 ? ` (${queued} waiting in the list)` : ""}. ${resumeCommand} to continue.`, "info");
     return;
   }
-  ctx.ui.notify(`Goal "${shortObj(state.goal.objective)}" paused. /goal resume to continue.`, "info");
+  ctx.ui.notify(`Goal "${shortObj(state.goal.objective)}" paused. ${resumeCommand} to continue.`, "info");
 }
 
 async function cmdResume(ctx: ExtensionContext): Promise<void> {
   releaseInitialSessionLoadBarrier();
+  const resumeCommand = activeGoalCommand("resume");
   if (manuallyResumeMainModelRecovery(ctx)) return;
   if (state.mainModelRecovery?.retryAt) {
     clearMainModelRecoveryTimer();
@@ -3911,7 +3919,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
       ctx.ui.notify("A loop is active — one active thing at a time. /loop stop it first, then resume the goal.", "warning");
       return;
     }
-    appendLedger(ctx.cwd, "resume_rekick", { goalId: state.goal.id, policy: state.goal.policy, via: "/goal resume" });
+    appendLedger(ctx.cwd, "resume_rekick", { goalId: state.goal.id, policy: state.goal.policy, via: resumeCommand });
     if (state.goal.interruptedAt) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx); // v0.34.7: same marker law here
     ctx.ui.notify(
       `The ${state.goal.policy === "list" ? "list item" : "goal"} is ACTIVE but idle — re-firing its continuation: ${displaySlice(state.goal.objective, 70)}`,
@@ -3933,7 +3941,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
       ctx.ui.notify("A loop is active — one active thing at a time. /loop stop it first, then resume the completion audit.", "warning");
       return;
     }
-    const staleEntry = warnIfStaleAtEntry(ctx, "/goal resume");
+    const staleEntry = warnIfStaleAtEntry(ctx, resumeCommand);
     if (staleEntry) return;
     markCompletionAuditRecoveryPending(ctx, "manual-resume");
     completionAuditRecoveryArmed = true;
@@ -3954,7 +3962,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
   // (or zombie — S1). Now: persist the resume (the next fresh session
   // auto-resumes ACTIVE goals), mark the interrupt, tell the truth, and
   // skip the send that can never land.
-  const staleEntry = warnIfStaleAtEntry(ctx, "/goal resume");
+  const staleEntry = warnIfStaleAtEntry(ctx, resumeCommand);
   // v0.12.0: refresh the token cap from CURRENT settings on resume — goals
   // snapshot the cap at creation, so a goal paused under an old default
   // (e.g. 10M) would re-pause instantly even after the default changed.
