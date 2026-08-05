@@ -28,7 +28,9 @@ import {
   readState,
   mergeSettings,
   auditFeedbackExcerpt,
+  auditVerdictLabel,
   DEFAULT_AUDIT_FEEDBACK_CHARS,
+  formatGoalAuditHistory,
   renderGoalMarkdown,
   shouldAutoResumeOnSessionStart,
   statusLabel,
@@ -70,6 +72,66 @@ test("statusLabel covers all states", () => {
   assert.equal(statusLabel("paused"), "paused");
   assert.equal(statusLabel("aborted"), "aborted");
   assert.equal(statusLabel(null), "no goal");
+});
+
+test("audit display classification keeps semantic verdicts separate from infra and shield outcomes", () => {
+  const entries = [
+    { approved: true, disapproved: false },
+    { approved: false, disapproved: true },
+    { approved: false, disapproved: false, impossible: true },
+    { approved: true, disapproved: false, regressionShieldPassed: false },
+    { approved: false, disapproved: false, error: "auditor stalled" },
+  ];
+  assert.deepEqual(entries.map(auditVerdictLabel), [
+    "approved",
+    "disapproved",
+    "impossible",
+    "shield-blocked",
+    "infrastructure failure",
+  ]);
+
+  const history = entries.map((entry, i) => ({
+    at: `2026-07-19T00:0${i}:00Z`,
+    model: `test/${i}`,
+    report: `report ${i}`,
+    ...entry,
+  }));
+  const goal = {
+    id: "audit-display",
+    objective: "keep categories honest",
+    status: "active" as const,
+    policy: "goal" as const,
+    autoContinue: true,
+    usage: { tokensUsed: 0, tokensLimit: 0 },
+    createdAt: "2026-07-19T00:00:00Z",
+    updatedAt: "2026-07-19T00:00:00Z",
+    auditHistory: history,
+  };
+  const markdown = renderGoalMarkdown(goal);
+  for (const label of ["approved", "disapproved", "impossible", "shield-blocked", "infrastructure failure"]) {
+    assert.match(markdown, new RegExp(`— ${label} —`), `${label} remains explicit in the auditor prompt state`);
+  }
+  const auditLines = formatGoalAuditHistory(goal).split("\n");
+  assert.equal(auditLines.length, entries.length);
+  assert.notEqual(auditLines[0]![0], auditLines[3]![0], "shield-blocked does not share approved's glyph");
+  assert.notEqual(auditLines[1]![0], auditLines[4]![0], "infrastructure failure does not share disapproved's glyph");
+});
+
+test("list policy and aborted status remain separate display facts", () => {
+  const md = renderGoalMarkdown({
+    id: "aborted-list-item",
+    objective: "cancelled list work",
+    status: "aborted",
+    policy: "list",
+    autoContinue: false,
+    usage: { tokensUsed: 0, tokensLimit: 0 },
+    createdAt: "2026-07-19T00:00:00Z",
+    updatedAt: "2026-07-19T00:00:00Z",
+    stopReason: "list cancelled",
+  });
+  assert.match(md, /\*\*Status\*\*: aborted/);
+  assert.match(md, /\*\*Policy\*\*: list/);
+  assert.match(md, /\*\*Stop reason\*\*: list cancelled/);
 });
 
 test("backoffMs caps at 5 min", () => {
