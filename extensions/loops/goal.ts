@@ -4329,7 +4329,14 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
       && state.goal.status === "active"
       && (!!state.goal.interruptedAt || continuationDispatchStoodDown);
     if (!state.goal || (state.goal.status !== "paused" && !listDispatchRecovery)) {
-      ctx.ui.notify("No paused list item to resume. /list show to see the list.", "info");
+      const terminalListItem = state.goal?.policy === "list"
+        && (state.goal.status === "complete" || state.goal.status === "aborted");
+      ctx.ui.notify(
+        terminalListItem
+          ? `The last list item is ${statusLabel(state.goal!.status)} and archived${state.goal!.stopReason ? ` (${displaySlice(state.goal!.stopReason, 90)})` : ""}; nothing to resume. Re-add it with /list or activate a waiting item with /list next.`
+          : "No paused list item to resume. /list show to see the list.",
+        "info",
+      );
       return;
     }
     if (state.goal.policy !== "list") {
@@ -4344,7 +4351,8 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     const queue = listQueue();
     const lines: string[] = [];
     if (state.goal) {
-      lines.push(`Active: [${state.goal.policy}] ${displaySlice(state.goal.objective, 80)} (${statusLabel(state.goal.status)})`);
+      const terminal = state.goal.status === "complete" || state.goal.status === "aborted";
+      lines.push(`${terminal ? "Last" : "Active"}: [${state.goal.policy}] ${displaySlice(state.goal.objective, 80)} (${statusLabel(state.goal.status)})`);
     } else {
       lines.push("Active: (none)");
     }
@@ -6673,12 +6681,13 @@ function registerAgentTools(pi: any): void {
   pi.registerTool(defineTool({
     name: "list_status",
     label: "List status",
-    description: "Show the active goal and the /list list (loop 2) as text: what's running, what's waiting.",
+    description: "Show the active or last terminal list item and the /list list (loop 2) as text: what's running, what's waiting.",
     parameters: Type.Object({}),
     async execute() {
       const lines: string[] = [];
       if (state.goal) {
-        lines.push(`Active [${state.goal.policy}] (${statusLabel(state.goal.status)}): ${sanitizeDisplayText(state.goal.objective)}`);
+        const terminal = state.goal.status === "complete" || state.goal.status === "aborted";
+        lines.push(`${terminal ? "Last" : "Active"} [${state.goal.policy}] (${statusLabel(state.goal.status)}): ${sanitizeDisplayText(state.goal.objective)}`);
       } else {
         lines.push("Active: (none)");
       }

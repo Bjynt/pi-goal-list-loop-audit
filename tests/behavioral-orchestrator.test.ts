@@ -217,6 +217,71 @@ test("T3b (v0.28.21): active goal + reload → HELD by default; autoresume=on �
   assert.ok(pi.sent.length >= 1, "continuation actually sent");
 });
 
+test("v0.35.x: list cancel archives the active item, does not relabel it as active, and preserves its audit history", async () => {
+  const cwd = tmpCwd();
+  const priorAuditReport = "auditor report: required fix remains recorded";
+  seedState(cwd, {
+    goal: seedGoal({
+      policy: "list",
+      objective: "cancelled list item — done when its archive is truthful",
+      auditHistory: [{
+        at: new Date().toISOString(),
+        approved: false,
+        disapproved: true,
+        model: "fixture-auditor",
+        report: priorAuditReport,
+      }],
+    }),
+    list: [
+      { id: "waiting-1", objective: "waiting item one", addedAt: new Date().toISOString() },
+      { id: "waiting-2", objective: "waiting item two", addedAt: new Date().toISOString() },
+    ],
+  });
+  setGlobalAutoResume(true);
+  const ctx = await freshSession(cwd, "startup");
+  await tick();
+
+  await pi.command("list", "cancel", ctx);
+  const cancelled = readState(cwd).goal as {
+    status: string;
+    policy: string;
+    stopReason?: string;
+    archivedPath?: string;
+    auditHistory?: Array<{ report?: string }>;
+  };
+  assert.equal(cancelled.status, "aborted", "/list cancel transitions the active list item to aborted");
+  assert.equal(cancelled.policy, "list");
+  assert.equal(cancelled.stopReason, "list cancelled");
+  assert.deepEqual(readState(cwd).list, [], "list cancel drops waiting items, rather than leaving a hidden retry queue");
+  assert.equal(cancelled.auditHistory?.[0]?.report, priorAuditReport, "the prior auditor report survives the abort");
+  assert.ok(cancelled.archivedPath, "the aborted list item has an archive path");
+  const archive = fs.readFileSync(path.join(cwd, cancelled.archivedPath!), "utf8");
+  assert.match(archive, /\*\*Status\*\*: aborted/);
+  assert.match(archive, /\*\*Policy\*\*: list/);
+  assert.match(archive, /\*\*Stop reason\*\*: list cancelled/);
+  assert.match(archive, /disapproved — `fixture-auditor`/, "the archive keeps the prior verdict classification");
+
+  const archived = ledgerEvent(cwd, "goal_archived");
+  assert.equal(archived.value.status, "aborted");
+  assert.equal(archived.value.stopReason, "list cancelled");
+  const cancelledEvent = ledgerEvent(cwd, "list_cancelled");
+  assert.equal(cancelledEvent.value.abortedActive, true);
+  assert.equal(cancelledEvent.value.dropped, 2);
+  const ledgerTypes = readLedger(cwd).map((entry) => entry.type);
+  assert.equal(ledgerTypes.filter((type) => type === "audit_started").length, 0, "cancel does not invent a new audit");
+
+  const sentAfterCancel = pi.sent.length;
+  await pi.command("list", "resume", ctx);
+  assert.equal((readState(cwd).goal as { status: string }).status, "aborted", "an aborted item is not silently resumed");
+  assert.ok(ctx.ui.matching("last list item is aborted").length >= 1, "resume explains the terminal list state");
+  assert.equal(pi.sent.length, sentAfterCancel, "resume does not dispatch a retry for an aborted item");
+
+  const status = await pi.runTool("list_status", {}, ctx);
+  assert.match(status.content[0]?.text ?? "", /^Last \[list\] \(aborted\):/, "list_status calls a terminal item Last, not Active");
+  await pi.command("list", "show", ctx);
+  assert.match(ctx.ui.notifies.at(-1)?.message ?? "", /^Last: \[list\].*\(aborted\)/, "/list show is truthful after cancellation");
+});
+
 test("T3d: active loop + human load → HELD_ON_RESTORE (loop deactivated loudly, not silently dropped)", async () => {
   const cwd = tmpCwd();
   seedState(cwd, { loop: seedLoop() });
