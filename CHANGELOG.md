@@ -1,5 +1,42 @@
 # Changelog
 
+## Unreleased (work since v0.34.50 — release gate pending)
+
+Version labels below match the in-repo milestone markers (test-file headers, DESIGN.md addenda). The next npm release consolidates them; the release commit renames this section to the released version per docs/RELEASING.md.
+
+### 0.34.51 — uniform provider-failure envelope; /list stale-context honesty; contract-text semantics; mode-aware guidance
+
+- **One retry envelope, bounded** (the "dumb retry" policy): error text is NOT trusted to pick a retry policy. Every main-model failure — quota, billing/credits, auth, transient, unknown — rides the same durable envelope `15m → 30m → 1h → 2h → 4h → 5h` (probe cap 5h, automatic window 24h, then explicit resume starts a fresh window). The billing-hold special case is removed (`main_model_billing_hold` is legacy); classification only labels the card/badge and preserves the raw provider message in durable state and the ledger. The only failures that never auto-retry are those identified by positive evidence as futile: context/output-token limits and user aborts (`non-recoverable`), plus auditor watchdog timeouts (a hanging verification command will hang again — the stored claim waits for an explicit resume). Provider hints (`retry_after`/`reset_at`) are honored when they fit the five-hour probe budget; a week-long hint is shown and held instead of scheduling a hidden week-long timer.
+- **`/list` refuses to mutate on a stale extension context**: `warnIfStaleAtEntry` probes at entry (as since v0.28.1), but `cmdList` previously discarded the probe's return and mutated anyway — `/list add` could ACTIVATE a goal in a doomed process, `/list clear` could wipe the queue from a session that could not announce it. Now every `/list` mutation path (add/remove/next/clear/cancel) returns the standard recovery message on a stale handle and touches nothing; the drafting path was already guarded.
+- **Contract-text semantics for tweak flows** (goal + list): a supplied `Done when: …` clause REPLACES the stored contract, an omitted clause PRESERVES it, and a bare `Done when:` marker CLEARS it — a reword must not silently destroy the verification gate; clearing is an explicit act. `extractVerificationContract` exposes the explicit-clear signal to every caller.
+- **Mode-aware command guidance**: generated auditor, stall, continuation, and pause guidance renders `/goal …` for standalone goals and `/list …` for list items — source pins (no hardcoded `/goal <cmd>` literals in generated guidance or widget strings), behavioral, and widget regressions.
+
+### 0.34.52 — settings UI stale-context hardening
+
+- **Bare `/glla` (the settings surface) probes at entry**: on a stale extension context the settings table refuses to open wholesale (every table choice writes state), and the mutating actions `/glla wipe`, `cancel`, `reviewer`, `postaudit`, `tooloverride` refuse with the standard recovery message and a `settings_mutation_refused_stale` ledger trail. Read-only surfaces stay usable with the recovery warning.
+
+### 0.34.53 — settings command routing
+
+- **`/list settings` no longer falls into natural-language drafting**: `/list`'s dump routing treated any unknown first word as an item seed, so the word "settings" started a drafting interview. The verb is now handled explicitly BEFORE the dump fallthrough: a clear redirect naming the supported settings command (`/glla`), ledgered as `list_settings_redirect`, never a drafting seed. `/list add settings …` keeps working (the explicit add verb remains the only way an item literally named "settings" enters the queue).
+
+### 0.34.54 — lifecycle-recovery harness
+
+- **Behavioral proof for list and settings recovery after session replacement**: the harness demonstrates Phase 1 (stale handle — pi replaced the session, no successor event): `/list show` accompanies its read with the standard recovery warning and does NOT silently pretend success; settings refuse to open or write. Phase 2 (fresh `session_start` arrives): `/list show` renders cleanly with no stale residue and the settings table renders again.
+
+### 0.34.55 — command-registration collision model
+
+- **Hermetic model of pi's command merge semantics** (read from the installed pi core's loader, never modified): each extension keeps its own commands Map (within-extension re-registration = last wins); `resolveRegisteredCommands()` flattens extensions IN LOAD ORDER and suffixes EVERY registration of a duplicated name (`name:1`, `name:2`, …) — the bare command name becomes owned by NOBODY, so dispatch cannot route `/list` at all while a collision exists. The routing table is auto-recorded to `audit/command-registration-routing.md`; the diagnostic is reproducible and does not change installed pi core.
+
+### 0.34.56 — auditor unmatched telemetry
+
+- **Unmatched tool starts/ends are represented as explicitly unmatched facts, never falsely paired**: telemetry regression coverage plus worker/parent/widget updates keep the report surface truthful when a tool start or end has no counterpart.
+
+### 0.34.57 — quota walls engage the recovery machinery in minutes, not 15
+
+- **Knowledge-window escalation**: a surfaced long-lived failure (quota / billing / auth) records a 30-minute knowledge window. A send-rearm storm inside that window escalates into the recovery envelope after 3 minutes of failed sends (plus the unchanged 5-minute activity-silence gate) instead of the generic 15 minutes — a wedge right after a quota wall is almost always the same wall, and blind re-sends into it are pure waste.
+- **Transient failures stay fast**: 5xx/stream/network failures are short-lived by definition, never record the knowledge signal, and keep the fast error ladder plus the pi-core retry budget.
+- **Armed by configuration**: the envelope is inert without `mainModelFallbacks` (rotation); an empty list means "park and probe the same model" instead of switching pools. Field evidence (2026-08-05): 89+ quota signals in the live ledger, zero `main_model_*` recovery events before this fix — the v0.34.51+ envelope never engaged because rotation was unset and pi's internal retry absorbed the 429s.
+
 ## 0.34.50 — 2026-08-04
 
 ### Fixed — make the host/auditor boundary explicit

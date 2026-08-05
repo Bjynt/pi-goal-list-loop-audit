@@ -197,6 +197,48 @@ architectural decisions that changed the SHAPE of the system:
   cycle. Manual model selection cancels it; goal/list/loop cancellation clears
   its timer and durable state.
 
+## Addendum v0.34.48–v0.34.56 (lifecycle/recovery hardening — the stale-handle era)
+
+Between the v0.34.31 recovery envelope and the v0.34.57 quota fast-engagement, the
+recovery story hardened around the **stale extension handle** — the field-observed
+shape (hegemon/polis 2026-07-26+) where pi invalidates the extension API on session
+replacement without delivering a successor `session_start`:
+
+- **Honest stale entry everywhere** (v0.34.51/52): `warnIfStaleAtEntry` probes at
+  entry (since v0.28.1), but the probe's return value used to be discarded by the
+  mutation paths. Now every `/list` mutation (add/remove/next/clear/cancel) and the
+  bare `/glla` settings surface refuse on a stale handle with the standard recovery
+  message — a session that cannot announce or run its writes must not make them.
+  Mutating `/glla` actions (wipe/cancel/reviewer/postaudit/tooloverride) refuse with
+  a `settings_mutation_refused_stale` ledger trail; read-only surfaces stay usable
+  with the warning. This is the plugin side of the missing-replacement contract: fail
+  closed, never guess, never pretend success.
+- **Settings routing clarity** (v0.34.53): `/list settings` is a verb, handled
+  explicitly BEFORE the natural-language dump fallthrough — a ledgered redirect to
+  `/glla`, never a drafting seed. `/list add settings …` remains the only way an item
+  literally named "settings" enters the queue.
+- **Lifecycle-recovery harness** (v0.34.54): a behavioral suite proves the two-phase
+  contract — stale handle: `/list show` warns and does not pretend, settings refuse
+  wholesale; fresh `session_start`: both render cleanly with no stale residue.
+- **Command-registration collision model** (v0.34.55): pi's `resolveRegisteredCommands`
+  flattens extensions in load order and suffixes EVERY registration of a duplicated
+  command name (`name:1`, `name:2`, …) — the bare name becomes owned by nobody and
+  dispatch stops routing it while a collision exists. The model is read from the
+  installed pi core (hermetic, never modified) and auto-records the routing table to
+  `audit/command-registration-routing.md`, making collisions reproducible and
+  diagnosable without touching pi.
+- **Unmatched telemetry stays unmatched** (v0.34.56): tool starts/ends without a
+  counterpart are represented as explicitly unmatched facts, never falsely paired —
+  the report surface stays truthful (the AuditProgress/AuditorProgress dual-interface
+  rule: display evidence-gates on `unmatchedStarts + unmatchedEnds > 0`).
+- **Uniform retry envelope, no text-trust** (v0.34.51): error text is not trusted to
+  pick a retry policy. Quota, billing, auth, transient, and unknown failures all ride
+  ONE bounded durable envelope `15m → 30m → 1h → 2h → 4h → 5h` (cap 5h, automatic
+  window 24h); classification only labels the display. The billing-hold special case
+  is removed (`main_model_billing_hold` is legacy). Positive-evidence futile classes
+  (context/output-token limits, user aborts) plus auditor watchdog timeouts never
+  auto-retry; provider hints are honored only within the 5h probe budget.
+
 ## Addendum v0.34.57 (quota walls engage recovery fast)
 
 - **Knowledge-window escalation**: a surfaced long-lived failure (quota /

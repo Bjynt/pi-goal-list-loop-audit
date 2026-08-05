@@ -270,6 +270,16 @@ probes survive a session reload. For continuous work, configure ordered
 billing/quota pool — another model on the same exhausted plan is not a real
 fallback.
 
+**Quota walls engage fast** (v0.34.57): a surfaced long-lived failure
+(quota / billing / auth) records a 30-minute knowledge window; a send-rearm
+storm inside that window escalates into the recovery envelope after **3
+minutes** of failed sends instead of the generic 15 — a wedge right after a
+quota wall is almost always the same wall. Transient (5xx/stream/network)
+failures never record the signal and keep the fast error ladder. The
+envelope is armed by configuration: an empty `mainModelFallbacks` list means
+"park and probe the same model" rather than switching pools — the
+never-switch posture is a first-class policy, not an accident.
+
 Classification still exists, but it only *labels*: the card and badge show
 what the provider said (quota wall, billing, rate limit) so the reason is
 diagnosable, and `QUOTA WALL` is only shown when the provider's own words say
