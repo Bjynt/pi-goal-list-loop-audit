@@ -542,6 +542,37 @@ test("auditor widget shows concrete worker observations without exposing think b
   assert.doesNotMatch(streamedThink.join("\n"), /private streamed reasoning/);
 });
 
+test("v0.34.56: unmatched tool-event counts render ONLY with evidence (never a zero-fact observation)", () => {
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-gate" } });
+  const base = {
+    phase: "tool_executing" as const,
+    currentTool: "read",
+    currentToolStartedAt: NOW - 2_000,
+    recentOutput: ["inspected README.md"],
+    toolCalls: [{ name: "grep", argsPrefix: "{}", finishedAt: NOW - 3_000 }],
+    elapsedMs: 42_000,
+    lastActivityAt: NOW - 1_000,
+  };
+  // Evidence present: both counts surface exactly.
+  const withFacts = buildWidgetLines({ goal: g, list: [] }, {
+    ...base,
+    unmatchedToolStarts: 2,
+    unmatchedToolEnds: 1,
+  }, NOW)!.join("\n");
+  assert.match(withFacts, /unmatched tool events: 2 start \/ 1 end — explicitly unpaired, never falsely matched/);
+  // No evidence: the observation must not exist at all — zero is not a fact.
+  for (const audit of [
+    { ...base },                        // fields absent (old worker protocol)
+    { ...base, unmatchedToolStarts: 0, unmatchedToolEnds: 0 },
+  ]) {
+    const joined = buildWidgetLines({ goal: g, list: [] }, audit, NOW)!.join("\n");
+    assert.doesNotMatch(joined, /unmatched tool events/, `no invented fact for ${JSON.stringify(audit)}`);
+  }
+  // Start-only facts still count as evidence (an orphaned start is a fact).
+  const startOnly = buildWidgetLines({ goal: g, list: [] }, { ...base, unmatchedToolStarts: 3, unmatchedToolEnds: 0 }, NOW)!.join("\n");
+  assert.match(startOnly, /unmatched tool events: 3 start \/ 0 end/);
+});
+
 test("stale auditor snapshots show the last tool, not a fake current tool", () => {
   const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-stale" } });
   const lines = buildWidgetLines({ goal: g, list: [] }, {
