@@ -1914,6 +1914,42 @@ test("v0.34.22: detached disapproval resumes the goal with a durable report", as
   }
 });
 
+test("v0.35.x: a detached approval blocked by the regression shield is not relabeled", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const fakePi = writeFakeAuditor(cwd, "approved", 0, "<evidence>\\npinned\\n</evidence>\\n<approved/>");
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = fakePi;
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    await pi.command("goal", "start shielded completion target — done when:\n- pinned\n- tests", ctx);
+    await tick();
+    await pi.runTool("complete_goal", { completionSummary: "Claim", verificationSummary: "Evidence" }, ctx);
+    await waitUntil(() => {
+      const goal = readState(cwd).goal as { status?: string; pendingCompletion?: unknown; auditHistory?: unknown[] } | null;
+      return goal?.status === "active" && !goal.pendingCompletion && (goal.auditHistory?.length ?? 0) > 0;
+    });
+    const goal = readState(cwd).goal as {
+      status: string;
+      auditHistory?: Array<{ approved?: boolean; disapproved?: boolean; regressionShieldPassed?: boolean; regressionShieldMissing?: string[] }>;
+    };
+    const latest = goal.auditHistory?.at(-1);
+    assert.equal(goal.status, "active", "shield-blocked completion remains open for another evidence-backed audit");
+    assert.equal(latest?.approved, true);
+    assert.equal(latest?.disapproved, false);
+    assert.equal(latest?.regressionShieldPassed, false);
+    assert.deepEqual(latest?.regressionShieldMissing, ["tests"]);
+    const auditLog = fs.readFileSync(path.join(cwd, ".pi-glla", "audits.jsonl"), "utf8");
+    assert.match(auditLog, /"verdict":"shield_blocked"/);
+    assert.doesNotMatch(auditLog, /"verdict":"disapproved"/);
+    assert.ok(ctx.ui.matching("Regression shield blocked completion").length >= 1);
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  } finally {
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
 test("v0.34.22: an old detached result cannot archive after session replacement", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();

@@ -46,7 +46,11 @@ test("auditor watchdog exits are infrastructure failures, never verdicts", () =>
   }
 });
 
-test("semantic verdict-quality failures stay disapproved (no-tool, shield)", () => {
-  assert.match(SRC, /treated as disapproved\./);
-  assert.match(SRC, /regression_shield: approved but/);
+test("semantic verdict-quality failures and shield blocks keep distinct categories", () => {
+  assert.match(SRC, /treated as disapproved\./, "approval without evidence tools is a semantic disapproval");
+  const shield = SRC.slice(SRC.indexOf("if (!shield.passed)"), SRC.indexOf("progress.phase = \"complete\"", SRC.indexOf("if (!shield.passed)")));
+  assert.match(shield, /approved:\s*true/);
+  assert.match(shield, /disapproved:\s*false/);
+  assert.match(shield, /regressionShieldPassed:\s*false/);
+  assert.doesNotMatch(shield, /error:/, "a shield block is not infrastructure failure");
 });

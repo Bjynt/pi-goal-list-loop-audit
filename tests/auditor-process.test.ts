@@ -89,6 +89,23 @@ test("detached parent accepts an identity-checked result and applies regression_
   }
 });
 
+test("detached parent keeps a regression-shield block distinct from disapproval and infrastructure", async () => {
+  const dir = await setup();
+  try {
+    const result = await run(dir, {
+      FAKE_AUDIT_OUTPUT: "<evidence>\\nartifact exists\\n</evidence>\\n<approved/>",
+      FAKE_TOOL: "yes",
+    });
+    assert.equal(result.approved, true, "the auditor's semantic verdict remains approval");
+    assert.equal(result.disapproved, false, "the shield block is not a work disapproval");
+    assert.equal(result.regressionShieldPassed, false);
+    assert.deepEqual(result.regressionShieldMissing, ["tests pass"]);
+    assert.equal(result.error, undefined, "the shield block is not infrastructure failure");
+  } finally {
+    await cleanup(dir);
+  }
+});
+
 test("detached parent forwards live worker telemetry to its progress callback", async () => {
   const dir = await setup();
   const reports: AuditorProgress[] = [];
