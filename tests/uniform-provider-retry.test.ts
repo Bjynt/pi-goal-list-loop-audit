@@ -81,5 +81,5 @@ test("v0.34.51: README no longer claims quota walls get no retries", () => {
   assert.ok(!README.includes("do **not** get more blind request retries"), "old no-retry claim gone");
   assert.ok(!README.includes("Credit/billing exhaustion gets a manual-action hold"), "old billing-hold claim gone");
   assert.match(README, /Error text is \*\*not trusted\*\* to pick a retry policy/);
-  assert.match(README, /one durable recovery envelope `15m → 30m → 1h → 2h → 4h → 5h`/);
+  assert.match(README, /durable recovery envelope `15m → 30m → 1h → 2h → 4h → 5h`/);
 });

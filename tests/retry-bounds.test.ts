@@ -38,7 +38,10 @@ test("E2: auditor infra errors enter the durable bounded retry plan (v0.34.51 �
   assert.ok(!SRC.includes("const reachedInfraCap = infraStreak >= 3;"), "3-strike cap gone");
   assert.ok(!SRC.includes("auditor infrastructure failed ${infraStreak}× in a row"), "3-strike wording gone");
   assert.ok(!SRC.includes("audit_infra_waiting\", { goalId, attemptId: claim.attemptId, error: result.error.slice(0, 240), infraStreak }"), "3-strike ledger payload gone");
-  assert.ok(!SRC.includes("The completion claim is stored and was not judged"), "3-strike action gone");
+  // The stranded-audit no-verdict blocker keeps its own distinct wording
+  // ("Fix the auditor/session issue" — a different feature from the
+  // 3-strike stop):
+  assert.match(SRC, /The completion claim is stored and was not judged\. Fix the auditor\/session issue/);
   // The durable plan owns the wait: quota-waiting phase, wait-kind pause,
   // horizon-capped blocked stop, and a re-checked auto-resume callback.
   assert.match(SRC, /phase: "quota-waiting" as const/);
