@@ -761,6 +761,30 @@ test("released auditor no-verdict state names the attached MAIN host", () => {
   assert.doesNotMatch(status, /DETACHED · LIVE/);
 });
 
+test("MAIN activity is never represented as detached — the detached marker belongs only to the live auditor badge", () => {
+  // MAIN actively working (status active, no audit in flight): no detached
+  // representation anywhere — the host stays attached and unnamed as such.
+  const active = goalOf({ status: "active", objective: "active main work — done when pinned" });
+  const activeState = { goal: active, list: [], loop: null };
+  const activeWidget = buildWidgetLines(activeState as never)!;
+  const activeStatus = buildStatusText(activeState as never)!;
+  assert.doesNotMatch(activeWidget.join("\n"), /DETACHED|detached/, "MAIN activity never renders as detached (widget)");
+  assert.doesNotMatch(activeStatus, /DETACHED|detached/, "MAIN activity never renders as detached (status)");
+
+  // Auditing MAIN: the ONLY detached marker in the whole projection is the
+  // live auditor activity badge; the host projection is MAIN HOST · SUPERVISING.
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-host-invariant" } });
+  const state = { goal: g, list: [], loop: null };
+  const audit = { phase: "tool_executing", currentTool: "read", lastActivityAt: NOW - 1_000 };
+  const status = buildStatusText(state as never, audit, NOW)!;
+  assert.match(status, /MAIN HOST · SUPERVISING/);
+  const detachedCount = (status.match(/DETACHED/g) ?? []).length;
+  assert.equal(detachedCount, 1, `exactly one detached marker, inside the auditor badge: ${status}`);
+  const badgeIndex = status.indexOf("AUDITOR · DETACHED · LIVE");
+  const hostIndex = status.indexOf("MAIN HOST · SUPERVISING");
+  assert.ok(hostIndex >= 0 && badgeIndex > hostIndex, "the host names MAIN first; the detached auditor badge follows");
+});
+
 test("active auditor verdicts never masquerade as infrastructure no-verdict", () => {
   const shield = goalOf({
     status: "active",
