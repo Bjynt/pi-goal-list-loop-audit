@@ -337,7 +337,7 @@ test("v0.34.55: live rig — the routing table records duplicate-command routing
     assert.match(recorded, new RegExp(`\\| ${command} \\|`), `report records ${command}`);
     if (row.winner.entry.startsWith(repoRoot) || row.winner.source.includes("pi-goal-loop-audit")) {
       assert.ok(row.bareOwned, `on this rig the repo is the SOLE registrant of /${command} — the bare name is owned and routes`);
-      assert.ok(row.suffixed.length === 1, `no suffixed shadow names for /${command}`);
+      assert.ok(row.suffixed.length === 0, `no suffixed shadow names for /${command}`);
     } else {
       // A different earlier registrant won — the honest record names it;
       // the assertion documents that pi routes the bare name to it.
