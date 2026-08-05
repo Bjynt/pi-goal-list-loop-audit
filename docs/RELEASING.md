@@ -17,6 +17,12 @@ the repository.
 
 ## Release checklist
 
+Accumulated changes since the last release live under an `## Unreleased`
+section at the top of `CHANGELOG.md` (with the in-repo milestone labels such
+as `### 0.34.51`); the release commit renames that section to the released
+version. Do not invent version headers for work that was never tagged —
+untagged work stays under `Unreleased` until the release commit.
+
 ```bash
 npm version <major.minor.patch> --no-git-tag-version
 npm run release:check
