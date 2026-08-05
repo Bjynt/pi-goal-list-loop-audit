@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Changed — provider-failure retry is uniformly kind-independent
+
+- The last quota-only parking gate is gone: an upstream reset hint beyond the
+  five-hour probe budget no longer parks the goal on a manual hold — the
+  bounded durable envelope owns the wait, and only the kind-independent 24h
+  horizon ends automatic probes.
+- Removed the quota-gated `mainModelHintExceedsProbeBudget` hold path from
+  `extensions/loops/goal.ts` (the billing manual-hold was already gone since
+  v0.34.51); the auditor durable branch keeps catching any non-timeout
+  infrastructure error with neutral `auditor retry:` wording.
+
 ## 0.34.57 — 2026-08-05
 
 The first release since v0.34.50 consolidates the unreleased milestone work
