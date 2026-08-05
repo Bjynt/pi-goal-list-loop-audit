@@ -125,17 +125,18 @@ export function mainModelAutoRetryUntil(firstFailureAtMs = Date.now(), horizonMs
   return new Date(first + horizon).toISOString();
 }
 
-/** Honor an explicit provider hint when it fits the five-hour probe budget;
- * otherwise use glla's bounded exponential cadence. A plan/entitlement wall
- * without a reset hint starts at one hour: it is durable recovery, not a
- * per-minute throttle, and probing it every 15m only creates noisy failures. */
+/** v0.34.51: one uniform envelope for EVERY provider failure. Error text is
+ * not trusted to pick a cadence — the only exception is the upstream
+ * Retry-After hint, a factual provider fact, honored when it fits the
+ * five-hour probe budget. Classification now serves display and the
+ * no-retry class (context-length/aborted) only: billing, auth, transient,
+ * and unknown all retry on the same bounded exponential cadence, because a
+ * miss-classified quota wall is the common case and "keep retrying" beats
+ * confident stopping. */
 export function mainModelFailureDelayMs(failure: MainModelFailure, attempt: number, baseMinutes = 15): number {
-  if (failure.kind === "quota" && failure.retryFromUpstream && Number.isFinite(failure.retryAfterSec)) {
+  if (failure.retryFromUpstream && Number.isFinite(failure.retryAfterSec)) {
     const hinted = Math.max(1_000, Math.round(failure.retryAfterSec! * 1_000));
     if (hinted <= MAIN_MODEL_MAX_RETRY_DELAY_MS) return hinted;
   }
-  const cadenceBase = failure.kind === "quota" && failure.quotaSignal === "plan-quota"
-    ? Math.max(baseMinutes, 60)
-    : baseMinutes;
-  return mainModelRetryDelayMs(attempt, cadenceBase);
+  return mainModelRetryDelayMs(attempt, baseMinutes);
 }
