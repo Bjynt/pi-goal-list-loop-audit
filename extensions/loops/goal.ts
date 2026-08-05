@@ -3318,13 +3318,31 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     if (history.length > 20) history.splice(0, history.length - 20);
   }
 
-  if (result.approved) {
+  if (result.approved && result.regressionShieldPassed !== false) {
     updateGoal({ auditHistory: history, pendingCompletion: undefined }, liveCtx);
     const objective = state.goal.objective;
     const approvalVia = `${origin === "manual" ? " on /goal verify" : origin === "session-recovery" ? " after session recovery" : " on the quota retry"}${fallbackUsed ? " after an auditor-model fallback" : ""}`;
     archiveCurrentGoal(liveCtx, "complete", `auditor ${result.model} approved (${origin})`);
     liveCtx.ui.notify(`Goal complete — auditor ${result.model} approved${approvalVia}.`, "info");
     notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${displaySlice(objective, 120)}`);
+    return;
+  }
+
+  if (result.regressionShieldPassed === false && result.regressionShieldMissing && result.regressionShieldMissing.length > 0) {
+    const missing = result.regressionShieldMissing;
+    updateGoal({
+      status: "active",
+      auditHistory: history,
+      pendingCompletion: undefined,
+      pauseReason: "regression shield: auditor approved, but evidence never referenced contract items",
+      pauseSuggestedAction: "Call complete_goal again — the next auditor run is told exactly which items to quote evidence for.",
+    }, liveCtx);
+    liveCtx.ui.notify(
+      `Regression shield blocked completion: the auditor approved, but its evidence did not reference these contract items:\n${missing.map((item) => `- ${item}`).join("\n")}\n\nCall complete_goal again; the next audit will be told to quote raw evidence for each item.`,
+      "warning",
+    );
+    appendLedger(liveCtx.cwd, "audit_shield_blocked", { goalId, attemptId: claim.attemptId, missing });
+    scheduleContinuation(liveCtx, true);
     return;
   }
 
@@ -5680,7 +5698,7 @@ function registerAgentTools(pi: any): void {
         };
       }
 
-      if (result.approved) {
+      if (result.approved && result.regressionShieldPassed !== false) {
         updateGoal({ auditHistory: history, pendingCompletion: undefined }, ctx);
         const objective = state.goal.objective;
         archiveCurrentGoal(ctx, "complete", `auditor ${result.model} approved`);

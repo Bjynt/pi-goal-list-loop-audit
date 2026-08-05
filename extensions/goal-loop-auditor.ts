@@ -429,16 +429,15 @@ export async function runGoalCompletionAuditor(args: {
     if (approved && args.goal.verificationContract?.trim()) {
       const shield = checkRegressionShield(output, args.goal.verificationContract);
       if (!shield.passed) {
-        const why = !shield.hasEvidenceBlock
-          ? "report has no <evidence> block"
-          : `report's evidence does not address: ${shield.missingItems.join("; ")}`;
+        // Keep the auditor's semantic approval distinct from the
+        // orchestrator-side shield block. This is neither a disapproval of
+        // the work nor an infrastructure failure.
         return {
-          approved: false,
-          disapproved: true,
+          approved: true,
+          disapproved: false,
           output,
           model: modelLabel(model),
           thinkingLevel,
-          error: `regression_shield: approved but ${why}`,
           regressionShieldPassed: false,
           regressionShieldMissing: shield.missingItems,
         };
