@@ -17,7 +17,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import activate, { __testOnlyResetStaleFlag } from "../extensions/loops/goal.js";
+import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag } from "../extensions/loops/goal.js";
 import { MockPi, makeMockCtx, tmpCwd, seedState, seedGoal, tick, type MockCtx } from "./harness/mock-pi.js";
 import { buildWidgetLines } from "../extensions/goal-loop-display.js";
 import type { Goal } from "../extensions/goal-loop-core.js";
@@ -26,7 +26,11 @@ const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
 function setGlobalAutoResume(v: boolean): void {
   fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(v ? { autoResume: true } : {}));
 }
-afterEach(() => setGlobalAutoResume(false));
+afterEach(() => {
+  setGlobalAutoResume(false);
+  pi.execHandler = null;
+  __testOnlyResetOwnerSession(); // release the shared owner claim so later/parallel files are unaffected
+});
 
 const GOAL_SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 const DISPLAY_SRC = fs.readFileSync("extensions/goal-loop-display.ts", "utf-8");
@@ -39,6 +43,7 @@ function ownerCtx(cwd: string): MockCtx {
   return makeMockCtx(cwd, { sessionManager: MAIN_SM });
 }
 async function freshSession(cwd: string, reason: string): Promise<MockCtx> {
+  __testOnlyResetOwnerSession(); // behavioral-orchestrator's owner claim precedes this file (shared process)
   const ctx = ownerCtx(cwd);
   await pi.fire("session_start", { reason }, ctx);
   return ctx;
