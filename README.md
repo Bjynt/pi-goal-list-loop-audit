@@ -351,6 +351,16 @@ warning says no replacement arrived, restart pi normally and let the saved
 mux dependency. The legacy `autoReloadOnStale` and `autoRecovery` fields remain
 only as deprecated settings-file compatibility fields; they are ignored.
 
+**A stale handle never mutates** (v0.34.51–v0.34.54): every `/list` mutation
+(add/remove/next/clear/cancel) and the bare `/glla` settings surface probe at
+entry and refuse with the standard recovery message on a stale extension
+context — a session that cannot announce or run its writes must not make them.
+Mutating `/glla` actions (wipe/cancel/reviewer/postaudit/tooloverride) leave a
+`settings_mutation_refused_stale` ledger trail; read-only surfaces (`/list
+show`, `/goal status`) stay usable with the warning. Once the replacement
+`session_start` arrives, both surfaces render cleanly with no stale residue
+(the lifecycle-recovery harness proves the two-phase contract).
+
 **User aborts mean STOP** (v0.29.4): Esc-aborting a turn stands the chain
 down with a named notify (`/goal resume` to continue) — it does NOT count
 toward stall warnings, does NOT auto re-fire, and the stand-down survives
