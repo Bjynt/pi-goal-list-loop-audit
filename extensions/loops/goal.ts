@@ -1356,7 +1356,7 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
   // Same loud-terminal shape as escalateStallNow (v0.24.7). v0.28.29: this
   // only fires on a REAL wedge now (15m of failed sends + 5m of zero
   // session activity) — busy-but-alive sessions never reach it.
-  const mins = Math.round(SEND_REARM_ESCALATE_AFTER_MS / 60000);
+  const mins = Math.round(sendStormEscalateMs(lastLongLivedFailureAt) / 60000);
   const silent = Math.round(SEND_REARM_ESCALATE_SILENT_MS / 60000);
   appendLedger(ctx.cwd, "send_rearm_escalated", { kind, afterMinutes: mins, silentMinutes: silent });
   if (kind === "loop" && isLoopActive()) {
