@@ -77,7 +77,7 @@ function ledgerEvent(cwd: string, type: string): { type: string; value: Record<s
   return event!;
 }
 
-function writeFakeAuditor(cwd: string, verdict: "approved" | "disapproved", delayMs = 0): string {
+function writeFakeAuditor(cwd: string, verdict: "approved" | "disapproved", delayMs = 0, reportOverride?: string): string {
   const script = path.join(cwd, "fake-auditor-pi.mjs");
   fs.writeFileSync(script, `#!/usr/bin/env node
 let input = "";
@@ -88,7 +88,7 @@ process.stdin.on("data", async (chunk) => {
   handled = true;
   await new Promise((resolve) => setTimeout(resolve, ${delayMs}));
   const emit = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
-  const report = ${JSON.stringify(verdict === "approved" ? "<evidence>\\npinned\\n</evidence>\\n<approved/>" : "## Required fixes\\n- fix the pinned gap\\n<disapproved/>")};
+  const report = ${JSON.stringify(reportOverride ?? (verdict === "approved" ? "<evidence>\\npinned\\n</evidence>\\n<approved/>" : "## Required fixes\\n- fix the pinned gap\\n<disapproved/>"))};
   emit({ type: "tool_execution_start", toolCallId: "fake-read", toolName: "read", args: { path: "README.md" } });
   emit({ type: "tool_execution_end", toolCallId: "fake-read" });
   emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: report } });
@@ -878,6 +878,109 @@ test("v0.35.x: host loss keeps durable auditor disapproval feedback visible", as
   } finally {
     pi.sendMessageError = null;
     pi.sessionNameError = null;
+    __testOnlyResetOwnerSession();
+  }
+});
+
+test("v0.35.x: full auditor reports and required-fixes tails survive lifecycle boundaries", async () => {
+  const fullReport = [
+    "Audit summary: inspected the pinned artifact.",
+    "",
+    "## Required fixes",
+    "- fix the pinned gap",
+    "- rerun the regression check",
+    "<disapproved/>",
+  ].join("\\n");
+  const seedAuditedGoal = () => seedGoal({
+    pauseReason: "auditor disapproved — inspect the required fixes",
+    pauseSuggestedAction: "Inspect the required fixes, then /goal resume.",
+    auditHistory: [{
+      at: "2026-08-04T23:00:00.000Z",
+      approved: false,
+      disapproved: true,
+      model: "test/auditor",
+      report: fullReport,
+    }],
+  });
+  const assertDurableReport = (cwd: string, ctx: MockCtx, label: string): void => {
+    const goal = readState(cwd).goal as {
+      auditHistory?: Array<{ report?: string; disapproved?: boolean }>;
+    };
+    const latest = goal.auditHistory?.at(-1);
+    assert.equal(latest?.report, fullReport, `${label}: complete report survives`);
+    assert.equal(latest?.disapproved, true, `${label}: semantic disapproval survives`);
+    const widget = ((ctx.ui.widgets["pi-glla"] as string[] | undefined) ?? []).join("\\n");
+    assert.match(widget, /fix the pinned gap/, `${label}: required-fixes tail remains visible`);
+    assert.match(widget, /rerun the regression check/, `${label}: complete actionable tail remains visible`);
+  };
+
+  __testOnlyResetStaleFlag();
+  __testOnlySetContinuationStartTimeout(300);
+  try {
+    // An accepted continuation that never produces a turn-start proof must
+    // update interruption metadata without dropping the settled report.
+    const noStartCwd = tmpCwd();
+    seedState(noStartCwd, { goal: seedAuditedGoal() });
+    setGlobalAutoResume(true);
+    pi.sent.length = 0;
+    const noStartCtx = await freshSession(noStartCwd, "startup");
+    await tick();
+    await waitUntil(() => {
+      try {
+        return fs.readFileSync(path.join(noStartCwd, ".pi-glla", "active.jsonl"), "utf8").includes("continuation_start_unacknowledged");
+      } catch {
+        return false;
+      }
+    }, 1_000);
+    const noStartGoal = readState(noStartCwd).goal as { interruptedReason?: string };
+    assert.match(noStartGoal.interruptedReason ?? "", /continuation start acknowledgement timed out/);
+    assertDurableReport(noStartCwd, noStartCtx, "no-start");
+
+    // A stale host lifecycle boundary must preserve the same report while
+    // parking recovery behind an honest host-session-lost marker.
+    __testOnlyResetStaleFlag();
+    const staleCwd = tmpCwd();
+    seedState(staleCwd, { goal: seedAuditedGoal() });
+    setGlobalAutoResume(true);
+    const staleCtx = await freshSession(staleCwd, "startup");
+    await tick();
+    invalidateHostSession(pi, staleCtx);
+    __testOnlyHeartbeatTick();
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    const staleGoal = readState(staleCwd).goal as { interruptedAt?: string };
+    assert.ok(staleGoal.interruptedAt, "stale replacement writes a durable lifecycle marker");
+    assertDurableReport(staleCwd, staleCtx, "stale replacement");
+
+    // Finally exercise the real detached-worker result path and verify both
+    // the state snapshot and append-only audit log retain the whole report.
+    __testOnlyResetStaleFlag();
+    const normalCwd = tmpCwd();
+    const previousBinary = process.env.GLLA_PI_BINARY;
+    const fakePi = writeFakeAuditor(normalCwd, "disapproved", 0, fullReport);
+    process.env.GLLA_PI_BINARY = fakePi;
+    try {
+      const normalCtx = await freshSession(normalCwd, "startup");
+      await pi.command("goal", "start normal settled audit target — done when pinned", normalCtx);
+      await tick();
+      await pi.runTool("complete_goal", { completionSummary: "Claim", verificationSummary: "Evidence" }, normalCtx);
+      await waitUntil(() => {
+        const goal = readState(normalCwd).goal as { status?: string; pendingCompletion?: unknown; auditHistory?: unknown[] } | null;
+        return goal?.status === "active" && !goal.pendingCompletion && (goal.auditHistory?.length ?? 0) > 0;
+      });
+      assertDurableReport(normalCwd, normalCtx, "settled disapproval");
+      const auditLog = fs.readFileSync(path.join(normalCwd, ".pi-glla", "audits.jsonl"), "utf8");
+      assert.match(auditLog, /Audit summary: inspected the pinned artifact\./);
+      assert.match(auditLog, /- rerun the regression check/);
+      await pi.fire("session_shutdown", { reason: "quit" }, normalCtx);
+    } finally {
+      if (previousBinary === undefined) delete process.env.GLLA_PI_BINARY;
+      else process.env.GLLA_PI_BINARY = previousBinary;
+    }
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    __testOnlySetContinuationStartTimeout(null);
     __testOnlyResetOwnerSession();
   }
 });
