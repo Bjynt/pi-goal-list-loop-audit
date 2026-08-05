@@ -114,6 +114,26 @@ export interface AuditVerdict {
   regressionShieldMissing?: string[];
 }
 
+/** The display classification for one stored auditor result. Keep semantic
+ * verdicts separate from operational failures: a shield-blocked approval is
+ * not a disapproval, and an infrastructure error is not a verdict at all. */
+export type AuditVerdictLabel =
+  | "approved"
+  | "disapproved"
+  | "impossible"
+  | "shield-blocked"
+  | "infrastructure failure"
+  | "no verdict";
+
+export function auditVerdictLabel(v: Pick<AuditVerdict, "approved" | "disapproved" | "impossible" | "error" | "regressionShieldPassed">): AuditVerdictLabel {
+  if (v.approved && v.regressionShieldPassed === false) return "shield-blocked";
+  if (v.approved) return "approved";
+  if (v.impossible) return "impossible";
+  if (v.disapproved) return "disapproved";
+  if (v.error) return "infrastructure failure";
+  return "no verdict";
+}
+
 /**
  * Sum token usage across assistant messages, counting each message once.
  * `agent_end` events may include already-seen history, so callers pass a
@@ -725,7 +745,7 @@ export function renderGoalMarkdown(goal: Goal): string {
     lines.push("## Audit history");
     lines.push("");
     for (const v of goal.auditHistory) {
-      lines.push(`- ${v.at} — ${v.approved ? "approved" : v.impossible ? "impossible" : "disapproved"} — \`${v.model}\``);
+      lines.push(`- ${v.at} — ${auditVerdictLabel(v)} — \`${v.model}\``);
     }
     lines.push("");
   }
@@ -1440,7 +1460,8 @@ export function formatGoalAuditHistory(goal: { id: string; auditHistory?: Array<
   if (history.length === 0) return "(no audits on this goal yet)";
   return history
     .map((v) => {
-      const glyph = v.approved ? (v.regressionShieldPassed === false ? "🛡" : "✔") : v.impossible ? "⛔" : v.disapproved ? "✖" : "⚠";
+      const verdict = auditVerdictLabel(v);
+      const glyph = verdict === "approved" ? "✔" : verdict === "shield-blocked" ? "🛡" : verdict === "impossible" ? "⛔" : verdict === "disapproved" ? "✖" : "⚠";
       const day = String(v.at ?? "").slice(5, 16).replace("T", " ");
       const elapsed = v.durationMs ? ` · ${Math.round(v.durationMs / 60000)}m` : "";
       const firstLine = (String(v.report ?? "").split("\n").find((l: string) => l.trim()) ?? "").trim().slice(0, 80);

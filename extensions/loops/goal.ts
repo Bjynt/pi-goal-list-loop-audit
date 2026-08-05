@@ -32,6 +32,7 @@ import {
   buildTaskList,
   buildTaskSummary,
   auditFeedbackExcerpt,
+  auditVerdictLabel,
   DEFAULT_AUDIT_FEEDBACK_CHARS,
   DEFAULT_QUOTA_RETRY_MINUTES,
   DEFAULT_STALL_ESCALATION_REFIRES,
@@ -2627,7 +2628,7 @@ function buildPostCompactResync(): string {
     const next = findNextPendingTask(state.goal.taskList?.tasks ?? []);
     if (next) lines.push(`Next pending task: \`${next.id}\` — ${next.title}`);
     const lastAudit = state.goal.auditHistory?.[state.goal.auditHistory.length - 1];
-    if (lastAudit) lines.push(`Last audit: ${lastAudit.approved ? "APPROVED" : lastAudit.impossible ? "IMPOSSIBLE" : "disapproved"} (${lastAudit.at})`);
+    if (lastAudit) lines.push(`Last audit: ${auditVerdictLabel(lastAudit).toUpperCase()} (${lastAudit.at})`);
   } else if (state.loop?.active) {
     lines.push(`Loop: ${state.loop.target.slice(0, 160)} — iteration ${state.loop.iteration}`);
   }
