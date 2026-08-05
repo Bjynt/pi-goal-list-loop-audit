@@ -282,6 +282,61 @@ test("v0.35.x: list cancel archives the active item, does not relabel it as acti
   assert.match(ctx.ui.notifies.at(-1)?.message ?? "", /^Last: \[list\].*\(aborted\)/, "/list show is truthful after cancellation");
 });
 
+test("v0.35.x: /list tweak amends a paused list item without activating it or changing waiting entries", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const waiting = [
+    { id: "waiting-1", objective: "waiting item one", addedAt: new Date().toISOString() },
+    { id: "waiting-2", objective: "waiting item two", addedAt: new Date().toISOString() },
+  ];
+  seedState(cwd, {
+    goal: seedGoal({
+      policy: "list",
+      status: "paused",
+      objective: "old paused list item",
+      verificationContract: "old check",
+      pauseReason: "paused by user",
+      pauseSuggestedAction: "/list resume to continue",
+    }),
+    list: waiting,
+  });
+  const ctx = await freshSession(cwd, "reload");
+  await tick();
+  let confirmTitle = "";
+  let confirmMessage = "";
+  ctx.ui.confirmImpl = async (title, message) => {
+    confirmTitle = title;
+    confirmMessage = message;
+    return true;
+  };
+
+  await pi.command("list", "tweak new paused list item. Done when: new check", ctx);
+
+  const updated = readState(cwd).goal as {
+    status: string;
+    policy: string;
+    objective: string;
+    verificationContract?: string;
+    pauseReason?: string;
+  };
+  assert.equal(updated.status, "paused", "tweak does not activate the list item");
+  assert.equal(updated.policy, "list", "the list provenance is preserved");
+  assert.equal(updated.objective, "new paused list item");
+  assert.equal(updated.verificationContract, "new check", "the replacement contract is stored");
+  assert.equal(updated.pauseReason, "paused by user", "the pause state remains intact");
+  assert.deepEqual(readState(cwd).list, waiting, "waiting queue entries are unchanged");
+  assert.equal(confirmTitle, "Tweak list item?", "the list-specific confirmation is used");
+  assert.match(confirmMessage, /CURRENT:\nold paused list item/);
+  assert.match(confirmMessage, /NEW:\nnew paused list item/);
+  assert.equal(ctx.ui.matching("No active goal to tweak").length, 0, "list mode does not use the goal-mode error");
+  assert.ok(ctx.ui.matching("List item tweaked; it remains paused").length >= 1, "the result names the paused list item");
+
+  const tweak = ledgerEvent(cwd, "goal_tweaked");
+  assert.equal(tweak.value.goalId, updated.id);
+  assert.equal(tweak.value.via, "/list tweak");
+  assert.equal(tweak.value.objective, "new paused list item");
+});
+
 test("T3d: active loop + human load → HELD_ON_RESTORE (loop deactivated loudly, not silently dropped)", async () => {
   const cwd = tmpCwd();
   seedState(cwd, { loop: seedLoop() });
