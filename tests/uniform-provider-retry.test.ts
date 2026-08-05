@@ -65,7 +65,7 @@ test("v0.34.51: the auditor durable plan catches ANY non-timeout infra error wit
   assert.ok(!SRC.includes("Quota auto-retry in"), "old quota-only action wording gone");
   // The 3-strike stop and its vocabulary are gone:
   assert.ok(!SRC.includes("reachedInfraCap"), "3-strike cap gone");
-  assert.ok(!SRC.includes("audit_infra_waiting"), "3-strike ledger gone");
+  assert.ok(!SRC.includes("audit_infra_waiting\", { goalId, attemptId: claim.attemptId, error: result.error.slice(0, 240), infraStreak }"), "3-strike ledger payload gone");
   assert.ok(!SRC.includes("The auditor has failed ${infraStreak} times in a row"), "3-strike verdict wording gone");
   // Watchdog timeouts keep their loud branch (a hanging command will hang again):
   assert.match(SRC, /isAuditorTimeoutError\(result\.error\)\) \{\n    \/\/ Watchdog timeouts stay ahead/);

@@ -245,7 +245,7 @@ function quotaResumeText(g: Goal, now: number): string {
   if (!Number.isFinite(ms)) return "manual resume required";
   // v0.34.51: the pause is a WAIT for the durable probe — nothing retries at
   // render time, so a passed resumeAt says "resuming…" (the timer owns it),
-  // never the old lie "retrying now".
+  // never the old claim that a retry is happening this instant.
   return ms <= 0 ? "resuming…" : `next probe in ${fmtElapsed(ms)}`;
 }
 

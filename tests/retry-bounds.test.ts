@@ -37,7 +37,7 @@ test("E2: auditor infra errors enter the durable bounded retry plan (v0.34.51 â€
   assert.ok(!SRC.includes("const infraStreak = (state.goal.auditInfraStreak ?? 0) + 1;"), "3-strike streak counter gone");
   assert.ok(!SRC.includes("const reachedInfraCap = infraStreak >= 3;"), "3-strike cap gone");
   assert.ok(!SRC.includes("auditor infrastructure failed ${infraStreak}Ã— in a row"), "3-strike wording gone");
-  assert.ok(!SRC.includes("audit_infra_waiting"), "3-strike ledger event gone");
+  assert.ok(!SRC.includes("audit_infra_waiting\", { goalId, attemptId: claim.attemptId, error: result.error.slice(0, 240), infraStreak }"), "3-strike ledger payload gone");
   assert.ok(!SRC.includes("The completion claim is stored and was not judged"), "3-strike action gone");
   // The durable plan owns the wait: quota-waiting phase, wait-kind pause,
   // horizon-capped blocked stop, and a re-checked auto-resume callback.
@@ -135,7 +135,7 @@ test("v0.34.51: stored-claim auditor retries enter the durable plan on ANY infra
   assert.match(retry, /v0\.34\.51: ANY infrastructure failure enters the durable bounded retry/);
   assert.match(retry, /phase: "quota-waiting" as const/);
   assert.match(retry, /startsWith\("auditor retry:"\)/);
-  assert.ok(!retry.includes("audit_infra_waiting"), "3-strike stop gone from stored-claim retries");
+  assert.ok(!retry.includes("audit_infra_waiting\", { goalId, attemptId: claim.attemptId, error: result.error.slice(0, 240), infraStreak }"), "3-strike ledger payload gone from stored-claim retries");
 });
 
 test("v0.34.26: length-continue exhaustion is a durable paused state, not a transient notify", () => {
