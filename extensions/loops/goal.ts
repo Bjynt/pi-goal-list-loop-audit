@@ -130,6 +130,7 @@ import {
 } from "../quota-retry.js";
 import {
   classifyMainModelFailure,
+  isLongLivedFailureKind,
   mainModelAutoRetryUntil,
   mainModelFailureDelayMs,
   mainModelRetryDelayMs,
@@ -138,6 +139,7 @@ import {
   modelRef,
   nextUntriedModelRef,
   normalizeModelRefs,
+  sendStormEscalateMs,
   splitModelRef,
   type MainModelFailure,
 } from "../main-model-recovery.js";
@@ -1310,6 +1312,10 @@ const SEND_REARM_ESCALATE_AFTER_MS = 15 * 60_000;
 const SEND_REARM_ESCALATE_SILENT_MS = 5 * 60_000;
 let continuationRearmSince = 0;
 let loopRearmSince = 0;
+// v0.34.57: when the last surfaced provider failure was a long-lived class
+// (quota/billing/auth), a send wedge inside this window is almost certainly
+// the same wall — escalate the storm into recovery after 3m, not 15m.
+let lastLongLivedFailureAt = 0;
 let continuationRearmMilestone = 0;
 let loopRearmMilestone = 0;
 
@@ -1340,7 +1346,7 @@ function accountSendRearm(ctx: ExtensionContext, kind: "continuation" | "loop"):
     if (kind === "continuation") continuationRearmMilestone++; else loopRearmMilestone++;
     appendLedger(ctx.cwd, "send_rearm_storm", { kind, streak, minutes: Math.round(elapsed / 60000) });
   }
-  if (elapsed >= SEND_REARM_ESCALATE_AFTER_MS && Date.now() - lastActivityAt >= SEND_REARM_ESCALATE_SILENT_MS) {
+  if (elapsed >= sendStormEscalateMs(lastLongLivedFailureAt) && Date.now() - lastActivityAt >= SEND_REARM_ESCALATE_SILENT_MS) {
     if (kind === "continuation") { continuationRearmStreak = 0; continuationRearmSince = 0; } else { loopRearmStreak = 0; loopRearmSince = 0; }
     escalateSendRearmStorm(ctx, kind);
   }
@@ -2333,6 +2339,7 @@ function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainModelFail
 async function recoverMainModelFromSendStorm(ctx: ExtensionContext, kind: "continuation" | "loop"): Promise<void> {
   if (!isSupervising() || mainModelRecoveryActive()) return;
   const failure = classifyMainModelFailure("429 rate limit: pi held the provider retry with no stream activity");
+  lastLongLivedFailureAt = Date.now();
   const switched = await tryMainModelFallback(ctx, failure);
   if (switched) {
     const current = modelRef(ctx.model);
@@ -2400,6 +2407,7 @@ async function handleMainModelAgentEnd(ctx: ExtensionContext, rawLastA: any, las
     const rawError = [rawLastA?.errorMessage, lastA.text].filter((v): v is string => typeof v === "string" && v.trim().length > 0).join(" — ");
     const failure = classifyMainModelFailure(rawError);
     lastMainModelFailure = failure;
+    if (isLongLivedFailureKind(failure.kind)) lastLongLivedFailureAt = Date.now();
     if (failure.kind !== "non-recoverable") {
       const switched = await tryMainModelFallback(ctx, failure);
       if (switched) return true; // pi's core retry now uses the selected backup

@@ -98,6 +98,29 @@ export function classifyMainModelFailure(error: string | undefined): MainModelFa
   return { kind: "unknown", raw };
 }
 
+/** v0.34.57: long-lived failure classes (quota/billing/auth) are durable
+ * knowledge for a window: a send-wedge that follows one of them within the
+ * window is almost certainly the same wall, so recovery engages in minutes
+ * instead of the generic 15m storm threshold. Transient (5xx/timeout/stream)
+ * failures are short-lived by definition and never record this signal. */
+export const LONG_LIVED_FAILURE_KNOWLEDGE_MS = 30 * 60_000;
+export const SEND_REARM_QUOTA_ESCALATE_MS = 3 * 60_000;
+export const SEND_REARM_GENERIC_ESCALATE_MS = 15 * 60_000;
+
+export function isLongLivedFailureKind(kind: MainModelFailureKind): boolean {
+  return kind === "quota" || kind === "billing" || kind === "auth";
+}
+
+/** Storm-escalation threshold: fast (3m) inside a fresh long-lived-failure
+ * knowledge window, generic (15m) otherwise. Pure — the orchestrator owns
+ * the timestamp state. */
+export function sendStormEscalateMs(lastLongLivedFailureAtMs: number, nowMs = Date.now()): number {
+  return Number.isFinite(lastLongLivedFailureAtMs) && lastLongLivedFailureAtMs > 0
+    && nowMs - lastLongLivedFailureAtMs < LONG_LIVED_FAILURE_KNOWLEDGE_MS
+    ? SEND_REARM_QUOTA_ESCALATE_MS
+    : SEND_REARM_GENERIC_ESCALATE_MS;
+}
+
 /** Return the next configured candidate that has not been attempted. */
 export function nextUntriedModelRef(current: string | undefined, refs: string[], attempted: string[] = []): string | undefined {
   const tried = new Set(attempted);
