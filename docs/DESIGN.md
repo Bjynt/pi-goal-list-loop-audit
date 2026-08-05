@@ -197,6 +197,21 @@ architectural decisions that changed the SHAPE of the system:
   cycle. Manual model selection cancels it; goal/list/loop cancellation clears
   its timer and durable state.
 
+## Addendum v0.34.57 (quota walls engage recovery fast)
+
+- **Knowledge-window escalation**: a surfaced long-lived failure (quota /
+  billing / auth) records a 30-minute knowledge window. A send-rearm storm
+  inside that window escalates into the recovery envelope after 3 minutes of
+  failed sends (plus the unchanged 5-minute activity silence gate) instead of
+  the generic 15 minutes — a wedge right after a quota wall is almost always
+  the same wall, and blind re-sends into it are pure waste.
+- **Transient failures stay fast**: 5xx/stream/network failures are
+  short-lived by definition and never record the knowledge signal; they keep
+  the 5s→3m error ladder and the pi-core retry budget.
+- **Armed by configuration**: the envelope is inert without
+  `mainModelFallbacks` (rotation) — an empty list means "park and probe the
+  same model" instead of switching pools.
+
 ## Addendum v0.4.0 (completion)
 
 - **Auditor compaction enabled** (flaw #3 — the last open one). Safety:
