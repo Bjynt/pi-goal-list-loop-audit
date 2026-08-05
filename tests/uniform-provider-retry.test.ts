@@ -45,11 +45,14 @@ test("v0.34.51: the billing manual-hold is gone — billing retries like everyth
   assert.ok(!SRC.includes("blind retries are stopped"), "manual-stop wording gone");
 });
 
-test("v0.34.51: quota-only parking gates are widened to every retryable failure", () => {
+test("v0.34.51: quota-only parking gates are widened to every non-transient failure", () => {
   assert.ok(!SRC.includes('lastMainModelFailure?.kind === "quota"'), "loop-brake quota-only gate gone");
   assert.match(SRC, /sr === "error" && lastMainModelFailure && lastMainModelFailure\.kind !== "non-recoverable"/);
   assert.ok(!SRC.includes('(failure.kind === "quota" && state.goal?.status === "active")'), "send-storm quota-only gate gone");
-  assert.match(SRC, /state\.goal\?\.status === "active" \|\| backupRefs\.length > 0/);
+  // Everything parks into the durable envelope except transient
+  // (5xx/timeout/network — positive evidence of a short-lived hiccup keeps
+  // the fast ladder). Nothing STOPS on classification anymore.
+  assert.match(SRC, /\(state\.goal\?\.status === "active" && failure\.kind !== "transient"\) \|\| backupRefs\.length > 0/);
   // The only remaining kind check is the factual upstream-hint budget:
   assert.match(SRC, /mainModelHintExceedsProbeBudget\(failure: MainModelFailure\): boolean \{\n  return failure\.kind === "quota"/);
 });

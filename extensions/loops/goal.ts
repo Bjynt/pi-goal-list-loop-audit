@@ -2399,9 +2399,12 @@ async function handleMainModelAgentEnd(ctx: ExtensionContext, rawLastA: any, las
       const switched = await tryMainModelFallback(ctx, failure);
       if (switched) return true; // pi's core retry now uses the selected backup
       const backupRefs = mainModelFallbackRefs(ctx);
-      // v0.34.51: no kind gate — ANY provider failure parks into the durable
-      // recovery envelope (billing and auth retry like quota now).
-      if (state.goal?.status === "active" || backupRefs.length > 0) {
+      // v0.34.51: no quota/billing/auth gate — ANY failure parks into the
+      // durable recovery envelope. The one exemption is transient
+      // (5xx/timeout/network: positive evidence of a short-lived hiccup),
+      // which keeps the fast error ladder instead of a 15m probe — nothing
+      // ever STOPS on classification, only the pacing differs.
+      if ((state.goal?.status === "active" && failure.kind !== "transient") || backupRefs.length > 0) {
         parkMainModelAfterFailure(ctx, failure);
         if (mainModelRecoveryActive() || state.mainModelRecovery) return true;
       }

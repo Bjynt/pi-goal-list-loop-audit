@@ -455,10 +455,16 @@ test("v0.34.14: /reload rebind resumes mid-work — the 'list is not continuing'
   assert.ok((g.match(/if \(autoResume \|\| recoveryResume \|\| rebindResume \|\| handoffResume\) \{/g) ?? []).length >= 2, "goal + loop branches");
 });
 
-test("v0.34.14: 3-strike pause names the hanging-verification cause (pully ssh/sudo stall)", () => {
+test("v0.34.51: the hanging-verification cause is named by the timeout branch (pully ssh/sudo stall)", () => {
   const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
-  assert.match(g, /a verification command is hanging \(ssh\/sudo\/long test runs stall the stream\)/, "pauseReason names both causes");
-  assert.match(g, /model broken or a verification command hanging/, "notify names both causes");
+  // The 3-strike pause is gone; a hanging verification command is now caught
+  // by the auditor watchdog timeout, which names the cause before asking for
+  // an explicit resume.
+  assert.match(g, /Check long-running verification commands, then \$\{activeGoalSurfaceCommand\("resume"\)\} to retry the isolated auditor\./, "timeout action names long-running commands");
+  assert.match(g, /completion audit timed out — \$\{result\.error\}/, "timeout reason keeps the raw error");
+  assert.match(g, /A watchdog timeout is infrastructure, but unlike a normal one-shot/, "timeout branch keeps its identity comment");
+  assert.ok(!g.includes("a verification command is hanging (ssh/sudo/long test runs stall the stream)"), "3-strike pauseReason gone");
+  assert.ok(!g.includes("model broken or a verification command hanging"), "3-strike notify gone");
 });
 
 // ---------- v0.34.15: persisted error brake + quota cards + queue-stuck probe ----------
