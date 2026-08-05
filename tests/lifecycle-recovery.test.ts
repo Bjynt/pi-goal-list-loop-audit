@@ -217,7 +217,8 @@ test("v0.34.54: settings after a fresh session_start — the table opens AND a r
   // autoAcceptDrafts row, answer "on" — the global settings file must
   // change. (After the write the loop re-renders once; the second custom
   // call cancels.)
-  fresh.ui.customImpl = async () => "autoAcceptDrafts";
+  let pickCount = 0;
+  fresh.ui.customImpl = async () => (++pickCount === 1 ? "autoAcceptDrafts" : undefined); // one pick, then cancel — the loop exits
   fresh.ui.selectImpl = async (title: string) => (title.startsWith("Auto-accept") ? "on" : undefined);
   const globalBefore = fs.readFileSync(GLOBAL_SETTINGS_PATH, "utf-8");
   await pi.command("glla", "", fresh);
