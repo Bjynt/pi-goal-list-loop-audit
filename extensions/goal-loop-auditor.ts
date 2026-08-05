@@ -67,8 +67,80 @@ export interface AuditProgress {
   currentTool?: string;
   currentToolArgs?: string;
   currentToolStartedAt?: number;
+  /** v0.34.56: the toolCallId of the open start (undefined when the start
+   * event carried none — the missing-toolCallId shape). */
+  currentToolId?: string;
   // Tool-call history for regression_shield:
   toolCalls: Array<{ name: string; argsPrefix: string; finishedAt: number }>;
+  /** v0.34.56: tool_execution_start events whose end never arrived (the
+   * start was replaced by a later start with a different/absent id). These
+   * are EXPLICIT unmatched facts — never silently re-paired with a wrong
+   * end. */
+  unmatchedToolStarts: Array<{ name: string; argsPrefix: string; startedAt: number; toolCallId?: string }>;
+  /** v0.34.56: tool_execution_end events that provably do not close the
+   * open start (wrong/absent id, or no open start at all). Represented
+   * explicitly instead of being dropped or falsely paired. */
+  unmatchedToolEnds: Array<{ toolCallId?: string; toolName?: string; at: number }>;
+}
+
+export type AuditorToolExecutionEvent =
+  | { type: "tool_execution_start"; toolCallId?: string; toolName: string; args?: unknown }
+  | { type: "tool_execution_end"; toolCallId?: string; toolName?: string };
+
+/** v0.34.56: tool-execution pairing, extracted pure so the telemetry is
+ * regression-testable. Truth rules:
+ *
+ * - A start while a start is open with a different (or absent) id means the
+ *   open start never received its end — record it in unmatchedToolStarts as
+ *   an explicitly unmatched fact, then adopt the new start.
+ * - An end pairs ONLY when: both sides carry the SAME id, or both sides are
+ *   anonymous (the id-less serial stream — the only pairing an id-less
+ *   stream can support).
+ * - An end with a different id than the open start, an id'd end against an
+ *   anonymous start, an anonymous end against an id'd start, or an end with
+ *   no open start at all: recorded in unmatchedToolEnds. NEVER paired with
+ *   the wrong start, NEVER silently dropped.
+ */
+export function applyToolExecutionEvent(
+  telemetry: AuditProgress,
+  event: AuditorToolExecutionEvent,
+  now: number,
+): AuditProgress {
+  if (event.type === "tool_execution_start") {
+    const sameId = event.toolCallId !== undefined && event.toolCallId === telemetry.currentToolId;
+    if (telemetry.currentTool !== undefined && !sameId) {
+      telemetry.unmatchedToolStarts.push({
+        name: telemetry.currentTool,
+        argsPrefix: telemetry.currentToolArgs ?? "",
+        startedAt: telemetry.currentToolStartedAt ?? now,
+        toolCallId: telemetry.currentToolId,
+      });
+    }
+    telemetry.currentTool = event.toolName;
+    telemetry.currentToolArgs = typeof event.args === "object" && event.args !== null
+      ? JSON.stringify(event.args).slice(0, 120)
+      : String(event.args ?? "").slice(0, 120);
+    telemetry.currentToolStartedAt = now;
+    telemetry.currentToolId = event.toolCallId;
+    return telemetry;
+  }
+  const open = telemetry.currentTool;
+  if (open !== undefined) {
+    const idMatches = event.toolCallId !== undefined && telemetry.currentToolId !== undefined && event.toolCallId === telemetry.currentToolId;
+    const bothAnonymous = event.toolCallId === undefined && telemetry.currentToolId === undefined;
+    if (idMatches || bothAnonymous) {
+      telemetry.toolCalls.push({ name: open, argsPrefix: telemetry.currentToolArgs ?? "", finishedAt: now });
+      telemetry.currentTool = undefined;
+      telemetry.currentToolArgs = undefined;
+      telemetry.currentToolStartedAt = undefined;
+      telemetry.currentToolId = undefined;
+      return telemetry;
+    }
+    // The end provably does not close the open start — the start stays open
+    // (it has not ended) and the end is recorded as an unmatched fact.
+  }
+  telemetry.unmatchedToolEnds.push({ toolCallId: event.toolCallId, toolName: event.toolName, at: now });
+  return telemetry;
 }
 
 export type AuditorProgressCallback = (progress: AuditProgress) => void;
@@ -223,6 +295,8 @@ export async function runGoalCompletionAuditor(args: {
     return { approved: false, disapproved: false, output: "", model: "(unset)", thinkingLevel, error: "no model (session model also unset)" };
   }
   const toolCalls: AuditProgress["toolCalls"] = [];
+  const unmatchedToolStarts: AuditProgress["unmatchedToolStarts"] = [];
+  const unmatchedToolEnds: AuditProgress["unmatchedToolEnds"] = [];
 
   try {
     const startedAt = Date.now();
@@ -231,6 +305,8 @@ export async function runGoalCompletionAuditor(args: {
       phase: "running",
       elapsedMs: 0,
       toolCalls,
+      unmatchedToolStarts,
+      unmatchedToolEnds,
     };
     function emitProgress(): void {
       progress.elapsedMs = Date.now() - startedAt;
@@ -291,26 +367,24 @@ export async function runGoalCompletionAuditor(args: {
         if (typeof msg === "string") streamError = msg.slice(0, 300);
       }
       if (event.type === "tool_execution_start") {
-        progress.currentTool = event.toolName;
-        progress.currentToolArgs = typeof event.args === "object" && event.args !== null
-          ? JSON.stringify(event.args).slice(0, 120)
-          : String(event.args ?? "").slice(0, 120);
-        progress.currentToolStartedAt = Date.now();
+        // v0.34.56: pairing lives in the pure applyToolExecutionEvent — the
+        // telemetry regression test drives it directly.
+        applyToolExecutionEvent(progress, {
+          type: "tool_execution_start",
+          toolCallId: (anyEvent.toolCallId as string | undefined) ?? undefined,
+          toolName: event.toolName,
+          args: anyEvent.args,
+        }, Date.now());
         progress.phase = "tool_executing";
         emitProgress();
         return;
       }
       if (event.type === "tool_execution_end") {
-        if (progress.currentTool) {
-          toolCalls.push({
-            name: progress.currentTool,
-            argsPrefix: progress.currentToolArgs ?? "",
-            finishedAt: Date.now(),
-          });
-        }
-        progress.currentTool = undefined;
-        progress.currentToolArgs = undefined;
-        progress.currentToolStartedAt = undefined;
+        applyToolExecutionEvent(progress, {
+          type: "tool_execution_end",
+          toolCallId: (anyEvent.toolCallId as string | undefined) ?? undefined,
+          toolName: anyEvent.toolName as string | undefined,
+        }, Date.now());
         progress.phase = "running";
         emitProgress();
         return;
