@@ -139,7 +139,7 @@ test("/goal audit + /list audit warn when an audit loop is already running", () 
 test("restore-hold names the supersession in the widget surface", () => {
   assert.match(SRC, /const auditSuperseded =/);
   assert.match(SRC, /restored on session load — SUPERSEDED by the audit loop in this session/);
-  assert.match(SRC, /\/goal cancel clears it \(the loop already owns the audit\)/);
+  assert.match(SRC, /activeGoalSurfaceCommand\("cancel"\)\} clears it \(the loop already owns the audit\)/); // v0.34.51 mode-aware
 });
 
 test("v0.33.3: one-shot audit raises DECIDE findings as questions before completing", () => {

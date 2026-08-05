@@ -111,7 +111,7 @@ test("v0.34.26: output-token-limit provider errors are classified as a determini
   const wallBranch = SRC.slice(wallIdx, capIdx);
   assert.match(wallBranch, /pauseKind: "error",/);
   assert.match(wallBranch, /Deterministic wall — the provider rejects this response shape every time/);
-  assert.match(wallBranch, /\/goal resume\./);
+  assert.match(wallBranch, /activeGoalSurfaceCommand\("resume"\)\}/); // v0.34.51 mode-aware
   assert.ok(!wallBranch.includes("scheduleQuotaRetryForSession"), "no flake auto-resume for a deterministic wall");
   assert.ok(!wallBranch.includes("pauseResumeAt"), "no wait-timer for a deterministic wall");
 });
@@ -133,7 +133,7 @@ test("v0.34.26: length-continue exhaustion is a durable paused state, not a tran
   assert.match(SRC, /appendLedger\(ctx\.cwd, "length_continue_exhausted", \{ consecutive: lc\.consecutive \}\);/);
   assert.match(SRC, /pauseReason: `output-token limit — \$\{LENGTH_CONTINUE_MAX\} responses in a row were truncated mid-artifact; auto-continue exhausted`,/);
   assert.match(SRC, /pauseKind: "error",/);
-  assert.match(SRC, /then \/goal resume — the truncation budget restarts fresh\./);
+  assert.match(SRC, /then \$\{activeGoalSurfaceCommand\("resume"\)\} — the truncation budget restarts fresh\./); // v0.34.51 mode-aware
   // the sticky gaveUp tracker resets so an explicit resume gets a fresh budget:
   assert.match(SRC, /resetLengthContinue\(\);/);
   // loop path: explicit stop reason with preserved iteration:
