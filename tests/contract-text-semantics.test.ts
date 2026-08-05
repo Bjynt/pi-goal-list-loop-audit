@@ -86,6 +86,10 @@ test("parser: bare marker followed by content still captures the contract block"
 // ---------------------------------------------------------------------------
 
 async function goalTweakFixture(contract: string | undefined) {
+  // default settings HOLD an active goal on session_start (reload → paused),
+  // which would trip the "No active goal to tweak" guard — opt in to
+  // auto-resume so the seeded goal stays active like a real running goal.
+  setGlobalAutoResume(true);
   const cwd = tmpCwd();
   seedState(cwd, {
     goal: seedGoal({
