@@ -851,11 +851,19 @@ test("ambiguous provider recovery is not mislabeled as a quota wall", () => {
   assert.match(buildStatusText(state as never)!, /waiting/);
 });
 
-test("quota manual hold stays distinct and does not show raw provider detail", () => {
+test("over-budget provider hints never park the goal — only the 24h horizon holds", () => {
+  // v0.34.58: an upstream reset hint beyond the 5h probe budget falls back to
+  // the bounded cadence; it no longer produces a quota-only manual hold.
+  const goalSrc = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  assert.ok(!goalSrc.includes("mainModelHintExceedsProbeBudget"), "quota-only parking gate gone from goal.ts");
+  assert.ok(!goalSrc.includes("provider supplied a reset beyond"), "over-budget hint hold reason gone");
+
+  // The only remaining manual hold is the kind-independent 24h horizon: it
+  // still renders as a distinct QUOTA WALL card without raw provider detail.
   const g = goalOf({
     status: "paused",
     pauseKind: "blocked",
-    pauseReason: "main model recovery — automatic probes stopped (provider supplied a reset beyond the 5h automatic probe budget) · main model quota: 429 reset in 1 week",
+    pauseReason: "main model recovery — automatic probes stopped (the 24h automatic recovery horizon was reached) · main model quota: 429 reset in 1 week",
     pauseSuggestedAction: "Check the provider reset, then /goal resume to start a fresh bounded window.",
   });
   const state = { goal: g, list: [], loop: null };

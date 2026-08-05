@@ -53,8 +53,13 @@ test("v0.34.51: quota-only parking gates are widened to every non-transient fail
   // (5xx/timeout/network — positive evidence of a short-lived hiccup keeps
   // the fast ladder). Nothing STOPS on classification anymore.
   assert.match(SRC, /\(state\.goal\?\.status === "active" && failure\.kind !== "transient"\) \|\| backupRefs\.length > 0/);
-  // The only remaining kind check is the factual upstream-hint budget:
-  assert.match(SRC, /mainModelHintExceedsProbeBudget\(failure: MainModelFailure\): boolean \{\n  return failure\.kind === "quota"/);
+  // v0.34.58: even the upstream-hint budget gate is gone — an over-budget
+  // provider reset hint falls back to the bounded cadence instead of parking
+  // the goal for a manual resume. The kind-independent 24h horizon hold is
+  // the only remaining stop for automatic probes.
+  assert.ok(!SRC.includes("mainModelHintExceedsProbeBudget"), "quota-only upstream-hint parking gate gone");
+  assert.ok(!SRC.includes("provider supplied a reset beyond"), "over-budget hint hold reason gone");
+  assert.ok(!SRC.includes('failure.kind === "quota"'), "no kind==='quota' check left in goal.ts");
 });
 
 test("v0.34.51: the auditor durable plan catches ANY non-timeout infra error with neutral wording", () => {

@@ -2026,13 +2026,6 @@ function withMainModelRecoveryWindow(recovery: MainModelRecovery, now = Date.now
   return { ...recovery, firstFailureAt, autoRetryUntil };
 }
 
-function mainModelHintExceedsProbeBudget(failure: MainModelFailure): boolean {
-  return failure.kind === "quota"
-    && failure.retryFromUpstream === true
-    && Number.isFinite(failure.retryAfterSec)
-    && failure.retryAfterSec! * 1_000 > MAIN_MODEL_MAX_RETRY_DELAY_MS;
-}
-
 function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModelRecovery, why: string): void {
   const normalized = withMainModelRecoveryWindow(recovery);
   clearMainModelRecoveryTimer();
@@ -2292,12 +2285,12 @@ async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
     // the uniform durable envelope (credits can be topped up; a miss-classified
     // quota wall must not become a manual-action stop).
     const next = withMainModelRecoveryWindow({ ...recovery, attempts: recovery.attempts + 1, attempted: [...(current ? [current] : []), target], reason: mainModelRecoveryReason(failure), resetAt: failure.resetAt ?? recovery.resetAt });
-    if (mainModelHintExceedsProbeBudget(failure)) {
-      holdMainModelRecovery(ctx, next, `provider supplied a reset beyond the 5h automatic probe budget${failure.resetAt ? ` (reset ${failure.resetAt})` : ""}`);
-    } else {
-      const delay = mainModelFailureDelayMs(failure, next.attempts, loadGlobalSettings().mainModelRetryMinutes);
-      if (setMainModelRecoveryPause(ctx, next, delay)) scheduleMainModelRecoveryTimer(ctx, delay);
-    }
+    // v0.34.58: no quota-only parking — an over-budget upstream reset hint
+    // never holds the goal for a manual resume; the bounded envelope owns
+    // the wait (mainModelFailureDelayMs falls back to the bounded cadence
+    // when the hint exceeds the 5h probe budget).
+    const delay = mainModelFailureDelayMs(failure, next.attempts, loadGlobalSettings().mainModelRetryMinutes);
+    if (setMainModelRecoveryPause(ctx, next, delay)) scheduleMainModelRecoveryTimer(ctx, delay);
   } finally {
     mainModelSwitchInFlight = false;
   }
@@ -2323,12 +2316,9 @@ function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainModelFail
     reason: mainModelRecoveryReason(failure),
     resetAt: failure.resetAt ?? existing.resetAt,
   });
-  if (mainModelHintExceedsProbeBudget(failure)) {
-    holdMainModelRecovery(ctx, nextRecovery, `provider supplied a reset beyond the 5h automatic probe budget${failure.resetAt ? ` (reset ${failure.resetAt})` : ""}`);
-    mainModelAbortForRecovery = true;
-    try { ctx.abort(); } catch { /* abort is best effort */ }
-    return;
-  }
+  // v0.34.58: uniform envelope even for over-budget upstream hints — the
+  // goal never parks on a quota-only manual hold; the bounded cadence owns
+  // the wait and the 24h horizon ends automatic probes (kind-independent).
   const delay = mainModelFailureDelayMs(failure, nextRecovery.attempts, loadGlobalSettings().mainModelRetryMinutes);
   if (!setMainModelRecoveryPause(ctx, nextRecovery, delay)) return;
   mainModelAbortForRecovery = true;

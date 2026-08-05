@@ -263,8 +263,10 @@ limits and user aborts (`non-recoverable`), plus auditor watchdog timeouts
 (a hanging verification command will hang again — the stored claim waits for
 an explicit resume).
 A provider hint (`retry_after`/`reset_at`) is honored when it fits the
-five-hour probe budget; a week-long hint is shown and held instead of
-scheduling a hidden week-long timer. With global `autoResume=on`, pending
+five-hour probe budget; an over-budget hint (e.g. a week-long reset) never
+parks the goal — the bounded cadence owns the wait, and only the 24h horizon
+ends automatic probes (a `/goal resume`/`/list resume`/`/loop resume` then
+starts a fresh window). With global `autoResume=on`, pending
 probes survive a session reload. For continuous work, configure ordered
 **Main model backups** in `/glla` using a model from a different provider or
 billing/quota pool — another model on the same exhausted plan is not a real
