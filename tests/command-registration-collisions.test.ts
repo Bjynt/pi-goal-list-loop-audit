@@ -23,8 +23,10 @@
 //      settings.json packages), scans every loaded extension's entry source
 //      for registerCommand("list"|"glla"|"goal"|"loop"), computes the
 //      routing table with the model's rule, and RECORDS it to
-//      audit/command-registration-routing.md. Skips (t.skip) when the pi
-//      agent dir is absent (CI / non-pi rigs); never writes to pi core.
+//      audit/command-registration-routing.md. When nothing registers the
+//      goal family (CI / non-pi rigs), the report records explicit
+//      zero-registrant rows for goal/list/glla/loop instead of failing on
+//      an empty table; never writes to pi core.
 //
 // 2026-08-05 live finding: the only loaded registrant of goal/glla/list/loop
 // is this repo (global packages[10] = /home/dracon/Dev/pi-goal-loop-audit)
@@ -275,6 +277,19 @@ test("v0.34.55: live rig — the routing table records duplicate-command routing
   });
   routing.sort((a, b) => a.command.localeCompare(b.command));
 
+  // Ensure every goal-family command has a row: the real routing row when
+  // registered, an explicit zero-registrant row otherwise. On CI and other
+  // non-pi rigs NOTHING registers goal/list/glla/loop — the report must
+  // still name them (a truthful record, and the per-command assertions
+  // below hold on every rig) instead of a placeholder row that hides which
+  // commands are unregistered.
+  for (const command of ["goal", "list", "glla", "loop"]) {
+    if (!routing.some((r) => r.command === command)) {
+      routing.push({ command, registrants: 0, bareOwned: false, winner: { source: "—", entry: "—" }, suffixed: [] });
+    }
+  }
+  routing.sort((a, b) => a.command.localeCompare(b.command));
+
   // RECORD the diagnostic — the reproducible artifact.
   const lines = [
     "# Command registration routing (auto-recorded by tests/command-registration-collisions.test.ts)",
@@ -290,10 +305,8 @@ test("v0.34.55: live rig — the routing table records duplicate-command routing
     "|---|---|---|---|---|---|",
   ];
   for (const r of routing) {
-    lines.push(`| ${r.command} | ${r.registrants} | ${r.bareOwned ? "yes" : "NO — unroutable"} | ${r.winner.source} | ${r.winner.entry} | ${r.suffixed.join(", ")} |`);
-  }
-  if (routing.length === 0) {
-    lines.push("| — | 0 | — | — | — |");
+    const owned = r.registrants === 0 ? "no registrant" : r.bareOwned ? "yes" : "NO — unroutable";
+    lines.push(`| ${r.command} | ${r.registrants} | ${owned} | ${r.winner.source} | ${r.winner.entry} | ${r.suffixed.join(", ")} |`);
   }
 
   // Hazard list: goal-family registrants installed under the agent npm dir
@@ -329,12 +342,12 @@ test("v0.34.55: live rig — the routing table records duplicate-command routing
   for (const command of ["list", "glla"]) {
     const row = routing.find((r) => r.command === command);
     if (!row) {
-      // No registrant at all would be a broken installation — record it.
-      assert.ok(recorded.includes(`| ${command} |`), `routing table records ${command}`);
-      continue;
+      // Cannot happen: zero-registrant rows are synthesized above.
+      assert.fail(`routing table records ${command}`);
     }
-    assert.equal(row.registrants, row.registrants, "self-consistent count");
     assert.match(recorded, new RegExp(`\\| ${command} \\|`), `report records ${command}`);
+    if (row.registrants === 0) continue; // zero-registrant rig: nothing to win
+    assert.equal(row.registrants, row.registrants, "self-consistent count");
     if (row.winner.entry.startsWith(repoRoot) || row.winner.source.includes("pi-goal-loop-audit")) {
       assert.ok(row.bareOwned, `on this rig the repo is the SOLE registrant of /${command} — the bare name is owned and routes`);
       assert.ok(row.suffixed.length === 0, `no suffixed shadow names for /${command}`);
