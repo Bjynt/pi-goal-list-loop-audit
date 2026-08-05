@@ -939,15 +939,27 @@ export function draftContractItemCount(normalized: string): number {
  * module so tests exercise THIS function, not a copy (the pre-0.23.7 test
  * re-implemented it and silently went stale).
  */
-export function extractVerificationContract(raw: string): { objective: string; verificationContract: string } {
+export function extractVerificationContract(raw: string): { objective: string; verificationContract: string; explicitClear: boolean } {
   // Line-based first: a marker at line start begins the contract block.
   const lines = raw.split("\n");
   let mode: "obj" | "verify" = "obj";
   const objParts: string[] = [];
   const verifyParts: string[] = [];
+  // v0.34.51: a BARE contract marker ("Done when:" with nothing after it) is
+  // an explicit CLEAR signal — the caller wipes the stored contract instead
+  // of preserving or replacing it. The bare marker line is consumed, never
+  // kept as contract text; later lines after a bare marker still belong to
+  // the contract block.
+  let explicitClear = false;
+  const MARKER_START = /^\s*(?:done when|verified when|verify|verification|done)\b[^:]*:/i;
   for (const line of lines) {
-    if (line.match(/^\s*(?:done when|verified when|verify|verification|done)\b[^:]*:/i)) {
+    const m = line.match(MARKER_START);
+    if (m) {
       mode = "verify";
+      if (!line.slice(m[0].length).trim()) {
+        explicitClear = true;
+        continue;
+      }
     }
     if (mode === "obj") objParts.push(line);
     else verifyParts.push(line);
@@ -963,9 +975,16 @@ export function extractVerificationContract(raw: string): { objective: string; v
     if (m) {
       objective = (m[1] ?? "").trim().replace(/[.;]\s*$/, "");
       verificationContract = (m[2] ?? "").trim();
+    } else if (!explicitClear) {
+      // Trailing bare marker mid-line: "Do x. Done when:" — explicit clear.
+      const empty = raw.match(/^(.*?)\s+(?:done when|verified when|verify|verification)\b[^:]*:\s*$/is);
+      if (empty) {
+        objective = (empty[1] ?? "").trim().replace(/[.;]\s*$/, "");
+        explicitClear = true;
+      }
     }
   }
-  return { objective, verificationContract };
+  return { objective, verificationContract, explicitClear };
 }
 
 /**

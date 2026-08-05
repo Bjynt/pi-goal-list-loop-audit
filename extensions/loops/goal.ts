@@ -4146,13 +4146,32 @@ async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "lis
   }
   const proposed = extractVerificationContract(raw);
   const newObjective = proposed.objective;
-  const newContract = proposed.verificationContract;
+  if (!newObjective) {
+    ctx.ui.notify(
+      mode === "list"
+        ? "Usage: /list tweak <replacement objective, optional 'Done when: ...' clause>"
+        : "Usage: /goal tweak <replacement objective, optional 'Done when: ...' clause>",
+      "info",
+    );
+    return;
+  }
+  // v0.34.51 contract-text semantics (defined + pinned by tests):
+  //   supplied clause  → REPLACE the stored contract
+  //   omitted clause   → PRESERVE the stored contract (a reword must not
+  //                      silently destroy the verification gate)
+  //   bare marker      → CLEAR the stored contract ("Done when:" with nothing)
+  const hasNewContract = proposed.verificationContract.length > 0;
+  const clearsContract = !hasNewContract && proposed.explicitClear;
   let confirmed = false;
   try {
     confirmed = await ctx.ui.confirm(
       mode === "list" ? "Tweak list item?" : "Tweak goal?",
       `CURRENT:\n${sanitizeDisplayText(current.objective)}\n\nNEW:\n${sanitizeDisplayText(newObjective)}` +
-      (newContract ? `\n\nNew contract:\n${sanitizeDisplayText(newContract)}` : "\n\n(New text carries no contract; old contract is dropped.)"),
+      (hasNewContract
+        ? `\n\nNew contract:\n${sanitizeDisplayText(proposed.verificationContract)}`
+        : clearsContract
+          ? "\n\n(Empty 'Done when:' — the verification contract is cleared.)"
+          : "\n\n(New text carries no contract; the old contract is kept.)"),
     );
   } catch {
     confirmed = false;
@@ -4161,7 +4180,11 @@ async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "lis
     ctx.ui.notify("Tweak cancelled; goal unchanged.", "info");
     return;
   }
-  updateGoal({ objective: newObjective, verificationContract: newContract }, ctx);
+  const patch: Partial<Goal> = { objective: newObjective };
+  if (hasNewContract) patch.verificationContract = proposed.verificationContract;
+  else if (clearsContract) patch.verificationContract = "";
+  // omitted clause → no verificationContract key in the patch: preserved.
+  updateGoal(patch, ctx);
   appendLedger(ctx.cwd, "goal_tweaked", {
     goalId: current.id,
     objective: newObjective,
