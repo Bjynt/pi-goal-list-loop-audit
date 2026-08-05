@@ -369,6 +369,24 @@ export const LIST_MUTATING_SUBCOMMANDS = new Set([
 ]);
 
 /**
+ * v0.34.52: /glla verbs that open a settings surface or persist config —
+ * refused on a stale extension handle by cmdSettings' entry probe, mirroring
+ * the /list gate. Bare /glla (verb "ui") is the settings entry itself: every
+ * table choice writes state. wipe/reset/cancel/resume/reviewer/postaudit/
+ * tooloverride mutate directly. Read-only surfaces (status, log, stats,
+ * audits) and the unknown-action notice stay available for inspection.
+ */
+export const SETTINGS_MUTATING_ACTIONS = new Set([
+  "wipe",
+  "reset",
+  "cancel",
+  "resume",
+  "reviewer",
+  "postaudit",
+  "tooloverride",
+]);
+
+/**
  * Route natural-language text handed to `/list` with no subcommand verb
  * (v0.18.0). The user typed a dump — "fix x, do y, write docs" — not a
  * command. Flexible by detection, never a usage error:

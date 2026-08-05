@@ -68,6 +68,7 @@ import {
   listMutationBlocked,
   LIST_DRAFTING_BLOCK_MESSAGE,
   LIST_MUTATING_SUBCOMMANDS,
+  SETTINGS_MUTATING_ACTIONS,
   sumNewAssistantTokens,
   takeAt,
   countTrailingDisapprovals,
@@ -7785,10 +7786,24 @@ function cmdGllaStatus(ctx: ExtensionContext): void {
 }
 
 async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
+  // v0.34.52: settings entry probe — mirror of cmdList's stale gate. Bare
+  // /glla is a settings surface every choice of which writes state, and
+  // wipe/reset/cancel/resume/reviewer/postaudit/tooloverride mutate
+  // directly; on a stale handle (pi session replacement) those writes
+  // would land from a doomed process that can neither announce nor run
+  // them. Refuse with the standard recovery message from the entry probe
+  // and a ledger trail; read-only surfaces (status/log/stats/audits) and
+  // the unknown-action notice stay usable for inspection.
+  const staleEntry = warnIfStaleAtEntry(ctx, "/glla");
   // `/glla` is the settings surface. Arguments belong to the action namespace
   // below (status, resume, stats, etc.); settings are edited in the table
   // rather than through noisy inline assignments.
   const trimmed = args.trim();
+  const verb = trimmed ? trimmed.split(/\s+/)[0]!.toLowerCase() : "ui";
+  if (staleEntry && (verb === "ui" || SETTINGS_MUTATING_ACTIONS.has(verb))) {
+    appendLedger(ctx.cwd, "settings_mutation_refused_stale", { sub: verb });
+    return;
+  }
   // v0.25.2: /glla stats sub-mode — cross-project telemetry rollups.
   if (/^stats(?:\s|$)/.test(trimmed)) {
     cmdStats(trimmed.slice("stats".length).trim(), ctx);
