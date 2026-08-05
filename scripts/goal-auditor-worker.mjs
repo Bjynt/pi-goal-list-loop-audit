@@ -70,6 +70,8 @@ const MAX_TOOL_ARG_VALUE_CHARS = 80;
 const MAX_RECENT_OUTPUT_ITEMS = 8;
 const MAX_RECENT_OUTPUT_ITEM_CHARS = 240;
 const MAX_TOOL_CALLS = 64;
+/** v0.34.56: bounded explicit unmatched-tool-fact retention. */
+const MAX_UNMATCHED_EVENTS = 20;
 
 function clipTelemetryString(value, max) {
   if (value.length <= max) return value;
@@ -149,10 +151,20 @@ async function main() {
 
   const startedAt = Date.now();
   const toolCalls = [];
+  // v0.34.56: tool starts/ends that provably never paired are recorded as
+  // EXPLICIT unmatched facts — never dropped, never falsely paired with a
+  // different tool (see applyToolExecutionEvent in goal-loop-auditor.ts for
+  // the shared truth rules; the worker keeps a concurrency-capable Map).
+  const unmatchedToolStarts = [];
+  const unmatchedToolEnds = [];
   const recentOutput = [];
   const outputParts = [];
   const recentReportLine = { value: "" };
   const activeTools = new Map();
+  /** Keys of active starts that arrived WITHOUT a toolCallId. An anonymous
+   * end can only pair when exactly ONE anonymous start is open — with zero
+   * or several it is an unmatched fact (any pairing would be a guess). */
+  const anonymousStartKeys = new Set();
   let currentTool;
   let currentToolArgs;
   let currentToolStartedAt;
@@ -197,6 +209,8 @@ async function main() {
           : `${recentReportLine.value.slice(0, MAX_RECENT_OUTPUT_ITEM_CHARS - 1)}…`] : []),
       ].slice(-MAX_RECENT_OUTPUT_ITEMS),
       toolCalls: toolCalls.slice(-MAX_TOOL_CALLS),
+      unmatchedToolStarts: unmatchedToolStarts.slice(-MAX_UNMATCHED_EVENTS),
+      unmatchedToolEnds: unmatchedToolEnds.slice(-MAX_UNMATCHED_EVENTS),
       ...(currentTool ? { currentTool } : {}),
       ...(currentToolArgs ? { currentToolArgs } : {}),
       ...(currentToolStartedAt ? { currentToolStartedAt } : {}),
@@ -210,6 +224,16 @@ async function main() {
   const finish = async (ok, error = "") => {
     if (finalized) return;
     finalized = true;
+    // v0.34.56: tools still in flight when the session ends never received
+    // their end — represent them as explicitly unmatched STARTS in the final
+    // telemetry snapshot instead of a phantom in-flight "current tool".
+    for (const active of activeTools.values()) {
+      unmatchedToolStarts.push({ name: active.name, argsPrefix: active.argsPrefix, startedAt: active.startedAt, toolCallId: active.toolCallId });
+      if (unmatchedToolStarts.length > MAX_UNMATCHED_EVENTS) unmatchedToolStarts.shift();
+    }
+    activeTools.clear();
+    anonymousStartKeys.clear();
+    setCurrentToolFromActive();
     // Preserve a final unterminated report line in the last progress snapshot
     // without changing the exact result output used for verdict parsing.
     appendRecentOutput(recentOutput, recentReportLine, "", true);
@@ -347,21 +371,35 @@ async function main() {
         return;
       }
       if (event.type === "tool_execution_start" && READ_ONLY_TOOLS.has(event.toolName)) {
-        const key = String(event.toolCallId ?? `${event.toolName}:${activeTools.size}:${Date.now()}`);
-        activeTools.set(key, { name: event.toolName, argsPrefix: toolArgsPrefix(event.args), startedAt: Date.now() });
+        const id = event.toolCallId === undefined || event.toolCallId === null ? undefined : String(event.toolCallId);
+        const key = id !== undefined ? id : `${event.toolName}:${activeTools.size}:${Date.now()}`;
+        activeTools.set(key, { name: event.toolName, argsPrefix: toolArgsPrefix(event.args), startedAt: Date.now(), toolCallId: id });
+        if (id === undefined) anonymousStartKeys.add(key);
         setCurrentToolFromActive();
         void progress(phase).catch(() => {});
         return;
       }
       if (event.type === "tool_execution_end") {
-        const key = String(event.toolCallId ?? "");
-        const active = activeTools.get(key);
+        const id = event.toolCallId === undefined || event.toolCallId === null ? undefined : String(event.toolCallId);
+        let key;
+        if (id !== undefined) {
+          key = id;
+        } else if (anonymousStartKeys.size === 1) {
+          key = [...anonymousStartKeys][0];
+        }
+        const active = key !== undefined ? activeTools.get(key) : undefined;
         if (active) {
-          const { startedAt: _startedAt, ...toolCall } = active;
+          const { startedAt: _startedAt, toolCallId: _toolCallId, ...toolCall } = active;
           toolCalls.push({ ...toolCall, finishedAt: Date.now() });
           while (toolCalls.length > MAX_TOOL_CALLS) toolCalls.shift();
           activeTools.delete(key);
+          if (id === undefined) anonymousStartKeys.delete(key);
           setCurrentToolFromActive();
+        } else {
+          // v0.34.56: an end that provably closes nothing is an EXPLICIT
+          // unmatched fact — never silently dropped.
+          unmatchedToolEnds.push({ toolCallId: id, toolName: event.toolName, at: Date.now() });
+          if (unmatchedToolEnds.length > MAX_UNMATCHED_EVENTS) unmatchedToolEnds.shift();
         }
         void progress(activeTools.size > 0 ? "tool_executing" : "thinking").catch(() => {});
         return;

@@ -353,6 +353,11 @@ export interface AuditDisplayProgress {
   recentOutput?: string[];
   /** Completed read-only calls retained by the worker for live context. */
   toolCalls?: Array<{ name: string; argsPrefix: string; finishedAt: number }>;
+  /** v0.34.56: explicit counts of unmatched tool start/end telemetry facts
+   * (events that provably never paired). Shown honestly — never hidden, and
+   * never silently re-paired into the paired toolCalls list. */
+  unmatchedToolStarts?: number;
+  unmatchedToolEnds?: number;
   /** Parent-observed progress-file change; useful for legacy callers. */
   lastEventAt?: number;
   /** Worker-side activity, excluding parent polls and UI refreshes. */
@@ -831,6 +836,11 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     }
     const latest = latestAuditorOutput(audit);
     if (latest) observations.push(`latest: ${latest}`);
+    const unmatchedStarts = audit?.unmatchedToolStarts ?? 0;
+    const unmatchedEnds = audit?.unmatchedToolEnds ?? 0;
+    if (unmatchedStarts + unmatchedEnds > 0) {
+      observations.push(`unmatched tool events: ${unmatchedStarts} start / ${unmatchedEnds} end — explicitly unpaired, never falsely matched`);
+    }
     observations.forEach((observation, i) => {
       lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, "dim", observation)}`);
     });

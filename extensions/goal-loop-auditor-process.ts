@@ -129,6 +129,10 @@ interface AuditorProgressFile {
   currentTool?: string;
   currentToolArgs?: string;
   currentToolStartedAt?: number;
+  /** v0.34.56: explicitly unmatched tool telemetry facts (see
+   * applyToolExecutionEvent in goal-loop-auditor.ts). */
+  unmatchedToolStarts?: AuditProgress["unmatchedToolStarts"];
+  unmatchedToolEnds?: AuditProgress["unmatchedToolEnds"];
 }
 
 export interface AuditorProcessRuntime {
@@ -227,6 +231,8 @@ function asProgress(file: AuditorProgressFile, startedAt: number): AuditorProgre
     ...(file.currentTool ? { currentTool: file.currentTool } : {}),
     ...(file.currentToolArgs ? { currentToolArgs: file.currentToolArgs } : {}),
     ...(file.currentToolStartedAt ? { currentToolStartedAt: file.currentToolStartedAt } : {}),
+    ...(file.unmatchedToolStarts ? { unmatchedToolStarts: file.unmatchedToolStarts } : {}),
+    ...(file.unmatchedToolEnds ? { unmatchedToolEnds: file.unmatchedToolEnds } : {}),
   };
 }
 

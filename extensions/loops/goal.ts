@@ -1134,6 +1134,9 @@ function publishDetachedAuditProgress(
     elapsedMs: progress.elapsedMs,
     recentOutput: progress.recentOutput,
     toolCalls: progress.toolCalls,
+    // v0.34.56: expose explicit unmatched-tool-fact counts to the HUD.
+    unmatchedToolStarts: progress.unmatchedToolStarts?.length ?? 0,
+    unmatchedToolEnds: progress.unmatchedToolEnds?.length ?? 0,
     lastEventAt: Date.now(),
     lastActivityAt: progress.lastActivityAt,
   };
