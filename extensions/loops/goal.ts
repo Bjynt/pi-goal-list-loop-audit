@@ -1719,6 +1719,7 @@ function clearContinuationStartWatchdog(): void {
     clearTimeout(continuationStartTimer);
     continuationStartTimer = null;
   }
+  if (pendingContinuationDispatch) clearCompactionRearms(pendingContinuationDispatch.id);
   pendingContinuationDispatch = null;
   lastContinuationSentAt = 0;
 }
@@ -1819,6 +1820,7 @@ function dispatchStartAcknowledged(ctx: ExtensionContext, source: string, prompt
   pendingContinuationDispatch = started;
   persistDispatchRecord(ctx.cwd, started);
   clearContinuationStartWatchdog();
+  clearCompactionRearms(record.id);
   clearDispatchRecord(ctx.cwd);
   lastContinuationSentAt = 0;
   if (record.resync) postCompactResyncPending = false;
