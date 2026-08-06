@@ -878,6 +878,10 @@ test("T2: a stale send on agent_end continuation → goal ACTIVE + interrupt mar
   assert.ok(ctx.ui.matching("restart pi").length >= 1, "loud restart guidance");
   const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
   assert.ok(ledger.includes('"extension_api_stale"'), "stale terminal ledgered");
+  // v0.34.57: the chrome-bridge handle path also writes session_handle_invalidated
+  // with a structured reason enum so the recovery path can pick the right strategy.
+  assert.ok(ledger.includes('"session_handle_invalidated"'), "session_handle_invalidated ledgered alongside extension_api_stale");
+  assert.match(ledger, /"session_handle_invalidated"[^}]*"reason":"unknown"/, "session_handle_invalidated carries the reason enum (default: unknown)");
 });
 
 // ────────────────────────────────────────────────────────────────────
