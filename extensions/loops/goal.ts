@@ -619,6 +619,13 @@ export function __testOnlyResetTerminalFlags(): void {
   sessionHandoffPending = false;
 }
 
+/** TEST-ONLY hook (tests/harness): set/clear the persisted lastModelRef
+ * slot so a test can start from fresh-process semantics (no model observed
+ * yet) without firing a session_start. Never called by production code. */
+export function __testOnlySetLastModelRef(ref: string | undefined): void {
+  state.lastModelRef = ref;
+}
+
 /** Test-only lifecycle driver: exercise the orphan watchdog without waiting
  * for the production 15-second heartbeat interval. This never ships as a
  * runtime command; it only lets the mock host reproduce an invalidated
