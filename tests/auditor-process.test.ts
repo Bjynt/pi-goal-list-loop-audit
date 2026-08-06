@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -12,6 +13,7 @@ import {
   stableJson,
   type AuditorModel,
   type AuditorProgress,
+  type AuditorStalledInfo,
 } from "../extensions/goal-loop-auditor-process.ts";
 
 const workerPath = path.resolve(process.cwd(), "tests/fixtures/auditor-fake-worker.mjs");
@@ -126,6 +128,71 @@ test("detached parent forwards live worker telemetry to its progress callback", 
     assert.ok(live?.lastActivityAt);
   } finally {
     await cleanup(dir);
+  }
+});
+
+test("v0.34.57: heartbeat-without-progress watchdog emits auditor_stalled and cancels the detached job", async () => {
+  // steal-list #7 / bug #1.4: a worker that keeps refreshing its heartbeat
+  // (fresh lastActivityAt) without delivering any NEW tool call or report
+  // output is alive but wedged — the 1h50m "stuck but says LIVE" class. The
+  // parent watchdog must demote it to quiet, emit auditor_stalled, and
+  // SIGTERM the detached job.
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-heartbeat-stall-"));
+  const heartbeatWorker = path.join(dir, "heartbeat-worker.mjs");
+  const sigtermMarker = path.join(dir, "sigterm-marker");
+  await writeFile(heartbeatWorker, `
+import { readFile, writeFile } from "node:fs/promises";
+import { writeFileSync } from "node:fs";
+const dir = process.argv[process.argv.indexOf("--job-dir") + 1];
+const request = JSON.parse(await readFile(dir + "/request.json", "utf8"));
+process.on("SIGTERM", () => { writeFileSync(${JSON.stringify(sigtermMarker)}, "killed"); process.exit(0); });
+// Heartbeat-only worker: fresh lastActivityAt every 15ms, identical
+// signature (same phase/recentOutput/toolCalls), never a result.json.
+setInterval(async () => {
+  await writeFile(dir + "/progress.json", JSON.stringify({
+    protocolVersion: 1, attemptId: request.attemptId, requestHash: request.requestHash,
+    phase: "running", elapsedMs: 1,
+    lastActivityAt: Date.now(),
+    recentOutput: [],
+    toolCalls: [],
+  }));
+}, 15);
+`);
+  const reports: AuditorProgress[] = [];
+  const stalled: AuditorStalledInfo[] = [];
+  try {
+    const result = await runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "high",
+      onProgress: (progress) => reports.push(progress),
+      onStalled: (info) => stalled.push(info),
+      runtime: {
+        workerPath: heartbeatWorker,
+        attemptId: () => "attempt-heartbeat-stall",
+        pollIntervalMs: 10,
+        wallTimeoutMs: 5_000,
+        heartbeatNoProgressMs: 120,
+        heartbeatFreshMs: 500,
+      },
+    });
+    assert.equal(result.approved, false, "a stalled worker is never a verdict");
+    assert.equal(result.disapproved, false, "a stalled worker is never a verdict");
+    assert.match(result.error ?? "", /Auditor stalled — heartbeats without progress for 1s/);
+    assert.match(result.error ?? "", /auto-cancelled/);
+    assert.equal(stalled.length, 1, "the watchdog emits auditor_stalled exactly once");
+    const stall = stalled[0];
+    assert.ok(stall, "stall info present");
+    assert.ok(stall.noProgressMs >= 120, `no-progress streak reached the window: ${stall.noProgressMs}ms`);
+    assert.ok(stall.heartbeatAgeMs <= 500, `heartbeat was fresh at detection: ${stall.heartbeatAgeMs}ms`);
+    assert.equal(stall.phase, "running");
+    const lastReport = reports[reports.length - 1];
+    assert.ok(lastReport, "the demote-to-quiet snapshot was emitted");
+    assert.equal(lastReport.lastActivityAt, undefined, "the demote snapshot carries no live heartbeat, so the HUD cannot render LIVE");
+    assert.ok(existsSync(sigtermMarker), "the wedged worker was SIGTERMed — the detached job was cancelled");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });
 
