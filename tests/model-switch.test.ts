@@ -20,7 +20,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { MockPi, makeMockCtx, tmpCwd, type MockCtx } from "./harness/mock-pi.js";
-import activate, { __testOnlyResetStaleFlag } from "../extensions/loops/goal.js";
+import activate, { __testOnlyResetStaleFlag, __testOnlyResetTerminalFlags } from "../extensions/loops/goal.js";
 import { modelSwitch, isForbiddenModel, DEFAULT_FORBIDDEN_MODELS } from "../extensions/goal-loop-core.js";
 
 const pi = new MockPi();
@@ -52,6 +52,7 @@ function readLedger(cwd: string): Array<{ type: string; value: any; at: string }
 
 afterEach(() => {
   __testOnlyResetStaleFlag();
+  __testOnlyResetTerminalFlags();
   fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({}));
 });
 

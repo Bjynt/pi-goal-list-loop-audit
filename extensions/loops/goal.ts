@@ -608,6 +608,17 @@ export function __testOnlyResetStaleFlag(): void {
   extensionApiStale = false;
 }
 
+/** TEST-ONLY hook (tests/harness): clears the terminal/stand-down module
+ * flags a stale-scenario test file may have latched. Production clears them
+ * only on successor-absorb or process restart; bun test shares module state
+ * across files, so an ordinary-events test file must be able to run even
+ * when an earlier file latched them. Never called by production code. */
+export function __testOnlyResetTerminalFlags(): void {
+  staleTerminalDone = false;
+  zombieStoodDown = false;
+  sessionHandoffPending = false;
+}
+
 /** Test-only lifecycle driver: exercise the orphan watchdog without waiting
  * for the production 15-second heartbeat interval. This never ships as a
  * runtime command; it only lets the mock host reproduce an invalidated
