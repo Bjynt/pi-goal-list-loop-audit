@@ -63,6 +63,9 @@ export class MockPi {
    * A Promise result lets lifecycle tests suspend an async measure while a
    * replacement session is delivered. */
   execHandler: ((cmd: string, args: string[], opts: unknown) => { code: number; stdout: string; stderr: string } | Promise<{ code: number; stdout: string; stderr: string }>) | null = null;
+  /** v0.34.57: models passed to api.setModel() — the forbidden-gate revert
+   * path records its selections here. */
+  modelSelections: unknown[] = [];
   sessionName = "mock-session";
   private activeTools: string[] = [];
   readonly api: ExtensionAPI;
@@ -87,6 +90,10 @@ export class MockPi {
       sendUserMessage(message: string, options: unknown): void {
         if (self.sendMessageError) throw self.sendMessageError;
         self.userMessages.push({ message, options });
+      },
+      async setModel(model: unknown): Promise<boolean> {
+        self.modelSelections.push(model);
+        return true;
       },
       getThinkingLevel(): string {
         return "high";

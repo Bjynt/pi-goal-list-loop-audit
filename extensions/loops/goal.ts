@@ -104,6 +104,9 @@ import {
   runPersistStep,
   isPersistenceDegraded,
   lastPersistenceFailure,
+  modelSwitch,
+  isForbiddenModel,
+  type ModelSwitchRecord,
 } from "../goal-loop-core.js";
 import {
   createContinuationDispatch,
@@ -7266,6 +7269,26 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       ctx.ui.notify(refs.length ? `Main model backups saved in order: ${refs.join(" → ")}` : "Main model backups cleared — quota recovery will keep probing the current model.", "info");
       return;
     }
+    case "forbiddenModels": {
+      const current = normalizeModelRefs(loadGlobalSettings().forbiddenModels);
+      const v = await ctx.ui.input(
+        "Forbidden models — comma-separated provider/model refs; any switch to one is ledgered as forbidden_model_switch and (by default) reverted",
+        current.length ? current.join(",") : "gpt-5.5,sonnet,opus",
+      );
+      if (v === undefined) return;
+      const refs = normalizeModelRefs(v);
+      saveSettings("global", ctx.cwd, { forbiddenModels: refs });
+      ctx.ui.notify(refs.length ? `Forbidden models saved: ${refs.join(", ")}` : "Forbidden models cleared — every model is allowed (policy gate off).", "info");
+      return;
+    }
+    case "blockForbiddenModelSwitches": {
+      const v = await ctx.ui.select("Block forbidden model switches — revert a forbidden selection to the previous model", [
+        "on — forbidden selections are reverted to the previous model (default)",
+        "off — the switch stands; the forbidden_model_switch ledger entry still records the violation",
+      ]);
+      if (v) saveSettings("global", ctx.cwd, { blockForbiddenModelSwitches: v.startsWith("off") ? false : undefined });
+      return;
+    }
     case "mainModelRetryMinutes": {
       const v = await ctx.ui.input("Main session model recovery wait", "positive integer minutes; empty = default 15 (backs off to hourly)");
       if (v !== undefined) {
@@ -7732,6 +7755,37 @@ function cmdLog(args: string, ctx: ExtensionContext): void {
   ctx.ui.notify(`Ledger tail (last ${tail.length}${all ? "" : " non-noise"} events — /glla log <N> for more, /glla log all to include noise):\n${lines.join("\n")}`, "info");
 }
 
+/** v0.34.57: /glla switchlog [N] — the model-switch trail (model_switch +
+ * forbidden_model_switch ledger events). Read-only: works on a stale
+ * handle, like the other /glla read-only actions. */
+function cmdSwitchlog(args: string, ctx: ExtensionContext): void {
+  const nMatch = args.match(/\b(\d+)\b/);
+  const n = Math.min(Math.max(parseInt(nMatch?.[1] ?? "15", 10) || 15, 1), 100);
+  let entries: Array<{ type: string; at?: string; value?: any }> = [];
+  try {
+    entries = parseLedgerEntries(fs.readFileSync(ledgerPath(ctx.cwd), "utf-8"));
+  } catch {
+    ctx.ui.notify("No ledger yet — .pi-glla/active.jsonl doesn't exist.", "info");
+    return;
+  }
+  const switches = entries.filter((e) => e.type === "model_switch" || e.type === "forbidden_model_switch");
+  const tail = switches.slice(-n);
+  if (tail.length === 0) {
+    ctx.ui.notify("No model switches recorded yet — /glla switchlog shows the model_switch / forbidden_model_switch trail.", "info");
+    return;
+  }
+  const lines = tail.map((e) => {
+    const t = (e.at ?? "").slice(11, 19);
+    const v = e.value ?? {};
+    const arrow = `${v.from ?? "(unknown)"} → ${v.to ?? "(unknown)"}`;
+    const tag = e.type === "forbidden_model_switch" ? "FORBIDDEN" : "switch";
+    const outcome = v.blocked === true ? " (BLOCKED)" : v.blocked === false ? " (violation)" : "";
+    const reason = v.reason ? ` [${v.reason}]` : "";
+    return `${t}  ${tag}  ${arrow}${outcome}${reason}`;
+  });
+  ctx.ui.notify(`Model-switch trail (last ${tail.length} — /glla switchlog <N> for more):\n${lines.join("\n")}`, "info");
+}
+
 /**
  * v0.28.31 (renamed v0.28.33): /glla wipe — ONE confirmed command that leaves a project with
  * zero live glla state. User directive: "make sure we only have one goal or
@@ -8022,6 +8076,10 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
     cmdLog(trimmed.slice("log".length).trim(), ctx);
     return;
   }
+  if (/^switchlog(?:\s|$)/.test(trimmed)) {
+    cmdSwitchlog(trimmed.slice("switchlog".length).trim(), ctx);
+    return;
+  }
   if (/^wipe(?:\s|$)/.test(trimmed)) {
     await cmdGllaWipe(ctx);
     return;
@@ -8074,6 +8132,8 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
     [
       fmt("mainModelFallbacks", "mainModelBackups"),
       fmt("mainModelRetryMinutes", "mainModelRetryMinutes"),
+      fmt("forbiddenModels", "forbiddenModels"),
+      fmt("blockForbiddenModelSwitches", "blockForbidden"),
       fmt("auditorModel", "auditorModel"),
       fmt("auditorThinkingLevel", "thinking"),
       fmt("notifyCmd", "notify"),
@@ -8174,6 +8234,64 @@ function warnOnCommandCollision(ctx: ExtensionContext): void {
 // =================================================================
 // Public extension entry
 // =================================================================
+// Model-switch ledger (v0.34.57 — bug #1.14)
+// =================================================================
+
+/** v0.34.57: model-switch ledger + forbidden-model gate. Writes the
+ * `model_switch` entry for every real provider/model change (the
+ * model_select event OR turn-boundary drift), and the
+ * `forbidden_model_switch` violation entry when the target is forbidden.
+ * Returns true when the switch was BLOCKED (the caller holds the previous
+ * Model object and should revert it).
+ *
+ * Blocking is skipped while the plugin's own recovery rotation is in
+ * flight (mainModelSwitchInFlight — that path is the AUTHORIZED switch
+ * channel; reverting it would wedge recovery against itself) and never
+ * applies to turn-boundary drift (the turn already started — detection
+ * and the violation record are the honest actions there). The violation
+ * entry always lands either way. */
+function observeModelChange(ctx: ExtensionContext, from: string | undefined, to: string | undefined, reason: string, source: string | undefined): boolean {
+  if (!from || !to || from === to) return false;
+  const settings = loadSettings(ctx.cwd);
+  const forbidden = isForbiddenModel(to, settings.forbiddenModels);
+  const at = Date.now();
+  const blocked = forbidden && settings.blockForbiddenModelSwitches !== false && reason !== "turn-boundary" && !mainModelSwitchInFlight;
+  if (forbidden) {
+    // The switch either stands (blocked: false) or was reverted (blocked:
+    // true) — one event tells the whole story; a model_switch entry would
+    // falsely claim the forbidden model took over.
+    appendLedger(ctx.cwd, "forbidden_model_switch", {
+      ...modelSwitch(from, to, reason, at),
+      ...(source ? { source } : {}),
+      blocked,
+    });
+  } else {
+    appendLedger(ctx.cwd, "model_switch", {
+      ...modelSwitch(from, to, reason, at),
+      ...(source ? { source } : {}),
+    });
+  }
+  state.lastModelRef = to;
+  persistState(ctx);
+  return blocked;
+}
+
+/** v0.34.57: turn-boundary model observation — the session is about to run
+ * a turn on a different model than last observed. The first observation in
+ * a process just baselines (no ledger entry); a change baselines AND
+ * records drift that arrived without a model_select event (a fresh pi
+ * launch with a changed default model fires none). */
+function observeTurnBoundaryModel(ctx: ExtensionContext): void {
+  const current = modelRef(ctx.model);
+  if (!current) return;
+  const last = state.lastModelRef;
+  if (last && last !== current) {
+    observeModelChange(ctx, last, current, "turn-boundary", undefined);
+  } else if (!last) {
+    state.lastModelRef = current;
+    persistState(ctx);
+  }
+}
 
 export default function (pi: ExtensionAPI): void {
   extensionApi = pi;
@@ -8232,6 +8350,7 @@ export default function (pi: ExtensionAPI): void {
       ["wipe", "wipe goal, list, and loop state"],
       ["stats", "show per-project ledger rollups"],
       ["audits", "browse the audit log"],
+      ["switchlog", "show the model-switch trail (model_switch / forbidden_model_switch)"],
       ["tooloverride", "configure agent-tool visibility"],
     ]),
     handler: settingsHandler,
@@ -9312,11 +9431,39 @@ export default function (pi: ExtensionAPI): void {
     // replacement contact because pi exposes the prompt itself.
     if (tryAbsorbHostSuccessor(ctx, "before_agent_start")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
+    // v0.34.57: turn-boundary model drift (bug #1.14) — the session is about
+    // to run a turn on a model different from the last observed one. Ledger
+    // only: the turn already started, there is nothing to block.
+    observeTurnBoundaryModel(ctx);
     dispatchStartAcknowledged(ctx, "before_agent_start", event?.prompt);
   });
-  pi.on("model_select", (_event: any, ctx: ExtensionContext) => {
+  pi.on("model_select", async (event: any, ctx: ExtensionContext) => {
     if (tryAbsorbHostSuccessor(ctx, "model_select")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
+    // v0.34.57: model-switch ledger + forbidden-model gate (bug #1.14) —
+    // runs for EVERY model change (user set/cycle/restore AND the plugin's
+    // own recovery rotation). The recovery-cancel block below stays scoped
+    // to user-driven selections exactly as before.
+    const from = modelRef(event?.previousModel);
+    const to = modelRef(event?.model);
+    const source = typeof event?.source === "string" ? event.source : undefined;
+    const reason = mainModelSwitchInFlight ? "recovery" : source === "restore" ? "restore" : source === "cycle" ? "cycle" : "manual";
+    const blocked = observeModelChange(ctx, from, to, reason, source);
+    if (blocked && event?.previousModel) {
+      // The forbidden gate wants the selection undone. Revert to the
+      // previous model — the resulting model_select is a plain switch
+      // back and is ledgered normally.
+      try {
+        const reverted = await extensionApi?.setModel(event.previousModel);
+        if (reverted) {
+          ctx.ui.notify(`Forbidden model ${to} was blocked by the glla policy gate (forbiddenModels) and reverted to ${from}.`, "warning");
+        } else {
+          ctx.ui.notify(`Forbidden model ${to} selected — the glla policy gate blocks it, but pi did not accept the revert. Switch away manually.`, "warning");
+        }
+      } catch {
+        // The violation is already ledgered; the session keeps the model.
+      }
+    }
     if (mainModelSwitchInFlight || !state.mainModelRecovery) return;
     clearMainModelRecoveryTimer();
     state.mainModelRecovery = undefined;

@@ -175,6 +175,22 @@ export function buildSettingsRows(
       description: "ordered provider/model refs; quota/provider errors rotate here, then use a bounded 5h-capped, 24h recovery window"
     },
     {
+      id: "forbiddenModels",
+      section: "keep-going",
+      label: "Forbidden models",
+      valueText: settings.forbiddenModels?.length ? settings.forbiddenModels.join(", ") : "none",
+      sourceText: src("forbiddenModels"),
+      description: "policy gate (v0.34.57): a switch to any of these is ledgered as forbidden_model_switch — blocked (reverted) when Block forbidden switches is on"
+    },
+    {
+      id: "blockForbiddenModelSwitches",
+      section: "keep-going",
+      label: "Block forbidden switches",
+      valueText: show("blockForbiddenModelSwitches", "on"),
+      sourceText: src("blockForbiddenModelSwitches"),
+      description: "on: a forbidden selection is reverted to the previous model · off: the switch stands, the violation is still ledgered"
+    },
+    {
       id: "mainModelRetryMinutes",
       section: "keep-going",
       label: "Main model retry minutes",
