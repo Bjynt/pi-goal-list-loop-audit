@@ -1,17 +1,21 @@
 // pi-goal-list-loop-audit — tests/revision-bound-audit.test.ts
 //
 // Revision-bound audit validity (steal #3 / item #8): the goal carries a
-// `revision` counter bumped on every contract change (/goal tweak, or
-// complete_goal with newObjective); complete_goal is gated on the current
-// revision matching the revision of the LAST audit in auditHistory — an
-// approval from an older contract cannot be cited against a new one. The
-// claim that itself carries the contract change (newObjective) skips the
-// gate: its audit covers the new contract in the same call.
+// `revision` counter bumped on every CONTRACT change (/goal tweak, or
+// complete_goal with newObjective) — contract-scoped since v0.34.61, so
+// audit settles and other non-contract writes do NOT move it. complete_goal
+// is gated on the current revision matching the revision of the LAST audit
+// in auditHistory — an approval from an older contract cannot be cited
+// against a new one, while a settled audit never invalidates its own
+// verdict (auditor round-2 findings 1-4: the +1 drift, the broken /goal
+// verify escape, the every-persist bump, the false rejection text).
+// The claim that itself carries the contract change (newObjective) skips
+// the gate: its audit covers the new contract in the same call.
 //
-// Co-residency: this file drives complete_goal / goal tweak like the
-// behavioral driver but NEVER fires session_start. beforeEach resets the
-// module-level terminal/owner flags; settings written to the suite's global
-// settings path.
+// Co-residency: this file drives complete_goal / goal tweak / goal verify
+// like the behavioral driver but NEVER fires session_start. beforeEach
+// resets the module-level terminal/owner flags; settings written to the
+// suite's global settings path.
 
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -144,7 +148,7 @@ test("v0.34.60: complete_goal with newObjective bumps the revision and audits th
     assert.match(res.content[0]!.text, /auditor queued|detached/i, "the claim proceeds (no gate rejection)");
     const st = readState(cwd);
     assert.equal(st.goal?.objective, "shifted objective — different work now", "newObjective replaced the objective");
-    assert.ok((st.goal?.revision ?? 0) > 1, "newObjective bumps the revision in the same call");
+    assert.equal(st.goal?.revision, 2, "newObjective bumps the revision exactly once (seed 1 → 2); settle writes do not bump");
     await waitUntil(() => readState(cwd).goal?.status === "complete");
   } finally {
     delete process.env.GLLA_PI_BINARY;
@@ -212,6 +216,80 @@ test("v0.34.60: legacy audit entries without a revision never trip the gate", as
   }
 });
 
+test("v0.34.61: a settled audit never invalidates its own verdict — a second complete_goal on the same contract proceeds", async () => {
+  // Auditor round-2 finding 1 (the +1 drift): v0.34.59 bumped on every
+  // persist, so the settle write itself moved the goal one revision past
+  // the verdict's recorded one and the next complete_goal was falsely
+  // rejected with zero contract change. With the contract-scoped counter
+  // the settle leaves lastAudited.revision === state.goal.revision.
+  const cwd = tmpCwd();
+  seedRevisionedGoal(cwd, 2, 2, false); // last audit at revision 2, goal at revision 2
+  const fakePi = writeFakeAuditor(cwd, "disapproved");
+  process.env.GLLA_PI_BINARY = fakePi;
+  try {
+    const pi = new MockPi();
+    activate(pi.api);
+    __testOnlyRegisterAgentTools(pi.api);
+    rememberCtxFor(cwd);
+    // Call 1: proceeds and settles disapproved → goal stays active.
+    const res1 = await pi.runTool("complete_goal", { completionSummary: "Claim 1", verificationSummary: "Evidence" }, ownerCtx(cwd));
+    assert.match(res1.content[0]!.text, /auditor queued|detached/i, "first claim proceeds");
+    await waitUntil(() => {
+      const st = readState(cwd);
+      return st.goal?.status === "active" && !st.goal?.pendingCompletion && (st.goal?.auditHistory?.length ?? 0) >= 2;
+    });
+    const afterSettle = readState(cwd);
+    const lastAudited = afterSettle.goal?.auditHistory?.at(-1);
+    assert.equal(lastAudited?.revision, afterSettle.goal?.revision, "settle leaves the recorded revision equal to the goal's current revision");
+    // Call 2: same contract, zero changes → must proceed (before the fix
+    // this was REJECTED — the "pass when matching" state was unreachable).
+    const res2 = await pi.runTool("complete_goal", { completionSummary: "Claim 2", verificationSummary: "Evidence" }, ownerCtx(cwd));
+    assert.match(res2.content[0]!.text, /auditor queued|detached/i, "second claim on the same contract proceeds");
+    const ledger = readLedger(cwd);
+    assert.equal(ledger.filter((l) => l.type === "complete_goal_revision_rejected").length, 0, "no false rejection");
+    assert.equal(ledger.filter((l) => l.type === "audit_started").length, 2, "both claims dispatched audits");
+  } finally {
+    delete process.env.GLLA_PI_BINARY;
+  }
+});
+
+test("v0.34.61: the documented escape works — tweak, then /goal verify, then complete_goal proceeds", async () => {
+  // Auditor round-2 finding 2: the rejection text promised "Run /goal
+  // verify … then call complete_goal again", but the verify settle bumped
+  // the revision too, dead-ending the escape. With the contract-scoped
+  // counter the verify's settle records the CURRENT revision and the
+  // follow-up claim proceeds.
+  const cwd = tmpCwd();
+  seedRevisionedGoal(cwd, 1, 1, true); // approved at revision 1
+  const fakePi = writeFakeAuditor(cwd, "disapproved");
+  process.env.GLLA_PI_BINARY = fakePi;
+  try {
+    const pi = new MockPi();
+    activate(pi.api);
+    __testOnlyRegisterAgentTools(pi.api);
+    rememberCtxFor(cwd);
+    // Contract change: /goal tweak → revision 2 → the old approval is stale.
+    await pi.command("goal", 'tweak "new contract after tweak"', ownerCtx(cwd));
+    assert.equal(readState(cwd).goal?.revision, 2, "tweak bumps 1 → 2");
+    const resRejected = await pi.runTool("complete_goal", { completionSummary: "Claim", verificationSummary: "Evidence" }, ownerCtx(cwd));
+    assert.match(resRejected.content[0]!.text, /REJECTED/i, "tweak since the last audit → rejected");
+    // The escape: /goal verify audits the CURRENT contract (disapproved
+    // settle → goal stays active) and records its revision.
+    await pi.command("goal", "verify", ownerCtx(cwd));
+    await waitUntil(() => {
+      const st = readState(cwd);
+      return st.goal?.status === "active" && !st.goal?.pendingCompletion && (st.goal?.auditHistory?.length ?? 0) >= 2;
+    });
+    const afterVerify = readState(cwd);
+    assert.equal(afterVerify.goal?.auditHistory?.at(-1)?.revision, afterVerify.goal?.revision, "verify records the current revision");
+    const res2 = await pi.runTool("complete_goal", { completionSummary: "Claim", verificationSummary: "Evidence" }, ownerCtx(cwd));
+    assert.match(res2.content[0]!.text, /auditor queued|detached/i, "after /goal verify the claim proceeds (escape is real)");
+    assert.equal(readLedger(cwd).filter((l) => l.type === "complete_goal_revision_rejected").length, 1, "exactly the pre-verify rejection");
+  } finally {
+    delete process.env.GLLA_PI_BINARY;
+  }
+});
+
 test("v0.34.60: the gate skips when the call itself carries newObjective (its audit covers the new contract)", async () => {
   const cwd = tmpCwd();
   seedRevisionedGoal(cwd, 1, 1, true); // old approval at revision 1 — but the call CHANGES the contract
@@ -228,7 +306,7 @@ test("v0.34.60: the gate skips when the call itself carries newObjective (its au
       ownerCtx(cwd),
     );
     assert.match(res.content[0]!.text, /auditor queued|detached/i, "newObjective claims skip the stale-approval gate");
-    assert.ok((readState(cwd).goal?.revision ?? 0) > 1, "revision bumped by the contract change in the call");
+    assert.equal(readState(cwd).goal?.revision, 2, "revision bumped exactly once by the contract change in the call");
     assert.equal(readLedger(cwd).filter((l) => l.type === "complete_goal_revision_rejected").length, 0);
     await waitUntil(() => readState(cwd).goal?.status === "active" && !readState(cwd).goal?.pendingCompletion);
   } finally {

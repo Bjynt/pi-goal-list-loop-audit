@@ -2909,12 +2909,14 @@ function createGoal(objective: string, ctx: ExtensionContext, policy: "goal" | "
 }
 
 function persistState(ctx: ExtensionContext): void {
-  // v0.34.59: bump the focus-revision counter BEFORE writing the state
-  // event — the on-disk revision strictly increases on every commit, so a
-  // detached worker holding a captured token can detect a goal that moved
-  // on during its audit. The bump only applies to the goal slot; list /
-  // loop / recovery slots are not part of the focus token.
-  if (state.goal) state.goal = bumpGoalRevision(state.goal);
+  // v0.34.61 (steal #3, auditor round 2): the revision counter is
+  // CONTRACT-scoped. v0.34.59 bumped on EVERY commit — audit settles
+  // bumped too, so a settled verdict always left the goal one revision
+  // past the recorded one and every later complete_goal was falsely
+  // rejected ("pass when matching" was unreachable; /goal verify's
+  // escape dead-ended too). Bumps now happen ONLY at the two contract
+  // change sites (cmdTweak, complete_goal newObjective) — a settled
+  // audit leaves lastAudited.revision === state.goal.revision.
   // Persist explicit null for the optional top-level recovery slot. JSON
   // omits undefined, while readState intentionally merges state snapshots;
   // omission would resurrect an older quota wall after a successful retry.
@@ -3539,10 +3541,13 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
   if (state.goal.pendingCompletion?.attemptId !== claim.attemptId) return; // a newer attempt owns the durable claim
   liveCtx = currentAfterAudit;
 
-  // v0.34.59: focus revision guard. The detached worker captured
-  // (goalId, revision) at dispatch; if the goal was mutated by anything
-  // (user pause, status flip, abort/replace) during the audit, the
-  // captured token no longer matches and the verdict must NOT apply.
+  // v0.34.61: focus revision guard — contract-scoped. The detached
+  // worker captured (goalId, revision) at dispatch; only a CONTRACT
+  // change (tweak / newObjective) bumps the counter now, so a mismatch
+  // means the goal's contract moved while the audit ran — the verdict
+  // must NOT apply to the new contract. Non-contract writes (pause,
+  // status flips, quota machinery) no longer trip this guard; they do
+  // not change the contract the verdict applies to.
   // Surface the refusal loudly via the HUD rather than silently
   // overwriting a goal that moved on.
   if (result.goalRevision && state.goal.revision !== result.goalRevision.revision) {
@@ -4429,6 +4434,9 @@ async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "lis
   if (hasNewContract) patch.verificationContract = proposed.verificationContract;
   else if (clearsContract) patch.verificationContract = "";
   // omitted clause → no verificationContract key in the patch: preserved.
+  // v0.34.61: contract-scoped revision bump — one of exactly two sites
+  // (the other: complete_goal newObjective). persistState no longer bumps.
+  state.goal = bumpGoalRevision(state.goal);
   updateGoal(patch, ctx);
   appendLedger(ctx.cwd, "goal_tweaked", {
     goalId: current.id,
@@ -5914,6 +5922,10 @@ function registerAgentTools(pi: any): void {
       if (p.newObjective?.trim()) {
         const oldObjective = state.goal.objective;
         const { objective: cleanObj, verificationContract } = extractVerificationContract(p.newObjective.trim());
+        // v0.34.61: contract-scoped revision bump — one of exactly two
+        // sites (the other: cmdTweak). persistState no longer bumps, so
+        // the settle writes of THIS call keep the audited revision stable.
+        state.goal = bumpGoalRevision(state.goal);
         updateGoal({ objective: cleanObj, ...(verificationContract ? { verificationContract } : {}) }, ctx);
         appendLedger(ctx.cwd, "goal_tweaked", { via: "complete_goal.newObjective", from: oldObjective.slice(0, 200), to: cleanObj.slice(0, 200) });
         ctx.ui.notify(`Objective updated (complete_goal newObjective): ${cleanObj.slice(0, 80)}`, "info");
