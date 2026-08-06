@@ -2756,8 +2756,14 @@ function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): void {
     archiveCurrentGoal(ctx, "aborted", `replaced by goal ${goal.id}`);
   }
   goal.createdVia = via; // v0.28.28: provenance — answerable from the ledger + /glla log
-  state = { ...state, goal }; // preserve list AND loop (v0.28.14: the bare reconstruction used to nuke a held/active loop whenever a goal was set)
+  // v0.34.60: disk-first write order. The active-goal .md lands BEFORE
+  // the in-memory state commit, so a stale extension handle (post
+  // /reload, torn jsonl, process restart) can recover from disk. The
+  // active goal .md path is also where any state.goal.id lookup in a
+  // fresh process lands, so writing it first closes the
+  // "in-memory knows about a goal the disk does not" gap.
   const file = writeGoalMd(ctx.cwd, goal);
+  state = { ...state, goal }; // preserve list AND loop (v0.28.14: the bare reconstruction used to nuke a held/active loop whenever a goal was set)
   state.goal!.activePath = path.relative(ctx.cwd, file) || file;
   persistState(ctx);
   appendLedger(ctx.cwd, "goal_created", { goalId: goal.id, objective: goal.objective, policy: goal.policy, via });
@@ -2765,8 +2771,16 @@ function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): void {
 
 function updateGoal(patch: Partial<Goal>, ctx: ExtensionContext): void {
   if (!state.goal) return;
-  state.goal = { ...state.goal, ...patch, updatedAt: nowIso() };
-  const file = writeGoalMd(ctx.cwd, state.goal);
+  // v0.34.60: write the active-goal .md BEFORE the in-memory commit and
+  // BEFORE persistState (which appends to active.jsonl). If the
+  // orchestrator turn dies between the in-memory commit and the disk
+  // write, the file is already on disk; if it dies between the disk
+  // write and active.jsonl, the file is still there. The only failure
+  // mode that loses the write is the disk write itself — exactly the
+  // path runPersistStep already guards.
+  const next: Goal = { ...state.goal, ...patch, updatedAt: nowIso() };
+  const file = writeGoalMd(ctx.cwd, next);
+  state.goal = next;
   state.goal.activePath = path.relative(ctx.cwd, file) || file;
   persistState(ctx);
 }
