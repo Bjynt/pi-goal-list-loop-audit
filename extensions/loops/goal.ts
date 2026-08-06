@@ -1381,6 +1381,16 @@ export function __testOnlyFireQuotaPrompt(): void {
 export function __testOnlyLoadState(cwd: string): void {
   state = readState(cwd);
 }
+
+/** Register the agent tools (complete_goal etc.) the way session_start
+ * does, WITHOUT firing session_start (co-residency rule). runTool tests
+ * that must not claim the session use this. */
+export function __testOnlyRegisterAgentTools(pi: any): void {
+  if (!toolsRegistered) {
+    registerAgentTools(pi);
+    toolsRegistered = true;
+  }
+}
 function noteCompactionRearm(id: string): number {
   const next = (continuationStartCompactionRearms.get(id) ?? 0) + 1;
   continuationStartCompactionRearms.set(id, next);
