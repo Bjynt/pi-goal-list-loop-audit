@@ -72,6 +72,44 @@ afterEach(() => {
   fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({}));
 });
 
+test("v0.34.57: persistState carries lastModelRef on the state line for a fresh process to restore", async () => {
+  const cwd = tmpCwd();
+  const ctx = ownerCtx(cwd);
+  // A model_select sets + persists lastModelRef.
+  await pi.fire(
+    "model_select",
+    { model: { provider: "openai", id: "gpt-4.1" }, previousModel: { provider: "anthropic", id: "claude-sonnet-4-5" }, source: "set" },
+    ctx,
+  );
+  const stateLines = readLedger(cwd).filter((e) => e.type === "state");
+  assert.ok(stateLines.length >= 1, "state lines were persisted");
+  assert.equal(stateLines.at(-1)!.value.lastModelRef, "openai/gpt-4.1", "the persisted state line carries lastModelRef");
+  // And the baseline path persists too (first observation of a fresh process).
+  const cwd2 = tmpCwd();
+  __testOnlySetLastModelRef(undefined);
+  await pi.fire("before_agent_start", { prompt: "first turn" }, ownerCtx(cwd2));
+  const baselineLines = readLedger(cwd2).filter((e) => e.type === "state");
+  assert.equal(baselineLines.at(-1)!.value.lastModelRef, "anthropic/mock-model", "the baseline persists what a fresh process will compare against");
+});
+
+test("v0.34.57: a fresh process with a changed default model ledgeres turn-boundary drift (cross-session detection)", async () => {
+  const cwd = tmpCwd();
+  // The previous process observed anthropic/claude-sonnet-4-5 and persisted
+  // it on the state line; this process restores it (readState) — simulated
+  // here with the test hook, since the module never re-reads disk without a
+  // session_start (this file deliberately never fires one).
+  __testOnlySetLastModelRef("anthropic/claude-sonnet-4-5");
+  const launched: MockCtx = { ...ownerCtx(cwd), model: { provider: "openai", id: "gpt-4.1" } as any };
+  await pi.fire("before_agent_start", { prompt: "first turn of the new process" }, launched);
+  const switches = readLedger(cwd).filter((e) => e.type === "model_switch");
+  assert.equal(switches.length, 1, "exactly one model_switch — the fresh launch drifted onto a changed default");
+  assert.equal(switches[0]!.value.from, "anthropic/claude-sonnet-4-5");
+  assert.equal(switches[0]!.value.to, "openai/gpt-4.1");
+  assert.equal(switches[0]!.value.reason, "turn-boundary");
+  // No baseline entry was possible — the hook had a last model to compare.
+  assert.equal(readLedger(cwd).filter((e) => e.type === "model_switch").length, 1);
+});
+
 // ── (a) helper + turn-boundary hook ────────────────────────────────────
 
 test("v0.34.57: modelSwitch() builds the canonical ledger payload", () => {

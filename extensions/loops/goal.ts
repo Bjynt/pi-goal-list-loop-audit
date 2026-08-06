@@ -2776,7 +2776,10 @@ function persistState(ctx: ExtensionContext): void {
   // Persist explicit null for the optional top-level recovery slot. JSON
   // omits undefined, while readState intentionally merges state snapshots;
   // omission would resurrect an older quota wall after a successful retry.
-  appendLedger(ctx.cwd, "state", { goal: state.goal, list: state.list ?? [], loop: state.loop ?? null, mainModelRecovery: state.mainModelRecovery ?? null });
+  // v0.34.57: lastModelRef is carried on the state line so a fresh process
+  // can restore it (readState) and the turn-boundary check can catch a
+  // changed default model across sessions (bug #1.14).
+  appendLedger(ctx.cwd, "state", { goal: state.goal, list: state.list ?? [], loop: state.loop ?? null, mainModelRecovery: state.mainModelRecovery ?? null, lastModelRef: state.lastModelRef });
   notifyPersistenceState(ctx); // v0.28.6 (E1): loud on the first failure, all-clear on recovery
   refreshUI(ctx); // every state transition flows through here → the TUI is always current
 }
