@@ -341,7 +341,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
       // worker echoes it in result.json; the parent re-validates before
       // applying the verdict. A stale-handle ghost can no longer silently
       // overwrite a goal that moved on.
-      goalRevision: captureGoalRevision(args.goal) ?? undefined,
+      goalRevision: capturedRevisionToken,
     };
     const request: AuditorRequest = { ...requestWithoutHash, requestHash: requestHash(requestWithoutHash) };
     await writeAtomicJson(requestPath, request);
@@ -370,15 +370,15 @@ export async function runDetachedGoalCompletionAuditor(args: {
     args.signal?.addEventListener("abort", abort, { once: true });
     try {
       while (true) {
-        if (args.signal?.aborted) return infra(model, thinkingLevel, "Auditor aborted.");
+        if (args.signal?.aborted) return infra(model, thinkingLevel, "Auditor aborted.", "", capturedRevisionToken);
         if (now() >= wallDeadlineAt) {
           if (childAlive(child)) child.kill("SIGTERM");
-          return infra(model, thinkingLevel, `Auditor exceeded its ${Math.round(wallTimeoutMs / 60_000)}m wall-clock bound and was aborted.`);
+          return infra(model, thinkingLevel, `Auditor exceeded its ${Math.round(wallTimeoutMs / 60_000)}m wall-clock bound and was aborted.`, "", capturedRevisionToken);
         }
         try {
           const progress = await readJson<AuditorProgressFile>(progressPath);
           if (progress.protocolVersion !== PROTOCOL_VERSION || progress.attemptId !== attemptId || progress.requestHash !== request.requestHash) {
-            return infra(model, thinkingLevel, "auditor progress identity/request-hash mismatch");
+            return infra(model, thinkingLevel, "auditor progress identity/request-hash mismatch", "", capturedRevisionToken);
           }
           const serialized = stableJson(progress);
           if (serialized !== lastProgressSerialized) {
@@ -386,21 +386,21 @@ export async function runDetachedGoalCompletionAuditor(args: {
             args.onProgress?.(asProgress(progress, startedAt));
           }
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") return infra(model, thinkingLevel, `invalid auditor progress: ${error instanceof Error ? error.message : String(error)}`);
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") return infra(model, thinkingLevel, `invalid auditor progress: ${error instanceof Error ? error.message : String(error)}`, "", capturedRevisionToken);
         }
         try {
           const result = await readJson<AuditorResultFile>(resultPath);
           if (result.protocolVersion !== PROTOCOL_VERSION || result.attemptId !== attemptId || result.requestHash !== request.requestHash) {
-            return infra(model, thinkingLevel, "auditor result identity/request-hash mismatch");
+            return infra(model, thinkingLevel, "auditor result identity/request-hash mismatch", "", capturedRevisionToken);
           }
           const output = stripThinkBlocks(result.output);
-          if (!result.ok) return infra(model, thinkingLevel, result.error || "detached auditor failed", output);
-          if (!output.trim()) return infra(model, thinkingLevel, "auditor produced no output");
+          if (!result.ok) return infra(model, thinkingLevel, result.error || "detached auditor failed", output, capturedRevisionToken);
+          if (!output.trim()) return infra(model, thinkingLevel, "auditor produced no output", output, capturedRevisionToken);
           const parsed = parseAuditorVerdict(output);
-          if (!parsed.approved && !parsed.disapproved && !parsed.impossible) return infra(model, thinkingLevel, "auditor produced no verdict marker");
+          if (!parsed.approved && !parsed.disapproved && !parsed.impossible) return infra(model, thinkingLevel, "auditor produced no verdict marker", output, capturedRevisionToken);
           const usedReadTool = result.toolCalls.some((call) => (READ_ONLY_TOOLS as readonly string[]).includes(call.name));
           if (parsed.approved && !usedReadTool) {
-            return { approved: false, disapproved: true, output, model, thinkingLevel, error: "Auditor approved without calling any read-only tool; treated as disapproved." };
+            return stampToken({ approved: false, disapproved: true, output, model, thinkingLevel, error: "Auditor approved without calling any read-only tool; treated as disapproved." }, capturedRevisionToken);
           }
           if (parsed.approved && args.goal.verificationContract?.trim()) {
             const shield = checkRegressionShield(output, args.goal.verificationContract);
@@ -409,27 +409,27 @@ export async function runDetachedGoalCompletionAuditor(args: {
               // regression shield blocked acceptance because the report did
               // not cite every contract item. Keep that outcome distinct from
               // both a work disapproval and infrastructure failure.
-              return {
+              return stampToken({
                 approved: true, disapproved: false, output, model, thinkingLevel,
                 regressionShieldPassed: false, regressionShieldMissing: shield.missingItems,
-              };
+              }, capturedRevisionToken);
             }
             args.onProgress?.({ phase: "complete", elapsedMs: now() - startedAt, recentOutput: output.split("\n").filter(Boolean).slice(-8), toolCalls: result.toolCalls, unmatchedToolStarts: [], unmatchedToolEnds: [] });
-            return { approved: true, disapproved: false, output, model, thinkingLevel, regressionShieldPassed: true };
+            return stampToken({ approved: true, disapproved: false, output, model, thinkingLevel, regressionShieldPassed: true }, capturedRevisionToken);
           }
           args.onProgress?.({ phase: "complete", elapsedMs: now() - startedAt, recentOutput: output.split("\n").filter(Boolean).slice(-8), toolCalls: result.toolCalls, unmatchedToolStarts: [], unmatchedToolEnds: [] });
-          return { approved: parsed.approved, disapproved: parsed.disapproved, impossible: parsed.impossible, impossibleReason: parsed.impossibleReason, output, model, thinkingLevel };
+          return stampToken({ approved: parsed.approved, disapproved: parsed.disapproved, impossible: parsed.impossible, impossibleReason: parsed.impossibleReason, output, model, thinkingLevel }, capturedRevisionToken);
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") return infra(model, thinkingLevel, `invalid auditor result: ${error instanceof Error ? error.message : String(error)}`);
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") return infra(model, thinkingLevel, `invalid auditor result: ${error instanceof Error ? error.message : String(error)}`, "", capturedRevisionToken);
         }
-        if (child && !childAlive(child)) return infra(model, thinkingLevel, "auditor worker exited without an atomic result");
+        if (child && !childAlive(child)) return infra(model, thinkingLevel, "auditor worker exited without an atomic result", "", capturedRevisionToken);
         await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
       }
     } finally {
       args.signal?.removeEventListener("abort", abort);
     }
   } catch (error) {
-    return infra(model, thinkingLevel, error instanceof Error ? error.message : String(error));
+    return infra(model, thinkingLevel, error instanceof Error ? error.message : String(error), "", capturedRevisionToken);
   } finally {
     activeChildren.delete(childKey(args.cwd, attemptId));
     if (lockHeld) await fs.unlink(lockPath).catch(() => {});

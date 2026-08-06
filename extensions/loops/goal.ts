@@ -3288,6 +3288,34 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
   if (state.goal.pendingCompletion?.attemptId !== claim.attemptId) return; // a newer attempt owns the durable claim
   liveCtx = currentAfterAudit;
 
+  // v0.34.59: focus revision guard. The detached worker captured
+  // (goalId, revision) at dispatch; if the goal was mutated by anything
+  // (user pause, status flip, abort/replace) during the audit, the
+  // captured token no longer matches and the verdict must NOT apply.
+  // Surface the refusal loudly via the HUD rather than silently
+  // overwriting a goal that moved on.
+  if (result.goalRevision && state.goal.revision !== result.goalRevision.revision) {
+    appendLedger(liveCtx.cwd, "stale_revision_refused", {
+      goalId,
+      captured: result.goalRevision,
+      current: { goalId: state.goal.id, revision: state.goal.revision ?? 0 },
+      attemptId: claim.attemptId,
+      approvedClaimed: result.approved,
+      disapprovedClaimed: result.disapproved,
+      error: result.error?.slice?.(0, 200),
+    });
+    liveCtx.ui.notify(
+      `Stale auditor verdict REFUSED: goal ${goalId} revision is ${state.goal.revision ?? 0} but the auditor captured ${result.goalRevision.revision}. The goal moved on during the audit — its verdict was not applied. Run /goal verify again to audit the current state.`,
+      "warning",
+    );
+    // v0.34.59: leave the goal active. The stale claim is consumed
+    // (cleared) so we do not loop on a forever-stale retry. The user can
+    // /goal verify to re-engage on current state.
+    updateGoal({ pendingCompletion: undefined }, liveCtx);
+    scheduleContinuation(liveCtx, true);
+    return;
+  }
+
   // Record the run in history (same compact shape as the tool path).
   const auditorRan = result.output.trim().length > 0;
   const history = state.goal.auditHistory ?? [];
