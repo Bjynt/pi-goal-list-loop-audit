@@ -1284,6 +1284,18 @@ let loopRearmStreak = 0;
 // whose turn trigger was still dead — pausing a resumable goal 4 minutes
 // after the compact instead of giving pi room to recover.
 let compactionGraceUntil = 0;
+// v0.34.57: timestamp of the most recent session_compact event. The 150s
+// continuation-start watchdog checks this so a compaction that lands inside
+// the watchdog window pauses/resets the watchdog instead of being misread
+// as a stall (field: 115855/115858/115901 — the watchdog fired while the
+// session was still mid-compact; the work was completed on disk but the
+// session handle was lost, so the user saw the false-positive warning).
+let lastCompactionAt = 0;
+/** Test-only: simulate a compaction event at a controlled time without firing
+ * the full session_compact plumbing. Pass null to clear. */
+export function __testOnlySetLastCompactionAt(at: number | null): void {
+  lastCompactionAt = at ?? 0;
+}
 // v0.32.1 (pi-goal-x's lesson — "recover from compacts smarter"): a compact
 // leaves a RESUME DEBT, not just two fixed-offset settle probes that can both
 // lose (field: hellhunter 4-min dangle 2026-07-31; polis stall same day).
@@ -1854,6 +1866,20 @@ function armContinuationStartWatchdog(ctx: ExtensionContext, record: Continuatio
     if (pendingContinuationDispatch !== record || record.phase !== "accepted") return;
     const current = freshCtxForGeneration(generation);
     if (!current) return;
+    // v0.34.57: a compaction that landed AFTER the dispatch was accepted is
+    // legitimate busy time — the session is mid-compact and the turn-start
+    // event will arrive after the compact + resume debt. Re-arm the watchdog
+    // instead of firing the false-positive unacknowledged warning. The 3-min
+    // compactionGraceUntil alone misses compactions that finish within or
+    // past the grace window (field 115855/115858/115901).
+    if (lastCompactionAt > (record.acceptedAt ?? 0)) {
+      appendLedger(current.cwd, "continuation_start_paused_for_compaction", dispatchLedgerValue(record, {
+        lastCompactionAt,
+        acceptedAt: record.acceptedAt ?? 0,
+      }));
+      armContinuationStartWatchdog(current, record);
+      return;
+    }
     if (dispatchTimedOut(record, Date.now(), record.timeoutMs ?? continuationStartTimeoutMs())) {
       dispatchStartUnacknowledged(current, record);
     }
@@ -8266,6 +8292,7 @@ export default function (pi: ExtensionAPI): void {
     continuationRearmStreak = 0; continuationRearmSince = 0;
     loopRearmStreak = 0; loopRearmSince = 0;
     compactionGraceUntil = Date.now() + COMPACTION_GRACE_MS;
+    lastCompactionAt = Date.now();
     // v0.32.1: arm the resume debt + the resync block (the settle probes
     // below stay as the fast path; the heartbeat now retries the debt on
     // EVERY post-grace tick until agent_start discharges it).
