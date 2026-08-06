@@ -1384,12 +1384,10 @@ export function __testOnlyLoadState(cwd: string): void {
 
 /** Register the agent tools (complete_goal etc.) the way session_start
  * does, WITHOUT firing session_start (co-residency rule). runTool tests
- * that must not claim the session use this. */
+ * that must not claim the session use this. MockPi.registerTool is a map
+ * write — re-registration is idempotent on the harness. */
 export function __testOnlyRegisterAgentTools(pi: any): void {
-  if (!toolsRegistered) {
-    registerAgentTools(pi);
-    toolsRegistered = true;
-  }
+  registerAgentTools(pi);
 }
 function noteCompactionRearm(id: string): number {
   const next = (continuationStartCompactionRearms.get(id) ?? 0) + 1;
