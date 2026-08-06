@@ -119,8 +119,8 @@ test("readQueueFromDisk: returns queue items, in id order, skipping garbage", ()
   fs.writeFileSync(path.join(cwd, ".pi-glla", "goals", "wrong-schema.queue.json"), JSON.stringify({ schema: 99 }), "utf-8");
   const items = readQueueFromDisk(cwd);
   assert.equal(items.length, 2, "exactly the two queue items, garbage skipped");
-  assert.equal(items[0].id, "20260806080000-aaaa06");
-  assert.equal(items[1].id, "20260806080000-aaaa07");
+  assert.equal(items[0]!.id, "20260806080000-aaaa06");
+  assert.equal(items[1]!.id, "20260806080000-aaaa07");
 });
 
 test("readQueueFromDisk: excludeIds removes ids that are active or archived", () => {
@@ -131,7 +131,7 @@ test("readQueueFromDisk: excludeIds removes ids that are active or archived", ()
   assert.equal(noExclude.length, 2, "without exclude, both returned");
   const withExclude = readQueueFromDisk(cwd, new Set(["20260806080000-aaaa08"]));
   assert.equal(withExclude.length, 1);
-  assert.equal(withExclude[0].id, "20260806080000-aaaa09");
+  assert.equal(withExclude[0]!.id, "20260806080000-aaaa09");
 });
 
 test("readQueueFromDisk: missing goals/ dir returns [] (not throw)", () => {
@@ -151,9 +151,9 @@ test("round-trip: write then read returns identical items", () => {
   const out = readQueueFromDisk(cwd);
   assert.equal(out.length, 2);
   assert.deepEqual(out[0], items[0], "first round-trips exactly");
-  assert.equal(out[1].id, items[1].id);
-  assert.equal(out[1].objective, items[1].objective);
-  assert.equal(out[1].verificationContract, undefined, "absent optional field stays absent");
+  assert.equal(out[1]!.id, items[1]!.id);
+  assert.equal(out[1]!.objective, items[1]!.objective);
+  assert.equal(out[1]!.verificationContract, undefined, "absent optional field stays absent");
 });
 
 test("queueItemPath: stable relative shape", () => {
