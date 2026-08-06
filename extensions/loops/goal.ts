@@ -1389,6 +1389,13 @@ export function __testOnlyLoadState(cwd: string): void {
 export function __testOnlyRegisterAgentTools(pi: any): void {
   registerAgentTools(pi);
 }
+
+/** Pin the context freshCtx() resolves to (normally set by event/command
+ * handlers) WITHOUT firing session_start — lets the detached-audit apply
+ * path (freshCtxForGeneration) rebind in co-resident test files. */
+export function __testOnlyRememberCtx(ctx: ExtensionContext): void {
+  rememberCtx(ctx);
+}
 function noteCompactionRearm(id: string): number {
   const next = (continuationStartCompactionRearms.get(id) ?? 0) + 1;
   continuationStartCompactionRearms.set(id, next);
