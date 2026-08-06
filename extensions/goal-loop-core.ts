@@ -10,6 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
+import { isQuotaError } from "./quota-retry.js";
 
 /** v0.26.1: consecutive heartbeat refires without a real agent turn
  * before the supervisor gives up (pauses the goal / stops the loop).
@@ -20,6 +21,34 @@ export const DEFAULT_STALL_ESCALATION_REFIRES = 5;
  * threshold? threshold 0 disables escalation entirely. */
 export function shouldEscalateStall(consecutiveStalls: number, threshold: number): boolean {
   return threshold > 0 && consecutiveStalls >= threshold;
+}
+
+// =================================================================
+// Hourly quota-resume prompter (v0.34.58, bug #1.15)
+//
+// Provider quota walls park the goal into durable recovery; the user then
+// has to notice the stall and re-prompt manually. The prompter schedules
+// ONE sendUserMessage at the next :00 clock minute (quota windows refresh
+// on the hour) asking the user to resume. NOT a self-resume — the message
+// only asks; gating lives in goal.ts (autoResume: true). The detector and
+// the :00 math are pure so they are unit-pinned here.
+// =================================================================
+
+/** Quota-wall detector: recognizes provider quota-wall events from error
+ * text — rate-limit / plan-quota / billing families, per the quota-retry
+ * recognition. Context-token errors, transient 5xx, and stream deaths are
+ * NOT quota walls (they have different recovery semantics). */
+export function isQuotaWallError(error: string | undefined): boolean {
+  return isQuotaError(error);
+}
+
+/** The next top-of-hour (:00:00.000) strictly after now — the hourly
+ * quota-resume prompt slot. At exactly :00 the next slot is the following
+ * hour (the wall was hit in the current hour). */
+export function nextHourlyPromptMs(now = Date.now()): number {
+  const d = new Date(now);
+  d.setHours(d.getHours() + 1, 0, 0, 0);
+  return d.getTime();
 }
 
 // =================================================================
