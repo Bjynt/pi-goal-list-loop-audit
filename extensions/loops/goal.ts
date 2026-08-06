@@ -53,6 +53,7 @@ import {
   runWithInfraRetry,
   isRetriableInfraError,
   readAuditLog,
+  bumpGoalRevision,
   stripThinkBlocks,
   type AuditLogEntry,
   ledgerPath,
@@ -2682,6 +2683,12 @@ function createGoal(objective: string, ctx: ExtensionContext, policy: "goal" | "
 }
 
 function persistState(ctx: ExtensionContext): void {
+  // v0.34.59: bump the focus-revision counter BEFORE writing the state
+  // event — the on-disk revision strictly increases on every commit, so a
+  // detached worker holding a captured token can detect a goal that moved
+  // on during its audit. The bump only applies to the goal slot; list /
+  // loop / recovery slots are not part of the focus token.
+  if (state.goal) state.goal = bumpGoalRevision(state.goal);
   // Persist explicit null for the optional top-level recovery slot. JSON
   // omits undefined, while readState intentionally merges state snapshots;
   // omission would resurrect an older quota wall after a successful retry.

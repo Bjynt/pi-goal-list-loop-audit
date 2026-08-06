@@ -274,6 +274,12 @@ export interface Goal {
    * detection. Bumped live: turns on agent_end, fileWrites/bashCalls on
    * tool_result while the goal is active. */
   telemetry?: { turns: number; fileWrites: number; bashCalls: number };
+  /** v0.34.59: focus token / revision counter on every goal mutation.
+   * Persisted alongside the goal; bumped on every persistState. Detached
+   * workers capture (goalId, revision) at dispatch and refuse to apply
+   * their result if the captured revision no longer matches — a stale
+   * handle cannot silently overwrite a goal that moved on. */
+  revision?: number;
 }
 
 /**
@@ -860,6 +866,41 @@ export function compactDisplayText(value: string): string {
 
 export function nowIso(): string {
   return new Date().toISOString();
+}
+
+/**
+ * v0.34.59: revision token — return {goalId, revision} for use as a
+ * (focus-token, sandbox-check) at async boundaries. The orchestrator
+ * captures this before spawning a detached worker, the worker echoes it
+ * back through result.json, and the parent re-validates it before
+ * applying the verdict. A mismatched token refuses to apply rather than
+ * silently overwriting a goal that moved on.
+ */
+export interface GoalRevisionToken {
+  goalId: string;
+  revision: number;
+}
+
+export function captureGoalRevision(goal: Goal | null | undefined): GoalRevisionToken | null {
+  if (!goal || !goal.id) return null;
+  return { goalId: goal.id, revision: goal.revision ?? 0 };
+}
+
+export function isGoalRevisionCurrent(captured: GoalRevisionToken | null, current: Goal | null | undefined): boolean {
+  if (!captured) return true; // v0.34.59: pre-revision goals pass through unchanged
+  const cur = current?.revision ?? 0;
+  if (!current || current.id !== captured.goalId) return false;
+  return cur === captured.revision;
+}
+
+/**
+ * Bump the goal's revision in-place. Persist path calls this before
+ * appendLedger so the on-disk state.goal.revision strictly increases on
+ * every committed write. The returned object is a fresh reference so the
+ * surrounding spread propagates the new revision.
+ */
+export function bumpGoalRevision(goal: Goal): Goal {
+  return { ...goal, revision: (goal.revision ?? 0) + 1 };
 }
 
 export function newGoalId(): string {
