@@ -62,6 +62,19 @@ export const READ_ONLY_TOOLS = ["read", "grep", "find", "ls", "bash"] as const;
 const PROTOCOL_VERSION = 1;
 const DEFAULT_WALL_TIMEOUT_MS = 30 * 60_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
+/** v0.34.57 (steal-list #7 / bug #1.4): heartbeat-without-progress watchdog.
+ * A worker heartbeat (`lastActivityAt`) fresher than this is "activity";
+ * older than this is "silence" (the worker's own GLLA_AUDITOR_STALL_MS
+ * brake owns that case — the parent watchdog must not double-fire it). */
+const DEFAULT_HEARTBEAT_FRESH_MS = 60_000;
+/** v0.34.57: if the heartbeat stays fresh but no NEW tool call or report
+ * output arrives for this long, the worker is alive but wedged (auto-retry
+ * loop, empty stream, hung tool). Demote to quiet, emit `auditor_stalled`,
+ * and auto-cancel the detached job. Mirrors the worker's 10m default brake
+ * on the complementary axis: silence→worker cancels, activity-without-
+ * progress→parent cancels. Both are far inside the 30m wall bound and the
+ * observed 1h50m stuck case. */
+const DEFAULT_HEARTBEAT_NO_PROGRESS_MS = 10 * 60_000;
 const ATTEMPT_ID_RE = /^[A-Za-z0-9._-]{1,100}$/;
 const activeChildren = new Map<string, ChildProcess>();
 
@@ -171,11 +184,33 @@ export interface AuditorProcessRuntime {
   wallTimeoutMs?: number;
   now?: () => number;
   attemptId?: () => string;
+  /** v0.34.57: watchdog window — cancel the detached job when the worker's
+   * heartbeat stays fresh but no new tool call or report output arrives for
+   * this long (default 10m). Tests shrink this. */
+  heartbeatNoProgressMs?: number;
+  /** v0.34.57: freshness horizon for `lastActivityAt` — only heartbeats
+   * younger than this count as "activity" for the watchdog (default 60s). */
+  heartbeatFreshMs?: number;
   /** Environment is inherited by default; useful for a fake pi binary in tests. */
   env?: NodeJS.ProcessEnv;
 }
 
 export type AuditorProgressCallback = (progress: AuditorProgress) => void;
+
+/** v0.34.57: payload for the heartbeat-without-progress watchdog. The parent
+ * persists this as the `auditor_stalled` ledger event. */
+export interface AuditorStalledInfo {
+  /** When the watchdog fired. */
+  at: number;
+  /** Age of the last worker heartbeat at detection (`now - lastActivityAt`).
+   * Fresh (≤ heartbeatFreshMs) by construction — this is activity without
+   * progress, not silence. */
+  heartbeatAgeMs: number;
+  /** How long the no-progress streak had been running (≥ heartbeatNoProgressMs). */
+  noProgressMs: number;
+  /** The worker phase in the last progress snapshot. */
+  phase: AuditorProgress["phase"];
+}
 
 /** Return a stable JSON representation for request-hash validation. */
 export function stableJson(value: unknown): string {
@@ -261,6 +296,17 @@ function asProgress(file: AuditorProgressFile, startedAt: number): AuditorProgre
   };
 }
 
+/** v0.34.57: the progress-bearing subset of a worker snapshot. Heartbeat
+ * events refresh `lastActivityAt` and may oscillate `phase` (running ↔
+ * thinking on message_start/agent_start) without delivering progress — this
+ * signature deliberately excludes both, so only a NEW finished tool call,
+ * new report output, or a NEW tool start counts as progress. */
+function progressSignature(file: AuditorProgressFile): string {
+  const calls = file.toolCalls;
+  const lastToolFinishedAt = calls.length > 0 ? (calls[calls.length - 1]?.finishedAt ?? 0) : 0;
+  return `${calls.length}|${lastToolFinishedAt}|${file.recentOutput.join("\u0000")}|${file.currentTool ?? ""}|${file.currentToolStartedAt ?? 0}`;
+}
+
 function infra(model: string, thinkingLevel: string, error: string, output = "", capturedToken?: GoalRevisionToken): GoalAuditorResult {
   return { approved: false, disapproved: false, output, model, thinkingLevel, error, ...(capturedToken ? { goalRevision: capturedToken } : {}) };
 }
@@ -288,6 +334,10 @@ export async function runDetachedGoalCompletionAuditor(args: {
   thinkingLevel?: string;
   signal?: AbortSignal;
   onProgress?: AuditorProgressCallback;
+  /** v0.34.57: fired once when the heartbeat-without-progress watchdog
+   * detects a wedged worker and auto-cancels the detached job. The parent
+   * persists this as the `auditor_stalled` ledger event. */
+  onStalled?: (info: AuditorStalledInfo) => void;
   runtime?: AuditorProcessRuntime;
 }): Promise<GoalAuditorResult> {
   const runtime = args.runtime ?? {};
@@ -298,6 +348,8 @@ export async function runDetachedGoalCompletionAuditor(args: {
   const now = runtime.now ?? Date.now;
   const wallTimeoutMs = runtime.wallTimeoutMs ?? DEFAULT_WALL_TIMEOUT_MS;
   const pollIntervalMs = Math.max(10, runtime.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS);
+  const heartbeatFreshMs = Math.max(10, runtime.heartbeatFreshMs ?? DEFAULT_HEARTBEAT_FRESH_MS);
+  const heartbeatNoProgressMs = Math.max(50, runtime.heartbeatNoProgressMs ?? DEFAULT_HEARTBEAT_NO_PROGRESS_MS);
   const attemptId = runtime.attemptId?.() ?? `${Date.now().toString(36)}-${randomUUID()}`;
   // v0.34.59: capture the focus revision token at dispatch. Every result
   // shape returned to the parent carries this token so the parent can
@@ -321,6 +373,13 @@ export async function runDetachedGoalCompletionAuditor(args: {
   let lockHeld = false;
   let child: ChildProcess | undefined;
   let lastProgressSerialized = "";
+  // v0.34.57: heartbeat-without-progress watchdog state. `lastProgressAt` is
+  // reset whenever the progress signature changes; the watchdog fires when
+  // the worker heartbeat stays fresh but the signature has not changed for
+  // `heartbeatNoProgressMs` — the worker is alive but wedged.
+  let lastProgressAt = startedAt;
+  let lastProgressSignature = "";
+  let lastProgress: AuditorProgressFile | undefined;
 
   try {
     await fs.mkdir(jobsRoot, { recursive: true, mode: 0o700 });
@@ -380,6 +439,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
           if (progress.protocolVersion !== PROTOCOL_VERSION || progress.attemptId !== attemptId || progress.requestHash !== request.requestHash) {
             return infra(model, thinkingLevel, "auditor progress identity/request-hash mismatch", "", capturedRevisionToken);
           }
+          lastProgress = progress;
           const serialized = stableJson(progress);
           if (serialized !== lastProgressSerialized) {
             lastProgressSerialized = serialized;
@@ -421,6 +481,45 @@ export async function runDetachedGoalCompletionAuditor(args: {
           return stampToken({ approved: parsed.approved, disapproved: parsed.disapproved, impossible: parsed.impossible, impossibleReason: parsed.impossibleReason, output, model, thinkingLevel }, capturedRevisionToken);
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") return infra(model, thinkingLevel, `invalid auditor result: ${error instanceof Error ? error.message : String(error)}`, "", capturedRevisionToken);
+        }
+        // v0.34.57: heartbeat-without-progress watchdog (steal-list #7 /
+        // bug #1.4). The worker's own stall brake only fires on TOTAL silence
+        // (and skips it while a read-only tool is running); a worker that
+        // keeps emitting RPC events — auto-retry loops, empty message
+        // updates, a hung tool — refreshes `lastActivityAt` forever without
+        // delivering any new tool call or report output. That is the 1h50m
+        // "alive but wedged" class: fail fast instead.
+        if (lastProgress && lastProgress.lastActivityAt !== undefined && now() - lastProgress.lastActivityAt <= heartbeatFreshMs) {
+          const signature = progressSignature(lastProgress);
+          if (signature !== lastProgressSignature) {
+            lastProgressSignature = signature;
+            lastProgressAt = now();
+          }
+          const noProgressMs = now() - lastProgressAt;
+          if (noProgressMs >= heartbeatNoProgressMs) {
+            // Demote to quiet first: a final progress snapshot WITHOUT the
+            // live heartbeat, so the HUD cannot render LIVE + "worker activity
+            // 0s ago" for the wedged worker.
+            args.onProgress?.({
+              phase: "running",
+              elapsedMs: now() - startedAt,
+              recentOutput: lastProgress.recentOutput,
+              toolCalls: lastProgress.toolCalls,
+              unmatchedToolStarts: lastProgress.unmatchedToolStarts ?? [],
+              unmatchedToolEnds: lastProgress.unmatchedToolEnds ?? [],
+            });
+            const stallLabel = heartbeatNoProgressMs >= 60_000
+              ? `${Math.max(1, Math.round(heartbeatNoProgressMs / 60_000))}m`
+              : `${Math.max(1, Math.round(heartbeatNoProgressMs / 1_000))}s`;
+            args.onStalled?.({
+              at: now(),
+              heartbeatAgeMs: now() - lastProgress.lastActivityAt,
+              noProgressMs,
+              phase: lastProgress.phase,
+            });
+            if (child && childAlive(child)) child.kill("SIGTERM");
+            return infra(model, thinkingLevel, `Auditor stalled — heartbeats without progress for ${stallLabel} (no new tool call or output); the detached job was auto-cancelled.`, "", capturedRevisionToken);
+          }
         }
         if (child && !childAlive(child)) return infra(model, thinkingLevel, "auditor worker exited without an atomic result", "", capturedRevisionToken);
         await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));

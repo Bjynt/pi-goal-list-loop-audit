@@ -3338,6 +3338,14 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
           onProgress: (progress) => {
             publishDetachedAuditProgress(generation, goalId, claim.attemptId!, progress);
           },
+          // v0.34.57: the parent-side heartbeat-without-progress watchdog
+          // fired — persist the auditor_stalled ledger event so the recovery
+          // path can distinguish "wedged worker" from other timeouts.
+          onStalled: (info) => {
+            const current = detachedAuditContext(generation, goalId, claim.attemptId!);
+            if (!current) return;
+            appendLedger(current.cwd, "auditor_stalled", { goalId, attemptId: claim.attemptId, ...info });
+          },
         }),
       {
         shouldRetry: () => detachedAuditContext(generation, goalId, claim.attemptId!) !== null,
@@ -5782,6 +5790,14 @@ function registerAgentTools(pi: any): void {
           runtime: { attemptId: () => newDetachedAuditJobAttemptId(completionClaim.attemptId!), wallTimeoutMs: AUDITOR_WALL_TIMEOUT_MS },
           onProgress: (progress) => {
             publishDetachedAuditProgress(auditGeneration, auditGoalId, auditAttemptId, progress);
+          },
+          // v0.34.57: the parent-side heartbeat-without-progress watchdog
+          // fired — persist the auditor_stalled ledger event so the recovery
+          // path can distinguish "wedged worker" from other timeouts.
+          onStalled: (info) => {
+            const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
+            if (!current) return;
+            appendLedger(current.cwd, "auditor_stalled", { goalId: auditGoalId, attemptId: auditAttemptId, ...info });
           },
         });
       // v0.25.4 (post-audit fix): a retriable infra failure (stream error,
