@@ -28,6 +28,12 @@ export interface GoalAuditorResult {
   error?: string;
   regressionShieldPassed?: boolean;
   regressionShieldMissing?: string[];
+  /** v0.34.59: focus revision token echoed from request.json. The parent
+   * compares this against the current state.goal.revision after the audit
+   * finishes; mismatch → the verdict is treated as stale-refused, not a
+   * silent overwrite. The caller decides what to do (typically: skip the
+   * verdict, log stale_revision_refused, surface the refusal in the HUD). */
+  goalRevision?: GoalRevisionToken;
 }
 
 export interface AuditorProgress {
@@ -104,6 +110,11 @@ interface AuditorRequest {
   thinkingLevel: string;
   createdAt: string;
   wallDeadlineAt: number;
+  /** v0.34.59: focus revision token captured at dispatch. Echoed in
+   * result.json; the parent re-validates against current disk state
+   * before applying the verdict. Mismatch → stale-refusal, not a silent
+   * overwrite. */
+  goalRevision?: GoalRevisionToken;
 }
 
 interface AuditorToolCall {
@@ -122,6 +133,10 @@ interface AuditorResultFile {
   thinkingLevel: string;
   toolCalls: AuditorToolCall[];
   error?: string;
+  /** v0.34.59: focus revision token echoed from request.json. The parent
+   * compares this against the current state.goal.revision; mismatch → the
+   * verdict is treated as stale-refused, not a silent overwrite. */
+  goalRevision?: GoalRevisionToken;
 }
 
 interface AuditorProgressFile {
@@ -246,8 +261,17 @@ function asProgress(file: AuditorProgressFile, startedAt: number): AuditorProgre
   };
 }
 
-function infra(model: string, thinkingLevel: string, error: string, output = ""): GoalAuditorResult {
-  return { approved: false, disapproved: false, output, model, thinkingLevel, error };
+function infra(model: string, thinkingLevel: string, error: string, output = "", capturedToken?: GoalRevisionToken): GoalAuditorResult {
+  return { approved: false, disapproved: false, output, model, thinkingLevel, error, ...(capturedToken ? { goalRevision: capturedToken } : {}) };
+}
+
+/** v0.34.59: stamp the captured focus revision onto a successful verdict
+ * result so the parent can re-validate before applying. Mismatched tokens
+ * cause the verdict to be refused (logged as stale_revision_refused in the
+ * parent) rather than silently overwriting a goal that moved on. */
+function stampToken<T extends GoalAuditorResult>(result: T, capturedToken: GoalRevisionToken | undefined): T {
+  if (!capturedToken) return result;
+  return { ...result, goalRevision: capturedToken };
 }
 
 /**
@@ -275,10 +299,15 @@ export async function runDetachedGoalCompletionAuditor(args: {
   const wallTimeoutMs = runtime.wallTimeoutMs ?? DEFAULT_WALL_TIMEOUT_MS;
   const pollIntervalMs = Math.max(10, runtime.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS);
   const attemptId = runtime.attemptId?.() ?? `${Date.now().toString(36)}-${randomUUID()}`;
+  // v0.34.59: capture the focus revision token at dispatch. Every result
+  // shape returned to the parent carries this token so the parent can
+  // re-validate before applying a verdict. Pre-revision goals pass through
+  // unchanged (captured is null).
+  const capturedRevisionToken: GoalRevisionToken | undefined = captureGoalRevision(args.goal) ?? undefined;
   try {
     assertAttemptId(attemptId);
   } catch (error) {
-    return infra(model, thinkingLevel, error instanceof Error ? error.message : String(error));
+    return infra(model, thinkingLevel, error instanceof Error ? error.message : String(error), "", capturedRevisionToken);
   }
 
   const jobDir = path.resolve(args.cwd, ".pi-glla", "audit-jobs", attemptId);
@@ -308,6 +337,11 @@ export async function runDetachedGoalCompletionAuditor(args: {
       thinkingLevel,
       createdAt: new Date(startedAt).toISOString(),
       wallDeadlineAt,
+      // v0.34.59: capture the focus revision token at dispatch. The
+      // worker echoes it in result.json; the parent re-validates before
+      // applying the verdict. A stale-handle ghost can no longer silently
+      // overwrite a goal that moved on.
+      goalRevision: captureGoalRevision(args.goal) ?? undefined,
     };
     const request: AuditorRequest = { ...requestWithoutHash, requestHash: requestHash(requestWithoutHash) };
     await writeAtomicJson(requestPath, request);

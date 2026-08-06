@@ -252,6 +252,11 @@ async function main() {
       model: request.model,
       thinkingLevel: request.thinkingLevel,
       toolCalls: toolCalls.slice(-MAX_TOOL_CALLS),
+      // v0.34.59: echo the focus revision token captured at dispatch.
+      // The parent re-validates against current disk state; a mismatch
+      // refuses the verdict instead of silently overwriting a goal that
+      // moved on during the audit. Ghost writes cannot survive.
+      ...(request.goalRevision ? { goalRevision: request.goalRevision } : {}),
       ...(error ? { error: error.slice(0, 500) } : {}),
     };
     // Publish the terminal worker phase before the result. The parent polls
