@@ -115,7 +115,7 @@ test("v0.34.57: the turn-boundary check ledgeres drift that arrives without a mo
   assert.equal(readLedger(cwd).filter((e) => e.type === "model_switch").length, 0, "baseline turn records nothing");
   // The next turn runs on a different model (e.g. a fresh launch with a
   // changed default) — drift is ledgered as a turn-boundary switch.
-  const drifted: MockCtx = { ...ctx, model: { provider: "openai", id: "gpt-4.1" } };
+  const drifted: MockCtx = { ...ctx, model: { provider: "openai", id: "gpt-4.1" } as any };
   await pi.fire("before_agent_start", { prompt: "second turn" }, drifted);
   const switches = readLedger(cwd).filter((e) => e.type === "model_switch");
   assert.equal(switches.length, 1, "drift is ledgered once");
@@ -174,7 +174,7 @@ test("v0.34.57: turn-boundary drift into a forbidden model records the violation
   const ctx = await freshSession(cwd);
   pi.modelSelections.length = 0;
   await pi.fire("before_agent_start", { prompt: "baseline" }, ctx);
-  const drifted: MockCtx = { ...ctx, model: { provider: "openai", id: "gpt-5.5" } };
+  const drifted: MockCtx = { ...ctx, model: { provider: "openai", id: "gpt-5.5" } as any };
   await pi.fire("before_agent_start", { prompt: "drifted turn" }, drifted);
   const ledger = readLedger(cwd);
   const violations = ledger.filter((e) => e.type === "forbidden_model_switch");
