@@ -12,15 +12,23 @@
 //   (c) /glla switchlog renders the last N entries
 //
 // Pure helper pins + wiring pins on a MockPi that DRIVES the registered
-// handlers, mirroring the behavioral-orchestrator harness pattern (own
-// MockPi, own tmp cwd per test, session_start re-reads state from disk).
+// handlers.
+//
+// FILE-LEVEL DESIGN: goal.ts is a singleton module shared with the other
+// goal.ts-driving files (behavioral-orchestrator, lifecycle-recovery, …) in
+// one process — so this file NEVER fires session_start (a second session
+// claim disturbs the restore gate of co-resident files) and NEVER depends
+// on module state loaded from disk. Every test starts from a fresh tmp cwd
+// and resets the module ownership/terminal flags first; the model_select /
+// before_agent_start guards pass with a clean (or null) owner, and the
+// ledger assertions read the cwd's own .pi-glla/active.jsonl.
 
-import { test, afterEach } from "node:test";
+import { test, beforeEach, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { MockPi, makeMockCtx, tmpCwd, type MockCtx } from "./harness/mock-pi.js";
-import activate, { __testOnlyResetStaleFlag, __testOnlyResetTerminalFlags } from "../extensions/loops/goal.js";
+import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyResetTerminalFlags } from "../extensions/loops/goal.js";
 import { modelSwitch, isForbiddenModel, DEFAULT_FORBIDDEN_MODELS } from "../extensions/goal-loop-core.js";
 
 const pi = new MockPi();
@@ -31,12 +39,6 @@ const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
 
 function ownerCtx(cwd: string): MockCtx {
   return makeMockCtx(cwd, { sessionManager: MAIN_SM });
-}
-
-async function freshSession(cwd: string): Promise<MockCtx> {
-  const ctx = ownerCtx(cwd);
-  await pi.fire("session_start", { reason: "startup" }, ctx);
-  return ctx;
 }
 
 /** All ledger entries for a cwd, in order. */
@@ -50,9 +52,19 @@ function readLedger(cwd: string): Array<{ type: string; value: any; at: string }
     .map((line) => JSON.parse(line));
 }
 
+beforeEach(() => {
+  // Clean slate: a co-resident stale-scenario file may have latched the
+  // terminal/owner flags; the guards must see a clean module.
+  __testOnlyResetStaleFlag();
+  __testOnlyResetTerminalFlags();
+  __testOnlyResetOwnerSession();
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({}));
+});
+
 afterEach(() => {
   __testOnlyResetStaleFlag();
   __testOnlyResetTerminalFlags();
+  __testOnlyResetOwnerSession();
   fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({}));
 });
 
@@ -90,9 +102,8 @@ test("v0.34.57: isForbiddenModel matches gpt-5.5/sonnet/opus refs, case-insensit
 });
 
 test("v0.34.57: the model_select hook ledgeres every provider/model change", async () => {
-  __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
-  const ctx = await freshSession(cwd);
+  const ctx = ownerCtx(cwd);
   await pi.fire(
     "model_select",
     { model: { provider: "openai", id: "gpt-4.1" }, previousModel: { provider: "anthropic", id: "claude-sonnet-4-5" }, source: "set" },
@@ -108,14 +119,11 @@ test("v0.34.57: the model_select hook ledgeres every provider/model change", asy
 });
 
 test("v0.34.57: the turn-boundary check ledgeres drift that arrives without a model_select event", async () => {
-  __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
-  const ctx = await freshSession(cwd);
+  const ctx = ownerCtx(cwd);
   // First observed turn just baselines — no ledger entry.
   await pi.fire("before_agent_start", { prompt: "first turn" }, ctx);
-  const baselineSwitches = readLedger(cwd).filter((e) => e.type === "model_switch");
-  if (baselineSwitches.length > 0) console.log("DBG baseline switches:", JSON.stringify(baselineSwitches), "state lines:", JSON.stringify(readLedger(cwd).filter((e) => e.type === "state")));
-  assert.equal(baselineSwitches.length, 0, "baseline turn records nothing");
+  assert.equal(readLedger(cwd).filter((e) => e.type === "model_switch").length, 0, "baseline turn records nothing");
   // The next turn runs on a different model (e.g. a fresh launch with a
   // changed default) — drift is ledgered as a turn-boundary switch.
   const drifted: MockCtx = { ...ctx, model: { provider: "openai", id: "gpt-4.1" } as any };
@@ -133,9 +141,8 @@ test("v0.34.57: the turn-boundary check ledgeres drift that arrives without a mo
 // ── (b) forbiddenModels gate ───────────────────────────────────────────
 
 test("v0.34.57: the forbidden gate blocks a forbidden selection, emits forbidden_model_switch, and reverts", async () => {
-  __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
-  const ctx = await freshSession(cwd);
+  const ctx = ownerCtx(cwd);
   pi.modelSelections.length = 0;
   const previous = { provider: "anthropic", id: "claude-sonnet-4-5" };
   await pi.fire("model_select", { model: { provider: "openai", id: "gpt-5.5" }, previousModel: previous, source: "set" }, ctx);
@@ -154,10 +161,9 @@ test("v0.34.57: the forbidden gate blocks a forbidden selection, emits forbidden
 });
 
 test("v0.34.57: blockForbiddenModelSwitches off allows the switch but records the violation", async () => {
-  __testOnlyResetStaleFlag();
   fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({ blockForbiddenModelSwitches: false }));
   const cwd = tmpCwd();
-  const ctx = await freshSession(cwd);
+  const ctx = ownerCtx(cwd);
   pi.modelSelections.length = 0;
   await pi.fire(
     "model_select",
@@ -172,9 +178,8 @@ test("v0.34.57: blockForbiddenModelSwitches off allows the switch but records th
 });
 
 test("v0.34.57: turn-boundary drift into a forbidden model records the violation without blocking", async () => {
-  __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
-  const ctx = await freshSession(cwd);
+  const ctx = ownerCtx(cwd);
   pi.modelSelections.length = 0;
   await pi.fire("before_agent_start", { prompt: "baseline" }, ctx);
   const drifted: MockCtx = { ...ctx, model: { provider: "openai", id: "gpt-5.5" } as any };
@@ -192,9 +197,8 @@ test("v0.34.57: turn-boundary drift into a forbidden model records the violation
 // ── (c) /glla switchlog ────────────────────────────────────────────────
 
 test("v0.34.57: /glla switchlog renders the last N entries of the model-switch trail", async () => {
-  __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
-  const ctx = await freshSession(cwd);
+  const ctx = ownerCtx(cwd);
   // Two plain switches, then a blocked forbidden one.
   await pi.fire(
     "model_select",
