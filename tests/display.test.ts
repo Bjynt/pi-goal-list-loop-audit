@@ -497,6 +497,53 @@ test("auditor progress phases are explicit and retain worker activity", () => {
   assert.match(blocked, /auditor blocked/);
 });
 
+test("H-code: HUD liveness gate rejects clock-skewed lastActivityAt (future timestamps must not claim LIVE)", () => {
+  // DETACHED-WORKER-HUD-RECONCILIATION-2026-08-05.md action code H:
+  // "the UI must ignore currentTool* after phase: complete" + "status rendering
+  // should gate LIVE/BUSY on a non-terminal phase plus fresh process/heartbeat
+  // evidence". A lastActivityAt in the future (worker clock ahead / clock skew)
+  // is NOT a fresh heartbeat; the HUD must not render LIVE or "0s ago" forever.
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-skew" } });
+
+  // lastActivityAt 10s in the future: currently the HUD renders LIVE + "0s ago"
+  // because Math.max(0, now - lastActivityAt) clamps to 0 and any non-positive
+  // age passes the <= LIVE_ACTIVITY_MS check.
+  const skewedStatus = buildStatusText({ goal: g, list: [] }, {
+    phase: "tool_executing",
+    currentTool: "bash",
+    lastActivityAt: NOW + 10_000,
+  }, NOW)!;
+  assert.doesNotMatch(skewedStatus, /AUDITOR · DETACHED · LIVE/, "future timestamp must not render LIVE badge");
+  assert.doesNotMatch(skewedStatus, /worker activity 0s ago/, "future timestamp must not render misleading 0s ago");
+
+  const skewedWidget = buildWidgetLines({ goal: g, list: [] }, {
+    phase: "tool_executing",
+    currentTool: "bash",
+    lastActivityAt: NOW + 10_000,
+  }, NOW)!;
+  assert.ok(!skewedWidget.some((l) => /worker activity 0s ago/.test(l)), "widget must not render worker activity 0s ago for future timestamp");
+  // When not LIVE, the auditor tool should fall back to "last observed tool".
+  assert.ok(skewedWidget.some((l) => l.includes("last observed tool")) || !skewedWidget.some((l) => /LIVE|worker activity 0s/.test(l)),
+    "non-LIVE worker should not surface a freshness claim");
+
+  // Sanity: a current timestamp (NOW) IS live and renders "0s ago".
+  const currentStatus = buildStatusText({ goal: g, list: [] }, {
+    phase: "tool_executing",
+    currentTool: "bash",
+    lastActivityAt: NOW,
+  }, NOW)!;
+  assert.match(currentStatus, /AUDITOR · DETACHED · LIVE/);
+  assert.match(currentStatus, /worker activity 0s ago/);
+
+  // Sanity: a genuinely stale timestamp (> LIVE_ACTIVITY_MS old) is NOT live.
+  const staleStatus = buildStatusText({ goal: g, list: [] }, {
+    phase: "tool_executing",
+    currentTool: "bash",
+    lastActivityAt: NOW - 60_000,
+  }, NOW)!;
+  assert.doesNotMatch(staleStatus, /AUDITOR · DETACHED · LIVE/);
+});
+
 test("auditor widget shows concrete worker observations without exposing think blocks", () => {
   const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-live" } });
   const lines = buildWidgetLines({ goal: g, list: [] }, {
