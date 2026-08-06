@@ -113,7 +113,9 @@ test("v0.34.57: the turn-boundary check ledgeres drift that arrives without a mo
   const ctx = await freshSession(cwd);
   // First observed turn just baselines — no ledger entry.
   await pi.fire("before_agent_start", { prompt: "first turn" }, ctx);
-  assert.equal(readLedger(cwd).filter((e) => e.type === "model_switch").length, 0, "baseline turn records nothing");
+  const baselineSwitches = readLedger(cwd).filter((e) => e.type === "model_switch");
+  if (baselineSwitches.length > 0) console.log("DBG baseline switches:", JSON.stringify(baselineSwitches), "state lines:", JSON.stringify(readLedger(cwd).filter((e) => e.type === "state")));
+  assert.equal(baselineSwitches.length, 0, "baseline turn records nothing");
   // The next turn runs on a different model (e.g. a fresh launch with a
   // changed default) — drift is ledgered as a turn-boundary switch.
   const drifted: MockCtx = { ...ctx, model: { provider: "openai", id: "gpt-4.1" } as any };
