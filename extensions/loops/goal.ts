@@ -1291,10 +1291,24 @@ let compactionGraceUntil = 0;
 // session was still mid-compact; the work was completed on disk but the
 // session handle was lost, so the user saw the false-positive warning).
 let lastCompactionAt = 0;
+// v0.34.57: per-record counter capping the compaction-paused re-arm loop.
+// A stuck session that never produces a new compaction event must not
+// re-arm indefinitely; after 3 rearms (default 3 × 150s = 7.5m) the
+// watchdog fires the unacknowledged warning so the user can intervene.
+const COMPACTION_REARM_CAP = 3;
+const continuationStartCompactionRearms = new Map<string, number>();
 /** Test-only: simulate a compaction event at a controlled time without firing
  * the full session_compact plumbing. Pass null to clear. */
 export function __testOnlySetLastCompactionAt(at: number | null): void {
   lastCompactionAt = at ?? 0;
+}
+function noteCompactionRearm(id: string): number {
+  const next = (continuationStartCompactionRearms.get(id) ?? 0) + 1;
+  continuationStartCompactionRearms.set(id, next);
+  return next;
+}
+function clearCompactionRearms(id: string): void {
+  continuationStartCompactionRearms.delete(id);
 }
 // v0.32.1 (pi-goal-x's lesson — "recover from compacts smarter"): a compact
 // leaves a RESUME DEBT, not just two fixed-offset settle probes that can both
@@ -1873,12 +1887,19 @@ function armContinuationStartWatchdog(ctx: ExtensionContext, record: Continuatio
     // compactionGraceUntil alone misses compactions that finish within or
     // past the grace window (field 115855/115858/115901).
     if (lastCompactionAt > (record.acceptedAt ?? 0)) {
+      const rearms = noteCompactionRearm(record.id);
       appendLedger(current.cwd, "continuation_start_paused_for_compaction", dispatchLedgerValue(record, {
         lastCompactionAt,
         acceptedAt: record.acceptedAt ?? 0,
+        rearmCount: rearms,
+        capped: rearms >= COMPACTION_REARM_CAP,
       }));
-      armContinuationStartWatchdog(current, record);
-      return;
+      if (rearms < COMPACTION_REARM_CAP) {
+        armContinuationStartWatchdog(current, record);
+        return;
+      }
+      // Cap reached: fall through to the unacknowledged warning so the
+      // user can intervene. A stuck session must not loop forever.
     }
     if (dispatchTimedOut(record, Date.now(), record.timeoutMs ?? continuationStartTimeoutMs())) {
       dispatchStartUnacknowledged(current, record);
