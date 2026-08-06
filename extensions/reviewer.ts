@@ -197,6 +197,30 @@ export function extractFindings(sources: Array<{ name: string; text: string }>, 
   return out;
 }
 
+/** v0.34.61: superseded-disapproval curation (field-observed 2026-08-06:
+ * goal lhy6nt round-1 DISAPPROVED → round-2 APPROVED; the reviewer mined
+ * the round-1 report verbatim into 3 junk /list items and cascade-
+ * activated one). v0.26.4 already excludes APPROVED reports (the
+ * executor's own claims — meta-text); this adds the missing half: a
+ * disapproval SUPERSEDED by a later approval on the same goal is ANSWERED
+ * work — its required fixes are exactly what the approval verified, so
+ * re-mining it re-queues already-fixed findings. The LAST verdict for the
+ * goal decides: approved → zero audit sources; disapproved/error → all
+ * disapproved/error reports for that goal (the goal ended on an open
+ * verdict — its fixes are genuinely outstanding). */
+export function curateAuditReviewSources(
+  entries: Array<{ goalId?: string; verdict?: string; report?: string }>,
+  goalId: string,
+): Array<{ report: string; verdict: string }> {
+  const mineable = entries.filter(
+    (e) => e.goalId === goalId && (e.verdict === "disapproved" || e.verdict === "error") && typeof e.report === "string" && e.report.length > 0,
+  );
+  if (mineable.length === 0) return [];
+  const lastForGoal = entries.filter((e) => e.goalId === goalId).at(-1);
+  if (lastForGoal && lastForGoal.verdict === "approved") return [];
+  return mineable.map((e) => ({ report: e.report as string, verdict: e.verdict as string }));
+}
+
 /** Runaway prevention (contract item 6/9): a reviewer fire in the last
  * `windowMs` suppresses re-firing — reviewer-created work completing
  * immediately must not recursively fire the reviewer. */

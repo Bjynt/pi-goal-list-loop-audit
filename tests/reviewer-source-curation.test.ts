@@ -15,6 +15,7 @@ import * as path from "node:path";
 
 import {
   classifyFindingText,
+  curateAuditReviewSources,
   extractFindings,
   stripCodeSpans,
   resolveReviewerConfig,
@@ -87,6 +88,42 @@ test("a DISAPPROVED report's required-fixes extract as findings; an APPROVED met
   const out = runReviewer(resolveReviewerConfig(), { kind: "goal", goalId: "g1", objective: "ship 0.26.4", terminal: "goal-complete" }, deps);
   assert.equal(out.enqueued, 2);
   assert.equal(calls.proposed.length, 0);
+});
+
+test("superseded-disapproval curation: a disapproval answered by a later approval is NOT re-mined", () => {
+  // v0.34.61 (field-observed 2026-08-06): goal lhy6nt round-1 DISAPPROVED
+  // → round-2 APPROVED. The reviewer mined the round-1 disapproval report
+  // verbatim ("The gate and both apply sites exist...", section headings,
+  // numbered narrative lines) into 3 junk /list items and cascade-activated
+  // one. A disapproval superseded by a later approval is ANSWERED work —
+  // its required fixes were exactly what the approval verified.
+  const goalLog = [
+    { goalId: "g-r1", verdict: "disapproved", report: "## Required fixes\n- TODO: fix the pinned gap", at: "2026-08-06T10:00:00Z" },
+    { goalId: "g-r1", verdict: "approved", report: "<approved/>", at: "2026-08-06T11:00:00Z" },
+  ];
+  assert.deepEqual(curateAuditReviewSources(goalLog, "g-r1"), [], "approval supersedes — zero audit sources");
+
+  // A disapproval that is still the LAST verdict stays mineable (goal
+  // ended on it: aborted/paused, work still open).
+  const openLog = [
+    { goalId: "g-r1", verdict: "disapproved", report: "## Required fixes\n- TODO: fix the pinned gap", at: "2026-08-06T10:00:00Z" },
+  ];
+  const mined = curateAuditReviewSources(openLog, "g-r1");
+  assert.equal(mined.length, 1);
+  assert.match(mined[0]!.report, /Required fixes/);
+
+  // Error verdicts behave like disapprovals when still the last verdict.
+  const errLog = [{ goalId: "g-r1", verdict: "error", report: "auditor infra failure", at: "2026-08-06T10:00:00Z" }];
+  assert.equal(curateAuditReviewSources(errLog, "g-r1").length, 1);
+  assert.deepEqual(curateAuditReviewSources(errLog, "g-other"), [], "other goals' entries never mined");
+
+  // Two disapprovals then approval: ALL superseded.
+  const multi = [
+    { goalId: "g-r1", verdict: "disapproved", report: "first", at: "2026-08-06T09:00:00Z" },
+    { goalId: "g-r1", verdict: "disapproved", report: "second", at: "2026-08-06T09:30:00Z" },
+    { goalId: "g-r1", verdict: "approved", report: "<approved/>", at: "2026-08-06T11:00:00Z" },
+  ];
+  assert.deepEqual(curateAuditReviewSources(multi, "g-r1"), [], "all prior disapprovals superseded by the approval");
 });
 
 test("real prose findings still classify after curation", () => {

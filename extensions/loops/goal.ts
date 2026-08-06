@@ -3771,9 +3771,12 @@ function fireReviewer(
     // own completion claims — meta-text with zero finding signal (the
     // 0.26.2/0.26.3 misfires both mined it). Disapprovals/errors carry the
     // independent auditor's required-fixes — the real findings.
-    const auditTexts = readAuditLog(ctx.cwd)
-      .filter((e) => e.goalId === source.goalId && (e.verdict === "disapproved" || e.verdict === "error"))
-      .map((e) => e.report);
+    // v0.34.61: superseded-disapproval curation — a disapproval answered
+    // by a later approval on the same goal must NOT be re-mined (its
+    // required fixes are already shipped; re-mining re-queues them verbatim
+    // — field-observed 2026-08-06: round-1 report sliced into 3 junk /list
+    // items after the round-2 approval, auto-activated by autoResume).
+    const auditTexts = curateAuditReviewSources(readAuditLog(ctx.cwd), source.goalId).map((e) => e.report);
     for (const t of auditTexts) sources.push({ name: "audit", text: t });
     let ledgerEntries: Array<{ type: string; at?: string; value?: any }> = [];
     try {
