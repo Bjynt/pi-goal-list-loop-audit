@@ -659,6 +659,81 @@ export function ledgerPath(cwd: string): string {
   return path.join(piGlaDir(cwd), "active.jsonl");
 }
 
+/**
+ * v0.34.60: disk-first queue sidecar. Each list item gets a sidecar JSON
+ * file in `.pi-glla/goals/<id>.queue.json` BEFORE any in-memory state is
+ * mutated. This makes /list recoverable when the extension handle is stale
+ * (e.g. after a /reload that wiped the plugin's state object before
+ * `readState` was reparsed) — the disk is the source of truth, not RAM.
+ *
+ * The `.queue.json` suffix distinguishes queued-sidecar files from
+ * `renderGoalMarkdown`-formatted active-goal `.md` files in the same dir,
+ * so the scanner can read either format without parsing ambiguity. On
+ * activation the sidecar is removed (`deleteQueueItemFile`) because the
+ * active-goal `.md` takes over; on archive the sidecar was never created
+ * because the item activated before its first read.
+ *
+ * Atomic: temp + rename. Idempotent on retry: writes land at distinct
+ * `.tmp` paths via process.pid+randomBytes, and never trample an existing
+ * sidecar (collision = skip, not overwrite).
+ */
+export function queueItemPath(cwd: string, id: string): string {
+  return path.join(piGlaDir(cwd), "goals", `${id}.queue.json`);
+}
+
+export function writeQueueItemFile(cwd: string, item: ListItem): { path: string; wrote: boolean } {
+  const file = queueItemPath(cwd, item.id);
+  if (fs.existsSync(file)) return { path: file, wrote: false }; // idempotent — never overwrite
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+  } catch { /* ensureDirs on the goals/ path handles this */ }
+  const tempPath = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`;
+  fs.writeFileSync(tempPath, JSON.stringify({ schema: 1, type: "queue-item", ...item }), "utf-8");
+  fs.renameSync(tempPath, file);
+  return { path: file, wrote: true };
+}
+
+export function deleteQueueItemFile(cwd: string, id: string): boolean {
+  const file = queueItemPath(cwd, id);
+  if (!fs.existsSync(file)) return false;
+  try { fs.unlinkSync(file); return true; } catch { return false; }
+}
+
+/**
+ * v0.34.60: read the queue from disk (sidecar files in `.pi-glla/goals/`)
+ * when the in-memory list is missing or empty — the stale-handle fallback
+ * for /list after /reload, plugin re-init, or process restart with a
+ * damaged RAM state.
+ *
+ * Each sidecar file is a small JSON record; parse failures are skipped
+ * (a torn temp-file mid-rename never blocks the read). Files matching a
+ * known-active or known-archived goalId are excluded so activated items
+ * don't reappear in the queue after archive.
+ */
+export function readQueueFromDisk(cwd: string, excludeIds: ReadonlySet<string> = new Set()): ListItem[] {
+  const dir = path.join(piGlaDir(cwd), "goals");
+  let names: string[];
+  try { names = fs.readdirSync(dir); } catch { return []; }
+  const out: ListItem[] = [];
+  for (const name of names) {
+    if (!name.endsWith(".queue.json")) continue;
+    let raw: string;
+    try { raw = fs.readFileSync(path.join(dir, name), "utf-8"); } catch { continue; }
+    let e: any;
+    try { e = JSON.parse(raw); } catch { continue; }
+    if (!e || e.schema !== 1 || e.type !== "queue-item") continue;
+    if (typeof e.id !== "string" || typeof e.objective !== "string") continue;
+    if (excludeIds.has(e.id)) continue;
+    out.push({
+      id: e.id,
+      objective: e.objective,
+      ...(typeof e.verificationContract === "string" && e.verificationContract ? { verificationContract: e.verificationContract } : {}),
+      addedAt: typeof e.addedAt === "string" ? e.addedAt : new Date().toISOString(),
+    });
+  }
+  return out;
+}
+
 // =================================================================
 // Persistence
 // =================================================================

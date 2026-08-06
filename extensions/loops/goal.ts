@@ -97,6 +97,9 @@ import {
   shouldAutoResumeOnSessionStart,
   statusLabel,
   writeGoalMd,
+  writeQueueItemFile,
+  readQueueFromDisk,
+  deleteQueueItemFile,
   missingGllaTools,
   runPersistStep,
   isPersistenceDegraded,
@@ -3597,6 +3600,10 @@ function activateNextListItem(ctx: ExtensionContext, n = 1): boolean {
   if (!taken) return false;
   const [next, rest] = taken;
   state = { ...state, list: rest };
+  // v0.34.60: remove the disk sidecar. The active goal .md takes its
+  // place via setGoal → writeGoalMd; the sidecar would re-show the item
+  // as queued if a stale-handle /list read happened later.
+  deleteQueueItemFile(ctx.cwd, next.id);
   const goal = createGoal(next.objective, ctx, "list");
   if (next.verificationContract) goal.verificationContract = next.verificationContract;
   setGoal(goal, ctx, "list-cascade");
@@ -4249,7 +4256,15 @@ function enqueueItems(ctx: ExtensionContext, texts: string[], source: string, op
     const extracted = extractVerificationContract(text);
     return { id: newGoalId(), objective: extracted.objective, verificationContract: extracted.verificationContract || undefined, addedAt: nowIso() };
   });
+  // v0.34.60: disk-first write order. Each item lands on disk BEFORE any
+  // in-memory state mutation, so /list survives a stale extension handle
+  // (e.g. /reload, plugin re-init, RAM-only state loss). The
+  // .queue.json sidecar is atomic (temp + rename) and idempotent (skips
+  // existing files rather than overwriting).
+  const written = items.map((item) => writeQueueItemFile(ctx.cwd, item));
   state = { ...state, list: [...listQueue(), ...items] };
+  const diskFirst = written.filter((w) => w.wrote).length === items.length;
+  appendLedger(ctx.cwd, "list_queue_disk_first", { source, count: items.length, diskFirst });
   persistState(ctx);
   appendLedger(ctx.cwd, "list_imported", { source, count: items.length });
   if (!state.goal || state.goal.status === "complete" || state.goal.status === "aborted") {
@@ -4417,7 +4432,23 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
   }
 
   if (!sub || sub === "show") {
-    const queue = listQueue();
+    const memQueue = listQueue();
+    // v0.34.60: stale-handle fallback. If in-memory is empty but disk has
+    // queue sidecar files (a fresh pi session that hasn't yet reparsed
+    // active.jsonl, or a torn jsonl write), recover from
+    // .pi-glla/goals/*.queue.json instead of falsely reporting "list is
+    // empty". Exclude any goalId that's already active or archived so we
+    // don't re-show active/finished work as queued.
+    let queue = memQueue;
+    if (queue.length === 0) {
+      const exclude = new Set<string>();
+      if (state.goal?.id) exclude.add(state.goal.id);
+      const diskQueue = readQueueFromDisk(ctx.cwd, exclude);
+      if (diskQueue.length > 0) {
+        appendLedger(ctx.cwd, "list_recovered_from_disk", { count: diskQueue.length });
+        queue = diskQueue;
+      }
+    }
     const lines: string[] = [];
     if (state.goal) {
       const terminal = state.goal.status === "complete" || state.goal.status === "aborted";
