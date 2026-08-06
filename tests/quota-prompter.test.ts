@@ -24,8 +24,12 @@ import {
   __testOnlyResetStaleFlag,
   __testOnlyResetTerminalFlags,
   __testOnlySetQuotaPromptNow,
+  __testOnlyLoadState,
 } from "../extensions/loops/goal.js";
-import { MAIN_SM, makeMockCtx, MockPi, seedGoal, seedState, tmpCwd } from "./harness/mock-pi.js";
+import activate from "../extensions/loops/goal.js";
+import { makeMockCtx, MockPi, seedGoal, seedState, tmpCwd } from "./harness/mock-pi.js";
+
+const MAIN_SM = { name: "main-session-manager" };
 
 const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
 
@@ -104,7 +108,9 @@ test("v0.34.58: nextHourlyPromptMs is the next :00:00.000 strictly after now", (
 test("v0.34.58: a quota-wall agent_end parks the goal and schedules exactly one sendUserMessage at the next :00 with the original turn context", async () => {
   const cwd = tmpCwd();
   seedState(cwd, { goal: seedGoal() });
+  __testOnlyLoadState(cwd);
   const pi = new MockPi();
+  activate(pi.api);
   await pi.fire("agent_end", quotaWallAgentEnd(), ownerCtx(cwd));
 
   // The goal parked into durable recovery (this is the recovery's own pause).
@@ -135,7 +141,9 @@ test("v0.34.58: a quota-wall agent_end parks the goal and schedules exactly one 
 test("v0.34.58: repeated quota-wall events while one prompt is pending still schedule exactly one", async () => {
   const cwd = tmpCwd();
   seedState(cwd, { goal: seedGoal() });
+  __testOnlyLoadState(cwd);
   const pi = new MockPi();
+  activate(pi.api);
   await pi.fire("agent_end", quotaWallAgentEnd(), ownerCtx(cwd));
   await pi.fire("agent_end", quotaWallAgentEnd(), ownerCtx(cwd)); // recovery already active — must not double-schedule
 
@@ -150,7 +158,9 @@ test("v0.34.58: gated on autoResume: true — with autoResume false the quota wa
   writeSettings({ autoResume: false });
   const cwd = tmpCwd();
   seedState(cwd, { goal: seedGoal() });
+  __testOnlyLoadState(cwd);
   const pi = new MockPi();
+  activate(pi.api);
   await pi.fire("agent_end", quotaWallAgentEnd(), ownerCtx(cwd));
 
   // The recovery park still happens (recovery is not the prompter)…
@@ -167,7 +177,9 @@ test("v0.34.58: gated on autoResume: true — with autoResume false the quota wa
 test("v0.34.58: if recovery succeeds before :00 the pending prompt is cancelled — no late message", async () => {
   const cwd = tmpCwd();
   seedState(cwd, { goal: seedGoal() });
+  __testOnlyLoadState(cwd);
   const pi = new MockPi();
+  activate(pi.api);
   await pi.fire("agent_end", quotaWallAgentEnd(), ownerCtx(cwd));
   assert.ok(__testOnlyQuotaPromptState().scheduledFireAt, "prompt scheduled while walled");
 
