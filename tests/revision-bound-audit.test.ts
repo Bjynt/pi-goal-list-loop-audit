@@ -248,6 +248,9 @@ test("v0.34.61: a settled audit never invalidates its own verdict — a second c
     const ledger = readLedger(cwd);
     assert.equal(ledger.filter((l) => l.type === "complete_goal_revision_rejected").length, 0, "no false rejection");
     assert.equal(ledger.filter((l) => l.type === "audit_started").length, 2, "both claims dispatched audits");
+    // Drain call-2's settle so no in-flight audit bleeds into the next test
+    // (the /goal verify route no-ops while completionAuditInFlight is set).
+    await waitUntil(() => readState(cwd).goal?.status === "active" && !readState(cwd).goal?.pendingCompletion);
   } finally {
     delete process.env.GLLA_PI_BINARY;
   }
