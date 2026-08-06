@@ -17,6 +17,7 @@ import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { readState } from "../extensions/goal-loop-core.js";
 import activate, {
   __testOnlyLoadState,
@@ -33,6 +34,12 @@ const MAIN_SM = { name: "main-session-manager" };
 
 function ownerCtx(cwd: string) {
   return makeMockCtx(cwd, { sessionManager: MAIN_SM });
+}
+
+/** rememberCtx is typed against the production ExtensionContext; the
+ * harness MockCtx is structurally close but not assignable. */
+function rememberCtxFor(cwd: string): void {
+  __testOnlyRememberCtx(ownerCtx(cwd) as unknown as ExtensionContext);
 }
 
 /** All ledger entries for a cwd, in order. */
@@ -128,7 +135,7 @@ test("v0.34.60: complete_goal with newObjective bumps the revision and audits th
     const pi = new MockPi();
     activate(pi.api);
     __testOnlyRegisterAgentTools(pi.api);
-    __testOnlyRememberCtx(ownerCtx(cwd));
+    rememberCtxFor(cwd);
     const res = await pi.runTool(
       "complete_goal",
       { completionSummary: "Claim", verificationSummary: "Evidence", newObjective: "shifted objective — different work now" },
@@ -152,7 +159,7 @@ test("v0.34.60: complete_goal REJECTS when the contract revision moved past the 
   const pi = new MockPi();
   activate(pi.api);
   __testOnlyRegisterAgentTools(pi.api);
-  __testOnlyRememberCtx(ownerCtx(cwd));
+  rememberCtxFor(cwd);
   const res = await pi.runTool("complete_goal", { completionSummary: "Claim", verificationSummary: "Evidence" }, ownerCtx(cwd));
 
   assert.match(res.content[0]!.text, /REJECTED/i, "the tool refuses the claim");
@@ -175,7 +182,7 @@ test("v0.34.60: complete_goal passes when the last audit matches the current rev
     const pi = new MockPi();
     activate(pi.api);
     __testOnlyRegisterAgentTools(pi.api);
-    __testOnlyRememberCtx(ownerCtx(cwd));
+    rememberCtxFor(cwd);
     const res = await pi.runTool("complete_goal", { completionSummary: "Claim", verificationSummary: "Evidence" }, ownerCtx(cwd));
     assert.match(res.content[0]!.text, /auditor queued|detached/i, "the claim proceeds");
     assert.equal(readLedger(cwd).filter((l) => l.type === "audit_started").length, 1);
@@ -195,7 +202,7 @@ test("v0.34.60: legacy audit entries without a revision never trip the gate", as
     const pi = new MockPi();
     activate(pi.api);
     __testOnlyRegisterAgentTools(pi.api);
-    __testOnlyRememberCtx(ownerCtx(cwd));
+    rememberCtxFor(cwd);
     const res = await pi.runTool("complete_goal", { completionSummary: "Claim", verificationSummary: "Evidence" }, ownerCtx(cwd));
     assert.match(res.content[0]!.text, /auditor queued|detached/i, "legacy entries do not block the claim");
     assert.equal(readLedger(cwd).filter((l) => l.type === "complete_goal_revision_rejected").length, 0);
@@ -214,7 +221,7 @@ test("v0.34.60: the gate skips when the call itself carries newObjective (its au
     const pi = new MockPi();
     activate(pi.api);
     __testOnlyRegisterAgentTools(pi.api);
-    __testOnlyRememberCtx(ownerCtx(cwd));
+    rememberCtxFor(cwd);
     const res = await pi.runTool(
       "complete_goal",
       { completionSummary: "Claim", verificationSummary: "Evidence", newObjective: "different contract now" },
