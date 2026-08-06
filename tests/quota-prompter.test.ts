@@ -121,8 +121,10 @@ test("v0.34.58: a quota-wall agent_end parks the goal and schedules exactly one 
   // Exactly ONE prompt scheduled at the next :00 — nothing sent yet.
   const sched = __testOnlyQuotaPromptState();
   assert.equal(sched.scheduledFireAt, nextHourlyPromptMs(Date.UTC(2026, 7, 6, 18, 44, 30)), "fires at the next :00, not now");
-  assert.ok(sched.context.includes("seeded test objective"), "the original turn context is captured");
-  assert.ok(sched.context.includes("429 rate limit"), "the quota failure detail is captured");
+  assert.ok(sched.context, "the original turn context is captured");
+  const context = sched.context;
+  assert.ok(context.includes("seeded test objective"));
+  assert.ok(context.includes("429 rate limit"), "the quota failure detail is captured");
   assert.equal(pi.userMessages.length, 0, "no premature message — only scheduled");
   const ledger = readLedger(cwd);
   assert.equal(ledger.filter((l) => l.type === "quota_prompt_scheduled").length, 1);
@@ -131,8 +133,10 @@ test("v0.34.58: a quota-wall agent_end parks the goal and schedules exactly one 
   // Fire at :00 → exactly ONE sendUserMessage with the original turn context.
   __testOnlyFireQuotaPrompt();
   assert.equal(pi.userMessages.length, 1);
-  assert.ok(pi.userMessages[0].message.includes("seeded test objective"), "message carries the original turn context");
-  assert.ok(pi.userMessages[0].message.includes("/goal resume"), "message tells the user how to resume");
+  const [msg] = pi.userMessages;
+  assert.ok(msg);
+  assert.ok(msg.message.includes("seeded test objective"), "message carries the original turn context");
+  assert.ok(msg.message.includes("/goal resume"), "message tells the user how to resume");
   assert.equal(readState(cwd).goal?.status, "paused", "no self-resume — the parked goal stays parked after the prompt");
   assert.equal(__testOnlyQuotaPromptState().scheduledFireAt, null, "the schedule is consumed by the single fire");
   assert.equal(readLedger(cwd).filter((l) => l.type === "quota_prompt_sent").length, 1);
