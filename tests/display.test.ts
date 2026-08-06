@@ -834,6 +834,42 @@ test("MAIN activity is never represented as detached — the detached marker bel
   assert.ok(hostIndex >= 0 && badgeIndex > hostIndex, "the host names MAIN first; the detached auditor badge follows");
 });
 
+test("v0.34.57: MAIN host label is pinned to SUPERVISING by the MAIN_HOST_LABEL constant guard", () => {
+  // OPEN-ISSUES bug #1.8 (tasklist item #2): the MAIN host must ALWAYS render
+  // as SUPERVISING, never DETACHED. The constant MAIN_HOST_LABEL is the
+  // one-line guard. This test pins the invariant across every host-bearing
+  // state so a future refactor cannot accidentally regress it.
+  assert.equal(MAIN_HOST_LABEL, "MAIN HOST · SUPERVISING", "the guard constant is the single source of truth for the MAIN host label");
+
+  // 1. Auditing state: the host projection is "MAIN HOST · SUPERVISING".
+  const auditing = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-guard" } });
+  const auditingState = { goal: auditing, list: [], loop: null };
+  const auditingStatus = buildStatusText(auditingState as never)!;
+  assert.match(auditingStatus, /MAIN HOST · SUPERVISING/);
+  const auditingWidget = buildWidgetLines(auditingState as never)!;
+  assert.ok(auditingWidget.some((l) => l.includes("MAIN HOST · SUPERVISING")), "widget uses the guard label");
+
+  // 2. No-verdict state: the host label is still SUPERVISING (the AUDITOR is
+  // blocked, but the MAIN host is still supervising).
+  const noVerdict = goalOf({
+    status: "paused",
+    pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "recovery-pending", attemptId: "audit-noverdict" },
+    pauseKind: "blocked",
+    pauseReason: "auditor blocked — no verdict",
+  });
+  const noVerdictState = { goal: noVerdict, list: [], loop: null };
+  const noVerdictStatus = buildStatusText(noVerdictState as never)!;
+  assert.match(noVerdictStatus, /MAIN HOST · SUPERVISING · auditor blocked — no verdict/);
+  assert.doesNotMatch(noVerdictStatus, /MAIN HOST · auditor blocked/, "the host label must come from the constant guard, not a literal string");
+
+  // 3. Invariant: wherever "MAIN HOST" appears in any host-bearing rendering,
+  // it is followed by " · SUPERVISING" — never " · DETACHED".
+  for (const text of [auditingStatus, noVerdictStatus]) {
+    assert.match(text, /MAIN HOST · SUPERVISING/, `MAIN HOST must render as SUPERVISING: ${text}`);
+    assert.doesNotMatch(text, /MAIN HOST · DETACHED/, `MAIN HOST must never render as DETACHED: ${text}`);
+  }
+});
+
 test("active auditor verdicts never masquerade as infrastructure no-verdict", () => {
   const shield = goalOf({
     status: "active",
