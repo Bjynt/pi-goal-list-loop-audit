@@ -4436,7 +4436,7 @@ async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "lis
   // omitted clause → no verificationContract key in the patch: preserved.
   // v0.34.61: contract-scoped revision bump — one of exactly two sites
   // (the other: complete_goal newObjective). persistState no longer bumps.
-  state.goal = bumpGoalRevision(state.goal);
+  state.goal = bumpGoalRevision(current);
   updateGoal(patch, ctx);
   appendLedger(ctx.cwd, "goal_tweaked", {
     goalId: current.id,
