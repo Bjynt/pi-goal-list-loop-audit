@@ -172,7 +172,7 @@ test("v0.28.33: /glla wipe — renamed from reset (too close to /glla resume); r
   // honest close-out: goal archived (not dropped), list + loop ledgered:
   assert.match(SRC, /appendLedger\(ctx\.cwd, "glla_wipe", \{ goalId: live/);
   assert.match(SRC, /archiveCurrentGoal\(ctx, "aborted", "user wipe \(\/glla wipe\)"\);/);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "list_cleared", \{ via: "glla_wipe" \}\);/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "list_cleared", \{ via: "glla_wipe"(, count: n)? \}\);/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "loop_stopped", \{ reason: "user wipe \(\/glla wipe\)"/);
   assert.match(SRC, /state\.loop = undefined;/);
   // already-clean short-circuit:
