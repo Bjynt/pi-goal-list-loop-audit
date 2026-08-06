@@ -383,7 +383,14 @@ function auditorActivityAge(audit: AuditDisplayProgress | null | undefined, now:
 
 function auditorLastActivity(audit: AuditDisplayProgress | null | undefined, now: number): string {
   if (!audit?.lastActivityAt || !Number.isFinite(audit.lastActivityAt)) return "";
-  return ` · worker activity ${fmtElapsed(Math.max(0, now - audit.lastActivityAt))} ago`;
+  // v0.34.57 (H-code fix — DETACHED-WORKER-HUD-RECONCILIATION-2026-08-05):
+  // a future timestamp (worker clock ahead / skew) is NOT a fresh heartbeat.
+  // Returning "" suppresses the misleading "0s ago" suffix the old
+  // `Math.max(0, ...)` clamp produced. The companion gate in
+  // `auditorHasLiveEvidence` also rejects future timestamps so the LIVE
+  // badge does not render.
+  if (audit.lastActivityAt > now) return "";
+  return ` · worker activity ${fmtElapsed(now - audit.lastActivityAt)} ago`;
 }
 
 /** Project the detached worker's raw progress into the five user-facing
@@ -435,6 +442,12 @@ function auditorPhaseForDisplay(audit: AuditDisplayProgress | null | undefined, 
 
 function auditorHasLiveEvidence(audit: AuditDisplayProgress | null | undefined, phase: AuditorDisplayPhase, now: number): boolean {
   if (phase !== "running" || audit?.lastActivityAt === undefined || !Number.isFinite(audit.lastActivityAt)) return false;
+  // v0.34.57 (H-code fix): reject future timestamps. A lastActivityAt in the
+  // future is clock-skew or a stuck worker, NOT a fresh heartbeat. The old
+  // comparison `now - lastActivityAt <= LIVE_ACTIVITY_MS` treated any
+  // non-positive age as live, so a future timestamp rendered LIVE + "0s ago"
+  // forever.
+  if (audit.lastActivityAt > now) return false;
   return now - audit.lastActivityAt <= LIVE_ACTIVITY_MS;
 }
 
