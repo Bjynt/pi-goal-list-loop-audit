@@ -180,7 +180,7 @@ export function buildSettingsRows(
       label: "Forbidden models",
       valueText: settings.forbiddenModels?.length ? settings.forbiddenModels.join(", ") : "none",
       sourceText: src("forbiddenModels"),
-      description: "policy gate (v0.34.57): a switch to any of these is ledgered as forbidden_model_switch — blocked (reverted) when Block forbidden switches is on"
+      description: "policy gate: a switch to any of these is ledgered as forbidden_model_switch — blocked (reverted) when Block forbidden switches is on"
     },
     {
       id: "blockForbiddenModelSwitches",
