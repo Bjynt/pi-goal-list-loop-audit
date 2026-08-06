@@ -54,7 +54,7 @@ test("brace-led and quote-led lines are code-ish, never findings", () => {
 });
 
 test("fireReviewer only mines disapproved/error audit reports, never approved ones", () => {
-  assert.match(SRC_GOAL, /e\.verdict === "disapproved" \|\| e\.verdict === "error"/);
+  assert.match(SRC_GOAL, /curateAuditReviewSources\(readAuditLog\(ctx\.cwd\), source\.goalId\)\.map\(/);
   assert.match(SRC_GOAL, /APPROVED audit report is the executor's\n    \/\/ own completion claims/);
 });
 

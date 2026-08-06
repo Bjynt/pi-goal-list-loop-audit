@@ -164,6 +164,7 @@ import {
   type Settings,
 } from "../goal-settings.js";
 import {
+  curateAuditReviewSources,
   DEFAULT_REVIEWER_CONFIG,
   normalizeObjective,
   resolveReviewerConfig,
