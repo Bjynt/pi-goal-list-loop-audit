@@ -12,6 +12,7 @@ import * as path from "node:path";
 
 import {
   DEFAULT_AUDIT_FEEDBACK_CHARS,
+  DEFAULT_FORBIDDEN_MODELS,
   DEFAULT_QUOTA_RETRY_MINUTES,
   mergeSettings,
   piGlaDir,
@@ -19,6 +20,17 @@ import {
 import type { SubagentModelStrategy } from "./goal-loop-subagents.js";
 
 export interface Settings {
+  /** v0.34.57: model refs/ids that must never be selected — the policy
+   * guard (bug #1.14). Default forbids gpt-5.5 / sonnet / opus; matched
+   * case-insensitively as a substring against the "provider/id" ref.
+   * Every switch to a forbidden model is ledgered as
+   * `forbidden_model_switch`; with blockForbiddenModelSwitches on the
+   * selection is reverted. */
+  forbiddenModels?: string[];
+  /** v0.34.57: when a forbidden model is selected, revert to the previous
+   * model (block the call). Default ON. Off = the switch stands but the
+   * `forbidden_model_switch` ledger entry records the violation. */
+  blockForbiddenModelSwitches?: boolean;
   /** Ordered provider/model refs to use when the MAIN session model hits a provider wall. */
   mainModelFallbacks?: string[];
   /** Minutes before the main-session recovery probe; the cadence caps at 5h and the automatic window at 24h. */
@@ -132,6 +144,10 @@ export const DEFAULT_SETTINGS: Settings = {
   // session model behavior, while the recovery cadence still protects an
   // active supervised goal from a temporary quota wall.
   mainModelFallbacks: [],
+  // v0.34.57: the policy gate defaults ON — gpt-5.5/sonnet/opus must never
+  // be selected unattended (expense policy).
+  forbiddenModels: [...DEFAULT_FORBIDDEN_MODELS],
+  blockForbiddenModelSwitches: true,
   mainModelRetryMinutes: 15,
   // Unset = "high" at the call site (v0.31.2). The auditor is the
   // verification gate: its depth must NOT ride the session's coding-speed
@@ -200,6 +216,8 @@ export function loadGlobalSettings(): Settings {
 export const SETTINGS_KEYS: Array<keyof Settings> = [
   "mainModelFallbacks",
   "mainModelRetryMinutes",
+  "forbiddenModels",
+  "blockForbiddenModelSwitches",
   "auditorModel",
   "auditorModelFallback",
   "auditorSameSessionSwap",

@@ -592,6 +592,10 @@ export interface State {
   loop?: import("./goal-loop-forever.js").LoopState;
   /** Main-session provider recovery; independent of detached auditor quota state. */
   mainModelRecovery?: MainModelRecovery;
+  /** v0.34.57: last provider/model ref the main session was observed on.
+   * Persisted so the turn-boundary check can detect drift across sessions
+   * (a fresh pi launch with a changed default model fires no model_select). */
+  lastModelRef?: string;
 }
 
 /** v0.24.2: count TRAILING consecutive disapprovals (the disapproval-cap
@@ -813,6 +817,7 @@ export function readState(cwd: string): State {
     list: Array.isArray(parsed.list) ? parsed.list : [],
     loop: parsed.loop && typeof parsed.loop === "object" ? parsed.loop as State["loop"] : undefined,
     mainModelRecovery: parsed.mainModelRecovery && typeof parsed.mainModelRecovery === "object" ? parsed.mainModelRecovery as State["mainModelRecovery"] : undefined,
+    lastModelRef: typeof parsed.lastModelRef === "string" ? parsed.lastModelRef : undefined,
   };
 }
 
@@ -824,6 +829,49 @@ export function appendLedger(cwd: string, type: string, value: unknown): void {
     const line = JSON.stringify({ type, value, at: new Date().toISOString() });
     fs.appendFileSync(ledgerPath(cwd), line + "\n");
   });
+}
+
+// =================================================================
+// Model-switch ledger (v0.34.57 — bug #1.14, unauthorized model switches)
+// =================================================================
+
+/** The canonical `model_switch` ledger payload (v0.34.57).
+ * `from`/`to` are canonical "provider/id" refs; unknown sides are omitted.
+ * `reason`: one of "manual" | "cycle" | "restore" | "turn-boundary" |
+ * "recovery" — how the change reached the session. */
+export interface ModelSwitchRecord {
+  from?: string;
+  to?: string;
+  reason: string;
+  /** ISO timestamp. */
+  at: string;
+}
+
+/** Build the canonical `model_switch` ledger payload (v0.34.57). Pure —
+ * the turn-boundary hook (extensions/loops/goal.ts) writes the entry via
+ * appendLedger after applying the forbidden-model gate. */
+export function modelSwitch(from: string | undefined, to: string | undefined, reason: string, at: number = Date.now()): ModelSwitchRecord {
+  return {
+    ...(from ? { from } : {}),
+    ...(to ? { to } : {}),
+    reason,
+    at: new Date(at).toISOString(),
+  };
+}
+
+/** v0.34.57: model refs/ids that must never be selected — the policy guard.
+ * Default forbids gpt-5.5 (expense), sonnet and opus (the user's explicit
+ * forbidden families). Matched case-insensitively as a substring against
+ * the full "provider/id" ref, so "gpt-5.5" covers "openai/gpt-5.5" and
+ * "sonnet" covers "anthropic/claude-sonnet-4-5". */
+export const DEFAULT_FORBIDDEN_MODELS = ["gpt-5.5", "sonnet", "opus"];
+
+/** v0.34.57: forbidden-model matcher. Empty/unknown refs are never
+ * forbidden; an empty forbidden list forbids nothing. */
+export function isForbiddenModel(ref: string | undefined, forbiddenModels: readonly string[] = DEFAULT_FORBIDDEN_MODELS): boolean {
+  if (!ref) return false;
+  const needle = ref.toLowerCase();
+  return forbiddenModels.some((f) => typeof f === "string" && f.trim() !== "" && needle.includes(f.trim().toLowerCase()));
 }
 
 export function writeGoalMd(cwd: string, goal: Goal): string {
