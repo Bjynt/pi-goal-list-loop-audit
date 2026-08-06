@@ -381,6 +381,17 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   staleTerminalDone = true;
   extensionApiStale = true;
   appendLedger(ctx.cwd, "extension_api_stale", { where, kind: isLoopActive() ? "loop" : "goal" });
+  // v0.34.57 (OPEN-ISSUES bug #1.1/#1.3 / tasklist item #2): also write a
+  // structured `session_handle_invalidated` event with a `reason` enum so the
+  // recovery path can pick the right strategy. The current stale-handle
+  // detection cannot infer the cause from a generic stale error, so the
+  // default reason is "unknown". Future callers MAY pass a more specific
+  // reason when known (oom | manual-kill | provider-disconnect | unknown).
+  appendLedger(ctx.cwd, "session_handle_invalidated", {
+    where,
+    kind: isLoopActive() ? "loop" : "goal",
+    reason: "unknown",
+  });
   const guidance = "pi invalidated this session's extension handle without delivering a replacement session. glla stopped stale sends and kept the work safe in .pi-glla/. A fresh session_start will resume it; if pi does not create one, restart pi normally and glla will restore the saved work.";
   // v0.35.x: an orphaned detached completion audit is not allowed to leave
   // the durable goal in AUDITING. Release the MAIN-side wait immediately and

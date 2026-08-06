@@ -16,6 +16,15 @@ import type { Goal, State } from "./goal-loop-core.js";
 import { compactDisplayText, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
 import { HELD_ON_RESTORE, type LoopState } from "./goal-loop-forever.js";
 
+/** v0.34.57 (OPEN-ISSUES bug #1.8 / tasklist item #2): the MAIN host is
+ * NEVER detached — it is always SUPERVISING, regardless of any handle state.
+ * The DETACHED label belongs exclusively to the AUDITOR worker (which runs
+ * in a separate process). This constant is the one-line guard: every MAIN
+ * host render in this module MUST use this label. See
+ * DETACHED-WORKER-HUD-RECONCILIATION-2026-08-05.md §3 ("Current MAIN is not
+ * detached"). */
+export const MAIN_HOST_LABEL = "MAIN HOST · SUPERVISING";
+
 /** v0.28.17: a loop parked by the session-restore gate (was active when the
  * last session ended). Held loops must stay VISIBLE — before, only
  * state.loop?.active rendered anything and a reload made the loop vanish
@@ -531,7 +540,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     return undefined;
   }
   if (g.status === "auditing") {
-    const host = paint(theme, "accent", "MAIN HOST · SUPERVISING");
+    const host = paint(theme, "accent", MAIN_HOST_LABEL);
     if (auditRecoveryPending(g)) {
       return `glla: ${host} · ${paint(theme, "warning", "audit recovery pending")}${heldSuffix}`;
     }
@@ -553,7 +562,10 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     // chip already names the type ("list item"), so "glla: list ⏸ …" doubled
     // it. Status line = state/actionability only.
     if (isCompletionAuditNoVerdict(g)) {
-      return `glla: ${paint(theme, "warning", "MAIN HOST · auditor blocked — no verdict")}${heldSuffix}`;
+      // v0.34.57: MAIN host label uses the constant guard so it stays
+      // SUPERVISING even when the AUDITOR is blocked. The MAIN host is not
+      // detached — only the auditor is blocked.
+      return `glla: ${paint(theme, "accent", MAIN_HOST_LABEL)} · ${paint(theme, "warning", "auditor blocked — no verdict")}${heldSuffix}`;
     }
     const kind = pauseKind(g);
     if (kind === "decision") return `glla: ${paint(theme, "accent", "⏸ decision needed")}${heldSuffix}`;
@@ -813,7 +825,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // goal and its durable recent action, avoiding the duplicated live badge
   // that made the above-editor panel look noisy.
   if (g.status === "auditing") {
-    const host = paint(theme, "accent", "MAIN HOST · SUPERVISING");
+    const host = paint(theme, "accent", MAIN_HOST_LABEL);
     if (auditRecoveryPending(g)) {
       lines.push(`├─ ${host} · auditor: ${paint(theme, "warning", "recovery pending — previous audit was interrupted")}`);
       lines.push(`└─ ${paint(theme, "dim", "stored completion claim is safe; a fresh session will retry it")}`);

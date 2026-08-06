@@ -14,6 +14,7 @@ import {
   fmtElapsed,
   fmtTokens,
   truncate,
+  MAIN_HOST_LABEL,
 } from "../extensions/goal-loop-display.ts";
 import type { Goal, State } from "../extensions/goal-loop-core.ts";
 import type { LoopState } from "../extensions/goal-loop-forever.ts";
@@ -804,7 +805,9 @@ test("released auditor no-verdict state names the attached MAIN host", () => {
   assert.ok(widget.some((line) => line.includes("MAIN host remains attached")), widget.join("\\n"));
   assert.ok(widget.some((line) => line.includes("/goal resume")), widget.join("\\n"));
   const status = buildStatusText(state as never)!;
-  assert.match(status, /MAIN HOST · auditor blocked — no verdict/);
+  // v0.34.57: MAIN host label uses the constant guard so it stays SUPERVISING
+  // even when the AUDITOR is blocked. The MAIN host is not detached.
+  assert.match(status, /MAIN HOST · SUPERVISING · auditor blocked — no verdict/);
   assert.doesNotMatch(status, /DETACHED · LIVE/);
 });
 
