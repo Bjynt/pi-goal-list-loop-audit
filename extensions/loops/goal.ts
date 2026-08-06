@@ -4516,9 +4516,15 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
   }
 
   if (sub === "clear") {
+    // v0.34.61: delete the sidecars of every removed item BEFORE clearing
+    // state. The /list disk-recovery fallback scans .pi-glla/goals/*.queue.json
+    // when memQueue is empty; without this, a /list clear followed by a
+    // stale-handle reload would resurrect the cleared items.
+    const dropped = listQueue();
+    for (const item of dropped) deleteQueueItemFile(ctx.cwd, item.id);
     state = { ...state, list: [] };
     persistState(ctx);
-    appendLedger(ctx.cwd, "list_cleared", {});
+    appendLedger(ctx.cwd, "list_cleared", { count: dropped.length });
     ctx.ui.notify(`List cleared. Active goal (if any) is untouched — ${activeGoalSurfaceCommand("cancel")} for that, /list cancel to stop the whole list.`, "info");
     return;
   }
@@ -4534,6 +4540,10 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
       return;
     }
     const dropped = waiting;
+    // v0.34.61: delete sidecars for every dropped item before clearing
+    // state — see /list clear above for the same reason. cancel drops the
+    // whole waiting list, so every sidecar must go.
+    for (const item of listQueue()) deleteQueueItemFile(ctx.cwd, item.id);
     state = { ...state, list: [] };
     persistState(ctx);
     if (activeIsListItem) {
@@ -4579,6 +4589,11 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
       return;
     }
     const removed = queue[n - 1]!;
+    // v0.34.61: delete the sidecar so the /list disk-recovery fallback
+    // cannot resurrect the removed item. Without this, the new fallback
+    // (cmdList → readQueueFromDisk) would show the removed item after
+    // a stale-handle /list, contradicting the user's explicit remove.
+    deleteQueueItemFile(ctx.cwd, removed.id);
     state = { ...state, list: queue.filter((_, i) => i !== n - 1) };
     persistState(ctx);
     appendLedger(ctx.cwd, "list_removed", { id: removed.id, objective: removed.objective });
@@ -4635,6 +4650,10 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
 function addSingleItem(ctx: ExtensionContext, raw: string): void {
   const { objective, verificationContract } = extractVerificationContract(raw);
   const item = { id: newGoalId(), objective, verificationContract: verificationContract || undefined, addedAt: nowIso() };
+  // v0.34.61: disk-first — write the sidecar BEFORE mutating state so the
+  // item survives an orchestrator-turn death between state mutation and
+  // persistState (the original bug for /list add "<direct text>").
+  writeQueueItemFile(ctx.cwd, item);
   state = { ...state, list: [...listQueue(), item] };
   persistState(ctx);
   appendLedger(ctx.cwd, "list_added", { id: item.id, objective: item.objective });
@@ -6447,6 +6466,11 @@ function registerAgentTools(pi: any): void {
       if (confirmedTarget === "list") {
         const extracted = extractVerificationContract(full);
         const item = { id: newGoalId(), objective: extracted.objective, verificationContract: extracted.verificationContract || undefined, addedAt: nowIso() };
+        // v0.34.61: disk-first — same invariant as addSingleItem. The list
+        // draft path was the second-missed place: previously the in-memory
+        // state mutated without a sidecar, so a torn-rename or post-mutation
+        // crash could drop the drafted item.
+        writeQueueItemFile(liveCtx.cwd, item);
         state = { ...state, list: [...listQueue(), item] };
         persistState(liveCtx);
         appendLedger(liveCtx.cwd, "list_added", { id: item.id, objective: item.objective, drafted: true });
@@ -7676,8 +7700,13 @@ async function cmdGllaWipe(ctx: ExtensionContext): Promise<void> {
     state = { ...state, goal: null };
   }
   if (n > 0) {
+    // v0.34.61: delete sidecars of every cleared item before the state
+    // mutation. /glla wipe is the nuclear option — leaving disk sidecars
+    // behind would let a later /list disk-fallback surface them again,
+    // undoing the wipe.
+    for (const item of listQueue()) deleteQueueItemFile(ctx.cwd, item.id);
     state = { ...state, list: [] };
-    appendLedger(ctx.cwd, "list_cleared", { via: "glla_wipe" });
+    appendLedger(ctx.cwd, "list_cleared", { via: "glla_wipe", count: n });
   }
   if (loop) {
     clearLoopTimer();

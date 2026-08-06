@@ -160,3 +160,60 @@ test("queueItemPath: stable relative shape", () => {
   const p = queueItemPath("/tmp/foo", "20260806080000-aaaa12");
   assert.equal(p, path.join("/tmp/foo", ".pi-glla", "goals", "20260806080000-aaaa12.queue.json"));
 });
+
+test("v0.34.61: addSingleItem is disk-first (sidecar before state mutation)", () => {
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // The /list add "<direct text>" path (auditor-fixed gap #1): the sidecar
+  // must be written BEFORE `state = { ...state, list: ... }` so an
+  // orchestrator-turn death between the state mutation and persistState
+  // cannot lose the item. readQueueFromDisk must find it after a reload.
+  const fn = SRC.slice(SRC.indexOf("function addSingleItem"), SRC.indexOf("function addSingleItem") + 1200);
+  const writePos = fn.indexOf("writeQueueItemFile(ctx.cwd, item)");
+  const statePos = fn.indexOf("state = { ...state, list: [...listQueue(), item] }");
+  assert.ok(writePos !== -1, "addSingleItem calls writeQueueItemFile");
+  assert.ok(statePos !== -1, "addSingleItem mutates state");
+  assert.ok(writePos < statePos, "sidecar write comes BEFORE the in-memory commit");
+});
+
+test("v0.34.61: list-draft path is disk-first (sidecar before state mutation)", () => {
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // Auditor-fixed gap #2: the /list add (no args) drafting interview that
+  // confirms to the queue. Same invariant: writeQueueItemFile first.
+  const anchor = "List drafting: the confirmed contract goes into the QUEUE, not active.";
+  const seg = SRC.slice(SRC.indexOf(anchor), SRC.indexOf(anchor) + 900);
+  const writePos = seg.indexOf("writeQueueItemFile(liveCtx.cwd, item)");
+  const statePos = seg.indexOf("state = { ...state, list: [...listQueue(), item] }");
+  assert.ok(writePos !== -1, "list-draft path calls writeQueueItemFile");
+  assert.ok(statePos !== -1, "list-draft path mutates state");
+  assert.ok(writePos < statePos, "sidecar write comes BEFORE the in-memory commit");
+});
+
+test("v0.34.61: remove/clear/cancel/glla_wipe delete sidecars", () => {
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // Auditor-fixed gap #3: every removal path must call deleteQueueItemFile so
+  // the /list disk-recovery fallback cannot resurrect explicitly-removed items.
+  assert.match(SRC, /deleteQueueItemFile\(ctx\.cwd, removed\.id\);\n\s*state = \{ \.\.\.state, list: queue\.filter/); // /list remove
+  assert.match(SRC, /for \(const item of dropped\) deleteQueueItemFile\(ctx\.cwd, item\.id\);/); // /list clear
+  assert.match(SRC, /for \(const item of listQueue\(\)\) deleteQueueItemFile\(ctx\.cwd, item\.id\);/); // /list cancel + glla_wipe
+});
+
+test("v0.34.61: crash-simulation — sidecar survives state death and reload finds it", () => {
+  // Runtime proof of the auditor's suggested scenario: write sidecar →
+  // (simulated orchestrator death) → reload from disk → item present.
+  const cwd = mkTmp();
+  const item = mkItem("20260806080000-aaaa13");
+  // Phase 1: the disk-first write (what addSingleItem / list-draft do).
+  const { wrote } = writeQueueItemFile(cwd, item);
+  assert.equal(wrote, true);
+  // Phase 2: the in-memory commit happened but persistState never ran —
+  // the orchestrator turn died. Disk must still know the item.
+  // (No state write here — that IS the crash.)
+  const recovered = readQueueFromDisk(cwd);
+  assert.equal(recovered.length, 1, "item survives the simulated crash");
+  assert.equal(recovered[0]!.id, item.id);
+  assert.equal(recovered[0]!.objective, item.objective);
+  assert.equal(recovered[0]!.verificationContract, item.verificationContract);
+  // Phase 3: the user then removes the item; the sidecar must go away too.
+  assert.equal(deleteQueueItemFile(cwd, item.id), true);
+  assert.deepEqual(readQueueFromDisk(cwd), [], "removed item is gone from disk — no resurrection");
+});
