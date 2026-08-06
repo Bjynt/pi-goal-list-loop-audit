@@ -77,6 +77,7 @@ process.stdin.on("data", async (chunk) => {
   process.exit(0);
 });
 `);
+  fs.chmodSync(script, 0o700);
   return script;
 }
 

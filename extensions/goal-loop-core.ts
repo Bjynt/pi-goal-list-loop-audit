@@ -161,6 +161,13 @@ export interface AuditVerdict {
   regressionShieldPassed?: boolean;
   /** Contract items the shield found unreferenced (fed into the next audit's prompt, v0.22.6). */
   regressionShieldMissing?: string[];
+  /** v0.34.60 (steal #3): the goal revision this audit ran against. An
+   * approval recorded here is only valid for that contract revision —
+   * complete_goal gates on the latest audited revision matching the
+   * goal's current revision so an old approval can never be cited
+   * against a tweaked contract. Legacy entries lack the field and pass
+   * the gate unchanged. */
+  revision?: number;
 }
 
 /** The display classification for one stored auditor result. Keep semantic

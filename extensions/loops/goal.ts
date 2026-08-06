@@ -3584,6 +3584,9 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       error: result.error,
       regressionShieldPassed: result.regressionShieldPassed,
       regressionShieldMissing: result.regressionShieldMissing,
+      // v0.34.60 (steal #3): the revision the worker audited (captured at
+      // dispatch) — the revision-bound validity gate reads this.
+      revision: result.goalRevision?.revision ?? state.goal.revision ?? 0,
       durationMs: Date.now() - auditStartMs,
     } as any);
     if (history.length > 20) history.splice(0, history.length - 20);
@@ -5915,6 +5918,36 @@ function registerAgentTools(pi: any): void {
         appendLedger(ctx.cwd, "goal_tweaked", { via: "complete_goal.newObjective", from: oldObjective.slice(0, 200), to: cleanObj.slice(0, 200) });
         ctx.ui.notify(`Objective updated (complete_goal newObjective): ${cleanObj.slice(0, 80)}`, "info");
       }
+      // v0.34.60 (steal #3): revision-bound audit validity — an approval
+      // from an older contract must not be cited against the current one.
+      // The gate compares the goal's CURRENT revision against the revision
+      // the LAST audit in history ran at: a contract change since that
+      // audit (/goal tweak, or any objective mutation) invalidates the
+      // prior verdict, and the claim is refused until the current contract
+      // gets its own audit. Two escapes: (1) the claim itself carries the
+      // contract change (newObjective above) — its audit covers the NEW
+      // contract in this same call, so the gate skips; (2) /goal verify
+      // audits the current state explicitly, after which the latest
+      // audited revision matches and complete_goal proceeds. Legacy
+      // history entries without a revision field pass unchanged.
+      const lastAudited = state.goal.auditHistory?.[state.goal.auditHistory.length - 1];
+      const currentRevision = state.goal.revision ?? 0;
+      if (!(p.newObjective?.trim() ?? "") && lastAudited && typeof lastAudited.revision === "number" && lastAudited.revision !== currentRevision) {
+        appendLedger(ctx.cwd, "complete_goal_revision_rejected", {
+          goalId: state.goal.id,
+          currentRevision,
+          auditedRevision: lastAudited.revision,
+          auditedAt: lastAudited.at,
+          objective: state.goal.objective.slice(0, 200),
+        });
+        return {
+          content: [{
+            type: "text",
+            text: `complete_goal REJECTED — revision mismatch: the goal's contract changed since its last audit (audited at revision ${lastAudited.revision}, now revision ${currentRevision}). An approval from the old contract cannot be cited against the new one. Run ${activeGoalRoot()} verify to audit the current contract, then call complete_goal again.`,
+          }],
+          details: {},
+        };
+      }
       // v0.34.20/v0.34.21: persist the completion claim AND an explicit
       // running-attempt record BEFORE the isolated auditor starts. If session
       // replacement lands during the audit, a fresh session can immediately
@@ -6041,6 +6074,8 @@ function registerAgentTools(pi: any): void {
           error: result.error,
           regressionShieldPassed: result.regressionShieldPassed,
           regressionShieldMissing: result.regressionShieldMissing,
+          // v0.34.60 (steal #3): the revision the worker audited.
+          revision: result.goalRevision?.revision ?? state.goal.revision ?? 0,
           durationMs: auditDurationMs,
         } as any);
         // Cap history — 39 infra errors taught us unbounded growth is real.
