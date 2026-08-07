@@ -3665,7 +3665,8 @@ function fmtRetryDelay(seconds: number): string {
   return seconds < 60 ? `${Math.round(seconds)}s` : `${Math.round(seconds / 60)}m`;
 }
 
-function auditorQuotaRetryPlan(claim: PendingCompletion, quota: ReturnType<typeof parseQuotaError>, baseMinutes: number): {
+// v0.34.79: exported for tests — the eager-first-retry schedule is pure.
+export function auditorQuotaRetryPlan(claim: PendingCompletion, quota: ReturnType<typeof parseQuotaError>, baseMinutes: number): {
   attempt: number;
   retryAfterSec: number;
   firstAt: string;
@@ -6729,7 +6730,7 @@ function registerAgentTools(pi: any): void {
           return {
             content: [{
               type: "text",
-              text: `The auditor hit an infrastructure error (NOT a verdict): ${result.error}\nThe goal is PAUSED with an automatic retry scheduled in ${retryMin} minute(s)${quota.fromUpstream ? " (upstream hint)" : " (bounded default — edit Quota retry minutes in /glla settings)"}${providerHint}. Your completion claim was not evaluated; do not change your deliverable for this. ${activeGoalSurfaceCommand("resume")} retries immediately.`,
+              text: `The auditor hit an infrastructure error (NOT a verdict): ${result.error}\nThe goal is PAUSED with an automatic retry scheduled in ${fmtRetryDelay(quota.retryAfterSec)}${quota.fromUpstream ? " (upstream hint)" : " (bounded default — edit Quota retry minutes in /glla settings)"}${providerHint}. Your completion claim was not evaluated; do not change your deliverable for this. ${activeGoalSurfaceCommand("resume")} retries immediately.`,
             }],
             details: {},
           };
