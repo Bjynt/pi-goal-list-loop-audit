@@ -31,7 +31,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { MockPi, makeMockCtx, tmpCwd, tick, type MockCtx } from "../harness/mock-pi.js";
-import activate, { __testOnlyResetStaleFlag, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, __testOnlySetLastCompactionAt } from "../../extensions/loops/goal.js";
+import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, __testOnlySetLastCompactionAt } from "../../extensions/loops/goal.js";
 
 const pi = new MockPi();
 activate(pi.api);
@@ -58,7 +58,9 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 4_000): Promise<v
 
 afterEach(() => {
   __testOnlySetContinuationStartTimeout(null);
+  __testOnlySetContinuationRetryBackoff(null);
   __testOnlySetLastCompactionAt(null);
+  __testOnlyResetOwnerSession();
 });
 
 test("v0.34.57: a compaction inside the watchdog window pauses the watchdog instead of firing the unacknowledged warning", async () => {
@@ -69,6 +71,7 @@ test("v0.34.57: a compaction inside the watchdog window pauses the watchdog inst
   // the dispatch was accepted, then fire unacknowledged only after the
   // re-arm cap is reached.
   __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession(); // order-independence: a previous file's recorded owner must not refuse our startup
   __testOnlySetContinuationStartTimeout(300);
   __testOnlySetContinuationRetryBackoff(200);
   try {
@@ -100,6 +103,7 @@ test("v0.34.57: a compaction inside the watchdog window pauses the watchdog inst
 
 test("v0.34.57: a genuine stall (no compaction in the window) still fires the unacknowledged warning", async () => {
   __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession(); // order-independence: a previous file's recorded owner must not refuse our startup
   __testOnlySetContinuationStartTimeout(300);
   __testOnlySetContinuationRetryBackoff(200);
   try {
