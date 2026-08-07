@@ -268,15 +268,26 @@ beforeEach(() => {
 });
 
 test("v0.34.81 (behavioral): list_add with a subtask binds parentId to the matching queue item", async () => {
-  setGlobalAutoResume(false); // do not auto-start the head — we just want the queue state
+  setGlobalAutoResume(false);
   const cwd = tmpCwd();
-  // Pre-seed state with a complete goal so the bulk-add does NOT auto-
-  // activate the head — we want to inspect the queue unchanged.
+  // Pre-seed state with an ACTIVE goal so the bulk-add does NOT auto-
+  // activate (enqueueItems only auto-activates when state.goal is
+  // null/complete/aborted — an active slot blocks it). We want to inspect
+  // the queue unchanged so we can see BOTH children bound.
   fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
   const seedLine = JSON.stringify({
     type: "state",
     value: {
-      goal: { id: "seed", objective: "seeded complete", status: "complete", policy: "goal", autoContinue: true, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, turns: 0 }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      goal: {
+        id: "seed-active",
+        objective: "seeded active blocker",
+        status: "active",
+        policy: "goal",
+        autoContinue: true,
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, turns: 0 },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
       list: [],
       loop: null,
     },
@@ -286,8 +297,7 @@ test("v0.34.81 (behavioral): list_add with a subtask binds parentId to the match
   const ctx = await freshSession(cwd);
   // Single bulk-add with the parent first, then its two children, then an
   // unrelated item. All go through one enqueueItems call so the resolve
-  // step finds the parent in `resolved[]` and the unrelated item binds to
-  // nothing.
+  // step finds the parent in `resolved[]`.
   await pi.command(
     "list",
     "add Deploy the release pipeline. Done when: foo. Parallel: yes.\n" +
@@ -298,8 +308,6 @@ test("v0.34.81 (behavioral): list_add with a subtask binds parentId to the match
   );
   await tick();
 
-  // Read the LAST state line — the queue is in `list` (post-enqueue,
-  // pre-activation since the seeded complete goal blocks auto-activate).
   // Filter for type=="state" so continuation-dispatch / ledger entries
   // interleaved on active.jsonl don't poison the read.
   const stateRaw = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
@@ -310,7 +318,7 @@ test("v0.34.81 (behavioral): list_add with a subtask binds parentId to the match
   const children = queue.filter((s: any) => typeof s.parentId === "string");
   assert.ok(parent, "parent in queue");
   assert.equal(parent.parallelSafe, true, "parent keeps its own Parallel: yes");
-  assert.equal(children.length, 2, "both children bound");
+  assert.equal(children.length, 2, "both children bound (the active-blocker stopped auto-activate)");
   for (const c of children) {
     assert.equal(c.parentId, parent.id, "child.parentId points at the parent");
   }
@@ -326,13 +334,21 @@ test("v0.34.81 (behavioral): list_add with a subtask binds parentId to the match
 test("v0.34.81 (behavioral): unresolved parent refuses that child, other items still land", async () => {
   setGlobalAutoResume(false);
   const cwd = tmpCwd();
-  // Pre-seed a complete goal so auto-activate does not claim the Real
-  // parent — we want to inspect the post-enqueue queue unchanged.
+  // Active-blocker pre-seed so auto-activate does not claim the Real parent.
   fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
   const seedLine = JSON.stringify({
     type: "state",
     value: {
-      goal: { id: "seed", objective: "seeded complete", status: "complete", policy: "goal", autoContinue: true, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, turns: 0 }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      goal: {
+        id: "seed-active",
+        objective: "seeded active blocker",
+        status: "active",
+        policy: "goal",
+        autoContinue: true,
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, turns: 0 },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
       list: [],
       loop: null,
     },
