@@ -172,6 +172,11 @@ export interface MockNotify {
   type?: string;
 }
 
+// Minimal theme/keybindings the emulated interactive custom TUI passes to
+// the builder — mirrors the FAKE_THEME/FAKE_KB fixtures in confirm-draft.test.ts.
+const FAKE_THEME = { fg: (_c: string, t: string) => t, bold: (t: string) => t } as any;
+const FAKE_KB = { matches: () => false };
+
 export class MockUi {
   notifies: MockNotify[] = [];
   statuses: Record<string, string | undefined> = {};
@@ -180,6 +185,14 @@ export class MockUi {
   selectImpl: ((title: string, options: string[]) => Promise<string | undefined>) | undefined = async () => undefined;
   inputImpl: ((title: string, placeholder?: string) => Promise<string | undefined>) | undefined = async () => undefined;
   customImpl: ((...args: unknown[]) => Promise<unknown>) | undefined = async () => undefined;
+  // v0.34.80: real interactive pi INVOKES the custom factory (the builder
+  // runs, then the component's done() resolves the dialog). The old mock
+  // never invoked it — which accidentally emulated the RPC/noOp stub shape
+  // (pi 0.84.1: `async custom() { return undefined; }`, factory never
+  // called). Both shapes are now explicit: customStubMode=true reproduces
+  // the RPC stub (factory never invoked, resolves via customImpl/default
+  // undefined); false (default) emulates interactive pi.
+  customStubMode = false;
 
   notify(message: string, type?: string): void {
     this.notifies.push({ message, type });
@@ -200,6 +213,17 @@ export class MockUi {
     return this.inputImpl ? this.inputImpl(title, placeholder) : Promise.resolve(undefined);
   }
   custom(...args: unknown[]): Promise<unknown> {
+    if (!this.customStubMode) {
+      const factory = args[0] as ((tui: unknown, theme: unknown, keybindings: unknown, done: (r: unknown) => void) => unknown) | undefined;
+      if (typeof factory === "function") {
+        try {
+          factory({ requestRender: () => {} }, FAKE_THEME, FAKE_KB, () => {});
+        } catch {
+          // builder errors surface through customImpl's promise in tests that
+          // opt into them — never let the emulated TUI mask the resolver.
+        }
+      }
+    }
     return this.customImpl ? this.customImpl(...args) : Promise.resolve(undefined);
   }
   get theme(): undefined {

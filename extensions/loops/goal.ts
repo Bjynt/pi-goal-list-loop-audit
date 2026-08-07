@@ -926,20 +926,36 @@ type DraftChoice = "yes" | "no" | "stale";
 let lastConfirmDialog: { title: string; body: string; options: string[] } | null = null;
 async function confirmDraft(ctx: ExtensionContext, title: string, body: string): Promise<DraftChoice> {
   const ALWAYS = "Yes — and always auto-accept drafts (sets autoAcceptDrafts for this project)";
+  const options = ["Yes", ALWAYS, "No"];
+  // v0.34.80 (GitHub #4 rework): `custom` is ALWAYS a function in real pi
+  // 0.84.1 — RPC mode resolves `undefined` WITHOUT ever invoking the factory
+  // (`async custom() { /* Custom UI not supported */ return undefined; }`),
+  // so `typeof custom === "function"` alone never fires the headless/RPC
+  // fallback and RPC drafts were silently rejected ("no" — the dialog never
+  // rendered, the host never answered). Detect unavailability by whether the
+  // builder RAN: if `custom()` settles and the factory was never invoked,
+  // treat custom as unavailable and fall through to the byte-identical
+  // select path (the host-dialog route in RPC mode).
   if (typeof (ctx.ui as { custom?: unknown }).custom === "function") {
-    const options = ["Yes", ALWAYS, "No"];
     lastConfirmDialog = { title, body, options };
+    let factoryInvoked = false;
     try {
-      const choice = await ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) =>
-        new ConfirmDraftComponent({ title, body, options }, () => tui.requestRender(), theme as any, keybindings as any, done),
-      );
-      if (choice === ALWAYS) {
-        saveSettings("project", ctx.cwd, { autoAcceptDrafts: true });
-        appendLedger(ctx.cwd, "draft_autoaccept_enabled", { via: title });
-        ctx.ui.notify("Draft auto-accept ON for this project — future draft confirms are skipped. Undo in /glla settings: Auto-accept drafts = off.", "info");
-        return "yes";
+      const choice = await ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) => {
+        factoryInvoked = true;
+        return new ConfirmDraftComponent({ title, body, options }, () => tui.requestRender(), theme as any, keybindings as any, done);
+      });
+      if (factoryInvoked) {
+        if (choice === ALWAYS) {
+          saveSettings("project", ctx.cwd, { autoAcceptDrafts: true });
+          appendLedger(ctx.cwd, "draft_autoaccept_enabled", { via: title });
+          ctx.ui.notify("Draft auto-accept ON for this project — future draft confirms are skipped. Undo in /glla settings: Auto-accept drafts = off.", "info");
+          return "yes";
+        }
+        return choice === "Yes" ? "yes" : "no";
       }
-      return choice === "Yes" ? "yes" : "no";
+      // real RPC/noOp stub — custom is unavailable in this mode; the
+      // select fallback below is the host-dialog path.
+      appendLedger(ctx.cwd, "confirm_dialog_fallback_select", { via: "custom-stub" });
     } catch (err) {
       if (isStaleApiError(err)) return "stale";
       // a non-stale custom failure degrades to the legacy select path
