@@ -129,9 +129,10 @@ export function nextUntriedModelRef(current: string | undefined, refs: string[],
 
 /**
  * Retry slowly rather than spin: 15m → 30m → 1h → 2h → 4h → 5h, then hold
- * after the 24h automatic window. A quota that returns within that window is
- * observed without a manual resume, while a week-long cap requires an
- * explicit resume instead of hidden unattended probes.
+ * after the 24h automatic window. v0.34.63: the failure-driven envelope is
+ * hour-aligned (hourAlignedRetryDelayMs); this ladder survives as the
+ * bounded fallback for the pathological no-model-ref probe path, and as the
+ * knob for the mainModelRetryMinutes setting.
  */
 export function mainModelRetryDelayMs(attempt: number, baseMinutes = 15): number {
   const base = Number.isFinite(baseMinutes) && baseMinutes > 0 ? baseMinutes : 15;
@@ -148,18 +149,40 @@ export function mainModelAutoRetryUntil(firstFailureAtMs = Date.now(), horizonMs
   return new Date(first + horizon).toISOString();
 }
 
+/**
+ * v0.34.63: probe delays align to the next :00 of the LOCAL clock hour —
+ * provider quota windows tend to reset on the hour, so a mid-hour probe is
+ * a wasted attempt (field: 01:18 wall probed at 01:33 / 02:03 / 02:33 and
+ * never once hit a fresh window). The ladder's job — bounded, slow probing
+ * — is preserved: one probe per hour, still inside the 24h automatic
+ * window and the 5h per-delay cap. Upstream Retry-After hints remain
+ * factual facts and outrank the alignment (a per-minute RPM throttle says
+ * so itself).
+ */
+export function hourAlignedRetryDelayMs(nowMs = Date.now()): number {
+  const next = new Date(nowMs);
+  next.setMinutes(0, 0, 0);
+  next.setHours(next.getHours() + 1);
+  return Math.max(1_000, next.getTime() - nowMs);
+}
+
 /** v0.34.51: one uniform envelope for EVERY provider failure. Error text is
  * not trusted to pick a cadence — the only exception is the upstream
  * Retry-After hint, a factual provider fact, honored when it fits the
  * five-hour probe budget. Classification now serves display and the
  * no-retry class (context-length/aborted) only: billing, auth, transient,
- * and unknown all retry on the same bounded exponential cadence, because a
+ * and unknown all retry on the same bounded cadence, because a
  * miss-classified quota wall is the common case and "keep retrying" beats
- * confident stopping. */
-export function mainModelFailureDelayMs(failure: MainModelFailure, attempt: number, baseMinutes = 15): number {
+ * confident stopping.
+ * v0.34.63: the bounded cadence is the next :00 clock hour (see
+ * hourAlignedRetryDelayMs) — kind-independent, hint-overridable, and never
+ * farther out than one hour per probe. */
+export function mainModelFailureDelayMs(failure: MainModelFailure, attempt: number, baseMinutes = 15, nowMs = Date.now()): number {
   if (failure.retryFromUpstream && Number.isFinite(failure.retryAfterSec)) {
     const hinted = Math.max(1_000, Math.round(failure.retryAfterSec! * 1_000));
     if (hinted <= MAIN_MODEL_MAX_RETRY_DELAY_MS) return hinted;
   }
-  return mainModelRetryDelayMs(attempt, baseMinutes);
+  void attempt;
+  void baseMinutes;
+  return hourAlignedRetryDelayMs(nowMs);
 }

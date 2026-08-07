@@ -911,7 +911,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       const queued = state.list?.length ?? 0;
       const queue = queued > 0 ? ` · ${queued} waiting in list` : "";
       lines.push(`├─ ${paint(theme, "warning", `QUOTA WALL · ${quotaWallDetail(g)}${queue}`)}`);
-      lines.push(`├─ ${paint(theme, "dim", kind === "blocked" ? `automatic retries stopped · ${quotaResumeText(g, now)}` : `waiting — nothing for you to do · ${quotaResumeText(g, now)}`)}`);
+      lines.push(`├─ ${paint(theme, "dim", kind === "blocked" ? `automatic retries stopped · ${quotaResumeText(g, now)}` : `auto-retrying · ${quotaResumeText(g, now)}`)}`);
     } else if (kind === "wait") lines.push(`├─ ${paint(theme, "dim", "waiting — nothing for you to do")}`);
     // v0.27.1: wrap reason + suggested action (see wrap()). v0.28.22:
     // decision/wait reasons cap at 2 lines — the options/countdown below

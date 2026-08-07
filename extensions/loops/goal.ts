@@ -321,6 +321,25 @@ function sessionManagerId(ctx: ExtensionContext): string {
   }
 }
 
+/** v0.34.63: identity-tolerant session comparison. pi can deliver the SAME
+ * resumed session with a NEW SessionManager object (quit → fresh pi → blank
+ * startup → resume), so object identity is not enough; the session id it
+ * reports is. Two managers match when both expose a real, equal session id.
+ * In-memory workers (or unknown ids) never match — fail closed. */
+function sameSessionIdentity(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  try {
+    const ga = (a as { getSessionId?: () => string } | null)?.getSessionId;
+    const gb = (b as { getSessionId?: () => string } | null)?.getSessionId;
+    if (typeof ga !== "function" || typeof gb !== "function") return false;
+    const ia = String(ga.call(a));
+    const ib = String(gb.call(b));
+    return ia !== "unknown-session" && ib !== "unknown-session" && ia === ib;
+  } catch {
+    return false;
+  }
+}
+
 /** v0.26.7: a stale api is terminal for this process — go loudly with
  * restart guidance instead of retrying sends that can never land.
  * v0.28.1 (S1/S2): goals STAY ACTIVE with an interrupt marker instead of
@@ -8960,7 +8979,19 @@ export default function (pi: ExtensionAPI): void {
     // consume the recovery event and erase the host's successor proof.
     const recordedOwner = ownerSession ?? deadOwnerSession;
     const foreignRecordedSession = recordedOwner !== null && ctx.sessionManager !== recordedOwner;
-    if (foreignRecordedSession && !hostLifecycleStart) return;
+    // v0.34.63: quit → fresh pi → blank startup (load barrier pending) →
+    // resume. pi delivers the resumed session with a NEW SessionManager
+    // object, so identity (and possibly file-backed) checks fail and the
+    // resume was silently DROPPED — the goal stayed parked forever with a
+    // dead countdown (dracon-platform 2026-08-07: wall at 01:18, probe at
+    // 01:33 never ran). While this process is waiting on the load barrier,
+    // a lifecycle start from the same workspace carrying the same session
+    // identity IS that load completing — accept it before the gate.
+    const barrierAwaitingLoadedSession = initialSessionLoadPending && lifecycleSignal;
+    const resumeCompletesLoad = barrierAwaitingLoadedSession
+      && (ownerCwd == null || ctx.cwd === ownerCwd)
+      && sameSessionIdentity(ctx.sessionManager, recordedOwner);
+    if (foreignRecordedSession && !hostLifecycleStart && !resumeCompletesLoad) return;
     if (hostLifecycleStart && ownerSession !== null && ctx.sessionManager !== ownerSession) {
       // No shutdown means the old timers were not cleared by pi. Clear them
       // before claiming the replacement, then reopen the handoff gate below.
