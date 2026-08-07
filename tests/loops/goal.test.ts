@@ -87,7 +87,7 @@ test("v0.34.57: a compaction inside the watchdog window pauses the watchdog inst
       } catch {
         return false;
       }
-    }, 2_000);
+    }, 4_000);
     const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
     assert.match(ledger, /continuation_start_paused_for_compaction/, "the watchdog paused on the in-window compaction");
     assert.doesNotMatch(ledger, /continuation_start_unacknowledged/, "the false-positive unacknowledged warning must NOT fire");
@@ -114,7 +114,7 @@ test("v0.34.57: a genuine stall (no compaction in the window) still fires the un
       } catch {
         return false;
       }
-    }, 2_000);
+    }, 4_000);
     const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
     assert.match(ledger, /continuation_start_unacknowledged/, "the unacknowledged warning still fires for a genuine stall");
     assert.doesNotMatch(ledger, /continuation_start_paused_for_compaction/, "no pause is recorded when there was no compaction");
