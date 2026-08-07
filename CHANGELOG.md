@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+### 0.34.88 — No-turn-start retry: 30s first window + ONE verbatim auto-retry (closes note.md "pi did not start turn")
+
+Field: a continuation was accepted but pi never started the turn — no turn-start proof. The v0.34.74 handling waited 150s then declared the dispatch unacknowledged, forcing a manual `/list resume` for every miss; transient misses (turn-start event lost, busy session) looked identical to a genuine provider stall.
+
+Fix: (1) first window 150s → 30s (`CONTINUATION_START_TIMEOUT_MS`, env override unchanged); (2) exactly ONE automatic retry that re-sends the **verbatim original payload** (captured at all 4 send sites as `lastContinuationSentPayload`) and re-arms for a 60s backoff (`NO_TURN_START_RETRY_BACKOFF_MS`) — transient misses self-heal, and only the second window failure (a genuine stall) reaches the explicit `/list|/goal|/loop resume` fallback. Worst case before the fallback is 90s, under the old single 150s window. Retry is gated by persisted `record.retryCount` (sidecar field, no protocol bump), guarded by goal/loop actionability + stale-API checks, and ledgered as `continuation_retry_sent` / `continuation_retry_send_failed`; a paused goal's watchdog is cleared at pause, so it is never blind-retried.
+
+Files: `extensions/loops/goal.ts`, `extensions/goal-loop-dispatch.ts` (optional `retryCount`/`retrySentAt`). Tests: `tests/behavioral-orchestrator.test.ts` (3 watchdog tests updated for the retry + 3 new: self-heal verbatim, genuine-stall fallback, paused-never-retried), `tests/loops/goal.test.ts` (v0.34.57 tests take the backoff override; order-independence via `__testOnlyResetOwnerSession`), `tests/stall-handling.test.ts` (source pins). `audit/NO-TURN-START-RETRY-2026-08-07.md`. Suite: 1090 pass / 1 skip / 0 fail across 100 files (was 1087/1/0). tsc clean.
+
 
 ### 0.34.87 — Status-surface separation: paused list item vs active session (closes note.md Screenshots 161659/161718)
 
