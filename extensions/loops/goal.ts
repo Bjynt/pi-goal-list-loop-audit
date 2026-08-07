@@ -5075,7 +5075,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     } else {
       lines.push(`List (${queue.length}):`);
       const PAGE = 15;
-      queue.slice(0, PAGE).forEach((item, i) => lines.push(`  ${i + 1}. ${displaySlice(item.objective, 90)}`));
+      queue.slice(0, PAGE).forEach((item, i) => lines.push(`  ${i + 1}. ${displaySlice(item.objective, 90)}${item.parallelSafe ? " [parallel]" : ""}`));
       if (queue.length > PAGE) {
         lines.push(`  … and ${queue.length - PAGE} more. /list remove <n> to prune, /list clear to empty.`);
       }
@@ -7162,8 +7162,8 @@ function registerAgentTools(pi: any): void {
       resolveCarryover(liveCtx, "goal"); // v0.28.14: surface/clear stale leftovers
       // List drafting: the confirmed contract goes into the QUEUE, not active.
       if (confirmedTarget === "list") {
-        const extracted = extractVerificationContract(full);
-        const item = { id: newGoalId(), objective: extracted.objective, verificationContract: extracted.verificationContract || undefined, addedAt: nowIso() };
+        const extracted = parseListItemDeclaration(full);
+        const item = { id: newGoalId(), objective: extracted.objective, verificationContract: extracted.verificationContract || undefined, ...(extracted.parallelSafe === undefined ? {} : { parallelSafe: extracted.parallelSafe }), addedAt: nowIso() };
         // v0.34.61: disk-first — same invariant as addSingleItem. The list
         // draft path was the second-missed place: previously the in-memory
         // state mutated without a sidecar, so a torn-rename or post-mutation
@@ -7519,7 +7519,7 @@ function registerAgentTools(pi: any): void {
         lines.push("List: empty.");
       } else {
         lines.push(`List (${queue.length}):`);
-        queue.slice(0, 20).forEach((item, i) => lines.push(`${i + 1}. ${sanitizeDisplayText(item.objective)}`));
+        queue.slice(0, 20).forEach((item, i) => lines.push(`${i + 1}. ${sanitizeDisplayText(item.objective)}${item.parallelSafe ? " [parallel]" : ""}`));
         if (queue.length > 20) lines.push(`… and ${queue.length - 20} more`);
       }
       if (state.loop) {
