@@ -144,6 +144,15 @@ export function wrap(s: string, width: number, maxLines: number): string[] {
  */
 const WIDGET_HORIZONTAL_MARGIN = 2;
 
+/** v0.34.67: paragraph spacer for the widget's worker/subagent text.
+ * pi-tui skips whitespace-only widget lines (Text.render returns [] when
+ * trim is empty), so the spacer carries a dim hairline — a `│` continuation
+ * row that reads as whitespace but renders a visible line. Inserted between
+ * the auditing card's observation paragraph (`tool:`, `latest:`, …) and the
+ * footer verdict line (note.md 08-06 "visually subagents least need more
+ * spacing for text", Screenshot_20260806_223836). */
+export const WORKER_TEXT_SPACER = "│ ·";
+
 function budgetFor(width: number | undefined, prefixCols: number, floor: number): number {
   if (!width || width <= 0) return floor;
   return Math.max(floor, width - WIDGET_HORIZONTAL_MARGIN - prefixCols);
@@ -879,6 +888,11 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     observations.forEach((observation, i) => {
       lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, "dim", observation)}`);
     });
+    // v0.34.67: paragraph spacing — the worker/subagent text paragraph gets
+    // one dim hairline row of breathing room before the card footer (the
+    // pinned WORKER_TEXT_SPACER; a truly empty line would be skipped by
+    // pi-tui's Text renderer).
+    if (observations.length > 0) lines.push(paint(theme, "dim", WORKER_TEXT_SPACER));
 
     const activity = auditorActivityAge(audit, now);
     const last = auditorLastActivity(audit, now);

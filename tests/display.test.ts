@@ -15,6 +15,7 @@ import {
   fmtTokens,
   truncate,
   MAIN_HOST_LABEL,
+  WORKER_TEXT_SPACER,
 } from "../extensions/goal-loop-display.ts";
 import type { Goal, State } from "../extensions/goal-loop-core.ts";
 import type { LoopState } from "../extensions/goal-loop-forever.ts";
@@ -666,6 +667,39 @@ test("v0.34.66: at the verdict the FINAL report shows even when silent", () => {
   const joined = lines.join("\n");
   assert.match(joined, /latest: 1\. display path honors the toggle/);
   assert.doesNotMatch(joined, /report stream muted/);
+});
+
+test("v0.34.67: worker/subagent text paragraph gets breathing room — dim hairline spacer between observations and the card footer", () => {
+  assert.match(WORKER_TEXT_SPACER, /│ ·/, "spacing constant is the dim hairline row");
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-spacing" } });
+  const lines = buildWidgetLines({ goal: g, list: [] }, {
+    phase: "tool_executing",
+    currentTool: "read",
+    currentToolArgs: JSON.stringify({ path: "/repo/README.md" }),
+    currentToolStartedAt: NOW - 2_000,
+    recentOutput: ["inspected README.md"],
+    toolCalls: [{ name: "grep", argsPrefix: "{}", finishedAt: NOW - 3_000 }],
+    elapsedMs: 42_000,
+    lastActivityAt: NOW - 1_000,
+  }, NOW)!;
+  const obsIdx = lines.findIndex((l) => /tool: read → README\.md/.test(l));
+  const footerIdx = lines.findIndex((l) => /42s in detached worker/.test(l));
+  assert.ok(obsIdx >= 0, "observation paragraph present");
+  assert.ok(footerIdx > obsIdx, "footer follows the observations");
+  const gap = lines.slice(obsIdx + 1, footerIdx);
+  assert.ok(gap.length >= 2, `text + spacer between observations and footer: ${gap.join(" | ")}`);
+  assert.match(gap.at(-1)!, /│ ·/, "the gap ends with the dim hairline spacer");
+  assert.match(gap[0]!, /report stream muted/, "the observation text precedes the spacer");
+});
+
+test("v0.34.67: no spacer is invented when there is no worker text", () => {
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-no-obs" } });
+  const lines = buildWidgetLines({ goal: g, list: [] }, {
+    phase: "running",
+    label: "queued",
+  }, NOW)!;
+  assert.ok(lines.some((l) => /detached worker queued/.test(l)));
+  assert.ok(!lines.some((l) => /│ ·/.test(l)), "no spacer without an observations paragraph");
 });
 
 test("v0.34.56: unmatched tool-event counts render ONLY with evidence (never a zero-fact observation)", () => {
