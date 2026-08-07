@@ -40,6 +40,8 @@ export interface AuditorProgress {
   recentOutput: string[];
   phase: "starting" | "running" | "thinking" | "tool_executing" | "producing_report" | "complete";
   elapsedMs: number;
+  /** v0.34.86: monotonic report-stream byte count (text_delta chars). */
+  reportBytes?: number;
   /** Timestamp of the last real RPC/session event observed by the worker. */
   lastActivityAt?: number;
   currentTool?: string;
@@ -158,6 +160,10 @@ interface AuditorProgressFile {
   requestHash: string;
   phase: AuditorProgress["phase"];
   elapsedMs: number;
+  /** v0.34.86: monotonic report-stream byte count (text_delta chars). The
+   * silent-mode byte counter — the "worker IS making progress" evidence
+   * that never reveals prose. */
+  reportBytes?: number;
   /** Worker-side activity, not merely a parent poll or UI refresh. */
   lastActivityAt?: number;
   recentOutput: string[];
@@ -283,6 +289,7 @@ function asProgress(file: AuditorProgressFile, startedAt: number): AuditorProgre
   return {
     phase: file.phase,
     elapsedMs: Math.max(file.elapsedMs, Date.now() - startedAt),
+    ...(file.reportBytes !== undefined ? { reportBytes: file.reportBytes } : {}),
     ...(file.lastActivityAt !== undefined ? { lastActivityAt: file.lastActivityAt } : {}),
     recentOutput: file.recentOutput,
     toolCalls: file.toolCalls,

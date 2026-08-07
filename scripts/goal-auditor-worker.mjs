@@ -160,6 +160,10 @@ async function main() {
   const recentOutput = [];
   const outputParts = [];
   const recentReportLine = { value: "" };
+  // v0.34.86: monotonic report-stream byte counter (chars of text_delta).
+  // The silent-mode HUD shows this instead of the hidden prose tail —
+  // "the worker IS making progress" without revealing the report text.
+  let reportBytes = 0;
   const activeTools = new Map();
   /** Keys of active starts that arrived WITHOUT a toolCallId. An anonymous
    * end can only pair when exactly ONE anonymous start is open — with zero
@@ -201,6 +205,7 @@ async function main() {
       requestHash: request.requestHash,
       phase,
       elapsedMs: Date.now() - startedAt,
+      ...(reportBytes > 0 ? { reportBytes } : {}),
       ...(lastActivityAt !== undefined ? { lastActivityAt } : {}),
       recentOutput: [
         ...recentOutput.slice(-MAX_RECENT_OUTPUT_ITEMS),
@@ -368,6 +373,7 @@ async function main() {
       if (event.type === "message_update") {
         if (update?.type === "text_delta" && typeof update.delta === "string") {
           outputParts.push(update.delta);
+          reportBytes += update.delta.length;
           appendRecentOutput(recentOutput, recentReportLine, update.delta);
           void progress(phase).catch(() => {});
         } else {
