@@ -63,6 +63,53 @@ test("real architectural + strategic text still classifies", () => {
   assert.equal(classifyFindingText("TODO: fix the null deref"), "bug");
 });
 
+test("v0.34.83: the bare word 'issue' is REMOVED from the bug regex — GitHub issue references and prose don't classify as bugs", () => {
+  // The 0.34.82 reviewer fired on every completion summary that mentioned
+  // a GitHub issue number ("GitHub issue #5", "issue #3", etc.) and
+  // enqueued a junk bug finding. Real bug markers (TODO/FIXME/bug/
+  // regression/broken/fixme) still classify.
+  // GitHub issue refs — citations, not bugs:
+  assert.equal(classifyFindingText("fixed in GitHub issue #5 (regression shield non-ASCII)"), undefined);
+  assert.equal(classifyFindingText("See GitHub issue #3 for the list-collision resolution"), undefined);
+  assert.equal(classifyFindingText("traced back to gh-123"), undefined);
+  // Issue-prose phrases — not bugs:
+  assert.equal(classifyFindingText("this issue is the latest regression we shipped"), undefined);
+  assert.equal(classifyFindingText("open the issue tracker and pick the next one"), undefined);
+  // Real bug markers still classify:
+  assert.equal(classifyFindingText("TODO: fix the null deref"), "bug");
+  assert.equal(classifyFindingText("FIXME: the cache key is broken"), "bug");
+  assert.equal(classifyFindingText("regression in the auditor path"), "bug");
+});
+
+test("v0.34.83: a completion summary referencing GitHub issues enqueues zero bug findings through the curated pipeline", () => {
+  // The full review pipeline (stripCodeSpans + unwrapHardWrappedLines +
+  // classifyFindingText + extractFindings) must not enqueue bug findings
+  // when the only trigger-words are "GitHub issue #N" citations.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-issue-"));
+  const calls = { proposed: [] as string[], enqueued: [] as string[][] };
+  const text = [
+    "Closed GitHub issue #5 (regression shield non-ASCII) and GitHub issue #4 (final confirm dialog).",
+    "Reused the GitHub issue #3 (list collision) resolution to verify single-instance.",
+    "Tracked via gh-123 for the audit-storm finding.",
+  ].join("\n");
+  const deps: ReviewerDeps = {
+    cwd: dir,
+    nowMs: Date.parse("2026-08-07T17:00:00Z"),
+    ledgerEntries: [],
+    sources: [{ name: "archive", text }],
+    enqueueListItems: (objs) => calls.enqueued.push(objs),
+    proposeGoal: (obj) => { calls.proposed.push(obj); return true; },
+    notify: () => {},
+    ledger: () => {},
+  };
+  const out = runReviewer(resolveReviewerConfig(), { kind: "goal", goalId: "g-issue", objective: "verify and close", terminal: "goal-complete" }, deps);
+  assert.equal(out.fired, true);
+  // No bug findings — every "issue" mention was a citation, not a bug.
+  const bugs = out.report!.findings.filter((f) => f.class === "bug");
+  assert.equal(bugs.length, 0, "GitHub issue citations must not enqueue bug findings");
+  assert.equal(calls.enqueued.flat().length, 0);
+});
+
 test("full runReviewer over 0.26.2-style source text produces zero architectural findings", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-harden-"));
   const calls = { proposed: [] as string[], enqueued: [] as string[][] };

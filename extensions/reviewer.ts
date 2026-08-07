@@ -75,10 +75,16 @@ export interface Finding {
 // self-matched the reviewer's own vocabulary ("architectural-class",
 // "architectural findings", the docs' mode matrix) and produced 3 junk
 // findings on the 0.26.2 completion, observed live.
+// v0.34.83: the bare word "issue" is REMOVED from the bug regex — it
+// matched every GitHub issue reference, "issue tracker", "this issue",
+// etc. Observed live: a completion summary mentioning "GitHub issue #5"
+// produced a junk bug finding on every recent goal, which is why
+// newObjective prose was rewritten trigger-word-free as a workaround.
+// Real bug markers stay (TODO/FIXME/bug/regression/broken/fixme).
 const CLASS_PATTERNS: Array<{ class: FindingClass; re: RegExp }> = [
   { class: "strategic", re: /\bshould we\b|\bdeprecat|ship this\??/i },
   { class: "architectural", re: /\brewrite\b|new dependency|schema change|\bredesign\b/i },
-  { class: "bug", re: /\bTODO\b|\bFIXME\b|\bbug\b|\bissue\b|regression|broken|\bfixme\b/i },
+  { class: "bug", re: /\bTODO\b|\bFIXME\b|\bbug\b|regression|broken|\bfixme\b/i },
   { class: "refactor", re: /could be cleaner|consider refactoring|duplicat|refactor|left ?out|follow[\s-]?up|deferred|could be improved|improvement|enhancement|consider adding|would be nice|nice to have/i },
 ];
 
@@ -87,7 +93,10 @@ const CLASS_PATTERNS: Array<{ class: FindingClass; re: RegExp }> = [
  * from the 0.26.2 completion: a test("…architectural…") name, the
  * INSTALL.md mode-matrix row, and ship-doc prose. */
 const SKIP_LINE = /^\s*(test|it|describe|assert|expect)\s*\(|^\s*(const|let|var|function|import|export|require)\b|\{\s*\.\.\.\s*\}|,\s*\.\.\.$|^\s*\||^\s*[{\[\]}]|^\s*['"]|^\s*ℹ/; // ℹ = test-runner/status noise ("ℹ todo 0" was enqueued as a /list item by the 0.26.2 reviewer)
-const REVIEWER_VOCAB = /architectural-class|bug-class|refactor-class|strategic-class|reviewer found|cascade step|\*\*Mode\*\*|problems\s*\/\s*\(?(improvements|architectural)/i;
+// v0.34.83: GitHub-issue references (and "issue tracker/board") added —
+// defense in depth for the "issue" misparse. Any line that mentions a
+// GitHub issue number is a citation, not a finding.
+const REVIEWER_VOCAB = /architectural-class|bug-class|refactor-class|strategic-class|reviewer found|cascade step|\*\*Mode\*\*|problems\s*\/\s*\(?(improvements|architectural)|\bgithub\s+issue\b|\bgh-\d+|\bissue\s+(tracker|board|queue)\b/i;
 
 export function classifyFindingText(line: string): FindingClass | undefined {
   // Strip list markers here too (extractFindings already does, but direct
