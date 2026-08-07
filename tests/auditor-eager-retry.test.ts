@@ -31,6 +31,12 @@ function quota(retryAfterSec: number, fromUpstream: boolean): any {
   return { raw: "", retryAfterSec, fromUpstream };
 }
 
+/** v0.34.84: quota-shaped errors carry a signal so the plan can route them
+ * to the hour-aligned branch instead of the exponential cadence. */
+function quotaSignal(retryAfterSec: number, fromUpstream: boolean, signal: "rate-limit" | "plan-quota" | "billing"): any {
+  return { raw: "", retryAfterSec, fromUpstream, signal };
+}
+
 test("eager: first no-hint attempt retries in 5s (mirrors runWithInfraRetry's 5s backoff)", () => {
   const plan = auditorQuotaRetryPlan(claim(), quota(0, false), 60);
   assert.equal(plan.attempt, 1);
@@ -52,6 +58,80 @@ test("eager: an upstream Retry-After hint still wins over the eager default", ()
   assert.equal(plan.attempt, 1);
   assert.equal(plan.retryAfterSec, 3600, "the provider's own hint outranks the eager 5s");
   assert.equal(plan.requestedSec, 3600);
+});
+
+test("v0.34.84: quota-shaped errors get hour-aligned probes on attempts 2+ (not exponential 2h/4h rungs)", () => {
+  // note.md Screenshots 160846–161010: the auditor sat 6232s–6367s ≈ 1h44m
+  // between retries because exponential 2h/4h… rungs don't align with the
+  // provider's quota reset (most providers reset at top-of-hour or on a
+  // billing boundary). hour-aligned probes react within minutes of the reset.
+  const p2 = auditorQuotaRetryPlan(
+    claim({ quotaAttempts: 1, quotaFirstAt: new Date().toISOString() }),
+    quotaSignal(0, false, "rate-limit"),
+    60,
+  );
+  assert.equal(p2.attempt, 2);
+  // ≤ 60min (next top-of-hour strictly after now); must NOT be the 2h exponential rung
+  assert.ok(p2.retryAfterSec <= 60 * 60, `hour-aligned probe should be ≤ 60min, got ${p2.retryAfterSec}`);
+  assert.ok(p2.retryAfterSec < 2 * 60 * 60, `hour-aligned probe must NOT be the 2h exponential rung, got ${p2.retryAfterSec}`);
+  // the requestedSec also reflects the hour-aligned schedule (not 2h)
+  assert.ok(p2.requestedSec < 2 * 60 * 60, `requestedSec should be hour-aligned, got ${p2.requestedSec}`);
+});
+
+test("v0.34.84: plan-quota and billing signals also get hour-aligned probes", () => {
+  for (const signal of ["plan-quota", "billing"] as const) {
+    const p = auditorQuotaRetryPlan(
+      claim({ quotaAttempts: 2, quotaFirstAt: new Date().toISOString() }),
+      quotaSignal(0, false, signal),
+      60,
+    );
+    assert.equal(p.attempt, 3);
+    assert.ok(p.retryAfterSec <= 60 * 60, `${signal} should also get hour-aligned probes, got ${p.retryAfterSec}`);
+    assert.ok(p.retryAfterSec < 4 * 60 * 60, `${signal} must NOT be the 4h exponential rung`);
+  }
+});
+
+test("v0.34.84: non-quota transient infra errors keep the exponential minute-scale cadence", () => {
+  // When the failure isn't quota-shaped (no signal set), the existing
+  // exponential cadence still applies — a stuck provider shouldn't be
+  // probed at the top of every hour.
+  const p2 = auditorQuotaRetryPlan(
+    claim({ quotaAttempts: 1, quotaFirstAt: new Date().toISOString() }),
+    quota(0, false), // no signal
+    60,
+  );
+  assert.equal(p2.retryAfterSec, 120 * 60, "non-quota transient keeps the 2h exponential rung");
+  const p3 = auditorQuotaRetryPlan(
+    claim({ quotaAttempts: 2, quotaFirstAt: new Date().toISOString() }),
+    quota(0, false),
+    60,
+  );
+  assert.equal(p3.retryAfterSec, 240 * 60, "non-quota transient keeps the 4h exponential rung");
+});
+
+test("v0.34.84: hour-aligned probes floor at 60s (no sub-minute cadence on a stale nextHourlyPromptMs)", () => {
+  // Pathological case: if nextHourlyPromptMs returns a time within 60s of
+  // now (e.g. at exactly 14:59:59 with sub-second drift), the probe must
+  // still floor at 60s — never go below the main-thread 5s eager default.
+  // This test pins the Math.max(60, ...) floor by feeding a quota object
+  // that would otherwise compute a sub-60s wait.
+  const p = auditorQuotaRetryPlan(
+    claim({ quotaAttempts: 1, quotaFirstAt: new Date().toISOString() }),
+    quotaSignal(0, false, "rate-limit"),
+    60,
+  );
+  assert.ok(p.retryAfterSec >= 60, `hour-aligned probe must floor at 60s, got ${p.retryAfterSec}`);
+});
+
+test("v0.34.84: upstream Retry-After still wins over hour-aligned", () => {
+  // If the provider gave a hint (e.g. Retry-After: 7200), we honor that
+  // — hour-aligned is the fallback, not the override.
+  const plan = auditorQuotaRetryPlan(
+    claim({ quotaAttempts: 1, quotaFirstAt: new Date().toISOString() }),
+    quotaSignal(7200, true, "rate-limit"),
+    60,
+  );
+  assert.equal(plan.retryAfterSec, 7200, "the provider's hint still wins over hour-aligned");
 });
 
 test("eager: attempts are bounded by the automatic horizon (capped after 5)", () => {
