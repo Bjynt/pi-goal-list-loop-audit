@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### 0.34.84 — Hourly quota probe for the auditor retry envelope (closes note.md Screenshots 160846–161010)
+
+Field (note.md, six screenshots 16:08–16:10 on 2026-08-07): the auditor's durable quota-retry envelope (v0.34.79) retried attempt 1 eagerly at 5s, then fell onto exponential rungs — 60m → 2h → 4h → … The auditor was observed parked at "Retrying (13/15) in 6232s–6367s" ≈ 1h44m between probes, with a separate main-thread "next probe in 32m–51m" timer running in parallel. Exponential rungs don't align with the provider's quota-reset boundary, so the goal could sit a 2h/4h rung while the quota had already reset at a top-of-hour the plugin never probed.
+
+Fix: `auditorQuotaRetryPlan` (extensions/loops/goal.ts) now routes quota-shaped errors (error text matching the conservative `quotaSignal` patterns — `rate-limit` | `plan-quota` | `billing`) to an hour-aligned probe on attempts 2+, binding the existing `nextHourlyPromptMs` helper (goal-loop-core.ts:48): retry at the next top-of-hour strictly after now, floored at 60s. Priority stays: upstream hint > attempt-1 eager 5s > (quota → hourly | transient → exponential 2h/4h…). A stuck provider that isn't quota-shaped still gets the exponential cadence; the 5-attempt horizon and 5h cap are untouched.
+
+Files: `extensions/loops/goal.ts` (plan branches on `quota.signal`), `tests/auditor-eager-retry.test.ts` (+5 tests, 11 total), `audit/HOURLY-QUOTA-PROBE-2026-08-07.md`. Suite: 1070 pass / 1 skip / 0 fail across 99 files (was 1065/1/0). tsc clean.
+
 ### 0.34.83 — Reviewer "issue" misparse fix (closes note.md Screenshot_20260807_161539)
 
 Field (note.md, 7 screenshots 16:08–16:18 on 2026-08-07): the reviewer's bug regex (`/\bTODO\b|\bFIXME\b|\bbug\b|\bissue\b|regression|broken|\bfixme\b/i`) matched the bare word "issue" — every completion summary that cited a GitHub issue number ("fixed in GitHub issue #5", "traced via gh-123", "this issue is open") produced a junk bug-class finding that was enqueued to `/list`. The reviewer then cascade-activated that finding as its own list item. The workaround in the last few goals was rewriting `newObjective` prose to be trigger-word-free; the fix removes the workaround's cause.
