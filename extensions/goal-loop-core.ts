@@ -1237,7 +1237,15 @@ export function extractParallelFlag(raw: string): { objective: string; parallelS
   if (!m) return { objective: raw.trim(), parallelSafe: undefined };
   const value = m[1]!.toLowerCase();
   const parallelSafe = !["no", "false", "0", "none", "off"].includes(value);
-  const objective = (raw.slice(0, m.index) + raw.slice(m.index! + m[0].length)).trim();
+  // Reconstruct the objective around the cut: join with a single space, then
+  // collapse doubles, re-space a comma/semicolon that lost its follower
+  // ("first,then" → "first, then"), and trim each line so a line-final marker
+  // never leaves trailing whitespace.
+  const objective = (raw.slice(0, m.index ?? 0) + " " + raw.slice((m.index ?? 0) + m[0].length))
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/([,;])([A-Za-z])/g, "$1 $2")
+    .split("\n").map((l) => l.trimEnd()).join("\n")
+    .trim();
   return { objective, parallelSafe };
 }
 
