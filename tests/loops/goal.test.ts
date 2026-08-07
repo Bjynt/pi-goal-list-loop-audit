@@ -31,7 +31,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { MockPi, makeMockCtx, tmpCwd, tick, type MockCtx } from "../harness/mock-pi.js";
-import activate, { __testOnlyResetStaleFlag, __testOnlySetContinuationStartTimeout, __testOnlySetLastCompactionAt } from "../../extensions/loops/goal.js";
+import activate, { __testOnlyResetStaleFlag, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, __testOnlySetLastCompactionAt } from "../../extensions/loops/goal.js";
 
 const pi = new MockPi();
 activate(pi.api);
