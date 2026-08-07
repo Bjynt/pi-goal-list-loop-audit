@@ -21,7 +21,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 
 import { readState } from "../extensions/goal-loop-core.js";
-import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
+import activate, { __testOnlyLoadState, __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
 import {
   MockPi, makeMockCtx, tmpCwd, seedState, seedGoal, seedLoop, tick,
   type MockCtx,
@@ -154,14 +154,9 @@ test("last item: drop still ledgered, list goes empty, no advance possible", asy
   const { cwd, ctx, goal } = await impossibleFixture({ list: [] });
   const before = readState(cwd).goal as { id: string };
 
-  const st0 = readState(cwd).goal as any;
-  console.log("DBG4 pre-pause:", JSON.stringify({ id: st0.id, status: st0.status, policy: st0.policy, objective: st0.objective }));
-  console.log("DBG4 list:", JSON.stringify((readState(cwd).list ?? []).map((i: any) => i.objective)));
-  const res4 = await runPauseTool(ctx, { reason: "nobody can build this", kind: "blocked" });
-  console.log("DBG4 tool:", res4.content[0]!.text);
+  await runPauseTool(ctx, { reason: "nobody can build this", kind: "blocked" });
   await tick();
 
-  console.log("DBG4 ledger:", readLedger(cwd).map((l) => l.type).join(","));
   assert.equal(readLedger(cwd).filter((l) => l.type === "list_item_auto_dropped").length, 1, "drop ledgered even for the last item");
   const after = readState(cwd).goal as { id: string; status: string };
   assert.equal(after.id, before.id, "no advance when the queue is empty");
@@ -171,21 +166,32 @@ test("last item: drop still ledgered, list goes empty, no advance possible", asy
 });
 
 test("loop hold: drop ledgered but NO advance while a loop owns the surface", async () => {
-  const { cwd, ctx, goal } = await impossibleFixture({
-    state: { loop: seedLoop({ active: true }) },
-  });
-  const before = readState(cwd).goal as { id: string };
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  try {
+    // __testOnlyLoadState skips session_start, so the stacked-state
+    // auto-arbitration (which would park the loop) never runs — a live
+    // loop AND a live list goal can coexist for this gate test.
+    const goal = seedGoal({ policy: "list", status: "active", objective: "impossible item A" });
+    seedState(cwd, {
+      goal,
+      list: [{ id: "q-item-2", objective: "second list item" }],
+      loop: seedLoop({ active: true, startedAt: new Date(Date.now() + 60_000).toISOString() }),
+    });
+    __testOnlyLoadState(cwd);
+    const ctx = ownerCtx(cwd);
+    const before = readState(cwd).goal as { id: string };
 
-  const st0 = readState(cwd).goal as any;
-  console.log("DBG5 pre-pause:", JSON.stringify({ id: st0.id, status: st0.status, policy: st0.policy, objective: st0.objective, pauseKind: st0.pauseKind }));
-  console.log("DBG5 list:", JSON.stringify((readState(cwd).list ?? []).map((i: any) => i.objective)), "loop:", JSON.stringify((readState(cwd).loop as any)?.active));
-  const res5 = await runPauseTool(ctx, { reason: "cannot be done", kind: "blocked" });
-  console.log("DBG5 tool:", res5.content[0]!.text);
-  await tick();
+    await runPauseTool(ctx, { reason: "cannot be done", kind: "blocked" });
+    await tick();
 
-  console.log("DBG5 ledger:", readLedger(cwd).map((l) => l.type).join(","));
-  assert.equal(readLedger(cwd).filter((l) => l.type === "list_item_auto_dropped").length, 1, "drop ledgered");
-  const after = readState(cwd).goal as { id: string; status: string };
-  assert.equal(after.id, before.id, "one-active-thing choke point: no advance over a live loop");
-  assert.ok(ctx.ui.matching("a running loop holds the surface").length >= 1, "loop-hold notify");
+    assert.equal(readLedger(cwd).filter((l) => l.type === "list_item_auto_dropped").length, 1, "drop ledgered");
+    const after = readState(cwd).goal as { id: string; status: string };
+    assert.equal(after.id, before.id, "one-active-thing choke point: no advance over a live loop");
+    assert.equal(after.status, "paused");
+    assert.equal(readState(cwd).list?.length, 1, "follow-up stays queued behind the live loop");
+    assert.ok(ctx.ui.matching("a running loop holds the surface").length >= 1, "loop-hold notify");
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
 });
