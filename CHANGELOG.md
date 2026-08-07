@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### 0.34.87 — Status-surface separation: paused list item vs active session (closes note.md Screenshots 161659/161718)
+
+Field: `∴ Working…` (session-level) shown alongside `list item · paused · 1h 31m` and `⏵ auditor: blocked — no verdict`; the status line claimed `glla: MAIN HOST · SUPERVISING · auditor blocked — no verdict` while the card read paused; `complete_goal` answered "No active goal." while the widget clearly held a paused item. The status bar mixed session-level activity with goal-level state — two contradictory surfaces. (pi's own Working… indicator is session-generation and stays; glla's surfaces must never claim goal activity while the item is parked.)
+
+Fix — three surfaces: (1) status line for a paused audit-no-verdict item: `glla: MAIN HOST · SUPERVISING · auditor blocked — no verdict` → `glla: ⏸ paused · auditor parked — no verdict · /list resume` (+ ` · N queued`); a parked item is deliberately NOT host-bearing (the v0.34.57 MAIN_HOST_LABEL guard still covers auditing). (2) Widget card: `auditor: blocked — no verdict` → `auditor: parked — no verdict`; "MAIN host remains attached" → "the stored completion claim was not evaluated — the audit waits while the item is paused" — "parked" names the goal state; "blocked" read as live failure next to ⏸. (3) `complete_goal` on a paused goal: the flat "No active goal." → "No active goal — the goal is paused; /goal resume reactivates it" (list policy names /list resume).
+
+Files: `extensions/goal-loop-display.ts` (status + card parked rendering), `extensions/loops/goal.ts` (complete_goal paused response). Tests: `tests/display.test.ts` (no-verdict test rewritten to parked semantics + list/queue variant; MAIN_HOST_LABEL guard test updated — paused is not host-bearing), `tests/mode-command-guidance.test.ts` (fallback wording), `tests/behavioral-orchestrator.test.ts` (cold-start hold pins the parked card; +1 MockPi complete_goal-on-paused test). `audit/STATUS-SURFACE-SEPARATION-2026-08-07.md`. Suite: 1087 pass / 1 skip / 0 fail across 100 files (was 1085/1/0). tsc clean.
+
 ### 0.34.86 — Auditor liveness / progress signals (phase labels + report byte-counter, closes note.md Screenshots 161837/175627)
 
 Field (queue item: auditor liveness/progress signals): the auditor's report stream is muted by default (v0.34.66 — "report stream muted — final text at verdict"), so a 5-minute audit pass shows a timer counting up with zero visible progress — a hung worker and a working-but-silent worker look identical.
