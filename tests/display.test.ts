@@ -365,15 +365,16 @@ test("auditing shows the auditor's current tool", () => {
   assert.match(s, /read/);
 });
 
-test("v0.34.65: completed goal shows outcome + duration instead of clearing the segment", () => {
+test("v0.34.89: completed goal shows a dim one-line summary instead of a loud status claim", () => {
   const s = buildStatusText({ goal: goalOf({ status: "complete" }), list: [] }, null, NOW)!;
-  assert.match(s, /✓ complete/);
-  assert.match(s, /took 0s/, "goalOf createdAt === updatedAt → wall duration 0");
+  assert.match(s, /✓ done/);
+  assert.match(s, /0s/, "goalOf createdAt === updatedAt → wall duration 0 (compact '· 0s' on the status line)");
+  assert.doesNotMatch(s, /✓ complete/, "the loud '✓ complete' claim is gone");
 });
 
-// ---- v0.34.65: terminal-goal cards (note.md 2026-08-07) ----
+// ---- v0.34.89: terminal-goal summary line (replaces the v0.34.65 card) ----
 
-test("v0.34.65: completed goal widget card shows duration + final verdict", () => {
+test("v0.34.89: completed goal widget is ONE dim summary line (objective + duration, no verdict card)", () => {
   const g = goalOf({
     status: "complete",
     createdAt: "2026-07-21T10:00:00Z",
@@ -381,13 +382,14 @@ test("v0.34.65: completed goal widget card shows duration + final verdict", () =
     auditHistory: [{ at: "2026-07-21T11:44:00Z", approved: true, disapproved: false, model: "minimax-m3" }],
   });
   const lines = buildWidgetLines({ goal: g, list: [] }, null, NOW)!;
-  assert.ok(lines, "a completed goal must still render a widget card");
-  assert.match(lines[0]!, /✓ complete/);
+  assert.ok(lines, "a completed goal still leaves a trace in the widget");
+  assert.equal(lines.length, 1, "the completion card collapsed to a single summary line");
+  assert.match(lines[0]!, /✓ done/);
   assert.match(lines[0]!, /took 1h 45m/);
-  assert.match(lines.join("\n"), /auditor approved \(minimax-m3\)/);
+  assert.doesNotMatch(lines.join("\n"), /auditor approved/, "the verdict stays in the archive + /goal status, not the widget");
 });
 
-test("v0.34.65: aborted goal widget card names the reason + duration", () => {
+test("v0.34.89: aborted goal summary names the reason + duration on one line", () => {
   const g = goalOf({
     status: "aborted",
     createdAt: "2026-07-21T11:30:00Z",
@@ -395,15 +397,17 @@ test("v0.34.65: aborted goal widget card names the reason + duration", () => {
     stopReason: "cancelled by user",
   });
   const lines = buildWidgetLines({ goal: g, list: [] }, null, NOW)!;
+  assert.equal(lines.length, 1, "aborted goals also collapse to one line");
   assert.match(lines[0]!, /✗ aborted/);
   assert.match(lines[0]!, /took 28m/);
   assert.match(lines.join("\n"), /cancelled by user/);
 });
 
-test("v0.34.65: completed goal without a verdict is honest about it", () => {
+test("v0.34.89: completed goal without a verdict does not fabricate one on the summary", () => {
   const g = goalOf({ status: "complete", createdAt: "2026-07-21T10:00:00Z", updatedAt: "2026-07-21T11:45:00Z" });
   const lines = buildWidgetLines({ goal: g, list: [] }, null, NOW)!;
-  assert.match(lines.join("\n"), /no stored verdict/);
+  assert.match(lines.join("\n"), /✓ done/);
+  assert.doesNotMatch(lines.join("\n"), /approved|no stored verdict/, "the summary neither claims a verdict nor explains one away — the archive is the record");
 });
 
 test("active loop shows iteration + best + stall", () => {
@@ -892,12 +896,12 @@ test("held loop + active goal → status suffix present", () => {
   assert.match(s, /loop⏸held/);
 });
 
-test("v0.34.65: held loop + completed goal → completion card shows, held loop stays visible via suffix", () => {
+test("v0.34.89: held loop + completed goal → dim summary shows, held loop stays visible via suffix", () => {
   const state = { goal: goalOf({ status: "complete" }), list: [], loop: heldLoopOf() };
   const s = buildStatusText(state, null, NOW)!;
-  assert.match(s, /✓ complete/);
+  assert.match(s, /✓ done/);
   assert.match(s, /loop⏸held/, "the held loop stays visible as a status suffix");
-  assert.match(buildWidgetLines(state, null, NOW)![0]!, /✓ complete/);
+  assert.match(buildWidgetLines(state, null, NOW)![0]!, /✓ done/);
 });
 
 test("active loop unchanged; stopped loop stays invisible", () => {

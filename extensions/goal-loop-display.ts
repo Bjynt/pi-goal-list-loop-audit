@@ -13,7 +13,7 @@
 import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth } from "@earendil-works/pi-tui";
 
 import type { Goal, State } from "./goal-loop-core.js";
-import { auditVerdictLabel, compactDisplayText, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
+import { compactDisplayText, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
 import { HELD_ON_RESTORE, type LoopState } from "./goal-loop-forever.js";
 
 /** v0.34.57 (OPEN-ISSUES bug #1.8 / tasklist item #2): the MAIN host is
@@ -702,7 +702,11 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
   // goal"). A held loop without a goal still outranks on its own.
   if (g.status === "complete" || g.status === "aborted") {
     const done = g.status === "complete";
-    return `glla: ${paint(theme, done ? "success" : "error", done ? "✓ complete" : "✗ aborted")} · took ${fmtElapsed(goalDurationMs(g, now))}${heldSuffix}`;
+    // v0.34.89: one-line dim SUMMARY, not a loud status claim. The full
+    // verdict/reason lives in the archive + /goal status; the status bar
+    // names the outcome + wall duration like history (Screenshot_20260807
+    // _231205/231236 — the completed goal read as still-active work).
+    return `glla: ${paint(theme, "dim", `${done ? "✓ done" : "✗ aborted"} · ${fmtElapsed(goalDurationMs(g, now))}`)}${heldSuffix}`;
   }
   if (held) return `glla: loop ${paint(theme, "warning", "⏸ held")} · iter ${held.iteration} — /loop to resume`;
   return undefined;
@@ -767,9 +771,10 @@ function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null
     return held ? heldLoopLines(held, now, theme, width) : undefined;
   }
   if (g.status === "complete" || g.status === "aborted") {
-    // v0.34.65: terminal goals render a completion card (✓ complete · took X
-    // + final verdict) instead of vanishing — note.md 2026-08-07: "if ended
-    // how long it took … this seems weak for a complete goal".
+    // v0.34.65: terminal goals render instead of vanishing (a finished batch
+    // left no trace — note.md 2026-08-07). v0.34.89: that render is now a
+    // single dim SUMMARY line (`─ done · <objective> · took X`), not a full
+    // card — the old card read like an active item (Screenshot_20260807_231205).
     return completedGoalLines(g, now, theme, width);
   }
   const lines = goalLines(g, state, audit, now, theme, width, extras);
@@ -1125,39 +1130,24 @@ function goalDurationMs(g: Goal, now: number): number {
 }
 
 /**
- * v0.34.65: terminal-goal card. The widget used to vanish the instant a goal
- * completed — a finished batch with an empty list left no trace of what ran
- * or how long it took (note.md 2026-08-07, Screenshot_20260807_093742 "this
- * seems weak for a complete goal"). Render ✓ complete · took X plus a final
- * verdict/abort line instead of nothing.
+ * v0.34.65: terminal-goal rendering. The widget used to vanish the instant a
+ * goal completed — a finished batch with an empty list left no trace of what
+ * ran or how long it took (note.md 2026-08-07, Screenshot_20260807_093742
+ * "this seems weak for a complete goal").
+ * v0.34.89: that became a full card (objective + ✓ complete · took X +
+ * verdict sub-line) that read like an ACTIVE item sitting on the surface
+ * forever (Screenshot_20260807_231205/231236). Now: ONE compact dim summary
+ * line — `─ done · <objective> · took X` — history, not a second surface.
+ * The verdict/reason stays in the archive and /goal status.
  */
 function completedGoalLines(g: Goal, now: number, theme?: DisplayTheme, width?: number): string[] {
   const done = g.status === "complete";
-  const segsText = `${paint(theme, done ? "success" : "error", done ? "✓ complete" : "✗ aborted")} · took ${fmtElapsed(goalDurationMs(g, now))}`;
+  const why = g.status === "aborted" ? (g.stopReason ?? g.pauseReason) : undefined;
+  const segs = `${done ? "✓ done" : "✗ aborted"} · ${why ? `${truncate(sanitizeDisplayText(why).replace(/\s+/g, " "), 28)} · ` : ""}took ${fmtElapsed(goalDurationMs(g, now))}`;
   const objBudget = width && width > 0
-    ? Math.max(16, width - WIDGET_HORIZONTAL_MARGIN - 2 - 3 - visibleLen(segsText))
-    : 48;
-  const head = `${paint(theme, done ? "success" : "error", done ? "✓" : "✗")} ${truncate(g.objective.replace(/\s+/g, " "), objBudget)} ${paint(theme, "dim", "·")} ${segsText}`;
-  const lines = [head];
-  const summary = completionSummary(g);
-  if (summary) lines.push(`└─ ${paint(theme, "dim", summary)}`);
-  return lines;
-}
-
-/** v0.34.65: "more info at the end" — the final stored verdict for a
- * completed goal, or the abort reason. The label comes from the same
- * auditVerdictLabel classification the auditor path uses. */
-function completionSummary(g: Goal): string | undefined {
-  if (g.status === "aborted") {
-    const why = g.stopReason ?? g.pauseReason;
-    if (why) return `aborted: ${truncate(sanitizeDisplayText(why).replace(/\s+/g, " "), 60)}`;
-    return "aborted — archived without a reason";
-  }
-  const last = [...(g.auditHistory ?? [])].reverse().find((v) => v.approved || v.disapproved || v.impossible);
-  if (!last) return "archived · no stored verdict";
-  const label = auditVerdictLabel(last);
-  if (label === "approved") return `auditor approved (${last.model})`;
-  return `auditor ${label}${last.model ? ` (${last.model})` : ""}`;
+    ? Math.max(16, width - WIDGET_HORIZONTAL_MARGIN - 4 - visibleLen(segs))
+    : 44;
+  return [`${paint(theme, "dim", "─")} ${paint(theme, "dim", `${done ? "✓ done" : "✗ aborted"} · ${truncate(g.objective.replace(/\s+/g, " "), objBudget)} · ${segs}`)}`];
 }
 
 function loopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: number, extras?: WidgetExtras): string[] {
