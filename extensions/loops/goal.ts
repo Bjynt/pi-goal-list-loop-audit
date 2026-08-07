@@ -800,6 +800,25 @@ export function __testOnlySetHeartbeatStaleDebounce(n: number | null): void {
   heartbeatStaleDebounce = n ?? HEARTBEAT_STALE_DEBOUNCE;
 }
 
+/** Test-only: snapshot of the live subagent-hang probe registry. Never
+ * called by production code. */
+export function __testOnlySubagentHangProbes(): Array<{
+  recordId: string;
+  agentType?: string;
+  summary?: string;
+  lastProgressAt: number;
+  hangAlertedAt?: number;
+  endedAt?: number;
+}> {
+  return [...subagentHangProbes.values()].map((p) => ({ ...p }));
+}
+
+/** Test-only: clear the subagent-hang probe registry (between tests). Never
+ * called by production code. */
+export function __testOnlyClearSubagentHangProbes(): void {
+  subagentHangProbes.clear();
+}
+
 /** Test-only: override the session-replacement grace window (null restores
  * the production 60s). A shutdown followed by a NEVER-delivered rebind must
  * still classify as session_shutdown once the grace expires — tests backdate
@@ -1903,6 +1922,126 @@ const HEARTBEAT_STALE_DEBOUNCE = 3;
 let heartbeatStaleDebounce = HEARTBEAT_STALE_DEBOUNCE;
 let heartbeatStaleStreak = 0;
 
+// =================================================================
+// v0.34.85 — subagent hang watchdog
+// =================================================================
+// note.md Screenshots 161019/161032: subagents frozen at 10697s (3h) with
+// zero stream activity — repeated "BUSY with zero stream activity" warnings
+// at 22/31/41 min. The auditor's detached worker has a heartbeat-without-
+// progress watchdog (auditor-process.ts, 10m default); subagent sessions
+// have NONE — a wedged subagent burns parent tokens for hours before anyone
+// notices. This watchdog gives subagents the same fail-fast: a subagent
+// whose pi-subagents record is still "running" but shows NO new progress
+// (tool uses or assistant output tokens) for SUBAGENT_HANG_NO_PROGRESS_MS
+// (5m default — SHORTER than the auditor's 10m, because a hung subagent
+// costs parent tokens on every turn) is surfaced to the user and ledgered
+// `subagent_hang_detected`. Detection + guidance only: the main session
+// decides whether to abort — never an auto-kill.
+const SUBAGENT_HANG_NO_PROGRESS_MS = 5 * 60_000;
+/** Re-alert throttle — one user-facing hang warning per streak window. */
+const SUBAGENT_HANG_ALERT_THROTTLE_MS = 5 * 60_000;
+/** Ended probes are pruned an hour after completion (HUD/final-state reads). */
+const SUBAGENT_HANG_PRUNE_MS = 60 * 60_000;
+
+interface SubagentHangProbe {
+  recordId: string;
+  agentType?: string;
+  summary?: string;
+  spawnedAt: number;
+  /** Last time the subagent delivered NEW progress (tool use / output tokens). */
+  lastProgressAt: number;
+  /** Last polled record.toolUses — progress when it increases. */
+  lastToolUses: number;
+  /** Last polled record.lifetimeUsage.output — progress when it increases. */
+  lastOutputTokens: number;
+  /** Throttle: last user-facing hang warning for this subagent. */
+  hangAlertedAt?: number;
+  endedAt?: number;
+}
+
+const subagentHangProbes = new Map<string, SubagentHangProbe>();
+
+/** pi-subagents publishes a cross-package manager registry
+ * (Symbol.for("pi-subagents:manager"), agent-manager.ts) exposing
+ * getRecord(id) with LIVE toolUses / lifetimeUsage / status — the join that
+ * lets the main session distinguish "working" from "wedged" without any
+ * cross-extension stream event. Defensive: absent when pi-subagents isn't
+ * loaded or the record shape changes (falls back to event-only evidence). */
+const SUBAGENT_MANAGER_KEY = Symbol.for("pi-subagents:manager");
+type SubagentRecordPoll = { toolUses?: number; lifetimeUsage?: { output?: number }; status?: string };
+type SubagentManagerPoll = { getRecord?: (id: string) => SubagentRecordPoll | undefined };
+function subagentManagerPoller(): SubagentManagerPoll {
+  try {
+    return ((globalThis as any)[SUBAGENT_MANAGER_KEY] ?? {}) as SubagentManagerPoll;
+  } catch {
+    return {};
+  }
+}
+
+function upsertSubagentHangProbe(recordId: string, agentType: string | undefined, summary: string | undefined, now = Date.now()): void {
+  const existing = subagentHangProbes.get(recordId);
+  if (existing) {
+    // Re-observation (resume / re-run): fresh evidence + refreshed metadata.
+    existing.lastProgressAt = now;
+    existing.endedAt = undefined;
+    if (agentType) existing.agentType = agentType;
+    if (summary) existing.summary = summary;
+    return;
+  }
+  subagentHangProbes.set(recordId, {
+    recordId, agentType, summary,
+    spawnedAt: now, lastProgressAt: now, lastToolUses: 0, lastOutputTokens: 0,
+  });
+}
+
+function markSubagentHangProgress(recordId: string, now = Date.now()): void {
+  const p = subagentHangProbes.get(recordId);
+  if (p) p.lastProgressAt = now;
+}
+
+function endSubagentHangProbe(recordId: string, now = Date.now()): void {
+  const p = subagentHangProbes.get(recordId);
+  if (p) p.endedAt = now;
+}
+
+/** v0.34.85: which probes are hung right now? MUTATES the passed probes'
+ * progress counters (advances lastToolUses/lastOutputTokens/lastProgressAt)
+ * so a streak resets when progress resumes — the same driver semantics as
+ * the auditor's heartbeat watchdog. A probe is hung when its record is
+ * still running (or queued/steered) and it produced no NEW progress for ≥
+ * SUBAGENT_HANG_NO_PROGRESS_MS. Records that vanished or ended are skipped
+ * (the driver prunes ended probes). Exported pure for tests. */
+export function classifyHungSubagents(
+  probes: Array<{
+    recordId: string;
+    lastProgressAt: number;
+    lastToolUses: number;
+    lastOutputTokens: number;
+    endedAt?: number;
+  }>,
+  getRecord: (id: string) => SubagentRecordPoll | undefined,
+  now = Date.now(),
+): Array<{ recordId: string; silentMs: number }> {
+  const hung: Array<{ recordId: string; silentMs: number }> = [];
+  for (const p of probes) {
+    if (p.endedAt !== undefined) continue;
+    const rec = getRecord(p.recordId);
+    if (!rec) continue; // vanished mid-poll — the driver prunes/ignores
+    if (rec.status !== "running" && rec.status !== "steered" && rec.status !== "queued") continue;
+    const toolUses = rec.toolUses ?? 0;
+    const output = rec.lifetimeUsage?.output ?? 0;
+    if (toolUses > p.lastToolUses || output > p.lastOutputTokens) {
+      p.lastToolUses = toolUses;
+      p.lastOutputTokens = output;
+      p.lastProgressAt = now;
+      continue;
+    }
+    const silentMs = now - p.lastProgressAt;
+    if (silentMs >= SUBAGENT_HANG_NO_PROGRESS_MS) hung.push({ recordId: p.recordId, silentMs });
+  }
+  return hung;
+}
+
 function heartbeatTick(): void {
   if (zombieStoodDown || initialSessionLoadPending) return; // blank startup waits for pi to bind a real session
   // Probe the ExtensionAPI BEFORE probing the captured context. When pi
@@ -2012,6 +2151,38 @@ function heartbeatTick(): void {
     ctx.ui.notify(`glla: the session has been BUSY with zero stream activity for ${Math.round(streamSilentMs / 60000)} min — the provider stream is hung (pi never times it out; queued continuations can't land). Press Esc to abort the zombie turn — the goal/loop refires itself.`, "warning");
     notifyExternal(ctx, `glla: zombie run suspected (${Math.round(streamSilentMs / 60000)} min busy-silent) — press Esc to abort.`);
     return;
+  }
+  // v0.34.85: subagent hang watchdog (note.md Screenshots 161019/161032).
+  // A subagent whose pi-subagents record is still running but delivers no
+  // NEW progress (tool use or output tokens) for 5m is wedged — the same
+  // fail-fast the auditor's detached worker gets via its heartbeat
+  // watchdog. Surface + ledger `subagent_hang_detected`; the main session
+  // decides whether to abort (detection only, never an auto-kill).
+  if (subagentHangProbes.size > 0) {
+    const nowMs = Date.now();
+    const poll = subagentManagerPoller();
+    const hung = classifyHungSubagents([...subagentHangProbes.values()], (id) => poll.getRecord?.(id), nowMs);
+    for (const [id, p] of subagentHangProbes) {
+      if (p.endedAt !== undefined && nowMs - p.endedAt >= SUBAGENT_HANG_PRUNE_MS) subagentHangProbes.delete(id);
+    }
+    for (const h of hung) {
+      const p = subagentHangProbes.get(h.recordId);
+      if (!p || (p.hangAlertedAt !== undefined && nowMs - p.hangAlertedAt < SUBAGENT_HANG_ALERT_THROTTLE_MS)) continue;
+      p.hangAlertedAt = nowMs;
+      const label = [p.agentType, p.summary].filter(Boolean).join(" ");
+      const mins = Math.max(1, Math.round(h.silentMs / 60_000));
+      appendLedger(ctx.cwd, "subagent_hang_detected", {
+        recordId: p.recordId,
+        agentType: p.agentType,
+        summary: p.summary,
+        silentMs: h.silentMs,
+        spawnedAt: new Date(p.spawnedAt).toISOString(),
+        at: nowIso(),
+      });
+      const msg = `glla: subagent${label ? ` (${label})` : ""} shows no progress for ${mins}m — still running with no new tool calls or output. It may be hung; the main session can decide to abort it.`;
+      ctx.ui.notify(msg, "warning");
+      notifyExternal(ctx, msg);
+    }
   }
   // v0.34.11: legacy unanswered-continuation diagnostics. The new
   // generation-bound dispatch watchdog returns above while a dispatch is
@@ -10579,5 +10750,40 @@ export default function (pi: ExtensionAPI): void {
       goalId: state.goal?.status === "active" ? state.goal.id : undefined,
       at: nowIso(),
     });
+    // v0.34.85: seed the hang-watchdog probe (spawn = baseline evidence).
+    upsertSubagentHangProbe(sessionId, typeof e.type === "string" ? e.type : undefined, typeof e.description === "string" ? e.description : undefined);
+  });
+
+  // v0.34.85 — subagent hang watchdog inputs. Progress evidence (compacted =
+  // the session survived a compaction → alive and working; steered = a steer
+  // landed) refreshes the probe's streak; terminal events (completed/failed)
+  // stop the watch. The watchdog scan itself lives in heartbeatTick.
+  pi.events.on("subagents:compacted", (data: unknown) => {
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
+    if (!freshCtx()) return;
+    const e = (data ?? {}) as { id?: unknown };
+    const recordId = typeof e.id === "string" && e.id.length > 0 ? e.id : undefined;
+    if (recordId) markSubagentHangProgress(recordId);
+  });
+  pi.events.on("subagents:steered", (data: unknown) => {
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
+    if (!freshCtx()) return;
+    const e = (data ?? {}) as { id?: unknown };
+    const recordId = typeof e.id === "string" && e.id.length > 0 ? e.id : undefined;
+    if (recordId) markSubagentHangProgress(recordId);
+  });
+  pi.events.on("subagents:completed", (data: unknown) => {
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
+    if (!freshCtx()) return;
+    const e = (data ?? {}) as { id?: unknown };
+    const recordId = typeof e.id === "string" && e.id.length > 0 ? e.id : undefined;
+    if (recordId) endSubagentHangProbe(recordId);
+  });
+  pi.events.on("subagents:failed", (data: unknown) => {
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
+    if (!freshCtx()) return;
+    const e = (data ?? {}) as { id?: unknown };
+    const recordId = typeof e.id === "string" && e.id.length > 0 ? e.id : undefined;
+    if (recordId) endSubagentHangProbe(recordId);
   });
 }
