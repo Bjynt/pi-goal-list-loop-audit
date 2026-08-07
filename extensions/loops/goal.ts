@@ -4559,21 +4559,43 @@ async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "lis
     raw = raw.slice(1, -1).trim();
   }
   if (!raw) {
+    // v0.34.69 (note.md 2026-08-07: "list tweak seems too literal, doesnt
+    // work, it should launcher into a what we update into"): a bare tweak
+    // now LAUNCHES the update-proposal flow instead of dying with "Usage:".
+    // The current item text is shown (notify preview + input pre-fill), the
+    // replacement is collected interactively, and the proposal confirm below
+    // still gates the apply — old→new, confirm, then apply.
+    const surface = mode === "list" ? "list item" : "goal";
     ctx.ui.notify(
-      mode === "list"
-        ? "Usage: /list tweak <replacement objective, optional 'Done when: ...' clause>"
-        : "Usage: /goal tweak <replacement objective, optional 'Done when: ...' clause>",
+      `Tweak ${surface} — current: ${displaySlice(current.objective, 120)}`,
       "info",
     );
-    return;
+    let v: string | undefined;
+    try {
+      v = await ctx.ui.input(
+        mode === "list"
+          ? "What should we update the list item into? (replacement objective, optional 'Done when: ...' clause)"
+          : "What should we update the goal into? (replacement objective, optional 'Done when: ...' clause)",
+        current.objective,
+      );
+    } catch {
+      v = undefined;
+    }
+    if (v === undefined || !v.trim()) {
+      ctx.ui.notify("Tweak cancelled; nothing changed.", "info");
+      return;
+    }
+    raw = v.trim();
   }
   const proposed = extractVerificationContract(raw);
   const newObjective = proposed.objective;
   if (!newObjective) {
+    // (a bare input of "Done when: ..." only yields this — the replacement
+    // has no objective part to apply)
     ctx.ui.notify(
       mode === "list"
-        ? "Usage: /list tweak <replacement objective, optional 'Done when: ...' clause>"
-        : "Usage: /goal tweak <replacement objective, optional 'Done when: ...' clause>",
+        ? "No objective in the replacement text — include what the list item should become."
+        : "No objective in the replacement text — include what the goal should become.",
       "info",
     );
     return;
@@ -4585,6 +4607,18 @@ async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "lis
   //   bare marker      → CLEAR the stored contract ("Done when:" with nothing)
   const hasNewContract = proposed.verificationContract.length > 0;
   const clearsContract = !hasNewContract && proposed.explicitClear;
+  // v0.34.69: no-op guard — an identical objective with no contract change
+  // must not bump the v0.34.61 revision (which would invalidate the last
+  // auditor approval for a tweak that changed NOTHING). Pre-filling the
+  // input with the current text makes this reachable by a plain Enter.
+  if (
+    newObjective.trim() === current.objective.trim()
+    && !hasNewContract
+    && !clearsContract
+  ) {
+    ctx.ui.notify("Tweak cancelled — the objective is unchanged.", "info");
+    return;
+  }
   let confirmed = false;
   try {
     confirmed = await ctx.ui.confirm(
