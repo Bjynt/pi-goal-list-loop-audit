@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### 0.34.62 — spurious-stale self-heal; heartbeat probe debounce
+
+Field: hegemon 2026-08-06 — ONE heartbeat probe failure latched
+`extensionApiStale` and parked the goal plane ("this session is handing off
+ to a fresh pi context — /list will be handled after session_start") for
+ ~5 hours while the SAME pi process kept serving commands. pi never
+ replaced the session (compaction emits only `session_compact` — no
+ `session_shutdown`, no `session_start`), so no rebind ever arrived and the
+ only recovery was a restart.
+
+- **Heartbeat probe debounce** (`HEARTBEAT_STALE_DEBOUNCE = 3`): the
+  heartbeat now counts consecutive RAW probe failures and only declares the
+  stale terminal at the debounce threshold — a single transient probe
+  failure (pi mid-settle, compaction settle, provider pause) must not park
+  a live session. The non-caching `probeExtensionApiStaleRaw()` was
+  extracted for this; the cached probe keeps its semantics elsewhere.
+- **Same-session self-heal** (`selfHealStaleSameSession`, wired at the top
+  of `rememberCtx` before successor absorption): when a user command
+  arrives from the SAME sessionManager after the park, the rebind grace has
+  expired, the owner file shows no successor instance, and the fresh probe
+  is healthy, the park was wrong — the plane is reclaimed (ledger
+  `stale_self_healed`), and the interrupted goal resumes per the
+  autoResume gate (hold-everything keeps the interrupt marker and asks for
+  an explicit resume; loops stay held). Refused for zombies, foreign
+  sessions (absorption owns that path), inside the rebind window, and for
+  genuinely-dead handles.
+- Tests: `tests/stale-self-heal.test.ts` (7 — debounce, heal, dead-handle
+  refusal, foreign refusal, rebind-window refusal, loop-held pin,
+  source guards); `__testOnlyHeartbeatTick` keeps its single-tick terminal
+  contract via a debounce override; new `__testOnlyHeartbeatTickRaw` /
+  `__testOnlySetHeartbeatStaleDebounce` hooks.
+
 ### Changed — provider-failure retry is uniformly kind-independent
 
 - The last quota-only parking gate is gone: an upstream reset hint beyond the

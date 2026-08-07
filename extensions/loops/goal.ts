@@ -634,7 +634,23 @@ export function __testOnlySetLastModelRef(ref: string | undefined): void {
  * runtime command; it only lets the mock host reproduce an invalidated
  * context with no successor session_start. */
 export function __testOnlyHeartbeatTick(): void {
+  const prev = heartbeatStaleDebounce;
+  heartbeatStaleDebounce = 1; // v0.34.62: the hook keeps its single-tick terminal contract
   heartbeatTick();
+  heartbeatStaleDebounce = prev;
+}
+
+/** Test-only: drive the PRODUCTION (debounced) heartbeat path — the orphan
+ * watchdog with HEARTBEAT_STALE_DEBOUNCE applied. Never called by production
+ * code. */
+export function __testOnlyHeartbeatTickRaw(): void {
+  heartbeatTick();
+}
+
+/** Test-only: override the heartbeat stale-probe debounce (null restores the
+ * production HEARTBEAT_STALE_DEBOUNCE). Never called by production code. */
+export function __testOnlySetHeartbeatStaleDebounce(n: number | null): void {
+  heartbeatStaleDebounce = n ?? HEARTBEAT_STALE_DEBOUNCE;
 }
 
 /** Test-only: release the claimed session owner so a later test file can
@@ -659,14 +675,24 @@ export async function __testOnlyRunFanOutListAuditFindings(cwd: string): Promise
  * routes through pi's assertActive() and throws the stale signature iff
  * pi invalidated this factory handle (session replacement). A positive
  * result is cached in extensionApiStale. */
-function probeExtensionApiStale(): boolean {
-  if (extensionApiStale) return true;
+/** v0.34.62: side-effect-free RAW staleness probe — same shape as
+ * probeExtensionApiStale but never caches. The heartbeat debounce needs to
+ * count consecutive failures WITHOUT latching on the first transient one
+ * (field: hegemon 2026-08-06 — one probe failure parked a live session for
+ * 5 hours). */
+function probeExtensionApiStaleRaw(): boolean {
   if (!extensionApi) return false;
   try {
     extensionApi.getSessionName();
   } catch (err) {
-    if (isStaleApiError(err)) extensionApiStale = true;
+    if (isStaleApiError(err)) return true;
   }
+  return false;
+}
+
+function probeExtensionApiStale(): boolean {
+  if (extensionApiStale) return true;
+  if (probeExtensionApiStaleRaw()) extensionApiStale = true;
   return extensionApiStale;
 }
 
@@ -932,6 +958,7 @@ function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   }
   ctx.ui.notify("glla: pi replaced this session without delivering session_start — absorbed the live replacement as the goal-plane owner (in-memory subagent sessions stay refused).", "info");
   startHeartbeat();
+  heartbeatStaleStreak = 0;
   if (state.goal && state.goal.status === "active" && state.goal.interruptedAt) {
     updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
     ctx.ui.notify(`Resuming ${state.goal.policy === "list" ? "list item" : "goal"}: ${displaySlice(state.goal.objective, 70)} — auto-resumed after the silent session swap`, "info");
@@ -942,7 +969,80 @@ function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   return true;
 }
 
+/** v0.34.62: spurious-stale self-heal. Field: hegemon 2026-08-06T20:06Z — a
+ * single heartbeat probe failure latched extensionApiStale and parked the
+ * goal plane ("handing off to a fresh pi context") for ~5 hours while the
+ * SAME pi process kept serving commands. pi never replaced the session
+ * (compaction emits only session_compact — no session_shutdown, no
+ * session_start), so no rebind ever arrived and the only recovery was a
+ * restart. When a user command arrives from the SAME sessionManager after
+ * the rebind grace expired AND the handle now probes healthy, the park was
+ * wrong: un-park, reclaim the plane, and resume the interrupted goal per
+ * the autoResume gate (mirroring the session-load restore semantics).
+ * Refused when a zombie owns the plane (owner file), when a DIFFERENT
+ * session contacts us (successor absorption owns that path), inside the
+ * rebind window, or while the fresh probe still throws (genuinely dead —
+ * keep the honest park). */
+function selfHealStaleSameSession(ctx: ExtensionContext): boolean {
+  if (zombieStoodDown) return false; // another instance owns the plane
+  const parked = extensionApiStale || sessionHandoffPending || staleTerminalDone;
+  if (!parked) return false;
+  if (initialSessionLoadPending) return false;
+  const recordedOwner = ownerSession ?? deadOwnerSession;
+  if (recordedOwner === null || ctx.sessionManager !== recordedOwner) return false;
+  if (Date.now() < sessionReplacementUntil) return false; // a successor session_start is expected
+  const owner = readOwnerFile(ctx.cwd);
+  if (owner && owner.pid === process.pid && typeof owner.instanceId === "string" && owner.instanceId !== instanceId) {
+    return false; // a successor module instance owns this cwd — never re-claim
+  }
+  // The handle must actually be healthy NOW — the fresh probe, not the
+  // latched cache. A null api means we cannot send anything anyway.
+  if (!extensionApi || probeExtensionApiStaleRaw()) return false;
+  const was = extensionApiStale ? "extension_api_stale" : sessionHandoffPending ? "session_handoff_pending" : "stale_terminal_done";
+  extensionApiStale = false;
+  sessionHandoffPending = false;
+  staleTerminalDone = false;
+  deadOwnerSession = null;
+  deadOwnerCwd = null;
+  ownerSession = ctx.sessionManager;
+  ownerCwd = ctx.cwd;
+  lastCtx = ctx;
+  sessionGeneration++; // a parked generation's delayed callbacks must not fire into the reclaimed plane
+  heartbeatStaleStreak = 0;
+  clearDraftingState();
+  appendLedger(ctx.cwd, "stale_self_healed", { was, via: "same-session command", generation: sessionGeneration });
+  startHeartbeat();
+  startUITicker();
+  if (state.goal && state.goal.status === "active" && state.goal.interruptedAt) {
+    // Mirror the session-load restore gate: autoResume=on (unattended rigs)
+    // resumes; the hold-everything default keeps the interrupt marker and
+    // asks for an explicit resume.
+    const autoResumeSetting = resolveEffectiveAggressiveSettings(loadGlobalSettings()).autoResume;
+    if (autoResumeSetting) {
+      updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
+      ctx.ui.notify(
+        `Recovered from the stale-handle park — the handle is healthy again. Resuming ${state.goal.policy === "list" ? "list item" : "goal"}: ${displaySlice(state.goal.objective, 70)}`,
+        "info",
+      );
+      postRestoreGraceTurns = 2;
+      scheduleContinuation(ctx, true);
+    } else {
+      ctx.ui.notify(
+        `Recovered from the stale-handle park — the handle is healthy again. ${activeGoalSurfaceCommand("resume")} continues the interrupted ${state.goal.policy === "list" ? "list item" : "goal"}.`,
+        "info",
+      );
+    }
+  } else {
+    ctx.ui.notify("glla: recovered from the stale-handle park — the handle is healthy again; the goal plane is live.", "info");
+  }
+  refreshUI(ctx);
+  return true;
+}
+
 function rememberCtx(ctx: ExtensionContext): void {
+  // v0.34.62: spurious-stale self-heal BEFORE the stale gates drop the ctx —
+  // a same-session command with a healthy handle proves the park was wrong.
+  if (selfHealStaleSameSession(ctx)) return;
   // v0.34.25: absorb BEFORE the stale gates drop the ctx — after pi's silent
   // swap, the first sign of life is an ordinary command/event from the
   // replacement session, and every gate below would discard it forever.
@@ -1550,6 +1650,13 @@ function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
   return true;
 }
 
+// v0.34.62: consecutive heartbeat probe failures required before the stale
+// terminal is declared (field: hegemon 2026-08-06 — see heartbeatTick).
+// heartbeatStaleDebounce is overridable via __testOnlySetHeartbeatStaleDebounce.
+const HEARTBEAT_STALE_DEBOUNCE = 3;
+let heartbeatStaleDebounce = HEARTBEAT_STALE_DEBOUNCE;
+let heartbeatStaleStreak = 0;
+
 function heartbeatTick(): void {
   if (zombieStoodDown || initialSessionLoadPending) return; // blank startup waits for pi to bind a real session
   // Probe the ExtensionAPI BEFORE probing the captured context. When pi
@@ -1559,10 +1666,21 @@ function heartbeatTick(): void {
   // a durable interruption marker. Keep the last context long enough for the
   // terminal path to persist the honest orphan state.
   const knownCtx = lastCtx;
-  if (probeExtensionApiStale()) {
+  if (extensionApiStale || probeExtensionApiStaleRaw()) {
+    if (!extensionApiStale) {
+      // v0.34.62: debounce — ONE transient probe failure (pi mid-settle,
+      // compaction settle, provider pause) must not park a live session.
+      // Field: hegemon 2026-08-06T20:06Z — a single heartbeat probe failure
+      // latched the terminal and held the session in "handing off to a fresh
+      // pi context" for ~5h with NO session_start ever arriving (compaction
+      // emits only session_compact); the only recovery was a restart.
+      heartbeatStaleStreak++;
+      if (heartbeatStaleStreak < heartbeatStaleDebounce) return;
+    }
     if (knownCtx && !absorbStaleIfSuperseded(knownCtx)) goStaleTerminal(knownCtx, "heartbeat probe");
     return;
   }
+  heartbeatStaleStreak = 0;
   const ctx = freshCtx();
   if (!ctx) return;
   if (mainModelRecoveryActive()) return;
@@ -8874,6 +8992,7 @@ export default function (pi: ExtensionAPI): void {
     // fresh session inherit a false stall count.
     heartbeatNudges = 0;
     consecutiveStalls = 0;
+    heartbeatStaleStreak = 0;
     const startReason = typeof event?.reason === "string" ? event.reason : "unknown";
     initialSessionLoadPending = isBlankInitialStartup(ctx, startReason);
     rememberCtx(ctx);
