@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### 0.34.66 — auditor stream is final-only by default
+
+note.md #4 (Screenshot_20260804_211341/211506): the HUD rendered the
+detached auditor's report assembling "words one by one" as the worker
+streamed. The display now has a `auditorSilent` toggle (default ON)
+gating the per-token tail: while the worker streams, the widget shows a
+`report stream muted — final text at verdict` note; the text surfaces
+only at the verdict, when the report is FINAL. `off` restores the live
+tail.
+
+- **display path**: `WidgetExtras.auditorSilent` (undefined → silent)
+  gates the widget's `latest:` observation in the auditing card; the
+  status line (phase + tool + activity, no streamed text) is unchanged.
+- **settings**: `auditorSilent?: boolean`, default `true` in
+  DEFAULT_SETTINGS, in SETTINGS_KEYS for provenance.
+- **/glla menu**: new "Silent auditor stream" row in the auditor section
+  (on/off) with a dispatcher case in handleSettingChoice.
+- **orchestrator**: refreshUI passes the effective toggle into widget
+  extras from loadSettings.
+- Tests: display.test.ts — silent-default pin (no live tail + muted
+  note), final-report-at-verdict, `auditorSilent: false` live-tail
+  variant (2 new, 1 updated); settings-menu-complete coverage list
+  includes auditorSilent. Full suite 956 pass / 1 skip / 0 fail, tsc
+  clean.
+
 ### 0.34.65 — completed goals show outcome, duration, and final verdict
 
 note.md 2026-08-07 (Screenshot_20260807_093742): "lets show how long ago
