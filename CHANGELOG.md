@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+### 0.34.89 — Terminal goals collapse to a dim one-line summary (widget + status; Screenshot_20260807_231205/231236)
+
+Field: after a batch finishes, the widget kept rendering a full completion CARD (`✓ <objective> · ✓ complete · took 4h 38m` + `└─ auditor approved (…)`) and the status line kept a loud `glla: ✓ complete · took 4h 38m` — indefinitely, until the next goal started. The completed item read like still-active work sitting on the surface (user: "shouldn't we close complete goals or at least show them differently?").
+
+Fix: no card, no loud claim — a single dim SUMMARY. (1) Widget: `completedGoalLines` collapses to ONE line — `─ ✓ done · <objective> · took 4h 38m` (aborted keeps `✗ aborted` + a short reason). (2) Status line: `glla: ✓ done · 4h 38m` (dim; aborted: `✗ aborted · …`). The verdict/reason stays in the archive (`.pi-glla/goals/*.md`, audits.jsonl) and `/goal status`; the widget leaves a trace ("what ran + how long") without a second active-looking surface. `completionSummary` + the now-unused `auditVerdictLabel` import removed.
+
+Files: `extensions/goal-loop-display.ts`. Tests: `tests/display.test.ts` — 4 v0.34.65 card tests rewritten for the summary (single-line, no verdict on the widget, no fabricated verdict) + held-loop suffix test updated. Suite: 1090 pass / 1 skip / 0 fail across 100 files (unchanged count — same number of tests, rewritten). tsc clean.
+
 ### 0.34.88 — No-turn-start retry: 30s first window + ONE verbatim auto-retry (closes note.md "pi did not start turn")
 
 Field: a continuation was accepted but pi never started the turn — no turn-start proof. The v0.34.74 handling waited 150s then declared the dispatch unacknowledged, forcing a manual `/list resume` for every miss; transient misses (turn-start event lost, busy session) looked identical to a genuine provider stall.
