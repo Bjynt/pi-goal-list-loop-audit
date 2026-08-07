@@ -55,3 +55,41 @@ is `select(title: string, options: string[], opts?)` — plain strings only.
 - `tests/behavioral-orchestrator.test.ts`: 3 tests converted to `customImpl`.
 - Full suite: **1034 pass / 1 skip / 0 fail across 96 files** (was
   1026/1/0 at v0.34.77), `npx tsc --noEmit` clean.
+
+## v0.34.80 rework — the detached auditor disapproved (2026-08-07)
+
+The item's own detached auditor (opencode-go/deepseek-v4-flash) DISAPPROVED
+v0.34.78 with a legitimate finding: **the headless/RPC fallback is dead code
+in the actual runtime**.
+
+- pi 0.84.1's `custom` is **always a function**: RPC mode is
+  `async custom() { /* Custom UI not supported */ return undefined; }`
+  (dist/modes/rpc/rpc-mode.js:152) and the noOp/print runner is
+  `custom: async () => undefined` (dist/core/extensions/runner.js:103) —
+  neither ever invokes the factory.
+- So `typeof custom === "function"` was true in every mode; the
+  `custom = undefined` fallback tests emulated a state that never occurs.
+- Worse: in RPC mode v0.34.77's `ctx.ui.select(...)` emitted
+  `extension_ui_request {method:"select"}` which the host renders and
+  answers; v0.34.78's `ctx.ui.custom(...)` resolved `undefined` instantly →
+  `"no"` → every draft silently rejected, no dialog ever shown — a real
+  regression in the exact mode the objective named.
+
+### Required fixes (all done)
+
+1. **Factory-invocation detection** (goal.ts `confirmDraft` + the copied
+   `promptSettingsMenu` pattern): the custom-path factory sets a
+   `factoryInvoked` flag; if `ctx.ui.custom(...)` settles and the builder
+   never ran, custom is treated as unavailable and the byte-identical
+   `ctx.ui.select` path takes over (ALWAYS/stale semantics preserved on both
+   paths). Ledgered as `confirm_dialog_fallback_select` / `settings_menu_fallback_select`
+   with `via: "custom-stub"`.
+2. **Real-RPC-shape tests**: the mock harness now emulates real interactive
+   pi (the factory IS invoked with a minimal fake tui/theme/keybindings) and
+   gains `customStubMode=true` to reproduce the pi 0.84.1 RPC stub exactly
+   (custom present, resolves `undefined`, builder never runs). New tests:
+   the stub falls through to the select host dialog and accepts (Yes),
+   declines (No), and returns stale on a stale select error. The
+   `custom = undefined` emulation tests remain as the absent-API shape.
+3. **Suite + tsc re-run**: 1045 pass / 1 skip / 0 fail across 97 files,
+   `npx tsc --noEmit` clean.
