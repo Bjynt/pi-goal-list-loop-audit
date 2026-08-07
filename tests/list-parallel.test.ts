@@ -10,7 +10,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { test } from "node:test";
+import { test, beforeEach } from "node:test";
 import * as assert from "node:assert/strict";
 
 import {
@@ -24,8 +24,6 @@ import {
 } from "../extensions/goal-loop-core.ts";
 import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
 import { MockPi, makeMockCtx, seedState, seedGoal, tick } from "./harness/mock-pi.js";
-
-import { test, beforeEach } from "node:test";
 
 // ONE module-level pi, like behavioral-orchestrator: registerAgentTools runs
 // once per extension instance (toolsRegistered is module state), so a fresh
@@ -174,7 +172,7 @@ test("list_add parses the declaration into the queue state + disk + status", asy
     const text = res.content.map((c) => c.text).join("\n");
     assert.ok(text.includes("[parallel]"), "list_status shows the declaration tag");
     assert.ok(text.includes("Run the a-scan [parallel]"), "the tagged line reads correctly");
-    assert.ok(text.includes("Run the b-scan [parallel]"));
+    assert.ok(text.includes("Run the b-scan. [parallel]")); // no contract → the trailing period survives
     assert.ok(!/Do the migration\. \[parallel\]/.test(text), "Parallel: no is NOT tagged");
     assert.ok(!/Plain item[^\n]*\[parallel\]/.test(text), "undeclared item is not tagged");
   } finally {
