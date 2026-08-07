@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### 0.34.77 — regression shield handles non-ASCII (Chinese) contract items (GitHub #5)
+
+The shield's token extraction regex was ASCII-only
+(`split(/[^A-Za-z0-9_.\-/]+/)`), so pure-CJK contract lines produced zero
+candidates and an English-written auditor report never contained the
+Chinese item verbatim — 18 rounds of approved=True verdicts with
+shield=False, the goal stuck active forever.
+
+- **Unicode-aware matching** in goal-loop-shield.ts: token split and
+  stripEdgePunct now use `\p{L}\p{N}` with the /u flag (a pure-Chinese
+  line is ONE candidate token); tokenPresent gets an explicit Han branch
+  (exact substring only — no compound-segment decomposition for Chinese
+  words); the no-candidate fallback strips punctuation edges so a quote
+  that drops the item's trailing full-width colon (章节： → 章节) still
+  matches.
+- **Prompt reinforcement** in goal-loop-auditor.ts: the REGRESSION SHIELD
+  block now requires each item to be quoted VERBATIM in the contract's
+  original language — a translated/paraphrased item cannot be matched and
+  the approval is rejected. The shield itself stays strict (English
+  paraphrase of a Chinese item still fails; no blanket leniency).
+- Tests: tests/regression-shield.test.ts +6 — verbatim CJK quote passes,
+  quote-without-trailing-colon passes, pure-CJK line = one candidate,
+  English paraphrase still rejected, mixed item matches on its ASCII
+  token, ASCII distinctive-token + compound behavior unchanged. Full
+  suite 1026 pass / 1 skip / 0 fail across 95 files, tsc clean.
+
 ### 0.34.76 — /list parallel-execution metadata (OPEN-ISSUES 1.11)
 
 The "list with subtasks vs goal with subgoals" shape question
