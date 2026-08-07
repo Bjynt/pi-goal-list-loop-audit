@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.34.79 — 2026-08-07
+
+The first release since v0.34.57 consolidates the unreleased milestone work
+(v0.34.58–v0.34.79) into one published version; no intermediate version was
+ever tagged or published. Section labels below match the in-repo milestone
+markers (test-file headers, audit docs).
+
 ### 0.34.79 — eager auditor retry on infra failures (note.md 112555)
 
 "we are not retrying the auditor as eagerly as the main thread" — measured:
