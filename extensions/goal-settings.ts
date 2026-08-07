@@ -60,6 +60,10 @@ export interface Settings {
    * word-by-word HUD was the user complaint (note.md #4,
    * Screenshot_20260804_211341/211506). */
   auditorSilent?: boolean;
+  /** v0.34.86: intermediate progress signals during silent audits — phase
+   * label ("reading source…" / "writing report…") + report byte-counter.
+   * Default ON; off = the plain timer-only card. */
+  auditorProgressSignals?: boolean;
   auditorThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   /** Shell command run on goal complete / goal pause / loop stop; message passed as $1. */
   notifyCmd?: string;
@@ -175,6 +179,9 @@ export const DEFAULT_SETTINGS: Settings = {
   // v0.34.66: final-only auditor stream is the default — the HUD never
   // shows the report assembling word-by-word again (note.md #4).
   auditorSilent: true,
+  // v0.34.86: progress signals are on by default — silent audits still
+  // show a phase label + byte counter (note.md Screenshots 161837/175627).
+  auditorProgressSignals: true,
   // v0.24.6: subagents inherit the session model by default — one quota
   // pool, no surprise 403s from a pinned default agent's provider.
   subagentModelStrategy: "inherit-parent",
@@ -252,6 +259,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "auditCap",
   "auditFeedbackChars",
   "auditorSilent",
+  "auditorProgressSignals",
   "subagentModelStrategy",
   "subagentModelOverrides",
   "aggressiveMode",

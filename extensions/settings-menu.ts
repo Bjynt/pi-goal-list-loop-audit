@@ -244,6 +244,14 @@ export function buildSettingsRows(
       description: "on: the auditor's report renders final-only — the widget shows the text at the verdict, never word-by-word · off: live per-token tail",
     },
     {
+      id: "auditorProgressSignals",
+      section: "auditor",
+      label: "Auditor progress signals",
+      valueText: show("auditorProgressSignals", "on"),
+      sourceText: src("auditorProgressSignals"),
+      description: "on: during silent audits the card shows a phase label (reading source… / writing report…) and a report byte-counter so a long pass shows movement · off: plain timer-only card",
+    },
+    {
       id: "auditCap",
       section: "auditor",
       label: "Audit cap",

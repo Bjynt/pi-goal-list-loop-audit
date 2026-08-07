@@ -101,6 +101,11 @@ export interface WidgetExtras {
    * streams, showing the text once the verdict lands (note.md #4 — "auditor
    * words one by one"). false = live tail. */
   auditorSilent?: boolean;
+  /** v0.34.86: intermediate progress-signal gate for silent audits. Default
+   * on: the phase label ("reading source…" / "writing report…") and the
+   * report byte-counter render while the prose tail is muted. false =
+   * the plain timer-only card (the pre-v0.34.86 silent look). */
+  auditorProgressSignals?: boolean;
 }
 
 /**
@@ -366,6 +371,9 @@ export interface AuditDisplayProgress {
   lastEventAt?: number;
   /** Worker-side activity, excluding parent polls and UI refreshes. */
   lastActivityAt?: number;
+  /** v0.34.86: monotonic report-stream byte count (text_delta chars) — the
+   * silent-mode progress evidence that never reveals prose. */
+  reportBytes?: number;
 }
 
 type AuditorDisplayPhase = "queued" | "running" | "quiet" | "blocked" | "awaiting-verdict";
@@ -409,6 +417,32 @@ function auditorDisplayPhase(g: Goal, audit: AuditDisplayProgress | null | undef
   if (age !== undefined && age > AUDITOR_QUIET_MS) return "quiet";
   if (!audit && g.pendingCompletion?.phase === "running") return "awaiting-verdict";
   return "running";
+}
+
+/** v0.34.86: fine-grained phase label for the silent-mode progress signals.
+ * The coarse HUD phase (running/quiet/blocked/awaiting verdict) stays as the
+ * STATE; this names WHAT the worker is doing so a 5-minute audit pass shows
+ * movement without streaming prose. Map to user vocabulary: thinking =
+ * reading source, tool_executing = inspecting, producing_report = writing
+ * report. Only appended while the coarse phase is running. */
+function auditorFinePhaseLabel(audit: AuditDisplayProgress | null | undefined): string | undefined {
+  switch (audit?.phase) {
+    case "starting": return "starting…";
+    case "running": return "working…";
+    case "thinking": return "reading source…";
+    case "tool_executing": return "inspecting source…";
+    case "producing_report": return "writing report…";
+    case "complete": return "finalizing…";
+    default: return undefined;
+  }
+}
+
+/** v0.34.86: humanize a byte/char count for the report byte-counter. */
+function fmtByteCount(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return "0 B";
+  if (n < 1024) return `${Math.round(n)} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function auditorPhaseLabel(phase: AuditorDisplayPhase): string {
@@ -547,7 +581,11 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       ? `${paint(theme, "success", phaseText)} ${activityBadge("AUDITOR · DETACHED · LIVE", now, theme)}`
       : paint(theme, color, phaseText);
     const tool = phase === "running" && audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : "";
-    return `glla: ${host} · ${label}${tool}${live ? auditorLastActivity(audit, now) : ""}${heldSuffix}`;
+    // v0.34.86: fine phase label on the status line too (the always-visible
+    // surface) — "auditor running · reading source…". Opt-out via
+    // auditorProgressSignals.
+    const fine = extras?.auditorProgressSignals !== false && phase === "running" ? auditorFinePhaseLabel(audit) : undefined;
+    return `glla: ${host} · ${label}${fine ? ` · ${fine}` : ""}${tool}${live ? auditorLastActivity(audit, now) : ""}${heldSuffix}`;
   }
   if (g.status === "paused") {
     // v0.28.22: the status line names the ACTIONABILITY, not the reason —
@@ -847,10 +885,14 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     const detail = audit?.label && audit.label !== "queued" && audit.label !== "running"
       ? ` · ${truncate(audit.label, 30)}`
       : "";
+    // v0.34.86: fine phase label — the "reading source… / writing report…"
+    // progress signal. Only while running (quiet/blocked/awaiting-verdict
+    // keep their single state label). Opt-out via auditorProgressSignals.
+    const fine = extras?.auditorProgressSignals !== false && phase === "running" ? auditorFinePhaseLabel(audit) : undefined;
     // The status bar is the single activity HUD. Keep the widget's audit line
     // factual and compact; the ⟡ head icon plus this phase identify the
     // detached verifier without repeating the animated status badge.
-    lines.push(`├─ ${host} · auditor: ${phaseLabel}${detail}`);
+    lines.push(`├─ ${host} · auditor: ${phaseLabel}${fine ? ` · ${fine}` : ""}${detail}`);
 
     // Show observed worker facts, not a made-up percentage or semantic claim.
     // This is the difference between “the timer moved” and “I can see what
@@ -878,6 +920,10 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     const silent = extras?.auditorSilent !== false;
     if (latest) {
       if (!silent || phase === "awaiting-verdict") observations.push(`latest: ${latest}`);
+      // v0.34.86: silent-mode byte counter — progress evidence without prose.
+      // "report stream muted — 12.4 KB written" beats a dead timer.
+      else if (extras?.auditorProgressSignals !== false && typeof audit?.reportBytes === "number" && audit.reportBytes > 0)
+        observations.push(`report stream muted — ${fmtByteCount(audit.reportBytes)} written · final text at verdict`);
       else observations.push("report stream muted — final text at verdict");
     }
     const unmatchedStarts = audit?.unmatchedToolStarts ?? 0;

@@ -1504,6 +1504,7 @@ function publishDetachedAuditProgress(
     currentToolStartedAt: progress.currentToolStartedAt,
     phase: progress.phase,
     elapsedMs: progress.elapsedMs,
+    reportBytes: progress.reportBytes,
     recentOutput: progress.recentOutput,
     toolCalls: progress.toolCalls,
     // v0.34.56: expose explicit unmatched-tool-fact counts to the HUD.
@@ -1616,7 +1617,7 @@ function refreshUI(ctx: ExtensionContext): void {
     // uses the room instead of cutting at fixed ~60-char floors.
     const width = process.stdout.columns || 80;
     const activity = displayActivityFor(ctx);
-    const extras = { stalls: consecutiveStalls, recent: recentActions, ...activity, auditorSilent: loadSettings(ctx.cwd).auditorSilent !== false };
+    const extras = { stalls: consecutiveStalls, recent: recentActions, ...activity, auditorSilent: loadSettings(ctx.cwd).auditorSilent !== false, auditorProgressSignals: loadSettings(ctx.cwd).auditorProgressSignals !== false };
     ctx.ui.setStatus("pi-glla", buildStatusText(state, latestAuditProgress, Date.now(), theme, extras));
     ctx.ui.setWidget("pi-glla", buildWidgetLines(state, latestAuditProgress, Date.now(), theme, width, extras));
   } catch {
@@ -8432,6 +8433,17 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       if (v) {
         saveSettings("global", ctx.cwd, { auditorSilent: v.startsWith("off") ? false : undefined });
         ctx.ui.notify(v.startsWith("off") ? "Auditor stream LIVE — report lines show as they stream." : "Auditor stream SILENT — final text at the verdict.", "info");
+      }
+      return;
+    }
+    case "auditorProgressSignals": {
+      const v = await ctx.ui.select("Auditor progress signals — intermediate evidence shown during silent audits (phase label + report byte-counter)", [
+        "on — phase label (reading source… / writing report…) + report byte-counter (default)",
+        "off — plain timer-only card, no intermediate signals",
+      ]);
+      if (v) {
+        saveSettings("global", ctx.cwd, { auditorProgressSignals: v.startsWith("off") ? false : undefined });
+        ctx.ui.notify(v.startsWith("off") ? "Auditor progress signals OFF — silent card shows only the timer." : "Auditor progress signals ON — phase + byte-counter visible during audits.", "info");
       }
       return;
     }
