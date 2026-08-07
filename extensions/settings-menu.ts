@@ -167,6 +167,15 @@ export function buildSettingsRows(
         "flips DEFAULTS toward keep-going (autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs); explicit per-key settings still win",
     },
     {
+      id: "visionAssist",
+      section: "keep-going",
+      label: "Vision assist",
+      valueText: show("visionAssist", "on"),
+      sourceText: src("visionAssist"),
+      description:
+        "on: continuation prompts route 'can't see' checks to the mmx vision CLI instead of switching models; switches stay preapproved-only (forbiddenModels gate)",
+    },
+    {
       id: "mainModelFallbacks",
       section: "keep-going",
       label: "Main model backups",

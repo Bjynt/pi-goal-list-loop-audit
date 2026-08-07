@@ -31,6 +31,13 @@ export interface Settings {
    * model (block the call). Default ON. Off = the switch stands but the
    * `forbidden_model_switch` ledger entry records the violation. */
   blockForbiddenModelSwitches?: boolean;
+  /** v0.34.72: on (default) → continuation prompts carry the VISION-ASSIST
+   * directive: agents that need to SEE something route the check to the
+   * mmx vision CLI (mmx-cli skill) instead of switching models; a switch
+   * is sanctioned only when the target is preapproved (not forbidden).
+   * Off → no vision guidance is injected (the forbiddenModels gate still
+   * stands). */
+  visionAssist?: boolean;
   /** Ordered provider/model refs to use when the MAIN session model hits a provider wall. */
   mainModelFallbacks?: string[];
   /** Minutes before the main-session recovery probe; the cadence caps at 5h and the automatic window at 24h. */
@@ -154,6 +161,9 @@ export const DEFAULT_SETTINGS: Settings = {
   // be selected unattended (expense policy).
   forbiddenModels: [...DEFAULT_FORBIDDEN_MODELS],
   blockForbiddenModelSwitches: true,
+  // v0.34.72: vision-assist routing is the default — seeing is an mmx
+  // vision CLI job, never a reason to switch models (note.md 2026-08-07).
+  visionAssist: true,
   mainModelRetryMinutes: 15,
   // Unset = "high" at the call site (v0.31.2). The auditor is the
   // verification gate: its depth must NOT ride the session's coding-speed
@@ -227,6 +237,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "mainModelRetryMinutes",
   "forbiddenModels",
   "blockForbiddenModelSwitches",
+  "visionAssist",
   "auditorModel",
   "auditorModelFallback",
   "auditorSameSessionSwap",

@@ -210,6 +210,11 @@ import {
   type SettingsSectionId,
 } from "../settings-menu.js";
 import {
+  VISION_ASSIST_GUIDANCE,
+  routeVisionCheck,
+  visionAssistLedger,
+} from "../vision-assist.js";
+import {
   buildModelPickItems,
   ModelPickerComponent,
   type ModelPickItem,
@@ -3016,6 +3021,12 @@ function continuationPrompt(goal: Goal): string {
     directives.push(
       `## AUDITOR TODO LIST (from ${goal.pauseReason?.includes("cap") ? "the disapproval cap" : "the last audit"})\n\nAddress these objections, in order, before re-calling complete_goal:\n${goal.pendingTasks.map((t, i) => `${i + 1}. ${t}`).join("\n")}`,
     );
+  }
+  // v0.34.72 (note.md 2026-08-07): the vision-assist directive — seeing is
+  // an mmx vision CLI job, never a reason to switch models (preapproval
+  // gate: forbiddenModels). Injected whenever the setting is not disabled.
+  if (loadSettings(freshCtx()?.cwd ?? process.cwd()).visionAssist !== false) {
+    directives.push(VISION_ASSIST_GUIDANCE);
   }
   if (effSettings.aggressiveMode && isFullAuditObjective(goal.objective)) {
     directives.push(
@@ -7732,6 +7743,17 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       }
       return;
     }
+    case "visionAssist": {
+      const v = await ctx.ui.select("Vision assist — when the agent can't see, route the check to the mmx vision CLI instead of switching models (preapproval gate: forbiddenModels)", [
+        "on — continuation prompts carry the VISION-ASSIST directive; seeing = mmx vision, switches stay preapproved-only (default)",
+        "off — no vision guidance injected; the forbiddenModels gate still blocks forbidden switches",
+      ]);
+      if (v) {
+        saveSettings("global", ctx.cwd, { visionAssist: v.startsWith("off") ? false : undefined });
+        ctx.ui.notify(v.startsWith("off") ? "Vision assist OFF — no mmx routing guidance; the model-switch gate still stands." : "Vision assist ON — 'can't see' checks route to mmx vision, switches stay preapproved-only.", "info");
+      }
+      return;
+    }
     case "mainModelFallbacks": {
       const current = normalizeModelRefs(loadGlobalSettings().mainModelFallbacks);
       const v = await ctx.ui.input(
@@ -8620,6 +8642,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
       fmt("mainModelRetryMinutes", "mainModelRetryMinutes"),
       fmt("forbiddenModels", "forbiddenModels"),
       fmt("blockForbiddenModelSwitches", "blockForbidden"),
+      fmt("visionAssist", "visionAssist"),
       fmt("auditorModel", "auditorModel"),
       fmt("auditorThinkingLevel", "thinking"),
       fmt("notifyCmd", "notify"),
@@ -8751,6 +8774,17 @@ function observeModelChange(ctx: ExtensionContext, from: string | undefined, to:
       ...(source ? { source } : {}),
       blocked,
     });
+    // v0.34.72 (note.md 2026-08-07): the too-eager-switch symptom — the
+    // agent reached for an expensive model. With vision assist on, record
+    // the routing alternative: seeing is an mmx vision CLI job. Advisory,
+    // not a claim about the switch's motive.
+    if (settings.visionAssist !== false) {
+      const vr = routeVisionCheck({ targetModelRef: to, forbiddenModels: settings.forbiddenModels });
+      appendLedger(ctx.cwd, "vision_assist", {
+        ...visionAssistLedger(vr, { targetModelRef: to }),
+        reason: "forbidden_model_switch",
+      });
+    }
   } else {
     appendLedger(ctx.cwd, "model_switch", {
       ...modelSwitch(from, to, reason, at),
