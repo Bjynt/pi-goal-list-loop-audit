@@ -2169,7 +2169,7 @@ test("v0.34.21 lifecycle: cold startup holds a recovered claim until explicit re
   const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
   assert.doesNotMatch(ledger, /"audit_recovery_started"/, "no recovery starts without lifecycle/explicit consent");
   assert.ok(ctx.ui.matching("Completion audit blocked — no verdict").length >= 1, "the hold is explained");
-  assert.ok((ctx.ui.widgets["pi-glla"] as string[]).some((line) => line.includes("MAIN host remains attached")), "the widget names the live MAIN host");
+  assert.ok((ctx.ui.widgets["pi-glla"] as string[]).some((line) => line.includes("auditor: parked — no verdict")), "the widget names the parked auditor (v0.34.87 surface separation)");
 });
 
 test("v0.35.x: stale host loss releases an in-flight completion audit without a verdict", async () => {
