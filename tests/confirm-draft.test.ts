@@ -80,12 +80,21 @@ function setup(cwd: string) {
   return ctx;
 }
 
+/** Enter goal-drafting mode like behavioral-orchestrator: /goal (no args)
+ * + two user messages (the seed send is a no-op; the floor is 2). */
+async function enterGoalDrafting(ctx: ReturnType<typeof makeMockCtx>): Promise<void> {
+  await pi.command("goal", "", ctx);
+  await pi.fire("message_start", { message: { role: "user" } }, ctx);
+  await pi.fire("message_start", { message: { role: "user" } }, ctx);
+}
+
 test("custom path: Yes accepts the draft and the dialog is captured", async () => {
   __testOnlyResetOwnerSession();
   const cwd = tmpCwd();
   const ctx = setup(cwd);
   await pi.fire("session_start", { reason: "startup" }, ctx);
   await tick();
+  await enterGoalDrafting(ctx);
   ctx.ui.customImpl = async () => "Yes";
   const res = await pi.runTool("propose_goal_draft", { objective: "confirm custom yes — done when pinned", verificationContract: "pinned" }, ctx);
   ctx.ui.customImpl = undefined;
@@ -103,6 +112,7 @@ test("custom path: No rejects the draft", async () => {
   const ctx = setup(cwd);
   await pi.fire("session_start", { reason: "startup" }, ctx);
   await tick();
+  await enterGoalDrafting(ctx);
   ctx.ui.customImpl = async () => "No";
   const res = await pi.runTool("propose_goal_draft", { objective: "confirm custom no — done when pinned", verificationContract: "pinned" }, ctx);
   ctx.ui.customImpl = undefined;
@@ -116,6 +126,7 @@ test("custom path: a stale error returns stale (NOT-a-rejection)", async () => {
   const ctx = setup(cwd);
   await pi.fire("session_start", { reason: "startup" }, ctx);
   await tick();
+  await enterGoalDrafting(ctx);
   ctx.ui.customImpl = async () => { throw staleError(); };
   const res = await pi.runTool("propose_goal_draft", { objective: "confirm stale — done when pinned", verificationContract: "pinned" }, ctx);
   ctx.ui.customImpl = undefined;
@@ -131,6 +142,7 @@ test("fallback: no custom shard → plain select path still accepts (Yes)", asyn
   const ctx = setup(cwd);
   await pi.fire("session_start", { reason: "startup" }, ctx);
   await tick();
+  await enterGoalDrafting(ctx);
   (ctx.ui as { custom?: unknown }).custom = undefined; // emulate headless/RPC
   let selectTitle = "";
   ctx.ui.selectImpl = async (title: string) => {
@@ -150,6 +162,7 @@ test("fallback: a stale select error still returns stale", async () => {
   const ctx = setup(cwd);
   await pi.fire("session_start", { reason: "startup" }, ctx);
   await tick();
+  await enterGoalDrafting(ctx);
   (ctx.ui as { custom?: unknown }).custom = undefined;
   ctx.ui.selectImpl = async () => { throw staleError(); };
   ctx.ui.confirmImpl = async () => { throw staleError(); };
