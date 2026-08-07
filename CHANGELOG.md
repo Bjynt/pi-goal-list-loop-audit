@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### 0.34.70 — impossible /list items auto-drop instead of stopping (note.md 2026-08-07)
+
+"auto drop impossible ones i think or auto adjust instead of stopping" —
+an agent-authored blocked pause that offers NO way forward no longer stops
+the /list queue: the item is dropped (ledgered) and the queue advances.
+
+- **Defined impossible state** (pause_goal handler, goal.ts): a /list item
+  paused as `kind="blocked"` with no non-empty `suggestedAction` — the
+  pause itself declares "blocked forever, no resume path". Every internal
+  blocked pause (restore hold, audit retry horizon, abort wall, …)
+  carries a suggestedAction, so only an agent-authored blocked pause that
+  offers no way forward reaches the rule; a blocked pause WITH a resume
+  path is never overridden, and plain goals are never list-dropped.
+- **Behavior**: detection ledgered as `list_item_impossible` (itemId,
+  reason, objective) + drop ledgered as `list_item_auto_dropped`
+  (reason "blocked with no resume path"); the queue then auto-advances
+  (`activateNextListItem`) when items remain and no loop owns the surface
+  (one-active-thing choke point). Last item → list goes empty with a
+  pointer to /list add. Warning notify + the pause tool's returned text
+  tell the agent the item was dropped and the list moved on.
+- Tests: `tests/impossible-list-drop.test.ts` (5) — the rule (drop
+  ledgered both ways + advance, still-active next item); the resume-path
+  guard (blocked WITH suggestedAction stays paused, queue untouched); the
+  plain-goal guard (no list ledger); last-item (drop ledgered, empty-list
+  notify, no advance); loop hold (drop ledgered, no advance over a live
+  loop, follow-up stays queued). Full suite 975 pass / 1 skip / 0 fail
+  across 89 files, tsc clean.
+
 ### 0.34.69 — bare tweak launches the update-proposal flow (note.md 2026-08-07)
 
 "list tweak seems too literal, doesnt work, it should launcher into a what
