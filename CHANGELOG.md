@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### 0.34.83 — Reviewer "issue" misparse fix (closes note.md Screenshot_20260807_161539)
+
+Field (note.md, 7 screenshots 16:08–16:18 on 2026-08-07): the reviewer's bug regex (`/\bTODO\b|\bFIXME\b|\bbug\b|\bissue\b|regression|broken|\bfixme\b/i`) matched the bare word "issue" — every completion summary that cited a GitHub issue number ("fixed in GitHub issue #5", "traced via gh-123", "this issue is open") produced a junk bug-class finding that was enqueued to `/list`. The reviewer then cascade-activated that finding as its own list item. The workaround in the last few goals was rewriting `newObjective` prose to be trigger-word-free; the fix removes the workaround's cause.
+
+Fix: drop `\bissue\b` from the `bug` regex (real bug markers stay: `TODO`/`FIXME`/`bug`/`regression`/`broken`/`fixme`); add `GitHub issue`, `gh-N`, and `issue tracker/board/queue` to `REVIEWER_VOCAB` for defense-in-depth so a GitHub-issue citation on any line skips classification entirely.
+
+Files: `extensions/reviewer.ts:81` (CLASS_PATTERNS regex) + `extensions/reviewer.ts:91` (REVIEWER_VOCAB GitHub-issue branch), `tests/reviewer-extraction-hardening.test.ts` (+2 tests: GitHub-issue refs and prose phrases don't classify; full `runReviewer` over a GitHub-issue-citing source produces zero bug findings). Suite: 1065 pass / 1 skip / 0 fail across 99 files (was 1063/1/0). Audit: triage is in note.md under "Triaged 2026-08-07"; design + history (why `\bissue\b` was added in the first place, the v0.34.82 false-positive class) in `audit/REVIEWER-ISSUE-MISPARSE-2026-08-07.md`.
+
 ### 0.34.82 — Context-starvation refuse gate (compaction-off drain guard)
 
 Field (screenshot 2026-08-07 16:50:55, this user): user-level settings had `compaction.enabled:false`. The `agent_end` yield path correctly refused to send a 1-token length-continue (v0.34.19), but the heartbeat kept refiring full turns against the same near-full context — the session drained from 98% to 120% over six retries, every retry was a 1-token truncation, and the only `session_compact` event landed after the user manually triggered a restart. The "stalled session" was actually the plugin's own heartbeat refire against an uncompacted context.
