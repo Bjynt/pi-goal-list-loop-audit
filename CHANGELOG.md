@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### 0.34.76 — /list parallel-execution metadata (OPEN-ISSUES 1.11)
+
+The "list with subtasks vs goal with subgoals" shape question
+(Screenshot_20260805_095413): the smaller default — a `parallelSafe`
+DECLARATION on /list items, with a design doc recording why the sub-goal
+tree (option A) stays parked for v0.29+.
+
+- **Schema**: `ListItem.parallelSafe?: boolean`. `Parallel: yes|no` clause
+  (line-start or inline, yes/true/1/safe/parallel vs no/false/0/none/off),
+  consumed from the item text — never part of the objective or contract.
+  `extractParallelFlag` + `parseListItemDeclaration` (marker stripped
+  BEFORE the `Done when:` split) in goal-loop-core.
+- **One enqueue path** (enqueueItems + the list-draft confirm) parses the
+  declaration; the disk sidecar round-trips it (survives /reload and the
+  disk-first fallback). Status surfaces: `/list show` and the `list_status`
+  tool render `[parallel]` on declared items.
+- **Execution is unchanged** — the queue still runs serially. The flag is
+  data for a future parallel dispatcher; the design doc records the
+  decision table (tree vs metadata) and why option A stays parked.
+- Tests: tests/list-parallel.test.ts (10) — marker parse pins
+  (truthy/falsy/absent/inline), parse-order vs contract, disk round-trip
+  (incl. legacy sidecars), behavioral list_add → state + sidecar + status
+  tag, and activation carries the clean objective (no marker leak). Full
+  suite 1020 pass / 1 skip / 0 fail across 95 files, tsc clean.
+
 ### 0.34.75 — host-session-lost: classified session_handle_invalidated reason + pi-side finding
 
 "host session lost" is note.md's most recurring theme (13 screenshots
