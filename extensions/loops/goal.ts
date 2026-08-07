@@ -3652,6 +3652,18 @@ function isCompletionAuditRecoveryPending(goal: Goal | null | undefined): boolea
 }
 
 const MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS = 5;
+/** v0.34.79 (note.md 112555): the FIRST auditor retry after an infra
+ * failure is eager — 5s, mirroring runWithInfraRetry's default backoff for
+ * the main thread — when the provider gave no upstream hint. A quota that
+ * expired mid-audit must not park the goal for the base window (default
+ * 60m) before the first probe; later attempts keep the exponential
+ * minute-scale cadence. Provider hints still win (they are authoritative). */
+const EAGER_AUDITOR_RETRY_SEC = 5;
+
+/** Seconds-aware "auto-retry in …" label: "5s" under a minute, else "60m". */
+function fmtRetryDelay(seconds: number): string {
+  return seconds < 60 ? `${Math.round(seconds)}s` : `${Math.round(seconds / 60)}m`;
+}
 
 function auditorQuotaRetryPlan(claim: PendingCompletion, quota: ReturnType<typeof parseQuotaError>, baseMinutes: number): {
   attempt: number;
@@ -3669,7 +3681,14 @@ function auditorQuotaRetryPlan(claim: PendingCompletion, quota: ReturnType<typeo
     ? Date.parse(claim.quotaAutoRetryUntil)
     : firstAtMs + MAIN_MODEL_AUTO_RETRY_HORIZON_MS;
   const attempt = (claim.quotaAttempts ?? 0) + 1;
-  const requestedSec = quota.fromUpstream ? quota.retryAfterSec : quotaRetryDelaySeconds(attempt, baseMinutes);
+  // v0.34.79: eager first probe (5s) when the provider gave no hint — the
+  // main thread retries infra errors after 5s; the auditor must not sit an
+  // hour. Upstream Retry-After still wins.
+  const requestedSec = quota.fromUpstream
+    ? quota.retryAfterSec
+    : attempt === 1
+      ? EAGER_AUDITOR_RETRY_SEC
+      : quotaRetryDelaySeconds(attempt, baseMinutes);
   const retryAfterSec = capQuotaRetrySeconds(requestedSec);
   const automatic = attempt < MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS && now + retryAfterSec * 1_000 <= untilMs;
   return { attempt, retryAfterSec, firstAt, autoRetryUntil: new Date(untilMs).toISOString(), automatic, requestedSec };
@@ -4018,7 +4037,6 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       liveCtx.ui.notify(`Automatic auditor retries stopped after ${plan.attempt} bounded attempts — the claim stays stored; check the provider, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
       return;
     }
-    const retryMin = Math.max(1, Math.round(plan.retryAfterSec / 60));
     updateGoal({
       status: "paused",
       auditHistory: history,
@@ -4026,10 +4044,10 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       pauseKind: "wait",
       pauseResumeAt: new Date(Date.now() + plan.retryAfterSec * 1000).toISOString(),
       pauseReason: `auditor retry: ${result.error}`,
-      pauseSuggestedAction: `Auto-retry in ${retryMin}m${providerHint} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
+      pauseSuggestedAction: `Auto-retry in ${fmtRetryDelay(plan.retryAfterSec)}${providerHint} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
     }, liveCtx);
     appendLedger(liveCtx.cwd, "goal_paused", { reason: `auditor retry: retry in ${plan.retryAfterSec}s (stored-claim retry)`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil });
-    liveCtx.ui.notify(`Auditor still failing — next auto-retry in ${retryMin}m${providerHint} (your completion claim is stored; no action needed).`, "warning");
+    liveCtx.ui.notify(`Auditor still failing — next auto-retry in ${fmtRetryDelay(plan.retryAfterSec)}${providerHint} (your completion claim is stored; no action needed).`, "warning");
     scheduleQuotaRetryForSession(liveCtx, plan.retryAfterSec, result.error, (fresh) => {
       if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor retry:") && state.goal.pendingCompletion) {
         void retryStoredCompletionAudit(origin);
@@ -6676,7 +6694,6 @@ function registerAgentTools(pi: any): void {
               details: {},
             };
           }
-          const retryMin = Math.max(1, Math.round(quota.retryAfterSec / 60));
           updateGoal({
             status: "paused",
             auditHistory: history,
@@ -6687,7 +6704,7 @@ function registerAgentTools(pi: any): void {
             pauseKind: "wait",
             pauseResumeAt: new Date(Date.now() + quota.retryAfterSec * 1000).toISOString(),
             pauseReason: `auditor retry: ${result.error}`,
-            pauseSuggestedAction: `Auto-retry in ${retryMin}m${providerHint} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
+            pauseSuggestedAction: `Auto-retry in ${fmtRetryDelay(quota.retryAfterSec)}${providerHint} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
           }, ctx);
           appendLedger(ctx.cwd, "goal_paused", { reason: `auditor retry: retry in ${quota.retryAfterSec}s (${quota.fromUpstream ? "upstream hint" : "bounded default"})`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil });
           scheduleQuotaRetryForSession(ctx, quota.retryAfterSec, result.error, (fresh) => {
