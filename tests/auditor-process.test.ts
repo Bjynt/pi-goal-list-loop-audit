@@ -311,6 +311,21 @@ process.stdin.on("data", async (chunk) => {
       reports.every((progress) => !progress.recentOutput.some((line) => ["ne", "ys"].includes(line))),
       "word fragments are never presented as separate report lines",
     );
+    // v0.34.86: the monotonic report byte-counter reaches the parent and
+    // only grows — the silent-mode "worker IS making progress" evidence.
+    // (The parent synthesizes the final phase:"complete" progress without
+    // a byte field, so assert on the file-derived counts only.)
+    const byteCounts = reports
+      .map((progress) => progress.reportBytes)
+      .filter((n): n is number => typeof n === "number" && n > 0);
+    assert.ok(byteCounts.length >= 6, `each text_delta produced an observed byte count: ${byteCounts.join(", ")}`);
+    for (let i = 1; i < byteCounts.length; i++) {
+      assert.ok(byteCounts[i]! >= byteCounts[i - 1]!, `reportBytes monotonic: ${byteCounts.join(", ")}`);
+    }
+    assert.ok(
+      byteCounts.includes("Audit summary: checked\nNext line: analysis".length) && byteCounts.at(-1)! >= "Audit summary: checked\nNext line: analysis".length,
+      `counts track the assembled report length (${result.output.length}): ${byteCounts.join(", ")}`,
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
