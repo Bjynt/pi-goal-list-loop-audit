@@ -63,6 +63,8 @@ function readLedger(cwd: string): string {
 }
 
 function seedParkedGoal(cwd: string, retryAtMs: number): void {
+  // seedState spreads extra keys into the state line; mainModelRecovery is
+  // carried through the unknown of the value type via a cast below.
   const retryAt = new Date(retryAtMs).toISOString();
   seedState(cwd, {
     goal: seedGoal({
@@ -82,7 +84,7 @@ function seedParkedGoal(cwd: string, retryAtMs: number): void {
       autoRetryUntil: new Date(Date.now() + 24 * 3600_000).toISOString(),
       retryAt,
     },
-  });
+  } as unknown as Parameters<typeof seedState>[1]);
   __testOnlyLoadState(cwd);
 }
 
