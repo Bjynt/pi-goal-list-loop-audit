@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### 0.34.63 — hour-aligned recovery probes; dead-countdown restart fix
+
+Field: dracon-platform/web 2026-08-07 — a 429 wall parked the list item
+into durable recovery (retryAt 01:33, attempts 1); the user quit pi and
+resumed; the resumed session arrived with a NEW SessionManager object, the
+foreign-session gate silently DROPPED it (no `session_rebound`, no restore),
+and the wall card kept a dead countdown — the probe at 01:33 never ran and
+the item stayed parked until a manual `/list resume`.
+
+- **Barrier-completing resume accepted** (session_start gate): while THIS
+  process is waiting on the load barrier (`initialSessionLoadPending` set
+  by a blank startup), a lifecycle start (`resume`/`new`/`fork`/`reload`)
+  from the same workspace carrying the SAME session identity (`getSessionId`
+  equality via `sameSessionIdentity`) IS that load completing — accepted
+  before the foreign gate. Different session ids stay refused; in-memory
+  workers (no session id) fail closed.
+- **Hour-aligned probes** (`hourAlignedRetryDelayMs`): the failure-driven
+  recovery envelope now probes at the next :00 of the LOCAL clock hour
+  (quota windows reset on the hour — the 15m/30m/1h ladder from the wall
+  time probed mid-hour every time). Kind-independent (v0.34.51 uniform
+  envelope preserved: a 503 waits the same boundary as a 429); upstream
+  Retry-After hints still outrank the alignment when within the 5h probe
+  budget; the attempt counter no longer shapes the delay. The ladder
+  survives only as the no-model-ref fallback (mainModelRetryMinutes knob).
+- **Wall wording**: the card's countdown line now reads `auto-retrying ·
+  next probe in …` instead of `waiting — nothing for you to do` (the
+  system IS probing; the old line mis-sold the wait).
+- Tests: `tests/recovery-restore-after-restart.test.ts` (3 — incident
+  reproduction: quit → blank startup → same-id resume restores the probe
+  and it fires; different-id lifecycle start refused; source guard);
+  hour-aligned unit pins in `main-model-recovery.test.ts` and
+  `uniform-provider-retry.test.ts` (hint override + over-budget hint
+  fallback + exact :00 boundary math); display pin updated.
+
 ### 0.34.62 — spurious-stale self-heal; heartbeat probe debounce
 
 Field: hegemon 2026-08-06 — ONE heartbeat probe failure latched
