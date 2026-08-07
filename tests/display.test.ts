@@ -542,10 +542,10 @@ test("v0.34.86: silent audits show a fine phase label (reading source… / writi
 
   const widget = buildWidgetLines({ goal: g, list: [] }, audit, NOW)!;
   assert.ok(widget.some((l) => l.includes("writing report…")), "card names what the worker is doing");
-  assert.ok(widget.some((l) => l.includes("auditor: running")), "the coarse state stays");
+  assert.ok(widget.some((l) => l.includes("auditor: writing report…")), "the fine label replaces the coarse one");
 
   const status = buildStatusText({ goal: g, list: [] }, { ...audit, phase: "thinking" }, NOW)!;
-  assert.match(status, /auditor running · reading source…/, "status line carries the fine phase");
+  assert.match(status, /auditor reading source…/, "status line carries the fine phase");
 });
 
 test("v0.34.86: silent audits show a report byte-counter instead of a dead timer", () => {
@@ -577,6 +577,7 @@ test("v0.34.86: auditorProgressSignals off restores the plain timer-only card", 
   const extras = { auditorProgressSignals: false };
   const lines = buildWidgetLines({ goal: g, list: [] }, audit, NOW, undefined, undefined, extras)!;
   assert.ok(!lines.some((l) => l.includes("writing report…")), "no fine phase label when opted out");
+  assert.ok(lines.some((l) => l.includes("auditor: producing report")), "the coarse label returns when opted out");
   assert.ok(lines.some((l) => l.includes("report stream muted — final text at verdict")), "the pre-v0.34.86 silent line returns");
   const status = buildStatusText({ goal: g, list: [] }, audit, NOW, undefined, extras)!;
   assert.doesNotMatch(status, /reading source…|writing report…/, "status line opts out too");

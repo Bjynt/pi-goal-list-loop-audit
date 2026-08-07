@@ -419,20 +419,16 @@ function auditorDisplayPhase(g: Goal, audit: AuditDisplayProgress | null | undef
   return "running";
 }
 
-/** v0.34.86: fine-grained phase label for the silent-mode progress signals.
- * The coarse HUD phase (running/quiet/blocked/awaiting verdict) stays as the
- * STATE; this names WHAT the worker is doing so a 5-minute audit pass shows
- * movement without streaming prose. Map to user vocabulary: thinking =
- * reading source, tool_executing = inspecting, producing_report = writing
- * report. Only appended while the coarse phase is running. */
-function auditorFinePhaseLabel(audit: AuditDisplayProgress | null | undefined): string | undefined {
+/** v0.34.86: objective-vocabulary phase label for the silent-mode progress
+ * signals. The coarse labels stay for everything else; these two are the
+ * ones the audit note names ("reading source…" / "writing report…") and the
+ * ones a long silent pass lingers on. Gated by auditorProgressSignals and
+ * only applied while the coarse phase is running (quiet/blocked/awaiting
+ * verdict keep their single state label). */
+function auditorProgressPhaseLabel(audit: AuditDisplayProgress | null | undefined): string | undefined {
   switch (audit?.phase) {
-    case "starting": return "starting…";
-    case "running": return "working…";
     case "thinking": return "reading source…";
-    case "tool_executing": return "inspecting source…";
     case "producing_report": return "writing report…";
-    case "complete": return "finalizing…";
     default: return undefined;
   }
 }
@@ -575,17 +571,20 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     }
     const phase = auditorDisplayPhase(g, audit, now);
     const live = auditorHasLiveEvidence(audit, phase, now);
-    const phaseText = `auditor ${auditorPhaseForDisplay(audit, phase, live)}`;
+    // v0.34.86: objective-vocabulary phase label when progress signals are
+    // on — "auditor reading source…" names the work the coarse "thinking"
+    // label hid. Opt-out via auditorProgressSignals.
+    const signals = extras?.auditorProgressSignals !== false;
+    const observed = signals && phase === "running"
+      ? (auditorProgressPhaseLabel(audit) ?? auditorPhaseForDisplay(audit, phase, live))
+      : auditorPhaseForDisplay(audit, phase, live);
+    const phaseText = `auditor ${observed}`;
     const color = phase === "blocked" || phase === "quiet" ? "warning" : live ? "success" : "accent";
     const label = live
       ? `${paint(theme, "success", phaseText)} ${activityBadge("AUDITOR · DETACHED · LIVE", now, theme)}`
       : paint(theme, color, phaseText);
     const tool = phase === "running" && audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : "";
-    // v0.34.86: fine phase label on the status line too (the always-visible
-    // surface) — "auditor running · reading source…". Opt-out via
-    // auditorProgressSignals.
-    const fine = extras?.auditorProgressSignals !== false && phase === "running" ? auditorFinePhaseLabel(audit) : undefined;
-    return `glla: ${host} · ${label}${fine ? ` · ${fine}` : ""}${tool}${live ? auditorLastActivity(audit, now) : ""}${heldSuffix}`;
+    return `glla: ${host} · ${label}${tool}${live ? auditorLastActivity(audit, now) : ""}${heldSuffix}`;
   }
   if (g.status === "paused") {
     // v0.28.22: the status line names the ACTIONABILITY, not the reason —
@@ -881,18 +880,19 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     }
     const phase = auditorDisplayPhase(g, audit, now);
     const phaseLive = auditorHasLiveEvidence(audit, phase, now);
-    const phaseLabel = auditorPhaseForDisplay(audit, phase, phaseLive);
+    // v0.34.86: objective-vocabulary phase label when progress signals are
+    // on ("reading source…" / "writing report…"); the coarse label otherwise.
+    const signals = extras?.auditorProgressSignals !== false;
+    const phaseLabel = signals && phase === "running"
+      ? (auditorProgressPhaseLabel(audit) ?? auditorPhaseForDisplay(audit, phase, phaseLive))
+      : auditorPhaseForDisplay(audit, phase, phaseLive);
     const detail = audit?.label && audit.label !== "queued" && audit.label !== "running"
       ? ` · ${truncate(audit.label, 30)}`
       : "";
-    // v0.34.86: fine phase label — the "reading source… / writing report…"
-    // progress signal. Only while running (quiet/blocked/awaiting-verdict
-    // keep their single state label). Opt-out via auditorProgressSignals.
-    const fine = extras?.auditorProgressSignals !== false && phase === "running" ? auditorFinePhaseLabel(audit) : undefined;
     // The status bar is the single activity HUD. Keep the widget's audit line
     // factual and compact; the ⟡ head icon plus this phase identify the
     // detached verifier without repeating the animated status badge.
-    lines.push(`├─ ${host} · auditor: ${phaseLabel}${fine ? ` · ${fine}` : ""}${detail}`);
+    lines.push(`├─ ${host} · auditor: ${phaseLabel}${detail}`);
 
     // Show observed worker facts, not a made-up percentage or semantic claim.
     // This is the difference between “the timer moved” and “I can see what
