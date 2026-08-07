@@ -20,7 +20,10 @@ import {
   writeQueueItemFile,
   newGoalId,
   nowIso,
+  readState,
 } from "../extensions/goal-loop-core.ts";
+import activate from "../extensions/loops/goal.js";
+import { MockPi, makeMockCtx, tmpCwd, seedState, seedGoal, tick } from "./harness/mock-pi.js";
 
 function tmpCwd(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "pi-gla-list-parallel-test-"));
@@ -94,5 +97,96 @@ test("queue sidecar round-trips the parallelSafe flag", () => {
     assert.equal(legacyBack.parallelSafe, undefined);
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// ── Behavioral: the enqueue path + the status surfaces ─────────────────────
+
+const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
+function setGlobalAutoResume(v: boolean): void {
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(v ? { autoResume: true } : {}));
+}
+
+function makePi() {
+  const pi = new MockPi();
+  activate(pi.api);
+  return pi;
+}
+
+function enqueuedItems(cwd: string) {
+  return readState(cwd).list ?? [];
+}
+
+const fs2 = fs; // keep fs in scope for the behavioral tests below
+
+const ITEMS = [
+  "Run the a-scan. Parallel: yes. Done when: grep -q ok a.txt",
+  "Run the b-scan. Parallel: yes",
+  "Do the migration. Parallel: no",
+  "Plain item with no declaration",
+];
+
+test("list_add parses the declaration into the queue state + disk + status", async () => {
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  try {
+    // An ACTIVE goal so the new items queue instead of auto-activating.
+    seedState(cwd, { goal: seedGoal({ policy: "goal", status: "active", objective: "busy" }) });
+    const pi = makePi();
+    const ctx = makeMockCtx(cwd);
+    await pi.fire("session_start", { reason: "startup" }, ctx);
+    await tick();
+    await pi.runTool("list_add", { items: ITEMS }, ctx);
+
+    // Schema accepts the declaration: state carries parallelSafe, the marker
+    // is consumed from the objective.
+    const queued = enqueuedItems(cwd);
+    assert.equal(queued.length, 4);
+    const [a, b, mig, plain] = queued;
+    assert.equal(a!.parallelSafe, true);
+    assert.equal(a!.objective, "Run the a-scan.");
+    assert.equal(a!.verificationContract, "grep -q ok a.txt");
+    assert.equal(b!.parallelSafe, true);
+    assert.equal(b!.objective, "Run the b-scan.");
+    assert.equal(mig!.parallelSafe, false, "Parallel: no explicitly opts out");
+    assert.equal(mig!.objective, "Do the migration.");
+    assert.equal(plain!.parallelSafe, undefined, "no marker → unknown");
+
+    // Disk sidecars carry it (survives /reload + the disk-first fallback).
+    const fromDisk = readQueueFromDisk(cwd);
+    assert.equal(fromDisk.filter((i) => i.parallelSafe === true).length, 2);
+    assert.equal(fromDisk.filter((i) => i.parallelSafe === false).length, 1);
+
+    // Status surface: list_status renders the [parallel] tag.
+    const res = await pi.runTool("list_status", {}, ctx);
+    const text = res.content.map((c) => c.text).join("\n");
+    assert.ok(text.includes("[parallel]"), "list_status shows the declaration tag");
+    assert.ok(text.includes("Run the a-scan. [parallel]"), "the tagged line reads correctly");
+    assert.ok(text.includes("Run the b-scan. [parallel]"));
+    assert.ok(!/Do the migration\. \[parallel\]/.test(text), "Parallel: no is NOT tagged");
+    assert.ok(!/Plain item[^\n]*\[parallel\]/.test(text), "undeclared item is not tagged");
+  } finally {
+    fs2.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("a declared item activating into a goal carries the CLEAN objective (no marker leak)", async () => {
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  try {
+    seedState(cwd, {}); // nothing active → the first queued item activates
+    const pi = makePi();
+    const ctx = makeMockCtx(cwd);
+    await pi.fire("session_start", { reason: "startup" }, ctx);
+    await tick();
+    await pi.runTool("list_add", { items: ["Ship the fix. Parallel: yes. Done when: grep -q ok fix.txt"] }, ctx);
+    await tick();
+    const s = readState(cwd);
+    assert.ok(s.goal, "the item auto-activated");
+    assert.equal(s.goal!.objective, "Ship the fix.");
+    assert.ok(!s.goal!.objective.includes("Parallel"), "no marker leak into the active goal");
+    assert.equal(s.goal!.verificationContract, "grep -q ok fix.txt");
+  } finally {
+    fs2.rmSync(cwd, { recursive: true, force: true });
   }
 });
