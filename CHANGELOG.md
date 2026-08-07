@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### 0.34.69 — bare tweak launches the update-proposal flow (note.md 2026-08-07)
+
+"list tweak seems too literal, doesnt work, it should launcher into a what
+we update into" — a bare `/list tweak` (and `/goal tweak`) previously died
+with a "Usage:" notify. Both now LAUNCH the flow: the current item text is
+surfaced (notify preview + input pre-fill), the replacement is collected
+interactively, and the old→new proposal is confirmed BEFORE any apply.
+
+- `cmdTweak` (goal.ts): a bare tweak notifies the current text, then
+  `ctx.ui.input` (pre-filled with the current objective — "what should we
+  update the list item/goal into?") collects the replacement; empty/cancel
+  → "Tweak cancelled; nothing changed."; otherwise the existing
+  CURRENT/NEW confirm gates the apply. The no-objective edge (a bare
+  "Done when: …" input) gets a plain message instead of a Usage line.
+- **No-op guard**: a replacement identical to the current objective with no
+  contract change now cancels instead of bumping the v0.34.61 revision
+  (which would have invalidated the last auditor approval for a tweak that
+  changed NOTHING — reachable by a plain Enter on the pre-fill).
+- Tests: `tests/list-tweak-proposal.test.ts` (5) — bare /list tweak
+  launches the flow (current-text preview + pre-fill, CURRENT/NEW confirm,
+  applied via "/list tweak", still paused, revision bumped once); empty
+  input cancels with no confirm; unchanged text is a no-op with no revision
+  bump; interactive "Done when:" clause applies the contract; bare /goal
+  tweak mirrors the flow. Full suite 970 pass / 1 skip / 0 fail, tsc
+  clean.
+
 ### 0.34.68 — list/goal mode-gate self-heal (bug 1.7)
 
 OPEN-ISSUES 1.7 (Screenshot_20260804_212233): after some draft workflow,
