@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+### 0.34.75 — host-session-lost: classified session_handle_invalidated reason + pi-side finding
+
+"host session lost" is note.md's most recurring theme (13 screenshots
+08-05→08-07). Ledger sweep (all ~/Dev/**/.pi-glla/active.jsonl, 08-05→08-08):
+515 session_shutdown / 522 session_rebound pairs (healthy cycles) vs 164
+extension_api_stale and 23 session_handle_invalidated (ALL on 08-07, ALL
+reason "unknown" pre-fix). Host-wide bursts align with session cycles; the
+real losses are the single-project silent deaths (deathrun 08-07T01:02:54 —
+invalidated with NO shutdown in its own ledger). The 08-05 11h orphan and
+the hegemon ~5h "handing off to a fresh pi context" hang are the worst
+field cases.
+
+- **Diagnostics change**: `session_handle_invalidated` now carries a reason
+  CLASSIFIED at emission via the exported
+  `classifySessionHandleInvalidation` — `session_shutdown` (lifecycle
+  shutdown recorded; in practice the shutdown also nulls lastCtx so the
+  terminal cannot fire — this branch guards the send-path race),
+  `provider_disconnect` (main model in provider-failure recovery),
+  `silent_handle_death` (neither — pi invalidated the handle WITHOUT a
+  replacement session: the only class that emits in practice).
+- **Verified discriminator**: a proper session_shutdown suppresses the
+  terminal entirely (clearSessionOwnedTimers nulls lastCtx; the loop trusts
+  the announced replacement; the next session_start consumes the handoff
+  debt) — no loss event. The terminal event fires only for genuine losses.
+- **Pi-side finding filed** (audit/HOST-SESSION-LOST-2026-08-07.md +
+  note.md cross-ref): pi must deliver a replacement session_start OR a
+  session_shutdown lifecycle event when invalidating an extension handle;
+  compaction paths that leave the handle stale must still emit a session
+  boundary; host-wide invalidations must not leave a subset of sessions
+  orphaned.
+- Tests: tests/host-session-lost.test.ts (5) — classifier pins (+priority);
+  behavioral silent-death (invalidateHostSession + heartbeat tick →
+  reason silent_handle_death); behavioral shutdown-suppression (proper
+  shutdown → NO loss event, shutdown recorded); source pins (emission uses
+  the classifier; hardcoded unknown gone). New test-only hook
+  __testOnlySetSessionReplacementUntil (grace-window backdate). Updated the
+  v0.34.57 pin in behavioral-orchestrator to the classified reason. Full
+  suite 1010 pass / 1 skip / 0 fail across 94 files, tsc clean.
+
 ### 0.34.74 — interrupt-didn't-continue: spurious stale-revision refusal + auditing dead end
 
 Field incident (Screenshot_20260807_100610, junk-runner): "interrupt didn't
