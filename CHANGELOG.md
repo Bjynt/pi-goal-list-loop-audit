@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.34.80 — 2026-08-07
+
 ### 0.34.80 — stuck "auditing" freeze: stale-latch verdict drop + RPC-stub confirm rework (2026-08-07)
 
 Field incident (the "are we stuck" freeze): a latched-stale LIVE session
