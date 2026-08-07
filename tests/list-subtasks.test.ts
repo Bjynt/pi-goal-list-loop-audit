@@ -26,7 +26,7 @@
  * archiveCurrentGoal). The pure tier pins the data model; the behavioral
  * tier pins the lifecycle.
  */
-import { test, beforeEach, afterEach } from "bun:test";
+import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";

@@ -206,6 +206,39 @@ test("RPC stub (custom present, factory never invoked): the select fallback fire
   assert.ok(ledgerText(cwd).includes("confirm_dialog_fallback_select"), "the fallback is ledgered with the stub cause");
 });
 
+test("v0.34.82: the custom-path factory is INVOKED and returns a ConfirmDraftComponent that renders the body + all three choices", async () => {
+  // Auditor (disapproval 2026-08-07T15:39:15): the previous custom-path test
+  // asserted `__testOnlyLastConfirmDialog` — which is assigned BEFORE the
+  // custom factory runs. The mock invoked the factory but discarded the
+  // returned component. Replacing the component with anything else (or
+  // making the constructor throw) would still pass those tests. This test
+  // captures the factory's RETURNED object and asserts it is a real
+  // ConfirmDraftComponent whose rendered output contains the Markdown body
+  // and all three choice labels.
+  __testOnlyResetOwnerSession();
+  const cwd = tmpCwd();
+  const ctx = setup(cwd);
+  await pi.fire("session_start", { reason: "startup" }, ctx);
+  await tick();
+  await enterGoalDrafting(ctx);
+  let captured: unknown = undefined;
+  ctx.ui.customImpl = async (...args) => {
+    const factory = args[0] as (tui: unknown, theme: unknown, kb: unknown, done: (r: unknown) => void) => unknown;
+    captured = factory({ requestRender: () => {} }, FAKE_THEME, FAKE_KB, () => {});
+    return "Yes";
+  };
+  await pi.runTool("propose_goal_draft", { objective: "factory captures component — done when pinned", verificationContract: "pinned" }, ctx);
+  ctx.ui.customImpl = undefined;
+  assert.ok(captured, "the custom factory was invoked and returned a component");
+  assert.ok(captured instanceof ConfirmDraftComponent, `the factory returned a ConfirmDraftComponent (got ${(captured as { constructor?: { name?: string } })?.constructor?.name})`);
+  const rendered = (captured as ConfirmDraftComponent).render(120).join("\n");
+  assert.ok(rendered.includes("factory captures component"), "the rendered Markdown body includes the objective");
+  assert.ok(rendered.includes("Yes"), "Yes choice renders");
+  assert.ok(rendered.includes("No"), "No choice renders");
+  assert.ok(rendered.includes("auto-accept"), "Yes-and-always choice renders");
+  assert.ok(rendered.includes("Confirm goal"), "the H1 title renders");
+});
+
 test("RPC stub: a select 'No' still declines, and a stale select error returns stale", async () => {
   __testOnlyResetOwnerSession();
   const cwd = tmpCwd();
