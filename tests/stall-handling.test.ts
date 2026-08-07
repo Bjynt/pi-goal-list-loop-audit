@@ -428,7 +428,9 @@ test("v0.34.5: wedge alert names a subagent wait when the in-flight call is one"
 
 test("v0.34.11: unanswered-continuation watchdog (accepted send, no turn — hellhunter list-transition wedge)", () => {
   const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
-  assert.match(g, /const CONTINUATION_START_TIMEOUT_MS = Number\(process\.env\.GLLA_CONTINUATION_START_TIMEOUT_MS \?\? 150_000\);/, "bounded start-proof timeout");
+  assert.match(g, /const CONTINUATION_START_TIMEOUT_MS = Number\(process\.env\.GLLA_CONTINUATION_START_TIMEOUT_MS \?\? 30_000\);/, "bounded start-proof timeout (v0.34.88: 30s first window, was 150s)");
+  assert.match(g, /const NO_TURN_START_RETRY_BACKOFF_MS = 60_000;/, "single auto-retry backoff after the first window");
+  assert.match(g, /if \(!record\.retryCount && retryContinuationDispatch\(current, record\)\) return;/, "exactly ONE automatic retry before unacknowledged");
   assert.match(g, /const CONTINUATION_UNANSWERED_THROTTLE_MS = 300_000;/, "legacy re-alert throttle remains documented");
   // Disarm signal: real activity (agent_end/tool_call via noteActivity(true)) AFTER the last send.
   assert.match(g, /if \(real\) \{ consecutiveStalls = 0; lastRealActivityAt = lastActivityAt; \}/, "real activity stamps lastRealActivityAt");

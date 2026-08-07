@@ -70,6 +70,7 @@ test("v0.34.57: a compaction inside the watchdog window pauses the watchdog inst
   // re-arm cap is reached.
   __testOnlyResetStaleFlag();
   __testOnlySetContinuationStartTimeout(300);
+  __testOnlySetContinuationRetryBackoff(200);
   try {
     const cwd = tmpCwd();
     const ctx = await freshSession(cwd, "startup");
@@ -100,6 +101,7 @@ test("v0.34.57: a compaction inside the watchdog window pauses the watchdog inst
 test("v0.34.57: a genuine stall (no compaction in the window) still fires the unacknowledged warning", async () => {
   __testOnlyResetStaleFlag();
   __testOnlySetContinuationStartTimeout(300);
+  __testOnlySetContinuationRetryBackoff(200);
   try {
     const cwd = tmpCwd();
     const ctx = await freshSession(cwd, "startup");

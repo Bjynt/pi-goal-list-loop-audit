@@ -786,6 +786,7 @@ test("v0.34.48: /list resume releases an unacknowledged dispatch exactly once", 
 test("v0.34.24: missing start proof stands down durably and explicit resume sends one fresh attempt", async () => {
   __testOnlyResetStaleFlag();
   __testOnlySetContinuationStartTimeout(300);
+  __testOnlySetContinuationRetryBackoff(300);
   try {
     const cwd = tmpCwd();
     const ctx = await freshSession(cwd, "startup");
@@ -800,10 +801,11 @@ test("v0.34.24: missing start proof stands down durably and explicit resume send
       } catch {
         return false;
       }
-    }, 1_000);
+    }, 1_500);
     const stoodDown = JSON.parse(fs.readFileSync(sidecar, "utf8")) as { phase: string; id: string };
     assert.equal(stoodDown.phase, "unacknowledged", "the failed proof is durable");
-    assert.equal(pi.sent.length, 1, "the watchdog does not re-arm a second send");
+    // v0.34.88: exactly one automatic retry fired before the stand-down.
+    assert.equal(pi.sent.length, 2, "the watchdog re-arms exactly one retry, then stops");
     assert.ok(ctx.ui.matching("Automatic re-sends are stopped").length >= 1, "the stand-down is loud");
     const timedOut = ledgerEvent(cwd, "continuation_start_unacknowledged").value;
     assert.equal(timedOut.id, stoodDown.id, "timeout settles the same dispatch identity");
@@ -816,8 +818,8 @@ test("v0.34.24: missing start proof stands down durably and explicit resume send
 
     await pi.command("goal", "resume", ctx);
     await tick();
-    assert.equal(pi.sent.length, 2, "explicit /goal resume creates exactly one fresh dispatch");
-    const secondContent = pi.sent[1]!.message.content ?? "";
+    assert.equal(pi.sent.length, 3, "explicit /goal resume creates exactly one fresh dispatch");
+    const secondContent = pi.sent[2]!.message.content ?? "";
     const retried = JSON.parse(fs.readFileSync(sidecar, "utf8")) as { phase: string; id: string };
     assert.equal(retried.phase, "accepted");
     assert.notEqual(retried.id, stoodDown.id, "resume gets a new dispatch identity");
@@ -827,6 +829,112 @@ test("v0.34.24: missing start proof stands down durably and explicit resume send
     await pi.command("goal", "pause", ctx);
   } finally {
     __testOnlySetContinuationStartTimeout(null);
+    __testOnlySetContinuationRetryBackoff(null);
+  }
+});
+
+test("v0.34.88: a transient no-turn-start miss self-heals with exactly ONE verbatim retry", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlySetContinuationStartTimeout(300);
+  __testOnlySetContinuationRetryBackoff(300);
+  try {
+    const cwd = tmpCwd();
+    const ctx = await freshSession(cwd, "startup");
+    pi.sent.length = 0;
+    await pi.command("goal", "no-turn-start retry target — done when pinned", ctx);
+    await tick();
+    // First window (T1) expires with no turn-start → the watchdog re-sends
+    // the verbatim original continuation instead of declaring unacknowledged.
+    await waitUntil(() => {
+      try {
+        return fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes("continuation_retry_sent");
+      } catch {
+        return false;
+      }
+    }, 1_500);
+    assert.equal(pi.sent.length, 2, "the watchdog re-sent exactly one automatic retry");
+    const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+    assert.doesNotMatch(ledger, /continuation_start_unacknowledged/, "the retry window must not declare unacknowledged yet");
+    const first = pi.sent[0]!.message.content ?? "";
+    const retried = pi.sent[1]!.message.content ?? "";
+    assert.equal(retried, first, "the retry re-sends the VERBATIM original continuation");
+    // The turn starts on the retried message (self-heal) — the dispatch
+    // settles on owner start proof and nothing further is sent.
+    await pi.fire("before_agent_start", { prompt: retried }, ctx);
+    const sidecar = path.join(cwd, ".pi-glla", "continuation-dispatch.json");
+    assert.equal(fs.existsSync(sidecar), false, "the retried dispatch settles on start proof");
+    await waitUntil(() => {
+      try {
+        return fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes("continuation_start_acknowledged");
+      } catch {
+        return false;
+      }
+    }, 1_500);
+    assert.equal(pi.sent.length, 2, "settling after the retry sends nothing further");
+    await pi.command("goal", "pause", ctx);
+  } finally {
+    __testOnlySetContinuationStartTimeout(null);
+    __testOnlySetContinuationRetryBackoff(null);
+  }
+});
+
+test("v0.34.88: a genuine stall fires unacknowledged after the retry backoff — exactly one retry, then re-sends stop", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlySetContinuationStartTimeout(300);
+  __testOnlySetContinuationRetryBackoff(300);
+  try {
+    const cwd = tmpCwd();
+    const ctx = await freshSession(cwd, "startup");
+    pi.sent.length = 0;
+    await pi.command("goal", "no-turn-start stall target — done when pinned", ctx);
+    await tick();
+    await waitUntil(() => {
+      try {
+        return fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes("continuation_retry_sent");
+      } catch {
+        return false;
+      }
+    }, 1_500);
+    assert.equal(pi.sent.length, 2, "exactly one automatic retry before the stall is declared");
+    await waitUntil(() => {
+      try {
+        return fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes("continuation_start_unacknowledged");
+      } catch {
+        return false;
+      }
+    }, 2_000);
+    assert.equal(pi.sent.length, 2, "re-sends STOP after the single retry — the explicit resume fallback owns the rest");
+    const goal = readState(cwd).goal as { status: string; interruptedAt?: string };
+    assert.equal(goal.status, "active", "an unacknowledged dispatch remains active but interrupted");
+    assert.ok(goal.interruptedAt, "the goal exposes its explicit-recovery marker after both windows");
+    assert.ok(ctx.ui.matching("Automatic re-sends are stopped").length >= 1, "the stand-down is loud");
+    await pi.command("goal", "pause", ctx);
+  } finally {
+    __testOnlySetContinuationStartTimeout(null);
+    __testOnlySetContinuationRetryBackoff(null);
+  }
+});
+
+test("v0.34.88: a goal paused inside the watchdog window is never blind-retried", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlySetContinuationStartTimeout(300);
+  __testOnlySetContinuationRetryBackoff(300);
+  try {
+    const cwd = tmpCwd();
+    const ctx = await freshSession(cwd, "startup");
+    pi.sent.length = 0;
+    await pi.command("goal", "no-turn-start pause target — done when pinned", ctx);
+    await tick();
+    // Pause BEFORE the first window expires — the pause clears the watchdog.
+    await pi.command("goal", "pause", ctx);
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    assert.equal(pi.sent.length, 1, "a paused goal is never blind-retried");
+    const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+    assert.doesNotMatch(ledger, /continuation_retry_sent/, "no retry for a paused goal");
+    assert.doesNotMatch(ledger, /continuation_start_unacknowledged/, "the watchdog was cleared with the pause");
+  } finally {
+    __testOnlySetContinuationStartTimeout(null);
+    __testOnlySetContinuationRetryBackoff(null);
   }
 });
 
