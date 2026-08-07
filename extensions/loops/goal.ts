@@ -7879,22 +7879,34 @@ async function promptSettingsMenu(
   initialSection?: SettingsSectionId,
 ): Promise<string | undefined> {
   const title = `pi-goal-list-loop-audit settings — global: ${globalSettingsPath()}`;
-  if (typeof (ctx.ui as { custom?: unknown }).custom !== "function") {
-    // Headless / no custom shard — fall back to the legacy flat-row select
-    // for any environment that lacks the new primitive. This is rare and
-    // effectively an emergency hatch; the new UI is the supported path.
-    const flat = rows.map((r) => `[${r.section}] ${r.label} — ${r.valueText} [${r.sourceText.replace(/^\[|\]$/g, "")}] — ${r.description}`);
-    flat.push("Done");
-    const v = await ctx.ui.select(title, flat);
-    if (!v || v === "Done") return undefined;
-    // v0.34.25: resolve by the full constructed prefix (section + label),
-    // not a bare startsWith(label) — a label-prefix collision used to be
-    // able to open the wrong editor silently.
-    return rows.find((r) => v.startsWith(`[${r.section}] ${r.label} —`))?.id;
+  // v0.34.80: `custom` is a function in EVERY pi 0.84.1 mode — RPC/noOp
+  // resolve `undefined` without invoking the builder. Detect availability by
+  // whether the factory RAN; a settled stub falls through to the flat-row
+  // select (the host-dialog path in RPC mode).
+  if (typeof (ctx.ui as { custom?: unknown }).custom === "function") {
+    let factoryInvoked = false;
+    try {
+      const v = await ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) => {
+        factoryInvoked = true;
+        return new SettingsMenuComponent({ rows, title, initialSection }, () => tui.requestRender(), theme, keybindings, done);
+      });
+      if (factoryInvoked) return v;
+      appendLedger(ctx.cwd, "settings_menu_fallback_select", { via: "custom-stub" });
+    } catch {
+      // a non-stale custom failure degrades to the legacy select path
+    }
   }
-  return await ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) => {
-    return new SettingsMenuComponent({ rows, title, initialSection }, () => tui.requestRender(), theme, keybindings, done);
-  });
+  // Headless / no custom shard — fall back to the legacy flat-row select
+  // for any environment that lacks the new primitive. This is rare and
+  // effectively an emergency hatch; the new UI is the supported path.
+  const flat = rows.map((r) => `[${r.section}] ${r.label} — ${r.valueText} [${r.sourceText.replace(/^\[|\]$/g, "")}] — ${r.description}`);
+  flat.push("Done");
+  const v = await ctx.ui.select(title, flat);
+  if (!v || v === "Done") return undefined;
+  // v0.34.25: resolve by the full constructed prefix (section + label),
+  // not a bare startsWith(label) — a label-prefix collision used to be
+  // able to open the wrong editor silently.
+  return rows.find((r) => v.startsWith(`[${r.section}] ${r.label} —`))?.id;
 }
 
 /**

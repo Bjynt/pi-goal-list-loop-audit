@@ -1,0 +1,62 @@
+// pi-goal-list-loop-audit — v0.34.80
+// tests/stuck-audit-latch.test.ts
+//
+// 2026-08-07 field incident (the "are we stuck" freeze): a latched-stale
+// LIVE session froze item 2's goal in "auditing" for 30m+ with zero ledger
+// activity. Chain: transient heartbeat-probe failures tripped
+// goStaleTerminal (extensionApiStale latched) → complete_goal's tool path
+// (raw toolCtx) still dispatched the detached audit → the worker's verdict
+// (DISAPPROVED) completed on disk → the apply gate's freshCtxForGeneration()
+// returned null under the latch → the verdict was SILENTLY DROPPED → the
+// stranded-audit recovery in heartbeatTick is unreachable below the stale
+// branch → the queue froze with no in-flight audit.
+//
+// Fixes pinned here:
+//   Fix A — the apply gate never drops a completed verdict silently: it
+//           ledgeres audit_verdict_deferred and parks the claim via
+//           markCompletionAuditRecoveryPending (recovery-pending phase) so a
+//           fresh session's recovery path surfaces it for /goal resume.
+//   Fix B — heartbeatTick parks a stuck auditing goal (stale-latch branch)
+//           BEFORE the extensionApiStale early return, via the kept last
+//           context — the park is the explicit-resume gate; a heartbeat
+//           still never launches another worker.
+
+import { test } from "node:test";
+import * as assert from "node:assert/strict";
+import * as fs from "node:fs";
+
+const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+
+test("Fix A: the apply gate defers + parks instead of silently dropping a completed verdict", () => {
+  // The two silent returns became one guarded path:
+  assert.match(SRC, /const currentAfterAudit = freshCtxForGeneration\(generation\);\n  if \(!currentAfterAudit \|\| !state\.goal \|\| state\.goal\.id !== goalId\) \{/);
+  assert.match(SRC, /audit_verdict_deferred/, "the deferred-verdict ledger event exists");
+  assert.match(SRC, /markCompletionAuditRecoveryPending\(lastCtx, "verdict-apply-gate"\)/, "the claim parks as recovery-pending");
+  assert.match(SRC, /NEVER drop a completed verdict silently/, "the intent comment is pinned");
+  // The legit-supersede case (a NEWER attempt owns the durable claim) stays silent:
+  assert.match(SRC, /if \(state\.goal\.pendingCompletion\?\.attemptId !== claim\.attemptId\) return; \/\/ a newer attempt owns the durable claim/);
+});
+
+test("Fix B: the stale-latch stranded park runs BEFORE the extensionApiStale early return", () => {
+  const staleBranch = SRC.indexOf("if (extensionApiStale || probeExtensionApiStaleRaw()) {");
+  const parked = SRC.indexOf("stranded_audit_recovered");
+  assert.ok(staleBranch > 0 && parked > 0, "both branches exist");
+  assert.ok(parked < staleBranch, "the stale-latch park is ordered BEFORE the stale probe branch — the backstop is reachable while latched");
+  assert.match(SRC, /via: "stale-latch"/, "the park is attributed to the stale latch");
+  assert.match(SRC, /markCompletionAuditRecoveryPending\(knownCtx, "stale-latch-recovery"\)/, "the park uses the kept last context");
+  // A heartbeat must never launch another worker — only the park. The
+  // pre-branch block (between the park and the stale probe branch) contains
+  // no dispatch call:
+  const between = SRC.slice(parked, staleBranch);
+  assert.ok(!between.includes("retryStoredCompletionAudit"), "no worker relaunch from the heartbeat pre-branch");
+  assert.ok(between.includes("return;"), "the park returns — the stale branch is skipped this tick");
+});
+
+test("Fix B: the park requires the exact stuck signature (auditing, no in-flight, claim, 90s silence)", () => {
+  assert.match(SRC, /state\.goal\?\.status === "auditing"/);
+  assert.match(SRC, /!completionAuditInFlight/);
+  assert.match(SRC, /state\.goal\.pendingCompletion/);
+  assert.match(SRC, /Date\.now\(\) - lastActivityAt >= 90_000/);
+  // the pre-existing (non-stale) stranded block keeps its stored-claim path:
+  assert.match(SRC, /markCompletionAuditRecoveryPending\(ctx, "heartbeat-recovery"\)/);
+});

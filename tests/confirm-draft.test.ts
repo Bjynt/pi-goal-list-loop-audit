@@ -33,6 +33,10 @@ function tmpCwd(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "glla-confirm-draft-"));
 }
 
+function ledgerText(cwd: string): string {
+  return fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+}
+
 // ── pure builder ────────────────────────────────────────────────────────
 
 test("buildConfirmDraftMarkdown: title is the H1, body follows", () => {
@@ -170,5 +174,61 @@ test("fallback: a stale select error still returns stale", async () => {
   ctx.ui.selectImpl = undefined;
   ctx.ui.confirmImpl = undefined;
   assert.match(res.content[0]!.text, /NOT a rejection/);
+  assert.equal(readState(cwd).goal, null);
+});
+
+// ── v0.34.80 (GitHub #4 rework): the REAL headless/RPC shape ───────────
+// pi 0.84.1's RPC/noOp `custom` IS a function that resolves `undefined`
+// WITHOUT ever invoking the factory — `typeof custom === "function"` is true
+// in every mode, so the fallback must engage on "factory never invoked",
+// not on typeof. The mock reproduces the stub with customStubMode=true.
+
+test("RPC stub (custom present, factory never invoked): the select fallback fires and accepts", async () => {
+  __testOnlyResetOwnerSession();
+  const cwd = tmpCwd();
+  const ctx = setup(cwd);
+  await pi.fire("session_start", { reason: "startup" }, ctx);
+  await tick();
+  await enterGoalDrafting(ctx);
+  const ui = ctx.ui as { customStubMode?: boolean };
+  ui.customStubMode = true; // real pi 0.84.1 RPC stub: custom resolves undefined, builder never runs
+  let selectTitle = "";
+  ctx.ui.selectImpl = async (title: string) => {
+    selectTitle = title;
+    return "Yes";
+  };
+  const res = await pi.runTool("propose_goal_draft", { objective: "rpc stub — done when pinned", verificationContract: "pinned" }, ctx);
+  ctx.ui.selectImpl = undefined;
+  ui.customStubMode = false;
+  assert.match(selectTitle, /Confirm goal/, "the stub falls through to the HOST dialog (select) instead of silently rejecting");
+  assert.match(res.content[0]!.text, /activated|Begin work/i);
+  assert.equal((readState(cwd).goal as { objective: string }).objective, "rpc stub — done when pinned");
+  assert.ok(ledgerText(cwd).includes("confirm_dialog_fallback_select"), "the fallback is ledgered with the stub cause");
+});
+
+test("RPC stub: a select 'No' still declines, and a stale select error returns stale", async () => {
+  __testOnlyResetOwnerSession();
+  const cwd = tmpCwd();
+  const ctx = setup(cwd);
+  await pi.fire("session_start", { reason: "startup" }, ctx);
+  await tick();
+  await enterGoalDrafting(ctx);
+  const ui = ctx.ui as { customStubMode?: boolean };
+  ui.customStubMode = true;
+  ctx.ui.selectImpl = async () => "No";
+  const declined = await pi.runTool("propose_goal_draft", { objective: "rpc no — done when pinned", verificationContract: "pinned" }, ctx);
+  ctx.ui.selectImpl = undefined;
+  ui.customStubMode = false;
+  assert.match(declined.content[0]!.text, /not accepted|refused|rejected|declined|skip/i);
+  assert.equal(readState(cwd).goal, null);
+
+  ui.customStubMode = true;
+  ctx.ui.selectImpl = async () => { throw staleError(); };
+  ctx.ui.confirmImpl = async () => { throw staleError(); };
+  const stale = await pi.runTool("propose_goal_draft", { objective: "rpc stale — done when pinned", verificationContract: "pinned" }, ctx);
+  ctx.ui.selectImpl = undefined;
+  ctx.ui.confirmImpl = undefined;
+  ui.customStubMode = false;
+  assert.match(stale.content[0]!.text, /NOT a rejection/);
   assert.equal(readState(cwd).goal, null);
 });
