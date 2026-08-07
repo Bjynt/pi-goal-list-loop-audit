@@ -597,18 +597,33 @@ test("auditor widget shows concrete worker observations without exposing think b
   const joined = lines.join("\n");
   assert.match(joined, /auditor: tool executing/);
   assert.match(joined, /tool: read → README\.md/);
-  assert.match(joined, /latest: inspected README\.md/);
+  // v0.34.66: the stream is SILENT by default — no live tail while the
+  // worker runs; the report text surfaces at the verdict.
+  assert.doesNotMatch(joined, /latest: inspected README\.md/);
+  assert.match(joined, /report stream muted — final text at verdict/);
   assert.doesNotMatch(joined, /private reasoning|do not display this/);
   assert.match(joined, /worker activity 1s ago/);
+
+  // auditorSilent: false restores the live per-token tail.
+  const liveTail = buildWidgetLines({ goal: g, list: [] }, {
+    phase: "tool_executing",
+    currentTool: "read",
+    currentToolStartedAt: NOW - 2_000,
+    recentOutput: ["inspected README.md"],
+    toolCalls: [{ name: "grep", argsPrefix: "{}", finishedAt: NOW - 3_000 }],
+    elapsedMs: 42_000,
+    lastActivityAt: NOW - 1_000,
+  }, NOW, undefined, undefined, { auditorSilent: false })!;
+  assert.match(liveTail.join("\n"), /latest: inspected README\.md/, "auditorSilent off shows the live tail");
 
   const cumulativeReport = buildWidgetLines({ goal: g, list: [] }, {
     phase: "producing_report",
     recentOutput: ["Audit summary: checked", "Next line now"],
     elapsedMs: 42_000,
     lastActivityAt: NOW - 1_000,
-  }, NOW)!;
-  assert.match(cumulativeReport.join("\\n"), /latest: Next line now/);
-  assert.doesNotMatch(cumulativeReport.join("\\n"), /latest: (?:checked|:)/);
+  }, NOW, undefined, undefined, { auditorSilent: false })!;
+  assert.match(cumulativeReport.join("\n"), /latest: Next line now/);
+  assert.doesNotMatch(cumulativeReport.join("\n"), /latest: (?:checked|:)/);
 
   const liveAuditStatus = buildStatusText({ goal: g, list: [] }, {
     phase: "tool_executing",
@@ -625,6 +640,32 @@ test("auditor widget shows concrete worker observations without exposing think b
     lastActivityAt: NOW - 1_000,
   }, NOW)!;
   assert.doesNotMatch(streamedThink.join("\n"), /private streamed reasoning/);
+});
+
+test("v0.34.66: auditor stream is SILENT by default — no live tail, muted note instead", () => {
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-silent-default" } });
+  const lines = buildWidgetLines({ goal: g, list: [] }, {
+    phase: "producing_report",
+    recentOutput: ["Audit summary: checked", "Next line now"],
+    elapsedMs: 42_000,
+    lastActivityAt: NOW - 1_000,
+  }, NOW)!;
+  const joined = lines.join("\n");
+  assert.doesNotMatch(joined, /latest:/, "the live per-token tail is hidden by default");
+  assert.match(joined, /report stream muted — final text at verdict/);
+});
+
+test("v0.34.66: at the verdict the FINAL report shows even when silent", () => {
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-final-only" } });
+  const lines = buildWidgetLines({ goal: g, list: [] }, {
+    phase: "complete",
+    recentOutput: ["Verification contract checked:", "1. display path honors the toggle ✓"],
+    elapsedMs: 42_000,
+    lastActivityAt: NOW - 1_000,
+  }, NOW)!;
+  const joined = lines.join("\n");
+  assert.match(joined, /latest: 1\. display path honors the toggle/);
+  assert.doesNotMatch(joined, /report stream muted/);
 });
 
 test("v0.34.56: unmatched tool-event counts render ONLY with evidence (never a zero-fact observation)", () => {
