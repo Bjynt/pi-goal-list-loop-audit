@@ -87,9 +87,12 @@ test("v0.34.51: the auditor durable plan catches ANY non-timeout infra error wit
   assert.match(SRC, /completion audit timed out — \$\{result\.error\}/);
 });
 
-test("v0.34.51: the badge says resuming…, never 'retrying now' (a wait is not a retry)", () => {
+test("v0.34.51 + v0.34.64: the badge says resuming…, never 'retrying now' (a wait is not a retry)", () => {
   assert.ok(!DISPLAY.includes('"retrying now"'), "old lie gone from the display");
-  assert.match(DISPLAY, /return ms <= 0 \? "resuming…" : `next probe in \$\{fmtElapsed\(ms\)\}`/);
+  // v0.34.64: the wait badge lives in the sidebar wait/blocked branch with
+  // the uniform auto-retry wording; the paused card uses `next probe in`.
+  assert.match(DISPLAY, /rms <= 0 \? " · resuming…" : ` · auto-retry in \$\{fmtElapsed\(rms\)\}`/);
+  assert.match(DISPLAY, /retryMs <= 0 \? "now" : `next probe in \$\{fmtElapsed\(retryMs\)\}`/);
 });
 
 test("v0.34.51: README no longer claims quota walls get no retries", () => {

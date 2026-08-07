@@ -419,9 +419,9 @@ test("v0.34.12: eager continuation settles 2.5s past agent_end (hellhunter 60s-p
   assert.match(setup, /process\.env\.GLLA_EAGER_SETTLE_MS \?\?= "0";/);
 });
 
-test("v0.34.12: wait-pause status line counts down live + ticker survives the wait (pully field request)", () => {
+test("v0.34.12 + v0.34.64: wait-pause status line counts down live + ticker survives the wait (pully field request)", () => {
   const d = fs.readFileSync(path.resolve("extensions/goal-loop-display.ts"), "utf-8");
-  assert.match(d, /rms <= 0 \? " · resuming…" : ` · resumes in \$\{fmtElapsed\(rms\)\}`;/, "live countdown, honest past-resumeAt");
+  assert.match(d, /rms <= 0 \? " · resuming…" : ` · auto-retry in \$\{fmtElapsed\(rms\)\}`/, "live countdown, honest past-resumeAt");
   const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
   assert.match(g, /isSupervising\(\) \|\| \(state\.goal\?\.status === "paused" && !!state\.goal\.pauseResumeAt\)/, "ticker keeps rendering through a timed wait");
 });

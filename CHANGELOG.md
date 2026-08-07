@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+### 0.34.64 — QUOTA WALL display removed; blocked pauses auto-clear on recovery
+
+User report (dracon-platform/web 2026-08-07): woke up to a parked goal
+whose card said "QUOTA WALL · automatic retries stopped · manual resume
+required" — even though the quota had ALREADY recovered at 05:07Z. The
+card lied twice: `isQuotaWall()` regex matched the word "quota" in the
+agent's own past-tense narration ("Quota recovered, but the two contract
+blockers…"), and the pause the goal was actually parked on (kind="blocked")
+was not auto-cleared when mainModelRecovery went set → null.
+
+Direction from the user: "we dont want a quota wall at all, we are just
+retrying a lot and retry after every starts of an hour" + "manual resume
+is the exact wrong idea — we want to keep going".
+
+- **QUOTA WALL display concept removed.** The dedicated wall banner, the
+  "manual resume required" wording, and the `isQuotaWall` /
+  `quotaWallDetail` / `quotaResumeText` render helpers are gone. Every
+  retry-class pause (wait or blocked with a recovery timer) renders the
+  same uniform line: `auto-retrying · next probe in X` — quota, billing,
+  429, transient, whatever. The durable reason still lives in state and
+  the ledger for forensics; the card no longer claims a wall exists.
+- **Blocked pauses auto-clear when the underlying condition resolves.**
+  `mainModelRecoverySucceeded` now accepts pauseKind="blocked" (previously
+  only "wait") when the pauseReason matches a quota-style indicator
+  (main model recovery / quota / rate limit / Token Plan / insufficient /
+  credits / billing prefixes). autoResume:true honors "keep going" — a
+  blocked pause authored in response to the wall is un-parked and
+  re-engaged once the wall is gone. Decision/error pauses (intentional
+  user action) are still never auto-cleared, and a blocked pause with a
+  NON-quota reason stays blocked.
+- **Manual-resume nudges removed from the card.** The "resumes X — or
+  /goal resume now" countdown line is gone (the auto-retrying line owns
+  the wait); the sidebar badge reads `⏳ auto-retrying · auto-retry in X`
+  for waits and `⏸ action needed` for blocked-without-timer.
+- Tests: `tests/blocked-pause-autoclear.test.ts` (4 — blocked+quota
+  auto-clears; blocked+non-quota stays; wait+quota regression guard;
+  source guard); display tests rewritten to pin the uniform auto-retrying
+  card (no QUOTA WALL anywhere); source-guard regexes updated
+  (uniform-provider-retry, mode-command-guidance, stall-handling).
+
 ### 0.34.63 — hour-aligned recovery probes; dead-countdown restart fix
 
 Field: dracon-platform/web 2026-08-07 — a 429 wall parked the list item

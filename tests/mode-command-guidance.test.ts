@@ -101,8 +101,10 @@ test("no hardcoded /goal <cmd> literals remain in generated guidance (goal.ts)",
 
 test("widget resume hints are mode-aware ternaries (display.ts)", () => {
   const ternaries = DISPLAY_SRC.match(/isList \? "\/list resume" : "\/goal resume"/g) ?? [];
-  // interrupted-card hint, no-verdict fallback, wait countdown.
-  assert.ok(ternaries.length >= 3, `expected >=3 mode-aware resume ternaries, got ${ternaries.length}`);
+  // v0.34.64: the wait-countdown ternary was removed (the auto-retrying line
+  // owns the wait now, no manual nudge); interrupted-card hint + no-verdict
+  // fallback remain.
+  assert.ok(ternaries.length >= 2, `expected >=2 mode-aware resume ternaries, got ${ternaries.length}`);
 });
 
 // ---- level 2: behavioral (pause guidance) ----
@@ -134,7 +136,11 @@ test("list-policy pause notifies with /list resume", async () => {
 
 // ---- level 3: widget rendering ----
 
-test("widget wait countdown resume hint is mode-aware", () => {
+test("widget wait countdown is uniform auto-retrying (no manual resume hint — v0.34.64)", () => {
+  // v0.34.64: the wait card no longer nudges "or /goal resume now" — the
+  // auto-retrying line owns the wait (autoResume:true honors "keep going";
+  // the recovery-cleared path un-parks when the condition resolves). Both
+  // goal and list cards show the same uniform countdown.
   const base = {
     status: "paused" as const,
     pauseReason: "waiting for provider window",
@@ -143,10 +149,11 @@ test("widget wait countdown resume hint is mode-aware", () => {
     autoResume: true,
   };
   const goalCard = buildWidgetLines({ goal: goalOf(base) }, null, NOW)!;
-  assert.ok(goalCard.some((l) => l.includes("or /goal resume now")), `goal card: ${goalCard.join("\n")}`);
+  assert.ok(goalCard.some((l) => l.includes("auto-retrying") && l.includes("next probe in")), `goal card: ${goalCard.join("\n")}`);
+  assert.ok(!goalCard.some((l) => l.includes("resume now")), "no manual resume nudge on the wait card");
   const listCard = buildWidgetLines({ goal: goalOf({ ...base, policy: "list" }) }, null, NOW)!;
-  assert.ok(listCard.some((l) => l.includes("or /list resume now")), `list card: ${listCard.join("\n")}`);
-  assert.ok(!listCard.some((l) => l.includes("or /goal resume now")), "list card must not say /goal resume now");
+  assert.ok(listCard.some((l) => l.includes("auto-retrying") && l.includes("next probe in")), `list card: ${listCard.join("\n")}`);
+  assert.ok(!listCard.some((l) => l.includes("/goal resume now")), "list card must not say /goal resume now");
 });
 
 test("widget no-verdict fallback action is mode-aware", () => {

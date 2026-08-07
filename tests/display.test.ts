@@ -904,7 +904,12 @@ test("active auditor verdicts never masquerade as infrastructure no-verdict", ()
   assert.match(buildStatusText(disapprovalState as never)!, /auditor disapproved — fix the gap/);
 });
 
-test("quota wait gets a distinct recovery HUD without raw provider JSON", () => {
+test("v0.34.64: retry-class pause shows uniform auto-retrying countdown; no QUOTA WALL anywhere", () => {
+  // v0.34.64: the QUOTA WALL display concept is gone. Every retry-class pause
+  // (wait/blocked with a recovery timer) renders the same "auto-retrying ·
+  // next probe in X" line — quota, billing, 429, transient — regardless of
+  // the underlying reason. Raw 429 JSON stays out of the card; the durable
+  // reason lives in the ledger for forensics.
   const g = goalOf({
     status: "paused",
     policy: "list",
@@ -915,16 +920,21 @@ test("quota wait gets a distinct recovery HUD without raw provider JSON", () => 
   });
   const state = { goal: g, list: [{ id: "next", objective: "later", addedAt: "z" }], loop: null };
   const w = buildWidgetLines(state as never)!;
-  assert.ok(w.some((l) => l.includes("QUOTA WALL · Token Plan usage limit · 1 waiting in list")), `quota banner: ${w.join("\n")}`);
   assert.ok(w.some((l) => l.includes("auto-retrying") && l.includes("next probe in")), `countdown: ${w.join("\n")}`);
   assert.ok(w.some((l) => l.includes("saved —")), `saved state: ${w.join("\n")}`);
+  assert.doesNotMatch(w.join("\n"), /QUOTA WALL/, "the QUOTA WALL banner is gone");
+  assert.doesNotMatch(w.join("\n"), /manual resume required/, "manual-resume wording is gone");
   assert.doesNotMatch(w.join("\n"), /main model quota: 429|Token Plan usage limit reached.*message/, "raw provider JSON stays out of the card");
   const s = buildStatusText(state as never)!;
-  assert.match(s, /QUOTA WALL/);
+  assert.match(s, /auto-retrying/);
   assert.match(s, /1 queued/);
+  assert.doesNotMatch(s, /QUOTA WALL/, "status text never says QUOTA WALL");
 });
 
-test("ambiguous provider recovery is not mislabeled as a quota wall", () => {
+test("v0.34.64: ambiguous (transient 503) recovery is shown with the same auto-retrying badge — no special 'wall' label", () => {
+  // v0.34.64: every retry-class pause renders identically. A 503 transient
+  // gets the same uniform treatment as a 429 quota wall — the card never
+  // claims a wall exists; it only says "we're retrying at X".
   const g = goalOf({
     status: "paused",
     pauseKind: "wait",
@@ -933,19 +943,25 @@ test("ambiguous provider recovery is not mislabeled as a quota wall", () => {
   });
   const state = { goal: g, list: [], loop: null };
   const w = buildWidgetLines(state as never)!;
-  assert.doesNotMatch(w.join("\\n"), /QUOTA WALL/);
-  assert.match(buildStatusText(state as never)!, /waiting/);
+  assert.doesNotMatch(w.join("\\n"), /QUOTA WALL/, "no QUOTA WALL banner ever");
+  assert.match(w.join("\\n"), /auto-retrying/, "uses the uniform auto-retrying line");
+  const s = buildStatusText(state as never)!;
+  assert.match(s, /auto-retrying/);
+  assert.doesNotMatch(s, /waiting(?! for)/, "old `waiting` badge is gone");
 });
 
-test("over-budget provider hints never park the goal — only the 24h horizon holds", () => {
+test("v0.34.64: 24h horizon holds render as a paused card with the suggested action; no manual-resume wording", () => {
   // v0.34.58: an upstream reset hint beyond the 5h probe budget falls back to
   // the bounded cadence; it no longer produces a quota-only manual hold.
   const goalSrc = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   assert.ok(!goalSrc.includes("mainModelHintExceedsProbeBudget"), "quota-only parking gate gone from goal.ts");
   assert.ok(!goalSrc.includes("provider supplied a reset beyond"), "over-budget hint hold reason gone");
 
-  // The only remaining manual hold is the kind-independent 24h horizon: it
-  // still renders as a distinct QUOTA WALL card without raw provider detail.
+  // v0.34.64: the 24h horizon is a paused goal with kind=blocked and no
+  // pauseResumeAt. The card wraps the pauseReason and pops the suggested
+  // action; it never brands this state as a "QUOTA WALL · manual resume
+  // required" (that wording is gone) and never tells the user "manual
+  // resume" is the only path.
   const g = goalOf({
     status: "paused",
     pauseKind: "blocked",
@@ -954,9 +970,15 @@ test("over-budget provider hints never park the goal — only the 24h horizon ho
   });
   const state = { goal: g, list: [], loop: null };
   const w = buildWidgetLines(state as never)!;
-  assert.ok(w.some((l) => l.includes("QUOTA WALL")), `quota hold: ${w.join("\\n")}`);
-  assert.ok(w.some((l) => l.includes("manual resume required")), `manual action: ${w.join("\\n")}`);
-  assert.doesNotMatch(w.join("\\n"), /automatic probes stopped \(provider supplied/);
+  assert.doesNotMatch(w.join("\\n"), /QUOTA WALL/, "no QUOTA WALL banner ever");
+  assert.doesNotMatch(w.join("\\n"), /manual resume required/, "manual-resume wording is gone");
+  // The reason DOES wrap in the card (no retryAt → reason dump), so the
+  // 24h horizon line is visible — it explains the situation honestly.
+  // The wrap helper splits long reasons across multiple lines, so match
+  // a permissive "24h" + "automatic recovery horizon" pair:
+  assert.match(w.join("\\n"), /24h[\s\S]*automatic recovery horizon/);
+  // The suggested action is the recovery path the card surfaces:
+  assert.match(w.join("\\n"), /\/goal resume/);
 });
 
 test("v0.34.51: a passed quota resumeAt says resuming…, never the old 'retrying now'", () => {

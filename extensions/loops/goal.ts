@@ -2724,10 +2724,18 @@ function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
   // old code cleared only the recovery record, leaving the goal durably
   // paused (the next screenshot then looked like a stale QUOTA WALL). Resume
   // only our own recovery wait — never a user decision/error pause.
+  // v0.34.64: also auto-clear a blocked pause whose reason indicates a quota
+  // / rate-limit / billing cause. autoResume:true honors "keep going" — when
+  // the underlying condition (the quota wall) has resolved, we un-park and
+  // re-engage, instead of leaving the goal stuck on an agent-initiated
+  // block that was authored in response to the wall. Decision/error pauses
+  // (intentional user-action) are still NOT touched.
+  const isQuotaPauseReason = (r: string | undefined): boolean =>
+    !!r && /^(main model recovery|quota|provider quota|provider rate limit|rate limit|Token Plan|insufficient|credits?|billing)/i.test(r);
   const recoveryPause = state.goal
     && state.goal.status === "paused"
-    && state.goal.pauseKind === "wait"
-    && (state.goal.pauseReason ?? "").startsWith("main model recovery —");
+    && (state.goal.pauseKind === "wait" || state.goal.pauseKind === "blocked")
+    && isQuotaPauseReason(state.goal.pauseReason);
   const recoveryLoop = state.loop
     && !state.loop.active
     && (state.loop.stopReason ?? "").startsWith("main model recovery —");

@@ -553,20 +553,23 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     if (kind === "error") return `glla: ${paint(theme, "error", `⏸ action needed — ${truncate(g.pauseReason ?? "", 30)}`)}${heldSuffix}`;
     if (kind === "wait" || kind === "blocked") {
       // v0.34.12: live countdown (the UI ticker keeps rendering through a
-      // timed wait) — "resumes in 23m" beats a static clock time, and a
+      // timed wait) — "auto-retry in 23m" beats a static clock time, and a
       // passed resumeAt says "resuming…" instead of lying about the past.
-      // v0.34.44: quota walls get a distinct amber badge. The retry budget in
-      // pi's current request is not the recovery plan; this label tells the
-      // user that the durable probe owns the wait.
-      if (isQuotaWall(g)) {
-        const queued = state.list?.length ?? 0;
-        const queue = queued > 0 ? ` · ${queued} queued` : "";
-        return `glla: ${stateBadge(`QUOTA WALL · ${quotaResumeText(g, now)}`, "⏳", theme, "warning")}${queue}${heldSuffix}`;
-      }
-      if (kind === "blocked") return `glla: ${paint(theme, "warning", "⏸ action needed")}${heldSuffix}`;
+      // v0.34.64: the QUOTA WALL amber badge is gone. Every retry-class
+      // pause renders the same ⏳ auto-retrying… line + countdown; blocked
+      // pauses without a recovery timer render as ⏸ action needed (the only
+      // honest non-quota "manual" state — agent-initiated blocks, decision
+      // pauses don't reach here).
+      const queued = state.list?.length ?? 0;
+      const queue = queued > 0 ? ` · ${queued} queued` : "";
       const rms = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) - now : Number.NaN;
-      const when = Number.isNaN(rms) ? "" : rms <= 0 ? " · resuming…" : ` · resumes in ${fmtElapsed(rms)}`;
-      return `glla: ${paint(theme, "dim", `⏳ waiting${when}`)}${heldSuffix}`;
+      const when = Number.isFinite(rms)
+        ? rms <= 0 ? " · resuming…" : ` · auto-retry in ${fmtElapsed(rms)}`
+        : "";
+      if (kind === "blocked") {
+        return `glla: ${paint(theme, "warning", `⏸ action needed${when}`)}${queue}${heldSuffix}`;
+      }
+      return `glla: ${paint(theme, "dim", `⏳ auto-retrying${when}`)}${queue}${heldSuffix}`;
     }
     const label = `paused ⏸ ${truncate(g.pauseReason ?? "", 40)}`;
     return `glla: ${paint(theme, pauseIsError(g) ? "error" : "warning", label)}${heldSuffix}`;
@@ -883,22 +886,34 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     // v0.28.22: actionability banner — a decision pause, an operational
     // failure, and a time-gated wait must not look alike (user report:
     // "if something actionable is going on it can be hard to tell").
-    // v0.34.44: quota walls get a dedicated visual treatment. Do not dump
-    // the provider's raw 429 JSON into the card; it remains in durable state
-    // and the ledger while the user sees the recovery contract.
+    // v0.34.64: the QUOTA WALL banner is gone. Every retry-class pause with
+    // a recovery timer renders the same uniform "auto-retrying · next probe
+    // in X" line — quota, billing, 429, transient — regardless of the
+    // underlying reason (the reason still lives in durable state + ledger
+    // for forensics). Manual-resume wording is removed; autoResume:true
+    // honors "keep going" and the recovery-cleared path auto-unparks
+    // blocked pauses whose underlying condition has resolved.
+    const retryMs = (kind === "wait" || kind === "blocked") && g.pauseResumeAt
+      ? Date.parse(g.pauseResumeAt) - now
+      : Number.NaN;
     if (kind === "decision") lines.push(`├─ ${paint(theme, "accent", "decision needed — your call unblocks this")}`);
     else if (kind === "error") lines.push(`├─ ${paint(theme, "error", "action needed — this won't fix itself")}`);
-    else if ((kind === "wait" || kind === "blocked") && isQuotaWall(g)) {
-      const queued = state.list?.length ?? 0;
-      const queue = queued > 0 ? ` · ${queued} waiting in list` : "";
-      lines.push(`├─ ${paint(theme, "warning", `QUOTA WALL · ${quotaWallDetail(g)}${queue}`)}`);
-      lines.push(`├─ ${paint(theme, "dim", kind === "blocked" ? `automatic retries stopped · ${quotaResumeText(g, now)}` : `auto-retrying · ${quotaResumeText(g, now)}`)}`);
-    } else if (kind === "wait") lines.push(`├─ ${paint(theme, "dim", "waiting — nothing for you to do")}`);
+    else if (Number.isFinite(retryMs)) {
+      const when = retryMs <= 0 ? "now" : `next probe in ${fmtElapsed(retryMs)}`;
+      lines.push(`├─ ${paint(theme, "dim", `auto-retrying · ${when}`)}`);
+    } else if (kind === "blocked") {
+      lines.push(`├─ ${paint(theme, "warning", "blocked — waiting on a non-quota condition")}`);
+    } else if (kind === "wait") {
+      lines.push(`├─ ${paint(theme, "dim", "paused — waiting on a recovery timer")}`);
+    }
     // v0.27.1: wrap reason + suggested action (see wrap()). v0.28.22:
     // decision/wait reasons cap at 2 lines — the options/countdown below
-    // carry the actionable content; error reasons keep 3.
+    // carry the actionable content; error reasons keep 3. v0.34.64: retry-
+    // class pauses (the auto-retrying line above) suppress the reason dump
+    // — the recovery timer is the actionable content; dumping raw 429 JSON
+    // under it just confuses the card.
     const reasonPaint = isErr ? "error" : kind === "wait" ? "dim" : "warning";
-    if (!((kind === "wait" || kind === "blocked") && isQuotaWall(g))) {
+    if (!Number.isFinite(retryMs)) {
       wrap(g.pauseReason, budget, kind === "decision" || kind === "wait" ? 2 : 3).forEach((w, i) => {
         lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, reasonPaint, w)}`);
       });
@@ -913,12 +928,10 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       });
       if (g.pauseOptions.length > 6) lines.push(`│  ${paint(theme, "dim", `… and ${g.pauseOptions.length - 6} more`)}`);
     }
-    // v0.28.22: wait countdown — when the pause lifts on its own.
-    if (kind === "wait" && g.pauseResumeAt && !isQuotaWall(g)) {
-      const ms = Date.parse(g.pauseResumeAt) - now;
-      const when = Number.isNaN(ms) ? g.pauseResumeAt : ms <= 0 ? "now" : `${shortClock(g.pauseResumeAt)} (in ${fmtElapsed(ms)})`;
-      lines.push(`├─ ${paint(theme, "dim", `resumes ${when} — or ${isList ? "/list resume" : "/goal resume"} now`)}`);
-    }
+    // v0.28.22: wait countdown — moved into the auto-retrying line above
+    // (v0.34.64). The old separate `resumes X — or /goal resume now` line
+    // implied manual rescue was the path; autoResume + the recovery-cleared
+    // path now own "keep going" instead. Drop the manual nudge.
     // v0.27.1: what survives the pause — the first question at a pause is
     // "did I lose the work?". Answer it on the card.
     // v0.27.9: when the goal has no telemetry yet (restored-in-fresh-session
