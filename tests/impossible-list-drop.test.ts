@@ -73,10 +73,9 @@ async function impossibleFixture(extra: Record<string, unknown> = {}) {
     });
     seedState(cwd, {
       goal,
-      list: [
-        { id: "q-item-2", objective: "second list item" },
-        ...((extra.list ?? []) as unknown[]),
-      ],
+      list: extra.list !== undefined
+        ? (extra.list as unknown[])
+        : [{ id: "q-item-2", objective: "second list item" }],
       ...((extra.state ?? {}) as Record<string, unknown>),
     });
     const ctx = await freshSession(cwd, "reload");
@@ -155,9 +154,14 @@ test("last item: drop still ledgered, list goes empty, no advance possible", asy
   const { cwd, ctx, goal } = await impossibleFixture({ list: [] });
   const before = readState(cwd).goal as { id: string };
 
-  await runPauseTool(ctx, { reason: "nobody can build this", kind: "blocked" });
+  const st0 = readState(cwd).goal as any;
+  console.log("DBG4 pre-pause:", JSON.stringify({ id: st0.id, status: st0.status, policy: st0.policy, objective: st0.objective }));
+  console.log("DBG4 list:", JSON.stringify((readState(cwd).list ?? []).map((i: any) => i.objective)));
+  const res4 = await runPauseTool(ctx, { reason: "nobody can build this", kind: "blocked" });
+  console.log("DBG4 tool:", res4.content[0]!.text);
   await tick();
 
+  console.log("DBG4 ledger:", readLedger(cwd).map((l) => l.type).join(","));
   assert.equal(readLedger(cwd).filter((l) => l.type === "list_item_auto_dropped").length, 1, "drop ledgered even for the last item");
   const after = readState(cwd).goal as { id: string; status: string };
   assert.equal(after.id, before.id, "no advance when the queue is empty");
@@ -172,9 +176,14 @@ test("loop hold: drop ledgered but NO advance while a loop owns the surface", as
   });
   const before = readState(cwd).goal as { id: string };
 
-  await runPauseTool(ctx, { reason: "cannot be done", kind: "blocked" });
+  const st0 = readState(cwd).goal as any;
+  console.log("DBG5 pre-pause:", JSON.stringify({ id: st0.id, status: st0.status, policy: st0.policy, objective: st0.objective, pauseKind: st0.pauseKind }));
+  console.log("DBG5 list:", JSON.stringify((readState(cwd).list ?? []).map((i: any) => i.objective)), "loop:", JSON.stringify((readState(cwd).loop as any)?.active));
+  const res5 = await runPauseTool(ctx, { reason: "cannot be done", kind: "blocked" });
+  console.log("DBG5 tool:", res5.content[0]!.text);
   await tick();
 
+  console.log("DBG5 ledger:", readLedger(cwd).map((l) => l.type).join(","));
   assert.equal(readLedger(cwd).filter((l) => l.type === "list_item_auto_dropped").length, 1, "drop ledgered");
   const after = readState(cwd).goal as { id: string; status: string };
   assert.equal(after.id, before.id, "one-active-thing choke point: no advance over a live loop");
