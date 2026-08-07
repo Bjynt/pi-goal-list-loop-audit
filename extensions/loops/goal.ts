@@ -3556,6 +3556,35 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
   // (v0.2.0 bug: bare /list next silently consumed TWO items, found by the
   // pick-any-item verification in v0.10.0).
   if (goal.policy === "list" && status === "complete") {
+    // v0.34.81 (LIGHT parent/child): if the completed child was the last
+    // open subtask of a parent group, CASCADE CLOSE the parent. Runs BEFORE
+    // the advance so the scan-skip in activateNextListItem sees the updated
+    // queue (otherwise a parent whose last child just closed could be
+    // re-scanned as a group with children still queued — it would not, but
+    // the ordering is the right discipline: every list-complete consequence
+    // of THIS goal settles before the next goal is chosen). The parent is
+    // a queue item (never a Goal), so closing it means removing it from
+    // the queue + deleting its disk sidecar + ledger entry. The reviewer
+    // fires on the CHILD's completion (its archive md is the audit unit);
+    // no synthetic goal archive is written for the group — the ledger
+    // record is the durable trace.
+    if (goal.parentId) {
+      const pid = goal.parentId;
+      if (groupOpenChildren(pid) === 0) {
+        const queue = listQueue();
+        const parent = queue.find((c) => c.id === pid);
+        if (parent) {
+          appendLedger(ctx.cwd, "list_group_closed", {
+            parentId: pid,
+            parentObjective: parent.objective,
+            closedVia: goal.objective,
+          });
+          state = { ...state, list: queue.filter((c) => c.id !== pid) };
+          deleteQueueItemFile(ctx.cwd, pid);
+          ctx.ui.notify(`Group closed: "${displaySlice(parent.objective, 80)}" — all subtasks complete.`, "info");
+        }
+      }
+    }
     // v0.31.0: a /list audit collection item completed → fan the open
     // findings out into the queue (async — Confirm-gated). When the queue
     // was empty, enqueueItems activates the first fix itself, so the
@@ -4274,6 +4303,29 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
   // to activate; under pause the ONE summary precedes the activation.
   resolveCarryover(ctx, "list");
   const queue = listQueue();
+  // v0.34.81 (LIGHT parent/child): a group (queue item with one or more
+  // open children) is not a work item. The auto-advance SILENTLY SKIPS the
+  // head group and lands on its first open child — children are queued
+  // immediately after the parent, so the scan takes the natural next item
+  // for free. An EXPLICIT user pick on a group refuses loudly: `/list next 1`
+  // landing on a group would silently activate a child, which is confusing
+  // ("I asked for item 1 but item 2 started"). list_activate (the tool) and
+  // `/list next <n>` both pass explicit:true; the cascade advance and
+  // enqueue auto-activate leave it false.
+  if (n === 1 && !opts?.explicit) {
+    let scan = 0;
+    while (scan < queue.length && groupOpenChildren(queue[scan]!.id) > 0) scan++;
+    n = scan + 1;
+  } else if (opts?.explicit && queue[n - 1] && groupOpenChildren(queue[n - 1]!.id) > 0) {
+    const target = queue[n - 1]!;
+    const open = groupOpenChildren(target.id);
+    appendLedger(ctx.cwd, "list_group_activation_refused", { goalId: target.id, open });
+    ctx.ui.notify(
+      `List item #${n} is a group with ${open} open subtask${open === 1 ? "" : "s"} — complete its subtasks first (they run in queue order, then the group closes itself).`,
+      "warning",
+    );
+    return false;
+  }
   const taken = takeAt(queue, n);
   if (!taken) return false;
   const [next, rest] = taken;
@@ -4284,6 +4336,10 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
   deleteQueueItemFile(ctx.cwd, next.id);
   const goal = createGoal(next.objective, ctx, "list");
   if (next.verificationContract) goal.verificationContract = next.verificationContract;
+  // v0.34.81: carry the subtask binding onto the active goal so the cascade
+  // in archiveCurrentGoal can find the parent at completion time, and so the
+  // group-open counter (active child = +1) stays accurate while a child runs.
+  if (next.parentId) goal.parentId = next.parentId;
   setGoal(goal, ctx, "list-cascade");
   iterationCounter = 0;
   consecutiveErrorIterations = 0;
@@ -4992,32 +5048,81 @@ function enqueueItems(ctx: ExtensionContext, texts: string[], source: string, op
   if (fresh.length === 0) return 0;
   const items = fresh.map((text) => {
     const extracted = parseListItemDeclaration(text);
-    return { id: newGoalId(), objective: extracted.objective, verificationContract: extracted.verificationContract || undefined, ...(extracted.parallelSafe === undefined ? {} : { parallelSafe: extracted.parallelSafe }), addedAt: nowIso() };
+    return {
+      id: newGoalId(),
+      objective: extracted.objective,
+      verificationContract: extracted.verificationContract || undefined,
+      ...(extracted.parallelSafe === undefined ? {} : { parallelSafe: extracted.parallelSafe }),
+      // parentObjective is the parse step's transient; the resolved
+      // parentId is set below (queue-bound resolution) or stripped on refusal.
+      parentObjective: extracted.parentObjective,
+      addedAt: nowIso(),
+    };
   });
+  // v0.34.81 (LIGHT parent/child): bind each child's parentId by objective
+  // match. Earlier items in THIS batch win (the natural declaration order:
+  // parent first, then its children); if not found there, fall back to the
+  // existing queue. Refusals are reported individually — empty objectives
+  // (a marker line with no child text after the separator), unresolved
+  // parents (typo or parent not yet declared), and one-level-only nesting
+  // (a child whose parent is itself a subtask). The rest of the batch is
+  // still added; a refusal does NOT roll back the successful bindings.
+  const existing = listQueue();
+  const refused: string[] = [];
+  const resolved: ListItem[] = [];
+  for (const item of items) {
+    if (!item.parentObjective) {
+      resolved.push(item);
+      continue;
+    }
+    if (!item.objective) {
+      refused.push(`empty objective after "Subtask of: ${item.parentObjective}" — add the child text after a spaced em-dash separator (e.g. "Subtask of: ${item.parentObjective} — <child>").`);
+      continue;
+    }
+    const candidates = [...resolved, ...existing];
+    const parent = candidates.find((c) => normalizeObjective(c.objective) === normalizeObjective(item.parentObjective!));
+    if (!parent) {
+      refused.push(`unresolved parent "${item.parentObjective}" for child "${item.objective.slice(0, 60)}" — add the parent first (or check the objective spelling).`);
+      continue;
+    }
+    if (parent.parentId) {
+      refused.push(`nested subtask "${item.objective.slice(0, 60)}" — one level only (parent "${parent.objective.slice(0, 60)}" is itself a subtask of "${existing.find((c) => c.id === parent.parentId)?.objective.slice(0, 60) ?? "another item"}").`);
+      continue;
+    }
+    const { parentObjective: _drop, ...stored } = item;
+    void _drop;
+    resolved.push({ ...stored, parentId: parent.id });
+  }
+  if (refused.length > 0) {
+    appendLedger(ctx.cwd, "list_subtask_refused", { source, count: refused.length, refusals: refused });
+    ctx.ui.notify(`Refused ${refused.length} subtask item(s): ${refused.join(" | ")}.`, "warning");
+  }
+  if (resolved.length === 0) return 0;
+  const itemsToWrite = resolved;
   // v0.34.60: disk-first write order. Each item lands on disk BEFORE any
   // in-memory state mutation, so /list survives a stale extension handle
   // (e.g. /reload, plugin re-init, RAM-only state loss). The
   // .queue.json sidecar is atomic (temp + rename) and idempotent (skips
   // existing files rather than overwriting).
-  const written = items.map((item) => writeQueueItemFile(ctx.cwd, item));
-  state = { ...state, list: [...listQueue(), ...items] };
-  const diskFirst = written.filter((w) => w.wrote).length === items.length;
-  appendLedger(ctx.cwd, "list_queue_disk_first", { source, count: items.length, diskFirst });
+  const written = itemsToWrite.map((item) => writeQueueItemFile(ctx.cwd, item));
+  state = { ...state, list: [...listQueue(), ...itemsToWrite] };
+  const diskFirst = written.filter((w) => w.wrote).length === itemsToWrite.length;
+  appendLedger(ctx.cwd, "list_queue_disk_first", { source, count: itemsToWrite.length, diskFirst });
   persistState(ctx);
-  appendLedger(ctx.cwd, "list_imported", { source, count: items.length });
+  appendLedger(ctx.cwd, "list_imported", { source, count: itemsToWrite.length });
   if (!state.goal || state.goal.status === "complete" || state.goal.status === "aborted") {
     // v0.28.28: unsolicited sources (the reviewer) do NOT auto-start the
     // head unless autoResume is on — "I cancelled a goal and the next one
     // started itself" was the field complaint. User-driven imports keep
     // the immediate-start behavior (opts default true).
     if (opts?.autoActivate === false) {
-      ctx.ui.notify(`Queued ${items.length} item(s) from ${source} — /list next when ready (auto-start is opt-in: enable Auto-resume in /glla settings).`, "info");
-      appendLedger(ctx.cwd, "list_autoactivation_held", { source, count: items.length });
+      ctx.ui.notify(`Queued ${itemsToWrite.length} item(s) from ${source} — /list next when ready (auto-start is opt-in: enable Auto-resume in /glla settings).`, "info");
+      appendLedger(ctx.cwd, "list_autoactivation_held", { source, count: itemsToWrite.length });
     } else {
       activateNextListItem(ctx);
     }
   }
-  return items.length;
+  return itemsToWrite.length;
 }
 
 /** Bulk-enqueue parsed items: one Confirm for the whole batch, never drafts. */
