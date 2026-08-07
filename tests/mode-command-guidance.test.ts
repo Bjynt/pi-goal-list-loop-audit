@@ -169,8 +169,8 @@ test("widget no-verdict fallback action is mode-aware", () => {
     },
   };
   const goalCard = buildWidgetLines({ goal: goalOf(base) }, null, NOW)!;
-  assert.ok(goalCard.some((l) => l.includes("/goal resume starts one fresh auditor")), `goal fallback: ${goalCard.join("\n")}`);
+  assert.ok(goalCard.some((l) => l.includes("/goal resume starts exactly one fresh auditor")), `goal fallback: ${goalCard.join("\n")}`);
   const listCard = buildWidgetLines({ goal: goalOf({ ...base, policy: "list" }) }, null, NOW)!;
-  assert.ok(listCard.some((l) => l.includes("/list resume starts one fresh auditor")), `list fallback: ${listCard.join("\n")}`);
-  assert.ok(!listCard.some((l) => l.includes("/goal resume starts one fresh auditor")), "list fallback must not say /goal resume");
+  assert.ok(listCard.some((l) => l.includes("/list resume starts exactly one fresh auditor")), `list fallback: ${listCard.join("\n")}`);
+  assert.ok(!listCard.some((l) => l.includes("/goal resume starts exactly one fresh auditor")), "list fallback must not say /goal resume");
 });
