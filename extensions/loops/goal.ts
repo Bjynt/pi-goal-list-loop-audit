@@ -5432,7 +5432,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     if (state.goal && state.goal.status === "active") {
       archiveCurrentGoal(ctx, "aborted", `skipped via /list next ${n > 1 ? n : ""}`.trim());
     }
-    if (!activateNextListItem(ctx, n)) {
+    if (!activateNextListItem(ctx, n, { explicit: true })) {
       ctx.ui.notify(listQueue().length === 0 ? "List is empty — nothing to activate." : `No item #${n} (list has ${listQueue().length}).`, "info");
     }
     return;
@@ -7750,7 +7750,7 @@ function registerAgentTools(pi: any): void {
       if (state.goal && state.goal.status === "active") {
         archiveCurrentGoal(liveCtx, "aborted", "skipped via list_activate");
       }
-      if (!activateNextListItem(liveCtx, n)) {
+      if (!activateNextListItem(liveCtx, n, { explicit: true })) {
         return { content: [{ type: "text", text: listQueue().length === 0 ? "List is empty." : `No item #${n} (list has ${listQueue().length} items).` }], details: {} };
       }
       return { content: [{ type: "text", text: `Item #${n} activated. Work it normally; call complete_goal when done.` }], details: {} };
