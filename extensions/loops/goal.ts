@@ -782,6 +782,14 @@ export function __testOnlySetHeartbeatStaleDebounce(n: number | null): void {
   heartbeatStaleDebounce = n ?? HEARTBEAT_STALE_DEBOUNCE;
 }
 
+/** Test-only: override the session-replacement grace window (null restores
+ * the production 60s). A shutdown followed by a NEVER-delivered rebind must
+ * still classify as session_shutdown once the grace expires — tests backdate
+ * the window instead of waiting 60s. Never called by production code. */
+export function __testOnlySetSessionReplacementUntil(ms: number | null): void {
+  sessionReplacementUntil = ms ?? 0;
+}
+
 /** Test-only: release the claimed session owner so a later test file can
  * drive agent_end with its own sessionManager identity (ownerSession is
  * process-wide module state; behavioral-orchestrator claims it first). */

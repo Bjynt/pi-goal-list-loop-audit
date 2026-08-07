@@ -30,6 +30,7 @@ import activate, {
   __testOnlyResetOwnerSession,
   __testOnlyResetStaleFlag,
   __testOnlyResetTerminalFlags,
+  __testOnlySetSessionReplacementUntil,
 } from "../extensions/loops/goal.js";
 import { MockPi, invalidateHostSession, makeMockCtx, tmpCwd, seedState, seedGoal, tick, type MockCtx } from "./harness/mock-pi.js";
 
@@ -103,9 +104,13 @@ test("a lifecycle shutdown before the invalidation classifies session_shutdown",
   const ctx = makeMockCtx(cwd);
   await pi.fire("session_start", { reason: "startup" }, ctx);
   await tick();
-  // The user quits — session_end runs clearSessionOwnedTimers →
-  // sessionHandoffPending=true BEFORE the handle dies.
-  await pi.fire("session_end", { reason: "quit" }, ctx);
+  // The user quits — session_shutdown runs clearSessionOwnedTimers →
+  // sessionHandoffPending=true and opens the 60s rebind grace. pi announces
+  // the replacement but NEVER delivers it (the lost-session case): backdate
+  // the grace window, then the heartbeat must go terminal and classify the
+  // death as the tail of a proper cycle.
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  __testOnlySetSessionReplacementUntil(0); // grace expired — no rebind arrived
   invalidateHostSession(pi, ctx);
   __testOnlyHeartbeatTick();
   try {
@@ -115,6 +120,7 @@ test("a lifecycle shutdown before the invalidation classifies session_shutdown",
   } finally {
     pi.sendMessageError = null;
     pi.sessionNameError = null;
+    __testOnlySetSessionReplacementUntil(null);
   }
 });
 
