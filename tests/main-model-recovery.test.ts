@@ -51,19 +51,41 @@ test("main model recovery backs off without giving up", () => {
   assert.equal(mainModelRetryDelayMs(5, 15), 4 * 60 * 60_000);
   assert.equal(mainModelRetryDelayMs(6, 15), 5 * 60 * 60_000);
   assert.equal(mainModelRetryDelayMs(20, 15), 5 * 60 * 60_000);
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 rate limit; retry in 2 hours"), 1), 2 * 60 * 60_000);
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 rate limit; retry in 1 week"), 1), 15 * 60_000);
+  // v0.34.63: the failure-driven envelope is hour-aligned — the next :00 of
+  // the LOCAL clock hour (quota windows reset on the hour). Expected value
+  // computed with the same local-time math so the pin is timezone-safe.
+  const hourAligned = (nowMs: number) => {
+    const next = new Date(nowMs);
+    next.setMinutes(0, 0, 0);
+    next.setHours(next.getHours() + 1);
+    return Math.max(1_000, next.getTime() - nowMs);
+  };
+  const nowMs = Date.parse("2026-08-07T01:18:01.930Z");
+  const first = hourAligned(nowMs);
+  assert.ok(first > 40 * 60_000 && first <= 60 * 60_000, `aligned first delay: ${first}`);
+  // The upstream hint (a factual provider fact) still outranks the alignment:
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 rate limit; retry in 2 hours"), 1, 15, nowMs), 2 * 60 * 60_000);
+  // ...but an over-budget hint falls back to the bounded alignment:
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 rate limit; retry in 1 week"), 1, 15, nowMs), first);
   // v0.34.51: ONE uniform envelope — error text does not pick the cadence.
-  // A plan wall starts at the same 15m base as a 503 or an auth failure.
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("Token Plan rate limit reached (2062)"), 1), 15 * 60_000);
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("Token Plan rate limit reached (2062)"), 2), 30 * 60_000);
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("503 temporarily unavailable"), 1), 15 * 60_000);
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("insufficient credits — buy credits"), 1), 15 * 60_000);
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("401 invalid API key"), 1), 15 * 60_000);
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("mysterious provider prose with no hint"), 1), 15 * 60_000);
+  // A plan wall waits the same hour boundary as a 503 or an auth failure;
+  // the attempt number no longer shapes the delay either.
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("Token Plan rate limit reached (2062)"), 1, 15, nowMs), first);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("Token Plan rate limit reached (2062)"), 2, 15, nowMs), first);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("503 temporarily unavailable"), 1, 15, nowMs), first);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("insufficient credits — buy credits"), 1, 15, nowMs), first);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("401 invalid API key"), 1, 15, nowMs), first);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("mysterious provider prose with no hint"), 1, 15, nowMs), first);
   // ...and the upstream hint (a factual provider fact) still outranks it,
   // even on a plan wall:
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("Token Plan rate limit reached (2062); retry after 3 hours"), 1), 3 * 60 * 60_000);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("Token Plan rate limit reached (2062); retry after 3 hours"), 1, 15, nowMs), 3 * 60 * 60_000);
+  // Exact boundary math: a wall at 01:59:59 probes within ~2s of 02:00;
+  // a wall just after 02:00 waits almost the full hour to 03:00.
+  const justBefore = Date.parse("2026-08-07T01:59:59.900Z");
+  assert.ok(mainModelFailureDelayMs(classifyMainModelFailure("weird prose"), 1, 15, justBefore) <= 2_000, "wall at :59:59 probes at the top of the hour");
+  const justAfter = Date.parse("2026-08-07T02:00:00.100Z");
+  const after = mainModelFailureDelayMs(classifyMainModelFailure("weird prose"), 1, 15, justAfter);
+  assert.ok(after > 59 * 60_000 && after <= 60 * 60_000, `wall just after :00 waits to the next hour: ${after}`);
   assert.equal(mainModelAutoRetryUntil(Date.parse("2026-08-03T00:00:00Z")), "2026-08-04T00:00:00.000Z");
   assert.equal(modelRef({ provider: "openai", id: "gpt" }), "openai/gpt");
   assert.equal(modelRef({ provider: "openai" }), undefined);

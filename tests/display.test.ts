@@ -916,7 +916,7 @@ test("quota wait gets a distinct recovery HUD without raw provider JSON", () => 
   const state = { goal: g, list: [{ id: "next", objective: "later", addedAt: "z" }], loop: null };
   const w = buildWidgetLines(state as never)!;
   assert.ok(w.some((l) => l.includes("QUOTA WALL · Token Plan usage limit · 1 waiting in list")), `quota banner: ${w.join("\n")}`);
-  assert.ok(w.some((l) => l.includes("waiting — nothing for you to do") && l.includes("next probe in")), `countdown: ${w.join("\n")}`);
+  assert.ok(w.some((l) => l.includes("auto-retrying") && l.includes("next probe in")), `countdown: ${w.join("\n")}`);
   assert.ok(w.some((l) => l.includes("saved —")), `saved state: ${w.join("\n")}`);
   assert.doesNotMatch(w.join("\n"), /main model quota: 429|Token Plan usage limit reached.*message/, "raw provider JSON stays out of the card");
   const s = buildStatusText(state as never)!;

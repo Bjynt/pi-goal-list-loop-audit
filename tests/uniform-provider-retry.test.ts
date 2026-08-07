@@ -21,15 +21,22 @@ const README = fs.readFileSync("README.md", "utf-8");
 
 test("v0.34.51: the cadence is kind-independent (unit proof)", () => {
   const at = (kind: string) => classifyMainModelFailure(kind);
-  const first = 15 * 60_000;
-  assert.equal(mainModelFailureDelayMs(at("429 usage limit"), 1), first);
-  assert.equal(mainModelFailureDelayMs(at("Token Plan rate limit reached (2062)"), 1), first);
-  assert.equal(mainModelFailureDelayMs(at("insufficient credits — buy credits"), 1), first);
-  assert.equal(mainModelFailureDelayMs(at("401 invalid API key"), 1), first);
-  assert.equal(mainModelFailureDelayMs(at("503 temporarily unavailable"), 1), first);
-  assert.equal(mainModelFailureDelayMs(at("weird provider prose, no hint"), 1), first);
+  // v0.34.63: the uniform cadence is hour-aligned — next :00 of the local
+  // clock hour (quota windows reset on the hour); the attempt number and
+  // failure class no longer shape the delay at all.
+  const nowMs = Date.parse("2026-08-07T01:18:01.930Z");
+  const next = new Date(nowMs);
+  next.setMinutes(0, 0, 0);
+  next.setHours(next.getHours() + 1);
+  const first = Math.max(1_000, next.getTime() - nowMs);
+  assert.equal(mainModelFailureDelayMs(at("429 usage limit"), 1, 15, nowMs), first);
+  assert.equal(mainModelFailureDelayMs(at("Token Plan rate limit reached (2062)"), 1, 15, nowMs), first);
+  assert.equal(mainModelFailureDelayMs(at("insufficient credits — buy credits"), 1, 15, nowMs), first);
+  assert.equal(mainModelFailureDelayMs(at("401 invalid API key"), 1, 15, nowMs), first);
+  assert.equal(mainModelFailureDelayMs(at("503 temporarily unavailable"), 1, 15, nowMs), first);
+  assert.equal(mainModelFailureDelayMs(at("weird provider prose, no hint"), 1, 15, nowMs), first);
   // The upstream hint still outranks (factual provider fact):
-  assert.equal(mainModelFailureDelayMs(at("429 rate limit; retry in 4 hours"), 1), 4 * 60 * 60_000);
+  assert.equal(mainModelFailureDelayMs(at("429 rate limit; retry in 4 hours"), 1, 15, nowMs), 4 * 60 * 60_000);
 });
 
 test("v0.34.51: main-model recovery has no kind-gated cadence left", () => {
