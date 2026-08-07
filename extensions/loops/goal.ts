@@ -4244,7 +4244,21 @@ function listQueue(): NonNullable<State["list"]> {
   return state.list ?? [];
 }
 
-function activateNextListItem(ctx: ExtensionContext, n = 1): boolean {
+/**
+ * v0.34.81 (LIGHT parent/child): count of open children for a queue item
+ * (used as the GROUP cardinality surfaced in /list show). A child is open
+ * while it is queued OR while it is the active goal (it gets taken out of
+ * the queue at activation). When the active child completes, archiveCurrentGoal
+ * reads the goal's parentId and uses this helper to decide whether the parent
+ * is now childless → cascade close.
+ */
+function groupOpenChildren(groupId: string): number {
+  const inQueue = listQueue().filter((c) => c.parentId === groupId).length;
+  const activeChild = state.goal && state.goal.parentId === groupId && state.goal.status !== "complete" && state.goal.status !== "aborted" ? 1 : 0;
+  return inQueue + activeChild;
+}
+
+function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: boolean }): boolean {
   // An explicit list activation is user consent even when pi initially
   // reported a blank startup context; automatic restore never reaches here.
   releaseInitialSessionLoadBarrier();

@@ -254,6 +254,14 @@ export interface Goal {
   policy: Policy;
   verificationContract?: string;
   autoContinue: boolean;
+  /** v0.34.81 (LIGHT parent/child): set ONLY when this goal was activated
+   * from a queue item that declared `Subtask of: <parent objective>`. The
+   * parent is identified by its queue item id so the cascade on completion
+   * can locate it without resolving objectives at archive time. Persists in
+   * state.json (the durable goal .md is a render projection and intentionally
+   * does not carry this — a crash-restart that drops it leaves the parent
+   * visible as a plain queue item rather than mis-handling the cascade). */
+  parentId?: string;
   taskList?: TaskList;
   auditHistory?: AuditVerdict[];
   stopReason?: string;
@@ -527,6 +535,17 @@ export interface ListItem {
    * serially; parallel dispatch of parallelSafe items is a later milestone
    * (see audit/DESIGN-LIST-PARALLEL-2026-08-07.md). */
   parallelSafe?: boolean;
+  /** v0.34.81 (LIGHT parent/child): one-level subtask binding. Set when a
+   * declaration opened with `Subtask of: <parent objective> — <child…>`;
+   * points at the QUEUE item whose objective matched. A parent with at least
+   * one child (queued or currently active) is a GROUP, not a work item —
+   * the auto-advance skips it (its first open child runs next, in order) and
+   * `/list show` renders it as `[group: N open]`. When the last child closes,
+   * the cascade in archiveCurrentGoal removes the group from the queue and
+   * ledger-records `list_group_closed`. One level only — a parent that is
+   * itself a child is refused at enqueue time (nesting is a later milestone
+   * parked behind focus/unfocus in the runtime). */
+  parentId?: string;
   addedAt: string;
 }
 
@@ -775,6 +794,9 @@ export function readQueueFromDisk(cwd: string, excludeIds: ReadonlySet<string> =
       objective: e.objective,
       ...(typeof e.verificationContract === "string" && e.verificationContract ? { verificationContract: e.verificationContract } : {}),
       ...(typeof e.parallelSafe === "boolean" ? { parallelSafe: e.parallelSafe } : {}),
+      // v0.34.81: subtask binding round-trips from the sidecar the same way
+      // parallelSafe does — must be a string id matching another queue item.
+      ...(typeof e.parentId === "string" && e.parentId ? { parentId: e.parentId } : {}),
       addedAt: typeof e.addedAt === "string" ? e.addedAt : new Date().toISOString(),
     });
   }
@@ -1232,6 +1254,36 @@ export function draftContractItemCount(normalized: string): number {
  */
 export const PARALLEL_MARKER = /[ \t]*\bparallel\b\s*:\s*(yes|true|1|safe|parallel|no|false|0|none|off)\b[.,;]?[ \t]*/i;
 
+/**
+ * v0.34.81 (LIGHT parent/child): the `Subtask of: <parent objective>` marker.
+ * Anchored at line start of the FIRST line of the declaration so a child
+ * objective on subsequent lines is never mistaken for a parent. The parent
+ * objective runs to the first spaced em-dash / en-dash / hyphen separator
+ * ("Deploy the release pipeline — bump version" → parent "Deploy the release
+ * pipeline", child "bump version"); absent the separator the entire line
+ * after the colon is the parent and the child objective is empty (the
+ * enqueue path refuses empty-objective items). The marker is CONSUMED —
+ * parentObjective is a property of the item, not part of the objective.
+ *
+ * Case-insensitive; one-level only (a nested subtask is refused at enqueue).
+ */
+export const SUBTASK_MARKER = /^[ \t]*subtask of[ \t]*:[ \t]*(.*)$/i;
+
+export function extractSubtaskParent(raw: string): { objective: string; parentObjective: string | undefined } {
+  const lines = raw.split("\n");
+  const first = lines[0] ?? "";
+  const m = first.match(SUBTASK_MARKER);
+  if (!m) return { objective: raw.trim(), parentObjective: undefined };
+  const rest = m[1] ?? "";
+  // First spaced em/en/hyphen separator — require whitespace around it so a
+  // hyphen inside a parent objective ("Fix A-B") does not split.
+  const sep = rest.match(/^(.+?)[ \t]+[—–-][ \t]+(.*)$/);
+  const parentObjective = ((sep ? sep[1] : rest) ?? "").trim() || undefined;
+  const head = sep ? (sep[2] ?? "") : "";
+  const objective = ([head, ...lines.slice(1)].join("\n")).trim();
+  return { objective, parentObjective };
+}
+
 export function extractParallelFlag(raw: string): { objective: string; parallelSafe: boolean | undefined } {
   const m = raw.match(PARALLEL_MARKER);
   if (!m) return { objective: raw.trim(), parallelSafe: undefined };
@@ -1254,11 +1306,19 @@ export function extractParallelFlag(raw: string): { objective: string; parallelS
  * `Parallel:` marker FIRST, then split `Done when:` out of the cleaned text.
  * A marker inside the contract block still gets stripped before the contract
  * text is captured, so the contract never carries the declaration.
+ *
+ * v0.34.81 (LIGHT parent/child): the `Subtask of:` marker is stripped BEFORE
+ * the parallel/contract pass, so the child objective (the remainder) still
+ * gets its own `Parallel:` and `Done when:` clauses parsed normally. The
+ * resolved parent OBJECTIVE is returned for the enqueue path to bind by
+ * match; the binding itself (queue-item id lookup) lives in goal.ts where
+ * the queue context exists.
  */
-export function parseListItemDeclaration(raw: string): { objective: string; parallelSafe: boolean | undefined; verificationContract: string } {
-  const { objective, parallelSafe } = extractParallelFlag(raw);
-  const ext = extractVerificationContract(objective);
-  return { objective: ext.objective, parallelSafe, verificationContract: ext.verificationContract };
+export function parseListItemDeclaration(raw: string): { objective: string; parallelSafe: boolean | undefined; verificationContract: string; parentObjective: string | undefined } {
+  const { objective, parentObjective } = extractSubtaskParent(raw);
+  const { objective: obj2, parallelSafe } = extractParallelFlag(objective);
+  const ext = extractVerificationContract(obj2);
+  return { objective: ext.objective, parallelSafe, verificationContract: ext.verificationContract, parentObjective };
 }
 
 export function extractVerificationContract(raw: string): { objective: string; verificationContract: string; explicitClear: boolean } {
