@@ -22,14 +22,22 @@ import {
   nowIso,
   readState,
 } from "../extensions/goal-loop-core.ts";
-import activate from "../extensions/loops/goal.js";
+import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
 import { MockPi, makeMockCtx, seedState, seedGoal, tick } from "./harness/mock-pi.js";
+
+import { test, beforeEach } from "node:test";
 
 // ONE module-level pi, like behavioral-orchestrator: registerAgentTools runs
 // once per extension instance (toolsRegistered is module state), so a fresh
 // MockPi per test would never have its tools registered.
 const pi = new MockPi();
 activate(pi.api);
+
+beforeEach(() => {
+  // The owner session is module state — without the reset a later test's
+  // session_start is foreign-gated and never re-reads its seeded state.
+  __testOnlyResetOwnerSession();
+});
 
 function tmpCwd(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "pi-gla-list-parallel-test-"));
@@ -165,8 +173,8 @@ test("list_add parses the declaration into the queue state + disk + status", asy
     const res = await pi.runTool("list_status", {}, ctx);
     const text = res.content.map((c) => c.text).join("\n");
     assert.ok(text.includes("[parallel]"), "list_status shows the declaration tag");
-    assert.ok(text.includes("Run the a-scan. [parallel]"), "the tagged line reads correctly");
-    assert.ok(text.includes("Run the b-scan. [parallel]"));
+    assert.ok(text.includes("Run the a-scan [parallel]"), "the tagged line reads correctly");
+    assert.ok(text.includes("Run the b-scan [parallel]"));
     assert.ok(!/Do the migration\. \[parallel\]/.test(text), "Parallel: no is NOT tagged");
     assert.ok(!/Plain item[^\n]*\[parallel\]/.test(text), "undeclared item is not tagged");
   } finally {
@@ -187,7 +195,7 @@ test("a declared item activating into a goal carries the CLEAN objective (no mar
     await tick();
     const s = readState(cwd);
     assert.ok(s.goal, "the item auto-activated");
-    assert.equal(s.goal!.objective, "Ship the fix.");
+    assert.equal(s.goal!.objective, "Ship the fix"); // inline-contract split strips the trailing period
     assert.ok(!s.goal!.objective.includes("Parallel"), "no marker leak into the active goal");
     assert.equal(s.goal!.verificationContract, "grep -q ok fix.txt");
   } finally {
