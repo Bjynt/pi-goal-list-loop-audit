@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### 0.34.86 — Auditor liveness / progress signals (phase labels + report byte-counter, closes note.md Screenshots 161837/175627)
+
+Field (queue item: auditor liveness/progress signals): the auditor's report stream is muted by default (v0.34.66 — "report stream muted — final text at verdict"), so a 5-minute audit pass shows a timer counting up with zero visible progress — a hung worker and a working-but-silent worker look identical.
+
+Fix: intermediate progress signals, gated behind a new opt-out `auditorProgressSignals` (default on; off = exact pre-v0.34.86 look). (1) A monotonic report byte-counter: the worker counts `text_delta` chars into `reportBytes` → `progress.json` → parent `asProgress` → `latestAuditProgress` → the widget's silent mode now shows `report stream muted — 12.4 KB written · final text at verdict` instead of the dead muted line (falls back when bytes are absent). (2) Objective-vocabulary phase labels while the coarse phase is running: `thinking` → `reading source…`, `producing_report` → `writing report…` on both the status line and the card (`auditor reading source…` / `auditor: writing report…`). (3) Settings menu row + `/glla auditorProgressSignals` toggle.
+
+Files: `scripts/goal-auditor-worker.mjs` (byte counter), `extensions/goal-loop-auditor-process.ts` (optional `reportBytes` passthrough, PROTOCOL_VERSION unchanged), `extensions/goal-loop-display.ts` (`auditorProgressPhaseLabel`, `fmtByteCount`, silent-mode counter line), `extensions/loops/goal.ts` (publish passthrough, refreshUI extras, toggle), `extensions/goal-settings.ts` + `extensions/settings-menu.ts` (setting + row). Tests: `tests/display.test.ts` +4, `tests/auditor-process.test.ts` extended (real worker → parent monotonic byte counts). `audit/AUDITOR-PROGRESS-SIGNALS-2026-08-07.md`. Suite: 1085 pass / 1 skip / 0 fail across 100 files (was 1081/1/0). tsc clean.
+
 ### 0.34.85 — Subagent hang detection (no-progress watchdog, closes note.md Screenshots 161019/161032)
 
 Field (note.md, screenshots 16:10 on 2026-08-07): subagents frozen at 10697s (3h) with 0 stream activity — repeated "BUSY with zero stream activity" warnings at 22/31/41 min. The auditor's detached worker has a heartbeat-without-progress watchdog (auditor-process.ts, 10m default); subagent sessions had NONE — a hung subagent burns parent tokens for hours before anyone notices.
