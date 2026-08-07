@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### 0.34.80 — stuck "auditing" freeze: stale-latch verdict drop + RPC-stub confirm rework (2026-08-07)
+
+Field incident (the "are we stuck" freeze): a latched-stale LIVE session
+froze the queue at item 2 for 30m+ with zero ledger activity while the
+detached auditor's DISAPPROVED verdict sat complete on disk.
+
+- **Fix A — the apply gate never drops a completed verdict silently**: when
+  `freshCtxForGeneration` nulls out on a latched-stale session (transient
+  heartbeat-probe failures tripping goStaleTerminal — the session was
+  alive), the verdict is deferred durably: `audit_verdict_deferred` ledger
+  + `markCompletionAuditRecoveryPending(lastCtx, "verdict-apply-gate")` so
+  a fresh session's recovery path surfaces it for /goal resume. The
+  legit-supersede case (newer attempt owns the claim) stays silent.
+- **Fix B — heartbeatTick parks a stuck auditing goal BEFORE the stale
+  latch's early return**: the stranded-audit recovery was unreachable below
+  the `extensionApiStale` branch; a stale-latch variant now runs first via
+  the kept last context (`stranded_audit_recovered` `via: "stale-latch"`),
+  guarded by the exact stuck signature (auditing, no in-flight, claim,
+  90s silence). A heartbeat still never launches another worker.
+- **GitHub #4 rework (the disapproval)**: real pi 0.84.1's `custom` is a
+  function in EVERY mode (RPC/noOp resolve `undefined` without invoking the
+  factory), so `typeof custom === "function"` never fired the headless
+  fallback — RPC drafts were silently rejected. `confirmDraft` (and the
+  copied `promptSettingsMenu` pattern) now detect availability by whether
+  the builder RAN: a settled stub falls through to the byte-identical
+  select host-dialog path (ledgered `confirm_dialog_fallback_select` /
+  `settings_menu_fallback_select` via custom-stub). The mock harness
+  emulates real interactive pi (factory invoked) and gains
+  `customStubMode=true` for the exact RPC stub shape.
+- Tests: tests/stuck-audit-latch.test.ts (3, new); tests/confirm-draft
+  .test.ts +2 real-RPC-stub tests (fallback fires on the stub, Yes/No/
+  stale); audit docs STUCK-AUDITING-LATCH-2026-08-07.md + CONFIRM-DRAFT
+  -MARKDOWN-2026-08-07.md §rework. Full suite 1045 pass / 1 skip / 0 fail
+  across 97 files, tsc clean.
+
 ## 0.34.79 — 2026-08-07
 
 The first release since v0.34.57 consolidates the unreleased milestone work
