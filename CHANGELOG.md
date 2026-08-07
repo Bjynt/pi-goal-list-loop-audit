@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### 0.34.65 — completed goals show outcome, duration, and final verdict
+
+note.md 2026-08-07 (Screenshot_20260807_093742): "lets show how long ago
+the goal/list/loop started and if ended how long it took and possibly at
+the end we can show more info … this seems weak for a complete goal."
+Started/elapsed was already on the active goal card and loop card; the gap
+was the END: the widget and status line went empty the moment a goal
+completed, so a finished batch (empty list) left no trace of what ran or
+how long it took.
+
+- **Terminal-goal widget card.** A completed/aborted goal now renders a
+  card (`✓ complete · took 1h 45m` / `✗ aborted`) instead of vanishing;
+  the head carries the objective + wall duration (updatedAt − createdAt),
+  and a `└─` line adds the final stored verdict — `auditor approved
+  (model)` from the same `auditVerdictLabel` classification, or the abort
+  reason — or honestly says `archived · no stored verdict` when the goal
+  was archived without one.
+- **Status line names the outcome.** `glla: ✓ complete · took X` (or
+  `✗ aborted · took X`) replaces the empty segment; a held loop still
+  rides as the ` · loop⏸held` suffix and keeps its own card when no goal
+  exists.
+- Tests: `tests/display.test.ts` — duration + verdict card, abort reason
+  card, no-verdict honesty, status-line outcome (2 updated, 3 new pins).
+
 ### 0.34.64 — QUOTA WALL display removed; blocked pauses auto-clear on recovery
 
 User report (dracon-platform/web 2026-08-07): woke up to a parked goal
