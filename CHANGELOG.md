@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+### 0.34.74 — interrupt-didn't-continue: spurious stale-revision refusal + auditing dead end
+
+Field incident (Screenshot_20260807_100610, junk-runner): "interrupt didn't
+continue". Ledger-verified chain for goal 20260806215307-4irtlm: user quit
+mid-audit (01:44) → recovery dispatched a fresh audit (01:44:08) → verdict
+REFUSED as stale (01:47:25) even though the goal's revision was NEVER set
+(undefined) and the auditor captured 0 — the warning literally read
+"revision is 0 but the auditor captured 0" — → the refusal cleared the claim
+but left status `auditing`, so the re-scheduled continuation was silently
+silenced by isActionableGoal() (requires active) → 90s later the heartbeat
+stranded-audit recovery parked the goal paused/blocked "completion audit
+interrupted — no verdict" → 7h33m of silence until a manual /list resume.
+
+- **Fix A**: the v0.34.61 focus-revision guard (retryStoredCompletionAudit)
+  now uses the canonical normalized `isGoalRevisionCurrent` instead of raw
+  `state.goal.revision !== result.goalRevision.revision` — a never-set
+  revision (undefined) normalizes to 0 on both sides, so a captured 0 is
+  CURRENT and the verdict applies. Genuine contract moves (3 vs 4, undefined
+  vs 4) still refuse.
+- **Fix B**: the refusal branch now restores `status: "active"` alongside
+  clearing the claim (the v0.34.59 comment said "leave the goal active" but
+  the code never flipped the status), so the re-scheduled continuation
+  actually sends and the loop keeps driving the current objective. Genuine
+  orphans still hit the stranded-audit backstop — that path is unchanged.
+- **Docs**: audit/INTERRUPT-DIDNT-CONTINUE-2026-08-07.md — the full ledger
+  timeline, the root-cause chain, both fixes, evidence.
+- Tests: tests/interrupt-didnt-continue.test.ts (6) — the incident case
+  (undefined revision + captured 0 → current); bumped revisions still
+  refuse; equal non-zero revisions stay current; source pins for Fix A
+  (guard uses isGoalRevisionCurrent) and Fix B (refusal sets active +
+  re-schedules); behavior-preservation pin for genuine orphans. Full suite
+  1005 pass / 1 skip / 0 fail across 93 files, tsc clean.
+
 ### 0.34.73 — id_invalidation ledger event (OPEN-ISSUES 1.12)
 
 The invalidated-id incident (Screenshot_20260805_121634): pi invalidated the
