@@ -270,35 +270,45 @@ beforeEach(() => {
 test("v0.34.81 (behavioral): list_add with a subtask binds parentId to the matching queue item", async () => {
   setGlobalAutoResume(false); // do not auto-start the head — we just want the queue state
   const cwd = tmpCwd();
+  // Pre-seed state with a complete goal so the bulk-add does NOT auto-
+  // activate the head — we want to inspect the queue unchanged.
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  const seedLine = JSON.stringify({
+    type: "state",
+    value: {
+      goal: { id: "seed", objective: "seeded complete", status: "complete", policy: "goal", autoContinue: true, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, turns: 0 }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      list: [],
+      loop: null,
+    },
+    at: new Date().toISOString(),
+  });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), seedLine + "\n");
   const ctx = await freshSession(cwd);
-  console.error("DEBUG before list_add cwd=", cwd);
   // Single bulk-add with the parent first, then its two children, then an
   // unrelated item. All go through one enqueueItems call so the resolve
   // step finds the parent in `resolved[]` and the unrelated item binds to
   // nothing.
   await pi.command(
     "list",
-    "add Deploy the release pipeline — a parent. Done when: foo. Parallel: yes.\n" +
+    "add Deploy the release pipeline. Done when: foo. Parallel: yes.\n" +
       "Subtask of: Deploy the release pipeline — bump version. Done when: bar\n" +
       "Subtask of: Deploy the release pipeline — write the changelog. Done when: baz\n" +
       "Unrelated work. Done when: qux",
     ctx,
   );
   await tick();
-  console.error("DEBUG after list_add tick done");
 
-  // Read the disk sidecars (only queue files; ignore subdirs or junk).
-  const dir = path.join(cwd, ".pi-glla", "goals");
-  const allFiles = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
-  console.error("DEBUG list_add cwd=", cwd, "fileCount=", allFiles.length);
-  for (const f of allFiles) console.error("DEBUG   file:", f);
-  const sidecars = fs
-    .readdirSync(dir)
-    .filter((n) => n.endsWith(".queue.json"))
-    .map((n) => JSON.parse(fs.readFileSync(path.join(dir, n), "utf-8")));
-  const parent = sidecars.find((s: any) => typeof s.objective === "string" && s.objective.startsWith("Deploy the release pipeline"));
-  const children = sidecars.filter((s: any) => typeof s.parentId === "string");
-  assert.ok(parent, "parent sidecar exists");
+  // Read the LAST state line — the queue is in `list` (post-enqueue,
+  // pre-activation since the seeded complete goal blocks auto-activate).
+  // Filter for type=="state" so continuation-dispatch / ledger entries
+  // interleaved on active.jsonl don't poison the read.
+  const stateRaw = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
+  const lines = stateRaw.trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const stateLines = lines.filter((l: any) => l.type === "state");
+  const queue: any[] = stateLines[stateLines.length - 1].value.list;
+  const parent = queue.find((s: any) => typeof s.objective === "string" && s.objective.startsWith("Deploy the release pipeline"));
+  const children = queue.filter((s: any) => typeof s.parentId === "string");
+  assert.ok(parent, "parent in queue");
   assert.equal(parent.parallelSafe, true, "parent keeps its own Parallel: yes");
   assert.equal(children.length, 2, "both children bound");
   for (const c of children) {
@@ -316,6 +326,19 @@ test("v0.34.81 (behavioral): list_add with a subtask binds parentId to the match
 test("v0.34.81 (behavioral): unresolved parent refuses that child, other items still land", async () => {
   setGlobalAutoResume(false);
   const cwd = tmpCwd();
+  // Pre-seed a complete goal so auto-activate does not claim the Real
+  // parent — we want to inspect the post-enqueue queue unchanged.
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  const seedLine = JSON.stringify({
+    type: "state",
+    value: {
+      goal: { id: "seed", objective: "seeded complete", status: "complete", policy: "goal", autoContinue: true, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, turns: 0 }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      list: [],
+      loop: null,
+    },
+    at: new Date().toISOString(),
+  });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), seedLine + "\n");
   const ctx = await freshSession(cwd);
   // Bulk-add with a child referencing a parent that is NEVER declared.
   await pi.command(
@@ -325,15 +348,12 @@ test("v0.34.81 (behavioral): unresolved parent refuses that child, other items s
     ctx,
   );
   await tick();
-  console.error("DEBUG cwd:", cwd, "dir exists:", fs.existsSync(path.join(cwd, ".pi-glla", "goals")), "files:", fs.existsSync(path.join(cwd, ".pi-glla", "goals")) ? fs.readdirSync(path.join(cwd, ".pi-glla", "goals")) : "n/a");
-  console.error("DEBUG active.jsonl:", fs.existsSync(path.join(cwd, ".pi-glla", "active.jsonl")) ? fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8").slice(0, 600) : "n/a");
-  const dir = path.join(cwd, ".pi-glla", "goals");
-  const sidecars = fs
-    .readdirSync(dir)
-    .filter((n) => n.endsWith(".queue.json"))
-    .map((n) => JSON.parse(fs.readFileSync(path.join(dir, n), "utf-8")));
   // Only the real parent made it (the child with a bogus parent is refused).
-  assert.equal(sidecars.length, 1, "refused child never written");
+  const stateRaw = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
+  const lines = stateRaw.trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const stateLines = lines.filter((l: any) => l.type === "state");
+  const queue: any[] = stateLines[stateLines.length - 1].value.list;
+  assert.equal(queue.length, 1, "refused child never written");
   const ledger = readLedger(cwd);
   const refused = ledger.find((e) => e.type === "list_subtask_refused");
   assert.ok(refused, "refusal ledger present");
@@ -418,11 +438,13 @@ test("v0.34.81 (behavioral): auto-advance skips a head group and lands on its fi
     ctx,
   );
   await tick();
-  // Read the LAST state line — the active goal's objective is child one's,
-  // not the parent's, and parentId points at the parent.
+  // Read the LAST STATE line (filter out continuation-dispatch / ledger
+// entries that interleave on active.jsonl). After auto-advance the goal
+// is "child one" and the queue holds [Parent group, child two].
   const stateRaw = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
   const lines = stateRaw.trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
-  const lastStateLine = lines[lines.length - 1];
+  const stateLines = lines.filter((l: any) => l.type === "state");
+  const lastStateLine = stateLines[stateLines.length - 1];
   const goal = lastStateLine.value.goal;
   assert.ok(goal, "a goal is active after auto-advance");
   assert.match(String(goal.objective), /child one/);

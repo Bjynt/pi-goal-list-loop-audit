@@ -5049,7 +5049,6 @@ function enqueueItems(ctx: ExtensionContext, texts: string[], source: string, op
   if (fresh.length === 0) return 0;
   const items = fresh.map((text) => {
     const extracted = parseListItemDeclaration(text);
-    console.error("DBG enqueueItems item id will be assigned; objective=", extracted.objective.slice(0, 60), "parentObjective=", extracted.parentObjective ?? "(none)");
     return {
       id: newGoalId(),
       objective: extracted.objective,
@@ -5107,7 +5106,6 @@ function enqueueItems(ctx: ExtensionContext, texts: string[], source: string, op
   // .queue.json sidecar is atomic (temp + rename) and idempotent (skips
   // existing files rather than overwriting).
   const written = itemsToWrite.map((item) => writeQueueItemFile(ctx.cwd, item));
-  console.error("DBG enqueueItems wrote", written.length, "sidecars, all wrote=", written.every((w) => w.wrote), "paths=", written.map((w) => w.path));
   state = { ...state, list: [...listQueue(), ...itemsToWrite] };
   const diskFirst = written.filter((w) => w.wrote).length === itemsToWrite.length;
   appendLedger(ctx.cwd, "list_queue_disk_first", { source, count: itemsToWrite.length, diskFirst });
