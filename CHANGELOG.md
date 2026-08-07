@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### 0.34.78 — draft confirm renders markdown (GitHub #4)
+
+The draft-class confirm dialog (`confirmDraft`) rendered through plain-text
+`ctx.ui.select` — no markdown, no wrapping — while the README promises
+markdown-rendered confirm dialogs. `ask_user_question` is an agent tool and
+can't be called from a dialog, so the confirm now hosts a real TUI component
+via `ctx.ui.custom`.
+
+- **extensions/confirm-draft.ts (new)**: `ConfirmDraftComponent` —
+  DynamicBorder frame, Markdown body (title as H1, objective + contract at
+  full width), a SelectList with the same three choices (Yes / Yes-and-
+  always / No), and a help line. MarkdownTheme is built from the runtime
+  theme's own md* colors so the dialog follows the active theme.
+- **confirmDraft (goal.ts)**: custom-first when `ctx.ui.custom` exists;
+  the plain select path stays as the headless/RPC fallback. The ALWAYS
+  escape hatch, project autoAcceptDrafts persistence, the ledger entry,
+  and the stale-API "stale" semantics are shared by both paths.
+- Tests: tests/confirm-draft.test.ts (8, new) — pure markdown builder,
+  component renders title/body/all three choices, first-choice
+  preselection + no-throw input, custom path Yes/No/stale with dialog
+  capture, select fallback Yes/stale. 3 behavioral tests converted to
+  drive the dialog via customImpl. Full suite 1034 pass / 1 skip / 0 fail
+  across 96 files, tsc clean.
+
 ### 0.34.77 — regression shield handles non-ASCII (Chinese) contract items (GitHub #5)
 
 The shield's token extraction regex was ASCII-only
