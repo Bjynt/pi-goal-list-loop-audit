@@ -1629,6 +1629,10 @@ function startUITicker(): void {
 // and escalated loudly past 5 minutes.
 let continuationRearmStreak = 0;
 let loopRearmStreak = 0;
+// v0.34.82: deduplicate the "compaction appears off" notify to once per
+// second (the heartbeat fires every 60s, but a busy session may have
+// multiple refire checks within a single second).
+let lastStarvedRefusedAt = "";
 // v0.28.24: post-compaction grace — a just-replaced session gets 3 minutes
 // to settle (queue drain, provider recovery) before stall counting resumes.
 // Field-observed in junk-runner: a 196k-token compact finished, then the
@@ -1643,6 +1647,45 @@ let compactionGraceUntil = 0;
 // session was still mid-compact; the work was completed on disk but the
 // session handle was lost, so the user saw the false-positive warning).
 let lastCompactionAt = 0;
+// v0.34.82: context-starvation streak — when pi auto-compaction is
+// DISABLED (or otherwise absent) the agent_end yield path is correct (do
+// not send a 1-token length-continue) but the heartbeat refire would
+// queue another full turn against the same near-full context, growing
+// from 98% to 120%+ in six retries. The user only sees that as a stalled
+// session. Track consecutive yielded length stops with no
+// session_compact between them; when that crosses the cap, freeze
+// scheduleContinuation until a real compaction lands or the user takes
+// the manual `compaction` or `/compact` path. A session_compact
+// immediately clears the streak.
+const CONTEXT_STARVATION_REFUSE_THRESHOLD = 2;
+const CONTEXT_STARVATION_RECENT_WINDOW_MS = 90_000;
+let contextStarvedStreak = 0;
+let lastContextStarvedAt = 0;
+function noteContextStarvedYield(): { streak: number; shouldRefuse: boolean } {
+  const now = Date.now();
+  if (now - lastContextStarvedAt > CONTEXT_STARVATION_RECENT_WINDOW_MS) {
+    contextStarvedStreak = 0;
+  }
+  contextStarvedStreak++;
+  lastContextStarvedAt = now;
+  return { streak: contextStarvedStreak, shouldRefuse: contextStarvedStreak >= CONTEXT_STARVATION_REFUSE_THRESHOLD };
+}
+function clearContextStarvedStreak(): void {
+  contextStarvedStreak = 0;
+  lastContextStarvedAt = 0;
+}
+/** Public: a session_compact landed — clear the starvation refuse gate. */
+function onCompactionLanded(): void {
+  clearContextStarvedStreak();
+}
+/** Public: has the yield path declared compaction absent? The heartbeat
+ * consults this to refuse to schedule a new continuation while the
+ * session is stuck in the same near-full context. */
+function isContextStarvedRefused(): boolean {
+  if (contextStarvedStreak < CONTEXT_STARVATION_REFUSE_THRESHOLD) return false;
+  if (lastCompactionAt > lastContextStarvedAt) return false; // a compact happened after the streak — fresh slate
+  return Date.now() - lastContextStarvedAt <= CONTEXT_STARVATION_RECENT_WINDOW_MS;
+}
 // v0.34.57: per-record counter capping the compaction-paused re-arm loop.
 // A stuck session that never produces a new compaction event must not
 // re-arm indefinitely; after 3 rearms (default 3 × 150s = 7.5m) the
@@ -2097,6 +2140,27 @@ function heartbeatTick(): void {
   // continuation and defeated the 0.29.4 stand-down within a minute.
   if (abortedStandDown) return;
   if (!fire) return;
+  // v0.34.82: when pi auto-compaction is absent (settings `compaction.enabled:false`
+  // or otherwise no session_compact event has fired in the recent window),
+  // the agent_end yield path correctly refuses to send a 1-token
+  // length-continue. But the heartbeat's refire would still queue a full
+  // turn against the same near-full context, draining sessions to 120%+
+  // before the user notices. Refuse to schedule a new continuation while
+  // we are starving; surface a one-shot "compaction needed" notify so the
+  // user can either flip `compaction.enabled` back on or run `/compact`.
+  // A real `session_compact` clears the streak and the heartbeat resumes
+  // its normal refire (goal.ts:9411).
+  if (isContextStarvedRefused()) {
+    if (lastStarvedRefusedAt !== Date.now().toString().slice(0, -3)) {
+      lastStarvedRefusedAt = Date.now().toString().slice(0, -3);
+      appendLedger(ctx.cwd, "continuation_refused_context_starved", { streak: contextStarvedStreak, sinceMs: Date.now() - lastContextStarvedAt });
+      ctx.ui.notify(
+        "glla: auto-compaction appears to be off (or not running) — context is starving and the next turn would just truncate again. Run `/compact` once, or set `compaction.enabled:true` in ~/.pi/agent/settings.json to let pi handle this automatically.",
+        "warning",
+      );
+    }
+    return;
+  }
   // v0.26.6: the 0.25.0 "recent ship (<5m)" suppression was REMOVED. It fed
   // lastShippedAtMs, which read the state-file MTIME — and the heartbeat's
   // own suppressed-tick ledger writes refreshed that mtime every 15s,
@@ -9401,6 +9465,10 @@ export default function (pi: ExtensionAPI): void {
     loopRearmStreak = 0; loopRearmSince = 0;
     compactionGraceUntil = Date.now() + COMPACTION_GRACE_MS;
     lastCompactionAt = Date.now();
+    // v0.34.82: a real compaction landed — clear the starvation refuse
+    // gate. The agent_end yield path will resume deferring on the next
+    // near-full length stop, and the heartbeat can refire again.
+    onCompactionLanded();
     // v0.32.1: arm the resume debt + the resync block (the settle probes
     // below stay as the fast path; the heartbeat now retries the debt on
     // EVERY post-grace tick until agent_start discharges it).
@@ -10006,11 +10074,13 @@ export default function (pi: ExtensionAPI): void {
     const contextStarvedLength = isContextStarvedLengthStop(rawLastA, contextUsage);
     const lc = tickLengthContinue(lastA?.stopReason === "length" && !contextStarvedLength);
     if (contextStarvedLength) {
+      const starved = noteContextStarvedYield();
       appendLedger(ctx.cwd, "length_continue_deferred_context_full", {
         outputTokens: rawLastA?.usage?.output,
         contextTokens: contextUsage?.tokens ?? null,
         contextWindow: contextUsage?.contextWindow ?? null,
         contextPercent: contextUsage?.percent ?? null,
+        starvedStreak: starved.streak,
       });
       ctx.ui.notify("glla: output-token stop was context starvation (tiny output at a nearly full context) — yielding to pi auto-compaction instead of re-sending.", "info");
       return;

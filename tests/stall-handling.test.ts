@@ -151,6 +151,37 @@ test("v0.28.24: session_compact resets the send-rearm storm streaks + opens the 
   assert.ok(hookIdx > 0 && resetIdx > hookIdx, "streak reset + grace arm inside the session_compact hook");
 });
 
+test("v0.34.82: heartbeat refuses to refire a continuation while pi is context-starved (no compaction landing)", () => {
+  // Field (screenshot 2026-08-07 16:50:55): user-level settings had
+  // `compaction.enabled:false`; the agent_end yield path correctly refused
+  // to send a 1-token length-continue, but the heartbeat kept refiring
+  // full turns against the same near-full context, draining the session
+  // from 98% to 120% over six retries. The user only saw "stalled".
+  // The new gate watches consecutive `length_continue_deferred_context_full`
+  // events; once the streak crosses the threshold and no `session_compact`
+  // has landed, the heartbeat stops scheduling new continuations and posts
+  // a one-shot "compaction appears off — run /compact" notify.
+  assert.match(SRC, /let contextStarvedStreak = 0;/);
+  assert.match(SRC, /const CONTEXT_STARVATION_REFUSE_THRESHOLD = 2;/);
+  assert.match(SRC, /const CONTEXT_STARVATION_RECENT_WINDOW_MS = 90_000;/);
+  // The yield path records the streak in the ledger so postmortem sees it.
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "length_continue_deferred_context_full", \{[\s\S]*?starvedStreak: starved\.streak,[\s\S]*?\}\)/);
+  // The heartbeat gate is a one-shot "compaction appears off" path.
+  assert.match(SRC, /if \(isContextStarvedRefused\(\)\) \{/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "continuation_refused_context_starved", \{ streak: contextStarvedStreak, sinceMs: Date\.now\(\) - lastContextStarvedAt \}\)/);
+  assert.match(SRC, /auto-compaction appears to be off[\s\S]*?Run `\/compact`/);
+  // A real compaction clears the streak so the heartbeat can refire again.
+  const compactIdx = SRC.indexOf('pi.on("session_compact"');
+  const clearIdx = SRC.indexOf("onCompactionLanded();");
+  assert.ok(compactIdx > 0 && clearIdx > compactIdx, "session_compact hook clears the starvation streak");
+  // The gate is BEFORE scheduleContinuation in the heartbeat path, so the
+  // refire short-circuits before any work is scheduled.
+  const refireIdx = SRC.indexOf("if (isLoopActive()) {\n    scheduleLoopTick(ctx);");
+  const gateIdx = SRC.indexOf("if (isContextStarvedRefused()) {");
+  assert.ok(gateIdx > 0 && refireIdx > 0, "both gate and refire branches present");
+  assert.ok(gateIdx < refireIdx, "refuse gate precedes the refire schedule");
+});
+
 test("v0.29.21: session_compact arms a SECOND settle refire at grace expiry", () => {
   // Field (hellhunter 2026-07-31): auto-compact at 195.8k after two
   // output-limit turns → zero continuation rearm attempts after the
