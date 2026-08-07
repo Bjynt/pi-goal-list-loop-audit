@@ -107,6 +107,7 @@ import {
   lastPersistenceFailure,
   modelSwitch,
   isForbiddenModel,
+isGoalRevisionCurrent,
   isQuotaWallError,
   nextHourlyPromptMs,
   type ModelSwitchRecord,
@@ -3780,10 +3781,15 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
   // means the goal's contract moved while the audit ran — the verdict
   // must NOT apply to the new contract. Non-contract writes (pause,
   // status flips, quota machinery) no longer trip this guard; they do
-  // not change the contract the verdict applies to.
-  // Surface the refusal loudly via the HUD rather than silently
-  // overwriting a goal that moved on.
-  if (result.goalRevision && state.goal.revision !== result.goalRevision.revision) {
+  // v0.34.74 (interrupt-didn't-continue): the guard MUST normalize the
+  // never-set revision (undefined) to 0 — the raw `undefined !== 0`
+  // comparison spuriously refused verdicts for goals whose revision was
+  // never bumped (field-observed in junk-runner 2026-08-07: goal
+  // 20260806215307-4irtlm rev undefined, auditor captured 0, verdict
+  // REFUSED even though the contract had NOT moved; the refusal then
+  // stranded the goal and the loop went silent for 7.5h).
+  // isGoalRevisionCurrent is the canonical normalized check.
+  if (result.goalRevision && !isGoalRevisionCurrent(result.goalRevision, state.goal)) {
     appendLedger(liveCtx.cwd, "stale_revision_refused", {
       goalId,
       captured: result.goalRevision,
@@ -3800,7 +3806,14 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     // v0.34.59: leave the goal active. The stale claim is consumed
     // (cleared) so we do not loop on a forever-stale retry. The user can
     // /goal verify to re-engage on current state.
-    updateGoal({ pendingCompletion: undefined }, liveCtx);
+    // v0.34.74: the status flip is REQUIRED, not cosmetic — the goal is in
+    // `auditing` here, and isActionableGoal() (sendContinuation's gate)
+    // requires status === "active". Without the flip the scheduled
+    // continuation silently never sent, the heartbeat stranded the goal
+    // 90s later, and the list item sat paused "completion audit
+    // interrupted — no verdict" until a manual resume (the 2026-08-07
+    // junk-runner incident).
+    updateGoal({ ...(state.goal?.status === "auditing" ? { status: "active" } : {}), pendingCompletion: undefined }, liveCtx);
     scheduleContinuation(liveCtx, true);
     return;
   }
