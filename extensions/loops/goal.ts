@@ -747,6 +747,16 @@ export function __testOnlyResetStaleFlag(): void {
   extensionApiStale = false;
 }
 
+/** TEST-ONLY hook (GitHub #4): the last draft dialog rendered through the
+ * custom path — the mock never invokes the custom builder, so tests assert
+ * the captured title/body/options instead. Cleared to null by the hook
+ * itself between assertions (no production caller). */
+export function __testOnlyLastConfirmDialog(): { title: string; body: string; options: string[] } | null {
+  const last = lastConfirmDialog;
+  lastConfirmDialog = null;
+  return last;
+}
+
 /** TEST-ONLY hook (tests/harness): clears the terminal/stand-down module
  * flags a stale-scenario test file may have latched. Production clears them
  * only on successor-absorb or process restart; bun test shares module state

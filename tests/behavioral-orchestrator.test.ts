@@ -23,7 +23,7 @@ import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import activate, { __testOnlyHeartbeatTick, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyRunFanOutListAuditFindings, __testOnlySetContinuationStartTimeout, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
+import activate, { __testOnlyHeartbeatTick, __testOnlyLastConfirmDialog, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyRunFanOutListAuditFindings, __testOnlySetContinuationStartTimeout, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
 
 // v0.29.5: autoResume is GLOBAL-only now — tests opt in by writing the
 // harness's global settings path, and afterEach resets it so the opt-in
@@ -1379,7 +1379,7 @@ test("T1a: stale Confirm in propose_goal_draft → NOT-a-rejection guidance, no 
   await pi.command("goal", "", ctx); // no args → drafting mode (seed send is a no-op now: stale)
   await pi.fire("message_start", { message: { role: "user" } }, ctx); // the seed itself (skipped)
   await pi.fire("message_start", { message: { role: "user" } }, ctx); // a real reply (counted)
-  ctx.ui.selectImpl = async () => {
+  ctx.ui.customImpl = async () => {
     throw staleError();
   };
   ctx.ui.confirmImpl = async () => {
@@ -1439,7 +1439,7 @@ test("drafting state is not left behind by a stale seed, and old confirmations c
   await pi.fire("message_start", { message: { role: "user" } }, first);
   await pi.fire("message_start", { message: { role: "user" } }, first);
   let resolveConfirm!: (choice: string) => void;
-  first.ui.selectImpl = () => new Promise<string>((resolve) => { resolveConfirm = resolve; });
+  first.ui.customImpl = () => new Promise<string>((resolve) => { resolveConfirm = resolve; });
   const pending = pi.runTool("propose_goal_draft", { objective: "late draft — done when pinned", verificationContract: "pinned" }, first);
   await tick(20);
   const replacement = makeMockCtx(confirmCwd, {
@@ -1471,12 +1471,14 @@ test("auto-accept escape hatch: ALWAYS choice persists project autoAcceptDrafts 
   await pi.fire("message_start", { message: { role: "user" } }, ctx);
   await pi.fire("message_start", { message: { role: "user" } }, ctx); // floor satisfied
   let selectTitle = "";
-  ctx.ui.selectImpl = async (title: string) => {
-    selectTitle = title;
+  ctx.ui.customImpl = async () => {
     return "Yes — and always auto-accept drafts (sets autoAcceptDrafts for this project)";
   };
   const res = await pi.runTool("propose_goal_draft", { objective: "hatch objective — done when pinned", verificationContract: "pinned" }, ctx);
-  ctx.ui.selectImpl = undefined; // cleanup BEFORE asserts
+  ctx.ui.customImpl = undefined; // cleanup BEFORE asserts
+  const lastDialog = __testOnlyLastConfirmDialog();
+  assert.ok(lastDialog, "the custom path captured the rendered dialog");
+  selectTitle = lastDialog!.title;
   assert.match(res.content[0]!.text, /Goal activated|activated|Begin work/i, "draft accepted, not rejected");
   assert.match(selectTitle, /Confirm goal/, "the dialog rendered as the goal confirm");
   const g = readState(cwd).goal as { status: string } | null;
