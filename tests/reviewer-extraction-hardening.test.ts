@@ -72,13 +72,15 @@ test("v0.34.83: the bare word 'issue' is REMOVED from the bug regex — GitHub i
   assert.equal(classifyFindingText("fixed in GitHub issue #5 (regression shield non-ASCII)"), undefined);
   assert.equal(classifyFindingText("See GitHub issue #3 for the list-collision resolution"), undefined);
   assert.equal(classifyFindingText("traced back to gh-123"), undefined);
-  // Issue-prose phrases — not bugs:
-  assert.equal(classifyFindingText("this issue is the latest regression we shipped"), undefined);
+  // Issue-prose phrases — not bugs (no other bug markers in the line):
+  assert.equal(classifyFindingText("this issue is open and awaiting triage"), undefined);
   assert.equal(classifyFindingText("open the issue tracker and pick the next one"), undefined);
   // Real bug markers still classify:
   assert.equal(classifyFindingText("TODO: fix the null deref"), "bug");
   assert.equal(classifyFindingText("FIXME: the cache key is broken"), "bug");
   assert.equal(classifyFindingText("regression in the auditor path"), "bug");
+  // Multi-marker lines still classify (regression is a real bug marker).
+  assert.equal(classifyFindingText("this issue is a regression we shipped"), "bug");
 });
 
 test("v0.34.83: a completion summary referencing GitHub issues enqueues zero bug findings through the curated pipeline", () => {
