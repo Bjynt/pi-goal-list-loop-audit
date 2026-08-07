@@ -222,6 +222,9 @@ import {
   type ModelPickItem,
 } from "../model-picker.js";
 import {
+  ConfirmDraftComponent,
+} from "../confirm-draft.js";
+import {
   applyMeasurement,
   applyMetriclessTick,
   applyRefinement,
@@ -901,10 +904,37 @@ function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
  * draft dialog is a 3-choice select; the ALWAYS choice persists project
  * autoAcceptDrafts=true and accepts. Returns "stale" when the dialog can't
  * render (session replacement) so call sites keep their NOT-a-rejection
- * handling; falls back to the plain confirm if select is unavailable. */
+ * handling; falls back to the plain confirm if select is unavailable.
+ * v0.34.78 (GitHub #4): when the runtime has ctx.ui.custom, the SAME three
+ * choices render as a Markdown dialog (objective + contract at full width)
+ * instead of the plain-text select; the select path stays as the headless/
+ * RPC fallback. */
 type DraftChoice = "yes" | "no" | "stale";
+// v0.34.78: last draft dialog rendered via the custom path — exposed for
+// tests (__testOnlyLastConfirmDialog) since the mock never invokes the
+// custom builder.
+let lastConfirmDialog: { title: string; body: string; options: string[] } | null = null;
 async function confirmDraft(ctx: ExtensionContext, title: string, body: string): Promise<DraftChoice> {
   const ALWAYS = "Yes — and always auto-accept drafts (sets autoAcceptDrafts for this project)";
+  if (typeof (ctx.ui as { custom?: unknown }).custom === "function") {
+    const options = ["Yes", ALWAYS, "No"];
+    lastConfirmDialog = { title, body, options };
+    try {
+      const choice = await ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) =>
+        new ConfirmDraftComponent({ title, body, options }, () => tui.requestRender(), theme as any, keybindings as any, done),
+      );
+      if (choice === ALWAYS) {
+        saveSettings("project", ctx.cwd, { autoAcceptDrafts: true });
+        appendLedger(ctx.cwd, "draft_autoaccept_enabled", { via: title });
+        ctx.ui.notify("Draft auto-accept ON for this project — future draft confirms are skipped. Undo in /glla settings: Auto-accept drafts = off.", "info");
+        return "yes";
+      }
+      return choice === "Yes" ? "yes" : "no";
+    } catch (err) {
+      if (isStaleApiError(err)) return "stale";
+      // a non-stale custom failure degrades to the legacy select path
+    }
+  }
   try {
     const choice = await ctx.ui.select(`${title}\n\n${body}`, ["Yes", ALWAYS, "No"]);
     if (choice === ALWAYS) {
