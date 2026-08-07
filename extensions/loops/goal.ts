@@ -6727,7 +6727,61 @@ function registerAgentTools(pi: any): void {
       // or b") reached the user as an unreadable fragment.
       ctx.ui.notify(`${goalNoun()} paused: ${p.reason}${p.suggestedAction ? `\n\n→ ${p.suggestedAction}` : ""}`, "info");
       notifyExternal(ctx, `${goalNoun()} paused: ${(p.suggestedAction ? `${p.reason} → ${p.suggestedAction}` : p.reason).slice(0, 200)}`);
-      return { content: [{ type: "text", text: `Goal paused. ${activeGoalSurfaceCommand("resume")} to continue.` }], details: {} };
+      // v0.34.70 — impossible list items auto-drop (note.md 2026-08-07:
+      // "auto drop impossible ones i think or auto adjust instead of stopping").
+      // DEFINED IMPOSSIBLE STATE: a /list item paused as kind="blocked" with
+      // NO resume path (no non-empty suggestedAction) — the pause itself
+      // declares "blocked forever, no way forward". Every internal blocked
+      // pause (restore hold, audit retries, abort wall, …) carries a
+      // suggestedAction, so only an agent-authored blocked pause that offers
+      // no way forward reaches this branch. The list then DROPS the item
+      // (ledgered, both the detection and the drop) and ADVANCES to the next
+      // item instead of stopping on it.
+      let droppedImpossible = false;
+      if (
+        state.goal.policy === "list"
+        && p.kind === "blocked"
+        && !(p.suggestedAction && p.suggestedAction.trim())
+      ) {
+        droppedImpossible = true;
+        const impossible = state.goal;
+        appendLedger(ctx.cwd, "list_item_impossible", {
+          itemId: impossible.id,
+          reason: p.reason,
+          objective: impossible.objective,
+        });
+        // The item was already taken out of the queue at activation — the
+        // drop records the decision; the queue advances past it below.
+        appendLedger(ctx.cwd, "list_item_auto_dropped", {
+          itemId: impossible.id,
+          objective: impossible.objective,
+          reason: "blocked with no resume path",
+        });
+        const droppedLabel = displaySlice(impossible.objective, 60);
+        const remaining = listQueue().length;
+        if (remaining > 0 && !isLoopActive()) {
+          const advanced = activateNextListItem(ctx);
+          ctx.ui.notify(
+            advanced
+              ? `List item auto-dropped as impossible (blocked with no resume path): ${droppedLabel} — advancing to the next item (${remaining} remaining).`
+              : `List item auto-dropped as impossible (blocked with no resume path): ${droppedLabel} — could not auto-advance (${remaining} remaining).`,
+            "warning",
+          );
+        } else if (remaining === 0) {
+          ctx.ui.notify(`List item auto-dropped as impossible (blocked with no resume path): ${droppedLabel} — the list is now empty; add more with /list add.`, "warning");
+        } else {
+          ctx.ui.notify(`List item auto-dropped as impossible (blocked with no resume path): ${droppedLabel} — a running loop holds the surface; the item stays dropped.`, "warning");
+        }
+      }
+      return {
+        content: [{
+          type: "text",
+          text: droppedImpossible
+            ? "The list item was auto-dropped as impossible (blocked with no resume path) — the list moved on instead of stopping."
+            : `Goal paused. ${activeGoalSurfaceCommand("resume")} to continue.`,
+        }],
+        details: {},
+      };
     },
   }));
 
