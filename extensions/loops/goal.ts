@@ -93,6 +93,7 @@ import {
   extractVerificationContract,
   classifySessionCtx,
   readState,
+  healCorruptedGoalPolicy,
   renderGoalMarkdown,
   shouldAutoResumeOnSessionStart,
   statusLabel,
@@ -4122,7 +4123,30 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
 // else is an objective (draft if empty, set+start otherwise).
 // =================================================================
 
+/** v0.34.68 (bug 1.7 — "list/goal drafting disallows until we restart",
+ * Screenshot_20260804_212233): mode-gate self-heal. A corrupted
+ * state.goal.policy (readState parse failure — the ledger `state` event is
+ * trusted verbatim) made every mode gate silently refuse /list and /goal
+ * actions until a restart. Heal from the durable goal .md and persist so
+ * the next readState sees the corrected value. A visible notify replaces
+ * the old silent rejection. Returns true when the policy was repaired. */
+function healGoalPolicy(ctx: ExtensionContext): boolean {
+  const healed = healCorruptedGoalPolicy(state, ctx.cwd);
+  if (healed) {
+    persistState(ctx);
+    ctx.ui.notify(
+      `Recovered the goal mode (${healed === "list" ? "list item" : "goal"}) from the durable goal file — the corrupted in-memory mode flag was self-healed; no restart needed.`,
+      "info",
+    );
+  }
+  return healed !== undefined;
+}
+
 async function cmdGoal(args: string, ctx: ExtensionContext): Promise<void> {
+  // v0.34.68 (bug 1.7): heal a corrupted mode flag BEFORE any gate branches
+  // on state.goal.policy — a silent "disallows until restart" must not
+  // refuse /goal drafting or actions.
+  healGoalPolicy(ctx);
   const route = routeGoalArgs(args);
   if (route.kind === "sub") {
     if (route.name === "status") return cmdStatus(ctx);
@@ -4750,6 +4774,10 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     appendLedger(ctx.cwd, "list_mutation_refused_stale", { sub });
     return;
   }
+  // v0.34.68 (bug 1.7): heal a corrupted mode flag BEFORE the pause/
+  // resume/tweak/cancel gates branch on state.goal.policy — the gate used
+  // to silently refuse the whole surface until a restart.
+  healGoalPolicy(ctx);
 
   if (sub === "audit") {
     // v0.31.0: /list audit [focus] — collect-then-drain (user design

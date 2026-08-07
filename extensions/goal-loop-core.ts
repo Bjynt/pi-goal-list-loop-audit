@@ -927,6 +927,42 @@ export function readGoalMd(cwd: string, id: string): string | null {
   return fs.readFileSync(file, "utf-8");
 }
 
+/** v0.34.68 (bug 1.7 — "list/goal drafting disallows until we restart",
+ * Screenshot_20260804_212233): parse the durable Policy marker from a
+ * renderGoalMarkdown-formatted active-goal .md. Returns undefined when
+ * the file is absent or the marker is missing/unrecognized. */
+export function parseGoalPolicyFromMd(cwd: string, goalId: string): Policy | undefined {
+  const md = readGoalMd(cwd, goalId);
+  if (!md) return undefined;
+  const m = md.match(/\*\*Policy\*\*:\s*(goal|list)/);
+  return m ? (m[1] as Policy) : undefined;
+}
+
+/** v0.34.68 (bug 1.7): self-heal a corrupted in-memory state.goal.policy.
+ * readState trusts the active.jsonl `state` event verbatim, so a parse
+ * failure (truncated write, torn merge, old schema) can leave policy
+ * outside {goal,list}; every mode gate branching on
+ * `state.goal.policy === "list"` then silently refuses the wrong surface
+ * until a restart re-reads the ledger. Re-derive policy from the durable
+ * active-goal .md (`**Policy**: …`) and repair state in place (the goal
+ * object is shared by reference). Returns the healed policy when
+ * repaired; undefined when there is nothing to heal or no durable source
+ * exists (a heal_failed ledger entry records the unfixable case). */
+export function healCorruptedGoalPolicy(state: State, cwd: string): Policy | undefined {
+  const g = state.goal;
+  if (!g) return undefined;
+  if (g.policy === "goal" || g.policy === "list") return undefined;
+  const healed = parseGoalPolicyFromMd(cwd, g.id);
+  if (!healed) {
+    appendLedger(cwd, "goal_policy_heal_failed", { goalId: g.id, policy: g.policy });
+    return undefined;
+  }
+  const from = g.policy;
+  g.policy = healed;
+  appendLedger(cwd, "goal_policy_healed", { goalId: g.id, from, to: healed });
+  return healed;
+}
+
 // =================================================================
 // Renderer — replace pi-goal-x's hand-concat detailedSummary
 // =================================================================
