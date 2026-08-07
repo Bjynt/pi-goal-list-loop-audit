@@ -373,13 +373,16 @@ export function classifyIdInvalidationReason(flags: {
  * the cause from a generic stale error — the class is inferred from what
  * the loop itself knows at the moment of the terminal:
  * - session_shutdown — a lifecycle shutdown already ran (clearSessionOwnedTimers
- *   → sessionHandoffPending): the invalidation is the tail of a proper session
- *   replacement (quit/reload/resume/new), not a loss;
+ *   → sessionHandoffPending). In practice the shutdown ALSO nulls lastCtx, so
+ *   the heartbeat cannot fire the terminal at all — this branch only guards
+ *   the rare race where a send-path stale error beats the shutdown handler's
+ *   cleanup, and any future caller with better knowledge;
  * - provider_disconnect — the main model was in provider-failure recovery when
  *   the handle died (weak signal: quota/billing walls often coincide);
  * - silent_handle_death — neither: pi invalidated the handle WITHOUT delivering
  *   a replacement session and without a shutdown record. This is the exact
- *   "host session lost" case the user keeps hitting (13 screenshots 08-05→08-07).
+ *   "host session lost" case the user keeps hitting (13 screenshots 08-05→08-07);
+ *   the terminal event ONLY fires for this class in practice.
  * Priority: a recorded shutdown wins even if recovery is also active. */
 export function classifySessionHandleInvalidation(flags: {
   sessionHandoffPending?: boolean;

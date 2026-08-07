@@ -96,7 +96,12 @@ test("host loss without any lifecycle shutdown classifies silent_handle_death", 
 
 // ── (c) behavioral — a proper lifecycle shutdown precedes the death ─────
 
-test("a lifecycle shutdown before the invalidation classifies session_shutdown", async () => {
+test("a lifecycle shutdown suppresses the terminal entirely — no loss event", async () => {
+  // The discriminator: after a proper session_shutdown the loop has no
+  // lastCtx (clearSessionOwnedTimers nulls it) and expects the announced
+  // replacement — it does NOT declare a loss. The next session_start
+  // consumes the handoff debt. The silent-death event is reserved for the
+  // no-shutdown case (the real "host session lost").
   setGlobalAutoResume(true);
   const cwd = tmpCwd();
   seedState(cwd, { goal: seedGoal({ policy: "goal", status: "active", objective: "repro host session lost" }) });
@@ -104,19 +109,16 @@ test("a lifecycle shutdown before the invalidation classifies session_shutdown",
   const ctx = makeMockCtx(cwd);
   await pi.fire("session_start", { reason: "startup" }, ctx);
   await tick();
-  // The user quits — session_shutdown runs clearSessionOwnedTimers →
-  // sessionHandoffPending=true and opens the 60s rebind grace. pi announces
-  // the replacement but NEVER delivers it (the lost-session case): backdate
-  // the grace window, then the heartbeat must go terminal and classify the
-  // death as the tail of a proper cycle.
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
-  __testOnlySetSessionReplacementUntil(0); // grace expired — no rebind arrived
+  __testOnlySetSessionReplacementUntil(0); // grace expired — even so, no terminal
   invalidateHostSession(pi, ctx);
   __testOnlyHeartbeatTick();
   try {
     const evs = invalidations(cwd);
-    assert.equal(evs.length, 1, "one session_handle_invalidated");
-    assert.equal(evs[0]!.value.reason, "session_shutdown", "a shutdown was recorded — the tail of a proper cycle");
+    assert.equal(evs.length, 0, "a recorded shutdown is NOT a host loss — no terminal event");
+    const shutdowns = readLedger(cwd).filter((e) => e.type === "session_shutdown");
+    assert.equal(shutdowns.length, 1, "the shutdown was recorded");
+    assert.equal(shutdowns[0]!.value.reason, "quit");
   } finally {
     pi.sendMessageError = null;
     pi.sessionNameError = null;
