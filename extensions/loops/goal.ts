@@ -1852,6 +1852,31 @@ function heartbeatTick(): void {
   // a durable interruption marker. Keep the last context long enough for the
   // terminal path to persist the honest orphan state.
   const knownCtx = lastCtx;
+  // v0.34.80 (field: 2026-08-07 item-2 freeze): a latched-stale LIVE session
+  // (transient heartbeat-probe failures tripping goStaleTerminal) freezes an
+  // auditing goal with no in-flight audit: the completed verdict's apply path
+  // silently bails on freshCtxForGeneration()=null and the full stranded-
+  // recovery block below is unreachable while the latch holds — the queue sat
+  // blocked ~30m+ while the worker's disapproval sat on disk. Park the stuck
+  // claim via the kept last context. A heartbeat must still NEVER launch
+  // another worker; the park is the explicit-resume gate.
+  if (
+    extensionApiStale &&
+    knownCtx &&
+    state.goal?.status === "auditing" &&
+    !completionAuditInFlight &&
+    state.goal.pendingCompletion &&
+    Date.now() - lastActivityAt >= 90_000
+  ) {
+    appendLedger(knownCtx.cwd, "stranded_audit_recovered", { goalId: state.goal.id, via: "stale-latch" });
+    markCompletionAuditRecoveryPending(knownCtx, "stale-latch-recovery");
+    try {
+      knownCtx.ui.notify(`Completion audit blocked — no verdict (stale session). The stored claim is safe; ${activeGoalSurfaceCommand("resume")} starts exactly one fresh auditor.`, "warning");
+    } catch {
+      /* stale handle — the ledger + park are the durable record */
+    }
+    return;
+  }
   if (extensionApiStale || probeExtensionApiStaleRaw()) {
     if (!extensionApiStale) {
       // v0.34.62: debounce — ONE transient probe failure (pi mid-settle,
@@ -3876,7 +3901,21 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     }
   }
   const currentAfterAudit = freshCtxForGeneration(generation);
-  if (!currentAfterAudit || !state.goal || state.goal.id !== goalId) return; // replacement/stale/goal boundary — fresh session rebinds durable state
+  if (!currentAfterAudit || !state.goal || state.goal.id !== goalId) {
+    // v0.34.80 (field: 2026-08-07): NEVER drop a completed verdict silently.
+    // The gate nulls out on a latched-stale LIVE session (extensionApiStale
+    // from transient heartbeat-probe failures) — the goal then froze in
+    // "auditing" with no in-flight audit and the stranded backstop
+    // unreachable below the stale latch in heartbeatTick. The worker's
+    // verdict (result.json) sat complete on disk for 30m+ while the queue
+    // was blocked. Leave a durable marker via the kept last context so the
+    // fresh session's recovery path parks the claim for an explicit resume.
+    if (state.goal?.status === "auditing" && state.goal.pendingCompletion?.attemptId === claim.attemptId && lastCtx) {
+      appendLedger(lastCtx.cwd, "audit_verdict_deferred", { goalId, attemptId: claim.attemptId, reason: "stale-latch-apply-gate" });
+      markCompletionAuditRecoveryPending(lastCtx, "verdict-apply-gate");
+    }
+    return;
+  }
   if (state.goal.pendingCompletion?.attemptId !== claim.attemptId) return; // a newer attempt owns the durable claim
   liveCtx = currentAfterAudit;
 
