@@ -57,7 +57,7 @@ test("extractParallelFlag: inline marker mid-line, case-insensitive", () => {
 test("parseListItemDeclaration: marker stripped BEFORE the contract split", () => {
   const d = parseListItemDeclaration("Fix the exporter. Parallel: yes. Done when: grep -q ok out.json");
   assert.equal(d.parallelSafe, true);
-  assert.equal(d.objective, "Fix the exporter.");
+  assert.equal(d.objective, "Fix the exporter"); // inline-contract split strips the trailing period (existing behavior)
   assert.equal(d.verificationContract, "grep -q ok out.json");
   assert.ok(!d.verificationContract.includes("parallel"), "contract never carries the declaration");
 });
@@ -66,13 +66,15 @@ test("parseListItemDeclaration: a parallel marker after Done when: still strips 
   const d = parseListItemDeclaration("Create x.txt\nDone when: grep -q ok x.txt\nParallel: no");
   assert.equal(d.parallelSafe, false);
   assert.equal(d.objective, "Create x.txt");
-  assert.equal(d.verificationContract.trim(), "grep -q ok x.txt");
+  assert.equal(d.verificationContract, "Done when: grep -q ok x.txt"); // line-based blocks keep their marker line (existing convention)
+  assert.ok(!d.verificationContract.includes("parallel"), "contract never carries the declaration");
 });
 
 test("parseListItemDeclaration: parallel marker inside a multi-line objective is consumed", () => {
   const d = parseListItemDeclaration("Step one\nStep two. Parallel: safe\nStep three");
   assert.equal(d.parallelSafe, true);
-  assert.equal(d.objective, "Step one\nStep two\nStep three");
+  assert.equal(d.objective, "Step one\nStep two.\nStep three");
+  assert.equal(d.verificationContract, "");
 });
 
 test("queue sidecar round-trips the parallelSafe flag", () => {

@@ -1230,7 +1230,7 @@ export function draftContractItemCount(normalized: string): number {
  * from the text — it is a property of the item, not part of the objective or
  * the verification contract.
  */
-export const PARALLEL_MARKER = /\bparallel\b\s*:\s*(yes|true|1|safe|parallel|no|false|0|none|off)\b[.,;]?\s*/i;
+export const PARALLEL_MARKER = /[ \t]*\bparallel\b\s*:\s*(yes|true|1|safe|parallel|no|false|0|none|off)\b[.,;]?[ \t]*/i;
 
 export function extractParallelFlag(raw: string): { objective: string; parallelSafe: boolean | undefined } {
   const m = raw.match(PARALLEL_MARKER);
