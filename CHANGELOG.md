@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### 0.34.73 — id_invalidation ledger event (OPEN-ISSUES 1.12)
+
+The invalidated-id incident (Screenshot_20260805_121634): pi invalidated the
+session's extension handle without delivering a replacement — and the OLD
+session id was never recorded, so the old/new pair was unrecoverable from
+history. Repro'd from real ledgers (10 stale events in ai-auto-writer
+2026-07-27..08-05 incl. the screenshot day, 21+ in dracon-platform — each
+`extension_api_stale` orphaned until a later user action). Now the pair is
+recorded on the next forced rewrite/handoff.
+
+- **New ledger event `id_invalidation`**: `{ oldId, newId, reason, at,
+  shutdownReason? (clean shutdown only), goalId? (active-goal correlation)
+  }` — emitted at session_start rebind when the owner sidecar's previous
+  session id differs from the fresh session's id, and at successor
+  absorption (silent swap, `reason: "successor_absorption"`).
+- **Reason enum** (`classifyIdInvalidationReason`, exported):
+  `stale_terminal` | `zombie_stood_down` | `rebind_without_shutdown` |
+  `session_shutdown` | `forced_rewrite` (new process took over with NO
+  shutdown record — the crash/kill/orphan case) | `session_handoff`.
+- **Fail closed**: both ids must be real and differ — a plain /reload keeps
+  the same session id and emits nothing; `unknown-session` (no
+  getSessionId) is never recorded; first boot (no sidecar) emits nothing.
+  The audit trail now reconstructs from disk: old ledger `extension_api_stale`
+  / `session_handle_invalidated` → new ledger `id_invalidation` with the pair.
+- **Docs**: `audit/ID-INVALIDATION-2026-08-07.md` — repro attempt (real
+  event timelines, the 2026-08-05T17:41 stale event, the 11h orphan gap,
+  the missing-data finding), the fix, the reason semantics. The mmx vision
+  CLI (v0.34.72 routing) read the screenshot.
+- Tests: `tests/id-invalidation.test.ts` (7) — reason classifier pins;
+  forced-rewrite repro (foreign-pid sidecar, no shutdown record →
+  `forced_rewrite` + goalId); clean shutdown → `session_shutdown` + raw
+  reason; same-id reload → none; first boot → none; absorption source pin;
+  unknown-session fail-closed. Full suite 999 pass / 1 skip / 0 fail across
+  92 files, tsc clean.
+
 ### 0.34.72 — vision-assist: see with mmx, not a model switch (note.md 2026-08-07)
 
 The agent was too eager to switch to expensive models when it couldn't see.
