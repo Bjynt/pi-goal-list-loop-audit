@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### 0.34.71 — subagent_session ledger on Agent-tool spawn (OPEN-ISSUES 1.16)
+
+"Subagents lost between restarts": parents could not recover subagent
+references after a /reload because the Agent-tool registry is in-process
+and dies with the session. Each Agent-tool spawn is now ledgered on disk
+with the session id + summary, so the reference survives.
+
+- **Spawn hook**: pi-subagents broadcasts a cross-extension lifecycle
+  event on `pi.events` (`subagents:started`, payload `{ id, type,
+  description }`) when an Agent-tool subagent transitions to running —
+  once per spawn, foreground AND background, queued and resumed agents
+  included. The extension subscribes in activate() (goal.ts, end of the
+  listener block) and appends `subagent_session` to the ledger
+  (`.pi-glla/active.jsonl` — on disk, restart-proof).
+- **Entry shape**: `{ sessionId, agentType, summary, goalId, at }` —
+  summary is the Agent-tool `description` (the 3-5 word task label the
+  parent matches on); goalId correlates the spawn to the active goal.
+  Re-observation of an id (resume/re-run) appends again — fresh evidence
+  the reference is alive.
+- **Guards**: the handler drops spawns observed before any session bound
+  a ctx (freshCtx() null — a fresh process at boot has no session yet),
+  is gated on the same handoff/stale/zombie flags as every other
+  listener, and silently ignores malformed payloads (missing/empty id,
+  non-object data).
+- **Mock**: MockPi now exposes the `events` EventBus on its api (emit/on)
+  plus an `emitBus(channel, data)` helper so tests can fire pi-subagents
+  lifecycle broadcasts.
+- Tests: `tests/subagent-session-ledger.test.ts` (5) — orphan spawn
+  before any session writes nothing; a spawn appends id + summary + goal
+  correlation; the reference SURVIVES a /reload (restart-recovery) and
+  post-restart spawns still append; every spawn observation appends
+  (resume re-ledgers); malformed payloads are dropped. Full suite 980
+  pass / 1 skip / 0 fail across 90 files, tsc clean.
+
 ### 0.34.70 — impossible /list items auto-drop instead of stopping (note.md 2026-08-07)
 
 "auto drop impossible ones i think or auto adjust instead of stopping" —
