@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### 0.34.85 — Subagent hang detection (no-progress watchdog, closes note.md Screenshots 161019/161032)
+
+Field (note.md, screenshots 16:10 on 2026-08-07): subagents frozen at 10697s (3h) with 0 stream activity — repeated "BUSY with zero stream activity" warnings at 22/31/41 min. The auditor's detached worker has a heartbeat-without-progress watchdog (auditor-process.ts, 10m default); subagent sessions had NONE — a hung subagent burns parent tokens for hours before anyone notices.
+
+Fix: a per-subagent no-progress watchdog in the main session. `subagents:started` seeds a probe (recordId/type/summary/spawn); `subagents:compacted`/`subagents:steered` refresh the streak; `subagents:completed`/`subagents:failed` end it. Each heartbeat, the scan polls the live record via the cross-package registry `Symbol.for("pi-subagents:manager")` → `getRecord(id)` — live `toolUses` (per tool activity) and `lifetimeUsage.output` (per assistant message_end) are the "new tool call or output" progress signal, joined without a cross-extension stream event. A record still "running" with no new progress for `SUBAGENT_HANG_NO_PROGRESS_MS = 5m` (SHORTER than the auditor's 10m — a hung subagent costs parent tokens every turn) gets a throttled `ui.notify` + `notifyExternal` + `subagent_hang_detected` ledger entry so the main session can decide to abort. Detection + guidance only — never an auto-kill.
+
+Files: `extensions/loops/goal.ts` (probe registry, exported pure `classifyHungSubagents`, heartbeatTick scan, probe seeding + 4 new `subagents:*` listeners, `__testOnly` hooks), `tests/subagent-hang-detection.test.ts` (11 tests: 5 pure classify + 6 integration via MockPi emitBus + heartbeat tick with a faked manager registry), `audit/SUBAGENT-HANG-DETECTION-2026-08-07.md`. Suite: 1081 pass / 1 skip / 0 fail across 100 files (was 1070/1/0). tsc clean.
+
 ### 0.34.84 — Hourly quota probe for the auditor retry envelope (closes note.md Screenshots 160846–161010)
 
 Field (note.md, six screenshots 16:08–16:10 on 2026-08-07): the auditor's durable quota-retry envelope (v0.34.79) retried attempt 1 eagerly at 5s, then fell onto exponential rungs — 60m → 2h → 4h → … The auditor was observed parked at "Retrying (13/15) in 6232s–6367s" ≈ 1h44m between probes, with a separate main-thread "next probe in 32m–51m" timer running in parallel. Exponential rungs don't align with the provider's quota-reset boundary, so the goal could sit a 2h/4h rung while the quota had already reset at a top-of-hour the plugin never probed.
