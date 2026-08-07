@@ -271,6 +271,7 @@ test("v0.34.81 (behavioral): list_add with a subtask binds parentId to the match
   setGlobalAutoResume(false); // do not auto-start the head — we just want the queue state
   const cwd = tmpCwd();
   const ctx = await freshSession(cwd);
+  console.error("DEBUG before list_add cwd=", cwd);
   // Single bulk-add with the parent first, then its two children, then an
   // unrelated item. All go through one enqueueItems call so the resolve
   // step finds the parent in `resolved[]` and the unrelated item binds to
@@ -284,9 +285,13 @@ test("v0.34.81 (behavioral): list_add with a subtask binds parentId to the match
     ctx,
   );
   await tick();
+  console.error("DEBUG after list_add tick done");
 
   // Read the disk sidecars (only queue files; ignore subdirs or junk).
   const dir = path.join(cwd, ".pi-glla", "goals");
+  const allFiles = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+  console.error("DEBUG list_add cwd=", cwd, "fileCount=", allFiles.length);
+  for (const f of allFiles) console.error("DEBUG   file:", f);
   const sidecars = fs
     .readdirSync(dir)
     .filter((n) => n.endsWith(".queue.json"))
@@ -332,64 +337,20 @@ test("v0.34.81 (behavioral): unresolved parent refuses that child, other items s
   const ledger = readLedger(cwd);
   const refused = ledger.find((e) => e.type === "list_subtask_refused");
   assert.ok(refused, "refusal ledger present");
-  assert.match(String(refused.value.refusals?.[0] ?? ""), /unresolved parent "Bogus parent"/);
+  const refusals = refused.value.refusals;
+  assert.ok(Array.isArray(refusals), "refusals is an array");
+  assert.match(String((refusals as string[])[0] ?? ""), /unresolved parent "Bogus parent"/);
 });
 
 test("v0.34.81 (behavioral): explicit pick on a group refuses loudly (no silent jump)", async () => {
   setGlobalAutoResume(false);
   const cwd = tmpCwd();
   const ctx = await freshSession(cwd);
-  // Bulk-add: parent group + its one child + an unrelated tail item. The
-  // bulk path will auto-advance over the parent (scan-skip) and land on
-  // the child — but we abort that activation before it can claim the slot
-  // by routing through `/list next 1` instead. Easier: bulk-add WITHOUT
-  // auto-activate (setGlobalAutoResume false does not stop user-driven
-  // auto-start — so we add the tail item FIRST so the head is not the
-  // group, then add a separate batch that leaves the group as head).
-  // Simpler approach: two batched adds — first put a non-group item, then
-  // a group with one child. The first batch auto-activates its head
-  // (active slot taken). The second batch sits in the queue behind it.
-  // Then we abort the active and `/list next 1` against the group.
-  await pi.command(
-    "list",
-    "add Decoy plain. Done when: d",
-    ctx,
-  );
-  await tick();
-  // Abort the active so the next slot is free; the decoy is now terminal.
-  await pi.command("goal", "cancel", ctx);
-  await tick();
-  // Bulk-add the group as the new head.
-  await pi.command(
-    "list",
-    "add Parent group. Done when: foo\n" +
-      "Subtask of: Parent group — child one. Done when: bar\n" +
-      "Tail item. Done when: baz",
-    ctx,
-  );
-  await tick();
-  // Now the active slot has whatever the bulk-add started (the scan-skip
-  // would activate "child one" since the parent is a group). To set up the
-  // explicit-pick refusal, abort whatever is active and re-add ONLY the
-  // parent group (without its children).
-  if (ctx) {
-    await pi.command("goal", "cancel", ctx);
-    await tick();
-  }
-  // Reset and add JUST a parent (no children). It is a plain item until
-  // children arrive — but if children are queued, it is a group.
-  // Easier: seed directly.
-  await pi.command(
-    "list",
-    "add Standalone parent. Done when: z",
-    ctx,
-  );
-  await tick();
-  await pi.command("goal", "cancel", ctx);
-  await tick();
-  // Now place a parent with one child directly into the queue sidecar so
-  // it's the head, and a tail item behind it.
-  fs.mkdirSync(dir(), { recursive: true });
+  // Seed a parent + child directly into the queue sidecars so the queue
+  // head IS a group (the parent has one open child). No bulk-add involved
+  // — the auto-advance scan-skip would silently activate the child, so we
+  // place the group before any /list add that could auto-activate.
+  fs.mkdirSync(dir(cwd), { recursive: true });
   const parentId = "p-" + Math.random().toString(36).slice(2, 8);
   const childId = "c-" + Math.random().toString(36).slice(2, 8);
   writeSidecar(cwd, {
@@ -403,12 +364,34 @@ test("v0.34.81 (behavioral): explicit pick on a group refuses loudly (no silent 
     parentId,
     addedAt: new Date().toISOString(),
   });
-  // Reload the queue from disk (the extension re-reads on session_start,
-  // but here we just want the next /list next to see it — push it through
-  // the cmdList show path that calls listQueue).
-  // Cleanest: trigger a /list next 1 — this calls activateNextListItem
-  // with explicit:true. The target is the parent (head). groupOpenChildren
-  // counts the queued child = 1. Must refuse loudly.
+  // The queue lives in active.jsonl's `list` array, not the sidecar dir,
+  // once the extension has booted. Sidecars are the stale-handle fallback
+  // (v0.34.60). For the live `listQueue()` path, the items must also be in
+  // state.list. Easiest: load the state line, push the parent+child into
+  // its list, write it back. session_start re-reads it.
+  // (The /list show path also falls back to readQueueFromDisk, but
+  // activateNextListItem reads from state.list directly.)
+  const stateLine = JSON.stringify({
+    type: "state",
+    value: {
+      goal: null,
+      list: [
+        { id: parentId, objective: "Pick-refusal parent group", addedAt: new Date().toISOString() },
+        { id: childId, objective: "Pick-refusal child one", parentId, addedAt: new Date().toISOString() },
+      ],
+      loop: null,
+    },
+    at: new Date().toISOString(),
+  });
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), stateLine + "\n");
+  // Fresh session — reads the state line, queue is now [parent, child]
+  // where parent has one open child. groupOpenChildren(parent.id) === 1.
+  await pi.fire("session_start", { reason: "startup" }, ctx);
+  await tick();
+  // /list next 1 → activateNextListItem(ctx, 1, { explicit: true }) →
+  // target is the head (the parent). Must refuse loudly with
+  // list_group_activation_refused.
   await pi.command("list", "next 1", ctx);
   await tick();
   const ledger = readLedger(cwd);
