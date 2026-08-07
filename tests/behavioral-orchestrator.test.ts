@@ -880,8 +880,10 @@ test("T2: a stale send on agent_end continuation → goal ACTIVE + interrupt mar
   assert.ok(ledger.includes('"extension_api_stale"'), "stale terminal ledgered");
   // v0.34.57: the chrome-bridge handle path also writes session_handle_invalidated
   // with a structured reason enum so the recovery path can pick the right strategy.
+  // v0.34.75: the reason is CLASSIFIED at emission — this send-path death has no
+  // lifecycle shutdown, so it is silent_handle_death (the "host session lost" class).
   assert.ok(ledger.includes('"session_handle_invalidated"'), "session_handle_invalidated ledgered alongside extension_api_stale");
-  assert.match(ledger, /"session_handle_invalidated"[^}]*"reason":"unknown"/, "session_handle_invalidated carries the reason enum (default: unknown)");
+  assert.match(ledger, /"session_handle_invalidated"[^}]*"reason":"silent_handle_death"/, "session_handle_invalidated carries the classified reason");
 });
 
 // ────────────────────────────────────────────────────────────────────
