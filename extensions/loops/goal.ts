@@ -9096,6 +9096,11 @@ export default function (pi: ExtensionAPI): void {
       }
     }
     state = readState(ctx.cwd);
+    // v0.34.68 (bug 1.7): heal a corrupted in-memory policy BEFORE the
+    // restore gate below persists state — otherwise the hold/auto-resume
+    // would rewrite the durable goal .md with the corrupted policy and
+    // destroy the only source the gate heal can re-parse.
+    healGoalPolicy(ctx);
     clearMainModelRecoveryTimer();
     mainModelAbortForRecovery = false;
     lastMainModelFailure = null;

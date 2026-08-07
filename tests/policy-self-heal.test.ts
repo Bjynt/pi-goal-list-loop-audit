@@ -154,6 +154,9 @@ const MAIN_SM = { name: "main-session-manager" };
 function ownerCtx(cwd: string): MockCtx {
   return makeMockCtx(cwd, { sessionManager: MAIN_SM });
 }
+function setGlobalAutoResume(v: boolean): void {
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(v ? { autoResume: true } : {}));
+}
 async function freshSession(cwd: string, reason: string): Promise<MockCtx> {
   __testOnlyResetOwnerSession();
   const ctx = ownerCtx(cwd);
@@ -163,14 +166,18 @@ async function freshSession(cwd: string, reason: string): Promise<MockCtx> {
 
 test("bug 1.7: /list pause with a corrupted in-memory policy heals at the gate instead of refusing", async () => {
   __testOnlyResetStaleFlag();
+  setGlobalAutoResume(true); // keep the seeded goal ACTIVE past the restore gate
   const cwd = tmpCwd();
   try {
     // The durable .md says `list`; the restored in-memory state (ledger
     // `state` event) carries a corrupted policy — the bug 1.7 shape.
     seedState(cwd, { goal: seedGoal({ id: GOAL_ID, policy: "lits", status: "active" }) });
-    seedDurablePolicy(cwd, "list");
     const ctx = await freshSession(cwd, "reload");
     await tick();
+    // The auto-resume branch does not rewrite the goal .md (no interrupt
+    // marker); write the durable truth AFTER boot so it survives the
+    // session-start persist steps.
+    seedDurablePolicy(cwd, "list");
 
     await pi.command("list", "pause", ctx);
 
@@ -184,17 +191,19 @@ test("bug 1.7: /list pause with a corrupted in-memory policy heals at the gate i
     assert.match(ledger, /"to":"list"/);
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
+    setGlobalAutoResume(false);
   }
 });
 
 test("bug 1.7: /goal pause with a corrupted in-memory policy heals to goal and proceeds", async () => {
   __testOnlyResetStaleFlag();
+  setGlobalAutoResume(true);
   const cwd = tmpCwd();
   try {
     seedState(cwd, { goal: seedGoal({ id: GOAL_ID, policy: "lits", status: "active" }) });
-    seedDurablePolicy(cwd, "goal");
     const ctx = await freshSession(cwd, "reload");
     await tick();
+    seedDurablePolicy(cwd, "goal");
 
     await pi.command("goal", "pause", ctx);
 
@@ -205,5 +214,6 @@ test("bug 1.7: /goal pause with a corrupted in-memory policy heals to goal and p
     assert.match(ledger, /"to":"goal"/);
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
+    setGlobalAutoResume(false);
   }
 });
