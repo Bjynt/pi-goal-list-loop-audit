@@ -1166,6 +1166,7 @@ test("v0.35.x: full auditor reports and required-fixes tails survive lifecycle b
 
   __testOnlyResetStaleFlag();
   __testOnlySetContinuationStartTimeout(300);
+  __testOnlySetContinuationRetryBackoff(200);
   try {
     // An accepted continuation that never produces a turn-start proof must
     // update interruption metadata without dropping the settled report.
@@ -1231,6 +1232,7 @@ test("v0.35.x: full auditor reports and required-fixes tails survive lifecycle b
     pi.sendMessageError = null;
     pi.sessionNameError = null;
     __testOnlySetContinuationStartTimeout(null);
+    __testOnlySetContinuationRetryBackoff(null);
     __testOnlyResetOwnerSession();
   }
 });
