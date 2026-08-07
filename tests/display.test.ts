@@ -364,8 +364,45 @@ test("auditing shows the auditor's current tool", () => {
   assert.match(s, /read/);
 });
 
-test("complete goal clears the segment", () => {
-  assert.equal(buildStatusText({ goal: goalOf({ status: "complete" }), list: [] }, null, NOW), undefined);
+test("v0.34.65: completed goal shows outcome + duration instead of clearing the segment", () => {
+  const s = buildStatusText({ goal: goalOf({ status: "complete" }), list: [] }, null, NOW)!;
+  assert.match(s, /✓ complete/);
+  assert.match(s, /took 0s/, "goalOf createdAt === updatedAt → wall duration 0");
+});
+
+// ---- v0.34.65: terminal-goal cards (note.md 2026-08-07) ----
+
+test("v0.34.65: completed goal widget card shows duration + final verdict", () => {
+  const g = goalOf({
+    status: "complete",
+    createdAt: "2026-07-21T10:00:00Z",
+    updatedAt: "2026-07-21T11:45:00Z",
+    auditHistory: [{ at: "2026-07-21T11:44:00Z", approved: true, disapproved: false, model: "minimax-m3" }],
+  });
+  const lines = buildWidgetLines({ goal: g, list: [] }, null, NOW)!;
+  assert.ok(lines, "a completed goal must still render a widget card");
+  assert.match(lines[0]!, /✓ complete/);
+  assert.match(lines[0]!, /took 1h 45m/);
+  assert.match(lines.join("\n"), /auditor approved \(minimax-m3\)/);
+});
+
+test("v0.34.65: aborted goal widget card names the reason + duration", () => {
+  const g = goalOf({
+    status: "aborted",
+    createdAt: "2026-07-21T11:30:00Z",
+    updatedAt: "2026-07-21T11:58:00Z",
+    stopReason: "cancelled by user",
+  });
+  const lines = buildWidgetLines({ goal: g, list: [] }, null, NOW)!;
+  assert.match(lines[0]!, /✗ aborted/);
+  assert.match(lines[0]!, /took 28m/);
+  assert.match(lines.join("\n"), /cancelled by user/);
+});
+
+test("v0.34.65: completed goal without a verdict is honest about it", () => {
+  const g = goalOf({ status: "complete", createdAt: "2026-07-21T10:00:00Z", updatedAt: "2026-07-21T11:45:00Z" });
+  const lines = buildWidgetLines({ goal: g, list: [] }, null, NOW)!;
+  assert.match(lines.join("\n"), /no stored verdict/);
 });
 
 test("active loop shows iteration + best + stall", () => {
@@ -719,10 +756,12 @@ test("held loop + active goal → status suffix present", () => {
   assert.match(s, /loop⏸held/);
 });
 
-test("held loop + completed goal → held loop still shows (goal state clears)", () => {
+test("v0.34.65: held loop + completed goal → completion card shows, held loop stays visible via suffix", () => {
   const state = { goal: goalOf({ status: "complete" }), list: [], loop: heldLoopOf() };
-  assert.match(buildStatusText(state, null, NOW)!, /loop ⏸ held/);
-  assert.ok(buildWidgetLines(state, null, NOW)!.length >= 2);
+  const s = buildStatusText(state, null, NOW)!;
+  assert.match(s, /✓ complete/);
+  assert.match(s, /loop⏸held/, "the held loop stays visible as a status suffix");
+  assert.match(buildWidgetLines(state, null, NOW)![0]!, /✓ complete/);
 });
 
 test("active loop unchanged; stopped loop stays invisible", () => {
