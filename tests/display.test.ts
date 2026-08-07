@@ -536,6 +536,66 @@ test("auditor progress phases are explicit and retain worker activity", () => {
   assert.match(blocked, /auditor blocked/);
 });
 
+test("v0.34.86: silent audits show a fine phase label (reading source… / writing report…)", () => {
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-fine" } });
+  const audit = { phase: "producing_report" as const, elapsedMs: 300_000, lastActivityAt: NOW - 5_000 };
+
+  const widget = buildWidgetLines({ goal: g, list: [] }, audit, NOW)!;
+  assert.ok(widget.some((l) => l.includes("writing report…")), "card names what the worker is doing");
+  assert.ok(widget.some((l) => l.includes("auditor: running")), "the coarse state stays");
+
+  const status = buildStatusText({ goal: g, list: [] }, { ...audit, phase: "thinking" }, NOW)!;
+  assert.match(status, /auditor running · reading source…/, "status line carries the fine phase");
+});
+
+test("v0.34.86: silent audits show a report byte-counter instead of a dead timer", () => {
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-bytes" } });
+  const audit = {
+    phase: "producing_report" as const,
+    elapsedMs: 300_000,
+    lastActivityAt: NOW - 5_000,
+    recentOutput: ["Audit summary: the goal is complete."],
+    reportBytes: 12_678,
+  };
+  const lines = buildWidgetLines({ goal: g, list: [] }, audit, NOW)!;
+  assert.ok(
+    lines.some((l) => l.includes("report stream muted — 12.4 KB written · final text at verdict")),
+    "silent mode shows the growing byte counter: " + lines.join(" | "),
+  );
+  assert.ok(!lines.some((l) => l.includes("latest: Audit summary")), "the prose tail stays hidden in silent mode");
+});
+
+test("v0.34.86: auditorProgressSignals off restores the plain timer-only card", () => {
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-optout" } });
+  const audit = {
+    phase: "producing_report" as const,
+    elapsedMs: 300_000,
+    lastActivityAt: NOW - 5_000,
+    recentOutput: ["Audit summary: the goal is complete."],
+    reportBytes: 12_678,
+  };
+  const extras = { auditorProgressSignals: false };
+  const lines = buildWidgetLines({ goal: g, list: [] }, audit, NOW, undefined, undefined, extras)!;
+  assert.ok(!lines.some((l) => l.includes("writing report…")), "no fine phase label when opted out");
+  assert.ok(lines.some((l) => l.includes("report stream muted — final text at verdict")), "the pre-v0.34.86 silent line returns");
+  const status = buildStatusText({ goal: g, list: [] }, audit, NOW, undefined, extras)!;
+  assert.doesNotMatch(status, /reading source…|writing report…/, "status line opts out too");
+});
+
+test("v0.34.86: live tail (auditorSilent off) is unaffected by the byte counter", () => {
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-live" } });
+  const audit = {
+    phase: "producing_report" as const,
+    elapsedMs: 42_000,
+    lastActivityAt: NOW - 5_000,
+    recentOutput: ["Audit summary: the goal is complete."],
+    reportBytes: 5_000,
+  };
+  const lines = buildWidgetLines({ goal: g, list: [] }, audit, NOW, undefined, undefined, { auditorSilent: false })!;
+  assert.ok(lines.some((l) => l.includes("latest: Audit summary")), "live tail still renders");
+  assert.ok(!lines.some((l) => l.includes("report stream muted")), "no muted line in live mode");
+});
+
 test("H-code: HUD liveness gate rejects clock-skewed lastActivityAt (future timestamps must not claim LIVE)", () => {
   // DETACHED-WORKER-HUD-RECONCILIATION-2026-08-05.md action code H:
   // "the UI must ignore currentTool* after phase: complete" + "status rendering
