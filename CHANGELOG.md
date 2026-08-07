@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### 0.34.81 — LIGHT parent/child for list items (Subtask of: …)
+
+A `/list add` declaration may now begin with `Subtask of: <parent objective> — <child objective>` to bind the item as a child of a parent queue item. The marker is line-start, case-insensitive, consumed before the `Parallel:` / `Done when:` passes; the child objective carries its own clauses normally. Resolution is by `normalizeObjective` match — earlier items in the same batch win, then the existing queue — with three refused-badly cases (empty child, unresolved parent, nested). A group (a queue item with one or more open children) is not a work item: the auto-advance silently skips it and lands on its first open child; an EXPLICIT pick (`/list next <n>`, `list_activate`) on a group refuses loudly so the user is not confused by a silent jump. When the last child completes, `archiveCurrentGoal` removes the parent from the queue, deletes its disk sidecar, and ledger-records `list_group_closed` — no synthetic goal archive md (the child IS the audit unit). `/list show` and `list_status` render parents as `N. <objective> [group: N open]` with children as `N.1`, `N.2` indented underneath. One level only — nesting is refused at enqueue. Full sub-goal tree (focus/unfocus, per-subtree audit) remains parked. Audit: `audit/LIST-SUBTASKS-2026-08-07.md`. Tests: `tests/list-subtasks.test.ts` (+16, total now 1061 pass / 1 skip / 0 fail across 99 files).
+
 ## 0.34.80 — 2026-08-07
 
 ### 0.34.80 — stuck "auditing" freeze: stale-latch verdict drop + RPC-stub confirm rework (2026-08-07)
