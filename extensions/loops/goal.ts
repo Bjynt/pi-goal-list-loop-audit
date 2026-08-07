@@ -3820,11 +3820,20 @@ export function auditorQuotaRetryPlan(claim: PendingCompletion, quota: ReturnTyp
   // v0.34.79: eager first probe (5s) when the provider gave no hint — the
   // main thread retries infra errors after 5s; the auditor must not sit an
   // hour. Upstream Retry-After still wins.
+  // v0.34.84 (note.md Screenshots 160846–161010): quota-shaped errors
+  // (signal: "rate-limit" | "plan-quota" | "billing") get hour-aligned
+  // probes on attempts 2+, not exponential rungs — the user wants to react
+  // fast when the quota resets (which most providers do on a billing /
+  // top-of-hour boundary). Non-quota transient infra errors keep the
+  // exponential cadence (a stuck provider shouldn't be probed at 60m).
+  const isQuota = quota.signal !== undefined;
   const requestedSec = quota.fromUpstream
     ? quota.retryAfterSec
     : attempt === 1
       ? EAGER_AUDITOR_RETRY_SEC
-      : quotaRetryDelaySeconds(attempt, baseMinutes);
+      : isQuota
+        ? Math.max(60, Math.round((nextHourlyPromptMs(now) - now) / 1000))
+        : quotaRetryDelaySeconds(attempt, baseMinutes);
   const retryAfterSec = capQuotaRetrySeconds(requestedSec);
   const automatic = attempt < MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS && now + retryAfterSec * 1_000 <= untilMs;
   return { attempt, retryAfterSec, firstAt, autoRetryUntil: new Date(untilMs).toISOString(), automatic, requestedSec };
