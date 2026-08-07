@@ -660,6 +660,7 @@ test("v0.34.24: continuation dispatch waits for owner start proof and clears its
 test("v0.34.36: compaction releases a timed-out dispatch for one fresh resync attempt", async () => {
   __testOnlyResetStaleFlag();
   __testOnlySetContinuationStartTimeout(300);
+  __testOnlySetContinuationRetryBackoff(300);
   try {
     const cwd = tmpCwd();
     const ctx = await freshSession(cwd, "startup");
@@ -672,28 +673,32 @@ test("v0.34.36: compaction releases a timed-out dispatch for one fresh resync at
       } catch {
         return false;
       }
-    }, 1_000);
-    assert.equal(pi.sent.length, 1, "the missing-start watchdog sent no blind retry");
+    }, 1_500);
+    // v0.34.88: the first timeout now sends exactly ONE automatic retry (the
+    // backoff window follows), then the second window declares unacknowledged.
+    assert.equal(pi.sent.length, 2, "the watchdog sent exactly one automatic retry, no blind storm");
     await pi.fire("session_compact", {}, ctx);
-    await waitUntil(() => pi.sent.length >= 2, 3_500);
+    await waitUntil(() => pi.sent.length >= 3, 3_500);
     const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
     assert.match(ledger, /compaction_refire/);
-    const resyncContent = pi.sent[1]!.message.content ?? "";
+    const resyncContent = pi.sent[2]!.message.content ?? "";
     assert.match(resyncContent, /POST-COMPACTION RESYNC/);
     await pi.command("goal", "pause", ctx);
   } finally {
     __testOnlySetContinuationStartTimeout(null);
+    __testOnlySetContinuationRetryBackoff(null);
   }
 });
 
 // v0.34.57 watchdog tests moved to tests/loops/goal.test.ts (the verification
-// contract for the 150s continuation-start watchdog fix names that path).
+// contract for the 30s continuation-start watchdog fix names that path).
 // behavioral-orchestrator.test.ts remains the home for the behavioral
 // orchestrator / T3-T1 stale-handle / T2 stop tests.
 
 test("v0.34.36: a loop missing start proof stops durably and /loop resume re-arms it exactly once", async () => {
   __testOnlyResetStaleFlag();
   __testOnlySetContinuationStartTimeout(300);
+  __testOnlySetContinuationRetryBackoff(300);
   try {
     const cwd = tmpCwd();
     setGlobalAutoResume(true);
@@ -710,17 +715,18 @@ test("v0.34.36: a loop missing start proof stops durably and /loop resume re-arm
       } catch {
         return false;
       }
-    }, 1_000);
+    }, 1_500);
     assert.equal(stoodDown.phase, "accepted", "the initial loop dispatch was accepted before its proof timed out");
     const stopped = readState(cwd).loop as { active: boolean; stopReason?: string };
     assert.equal(stopped.active, false, "a loop cannot remain green-active after its continuation never starts");
     assert.match(stopped.stopReason ?? "", /stalled: continuation start acknowledgement timed out/);
-    assert.equal(pi.sent.length, 1, "the timeout does not re-arm a loop dispatch");
+    // v0.34.88: the watchdog re-armed exactly ONE verbatim retry, then stopped.
+    assert.equal(pi.sent.length, 2, "the timeout re-arms exactly one retry, then stops");
 
     await pi.command("loop", "resume", ctx);
     await tick();
-    assert.equal(pi.sent.length, 2, "explicit /loop resume creates exactly one fresh dispatch");
-    const secondContent = pi.sent[1]!.message.content ?? "";
+    assert.equal(pi.sent.length, 3, "explicit /loop resume creates exactly one fresh dispatch");
+    const secondContent = pi.sent[2]!.message.content ?? "";
     const retried = JSON.parse(fs.readFileSync(sidecar, "utf8")) as { phase: string; id: string };
     assert.equal(retried.phase, "accepted");
     assert.notEqual(retried.id, stoodDown.id, "loop resume clears the stand-down and gets a new identity");
@@ -729,12 +735,14 @@ test("v0.34.36: a loop missing start proof stops durably and /loop resume re-arm
     await pi.command("loop", "stop", ctx);
   } finally {
     __testOnlySetContinuationStartTimeout(null);
+    __testOnlySetContinuationRetryBackoff(null);
   }
 });
 
 test("v0.34.48: /list resume releases an unacknowledged dispatch exactly once", async () => {
   __testOnlyResetStaleFlag();
   __testOnlySetContinuationStartTimeout(300);
+  __testOnlySetContinuationRetryBackoff(300);
   try {
     const cwd = tmpCwd();
     setGlobalAutoResume(true);
@@ -751,17 +759,18 @@ test("v0.34.48: /list resume releases an unacknowledged dispatch exactly once", 
       } catch {
         return false;
       }
-    }, 1_000);
+    }, 1_500);
     const interrupted = readState(cwd).goal as { status: string; policy: string; interruptedAt?: string };
     assert.equal(interrupted.status, "active", "an unacknowledged list dispatch remains active but interrupted");
     assert.equal(interrupted.policy, "list");
     assert.ok(interrupted.interruptedAt, "the list item exposes its explicit-recovery marker");
-    assert.equal(pi.sent.length, 1, "the timeout does not re-arm a list dispatch");
+    // v0.34.88: exactly one automatic retry before the stand-down.
+    assert.equal(pi.sent.length, 2, "the timeout re-arms exactly one retry, then stops");
 
     await pi.command("list", "resume", ctx);
     await tick();
-    assert.equal(pi.sent.length, 2, "explicit /list resume creates exactly one fresh dispatch");
-    const secondContent = pi.sent[1]!.message.content ?? "";
+    assert.equal(pi.sent.length, 3, "explicit /list resume creates exactly one fresh dispatch");
+    const secondContent = pi.sent[2]!.message.content ?? "";
     const retried = JSON.parse(fs.readFileSync(sidecar, "utf8")) as { phase: string; id: string };
     assert.equal(retried.phase, "accepted");
     assert.notEqual(retried.id, stoodDown.id, "list resume clears the stand-down and gets a new identity");
@@ -770,6 +779,7 @@ test("v0.34.48: /list resume releases an unacknowledged dispatch exactly once", 
     await pi.command("goal", "pause", ctx);
   } finally {
     __testOnlySetContinuationStartTimeout(null);
+    __testOnlySetContinuationRetryBackoff(null);
   }
 });
 
