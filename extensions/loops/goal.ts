@@ -606,6 +606,8 @@ interface SessionOwnerClaim {
   hadShutdown: boolean;
   /** v0.34.73: the previous owner's pid (null on first boot). */
   previousPid: number | null;
+  /** v0.34.73: the raw shutdown reason string ("quit", "reload", ...). */
+  previousShutdownReason: string | null;
 }
 function markSessionOwnerShutdown(cwd: string, reason: string): void {
   try {
@@ -648,6 +650,7 @@ function claimSessionOwnerAndDetectRebind(
       previousOwnerSessionId: typeof previous.ownerSessionId === "string" ? previous.ownerSessionId : null,
       hadShutdown,
       previousPid: typeof previous.pid === "number" ? previous.pid : null,
+      previousShutdownReason: typeof previous.shutdownReason === "string" && previous.shutdownReason.length > 0 ? previous.shutdownReason : null,
     };
   } catch {
     return {
@@ -657,6 +660,7 @@ function claimSessionOwnerAndDetectRebind(
       previousOwnerSessionId: null,
       hadShutdown: false,
       previousPid: null,
+      previousShutdownReason: null,
     };
   }
 }
@@ -667,7 +671,7 @@ function claimSessionOwnerAndDetectRebind(
  * active.jsonl history can reconstruct the story. Emitted only when both
  * ids are real and DIFFER (a plain /reload keeps the same session id and
  * emits nothing). The goalId correlation lands when a goal is active. */
-function emitIdInvalidation(ctx: ExtensionContext, oldId: string | null, newId: string, reason: string, shutdownReason?: string | null): void {
+function emitIdInvalidation(ctx: ExtensionContext, oldId: string | null, newId: string | null, reason: string, shutdownReason?: string | null): void {
   if (!oldId || !newId || oldId === newId || oldId === "unknown-session" || newId === "unknown-session") return;
   appendLedger(ctx.cwd, "id_invalidation", {
     oldId,
@@ -9383,7 +9387,7 @@ export default function (pi: ExtensionAPI): void {
       rebindWithoutShutdown: invalidationFlags.rebindWithoutShutdown,
       hadShutdown: ownerClaim.hadShutdown,
       previousPid: ownerClaim.previousPid,
-    }), ownerClaim.hadShutdown ? undefined : undefined);
+    }), ownerClaim.previousShutdownReason);
     const handoffResume = consumeSessionHandoff(ctx.cwd, ownerClaim.previousGeneration, ownerClaim.previousOwnerSessionId);
     if (handoffResume) appendLedger(ctx.cwd, "session_handoff_resumed", { pid: process.pid, reason: startReason });
     const rebindResume = ownerClaim.rebind;
