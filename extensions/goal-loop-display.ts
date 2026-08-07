@@ -96,6 +96,11 @@ export interface WidgetExtras {
   lastActivityAt?: number;
   /** Last stream event used as proof for the live-work indicator. */
   lastStreamActivityAt?: number;
+  /** v0.34.66: final-only gate for the auditor's streamed report. Default
+   * on: the widget hides the live per-token tail while the detached worker
+   * streams, showing the text once the verdict lands (note.md #4 — "auditor
+   * words one by one"). false = live tail. */
+  auditorSilent?: boolean;
 }
 
 /**
@@ -856,7 +861,16 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       if (lastTool) observations.push(`last tool: ${lastTool}`);
     }
     const latest = latestAuditorOutput(audit);
-    if (latest) observations.push(`latest: ${latest}`);
+    // v0.34.66: final-only default (note.md #4 — "auditor words one by
+    // one", Screenshot_20260804_211341/211506). With auditorSilent on
+    // (default) the live per-token tail is hidden while the worker
+    // streams; the text surfaces only at awaiting-verdict, when the
+    // report is FINAL. off restores the live tail.
+    const silent = extras?.auditorSilent !== false;
+    if (latest) {
+      if (!silent || phase === "awaiting-verdict") observations.push(`latest: ${latest}`);
+      else observations.push("report stream muted — final text at verdict");
+    }
     const unmatchedStarts = audit?.unmatchedToolStarts ?? 0;
     const unmatchedEnds = audit?.unmatchedToolEnds ?? 0;
     if (unmatchedStarts + unmatchedEnds > 0) {

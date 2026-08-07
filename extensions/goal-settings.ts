@@ -47,6 +47,12 @@ export interface Settings {
    * the first-order defense either way; diversity is the second-order one
    * the user may deliberately trade away. */
   auditorSameSessionSwap?: boolean;
+  /** v0.34.66: on → the auditor's report text renders FINAL-ONLY in the
+   * widget: the live per-token tail is hidden while the detached worker
+   * streams and the text surfaces at the verdict. Default ON — the
+   * word-by-word HUD was the user complaint (note.md #4,
+   * Screenshot_20260804_211341/211506). */
+  auditorSilent?: boolean;
   auditorThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   /** Shell command run on goal complete / goal pause / loop stop; message passed as $1. */
   notifyCmd?: string;
@@ -156,6 +162,9 @@ export const DEFAULT_SETTINGS: Settings = {
   // model in /glla → Auditor model (no standalone menu row); /glla
   // thinking= remains the direct path.
   auditorThinkingLevel: undefined,
+  // v0.34.66: final-only auditor stream is the default — the HUD never
+  // shows the report assembling word-by-word again (note.md #4).
+  auditorSilent: true,
   // v0.24.6: subagents inherit the session model by default — one quota
   // pool, no surprise 403s from a pinned default agent's provider.
   subagentModelStrategy: "inherit-parent",
@@ -231,6 +240,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "autoAcceptDrafts",
   "auditCap",
   "auditFeedbackChars",
+  "auditorSilent",
   "subagentModelStrategy",
   "subagentModelOverrides",
   "aggressiveMode",

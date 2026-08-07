@@ -227,6 +227,14 @@ export function buildSettingsRows(
       description: "when the pinned auditor IS the session model, walk the fallback pin (verifier ≠ executor) — off = same-model audits stand",
     },
     {
+      id: "auditorSilent",
+      section: "auditor",
+      label: "Silent auditor stream",
+      valueText: show("auditorSilent", "on"),
+      sourceText: src("auditorSilent"),
+      description: "on: the auditor's report renders final-only — the widget shows the text at the verdict, never word-by-word · off: live per-token tail",
+    },
+    {
       id: "auditCap",
       section: "auditor",
       label: "Audit cap",

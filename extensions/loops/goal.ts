@@ -1418,7 +1418,7 @@ function refreshUI(ctx: ExtensionContext): void {
     // uses the room instead of cutting at fixed ~60-char floors.
     const width = process.stdout.columns || 80;
     const activity = displayActivityFor(ctx);
-    const extras = { stalls: consecutiveStalls, recent: recentActions, ...activity };
+    const extras = { stalls: consecutiveStalls, recent: recentActions, ...activity, auditorSilent: loadSettings(ctx.cwd).auditorSilent !== false };
     ctx.ui.setStatus("pi-glla", buildStatusText(state, latestAuditProgress, Date.now(), theme, extras));
     ctx.ui.setWidget("pi-glla", buildWidgetLines(state, latestAuditProgress, Date.now(), theme, width, extras));
   } catch {
@@ -7626,6 +7626,17 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const refs = normalizeModelRefs(v);
       saveSettings("global", ctx.cwd, { mainModelFallbacks: refs });
       ctx.ui.notify(refs.length ? `Main model backups saved in order: ${refs.join(" → ")}` : "Main model backups cleared — quota recovery will keep probing the current model.", "info");
+      return;
+    }
+    case "auditorSilent": {
+      const v = await ctx.ui.select("Silent auditor stream — how the auditor's report text renders in the widget while the detached worker streams", [
+        "on — final-only: the text appears once the verdict lands, never word-by-word (default)",
+        "off — live tail: show the streamed report lines as they arrive",
+      ]);
+      if (v) {
+        saveSettings("global", ctx.cwd, { auditorSilent: v.startsWith("off") ? false : undefined });
+        ctx.ui.notify(v.startsWith("off") ? "Auditor stream LIVE — report lines show as they stream." : "Auditor stream SILENT — final text at the verdict.", "info");
+      }
       return;
     }
     case "forbiddenModels": {
