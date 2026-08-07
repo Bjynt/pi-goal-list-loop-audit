@@ -594,10 +594,18 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     // chip already names the type ("list item"), so "glla: list ⏸ …" doubled
     // it. Status line = state/actionability only.
     if (isCompletionAuditNoVerdict(g)) {
-      // v0.34.57: MAIN host label uses the constant guard so it stays
-      // SUPERVISING even when the AUDITOR is blocked. The MAIN host is not
-      // detached — only the auditor is blocked.
-      return `glla: ${paint(theme, "accent", MAIN_HOST_LABEL)} · ${paint(theme, "warning", "auditor blocked — no verdict")}${heldSuffix}`;
+      // v0.34.87: surface separation — a paused item is NOT host-bearing.
+      // The old line claimed "MAIN HOST · SUPERVISING" while the card read
+      // "paused · 1h 31m": two contradictory surfaces (note.md Screenshots
+      // 161659/161718). The MAIN host is not supervising anything while the
+      // item is parked; the status line leads with the pause (goal state)
+      // and names the resume action — glla's "session idle, awaiting
+      // /list resume". The v0.34.57 MAIN_HOST_LABEL guard still covers
+      // host-bearing states (auditing); this paused state is deliberately
+      // not host-bearing anymore.
+      const queued = (state.list?.length ?? 0) > 0 ? ` · ${state.list!.length} queued` : "";
+      const resume = g.policy === "list" ? "/list resume" : "/goal resume";
+      return `glla: ${paint(theme, "warning", "⏸ paused")} · ${paint(theme, "dim", "auditor parked — no verdict")} · ${resume}${queued}${heldSuffix}`;
     }
     const kind = pauseKind(g);
     if (kind === "decision") return `glla: ${paint(theme, "accent", "⏸ decision needed")}${heldSuffix}`;
@@ -961,9 +969,14 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   }
   if (g.status === "paused" && g.pauseReason) {
     if (isCompletionAuditNoVerdict(g)) {
-      lines.push(`├─ ${paint(theme, "error", "auditor: blocked — no verdict")}`);
-      lines.push(`├─ ${paint(theme, "dim", "MAIN host remains attached; the completion claim was not evaluated")}`);
-      lines.push(`└─ ${paint(theme, "warning", g.pauseSuggestedAction ?? `The claim is safe; ${isList ? "/list resume" : "/goal resume"} starts one fresh auditor.`)}`);
+      // v0.34.87: parked, not blocked — the item is paused, so the auditor
+      // is NOT failing; it is parked with the stored claim. "blocked" next
+      // to "⏸ paused" read as live failure ("auditor: blocked — no
+      // verdict" while the session shows working…) — two contradictory
+      // surfaces. Parked vocabulary names the goal state: the audit waits.
+      lines.push(`├─ ${paint(theme, "warning", "auditor: parked — no verdict")}`);
+      lines.push(`├─ ${paint(theme, "dim", "the stored completion claim was not evaluated — the audit waits while the item is paused")}`);
+      lines.push(`└─ ${paint(theme, "warning", g.pauseSuggestedAction ?? `The claim is safe; ${isList ? "/list resume" : "/goal resume"} starts exactly one fresh auditor.`)}`);
       return lines;
     }
     const kind = pauseKind(g);

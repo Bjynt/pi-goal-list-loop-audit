@@ -961,7 +961,7 @@ test("active auditor infrastructure failure is visible as blocked, not green pro
   assert.doesNotMatch(s, /glla: ●/);
 });
 
-test("released auditor no-verdict state names the attached MAIN host", () => {
+test("v0.34.87: paused auditor no-verdict is parked, not host-bearing (surface separation)", () => {
   const g = goalOf({
     status: "paused",
     pauseKind: "blocked",
@@ -976,14 +976,37 @@ test("released auditor no-verdict state names the attached MAIN host", () => {
   });
   const state = { goal: g, list: [], loop: null };
   const widget = buildWidgetLines(state as never)!;
-  assert.ok(widget.some((line) => line.includes("auditor: blocked — no verdict")), widget.join("\\n"));
-  assert.ok(widget.some((line) => line.includes("MAIN host remains attached")), widget.join("\\n"));
+  assert.ok(widget.some((line) => line.includes("auditor: parked — no verdict")), widget.join("\\n"));
+  assert.ok(widget.some((line) => line.includes("completion claim was not evaluated")), widget.join("\\n"));
   assert.ok(widget.some((line) => line.includes("/goal resume")), widget.join("\\n"));
+  // v0.34.87: "blocked" read as live failure next to "⏸ paused"; "MAIN
+  // host remains attached" claimed session activity the parked state lacks.
+  assert.ok(!widget.some((line) => line.includes("blocked — no verdict")), widget.join("\\n"));
+  assert.ok(!widget.some((line) => line.includes("MAIN host remains attached")), widget.join("\\n"));
   const status = buildStatusText(state as never)!;
-  // v0.34.57: MAIN host label uses the constant guard so it stays SUPERVISING
-  // even when the AUDITOR is blocked. The MAIN host is not detached.
-  assert.match(status, /MAIN HOST · SUPERVISING · auditor blocked — no verdict/);
-  assert.doesNotMatch(status, /DETACHED · LIVE/);
+  // Surface separation: the status line leads with the pause and names the
+  // resume action — glla's "session idle, awaiting /goal resume" — and
+  // never claims the MAIN host is supervising a parked item.
+  assert.match(status, /⏸ paused · auditor parked — no verdict · \/goal resume/);
+  assert.doesNotMatch(status, /MAIN HOST|DETACHED/);
+});
+
+test("v0.34.87: a paused LIST item's parked line names /list resume and the queue", () => {
+  const g = goalOf({
+    policy: "list",
+    status: "paused",
+    pauseKind: "blocked",
+    pauseReason: "completion audit blocked — no verdict: silent host successor",
+    pendingCompletion: {
+      at: "2026-07-21T11:59:00Z",
+      phase: "recovery-pending",
+      attemptId: "audit-list-parked",
+      completionSummary: "stored claim",
+    },
+  });
+  const status = buildStatusText({ goal: g, list: [{ objective: "next queued item" }], loop: null } as never)!;
+  assert.match(status, /⏸ paused · auditor parked — no verdict · \/list resume · 1 queued/);
+  assert.doesNotMatch(status, /SUPERVISING|working/);
 });
 
 test("MAIN activity is never represented as detached — the detached marker belongs only to the live auditor badge", () => {

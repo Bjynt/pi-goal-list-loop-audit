@@ -6763,8 +6763,20 @@ function registerAgentTools(pi: any): void {
       if (!toolCtx) return staleToolResult();
       let ctx: ExtensionContext = toolCtx;
       const auditGeneration = sessionGeneration;
-      if (!state.goal || state.goal.status !== "active") {
-        return { content: [{ type: "text", text: "No active goal." }], details: {} };
+      if (!state.goal) return { content: [{ type: "text", text: "No active goal." }], details: {} };
+      if (state.goal.status !== "active") {
+        // v0.34.87: a paused item IS a goal — the old flat "No active
+        // goal." read as if the paused card in the widget were nothing at
+        // all (note.md Screenshots 161659/161718: complete_goal answered
+        // "No active goal" while the session clearly held a paused item).
+        // Name the actual state and the resume verb: surface separation
+        // between "no goal" and "goal parked".
+        if (state.goal.status === "paused") {
+          const isList = state.goal.policy === "list";
+          const resume = isList ? "/list resume" : "/goal resume";
+          return { content: [{ type: "text", text: `No active goal — the ${isList ? "list item" : "goal"} is paused; ${resume} reactivates it (complete_goal only runs on an active item).` }], details: {} };
+        }
+        return { content: [{ type: "text", text: `No active goal — it is ${state.goal.status}.` }], details: {} };
       }
       const p = params as { completionSummary?: string; verificationSummary?: string; newObjective?: string };
       // v0.25.0 (contract item 15): atomic objective update + audit in one
