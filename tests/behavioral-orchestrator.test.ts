@@ -1052,7 +1052,8 @@ test("v0.34.48: host-session loss without replacement session_start parks durabl
   try {
     await pi.command("goal", "orphaned host target — done when pinned", ctx);
     await tick();
-    assert.equal(pi.sent.length, 1, "the host sent the initial continuation");
+    console.log("ORPHAN-DEBUG sent len=", pi.sent.length, JSON.stringify(pi.sent.map(s => String(s.message.content).slice(0,60))));
+assert.equal(pi.sent.length, 1, "the host sent the initial continuation");
     const initialPrompt = pi.sent[0]!.message.content ?? "";
     await pi.fire("before_agent_start", { prompt: initialPrompt }, ctx);
     pi.sent.length = 0;
