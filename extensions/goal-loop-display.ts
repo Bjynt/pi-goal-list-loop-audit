@@ -228,35 +228,16 @@ function isCompletionAuditNoVerdict(g: Goal): boolean {
     && /audit|verdict/i.test(g.pauseReason ?? "");
 }
 
-/** A provider quota wall is an expected wait, not a generic failure. Keep
- * raw 429/JSON detail out of the visual card while preserving it in durable
- * state and the ledger. Local token-budget pauses intentionally do not match.
- */
-function isQuotaWall(g: Goal): boolean {
-  const reason = g.pauseReason ?? "";
-  if (/token limit exceeded/i.test(reason)) return false;
-  // `main model recovery` alone is not a quota proof: auth, billing, and
-  // transient provider failures can use the same recovery machinery. Require
-  // explicit classifier vocabulary in the durable reason instead.
-  return /429|quota|rate.?limit|usage.?limit|token.?plan|plan.?limit|credits?\s+(?:exhausted|depleted|used\s+up)|insufficient\s+(?:credits?|balance)/i.test(reason);
-}
-
-function quotaWallDetail(g: Goal): string {
-  const reason = g.pauseReason ?? "";
-  if (/credits?|balance|billing/i.test(reason)) return "provider billing/credit limit";
-  if (/token.?plan|plan.?limit/i.test(reason)) return "Token Plan usage limit";
-  if (/rate.?limit|429/i.test(reason)) return "provider rate limit";
-  return "provider quota wall";
-}
-
-function quotaResumeText(g: Goal, now: number): string {
-  const ms = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) - now : Number.NaN;
-  if (!Number.isFinite(ms)) return "manual resume required";
-  // v0.34.51: the pause is a WAIT for the durable probe — nothing retries at
-  // render time, so a passed resumeAt says "resuming…" (the timer owns it),
-  // never the old claim that a retry is happening this instant.
-  return ms <= 0 ? "resuming…" : `next probe in ${fmtElapsed(ms)}`;
-}
+/** v0.34.64: the QUOTA WALL display concept is gone. We removed the dedicated
+ * wall banner, the "manual resume required" wording, and the kind === "blocked"
+ * false-positive surface so the card never lies about a wall that's actually
+ * already cleared. Pause-rendering classifies by pauseKind (decision / error /
+ * wait / blocked) and shows a uniform `auto-retrying · next probe in X` for
+ * any retry-class pause that has a recovery timer — quota or otherwise. The
+ * durable reason still lives in the ledger for forensics; the card no longer
+ * carries a special "this is a wall" treatment. Auto-resume (`autoResume:true`)
+ * honors "keep going" through blocked-pause + recovery-cleared transitions
+ * via the broadened recoveryPause check in mainModelRecoverySucceeded. */
 
 /** Active goals can carry an operational warning while the agent is being
  * re-engaged. Do not render those as an ordinary green `active` card: a
