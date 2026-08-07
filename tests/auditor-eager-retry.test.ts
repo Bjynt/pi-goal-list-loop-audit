@@ -41,10 +41,10 @@ test("eager: first no-hint attempt retries in 5s (mirrors runWithInfraRetry's 5s
 test("eager: later no-hint attempts keep the exponential minute-scale cadence", () => {
   const p2 = auditorQuotaRetryPlan(claim({ quotaAttempts: 1, quotaFirstAt: new Date().toISOString() }), quota(0, false), 60);
   assert.equal(p2.attempt, 2);
-  assert.equal(p2.retryAfterSec, 60 * 60, "attempt 2 = 60m base");
+  assert.equal(p2.retryAfterSec, 120 * 60, "attempt 2 = base·2^1 = 2h");
   const p3 = auditorQuotaRetryPlan(claim({ quotaAttempts: 2, quotaFirstAt: new Date().toISOString() }), quota(0, false), 60);
   assert.equal(p3.attempt, 3);
-  assert.equal(p3.retryAfterSec, 120 * 60, "attempt 3 = 2h");
+  assert.equal(p3.retryAfterSec, 240 * 60, "attempt 3 = base·2^2 = 4h");
 });
 
 test("eager: an upstream Retry-After hint still wins over the eager default", () => {
@@ -67,7 +67,7 @@ test("eager: the first eager attempt counts toward the attempt streak (no infini
   const p1 = auditorQuotaRetryPlan(claim(), quota(0, false), 60);
   const p2 = auditorQuotaRetryPlan(claim({ quotaAttempts: p1.attempt, quotaFirstAt: p1.firstAt, quotaAutoRetryUntil: p1.autoRetryUntil }), quota(0, false), 60);
   assert.equal(p2.attempt, 2);
-  assert.equal(p2.retryAfterSec, 60 * 60);
+  assert.equal(p2.retryAfterSec, 120 * 60, "a stuck provider does not get hammered every 5s — attempt 2 is the 2h rung");
 });
 
 test("source pins: eager constant + seconds-aware wording at both dispatch sites", () => {

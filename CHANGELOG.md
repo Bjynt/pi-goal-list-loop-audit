@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### 0.34.79 — eager auditor retry on infra failures (note.md 112555)
+
+"we are not retrying the auditor as eagerly as the main thread" — measured:
+`runWithInfraRetry` retries the main thread after 5s, but the auditor's
+first probe was `quotaRetryDelaySeconds(1, 60)` = an hour (unless the
+provider gave a Retry-After hint). A quota that expired mid-audit parked
+the goal for 60m before the first retry.
+
+- **Eager first probe**: `EAGER_AUDITOR_RETRY_SEC = 5` — the first no-hint
+  attempt now retries in 5s, mirroring the main thread's backoff; provider
+  hints still win; later attempts keep the exponential rungs (2h, 4h, …)
+  and the bounded 5-attempt / 24h-horizon envelope is unchanged (the eager
+  probe counts as attempt 1 — no 5s hammering of a stuck provider).
+- **Seconds-aware wording**: both dispatch sites' pause reason / suggested
+  action / notify / tool result use `fmtRetryDelay` ("5s" under a minute,
+  else "60m") instead of a rounded minute.
+- **`auditorQuotaRetryPlan` exported** (pure) — the schedule is unit-pinned.
+- Tests: tests/auditor-eager-retry.test.ts (6, new) — eager 5s first
+  attempt, exponential later rungs, upstream-hint priority, horizon bound,
+  streak accounting, source pins. Full suite 1040 pass / 1 skip / 0 fail
+  across 97 files, tsc clean.
+
 ### 0.34.78 — draft confirm renders markdown (GitHub #4)
 
 The draft-class confirm dialog (`confirmDraft`) rendered through plain-text
