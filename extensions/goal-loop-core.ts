@@ -521,6 +521,12 @@ export interface ListItem {
   id: string;
   objective: string;
   verificationContract?: string;
+  /** v0.34.76 (OPEN-ISSUES 1.11): parallel-execution metadata DECLARATION.
+   * Parsed from a `Parallel: yes|no` clause on the item text; surfaced in
+   * /list show and list_status. A DECLARATION ONLY — the queue still runs
+   * serially; parallel dispatch of parallelSafe items is a later milestone
+   * (see audit/DESIGN-LIST-PARALLEL-2026-08-07.md). */
+  parallelSafe?: boolean;
   addedAt: string;
 }
 
@@ -768,6 +774,7 @@ export function readQueueFromDisk(cwd: string, excludeIds: ReadonlySet<string> =
       id: e.id,
       objective: e.objective,
       ...(typeof e.verificationContract === "string" && e.verificationContract ? { verificationContract: e.verificationContract } : {}),
+      ...(typeof e.parallelSafe === "boolean" ? { parallelSafe: e.parallelSafe } : {}),
       addedAt: typeof e.addedAt === "string" ? e.addedAt : new Date().toISOString(),
     });
   }
@@ -1214,6 +1221,38 @@ export function draftContractItemCount(normalized: string): number {
  * module so tests exercise THIS function, not a copy (the pre-0.23.7 test
  * re-implemented it and silently went stale).
  */
+/**
+ * v0.34.76 (OPEN-ISSUES 1.11): the `Parallel:` declaration marker.
+ * Line-start OR inline, case-insensitive; truthy values yes|true|1|safe|parallel,
+ * falsy no|false|0|none|off. Mirrors the `Done when:` marker style so a
+ * one-liner like "Create x.txt. Parallel: yes. Done when: grep -q ok x.txt"
+ * parses the same way a drafted multi-line item does. The marker is CONSUMED
+ * from the text — it is a property of the item, not part of the objective or
+ * the verification contract.
+ */
+export const PARALLEL_MARKER = /\bparallel\b\s*:\s*(yes|true|1|safe|parallel|no|false|0|none|off)\b[.,;]?\s*/i;
+
+export function extractParallelFlag(raw: string): { objective: string; parallelSafe: boolean | undefined } {
+  const m = raw.match(PARALLEL_MARKER);
+  if (!m) return { objective: raw.trim(), parallelSafe: undefined };
+  const value = m[1]!.toLowerCase();
+  const parallelSafe = !["no", "false", "0", "none", "off"].includes(value);
+  const objective = (raw.slice(0, m.index) + raw.slice(m.index! + m[0].length)).trim();
+  return { objective, parallelSafe };
+}
+
+/**
+ * v0.34.76: full list-item declaration parse in the right order — strip the
+ * `Parallel:` marker FIRST, then split `Done when:` out of the cleaned text.
+ * A marker inside the contract block still gets stripped before the contract
+ * text is captured, so the contract never carries the declaration.
+ */
+export function parseListItemDeclaration(raw: string): { objective: string; parallelSafe: boolean | undefined; verificationContract: string } {
+  const { objective, parallelSafe } = extractParallelFlag(raw);
+  const ext = extractVerificationContract(objective);
+  return { objective: ext.objective, parallelSafe, verificationContract: ext.verificationContract };
+}
+
 export function extractVerificationContract(raw: string): { objective: string; verificationContract: string; explicitClear: boolean } {
   // Line-based first: a marker at line start begins the contract block.
   const lines = raw.split("\n");

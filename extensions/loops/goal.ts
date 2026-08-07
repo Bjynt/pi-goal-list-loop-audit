@@ -59,6 +59,7 @@ import {
   ledgerPath,
   crossRecommendMode,
   formatListDepth,
+  parseListItemDeclaration,
   shouldEscalateStall,
   isStaleApiError,
   mergeSettings,
@@ -4853,17 +4854,17 @@ function recentlyCompletedObjectives(cwd: string): Set<string> {
 
 function enqueueItems(ctx: ExtensionContext, texts: string[], source: string, opts?: { autoActivate?: boolean }): number {
   const recentlyDone = recentlyCompletedObjectives(ctx.cwd);
-  const fresh = texts.filter((t) => !recentlyDone.has(normalizeObjective(extractVerificationContract(t).objective)));
+  const fresh = texts.filter((t) => !recentlyDone.has(normalizeObjective(parseListItemDeclaration(t).objective)));
   const skipped = texts.length - fresh.length;
   if (skipped > 0) {
-    const first = texts.find((t) => recentlyDone.has(normalizeObjective(extractVerificationContract(t).objective))) ?? "";
+    const first = texts.find((t) => recentlyDone.has(normalizeObjective(parseListItemDeclaration(t).objective))) ?? "";
     appendLedger(ctx.cwd, "list_duplicate_skipped", { source, count: skipped, objective: first.slice(0, 200) });
     ctx.ui.notify(`Skipped ${skipped} item(s) duplicating work COMPLETED in the last 24h (zombie-twin guard): ${first.slice(0, 90)}`, "warning");
   }
   if (fresh.length === 0) return 0;
   const items = fresh.map((text) => {
-    const extracted = extractVerificationContract(text);
-    return { id: newGoalId(), objective: extracted.objective, verificationContract: extracted.verificationContract || undefined, addedAt: nowIso() };
+    const extracted = parseListItemDeclaration(text);
+    return { id: newGoalId(), objective: extracted.objective, verificationContract: extracted.verificationContract || undefined, ...(extracted.parallelSafe === undefined ? {} : { parallelSafe: extracted.parallelSafe }), addedAt: nowIso() };
   });
   // v0.34.60: disk-first write order. Each item lands on disk BEFORE any
   // in-memory state mutation, so /list survives a stale extension handle
