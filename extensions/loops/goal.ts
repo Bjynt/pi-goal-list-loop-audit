@@ -112,6 +112,7 @@ isGoalRevisionCurrent,
   isQuotaWallError,
   nextHourlyPromptMs,
   type ModelSwitchRecord,
+  type ListItem,
 } from "../goal-loop-core.js";
 import {
   createContinuationDispatch,
@@ -5308,9 +5309,32 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     } else {
       lines.push(`List (${queue.length}):`);
       const PAGE = 15;
-      queue.slice(0, PAGE).forEach((item, i) => lines.push(`  ${i + 1}. ${displaySlice(item.objective, 90)}${item.parallelSafe ? " [parallel]" : ""}`));
-      if (queue.length > PAGE) {
-        lines.push(`  … and ${queue.length - PAGE} more. /list remove <n> to prune, /list clear to empty.`);
+      // v0.34.81 (LIGHT parent/child): render parents as `[group: N open]`
+      // and their children as hierarchical sub-numbers (`1.1`, `1.2`).
+      // Groups are skipped in the outer loop; children are rendered under
+      // their parent, preserving queue order so adjacent declarations stay
+      // adjacent visually. The PAGE limit caps top-level entries — a parent
+      // at the boundary still shows all of its children to keep the block
+      // coherent (children of a sliced-off parent would orphan).
+      let flat = 0;
+      let omitted = 0;
+      for (const item of queue) {
+        if (item.parentId) continue; // rendered under its parent
+        if (flat >= PAGE) { omitted++; continue; }
+        const children = queue.filter((c) => c.parentId === item.id);
+        const open = groupOpenChildren(item.id);
+        flat++;
+        const labels: string[] = [];
+        if (item.parallelSafe) labels.push("parallel");
+        if (open > 0) labels.push(`group: ${open} open`);
+        const tag = labels.length ? ` [${labels.join(", ")}]` : "";
+        lines.push(`  ${flat}. ${displaySlice(item.objective, 90)}${tag}`);
+        children.forEach((c, ci) =>
+          lines.push(`     ${flat}.${ci + 1} ${displaySlice(c.objective, 80)}${c.parallelSafe ? " [parallel]" : ""}`),
+        );
+      }
+      if (omitted > 0) {
+        lines.push(`  … and ${omitted} more top-level item(s). /list remove <n> to prune, /list clear to empty.`);
       }
     }
     ctx.ui.notify(lines.join("\n"), "info");
@@ -7751,8 +7775,26 @@ function registerAgentTools(pi: any): void {
         lines.push("List: empty.");
       } else {
         lines.push(`List (${queue.length}):`);
-        queue.slice(0, 20).forEach((item, i) => lines.push(`${i + 1}. ${sanitizeDisplayText(item.objective)}${item.parallelSafe ? " [parallel]" : ""}`));
-        if (queue.length > 20) lines.push(`… and ${queue.length - 20} more`);
+        // v0.34.81 (LIGHT parent/child): see /list show — groups render
+        // with [group: N open] and children as 1.1/1.2 sub-numbers.
+        let flat = 0;
+        let omitted = 0;
+        for (const item of queue) {
+          if (item.parentId) continue;
+          if (flat >= 20) { omitted++; continue; }
+          const children = queue.filter((c) => c.parentId === item.id);
+          const open = groupOpenChildren(item.id);
+          flat++;
+          const labels: string[] = [];
+          if (item.parallelSafe) labels.push("parallel");
+          if (open > 0) labels.push(`group: ${open} open`);
+          const tag = labels.length ? ` [${labels.join(", ")}]` : "";
+          lines.push(`${flat}. ${sanitizeDisplayText(item.objective)}${tag}`);
+          children.forEach((c, ci) =>
+            lines.push(`   ${flat}.${ci + 1} ${sanitizeDisplayText(c.objective)}${c.parallelSafe ? " [parallel]" : ""}`),
+          );
+        }
+        if (omitted > 0) lines.push(`… and ${omitted} more top-level item(s)`);
       }
       if (state.loop) {
         lines.push(`Loop: ${state.loop.active ? "active" : "stopped"} — ${sanitizeDisplayText(state.loop.target)} (best ${state.loop.bestValue ?? "n/a"}, iteration ${state.loop.iteration})`);
