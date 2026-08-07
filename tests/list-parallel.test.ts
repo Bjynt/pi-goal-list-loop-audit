@@ -23,7 +23,13 @@ import {
   readState,
 } from "../extensions/goal-loop-core.ts";
 import activate from "../extensions/loops/goal.js";
-import { MockPi, makeMockCtx, tmpCwd, seedState, seedGoal, tick } from "./harness/mock-pi.js";
+import { MockPi, makeMockCtx, seedState, seedGoal, tick } from "./harness/mock-pi.js";
+
+// ONE module-level pi, like behavioral-orchestrator: registerAgentTools runs
+// once per extension instance (toolsRegistered is module state), so a fresh
+// MockPi per test would never have its tools registered.
+const pi = new MockPi();
+activate(pi.api);
 
 function tmpCwd(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "pi-gla-list-parallel-test-"));
@@ -108,8 +114,6 @@ function setGlobalAutoResume(v: boolean): void {
 }
 
 function makePi() {
-  const pi = new MockPi();
-  activate(pi.api);
   return pi;
 }
 
@@ -144,7 +148,7 @@ test("list_add parses the declaration into the queue state + disk + status", asy
     assert.equal(queued.length, 4);
     const [a, b, mig, plain] = queued;
     assert.equal(a!.parallelSafe, true);
-    assert.equal(a!.objective, "Run the a-scan.");
+    assert.equal(a!.objective, "Run the a-scan"); // inline-contract split strips the trailing period (pinned in the pure tests)
     assert.equal(a!.verificationContract, "grep -q ok a.txt");
     assert.equal(b!.parallelSafe, true);
     assert.equal(b!.objective, "Run the b-scan.");
@@ -174,7 +178,7 @@ test("a declared item activating into a goal carries the CLEAN objective (no mar
   setGlobalAutoResume(true);
   const cwd = tmpCwd();
   try {
-    seedState(cwd, {}); // nothing active → the first queued item activates
+    seedState(cwd, { goal: seedGoal({ policy: "goal", status: "complete", objective: "previously done" }) }); // completed goal → not a blank startup; the first queued item auto-activates
     const pi = makePi();
     const ctx = makeMockCtx(cwd);
     await pi.fire("session_start", { reason: "startup" }, ctx);
