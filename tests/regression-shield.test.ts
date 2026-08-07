@@ -176,6 +176,103 @@ test("still rejects: bamboozle report that never touches the item's vocabulary",
   assert.equal(r.missingItems.length, 1);
 });
 
+// ---- v0.34.77 (GitHub #5): non-ASCII (Chinese) contract items — the token
+// extraction regex was ASCII-only, so pure-CJK lines produced zero candidates
+// and could never be matched against the evidence block. ----
+
+const ZH_CONTRACT = "Done when:\n- 调研报告文件存在且包含以下章节：\n- 包含「横向对比表」，至少对比 5 个工具/方案\n- README 包含 Markdown 渲染说明";
+
+test("CJK: a verbatim-quoted Chinese item passes (token is one CJK word, not delimiters)", () => {
+  const report = [
+    "Audit report.",
+    "<evidence>",
+    "Item: 调研报告文件存在且包含以下章节：",
+    "Output:",
+    "$ ls reports/调研.pdf",
+    "调研报告文件存在且包含以下章节",
+    "Item: 包含「横向对比表」，至少对比 5 个工具/方案",
+    "Output:",
+    "横向对比表 rendered",
+    "Item: README 包含 Markdown 渲染说明",
+    "Output:",
+    "README section: Markdown rendering",
+    "</evidence>",
+    "<approved/>",
+  ].join("\n");
+  const r = checkRegressionShield(report, ZH_CONTRACT);
+  assert.equal(r.passed, true, JSON.stringify(r.missingItems));
+  assert.deepEqual(r.missingItems, []);
+});
+
+test("CJK: a quote that drops the trailing full-width colon still matches", () => {
+  // The auditor copied the item without its final ： — the candidate token
+  // (colon stripped by the split) is a substring of the report either way.
+  const report = [
+    "<evidence>",
+    "Item: 调研报告文件存在且包含以下章节",
+    "Output:",
+    "found",
+    "</evidence>",
+    "<approved/>",
+  ].join("\n");
+  const r = checkRegressionShield(report, "Done when:\n- 调研报告文件存在且包含以下章节：");
+  assert.equal(r.passed, true, JSON.stringify(r.missingItems));
+});
+
+test("CJK: a Chinese line with no ASCII letters is one candidate token", () => {
+  const r = checkRegressionShield(
+    "<evidence>\nItem: 调研报告文件存在且包含以下章节\nOutput: ok\n</evidence>\n<approved/>",
+    "Done when:\n- 调研报告文件存在且包含以下章节",
+  );
+  assert.equal(r.passed, true);
+});
+
+test("CJK: an English-only paraphrase of a Chinese item is still rejected (strict shield)", () => {
+  const report = [
+    "<evidence>",
+    "Item: the research report file exists and contains the following sections",
+    "Output: confirmed",
+    "</evidence>",
+    "<approved/>",
+  ].join("\n");
+  const r = checkRegressionShield(report, ZH_CONTRACT);
+  assert.equal(r.passed, false);
+  assert.ok(r.missingItems.length >= 1);
+});
+
+test("CJK: mixed item matches on its ASCII token even when CJK words are not quoted", () => {
+  // 包含「横向对比表」… also carries the ASCII token Markdown via README line.
+  const report = [
+    "<evidence>",
+    "README includes a Markdown rendering section.",
+    "</evidence>",
+    "<approved/>",
+  ].join("\n");
+  const r = checkRegressionShield(report, "Done when:\n- README 包含 Markdown 渲染说明");
+  assert.equal(r.passed, true);
+});
+
+test("ASCII behavior is unchanged: distinctive-token + compound matching still work", () => {
+  const report = [
+    "<evidence>",
+    "Checked the file:",
+    "$ cat hello.txt",
+    "world",
+    "$ grep -q world hello.txt && echo PASS",
+    "PASS",
+    "</evidence>",
+    "<approved/>",
+  ].join("\n");
+  const r = checkRegressionShield(report, "Done when: grep -q world hello.txt");
+  assert.equal(r.passed, true);
+  // compound segments still match
+  const r2 = checkRegressionShield(
+    "<evidence>\nno cropped strip on the left edge\n</evidence>\n<approved/>",
+    "Done when:\n- left-cropped strip absent",
+  );
+  assert.equal(r2.passed, true);
+});
+
 // ---- v0.23.4: preamble lines are not items (darklord field bug) ----
 
 test("contractItems: 'Done when ALL of the following are true:' preamble is dropped", () => {

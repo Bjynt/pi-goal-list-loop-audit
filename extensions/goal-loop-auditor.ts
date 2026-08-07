@@ -259,7 +259,10 @@ export function buildGoalAuditorPrompt(goal: Goal, completionSummary: string | n
           "<raw command output here>",
           "</evidence>",
           "",
-          "An approval without a complete <evidence> section will be rejected automatically.",
+          "v0.34.77: quote each item VERBATIM in the contract's ORIGINAL language — a translated",
+          "or paraphrased item (e.g. an English gloss of a Chinese line) cannot be matched by the",
+          "shield and the approval will be rejected automatically. An approval without a complete",
+          "<evidence> section will be rejected automatically.",
         ]
       : []),
   ].join("\n");

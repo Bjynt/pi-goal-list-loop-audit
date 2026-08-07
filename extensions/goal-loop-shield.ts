@@ -41,9 +41,12 @@ export interface RegressionShieldResult {
   hasEvidenceBlock: boolean;
 }
 
-/** Strip prose punctuation glued to a token ("file/element." → "file/element"). */
+/** Strip prose punctuation glued to a token ("file/element." → "file/element").
+ * v0.34.77 (GitHub #5): Unicode-aware — \p{L}\p{N} with the /u flag keeps
+ * CJK letters. The old ASCII-only class treated every Chinese character as
+ * punctuation, so a pure-Chinese token like 调研报告文件 shrank to nothing. */
 function stripEdgePunct(w: string): string {
-  return w.replace(/^[^A-Za-z0-9]+/, "").replace(/[^A-Za-z0-9/_.-]+$/, "");
+  return w.replace(/^[^\p{L}\p{N}]+/u, "").replace(/[^\p{L}\p{N}/_.-]+$/u, "");
 }
 
 /**
@@ -55,8 +58,19 @@ function stripEdgePunct(w: string): string {
 function tokenPresent(candidate: string, reportLower: string): boolean {
   const c = candidate.toLowerCase();
   if (reportLower.includes(c)) return true;
+  // v0.34.77 (GitHub #5): Han (CJK) tokens match by exact substring only —
+  // Chinese words have no compound-segment decomposition, so the ASCII
+  // segment rule below would wrongly reject a quoted 章节 line.
+  if (/\p{Script=Han}/u.test(c)) return reportLower.includes(c);
   const segments = c.split(/[-/]+/).filter((s) => s.length >= 3);
   return segments.length > 1 && segments.every((s) => reportLower.includes(s));
+}
+
+/** v0.34.77 (GitHub #5): punctuation-edge-normalized lowercase for the
+ * no-candidate fallback — a verbatim quote that drops the item's trailing
+ * full-width colon (章节： → 章节) still counts as a reference. */
+function normalizeForMatch(s: string): string {
+  return s.toLowerCase().replace(/^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu, "").replace(/\s+/g, " ");
 }
 
 /**
@@ -77,15 +91,18 @@ export function checkRegressionShield(report: string, contract: string): Regress
   const missingItems: string[] = [];
   const reportLower = report.toLowerCase();
   for (const item of items) {
+    // v0.34.77 (GitHub #5): Unicode-aware token split — \p{L}\p{N} treats
+    // CJK characters as letters, so a pure-Chinese contract line is ONE
+    // candidate token instead of a pile of delimiters.
     const candidates = item
-      .split(/[^A-Za-z0-9_.\-/]+/)
+      .split(/[^\p{L}\p{N}_.\-/]+/u)
       .map(stripEdgePunct)
       .filter((w) => w.length >= 5)
       .sort((a, b) => b.length - a.length)
       .slice(0, 3);
     const addressed = candidates.length > 0
       ? candidates.some((c) => tokenPresent(c, reportLower))
-      : reportLower.includes(item.toLowerCase());
+      : reportLower.includes(normalizeForMatch(item));
     if (!addressed) missingItems.push(item);
   }
   return {
