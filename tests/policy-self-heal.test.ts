@@ -68,7 +68,7 @@ function corruptedState(policy: unknown): State {
       usage: { tokensUsed: 0 },
     },
     list: [],
-  } as State;
+  } as unknown as State;
 }
 
 test("parseGoalPolicyFromMd reads the durable marker, undefined when absent", () => {
@@ -178,7 +178,7 @@ test("bug 1.7: /list pause with a corrupted in-memory policy heals at the gate i
     // as a list item pause (the refusal said "standalone goal — /goal pause").
     assert.ok(ctx.ui.matching("/list resume to continue").length >= 1, "gate proceeded with the list-surface guidance");
     assert.equal(ctx.ui.matching("standalone goal").length, 0, "no silent list-mode rejection");
-    assert.ok(ctx.ui.matching(/Recovered the goal mode/).length >= 1, "self-heal notify replaced the silent rejection");
+    assert.ok(ctx.ui.matching("Recovered the goal mode").length >= 1, "self-heal notify replaced the silent rejection");
     const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
     assert.match(ledger, /"goal_policy_healed"/);
     assert.match(ledger, /"to":"list"/);
@@ -199,7 +199,7 @@ test("bug 1.7: /goal pause with a corrupted in-memory policy heals to goal and p
     await pi.command("goal", "pause", ctx);
 
     assert.ok(ctx.ui.matching("/goal resume to continue").length >= 1, "goal pause proceeded with goal-surface guidance");
-    assert.ok(ctx.ui.matching(/Recovered the goal mode/).length >= 1, "self-heal notify fired");
+    assert.ok(ctx.ui.matching("Recovered the goal mode").length >= 1, "self-heal notify fired");
     const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
     assert.match(ledger, /"goal_policy_healed"/);
     assert.match(ledger, /"to":"goal"/);
