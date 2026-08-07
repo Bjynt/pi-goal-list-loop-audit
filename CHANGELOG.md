@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### 0.34.67 — worker/subagent text paragraphs get breathing room
+
+note.md 08-06 (Screenshot_20260806_223836): "visually subagents least need
+more spacing for text". The auditing card's worker-text paragraph
+(`tool:`, `latest:`, `unmatched tool events:` observations) sat flush
+against the footer verdict line. A new styling constant,
+`WORKER_TEXT_SPACER` (a dim `│ ·` hairline), is inserted between the
+observations paragraph and the card footer. pi-tui skips whitespace-only
+widget lines (Text.render returns [] when trim is empty), so the spacer
+carries the dim hairline rather than a truly empty line — it reads as
+whitespace but renders a visible row.
+
+- display: `WORKER_TEXT_SPACER` styling constant; the auditing block
+  pushes it after the observations paragraph when observations exist.
+- tests: display.test.ts pins the constant value and its position between
+  the observation text and the footer, plus a negative pin (no spacer
+  when there is no worker text). Full suite 958 pass / 1 skip / 0 fail,
+  tsc clean.
+
 ### 0.34.66 — auditor stream is final-only by default
 
 note.md #4 (Screenshot_20260804_211341/211506): the HUD rendered the
