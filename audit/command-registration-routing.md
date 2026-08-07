@@ -1,6 +1,6 @@
 # Command registration routing (auto-recorded by tests/command-registration-collisions.test.ts)
 
-- Recorded: 2026-08-07T15:37:05.180Z
+- Recorded: 2026-08-07T16:02:55.963Z
 - Agent dir: /home/dracon/.pi/agent
 - Loaded extensions scanned: 15
 - Winner rule (pi resolveRegisteredCommands): a SINGLY-registered name keeps its bare command (that registrant wins). A DUPLICATED name suffixes EVERY registration — `name:1`, `name:2`, … — the bare command becomes owned by nobody and dispatch stops routing it. Within one extension, re-registration is last-wins (Map).
@@ -20,6 +20,5 @@
 - `npm:@fractaal/pi-goal-x` (installed, NOT configured) registers: goal
 - `npm:@capyup/pi-goal` (installed, NOT configured) registers: goal
 - `npm:pi-goal-loop-audit` (installed, NOT configured) registers: goal, list, loop
-- `npm:pi-goal-list-loop-audit.stale-0.34.57-20260806` (installed, NOT configured) registers: goal, glla, list, loop
 - `npm:pi-goal-x` (installed, NOT configured) registers: goal
 - `npm:@misunders2d/pi-goal` (installed, NOT configured) registers: goal
