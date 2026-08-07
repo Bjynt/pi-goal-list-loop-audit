@@ -68,6 +68,10 @@ export class MockPi {
   modelSelections: unknown[] = [];
   sessionName = "mock-session";
   private activeTools: string[] = [];
+  /** v0.34.71: cross-extension event bus (pi.events) — the extension
+   * subscribes to pi-subagents lifecycle channels here; tests fire spawn
+   * events via emitBus(). */
+  eventHandlers = new Map<string, Array<(data: unknown) => void>>();
   readonly api: ExtensionAPI;
 
   constructor() {
@@ -111,6 +115,20 @@ export class MockPi {
       getCommands(): Array<{ name: string }> {
         return [...self.commands.keys()].map((name) => ({ name }));
       },
+      events: {
+        emit(channel: string, data: unknown): void {
+          for (const h of self.eventHandlers.get(channel) ?? []) h(data);
+        },
+        on(channel: string, handler: (data: unknown) => void): () => void {
+          const hs = self.eventHandlers.get(channel) ?? [];
+          hs.push(handler);
+          self.eventHandlers.set(channel, hs);
+          return () => {
+            const cur = self.eventHandlers.get(channel) ?? [];
+            self.eventHandlers.set(channel, cur.filter((h) => h !== handler));
+          };
+        },
+      },
       async exec(cmd: string, args: string[], opts: unknown): Promise<{ code: number; stdout: string; stderr: string }> {
         if (self.execHandler) return self.execHandler(cmd, args, opts);
         return { code: 0, stdout: "", stderr: "" };
@@ -140,6 +158,12 @@ export class MockPi {
     const h = this.commands.get(name);
     if (!h) throw new Error(`command not registered: ${name}`);
     await h(args, ctx);
+  }
+
+  /** Fire a cross-extension event-bus message (pi.events.emit) — tests use
+   * this to simulate pi-subagents lifecycle broadcasts. */
+  emitBus(channel: string, data: unknown): void {
+    for (const h of this.eventHandlers.get(channel) ?? []) h(data);
   }
 }
 

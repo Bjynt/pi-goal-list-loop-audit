@@ -10001,4 +10001,29 @@ export default function (pi: ExtensionAPI): void {
     streamActivityObserved = true;
     dispatchStartAcknowledged(ctx, "turn_start");
   });
+
+  // v0.34.71 — subagent_session ledger (OPEN-ISSUES 1.16: "Subagents lost
+  // between restarts"): pi-subagents broadcasts a cross-extension lifecycle
+  // event (pi.events) when an Agent-tool subagent transitions to running —
+  // once per spawn, foreground AND background, payload { id, type,
+  // description }. Ledger the spawn (session id + summary) so the parent
+  // can recover the reference after a /reload: the ledger lives on disk in
+  // .pi-glla/active.jsonl and survives restarts, unlike the in-process
+  // agent registry. Queued/repeating observations (resume, re-run) append
+  // again — fresh evidence the reference is alive.
+  pi.events.on("subagents:started", (data: unknown) => {
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
+    const ctx = freshCtx();
+    if (!ctx) return;
+    const e = (data ?? {}) as { id?: unknown; type?: unknown; description?: unknown };
+    const sessionId = typeof e.id === "string" && e.id.length > 0 ? e.id : undefined;
+    if (!sessionId) return;
+    appendLedger(ctx.cwd, "subagent_session", {
+      sessionId,
+      agentType: typeof e.type === "string" ? e.type : undefined,
+      summary: typeof e.description === "string" ? e.description : undefined,
+      goalId: state.goal?.status === "active" ? state.goal.id : undefined,
+      at: nowIso(),
+    });
+  });
 }
