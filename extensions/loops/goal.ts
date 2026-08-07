@@ -368,6 +368,28 @@ export function classifyIdInvalidationReason(flags: {
   return "session_handoff";
 }
 
+/** v0.34.75 (host-session-lost): the session_handle_invalidated reason enum.
+ * goStaleTerminal detects the death of the extension handle but cannot see
+ * the cause from a generic stale error — the class is inferred from what
+ * the loop itself knows at the moment of the terminal:
+ * - session_shutdown — a lifecycle shutdown already ran (clearSessionOwnedTimers
+ *   → sessionHandoffPending): the invalidation is the tail of a proper session
+ *   replacement (quit/reload/resume/new), not a loss;
+ * - provider_disconnect — the main model was in provider-failure recovery when
+ *   the handle died (weak signal: quota/billing walls often coincide);
+ * - silent_handle_death — neither: pi invalidated the handle WITHOUT delivering
+ *   a replacement session and without a shutdown record. This is the exact
+ *   "host session lost" case the user keeps hitting (13 screenshots 08-05→08-07).
+ * Priority: a recorded shutdown wins even if recovery is also active. */
+export function classifySessionHandleInvalidation(flags: {
+  sessionHandoffPending?: boolean;
+  mainModelRecoveryActive?: boolean;
+}): "session_shutdown" | "provider_disconnect" | "silent_handle_death" {
+  if (flags.sessionHandoffPending) return "session_shutdown";
+  if (flags.mainModelRecoveryActive) return "provider_disconnect";
+  return "silent_handle_death";
+}
+
 /** v0.34.63: identity-tolerant session comparison. pi can deliver the SAME
  * resumed session with a NEW SessionManager object (quit → fresh pi → blank
  * startup → resume), so object identity is not enough; the session id it
@@ -459,10 +481,21 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   // detection cannot infer the cause from a generic stale error, so the
   // default reason is "unknown". Future callers MAY pass a more specific
   // reason when known (oom | manual-kill | provider-disconnect | unknown).
+  // v0.34.75 (host-session-lost): the reason is now CLASSIFIED at emission
+  // from what the loop knows: a lifecycle shutdown already recorded
+  // (sessionHandoffPending) → the invalidation is the tail of a proper
+  // session replacement; main-model provider recovery active →
+  // provider_disconnect; neither → silent_handle_death, the exact
+  // "invalidated without delivering a replacement" case the user keeps
+  // hitting. The field distribution in the ledger now separates proper
+  // session cycles from genuine host losses.
   appendLedger(ctx.cwd, "session_handle_invalidated", {
     where,
     kind: isLoopActive() ? "loop" : "goal",
-    reason: "unknown",
+    reason: classifySessionHandleInvalidation({
+      sessionHandoffPending,
+      mainModelRecoveryActive: mainModelRecoveryActive(),
+    }),
   });
   const guidance = "pi invalidated this session's extension handle without delivering a replacement session. glla stopped stale sends and kept the work safe in .pi-glla/. A fresh session_start will resume it; if pi does not create one, restart pi normally and glla will restore the saved work.";
   // v0.35.x: an orphaned detached completion audit is not allowed to leave
