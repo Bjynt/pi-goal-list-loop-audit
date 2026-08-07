@@ -1047,8 +1047,10 @@ test("v0.34.57: MAIN host label is pinned to SUPERVISING by the MAIN_HOST_LABEL 
   const auditingWidget = buildWidgetLines(auditingState as never)!;
   assert.ok(auditingWidget.some((l) => l.includes("MAIN HOST · SUPERVISING")), "widget uses the guard label");
 
-  // 2. No-verdict state: the host label is still SUPERVISING (the AUDITOR is
-  // blocked, but the MAIN host is still supervising).
+  // 2. No-verdict state: NOT host-bearing anymore (v0.34.87 surface
+  // separation — a parked item's status line names the pause and the resume
+  // action, never claims the MAIN host is supervising). The guard constant
+  // itself is unchanged; the paused state simply renders no host label.
   const noVerdict = goalOf({
     status: "paused",
     pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "recovery-pending", attemptId: "audit-noverdict" },
@@ -1057,12 +1059,13 @@ test("v0.34.57: MAIN host label is pinned to SUPERVISING by the MAIN_HOST_LABEL 
   });
   const noVerdictState = { goal: noVerdict, list: [], loop: null };
   const noVerdictStatus = buildStatusText(noVerdictState as never)!;
-  assert.match(noVerdictStatus, /MAIN HOST · SUPERVISING · auditor blocked — no verdict/);
-  assert.doesNotMatch(noVerdictStatus, /MAIN HOST · auditor blocked/, "the host label must come from the constant guard, not a literal string");
+  assert.match(noVerdictStatus, /⏸ paused · auditor parked — no verdict/);
+  assert.doesNotMatch(noVerdictStatus, /MAIN HOST/, "a parked item must not claim the host is supervising");
+  assert.doesNotMatch(noVerdictStatus, /MAIN HOST · DETACHED/, "MAIN HOST must never render as DETACHED");
 
   // 3. Invariant: wherever "MAIN HOST" appears in any host-bearing rendering,
   // it is followed by " · SUPERVISING" — never " · DETACHED".
-  for (const text of [auditingStatus, noVerdictStatus]) {
+  for (const text of [auditingStatus, auditingWidget.join("\n")]) {
     assert.match(text, /MAIN HOST · SUPERVISING/, `MAIN HOST must render as SUPERVISING: ${text}`);
     assert.doesNotMatch(text, /MAIN HOST · DETACHED/, `MAIN HOST must never render as DETACHED: ${text}`);
   }

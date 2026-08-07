@@ -2019,6 +2019,33 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
   }
 });
 
+test("v0.34.87: complete_goal on a paused item names the pause + resume verb, not a flat 'No active goal'", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = writeFakeAuditor(cwd, "approved", 0);
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    await pi.command("goal", "start parked-completion target — done when pinned", ctx);
+    await tick();
+    const paused = await pi.runTool("pause_goal", { reason: "completion audit blocked — no verdict: host successor silent", kind: "blocked" }, ctx);
+    assert.match(paused.content[0]!.text, /Goal paused/);
+    // Surface separation: the widget shows a paused card, so complete_goal
+    // must name the paused state + the resume verb instead of the old flat
+    // "No active goal." that read as if the card were nothing at all.
+    const result = await pi.runTool("complete_goal", { completionSummary: "Claim", verificationSummary: "Evidence" }, ctx);
+    assert.match(result.content[0]!.text, /No active goal — the goal is paused; \/goal resume reactivates it/);
+    assert.doesNotMatch(result.content[0]!.text, /^No active goal\.$/);
+    // The pause survives — complete_goal did not touch the parked goal.
+    const state = readState(cwd).goal as { status: string };
+    assert.equal(state.status, "paused");
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  } finally {
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
 test("v0.34.22: detached disapproval resumes the goal with a durable report", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
