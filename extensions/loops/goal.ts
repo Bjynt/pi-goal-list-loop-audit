@@ -327,6 +327,46 @@ function sessionManagerId(ctx: ExtensionContext): string {
   }
 }
 
+/** The session id of a raw sessionManager object (no ctx), or null when the
+ * object exposes no usable id. The id_invalidation path uses this on the
+ * RECORDED owner (ownerSession/deadOwnerSession) — objects whose ctx is
+ * gone but whose manager still answers getSessionId. */
+function sessionIdOf(manager: unknown): string | null {
+  try {
+    const getId = (manager as { getSessionId?: () => string } | null | undefined)?.getSessionId;
+    return typeof getId === "function" ? String(getId.call(manager)) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** v0.34.73 (OPEN-ISSUES 1.12): the id_invalidation reason enum. The old
+ * session handle was invalidated; the fresh session carries a new id. The
+ * reason says WHICH invalidation mechanism produced the pair:
+ * - stale_terminal — the handle went stale in-process (goStaleTerminal);
+ * - zombie_stood_down — a successor INSTANCE owns the cwd; this one stood down;
+ * - rebind_without_shutdown — pi swapped the session with no session_end;
+ * - session_shutdown — the old session ended cleanly (shutdown record);
+ * - forced_rewrite — a new process took over with NO shutdown record
+ *   (crash/kill — the screenshot's orphan case);
+ * - successor_absorption — a live file-backed successor claimed the plane;
+ * - session_handoff — generic handoff with an id change. */
+export function classifyIdInvalidationReason(flags: {
+  staleTerminal?: boolean;
+  zombieStoodDown?: boolean;
+  extensionApiStale?: boolean;
+  rebindWithoutShutdown?: boolean;
+  hadShutdown?: boolean;
+  previousPid?: number | null;
+}): string {
+  if (flags.staleTerminal) return "stale_terminal";
+  if (flags.zombieStoodDown) return "zombie_stood_down";
+  if (flags.rebindWithoutShutdown) return "rebind_without_shutdown";
+  if (flags.hadShutdown) return "session_shutdown";
+  if (flags.previousPid != null && flags.previousPid !== process.pid) return "forced_rewrite";
+  return "session_handoff";
+}
+
 /** v0.34.63: identity-tolerant session comparison. pi can deliver the SAME
  * resumed session with a NEW SessionManager object (quit → fresh pi → blank
  * startup → resume), so object identity is not enough; the session id it
@@ -562,6 +602,10 @@ interface SessionOwnerClaim {
   generation: number;
   previousGeneration: number | null;
   previousOwnerSessionId: string | null;
+  /** v0.34.73: the previous owner shut down cleanly (shutdown record). */
+  hadShutdown: boolean;
+  /** v0.34.73: the previous owner's pid (null on first boot). */
+  previousPid: number | null;
 }
 function markSessionOwnerShutdown(cwd: string, reason: string): void {
   try {
@@ -602,6 +646,8 @@ function claimSessionOwnerAndDetectRebind(
       generation,
       previousGeneration,
       previousOwnerSessionId: typeof previous.ownerSessionId === "string" ? previous.ownerSessionId : null,
+      hadShutdown,
+      previousPid: typeof previous.pid === "number" ? previous.pid : null,
     };
   } catch {
     return {
@@ -609,8 +655,28 @@ function claimSessionOwnerAndDetectRebind(
       generation: currentGeneration,
       previousGeneration: null,
       previousOwnerSessionId: null,
+      hadShutdown: false,
+      previousPid: null,
     };
   }
+}
+
+/** v0.34.73 (OPEN-ISSUES 1.12): the id_invalidation ledger event. The old
+ * session handle was invalidated (forced rewrite/handoff) and the fresh
+ * session carries a new id — record the pair + reason so a repro from
+ * active.jsonl history can reconstruct the story. Emitted only when both
+ * ids are real and DIFFER (a plain /reload keeps the same session id and
+ * emits nothing). The goalId correlation lands when a goal is active. */
+function emitIdInvalidation(ctx: ExtensionContext, oldId: string | null, newId: string, reason: string, shutdownReason?: string | null): void {
+  if (!oldId || !newId || oldId === newId || oldId === "unknown-session" || newId === "unknown-session") return;
+  appendLedger(ctx.cwd, "id_invalidation", {
+    oldId,
+    newId,
+    reason,
+    ...(typeof shutdownReason === "string" && shutdownReason.length > 0 ? { shutdownReason } : {}),
+    ...(state.goal?.status === "active" ? { goalId: state.goal.id } : {}),
+    at: nowIso(),
+  });
 }
 
 /** v0.34.13: consume the sidecar marker on session restore. Single-use,
@@ -963,6 +1029,11 @@ function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   if (zombieStoodDown) return false; // a successor INSTANCE owns owner.json — this instance stands down forever
   if (!isHostSuccessorContact(ctx)) return false;
   const interruptedAudit = state.goal?.status === "auditing" && !!state.goal.pendingCompletion;
+  // v0.34.73 (OPEN-ISSUES 1.12): a live successor absorbed WITHOUT
+  // session_start is a silent-swap handoff — record the id pair when the
+  // session identity actually changed.
+  const absorbedOldId = sessionIdOf(ownerSession ?? deadOwnerSession);
+  emitIdInvalidation(ctx, absorbedOldId, sessionIdOf(ctx.sessionManager), "successor_absorption");
   ownerSession = ctx.sessionManager;
   ownerCwd = ctx.cwd;
   deadOwnerSession = null;
@@ -9161,6 +9232,15 @@ export default function (pi: ExtensionAPI): void {
       && (ownerCwd == null || ctx.cwd === ownerCwd)
       && sameSessionIdentity(ctx.sessionManager, recordedOwner);
     if (foreignRecordedSession && !hostLifecycleStart && !resumeCompletesLoad) return;
+    // v0.34.73 (OPEN-ISSUES 1.12): capture the pre-rebind invalidation flags
+    // BEFORE the block below clears them — the id_invalidation reason needs
+    // to know which mechanism invalidated the old handle.
+    const invalidationFlags = {
+      staleTerminal: staleTerminalDone,
+      zombieStoodDown,
+      extensionApiStale,
+      rebindWithoutShutdown: hostLifecycleStart && ownerSession !== null && ctx.sessionManager !== ownerSession,
+    };
     if (hostLifecycleStart && ownerSession !== null && ctx.sessionManager !== ownerSession) {
       // No shutdown means the old timers were not cleared by pi. Clear them
       // before claiming the replacement, then reopen the handoff gate below.
@@ -9291,6 +9371,19 @@ export default function (pi: ExtensionAPI): void {
     const recoveryResume = consumeRecoveryResume(ctx.cwd);
     const ownerClaim = claimSessionOwnerAndDetectRebind(ctx.cwd, sessionGeneration, sessionManagerId(ctx));
     sessionGeneration = ownerClaim.generation;
+    // v0.34.73 (OPEN-ISSUES 1.12): forced rewrite/handoff — the previous
+    // owner recorded a different session id in the owner sidecar (or the
+    // recorded in-memory owner was invalidated). Record the old/new id pair
+    // and the mechanism so active.jsonl history can repro the invalidation.
+    const oldOwnerId = ownerClaim.previousOwnerSessionId ?? (recordedOwner ? sessionIdOf(recordedOwner) : null);
+    emitIdInvalidation(ctx, oldOwnerId, sessionManagerId(ctx), classifyIdInvalidationReason({
+      staleTerminal: invalidationFlags.staleTerminal,
+      zombieStoodDown: invalidationFlags.zombieStoodDown,
+      extensionApiStale: invalidationFlags.extensionApiStale,
+      rebindWithoutShutdown: invalidationFlags.rebindWithoutShutdown,
+      hadShutdown: ownerClaim.hadShutdown,
+      previousPid: ownerClaim.previousPid,
+    }), ownerClaim.hadShutdown ? undefined : undefined);
     const handoffResume = consumeSessionHandoff(ctx.cwd, ownerClaim.previousGeneration, ownerClaim.previousOwnerSessionId);
     if (handoffResume) appendLedger(ctx.cwd, "session_handoff_resumed", { pid: process.pid, reason: startReason });
     const rebindResume = ownerClaim.rebind;
