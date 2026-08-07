@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### 0.34.68 — list/goal mode-gate self-heal (bug 1.7)
+
+OPEN-ISSUES 1.7 (Screenshot_20260804_212233): after some draft workflow,
+`/list` and `/goal` started silently refusing actions until a restart.
+`readState` trusts the active.jsonl `state` event verbatim, so a parse
+failure could leave `state.goal.policy` outside {goal,list}; every mode
+gate branching on `state.goal.policy === "list"` then refused the wrong
+surface until a restart rebuilt clean state.
+
+- **core** (`goal-loop-core.ts`): `parseGoalPolicyFromMd` re-parses the
+  durable `**Policy**: …` marker from the active-goal .md;
+  `healCorruptedGoalPolicy(state, cwd)` repairs a corrupted in-memory
+  policy in place from that source, ledgering `goal_policy_healed`
+  (and `goal_policy_heal_failed` when no durable source exists — no
+  invented mode).
+- **gates** (`goal.ts`): `healGoalPolicy(ctx)` runs at the top of
+  `cmdGoal` and `cmdList` (before any policy gate) and at session_start
+  right after `readState` — before the restore gate can rewrite the
+  durable .md with the corrupted value. Silent rejection replaced by a
+  visible "Recovered the goal mode … no restart needed" notify.
+- Tests: `tests/policy-self-heal.test.ts` — pure parse/heal pins
+  (heal / healthy-noop / no-source-failure / readState round-trip) and
+  the bug 1.7 regression: corrupted in-memory policy + durable .md →
+  the gate heals and proceeds (no refusal, no restart). Full suite
+  965 pass / 1 skip / 0 fail, tsc clean.
+
 ### 0.34.67 — worker/subagent text paragraphs get breathing room
 
 note.md 08-06 (Screenshot_20260806_223836): "visually subagents least need
