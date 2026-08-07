@@ -311,18 +311,37 @@ let sessionGeneration = 0;
 // accepted dispatch, not proof that pi started a turn. Keep one immutable
 // attempt bound to the session generation and owner identity until a real
 // before_agent_start/agent_start/turn_start event acknowledges it.
-const CONTINUATION_START_TIMEOUT_MS = Number(process.env.GLLA_CONTINUATION_START_TIMEOUT_MS ?? 150_000);
+// v0.34.88: the first no-turn-start window is 30s (was 150s — too long for
+// a user waiting on /list resume); a single automatic retry with a 60s
+// backoff re-sends the EXACT original message, so most transient misses
+// self-heal; only the second window failure declares unacknowledged (the
+// explicit /list|/goal|/loop resume fallback for genuine provider stalls).
+const CONTINUATION_START_TIMEOUT_MS = Number(process.env.GLLA_CONTINUATION_START_TIMEOUT_MS ?? 30_000);
+const NO_TURN_START_RETRY_BACKOFF_MS = 60_000;
 let continuationStartTimeoutOverrideMs: number | null = null;
+let continuationRetryBackoffOverrideMs: number | null = null;
 function continuationStartTimeoutMs(): number {
   return continuationStartTimeoutOverrideMs ?? CONTINUATION_START_TIMEOUT_MS;
 }
-/** Test-only: make the bounded start-proof watchdog observable without waiting 150s. */
+function continuationRetryBackoffMs(): number {
+  return continuationRetryBackoffOverrideMs ?? NO_TURN_START_RETRY_BACKOFF_MS;
+}
+/** Test-only: make the bounded start-proof watchdog observable without waiting 30s. */
 export function __testOnlySetContinuationStartTimeout(timeoutMs: number | null): void {
   continuationStartTimeoutOverrideMs = timeoutMs;
+}
+/** Test-only: make the single retry backoff observable without waiting 60s. */
+export function __testOnlySetContinuationRetryBackoff(backoffMs: number | null): void {
+  continuationRetryBackoffOverrideMs = backoffMs;
 }
 let pendingContinuationDispatch: ContinuationDispatch | null = null;
 let continuationStartTimer: NodeJS.Timeout | null = null;
 let continuationDispatchStoodDown = false;
+// v0.34.88: the EXACT payload of the last accepted dispatch send. The retry
+// re-sends this verbatim (same customType/content/display) — no per-kind
+// rebuild, no marker parsing; only one dispatch is ever pending, so this
+// always pairs with pendingContinuationDispatch.
+let lastContinuationSentPayload: { content: string; display: boolean } | null = null;
 
 function sessionManagerId(ctx: ExtensionContext): string {
   try {
@@ -1655,7 +1674,7 @@ let lastStarvedRefusedAt = "";
 // whose turn trigger was still dead — pausing a resumable goal 4 minutes
 // after the compact instead of giving pi room to recover.
 let compactionGraceUntil = 0;
-// v0.34.57: timestamp of the most recent session_compact event. The 150s
+// v0.34.57: timestamp of the most recent session_compact event. The 30s
 // continuation-start watchdog checks this so a compaction that lands inside
 // the watchdog window pauses/resets the watchdog instead of being misread
 // as a stall (field: 115855/115858/115901 — the watchdog fired while the
@@ -1703,7 +1722,8 @@ function isContextStarvedRefused(): boolean {
 }
 // v0.34.57: per-record counter capping the compaction-paused re-arm loop.
 // A stuck session that never produces a new compaction event must not
-// re-arm indefinitely; after 3 rearms (default 3 × 150s = 7.5m) the
+// re-arm indefinitely; after 3 rearms (default 3 × 30s = 90s, plus the 60s
+// retry backoff if the single auto-retry already fired) the
 // watchdog fires the unacknowledged warning so the user can intervene.
 const COMPACTION_REARM_CAP = 3;
 const continuationStartCompactionRearms = new Map<string, number>();
@@ -2394,6 +2414,7 @@ function clearContinuationStartWatchdog(): void {
   if (pendingContinuationDispatch) clearCompactionRearms(pendingContinuationDispatch.id);
   pendingContinuationDispatch = null;
   lastContinuationSentAt = 0;
+  lastContinuationSentPayload = null;
 }
 
 function dispatchLabel(record: ContinuationDispatch): string {
@@ -2539,7 +2560,7 @@ function dispatchStartUnacknowledged(ctx: ExtensionContext, record: Continuation
   if (state.goal && state.goal.status === "active" && (record.kind === "goal" || record.kind === "stall")) {
     updateGoal({ interruptedAt: nowIso(), interruptedReason: reason }, ctx);
   }
-  const msg = `glla: pi accepted the ${dispatchLabel(record)} continuation, but no observable turn-start event arrived within ${Math.round(continuationStartTimeoutMs() / 1000)}s. Automatic re-sends are stopped to avoid a blind queue storm. The work is safe in .pi-glla; start a fresh session or use /goal resume, /list resume, or /loop resume to retry explicitly.`;
+  const msg = `glla: pi accepted the ${dispatchLabel(record)} continuation, but no observable turn-start event arrived within ${Math.round((Date.now() - record.sentAt) / 1000)}s despite one automatic retry. Automatic re-sends are stopped to avoid a blind queue storm. The work is safe in .pi-glla; start a fresh session or use /goal resume, /list resume, or /loop resume to retry explicitly.`;
   ctx.ui.notify(msg, "warning");
   notifyExternal(ctx, sanitizeDisplayText(msg));
   refreshUI(ctx);
@@ -2575,10 +2596,55 @@ function armContinuationStartWatchdog(ctx: ExtensionContext, record: Continuatio
       // Cap reached: fall through to the unacknowledged warning so the
       // user can intervene. A stuck session must not loop forever.
     }
-    if (dispatchTimedOut(record, Date.now(), record.timeoutMs ?? continuationStartTimeoutMs())) {
+    if (dispatchTimedOut(record, now, record.timeoutMs ?? continuationStartTimeoutMs())) {
+      // v0.34.88: exactly ONE automatic retry with backoff before declaring
+      // unacknowledged. The retry re-sends the verbatim original payload so
+      // a transient miss (accepted enqueue, turn-start event lost) self-heals
+      // without the user; only the second window failure — a genuine provider
+      // stall — hits the explicit /list|/goal|/loop resume fallback. A
+      // skipped/failed retry falls through to unacknowledged immediately.
+      if (!record.retryCount && retryContinuationDispatch(current, record)) return;
       dispatchStartUnacknowledged(current, record);
     }
   }, record.timeoutMs ?? continuationStartTimeoutMs());
+}
+
+/** v0.34.88: the single no-turn-start retry. Re-sends the verbatim original
+ * payload (captured at first send), marks the record retried + persisted so
+ * a reload mid-backoff stays consistent, re-arms the watchdog with the
+ * backoff window, and ledgeres the retry. Returns true when the retry was
+ * sent and the backoff watchdog is running; false means the unacknowledged
+ * path should fire now (skipped because the goal/loop is no longer
+ * actionable, or the send failed). */
+function retryContinuationDispatch(ctx: ExtensionContext, record: ContinuationDispatch): boolean {
+  if (pendingContinuationDispatch !== record || record.phase !== "accepted") return false;
+  // Belt-and-braces: the watchdog is normally cleared on pause/reload, but a
+  // goal parked by another path mid-wait must never get a blind re-send.
+  if (record.kind === "loop") {
+    if (!state.loop?.active) return false;
+  } else if (record.kind === "goal" || record.kind === "stall") {
+    if (state.goal?.status !== "active") return false;
+  }
+  const payload = lastContinuationSentPayload;
+  if (!payload) return false;
+  try {
+    extensionApi.sendMessage({ customType: GOAL_EVENT_ENTRY, content: payload.content, display: payload.display }, { triggerTurn: true, deliverAs: "followUp" });
+  } catch (err) {
+    appendLedger(ctx.cwd, "continuation_retry_send_failed", { id: record.id, kind: record.kind, error: err instanceof Error ? err.message : String(err) });
+    if (isStaleApiError(err)) goStaleTerminal(ctx, "retryContinuationDispatch");
+    return false; // the retry itself failed — genuine stall, fail closed now
+  }
+  record.retryCount = 1;
+  record.retrySentAt = Date.now();
+  record.timeoutMs = continuationRetryBackoffMs();
+  persistDispatchRecord(ctx.cwd, record);
+  appendLedger(ctx.cwd, "continuation_retry_sent", dispatchLedgerValue(record, {
+    retrySentAt: record.retrySentAt,
+    nextTimeoutMs: record.timeoutMs,
+    totalWaitMs: record.retrySentAt - record.sentAt + record.timeoutMs,
+  }));
+  armContinuationStartWatchdog(ctx, record);
+  return true;
 }
 
 function dispatchAccepted(ctx: ExtensionContext, record: ContinuationDispatch): boolean {
@@ -3328,6 +3394,7 @@ function sendContinuation(goalId: string): void {
       content: resync + continuationPrompt(state.goal!),
       display: false,
     }, { triggerTurn: true, deliverAs: "followUp" });
+    lastContinuationSentPayload = { content: resync + continuationPrompt(state.goal!), display: false }; // v0.34.88: verbatim retry payload
     if (!dispatchAccepted(ctx, attempt)) return;
     continuationRearmStreak = 0; continuationRearmSince = 0; // v0.28.5 (E3): an accepted dispatch clears the storm
     appendLedger(ctx.cwd, "goal_continuation_sent", { goalId, attemptId: attempt.id, generation: attempt.generation });
@@ -3369,6 +3436,7 @@ function sendStallEscalation(ctx: ExtensionContext, nudges: number): void {
   if (!attempt) return;
   try {
     extensionApi.sendMessage({ customType: GOAL_EVENT_ENTRY, content: text, display: true }, { triggerTurn: true, deliverAs: "followUp" });
+    lastContinuationSentPayload = { content: text, display: true }; // v0.34.88: verbatim retry payload
     if (!dispatchAccepted(ctx, attempt)) return;
     appendLedger(ctx.cwd, "stall_escalation_dispatched", { nudges, remaining, attemptId: attempt.id });
     if (pendingContinuationDispatch === null) return;
@@ -3400,6 +3468,7 @@ function sendLengthContinue(ctx: ExtensionContext, consecutive: number): void {
       content: LENGTH_CONTINUE_TEXT,
       display: true,
     }, { triggerTurn: true, deliverAs: "followUp" });
+    lastContinuationSentPayload = { content: LENGTH_CONTINUE_TEXT, display: true }; // v0.34.88: verbatim retry payload
     if (!dispatchAccepted(ctx, attempt)) return;
     appendLedger(ctx.cwd, "length_continue_sent", { consecutive, attemptId: attempt.id });
     ctx.ui.notify(`Response hit the output-token cap — auto-continuing (${consecutive}/${LENGTH_CONTINUE_MAX})`, "warning");
@@ -6018,6 +6087,7 @@ function sendLoopTurn(): void {
       content: loopResync + loopPrompt(loop, regressionNote, strategyNote2, boundsNote, interventionNote, variantNote, hypothesisNote, refineHintNote),
       display: false,
     }, { triggerTurn: true, deliverAs: "followUp" });
+    lastContinuationSentPayload = { content: loopResync + loopPrompt(loop, regressionNote, strategyNote2, boundsNote, interventionNote, variantNote, hypothesisNote, refineHintNote), display: false }; // v0.34.88: verbatim retry payload
     if (!dispatchAccepted(ctx, attempt)) return;
     // v0.26.1: the send path is ledgered — the hegemon zombie spun 619
     // refires with zero visibility into whether sends were landing.

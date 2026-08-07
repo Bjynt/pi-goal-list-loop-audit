@@ -44,6 +44,12 @@ export interface ContinuationDispatch extends DispatchLifecycleTimestamps {
   sentAt: number;
   phase: DispatchPhase;
   resync: boolean;
+  /** v0.34.88: one automatic retry after the first no-turn-start timeout.
+   * retryCount is 1 after the single retry send; retrySentAt is the retry
+   * send time. Both persist so a reload mid-backoff keeps the record
+   * consistent (optional fields — no record-version bump). */
+  retryCount?: number;
+  retrySentAt?: number;
 }
 
 export function dispatchRecordPath(cwd: string): string {
