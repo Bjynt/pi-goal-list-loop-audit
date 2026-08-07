@@ -2596,7 +2596,7 @@ function armContinuationStartWatchdog(ctx: ExtensionContext, record: Continuatio
       // Cap reached: fall through to the unacknowledged warning so the
       // user can intervene. A stuck session must not loop forever.
     }
-    if (dispatchTimedOut(record, now, record.timeoutMs ?? continuationStartTimeoutMs())) {
+    if (dispatchTimedOut(record, Date.now(), record.timeoutMs ?? continuationStartTimeoutMs())) {
       // v0.34.88: exactly ONE automatic retry with backoff before declaring
       // unacknowledged. The retry re-sends the verbatim original payload so
       // a transient miss (accepted enqueue, turn-start event lost) self-heals
@@ -2627,6 +2627,7 @@ function retryContinuationDispatch(ctx: ExtensionContext, record: ContinuationDi
   }
   const payload = lastContinuationSentPayload;
   if (!payload) return false;
+  if (!extensionApi || extensionApiStale) return false; // stale runtime = terminal; the unacknowledged path notifies
   try {
     extensionApi.sendMessage({ customType: GOAL_EVENT_ENTRY, content: payload.content, display: payload.display }, { triggerTurn: true, deliverAs: "followUp" });
   } catch (err) {
