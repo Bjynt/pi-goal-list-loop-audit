@@ -800,17 +800,12 @@ export function __testOnlySetHeartbeatStaleDebounce(n: number | null): void {
   heartbeatStaleDebounce = n ?? HEARTBEAT_STALE_DEBOUNCE;
 }
 
-/** Test-only: snapshot of the live subagent-hang probe registry. Never
- * called by production code. */
-export function __testOnlySubagentHangProbes(): Array<{
-  recordId: string;
-  agentType?: string;
-  summary?: string;
-  lastProgressAt: number;
-  hangAlertedAt?: number;
-  endedAt?: number;
-}> {
-  return [...subagentHangProbes.values()].map((p) => ({ ...p }));
+/** Test-only: snapshot of the live subagent-hang probe registry. Returns
+ * the LIVE probe objects (tests backdate lastProgressAt / read hangAlertedAt)
+ * — read-only misuse is on the test author. Never called by production
+ * code. */
+export function __testOnlySubagentHangProbes(): SubagentHangProbe[] {
+  return [...subagentHangProbes.values()];
 }
 
 /** Test-only: clear the subagent-hang probe registry (between tests). Never

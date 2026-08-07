@@ -25,6 +25,7 @@ import activate, {
   __testOnlyResetOwnerSession,
   __testOnlySubagentHangProbes,
   __testOnlyClearSubagentHangProbes,
+  __testOnlyHeartbeatTick,
 } from "../extensions/loops/goal.js";
 import {
   MockPi, makeMockCtx, tmpCwd, seedState, seedGoal, tick,
@@ -143,7 +144,7 @@ test("hang detection surfaces ui.notify + ledger `subagent_hang_detected` via th
   const probe = __testOnlySubagentHangProbes()[0]!;
   probe.lastProgressAt = Date.now() - 6 * 60_000;
 
-  await pi.fire("heartbeat_tick", {}, ctx);
+  __testOnlyHeartbeatTick();
   await tick();
 
   const hangs = ledgerHangs(cwd);
@@ -165,9 +166,9 @@ test("hang warning is throttled — one alert per 5m streak window, not per tick
   const probe = __testOnlySubagentHangProbes()[0]!;
   probe.lastProgressAt = Date.now() - 6 * 60_000;
 
-  await pi.fire("heartbeat_tick", {}, ctx);
+  await __testOnlyHeartbeatTick();
   await tick();
-  await pi.fire("heartbeat_tick", {}, ctx); // second tick within the throttle window
+  await __testOnlyHeartbeatTick(); // second tick within the throttle window
   await tick();
 
   assert.equal(ledgerHangs(cwd).length, 1, "the second tick does not re-alert inside the throttle");
@@ -184,7 +185,7 @@ test("completed/failed events end the watch — no hang alert after completion",
   assert.ok(probe.endedAt !== undefined, "the watch ended on completion");
   probe.lastProgressAt = Date.now() - 6 * 60_000;
 
-  await pi.fire("heartbeat_tick", {}, ctx);
+  await __testOnlyHeartbeatTick();
   await tick();
   assert.equal(ledgerHangs(cwd).length, 0, "no hang alert for a completed subagent");
 });
@@ -199,7 +200,7 @@ test("compacted/steered events refresh the streak (secondary progress evidence)"
   pi.emitBus("subagents:compacted", { id: "sub-alive-1", reason: "context full" });
   await tick();
 
-  await pi.fire("heartbeat_tick", {}, ctx);
+  await __testOnlyHeartbeatTick();
   await tick();
   assert.equal(ledgerHangs(cwd).length, 0, "a compaction is fresh evidence — no hang");
   assert.ok(probe.lastProgressAt > Date.now() - 60_000, "the streak reset on the compacted event");
