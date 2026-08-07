@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### 0.34.72 — vision-assist: see with mmx, not a model switch (note.md 2026-08-07)
+
+The agent was too eager to switch to expensive models when it couldn't see.
+Vision checks now route to the mmx vision CLI instead; model switches stay
+preapproved-only (the existing forbiddenModels gate).
+
+- **Setting `visionAssist` (default ON)**: `/glla` → Keep-going → Vision
+  assist (or `/glla visionAssist=off`). On → continuation prompts carry the
+  `## VISION-ASSIST — SEE WITH MMX, NOT A MODEL SWITCH` directive; off →
+  no vision guidance injected (the forbiddenModels gate always stands).
+- **New module `extensions/vision-assist.ts` (pure helpers)**: the
+  `VISION_ASSIST_GUIDANCE` block (single source of truth), the exact
+  `visionDescribeCommand(imagePath, question?)` builder (`mmx vision
+  describe --image … --prompt … --quiet --non-interactive`), the routing
+  rule `routeVisionCheck()` — a vision check routes to mmx vision by
+  default; a FORBIDDEN target model forces the mmx-vision route and
+  reports `blockedSwitch` (the preapproval gate fires); a preapproved
+  target may switch; `visionAssistLedger()` builds the audit payload.
+- **Ledger `vision_assist`**: when a forbidden switch is observed at
+  runtime (the too-eager-switch symptom) and vision assist is on,
+  `observeModelChange` also records `{ route: "mmx-vision", blockedSwitch,
+  reason: "forbidden_model_switch" }` — advisory, alongside the existing
+  `forbidden_model_switch` violation. Off → no vision entry.
+- **Docs**: `docs/VISION-ASSIST.md` documents the policy, the exact
+  command, the preapproval gate, the setting, and the implementation map
+  (mmx vision verified working 2026-08-07, `status_code: 0`).
+- Tests: `tests/vision-assist.test.ts` (12) — guidance block carries the
+  command + preapproval rule; the doc documents both; command builder;
+  router (forbidden → mmx+blockedSwitch, preapproved → allowed, no target
+  → mmx); the gate itself (isForbiddenModel + DEFAULT_FORBIDDEN_MODELS);
+  continuation carries the directive by default and drops it when off;
+  runtime forbidden switch records vision_assist (and not when off). Full
+  suite 992 pass / 1 skip / 0 fail across 91 files, tsc clean.
+
 ### 0.34.71 — subagent_session ledger on Agent-tool spawn (OPEN-ISSUES 1.16)
 
 "Subagents lost between restarts": parents could not recover subagent
