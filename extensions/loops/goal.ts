@@ -1472,6 +1472,18 @@ const EAGER_CONTINUATION_SETTLE_MS = Number(process.env.GLLA_EAGER_SETTLE_MS ?? 
 // the session lifecycle handoff below and never injects terminal keystrokes.
 const RECOVERY_RESUME_MARKER = "recovery-resume.json";
 const RECOVERY_RESUME_FRESH_MS = 300_000;
+// v0.34.104 ([Image-#1] 2026-08-08 10:29 dracon-platform): a list item
+// completing and auto-advancing fires a continuation AT pi while pi is
+// still settling the completion acknowledgement. The v0.34.88
+// no-turn-start watchdog (30s + 60s retry backoff) declared the new item
+// unacknowledged → the queue was stuck for manual /list resume, even
+// though pi was about to start a turn on its own. The settle window
+// delays the FIRST continuation dispatched from the list-complete cascade
+// so pi has time to settle the verdict; any agent activity (message_update,
+// agent_start, turn_start) clears the window — if pi wakes up on its own,
+// the deferred send is cancelled and no double-dispatch happens.
+const LIST_COMPLETION_SETTLE_MS = Number(process.env.GLLA_LIST_COMPLETION_SETTLE_MS ?? 15_000);
+let postCompletionSettleUntil = 0;
 // v0.29.19: dead-turn caps (agent_end exemption path). 6 consecutive
 // provider-error turns = a real outage, not bad luck — stop honestly.
 // 3 consecutive user aborts = the user means it (user aborts mean STOP).
@@ -2557,6 +2569,18 @@ function dispatchFailed(ctx: ExtensionContext, record: ContinuationDispatch, rea
 }
 
 function dispatchStartAcknowledged(ctx: ExtensionContext, source: string, prompt?: unknown): boolean {
+  // v0.34.104 ([Image-#1]): any real agent activity during the
+  // post-list-completion settle window means pi woke up on its own — the
+  // deferred continuation must be cancelled so we don't double-dispatch.
+  if (postCompletionSettleUntil > 0) {
+    const remaining = postCompletionSettleUntil - Date.now();
+    if (remaining > 0) {
+      clearContinuationTimer();
+      continuationScheduledFor = null;
+      appendLedger(ctx.cwd, "list_completion_settle_cleared", { source, remainingMs: remaining });
+    }
+    postCompletionSettleUntil = 0;
+  }
   const record = pendingContinuationDispatch;
   if (!record || sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return false;
   if (record.generation !== sessionGeneration || isForeignCtx(ctx)) return false;
@@ -3455,6 +3479,15 @@ function scheduleContinuation(ctx: ExtensionContext, force = false, delayMs?: nu
   } catch {
     return;
   }
+  // v0.34.104 ([Image-#1]): the post-list-completion settle window delays
+  // the first continuation after a queue auto-advance. Any real agent
+  // activity during the window clears `postCompletionSettleUntil`, so a
+  // wake-up cancels the deferred send and no double-dispatch happens.
+  const settleRemaining = postCompletionSettleUntil - Date.now();
+  if (settleRemaining > 0) {
+    delay = Math.max(delay, settleRemaining);
+    appendLedger(ctx.cwd, "list_completion_settle_pending", { goalId, settleMs: LIST_COMPLETION_SETTLE_MS, remainingMs: settleRemaining });
+  }
   continuationScheduledFor = goalId;
   continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), delay);
 }
@@ -3462,6 +3495,11 @@ function scheduleContinuation(ctx: ExtensionContext, force = false, delayMs?: nu
 function sendContinuation(goalId: string): void {
   if (mainModelRecoveryActive()) return;
   if (sessionHandoffPending || initialSessionLoadPending || extensionApiStale || staleTerminalDone || zombieStoodDown || continuationDispatchStoodDown || pendingContinuationDispatch) return;
+  // v0.34.104 ([Image-#1]): the settle window armed by the list-complete
+  // cascade has expired (or was cleared by activity) — the deferred
+  // continuation is firing. Reset the flag so it doesn't apply to a
+  // later, unrelated continuation.
+  postCompletionSettleUntil = 0;
   continuationTimer = null;
   continuationScheduledFor = null;
   if (!isActionableGoal()) return;
@@ -4030,6 +4068,14 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
       });
     }
     const advanced = activateNextListItem(ctx);
+    // v0.34.104 ([Image-#1]): delay the first continuation dispatched
+    // from the cascade so pi has time to settle the completion
+    // acknowledgement; any agent activity during the window clears the
+    // settle so a wake-up doesn't double-dispatch.
+    if (advanced) {
+      postCompletionSettleUntil = Date.now() + LIST_COMPLETION_SETTLE_MS;
+      appendLedger(ctx.cwd, "list_completion_settle_armed", { goalId: goal.id, settleMs: LIST_COMPLETION_SETTLE_MS, nextObjective: goal.objective.slice(0, 120) });
+    }
     // v0.26.0: the queue just EMPTIED on a completion → list-complete.
     if (!advanced && !isListAuditCollect) {
       fireReviewer(ctx, { kind: "list", goalId: goal.id, objective: goal.objective, terminal: "goal-complete" });
@@ -7112,7 +7158,16 @@ function registerAgentTools(pi: any): void {
         verificationSummary: p.verificationSummary,
         at: nowIso(),
       }, "complete-goal");
-      updateGoal({ pendingTasks: undefined, ...(p.completionSummary?.trim() ? { completionSummary: p.completionSummary.trim() } : {}) }, ctx);
+      // v0.34.104 ([Image-#1] 2026-08-08 10:29 dracon-platform): the
+      // completionSummary said "29/28 pass, 0 fail" — more tests passing
+      // than exist in the suite is nonsensical and the agent shipped it
+      // verbatim. Catch obvious arithmetic impossibilities at capture time
+      // (X/Y pass with X > Y), ledger the discrepancy for forensics, and
+      // append a note so the recap carries the warning forward — the
+      // auditor's job is to verify the claim, but the claim should at
+      // least be self-consistent.
+      const validated = p.completionSummary?.trim() ? validateCompletionSummary(p.completionSummary, ctx) : p.completionSummary;
+      updateGoal({ pendingTasks: undefined, ...(validated?.trim() ? { completionSummary: validated.trim() } : {}) }, ctx);
       const auditGoal = state.goal;
       if (!auditGoal) return staleToolResult();
       const auditGoalId = auditGoal.id;
