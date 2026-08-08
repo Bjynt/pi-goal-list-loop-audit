@@ -6966,6 +6966,52 @@ function registerAgentTools(pi: any): void {
       // replacement lands during the audit, a fresh session can immediately
       // distinguish the interrupted claim from an active run and retry the
       // exact claim without allowing the old generation to archive anything.
+      // v0.34.96: detect "already shipped" / "verified vX covers this"
+      // phrasing in the completionSummary — the agent is signaling that
+      // the work was done in a prior version, not this turn. There is
+      // nothing for the auditor to verify (the goal's contract items may
+      // still be met, but not BY THIS turn's work); routing to status
+      // "aborted" with stopReason "already shipped in vX" gives the
+      // user a truthful terminal state ("no new work shipped in this
+      // turn") instead of a misleading "complete" with a recap that
+      // names a version, not this turn. Field evidence: Screenshot
+      // 080536 — a v0.34.74 recap ended in `✓ complete` while saying
+      // "v0.34.74 already…", the two states contradicted each other.
+      const summaryText = (p.completionSummary ?? "").toLowerCase();
+      const alreadyShippedMatch = summaryText.match(/(?:already\s+shipped|verified\s+v\d+\.\d+\.\d+\s+covers\s+this|no\s+new\s+work\s+shipped)/);
+      if (alreadyShippedMatch) {
+        const matchedPhrase = alreadyShippedMatch[0];
+        const matchedVersion = summaryText.match(/v\d+\.\d+\.\d+/);
+        const stopReason = matchedVersion
+          ? `already_shipped:${matchedVersion[0]}`
+          : `already_shipped:${matchedPhrase}`;
+        // Persist the recap as the abort reason so the user sees it in
+        // /goal status; archive directly with the aborted status.
+        if (state.goal) {
+          updateGoal({
+            completionSummary: p.completionSummary?.trim(),
+            stopReason,
+            pendingTasks: undefined,
+            pendingCompletion: undefined,
+          }, ctx);
+        }
+        appendLedger(ctx.cwd, "complete_goal_already_shipped", {
+          goalId: state.goal?.id,
+          stopReason,
+          matchedPhrase,
+          matchedVersion: matchedVersion?.[0] ?? null,
+          recap: p.completionSummary?.slice(0, 300),
+        });
+        archiveCurrentGoal(ctx, "aborted", stopReason);
+        ctx.ui.notify(`Goal archived as aborted — completionSummary indicated the work was ${matchedPhrase}; no new work shipped in this turn.`, "info");
+        return {
+          content: [{
+            type: "text",
+            text: `complete_goal routed to status=aborted — completionSummary matched "${matchedPhrase}" (${matchedVersion?.[0] ?? "no version"}). The work was already shipped in a prior version; this turn shipped no new code. Use this status to differentiate "completed" from "verified-already-shipped".`,
+          }],
+          details: {},
+        };
+      }
       const completionClaim = beginCompletionAudit(ctx, {
         completionSummary: p.completionSummary,
         verificationSummary: p.verificationSummary,

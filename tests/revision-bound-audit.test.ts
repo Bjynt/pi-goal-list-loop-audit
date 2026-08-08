@@ -317,3 +317,81 @@ test("v0.34.60: the gate skips when the call itself carries newObjective (its au
     delete process.env.GLLA_PI_BINARY;
   }
 });
+
+// v0.34.96: complete-vs-aborted distinction when the work was already
+// shipped in a prior version. Field evidence: Screenshot 080536 — a
+// v0.34.74 recap ended `✓ complete` while saying "v0.34.74 already…",
+// the two states contradicted each other. The fix: detect
+// "already shipped" / "verified vX.Y.Z covers this" / "no new work
+// shipped" in the completionSummary and route to status=aborted with
+// stopReason already_shipped:vX.Y.Z. The auditor never runs (there's
+// nothing for it to verify); the user sees an honest terminal state.
+test("v0.34.96: complete_goal routes to aborted when completionSummary says 'already shipped'", async () => {
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal({ status: "active" }) });
+  __testOnlyLoadState(cwd);
+  const pi = new MockPi();
+  activate(pi.api);
+  __testOnlyRegisterAgentTools(pi.api);
+  rememberCtxFor(cwd);
+  const res = await pi.runTool(
+    "complete_goal",
+    {
+      completionSummary: "Verified v0.34.74 already covers this — no new work shipped in this turn.",
+      verificationSummary: "Evidence points to v0.34.74 commit history.",
+    },
+    ownerCtx(cwd),
+  );
+  assert.match(res.content[0]!.text, /routed to status=aborted/i);
+  assert.match(res.content[0]!.text, /v0\.34\.74/, "the matched version is named in the response");
+  const st = readState(cwd);
+  assert.equal(st.goal?.status, "aborted", "the goal is archived as aborted, not complete");
+  assert.match(st.goal?.stopReason ?? "", /already_shipped:v0\.34\.74/, "stopReason names the version");
+  const ledger = readLedger(cwd);
+  assert.equal(ledger.filter((l) => l.type === "complete_goal_already_shipped").length, 1);
+  assert.equal(ledger.filter((l) => l.type === "audit_started").length, 0, "no auditor was started");
+});
+
+test("v0.34.96: complete_goal routes to aborted when completionSummary says 'no new work shipped'", async () => {
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal({ status: "active" }) });
+  __testOnlyLoadState(cwd);
+  const pi = new MockPi();
+  activate(pi.api);
+  __testOnlyRegisterAgentTools(pi.api);
+  rememberCtxFor(cwd);
+  const res = await pi.runTool(
+    "complete_goal",
+    { completionSummary: "All checklist items were no new work shipped — the audit shows prior versions." },
+    ownerCtx(cwd),
+  );
+  assert.match(res.content[0]!.text, /routed to status=aborted/i);
+  assert.match(res.content[0]!.text, /no version/i, "no version is named when summary has no vX.Y.Z");
+  const st = readState(cwd);
+  assert.equal(st.goal?.status, "aborted");
+  assert.match(st.goal?.stopReason ?? "", /already_shipped:no new work shipped/, "stopReason names the matched phrase");
+});
+
+test("v0.34.96: a NORMAL completionSummary still runs the auditor (no false-positive abort)", async () => {
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal({ status: "active" }) });
+  __testOnlyLoadState(cwd);
+  const fakePi = writeFakeAuditor(cwd, "disapproved");
+  process.env.GLLA_PI_BINARY = fakePi;
+  try {
+    const pi = new MockPi();
+    activate(pi.api);
+    __testOnlyRegisterAgentTools(pi.api);
+    rememberCtxFor(cwd);
+    const res = await pi.runTool(
+      "complete_goal",
+      { completionSummary: "Shipped v0.34.95 work: quota-prompt removal + hourly probe ticker." },
+      ownerCtx(cwd),
+    );
+    assert.match(res.content[0]!.text, /auditor queued|detached/i, "normal claims still run the auditor");
+    assert.equal(readLedger(cwd).filter((l) => l.type === "complete_goal_already_shipped").length, 0);
+    await waitUntil(() => readState(cwd).goal?.status === "active" && !readState(cwd).goal?.pendingCompletion);
+  } finally {
+    delete process.env.GLLA_PI_BINARY;
+  }
+});
