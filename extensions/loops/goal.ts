@@ -3107,7 +3107,16 @@ async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
     ctx.ui.notify(`Main model recovery probe: continuing on ${current}; primary will be tested after this supervised turn.`, "info");
     return;
   }
-  const target = refs.find((ref) => ref !== current);
+  // v0.34.93: pick the first target that is neither the current model nor
+  // a forbidden ref. Without the gate the probe rotates to a forbidden
+  // model (e.g. when the user has both Anthropic and a non-Anthropic
+  // configured but the primary rotation lands on Anthropic).
+  const forbiddenList = loadSettings(ctx.cwd).forbiddenModels;
+  const target = refs.find((ref) => ref !== current && !isForbiddenModel(ref, forbiddenList));
+  if (target) {
+    const skipped = refs.find((ref) => ref !== current && isForbiddenModel(ref, forbiddenList));
+    if (skipped) appendLedger(ctx.cwd, "forbidden_model_fallback_blocked", { ref: skipped, reason: "recovery probe target was forbidden; skipping to next allowed", from: current });
+  }
   if (!target) {
     if (!current) {
       const delay = mainModelRetryDelayMs(recovery.attempts + 1, loadGlobalSettings().mainModelRetryMinutes);
