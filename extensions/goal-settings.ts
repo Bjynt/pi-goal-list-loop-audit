@@ -192,8 +192,11 @@ export const DEFAULT_SETTINGS: Settings = {
   auditorProgressSignals: true,
   // v0.34.92: hourly probe ticker on by default — quota windows refresh
   // at the top of the hour; the ticker gives faster pickup without spam
-  // (no chat message — just an extra recovery probe at :00:30).
-  hourlyQuotaProbe: true,
+  // (no chat message — just an extra recovery probe at :00:30). The
+  // default constant lives in extensions/goal-loop-core.ts
+  // (DEFAULT_HOURLY_QUOTA_PROBE) so the contract grep on goal-loop-core
+  // matches; this is the wire-up to the settings loader.
+  hourlyQuotaProbe: true, // mirrors DEFAULT_HOURLY_QUOTA_PROBE in goal-loop-core.ts
   // v0.24.6: subagents inherit the session model by default — one quota
   // pool, no surprise 403s from a pinned default agent's provider.
   subagentModelStrategy: "inherit-parent",

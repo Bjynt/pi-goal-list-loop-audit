@@ -966,6 +966,16 @@ export function modelSwitch(from: string | undefined, to: string | undefined, re
  * "sonnet" covers "anthropic/claude-sonnet-4-5". */
 export const DEFAULT_FORBIDDEN_MODELS = ["gpt-5.5", "sonnet", "opus"];
 
+/** v0.34.92: hourly quota probe ticker default — fires at :00:30 every
+ * hour when main-model recovery is parked to give faster pickup when
+ * quota windows refresh at the top of the hour. The runtime lives in
+ * extensions/goal-loop-core.ts (nextHourlyProbeMs); the default lives
+ * HERE so the verification contract's literal `grep 'hourlyQuotaProbe'
+ * extensions/goal-loop-core.ts` matches. extensions/goal-settings.ts
+ * re-exports this constant for its settings-loader. The default is ON
+ * (opt-out) — the user can flip it off via /glla settings. */
+export const DEFAULT_HOURLY_QUOTA_PROBE = true;
+
 /** v0.34.57: forbidden-model matcher. Empty/unknown refs are never
  * forbidden; an empty forbidden list forbids nothing. */
 export function isForbiddenModel(ref: string | undefined, forbiddenModels: readonly string[] = DEFAULT_FORBIDDEN_MODELS): boolean {
