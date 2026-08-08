@@ -2173,6 +2173,50 @@ function heartbeatTick(): void {
   }
   const ctx = freshCtx();
   if (!ctx) return;
+  // v0.34.105 (field: 2026-08-08 16:18 — quota wall froze subagent
+  // 74305f7e while the MAIN model was also in recovery; heartbeatTick
+  // returned at the `mainModelRecoveryActive()` gate BELOW, so the
+  // subagent hang scan never ran and the 12m+ wedge produced ZERO
+  // `subagent_hang_detected`). The scan is detection + notify only
+  // (never an auto-kill, never a send) — it MUST run even while the
+  // main model is quota-parked, because a shared-provider quota wall
+  // freezes subagents and main model at the same time.
+  if (subagentHangProbes.size > 0) {
+    const nowMs = Date.now();
+    const poll = subagentManagerPoller();
+    const hung = classifyHungSubagents([...subagentHangProbes.values()], (id) => poll.getRecord?.(id), nowMs);
+    for (const [id, p] of subagentHangProbes) {
+      if (p.endedAt !== undefined && nowMs - p.endedAt >= SUBAGENT_HANG_PRUNE_MS) subagentHangProbes.delete(id);
+    }
+    for (const h of hung) {
+      const p = subagentHangProbes.get(h.recordId);
+      if (!p || (p.hangAlertedAt !== undefined && nowMs - p.hangAlertedAt < SUBAGENT_HANG_ALERT_THROTTLE_MS)) continue;
+      p.hangAlertedAt = nowMs;
+      const label = [p.agentType, p.summary].filter(Boolean).join(" ");
+      const mins = Math.max(1, Math.round(h.silentMs / 60_000));
+      // v0.34.102: classifyHungSubagents cannot tell us the evidence class
+      // (record-poll vs event-only) — recompute: if the record is still
+      // pollable this is the frozen-record case (tool/output counters
+      // stopped); if not, the child vanished from the manager entirely and
+      // only its event trail (spawn/compacted/steered) remains. Name it so
+      // the user knows whether the Agents panel can still show a live child.
+      const stillTracked = poll.getRecord?.(p.recordId) !== undefined;
+      appendLedger(ctx.cwd, "subagent_hang_detected", {
+        recordId: p.recordId,
+        agentType: p.agentType,
+        summary: p.summary,
+        silentMs: h.silentMs,
+        spawnedAt: new Date(p.spawnedAt).toISOString(),
+        evidence: stillTracked ? "record-frozen" : "event-only",
+        at: nowIso(),
+      });
+      const msg = `glla: subagent${label ? ` (${label})` : ""} shows no progress for ${mins}m — ${stillTracked
+        ? "still running with no new tool calls or output"
+        : "its manager record is unreachable and it produced no events (spawn/compaction/steer)"}. It may be hung; the main session can decide to abort it.`;
+      ctx.ui.notify(msg, "warning");
+      notifyExternal(ctx, msg);
+    }
+  }
   if (mainModelRecoveryActive()) return;
   let idle = false;
   let pending = false;
@@ -2231,48 +2275,6 @@ function heartbeatTick(): void {
     ctx.ui.notify(`glla: the session has been BUSY with zero stream activity for ${Math.round(streamSilentMs / 60000)} min — the provider stream is hung (pi never times it out; queued continuations can't land). Press Esc to abort the zombie turn — the goal/loop refires itself.`, "warning");
     notifyExternal(ctx, `glla: zombie run suspected (${Math.round(streamSilentMs / 60000)} min busy-silent) — press Esc to abort.`);
     return;
-  }
-  // v0.34.85: subagent hang watchdog (note.md Screenshots 161019/161032).
-  // A subagent whose pi-subagents record is still running but delivers no
-  // NEW progress (tool use or output tokens) for 5m is wedged — the same
-  // fail-fast the auditor's detached worker gets via its heartbeat
-  // watchdog. Surface + ledger `subagent_hang_detected`; the main session
-  // decides whether to abort (detection only, never an auto-kill).
-  if (subagentHangProbes.size > 0) {
-    const nowMs = Date.now();
-    const poll = subagentManagerPoller();
-    const hung = classifyHungSubagents([...subagentHangProbes.values()], (id) => poll.getRecord?.(id), nowMs);
-    for (const [id, p] of subagentHangProbes) {
-      if (p.endedAt !== undefined && nowMs - p.endedAt >= SUBAGENT_HANG_PRUNE_MS) subagentHangProbes.delete(id);
-    }
-    for (const h of hung) {
-      const p = subagentHangProbes.get(h.recordId);
-      if (!p || (p.hangAlertedAt !== undefined && nowMs - p.hangAlertedAt < SUBAGENT_HANG_ALERT_THROTTLE_MS)) continue;
-      p.hangAlertedAt = nowMs;
-      const label = [p.agentType, p.summary].filter(Boolean).join(" ");
-      const mins = Math.max(1, Math.round(h.silentMs / 60_000));
-      // v0.34.102: classifyHungSubagents cannot tell us the evidence class
-      // (record-poll vs event-only) — recompute: if the record is still
-      // pollable this is the frozen-record case (tool/output counters
-      // stopped); if not, the child vanished from the manager entirely and
-      // only its event trail (spawn/compacted/steered) remains. Name it so
-      // the user knows whether the Agents panel can still show a live child.
-      const stillTracked = poll.getRecord?.(p.recordId) !== undefined;
-      appendLedger(ctx.cwd, "subagent_hang_detected", {
-        recordId: p.recordId,
-        agentType: p.agentType,
-        summary: p.summary,
-        silentMs: h.silentMs,
-        spawnedAt: new Date(p.spawnedAt).toISOString(),
-        evidence: stillTracked ? "record-frozen" : "event-only",
-        at: nowIso(),
-      });
-      const msg = `glla: subagent${label ? ` (${label})` : ""} shows no progress for ${mins}m — ${stillTracked
-        ? "still running with no new tool calls or output"
-        : "its manager record is unreachable and it produced no events (spawn/compaction/steer)"}. It may be hung; the main session can decide to abort it.`;
-      ctx.ui.notify(msg, "warning");
-      notifyExternal(ctx, msg);
-    }
   }
   // v0.34.11: legacy unanswered-continuation diagnostics. The new
   // generation-bound dispatch watchdog returns above while a dispatch is
