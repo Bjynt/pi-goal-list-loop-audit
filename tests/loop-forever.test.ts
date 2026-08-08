@@ -114,7 +114,8 @@ test("v0.29.10 — applyMeasurement: null best (deferred audit baseline) seeds o
 });
 
 test("v0.29.10 — audit loop source pins: deferred baseline, true-regression note, live-loop reseed migration", () => {
-  const src = readFileSync(new URL("../extensions/loops/goal.ts", import.meta.url), "utf-8");
+  const src = readFileSync(new URL("../extensions/goal-loop.ts", import.meta.url), "utf-8");
+  const goalSrc = readFileSync(new URL("../extensions/loops/goal.ts", import.meta.url), "utf-8");
   // The /loop audit route defers the baseline and tags the loop kind.
   assert.ok(src.includes("deferBaseline: true,"), "audit route defers the baseline");
   assert.ok(src.includes('kind: "audit",'), "audit route tags the loop kind");
@@ -132,9 +133,9 @@ test("v0.29.10 — audit loop source pins: deferred baseline, true-regression no
   );
   // v0.29.14: live loops on the open-count/min metric migrate to
   // closed-count/max on session load (supersedes the baseline-0 reseed).
-  assert.ok(src.includes("audit_loop_metric_migrated"), "migration ledgers the metric flip");
-  assert.ok(src.includes('from: "open-count/min", to: "closed-count/max"'), "migration names both metrics");
-  assert.ok(!src.includes("audit_loop_baseline_reseeded"), "v0.29.10 reseed superseded");
+  assert.ok(goalSrc.includes("audit_loop_metric_migrated"), "migration ledgers the metric flip");
+  assert.ok(goalSrc.includes('from: "open-count/min", to: "closed-count/max"'), "migration names both metrics");
+  assert.ok(!goalSrc.includes("audit_loop_baseline_reseeded"), "v0.29.10 reseed superseded");
 });
 
 
@@ -538,7 +539,8 @@ test("v0.29.0: /loop audit — metric loop over open findings; plateau = the wel
   // progress and what to fix" — the thing that fires at the end of goals
   // and lists. Unlike respec (metricless) this has an HONEST metric: the
   // orchestrator counts open findings, so the plateau stop terminates it.
-  const SRC = readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = readFileSync("extensions/goal-loop.ts", "utf-8");
+  const GOAL = readFileSync("extensions/loops/goal.ts", "utf-8");
   assert.match(SRC, /if \(sub === "audit"\) \{/);
   assert.match(SRC, /target: auditTarget\(\),\s*\n\s*measureCmd: auditMeasureCmd\(\),\s*\n\s*direction: "max",/);
   // guards: no stacking over an active goal or loop:
@@ -548,7 +550,7 @@ test("v0.29.0: /loop audit — metric loop over open findings; plateau = the wel
   assert.match(SRC.slice(auditIdx, auditIdx + 2800), /A goal is active — \$\{activeGoalSurfaceCommand\("cancel"\)\} or \$\{activeGoalSurfaceCommand\("pause"\)\} it before starting a loop\./); // v0.34.51 mode-aware
   assert.match(SRC.slice(auditIdx, auditIdx + 2800), /A loop is already active\. \/loop stop first\./);
   // drain suggestion (suggestion, not auto-start — consent per v0.28.28):
-  assert.match(SRC, /List complete\. \/loop audit to sweep the project for the next batch of work\./);
+  assert.match(GOAL, /List complete\. \/loop audit to sweep the project for the next batch of work\./);
   // the measure is orchestrator-counted and single-number in all file states:
   const F = readFileSync("extensions/goal-loop-forever.ts", "utf-8");
   assert.match(F, /export const AUDIT_FINDINGS_REL = "\.pi-glla\/audit-loop\/findings\.md";/);
@@ -575,9 +577,9 @@ test("v0.29.0: /loop audit — metric loop over open findings; plateau = the wel
   assert.match(t, /"no new action this turn" is never an acceptable iteration while open boxes exist/);
   // the old audit-every-iteration template is gone:
   assert.ok(!t.includes("Every iteration: (1) run a FRESH audit pass"), "old template superseded");
-  // live-loop migration pins (goal.ts):
-  assert.match(SRC, /audit_loop_target_migrated/);
-  assert.match(SRC, /state\.loop\?\.kind === "audit" && state\.loop\.target\?\.includes\("Every iteration: \(1\) run a FRESH audit pass"\)/);
+  // live-loop migration pins (goal.ts — session-load path stays there):
+  assert.match(GOAL, /audit_loop_target_migrated/);
+  assert.match(GOAL, /state\.loop\?\.kind === "audit" && state\.loop\.target\?\.includes\("Every iteration: \(1\) run a FRESH audit pass"\)/);
   // reviewer: fire-audit-on-clean is OPT-IN, not default (the auditor already
   // verified the work — a reflexive re-scan pays for verification twice):
   const R = readFileSync("extensions/reviewer.ts", "utf-8");

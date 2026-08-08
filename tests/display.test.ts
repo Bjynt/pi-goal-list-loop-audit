@@ -21,6 +21,7 @@ import type { Goal, State } from "../extensions/goal-loop-core.ts";
 import type { LoopState } from "../extensions/goal-loop-forever.ts";
 
 const NOW = Date.parse("2026-07-21T12:00:00Z");
+const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
 
 function goalOf(overrides: Partial<Goal> = {}): Goal {
   return {
