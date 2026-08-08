@@ -25,12 +25,14 @@ import * as path from "node:path";
 import { MockPi, makeMockCtx, tmpCwd, seedState, seedGoal, seedLoop, staleError, tick, type MockCtx } from "./harness/mock-pi.js";
 import { readState } from "../extensions/goal-loop-core.js";
 import activate, {
-  __testOnlyHeartbeatTickRaw,
   __testOnlyResetStaleFlag,
   __testOnlyResetTerminalFlags,
   __testOnlyResetOwnerSession,
-  __testOnlySetHeartbeatStaleDebounce,
 } from "../extensions/loops/goal.js";
+import {
+  __testOnlyHeartbeatTickRaw,
+  __testOnlySetHeartbeatStaleDebounce,
+} from "../extensions/goal-heartbeat.js";
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 

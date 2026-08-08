@@ -23,7 +23,8 @@ import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import activate, { __testOnlyHeartbeatTick, __testOnlyLastConfirmDialog, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyRunFanOutListAuditFindings, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
+import activate, { __testOnlyLastConfirmDialog, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyRunFanOutListAuditFindings, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
+import { __testOnlyHeartbeatTick } from "../extensions/goal-heartbeat.js";
 
 // v0.29.5: autoResume is GLOBAL-only now — tests opt in by writing the
 // harness's global settings path, and afterEach resets it so the opt-in

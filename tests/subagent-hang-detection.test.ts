@@ -21,13 +21,15 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 
 import activate, {
-  classifyHungSubagents,
   __testOnlyResetOwnerSession,
   __testOnlyResetStaleFlag,
-  __testOnlySubagentHangProbes,
+} from "../extensions/loops/goal.js";
+import {
+  classifyHungSubagents,
   __testOnlyClearSubagentHangProbes,
   __testOnlyHeartbeatTick,
-} from "../extensions/loops/goal.js";
+  __testOnlySubagentHangProbes,
+} from "../extensions/goal-heartbeat.js";
 import {
   MockPi, makeMockCtx, tmpCwd, tick,
   type MockCtx,

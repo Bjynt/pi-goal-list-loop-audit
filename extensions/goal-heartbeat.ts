@@ -226,7 +226,7 @@ function subagentManagerPoller(): SubagentManagerPoll {
   }
 }
 
-function upsertSubagentHangProbe(recordId: string, agentType: string | undefined, summary: string | undefined, now = Date.now()): void {
+export function upsertSubagentHangProbe(recordId: string, agentType: string | undefined, summary: string | undefined, now = Date.now()): void {
   const existing = subagentHangProbes.get(recordId);
   if (existing) {
     // Re-observation (resume / re-run): fresh evidence + refreshed metadata.
@@ -242,12 +242,12 @@ function upsertSubagentHangProbe(recordId: string, agentType: string | undefined
   });
 }
 
-function markSubagentHangProgress(recordId: string, now = Date.now()): void {
+export function markSubagentHangProgress(recordId: string, now = Date.now()): void {
   const p = subagentHangProbes.get(recordId);
   if (p) p.lastProgressAt = now;
 }
 
-function endSubagentHangProbe(recordId: string, now = Date.now()): void {
+export function endSubagentHangProbe(recordId: string, now = Date.now()): void {
   const p = subagentHangProbes.get(recordId);
   if (p) p.endedAt = now;
 }
@@ -654,7 +654,7 @@ function heartbeatTick(): void {
   }
 }
 
-function startHeartbeat(): void {
+export function startHeartbeat(): void {
   if (flags.heartbeatTimer) return;
   flags.heartbeatTimer = setInterval(heartbeatTick, HEARTBEAT_INTERVAL_MS);
   flags.heartbeatTimer.unref?.();
