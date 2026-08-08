@@ -389,6 +389,29 @@ test("v0.34.89: completed goal widget is ONE dim summary line (objective + durat
   assert.doesNotMatch(lines.join("\n"), /auditor approved/, "the verdict stays in the archive + /goal status, not the widget");
 });
 
+// ---- v0.34.91: the end-of-goal summary says WHAT HAPPENED ----
+
+test("v0.34.91: completed goal summary shows the agent's completion recap, not the objective echo", () => {
+  const g = goalOf({
+    status: "complete",
+    createdAt: "2026-07-21T10:00:00Z",
+    updatedAt: "2026-07-21T11:45:00Z",
+    completionSummary: "Audited all 9 deathrun routes at the surface level, deep-dived /welcome, /play and the main cube, and shipped the prioritized plan.",
+  });
+  const lines = buildWidgetLines({ goal: g, list: [] }, null, NOW)!;
+  assert.equal(lines.length, 1, "still ONE dim line");
+  assert.match(lines[0]!, /✓ done/);
+  assert.match(lines[0]!, /Audited all 9 deathrun routes/, "the recap tells what happened");
+  assert.doesNotMatch(lines.join("\n"), /Create x\.txt/, "the objective echo is gone — it read like a ticket title, not a recap");
+  assert.match(lines[0]!, /took 1h 45m/);
+});
+
+test("v0.34.91: whitespace-only completion summary falls back to the objective", () => {
+  const g = goalOf({ status: "complete", createdAt: "2026-07-21T10:00:00Z", updatedAt: "2026-07-21T11:45:00Z", completionSummary: "   " });
+  const lines = buildWidgetLines({ goal: g, list: [] }, null, NOW)!;
+  assert.match(lines.join("\n"), /Create x\.txt/, "empty recap → objective fallback");
+});
+
 test("v0.34.89: aborted goal summary names the reason + duration on one line", () => {
   const g = goalOf({
     status: "aborted",

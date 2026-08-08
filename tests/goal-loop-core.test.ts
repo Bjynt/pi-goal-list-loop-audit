@@ -232,6 +232,25 @@ test("renderGoalMarkdown renders sections", () => {
   assert.ok(md.includes("npm test"));
 });
 
+test("v0.34.91: renderGoalMarkdown includes the completion recap section", () => {
+  const goal: Goal = {
+    id: "test-1",
+    objective: "Make widget foo.",
+    status: "complete",
+    policy: "goal",
+    autoContinue: true,
+    completionSummary: "Shipped the widget with 12 tests; the float alignment bug is fixed.",
+    usage: { tokensUsed: 100, tokensLimit: 1000 },
+    createdAt: "2026-07-19T00:00:00Z",
+    updatedAt: "2026-07-19T00:00:00Z",
+  };
+  const md = renderGoalMarkdown(goal);
+  assert.ok(md.includes("## Completion summary"), "the recap has a durable home in the goal .md → archive");
+  assert.ok(md.includes("Shipped the widget with 12 tests"), "the recap text lands verbatim");
+  const without = renderGoalMarkdown({ ...goal, completionSummary: undefined });
+  assert.ok(!without.includes("## Completion summary"), "no empty section when the recap is absent");
+});
+
 test("writeGoalMd persists + readGoalMd returns", () => {
   const cwd = tmpCwd();
   try {
