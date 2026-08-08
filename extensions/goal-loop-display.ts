@@ -177,11 +177,6 @@ function budgetFor(width: number | undefined, prefixCols: number, floor: number)
   return Math.max(floor, width - WIDGET_HORIZONTAL_MARGIN - prefixCols);
 }
 
-function sinceIso(iso: string): number {
-  const t = Date.parse(iso);
-  return Number.isFinite(t) ? Date.now() - t : 0;
-}
-
 // ---- semantic colors (optional; tests call without a theme → plain strings) ----
 
 export type DisplayColor = "accent" | "success" | "warning" | "error" | "muted" | "dim";
@@ -236,9 +231,6 @@ function activityBadge(label: string, now: number, theme?: DisplayTheme): string
 }
 function activityStateBadge(label: string, theme: DisplayTheme | undefined, color: DisplayColor): string {
   return paint(theme, color, `[${label}]`);
-}
-function stateBadge(label: string, glyph: string, theme: DisplayTheme | undefined, color: DisplayColor): string {
-  return paint(theme, color, `⟦${glyph} ${label}⟧`);
 }
 
 /** Pause reasons that mean "something broke", not "waiting on the user". */
@@ -355,12 +347,6 @@ function interruptedForNoStart(g: Goal): boolean {
 function auditRecoveryPending(g: Goal): boolean {
   return g.status === "auditing" && !!g.pendingCompletion && g.pendingCompletion.phase !== "running";
 }
-
-/** v0.28.22: "06:40 UTC" from an ISO string (wait-pause countdown). */
-const shortClock = (iso: string): string => {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso.slice(0, 16) : d.toISOString().slice(11, 16) + " UTC";
-};
 
 // ---- status line (one-liner, always-on) ----
 
@@ -845,7 +831,6 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // terminal fonts and ignores ANSI color; ● takes the paint everywhere.
   const interrupted = g.status === "active" && !!g.interruptedAt;
   const attention = activeAttention(g);
-  const auditorPhase = g.status === "auditing" ? auditorDisplayPhase(g, audit, now) : undefined;
   // v0.34.102: a paused goal with a live mainModelRecovery park is
   // RECOVERING, not paused — the loop is actively probing/rearming in the
   // background while the provider wall holds (field: dracon-platform

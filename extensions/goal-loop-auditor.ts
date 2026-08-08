@@ -14,24 +14,8 @@
  * evidence-free approvals.
  */
 
-import type { Model } from "@earendil-works/pi-ai";
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import {
-  createAgentSession,
-  createExtensionRuntime,
-  SessionManager,
-  SettingsManager,
-  type ExtensionContext,
-  type ResourceLoader,
-} from "@earendil-works/pi-coding-agent";
-
 import type { Goal } from "./goal-loop-core.js";
 import { renderGoalMarkdown } from "./goal-loop-core.js";
-import {
-  AUDITOR_STALL_MS,
-  AUDITOR_WALL_TIMEOUT_MS,
-  auditorWatchdogAction,
-} from "./goal-loop-backoff.js";
 
 // =================================================================
 // Result type
@@ -45,7 +29,7 @@ export interface GoalAuditorResult {
   impossibleReason?: string;
   output: string;
   model: string;
-  thinkingLevel?: ThinkingLevel;
+  thinkingLevel?: string;
   error?: string;
   /** regression_shield outcome when the goal has a verification contract. */
   regressionShieldPassed?: boolean;
@@ -141,30 +125,6 @@ export function applyToolExecutionEvent(
   }
   telemetry.unmatchedToolEnds.push({ toolCallId: event.toolCallId, toolName: event.toolName, at: now });
   return telemetry;
-}
-
-export type AuditorProgressCallback = (progress: AuditProgress) => void;
-
-// =================================================================
-// Auditor resource loader — zero extensions, zero skills, zero prompts
-// =================================================================
-
-function makeAuditorResourceLoader(): ResourceLoader {
-  return {
-    getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
-    getSkills: () => ({ skills: [], diagnostics: [] }),
-    getPrompts: () => ({ prompts: [], diagnostics: [] }),
-    getThemes: () => ({ themes: [], diagnostics: [] }),
-    getAgentsFiles: () => ({ agentsFiles: [] }),
-    getSystemPrompt: () => [
-      "You are a read-only completion auditor running in an isolated pi agent session.",
-      "Inspect the repository and decide whether the claimed goal completion is genuinely satisfied.",
-      "Never modify files. Never approve unless the actual user objective is complete.",
-    ].join("\n"),
-    getAppendSystemPrompt: () => [],
-    extendResources: () => {},
-    reload: async () => {},
-  };
 }
 
 // =================================================================
@@ -272,11 +232,3 @@ export function buildGoalAuditorPrompt(goal: Goal, completionSummary: string | n
 // tests can import it without pulling in pi). Re-exported for callers.
 export { checkRegressionShield, contractItems, parseAuditorVerdict, type RegressionShieldResult } from "./goal-loop-shield.js";
 import { checkRegressionShield, parseAuditorVerdict } from "./goal-loop-shield.js";
-
-// =================================================================
-// Auditor entry point
-// =================================================================
-
-).id;
-  return "(unknown model)";
-}
