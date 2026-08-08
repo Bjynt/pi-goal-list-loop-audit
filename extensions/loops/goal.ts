@@ -62,7 +62,6 @@ import {
   parseListItemDeclaration,
   shouldEscalateStall,
   isStaleApiError,
-  mergeSettings,
   parseListImport,
 
   routeGoalArgs,
@@ -80,7 +79,6 @@ import {
   draftProposalBlock,
   type TaskProposal,
   validateTaskProposal,
-  cloneGoal,
   ensureDirs,
   findNextPendingTask,
   goalMdPath,
@@ -109,9 +107,6 @@ import {
   modelSwitch,
   isForbiddenModel,
 isGoalRevisionCurrent,
-  isQuotaWallError,
-  nextHourlyPromptMs,
-  nextHourlyProbeMs,
   type ModelSwitchRecord,
   type ListItem,
 } from "../goal-loop-core.js";
@@ -149,7 +144,6 @@ import {
   mainModelFailureDelayMs,
   mainModelRetryDelayMs,
   MAIN_MODEL_AUTO_RETRY_HORIZON_MS,
-  MAIN_MODEL_MAX_RETRY_DELAY_MS,
   modelRef,
   nextUntriedModelRef,
   normalizeModelRefs,
@@ -158,8 +152,6 @@ import {
   type MainModelFailure,
 } from "../main-model-recovery.js";
 import {
-  DEFAULT_SETTINGS,
-  SETTINGS_KEYS,
   globalSettingsPath,
   loadGlobalSettings,
   loadSettings,
@@ -170,7 +162,6 @@ import {
 } from "../goal-settings.js";
 import {
   curateAuditReviewSources,
-  DEFAULT_REVIEWER_CONFIG,
   normalizeObjective,
   resolveReviewerConfig,
   reviewerMenuOptions,
@@ -1437,9 +1428,6 @@ let completionAuditGeneration: number | null = null;
 // an explicit /goal resume supplied continuation consent. A cold startup with
 // autoResume off may display a recovery-pending claim without launching it.
 let completionAuditRecoveryArmed = false;
-// v0.32.0 compatibility mirror: durable pendingCompletion.quotaAttempts is
-// authoritative; this display/ledger counter survives only within a process.
-let quotaRetryStreak = 0;
 let heartbeatTimer: NodeJS.Timeout | null = null;
 
 const ZOMBIE_RUN_SILENT_MS = 20 * 60_000;
@@ -1801,7 +1789,6 @@ const SEND_REARM_LEDGER_MILESTONES_MS = [2 * 60_000, 5 * 60_000, 10 * 60_000];
 // paused the goal (the polis field report). Escalate only after 15 minutes
 // of failed sends AND no session activity in the last 5 minutes (a wedged
 // queue shows no events at all; a busy one streams constantly).
-const SEND_REARM_ESCALATE_AFTER_MS = 15 * 60_000;
 const SEND_REARM_ESCALATE_SILENT_MS = 5 * 60_000;
 let continuationRearmSince = 0;
 let loopRearmSince = 0;
@@ -2458,7 +2445,6 @@ let consecutiveAbortIterations = 0;
 // heartbeat refire + post-compaction refire must NOT resurrect it; only
 // an explicit schedule (resume/activate/next turn) clears it.
 let abortedStandDown = false;
-let consecutiveNoToolIterations = 0;
 
 // =================================================================
 // Helpers
@@ -3085,7 +3071,6 @@ function scheduleMainModelRecoveryTimer(ctx: ExtensionContext, delayMs: number):
 
 let hourlyProbeTimer: NodeJS.Timeout | null = null;
 let hourlyProbeFireAt: number | null = null;
-let hourlyProbeClockOverride: number | null = null; // __testOnly
 
 /** Schedule the next :00:30 probe. Re-arms itself after each fire as long
  * as recovery is parked and the setting is on. Safe to call when already
@@ -3094,7 +3079,7 @@ function scheduleHourlyProbe(ctx: ExtensionContext): void {
   if (loadGlobalSettings().hourlyQuotaProbe !== true) return;
   if (!state.mainModelRecovery) return; // nothing to recover — silent no-op
   if (hourlyProbeTimer) return; // already pending
-  const now = hourlyProbeClockOverride ?? Date.now();
+  const now = Date.now();
   const fireAt = nextHourlyProbeMs(now);
   const generation = sessionGeneration;
   hourlyProbeFireAt = fireAt;
@@ -3769,7 +3754,6 @@ function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): void {
   mainModelAbortForRecovery = false;
   lastMainModelFailure = null;
   releaseContinuationDispatchStandDown();
-  quotaRetryStreak = 0;
   countedTokenMessages.clear();
   recentActions.length = 0;
   // v0.28.14: never silently orphan a live goal — a paused/active goal
@@ -4623,7 +4607,6 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     const defaultMinutes = settingsNow.quotaRetryMinutes ?? DEFAULT_QUOTA_RETRY_MINUTES;
     const quota = parseQuotaError(result.error, defaultMinutes * 60);
     const plan = auditorQuotaRetryPlan(claim, quota, defaultMinutes);
-    quotaRetryStreak = plan.attempt;
     const pending = {
       ...claim,
       phase: "quota-waiting" as const,
@@ -4672,7 +4655,6 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
   // Any other outcome — disapproved or impossible — belongs to the agent:
   // resume and let the continuation drive the next step. The verdict is
   // durable in auditHistory + /goal status.
-  quotaRetryStreak = 0;
   updateGoal({
     status: "active",
     auditHistory: history,
@@ -5117,7 +5099,6 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
   iterationCounter = 0;
   consecutiveErrorIterations = 0;
   consecutiveAbortIterations = 0;
-  consecutiveNoToolIterations = 0;
   if (staleEntry) {
     // v0.28.1 (S3): the goal is persisted — mark the interrupt so the next
     // fresh session LOADS it (held by default since v0.28.21), and tell the truth instead of "starting now".
