@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+### 0.34.107 — audit/ organization (INDEX.md + pre-0.34.80 docs archived)
 ### 0.34.105 — field: subagent hang watchdog blinded by main-model quota recovery
 
 Live field case (2026-08-08 ~16:18): an audit subagent hit the MiniMax
