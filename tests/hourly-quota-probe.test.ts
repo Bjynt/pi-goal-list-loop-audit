@@ -94,7 +94,7 @@ test("v0.34.92: parkMainModelAfterFailure schedules the hourly ticker alongside 
   // up the extra probe slot.
   const parkIdx = RECOVERY_SRC.indexOf("function parkMainModelAfterFailure");
   assert.ok(parkIdx > 0, "parkMainModelAfterFailure is present");
-  const tail = GOAL_SRC.slice(parkIdx, parkIdx + 2_500);
+  const tail = RECOVERY_SRC.slice(parkIdx, parkIdx + 2_500);
   assert.match(tail, /scheduleMainModelRecoveryTimer\(ctx, delay\);/, "park schedules the recovery timer");
   assert.match(tail, /scheduleHourlyProbe\(ctx\);/, "park also schedules the hourly ticker");
 });
@@ -102,7 +102,7 @@ test("v0.34.92: parkMainModelAfterFailure schedules the hourly ticker alongside 
 test("v0.34.92: mainModelRecoverySucceeded cancels the hourly ticker", () => {
   const succIdx = RECOVERY_SRC.indexOf("function mainModelRecoverySucceeded");
   assert.ok(succIdx > 0, "mainModelRecoverySucceeded is present");
-  const tail = GOAL_SRC.slice(succIdx, succIdx + 1_500);
+  const tail = RECOVERY_SRC.slice(succIdx, succIdx + 1_500);
   assert.match(tail, /cancelHourlyProbe\(\);/, "success cancels the hourly ticker");
 });
 
