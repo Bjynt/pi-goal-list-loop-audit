@@ -265,6 +265,13 @@ export interface Goal {
   taskList?: TaskList;
   auditHistory?: AuditVerdict[];
   stopReason?: string;
+  /** v0.34.91: the agent's own 1-paragraph completion recap (from
+   * complete_goal's completionSummary), captured when the claim is made and
+   * persisted with the goal. The terminal summary line shows THIS instead
+   * of echoing the objective — the end-of-goal recap should say what
+   * happened, not restate the contract. Absent on legacy/aborted goals
+   * (the render falls back to the objective/reason). */
+  completionSummary?: string;
   pauseReason?: string;
   pauseSuggestedAction?: string;
   /** v0.28.22: pause classification — drives the widget/status rendering
@@ -1026,6 +1033,15 @@ export function renderGoalMarkdown(goal: Goal): string {
   lines.push("");
   lines.push("> " + goal.objective);
   lines.push("");
+  if (goal.completionSummary) {
+    // v0.34.91: the agent's completion recap lands in the durable record
+    // (active goal .md → archive), so the one-line widget recap has a
+    // full-length home after the goal leaves the surface.
+    lines.push("## Completion summary");
+    lines.push("");
+    lines.push(goal.completionSummary);
+    lines.push("");
+  }
   if (goal.verificationContract) {
     lines.push("## Verification contract");
     lines.push("");

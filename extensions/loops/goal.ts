@@ -7006,7 +7006,7 @@ function registerAgentTools(pi: any): void {
         verificationSummary: p.verificationSummary,
         at: nowIso(),
       }, "complete-goal");
-      updateGoal({ pendingTasks: undefined }, ctx);
+      updateGoal({ pendingTasks: undefined, ...(p.completionSummary?.trim() ? { completionSummary: p.completionSummary.trim() } : {}) }, ctx);
       const auditGoal = state.goal;
       if (!auditGoal) return staleToolResult();
       const auditGoalId = auditGoal.id;
