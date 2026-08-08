@@ -1,6 +1,47 @@
 # Changelog
 
 ## Unreleased
+### 0.34.101 — Auditor-as-subagent architecture (design doc only)
+
+Field evidence (Screenshots_20260808_084527/084717 endless-td
+minimax/MiniMax-M3): the user asked "the auditor keep showing
+one words at a time... in fact arguably the main thread should
+not be the auditor, not detached — we can just show the auditor
+as a subagent we are waiting for."
+
+That request implies a UI shape change: instead of the
+detached worker (separate process, ledger-driven) rendering
+muted-by-default, the auditor should run as a `Agent`-tool
+sub-agent of the main session, with its prose visible in the
+sub-agent's pane.
+
+This release is **design only**. The implementation lands
+in a later goal. The deliverable is
+`audit/AUDITOR-AS-SUBAGENT-DESIGN.md`.
+
+The doc covers:
+- Current shape (detached worker, JSONL protocol, side-files)
+- Proposed shape (sub-agent via `Agent` tool, sub-agent pane)
+- Trade-offs (visual, cost, isolation, hung detection,
+  failure modes, session restart, quota impact, forbidden-
+  model risk)
+- Migration plan (3 phases: design → opt-in flag → default
+  flip + retire worker)
+- Risks (5: sub-agent context exhaustion, model mismatch,
+  UI pane availability, concurrent audits, worker vs
+  sub-agent hooks)
+- User-facing changes (the widget's muted line disappears;
+  the verdict notify references the sub-agent pane; a
+  settings toggle)
+
+- **No code change** in v0.34.101. The detached worker
+  remains the implementation.
+- **Suite**: still 1119 pass / 1 skip / 0 fail (no test
+  changes). `tsc --noEmit` clean.
+- **Files touched**: `audit/AUDITOR-AS-SUBAGENT-DESIGN.md`
+  (new, 12 KB), `package.json` (0.34.100 → 0.34.101),
+  `CHANGELOG.md` (this entry).
+
 ### 0.34.100 — Auditor report-stream muted default verification across session models
 
 Field evidence (Screenshot_20260808_084527/084717 endless-td
