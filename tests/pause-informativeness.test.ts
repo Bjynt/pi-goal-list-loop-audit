@@ -120,3 +120,35 @@ test("v0.28.30: pause/abort notifies name the policy (List item vs Goal) via goa
   assert.match(src, /`\$\{goalNoun\(\)\} aborted\./);
   assert.match(src, /`\$\{goalNoun\(\)\} appears wedged/);
 });
+
+// v0.34.98: paused-without-draft / decision surface. When the pause is
+// kind="wait" or "blocked" AND resumeAt is > 6h away, the user is
+// effectively locked out of progress for the entire workday. The fix:
+// surface a tweak prompt at pause time so the user can pivot right now,
+// instead of remembering the long wait later. Field evidence:
+// Screenshot_20260808_080402 hellhunter paused kind="wait"
+// resumeAt=2026-08-08T02:00:00Z — the user couldn't unblock without
+// re-issuing the same objective later.
+test("v0.34.98: long-wait pause (> 6h) surfaces a tweak-prompt notification + ledger entry", () => {
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // The block lives in pause_goal's execute function, gated on a 6h
+  // resumeAt window for wait/blocked kinds.
+  assert.match(src, /const SIX_HOURS_MS = 6 \* 60 \* 60 \* 1000;/);
+  assert.match(src, /const longWait = \(kind === "wait" \|\| kind === "blocked"\) && Number\.isFinite\(resumeAtMs\) && \(resumeAtMs - Date\.now\(\)\) > SIX_HOURS_MS;/);
+  // The notify text names the tweak path and the wait.
+  assert.match(src, /Pause scheduled for ~\$\{hours\}h\./, "the notify names the wait duration");
+  assert.match(src, /If the objective no longer matches your intent, run/, "the notify offers the tweak path");
+  // The ledger event records the pause + hours for auditing.
+  assert.match(src, /appendLedger\(ctx\.cwd, "pause_long_wait_offer_tweak", \{[\s\S]*?hours,/);
+});
+
+test("v0.34.98: short-wait pause (≤ 6h) does NOT trigger the tweak offer", () => {
+  // Source pin: the longWait gate explicitly requires > 6h; pauses
+  // with shorter resumeAt or no resumeAt at all do not fire the
+  // tweak-offer notify (the user is engaged and can wait).
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const longWaitBlock = src.match(/const longWait = [\s\S]{0,300};/);
+  assert.ok(longWaitBlock, "the longWait gate is present");
+  assert.match(longWaitBlock![0], /> SIX_HOURS_MS/, "strictly greater than 6h");
+  assert.doesNotMatch(longWaitBlock![0], />= SIX_HOURS_MS/, "not >= (6h exactly is allowed)");
+});
