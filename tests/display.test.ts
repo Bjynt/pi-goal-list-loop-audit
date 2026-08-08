@@ -186,6 +186,41 @@ test("v0.34.95: parked recovery on a LIVE working goal does NOT show quota text 
   assert.doesNotMatch(status, /waiting for quota reset/);
 });
 
+// v0.34.97: while the post-compaction grace window is open, the status
+// line paints "⏳ compacting…" so the user knows the session just shrank.
+// Field evidence: Screenshot_20260808_003007/003024 ai-auto-writer 222,368
+// tokens compacted; the user only saw "[compaction]" on RELOAD because no
+// in-process UI surface told them what just happened. The chip survives
+// reload because lastCompactionAt is persisted on State.
+test("v0.34.97: status line shows '⏳ compacting…' during the post-compaction grace window", () => {
+  const state = {
+    goal: goalOf({ policy: "list", createdAt: "2026-07-21T11:58:51Z" }),
+    list: [],
+    lastCompactionAt: NOW - 30_000, // 30s ago — well within the 3-minute grace
+  };
+  const status = buildStatusText(state, null, NOW, undefined, { activity: "active" })!;
+  assert.match(status, /⏳ compacting… \(30s ago\)/, "compacting chip with elapsed time");
+});
+
+test("v0.34.97: compacting chip is GONE after the 3-minute grace window", () => {
+  const state = {
+    goal: goalOf({ policy: "list", createdAt: "2026-07-21T11:58:51Z" }),
+    list: [],
+    lastCompactionAt: NOW - 200_000, // 200s ago — past the 3-minute grace
+  };
+  const status = buildStatusText(state, null, NOW, undefined, { activity: "active" })!;
+  assert.doesNotMatch(status, /compacting/, "no compacting chip past grace");
+});
+
+test("v0.34.97: no compacting chip when lastCompactionAt is absent", () => {
+  const state = {
+    goal: goalOf({ policy: "list", createdAt: "2026-07-21T11:58:51Z" }),
+    list: [],
+  };
+  const status = buildStatusText(state, null, NOW, undefined, { activity: "active" })!;
+  assert.doesNotMatch(status, /compacting/, "no chip when state has no lastCompactionAt");
+});
+
 test("live capsule shows a compact animated signal and truthful freshness text", () => {
   const state = { goal: goalOf(), list: [] };
   const first = buildStatusText(state, null, NOW, undefined, {
