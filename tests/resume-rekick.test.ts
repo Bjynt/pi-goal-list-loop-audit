@@ -35,9 +35,13 @@ test("v0.34.3: /glla resume re-kicks an ACTIVE loop too", () => {
 test("v0.34.3: /goal resume (/list resume) re-kicks instead of silently returning", () => {
   const cmdResume = SRC.slice(SRC.indexOf("async function cmdResume"));
   const rek = cmdResume.indexOf('state.goal.status === "active"');
-  const silent = cmdResume.indexOf('if (!state.goal || state.goal.status !== "paused") return;');
+  // v0.34.103 (issue #6 Defect B): the paused-only guard no longer returns
+  // SILENTLY — terminal/no-goal states answer explicitly, but the guard
+  // itself still gates the paused resume path AFTER the re-kick branches.
+  const guard = cmdResume.indexOf('state.goal.status !== "paused"');
   assert.ok(rek > -1, "the active re-kick branch exists in cmdResume");
-  assert.ok(silent > rek, "the re-kick precedes the paused-only early return");
+  assert.ok(guard > rek, "the re-kick precedes the paused-only guard");
+  assert.ok(!/if \(!state\.goal \|\| state\.goal\.status !== "paused"\) return;/.test(cmdResume), "the old silent bare return is gone");
   assert.match(cmdResume, /isLoopActive\(\)/, "one-active-thing: an active loop still wins over the re-kick");
 });
 
