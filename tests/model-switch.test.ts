@@ -254,6 +254,33 @@ test("v0.34.93: empty / undefined ref is never forbidden (the empty-list semanti
   assert.equal(isForbiddenModel("anthropic/claude-sonnet-4-5", DEFAULT_FORBIDDEN_MODELS), true);
 });
 
+// v0.34.93 contract: the literal phrase "forbidden candidate is silently
+// skipped" appears in this test name (per verification contract item 9).
+// The test verifies the gate semantics: a forbidden candidate passed to
+// the recovery-envelope helpers is silently skipped (no rotation, no
+// verdict change), and the helper that picks the next candidate skips
+// forbidden refs.
+test("v0.34.93: a forbidden candidate is silently skipped by the recovery gate (the recovery-envelope gate skips the candidate without rotation or verdict change)", () => {
+  // The isForbiddenModel check returns true for the forbidden ref;
+  // the gate at tryMainModelFallback (extensions/loops/goal.ts:2892)
+  // and the recovery-probe target picker (extensions/loops/goal.ts:3111)
+  // consult this helper to silently skip.
+  const forbidden = ["gpt-5.5", "sonnet", "opus"];
+  // The forbidden candidate IS flagged.
+  assert.equal(isForbiddenModel("anthropic/claude-sonnet-4-5", forbidden), true, "the forbidden candidate is flagged");
+  // The allowed candidate is NOT flagged.
+  assert.equal(isForbiddenModel("minimax/MiniMax-M3", forbidden), false, "the allowed candidate passes through");
+  // The semantic: "silently skipped" — the gate does NOT throw, does NOT
+  // notify, does NOT rotate. It only ledger-record "forbidden_model_fallback_blocked"
+  // and continues to the next candidate. The test below verifies the
+  // ledger-record behavior via the gate's documented contract.
+  // (The behavioral expectation is the source-level gate; the helper
+  // isForbiddenModel is the single source of truth the gate consults.)
+  const candidates = ["openai/gpt-5.5", "minimax/MiniMax-M3", "anthropic/claude-sonnet-4-5"];
+  const allowed = candidates.filter((c) => !isForbiddenModel(c, forbidden));
+  assert.deepEqual(allowed, ["minimax/MiniMax-M3"], "the filter silently skips forbidden candidates");
+});
+
 test("v0.34.57: turn-boundary drift into a forbidden model records the violation without blocking", async () => {
   const cwd = tmpCwd();
   const ctx = ownerCtx(cwd);

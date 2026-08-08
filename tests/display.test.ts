@@ -1504,3 +1504,26 @@ test("v0.34.100: silent-default widget renders muted for ANY session model", () 
     );
   }
 });
+
+// v0.34.96: complete-vs-aborted distinction when the work was already
+// shipped in a prior version. Field evidence: Screenshot_20260808_080536
+// — a recap ending `✓ complete` while saying "v0.34.74 already…"
+// contradicted itself. The fix: detect "already shipped" / "verified
+// vX.Y.Z covers this" / "no new work shipped" in the completionSummary
+// and route to status=aborted with stopReason already_shipped:vX.Y.Z.
+// This SRC-pinned assertion lives in tests/display.test.ts per the
+// verification contract item 12; the behavioral test (running the
+// complete_goal tool) is in tests/revision-bound-audit.test.ts for
+// fixture convenience.
+test("v0.34.96: complete_goal detects 'already shipped' / 'verified vX covers this' / 'no new work shipped' and routes to aborted (SRC-pinned in display.test.ts)", () => {
+  const loops = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // The detection regex covers the three contracted phrases.
+  assert.match(loops, /already shipped/i, "detects 'already shipped'");
+  assert.match(loops, /verified v[\d.]+ covers this/i, "detects 'verified vX.Y.Z covers this'");
+  assert.match(loops, /no new work shipped/i, "detects 'no new work shipped'");
+  // The routing path: archiveCurrentGoal(ctx, "aborted", stopReason).
+  assert.match(loops, /archiveCurrentGoal\(ctx,\s*"aborted",\s*stopReason\)/, "routes to status=aborted via archiveCurrentGoal");
+  assert.match(loops, /already_shipped:v[\d.]+|already_shipped:/, "stopReason names the matched version");
+  // The ledger event is recorded.
+  assert.match(loops, /complete_goal_already_shipped/, "the ledger event is recorded");
+});
