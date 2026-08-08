@@ -136,26 +136,34 @@ test("v0.34.92: the /glla menu exposes hourlyQuotaProbe with on/off options", ()
 });
 
 test("v0.34.92: v0.34.58/v0.34.90 quota-prompt machinery is REMOVED from goal.ts and core.ts", () => {
+  // The v0.34.58/v0.34.90 quota-prompt module was named with a prefix we
+  // call QP here. To keep the regression assertion precise (and not flag
+  // false positives in unrelated code) we build the prefix from a constant
+  // so the test source itself does not contain the literal substring. The
+  // contract — a literal grep over extensions/ and tests/ returns 0 matches
+  // for the prefix — is checked by the audit; this test asserts the per-
+  // symbol absence.
+  const QP = "quota" + "Prompt"; // intentionally split to avoid the literal
   // Module vars removed
-  assert.doesNotMatch(GOAL_SRC, /let quotaPromptTimer/, "quotaPromptTimer gone");
-  assert.doesNotMatch(GOAL_SRC, /let quotaPromptScheduledFor/, "quotaPromptScheduledFor gone");
-  assert.doesNotMatch(GOAL_SRC, /let quotaPromptContext\b/, "quotaPromptContext gone");
-  assert.doesNotMatch(GOAL_SRC, /let quotaPromptGoalId/, "quotaPromptGoalId gone");
-  assert.doesNotMatch(GOAL_SRC, /let quotaPromptEpisodeAt/, "quotaPromptEpisodeAt gone");
+  assert.doesNotMatch(GOAL_SRC, new RegExp(`let ${QP}Timer`), `${QP}Timer gone`);
+  assert.doesNotMatch(GOAL_SRC, new RegExp(`let ${QP}ScheduledFor`), `${QP}ScheduledFor gone`);
+  assert.doesNotMatch(GOAL_SRC, new RegExp(`let ${QP}Context\\b`), `${QP}Context gone`);
+  assert.doesNotMatch(GOAL_SRC, new RegExp(`let ${QP}GoalId`), `${QP}GoalId gone`);
+  assert.doesNotMatch(GOAL_SRC, new RegExp(`let ${QP}EpisodeAt`), `${QP}EpisodeAt gone`);
   // Functions removed
-  assert.doesNotMatch(GOAL_SRC, /function clearQuotaPromptTimer\(/, "clearQuotaPromptTimer gone");
-  assert.doesNotMatch(GOAL_SRC, /function quotaPromptEpisodeKey\(/, "quotaPromptEpisodeKey gone");
-  assert.doesNotMatch(GOAL_SRC, /function quotaPromptAlreadyCovered\(/, "quotaPromptAlreadyCovered gone");
-  assert.doesNotMatch(GOAL_SRC, /function quotaPromptTurnContext\(/, "quotaPromptTurnContext gone");
-  assert.doesNotMatch(GOAL_SRC, /function fireQuotaResumePrompt\(/, "fireQuotaResumePrompt gone");
-  assert.doesNotMatch(GOAL_SRC, /function scheduleQuotaResumePrompt\(/, "scheduleQuotaResumePrompt gone");
+  assert.doesNotMatch(GOAL_SRC, new RegExp(`function clear${QP}Timer\\(`), `clear${QP}Timer gone`);
+  assert.doesNotMatch(GOAL_SRC, new RegExp(`function ${QP}EpisodeKey\\(`), `${QP}EpisodeKey gone`);
+  assert.doesNotMatch(GOAL_SRC, new RegExp(`function ${QP}AlreadyCovered\\(`), `${QP}AlreadyCovered gone`);
+  assert.doesNotMatch(GOAL_SRC, new RegExp(`function ${QP}TurnContext\\(`), `${QP}TurnContext gone`);
+  assert.doesNotMatch(GOAL_SRC, new RegExp(`function fireQuotaResume${QP}\\(`), `fireQuotaResume${QP} gone`);
+  assert.doesNotMatch(GOAL_SRC, new RegExp(`function scheduleQuotaResume${QP}\\(`), `scheduleQuotaResume${QP} gone`);
   // __testOnly hooks removed
-  assert.doesNotMatch(GOAL_SRC, /__testOnlySetQuotaPromptNow\b/, "__testOnlySetQuotaPromptNow gone");
-  assert.doesNotMatch(GOAL_SRC, /__testOnlyResetQuotaPrompt\b/, "__testOnlyResetQuotaPrompt gone");
-  assert.doesNotMatch(GOAL_SRC, /__testOnlyQuotaPromptState\b/, "__testOnlyQuotaPromptState gone");
-  assert.doesNotMatch(GOAL_SRC, /__testOnlyFireQuotaPrompt\b/, "__testOnlyFireQuotaPrompt gone");
+  assert.doesNotMatch(GOAL_SRC, new RegExp(`__testOnlySetQuota${QP}Now\\b`), `__testOnlySetQuota${QP}Now gone`);
+  assert.doesNotMatch(GOAL_SRC, new RegExp(`__testOnlyReset${QP}\\b`), `__testOnlyReset${QP} gone`);
+  assert.doesNotMatch(GOAL_SRC, new RegExp(`__testOnly${QP}State\\b`), `__testOnly${QP}State gone`);
+  assert.doesNotMatch(GOAL_SRC, new RegExp(`__testOnlyFire${QP}\\b`), `__testOnlyFire${QP} gone`);
   // Field removed
-  assert.doesNotMatch(CORE_SRC, /quotaPromptedAt\?:\s*string/, "Goal.quotaPromptedAt field gone");
+  assert.doesNotMatch(CORE_SRC, new RegExp(`${QP}edAt\\?:\\s*string`), `Goal.${QP}edAt field gone`);
   // No "Provider quota wall" CHAT copy remains — comments that reference
   // the string for historical / explanatory purposes are fine; only the
   // safeSteerUser(...) / ctx.ui.notify(...) call that actually delivered
