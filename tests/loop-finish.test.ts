@@ -14,6 +14,7 @@ import * as path from "node:path";
 import { loopFinishStopReason } from "../extensions/goal-loop-forever.ts";
 
 const goalSrc = fs.readFileSync(path.resolve("extensions", "loops", "goal.ts"), "utf-8");
+const loopSrc = fs.readFileSync(path.resolve("extensions", "goal-loop.ts"), "utf-8"); // decomposition step 2
 
 test("loopFinishStopReason: cmdLoop('finish audit clean') → 'completed: audit clean' (item 7)", () => {
   assert.equal(loopFinishStopReason("audit clean"), "completed: audit clean");
@@ -27,7 +28,7 @@ test("loopFinishStopReason: cmdLoop('finish audit clean') → 'completed: audit 
 });
 
 test("/loop finish is routed in cmdLoop and registered in completions (item 7)", () => {
-  assert.match(goalSrc, /if \(sub === "finish"\) \{/);
-  assert.match(goalSrc, /state\.loop = \{ \.\.\.state\.loop, active: false, stopReason: reason \}/);
+  assert.match(loopSrc, /if \(sub === "finish"\) \{/);
+  assert.match(loopSrc, /state\.loop = \{ \.\.\.state\.loop, active: false, stopReason: reason \}/);
   assert.match(goalSrc, /\["finish", "end the loop cleanly/);
 });
