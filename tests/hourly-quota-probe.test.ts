@@ -116,7 +116,10 @@ test("v0.34.92: clearMainModelRecoveryTimer cancels the hourly ticker in lockste
 test("v0.34.92: session_start re-arms the hourly ticker when recovery is parked", () => {
   const handlerIdx = GOAL_SRC.indexOf('pi.on("session_start"');
   assert.ok(handlerIdx > 0, "session_start handler exists");
-  const tail = GOAL_SRC.slice(handlerIdx, handlerIdx + 8_000);
+  // session_start handler is ~15k chars (from `pi.on("session_start"` to the
+  // end of the recovery restore + the new hourly schedule call); slice
+  // enough to cover the schedule call at the bottom of the recovery block.
+  const tail = GOAL_SRC.slice(handlerIdx, handlerIdx + 16_000);
   assert.match(tail, /scheduleMainModelRecoveryTimer\(ctx, delay\);/, "session_start re-schedules recovery");
   assert.match(tail, /scheduleHourlyProbe\(ctx\);/, "session_start also re-arms the hourly ticker");
 });
@@ -153,8 +156,12 @@ test("v0.34.92: v0.34.58/v0.34.90 quota-prompt machinery is REMOVED from goal.ts
   assert.doesNotMatch(GOAL_SRC, /__testOnlyFireQuotaPrompt\b/, "__testOnlyFireQuotaPrompt gone");
   // Field removed
   assert.doesNotMatch(CORE_SRC, /quotaPromptedAt\?:\s*string/, "Goal.quotaPromptedAt field gone");
-  // No "Provider quota wall" chat copy remains
-  assert.doesNotMatch(GOAL_SRC, /Provider quota wall —/, "the chat-spam copy is gone");
+  // No "Provider quota wall" CHAT copy remains — comments that reference
+  // the string for historical / explanatory purposes are fine; only the
+  // safeSteerUser(...) / ctx.ui.notify(...) call that actually delivered
+  // the message must be gone.
+  assert.doesNotMatch(GOAL_SRC, /safeSteerUser\(\s*ctx,\s*`Provider quota wall/, "the chat-spam notify call is gone");
+  assert.doesNotMatch(GOAL_SRC, /ctx\.ui\.notify\([^)]*Provider quota wall/, "no quota-wall ui.notify remains");
   // Test file removed
   let testFile = "";
   try { testFile = readFileSync(join(here, "quota-prompter.test.ts"), "utf8"); }
