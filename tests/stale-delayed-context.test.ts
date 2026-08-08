@@ -6,6 +6,8 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 
 const GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf8");
+const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf8");
+const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf8");
 const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf8");
 
 function between(source: string, start: string, end: string): string {
@@ -74,20 +76,20 @@ test("v0.34.20: generic infra retry supports a lifecycle guard before and after 
 });
 
 test("v0.34.20: manual resume consumes a stored completion claim directly", () => {
-  const resume = between(GOAL, "async function cmdResume", "async function cmdCancel");
+  const resume = between(CMDS, "async function cmdResume", "async function cmdCancel");
   assert.match(resume, /const storedCompletion = state\.goal\.pendingCompletion/);
   assert.match(resume, /if \(storedCompletion\) \{/);
   assert.match(resume, /void retryStoredCompletionAudit\("manual"\)/);
 });
 
 test("v0.34.20: loop measurement and branch cleanup rebind after async work", () => {
-  const tick = between(GOAL, "async function runLoopTick", "async function finishLoopGit");
-  assert.match(tick, /const generation = sessionGeneration/);
+  const tick = between(LOOP, "async function runLoopTick", "async function finishLoopGit");
+  assert.match(tick, /const generation = flags\.sessionGeneration/); // flag accessor re-spelling (decomposition step 2)
   assert.match(tick, /const rebind = \(\): boolean =>/);
   assert.match(tick, /await runMeasure\(ctx, loop\.measureCmd!\);\n  if \(!rebind\(\)\) return;/);
   assert.match(tick, /await runGit\(ctx, \["rev-parse", "HEAD"\]\);\n  if \(!rebind\(\)\) return;/);
   assert.match(tick, /await finishLoopGit\(ctx, loop\);\n    if \(!rebind\(\)\) return;/);
-  const finish = between(GOAL, "async function finishLoopGit", "interface LoopConfig");
+  const finish = between(LOOP, "async function finishLoopGit", "interface LoopConfig");
   assert.match(finish, /const afterReset = freshCtxForGeneration\(generation\)/);
   assert.match(finish, /const afterCheckout = freshCtxForGeneration\(generation\)/);
   assert.match(GOAL, /let completionAuditGeneration: number \| null = null/);

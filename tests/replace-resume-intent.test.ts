@@ -18,6 +18,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 const SRC = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+const CMDS = fs.readFileSync(path.resolve("extensions/goal-commands.ts"), "utf-8");
 
 // ---------------------------------------------------------------- Defect A
 
@@ -48,7 +49,7 @@ test("v0.34.103 (issue #6 Defect A): plain replace without a scheduled resume st
 // ---------------------------------------------------------------- Defect B
 
 test("v0.34.103 (issue #6 Defect B): /goal resume answers terminal (complete/aborted) goals explicitly", () => {
-  const cmdResume = SRC.slice(SRC.indexOf("async function cmdResume"), SRC.indexOf("async function cmdCancel"));
+  const cmdResume = CMDS.slice(CMDS.indexOf("async function cmdResume"), CMDS.indexOf("async function cmdCancel"));
   assert.ok(!/if \(!state\.goal \|\| state\.goal\.status !== "paused"\) return;/.test(cmdResume), "the silent bare return is gone");
   // Terminal states (complete/aborted — archived) get a named warning:
   assert.match(cmdResume, /The \$\{label\} is \$\{state\.goal\.status\} \(archived\)/);
@@ -61,7 +62,7 @@ test("v0.34.103 (issue #6 Defect B): /goal resume answers terminal (complete/abo
 });
 
 test("v0.34.103 (issue #6 Defect B): resume with NO goal at all answers instead of swallowing the verb", () => {
-  const cmdResume = SRC.slice(SRC.indexOf("async function cmdResume"), SRC.indexOf("async function cmdCancel"));
+  const cmdResume = CMDS.slice(CMDS.indexOf("async function cmdResume"), CMDS.indexOf("async function cmdCancel"));
   assert.match(cmdResume, /Nothing to resume — no goal is active or paused/);
   // An active loop is named so /goal resume points at the right verb:
   assert.match(cmdResume, /A loop is active: \/loop resume/);
