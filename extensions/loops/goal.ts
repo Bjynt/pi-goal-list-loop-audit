@@ -107,6 +107,8 @@ import {
   modelSwitch,
   isForbiddenModel,
 isGoalRevisionCurrent,
+  nextHourlyPromptMs,
+  nextHourlyProbeMs,
   type ModelSwitchRecord,
   type ListItem,
 } from "../goal-loop-core.js";
