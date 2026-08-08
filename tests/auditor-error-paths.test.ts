@@ -39,11 +39,10 @@ test("infra-flavored returns (no model / aborted) are not disapprovals", () => {
   for (const marker of ["no auditor model", "Auditor aborted."]) {
     const idx = SRC.indexOf(marker);
     assert.ok(idx > 0, `found: ${marker}`);
-    // the return object containing this marker must not set disapproved:true
+    // the return expression containing this marker is an infra() call —
+    // disapproved:false by construction, never a verdict.
     const window = SRC.slice(Math.max(0, idx - 300), idx);
-    const lastDisapproved = window.lastIndexOf("disapproved:");
-    assert.ok(lastDisapproved >= 0, `return before '${marker}' sets disapproved`);
-    assert.match(window.slice(lastDisapproved), /disapproved:\s*false/, `'${marker}' must be disapproved:false`);
+    assert.ok(window.includes("return infra("), `'${marker}' returns via infra()`);
   }
   // The infra() helper itself is disapproved:false by construction.
   assert.match(infraBody(), /disapproved:\s*false/);
@@ -53,24 +52,20 @@ test("infra-flavored returns (no model / aborted) are not disapprovals", () => {
 
 test("auditor watchdog exits are infrastructure failures, never verdicts", () => {
   // The worker's stall watchdog (GLLA_AUDITOR_STALL_MS brake) exits with an
-  // infra-flavored result; the parent's wall-timeout watchdog rejects with
-  // "auditor wall timeout", never a verdict.
-  assert.match(SRC, /wall timeout/);
+  // infra-flavored result; the parent's wall-timeout watchdog returns
+  // infra() with a wall-clock message — never a verdict.
+  assert.match(SRC, /wall-clock bound/, "parent wall-timeout branch exists");
   assert.match(SRC, /GLLA_AUDITOR_STALL_MS/, "worker stall brake env var honored");
+  const wallIdx = SRC.indexOf("wall-clock bound");
+  const wallWindow = SRC.slice(Math.max(0, wallIdx - 200), wallIdx + 60);
+  assert.match(wallWindow, /return infra\(/, "wall timeout returns infra, not a verdict");
   const worker = readFileSync(
     path.resolve(__dirname, "../scripts/goal-auditor-worker.mjs"),
     "utf-8",
   );
-  for (const marker of ["stall watchdog fired", "finish(false"]) {
-    const idx = worker.indexOf(marker);
-    if (idx < 0) continue;
-    const window = worker.slice(idx, idx + 400);
-    assert.match(window, /not a verdict|infrastructure|watchdog/i);
-  }
-  // Parent wall-timeout: infra result, not disapproved.
-  const wallIdx = SRC.indexOf("wall timeout");
-  assert.ok(wallIdx > 0, "wall timeout branch exists");
-  assert.match(SRC.slice(Math.max(0, wallIdx - 400), wallIdx), /infra\(|approved:\s*false/);
+  const stallIdx = worker.indexOf("Auditor stalled");
+  assert.ok(stallIdx >= 0, "worker stall watchdog branch exists");
+  assert.match(worker.slice(stallIdx, stallIdx + 300), /aborted|no session activity/i);
 });
 
 test("semantic verdict-quality failures and shield blocks keep distinct categories", () => {

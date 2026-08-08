@@ -162,15 +162,20 @@ test("a fresh factory run clears the stale flag (extension reload recovery)", ()
 });
 
 test("v0.32.0: audit-opportunistic fix batch — dispose, keys, caps, message", () => {
-  const AUD = fs.readFileSync("extensions/goal-loop-auditor.ts", "utf-8");
-  assert.match(AUD, /dispose\?\.\(\)/); // auditor session no longer leaked per complete_goal
+  // v0.34.108: the in-process auditor session (dispose?.()) is gone with
+  // runGoalCompletionAuditor; the production path kills every detached
+  // worker child on complete_goal teardown — no worker leaked per complete.
+  const AUD = fs.readFileSync("extensions/goal-loop-auditor-process.ts", "utf-8");
+  assert.match(AUD, /child\.kill\("SIGTERM"\)/); // detached auditor children are terminated on teardown
   const GS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
   assert.match(GS, /"auditorModelFallback",/); // provenance-tracked — menu row shows pinned value
   assert.match(GS, /"auditorSameSessionSwap",/);
   const GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   assert.match(GOAL, /slice\(0, 50\)/); // fan-out cap
   assert.match(GOAL, /MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS = 5/); // durable quota retry terminal cap
-  assert.match(GOAL, /quotaRetryStreak = 0;/); // streak resets on any non-quota outcome
+  // v0.34.108: quotaRetryStreak (process-local mirror) was dead code and removed;
+  // the durable reset is quotaAttempts: undefined on a manual-origin audit claim.
+  assert.match(GOAL, /origin === "manual"\n\s*\? \{ \.\.\.claim, quotaAttempts: undefined, quotaFirstAt: undefined, quotaAutoRetryUntil: undefined \}/); // streak resets on any non-quota outcome
   assert.match(GOAL, /handing off to a fresh pi context — /); // entry probe names the lifecycle handoff honestly
   assert.match(GOAL, /function clearSessionOwnedTimers\(\): void/); // terminal kills all old-session timers
 });

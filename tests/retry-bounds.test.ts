@@ -81,8 +81,11 @@ test("v0.28.29: busy-retry cadence backs off (no more flat 50ms spins)", () => {
 });
 
 test("v0.28.29: escalation is TIME-based and ACTIVITY-gated (busy ≠ wedged — the polis false positive)", () => {
-  assert.match(SRC, /const SEND_REARM_ESCALATE_AFTER_MS = 15 \* 60_000;/);
+  // v0.34.108: the flat SEND_REARM_ESCALATE_AFTER_MS constant was dead code
+  // (superseded by sendStormEscalateMs()'s knowledge-aware threshold) and
+  // was removed. The activity gate and the 5m silent window remain.
   assert.match(SRC, /const SEND_REARM_ESCALATE_SILENT_MS = 5 \* 60_000;/);
+  assert.ok(!SRC.includes("SEND_REARM_ESCALATE_AFTER_MS"), "flat escalation constant removed (v0.34.108 dead-code sweep)");
   // v0.34.57: the flat 15m check became the generic branch of the
   // knowledge-aware threshold — the activity gate is unchanged.
   assert.match(SRC, /elapsed >= sendStormEscalateMs\(lastLongLivedFailureAt\) && Date\.now\(\) - lastActivityAt >= SEND_REARM_ESCALATE_SILENT_MS/);

@@ -1464,8 +1464,10 @@ test("v0.33.1: audit-batch — sanitize, head fits width, last restored, flag li
   } as any }, null, NOW, undefined, 120)!;
   assert.match(loopLines[0]!, /best 4 · last 5 · stall 2\/5/);
   // sweep-F4: the auditor's abort listener is removed in finally.
-  const AUD = fs.readFileSync("extensions/goal-loop-auditor.ts", "utf-8");
-  assert.match(AUD, /removeEventListener\("abort", abort\)/);
+  // v0.34.108: the listener lived on the removed in-process session; the
+  // production equivalent is the detached worker's abort listener cleanup.
+  const AUD = fs.readFileSync("extensions/goal-loop-auditor-process.ts", "utf-8");
+  assert.match(AUD, /args\.signal\?\.removeEventListener\("abort", abort\)/);
 });
 
 test("v0.33.2: loop proactiveness + respec machinery", () => {
