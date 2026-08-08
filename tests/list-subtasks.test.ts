@@ -157,17 +157,18 @@ test("v0.34.81: readQueueFromDisk ignores malformed parentId (non-string)", () =
 
 test("v0.34.81: wiring — parse in core, resolve/refuse/cascade in goal.ts", () => {
   const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
-  const SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2: cmdList moved
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2
   // Parse step lives in core (single source of truth for the marker regex).
   assert.match(CORE, /const \{ objective, parentObjective \} = extractSubtaskParent\(raw\);/);
   // Refusal ledger key
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "list_subtask_refused", \{ source, count: refused\.length, refusals: refused \}\);/);
+  assert.match(CMDS, /appendLedger\(ctx\.cwd, "list_subtask_refused", \{ source, count: refused\.length, refusals: refused \}\);/);
   // Cascade close ledger key
   assert.match(SRC, /appendLedger\(ctx\.cwd, "list_group_closed", \{[\s\S]*parentId: pid,/);
   // Explicit-pick refusal key
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "list_group_activation_refused", \{ goalId: target\.id, open \}\);/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "list_group_activation_refused", \{ goalId: target\.id, open \}\);/); // stays in goal.ts (activation path)
   // Scan-skip uses groupOpenChildren
-  assert.match(SRC, /while \(scan < queue\.length && groupOpenChildren\(queue\[scan\]!\.id\) > 0\) scan\+\+;/);
+  assert.match(CMDS, /while \(scan < queue\.length && groupOpenChildren\(queue\[scan\]!\.id\) > 0\) scan\+\+;/);
   // parentId carried onto the active goal
   assert.match(SRC, /if \(next\.parentId\) goal\.parentId = next\.parentId;/);
   // Nesting refused

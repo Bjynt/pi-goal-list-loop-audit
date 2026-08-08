@@ -236,15 +236,16 @@ test("v0.34.54: settings after a fresh session_start — the table opens AND a r
 // ────────────────────────────────────────────────────────────────────
 
 test("v0.34.54: source — read-only surfaces are never in the mutating sets; the gates are the honest refusal, not silence", () => {
-  const SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2: cmdList/cmdSettings moved
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2
   assert.ok(!LIST_MUTATING_SUBCOMMANDS.has("show") && !LIST_MUTATING_SUBCOMMANDS.has("depth"), "show/depth stay read-only for /list");
   assert.ok(!SETTINGS_MUTATING_ACTIONS.has("status") && !SETTINGS_MUTATING_ACTIONS.has("log") && !SETTINGS_MUTATING_ACTIONS.has("stats") && !SETTINGS_MUTATING_ACTIONS.has("audits"), "read-only /glla verbs stay ungated");
   // The /list show branch must NOT be gated by the entry probe (inspect,
   // don't mutate) — it only prints the honest warning via the probe:
-  assert.match(SRC, /const staleEntry = warnIfStaleAtEntry\(ctx, "\/list"\);[\s\S]{0,12000}?if \(!sub \|\| sub === "show"\)/, "the probe is captured before the show branch");
-  const showBlock = SRC.slice(SRC.indexOf('if (!sub || sub === "show")'), SRC.indexOf('if (!sub || sub === "show")') + 400);
+  assert.match(CMDS, /const staleEntry = warnIfStaleAtEntry\(ctx, "\/list"\);[\s\S]{0,12000}?if \(!sub \|\| sub === "show"\)/, "the probe is captured before the show branch");
+  const showBlock = CMDS.slice(CMDS.indexOf('if (!sub || sub === "show")'), CMDS.indexOf('if (!sub || sub === "show")') + 400);
   assert.ok(!showBlock.includes("LIST_MUTATING_SUBCOMMANDS"), "the show branch itself is ungated");
   // The settings gate refuses the bare entry on stale and names the recovery:
-  assert.match(SRC, /staleEntry && \(verb === "ui" \|\| SETTINGS_MUTATING_ACTIONS\.has\(verb\)\)/, "the settings gate refuses the entry + mutating verbs on stale");
+  assert.match(CMDS, /staleEntry && \(verb === "ui" \|\| SETTINGS_MUTATING_ACTIONS\.has\(verb\)\)/, "the settings gate refuses the entry + mutating verbs on stale");
   assert.match(SRC, /State is safe in \.pi-glla\/\. A fresh session_start will resume it/, "the honest recovery message is the standard one");
 });
