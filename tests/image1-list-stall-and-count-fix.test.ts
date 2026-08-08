@@ -66,7 +66,7 @@ test("v0.34.104 [Image-#1] Problem 1: agent activity during settle cancels the d
 });
 
 test("v0.34.104 [Image-#1] Problem 1: sendContinuation clears the flag on dispatch", () => {
-  const send = SRC.slice(SRC.indexOf("function sendContinuation"), SRC.indexOf("async function recoverMainModelFromSendStorm"));
+  const send = SRC.slice(SRC.indexOf("function sendContinuation"), SRC.indexOf("function sendStallEscalation"));
   assert.match(send, /postCompletionSettleUntil = 0;/);
 });
 
@@ -74,9 +74,10 @@ test("v0.34.104 [Image-#1] Problem 1: sendContinuation clears the flag on dispat
 
 test("v0.34.104 [Image-#1] Problem 2: validateCompletionSummary exists and is wired into complete_goal capture", () => {
   assert.match(SRC, /function validateCompletionSummary\(text: string, ctx: ExtensionContext\): string/);
-  const capture = SRC.slice(SRC.indexOf("const completionClaim = beginCompletionAudit"), SRC.indexOf("const auditGoal = state.goal;"));
-  assert.match(capture, /validateCompletionSummary\(p\.completionSummary, ctx\)/);
-  assert.match(capture, /completionSummary: validated\.trim\(\)/);
+  // The capture site is a few lines after beginCompletionAudit; use a
+  // tight anchor that survives edits to surrounding code:
+  assert.match(SRC, /const validated = p\.completionSummary\?\.trim\(\) \? validateCompletionSummary\(p\.completionSummary, ctx\) : p\.completionSummary;/);
+  assert.match(SRC, /completionSummary: validated\.trim\(\)/);
 });
 
 test("v0.34.104 [Image-#1] Problem 2: impossible X/Y pass counts match the field regex (29/28)", () => {
