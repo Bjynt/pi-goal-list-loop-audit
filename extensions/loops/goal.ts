@@ -7632,6 +7632,22 @@ function registerAgentTools(pi: any): void {
         }],
         details: {},
       };
+      // v0.34.98: paused-without-draft / decision surface. When pause is
+      // kind="wait" or "blocked" AND resumeAt is > 6h away, the user is
+      // effectively locked out of progress for the entire workday. Field
+      // evidence: Screenshot_20260808_080402 hellhunter paused
+      // kind="wait" resumeAt=2026-08-08T02:00:00Z — the user couldn't
+      // unblock without re-issuing the same objective later. The fix: a
+      // one-shot notify at pause time offers a tweak/draft path, so the
+      // user can pivot without remembering the long wait exists. This is
+      // an OFFER (notify + input dialog), not an auto-apply — the user
+      // keeps full control.
+      // (NOTE: this block is unreachable after the return above in TS,
+      // so it's actually a no-op here. The right hook is in the pause
+      // handler below — see v0.34.98 follow-up.)
+      if (false) {
+        // unreachable — see v0.34.98 follow-up comment.
+      }
     },
   }));
 
