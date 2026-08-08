@@ -1,6 +1,22 @@
 # Changelog
 
 ## Unreleased
+### 0.34.111 — decomposition step 3: extensions/goal-recovery.ts extracted
+
+Third extraction per docs/GLLA-POSITIONING-AND-DECOMPOSITION-2026-08-08.md
+sequencing — the recovery machinery (compat sidecar, main-model recovery
+envelope, hourly quota probe, completion-audit recovery) leaves the monolith,
+zero behavior change.
+
+- New `extensions/goal-recovery.ts` (696 lines): `createGoalRecovery(flags, deps)`
+  factory + mirror-lets pattern (same as v0.34.110). 22 functions moved and
+  exported; 12 module flags observed via `RecoveryFlags` accessor; 11
+  goal.ts-owned functions passed via `RecoveryDeps`.
+- goal.ts: 8,643 → 8,162 lines.
+- recovery ledger event names unchanged (now emitted from goal-recovery.ts).
+- 6 source pins in 5 test files re-anchored (retry-bounds, hourly-quota-probe,
+  quota-wall-engagement, blocked-pause-autoclear, mode-command-guidance).
+
 ### 0.34.110 — decomposition step 2: goal-commands.ts + goal-loop.ts extracted
 
 Second extraction per docs/GLLA-POSITIONING-AND-DECOMPOSITION-2026-08-08.md
