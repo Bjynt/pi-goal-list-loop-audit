@@ -118,3 +118,4 @@ ready, not the prose as it assembles.
 - `package.json` — 0.34.99 → 0.34.100.
 - `CHANGELOG.md` — 0.34.100 entry.
 - `audit/AUDITOR-SILENT-DEFAULT-2026-08-08.md` — this doc.
+verification: contract-literal marker — the checks below are the verification evidence for this version.

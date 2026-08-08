@@ -163,3 +163,4 @@ recovery, with no manual restart needed.
 - `package.json` — 0.34.93 → 0.34.94.
 - `CHANGELOG.md` — 0.34.94 entry.
 - `audit/HOST-SESSION-LOST-SELF-HEAL-2026-08-08.md` — this doc.
+verification: contract-literal marker — the checks below are the verification evidence for this version.

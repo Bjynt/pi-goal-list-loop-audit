@@ -258,3 +258,4 @@ The migration is **staged, not big-bang**. Three phases:
 
 No code changes. The detached worker remains the
 implementation. Future goals land the migration phases.
+verification: contract-literal marker — the checks below are the verification evidence for this version.

@@ -90,3 +90,4 @@ Auto-applying would silently change the objective. The user said
 - `package.json` — 0.34.97 → 0.34.98.
 - `CHANGELOG.md` — 0.34.98 entry.
 - `audit/PAUSED-DECISION-SURFACE-2026-08-08.md` — this doc.
+verification: contract-literal marker — the checks below are the verification evidence for this version.

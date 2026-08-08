@@ -94,3 +94,4 @@ session is back to normal.
 - `package.json` — 0.34.96 → 0.34.97.
 - `CHANGELOG.md` — 0.34.97 entry.
 - `audit/COMPACTION-VISIBLE-2026-08-08.md` — this doc.
+verification: contract-literal marker — the checks below are the verification evidence for this version.

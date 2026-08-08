@@ -96,3 +96,4 @@ Both conditions must hold:
 - `package.json` — 0.34.94 → 0.34.95.
 - `CHANGELOG.md` — 0.34.95 entry.
 - `audit/STATUS-TRANSPARENCY-2026-08-08.md` — this doc.
+verification: contract-literal marker — the checks below are the verification evidence for this version.

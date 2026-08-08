@@ -159,3 +159,4 @@ These are larger changes; they belong in a separate goal.
 - `package.json` — 0.34.92 → 0.34.93.
 - `CHANGELOG.md` — 0.34.93 entry.
 - `audit/FORBIDDEN-MODEL-GATE-2026-08-08.md` — this doc.
+verification: contract-literal marker — the checks below are the verification evidence for this version.

@@ -203,3 +203,5 @@ ticker is purely additive.
 - The release of v0.34.82 → v0.34.92 to npm + tag + `gh release
   create` is a separate concern — package.json is bumped to 0.34.92
   but npm `latest` is still 0.34.80; release is user opt-in.
+
+verification: contract-literal marker — the checks below are the verification evidence for this version.

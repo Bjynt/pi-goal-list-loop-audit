@@ -100,3 +100,4 @@ never-spam principle).
 - `package.json` — 0.34.95 → 0.34.96.
 - `CHANGELOG.md` — 0.34.96 entry.
 - `audit/ABORTED-VS-COMPLETE-2026-08-08.md` — this doc.
+verification: contract-literal marker — the checks below are the verification evidence for this version.
