@@ -1803,6 +1803,10 @@ const SEND_REARM_ESCALATE_AFTER_MS = 15 * 60_000;
 const SEND_REARM_ESCALATE_SILENT_MS = 5 * 60_000;
 let continuationRearmSince = 0;
 let loopRearmSince = 0;
+// v0.34.102: one-shot "no turn started" notify per storm milestone window
+// (rearm storm fires with no accepted dispatch — the user's "pi did not
+// start a turn" state under a recovery park).
+let lastNoTurnStartedNotifiedAt = 0;
 // v0.34.57: when the last surfaced provider failure was a long-lived class
 // (quota/billing/auth), a send wedge inside this window is almost certainly
 // the same wall — escalate the storm into recovery after 3m, not 15m.
@@ -1836,6 +1840,24 @@ function accountSendRearm(ctx: ExtensionContext, kind: "continuation" | "loop"):
   if (milestone < SEND_REARM_LEDGER_MILESTONES_MS.length && elapsed >= SEND_REARM_LEDGER_MILESTONES_MS[milestone]!) {
     if (kind === "continuation") continuationRearmMilestone++; else loopRearmMilestone++;
     appendLedger(ctx.cwd, "send_rearm_storm", { kind, streak, minutes: Math.round(elapsed / 60000) });
+    // v0.34.102 (field: dracon-platform 2026-08-08 091828 "pi did not
+    // start a turn"): a continuation storm with NO accepted dispatch since
+    // it began is the exact "no turn started" state. The existing
+    // continuation_unanswered diagnostic only fires when the plugin itself
+    // SENT a continuation (lastContinuationSentAt > 0) — under a recovery
+    // park the send path is gated so it never fires, and the rearm storm
+    // raged 68m with zero user-facing explanation. Surface it once per
+    // storm milestone (2m/5m/10m), ledgered distinctly.
+    if (kind === "continuation") {
+      const noDispatchAccepted = lastContinuationSentAt === 0 || lastContinuationSentAt < continuationRearmSince;
+      if (noDispatchAccepted && lastNoTurnStartedNotifiedAt + SEND_REARM_LEDGER_MILESTONES_MS[0]! <= Date.now()) {
+        lastNoTurnStartedNotifiedAt = Date.now();
+        appendLedger(ctx.cwd, "rearm_no_turn_started", { streak, minutes: Math.round(elapsed / 60000) });
+        const msg = `glla: pi accepted no continuation for ${Math.round(elapsed / 60000)}m (${streak} re-arms, no turn started) — likely the same provider wall. The recovery probe is retrying automatically; no action needed unless it outlives the reset time.`;
+        ctx.ui.notify(msg, "warning");
+        notifyExternal(ctx, msg);
+      }
+    }
   }
   if (elapsed >= sendStormEscalateMs(lastLongLivedFailureAt) && Date.now() - lastActivityAt >= SEND_REARM_ESCALATE_SILENT_MS) {
     if (kind === "continuation") { continuationRearmStreak = 0; continuationRearmSince = 0; } else { loopRearmStreak = 0; loopRearmSince = 0; }
