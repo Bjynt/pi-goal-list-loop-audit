@@ -66,6 +66,7 @@ test("pause_goal tool notification carries the FULL reason AND suggested action"
 });
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
 
 test("pause_goal tool: structured kind/options/recommended/resumeAt persist to the goal (v0.28.22)", () => {
   // Source pin — the behavioral harness's runTool writes through the
@@ -76,7 +77,7 @@ test("pause_goal tool: structured kind/options/recommended/resumeAt persist to t
   assert.match(SRC, /pauseRecommended: p\.kind === "decision" && p\.recommended && p\.recommended >= 1 \? Math\.floor\(p\.recommended\) : undefined,/);
   assert.match(SRC, /pauseResumeAt: p\.kind === "wait" && p\.resumeAt \? p\.resumeAt : undefined,/);
   // Resume clears the new fields alongside the old ones.
-  assert.match(SRC, /pauseKind: undefined, pauseOptions: undefined, pauseRecommended: undefined, pauseResumeAt: undefined/);
+  assert.match(CMDS, /pauseKind: undefined, pauseOptions: undefined, pauseRecommended: undefined, pauseResumeAt: undefined/); // decomposition step 2: cmdResume moved
   // The extension's own pauses are classified at the source.
   const pairs: Array<[string, string]> = [
     ["pauseReason: `send-retry storm", "error"],
@@ -114,10 +115,11 @@ test("late pause calls cannot overwrite a paused or auditing lifecycle", () => {
 test("v0.28.30: pause/abort notifies name the policy (List item vs Goal) via goalNoun", () => {
   // User note: "we seem to call everything goal". A list item is not a goal.
   const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const cmds = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2
   assert.match(src, /const goalNoun = \(\): string => \(state\.goal\?\.policy === "list" \? "List item" : "Goal"\);/);
   const occurrences = src.split("${goalNoun()}").length - 1;
   assert.ok(occurrences >= 10, `goalNoun used across the notify surface (${occurrences} sites)`);
-  assert.match(src, /`\$\{goalNoun\(\)\} aborted\./);
+  assert.match(cmds, /`\$\{goalNoun\(\)\} aborted\./);
   assert.match(src, /`\$\{goalNoun\(\)\} appears wedged/);
 });
 

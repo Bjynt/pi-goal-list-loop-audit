@@ -204,7 +204,7 @@ test("haiku mention is dropped from any valueText / description / sourceText", (
 /* --------------------------------------------------------------------- */
 
 test("the headless `/glla` fallback still lists stall brakes", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2: cmdSettings moved
   // v0.28.0: the headless fallback is the second branch in `if (typeof ctx.ui.custom !== "function")`
   // (the rare legacy shard) OR the original text fallback at the bottom of
   // cmdSettings. Both forms must keep the stallBrakes key in the listing.
@@ -235,12 +235,12 @@ test("the legacy flat-row startsWith logic is removed (no more `──` section 
 });
 
 test("/glla tooloverride still routes headlessly (regression: subsystems unchanged)", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2
   assert.match(src, /tooloverride\b.*cmdToolOverride|cmdToolOverride\(trimmed\.slice\("tooloverride"/);
 });
 
 test("postaudit and reviewer routes both open the reviewer menu (back-compat)", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2
   assert.match(src, /postaudit.*cmdReviewerSettings|cmdReviewerSettings/);
 });
 

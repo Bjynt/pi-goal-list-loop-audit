@@ -22,6 +22,7 @@ import {
 } from "../extensions/reviewer.ts";
 
 const SRC_GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const SRC_CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2
 
 function mkDeps(cwd: string, over: Partial<ReviewerDeps> = {}) {
   const calls = { enqueued: [] as string[][], proposed: [] as string[], notified: [] as string[], ledgered: [] as string[] };
@@ -150,13 +151,13 @@ test("menu: Mode option lists the 4 modes (off, on, auto, aggressive)", () => {
   const off = reviewerMenuOptions({ ...DEFAULT_REVIEWER_CONFIG, mode: "off" });
   assert.match(off[1]!, /Mode — off/);
   // the goal.ts handler cycles through 4 modes (off → on → auto → aggressive → off)
-  assert.match(SRC_GOAL, /order: Array<"off" \| "on" \| "auto" \| "aggressive"> = \["off", "on", "auto", "aggressive"\]/);
+  assert.match(SRC_CMDS, /order: Array<"off" \| "on" \| "auto" \| "aggressive"> = \["off", "on", "auto", "aggressive"\]/);
 });
 
 test("/review accepts all 4 modes and rejects unknown modes", () => {
-  assert.match(SRC_GOAL, /const validModes = \["off", "on", "auto", "aggressive"\] as const/);
-  assert.match(SRC_GOAL, /Unknown mode "\$\{modeArg\}" — use off \| on \| auto \| aggressive\./);
-  assert.match(SRC_GOAL, /\{ manual: true, mode \}\)/);
+  assert.match(SRC_CMDS, /const validModes = \["off", "on", "auto", "aggressive"\] as const/);
+  assert.match(SRC_CMDS, /Unknown mode "\$\{modeArg\}" — use off \| on \| auto \| aggressive\./);
+  assert.match(SRC_CMDS, /\{ manual: true, mode \}\)/);
 });
 
 test("config: mode defaults to 'on' and merges from project settings", () => {
