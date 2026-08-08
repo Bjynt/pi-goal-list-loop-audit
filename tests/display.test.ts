@@ -124,6 +124,68 @@ test("stream-proven work uses one compact status-bar HUD; the card stays quiet",
   );
 });
 
+// v0.34.95: when the goal is queued AND state.mainModelRecovery is set
+// (the bounded envelope is parked), the status line names the blocker —
+// `waiting for quota reset at HH:MM` follows the queue depth. No chat
+// spam, no extra prompt — just truth on the existing status line.
+// Field evidence: Screenshot_20260808_014303 darklord LIST-AUDIT-COLLECT
+// showed `[QUEUED] 12m 26s` with no WHY.
+test("v0.34.95: queued + parked recovery surfaces 'waiting for quota reset at HH:MM' on the status line", () => {
+  const queuedWithRecovery = {
+    goal: goalOf({ policy: "list", createdAt: "2026-07-21T11:59:16Z" }),
+    list: Array.from({ length: 18 }, (_, i) => ({ id: `queued-${i}`, objective: "queued", addedAt: "z" })),
+    mainModelRecovery: {
+      primary: "minimax/MiniMax-M3",
+      active: "minimax/MiniMax-M3",
+      attempted: ["minimax/MiniMax-M3"],
+      attempts: 1,
+      reason: "main model quota: 429 rate limit",
+      kind: "goal" as const,
+      firstFailureAt: "2026-07-21T11:55:00.000Z",
+      autoRetryUntil: "2026-07-22T11:55:00.000Z",
+      retryAt: "2026-07-21T12:30:00.000Z",
+    },
+  };
+  // Pin NOW to a known hour:minute so the formatClockTime output is
+  // deterministic across timezones. NOW is already an epoch defined at
+  // the top of this file — we use the retryAt ISO string directly.
+  const status = buildStatusText(queuedWithRecovery, null, NOW, undefined, { activity: "queued" })!;
+  assert.match(status, /\[QUEUED\]/);
+  assert.match(status, /18 queued/);
+  assert.match(status, /waiting for quota reset at \d{2}:\d{2}/);
+});
+
+test("v0.34.95: queued WITHOUT a parked recovery does NOT show quota text (no false signal)", () => {
+  const queuedNoRecovery = {
+    goal: goalOf({ policy: "list", createdAt: "2026-07-21T11:59:16Z" }),
+    list: [{ id: "queued-0", objective: "queued", addedAt: "z" }],
+  };
+  const status = buildStatusText(queuedNoRecovery, null, NOW, undefined, { activity: "queued" })!;
+  assert.equal(status, "glla: [QUEUED] 44s · 1 queued");
+  assert.doesNotMatch(status, /quota/);
+});
+
+test("v0.34.95: parked recovery on a LIVE working goal does NOT show quota text (only queued needs the WHY)", () => {
+  // The QUEUED state is the one the user sees without context — the
+  // LIVE/WORKING state already names the work via the live stream badge.
+  // Showing quota text on top of LIVE would be noise.
+  const liveWithRecovery = {
+    goal: goalOf({ policy: "list", createdAt: "2026-07-21T11:58:51Z" }),
+    list: [{ id: "next-1", objective: "next", addedAt: "z" }],
+    mainModelRecovery: {
+      primary: "minimax/MiniMax-M3",
+      attempted: ["minimax/MiniMax-M3"],
+      attempts: 1,
+      reason: "main model quota: 429 rate limit",
+      kind: "goal" as const,
+      retryAt: "2026-07-21T12:30:00.000Z",
+    },
+  };
+  const status = buildStatusText(liveWithRecovery, null, NOW, undefined, { activity: "working", lastStreamActivityAt: NOW - 11_000 })!;
+  assert.match(status, /LIVE · WORKING/);
+  assert.doesNotMatch(status, /waiting for quota reset/);
+});
+
 test("live capsule shows a compact animated signal and truthful freshness text", () => {
   const state = { goal: goalOf(), list: [] };
   const first = buildStatusText(state, null, NOW, undefined, {

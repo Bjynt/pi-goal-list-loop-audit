@@ -49,6 +49,20 @@ export function fmtElapsed(ms: number): string {
   return `${h}h ${String(m % 60).padStart(2, "0")}m`;
 }
 
+/** v0.34.95: format an absolute epoch (ms) as HH:MM in the local timezone.
+ * Used by the quota-recovery status line so the user can glance at the
+ * clock and see when the next probe will fire. The bounded envelope
+ * records `retryAt` as ISO; converting to local HH:MM keeps the surface
+ * readable without inventing a relative-time view (the existing
+ * fmtElapsed() covers that case for live countdowns). */
+export function formatClockTime(epochMs: number): string {
+  if (!Number.isFinite(epochMs) || epochMs <= 0) return "—";
+  const d = new Date(epochMs);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
 export function fmtTokens(n: number): string {
   if (n < 1000) return `${n}`;
   if (n < 100_000) return `${(n / 1000).toFixed(1)}k`;
@@ -686,6 +700,17 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       : queued
         ? activityStateBadge("QUEUED", theme, "warning")
         : activityStateBadge("ACTIVE", theme, "accent");
+    // v0.34.95: when parked on quota, name the blocker — `[QUEUED] 12m 26s`
+    // reads as a stalled queue with no WHY (Screenshot_20260808_014303
+    // darklord LIST-AUDIT-COLLECT). State.mainModelRecovery is the
+    // bounded envelope's parked state; when set, render "waiting for
+    // quota reset at HH:MM" alongside the queue depth. No chat spam, no
+    // extra prompt — the status line just says what's blocking.
+    const recovery = state.mainModelRecovery;
+    const blockedByQuota = queued && recovery && recovery.retryAt;
+    const quotaSuffix = blockedByQuota
+      ? ` · waiting for quota reset at ${formatClockTime(Date.parse(recovery!.retryAt!))}`
+      : "";
     // Keep the screenshot-proven order: state, elapsed, freshness, then
     // queue/task context. It scans like a compact instrument readout and
     // remains useful when the above-editor card is hidden or scrolled away.
@@ -695,7 +720,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       live ? hostLastStream(extras, now).replace(/^ · /, "") : "",
       n > 0 ? `${n} queued` : "",
     ].filter(Boolean);
-    return `glla: ${marker}${details.length > 0 ? ` ${details.join(" · ")}` : ""}${heldSuffix}`;
+    return `glla: ${marker}${details.length > 0 ? ` ${details.join(" · ")}` : ""}${quotaSuffix}${heldSuffix}`;
   }
   // v0.34.65: a terminal goal names its outcome + wall duration instead of
   // clearing the segment (note.md 2026-08-07: "this seems weak for a complete
