@@ -58,6 +58,9 @@ test("E2: auditor infra errors enter the durable bounded retry plan (v0.34.51 â€
 test("E3: send-retry re-arms counted, ledgered, escalated", () => {
   assert.match(SRC, /appendLedger\(ctx\.cwd, "send_rearm_start", \{ kind \}\)/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "send_rearm_storm", \{ kind, streak/);
+  // v0.34.102: a storm with NO accepted dispatch since it began surfaces
+  // the "no turn started" diagnostic (field: dracon-platform 091828):
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "rearm_no_turn_started", \{ streak/);
   // wired into both send paths' re-arm sites:
   assert.match(SRC, /accountSendRearm\(ctx, "continuation"\);/);
   assert.match(SRC, /\} else accountSendRearm\(ctx, "loop"\);/); // v0.33.1: null-ctx probes + backs off

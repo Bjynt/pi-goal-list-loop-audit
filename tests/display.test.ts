@@ -1275,6 +1275,60 @@ test("v0.34.64: ambiguous (transient 503) recovery is shown with the same auto-r
   assert.doesNotMatch(s, /waiting(?! for)/, "old `waiting` badge is gone");
 });
 
+test("v0.34.102: paused goal parked on mainModelRecovery renders as RECOVERING, not paused (widget head + card)", () => {
+  // Field: dracon-platform 2026-08-08 090343 "working while displaying
+  // paused here" — the goal was parked on the provider wall (rearm storm
+  // streak 19 firing) but the widget head chip read ⏸ paused. With
+  // state.mainModelRecovery.retryAt present, the head must say
+  // recovering (⏳), never contradict the status line.
+  const g = goalOf({
+    status: "paused",
+    policy: "goal",
+    pauseKind: "wait",
+    pauseReason: "main model recovery — retrying (429)",
+    pauseResumeAt: new Date(Date.now() + 42 * 60_000).toISOString(),
+    pauseSuggestedAction: "Auto-retry continues.",
+  });
+  const state = {
+    goal: g,
+    list: [],
+    loop: null,
+    mainModelRecovery: {
+      primary: "minimax/MiniMax-M3",
+      active: "minimax/MiniMax-M3",
+      attempted: ["minimax/MiniMax-M3"],
+      attempts: 2,
+      retryAt: new Date(Date.now() + 42 * 60_000).toISOString(),
+      reason: "main model quota: 429",
+    },
+  };
+  const w = buildWidgetLines(state as never)!;
+  assert.ok(w.some((l) => l.includes("recovering")), `head says recovering: ${w.join("\n")}`);
+  assert.ok(w.some((l) => l.includes("parked on provider wall") && l.includes("quota reset at")), `card names the reset: ${w.join("\n")}`);
+  assert.doesNotMatch(w.join("\n"), /⏸ paused/, "the head chip no longer reads paused");
+  const s = buildStatusText(state as never)!;
+  assert.ok(s.includes("parked on provider wall") && s.includes("no turns until quota reset at"), `status names the blocker: ${s}`);
+  assert.ok(!s.includes("auto-retrying"), "auto-retrying promise is gone for the parked case (it read as live retry)");
+});
+
+test("v0.34.102: wait pause WITHOUT mainModelRecovery keeps the uniform auto-retrying shape", () => {
+  // The v0.34.64 uniform shape survives when the pause is NOT a recovery
+  // park (no state.mainModelRecovery) — e.g. a plain timed wait.
+  const g = goalOf({
+    status: "paused",
+    policy: "goal",
+    pauseKind: "wait",
+    pauseReason: "user timed wait",
+    pauseResumeAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+  });
+  const state = { goal: g, list: [], loop: null };
+  const s = buildStatusText(state as never)!;
+  assert.match(s, /auto-retrying/);
+  assert.ok(!s.includes("parked on provider wall"), "plain wait is not a provider park");
+  const w = buildWidgetLines(state as never)!;
+  assert.ok(w.some((l) => l.includes("auto-retrying")), "plain wait keeps the uniform countdown line");
+});
+  const goalSrc = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 test("v0.34.64: 24h horizon holds render as a paused card with the suggested action; no manual-resume wording", () => {
   // v0.34.58: an upstream reset hint beyond the 5h probe budget falls back to
   // the bounded cadence; it no longer produces a quota-only manual hold.
