@@ -686,6 +686,12 @@ export interface State {
    * Persisted so the turn-boundary check can detect drift across sessions
    * (a fresh pi launch with a changed default model fires no model_select). */
   lastModelRef?: string;
+  /** v0.34.97: epoch (ms) of the most recent session_compact event. The
+   * status line paints a ⏳ compacting… chip while this is within the last
+   * 3 minutes (COMPACTION_GRACE_MS). Persisted so the chip survives a
+   * reload — without it, the chip vanishes on reload and the user thinks
+   * the compaction didn't happen (Screenshot_20260808_003007/003024). */
+  lastCompactionAt?: number;
 }
 
 /** v0.24.2: count TRAILING consecutive disapprovals (the disapproval-cap

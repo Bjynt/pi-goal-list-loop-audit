@@ -661,6 +661,14 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       return `glla: ${paint(theme, attention.color, `⚠ ${attention.label}`)}${heldSuffix}`;
     }
     const activity = goalDisplayActivity(g, extras);
+    // v0.34.97: while the post-compaction grace window is open, surface
+    // "compacting…" so the user knows the session just shrank. The chip
+    // survives reload because lastCompactionAt is persisted on State.
+    const compactAgeMs = state.lastCompactionAt ? now - state.lastCompactionAt : Number.POSITIVE_INFINITY;
+    const compacting = Number.isFinite(compactAgeMs) && compactAgeMs >= 0 && compactAgeMs < 180_000; // COMPACTION_GRACE_MS = 3 min
+    if (compacting) {
+      return `glla: ${paint(theme, "warning", `⏳ compacting… (${fmtElapsed(compactAgeMs)} ago)`)}${heldSuffix}`;
+    }
     if (activity === "awaiting-first-turn") {
       return `glla: ${activityStateBadge("AWAITING FIRST TURN", theme, "warning")}${heldSuffix}`;
     }

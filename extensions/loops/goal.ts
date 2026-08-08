@@ -9873,6 +9873,26 @@ export default function (pi: ExtensionAPI): void {
     loopRearmStreak = 0; loopRearmSince = 0;
     compactionGraceUntil = Date.now() + COMPACTION_GRACE_MS;
     lastCompactionAt = Date.now();
+    // v0.34.97: persist lastCompactionAt to state so the ⏳ compacting…
+    // chip survives a reload. Without this, the chip vanishes on reload
+    // and the user thinks the compaction didn't happen
+    // (Screenshot_20260808_003007/003024 ai-auto-writer 222,368 tokens).
+    state = { ...state, lastCompactionAt };
+    persistState(ctx);
+    // v0.34.97: surface the compaction to the user. Field evidence
+    // (Screenshot_20260808_003007/003024 ai-auto-writer): a 222,368-token
+    // compaction happened but the user only saw "[compaction]" on RELOAD —
+    // the session_compact event fired in-process but no UI surface told
+    // the user what just happened. A brief info notification on the
+    // session_compact event itself makes the compaction visible
+    // immediately. The widget's status line below also paints a
+    // ⏳ compacting… chip while compactionGraceUntil is in the future
+    // (see buildStatusText compaction check).
+    try {
+      ctx.ui.notify(`glla: session compacting — stall counter reset, grace timer started. The widget will show ⏳ compacting… for the next 3 minutes.`, "info");
+    } catch {
+      /* stale ctx best-effort */
+    }
     // v0.34.82: a real compaction landed — clear the starvation refuse
     // gate. The agent_end yield path will resume deferring on the next
     // near-full length stop, and the heartbeat can refire again.
