@@ -1,6 +1,30 @@
 # Changelog
 
 ## Unreleased
+### 0.34.91 — End-of-goal voice says WHAT HAPPENED: completion recap on every terminal surface
+
+Three screenshots in a row (Screenshot_20260808_012905 deathrun, 013220 + 013515 polis) called
+out the same thing: every plugin summary at goal-complete was boilerplate about the process
+("auditor approved", "claim persisted", `✓ <objective> ✓ complete · took X`) while the one
+useful recap ("Goal ... SHIPPED summary: ...") was agent-prose luck, not a plugin surface.
+Fix: persist the agent's `completionSummary` on the goal at complete_goal and surface it on
+every end-of-goal surface — terminal widget line, settle chat notify, external notify, and
+the durable goal .md → archive. Fallback to the objective when no recap was captured.
+
+- `Goal.completionSummary` (extensions/goal-loop-core.ts) — persisted with the goal at
+  complete_goal time, used wherever the widget/notify previously echoed the objective.
+- Widget + status terminal line → `─ ✓ done · <recap> · took X` (extensions/goal-loop-display.ts).
+- Detached-audit settle notify → `✓ done: <recap> — auditor <model> approved.` (was
+  `Goal complete — auditor <model> approved.` — process only, no information). Tool-path
+  `/goal verify` external notify: same swap to the recap. Both: captured BEFORE
+  archiveCurrentGoal mutates state.goal.
+- `renderGoalMarkdown` → new `## Completion summary` section so the archive carries the
+  full-length recap (widget shows a truncated line; the .md has the whole thing).
+- Tests: display v0.34.89 test kept as fallback (no summary → objective); new v0.34.91
+  tests pin the recap-preferred + whitespace-only fallback, plus the settle-notify carries
+  the recap (not process boilerplate). `revision-bound-audit` asserts the recap lands on
+  the goal at claim time.
+
 ### 0.34.90 — Never spam the chat: quota-wall prompt fires ONCE per parked episode, cross-session; redundant "Auditor queued" notify removed
 
 Field (endless-td, 2026-08-07, Screenshot_20260807_231717): the chat showed FOUR nearly identical "Provider quota wall — [TRIAGE-2026-08-06 findings.md:591] …" messages. Ledger forensics: the same parked triage goal was prompted every hour (scheduled 18:03→19:00, 19:15→20:00, 20:15→21:00 after the 18:00 send) because auto-recovery flapping re-arms the schedule each cycle, and FOUR pi sessions on the same project each scheduled their own prompt for the same :00 (09:19/09:20/09:25/09:35 → 10:00). The in-memory `quotaPromptScheduledFor` guard is per-session only; the hourly repeat was per-episode re-park; nothing was durable. User principle: "we should never spam in the chat."

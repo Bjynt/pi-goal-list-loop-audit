@@ -7204,12 +7204,19 @@ function registerAgentTools(pi: any): void {
 
       if (result.approved && result.regressionShieldPassed !== false) {
         updateGoal({ auditHistory: history, pendingCompletion: undefined }, ctx);
-        // v0.34.91: external notify carries the recap (what happened),
-        // not the objective echo.
+        // v0.34.91: the end-of-goal voice carries the recap (what happened)
+        // on EVERY approve path — fresh complete_goal approve + quota-retry
+        // approve + manual-verify approve. Captured BEFORE archive (it
+        // mutates state.goal). The widget card and the external notify both
+        // already use the recap; the chat notify was the lone surface still
+        // saying "auditor approved" — pure process, no information
+        // (Screenshot_20260808_012905/013220/013515).
         const recapSrc = state.goal.completionSummary?.trim()
           ? state.goal.completionSummary.replace(/\s+/g, " ")
           : state.goal.objective;
+        const recap = displaySlice(recapSrc, 110);
         archiveCurrentGoal(ctx, "complete", `auditor ${result.model} approved`);
+        ctx.ui.notify(`✓ done: ${recap} — auditor ${result.model} approved.`, "info");
         notifyExternal(ctx, `Goal complete (auditor approved): ${displaySlice(recapSrc, 120)}`);
         return { content: [{ type: "text", text: `Goal approved by auditor ${result.model}.` }], details: {} };
       }
