@@ -225,7 +225,11 @@ test("v0.29.1: completion lifecycle survives the wedged-queue window (storm supp
   //    result never landed (pully: 12h+ stuck). Release the stored claim as
   //    infrastructure/no-verdict; a heartbeat must not launch a blind retry.
   const hbIdx = src.indexOf("function heartbeatTick");
-  const hb = src.slice(hbIdx, hbIdx + 12000); // v0.35.x: heartbeat releases stranded audits before latch handling
+  // v0.34.94: increased slice size to cover the new self-heal block added
+  // between the stale-probe check and the stranded-audit watchdog — the
+  // pending_latch_stuck event the assertion targets has grown further into
+  // the heartbeatTick body as new features land.
+  const hb = src.slice(hbIdx, hbIdx + 16000); // v0.35.x: heartbeat releases stranded audits before latch handling
   assert.match(hb, /stranded_audit_recovered/);
   assert.match(hb, /state\.goal\?\.status === "auditing" &&\s*\n\s*!completionAuditInFlight/);
   assert.match(hb, /Completion audit blocked — no verdict/);
