@@ -25,6 +25,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
 const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
 const DISPLAY = fs.readFileSync("extensions/goal-loop-display.ts", "utf-8");
 const SCHEMA = fs.readFileSync("schemas/goal.schema.json", "utf-8");
@@ -62,13 +63,13 @@ test("S3: probes wired at cmdSet / cmdResume / cmdList / propose_goal_draft entr
 });
 
 test("S3: stale creation marks the interrupt and tells the truth (no 'starting now' lie)", () => {
-  assert.match(SRC, /updateGoal\(\{ interruptedAt: nowIso\(\), interruptedReason: "created in a stale session" \}, ctx\)/);
-  assert.match(SRC, /safe in \.pi-glla\/, but this stale process can't send continuations\. A fresh session_start will resume it; if no replacement arrives, restart pi normally/);
+  assert.match(CMDS, /updateGoal\(\{ interruptedAt: nowIso\(\), interruptedReason: "created in a stale session" \}, ctx\)/);
+  assert.match(CMDS, /safe in \.pi-glla\/, but this stale process can't send continuations\. A fresh session_start will resume it; if no replacement arrives, restart pi normally/);
 });
 
 test("S1: stale resume persists active+marker, skips the misleading notify and the doomed send", () => {
-  assert.match(SRC, /interruptedReason: "resumed in a stale session"/);
-  assert.match(SRC, /if \(staleEntry\) return;/);
+  assert.match(CMDS, /interruptedReason: "resumed in a stale session"/);
+  assert.match(CMDS, /if \(staleEntry\) return;/);
 });
 
 test("S2: restore gate clears the marker on auto-resume and names the recovery", () => {
@@ -133,11 +134,11 @@ test("v0.28.27/0.29.8: /goal verify (renamed from /goal audit) — manual audito
   assert.ok(CORE.includes('"audit", "tweak", "archive", "start"'));
   // Dispatch: guards (no goal, audit in flight), seeds the synthesized
   // claim, ledgered, delegates to the shared engine with origin "manual".
-  assert.match(SRC, /if \(route\.name === "verify"\) \{/);
-  assert.match(SRC, /No active goal — \/goal verify needs a goal to verify\./);
-  assert.match(SRC, /Manual audit requested by the user via \/goal verify \(no agent completion claim\)/);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "manual_audit_requested", \{ goalId: state\.goal\.id \}\);/);
-  assert.match(SRC, /void retryStoredCompletionAudit\("manual"\);/);
+  assert.match(CMDS, /if \(route\.name === "verify"\) \{/);
+  assert.match(CMDS, /No active goal — \/goal verify needs a goal to verify\./);
+  assert.match(CMDS, /Manual audit requested by the user via \/goal verify \(no agent completion claim\)/);
+  assert.match(CMDS, /appendLedger\(ctx\.cwd, "manual_audit_requested", \{ goalId: state\.goal\.id \}\);/);
+  assert.match(CMDS, /void retryStoredCompletionAudit\("manual"\);/);
   // Engine parametrized: origin flows into ledger + notifies + archive reason.
   assert.match(SRC, /origin: CompletionAuditOrigin = "quota-retry"/);
   assert.match(SRC, /via: origin === "manual" \? "manual-audit" : "quota-retry-direct-audit"/);
@@ -158,13 +159,13 @@ test("v0.29.8: /goal audit [focus] — the one-shot project audit; /glla status 
   assert.ok(FOREVER.includes("Done when: the audit pass is complete, every new FIX finding has a fix commit"));
   // Dispatch: /goal audit goes through cmdSet with skipDraft (explicit
   // command → starts immediately), focus flows through.
-  assert.ok(SRC.includes("return cmdSet(projectAuditTarget(route.rest || undefined), ctx, true);"));
+  assert.ok(CMDS.includes("return cmdSet(projectAuditTarget(route.rest || undefined), ctx, true);"));
   // /glla status aggregates the ONE state + pointers.
-  assert.ok(SRC.includes("function cmdGllaStatus(ctx: ExtensionContext): void {"));
-  assert.ok(SRC.includes("decision pending (${g.pauseOptions.length} options) — ${activeGoalSurfaceCommand(\"decide\")}"));
+  assert.ok(CMDS.includes("function cmdGllaStatus(ctx: ExtensionContext): void {"));
+  assert.ok(CMDS.includes("decision pending (${g.pauseOptions.length} options) — ${activeGoalSurfaceCommand(\"decide\")}"));
   // v0.34.51: the /glla status decision line is mode-aware (goal vs list policy).
-  assert.ok(SRC.includes("deep: /goal status · /list · /loop status · /glla stats · /glla audits · /glla log"));
-  assert.ok(SRC.includes('if (/^status(?:\\s|$)/.test(trimmed)) {'));
+  assert.ok(CMDS.includes("deep: /goal status · /list · /loop status · /glla stats · /glla audits · /glla log"));
+  assert.ok(CMDS.includes('if (/^status(?:\\s|$)/.test(trimmed)) {'));
 });
 
 // ---------- v0.34.2: manual resume clears the marker too ----------
@@ -173,7 +174,7 @@ test("v0.34.2: cmdResume clears interruptedAt/interruptedReason on a fresh-sessi
   // The autoResume restore path (:6227-ish) was the ONLY clear-site — with
   // autoresume=off a manually resumed goal kept the red interrupted banner
   // forever while actively working (hegemon, 2026-08-01).
-  const resumeCall = SRC.match(/updateGoal\(\{ status: "active", pauseReason: undefined[^\n]*\n?/);
+  const resumeCall = CMDS.match(/updateGoal\(\{ status: "active", pauseReason: undefined[^\n]*\n?/);
   assert.ok(resumeCall, "cmdResume updateGoal call found");
   assert.match(resumeCall[0], /interruptedAt: undefined, interruptedReason: undefined/, "manual resume clears the marker");
   // …and the stale-session re-mark still wins when the resume itself is stale.
@@ -208,13 +209,13 @@ test("v0.34.7: the fan-out float carries a catch (rejection ≠ process exit)", 
 });
 
 test("v0.34.7: re-kick clears the stale-handle marker (banner must not survive a working session)", () => {
-  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  const g = fs.readFileSync(path.resolve("extensions/goal-commands.ts"), "utf-8");
   const gllaResume = g.slice(g.indexOf("async function cmdGllaResume"));
   const rek = gllaResume.indexOf('g.status === "active"');
   const clear = gllaResume.indexOf("updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx)", rek);
   const notify = gllaResume.indexOf("ACTIVE but idle", rek);
   assert.ok(rek > -1 && clear > rek && clear < notify, "cmdGllaResume re-kick clears interruptedAt before notifying");
-  const cmdResume = g.slice(g.indexOf("async function cmdResume"));
+  const cmdResume = g.slice(g.indexOf("async function cmdResume"), g.indexOf("async function cmdCancel"));
   const rek2 = cmdResume.indexOf('state.goal.status === "active"');
   const clear2 = cmdResume.indexOf("updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx)", rek2);
   assert.ok(rek2 > -1 && clear2 > rek2, "cmdResume re-kick clears interruptedAt too");
