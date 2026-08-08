@@ -1,6 +1,32 @@
 # Changelog
 
 ## Unreleased
+### 0.34.109 — decomposition step 1: goal-state.ts owns the state singleton
+
+First extraction per docs/GLLA-POSITIONING-AND-DECOMPOSITION-2026-08-08.md
+sequencing. Invariant #2: the mutable `state` object has ONE owner.
+
+- New `extensions/goal-state.ts`: `export let state: State = { goal: null }`
+  (the singleton), `replaceState(next)` (wholesale replacement primitive),
+  and `persistStateLine(cwd, s)` (the ledger `state`-line write — the
+  persistence core). goal.ts imports the binding and the primitive.
+- goal.ts: the local `let state: State = { goal: null }` declaration is
+  gone; all 18 wholesale `state = ...` sites now route through
+  `replaceState(...)` (ESM import bindings are read-only, so a stray
+  reassignment would be a tsc error — the pin test enforces it too).
+  `persistState` wraps `persistStateLine` with its UI side effects
+  (notifyPersistenceState / refreshUI) unchanged.
+- Module-level mutable flags deliberately stay in goal.ts (invariant #3) —
+  setGoal / updateGoal / archiveCurrentGoal / autoArbitrateStackedState are
+  NOT moved yet; they reset ~10 flags that belong to goal.ts's clusters and
+  will move in later steps with their owning code.
+- Tests: new tests/goal-state.test.ts (4 pins: single declaration, no
+  stray `state =` reassignments, persistence core location, spot-checked
+  converted sites); disk-first-queue.test.ts pins re-spelled to the
+  replaceState form (intent unchanged — sidecar-before-commit ordering).
+
+Suite: 1146 pass / 1 skip / 0 fail (103 files); tsc clean.
+
 ### 0.34.108 — guidance literals fixed + dead-code sweep (audit findings)
 
 Findings from the 2026-08-08 source audit (subagent c6206c9d, v0.34.105

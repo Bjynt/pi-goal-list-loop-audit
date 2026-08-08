@@ -23,10 +23,12 @@ plus a `v0.34.x-<TOPIC>.md` symlink for versioned docs). Older docs
 | v0.34.104 | v0.34.104-IMAGE1-LIST-STALL-AND-COUNT-FIX.md | IMAGE1-LIST-STALL-AND-COUNT-FIX-2026-08-08.md |
 | v0.34.105 | v0.34.105-SUBAGENT-HANG-WATCHDOG-QUOTA-BLINDSPOT.md | SUBAGENT-HANG-WATCHDOG-QUOTA-BLINDSPOT-2026-08-08.md |
 | v0.34.108 | v0.34.108-GUIDANCE-LITERALS-AND-DEAD-CODE.md | GUIDANCE-LITERALS-AND-DEAD-CODE-2026-08-08.md |
+| v0.34.109 | v0.34.109-GOAL-STATE-EXTRACTION.md | GOAL-STATE-EXTRACTION-2026-08-08.md |
 
 ## Topic index (canonical docs, newest first)
 
 **2026-08-08**
+- GOAL-STATE-EXTRACTION-2026-08-08.md — decomposition step 1: goal-state.ts owns the state singleton (v0.34.109)
 - GUIDANCE-LITERALS-AND-DEAD-CODE-2026-08-08.md — 7 guidance literals fixed + dead-code sweep + pin blind spot (v0.34.108)
 - SUBAGENT-HANG-WATCHDOG-QUOTA-BLINDSPOT-2026-08-08.md — subagent hang watchdog blinded by main-model quota recovery (v0.34.105)
 - IMAGE1-LIST-STALL-AND-COUNT-FIX-2026-08-08.md — list-stall settle window + completionSummary self-check (v0.34.104)
