@@ -650,8 +650,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       // the v0.34.95 queued-envelope wording so both surfaces agree.
       const parked = state.mainModelRecovery?.retryAt ? Date.parse(state.mainModelRecovery.retryAt) : Number.NaN;
       if (Number.isFinite(parked)) {
-        const qs = queue;
-        return `glla: ${paint(theme, "dim", `⏳ parked on provider wall — no turns until quota reset at ${formatClockTime(parked)}`)}${qs}${heldSuffix}`;
+        return `glla: ${paint(theme, "dim", `⏳ parked on provider wall — no turns until quota reset at ${formatClockTime(parked)}`)}${queue}${heldSuffix}`;
       }
       return `glla: ${paint(theme, "dim", `⏳ auto-retrying${when}`)}${queue}${heldSuffix}`;
     }
