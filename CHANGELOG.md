@@ -1,6 +1,31 @@
 # Changelog
 
 ## Unreleased
+### 0.34.110 — decomposition step 2: goal-commands.ts + goal-loop.ts extracted
+
+Second extraction per docs/GLLA-POSITIONING-AND-DECOMPOSITION-2026-08-08.md
+sequencing — the command surface and the loop machinery leave the monolith,
+zero behavior change.
+
+- New `extensions/goal-commands.ts` (1,991 lines): `createGoalCommands(deps)`
+  factory + mirrored exports — cmdResume/cmdCancel/cmdList/cmdSettings/
+  cmdGllaWipe/cmdGllaResume/cmdGllaStatus/cmdLog/cmdSet/cmdToolOverride/
+  cmdReviewerSettings, maybeDecisionPopup, addSingleItem, enqueueItems,
+  recentlyCompletedObjectives, probeAutoNotify, stale-entry gates,
+  subtask validation refusals, `Unknown /glla action`.
+- New `extensions/goal-loop.ts` (1,071 lines): `createGoalLoop(deps)` factory
+  + mirrors — sendLoopTurn, runLoopTick, finishLoopGit, cmdLoop (incl.
+  `/loop finish`), startLoopFromConfig, spec_item_progress accounting,
+  divergence walk, loop rearm/backoff, `loopTimerPending()` helper.
+- goal.ts: 11,415 → 8,643 lines; one-way imports only; moved bodies
+  byte-identical except mechanical `flags.X` accessor re-spellings and
+  `loopTimer === null` → `!loopTimerPending()`.
+- Ledger event names unchanged; loop_turn_sent / loop_turn_send_failed
+  now emitted from goal-loop.ts, list_duplicate_skipped from
+  goal-commands.ts, everything else stays put.
+- 16 test files re-anchored (mechanical source-pin re-spellings only, no
+  expectation edits). Suite: 1146 pass / 1 skip / 0 fail; tsc clean.
+
 ### 0.34.109 — decomposition step 1: goal-state.ts owns the state singleton
 
 First extraction per docs/GLLA-POSITIONING-AND-DECOMPOSITION-2026-08-08.md
