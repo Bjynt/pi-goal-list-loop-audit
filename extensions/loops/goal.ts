@@ -778,16 +778,6 @@ export function __testOnlyLastConfirmDialog(): { title: string; body: string; op
   return last;
 }
 
-/** TEST-ONLY hook (tests/harness): clears the stall-brake counters a
- * previous test file's short no-tool turns accumulated (bun test shares
- * module state; a parked-goal test that fires a few short "back up" turns
- * would otherwise trip the stall pause on an unrelated goal). */
-export function __testOnlyResetStallState(): void {
-  heartbeatNudges = 0;
-  consecutiveStalls = 0;
-  heartbeatStaleStreak = 0;
-}
-
 /** TEST-ONLY hook (tests/harness): clears the terminal/stand-down module
  * flags a stale-scenario test file may have latched. Production clears them
  * only on successor-absorb or process restart; bun test shares module state
@@ -2918,7 +2908,7 @@ function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModelRecover
   clearLoopTimer();
   continuationDispatchStoodDown = true;
   state.mainModelRecovery = { ...normalized, retryAt: undefined, manualResumeRequired: true };
-  const resumeCmd = state.goal?.policy === "list" ? "/list resume" : normalized.kind === "loop" ? "/loop resume" : "/goal resume";
+  const resumeCmd = recoverySurfaceCommand(normalized.kind, "resume");
   const quotaMarker = /quota|rate.?limit|usage.?limit|token.?plan|plan.?limit/i.test(normalized.reason) ? ` · ${normalized.reason}` : "";
   const pauseReason = `main model recovery — automatic probes stopped (${why})${quotaMarker}`;
   const action = `No automatic provider probes remain. Check the provider reset/billing state or switch /model, then ${resumeCmd} to start a fresh recovery window; ${activeGoalSurfaceCommand("cancel")} stops it.`;
@@ -3049,7 +3039,7 @@ function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainModelRec
   clearContinuationTimer();
   clearLoopTimer();
   continuationDispatchStoodDown = true;
-  const resumeCmd = state.goal?.policy === "list" ? "/list resume" : normalized.kind === "loop" ? "/loop resume" : "/goal resume";
+  const resumeCmd = recoverySurfaceCommand(normalized.kind, "resume");
   if (normalized.kind === "goal" && state.goal) {
     updateGoal({
       status: "paused",
@@ -3148,19 +3138,10 @@ function cancelHourlyProbe(): void {
   hourlyProbeFireAt = null;
 }
 
-// Test-only hooks for the hourly ticker. The clock override lets tests
-// fast-forward to a specific :00:30 slot without waiting an hour.
-export function __testOnlySetHourlyProbeNow(now: number | null): void {
-  hourlyProbeClockOverride = now;
-}
-
-export function __testOnlyResetHourlyProbe(): void {
-  cancelHourlyProbe();
-}
-
-export function __testOnlyHourlyProbeState(): { scheduledFireAt: number | null } {
-  return { scheduledFireAt: hourlyProbeFireAt };
-}
+// v0.34.108: the hourly-ticker test-only hooks (__testOnlySetHourlyProbeNow /
+// __testOnlyResetHourlyProbe / __testOnlyHourlyProbeState) were dead —
+// hourly-quota-probe.test.ts is source-pin only and never called them.
+// Removed with the v0.34.108 dead-code sweep.
 
 /** An explicit resume is consent to start a fresh automatic window after the
  * five-hour/24-hour safety hold. It does not silently reset the window during
@@ -3757,6 +3738,11 @@ const activeGoalCommand = (command: ModeCommand): string => modeCommand(state.go
 const activeGoalRoot = (): "/goal" | "/list" => workCommandRoot(state.goal?.policy) as "/goal" | "/list";
 const activeGoalSurfaceCommand = (command: string): string => workCommand(state.goal?.policy, command);
 const activeGoalStatusCommand = (): string => state.goal?.policy === "list" ? `${activeGoalRoot()} show` : `${activeGoalRoot()} status`;
+// v0.34.108: the main-model recovery paths park a METRIC LOOP too — a
+// loop resumed through "/goal resume" would be wrong. activeGoalSurfaceCommand
+// keys off the goal policy only; this helper adds the loop surface.
+const recoverySurfaceCommand = (kind: "goal" | "loop", command: string): string =>
+  workCommand(kind === "loop" ? "loop" : state.goal?.policy, command);
 function notifyPersistenceState(ctx: ExtensionContext): void {
   if (isPersistenceDegraded() && !persistenceDegradedNotified) {
     persistenceDegradedNotified = true;
@@ -7095,7 +7081,7 @@ function registerAgentTools(pi: any): void {
         // between "no goal" and "goal parked".
         if (state.goal.status === "paused") {
           const isList = state.goal.policy === "list";
-          const resume = isList ? "/list resume" : "/goal resume";
+          const resume = activeGoalSurfaceCommand("resume");
           return { content: [{ type: "text", text: `No active goal — the ${isList ? "list item" : "goal"} is paused; ${resume} reactivates it (complete_goal only runs on an active item).` }], details: {} };
         }
         return { content: [{ type: "text", text: `No active goal — it is ${state.goal.status}.` }], details: {} };
@@ -10493,7 +10479,7 @@ export default function (pi: ExtensionAPI): void {
     const autoResume = shouldAutoResumeOnSessionStart(event?.reason, autoResumeSetting);
     const mainRecovery = state.mainModelRecovery;
     if (mainRecovery?.manualResumeRequired) {
-      const recoveryResumeCmd = mainRecovery.kind === "loop" ? "/loop resume" : state.goal?.policy === "list" ? "/list resume" : "/goal resume";
+      const recoveryResumeCmd = recoverySurfaceCommand(mainRecovery.kind, "resume");
       ctx.ui.notify(`Main-model recovery stopped automatic probes — the work is safe; ${recoveryResumeCmd} starts a fresh bounded window after you check the provider.`, "warning");
     } else if (mainRecovery?.retryAt) {
       const retryAtMs = Date.parse(mainRecovery.retryAt);
@@ -10507,7 +10493,7 @@ export default function (pi: ExtensionAPI): void {
         // session is still parked — the timer died with the old session.
         scheduleHourlyProbe(ctx);
       } else {
-        const recoveryResumeCmd = mainRecovery.kind === "loop" ? "/loop resume" : state.goal?.policy === "list" ? "/list resume" : "/goal resume";
+        const recoveryResumeCmd = recoverySurfaceCommand(mainRecovery.kind, "resume");
         ctx.ui.notify(`Main-model recovery is waiting with the work safe — ${recoveryResumeCmd} retries the provider, or enable Auto-resume in /glla settings.`, "info");
       }
     }
@@ -10518,7 +10504,7 @@ export default function (pi: ExtensionAPI): void {
     const quotaClaim = state.goal?.pendingCompletion;
     if (state.goal?.status === "paused" && quotaClaim?.phase === "quota-waiting" && state.goal.pauseKind === "wait" && state.goal.pauseResumeAt) {
       const quotaConsent = autoResume || explicitRecovery;
-      const quotaResumeCmd = state.goal.policy === "list" ? "/list resume" : "/goal resume";
+      const quotaResumeCmd = activeGoalSurfaceCommand("resume");
       const quotaAtMs = Date.parse(state.goal.pauseResumeAt);
       if (quotaConsent) {
         const delay = Number.isFinite(quotaAtMs) ? Math.max(0, quotaAtMs - Date.now()) : 0;
@@ -10615,7 +10601,7 @@ export default function (pi: ExtensionAPI): void {
         const queued = listQueue().length;
         // v0.22.7: name WHAT is held — a list head resumes through /list.
         const isListItem = state.goal.policy === "list";
-        const resumeCmd = isListItem ? "/list resume" : "/goal resume";
+        const resumeCmd = activeGoalSurfaceCommand("resume");
         const resumeHint = `${resumeCmd} to continue${queued > 0 ? ` (+${queued} waiting in the list)` : ""} · enable Auto-resume in /glla settings for load-time recovery`;
         // v0.31.1: name the supersession — a held one-shot audit whose work a
         // live audit loop now owns reads as "stalled" for HOURS otherwise
