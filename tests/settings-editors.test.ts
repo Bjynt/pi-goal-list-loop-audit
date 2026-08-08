@@ -180,14 +180,15 @@ test("T4: the switch has no confirm-class editors (select + input only)", () => 
 
 test("v0.28.34: notify folds a default IN — auto-detect notify-send/osascript, 'off' silences, custom overrides", () => {
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   // resolution order: explicit off → custom → auto-probe:
   assert.match(SRC, /if \(settings\.notifyCmd === "off" \|\| !extensionApi\) return;/);
   assert.match(SRC, /const cmd = settings\.notifyCmd \?\? autoNotifyCmd;/);
-  assert.match(SRC, /command -v notify-send \|\| command -v osascript/);
-  assert.match(SRC, /autoNotifyCmd = `notify-send "pi-goal-list-loop-audit" "\$1"`;/);
-  assert.match(SRC, /GLLA_MSG="\$1" osascript/);
+  assert.match(CMDS, /command -v notify-send \|\| command -v osascript/); // decomposition step 2: probe moved
+  assert.match(CMDS, /autoNotifyCmd = `notify-send "pi-goal-list-loop-audit" "\$1"`;/);
+  assert.match(CMDS, /GLLA_MSG="\$1" osascript/);
   // pushes stay actionable-only (no per-turn site exists):
-  assert.match(SRC, /Pushes fire only where there is something to DO/);
+  assert.match(CMDS, /Pushes fire only where there is something to DO/); // decomposition step 2
   const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
   assert.match(MENU, /unset = auto-detect notify-send\/osascript · 'off' = silent/);
   // README decoupling (user: "too married to our own eco"):

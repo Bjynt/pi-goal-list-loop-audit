@@ -76,11 +76,12 @@ test("v0.34.0: audit templates demand the parallel fan-out shape (both)", () => 
 
 test("v0.34.0: divergence bail — 3+ trailing regressions append a reassessment note", () => {
   const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
-  assert.match(g, /let trailingRegressions = 0;/);
-  assert.match(g, /trailingRegressions >= 3/, "bail threshold");
-  assert.match(g, /consecutive regressions — every recent change moved the metric the WRONG way/);
-  assert.match(g, /if \(a === null \|\| b === null\) break;/, "metricless ticks carry no value — the walk stops");
-  assert.match(g, /strategyNote2 = strategyNote/, "note rides the strategy channel (note-only, nothing auto-stops)");
+  const gl = fs.readFileSync(path.resolve("extensions/goal-loop.ts"), "utf-8"); // decomposition step 2
+  assert.match(gl, /let trailingRegressions = 0;/);
+  assert.match(gl, /trailingRegressions >= 3/, "bail threshold");
+  assert.match(gl, /consecutive regressions — every recent change moved the metric the WRONG way/);
+  assert.match(gl, /if \(a === null \|\| b === null\) break;/, "metricless ticks carry no value — the walk stops");
+  assert.match(gl, /strategyNote2 = strategyNote/, "note rides the strategy channel (note-only, nothing auto-stops)");
 });
 
 // ---------- v0.34.4: brief discipline (darklord + junk-runner zero-text deaths) ----------
