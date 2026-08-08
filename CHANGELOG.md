@@ -1,6 +1,42 @@
 # Changelog
 
 ## Unreleased
+### 0.34.100 — Auditor report-stream muted default verification across session models
+
+Field evidence (Screenshot_20260808_084527/084717 endless-td
+minimax/MiniMax-M3): the auditor's report stream was muted by
+default in the widget — `report stream muted — final text at
+verdict` rendered in the card during the audit run, the prose
+tail was hidden. The user wanted verification that this default
+applies across session models, not just for MiniMax-M3.
+
+The fix is verification: the silent default was already wired
+(v0.34.66 + v0.34.86). This release adds regression tests that
+pin the contract:
+
+- **Default ON** (`extensions/goal-settings.ts:189`):
+  `auditorSilent: true` in `DEFAULT_GLOBAL_SETTINGS`. /glla
+  settings exposes the toggle.
+- **Plumbing** (`extensions/loops/goal.ts:1647`):
+  `auditorSilent: loadSettings(ctx.cwd).auditorSilent !== false`
+  threads the loaded setting into `extras.auditorSilent`. The
+  `!== false` check means `undefined` defaults to ON — a session
+  with no explicit setting gets the silent default.
+- **Display** (`extensions/goal-loop-display.ts:966`):
+  `const silent = extras?.auditorSilent !== false` — same pattern.
+- **New tests** in `tests/display.test.ts`, +3 cases:
+  - default is on in settings (regression pin for
+    `auditorSilent: true,`)
+  - plumbing threads the loaded setting through extras
+  - silent-default widget renders muted for ANY session model
+    (tested with MiniMax-M3, Anthropic Sonnet, OpenAI GPT-4.1,
+    and undefined — all muted)
+- **Suite**: 1119 pass / 1 skip / 0 fail across 100 files. `tsc
+  --noEmit` clean.
+- **Files touched**: `tests/display.test.ts` (+3 tests, +40 LOC),
+  `package.json` (0.34.99 → 0.34.100), `CHANGELOG.md` (this
+  entry), `audit/AUDITOR-SILENT-DEFAULT-2026-08-08.md` (new).
+
 ### 0.34.99 — Quota prompt verbosity (CLOSED via v0.34.92)
 
 The original complaint was that the v0.34.58 hourly quota-resume
