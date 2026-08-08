@@ -2878,6 +2878,26 @@ async function tryMainModelFallback(ctx: ExtensionContext, failure: MainModelFai
       return false;
     }
     recovery.attempted.push(candidateRef);
+    // v0.34.93: forbidden-models gate on main-model fallback. The auditor
+    // chain (resolveAuditorModel) consults isForbiddenModel; this path did
+    // not. Without the gate the recovery envelope can rotate onto a
+    // forbidden model (expensive default, vision assist forbidden), briefly
+    // set it via extensionApi.setModel, then observeModelChange reverts it
+    // — but one wasted provider call and a misleading forbidden_model_switch
+    // ledger event happen first. Screenshot_20260808_083612 (endless-td):
+    // the session rotated to Anthropic during recovery when no allowed
+    // backup existed; user: "this could be a very costly importu decision.
+    // I think it should be disallowed." Silent skip + clearer ledger event;
+    // the loop continues to the next candidate. If no allowed candidate
+    // exists, the recovery fails-closed below (no allowed backup).
+    if (isForbiddenModel(candidateRef, loadSettings(ctx.cwd).forbiddenModels)) {
+      appendLedger(ctx.cwd, "forbidden_model_fallback_blocked", {
+        ref: candidateRef,
+        reason: "candidate is in the forbidden list",
+        from: current,
+      });
+      continue;
+    }
     const candidate = resolveMainModel(ctx, candidateRef);
     if (!candidate) {
       appendLedger(ctx.cwd, "main_model_fallback_unavailable", { ref: candidateRef, reason: "not in the configured model registry" });
