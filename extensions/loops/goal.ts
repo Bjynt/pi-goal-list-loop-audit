@@ -230,7 +230,18 @@ import {
   mainModelRecoveryActive,
   mainModelRecoveryKind,
   mainModelRecoveryReason,
+  mainModelRecoverySucceeded,
+  mainModelFallbackRefs,
+  manuallyResumeMainModelRecovery,
   markCompletionAuditRecoveryPending,
+  parkMainModelAfterFailure,
+  probeMainModelRecovery,
+  recoverMainModelFromSendStorm,
+  resolveMainModel,
+  scheduleHourlyProbe,
+  scheduleMainModelRecoveryTimer,
+  setMainModelRecoveryPause,
+  tryMainModelFallback,
   withMainModelRecoveryWindow,
   type RecoveryDeps,
   type RecoveryFlags,
@@ -1388,6 +1399,11 @@ function foreignToolGuard(execCtx: unknown): string | null {
 let mainModelRecoveryTimer: NodeJS.Timeout | null = null;
 let mainModelSwitchInFlight = false;
 let mainModelAbortForRecovery = false;
+// hourly quota-probe ticker (v0.34.92) — co-resident with the normal retry
+// cadence; opt-in via hourlyQuotaProbe (default ON). Flags stay owned here;
+// goal-recovery.ts observes them through the RecoveryFlags accessor.
+let hourlyProbeTimer: NodeJS.Timeout | null = null;
+let hourlyProbeFireAt: number | null = null;
 let lastMainModelFailure: MainModelFailure | null = null;
 
 // v0.34.92: hourly quota-resume prompter REMOVED. v0.34.58/v0.34.90 added a
@@ -6783,14 +6799,29 @@ const recoveryFlags: RecoveryFlags = {
   set hourlyProbeTimer(v) { hourlyProbeTimer = v; },
   get hourlyProbeFireAt() { return hourlyProbeFireAt; },
   set hourlyProbeFireAt(v) { hourlyProbeFireAt = v; },
+  get sessionGeneration() { return sessionGeneration; },
+  set sessionGeneration(v) { sessionGeneration = v; },
+  get extensionApi() { return extensionApi; },
+  set extensionApi(v) { extensionApi = v; },
+  get extensionApiStale() { return extensionApiStale; },
+  set extensionApiStale(v) { extensionApiStale = v; },
+  get continuationDispatchStoodDown() { return continuationDispatchStoodDown; },
+  set continuationDispatchStoodDown(v) { continuationDispatchStoodDown = v; },
+  get lastLongLivedFailureAt() { return lastLongLivedFailureAt; },
+  set lastLongLivedFailureAt(v) { lastLongLivedFailureAt = v; },
 };
 const recoveryDeps: RecoveryDeps = {
   activeGoalSurfaceCommand,
   clearDetachedAuditRuntime,
   updateGoal,
-  cancelHourlyProbe,
-  mainModelAutoRetryUntil,
-  MAIN_MODEL_AUTO_RETRY_HORIZON_MS,
+  clearContinuationTimer,
+  freshCtxForGeneration,
+  isSupervising,
+  notifyExternal,
+  persistState,
+  recoverySurfaceCommand,
+  scheduleContinuation,
+  scheduleSessionTimeout,
 };
 createGoalRecovery(recoveryFlags, recoveryDeps);
 

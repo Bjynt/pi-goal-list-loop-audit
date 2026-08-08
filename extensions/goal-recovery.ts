@@ -212,11 +212,11 @@ export function clearMainModelRecoveryTimer(): void {
   cancelHourlyProbe();
 }
 
-function mainModelFallbackRefs(ctx: ExtensionContext): string[] {
+export function mainModelFallbackRefs(ctx: ExtensionContext): string[] {
   try { return normalizeModelRefs(loadGlobalSettings().mainModelFallbacks); } catch { return []; }
 }
 
-function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModelRecovery, why: string): void {
+export function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModelRecovery, why: string): void {
   const normalized = withMainModelRecoveryWindow(recovery);
   clearMainModelRecoveryTimer();
   clearContinuationTimer();
@@ -253,14 +253,14 @@ function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModelRecover
 }
 
 /** Resolve a configured provider/model using only the public registry API. */
-function resolveMainModel(ctx: ExtensionContext, ref: string): any | undefined {
+export function resolveMainModel(ctx: ExtensionContext, ref: string): any | undefined {
   const parts = splitModelRef(ref);
   if (!parts) return undefined;
   try { return ctx.modelRegistry?.find?.(parts.provider, parts.id) as any; } catch { return undefined; }
 }
 
 /** Select one configured backup before pi's own agent-level retry continues. */
-async function tryMainModelFallback(ctx: ExtensionContext, failure: MainModelFailure): Promise<boolean> {
+export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainModelFailure): Promise<boolean> {
   if (flags.mainModelSwitchInFlight || failure.kind === "non-recoverable") return false;
   const refs = mainModelFallbackRefs(ctx);
   if (refs.length === 0) return false;
@@ -336,7 +336,7 @@ async function tryMainModelFallback(ctx: ExtensionContext, failure: MainModelFai
   }
 }
 
-function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainModelRecovery, delayMs: number): boolean {
+export function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainModelRecovery, delayMs: number): boolean {
   const normalized = withMainModelRecoveryWindow(recovery);
   const now = Date.now();
   const deadlineMs = normalized.autoRetryUntil ? Date.parse(normalized.autoRetryUntil) : Number.NaN;
@@ -375,7 +375,7 @@ function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainModelRec
   return true;
 }
 
-function scheduleMainModelRecoveryTimer(ctx: ExtensionContext, delayMs: number): void {
+export function scheduleMainModelRecoveryTimer(ctx: ExtensionContext, delayMs: number): void {
   const generation = flags.sessionGeneration;
   clearMainModelRecoveryTimer();
   flags.mainModelRecoveryTimer = scheduleSessionTimeout(() => {
@@ -402,7 +402,7 @@ function scheduleMainModelRecoveryTimer(ctx: ExtensionContext, delayMs: number):
 /** Schedule the next :00:30 probe. Re-arms itself after each fire as long
  * as recovery is parked and the setting is on. Safe to call when already
  * scheduled (no duplicate schedules). */
-function scheduleHourlyProbe(ctx: ExtensionContext): void {
+export function scheduleHourlyProbe(ctx: ExtensionContext): void {
   if (loadGlobalSettings().hourlyQuotaProbe !== true) return;
   if (!state.mainModelRecovery) return; // nothing to recover — silent no-op
   if (flags.hourlyProbeTimer) return; // already pending
@@ -432,7 +432,7 @@ function scheduleHourlyProbe(ctx: ExtensionContext): void {
  * on the next re-arm sees no recovery); a failure reschedules via the
  * normal schedule (v0.34.79/v0.34.84), and the hourly ticker's next fire
  * is already queued by the re-arm above. */
-function fireHourlyProbe(ctx: ExtensionContext): void {
+export function fireHourlyProbe(ctx: ExtensionContext): void {
   if (!state.mainModelRecovery) return; // wall already lifted — silent no-op
   appendLedger(ctx.cwd, "hourly_probe_fired", {
     at: new Date().toISOString(),
@@ -442,7 +442,7 @@ function fireHourlyProbe(ctx: ExtensionContext): void {
 
 /** Cancel the hourly ticker — called on session replacement, recovery
  * success, and user resume. Safe to call when no ticker is pending. */
-function cancelHourlyProbe(): void {
+export function cancelHourlyProbe(): void {
   if (flags.hourlyProbeTimer) {
     clearTimeout(flags.hourlyProbeTimer);
     flags.hourlyProbeTimer = null;
@@ -458,7 +458,7 @@ function cancelHourlyProbe(): void {
 /** An explicit resume is consent to start a fresh automatic window after the
  * five-hour/24-hour safety hold. It does not silently reset the window during
  * reload or heartbeat recovery. */
-function manuallyResumeMainModelRecovery(ctx: ExtensionContext): boolean {
+export function manuallyResumeMainModelRecovery(ctx: ExtensionContext): boolean {
   const recovery = state.mainModelRecovery;
   if (!recovery?.manualResumeRequired) return false;
   const current = modelRef(ctx.model);
@@ -482,7 +482,7 @@ function manuallyResumeMainModelRecovery(ctx: ExtensionContext): boolean {
   return true;
 }
 
-async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
+export async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
   const generation = flags.sessionGeneration;
   const recovery = state.mainModelRecovery;
   if (!recovery) return;
@@ -583,7 +583,7 @@ async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
   }
 }
 
-function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainModelFailure): void {
+export function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainModelFailure): void {
   if (!isSupervising() || mainModelRecoveryActive()) return;
   const current = modelRef(ctx.model);
   if (!current) return;
@@ -620,7 +620,7 @@ function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainModelFail
   scheduleHourlyProbe(ctx);
 }
 
-async function recoverMainModelFromSendStorm(ctx: ExtensionContext, kind: "continuation" | "loop"): Promise<void> {
+export async function recoverMainModelFromSendStorm(ctx: ExtensionContext, kind: "continuation" | "loop"): Promise<void> {
   if (!isSupervising() || mainModelRecoveryActive()) return;
   const failure = classifyMainModelFailure("429 rate limit: pi held the provider retry with no stream activity");
   flags.lastLongLivedFailureAt = Date.now();
@@ -640,7 +640,7 @@ async function recoverMainModelFromSendStorm(ctx: ExtensionContext, kind: "conti
   parkMainModelAfterFailure(ctx, failure);
 }
 
-function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
+export function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
   const recovery = state.mainModelRecovery;
   if (!recovery) return;
   clearMainModelRecoveryTimer();
