@@ -21,6 +21,8 @@ import * as fs from "node:fs";
 import { isStaleApiError } from "../extensions/goal-loop-core.ts";
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
+const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
 
 const PI_STALE_MSG = "This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().";
 
@@ -36,7 +38,7 @@ test("isStaleApiError matches pi's exact stale signature, rejects everything els
 
 test("both autonomous send paths detect staleness and go terminal", () => {
   const cont = SRC.indexOf('if (isStaleApiError(err)) goStaleTerminal(ctx, "sendContinuation");');
-  const loop = SRC.indexOf('if (isStaleApiError(err)) goStaleTerminal(ctx, "sendLoopTurn");');
+  const loop = LOOP.indexOf('if (isStaleApiError(err)) goStaleTerminal(ctx, "sendLoopTurn");');
   assert.ok(cont > 0, "sendContinuation detects");
   assert.ok(loop > 0, "sendLoopTurn detects");
 });
@@ -117,7 +119,7 @@ test("v0.29.12 — /glla resume is stale-aware (the zombie must not say 'Nothing
   // resume with "Nothing to resume" — misleading. The entry probe now
   // names the real recovery: wait for lifecycle replacement, or restart pi
   // normally if this is a true orphan.
-  assert.match(SRC, /warnIfStaleAtEntry\(ctx, "\/glla resume"\)/);
+  assert.match(CMDS, /warnIfStaleAtEntry\(ctx, "\/glla resume"\)/);
   assert.ok(!SRC.includes("compaction triggers it in pi 0.82.x"), "compaction blame removed — compaction never disposes (pi 0.83.0 source-verified)");
 });
 
@@ -154,7 +156,7 @@ test("v0.34.16 — stale paths never inject terminal input", () => {
 
 test("send paths short-circuit once stale (no retry-into-the-void)", () => {
   assert.match(SRC, /if \(!extensionApi \|\| extensionApiStale\) return;/, "sendContinuation guard");
-  assert.match(SRC, /if \(!extensionApi \|\| extensionApiStale\) return null;/, "sendLoopTurn guard");
+  assert.match(LOOP, /if \(!isLoopActive\(\) \|\| !flags\.extensionApi\) return;/, "sendLoopTurn guard (flag accessor re-spelling, decomposition step 2)");
 });
 
 test("a fresh factory run clears the stale flag (extension reload recovery)", () => {

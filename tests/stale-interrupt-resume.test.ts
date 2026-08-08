@@ -50,15 +50,15 @@ test("S3 warn helper: honest 'state is safe' messaging + ledger", () => {
 });
 
 test("S3: probes wired at cmdSet / cmdResume / cmdList / propose_goal_draft entry", () => {
-  assert.match(SRC, /const staleEntry = warnIfStaleAtEntry\(ctx, "\/goal"\);/, "cmdSet creation entry");
+  assert.match(CMDS, /const staleEntry = warnIfStaleAtEntry\(ctx, "\/goal"\);/, "cmdSet creation entry");
   // v0.34.51: cmdResume probes with the mode-correct command root (resumeCommand
   // = activeGoalCommand("resume") -> "/goal resume" or "/list resume").
-  assert.match(SRC, /const resumeCommand = activeGoalCommand\("resume"\);/ , "mode-correct resume command");
+  assert.match(CMDS, /const resumeCommand = activeGoalCommand\("resume"\);/ , "mode-correct resume command");
   assert.ok(
-    (SRC.match(/const staleEntry = warnIfStaleAtEntry\(ctx, resumeCommand\);/g) ?? []).length >= 2,
+    (CMDS.match(/const staleEntry = warnIfStaleAtEntry\(ctx, resumeCommand\);/g) ?? []).length >= 2,
     "cmdResume entry probe (audit-resume + paused-goal paths)",
   );
-  assert.match(SRC, /warnIfStaleAtEntry\(ctx, "\/list"\);/, "cmdList entry");
+  assert.match(CMDS, /warnIfStaleAtEntry\(ctx, "\/list"\);/, "cmdList entry");
   assert.match(SRC, /warnIfStaleAtEntry\(liveCtx, "goal drafting"\);/, "propose_goal_draft entry");
 });
 
