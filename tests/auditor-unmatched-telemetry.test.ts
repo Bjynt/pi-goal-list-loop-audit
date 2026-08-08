@@ -157,15 +157,26 @@ test("v0.34.56: same-id restart updates the slot without an unmatched fact; an e
   assert.deepEqual(t2.toolCalls, []);
 });
 
-// ── the in-process harness delegates to the pure function ──────────
+// ── the process module forwards worker telemetry, never re-pairs inline ──
 
-test("v0.34.56: the session handler delegates pairing to applyToolExecutionEvent (no inline slot mutation)", () => {
-  const subscribeSection = AUDITOR_SRC.slice(AUDITOR_SRC.indexOf("session.subscribe"), AUDITOR_SRC.indexOf("const abort = () =>"));
-  assert.ok(subscribeSection.includes("applyToolExecutionEvent(progress,"), "handler calls the pure pairing function");
-  assert.ok(subscribeSection.includes('type: "tool_execution_start"'), "start branch present");
-  assert.ok(subscribeSection.includes('type: "tool_execution_end"'), "end branch present");
-  assert.ok(!subscribeSection.includes("progress.currentTool = event.toolName"), "no inline single-slot assignment");
-  assert.ok(!subscribeSection.includes("toolCalls.push({"), "no inline pairing outside the pure function");
+test("v0.34.56/0.34.108: the detached path forwards pairing data untouched (no inline slot mutation)", () => {
+  // v0.34.108: runGoalCompletionAuditor (the in-process session handler that
+  // used to pair events via applyToolExecutionEvent) was dead code and was
+  // removed. The production delegation now runs through
+  // goal-loop-auditor-process.ts + the detached worker: the process module
+  // must forward the worker's pairing facts verbatim and never mutate slots
+  // inline. The pure pairing function still owns the semantics.
+  assert.ok(AUDITOR_SRC.includes("export function applyToolExecutionEvent("), "pure pairing function survives");
+  assert.ok(!AUDITOR_SRC.includes("session.subscribe"), "no in-process session handler remains");
+  assert.ok(PROCESS_SRC.includes("function asProgress(file: AuditorProgressFile, startedAt: number): AuditorProgress {"), "detached progress mapper exists");
+  const asProgressSection = PROCESS_SRC.slice(PROCESS_SRC.indexOf("function asProgress"), PROCESS_SRC.indexOf("function progressSignature"));
+  assert.ok(asProgressSection.includes("unmatchedToolStarts: file.unmatchedToolStarts ?? []"), "unmatched starts forwarded verbatim");
+  assert.ok(asProgressSection.includes("unmatchedToolEnds: file.unmatchedToolEnds ?? []"), "unmatched ends forwarded verbatim");
+  assert.ok(asProgressSection.includes("toolCalls: file.toolCalls"), "paired calls forwarded verbatim");
+  assert.ok(!asProgressSection.includes("progress.currentTool = "), "no inline single-slot assignment in the mapper");
+  assert.ok(!asProgressSection.includes("toolCalls.push({"), "no inline pairing in the mapper");
+  // The worker (production pairing site) still pins the matrix in the test below.
+  assert.ok(WORKER_SRC.includes("toolCalls.push({ ...toolCall, finishedAt: Date.now() })"), "worker pairs inline as the single production site");
 });
 
 // ── the detached worker mirrors the matrix ─────────────────────────
