@@ -1449,3 +1449,58 @@ test("v0.33.2: loop proactiveness + respec machinery", () => {
   assert.match(ML, /\$\{HYPOTHESIS_NOTE\}/);
   assert.match(ML, /\$\{REFINE_HINT\}/);
 });
+
+// v0.34.100: auditor silent-default verification. Field evidence
+// (Screenshot_20260808_084527/084717 endless-td minimax/MiniMax-M3) showed
+// the auditor's report stream muted by default. The contract: confirm
+// the gate fires for ANY session model (not just for MiniMax-M3) and
+// the default is on. Regression test pins:
+//   1. settings.ts default is `auditorSilent: true`
+//   2. display.ts honors `auditorSilent !== false` (treats undefined as on)
+//   3. The plumbing in loops/goal.ts passes the loaded setting through
+//      to extras.auditorSilent
+//   4. With auditorSilent default on, the report stream is hidden even
+//      for non-MiniMax session models (the gate is not model-specific)
+test("v0.34.100: auditorSilent default is on in settings (every session model)", () => {
+  const settings = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
+  // Default-on: the field must default to true (not false, not undefined).
+  assert.match(settings, /auditorSilent: true,/);
+  // The setting is registered (so /glla settings exposes the toggle).
+  assert.match(settings, /"auditorSilent",/);
+});
+
+test("v0.34.100: auditorSilent plumbing threads the loaded setting through extras", () => {
+  const loops = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  // extras includes auditorSilent from loadSettings
+  assert.match(loops, /auditorSilent: loadSettings\(ctx\.cwd\)\.auditorSilent !== false/);
+  // display.ts consumes extras.auditorSilent
+  const display = fs.readFileSync("extensions/goal-loop-display.ts", "utf-8");
+  assert.match(display, /const silent = extras\?\.auditorSilent !== false/);
+});
+
+test("v0.34.100: silent-default widget renders muted for ANY session model", () => {
+  // The gate is not model-specific — if `auditorSilent` is on (the
+  // default), the widget shows "report stream muted" regardless of the
+  // session model. Test with multiple mock models to confirm.
+  const models = ["minimax/MiniMax-M3", "anthropic/claude-sonnet-4-5", "openai/gpt-4.1", undefined];
+  for (const model of models) {
+    const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: `audit-${model ?? "none"}` } });
+    const audit = {
+      phase: "producing_report" as const,
+      elapsedMs: 300_000,
+      lastActivityAt: NOW - 5_000,
+      recentOutput: ["Some prose the auditor is generating."],
+      reportBytes: 5_000,
+    };
+    // extras.auditorSilent undefined → defaults to on (the !=== false check)
+    const lines = buildWidgetLines({ goal: g, list: [] }, audit, NOW)!;
+    assert.ok(
+      lines.some((l) => l.includes("report stream muted")),
+      `model=${model}: muted-by-default renders regardless of session model`,
+    );
+    assert.ok(
+      !lines.some((l) => l.includes("latest: Some prose")),
+      `model=${model}: prose tail stays hidden by default`,
+    );
+  }
+});
