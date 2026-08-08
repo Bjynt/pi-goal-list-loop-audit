@@ -3,7 +3,7 @@
 Field-validated bug found by a LIVE audit (the audit subagent itself died
 mid-run — which is the subject of this fix).
 
-verification: bun test tests/subagent-hang-detection.test.ts → 15 pass / 0 fail; full suite 1152 pass / 1 skip / 0 fail; npx tsc --noEmit clean; version 0.34.105.
+verification: bun test tests/subagent-hang-detection.test.ts → 15 pass / 0 fail; full suite 1142 pass / 1 skip / 0 fail; npx tsc --noEmit clean; version 0.34.105.
 
 ## Field case (2026-08-08 ~16:18)
 
