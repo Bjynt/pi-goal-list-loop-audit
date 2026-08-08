@@ -3749,8 +3749,29 @@ function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): void {
   // v0.28.14: never silently orphan a live goal — a paused/active goal
   // being replaced is archived honestly first (the old behavior left it in
   // goals/ but untracked: "older goals lying around leading to confusion").
+  // v0.34.103 (GitHub #6, Defect A): a REPLACED WAIT goal's scheduled
+  // auto-resume (pauseResumeAt) was silently dropped with it — the user's
+  // reasonable "it will come back" expectation broke with no notice. If the
+  // superseded goal had a pending scheduled resume, say so explicitly and
+  // ledger the cancellation so forensics can trace the dropped intent.
   if (state.goal && state.goal.id !== goal.id && (state.goal.status === "active" || state.goal.status === "paused")) {
+    const replaced = state.goal;
+    const hadScheduledResume = !!replaced.pauseResumeAt;
     archiveCurrentGoal(ctx, "aborted", `replaced by goal ${goal.id}`);
+    if (hadScheduledResume) {
+      appendLedger(ctx.cwd, "replaced_resume_cancelled", {
+        goalId: replaced.id,
+        policy: replaced.policy,
+        scheduledAt: replaced.pauseResumeAt,
+        replacedBy: goal.id,
+      });
+      const verb = replaced.policy === "list" ? "/list add" : "/goal";
+      ctx.ui.notify(
+        `Goal [${replaced.id}]: ${displaySlice(replaced.objective, 60)} was superseded and archived — its scheduled auto-resume (${new Date(Date.parse(replaced.pauseResumeAt!)).toLocaleTimeString()}) was cancelled. ${verb} <objective> to recreate it.`,
+        "warning",
+      );
+      notifyExternal(ctx, `pi-goal-list-loop-audit: a paused goal with a scheduled auto-resume was replaced; the resume was cancelled.`);
+    }
   }
   goal.createdVia = via; // v0.28.28: provenance — answerable from the ledger + /glla log
   // v0.34.60: disk-first write order. The active-goal .md lands BEFORE
@@ -5133,7 +5154,28 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
     void retryStoredCompletionAudit("manual");
     return;
   }
-  if (!state.goal || state.goal.status !== "paused") return;
+  if (!state.goal || state.goal.status !== "paused") {
+    // v0.34.103 (GitHub #6, Defect B): /goal resume on an archived,
+    // complete, or aborted goal produced NO feedback at all — an
+    // ineffective command must answer. Name the actual state and the
+    // real recovery path instead of swallowing the verb silently.
+    if (!state.goal) {
+      const loopHint = isLoopActive() ? " A loop is active: /loop resume (or /loop status)." : " /goal <objective> starts one (or /list show for the queue).";
+      ctx.ui.notify(`Nothing to resume — no goal is active or paused.${loopHint}`, "info");
+      return;
+    }
+    const label = state.goal.policy === "list" ? "list item" : "goal";
+    const terminal = state.goal.status === "complete" || state.goal.status === "aborted";
+    if (terminal) {
+      ctx.ui.notify(
+        `The ${label} is ${state.goal.status} (archived) — it can't be resumed. ${state.goal.policy === "list" ? "/list add <objective> re-queues it; /list show lists waiting items." : "/goal <objective> starts a fresh one; /goal archive lists archived goals."}`,
+        "warning",
+      );
+    } else {
+      ctx.ui.notify(`The ${label} is ${state.goal.status} — nothing to resume. ${state.goal.policy === "list" ? "/list show" : "/goal status"} for the current state.`, "info");
+    }
+    return;
+  }
   // v0.28.21: one-active-thing — the LAST unguarded activation path. A
   // paused goal/list-item must not resume over a live loop (covers
   // /goal resume AND /list resume, which routes here).
