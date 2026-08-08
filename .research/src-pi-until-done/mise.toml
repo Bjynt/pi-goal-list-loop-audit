@@ -1,0 +1,236 @@
+# Centralized CI/CD orchestrator for pi-until-done.
+#
+# Mise is the sole CLI entry point. Every shell command — typecheck, lint,
+# format, test, build, watch, dev — runs through `mise run <task>` (defined
+# below) or `mise exec -- <binary>` (when invoking ad-hoc tools that aren't
+# wrapped as a task). Versions are pinned via `[tools]` and the mise.lock
+# lockfile so dev / CI / agent all converge.
+#
+# Common entry points:
+#   mise run check      — fast pre-commit gate (typecheck + lint + format)
+#   mise run ci         — full CI suite (everything until-done's runtime CI runs)
+#   mise watch check    — re-run the check gate on every file save
+#   mise tasks ls       — list every defined task
+#   mise tasks ls --json — machine-readable; what until-done's runtime queries
+
+[tools]
+actionlint = "1.7.12"
+bun = "1.2.23"
+node = "22.19.0"
+"ubi:github/gh-aw" = "0.82.14"
+
+[settings]
+# Required for some experimental features (monorepo target paths, age secrets).
+# Safe default for this repo since we own the config.
+experimental = true
+# Limit per-task stdout to one line per second by default; tasks themselves
+# can override with `quiet = true` for silent passes.
+jobs = 4
+
+# ---- Verbs the runtime CI hook expects -------------------------------------
+# Names must match the CiVerb union in extensions/lib/ci/types.ts.
+
+[tasks.typecheck]
+description = "TypeScript type-check (tsc --noEmit) for every file under extensions/"
+run = "bun x tsc --noEmit"
+
+[tasks.lint]
+description = "Lint with biome (auto-installed on first run via bun x)"
+run = "bun x --bun @biomejs/biome check --reporter=summary extensions"
+
+[tasks.format]
+description = "Verify formatting (does not write changes)"
+run = "bun x --bun @biomejs/biome format --reporter=summary extensions"
+
+[tasks.format-write]
+description = "Apply formatting in-place (use locally; CI uses `format`)"
+run = "bun x --bun @biomejs/biome format --write extensions"
+
+[tasks.fmt-toml]
+description = "Format mise.toml itself (sorts keys, normalizes whitespace)"
+run = "mise fmt"
+
+[tasks.compile]
+description = "Compile-equivalent: tsc emits no output but proves every module resolves"
+run = "bun x tsc --noEmit --pretty"
+
+[tasks.test]
+description = "Run bun's test runner against extensions/ and tests/"
+run = "bun test --rerun-each=1 tests extensions"
+
+[tasks.test-node]
+description = "Exercise production subprocess and mise discovery under Pi's official Node runtime"
+run = """
+node tests/node/runner.mjs
+node tests/node/mise-tasks.mjs
+node tests/node/package-load.mjs
+node tests/node/pack-manifest.mjs
+node tests/node/packed-install.mjs
+"""
+
+[tasks.build]
+description = "No bundling — Pi loads .ts directly. This task verifies the runtime entrypoint resolves on every OS."
+run = "bun tests/build-smoke.ts"
+
+[tasks.structure]
+description = "Enforce production file, construct, and nesting limits"
+run = "node tests/structure/check.mjs"
+
+[tasks.workflows]
+description = "Compile, patch, lint, and test trusted workflow policy"
+run = "node .github/scripts/verify-workflows.mjs"
+
+# ---- Convenience composites ------------------------------------------------
+
+[tasks.check]
+description = "Fast pre-commit gate — typecheck + lint + format in parallel"
+depends = ["typecheck", "lint", "format"]
+
+[tasks.test-ci]
+description = "Run the full suite after generated workflow validation completes"
+depends = ["workflows"]
+run = "mise run test"
+
+[tasks.ci]
+description = "Full CI suite (everything until-done's runtime CI runs on agent_settled)"
+depends = [
+  "typecheck",
+  "lint",
+  "format",
+  "compile",
+  "test-ci",
+  "test-node",
+  "build",
+  "structure",
+]
+depends_post = ["fmt-toml"]
+
+[tasks.release-ready]
+description = "Local release-readiness suite (pi-config §0.4) — full repo, deterministic, slower than `check`. Run before tagging a release."
+depends = ["ci"]
+run = """
+echo '─── release-readiness checks ───'
+test -f mise.toml || (echo 'mise.toml missing'; exit 1)
+test -f AGENTS.md || (echo 'AGENTS.md missing'; exit 1)
+test -f .github/workflows/ci.yml || (echo 'GitHub workflow missing'; exit 1)
+test -f README.md || (echo 'README.md missing'; exit 1)
+test -f LICENSE || echo 'WARN: LICENSE missing'
+test -f package.json || (echo 'package.json missing'; exit 1)
+echo '✓ release surfaces present'
+echo '─── parity check ───'
+grep -q 'mise run ci' .github/workflows/ci.yml || (echo 'GitHub workflow does not invoke mise run ci'; exit 1)
+echo '✓ local ↔ GitHub parity (both run mise run ci)'
+"""
+
+[tasks.dev]
+description = "Watch mode — re-run `check` whenever a .ts file under extensions/ changes"
+run = "mise watch check"
+
+[tasks.install-deps]
+description = "Install bun dependencies (idempotent — skips when bun.lock unchanged)"
+run = "bun install"
+
+[tasks.clean]
+description = "Remove build artifacts and the runtime .until-done/ scratch directory"
+run = """
+rm -rf .until-done
+rm -rf node_modules/.cache
+"""
+
+# ---- npm publish (release surface) -----------------------------------------
+# Every publish path runs `mise run release-ready` first (full CI + parity
+# checks) and refuses to publish from a dirty working tree.
+
+[tasks."version:patch"]
+description = "Prepare a patch version without committing or tagging"
+run = "npm version patch --no-git-tag-version"
+
+[tasks."publish:dry"]
+description = "Inspect what npm would publish without actually publishing"
+run = "npm pack --dry-run"
+
+[tasks."publish:check"]
+description = "Pre-publish gate — local release-ready + clean tree on main + HEAD pushed + remote CI green on this SHA"
+depends = ["release-ready"]
+run = """
+git diff --quiet || (echo 'Working tree dirty. Commit first.'; exit 1)
+git diff --cached --quiet || (echo 'Staged but not committed. Commit first.'; exit 1)
+branch=$(git rev-parse --abbrev-ref HEAD)
+[ "$branch" = "main" ] || (echo "Not on main (on $branch). Switch first."; exit 1)
+
+echo '─── remote CI gate ───'
+# Local `mise run ci` only runs on the developer's OS; the cross-platform
+# matrix runs in GitHub. v0.2.0 / v0.2.1 both shipped tags and held the
+# whole publish pipeline hostage because the local bump+tag happened
+# before remote CI proved out the cross-platform behavior. This gate
+# enforces the rule: NEVER bump version unless remote CI is GREEN on the
+# current HEAD SHA.
+
+command -v gh >/dev/null 2>&1 || (echo 'gh CLI not installed — required for remote CI gate. brew install gh / sudo apt install gh.'; exit 1)
+command -v jq >/dev/null 2>&1 || (echo 'jq not installed — required for remote CI gate.'; exit 1)
+
+git fetch --quiet origin main || (echo 'git fetch origin main failed'; exit 1)
+local_sha=$(git rev-parse HEAD)
+remote_sha=$(git rev-parse origin/main)
+if [ "$local_sha" != "$remote_sha" ]; then
+  echo "Local HEAD ($local_sha) does not match origin/main ($remote_sha)."
+  echo "Push your commits first, wait for CI to go green, then re-run this task."
+  exit 1
+fi
+
+data=$(gh run list --commit "$local_sha" --workflow ci.yml --json status,conclusion --limit 1 --jq '.[0]')
+if [ -z "$data" ] || [ "$data" = "null" ]; then
+  echo "No CI workflow run found for $local_sha on origin."
+  echo "If you just pushed, give the workflow a moment to register and re-run."
+  exit 1
+fi
+status=$(echo "$data" | jq -r '.status')
+conclusion=$(echo "$data" | jq -r '.conclusion // ""')
+if [ "$status" != "completed" ]; then
+  echo "CI on $local_sha is still $status. Wait for it to finish (gh run watch)."
+  exit 1
+fi
+if [ "$conclusion" != "success" ]; then
+  echo "CI on $local_sha did NOT pass (conclusion=$conclusion)."
+  echo "Fix the failure on a new commit, push, wait for CI green, then bump."
+  exit 1
+fi
+
+echo "✓ tree clean, on main, HEAD pushed, remote CI green on $local_sha"
+"""
+
+[tasks.publish]
+description = "Re-trigger the GH publish workflow for the current tag (used to re-run a failed publish)"
+depends = ["publish:check"]
+run = """
+tag=$(git describe --tags --exact-match 2>/dev/null) || (echo 'No tag on HEAD; nothing to re-publish.'; exit 1)
+gh workflow run publish.yml --ref "$tag" -f tag="$tag"
+echo "✓ Re-triggered publish workflow for $tag"
+"""
+
+[tasks."publish:patch"]
+description = "Bump patch version, tag, push — GH Actions publishes on tag push"
+depends = ["publish:check"]
+run = """
+npm version patch -m "release v%s"
+git push --follow-tags origin main
+echo "✓ Tag pushed — GH publish workflow now running"
+"""
+
+[tasks."publish:minor"]
+description = "Bump minor version, tag, push — GH Actions publishes on tag push"
+depends = ["publish:check"]
+run = """
+npm version minor -m "release v%s"
+git push --follow-tags origin main
+echo "✓ Tag pushed — GH publish workflow now running"
+"""
+
+[tasks."publish:major"]
+description = "Bump major version, tag, push — GH Actions publishes on tag push"
+depends = ["publish:check"]
+run = """
+npm version major -m "release v%s"
+git push --follow-tags origin main
+echo "✓ Tag pushed — GH publish workflow now running"
+"""
