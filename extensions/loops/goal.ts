@@ -21,6 +21,12 @@ import * as path from "node:path";
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+// v0.34.109 (decomposition step 1): the state singleton and the persistence
+// core moved to goal-state.ts — the SINGLE owner of the mutable state object
+// (positioning doc invariant #2). Property reads on the imported binding are
+// fine; wholesale replacement goes through replaceState().
+import { state, replaceState, persistStateLine } from "../goal-state.js";
+
 import {
   type Goal,
   type Policy,
@@ -1033,7 +1039,7 @@ function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop" | "lis
   }
   if (snap.listCount > 0) {
     if (policy === "clear") {
-      state = { ...state, list: [] };
+      replaceState({ ...state, list: [] });
       done.push(`dropped ${snap.listCount} waiting list item(s)`);
     } else {
       waiting.push(`${snap.listCount} waiting list item(s) (/list next)`);
@@ -1340,7 +1346,8 @@ function foreignToolGuard(execCtx: unknown): string | null {
   return null;
 }
 
-let state: State = { goal: null };
+// v0.34.109: `state` singleton moved to goal-state.ts (single owner).
+// This module imports it and mutates through replaceState() only.
 
 // Main-session model recovery is separate from detached-auditor quota retry.
 // It is opt-in for model rotation (via mainModelFallbacks), but the durable
@@ -1738,7 +1745,7 @@ export function __testOnlySetLastCompactionAt(at: number | null): void {
  * session_start (co-residency rule: a second session_start claim in a
  * co-resident test file poisons the behavioral driver). */
 export function __testOnlyLoadState(cwd: string): void {
-  state = readState(cwd);
+  replaceState(readState(cwd));
 }
 
 /** Register the agent tools (complete_goal etc.) the way session_start
@@ -3694,13 +3701,9 @@ function persistState(ctx: ExtensionContext): void {
   // escape dead-ended too). Bumps now happen ONLY at the two contract
   // change sites (cmdTweak, complete_goal newObjective) — a settled
   // audit leaves lastAudited.revision === state.goal.revision.
-  // Persist explicit null for the optional top-level recovery slot. JSON
-  // omits undefined, while readState intentionally merges state snapshots;
-  // omission would resurrect an older quota wall after a successful retry.
-  // v0.34.57: lastModelRef is carried on the state line so a fresh process
-  // can restore it (readState) and the turn-boundary check can catch a
-  // changed default model across sessions (bug #1.14).
-  appendLedger(ctx.cwd, "state", { goal: state.goal, list: state.list ?? [], loop: state.loop ?? null, mainModelRecovery: state.mainModelRecovery ?? null, lastModelRef: state.lastModelRef });
+  // The durable write itself lives in goal-state.ts (persistStateLine);
+  // this wrapper adds the UI side effects on top.
+  persistStateLine(ctx.cwd, state);
   notifyPersistenceState(ctx); // v0.28.6 (E1): loud on the first failure, all-clear on recovery
   refreshUI(ctx); // every state transition flows through here → the TUI is always current
 }
@@ -3793,7 +3796,7 @@ function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): void {
   // fresh process lands, so writing it first closes the
   // "in-memory knows about a goal the disk does not" gap.
   const file = writeGoalMd(ctx.cwd, goal);
-  state = { ...state, goal }; // preserve list AND loop (v0.28.14: the bare reconstruction used to nuke a held/active loop whenever a goal was set)
+  replaceState({ ...state, goal }); // preserve list AND loop (v0.28.14: the bare reconstruction used to nuke a held/active loop whenever a goal was set)
   state.goal!.activePath = path.relative(ctx.cwd, file) || file;
   persistState(ctx);
   appendLedger(ctx.cwd, "goal_created", { goalId: goal.id, objective: goal.objective, policy: goal.policy, via });
@@ -3841,7 +3844,7 @@ function autoArbitrateStackedState(ctx: ExtensionContext): void {
   if (keepGoal) {
     // Same shape as /loop stop: the loop record stays in state (inactive)
     // with an honest reason — /loop status still shows it.
-    state = { ...state, loop: { ...loop, active: false, stopReason: "auto-arbitrated on session load: the goal was more recent (one active thing)" } };
+    replaceState({ ...state, loop: { ...loop, active: false, stopReason: "auto-arbitrated on session load: the goal was more recent (one active thing)" } });
     persistState(ctx);
   } else {
     archiveCurrentGoal(ctx, "aborted", "auto-arbitrated on session load: the loop was more recent (one active thing)");
@@ -3964,7 +3967,7 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
   if (archived) {
     try { fs.unlinkSync(goalMdPath(ctx.cwd, goal.id)); } catch {}
   }
-  state = {
+  replaceState({
     ...state,
     goal: {
       ...goal,
@@ -3974,7 +3977,7 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
       // A cancelled/archived goal cannot accept a late detached worker result.
       pendingCompletion: undefined,
     },
-  };
+  });
   if (pendingAttemptId) {
     // Drop the ephemeral widget projection immediately; the detached worker
     // may still emit a final callback while its SIGTERM is settling.
@@ -4021,7 +4024,7 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
             parentObjective: parent.objective,
             closedVia: goal.objective,
           });
-          state = { ...state, list: queue.filter((c) => c.id !== pid) };
+          replaceState({ ...state, list: queue.filter((c) => c.id !== pid) });
           deleteQueueItemFile(ctx.cwd, pid);
           ctx.ui.notify(`Group closed: "${displaySlice(parent.objective, 80)}" — all subtasks complete.`, "info");
         }
@@ -4839,7 +4842,7 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
   const taken = takeAt(queue, n);
   if (!taken) return false;
   const [next, rest] = taken;
-  state = { ...state, list: rest };
+  replaceState({ ...state, list: rest });
   // v0.34.60: remove the disk sidecar. The active goal .md takes its
   // place via setGoal → writeGoalMd; the sidecar would re-show the item
   // as queued if a stale-handle /list read happened later.
@@ -5636,7 +5639,7 @@ function enqueueItems(ctx: ExtensionContext, texts: string[], source: string, op
   // .queue.json sidecar is atomic (temp + rename) and idempotent (skips
   // existing files rather than overwriting).
   const written = itemsToWrite.map((item) => writeQueueItemFile(ctx.cwd, item));
-  state = { ...state, list: [...listQueue(), ...itemsToWrite] };
+  replaceState({ ...state, list: [...listQueue(), ...itemsToWrite] });
   const diskFirst = written.filter((w) => w.wrote).length === itemsToWrite.length;
   appendLedger(ctx.cwd, "list_queue_disk_first", { source, count: itemsToWrite.length, diskFirst });
   persistState(ctx);
@@ -5909,7 +5912,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     // stale-handle reload would resurrect the cleared items.
     const dropped = listQueue();
     for (const item of dropped) deleteQueueItemFile(ctx.cwd, item.id);
-    state = { ...state, list: [] };
+    replaceState({ ...state, list: [] });
     persistState(ctx);
     appendLedger(ctx.cwd, "list_cleared", { count: dropped.length });
     ctx.ui.notify(`List cleared. Active goal (if any) is untouched — ${activeGoalSurfaceCommand("cancel")} for that, /list cancel to stop the whole list.`, "info");
@@ -5931,7 +5934,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     // state — see /list clear above for the same reason. cancel drops the
     // whole waiting list, so every sidecar must go.
     for (const item of listQueue()) deleteQueueItemFile(ctx.cwd, item.id);
-    state = { ...state, list: [] };
+    replaceState({ ...state, list: [] });
     persistState(ctx);
     if (activeIsListItem) {
       archiveCurrentGoal(ctx, "aborted", "list cancelled");
@@ -5981,7 +5984,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     // (cmdList → readQueueFromDisk) would show the removed item after
     // a stale-handle /list, contradicting the user's explicit remove.
     deleteQueueItemFile(ctx.cwd, removed.id);
-    state = { ...state, list: queue.filter((_, i) => i !== n - 1) };
+    replaceState({ ...state, list: queue.filter((_, i) => i !== n - 1) });
     persistState(ctx);
     appendLedger(ctx.cwd, "list_removed", { id: removed.id, objective: removed.objective });
     ctx.ui.notify(`Removed: ${displaySlice(removed.objective, 80)}`, "info");
@@ -6041,7 +6044,7 @@ function addSingleItem(ctx: ExtensionContext, raw: string): void {
   // item survives an orchestrator-turn death between state mutation and
   // persistState (the original bug for /list add "<direct text>").
   writeQueueItemFile(ctx.cwd, item);
-  state = { ...state, list: [...listQueue(), item] };
+  replaceState({ ...state, list: [...listQueue(), item] });
   persistState(ctx);
   appendLedger(ctx.cwd, "list_added", { id: item.id, objective: item.objective });
   // Nothing active → activate immediately.
@@ -6647,7 +6650,7 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
   }
   resolveCarryover(ctx, "loop"); // v0.28.14: surface/clear stale leftovers
   releaseContinuationDispatchStandDown();
-  state = {
+  replaceState({
     ...state,
     loop: {
       target: cfg.target,
@@ -6674,7 +6677,7 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
       specChecked: cfg.specFile ? countCheckedSpecItems(cfg.specFile) ?? undefined : undefined,
       iterMetrics: { fileWrites: 0, iterationStartAt: nowIso() },
     },
-  };
+  });
   persistState(ctx);
   appendLedger(ctx.cwd, "loop_started", { target: cfg.target, measureCmd: cfg.measureCmd || "none", direction: cfg.direction ?? "none", baseline, branch: branchName, timeLimitHours: cfg.timeLimitHours, tokenBudget: cfg.tokenBudget });
   ctx.ui.notify(
@@ -8070,7 +8073,7 @@ function registerAgentTools(pi: any): void {
         // state mutated without a sidecar, so a torn-rename or post-mutation
         // crash could drop the drafted item.
         writeQueueItemFile(liveCtx.cwd, item);
-        state = { ...state, list: [...listQueue(), item] };
+        replaceState({ ...state, list: [...listQueue(), item] });
         persistState(liveCtx);
         appendLedger(liveCtx.cwd, "list_added", { id: item.id, objective: item.objective, drafted: true });
         if (!state.goal || state.goal.status === "complete" || state.goal.status === "aborted") {
@@ -9421,7 +9424,7 @@ async function cmdGllaWipe(ctx: ExtensionContext): Promise<void> {
     archiveCurrentGoal(ctx, "aborted", "user wipe (/glla wipe)");
     ctx.abort();
   } else if (g) {
-    state = { ...state, goal: null };
+    replaceState({ ...state, goal: null });
   }
   if (n > 0) {
     // v0.34.61: delete sidecars of every cleared item before the state
@@ -9429,7 +9432,7 @@ async function cmdGllaWipe(ctx: ExtensionContext): Promise<void> {
     // behind would let a later /list disk-fallback surface them again,
     // undoing the wipe.
     for (const item of listQueue()) deleteQueueItemFile(ctx.cwd, item.id);
-    state = { ...state, list: [] };
+    replaceState({ ...state, list: [] });
     appendLedger(ctx.cwd, "list_cleared", { via: "glla_wipe", count: n });
   }
   if (loop) {
@@ -10072,7 +10075,7 @@ export default function (pi: ExtensionAPI): void {
     // chip survives a reload. Without this, the chip vanishes on reload
     // and the user thinks the compaction didn't happen
     // (Screenshot_20260808_003007/003024 ai-auto-writer 222,368 tokens).
-    state = { ...state, lastCompactionAt };
+    replaceState({ ...state, lastCompactionAt });
     persistState(ctx);
     // v0.34.97: surface the compaction to the user. Field evidence
     // (Screenshot_20260808_003007/003024 ai-auto-writer): a 222,368-token
@@ -10336,7 +10339,7 @@ export default function (pi: ExtensionAPI): void {
         ctx.ui.notify("glla: session rebound but the extension handle is still stale — waiting for another fresh session_start; restart pi normally only if no replacement arrives, then /glla resume.", "warning");
       }
     }
-    state = readState(ctx.cwd);
+    replaceState(readState(ctx.cwd));
     // v0.34.68 (bug 1.7): heal a corrupted in-memory policy BEFORE the
     // restore gate below persists state — otherwise the hold/auto-resume
     // would rewrite the durable goal .md with the corrupted policy and
