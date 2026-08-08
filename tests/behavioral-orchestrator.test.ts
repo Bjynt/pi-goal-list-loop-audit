@@ -2132,6 +2132,36 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
     assert.ok(queuedWidget.some((line) => line.includes("auditor: queued")), "the queued auditor phase is visible before worker progress");
     await waitUntil(() => (readState(cwd).goal as { status?: string } | null)?.status === "complete");
     assert.ok(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes('"goal_archived"'), "approval archived the goal");
+    // v0.34.91: the detached-settle chat notify carries the recap (what
+    // happened), not "auditor approved" boilerplate.
+    assert.ok(ctx.ui.matching("✓ done: The detached completion path is covered").length > 0, "the settle notify surfaces the agent's recap");
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  } finally {
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
+// ---- v0.34.91: the end-of-goal voice carries the recap (what happened) ----
+
+test("v0.34.91: detached approval notify carries the agent's completion recap, not process boilerplate", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = writeFakeAuditor(cwd, "approved", 0);
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    await pi.command("goal", "start recap-notify target — done when pinned", ctx);
+    await tick();
+    await pi.runTool("complete_goal", {
+      completionSummary: "Pinned the R-key/HUD retire parity in 5 tests across 5 layers; ledger close at findings.md:727.",
+      verificationSummary: "5338/5338 tests / 24166 expect() / 598 files pass. tsc clean.",
+    }, ctx);
+    await waitUntil(() => (readState(cwd).goal as { status?: string } | null)?.status === "complete");
+    const recapNotifs = ctx.ui.matching("Pinned the R-key/HUD retire parity");
+    assert.ok(recapNotifs.length > 0, "the settle notify carries the recap (what happened), not 'auditor approved' alone");
+    assert.ok(ctx.ui.matching("✓ done").length > 0, "the recap line is the decisive end-of-goal voice");
+    assert.doesNotMatch(recapNotifs.join("\n"), /^Goal complete — auditor /, "the old process-only line is gone");
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   } finally {
     if (previous === undefined) delete process.env.GLLA_PI_BINARY;

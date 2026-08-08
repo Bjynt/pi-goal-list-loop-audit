@@ -4440,11 +4440,22 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
 
   if (result.approved && result.regressionShieldPassed !== false) {
     updateGoal({ auditHistory: history, pendingCompletion: undefined }, liveCtx);
-    const objective = state.goal.objective;
+    // v0.34.91: capture the recap BEFORE archiveCurrentGoal (it mutates
+    // state.goal). The end-of-goal message says WHAT HAPPENED, not
+    // "auditor approved" — that's process, not information (the field
+    // complaint across Screenshot_20260808_012905/013220/013515: three
+    // boilerplate "claim persisted/auditor queued" lines + a "Goal complete
+    // — auditor X approved" card read as useless summary spam). The recap
+    // is the agent's completionSummary when captured; the objective is the
+    // fallback for legacy/aborted goals.
+    const recapSrc = state.goal.completionSummary?.trim()
+      ? state.goal.completionSummary.replace(/\s+/g, " ")
+      : state.goal.objective;
+    const recap = displaySlice(recapSrc, 110);
     const approvalVia = `${origin === "manual" ? " on /goal verify" : origin === "session-recovery" ? " after session recovery" : " on the quota retry"}${fallbackUsed ? " after an auditor-model fallback" : ""}`;
     archiveCurrentGoal(liveCtx, "complete", `auditor ${result.model} approved (${origin})`);
-    liveCtx.ui.notify(`Goal complete — auditor ${result.model} approved${approvalVia}.`, "info");
-    notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${displaySlice(objective, 120)}`);
+    liveCtx.ui.notify(`✓ done: ${recap} — auditor ${result.model} approved${approvalVia}.`, "info");
+    notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${displaySlice(recapSrc, 120)}`);
     return;
   }
 
@@ -7193,9 +7204,13 @@ function registerAgentTools(pi: any): void {
 
       if (result.approved && result.regressionShieldPassed !== false) {
         updateGoal({ auditHistory: history, pendingCompletion: undefined }, ctx);
-        const objective = state.goal.objective;
+        // v0.34.91: external notify carries the recap (what happened),
+        // not the objective echo.
+        const recapSrc = state.goal.completionSummary?.trim()
+          ? state.goal.completionSummary.replace(/\s+/g, " ")
+          : state.goal.objective;
         archiveCurrentGoal(ctx, "complete", `auditor ${result.model} approved`);
-        notifyExternal(ctx, `Goal complete (auditor approved): ${displaySlice(objective, 120)}`);
+        notifyExternal(ctx, `Goal complete (auditor approved): ${displaySlice(recapSrc, 120)}`);
         return { content: [{ type: "text", text: `Goal approved by auditor ${result.model}.` }], details: {} };
       }
 
