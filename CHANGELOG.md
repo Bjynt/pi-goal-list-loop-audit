@@ -1,6 +1,72 @@
 # Changelog
 
 ## Unreleased
+### 0.34.92 — Drop quota-prompt chat spam; add opt-in hourly probe ticker for faster quota pickup
+
+The v0.34.58 hourly quota-resume prompt was the wrong shape. The plugin
+scheduled a `safeSteerUser("Provider quota wall — … run /list resume")`
+at the next :00 clock minute whenever main-model recovery parked — but
+quota text from providers is unreliable (v0.34.64), so the plugin was
+sending a chat message it couldn't reliably earn. Field evidence
+(Screenshot_20260807_231717): four identical "Provider quota wall"
+messages from peer sessions on one parked goal, one prompt per open pi
+session, plus a fresh prompt every hour for the same parked triage item.
+The user told us plainly: **"we cant check for it; just actively retry;
+additionally retry after the start of every hour."**
+
+This release removes the v0.34.90 chat-prompt machinery entirely and
+adds an opt-in hourly probe ticker:
+
+- **Removed (the whole v0.34.58/v0.34.90 quota-prompt surface)** —
+  `Goal.quotaPromptedAt`, `quotaPrompt*` functions, `quotaPromptTimer`,
+  `quota_prompt_scheduled` / `quota_prompt_sent` ledger events, the
+  `safeSteerUser("Provider quota wall — …")` chat notify, the four
+  `__testOnly*` hooks (`__testOnlySetQuotaPromptNow`,
+  `__testOnlyResetQuotaPrompt`, `__testOnlyQuotaPromptState`,
+  `__testOnlyFireQuotaPrompt`), and all 9 `tests/quota-prompter.test.ts`
+  cases + the `audit/QUOTA-PROMPT-DEDUPE-2026-08-07.md` doc. The plugin
+  never says "Provider quota wall" in chat again.
+- **Added `hourlyQuotaProbe` setting (default ON)** — a periodic ticker
+  that fires at `:00:30` every hour while `state.mainModelRecovery` is
+  set. `:00:30` (not `:00:00`) gives the provider a 30s skew window to
+  roll its quota counters before the probe; a probe at exactly `:00:00`
+  can race the provider's reset. The ticker is a strict ADDITIONAL
+  probe slot — the existing retry cadence is unaffected (v0.34.79 eager
+  5s first probe + v0.34.84 hour-aligned attempts 2+). Opt-out: set
+  `hourlyQuotaProbe: false` in `/glla` settings (the only consumer
+  affected is the ticker; the normal cadence runs either way).
+- **Lifecycle wiring**: `scheduleHourlyProbe` is called from
+  `parkMainModelAfterFailure` (alongside the recovery timer) and from
+  the `session_start` recovery-restored branch (so the new session
+  re-arms after session replacement); `cancelHourlyProbe` is called
+  from `mainModelRecoverySucceeded` (wall lifted) and from
+  `clearMainModelRecoveryTimer` (session replacement / recovery reset).
+  The new `nextHourlyProbeMs` helper returns the next `:00:30` strictly
+  after now (kept the legacy `nextHourlyPromptMs` for any external
+  callers that pin `:00:00`).
+- **New tests** (`tests/hourly-quota-probe.test.ts`, 14 cases):
+  `nextHourlyProbeMs` math (4 cases), `scheduleHourlyProbe` /
+  `fireHourlyProbe` / `cancelHourlyProbe` exist, the park path calls
+  `scheduleHourlyProbe` after the recovery timer, success path cancels,
+  `clearMainModelRecoveryTimer` cancels in lockstep, `session_start`
+  re-arms on recovery restore, the `/glla` menu exposes the on/off
+  options, `hourlyQuotaProbe` defaults to ON, and the v0.34.58/v0.34.90
+  machinery is GONE (module vars, functions, `__testOnly*` hooks, the
+  field, the test file, the chat copy).
+- **Suite**: 1102 pass / 1 skip / 0 fail across 100 files. `tsc --noEmit`
+  clean.
+- **Files touched**: `extensions/loops/goal.ts` (-250 / +90 LOC),
+  `extensions/goal-loop-core.ts` (+12 LOC for the helper),
+  `extensions/goal-settings.ts` (+15 LOC for the setting + default +
+  menu entry), `tests/hourly-quota-probe.test.ts` (new), deletion of
+  `tests/quota-prompter.test.ts` (14.5K) + `audit/QUOTA-PROMPT-DEDUPE-2026-08-07.md`.
+
+The auto-recovery shape is unchanged: the plugin still retries on
+failure with the bounded envelope (v0.34.79 eager 5s first probe,
+v0.34.84 hour-aligned attempts 2+, 5h/24h horizons). What changed is
+that the recovery no longer prompts the user — it just retries, with
+one extra :00:30 probe slot per hour for faster pickup.
+
 ### 0.34.91 — End-of-goal voice says WHAT HAPPENED: completion recap on every terminal surface
 
 Three screenshots in a row (Screenshot_20260808_012905 deathrun, 013220 + 013515 polis) called
