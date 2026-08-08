@@ -111,6 +111,7 @@ import {
 isGoalRevisionCurrent,
   isQuotaWallError,
   nextHourlyPromptMs,
+  nextHourlyProbeMs,
   type ModelSwitchRecord,
   type ListItem,
 } from "../goal-loop-core.js";
@@ -8467,6 +8468,17 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       if (v) {
         saveSettings("global", ctx.cwd, { auditorProgressSignals: v.startsWith("off") ? false : undefined });
         ctx.ui.notify(v.startsWith("off") ? "Auditor progress signals OFF — silent card shows only the timer." : "Auditor progress signals ON — phase + byte-counter visible during audits.", "info");
+      }
+      return;
+    }
+    case "hourlyQuotaProbe": {
+      const v = await ctx.ui.select("Hourly quota probe ticker — extra recovery probe at :00:30 every hour while main-model recovery is parked (quota windows tend to refresh at the top of the hour; the ticker gives faster pickup without spamming chat)", [
+        "on — fire an extra probe at :00:30 every hour while parked (default)",
+        "off — rely on the normal retry cadence only (5s eager + hour-aligned attempts 2+)",
+      ]);
+      if (v) {
+        saveSettings("global", ctx.cwd, { hourlyQuotaProbe: v.startsWith("off") ? false : undefined });
+        ctx.ui.notify(v.startsWith("off") ? "Hourly quota probe OFF — only the normal retry cadence will run." : "Hourly quota probe ON — extra :00:30 probe while parked.", "info");
       }
       return;
     }

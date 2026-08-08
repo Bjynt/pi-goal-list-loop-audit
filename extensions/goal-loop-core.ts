@@ -44,10 +44,26 @@ export function isQuotaWallError(error: string | undefined): boolean {
 
 /** The next top-of-hour (:00:00.000) strictly after now — the hourly
  * quota-resume prompt slot. At exactly :00 the next slot is the following
- * hour (the wall was hit in the current hour). */
+ * hour (the wall was hit in the current hour).
+ *
+ * v0.34.92: superseded by nextHourlyProbeMs for the actual probe ticker
+ * (the prompt slot is no longer used — the v0.34.58/v0.34.90 prompt
+ * machinery is removed). Kept here so any external caller (older
+ * extensions, the LEGACY hourlyPromptMs that may be referenced elsewhere)
+ * still compiles. */
 export function nextHourlyPromptMs(now = Date.now()): number {
   const d = new Date(now);
   d.setHours(d.getHours() + 1, 0, 0, 0);
+  return d.getTime();
+}
+
+/** v0.34.92: the next :00:30 strictly after now — the hourly probe ticker
+ * slot. We use :00:30 (not :00:00) so the provider has a 30s skew window to
+ * roll its quota counters before we probe; a probe at exactly :00:00 can
+ * race the provider's reset. */
+export function nextHourlyProbeMs(now = Date.now()): number {
+  const d = new Date(now);
+  d.setHours(d.getHours() + 1, 0, 30, 0);
   return d.getTime();
 }
 
