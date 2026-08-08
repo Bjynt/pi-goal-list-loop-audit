@@ -1939,6 +1939,16 @@ let heartbeatStaleStreak = 0;
 // `subagent_hang_detected`. Detection + guidance only: the main session
 // decides whether to abort — never an auto-kill.
 const SUBAGENT_HANG_NO_PROGRESS_MS = 5 * 60_000;
+// v0.34.102 (field: pully W161 rehearsal agent aac4ab1e, 2026-08-08T08:15
+// → 10:13 — a 118-minute wedge where `subagent_hang_detected` NEVER fired
+// because the manager record was unreachable and classifyHungSubagents
+// skipped the probe at `if (!rec) continue`). When the pi-subagents record
+// is ABSENT (manager not loaded, record pruned, or poll shape changed) the
+// probe's own event-derived evidence — spawn time + compacted/steered
+// refreshes — is the only liveness signal left. Long-wait threshold so a
+// healthy child that merely lacks a pollable record isn't flagged as hung;
+// a wedged child with NO event evidence at all trips this.
+const SUBAGENT_HANG_EVENT_ONLY_MS = 20 * 60_000;
 /** Re-alert throttle — one user-facing hang warning per streak window. */
 const SUBAGENT_HANG_ALERT_THROTTLE_MS = 5 * 60_000;
 /** Ended probes are pruned an hour after completion (HUD/final-state reads). */
@@ -2027,7 +2037,18 @@ export function classifyHungSubagents(
   for (const p of probes) {
     if (p.endedAt !== undefined) continue;
     const rec = getRecord(p.recordId);
-    if (!rec) continue; // vanished mid-poll — the driver prunes/ignores
+    if (!rec) {
+      // v0.34.102 event-only fallback: the manager record is unreachable.
+      // Old behavior silently skipped (field: pully 118m wedge, zero
+      // `subagent_hang_detected`). The probe's event-derived lastProgressAt
+      // (spawn seed + compacted/steered refreshes) is the surviving liveness
+      // evidence — classify against the longer event-only window instead of
+      // vanishing. A record that ended normally sets endedAt above and never
+      // reaches here.
+      const silentMs = now - p.lastProgressAt;
+      if (silentMs >= SUBAGENT_HANG_EVENT_ONLY_MS) hung.push({ recordId: p.recordId, silentMs });
+      continue;
+    }
     if (rec.status !== "running" && rec.status !== "steered" && rec.status !== "queued") continue;
     const toolUses = rec.toolUses ?? 0;
     const output = rec.lifetimeUsage?.output ?? 0;
@@ -2196,15 +2217,25 @@ function heartbeatTick(): void {
       p.hangAlertedAt = nowMs;
       const label = [p.agentType, p.summary].filter(Boolean).join(" ");
       const mins = Math.max(1, Math.round(h.silentMs / 60_000));
+      // v0.34.102: classifyHungSubagents cannot tell us the evidence class
+      // (record-poll vs event-only) — recompute: if the record is still
+      // pollable this is the frozen-record case (tool/output counters
+      // stopped); if not, the child vanished from the manager entirely and
+      // only its event trail (spawn/compacted/steered) remains. Name it so
+      // the user knows whether the Agents panel can still show a live child.
+      const stillTracked = poll.getRecord?.(p.recordId) !== undefined;
       appendLedger(ctx.cwd, "subagent_hang_detected", {
         recordId: p.recordId,
         agentType: p.agentType,
         summary: p.summary,
         silentMs: h.silentMs,
         spawnedAt: new Date(p.spawnedAt).toISOString(),
+        evidence: stillTracked ? "record-frozen" : "event-only",
         at: nowIso(),
       });
-      const msg = `glla: subagent${label ? ` (${label})` : ""} shows no progress for ${mins}m — still running with no new tool calls or output. It may be hung; the main session can decide to abort it.`;
+      const msg = `glla: subagent${label ? ` (${label})` : ""} shows no progress for ${mins}m — ${stillTracked
+        ? "still running with no new tool calls or output"
+        : "its manager record is unreachable and it produced no events (spawn/compaction/steer)"}. It may be hung; the main session can decide to abort it.`;
       ctx.ui.notify(msg, "warning");
       notifyExternal(ctx, msg);
     }
