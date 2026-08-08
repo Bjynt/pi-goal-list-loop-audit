@@ -777,6 +777,16 @@ export function __testOnlyLastConfirmDialog(): { title: string; body: string; op
   return last;
 }
 
+/** TEST-ONLY hook (tests/harness): clears the stall-brake counters a
+ * previous test file's short no-tool turns accumulated (bun test shares
+ * module state; a parked-goal test that fires a few short "back up" turns
+ * would otherwise trip the stall pause on an unrelated goal). */
+export function __testOnlyResetStallState(): void {
+  heartbeatNudges = 0;
+  consecutiveStalls = 0;
+  heartbeatStaleStreak = 0;
+}
+
 /** TEST-ONLY hook (tests/harness): clears the terminal/stand-down module
  * flags a stale-scenario test file may have latched. Production clears them
  * only on successor-absorb or process restart; bun test shares module state
@@ -1369,6 +1379,11 @@ let quotaPromptScheduledFor: number | null = null;
 let quotaPromptContext: string | null = null;
 let quotaPromptCtx: ExtensionContext | null = null;
 let quotaPromptFired = false;
+// v0.34.90: durable dedupe identity — captured at schedule time so the
+// fire path can write the same key back into the ledger (once-per-episode,
+// cross-session: several pi sessions on one project share the ledger).
+let quotaPromptGoalId: string | null = null;
+let quotaPromptEpisodeAt: string | null = null;
 let quotaPromptClockOverride: number | null = null; // __testOnly
 
 // Drafting mode: a no-arg loop command starts a clarification turn; the agent
@@ -1746,6 +1761,8 @@ export function __testOnlyResetQuotaPrompt(): void {
   quotaPromptContext = null;
   quotaPromptCtx = null;
   quotaPromptFired = false;
+  quotaPromptGoalId = null;
+  quotaPromptEpisodeAt = null;
 }
 
 export function __testOnlyQuotaPromptState(): { scheduledFireAt: number | null; context: string | null; fired: boolean } {
@@ -2991,6 +3008,10 @@ function manuallyResumeMainModelRecovery(ctx: ExtensionContext): boolean {
   clearMainModelRecoveryTimer();
   continuationDispatchStoodDown = false;
   persistState(ctx);
+  // v0.34.90: a manual probe is a user action — re-arm the once-per-episode
+  // quota prompt allowance (the goal itself stays parked until the probe
+  // lands; a wall after THIS probe may nudge once more).
+  if (state.goal) updateGoal({ quotaPromptedAt: undefined }, ctx);
   ctx.ui.notify("Manual resume starts a fresh bounded main-model recovery window — one provider probe, then configured backups if needed.", "info");
   void probeMainModelRecovery(ctx);
   return true;
@@ -3137,6 +3158,46 @@ function clearQuotaPromptTimer(): void {
   }
 }
 
+/** v0.34.90: dedupe identity for the current parked episode — the goal id
+ * (or loop target) plus the recovery episode start (firstFailureAt). The
+ * same key is written into quota_prompt_scheduled/sent ledger events so
+ * OTHER sessions on the same project can see it: the prompter must never
+ * spam — one prompt per parked episode, scheduled once. */
+function quotaPromptEpisodeKey(): { id: string; episodeAt: string } | null {
+  if (state.goal) {
+    return { id: state.goal.id, episodeAt: state.mainModelRecovery?.firstFailureAt ?? nowIso() };
+  }
+  if (state.loop?.active) {
+    return { id: `loop:${state.loop.target}`, episodeAt: state.mainModelRecovery?.firstFailureAt ?? nowIso() };
+  }
+  return null;
+}
+
+/** Ledger scan: has this episode already scheduled its :00 slot (a peer
+ * session) or already sent its one prompt? ISO strings compare
+ * chronologically. Unknown/legacy events without the key fields never
+ * match, so pre-v0.34.90 ledgers simply don't suppress. */
+function quotaPromptAlreadyCovered(cwd: string, key: { id: string; episodeAt: string }, fireAtIso: string): boolean {
+  let entries: Array<{ type: string; value?: Record<string, unknown>; at?: string }> = [];
+  try {
+    entries = parseLedgerEntries(fs.readFileSync(ledgerPath(cwd), "utf-8"));
+  } catch {
+    return false; // no ledger yet — nothing covered
+  }
+  for (const e of entries) {
+    if (e.type !== "quota_prompt_scheduled" && e.type !== "quota_prompt_sent") continue;
+    const v = e.value ?? {};
+    const coveredId = (v["goalId"] as string | undefined) ?? (v["loopTarget"] as string | undefined);
+    if (coveredId !== key.id) continue;
+    if (e.type === "quota_prompt_scheduled" && v["fireAt"] === fireAtIso) return true; // a peer session already holds this :00 slot
+    // Loop case: once a prompt was sent for this parked loop, only a user
+    // /loop resume (loop active again) re-arms it. Goals are covered by the
+    // durable quotaPromptedAt marker instead.
+    if (e.type === "quota_prompt_sent" && coveredId === key.id && !state.goal && !state.loop?.active) return true; // this episode already prompted
+  }
+  return false;
+}
+
 /** The original turn context: what the session was doing when the wall hit. */
 function quotaPromptTurnContext(failure: MainModelFailure): string {
   const identity = state.goal
@@ -3157,14 +3218,29 @@ function fireQuotaResumePrompt(): void {
   const ctx = quotaPromptCtx;
   const fireAt = quotaPromptScheduledFor;
   const context = quotaPromptContext;
+  const goalId = quotaPromptGoalId;
+  const episodeAt = quotaPromptEpisodeAt;
   quotaPromptCtx = null;
   quotaPromptScheduledFor = null;
   quotaPromptContext = null;
   quotaPromptFired = true;
+  quotaPromptGoalId = null;
+  quotaPromptEpisodeAt = null;
   if (!ctx || fireAt === null || context === null) return;
   if (!state.mainModelRecovery) return; // wall already lifted — nothing to prompt
   const resumeCmd = state.goal?.policy === "list" ? "/list resume" : state.loop?.active ? "/loop resume" : "/goal resume";
-  appendLedger(ctx.cwd, "quota_prompt_sent", { fireAt: new Date(fireAt).toISOString(), at: new Date().toISOString() });
+  appendLedger(ctx.cwd, "quota_prompt_sent", {
+    fireAt: new Date(fireAt).toISOString(),
+    at: new Date().toISOString(),
+    ...(goalId !== null ? (goalId.startsWith("loop:") ? { loopTarget: goalId } : { goalId }) : {}),
+    ...(episodeAt !== null ? { episodeAt } : {}),
+  });
+  // v0.34.90: mark the goal so NO further prompt fires for this parked
+  // episode — in any session — until the user resumes it. Only when the
+  // parked goal is still the one captured at schedule time.
+  if (state.goal && goalId !== null && !goalId.startsWith("loop:") && state.goal.id === goalId) {
+    updateGoal({ quotaPromptedAt: nowIso() }, ctx);
+  }
   safeSteerUser(
     ctx,
     `Provider quota wall — ${context}. Hourly quota windows usually refresh at the top of the hour: run ${resumeCmd} (or just reply) to pick the work back up.`,
@@ -3177,17 +3253,36 @@ function fireQuotaResumePrompt(): void {
 function scheduleQuotaResumePrompt(ctx: ExtensionContext, failure: MainModelFailure): void {
   if (loadGlobalSettings().autoResume !== true) return; // gated — no prompt without autoResume
   if (quotaPromptScheduledFor !== null) return; // exactly one pending schedule
+  const key = quotaPromptEpisodeKey();
+  if (!key) return; // nothing parked to name
   const now = quotaPromptClockOverride ?? Date.now();
   const fireAt = nextHourlyPromptMs(now);
+  const fireAtIso = new Date(fireAt).toISOString();
+  // v0.34.90: durable, cross-session dedupe — a peer session already holds
+  // this :00 slot, or this episode already sent its one prompt. Without it
+  // the chat gets spammed: the same parked goal prompted once per hour, and
+  // one prompt per open pi session (field 2026-08-07: four identical
+  // "Provider quota wall — [TRIAGE-…]" messages).
+  if (quotaPromptAlreadyCovered(ctx.cwd, key, fireAtIso)) return;
+  // v0.34.90: once-per-parked-episode — after the one prompt was sent for
+  // this goal, nothing re-arms it except a USER resume (cmdResume clears
+  // the marker). Auto-recovery flapping (probe succeeds → goal runs a few
+  // minutes → wall again) must never re-prompt: in the field this produced
+  // a fresh prompt every hour for the same parked triage item.
+  if (state.goal && state.goal.quotaPromptedAt) return;
   quotaPromptScheduledFor = fireAt;
   quotaPromptContext = quotaPromptTurnContext(failure);
   quotaPromptCtx = ctx;
   quotaPromptFired = false;
+  quotaPromptGoalId = key.id;
+  quotaPromptEpisodeAt = key.episodeAt;
   appendLedger(ctx.cwd, "quota_prompt_scheduled", {
-    fireAt: new Date(fireAt).toISOString(),
+    fireAt: fireAtIso,
     at: new Date(now).toISOString(),
     kind: state.loop?.active ? "loop" : "goal",
     reason: mainModelRecoveryReason(failure),
+    ...(key.id.startsWith("loop:") ? { loopTarget: key.id } : { goalId: key.id }),
+    episodeAt: key.episodeAt,
   });
   clearQuotaPromptTimer();
   quotaPromptTimer = scheduleSessionTimeout(() => {
@@ -4971,6 +5066,12 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
   if (state.mainModelRecovery?.retryAt) {
     clearMainModelRecoveryTimer();
     continuationDispatchStoodDown = false;
+    // v0.34.90: a user /goal resume is the re-arm signal even in the probe
+    // branch — the paused→active transition below is only reachable after
+    // the automatic horizon ended. Without this, the marker would survive
+    // the user's explicit resume and the next parked episode would stay
+    // silent forever.
+    if (state.goal) updateGoal({ quotaPromptedAt: undefined }, ctx);
     ctx.ui.notify("Retrying the saved main-model recovery now — one provider probe, then the configured backups if needed.", "info");
     void probeMainModelRecovery(ctx);
     return;
@@ -5043,7 +5144,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
   // manual resume exactly as by an automatic one. (staleEntry still re-marks
   // below — a resume inside a stale session is a NEW interrupt.)
   const storedCompletion = state.goal.pendingCompletion;
-  updateGoal({ status: "active", pauseReason: undefined, pauseSuggestedAction: undefined, pauseKind: undefined, pauseOptions: undefined, pauseRecommended: undefined, pauseResumeAt: undefined, interruptedAt: undefined, interruptedReason: undefined, ...(staleEntry ? { interruptedAt: nowIso(), interruptedReason: "resumed in a stale session" } : {}), ...(usage ? { usage } : {}) }, ctx);
+  updateGoal({ status: "active", pauseReason: undefined, pauseSuggestedAction: undefined, pauseKind: undefined, pauseOptions: undefined, pauseRecommended: undefined, pauseResumeAt: undefined, interruptedAt: undefined, interruptedReason: undefined, quotaPromptedAt: undefined, ...(staleEntry ? { interruptedAt: nowIso(), interruptedReason: "resumed in a stale session" } : {}), ...(usage ? { usage } : {}) }, ctx);
   if (staleEntry) return;
   // A stored completion claim is a direct-audit resume, not an agent turn.
   // Keeping the claim while merely scheduling a continuation left manual
@@ -6916,7 +7017,11 @@ function registerAgentTools(pi: any): void {
         ctx.ui.notify(`Auditor model issue: ${modelError}`, "warning");
       }
       const auditorCandidates: AuditorModelCandidate[] = [{ model: auditorModel, via: via ?? "unset" }, ...(fallbackModels ?? [])];
-      ctx.ui.notify(`Auditor queued (detached worker, model: ${via ?? "setting"}) — the claim is durable; verdict will arrive asynchronously.`, "info");
+      // v0.34.90: no redundant chat notify here — pi's own complete_goal
+      // response already says the claim persisted and the detached auditor
+      // is queued; a second "Auditor queued" message is chat spam (never
+      // spam the chat — one notification per state transition). The widget
+      // and status line surface auditor: queued/running/live as it moves.
       // The detached worker must not keep complete_goal's pi turn open. The
       // rest of this callback deliberately runs after the tool has returned;
       // every state/UI access below rebinds through the generation guard.

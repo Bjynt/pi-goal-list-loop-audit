@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+### 0.34.90 — Never spam the chat: quota-wall prompt fires ONCE per parked episode, cross-session; redundant "Auditor queued" notify removed
+
+Field (endless-td, 2026-08-07, Screenshot_20260807_231717): the chat showed FOUR nearly identical "Provider quota wall — [TRIAGE-2026-08-06 findings.md:591] …" messages. Ledger forensics: the same parked triage goal was prompted every hour (scheduled 18:03→19:00, 19:15→20:00, 20:15→21:00 after the 18:00 send) because auto-recovery flapping re-arms the schedule each cycle, and FOUR pi sessions on the same project each scheduled their own prompt for the same :00 (09:19/09:20/09:25/09:35 → 10:00). The in-memory `quotaPromptScheduledFor` guard is per-session only; the hourly repeat was per-episode re-park; nothing was durable. User principle: "we should never spam in the chat."
+
+- `scheduleQuotaResumePrompt` now writes `goalId`/`loopTarget` + `episodeAt` into the `quota_prompt_scheduled` ledger event and SCANS the shared ledger before scheduling: a peer session's pending schedule for the same :00 slot suppresses this session (kills the bunching), and a `quota_prompt_sent` for the same key while the loop is parked suppresses loop re-schedules.
+- NEW durable once-per-episode marker on the Goal: `quotaPromptedAt` (ISO, persisted with the goal). Set when the prompt actually SENDS; while set, NO schedule is accepted — in any session — even when auto-recovery flaps (probe success → goal runs minutes → wall again). Cleared ONLY by a user resume: cmdResume's probe branch, the paused→active transition, and `manuallyResumeMainModelRecovery`. Auto-recovery success does NOT clear it (that is the flap).
+- `fireQuotaResumePrompt` writes the same key fields back into `quota_prompt_sent` and marks the goal (only when the parked goal is still the one captured at schedule time).
+- Removed the redundant `"Auditor queued (detached worker, model: …)"` info notify from the complete_goal path — pi's own tool response already says the claim persisted and the detached auditor is queued; the widget/status line surface `auditor: queued/running/live`. One notification per state transition.
+- Tests (quota-prompter): +3 — hourly repeat is dead (flap after the one prompt schedules NOTHING), peer-session same-:00 slot suppresses (ledger scan), user resume re-arms exactly one fresh prompt. Test-order hardening: new `__testOnlyResetStallState()` (the stall-brake counters leak across files in bun's shared module registry — short no-tool "back up" turns in earlier tests tripped a bogus "stalled" decision-pause on the resumed goal, which then silently skipped the park). Suite 1093/1/0 across 100 files, tsc clean.
+
 ### 0.34.89 — Terminal goals collapse to a dim one-line summary (widget + status; Screenshot_20260807_231205/231236)
 
 Field: after a batch finishes, the widget kept rendering a full completion CARD (`✓ <objective> · ✓ complete · took 4h 38m` + `└─ auditor approved (…)`) and the status line kept a loud `glla: ✓ complete · took 4h 38m` — indefinitely, until the next goal started. The completed item read like still-active work sitting on the surface (user: "shouldn't we close complete goals or at least show them differently?").

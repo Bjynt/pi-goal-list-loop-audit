@@ -24,6 +24,7 @@ import {
   __testOnlyResetStaleFlag,
   __testOnlyResetTerminalFlags,
   __testOnlySetQuotaPromptNow,
+  __testOnlyResetStallState,
   __testOnlyLoadState,
 } from "../extensions/loops/goal.js";
 import activate from "../extensions/loops/goal.js";
@@ -67,6 +68,7 @@ beforeEach(() => {
   __testOnlyResetStaleFlag();
   __testOnlyResetTerminalFlags();
   __testOnlyResetOwnerSession();
+  __testOnlyResetStallState();
   __testOnlyResetQuotaPrompt();
   __testOnlySetQuotaPromptNow(Date.UTC(2026, 7, 6, 18, 44, 30)); // 18:44:30Z — next :00 is 19:00:00Z
   writeSettings({ autoResume: true });
@@ -199,4 +201,107 @@ test("v0.34.58: if recovery succeeds before :00 the pending prompt is cancelled 
   __testOnlyFireQuotaPrompt();
   assert.equal(pi.userMessages.length, 0, "no prompt fires after the wall already lifted");
   assert.equal(readLedger(cwd).filter((l) => l.type === "quota_prompt_sent").length, 0);
+});
+
+// ---- (d) v0.34.90: never spam — once per parked episode, durable across sessions ----
+
+test("v0.34.90: the hourly repeat is dead — after the one prompt is sent, auto-recovery flapping schedules NOTHING (field 2026-08-07: four identical quota-wall messages)", async () => {
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal() });
+  __testOnlyLoadState(cwd);
+  const pi = new MockPi();
+  activate(pi.api);
+  await pi.fire("agent_end", quotaWallAgentEnd(), ownerCtx(cwd));
+  assert.ok(__testOnlyQuotaPromptState().scheduledFireAt, "prompt scheduled while walled");
+
+  // :00 → the ONE prompt fires and marks the goal durably.
+  __testOnlyFireQuotaPrompt();
+  assert.equal(pi.userMessages.length, 1, "exactly one prompt");
+  assert.ok(readState(cwd).goal?.quotaPromptedAt, "the goal carries the durable once-per-episode marker");
+
+  // Auto-recovery flap: a probe SUCCEEDS (recovery cleared, goal active —
+  // but the marker stays: no user action), then the next turn hits the wall
+  // again and re-parks fresh. The prompter must stay silent.
+  await pi.fire(
+    "agent_end",
+    { messages: [{ role: "assistant", content: [{ type: "text", text: "back up" }], stopReason: "end_turn" }] },
+    ownerCtx(cwd),
+  );
+  assert.equal(readState(cwd).mainModelRecovery, undefined, "recovery cleared on success");
+  assert.equal(readState(cwd).goal?.status, "active", "the recovery pause auto-resumes");
+  assert.ok(readState(cwd).goal?.quotaPromptedAt, "auto-recovery success does NOT clear the marker");
+  await pi.fire("agent_end", quotaWallAgentEnd(), ownerCtx(cwd));
+
+  assert.equal(__testOnlyQuotaPromptState().scheduledFireAt, null, "no re-schedule while the marker stands");
+  __testOnlyFireQuotaPrompt();
+  assert.equal(pi.userMessages.length, 1, "still exactly one message — the wall stayed silent for hours");
+  assert.equal(readLedger(cwd).filter((l) => l.type === "quota_prompt_scheduled").length, 1);
+  assert.equal(readLedger(cwd).filter((l) => l.type === "quota_prompt_sent").length, 1);
+});
+
+test("v0.34.90: a peer session's pending schedule for the same :00 suppresses a second schedule (ledger scan)", async () => {
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal() });
+  __testOnlyLoadState(cwd);
+  const pi = new MockPi();
+  activate(pi.api);
+  await pi.fire("agent_end", quotaWallAgentEnd(), ownerCtx(cwd));
+  assert.ok(__testOnlyQuotaPromptState().scheduledFireAt, "session A holds the :00 slot");
+
+  // Session B (field 09:19/09:20/09:25/09:35 bunching): fresh module state,
+  // same disk state. Recovery success clears the envelope, then B's own wall
+  // hit parks fresh — but the ledger scan sees A's pending schedule for the
+  // SAME fireAt and stands down.
+  __testOnlyResetQuotaPrompt();
+  await pi.fire(
+    "agent_end",
+    { messages: [{ role: "assistant", content: [{ type: "text", text: "back up" }], stopReason: "end_turn" }] },
+    ownerCtx(cwd),
+  );
+  await pi.fire("agent_end", quotaWallAgentEnd(), ownerCtx(cwd));
+  assert.equal(__testOnlyQuotaPromptState().scheduledFireAt, null, "peer slot held — B schedules nothing");
+  __testOnlyFireQuotaPrompt();
+  assert.equal(pi.userMessages.length, 0, "no message from B");
+  const ledger = readLedger(cwd);
+  assert.equal(ledger.filter((l) => l.type === "quota_prompt_scheduled").length, 1, "one schedule on disk, not two");
+  const sched = ledger.find((l) => l.type === "quota_prompt_scheduled");
+  assert.ok(sched?.value?.goalId, "the schedule carries the goal id for cross-session dedupe");
+});
+
+test("v0.34.90: a USER resume re-arms the allowance — a wall after resume schedules exactly one fresh prompt", async () => {
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal() });
+  __testOnlyLoadState(cwd);
+  const pi = new MockPi();
+  activate(pi.api);
+  const ctx = ownerCtx(cwd);
+  await pi.fire("agent_end", quotaWallAgentEnd(), ctx);
+  __testOnlyFireQuotaPrompt();
+  assert.equal(pi.userMessages.length, 1);
+  assert.ok(readState(cwd).goal?.quotaPromptedAt);
+
+  // Auto-recovery lifts, the wall returns (still silent — flap protection),
+  // and THEN the user explicitly resumes the parked goal.
+  await pi.fire(
+    "agent_end",
+    { messages: [{ role: "assistant", content: [{ type: "text", text: "back up" }], stopReason: "end_turn" }] },
+    ctx,
+  );
+  await pi.fire("agent_end", quotaWallAgentEnd(), ctx);
+  assert.equal(__testOnlyQuotaPromptState().scheduledFireAt, null, "still silent through the flap");
+  await pi.command("goal", "resume", ctx);
+  assert.equal(readState(cwd).goal?.quotaPromptedAt, undefined, "user resume clears the marker");
+  // Let the resume probe land successfully, then hours later the wall
+  // returns — a genuinely new parked episode with a new :00 slot.
+  await pi.fire(
+    "agent_end",
+    { messages: [{ role: "assistant", content: [{ type: "text", text: "back up" }], stopReason: "end_turn" }] },
+    ctx,
+  );
+  __testOnlySetQuotaPromptNow(Date.UTC(2026, 7, 6, 21, 44, 30));
+  await pi.fire("agent_end", quotaWallAgentEnd(), ctx);
+  assert.ok(__testOnlyQuotaPromptState().scheduledFireAt, "re-armed — schedules the fresh episode's prompt");
+  __testOnlyFireQuotaPrompt();
+  assert.equal(pi.userMessages.length, 2, "one prompt per user-resumed episode, never more");
+  assert.equal(readLedger(cwd).filter((l) => l.type === "quota_prompt_sent").length, 2);
 });
