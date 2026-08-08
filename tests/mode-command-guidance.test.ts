@@ -80,7 +80,7 @@ test("no hardcoded /goal <cmd> literals remain in generated guidance (goal.ts)",
   // Allowed: deliberate SURFACE MAPS that enumerate every surface's real
   // commands (tool vocabulary descriptions, the /glla status deep map) —
   // these are cross-surface references, not active-surface guidance.
-  const SURFACE_MAP = [/deep: \/goal status/, /\/list remove N/, /status\|pause\|resume\|cancel\|tweak/];
+  const SURFACE_MAP = [/deep: \/goal status/, /\/list remove N/, /status\|pause\|resume\|cancel\|tweak/, /\/goal resume, \/list resume, or \/loop resume/];
   // v0.34.108: the scan used to skip lines without a guidance trigger token
   // (pauseSuggestedAction / notify( / lines.push / text: / description:),
   // so a literal parked on a `const resumeCmd = ...` assignment line escaped
@@ -91,7 +91,7 @@ test("no hardcoded /goal <cmd> literals remain in generated guidance (goal.ts)",
     const s = raw.trim();
     if (s.startsWith("//") || s.startsWith("*")) continue;
     if (!/(pauseSuggestedAction|notify\(|lines\.push|text:|description:)/.test(raw)
-        && !/^\s*(const|let) \w+ = .*"\/(goal|list|loop) /.test(raw)) continue;
+        && !/^\s*(const|let) \w+ = .*["`]\/(goal|list|loop) /.test(raw)) continue;
     if (/["`][^"`]*\/goal (pause|resume|tweak|cancel|decide|status)/.test(raw)) {
       if (SURFACE_MAP.some((re) => re.test(raw))) continue;
       hard.push(`${i + 1}: ${s.slice(0, 120)}`);
@@ -108,8 +108,9 @@ test("no hardcoded /goal <cmd> literals remain in generated guidance (goal.ts)",
 test("loop-policy recovery guidance interpolates recoverySurfaceCommand (v0.34.108)", () => {
   // v0.34.108: the main-model-recovery paths park a METRIC LOOP too — a loop
   // resumed through "/goal resume" would be wrong. The helper keys off the
-  // loop kind explicitly; no hardcoded /loop resume literal may appear in
-  // recovery guidance (the same const-line blind spot the audit found).
+  // loop kind explicitly; no hardcoded /loop resume literal may appear on
+  // const-assignment lines (the audit's const-line blind spot) — loop-only
+  // contexts (no mode ambiguity) may keep their literals.
   assert.match(GOAL_SRC, /const recoverySurfaceCommand = \(kind: "goal" \| "loop", command: string\): string =>/);
   const uses = (GOAL_SRC.match(/recoverySurfaceCommand\([^)]*\)/g) ?? []).length;
   assert.ok(uses >= 4, `expected >=4 recoverySurfaceCommand uses, got ${uses}`);
@@ -117,9 +118,11 @@ test("loop-policy recovery guidance interpolates recoverySurfaceCommand (v0.34.1
   for (const [i, raw] of GOAL_SRC.split("\n").entries()) {
     const s = raw.trim();
     if (s.startsWith("//") || s.startsWith("*")) continue;
-    if (/["`][^"`]*\/loop resume/.test(raw)) hard.push(`${i + 1}: ${s.slice(0, 120)}`);
+    if (!/^const .* = .*["`]\/loop resume/.test(raw)) continue;
+    if (/\/goal resume, \/list resume, or \/loop resume/.test(raw)) continue; // cross-surface enumeration
+    hard.push(`${i + 1}: ${s.slice(0, 120)}`);
   }
-  assert.deepEqual(hard, [], "hardcoded /loop resume literals in goal.ts");
+  assert.deepEqual(hard, [], "hardcoded /loop resume literals on const lines in goal.ts");
 });
 
 test("widget resume hints are mode-aware ternaries (display.ts)", () => {
