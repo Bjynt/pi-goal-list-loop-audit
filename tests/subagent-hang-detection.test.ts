@@ -132,8 +132,25 @@ test("classify: ended / non-running records are not hung (watch stops)", () => {
   assert.equal(classifyHungSubagents(ended, () => runningRecord()).length, 0, "ended probe is skipped");
   const completed = [{ recordId: "r2", lastProgressAt: Date.now() - 60 * 60_000, lastToolUses: 1, lastOutputTokens: 1 }];
   assert.equal(classifyHungSubagents(completed, () => runningRecord({ status: "completed" })).length, 0, "completed record is skipped");
-  const gone = [{ recordId: "r3", lastProgressAt: Date.now() - 60 * 60_000, lastToolUses: 1, lastOutputTokens: 1 }];
-  assert.equal(classifyHungSubagents(gone, () => undefined).length, 0, "vanished record is skipped (no false positive)");
+});
+
+test("v0.34.102: a vanished/unreachable record falls back to event-only evidence (field: pully 118m wedge)", () => {
+  // Field case (pully W161 rehearsal agent aac4ab1e, 2026-08-08): the
+  // manager record was unreachable for the whole 118-minute wedge, so the
+  // OLD `if (!rec) continue` skipped the probe every poll and
+  // `subagent_hang_detected` NEVER fired. Event-only classification uses
+  // the probe's own lastProgressAt (spawn seed + compacted/steered refresh)
+  // against the LONGER SUBAGENT_HANG_EVENT_ONLY_MS window.
+  const stale = [{ recordId: "gone-1", lastProgressAt: Date.now() - 21 * 60_000, lastToolUses: 0, lastOutputTokens: 0 }];
+  const hung = classifyHungSubagents(stale, () => undefined);
+  assert.equal(hung.length, 1, "a stale event-only probe IS hung (no manager record to contradict it)");
+  assert.ok(hung[0]!.silentMs >= 20 * 60_000);
+
+  const fresh = [{ recordId: "gone-2", lastProgressAt: Date.now() - 60_000, lastToolUses: 0, lastOutputTokens: 0 }];
+  assert.equal(classifyHungSubagents(fresh, () => undefined).length, 0, "a young event-only probe is not hung");
+
+  const ended = [{ recordId: "gone-3", lastProgressAt: Date.now() - 21 * 60_000, lastToolUses: 0, lastOutputTokens: 0, endedAt: Date.now() }];
+  assert.equal(classifyHungSubagents(ended, () => undefined).length, 0, "an ended probe is skipped even with no record");
 });
 
 // ------------------------------------------------------------- integration
@@ -177,6 +194,33 @@ test("hang warning is throttled — one alert per 5m streak window, not per tick
   await tick();
 
   assert.equal(ledgerHangs(cwd).length, 1, "the second tick does not re-alert inside the throttle");
+});
+
+test("v0.34.102: event-only hang surfaces `subagent_hang_detected` with evidence=event-only when no manager record exists", async () => {
+  const { cwd, ctx } = await spawnFixture();
+  // NO installManager() — the pi-subagents manager registry is absent, which
+  // is the field shape (pully: getRecord returned undefined for the whole
+  // 118m wedge). The watchdog must still classify via the probe's own event
+  // trail against the longer SUBAGENT_HANG_EVENT_ONLY_MS window.
+  pi.emitBus("subagents:started", { id: "sub-orphan-1", type: "general-purpose", description: "rehearse W161 contract" });
+  await tick();
+  assert.equal(__testOnlySubagentHangProbes().length, 1, "spawn seeded the probe");
+
+  // Backdate past the 20m event-only window (the 5m record path never
+  // applies — no record to poll).
+  const probe = __testOnlySubagentHangProbes()[0]!;
+  probe.lastProgressAt = Date.now() - 21 * 60_000;
+
+  __testOnlyHeartbeatTick();
+  await tick();
+
+  const hangs = ledgerHangs(cwd);
+  assert.equal(hangs.length, 1, "the orphaned subagent is surfaced despite no manager record");
+  assert.equal(hangs[0]!.value.recordId, "sub-orphan-1");
+  assert.equal(hangs[0]!.value.evidence, "event-only", "the ledger names the evidence class");
+  assert.ok(hangs[0]!.value.silentMs >= 20 * 60_000);
+  const warned = ctx.ui.notifies.filter((n) => n.message.includes("manager record is unreachable"));
+  assert.equal(warned.length, 1, "the warning names the event-only shape");
 });
 
 test("completed/failed events end the watch — no hang alert after completion", async () => {
@@ -226,8 +270,10 @@ test("malformed hang inputs are dropped, not crashy", async () => {
 test("source pins: constants, watchdog wiring, and ledger key", () => {
   const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   assert.match(src, /const SUBAGENT_HANG_NO_PROGRESS_MS = 5 \* 60_000;/);
+  assert.match(src, /const SUBAGENT_HANG_EVENT_ONLY_MS = 20 \* 60_000;/);
   assert.match(src, /Symbol\.for\("pi-subagents:manager"\)/);
   assert.match(src, /subagent_hang_detected/);
+  assert.match(src, /evidence: stillTracked \? "record-frozen" : "event-only"/);
   assert.match(src, /subagents:compacted/);
   assert.match(src, /subagents:steered/);
   assert.match(src, /subagents:completed/);
