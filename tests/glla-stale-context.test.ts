@@ -223,7 +223,7 @@ test("v0.34.52: the standard recovery — a fresh session reopens the settings U
 // ────────────────────────────────────────────────────────────────────
 
 test("v0.34.52: source — cmdSettings captures the entry probe and gates the settings entry + mutating actions", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2: cmdSettings moved
   const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
   assert.match(SRC, /const staleEntry = warnIfStaleAtEntry\(ctx, "\/glla"\);/, "entry probe result is captured");
   assert.match(SRC, /if \(staleEntry && \(verb === "ui" \|\| SETTINGS_MUTATING_ACTIONS\.has\(verb\)\)\) \{/, "settings-entry + action gate");

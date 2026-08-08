@@ -157,7 +157,7 @@ test("v0.34.81: readQueueFromDisk ignores malformed parentId (non-string)", () =
 
 test("v0.34.81: wiring — parse in core, resolve/refuse/cascade in goal.ts", () => {
   const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2: cmdList moved
   // Parse step lives in core (single source of truth for the marker regex).
   assert.match(CORE, /const \{ objective, parentObjective \} = extractSubtaskParent\(raw\);/);
   // Refusal ledger key

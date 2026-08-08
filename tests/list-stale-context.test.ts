@@ -271,7 +271,7 @@ test("v0.34.51: list_add and list_activate tools return the stale-context recove
 // ────────────────────────────────────────────────────────────────────
 
 test("v0.34.51: source — cmdList captures the entry probe and gates every mutating path", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2: cmdList moved
   const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
   assert.match(SRC, /const staleEntry = warnIfStaleAtEntry\(ctx, "\/list"\);/, "entry probe result is captured");
   assert.match(SRC, /if \(staleEntry && LIST_MUTATING_SUBCOMMANDS\.has\(sub\)\) \{/, "top-level mutation gate");
