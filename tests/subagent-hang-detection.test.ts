@@ -23,6 +23,7 @@ import * as fs from "node:fs";
 import activate, {
   classifyHungSubagents,
   __testOnlyResetOwnerSession,
+  __testOnlyResetStaleFlag,
   __testOnlySubagentHangProbes,
   __testOnlyClearSubagentHangProbes,
   __testOnlyHeartbeatTick,
@@ -31,6 +32,7 @@ import {
   MockPi, makeMockCtx, tmpCwd, tick,
   type MockCtx,
 } from "./harness/mock-pi.js";
+import { readState } from "../extensions/goal-loop-core.js";
 
 const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
 function setGlobalAutoResume(v: boolean): void {
@@ -279,4 +281,59 @@ test("source pins: constants, watchdog wiring, and ledger key", () => {
   assert.match(src, /subagents:completed/);
   assert.match(src, /subagents:failed/);
   assert.match(src, /upsertSubagentHangProbe\(sessionId/);
+});
+
+// v0.34.105 (field: 2026-08-08 16:18 — quota wall froze subagent
+// 74305f7e while the MAIN model was also in recovery). Before this fix,
+// heartbeatTick returned early at `if (mainModelRecoveryActive()) return;`
+// and the subagent hang scan NEVER ran during a main-model quota wall —
+// the 12m+ wedge produced zero `subagent_hang_detected` ledger entries.
+// The scan is detection + notify only (never an auto-kill), so it must
+// run even while the main model is quota-parked: a shared-provider wall
+// freezes subagents and the main model at the same time.
+test("v0.34.105: hang scan runs during main-model recovery (quota wall blinds the watchdog before the fix)", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "start recovery-blindspot target — done when pinned", ctx);
+  await tick();
+  assert.equal((readState(cwd).goal as { status: string }).status, "active", "goal created and active");
+
+  // Park the MAIN model into durable recovery (3× 429) — the exact field
+  // shape: main model quota-walled, subagent frozen by the same wall.
+  const errTurn = { messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: "429: rate_limit_error" }] };
+  for (let i = 0; i < 3; i++) {
+    await pi.fire("agent_end", errTurn, ctx);
+    await tick();
+  }
+  const parked = readState(cwd) as { goal: { status: string; pauseKind?: string }; mainModelRecovery?: unknown };
+  assert.equal(parked.goal.status, "paused", "the quota wall parks the goal");
+  assert.ok(parked.mainModelRecovery, "the main model is in recovery — the exact gate that used to blind the scan");
+
+  // Now a subagent freezes (frozen record, no new progress for 6m):
+  installManager(() => runningRecord({ toolUses: 0, output: 0 }));
+  pi.emitBus("subagents:started", { id: "sub-quota-1", type: "general-purpose", description: "audit the project" });
+  await tick();
+  const probe = __testOnlySubagentHangProbes()[0]!;
+  probe.lastProgressAt = Date.now() - 6 * 60_000;
+
+  __testOnlyHeartbeatTick();
+  await tick();
+
+  const hangs = ledgerHangs(cwd);
+  assert.equal(hangs.length, 1, "the frozen subagent is surfaced even while the main model is quota-parked");
+  assert.equal(hangs[0]!.value.recordId, "sub-quota-1");
+  assert.equal(hangs[0]!.value.evidence, "record-frozen", "record still pollable → record-frozen evidence");
+  const warned = ctx.ui.notifies.filter((n) => n.message.includes("no progress"));
+  assert.equal(warned.length, 1, "the user was warned during the recovery window");
+});
+
+test("v0.34.105 source pin: subagent scan precedes the main-model-recovery early return in heartbeatTick", () => {
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const tickBody = src.slice(src.indexOf("function heartbeatTick"), src.indexOf("function startHeartbeat"));
+  const scanAt = tickBody.indexOf("subagentHangProbes.size > 0");
+  const recoveryGateAt = tickBody.indexOf("if (mainModelRecoveryActive()) return;");
+  assert.ok(scanAt > -1, "the subagent scan lives in heartbeatTick");
+  assert.ok(recoveryGateAt > -1, "the recovery early-return lives in heartbeatTick");
+  assert.ok(scanAt < recoveryGateAt, "the scan runs BEFORE the recovery gate — a quota wall can no longer blind it");
 });
