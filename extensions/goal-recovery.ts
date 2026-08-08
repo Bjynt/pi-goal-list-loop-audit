@@ -17,9 +17,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { state } from "./goal-state.js";
-import { appendLedger, nowIso, piGlaDir, type Goal, type PendingCompletion } from "./goal-loop-core.js";
+import { appendLedger, nowIso, piGlaDir, type Goal, type MainModelRecovery, type PendingCompletion } from "./goal-loop-core.js";
 import { cancelDetachedGoalCompletionAuditor } from "./goal-loop-auditor-process.js";
-import type { MainModelFailure, MainModelRecovery } from "./main-model-recovery.js";
+import type { MainModelFailure } from "./main-model-recovery.js";
 
 /* ------------------------------------------------------------------ */
 /* Cluster A — compat sidecar marker (single-use, freshness-bounded)   */
