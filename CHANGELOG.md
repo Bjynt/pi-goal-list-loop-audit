@@ -1,6 +1,36 @@
 # Changelog
 
 ## Unreleased
+### 0.34.102 — Field-report triple fix: watchdog event-only fallback + recovering display state + no-turn diagnostic
+
+Three field reports (pully/dracon-platform 2026-08-08, screenshots 090206/
+090343/091828) traced to root causes and fixed together:
+
+1. **Subagent-hang watchdog blind spot (pully 118-min wedge, zero detections).**
+   `classifyHungSubagents` skipped every probe whose manager record was
+   unreachable (`if (!rec) continue`), contradicting its own "falls back to
+   event-only evidence" comment. Now a vanished record falls back to the
+   probe's event trail (spawn seed + compacted/steered refreshes) against a
+   longer `SUBAGENT_HANG_EVENT_ONLY_MS = 20m` window (5m record-frozen path
+   unchanged). Alerts/ledger distinguish `evidence: "record-frozen"` vs
+   `"event-only"`. Still detection-only — the main session decides whether to
+   abort.
+
+2. **"Working while displaying paused" (dracon-platform 090343).** A goal
+   parked on `mainModelRecovery` rendered the widget head as `⏸ paused`
+   while the rearm storm (streak 19) was actively working. The head chip now
+   renders `⏳ recovering` and the card names the reset time; the status line
+   says `⏳ parked on provider wall — no turns until quota reset at HH:MM`
+   instead of promising a live retry.
+
+3. **"pi did not start a turn" with no explanation (dracon-platform 091828).**
+   A continuation rearm storm raged 68m with zero accepted dispatches, but
+   `continuation_unanswered` never fired (it requires the plugin to have SENT
+   a continuation — `lastContinuationSentAt > 0` — which the recovery park
+   gates). The storm milestone now detects no-accepted-dispatch and surfaces
+   `rearm_no_turn_started` (ledger + notify, throttled per milestone window)
+   naming the provider wall and the automatic recovery.
+
 ### 0.34.101 — Auditor-as-subagent architecture (design doc only)
 
 Field evidence (Screenshots_20260808_084527/084717 endless-td
