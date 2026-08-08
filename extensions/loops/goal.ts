@@ -5172,7 +5172,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
         "warning",
       );
     } else {
-      ctx.ui.notify(`The ${label} is ${state.goal.status} — nothing to resume. ${state.goal.policy === "list" ? "/list show" : "/goal status"} for the current state.`, "info");
+      ctx.ui.notify(`The ${label} is ${state.goal.status} — nothing to resume. ${activeGoalStatusCommand()} for the current state.`, "info");
     }
     return;
   }
