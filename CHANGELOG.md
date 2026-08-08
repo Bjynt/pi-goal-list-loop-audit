@@ -1,6 +1,26 @@
 # Changelog
 
 ## Unreleased
+### 0.34.99 — Quota prompt verbosity (CLOSED via v0.34.92)
+
+The original complaint was that the v0.34.58 hourly quota-resume
+prompt was verbose: the chat message dumped the full turn snapshot
+(`goal: <objective> — main model quota: 429 rate limit: ...`) into
+the chat, which was useful for debugging but awful for the user.
+
+The v0.34.92 reversal removed the whole quota-prompt surface — the
+plugin never says "Provider quota wall" in chat anymore. The
+verbosity complaint is therefore moot: there is no message to be
+verbose. The hourly ticker (also added in v0.34.92) gives the same
+fast pickup without any chat text.
+
+- **No code change** in v0.34.99. The v0.34.92 entry is the fix.
+- **Suite**: unchanged (1116 pass / 1 skip / 0 fail). `tsc
+  --noEmit` clean.
+- **Files touched**: `CHANGELOG.md` (this entry),
+  `audit/QUOTA-PROMPT-REMOVED-2026-08-08.md` (already covers the
+  verbosity removal as part of the broader quota-prompt removal).
+
 ### 0.34.98 — Paused-without-draft / decision surface: long-wait pauses (> 6h) surface a tweak offer
 
 Field evidence (Screenshot_20260808_080402 hellhunter): a goal
