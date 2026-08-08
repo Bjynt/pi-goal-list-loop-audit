@@ -296,14 +296,6 @@ export interface Goal {
   auditInfraStreak?: number;
   /** v0.34.15: persisted error-brake rung — survives /reload so the 6-brake park can engage. */
   errorBrakeStreak?: number;
-  /** v0.34.90: ISO time the once-per-parked-episode quota prompt was last
-   * SENT for this goal. Persisted with the goal so every session on the
-   * project shares the dedupe: while set, the hourly quota prompter stays
-   * silent even if auto-recovery flaps (success → wall → success → wall).
-   * Cleared ONLY by a user resume (cmdResume reaching the paused→active
-   * transition, or a manual recovery probe) — auto-recovery success does
-   * NOT clear it. */
-  quotaPromptedAt?: string;
   /** v0.28.26: the completion claim captured when an audit attempt is
    * quota-blocked. The quota retry re-runs the AUDITOR directly with this
    * stored claim instead of re-engaging the agent — re-engaging produced a

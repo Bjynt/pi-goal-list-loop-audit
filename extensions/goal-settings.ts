@@ -64,6 +64,14 @@ export interface Settings {
    * label ("reading source…" / "writing report…") + report byte-counter.
    * Default ON; off = the plain timer-only card. */
   auditorProgressSignals?: boolean;
+  /** v0.34.92: when the orchestrator is parked on main-model recovery, fire
+   * an extra probe at the next :00:30 every hour. Quota windows tend to
+   * refresh at the top of the hour; the ticker is the fastest pickup the
+   * plugin can give without spam. Default ON (the user opted in by asking
+   * for it: "additionally retry after the start of every hour"). Co-resident
+   * with the normal retry schedule — opt-out flips this off, the retry
+   * cadence is unaffected. */
+  hourlyQuotaProbe?: boolean;
   auditorThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   /** Shell command run on goal complete / goal pause / loop stop; message passed as $1. */
   notifyCmd?: string;
@@ -182,6 +190,10 @@ export const DEFAULT_SETTINGS: Settings = {
   // v0.34.86: progress signals are on by default — silent audits still
   // show a phase label + byte counter (note.md Screenshots 161837/175627).
   auditorProgressSignals: true,
+  // v0.34.92: hourly probe ticker on by default — quota windows refresh
+  // at the top of the hour; the ticker gives faster pickup without spam
+  // (no chat message — just an extra recovery probe at :00:30).
+  hourlyQuotaProbe: true,
   // v0.24.6: subagents inherit the session model by default — one quota
   // pool, no surprise 403s from a pinned default agent's provider.
   subagentModelStrategy: "inherit-parent",
@@ -260,6 +272,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "auditFeedbackChars",
   "auditorSilent",
   "auditorProgressSignals",
+  "hourlyQuotaProbe",
   "subagentModelStrategy",
   "subagentModelOverrides",
   "aggressiveMode",

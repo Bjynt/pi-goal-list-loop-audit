@@ -3132,9 +3132,6 @@ function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
   const recovery = state.mainModelRecovery;
   if (!recovery) return;
   clearMainModelRecoveryTimer();
-  clearQuotaPromptTimer(); // v0.34.58: a wall that lifted before :00 must not prompt
-  quotaPromptScheduledFor = null;
-  quotaPromptContext = null;
   // v0.34.92: clearQuotaPromptTimer() call removed — the quota-prompt
   // timer was deleted with the rest of v0.34.58/v0.34.90. Recovery now
   // clears only its own timer (above).
