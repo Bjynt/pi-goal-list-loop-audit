@@ -6,13 +6,11 @@
  * - ZERO behavior change: moved bodies are byte-identical except module-level
  *   flag references rewritten to `flags.<name>` accessors.
  * - One-way imports: this module never imports from goal.ts or goal-commands.ts.
- *   It DOES import from goal-loop.ts (clearContinuationTimer / clearLoopTimer
- *   are loop-owned) and from goal-state.ts (state.mainModelRecovery lives
- *   there per step 1).
- * - Module-level mutable state owned here: mainModelRecoveryTimer,
+ * - Module-level mutable state stays OWNED by goal.ts (mainModelRecoveryTimer,
  *   mainModelSwitchInFlight, mainModelAbortForRecovery, lastMainModelFailure,
- *   completionAuditRecoveryArmed. goal.ts observes them through the
- *   RecoveryFlags accessor object.
+ *   completionAuditRecoveryArmed, hourlyProbeTimer, hourlyProbeFireAt); this
+ *   module observes them through the RecoveryFlags accessor object (the same
+ *   mirror-lets pattern as goal-loop.ts's flags).
  */
 
 import * as fs from "node:fs";
@@ -49,39 +47,6 @@ export function consumeRecoveryResume(cwd: string): boolean {
 /* ------------------------------------------------------------------ */
 /* Cluster C — completion-audit recovery (durable claim rehydration)  */
 /* ------------------------------------------------------------------ */
-
-/* The `completionAuditRecoveryArmed` flag stays owned by goal.ts and is
- * read/written by goal.ts watchdog / lifecycle code; the moved functions
- * below don't touch it directly, so no RecoveryFlags entry is needed yet.
- * (Cluster B's mainModelRecovery will add the first RecoveryFlags
- * accessors when the big block moves.) */
-export interface RecoveryFlags {
-  // intentionally empty for cluster A + C; cluster B will add:
-  //   get/set mainModelRecoveryTimer
-  //   get/set mainModelSwitchInFlight
-  //   get/set mainModelAbortForRecovery
-  //   get/set lastMainModelFailure
-  //   get/set completionAuditRecoveryArmed (if it ends up here)
-}
-
-export interface RecoveryDeps {
-  activeGoalSurfaceCommand: (command: string) => string;
-  cancelDetachedGoalCompletionAuditor: (cwd: string, attemptId: string) => boolean;
-  clearDetachedAuditRuntime: () => void;
-  nowIso: () => string;
-  updateGoal: (patch: Partial<Goal>, ctx: ExtensionContext) => void;
-}
-
-let activeGoalSurfaceCommand: RecoveryDeps["activeGoalSurfaceCommand"];
-let clearDetachedAuditRuntime: RecoveryDeps["clearDetachedAuditRuntime"];
-// appendLedger + nowIso + cancelDetachedGoalCompletionAuditor imported directly from goal-loop-core / goal-loop-auditor-process above.
-let updateGoal: RecoveryDeps["updateGoal"];
-
-export function createGoalRecovery(_flags: RecoveryFlags, d: RecoveryDeps): void {
-  activeGoalSurfaceCommand = d.activeGoalSurfaceCommand;
-  clearDetachedAuditRuntime = d.clearDetachedAuditRuntime;
-  updateGoal = d.updateGoal;
-}
 
 export function markCompletionAuditRecoveryPending(ctx: ExtensionContext, reason: string): boolean {
   const goal = state.goal;
@@ -131,9 +96,9 @@ export function isCompletionAuditRecoveryPending(goal: Goal | null | undefined):
 /* Cluster B — main-model recovery + hourly quota probe               */
 /* ------------------------------------------------------------------ */
 
-/* The 4 module flags + 2 hourly-probe timers stay owned by goal.ts
- * (they're read by goal.ts watchdogs, cmdResume, the loop, etc.) and
- * are observed here through the RecoveryFlags accessor. */
+/* The 6 module flags stay owned by goal.ts (they're read by goal.ts
+ * watchdogs, cmdResume, the loop, etc.) and are observed here through the
+ * RecoveryFlags accessor object. */
 export interface RecoveryFlags {
   get completionAuditRecoveryArmed(): boolean;
   set completionAuditRecoveryArmed(v: boolean);
@@ -154,67 +119,48 @@ export interface RecoveryFlags {
 export interface RecoveryDeps {
   // cluster C
   activeGoalSurfaceCommand: (command: string) => string;
-  cancelDetachedGoalCompletionAuditor: (cwd: string, attemptId: string) => boolean;
   clearDetachedAuditRuntime: () => void;
-  nowIso: () => string;
   updateGoal: (patch: Partial<Goal>, ctx: ExtensionContext) => void;
-  // cluster B (added incrementally — the rest of B is the next surgery)
-  // clearContinuationTimer, clearLoopTimer (step 5 — not yet moved)
-  // clearMainModelRecoveryTimer is the only one moved so far
+  // cluster B (batch 1 — the timer clear + pure helpers)
   cancelHourlyProbe: () => void;
-  recoverySurfaceCommand: (kind: "goal" | "loop", command: string) => string;
-  freshCtxForGeneration: (generation: number) => ExtensionContext | null;
-  isStaleApiError: (err: unknown) => boolean;
-  loadGlobalSettings: () => { hourlyQuotaProbe?: boolean; mainModelFallbacks?: string[] };
-  nextHourlyProbeMs: (now: number) => number;
-  normalizeModelRefs: (refs: string[] | undefined) => string[];
   mainModelAutoRetryUntil: (firstMs: number, horizonMs: number) => string;
-  nextUntriedModelRef: (current: string, refs: string[], attempted: string[]) => string | undefined;
-  splitModelRef: (ref: string) => { provider: string; id: string } | null;
   MAIN_MODEL_AUTO_RETRY_HORIZON_MS: number;
-  isForbiddenModel: (ref: string | undefined, forbiddenModels: readonly string[]) => boolean;
-  isLoopActive: () => boolean;
-  loadSettings: (cwd: string) => { forbiddenModels: readonly string[] };
-  notifyExternal: (ctx: ExtensionContext, message: string) => void;
-  persistState: (ctx: ExtensionContext) => void;
-  recoverySurfaceCommandGoal: (command: string) => string; // alias for state.goal?.policy === "list" ? "list resume" : "goal resume"
-  scheduleSessionTimeout: (callback: () => void, delayMs: number) => NodeJS.Timeout;
-  // For tryMainModelFallback:
-  modelRef: (m: any) => string | undefined;
-  sessionGeneration: () => number; // accessor for the generation flag
-  extensionApi: () => { setModel?: (m: any) => Promise<boolean> } | null;
-  extensionApiStale: () => boolean;
-  setExtensionApiStale: (v: boolean) => void;
 }
 
+let flags: RecoveryFlags;
 let activeGoalSurfaceCommand: RecoveryDeps["activeGoalSurfaceCommand"];
 let clearDetachedAuditRuntime: RecoveryDeps["clearDetachedAuditRuntime"];
-// appendLedger + nowIso + cancelDetachedGoalCompletionAuditor imported directly from goal-loop-core / goal-loop-auditor-process above.
 let updateGoal: RecoveryDeps["updateGoal"];
-
-// cluster B deps (module-level lets for the factory)
+// cluster B (batch 1)
 let cancelHourlyProbe: RecoveryDeps["cancelHourlyProbe"];
+let mainModelAutoRetryUntil: RecoveryDeps["mainModelAutoRetryUntil"];
+let MAIN_MODEL_AUTO_RETRY_HORIZON_MS: RecoveryDeps["MAIN_MODEL_AUTO_RETRY_HORIZON_MS"];
 
-export function createGoalRecovery(_flags: RecoveryFlags, d: RecoveryDeps): void {
-  // cluster C
+export function createGoalRecovery(flagsArg: RecoveryFlags, d: RecoveryDeps): void {
+  flags = flagsArg;
   activeGoalSurfaceCommand = d.activeGoalSurfaceCommand;
   clearDetachedAuditRuntime = d.clearDetachedAuditRuntime;
   updateGoal = d.updateGoal;
-  // cluster B (incremental — expand as more functions move)
   cancelHourlyProbe = d.cancelHourlyProbe;
+  mainModelAutoRetryUntil = d.mainModelAutoRetryUntil;
+  MAIN_MODEL_AUTO_RETRY_HORIZON_MS = d.MAIN_MODEL_AUTO_RETRY_HORIZON_MS;
 }
 
-/* Pure helpers — no state, no deps. */
-function mainModelRecoveryActive(): boolean { return !!state.mainModelRecovery?.retryAt; }
+/* ------------------------------------------------------------------ */
+/* Cluster B, batch 1 — moved functions (byte-identical bodies,        */
+/* module flags via RecoveryFlags accessor)                            */
+/* ------------------------------------------------------------------ */
 
-function mainModelRecoveryKind(): "goal" | "loop" { return state.loop?.active ? "loop" : "goal"; }
+export function mainModelRecoveryActive(): boolean { return !!state.mainModelRecovery?.retryAt; }
 
-function mainModelRecoveryReason(failure: MainModelFailure): string {
+export function mainModelRecoveryKind(): "goal" | "loop" { return state.loop?.active ? "loop" : "goal"; }
+
+export function mainModelRecoveryReason(failure: MainModelFailure): string {
   const detail = failure.raw.replace(/\s+/g, " ").trim().slice(0, 180);
   return `main model ${failure.kind}${detail ? `: ${detail}` : " failure"}`;
 }
 
-function withMainModelRecoveryWindow(recovery: MainModelRecovery, now = Date.now()): MainModelRecovery {
+export function withMainModelRecoveryWindow(recovery: MainModelRecovery, now = Date.now()): MainModelRecovery {
   const firstMs = recovery.firstFailureAt ? Date.parse(recovery.firstFailureAt) : Number.NaN;
   const firstFailureAt = Number.isFinite(firstMs) ? recovery.firstFailureAt : new Date(now).toISOString();
   const untilMs = recovery.autoRetryUntil ? Date.parse(recovery.autoRetryUntil) : Number.NaN;
@@ -224,7 +170,7 @@ function withMainModelRecoveryWindow(recovery: MainModelRecovery, now = Date.now
   return { ...recovery, firstFailureAt, autoRetryUntil };
 }
 
-function clearMainModelRecoveryTimer(): void {
+export function clearMainModelRecoveryTimer(): void {
   if (flags.mainModelRecoveryTimer) {
     clearTimeout(flags.mainModelRecoveryTimer);
     flags.mainModelRecoveryTimer = null;
@@ -235,4 +181,3 @@ function clearMainModelRecoveryTimer(): void {
   // re-arm via scheduleHourlyProbe() if recovery is still parked.
   cancelHourlyProbe();
 }
-

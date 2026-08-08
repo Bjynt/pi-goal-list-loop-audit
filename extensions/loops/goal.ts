@@ -224,12 +224,17 @@ import {
 } from "../model-picker.js";
 import { consumeRecoveryResume } from "../goal-recovery.js"; // decomposition step 3 (v0.34.111)
 import {
+  clearMainModelRecoveryTimer,
   createGoalRecovery,
   isCompletionAuditRecoveryPending,
+  mainModelRecoveryActive,
+  mainModelRecoveryKind,
+  mainModelRecoveryReason,
   markCompletionAuditRecoveryPending,
+  withMainModelRecoveryWindow,
   type RecoveryDeps,
   type RecoveryFlags,
-} from "../goal-recovery.js"; // decomposition step 3 (v0.34.111) — cluster C (completion-audit recovery)
+} from "../goal-recovery.js"; // decomposition step 3 (v0.34.111) — clusters B (main-model recovery) + C (completion-audit recovery)
 import {
   ConfirmDraftComponent,
 } from "../confirm-draft.js";
@@ -2887,39 +2892,12 @@ function scheduleQuotaRetryForSession(
   }, label);
 }
 
-function clearMainModelRecoveryTimer(): void {
-  if (mainModelRecoveryTimer) {
-    clearTimeout(mainModelRecoveryTimer);
-    mainModelRecoveryTimer = null;
-  }
-  // v0.34.92: clear the hourly probe ticker in lockstep — session
-  // replacement / recovery reset must not leave an orphaned ticker firing
-  // against a dead generation. The new session's session_start will
-  // re-arm via scheduleHourlyProbe() if recovery is still parked.
-  cancelHourlyProbe();
-}
+// clearMainModelRecoveryTimer / mainModelRecoveryActive / mainModelRecoveryKind /
+// mainModelRecoveryReason / withMainModelRecoveryWindow moved to goal-recovery.ts
+// (decomposition step 3, v0.34.111) and imported above.
 
 function mainModelFallbackRefs(ctx: ExtensionContext): string[] {
   try { return normalizeModelRefs(loadGlobalSettings().mainModelFallbacks); } catch { return []; }
-}
-
-function mainModelRecoveryActive(): boolean { return !!state.mainModelRecovery?.retryAt; }
-
-function mainModelRecoveryKind(): "goal" | "loop" { return state.loop?.active ? "loop" : "goal"; }
-
-function mainModelRecoveryReason(failure: MainModelFailure): string {
-  const detail = failure.raw.replace(/\s+/g, " ").trim().slice(0, 180);
-  return `main model ${failure.kind}${detail ? `: ${detail}` : " failure"}`;
-}
-
-function withMainModelRecoveryWindow(recovery: MainModelRecovery, now = Date.now()): MainModelRecovery {
-  const firstMs = recovery.firstFailureAt ? Date.parse(recovery.firstFailureAt) : Number.NaN;
-  const firstFailureAt = Number.isFinite(firstMs) ? recovery.firstFailureAt : new Date(now).toISOString();
-  const untilMs = recovery.autoRetryUntil ? Date.parse(recovery.autoRetryUntil) : Number.NaN;
-  const autoRetryUntil = Number.isFinite(untilMs) && untilMs > (Number.isFinite(firstMs) ? firstMs : now)
-    ? recovery.autoRetryUntil
-    : mainModelAutoRetryUntil(Number.isFinite(firstMs) ? firstMs : now, MAIN_MODEL_AUTO_RETRY_HORIZON_MS);
-  return { ...recovery, firstFailureAt, autoRetryUntil };
 }
 
 function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModelRecovery, why: string): void {
@@ -7260,13 +7238,29 @@ const loopDeps: LoopDeps = {
 
 createGoalLoop(loopDeps);
 createGoalCommands(commandDeps);
-const recoveryFlags: RecoveryFlags = {};
+const recoveryFlags: RecoveryFlags = {
+  get completionAuditRecoveryArmed() { return completionAuditRecoveryArmed; },
+  set completionAuditRecoveryArmed(v) { completionAuditRecoveryArmed = v; },
+  get mainModelRecoveryTimer() { return mainModelRecoveryTimer; },
+  set mainModelRecoveryTimer(v) { mainModelRecoveryTimer = v; },
+  get mainModelSwitchInFlight() { return mainModelSwitchInFlight; },
+  set mainModelSwitchInFlight(v) { mainModelSwitchInFlight = v; },
+  get mainModelAbortForRecovery() { return mainModelAbortForRecovery; },
+  set mainModelAbortForRecovery(v) { mainModelAbortForRecovery = v; },
+  get lastMainModelFailure() { return lastMainModelFailure; },
+  set lastMainModelFailure(v) { lastMainModelFailure = v; },
+  get hourlyProbeTimer() { return hourlyProbeTimer; },
+  set hourlyProbeTimer(v) { hourlyProbeTimer = v; },
+  get hourlyProbeFireAt() { return hourlyProbeFireAt; },
+  set hourlyProbeFireAt(v) { hourlyProbeFireAt = v; },
+};
 const recoveryDeps: RecoveryDeps = {
   activeGoalSurfaceCommand,
-  cancelDetachedGoalCompletionAuditor,
   clearDetachedAuditRuntime,
-  nowIso,
   updateGoal,
+  cancelHourlyProbe,
+  mainModelAutoRetryUntil,
+  MAIN_MODEL_AUTO_RETRY_HORIZON_MS,
 };
 createGoalRecovery(recoveryFlags, recoveryDeps);
 
