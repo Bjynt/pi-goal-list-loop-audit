@@ -162,7 +162,7 @@ test("queueItemPath: stable relative shape", () => {
 });
 
 test("v0.34.61: addSingleItem is disk-first (sidecar before state mutation)", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   // The /list add "<direct text>" path (auditor-fixed gap #1): the sidecar
   // must be written BEFORE `state = { ...state, list: ... }` so an
   // orchestrator-turn death between the state mutation and persistState
@@ -189,7 +189,7 @@ test("v0.34.61: list-draft path is disk-first (sidecar before state mutation)", 
 });
 
 test("v0.34.61: remove/clear/cancel/glla_wipe delete sidecars", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   // Auditor-fixed gap #3: every removal path must call deleteQueueItemFile so
   // the /list disk-recovery fallback cannot resurrect explicitly-removed items.
   assert.match(SRC, /deleteQueueItemFile\(ctx\.cwd, removed\.id\);\n\s*replaceState\(\{ \.\.\.state, list: queue\.filter/); // /list remove

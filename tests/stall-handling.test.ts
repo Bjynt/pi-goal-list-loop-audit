@@ -21,6 +21,8 @@ import { loadSettings, saveSettings } from "../extensions/goal-settings.ts";
 import { buildStatusText, buildWidgetLines } from "../extensions/goal-loop-display.ts";
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
+const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
 
 test("escalation gate: threshold semantics (0 = never, N = fire at streak N)", () => {
   assert.equal(shouldEscalateStall(5, 5), true);
@@ -31,11 +33,14 @@ test("escalation gate: threshold semantics (0 = never, N = fire at streak N)", (
 });
 
 test("send paths are ledgered: sent AND failed, loop and goal", () => {
-  for (const ev of ["loop_turn_sent", "loop_turn_send_failed", "goal_continuation_sent", "goal_continuation_send_failed"]) {
+  for (const ev of ["goal_continuation_sent", "goal_continuation_send_failed"]) {
     assert.ok(SRC.includes(`"${ev}"`), `missing ledger event ${ev}`);
   }
+  for (const ev of ["loop_turn_sent", "loop_turn_send_failed"]) {
+    assert.ok(LOOP.includes(`"${ev}"`), `missing ledger event ${ev} (moved to goal-loop.ts, decomposition step 2)`);
+  }
   // The failure branch must capture the error message (was: silent catch).
-  assert.match(SRC, /loop_turn_send_failed", \{ error: err instanceof Error/);
+  assert.match(LOOP, /loop_turn_send_failed", \{ error: err instanceof Error/);
 });
 
 test("refire streak: incremented on refire, ledgered, reset only on REAL activity", () => {
@@ -66,7 +71,7 @@ test("session_compact hook: re-arms the chain when idle with no timer pending", 
   assert.match(SRC, /appendLedger\(ctx\.cwd, "session_compact", \{\}\)/);
   assert.match(SRC, /appendLedger\(c\.cwd, "compaction_refire", \{\}\)/);
   // only when nothing is scheduled and the session is idle:
-  assert.match(SRC, /c\.isIdle\(\) && !c\.hasPendingMessages\(\) && continuationTimer === null && loopTimer === null && isSupervising\(\)/);
+  assert.match(SRC, /c\.isIdle\(\) && !c\.hasPendingMessages\(\) && continuationTimer === null && !loopTimerPending\(\) && isSupervising\(\)/);
 });
 
 test("widget + status surface the streak only while nonzero", () => {
@@ -100,7 +105,7 @@ test("/glla surface: bare command opens settings; arguments are actions", () => 
   assert.doesNotMatch(SRC, /\["stall-brakes",/);
   assert.doesNotMatch(SRC, /\["stallescalation=",/);
   assert.doesNotMatch(SRC, /\^\(keep-going\|auditor\|stall-brakes\|subagents\|other\)\\b/);
-  assert.match(SRC, /Unknown \/glla action/);
+  assert.match(CMDS, /Unknown \/glla action/);
   assert.doesNotMatch(SRC, /const kvRe =/);
 });
 
@@ -199,7 +204,7 @@ test("v0.29.21: session_compact arms a SECOND settle refire at grace expiry", ()
   assert.ok(block.includes("if (isLoopActive()) scheduleLoopTick(c);"), "loop refire line");
   assert.ok(block.includes("else scheduleContinuation(c, true);"), "goal refire line");
   assert.match(block, /COMPACTION_GRACE_MS \+ 2_000/, "fires at grace expiry (+2s epsilon)");
-  assert.match(block, /c\.isIdle\(\) && !c\.hasPendingMessages\(\) && continuationTimer === null && loopTimer === null/, "same guards as the 2s settle");
+  assert.match(block, /c\.isIdle\(\) && !c\.hasPendingMessages\(\) && continuationTimer === null && !loopTimerPending\(\)/, "same guards as the 2s settle");
   assert.match(block, /!abortedStandDown/, "user stand-down still wins");
   assert.ok(SRC.includes("const sessionTimeouts = new Set<NodeJS.Timeout>();"), "settle timer is tracked for shutdown cleanup");
   assert.match(SRC, /const COMPACTION_GRACE_MS = 3 \* 60_000;/);
@@ -273,17 +278,19 @@ test("v0.29.9: msUntilNextHourBoundary — next clock-hour + grace, correct acro
 
 test("v0.29.1: zombie-twin guard — drafts/enqueues duplicating a goal completed <24h ago are refused loudly", () => {
   const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const cmds = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   // Junk-runner field case: the just-approved close re-drafted itself 3
   // minutes later and autoaccept waved it in (9h of storm for nothing).
-  assert.match(src, /const DUPLICATE_LOOKBACK_MS = 24 \* 60 \* 60 \* 1000;/);
-  assert.match(src, /function recentlyCompletedObjectives\(cwd: string\)/);
+  // (decomposition step 2: the enqueue-side guard moved to goal-commands.ts)
+  assert.match(cmds, /const DUPLICATE_LOOKBACK_MS = 24 \* 60 \* 60 \* 1000;/);
+  assert.match(cmds, /function recentlyCompletedObjectives\(cwd: string\)/);
   // goal_archived carries the objective going forward (retro fallback reads
   // the archived file's ## Objective section):
   assert.match(src, /appendLedger\(ctx\.cwd, "goal_archived", \{ goalId: goal\.id, status, stopReason, objective: goal\.objective\.slice\(0, 300\) \}\)/);
-  assert.match(src, /md\.split\("## Objective"\)/);
+  assert.match(cmds, /md\.split\("## Objective"\)/);
   // enqueue path filters + reports:
-  assert.match(src, /list_duplicate_skipped/);
-  assert.match(src, /Skipped \$\{skipped\} item\(s\) duplicating work COMPLETED in the last 24h/);
+  assert.match(cmds, /list_duplicate_skipped/);
+  assert.match(cmds, /Skipped \$\{skipped\} item\(s\) duplicating work COMPLETED in the last 24h/);
   // draft path refuses before activation (autoaccept OR confirmed alike):
   const draftIdx = src.indexOf("draft_duplicate_skipped");
   assert.ok(draftIdx > -1 && src.slice(draftIdx - 1600, draftIdx).includes("recentlyCompletedObjectives(liveCtx.cwd).has(normalizeObjective(p.objective.trim()))"));
@@ -311,6 +318,7 @@ test("v0.29.2: git discipline law — no invented identities or branches, in eve
 
 test("v0.29.3/0.29.6: no empty allowlist warning; stacked states AUTO-ARBITRATE (picker superseded)", () => {
   const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const cmds = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   // 1. The tool-heal warn used to fire with "0 agent tool(s) … re-activated
   //    ()" at every pi start (darklord screenshot). Warn only on a real heal.
   assert.match(src, /if \(!toolHealNotified && missing\.length > 0\) \{/);
@@ -324,8 +332,8 @@ test("v0.29.3/0.29.6: no empty allowlist warning; stacked states AUTO-ARBITRATE 
   // 3. The decision prompt still executes wipe-labelled options if a
   //    future pause offers one (cmdGllaWipe keeps its own Confirm —
   //    destructive actions keep their gate).
-  assert.ok(src.includes("/\\(\\/glla wipe\\)\\s*$/.test(label)"));
-  assert.match(src, /await cmdGllaWipe\(ctx\);\s*\n\s*return true;/);
+  assert.ok(cmds.includes("/\\(\\/glla wipe\\)\\s*$/.test(label)"));
+  assert.match(cmds, /await cmdGllaWipe\(ctx\);\s*\n\s*return true;/);
 });
 
 test("v0.29.4: user aborts stand the chain down and never count toward stalls (the Esc-spam loop)", () => {
@@ -406,7 +414,7 @@ test("v0.32.1: post-compaction resume debt + deterministic resync (pi-goal-x's l
   assert.match(SRC, /compaction_resume_owed_refire/); // heartbeat retries the debt every post-grace tick
   assert.match(SRC, /\[POST-COMPACTION RESYNC\]/); // deterministic re-anchor block
   assert.match(SRC, /content: resync \+ continuationPrompt/); // goal path prepends
-  assert.match(SRC, /content: loopResync \+ loopPrompt/); // loop path prepends
+  assert.match(LOOP, /content: loopResync \+ loopPrompt/); // loop path prepends (moved to goal-loop.ts, decomposition step 2)
   assert.match(SRC, /resync: Boolean\(resync\)/, "dispatch records whether resync was sent");
   assert.match(SRC, /if \(record\.resync\) postCompactResyncPending = false;/, "resync is consumed only after start acknowledgement");
   // discharged by a real turn start (agent_start), not by the send itself.
