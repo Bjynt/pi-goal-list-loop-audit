@@ -1,6 +1,57 @@
 # Changelog
 
 ## Unreleased
+### 0.34.96 — Complete-vs-aborted distinction when the work was already shipped in a prior version
+
+Field evidence (Screenshot_20260808_080536): an agent's
+completionSummary ended `✓ complete` while saying "v0.34.74 already…",
+two contradictory surfaces — the goal's `status=complete` claimed the
+work was done in THIS turn, while the recap named a prior version.
+The user wants a way to differentiate "completed" from
+"verified-already-shipped".
+
+The fix: detect "already shipped" / "verified vX.Y.Z covers this" /
+"no new work shipped" in the completionSummary at the
+`complete_goal` entry point and route to `status=aborted` with
+`stopReason=already_shipped:vX.Y.Z`. The auditor never runs (there
+is nothing for it to verify); the user sees an honest terminal state
+("no new work shipped in this turn") instead of a misleading
+`✓ complete` with a recap that names a version, not this turn.
+
+- **Detection patterns** (case-insensitive on the completionSummary):
+  - `already shipped`
+  - `verified vX.Y.Z covers this`
+  - `no new work shipped`
+  The regex captures the matched phrase; an additional regex pulls
+  `vX.Y.Z` from the summary text for the `stopReason`.
+- **Routing**: when matched, the goal's `status` becomes `aborted`,
+  `stopReason` becomes `already_shipped:<matched>` (e.g.
+  `already_shipped:v0.34.74` or `already_shipped:already shipped`
+  when no version is named). The completionSummary is preserved as
+  the abort reason so `/goal status` shows the full text.
+- **Ledger event** `complete_goal_already_shipped` records the
+  matched phrase, matched version (if any), and a 300-char recap
+  excerpt. This is the durable record — the user can grep the
+  ledger to find all "already shipped" aborts.
+- **UI notify**: an `info` notification tells the user
+  "Goal archived as aborted — completionSummary indicated the
+  work was <matched phrase>; no new work shipped in this turn."
+- **New tests** in `tests/revision-bound-audit.test.ts`, +3 cases:
+  - "already shipped" / "verified v0.34.74 covers this" → routes
+    to aborted, no auditor runs
+  - "no new work shipped" → routes to aborted with stopReason
+    `already_shipped:no new work shipped`
+  - A NORMAL completionSummary ("Shipped v0.34.95 work: ...")
+    still runs the auditor (no false-positive abort — the gate
+    only fires on the specific phrases)
+- **Suite**: 1111 pass / 1 skip / 0 fail across 100 files. `tsc
+  --noEmit` clean.
+- **Files touched**: `extensions/loops/goal.ts` (+60 LOC for the
+  detection + routing + UI notify + ledger entry + comment),
+  `tests/revision-bound-audit.test.ts` (+3 tests, +75 LOC),
+  `package.json` (0.34.95 → 0.34.96), `CHANGELOG.md` (this entry),
+  `audit/ABORTED-VS-COMPLETE-2026-08-08.md` (new).
+
 ### 0.34.95 — Status transparency when parked on quota: '[QUEUED] 12m 26s · N queued' → '… · waiting for quota reset at HH:MM'
 
 Field evidence (Screenshot_20260808_014303 darklord LIST-AUDIT-COLLECT):
