@@ -1,6 +1,30 @@
 # Changelog
 
 ## Unreleased
+### 0.34.103 — GitHub #6: replace no longer silently cancels a wait goal's scheduled resume; resume answers archived goals
+
+Field report (GitHub issue #6, filed by the detached auditor 2026-08-08):
+
+**Defect A — replaced wait goal's auto-resume silently dropped.** When a
+newly-activated goal `replace`s an older goal parked in `wait` (scheduled
+`pauseResumeAt`), the old goal was archived outright and its resume intent
+silently cancelled with no notification. Now `setGoal` captures the
+superseded goal, and if it carried a pending scheduled resume the plugin
+warns (`…was superseded and archived — its scheduled auto-resume (HH:MM)
+was cancelled`) + ledgers `replaced_resume_cancelled` (goalId, policy,
+scheduledAt, replacedBy). Plain replaces without a resume intent stay quiet.
+
+**Defect B — `/goal resume` on an archived goal silently no-opped.** The
+bare `if (!state.goal || status !== "paused") return;` swallowed the verb
+with zero feedback. Now cmdResume answers every dead end:
+- terminal (complete/aborted → archived): names the state and the recovery
+  path (`/goal <objective>` fresh start + `/goal archive`, or `/list add`
+  re-queue + `/list show` for list items);
+- no goal at all: "Nothing to resume" + points at `/goal <objective>`,
+  `/list show`, or `/loop resume` when a loop is active;
+- non-terminal non-paused: informational answer via the mode-aware
+  `activeGoalStatusCommand()`.
+
 ### 0.34.102 — Field-report triple fix: watchdog event-only fallback + recovering display state + no-turn diagnostic
 
 Three field reports (pully/dracon-platform 2026-08-08, screenshots 090206/
