@@ -2778,6 +2778,11 @@ function clearMainModelRecoveryTimer(): void {
     clearTimeout(mainModelRecoveryTimer);
     mainModelRecoveryTimer = null;
   }
+  // v0.34.92: clear the hourly probe ticker in lockstep — session
+  // replacement / recovery reset must not leave an orphaned ticker firing
+  // against a dead generation. The new session's session_start will
+  // re-arm via scheduleHourlyProbe() if recovery is still parked.
+  cancelHourlyProbe();
 }
 
 function mainModelFallbackRefs(ctx: ExtensionContext): string[] {
@@ -10153,6 +10158,9 @@ export default function (pi: ExtensionAPI): void {
         ctx.ui.notify(`Restored main-model recovery (${mainRecovery.kind}) — ${delay > 0 ? `next probe in ${Math.max(1, Math.ceil(delay / 60_000))}m` : "probe is due now"}.`, "info");
         if (delay > 0) scheduleMainModelRecoveryTimer(ctx, delay);
         else void probeMainModelRecovery(ctx);
+        // v0.34.92: re-arm the hourly probe ticker on session_start if the
+        // session is still parked — the timer died with the old session.
+        scheduleHourlyProbe(ctx);
       } else {
         const recoveryResumeCmd = mainRecovery.kind === "loop" ? "/loop resume" : state.goal?.policy === "list" ? "/list resume" : "/goal resume";
         ctx.ui.notify(`Main-model recovery is waiting with the work safe — ${recoveryResumeCmd} retries the provider, or enable Auto-resume in /glla settings.`, "info");
