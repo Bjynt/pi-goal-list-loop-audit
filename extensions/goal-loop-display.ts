@@ -642,6 +642,17 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       if (kind === "blocked") {
         return `glla: ${paint(theme, "warning", `⏸ action needed${when}`)}${queue}${heldSuffix}`;
       }
+      // v0.34.102 (field: dracon-platform 2026-08-08 091828 "pi did not
+      // start a turn"): a wait-pause parked on mainModelRecovery must name
+      // the blocker, not promise a live retry. "auto-retrying · auto-retry
+      // in 42m" read as pi actively starting turns; in fact NO turn starts
+      // until the reset — the goal is parked on the provider wall. Mirror
+      // the v0.34.95 queued-envelope wording so both surfaces agree.
+      const parked = state.mainModelRecovery?.retryAt ? Date.parse(state.mainModelRecovery.retryAt) : Number.NaN;
+      if (Number.isFinite(parked)) {
+        const qs = queue;
+        return `glla: ${paint(theme, "dim", `⏳ parked on provider wall — no turns until quota reset at ${formatClockTime(parked)}`)}${qs}${heldSuffix}`;
+      }
       return `glla: ${paint(theme, "dim", `⏳ auto-retrying${when}`)}${queue}${heldSuffix}`;
     }
     const label = `paused ⏸ ${truncate(g.pauseReason ?? "", 40)}`;
@@ -836,16 +847,26 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   const interrupted = g.status === "active" && !!g.interruptedAt;
   const attention = activeAttention(g);
   const auditorPhase = g.status === "auditing" ? auditorDisplayPhase(g, audit, now) : undefined;
+  // v0.34.102: a paused goal with a live mainModelRecovery park is
+  // RECOVERING, not paused — the loop is actively probing/rearming in the
+  // background while the provider wall holds (field: dracon-platform
+  // 2026-08-08 090343 "working while displaying paused here"; the rearm
+  // storm streak 19 was firing while the head chip said ⏸ paused). The
+  // status line already renders ⏳ auto-retrying for these; the widget head
+  // must not contradict it.
+  const recovering = g.status === "paused" && !!state.mainModelRecovery && !!state.mainModelRecovery.retryAt;
   const icon =
     interrupted
       ? paint(theme, "error", "⚠")
       : attention
         ? paint(theme, attention.color, "⚠")
-        : g.status === "paused"
-          ? paint(theme, pauseIsError(g) ? "error" : "warning", "⏸")
-          : g.status === "auditing"
-            ? paint(theme, "accent", "⟡")
-            : paint(theme, "success", "●");
+        : recovering
+          ? paint(theme, "dim", "⏳")
+          : g.status === "paused"
+            ? paint(theme, pauseIsError(g) ? "error" : "warning", "⏸")
+            : g.status === "auditing"
+              ? paint(theme, "accent", "⟡")
+              : paint(theme, "success", "●");
   // v0.24.7: a list item is named as such and points at /list — before,
   // the widget called it "active" and hinted "/goal status", reading as if
   // queue work were a standalone goal.
@@ -854,9 +875,11 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     ? paint(theme, "error", "interrupted")
     : attention
       ? paint(theme, attention.color, attention.label)
-      : g.status === "active"
-        ? paint(theme, "success", "active")
-        : g.status;
+      : recovering
+        ? paint(theme, "dim", "recovering")
+        : g.status === "active"
+          ? paint(theme, "success", "active")
+          : g.status;
   // v0.33.0: slim card — status folds INTO the head line as middot segments
   // (filter(Boolean).join, the universal CLI idiom). Line 2 is the live
   // "last action · next task" line; the footer stays the hint line.
@@ -1033,8 +1056,15 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     const retryMs = (kind === "wait" || kind === "blocked") && g.pauseResumeAt
       ? Date.parse(g.pauseResumeAt) - now
       : Number.NaN;
+    // v0.34.102: a paused goal parked on mainModelRecovery is recovering —
+    // name the reset time in the card body too (field: dracon-platform
+    // 2026-08-08 090343 "working while displaying paused").
+    const parkedAt = state.mainModelRecovery?.retryAt ? Date.parse(state.mainModelRecovery.retryAt) : Number.NaN;
     if (kind === "decision") lines.push(`├─ ${paint(theme, "accent", "decision needed — your call unblocks this")}`);
     else if (kind === "error") lines.push(`├─ ${paint(theme, "error", "action needed — this won't fix itself")}`);
+    else if (Number.isFinite(parkedAt)) {
+      lines.push(`├─ ${paint(theme, "dim", `parked on provider wall — no turns until quota reset at ${formatClockTime(parkedAt)}`)}`);
+    }
     else if (Number.isFinite(retryMs)) {
       const when = retryMs <= 0 ? "now" : `next probe in ${fmtElapsed(retryMs)}`;
       lines.push(`├─ ${paint(theme, "dim", `auto-retrying · ${when}`)}`);
