@@ -1367,24 +1367,16 @@ let mainModelSwitchInFlight = false;
 let mainModelAbortForRecovery = false;
 let lastMainModelFailure: MainModelFailure | null = null;
 
-// v0.34.58 (bug #1.15): hourly quota-resume prompter. A quota wall parks the
-// goal into durable recovery; the prompter schedules ONE sendUserMessage at
-// the next :00 clock minute (quota windows refresh on the hour) with the
-// original turn context so the user can pick the work back up. NOT a
-// self-resume — the message only asks; gated on autoResume: true (the same
-// gate that permits automatic continuation). One pending schedule per
-// session: a second wall while one is pending never double-schedules.
-let quotaPromptTimer: NodeJS.Timeout | null = null;
-let quotaPromptScheduledFor: number | null = null;
-let quotaPromptContext: string | null = null;
-let quotaPromptCtx: ExtensionContext | null = null;
-let quotaPromptFired = false;
-// v0.34.90: durable dedupe identity — captured at schedule time so the
-// fire path can write the same key back into the ledger (once-per-episode,
-// cross-session: several pi sessions on one project share the ledger).
-let quotaPromptGoalId: string | null = null;
-let quotaPromptEpisodeAt: string | null = null;
-let quotaPromptClockOverride: number | null = null; // __testOnly
+// v0.34.92: hourly quota-resume prompter REMOVED. v0.34.58/v0.34.90 added a
+// sendUserMessage at the next :00 telling the user "Provider quota wall —
+// run /list resume". Field evidence 2026-08-07 (four identical
+// "Provider quota wall — [TRIAGE-…]" messages in chat from peer sessions,
+// screenshots Screenshot_20260807_231717) showed the prompt itself was the
+// problem: we cannot reliably detect quota (provider text is inconsistent),
+// so the right answer is active retry (v0.34.79 eager first probe, v0.34.84
+// hour-aligned attempts 2+) + an opt-in hourly probe ticker for faster
+// pickup (this file, below). The plugin never says "Provider quota wall" in
+// chat again.
 
 // Drafting mode: a no-arg loop command starts a clarification turn; the agent
 // must call propose_goal_draft / propose_loop_draft, which opens the user's
@@ -1746,31 +1738,6 @@ const continuationStartCompactionRearms = new Map<string, number>();
  * the full session_compact plumbing. Pass null to clear. */
 export function __testOnlySetLastCompactionAt(at: number | null): void {
   lastCompactionAt = at ?? 0;
-}
-
-// v0.34.58 (bug #1.15): hourly quota-resume prompter test hooks — clock
-// override for the next-:00 math, full state reset, and a fire entry point
-// that shares fireQuotaResumePrompt() with the real timer callback.
-export function __testOnlySetQuotaPromptNow(now: number | null): void {
-  quotaPromptClockOverride = now;
-}
-
-export function __testOnlyResetQuotaPrompt(): void {
-  clearQuotaPromptTimer();
-  quotaPromptScheduledFor = null;
-  quotaPromptContext = null;
-  quotaPromptCtx = null;
-  quotaPromptFired = false;
-  quotaPromptGoalId = null;
-  quotaPromptEpisodeAt = null;
-}
-
-export function __testOnlyQuotaPromptState(): { scheduledFireAt: number | null; context: string | null; fired: boolean } {
-  return { scheduledFireAt: quotaPromptScheduledFor, context: quotaPromptContext, fired: quotaPromptFired };
-}
-
-export function __testOnlyFireQuotaPrompt(): void {
-  fireQuotaResumePrompt();
 }
 
 /** Load the module state singleton from a cwd's disk state — the exact
@@ -3008,10 +2975,6 @@ function manuallyResumeMainModelRecovery(ctx: ExtensionContext): boolean {
   clearMainModelRecoveryTimer();
   continuationDispatchStoodDown = false;
   persistState(ctx);
-  // v0.34.90: a manual probe is a user action — re-arm the once-per-episode
-  // quota prompt allowance (the goal itself stays parked until the probe
-  // lands; a wall after THIS probe may nudge once more).
-  if (state.goal) updateGoal({ quotaPromptedAt: undefined }, ctx);
   ctx.ui.notify("Manual resume starts a fresh bounded main-model recovery window — one provider probe, then configured backups if needed.", "info");
   void probeMainModelRecovery(ctx);
   return true;
@@ -3137,157 +3100,12 @@ function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainModelFail
   mainModelAbortForRecovery = true;
   try { ctx.abort(); } catch { /* abort is best effort; the recovery guard prevents re-send storms */ }
   scheduleMainModelRecoveryTimer(ctx, delay);
-  // v0.34.58 (bug #1.15): only quota walls get the hourly resume prompt;
-  // billing/auth/transient have different reset semantics and must not
-  // promise a top-of-hour refresh. Detection delegates to the goal-loop-core
-  // detector (isQuotaWallError) — the same recognition the tests pin.
-  if (isQuotaWallError(failure.raw)) scheduleQuotaResumePrompt(ctx, failure);
-}
-
-// v0.34.58 (bug #1.15) — hourly quota-resume prompter implementation.
-// The schedule is a one-shot timer to the next :00; firing sends exactly one
-// sendUserMessage with the original turn context (objective/target + failure
-// detail, captured at schedule time — never re-read at fire time). The
-// session-generation guard on scheduleSessionTimeout means a reload that
-// lands before :00 simply drops the prompt instead of firing stale.
-
-function clearQuotaPromptTimer(): void {
-  if (quotaPromptTimer) {
-    clearTimeout(quotaPromptTimer);
-    quotaPromptTimer = null;
-  }
-}
-
-/** v0.34.90: dedupe identity for the current parked episode — the goal id
- * (or loop target) plus the recovery episode start (firstFailureAt). The
- * same key is written into quota_prompt_scheduled/sent ledger events so
- * OTHER sessions on the same project can see it: the prompter must never
- * spam — one prompt per parked episode, scheduled once. */
-function quotaPromptEpisodeKey(): { id: string; episodeAt: string } | null {
-  if (state.goal) {
-    return { id: state.goal.id, episodeAt: state.mainModelRecovery?.firstFailureAt ?? nowIso() };
-  }
-  if (state.loop?.active) {
-    return { id: `loop:${state.loop.target}`, episodeAt: state.mainModelRecovery?.firstFailureAt ?? nowIso() };
-  }
-  return null;
-}
-
-/** Ledger scan: has this episode already scheduled its :00 slot (a peer
- * session) or already sent its one prompt? ISO strings compare
- * chronologically. Unknown/legacy events without the key fields never
- * match, so pre-v0.34.90 ledgers simply don't suppress. */
-function quotaPromptAlreadyCovered(cwd: string, key: { id: string; episodeAt: string }, fireAtIso: string): boolean {
-  let entries: Array<{ type: string; value?: Record<string, unknown>; at?: string }> = [];
-  try {
-    entries = parseLedgerEntries(fs.readFileSync(ledgerPath(cwd), "utf-8"));
-  } catch {
-    return false; // no ledger yet — nothing covered
-  }
-  for (const e of entries) {
-    if (e.type !== "quota_prompt_scheduled" && e.type !== "quota_prompt_sent") continue;
-    const v = e.value ?? {};
-    const coveredId = (v["goalId"] as string | undefined) ?? (v["loopTarget"] as string | undefined);
-    if (coveredId !== key.id) continue;
-    if (e.type === "quota_prompt_scheduled" && v["fireAt"] === fireAtIso) return true; // a peer session already holds this :00 slot
-    // Loop case: once a prompt was sent for this parked loop, only a user
-    // /loop resume (loop active again) re-arms it. Goals are covered by the
-    // durable quotaPromptedAt marker instead.
-    if (e.type === "quota_prompt_sent" && coveredId === key.id && !state.goal && !state.loop?.active) return true; // this episode already prompted
-  }
-  return false;
-}
-
-/** The original turn context: what the session was doing when the wall hit. */
-function quotaPromptTurnContext(failure: MainModelFailure): string {
-  const identity = state.goal
-    ? `goal: ${state.goal.objective}`
-    : state.loop?.active
-      ? `loop: ${state.loop.target}`
-      : "the active session";
-  return `${identity} — ${mainModelRecoveryReason(failure)}`;
-}
-
-/** Fire the pending prompt (the timer callback and the __testOnly hook share
- * this one code path). Consumes the schedule exactly once; a fire with no
- * pending schedule, or after recovery already succeeded, is a silent no-op.
- * The ONLY side effects are the ledger entry and the sendUserMessage — the
- * parked goal stays parked (no self-resume, ever). */
-function fireQuotaResumePrompt(): void {
-  clearQuotaPromptTimer();
-  const ctx = quotaPromptCtx;
-  const fireAt = quotaPromptScheduledFor;
-  const context = quotaPromptContext;
-  const goalId = quotaPromptGoalId;
-  const episodeAt = quotaPromptEpisodeAt;
-  quotaPromptCtx = null;
-  quotaPromptScheduledFor = null;
-  quotaPromptContext = null;
-  quotaPromptFired = true;
-  quotaPromptGoalId = null;
-  quotaPromptEpisodeAt = null;
-  if (!ctx || fireAt === null || context === null) return;
-  if (!state.mainModelRecovery) return; // wall already lifted — nothing to prompt
-  const resumeCmd = state.goal?.policy === "list" ? "/list resume" : state.loop?.active ? "/loop resume" : "/goal resume";
-  appendLedger(ctx.cwd, "quota_prompt_sent", {
-    fireAt: new Date(fireAt).toISOString(),
-    at: new Date().toISOString(),
-    ...(goalId !== null ? (goalId.startsWith("loop:") ? { loopTarget: goalId } : { goalId }) : {}),
-    ...(episodeAt !== null ? { episodeAt } : {}),
-  });
-  // v0.34.90: mark the goal so NO further prompt fires for this parked
-  // episode — in any session — until the user resumes it. Only when the
-  // parked goal is still the one captured at schedule time.
-  if (state.goal && goalId !== null && !goalId.startsWith("loop:") && state.goal.id === goalId) {
-    updateGoal({ quotaPromptedAt: nowIso() }, ctx);
-  }
-  safeSteerUser(
-    ctx,
-    `Provider quota wall — ${context}. Hourly quota windows usually refresh at the top of the hour: run ${resumeCmd} (or just reply) to pick the work back up.`,
-  );
-}
-
-/** Schedule exactly one prompt at the next :00 with the original turn
- * context. Gated on autoResume: true; a schedule already pending for this
- * session is never replaced or duplicated. */
-function scheduleQuotaResumePrompt(ctx: ExtensionContext, failure: MainModelFailure): void {
-  if (loadGlobalSettings().autoResume !== true) return; // gated — no prompt without autoResume
-  if (quotaPromptScheduledFor !== null) return; // exactly one pending schedule
-  const key = quotaPromptEpisodeKey();
-  if (!key) return; // nothing parked to name
-  const now = quotaPromptClockOverride ?? Date.now();
-  const fireAt = nextHourlyPromptMs(now);
-  const fireAtIso = new Date(fireAt).toISOString();
-  // v0.34.90: durable, cross-session dedupe — a peer session already holds
-  // this :00 slot, or this episode already sent its one prompt. Without it
-  // the chat gets spammed: the same parked goal prompted once per hour, and
-  // one prompt per open pi session (field 2026-08-07: four identical
-  // "Provider quota wall — [TRIAGE-…]" messages).
-  if (quotaPromptAlreadyCovered(ctx.cwd, key, fireAtIso)) return;
-  // v0.34.90: once-per-parked-episode — after the one prompt was sent for
-  // this goal, nothing re-arms it except a USER resume (cmdResume clears
-  // the marker). Auto-recovery flapping (probe succeeds → goal runs a few
-  // minutes → wall again) must never re-prompt: in the field this produced
-  // a fresh prompt every hour for the same parked triage item.
-  if (state.goal && state.goal.quotaPromptedAt) return;
-  quotaPromptScheduledFor = fireAt;
-  quotaPromptContext = quotaPromptTurnContext(failure);
-  quotaPromptCtx = ctx;
-  quotaPromptFired = false;
-  quotaPromptGoalId = key.id;
-  quotaPromptEpisodeAt = key.episodeAt;
-  appendLedger(ctx.cwd, "quota_prompt_scheduled", {
-    fireAt: fireAtIso,
-    at: new Date(now).toISOString(),
-    kind: state.loop?.active ? "loop" : "goal",
-    reason: mainModelRecoveryReason(failure),
-    ...(key.id.startsWith("loop:") ? { loopTarget: key.id } : { goalId: key.id }),
-    episodeAt: key.episodeAt,
-  });
-  clearQuotaPromptTimer();
-  quotaPromptTimer = scheduleSessionTimeout(() => {
-    fireQuotaResumePrompt();
-  }, Math.max(1_000, fireAt - now));
+  // v0.34.92: no quota-prompt schedule — quota walls are not detected
+  // (provider text is unreliable; v0.34.64 established the principle).
+  // Active retry (v0.34.79 eager first probe + v0.34.84 hour-aligned
+  // attempts 2+) is the recovery. An opt-in hourly probe ticker
+  // (scheduleHourlyProbeForSession below) gives faster pickup when
+  // hourlyQuotaProbe is enabled.
 }
 
 async function recoverMainModelFromSendStorm(ctx: ExtensionContext, kind: "continuation" | "loop"): Promise<void> {
@@ -3317,6 +3135,9 @@ function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
   clearQuotaPromptTimer(); // v0.34.58: a wall that lifted before :00 must not prompt
   quotaPromptScheduledFor = null;
   quotaPromptContext = null;
+  // v0.34.92: clearQuotaPromptTimer() call removed — the quota-prompt
+  // timer was deleted with the rest of v0.34.58/v0.34.90. Recovery now
+  // clears only its own timer (above).
   state.mainModelRecovery = undefined;
   lastMainModelFailure = null;
   mainModelAbortForRecovery = false;
@@ -5077,12 +4898,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
   if (state.mainModelRecovery?.retryAt) {
     clearMainModelRecoveryTimer();
     continuationDispatchStoodDown = false;
-    // v0.34.90: a user /goal resume is the re-arm signal even in the probe
-    // branch — the paused→active transition below is only reachable after
-    // the automatic horizon ended. Without this, the marker would survive
-    // the user's explicit resume and the next parked episode would stay
-    // silent forever.
-    if (state.goal) updateGoal({ quotaPromptedAt: undefined }, ctx);
+    // v0.34.92: quota-prompt re-arm removed (whole prompter deleted).
     ctx.ui.notify("Retrying the saved main-model recovery now — one provider probe, then the configured backups if needed.", "info");
     void probeMainModelRecovery(ctx);
     return;
@@ -5155,7 +4971,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
   // manual resume exactly as by an automatic one. (staleEntry still re-marks
   // below — a resume inside a stale session is a NEW interrupt.)
   const storedCompletion = state.goal.pendingCompletion;
-  updateGoal({ status: "active", pauseReason: undefined, pauseSuggestedAction: undefined, pauseKind: undefined, pauseOptions: undefined, pauseRecommended: undefined, pauseResumeAt: undefined, interruptedAt: undefined, interruptedReason: undefined, quotaPromptedAt: undefined, ...(staleEntry ? { interruptedAt: nowIso(), interruptedReason: "resumed in a stale session" } : {}), ...(usage ? { usage } : {}) }, ctx);
+  updateGoal({ status: "active", pauseReason: undefined, pauseSuggestedAction: undefined, pauseKind: undefined, pauseOptions: undefined, pauseRecommended: undefined, pauseResumeAt: undefined, interruptedAt: undefined, interruptedReason: undefined, ...(staleEntry ? { interruptedAt: nowIso(), interruptedReason: "resumed in a stale session" } : {}), ...(usage ? { usage } : {}) }, ctx);
   if (staleEntry) return;
   // A stored completion claim is a direct-audit resume, not an agent turn.
   // Keeping the claim while merely scheduling a continuation left manual
