@@ -548,7 +548,7 @@ function heartbeatTick(): void {
     })
   ) {
     flags.consecutiveStalls++;
-    appendLedger(ctx.cwd, "pending_latch_stuck", { flags.consecutiveStalls, silentMs: latchSilentMs });
+    appendLedger(ctx.cwd, "pending_latch_stuck", { consecutiveStalls: flags.consecutiveStalls, silentMs: latchSilentMs });
     noteActivity(); // re-arm the 3-minute cadence; never resets the stall streak
     const stallEscalation = loadSettings(ctx.cwd).stallEscalationRefires ?? DEFAULT_STALL_ESCALATION_REFIRES;
     if (escalateStallNow(ctx, stallEscalation)) return;
@@ -563,7 +563,7 @@ function heartbeatTick(): void {
     timerPending: flags.continuationTimer !== null || loopTimerPending() || flags.continuationStartTimer !== null || flags.pendingContinuationDispatch !== null,
     msSinceActivity: Date.now() - flags.lastActivityAt,
     stallMs: HEARTBEAT_STALL_MS,
-    flags.consecutiveStalls,
+    consecutiveStalls: flags.consecutiveStalls,
   });
   // Wedge alert (v0.23.2): session BUSY but silent for the threshold —
   // the classic hung-command case (a test suite that never exits holds
@@ -639,7 +639,7 @@ function heartbeatTick(): void {
   if (flags.completionAuditInFlight) return;
   noteActivity();
   flags.consecutiveStalls++;
-  appendLedger(ctx.cwd, "heartbeat_refire", { nudgesSoFar: flags.heartbeatNudges, flags.consecutiveStalls });
+  appendLedger(ctx.cwd, "heartbeat_refire", { nudgesSoFar: flags.heartbeatNudges, consecutiveStalls: flags.consecutiveStalls });
   // v0.26.1: a refire streak means the continuation is NOT landing (wedged
   // message queue, stale API handle, dead turn trigger). Nudges can't catch
   // this — they count turns, and a zombie runs none. Escalate to a loud,
