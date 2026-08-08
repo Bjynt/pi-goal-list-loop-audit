@@ -1,6 +1,24 @@
 # Changelog
 
 ## Unreleased
+### 0.34.105 — field: subagent hang watchdog blinded by main-model quota recovery
+
+Live field case (2026-08-08 ~16:18): an audit subagent hit the MiniMax
+Token-Plan 429 wall while the MAIN model was also in recovery (18
+`main_model_recovery_wait` ledger entries). `heartbeatTick` returned
+early at `if (mainModelRecoveryActive()) return;` BEFORE the subagent
+hang scan, so the frozen subagent (12+ min, zero new progress) produced
+ZERO `subagent_hang_detected` entries — the watchdog was blind exactly
+when a shared-provider quota wall freezes subagent + main model at the
+same time.
+
+Fix: moved the subagent hang scan (v0.34.85) ahead of the
+`mainModelRecoveryActive()` gate in `heartbeatTick`. The scan is
+detection + notify only (never an auto-kill, never a send), so it is
+safe to run during main-model recovery. Two regression tests: a
+behavioral one that parks the main model via 3× 429 turns and asserts
+the frozen subagent still surfaces `subagent_hang_detected`, and a
+source pin asserting the scan precedes the recovery gate.
 ### 0.34.104 — [Image-#1] list-stall settle window + completionSummary self-check
 
 Field report (dracon-platform 2026-08-08 10:29 — the user's
