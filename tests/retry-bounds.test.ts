@@ -21,6 +21,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const RECOVERY = fs.readFileSync("extensions/goal-recovery.ts", "utf-8"); // decomposition step 3 (v0.34.111)
 const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
 const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
 const QUOTA = fs.readFileSync("extensions/quota-retry.ts", "utf-8");
@@ -42,7 +43,7 @@ test("E2: auditor infra errors enter the durable bounded retry plan (v0.34.51 â€
   // The stranded-audit no-verdict blocker keeps its own distinct wording
   // ("Fix the auditor/session issue" â€” a different feature from the
   // 3-strike stop):
-  assert.match(SRC, /The completion claim is stored and was not judged\. Fix the auditor\/session issue/);
+  assert.match(RECOVERY, /The completion claim is stored and was not judged\. Fix the auditor\/session issue/); // decomposition step 3 (v0.34.111)
   // The durable plan owns the wait: quota-waiting phase, wait-kind pause,
   // horizon-capped blocked stop, and a re-checked auto-resume callback.
   assert.match(SRC, /phase: "quota-waiting" as const/);
