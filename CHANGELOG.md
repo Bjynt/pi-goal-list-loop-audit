@@ -1,6 +1,41 @@
 # Changelog
 
 ## Unreleased
+### 0.34.108 — guidance literals fixed + dead-code sweep (audit findings)
+
+Findings from the 2026-08-08 source audit (subagent c6206c9d, v0.34.105
+baseline): the seven hardcoded `/goal <verb>` literals in generated
+recovery/pause guidance, and dead code left by three refactors.
+
+1. Mode-command-guidance contract (7 sites fixed): every recovery guidance
+   path (manual-hold pause action, wait-park, complete_goal tool text,
+   session_start recovery notifies, quota-claim wait, restore hint) now
+   interpolates through `recoverySurfaceCommand(kind, command)` /
+   `activeGoalSurfaceCommand(command)` instead of hardcoding
+   `/goal|/list|/loop resume` ternaries. `recoverySurfaceCommand` is the
+   loop-aware extension of `activeGoalSurfaceCommand` (the main-model
+   recovery paths park a METRIC LOOP too).
+2. Source-pin blind spot closed: mode-command-guidance.test.ts only scanned
+   lines carrying guidance trigger tokens (pauseSuggestedAction/notify(/…),
+   so a literal parked on a `const resumeCmd = ...` assignment line escaped.
+   The pin now also scans const/let assignment lines; new pin asserts
+   recovery guidance never hardcodes `/loop resume` on assignment lines.
+3. Dead-code sweep (audit §1): removed `runGoalCompletionAuditor`
+   (goal-loop-auditor.ts, superseded by the detached worker path) plus its
+   private machinery (`makeAuditorResourceLoader`, `modelLabel`, dead
+   imports); 4 never-called `__testOnly*` hooks (ResetStallState,
+   SetHourlyProbeNow, ResetHourlyProbe, HourlyProbeState) + the
+   `hourlyProbeClockOverride` they were the only readers of; dead locals
+   `quotaRetryStreak` (written 4×, never read), `SEND_REARM_ESCALATE_AFTER_MS`
+   (superseded by `sendStormEscalateMs()`), `consecutiveNoToolIterations`;
+   8 unused goal.ts imports; display.ts dead helpers `sinceIso`/`stateBadge`/
+   `shortClock` and the unused `auditorPhase` computation. Affected source
+   pins were re-anchored to the production path (goal-loop-auditor-process.ts
+   + scripts/goal-auditor-worker.mjs) — the invariants they guarded (infra
+   failures never disapproved, abort listeners removed, worker children
+   killed on teardown, no inline pairing outside the pure function) all
+   still hold in the detached path.
+
 ### 0.34.107 — audit/ organization (INDEX.md + pre-0.34.80 docs archived)
 ### 0.34.105 — field: subagent hang watchdog blinded by main-model quota recovery
 
