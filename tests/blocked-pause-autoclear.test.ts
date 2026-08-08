@@ -193,7 +193,7 @@ test("v0.34.64 — wait pause with a quota-style reason still auto-clears (regre
 });
 
 test("v0.34.64 — source guard: isQuotaPauseReason broadens the recoveryPause check", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/goal-recovery.ts", "utf-8"); // decomposition step 3 (v0.34.111): mainModelRecoverySucceeded moved here
   // The function exists and accepts a blocked pauseKind now:
   assert.match(SRC, /pauseKind === "wait" \|\| state\.goal\.pauseKind === "blocked"/);
   // ...with the broader reason predicate:

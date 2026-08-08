@@ -36,6 +36,7 @@ import { dirname, join } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 const GOAL_SRC = readFileSync(join(here, "..", "extensions", "loops", "goal.ts"), "utf8");
 const RECOVERY_SRC = readFileSync(join(here, "..", "extensions", "main-model-recovery.ts"), "utf8");
+const RECOVERY_MODULE_SRC = readFileSync(join(here, "..", "extensions", "goal-recovery.ts"), "utf8"); // decomposition step 3 (v0.34.111)
 
 import {
   classifyMainModelFailure,
@@ -103,7 +104,7 @@ test("v0.34.57: goal.ts records the long-lived timestamp at the classify site", 
     agentEndSection.includes("if (isLongLivedFailureKind(failure.kind)) lastLongLivedFailureAt = Date.now();"),
     "the agent-end handler must record the knowledge window when the surfaced failure is long-lived",
   );
-  const stormSection = GOAL_SRC.slice(GOAL_SRC.indexOf("async function recoverMainModelFromSendStorm"));
+  const stormSection = RECOVERY_MODULE_SRC.slice(RECOVERY_MODULE_SRC.indexOf("async function recoverMainModelFromSendStorm")); // decomposition step 3 (v0.34.111)
   assert.ok(
     stormSection.includes("lastLongLivedFailureAt = Date.now();"),
     "the send-storm recovery classifies a quota-shaped wedge and records it",

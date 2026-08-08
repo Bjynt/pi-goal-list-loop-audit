@@ -81,17 +81,18 @@ test("v0.34.92: nextHourlyPromptMs (legacy) still returns :00:00 — kept for ca
 // v0.34.58/v0.34.90 quota-prompt machinery is GONE
 // ---------------------------------------------------------------------------
 
-test("v0.34.92: scheduleHourlyProbe / fireHourlyProbe / cancelHourlyProbe are wired in goal.ts", () => {
-  assert.match(GOAL_SRC, /function scheduleHourlyProbe\(ctx: ExtensionContext\): void/, "scheduleHourlyProbe exists");
-  assert.match(GOAL_SRC, /function fireHourlyProbe\(ctx: ExtensionContext\): void/, "fireHourlyProbe exists");
-  assert.match(GOAL_SRC, /function cancelHourlyProbe\(\): void/, "cancelHourlyProbe exists");
+test("v0.34.92: scheduleHourlyProbe / fireHourlyProbe / cancelHourlyProbe are wired in goal-recovery.ts", () => {
+  // decomposition step 3 (v0.34.111): the trio moved to goal-recovery.ts
+  assert.match(RECOVERY_SRC, /function scheduleHourlyProbe\(ctx: ExtensionContext\): void/, "scheduleHourlyProbe exists");
+  assert.match(RECOVERY_SRC, /function fireHourlyProbe\(ctx: ExtensionContext\): void/, "fireHourlyProbe exists");
+  assert.match(RECOVERY_SRC, /function cancelHourlyProbe\(\): void/, "cancelHourlyProbe exists");
 });
 
 test("v0.34.92: parkMainModelAfterFailure schedules the hourly ticker alongside the recovery timer", () => {
   // After scheduleMainModelRecoveryTimer in the park path, the hourly
   // ticker must be armed too — otherwise a parked recovery never picks
   // up the extra probe slot.
-  const parkIdx = GOAL_SRC.indexOf("function parkMainModelAfterFailure");
+  const parkIdx = RECOVERY_SRC.indexOf("function parkMainModelAfterFailure");
   assert.ok(parkIdx > 0, "parkMainModelAfterFailure is present");
   const tail = GOAL_SRC.slice(parkIdx, parkIdx + 2_500);
   assert.match(tail, /scheduleMainModelRecoveryTimer\(ctx, delay\);/, "park schedules the recovery timer");
@@ -99,7 +100,7 @@ test("v0.34.92: parkMainModelAfterFailure schedules the hourly ticker alongside 
 });
 
 test("v0.34.92: mainModelRecoverySucceeded cancels the hourly ticker", () => {
-  const succIdx = GOAL_SRC.indexOf("function mainModelRecoverySucceeded");
+  const succIdx = RECOVERY_SRC.indexOf("function mainModelRecoverySucceeded");
   assert.ok(succIdx > 0, "mainModelRecoverySucceeded is present");
   const tail = GOAL_SRC.slice(succIdx, succIdx + 1_500);
   assert.match(tail, /cancelHourlyProbe\(\);/, "success cancels the hourly ticker");

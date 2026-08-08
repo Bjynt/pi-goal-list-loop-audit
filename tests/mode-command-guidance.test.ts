@@ -33,6 +33,7 @@ afterEach(() => {
 });
 
 const GOAL_SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const RECOVERY_SRC = fs.readFileSync("extensions/goal-recovery.ts", "utf-8"); // decomposition step 3 (v0.34.111)
 const DISPLAY_SRC = fs.readFileSync("extensions/goal-loop-display.ts", "utf-8");
 const CORE_SRC = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
 
@@ -112,7 +113,10 @@ test("loop-policy recovery guidance interpolates recoverySurfaceCommand (v0.34.1
   // const-assignment lines (the audit's const-line blind spot) — loop-only
   // contexts (no mode ambiguity) may keep their literals.
   assert.match(GOAL_SRC, /const recoverySurfaceCommand = \(kind: "goal" \| "loop", command: string\): string =>/);
-  const uses = (GOAL_SRC.match(/recoverySurfaceCommand\([^)]*\)/g) ?? []).length;
+  // decomposition step 3 (v0.34.111): two of the recovery paths moved to
+  // goal-recovery.ts — count uses across both files.
+  const uses = (GOAL_SRC.match(/recoverySurfaceCommand\([^)]*\)/g) ?? []).length
+    + (RECOVERY_SRC.match(/recoverySurfaceCommand\([^)]*\)/g) ?? []).length;
   assert.ok(uses >= 4, `expected >=4 recoverySurfaceCommand uses, got ${uses}`);
   const hard: string[] = [];
   for (const [i, raw] of GOAL_SRC.split("\n").entries()) {
