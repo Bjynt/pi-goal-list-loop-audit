@@ -291,7 +291,7 @@ import {
   warnOnCommandCollision,
   type CommandDeps,
   type CommandFlags,
-} from "./goal-commands.js";
+} from "../goal-commands.js";
 import {
   STALE_TOOL_CONTEXT_MESSAGE,
   clearLoopTimer,
@@ -304,7 +304,7 @@ import {
   startLoopFromConfig,
   type LoopDeps,
   type LoopFlags,
-} from "./goal-loop.js";
+} from "../goal-loop.js";
 
 
 // =================================================================
@@ -7222,7 +7222,7 @@ const loopFlags: LoopFlags = {
   get loopRearmStreak() { return loopRearmStreak; },
   set loopRearmStreak(v) { loopRearmStreak = v; },
   get countedLoopTokenMessages() { return countedLoopTokenMessages; },
-  set countedLoopTokenMessages(v) { countedLoopTokenMessages = v; },
+  set countedLoopTokenMessages(v) { void v; }, // const collection — mutated in place, never reassigned
   get mainModelAbortForRecovery() { return mainModelAbortForRecovery; },
   set mainModelAbortForRecovery(v) { mainModelAbortForRecovery = v; },
   get postCompactResyncPending() { return postCompactResyncPending; },

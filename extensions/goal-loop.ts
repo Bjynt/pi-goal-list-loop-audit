@@ -12,7 +12,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionContext, ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { state, replaceState } from "../goal-state.js";
+import { state, replaceState } from "./goal-state.js";
 import {
   appendLedger,
   isStaleApiError,
@@ -27,7 +27,7 @@ import {
   isActuallyStuck,
   loopInterventionDirective,
   textFingerprint,
-  pushRepetitionCapped,
+  pushCapped,
 } from "./goal-loop-repetition.js";
 import {
   AUDIT_FINDINGS_REL,
@@ -50,6 +50,7 @@ import {
   respecTarget,
   specFileHash,
   topOpenAuditFinding,
+  LOOP_DEFAULTS,
 } from "./goal-loop-forever.js";
 import { loadSettings } from "./goal-settings.js";
 import { createContinuationDispatch, type ContinuationDispatch } from "./goal-loop-dispatch.js";
@@ -62,37 +63,37 @@ type DispatchInput = Omit<Parameters<typeof createContinuationDispatch>[0], "id"
 
 export interface LoopFlags {
   get extensionApi(): ExtensionAPI | null;
-  set extensionApi(v: ExtensionAPI | null): void;
+  set extensionApi(v: ExtensionAPI | null);
   get extensionApiStale(): boolean;
-  set extensionApiStale(v: boolean): void;
+  set extensionApiStale(v: boolean);
   get sessionGeneration(): number;
-  set sessionGeneration(v: number): void;
+  set sessionGeneration(v: number);
   get sessionHandoffPending(): boolean;
-  set sessionHandoffPending(v: boolean): void;
+  set sessionHandoffPending(v: boolean);
   get initialSessionLoadPending(): boolean;
-  set initialSessionLoadPending(v: boolean): void;
+  set initialSessionLoadPending(v: boolean);
   get pendingContinuationDispatch(): ContinuationDispatch | null;
-  set pendingContinuationDispatch(v: ContinuationDispatch | null): void;
+  set pendingContinuationDispatch(v: ContinuationDispatch | null);
   get continuationDispatchStoodDown(): boolean;
-  set continuationDispatchStoodDown(v: boolean): void;
+  set continuationDispatchStoodDown(v: boolean);
   get lastContinuationSentAt(): number;
-  set lastContinuationSentAt(v: number): void;
+  set lastContinuationSentAt(v: number);
   get lastContinuationSentPayload(): { content: string; display: boolean } | null;
-  set lastContinuationSentPayload(v: { content: string; display: boolean } | null): void;
+  set lastContinuationSentPayload(v: { content: string; display: boolean } | null);
   get loopRearmSince(): number;
-  set loopRearmSince(v: number): void;
+  set loopRearmSince(v: number);
   get loopRearmStreak(): number;
-  set loopRearmStreak(v: number): void;
+  set loopRearmStreak(v: number);
   get countedLoopTokenMessages(): Set<string>;
-  set countedLoopTokenMessages(v: Set<string>): void;
+  set countedLoopTokenMessages(v: Set<string>);
   get mainModelAbortForRecovery(): boolean;
-  set mainModelAbortForRecovery(v: boolean): void;
+  set mainModelAbortForRecovery(v: boolean);
   get postCompactResyncPending(): boolean;
-  set postCompactResyncPending(v: boolean): void;
+  set postCompactResyncPending(v: boolean);
   get staleTerminalDone(): boolean;
-  set staleTerminalDone(v: boolean): void;
+  set staleTerminalDone(v: boolean);
   get zombieStoodDown(): boolean;
-  set zombieStoodDown(v: boolean): void;
+  set zombieStoodDown(v: boolean);
 }
 
 export interface LoopDeps {
@@ -127,13 +128,24 @@ export interface LoopDeps {
   activeGoalSurfaceCommand: (command: string) => string;
 }
 
-/* deps binding — set once at activation by createGoalLoop(). */
 let deps: LoopDeps;
 let flags: LoopFlags;
+let GOAL_EVENT_ENTRY: string;
+let accountSendRearm: LoopDeps["accountSendRearm"], armQueueStuckProbe: LoopDeps["armQueueStuckProbe"], buildPostCompactResync: LoopDeps["buildPostCompactResync"], clearMainModelRecoveryTimer: LoopDeps["clearMainModelRecoveryTimer"], dispatchAccepted: LoopDeps["dispatchAccepted"],
+    dispatchFailed: LoopDeps["dispatchFailed"], dispatchPrepare: LoopDeps["dispatchPrepare"], displaySlice: LoopDeps["displaySlice"], freshCtx: LoopDeps["freshCtx"], freshCtxForGeneration: LoopDeps["freshCtxForGeneration"],
+    goStaleTerminal: LoopDeps["goStaleTerminal"], mainModelRecoveryActive: LoopDeps["mainModelRecoveryActive"], manuallyResumeMainModelRecovery: LoopDeps["manuallyResumeMainModelRecovery"], notifyExternal: LoopDeps["notifyExternal"], persistState: LoopDeps["persistState"],
+    probeExtensionApiStale: LoopDeps["probeExtensionApiStale"], probeMainModelRecovery: LoopDeps["probeMainModelRecovery"], releaseContinuationDispatchStandDown: LoopDeps["releaseContinuationDispatchStandDown"], releaseInitialSessionLoadBarrier: LoopDeps["releaseInitialSessionLoadBarrier"], rememberCtx: LoopDeps["rememberCtx"],
+    resolveCarryover: LoopDeps["resolveCarryover"], scheduleSessionTimeout: LoopDeps["scheduleSessionTimeout"], sendContinuation: LoopDeps["sendContinuation"], sendRearmDelayMs: LoopDeps["sendRearmDelayMs"], sessionManagerId: LoopDeps["sessionManagerId"],
+    startDrafting: LoopDeps["startDrafting"], activeGoalSurfaceCommand: LoopDeps["activeGoalSurfaceCommand"];
 
 export function createGoalLoop(d: LoopDeps): void {
-  deps = d;
-  flags = d.flags;
+  deps = d; flags = d.flags; GOAL_EVENT_ENTRY = d.GOAL_EVENT_ENTRY;
+  accountSendRearm = d.accountSendRearm; armQueueStuckProbe = d.armQueueStuckProbe; buildPostCompactResync = d.buildPostCompactResync; clearMainModelRecoveryTimer = d.clearMainModelRecoveryTimer; dispatchAccepted = d.dispatchAccepted;
+  dispatchFailed = d.dispatchFailed; dispatchPrepare = d.dispatchPrepare; displaySlice = d.displaySlice; freshCtx = d.freshCtx; freshCtxForGeneration = d.freshCtxForGeneration;
+  goStaleTerminal = d.goStaleTerminal; mainModelRecoveryActive = d.mainModelRecoveryActive; manuallyResumeMainModelRecovery = d.manuallyResumeMainModelRecovery; notifyExternal = d.notifyExternal; persistState = d.persistState;
+  probeExtensionApiStale = d.probeExtensionApiStale; probeMainModelRecovery = d.probeMainModelRecovery; releaseContinuationDispatchStandDown = d.releaseContinuationDispatchStandDown; releaseInitialSessionLoadBarrier = d.releaseInitialSessionLoadBarrier; rememberCtx = d.rememberCtx;
+  resolveCarryover = d.resolveCarryover; scheduleSessionTimeout = d.scheduleSessionTimeout; sendContinuation = d.sendContinuation; sendRearmDelayMs = d.sendRearmDelayMs; sessionManagerId = d.sessionManagerId;
+  startDrafting = d.startDrafting; activeGoalSurfaceCommand = d.activeGoalSurfaceCommand;
 }
 
 /* ------------------------------------------------------------------ */
@@ -456,8 +468,8 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
   };
   const previousText = loop.recentTexts && loop.recentTexts.length > 0 ? loop.recentTexts[loop.recentTexts.length - 1] : undefined;
   if (lastAssistantText) {
-    loop.recentPrints = pushRepetitionCapped(loop.recentPrints ?? [], textFingerprint(lastAssistantText), REPETITION.printWindow);
-    loop.recentTexts = pushRepetitionCapped(loop.recentTexts ?? [], lastAssistantText, REPETITION.textWindow);
+    loop.recentPrints = pushCapped(loop.recentPrints ?? [], textFingerprint(lastAssistantText), REPETITION.printWindow);
+    loop.recentTexts = pushCapped(loop.recentTexts ?? [], lastAssistantText, REPETITION.textWindow);
   }
   const stuckReason = isActuallyStuck({
     assistantText: lastAssistantText,

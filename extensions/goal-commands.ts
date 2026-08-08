@@ -9,13 +9,13 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionContext, ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { state, replaceState } from "../goal-state.js";
+import { state, replaceState } from "./goal-state.js";
 import {
   DEFAULT_TOKEN_LIMIT, Goal, ListItem, Status, appendLedger, archiveDir, archivedGoalPath, bumpGoalRevision,
   computeListDepth, deleteQueueItemFile, extractVerificationContract, formatAuditLog, formatGoalAuditHistory,
   formatListDepth, goalArgsNeedDrafting, ledgerPath, newGoalId, nowIso, parseListImport, parseListItemDeclaration,
   readAuditLog, readQueueFromDisk, routeGoalArgs, routeListText, sanitizeDisplayText, statusLabel,
-  writeQueueItemFile, type ModeCommand, type State,
+  writeQueueItemFile, type ModeCommand, type State, LIST_MUTATING_SUBCOMMANDS, SETTINGS_MUTATING_ACTIONS,
 } from "./goal-loop-core.js";
 import { clearDispatchRecord } from "./goal-loop-dispatch.js";
 import type { AuditDisplayProgress } from "./goal-loop-display.js";
@@ -24,22 +24,22 @@ import { ProjectRollup, discoverGllaProjects, filterPremature, formatRollupJson,
 import { resolveEffectiveSubagentModel } from "./goal-loop-subagents.js";
 import { Settings, globalSettingsPath, loadSettings, projectSettingsPath, saveSettings, settingsProvenance } from "./goal-settings.js";
 import { ReviewerConfig, normalizeObjective, resolveReviewerConfig, reviewerMenuOptions } from "./reviewer.js";
-import type { SettingsSectionId } from "../settings-menu.js";
+import type { SettingsSectionId } from "./settings-menu.js";
 import { cmdLoop, clearLoopTimer, finishLoopGit, isLoopActive, scheduleLoopTick } from "./goal-loop.js";
 
 export interface CommandFlags {
-  get draftingTarget(): "goal" | "list" | "loop" | null; set draftingTarget(v: "goal" | "list" | "loop" | null): void;
-  get completionAuditInFlight(): boolean; set completionAuditInFlight(v: boolean): void;
-  get completionAuditRecoveryArmed(): boolean; set completionAuditRecoveryArmed(v: boolean): void;
-  get consecutiveAbortIterations(): number; set consecutiveAbortIterations(v: number): void;
-  get consecutiveErrorIterations(): number; set consecutiveErrorIterations(v: number): void;
-  get continuationDispatchStoodDown(): boolean; set continuationDispatchStoodDown(v: boolean): void;
-  get extensionApi(): ExtensionAPI | null; set extensionApi(v: ExtensionAPI | null): void;
-  get iterationCounter(): number; set iterationCounter(v: number): void;
-  get latestAuditProgress(): AuditDisplayProgress | null; set latestAuditProgress(v: AuditDisplayProgress | null): void;
-  get mainModelAbortForRecovery(): boolean; set mainModelAbortForRecovery(v: boolean): void;
-  get mainModelSwitchInFlight(): boolean; set mainModelSwitchInFlight(v: boolean): void;
-  get sessionGeneration(): number; set sessionGeneration(v: number): void;
+  get draftingTarget(): "goal" | "list" | "loop" | null; set draftingTarget(v: "goal" | "list" | "loop" | null);
+  get completionAuditInFlight(): boolean; set completionAuditInFlight(v: boolean);
+  get completionAuditRecoveryArmed(): boolean; set completionAuditRecoveryArmed(v: boolean);
+  get consecutiveAbortIterations(): number; set consecutiveAbortIterations(v: number);
+  get consecutiveErrorIterations(): number; set consecutiveErrorIterations(v: number);
+  get continuationDispatchStoodDown(): boolean; set continuationDispatchStoodDown(v: boolean);
+  get extensionApi(): ExtensionAPI | null; set extensionApi(v: ExtensionAPI | null);
+  get iterationCounter(): number; set iterationCounter(v: number);
+  get latestAuditProgress(): AuditDisplayProgress | null; set latestAuditProgress(v: AuditDisplayProgress | null);
+  get mainModelAbortForRecovery(): boolean; set mainModelAbortForRecovery(v: boolean);
+  get mainModelSwitchInFlight(): boolean; set mainModelSwitchInFlight(v: boolean);
+  get sessionGeneration(): number; set sessionGeneration(v: number);
 }
 
 export interface CommandDeps {
@@ -70,7 +70,7 @@ export interface CommandDeps {
   scheduleContinuation: (ctx: ExtensionContext, force?: boolean, delayMs?: number) => void;
   scheduleSessionTimeout: (callback: () => void, delayMs: number) => NodeJS.Timeout;
   createGoal: (objective: string, ctx: ExtensionContext, policy?: "goal" | "list") => Goal;
-  fireReviewer: (ctx: ExtensionContext, source: { kind: "goal" | "list"; goalId: string; objective: string; terminal: string }) => Promise<void>;
+  fireReviewer: (ctx: ExtensionContext, source: { kind: "goal" | "list"; goalId: string; objective: string; terminal: string }, opts?: { manual?: boolean; mode?: "off" | "on" | "auto" | "aggressive" }) => void;
   openSettingsUI: (ctx: ExtensionContext, initialSection?: SettingsSectionId) => Promise<void>;
   manuallyResumeMainModelRecovery: (ctx: ExtensionContext) => boolean;
   activeGoalCommand: (command: ModeCommand) => string;
@@ -83,10 +83,23 @@ export interface CommandDeps {
 
 let deps: CommandDeps;
 let flags: CommandFlags;
+let listQueue: CommandDeps["listQueue"], notifyExternal: CommandDeps["notifyExternal"], persistState: CommandDeps["persistState"], updateGoal: CommandDeps["updateGoal"], setGoal: CommandDeps["setGoal"],
+    archiveCurrentGoal: CommandDeps["archiveCurrentGoal"], healGoalPolicy: CommandDeps["healGoalPolicy"], startDrafting: CommandDeps["startDrafting"], warnIfStaleAtEntry: CommandDeps["warnIfStaleAtEntry"], freshCtx: CommandDeps["freshCtx"],
+    freshCtxForGeneration: CommandDeps["freshCtxForGeneration"], goStaleTerminal: CommandDeps["goStaleTerminal"], groupOpenChildren: CommandDeps["groupOpenChildren"], activateNextListItem: CommandDeps["activateNextListItem"], clearMainModelRecoveryTimer: CommandDeps["clearMainModelRecoveryTimer"],
+    isCompletionAuditRecoveryPending: CommandDeps["isCompletionAuditRecoveryPending"], markCompletionAuditRecoveryPending: CommandDeps["markCompletionAuditRecoveryPending"], retryStoredCompletionAudit: CommandDeps["retryStoredCompletionAudit"], probeMainModelRecovery: CommandDeps["probeMainModelRecovery"], releaseContinuationDispatchStandDown: CommandDeps["releaseContinuationDispatchStandDown"],
+    releaseInitialSessionLoadBarrier: CommandDeps["releaseInitialSessionLoadBarrier"], resolveCarryover: CommandDeps["resolveCarryover"], safeSteerUser: CommandDeps["safeSteerUser"], scheduleContinuation: CommandDeps["scheduleContinuation"], scheduleSessionTimeout: CommandDeps["scheduleSessionTimeout"],
+    createGoal: CommandDeps["createGoal"], fireReviewer: CommandDeps["fireReviewer"], openSettingsUI: CommandDeps["openSettingsUI"], manuallyResumeMainModelRecovery: CommandDeps["manuallyResumeMainModelRecovery"], activeGoalCommand: CommandDeps["activeGoalCommand"],
+    activeGoalStatusCommand: CommandDeps["activeGoalStatusCommand"], activeGoalSurfaceCommand: CommandDeps["activeGoalSurfaceCommand"], goalNoun: CommandDeps["goalNoun"], displaySlice: CommandDeps["displaySlice"], shortObj: CommandDeps["shortObj"];
 
 export function createGoalCommands(d: CommandDeps): void {
-  deps = d;
-  flags = d.flags;
+  deps = d; flags = d.flags;
+  listQueue = d.listQueue; notifyExternal = d.notifyExternal; persistState = d.persistState; updateGoal = d.updateGoal; setGoal = d.setGoal;
+  archiveCurrentGoal = d.archiveCurrentGoal; healGoalPolicy = d.healGoalPolicy; startDrafting = d.startDrafting; warnIfStaleAtEntry = d.warnIfStaleAtEntry; freshCtx = d.freshCtx;
+  freshCtxForGeneration = d.freshCtxForGeneration; goStaleTerminal = d.goStaleTerminal; groupOpenChildren = d.groupOpenChildren; activateNextListItem = d.activateNextListItem; clearMainModelRecoveryTimer = d.clearMainModelRecoveryTimer;
+  isCompletionAuditRecoveryPending = d.isCompletionAuditRecoveryPending; markCompletionAuditRecoveryPending = d.markCompletionAuditRecoveryPending; retryStoredCompletionAudit = d.retryStoredCompletionAudit; probeMainModelRecovery = d.probeMainModelRecovery; releaseContinuationDispatchStandDown = d.releaseContinuationDispatchStandDown;
+  releaseInitialSessionLoadBarrier = d.releaseInitialSessionLoadBarrier; resolveCarryover = d.resolveCarryover; safeSteerUser = d.safeSteerUser; scheduleContinuation = d.scheduleContinuation; scheduleSessionTimeout = d.scheduleSessionTimeout;
+  createGoal = d.createGoal; fireReviewer = d.fireReviewer; openSettingsUI = d.openSettingsUI; manuallyResumeMainModelRecovery = d.manuallyResumeMainModelRecovery; activeGoalCommand = d.activeGoalCommand;
+  activeGoalStatusCommand = d.activeGoalStatusCommand; activeGoalSurfaceCommand = d.activeGoalSurfaceCommand; goalNoun = d.goalNoun; displaySlice = d.displaySlice; shortObj = d.shortObj;
 }
 
 /* Moved bodies (bands b1 + b3 from goal.ts).                          */
@@ -1970,7 +1983,6 @@ export {
   cmdReview,
   cmdReviewerSettings,
   cmdSettings,
-  createGoalCommands,
   enqueueItems,
   maybeDecisionPopup,
   probeAutoNotify,
