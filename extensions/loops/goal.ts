@@ -2954,6 +2954,86 @@ function scheduleMainModelRecoveryTimer(ctx: ExtensionContext, delayMs: number):
   void ctx;
 }
 
+// =================================================================
+// v0.34.92: hourly quota probe ticker — opt-in (default ON) extra probe at
+// :00:30 every hour while main-model recovery is parked. Quota windows tend
+// to refresh at the top of the hour; the ticker gives the fastest pickup
+// the plugin can offer without spamming chat (no chat message — just an
+// extra probe). Co-resident with the normal retry schedule (v0.34.79 eager
+// 5s first probe + v0.34.84 hour-aligned attempts 2+); the ticker is
+// strictly an ADDITIONAL probe slot at :00:30. When the user opts out, the
+// normal retry cadence is unaffected — only the ticker stops.
+// =================================================================
+
+let hourlyProbeTimer: NodeJS.Timeout | null = null;
+let hourlyProbeFireAt: number | null = null;
+let hourlyProbeClockOverride: number | null = null; // __testOnly
+
+/** Schedule the next :00:30 probe. Re-arms itself after each fire as long
+ * as recovery is parked and the setting is on. Safe to call when already
+ * scheduled (no duplicate schedules). */
+function scheduleHourlyProbe(ctx: ExtensionContext): void {
+  if (loadGlobalSettings().hourlyQuotaProbe !== true) return;
+  if (!state.mainModelRecovery) return; // nothing to recover — silent no-op
+  if (hourlyProbeTimer) return; // already pending
+  const now = hourlyProbeClockOverride ?? Date.now();
+  const fireAt = nextHourlyProbeMs(now);
+  const generation = sessionGeneration;
+  hourlyProbeFireAt = fireAt;
+  appendLedger(ctx.cwd, "hourly_probe_scheduled", {
+    fireAt: new Date(fireAt).toISOString(),
+    at: new Date(now).toISOString(),
+  });
+  hourlyProbeTimer = scheduleSessionTimeout(() => {
+    hourlyProbeTimer = null;
+    hourlyProbeFireAt = null;
+    const fresh = freshCtxForGeneration(generation);
+    if (!fresh) return;
+    fireHourlyProbe(fresh);
+    // Re-arm if still parked after the probe — the ticker is continuous
+    // until the user / list resume or recovery succeeds.
+    if (state.mainModelRecovery) scheduleHourlyProbe(fresh);
+  }, Math.max(1_000, fireAt - now));
+}
+
+/** Fire one :00:30 probe — invoke the same recovery probe path the normal
+ * schedule uses. The probe is observed by the recovery envelope: a success
+ * clears state.mainModelRecovery (and the ticker stops because the guard
+ * on the next re-arm sees no recovery); a failure reschedules via the
+ * normal schedule (v0.34.79/v0.34.84), and the hourly ticker's next fire
+ * is already queued by the re-arm above. */
+function fireHourlyProbe(ctx: ExtensionContext): void {
+  if (!state.mainModelRecovery) return; // wall already lifted — silent no-op
+  appendLedger(ctx.cwd, "hourly_probe_fired", {
+    at: new Date().toISOString(),
+  });
+  void probeMainModelRecovery(ctx).catch((err) => { if (isStaleApiError(err)) extensionApiStale = true; });
+}
+
+/** Cancel the hourly ticker — called on session replacement, recovery
+ * success, and user resume. Safe to call when no ticker is pending. */
+function cancelHourlyProbe(): void {
+  if (hourlyProbeTimer) {
+    clearTimeout(hourlyProbeTimer);
+    hourlyProbeTimer = null;
+  }
+  hourlyProbeFireAt = null;
+}
+
+// Test-only hooks for the hourly ticker. The clock override lets tests
+// fast-forward to a specific :00:30 slot without waiting an hour.
+export function __testOnlySetHourlyProbeNow(now: number | null): void {
+  hourlyProbeClockOverride = now;
+}
+
+export function __testOnlyResetHourlyProbe(): void {
+  cancelHourlyProbe();
+}
+
+export function __testOnlyHourlyProbeState(): { scheduledFireAt: number | null } {
+  return { scheduledFireAt: hourlyProbeFireAt };
+}
+
 /** An explicit resume is consent to start a fresh automatic window after the
  * five-hour/24-hour safety hold. It does not silently reset the window during
  * reload or heartbeat recovery. */
@@ -3105,8 +3185,9 @@ function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainModelFail
   // (provider text is unreliable; v0.34.64 established the principle).
   // Active retry (v0.34.79 eager first probe + v0.34.84 hour-aligned
   // attempts 2+) is the recovery. An opt-in hourly probe ticker
-  // (scheduleHourlyProbeForSession below) gives faster pickup when
-  // hourlyQuotaProbe is enabled.
+  // (scheduleHourlyProbe) gives faster pickup at :00:30 when
+  // hourlyQuotaProbe is enabled (default ON).
+  scheduleHourlyProbe(ctx);
 }
 
 async function recoverMainModelFromSendStorm(ctx: ExtensionContext, kind: "continuation" | "loop"): Promise<void> {
@@ -3133,6 +3214,7 @@ function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
   const recovery = state.mainModelRecovery;
   if (!recovery) return;
   clearMainModelRecoveryTimer();
+  cancelHourlyProbe(); // v0.34.92: wall lifted — ticker stops
   // v0.34.92: clearQuotaPromptTimer() call removed — the quota-prompt
   // timer was deleted with the rest of v0.34.58/v0.34.90. Recovery now
   // clears only its own timer (above).
