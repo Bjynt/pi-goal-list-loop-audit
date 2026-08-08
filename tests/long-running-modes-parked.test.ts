@@ -15,6 +15,7 @@ import * as fs from "node:fs";
 import { resolveReviewerConfig, type ReviewerConfig } from "../extensions/reviewer.ts";
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
 const SETTINGS_SRC = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
 
 test("fireReviewer emits a SECOND notify with the review file path after the cascade", () => {
@@ -53,8 +54,8 @@ test("SETTINGS_KEYS includes postaudit and toolOverrides", () => {
 
 test("/glla postaudit opens the same menu as /glla reviewer (no behavioral split)", () => {
   // Both keywords route to cmdReviewerSettings — there's ONE settings menu.
-  const keywordCheck = SRC.indexOf('if (/^postaudit(?:\\s|$)/.test(trimmed))');
-  const routeCheck = SRC.indexOf('await cmdReviewerSettings(ctx);', keywordCheck);
+  const keywordCheck = CMDS.indexOf('if (/^postaudit(?:\\s|$)/.test(trimmed))');
+  const routeCheck = CMDS.indexOf('await cmdReviewerSettings(ctx);', keywordCheck);
   assert.ok(keywordCheck > 0, "/glla postaudit keyword check exists");
   assert.ok(routeCheck > 0 && routeCheck < keywordCheck + 200, "the postaudit branch routes to cmdReviewerSettings");
 });
@@ -62,10 +63,10 @@ test("/glla postaudit opens the same menu as /glla reviewer (no behavioral split
 test("/glla routes reviewer (legacy) and postaudit (new) without completion rows", () => {
   // v0.34.25: both keywords still ROUTE to the one postaudit menu, but they
   // are no longer autocomplete entries (verb-only picker, group narrowing).
-  assert.doesNotMatch(SRC, /\["reviewer",/);
-  assert.doesNotMatch(SRC, /\["postaudit",/);
-  assert.match(SRC, /\^postaudit\(\?:\\s\|\$\)/);
-  assert.match(SRC, /\^reviewer\(\?:\\s\|\$\)/);
+  assert.doesNotMatch(CMDS, /\["reviewer",/);
+  assert.doesNotMatch(CMDS, /\["postaudit",/);
+  assert.match(CMDS, /\^postaudit\(\?:\\s\|\$\)/);
+  assert.match(CMDS, /\^reviewer\(\?:\\s\|\$\)/);
 });
 
 test("resolveReviewerConfig: postaudit and reviewer blocks merge equivalently", () => {
