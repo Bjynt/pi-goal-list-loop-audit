@@ -4116,6 +4116,48 @@ function newCompletionAuditAttemptId(): string {
  * durable job directory behind. Each detached process attempt gets its own
  * filesystem identity; the claim's `pendingCompletion.attemptId` remains the
  * parent-generation identity used for stale-result rejection. */
+/**
+ * v0.34.104 ([Image-#1]): detect arithmetic impossibilities in the
+ * agent-supplied completionSummary text. The agent's recap occasionally
+ * reports test counts that violate pass ≤ total (field: "29/28 pass" on
+ * 2026-08-08 10:29 dracon-platform — a 28-test suite cannot yield 29
+ * passes). Pure except for the ledger append — unit-testable in
+ * isolation. On a hit, ledger `completion_summary_impossible_count` and
+ * append an honest `Counts appear inconsistent: X passed vs Y total.`
+ * note to the recap so the user + auditor see the discrepancy. Returns
+ * the (possibly amended) text to persist.
+ */
+function validateCompletionSummary(text: string, ctx: ExtensionContext): string {
+  const flags: string[] = [];
+  // Match "X/Y pass" / "X / Y pass" — anchor on the noun "pass" so we
+  // don't false-positive on ratios like "1/2 done".
+  const ratio = /(\d{1,4})\s*\/\s*(\d{1,4})\s*(?:tests?\s+)?pass(?:es|ed)?\b/i;
+  const m = ratio.exec(text);
+  if (m) {
+    const passed = Number(m[1]);
+    const total = Number(m[2]);
+    if (Number.isFinite(passed) && Number.isFinite(total) && passed > total) {
+      flags.push(`Counts appear inconsistent: ${passed} passed vs ${total} total in the suite.`);
+    }
+  }
+  // "X tests, Y passed" — Y cannot exceed X.
+  const aggregate = /(\d{1,4})\s+tests?[\s,]+(\d{1,4})\s+passed\b/i;
+  const a = aggregate.exec(text);
+  if (a) {
+    const total = Number(a[1]);
+    const passed = Number(a[2]);
+    if (Number.isFinite(total) && Number.isFinite(passed) && passed > total) {
+      flags.push(`Counts appear inconsistent: ${passed} passed vs ${total} total tests reported.`);
+    }
+  }
+  if (flags.length === 0) return text;
+  appendLedger(ctx.cwd, "completion_summary_impossible_count", {
+    flags,
+    excerpt: text.slice(0, 240),
+  });
+  return `${text.trimEnd()} — NOTE: ${flags.join(" ")}`;
+}
+
 function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, origin: CompletionAuditOrigin): PendingCompletion {
   completionAuditRecoveryArmed = true;
   const startedMs = Date.now();
