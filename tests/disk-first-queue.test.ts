@@ -169,7 +169,7 @@ test("v0.34.61: addSingleItem is disk-first (sidecar before state mutation)", ()
   // cannot lose the item. readQueueFromDisk must find it after a reload.
   const fn = SRC.slice(SRC.indexOf("function addSingleItem"), SRC.indexOf("function addSingleItem") + 1200);
   const writePos = fn.indexOf("writeQueueItemFile(ctx.cwd, item)");
-  const statePos = fn.indexOf("state = { ...state, list: [...listQueue(), item] }");
+  const statePos = fn.indexOf("replaceState({ ...state, list: [...listQueue(), item] })");
   assert.ok(writePos !== -1, "addSingleItem calls writeQueueItemFile");
   assert.ok(statePos !== -1, "addSingleItem mutates state");
   assert.ok(writePos < statePos, "sidecar write comes BEFORE the in-memory commit");
@@ -182,7 +182,7 @@ test("v0.34.61: list-draft path is disk-first (sidecar before state mutation)", 
   const anchor = "List drafting: the confirmed contract goes into the QUEUE, not active.";
   const seg = SRC.slice(SRC.indexOf(anchor), SRC.indexOf(anchor) + 900);
   const writePos = seg.indexOf("writeQueueItemFile(liveCtx.cwd, item)");
-  const statePos = seg.indexOf("state = { ...state, list: [...listQueue(), item] }");
+  const statePos = seg.indexOf("replaceState({ ...state, list: [...listQueue(), item] })");
   assert.ok(writePos !== -1, "list-draft path calls writeQueueItemFile");
   assert.ok(statePos !== -1, "list-draft path mutates state");
   assert.ok(writePos < statePos, "sidecar write comes BEFORE the in-memory commit");
@@ -192,7 +192,7 @@ test("v0.34.61: remove/clear/cancel/glla_wipe delete sidecars", () => {
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   // Auditor-fixed gap #3: every removal path must call deleteQueueItemFile so
   // the /list disk-recovery fallback cannot resurrect explicitly-removed items.
-  assert.match(SRC, /deleteQueueItemFile\(ctx\.cwd, removed\.id\);\n\s*state = \{ \.\.\.state, list: queue\.filter/); // /list remove
+  assert.match(SRC, /deleteQueueItemFile\(ctx\.cwd, removed\.id\);\n\s*replaceState\(\{ \.\.\.state, list: queue\.filter/); // /list remove
   assert.match(SRC, /for \(const item of dropped\) deleteQueueItemFile\(ctx\.cwd, item\.id\);/); // /list clear
   assert.match(SRC, /for \(const item of listQueue\(\)\) deleteQueueItemFile\(ctx\.cwd, item\.id\);/); // /list cancel + glla_wipe
 });
