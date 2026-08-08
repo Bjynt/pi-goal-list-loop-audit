@@ -1,6 +1,49 @@
 # Changelog
 
 ## Unreleased
+### 0.34.95 — Status transparency when parked on quota: '[QUEUED] 12m 26s · N queued' → '… · waiting for quota reset at HH:MM'
+
+Field evidence (Screenshot_20260808_014303 darklord LIST-AUDIT-COLLECT):
+the status line rendered `[QUEUED] 12m 26s` with no WHY — the user
+couldn't tell whether the queue was stalled on quota, on a slow
+provider, or just idle. The fix: when the goal is in the QUEUED state
+AND `state.mainModelRecovery` is set (the bounded envelope is parked),
+the status line appends `· waiting for quota reset at HH:MM` after
+the queue depth. No chat spam, no extra prompt — the existing
+status line just says what's blocking.
+
+- **New helper** `formatClockTime(epochMs)` in
+  `extensions/goal-loop-display.ts`: returns local `HH:MM` from an
+  absolute epoch. Used by the quota-recovery status line so the user
+  can glance at the clock and see when the next probe will fire.
+- **Status line change** (`buildStatusText`):
+  `glla: [QUEUED] 12m 26s · 5 queued` →
+  `glla: [QUEUED] 12m 26s · 5 queued · waiting for quota reset at 14:30`.
+  The `quotaSuffix` only renders when both:
+  - `activity === "queued"` (the user can't tell work is happening), AND
+  - `state.mainModelRecovery` is set with a `retryAt` (the envelope
+    is parked with a known next-probe time).
+  A LIVE/WORKING or ACTIVE state with recovery set renders normally
+  (the live badge already names the work).
+- **No chat spam**: this release is purely a status-line tweak. The
+  v0.34.92 quota-prompt removal stays — the recovery envelope handles
+  everything else (v0.34.79 eager first probe + v0.34.84 hour-aligned
+  attempts 2+ + v0.34.92 hourly probe ticker).
+- **New tests** in `tests/display.test.ts`, +3 cases:
+  - `[QUEUED]` + `mainModelRecovery.retryAt` set → status line
+    includes `waiting for quota reset at HH:MM`
+  - `[QUEUED]` without recovery → status line is unchanged (no false
+    signal — the user only sees quota text when actually parked)
+  - `[LIVE · WORKING]` with recovery → status line does NOT include
+    quota text (only the QUEUED state needs the WHY)
+- **Suite**: 1108 pass / 1 skip / 0 fail across 100 files. `tsc
+  --noEmit` clean.
+- **Files touched**: `extensions/goal-loop-display.ts` (+28 LOC for
+  `formatClockTime` + the `blockedByQuota` / `quotaSuffix` block),
+  `tests/display.test.ts` (+3 tests, +60 LOC), `package.json` (0.34.94
+  → 0.34.95), `CHANGELOG.md` (this entry),
+  `audit/STATUS-TRANSPARENCY-2026-08-08.md` (new).
+
 ### 0.34.94 — Host-session-lost self-heal: heartbeat re-binds in-memory state when the raw probe says pi is fresh
 
 Field evidence (Screenshot_20260808_080109, 080230, 080248 darklord /
