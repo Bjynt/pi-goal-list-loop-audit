@@ -29,6 +29,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const GOAL_SRC = readFileSync(join(here, "..", "extensions", "loops", "goal.ts"), "utf8");
 const CORE_SRC = readFileSync(join(here, "..", "extensions", "goal-loop-core.ts"), "utf8");
 const SETTINGS_SRC = readFileSync(join(here, "..", "extensions", "goal-settings.ts"), "utf8");
+const RECOVERY_SRC = readFileSync(join(here, "..", "extensions", "goal-recovery.ts"), "utf8"); // decomposition step 3 (v0.34.111)
 
 import {
   nextHourlyProbeMs,
@@ -107,9 +108,9 @@ test("v0.34.92: mainModelRecoverySucceeded cancels the hourly ticker", () => {
 test("v0.34.92: clearMainModelRecoveryTimer cancels the hourly ticker in lockstep", () => {
   // Session replacement must not leave an orphaned ticker firing against
   // a dead generation.
-  const fnIdx = GOAL_SRC.indexOf("function clearMainModelRecoveryTimer()");
+  const fnIdx = RECOVERY_SRC.indexOf("function clearMainModelRecoveryTimer()");
   assert.ok(fnIdx > 0, "clearMainModelRecoveryTimer is present");
-  const tail = GOAL_SRC.slice(fnIdx, fnIdx + 1_000);
+  const tail = RECOVERY_SRC.slice(fnIdx, fnIdx + 1_000);
   assert.match(tail, /cancelHourlyProbe\(\);/, "clear also cancels the hourly ticker");
 });
 
