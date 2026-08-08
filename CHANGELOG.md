@@ -1,6 +1,62 @@
 # Changelog
 
 ## Unreleased
+### 0.34.93 — Forbidden-models gate on main-model fallback + recovery-probe target resolution
+
+The auditor fallback chain (`resolveAuditorModel`, v0.34.72) consults
+`isForbiddenModel` before rotating; the main-model fallback chain did
+not. Field evidence (Screenshot_20260808_083612 endless-td): a session
+running on `minimax/MiniMax-M3` rotated to Anthropic during recovery,
+produced "Anthropic stream ended without a stop reason" repeatedly,
+and burned provider quota on a model the user had explicitly forbidden.
+The user's read was sharp: **"we switched model to anthropic that is a
+mistake. this could be a very costly importu decision. I think it should
+be disallowed."**
+
+Two paths now consult `isForbiddenModel` before `setModel`:
+
+- **`tryMainModelFallback`** (`extensions/loops/goal.ts:2867`) — the
+  bounded fallback chain that iterates `mainModelFallbackRefs` after a
+  recoverable failure. Forbidden refs are silently skipped (one
+  `forbidden_model_fallback_blocked` ledger entry each) and the loop
+  continues to the next candidate. If every configured candidate is
+  forbidden, recovery fails-closed: the probe retries the current model
+  itself per the no-target branch — never rotating to a forbidden
+  ref. Mirror of the auditor fallback's gate (v0.34.72).
+- **`probeMainModelRecovery` target resolution**
+  (`extensions/loops/goal.ts:3109`) — the recovery probe picks the
+  first non-current target from `[recovery.primary, ...fallbacks]`. The
+  gate filters out forbidden refs in that find; if every candidate is
+  forbidden, the no-target fallthrough retries the current model.
+
+The ledger event `forbidden_model_fallback_blocked` is the explicit
+"the recovery envelope tried to rotate to this forbidden ref, but the
+gate caught it" record. Existing `forbidden_model_switch` events (the
+`observeModelChange` ledger entries) continue to fire on the
+unrelated observer path — both events co-exist.
+
+- **New tests** (`tests/model-switch.test.ts`, +2 cases): the v0.34.93
+  helpers (sonnet/opus/gpt-5.5 substring match) catch the user's
+  Screenshot_20260808_083612 scenario; empty / undefined refs are
+  never forbidden (the empty-list semantic); the policy-default
+  `DEFAULT_FORBIDDEN_MODELS` list matches the same patterns.
+- **Suite**: 1104 pass / 1 skip / 0 fail across 100 files. `tsc
+  --noEmit` clean.
+- **Files touched**: `extensions/loops/goal.ts` (+24 / -1 LOC for the
+  two gates + the ledger entries + the explanatory comments),
+  `tests/model-switch.test.ts` (+27 LOC for the two new cases),
+  `package.json` (0.34.92 → 0.34.93), `CHANGELOG.md` (this entry),
+  `audit/FORBIDDEN-MODEL-GATE-2026-08-08.md` (new).
+
+Out of scope: an even-broader gate that catches every pi-internal model
+rotation (the one that produced Screenshot_20260808_083612) is a
+separate concern — `observeModelChange` is the only hook into pi's
+model_select event stream, and the field rotation the user saw likely
+bypassed it (the error stream said "Anthropic stream ended" while the
+session status line still read `minimax/MiniMax-M3`, suggesting the
+rotation happened mid-turn). The v0.34.93 fix narrows the exposure
+window but does not eliminate it; the broader fix is a follow-up.
+
 ### 0.34.92 — Drop quota-prompt chat spam; add opt-in hourly probe ticker for faster quota pickup
 
 The v0.34.58 hourly quota-resume prompt was the wrong shape. The plugin

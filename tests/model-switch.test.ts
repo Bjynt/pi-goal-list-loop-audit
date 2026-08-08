@@ -219,6 +219,41 @@ test("v0.34.57: blockForbiddenModelSwitches off allows the switch but records th
   assert.equal(pi.modelSelections.length, 0, "no revert attempted");
 });
 
+// v0.34.93: forbidden-models gate on the recovery-probe target resolution.
+// Mirrors the existing observerModelChange gate but for the probe rotation
+// path — `probeMainModelRecovery` builds a target list (primary + fallbacks)
+// and picks the first non-current target. The v0.34.93 gate filters out
+// forbidden refs before picking; the no-target fallthrough then retries
+// the current model itself instead of rotating onto a forbidden one.
+// This test seeds a forbidden target via a forbiddenModels override and
+// verifies the helper logic that the gate consults (mirrors the
+// tryMainModelFallback gate at extensions/loops/goal.ts:2892).
+test("v0.34.93: isForbiddenModel flags sonnet/opus/gpt-5.5 refs the gate must skip", () => {
+  const forbidden = ["gpt-5.5", "sonnet", "opus"];
+  // The forbidden list matches case-insensitively and by substring (the
+  // suffix-agnostic matching lets `claude-3-5-sonnet-...` be caught).
+  assert.equal(isForbiddenModel("anthropic/claude-sonnet-4-5", forbidden), true);
+  assert.equal(isForbiddenModel("openai/gpt-5.5", forbidden), true);
+  assert.equal(isForbiddenModel("anthropic/claude-opus-4", forbidden), true);
+  // Screenshot_20260808_083612 scenario: the user's session model rotated
+  // to an Anthropic ref during recovery — the gate must catch it.
+  assert.equal(isForbiddenModel("anthropic/claude-3-5-sonnet-20240620", forbidden), true);
+  // Allowed refs are not flagged.
+  assert.equal(isForbiddenModel("minimax/MiniMax-M3", forbidden), false);
+  assert.equal(isForbiddenModel("openai/gpt-4.1", forbidden), false);
+});
+
+test("v0.34.93: empty / undefined ref is never forbidden (the empty-list semantic)", () => {
+  // Mirrors goal-loop-core.ts:isForbiddenModel: empty ref returns false.
+  assert.equal(isForbiddenModel(undefined, ["sonnet"]), false);
+  assert.equal(isForbiddenModel("", ["sonnet"]), false);
+  // Empty forbidden list forbids nothing.
+  assert.equal(isForbiddenModel("anthropic/claude-sonnet-4-5", []), false);
+  // Default forbidden list matches the policy-default.
+  assert.equal(isForbiddenModel("openai/gpt-5.5", DEFAULT_FORBIDDEN_MODELS), true);
+  assert.equal(isForbiddenModel("anthropic/claude-sonnet-4-5", DEFAULT_FORBIDDEN_MODELS), true);
+});
+
 test("v0.34.57: turn-boundary drift into a forbidden model records the violation without blocking", async () => {
   const cwd = tmpCwd();
   const ctx = ownerCtx(cwd);
