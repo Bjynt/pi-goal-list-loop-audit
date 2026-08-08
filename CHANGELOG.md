@@ -1,6 +1,53 @@
 # Changelog
 
 ## Unreleased
+### 0.34.98 — Paused-without-draft / decision surface: long-wait pauses (> 6h) surface a tweak offer
+
+Field evidence (Screenshot_20260808_080402 hellhunter): a goal
+paused with `kind="wait"` and `resumeAt=2026-08-08T02:00:00Z` —
+the user couldn't unblock without re-issuing the same objective
+later. A 6+ hour wait effectively locks the user out of progress
+for the entire workday.
+
+The fix: at `pause_goal` time, when the pause is `kind="wait"` or
+`kind="blocked"` AND `resumeAt` is more than 6 hours away, surface
+a one-shot notify offering the tweak path:
+
+> "Pause scheduled for ~Nh. If the objective no longer matches your
+> intent, run /goal tweak (or /list tweak) to replace it now;
+> otherwise /goal resume continues automatically when the wait
+> ends."
+
+This is an OFFER, not an auto-apply. The user keeps full control:
+they can ignore the offer and wait as planned, or run the tweak
+command to pivot the objective without waiting for the resumeAt.
+
+- **Gating**: strictly `> SIX_HOURS_MS` (6h × 60min × 60s × 1000ms).
+  6h exactly does NOT trigger — the boundary is conservative so a
+  slightly-long wait doesn't spam the user.
+- **Kinds covered**: `wait` (time-gated) and `blocked` (generic
+  blocked with a resumeAt). Decision pauses (`decision` kind) don't
+  carry a `resumeAt` — they need an explicit user pick — and are
+  excluded.
+- **Ledger event** `pause_long_wait_offer_tweak` records the
+  pause + hours for auditing. The event is `info`-level: it tells
+  the user the offer fired without spamming chat (one notify per
+  state transition).
+- **New tests** in `tests/pause-informativeness.test.ts`, +2 cases:
+  - long-wait pause (> 6h): the SIX_HOURS_MS constant is present,
+    the longWait gate is present, the notify text mentions both
+    the wait duration and the tweak path, the ledger event
+    records hours.
+  - short-wait pause (≤ 6h): the gate is strictly `>` not `>=`,
+    so 6h exactly does not fire the offer.
+- **Suite**: 1116 pass / 1 skip / 0 fail across 100 files. `tsc
+  --noEmit` clean.
+- **Files touched**: `extensions/loops/goal.ts` (+30 LOC for the
+  longWait block + notify + ledger event),
+  `tests/pause-informativeness.test.ts` (+2 tests, +30 LOC),
+  `package.json` (0.34.97 → 0.34.98), `CHANGELOG.md` (this entry),
+  `audit/PAUSED-DECISION-SURFACE-2026-08-08.md` (new).
+
 ### 0.34.97 — Compaction-not-visible-until-reload: '⏳ compacting…' chip paints while the grace window is open
 
 Field evidence (Screenshot_20260808_003007/003024 ai-auto-writer):
