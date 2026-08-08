@@ -22,6 +22,8 @@ import {
 } from "../extensions/goal-loop-forever.ts";
 
 const SRC = fs.readFileSync(new URL("../extensions/loops/goal.ts", import.meta.url), "utf-8");
+const CMDS = fs.readFileSync(new URL("../extensions/goal-commands.ts", import.meta.url), "utf-8");
+const LOOP = fs.readFileSync(new URL("../extensions/goal-loop.ts", import.meta.url), "utf-8");
 
 // ---------- pure fan-out parsing (real behavior) ----------
 
@@ -80,10 +82,10 @@ test("listAuditCollectTarget: collect-only — marker, no-fix law, honest-empty 
 // ---------- orchestrator wiring pins ----------
 
 test("/list audit route: builds the collect target and enqueues it", () => {
-  assert.match(SRC, /if \(sub === "audit"\) \{/);
-  assert.match(SRC, /const objective = listAuditCollectTarget\(rest \|\| undefined\);/);
-  assert.match(SRC, /enqueueItems\(ctx, \[objective\], "\/list audit"\)/);
-  assert.match(SRC, /CHANGES NO CODE/, "the route's notify states the collect-only contract");
+  assert.match(CMDS, /if \(sub === "audit"\) \{/);
+  assert.match(CMDS, /const objective = listAuditCollectTarget\(rest \|\| undefined\);/);
+  assert.match(CMDS, /enqueueItems\(ctx, \[objective\], "\/list audit"\)/);
+  assert.match(CMDS, /CHANGES NO CODE/, "the route's notify states the collect-only contract");
 });
 
 test("completion fan-out: collect items fan out + suppress the list-complete noise", () => {
@@ -123,17 +125,17 @@ test("markers: the built targets still contain what the guards match on", () => 
 });
 
 test("/loop audit warns when a one-shot audit goal exists (paused or active)", () => {
-  assert.match(SRC, /state\.goal && state\.goal\.objective\.includes\(GOAL_AUDIT_ONESHOT_MARKER\)/);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "audit_stack_warn", \{ have: "goal", starting: "loop", goalStatus: state\.goal\.status \}\)/);
-  assert.match(SRC, /the audit loop SUPERSEDES it \(one pass \+ fixes IS the loop's job\)/);
+  assert.match(LOOP, /state\.goal && state\.goal\.objective\.includes\(GOAL_AUDIT_ONESHOT_MARKER\)/);
+  assert.match(LOOP, /appendLedger\(ctx\.cwd, "audit_stack_warn", \{ have: "goal", starting: "loop", goalStatus: state\.goal\.status \}\)/);
+  assert.match(LOOP, /the audit loop SUPERSEDES it \(one pass \+ fixes IS the loop's job\)/);
 });
 
 test("/goal audit + /list audit warn when an audit loop is already running", () => {
-  assert.equal(SRC.match(/state\.loop\?\.active && state\.loop\.target\.includes\(LOOP_AUDIT_MARKER\)/g)!.length >= 2, true, "both routes check the live loop");
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "audit_stack_warn", \{ have: "loop", starting: "goal" \}\)/);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "audit_stack_warn", \{ have: "loop", starting: "list" \}\)/);
-  assert.match(SRC, /a one-shot \/goal audit duplicates its work/);
-  assert.match(SRC, /\/list audit would double-hunt the same ground/);
+  assert.equal(CMDS.match(/state\.loop\?\.active && state\.loop\.target\.includes\(LOOP_AUDIT_MARKER\)/g)!.length >= 2, true, "both routes check the live loop");
+  assert.match(CMDS, /appendLedger\(ctx\.cwd, "audit_stack_warn", \{ have: "loop", starting: "goal" \}\)/);
+  assert.match(CMDS, /appendLedger\(ctx\.cwd, "audit_stack_warn", \{ have: "loop", starting: "list" \}\)/);
+  assert.match(CMDS, /a one-shot \/goal audit duplicates its work/);
+  assert.match(CMDS, /\/list audit would double-hunt the same ground/);
 });
 
 test("restore-hold names the supersession in the widget surface", () => {

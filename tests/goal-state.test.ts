@@ -13,6 +13,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 
 const GOAL_SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const CMDS_SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
 const STATE_SRC = fs.readFileSync("extensions/goal-state.ts", "utf-8");
 
 test("goal-state.ts owns the state singleton (single source of truth)", () => {
@@ -53,10 +54,13 @@ test("replaceState is used at the moved wholesale sites", () => {
   for (const needle of [
     "replaceState({ ...state, goal });",
     "replaceState(readState(cwd));",
-    "replaceState({ ...state, list: [] });",
     "replaceState({ ...state, lastCompactionAt });",
-    "replaceState({ ...state, goal: null });",
   ]) {
-    assert.ok(GOAL_SRC.includes(needle), `expected: ${needle}`);
+    assert.ok(GOAL_SRC.includes(needle), `expected in goal.ts: ${needle}`);
+  }
+  // Decomposition step 2: the list-clear and wipe sites moved to
+  // goal-commands.ts — the primitive requirement travels with them.
+  for (const needle of ["replaceState({ ...state, list: [] });", "replaceState({ ...state, goal: null });"]) {
+    assert.ok(CMDS_SRC.includes(needle), `expected in goal-commands.ts: ${needle}`);
   }
 });

@@ -118,15 +118,16 @@ test("takeAt: out of range returns null", () => {
 
 test("v0.28.28: unsolicited enqueue (reviewer) does not auto-start the head unless autoResume is on", () => {
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   // junk-runner hydra: user cancelled a goal and the next reviewer-enqueued
   // item started itself (twice). Enqueue is not consent to start.
-  assert.match(SRC, /function enqueueItems\(ctx: ExtensionContext, texts: string\[\], source: string, opts\?: \{ autoActivate\?: boolean \}\): number/);
-  assert.match(SRC, /opts\?\.autoActivate === false/);
+  assert.match(CMDS, /function enqueueItems\(ctx: ExtensionContext, texts: string\[\], source: string, opts\?: \{ autoActivate\?: boolean \}\): number/);
+  assert.match(CMDS, /opts\?\.autoActivate === false/);
   // v0.34.81 (LIGHT parent/child): the count reflects items ACTUALLY
   // written (post-refusals) — `itemsToWrite.length` — so a refused
   // subtask does not over-report in the held-mode notify.
-  assert.match(SRC, /Queued \$\{itemsToWrite\.length\} item\(s\) from \$\{source\} — \/list next when ready \(auto-start is opt-in: enable Auto-resume in \/glla settings\)\./);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "list_autoactivation_held", \{ source, count: itemsToWrite\.length \}\);/);
+  assert.match(CMDS, /Queued \$\{itemsToWrite\.length\} item\(s\) from \$\{source\} — \/list next when ready \(auto-start is opt-in: enable Auto-resume in \/glla settings\)\./);
+  assert.match(CMDS, /appendLedger\(ctx\.cwd, "list_autoactivation_held", \{ source, count: itemsToWrite\.length \}\);/);
   // the reviewer call site passes the gate; user-driven imports keep default:
   assert.match(SRC, /enqueueItems\(ctx, objectives, "reviewer", \{ autoActivate: loadGlobalSettings\(\)\.autoResume === true \}\)/); // v0.29.5: global-only
 });
@@ -157,7 +158,7 @@ test("v0.28.28: goal provenance — setGoal threads `via` into the record + goal
 });
 
 test("v0.28.28: /glla log [N] — human-readable ledger tail, noise-filtered", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   assert.match(SRC, /if \(\/\^log\(\?:\\s\|\$\)\/\.test\(trimmed\)\) \{/);
   assert.match(SRC, /function cmdLog\(args: string, ctx: ExtensionContext\): void/);
   assert.match(SRC, /const LOG_NOISE = new Set\(\["state", "send_rearm_start", "heartbeat_suppressed_tick"\]\);/);
@@ -166,7 +167,7 @@ test("v0.28.28: /glla log [N] — human-readable ledger tail, noise-filtered", (
 });
 
 test("v0.28.33: /glla wipe — renamed from reset (too close to /glla resume); reset redirects without acting", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   assert.match(SRC, /if \(\/\^wipe\(\?:\\s\|\$\)\/\.test\(trimmed\)\) \{/);
   assert.match(SRC, /async function cmdGllaWipe\(ctx: ExtensionContext\): Promise<void>/);
   // destructive → Confirm dialog with the full summary:
@@ -184,7 +185,7 @@ test("v0.28.33: /glla wipe — renamed from reset (too close to /glla resume); r
   assert.match(SRC, /\/glla reset is now \/glla wipe \(renamed — too close to \/glla resume\)\. Nothing was done\./);
 });
 test("v0.28.32: /glla resume + /glla cancel — type-blind verbs over the ONE live thing", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   assert.match(SRC, /if \(\/\^resume\(\?:\\s\|\$\)\/\.test\(trimmed\)\) \{/);
   assert.match(SRC, /if \(\/\^cancel\(\?:\\s\|\$\)\/\.test\(trimmed\)\) \{/);
   assert.match(SRC, /async function cmdGllaResume\(ctx: ExtensionContext\): Promise<void>/);
