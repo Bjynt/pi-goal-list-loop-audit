@@ -1,6 +1,46 @@
 # Changelog
 
 ## Unreleased
+### 0.34.97 — Compaction-not-visible-until-reload: '⏳ compacting…' chip paints while the grace window is open
+
+Field evidence (Screenshot_20260808_003007/003024 ai-auto-writer):
+222,368 tokens compacted mid-turn, but the user only saw
+`[compaction]` AFTER a reload — the session_compact event fired
+in-process but no in-process UI surface told the user what just
+happened. The fix has two parts:
+
+- **An info notification on session_compact** ("glla: session
+  compacting — stall counter reset, grace timer started. The widget
+  will show ⏳ compacting… for the next 3 minutes."). The notify is
+  best-effort (try/catch around stale ctx); the durable record is
+  the `session_compact` ledger event the handler already writes.
+- **A `⏳ compacting… (X ago)` chip on the status line** for 3
+  minutes after the compaction. The chip survives a reload because
+  `lastCompactionAt` is now persisted on `State`
+  (`extensions/goal-loop-core.ts:684`).
+
+- **State field** `lastCompactionAt?: number` — epoch (ms) of the
+  most recent session_compact. Persisted via `persistState` so the
+  chip survives reload. Set by the session_compact handler
+  (`extensions/loops/goal.ts:9877`).
+- **Status-line chip** in `buildStatusText` — when
+  `state.lastCompactionAt` is within the last 3 minutes (matches
+  `COMPACTION_GRACE_MS`), the chip renders at the top of the active
+  branch. Outside the window, no chip — the compaction has finished
+  settling.
+- **New tests** in `tests/display.test.ts`, +3 cases:
+  - Within grace: chip renders with elapsed time
+  - Past grace (200s ago, > 180s threshold): no chip
+  - No `lastCompactionAt` on state: no chip (no false signal)
+- **Suite**: 1114 pass / 1 skip / 0 fail across 100 files. `tsc
+  --noEmit` clean.
+- **Files touched**: `extensions/loops/goal.ts` (+12 LOC for the
+  notify + state persist), `extensions/goal-loop-core.ts` (+7 LOC for
+  the State field), `extensions/goal-loop-display.ts` (+9 LOC for
+  the chip), `tests/display.test.ts` (+3 tests, +37 LOC),
+  `package.json` (0.34.96 → 0.34.97), `CHANGELOG.md` (this entry),
+  `audit/COMPACTION-VISIBLE-2026-08-08.md` (new).
+
 ### 0.34.96 — Complete-vs-aborted distinction when the work was already shipped in a prior version
 
 Field evidence (Screenshot_20260808_080536): an agent's
