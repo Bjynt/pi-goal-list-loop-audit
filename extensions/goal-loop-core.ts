@@ -60,10 +60,16 @@ export function nextHourlyPromptMs(now = Date.now()): number {
 /** v0.34.92: the next :00:30 strictly after now — the hourly probe ticker
  * slot. We use :00:30 (not :00:00) so the provider has a 30s skew window to
  * roll its quota counters before we probe; a probe at exactly :00:00 can
- * race the provider's reset. */
+ * race the provider's reset. The slot is per-hour: at 14:00:01 the next
+ * slot is 14:00:30 (29s away); at 14:00:31 the next slot is 15:00:30. */
 export function nextHourlyProbeMs(now = Date.now()): number {
   const d = new Date(now);
-  d.setHours(d.getHours() + 1, 0, 30, 0);
+  // Start with this hour's :00:30
+  d.setMinutes(0, 30, 0);
+  if (d.getTime() <= now) {
+    // Already past this hour's :00:30 — jump to next hour
+    d.setHours(d.getHours() + 1);
+  }
   return d.getTime();
 }
 
