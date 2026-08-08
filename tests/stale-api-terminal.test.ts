@@ -174,3 +174,33 @@ test("v0.32.0: audit-opportunistic fix batch — dispose, keys, caps, message", 
   assert.match(GOAL, /handing off to a fresh pi context — /); // entry probe names the lifecycle handoff honestly
   assert.match(GOAL, /function clearSessionOwnedTimers\(\): void/); // terminal kills all old-session timers
 });
+
+// v0.34.94 — host-session-lost self-heal. Field evidence (darklord/hegemon
+// Screenshot_20260808_080109/080230/080248): pi invalidated the extension
+// handle WITHOUT delivering a replacement session (silent_handle_death);
+// the plugin sat with staleTerminalDone=true and extensionApiStale=true
+// forever, the user had to manually restart pi. The heartbeat probe is now
+// evidence of recovery: when raw probe returns false (pi is fresh) but
+// staleTerminalDone is still latched, the heartbeat self-heals the
+// in-memory state and absorbs the replacement via tryAbsorbHostSuccessor.
+// No sends are re-queued, so there is NO blind queue storm risk — the
+// path just unblocks future events from a fresh ctx.
+test("v0.34.94: heartbeat self-heals stale-terminal when raw probe says pi is fresh", () => {
+  // The new heartbeat path lives between the raw-probe and freshCtx() call
+  // in heartbeatTick. It checks staleTerminalDone and clears the stale
+  // flags so the next freshCtx() returns a non-null ctx.
+  assert.match(
+    SRC,
+    /if \(staleTerminalDone && knownCtx\) \{[\s\S]*appendLedger\(knownCtx\.cwd, "stale_terminal_recovered_via_probe"/,
+    "heartbeat self-heal ledger event is recorded",
+  );
+  assert.match(SRC, /staleTerminalDone = false;\s*\n\s*extensionApiStale = false;/, "stale flags are cleared on probe-fresh-after-stale-terminal");
+  assert.match(SRC, /tryAbsorbHostSuccessor\(knownCtx, "heartbeat-self-heal"\)/, "tryAbsorbHostSuccessor is called against the knownCtx");
+  // No sends re-queued: the self-heal only resets flags and absorbs — it
+  // never calls scheduleContinuation / sendMessage / etc. The user has to
+  // either issue a fresh goal or resume explicitly.
+  const heartbeatRegion = SRC.match(/stale_terminal_recovered_via_probe[\s\S]{0,800}return;\s*\n\s*\}/);
+  assert.ok(heartbeatRegion, "self-heal region is in scope");
+  assert.ok(!heartbeatRegion![0].includes("scheduleContinuation"), "no continuation scheduled during self-heal");
+  assert.ok(!heartbeatRegion![0].includes("sendMessage"), "no sendMessage during self-heal");
+});

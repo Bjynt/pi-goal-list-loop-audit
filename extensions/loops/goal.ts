@@ -2092,6 +2092,30 @@ function heartbeatTick(): void {
     return;
   }
   heartbeatStaleStreak = 0;
+  // v0.34.94 (host-session-lost self-heal): if the heartbeat's raw probe
+  // says pi is fresh but the plugin is in stale-terminal (the gap between
+  // goStaleTerminal and a session_start that may never arrive — the
+  // silent_handle_death reason the user hit in darklord/hegemon
+  // Screenshot_20260808_080109/080230/080248), the raw probe is evidence
+  // pi has recovered. Clear the stale flags so a subsequent freshCtx()
+  // call can return a non-null ctx; if tryAbsorbHostSuccessor lands (the
+  // replacement session id matches this ctx), the goal plane re-binds.
+  // If the absorb fails (still same session, no replacement), we just
+  // proceed with the normal heartbeat — no sends are re-queued, so there
+  // is no blind queue storm risk.
+  if (staleTerminalDone && knownCtx) {
+    appendLedger(knownCtx.cwd, "stale_terminal_recovered_via_probe", { via: "heartbeat-self-heal" });
+    staleTerminalDone = false;
+    extensionApiStale = false;
+    zombieStoodDown = false;
+    sessionHandoffPending = false;
+    try {
+      knownCtx.ui.notify("glla: pi recovered after a stale-handle terminal — self-healing in-memory state (no /reload needed).", "info");
+    } catch {
+      /* the ledger is the durable record; notify is best-effort */
+    }
+    if (tryAbsorbHostSuccessor(knownCtx, "heartbeat-self-heal")) return;
+  }
   const ctx = freshCtx();
   if (!ctx) return;
   if (mainModelRecoveryActive()) return;

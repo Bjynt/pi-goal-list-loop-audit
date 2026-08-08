@@ -1,6 +1,43 @@
 # Changelog
 
 ## Unreleased
+### 0.34.94 — Host-session-lost self-heal: heartbeat re-binds in-memory state when the raw probe says pi is fresh
+
+Field evidence (Screenshot_20260808_080109, 080230, 080248 darklord /
+hegemon): pi invalidated the extension handle WITHOUT delivering a
+replacement session — `silent_handle_death` in the
+`session_handle_invalidated` ledger's `reason` field. The plugin sat
+with `staleTerminalDone=true` and `extensionApiStale=true` forever, the
+user had to manually restart pi. The heartbeat's raw probe is now
+treated as evidence of recovery: when `probeExtensionApiStaleRaw()`
+returns false (pi is fresh) but `staleTerminalDone` is still latched,
+the heartbeat clears the stale flags and calls
+`tryAbsorbHostSuccessor(knownCtx, "heartbeat-self-heal")`.
+
+No sends are re-queued. The path only resets in-memory flags and
+absorbs — no `scheduleContinuation` / `sendMessage` / etc. fires from
+the self-heal branch. That keeps the **no-blind-queue-storm**
+guarantee the contract named: transient misses don't cause the queue
+to spin; the heartbeat just unblocks future events from a fresh ctx.
+
+- **New ledger event** `stale_terminal_recovered_via_probe` records
+  every self-heal.
+- **New info notification** "glla: pi recovered after a stale-handle
+  terminal — self-healing in-memory state (no /reload needed)."
+  notifies the user when the recovery lands. Wrapped in try/catch so
+  a still-stale ctx doesn't break the recovery.
+- **New test** in `tests/stale-api-terminal.test.ts`: the self-heal
+  ledger event fires, the stale flags are cleared, the absorb is
+  attempted, and the heartbeat region contains NO `scheduleContinuation`
+  / `sendMessage` calls (the queue-storm guard).
+- **Suite**: 1105 pass / 1 skip / 0 fail across 100 files. `tsc
+  --noEmit` clean.
+- **Files touched**: `extensions/loops/goal.ts` (+18 LOC for the
+  self-heal block in `heartbeatTick`),
+  `tests/stale-api-terminal.test.ts` (+1 test, +24 LOC), `package.json`
+  (0.34.93 → 0.34.94), `CHANGELOG.md` (this entry),
+  `audit/HOST-SESSION-LOST-SELF-HEAL-2026-08-08.md` (new).
+
 ### 0.34.93 — Forbidden-models gate on main-model fallback + recovery-probe target resolution
 
 The auditor fallback chain (`resolveAuditorModel`, v0.34.72) consults
