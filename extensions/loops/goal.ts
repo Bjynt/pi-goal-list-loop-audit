@@ -222,6 +222,14 @@ import {
   ModelPickerComponent,
   type ModelPickItem,
 } from "../model-picker.js";
+import { consumeRecoveryResume } from "../goal-recovery.js"; // decomposition step 3 (v0.34.111)
+import {
+  createGoalRecovery,
+  isCompletionAuditRecoveryPending,
+  markCompletionAuditRecoveryPending,
+  type RecoveryDeps,
+  type RecoveryFlags,
+} from "../goal-recovery.js"; // decomposition step 3 (v0.34.111) — cluster C (completion-audit recovery)
 import {
   ConfirmDraftComponent,
 } from "../confirm-draft.js";
@@ -777,21 +785,7 @@ function emitIdInvalidation(ctx: ExtensionContext, oldId: string | null, newId: 
   });
 }
 
-/** v0.34.13: consume the sidecar marker on session restore. Single-use,
- * freshness-bounded — a stale marker from an abandoned recovery must not
- * surprise-resume a later session. */
-function consumeRecoveryResume(cwd: string): boolean {
-  try {
-    const p = path.join(piGlaDir(cwd), RECOVERY_RESUME_MARKER);
-    if (!fs.existsSync(p)) return false;
-    const raw = fs.readFileSync(p, "utf-8");
-    fs.unlinkSync(p);
-    const at = Date.parse((JSON.parse(raw) as { at?: string }).at ?? "");
-    return !Number.isNaN(at) && Date.now() - at < RECOVERY_RESUME_FRESH_MS;
-  } catch {
-    return false;
-  }
-}
+// consumeRecoveryResume moved to extensions/goal-recovery.ts (decomposition step 3, v0.34.111).
 
 /** TEST-ONLY hook (tests/harness): the stale flag is process-terminal in
  * production — only a pi restart clears it — so behavioral tests reset it
@@ -1490,8 +1484,7 @@ const EAGER_CONTINUATION_SETTLE_MS = Number(process.env.GLLA_EAGER_SETTLE_MS ?? 
 // v0.34.16: retain the old recovery marker for one compatibility window so
 // an in-flight v0.34.15 reload can still resume once. New recovery debt uses
 // the session lifecycle handoff below and never injects terminal keystrokes.
-const RECOVERY_RESUME_MARKER = "recovery-resume.json";
-const RECOVERY_RESUME_FRESH_MS = 300_000;
+// RECOVERY_RESUME_MARKER / RECOVERY_RESUME_FRESH_MS moved to extensions/goal-recovery.ts (decomposition step 3, v0.34.111).
 // v0.34.104 ([Image-#1] 2026-08-08 10:29 dracon-platform): a list item
 // completing and auto-advancing fires a continuation AT pi while pi is
 // still settling the completion acknowledgement. The v0.34.88
@@ -4201,53 +4194,14 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
   return pending;
 }
 
-function markCompletionAuditRecoveryPending(ctx: ExtensionContext, reason: string): boolean {
-  const goal = state.goal;
-  const claim = goal?.pendingCompletion;
-  if (!goal || goal.status !== "auditing" || !claim) {
-    // A legacy/corrupt in-memory audit can still hold the process latch even
-    // when its durable claim is absent. Fail closed for the MAIN as well.
-    if (goal?.status === "auditing") clearDetachedAuditRuntime();
-    return false;
-  }
-  const pending: PendingCompletion = {
-    ...claim,
-    phase: "recovery-pending",
-    recoveryAt: nowIso(),
-    recoveryReason: reason,
-  };
-  // Kill any child still owned by this process before releasing the durable
-  // claim. Its late result is rejected by the attempt/generation checks, and
-  // it must not keep the user-facing state looking like an active audit.
-  if (claim.attemptId) cancelDetachedGoalCompletionAuditor(ctx.cwd, claim.attemptId);
-  clearDetachedAuditRuntime();
-  updateGoal({
-    status: "paused",
-    pendingCompletion: pending,
-    pauseKind: "blocked",
-    pauseResumeAt: undefined,
-    pauseReason: `completion audit blocked — no verdict: ${reason}`,
-    pauseSuggestedAction: `The completion claim is stored and was not judged. Fix the auditor/session issue, then ${activeGoalSurfaceCommand("resume")} to start exactly one fresh audit.`,
-    pauseOptions: undefined,
-    pauseRecommended: undefined,
-  }, ctx);
-  appendLedger(ctx.cwd, "audit_recovery_pending", {
-    goalId: goal.id,
-    attemptId: claim.attemptId,
-    reason,
-    mainReleased: true,
-    verdict: "none",
-  });
-  return true;
-}
+// markCompletionAuditRecoveryPending moved to extensions/goal-recovery.ts (decomposition step 3, v0.34.111, cluster C).
 
 function isAuditorTimeoutError(error: string | undefined): boolean {
   return !!error && (/^Auditor exceeded its .* wall-clock bound/i.test(error) || /^Auditor stalled —/i.test(error));
 }
 
-function isCompletionAuditRecoveryPending(goal: Goal | null | undefined): boolean {
-  return !!goal?.pendingCompletion && goal.pendingCompletion.phase !== "running";
-}
+// isCompletionAuditRecoveryPending moved to extensions/goal-recovery.ts (decomposition step 3, v0.34.111, cluster C).
+// goal-commands.ts (decomposition step 2) imports it directly from there.
 
 const MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS = 5;
 /** v0.34.79 (note.md 112555): the FIRST auditor retry after an infra
@@ -7306,6 +7260,15 @@ const loopDeps: LoopDeps = {
 
 createGoalLoop(loopDeps);
 createGoalCommands(commandDeps);
+const recoveryFlags: RecoveryFlags = {};
+const recoveryDeps: RecoveryDeps = {
+  activeGoalSurfaceCommand,
+  cancelDetachedGoalCompletionAuditor,
+  clearDetachedAuditRuntime,
+  nowIso,
+  updateGoal,
+};
+createGoalRecovery(recoveryFlags, recoveryDeps);
 
 export default function (pi: ExtensionAPI): void {
   extensionApi = pi;
