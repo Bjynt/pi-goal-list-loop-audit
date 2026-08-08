@@ -168,13 +168,13 @@ test("v0.34.81: wiring — parse in core, resolve/refuse/cascade in goal.ts", ()
   // Explicit-pick refusal key
   assert.match(SRC, /appendLedger\(ctx\.cwd, "list_group_activation_refused", \{ goalId: target\.id, open \}\);/); // stays in goal.ts (activation path)
   // Scan-skip uses groupOpenChildren
-  assert.match(CMDS, /while \(scan < queue\.length && groupOpenChildren\(queue\[scan\]!\.id\) > 0\) scan\+\+;/);
+  assert.match(SRC, /while \(scan < queue\.length && groupOpenChildren\(queue\[scan\]!\.id\) > 0\) scan\+\+;/); // stays in goal.ts (activation path)
   // parentId carried onto the active goal
   assert.match(SRC, /if \(next\.parentId\) goal\.parentId = next\.parentId;/);
   // Nesting refused
-  assert.match(SRC, /nested subtask ".*" — one level only/);
+  assert.match(CMDS, /nested subtask ".*" — one level only/); // decomposition step 2: enqueue validation moved
   // Unresolved parent refused
-  assert.match(SRC, /unresolved parent ".*" for child/);
+  assert.match(CMDS, /unresolved parent ".*" for child/);
 });
 // =====================================================================
 // BEHAVIORAL TIER — drives the extension via MockPi + activate()
