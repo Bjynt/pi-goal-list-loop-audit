@@ -1,6 +1,35 @@
 # Changelog
 
 ## Unreleased
+### 0.34.104 — [Image-#1] list-stall settle window + completionSummary self-check
+
+Field report (dracon-platform 2026-08-08 10:29 — the user's
+"first we fix the problem" screenshot):
+
+1. **List-item stall after audit completion.** A list item completing
+   fires an auto-advance that dispatches a continuation to pi
+   immediately. Pi is still settling the completion acknowledgement
+   and doesn't start a turn within the v0.34.88 watchdog window
+   (30s + 60s retry). The new item is declared unacknowledged and
+   the queue is stuck for manual /list resume, even though pi was
+   about to start a turn on its own. Fix: a bounded
+   `LIST_COMPLETION_SETTLE_MS = 15s` window delays the FIRST
+   continuation dispatched from the list-complete cascade; any
+   agent activity during the window (`message_update`/`agent_start`/
+   `turn_start`/`before_agent_start`) cancels the deferred send so a
+   wake-up doesn't double-dispatch. Ledgers `list_completion_settle_armed`
+   / `_settle_pending` / `_settle_cleared` for forensics. Env override
+   `GLLA_LIST_COMPLETION_SETTLE_MS`.
+
+2. **"29/28 pass" cosmetic bug.** The agent's `completionSummary`
+   said "29/28 pass, 0 fail" — more tests passed than existed. The
+   plugin persisted it verbatim. Fix: `validateCompletionSummary`
+   scans for impossible counts (X/Y pass with X > Y, or "X tests,
+   Y passed" with Y > X), ledgers `completion_summary_impossible_count`,
+   and appends an honest `Counts appear inconsistent: X passed vs Y
+   total` note to the recap so the user + auditor see the discrepancy.
+   Clean input (X ≤ Y or no count) is returned untouched.
+
 ### 0.34.103 — GitHub #6: replace no longer silently cancels a wait goal's scheduled resume; resume answers archived goals
 
 Field report (GitHub issue #6, filed by the detached auditor 2026-08-08):
