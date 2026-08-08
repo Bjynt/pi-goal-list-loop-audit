@@ -21,6 +21,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
 const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
 const QUOTA = fs.readFileSync("extensions/quota-retry.ts", "utf-8");
 const SCHEMA = fs.readFileSync("schemas/goal.schema.json", "utf-8");
@@ -63,11 +64,11 @@ test("E3: send-retry re-arms counted, ledgered, escalated", () => {
   assert.match(SRC, /appendLedger\(ctx\.cwd, "rearm_no_turn_started", \{ streak/);
   // wired into both send paths' re-arm sites:
   assert.match(SRC, /accountSendRearm\(ctx, "continuation"\);/);
-  assert.match(SRC, /\} else accountSendRearm\(ctx, "loop"\);/); // v0.33.1: null-ctx probes + backs off
-  assert.match(SRC, /if \(probeExtensionApiStale\(\)\) return;\s*\n\s*loopRearmStreak\+\+;/); // v0.33.1
+  assert.match(LOOP, /\} else accountSendRearm\(ctx, "loop"\);/); // v0.33.1: null-ctx probes + backs off (moved to goal-loop.ts)
+  assert.match(LOOP, /if \(probeExtensionApiStale\(\)\) return;\s*\n\s*flags\.loopRearmStreak\+\+;/); // v0.33.1 (flag accessor re-spelling)
   // a landed send clears the storm:
   assert.match(SRC, /continuationRearmStreak = 0; continuationRearmSince = 0; \/\/ v0\.28\.5 \(E3\)/);
-  assert.match(SRC, /loopRearmStreak = 0; loopRearmSince = 0; \/\/ v0\.28\.5 \(E3\)/);
+  assert.match(LOOP, /flags\.loopRearmStreak = 0; flags\.loopRearmSince = 0; \/\/ v0\.28\.5 \(E3\)/); // flag accessor re-spelling
 });
 
 test("v0.28.29: busy-retry cadence backs off (no more flat 50ms spins)", () => {
@@ -77,7 +78,7 @@ test("v0.28.29: busy-retry cadence backs off (no more flat 50ms spins)", () => {
   assert.match(SRC, /if \(streak <= 12\) return 1_000;/);
   assert.match(SRC, /return 30_000;/);
   assert.match(SRC, /scheduleSessionTimeout\(\(\) => sendContinuation\(goalId\), sendRearmDelayMs\(continuationRearmStreak\)\)/);
-  assert.match(SRC, /scheduleSessionTimeout\(\(\) => sendLoopTurn\(\), sendRearmDelayMs\(loopRearmStreak\)\)/);
+  assert.match(LOOP, /scheduleSessionTimeout\(\(\) => sendLoopTurn\(\), sendRearmDelayMs\(flags\.loopRearmStreak\)\)/); // flag accessor re-spelling
 });
 
 test("v0.28.29: escalation is TIME-based and ACTIVITY-gated (busy ≠ wedged — the polis false positive)", () => {
@@ -135,7 +136,7 @@ test("v0.34.26: output-token-limit provider errors are classified as a determini
 test("v0.34.36: a loop whose continuation never starts is durably stopped and resumable", () => {
   assert.match(SRC, /if \(record\.kind === "loop" && state\.loop\?\.active\)/);
   assert.match(SRC, /stopReason: `stalled: continuation start acknowledgement timed out/);
-  assert.match(SRC, /!!r\?\.startsWith\("stalled:"\)/);
+  assert.match(LOOP, /!!r\?\.startsWith\("stalled:"\)/);
 });
 
 test("v0.34.51: stored-claim auditor retries enter the durable plan on ANY infra error", () => {
