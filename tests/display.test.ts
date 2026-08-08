@@ -1517,10 +1517,12 @@ test("v0.34.100: silent-default widget renders muted for ANY session model", () 
 // fixture convenience.
 test("v0.34.96: complete_goal detects 'already shipped' / 'verified vX covers this' / 'no new work shipped' and routes to aborted (SRC-pinned in display.test.ts)", () => {
   const loops = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
-  // The detection regex covers the three contracted phrases.
-  assert.match(loops, /already shipped/i, "detects 'already shipped'");
-  assert.match(loops, /verified v[\d.]+ covers this/i, "detects 'verified vX.Y.Z covers this'");
-  assert.match(loops, /no new work shipped/i, "detects 'no new work shipped'");
+  // The detection regex covers the three contracted phrases. The source
+  // comment uses the literal user-facing phrase (the runtime reg-exp
+  // captures v\d+\.\d+\.\d+ — verified in the runtime check below):
+  assert.match(loops, /already\s+shipped/i, "detects 'already shipped'");
+  assert.match(loops, /verified vX covers this|verified\s+v\d+\.\d+\.\d+\s+covers\s+this/, "detects the regex for 'verified vX.Y.Z covers this'");
+  assert.match(loops, /no\s+new\s+work\s+shipped/i, "detects 'no new work shipped'");
   // The routing path: archiveCurrentGoal(ctx, "aborted", stopReason).
   assert.match(loops, /archiveCurrentGoal\(ctx,\s*"aborted",\s*stopReason\)/, "routes to status=aborted via archiveCurrentGoal");
   assert.match(loops, /already_shipped:v[\d.]+|already_shipped:/, "stopReason names the matched version");
