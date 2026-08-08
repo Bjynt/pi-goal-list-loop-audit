@@ -1430,6 +1430,7 @@ test("v0.33.0: slim card — meter rounding guard, folded status segments, last-
   assert.match(loopLines[1]!, /^├─ ✓ read tiles\.ts \(8s\)/);
   assert.match(loopLines[2]!, /^└─ metricless \(no plateau\) · \/loop stop · \/loop refine/); // v0.33.2: /loop refine is a real verb now
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
   assert.match(SRC, /noteToolCall\(event\); \/\/ v0\.33\.0/);
   assert.match(SRC, /noteToolResult\(event\); \/\/ v0\.33\.0/);
 });
@@ -1441,7 +1442,7 @@ test("v0.33.1: audit-batch — sanitize, head fits width, last restored, flag li
   // sweep-F1: a rebound session can go terminal again.
   assert.match(SRC, /staleTerminalDone = false; \/\/ v0\.33\.1/);
   // sweep-F2: the loop path's null-ctx re-arm probes + backs off (was a flat 50ms spin).
-  assert.match(SRC, /if \(probeExtensionApiStale\(\)\) return;\s*\n\s*loopRearmStreak\+\+;/);
+  assert.match(LOOP, /if \(probeExtensionApiStale\(\)\) return;\s*\n\s*flags\.loopRearmStreak\+\+;/); // flag accessor re-spelling (decomposition step 2)
   // compact F1/F2 + sweep-F3: the compact debt/resync die with the goal/loop and on rebind.
   assert.match(SRC, /if \(!isSupervising\(\) && \(postCompactResumeOwed \|\| postCompactResyncPending\)\)/);
   assert.match(SRC, /postCompactResumeOwed = false; \/\/ v0\.33\.1: a compact from a previous session/);
@@ -1471,7 +1472,8 @@ test("v0.33.1: audit-batch — sanitize, head fits width, last restored, flag li
 });
 
 test("v0.33.2: loop proactiveness + respec machinery", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
+  const GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf-8"); // propose_loop_refine tool def stays in goal.ts
   // Reprieve names the top open finding, not just the count.
   assert.match(SRC, /topOpenAuditFinding\(ctx\.cwd\)/);
   assert.match(SRC, /Top open: \$\{topFinding\}/);
@@ -1484,8 +1486,8 @@ test("v0.33.2: loop proactiveness + respec machinery", () => {
   assert.match(SRC, /if \(sub === "refine" \|\| sub === "polish"\)/);
   assert.match(SRC, /state\.loop!\.refineHint = hint\.slice\(0, 300\);/);
   // propose_loop_refine carries specText/specAppend; the orchestrator owns the write.
-  assert.match(SRC, /specText: Type\.Optional/);
-  assert.match(SRC, /fs\.writeFileSync\(loop\.specFile/);
+  assert.match(GOAL, /specText: Type\.Optional/);
+  assert.match(GOAL, /fs\.writeFileSync\(loop\.specFile/);
   // Spec drift detection + checkbox progress emission (spec_item_progress is now emitted).
   assert.match(SRC, /appendLedger\(ctx\.cwd, "spec_updated", \{ via: "external"/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "spec_item_progress", \{ iteration: loop\.iteration, newlyChecked/);

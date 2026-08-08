@@ -35,13 +35,13 @@ test("goal.ts ensureAgentToolsActive applies toolOverrides.allow and .hide", () 
 });
 
 test("/glla tooloverride keyword routes to cmdToolOverride", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   assert.match(src, /if \(\/\^tooloverride\(\?:\\s\|\$\)\/\.test\(trimmed\)\) \{/);
   assert.match(src, /cmdToolOverride\(trimmed\.slice\("tooloverride"\.length\)\.trim\(\), ctx\)/);
 });
 
 test("cmdToolOverride supports allow / hide / unallow / unhide / set / unset / list", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   assert.match(src, /if \(action === "allow" \|\| action === "hide" \|\| action === "unallow" \|\| action === "unhide"\) \{/);
   assert.match(src, /if \(action === "set" \|\| action === "unset"\) \{/);
   assert.match(src, /action === "list" \|\| action === "show"/);
@@ -50,9 +50,9 @@ test("cmdToolOverride supports allow / hide / unallow / unhide / set / unset / l
 test("parseToolOverrideValue coerces booleans, numbers, JSON; else string", () => {
   // We import via dynamic eval of the source to avoid pulling in the
   // whole pi runtime (cmdToolOverride is unexported).
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   const fnSrc = src.match(/function parseToolOverrideValue[\s\S]+?\n\}/m);
-  assert.ok(fnSrc, "parseToolOverrideValue function found in goal.ts");
+  assert.ok(fnSrc, "parseToolOverrideValue function found in goal-commands.ts");
   // Spot-check the branches the function handles.
   assert.match(fnSrc[0]!, /trimmed === "true"/);
   assert.match(fnSrc[0]!, /trimmed === "false"/);
