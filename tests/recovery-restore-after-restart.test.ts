@@ -167,7 +167,7 @@ test("v0.34.63 — a lifecycle start with a DIFFERENT session id stays refused w
 });
 
 test("v0.34.63 — source guard: the barrier-completing resume gate is wired before the foreign-session return", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
   assert.match(SRC, /const barrierAwaitingLoadedSession = initialSessionLoadPending && lifecycleSignal;/);
   assert.match(SRC, /resumeCompletesLoad = barrierAwaitingLoadedSession/);
   assert.match(SRC, /if \(foreignRecordedSession && !hostLifecycleStart && !resumeCompletesLoad\) return;/);

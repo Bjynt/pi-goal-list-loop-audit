@@ -29,7 +29,7 @@ import {
 } from "../extensions/goal-loop-core.js";
 
 const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
-const GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const GOAL = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
 const DISPLAY = fs.readFileSync("extensions/goal-loop-display.ts", "utf-8");
 const SCHEMA = fs.readFileSync("schemas/goal.schema.json", "utf-8");
 

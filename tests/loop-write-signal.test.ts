@@ -12,7 +12,7 @@ import * as path from "node:path";
 
 import { isLoopWriteTool, LOOP_WRITE_TOOLS } from "../extensions/goal-loop-forever.ts";
 
-const goalSrc = fs.readFileSync(path.resolve("extensions", "loops", "goal.ts"), "utf-8");
+const goalSrc = fs.readFileSync(path.resolve("extensions", "loops", "goal-runtime.ts"), "utf-8");
 const loopSrc = fs.readFileSync(path.resolve("extensions", "goal-loop.ts"), "utf-8"); // decomposition step 2
 
 test("item 3: write/edit/multi_edit/write_file are the write-signal tools", () => {

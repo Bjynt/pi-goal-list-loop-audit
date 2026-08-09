@@ -117,7 +117,7 @@ test("takeAt: out of range returns null", () => {
 });
 
 test("v0.28.28: unsolicited enqueue (reviewer) does not auto-start the head unless autoResume is on", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
   const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   // junk-runner hydra: user cancelled a goal and the next reviewer-enqueued
   // item started itself (twice). Enqueue is not consent to start.
@@ -133,7 +133,7 @@ test("v0.28.28: unsolicited enqueue (reviewer) does not auto-start the head unle
 });
 
 test("v0.29.4: auto-accepted drafts START (supersedes the 0.28.28 autoResume hold)", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
   // User decision 2026-07-30: the held draft was "not desired behavior" —
   // autoAcceptDrafts is the pre-consent for in-session drafts; autoResume
   // now gates ONLY launch-time restore. The zombie-twin guard (0.29.1)
@@ -145,7 +145,7 @@ test("v0.29.4: auto-accepted drafts START (supersedes the 0.28.28 autoResume hol
 });
 
 test("v0.28.28: goal provenance — setGoal threads `via` into the record + goal_created ledger", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
   assert.match(SRC, /function setGoal\(goal: Goal, ctx: ExtensionContext, via = "user"\): void/);
   assert.match(SRC, /goal\.createdVia = via;/);
   assert.match(SRC, /"goal_created", \{ goalId: goal\.id, objective: goal\.objective, policy: goal\.policy, via \}/);

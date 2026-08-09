@@ -75,7 +75,7 @@ test("v0.34.0: audit templates demand the parallel fan-out shape (both)", () => 
 });
 
 test("v0.34.0: divergence bail — 3+ trailing regressions append a reassessment note", () => {
-  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  const g = fs.readFileSync(path.resolve("extensions/loops/goal-runtime.ts"), "utf-8");
   const gl = fs.readFileSync(path.resolve("extensions/goal-loop.ts"), "utf-8"); // decomposition step 2
   assert.match(gl, /let trailingRegressions = 0;/);
   assert.match(gl, /trailingRegressions >= 3/, "bail threshold");

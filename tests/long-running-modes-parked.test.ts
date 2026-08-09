@@ -14,7 +14,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import { resolveReviewerConfig, type ReviewerConfig } from "../extensions/reviewer.ts";
 
-const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const SRC = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
 const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
 const SETTINGS_SRC = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
 

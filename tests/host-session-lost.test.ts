@@ -129,7 +129,7 @@ test("a lifecycle shutdown suppresses the terminal entirely — no loss event", 
 // ── (d) source pins — the emission classifies; no hardcoded unknown ────
 
 test("source pin: the emission classifies the reason instead of hardcoding unknown", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
   assert.match(src, /reason: classifySessionHandleInvalidation\(\{/);
   assert.match(src, /sessionHandoffPending,/);
   assert.match(src, /mainModelRecoveryActive: mainModelRecoveryActive\(\),/);
@@ -137,7 +137,7 @@ test("source pin: the emission classifies the reason instead of hardcoding unkno
 });
 
 test("source pin: the classifier and its enum are exported", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
   assert.match(src, /export function classifySessionHandleInvalidation\(/);
   assert.match(src, /"session_shutdown" \| "provider_disconnect" \| "silent_handle_death"/);
 });

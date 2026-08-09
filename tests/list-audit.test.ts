@@ -21,7 +21,7 @@ import {
   parseAuditFindingsForFanout,
 } from "../extensions/goal-loop-forever.ts";
 
-const SRC = fs.readFileSync(new URL("../extensions/loops/goal.ts", import.meta.url), "utf-8");
+const SRC = fs.readFileSync(new URL("../extensions/loops/goal-runtime.ts", import.meta.url), "utf-8");
 const CMDS = fs.readFileSync(new URL("../extensions/goal-commands.ts", import.meta.url), "utf-8");
 const LOOP = fs.readFileSync(new URL("../extensions/goal-loop.ts", import.meta.url), "utf-8");
 

@@ -236,7 +236,7 @@ test("v0.34.54: settings after a fresh session_start — the table opens AND a r
 // ────────────────────────────────────────────────────────────────────
 
 test("v0.34.54: source — read-only surfaces are never in the mutating sets; the gates are the honest refusal, not silence", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
   const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2
   assert.ok(!LIST_MUTATING_SUBCOMMANDS.has("show") && !LIST_MUTATING_SUBCOMMANDS.has("depth"), "show/depth stay read-only for /list");
   assert.ok(!SETTINGS_MUTATING_ACTIONS.has("status") && !SETTINGS_MUTATING_ACTIONS.has("log") && !SETTINGS_MUTATING_ACTIONS.has("stats") && !SETTINGS_MUTATING_ACTIONS.has("audits"), "read-only /glla verbs stay ungated");

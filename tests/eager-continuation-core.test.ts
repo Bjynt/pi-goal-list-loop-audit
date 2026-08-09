@@ -19,7 +19,7 @@ import {
 } from "../extensions/goal-loop-core.ts";
 
 const goalSrc = fs.readFileSync(
-  path.resolve("extensions", "loops", "goal.ts"),
+  path.resolve("extensions", "loops", "goal-runtime.ts"),
   "utf-8",
 );
 

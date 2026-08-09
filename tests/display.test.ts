@@ -1329,11 +1329,11 @@ test("v0.34.102: wait pause WITHOUT mainModelRecovery keeps the uniform auto-ret
   const w = buildWidgetLines(state as never)!;
   assert.ok(w.some((l) => l.includes("auto-retrying")), "plain wait keeps the uniform countdown line");
 });
-  const goalSrc = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const goalSrc = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
 test("v0.34.64: 24h horizon holds render as a paused card with the suggested action; no manual-resume wording", () => {
   // v0.34.58: an upstream reset hint beyond the 5h probe budget falls back to
   // the bounded cadence; it no longer produces a quota-only manual hold.
-  const goalSrc = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const goalSrc = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
   assert.ok(!goalSrc.includes("mainModelHintExceedsProbeBudget"), "quota-only parking gate gone from goal.ts");
   assert.ok(!goalSrc.includes("provider supplied a reset beyond"), "over-budget hint hold reason gone");
 
@@ -1430,14 +1430,14 @@ test("v0.33.0: slim card — meter rounding guard, folded status segments, last-
   assert.match(loopLines[0]!, /^∞ endless-td audit · iter 12\/100 ▰▱▱▱▱ · /);
   assert.match(loopLines[1]!, /^├─ ✓ read tiles\.ts \(8s\)/);
   assert.match(loopLines[2]!, /^└─ metricless \(no plateau\) · \/loop stop · \/loop refine/); // v0.33.2: /loop refine is a real verb now
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
 const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
   assert.match(SRC, /noteToolCall\(event\); \/\/ v0\.33\.0/);
   assert.match(SRC, /noteToolResult\(event\); \/\/ v0\.33\.0/);
 });
 
 test("v0.33.1: audit-batch — sanitize, head fits width, last restored, flag lifecycle", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
   const CONT = fs.readFileSync("extensions/goal-continuation.ts", "utf-8"); // decomposition step 5 (v0.34.113)
   const HB = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
   // A1: tool args are control-char-stripped before reaching a widget line.
@@ -1476,7 +1476,7 @@ test("v0.33.1: audit-batch — sanitize, head fits width, last restored, flag li
 
 test("v0.33.2: loop proactiveness + respec machinery", () => {
   const SRC = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
-  const GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf-8"); // propose_loop_refine tool def stays in goal.ts
+  const GOAL = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8"); // propose_loop_refine tool def stays in goal.ts
   // Reprieve names the top open finding, not just the count.
   assert.match(SRC, /topOpenAuditFinding\(ctx\.cwd\)/);
   assert.match(SRC, /Top open: \$\{topFinding\}/);
@@ -1531,7 +1531,7 @@ test("v0.34.100: auditorSilent default is on in settings (every session model)",
 });
 
 test("v0.34.100: auditorSilent plumbing threads the loaded setting through extras", () => {
-  const loops = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const loops = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
   // extras includes auditorSilent from loadSettings
   assert.match(loops, /auditorSilent: loadSettings\(ctx\.cwd\)\.auditorSilent !== false/);
   // display.ts consumes extras.auditorSilent
@@ -1577,7 +1577,7 @@ test("v0.34.100: silent-default widget renders muted for ANY session model", () 
 // complete_goal tool) is in tests/revision-bound-audit.test.ts for
 // fixture convenience.
 test("v0.34.96: complete_goal detects 'already shipped' / 'verified vX covers this' / 'no new work shipped' and routes to aborted (SRC-pinned in display.test.ts)", () => {
-  const loops = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const loops = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
   // The detection regex covers the three contracted phrases. The source
   // comment uses the literal user-facing phrase (the runtime reg-exp
   // captures v\d+\.\d+\.\d+ — verified in the runtime check below):
