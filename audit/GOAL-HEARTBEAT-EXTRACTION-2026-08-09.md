@@ -106,7 +106,8 @@ NOT weakened. Affected files:
 - `bun test`: 1146 pass / 1 skip / 0 fail, 1147 tests across 103 files
   (run twice).
 - `npx tsc --noEmit`: clean.
-- Fresh-context rehearsal: PASS (8/8 checks, see rehearsal agent output).
+- Fresh-context rehearsal: PASS (4/4 checks: tsc, full suite, import
+  direction, heartbeatTick migration — see rehearsal agent output).
 - Contract checks: moved fn names absent from goal.ts; no
   `from "../loops/goal"` import in goal-heartbeat.ts; createGoalHeartbeat
   wired in both files; ledger event names unchanged.
