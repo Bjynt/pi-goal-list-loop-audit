@@ -107,3 +107,7 @@ tasks*.json
 !state/events/*.jsonl
 # --- END DRACON MANAGED BLOCK ---
 .research/
+
+# pi-goal-list-loop-audit runtime state — out of git per v0.34.115 release
+# contract (the .pi-glla tree is per-session runtime, not source-of-truth).
+.pi-glla/
