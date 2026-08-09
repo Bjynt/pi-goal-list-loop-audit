@@ -35,7 +35,7 @@ npx tsc --noEmit
   TypeScript: No errors found
 
 bun test
-  1208 pass / 1 skip / 0 fail across 107 files
+  1209 pass / 1 skip / 0 fail across 107 files
 ```
 
 The existing note triage, external-review evidence, stale-session limitation,
