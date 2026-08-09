@@ -131,6 +131,41 @@ import {
   type ContinuationDispatch,
 } from "../goal-loop-dispatch.js";
 import {
+  createGoalContinuation,
+  scheduleContinuation,
+  sendContinuation,
+  sendStallEscalation,
+  sendLengthContinue,
+  dispatchStartAcknowledged,
+  dispatchAccepted,
+  dispatchFailed,
+  dispatchPrepare,
+  releaseContinuationDispatchStandDown,
+  clearContinuationTimer,
+  clearContinuationStartWatchdog,
+  clearQueueStuckProbe,
+  accountSendRearm,
+  sendRearmDelayMs,
+  armQueueStuckProbe,
+  buildPostCompactResync,
+  continuationTimerPending,
+  continuationTimerRef,
+  continuationStartTimerRef,
+  pendingContinuationDispatchRef,
+  setPendingContinuationDispatchRef,
+  continuationDispatchStoodDownRef,
+  setContinuationDispatchStoodDownRef,
+  lastContinuationSentAtRef,
+  setLastContinuationSentAtRef,
+  lastContinuationSentPayloadRef,
+  setLastContinuationSentPayloadRef,
+  setContinuationRearmStreak,
+  setContinuationRearmSince,
+  type ContinuationFlags,
+  type ContinuationDeps,
+} from "../goal-continuation.js";
+export { __testOnlySetContinuationStartTimeout, __testOnlySetContinuationRetryBackoff } from "../goal-continuation.js";
+import {
   LENGTH_CONTINUE_MAX,
   LENGTH_CONTINUE_TEXT,
   isContextStarvedLengthStop,
@@ -1424,7 +1459,7 @@ let heartbeatTimer: NodeJS.Timeout | null = null;
 // v0.34.11/v0.34.24: compatibility alias for the old unanswered-send
 // watchdog. The bounded dispatch-start timer is now the primary proof path;
 // this value remains named for older ledger/tests and fallback diagnostics.
-const CONTINUATION_UNANSWERED_MS = CONTINUATION_START_TIMEOUT_MS;
+const CONTINUATION_UNANSWERED_MS = Number(process.env.GLLA_CONTINUATION_START_TIMEOUT_MS ?? 30_000);
 const CONTINUATION_UNANSWERED_THROTTLE_MS = 300_000;
 // v0.34.12: eager-continuation settle delay. Hellhunter 2026-08-01 (post-
 // restart): every turn cycle paid a 60s heartbeat tax because the eager
@@ -1572,7 +1607,7 @@ function displayActivityFor(ctx: ExtensionContext): {
   const noTurnYet = !telemetry
     && !hasRealActivity
     && (goal.usage?.tokensUsed ?? 0) === 0
-    && pendingContinuationDispatch === null;
+    && pendingContinuationDispatchRef() === null;
   if (noTurnYet) return { activity: "awaiting-first-turn" };
   let idle = false;
   let pending = false;
@@ -1584,7 +1619,7 @@ function displayActivityFor(ctx: ExtensionContext): {
     // active marker, but do not animate it.
     return { activity: "active" };
   }
-  const scheduled = continuationTimer !== null || pendingContinuationDispatch !== null || continuationDispatchStoodDown;
+  const scheduled = continuationTimerRef() !== null || pendingContinuationDispatchRef() !== null || continuationDispatchStoodDownRef();
   const lastActivityAt = lastRealActivityAt > 0
     && (!Number.isFinite(goalStartedAt) || lastRealActivityAt >= goalStartedAt)
     ? lastRealActivityAt
@@ -1798,12 +1833,6 @@ let consecutiveAbortIterations = 0;
 // an explicit schedule (resume/activate/next turn) clears it.
 let abortedStandDown = false;
 
-// =================================================================
-// Helpers
-// =================================================================
-
-}
-
 function scheduleSessionTimeout(callback: () => void, delayMs: number): NodeJS.Timeout {
   const generation = sessionGeneration;
   let timer: NodeJS.Timeout;
@@ -1832,7 +1861,7 @@ function clearSessionOwnedTimers(): void {
   clearContinuationTimer();
   clearContinuationStartWatchdog();
   clearLoopTimer();
-  if (queueStuckProbe) { clearTimeout(queueStuckProbe); queueStuckProbe = null; }
+  clearQueueStuckProbe();
   if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
   if (uiTicker) { clearInterval(uiTicker); uiTicker = null; }
   clearMainModelRecoveryTimer();
@@ -5407,8 +5436,8 @@ const commandFlags: CommandFlags = {
   set consecutiveAbortIterations(v) { consecutiveAbortIterations = v; },
   get consecutiveErrorIterations() { return consecutiveErrorIterations; },
   set consecutiveErrorIterations(v) { consecutiveErrorIterations = v; },
-  get continuationDispatchStoodDown() { return continuationDispatchStoodDown; },
-  set continuationDispatchStoodDown(v) { continuationDispatchStoodDown = v; },
+  get continuationDispatchStoodDown() { return continuationDispatchStoodDownRef(); },
+  set continuationDispatchStoodDown(v) { setContinuationDispatchStoodDownRef(v); },
   get extensionApi() { return extensionApi; },
   set extensionApi(v) { extensionApi = v; },
   get iterationCounter() { return iterationCounter; },
@@ -5434,14 +5463,14 @@ const loopFlags: LoopFlags = {
   set sessionHandoffPending(v) { sessionHandoffPending = v; },
   get initialSessionLoadPending() { return initialSessionLoadPending; },
   set initialSessionLoadPending(v) { initialSessionLoadPending = v; },
-  get pendingContinuationDispatch() { return pendingContinuationDispatch; },
-  set pendingContinuationDispatch(v) { pendingContinuationDispatch = v; },
-  get continuationDispatchStoodDown() { return continuationDispatchStoodDown; },
-  set continuationDispatchStoodDown(v) { continuationDispatchStoodDown = v; },
-  get lastContinuationSentAt() { return lastContinuationSentAt; },
-  set lastContinuationSentAt(v) { lastContinuationSentAt = v; },
-  get lastContinuationSentPayload() { return lastContinuationSentPayload; },
-  set lastContinuationSentPayload(v) { lastContinuationSentPayload = v; },
+  get pendingContinuationDispatch() { return pendingContinuationDispatchRef(); },
+  set pendingContinuationDispatch(v) { setPendingContinuationDispatchRef(v); },
+  get continuationDispatchStoodDown() { return continuationDispatchStoodDownRef(); },
+  set continuationDispatchStoodDown(v) { setContinuationDispatchStoodDownRef(v); },
+  get lastContinuationSentAt() { return lastContinuationSentAtRef(); },
+  set lastContinuationSentAt(v) { setLastContinuationSentAtRef(v); },
+  get lastContinuationSentPayload() { return lastContinuationSentPayloadRef(); },
+  set lastContinuationSentPayload(v) { setLastContinuationSentPayloadRef(v); },
   get loopRearmSince() { return loopRearmSince; },
   set loopRearmSince(v) { loopRearmSince = v; },
   get loopRearmStreak() { return loopRearmStreak; },
@@ -5529,6 +5558,62 @@ const loopDeps: LoopDeps = {
   activeGoalSurfaceCommand,
 };
 
+
+// decomposition step 5 (v0.34.113): the continuation cluster (schedule/send,
+// dispatch sidecar, rearm accounting, queue-stuck probe, prompt assembly)
+// lives in goal-continuation.js — goal.ts owns the flags, observes them via
+// accessors. Timer/dispatch/rearm state stays in goal-continuation.js; goal.ts
+// reads it only through the exported ref accessors (invariant #3).
+const continuationFlags: ContinuationFlags = {
+  get sessionGeneration() { return sessionGeneration; },
+  get sessionHandoffPending() { return sessionHandoffPending; },
+  get initialSessionLoadPending() { return initialSessionLoadPending; },
+  get extensionApiStale() { return extensionApiStale; },
+  get staleTerminalDone() { return staleTerminalDone; },
+  get zombieStoodDown() { return zombieStoodDown; },
+  get extensionApi() { return extensionApi; },
+  get postCompletionSettleUntil() { return postCompletionSettleUntil; },
+  set postCompletionSettleUntil(v) { postCompletionSettleUntil = v; },
+  get postCompactResyncPending() { return postCompactResyncPending; },
+  set postCompactResyncPending(v) { postCompactResyncPending = v; },
+  get abortedStandDown() { return abortedStandDown; },
+  set abortedStandDown(v) { abortedStandDown = v; },
+  get lastCompactionAt() { return lastCompactionAt; },
+  get lastActivityAt() { return lastActivityAt; },
+  get lastRealActivityAt() { return lastRealActivityAt; },
+  get loopRearmStreak() { return loopRearmStreak; },
+  set loopRearmStreak(v) { loopRearmStreak = v; },
+  get loopRearmSince() { return loopRearmSince; },
+  set loopRearmSince(v) { loopRearmSince = v; },
+  get loopRearmMilestone() { return loopRearmMilestone; },
+  set loopRearmMilestone(v) { loopRearmMilestone = v; },
+  get completionAuditInFlight() { return completionAuditInFlight; },
+  get lastLongLivedFailureAt() { return lastLongLivedFailureAt; },
+};
+const continuationDeps: ContinuationDeps = {
+  instanceId,
+  GOAL_EVENT_ENTRY,
+  LIST_COMPLETION_SETTLE_MS,
+  persistState,
+  updateGoal,
+  refreshUI,
+  notifyExternal,
+  noteActivity,
+  rememberCtx,
+  freshCtx,
+  freshCtxForGeneration,
+  probeExtensionApiStale,
+  goStaleTerminal,
+  isForeignCtx,
+  sessionManagerId,
+  isActionableGoal,
+  isSupervising,
+  goalNoun,
+  activeGoalSurfaceCommand,
+  scheduleSessionTimeout,
+};
+createGoalContinuation(continuationFlags, continuationDeps);
+
 createGoalLoop(loopDeps);
 createGoalCommands(commandDeps);
 const recoveryFlags: RecoveryFlags = {
@@ -5552,8 +5637,8 @@ const recoveryFlags: RecoveryFlags = {
   set extensionApi(v) { extensionApi = v; },
   get extensionApiStale() { return extensionApiStale; },
   set extensionApiStale(v) { extensionApiStale = v; },
-  get continuationDispatchStoodDown() { return continuationDispatchStoodDown; },
-  set continuationDispatchStoodDown(v) { continuationDispatchStoodDown = v; },
+  get continuationDispatchStoodDown() { return continuationDispatchStoodDownRef(); },
+  set continuationDispatchStoodDown(v) { setContinuationDispatchStoodDownRef(v); },
   get lastLongLivedFailureAt() { return lastLongLivedFailureAt; },
   set lastLongLivedFailureAt(v) { lastLongLivedFailureAt = v; },
 };
@@ -5589,17 +5674,17 @@ const heartbeatFlags: HeartbeatFlags = {
   get sessionHandoffPending() { return sessionHandoffPending; },
   set sessionHandoffPending(v) { sessionHandoffPending = v; },
   get compactionGraceUntil() { return compactionGraceUntil; },
-  get continuationDispatchStoodDown() { return continuationDispatchStoodDown; },
-  get pendingContinuationDispatch() { return pendingContinuationDispatch; },
+  get continuationDispatchStoodDown() { return continuationDispatchStoodDownRef(); },
+  get pendingContinuationDispatch() { return pendingContinuationDispatchRef(); },
   get postCompactResumeOwed() { return postCompactResumeOwed; },
   set postCompactResumeOwed(v) { postCompactResumeOwed = v; },
   get postCompactResyncPending() { return postCompactResyncPending; },
   set postCompactResyncPending(v) { postCompactResyncPending = v; },
   get abortedStandDown() { return abortedStandDown; },
-  get continuationTimer() { return continuationTimer; },
-  get continuationStartTimer() { return continuationStartTimer; },
+  get continuationTimer() { return continuationTimerRef(); },
+  get continuationStartTimer() { return continuationStartTimerRef(); },
   get lastStreamActivityAt() { return lastStreamActivityAt; },
-  get lastContinuationSentAt() { return lastContinuationSentAt; },
+  get lastContinuationSentAt() { return lastContinuationSentAtRef(); },
   get lastRealActivityAt() { return lastRealActivityAt; },
   get consecutiveStalls() { return consecutiveStalls; },
   set consecutiveStalls(v) { consecutiveStalls = v; },
@@ -5798,7 +5883,7 @@ export default function (pi: ExtensionAPI): void {
     // v0.28.24: a compaction is LEGITIMATE busy time — reset the send-rearm
     // storm streaks (π-web nearly escalated a "send-retry storm" pause during
     // a 3.5-minute compact) and open the post-compaction stall grace.
-    continuationRearmStreak = 0; continuationRearmSince = 0;
+    setContinuationRearmStreak(0); setContinuationRearmSince(0);
     loopRearmStreak = 0; loopRearmSince = 0;
     compactionGraceUntil = Date.now() + COMPACTION_GRACE_MS;
     lastCompactionAt = Date.now();
@@ -5835,7 +5920,7 @@ export default function (pi: ExtensionAPI): void {
       const c = freshCtx();
       if (!c) return;
       try {
-        if (c.isIdle() && !c.hasPendingMessages() && continuationTimer === null && !loopTimerPending() && isSupervising() && !abortedStandDown) {
+        if (c.isIdle() && !c.hasPendingMessages() && !continuationTimerPending() && !loopTimerPending() && isSupervising() && !abortedStandDown) {
           appendLedger(c.cwd, "compaction_refire", {});
           if (isLoopActive()) scheduleLoopTick(c);
           else scheduleContinuation(c, true);
@@ -5856,7 +5941,7 @@ export default function (pi: ExtensionAPI): void {
       const c = freshCtx();
       if (!c) return;
       try {
-        if (c.isIdle() && !c.hasPendingMessages() && continuationTimer === null && !loopTimerPending() && isSupervising() && !abortedStandDown) {
+        if (c.isIdle() && !c.hasPendingMessages() && !continuationTimerPending() && !loopTimerPending() && isSupervising() && !abortedStandDown) {
           appendLedger(c.cwd, "compaction_grace_refire", {});
           if (isLoopActive()) scheduleLoopTick(c);
           else scheduleContinuation(c, true);
@@ -6079,7 +6164,7 @@ export default function (pi: ExtensionAPI): void {
     clearMainModelRecoveryTimer();
     mainModelAbortForRecovery = false;
     lastMainModelFailure = null;
-    continuationDispatchStoodDown = false;
+    setContinuationDispatchStoodDownRef(false);
     clearContinuationStartWatchdog();
     const recoveredDispatch = readDispatchRecord(ctx.cwd);
     if (recoveredDispatch) {
@@ -6876,7 +6961,7 @@ export default function (pi: ExtensionAPI): void {
     if (mainModelSwitchInFlight || !state.mainModelRecovery) return;
     clearMainModelRecoveryTimer();
     state.mainModelRecovery = undefined;
-    continuationDispatchStoodDown = false;
+    setContinuationDispatchStoodDownRef(false);
     appendLedger(ctx.cwd, "main_model_recovery_cancelled", { via: "manual-model-select", model: modelRef(ctx.model) });
     persistState(ctx);
     ctx.ui.notify("Manual model selection cancelled the automatic main-model recovery cycle. Resume the goal when ready.", "info");
