@@ -1438,6 +1438,7 @@ const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
 
 test("v0.33.1: audit-batch — sanitize, head fits width, last restored, flag lifecycle", () => {
   const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const HB = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
   // A1: tool args are control-char-stripped before reaching a widget line.
   assert.match(SRC, /\[\\x00-\\x1f\\x7f-\\x9f\]\/g/);
   // sweep-F1: a rebound session can go terminal again.
@@ -1445,7 +1446,7 @@ test("v0.33.1: audit-batch — sanitize, head fits width, last restored, flag li
   // sweep-F2: the loop path's null-ctx re-arm probes + backs off (was a flat 50ms spin).
   assert.match(LOOP, /if \(probeExtensionApiStale\(\)\) return;\s*\n\s*flags\.loopRearmStreak\+\+;/); // flag accessor re-spelling (decomposition step 2)
   // compact F1/F2 + sweep-F3: the compact debt/resync die with the goal/loop and on rebind.
-  assert.match(SRC, /if \(!isSupervising\(\) && \(postCompactResumeOwed \|\| postCompactResyncPending\)\)/);
+  assert.match(HB, /if \(!isSupervising\(\) && \(flags\.postCompactResumeOwed \|\| flags\.postCompactResyncPending\)\)/);
   assert.match(SRC, /postCompactResumeOwed = false; \/\/ v0\.33\.1: a compact from a previous session/);
   // compact-F3: builder throws are contained.
   assert.match(SRC, /try \{ resync = buildPostCompactResync\(\); \} catch/);
