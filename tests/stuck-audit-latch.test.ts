@@ -26,6 +26,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const HB = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 
 test("Fix A: the apply gate defers + parks instead of silently dropping a completed verdict", () => {
   // The two silent returns became one guarded path:
@@ -38,16 +39,16 @@ test("Fix A: the apply gate defers + parks instead of silently dropping a comple
 });
 
 test("Fix B: the stale-latch stranded park runs BEFORE the extensionApiStale early return", () => {
-  const staleBranch = SRC.indexOf("if (extensionApiStale || probeExtensionApiStaleRaw()) {");
-  const parked = SRC.indexOf("stranded_audit_recovered");
+  const staleBranch = HB.indexOf("if (flags.extensionApiStale || probeExtensionApiStaleRaw()) {");
+  const parked = HB.indexOf("stranded_audit_recovered");
   assert.ok(staleBranch > 0 && parked > 0, "both branches exist");
   assert.ok(parked < staleBranch, "the stale-latch park is ordered BEFORE the stale probe branch — the backstop is reachable while latched");
-  assert.match(SRC, /via: "stale-latch"/, "the park is attributed to the stale latch");
-  assert.match(SRC, /markCompletionAuditRecoveryPending\(knownCtx, "stale-latch-recovery"\)/, "the park uses the kept last context");
+  assert.match(HB, /via: "stale-latch"/, "the park is attributed to the stale latch");
+  assert.match(HB, /markCompletionAuditRecoveryPending\(knownCtx, "stale-latch-recovery"\)/, "the park uses the kept last context");
   // A heartbeat must never launch another worker — only the park. The
   // pre-branch block (between the park and the stale probe branch) contains
   // no dispatch call:
-  const between = SRC.slice(parked, staleBranch);
+  const between = HB.slice(parked, staleBranch);
   assert.ok(!between.includes("retryStoredCompletionAudit"), "no worker relaunch from the heartbeat pre-branch");
   assert.ok(between.includes("return;"), "the park returns — the stale branch is skipped this tick");
 });

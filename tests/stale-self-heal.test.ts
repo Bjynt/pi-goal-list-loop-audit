@@ -35,6 +35,7 @@ import {
 } from "../extensions/goal-heartbeat.js";
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const HB = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 
 const pi = new MockPi();
 activate(pi.api);
@@ -91,10 +92,10 @@ afterEach(() => {
 // ---------------------------------------------------------------- source
 
 test("v0.34.62 — debounce + self-heal wiring (source guards)", () => {
-  assert.match(SRC, /const HEARTBEAT_STALE_DEBOUNCE = 3;/);
+  assert.match(HB, /const HEARTBEAT_STALE_DEBOUNCE = 3;/);
   assert.match(SRC, /function probeExtensionApiStaleRaw\(\): boolean/);
-  assert.match(SRC, /heartbeatStaleStreak\+\+/);
-  assert.match(SRC, /if \(heartbeatStaleStreak < heartbeatStaleDebounce\) return;/);
+  assert.match(HB, /flags\.heartbeatStaleStreak\+\+/);
+  assert.match(HB, /if \(flags\.heartbeatStaleStreak < heartbeatStaleDebounce\) return;/);
   assert.match(SRC, /function selfHealStaleSameSession\(ctx: ExtensionContext\): boolean/);
   // self-heal runs BEFORE the stale gates inside rememberCtx, and before
   // successor absorption (they are mutually exclusive: heal = same session,

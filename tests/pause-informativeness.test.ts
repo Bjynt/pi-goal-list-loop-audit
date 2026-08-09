@@ -66,6 +66,7 @@ test("pause_goal tool notification carries the FULL reason AND suggested action"
 });
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const HB = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
 
 test("pause_goal tool: structured kind/options/recommended/resumeAt persist to the goal (v0.28.22)", () => {
@@ -120,7 +121,7 @@ test("v0.28.30: pause/abort notifies name the policy (List item vs Goal) via goa
   const occurrences = src.split("${goalNoun()}").length - 1;
   assert.ok(occurrences >= 10, `goalNoun used across the notify surface (${occurrences} sites)`);
   assert.match(cmds, /`\$\{goalNoun\(\)\} aborted\./);
-  assert.match(src, /`\$\{goalNoun\(\)\} appears wedged/);
+  assert.match(HB, /`\$\{goalNoun\(\)\} appears wedged/);
 });
 
 // v0.34.98: paused-without-draft / decision surface. When the pause is

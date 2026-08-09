@@ -20,6 +20,7 @@ import {
 import { classifyFindingText, extractFindings } from "../extensions/reviewer.ts";
 
 const SRC_GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const HB = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 
 const BASE = {
   supervising: true,
@@ -49,16 +50,16 @@ test("threshold is 3 minutes (post-compaction settle is 2s; legit queue latency 
 });
 
 test("heartbeat wiring: idle/pending split, watchdog branch, ledger event, wedge uses !idle, shared escalation", () => {
-  assert.match(SRC_GOAL, /idle = ctx\.isIdle\(\);\s*\n\s*pending = ctx\.hasPendingMessages\(\);/);
-  assert.match(SRC_GOAL, /shouldFirePendingLatchWatchdog\(\{/);
-  assert.match(SRC_GOAL, /appendLedger\(ctx\.cwd, "pending_latch_stuck", \{ consecutiveStalls, silentMs: latchSilentMs \}\)/);
-  assert.match(SRC_GOAL, /sessionBusy: !idle,/, "wedge alert must not fire on latch-pending (it is not a hung command)");
+  assert.match(HB, /idle = ctx\.isIdle\(\);\s*\n\s*pending = ctx\.hasPendingMessages\(\);/);
+  assert.match(HB, /shouldFirePendingLatchWatchdog\(\{/);
+  assert.match(HB, /appendLedger\(ctx\.cwd, "pending_latch_stuck", \{ consecutiveStalls: flags\.consecutiveStalls, silentMs: latchSilentMs \}\)/);
+  assert.match(HB, /sessionBusy: !idle,/, "wedge alert must not fire on latch-pending (it is not a hung command)");
   assert.match(SRC_GOAL, /function escalateStallNow\(ctx: ExtensionContext, threshold: number\): boolean/);
   // Both stall paths share the escalation helper:
-  const calls = SRC_GOAL.match(/if \(escalateStallNow\(ctx, stallEscalation\)\) return;/g) ?? [];
+  const calls = HB.match(/if \(escalateStallNow\(ctx, stallEscalation\)\) return;/g) ?? [];
   assert.equal(calls.length, 2, "refire path + latch path both escalate through the helper");
   // The latch path NEVER re-sends (hegemon lesson: 619 sends, 0 turns):
-  const latchBlock = SRC_GOAL.slice(SRC_GOAL.indexOf("shouldFirePendingLatchWatchdog({"), SRC_GOAL.indexOf("const wedgeMinutes"));
+  const latchBlock = HB.slice(HB.indexOf("shouldFirePendingLatchWatchdog({"), HB.indexOf("const wedgeMinutes"));
   assert.ok(!latchBlock.includes("scheduleContinuation") && !latchBlock.includes("scheduleLoopTick"), "latch path must not re-send");
 });
 

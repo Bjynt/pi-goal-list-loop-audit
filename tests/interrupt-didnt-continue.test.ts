@@ -105,7 +105,8 @@ test("behavior preserved: a GENUINE orphaned audit still parks with the same mes
   // The stranded-audit recovery (heartbeat) must keep existing — it is the
   // correct backstop for real orphans (process death without recovery).
   const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
-  assert.match(src, /"completion audit interrupted — no verdict"/);
-  assert.match(src, /"stranded_audit_recovered"/);
+  const hb = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
+  assert.match(hb, /"completion audit interrupted — no verdict"/);
+  assert.match(hb, /"stranded_audit_recovered"/);
   assert.match(src, /"stale_revision_refused"/);
 });

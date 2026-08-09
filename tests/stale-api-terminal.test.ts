@@ -21,6 +21,7 @@ import * as fs from "node:fs";
 import { isStaleApiError } from "../extensions/goal-loop-core.ts";
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const HB = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
 const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
 
@@ -75,7 +76,7 @@ test("v0.29.11 — heartbeat PROBES staleness before burning stall refires", () 
   // (HEARTBEAT_STALE_DEBOUNCE) — a single transient probe failure must not
   // park a live session (hegemon 2026-08-06); consecutive failures still
   // go terminal before any stall refire can burn.
-  assert.match(SRC, /const knownCtx = lastCtx;[\s\S]*if \(extensionApiStale \|\| probeExtensionApiStaleRaw\(\)\) \{[\s\S]*if \(knownCtx && !absorbStaleIfSuperseded\(knownCtx\)\) goStaleTerminal\(knownCtx, "heartbeat probe"\);/);
+  assert.match(HB, /const knownCtx = flags\.lastCtx;[\s\S]*if \(flags\.extensionApiStale \|\| probeExtensionApiStaleRaw\(\)\) \{[\s\S]*if \(knownCtx && !absorbStaleIfSuperseded\(knownCtx\)\) goStaleTerminal\(knownCtx, "heartbeat probe"\);/);
 });
 
 test("v0.30.0 — rebind-first survival: session_shutdown attribution, session_start rebind, zombie stand-down", () => {
