@@ -870,10 +870,6 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
   }
 
   if (sub === "start") {
-    if (state.goal && state.goal.status === "active") {
-      ctx.ui.notify(`A goal is active — ${activeGoalSurfaceCommand("cancel")} or ${activeGoalSurfaceCommand("pause")} it before starting a loop.`, "warning");
-      return;
-    }
     if (isLoopActive()) {
       ctx.ui.notify("A loop is already active. /loop stop first.", "warning");
       return;
@@ -984,10 +980,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     // plateau stop is the termination — no fixes landing for the window =
     // the well is dry. User typed the command = the act (same auto-start
     // rule as respec).
-    if (state.goal && state.goal.status === "active") {
-      ctx.ui.notify(`A goal is active — ${activeGoalSurfaceCommand("cancel")} or ${activeGoalSurfaceCommand("pause")} it before starting a loop.`, "warning");
-      return;
-    }
+    // v0.35.0: activation below asks before replacing any live objective.
     // v0.31.1: a paused/active one-shot audit goal + this loop = two stacked
     // audit initiatives (junk-runner 2026-07-31: the held one-shot read as
     // "stalled" for 8h while the loop did all the work — the agent conflated
@@ -1026,10 +1019,6 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     // Same auto-start path as /loop start (the user typed the command —
     // that IS the act); metricless + unbounded by design. No limit-nagging:
     // bounds exist on /loop start for whoever wants them.
-    if (state.goal && state.goal.status === "active") {
-      ctx.ui.notify(`A goal is active — ${activeGoalSurfaceCommand("cancel")} or ${activeGoalSurfaceCommand("pause")} it before starting a loop.`, "warning");
-      return;
-    }
     if (isLoopActive()) {
       ctx.ui.notify("A loop is already active. /loop stop first.", "warning");
       return;

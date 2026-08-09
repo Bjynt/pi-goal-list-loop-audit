@@ -202,6 +202,7 @@ const loopDeps: LoopDeps = {
   manuallyResumeMainModelRecovery,
   notifyExternal,
   persistState,
+  archiveCurrentGoal,
   probeExtensionApiStale,
   probeMainModelRecovery,
   releaseContinuationDispatchStandDown,
