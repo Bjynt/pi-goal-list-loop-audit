@@ -34,6 +34,8 @@ afterEach(() => {
 });
 
 const GOAL_SRC = readGoalRuntimeSource();
+const LOOP_SRC = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
+const GUIDANCE_SRC = `${GOAL_SRC}\n${LOOP_SRC}`;
 const RECOVERY_SRC = fs.readFileSync("extensions/goal-recovery.ts", "utf-8"); // decomposition step 3 (v0.34.111)
 const DISPLAY_SRC = fs.readFileSync("extensions/goal-loop-display.ts", "utf-8");
 const CORE_SRC = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
@@ -102,7 +104,7 @@ test("no hardcoded /goal <cmd> literals remain in generated guidance (goal.ts)",
   assert.deepEqual(hard, [], "hardcoded /goal guidance literals");
   // The helper is actually used across all four command kinds.
   for (const cmd of ["pause", "resume", "tweak", "cancel", "decide"]) {
-    assert.ok(GOAL_SRC.includes(`activeGoalSurfaceCommand("${cmd}")`), `${cmd} guidance is interpolated`);
+    assert.ok(GUIDANCE_SRC.includes(`activeGoalSurfaceCommand("${cmd}")`), `${cmd} guidance is interpolated`);
   }
   assert.ok(GOAL_SRC.includes("const noun = goalNoun()"), "abort guidance captures the policy before closing the slot");
   assert.ok(GOAL_SRC.includes("activeGoalStatusCommand()"), "status guidance is interpolated");

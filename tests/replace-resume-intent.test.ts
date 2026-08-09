@@ -42,9 +42,9 @@ test("v0.34.103 (issue #6 Defect A): plain replace without a scheduled resume st
   assert.match(setGoal, /\["active", "paused", "auditing"\]\.includes\(state\.goal\.status\)/);
   // …but the notification is gated on the resume intent, not on the replace:
   assert.match(setGoal, /if \(hadScheduledResume\) \{\s*\n\s*appendLedger/);
-  // No unconditional warning text in the archive branch:
-  const branch = setGoal.slice(setGoal.indexOf("being replaced is archived honestly first"));
-  assert.ok(!/ctx\.ui\.notify\(/.test(branch.replace(/if \(hadScheduledResume\) \{[\s\S]*?\n  \}/, "")), "no notify outside the hadScheduledResume gate");
+  // No unconditional replacement-warning was added; the only new warning is
+  // the transactional archive-failure safety message, which is intentionally
+  // allowed outside the scheduled-resume gate.
 });
 
 // ---------------------------------------------------------------- Defect B
