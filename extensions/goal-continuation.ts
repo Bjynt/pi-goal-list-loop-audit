@@ -872,7 +872,7 @@ export function continuationPrompt(goal: Goal): string {
   const taskSummary = goal.taskList?.tasks.length
     ? buildTaskSummary(goal.taskList.tasks)
     : "(no task list)";
-  const tmplPath = path.resolve(__dirname, "..", "..", "prompts", "goal-loop-continuation.md");
+  const tmplPath = path.resolve(__dirname, "..", "prompts", "goal-loop-continuation.md");
   let tmpl: string;
   try {
     tmpl = fs.readFileSync(tmplPath, "utf-8");
