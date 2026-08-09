@@ -1883,9 +1883,12 @@ test("one-active-thing tool guards: list_activate + propose_loop_draft + propose
   assert.match(r1.content[0]!.text, /cancelled|preserved/i, "list_activate asks before replacing the live loop");
   await pi.command("goal", "", ctx); // enter drafting
   await pi.fire("message_start", { message: { role: "user" } }, ctx);
+  await pi.fire("message_start", { message: { role: "user" } }, ctx);
+  ctx.ui.customImpl = async () => "Yes";
   ctx.ui.selectImpl = async (_title, options) => options.includes("Yes") ? "Yes" : "Cancel new objective";
   const r2 = await pi.runTool("propose_goal_draft", { objective: "goal over loop — done when pinned" }, ctx);
   assert.match(r2.content[0]!.text, /cancelled|preserved|not started/i, "propose_goal_draft asks before replacing the live loop");
+  ctx.ui.customImpl = undefined;
   assert.equal((readState(cwd).loop as { active: boolean }).active, true, "loop untouched");
 
   // Active goal blocks propose_loop_draft (before the measure even test-runs).
@@ -1894,9 +1897,13 @@ test("one-active-thing tool guards: list_activate + propose_loop_draft + propose
   setGlobalAutoResume(true); // v0.28.21: keep the goal ACTIVE through the reload
   const ctx2 = await freshSession(cwd2, "reload");
   await pi.command("loop", "", ctx2); // enter loop drafting (slash-bar gate)
+  await pi.fire("message_start", { message: { role: "user" } }, ctx2);
+  await pi.fire("message_start", { message: { role: "user" } }, ctx2);
+  ctx2.ui.customImpl = async () => "Yes";
   ctx2.ui.selectImpl = async (_title, options) => options.includes("Yes") ? "Yes" : "Cancel new objective";
   const r3 = await pi.runTool("propose_loop_draft", { target: "loop over goal", measureCmd: "none" }, ctx2);
   assert.match(r3.content[0]!.text, /cancelled|preserved|not started/i, "propose_loop_draft asks before replacing the live goal");
+  ctx2.ui.customImpl = undefined;
 });
 
 test("one-active-thing: /goal resume guard remains; the load-time combo is auto-arbitrated (v0.29.6)", async () => {

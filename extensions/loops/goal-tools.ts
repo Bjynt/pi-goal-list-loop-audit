@@ -1511,11 +1511,9 @@ function registerAgentTools(pi: any): void {
           details: {},
         };
       }
-      // v0.28.14: one-active-thing EARLY guard — refuse before the
-      // interview floor (a live goal blocks any loop proposal).
-      if (state.goal && state.goal.status === "active") {
-        return { content: [{ type: "text", text: `A goal is active — one active thing at a time. The user must ${activeGoalSurfaceCommand("pause")} or ${activeGoalSurfaceCommand("cancel")} it before a loop can start; do not re-propose until then.` }], details: {} };
-      }
+      // v0.35.0: the proposal may be shaped while another objective is
+      // live; the activation path asks update / replace / cancel after the
+      // user confirms the loop spec.
       // v0.14.0: the interview floor — no Confirm until the user replied.
       if (draftingUserReplies === 0) draftingBlockedProposals++;
       const loopBlock = draftProposalBlock(draftingUserReplies, draftingBlockedProposals);
@@ -1529,12 +1527,6 @@ function registerAgentTools(pi: any): void {
       const metricless = !p.measureCmd?.trim() || p.measureCmd.trim().toLowerCase() === "none";
       if (!metricless && p.direction !== "min" && p.direction !== "max") {
         return { content: [{ type: "text", text: 'direction=min|max is required for a measured loop (omit measureCmd or pass "none" for a metricless spec loop).' }], details: {} };
-      }
-      // v0.28.14: one-active-thing — refuse to even test-run a loop measure
-      // while a goal/list-item is active (the /loop start COMMAND guards
-      // this; the tool path used to skip it and stack a loop over a goal).
-      if (state.goal && state.goal.status === "active") {
-        return { content: [{ type: "text", text: `A goal is active — one active thing at a time. The user must ${activeGoalSurfaceCommand("pause")} or ${activeGoalSurfaceCommand("cancel")} it before a loop can start; do not re-propose until then.` }], details: {} };
       }
       // THE TEST-RUN: orchestrator runs the proposed measure once. The user
       // sees the real number before a single iteration burns tokens.
