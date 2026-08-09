@@ -41,6 +41,7 @@ import {
   setLastContinuationSentAtRef,
   lastContinuationSentPayloadRef,
   setLastContinuationSentPayloadRef,
+  resetContinuationDispatchState,
   type ContinuationFlags,
   type ContinuationDeps,
 } from "../goal-continuation.js";
@@ -162,6 +163,9 @@ const commandDeps: CommandDeps = {
   groupOpenChildren,
   activateNextListItem,
   clearMainModelRecoveryTimer,
+  mainModelRecoveryTimerActive: () => mainModelRecoveryTimer !== null,
+  continuationDispatchPending: () => pendingContinuationDispatchRef() !== null,
+  resetContinuationDispatchState,
   isCompletionAuditRecoveryPending,
   markCompletionAuditRecoveryPending,
   retryStoredCompletionAudit,

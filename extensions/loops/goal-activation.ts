@@ -919,6 +919,16 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     const rebindResume = ownerClaim.rebind;
     if (rebindResume) appendLedger(ctx.cwd, "rebind_resume", { pid: process.pid });
     const explicitRecovery = handoffResume || recoveryResume || rebindResume;
+    // Close terminal slots before the blank-start barrier as well. A blank
+    // startup is still a real state load, and returning before this cleanup
+    // used to leave legacy `complete`/`aborted` cards visible until a second
+    // lifecycle event.
+    if (state.goal && (state.goal.status === "complete" || state.goal.status === "aborted") && fs.existsSync(archivedGoalPath(ctx.cwd, state.goal.id))) {
+      const terminal = state.goal;
+      replaceState({ ...state, goal: null });
+      persistState(ctx);
+      appendLedger(ctx.cwd, "terminal_goal_slot_closed", { goalId: terminal.id, status: terminal.status, via: "session-start" });
+    }
     if (initialSessionLoadPending && !explicitRecovery) {
       // Even a blank startup must not leave a stored completion claim in the
       // old AUDITING state: there is no worker verdict to wait for after a
@@ -939,17 +949,6 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // v0.29.6: stacked-state auto-arbitration FIRST — one live artifact
     // survives before the restore gate decides hold-vs-resume for it.
     autoArbitrateStackedState(ctx);
-    // v0.34.120: older releases kept an archived terminal goal in the live
-    // slot, so a reload showed `complete`/`Last` and users reached for
-    // cancel. The archive is the summary/history surface; close that legacy
-    // slot on load once its archive is confirmed present. Waiting list items
-    // remain eligible for the normal activation branch below.
-    if (state.goal && (state.goal.status === "complete" || state.goal.status === "aborted") && fs.existsSync(archivedGoalPath(ctx.cwd, state.goal.id))) {
-      const terminal = state.goal;
-      replaceState({ ...state, goal: null });
-      persistState(ctx);
-      appendLedger(ctx.cwd, "terminal_goal_slot_closed", { goalId: terminal.id, status: terminal.status, via: "session-start" });
-    }
     // Restore gate (v0.26.9 tri-state): a human LOADING a session
     // ("startup"/"new"/"resume", or no reason) HOLDS — the popup shows what
     // is waiting and nothing starts until they resume explicitly. In-session

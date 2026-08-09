@@ -17,7 +17,7 @@ import {
   readAuditLog, readQueueFromDisk, routeGoalArgs, routeListText, sanitizeDisplayText, statusLabel,
   writeQueueItemFile, type ModeCommand, type State, LIST_MUTATING_SUBCOMMANDS, SETTINGS_MUTATING_ACTIONS,
 } from "./goal-loop-core.js";
-import { dispatchRecordExists } from "./goal-loop-dispatch.js";
+import { clearDispatchRecord, dispatchRecordExists } from "./goal-loop-dispatch.js";
 import type { AuditDisplayProgress } from "./goal-loop-display.js";
 import { AUDIT_FINDINGS_REL, HELD_ON_RESTORE, LOOP_AUDIT_MARKER, listAuditCollectTarget, projectAuditTarget } from "./goal-loop-forever.js";
 import { ProjectRollup, discoverGllaProjects, filterPremature, formatRollupJson, formatRollupTable, parseLedgerEntries, rollupProject } from "./goal-loop-stats.js";
@@ -1568,8 +1568,10 @@ async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise
   const orphanQueue = diskQueue.filter((item) => !memoryQueue.some((queued) => queued.id === item.id));
   const n = Math.max(memoryQueue.length, sidecarCount, memoryQueue.length + orphanQueue.length);
   const loop = state.loop;
-  if (!g && n === 0 && !loop) {
-    ctx.ui.notify("glla state is already clean — no goal, no list, no loop.", "info");
+  const hasRecovery = !!state.mainModelRecovery || mainModelRecoveryTimerActive();
+  const dispatchSidecarPresent = continuationDispatchPending() || dispatchRecordExists(ctx.cwd);
+  if (!g && n === 0 && !loop && !hasRecovery && !dispatchSidecarPresent) {
+    ctx.ui.notify("glla state is already clean — no goal, no list, no loop, no recovery.", "info");
     return;
   }
   const parts: string[] = [];
@@ -1577,6 +1579,8 @@ async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise
   else if (g) parts.push(`terminal goal record cleared (${g.status})`);
   if (n > 0) parts.push(`list cleared (${n} item${n === 1 ? "" : "s"})`);
   if (loop) parts.push(`loop ${loop.active ? "stopped" : "cleared"} (iter ${loop.iteration}${loop.bestValue !== null && loop.bestValue !== undefined ? `, best ${loop.bestValue}` : ""})`);
+  if (hasRecovery) parts.push("main-model recovery cleared");
+  if (dispatchSidecarPresent) parts.push("pending continuation dispatch cleared");
   if (!ctx.hasUI) {
     ctx.ui.notify("Wipe requires an interactive Confirm dialog; no state was changed.", "warning");
     return;
@@ -1591,7 +1595,13 @@ async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise
     ctx.ui.notify("Wipe cancelled.", "info");
     return;
   }
-  appendLedger(ctx.cwd, "glla_wipe", { goalId: live ? g!.id : undefined, listCleared: n, loop: loop ? { iteration: loop.iteration, active: loop.active } : undefined });
+  appendLedger(ctx.cwd, "glla_wipe", {
+    goalId: live ? g!.id : undefined,
+    listCleared: n,
+    loop: loop ? { iteration: loop.iteration, active: loop.active } : undefined,
+    recovery: hasRecovery,
+    dispatchSidecar: dispatchSidecarPresent,
+  });
   const abortAfterWipe = !!live;
   if (live) {
     // Do not abort here: wipe still has to clear queue sidecars and loop
@@ -1600,7 +1610,15 @@ async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise
   } else if (g) {
     replaceState({ ...state, goal: null });
   }
+  // Clear provider-recovery and continuation artifacts only after a live-goal
+  // archive succeeds. An archive failure must leave all resumable work intact.
+  clearMainModelRecoveryTimer();
+  state.mainModelRecovery = undefined;
+  flags.mainModelAbortForRecovery = false;
+  flags.mainModelSwitchInFlight = false;
+  const dispatchCleared = resetContinuationDispatchState(ctx.cwd);
   let failedSidecars: string[] = [];
+  const failedCleanup: string[] = dispatchSidecarPresent && !dispatchCleared ? ["continuation dispatch"] : [];
   if (n > 0) {
     // v0.35.0: clear the union of RAM and disk queue state. Orphaned
     // sidecars otherwise resurrected after a stale reload.
@@ -1623,9 +1641,13 @@ async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise
     appendLedger(ctx.cwd, "loop_stopped", { reason: "user wipe (/glla wipe)", iterations: loop.iteration, best: loop.bestValue });
   }
   persistState(ctx);
-  if (failedSidecars.length > 0) ctx.ui.notify(`Wipe could not remove ${failedSidecars.length} queue sidecar(s); the clean slate is incomplete.`, "warning");
-  ctx.ui.notify(`glla wipe done: ${parts.join(" · ")}. ${failedSidecars.length > 0 ? "Partial clean slate — fix disk access and retry." : "Clean slate."}`, "info");
-  notifyExternal(ctx, "glla state wiped by user — clean slate.");
+  const failedCleanupCount = failedSidecars.length + failedCleanup.length;
+  if (failedCleanupCount > 0) {
+    const failedLabels = [...failedSidecars.map(() => "queue sidecar"), ...failedCleanup].join(", ");
+    ctx.ui.notify(`Wipe could not remove ${failedCleanupCount} live artifact(s) (${failedLabels}); the clean slate is incomplete.`, "warning");
+  }
+  ctx.ui.notify(`glla wipe done: ${parts.join(" · ")}. ${failedCleanupCount > 0 ? "Partial clean slate — fix disk access and retry." : "Clean slate."}`, "info");
+  notifyExternal(ctx, failedCleanupCount > 0 ? "glla wipe incomplete — live cleanup needs attention." : "glla state wiped by user — clean slate.");
   if (abortAfterWipe) ctx.abort();
 }
 
@@ -1746,6 +1768,13 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
  * queue after aborting only its current item.
  */
 async function cmdGllaCancel(ctx: ExtensionContext): Promise<void> {
+  // A running loop is itself the active objective. Stop it before looking at
+  // an unrelated waiting list; otherwise `/glla cancel` can silently drop the
+  // queue while leaving the loop running.
+  if (state.loop?.active) {
+    await cmdLoop("stop", ctx);
+    return;
+  }
   const g = state.goal;
   const liveGoal = g && (g.status === "active" || g.status === "paused" || g.status === "auditing");
   // A standalone live goal is the active objective even when an unrelated
