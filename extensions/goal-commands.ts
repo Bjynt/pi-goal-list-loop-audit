@@ -17,7 +17,7 @@ import {
   readAuditLog, readQueueFromDisk, routeGoalArgs, routeListText, sanitizeDisplayText, statusLabel,
   writeQueueItemFile, type ModeCommand, type State, LIST_MUTATING_SUBCOMMANDS, SETTINGS_MUTATING_ACTIONS,
 } from "./goal-loop-core.js";
-import { clearDispatchRecord } from "./goal-loop-dispatch.js";
+import { dispatchRecordExists } from "./goal-loop-dispatch.js";
 import type { AuditDisplayProgress } from "./goal-loop-display.js";
 import { AUDIT_FINDINGS_REL, HELD_ON_RESTORE, LOOP_AUDIT_MARKER, listAuditCollectTarget, projectAuditTarget } from "./goal-loop-forever.js";
 import { ProjectRollup, discoverGllaProjects, filterPremature, formatRollupJson, formatRollupTable, parseLedgerEntries, rollupProject } from "./goal-loop-stats.js";
@@ -60,6 +60,9 @@ export interface CommandDeps {
   groupOpenChildren: (groupId: string) => number;
   activateNextListItem: (ctx: ExtensionContext, n?: number, opts?: { explicit?: boolean }) => boolean;
   clearMainModelRecoveryTimer: () => void;
+  mainModelRecoveryTimerActive: () => boolean;
+  continuationDispatchPending: () => boolean;
+  resetContinuationDispatchState: (cwd: string) => boolean;
   isCompletionAuditRecoveryPending: (goal: Goal | null | undefined) => boolean;
   markCompletionAuditRecoveryPending: (ctx: ExtensionContext, reason: string) => boolean;
   retryStoredCompletionAudit: (origin?: "complete-goal" | "quota-retry" | "manual" | "session-recovery") => Promise<void>;
@@ -86,7 +89,7 @@ let deps: CommandDeps;
 let flags: CommandFlags;
 let listQueue: CommandDeps["listQueue"], notifyExternal: CommandDeps["notifyExternal"], persistState: CommandDeps["persistState"], updateGoal: CommandDeps["updateGoal"], setGoal: CommandDeps["setGoal"],
     archiveCurrentGoal: CommandDeps["archiveCurrentGoal"], healGoalPolicy: CommandDeps["healGoalPolicy"], startDrafting: CommandDeps["startDrafting"], warnIfStaleAtEntry: CommandDeps["warnIfStaleAtEntry"], freshCtx: CommandDeps["freshCtx"],
-    freshCtxForGeneration: CommandDeps["freshCtxForGeneration"], goStaleTerminal: CommandDeps["goStaleTerminal"], groupOpenChildren: CommandDeps["groupOpenChildren"], activateNextListItem: CommandDeps["activateNextListItem"], clearMainModelRecoveryTimer: CommandDeps["clearMainModelRecoveryTimer"],
+    freshCtxForGeneration: CommandDeps["freshCtxForGeneration"], goStaleTerminal: CommandDeps["goStaleTerminal"], groupOpenChildren: CommandDeps["groupOpenChildren"], activateNextListItem: CommandDeps["activateNextListItem"], clearMainModelRecoveryTimer: CommandDeps["clearMainModelRecoveryTimer"], mainModelRecoveryTimerActive: CommandDeps["mainModelRecoveryTimerActive"], continuationDispatchPending: CommandDeps["continuationDispatchPending"], resetContinuationDispatchState: CommandDeps["resetContinuationDispatchState"],
     isCompletionAuditRecoveryPending: CommandDeps["isCompletionAuditRecoveryPending"], markCompletionAuditRecoveryPending: CommandDeps["markCompletionAuditRecoveryPending"], retryStoredCompletionAudit: CommandDeps["retryStoredCompletionAudit"], probeMainModelRecovery: CommandDeps["probeMainModelRecovery"], releaseContinuationDispatchStandDown: CommandDeps["releaseContinuationDispatchStandDown"],
     releaseInitialSessionLoadBarrier: CommandDeps["releaseInitialSessionLoadBarrier"], resolveCarryover: CommandDeps["resolveCarryover"], safeSteerUser: CommandDeps["safeSteerUser"], scheduleContinuation: CommandDeps["scheduleContinuation"], scheduleSessionTimeout: CommandDeps["scheduleSessionTimeout"],
     createGoal: CommandDeps["createGoal"], fireReviewer: CommandDeps["fireReviewer"], openSettingsUI: CommandDeps["openSettingsUI"], manuallyResumeMainModelRecovery: CommandDeps["manuallyResumeMainModelRecovery"], activeGoalCommand: CommandDeps["activeGoalCommand"],
@@ -96,7 +99,7 @@ export function createGoalCommands(d: CommandDeps): void {
   deps = d; flags = d.flags;
   listQueue = d.listQueue; notifyExternal = d.notifyExternal; persistState = d.persistState; updateGoal = d.updateGoal; setGoal = d.setGoal;
   archiveCurrentGoal = d.archiveCurrentGoal; healGoalPolicy = d.healGoalPolicy; startDrafting = d.startDrafting; warnIfStaleAtEntry = d.warnIfStaleAtEntry; freshCtx = d.freshCtx;
-  freshCtxForGeneration = d.freshCtxForGeneration; goStaleTerminal = d.goStaleTerminal; groupOpenChildren = d.groupOpenChildren; activateNextListItem = d.activateNextListItem; clearMainModelRecoveryTimer = d.clearMainModelRecoveryTimer;
+  freshCtxForGeneration = d.freshCtxForGeneration; goStaleTerminal = d.goStaleTerminal; groupOpenChildren = d.groupOpenChildren; activateNextListItem = d.activateNextListItem; clearMainModelRecoveryTimer = d.clearMainModelRecoveryTimer; mainModelRecoveryTimerActive = d.mainModelRecoveryTimerActive; continuationDispatchPending = d.continuationDispatchPending; resetContinuationDispatchState = d.resetContinuationDispatchState;
   isCompletionAuditRecoveryPending = d.isCompletionAuditRecoveryPending; markCompletionAuditRecoveryPending = d.markCompletionAuditRecoveryPending; retryStoredCompletionAudit = d.retryStoredCompletionAudit; probeMainModelRecovery = d.probeMainModelRecovery; releaseContinuationDispatchStandDown = d.releaseContinuationDispatchStandDown;
   releaseInitialSessionLoadBarrier = d.releaseInitialSessionLoadBarrier; resolveCarryover = d.resolveCarryover; safeSteerUser = d.safeSteerUser; scheduleContinuation = d.scheduleContinuation; scheduleSessionTimeout = d.scheduleSessionTimeout;
   createGoal = d.createGoal; fireReviewer = d.fireReviewer; openSettingsUI = d.openSettingsUI; manuallyResumeMainModelRecovery = d.manuallyResumeMainModelRecovery; activeGoalCommand = d.activeGoalCommand;

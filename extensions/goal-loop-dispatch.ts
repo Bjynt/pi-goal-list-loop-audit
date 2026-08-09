@@ -153,9 +153,31 @@ export function readDispatchRecord(cwd: string): ContinuationDispatch | null {
   }
 }
 
+export function dispatchRecordExists(cwd: string): boolean {
+  try {
+    const target = dispatchRecordPath(cwd);
+    if (fs.existsSync(target)) return true;
+    const dir = path.dirname(target);
+    const prefix = `${DISPATCH_RECORD_FILE}.tmp-`;
+    return fs.readdirSync(dir).some((name) => name.startsWith(prefix));
+  } catch {
+    return false;
+  }
+}
+
 export function clearDispatchRecord(cwd: string): boolean {
   return runPersistStep("clearContinuationDispatch", () => {
-    fs.rmSync(dispatchRecordPath(cwd), { force: true });
+    const target = dispatchRecordPath(cwd);
+    fs.rmSync(target, { force: true });
+    const dir = path.dirname(target);
+    const prefix = `${DISPATCH_RECORD_FILE}.tmp-`;
+    try {
+      for (const name of fs.readdirSync(dir)) {
+        if (name.startsWith(prefix)) fs.rmSync(path.join(dir, name), { force: true });
+      }
+    } catch {
+      // The target may have been the only file; missing cleanup is harmless.
+    }
     return true;
   }) === true;
 }

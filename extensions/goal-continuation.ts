@@ -970,3 +970,20 @@ export function setContinuationRearmStreak(v: number): void {
 export function setContinuationRearmSince(v: number): void {
   continuationRearmSince = v;
 }
+
+/** Clear every in-memory and file-backed continuation dispatch artifact.
+ * Destructive lifecycle commands use this rather than only clearing a timer:
+ * a pending dispatch can otherwise resurrect after a reload from its sidecar.
+ */
+export function resetContinuationDispatchState(cwd: string): boolean {
+  clearContinuationTimer();
+  clearContinuationStartWatchdog();
+  clearQueueStuckProbe();
+  continuationDispatchStoodDown = false;
+  continuationRearmStreak = 0;
+  continuationRearmSince = 0;
+  continuationRearmMilestone = 0;
+  lastNoTurnStartedNotifiedAt = 0;
+  continuationStartCompactionRearms.clear();
+  return clearDispatchRecord(cwd);
+}
