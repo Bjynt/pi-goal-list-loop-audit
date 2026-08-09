@@ -193,7 +193,7 @@ test("v0.34.61: list-draft path is disk-first (sidecar before state mutation)", 
   // Auditor-fixed gap #2: the /list add (no args) drafting interview that
   // confirms to the queue. Same invariant: writeQueueItemFile first.
   const anchor = "List drafting: the confirmed contract goes into the QUEUE, not active.";
-  const seg = SRC.slice(SRC.indexOf(anchor), SRC.indexOf(anchor) + 900);
+  const seg = SRC.slice(SRC.indexOf(anchor), SRC.indexOf(anchor) + 1800);
   const writePos = seg.indexOf("writeQueueItemFile(liveCtx.cwd, item)");
   const statePos = seg.indexOf("replaceState({ ...state, list: [...listQueue(), item] })");
   assert.ok(writePos !== -1, "list-draft path calls writeQueueItemFile");

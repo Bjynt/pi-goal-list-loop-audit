@@ -152,8 +152,8 @@ test("v0.28.28: goal provenance — setGoal threads `via` into the record + goal
   assert.match(SRC, /function setGoal\(goal: Goal, ctx: ExtensionContext, via = "user"\): boolean/);
   assert.match(SRC, /goal\.createdVia = via;/);
   assert.match(SRC, /"goal_created", \{ goalId: goal\.id, objective: goal\.objective, policy: goal\.policy, via \}/);
-  assert.match(QUEUE, /setGoal\(goal, ctx, "list-cascade"\);/);
-  assert.match(TOOLS, /setGoal\(goal, liveCtx, autoAccept \? "draft-autoaccepted" : "draft-confirmed"\);/);
+  assert.match(QUEUE, /setGoal\(goal, ctx, "list-cascade"\)/);
+  assert.match(TOOLS, /setGoal\(goal, liveCtx, autoAccept \? "draft-autoaccepted" : "draft-confirmed"\)/);
   const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
   assert.match(CORE, /createdVia\?: string;/);
   const SCHEMA = fs.readFileSync("schemas/goal.schema.json", "utf-8");
@@ -179,7 +179,7 @@ test("v0.28.33: /glla wipe — renamed from reset (too close to /glla resume); r
   // honest close-out: goal archived (not dropped), list + loop ledgered:
   assert.match(SRC, /appendLedger\(ctx\.cwd, "glla_wipe", \{ goalId: live/);
   assert.match(SRC, /archiveCurrentGoal\(ctx, "aborted", "user wipe \(\/glla wipe\)"\)/);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "list_cleared", \{ via: "glla_wipe"(, count: n)? \}\);/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "list_cleared", \{ via: "glla_wipe", count: n, sidecars: clearedSidecars\.removed \}\);/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "loop_stopped", \{ reason: "user wipe \(\/glla wipe\)"/);
   assert.match(SRC, /replaceState\(\{ \.\.\.state, loop: undefined \}\)/);
   // already-clean short-circuit:
