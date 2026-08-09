@@ -39,7 +39,7 @@ test("v0.34.103 (issue #6 Defect A): replacing a wait goal with a scheduled resu
 test("v0.34.103 (issue #6 Defect A): plain replace without a scheduled resume stays quiet", () => {
   const setGoal = SRC.slice(SRC.indexOf("function setGoal("), SRC.indexOf("function updateGoal("));
   // The archive branch still runs for every replaced paused/active goal…
-  assert.match(setGoal, /state\.goal\.status === "active" \|\| state\.goal\.status === "paused"/);
+  assert.match(setGoal, /\["active", "paused", "auditing"\]\.includes\(state\.goal\.status\)/);
   // …but the notification is gated on the resume intent, not on the replace:
   assert.match(setGoal, /if \(hadScheduledResume\) \{\s*\n\s*appendLedger/);
   // No unconditional warning text in the archive branch:

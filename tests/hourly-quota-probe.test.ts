@@ -122,7 +122,7 @@ test("v0.34.92: session_start re-arms the hourly ticker when recovery is parked"
   // session_start handler is ~15k chars (from `pi.on("session_start"` to the
   // end of the recovery restore + the new hourly schedule call); slice
   // enough to cover the schedule call at the bottom of the recovery block.
-  const tail = GOAL_SRC.slice(handlerIdx, handlerIdx + 16_000);
+  const tail = GOAL_SRC.slice(handlerIdx, handlerIdx + 20_000);
   assert.match(tail, /scheduleMainModelRecoveryTimer\(ctx, delay\);/, "session_start re-schedules recovery");
   assert.match(tail, /scheduleHourlyProbe\(ctx\);/, "session_start also re-arms the hourly ticker");
 });

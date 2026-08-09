@@ -104,6 +104,7 @@ test("no hardcoded /goal <cmd> literals remain in generated guidance (goal.ts)",
   for (const cmd of ["pause", "resume", "tweak", "cancel", "decide"]) {
     assert.ok(GOAL_SRC.includes(`activeGoalSurfaceCommand("${cmd}")`), `${cmd} guidance is interpolated`);
   }
+  assert.ok(GOAL_SRC.includes("const noun = goalNoun()"), "abort guidance captures the policy before closing the slot");
   assert.ok(GOAL_SRC.includes("activeGoalStatusCommand()"), "status guidance is interpolated");
 });
 
