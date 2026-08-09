@@ -781,7 +781,7 @@ async function fanOutListAuditFindings(cwd: string, generation: number): Promise
   const { open, decisions } = parseAuditFindingsForFanout(md);
   // Dedupe against the live queue (a re-run must not double-queue a finding
   // that's already waiting) — match on the finding text's first 60 chars.
-  const queuedText = listQueue().map((i) => i.objective).join("\n");
+  const queuedText = listQueue().map((i: any) => i.objective).join("\n");
   // v0.32.0: cap one fan-out — a runaway findings file must not enqueue
   // hundreds of items on a single Confirm.
   const fresh = open.filter((f) => !queuedText.includes(f.text.slice(0, 60))).slice(0, 50);
@@ -924,14 +924,14 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
       const pid = goal.parentId;
       if (groupOpenChildren(pid) === 0) {
         const queue = listQueue();
-        const parent = queue.find((c) => c.id === pid);
+        const parent = queue.find((c: any) => c.id === pid);
         if (parent) {
           appendLedger(ctx.cwd, "list_group_closed", {
             parentId: pid,
             parentObjective: parent.objective,
             closedVia: goal.objective,
           });
-          replaceState({ ...state, list: queue.filter((c) => c.id !== pid) });
+          replaceState({ ...state, list: queue.filter((c: any) => c.id !== pid) });
           deleteQueueItemFile(ctx.cwd, pid);
           ctx.ui.notify(`Group closed: "${displaySlice(parent.objective, 80)}" — all subtasks complete.`, "info");
         }

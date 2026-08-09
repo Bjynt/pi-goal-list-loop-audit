@@ -1444,7 +1444,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           notifyExternal(ctx, `${goalNoun()} parked: provider erroring across 6 error-brake cycles — hourly top-of-hour probes scheduled.`);
           appendLedger(ctx.cwd, "error_brake_capped", { streak: brakeStreak, reason });
           const probeMs = msUntilNextHourBoundary(Date.now());
-          scheduleQuotaRetryForSession(ctx, probeMs / 1000, reason, (fresh) => {
+          scheduleQuotaRetryForSession(ctx, probeMs / 1000, reason, (fresh: ExtensionContext) => {
             // Re-check: only probe if STILL parked by the error-brake cap —
             // a user pause/resume/cancel meanwhile is never stomped.
             if (state.goal && state.goal.status === "paused" && state.goal.pauseKind === "error"
@@ -1475,7 +1475,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         ctx.ui.notify(`Goal paused: ${reason}.${quotaWall ? " Quota/rate-limit wall — resuming won't help until the window resets; switch /model to continue now." : ""}`, "warning");
         notifyExternal(ctx, `Goal paused: ${reason}.`);
         appendLedger(ctx.cwd, "goal_paused", { reason });
-        scheduleQuotaRetryForSession(ctx, cooldownMs / 1000, reason, (fresh) => {
+        scheduleQuotaRetryForSession(ctx, cooldownMs / 1000, reason, (fresh: ExtensionContext) => {
           // Re-check: only auto-resume if STILL paused for the error brake
           // (a user /goal pause during the window is not stomped).
           if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("5 consecutive errors")) {

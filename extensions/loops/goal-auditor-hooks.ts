@@ -912,7 +912,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     }, liveCtx);
     appendLedger(liveCtx.cwd, "goal_paused", { reason: `auditor retry: retry in ${plan.retryAfterSec}s (stored-claim retry)`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil });
     liveCtx.ui.notify(`Auditor still failing — next auto-retry in ${fmtRetryDelay(plan.retryAfterSec)}${providerHint} (your completion claim is stored; no action needed).`, "warning");
-    scheduleQuotaRetryForSession(liveCtx, plan.retryAfterSec, result.error, (fresh) => {
+    scheduleQuotaRetryForSession(liveCtx, plan.retryAfterSec, result.error, (fresh: ExtensionContext) => {
       if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor retry:") && state.goal.pendingCompletion) {
         void retryStoredCompletionAudit(origin);
       }

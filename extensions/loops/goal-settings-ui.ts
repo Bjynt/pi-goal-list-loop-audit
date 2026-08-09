@@ -375,6 +375,8 @@ import {
 } from "../goal-loop.js";
 import { defineGoalRuntimeGlobal } from "./goal-runtime-globals.js";
 
+type AuditorModelCandidate = any;
+
 function auditorThinkingLevels(model: any): string[] {
   const ALL = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
   if (!model?.reasoning) return ["off"];

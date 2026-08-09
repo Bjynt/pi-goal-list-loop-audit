@@ -375,6 +375,9 @@ import {
 } from "../goal-loop.js";
 import { defineGoalRuntimeGlobal } from "./goal-runtime-globals.js";
 
+type AuditorModelCandidate = any;
+type PendingCompletion = any;
+
 function registerAgentTools(pi: any): void {
   pi.registerTool(defineTool({
     name: "complete_goal",
@@ -574,14 +577,14 @@ function registerAgentTools(pi: any): void {
       try {
         ({ result, retriedOnce, fallbackUsed } = await runDetachedCompletionWithFallback(auditorCandidates, runAudit, {
           shouldRetry: () => detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId) !== null,
-          onRetry: (candidate, err) => {
+          onRetry: (candidate: AuditorModelCandidate, err: string) => {
             const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
             if (!current) return;
             latestAuditProgress = { label: `infra error (${err.slice(0, 40)}) — retrying once`, lastEventAt: Date.now() };
             refreshUI(current);
             appendLedger(current.cwd, "audit_infra_retry", { goalId: auditGoalId, model: auditorCandidateLabel(candidate), error: err.slice(0, 200) });
           },
-          onFallback: (from, to, err) => {
+          onFallback: (from: AuditorModelCandidate, to: AuditorModelCandidate, err: string) => {
             const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
             if (!current) return;
             appendLedger(current.cwd, "auditor_runtime_model_fallback", { goalId: auditGoalId, from: auditorCandidateLabel(from), to: auditorCandidateLabel(to), error: err.slice(0, 200) });
@@ -857,7 +860,7 @@ function registerAgentTools(pi: any): void {
             pauseSuggestedAction: `Auto-retry in ${fmtRetryDelay(quota.retryAfterSec)}${providerHint} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
           }, ctx);
           appendLedger(ctx.cwd, "goal_paused", { reason: `auditor retry: retry in ${quota.retryAfterSec}s (${quota.fromUpstream ? "upstream hint" : "bounded default"})`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil });
-          scheduleQuotaRetryForSession(ctx, quota.retryAfterSec, result.error, (fresh) => {
+          scheduleQuotaRetryForSession(ctx, quota.retryAfterSec, result.error, (fresh: ExtensionContext) => {
             // Re-check: only auto-resume if STILL paused for the retry
             // reason (a user /goal pause during the window is not stomped).
             if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor retry:")) {
@@ -1765,7 +1768,7 @@ function registerAgentTools(pi: any): void {
         for (const item of queue) {
           if (item.parentId) continue;
           if (flat >= 20) { omitted++; continue; }
-          const children = queue.filter((c) => c.parentId === item.id);
+          const children = queue.filter((c: any) => c.parentId === item.id);
           const open = groupOpenChildren(item.id);
           flat++;
           const labels: string[] = [];
@@ -1773,7 +1776,7 @@ function registerAgentTools(pi: any): void {
           if (open > 0) labels.push(`group: ${open} open`);
           const tag = labels.length ? ` [${labels.join(", ")}]` : "";
           lines.push(`${flat}. ${sanitizeDisplayText(item.objective)}${tag}`);
-          children.forEach((c, ci) =>
+          children.forEach((c: any, ci: number) =>
             lines.push(`   ${flat}.${ci + 1} ${sanitizeDisplayText(c.objective)}${c.parallelSafe ? " [parallel]" : ""}`),
           );
         }
