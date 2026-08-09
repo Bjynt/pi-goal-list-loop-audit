@@ -68,7 +68,12 @@ test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal g
   // … and before the "no goal → return" gate (works in plain sessions)
   assert.ok(lengthIdx < handler.indexOf('if (!state.goal) return;'), "before goal gating");
   // truncated turns return early — no continuation scheduling on half a response
-  const early = handler.slice(lengthIdx, lengthIdx + 3400);
+  // v0.34.116: window bumped to 5000 — the post-`contextStarvedLength` early
+  // return now lives further down (the context-overflow fallback branch runs
+  // first), so the 3400-char window clipped the assertion. Factual contract
+  // (the inner `if (lastA?.stopReason === "length" && ...)` block exists)
+  // is unchanged.
+  const early = handler.slice(lengthIdx, lengthIdx + 5000);
   assert.match(early, /if \(lastA\?\.stopReason === "length"\) \{\s*\n\s*if \(lc\.fire && !ctx\.hasPendingMessages\(\)\) sendLengthContinue\(ctx, lc\.consecutive\);\s*\n\s*return;\s*\n\s*\}/);
 });
 

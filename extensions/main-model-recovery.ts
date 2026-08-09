@@ -10,7 +10,7 @@ import { isBillingError, isQuotaError, parseQuotaError, type QuotaSignal } from 
 export const MAIN_MODEL_MAX_RETRY_DELAY_MS = 5 * 60 * 60_000;
 export const MAIN_MODEL_AUTO_RETRY_HORIZON_MS = 24 * 60 * 60_000;
 
-export type MainModelFailureKind = "quota" | "billing" | "auth" | "transient" | "unknown" | "non-recoverable";
+export type MainModelFailureKind = "quota" | "billing" | "auth" | "transient" | "unknown" | "non-recoverable" | "context-overflow";
 
 export interface MainModelFailure {
   kind: MainModelFailureKind;
@@ -61,8 +61,19 @@ export function normalizeModelRefs(value: unknown): string[] {
 /**
  * Classify only provider failures. Context/output-token failures are
  * deterministic prompt-shape problems and must not trigger model rotation.
+ *
+ * v0.34.116: an override context — `isContextOverflow(raw)` — lets the
+ * recovery caller (goal-recovery.ts::tryMainModelFallback / the
+ * observeCompactFailure hook) distinguish a "the model is too small for the
+ * prompt" failure from "the prompt is too big for any model". The override
+ * is the dominant signal: when pi just told us the session_compact ALSO
+ * failed and the prompt is STILL over the model's window, the prompt is
+ * not the problem — the model is. Route through the fallback chain to a
+ * larger-context ref. Without the override the classifier falls back to
+ * the deterministic "non-recoverable" verb (a sample of a length cap
+ * mid-stream MUST NOT silently rotate when the chain has no ref).
  */
-export function classifyMainModelFailure(error: string | undefined): MainModelFailure {
+export function classifyMainModelFailure(error: string | undefined, opts?: { isContextOverflow?: boolean }): MainModelFailure {
   const raw = typeof error === "string" ? error.trim() : "";
   const text = raw.toLowerCase();
   if (!raw) return { kind: "unknown", raw };
@@ -70,7 +81,9 @@ export function classifyMainModelFailure(error: string | undefined): MainModelFa
     return { kind: "non-recoverable", raw };
   }
   if (/context|output[ -]?token|max_?tokens|length limit|too many tokens|prompt too large|context window/.test(text)) {
-    return { kind: "non-recoverable", raw };
+    return opts?.isContextOverflow
+      ? { kind: "context-overflow", raw }
+      : { kind: "non-recoverable", raw };
   }
   // Billing/credit exhaustion is not evidence of a future reset. It may be
   // solved by a configured backup, but with no backup it needs user action.
@@ -96,6 +109,20 @@ export function classifyMainModelFailure(error: string | undefined): MainModelFa
     return { kind: "transient", raw };
   }
   return { kind: "unknown", raw };
+}
+
+/** v0.34.116: detect when a length-context failure happened AFTER the
+ * session_compact already failed. The classifier maps this to
+ * `context-overflow` (rollback path: rotate to a larger-context ref). The
+ * call site is `observeCompactFailure` in goal-recovery.ts: when the next
+ * send throws a stale-ctx / "This extension ctx is stale" error AFTER our
+ * best-effort compact-and-retry, the prompt is not the problem — the
+ * current chosen model cannot serve it. The orchestrator wraps the failure
+ * with `isContextOverflow: true` so the selector walks the chain. */
+export function isContextOverflowError(error: string | undefined): boolean {
+  if (!error) return false;
+  const text = error.toLowerCase();
+  return /context|output[ -]?token|max_?tokens|length limit|too many tokens|prompt too large|context window/.test(text);
 }
 
 /** v0.34.57: long-lived failure classes (quota/billing/auth) are durable

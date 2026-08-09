@@ -90,7 +90,7 @@ test("S2 (v0.28.21): the 0.28.3 interrupt exemption is SUPERSEDED — only autor
 
 test("S1/S2: widget surfaces the interrupt on ACTIVE goals", () => {
   assert.match(DISPLAY, /if \(g\.interruptedAt\)/);
-  assert.match(DISPLAY, /⚠ interrupted — stale handle · fresh session_start resumes/);
+  assert.match(DISPLAY, /⚠ interrupted — stale handle · \/reload \(or a fresh session_start\) rebinds/);
 });
 
 test("E6: drafting-seed send failure is loud and stale-aware (was silent)", () => {

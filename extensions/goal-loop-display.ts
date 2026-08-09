@@ -649,7 +649,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     if (g.interruptedAt) {
       const label = interruptedForNoStart(g)
         ? "⚠ turn start not observed — automatic retry held"
-        : "⚠ interrupted — stale handle · fresh session_start resumes";
+        : "⚠ interrupted — stale handle · /reload (or a fresh session_start) rebinds";
       return `glla: ${paint(theme, "error", label)}${heldSuffix}`;
     }
     const attention = activeAttention(g);

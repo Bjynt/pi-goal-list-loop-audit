@@ -282,6 +282,7 @@ import {
   parkMainModelAfterFailure,
   probeMainModelRecovery,
   recoverMainModelFromSendStorm,
+  recoverFromContextOverflow,
   resolveMainModel,
   scheduleHourlyProbe,
   scheduleMainModelRecoveryTimer,
@@ -1198,6 +1199,22 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         contextPercent: contextUsage?.percent ?? null,
         starvedStreak: starved.streak,
       });
+      // v0.34.116: when pi already tried to compact within the last 90s
+      // (the COMPACTION_GRACE_MS window) and the prompt STILL does not fit,
+      // the model is too small for the prompt — not the prompt too big for
+      // any model. Walk the fallback chain to a larger-context ref so the
+      // next turn can land. Without this, the user sees "Context overflow
+      // recovery FAILED after one compact-and-retry attempt" with no
+      // automated recourse (Screenshot_20260808_192604 hegemion).
+      const sinceLastCompactMs = state.lastCompactionAt ? Date.now() - state.lastCompactionAt : Number.POSITIVE_INFINITY;
+      if (sinceLastCompactMs < COMPACTION_GRACE_MS && mainModelFallbackRefs(ctx).length > 0) {
+        const overflowMessage = `output-token stop at ${contextUsage?.percent?.toFixed(1) ?? "near-full"}% after recent compaction — model is too small for the prompt; walking fallback chain`;
+        const switched = await recoverFromContextOverflow(ctx, overflowMessage);
+        if (switched) {
+          ctx.ui.notify("glla: rotated to a larger-context backup model. The next turn will retry on the new model.", "info");
+          return;
+        }
+      }
       ctx.ui.notify("glla: output-token stop was context starvation (tiny output at a nearly full context) — yielding to pi auto-compaction instead of re-sending.", "info");
       return;
     }

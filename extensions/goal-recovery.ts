@@ -21,7 +21,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { state } from "./goal-state.js";
 import { appendLedger, nowIso, piGlaDir, isForbiddenModel, isStaleApiError, nextHourlyProbeMs, type Goal, type MainModelRecovery, type PendingCompletion } from "./goal-loop-core.js";
 import { cancelDetachedGoalCompletionAuditor } from "./goal-loop-auditor-process.js";
-import { classifyMainModelFailure, isLongLivedFailureKind, mainModelAutoRetryUntil, mainModelFailureDelayMs, mainModelRetryDelayMs, MAIN_MODEL_AUTO_RETRY_HORIZON_MS, modelRef, nextUntriedModelRef, normalizeModelRefs, splitModelRef, type MainModelFailure } from "./main-model-recovery.js";
+import { classifyMainModelFailure, isContextOverflowError, isLongLivedFailureKind, mainModelAutoRetryUntil, mainModelFailureDelayMs, mainModelRetryDelayMs, MAIN_MODEL_AUTO_RETRY_HORIZON_MS, modelRef, nextUntriedModelRef, normalizeModelRefs, splitModelRef, type MainModelFailure } from "./main-model-recovery.js";
 import { ModelSelector, type ModelScope } from "./model-selector.js";
 import { loadGlobalSettings, loadSettings } from "./goal-settings.js";
 import { clearLoopTimer, scheduleLoopTick } from "./goal-loop.js";
@@ -184,6 +184,34 @@ export function createGoalRecovery(flagsArg: RecoveryFlags, d: RecoveryDeps): vo
 
 export function mainModelRecoveryActive(): boolean { return !!state.mainModelRecovery?.retryAt; }
 
+/** v0.34.116: surface a one-liner when glla observes a session_compact
+ * failure. The signal is a length-context exception caught during the
+ * next send after a compaction attempt. When the message is genuinely the
+ * context-overflow kind (the prompt still does not fit, the model just
+ * cannot serve it), we wrap it with `isContextOverflow: true` so the
+ * classifier routes the next fallback-step through the selector instead of
+ * refusing rotation. The call site lives in goal-loop.ts; this function
+ * is the single chokepoint. */
+export function observeCompactFailure(ctx: ExtensionContext, error: string | undefined): boolean {
+  const text = typeof error === "string" ? error.trim() : "";
+  if (!text) return false;
+  if (!isContextOverflowError(text)) return false;
+  appendLedger(ctx.cwd, "compact_failure_observed", { at: nowIso(), error: text.slice(0, 240) });
+  ctx.ui.notify("glla: session_compact did not release the overflow — walking the fallback chain to a larger-context model.", "warning");
+  return true;
+}
+
+/** v0.34.116: classify a compact-failure string and route through
+ * tryMainModelFallback. Returns true when a backup was selected. The
+ * caller should still cancel the in-flight send / re-arm the continuation
+ * so the next attempt lands on the rotated model. */
+export async function recoverFromContextOverflow(ctx: ExtensionContext, error: string | undefined): Promise<boolean> {
+  const failure = classifyMainModelFailure(error, { isContextOverflow: true });
+  if (failure.kind !== "context-overflow") return false;
+  observeCompactFailure(ctx, error);
+  return tryMainModelFallback(ctx, failure);
+}
+
 export function mainModelRecoveryKind(): "goal" | "loop" { return state.loop?.active ? "loop" : "goal"; }
 
 export function mainModelRecoveryReason(failure: MainModelFailure): string {
@@ -286,7 +314,12 @@ function sessionModelSelector(ctx: ExtensionContext): ModelSelector {
 
 /** Select one configured backup before pi's own agent-level retry continues. */
 export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainModelFailure): Promise<boolean> {
-  if (flags.mainModelSwitchInFlight || failure.kind === "non-recoverable") return false;
+  if (flags.mainModelSwitchInFlight) return false;
+  // v0.34.116: context-overflow is the one failure the recovery path
+  // walks BACKUP because the prompt is no longer the problem — the model
+  // is. Every other non-recoverable (aborted, length-cap mid-stream) is
+  // still refused here.
+  if (failure.kind === "non-recoverable") return false;
   const refs = mainModelFallbackRefs(ctx);
   if (refs.length === 0) return false;
   const current = modelRef(ctx.model);
