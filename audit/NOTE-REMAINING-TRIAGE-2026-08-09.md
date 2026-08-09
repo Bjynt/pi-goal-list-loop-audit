@@ -1,6 +1,6 @@
 # note.md remaining-item triage — v0.34.119
 
-User request: re-check `/home/dracon/chat/pi/note.md`, identify anything still unaddressed, and test each item. The note now contains 13 actionable observations, including the newer rate-limit screenshot.
+User request: re-check `/home/dracon/chat/pi/note.md`, identify anything still unaddressed, and test each item. The note contains 13 actionable observations, including the newer rate-limit screenshot. On 2026-08-09 the source note was annotated in place with the status of every finding; this audit is the durable detailed record.
 
 ## Status matrix
 
