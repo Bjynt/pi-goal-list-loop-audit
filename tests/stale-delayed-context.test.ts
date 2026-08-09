@@ -36,8 +36,8 @@ test("v0.34.20: quota timers have one session-boundary adapter", () => {
   assert.match(GOAL, /const generation = sessionGeneration;/);
   assert.match(GOAL, /const current = freshCtxForGeneration\(generation\);/);
   assert.match(GOAL, /fire: \(ctx: ExtensionContext\) => void \| Promise<void>/);
-  assert.match(GOAL, /scheduleQuotaRetryForSession\(ctx, quota\.retryAfterSec, result\.error, \(fresh\) =>/);
-  assert.match(GOAL, /scheduleQuotaRetryForSession\(ctx, cooldownMs \/ 1000, reason, \(fresh\) =>/);
+  assert.match(GOAL, /scheduleQuotaRetryForSession\(ctx, quota\.retryAfterSec, result\.error, \(fresh(?:: ExtensionContext)?\) =>/);
+  assert.match(GOAL, /scheduleQuotaRetryForSession\(ctx, cooldownMs \/ 1000, reason, \(fresh(?:: ExtensionContext)?\) =>/);
 });
 
 test("v0.34.20: detached fan-out revalidates after user confirmation", () => {
