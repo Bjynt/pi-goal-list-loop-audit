@@ -450,7 +450,15 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
   // in archiveCurrentGoal can find the parent at completion time, and so the
   // group-open counter (active child = +1) stays accurate while a child runs.
   if (next.parentId) goal.parentId = next.parentId;
-  setGoal(goal, ctx, "list-cascade");
+  if (!setGoal(goal, ctx, "list-cascade")) {
+    // The queue item was removed before activation so its sidecar could not
+    // masquerade as waiting work. Restore both durable representations when
+    // the prior live objective could not be archived safely.
+    writeQueueItemFile(ctx.cwd, next);
+    replaceState({ ...state, list: queue });
+    persistState(ctx);
+    return false;
+  }
   iterationCounter = 0;
   consecutiveErrorIterations = 0;
   consecutiveAbortIterations = 0;

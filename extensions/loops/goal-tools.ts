@@ -1462,7 +1462,9 @@ function registerAgentTools(pi: any): void {
         return { content: [{ type: "text", text: "Goal activation was not started; the current objective was preserved." }], details: {} };
       }
       const goal = createGoal(full, liveCtx);
-      setGoal(goal, liveCtx, autoAccept ? "draft-autoaccepted" : "draft-confirmed");
+      if (!setGoal(goal, liveCtx, autoAccept ? "draft-autoaccepted" : "draft-confirmed")) {
+        return { content: [{ type: "text", text: "Goal activation was not persisted; the current objective remains open." }], details: {} };
+      }
       // v0.29.4: auto-accepted drafts START (autoAcceptDrafts is the
       // pre-consent — the user asked for the draft in-session). autoResume
       // no longer gates draft starts; it gates ONLY launch-time restore of

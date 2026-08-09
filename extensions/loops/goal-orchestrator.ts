@@ -655,7 +655,7 @@ function notifyPersistenceState(ctx: ExtensionContext): void {
   }
 }
 
-function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): void {
+function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): boolean {
   // v0.33.1: per-goal module state resets at activation — a new goal must
   // not inherit the previous goal's compact debt/resync, quota streak,
   // token-message dedupe set, or widget action feed.
@@ -676,10 +676,13 @@ function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): void {
   // reasonable "it will come back" expectation broke with no notice. If the
   // superseded goal had a pending scheduled resume, say so explicitly and
   // ledger the cancellation so forensics can trace the dropped intent.
-  if (state.goal && state.goal.id !== goal.id && (state.goal.status === "active" || state.goal.status === "paused")) {
+  if (state.goal && state.goal.id !== goal.id && ["active", "paused", "auditing"].includes(state.goal.status)) {
     const replaced = state.goal;
     const hadScheduledResume = !!replaced.pauseResumeAt;
-    archiveCurrentGoal(ctx, "aborted", `replaced by goal ${goal.id}`);
+    if (!archiveCurrentGoal(ctx, "aborted", `replaced by goal ${goal.id}`)) {
+      ctx.ui.notify(`New objective not started — the current ${replaced.policy === "list" ? "list item" : "goal"} could not be archived safely.`, "warning");
+      return false;
+    }
     if (hadScheduledResume) {
       appendLedger(ctx.cwd, "replaced_resume_cancelled", {
         goalId: replaced.id,
@@ -707,6 +710,7 @@ function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): void {
   state.goal!.activePath = path.relative(ctx.cwd, file) || file;
   persistState(ctx);
   appendLedger(ctx.cwd, "goal_created", { goalId: goal.id, objective: goal.objective, policy: goal.policy, via });
+  return true;
 }
 
 function updateGoal(patch: Partial<Goal>, ctx: ExtensionContext): void {
@@ -853,12 +857,12 @@ async function fanOutListAuditFindings(cwd: string, generation: number): Promise
   );
 }
 
-function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: string): void {
+function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: string): boolean {
   releaseContinuationDispatchStandDown();
   clearDispatchRecord(ctx.cwd);
   postCompactResumeOwed = false; // v0.33.1: the dead goal's compact debt/resync dies with it
   postCompactResyncPending = false;
-  if (!state.goal) return;
+  if (!state.goal) return false;
   const goal = state.goal;
   const pendingAttemptId = goal.pendingCompletion?.attemptId;
   ensureDirs(ctx.cwd);
@@ -871,9 +875,11 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
     fs.writeFileSync(target, md);
     return true;
   }) === true;
-  if (archived) {
-    try { fs.unlinkSync(goalMdPath(ctx.cwd, goal.id)); } catch {}
+  if (!archived) {
+    ctx.ui.notify(`Could not archive ${goal.policy === "list" ? "the list item" : "the goal"} — the live objective was kept open and no terminal state was recorded. Fix the project disk and retry.`, "warning");
+    return false;
   }
+  try { fs.unlinkSync(goalMdPath(ctx.cwd, goal.id)); } catch {}
   replaceState({
     ...state,
     goal: {
@@ -908,7 +914,7 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
   // and clear the slot only after any list cascade/reviewer work below has
   // had a chance to choose a successor.
   const closeArchivedSlot = () => {
-    if (!archived || state.goal?.id !== goal.id) return;
+    if (state.goal?.id !== goal.id) return;
     replaceState({ ...state, goal: null });
     persistState(ctx);
   };
@@ -978,13 +984,14 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
       ctx.ui.notify("List complete. /loop audit to sweep the project for the next batch of work.", "info");
     }
     closeArchivedSlot();
-    return;
+    return true;
   }
   // v0.26.0: a /goal (non-list) reached a terminal state → maybe fire.
   if (goal.policy !== "list") {
     fireReviewer(ctx, { kind: "goal", goalId: goal.id, objective: goal.objective, terminal: status === "complete" ? "goal-complete" : status === "aborted" ? "goal-aborted" : "goal-paused" });
   }
   closeArchivedSlot();
+  return true;
 }
 
 /** v0.34.21: durable completion-audit lifecycle helpers. A claim without

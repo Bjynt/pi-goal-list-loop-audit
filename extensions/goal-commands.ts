@@ -49,7 +49,7 @@ export interface CommandDeps {
   notifyExternal: (ctx: ExtensionContext, message: string) => void;
   persistState: (ctx: ExtensionContext) => void;
   updateGoal: (patch: Partial<Goal>, ctx: ExtensionContext) => void;
-  setGoal: (goal: Goal, ctx: ExtensionContext, via?: string) => void;
+  setGoal: (goal: Goal, ctx: ExtensionContext, via?: string) => boolean;
   archiveCurrentGoal: (ctx: ExtensionContext, status: Status, stopReason?: string) => void;
   healGoalPolicy: (ctx: ExtensionContext) => boolean;
   startDrafting: (ctx: ExtensionContext, target: "goal" | "list" | "loop", seed?: string) => Promise<boolean>;
@@ -245,7 +245,7 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
   flags.draftingTarget = null; // explicit objective cancels any drafting session
   resolveCarryover(ctx, "goal"); // v0.28.14: surface/clear stale leftovers
   const goal = createGoal(raw, ctx);
-  setGoal(goal, ctx);
+  if (!setGoal(goal, ctx)) return;
   // Reset counters
   flags.iterationCounter = 0;
   flags.consecutiveErrorIterations = 0;
