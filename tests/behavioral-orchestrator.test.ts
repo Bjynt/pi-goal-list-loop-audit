@@ -244,24 +244,16 @@ test("v0.35.x: list cancel archives the active item, does not relabel it as acti
   await tick();
 
   await pi.command("list", "cancel", ctx);
-  const cancelled = readState(cwd).goal as {
-    status: string;
-    policy: string;
-    stopReason?: string;
-    archivedPath?: string;
-    auditHistory?: Array<{ report?: string }>;
-  };
-  assert.equal(cancelled.status, "aborted", "/list cancel transitions the active list item to aborted");
-  assert.equal(cancelled.policy, "list");
-  assert.equal(cancelled.stopReason, "list cancelled");
-  assert.deepEqual(readState(cwd).list, [], "list cancel drops waiting items, rather than leaving a hidden retry queue");
-  assert.equal(cancelled.auditHistory?.[0]?.report, priorAuditReport, "the prior auditor report survives the abort");
-  assert.ok(cancelled.archivedPath, "the aborted list item has an archive path");
-  const archive = fs.readFileSync(path.join(cwd, cancelled.archivedPath!), "utf8");
+  const afterCancel = readState(cwd);
+  assert.equal(afterCancel.goal, null, "/list cancel closes the active list item after archiving it");
+  assert.deepEqual(afterCancel.list, [], "list cancel drops waiting items, rather than leaving a hidden retry queue");
+  const archivedPath = fs.readdirSync(path.join(cwd, ".pi-glla", "archive"))[0]!;
+  const archive = fs.readFileSync(path.join(cwd, ".pi-glla", "archive", archivedPath), "utf8");
   assert.match(archive, /\*\*Status\*\*: aborted/);
   assert.match(archive, /\*\*Policy\*\*: list/);
   assert.match(archive, /\*\*Stop reason\*\*: list cancelled/);
   assert.match(archive, /disapproved — `fixture-auditor`/, "the archive keeps the prior verdict classification");
+  assert.match(archive, new RegExp(priorAuditReport));
 
   const archived = ledgerEvent(cwd, "goal_archived");
   assert.equal(archived.value.status, "aborted");
@@ -274,14 +266,11 @@ test("v0.35.x: list cancel archives the active item, does not relabel it as acti
 
   const sentAfterCancel = pi.sent.length;
   await pi.command("list", "resume", ctx);
-  assert.equal((readState(cwd).goal as { status: string }).status, "aborted", "an aborted item is not silently resumed");
-  assert.ok(ctx.ui.matching("last list item is aborted").length >= 1, "resume explains the terminal list state");
-  assert.equal(pi.sent.length, sentAfterCancel, "resume does not dispatch a retry for an aborted item");
-
+  assert.equal(pi.sent.length, sentAfterCancel, "resume does not dispatch after the objective is closed");
   const status = await pi.runTool("list_status", {}, ctx);
-  assert.match(status.content[0]?.text ?? "", /^Last \[list\] \(aborted\):/, "list_status calls a terminal item Last, not Active");
+  assert.match(status.content[0]?.text ?? "", /no active list|empty/i, "list_status no longer presents a closed item as live");
   await pi.command("list", "show", ctx);
-  assert.match(ctx.ui.notifies.at(-1)?.message ?? "", /^Last: \[list\].*\(aborted\)/, "/list show is truthful after cancellation");
+  assert.match(ctx.ui.notifies.at(-1)?.message ?? "", /Active: \(none\)/, "/list show is truthful after cancellation");
 });
 
 test("v0.34.119: /glla cancel archives the active list item and drops the waiting objective queue", async () => {
@@ -296,9 +285,8 @@ test("v0.34.119: /glla cancel archives the active list item and drops the waitin
   const ctx = await freshSession(cwd, "startup");
   await tick();
   await pi.command("glla", "cancel", ctx);
-  const after = readState(cwd) as unknown as { goal: { status: string; stopReason?: string }; list?: unknown[] };
-  assert.equal(after.goal.status, "aborted");
-  assert.equal(after.goal.stopReason, "list cancelled");
+  const after = readState(cwd) as unknown as { goal: unknown; list?: unknown[] };
+  assert.equal(after.goal, null, "glla cancel closes the objective after archiving it");
   assert.deepEqual(after.list, [], "glla cancel cancels the objective rather than leaving waiting list work behind");
   assert.equal(ledgerEvent(cwd, "list_cancelled").value.dropped, 1);
   assert.ok(ctx.ui.matching("List cancelled").length >= 1);
@@ -325,9 +313,8 @@ test("v0.34.119: /glla cancel also aborts an auditing list objective and clears 
   const ctx = await freshSession(cwd, "startup");
   await tick();
   await pi.command("glla", "cancel", ctx);
-  const after = readState(cwd) as unknown as { goal: { status: string; pendingCompletion?: unknown }; list?: unknown[] };
-  assert.equal(after.goal.status, "aborted");
-  assert.equal(after.goal.pendingCompletion, undefined, "cancel releases the detached claim");
+  const after = readState(cwd) as unknown as { goal: { status?: string; pendingCompletion?: unknown } | null; list?: unknown[] };
+  assert.equal(after.goal, null, "cancel closes the auditing objective after archiving it");
   assert.deepEqual(after.list, []);
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
 });

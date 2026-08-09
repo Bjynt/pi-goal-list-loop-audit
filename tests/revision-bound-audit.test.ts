@@ -345,8 +345,10 @@ test("v0.34.96: complete_goal routes to aborted when completionSummary says 'alr
   assert.match(res.content[0]!.text, /routed to status=aborted/i);
   assert.match(res.content[0]!.text, /v0\.34\.74/, "the matched version is named in the response");
   const st = readState(cwd);
-  assert.equal(st.goal?.status, "aborted", "the goal is archived as aborted, not complete");
-  assert.match(st.goal?.stopReason ?? "", /already_shipped:v0\.34\.74/, "stopReason names the version");
+  assert.equal(st.goal, null, "the live slot closes after the archived abort");
+  const archive = fs.readdirSync(path.join(cwd, ".pi-glla", "archive"));
+  assert.equal(archive.length, 1);
+  assert.match(fs.readFileSync(path.join(cwd, ".pi-glla", "archive", archive[0]!), "utf8"), /already_shipped:v0\.34\.74/, "the archive preserves the version reason");
   const ledger = readLedger(cwd);
   assert.equal(ledger.filter((l) => l.type === "complete_goal_already_shipped").length, 1);
   assert.equal(ledger.filter((l) => l.type === "audit_started").length, 0, "no auditor was started");
@@ -368,8 +370,10 @@ test("v0.34.96: complete_goal routes to aborted when completionSummary says 'no 
   assert.match(res.content[0]!.text, /routed to status=aborted/i);
   assert.match(res.content[0]!.text, /no version/i, "no version is named when summary has no vX.Y.Z");
   const st = readState(cwd);
-  assert.equal(st.goal?.status, "aborted");
-  assert.match(st.goal?.stopReason ?? "", /already_shipped:no new work shipped/, "stopReason names the matched phrase");
+  assert.equal(st.goal, null, "the live slot closes after the archived abort");
+  const archive = fs.readdirSync(path.join(cwd, ".pi-glla", "archive"));
+  assert.equal(archive.length, 1);
+  assert.match(fs.readFileSync(path.join(cwd, ".pi-glla", "archive", archive[0]!), "utf8"), /already_shipped:no new work shipped/, "the archive preserves the matched phrase");
 });
 
 test("v0.34.96: a NORMAL completionSummary still runs the auditor (no false-positive abort)", async () => {
