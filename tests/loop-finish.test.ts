@@ -12,8 +12,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { loopFinishStopReason } from "../extensions/goal-loop-forever.ts";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
-const goalSrc = fs.readFileSync(path.resolve("extensions", "loops", "goal.ts"), "utf-8");
+const goalSrc = readGoalRuntimeSource();
 const loopSrc = fs.readFileSync(path.resolve("extensions", "goal-loop.ts"), "utf-8"); // decomposition step 2
 
 test("loopFinishStopReason: cmdLoop('finish audit clean') → 'completed: audit clean' (item 7)", () => {

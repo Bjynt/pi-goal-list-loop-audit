@@ -22,6 +22,7 @@ import {
   piGlaDir,
   type ListItem,
 } from "../extensions/goal-loop-core.ts";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 function mkTmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "glla-disk-first-"));
@@ -176,7 +177,7 @@ test("v0.34.61: addSingleItem is disk-first (sidecar before state mutation)", ()
 });
 
 test("v0.34.61: list-draft path is disk-first (sidecar before state mutation)", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = readGoalRuntimeSource();
   // Auditor-fixed gap #2: the /list add (no args) drafting interview that
   // confirms to the queue. Same invariant: writeQueueItemFile first.
   const anchor = "List drafting: the confirmed contract goes into the QUEUE, not active.";

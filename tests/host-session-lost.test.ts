@@ -33,6 +33,7 @@ import activate, {
   __testOnlySetSessionReplacementUntil,
 } from "../extensions/loops/goal.js";
 import { MockPi, invalidateHostSession, makeMockCtx, tmpCwd, seedState, seedGoal, tick, type MockCtx } from "./harness/mock-pi.js";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
 function setGlobalAutoResume(v: boolean): void {
@@ -129,7 +130,7 @@ test("a lifecycle shutdown suppresses the terminal entirely — no loss event", 
 // ── (d) source pins — the emission classifies; no hardcoded unknown ────
 
 test("source pin: the emission classifies the reason instead of hardcoding unknown", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   assert.match(src, /reason: classifySessionHandleInvalidation\(\{/);
   assert.match(src, /sessionHandoffPending,/);
   assert.match(src, /mainModelRecoveryActive: mainModelRecoveryActive\(\),/);
@@ -137,7 +138,7 @@ test("source pin: the emission classifies the reason instead of hardcoding unkno
 });
 
 test("source pin: the classifier and its enum are exported", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   assert.match(src, /export function classifySessionHandleInvalidation\(/);
   assert.match(src, /"session_shutdown" \| "provider_disconnect" \| "silent_handle_death"/);
 });

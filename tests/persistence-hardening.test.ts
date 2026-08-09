@@ -27,9 +27,10 @@ import {
   isPersistenceDegraded,
   lastPersistenceFailure,
 } from "../extensions/goal-loop-core.js";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
-const GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const GOAL = readGoalRuntimeSource();
 const DISPLAY = fs.readFileSync("extensions/goal-loop-display.ts", "utf-8");
 const SCHEMA = fs.readFileSync("schemas/goal.schema.json", "utf-8");
 

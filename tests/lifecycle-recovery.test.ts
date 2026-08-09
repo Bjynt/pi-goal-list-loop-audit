@@ -34,6 +34,7 @@ import * as path from "node:path";
 import activate, { __testOnlyResetStaleFlag, __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
 import { readState, LIST_MUTATING_SUBCOMMANDS, SETTINGS_MUTATING_ACTIONS } from "../extensions/goal-loop-core.js";
 import { MockPi, makeMockCtx, tmpCwd, seedState, invalidateHostSession, tick, type MockCtx } from "./harness/mock-pi.js";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 const pi = new MockPi();
 activate(pi.api);
@@ -236,7 +237,7 @@ test("v0.34.54: settings after a fresh session_start — the table opens AND a r
 // ────────────────────────────────────────────────────────────────────
 
 test("v0.34.54: source — read-only surfaces are never in the mutating sets; the gates are the honest refusal, not silence", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = readGoalRuntimeSource();
   const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2
   assert.ok(!LIST_MUTATING_SUBCOMMANDS.has("show") && !LIST_MUTATING_SUBCOMMANDS.has("depth"), "show/depth stay read-only for /list");
   assert.ok(!SETTINGS_MUTATING_ACTIONS.has("status") && !SETTINGS_MUTATING_ACTIONS.has("log") && !SETTINGS_MUTATING_ACTIONS.has("stats") && !SETTINGS_MUTATING_ACTIONS.has("audits"), "read-only /glla verbs stay ungated");

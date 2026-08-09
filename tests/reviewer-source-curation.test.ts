@@ -22,8 +22,9 @@ import {
   runReviewer,
   type ReviewerDeps,
 } from "../extensions/reviewer.ts";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
-const SRC_GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const SRC_GOAL = readGoalRuntimeSource();
 
 // The exact 4 junk findings from the 0.26.3 misfire:
 const LIVE_FALSE_POSITIVES = [

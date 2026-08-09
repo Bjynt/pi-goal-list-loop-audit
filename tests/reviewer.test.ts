@@ -22,6 +22,7 @@ import {
   runReviewer,
   type ReviewerDeps,
 } from "../extensions/reviewer.ts";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 function mkDeps(cwd: string, over: Partial<ReviewerDeps> = {}) {
   const calls = { enqueued: [] as string[][], proposed: [] as string[], notified: [] as string[], ledgered: [] as string[] };
@@ -163,7 +164,7 @@ test("menu options reflect the config", () => {
 });
 
 test("no /loop triggering: the loop stop path never calls runReviewer", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   // cmdLoop/stop handlers must not reference the reviewer:
   const loopSection = src.slice(src.indexOf('pi.registerCommand("loop"'));
   assert.doesNotMatch(loopSection, /runReviewer|fireReviewer/);

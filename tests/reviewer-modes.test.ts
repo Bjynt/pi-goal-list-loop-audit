@@ -20,8 +20,9 @@ import {
   runReviewer,
   type ReviewerDeps,
 } from "../extensions/reviewer.ts";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
-const SRC_GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const SRC_GOAL = readGoalRuntimeSource();
 const SRC_CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2
 
 function mkDeps(cwd: string, over: Partial<ReviewerDeps> = {}) {

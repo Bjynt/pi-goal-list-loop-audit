@@ -17,11 +17,9 @@ import {
   classifyImpossibleReason,
   shouldSuppressHeartbeatForRecentShip,
 } from "../extensions/goal-loop-core.ts";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
-const goalSrc = fs.readFileSync(
-  path.resolve("extensions", "loops", "goal.ts"),
-  "utf-8",
-);
+const goalSrc = readGoalRuntimeSource();
 
 // ---- item 22: pendingTasks extraction ----
 

@@ -37,8 +37,9 @@ afterEach(() => setGlobalAutoResume(false));
 
 import { readState } from "../extensions/goal-loop-core.js";
 import { MockPi, invalidateHostSession, makeMockCtx, tmpCwd, seedState, seedGoal, seedLoop, staleError, tick, type MockCtx } from "./harness/mock-pi.js";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
-const GOAL_SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const GOAL_SRC = readGoalRuntimeSource();
 
 const pi = new MockPi();
 activate(pi.api);
@@ -1804,7 +1805,7 @@ test("one-active-thing: /goal resume guard remains; the load-time combo is auto-
   // The 0.28.21 behavioral setup (paused goal + live loop after a reload)
   // is unreachable now: v0.29.6 arbitration resolves the stack AT LOAD.
   // The in-session guard stays (pause a goal → start a loop → /goal resume):
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = readGoalRuntimeSource();
   assert.match(SRC, /A loop is active — one active thing/);
   const cwd = tmpCwd();
   seedState(cwd, {
@@ -2055,7 +2056,7 @@ test("/goal status + /goal pause: no goal id in user-facing text (v0.28.24)", as
 });
 
 test("goal-start notify has no (id: …) suffix (v0.28.24 source pin)", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   assert.ok(!src.includes("(id: ${goal.id})"), "started/saved notifies dropped the id suffix");
   assert.ok(!src.includes("List item ${state.goal.id} paused"), "list-pause notify names the item");
 });

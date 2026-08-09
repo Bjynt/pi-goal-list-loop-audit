@@ -20,8 +20,9 @@ import {
   listAuditFanoutItemText,
   parseAuditFindingsForFanout,
 } from "../extensions/goal-loop-forever.ts";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
-const SRC = fs.readFileSync(new URL("../extensions/loops/goal.ts", import.meta.url), "utf-8");
+const SRC = readGoalRuntimeSource();
 const CMDS = fs.readFileSync(new URL("../extensions/goal-commands.ts", import.meta.url), "utf-8");
 const LOOP = fs.readFileSync(new URL("../extensions/goal-loop.ts", import.meta.url), "utf-8");
 

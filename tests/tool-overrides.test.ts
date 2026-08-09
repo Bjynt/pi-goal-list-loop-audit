@@ -10,6 +10,7 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 test("Settings type accepts toolOverrides (allow / hide / perToolConfig)", () => {
   const src = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
@@ -25,7 +26,7 @@ test("SETTINGS_KEYS includes toolOverrides for provenance tracking", () => {
 });
 
 test("goal.ts ensureAgentToolsActive applies toolOverrides.allow and .hide", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   // The function reads toolOverrides and applies allow/hide after the
   // existing missingGllaTools self-heal.
   assert.match(src, /const overrides = loadSettings\(ctx\.cwd\)\.toolOverrides/);

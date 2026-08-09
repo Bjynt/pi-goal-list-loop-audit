@@ -33,8 +33,9 @@ import {
   __testOnlyHeartbeatTickRaw,
   __testOnlySetHeartbeatStaleDebounce,
 } from "../extensions/goal-heartbeat.js";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
-const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const SRC = readGoalRuntimeSource();
 const HB = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 
 const pi = new MockPi();

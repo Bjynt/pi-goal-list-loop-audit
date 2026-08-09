@@ -19,8 +19,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { lastShippedAtMs } from "../extensions/goal-loop-core.ts";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
-const SRC_GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const SRC_GOAL = readGoalRuntimeSource();
 const SRC_CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
 
 test("lastShippedAtMs ignores the state-file mtime (the self-sustaining term)", () => {

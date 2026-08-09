@@ -21,6 +21,7 @@ import {
   type AuditLogEntry,
 } from "../extensions/goal-loop-core.ts";
 import { buildWidgetLines } from "../extensions/goal-loop-display.ts";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 test("stripThinkBlocks removes think bodies, fragments, and artifacts", () => {
   // Wild-caught shape (pully hsq4xq, 2026-07-25): leading think body:
@@ -89,7 +90,7 @@ test("tail-aware excerpt: capped output keeps the Required-fixes tail", () => {
 });
 
 test("disapproval feedback is surfaced even when the continuation turn never starts", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   assert.match(src, /returned tool text reaches the executor only if a continuation/);
   assert.match(src, /ctx\.ui\.notify\(`Auditor disapproved\. Report excerpt:/);
   assert.match(src, /no actionable feedback returned; use \/glla audits full/);

@@ -34,6 +34,7 @@ import activate, {
   __testOnlyResetTerminalFlags,
 } from "../extensions/loops/goal.js";
 import { seedGoal, seedState, MockPi, makeMockCtx, tmpCwd, tick, type MockCtx } from "./harness/mock-pi.js";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 const pi = new MockPi();
 activate(pi.api);
@@ -167,7 +168,7 @@ test("v0.34.63 — a lifecycle start with a DIFFERENT session id stays refused w
 });
 
 test("v0.34.63 — source guard: the barrier-completing resume gate is wired before the foreign-session return", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = readGoalRuntimeSource();
   assert.match(SRC, /const barrierAwaitingLoadedSession = initialSessionLoadPending && lifecycleSignal;/);
   assert.match(SRC, /resumeCompletesLoad = barrierAwaitingLoadedSession/);
   assert.match(SRC, /if \(foreignRecordedSession && !hostLifecycleStart && !resumeCompletesLoad\) return;/);

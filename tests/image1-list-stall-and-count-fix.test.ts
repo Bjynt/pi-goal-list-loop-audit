@@ -26,8 +26,9 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
-const SRC = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+const SRC = readGoalRuntimeSource();
 const CONT = fs.readFileSync(path.resolve("extensions/goal-continuation.ts"), "utf-8"); // decomposition step 5 (v0.34.113)
 
 // ---------------------------------------------------------------- Problem 1

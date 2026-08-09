@@ -18,8 +18,9 @@ import {
   shouldFirePendingLatchWatchdog,
 } from "../extensions/goal-loop-backoff.ts";
 import { classifyFindingText, extractFindings } from "../extensions/reviewer.ts";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
-const SRC_GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const SRC_GOAL = readGoalRuntimeSource();
 const HB = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 
 const BASE = {

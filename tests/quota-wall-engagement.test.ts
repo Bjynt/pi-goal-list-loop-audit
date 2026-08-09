@@ -34,7 +34,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const GOAL_SRC = readFileSync(join(here, "..", "extensions", "loops", "goal.ts"), "utf8");
+const GOAL_SRC = readGoalRuntimeSource();
 const CONT_SRC = readFileSync(join(here, "..", "extensions", "goal-continuation.ts"), "utf8"); // decomposition step 5 (v0.34.113): send-rearm storm moved
 const RECOVERY_SRC = readFileSync(join(here, "..", "extensions", "main-model-recovery.ts"), "utf8");
 const RECOVERY_MODULE_SRC = readFileSync(join(here, "..", "extensions", "goal-recovery.ts"), "utf8"); // decomposition step 3 (v0.34.111)
@@ -47,6 +47,7 @@ import {
   SEND_REARM_QUOTA_ESCALATE_MS,
   LONG_LIVED_FAILURE_KNOWLEDGE_MS,
 } from "../extensions/main-model-recovery.js";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 // ---------------------------------------------------------------------------
 // Pure escalation policy

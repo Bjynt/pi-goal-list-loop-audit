@@ -21,6 +21,7 @@ import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag } from 
 import { MockPi, makeMockCtx, tmpCwd, seedState, seedGoal, tick, type MockCtx } from "./harness/mock-pi.js";
 import { buildWidgetLines } from "../extensions/goal-loop-display.js";
 import type { Goal } from "../extensions/goal-loop-core.js";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
 function setGlobalAutoResume(v: boolean): void {
@@ -32,7 +33,7 @@ afterEach(() => {
   __testOnlyResetOwnerSession(); // release the shared owner claim so later/parallel files are unaffected
 });
 
-const GOAL_SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const GOAL_SRC = readGoalRuntimeSource();
 const RECOVERY_SRC = fs.readFileSync("extensions/goal-recovery.ts", "utf-8"); // decomposition step 3 (v0.34.111)
 const DISPLAY_SRC = fs.readFileSync("extensions/goal-loop-display.ts", "utf-8");
 const CORE_SRC = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");

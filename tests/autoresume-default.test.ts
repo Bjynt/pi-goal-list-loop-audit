@@ -10,8 +10,9 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
-const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const SRC = readGoalRuntimeSource();
 
 test("/glla settings persists explicit auto-resume off (tri-state, not undefined)", () => {
   assert.match(SRC, /saveSettings\("global", ctx\.cwd, \{ autoResume: v\.startsWith\("on"\) \? true : v\.startsWith\("off"\) \? false : undefined \}\)/);

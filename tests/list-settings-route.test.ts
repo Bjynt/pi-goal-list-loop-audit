@@ -28,6 +28,7 @@ import * as path from "node:path";
 import activate, { __testOnlyResetStaleFlag, __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
 import { readState } from "../extensions/goal-loop-core.js";
 import { MockPi, makeMockCtx, tmpCwd, seedState, invalidateHostSession, tick, type MockCtx } from "./harness/mock-pi.js";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 const pi = new MockPi();
 activate(pi.api);
@@ -134,7 +135,7 @@ test("v0.34.53: /list add settings… still adds a literal item — the explicit
 
 test("v0.34.53: source — /list help documents /glla as the settings command and the branch precedes the dump fallthrough", () => {
   const SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
-  const GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const GOAL = readGoalRuntimeSource();
   // The command surface (registerCommand description) documents the
   // supported settings command (description stays in goal.ts):
   assert.match(GOAL, /Loop 2: the list of audited goals[\s\S]*?Settings are under \/glla, not \/list — bare \/glla opens the settings table\./, "description points at /glla");

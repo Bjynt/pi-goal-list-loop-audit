@@ -4,8 +4,9 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
-const GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf8");
+const GOAL = readGoalRuntimeSource();
 const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf8");
 const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf8");
 const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf8");
