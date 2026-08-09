@@ -35,6 +35,7 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const GOAL_SRC = readFileSync(join(here, "..", "extensions", "loops", "goal.ts"), "utf8");
+const CONT_SRC = readFileSync(join(here, "..", "extensions", "goal-continuation.ts"), "utf8"); // decomposition step 5 (v0.34.113): send-rearm storm moved
 const RECOVERY_SRC = readFileSync(join(here, "..", "extensions", "main-model-recovery.ts"), "utf8");
 const RECOVERY_MODULE_SRC = readFileSync(join(here, "..", "extensions", "goal-recovery.ts"), "utf8"); // decomposition step 3 (v0.34.111)
 
@@ -113,17 +114,17 @@ test("v0.34.57: goal.ts records the long-lived timestamp at the classify site", 
 
 test("v0.34.57: the rearm escalation consults the dynamic threshold", () => {
   assert.ok(
-    GOAL_SRC.includes("elapsed >= sendStormEscalateMs(lastLongLivedFailureAt)"),
-    "the send-rearm storm check must use the knowledge-aware threshold, not the flat 15m constant",
+    CONT_SRC.includes("elapsed >= sendStormEscalateMs(flags.lastLongLivedFailureAt)"),
+    "the send-rearm storm check must use the knowledge-aware threshold, not the flat 15m constant (decomposition step 5: moved + flags re-spelling)",
   );
   assert.ok(
-    GOAL_SRC.includes("const mins = Math.round(sendStormEscalateMs(lastLongLivedFailureAt) / 60000)"),
+    CONT_SRC.includes("const mins = Math.round(sendStormEscalateMs(flags.lastLongLivedFailureAt) / 60000)"),
     "the escalation ledger/notification must report the actual threshold used",
   );
 });
 
 test("v0.34.57: escalation still funnels into the recovery envelope", () => {
-  const escalateSection = GOAL_SRC.slice(GOAL_SRC.indexOf("function escalateSendRearmStorm"));
+  const escalateSection = CONT_SRC.slice(CONT_SRC.indexOf("function escalateSendRearmStorm")); // decomposition step 5
   assert.ok(escalateSection.includes("recoverMainModelFromSendStorm(ctx, kind)"));
   assert.ok(
     escalateSection.includes('appendLedger(ctx.cwd, "send_rearm_escalated"'),
