@@ -14,7 +14,10 @@ export interface LiveObjective {
 }
 
 function liveGoal(goal: Goal | null | undefined): LiveObjective | null {
-  if (!goal || !["active", "paused", "auditing"].includes(goal.status)) return null;
+  // Paused work is resumable carryover, not a second live objective. The
+  // existing carryover policy already asks how to handle it; this conflict
+  // dialog is for a running/auditing slot that would be overwritten now.
+  if (!goal || !["active", "auditing"].includes(goal.status)) return null;
   return {
     kind: goal.policy === "list" ? "list" : "goal",
     id: goal.id,

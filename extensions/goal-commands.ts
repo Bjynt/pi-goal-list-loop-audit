@@ -1105,13 +1105,26 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
       ctx.ui.notify(`Usage: /list next [1-${listQueue().length || 1}]`, "info");
       return;
     }
-    // v0.28.14: one-active-thing — /list next must not jump a live loop.
-    if (isLoopActive()) {
-      ctx.ui.notify("A loop is active — /loop stop it before activating a list item.", "warning");
-      return;
-    }
-    if (state.goal && state.goal.status === "active") {
-      archiveCurrentGoal(ctx, "aborted", `skipped via /list next ${n > 1 ? n : ""}`.trim());
+    const targetItem = listQueue()[n - 1];
+    if (targetItem) {
+      const current = liveObjectives(state);
+      if (current.length > 0) {
+        const choice = await chooseObjectiveConflict(ctx, "list", targetItem.objective, current);
+        if (choice === "cancel") {
+          ctx.ui.notify("List activation cancelled; the current objective is unchanged.", "info");
+          return;
+        }
+        if (choice === "update") {
+          ctx.ui.notify("Update selected, but /list next is a replacement action. Use /list tweak to edit the current item; no item was switched.", "info");
+          return;
+        }
+        for (const item of current) {
+          if (item.kind === "loop" && isLoopActive()) await cmdLoop("stop", ctx);
+          else if (item.kind !== "loop" && state.goal && ["active", "auditing"].includes(state.goal.status)) {
+            if (!archiveCurrentGoal(ctx, "aborted", `skipped via /list next ${n > 1 ? n : ""}`.trim())) return;
+          }
+        }
+      }
     }
     if (!activateNextListItem(ctx, n, { explicit: true })) {
       ctx.ui.notify(listQueue().length === 0 ? "List is empty — nothing to activate." : `No item #${n} (list has ${listQueue().length}).`, "info");

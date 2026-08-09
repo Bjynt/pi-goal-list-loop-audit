@@ -1767,12 +1767,9 @@ function registerAgentTools(pi: any): void {
       if (!Number.isInteger(n) || n < 1) {
         return { content: [{ type: "text", text: "n must be a positive integer (1-based position)." }], details: {} };
       }
-      // v0.28.14: one-active-thing — a list item must not jump a live loop.
-      if (isLoopActive()) {
-        return { content: [{ type: "text", text: "A loop is active — one active thing at a time. The user must /loop stop it before a list item can activate." }], details: {} };
-      }
-      if (state.goal && state.goal.status === "active") {
-        archiveCurrentGoal(liveCtx, "aborted", "skipped via list_activate");
+      const targetItem = listQueue()[n - 1];
+      if (targetItem && !(await resolveDraftActivationConflict(liveCtx, "list", targetItem.objective))) {
+        return { content: [{ type: "text", text: "List activation was cancelled; the current objective was preserved." }], details: {} };
       }
       if (!activateNextListItem(liveCtx, n, { explicit: true })) {
         return { content: [{ type: "text", text: listQueue().length === 0 ? "List is empty." : `No item #${n} (list has ${listQueue().length} items).` }], details: {} };
