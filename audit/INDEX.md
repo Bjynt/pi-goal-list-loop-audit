@@ -34,6 +34,7 @@ plus a `v0.34.x-<TOPIC>.md` symlink for versioned docs). Older docs
 | v0.34.117 | v0.34.117-STALE-CTX-AUTO-RECOVERY.md | STALE-CTX-AUTO-RECOVERY-2026-08-09.md |
 | v0.34.118 | v0.34.118-BACKUPS-PICKER.md | BACKUPS-PICKER-2026-08-09.md |
 | v0.34.119 | v0.34.119-NOTE-REMAINING-TRIAGE.md | NOTE-REMAINING-TRIAGE-2026-08-09.md |
+| v0.34.121 | v0.34.121-NOTE-REMAINING-TRIAGE.md | NOTE-REMAINING-TRIAGE-2026-08-09.md |
 | external reviews | EXTERNAL-REVIEWS-2026-08-09.md | EXTERNAL-REVIEWS-2026-08-09.md |
 | v0.34.120 | v0.34.120-OBJECTIVE-LIFECYCLE.md | OBJECTIVE-LIFECYCLE-2026-08-09.md |
 | v0.34.121 | v0.34.121-OBJECTIVE-LIFECYCLE-FOLLOWUP.md | OBJECTIVE-LIFECYCLE-FOLLOWUP-2026-08-09.md |
@@ -41,7 +42,7 @@ plus a `v0.34.x-<TOPIC>.md` symlink for versioned docs). Older docs
 ## Topic index (canonical docs, newest first)
 
 **2026-08-09**
-- NOTE-REMAINING-TRIAGE-2026-08-09.md — re-audit of every note.md item; summary canonicalization, whole-objective cancel, closure integration tests, truthful stale-ctx `/new` limitation, and status matrix (v0.34.119)
+- NOTE-REMAINING-TRIAGE-2026-08-09.md — re-audit of every note.md item; summary canonicalization, whole-objective cancel, closure integration tests, truthful stale-ctx `/new` and subagent-transcript pi limitations, and 15-heading status matrix (v0.34.121)
 - EXTERNAL-REVIEWS-2026-08-09.md — raw retrieval status and relevant ChatGPT review excerpts; Qwen HTTP 401 blocker
 - OBJECTIVE-LIFECYCLE-2026-08-09.md — auto-close + final recap, one-active conflict choices, idempotent cancel/wipe, sidecar cleanup, and raw regression evidence (v0.34.120)
 - OBJECTIVE-LIFECYCLE-FOLLOWUP-2026-08-09.md — closes the three auditor objections: active-loop cancel precedence, provider/dispatch wipe cleanup, and blank-start terminal closure (v0.34.121)

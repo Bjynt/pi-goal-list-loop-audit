@@ -1,6 +1,6 @@
-# note.md remaining-item triage — v0.34.119
+# note.md remaining-item triage — v0.34.121
 
-User request: re-check `/home/dracon/chat/pi/note.md`, identify anything still unaddressed, and test each item. The note contains 13 actionable observations, including the newer rate-limit screenshot. On 2026-08-09 the source note was annotated in place with the status of every finding; this audit is the durable detailed record.
+User request: re-check `/home/dracon/chat/pi/note.md`, identify anything still unaddressed, and test each item. The note now contains 15 finding headings, including the newer subagent-visual screenshot. On 2026-08-09 the source note was annotated in place with the status of every finding; this audit is the durable detailed record.
 
 ## Status matrix
 
@@ -20,6 +20,8 @@ User request: re-check `/home/dracon/chat/pi/note.md`, identify anything still u
 | Stale ctx requiring `/new` (#12) | **Truthfully corrected, not magically solved** | `/reload` does not clear pi's cached stale context. Display guidance now says `/new`, and the recovery helper no longer claims `ExtensionAPI.newSession`. Automatic no-typing recovery is blocked by pi's public event-context API; this is filed as a pi-side limitation rather than hidden. |
 | Rate-limit / Token Plan wall (#13) | **Fixed and tested** | `quota-retry.ts` recognizes plan-quota 429s; main-model recovery parks durably and walks the configured backup chain; v0.34.118 provides the selector. Existing quota recovery/display tests and new picker tests pass. |
 
+| Subagent transcript visuals (#15) | **Reviewed / pi limitation documented in v0.34.121** | MMX vision review of `Screenshot_20260809_220633.png` identifies pi's native subagent tree: expanded entries show metadata but no full transcript/diff or side-by-side scratchpad reveal. No glla-owned renderer or public host hook owns this surface; a full fix requires a pi-side transcript/reveal API and UI. |
+
 ## Tests added or updated
 
 - `tests/image1-list-stall-and-count-fix.test.ts` — completion-summary canonicalization happens before the audit claim is persisted.
@@ -27,15 +29,19 @@ User request: re-check `/home/dracon/chat/pi/note.md`, identify anything still u
 - `tests/list-queue.test.ts` — source contract for whole-objective cancellation.
 - `tests/fresh-session-auto-recovery.test.ts` — current SDK capability boundary; no false `ExtensionAPI.newSession` claim; `/new` guidance.
 - `tests/stale-interrupt-resume.test.ts`, `tests/display.test.ts`, `tests/behavioral-orchestrator.test.ts` — stale guidance changed from misleading `/reload` to `/new`.
+- `mmx vision describe --image /home/dracon/Pictures/Screenshots/Screenshot_20260809_220633.png ...` — confirms the new subagent-visual surface is pi-owned, not a glla display regression.
 
 ## Verification
 
 ```text
 npx tsc --noEmit                       clean
-bun test                               1207 pass / 1 skip / 0 fail across 107 files
+bun test                               1209 pass / 1 skip / 0 fail across 107 files
 focused recovery/display/closure/list tests pass
+note status count                       15 (all finding headings explicitly annotated)
 ```
 
 ## Explicit remaining pi-side item
 
 Pi must expose a safe session-replacement action to event handlers (or an equivalent host-level recovery hook) if glla is expected to create a fresh session automatically after a stale event-context error. The extension cannot safely manufacture a replacement `AgentSessionRuntime` from the public `ExtensionContext`; it can only preserve state, stop blind sends, and direct the user to `/new`.
+
+Pi also owns the subagent transcript/reveal surface shown in the new screenshot. A glla extension cannot add the missing full-output/diff affordance to pi's native subagent tree without a host-level rendering or transcript API; glla records the limitation rather than claiming a plugin fix.

@@ -28,6 +28,16 @@ follow-up closes each one without changing pi core or host code.
    - Regression: a blank-start test seeds an archived terminal goal and proves
      `state.goal` is cleared and `terminal_goal_slot_closed` is ledgered.
 
+## New note finding: subagent visuals
+
+The note gained a new screenshot finding after the earlier 14-item audit:
+`Screenshot_20260809_220633.png` says subagents need better visuals. The required
+MMX vision pass identifies pi's native subagent tree and the missing full
+transcript/diff reveal as a host-owned surface. `note.md` now marks it
+`REVIEWED / PI LIMITATION DOCUMENTED`, and the detailed triage row plus blocker
+text are in `audit/NOTE-REMAINING-TRIAGE-2026-08-09.md`. No glla-owned renderer or
+public host API can fix that UI, so no speculative plugin change was made.
+
 ## Verification
 
 ```text
@@ -38,7 +48,8 @@ bun test
   1209 pass / 1 skip / 0 fail across 107 files
 ```
 
-The existing note triage, external-review evidence, stale-session limitation,
+The existing note triage, including the newly reviewed pi-owned subagent
+transcript-visual finding, external-review evidence, stale-session limitation,
 conflict confirmation, completion closure, and `/glla wipe` history-preserving
 contract remain documented in `audit/NOTE-REMAINING-TRIAGE-2026-08-09.md` and
 `audit/OBJECTIVE-LIFECYCLE-2026-08-09.md`.
