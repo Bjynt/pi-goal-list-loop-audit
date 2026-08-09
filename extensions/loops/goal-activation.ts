@@ -418,15 +418,15 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   });
   const settingsHandler = (args: string, ctx: ExtensionContext) => { rememberCtx(ctx); return cmdSettings(args, ctx); };
   pi.registerCommand("glla", {
-    description: "Open the settings UI for goals, loops, lists, and the auditor. `/glla` opens settings; arguments are reserved for actions.",
+    description: "Open the settings UI for goals, loops, lists, and the auditor. `/glla cancel` cancels the active objective; `/glla wipe` Confirm-gatedly clears all live state while preserving history.",
     getArgumentCompletions: completions([
       // Operational verbs only. Settings and section navigation belong in
       // the bare `/glla` table, so they do not compete with action completion.
       ["status", "show goal, list, loop, and pending decisions"],
       ["log", "show the recent event trail"],
       ["resume", "resume the paused or held live thing"],
-      ["cancel", "cancel the one live thing"],
-      ["wipe", "wipe goal, list, and loop state"],
+      ["cancel", "cancel the active objective (list item + queue)"],
+      ["wipe", "Confirm-gated idempotent reset of all live goal/list/loop state"],
       ["stats", "show per-project ledger rollups"],
       ["audits", "browse the audit log"],
       ["switchlog", "show the model-switch trail (model_switch / forbidden_model_switch)"],

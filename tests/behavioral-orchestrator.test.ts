@@ -319,6 +319,28 @@ test("v0.34.119: /glla cancel also aborts an auditing list objective and clears 
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
 });
 
+test("v0.35.0: one confirmed /glla wipe closes goal, queue, and terminal state without a second wipe", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    goal: seedGoal({ objective: "wipe-once objective — done when pinned" }),
+    list: [{ id: "wipe-waiting", objective: "orphan waiting item", addedAt: new Date().toISOString() }],
+  });
+  const ctx = await freshSession(cwd, "startup");
+  let confirms = 0;
+  ctx.ui.confirmImpl = async () => { confirms++; return true; };
+  await pi.command("glla", "wipe", ctx);
+  const after = readState(cwd);
+  assert.equal(after.goal, null, "the terminal goal record is removed from the live slot");
+  assert.deepEqual(after.list, []);
+  assert.equal(confirms, 1, "one wipe opens one destructive confirmation");
+  assert.equal(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length, 1, "history remains archived");
+  assert.equal(fs.readdirSync(path.join(cwd, ".pi-glla", "goals")).filter((name) => name.endsWith(".queue.json")).length, 0, "queue sidecars are gone");
+  await pi.command("glla", "wipe", ctx);
+  assert.equal(confirms, 1, "a clean second invocation is an idempotent no-op, not a second destructive flow");
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
+
 test("v0.35.x: /list tweak amends a paused list item without activating it or changing waiting entries", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
