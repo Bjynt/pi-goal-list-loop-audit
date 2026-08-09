@@ -1,6 +1,20 @@
 # Changelog
 
 ## Unreleased
+### 0.34.112 — decomposition step 4: extensions/goal-heartbeat.ts extracted
+  (v0.34.112, audit/GOAL-HEARTBEAT-EXTRACTION-2026-08-09.md). The heartbeat
+  watchdog cluster — `heartbeatTick`, `startHeartbeat`, the subagent-hang
+  machinery (`upsertSubagentHangProbe` / `markSubagentHangProgress` /
+  `endSubagentHangProbe` / `classifyHungSubagents`), the zombie-run and
+  wedge/latch watchdogs, and the five heartbeat test hooks — moved from
+  `extensions/loops/goal.ts` (8,162 → 7,683 lines) into the new
+  `extensions/goal-heartbeat.ts` (702 lines, ≤2,000). goal.ts owns the 28
+  heartbeat flags and observes them through `HeartbeatFlags` accessors;
+  the 15 dependencies + 2 continuation-unanswered values pass in via
+  `HeartbeatDeps`. Zero behavior change: ledger event names unchanged.
+  11 test files re-anchored to `HEARTBEAT_SRC` pins (flags.X re-spelling,
+  pins never weakened). Suite: 1146 pass / 1 skip / 0 fail (×2), tsc clean.
+
 ### 0.34.111 — decomposition step 3: extensions/goal-recovery.ts extracted
 
 Third extraction per docs/GLLA-POSITIONING-AND-DECOMPOSITION-2026-08-08.md
