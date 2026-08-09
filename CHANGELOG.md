@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+### 0.34.114 — decomposition step 6: goal.ts thin installer surface
+  (v0.34.114, audit/GOAL-INSTALLER-THINNING-2026-08-09.md). The public
+  `extensions/loops/goal.ts` entrypoint is now a 12-line installer/export
+  surface (≤700-line contract satisfied) and the historical runtime was moved
+  byte-for-byte into the sibling `extensions/loops/goal-runtime.ts`. The move
+  preserves the default export and every named test hook through re-exports,
+  keeps imports one-way (`goal.ts` → `goal-runtime.ts`, never back), and leaves
+  ledger event names unchanged. Source-pinned tests that intentionally inspect
+  the runtime were re-anchored from `goal.ts` to `goal-runtime.ts`; expectations
+  were not weakened. Suite: 1146 pass / 1 skip / 0 fail, tsc clean.
+
 ### 0.34.113 — decomposition step 5: extensions/goal-continuation.ts extracted
   (v0.34.113, audit/GOAL-CONTINUATION-EXTRACTION-2026-08-09.md). The
   continuation cluster — `scheduleContinuation`/`sendContinuation`,
