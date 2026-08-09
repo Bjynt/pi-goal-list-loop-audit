@@ -189,7 +189,7 @@ test("v0.34.61: addSingleItem is disk-first (sidecar before state mutation)", ()
 });
 
 test("v0.34.61: list-draft path is disk-first (sidecar before state mutation)", () => {
-  const SRC = readGoalRuntimeSource();
+  const SRC = fs.readFileSync("extensions/loops/goal-tools.ts", "utf-8");
   // Auditor-fixed gap #2: the /list add (no args) drafting interview that
   // confirms to the queue. Same invariant: writeQueueItemFile first.
   const anchor = "List drafting: the confirmed contract goes into the QUEUE, not active.";
