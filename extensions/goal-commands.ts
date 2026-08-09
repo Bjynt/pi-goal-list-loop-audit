@@ -26,7 +26,7 @@ import { Settings, globalSettingsPath, loadSettings, projectSettingsPath, saveSe
 import { ReviewerConfig, normalizeObjective, resolveReviewerConfig, reviewerMenuOptions } from "./reviewer.js";
 import type { SettingsSectionId } from "./settings-menu.js";
 import { cmdLoop, clearLoopTimer, finishLoopGit, isLoopActive, scheduleLoopTick } from "./goal-loop.js";
-import { chooseObjectiveConflict, liveObjectives, type LiveObjective } from "./goal-objective-conflict.js";
+import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-conflict.js";
 
 export interface CommandFlags {
   get draftingTarget(): "goal" | "list" | "loop" | null; set draftingTarget(v: "goal" | "list" | "loop" | null);
@@ -232,10 +232,6 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
     await startDrafting(ctx, "goal");
     return;
   }
-  if (isLoopActive()) {
-    ctx.ui.notify("A /loop is active — /loop stop it before setting a goal.", "warning");
-    return;
-  }
   // v0.11.0: a contract-less objective gets drafted, not activated raw —
   // the pi-goal-x lesson: arg + Enter is worse than a 5-minute draft.
   // Include an explicit "Done when: …" clause to activate instantly.
@@ -245,6 +241,7 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
     await startDrafting(ctx, "goal", raw);
     return;
   }
+  if (!(await resolveGoalStartConflict(ctx, raw))) return;
   flags.draftingTarget = null; // explicit objective cancels any drafting session
   resolveCarryover(ctx, "goal"); // v0.28.14: surface/clear stale leftovers
   const goal = createGoal(raw, ctx);

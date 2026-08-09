@@ -374,9 +374,35 @@ import {
   type LoopFlags,
 } from "../goal-loop.js";
 import { defineGoalRuntimeGlobal } from "./goal-runtime-globals.js";
+import { chooseObjectiveConflict, liveObjectives, type ObjectiveKind } from "../goal-objective-conflict.js";
 
 type AuditorModelCandidate = any;
 type PendingCompletion = any;
+
+async function resolveDraftActivationConflict(ctx: ExtensionContext, incoming: ObjectiveKind, objective: string): Promise<boolean> {
+  const current = liveObjectives(state);
+  if (current.length === 0) return true;
+  const choice = await chooseObjectiveConflict(ctx, incoming, objective, current);
+  if (choice === "cancel") {
+    ctx.ui.notify(`New ${incoming} objective cancelled; the current objective is unchanged.`, "info");
+    return false;
+  }
+  if (choice === "update") {
+    const one = current[0];
+    if (one?.kind === "goal" && incoming === "goal" && one.status === "active") await cmdGoal(`tweak ${objective}`, ctx);
+    else if (one?.kind === "list" && incoming === "list") await cmdList(`tweak ${objective}`, ctx);
+    else if (one?.kind === "loop" && incoming === "loop") await cmdLoop(`refine ${objective}`, ctx);
+    else ctx.ui.notify("Update selected, but this cross-mode start has no safe in-place edit. No replacement was started.", "info");
+    return false;
+  }
+  for (const item of current) {
+    if (item.kind === "loop" && isLoopActive()) await cmdLoop("stop", ctx);
+    else if (item.kind !== "loop" && state.goal && ["active", "paused", "auditing"].includes(state.goal.status)) {
+      archiveCurrentGoal(ctx, "aborted", `replaced by new ${incoming} objective`);
+    }
+  }
+  return true;
+}
 
 function registerAgentTools(pi: any): void {
   pi.registerTool(defineTool({
@@ -1269,12 +1295,9 @@ function registerAgentTools(pi: any): void {
         clearDraftingState();
         return { content: [{ type: "text", text: DRAFT_SESSION_INTERRUPTED_MESSAGE }], details: {} };
       }
-      // v0.28.14: one-active-thing EARLY guard — refuse the whole interview
-      // when a loop is live (the post-confirm backstop below stays: state
-      // can change mid-interview).
-      if (isLoopActive()) {
-        return { content: [{ type: "text", text: "A loop is active — one active thing at a time. The user must /loop stop it before a goal or list item can activate; do not re-propose until then." }], details: {} };
-      }
+      // v0.35.0: drafting may proceed while another objective is live;
+      // activation is gated after the user confirms, when the conflict
+      // dialog can offer update / replace / cancel without discarding work.
       // v0.14.0: the interview floor — no Confirm until the user replied.
       // v0.23.8: Auto-accept drafts = on in /glla settings skips the floor
       // AND the Confirm —
@@ -1332,6 +1355,10 @@ function registerAgentTools(pi: any): void {
             content: [{ type: "text", text: "Batch rejected by the user. Ask what to change, refine the item list, and propose again." }],
             details: {},
           };
+        }
+        if (batchActivates && !(await resolveDraftActivationConflict(liveCtx, "list", p.items.join("; ")))) {
+          draftingTarget = null;
+          return { content: [{ type: "text", text: "List activation was not started; the current objective was preserved." }], details: {} };
         }
         draftingTarget = null;
         const wasIdle = !state.goal || state.goal.status === "complete" || state.goal.status === "aborted";
@@ -1404,13 +1431,12 @@ function registerAgentTools(pi: any): void {
       // The user has just confirmed this activation; release the blank-start
       // barrier before the direct goal path schedules its first continuation.
       releaseInitialSessionLoadBarrier();
-      // v0.28.14: one-active-thing — no goal/list activation over a live loop.
-      if (isLoopActive()) {
-        return { content: [{ type: "text", text: "A loop is active — one active thing at a time. The user must /loop stop it before a goal or list item can activate; do not re-propose until then." }], details: {} };
-      }
       resolveCarryover(liveCtx, "goal"); // v0.28.14: surface/clear stale leftovers
       // List drafting: the confirmed contract goes into the QUEUE, not active.
       if (confirmedTarget === "list") {
+        if (willActivate && !(await resolveDraftActivationConflict(liveCtx, "list", p.objective.trim()))) {
+          return { content: [{ type: "text", text: "List activation was not started; the current objective was preserved." }], details: {} };
+        }
         const extracted = parseListItemDeclaration(full);
         const item = { id: newGoalId(), objective: extracted.objective, verificationContract: extracted.verificationContract || undefined, ...(extracted.parallelSafe === undefined ? {} : { parallelSafe: extracted.parallelSafe }), addedAt: nowIso() };
         // v0.34.61: disk-first — same invariant as addSingleItem. The list
@@ -1431,6 +1457,9 @@ function registerAgentTools(pi: any): void {
           return { content: [{ type: "text", text: "Confirmed and activated (list was empty). Begin work now." }], details: {} };
         }
         return { content: [{ type: "text", text: `Confirmed and added to the list (${listQueue().length} waiting). It activates when the current goal completes.` }], details: {} };
+      }
+      if (!(await resolveDraftActivationConflict(liveCtx, "goal", p.objective.trim()))) {
+        return { content: [{ type: "text", text: "Goal activation was not started; the current objective was preserved." }], details: {} };
       }
       const goal = createGoal(full, liveCtx);
       setGoal(goal, liveCtx, autoAccept ? "draft-autoaccepted" : "draft-confirmed");
