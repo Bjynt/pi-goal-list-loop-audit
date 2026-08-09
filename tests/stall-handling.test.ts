@@ -19,8 +19,9 @@ import {
 } from "../extensions/goal-loop-core.ts";
 import { loadSettings, saveSettings } from "../extensions/goal-settings.ts";
 import { buildStatusText, buildWidgetLines } from "../extensions/goal-loop-display.ts";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
-const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const SRC = readGoalRuntimeSource();
 const CONT = fs.readFileSync("extensions/goal-continuation.ts", "utf-8"); // decomposition step 5 (v0.34.113)
 const HEARTBEAT_SRC = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
@@ -220,7 +221,7 @@ test("v0.29.21: session_compact arms a SECOND settle refire at grace expiry", ()
 });
 
 test("v0.29.1: completion lifecycle survives the wedged-queue window (storm suppression + stranded recovery + brake cap)", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   // 1. The storm escalation NEVER pauses the audit lifecycle — an isolated
   //    auditor's minutes of silence is the storm detector's exact trigger
   //    shape (pully/hellhunter/junk-runner: "complete ending in a pause
@@ -253,7 +254,7 @@ test("v0.29.1: completion lifecycle survives the wedged-queue window (storm supp
 });
 
 test("v0.29.9: hourly top-of-hour probe — the park keeps retrying on clock-hour boundaries", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   // The park is no longer terminal: a probe is scheduled for the next
   // top-of-hour boundary (+60s grace) via the shared quota-retry timer.
   assert.match(src, /const probeMs = msUntilNextHourBoundary\(Date\.now\(\)\);/);
@@ -281,7 +282,7 @@ test("v0.29.9: msUntilNextHourBoundary — next clock-hour + grace, correct acro
 });
 
 test("v0.29.1: zombie-twin guard — drafts/enqueues duplicating a goal completed <24h ago are refused loudly", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   const cmds = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   // Junk-runner field case: the just-approved close re-drafted itself 3
   // minutes later and autoaccept waved it in (9h of storm for nothing).
@@ -321,7 +322,7 @@ test("v0.29.2: git discipline law — no invented identities or branches, in eve
 });
 
 test("v0.29.3/0.29.6: no empty allowlist warning; stacked states AUTO-ARBITRATE (picker superseded)", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   const cmds = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   // 1. The tool-heal warn used to fire with "0 agent tool(s) … re-activated
   //    ()" at every pi start (darklord screenshot). Warn only on a real heal.
@@ -341,7 +342,7 @@ test("v0.29.3/0.29.6: no empty allowlist warning; stacked states AUTO-ARBITRATE 
 });
 
 test("v0.29.4: user aborts stand the chain down and never count toward stalls (the Esc-spam loop)", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   // Pully field case 2026-07-30: launch auto-fired, the user Esc-spammed,
   // every abort re-fired the continuation AND counted toward the stall
   // brake — STALL WARNING 1/3, 2/3, then a bogus "stalled" pause.
@@ -363,7 +364,7 @@ test("v0.29.4: user aborts stand the chain down and never count toward stalls (t
 });
 
 test("v0.29.5: the stand-down survives the heartbeat + autoResume is GLOBAL-only", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   const settings = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
   // 1. Without a stand-down flag the 60s heartbeat refire would defeat the
   //    0.29.4 abort stand-down within a minute (isSupervising + idle + no
@@ -394,7 +395,7 @@ test("v0.29.16 — zombie-run watchdog: busy + zero stream events for 20 min = h
   // uses a stream-only clock (message_update / tool_call / agent_start /
   // turn_start / agent_end) — heartbeat-internal noteActivity() must never
   // touch it. Detection + guidance only: Esc is the user's call.
-  const SRC = fs.readFileSync(new URL("../extensions/loops/goal.ts", import.meta.url), "utf8");
+  const SRC = readGoalRuntimeSource();
   assert.ok(HEARTBEAT_SRC.includes("ZOMBIE_RUN_SILENT_MS = 20 * 60_000"), "20-min silence threshold");
   assert.ok(HEARTBEAT_SRC.includes("ZOMBIE_RUN_ALERT_THROTTLE_MS = 10 * 60_000"), "alert throttle");
   assert.ok(SRC.includes("let lastStreamActivityAt = Date.now();"), "separate stream clock");
@@ -411,7 +412,7 @@ test("v0.29.16 — zombie-run watchdog: busy + zero stream events for 20 min = h
 });
 
 test("v0.32.1: post-compaction resume debt + deterministic resync (pi-goal-x's lesson)", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = readGoalRuntimeSource();
   assert.match(SRC, /let postCompactResumeOwed = false;/);
   assert.match(SRC, /let postCompactResyncPending = false;/);
   assert.match(SRC, /postCompactResumeOwed = true;/); // armed in session_compact
@@ -433,7 +434,7 @@ test("v0.32.1: post-compaction resume debt + deterministic resync (pi-goal-x's l
 // ---------- v0.34.5: subagent-aware wedge alert ----------
 
 test("v0.34.5: wedge alert names a subagent wait when the in-flight call is one", () => {
-  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  const g = readGoalRuntimeSource();
   assert.match(HEARTBEAT_SRC, /SUBAGENT WAIT/, "the alert names the wait type");
   assert.match(HEARTBEAT_SRC, /t\.name === "get_subagent_result" \|\| t\.name === "Agent"/, "detects both wait shapes");
   assert.match(HEARTBEAT_SRC, /tool-use\/token counters have stopped moving between checks is hung, not thinking/, "the liveness check is in the message");
@@ -443,7 +444,7 @@ test("v0.34.5: wedge alert names a subagent wait when the in-flight call is one"
 // ---------- v0.34.11: unanswered-continuation watchdog ----------
 
 test("v0.34.11: unanswered-continuation watchdog (accepted send, no turn — hellhunter list-transition wedge)", () => {
-  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  const g = readGoalRuntimeSource();
   assert.match(CONT, /const CONTINUATION_START_TIMEOUT_MS = Number\(process\.env\.GLLA_CONTINUATION_START_TIMEOUT_MS \?\? 30_000\);/, "bounded start-proof timeout (v0.34.88: 30s first window, was 150s; decomposition step 5: moved)");
   assert.match(CONT, /const NO_TURN_START_RETRY_BACKOFF_MS = 60_000;/, "single auto-retry backoff after the first window (decomposition step 5: moved)");
   assert.match(CONT, /if \(!record\.retryCount && retryContinuationDispatch\(current, record\)\) return;/, "exactly ONE automatic retry before unacknowledged (decomposition step 5: moved)");
@@ -460,7 +461,7 @@ test("v0.34.11: unanswered-continuation watchdog (accepted send, no turn — hel
 // ---------- v0.34.12: eager-continuation settle + wait countdown ----------
 
 test("v0.34.12: eager continuation settles 2.5s past agent_end (hellhunter 60s-per-turn blackhole tax)", () => {
-  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  const g = readGoalRuntimeSource();
   assert.match(g, /const EAGER_CONTINUATION_SETTLE_MS = Number\(process\.env\.GLLA_EAGER_SETTLE_MS \?\? 2_500\);/, "2.5s default, env-overridable");
   assert.match(g, /scheduleContinuation\(ctx, false, EAGER_CONTINUATION_SETTLE_MS\);\n  \}\);/, "agent_end eager path settles");
   // Test harness zeroes it so tick() flushes keep working.
@@ -471,14 +472,14 @@ test("v0.34.12: eager continuation settles 2.5s past agent_end (hellhunter 60s-p
 test("v0.34.12 + v0.34.64: wait-pause status line counts down live + ticker survives the wait (pully field request)", () => {
   const d = fs.readFileSync(path.resolve("extensions/goal-loop-display.ts"), "utf-8");
   assert.match(d, /rms <= 0 \? " · resuming…" : ` · auto-retry in \$\{fmtElapsed\(rms\)\}`/, "live countdown, honest past-resumeAt");
-  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  const g = readGoalRuntimeSource();
   assert.match(g, /isSupervising\(\) \|\| \(state\.goal\?\.status === "paused" && !!state\.goal\.pauseResumeAt\)/, "ticker keeps rendering through a timed wait");
 });
 
 // ---------- v0.34.16: lifecycle recovery ("keep going unless we MUST stop") ----------
 
 test("v0.34.16: wedges hand off through pi lifecycle — no terminal self-reload", () => {
-  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  const g = readGoalRuntimeSource();
   assert.match(g, /const SESSION_HANDOFF_FILE = "session-handoff\.json";/, "durable handoff marker");
   assert.match(g, /writeSessionHandoff\(ctx, shutdownReason\);/, "shutdown persists resume debt");
   assert.match(g, /clearSessionOwnedTimers\(\);/, "shutdown clears old-context timers");
@@ -492,7 +493,7 @@ test("v0.34.16: wedges hand off through pi lifecycle — no terminal self-reload
 // ---------- v0.34.14: /reload rebind always resumes + auditor streak law ----------
 
 test("v0.34.14: /reload rebind resumes mid-work — the 'list is not continuing' fix (hellhunter)", () => {
-  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  const g = readGoalRuntimeSource();
   assert.match(g, /const SESSION_OWNER_FILE = "session-owner\.json";/, "pid sidecar");
   assert.match(g, /function markSessionOwnerShutdown\(cwd: string, reason: string\): void/, "shutdown reason is persisted for the next lifecycle");
   assert.match(g, /const shutdownReason = previous\.shutdownReason\?\.trim\(\)\.toLowerCase\(\);/, "shutdown reason is classified");
@@ -505,7 +506,7 @@ test("v0.34.14: /reload rebind resumes mid-work — the 'list is not continuing'
 });
 
 test("v0.34.51: the hanging-verification cause is named by the timeout branch (pully ssh/sudo stall)", () => {
-  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  const g = readGoalRuntimeSource();
   // The 3-strike pause is gone; a hanging verification command is now caught
   // by the auditor watchdog timeout, which names the cause before asking for
   // an explicit resume.
@@ -519,7 +520,7 @@ test("v0.34.51: the hanging-verification cause is named by the timeout branch (p
 // ---------- v0.34.15: persisted error brake + quota cards + queue-stuck probe ----------
 
 test("v0.34.15: errorBrakeStreak persists ON THE GOAL — the 6-brake park survives /reload (hegemon 429 churn)", () => {
-  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  const g = readGoalRuntimeSource();
   const core = fs.readFileSync(path.resolve("extensions/goal-loop-core.ts"), "utf-8");
   const schema = fs.readFileSync(path.resolve("schemas/goal.schema.json"), "utf-8");
   assert.match(core, /errorBrakeStreak\?: number;/);
@@ -530,14 +531,14 @@ test("v0.34.15: errorBrakeStreak persists ON THE GOAL — the 6-brake park survi
 });
 
 test("v0.34.15: quota walls are CLASSIFIED on the card — resuming won't help, switch /model", () => {
-  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  const g = readGoalRuntimeSource();
   assert.match(g, /const quotaWall = \/rate\.\?limit\|usage limit\|quota\|insufficient\|credits\/i\.test\(detail\);/);
   assert.match(g, /Provider quota\/rate-limit wall — resuming won't help until the window resets\. Switch \/model/);
   assert.ok((g.match(/quotaWall/g) ?? []).length >= 5, "both pause branches + notifies classify");
 });
 
 test("v0.34.16: queue-stuck probe — a send queued-without-a-turn is reported without terminal injection", () => {
-  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+  const g = readGoalRuntimeSource();
   assert.match(CONT, /GLLA_QUEUE_STUCK_MS \?\? 45_000/); // decomposition step 5: queueStuckProbeMs moved
   assert.match(CONT, /appendLedger\(ctx\.cwd, "queue_stuck_detected"/);
   assert.match(HEARTBEAT_SRC, /A fresh session_start will rebind the/);

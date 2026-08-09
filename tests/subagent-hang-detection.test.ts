@@ -35,6 +35,7 @@ import {
   type MockCtx,
 } from "./harness/mock-pi.js";
 import { readState } from "../extensions/goal-loop-core.js";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
 function setGlobalAutoResume(v: boolean): void {
@@ -278,7 +279,7 @@ test("source pins: constants, watchdog wiring, and ledger key", () => {
   assert.match(hb, /Symbol\.for\("pi-subagents:manager"\)/);
   assert.match(hb, /subagent_hang_detected/);
   assert.match(hb, /evidence: stillTracked \? "record-frozen" : "event-only"/);
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   assert.match(src, /subagents:compacted/);
   assert.match(src, /subagents:steered/);
   assert.match(src, /subagents:completed/);

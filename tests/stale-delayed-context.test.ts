@@ -4,8 +4,9 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
-const GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf8");
+const GOAL = readGoalRuntimeSource();
 const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf8");
 const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf8");
 const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf8");
@@ -35,8 +36,8 @@ test("v0.34.20: quota timers have one session-boundary adapter", () => {
   assert.match(GOAL, /const generation = sessionGeneration;/);
   assert.match(GOAL, /const current = freshCtxForGeneration\(generation\);/);
   assert.match(GOAL, /fire: \(ctx: ExtensionContext\) => void \| Promise<void>/);
-  assert.match(GOAL, /scheduleQuotaRetryForSession\(ctx, quota\.retryAfterSec, result\.error, \(fresh\) =>/);
-  assert.match(GOAL, /scheduleQuotaRetryForSession\(ctx, cooldownMs \/ 1000, reason, \(fresh\) =>/);
+  assert.match(GOAL, /scheduleQuotaRetryForSession\(ctx, quota\.retryAfterSec, result\.error, \(fresh(?:: ExtensionContext)?\) =>/);
+  assert.match(GOAL, /scheduleQuotaRetryForSession\(ctx, cooldownMs \/ 1000, reason, \(fresh(?:: ExtensionContext)?\) =>/);
 });
 
 test("v0.34.20: detached fan-out revalidates after user confirmation", () => {

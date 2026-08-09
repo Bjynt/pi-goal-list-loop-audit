@@ -24,8 +24,9 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
-const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const SRC = readGoalRuntimeSource();
 const HB = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 
 test("Fix A: the apply gate defers + parks instead of silently dropping a completed verdict", () => {

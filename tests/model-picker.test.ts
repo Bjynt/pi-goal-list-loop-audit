@@ -15,6 +15,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 
 import { buildModelPickItems, ModelPickerComponent } from "../extensions/model-picker.ts";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 const THEME = {
   fg: (_c: string, t: string) => t,
@@ -144,7 +145,7 @@ test("model-picker: active model row uses the available width for selection", ()
 });
 
 test("v0.29.17 wiring: model-valued settings use the fuzzy picker; unavailable auditor models fall back LOUDLY to the session model", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = readGoalRuntimeSource();
   // The picker hosts via ctx.ui.custom over buildModelPickItems:
   assert.match(SRC, /buildModelPickItems\(models, sessionLabel\)/);
   assert.match(SRC, /new ModelPickerComponent\(\{ title, items \}/);
@@ -167,7 +168,7 @@ test("v0.29.17 wiring: model-valued settings use the fuzzy picker; unavailable a
 });
 
 test("v0.31.2/0.31.3: auditor thinking defaults to sticky high — never the session dial", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = readGoalRuntimeSource();
   // v0.31.8: cast — the saved level may be "max" (pi ≥0.83; dev-types predate it)
   assert.equal(SRC.match(/thinkingLevel: \(settings\.auditorThinkingLevel \?\? "high"\) as any,/g)!.length, 2, "both audit call sites floor at high");
   assert.ok(!SRC.includes("getSessionThinkingLevel"), "the session-dial follower is gone");
@@ -188,7 +189,7 @@ test("v0.31.2/0.31.3: auditor thinking defaults to sticky high — never the ses
 });
 
 test("v0.31.3: the auditor chain — pinned primary → pinned fallback → session LAST; same-as-session auto-swap", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = readGoalRuntimeSource();
   // The cascade: two pins walked in order, session model after the loop:
   assert.match(SRC, /const pins: Array<\{ pin: string; src: "setting" \| "fallback-pin" \}> = \[\]/);
   assert.match(SRC, /addCandidate\(r\.model, pins\[i\]!\.src\)/); // v0.32.0: per-pin source labels (pins[0] may BE the fallback)
@@ -215,7 +216,7 @@ test("v0.31.3: the auditor chain — pinned primary → pinned fallback → sess
 });
 
 test("v0.31.6: same-model swap toggle — default ON, off = same-model audits stand", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = readGoalRuntimeSource();
   assert.match(SRC, /sameSessionSwap = true\): \{ model: any; error\?: string; via\?: string; fallbackModels\?: AuditorModelCandidate\[\]\s*\}/);
   assert.equal(SRC.match(/settings\.auditorSameSessionSwap !== false/g)!.length, 2, "both audit call sites pass the toggle (undefined = on)");
   assert.match(SRC, /if \(sameSessionSwap && isSession\(r\.model\) && i \+ 1 >= pins\.length\) \{/); // v0.32.0: last-pin guard — the fallback hop landing on the session model nudges too
@@ -230,7 +231,7 @@ test("v0.31.6: same-model swap toggle — default ON, off = same-model audits st
 });
 
 test("v0.31.8: thinking options come from the PICKED MODEL — xhigh/max only when the model maps them", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const SRC = readGoalRuntimeSource();
   assert.match(SRC, /function auditorThinkingLevels\(model: any\): string\[\] \{/);
   assert.match(SRC, /if \(!model\?\.reasoning\) return \["off"\];/);
   assert.match(SRC, /if \(level === "xhigh" \|\| level === "max"\) return mapped !== undefined;/);

@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const GOAL_SRC = readFileSync(join(here, "..", "extensions", "loops", "goal.ts"), "utf8");
+const GOAL_SRC = readGoalRuntimeSource();
 const CORE_SRC = readFileSync(join(here, "..", "extensions", "goal-loop-core.ts"), "utf8");
 const SETTINGS_SRC = readFileSync(join(here, "..", "extensions", "goal-settings.ts"), "utf8");
 const RECOVERY_SRC = readFileSync(join(here, "..", "extensions", "goal-recovery.ts"), "utf8"); // decomposition step 3 (v0.34.111)
@@ -35,6 +35,7 @@ import {
   nextHourlyProbeMs,
   nextHourlyPromptMs,
 } from "../extensions/goal-loop-core.js";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 // ---------------------------------------------------------------------------
 // nextHourlyProbeMs helper — :00:30 next hour strictly after now

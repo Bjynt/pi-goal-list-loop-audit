@@ -1,6 +1,24 @@
 # Changelog
 
 ## Unreleased
+### 0.34.114 — decomposition step 6: goal.ts real thin installer
+  (v0.34.114, audit/GOAL-INSTALLER-THINNING-2026-08-09.md). The public
+  `extensions/loops/goal.ts` entrypoint is now a 387-line real activation /
+  wiring surface (≤700-line contract satisfied), and the remaining runtime
+  concerns moved into named sibling modules under `extensions/loops/`:
+  `goal-session.ts`, `goal-ui.ts`, `goal-orchestrator.ts`,
+  `goal-auditor-hooks.ts`, `goal-list-queue.ts`, `goal-tools.ts`,
+  `goal-settings-ui.ts`, `goal-activation.ts`, plus the explicit
+  `goal-runtime-globals.ts` compatibility bridge for preserving the old
+  monolith lexical links during the split. `goal.ts` contains the actual
+  `createGoalContinuation(continuationFlags, continuationDeps)` call (not a
+  re-export façade), starts the heartbeat/UI ticker, and delegates command/tool
+  and lifecycle registration to the extracted activation module. There is no
+  `extensions/loops/goal-runtime.ts` monolith. Source-pinned tests now read a
+  live source corpus helper over the real split files; expectations remain
+  pinned to the moved runtime strings. Suite: 1146 pass / 1 skip / 0 fail, tsc
+  clean.
+
 ### 0.34.113 — decomposition step 5: extensions/goal-continuation.ts extracted
   (v0.34.113, audit/GOAL-CONTINUATION-EXTRACTION-2026-08-09.md). The
   continuation cluster — `scheduleContinuation`/`sendContinuation`,

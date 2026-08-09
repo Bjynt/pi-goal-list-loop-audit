@@ -40,6 +40,7 @@ import {
   bumpGoalRevision,
   type Goal,
 } from "../extensions/goal-loop-core.ts";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 function makeGoal(overrides: Partial<Goal> = {}): Goal {
   return {
@@ -85,7 +86,7 @@ test("FIX A: equal non-zero revisions stay current; bumps refuse", () => {
 // ── (b) source pins — the guard and the refusal branch ──────────────────
 
 test("FIX A pin: the refusal guard uses isGoalRevisionCurrent, not raw !== on undefined", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   const guardLine = src.split("\n").find((l) => l.includes("result.goalRevision &&"));
   assert.ok(guardLine, "the guard line exists");
   assert.match(guardLine!, /!isGoalRevisionCurrent\(result\.goalRevision, state\.goal\)/);
@@ -93,7 +94,7 @@ test("FIX A pin: the refusal guard uses isGoalRevisionCurrent, not raw !== on un
 });
 
 test("FIX B pin: the refusal branch restores status active so the loop continues", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   const refusalIdx = src.indexOf("stale_revision_refused");
   assert.ok(refusalIdx > 0, "refusal branch exists");
   const tail = src.slice(refusalIdx, refusalIdx + 2600);
@@ -104,7 +105,7 @@ test("FIX B pin: the refusal branch restores status active so the loop continues
 test("behavior preserved: a GENUINE orphaned audit still parks with the same message", () => {
   // The stranded-audit recovery (heartbeat) must keep existing — it is the
   // correct backstop for real orphans (process death without recovery).
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   const hb = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
   assert.match(hb, /"completion audit interrupted — no verdict"/);
   assert.match(hb, /"stranded_audit_recovered"/);

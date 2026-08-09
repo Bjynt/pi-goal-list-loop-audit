@@ -26,6 +26,7 @@ import {
   AUDIT_FINDINGS_REL,
   type LoopState,
 } from "../extensions/goal-loop-forever.ts";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 function freshLoop(overrides: Partial<LoopState> = {}): LoopState {
   return {
@@ -115,7 +116,7 @@ test("v0.29.10 — applyMeasurement: null best (deferred audit baseline) seeds o
 
 test("v0.29.10 — audit loop source pins: deferred baseline, true-regression note, live-loop reseed migration", () => {
   const src = readFileSync(new URL("../extensions/goal-loop.ts", import.meta.url), "utf-8");
-  const goalSrc = readFileSync(new URL("../extensions/loops/goal.ts", import.meta.url), "utf-8");
+  const goalSrc = readGoalRuntimeSource();
   // The /loop audit route defers the baseline and tags the loop kind.
   assert.ok(src.includes("deferBaseline: true,"), "audit route defers the baseline");
   assert.ok(src.includes('kind: "audit",'), "audit route tags the loop kind");
@@ -540,7 +541,7 @@ test("v0.29.0: /loop audit — metric loop over open findings; plateau = the wel
   // and lists. Unlike respec (metricless) this has an HONEST metric: the
   // orchestrator counts open findings, so the plateau stop terminates it.
   const SRC = readFileSync("extensions/goal-loop.ts", "utf-8");
-  const GOAL = readFileSync("extensions/loops/goal.ts", "utf-8");
+  const GOAL = readGoalRuntimeSource();
   assert.match(SRC, /if \(sub === "audit"\) \{/);
   assert.match(SRC, /target: auditTarget\(\),\s*\n\s*measureCmd: auditMeasureCmd\(\),\s*\n\s*direction: "max",/);
   // guards: no stacking over an active goal or loop:

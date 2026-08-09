@@ -19,8 +19,9 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
-const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const SRC = readGoalRuntimeSource();
 const CONT = fs.readFileSync("extensions/goal-continuation.ts", "utf-8"); // decomposition step 5 (v0.34.113)
 const RECOVERY = fs.readFileSync("extensions/goal-recovery.ts", "utf-8"); // decomposition step 3 (v0.34.111)
 const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
@@ -180,7 +181,7 @@ test("E8: provider-error brake gets ONE capped escalating auto-resume with reaso
   // 8m, 16m cap. First brake is still 60s (60_000 * 2^0).
   assert.match(SRC, /const cooldownMs = 60_000 \* 2 \*\* Math\.min\(brakeStreak, 4\);/);
   assert.match(SRC, /errorBrakeStreak: brakeStreak \+ 1,/, "v0.34.15: the rung is stamped ON THE GOAL (survives /reload)");
-  assert.match(SRC, /scheduleQuotaRetryForSession\(ctx, cooldownMs \/ 1000, reason, \(fresh\) => \{/);
+  assert.match(SRC, /scheduleQuotaRetryForSession\(ctx, cooldownMs \/ 1000, reason, \(fresh(?:: ExtensionContext)?\) => \{/);
   assert.match(SRC, /if \(\(state\.goal\?\.errorBrakeStreak \?\? 0\) > 0\) updateGoal\(\{ errorBrakeStreak: undefined \}, ctx\);/, "a healthy turn clears the persisted brake streak");
   assert.match(SRC, /\(state\.goal\.pauseReason \?\? ""\)\.startsWith\("5 consecutive errors"\)/);
   assert.match(SRC, /appendLedger\(fresh\.cwd, "goal_resumed", \{ via: "error-brake-retry" \}\)/);

@@ -17,6 +17,7 @@ import {
   type SettingsRow,
 } from "../extensions/settings-menu.ts";
 import type { Settings } from "../extensions/goal-settings.ts";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 /* --------------------------------------------------------------------- */
 /*  Pure row-builder pins                                                */
@@ -126,7 +127,7 @@ test("descriptions and values carry no version-tag chrome (v0.34.25)", () => {
 test("rows map 1:1 to dispatchable ids (every id can drive a handler)", () => {
   // The id → handler mapping lives in handleSettingChoice in goal.ts.
   // Build the set of case-labels we expect.
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   const dispatcher = src.slice(
     src.indexOf("async function handleSettingChoice"),
     src.indexOf("/** v0.26.0: /review"),
@@ -221,7 +222,7 @@ test("the headless `/glla` fallback still lists stall brakes", () => {
 });
 
 test("the legacy flat-row startsWith logic is removed (no more `──` section headers in code)", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   assert.doesNotMatch(
     src,
     /── Keep-going ──/,

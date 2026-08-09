@@ -32,6 +32,7 @@ import * as path from "node:path";
 import { classifyIdInvalidationReason } from "../extensions/loops/goal.js";
 import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
 import { MockPi, makeMockCtx, tmpCwd, seedState, seedGoal, tick, type MockCtx } from "./harness/mock-pi.js";
+import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
 function setGlobalAutoResume(v: boolean): void {
@@ -153,7 +154,7 @@ test("first boot (no sidecar): no id_invalidation", async () => {
 // ── (f) the successor-absorption hook exists (source pin) ──────────────
 
 test("successor absorption also emits id_invalidation (source-level pin)", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+  const src = readGoalRuntimeSource();
   assert.match(src, /emitIdInvalidation\(ctx, absorbedOldId, sessionIdOf\(ctx\.sessionManager\), "successor_absorption"\)/);
   assert.match(src, /sessionIdOf\(ownerSession \?\? deadOwnerSession\)/, "the old id comes from the recorded owner");
   assert.match(src, /function emitIdInvalidation\(/, "the emitter exists");
