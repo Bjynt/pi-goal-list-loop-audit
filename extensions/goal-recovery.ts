@@ -248,19 +248,6 @@ export function attemptFreshSessionRecovery(ctx: ExtensionContext, where: string
   }
 }
 
-/** v0.34.119: a stale `isStaleApiError` from any send path tries the
- * host capability first; only fall back to the terminal park when the
- * public event context cannot replace the session. The current SDK takes
- * that fallback, so the user-facing guidance names `/new` honestly. */
-export function autoRecoverFromStaleCtxOrTerminal(ctx: ExtensionContext, where: string): boolean {
-  if (attemptFreshSessionRecovery(ctx, where)) return true;
-  // Fallback: the legacy terminal park. The existing call sites
-  // imported goStaleTerminal from goal-*.ts directly; we add the
-  // helper here so the auto-recovery path is the single source of
-  // truth and the legacy path is the explicit fallback.
-  return false;
-}
-
 /** v0.34.116: classify a compact-failure string and route through
  * tryMainModelFallback. Returns true when a backup was selected. The
  * caller should still cancel the in-flight send / re-arm the continuation
