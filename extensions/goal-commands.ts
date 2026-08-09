@@ -421,8 +421,11 @@ async function cmdCancel(ctx: ExtensionContext): Promise<void> {
     return;
   }
   archiveCurrentGoal(ctx, "aborted", "user cancelled");
-  ctx.abort();
+  // Abort only after the durable archive + user-facing confirmation have
+  // landed. Aborting immediately used to cut off the rest of compound
+  // cancel/wipe cleanup and made the user repeat the command.
   ctx.ui.notify(`${goalNoun()} aborted.${isLoopActive() ? " A loop is still active — /loop stop ends it." : ""}`, "info");
+  ctx.abort();
 }
 
 // ---- v0.28.23: decision picker popup ----
@@ -1057,15 +1060,13 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     for (const item of listQueue()) deleteQueueItemFile(ctx.cwd, item.id);
     replaceState({ ...state, list: [] });
     persistState(ctx);
-    if (activeIsListItem) {
-      archiveCurrentGoal(ctx, "aborted", "list cancelled");
-      ctx.abort();
-    }
+    if (activeIsListItem) archiveCurrentGoal(ctx, "aborted", "list cancelled");
     appendLedger(ctx.cwd, "list_cancelled", { abortedActive: activeIsListItem, dropped });
     ctx.ui.notify(
       `List cancelled: ${activeIsListItem ? "active item aborted + " : ""}${dropped} waiting item(s) dropped.${!activeIsListItem && state.goal && state.goal.status === "active" ? ` Active goal is not a list item — untouched (${activeGoalSurfaceCommand("cancel")} for that).` : ""}`,
       "info",
     );
+    if (activeIsListItem) ctx.abort();
     return;
   }
 
@@ -1541,9 +1542,11 @@ async function cmdGllaWipe(ctx: ExtensionContext): Promise<void> {
     }
   }
   appendLedger(ctx.cwd, "glla_wipe", { goalId: live ? g!.id : undefined, listCleared: n, loop: loop ? { iteration: loop.iteration, active: loop.active } : undefined });
+  const abortAfterWipe = !!live;
   if (live) {
+    // Do not abort here: wipe still has to clear queue sidecars and loop
+    // state. The old early abort made a second /glla wipe appear necessary.
     archiveCurrentGoal(ctx, "aborted", "user wipe (/glla wipe)");
-    ctx.abort();
   } else if (g) {
     replaceState({ ...state, goal: null });
   }
@@ -1569,6 +1572,7 @@ async function cmdGllaWipe(ctx: ExtensionContext): Promise<void> {
   persistState(ctx);
   ctx.ui.notify(`glla wipe done: ${parts.join(" · ")}. Clean slate.`, "info");
   notifyExternal(ctx, "glla state wiped by user — clean slate.");
+  if (abortAfterWipe) ctx.abort();
 }
 
 /**
