@@ -25,6 +25,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const HEARTBEAT_SRC = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
 const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
 const DISPLAY = fs.readFileSync("extensions/goal-loop-display.ts", "utf-8");
@@ -112,17 +113,17 @@ test("v0.28.27: stale handle silences ALL stall machinery — refiring into a de
   // kept printing "re-firing continuation (stall 4/5)" into a process where
   // sends can never land — marching toward a stall-escalation pause that
   // would silently cancel that promise (paused restores load-held).
-  const tick = SRC.indexOf("function heartbeatTick(): void {");
-  const knownCtx = SRC.indexOf("const knownCtx = lastCtx;", tick);
+  const tick = HEARTBEAT_SRC.indexOf("function heartbeatTick(): void {");
+  const knownCtx = HEARTBEAT_SRC.indexOf("const knownCtx = flags.lastCtx;", tick);
   // v0.34.62: the heartbeat probe is the RAW non-caching form (debounced)
   // — single transient failures must not park a live session; consecutive
   // failures still reach the terminal before any stall machinery.
-  const probe = SRC.indexOf("if (extensionApiStale || probeExtensionApiStaleRaw()) {", knownCtx);
-  const stale = SRC.indexOf('if (knownCtx && !absorbStaleIfSuperseded(knownCtx)) goStaleTerminal(knownCtx, "heartbeat probe");', probe); // v0.34.48: probe the API before freshCtx() can discard the orphan context.
-  const grace = SRC.indexOf("if (Date.now() < compactionGraceUntil) return;", stale);
-  const watchdog = SRC.indexOf("pending-latch watchdog");
+  const probe = HEARTBEAT_SRC.indexOf("if (flags.extensionApiStale || probeExtensionApiStaleRaw()) {", knownCtx);
+  const stale = HEARTBEAT_SRC.indexOf('if (knownCtx && !absorbStaleIfSuperseded(knownCtx)) goStaleTerminal(knownCtx, "heartbeat probe");', probe); // v0.34.48: probe the API before freshCtx() can discard the orphan context.
+  const grace = HEARTBEAT_SRC.indexOf("if (Date.now() < flags.compactionGraceUntil) return;", stale);
+  const watchdog = HEARTBEAT_SRC.indexOf("pending-latch watchdog");
   assert.ok(tick > 0 && knownCtx > tick && probe > knownCtx && stale > probe && grace > stale, "stale bail inside heartbeatTick precedes the grace gate");
-  assert.ok(stale < SRC.indexOf("const fire = shouldHeartbeatRefire({"), "stale bail precedes the refire path");
+  assert.ok(stale < HEARTBEAT_SRC.indexOf("const fire = shouldHeartbeatRefire({"), "stale bail precedes the refire path");
   assert.ok(stale < watchdog, "stale bail precedes the latch watchdog too");
 });
 

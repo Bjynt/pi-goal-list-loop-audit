@@ -272,12 +272,13 @@ test("malformed hang inputs are dropped, not crashy", async () => {
 });
 
 test("source pins: constants, watchdog wiring, and ledger key", () => {
+  const hb = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
+  assert.match(hb, /const SUBAGENT_HANG_NO_PROGRESS_MS = 5 \* 60_000;/);
+  assert.match(hb, /const SUBAGENT_HANG_EVENT_ONLY_MS = 20 \* 60_000;/);
+  assert.match(hb, /Symbol\.for\("pi-subagents:manager"\)/);
+  assert.match(hb, /subagent_hang_detected/);
+  assert.match(hb, /evidence: stillTracked \? "record-frozen" : "event-only"/);
   const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
-  assert.match(src, /const SUBAGENT_HANG_NO_PROGRESS_MS = 5 \* 60_000;/);
-  assert.match(src, /const SUBAGENT_HANG_EVENT_ONLY_MS = 20 \* 60_000;/);
-  assert.match(src, /Symbol\.for\("pi-subagents:manager"\)/);
-  assert.match(src, /subagent_hang_detected/);
-  assert.match(src, /evidence: stillTracked \? "record-frozen" : "event-only"/);
   assert.match(src, /subagents:compacted/);
   assert.match(src, /subagents:steered/);
   assert.match(src, /subagents:completed/);
@@ -331,8 +332,8 @@ test("v0.34.105: hang scan runs during main-model recovery (quota wall blinds th
 });
 
 test("v0.34.105 source pin: subagent scan precedes the main-model-recovery early return in heartbeatTick", () => {
-  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
-  const tickBody = src.slice(src.indexOf("function heartbeatTick"), src.indexOf("function startHeartbeat"));
+  const hb = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
+  const tickBody = hb.slice(hb.indexOf("function heartbeatTick"), hb.indexOf("function startHeartbeat"));
   const scanAt = tickBody.indexOf("subagentHangProbes.size > 0");
   const recoveryGateAt = tickBody.indexOf("if (mainModelRecoveryActive()) return;");
   assert.ok(scanAt > -1, "the subagent scan lives in heartbeatTick");

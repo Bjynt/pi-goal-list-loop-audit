@@ -21,6 +21,7 @@ import { loadSettings, saveSettings } from "../extensions/goal-settings.ts";
 import { buildStatusText, buildWidgetLines } from "../extensions/goal-loop-display.ts";
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const HEARTBEAT_SRC = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
 const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
 
@@ -44,7 +45,7 @@ test("send paths are ledgered: sent AND failed, loop and goal", () => {
 });
 
 test("refire streak: incremented on refire, ledgered, reset only on REAL activity", () => {
-  assert.match(SRC, /consecutiveStalls\+\+;\n\s*appendLedger\(ctx\.cwd, "heartbeat_refire", \{ nudgesSoFar: heartbeatNudges, consecutiveStalls \}\)/);
+  assert.match(HEARTBEAT_SRC, /flags\.consecutiveStalls\+\+;\n\s*appendLedger\(ctx\.cwd, "heartbeat_refire", \{ nudgesSoFar: flags\.heartbeatNudges, consecutiveStalls: flags\.consecutiveStalls \}\)/);
   // agent_end and tool_call are real activity:
   assert.match(SRC, /if \(isForeignCtx\(ctx\)\) return;\n\s*noteActivity\(true\);/);
   assert.match(SRC, /toolCallsThisTurn\+\+;\n\s*noteActivity\(true\);/);
@@ -61,9 +62,11 @@ test("escalation: streak at threshold stops the loop / pauses the goal, loudly",
   assert.match(SRC, /notifyExternal\(ctx, "Loop stopped: stalled \(continuation not landing\)\."\)/);
   assert.match(SRC, /notifyExternal\(ctx, `\$\{goalNoun\(\)\} paused: stalled \(continuation not landing\)\."?`?\)/);
   // the escalation return happens BEFORE the schedule (no more refires):
-  const escIdx = SRC.indexOf('"stall_escalated"');
-  const refireScheduleIdx = SRC.indexOf('re-firing continuation (stall');
-  assert.ok(escIdx < refireScheduleIdx, "escalation precedes the refire schedule");
+  assert.match(SRC, /function escalateStallNow\(ctx: ExtensionContext, threshold: number\): boolean/, "escalateStallNow stays goal.ts-owned (decomposition step 4)");
+  assert.ok(!HEARTBEAT_SRC.includes('"stall_escalated"'), "stall_escalated ledger stays in goal.ts inside escalateStallNow");
+  const escCall = HEARTBEAT_SRC.indexOf("if (escalateStallNow(ctx, stallEscalation)) return;");
+  const refireScheduleIdx = HEARTBEAT_SRC.indexOf('re-firing continuation (stall');
+  assert.ok(escCall > 0 && escCall < refireScheduleIdx, "escalation precedes the refire schedule");
 });
 
 test("session_compact hook: re-arms the chain when idle with no timer pending", () => {
@@ -172,17 +175,17 @@ test("v0.34.82: heartbeat refuses to refire a continuation while pi is context-s
   // The yield path records the streak in the ledger so postmortem sees it.
   assert.match(SRC, /appendLedger\(ctx\.cwd, "length_continue_deferred_context_full", \{[\s\S]*?starvedStreak: starved\.streak,[\s\S]*?\}\)/);
   // The heartbeat gate is a one-shot "compaction appears off" path.
-  assert.match(SRC, /if \(isContextStarvedRefused\(\)\) \{/);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "continuation_refused_context_starved", \{ streak: contextStarvedStreak, sinceMs: Date\.now\(\) - lastContextStarvedAt \}\)/);
-  assert.match(SRC, /auto-compaction appears to be off[\s\S]*?Run `\/compact`/);
+  assert.match(HEARTBEAT_SRC, /if \(isContextStarvedRefused\(\)\) \{/);
+  assert.match(HEARTBEAT_SRC, /appendLedger\(ctx\.cwd, "continuation_refused_context_starved", \{ streak: flags\.contextStarvedStreak, sinceMs: Date\.now\(\) - flags\.lastContextStarvedAt \}\)/);
+  assert.match(HEARTBEAT_SRC, /auto-compaction appears to be off[\s\S]*?Run `\/compact`/);
   // A real compaction clears the streak so the heartbeat can refire again.
   const compactIdx = SRC.indexOf('pi.on("session_compact"');
   const clearIdx = SRC.indexOf("onCompactionLanded();");
   assert.ok(compactIdx > 0 && clearIdx > compactIdx, "session_compact hook clears the starvation streak");
   // The gate is BEFORE scheduleContinuation in the heartbeat path, so the
   // refire short-circuits before any work is scheduled.
-  const refireIdx = SRC.indexOf("if (isLoopActive()) {\n    scheduleLoopTick(ctx);");
-  const gateIdx = SRC.indexOf("if (isContextStarvedRefused()) {");
+  const refireIdx = HEARTBEAT_SRC.indexOf("if (isLoopActive()) {\n    scheduleLoopTick(ctx);");
+  const gateIdx = HEARTBEAT_SRC.indexOf("if (isContextStarvedRefused()) {");
   assert.ok(gateIdx > 0 && refireIdx > 0, "both gate and refire branches present");
   assert.ok(gateIdx < refireIdx, "refuse gate precedes the refire schedule");
 });
@@ -209,9 +212,9 @@ test("v0.29.21: session_compact arms a SECOND settle refire at grace expiry", ()
   assert.ok(SRC.includes("const sessionTimeouts = new Set<NodeJS.Timeout>();"), "settle timer is tracked for shutdown cleanup");
   assert.match(SRC, /const COMPACTION_GRACE_MS = 3 \* 60_000;/);
   // the grace check gates the heartbeat's stall/refire machinery:
-  assert.match(SRC, /if \(Date\.now\(\) < compactionGraceUntil\) return;/);
-  const graceGate = SRC.indexOf("if (Date.now() < compactionGraceUntil) return;");
-  const refire = SRC.indexOf('appendLedger(ctx.cwd, "heartbeat_refire"');
+  assert.match(HEARTBEAT_SRC, /if \(Date\.now\(\) < flags\.compactionGraceUntil\) return;/);
+  const graceGate = HEARTBEAT_SRC.indexOf("if (Date.now() < flags.compactionGraceUntil) return;");
+  const refire = HEARTBEAT_SRC.indexOf('appendLedger(ctx.cwd, "heartbeat_refire"');
   assert.ok(graceGate > 0 && graceGate < refire, "grace gate precedes the refire path");
 });
 
@@ -229,14 +232,14 @@ test("v0.29.1: completion lifecycle survives the wedged-queue window (storm supp
   // 2. Stranded-audit watchdog: "auditing" with no in-flight audit = the
   //    result never landed (pully: 12h+ stuck). Release the stored claim as
   //    infrastructure/no-verdict; a heartbeat must not launch a blind retry.
-  const hbIdx = src.indexOf("function heartbeatTick");
+  const hbIdx = HEARTBEAT_SRC.indexOf("function heartbeatTick");
   // v0.34.94: increased slice size to cover the new self-heal block added
   // between the stale-probe check and the stranded-audit watchdog — the
   // pending_latch_stuck event the assertion targets has grown further into
   // the heartbeatTick body as new features land.
-  const hb = src.slice(hbIdx, hbIdx + 16000); // v0.35.x: heartbeat releases stranded audits before latch handling
+  const hb = HEARTBEAT_SRC.slice(hbIdx, hbIdx + 16000); // v0.35.x: heartbeat releases stranded audits before latch handling
   assert.match(hb, /stranded_audit_recovered/);
-  assert.match(hb, /state\.goal\?\.status === "auditing" &&\s*\n\s*!completionAuditInFlight/);
+  assert.match(hb, /state\.goal\?\.status === "auditing" &&\s*\n\s*!flags\.completionAuditInFlight/);
   assert.match(hb, /Completion audit blocked — no verdict/);
   assert.doesNotMatch(hb, /retryStoredCompletionAudit\("session-recovery"\)/);
   assert.ok(hb.indexOf("stranded_audit_recovered") < hb.indexOf("pending_latch_stuck"),
@@ -366,7 +369,7 @@ test("v0.29.5: the stand-down survives the heartbeat + autoResume is GLOBAL-only
   //    timer = refire, and the goal stays ACTIVE while standing down):
   assert.match(src, /let abortedStandDown = false;/);
   assert.match(src, /abortedStandDown = true; \/\/ v0\.29\.5: heartbeat\/compaction refires must not resurrect/);
-  assert.match(src, /if \(abortedStandDown\) return;\n  if \(!fire\) return;/);
+  assert.match(HEARTBEAT_SRC, /if \(flags\.abortedStandDown\) return;\n  if \(!fire\) return;/);
   // 2. Any explicit schedule ends the stand-down (resume/activate):
   assert.match(src, /abortedStandDown = false; \/\/ v0\.29\.5: any explicit schedule ends the stand-down/);
   // 3. The post-compaction refire also respects it:
@@ -391,12 +394,12 @@ test("v0.29.16 — zombie-run watchdog: busy + zero stream events for 20 min = h
   // turn_start / agent_end) — heartbeat-internal noteActivity() must never
   // touch it. Detection + guidance only: Esc is the user's call.
   const SRC = fs.readFileSync(new URL("../extensions/loops/goal.ts", import.meta.url), "utf8");
-  assert.ok(SRC.includes("ZOMBIE_RUN_SILENT_MS = 20 * 60_000"), "20-min silence threshold");
-  assert.ok(SRC.includes("ZOMBIE_RUN_ALERT_THROTTLE_MS = 10 * 60_000"), "alert throttle");
+  assert.ok(HEARTBEAT_SRC.includes("ZOMBIE_RUN_SILENT_MS = 20 * 60_000"), "20-min silence threshold");
+  assert.ok(HEARTBEAT_SRC.includes("ZOMBIE_RUN_ALERT_THROTTLE_MS = 10 * 60_000"), "alert throttle");
   assert.ok(SRC.includes("let lastStreamActivityAt = Date.now();"), "separate stream clock");
-  assert.match(SRC, /isSupervising\(\) && !idle && streamSilentMs >= ZOMBIE_RUN_SILENT_MS/, "branch fires on busy + stream-silent");
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "zombie_run_suspected"/, "ledgered");
-  assert.ok(SRC.includes("Press Esc to abort the zombie turn — the goal/loop refires itself"), "Esc guidance");
+  assert.match(HEARTBEAT_SRC, /isSupervising\(\) && !idle && streamSilentMs >= ZOMBIE_RUN_SILENT_MS/, "branch fires on busy + stream-silent");
+  assert.match(HEARTBEAT_SRC, /appendLedger\(ctx\.cwd, "zombie_run_suspected"/, "ledgered");
+  assert.ok(HEARTBEAT_SRC.includes("Press Esc to abort the zombie turn — the goal/loop refires itself"), "Esc guidance");
   assert.match(SRC, /pi\.on\("message_update"/, "stream deltas feed the clock");
   assert.match(SRC, /pi\.on\("agent_start"/, "run starts feed the clock");
   assert.match(SRC, /pi\.on\("turn_start"/, "turn starts feed the clock");
@@ -411,7 +414,7 @@ test("v0.32.1: post-compaction resume debt + deterministic resync (pi-goal-x's l
   assert.match(SRC, /let postCompactResumeOwed = false;/);
   assert.match(SRC, /let postCompactResyncPending = false;/);
   assert.match(SRC, /postCompactResumeOwed = true;/); // armed in session_compact
-  assert.match(SRC, /compaction_resume_owed_refire/); // heartbeat retries the debt every post-grace tick
+  assert.match(HEARTBEAT_SRC, /compaction_resume_owed_refire/); // heartbeat retries the debt every post-grace tick
   assert.match(SRC, /\[POST-COMPACTION RESYNC\]/); // deterministic re-anchor block
   assert.match(SRC, /content: resync \+ continuationPrompt/); // goal path prepends
   assert.match(LOOP, /content: loopResync \+ loopPrompt/); // loop path prepends (moved to goal-loop.ts, decomposition step 2)
@@ -430,10 +433,10 @@ test("v0.32.1: post-compaction resume debt + deterministic resync (pi-goal-x's l
 
 test("v0.34.5: wedge alert names a subagent wait when the in-flight call is one", () => {
   const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
-  assert.match(g, /SUBAGENT WAIT/, "the alert names the wait type");
-  assert.match(g, /t\.name === "get_subagent_result" \|\| t\.name === "Agent"/, "detects both wait shapes");
-  assert.match(g, /tool-use\/token counters have stopped moving between checks is hung, not thinking/, "the liveness check is in the message");
-  assert.match(g, /subagentWait: subWaits\.size > 0/, "ledger marks subagent waits distinctly");
+  assert.match(HEARTBEAT_SRC, /SUBAGENT WAIT/, "the alert names the wait type");
+  assert.match(HEARTBEAT_SRC, /t\.name === "get_subagent_result" \|\| t\.name === "Agent"/, "detects both wait shapes");
+  assert.match(HEARTBEAT_SRC, /tool-use\/token counters have stopped moving between checks is hung, not thinking/, "the liveness check is in the message");
+  assert.match(HEARTBEAT_SRC, /subagentWait: subWaits\.size > 0/, "ledger marks subagent waits distinctly");
 });
 
 // ---------- v0.34.11: unanswered-continuation watchdog ----------
@@ -481,7 +484,7 @@ test("v0.34.16: wedges hand off through pi lifecycle — no terminal self-reload
   assert.match(g, /const handoffResume = consumeSessionHandoff\(ctx\.cwd, ownerClaim\.previousGeneration, ownerClaim\.previousOwnerSessionId\);/, "fresh session consumes matching debt");
   assert.ok(!g.includes("attemptAutoReload"), "no terminal transport");
   assert.ok(!g.includes("auto_reload_injected"), "no reload injection ledger");
-  assert.match(g, /A fresh session_start will rebind the/, "watchdogs explain the lifecycle cure");
+  assert.match(HEARTBEAT_SRC, /A fresh session_start will rebind the/, "watchdogs explain the lifecycle cure");
   assert.match(g, /const recoveryResume = consumeRecoveryResume\(ctx\.cwd\);/, "old markers remain one-release compatible");
 });
 
@@ -536,7 +539,7 @@ test("v0.34.16: queue-stuck probe — a send queued-without-a-turn is reported w
   const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
   assert.match(g, /GLLA_QUEUE_STUCK_MS \?\? 45_000/);
   assert.match(g, /appendLedger\(ctx\.cwd, "queue_stuck_detected"/);
-  assert.match(g, /A fresh session_start will rebind the/);
+  assert.match(HEARTBEAT_SRC, /A fresh session_start will rebind the/);
   assert.match(g, /if \(lastRealActivityAt > sentAt\) return;/, "real work disarms");
   assert.match(g, /if \(!ctx\.hasPendingMessages\(\)\) return;/, "consumed message = healthy — even an instant 429 consumes");
   assert.match(g, /if \(!ctx\.isIdle\(\)\) return;/, "running turn = healthy");
