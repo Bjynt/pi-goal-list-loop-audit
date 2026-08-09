@@ -1,6 +1,23 @@
 # Changelog
 
 ## Unreleased
+### 0.34.120 — objective lifecycle closure, conflict confirmation, and one-pass wipe
+  (v0.34.120, audit/OBJECTIVE-LIFECYCLE-2026-08-09.md). Approved objectives
+  now persist their final recap in the archive, show exactly one final `✓ done`
+  summary, and clear the live slot automatically; legacy terminal slots close
+  on session start. A new same-mode objective never silently overwrites live
+  work: users choose Update current objective, Replace current objective, or
+  Cancel new objective; cross-mode starts require explicit replacement. The
+  guard covers `/goal`, `/loop`, `/list next`, `list_activate`, and drafting
+  tools, with stale-dialog identity revalidation. `/glla cancel` now gives a
+  standalone live goal precedence over unrelated waiting backlog, while
+  list-owned cancellation still drops its queue. `/glla wipe` is now truly
+  one-pass and Confirm-gated: it archives safely, clears terminal live state,
+  removes RAM/orphan queue sidecars, persists clean state before scratch-branch
+  cleanup, and refuses to claim success on archive/deletion failures. Updated
+  docs and raw external-review evidence; pi core/host changes remain out of
+  scope.
+
 ### 0.34.119 — note.md triage: objective cancel, summary canonicalization, truthful stale-ctx recovery
   (v0.34.119, audit/NOTE-REMAINING-TRIAGE-2026-08-09.md). Re-audited
   every item in `/home/dracon/chat/pi/note.md` and added regression coverage.
