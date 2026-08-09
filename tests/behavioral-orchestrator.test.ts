@@ -1902,7 +1902,8 @@ test("one-active-thing tool guards: list_activate + propose_loop_draft + propose
   ctx2.ui.customImpl = async () => "Yes";
   ctx2.ui.selectImpl = async (_title, options) => options.includes("Yes") ? "Yes" : "Cancel new objective";
   const r3 = await pi.runTool("propose_loop_draft", { target: "loop over goal", measureCmd: "none" }, ctx2);
-  assert.match(r3.content[0]!.text, /cancelled|preserved|not started/i, "propose_loop_draft asks before replacing the live goal");
+  assert.match(r3.content[0]!.text, /could not start|cancelled|preserved|not started/i, "propose_loop_draft does not silently replace the live goal");
+  assert.ok(ctx2.ui.matching("New loop cancelled").length >= 1, "the conflict dialog's cancellation is visible");
   ctx2.ui.customImpl = undefined;
 });
 
@@ -1911,8 +1912,9 @@ test("one-active-thing: /goal resume guard remains; the load-time combo is auto-
   // The 0.28.21 behavioral setup (paused goal + live loop after a reload)
   // is unreachable now: v0.29.6 arbitration resolves the stack AT LOAD.
   // The in-session guard stays (pause a goal → start a loop → /goal resume):
-  const SRC = readGoalRuntimeSource();
-  assert.match(SRC, /objective conflict|one active thing/);
+  const CONFLICT_SRC = fs.readFileSync("extensions/goal-objective-conflict.ts", "utf8");
+  assert.match(CONFLICT_SRC, /Update current objective/);
+  assert.match(CONFLICT_SRC, /Replace current objective/);
   const cwd = tmpCwd();
   seedState(cwd, {
     loop: seedLoop({ active: true, startedAt: "2026-07-30T00:00:00.000Z" }),
