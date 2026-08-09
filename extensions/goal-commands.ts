@@ -26,6 +26,7 @@ import { Settings, globalSettingsPath, loadSettings, projectSettingsPath, saveSe
 import { ReviewerConfig, normalizeObjective, resolveReviewerConfig, reviewerMenuOptions } from "./reviewer.js";
 import type { SettingsSectionId } from "./settings-menu.js";
 import { cmdLoop, clearLoopTimer, finishLoopGit, isLoopActive, scheduleLoopTick } from "./goal-loop.js";
+import { chooseObjectiveConflict, liveObjectives, type LiveObjective } from "./goal-objective-conflict.js";
 
 export interface CommandFlags {
   get draftingTarget(): "goal" | "list" | "loop" | null; set draftingTarget(v: "goal" | "list" | "loop" | null);
@@ -179,6 +180,33 @@ async function cmdGoal(args: string, ctx: ExtensionContext): Promise<void> {
     }
   }
   return cmdSet(route.kind === "set" ? route.text : "", ctx);
+}
+
+async function resolveGoalStartConflict(ctx: ExtensionContext, objective: string): Promise<boolean> {
+  const current = liveObjectives(state);
+  if (current.length === 0) return true;
+  const choice = await chooseObjectiveConflict(ctx, "goal", objective, current);
+  if (choice === "cancel") {
+    ctx.ui.notify("New goal cancelled; the current objective is unchanged.", "info");
+    return false;
+  }
+  if (choice === "update") {
+    const one = current[0];
+    if (one?.kind === "goal" && one.status === "active") {
+      await cmdTweak(objective, ctx);
+    } else if (one?.kind === "loop") {
+      await cmdLoop(`refine ${objective}`, ctx);
+    } else {
+      ctx.ui.notify("Update selected, but the current list item is not in its editable paused state. Use /list tweak after pausing it; no new goal was started.", "info");
+    }
+    return false;
+  }
+  // Replacement is explicit. Stop a loop first; setGoal archives a live
+  // goal/list item before installing the new one.
+  for (const item of current) {
+    if (item.kind === "loop" && isLoopActive()) await cmdLoop("stop", ctx);
+  }
+  return true;
 }
 
 // =================================================================
