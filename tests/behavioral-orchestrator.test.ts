@@ -1878,11 +1878,14 @@ test("one-active-thing tool guards: list_activate + propose_loop_draft + propose
   seedState(cwd, { loop: seedLoop({ active: true }), list: [seedListItem("queued thing")] });
   setGlobalAutoResume(true); // v0.28.21: keep the loop ACTIVE through the reload
   const ctx = await freshSession(cwd, "reload");
+  ctx.ui.selectImpl = async (_title, options) => options.find((option) => option === "Cancel new objective") ?? "Yes";
   const r1 = await pi.runTool("list_activate", { n: 1 }, ctx);
-  assert.match(r1.content[0]!.text, /A loop is active/, "list_activate blocked over live loop");
-  await pi.command("goal", "", ctx); // enter drafting (the early guard needs no interview)
+  assert.match(r1.content[0]!.text, /cancelled|preserved/i, "list_activate asks before replacing the live loop");
+  await pi.command("goal", "", ctx); // enter drafting
+  await pi.fire("message_start", { message: { role: "user" } }, ctx);
+  ctx.ui.selectImpl = async (_title, options) => options.includes("Yes") ? "Yes" : "Cancel new objective";
   const r2 = await pi.runTool("propose_goal_draft", { objective: "goal over loop — done when pinned" }, ctx);
-  assert.match(r2.content[0]!.text, /A loop is active/, "propose_goal_draft blocked over live loop");
+  assert.match(r2.content[0]!.text, /cancelled|preserved|not started/i, "propose_goal_draft asks before replacing the live loop");
   assert.equal((readState(cwd).loop as { active: boolean }).active, true, "loop untouched");
 
   // Active goal blocks propose_loop_draft (before the measure even test-runs).
@@ -1891,8 +1894,9 @@ test("one-active-thing tool guards: list_activate + propose_loop_draft + propose
   setGlobalAutoResume(true); // v0.28.21: keep the goal ACTIVE through the reload
   const ctx2 = await freshSession(cwd2, "reload");
   await pi.command("loop", "", ctx2); // enter loop drafting (slash-bar gate)
+  ctx2.ui.selectImpl = async (_title, options) => options.includes("Yes") ? "Yes" : "Cancel new objective";
   const r3 = await pi.runTool("propose_loop_draft", { target: "loop over goal", measureCmd: "none" }, ctx2);
-  assert.match(r3.content[0]!.text, /A goal is active/, "propose_loop_draft blocked over live goal");
+  assert.match(r3.content[0]!.text, /cancelled|preserved|not started/i, "propose_loop_draft asks before replacing the live goal");
 });
 
 test("one-active-thing: /goal resume guard remains; the load-time combo is auto-arbitrated (v0.29.6)", async () => {
@@ -1901,7 +1905,7 @@ test("one-active-thing: /goal resume guard remains; the load-time combo is auto-
   // is unreachable now: v0.29.6 arbitration resolves the stack AT LOAD.
   // The in-session guard stays (pause a goal → start a loop → /goal resume):
   const SRC = readGoalRuntimeSource();
-  assert.match(SRC, /A loop is active — one active thing/);
+  assert.match(SRC, /objective conflict|one active thing/);
   const cwd = tmpCwd();
   seedState(cwd, {
     loop: seedLoop({ active: true, startedAt: "2026-07-30T00:00:00.000Z" }),
@@ -1911,7 +1915,7 @@ test("one-active-thing: /goal resume guard remains; the load-time combo is auto-
   const ctx = await freshSession(cwd, "reload");
   await tick();
   const s = readState(cwd);
-  assert.equal((s.goal as { status: string }).status, "aborted", "older goal auto-archived at load");
+  assert.equal(s.goal, null, "older goal was archived and closed at load");
   assert.equal((s.loop as { active: boolean }).active, true, "the surviving loop resumed");
   assert.ok(ctx.ui.matching("Stacked state auto-arbitrated").length >= 1, "arbitration notify");
 });
@@ -1929,7 +1933,7 @@ test("v0.29.6: stacked state at load is AUTO-ARBITRATED — most recent activity
   const ctx = await freshSession(cwd, "startup");
   await tick();
   const s = readState(cwd);
-  assert.equal((s.goal as { status: string }).status, "aborted", "the older goal was auto-archived");
+  assert.equal(s.goal, null, "the older goal was archived and closed");
   assert.equal((s.loop as { active: boolean }).active, false, "the surviving loop is then held by the restore gate");
   assert.ok(ctx.ui.matching("Stacked state auto-arbitrated").length >= 1, "arbitration notify");
   assert.equal(pi.sent.length, 0, "nothing fired");
