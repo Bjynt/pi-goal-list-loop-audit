@@ -8,6 +8,8 @@ The auditor runs in a fresh extension-less pi RPC process with no extensions, sk
 
 This is a detached process, not a nested session in the main pi process. `complete_goal` returns after writing the claim and job request; the status surface shows `auditor queued`, `auditor running`, or `audit recovery pending` while the worker runs or awaits a fresh lifecycle.
 
+**Current release:** `v0.34.120` — objective lifecycle closure, explicit start conflicts, and one-pass `/glla wipe`.
+
 ## Why this exists
 
 Most pi goal extensions — `pi-goal`, `pi-goal-x`, `pi-loop-mode`, `ralphi`, `tmustier-pi-ralph-wiggum` — let the same agent that did the work also be the verifier. **That's the bamboozle trap.** The agent that wrote the implementation also says "I'm done", and the loop trusts them.
@@ -46,7 +48,7 @@ Five top-level commands — `/goal`, `/list`, `/loop`, `/glla`, `/review`:
 /goal verify                       # queue a detached auditor for the current goal — no agent turn (v0.28.27, renamed from /goal audit in v0.29.8)
 /goal tweak "<new objective>"      # edit in place (Confirm dialog)
 /goal archive                      # archived goals, newest first
-/glla                               # settings UI table · actions include /glla status · /glla stats · /glla audits [N|full] · /glla cancel (cancel the active objective) · /glla postaudit · /glla wipe (nuclear reset, Confirm-gated)
+/glla                               # settings UI table · actions include /glla status · /glla stats · /glla audits [N|full] · /glla cancel (cancel the active objective) · /glla postaudit · /glla wipe (idempotent all-live-state reset, Confirm-gated)
 /list fix the login bug, add dark mode, write docs   # dump it — the agent shapes it into items, one Confirm
 /list plan.md                      # file detected → bulk import, one Confirm (sisyphus/Ralph style)
 /list <paste a checklist>          # multi-line paste → same batch flow
@@ -347,9 +349,11 @@ they do not retain an old `ctx` or `pi` handle.
 A user quit is not continuation consent: `reason: "quit"` is ledgered as
 `session_handoff_suppressed`, leaves no handoff debt, and does not receive
 same-pid rebind consent. An orphan with no fresh lifecycle event is reported
-honestly because an invalidated extension cannot repair its own pi host; if the
-warning says no replacement arrived, restart pi normally and let the saved
-`.pi-glla/` state restore. There are no automatic `/reload` keystrokes and no
+honestly because an invalidated extension cannot repair its own pi host; use
+`/new` (or restart pi normally) and let the saved `.pi-glla/` state restore.
+`/reload` does not clear pi's cached context, and event handlers cannot create a
+replacement session through the public pi API, so glla never claims automatic
+stale-session replacement. There are no automatic `/reload` keystrokes and no
 mux dependency. The legacy `autoReloadOnStale` and `autoRecovery` fields remain
 only as deprecated settings-file compatibility fields; they are ignored.
 
@@ -377,21 +381,27 @@ never silently overwrites it: the user chooses **Update current objective**,
 **Replace current objective**, or **Cancel new objective**. Cross-mode starts
 offer explicit replacement/cancellation rather than silently converting a goal
 into a loop (or vice versa). The queued list is a backlog, not a second live
-thing.
+thing. In headless mode, glla fails closed and asks you to resolve the existing
+objective explicitly instead of guessing.
 
 Session loads still repair dirty legacy state: if a pre-guard project persisted
 a live loop AND a live goal, the most recent artifact keeps the slot and the
 loser is archived (recoverable under `.pi-glla/archive/`), never silently
-wiped.
+wiped. Legacy `complete`/`aborted` terminal slots are also cleared once their
+archive exists, while the final summary remains available in history.
 
 ## Completion and destructive commands
 
 An approved objective writes its final completion summary to the archive and
 shows one final `✓ done` notification, then closes its live slot automatically.
-No follow-up cancel is required. `/glla cancel` stops only the active objective
-(and drops its waiting list queue when the objective is list-owned). `/glla wipe`
-is the Confirm-gated, idempotent all-live-state reset: it preserves archive and
-ledger history, removes queue sidecars, and completes in one invocation.
+No follow-up cancel is required. `/glla cancel` stops only the active objective:
+for a list-owned objective it also drops the waiting queue; an unrelated
+standalone goal does not consume an unrelated list backlog. `/glla wipe` is the
+Confirm-gated, idempotent all-live-state reset: it preserves archive and ledger
+history, removes RAM state plus valid or orphaned queue sidecars, persists the
+clean state before optional loop-branch cleanup, and completes in one
+invocation. Headless `/glla wipe` refuses before changing state because the
+confirmation is intentionally not bypassed.
 
 ## Config (one global place, rarely opened)
 
