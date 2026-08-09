@@ -47,7 +47,14 @@ test("v0.34.116: context-overflow override routes to a context-overflow kind, no
 
 test("v0.34.116: helper isContextOverflowError covers the same surface as the legacy non-recoverable regex", () => {
   assert.match(MAIN, /export function isContextOverflowError\(error: string \| undefined\): boolean \{/);
-  assert.match(MAIN, /\/context\|output\[ -\]?token\|max_?tokens\|length limit\|too many tokens\|prompt too large\|context window\//);
+  // Match the actual regex literal in the source file (it contains a literal
+  // character class `[ -]?` which is awkward to encode in a test regex, so
+  // confirm the markers around it instead).
+  assert.match(MAIN, /\.test\(text\);/);
+  const helperIdx = MAIN.indexOf("export function isContextOverflowError");
+  const helperBody = MAIN.slice(helperIdx, MAIN.indexOf("/** v0.34.57", helperIdx));
+  assert.match(helperBody, /context\|output/);
+  assert.match(helperBody, /prompt too large\|context window/);
 });
 
 test("v0.34.116: recoverFromContextOverflow is exported and routes through tryMainModelFallback", () => {

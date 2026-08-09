@@ -1,6 +1,33 @@
 # Changelog
 
 ## Unreleased
+### 0.34.116 — context-overflow fallback + /reload copy + stale-ctx one-liner
+  (v0.34.116, audit/SESSION-COMPACT-FALLBACK-2026-08-09.md). When pi's
+  `session_compact` cannot release the prompt (the model is smaller than
+  the prompt needs), glla now walks the fallback chain to a larger-context
+  backup instead of leaving the user stuck on "Context overflow recovery
+  FAILED after one compact-and-retry attempt" (hegemion 2026-08-08 case).
+  New `MainModelFailureKind = "context-overflow"` (gated by an
+  `isContextOverflow` override on `classifyMainModelFailure` — a length
+  cap mid-stream STILL classifies as non-recoverable; the override is the
+  explicit "compaction already tried, model is too small" signal).
+  New `extensions/goal-recovery.ts::observeCompactFailure` /
+  `recoverFromContextOverflow` (the one-liner surface + the chain walk —
+  reuses the existing `sessionModelSelector` from v0.34.115). The
+  `agent_end` context-starved branch detects "compaction already happened
+  within `COMPACTION_GRACE_MS`" (180s) and walks the chain before yielding
+  to pi. Stale-handle status-bar copy now reads `· /reload (or a fresh
+  session_start) rebinds` (the underlying `claimSessionOwnerAndDetectRebind`
+  already rebinds on `/reload`; the user-facing copy was misleading).
+  New `tests/context-overflow-recovery.test.ts` (7 source-pin tests).
+  `tests/length-continue.test.ts` window bumped 3400 → 5000 chars
+  (the new branch added ~1100 chars inside the `contextStarvedLength`
+  block; the inner early-return contract is unchanged).
+  `tests/stale-interrupt-resume.test.ts` updated for the new copy.
+  `npx tsc --noEmit` clean; `bun test` → 1188 pass / 1 skip / 0 fail
+  (up from 1181). `extensions/loops/goal.ts` ≤ 700 lines (387).
+
+## 0.34.115 — multi-select model picker + unified model-selector
 ### 0.34.115 — multi-select model picker + unified model-selector
   (v0.34.115, audit/MODEL-PICKER-MULTI-SELECT-2026-08-09.md). New
   `extensions/multi-model-picker.ts` (multi-select variant of the existing
