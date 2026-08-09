@@ -42,3 +42,13 @@ The existing note triage, external-review evidence, stale-session limitation,
 conflict confirmation, completion closure, and `/glla wipe` history-preserving
 contract remain documented in `audit/NOTE-REMAINING-TRIAGE-2026-08-09.md` and
 `audit/OBJECTIVE-LIFECYCLE-2026-08-09.md`.
+
+## Sequential completion-audit rerun
+
+A detached audit overlapped an independent rehearsal process and reported
+transient failures in the behavioral and full suites. With all other runners
+settled, the mandatory commands were rerun sequentially from the same clean
+implementation: the behavioral suite passed **86/86**, the full suite passed
+**1209/1209** with one env-gated skip, and `npx tsc --noEmit` reported no
+errors. No implementation change was needed for that infrastructure race; the
+fresh raw sequential output is the evidence used for the next audit claim.
