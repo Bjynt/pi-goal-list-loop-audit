@@ -39,11 +39,18 @@ test("isStaleApiError matches pi's exact stale signature, rejects everything els
   assert.equal(isStaleApiError(undefined), false);
 });
 
-test("both autonomous send paths detect staleness and go terminal", () => {
-  const cont = CONT.indexOf('if (isStaleApiError(err)) goStaleTerminal(ctx, "sendContinuation");'); // decomposition step 5: sendContinuation moved
-  const loop = LOOP.indexOf('if (isStaleApiError(err)) goStaleTerminal(ctx, "sendLoopTurn");');
-  assert.ok(cont > 0, "sendContinuation detects");
-  assert.ok(loop > 0, "sendLoopTurn detects");
+test("both autonomous send paths detect staleness and auto-recover before terminal", () => {
+  // v0.34.117: the auto-recovery path tries `ctx.newSession()` first; the
+  // terminal park is the explicit fallback (when the newSession entrypoint
+  // is missing or throws). The legacy two-line pattern is gone.
+  const cont = CONT.indexOf('attemptFreshSessionRecovery(ctx, "sendContinuation")');
+  const loop = LOOP.indexOf('attemptFreshSessionRecovery(ctx, "sendLoopTurn")');
+  assert.ok(cont > 0, "sendContinuation auto-recovers via attemptFreshSessionRecovery");
+  assert.ok(loop > 0, "sendLoopTurn auto-recovers via attemptFreshSessionRecovery");
+  // The terminal fall-back MUST still be reachable so the legacy path runs
+  // when the extension api lacks the newSession entrypoint.
+  assert.match(CONT, /if \(!attemptFreshSessionRecovery\(ctx, "sendContinuation"\)\) goStaleTerminal\(ctx, "sendContinuation"\);/);
+  assert.match(LOOP, /if \(!attemptFreshSessionRecovery\(ctx, "sendLoopTurn"\)\) goStaleTerminal\(ctx, "sendLoopTurn"\);/);
 });
 
 test("terminal path: ledger event, single-fire, goal ACTIVE+marker / loop stop with restart guidance", () => {

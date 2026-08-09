@@ -201,6 +201,70 @@ export function observeCompactFailure(ctx: ExtensionContext, error: string | und
   return true;
 }
 
+/** v0.34.117: when pi's compact subsystem throws "This extension ctx is
+ * stale after session replacement or reload", the cached ctx in pi's
+ * compact path is dead. /reload shares the same ctx and does not help;
+ * only /new clears the cache. The user observed this exact symptom
+ * (capture-anime-girls 2026-08-09 09:53, ai-auto-writer 2026-08-09 fields)
+ * — typing /new was the only escape. This helper automates the recovery:
+ * if the active pi context exposes a fresh-session entrypoint, call it
+ * and return true; the new session_start will rehydrate the goal from
+ * disk just like a manual /new would. When the entrypoint is missing
+ * (older pi builds), or the call throws, return false and the caller
+ * falls back to the legacy terminal park.
+ *
+ * The signature is `where: string` so every call site emits a distinct
+ * `fresh_session_recovery_triggered` ledger row — the recovery path MUST
+ * be observable so a future field regression can see when auto-recovery
+ * fired vs. when the user had to /new manually. */
+export function attemptFreshSessionRecovery(ctx: ExtensionContext, where: string): boolean {
+  // flags is set by createGoalRecovery(flags, d). If the factory has not
+  // been invoked yet (a module-load-time probe before goal.ts reaches
+  // its createGoalRecovery call), fall back to the legacy terminal
+  // path — the factory initializes the api on the next event.
+  if (typeof flags === "undefined") {
+    appendLedger(ctx.cwd, "fresh_session_recovery_skipped", { from: where, reason: "recovery factory not initialized yet" });
+    return false;
+  }
+  const api = flags.extensionApi as (ExtensionAPI & { newSession?: () => unknown | Promise<unknown> }) | null;
+  if (!api || typeof api.newSession !== "function") {
+    appendLedger(ctx.cwd, "fresh_session_recovery_skipped", { from: where, reason: "no newSession entrypoint on extension api" });
+    return false;
+  }
+  try {
+    const result = api.newSession();
+    if (result && typeof (result as Promise<unknown>).then === "function") {
+      // Best-effort: the new_session events will fire async; we don't
+      // await here because the caller's goal already triggered the stale
+      // ctx and we want to return immediately so the terminal park is
+      // skipped. The session_start handler will rehydrate from disk.
+      (result as Promise<unknown>).catch((err) => {
+        appendLedger(ctx.cwd, "fresh_session_recovery_failed", { from: where, error: err instanceof Error ? err.message : String(err) });
+      });
+    }
+    appendLedger(ctx.cwd, "fresh_session_recovery_triggered", { from: where });
+    ctx.ui.notify("glla: detected a stale ctx — auto-recovering with a fresh session (no /new needed).", "info");
+    return true;
+  } catch (err) {
+    appendLedger(ctx.cwd, "fresh_session_recovery_failed", { from: where, error: err instanceof Error ? err.message : String(err) });
+    return false;
+  }
+}
+
+/** v0.34.117: a stale `isStaleApiError` from any send path SHOULD first
+ * try the fresh-session auto-recovery; only fall back to the terminal
+ * park if the recovery is unavailable. The user-reported symptom
+ * (Screenshot_20260809_095353) was that only /new cleared the locked
+ * ctx — this helper makes /new automatic. */
+export function autoRecoverFromStaleCtxOrTerminal(ctx: ExtensionContext, where: string): boolean {
+  if (attemptFreshSessionRecovery(ctx, where)) return true;
+  // Fallback: the legacy terminal park. The existing call sites
+  // imported goStaleTerminal from goal-*.ts directly; we add the
+  // helper here so the auto-recovery path is the single source of
+  // truth and the legacy path is the explicit fallback.
+  return false;
+}
+
 /** v0.34.116: classify a compact-failure string and route through
  * tryMainModelFallback. Returns true when a backup was selected. The
  * caller should still cancel the in-flight send / re-arm the continuation

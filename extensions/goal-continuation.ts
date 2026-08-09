@@ -57,7 +57,7 @@ import { LENGTH_CONTINUE_MAX, LENGTH_CONTINUE_TEXT } from "./length-continue.js"
 import { VISION_ASSIST_GUIDANCE } from "./vision-assist.js";
 import { loadSettings } from "./goal-settings.js";
 import { clearLoopTimer, isLoopActive } from "./goal-loop.js";
-import { mainModelRecoveryActive, recoverMainModelFromSendStorm } from "./goal-recovery.js";
+import { attemptFreshSessionRecovery, mainModelRecoveryActive, recoverMainModelFromSendStorm } from "./goal-recovery.js";
 import { sendStormEscalateMs } from "./main-model-recovery.js";
 
 /** goal.ts-owned module lets the continuation cluster reads/writes through
@@ -598,7 +598,11 @@ function retryContinuationDispatch(ctx: ExtensionContext, record: ContinuationDi
     flags.extensionApi.sendMessage({ customType: GOAL_EVENT_ENTRY, content: payload.content, display: payload.display }, { triggerTurn: true, deliverAs: "followUp" });
   } catch (err) {
     appendLedger(ctx.cwd, "continuation_retry_send_failed", { id: record.id, kind: record.kind, error: err instanceof Error ? err.message : String(err) });
-    if (isStaleApiError(err)) goStaleTerminal(ctx, "retryContinuationDispatch");
+    if (isStaleApiError(err)) {
+      // v0.34.117: auto-recover with a fresh session first (no /new needed).
+      // Falls back to the terminal park only when the entrypoint is missing.
+      if (!attemptFreshSessionRecovery(ctx, "retryContinuationDispatch")) goStaleTerminal(ctx, "retryContinuationDispatch");
+    }
     return false; // the retry itself failed — genuine stall, fail closed now
   }
   record.retryCount = 1;
@@ -766,7 +770,9 @@ export function sendContinuation(goalId: string): void {
     appendLedger(ctx.cwd, "goal_continuation_send_failed", { goalId, error: err instanceof Error ? err.message : String(err) });
     // v0.26.7: stale runtime = terminal (sends can never land); anything
     // else is transient — next agent_end/session_start reschedules.
-    if (isStaleApiError(err)) goStaleTerminal(ctx, "sendContinuation");
+    if (isStaleApiError(err)) {
+      if (!attemptFreshSessionRecovery(ctx, "sendContinuation")) goStaleTerminal(ctx, "sendContinuation");
+    }
   }
 }
 
@@ -805,7 +811,9 @@ export function sendStallEscalation(ctx: ExtensionContext, nudges: number): void
   } catch (err) {
     if (pendingContinuationDispatch) dispatchFailed(ctx, pendingContinuationDispatch, err instanceof Error ? err.message : String(err));
     appendLedger(ctx.cwd, "stall_escalation_nudge_failed", { error: err instanceof Error ? err.message : String(err) });
-    if (isStaleApiError(err)) goStaleTerminal(ctx, "sendStallEscalation");
+    if (isStaleApiError(err)) {
+      if (!attemptFreshSessionRecovery(ctx, "sendStallEscalation")) goStaleTerminal(ctx, "sendStallEscalation");
+    }
   }
 }
 
@@ -835,7 +843,9 @@ export function sendLengthContinue(ctx: ExtensionContext, consecutive: number): 
   } catch (err) {
     if (pendingContinuationDispatch) dispatchFailed(ctx, pendingContinuationDispatch, err instanceof Error ? err.message : String(err));
     appendLedger(ctx.cwd, "length_continue_send_failed", { consecutive, error: err instanceof Error ? err.message : String(err) });
-    if (isStaleApiError(err)) goStaleTerminal(ctx, "sendLengthContinue");
+    if (isStaleApiError(err)) {
+      if (!attemptFreshSessionRecovery(ctx, "sendLengthContinue")) goStaleTerminal(ctx, "sendLengthContinue");
+    }
   }
 }
 

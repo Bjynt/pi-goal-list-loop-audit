@@ -31,10 +31,12 @@ plus a `v0.34.x-<TOPIC>.md` symlink for versioned docs). Older docs
 | v0.34.114 | v0.34.114-GOAL-INSTALLER-THINNING.md | GOAL-INSTALLER-THINNING-2026-08-09.md |
 | v0.34.115 | v0.34.115-MODEL-PICKER-MULTI-SELECT.md | MODEL-PICKER-MULTI-SELECT-2026-08-09.md |
 | v0.34.116 | v0.34.116-SESSION-COMPACT-FALLBACK.md | SESSION-COMPACT-FALLBACK-2026-08-09.md |
+| v0.34.117 | v0.34.117-STALE-CTX-AUTO-RECOVERY.md | STALE-CTX-AUTO-RECOVERY-2026-08-09.md |
 
 ## Topic index (canonical docs, newest first)
 
 **2026-08-09**
+- STALE-CTX-AUTO-RECOVERY-2026-08-09.md — programmatic /new on `isStaleApiError` so the user no longer has to type `/new` after pi's compact subsystem wedges (v0.34.117)
 - SESSION-COMPACT-FALLBACK-2026-08-09.md — context-overflow classification + fallback chain walk when session_compact cannot release the prompt + /reload copy + stale-ctx one-liner (v0.34.116)
 - MODEL-PICKER-MULTI-SELECT-2026-08-09.md — multi-select picker + unified model-selector + empty forbiddenModels default + subagentFallbacks chain (v0.34.115)
 - GOAL-INSTALLER-THINNING-2026-08-09.md — decomposition step 6: goal.ts thin installer surface (v0.34.114)

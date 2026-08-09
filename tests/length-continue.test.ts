@@ -83,7 +83,8 @@ test("sendLengthContinue: stale-api terminal guard + ledger + factory reset", ()
   assert.match(CONT, /kind: "length",\s*\n\s*marker: LENGTH_CONTINUE_TEXT\.slice\(0, 80\)/, "length sends use the dispatch proof state machine");
   assert.match(CONT, /flags\.extensionApi\.sendMessage\(\{\s*\n\s*customType: GOAL_EVENT_ENTRY,\s*\n\s*content: LENGTH_CONTINUE_TEXT/);
   assert.match(CONT, /appendLedger\(ctx\.cwd, "length_continue_sent", \{ consecutive, attemptId: attempt\.id \}\)/);
-  assert.match(CONT, /if \(isStaleApiError\(err\)\) goStaleTerminal\(ctx, "sendLengthContinue"\);/);
+  assert.match(CONT, /if \(isStaleApiError\(err\)\)/); // v0.34.117: the stale guard now wraps an auto-recovery call + terminal fallback
+  assert.match(CONT, /if \(!attemptFreshSessionRecovery\(ctx, "sendLengthContinue"\)\) goStaleTerminal\(ctx, "sendLengthContinue"\);/); // v0.34.117: auto-recover before terminal park
   assert.match(SRC, /resetLengthContinue\(\); \/\/ v0\.27\.2: fresh runtime, fresh truncation streak/); // factory reset stays in goal.ts
   // give-up is surfaced once via notify + external push
   assert.match(SRC, /lc\.giveUpNow/);

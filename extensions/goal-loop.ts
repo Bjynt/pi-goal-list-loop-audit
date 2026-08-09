@@ -54,6 +54,7 @@ import {
 } from "./goal-loop-forever.js";
 import { loadSettings } from "./goal-settings.js";
 import { createContinuationDispatch, type ContinuationDispatch } from "./goal-loop-dispatch.js";
+import { attemptFreshSessionRecovery } from "./goal-recovery.js";
 
 type DispatchInput = Omit<Parameters<typeof createContinuationDispatch>[0], "id" | "sentAt">;
 
@@ -369,7 +370,9 @@ function sendLoopTurn(): void {
     if (flags.pendingContinuationDispatch) dispatchFailed(ctx, flags.pendingContinuationDispatch, err instanceof Error ? err.message : String(err));
     appendLedger(ctx.cwd, "loop_turn_send_failed", { error: err instanceof Error ? err.message : String(err) });
     // v0.26.7: stale runtime is terminal, not transient — go loud now.
-    if (isStaleApiError(err)) goStaleTerminal(ctx, "sendLoopTurn");
+    if (isStaleApiError(err)) {
+      if (!attemptFreshSessionRecovery(ctx, "sendLoopTurn")) goStaleTerminal(ctx, "sendLoopTurn");
+    }
   }
 }
 

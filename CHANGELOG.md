@@ -1,6 +1,29 @@
 # Changelog
 
 ## Unreleased
+### 0.34.117 — fresh-session auto-recovery on stale ctx (no /new needed)
+  (v0.34.117, audit/STALE-CTX-AUTO-RECOVERY-2026-08-09.md). Pi's compact
+  subsystem holds a cached ctx; once it goes stale ("This extension ctx
+  is stale after session replacement or reload") EVERY sendMessage
+  throws in-process. The user-observed symptom (Screenshot_20260809_095353,
+  capture-anime-girls field) was that /reload shares the same ctx and does
+  NOT help; only /new clears it — until now, the user had to type /new by
+  hand. New `extensions/goal-recovery.ts::attemptFreshSessionRecovery` calls
+  `ctx.newSession()` (the programmatic equivalent of /new) when the stale
+  signature fires. All 5 `isStaleApiError` catch sites (`retryContinuationDispatch`,
+  `sendContinuation`, `sendStallEscalation`, `sendLengthContinue`, `sendLoopTurn`)
+  route through it BEFORE falling back to the legacy `goStaleTerminal` park
+  — the terminal park stays as the explicit fallback when the `newSession`
+  entrypoint is missing (older pi builds). Ledger events:
+  `fresh_session_recovery_triggered` (fired + session_start will rehydrate
+  from .pi-glla/); `fresh_session_recovery_skipped` (entrypoint missing);
+  `fresh_session_recovery_failed` (entrypoint threw). New
+  `tests/fresh-session-auto-recovery.test.ts` (4 source-pin tests, all
+  pass). Existing `tests/stale-api-terminal.test.ts` + `tests/length-continue.test.ts`
+  updated to pin the new auto-recovery pattern. `npx tsc --noEmit` clean;
+  `bun test` → 1192 pass / 1 skip / 0 fail (up from 1188 in v0.34.116).
+  `extensions/loops/goal.ts` ≤ 700 lines (387).
+
 ### 0.34.116 — context-overflow fallback + /reload copy + stale-ctx one-liner
   (v0.34.116, audit/SESSION-COMPACT-FALLBACK-2026-08-09.md). When pi's
   `session_compact` cannot release the prompt (the model is smaller than
