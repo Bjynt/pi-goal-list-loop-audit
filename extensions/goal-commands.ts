@@ -445,11 +445,12 @@ async function cmdCancel(ctx: ExtensionContext): Promise<void> {
     }
     return;
   }
-  archiveCurrentGoal(ctx, "aborted", "user cancelled");
+  const noun = goalNoun();
+  if (!archiveCurrentGoal(ctx, "aborted", "user cancelled")) return;
   // Abort only after the durable archive + user-facing confirmation have
   // landed. Aborting immediately used to cut off the rest of compound
   // cancel/wipe cleanup and made the user repeat the command.
-  ctx.ui.notify(`${goalNoun()} aborted.${isLoopActive() ? " A loop is still active — /loop stop ends it." : ""}`, "info");
+  ctx.ui.notify(`${noun} aborted.${isLoopActive() ? " A loop is still active — /loop stop ends it." : ""}`, "info");
   ctx.abort();
 }
 
@@ -1080,12 +1081,12 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
       return;
     }
     const dropped = waiting;
+    if (activeIsListItem && !archiveCurrentGoal(ctx, "aborted", "list cancelled")) return;
     // v0.35.0: clear the union of RAM and disk queue state. Orphaned
     // sidecars otherwise resurrected after a stale reload.
     const clearedSidecars = clearQueueItemFiles(ctx.cwd);
     replaceState({ ...state, list: [] });
     persistState(ctx);
-    if (activeIsListItem) archiveCurrentGoal(ctx, "aborted", "list cancelled");
     appendLedger(ctx.cwd, "list_cancelled", { abortedActive: activeIsListItem, dropped, sidecars: clearedSidecars.removed });
     ctx.ui.notify(
       `List cancelled: ${activeIsListItem ? "active item aborted + " : ""}${dropped} waiting item(s) dropped.${!activeIsListItem && state.goal && state.goal.status === "active" ? ` Active goal is not a list item — untouched (${activeGoalSurfaceCommand("cancel")} for that).` : ""}`,
