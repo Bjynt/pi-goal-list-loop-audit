@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+### 0.34.118 — dedicated Backups segment + forbidden-aware ordered picker
+  (v0.34.118, audit/BACKUPS-PICKER-2026-08-09.md). `/glla settings`
+  now has a dedicated `Backups` segment rather than burying main-model
+  recovery beside Keep-going controls. Main model backups, retry cadence,
+  and glla-managed subagent fallback chains are grouped there. The ordered
+  model picker now hides refs from `forbiddenModels` when selecting backups,
+  hides current backups when editing `forbiddenModels`, and removes the
+  no-op session/manual rows from multi-select backup lists. The same mutual
+  exclusion is enforced in headless/free-form input mode. New tests pin
+  picker filtering, six-tab grouping, and both editor paths.
+
 ### 0.34.117 — fresh-session auto-recovery on stale ctx (no /new needed)
   (v0.34.117, audit/STALE-CTX-AUTO-RECOVERY-2026-08-09.md). Pi's compact
   subsystem holds a cached ctx; once it goes stale ("This extension ctx

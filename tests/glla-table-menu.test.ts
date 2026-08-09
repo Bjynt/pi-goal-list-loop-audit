@@ -120,7 +120,7 @@ test("grouped entry points can open a specific settings section", () => {
   assert.ok(component.visibleRows().every((row) => row.section === "stall-brakes"));
 });
 
-test("render: tabs row lists all 5 sections", () => {
+test("render: tabs row lists all 6 sections", () => {
   const { component } = makeComponent(SAMPLE_ROWS);
   const lines = component.render(120);
   // Tabs row is index 1 (after title).
@@ -220,16 +220,16 @@ test("nav: Esc emits undefined (close)", () => {
 test("nav: Tab advances to the next section", () => {
   const { component } = makeComponent(SAMPLE_ROWS);
   component.handleInput("\t");
-  assert.equal(component.getActiveSectionIdx(), 1); // auditor
+  assert.equal(component.getActiveSectionIdx(), 1); // backups
   assert.equal(component.getSelectedIdx(), 0);     // reset
 });
 
 test("nav: Back-tab (\\x1b[Z) retreats to the previous section", () => {
   const { component } = makeComponent(SAMPLE_ROWS);
   // Move to last section, then back-tab.
-  component.switchSection(4); // → "other" (idx 4)
+  component.switchSection(5); // → "other" (idx 5)
   component.handleInput("\x1b[Z");
-  assert.equal(component.getActiveSectionIdx(), 3); // → "subagents"
+  assert.equal(component.getActiveSectionIdx(), 4); // → "subagents"
 });
 
 test("nav: Right-arrow CSI sequence (\\x1b[C) advances section", () => {
@@ -240,7 +240,7 @@ test("nav: Right-arrow CSI sequence (\\x1b[C) advances section", () => {
 
 test("nav: Left-arrow CSI sequence (\\x1b[D) retreats section", () => {
   const { component } = makeComponent(SAMPLE_ROWS);
-  component.switchSection(1); // → auditor
+  component.switchSection(1); // → backups
   component.handleInput("\x1b[D");
   assert.equal(component.getActiveSectionIdx(), 0);
 });
@@ -314,7 +314,7 @@ test("structural: Class implements Component (has render + invalidate + handleIn
   assert.equal(typeof component.invalidate, "function");
 });
 
-test("structural: buildSettingsRows returns ≥20 rows across all 5 sections (coverage)", () => {
+test("structural: buildSettingsRows returns ≥20 rows across all 6 sections (coverage)", () => {
   const rows = buildSettingsRows({} as Settings, {});
   assert.ok(rows.length >= 20, `expected ≥20 rows, got ${rows.length}`);
 });
@@ -368,9 +368,9 @@ test("render: a too-long VALUE is truncated with … — it must NOT break the g
 test("render: column widths are stable across tab switches (no grid reflow)", () => {
   const { component } = makeComponent(SAMPLE_ROWS, 120);
   const headerA = component.render(120)[2]!;
-  component.switchSection(+1); // auditor
+  component.switchSection(+1); // backups
   const headerB = component.render(120)[2]!;
-  component.switchSection(+2); // subagents
+  component.switchSection(+3); // subagents
   const headerC = component.render(120)[2]!;
   assert.equal(headerB, headerA, "header must not reflow on tab switch");
   assert.equal(headerC, headerA, "header must not reflow on tab switch");

@@ -72,18 +72,28 @@ test("every row carries every required column field", () => {
   }
 });
 
-test("the 5 sections are exactly {keep-going, auditor, stall-brakes, subagents, other}", () => {
+test("the 6 sections are exactly {keep-going, backups, auditor, stall-brakes, subagents, other}", () => {
   const ids = SETTINGS_SECTIONS.map((s) => s.id);
-  assert.deepEqual(ids, ["keep-going", "auditor", "stall-brakes", "subagents", "other"]);
+  assert.deepEqual(ids, ["keep-going", "backups", "auditor", "stall-brakes", "subagents", "other"]);
   assert.ok(SETTINGS_SECTIONS.every((s) => typeof s.label === "string" && s.label.length > 0));
 });
 
-test("every row's section is one of the 5 known section ids (no orphans)", () => {
+test("every row's section is one of the 6 known section ids (no orphans)", () => {
   const validSections = new Set<string>(SETTINGS_SECTIONS.map((s) => s.id));
   const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
   for (const r of rows) {
     assert.ok(validSections.has(r.section), `row ${r.id} has section ${r.section}`);
   }
+});
+
+test("v0.34.118: backup controls live together in the dedicated Backups section", () => {
+  const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  for (const id of ["mainModelFallbacks", "mainModelRetryMinutes", "subagentFallbacks:Explore"]) {
+    assert.equal(byId.get(id)?.section, "backups", `${id} must be in Backups`);
+  }
+  assert.ok(rows.filter((r) => r.id.startsWith("subagentFallbacks:")).every((r) => r.section === "backups"));
+  assert.equal(byId.get("forbiddenModels")?.section, "keep-going", "policy gate stays with keep-going controls");
 });
 
 test("key rows from v0.27.0 settings menu are all present (menu coverage contract)", () => {
@@ -93,6 +103,8 @@ test("key rows from v0.27.0 settings menu are all present (menu coverage contrac
     "autoAcceptDrafts",
     "carryover",
     "aggressiveMode",
+    "mainModelFallbacks",
+    "mainModelRetryMinutes",
     "auditorModel",
     "auditorSilent",
     "auditCap",

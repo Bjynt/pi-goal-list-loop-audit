@@ -603,23 +603,43 @@ async function promptModelRef(
 /** Multi-select counterpart to promptModelRef: returns an ordered string[] of
  * provider/model refs (selection order = toggle order), or undefined on Esc.
  * Falls back to a free-form comma-separated input when ctx.ui.custom /
- * ctx.modelRegistry are unavailable (headless tests). */
+ * ctx.modelRegistry are unavailable (headless tests).
+ *
+ * v0.34.118: `opts.excludeRefs` filters out a set of refs from the picker
+ * (typical use: when picking backups, exclude the user's forbidden models;
+ * when picking forbidden models, exclude current backups — the two lists
+ * are mutually exclusive by design). Stale initial refs that are no
+ * longer available/allowed are not shown as selectable; opening the picker
+ * itself does not rewrite the setting, and only currently visible/allowed
+ * refs are persisted when the user confirms. */
 async function promptModelRefs(
   ctx: ExtensionContext,
   title: string,
   initialRefs: string[],
+  opts: { excludeRefs?: string[] } = {},
 ): Promise<string[] | undefined> {
+  const exclude = new Set(opts.excludeRefs ?? []);
   if (typeof (ctx.ui as { custom?: unknown }).custom !== "function" || !ctx.modelRegistry) {
     const v = await ctx.ui.input(title, initialRefs.length ? initialRefs.join(",") : "provider/model-a,provider/model-b");
     if (v === undefined) return undefined;
-    return normalizeModelRefs(v);
+    // Enforce the same mutual exclusion in headless/free-form mode as in
+    // the TUI picker; a typed forbidden ref must not sneak into a backup
+    // chain (and a typed backup must not be added to forbiddenModels).
+    return normalizeModelRefs(v).filter((ref) => !exclude.has(ref));
   }
   const sessionModel = ctx.model as any;
   const sessionLabel = sessionModel ? `${sessionModel.provider}/${sessionModel.id}` : "pi session model";
   const models = ctx.modelRegistry
     .getAvailable()
     .filter((m: any) => ctx.modelRegistry.hasConfiguredAuth(m));
-  const items = buildModelPickItems(models, sessionLabel);
+  const items = buildModelPickItems(models, sessionLabel, {
+    excludeRefs: [...exclude],
+    // Ordered backup/forbidden lists contain refs, not overrides; showing
+    // session/manual rows here was confusing because MultiModelPicker treats
+    // both as no-op rows. Keep those rows for single-value ModelPicker only.
+    includeSessionRow: false,
+    includeManualRow: false,
+  });
   const pick = await ctx.ui.custom<MultiModelPickerResult>((tui, theme, keybindings, done) => {
     return new MultiModelPickerComponent({ title, items, initialSelected: initialRefs }, () => tui.requestRender(), theme, keybindings, done);
   });
@@ -687,7 +707,14 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     }
     case "mainModelFallbacks": {
       const current = normalizeModelRefs(loadGlobalSettings().mainModelFallbacks);
-      const refs = await promptModelRefs(ctx, "Main session model backups — ordered (space to toggle, enter/tab to confirm)", current);
+      // v0.34.118: forbidden models cannot be valid backups, so hide them.
+      const forbidden = normalizeModelRefs(loadGlobalSettings().forbiddenModels);
+      const refs = await promptModelRefs(
+        ctx,
+        "Main session model backups — ordered (space to toggle, enter/tab to confirm); forbidden models hidden",
+        current,
+        { excludeRefs: forbidden },
+      );
       if (refs === undefined) return;
       saveSettings("global", ctx.cwd, { mainModelFallbacks: refs });
       ctx.ui.notify(refs.length ? `Main model backups saved in order: ${refs.join(" → ")}` : "Main model backups cleared — quota recovery will keep probing the current model.", "info");
@@ -728,7 +755,19 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     }
     case "forbiddenModels": {
       const current = normalizeModelRefs(loadGlobalSettings().forbiddenModels);
-      const refs = await promptModelRefs(ctx, "Forbidden models — every ref here is ledgered as forbidden_model_switch on a switch attempt (space to toggle, enter/tab to confirm)", current);
+      // v0.34.118: a current backup cannot simultaneously be forbidden.
+      // Include both the main chain and any glla-managed subagent chains.
+      const global = loadGlobalSettings();
+      const backups = [
+        ...normalizeModelRefs(global.mainModelFallbacks),
+        ...Object.values(global.subagentFallbacks ?? {}).flatMap((chain) => normalizeModelRefs(chain)),
+      ];
+      const refs = await promptModelRefs(
+        ctx,
+        "Forbidden models — every ref here is ledgered as forbidden_model_switch on a switch attempt (space to toggle, enter/tab to confirm); current backups hidden",
+        current,
+        { excludeRefs: backups },
+      );
       if (refs === undefined) return;
       saveSettings("global", ctx.cwd, { forbiddenModels: refs });
       ctx.ui.notify(refs.length ? `Forbidden models saved: ${refs.join(", ")}` : "Forbidden models cleared — every model is allowed (policy gate off).", "info");
@@ -916,7 +955,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const agentType = id.slice("subagentFallbacks:".length);
       const settings = loadSettings(ctx.cwd);
       const current = settings.subagentFallbacks?.[agentType] ?? [];
-      const refs = await promptModelRefs(ctx, `${agentType} fallback chain — ordered, the FIRST eligible ref is written as the override (space to toggle, enter/tab to confirm)`, current);
+      const refs = await promptModelRefs(ctx, `${agentType} fallback chain — ordered, the FIRST eligible ref is written as the override (space to toggle, enter/tab to confirm); forbidden models hidden`, current, { excludeRefs: normalizeModelRefs(loadGlobalSettings().forbiddenModels) });
       if (refs === undefined) return;
       const next = { ...(settings.subagentFallbacks ?? {}) };
       if (refs.length > 0) next[agentType] = refs;

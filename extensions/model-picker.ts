@@ -40,31 +40,52 @@ export interface RegistryModelLike {
 
 /** Build the picker's static item list from registry models (already
  * filtered to configured-auth providers by the caller). Session row first,
- * manual-entry row last; models sorted by provider then id. */
-export function buildModelPickItems(models: RegistryModelLike[], sessionLabel: string): ModelPickItem[] {
-  const sorted = [...models].sort((a, b) =>
-    a.provider === b.provider ? a.id.localeCompare(b.id) : a.provider.localeCompare(b.provider),
-  );
+ * manual-entry row last; models sorted by provider then id.
+ *
+ * v0.34.118: `excludeRefs` lets a caller build a purpose-specific picker.
+ * Backup selectors use it to hide forbidden models; the forbidden-model
+ * selector uses it to hide current backups. `includeSessionRow` and
+ * `includeManualRow` let ordered-list selectors show only actual models —
+ * the session/manual rows are useful for single-value overrides but are
+ * no-op rows in a multi-select list. Filtering belongs here rather than
+ * only in the settings handler so every picker has one obvious boundary
+ * and tests can pin it directly. */
+export function buildModelPickItems(
+  models: RegistryModelLike[],
+  sessionLabel: string,
+  opts: {
+    excludeRefs?: readonly string[];
+    includeSessionRow?: boolean;
+    includeManualRow?: boolean;
+  } = {},
+): ModelPickItem[] {
+  const excluded = new Set(opts.excludeRefs ?? []);
+  const sorted = models
+    .filter((m) => !excluded.has(`${m.provider}/${m.id}`))
+    .sort((a, b) =>
+      a.provider === b.provider ? a.id.localeCompare(b.id) : a.provider.localeCompare(b.provider),
+    );
+  const modelItems = sorted.map((m) => {
+    const ref = `${m.provider}/${m.id}`;
+    return {
+      kind: "model" as const,
+      ref,
+      label: m.name && m.name !== m.id ? `${ref} — ${m.name}` : ref,
+      searchText: `${ref} ${m.name ?? ""}`,
+    };
+  });
   return [
-    {
-      kind: "session",
+    ...(opts.includeSessionRow === false ? [] : [{
+      kind: "session" as const,
       label: `session model (${sessionLabel}) — clear the override`,
       searchText: "session model default clear override follow",
-    },
-    ...sorted.map((m) => {
-      const ref = `${m.provider}/${m.id}`;
-      return {
-        kind: "model" as const,
-        ref,
-        label: m.name && m.name !== m.id ? `${ref} — ${m.name}` : ref,
-        searchText: `${ref} ${m.name ?? ""}`,
-      };
-    }),
-    {
-      kind: "manual",
+    }]),
+    ...modelItems,
+    ...(opts.includeManualRow === false ? [] : [{
+      kind: "manual" as const,
       label: "type provider/model manually…",
       searchText: "manual type custom provider model id",
-    },
+    }]),
   ];
 }
 

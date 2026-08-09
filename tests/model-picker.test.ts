@@ -72,6 +72,20 @@ test("model-picker items: session row first, manual row last, models sorted by p
   ]);
 });
 
+test("v0.34.118 backup picker: excludes forbidden refs before rendering", () => {
+  const items = buildModelPickItems(MODELS, "minimax/MiniMax-M3", {
+    excludeRefs: ["minimax/MiniMax-M2.7", "openrouter/anthropic/claude-sonnet-4.5"],
+    includeSessionRow: false,
+    includeManualRow: false,
+  });
+  const refs = items.filter((i) => i.kind === "model").map((i) => i.ref);
+  assert.deepEqual(refs, ["anthropic/claude-opus-4-7", "minimax/MiniMax-M3"]);
+  assert.equal(items.some((i) => i.ref === "minimax/MiniMax-M2.7"), false);
+  assert.equal(items.some((i) => i.ref === "openrouter/anthropic/claude-sonnet-4.5"), false);
+  assert.equal(items.some((i) => i.kind === "session"), false, "ordered backup pickers contain no no-op session row");
+  assert.equal(items.some((i) => i.kind === "manual"), false, "ordered backup pickers contain no no-op manual row");
+});
+
 test("model-picker: typing fuzzy-filters the list; enter returns the highlighted model", () => {
   const items = buildModelPickItems(MODELS, "minimax/MiniMax-M3");
   const p = makePicker(items);

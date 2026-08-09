@@ -5,14 +5,14 @@
 //
 // Pre-0.28.0 used `ctx.ui.select` with flat single-line rows; v0.28.0
 // replaces it with a `ctx.ui.custom` Container/Text layout featuring:
-//   • a top TABS row listing all 5 sections (left/right to switch sections)
+//   • a top TABS row listing all 6 sections (left/right to switch sections)
 //   • a 4-column table for the active section (KEY | VALUE | SOURCE | DESCRIPTION)
 //   • up/down navigation scoped to the active section's rows
 //   • Enter → emit the selected row's id (caller dispatches handler)
 //   • Esc / Ctrl+C → emit undefined (caller exits)
 //
-// Sections (5 total) map to the pre-0.28.0 menu groupings:
-//   keep-going | auditor | stall-brakes | subagents | other
+// Sections (6 total) map to the pre-0.28.0 menu groupings plus Backups:
+//   keep-going | backups | auditor | stall-brakes | subagents | other
 //
 // Extracted into its own module so tests can import `buildSettingsRows` directly
 // (mirrors how `readState` lives in goal-loop-core.ts) and so the renderer is
@@ -47,6 +47,7 @@ import { resolveEffectiveSubagentModel, KNOWN_PINNED_DEFAULT_AGENTS } from "./go
 
 export type SettingsSectionId =
   | "keep-going"
+  | "backups"
   | "auditor"
   | "stall-brakes"
   | "subagents"
@@ -54,6 +55,7 @@ export type SettingsSectionId =
 
 export const SETTINGS_SECTIONS: readonly { id: SettingsSectionId; label: string }[] = [
   { id: "keep-going", label: "Keep-going" },
+  { id: "backups", label: "Backups" },
   { id: "auditor", label: "Auditor" },
   { id: "stall-brakes", label: "Stall brakes" },
   { id: "subagents", label: "Subagents" },
@@ -177,7 +179,7 @@ export function buildSettingsRows(
     },
     {
       id: "mainModelFallbacks",
-      section: "keep-going",
+      section: "backups",
       label: "Main model backups",
       valueText: settings.mainModelFallbacks?.length ? settings.mainModelFallbacks.join(" → ") : "none",
       sourceText: src("mainModelFallbacks"),
@@ -201,7 +203,7 @@ export function buildSettingsRows(
     },
     {
       id: "mainModelRetryMinutes",
-      section: "keep-going",
+      section: "backups",
       label: "Main model retry minutes",
       valueText: show("mainModelRetryMinutes", "15"),
       sourceText: src("mainModelRetryMinutes"),
@@ -214,7 +216,7 @@ export function buildSettingsRows(
     const chain = settings.subagentFallbacks?.[name] ?? [];
     rows.push({
       id: `subagentFallbacks:${name}`,
-      section: "subagents",
+      section: "backups",
       label: `${name} fallback chain`,
       valueText: chain.length ? chain.join(" → ") : "none (uses pin or inherits)",
       sourceText: src("subagentFallbacks"),

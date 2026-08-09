@@ -122,6 +122,23 @@ test("T4: input editor — main model backups preserve order and retry cadence",
   }
 });
 
+test("v0.34.118: backup and forbidden editors enforce mutual exclusion even in headless input mode", async () => {
+  try {
+    fs.writeFileSync(GLOBAL_FILE, JSON.stringify({ forbiddenModels: ["blocked/provider"] }, null, 2));
+    const ctx = makeMockCtx(tmpCwd());
+    ctx.ui.inputImpl = async (title) => title.startsWith("Main session model backups")
+      ? "blocked/provider,good/provider"
+      : "good/provider,other/provider";
+    await handleSettingChoice("mainModelFallbacks", ctx as unknown as ExtensionContext);
+    assert.deepEqual(readGlobal().mainModelFallbacks, ["good/provider"], "forbidden refs cannot enter a backup chain");
+
+    await handleSettingChoice("forbiddenModels", ctx as unknown as ExtensionContext);
+    assert.deepEqual(readGlobal().forbiddenModels, ["other/provider"], "backup refs cannot enter forbiddenModels");
+  } finally {
+    restoreGlobal();
+  }
+});
+
 test("T4: input editor — auditorModel set / cleared on empty", async () => {
   try {
     const ctx = makeMockCtx(tmpCwd());
