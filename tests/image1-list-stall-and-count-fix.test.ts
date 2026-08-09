@@ -28,6 +28,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 const SRC = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
+const CONT = fs.readFileSync(path.resolve("extensions/goal-continuation.ts"), "utf-8"); // decomposition step 5 (v0.34.113)
 
 // ---------------------------------------------------------------- Problem 1
 
@@ -50,14 +51,14 @@ test("v0.34.104 [Image-#1] Problem 1: archiveCurrentGoal arms the settle window 
 });
 
 test("v0.34.104 [Image-#1] Problem 1: scheduleContinuation honours the settle window", () => {
-  const sched = SRC.slice(SRC.indexOf("function scheduleContinuation"), SRC.indexOf("function sendContinuation"));
-  assert.match(sched, /const settleRemaining = postCompletionSettleUntil - Date\.now\(\);/);
+  const sched = CONT.slice(CONT.indexOf("function scheduleContinuation"), CONT.indexOf("function sendContinuation")); // decomposition step 5
+  assert.match(sched, /const settleRemaining = flags\.postCompletionSettleUntil - Date\.now\(\);/); // flag accessor re-spelling (decomposition step 5)
   assert.match(sched, /if \(settleRemaining > 0\) \{\s*\n\s*delay = Math\.max\(delay, settleRemaining\);/);
   assert.match(sched, /"list_completion_settle_pending"/);
 });
 
 test("v0.34.104 [Image-#1] Problem 1: agent activity during settle cancels the deferred send", () => {
-  const ack = SRC.slice(SRC.indexOf("function dispatchStartAcknowledged"), SRC.indexOf("function dispatchAccepted"));
+  const ack = CONT.slice(CONT.indexOf("function dispatchStartAcknowledged"), CONT.indexOf("function dispatchAccepted")); // decomposition step 5
   const settleClearAt = ack.indexOf("list_completion_settle_cleared");
   const pendingGuardAt = ack.indexOf("const record = pendingContinuationDispatch;");
   assert.ok(settleClearAt > -1 && settleClearAt < pendingGuardAt, "settle-clear precedes the pending-dispatch guard");
@@ -66,7 +67,7 @@ test("v0.34.104 [Image-#1] Problem 1: agent activity during settle cancels the d
 });
 
 test("v0.34.104 [Image-#1] Problem 1: sendContinuation clears the flag on dispatch", () => {
-  const send = SRC.slice(SRC.indexOf("function sendContinuation"), SRC.indexOf("function sendStallEscalation"));
+  const send = CONT.slice(CONT.indexOf("function sendContinuation"), CONT.indexOf("function sendStallEscalation")); // decomposition step 5
   assert.match(send, /postCompletionSettleUntil = 0;/);
 });
 

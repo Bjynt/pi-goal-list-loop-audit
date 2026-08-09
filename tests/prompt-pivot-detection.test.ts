@@ -38,9 +38,9 @@ test("isFullAuditObjective classifies survey pivots (item 28)", () => {
 
 test("orchestrator injects the FULL-AUDIT directive conditionally (item 28)", () => {
   const src = fs.readFileSync(
-    path.resolve("extensions", "loops", "goal.ts"),
+    path.resolve("extensions", "goal-continuation.ts"),
     "utf-8",
-  );
+  ); // decomposition step 5 (v0.34.113): continuationPrompt moved
   assert.match(src, /FULL-AUDIT MODE \(aggressiveMode \+ survey objective\)/);
   assert.match(src, /effSettings\.aggressiveMode && isFullAuditObjective\(goal\.objective\)/);
 });

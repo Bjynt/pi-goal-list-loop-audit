@@ -21,6 +21,7 @@ import * as fs from "node:fs";
 import { isStaleApiError } from "../extensions/goal-loop-core.ts";
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const CONT = fs.readFileSync("extensions/goal-continuation.ts", "utf-8"); // decomposition step 5 (v0.34.113)
 const HB = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
 const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
@@ -38,7 +39,7 @@ test("isStaleApiError matches pi's exact stale signature, rejects everything els
 });
 
 test("both autonomous send paths detect staleness and go terminal", () => {
-  const cont = SRC.indexOf('if (isStaleApiError(err)) goStaleTerminal(ctx, "sendContinuation");');
+  const cont = CONT.indexOf('if (isStaleApiError(err)) goStaleTerminal(ctx, "sendContinuation");'); // decomposition step 5: sendContinuation moved
   const loop = LOOP.indexOf('if (isStaleApiError(err)) goStaleTerminal(ctx, "sendLoopTurn");');
   assert.ok(cont > 0, "sendContinuation detects");
   assert.ok(loop > 0, "sendLoopTurn detects");
@@ -52,7 +53,7 @@ test("terminal path: ledger event, single-fire, goal ACTIVE+marker / loop stop w
   // state and explain the lifecycle boundary.
   assert.match(SRC, /let staleTerminalDone = false;/);
   assert.match(SRC, /if \(staleTerminalDone\) return; \/\/ already terminal/);
-  assert.match(SRC, /if \(probeExtensionApiStale\(\)\) return;/); // no-ctx send path must not spin a 50ms re-arm
+  assert.match(CONT, /if \(probeExtensionApiStale\(\)\) return;/); // no-ctx send path must not spin a 50ms re-arm (decomposition step 5: sendContinuation moved)
   assert.match(SRC, /clearInterval\(heartbeatTimer\)/); // zombie stand-down clears the immortal tickers
   assert.match(SRC, /clearInterval\(uiTicker\)/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "extension_api_stale", \{ where, kind:/);
@@ -156,7 +157,7 @@ test("v0.34.16 — stale paths never inject terminal input", () => {
 });
 
 test("send paths short-circuit once stale (no retry-into-the-void)", () => {
-  assert.match(SRC, /if \(!extensionApi \|\| extensionApiStale\) return;/, "sendContinuation guard");
+  assert.match(CONT, /if \(!flags\.extensionApi \|\| flags\.extensionApiStale\) return;/, "sendContinuation guard (decomposition step 5: moved + flags re-spelling)");
   assert.match(LOOP, /if \(!isLoopActive\(\) \|\| !flags\.extensionApi\) return;/, "sendLoopTurn guard (flag accessor re-spelling, decomposition step 2)");
 });
 
