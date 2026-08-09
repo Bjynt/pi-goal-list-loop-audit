@@ -357,6 +357,19 @@ test("v0.35.0: a cross-mode replacement confirms before replacing a live loop", 
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
 });
 
+test("v0.35.0: a direct /loop start also confirms before replacing a live goal", async () => {
+  __testOnlyResetStaleFlag();
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal({ objective: "goal before loop — done when proof exists" }) });
+  const ctx = await freshSession(cwd, "reload");
+  ctx.ui.selectImpl = async (_title, options) => options.find((option) => option === "Replace current objective");
+  await pi.command("loop", "start loop replacement target", ctx);
+  assert.equal(readState(cwd).goal, null, "the replaced goal is archived and closed");
+  assert.equal((readState(cwd).loop as { active: boolean }).active, true, "the new loop owns the active slot");
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
+
 test("v0.35.0: one confirmed /glla wipe closes goal, queue, and terminal state without a second wipe", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();

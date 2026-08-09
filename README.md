@@ -370,16 +370,28 @@ the heartbeat (v0.29.5). Five consecutive aborts still pause loudly as a
 backstop. A queued steer interrupt (`length`/`toolResult` races) is not an
 abort and resumes normally.
 
-## One active thing (auto-arbitrated)
+## One active thing (confirmed replacement)
 
-At most one goal/list-item/loop owns the active slot — activation guards
-refuse a second live thing in-session, and **session loads auto-arbitrate
-dirty stacked state** (v0.29.6): if a pre-guard project persisted a live
-loop AND a live goal, the one with the most recent activity keeps the slot
-and the loser is ARCHIVED (recoverable under `.pi-glla/archive/` / `/loop
-status`), never silently wiped. No picker, no per-start arbitration chores.
-The queued list is a backlog, not a second live thing — untouched.
-`/glla wipe` remains the manual, Confirm-gated clean slate.
+At most one goal/list-item/loop owns the active slot. A new same-mode start
+never silently overwrites it: the user chooses **Update current objective**,
+**Replace current objective**, or **Cancel new objective**. Cross-mode starts
+offer explicit replacement/cancellation rather than silently converting a goal
+into a loop (or vice versa). The queued list is a backlog, not a second live
+thing.
+
+Session loads still repair dirty legacy state: if a pre-guard project persisted
+a live loop AND a live goal, the most recent artifact keeps the slot and the
+loser is archived (recoverable under `.pi-glla/archive/`), never silently
+wiped.
+
+## Completion and destructive commands
+
+An approved objective writes its final completion summary to the archive and
+shows one final `✓ done` notification, then closes its live slot automatically.
+No follow-up cancel is required. `/glla cancel` stops only the active objective
+(and drops its waiting list queue when the objective is list-owned). `/glla wipe`
+is the Confirm-gated, idempotent all-live-state reset: it preserves archive and
+ledger history, removes queue sidecars, and completes in one invocation.
 
 ## Config (one global place, rarely opened)
 
@@ -393,7 +405,9 @@ Open `/glla` to edit these settings in the table (the rows show effective values
 - Audit cap/report size, aggressive mode, quota retry, and stall brakes
 
 The argument namespace is reserved for actions such as `/glla status`, `/glla
-resume`, `/glla stats`, `/glla audits`, `/glla tooloverride`, and `/glla wipe`.
+resume`, `/glla cancel`, `/glla stats`, `/glla audits`, `/glla tooloverride`,
+and `/glla wipe`. Cancel stops the active objective; wipe clears all live state
+while preserving history.
 There is no top-level `/glla key=value` setting syntax.
 
 Resolution per key: **project > global > defaults** — EXCEPT `autoResume`,
