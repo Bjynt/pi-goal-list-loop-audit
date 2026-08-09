@@ -1060,10 +1060,11 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     // when memQueue is empty; without this, a /list clear followed by a
     // stale-handle reload would resurrect the cleared items.
     const dropped = listQueue();
-    for (const item of dropped) deleteQueueItemFile(ctx.cwd, item.id);
+    const clearedSidecars = clearQueueItemFiles(ctx.cwd);
     replaceState({ ...state, list: [] });
     persistState(ctx);
-    appendLedger(ctx.cwd, "list_cleared", { count: dropped.length });
+    appendLedger(ctx.cwd, "list_cleared", { count: dropped.length, sidecars: clearedSidecars.removed });
+    if (clearedSidecars.failed.length > 0) ctx.ui.notify(`List clear could not remove ${clearedSidecars.failed.length} queue sidecar(s); the list is not fully clean.`, "warning");
     ctx.ui.notify(`List cleared. Active goal (if any) is untouched — ${activeGoalSurfaceCommand("cancel")} for that, /list cancel to stop the whole list.`, "info");
     return;
   }
@@ -1079,18 +1080,18 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
       return;
     }
     const dropped = waiting;
-    // v0.34.61: delete sidecars for every dropped item before clearing
-    // state — see /list clear above for the same reason. cancel drops the
-    // whole waiting list, so every sidecar must go.
-    for (const item of listQueue()) deleteQueueItemFile(ctx.cwd, item.id);
+    // v0.35.0: clear the union of RAM and disk queue state. Orphaned
+    // sidecars otherwise resurrected after a stale reload.
+    const clearedSidecars = clearQueueItemFiles(ctx.cwd);
     replaceState({ ...state, list: [] });
     persistState(ctx);
     if (activeIsListItem) archiveCurrentGoal(ctx, "aborted", "list cancelled");
-    appendLedger(ctx.cwd, "list_cancelled", { abortedActive: activeIsListItem, dropped });
+    appendLedger(ctx.cwd, "list_cancelled", { abortedActive: activeIsListItem, dropped, sidecars: clearedSidecars.removed });
     ctx.ui.notify(
       `List cancelled: ${activeIsListItem ? "active item aborted + " : ""}${dropped} waiting item(s) dropped.${!activeIsListItem && state.goal && state.goal.status === "active" ? ` Active goal is not a list item — untouched (${activeGoalSurfaceCommand("cancel")} for that).` : ""}`,
       "info",
     );
+    if (clearedSidecars.failed.length > 0) ctx.ui.notify(`List cancel could not remove ${clearedSidecars.failed.length} queue sidecar(s); retry after fixing disk access.`, "warning");
     if (activeIsListItem) ctx.abort();
     return;
   }
@@ -1543,7 +1544,10 @@ function cmdSwitchlog(args: string, ctx: ExtensionContext): void {
 async function cmdGllaWipe(ctx: ExtensionContext): Promise<void> {
   const g = state.goal;
   const live = g && (g.status === "active" || g.status === "paused" || g.status === "auditing");
-  const n = listQueue().length;
+  const memoryQueue = listQueue();
+  const diskQueue = readQueueFromDisk(ctx.cwd);
+  const orphanQueue = diskQueue.filter((item) => !memoryQueue.some((queued) => queued.id === item.id));
+  const n = memoryQueue.length + orphanQueue.length;
   const loop = state.loop;
   if (!g && n === 0 && !loop) {
     ctx.ui.notify("glla state is already clean — no goal, no list, no loop.", "info");
@@ -1571,22 +1575,25 @@ async function cmdGllaWipe(ctx: ExtensionContext): Promise<void> {
   if (live) {
     // Do not abort here: wipe still has to clear queue sidecars and loop
     // state. The old early abort made a second /glla wipe appear necessary.
-    archiveCurrentGoal(ctx, "aborted", "user wipe (/glla wipe)");
+    if (!archiveCurrentGoal(ctx, "aborted", "user wipe (/glla wipe)")) return;
   } else if (g) {
     replaceState({ ...state, goal: null });
   }
+  let failedSidecars: string[] = [];
   if (n > 0) {
-    // v0.34.61: delete sidecars of every cleared item before the state
-    // mutation. /glla wipe is the nuclear option — leaving disk sidecars
-    // behind would let a later /list disk-fallback surface them again,
-    // undoing the wipe.
-    for (const item of listQueue()) deleteQueueItemFile(ctx.cwd, item.id);
+    // v0.35.0: clear the union of RAM and disk queue state. Orphaned
+    // sidecars otherwise resurrected after a stale reload.
+    const clearedSidecars = clearQueueItemFiles(ctx.cwd);
+    failedSidecars = clearedSidecars.failed;
     replaceState({ ...state, list: [] });
-    appendLedger(ctx.cwd, "list_cleared", { via: "glla_wipe", count: n });
+    appendLedger(ctx.cwd, "list_cleared", { via: "glla_wipe", count: n, sidecars: clearedSidecars.removed });
   }
   if (loop) {
     clearLoopTimer();
-    state.loop = undefined;
+    // Persist the clean live slot BEFORE branch cleanup can cross a stale
+    // context. A failed git cleanup must not resurrect the old loop on reload.
+    replaceState({ ...state, loop: undefined });
+    persistState(ctx);
     const wipeGeneration = flags.sessionGeneration;
     await finishLoopGit(ctx, loop);
     const afterFinish = freshCtxForGeneration(wipeGeneration);
@@ -1595,7 +1602,8 @@ async function cmdGllaWipe(ctx: ExtensionContext): Promise<void> {
     appendLedger(ctx.cwd, "loop_stopped", { reason: "user wipe (/glla wipe)", iterations: loop.iteration, best: loop.bestValue });
   }
   persistState(ctx);
-  ctx.ui.notify(`glla wipe done: ${parts.join(" · ")}. Clean slate.`, "info");
+  if (failedSidecars.length > 0) ctx.ui.notify(`Wipe could not remove ${failedSidecars.length} queue sidecar(s); the clean slate is incomplete.`, "warning");
+  ctx.ui.notify(`glla wipe done: ${parts.join(" · ")}. ${failedSidecars.length > 0 ? "Partial clean slate — fix disk access and retry." : "Clean slate."}`, "info");
   notifyExternal(ctx, "glla state wiped by user — clean slate.");
   if (abortAfterWipe) ctx.abort();
 }
