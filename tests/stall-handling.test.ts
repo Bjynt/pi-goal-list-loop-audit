@@ -21,6 +21,7 @@ import { loadSettings, saveSettings } from "../extensions/goal-settings.ts";
 import { buildStatusText, buildWidgetLines } from "../extensions/goal-loop-display.ts";
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const CONT = fs.readFileSync("extensions/goal-continuation.ts", "utf-8"); // decomposition step 5 (v0.34.113)
 const HEARTBEAT_SRC = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
 const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
@@ -35,7 +36,7 @@ test("escalation gate: threshold semantics (0 = never, N = fire at streak N)", (
 
 test("send paths are ledgered: sent AND failed, loop and goal", () => {
   for (const ev of ["goal_continuation_sent", "goal_continuation_send_failed"]) {
-    assert.ok(SRC.includes(`"${ev}"`), `missing ledger event ${ev}`);
+    assert.ok(CONT.includes(`"${ev}"`), `missing ledger event ${ev} (decomposition step 5: sendContinuation moved)`);
   }
   for (const ev of ["loop_turn_sent", "loop_turn_send_failed"]) {
     assert.ok(LOOP.includes(`"${ev}"`), `missing ledger event ${ev} (moved to goal-loop.ts, decomposition step 2)`);
@@ -74,7 +75,7 @@ test("session_compact hook: re-arms the chain when idle with no timer pending", 
   assert.match(SRC, /appendLedger\(ctx\.cwd, "session_compact", \{\}\)/);
   assert.match(SRC, /appendLedger\(c\.cwd, "compaction_refire", \{\}\)/);
   // only when nothing is scheduled and the session is idle:
-  assert.match(SRC, /c\.isIdle\(\) && !c\.hasPendingMessages\(\) && continuationTimer === null && !loopTimerPending\(\) && isSupervising\(\)/);
+  assert.match(SRC, /c\.isIdle\(\) && !c\.hasPendingMessages\(\) && !continuationTimerPending\(\) && !loopTimerPending\(\) && isSupervising\(\)/); // timer re-spelled via accessor (decomposition step 5)
 });
 
 test("widget + status surface the streak only while nonzero", () => {
@@ -120,16 +121,16 @@ test("/glla surface: bare command opens settings; arguments are actions", () => 
 const PROMPT = fs.readFileSync("prompts/goal-loop-continuation.md", "utf-8");
 
 test("P1: graduated stall escalation entry before the brake (sender + wiring)", () => {
-  assert.match(SRC, /function sendStallEscalation\(ctx: ExtensionContext, nudges: number\): void/);
-  assert.match(SRC, /\[STALL WARNING \$\{nudges\}\/\$\{HEARTBEAT_MAX_NUDGES\}\] The last turn produced no tool calls\./);
-  assert.match(SRC, /If the goal is DONE, call complete_goal NOW — prose closes nothing/);
-  assert.match(SRC, /If you are BLOCKED, call pause_goal with the blocker and a suggested action\./);
-  assert.match(SRC, /ONE more unproductive turn pauses the goal\./);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "stall_escalation_nudge", \{ nudges, remaining \}\)/);
+  assert.match(CONT, /function sendStallEscalation\(ctx: ExtensionContext, nudges: number\): void/); // decomposition step 5: moved
+  assert.match(CONT, /\[STALL WARNING \$\{nudges\}\/\$\{HEARTBEAT_MAX_NUDGES\}\] The last turn produced no tool calls\./);
+  assert.match(CONT, /If the goal is DONE, call complete_goal NOW — prose closes nothing/);
+  assert.match(CONT, /If you are BLOCKED, call pause_goal with the blocker and a suggested action\./);
+  assert.match(CONT, /ONE more unproductive turn pauses the goal\./);
+  assert.match(CONT, /appendLedger\(ctx\.cwd, "stall_escalation_nudge", \{ nudges, remaining \}\)/);
   // wired at nudge>=1 for active goals only (loops keep runLoopTick), and the
   // send path is stale-aware like every other autonomous send:
   assert.match(SRC, /if \(heartbeatNudges >= 1 && state\.goal && state\.goal\.status === "active" && !isLoopActive\(\)\)/);
-  assert.match(SRC, /goStaleTerminal\(ctx, "sendStallEscalation"\)/);
+  assert.match(CONT, /goStaleTerminal\(ctx, "sendStallEscalation"\)/); // decomposition step 5: sendStallEscalation moved
 });
 
 test("P2: every continuation carries the unclosed-status block", () => {
@@ -155,8 +156,8 @@ test("v0.28.24: session_compact resets the send-rearm storm streaks + opens the 
   // 3.5-minute compaction; junk-runner burned all 5 stall refires in the 5
   // minutes right after a 196k-token compact. Both are fixed at the hook:
   const hookIdx = SRC.indexOf('pi.on("session_compact"');
-  const resetIdx = SRC.indexOf("continuationRearmStreak = 0; continuationRearmSince = 0;\n    loopRearmStreak = 0; loopRearmSince = 0;\n    compactionGraceUntil = Date.now() + COMPACTION_GRACE_MS;");
-  assert.ok(hookIdx > 0 && resetIdx > hookIdx, "streak reset + grace arm inside the session_compact hook");
+  const resetIdx = SRC.indexOf("setContinuationRearmStreak(0); setContinuationRearmSince(0);\n    loopRearmStreak = 0; loopRearmSince = 0;\n    compactionGraceUntil = Date.now() + COMPACTION_GRACE_MS;");
+  assert.ok(hookIdx > 0 && resetIdx > hookIdx, "streak reset + grace arm inside the session_compact hook (continuation streaks re-spelled via setters, decomposition step 5)");
 });
 
 test("v0.34.82: heartbeat refuses to refire a continuation while pi is context-starved (no compaction landing)", () => {
@@ -207,7 +208,7 @@ test("v0.29.21: session_compact arms a SECOND settle refire at grace expiry", ()
   assert.ok(block.includes("if (isLoopActive()) scheduleLoopTick(c);"), "loop refire line");
   assert.ok(block.includes("else scheduleContinuation(c, true);"), "goal refire line");
   assert.match(block, /COMPACTION_GRACE_MS \+ 2_000/, "fires at grace expiry (+2s epsilon)");
-  assert.match(block, /c\.isIdle\(\) && !c\.hasPendingMessages\(\) && continuationTimer === null && !loopTimerPending\(\)/, "same guards as the 2s settle");
+  assert.match(block, /c\.isIdle\(\) && !c\.hasPendingMessages\(\) && !continuationTimerPending\(\) && !loopTimerPending\(\)/, "same guards as the 2s settle (timer accessor re-spelling, decomposition step 5)");
   assert.match(block, /!abortedStandDown/, "user stand-down still wins");
   assert.ok(SRC.includes("const sessionTimeouts = new Set<NodeJS.Timeout>();"), "settle timer is tracked for shutdown cleanup");
   assert.match(SRC, /const COMPACTION_GRACE_MS = 3 \* 60_000;/);
@@ -224,8 +225,8 @@ test("v0.29.1: completion lifecycle survives the wedged-queue window (storm supp
   //    auditor's minutes of silence is the storm detector's exact trigger
   //    shape (pully/hellhunter/junk-runner: "complete ending in a pause
   //    retry storm"). The audit lifecycle owns its own pauses.
-  const escIdx = src.indexOf("function escalateSendRearmStorm");
-  const esc = src.slice(escIdx, escIdx + 3000);
+  const escIdx = CONT.indexOf("function escalateSendRearmStorm"); // decomposition step 5: moved
+  const esc = CONT.slice(escIdx, escIdx + 3000);
   assert.ok(esc.indexOf('status === "auditing" || completionAuditInFlight || state.goal.pendingCompletion') < esc.indexOf('state.goal.status === "active"'),
     "the audit-lifecycle suppression precedes the active-goal pause");
   assert.match(esc, /send_rearm_escalated_suppressed/);
@@ -371,7 +372,7 @@ test("v0.29.5: the stand-down survives the heartbeat + autoResume is GLOBAL-only
   assert.match(src, /abortedStandDown = true; \/\/ v0\.29\.5: heartbeat\/compaction refires must not resurrect/);
   assert.match(HEARTBEAT_SRC, /if \(flags\.abortedStandDown\) return;\n  if \(!fire\) return;/);
   // 2. Any explicit schedule ends the stand-down (resume/activate):
-  assert.match(src, /abortedStandDown = false; \/\/ v0\.29\.5: any explicit schedule ends the stand-down/);
+  assert.match(CONT, /flags\.abortedStandDown = false; \/\/ v0\.29\.5: any explicit schedule ends the stand-down/); // decomposition step 5: scheduleContinuation moved
   // 3. The post-compaction refire also respects it:
   assert.match(src, /isSupervising\(\) && !abortedStandDown\) \{/);
   // 4. autoResume is GLOBAL-only (user directive: "not supporting project
@@ -415,11 +416,11 @@ test("v0.32.1: post-compaction resume debt + deterministic resync (pi-goal-x's l
   assert.match(SRC, /let postCompactResyncPending = false;/);
   assert.match(SRC, /postCompactResumeOwed = true;/); // armed in session_compact
   assert.match(HEARTBEAT_SRC, /compaction_resume_owed_refire/); // heartbeat retries the debt every post-grace tick
-  assert.match(SRC, /\[POST-COMPACTION RESYNC\]/); // deterministic re-anchor block
-  assert.match(SRC, /content: resync \+ continuationPrompt/); // goal path prepends
+  assert.match(CONT, /\[POST-COMPACTION RESYNC\]/); // deterministic re-anchor block (decomposition step 5: buildPostCompactResync moved)
+  assert.match(CONT, /content: resync \+ continuationPrompt/); // goal path prepends (decomposition step 5: sendContinuation moved)
   assert.match(LOOP, /content: loopResync \+ loopPrompt/); // loop path prepends (moved to goal-loop.ts, decomposition step 2)
-  assert.match(SRC, /resync: Boolean\(resync\)/, "dispatch records whether resync was sent");
-  assert.match(SRC, /if \(record\.resync\) postCompactResyncPending = false;/, "resync is consumed only after start acknowledgement");
+  assert.match(CONT, /resync: Boolean\(resync\)/, "dispatch records whether resync was sent (decomposition step 5: sendContinuation moved)");
+  assert.match(CONT, /if \(record\.resync\) flags\.postCompactResyncPending = false;/, "resync is consumed only after start acknowledgement (decomposition step 5: dispatchStartAcknowledged moved + flags re-spelling)");
   // discharged by a real turn start (agent_start), not by the send itself.
   // v0.34.27 may absorb a file-backed replacement before the stream clock;
   // pin the behavior inside the handler rather than obsolete adjacency.
