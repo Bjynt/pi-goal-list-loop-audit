@@ -902,6 +902,16 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
   }
   appendLedger(ctx.cwd, "goal_archived", { goalId: goal.id, status, stopReason, objective: goal.objective.slice(0, 300) });
   persistState(ctx);
+  // v0.34.120: archive is the durable history; a terminal goal must not
+  // remain in the live slot and make the user cancel a finished card. Keep
+  // the archive markdown (including completionSummary) as the final record,
+  // and clear the slot only after any list cascade/reviewer work below has
+  // had a chance to choose a successor.
+  const closeArchivedSlot = () => {
+    if (!archived || state.goal?.id !== goal.id) return;
+    replaceState({ ...state, goal: null });
+    persistState(ctx);
+  };
   // Loop 2: a list-sourced goal COMPLETED → auto-activate the next item.
   // Aborts are user actions (/list next, /goal cancel, list_activate) which
   // pick their own next step — auto-advancing on abort double-activates
@@ -967,12 +977,14 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
       // suggestion, not an action: consent, never auto-start (v0.28.28).
       ctx.ui.notify("List complete. /loop audit to sweep the project for the next batch of work.", "info");
     }
+    closeArchivedSlot();
     return;
   }
   // v0.26.0: a /goal (non-list) reached a terminal state → maybe fire.
   if (goal.policy !== "list") {
     fireReviewer(ctx, { kind: "goal", goalId: goal.id, objective: goal.objective, terminal: status === "complete" ? "goal-complete" : status === "aborted" ? "goal-aborted" : "goal-paused" });
   }
+  closeArchivedSlot();
 }
 
 /** v0.34.21: durable completion-audit lifecycle helpers. A claim without

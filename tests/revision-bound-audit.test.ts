@@ -150,7 +150,7 @@ test("v0.34.60: complete_goal with newObjective bumps the revision and audits th
     assert.equal(st.goal?.objective, "shifted objective — different work now", "newObjective replaced the objective");
     assert.equal(st.goal?.completionSummary, "Claim", "v0.34.91: the completion recap is captured on the goal at claim time (the terminal summary shows what happened)");
     assert.equal(st.goal?.revision, 2, "newObjective bumps the revision exactly once (seed 1 → 2); settle writes do not bump");
-    await waitUntil(() => readState(cwd).goal?.status === "complete");
+    await waitUntil(() => readState(cwd).goal === null);
   } finally {
     delete process.env.GLLA_PI_BINARY;
   }
