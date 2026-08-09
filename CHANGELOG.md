@@ -1,6 +1,29 @@
 # Changelog
 
 ## Unreleased
+### 0.34.113 — decomposition step 5: extensions/goal-continuation.ts extracted
+  (v0.34.113, audit/GOAL-CONTINUATION-EXTRACTION-2026-08-09.md). The
+  continuation cluster — `scheduleContinuation`/`sendContinuation`,
+  `sendStallEscalation`/`sendLengthContinue`, the dispatch sidecar lifecycle
+  (`dispatchPrepare`/`dispatchAccepted`/`dispatchStartAcknowledged`/
+  `dispatchFailed`/`dispatchStartUnacknowledged`/`retryContinuationDispatch`),
+  the continuation-start watchdog (30s + 60s retry, compaction rearm cap),
+  send-rearm storm accounting (`accountSendRearm`/`escalateSendRearmStorm`/
+  `sendRearmDelayMs`), queue-stuck probe, `buildPostCompactResync` and
+  `continuationPrompt` — moved from `extensions/loops/goal.ts` (7,683 →
+  7,054 lines) into the new `extensions/goal-continuation.ts` (962 lines,
+  ≤2,000). Continuation-owned module state (timers, dispatch sidecar, rearm
+  counters) lives in the new module; goal.ts observes it only through
+  accessors (`continuationTimerPending`, `pendingContinuationDispatchRef`,
+  …); goal.ts-owned lets pass in via `ContinuationFlags` accessors and
+  functions via `ContinuationDeps`. Zero behavior change: ledger event names
+  unchanged, moved bodies byte-identical except mechanical `flags.X`
+  re-spellings. Real bug fixed by the move: `continuationPrompt`'s template
+  path depth corrected for the new file location (`extensions/` vs
+  `extensions/loops/`). 9 test files re-anchored to `CONT` pins; re-spelled
+  pins updated (`continuationTimer === null` → `!continuationTimerPending()`),
+  never weakened. Suite: 1146 pass / 1 skip / 0 fail, tsc clean.
+
 ### 0.34.112 — decomposition step 4: extensions/goal-heartbeat.ts extracted
   (v0.34.112, audit/GOAL-HEARTBEAT-EXTRACTION-2026-08-09.md). The heartbeat
   watchdog cluster — `heartbeatTick`, `startHeartbeat`, the subagent-hang
