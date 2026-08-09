@@ -157,6 +157,19 @@ visual-spacing item and stays open.
 | `audit/INDEX.md` | this file's INDEX entry |
 | `package.json` | version → 0.34.116 |
 
+## Retroactive ship marker (2026-08-09 13:36)
+
+The v0.34.116 work landed in two auto-cycler commits on 2026-08-09:
+- `23d12f1e` — code (extensions + tests)
+- `aa38bac1` — audit doc + CHANGELOG + package.json bump to 0.34.116
+
+Neither commit carried an explicit `Ship v0.34.116: …` message, and no `v0.34.116` or `v0.34.116-ship` tags were created at the time. The detached auditor caught the gap and required the GitOps contract (paired tags at meaningful release commit + ship marker) to be honored. The retroactive fix:
+
+- `v0.34.116` (annotated) → `aa38bac1` (the release commit where package.json was bumped to 0.34.116, the audit doc + CHANGELOG entry landed).
+- `Ship v0.34.116: context-overflow fallback + /reload copy + stale-ctx surfacing` (empty commit, retroactive) → `v0.34.116-ship` (annotated).
+
+The ship commit is non-adjacent (lands after `v0.34.117` in the timeline) because it was added retroactively; the underlying release commit `aa38bac1` is still the addressable "what shipped in v0.34.116" anchor via the `v0.34.116` tag.
+
 ## What stays open
 
 - **Issue #8 (refresh icon spacing)** — separate visual-spacing bug, not a

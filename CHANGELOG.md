@@ -22,6 +22,13 @@
   pass). Existing `tests/stale-api-terminal.test.ts` + `tests/length-continue.test.ts`
   updated to pin the new auto-recovery pattern. `npx tsc --noEmit` clean;
   `bun test` → 1192 pass / 1 skip / 0 fail (up from 1188 in v0.34.116).
+
+  Retroactive ship marker (same session, follow-up to v0.34.117): the
+  v0.34.116 work originally landed in two auto-cycler commits without
+  paired tags. `v0.34.116` (annotated) → `aa38bac1` (the release commit
+  where package.json was bumped to 0.34.116); empty
+  `Ship v0.34.116: …` commit → `v0.34.116-ship` (annotated). Both pushed
+  to origin. Audit doc updated with the retroactive-ship section.
   `extensions/loops/goal.ts` ≤ 700 lines (387).
 
 ### 0.34.116 — context-overflow fallback + /reload copy + stale-ctx one-liner
