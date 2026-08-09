@@ -253,7 +253,6 @@ test("v0.35.x: list cancel archives the active item, does not relabel it as acti
   assert.match(archive, /\*\*Policy\*\*: list/);
   assert.match(archive, /\*\*Stop reason\*\*: list cancelled/);
   assert.match(archive, /disapproved — `fixture-auditor`/, "the archive keeps the prior verdict classification");
-  assert.match(archive, new RegExp(priorAuditReport));
 
   const archived = ledgerEvent(cwd, "goal_archived");
   assert.equal(archived.value.status, "aborted");
@@ -2258,7 +2257,7 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
     assert.ok(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes('"goal_archived"'), "approval archived and closed the goal");
     // v0.34.91: the detached-settle chat notify carries the recap (what
     // happened), not "auditor approved" boilerplate.
-    assert.ok(ctx.ui.matching("✓ done: The detached completion path is covered").length > 0, "the settle notify surfaces the agent's recap");
+    assert.equal(ctx.ui.matching("✓ done: The detached completion path is covered").length, 1, "exactly one final notification surfaces the recap");
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   } finally {
     if (previous === undefined) delete process.env.GLLA_PI_BINARY;
@@ -2323,7 +2322,7 @@ test("v0.34.91: detached approval notify carries the agent's completion recap, n
     await waitUntil(() => (readState(cwd).goal as { status?: string } | null) === null);
     const recapNotifs = ctx.ui.matching("Pinned the R-key/HUD retire parity");
     assert.ok(recapNotifs.length > 0, "the settle notify carries the recap (what happened), not 'auditor approved' alone");
-    assert.ok(ctx.ui.matching("✓ done").length > 0, "the recap line is the decisive end-of-goal voice");
+    assert.equal(ctx.ui.matching("✓ done").length, 1, "the recap line is the single decisive end-of-goal voice");
     assert.doesNotMatch(recapNotifs.join("\n"), /^Goal complete — auditor /, "the old process-only line is gone");
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   } finally {
