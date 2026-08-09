@@ -50,7 +50,7 @@ export interface CommandDeps {
   persistState: (ctx: ExtensionContext) => void;
   updateGoal: (patch: Partial<Goal>, ctx: ExtensionContext) => void;
   setGoal: (goal: Goal, ctx: ExtensionContext, via?: string) => boolean;
-  archiveCurrentGoal: (ctx: ExtensionContext, status: Status, stopReason?: string) => void;
+  archiveCurrentGoal: (ctx: ExtensionContext, status: Status, stopReason?: string) => boolean;
   healGoalPolicy: (ctx: ExtensionContext) => boolean;
   startDrafting: (ctx: ExtensionContext, target: "goal" | "list" | "loop", seed?: string) => Promise<boolean>;
   warnIfStaleAtEntry: (ctx: ExtensionContext, what: string) => boolean;
@@ -1726,7 +1726,15 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
  */
 async function cmdGllaCancel(ctx: ExtensionContext): Promise<void> {
   const g = state.goal;
-  const hasListObjective = listQueue().length > 0 || g?.policy === "list";
+  const liveGoal = g && (g.status === "active" || g.status === "paused" || g.status === "auditing");
+  // A standalone live goal is the active objective even when an unrelated
+  // waiting backlog exists. A list-policy goal owns its queue, so canceling
+  // that objective drops both together.
+  if (liveGoal && g!.policy !== "list") {
+    await cmdCancel(ctx);
+    return;
+  }
+  const hasListObjective = listQueue().length > 0 || (liveGoal && g!.policy === "list");
   if (hasListObjective) {
     await cmdList("cancel", ctx);
     return;

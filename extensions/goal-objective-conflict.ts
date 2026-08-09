@@ -86,4 +86,3 @@ export async function chooseObjectiveConflict(
   }
   return "cancel";
 }
-EOF
