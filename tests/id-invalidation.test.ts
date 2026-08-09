@@ -153,7 +153,7 @@ test("first boot (no sidecar): no id_invalidation", async () => {
 // ── (f) the successor-absorption hook exists (source pin) ──────────────
 
 test("successor absorption also emits id_invalidation (source-level pin)", () => {
-  const src = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   assert.match(src, /emitIdInvalidation\(ctx, absorbedOldId, sessionIdOf\(ctx\.sessionManager\), "successor_absorption"\)/);
   assert.match(src, /sessionIdOf\(ownerSession \?\? deadOwnerSession\)/, "the old id comes from the recorded owner");
   assert.match(src, /function emitIdInvalidation\(/, "the emitter exists");

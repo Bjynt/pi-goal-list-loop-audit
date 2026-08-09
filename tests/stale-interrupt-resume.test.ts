@@ -24,7 +24,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-const SRC = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 const HEARTBEAT_SRC = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
 const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
@@ -188,7 +188,7 @@ test("v0.34.2: cmdResume clears interruptedAt/interruptedReason on a fresh-sessi
 // ---------- v0.34.7: stale-ctx crash guard + re-kick marker clear ----------
 
 test("v0.34.7: safeSteerUser wraps every orchestrator sendUserMessage (darklord crash)", () => {
-  const g = fs.readFileSync(path.resolve("extensions/loops/goal-runtime.ts"), "utf-8");
+  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
   assert.match(g, /function safeSteerUser\(ctx: ExtensionContext, text: string\): boolean/, "the helper exists");
   // The helper's OWN send line must be the real API call, not a self-call
   // (a regex conversion once rewrote it into infinite recursion — every
@@ -204,7 +204,7 @@ test("v0.34.7: safeSteerUser wraps every orchestrator sendUserMessage (darklord 
 });
 
 test("v0.34.7: the fan-out float carries a catch (rejection ≠ process exit)", () => {
-  const g = fs.readFileSync(path.resolve("extensions/loops/goal-runtime.ts"), "utf-8");
+  const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
   assert.match(g, /void fanOutListAuditFindings\(fanoutCwd, fanoutGeneration\)\.catch\(/);
   assert.match(g, /list_audit_fanout_error/);
 });

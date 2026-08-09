@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 const src = fs.readFileSync(
-  path.resolve("extensions", "loops", "goal-runtime.ts"),
+  path.resolve("extensions", "loops", "goal.ts"),
   "utf-8",
 );
 

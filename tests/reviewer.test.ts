@@ -163,7 +163,7 @@ test("menu options reflect the config", () => {
 });
 
 test("no /loop triggering: the loop stop path never calls runReviewer", () => {
-  const src = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   // cmdLoop/stop handlers must not reference the reviewer:
   const loopSection = src.slice(src.indexOf('pi.registerCommand("loop"'));
   assert.doesNotMatch(loopSection, /runReviewer|fireReviewer/);

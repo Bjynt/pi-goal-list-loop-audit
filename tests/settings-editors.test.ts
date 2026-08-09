@@ -20,7 +20,7 @@ import { globalSettingsPath } from "../extensions/goal-settings.js";
 import { makeMockCtx, tmpCwd } from "./harness/mock-pi.js";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-const GOAL_SRC = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+const GOAL_SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 const GLOBAL_FILE = globalSettingsPath();
 const ORIGINAL = fs.existsSync(GLOBAL_FILE) ? fs.readFileSync(GLOBAL_FILE, "utf-8") : null;
 
@@ -179,7 +179,7 @@ test("T4: the switch has no confirm-class editors (select + input only)", () => 
 });
 
 test("v0.28.34: notify folds a default IN — auto-detect notify-send/osascript, 'off' silences, custom overrides", () => {
-  const SRC = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+  const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   // resolution order: explicit off → custom → auto-probe:
   assert.match(SRC, /if \(settings\.notifyCmd === "off" \|\| !extensionApi\) return;/);

@@ -21,7 +21,7 @@ import {
   type ReviewerDeps,
 } from "../extensions/reviewer.ts";
 
-const SRC_GOAL = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+const SRC_GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 const SRC_CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2
 
 function mkDeps(cwd: string, over: Partial<ReviewerDeps> = {}) {

@@ -14,7 +14,7 @@ import * as fs from "node:fs";
 
 import { mainModelFailureDelayMs, classifyMainModelFailure } from "../extensions/main-model-recovery.js";
 
-const SRC = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 const RECOVERY = fs.readFileSync("extensions/main-model-recovery.ts", "utf-8");
 const DISPLAY = fs.readFileSync("extensions/goal-loop-display.ts", "utf-8");
 const README = fs.readFileSync("README.md", "utf-8");

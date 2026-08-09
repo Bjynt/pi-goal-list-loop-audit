@@ -25,7 +25,7 @@ test("SETTINGS_KEYS includes toolOverrides for provenance tracking", () => {
 });
 
 test("goal.ts ensureAgentToolsActive applies toolOverrides.allow and .hide", () => {
-  const src = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   // The function reads toolOverrides and applies allow/hide after the
   // existing missingGllaTools self-heal.
   assert.match(src, /const overrides = loadSettings\(ctx\.cwd\)\.toolOverrides/);

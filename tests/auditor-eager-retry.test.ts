@@ -14,7 +14,7 @@ import * as fs from "node:fs";
 
 import { auditorQuotaRetryPlan } from "../extensions/loops/goal.js";
 
-const SRC = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 
 /** Minimal claim the plan reads: quotaAttempts / quotaFirstAt / quotaAutoRetryUntil. */
 function claim(over: Partial<Record<string, unknown>> = {}): any {

@@ -59,13 +59,13 @@ test("paused card wraps the suggested action and closes the branch on its last l
 });
 
 test("pause_goal tool notification carries the FULL reason AND suggested action", () => {
-  const src = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   assert.match(src, /ctx\.ui\.notify\(`\$\{goalNoun\(\)\} paused: \$\{p\.reason\}\$\{p\.suggestedAction \? `\\n\\n→ \$\{p\.suggestedAction\}`/);
   // external push carries both too (bounded)
   assert.match(src, /notifyExternal\(ctx, `\$\{goalNoun\(\)\} paused: \$\{\(p\.suggestedAction/);
 });
 
-const SRC = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 const CONT = fs.readFileSync("extensions/goal-continuation.ts", "utf-8"); // decomposition step 5 (v0.34.113)
 const HB = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
@@ -117,7 +117,7 @@ test("late pause calls cannot overwrite a paused or auditing lifecycle", () => {
 
 test("v0.28.30: pause/abort notifies name the policy (List item vs Goal) via goalNoun", () => {
   // User note: "we seem to call everything goal". A list item is not a goal.
-  const src = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   const cmds = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2
   assert.match(src, /const goalNoun = \(\): string => \(state\.goal\?\.policy === "list" \? "List item" : "Goal"\);/);
   const occurrences = src.split("${goalNoun()}").length - 1;
@@ -135,7 +135,7 @@ test("v0.28.30: pause/abort notifies name the policy (List item vs Goal) via goa
 // resumeAt=2026-08-08T02:00:00Z — the user couldn't unblock without
 // re-issuing the same objective later.
 test("v0.34.98: long-wait pause (> 6h) surfaces a tweak-prompt notification + ledger entry", () => {
-  const src = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   // The block lives in pause_goal's execute function, gated on a 6h
   // resumeAt window for wait/blocked kinds.
   assert.match(src, /const SIX_HOURS_MS = 6 \* 60 \* 60 \* 1000;/);
@@ -151,7 +151,7 @@ test("v0.34.98: short-wait pause (≤ 6h) does NOT trigger the tweak offer", () 
   // Source pin: the longWait gate explicitly requires > 6h; pauses
   // with shorter resumeAt or no resumeAt at all do not fire the
   // tweak-offer notify (the user is engaged and can wait).
-  const src = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   const longWaitBlock = src.match(/const longWait = [\s\S]{0,300};/);
   assert.ok(longWaitBlock, "the longWait gate is present");
   assert.match(longWaitBlock![0], /> SIX_HOURS_MS/, "strictly greater than 6h");

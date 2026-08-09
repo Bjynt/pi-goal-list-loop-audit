@@ -47,7 +47,7 @@ test("v0.34.19: tiny-output length at a nearly full context is context starvatio
   assert.equal(isContextStarvedLengthStop({ stopReason: "stop", usage: { output: 1 } }, { percent: 99.1 }), false);
 });
 
-const SRC = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 const CONT = fs.readFileSync("extensions/goal-continuation.ts", "utf-8"); // decomposition step 5 (v0.34.113)
 
 test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal gating", () => {

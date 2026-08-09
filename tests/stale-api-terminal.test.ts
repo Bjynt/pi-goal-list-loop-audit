@@ -20,7 +20,7 @@ import * as fs from "node:fs";
 
 import { isStaleApiError } from "../extensions/goal-loop-core.ts";
 
-const SRC = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 const CONT = fs.readFileSync("extensions/goal-continuation.ts", "utf-8"); // decomposition step 5 (v0.34.113)
 const HB = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
@@ -174,7 +174,7 @@ test("v0.32.0: audit-opportunistic fix batch — dispose, keys, caps, message", 
   const GS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
   assert.match(GS, /"auditorModelFallback",/); // provenance-tracked — menu row shows pinned value
   assert.match(GS, /"auditorSameSessionSwap",/);
-  const GOAL = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+  const GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   assert.match(GOAL, /slice\(0, 50\)/); // fan-out cap
   assert.match(GOAL, /MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS = 5/); // durable quota retry terminal cap
   // v0.34.108: quotaRetryStreak (process-local mirror) was dead code and removed;

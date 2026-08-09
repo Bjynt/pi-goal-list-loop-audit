@@ -89,7 +89,7 @@ test("tail-aware excerpt: capped output keeps the Required-fixes tail", () => {
 });
 
 test("disapproval feedback is surfaced even when the continuation turn never starts", () => {
-  const src = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+  const src = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
   assert.match(src, /returned tool text reaches the executor only if a continuation/);
   assert.match(src, /ctx\.ui\.notify\(`Auditor disapproved\. Report excerpt:/);
   assert.match(src, /no actionable feedback returned; use \/glla audits full/);

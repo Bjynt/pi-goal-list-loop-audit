@@ -39,7 +39,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AUDITOR_SRC = fs.readFileSync(path.resolve(__dirname, "../extensions/goal-loop-auditor.ts"), "utf-8");
 const PROCESS_SRC = fs.readFileSync(path.resolve(__dirname, "../extensions/goal-loop-auditor-process.ts"), "utf-8");
 const DISPLAY_SRC = fs.readFileSync(path.resolve(__dirname, "../extensions/goal-loop-display.ts"), "utf-8");
-const GOAL_SRC = fs.readFileSync(path.resolve(__dirname, "../extensions/loops/goal-runtime.ts"), "utf-8");
+const GOAL_SRC = fs.readFileSync(path.resolve(__dirname, "../extensions/loops/goal.ts"), "utf-8");
 const WORKER_SRC = fs.readFileSync(path.resolve(__dirname, "../scripts/goal-auditor-worker.mjs"), "utf-8");
 
 function fresh(): AuditProgress {

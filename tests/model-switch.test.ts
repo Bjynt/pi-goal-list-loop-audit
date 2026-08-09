@@ -227,7 +227,7 @@ test("v0.34.57: blockForbiddenModelSwitches off allows the switch but records th
 // the current model itself instead of rotating onto a forbidden one.
 // This test seeds a forbidden target via a forbiddenModels override and
 // verifies the helper logic that the gate consults (mirrors the
-// tryMainModelFallback gate at extensions/loops/goal-runtime.ts:2892).
+// tryMainModelFallback gate at extensions/loops/goal.ts:2892).
 test("v0.34.93: isForbiddenModel flags sonnet/opus/gpt-5.5 refs the gate must skip", () => {
   const forbidden = ["gpt-5.5", "sonnet", "opus"];
   // The forbidden list matches case-insensitively and by substring (the
@@ -262,8 +262,8 @@ test("v0.34.93: empty / undefined ref is never forbidden (the empty-list semanti
 // forbidden refs.
 test("v0.34.93: a forbidden candidate is silently skipped by the recovery gate (the recovery-envelope gate skips the candidate without rotation or verdict change)", () => {
   // The isForbiddenModel check returns true for the forbidden ref;
-  // the gate at tryMainModelFallback (extensions/loops/goal-runtime.ts:2892)
-  // and the recovery-probe target picker (extensions/loops/goal-runtime.ts:3111)
+  // the gate at tryMainModelFallback (extensions/loops/goal.ts:2892)
+  // and the recovery-probe target picker (extensions/loops/goal.ts:3111)
   // consult this helper to silently skip.
   const forbidden = ["gpt-5.5", "sonnet", "opus"];
   // The forbidden candidate IS flagged.

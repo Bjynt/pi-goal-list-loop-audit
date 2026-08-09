@@ -32,7 +32,7 @@ afterEach(() => {
   __testOnlyResetOwnerSession(); // release the shared owner claim so later/parallel files are unaffected
 });
 
-const GOAL_SRC = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+const GOAL_SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 const RECOVERY_SRC = fs.readFileSync("extensions/goal-recovery.ts", "utf-8"); // decomposition step 3 (v0.34.111)
 const DISPLAY_SRC = fs.readFileSync("extensions/goal-loop-display.ts", "utf-8");
 const CORE_SRC = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");

@@ -10,7 +10,7 @@
 //   - "v0.34.57: a genuine stall (no compaction in the window) still fires
 //     the unacknowledged warning"
 //
-// Behavior pinned by the companion code at extensions/loops/goal-runtime.ts:
+// Behavior pinned by the companion code at extensions/loops/goal.ts:
 //   - the 150s continuation-start watchdog re-arms when a compaction event
 //     lands after the dispatch was accepted
 //   - the re-arm is bounded by COMPACTION_REARM_CAP (3) so a stuck session

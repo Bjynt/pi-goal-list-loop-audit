@@ -19,7 +19,7 @@ import {
 } from "../extensions/goal-loop-backoff.ts";
 import { classifyFindingText, extractFindings } from "../extensions/reviewer.ts";
 
-const SRC_GOAL = fs.readFileSync("extensions/loops/goal-runtime.ts", "utf-8");
+const SRC_GOAL = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
 const HB = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 
 const BASE = {
