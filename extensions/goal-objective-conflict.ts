@@ -47,6 +47,10 @@ function label(kind: ObjectiveKind): string {
   return kind === "loop" ? "/loop" : kind === "list" ? "/list" : "/goal";
 }
 
+function objectiveKey(items: LiveObjective[]): string {
+  return items.map((item) => item.id).sort().join(",");
+}
+
 /**
  * Ask before a new active surface can replace an existing one. A same-mode
  * start offers an in-place update because the user may have meant to tweak
@@ -83,6 +87,11 @@ export async function chooseObjectiveConflict(
       `An objective is already active:\n${currentText}\n\nNew ${label(incoming)}: ${objective.slice(0, 180)}\nChoose how to proceed:`,
       options,
     );
+    if (objectiveKey(liveObjectives(state)) !== objectiveKey(current)) {
+      appendLedger(ctx.cwd, "objective_conflict_stale", { incoming, captured: current.map((item) => item.id), current: liveObjectives(state).map((item) => item.id) });
+      ctx.ui.notify("The active objective changed while the conflict dialog was open; no update or replacement was applied. Re-run the new objective command to choose again.", "warning");
+      return "cancel";
+    }
     if (selected === updateOption) {
       appendLedger(ctx.cwd, "objective_conflict_resolved", { incoming, choice: "update", current: current.map((item) => item.id) });
       return "update";

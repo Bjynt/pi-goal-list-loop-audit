@@ -870,10 +870,6 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
   }
 
   if (sub === "start") {
-    if (isLoopActive()) {
-      ctx.ui.notify("A loop is already active. /loop stop first.", "warning");
-      return;
-    }
     let cfg;
     try {
       cfg = parseLoopStartArgs(rest);
@@ -993,10 +989,6 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
         "warning",
       );
     }
-    if (isLoopActive()) {
-      ctx.ui.notify("A loop is already active. /loop stop first.", "warning");
-      return;
-    }
     await startLoopFromConfig(ctx, {
       target: auditTarget(),
       measureCmd: auditMeasureCmd(),
@@ -1019,10 +1011,6 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     // Same auto-start path as /loop start (the user typed the command —
     // that IS the act); metricless + unbounded by design. No limit-nagging:
     // bounds exist on /loop start for whoever wants them.
-    if (isLoopActive()) {
-      ctx.ui.notify("A loop is already active. /loop stop first.", "warning");
-      return;
-    }
     const specs = resolveSpecFiles(ctx.cwd);
     if (specs.length === 0) {
       // No spec → the target is undetermined; grill instead of dead-ending

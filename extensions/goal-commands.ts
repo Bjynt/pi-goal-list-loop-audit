@@ -1573,17 +1573,19 @@ async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise
   else if (g) parts.push(`terminal goal record cleared (${g.status})`);
   if (n > 0) parts.push(`list cleared (${n} item${n === 1 ? "" : "s"})`);
   if (loop) parts.push(`loop ${loop.active ? "stopped" : "cleared"} (iter ${loop.iteration}${loop.bestValue !== null && loop.bestValue !== undefined ? `, best ${loop.bestValue}` : ""})`);
-  if (ctx.hasUI) {
-    try {
-      const ok = await ctx.ui.confirm("Wipe glla state?", `${parts.map((p) => `  ${p}`).join("\n")}\n\nHistory stays in .pi-glla (archive + ledger); the live state is wiped.`);
-      if (!ok) {
-        ctx.ui.notify("Wipe cancelled.", "info");
-        return;
-      }
-    } catch {
+  if (!ctx.hasUI) {
+    ctx.ui.notify("Wipe requires an interactive Confirm dialog; no state was changed.", "warning");
+    return;
+  }
+  try {
+    const ok = await ctx.ui.confirm("Wipe glla state?", `${parts.map((p) => `  ${p}`).join("\n")}\n\nHistory stays in .pi-glla (archive + ledger); the live state is wiped.`);
+    if (!ok) {
       ctx.ui.notify("Wipe cancelled.", "info");
       return;
     }
+  } catch {
+    ctx.ui.notify("Wipe cancelled.", "info");
+    return;
   }
   appendLedger(ctx.cwd, "glla_wipe", { goalId: live ? g!.id : undefined, listCleared: n, loop: loop ? { iteration: loop.iteration, active: loop.active } : undefined });
   const abortAfterWipe = !!live;
