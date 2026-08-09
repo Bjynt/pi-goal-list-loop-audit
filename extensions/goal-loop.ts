@@ -55,6 +55,7 @@ import {
 import { loadSettings } from "./goal-settings.js";
 import { createContinuationDispatch, type ContinuationDispatch } from "./goal-loop-dispatch.js";
 import { attemptFreshSessionRecovery } from "./goal-recovery.js";
+import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-conflict.js";
 
 type DispatchInput = Omit<Parameters<typeof createContinuationDispatch>[0], "id" | "sentAt">;
 
@@ -127,6 +128,7 @@ export interface LoopDeps {
   sessionManagerId: (ctx: ExtensionContext) => string;
   startDrafting: (ctx: ExtensionContext, target: "goal" | "list" | "loop", seed?: string) => Promise<boolean>;
   activeGoalSurfaceCommand: (command: string) => string;
+  archiveCurrentGoal: (ctx: ExtensionContext, status: "aborted", stopReason?: string) => boolean;
 }
 
 let deps: LoopDeps;
@@ -137,7 +139,7 @@ let accountSendRearm: LoopDeps["accountSendRearm"], armQueueStuckProbe: LoopDeps
     goStaleTerminal: LoopDeps["goStaleTerminal"], mainModelRecoveryActive: LoopDeps["mainModelRecoveryActive"], manuallyResumeMainModelRecovery: LoopDeps["manuallyResumeMainModelRecovery"], notifyExternal: LoopDeps["notifyExternal"], persistState: LoopDeps["persistState"],
     probeExtensionApiStale: LoopDeps["probeExtensionApiStale"], probeMainModelRecovery: LoopDeps["probeMainModelRecovery"], releaseContinuationDispatchStandDown: LoopDeps["releaseContinuationDispatchStandDown"], releaseInitialSessionLoadBarrier: LoopDeps["releaseInitialSessionLoadBarrier"], rememberCtx: LoopDeps["rememberCtx"],
     resolveCarryover: LoopDeps["resolveCarryover"], scheduleSessionTimeout: LoopDeps["scheduleSessionTimeout"], sendContinuation: LoopDeps["sendContinuation"], sendRearmDelayMs: LoopDeps["sendRearmDelayMs"], sessionManagerId: LoopDeps["sessionManagerId"],
-    startDrafting: LoopDeps["startDrafting"], activeGoalSurfaceCommand: LoopDeps["activeGoalSurfaceCommand"];
+    startDrafting: LoopDeps["startDrafting"], activeGoalSurfaceCommand: LoopDeps["activeGoalSurfaceCommand"], archiveCurrentGoal: LoopDeps["archiveCurrentGoal"];
 
 export function createGoalLoop(d: LoopDeps): void {
   deps = d; flags = d.flags; GOAL_EVENT_ENTRY = d.GOAL_EVENT_ENTRY;
@@ -146,7 +148,7 @@ export function createGoalLoop(d: LoopDeps): void {
   goStaleTerminal = d.goStaleTerminal; mainModelRecoveryActive = d.mainModelRecoveryActive; manuallyResumeMainModelRecovery = d.manuallyResumeMainModelRecovery; notifyExternal = d.notifyExternal; persistState = d.persistState;
   probeExtensionApiStale = d.probeExtensionApiStale; probeMainModelRecovery = d.probeMainModelRecovery; releaseContinuationDispatchStandDown = d.releaseContinuationDispatchStandDown; releaseInitialSessionLoadBarrier = d.releaseInitialSessionLoadBarrier; rememberCtx = d.rememberCtx;
   resolveCarryover = d.resolveCarryover; scheduleSessionTimeout = d.scheduleSessionTimeout; sendContinuation = d.sendContinuation; sendRearmDelayMs = d.sendRearmDelayMs; sessionManagerId = d.sessionManagerId;
-  startDrafting = d.startDrafting; activeGoalSurfaceCommand = d.activeGoalSurfaceCommand;
+  startDrafting = d.startDrafting; activeGoalSurfaceCommand = d.activeGoalSurfaceCommand; archiveCurrentGoal = d.archiveCurrentGoal;
 }
 
 /* ------------------------------------------------------------------ */
@@ -168,6 +170,35 @@ function clearLoopTimer(): void {
 
 function isLoopActive(): boolean {
   return !!state.loop?.active;
+}
+
+async function resolveLoopStartConflict(ctx: ExtensionContext, target: string): Promise<boolean> {
+  const current = liveObjectives(state);
+  if (current.length === 0) return true;
+  const choice = await chooseObjectiveConflict(ctx, "loop", target, current);
+  if (choice === "cancel") {
+    ctx.ui.notify("New loop cancelled; the current objective is unchanged.", "info");
+    return false;
+  }
+  if (choice === "update") {
+    if (current.length === 1 && current[0]!.kind === "loop" && state.loop?.active) {
+      state.loop = { ...state.loop, refineHint: target };
+      persistState(ctx);
+      appendLedger(ctx.cwd, "loop_refine_hint", { iteration: state.loop.iteration, hint: target.slice(0, 300), via: "active-start-conflict" });
+      ctx.ui.notify("Update selected — the current loop will use this refinement hint; no second loop was started.", "info");
+    } else {
+      ctx.ui.notify("Update selected, but this cross-mode start has no safe in-place loop edit. No replacement was started.", "info");
+    }
+    return false;
+  }
+  for (const item of current) {
+    if (item.kind === "loop" && isLoopActive()) {
+      await cmdLoop("stop", ctx);
+    } else if (item.kind !== "loop" && state.goal && ["active", "paused", "auditing"].includes(state.goal.status)) {
+      if (!archiveCurrentGoal(ctx, "aborted", `replaced by new loop objective`)) return false;
+    }
+  }
+  return true;
 }
 
 /** Run the user's measure command. Orchestrator-side, never agent-side. */
@@ -655,6 +686,8 @@ interface LoopConfig {
 /** Shared loop-start path: /loop start AND propose_loop_draft (after Confirm). */
 async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Promise<boolean> {
   releaseInitialSessionLoadBarrier();
+  if (!(await resolveLoopStartConflict(ctx, cfg.target))) return false;
+  const conflictIdsAtStart = liveObjectives(state).map((item) => item.id).sort().join(",");
   // branch=1 mode: scratch branch ONLY. Refuse on non-git or dirty tree —
   // we never mix uncommitted user work into the loop's branch.
   let branchName: string | undefined;
@@ -694,6 +727,8 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
     );
     return false;
   }
+  const conflictIdsNow = liveObjectives(state).map((item) => item.id).sort().join(",");
+  if (conflictIdsNow !== conflictIdsAtStart && !(await resolveLoopStartConflict(ctx, cfg.target))) return false;
   resolveCarryover(ctx, "loop"); // v0.28.14: surface/clear stale leftovers
   releaseContinuationDispatchStandDown();
   replaceState({
