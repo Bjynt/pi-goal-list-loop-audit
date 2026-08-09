@@ -444,17 +444,17 @@ test("v0.34.5: wedge alert names a subagent wait when the in-flight call is one"
 
 test("v0.34.11: unanswered-continuation watchdog (accepted send, no turn — hellhunter list-transition wedge)", () => {
   const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
-  assert.match(g, /const CONTINUATION_START_TIMEOUT_MS = Number\(process\.env\.GLLA_CONTINUATION_START_TIMEOUT_MS \?\? 30_000\);/, "bounded start-proof timeout (v0.34.88: 30s first window, was 150s)");
-  assert.match(g, /const NO_TURN_START_RETRY_BACKOFF_MS = 60_000;/, "single auto-retry backoff after the first window");
-  assert.match(g, /if \(!record\.retryCount && retryContinuationDispatch\(current, record\)\) return;/, "exactly ONE automatic retry before unacknowledged");
+  assert.match(CONT, /const CONTINUATION_START_TIMEOUT_MS = Number\(process\.env\.GLLA_CONTINUATION_START_TIMEOUT_MS \?\? 30_000\);/, "bounded start-proof timeout (v0.34.88: 30s first window, was 150s; decomposition step 5: moved)");
+  assert.match(CONT, /const NO_TURN_START_RETRY_BACKOFF_MS = 60_000;/, "single auto-retry backoff after the first window (decomposition step 5: moved)");
+  assert.match(CONT, /if \(!record\.retryCount && retryContinuationDispatch\(current, record\)\) return;/, "exactly ONE automatic retry before unacknowledged (decomposition step 5: moved)");
   assert.match(g, /const CONTINUATION_UNANSWERED_THROTTLE_MS = 300_000;/, "legacy re-alert throttle remains documented");
   // Disarm signal: real activity (agent_end/tool_call via noteActivity(true)) AFTER the last send.
   assert.match(g, /if \(real\) \{ consecutiveStalls = 0; lastRealActivityAt = lastActivityAt; \}/, "real activity stamps lastRealActivityAt");
   assert.match(g, /pendingContinuationDispatch/, "accepted dispatch owns the watchdog before a generic heartbeat refire");
   assert.match(g, /dispatchStartAcknowledged\(ctx, "before_agent_start", event\?\.prompt\)/, "prompt-specific start proof");
-  assert.match(g, /dispatchStartUnacknowledged/, "missing proof fails closed");
-  assert.match(g, /continuation_start_unacknowledged/);
-  assert.match(g, /Automatic re-sends are stopped/, "no blind resend storm");
+  assert.match(CONT, /dispatchStartUnacknowledged\(current, record\)/, "missing proof fails closed (decomposition step 5: watchdog moved)");
+  assert.match(CONT, /continuation_start_unacknowledged/);
+  assert.match(CONT, /Automatic re-sends are stopped/, "no blind resend storm (decomposition step 5: moved)");
 });
 
 // ---------- v0.34.12: eager-continuation settle + wait countdown ----------
@@ -538,13 +538,13 @@ test("v0.34.15: quota walls are CLASSIFIED on the card — resuming won't help, 
 
 test("v0.34.16: queue-stuck probe — a send queued-without-a-turn is reported without terminal injection", () => {
   const g = fs.readFileSync(path.resolve("extensions/loops/goal.ts"), "utf-8");
-  assert.match(g, /GLLA_QUEUE_STUCK_MS \?\? 45_000/);
-  assert.match(g, /appendLedger\(ctx\.cwd, "queue_stuck_detected"/);
+  assert.match(CONT, /GLLA_QUEUE_STUCK_MS \?\? 45_000/); // decomposition step 5: queueStuckProbeMs moved
+  assert.match(CONT, /appendLedger\(ctx\.cwd, "queue_stuck_detected"/);
   assert.match(HEARTBEAT_SRC, /A fresh session_start will rebind the/);
-  assert.match(g, /if \(lastRealActivityAt > sentAt\) return;/, "real work disarms");
-  assert.match(g, /if \(!ctx\.hasPendingMessages\(\)\) return;/, "consumed message = healthy — even an instant 429 consumes");
-  assert.match(g, /if \(!ctx\.isIdle\(\)\) return;/, "running turn = healthy");
-  assert.match(g, /if \(!isSupervising\(\)\) return;/, "paused/completed disarms");
-  assert.ok((g.match(/armQueueStuckProbe\(lastContinuationSentAt\);/g) ?? []).length >= 2, "armed on goal + loop sends (and stall escalation)");
-  assert.match(g, /const ctx = freshCtx\(\);\n      if \(!ctx\) return;.*no fresh lifecycle context/s, "probe resolves a fresh ctx at fire time instead of retaining the sender ctx");
+  assert.match(CONT, /if \(flags\.lastRealActivityAt > sentAt\) return;/, "real work disarms (flags accessor re-spelling)");
+  assert.match(CONT, /if \(!ctx\.hasPendingMessages\(\)\) return;/, "consumed message = healthy — even an instant 429 consumes");
+  assert.match(CONT, /if \(!ctx\.isIdle\(\)\) return;/, "running turn = healthy");
+  assert.match(CONT, /if \(!isSupervising\(\)\) return;/, "paused/completed disarms");
+  assert.ok((CONT.match(/armQueueStuckProbe\(lastContinuationSentAt\);/g) ?? []).length >= 2, "armed on goal + stall sends (decomposition step 5: send paths moved)");
+  assert.match(CONT, /const ctx = freshCtx\(\);\n      if \(!ctx\) return;.*no fresh lifecycle context/s, "probe resolves a fresh ctx at fire time instead of retaining the sender ctx");
 });
