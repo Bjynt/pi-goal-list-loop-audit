@@ -54,10 +54,10 @@ test("Fix B: the stale-latch stranded park runs BEFORE the extensionApiStale ear
 });
 
 test("Fix B: the park requires the exact stuck signature (auditing, no in-flight, claim, 90s silence)", () => {
-  assert.match(SRC, /state\.goal\?\.status === "auditing"/);
-  assert.match(SRC, /!completionAuditInFlight/);
-  assert.match(SRC, /state\.goal\.pendingCompletion/);
-  assert.match(SRC, /Date\.now\(\) - lastActivityAt >= 90_000/);
+  assert.match(HB, /state\.goal\?\.status === "auditing"/);
+  assert.match(HB, /!flags\.completionAuditInFlight/);
+  assert.match(HB, /state\.goal\.pendingCompletion/);
+  assert.match(HB, /Date\.now\(\) - flags\.lastActivityAt >= 90_000/);
   // the pre-existing (non-stale) stranded block keeps its stored-claim path:
-  assert.match(SRC, /markCompletionAuditRecoveryPending\(ctx, "heartbeat-recovery"\)/);
+  assert.match(HB, /markCompletionAuditRecoveryPending\(ctx, "heartbeat-recovery"\)/);
 });

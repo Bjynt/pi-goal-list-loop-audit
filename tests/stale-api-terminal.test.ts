@@ -198,16 +198,16 @@ test("v0.34.94: heartbeat self-heals stale-terminal when raw probe says pi is fr
   // in heartbeatTick. It checks staleTerminalDone and clears the stale
   // flags so the next freshCtx() returns a non-null ctx.
   assert.match(
-    SRC,
-    /if \(staleTerminalDone && knownCtx\) \{[\s\S]*appendLedger\(knownCtx\.cwd, "stale_terminal_recovered_via_probe"/,
+    HB,
+    /if \(flags\.staleTerminalDone && knownCtx\) \{[\s\S]*appendLedger\(knownCtx\.cwd, "stale_terminal_recovered_via_probe"/,
     "heartbeat self-heal ledger event is recorded",
   );
-  assert.match(SRC, /staleTerminalDone = false;\s*\n\s*extensionApiStale = false;/, "stale flags are cleared on probe-fresh-after-stale-terminal");
-  assert.match(SRC, /tryAbsorbHostSuccessor\(knownCtx, "heartbeat-self-heal"\)/, "tryAbsorbHostSuccessor is called against the knownCtx");
+  assert.match(HB, /flags\.staleTerminalDone = false;\s*\n\s*flags\.extensionApiStale = false;/, "stale flags are cleared on probe-fresh-after-stale-terminal");
+  assert.match(HB, /tryAbsorbHostSuccessor\(knownCtx, "heartbeat-self-heal"\)/, "tryAbsorbHostSuccessor is called against the knownCtx");
   // No sends re-queued: the self-heal only resets flags and absorbs — it
   // never calls scheduleContinuation / sendMessage / etc. The user has to
   // either issue a fresh goal or resume explicitly.
-  const heartbeatRegion = SRC.match(/stale_terminal_recovered_via_probe[\s\S]{0,800}return;\s*\n\s*\}/);
+  const heartbeatRegion = HB.match(/stale_terminal_recovered_via_probe[\s\S]{0,800}return;\s*\n\s*\}/);
   assert.ok(heartbeatRegion, "self-heal region is in scope");
   assert.ok(!heartbeatRegion![0].includes("scheduleContinuation"), "no continuation scheduled during self-heal");
   assert.ok(!heartbeatRegion![0].includes("sendMessage"), "no sendMessage during self-heal");
