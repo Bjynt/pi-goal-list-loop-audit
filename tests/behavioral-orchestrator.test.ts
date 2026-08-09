@@ -23,7 +23,7 @@ import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import activate, { __testOnlyLastConfirmDialog, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyRunFanOutListAuditFindings, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
+import activate, { __testOnlyLastConfirmDialog, __testOnlyLoadState, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyRunFanOutListAuditFindings, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
 import { __testOnlyHeartbeatTick } from "../extensions/goal-heartbeat.js";
 
 // v0.29.5: autoResume is GLOBAL-only now — tests opt in by writing the
@@ -168,6 +168,26 @@ test("v0.34.18: blank startup waits for the transcript before autoresume, while 
   }
 });
 
+test("v0.35.1: blank startup closes a legacy terminal slot when its archive exists", async () => {
+  __testOnlyResetStaleFlag();
+  const session = MAIN_SM as { buildSessionContext?: () => { messages: unknown[] } };
+  const previous = session.buildSessionContext;
+  session.buildSessionContext = () => ({ messages: [] });
+  try {
+    const cwd = tmpCwd();
+    const goal = seedGoal({ status: "complete", objective: "legacy completed objective" });
+    fs.mkdirSync(path.join(cwd, ".pi-glla", "archive"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, ".pi-glla", "archive", `${goal.id}.md`), "**Status**: complete\n");
+    seedState(cwd, { goal });
+    await freshSession(cwd, "startup");
+    assert.equal(readState(cwd).goal, null, "blank startup closes the archived terminal slot");
+    assert.ok(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes("terminal_goal_slot_closed"), "closure is ledgered before the blank-start return");
+  } finally {
+    if (previous) session.buildSessionContext = previous;
+    else delete session.buildSessionContext;
+  }
+});
+
 test("T3c (v0.28.21): interrupted goal HELDS by default — the 0.28.3 exemption is superseded; autoresume=on auto-resumes", async () => {
   // Default: even an infra-interrupted goal loads HELD (user directive:
   // "load it on session load but not auto start it"). The marker STAYS.
@@ -291,6 +311,30 @@ test("v0.34.119: /glla cancel archives the active list item and drops the waitin
   assert.ok(ctx.ui.matching("List cancelled").length >= 1);
 });
 
+test("v0.35.1: /glla cancel stops an active loop before touching an unrelated waiting queue", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    loop: seedLoop({ active: true, target: "active loop objective" }),
+    list: [{ id: "unrelated-waiting", objective: "unrelated waiting item", addedAt: new Date().toISOString() }],
+  });
+  const ctx = await freshSession(cwd, "reload");
+  // A normal reload arbitrates legacy stacked state before the command. Reload
+  // the deliberately dirty pair after binding the context so this test pins
+  // the reachable cancel ordering itself.
+  seedState(cwd, {
+    loop: seedLoop({ active: true, target: "active loop objective" }),
+    list: [{ id: "unrelated-waiting", objective: "unrelated waiting item", addedAt: new Date().toISOString() }],
+  });
+  __testOnlyLoadState(cwd);
+  await pi.command("glla", "cancel", ctx);
+  const after = readState(cwd) as unknown as { loop: { active?: boolean } | null; list?: unknown[] };
+  assert.equal(after.loop?.active, false, "the active loop is the objective that gets cancelled");
+  assert.equal(after.list?.length, 1, "an unrelated waiting queue is not dropped");
+  assert.equal((after.list?.[0] as { id: string }).id, "unrelated-waiting");
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
+
 test("v0.34.119: /glla cancel also aborts an auditing list objective and clears its waiting queue", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
@@ -370,14 +414,27 @@ test("v0.35.0: a direct /loop start also confirms before replacing a live goal",
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
 });
 
-test("v0.35.0: one confirmed /glla wipe closes goal, queue, and terminal state without a second wipe", async () => {
+test("v0.35.1: one confirmed /glla wipe clears recovery and dispatch artifacts too", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   seedState(cwd, {
     goal: seedGoal({ objective: "wipe-once objective — done when pinned" }),
     list: [{ id: "wipe-waiting", objective: "orphan waiting item", addedAt: new Date().toISOString() }],
-  });
+    mainModelRecovery: {
+      kind: "goal",
+      primary: "provider/model",
+      active: "provider/model",
+      attempted: ["provider/model"],
+      attempts: 1,
+      reason: "provider quota",
+      firstFailureAt: new Date().toISOString(),
+      autoRetryUntil: new Date(Date.now() + 60_000).toISOString(),
+      retryAt: new Date(Date.now() + 30_000).toISOString(),
+    },
+  } as unknown as Parameters<typeof seedState>[1]);
   const ctx = await freshSession(cwd, "startup");
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "continuation-dispatch.json"), "{}\n");
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "continuation-dispatch.json.tmp-test"), "partial");
   let confirms = 0;
   ctx.ui.confirmImpl = async () => { confirms++; return true; };
   await pi.command("glla", "wipe", ctx);
@@ -387,6 +444,9 @@ test("v0.35.0: one confirmed /glla wipe closes goal, queue, and terminal state w
   assert.equal(confirms, 1, "one wipe opens one destructive confirmation");
   assert.equal(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length, 1, "history remains archived");
   assert.equal(fs.readdirSync(path.join(cwd, ".pi-glla", "goals")).filter((name) => name.endsWith(".queue.json")).length, 0, "queue sidecars are gone");
+  assert.equal(readState(cwd).mainModelRecovery, undefined, "provider recovery state is cleared");
+  assert.equal(fs.existsSync(path.join(cwd, ".pi-glla", "continuation-dispatch.json")), false, "dispatch sidecar is gone");
+  assert.equal(fs.existsSync(path.join(cwd, ".pi-glla", "continuation-dispatch.json.tmp-test")), false, "dispatch temp sidecar is gone");
   await pi.command("glla", "wipe", ctx);
   assert.equal(confirms, 1, "a clean second invocation is an idempotent no-op, not a second destructive flow");
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
