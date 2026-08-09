@@ -17,6 +17,7 @@ import * as path from "node:path";
 import {
   writeQueueItemFile,
   deleteQueueItemFile,
+  clearQueueItemFiles,
   readQueueFromDisk,
   queueItemPath,
   piGlaDir,
@@ -108,6 +109,17 @@ test("deleteQueueItemFile: returns true when present, false when missing", () =>
   assert.equal(deleteQueueItemFile(cwd, id), false, "second delete is a no-op");
 });
 
+test("clearQueueItemFiles: removes orphaned sidecars and is idempotent", () => {
+  const cwd = mkTmp();
+  writeQueueItemFile(cwd, mkItem("20260806080000-orphan1"));
+  writeQueueItemFile(cwd, mkItem("20260806080000-orphan2"));
+  const first = clearQueueItemFiles(cwd);
+  assert.equal(first.removed, 2);
+  assert.deepEqual(readQueueFromDisk(cwd), []);
+  const second = clearQueueItemFiles(cwd);
+  assert.deepEqual(second, { removed: 0, failed: [] });
+});
+
 test("readQueueFromDisk: returns queue items, in id order, skipping garbage", () => {
   const cwd = mkTmp();
   writeQueueItemFile(cwd, mkItem("20260806080000-aaaa06"));
@@ -189,13 +201,10 @@ test("v0.34.61: list-draft path is disk-first (sidecar before state mutation)", 
   assert.ok(writePos < statePos, "sidecar write comes BEFORE the in-memory commit");
 });
 
-test("v0.34.61: remove/clear/cancel/glla_wipe delete sidecars", () => {
+test("v0.35.0: remove/clear/cancel/glla_wipe clear queue sidecars", () => {
   const SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
-  // Auditor-fixed gap #3: every removal path must call deleteQueueItemFile so
-  // the /list disk-recovery fallback cannot resurrect explicitly-removed items.
   assert.match(SRC, /deleteQueueItemFile\(ctx\.cwd, removed\.id\);\n\s*replaceState\(\{ \.\.\.state, list: queue\.filter/); // /list remove
-  assert.match(SRC, /for \(const item of dropped\) deleteQueueItemFile\(ctx\.cwd, item\.id\);/); // /list clear
-  assert.match(SRC, /for \(const item of listQueue\(\)\) deleteQueueItemFile\(ctx\.cwd, item\.id\);/); // /list cancel + glla_wipe
+  assert.match(SRC, /clearQueueItemFiles\(ctx\.cwd\)/, "bulk removal paths clear orphaned disk state");
 });
 
 test("v0.34.61: crash-simulation — sidecar survives state death and reload finds it", () => {

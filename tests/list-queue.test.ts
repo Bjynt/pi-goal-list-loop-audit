@@ -170,7 +170,7 @@ test("v0.28.28: /glla log [N] — human-readable ledger tail, noise-filtered", (
 test("v0.28.33: /glla wipe — renamed from reset (too close to /glla resume); reset redirects without acting", () => {
   const SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   assert.match(SRC, /if \(\/\^wipe\(\?:\\s\|\$\)\/\.test\(trimmed\)\) \{/);
-  assert.match(SRC, /async function cmdGllaWipe\(ctx: ExtensionContext\): Promise<void>/);
+  assert.match(SRC, /async function cmdGllaWipe\(ctx: ExtensionContext, entryChecked = false\): Promise<void>/);
   // destructive → Confirm dialog with the full summary:
   assert.match(SRC, /await ctx\.ui\.confirm\("Wipe glla state\?"/);
   assert.match(SRC, /History stays in \.pi-glla \(archive \+ ledger\); the live state is wiped\./);
@@ -179,7 +179,7 @@ test("v0.28.33: /glla wipe — renamed from reset (too close to /glla resume); r
   assert.match(SRC, /archiveCurrentGoal\(ctx, "aborted", "user wipe \(\/glla wipe\)"\);/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "list_cleared", \{ via: "glla_wipe"(, count: n)? \}\);/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "loop_stopped", \{ reason: "user wipe \(\/glla wipe\)"/);
-  assert.match(SRC, /state\.loop = undefined;/);
+  assert.match(SRC, /replaceState\(\{ \.\.\.state, loop: undefined \}\)/);
   // already-clean short-circuit:
   assert.match(SRC, /glla state is already clean — no goal, no list, no loop\./);
   // the typo trap: /glla reset redirects WITHOUT executing:
@@ -197,7 +197,8 @@ test("v0.34.119: /glla cancel cancels the whole list objective, while standalone
   // path, so the waiting queue cannot survive as a hidden continuation.
   const cancelIdx = SRC.indexOf("async function cmdGllaCancel");
   const cancel = SRC.slice(cancelIdx);
-  assert.match(cancel, /const hasListObjective = listQueue\(\)\.length > 0 \|\| g\?\.policy === "list";/);
+  assert.match(cancel, /const liveGoal = g && \(g\.status === "active" \|\| g\.status === "paused" \|\| g\.status === "auditing"\);/);
+  assert.match(cancel, /const hasListObjective = listQueue\(\)\.length > 0 \|\| \(liveGoal && g!\.policy === "list"\);/);
   assert.match(cancel, /if \(hasListObjective\) \{\s*\n\s*await cmdList\("cancel", ctx\);/);
   assert.match(cancel, /if \(g && \(g\.status === "active" \|\| g\.status === "paused" \|\| g\.status === "auditing"\)\)/);
   assert.match(cancel, /await cmdCancel\(ctx\);/);
