@@ -168,7 +168,7 @@ test("v0.34.18: blank startup waits for the transcript before autoresume, while 
   }
 });
 
-test("v0.35.1: blank startup closes a legacy terminal slot when its archive exists", async () => {
+test("v0.34.121: blank startup closes a legacy terminal slot when its archive exists", async () => {
   __testOnlyResetStaleFlag();
   const session = MAIN_SM as { buildSessionContext?: () => { messages: unknown[] } };
   const previous = session.buildSessionContext;
@@ -311,7 +311,7 @@ test("v0.34.119: /glla cancel archives the active list item and drops the waitin
   assert.ok(ctx.ui.matching("List cancelled").length >= 1);
 });
 
-test("v0.35.1: /glla cancel stops an active loop before touching an unrelated waiting queue", async () => {
+test("v0.34.121: /glla cancel stops an active loop before touching an unrelated waiting queue", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   seedState(cwd, {
@@ -414,7 +414,7 @@ test("v0.35.0: a direct /loop start also confirms before replacing a live goal",
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
 });
 
-test("v0.35.1: one confirmed /glla wipe clears recovery and dispatch artifacts too", async () => {
+test("v0.34.121: one confirmed /glla wipe clears recovery and dispatch artifacts too", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   seedState(cwd, {
