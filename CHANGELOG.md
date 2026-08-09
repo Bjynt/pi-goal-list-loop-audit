@@ -1,6 +1,32 @@
 # Changelog
 
 ## Unreleased
+### 0.34.115 — multi-select model picker + unified model-selector
+  (v0.34.115, audit/MODEL-PICKER-MULTI-SELECT-2026-08-09.md). New
+  `extensions/multi-model-picker.ts` (multi-select variant of the existing
+  picker, space to toggle, enter/tab to confirm, ordered selection).
+  New `extensions/model-selector.ts` — a scope-aware selector
+  (`{kind:"session"} | {kind:"subagent", agentName}`) that composes the
+  existing main-model-recovery helpers for ONE chain-walk contract
+  reused by both session and per-subagent fallback paths. Three settings
+  editors now drive the picker instead of a free-form text dump:
+  mainModelFallbacks, forbiddenModels, and the new subagentFallbacks
+  (per-agent fallback chain written to the override .md via
+  `resolveSubagentOverrideRef`). `DEFAULT_FORBIDDEN_MODELS` is now empty
+  (the previous opinionated `["gpt-5.5", "sonnet", "opus"]` shipped as
+  policy and conflicted with rigs that rely on those models — the
+  blockForbiddenModelSwitches gate is still ON by default, users add
+  explicit refs via the picker). `goal-recovery.ts` consumes the
+  selector; the existing forbidden-gate walk becomes a single
+  `selectNextValid` call that records every ref visited under a unified
+  `model_fallback_select {scope, fromRef, toRef, reason}` ledger event
+  (reason ∈ ok | forbidden | unregistered | exhausted). 35 new tests
+  (15 picker + 20 selector). tsc clean; suite 1181 pass / 1 skip /
+  0 fail. Repo hygiene: `.pi-glla/` is now gitignored and untracked
+  (per v0.34.115 release contract — runtime state is per-session,
+  not source-of-truth); release history v0.34.113 / v0.34.114 / v0.34.115
+  is rewritten to three clean commits with no .pi-glla noise.
+
 ### 0.34.114 — decomposition step 6: goal.ts real thin installer
   (v0.34.114, audit/GOAL-INSTALLER-THINNING-2026-08-09.md). The public
   `extensions/loops/goal.ts` entrypoint is now a 387-line real activation /

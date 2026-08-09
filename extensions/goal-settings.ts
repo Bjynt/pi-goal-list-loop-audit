@@ -40,6 +40,12 @@ export interface Settings {
   visionAssist?: boolean;
   /** Ordered provider/model refs to use when the MAIN session model hits a provider wall. */
   mainModelFallbacks?: string[];
+  /** v0.34.115: per-subagent fallback chains. Keyed by subagent name
+   * (Explore, Plan, general-purpose, …). When set, the subagent sync uses
+   * the FIRST eligible ref in the chain via ModelSelector.selectNextValid;
+   * when unset, behavior is byte-identical to v0.34.114 (inherit-parent or
+   * per-type pin). */
+  subagentFallbacks?: Record<string, string[]>;
   /** Minutes before the main-session recovery probe; the cadence caps at 5h and the automatic window at 24h. */
   mainModelRetryMinutes?: number;
   /** "provider/model-id" or bare "model-id". Unset → session model. */

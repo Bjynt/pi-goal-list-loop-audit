@@ -22,6 +22,7 @@ import { state } from "./goal-state.js";
 import { appendLedger, nowIso, piGlaDir, isForbiddenModel, isStaleApiError, nextHourlyProbeMs, type Goal, type MainModelRecovery, type PendingCompletion } from "./goal-loop-core.js";
 import { cancelDetachedGoalCompletionAuditor } from "./goal-loop-auditor-process.js";
 import { classifyMainModelFailure, isLongLivedFailureKind, mainModelAutoRetryUntil, mainModelFailureDelayMs, mainModelRetryDelayMs, MAIN_MODEL_AUTO_RETRY_HORIZON_MS, modelRef, nextUntriedModelRef, normalizeModelRefs, splitModelRef, type MainModelFailure } from "./main-model-recovery.js";
+import { ModelSelector, type ModelScope } from "./model-selector.js";
 import { loadGlobalSettings, loadSettings } from "./goal-settings.js";
 import { clearLoopTimer, scheduleLoopTick } from "./goal-loop.js";
 
@@ -259,6 +260,30 @@ export function resolveMainModel(ctx: ExtensionContext, ref: string): any | unde
   try { return ctx.modelRegistry?.find?.(parts.provider, parts.id) as any; } catch { return undefined; }
 }
 
+/** Build a session-scoped ModelSelector that wires the chain provider,
+ * forbidden gate, resolver, and the unified model_fallback_select ledger
+ * event. Reused by tryMainModelFallback and (eventually) per-agent
+ * subagent fallback paths. */
+function sessionModelSelector(ctx: ExtensionContext): ModelSelector {
+  const settings = loadSettings(ctx.cwd);
+  return new ModelSelector({
+    getChain: (scope) => {
+      if (scope.kind === "session") return mainModelFallbackRefs(ctx);
+      return settings.subagentFallbacks?.[scope.agentName] ?? [];
+    },
+    resolve: (ref) => resolveMainModel(ctx, ref),
+    isForbidden: (ref) => isForbiddenModel(ref, settings.forbiddenModels),
+    record: (event) => {
+      appendLedger(ctx.cwd, "model_fallback_select", {
+        scope: event.scope.kind === "session" ? "session" : `subagent:${event.scope.agentName}`,
+        fromRef: event.fromRef,
+        toRef: event.toRef,
+        reason: event.reason,
+      });
+    },
+  });
+}
+
 /** Select one configured backup before pi's own agent-level retry continues. */
 export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainModelFailure): Promise<boolean> {
   if (flags.mainModelSwitchInFlight || failure.kind === "non-recoverable") return false;
@@ -278,39 +303,19 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
     kind: mainModelRecoveryKind(),
   });
   if (!recovery.attempted.includes(current)) recovery.attempted.push(current);
+  const selector = sessionModelSelector(ctx);
+  const scope: ModelScope = { kind: "session" };
   for (;;) {
-    const candidateRef = nextUntriedModelRef(current, refs, recovery.attempted);
-    if (!candidateRef) {
+    const pick = selector.selectNextValid(scope, current, recovery.attempted);
+    if (!("model" in pick)) {
+      // exhausted (or all refs forbidden / unregistered) — fail closed.
       state.mainModelRecovery = { ...recovery, active: current, reason: mainModelRecoveryReason(failure) };
       persistState(ctx);
       return false;
     }
-    recovery.attempted.push(candidateRef);
-    // v0.34.93: forbidden-models gate on main-model fallback. The auditor
-    // chain (resolveAuditorModel) consults isForbiddenModel; this path did
-    // not. Without the gate the recovery envelope can rotate onto a
-    // forbidden model (expensive default, vision assist forbidden), briefly
-    // set it via flags.extensionApi.setModel, then observeModelChange reverts it
-    // — but one wasted provider call and a misleading forbidden_model_switch
-    // ledger event happen first. Screenshot_20260808_083612 (endless-td):
-    // the session rotated to Anthropic during recovery when no allowed
-    // backup existed; user: "this could be a very costly importu decision.
-    // I think it should be disallowed." Silent skip + clearer ledger event;
-    // the loop continues to the next candidate. If no allowed candidate
-    // exists, the recovery fails-closed below (no allowed backup).
-    if (isForbiddenModel(candidateRef, loadSettings(ctx.cwd).forbiddenModels)) {
-      appendLedger(ctx.cwd, "forbidden_model_fallback_blocked", {
-        ref: candidateRef,
-        reason: "candidate is in the forbidden list",
-        from: current,
-      });
-      continue;
-    }
-    const candidate = resolveMainModel(ctx, candidateRef);
-    if (!candidate) {
-      appendLedger(ctx.cwd, "main_model_fallback_unavailable", { ref: candidateRef, reason: "not in the configured model registry" });
-      continue;
-    }
+    const candidateRef = pick.ref;
+    const candidate = pick.model;
+    if (!recovery.attempted.includes(candidateRef)) recovery.attempted.push(candidateRef);
     flags.mainModelSwitchInFlight = true;
     try {
       const accepted = await flags.extensionApi?.setModel(candidate);

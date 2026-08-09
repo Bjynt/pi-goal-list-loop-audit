@@ -199,6 +199,7 @@ declare global {
   var openSettingsUI: any;
   var promptSettingsMenu: any;
   var promptModelRef: any;
+  var promptModelRefs: any;
   var handleSettingChoice: any;
   var observeModelChange: any;
   var observeTurnBoundaryModel: any;

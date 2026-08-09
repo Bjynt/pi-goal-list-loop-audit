@@ -29,10 +29,12 @@ plus a `v0.34.x-<TOPIC>.md` symlink for versioned docs). Older docs
 | v0.34.112 | v0.34.112-GOAL-HEARTBEAT-EXTRACTION.md | GOAL-HEARTBEAT-EXTRACTION-2026-08-09.md |
 | v0.34.113 | v0.34.113-GOAL-CONTINUATION-EXTRACTION.md | GOAL-CONTINUATION-EXTRACTION-2026-08-09.md |
 | v0.34.114 | v0.34.114-GOAL-INSTALLER-THINNING.md | GOAL-INSTALLER-THINNING-2026-08-09.md |
+| v0.34.115 | v0.34.115-MODEL-PICKER-MULTI-SELECT.md | MODEL-PICKER-MULTI-SELECT-2026-08-09.md |
 
 ## Topic index (canonical docs, newest first)
 
 **2026-08-09**
+- MODEL-PICKER-MULTI-SELECT-2026-08-09.md — multi-select picker + unified model-selector + empty forbiddenModels default + subagentFallbacks chain (v0.34.115)
 - GOAL-INSTALLER-THINNING-2026-08-09.md — decomposition step 6: goal.ts thin installer surface (v0.34.114)
 - GOAL-CONTINUATION-EXTRACTION-2026-08-09.md — decomposition step 5: goal-continuation.ts extracted (v0.34.113)
 - GOAL-HEARTBEAT-EXTRACTION-2026-08-09.md — decomposition step 4: goal-heartbeat.ts extracted (v0.34.112)

@@ -960,11 +960,20 @@ export function modelSwitch(from: string | undefined, to: string | undefined, re
 }
 
 /** v0.34.57: model refs/ids that must never be selected — the policy guard.
- * Default forbids gpt-5.5 (expense), sonnet and opus (the user's explicit
- * forbidden families). Matched case-insensitively as a substring against
- * the full "provider/id" ref, so "gpt-5.5" covers "openai/gpt-5.5" and
- * "sonnet" covers "anthropic/claude-sonnet-4-5". */
-export const DEFAULT_FORBIDDEN_MODELS = ["gpt-5.5", "sonnet", "opus"];
+ * v0.34.115: default is empty. The previous default of ["gpt-5.5",
+ * "sonnet", "opus"] was an opinionated expense-policy safety net that
+ * shipped as a default and conflicted with users on rigs where these
+ * models are valid (e.g. an OpenRouter key with budget to spare, a local
+ * rig that runs sonnet fine, an Anthropic-only rig where opus is the
+ * primary model). The blockForbiddenModelSwitches gate is still ON by
+ * default — when the user adds a model to forbiddenModels, switches to
+ * it are reverted; but the DEFAULT no longer bans anything. Users can
+ * restore the previous safety net by setting forbiddenModels via
+ * /glla settings (now driven by a multi-select picker, not a typed dump).
+ * Matched case-insensitively as a substring against the full
+ * "provider/id" ref, so "gpt-5.5" covers "openai/gpt-5.5" and "sonnet"
+ * covers "anthropic/claude-sonnet-4-5". */
+export const DEFAULT_FORBIDDEN_MODELS: string[] = [];
 
 /** v0.34.92: hourly quota probe ticker default — fires at :00:30 every
  * hour when main-model recovery is parked to give faster pickup when

@@ -257,6 +257,10 @@ import {
   ModelPickerComponent,
   type ModelPickItem,
 } from "../model-picker.js";
+import {
+  MultiModelPickerComponent,
+  type MultiModelPickerResult,
+} from "../multi-model-picker.js";
 import { consumeRecoveryResume } from "../goal-recovery.js"; // decomposition step 3 (v0.34.111)
 import {
   createGoalHeartbeat,
@@ -596,6 +600,33 @@ async function promptModelRef(
   return v.trim() ? { kind: "ref", ref: v.trim() } : { kind: "session" };
 }
 
+/** Multi-select counterpart to promptModelRef: returns an ordered string[] of
+ * provider/model refs (selection order = toggle order), or undefined on Esc.
+ * Falls back to a free-form comma-separated input when ctx.ui.custom /
+ * ctx.modelRegistry are unavailable (headless tests). */
+async function promptModelRefs(
+  ctx: ExtensionContext,
+  title: string,
+  initialRefs: string[],
+): Promise<string[] | undefined> {
+  if (typeof (ctx.ui as { custom?: unknown }).custom !== "function" || !ctx.modelRegistry) {
+    const v = await ctx.ui.input(title, initialRefs.length ? initialRefs.join(",") : "provider/model-a,provider/model-b");
+    if (v === undefined) return undefined;
+    return normalizeModelRefs(v);
+  }
+  const sessionModel = ctx.model as any;
+  const sessionLabel = sessionModel ? `${sessionModel.provider}/${sessionModel.id}` : "pi session model";
+  const models = ctx.modelRegistry
+    .getAvailable()
+    .filter((m: any) => ctx.modelRegistry.hasConfiguredAuth(m));
+  const items = buildModelPickItems(models, sessionLabel);
+  const pick = await ctx.ui.custom<MultiModelPickerResult>((tui, theme, keybindings, done) => {
+    return new MultiModelPickerComponent({ title, items, initialSelected: initialRefs }, () => tui.requestRender(), theme, keybindings, done);
+  });
+  if (pick === undefined) return undefined;
+  return pick;
+}
+
 export async function handleSettingChoice(id: string, ctx: ExtensionContext): Promise<void> {
   switch (id) {
     case "autoResume": {
@@ -656,12 +687,8 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     }
     case "mainModelFallbacks": {
       const current = normalizeModelRefs(loadGlobalSettings().mainModelFallbacks);
-      const v = await ctx.ui.input(
-        "Main session model backups — ordered, comma-separated provider/model refs",
-        current.length ? current.join(",") : "provider/model-a,provider/model-b — empty clears backups",
-      );
-      if (v === undefined) return;
-      const refs = normalizeModelRefs(v);
+      const refs = await promptModelRefs(ctx, "Main session model backups — ordered (space to toggle, enter/tab to confirm)", current);
+      if (refs === undefined) return;
       saveSettings("global", ctx.cwd, { mainModelFallbacks: refs });
       ctx.ui.notify(refs.length ? `Main model backups saved in order: ${refs.join(" → ")}` : "Main model backups cleared — quota recovery will keep probing the current model.", "info");
       return;
@@ -701,12 +728,8 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     }
     case "forbiddenModels": {
       const current = normalizeModelRefs(loadGlobalSettings().forbiddenModels);
-      const v = await ctx.ui.input(
-        "Forbidden models — comma-separated provider/model refs; any switch to one is ledgered as forbidden_model_switch and (by default) reverted",
-        current.length ? current.join(",") : "gpt-5.5,sonnet,opus",
-      );
-      if (v === undefined) return;
-      const refs = normalizeModelRefs(v);
+      const refs = await promptModelRefs(ctx, "Forbidden models — every ref here is ledgered as forbidden_model_switch on a switch attempt (space to toggle, enter/tab to confirm)", current);
+      if (refs === undefined) return;
       saveSettings("global", ctx.cwd, { forbiddenModels: refs });
       ctx.ui.notify(refs.length ? `Forbidden models saved: ${refs.join(", ")}` : "Forbidden models cleared — every model is allowed (policy gate off).", "info");
       return;
@@ -887,6 +910,21 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       ctx.ui.notify(`${agentType} model pin saved — applies to NEW pi sessions.`, "info");
       return;
     }
+    case "subagentFallbacks:Explore":
+    case "subagentFallbacks:Plan":
+    case "subagentFallbacks:general-purpose": {
+      const agentType = id.slice("subagentFallbacks:".length);
+      const settings = loadSettings(ctx.cwd);
+      const current = settings.subagentFallbacks?.[agentType] ?? [];
+      const refs = await promptModelRefs(ctx, `${agentType} fallback chain — ordered, the FIRST eligible ref is written as the override (space to toggle, enter/tab to confirm)`, current);
+      if (refs === undefined) return;
+      const next = { ...(settings.subagentFallbacks ?? {}) };
+      if (refs.length > 0) next[agentType] = refs;
+      else delete next[agentType];
+      saveSettings("global", ctx.cwd, { subagentFallbacks: Object.keys(next).length > 0 ? next : undefined });
+      ctx.ui.notify(refs.length ? `${agentType} fallback chain saved: ${refs.join(" → ")} — applies to NEW pi sessions.` : `${agentType} fallback chain cleared — falls through to the legacy pin / strategy.`, "info");
+      return;
+    }
     case "subagentResolved":
       // Read-only (effective resolution row) — no editor; row just shows the
       // current effective subagent models. Treat as no-op.
@@ -980,6 +1018,7 @@ defineGoalRuntimeGlobal("resolveAuditorModel", { get: () => resolveAuditorModel 
 defineGoalRuntimeGlobal("openSettingsUI", { get: () => openSettingsUI });
 defineGoalRuntimeGlobal("promptSettingsMenu", { get: () => promptSettingsMenu });
 defineGoalRuntimeGlobal("promptModelRef", { get: () => promptModelRef });
+defineGoalRuntimeGlobal("promptModelRefs", { get: () => promptModelRefs });
 defineGoalRuntimeGlobal("handleSettingChoice", { get: () => handleSettingChoice });
 defineGoalRuntimeGlobal("observeModelChange", { get: () => observeModelChange });
 defineGoalRuntimeGlobal("observeTurnBoundaryModel", { get: () => observeTurnBoundaryModel });

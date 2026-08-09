@@ -39,7 +39,7 @@ import {
   WEDGE_ALERT_DEFAULT_MINUTES,
 } from "./goal-loop-backoff.ts";
 import type { Settings } from "./goal-settings.ts";
-import { resolveEffectiveSubagentModel } from "./goal-loop-subagents.ts";
+import { resolveEffectiveSubagentModel, KNOWN_PINNED_DEFAULT_AGENTS } from "./goal-loop-subagents.ts";
 
 // =================================================================
 // Pure row builder (testable + reusable from the headless fallback)
@@ -208,6 +208,19 @@ export function buildSettingsRows(
       description: "first recovery wait; backs off to 30m, 1h, 2h, 4h, 5h; automatic probes stop after 24h"
     },
   );
+
+  // ── Subagent fallback chains (v0.34.115) ──
+  for (const name of KNOWN_PINNED_DEFAULT_AGENTS) {
+    const chain = settings.subagentFallbacks?.[name] ?? [];
+    rows.push({
+      id: `subagentFallbacks:${name}`,
+      section: "subagents",
+      label: `${name} fallback chain`,
+      valueText: chain.length ? chain.join(" → ") : "none (uses pin or inherits)",
+      sourceText: src("subagentFallbacks"),
+      description: `ordered provider/model refs; the FIRST eligible ref in the chain is written as the ${name}.md override. Empty → falls through to subagentModelOverrides / subagentModelStrategy.`,
+    });
+  }
 
   // ── Auditor ──
   rows.push(

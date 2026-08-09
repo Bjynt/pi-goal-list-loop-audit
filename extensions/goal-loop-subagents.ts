@@ -283,16 +283,45 @@ export function syncSubagentModelOverrides(opts: {
 /** v0.25.6: effective model for an agent type, for the headless settings
  * display. Per-type override wins; inherit-parent falls to the session
  * model; agent-default means upstream's own resolution (Explore's haiku
- * pin for Explore, session model for the others). */
+ * pin for Explore, session model for the others).
+ * v0.34.115: subagentFallbacks[name] wins over per-type pin (the chain is
+ * explicit and ordered) — only when the chain is empty do we fall through
+ * to the legacy behavior. */
 export function resolveEffectiveSubagentModel(
   name: string,
-  settings: { subagentModelStrategy?: string; subagentModelOverrides?: Record<string, string> },
+  settings: { subagentModelStrategy?: string; subagentModelOverrides?: Record<string, string>; subagentFallbacks?: Record<string, string[]> },
   sessionModel?: string,
 ): string {
+  const chain = settings.subagentFallbacks?.[name];
+  if (chain && chain.length > 0) {
+    return `${chain.join(" → ")} (subagentFallbacks chain)`;
+  }
   const pin = settings.subagentModelOverrides?.[name];
   if (pin) return `${pin} (per-type pin)`;
   if ((settings.subagentModelStrategy ?? "inherit-parent") === "inherit-parent") {
     return sessionModel ? `${sessionModel} (inherits session)` : "(session model)";
   }
   return name === "Explore" ? "anthropic/claude-haiku-4-5 (upstream pin)" : "(agent default)";
+}
+
+/** v0.34.115: pure helper — choose the model ref to write into the
+ * subagent override .md given the configured chain, registry, and
+ * forbidden list. Returns the FIRST ref in the chain that is not forbidden
+ * and resolves against the registry. Used by syncSubagentModelOverrides
+ * when the per-agent subagentFallbacks chain is set; falls through to the
+ * legacy per-type pin / inherit-parent / agent-default behavior when the
+ * chain is empty. */
+export function resolveSubagentOverrideRef(
+  name: string,
+  chain: string[] | undefined,
+  resolve: (ref: string) => unknown | undefined,
+  isForbidden: (ref: string) => boolean,
+): string | undefined {
+  if (!chain || chain.length === 0) return undefined;
+  for (const ref of chain) {
+    if (isForbidden(ref)) continue;
+    if (!resolve(ref)) continue;
+    return ref;
+  }
+  return undefined;
 }

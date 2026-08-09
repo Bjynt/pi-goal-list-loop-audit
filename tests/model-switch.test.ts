@@ -129,16 +129,17 @@ test("v0.34.57: modelSwitch() builds the canonical ledger payload", () => {
   });
 });
 
-test("v0.34.57: isForbiddenModel matches gpt-5.5/sonnet/opus refs, case-insensitively, and ignores empty lists", () => {
-  assert.equal(DEFAULT_FORBIDDEN_MODELS.join(","), "gpt-5.5,sonnet,opus", "default policy forbids gpt-5.5/sonnet/opus");
-  assert.equal(isForbiddenModel("openai/gpt-5.5"), true);
-  assert.equal(isForbiddenModel("openrouter/openai/gpt-5.5"), true, "substring match against the full provider/id ref");
-  assert.equal(isForbiddenModel("anthropic/claude-sonnet-4-5"), true);
-  assert.equal(isForbiddenModel("anthropic/claude-opus-4-1"), true);
-  assert.equal(isForbiddenModel("ANTHROPIC/CLAUDE-OPUS-4-1"), true, "case-insensitive");
-  assert.equal(isForbiddenModel("openai/gpt-4.1"), false);
-  assert.equal(isForbiddenModel("minimax/MiniMax-M3"), false);
-  assert.equal(isForbiddenModel(undefined), false);
+test("v0.34.57: isForbiddenModel matches refs, case-insensitively; v0.34.115: empty default forbids nothing", () => {
+  assert.equal(DEFAULT_FORBIDDEN_MODELS.length, 0, "v0.34.115: empty default — no opinionated ban list ships to new users");
+  assert.equal(isForbiddenModel("openai/gpt-5.5"), false, "v0.34.115: empty default — gpt-5.5 is allowed by default");
+  assert.equal(isForbiddenModel("openrouter/openai/gpt-5.5"), false, "v0.34.115: empty default — substring match has nothing to match");
+  assert.equal(isForbiddenModel("anthropic/claude-sonnet-4-5"), false, "v0.34.115: empty default — sonnet allowed by default");
+  assert.equal(isForbiddenModel("openai/gpt-5.5", ["gpt-5.5", "sonnet", "opus"]), true, "explicit list still gates switches");
+  assert.equal(isForbiddenModel("anthropic/claude-opus-4-1", ["opus"]), true, "substring match against the full provider/id ref");
+  assert.equal(isForbiddenModel("ANTHROPIC/CLAUDE-OPUS-4-1", ["opus"]), true, "case-insensitive");
+  assert.equal(isForbiddenModel("openai/gpt-4.1", ["gpt-5.5"]), false);
+  assert.equal(isForbiddenModel("minimax/MiniMax-M3", ["gpt-5.5"]), false);
+  assert.equal(isForbiddenModel(undefined, ["gpt-5.5"]), false);
   assert.equal(isForbiddenModel("openai/gpt-5.5", []), false, "an empty forbidden list forbids nothing");
   assert.equal(isForbiddenModel("openai/gpt-5.5", ["sonnet"]), false, "custom list replaces the default");
 });
@@ -184,6 +185,8 @@ test("v0.34.57: the turn-boundary check ledgeres drift that arrives without a mo
 
 test("v0.34.57: the forbidden gate blocks a forbidden selection, emits forbidden_model_switch, and reverts", async () => {
   const cwd = tmpCwd();
+  fs.mkdirSync(`${cwd}/.pi-glla`, { recursive: true });
+  fs.writeFileSync(`${cwd}/.pi-glla/settings.json`, JSON.stringify({ forbiddenModels: ["gpt-5.5", "sonnet", "opus"] }));
   const ctx = ownerCtx(cwd);
   pi.modelSelections.length = 0;
   const previous = { provider: "anthropic", id: "claude-sonnet-4-5" };
@@ -203,7 +206,7 @@ test("v0.34.57: the forbidden gate blocks a forbidden selection, emits forbidden
 });
 
 test("v0.34.57: blockForbiddenModelSwitches off allows the switch but records the violation", async () => {
-  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({ blockForbiddenModelSwitches: false }));
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({ blockForbiddenModelSwitches: false, forbiddenModels: ["gpt-5.5", "sonnet", "opus"] }));
   const cwd = tmpCwd();
   const ctx = ownerCtx(cwd);
   pi.modelSelections.length = 0;
@@ -243,15 +246,15 @@ test("v0.34.93: isForbiddenModel flags sonnet/opus/gpt-5.5 refs the gate must sk
   assert.equal(isForbiddenModel("openai/gpt-4.1", forbidden), false);
 });
 
-test("v0.34.93: empty / undefined ref is never forbidden (the empty-list semantic)", () => {
+test("v0.34.93: empty / undefined ref is never forbidden (the empty-list semantic); v0.34.115: default is empty", () => {
   // Mirrors goal-loop-core.ts:isForbiddenModel: empty ref returns false.
   assert.equal(isForbiddenModel(undefined, ["sonnet"]), false);
   assert.equal(isForbiddenModel("", ["sonnet"]), false);
   // Empty forbidden list forbids nothing.
   assert.equal(isForbiddenModel("anthropic/claude-sonnet-4-5", []), false);
-  // Default forbidden list matches the policy-default.
-  assert.equal(isForbiddenModel("openai/gpt-5.5", DEFAULT_FORBIDDEN_MODELS), true);
-  assert.equal(isForbiddenModel("anthropic/claude-sonnet-4-5", DEFAULT_FORBIDDEN_MODELS), true);
+  // v0.34.115: empty default forbids nothing.
+  assert.equal(isForbiddenModel("openai/gpt-5.5", DEFAULT_FORBIDDEN_MODELS), false);
+  assert.equal(isForbiddenModel("anthropic/claude-sonnet-4-5", DEFAULT_FORBIDDEN_MODELS), false);
 });
 
 // v0.34.93 contract: the literal phrase "forbidden candidate is silently
@@ -283,6 +286,8 @@ test("v0.34.93: a forbidden candidate is silently skipped by the recovery gate (
 
 test("v0.34.57: turn-boundary drift into a forbidden model records the violation without blocking", async () => {
   const cwd = tmpCwd();
+  fs.mkdirSync(`${cwd}/.pi-glla`, { recursive: true });
+  fs.writeFileSync(`${cwd}/.pi-glla/settings.json`, JSON.stringify({ forbiddenModels: ["gpt-5.5", "sonnet", "opus"] }));
   const ctx = ownerCtx(cwd);
   pi.modelSelections.length = 0;
   await pi.fire("before_agent_start", { prompt: "baseline" }, ctx);
@@ -302,6 +307,8 @@ test("v0.34.57: turn-boundary drift into a forbidden model records the violation
 
 test("v0.34.57: /glla switchlog renders the last N entries of the model-switch trail", async () => {
   const cwd = tmpCwd();
+  fs.mkdirSync(`${cwd}/.pi-glla`, { recursive: true });
+  fs.writeFileSync(`${cwd}/.pi-glla/settings.json`, JSON.stringify({ forbiddenModels: ["gpt-5.5", "sonnet", "opus"] }));
   const ctx = ownerCtx(cwd);
   // Two plain switches, then a blocked forbidden one.
   await pi.fire(

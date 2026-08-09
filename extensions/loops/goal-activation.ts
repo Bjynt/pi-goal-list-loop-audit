@@ -238,6 +238,7 @@ import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "..
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
+  resolveSubagentOverrideRef,
   syncSubagentModelOverrides,
   type SubagentModelStrategy,
 } from "../goal-loop-subagents.js";
@@ -851,12 +852,30 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // v0.24.6: sync the pi-subagents model override (managed Explore.md) with
     // settings. Idempotent; applies to NEW sessions (pi-subagents registers
     // its agents at its own session start).
+    // v0.34.115: when subagentFallbacks[name] is set for an agent, the
+    // first eligible ref in the chain is written as the override model; the
+    // per-type pin (s.subagentModelOverrides[name]) still wins when the
+    // chain is empty (legacy behavior unchanged).
     try {
       const s = loadSettings(ctx.cwd);
+      const isForbidden = (ref: string) => isForbiddenModel(ref, s.forbiddenModels);
+      const resolve = (ref: string): unknown => {
+        const parts = (() => { const idx = ref.indexOf("/"); return idx > 0 ? { provider: ref.slice(0, idx), id: ref.slice(idx + 1) } : undefined; })();
+        if (!parts) return undefined;
+        try { return (ctx.modelRegistry as any)?.find?.(parts.provider, parts.id); } catch { return undefined; }
+      };
+      const fallbackOverrides: Record<string, string> = {};
+      if (s.subagentFallbacks) {
+        for (const [name, chain] of Object.entries(s.subagentFallbacks)) {
+          const picked = resolveSubagentOverrideRef(name, chain, resolve, isForbidden);
+          if (picked) fallbackOverrides[name] = picked;
+        }
+      }
+      const mergedOverrides = { ...(s.subagentModelOverrides ?? {}), ...fallbackOverrides };
       const sync = syncSubagentModelOverrides({
         agentDir: defaultAgentDir(),
         strategy: s.subagentModelStrategy ?? "inherit-parent",
-        overrides: s.subagentModelOverrides,
+        overrides: mergedOverrides,
       });
       for (const skip of sync.skipped) {
         ctx.ui.notify(`glla subagent override skipped [${skip.name}]: ${skip.reason}`, "warning");

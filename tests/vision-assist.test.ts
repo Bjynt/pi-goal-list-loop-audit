@@ -110,11 +110,12 @@ test("visionDescribeCommand builds the exact mmx call", () => {
 });
 
 test("routeVisionCheck: a forbidden target routes to mmx vision with blockedSwitch (preapproval gate fires)", () => {
-  const r = routeVisionCheck({ targetModelRef: "openai/gpt-5.5" });
+  const forbidden = ["gpt-5.5", "sonnet", "opus"];
+  const r = routeVisionCheck({ targetModelRef: "openai/gpt-5.5", forbiddenModels: forbidden });
   assert.equal(r.route, "mmx-vision");
   assert.equal((r as { blockedSwitch?: string }).blockedSwitch, "openai/gpt-5.5");
   // with an image the command is concrete
-  const r2 = routeVisionCheck({ targetModelRef: "anthropic/claude-sonnet-4-5", imagePath: "/tmp/ui.png", question: "What state is the UI in?" });
+  const r2 = routeVisionCheck({ targetModelRef: "anthropic/claude-sonnet-4-5", imagePath: "/tmp/ui.png", question: "What state is the UI in?", forbiddenModels: forbidden });
   assert.equal(r2.route, "mmx-vision");
   assert.ok((r2 as { command: string }).command.includes("/tmp/ui.png"));
   assert.equal((r2 as { blockedSwitch?: string }).blockedSwitch, "anthropic/claude-sonnet-4-5");
@@ -137,19 +138,23 @@ test("routeVisionCheck: no target model → mmx-vision by default", () => {
 
 // ── (d) the preapproval gate itself ────────────────────────────────────
 
-test("isForbiddenModel: the default policy forbids gpt-5.5/sonnet/opus, allows the session model", () => {
-  assert.ok(DEFAULT_FORBIDDEN_MODELS.includes("gpt-5.5"));
-  assert.ok(DEFAULT_FORBIDDEN_MODELS.includes("sonnet"));
-  assert.ok(DEFAULT_FORBIDDEN_MODELS.includes("opus"));
-  assert.equal(isForbiddenModel("openai/gpt-5.5", DEFAULT_FORBIDDEN_MODELS), true);
-  assert.equal(isForbiddenModel("anthropic/claude-sonnet-4-5", DEFAULT_FORBIDDEN_MODELS), true);
-  assert.equal(isForbiddenModel("anthropic/claude-opus-4-5", DEFAULT_FORBIDDEN_MODELS), true);
-  assert.equal(isForbiddenModel("minimax/minimax-m3", DEFAULT_FORBIDDEN_MODELS), false, "the session model is preapproved");
+test("isForbiddenModel: v0.34.115 default is empty — no model is forbidden by default", () => {
+  assert.equal(DEFAULT_FORBIDDEN_MODELS.length, 0, "v0.34.115: empty default — no opinionated ban list ships");
+  assert.equal(isForbiddenModel("openai/gpt-5.5", DEFAULT_FORBIDDEN_MODELS), false, "gpt-5.5 allowed by default");
+  assert.equal(isForbiddenModel("anthropic/claude-sonnet-4-5", DEFAULT_FORBIDDEN_MODELS), false, "sonnet allowed by default");
+  assert.equal(isForbiddenModel("anthropic/claude-opus-4-5", DEFAULT_FORBIDDEN_MODELS), false, "opus allowed by default");
+  assert.equal(isForbiddenModel("minimax/minimax-m3", DEFAULT_FORBIDDEN_MODELS), false, "session model always preapproved");
+  // explicit lists still gate:
+  const explicit = ["gpt-5.5", "sonnet", "opus"];
+  assert.equal(isForbiddenModel("openai/gpt-5.5", explicit), true);
+  assert.equal(isForbiddenModel("anthropic/claude-sonnet-4-5", explicit), true);
+  assert.equal(isForbiddenModel("anthropic/claude-opus-4-5", explicit), true);
 });
 
 test("visionAssistLedger builds the audit payload", () => {
-  const r = routeVisionCheck({ targetModelRef: "openai/gpt-5.5", imagePath: "/tmp/ui.png" });
-  const v = visionAssistLedger(r, { targetModelRef: "openai/gpt-5.5", imagePath: "/tmp/ui.png" }, "2026-08-07T00:00:00.000Z");
+  const forbidden = ["gpt-5.5", "sonnet", "opus"];
+  const r = routeVisionCheck({ targetModelRef: "openai/gpt-5.5", imagePath: "/tmp/ui.png", forbiddenModels: forbidden });
+  const v = visionAssistLedger(r, { targetModelRef: "openai/gpt-5.5", imagePath: "/tmp/ui.png", forbiddenModels: forbidden }, "2026-08-07T00:00:00.000Z");
   assert.equal(v.route, "mmx-vision");
   assert.equal(v.blockedSwitch, "openai/gpt-5.5");
   assert.equal(v.imagePath, "/tmp/ui.png");
@@ -198,6 +203,9 @@ test("visionAssist off → the directive is dropped from continuation prompts (g
 
 test("a forbidden switch at runtime records the vision_assist routing entry", async () => {
   const cwd = tmpCwd();
+  fs.mkdirSync(`${cwd}/.pi-glla`, { recursive: true });
+  // v0.34.115: default forbidden list is empty; tests must declare an explicit one.
+  fs.writeFileSync(`${cwd}/.pi-glla/settings.json`, JSON.stringify({ forbiddenModels: ["gpt-5.5", "sonnet", "opus"] }));
   __testOnlySetLastModelRef(undefined);
   const ctx = ownerCtx(cwd);
   await pi.fire(
@@ -218,7 +226,7 @@ test("a forbidden switch at runtime records the vision_assist routing entry", as
 test("visionAssist off → the forbidden switch records no vision_assist entry (gate still fires)", async () => {
   const cwd = tmpCwd();
   fs.mkdirSync(`${cwd}/.pi-glla`, { recursive: true });
-  fs.writeFileSync(`${cwd}/.pi-glla/settings.json`, JSON.stringify({ visionAssist: false }));
+  fs.writeFileSync(`${cwd}/.pi-glla/settings.json`, JSON.stringify({ visionAssist: false, forbiddenModels: ["gpt-5.5", "sonnet", "opus"] }));
   __testOnlySetLastModelRef(undefined);
   const ctx = ownerCtx(cwd);
   await pi.fire(
