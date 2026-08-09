@@ -1,5 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Goal, State } from "./goal-loop-core.js";
+import { appendLedger } from "./goal-loop-core.js";
 import { state } from "./goal-state.js";
 
 /** The three user-facing long-running surfaces. */
@@ -82,8 +83,15 @@ export async function chooseObjectiveConflict(
       `An objective is already active:\n${currentText}\n\nNew ${label(incoming)}: ${objective.slice(0, 180)}\nChoose how to proceed:`,
       options,
     );
-    if (selected === updateOption) return "update";
-    if (selected === replaceOption) return "replace";
+    if (selected === updateOption) {
+      appendLedger(ctx.cwd, "objective_conflict_resolved", { incoming, choice: "update", current: current.map((item) => item.id) });
+      return "update";
+    }
+    if (selected === replaceOption) {
+      appendLedger(ctx.cwd, "objective_conflict_resolved", { incoming, choice: "replace", current: current.map((item) => item.id) });
+      return "replace";
+    }
+    appendLedger(ctx.cwd, "objective_conflict_resolved", { incoming, choice: "cancel", current: current.map((item) => item.id) });
   } catch {
     // A stale/replaced UI is not consent to overwrite durable work.
   }

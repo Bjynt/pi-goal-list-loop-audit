@@ -1555,7 +1555,8 @@ function cmdSwitchlog(args: string, ctx: ExtensionContext): void {
  * the list is cleared, the loop record is wiped after a graceful stop.
  * History stays in .pi-glla; only the live state goes.
  */
-async function cmdGllaWipe(ctx: ExtensionContext): Promise<void> {
+async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise<void> {
+  if (!entryChecked && warnIfStaleAtEntry(ctx, "/glla wipe")) return;
   const g = state.goal;
   const live = g && (g.status === "active" || g.status === "paused" || g.status === "auditing");
   const memoryQueue = listQueue();
@@ -1867,7 +1868,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
     return;
   }
   if (/^wipe(?:\s|$)/.test(trimmed)) {
-    await cmdGllaWipe(ctx);
+    await cmdGllaWipe(ctx, true);
     return;
   }
   if (/^reset(?:\s|$)/.test(trimmed)) {
