@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 const GOAL_RUNTIME_SOURCE_FILES = [
   "extensions/loops/goal.ts",
