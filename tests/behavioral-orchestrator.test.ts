@@ -319,6 +319,45 @@ test("v0.34.119: /glla cancel also aborts an auditing list objective and clears 
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
 });
 
+test("v0.35.0: a conflicting /goal start offers update, replace, or cancel without silent overwrite", async () => {
+  __testOnlyResetStaleFlag();
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal({ objective: "current objective — done when current proof exists" }) });
+  const ctx = await freshSession(cwd, "reload");
+  const original = readState(cwd).goal as { id: string; objective: string };
+  ctx.ui.selectImpl = async (_title, options) => options.find((option) => option === "Update current objective");
+  await pi.command("goal", "start updated current objective — done when updated proof exists", ctx);
+  assert.equal((readState(cwd).goal as { id: string }).id, original.id, "update keeps the current objective identity");
+  assert.match((readState(cwd).goal as { objective: string }).objective, /updated current objective/);
+  assert.equal(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length, 0, "update does not archive the current objective");
+
+  ctx.ui.selectImpl = async (_title, options) => options.find((option) => option === "Cancel new objective");
+  await pi.command("goal", "start cancelled replacement — done when never starts", ctx);
+  assert.match((readState(cwd).goal as { objective: string }).objective, /updated current objective/);
+  assert.equal(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length, 0, "cancel preserves the current objective");
+
+  ctx.ui.selectImpl = async (_title, options) => options.find((option) => option === "Replace current objective");
+  await pi.command("goal", "start replacement objective — done when replacement proof exists", ctx);
+  assert.match((readState(cwd).goal as { objective: string }).objective, /replacement objective/);
+  assert.equal(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length, 1, "replace archives the prior objective");
+  assert.match(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8"), /objective_conflict_resolved/);
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
+
+test("v0.35.0: a cross-mode replacement confirms before replacing a live loop", async () => {
+  __testOnlyResetStaleFlag();
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  seedState(cwd, { loop: seedLoop({ active: true, target: "current loop target" }) });
+  const ctx = await freshSession(cwd, "reload");
+  ctx.ui.selectImpl = async (_title, options) => options.find((option) => option === "Replace current objective");
+  await pi.command("goal", "goal replacing loop — done when proof exists", ctx);
+  assert.match((readState(cwd).goal as { objective: string }).objective, /goal replacing loop/);
+  assert.equal((readState(cwd).loop as { active?: boolean } | undefined)?.active, false, "the replaced loop is no longer active");
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
+
 test("v0.35.0: one confirmed /glla wipe closes goal, queue, and terminal state without a second wipe", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
