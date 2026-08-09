@@ -12,7 +12,7 @@ import type { ExtensionContext, ExtensionAPI } from "@earendil-works/pi-coding-a
 import { state, replaceState } from "./goal-state.js";
 import {
   DEFAULT_TOKEN_LIMIT, Goal, ListItem, Status, appendLedger, archiveDir, archivedGoalPath, bumpGoalRevision,
-  computeListDepth, clearQueueItemFiles, deleteQueueItemFile, extractVerificationContract, formatAuditLog, formatGoalAuditHistory,
+  computeListDepth, clearQueueItemFiles, deleteQueueItemFile, extractVerificationContract, formatAuditLog, formatGoalAuditHistory, queueItemSidecarCount,
   formatListDepth, goalArgsNeedDrafting, ledgerPath, newGoalId, nowIso, parseListImport, parseListItemDeclaration,
   readAuditLog, readQueueFromDisk, routeGoalArgs, routeListText, sanitizeDisplayText, statusLabel,
   writeQueueItemFile, type ModeCommand, type State, LIST_MUTATING_SUBCOMMANDS, SETTINGS_MUTATING_ACTIONS,
@@ -1561,8 +1561,9 @@ async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise
   const live = g && (g.status === "active" || g.status === "paused" || g.status === "auditing");
   const memoryQueue = listQueue();
   const diskQueue = readQueueFromDisk(ctx.cwd);
+  const sidecarCount = queueItemSidecarCount(ctx.cwd);
   const orphanQueue = diskQueue.filter((item) => !memoryQueue.some((queued) => queued.id === item.id));
-  const n = memoryQueue.length + orphanQueue.length;
+  const n = Math.max(memoryQueue.length, sidecarCount, memoryQueue.length + orphanQueue.length);
   const loop = state.loop;
   if (!g && n === 0 && !loop) {
     ctx.ui.notify("glla state is already clean — no goal, no list, no loop.", "info");

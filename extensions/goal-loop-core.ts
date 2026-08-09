@@ -801,6 +801,11 @@ export function deleteQueueItemFile(cwd: string, id: string): boolean {
 
 /** v0.35.0: clear every queue sidecar, including orphaned files that are
  * absent from the in-memory queue after a stale handle or torn reload. */
+export function queueItemSidecarCount(cwd: string): number {
+  const dir = path.join(piGlaDir(cwd), "goals");
+  try { return fs.readdirSync(dir).filter((name) => name.endsWith(".queue.json")).length; } catch { return 0; }
+}
+
 export function clearQueueItemFiles(cwd: string): { removed: number; failed: string[] } {
   const dir = path.join(piGlaDir(cwd), "goals");
   let names: string[];

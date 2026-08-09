@@ -18,6 +18,7 @@ import {
   writeQueueItemFile,
   deleteQueueItemFile,
   clearQueueItemFiles,
+  queueItemSidecarCount,
   readQueueFromDisk,
   queueItemPath,
   piGlaDir,
@@ -113,8 +114,10 @@ test("clearQueueItemFiles: removes orphaned sidecars and is idempotent", () => {
   const cwd = mkTmp();
   writeQueueItemFile(cwd, mkItem("20260806080000-orphan1"));
   writeQueueItemFile(cwd, mkItem("20260806080000-orphan2"));
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "goals", "broken.queue.json"), "not json", "utf8");
+  assert.equal(queueItemSidecarCount(cwd), 3);
   const first = clearQueueItemFiles(cwd);
-  assert.equal(first.removed, 2);
+  assert.equal(first.removed, 3);
   assert.deepEqual(readQueueFromDisk(cwd), []);
   const second = clearQueueItemFiles(cwd);
   assert.deepEqual(second, { removed: 0, failed: [] });
