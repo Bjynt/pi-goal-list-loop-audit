@@ -87,3 +87,23 @@ All 1192 tests pass (up from 1188 in v0.34.116), 0 fail, 1 skip.
 - `tests/stale-api-terminal.test.ts` — 1 test renamed + updated to pin new pattern.
 - `tests/length-continue.test.ts` — 1 assertion updated to pin new pattern.
 - `CHANGELOG.md`, `package.json` — version bump to 0.34.117.
+
+## v0.34.119 correction: public SDK capability audit
+
+The v0.34.117 implementation claimed that `flags.extensionApi.newSession()` could
+perform the replacement. That was an invalid structural cast: the installed
+SDK's `ExtensionAPI` has no `newSession` member. Pi's public declaration exposes
+`newSession()` only on `ExtensionCommandContext`, while event handlers (including
+all autonomous send catches) receive plain `ExtensionContext`. The runtime
+runner confirms this split: `createContext()` has no session-replacement action;
+`createCommandContext()` adds it only for user command handlers.
+
+Therefore v0.34.119 removes the false `ExtensionAPI.newSession` path. The helper
+checks a future/host-specific command-capable context dynamically, but on the
+current public event context it returns false and the existing terminal park
+runs. The stale UI now says `/new`, not `/reload`: `/reload` shares the cached
+context on the field-observed compact wedge and is not a reliable escape.
+
+This is a pi-side API limitation, not silently claimed as fixed: fully automatic
+fresh-session creation from an autonomous extension event requires pi to expose
+a safe host-level session-replacement action to event handlers.

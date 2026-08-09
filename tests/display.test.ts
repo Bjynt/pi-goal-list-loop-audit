@@ -286,7 +286,7 @@ test("stale interrupted goal is visibly orphaned, not normally active", () => {
   const lines = buildWidgetLines({ goal: g, list: [{ id: "next", objective: "next", addedAt: "z" }] }, null, NOW)!;
   assert.match(lines[0]!, /⚠ .* · interrupted · /);
   assert.ok(lines.some((line) => line.includes("host session lost — waiting for fresh session_start")));
-  assert.ok(lines.some((line) => line.includes("/reload to rebind") && line.includes("/list resume")));
+  assert.ok(lines.some((line) => line.includes("/new to rebind") && line.includes("/list resume")));
   assert.ok(!lines.some((line) => /· active ·/.test(line)), "stale work must not look normally active");
 });
 
@@ -828,6 +828,24 @@ test("auditor widget shows concrete worker observations without exposing think b
     lastActivityAt: NOW - 1_000,
   }, NOW)!;
   assert.doesNotMatch(streamedThink.join("\n"), /private streamed reasoning/);
+});
+
+test("v0.34.119: repeated auditor tool telemetry does not render a tool-name history", () => {
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-dedup" } });
+  const lines = buildWidgetLines({ goal: g, list: [] }, {
+    phase: "tool_executing",
+    currentTool: "read",
+    currentToolStartedAt: NOW - 2_000,
+    toolCalls: [
+      { name: "read", argsPrefix: "{}", finishedAt: NOW - 4_000 },
+      { name: "read", argsPrefix: "{}", finishedAt: NOW - 3_000 },
+      { name: "read", argsPrefix: "{}", finishedAt: NOW - 2_000 },
+    ],
+    lastActivityAt: NOW - 1_000,
+  }, NOW)!;
+  const toolLines = lines.filter((line) => /tool:|last tool:/.test(line));
+  assert.equal(toolLines.length, 1, "the card shows one current observation, not all repeated tool calls");
+  assert.match(toolLines[0]!, /tool: read/);
 });
 
 test("v0.34.66: auditor stream is SILENT by default — no live tail, muted note instead", () => {

@@ -590,7 +590,7 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
       mainModelRecoveryActive: mainModelRecoveryActive(),
     }),
   });
-  const guidance = "pi invalidated this session's extension handle without delivering a replacement session. glla stopped stale sends and kept the work safe in .pi-glla/. A fresh session_start will resume it; if pi does not create one, restart pi normally and glla will restore the saved work.";
+  const guidance = "pi invalidated this session's extension handle without delivering a replacement session. glla stopped stale sends and kept the work safe in .pi-glla/. Use /new to create a fresh context; its session_start will resume the work. If /new does not create one, restart pi normally and glla will restore the saved work.";
   // v0.35.x: an orphaned detached completion audit is not allowed to leave
   // the durable goal in AUDITING. Release the MAIN-side wait immediately and
   // preserve the exact claim as infrastructure/no-verdict recovery debt.
@@ -946,7 +946,7 @@ function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
   }
   appendLedger(ctx.cwd, "extension_api_stale", { where: `entry probe (${what})` });
   ctx.ui.notify(
-    `glla: this session's extension handle is stale (pi session replacement) — ${what} can't send continuations in this process. State is safe in .pi-glla/. A fresh session_start will resume it; if pi does not create one, restart pi normally and restore the saved work.`,
+    `glla: this session's extension handle is stale (pi session replacement) — ${what} can't send continuations in this process. State is safe in .pi-glla/. Use /new to create a fresh context; its session_start will resume it. If /new does not create one, restart pi normally and restore the saved work.`,
     "warning",
   );
   // Entry probes never mutate the terminal. The only recovery boundary is

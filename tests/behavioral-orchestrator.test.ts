@@ -284,6 +284,54 @@ test("v0.35.x: list cancel archives the active item, does not relabel it as acti
   assert.match(ctx.ui.notifies.at(-1)?.message ?? "", /^Last: \[list\].*\(aborted\)/, "/list show is truthful after cancellation");
 });
 
+test("v0.34.119: /glla cancel archives the active list item and drops the waiting objective queue", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    goal: seedGoal({ policy: "list", objective: "glla cancel objective — done when pinned" }),
+    list: [
+      { id: "glla-waiting-1", objective: "hidden waiting objective", addedAt: new Date().toISOString() },
+    ],
+  });
+  const ctx = await freshSession(cwd, "startup");
+  await tick();
+  await pi.command("glla", "cancel", ctx);
+  const after = readState(cwd) as unknown as { goal: { status: string; stopReason?: string }; list?: unknown[] };
+  assert.equal(after.goal.status, "aborted");
+  assert.equal(after.goal.stopReason, "list cancelled");
+  assert.deepEqual(after.list, [], "glla cancel cancels the objective rather than leaving waiting list work behind");
+  assert.equal(ledgerEvent(cwd, "list_cancelled").value.dropped, 1);
+  assert.ok(ctx.ui.matching("List cancelled").length >= 1);
+});
+
+test("v0.34.119: /glla cancel also aborts an auditing list objective and clears its waiting queue", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    goal: seedGoal({
+      policy: "list",
+      status: "auditing",
+      objective: "auditing list objective — done when pinned",
+      pendingCompletion: {
+        completionSummary: "stored claim",
+        verificationSummary: "stored evidence",
+        at: new Date().toISOString(),
+        phase: "running",
+        attemptId: "audit-cancel-attempt",
+      } as any,
+    }),
+    list: [{ id: "audit-waiting-1", objective: "waiting after audit", addedAt: new Date().toISOString() }],
+  });
+  const ctx = await freshSession(cwd, "startup");
+  await tick();
+  await pi.command("glla", "cancel", ctx);
+  const after = readState(cwd) as unknown as { goal: { status: string; pendingCompletion?: unknown }; list?: unknown[] };
+  assert.equal(after.goal.status, "aborted");
+  assert.equal(after.goal.pendingCompletion, undefined, "cancel releases the detached claim");
+  assert.deepEqual(after.list, []);
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
+
 test("v0.35.x: /list tweak amends a paused list item without activating it or changing waiting entries", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
@@ -1036,7 +1084,7 @@ test("T2b: stale before compaction → no late rebind, refire, or misleading act
   assert.match(status, /interrupted — stale handle/);
   const widget = (ctx.ui.widgets["pi-glla"] as string[] | undefined) ?? [];
   assert.ok(widget.some((line) => line.includes("host session lost")), "widget identifies the orphaned host session");
-  assert.ok(widget.some((line) => line.includes("/reload to rebind")), "widget gives lifecycle recovery guidance");
+  assert.ok(widget.some((line) => line.includes("/new to rebind")), "widget gives lifecycle recovery guidance");
   assert.notEqual(after, before, "terminal marker and ledger are durably written");
 });
 
@@ -2109,6 +2157,30 @@ test("goal-start notify has no (id: …) suffix (v0.28.24 source pin)", () => {
   }
 });
 
+test("v0.34.119: impossible completion counts reach the durable auditor claim before the worker starts", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = writeFakeAuditor(cwd, "approved", 250);
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    await pi.command("goal", "impossible-count claim target — done when pinned", ctx);
+    await tick();
+    await pi.runTool("complete_goal", {
+      completionSummary: "bun test → 29/28 pass, 0 fail — all work is complete.",
+      verificationSummary: "The fake auditor checks the claim.",
+    }, ctx);
+    const claimed = readState(cwd).goal as { status: string; pendingCompletion?: { completionSummary?: string } };
+    assert.equal(claimed.status, "auditing");
+    assert.match(claimed.pendingCompletion?.completionSummary ?? "", /Counts appear inconsistent: 29 passed vs 28 total/);
+    await waitUntil(() => (readState(cwd).goal as { status?: string } | null)?.status === "complete");
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  } finally {
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
 test("v0.34.22: complete_goal returns while a detached auditor finishes and archives approval", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
@@ -2145,6 +2217,45 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
 });
 
 // ---- v0.34.91: the end-of-goal voice carries the recap (what happened) ----
+
+test("v0.34.119: auditor-approved list completion archives the item and activates exactly the next queue item", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = writeFakeAuditor(cwd, "approved", 0);
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    const added = await pi.runTool("list_add", {
+      items: ["first queued objective — done when first proof exists", "second queued objective — done when second proof exists"],
+    }, ctx);
+    assert.match(added.content[0]!.text, /item|active/i);
+    const before = readState(cwd).goal as { id: string; objective: string; status: string };
+    assert.match(before.objective, /first queued objective/);
+    const firstId = before.id;
+
+    await pi.runTool("complete_goal", {
+      completionSummary: "First queued objective is complete with the required proof.",
+      verificationSummary: "The fake auditor verifies the first proof.",
+    }, ctx);
+    await waitUntil(() => {
+      const current = readState(cwd).goal as { objective?: string; status?: string } | null;
+      return current?.status === "active" && current.objective?.includes("second queued objective") === true;
+    });
+
+    const after = readState(cwd) as unknown as { goal: { objective: string; status: string }; list?: unknown[] };
+    assert.match(after.goal.objective, /second queued objective/);
+    assert.equal(after.goal.status, "active", "the next item is genuinely active, not merely left queued");
+    assert.equal(after.list?.length ?? 0, 0, "the queue is empty after activating its final item");
+    assert.ok(fs.existsSync(path.join(cwd, ".pi-glla", "archive", `${firstId}.md`)), "the first item has a durable archive");
+    const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+    assert.match(ledger, /"goal_archived"/);
+    assert.match(ledger, /"status":"complete"/);
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  } finally {
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
 
 test("v0.34.91: detached approval notify carries the agent's completion recap, not process boilerplate", async () => {
   __testOnlyResetStaleFlag();

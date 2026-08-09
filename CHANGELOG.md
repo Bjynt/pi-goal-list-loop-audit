@@ -1,6 +1,24 @@
 # Changelog
 
 ## Unreleased
+### 0.34.119 — note.md triage: objective cancel, summary canonicalization, truthful stale-ctx recovery
+  (v0.34.119, audit/NOTE-REMAINING-TRIAGE-2026-08-09.md). Re-audited
+  every item in `/home/dracon/chat/pi/note.md` and added regression coverage.
+  `complete_goal` now validates impossible pass-count summaries BEFORE
+  persisting the pending detached-audit claim, so the canonical warning
+  reaches the auditor and all retries. `/glla cancel` now cancels the
+  active objective: an active list item plus its waiting queue; standalone
+  goals and loops keep their own paths. Approved list completion now has an
+  integration test proving durable archive + `goal_archived(status=complete)`
+  + exactly-one next-item activation. Corrected stale-ctx UX: pi's public
+  event `ExtensionContext` does not expose `newSession`, and `ExtensionAPI`
+  never did; v0.34.117's cast could not auto-recover on the real SDK. The
+  helper now checks the actual context capability, never claims automatic
+  recovery when absent, and stale guidance says `/new` rather than the
+  misleading `/reload`. The note audit records the remaining pi-side API
+  limitation, external-review fetch results, non-reproducible refresh icon
+  issue, and current auditor/stacked-thread evidence.
+
 ### 0.34.118 — dedicated Backups segment + forbidden-aware ordered picker
   (v0.34.118, audit/BACKUPS-PICKER-2026-08-09.md). `/glla settings`
   now has a dedicated `Backups` segment rather than burying main-model

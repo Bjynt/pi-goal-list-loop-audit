@@ -201,49 +201,46 @@ export function observeCompactFailure(ctx: ExtensionContext, error: string | und
   return true;
 }
 
-/** v0.34.117: when pi's compact subsystem throws "This extension ctx is
+/** v0.34.119: when pi's compact subsystem throws "This extension ctx is
  * stale after session replacement or reload", the cached ctx in pi's
  * compact path is dead. /reload shares the same ctx and does not help;
  * only /new clears the cache. The user observed this exact symptom
- * (capture-anime-girls 2026-08-09 09:53, ai-auto-writer 2026-08-09 fields)
- * — typing /new was the only escape. This helper automates the recovery:
- * if the active pi context exposes a fresh-session entrypoint, call it
- * and return true; the new session_start will rehydrate the goal from
- * disk just like a manual /new would. When the entrypoint is missing
- * (older pi builds), or the call throws, return false and the caller
- * falls back to the legacy terminal park.
+ * (capture-anime-girls 2026-08-09 09:53, ai-auto-writer 2026-08-09 fields).
  *
- * The signature is `where: string` so every call site emits a distinct
- * `fresh_session_recovery_triggered` ledger row — the recovery path MUST
- * be observable so a future field regression can see when auto-recovery
- * fired vs. when the user had to /new manually. */
+ * Important SDK boundary: event handlers receive ExtensionContext, while
+ * `newSession()` is public only on ExtensionCommandContext (user command
+ * handlers). ExtensionAPI does NOT expose newSession. The old v0.34.117
+ * implementation incorrectly cast ExtensionAPI and therefore never fired
+ * against the real SDK. We now check the context capability honestly:
+ * newer hosts that expose a command-capable context can self-heal; the
+ * current public event API returns false and the caller uses the terminal
+ * park with an explicit `/new` instruction instead of claiming recovery.
+ *
+ * The signature is `where: string` so every attempt/skip is observable. */
 export function attemptFreshSessionRecovery(ctx: ExtensionContext, where: string): boolean {
-  // flags is set by createGoalRecovery(flags, d). If the factory has not
-  // been invoked yet (a module-load-time probe before goal.ts reaches
-  // its createGoalRecovery call), fall back to the legacy terminal
-  // path — the factory initializes the api on the next event.
-  if (typeof flags === "undefined") {
-    appendLedger(ctx.cwd, "fresh_session_recovery_skipped", { from: where, reason: "recovery factory not initialized yet" });
-    return false;
-  }
-  const api = flags.extensionApi as (ExtensionAPI & { newSession?: () => unknown | Promise<unknown> }) | null;
-  if (!api || typeof api.newSession !== "function") {
-    appendLedger(ctx.cwd, "fresh_session_recovery_skipped", { from: where, reason: "no newSession entrypoint on extension api" });
+  type FreshSessionContext = ExtensionContext & {
+    newSession?: () => unknown | Promise<unknown>;
+  };
+  const freshCtx = ctx as FreshSessionContext;
+  if (typeof freshCtx.newSession !== "function") {
+    appendLedger(ctx.cwd, "fresh_session_recovery_skipped", {
+      from: where,
+      reason: "event context has no newSession; pi exposes it only on ExtensionCommandContext",
+    });
     return false;
   }
   try {
-    const result = api.newSession();
+    const result = freshCtx.newSession();
     if (result && typeof (result as Promise<unknown>).then === "function") {
-      // Best-effort: the new_session events will fire async; we don't
-      // await here because the caller's goal already triggered the stale
-      // ctx and we want to return immediately so the terminal park is
-      // skipped. The session_start handler will rehydrate from disk.
+      // The new session_start rehydrates the goal from disk. Do not await
+      // here: this send already failed on the stale context, and waiting on
+      // the replacement would touch the invalidated context again.
       (result as Promise<unknown>).catch((err) => {
         appendLedger(ctx.cwd, "fresh_session_recovery_failed", { from: where, error: err instanceof Error ? err.message : String(err) });
       });
     }
     appendLedger(ctx.cwd, "fresh_session_recovery_triggered", { from: where });
-    ctx.ui.notify("glla: detected a stale ctx — auto-recovering with a fresh session (no /new needed).", "info");
+    ctx.ui.notify("glla: stale ctx detected — host supplied a fresh-session capability; rehydrating the goal now.", "info");
     return true;
   } catch (err) {
     appendLedger(ctx.cwd, "fresh_session_recovery_failed", { from: where, error: err instanceof Error ? err.message : String(err) });
@@ -251,11 +248,10 @@ export function attemptFreshSessionRecovery(ctx: ExtensionContext, where: string
   }
 }
 
-/** v0.34.117: a stale `isStaleApiError` from any send path SHOULD first
- * try the fresh-session auto-recovery; only fall back to the terminal
- * park if the recovery is unavailable. The user-reported symptom
- * (Screenshot_20260809_095353) was that only /new cleared the locked
- * ctx — this helper makes /new automatic. */
+/** v0.34.119: a stale `isStaleApiError` from any send path tries the
+ * host capability first; only fall back to the terminal park when the
+ * public event context cannot replace the session. The current SDK takes
+ * that fallback, so the user-facing guidance names `/new` honestly. */
 export function autoRecoverFromStaleCtxOrTerminal(ctx: ExtensionContext, where: string): boolean {
   if (attemptFreshSessionRecovery(ctx, where)) return true;
   // Fallback: the legacy terminal park. The existing call sites

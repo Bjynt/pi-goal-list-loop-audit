@@ -229,7 +229,7 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
     // v0.28.1 (S3): the goal is persisted — mark the interrupt so the next
     // fresh session LOADS it (held by default since v0.28.21), and tell the truth instead of "starting now".
     updateGoal({ interruptedAt: nowIso(), interruptedReason: "created in a stale session" }, ctx);
-    ctx.ui.notify(`Goal saved: ${shortObj(goal.objective)} — safe in .pi-glla/, but this stale process can't send continuations. A fresh session_start will resume it; if no replacement arrives, restart pi normally, then ${activeGoalSurfaceCommand("resume")} if autoresume is off.`, "warning");
+    ctx.ui.notify(`Goal saved: ${shortObj(goal.objective)} — safe in .pi-glla/, but this stale process can't send continuations. Use /new to create a fresh context; its session_start will resume it. If /new does not create one, restart pi normally, then ${activeGoalSurfaceCommand("resume")} if autoresume is off.`, "warning");
     return;
   }
   ctx.ui.notify(`Goal started: ${shortObj(goal.objective)} — the auditor will verify on completion.`, "info");
@@ -1045,7 +1045,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
   // had to know to combine /goal cancel + /list clear.
   if (sub === "cancel") {
     const waiting = listQueue().length;
-    const activeIsListItem = state.goal?.policy === "list" && (state.goal.status === "active" || state.goal.status === "paused");
+    const activeIsListItem = state.goal?.policy === "list" && (state.goal.status === "active" || state.goal.status === "paused" || state.goal.status === "auditing");
     if (waiting === 0 && !activeIsListItem) {
       ctx.ui.notify(`No list to cancel — nothing waiting, and the active goal (if any) isn't a list item. ${activeGoalSurfaceCommand("cancel")} aborts a standalone goal.`, "info");
       return;
@@ -1676,15 +1676,24 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
 }
 
 /**
- * v0.28.32: /glla cancel — cancel the ONE live thing, uniformly: a goal or
- * list item is archived as aborted (its queue is untouched), an active or
- * held loop is stopped. Same outcome shape regardless of hidden type —
- * the user's caveat ("this sucks if one command doesn't work for others")
- * is why /list cancel (item + drop queue) and /glla wipe (nuke all)
- * remain the power verbs instead of being folded in.
+ * v0.34.119: /glla cancel means cancel the active OBJECTIVE, not merely
+ * whichever one live artifact happens to win a type-blind dispatch. For a
+ * list objective that means the active list item plus every waiting item
+ * (the same durable semantics as /list cancel). A standalone goal still
+ * archives only itself; a loop with no goal is stopped separately.
+ *
+ * `/list cancel` remains the explicit list-scoped spelling and `/glla wipe`
+ * remains the destructive all-state spelling. The important distinction is
+ * that `/glla cancel` no longer leaves a list objective half-alive in the
+ * queue after aborting only its current item.
  */
 async function cmdGllaCancel(ctx: ExtensionContext): Promise<void> {
   const g = state.goal;
+  const hasListObjective = listQueue().length > 0 || g?.policy === "list";
+  if (hasListObjective) {
+    await cmdList("cancel", ctx);
+    return;
+  }
   if (g && (g.status === "active" || g.status === "paused" || g.status === "auditing")) {
     await cmdCancel(ctx);
     return;
@@ -1693,7 +1702,7 @@ async function cmdGllaCancel(ctx: ExtensionContext): Promise<void> {
     await cmdLoop("stop", ctx);
     return;
   }
-  ctx.ui.notify("Nothing to cancel — no active/paused goal/list-item, no loop. Queued list items: /list clear; everything: /glla wipe.", "info");
+  ctx.ui.notify("Nothing to cancel — no active/paused goal/list-item, no loop. Queued list items: /list cancel; everything: /glla wipe.", "info");
 }
 
 function cmdAudits(args: string, ctx: ExtensionContext): void {

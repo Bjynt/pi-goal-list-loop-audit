@@ -47,7 +47,7 @@ test("S3 probe: side-effect-free getSessionName() probe caches the positive", ()
 
 test("S3 warn helper: honest 'state is safe' messaging + ledger", () => {
   assert.match(SRC, /function warnIfStaleAtEntry\(ctx: ExtensionContext, what: string\): boolean/);
-  assert.match(SRC, /State is safe in \.pi-glla\/\. A fresh session_start will resume it; if pi does not create one, restart pi normally and restore the saved work\./);
+  assert.match(SRC, /State is safe in \.pi-glla\/\. Use \/new to create a fresh context; its session_start will resume it\. If \/new does not create one, restart pi normally and restore the saved work\./);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "extension_api_stale", \{ where: `entry probe \(\$\{what\}\)` \}\)/);
 });
 
@@ -66,7 +66,7 @@ test("S3: probes wired at cmdSet / cmdResume / cmdList / propose_goal_draft entr
 
 test("S3: stale creation marks the interrupt and tells the truth (no 'starting now' lie)", () => {
   assert.match(CMDS, /updateGoal\(\{ interruptedAt: nowIso\(\), interruptedReason: "created in a stale session" \}, ctx\)/);
-  assert.match(CMDS, /safe in \.pi-glla\/, but this stale process can't send continuations\. A fresh session_start will resume it; if no replacement arrives, restart pi normally/);
+  assert.match(CMDS, /safe in \.pi-glla\/, but this stale process can't send continuations\. Use \/new to create a fresh context; its session_start will resume it\. If \/new does not create one, restart pi normally/);
 });
 
 test("S1: stale resume persists active+marker, skips the misleading notify and the doomed send", () => {
@@ -90,7 +90,7 @@ test("S2 (v0.28.21): the 0.28.3 interrupt exemption is SUPERSEDED — only autor
 
 test("S1/S2: widget surfaces the interrupt on ACTIVE goals", () => {
   assert.match(DISPLAY, /if \(g\.interruptedAt\)/);
-  assert.match(DISPLAY, /⚠ interrupted — stale handle · \/reload \(or a fresh session_start\) rebinds/);
+  assert.match(DISPLAY, /⚠ interrupted — stale handle · \/new \(or a fresh session_start\) rebinds/);
 });
 
 test("E6: drafting-seed send failure is loud and stale-aware (was silent)", () => {

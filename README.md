@@ -46,7 +46,7 @@ Five top-level commands — `/goal`, `/list`, `/loop`, `/glla`, `/review`:
 /goal verify                       # queue a detached auditor for the current goal — no agent turn (v0.28.27, renamed from /goal audit in v0.29.8)
 /goal tweak "<new objective>"      # edit in place (Confirm dialog)
 /goal archive                      # archived goals, newest first
-/glla                               # settings UI table · arguments are actions: /glla status · /glla stats · /glla audits [N|full] · /glla postaudit · /glla wipe (nuclear reset, Confirm-gated)
+/glla                               # settings UI table · actions include /glla status · /glla stats · /glla audits [N|full] · /glla cancel (cancel the active objective) · /glla postaudit · /glla wipe (nuclear reset, Confirm-gated)
 /list fix the login bug, add dark mode, write docs   # dump it — the agent shapes it into items, one Confirm
 /list plan.md                      # file detected → bulk import, one Confirm (sisyphus/Ralph style)
 /list <paste a checklist>          # multi-line paste → same batch flow

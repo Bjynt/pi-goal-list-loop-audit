@@ -1,35 +1,64 @@
-// pi-goal-list-loop-audit — v0.34.117
+// pi-goal-list-loop-audit — v0.34.119
 // tests/fresh-session-auto-recovery.test.ts
 //
-// Pins the v0.34.117 contract: when pi's compact subsystem throws the
-// stale signature, the cached ctx is dead — only /new clears it (pi
-// error: "For newSession, fork, and switchSession, move post-replacement
-// work into withSession and use the ctx passed to withSession. For
-// reload, do not use the old ctx after await ctx.reload()").
-// The user observed this exact wedge (Screenshot_20260809_095353 — only
-// /new cleared the locked ctx). This contract pins the helper that
-// automates /new so a future regression either fails or removes the
-// recovery on purpose.
+// Pins the stale-ctx recovery boundary. Pi's compact subsystem throws a
+// stale signature and only /new clears the cached context. The public event
+// ExtensionContext does NOT expose newSession; that method exists only on
+// ExtensionCommandContext. v0.34.117 incorrectly cast ExtensionAPI and
+// claimed automatic recovery, but the real SDK has no ExtensionAPI.newSession.
+// v0.34.119 must be honest: use a future command-capable context if pi exposes
+// one, otherwise fall back to the terminal park with /new guidance.
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { attemptFreshSessionRecovery } from "../extensions/goal-recovery.ts";
 
 const GOAL_RECOVERY_SRC = fs.readFileSync("extensions/goal-recovery.ts", "utf-8");
 const GOAL_CONTINUATION_SRC = fs.readFileSync("extensions/goal-continuation.ts", "utf-8");
 const GOAL_LOOP_SRC = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
 
-test("attemptFreshSessionRecovery: helper is exported from goal-recovery.ts and reads extensionApi from the recovery factory flags", () => {
+test("attemptFreshSessionRecovery: helper checks the actual context capability, not ExtensionAPI", () => {
   assert.match(GOAL_RECOVERY_SRC, /export function attemptFreshSessionRecovery\(ctx: ExtensionContext, where: string\): boolean/);
-  assert.match(GOAL_RECOVERY_SRC, /flags\.extensionApi/, "reads the extension api through the createGoalRecovery factory flags (one-way, not a direct import from goal.ts)");
-  assert.match(GOAL_RECOVERY_SRC, /api\.newSession\(\)/, "calls the newSession entrypoint on the extension api (programmatic equivalent of /new)");
-  assert.match(GOAL_RECOVERY_SRC, /fresh_session_recovery_triggered/, "ledger event when the recovery fires so future regressions are observable");
-  assert.match(GOAL_RECOVERY_SRC, /fresh_session_recovery_skipped/, "ledger event when the entrypoint is missing so the manual /new path is observable");
+  assert.match(GOAL_RECOVERY_SRC, /const freshCtx = ctx as FreshSessionContext/);
+  assert.doesNotMatch(GOAL_RECOVERY_SRC, /api\.newSession\(\)/, "ExtensionAPI has no public newSession method");
+  assert.match(GOAL_RECOVERY_SRC, /freshCtx\.newSession\(\)/, "forward-compatible call only when the host supplies a command-capable context");
+  assert.match(GOAL_RECOVERY_SRC, /fresh_session_recovery_triggered/, "ledger event when a host actually exposes the recovery capability");
+  assert.match(GOAL_RECOVERY_SRC, /fresh_session_recovery_skipped/, "ledger event when the event context cannot replace the session");
 });
 
-test("attemptFreshSessionRecovery: returns false when the newSession entrypoint is missing (so the legacy terminal park runs)", () => {
-  assert.match(GOAL_RECOVERY_SRC, /typeof api\.newSession !== "function"/);
+test("attemptFreshSessionRecovery: returns false when the event context lacks newSession", () => {
+  assert.match(GOAL_RECOVERY_SRC, /typeof freshCtx\.newSession !== "function"/);
+  assert.match(GOAL_RECOVERY_SRC, /event context has no newSession; pi exposes it only on ExtensionCommandContext/);
   assert.match(GOAL_RECOVERY_SRC, /return false;/);
+});
+
+test("runtime: current event-shaped context skips because pi does not expose newSession there", () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "glla-stale-event-"));
+  const notices: string[] = [];
+  const ctx = { cwd, ui: { notify: (message: string) => notices.push(message) } } as any;
+  assert.equal(attemptFreshSessionRecovery(ctx, "test-event-context"), false);
+  assert.equal(notices.length, 0, "the helper leaves the terminal path responsible for the single user-facing warning");
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.match(ledger, /event context has no newSession/);
+});
+
+test("runtime: a future command-capable host context is actually invoked and ledgered", () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "glla-stale-command-"));
+  const notices: string[] = [];
+  let called = 0;
+  const ctx = {
+    cwd,
+    ui: { notify: (message: string) => notices.push(message) },
+    newSession: () => { called++; return undefined; },
+  } as any;
+  assert.equal(attemptFreshSessionRecovery(ctx, "test-command-context"), true);
+  assert.equal(called, 1);
+  assert.equal(notices.length, 1);
+  const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.match(ledger, /fresh_session_recovery_triggered/);
 });
 
 test("every stale-ctx send site routes through attemptFreshSessionRecovery before falling back to goStaleTerminal", () => {
@@ -50,6 +79,8 @@ test("every stale-ctx send site routes through attemptFreshSessionRecovery befor
   }
 });
 
-test("attemptFreshSessionRecovery: notify surfaces the no-/new-needed message", () => {
-  assert.match(GOAL_RECOVERY_SRC, /auto-recovering with a fresh session \(no \/new needed\)/);
+test("stale display guidance names /new, not /reload, for the actual cached-ctx wedge", () => {
+  const display = fs.readFileSync("extensions/goal-loop-display.ts", "utf-8");
+  assert.match(display, /stale handle · \/new \(or a fresh session_start\) rebinds/);
+  assert.doesNotMatch(display, /stale handle · \/reload \(or a fresh session_start\) rebinds/);
 });

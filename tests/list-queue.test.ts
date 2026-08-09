@@ -185,7 +185,7 @@ test("v0.28.33: /glla wipe — renamed from reset (too close to /glla resume); r
   // the typo trap: /glla reset redirects WITHOUT executing:
   assert.match(SRC, /\/glla reset is now \/glla wipe \(renamed — too close to \/glla resume\)\. Nothing was done\./);
 });
-test("v0.28.32: /glla resume + /glla cancel — type-blind verbs over the ONE live thing", () => {
+test("v0.34.119: /glla cancel cancels the whole list objective, while standalone goals/loops keep their own paths", () => {
   const SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   assert.match(SRC, /if \(\/\^resume\(\?:\\s\|\$\)\/\.test\(trimmed\)\) \{/);
   assert.match(SRC, /if \(\/\^cancel\(\?:\\s\|\$\)\/\.test\(trimmed\)\) \{/);
@@ -193,9 +193,15 @@ test("v0.28.32: /glla resume + /glla cancel — type-blind verbs over the ONE li
   assert.match(SRC, /async function cmdGllaCancel\(ctx: ExtensionContext\): Promise<void>/);
   // paused-goal + held-loop ambiguity → decision picker (v0.28.23 pattern):
   assert.match(SRC, /ctx\.ui\.select\("Two things can resume — which one\?"/);
-  // cancel is uniform: live goal/list item → cmdCancel; any loop → cmdLoop stop:
+  // v0.34.119: a list objective routes through the whole-list cancellation
+  // path, so the waiting queue cannot survive as a hidden continuation.
   const cancelIdx = SRC.indexOf("async function cmdGllaCancel");
-  assert.match(SRC.slice(cancelIdx), /await cmdCancel\(ctx\);\s*\n\s*return;\s*\n\s*}\s*\n\s*if \(state\.loop\) \{\s*\n\s*await cmdLoop\("stop", ctx\);/);
+  const cancel = SRC.slice(cancelIdx);
+  assert.match(cancel, /const hasListObjective = listQueue\(\)\.length > 0 \|\| g\?\.policy === "list";/);
+  assert.match(cancel, /if \(hasListObjective\) \{\s*\n\s*await cmdList\("cancel", ctx\);/);
+  assert.match(cancel, /if \(g && \(g\.status === "active" \|\| g\.status === "paused" \|\| g\.status === "auditing"\)\)/);
+  assert.match(cancel, /await cmdCancel\(ctx\);/);
+  assert.match(cancel, /await cmdLoop\("stop", ctx\);/);
   // empty states guide to the typed verbs / power verbs:
   assert.match(SRC, /Nothing to resume — no paused goal\/list-item, no held loop\./);
   assert.match(SRC, /Nothing to cancel — no active\/paused goal\/list-item, no loop\./);

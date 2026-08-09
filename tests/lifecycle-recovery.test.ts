@@ -248,5 +248,5 @@ test("v0.34.54: source — read-only surfaces are never in the mutating sets; th
   assert.ok(!showBlock.includes("LIST_MUTATING_SUBCOMMANDS"), "the show branch itself is ungated");
   // The settings gate refuses the bare entry on stale and names the recovery:
   assert.match(CMDS, /staleEntry && \(verb === "ui" \|\| SETTINGS_MUTATING_ACTIONS\.has\(verb\)\)/, "the settings gate refuses the entry + mutating verbs on stale");
-  assert.match(SRC, /State is safe in \.pi-glla\/\. A fresh session_start will resume it/, "the honest recovery message is the standard one");
+  assert.match(SRC, /State is safe in \.pi-glla\/\. Use \/new to create a fresh context; its session_start will resume it/, "the honest recovery message is the standard one");
 });

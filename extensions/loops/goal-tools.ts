@@ -507,11 +507,6 @@ function registerAgentTools(pi: any): void {
           details: {},
         };
       }
-      const completionClaim = beginCompletionAudit(ctx, {
-        completionSummary: p.completionSummary,
-        verificationSummary: p.verificationSummary,
-        at: nowIso(),
-      }, "complete-goal");
       // v0.34.104 ([Image-#1] 2026-08-08 10:29 dracon-platform): the
       // completionSummary said "29/28 pass, 0 fail" — more tests passing
       // than exist in the suite is nonsensical and the agent shipped it
@@ -520,8 +515,20 @@ function registerAgentTools(pi: any): void {
       // append a note so the recap carries the warning forward — the
       // auditor's job is to verify the claim, but the claim should at
       // least be self-consistent.
+      //
+      // v0.34.119: canonicalize BEFORE beginCompletionAudit. Previously the
+      // archive got the amended warning, but pendingCompletion and the
+      // detached auditor received raw p.completionSummary. A retry after a
+      // session replacement therefore lost the only warning the user/auditor
+      // needed to see.
       const validated = p.completionSummary?.trim() ? validateCompletionSummary(p.completionSummary, ctx) : p.completionSummary;
-      updateGoal({ pendingTasks: undefined, ...(validated?.trim() ? { completionSummary: validated.trim() } : {}) }, ctx);
+      const validatedSummary = validated?.trim() || undefined;
+      const completionClaim = beginCompletionAudit(ctx, {
+        completionSummary: validatedSummary,
+        verificationSummary: p.verificationSummary,
+        at: nowIso(),
+      }, "complete-goal");
+      updateGoal({ pendingTasks: undefined, ...(validatedSummary ? { completionSummary: validatedSummary } : {}) }, ctx);
       const auditGoal = state.goal;
       if (!auditGoal) return staleToolResult();
       const auditGoalId = auditGoal.id;
@@ -549,7 +556,7 @@ function registerAgentTools(pi: any): void {
         runDetachedGoalCompletionAuditor({
           cwd: ctx.cwd,
           goal: auditGoal,
-          completionSummary: p.completionSummary,
+          completionSummary: validatedSummary,
           verificationSummary: p.verificationSummary,
           model: candidate.model,
           thinkingLevel: (settings.auditorThinkingLevel ?? "high") as any, // may be "max" — pi ≥0.83 understands it; the dev-types predate it

@@ -649,7 +649,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     if (g.interruptedAt) {
       const label = interruptedForNoStart(g)
         ? "⚠ turn start not observed — automatic retry held"
-        : "⚠ interrupted — stale handle · /reload (or a fresh session_start) rebinds";
+        : "⚠ interrupted — stale handle · /new (or a fresh session_start) rebinds";
       return `glla: ${paint(theme, "error", label)}${heldSuffix}`;
     }
     const attention = activeAttention(g);
@@ -916,7 +916,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     }
     const recovery = interruptedForNoStart(g)
       ? `automatic re-sends are stopped · ${resumeCmd} to retry once`
-      : `/reload to rebind · ${resumeCmd} if it does not resume`;
+      : `/new to rebind · ${resumeCmd} if it does not resume`;
     lines.push(`└─ ${paint(theme, "warning", recovery)}`);
     return lines;
   }

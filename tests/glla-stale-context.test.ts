@@ -93,7 +93,7 @@ test("v0.34.52: bare /glla on a stale handle is refused — standard recovery me
   assert.ok(honest.length >= 1, "the standard recovery message was printed");
   assert.ok(honest.some((n) => n.message.includes("can't send continuations in this process")), "names the real boundary");
   assert.ok(honest.some((n) => n.message.includes("State is safe in .pi-glla/")), "points at the durable state");
-  assert.ok(honest.some((n) => n.message.includes("A fresh session_start will resume it")), "names the recovery path");
+  assert.ok(honest.some((n) => n.message.includes("Use /new to create a fresh context") && n.message.includes("session_start will resume it")), "names the actual recovery path");
   assert.ok(after.includes('"settings_mutation_refused_stale"'), "refusal is ledgered");
   assert.ok(after.includes('"extension_api_stale"'), "entry probe is ledgered");
   assert.ok(!after.includes('"settings_saved"'), "no settings write event");

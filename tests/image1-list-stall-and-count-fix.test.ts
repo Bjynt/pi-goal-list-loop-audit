@@ -76,10 +76,12 @@ test("v0.34.104 [Image-#1] Problem 1: sendContinuation clears the flag on dispat
 
 test("v0.34.104 [Image-#1] Problem 2: validateCompletionSummary exists and is wired into complete_goal capture", () => {
   assert.match(SRC, /function validateCompletionSummary\(text: string, ctx: ExtensionContext\): string/);
-  // The capture site is a few lines after beginCompletionAudit; use a
-  // tight anchor that survives edits to surrounding code:
+  // v0.34.119: validation happens BEFORE beginCompletionAudit so the
+  // amended text reaches pendingCompletion and the detached auditor too.
   assert.match(SRC, /const validated = p\.completionSummary\?\.trim\(\) \? validateCompletionSummary\(p\.completionSummary, ctx\) : p\.completionSummary;/);
-  assert.match(SRC, /completionSummary: validated\.trim\(\)/);
+  assert.match(SRC, /const validatedSummary = validated\?\.trim\(\) \|\| undefined;/);
+  assert.match(SRC, /const completionClaim = beginCompletionAudit\(ctx, \{\s*completionSummary: validatedSummary,/s);
+  assert.match(SRC, /completionSummary: validatedSummary,\s*\n\s*verificationSummary: p\.verificationSummary,/s);
 });
 
 test("v0.34.104 [Image-#1] Problem 2: impossible X/Y pass counts match the field regex (29/28)", () => {
