@@ -8,7 +8,7 @@ The auditor runs in a fresh extension-less pi RPC process with no extensions, sk
 
 This is a detached process, not a nested session in the main pi process. `complete_goal` returns after writing the claim and job request; the status surface shows `auditor queued`, `auditor running`, or `audit recovery pending` while the worker runs or awaits a fresh lifecycle.
 
-**Current release:** `v0.34.120` — objective lifecycle closure, explicit start conflicts, and one-pass `/glla wipe`.
+**Current release:** `v0.34.121` — objective lifecycle closure, explicit start conflicts, and complete one-pass `/glla wipe` cleanup.
 
 ## Why this exists
 

@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+### 0.34.121 — close auditor lifecycle gaps in cancel, wipe, and blank startup
+  (v0.34.121, audit/OBJECTIVE-LIFECYCLE-FOLLOWUP-2026-08-09.md). `/glla
+  cancel` now stops an active loop before considering unrelated waiting list
+  work. `/glla wipe` treats provider recovery and continuation-dispatch state
+  as live artifacts: its clean fast path sees them, and confirmed cleanup
+  clears their timers, in-memory state, main sidecar, and atomic temp sidecars.
+  Archive failure still preserves resumable work. Legacy terminal-slot cleanup
+  now runs before the blank-start transcript barrier returns. New behavioral
+  regressions cover all three auditor objections.
+
 ### 0.34.120 — objective lifecycle closure, conflict confirmation, and one-pass wipe
   (v0.34.120, audit/OBJECTIVE-LIFECYCLE-2026-08-09.md). Approved objectives
   now persist their final recap in the archive, show exactly one final `✓ done`

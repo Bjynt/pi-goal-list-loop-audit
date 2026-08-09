@@ -177,13 +177,14 @@ test("v0.28.33: /glla wipe — renamed from reset (too close to /glla resume); r
   assert.match(SRC, /await ctx\.ui\.confirm\("Wipe glla state\?"/);
   assert.match(SRC, /History stays in \.pi-glla \(archive \+ ledger\); the live state is wiped\./);
   // honest close-out: goal archived (not dropped), list + loop ledgered:
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "glla_wipe", \{ goalId: live/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "glla_wipe", \{/);
+  assert.match(SRC, /goalId: live \? g!\.id/);
   assert.match(SRC, /archiveCurrentGoal\(ctx, "aborted", "user wipe \(\/glla wipe\)"\)/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "list_cleared", \{ via: "glla_wipe", count: n, sidecars: clearedSidecars\.removed \}\);/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "loop_stopped", \{ reason: "user wipe \(\/glla wipe\)"/);
   assert.match(SRC, /replaceState\(\{ \.\.\.state, loop: undefined \}\)/);
   // already-clean short-circuit:
-  assert.match(SRC, /glla state is already clean — no goal, no list, no loop\./);
+  assert.match(SRC, /glla state is already clean — no goal, no list, no loop, no recovery\./);
   // the typo trap: /glla reset redirects WITHOUT executing:
   assert.match(SRC, /\/glla reset is now \/glla wipe \(renamed — too close to \/glla resume\)\. Nothing was done\./);
 });
