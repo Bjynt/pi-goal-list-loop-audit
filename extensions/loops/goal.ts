@@ -131,6 +131,41 @@ import {
   type ContinuationDispatch,
 } from "../goal-loop-dispatch.js";
 import {
+  createGoalContinuation,
+  scheduleContinuation,
+  sendContinuation,
+  sendStallEscalation,
+  sendLengthContinue,
+  dispatchStartAcknowledged,
+  dispatchAccepted,
+  dispatchFailed,
+  dispatchPrepare,
+  releaseContinuationDispatchStandDown,
+  clearContinuationTimer,
+  clearContinuationStartWatchdog,
+  clearQueueStuckProbe,
+  accountSendRearm,
+  sendRearmDelayMs,
+  armQueueStuckProbe,
+  buildPostCompactResync,
+  continuationTimerPending,
+  continuationTimerRef,
+  continuationStartTimerRef,
+  pendingContinuationDispatchRef,
+  setPendingContinuationDispatchRef,
+  continuationDispatchStoodDownRef,
+  setContinuationDispatchStoodDownRef,
+  lastContinuationSentAtRef,
+  setLastContinuationSentAtRef,
+  lastContinuationSentPayloadRef,
+  setLastContinuationSentPayloadRef,
+  setContinuationRearmStreak,
+  setContinuationRearmSince,
+  type ContinuationFlags,
+  type ContinuationDeps,
+} from "../goal-continuation.js";
+export { __testOnlySetContinuationStartTimeout, __testOnlySetContinuationRetryBackoff } from "../goal-continuation.js";
+import {
   LENGTH_CONTINUE_MAX,
   LENGTH_CONTINUE_TEXT,
   isContextStarvedLengthStop,
@@ -373,41 +408,6 @@ let staleTerminalDone = false;
 // and schedule work against the fresh session.
 let sessionGeneration = 0;
 
-// v0.34.24: sendMessage(triggerTurn) returning without throwing is only an
-// accepted dispatch, not proof that pi started a turn. Keep one immutable
-// attempt bound to the session generation and owner identity until a real
-// before_agent_start/agent_start/turn_start event acknowledges it.
-// v0.34.88: the first no-turn-start window is 30s (was 150s — too long for
-// a user waiting on /list resume); a single automatic retry with a 60s
-// backoff re-sends the EXACT original message, so most transient misses
-// self-heal; only the second window failure declares unacknowledged (the
-// explicit /list|/goal|/loop resume fallback for genuine provider stalls).
-const CONTINUATION_START_TIMEOUT_MS = Number(process.env.GLLA_CONTINUATION_START_TIMEOUT_MS ?? 30_000);
-const NO_TURN_START_RETRY_BACKOFF_MS = 60_000;
-let continuationStartTimeoutOverrideMs: number | null = null;
-let continuationRetryBackoffOverrideMs: number | null = null;
-function continuationStartTimeoutMs(): number {
-  return continuationStartTimeoutOverrideMs ?? CONTINUATION_START_TIMEOUT_MS;
-}
-function continuationRetryBackoffMs(): number {
-  return continuationRetryBackoffOverrideMs ?? NO_TURN_START_RETRY_BACKOFF_MS;
-}
-/** Test-only: make the bounded start-proof watchdog observable without waiting 30s. */
-export function __testOnlySetContinuationStartTimeout(timeoutMs: number | null): void {
-  continuationStartTimeoutOverrideMs = timeoutMs;
-}
-/** Test-only: make the single retry backoff observable without waiting 60s. */
-export function __testOnlySetContinuationRetryBackoff(backoffMs: number | null): void {
-  continuationRetryBackoffOverrideMs = backoffMs;
-}
-let pendingContinuationDispatch: ContinuationDispatch | null = null;
-let continuationStartTimer: NodeJS.Timeout | null = null;
-let continuationDispatchStoodDown = false;
-// v0.34.88: the EXACT payload of the last accepted dispatch send. The retry
-// re-sends this verbatim (same customType/content/display) — no per-kind
-// rebuild, no marker parsing; only one dispatch is ever pending, so this
-// always pairs with pendingContinuationDispatch.
-let lastContinuationSentPayload: { content: string; display: boolean } | null = null;
 
 function sessionManagerId(ctx: ExtensionContext): string {
   try {
@@ -1459,7 +1459,7 @@ let heartbeatTimer: NodeJS.Timeout | null = null;
 // v0.34.11/v0.34.24: compatibility alias for the old unanswered-send
 // watchdog. The bounded dispatch-start timer is now the primary proof path;
 // this value remains named for older ledger/tests and fallback diagnostics.
-const CONTINUATION_UNANSWERED_MS = CONTINUATION_START_TIMEOUT_MS;
+const CONTINUATION_UNANSWERED_MS = Number(process.env.GLLA_CONTINUATION_START_TIMEOUT_MS ?? 30_000);
 const CONTINUATION_UNANSWERED_THROTTLE_MS = 300_000;
 // v0.34.12: eager-continuation settle delay. Hellhunter 2026-08-01 (post-
 // restart): every turn cycle paid a 60s heartbeat tax because the eager
@@ -1492,7 +1492,6 @@ const LOOP_MAX_CONSECUTIVE_ERRORS = 6;
 const LOOP_MAX_CONSECUTIVE_ABORTS = 3;
 
 let lastRealActivityAt = 0;
-let lastContinuationSentAt = 0;
 
 function noteActivity(real = false): void {
   lastActivityAt = Date.now();
@@ -1608,7 +1607,7 @@ function displayActivityFor(ctx: ExtensionContext): {
   const noTurnYet = !telemetry
     && !hasRealActivity
     && (goal.usage?.tokensUsed ?? 0) === 0
-    && pendingContinuationDispatch === null;
+    && pendingContinuationDispatchRef() === null;
   if (noTurnYet) return { activity: "awaiting-first-turn" };
   let idle = false;
   let pending = false;
@@ -1620,7 +1619,7 @@ function displayActivityFor(ctx: ExtensionContext): {
     // active marker, but do not animate it.
     return { activity: "active" };
   }
-  const scheduled = continuationTimer !== null || pendingContinuationDispatch !== null || continuationDispatchStoodDown;
+  const scheduled = continuationTimerRef() !== null || pendingContinuationDispatchRef() !== null || continuationDispatchStoodDownRef();
   const lastActivityAt = lastRealActivityAt > 0
     && (!Number.isFinite(goalStartedAt) || lastRealActivityAt >= goalStartedAt)
     ? lastRealActivityAt
@@ -1681,7 +1680,6 @@ function startUITicker(): void {
 // re-arm loop used to spin for HOURS with zero ledger events while the idle
 // watchdogs stayed suppressed. Now: counted, ledgered (start + every 30s),
 // and escalated loudly past 5 minutes.
-let continuationRearmStreak = 0;
 let loopRearmStreak = 0;
 // v0.34.82: deduplicate the "compaction appears off" notify to once per
 // second (the heartbeat fires every 60s, but a busy session may have
@@ -1739,13 +1737,6 @@ function isContextStarvedRefused(): boolean {
   if (lastCompactionAt > lastContextStarvedAt) return false; // a compact happened after the streak — fresh slate
   return Date.now() - lastContextStarvedAt <= CONTEXT_STARVATION_RECENT_WINDOW_MS;
 }
-// v0.34.57: per-record counter capping the compaction-paused re-arm loop.
-// A stuck session that never produces a new compaction event must not
-// re-arm indefinitely; after 3 rearms (default 3 × 30s = 90s, plus the 60s
-// retry backoff if the single auto-retry already fired) the
-// watchdog fires the unacknowledged warning so the user can intervene.
-const COMPACTION_REARM_CAP = 3;
-const continuationStartCompactionRearms = new Map<string, number>();
 /** Test-only: simulate a compaction event at a controlled time without firing
  * the full session_compact plumbing. Pass null to clear. */
 export function __testOnlySetLastCompactionAt(at: number | null): void {
@@ -1774,14 +1765,6 @@ export function __testOnlyRegisterAgentTools(pi: any): void {
 export function __testOnlyRememberCtx(ctx: ExtensionContext): void {
   rememberCtx(ctx);
 }
-function noteCompactionRearm(id: string): number {
-  const next = (continuationStartCompactionRearms.get(id) ?? 0) + 1;
-  continuationStartCompactionRearms.set(id, next);
-  return next;
-}
-function clearCompactionRearms(id: string): void {
-  continuationStartCompactionRearms.delete(id);
-}
 // v0.32.1 (pi-goal-x's lesson — "recover from compacts smarter"): a compact
 // leaves a RESUME DEBT, not just two fixed-offset settle probes that can both
 // lose (field: hellhunter 4-min dangle 2026-07-31; polis stall same day).
@@ -1803,124 +1786,13 @@ const COMPACTION_GRACE_MS = 3 * 60_000;
 // budget now spans ~5.5m) and escalate the brake cooldown per consecutive
 // brake (1m, 2m, 4m, 8m, 16m cap). A successful turn resets both.
 const ERROR_RETRY_LADDER_MS = [5_000, 15_000, 45_000, 90_000, 180_000];
-const SEND_REARM_LEDGER_MILESTONES_MS = [2 * 60_000, 5 * 60_000, 10 * 60_000];
-// v0.28.29: escalation is TIME-based and ACTIVITY-gated. A busy session is
-// NORMAL — the user conversing, or one long subagent turn — and the old
-// flat-50ms × 6000-count rule misread 5 minutes of busy as "wedged" and
-// paused the goal (the polis field report). Escalate only after 15 minutes
-// of failed sends AND no session activity in the last 5 minutes (a wedged
-// queue shows no events at all; a busy one streams constantly).
-const SEND_REARM_ESCALATE_SILENT_MS = 5 * 60_000;
-let continuationRearmSince = 0;
 let loopRearmSince = 0;
-// v0.34.102: one-shot "no turn started" notify per storm milestone window
-// (rearm storm fires with no accepted dispatch — the user's "pi did not
-// start a turn" state under a recovery park).
-let lastNoTurnStartedNotifiedAt = 0;
 // v0.34.57: when the last surfaced provider failure was a long-lived class
 // (quota/billing/auth), a send wedge inside this window is almost certainly
 // the same wall — escalate the storm into recovery after 3m, not 15m.
 let lastLongLivedFailureAt = 0;
-let continuationRearmMilestone = 0;
 let loopRearmMilestone = 0;
 
-/** v0.28.29: busy-retry cadence backs off — 50ms for the first beats
- * (instant pickup right after a turn ends), then 250ms, 1s, 5s, 15s, 30s
- * cap. agent_end reschedules independently, so the slow tail costs nothing
- * in the common case; it only caps the ledger/CPU spam of a long busy stretch. */
-function sendRearmDelayMs(streak: number): number {
-  if (streak <= 4) return 50;
-  if (streak <= 8) return 250;
-  if (streak <= 12) return 1_000;
-  if (streak === 13) return 5_000;
-  if (streak === 14) return 15_000;
-  return 30_000;
-}
-
-function accountSendRearm(ctx: ExtensionContext, kind: "continuation" | "loop"): void {
-  const streak = kind === "continuation" ? ++continuationRearmStreak : ++loopRearmStreak;
-  if (streak === 1) {
-    if (kind === "continuation") { continuationRearmSince = Date.now(); continuationRearmMilestone = 0; } else { loopRearmSince = Date.now(); loopRearmMilestone = 0; }
-    appendLedger(ctx.cwd, "send_rearm_start", { kind });
-    return;
-  }
-  const since = kind === "continuation" ? continuationRearmSince : loopRearmSince;
-  const elapsed = Date.now() - since;
-  const milestone = kind === "continuation" ? continuationRearmMilestone : loopRearmMilestone;
-  if (milestone < SEND_REARM_LEDGER_MILESTONES_MS.length && elapsed >= SEND_REARM_LEDGER_MILESTONES_MS[milestone]!) {
-    if (kind === "continuation") continuationRearmMilestone++; else loopRearmMilestone++;
-    appendLedger(ctx.cwd, "send_rearm_storm", { kind, streak, minutes: Math.round(elapsed / 60000) });
-    // v0.34.102 (field: dracon-platform 2026-08-08 091828 "pi did not
-    // start a turn"): a continuation storm with NO accepted dispatch since
-    // it began is the exact "no turn started" state. The existing
-    // continuation_unanswered diagnostic only fires when the plugin itself
-    // SENT a continuation (lastContinuationSentAt > 0) — under a recovery
-    // park the send path is gated so it never fires, and the rearm storm
-    // raged 68m with zero user-facing explanation. Surface it once per
-    // storm milestone (2m/5m/10m), ledgered distinctly.
-    if (kind === "continuation") {
-      const noDispatchAccepted = lastContinuationSentAt === 0 || lastContinuationSentAt < continuationRearmSince;
-      if (noDispatchAccepted && lastNoTurnStartedNotifiedAt + SEND_REARM_LEDGER_MILESTONES_MS[0]! <= Date.now()) {
-        lastNoTurnStartedNotifiedAt = Date.now();
-        appendLedger(ctx.cwd, "rearm_no_turn_started", { streak, minutes: Math.round(elapsed / 60000) });
-        const msg = `glla: pi accepted no continuation for ${Math.round(elapsed / 60000)}m (${streak} re-arms, no turn started) — likely the same provider wall. The recovery probe is retrying automatically; no action needed unless it outlives the reset time.`;
-        ctx.ui.notify(msg, "warning");
-        notifyExternal(ctx, msg);
-      }
-    }
-  }
-  if (elapsed >= sendStormEscalateMs(lastLongLivedFailureAt) && Date.now() - lastActivityAt >= SEND_REARM_ESCALATE_SILENT_MS) {
-    if (kind === "continuation") { continuationRearmStreak = 0; continuationRearmSince = 0; } else { loopRearmStreak = 0; loopRearmSince = 0; }
-    escalateSendRearmStorm(ctx, kind);
-  }
-}
-
-function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "loop"): void {
-  // Same loud-terminal shape as escalateStallNow (v0.24.7). v0.28.29: this
-  // only fires on a REAL wedge now (15m of failed sends + 5m of zero
-  // session activity) — busy-but-alive sessions never reach it.
-  const mins = Math.round(sendStormEscalateMs(lastLongLivedFailureAt) / 60000);
-  const silent = Math.round(SEND_REARM_ESCALATE_SILENT_MS / 60000);
-  appendLedger(ctx.cwd, "send_rearm_escalated", { kind, afterMinutes: mins, silentMinutes: silent });
-  if (kind === "loop" && isLoopActive()) {
-    void recoverMainModelFromSendStorm(ctx, kind);
-    return;
-  }
-  if (
-    state.goal &&
-    (state.goal.status === "auditing" || completionAuditInFlight || state.goal.pendingCompletion)
-  ) {
-    // v0.29.1: NEVER storm-pause the completion lifecycle. An isolated
-    // auditor run takes minutes and the main session is EXPECTED to be
-    // silent while it works — 15m of wedged re-arms + that silence is the
-    // exact trigger shape, so completing a goal under a wedged queue used
-    // to guarantee a mid-audit pause (field-observed in pully + hellhunter
-    // + junk-runner: "complete ending in a pause retry storm"). The audit
-    // lifecycle owns its own pauses (quota etc.).
-    appendLedger(ctx.cwd, "send_rearm_escalated_suppressed", { reason: "audit-lifecycle" });
-    ctx.ui.notify("Send-retry storm during the completion audit — NOT pausing; the auditor's silence is expected. If pi is wedged, Escape cancels the stuck run; the stored claim survives.", "info");
-    return;
-  }
-  // A provider-held retry is different from a dead dispatch: after 15m of
-  // zero stream activity, stop the stuck core retry, rotate to a configured
-  // backup when possible, and install a durable recovery probe. This keeps
-  // the old no-blind-resend invariant without requiring the user to notice
-  // the wedge and press Escape two hours before quota returns.
-  if (isSupervising()) {
-    void recoverMainModelFromSendStorm(ctx, kind);
-    return;
-  }
-  if (state.goal && state.goal.status === "active") {
-    updateGoal({
-      status: "paused",
-      pauseKind: "error",
-      pauseReason: `send-retry storm: ${mins}m of re-arms with no session activity for ${silent}m — the session never went idle for the continuation`,
-      pauseSuggestedAction: `The session produced no events while the send retried (wedged queue — often pi's own rate-limit retry holding the run; pi prints 'escape to cancel'). Press Escape, then ${activeGoalSurfaceCommand("resume")}. A fresh session_start rebinds the goal; restart pi normally only if no replacement arrives.`,
-    }, ctx);
-    ctx.ui.notify(`${goalNoun()} paused: send-retry storm (${mins}m, session silent ${silent}m). Escape cancels the stuck run, then ${activeGoalSurfaceCommand("resume")}. A fresh session_start rebinds it; restart pi normally only if no replacement arrives.`, "warning");
-    notifyExternal(ctx, `${goalNoun()} paused: send-retry storm.`);
-  }
-}
 
 function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
   if (!shouldEscalateStall(consecutiveStalls, threshold)) return false;
@@ -1950,8 +1822,6 @@ function escalateStallNow(ctx: ExtensionContext, threshold: number): boolean {
 
 let heartbeatStaleStreak = 0;
 
-let continuationTimer: NodeJS.Timeout | null = null;
-let continuationScheduledFor: string | null = null;
 let iterationCounter = 0;
 let toolCallsThisTurn = 0;
 let consecutiveErrorIterations = 0;
@@ -1962,301 +1832,6 @@ let consecutiveAbortIterations = 0;
 // heartbeat refire + post-compaction refire must NOT resurrect it; only
 // an explicit schedule (resume/activate/next turn) clears it.
 let abortedStandDown = false;
-
-// =================================================================
-// Helpers
-// =================================================================
-
-function clearContinuationTimer(): void {
-  if (continuationTimer) {
-    clearTimeout(continuationTimer);
-    continuationTimer = null;
-  }
-  continuationScheduledFor = null;
-}
-
-function clearContinuationStartWatchdog(): void {
-  if (continuationStartTimer) {
-    clearTimeout(continuationStartTimer);
-    continuationStartTimer = null;
-  }
-  if (pendingContinuationDispatch) clearCompactionRearms(pendingContinuationDispatch.id);
-  pendingContinuationDispatch = null;
-  lastContinuationSentAt = 0;
-  lastContinuationSentPayload = null;
-}
-
-function dispatchLabel(record: ContinuationDispatch): string {
-  if (record.kind === "loop") return `loop iteration ${record.iteration ?? "?"}`;
-  if (record.kind === "stall") return "stall warning";
-  if (record.kind === "length") return "length continuation";
-  return `${state.goal?.policy === "list" ? "list item" : "goal"}${record.goalId ? ` ${record.goalId}` : ""}`;
-}
-
-/**
- * Keep the dispatch lifecycle facts together in every ledger boundary. The
- * sidecar phase is useful for recovery, but a ledger reader also needs to
- * distinguish enqueue acknowledgement, start proof, timeout, and settlement
- * without inferring one from a neighboring event.
- */
-function dispatchLedgerValue(record: ContinuationDispatch, facts: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    id: record.id,
-    kind: record.kind,
-    ...(record.goalId === undefined ? {} : { goalId: record.goalId }),
-    ...(record.iteration === undefined ? {} : { iteration: record.iteration }),
-    generation: record.generation,
-    ownerSessionId: record.ownerSessionId,
-    marker: record.marker,
-    sentAt: record.sentAt,
-    phase: record.phase,
-    timeoutMs: record.timeoutMs ?? continuationStartTimeoutMs(),
-    ...facts,
-  };
-}
-
-function dispatchPrepare(
-  ctx: ExtensionContext,
-  input: Omit<Parameters<typeof createContinuationDispatch>[0], "id" | "sentAt">,
-): ContinuationDispatch | null {
-  const record: ContinuationDispatch = {
-    ...createContinuationDispatch({
-      ...input,
-      id: `${instanceId}:${input.generation}:${newGoalId()}`,
-    }),
-    timeoutMs: continuationStartTimeoutMs(),
-  };
-  // Persist ownership BEFORE asking pi to enqueue the follow-up. If this
-  // fails, an accepted send would be impossible to reconcile after a reload.
-  if (!persistDispatchRecord(ctx.cwd, record)) {
-    continuationDispatchStoodDown = true;
-    appendLedger(ctx.cwd, "continuation_dispatch_persistence_failed", { id: record.id, phase: record.phase, generation: record.generation });
-    ctx.ui.notify("glla: could not persist the continuation dispatch record, so no automatic turn was sent. Fix .pi-glla storage, then resume explicitly.", "error");
-    return null;
-  }
-  pendingContinuationDispatch = record;
-  appendLedger(ctx.cwd, "continuation_dispatch_prepared", dispatchLedgerValue(record, {
-    acknowledgement: "pending",
-    startProofSource: null,
-    settlement: "pending",
-    resync: record.resync,
-  }));
-  return record;
-}
-
-function dispatchFailed(ctx: ExtensionContext, record: ContinuationDispatch, reason: string): void {
-  if (pendingContinuationDispatch !== record) return;
-  const settledAt = Date.now();
-  const failed: ContinuationDispatch = {
-    ...transitionDispatch(record, "failed"),
-    settledAt,
-  };
-  pendingContinuationDispatch = failed;
-  persistDispatchRecord(ctx.cwd, failed);
-  appendLedger(ctx.cwd, "continuation_dispatch_failed", dispatchLedgerValue(failed, {
-    acknowledgement: "rejected",
-    startProofSource: null,
-    settlement: "failed",
-    settledAt,
-    reason,
-  }));
-  clearContinuationStartWatchdog();
-}
-
-function dispatchStartAcknowledged(ctx: ExtensionContext, source: string, prompt?: unknown): boolean {
-  // v0.34.104 ([Image-#1]): any real agent activity during the
-  // post-list-completion settle window means pi woke up on its own — the
-  // deferred continuation must be cancelled so we don't double-dispatch.
-  if (postCompletionSettleUntil > 0) {
-    const remaining = postCompletionSettleUntil - Date.now();
-    if (remaining > 0) {
-      clearContinuationTimer();
-      continuationScheduledFor = null;
-      appendLedger(ctx.cwd, "list_completion_settle_cleared", { source, remainingMs: remaining });
-    }
-    postCompletionSettleUntil = 0;
-  }
-  const record = pendingContinuationDispatch;
-  if (!record || sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return false;
-  if (record.generation !== sessionGeneration || isForeignCtx(ctx)) return false;
-  if (!dispatchMatchesOwner(record, sessionGeneration, sessionManagerId(ctx))) return false;
-  // before_agent_start is the strongest proof: it must carry this exact
-  // dispatch marker. Later low-level events are accepted as compatibility
-  // proofs because older pi builds may not expose the prompt there.
-  if (source === "before_agent_start" && !dispatchPromptMatches(record, prompt)) return false;
-  const settledAt = Date.now();
-  const started: ContinuationDispatch = {
-    ...transitionDispatch(record, "started"),
-    startedAt: settledAt,
-    settledAt,
-    startProofSource: source,
-  };
-  pendingContinuationDispatch = started;
-  persistDispatchRecord(ctx.cwd, started);
-  clearContinuationStartWatchdog();
-  clearCompactionRearms(record.id);
-  clearDispatchRecord(ctx.cwd);
-  lastContinuationSentAt = 0;
-  if (record.resync) postCompactResyncPending = false;
-  noteActivity(true);
-  appendLedger(ctx.cwd, "continuation_start_acknowledged", dispatchLedgerValue(started, {
-    acknowledgement: "accepted",
-    startProofSource: source,
-    settlement: "started",
-    startedAt: started.startedAt,
-    settledAt,
-  }));
-  return true;
-}
-
-function dispatchStartUnacknowledged(ctx: ExtensionContext, record: ContinuationDispatch): void {
-  if (pendingContinuationDispatch !== record || record.phase !== "accepted") return;
-  const timedOutAt = Date.now();
-  const unacknowledged: ContinuationDispatch = {
-    ...transitionDispatch(record, "unacknowledged"),
-    timedOutAt,
-    settledAt: timedOutAt,
-  };
-  persistDispatchRecord(ctx.cwd, unacknowledged);
-  clearContinuationStartWatchdog();
-  continuationDispatchStoodDown = true;
-  lastContinuationSentAt = 0;
-  const reason = `continuation start acknowledgement timed out (${record.id})`;
-  appendLedger(ctx.cwd, "continuation_start_unacknowledged", dispatchLedgerValue(unacknowledged, {
-    acknowledgement: "accepted",
-    startProofSource: null,
-    settlement: "unacknowledged",
-    timedOutAt,
-    settledAt: timedOutAt,
-  }));
-  if (record.kind === "loop" && state.loop?.active) {
-    clearLoopTimer();
-    state.loop = {
-      ...state.loop,
-      active: false,
-      stopReason: `stalled: continuation start acknowledgement timed out (${record.id}) — /loop resume to retry explicitly`,
-    };
-    persistState(ctx);
-  }
-  if (state.goal && state.goal.status === "active" && (record.kind === "goal" || record.kind === "stall")) {
-    updateGoal({ interruptedAt: nowIso(), interruptedReason: reason }, ctx);
-  }
-  const msg = `glla: pi accepted the ${dispatchLabel(record)} continuation, but no observable turn-start event arrived within ${Math.round((Date.now() - record.sentAt) / 1000)}s despite one automatic retry. Automatic re-sends are stopped to avoid a blind queue storm. The work is safe in .pi-glla; start a fresh session or use /goal resume, /list resume, or /loop resume to retry explicitly.`;
-  ctx.ui.notify(msg, "warning");
-  notifyExternal(ctx, sanitizeDisplayText(msg));
-  refreshUI(ctx);
-}
-
-function armContinuationStartWatchdog(ctx: ExtensionContext, record: ContinuationDispatch): void {
-  if (pendingContinuationDispatch !== record || record.phase !== "accepted") return;
-  if (continuationStartTimer) clearTimeout(continuationStartTimer);
-  const generation = record.generation;
-  continuationStartTimer = scheduleSessionTimeout(() => {
-    continuationStartTimer = null;
-    if (pendingContinuationDispatch !== record || record.phase !== "accepted") return;
-    const current = freshCtxForGeneration(generation);
-    if (!current) return;
-    // v0.34.57: a compaction that landed AFTER the dispatch was accepted is
-    // legitimate busy time — the session is mid-compact and the turn-start
-    // event will arrive after the compact + resume debt. Re-arm the watchdog
-    // instead of firing the false-positive unacknowledged warning. The 3-min
-    // compactionGraceUntil alone misses compactions that finish within or
-    // past the grace window (field 115855/115858/115901).
-    if (lastCompactionAt > (record.acceptedAt ?? 0)) {
-      const rearms = noteCompactionRearm(record.id);
-      appendLedger(current.cwd, "continuation_start_paused_for_compaction", dispatchLedgerValue(record, {
-        lastCompactionAt,
-        acceptedAt: record.acceptedAt ?? 0,
-        rearmCount: rearms,
-        capped: rearms >= COMPACTION_REARM_CAP,
-      }));
-      if (rearms < COMPACTION_REARM_CAP) {
-        armContinuationStartWatchdog(current, record);
-        return;
-      }
-      // Cap reached: fall through to the unacknowledged warning so the
-      // user can intervene. A stuck session must not loop forever.
-    }
-    if (dispatchTimedOut(record, Date.now(), record.timeoutMs ?? continuationStartTimeoutMs())) {
-      // v0.34.88: exactly ONE automatic retry with backoff before declaring
-      // unacknowledged. The retry re-sends the verbatim original payload so
-      // a transient miss (accepted enqueue, turn-start event lost) self-heals
-      // without the user; only the second window failure — a genuine provider
-      // stall — hits the explicit /list|/goal|/loop resume fallback. A
-      // skipped/failed retry falls through to unacknowledged immediately.
-      if (!record.retryCount && retryContinuationDispatch(current, record)) return;
-      dispatchStartUnacknowledged(current, record);
-    }
-  }, record.timeoutMs ?? continuationStartTimeoutMs());
-}
-
-/** v0.34.88: the single no-turn-start retry. Re-sends the verbatim original
- * payload (captured at first send), marks the record retried + persisted so
- * a reload mid-backoff stays consistent, re-arms the watchdog with the
- * backoff window, and ledgeres the retry. Returns true when the retry was
- * sent and the backoff watchdog is running; false means the unacknowledged
- * path should fire now (skipped because the goal/loop is no longer
- * actionable, or the send failed). */
-function retryContinuationDispatch(ctx: ExtensionContext, record: ContinuationDispatch): boolean {
-  if (pendingContinuationDispatch !== record || record.phase !== "accepted") return false;
-  // Belt-and-braces: the watchdog is normally cleared on pause/reload, but a
-  // goal parked by another path mid-wait must never get a blind re-send.
-  if (record.kind === "loop") {
-    if (!state.loop?.active) return false;
-  } else if (record.kind === "goal" || record.kind === "stall") {
-    if (state.goal?.status !== "active") return false;
-  }
-  const payload = lastContinuationSentPayload;
-  if (!payload) return false;
-  if (!extensionApi || extensionApiStale) return false; // stale runtime = terminal; the unacknowledged path notifies
-  try {
-    extensionApi.sendMessage({ customType: GOAL_EVENT_ENTRY, content: payload.content, display: payload.display }, { triggerTurn: true, deliverAs: "followUp" });
-  } catch (err) {
-    appendLedger(ctx.cwd, "continuation_retry_send_failed", { id: record.id, kind: record.kind, error: err instanceof Error ? err.message : String(err) });
-    if (isStaleApiError(err)) goStaleTerminal(ctx, "retryContinuationDispatch");
-    return false; // the retry itself failed — genuine stall, fail closed now
-  }
-  record.retryCount = 1;
-  record.retrySentAt = Date.now();
-  record.timeoutMs = continuationRetryBackoffMs();
-  persistDispatchRecord(ctx.cwd, record);
-  appendLedger(ctx.cwd, "continuation_retry_sent", dispatchLedgerValue(record, {
-    retrySentAt: record.retrySentAt,
-    nextTimeoutMs: record.timeoutMs,
-    totalWaitMs: record.retrySentAt - record.sentAt + record.timeoutMs,
-  }));
-  armContinuationStartWatchdog(ctx, record);
-  return true;
-}
-
-function dispatchAccepted(ctx: ExtensionContext, record: ContinuationDispatch): boolean {
-  // A synchronous before_agent_start can acknowledge while sendMessage is
-  // still on the stack. Do not overwrite that proof with "accepted".
-  if (pendingContinuationDispatch !== record) return true;
-  const acceptedAt = Date.now();
-  const accepted: ContinuationDispatch = {
-    ...transitionDispatch(record, "accepted"),
-    acceptedAt,
-  };
-  pendingContinuationDispatch = accepted;
-  appendLedger(ctx.cwd, "continuation_dispatch_accepted", dispatchLedgerValue(accepted, {
-    acknowledgement: "accepted",
-    startProofSource: null,
-    settlement: "pending",
-    acceptedAt,
-  }));
-  if (!persistDispatchRecord(ctx.cwd, accepted)) {
-    dispatchStartUnacknowledged(ctx, accepted);
-    return false;
-  }
-  armContinuationStartWatchdog(ctx, accepted);
-  return true;
-}
-
-function releaseContinuationDispatchStandDown(): void {
-  continuationDispatchStoodDown = false;
-  clearContinuationStartWatchdog();
-}
 
 function scheduleSessionTimeout(callback: () => void, delayMs: number): NodeJS.Timeout {
   const generation = sessionGeneration;
@@ -2286,7 +1861,7 @@ function clearSessionOwnedTimers(): void {
   clearContinuationTimer();
   clearContinuationStartWatchdog();
   clearLoopTimer();
-  if (queueStuckProbe) { clearTimeout(queueStuckProbe); queueStuckProbe = null; }
+  clearQueueStuckProbe();
   if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
   if (uiTicker) { clearInterval(uiTicker); uiTicker = null; }
   clearMainModelRecoveryTimer();
@@ -2418,267 +1993,7 @@ async function handleMainModelAgentEnd(ctx: ExtensionContext, rawLastA: any, las
   return false;
 }
 
-// v0.34.15 (hegemon 2026-08-01): pi ACCEPTED the continuation — footer showed
-// "1 queued" — but the turn trigger was dead, so the message sat queued while
-// pi idled. The 0.34.11 watchdog gates on "pi reported NO pending" and the
-// stall ladder takes ~10 minutes; a send that lands queued-without-a-turn is
-// a CONFIRMED dead trigger (hegemon law), so probe once, ~45s after every
-// landed send, and report it without terminal input. A consumed message (even
-// an instant-429 turn consumes it) or any real activity disarms the probe.
-function queueStuckProbeMs(): number {
-  return Number(process.env.GLLA_QUEUE_STUCK_MS ?? 45_000);
-}
-let queueStuckProbe: ReturnType<typeof setTimeout> | null = null;
-function armQueueStuckProbe(sentAt: number): void {
-  if (queueStuckProbe) clearTimeout(queueStuckProbe);
-  queueStuckProbe = scheduleSessionTimeout(() => {
-    queueStuckProbe = null;
-    try {
-      const ctx = freshCtx();
-      if (!ctx) return; // no fresh lifecycle context — do not touch a stale one
-      if (!isSupervising()) return; // paused/completed meanwhile
-      if (lastContinuationSentAt !== sentAt) return; // a newer send armed its own probe
-      if (lastRealActivityAt > sentAt) return; // the turn started and worked
-      if (!ctx.isIdle()) return; // a turn is running — healthy
-      if (!ctx.hasPendingMessages()) return; // consumed — even an instant 429 consumes
-      appendLedger(ctx.cwd, "queue_stuck_detected", { waitedMs: Date.now() - sentAt });
-      const msg = `${goalNoun()}: the continuation is QUEUED but pi won't start a turn — the turn trigger is dead (re-sends only queue). glla will resume from a fresh session_start; if no replacement arrives, restart pi normally and restore the saved work.`;
-      ctx.ui.notify(msg, "warning");
-      notifyExternal(ctx, msg);
-    } catch { /* stale ctx — the live instance owns the probe now */ }
-  }, queueStuckProbeMs());
-}
 
-function scheduleContinuation(ctx: ExtensionContext, force = false, delayMs?: number): void {
-  if (mainModelRecoveryActive()) return;
-  if (sessionHandoffPending || initialSessionLoadPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
-  if (pendingContinuationDispatch) return;
-  if (continuationDispatchStoodDown && !force) return;
-  if (force) releaseContinuationDispatchStandDown();
-  abortedStandDown = false; // v0.29.5: any explicit schedule ends the stand-down
-  if (!isActionableGoal()) return;
-  rememberCtx(ctx);
-  const goalId = state.goal!.id;
-  if (!force && continuationScheduledFor === goalId) return;
-  clearContinuationTimer();
-  let delay = 0;
-  try {
-    delay = delayMs ?? (ctx.isIdle() && !ctx.hasPendingMessages() ? 0 : BACKOFF_IDLE_RETRY_MS);
-  } catch {
-    return;
-  }
-  // v0.34.104 ([Image-#1]): the post-list-completion settle window delays
-  // the first continuation after a queue auto-advance. Any real agent
-  // activity during the window clears `postCompletionSettleUntil`, so a
-  // wake-up cancels the deferred send and no double-dispatch happens.
-  const settleRemaining = postCompletionSettleUntil - Date.now();
-  if (settleRemaining > 0) {
-    delay = Math.max(delay, settleRemaining);
-    appendLedger(ctx.cwd, "list_completion_settle_pending", { goalId, settleMs: LIST_COMPLETION_SETTLE_MS, remainingMs: settleRemaining });
-  }
-  continuationScheduledFor = goalId;
-  continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), delay);
-}
-
-function sendContinuation(goalId: string): void {
-  if (mainModelRecoveryActive()) return;
-  if (sessionHandoffPending || initialSessionLoadPending || extensionApiStale || staleTerminalDone || zombieStoodDown || continuationDispatchStoodDown || pendingContinuationDispatch) return;
-  // v0.34.104 ([Image-#1]): the settle window armed by the list-complete
-  // cascade has expired (or was cleared by activity) — the deferred
-  // continuation is firing. Reset the flag so it doesn't apply to a
-  // later, unrelated continuation.
-  postCompletionSettleUntil = 0;
-  continuationTimer = null;
-  continuationScheduledFor = null;
-  if (!isActionableGoal()) return;
-  const ctx = freshCtx();
-  if (!ctx) {
-    // v0.32.0: a stale handle must not spin a flat 50ms re-arm below every
-    // watchdog — the heartbeat's terminal path does the theatre; we just stop.
-    if (probeExtensionApiStale()) return;
-    // No live ctx — retry shortly; the next session event will refresh it.
-    continuationScheduledFor = goalId;
-    continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), BACKOFF_IDLE_RETRY_MS);
-    return;
-  }
-  if (!ctx.isIdle() || ctx.hasPendingMessages()) {
-    accountSendRearm(ctx, "continuation");
-    continuationScheduledFor = goalId;
-    // v0.28.29: backing-off cadence (was flat 50ms — 6,000 spins in 5m).
-    continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), sendRearmDelayMs(continuationRearmStreak));
-    return;
-  }
-  if (!extensionApi || extensionApiStale) return;
-  try {
-    let resync = "";
-    // v0.33.1: a builder throw (corrupt restored state) must not masquerade
-    // as a transport failure — send without the block instead.
-    if (postCompactResyncPending) { try { resync = buildPostCompactResync(); } catch { resync = ""; } }
-    const attempt = dispatchPrepare(ctx, {
-      generation: sessionGeneration,
-      ownerSessionId: sessionManagerId(ctx),
-      kind: "goal",
-      goalId,
-      marker: `[GOAL CHECKPOINT goalId=${goalId}]`,
-      resync: Boolean(resync),
-    });
-    if (!attempt) return;
-    extensionApi.sendMessage({
-      customType: GOAL_EVENT_ENTRY,
-      content: resync + continuationPrompt(state.goal!),
-      display: false,
-    }, { triggerTurn: true, deliverAs: "followUp" });
-    lastContinuationSentPayload = { content: resync + continuationPrompt(state.goal!), display: false }; // v0.34.88: verbatim retry payload
-    if (!dispatchAccepted(ctx, attempt)) return;
-    continuationRearmStreak = 0; continuationRearmSince = 0; // v0.28.5 (E3): an accepted dispatch clears the storm
-    appendLedger(ctx.cwd, "goal_continuation_sent", { goalId, attemptId: attempt.id, generation: attempt.generation });
-    if (pendingContinuationDispatch === null) return; // before_agent_start acked synchronously
-    lastContinuationSentAt = attempt.sentAt;
-    armQueueStuckProbe(lastContinuationSentAt);
-  } catch (err) {
-    if (pendingContinuationDispatch) dispatchFailed(ctx, pendingContinuationDispatch, err instanceof Error ? err.message : String(err));
-    appendLedger(ctx.cwd, "goal_continuation_send_failed", { goalId, error: err instanceof Error ? err.message : String(err) });
-    // v0.26.7: stale runtime = terminal (sends can never land); anything
-    // else is transient — next agent_end/session_start reschedules.
-    if (isStaleApiError(err)) goStaleTerminal(ctx, "sendContinuation");
-  }
-}
-
-// v0.28.4 (P1): graduated escalation entry — sent at nudge 1 and 2, BEFORE
-// the HEARTBEAT_MAX_NUDGES brake can pause the goal. Tells the model exactly
-// what closes the turn: complete_goal if done, pause_goal if blocked, a tool
-// call otherwise. display: true — the user should see the warning too.
-function sendStallEscalation(ctx: ExtensionContext, nudges: number): void {
-  if (sessionHandoffPending || initialSessionLoadPending || !extensionApi || extensionApiStale || continuationDispatchStoodDown || pendingContinuationDispatch) return;
-  const remaining = HEARTBEAT_MAX_NUDGES - nudges;
-  const text = [
-    `[STALL WARNING ${nudges}/${HEARTBEAT_MAX_NUDGES}] The last turn produced no tool calls.`,
-    "If the goal is DONE, call complete_goal NOW — prose closes nothing; only an auditor-approved complete_goal call closes a goal.",
-    "If you are BLOCKED, call pause_goal with the blocker and a suggested action.",
-    "Otherwise make a tool call that advances the goal this turn.",
-    remaining === 1 ? "ONE more unproductive turn pauses the goal." : `${remaining} more unproductive turns pause the goal.`,
-  ].join(" ");
-  appendLedger(ctx.cwd, "stall_escalation_nudge", { nudges, remaining });
-  const attempt = dispatchPrepare(ctx, {
-    generation: sessionGeneration,
-    ownerSessionId: sessionManagerId(ctx),
-    kind: "stall",
-    goalId: state.goal?.id,
-    marker: `[STALL WARNING ${nudges}/${HEARTBEAT_MAX_NUDGES}]`,
-    resync: false,
-  });
-  if (!attempt) return;
-  try {
-    extensionApi.sendMessage({ customType: GOAL_EVENT_ENTRY, content: text, display: true }, { triggerTurn: true, deliverAs: "followUp" });
-    lastContinuationSentPayload = { content: text, display: true }; // v0.34.88: verbatim retry payload
-    if (!dispatchAccepted(ctx, attempt)) return;
-    appendLedger(ctx.cwd, "stall_escalation_dispatched", { nudges, remaining, attemptId: attempt.id });
-    if (pendingContinuationDispatch === null) return;
-    lastContinuationSentAt = attempt.sentAt;
-    armQueueStuckProbe(lastContinuationSentAt);
-  } catch (err) {
-    if (pendingContinuationDispatch) dispatchFailed(ctx, pendingContinuationDispatch, err instanceof Error ? err.message : String(err));
-    appendLedger(ctx.cwd, "stall_escalation_nudge_failed", { error: err instanceof Error ? err.message : String(err) });
-    if (isStaleApiError(err)) goStaleTerminal(ctx, "sendStallEscalation");
-  }
-}
-
-// v0.27.2: send the truncation-continue nudge. Same guards as
-// sendContinuation (stale api = terminal), independent of goal state —
-// plain sessions truncate too.
-function sendLengthContinue(ctx: ExtensionContext, consecutive: number): void {
-  if (sessionHandoffPending || initialSessionLoadPending || !extensionApi || extensionApiStale || continuationDispatchStoodDown || pendingContinuationDispatch) return;
-  const attempt = dispatchPrepare(ctx, {
-    generation: sessionGeneration,
-    ownerSessionId: sessionManagerId(ctx),
-    kind: "length",
-    marker: LENGTH_CONTINUE_TEXT.slice(0, 80),
-    resync: false,
-  });
-  if (!attempt) return;
-  try {
-    extensionApi.sendMessage({
-      customType: GOAL_EVENT_ENTRY,
-      content: LENGTH_CONTINUE_TEXT,
-      display: true,
-    }, { triggerTurn: true, deliverAs: "followUp" });
-    lastContinuationSentPayload = { content: LENGTH_CONTINUE_TEXT, display: true }; // v0.34.88: verbatim retry payload
-    if (!dispatchAccepted(ctx, attempt)) return;
-    appendLedger(ctx.cwd, "length_continue_sent", { consecutive, attemptId: attempt.id });
-    ctx.ui.notify(`Response hit the output-token cap — auto-continuing (${consecutive}/${LENGTH_CONTINUE_MAX})`, "warning");
-  } catch (err) {
-    if (pendingContinuationDispatch) dispatchFailed(ctx, pendingContinuationDispatch, err instanceof Error ? err.message : String(err));
-    appendLedger(ctx.cwd, "length_continue_send_failed", { consecutive, error: err instanceof Error ? err.message : String(err) });
-    if (isStaleApiError(err)) goStaleTerminal(ctx, "sendLengthContinue");
-  }
-}
-
-/** v0.32.1: deterministic post-compaction re-anchor (pi-goal-x's #5) —
- * prepended to the first continuation/loop message after a compact. */
-function buildPostCompactResync(): string {
-  const lines: string[] = [
-    "[POST-COMPACTION RESYNC] The transcript was just compacted. Trust the artifacts on disk and .pi-glla/ state — NOT your memory of the prior chat. Re-read files before editing them.",
-  ];
-  if (state.goal) {
-    lines.push(`Goal ${state.goal.id} — status ${state.goal.status}`);
-    lines.push(`Objective: ${state.goal.objective.slice(0, 200)}`);
-    const next = findNextPendingTask(state.goal.taskList?.tasks ?? []);
-    if (next) lines.push(`Next pending task: \`${next.id}\` — ${next.title}`);
-    const lastAudit = state.goal.auditHistory?.[state.goal.auditHistory.length - 1];
-    if (lastAudit) lines.push(`Last audit: ${auditVerdictLabel(lastAudit).toUpperCase()} (${lastAudit.at})`);
-  } else if (state.loop?.active) {
-    lines.push(`Loop: ${state.loop.target.slice(0, 160)} — iteration ${state.loop.iteration}`);
-  }
-  return lines.join("\n") + "\n\n";
-}
-
-function continuationPrompt(goal: Goal): string {
-  // Read the .md file as the template, then substitute {{tokens}}.
-  // For v0.1.0 we inline-substitute so we don't need fs at runtime.
-  const next = findNextPendingTask(goal.taskList?.tasks ?? []);
-  const nextBlock = next
-    ? `**Next pending task**: \`${next.id}\` — ${next.title}`
-    : "**Next pending task**: (none — only call complete_goal when the objective is satisfied)";
-  const taskSummary = goal.taskList?.tasks.length
-    ? buildTaskSummary(goal.taskList.tasks)
-    : "(no task list)";
-  const tmplPath = path.resolve(__dirname, "..", "..", "prompts", "goal-loop-continuation.md");
-  let tmpl: string;
-  try {
-    tmpl = fs.readFileSync(tmplPath, "utf-8");
-  } catch {
-    tmpl = "[template-not-found]";
-  }
-  // v0.25.0 (contract items 22/28): conditional directives — aggressiveMode
-  // TODOs from the audit cap, and the full-audit fan-out directive when the
-  // objective reads as a survey pivot.
-  const directives: string[] = [];
-  const effSettings = resolveEffectiveAggressiveSettings(loadSettings(freshCtx()?.cwd ?? process.cwd()));
-  if (goal.pendingTasks && goal.pendingTasks.length > 0) {
-    directives.push(
-      `## AUDITOR TODO LIST (from ${goal.pauseReason?.includes("cap") ? "the disapproval cap" : "the last audit"})\n\nAddress these objections, in order, before re-calling complete_goal:\n${goal.pendingTasks.map((t, i) => `${i + 1}. ${t}`).join("\n")}`,
-    );
-  }
-  // v0.34.72 (note.md 2026-08-07): the vision-assist directive — seeing is
-  // an mmx vision CLI job, never a reason to switch models (preapproval
-  // gate: forbiddenModels). Injected whenever the setting is not disabled.
-  if (loadSettings(freshCtx()?.cwd ?? process.cwd()).visionAssist !== false) {
-    directives.push(VISION_ASSIST_GUIDANCE);
-  }
-  if (effSettings.aggressiveMode && isFullAuditObjective(goal.objective)) {
-    directives.push(
-      "## FULL-AUDIT MODE (aggressiveMode + survey objective)\n\nThis objective is a survey, not a single fix. Spawn 3+ `Explore` subagents NOW — one per subsystem, in a single message so they run in parallel — synthesize their findings, and call `propose_task_list` with the result. Do not start fixing before the task list exists.",
-    );
-  }
-  const dynamicDirectives = directives.length > 0 ? directives.join("\n\n") : "(no active directives)";
-  return tmpl
-    .replace(/\$\{GOAL_ID\}/g, goal.id)
-    .replace(/\$\{OBJECTIVE\}/g, goal.objective)
-    .replace(/\$\{VERIFICATION_CONTRACT\}/g, goal.verificationContract || "(none — auditor will decide based on objective)")
-    .replace(/\$\{TASK_LIST\}/g, taskSummary)
-    .replace(/\$\{NEXT_PENDING_TASK_BLOCK\}/g, nextBlock)
-    .replace(/\$\{DYNAMIC_DIRECTIVES\}/g, dynamicDirectives);
-}
 
 // =================================================================
 // Goal lifecycle
@@ -6121,8 +5436,8 @@ const commandFlags: CommandFlags = {
   set consecutiveAbortIterations(v) { consecutiveAbortIterations = v; },
   get consecutiveErrorIterations() { return consecutiveErrorIterations; },
   set consecutiveErrorIterations(v) { consecutiveErrorIterations = v; },
-  get continuationDispatchStoodDown() { return continuationDispatchStoodDown; },
-  set continuationDispatchStoodDown(v) { continuationDispatchStoodDown = v; },
+  get continuationDispatchStoodDown() { return continuationDispatchStoodDownRef(); },
+  set continuationDispatchStoodDown(v) { setContinuationDispatchStoodDownRef(v); },
   get extensionApi() { return extensionApi; },
   set extensionApi(v) { extensionApi = v; },
   get iterationCounter() { return iterationCounter; },
@@ -6148,14 +5463,14 @@ const loopFlags: LoopFlags = {
   set sessionHandoffPending(v) { sessionHandoffPending = v; },
   get initialSessionLoadPending() { return initialSessionLoadPending; },
   set initialSessionLoadPending(v) { initialSessionLoadPending = v; },
-  get pendingContinuationDispatch() { return pendingContinuationDispatch; },
-  set pendingContinuationDispatch(v) { pendingContinuationDispatch = v; },
-  get continuationDispatchStoodDown() { return continuationDispatchStoodDown; },
-  set continuationDispatchStoodDown(v) { continuationDispatchStoodDown = v; },
-  get lastContinuationSentAt() { return lastContinuationSentAt; },
-  set lastContinuationSentAt(v) { lastContinuationSentAt = v; },
-  get lastContinuationSentPayload() { return lastContinuationSentPayload; },
-  set lastContinuationSentPayload(v) { lastContinuationSentPayload = v; },
+  get pendingContinuationDispatch() { return pendingContinuationDispatchRef(); },
+  set pendingContinuationDispatch(v) { setPendingContinuationDispatchRef(v); },
+  get continuationDispatchStoodDown() { return continuationDispatchStoodDownRef(); },
+  set continuationDispatchStoodDown(v) { setContinuationDispatchStoodDownRef(v); },
+  get lastContinuationSentAt() { return lastContinuationSentAtRef(); },
+  set lastContinuationSentAt(v) { setLastContinuationSentAtRef(v); },
+  get lastContinuationSentPayload() { return lastContinuationSentPayloadRef(); },
+  set lastContinuationSentPayload(v) { setLastContinuationSentPayloadRef(v); },
   get loopRearmSince() { return loopRearmSince; },
   set loopRearmSince(v) { loopRearmSince = v; },
   get loopRearmStreak() { return loopRearmStreak; },
@@ -6243,6 +5558,62 @@ const loopDeps: LoopDeps = {
   activeGoalSurfaceCommand,
 };
 
+
+// decomposition step 5 (v0.34.113): the continuation cluster (schedule/send,
+// dispatch sidecar, rearm accounting, queue-stuck probe, prompt assembly)
+// lives in goal-continuation.js — goal.ts owns the flags, observes them via
+// accessors. Timer/dispatch/rearm state stays in goal-continuation.js; goal.ts
+// reads it only through the exported ref accessors (invariant #3).
+const continuationFlags: ContinuationFlags = {
+  get sessionGeneration() { return sessionGeneration; },
+  get sessionHandoffPending() { return sessionHandoffPending; },
+  get initialSessionLoadPending() { return initialSessionLoadPending; },
+  get extensionApiStale() { return extensionApiStale; },
+  get staleTerminalDone() { return staleTerminalDone; },
+  get zombieStoodDown() { return zombieStoodDown; },
+  get extensionApi() { return extensionApi; },
+  get postCompletionSettleUntil() { return postCompletionSettleUntil; },
+  set postCompletionSettleUntil(v) { postCompletionSettleUntil = v; },
+  get postCompactResyncPending() { return postCompactResyncPending; },
+  set postCompactResyncPending(v) { postCompactResyncPending = v; },
+  get abortedStandDown() { return abortedStandDown; },
+  set abortedStandDown(v) { abortedStandDown = v; },
+  get lastCompactionAt() { return lastCompactionAt; },
+  get lastActivityAt() { return lastActivityAt; },
+  get lastRealActivityAt() { return lastRealActivityAt; },
+  get loopRearmStreak() { return loopRearmStreak; },
+  set loopRearmStreak(v) { loopRearmStreak = v; },
+  get loopRearmSince() { return loopRearmSince; },
+  set loopRearmSince(v) { loopRearmSince = v; },
+  get loopRearmMilestone() { return loopRearmMilestone; },
+  set loopRearmMilestone(v) { loopRearmMilestone = v; },
+  get completionAuditInFlight() { return completionAuditInFlight; },
+  get lastLongLivedFailureAt() { return lastLongLivedFailureAt; },
+};
+const continuationDeps: ContinuationDeps = {
+  instanceId,
+  GOAL_EVENT_ENTRY,
+  LIST_COMPLETION_SETTLE_MS,
+  persistState,
+  updateGoal,
+  refreshUI,
+  notifyExternal,
+  noteActivity,
+  rememberCtx,
+  freshCtx,
+  freshCtxForGeneration,
+  probeExtensionApiStale,
+  goStaleTerminal,
+  isForeignCtx,
+  sessionManagerId,
+  isActionableGoal,
+  isSupervising,
+  goalNoun,
+  activeGoalSurfaceCommand,
+  scheduleSessionTimeout,
+};
+createGoalContinuation(continuationFlags, continuationDeps);
+
 createGoalLoop(loopDeps);
 createGoalCommands(commandDeps);
 const recoveryFlags: RecoveryFlags = {
@@ -6266,8 +5637,8 @@ const recoveryFlags: RecoveryFlags = {
   set extensionApi(v) { extensionApi = v; },
   get extensionApiStale() { return extensionApiStale; },
   set extensionApiStale(v) { extensionApiStale = v; },
-  get continuationDispatchStoodDown() { return continuationDispatchStoodDown; },
-  set continuationDispatchStoodDown(v) { continuationDispatchStoodDown = v; },
+  get continuationDispatchStoodDown() { return continuationDispatchStoodDownRef(); },
+  set continuationDispatchStoodDown(v) { setContinuationDispatchStoodDownRef(v); },
   get lastLongLivedFailureAt() { return lastLongLivedFailureAt; },
   set lastLongLivedFailureAt(v) { lastLongLivedFailureAt = v; },
 };
@@ -6303,17 +5674,17 @@ const heartbeatFlags: HeartbeatFlags = {
   get sessionHandoffPending() { return sessionHandoffPending; },
   set sessionHandoffPending(v) { sessionHandoffPending = v; },
   get compactionGraceUntil() { return compactionGraceUntil; },
-  get continuationDispatchStoodDown() { return continuationDispatchStoodDown; },
-  get pendingContinuationDispatch() { return pendingContinuationDispatch; },
+  get continuationDispatchStoodDown() { return continuationDispatchStoodDownRef(); },
+  get pendingContinuationDispatch() { return pendingContinuationDispatchRef(); },
   get postCompactResumeOwed() { return postCompactResumeOwed; },
   set postCompactResumeOwed(v) { postCompactResumeOwed = v; },
   get postCompactResyncPending() { return postCompactResyncPending; },
   set postCompactResyncPending(v) { postCompactResyncPending = v; },
   get abortedStandDown() { return abortedStandDown; },
-  get continuationTimer() { return continuationTimer; },
-  get continuationStartTimer() { return continuationStartTimer; },
+  get continuationTimer() { return continuationTimerRef(); },
+  get continuationStartTimer() { return continuationStartTimerRef(); },
   get lastStreamActivityAt() { return lastStreamActivityAt; },
-  get lastContinuationSentAt() { return lastContinuationSentAt; },
+  get lastContinuationSentAt() { return lastContinuationSentAtRef(); },
   get lastRealActivityAt() { return lastRealActivityAt; },
   get consecutiveStalls() { return consecutiveStalls; },
   set consecutiveStalls(v) { consecutiveStalls = v; },
@@ -6512,7 +5883,7 @@ export default function (pi: ExtensionAPI): void {
     // v0.28.24: a compaction is LEGITIMATE busy time — reset the send-rearm
     // storm streaks (π-web nearly escalated a "send-retry storm" pause during
     // a 3.5-minute compact) and open the post-compaction stall grace.
-    continuationRearmStreak = 0; continuationRearmSince = 0;
+    setContinuationRearmStreak(0); setContinuationRearmSince(0);
     loopRearmStreak = 0; loopRearmSince = 0;
     compactionGraceUntil = Date.now() + COMPACTION_GRACE_MS;
     lastCompactionAt = Date.now();
@@ -6549,7 +5920,7 @@ export default function (pi: ExtensionAPI): void {
       const c = freshCtx();
       if (!c) return;
       try {
-        if (c.isIdle() && !c.hasPendingMessages() && continuationTimer === null && !loopTimerPending() && isSupervising() && !abortedStandDown) {
+        if (c.isIdle() && !c.hasPendingMessages() && !continuationTimerPending() && !loopTimerPending() && isSupervising() && !abortedStandDown) {
           appendLedger(c.cwd, "compaction_refire", {});
           if (isLoopActive()) scheduleLoopTick(c);
           else scheduleContinuation(c, true);
@@ -6570,7 +5941,7 @@ export default function (pi: ExtensionAPI): void {
       const c = freshCtx();
       if (!c) return;
       try {
-        if (c.isIdle() && !c.hasPendingMessages() && continuationTimer === null && !loopTimerPending() && isSupervising() && !abortedStandDown) {
+        if (c.isIdle() && !c.hasPendingMessages() && !continuationTimerPending() && !loopTimerPending() && isSupervising() && !abortedStandDown) {
           appendLedger(c.cwd, "compaction_grace_refire", {});
           if (isLoopActive()) scheduleLoopTick(c);
           else scheduleContinuation(c, true);
@@ -6793,7 +6164,7 @@ export default function (pi: ExtensionAPI): void {
     clearMainModelRecoveryTimer();
     mainModelAbortForRecovery = false;
     lastMainModelFailure = null;
-    continuationDispatchStoodDown = false;
+    setContinuationDispatchStoodDownRef(false);
     clearContinuationStartWatchdog();
     const recoveredDispatch = readDispatchRecord(ctx.cwd);
     if (recoveredDispatch) {
@@ -7590,7 +6961,7 @@ export default function (pi: ExtensionAPI): void {
     if (mainModelSwitchInFlight || !state.mainModelRecovery) return;
     clearMainModelRecoveryTimer();
     state.mainModelRecovery = undefined;
-    continuationDispatchStoodDown = false;
+    setContinuationDispatchStoodDownRef(false);
     appendLedger(ctx.cwd, "main_model_recovery_cancelled", { via: "manual-model-select", model: modelRef(ctx.model) });
     persistState(ctx);
     ctx.ui.notify("Manual model selection cancelled the automatic main-model recovery cycle. Resume the goal when ready.", "info");

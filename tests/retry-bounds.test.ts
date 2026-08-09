@@ -21,6 +21,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const CONT = fs.readFileSync("extensions/goal-continuation.ts", "utf-8"); // decomposition step 5 (v0.34.113)
 const RECOVERY = fs.readFileSync("extensions/goal-recovery.ts", "utf-8"); // decomposition step 3 (v0.34.111)
 const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
 const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
@@ -58,27 +59,27 @@ test("E2: auditor infra errors enter the durable bounded retry plan (v0.34.51 �
 });
 
 test("E3: send-retry re-arms counted, ledgered, escalated", () => {
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "send_rearm_start", \{ kind \}\)/);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "send_rearm_storm", \{ kind, streak/);
+  assert.match(CONT, /appendLedger\(ctx\.cwd, "send_rearm_start", \{ kind \}\)/); // decomposition step 5: accountSendRearm moved
+  assert.match(CONT, /appendLedger\(ctx\.cwd, "send_rearm_storm", \{ kind, streak/);
   // v0.34.102: a storm with NO accepted dispatch since it began surfaces
   // the "no turn started" diagnostic (field: dracon-platform 091828):
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "rearm_no_turn_started", \{ streak/);
+  assert.match(CONT, /appendLedger\(ctx\.cwd, "rearm_no_turn_started", \{ streak/);
   // wired into both send paths' re-arm sites:
-  assert.match(SRC, /accountSendRearm\(ctx, "continuation"\);/);
+  assert.match(CONT, /accountSendRearm\(ctx, "continuation"\);/);
   assert.match(LOOP, /\} else accountSendRearm\(ctx, "loop"\);/); // v0.33.1: null-ctx probes + backs off (moved to goal-loop.ts)
   assert.match(LOOP, /if \(probeExtensionApiStale\(\)\) return;\s*\n\s*flags\.loopRearmStreak\+\+;/); // v0.33.1 (flag accessor re-spelling)
   // a landed send clears the storm:
-  assert.match(SRC, /continuationRearmStreak = 0; continuationRearmSince = 0; \/\/ v0\.28\.5 \(E3\)/);
+  assert.match(CONT, /continuationRearmStreak = 0; continuationRearmSince = 0; \/\/ v0\.28\.5 \(E3\)/); // decomposition step 5: sendContinuation moved
   assert.match(LOOP, /flags\.loopRearmStreak = 0; flags\.loopRearmSince = 0; \/\/ v0\.28\.5 \(E3\)/); // flag accessor re-spelling
 });
 
 test("v0.28.29: busy-retry cadence backs off (no more flat 50ms spins)", () => {
-  assert.match(SRC, /function sendRearmDelayMs\(streak: number\): number/);
-  assert.match(SRC, /if \(streak <= 4\) return 50;/);
-  assert.match(SRC, /if \(streak <= 8\) return 250;/);
-  assert.match(SRC, /if \(streak <= 12\) return 1_000;/);
-  assert.match(SRC, /return 30_000;/);
-  assert.match(SRC, /scheduleSessionTimeout\(\(\) => sendContinuation\(goalId\), sendRearmDelayMs\(continuationRearmStreak\)\)/);
+  assert.match(CONT, /function sendRearmDelayMs\(streak: number\): number/); // decomposition step 5: moved
+  assert.match(CONT, /if \(streak <= 4\) return 50;/);
+  assert.match(CONT, /if \(streak <= 8\) return 250;/);
+  assert.match(CONT, /if \(streak <= 12\) return 1_000;/);
+  assert.match(CONT, /return 30_000;/);
+  assert.match(CONT, /scheduleSessionTimeout\(\(\) => sendContinuation\(goalId\), sendRearmDelayMs\(continuationRearmStreak\)\)/);
   assert.match(LOOP, /scheduleSessionTimeout\(\(\) => sendLoopTurn\(\), sendRearmDelayMs\(flags\.loopRearmStreak\)\)/); // flag accessor re-spelling
 });
 
@@ -86,24 +87,27 @@ test("v0.28.29: escalation is TIME-based and ACTIVITY-gated (busy ≠ wedged —
   // v0.34.108: the flat SEND_REARM_ESCALATE_AFTER_MS constant was dead code
   // (superseded by sendStormEscalateMs()'s knowledge-aware threshold) and
   // was removed. The activity gate and the 5m silent window remain.
-  assert.match(SRC, /const SEND_REARM_ESCALATE_SILENT_MS = 5 \* 60_000;/);
+  assert.match(CONT, /const SEND_REARM_ESCALATE_SILENT_MS = 5 \* 60_000;/); // decomposition step 5: moved
   assert.ok(!SRC.includes("SEND_REARM_ESCALATE_AFTER_MS"), "flat escalation constant removed (v0.34.108 dead-code sweep)");
+  assert.ok(!CONT.includes("SEND_REARM_ESCALATE_AFTER_MS"), "flat escalation constant removed (v0.34.108 dead-code sweep)");
   // v0.34.57: the flat 15m check became the generic branch of the
   // knowledge-aware threshold — the activity gate is unchanged.
-  assert.match(SRC, /elapsed >= sendStormEscalateMs\(lastLongLivedFailureAt\) && Date\.now\(\) - lastActivityAt >= SEND_REARM_ESCALATE_SILENT_MS/);
-  assert.match(SRC, /const SEND_REARM_LEDGER_MILESTONES_MS = \[2 \* 60_000, 5 \* 60_000, 10 \* 60_000\];/);
-  assert.match(SRC, /"send_rearm_escalated", \{ kind, afterMinutes: mins, silentMinutes: silent \}/);
+  assert.match(CONT, /elapsed >= sendStormEscalateMs\(flags\.lastLongLivedFailureAt\) && Date\.now\(\) - flags\.lastActivityAt >= SEND_REARM_ESCALATE_SILENT_MS/);
+  assert.match(CONT, /const SEND_REARM_LEDGER_MILESTONES_MS = \[2 \* 60_000, 5 \* 60_000, 10 \* 60_000\];/);
+  assert.match(CONT, /"send_rearm_escalated", \{ kind, afterMinutes: mins, silentMinutes: silent \}/);
   assert.ok(!SRC.includes("SEND_REARM_ESCALATE_AT"), "count-based escalation constant gone");
+  assert.ok(!CONT.includes("SEND_REARM_ESCALATE_AT"), "count-based escalation constant gone");
   assert.ok(!SRC.includes("SEND_REARM_LEDGER_EVERY"), "count-based ledger constant gone");
+  assert.ok(!CONT.includes("SEND_REARM_LEDGER_EVERY"), "count-based ledger constant gone");
 });
 
 test("E3: provider-held send storms enter durable main-model recovery", () => {
-  assert.match(SRC, /function escalateSendRearmStorm\(ctx: ExtensionContext, kind: "continuation" \| "loop"\): void/);
-  assert.match(SRC, /send-retry storm: \$\{mins\}m of re-arms with no session activity for \$\{silent\}m — the session never went idle for the continuation/);
+  assert.match(CONT, /function escalateSendRearmStorm\(ctx: ExtensionContext, kind: "continuation" \| "loop"\): void/); // decomposition step 5: moved
+  assert.match(CONT, /send-retry storm: \$\{mins\}m of re-arms with no session activity for \$\{silent\}m — the session never went idle for the continuation/);
   // v0.34.31: a supervising goal/loop rotates through configured backups and
   // installs a durable retry probe instead of making Escape the recovery plan.
-  assert.match(SRC, /void recoverMainModelFromSendStorm\(ctx, kind\);/);
-  assert.match(SRC, /backup when possible, and install a durable recovery probe/);
+  assert.match(CONT, /void recoverMainModelFromSendStorm\(ctx, kind\);/);
+  assert.match(CONT, /backup when possible, and install a durable recovery probe/);
   // The old restart-first guidance must not be the active loop-storm path.
   assert.ok(!SRC.includes("Press Escape to cancel the stuck run (pi's own rate-limit retry holds it; pi prints"));
   assert.ok(!SRC.includes("Restart pi, then /goal resume."), "restart-first storm guidance gone");
@@ -135,8 +139,8 @@ test("v0.34.26: output-token-limit provider errors are classified as a determini
 });
 
 test("v0.34.36: a loop whose continuation never starts is durably stopped and resumable", () => {
-  assert.match(SRC, /if \(record\.kind === "loop" && state\.loop\?\.active\)/);
-  assert.match(SRC, /stopReason: `stalled: continuation start acknowledgement timed out/);
+  assert.match(CONT, /if \(record\.kind === "loop" && state\.loop\?\.active\)/); // decomposition step 5: retryContinuationDispatch moved
+  assert.match(CONT, /stopReason: `stalled: continuation start acknowledgement timed out/);
   assert.match(LOOP, /!!r\?\.startsWith\("stalled:"\)/);
 });
 
@@ -195,8 +199,8 @@ test("v0.28.25: inter-error retries ride an exponential ladder, not the immediat
   const abortBranch = SRC.indexOf('} else if (stopReason === "aborted") {');
   assert.ok(ladderIdx > 0 && abortBranch > ladderIdx, "ladder return precedes the aborted branch");
   // and scheduleContinuation honors an explicit delay:
-  assert.match(SRC, /function scheduleContinuation\(ctx: ExtensionContext, force = false, delayMs\?: number\): void \{/);
-  assert.match(SRC, /delay = delayMs \?\? \(ctx\.isIdle\(\)/);
+  assert.match(CONT, /function scheduleContinuation\(ctx: ExtensionContext, force = false, delayMs\?: number\): void \{/); // decomposition step 5: moved
+  assert.match(CONT, /delay = delayMs \?\? \(ctx\.isIdle\(\)/);
 });
 
 test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUDITOR directly (no agent turn)", () => {

@@ -66,6 +66,7 @@ test("pause_goal tool notification carries the FULL reason AND suggested action"
 });
 
 const SRC = fs.readFileSync("extensions/loops/goal.ts", "utf-8");
+const CONT = fs.readFileSync("extensions/goal-continuation.ts", "utf-8"); // decomposition step 5 (v0.34.113)
 const HB = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
 const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
 
@@ -95,7 +96,8 @@ test("pause_goal tool: structured kind/options/recommended/resumeAt persist to t
   assert.match(SRC, /auditor retry: automatic retry horizon reached \(\$\{plan\.attempt\} attempts\)/);
   for (const [anchor, kind] of pairs) {
     const esc = anchor.replace(/[.*+?^$()[\]\\|]/g, "\\$&");
-    assert.match(SRC, new RegExp(`pauseKind: "${kind}",[\\s\\S]{0,900}?${esc}`), `${anchor} → pauseKind ${kind}`);
+    const source = anchor.includes("send-retry storm") ? CONT : SRC; // decomposition step 5: storm pauses moved to goal-continuation.ts
+    assert.match(source, new RegExp(`pauseKind: "${kind}",[\\s\\S]{0,900}?${esc}`), `${anchor} → pauseKind ${kind}`);
   }
 });
 
