@@ -799,6 +799,26 @@ export function deleteQueueItemFile(cwd: string, id: string): boolean {
   try { fs.unlinkSync(file); return true; } catch { return false; }
 }
 
+/** v0.35.0: clear every queue sidecar, including orphaned files that are
+ * absent from the in-memory queue after a stale handle or torn reload. */
+export function clearQueueItemFiles(cwd: string): { removed: number; failed: string[] } {
+  const dir = path.join(piGlaDir(cwd), "goals");
+  let names: string[];
+  try { names = fs.readdirSync(dir); } catch { return { removed: 0, failed: [] }; }
+  let removed = 0;
+  const failed: string[] = [];
+  for (const name of names) {
+    if (!name.endsWith(".queue.json")) continue;
+    try {
+      fs.unlinkSync(path.join(dir, name));
+      removed++;
+    } catch {
+      failed.push(name);
+    }
+  }
+  return { removed, failed };
+}
+
 /**
  * v0.34.60: read the queue from disk (sidecar files in `.pi-glla/goals/`)
  * when the in-memory list is missing or empty — the stale-handle fallback

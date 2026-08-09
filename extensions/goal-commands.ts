@@ -12,7 +12,7 @@ import type { ExtensionContext, ExtensionAPI } from "@earendil-works/pi-coding-a
 import { state, replaceState } from "./goal-state.js";
 import {
   DEFAULT_TOKEN_LIMIT, Goal, ListItem, Status, appendLedger, archiveDir, archivedGoalPath, bumpGoalRevision,
-  computeListDepth, deleteQueueItemFile, extractVerificationContract, formatAuditLog, formatGoalAuditHistory,
+  computeListDepth, clearQueueItemFiles, deleteQueueItemFile, extractVerificationContract, formatAuditLog, formatGoalAuditHistory,
   formatListDepth, goalArgsNeedDrafting, ledgerPath, newGoalId, nowIso, parseListImport, parseListItemDeclaration,
   readAuditLog, readQueueFromDisk, routeGoalArgs, routeListText, sanitizeDisplayText, statusLabel,
   writeQueueItemFile, type ModeCommand, type State, LIST_MUTATING_SUBCOMMANDS, SETTINGS_MUTATING_ACTIONS,
