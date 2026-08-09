@@ -875,11 +875,12 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
     fs.writeFileSync(target, md);
     return true;
   }) === true;
-  if (!archived) {
+  if (archived) {
+    try { fs.unlinkSync(goalMdPath(ctx.cwd, goal.id)); } catch {}
+  } else {
     ctx.ui.notify(`Could not archive ${goal.policy === "list" ? "the list item" : "the goal"} — the live objective was kept open and no terminal state was recorded. Fix the project disk and retry.`, "warning");
     return false;
   }
-  try { fs.unlinkSync(goalMdPath(ctx.cwd, goal.id)); } catch {}
   replaceState({
     ...state,
     goal: {

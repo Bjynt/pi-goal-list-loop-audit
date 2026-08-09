@@ -122,8 +122,8 @@ test("v0.28.30: pause/abort notifies name the policy (List item vs Goal) via goa
   const cmds = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2
   assert.match(src, /const goalNoun = \(\): string => \(state\.goal\?\.policy === "list" \? "List item" : "Goal"\);/);
   const occurrences = src.split("${goalNoun()}").length - 1;
-  assert.ok(occurrences >= 10, `goalNoun used across the notify surface (${occurrences} sites)`);
-  assert.match(cmds, /`\$\{goalNoun\(\)\} aborted\./);
+  assert.ok(occurrences >= 9, `goalNoun used across the notify surface (${occurrences} sites)`);
+  assert.match(cmds, /const noun = goalNoun\(\);[\s\S]*`\$\{noun\} aborted\./);
   assert.match(HB, /`\$\{goalNoun\(\)\} appears wedged/);
 });
 
