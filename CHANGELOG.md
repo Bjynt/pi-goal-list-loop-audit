@@ -30,7 +30,7 @@
   exclusion is enforced in headless/free-form input mode. New tests pin
   picker filtering, six-tab grouping, and both editor paths.
 
-### 0.34.117 — fresh-session auto-recovery on stale ctx (no /new needed)
+### 0.34.117 — fresh-session auto-recovery on stale ctx (historical claim; superseded by v0.34.119)
   (v0.34.117, audit/STALE-CTX-AUTO-RECOVERY-2026-08-09.md). Pi's compact
   subsystem holds a cached ctx; once it goes stale ("This extension ctx
   is stale after session replacement or reload") EVERY sendMessage
@@ -38,12 +38,15 @@
   capture-anime-girls field) was that /reload shares the same ctx and does
   NOT help; only /new clears it — until now, the user had to type /new by
   hand. New `extensions/goal-recovery.ts::attemptFreshSessionRecovery` calls
-  `ctx.newSession()` (the programmatic equivalent of /new) when the stale
+  The original implementation attempted `ctx.newSession()` (the programmatic
+  equivalent of /new) when the stale
   signature fires. All 5 `isStaleApiError` catch sites (`retryContinuationDispatch`,
   `sendContinuation`, `sendStallEscalation`, `sendLengthContinue`, `sendLoopTurn`)
   route through it BEFORE falling back to the legacy `goStaleTerminal` park
-  — the terminal park stays as the explicit fallback when the `newSession`
-  entrypoint is missing (older pi builds). Ledger events:
+  — **v0.34.119 correction:** `ExtensionAPI.newSession()` does not exist and
+  autonomous event contexts do not expose `newSession`; the real current path
+  truthfully parks and directs the user to `/new`. The terminal park stays as
+  the fallback until pi exposes a host-level replacement hook. Ledger events:
   `fresh_session_recovery_triggered` (fired + session_start will rehydrate
   from .pi-glla/); `fresh_session_recovery_skipped` (entrypoint missing);
   `fresh_session_recovery_failed` (entrypoint threw). New

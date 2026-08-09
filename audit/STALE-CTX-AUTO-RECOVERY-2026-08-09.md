@@ -1,4 +1,11 @@
-# Stale-ctx auto-recovery — v0.34.117
+# Stale-ctx auto-recovery — v0.34.117 (superseded)
+
+> **Correction status: superseded by v0.34.119.** The original v0.34.117
+> claim below that the extension could call `ExtensionAPI.newSession()` was
+> invalid against the real SDK. Read the prominent **v0.34.119 correction**
+> section at the end before treating any earlier implementation description as
+> current. Autonomous event contexts still require user `/new`; pi-side API
+> work is the remaining blocker.
 
 Field-observed in `capture-anime-girls` 2026-08-09 09:53 (`/home/dracon/Pictures/Screenshots/Screenshot_20260809_095353.png`) and `ai-auto-writer` 2026-08-09 (~17:30). Symptom: pi's compact subsystem throws `This extension ctx is stale after session replacement or reload` on every sendMessage in-process. `/reload` does not help (same ctx cache); only `/new` (fresh ctx) clears it. Until v0.34.117, the user had to type `/new` by hand every time the wedge fired.
 
