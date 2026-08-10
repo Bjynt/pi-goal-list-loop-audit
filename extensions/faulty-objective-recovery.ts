@@ -164,3 +164,23 @@ export function buildQueuedRepairRecord(goal: Goal, assessment: SuspiciousObject
     confidence: "fallback",
   };
 }
+
+export function appendObjectiveRepairRecord(goal: Goal, record: ObjectiveRepairRecord): void {
+  goal.objectiveRepairHistory = [...(goal.objectiveRepairHistory ?? []), record].slice(-10);
+}
+
+export function hasQueuedObjectiveRepair(goal: Goal): boolean {
+  return (goal.objectiveRepairHistory ?? []).some((record) =>
+    record.action === "queued" && record.originalObjective === goal.objective,
+  );
+}
+
+export function applyObjectiveRepair(goal: Goal, proposal: ObjectiveRepairProposal, at: string): ObjectiveRepairRecord {
+  const record = buildAutoRepairRecord(goal, proposal, at);
+  goal.objective = proposal.objective;
+  goal.verificationContract = proposal.verificationContract;
+  goal.revision = (goal.revision ?? 0) + 1;
+  goal.updatedAt = at;
+  appendObjectiveRepairRecord(goal, record);
+  return record;
+}
