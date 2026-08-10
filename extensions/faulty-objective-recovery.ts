@@ -75,7 +75,7 @@ export function assessSuspiciousObjective(objective: unknown, verificationContra
 
   if (!text) reasons.push("empty");
   if (archiveMetadata(text)) reasons.push("archive-metadata");
-  if (REVIEWER_MARKER.test(text) || REVIEWER_VOCABULARY.test(text)) reasons.push("verification-fragment");
+  if (REVIEWER_MARKER.test(text) || REVIEWER_VOCABULARY.test(text) || /<\/?(?:evidence|approved|disapproved|impossible)\b/i.test(text)) reasons.push("verification-fragment");
   if (/^#{1,6}\s+\S/.test(text)) reasons.push("heading");
   if (isAuditLikeNumberedText(text)) reasons.push("numbered-audit-fragment");
   if (SEMANTIC_REVIEW_FRAGMENT.test(text)) reasons.push("reviewer-fragment");
@@ -192,6 +192,10 @@ export function deriveObjectiveRepair(goal: Goal, assessment: SuspiciousObjectiv
   for (const task of goal.taskList?.tasks ?? []) {
     if (task.status === "complete") continue;
     candidates.push(["taskList", usableCandidate(task.title), "recovered the next incomplete durable task"]);
+  }
+  const normalized = stripArchiveDecoration(current);
+  if (normalized !== current) {
+    candidates.push(["objective-normalization", usableCandidate(normalized), "removed explicit archive decoration without inventing intent"]);
   }
   // completionSummary is not trusted merely because it is present. It is
   // eligible only when the durable audit history says that context passed.
