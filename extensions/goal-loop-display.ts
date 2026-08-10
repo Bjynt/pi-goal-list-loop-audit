@@ -626,7 +626,12 @@ function pausedNextTransition(g: Goal, state: State, now: number): string {
   const resume = g.policy === "list" ? "/list resume" : "/goal resume";
   const retryAt = state.mainModelRecovery?.retryAt ? Date.parse(state.mainModelRecovery.retryAt) : Number.NaN;
   if (Number.isFinite(retryAt)) {
-    return retryAt <= now ? "resuming now" : `quota reset at ${formatClockTime(retryAt)}`;
+    // v0.34.125: never claim a "quota reset at HH:MM" — the provider
+    // window is NOT a guaranteed reset, and the :00:30 hourly probe can
+    // pick work back up earlier (note.md 2026-08-10: "this is just an
+    // extra … not a guaranteed reset of course but possible to pick up
+    // work a bit faster"). The next transition is an automatic retry.
+    return retryAt <= now ? "resuming now" : "retrying automatically";
   }
   const resumeAt = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) : Number.NaN;
   if (Number.isFinite(resumeAt)) {
@@ -766,11 +771,14 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       // start a turn"): a wait-pause parked on mainModelRecovery must name
       // the blocker, not promise a live retry. "auto-retrying · auto-retry
       // in 42m" read as pi actively starting turns; in fact NO turn starts
-      // until the reset — the goal is parked on the provider wall. Mirror
-      // the v0.34.95 queued-envelope wording so both surfaces agree.
+      // while the goal is parked on the provider wall. Mirror the v0.34.95
+      // queued-envelope wording so both surfaces agree. v0.34.125: no
+      // time claim — "until quota reset at HH:MM" overpromised (the window
+      // is not a guaranteed reset and the :00:30 hourly probe picks work
+      // up earlier; note.md 2026-08-10).
       const parked = state.mainModelRecovery?.retryAt ? Date.parse(state.mainModelRecovery.retryAt) : Number.NaN;
       if (Number.isFinite(parked)) {
-        return `glla: ${paint(theme, "dim", `⏳ parked on provider wall — no turns until quota reset at ${formatClockTime(parked)}`)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
+        return `glla: ${paint(theme, "dim", `⏳ parked on provider wall — retrying automatically`)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
       }
       return `glla: ${paint(theme, "dim", `⏳ auto-retrying${when}`)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
     }
@@ -841,14 +849,15 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     // v0.34.95: when parked on quota, name the blocker — `[QUEUED] 12m 26s`
     // reads as a stalled queue with no WHY (Screenshot_20260808_014303
     // darklord LIST-AUDIT-COLLECT). State.mainModelRecovery is the
-    // bounded envelope's parked state; when set, render "waiting for
-    // quota reset at HH:MM" alongside the queue depth. No chat spam, no
-    // extra prompt — the status line just says what's blocking.
+    // bounded envelope's parked state; when set, render "parked on
+    // provider wall" alongside the queue depth. No chat spam, no extra
+    // prompt — the status line just says what's blocking. v0.34.125: no
+    // "waiting for quota reset at HH:MM" — the window is not a guaranteed
+    // reset (note.md 2026-08-10) and the :00:30 hourly probe may pick the
+    // work up earlier.
     const recovery = state.mainModelRecovery;
     const blockedByQuota = queued && recovery && recovery.retryAt;
-    const quotaSuffix = blockedByQuota
-      ? ` · waiting for quota reset at ${formatClockTime(Date.parse(recovery!.retryAt!))}`
-      : "";
+    const quotaSuffix = blockedByQuota ? ` · parked on provider wall` : "";
     // Keep the screenshot-proven order: state, elapsed, freshness, then
     // queue/task context. It scans like a compact instrument readout and
     // remains useful when the above-editor card is hidden or scrolled away.
@@ -1190,13 +1199,15 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       ? Date.parse(g.pauseResumeAt) - now
       : Number.NaN;
     // v0.34.102: a paused goal parked on mainModelRecovery is recovering —
-    // name the reset time in the card body too (field: dracon-platform
-    // 2026-08-08 090343 "working while displaying paused").
+    // name the park in the card body too (field: dracon-platform
+    // 2026-08-08 090343 "working while displaying paused"). v0.34.125: no
+    // "until quota reset at HH:MM" — not a guaranteed reset; the :00:30
+    // hourly probe picks work up earlier (note.md 2026-08-10).
     const parkedAt = state.mainModelRecovery?.retryAt ? Date.parse(state.mainModelRecovery.retryAt) : Number.NaN;
     if (kind === "decision") lines.push(`├─ ${paint(theme, "accent", "decision needed — your call unblocks this")}`);
     else if (kind === "error") lines.push(`├─ ${paint(theme, "error", "action needed — this won't fix itself")}`);
     else if (Number.isFinite(parkedAt)) {
-      lines.push(`├─ ${paint(theme, "dim", `parked on provider wall — no turns until quota reset at ${formatClockTime(parkedAt)}`)}`);
+      lines.push(`├─ ${paint(theme, "dim", `parked on provider wall — retrying automatically`)}`);
     }
     else if (Number.isFinite(retryMs)) {
       const when = retryMs <= 0 ? "now" : `next probe in ${fmtElapsed(retryMs)}`;

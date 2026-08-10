@@ -141,11 +141,14 @@ test("stream-proven work uses one compact status-bar HUD; the card stays quiet",
 
 // v0.34.95: when the goal is queued AND state.mainModelRecovery is set
 // (the bounded envelope is parked), the status line names the blocker —
-// `waiting for quota reset at HH:MM` follows the queue depth. No chat
-// spam, no extra prompt — just truth on the existing status line.
+// `parked on provider wall` follows the queue depth. No chat spam, no
+// extra prompt — just truth on the existing status line. v0.34.125: the
+// old `waiting for quota reset at HH:MM` claim is gone — the window is
+// not a guaranteed reset and the :00:30 hourly probe picks work up
+// earlier (note.md 2026-08-10).
 // Field evidence: Screenshot_20260808_014303 darklord LIST-AUDIT-COLLECT
 // showed `[QUEUED] 12m 26s` with no WHY.
-test("v0.34.95: queued + parked recovery surfaces 'waiting for quota reset at HH:MM' on the status line", () => {
+test("v0.34.95: queued + parked recovery surfaces 'parked on provider wall' on the status line (no reset-time claim)", () => {
   const queuedWithRecovery = {
     goal: goalOf({ policy: "list", createdAt: "2026-07-21T11:59:16Z" }),
     list: Array.from({ length: 18 }, (_, i) => ({ id: `queued-${i}`, objective: "queued", addedAt: "z" })),
@@ -167,7 +170,8 @@ test("v0.34.95: queued + parked recovery surfaces 'waiting for quota reset at HH
   const status = buildStatusText(queuedWithRecovery, null, NOW, undefined, { activity: "queued" })!;
   assert.match(status, /\[QUEUED\]/);
   assert.match(status, /18 queued/);
-  assert.match(status, /waiting for quota reset at \d{2}:\d{2}/);
+  assert.match(status, /parked on provider wall/);
+  assert.doesNotMatch(status, /quota reset/);
 });
 
 test("v0.34.95: queued WITHOUT a parked recovery does NOT show quota text (no false signal)", () => {
@@ -500,10 +504,10 @@ test("paused lifecycle projection names owner, queue, last activity, and next tr
   assert.match(status, /owner: main-model recovery/);
   assert.match(status, /2 queued/);
   assert.match(status, /last activity 2m 00s ago/);
-  assert.match(status, /next: quota reset at/);
+  assert.match(status, /next: retrying automatically/);
   const widget = buildWidgetLines(state, null, NOW, undefined, undefined, extras)!;
   assert.ok(widget.some((line) => line.includes("lifecycle: safely parked") && line.includes("owner: main-model recovery") && line.includes("2 queued")), widget.join("\\n"));
-  assert.ok(widget.some((line) => line.includes("last activity 2m 00s ago") && line.includes("next: quota reset at")), widget.join("\\n"));
+  assert.ok(widget.some((line) => line.includes("last activity 2m 00s ago") && line.includes("next: retrying automatically")), widget.join("\\n"));
 });
 
 test("paused decision without activity says no turn was observed and names the manual path", () => {
@@ -1446,10 +1450,11 @@ test("v0.34.102: paused goal parked on mainModelRecovery renders as RECOVERING, 
   };
   const w = buildWidgetLines(state as never)!;
   assert.ok(w.some((l) => l.includes("recovering")), `head says recovering: ${w.join("\n")}`);
-  assert.ok(w.some((l) => l.includes("parked on provider wall") && l.includes("quota reset at")), `card names the reset: ${w.join("\n")}`);
+  assert.ok(w.some((l) => l.includes("parked on provider wall") && l.includes("retrying automatically")), `card names the park without a reset-time claim: ${w.join("\n")}`);
   assert.doesNotMatch(w.join("\n"), /⏸ paused/, "the head chip no longer reads paused");
+  assert.doesNotMatch(w.join("\n"), /quota reset/, "no guaranteed-reset time claim on the card");
   const s = buildStatusText(state as never)!;
-  assert.ok(s.includes("parked on provider wall") && s.includes("no turns until quota reset at"), `status names the blocker: ${s}`);
+  assert.ok(s.includes("parked on provider wall") && s.includes("retrying automatically"), `status names the blocker without a reset-time claim: ${s}`);
   assert.ok(!s.includes("auto-retrying"), "auto-retrying promise is gone for the parked case (it read as live retry)");
 });
 
