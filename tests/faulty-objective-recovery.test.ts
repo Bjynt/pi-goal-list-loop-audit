@@ -31,8 +31,20 @@ test("detects archive-derived and verification-fragment objectives", () => {
   assert.ok(result.reasons.includes("verification-fragment"));
 });
 
+test("detects reviewer prose, headings, numbered audit text, and dangling fragments", () => {
+  for (const text of [
+    "The gate and both apply sites exist. Now I need to verify the retry path.",
+    "## Required fixes",
+    "1. Guard the stored completion audit and stale generation.",
+    "Implement the recovery gate or",
+  ]) {
+    assert.equal(assessSuspiciousObjective(text).suspicious, true, text);
+  }
+});
+
 test("valid imperative objectives are not flagged", () => {
   assert.equal(assessSuspiciousObjective("Implement the recovery gate").suspicious, false);
+  assert.equal(assessSuspiciousObjective("Implement archive").suspicious, false);
   assert.equal(assessSuspiciousObjective("Fix the stale resume path", "run the focused tests").suspicious, false);
 });
 
@@ -46,7 +58,40 @@ test("normalization is an automatic provenance repair", () => {
   assert.equal(g.objective, "Implement the repair gate");
   assert.equal(g.revision, 1);
   assert.equal(record.action, "auto-applied");
+  assert.equal(record.reason, "removed explicit archive decoration without inventing intent");
+  assert.equal(record.revisionBefore, 0);
+  assert.equal(record.revisionAfter, 1);
   assert.equal(g.objectiveRepairHistory?.length, 1);
+});
+
+test("durable original provenance wins over reviewer prose and supplies the saved contract", () => {
+  const g = goal({
+    objective: "The gate and both apply sites exist. Now I need to verify the retry path.",
+    verificationContract: "",
+    objectiveProvenance: {
+      originalObjective: "Implement archive",
+      originalContract: "Done when: the recovery test passes",
+      userSeeds: ["Implement archive\nDone when: the recovery test passes"],
+    },
+    pendingCompletion: {
+      at: "2026-08-10T15:24:00.000Z",
+      verificationSummary: "Ran 1228 tests, zero failures",
+    },
+  });
+  const proposal = deriveObjectiveRepair(g, assessSuspiciousObjective(g.objective));
+  assert.equal(proposal?.source, "original-record");
+  assert.equal(proposal?.objective, "Implement archive");
+  assert.equal(proposal?.verificationContract, "Done when: the recovery test passes");
+  assert.match(proposal?.evidence ?? "", /original record/);
+  assert.match(proposal?.evidence ?? "", /pending verification summary/);
+});
+
+test("unverified completion prose is never promoted", () => {
+  const g = goal({
+    objective: "The gate and both apply sites exist. Now I need to verify the retry path.",
+    completionSummary: "Implement an invented replacement from the last chat",
+  });
+  assert.equal(deriveObjectiveRepair(g, assessSuspiciousObjective(g.objective)), null);
 });
 
 test("durable pending task is preferred when the objective cannot be normalized", () => {
@@ -56,10 +101,12 @@ test("durable pending task is preferred when the objective cannot be normalized"
   assert.equal(proposal?.objective, "Implement the paused recovery gate");
 });
 
-test("irrecoverable suspicious objectives produce a queued repair task", () => {
+test("irrecoverable suspicious objectives produce a non-suspicious queued repair task", () => {
   const g = goal({ objective: "verification contract" });
   const assessment = assessSuspiciousObjective(g.objective);
   assert.equal(deriveObjectiveRepair(g, assessment), null);
-  assert.match(buildRepairTaskObjective(g, assessment), /^Repair suspicious objective:/);
+  const repair = buildRepairTaskObjective(g, assessment);
+  assert.equal(assessSuspiciousObjective(repair).suspicious, false);
+  assert.match(repair, /^Repair the blocked list item from saved intent$/);
   assert.equal(hasQueuedObjectiveRepair(g), false);
 });
