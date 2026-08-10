@@ -444,12 +444,22 @@ function registerAgentTools(pi: any): void {
       // the shift is auditable.
       if (p.newObjective?.trim()) {
         const oldObjective = state.goal.objective;
-        const { objective: cleanObj, verificationContract } = extractVerificationContract(p.newObjective.trim());
+        const rawNewObjective = p.newObjective.trim();
+        const { objective: cleanObj, verificationContract } = extractVerificationContract(rawNewObjective);
+        const priorProvenance = state.goal.objectiveProvenance;
         // v0.34.61: contract-scoped revision bump — one of exactly two
         // sites (the other: cmdTweak). persistState no longer bumps, so
         // the settle writes of THIS call keep the audited revision stable.
         state.goal = bumpGoalRevision(state.goal);
-        updateGoal({ objective: cleanObj, ...(verificationContract ? { verificationContract } : {}) }, ctx);
+        updateGoal({
+          objective: cleanObj,
+          ...(verificationContract ? { verificationContract } : {}),
+          objectiveProvenance: {
+            originalObjective: priorProvenance?.originalObjective ?? oldObjective,
+            ...(priorProvenance?.originalContract ? { originalContract: priorProvenance.originalContract } : {}),
+            userSeeds: [...(priorProvenance?.userSeeds ?? []), rawNewObjective].slice(-10),
+          },
+        }, ctx);
         appendLedger(ctx.cwd, "goal_tweaked", { via: "complete_goal.newObjective", from: oldObjective.slice(0, 200), to: cleanObj.slice(0, 200) });
         ctx.ui.notify(`Objective updated (complete_goal newObjective): ${cleanObj.slice(0, 80)}`, "info");
       }
