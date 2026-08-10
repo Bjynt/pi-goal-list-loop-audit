@@ -46,6 +46,13 @@ test("repro: live sequence startup/shutdown(resume)/rebound(resume) then /list a
   console.log("=== last state list:", JSON.stringify(lastState?.value?.list));
 
   assert.ok(goals.length === 1 || notified.length > 0, "a list item should have been activated (goal md or notify)");
+  // v0.34.122 (fix): activation CONSUMES the item — the final state line
+  // carries the active goal with the queue emptied. The pre-fix bug kept
+  // the item stuck in a frozen list (enqueue persisted [] and nothing
+  // activated); the fix makes the enqueue persist the item and the
+  // activation take it off.
+  const lastGoal = lastState?.value?.goal as { id?: string } | null | undefined;
+  assert.ok(lastGoal && typeof lastGoal.id === "string", "final state must carry the activated goal");
   const lastList = lastState?.value?.list as unknown[] | undefined;
-  assert.ok(Array.isArray(lastList) && lastList.length > 0, "state.list should contain the queued item");
+  assert.ok(Array.isArray(lastList) && lastList.length === 0, "final state.list must be consumed by activation");
 });

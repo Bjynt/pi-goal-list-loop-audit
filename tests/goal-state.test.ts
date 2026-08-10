@@ -19,7 +19,7 @@ const STATE_SRC = fs.readFileSync("extensions/goal-state.ts", "utf-8");
 
 test("goal-state.ts owns the state singleton (single source of truth)", () => {
   // The singleton is declared exactly once, in goal-state.ts.
-  assert.match(STATE_SRC, /export let state: State = \{ goal: null \};/);
+  assert.match(STATE_SRC, /export const state: State = \{ goal: null \};/);
   assert.ok(!GOAL_SRC.includes("let state: State"), "goal.ts must not declare a second state singleton");
   // goal.ts imports the binding from goal-state.js.
   assert.match(GOAL_SRC, /import \{ state, replaceState, persistStateLine \} from "\.\.\/goal-state\.js";/);
@@ -35,7 +35,12 @@ test("wholesale state replacement goes through replaceState() only", () => {
   assert.deepEqual(reassigns.map((r) => r.i), [], `stray state = reassignments: ${JSON.stringify(reassigns.map((r) => r.line.trim().slice(0, 80)))}`);
   // And the primitive exists for the sites that DID move.
   assert.match(STATE_SRC, /export function replaceState\(next: State\): void \{/);
-  assert.match(STATE_SRC, /state = next;/);
+  // v0.34.122: in-place mutation — the exported binding must NEVER be
+  // reassigned (jiti's captured-value export binding froze importers on the
+  // original object; see the incident comment in goal-state.ts).
+  assert.match(STATE_SRC, /export const state: State = \{ goal: null \};/);
+  assert.match(STATE_SRC, /Object\.assign\(state, next\);/);
+  assert.ok(!STATE_SRC.includes("state = next;"), "replaceState must not reassign the exported binding");
 });
 
 test("the persistence core lives in goal-state.ts (persistStateLine)", () => {
