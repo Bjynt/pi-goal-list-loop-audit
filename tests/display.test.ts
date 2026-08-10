@@ -457,6 +457,62 @@ test("paused shows the reason", () => {
   assert.match(buildStatusText({ goal: g, list: [] }, null, NOW)!, /paused ⏸ auditor disapproved/);
 });
 
+test("paused lifecycle projection names owner, queue, last activity, and next transition", () => {
+  const retryAt = new Date(NOW + 20 * 60_000).toISOString();
+  const state = {
+    goal: goalOf({
+      policy: "list",
+      status: "paused",
+      pauseKind: "wait",
+      pauseReason: "main model recovery — retrying",
+      pauseResumeAt: retryAt,
+    }),
+    list: [{ objective: "next one" }, { objective: "next two" }],
+    mainModelRecovery: {
+      primary: "minimax/MiniMax-M3",
+      attempted: ["minimax/MiniMax-M3"],
+      attempts: 1,
+      retryAt,
+      reason: "provider unavailable",
+      kind: "goal",
+    },
+  } as State;
+  const extras = { lastActivityAt: NOW - 2 * 60_000 };
+  const status = buildStatusText(state, null, NOW, undefined, extras)!;
+  assert.match(status, /owner: main-model recovery/);
+  assert.match(status, /2 queued/);
+  assert.match(status, /last activity 2m 00s ago/);
+  assert.match(status, /next: quota reset at/);
+  const widget = buildWidgetLines(state, null, NOW, undefined, undefined, extras)!;
+  assert.ok(widget.some((line) => line.includes("lifecycle: safely parked") && line.includes("owner: main-model recovery") && line.includes("2 queued")), widget.join("\\n"));
+  assert.ok(widget.some((line) => line.includes("last activity 2m 00s ago") && line.includes("next: quota reset at")), widget.join("\\n"));
+});
+
+test("paused decision without activity says no turn was observed and names the manual path", () => {
+  const state = {
+    goal: goalOf({
+      policy: "goal",
+      status: "paused",
+      usage: undefined,
+      pauseKind: "decision",
+      pauseReason: "choose the deployment target",
+      pauseSuggestedAction: "Choose one, then /goal resume.",
+      pauseOptions: ["staging", "production"],
+      pauseRecommended: 1,
+    }),
+    list: [],
+  } as State;
+  const status = buildStatusText(state, null, NOW)!;
+  assert.match(status, /owner: user decision/);
+  assert.match(status, /last activity not observed/);
+  assert.match(status, /next: user decision → \/goal resume/);
+  const widget = buildWidgetLines(state, null, NOW)!;
+  const joined = widget.join("\\n");
+  assert.match(joined, /lifecycle: safely parked · owner: user decision · queue empty/);
+  assert.match(joined, /last activity not observed · next: user decision → \/goal resume/);
+  assert.match(joined, /1\. staging/);
+});
+
 test("auditing shows the auditor's current tool", () => {
   const g = goalOf({ status: "auditing" });
   const s = buildStatusText({ goal: g, list: [] }, { currentTool: "read" }, NOW)!;

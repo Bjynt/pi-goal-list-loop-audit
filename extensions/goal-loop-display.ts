@@ -592,9 +592,14 @@ function pausedLifecycleLines(g: Goal, state: State, extras: WidgetExtras | unde
   ];
 }
 
-function pausedStatusSuffix(g: Goal, state: State, extras: WidgetExtras | undefined, now: number): string {
+function pausedStatusSuffix(g: Goal, state: State, extras: WidgetExtras | undefined, now: number, queueFirst = false): string {
   const [lifecycle, transition] = pausedLifecycleLines(g, state, extras, now);
-  return ` · ${lifecycle.replace(/^lifecycle: /, "")} · ${transition}`;
+  const queueLabel = (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "queue empty";
+  const lifecycleText = lifecycle.replace(/^lifecycle: /, "");
+  if (queueFirst) {
+    return ` · ${queueLabel} · ${lifecycleText.replace(` · ${queueLabel}`, "")} · ${transition}`;
+  }
+  return ` · ${lifecycleText} · ${transition}`;
 }
 
 /**
@@ -663,9 +668,8 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       // /list resume". The v0.34.57 MAIN_HOST_LABEL guard still covers
       // host-bearing states (auditing); this paused state is deliberately
       // not host-bearing anymore.
-      const queued = (state.list?.length ?? 0) > 0 ? ` · ${state.list!.length} queued` : "";
       const resume = g.policy === "list" ? "/list resume" : "/goal resume";
-      return `glla: ${paint(theme, "warning", "⏸ paused")} · ${paint(theme, "dim", "auditor parked — no verdict")} · ${resume}${queued}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
+      return `glla: ${paint(theme, "warning", "⏸ paused")} · ${paint(theme, "dim", "auditor parked — no verdict")} · ${resume}${pausedStatusSuffix(g, state, extras, now, true)}${heldSuffix}`;
     }
     const kind = pauseKind(g);
     if (kind === "decision") return `glla: ${paint(theme, "accent", "⏸ decision needed")}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
@@ -679,14 +683,12 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       // pauses without a recovery timer render as ⏸ action needed (the only
       // honest non-quota "manual" state — agent-initiated blocks, decision
       // pauses don't reach here).
-      const queued = state.list?.length ?? 0;
-      const queue = queued > 0 ? ` · ${queued} queued` : "";
       const rms = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) - now : Number.NaN;
       const when = Number.isFinite(rms)
         ? rms <= 0 ? " · resuming…" : ` · auto-retry in ${fmtElapsed(rms)}`
         : "";
       if (kind === "blocked") {
-        return `glla: ${paint(theme, "warning", `⏸ action needed${when}`)}${queue}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
+        return `glla: ${paint(theme, "warning", `⏸ action needed${when}`)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
       }
       // v0.34.102 (field: dracon-platform 2026-08-08 091828 "pi did not
       // start a turn"): a wait-pause parked on mainModelRecovery must name
@@ -696,9 +698,9 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       // the v0.34.95 queued-envelope wording so both surfaces agree.
       const parked = state.mainModelRecovery?.retryAt ? Date.parse(state.mainModelRecovery.retryAt) : Number.NaN;
       if (Number.isFinite(parked)) {
-        return `glla: ${paint(theme, "dim", `⏳ parked on provider wall — no turns until quota reset at ${formatClockTime(parked)}`)}${queue}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
+        return `glla: ${paint(theme, "dim", `⏳ parked on provider wall — no turns until quota reset at ${formatClockTime(parked)}`)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
       }
-      return `glla: ${paint(theme, "dim", `⏳ auto-retrying${when}`)}${queue}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
+      return `glla: ${paint(theme, "dim", `⏳ auto-retrying${when}`)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
     }
     const label = `paused ⏸ ${truncate(g.pauseReason ?? "", 40)}`;
     return `glla: ${paint(theme, pauseIsError(g) ? "error" : "warning", label)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
@@ -1081,9 +1083,15 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       // surfaces. Parked vocabulary names the goal state: the audit waits.
       lines.push(`├─ ${paint(theme, "warning", "auditor: parked — no verdict")}`);
       lines.push(`├─ ${paint(theme, "dim", "the stored completion claim was not evaluated — the audit waits while the item is paused")}`);
+      const [lifecycle, transition] = pausedLifecycleLines(g, state, extras, now);
+      lines.push(`├─ ${paint(theme, "dim", lifecycle)}`);
+      lines.push(`│  ${paint(theme, "dim", transition)}`);
       lines.push(`└─ ${paint(theme, "warning", g.pauseSuggestedAction ?? `The claim is safe; ${isList ? "/list resume" : "/goal resume"} starts exactly one fresh auditor.`)}`);
       return lines;
     }
+    const [lifecycle, transition] = pausedLifecycleLines(g, state, extras, now);
+    lines.push(`├─ ${paint(theme, "dim", lifecycle)}`);
+    lines.push(`│  ${paint(theme, "dim", transition)}`);
     const kind = pauseKind(g);
     const isErr = kind === "error";
     const budget = budgetFor(width, 3, 60);
