@@ -67,6 +67,38 @@ tarball installation or publish was performed; a future runtime validation
 must install the local v0.34.121 tarball and restart pi before comparing field
 behavior.
 
+## Reassessment of the supplied ranking document
+
+`/home/dracon/Downloads/Ranking Pi Goal Extensions.txt` is a generated JSON
+transcript, not a checkout or source bundle for the ranked packages. Its
+inline snippets therefore cannot establish that another extension has a
+working stale-session repair. Several claims conflict with the installed pi
+SDK's actual public types:
+
+```text
+@earendil-works/pi-coding-agent 0.81.1
+AgentSettledEvent              { type: "agent_settled" }
+ExtensionContext               has sessionManager (ReadonlySessionManager), no newSession
+ExtensionCommandContext        has newSession(), fork(), switchSession(), reload()
+ExtensionAPI                   has appendEntry(), sendMessage(), no newSession()
+```
+
+The document's `agent_settled` idea is still useful for **normal continuation
+ordering**: pi emits that event from `AgentSession._emitAgentSettled()` in a
+`finally` block after the agent run and its retry/compaction handling. It does
+not fire when the accepted continuation never enters a run, and it cannot
+create a replacement session. The current glla source already uses
+`agent_settled` for host-successor absorption and model-failover continuation;
+`before_agent_start` remains the strongest proof for the specific dispatched
+turn. No recovery redesign is justified by the ranking transcript alone.
+
+Likewise, the transcript's `ctx.session.appendCustomEntry(...)` example does
+not match this SDK: session persistence is exposed to extensions as
+`pi.appendEntry(customType, data)`, while event contexts expose only a
+read-only `sessionManager`. Durable entries can restore state after a session
+boundary, but they cannot manufacture that boundary or repair a stale event
+context.
+
 ## Current glla behavior
 
 - `extensions/goal-continuation.ts` uses a bounded 30-second first start-proof
