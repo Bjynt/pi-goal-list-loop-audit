@@ -23,6 +23,7 @@ import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 const NOW = Date.parse("2026-07-21T12:00:00Z");
 const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
+const GOAL_UI = fs.readFileSync("extensions/loops/goal-ui.ts", "utf-8");
 
 function goalOf(overrides: Partial<Goal> = {}): Goal {
   return {
@@ -455,6 +456,11 @@ test("widget goal policy keeps /goal status hint + list N prefix", () => {
 test("paused shows the reason", () => {
   const g = goalOf({ status: "paused", pauseReason: "auditor disapproved: missing tests" });
   assert.match(buildStatusText({ goal: g, list: [] }, null, NOW)!, /paused ⏸ auditor disapproved/);
+});
+
+test("paused runtime projection carries goal-scoped activity into the display extras", () => {
+  assert.match(GOAL_UI, /if \(goal\.status !== "active"\) return \{ lastActivityAt, lastStreamActivityAt: streamAt \};/);
+  assert.match(GOAL_UI, /Guard by goal creation so a previous item's activity cannot leak/);
 });
 
 test("paused lifecycle projection names owner, queue, last activity, and next transition", () => {
