@@ -41,9 +41,9 @@ test("normalization is an automatic provenance repair", () => {
   const assessment = assessSuspiciousObjective(g.objective, g.verificationContract);
   const proposal = deriveObjectiveRepair(g, assessment);
   assert.ok(proposal);
-  assert.equal(proposal?.objective, "passes sequentially, including validated recovery");
+  assert.equal(proposal?.objective, "Implement the repair gate");
   const record = applyObjectiveRepair(g, proposal!, "2026-08-10T15:24:00.000Z");
-  assert.equal(g.objective, "passes sequentially, including validated recovery");
+  assert.equal(g.objective, "Implement the repair gate");
   assert.equal(g.revision, 1);
   assert.equal(record.action, "auto-applied");
   assert.equal(g.objectiveRepairHistory?.length, 1);
