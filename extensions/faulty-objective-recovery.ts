@@ -172,6 +172,19 @@ function approvedCompletionContext(goal: Goal): string | null {
   return usableCandidate(goal.completionSummary);
 }
 
+function auditedRequiredFix(goal: Goal): string | null {
+  for (const verdict of [...(goal.auditHistory ?? [])].reverse()) {
+    if (!verdict.disapproved || !verdict.report) continue;
+    const block = verdict.report.split(/##\s*required fixes\s*/i)[1];
+    if (!block) continue;
+    for (const line of block.split(/\r?\n/)) {
+      const candidate = usableCandidate(line.replace(/^\s*(?:[-*]|\d+[.)])\s+/, ""));
+      if (candidate) return candidate;
+    }
+  }
+  return null;
+}
+
 /**
  * Choose only durable, already-recorded intent. This is intentionally not a
  * model call: event handlers must not create a turn or invent a task. The
@@ -183,6 +196,9 @@ export function deriveObjectiveRepair(goal: Goal, assessment: SuspiciousObjectiv
   const candidates: Array<[string, string | null, string]> = [];
   const provenance = goal.objectiveProvenance;
   candidates.push(["original-record", seedObjective(provenance?.originalObjective), "restored the durable original objective"]);
+  for (const record of [...(goal.objectiveRepairHistory ?? [])].reverse()) {
+    candidates.push(["repair-history", seedObjective(record.originalObjective), "restored the original objective from an earlier durable repair record"]);
+  }
   for (const seed of provenance?.userSeeds ?? []) {
     candidates.push(["user-seed", seedObjective(seed), "restored an explicit user-supplied seed"]);
   }
@@ -198,6 +214,7 @@ export function deriveObjectiveRepair(goal: Goal, assessment: SuspiciousObjectiv
     candidates.push(["objective-normalization", usableCandidate(normalized), "removed explicit archive decoration without inventing intent"]);
   }
   // completionSummary is not trusted merely because it is present. It is
+  candidates.push(["auditHistory", auditedRequiredFix(goal), "recovered one actionable required fix from durable audit context"]);
   // eligible only when the durable audit history says that context passed.
   candidates.push(["verifiedCompletionContext", approvedCompletionContext(goal), "restored a completion context already approved by the auditor"]);
 
