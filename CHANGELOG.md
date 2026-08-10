@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+### Validated session-start recovery for parked detached audits
+  (`audit/SESSION-START-AUDIT-RECOVERY-2026-08-10.md`). A durable completion
+  claim already parked as `recovery-pending` now follows the existing
+  `session_start` recovery policy: a matching host handoff/rebind or explicit
+  global Auto-resume starts one fresh detached-auditor retry, while ordinary
+  cold/manual startup remains paused for `/goal resume`. No stale context is
+  used to create a session, and Pi host/process replacement remains out of
+  scope. Behavioral coverage pins validated handoff recovery, Auto-resume, and
+  no-blind-resend/manual-hold paths.
+
 ### 0.34.121 — close auditor lifecycle gaps in cancel, wipe, and blank startup
   (v0.34.121, audit/OBJECTIVE-LIFECYCLE-FOLLOWUP-2026-08-09.md). `/glla
   cancel` now stops an active loop before considering unrelated waiting list

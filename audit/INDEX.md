@@ -44,6 +44,9 @@ plus a `v0.34.x-<TOPIC>.md` symlink for versioned docs). Older docs
 
 ## Topic index (canonical docs, newest first)
 
+**2026-08-10**
+- SESSION-START-AUDIT-RECOVERY-2026-08-10.md — validated fresh-session recovery for durable `recovery-pending` detached-auditor claims; ordinary cold starts remain held and Pi host replacement stays out of scope
+
 **2026-08-09**
 - NOTE-REMAINING-TRIAGE-2026-08-09.md — re-audit of every note.md item; summary canonicalization, whole-objective cancel, closure integration tests, truthful stale-ctx `/new` and subagent-transcript pi limitations, and 15-heading status matrix (v0.34.121)
 - EXTERNAL-REVIEWS-2026-08-09.md — raw retrieval status and relevant ChatGPT review excerpts; Qwen HTTP 401 blocker
