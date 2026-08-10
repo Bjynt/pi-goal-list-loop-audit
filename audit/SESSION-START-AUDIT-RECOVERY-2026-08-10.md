@@ -66,6 +66,13 @@ npx tsc --noEmit
 TypeScript: No errors found
 ```
 
+The full sequential regression suite also remains green:
+
+```text
+bun test
+1216 pass / 1 skip / 0 fail across 107 files
+```
+
 Pi documentation sources consulted: `docs/extensions.md` (session events,
 command contexts, replacement lifecycle footguns and message APIs) and
 `docs/sdk.md` (`AgentSessionRuntime` replacement APIs). Pi core/host changes
