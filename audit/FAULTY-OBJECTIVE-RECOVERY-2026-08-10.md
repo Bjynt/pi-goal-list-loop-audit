@@ -68,4 +68,7 @@ bun test tests/disk-first-queue.test.ts
 
 bun test tests/revision-bound-audit.test.ts
 11 pass / 0 fail
+
+bun test
+1228 pass / 1 skip / 0 fail across 109 files
 ```
