@@ -40,7 +40,7 @@ const COMMAND_ONLY = /^(?:bun|npm|pnpm|yarn|npx|node|deno|git)\s+(?:test|run|che
 const REVIEWER_MARKER = /^(?:audit|review|verdict|evidence|output|item|required\s+fixes?|completion\s+claim)\s*:/i;
 const REVIEWER_VOCABULARY = /\b(?:passes\s+sequentially|zero\s+failures?|\d+\s+failures?|ran\s+\d+\s+tests?|verification\s+contract|regression\s+shield|auditor(?:[- ](?:approved|report|disapproved))?|completion\s+claim|<\/?(?:evidence|approved|disapproved|impossible)\b)\b/i;
 const SEMANTIC_REVIEW_FRAGMENT = /\b(?:now\s+)?i\s+(?:need|should|must)\s+(?:to\s+)?(?:verify|check|inspect|confirm)\b/i;
-const DANGling_END = /\b(?:or|and|but|to|with|because|if|when|of|the|a|an|in|for|from)\s*$/i;
+const DANGling_END = /\b(?:or|and|but|to|with|because|if|when|of|in|for|from)\s*$/i;
 
 function normalizedText(value: unknown): string {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
