@@ -426,6 +426,13 @@ export function dispatchPrepare(
     }),
     timeoutMs: continuationStartTimeoutMs(),
   };
+  // Central fail-closed check: every goal/stall dispatch, including callers
+  // that do not pass through scheduleContinuation, must revalidate the live
+  // goal identity and objective before touching pi's follow-up queue.
+  if (input.kind === "goal" || input.kind === "stall") {
+    if (!state.goal || state.goal.id !== input.goalId || state.goal.status !== "active") return null;
+    if (!guardGoalBeforeContinuation(ctx, "dispatch-prepare", input.goalId)) return null;
+  }
   // Persist ownership BEFORE asking pi to enqueue the follow-up. If this
   // fails, an accepted send would be impossible to reconcile after a reload.
   if (!persistDispatchRecord(ctx.cwd, record)) {
@@ -480,6 +487,7 @@ export function dispatchStartAcknowledged(ctx: ExtensionContext, source: string,
   if (!record || flags.sessionHandoffPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown) return false;
   if (record.generation !== flags.sessionGeneration || isForeignCtx(ctx)) return false;
   if (!dispatchMatchesOwner(record, flags.sessionGeneration, sessionManagerId(ctx))) return false;
+  if ((record.kind === "goal" || record.kind === "stall") && (!state.goal || state.goal.id !== record.goalId || state.goal.status !== "active")) return false;
   // before_agent_start is the strongest proof: it must carry this exact
   // dispatch marker. Later low-level events are accepted as compatibility
   // proofs because older pi builds may not expose the prompt there.
@@ -599,6 +607,10 @@ function armContinuationStartWatchdog(ctx: ExtensionContext, record: Continuatio
  * actionable, or the send failed). */
 function retryContinuationDispatch(ctx: ExtensionContext, record: ContinuationDispatch): boolean {
   if (pendingContinuationDispatch !== record || record.phase !== "accepted") return false;
+  if (record.kind === "goal" || record.kind === "stall") {
+    if (!state.goal || state.goal.id !== record.goalId || state.goal.status !== "active") return false;
+    if (!guardGoalBeforeContinuation(ctx, "dispatch-retry", record.goalId)) return false;
+  }
   // Belt-and-braces: the watchdog is normally cleared on pause/reload, but a
   // goal parked by another path mid-wait must never get a blind re-send.
   if (record.kind === "loop") {
@@ -634,6 +646,10 @@ function retryContinuationDispatch(ctx: ExtensionContext, record: ContinuationDi
 }
 
 export function dispatchAccepted(ctx: ExtensionContext, record: ContinuationDispatch): boolean {
+  if ((record.kind === "goal" || record.kind === "stall") && (!state.goal || state.goal.id !== record.goalId || state.goal.status !== "active")) {
+    if (pendingContinuationDispatch === record) dispatchFailed(ctx, record, "stale goal identity before dispatch acceptance");
+    return false;
+  }
   // A synchronous before_agent_start can acknowledge while sendMessage is
   // still on the stack. Do not overwrite that proof with "accepted".
   if (pendingContinuationDispatch !== record) return true;
@@ -702,15 +718,33 @@ export function armQueueStuckProbe(sentAt: number): void {
  * model turn or invent a task. A missing repair becomes a paused goal plus a
  * short queued repair item.
  */
-function guardGoalBeforeContinuation(ctx: ExtensionContext, where: string): boolean {
+export function guardGoalBeforeContinuation(
+  ctx: ExtensionContext,
+  where: string,
+  expectedGoalId?: string,
+  options: { allowAuditing?: boolean } = {},
+): boolean {
+  const allowAuditing = options.allowAuditing === true;
   const goal = state.goal;
-  if (!goal || (goal.status !== "active" && goal.status !== "paused")) return false;
+  if (!goal) return false;
+  if (expectedGoalId && goal.id !== expectedGoalId) {
+    appendLedger(ctx.cwd, "faulty_objective_stale_attempt_fence", { goalId: goal.id, expectedGoalId, where, generation: flags.sessionGeneration });
+    return false;
+  }
+  if (goal.status === "complete" || goal.status === "aborted") {
+    appendLedger(ctx.cwd, "faulty_objective_terminal_fence", { goalId: goal.id, status: goal.status, where });
+    return false;
+  }
+  if (goal.status === "auditing" && !allowAuditing) return false;
+  if (goal.status !== "active" && goal.status !== "paused" && goal.status !== "auditing") return false;
 
-  const archive = goal.archivedPath || archivedGoalPath(ctx.cwd, goal.id);
-  if (fs.existsSync(archive)) {
-    appendLedger(ctx.cwd, "faulty_objective_archive_fence", { goalId: goal.id, where, archive });
+  const storedArchive = goal.archivedPath
+    ? (path.isAbsolute(goal.archivedPath) ? goal.archivedPath : path.resolve(ctx.cwd, goal.archivedPath))
+    : archivedGoalPath(ctx.cwd, goal.id);
+  if (fs.existsSync(storedArchive)) {
+    appendLedger(ctx.cwd, "faulty_objective_archive_fence", { goalId: goal.id, where, archive: storedArchive });
     try { fs.rmSync(goalMdPath(ctx.cwd, goal.id), { force: true }); } catch { /* best effort */ }
-    state.goal = null;
+    replaceState({ ...state, goal: null });
     persistState(ctx);
     ctx.ui.notify("The goal was already archived/cancelled; stale in-memory work was discarded.", "warning");
     return false;
@@ -800,6 +834,11 @@ export function sendContinuation(goalId: string): void {
   flags.postCompletionSettleUntil = 0;
   continuationTimer = null;
   continuationScheduledFor = null;
+  if (!state.goal || state.goal.id !== goalId) {
+    const stale = freshCtx();
+    if (stale) appendLedger(stale.cwd, "faulty_objective_stale_attempt_fence", { expectedGoalId: goalId, currentGoalId: state.goal?.id ?? null, where: "sendContinuation" });
+    return;
+  }
   if (!isActionableGoal()) return;
   const ctx = freshCtx();
   if (!ctx) {
@@ -811,7 +850,7 @@ export function sendContinuation(goalId: string): void {
     continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), BACKOFF_IDLE_RETRY_MS);
     return;
   }
-  if (!guardGoalBeforeContinuation(ctx, "dispatch")) return;
+  if (!guardGoalBeforeContinuation(ctx, "dispatch", goalId)) return;
   if (!isActionableGoal()) return;
   if (!ctx.isIdle() || ctx.hasPendingMessages()) {
     accountSendRearm(ctx, "continuation");
@@ -864,6 +903,7 @@ export function sendContinuation(goalId: string): void {
 // call otherwise. display: true — the user should see the warning too.
 export function sendStallEscalation(ctx: ExtensionContext, nudges: number): void {
   if (flags.sessionHandoffPending || flags.initialSessionLoadPending || !flags.extensionApi || flags.extensionApiStale || continuationDispatchStoodDown || pendingContinuationDispatch) return;
+  if (!state.goal || !guardGoalBeforeContinuation(ctx, "stall-escalation")) return;
   const remaining = HEARTBEAT_MAX_NUDGES - nudges;
   const text = [
     `[STALL WARNING ${nudges}/${HEARTBEAT_MAX_NUDGES}] The last turn produced no tool calls.`,
@@ -904,6 +944,7 @@ export function sendStallEscalation(ctx: ExtensionContext, nudges: number): void
 // plain sessions truncate too.
 export function sendLengthContinue(ctx: ExtensionContext, consecutive: number): void {
   if (flags.sessionHandoffPending || flags.initialSessionLoadPending || !flags.extensionApi || flags.extensionApiStale || continuationDispatchStoodDown || pendingContinuationDispatch) return;
+  if (state.goal && !guardGoalBeforeContinuation(ctx, "length-continuation")) return;
   const attempt = dispatchPrepare(ctx, {
     generation: flags.sessionGeneration,
     ownerSessionId: sessionManagerId(ctx),
