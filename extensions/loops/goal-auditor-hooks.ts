@@ -148,6 +148,7 @@ import {
   sendRearmDelayMs,
   armQueueStuckProbe,
   buildPostCompactResync,
+  guardGoalBeforeContinuation,
   continuationTimerPending,
   continuationTimerRef,
   continuationStartTimerRef,
@@ -641,9 +642,12 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
   // cannot be proven live, the fresh session must rehydrate the durable claim.
   const initialCtx = freshCtxForGeneration(generation);
   if (!initialCtx) return;
+  if (!guardGoalBeforeContinuation(initialCtx, "stored-completion-audit", goalId, { allowAuditing: true })) return;
+  const guardedGoal = state.goal;
+  if (!guardedGoal || guardedGoal.id !== goalId || !guardedGoal.pendingCompletion) return;
   completionAuditRecoveryArmed = true;
   let liveCtx: ExtensionContext = initialCtx;
-  const claim = beginCompletionAudit(liveCtx, goal.pendingCompletion, origin);
+  const claim = beginCompletionAudit(liveCtx, guardedGoal.pendingCompletion, origin);
   const auditGoal = state.goal;
   if (!auditGoal || auditGoal.id !== goalId) return;
   if (origin === "session-recovery") {

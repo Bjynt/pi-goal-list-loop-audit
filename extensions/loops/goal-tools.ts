@@ -148,6 +148,7 @@ import {
   sendRearmDelayMs,
   armQueueStuckProbe,
   buildPostCompactResync,
+  guardGoalBeforeContinuation,
   continuationTimerPending,
   continuationTimerRef,
   continuationStartTimerRef,
@@ -549,6 +550,9 @@ function registerAgentTools(pi: any): void {
       // needed to see.
       const validated = p.completionSummary?.trim() ? validateCompletionSummary(p.completionSummary, ctx) : p.completionSummary;
       const validatedSummary = validated?.trim() || undefined;
+      if (!guardGoalBeforeContinuation(ctx, "completion-audit-dispatch", state.goal?.id)) {
+        return staleToolResult();
+      }
       const completionClaim = beginCompletionAudit(ctx, {
         completionSummary: validatedSummary,
         verificationSummary: p.verificationSummary,

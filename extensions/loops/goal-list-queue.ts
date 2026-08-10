@@ -374,6 +374,10 @@ import {
   type LoopFlags,
 } from "../goal-loop.js";
 import { defineGoalRuntimeGlobal } from "./goal-runtime-globals.js";
+import {
+  assessSuspiciousObjective,
+  buildRepairTaskObjective,
+} from "../faulty-objective-recovery.js";
 
 // =================================================================
 // Loop 2: /list list
@@ -395,6 +399,22 @@ function groupOpenChildren(groupId: string): number {
   const inQueue = listQueue().filter((c) => c.parentId === groupId).length;
   const activeChild = state.goal && state.goal.parentId === groupId && state.goal.status !== "complete" && state.goal.status !== "aborted" ? 1 : 0;
   return inQueue + activeChild;
+}
+
+/** Keep the malformed queue item in place and put a safe, actionable repair
+ * item immediately ahead of it. The original is not silently dropped or
+ * archived merely because activation was attempted. */
+function queueRepairAheadOfListItem(ctx: ExtensionContext, item: ListItem, assessment: ReturnType<typeof assessSuspiciousObjective>): void {
+  const repairObjective = buildRepairTaskObjective({ policy: "list", objective: item.objective } as Goal, assessment);
+  if (listQueue().some((queued) => queued.objective === repairObjective)) return;
+  const before = new Set(listQueue().map((queued) => queued.id));
+  enqueueItems(ctx, [repairObjective], "faulty-objective", { autoActivate: false });
+  const added = listQueue().find((queued) => !before.has(queued.id) && queued.objective === repairObjective);
+  if (!added) return;
+  const rest = listQueue().filter((queued) => queued.id !== added.id);
+  replaceState({ ...state, list: [added, ...rest] });
+  persistState(ctx);
+  appendLedger(ctx.cwd, "faulty_objective_repair_promoted", { goalId: added.id, position: 1, source: "list-activation" });
 }
 
 function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: boolean }): boolean {
@@ -435,6 +455,19 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
       "warning",
     );
     return false;
+  }
+  const candidate = queue[n - 1];
+  if (candidate) {
+    const assessment = assessSuspiciousObjective(candidate.objective, candidate.verificationContract);
+    if (assessment.suspicious) {
+      appendLedger(ctx.cwd, "faulty_objective_list_activation_blocked", {
+        queueItemId: candidate.id,
+        reasons: assessment.reasons,
+      });
+      queueRepairAheadOfListItem(ctx, candidate, assessment);
+      ctx.ui.notify("The queued item looks like reviewer/verification text, so it was not activated; a safe repair item is next in the list.", "warning");
+      return false;
+    }
   }
   const taken = takeAt(queue, n);
   if (!taken) return false;
