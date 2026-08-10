@@ -1128,9 +1128,20 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // v0.35.x: an interrupted stored completion claim is released from the
     // MAIN's auditing wait before any recovery policy is considered. A valid
     // handoff/rebind or global autoResume may then start one fresh attempt;
-    // cold/manual sessions remain paused until /goal resume.
-    if (state.goal?.status === "auditing" && state.goal.pendingCompletion) {
-      markCompletionAuditRecoveryPending(ctx, `session_start:${startReason}`);
+    // cold/manual sessions remain paused until /goal resume. A claim already
+    // parked as recovery-pending is the durable form produced by a stale
+    // host/session boundary; it must receive the same policy on the first
+    // genuinely fresh session instead of requiring a second manual command.
+    const storedCompletionGoal = state.goal;
+    const storedCompletionClaim = storedCompletionGoal?.pendingCompletion;
+    const interruptedCompletionAudit = !!storedCompletionGoal && !!storedCompletionClaim && (
+      storedCompletionGoal.status === "auditing" ||
+      (storedCompletionGoal.status === "paused" && storedCompletionClaim.phase === "recovery-pending")
+    );
+    if (interruptedCompletionAudit && storedCompletionGoal && storedCompletionClaim) {
+      if (storedCompletionGoal.status === "auditing") {
+        markCompletionAuditRecoveryPending(ctx, `session_start:${startReason}`);
+      }
       const canRecoverNow = explicitRecovery || autoResume;
       const recoveredClaim = state.goal?.pendingCompletion;
       if (canRecoverNow && recoveredClaim) {

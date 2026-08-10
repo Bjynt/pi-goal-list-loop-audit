@@ -2570,6 +2570,53 @@ test("v0.34.21 lifecycle: cold startup holds a recovered claim until explicit re
   assert.ok((ctx.ui.widgets["pi-glla"] as string[]).some((line) => line.includes("auditor: parked — no verdict")), "the widget names the parked auditor (v0.34.87 surface separation)");
 });
 
+test("v0.35.x: validated session handoff auto-retries a parked completion audit", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const fakePi = writeFakeAuditor(cwd, "disapproved", 350);
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = fakePi;
+  try {
+    const first = await freshSession(cwd, "startup");
+    await pi.command("goal", "session handoff audit target — done when pinned", first);
+    await tick();
+    const audit = pi.runTool("complete_goal", {
+      completionSummary: "The parked claim should recover on a valid handoff.",
+      verificationSummary: "A fresh session must retry the stored claim without manual resume.",
+    }, first);
+    await waitUntil(() => (readState(cwd).goal as { status?: string } | null)?.status === "auditing");
+    const before = readState(cwd).goal as { pendingCompletion?: { attemptId?: string } };
+    const oldAttempt = before.pendingCompletion?.attemptId;
+    assert.ok(oldAttempt);
+
+    // A non-quit lifecycle boundary writes a matching handoff sidecar. The
+    // successor session is therefore allowed to recover the parked claim;
+    // this is different from merely contacting the successor with a tool.
+    await pi.fire("session_shutdown", { reason: "reload" }, first);
+    const replacement = await freshSession(cwd, "reload");
+    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "audit_recovery_started"));
+
+    const afterStart = readState(cwd).goal as { status?: string; pendingCompletion?: { attemptId?: string; phase?: string } } | null;
+    assert.equal(afterStart?.status, "auditing", "the fresh host continues the detached audit, not the main goal");
+    assert.notEqual(afterStart?.pendingCompletion?.attemptId, oldAttempt, "recovery dispatch owns a fresh attempt");
+    assert.equal(readLedger(cwd).filter((entry) => entry.type === "audit_recovery_started").length, 1, "one recovery dispatch is ledgered");
+    assert.ok(replacement.ui.matching("Fresh session recovered the interrupted completion audit").length >= 1);
+
+    await waitUntil(() => {
+      const settled = readState(cwd).goal as { status?: string; pendingCompletion?: unknown; auditHistory?: unknown[] } | null;
+      return settled?.status === "active" && !settled.pendingCompletion && (settled.auditHistory?.length ?? 0) >= 1;
+    });
+    await pi.fire("session_shutdown", { reason: "quit" }, replacement);
+    await audit;
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    __testOnlyResetOwnerSession();
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
 test("v0.35.x: stale host loss releases an in-flight completion audit without a verdict", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
