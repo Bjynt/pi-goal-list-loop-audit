@@ -45,3 +45,25 @@ note status count                       15 (all finding headings explicitly anno
 Pi must expose a safe session-replacement action to event handlers (or an equivalent host-level recovery hook) if glla is expected to create a fresh session automatically after a stale event-context error. The extension cannot safely manufacture a replacement `AgentSessionRuntime` from the public `ExtensionContext`; it can only preserve state, stop blind sends, and direct the user to `/new`.
 
 Pi also owns the subagent transcript/reveal surface shown in the new screenshot. A glla extension cannot add the missing full-output/diff affordance to pi's native subagent tree without a host-level rendering or transcript API; glla records the limitation rather than claiming a plugin fix.
+
+---
+
+# Addendum 2026-08-10 (v0.34.122) — new note findings under heavy testing
+
+The note was re-read at 2026-08-10 ~21:30 UTC; it now contains **8 additional
+finding headings** (screenshots 105112-212014) captured DURING heavy testing
+of v0.34.121+ (the version with the decomposed modules and — at 21:20 UTC —
+the still-unfixed jiti state-binding split). Status below reflects
+disposition; detailed root-cause audit ran in parallel (see
+`audit/AUDIT-2026-08-10-HEAVY-TESTING-REPORTS.md` once written).
+
+| New note item | Status | Notes |
+|---|---|---|
+| Quota wall chat dump (105112/105109/105107) | **Under audit — likely recurrence** | Repeated `429 Token Plan usage limit` banners pasted in chat despite v0.34.92 removing the quota-prompt system. User: "didn't we remove the quota wall??" |
+| Not retrying at hour boundary (161339/161233/161835) | **Under audit** | Retry timers land mid-hour (8m48s, 4235s, 7917s, 52m47s) — quotas refresh at :00; hourly probe is documented at :00:30. |
+| Host session lost recurrence (161428) | **Under audit** | `■ host session lost - waiting for fresh session_start`; v0.34.117-119 claimed handling. |
+| Complete without close + long summary (170919) | **Under audit** | Slot not closed after complete; huge recap pasted. v0.34.120 claimed auto-close. |
+| Auditor frozen / blocked – no verdict (161616/161653/161756/161905) | **Under audit** | "completion claim was not evaluated"; only `/glla resume` restarts it; reload shows stuck. |
+| Working while showing pause state (162121/170713/170710) | **Under audit** | "Working..." + task "paused" simultaneously (3h+ pauses). |
+| Auditor disapproval chat leak | **Known constraint** | Verdict text may flash in chat briefly then vanish; user: "we never want to show error there". |
+| Registry-vs-disk mismatch (212014, no note text) | **Pre-fix window; verify post-fix** | `complete_goal` says "No active goal" while `goals/20260810201156-mccwc3.md` exists on disk; 21:20 UTC, before the v0.34.122 in-place-state fix (21:45). Verify the fence path can't leave memory/disk divergent post-fix. |
