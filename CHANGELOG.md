@@ -3,12 +3,16 @@
 ## Unreleased
 ### Faulty-objective recovery gate
   (`audit/FAULTY-OBJECTIVE-RECOVERY-2026-08-10.md`). Suspicious objectives are
-  now checked before resume, session-start auto-resume, list activation, and
-  continuation dispatch. Durable provenance can produce an automatic repair
-  with a revisioned record; otherwise the item is paused, never dispatched,
-  and a short repair task is queued. Archived/canceled IDs are hard-fenced
-  against stale resurrection. Valid objectives and Pi core/host boundaries
-  remain unchanged.
+  now checked before manual/startup resume, pre-activation list selection,
+  stored completion-audit retry, continuation retry, stall, length, and final
+  dispatch paths. Original/user-seed provenance, pending verification context,
+  task intent, prior repair history, and auditor-approved completion context
+  are consulted before a coherent repair is auto-applied with replacement
+  contract, reason/evidence, and revision-before/after recording. Uncertain
+  items pause and receive a safe non-recursive repair task promoted next in
+  the disk-first queue. Reviewer headings/fragments, dangling text, canceled
+  and stale generations are fenced while valid objectives such as `Implement
+  archive` remain untouched. Pi core/host boundaries remain unchanged.
 
 ### Prevent reviewer metadata from becoming malformed queue goals
   (`audit/REVIEWER-ARCHIVE-METADATA-GUARD-2026-08-10.md`). Automatic postaudit
