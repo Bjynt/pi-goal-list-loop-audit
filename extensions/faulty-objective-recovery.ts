@@ -243,7 +243,7 @@ export function buildAutoRepairRecord(
     originalObjective: goal.objective,
     replacementObjective: proposal.objective,
     originalContract: goal.verificationContract,
-    replacementContract: proposal.verificationContract,
+    replacementContract: proposal.verificationContract ?? "",
     source: proposal.source,
     reason: proposal.reason,
     evidence: proposal.evidence,
@@ -283,7 +283,10 @@ export function applyObjectiveRepair(goal: Goal, proposal: ObjectiveRepairPropos
   const before = goal.revision ?? 0;
   const record = buildAutoRepairRecord(goal, proposal, at, before);
   goal.objective = proposal.objective;
-  if (proposal.verificationContract !== undefined) goal.verificationContract = proposal.verificationContract;
+  // Never carry a reviewer/evidence fragment forward as a contract. A
+  // coherent durable contract is applied; otherwise the repaired goal has an
+  // explicitly empty contract rather than an unvalidated stale value.
+  goal.verificationContract = proposal.verificationContract ?? "";
   goal.revision = before + 1;
   goal.updatedAt = at;
   appendObjectiveRepairRecord(goal, record);

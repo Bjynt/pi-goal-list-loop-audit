@@ -419,6 +419,15 @@ export function dispatchPrepare(
   ctx: ExtensionContext,
   input: Omit<Parameters<typeof createContinuationDispatch>[0], "id" | "sentAt">,
 ): ContinuationDispatch | null {
+  if (input.generation !== flags.sessionGeneration) {
+    appendLedger(ctx.cwd, "faulty_objective_stale_attempt_fence", {
+      where: "dispatch-prepare",
+      inputGeneration: input.generation,
+      currentGeneration: flags.sessionGeneration,
+      goalId: input.goalId ?? null,
+    });
+    return null;
+  }
   const record: ContinuationDispatch = {
     ...createContinuationDispatch({
       ...input,
