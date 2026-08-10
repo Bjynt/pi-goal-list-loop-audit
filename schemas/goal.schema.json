@@ -78,7 +78,7 @@
   "definitions": {
     "objectiveRepair": {
       "type": "object",
-      "required": ["at", "action", "originalObjective", "source", "evidence", "confidence"],
+      "required": ["at", "action", "originalObjective", "source", "reason", "evidence", "confidence", "revisionBefore", "revisionAfter"],
       "properties": {
         "at": { "type": "string", "format": "date-time" },
         "action": { "type": "string", "enum": ["auto-applied", "queued"] },
