@@ -1,6 +1,18 @@
 # Changelog
 
 ## Unreleased
+### v0.34.126 — /glla settings table completeness (hourlyQuotaProbe + toolOverrides rows, provenance fix)
+  Settings-menu audit (2026-08-10): the hourly-quota-probe toggle had a
+  dispatcher handler but NO row in the table — the setting the user asked
+  to keep was only reachable by hand-editing the JSON. Added the row to
+  Backups. The toolOverrides feature had only the /glla tooloverride CLI;
+  the table now carries a Tool overrides row (Other) with an interactive
+  project-scoped editor (list / allow / hide / unallow / unhide / set /
+  unset). subagentFallbacks was missing from SETTINGS_KEYS so its rows
+  always showed provenance "default" — key added; the wedge-alert doc
+  comment claimed 45 but the real default is 30
+  (WEDGE_ALERT_DEFAULT_MINUTES) — corrected.
+
 ### v0.34.125 — quota-reset time claims removed from UI; temporary quota messages honored at their own short window
   (`note.md` 2026-08-10, Screenshot_20260810_224142/224136/224132/224119/224114).
   Field sessions parked on provider walls showed `next: quota reset at

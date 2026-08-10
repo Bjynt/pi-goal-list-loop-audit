@@ -1024,13 +1024,19 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const apply = (patch: Partial<NonNullable<Settings["toolOverrides"]>>) =>
         saveSettings("project", ctx.cwd, { toolOverrides: { ...current, ...patch } });
       if (verb === "allow" || verb === "hide") {
-        const list = current[verb] ?? [];
-        if (!list.includes(tool)) apply({ [verb]: [...list, tool] });
+        if (verb === "allow") {
+          const list = current.allow ?? [];
+          if (!list.includes(tool)) apply({ allow: [...list, tool] });
+        } else {
+          const list = current.hide ?? [];
+          if (!list.includes(tool)) apply({ hide: [...list, tool] });
+        }
         ctx.ui.notify(`"${tool}" is now ${verb === "allow" ? "always visible" : "always hidden"} (project override saved).`, "info");
         return;
       }
       if (verb === "unallow" || verb === "unhide") {
-        apply({ [verb]: (current[verb] ?? []).filter((t) => t !== tool) });
+        if (verb === "unallow") apply({ allow: (current.allow ?? []).filter((t: string) => t !== tool) });
+        else apply({ hide: (current.hide ?? []).filter((t: string) => t !== tool) });
         ctx.ui.notify(`"${tool}" ${verb.slice(2)} override removed — the session decides again.`, "info");
         return;
       }
