@@ -1,6 +1,35 @@
 # Changelog
 
 ## Unreleased
+### v0.34.124 — stale goal card actions + unexplained QUEUED status + false watchdog interrupt after recovery
+  (`note.md` 2026-08-10, Screenshot_20260810_221249 + 221345). Three UI/UX
+  findings from the field:
+  - **Stale action on the goal card**: the `recentActions` ring was not
+    goal-scoped — the previous goal's `✓ complete_goal` leaked onto the new
+    goal's card. Tool results now stamp `at`, and the card only shows actions
+    newer than the goal's creation (`>= createdAt − 5s`; unstamped legacy
+    entries stay visible).
+  - **QUEUED status with no explanation**: the queued line now reports
+    `turn pending` (a continuation is dispatched but not yet acknowledged)
+    plus host last-activity freshness, so a waiting card says WHY it waits.
+  - **False "did not start turn" interrupt**: the continuation watchdog fired
+    90s after a main-model-recovery resume while the model chain was still
+    warming up (goal `20260810205826-npnmfa`, watchdog at 21:13:15Z, turn
+    started 21:14:36Z). `mainModelRecoverySucceeded` now stamps
+    `lastMainModelRecoveryResumeAt`; the watchdog re-arms within a 5-minute
+    recovery grace (`continuation_start_paused_for_recovery`, capped at 10
+    re-arms) instead of interrupting.
+  Test-suite hardening found while verifying:
+  - the new module-level recovery-resume stamp leaked across files in bun's
+    shared-process node:test runner (blocked-pause-autoclear set it via
+    `mainModelRecoverySucceeded`; its resetModuleState now clears it) — this
+    re-armed 7 continuation-watchdog tests in sibling files;
+  - auditor-process fragment test: 25ms emit gaps let a stretched parent poll
+    miss intermediate byte counts (sampling race) — gaps widened to 120ms,
+    wall timeout 2s→5s;
+  - behavioral watchdog tests: real-time wait budgets widened (1.5s→4s) so
+    heavy-CI load does not stretch 300ms test timers past the deadline.
+
 ### v0.34.123 — widget spacer renders as a stray dot in π-web; agents-panel separator padding
   (`note.md` 2026-08-10, Screenshot_20260810_220759 + 220051). The auditing
   card's paragraph spacer `WORKER_TEXT_SPACER` was a dim `│ ·` hairline;
