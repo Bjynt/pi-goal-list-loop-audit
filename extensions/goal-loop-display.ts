@@ -1066,7 +1066,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     // The status bar is the single activity HUD. Keep the widget's audit line
     // factual and compact; the ⟡ head icon plus this phase identify the
     // detached verifier without repeating the animated status badge.
-    lines.push(`├─ ${host} · auditor: ${phaseLabel}${detail}`);
+    lines.push(`├─ ${host} · auditor: ${phaseLabel}${detail} · detached worker`);
 
     // Show observed worker facts, not a made-up percentage or semantic claim.
     // This is the difference between “the timer moved” and “I can see what
@@ -1100,6 +1100,10 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
         observations.push(`report stream muted — ${fmtByteCount(audit.reportBytes)} written · final text at verdict`);
       else observations.push("report stream muted — final text at verdict");
     }
+    // A complete snapshot may have no current tool, so retain a compact,
+    // protocol-safe evidence summary beside the last tool/final report facts.
+    const evidence = auditorEvidenceSummary(audit, phase);
+    if (evidence) observations.push(`evidence: ${evidence}`);
     const unmatchedStarts = audit?.unmatchedToolStarts ?? 0;
     const unmatchedEnds = audit?.unmatchedToolEnds ?? 0;
     if (unmatchedStarts + unmatchedEnds > 0) {
@@ -1116,20 +1120,21 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
 
     const activity = auditorActivityAge(audit, now);
     const last = auditorLastActivity(audit, now);
+    const next = auditorNextTransition(phase);
     if (phase === "quiet") {
       const quietMs = activity ?? 0;
-      lines.push(`└─ ${paint(theme, "warning", `auditor quiet ${fmtElapsed(quietMs)}${last} — may be stuck; /goal cancel discards the claim`)}`);
+      lines.push(`└─ ${paint(theme, "warning", `auditor quiet ${fmtElapsed(quietMs)}${last} — may be stuck; /goal cancel discards the claim · next: ${next}`)}`);
     } else if (phase === "blocked") {
-      lines.push(`└─ ${paint(theme, "warning", `auditor blocked${audit?.label ? ` — ${truncate(audit.label, 44)}` : ""}${last}`)}`);
+      lines.push(`└─ ${paint(theme, "warning", `auditor blocked${audit?.label ? ` — ${truncate(audit.label, 44)}` : ""}${last} · next: ${next}`)}`);
     } else if (phase === "awaiting-verdict") {
-      lines.push(`└─ ${paint(theme, "dim", `waiting for detached verdict${last}`)}`);
+      lines.push(`└─ ${paint(theme, "dim", `waiting for detached verdict${last} · next: ${next}`)}`);
     } else if (phase === "queued") {
-      lines.push(`└─ ${paint(theme, "dim", "detached worker queued — completion claim is durable")}`);
+      lines.push(`└─ ${paint(theme, "dim", `detached worker queued — completion claim is durable · next: ${next}`)}`);
     } else if (audit?.elapsedMs) {
       const firstEvent = audit.lastActivityAt === undefined ? " · waiting for first worker event" : "";
-      lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(audit.elapsedMs)} in detached worker${firstEvent}${last}`)}`);
+      lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(audit.elapsedMs)} in detached worker${firstEvent}${last} · next: ${next}`)}`);
     } else {
-      lines.push(`└─ ${paint(theme, "dim", `detached worker, read-only tools${last || " · waiting for first worker event"}`)}`);
+      lines.push(`└─ ${paint(theme, "dim", `detached worker, read-only tools${last || " · waiting for first worker event"} · next: ${next}`)}`);
     }
     return lines;
   }
