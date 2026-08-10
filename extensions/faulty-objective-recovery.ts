@@ -85,7 +85,7 @@ export function assessSuspiciousObjective(objective: unknown, verificationContra
   // Lowercase prose is valid in some list items. It becomes suspicious only
   // when it also looks like evaluator prose, rather than merely because it is
   // lowercase.
-  if (text && /^[a-z]/.test(text) && !IMPERATIVE_START.test(text) && /\b(?:passes|including|protections|contract|auditor|verification)\b/i.test(text)) {
+  if (text && /^[a-z]/.test(text) && !IMPERATIVE_START.test(text) && /\b(?:passes|including|protections|auditor|verification)\b/i.test(text)) {
     reasons.push("lowercase-fragment");
   }
 

@@ -478,7 +478,13 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
   // as queued if a stale-handle /list read happened later.
   deleteQueueItemFile(ctx.cwd, next.id);
   const goal = createGoal(next.objective, ctx, "list");
-  if (next.verificationContract) goal.verificationContract = next.verificationContract;
+  if (next.verificationContract) {
+    goal.verificationContract = next.verificationContract;
+    goal.objectiveProvenance = {
+      ...(goal.objectiveProvenance ?? { originalObjective: next.objective }),
+      originalContract: next.verificationContract,
+    };
+  }
   // v0.34.81: carry the subtask binding onto the active goal so the cascade
   // in archiveCurrentGoal can find the parent at completion time, and so the
   // group-open counter (active child = +1) stays accurate while a child runs.
