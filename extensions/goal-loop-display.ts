@@ -410,8 +410,9 @@ function auditorLastActivity(audit: AuditDisplayProgress | null | undefined, now
  * are display facts, not claims that the host is paused or that a verdict has
  * already landed. */
 function auditorElapsedSuffix(audit: AuditDisplayProgress | null | undefined): string {
-  if (!audit || !Number.isFinite(audit.elapsedMs) || audit.elapsedMs < 0) return "";
-  return ` · elapsed ${fmtElapsed(audit.elapsedMs)}`;
+  const elapsed = audit?.elapsedMs;
+  if (elapsed === undefined || !Number.isFinite(elapsed) || elapsed < 0) return "";
+  return ` · elapsed ${fmtElapsed(elapsed)}`;
 }
 
 function auditorFreshnessSuffix(audit: AuditDisplayProgress | null | undefined, phase: AuditorDisplayPhase, now: number): string {

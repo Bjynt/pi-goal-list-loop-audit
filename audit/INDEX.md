@@ -37,6 +37,7 @@ plus a `v0.34.x-<TOPIC>.md` symlink for versioned docs). Older docs
 | v0.34.121 | v0.34.121-NOTE-REMAINING-TRIAGE.md | NOTE-REMAINING-TRIAGE-2026-08-09.md |
 | v0.34.121 | v0.34.121-HOST-SESSION-LOST.md | HOST-SESSION-LOST-2026-08-10.md |
 | v0.34.121 | v0.34.121-PAUSED-WORKING-UI.md | PAUSED-WORKING-UI-2026-08-10.md |
+| v0.34.121 | v0.34.121-DETACHED-AUDITOR-STATUS.md | DETACHED-AUDITOR-STATUS-2026-08-10.md |
 | external reviews | EXTERNAL-REVIEWS-2026-08-09.md | EXTERNAL-REVIEWS-2026-08-09.md |
 | v0.34.120 | v0.34.120-OBJECTIVE-LIFECYCLE.md | OBJECTIVE-LIFECYCLE-2026-08-09.md |
 | v0.34.121 | v0.34.121-OBJECTIVE-LIFECYCLE-FOLLOWUP.md | OBJECTIVE-LIFECYCLE-FOLLOWUP-2026-08-09.md |
@@ -50,6 +51,7 @@ plus a `v0.34.x-<TOPIC>.md` symlink for versioned docs). Older docs
 - OBJECTIVE-LIFECYCLE-FOLLOWUP-2026-08-09.md — closes the three auditor objections: active-loop cancel precedence, provider/dispatch wipe cleanup, and blank-start terminal closure (v0.34.121)
 - HOST-SESSION-LOST-2026-08-10.md — correlates the new no-turn-start → stale-handle screenshots with raw ledger events and records the remaining pi-side replacement limitation
 - PAUSED-WORKING-UI-2026-08-10.md — makes paused lifecycle ownership, queue/park state, last activity, and next transition explicit without changing lifecycle semantics
+- DETACHED-AUDITOR-STATUS-2026-08-10.md — makes detached subprocess phase, evidence, freshness, verdict waiting, and next transition explicit while keeping MAIN supervising
 - BACKUPS-PICKER-2026-08-09.md — dedicated Backups settings segment + ordered backup picker hides forbidden refs and removes no-op session/manual rows (v0.34.118)
 - STALE-CTX-AUTO-RECOVERY-2026-08-09.md — programmatic /new on `isStaleApiError` so the user no longer has to type `/new` after pi's compact subsystem wedges (v0.34.117)
 - SESSION-COMPACT-FALLBACK-2026-08-09.md — context-overflow classification + fallback chain walk when session_compact cannot release the prompt + /reload copy + stale-ctx one-liner (v0.34.116)
