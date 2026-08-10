@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+### v0.34.122 — jiti `export let state` binding split froze persistence and broke activation
+  (`audit/JITI-STATE-BINDING-SPLIT-2026-08-10.md`). pi's extension loader (jiti
+  2.7.0, moduleCache:false) compiles `export let state` with a captured-value
+  export binding: after `replaceState(next)` every importer of `state` kept the
+  original object, so persisted ledger lines froze on the first-read state;
+  `/list audit` wrote sidecars + events but never activated. Fix: goal-state.ts
+  exports `const state` and replaceState() mutates in place (delete-then-
+  assign) — imported bindings stay current under any loader. Regression test
+  `tests/repro-jiti-state-split.test.mjs` loads the extension through jiti
+  under node (`npm run test:jiti`) and fails on the pre-fix code.
+
 ### Faulty-objective recovery gate
   (`audit/FAULTY-OBJECTIVE-RECOVERY-2026-08-10.md`). Suspicious objectives are
   now checked before manual/startup resume, pre-activation list selection,
