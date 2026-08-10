@@ -34,6 +34,13 @@ const RATE_LIMIT = /\b429\b|too many requests|rate[\s_-]*limit|throttl(?:e|ed|in
 const PLAN_QUOTA = /(?:quota|usage[\s_-]*limit|token[\s_-]*plan|plan[\s_-]*limit|monthly\s+limit|daily\s+limit|weekly\s+limit|key\s+limit\s+exceeded|limit\s+(?:reached|exceeded|exhausted|depleted)).{0,80}(?:quota|usage|token|plan|limit|reached|exceeded|exhausted|depleted)?/i;
 const PLAN_QUOTA_REVERSE = /(?:quota|usage|token[\s_-]*plan|plan|monthly|daily|weekly|key).{0,80}(?:limit\s+(?:reached|exceeded|exhausted|depleted)|exhausted|depleted)/i;
 const BILLING = /insufficient[\s_-]+(?:credits?|balance|quota)|(?:credits?|balance)\s+(?:exhausted|depleted|used\s+up)|billing\s+(?:required|issue|failure)|payment\s+required|buy\s+credits?/i;
+// v0.34.125: explicitly-TEMPORARY quota wording (note.md 2026-08-10 "we
+// received some quota message that would have been temporary but we gave up
+// and waited for a bigger reset"). "temporarily over quota" / "temporarily
+// unavailable due to a rate limit" are retryable short windows, NOT
+// long-lived walls — and plain "temporarily unavailable" stays ambiguous
+// (ordinary outage) so we never turn a random transient into a quota wall.
+const TEMPORARY_QUOTA = /temporar(?:y|ily)[^.\n]{0,60}(?:quota|limit|throttl|too many requests)|over\s+(?:the\s+)?(?:quota|rate\s*limit)/i;
 
 /** Return the strongest explicit provider signal, or undefined for an
  * ambiguous/transient message. Specific account/plan walls must win over a
@@ -44,7 +51,7 @@ export function quotaSignal(error: string | undefined): QuotaSignal | undefined 
   if (!error) return undefined;
   if (BILLING.test(error)) return "billing";
   if (PLAN_QUOTA.test(error) || PLAN_QUOTA_REVERSE.test(error)) return "plan-quota";
-  if (RATE_LIMIT.test(error)) return "rate-limit";
+  if (RATE_LIMIT.test(error) || TEMPORARY_QUOTA.test(error)) return "rate-limit";
   return undefined;
 }
 
@@ -104,22 +111,46 @@ export function parseQuotaError(error: string, defaultRetryAfterSec = DEFAULT_QU
   if (jsonDate) return { raw: error, ...jsonDate, fromUpstream: true, signal };
 
   m = error.match(/retry\s+(?:after|in)\s+(\d+(?:\.\d+)?)\s*(s|sec|secs|seconds|m|min|mins|minutes|h|hr|hrs|hours?|d|day|days|w|week|weeks?)/i);
-  if (m) {
-    const n = Number(m[1]);
-    const unit = m[2]!.toLowerCase();
-    const mult = unit.startsWith("w") ? 7 * 24 * 3600
-      : unit.startsWith("d") ? 24 * 3600
-        : unit.startsWith("h") ? 3600
-          : unit.startsWith("m") ? 60
-            : 1;
-    if (Number.isFinite(n) && n >= 0) return { raw: error, retryAfterSec: Math.round(n * mult), fromUpstream: true, signal };
-  }
+  const prose = retryWindow(m);
+  if (prose !== undefined) return { raw: error, retryAfterSec: prose, fromUpstream: true, signal };
 
   m = error.match(/(?:reset|resets|available)\s+(?:at|on)\s+([0-9]{4}-[0-9]{2}-[0-9]{2}[^,;\n)]*)/i);
   const proseDate = absoluteReset(m?.[1], nowMs);
   if (proseDate) return { raw: error, ...proseDate, fromUpstream: true, signal };
 
+  // v0.34.125: short-window prose (note.md 2026-08-10 — a temporary quota
+  // message must not park until the hour-aligned "bigger reset"). Providers
+  // phrase short windows as "try again in 30 seconds" / "please wait 1
+  // minute" / "rate limit resets in 15 seconds" / "available again in 2
+  // minutes" — the same factual Retry-After claim, just prose.
+  m = error.match(/\b(?:try again|retry|available again|try back|come back)\s+in\s+(\d+(?:\.\d+)?)\s*(s|sec|secs|seconds|m|min|mins|minutes|h|hr|hrs|hours?|d|day|days|w|week|weeks?)/i);
+  const again = retryWindow(m);
+  if (again !== undefined) return { raw: error, retryAfterSec: again, fromUpstream: true, signal };
+
+  m = error.match(/\b(?:wait|back off|pause|hold|sleep)\b\s+(?:for\s+)?(\d+(?:\.\d+)?)\s*(s|sec|secs|seconds|m|min|mins|minutes|h|hr|hrs|hours?|d|day|days|w|week|weeks?)/i);
+  const waited = retryWindow(m);
+  if (waited !== undefined) return { raw: error, retryAfterSec: waited, fromUpstream: true, signal };
+
+  m = error.match(/\b(?:resets?|refreshes?|renews?|recovers?|available)\s+(?:again\s+)?in\s+(\d+(?:\.\d+)?)\s*(s|sec|secs|seconds|m|min|mins|minutes|h|hr|hrs|hours?|d|day|days|w|week|weeks?)/i);
+  const resetIn = retryWindow(m);
+  if (resetIn !== undefined) return { raw: error, retryAfterSec: resetIn, fromUpstream: true, signal };
+
   return { raw: error, retryAfterSec: fallback, fromUpstream: false, signal };
+}
+
+/** Convert a "N <unit>" prose match to seconds, or undefined when the match
+ * or unit is missing. Units: s / m / h / d / w (weeks/days included for
+ * completeness; the 5h probe cap in mainModelFailureDelayMs still applies). */
+function retryWindow(m: RegExpMatchArray | null): number | undefined {
+  if (!m) return undefined;
+  const n = Number(m[1]);
+  const unit = (m[2] ?? "s").toLowerCase();
+  const mult = unit.startsWith("w") ? 7 * 24 * 3600
+    : unit.startsWith("d") ? 24 * 3600
+      : unit.startsWith("h") ? 3600
+        : unit.startsWith("m") ? 60
+          : 1;
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * mult) : undefined;
 }
 
 /** Clamp one automatic probe. A provider may claim a one-week reset; glla

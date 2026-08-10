@@ -65,6 +65,11 @@ test("main model recovery backs off without giving up", () => {
   assert.ok(first > 40 * 60_000 && first <= 60 * 60_000, `aligned first delay: ${first}`);
   // The upstream hint (a factual provider fact) still outranks the alignment:
   assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 rate limit; retry in 2 hours"), 1, 15, nowMs), 2 * 60 * 60_000);
+  // v0.34.125: temporary-window prose is the same factual hint — a
+  // "try again in 30 seconds" message must NOT park until the next hour
+  // (note.md 2026-08-10 "we gave up and waited for a bigger reset").
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 Too Many Requests — try again in 30 seconds"), 1, 15, nowMs), 30_000);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("rate limit resets in 15 seconds"), 1, 15, nowMs), 15_000);
   // ...but an over-budget hint falls back to the bounded alignment:
   assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 rate limit; retry in 1 week"), 1, 15, nowMs), first);
   // v0.34.51: ONE uniform envelope — error text does not pick the cadence.

@@ -46,6 +46,31 @@ test("parseQuotaError: prose hints (retry in 2m / retry after 30 seconds)", () =
   assert.equal(parseQuotaError("plan limit; retry in 1 week").retryAfterSec, 7 * 24 * 3600);
 });
 
+test("v0.34.125: temporary-window prose is honored — no give-up until the bigger reset", () => {
+  // note.md 2026-08-10: a temporary quota message must retry at its own
+  // short window, not park hour-aligned "until quota reset".
+  assert.equal(parseQuotaError("429 Too Many Requests — try again in 30 seconds").retryAfterSec, 30);
+  assert.equal(parseQuotaError("Rate limit exceeded, please wait 1 minute").retryAfterSec, 60);
+  assert.equal(parseQuotaError("quota exceeded — rate limit resets in 15 seconds").retryAfterSec, 15);
+  assert.equal(parseQuotaError("limit reached. Available again in 2 minutes").retryAfterSec, 120);
+  const allUpstream = ["try again in 30 seconds", "please wait 1 minute", "rate limit resets in 15 seconds", "Available again in 2 minutes"]
+    .map((text) => parseQuotaError(text).fromUpstream);
+  assert.ok(allUpstream.every(Boolean), `all temporary windows are upstream facts: ${allUpstream.join(", ")}`);
+});
+
+test("v0.34.125: 'temporarily over quota' is a retryable rate-limit, plain 'temporarily unavailable' stays ambiguous", () => {
+  assert.equal(quotaSignal("temporarily over quota, try again shortly"), "rate-limit");
+  assert.equal(isQuotaError("temporarily over quota"), true);
+  assert.equal(isQuotaError("temporarily above the rate limit"), true);
+  // no numeric hint → the conservative fallback (3600s) — the bounded
+  // cadence owns the wait, never a manual give-up.
+  assert.equal(parseQuotaError("temporarily over quota").retryAfterSec, 3600);
+  assert.equal(parseQuotaError("temporarily over quota").fromUpstream, false);
+  // still conservative: an ordinary outage is NOT a quota wall.
+  assert.equal(isQuotaError("temporarily unavailable, please try later"), false);
+  assert.equal(isQuotaError("503 Service Unavailable"), false);
+});
+
 test("quota classification stays conservative around ambiguous provider errors", () => {
   assert.equal(isQuotaError("503 temporarily unavailable"), false);
   assert.equal(isQuotaError("403 forbidden"), false);
