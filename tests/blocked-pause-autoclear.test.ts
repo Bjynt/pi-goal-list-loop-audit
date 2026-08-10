@@ -42,6 +42,7 @@ import activate, {
   __testOnlyResetOwnerSession,
   __testOnlyResetStaleFlag,
   __testOnlyResetTerminalFlags,
+  __testOnlySetLastMainModelRecoveryResumeAt,
 } from "../extensions/loops/goal.js";
 import { seedGoal, seedState, MockPi, makeMockCtx, tmpCwd, tick, type MockCtx } from "./harness/mock-pi.js";
 
@@ -98,6 +99,7 @@ function resetModuleState(): void {
   __testOnlyResetOwnerSession();
   __testOnlyResetStaleFlag();
   __testOnlyResetTerminalFlags();
+  __testOnlySetLastMainModelRecoveryResumeAt(null); // v0.34.124: the recovery-resume stamp is module-level; leaked into sibling files in bun's shared-process node:test runner it re-arms their continuation watchdogs
 }
 
 beforeEach(() => {
