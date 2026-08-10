@@ -31,7 +31,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { MockPi, makeMockCtx, tmpCwd, tick, type MockCtx } from "../harness/mock-pi.js";
-import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, __testOnlySetLastCompactionAt } from "../../extensions/loops/goal.js";
+import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, __testOnlySetLastCompactionAt, __testOnlySetLastMainModelRecoveryResumeAt } from "../../extensions/loops/goal.js";
 
 const pi = new MockPi();
 activate(pi.api);
@@ -60,6 +60,7 @@ afterEach(() => {
   __testOnlySetContinuationStartTimeout(null);
   __testOnlySetContinuationRetryBackoff(null);
   __testOnlySetLastCompactionAt(null);
+  __testOnlySetLastMainModelRecoveryResumeAt(null);
   __testOnlyResetOwnerSession();
 });
 
@@ -98,6 +99,76 @@ test("v0.34.57: a compaction inside the watchdog window pauses the watchdog inst
   } finally {
     __testOnlySetContinuationStartTimeout(null);
     __testOnlySetLastCompactionAt(null);
+  }
+});
+
+test("v0.34.124: a recovery resume inside the watchdog window pauses the watchdog instead of firing the unacknowledged warning", async () => {
+  // Field (deals 2026-08-10 21:11-21:14): the provider wall lifted, the
+  // recovery resumed the goal and scheduled the continuation ~1s later,
+  // but pi's model chain was still warming — the turn started at +2m51s.
+  // The 90s watchdog interrupted the live goal ("did not start turn")
+  // although the turn was merely slow. The watchdog must re-arm while a
+  // recovery resume is in its grace window, then fire unacknowledged only
+  // after the re-arm cap is reached.
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  __testOnlySetContinuationStartTimeout(300);
+  __testOnlySetContinuationRetryBackoff(200);
+  try {
+    const cwd = tmpCwd();
+    const ctx = await freshSession(cwd, "startup");
+    pi.sent.length = 0;
+    await pi.command("goal", "recovery grace target — done when pinned", ctx);
+    await tick();
+    // Simulate a main-model-recovery resume that landed right after the
+    // dispatch was accepted — pi is warming and the turn will be slow.
+    __testOnlySetLastMainModelRecoveryResumeAt(Date.now());
+    await waitUntil(() => {
+      try {
+        return fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes("continuation_start_paused_for_recovery");
+      } catch {
+        return false;
+      }
+    }, 4_000);
+    const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+    assert.match(ledger, /continuation_start_paused_for_recovery/, "the watchdog re-armed on the in-window recovery resume");
+    assert.doesNotMatch(ledger, /continuation_start_unacknowledged/, "the false-positive unacknowledged warning must NOT fire");
+    await pi.command("goal", "pause", ctx);
+  } finally {
+    __testOnlySetContinuationStartTimeout(null);
+    __testOnlySetLastMainModelRecoveryResumeAt(null);
+  }
+});
+
+test("v0.34.124: a recovery resume OUTSIDE the grace window does not pause the watchdog", async () => {
+  // The grace is bounded: a stale resume stamp (6+ minutes old) must not
+  // suppress the genuine-stall verdict — the cap falls through to
+  // unacknowledged exactly like the compaction path.
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  __testOnlySetContinuationStartTimeout(300);
+  __testOnlySetContinuationRetryBackoff(200);
+  try {
+    const cwd = tmpCwd();
+    const ctx = await freshSession(cwd, "startup");
+    pi.sent.length = 0;
+    await pi.command("goal", "recovery grace stale target — done when pinned", ctx);
+    await tick();
+    __testOnlySetLastMainModelRecoveryResumeAt(Date.now() - 6 * 60_000);
+    await waitUntil(() => {
+      try {
+        return fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes("continuation_start_unacknowledged");
+      } catch {
+        return false;
+      }
+    }, 4_000);
+    const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+    assert.match(ledger, /continuation_start_unacknowledged/, "a stale resume stamp does not suppress the verdict");
+    assert.doesNotMatch(ledger, /continuation_start_paused_for_recovery/, "no re-arm recorded outside the grace window");
+    await pi.command("goal", "pause", ctx);
+  } finally {
+    __testOnlySetContinuationStartTimeout(null);
+    __testOnlySetLastMainModelRecoveryResumeAt(null);
   }
 });
 

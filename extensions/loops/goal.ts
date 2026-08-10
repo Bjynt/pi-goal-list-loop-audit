@@ -319,6 +319,8 @@ const recoveryFlags: RecoveryFlags = {
   set continuationDispatchStoodDown(v) { setContinuationDispatchStoodDownRef(v); },
   get lastLongLivedFailureAt() { return lastLongLivedFailureAt; },
   set lastLongLivedFailureAt(v) { lastLongLivedFailureAt = v; },
+  get lastMainModelRecoveryResumeAt() { return lastMainModelRecoveryResumeAt; },
+  set lastMainModelRecoveryResumeAt(v) { lastMainModelRecoveryResumeAt = v; },
 };
 const recoveryDeps: RecoveryDeps = {
   activeGoalSurfaceCommand,

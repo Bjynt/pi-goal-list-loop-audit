@@ -117,6 +117,18 @@ test("stream-proven work uses one compact status-bar HUD; the card stays quiet",
   assert.match(queued, /glla: \[QUEUED\] 1m 09s · 3 queued/);
   assert.doesNotMatch(queued, /WORKING/);
 
+  // v0.34.124: the QUEUED "why" — an accepted-but-unstarted dispatch and
+  // the last real activity age. A ticking timer with no freshness told the
+  // user nothing (note.md 221249 "time ticking but nothing else").
+  const queuedPending = buildStatusText(state, null, NOW, undefined, { activity: "queued", turnPending: true, lastActivityAt: NOW - 180_000 })!;
+  assert.match(queuedPending, /\[QUEUED\] 1m 09s · turn pending · last activity 3m 00s ago · 3 queued/);
+  // turnPending WITHOUT a known last-activity epoch still names the pending turn.
+  const queuedPendingNoAge = buildStatusText(state, null, NOW, undefined, { activity: "queued", turnPending: true })!;
+  assert.match(queuedPendingNoAge, /\[QUEUED\] 1m 09s · turn pending · 3 queued/);
+  // No turnPending (scheduled-but-not-yet-sent) stays the plain QUEUED line.
+  const queuedScheduled = buildStatusText(state, null, NOW, undefined, { activity: "queued" })!;
+  assert.doesNotMatch(queuedScheduled, /turn pending/);
+
   const goldenQueued = {
     goal: goalOf({ createdAt: "2026-07-21T11:59:16Z" }),
     list: Array.from({ length: 18 }, (_, i) => ({ id: `queued-${i}`, objective: "queued", addedAt: "z" })),
@@ -1551,6 +1563,27 @@ test("v0.33.0: slim card — meter rounding guard, folded status segments, last-
     recent: [{ name: "bash", arg: "bun test", ms: 0, ok: false }],
   })!;
   assert.match(failed[1]!, /^├─ ✗ bash bun test(?! \()/);
+  // v0.34.124: the recent-action ring is NOT goal-scoped — entries from a
+  // PREVIOUS goal outlive activation. The card must drop actions stamped
+  // before the current goal was created (note.md 221249: the new goal's
+  // card showed the old goal's ✓ complete_goal (0s) for 14 minutes).
+  const staleRing = buildWidgetLines({ goal: goalOf({ createdAt: "2026-07-21T11:59:16Z" }), list: [] }, null, NOW, undefined, 120, {
+    recent: [
+      { name: "complete_goal", arg: undefined, ms: 0, ok: true, at: Date.parse("2026-07-21T11:59:10Z") },
+      { name: "read", arg: "new-goal.md", ms: 0, ok: true, at: Date.parse("2026-07-21T11:59:20Z") },
+    ],
+  })!;
+  assert.match(staleRing.join("\n"), /✓ read new-goal\.md/, "the newest action from THIS goal is shown");
+  assert.doesNotMatch(staleRing.join("\n"), /complete_goal/, "a pre-goal action must never leak onto the card");
+  const allStale = buildWidgetLines({ goal: goalOf({ createdAt: "2026-07-21T11:59:16Z" }), list: [] }, null, NOW, undefined, 120, {
+    recent: [{ name: "complete_goal", arg: undefined, ms: 0, ok: true, at: Date.parse("2026-07-21T11:59:10Z") }],
+  })!;
+  assert.doesNotMatch(allStale.join("\n"), /complete_goal/, "all-pre-goal actions vanish entirely (no stale last-action line)");
+  // Unstamped entries (legacy rings / fixtures) remain visible.
+  const legacyRing = buildWidgetLines({ goal: goalOf({ createdAt: "2026-07-21T11:59:16Z" }), list: [] }, null, NOW, undefined, 120, {
+    recent: [{ name: "edit", arg: "old.ts", ms: 12_000, ok: true }],
+  })!;
+  assert.match(legacyRing.join("\n"), /✓ edit old\.ts \(12s\)/, "unstamped legacy entries stay visible");
   // Slim loop card: ∞ icon + folded iter/meter segments + metricless footer.
   const loopLines = buildWidgetLines({ goal: null, list: [], loop: {
     active: true, target: "endless-td audit", iteration: 12, maxIterations: 100,
