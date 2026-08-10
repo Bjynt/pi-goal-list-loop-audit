@@ -984,8 +984,8 @@ test("v0.34.66: at the verdict the FINAL report shows even when silent", () => {
   assert.doesNotMatch(joined, /report stream muted/);
 });
 
-test("v0.34.67: worker/subagent text paragraph gets breathing room — dim hairline spacer between observations and the card footer", () => {
-  assert.match(WORKER_TEXT_SPACER, /│ ·/, "spacing constant is the dim hairline row");
+test("v0.34.67: worker/subagent text paragraph gets breathing room — invisible NBSP spacer between observations and the card footer", () => {
+  assert.equal(WORKER_TEXT_SPACER, "\u00A0", "spacer is a non-breaking space: invisible, never collapsed, never skipped");
   const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-spacing" } });
   const lines = buildWidgetLines({ goal: g, list: [] }, {
     phase: "tool_executing",
@@ -1002,8 +1002,8 @@ test("v0.34.67: worker/subagent text paragraph gets breathing room — dim hairl
   assert.ok(obsIdx >= 0, "observation paragraph present");
   assert.ok(footerIdx > obsIdx, "footer follows the observations");
   const gap = lines.slice(obsIdx + 1, footerIdx);
-  assert.ok(gap.length >= 2, `text + spacer between observations and footer: ${gap.join(" | ")}`);
-  assert.match(gap.at(-1)!, /│ ·/, "the gap ends with the dim hairline spacer");
+  assert.ok(gap.length >= 2, `text + spacer between observations and footer: ${gap.join("|")}`);
+  assert.equal(gap.at(-1)!, "\u00A0", "the gap ends with the invisible NBSP spacer");
   assert.match(gap[0]!, /report stream muted/, "the observation text precedes the spacer");
 });
 
@@ -1014,7 +1014,7 @@ test("v0.34.67: no spacer is invented when there is no worker text", () => {
     label: "queued",
   }, NOW)!;
   assert.ok(lines.some((l) => /detached worker queued/.test(l)));
-  assert.ok(!lines.some((l) => /│ ·/.test(l)), "no spacer without an observations paragraph");
+  assert.ok(!lines.includes("\u00A0"), "no spacer without an observations paragraph");
 });
 
 test("v0.34.56: unmatched tool-event counts render ONLY with evidence (never a zero-fact observation)", () => {

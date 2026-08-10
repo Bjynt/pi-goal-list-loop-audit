@@ -165,12 +165,15 @@ const WIDGET_HORIZONTAL_MARGIN = 2;
 
 /** v0.34.67: paragraph spacer for the widget's worker/subagent text.
  * pi-tui skips whitespace-only widget lines (Text.render returns [] when
- * trim is empty), so the spacer carries a dim hairline — a `│` continuation
- * row that reads as whitespace but renders a visible line. Inserted between
- * the auditing card's observation paragraph (`tool:`, `latest:`, …) and the
- * footer verdict line (note.md 08-06 "visually subagents least need more
- * spacing for text", Screenshot_20260806_223836). */
-export const WORKER_TEXT_SPACER = "│ ·";
+ * trim is empty), so the spacer carries a non-breaking space — invisible in
+ * every renderer (terminal, π-web HTML), never collapsed, and never
+ * misread as punctuation. Inserted between the auditing card's observation
+ * paragraph (`tool:`, `latest:`, …) and the footer verdict line (note.md
+ * 08-06 "visually subagents least need more spacing for text",
+ * Screenshot_20260806_223836). v0.34.123: the previous dim "│ ·" hairline
+ * rendered as a lone "·" where the box-drawing glyph is dropped (π-web),
+ * which the user flagged as a stray dot (note.md 08-10, 220759). */
+export const WORKER_TEXT_SPACER = "\u00A0";
 
 function budgetFor(width: number | undefined, prefixCols: number, floor: number): number {
   if (!width || width <= 0) return floor;
