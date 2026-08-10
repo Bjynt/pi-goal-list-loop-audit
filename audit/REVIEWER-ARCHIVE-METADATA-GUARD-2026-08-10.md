@@ -29,7 +29,7 @@ approved completion while preserving genuine required-fix review paths.
 The source helper is `buildReviewerSources()` in `extensions/reviewer.ts`; its
 automatic caller is `fireReviewer()` in
 `extensions/loops/goal-auditor-hooks.ts`, with the lower-level guard in
-`runReviewer()`. 
+`runReviewer()`.
 
 ## Regression coverage
 
