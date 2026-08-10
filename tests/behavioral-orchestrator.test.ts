@@ -2617,6 +2617,49 @@ test("v0.35.x: validated session handoff auto-retries a parked completion audit"
   }
 });
 
+test("v0.35.x: explicit Auto-resume retries a parked claim on cold startup", async () => {
+  __testOnlyResetStaleFlag();
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  const fakePi = writeFakeAuditor(cwd, "disapproved", 350);
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = fakePi;
+  const oldAttempt = "parked-before-autoresume";
+  seedState(cwd, {
+    goal: seedGoal({
+      status: "paused",
+      pauseKind: "blocked",
+      pauseReason: "completion audit blocked — no verdict",
+      pendingCompletion: {
+        completionSummary: "Auto-resume must recover this parked claim.",
+        verificationSummary: "The stored claim is retried from a fresh startup.",
+        at: new Date().toISOString(),
+        phase: "recovery-pending",
+        attemptId: oldAttempt,
+      },
+    }),
+  });
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "audit_recovery_started"));
+    const started = readState(cwd).goal as { status?: string; pendingCompletion?: { attemptId?: string } } | null;
+    assert.equal(started?.status, "auditing");
+    assert.notEqual(started?.pendingCompletion?.attemptId, oldAttempt);
+    assert.ok(ctx.ui.matching("Fresh session recovered the interrupted completion audit").length >= 1);
+    await waitUntil(() => {
+      const settled = readState(cwd).goal as { status?: string; pendingCompletion?: unknown; auditHistory?: unknown[] } | null;
+      return settled?.status === "active" && !settled.pendingCompletion && (settled.auditHistory?.length ?? 0) >= 1;
+    });
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    __testOnlyResetOwnerSession();
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
 test("v0.35.x: stale host loss releases an in-flight completion audit without a verdict", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
