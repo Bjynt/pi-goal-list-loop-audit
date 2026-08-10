@@ -53,7 +53,13 @@ export function assessSuspiciousObjective(objective: unknown, verificationContra
   if (/\b(?:verification contract|passes sequentially|auditor(?:-approved| report)?|no-proof)\b/i.test(text)) reasons.push("verification-fragment");
   if (COMMAND_ONLY.test(text) && !contract) reasons.push("command-only");
   if (/^(?:done when|verify|objective|tasks?)\s*:?\s*$/i.test(text)) reasons.push("marker-only");
-  if (text && /^[a-z]/.test(text) && !IMPERATIVE_START.test(text) && text.length < 220) reasons.push("lowercase-fragment");
+  // Lowercase prose is common in valid list/goal text (especially when a
+  // contract was extracted from the same line). Only treat it as a fragment
+  // when it also carries reviewer/verification vocabulary; the explicit
+  // signals above already catch those archive-derived cases.
+  if (text && /^[a-z]/.test(text) && !IMPERATIVE_START.test(text) && !/\bdone\s+when\b/i.test(text) && /\b(?:passes|including|protections|contract|auditor)\b/i.test(text)) {
+    reasons.push("lowercase-fragment");
+  }
 
   const unique = [...new Set(reasons)];
   return {
