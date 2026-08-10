@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+### v0.34.123 — widget spacer renders as a stray dot in π-web; agents-panel separator padding
+  (`note.md` 2026-08-10, Screenshot_20260810_220759 + 220051). The auditing
+  card's paragraph spacer `WORKER_TEXT_SPACER` was a dim `│ ·` hairline;
+  renderers that drop box-drawing glyphs (π-web) showed a lone `·` on its own
+  line. The spacer is now a non-breaking space: still non-empty (pi-tui skips
+  truly empty widget lines) but invisible in every renderer. Separately, the
+  user flagged cramped text in the pi-subagents Agents panel rows
+  (`description · stats`); pi-subagents' dist + src now join with two spaces
+  around `·` (`  ·  `) in agent-widget.ts/index.ts row builders and stat lines.
+
 ### v0.34.122 — jiti `export let state` binding split froze persistence and broke activation
   (`audit/JITI-STATE-BINDING-SPLIT-2026-08-10.md`). pi's extension loader (jiti
   2.7.0, moduleCache:false) compiles `export let state` with a captured-value

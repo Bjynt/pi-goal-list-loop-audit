@@ -39,7 +39,7 @@ test("wholesale state replacement goes through replaceState() only", () => {
   // reassigned (jiti's captured-value export binding froze importers on the
   // original object; see the incident comment in goal-state.ts).
   assert.match(STATE_SRC, /export const state: State = \{ goal: null \};/);
-  assert.match(STATE_SRC, /Object\.assign\(state, next\);/);
+  assert.match(STATE_SRC, /Object\.assign\(mutable, next\);/);
   assert.ok(!STATE_SRC.includes("state = next;"), "replaceState must not reassign the exported binding");
 });
 
