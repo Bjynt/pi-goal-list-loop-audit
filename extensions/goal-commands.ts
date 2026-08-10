@@ -652,7 +652,16 @@ async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "lis
     ctx.ui.notify("Tweak cancelled; goal unchanged.", "info");
     return;
   }
-  const patch: Partial<Goal> = { objective: newObjective };
+  const priorProvenance = current.objectiveProvenance;
+  const userSeeds = [...(priorProvenance?.userSeeds ?? []), raw].slice(-10);
+  const patch: Partial<Goal> = {
+    objective: newObjective,
+    objectiveProvenance: {
+      originalObjective: priorProvenance?.originalObjective ?? current.objective,
+      ...(priorProvenance?.originalContract ? { originalContract: priorProvenance.originalContract } : {}),
+      userSeeds,
+    },
+  };
   if (hasNewContract) patch.verificationContract = proposed.verificationContract;
   else if (clearsContract) patch.verificationContract = "";
   // omitted clause → no verificationContract key in the patch: preserved.

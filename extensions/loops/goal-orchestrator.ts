@@ -592,6 +592,11 @@ function createGoal(objective: string, ctx: ExtensionContext, policy: "goal" | "
     policy,
     autoContinue: true,
     verificationContract: verificationContract || "",
+    objectiveProvenance: {
+      originalObjective: cleanObj,
+      ...(verificationContract ? { originalContract: verificationContract } : {}),
+      userSeeds: [objective],
+    },
     usage: { tokensUsed: 0, tokensLimit: loadSettings(ctx.cwd).tokenLimit ?? DEFAULT_TOKEN_LIMIT },
     createdAt: nowIso(),
     updatedAt: nowIso(),
