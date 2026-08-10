@@ -55,10 +55,11 @@ state or timestamp persistence schema changed.
 ```text
 MMX vision — 4 screenshots described above
 npx tsc --noEmit — TypeScript: No errors found
-bun test tests/display.test.ts — 90 pass / 0 fail
+bun test tests/display.test.ts — 91 pass / 0 fail
+bun test — 1212 pass / 1 skip / 0 fail across 107 files
 ```
 
 Focused tests cover provider recovery with queue/last-activity/next-transition
-fields and a no-turn decision pause with truthful `last activity not observed`
-and `/goal resume` guidance. Existing paused, quota, auditor, stale-host, and
-surface-separation tests remain green.
+fields, the runtime paused-activity wiring, and a no-turn decision pause with
+truthful `last activity not observed` and `/goal resume` guidance. Existing
+paused, quota, auditor, stale-host, and surface-separation tests remain green.
