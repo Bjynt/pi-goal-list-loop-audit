@@ -33,6 +33,9 @@ import {
   appendLedger,
   nowIso,
   newGoalId,
+  archivedGoalPath,
+  goalMdPath,
+  writeGoalMd,
   sanitizeDisplayText,
   findNextPendingTask,
   buildTaskSummary,
@@ -59,6 +62,15 @@ import { loadSettings } from "./goal-settings.js";
 import { clearLoopTimer, isLoopActive } from "./goal-loop.js";
 import { attemptFreshSessionRecovery, mainModelRecoveryActive, recoverMainModelFromSendStorm } from "./goal-recovery.js";
 import { sendStormEscalateMs } from "./main-model-recovery.js";
+import {
+  appendObjectiveRepairRecord,
+  applyObjectiveRepair,
+  assessSuspiciousObjective,
+  buildQueuedRepairRecord,
+  buildRepairTaskObjective,
+  deriveObjectiveRepair,
+  hasQueuedObjectiveRepair,
+} from "./faulty-objective-recovery.js";
 
 /** goal.ts-owned module lets the continuation cluster reads/writes through
  * this accessor. Getters/setters are wired by goal.ts at factory time
@@ -113,6 +125,7 @@ export interface ContinuationDeps {
   goalNoun(): string;
   activeGoalSurfaceCommand(command: string): string;
   scheduleSessionTimeout(callback: () => void, delayMs: number): NodeJS.Timeout;
+  enqueueRepairTask(ctx: ExtensionContext, objective: string): void;
 }
 
 let flags: ContinuationFlags;
@@ -136,6 +149,7 @@ let isSupervising: ContinuationDeps["isSupervising"];
 let goalNoun: ContinuationDeps["goalNoun"];
 let activeGoalSurfaceCommand: ContinuationDeps["activeGoalSurfaceCommand"];
 let scheduleSessionTimeout: ContinuationDeps["scheduleSessionTimeout"];
+let enqueueRepairTask: ContinuationDeps["enqueueRepairTask"];
 
 export function createGoalContinuation(flagsArg: ContinuationFlags, d: ContinuationDeps): void {
   flags = flagsArg;
@@ -679,6 +693,69 @@ export function armQueueStuckProbe(sentAt: number): void {
 /* Cluster F — scheduleContinuation / sendContinuation / stall+length  */
 /* ------------------------------------------------------------------ */
 
+/**
+ * v0.35.x: a stale or reviewer-derived objective must never reach pi's
+ * follow-up queue. This is the final shared choke point for manual resume,
+ * session-start auto-resume, list activation, and delayed continuation sends.
+ * Repair is intentionally provenance-only: event handlers do not create a
+ * model turn or invent a task. A missing repair becomes a paused goal plus a
+ * short queued repair item.
+ */
+function guardGoalBeforeContinuation(ctx: ExtensionContext, where: string): boolean {
+  const goal = state.goal;
+  if (!goal || (goal.status !== "active" && goal.status !== "paused")) return false;
+
+  const archive = goal.archivedPath || archivedGoalPath(ctx.cwd, goal.id);
+  if (fs.existsSync(archive)) {
+    appendLedger(ctx.cwd, "faulty_objective_archive_fence", { goalId: goal.id, where, archive });
+    try { fs.rmSync(goalMdPath(ctx.cwd, goal.id), { force: true }); } catch { /* best effort */ }
+    state.goal = null;
+    persistState(ctx);
+    ctx.ui.notify("The goal was already archived/cancelled; stale in-memory work was discarded.", "warning");
+    return false;
+  }
+
+  const assessment = assessSuspiciousObjective(goal.objective, goal.verificationContract);
+  if (!assessment.suspicious) return true;
+
+  const proposal = deriveObjectiveRepair(goal, assessment);
+  if (proposal) {
+    const record = applyObjectiveRepair(goal, proposal, nowIso());
+    persistState(ctx);
+    writeGoalMd(ctx.cwd, goal);
+    appendLedger(ctx.cwd, "faulty_objective_auto_repaired", {
+      goalId: goal.id,
+      where,
+      reasons: assessment.reasons,
+      ...record,
+    });
+    ctx.ui.notify(`Repaired a suspicious ${goal.policy === "list" ? "list item" : "goal"} from ${proposal.source}; continuing with the recorded replacement.`, "warning");
+    return true;
+  }
+
+  if (!hasQueuedObjectiveRepair(goal)) {
+    const record = buildQueuedRepairRecord(goal, assessment, nowIso());
+    appendObjectiveRepairRecord(goal, record);
+    enqueueRepairTask(ctx, buildRepairTaskObjective(goal, assessment));
+    appendLedger(ctx.cwd, "faulty_objective_repair_queued", {
+      goalId: goal.id,
+      where,
+      reasons: assessment.reasons,
+      ...record,
+    });
+  }
+  goal.status = "paused";
+  goal.pauseKind = "blocked";
+  goal.pauseReason = `Suspicious objective detected (${assessment.reasons.join(", ")}).`;
+  goal.pauseSuggestedAction = `${activeGoalSurfaceCommand("tweak")} the objective, then resume after the repair task is complete.`;
+  goal.pauseResumeAt = undefined;
+  goal.updatedAt = nowIso();
+  persistState(ctx);
+  writeGoalMd(ctx.cwd, goal);
+  ctx.ui.notify(`Paused the suspicious ${goal.policy === "list" ? "list item" : "goal"}; a repair task was queued instead of dispatching it.`, "warning");
+  return false;
+}
+
 export function scheduleContinuation(ctx: ExtensionContext, force = false, delayMs?: number): void {
   if (mainModelRecoveryActive()) return;
   if (flags.sessionHandoffPending || flags.initialSessionLoadPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown) return;
@@ -686,6 +763,8 @@ export function scheduleContinuation(ctx: ExtensionContext, force = false, delay
   if (continuationDispatchStoodDown && !force) return;
   if (force) releaseContinuationDispatchStandDown();
   flags.abortedStandDown = false; // v0.29.5: any explicit schedule ends the stand-down
+  if (!isActionableGoal()) return;
+  if (!guardGoalBeforeContinuation(ctx, "schedule")) return;
   if (!isActionableGoal()) return;
   rememberCtx(ctx);
   const goalId = state.goal!.id;
@@ -731,6 +810,8 @@ export function sendContinuation(goalId: string): void {
     continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), BACKOFF_IDLE_RETRY_MS);
     return;
   }
+  if (!guardGoalBeforeContinuation(ctx, "dispatch")) return;
+  if (!isActionableGoal()) return;
   if (!ctx.isIdle() || ctx.hasPendingMessages()) {
     accountSendRearm(ctx, "continuation");
     continuationScheduledFor = goalId;

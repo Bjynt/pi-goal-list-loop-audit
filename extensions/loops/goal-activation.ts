@@ -377,6 +377,13 @@ import {
 } from "../goal-loop.js";
 import { defineGoalRuntimeGlobal } from "./goal-runtime-globals.js";
 
+/** v0.35.x: queue a repair task without auto-activating over the paused
+ * suspicious objective. The normal enqueue path keeps disk-first ordering,
+ * duplicate guards, and list provenance intact. */
+export function enqueueFaultRepairTask(ctx: ExtensionContext, objective: string): void {
+  enqueueItems(ctx, [objective], "faulty-objective", { autoActivate: false });
+}
+
 export function registerGoalRuntime(pi: ExtensionAPI): void {
   // Four top-level commands, that's all (v0.8.0 consolidation):
   //   /goal  — set/draft + status|pause|resume|cancel|tweak|archive subcommands
