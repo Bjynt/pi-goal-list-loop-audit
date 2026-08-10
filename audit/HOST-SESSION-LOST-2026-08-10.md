@@ -42,6 +42,31 @@ This confirms that the stale event preceded the later manual reload boundary;
 it was not a clean shutdown/rebind pair at the time of loss. The recovered
 replacement subsequently started successfully.
 
+## Runtime-version discrepancy
+
+The field record's `timeoutMs: 150000` and its stale-handle copy (`fresh
+session_start resumes`) match the package actually loaded by pi:
+
+```text
+~/.pi/agent/npm/node_modules/pi-goal-list-loop-audit/package.json → 0.34.80
+```
+
+The repository under investigation is v0.34.121, whose source has a 30-second
+first start-proof window plus one 60-second retry and displays `/new` for a
+cached stale context. The global development symlink is also stale:
+
+```text
+~/.npm-global/lib/node_modules/pi-goal-list-loop-audit
+  → /home/dracon/Dev/pi-goal-loop-audit  (missing; repo moved to pi-goal-list-loop-audit)
+```
+
+Therefore this incident is not valid evidence that the current v0.34.121
+implementation still emits the old 150-second retry/copy. It is evidence that
+pi was running the old installed package. Per the current constraint, no local
+tarball installation or publish was performed; a future runtime validation
+must install the local v0.34.121 tarball and restart pi before comparing field
+behavior.
+
 ## Current glla behavior
 
 - `extensions/goal-continuation.ts` uses a bounded 30-second first start-proof
