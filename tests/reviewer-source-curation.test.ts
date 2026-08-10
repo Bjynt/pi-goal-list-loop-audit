@@ -14,6 +14,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import {
+  buildReviewerSources,
   classifyFindingText,
   curateAuditReviewSources,
   extractFindings,
@@ -57,6 +58,21 @@ test("brace-led and quote-led lines are code-ish, never findings", () => {
 test("fireReviewer only mines disapproved/error audit reports, never approved ones", () => {
   assert.match(SRC_GOAL, /curateAuditReviewSources\(readAuditLog\(ctx\.cwd\), source\.goalId\)\.map\(/);
   assert.match(SRC_GOAL, /APPROVED audit report is the executor's\n    \/\/ own completion claims/);
+  assert.match(SRC_GOAL, /automatic postaudit must not mine the archive's Objective/);
+});
+
+test("automatic postaudit excludes archived objective/contract metadata; manual review retains it", () => {
+  const archive = [
+    "## Objective",
+    "Implement safe automatic recovery; fix the reviewer regression.",
+    "## Verification contract",
+    "bun test passes sequentially; duplicate protections are covered.",
+  ].join("\\n");
+  assert.deepEqual(buildReviewerSources(archive, [], false), [], "automatic clean review has no archive metadata source");
+  assert.deepEqual(buildReviewerSources(archive, ["## Required fixes\\n- fix the broken retry"], false), [
+    { name: "audit", text: "## Required fixes\\n- fix the broken retry" },
+  ]);
+  assert.deepEqual(buildReviewerSources(archive, [], true), [{ name: "archive", text: archive }], "manual review may inspect the archive");
 });
 
 test("a DISAPPROVED report's required-fixes extract as findings; an APPROVED meta-report is inert", () => {
