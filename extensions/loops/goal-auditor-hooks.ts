@@ -204,6 +204,7 @@ import {
   type Settings,
 } from "../goal-settings.js";
 import {
+  buildReviewerSources,
   curateAuditReviewSources,
   normalizeObjective,
   resolveReviewerConfig,
@@ -973,9 +974,9 @@ function fireReviewer(
     const reviewerBlock = (settings.postaudit ?? settings.reviewer) as Partial<ReviewerConfig> | undefined;
     const config = resolveReviewerConfig(reviewerBlock);
     if (opts.mode) config.mode = opts.mode;
-    const sources: Array<{ name: string; text: string }> = [];
+    let archiveText: string | undefined;
     try {
-      sources.push({ name: "archive", text: fs.readFileSync(archivedGoalPath(ctx.cwd, source.goalId), "utf-8") });
+      archiveText = fs.readFileSync(archivedGoalPath(ctx.cwd, source.goalId), "utf-8");
     } catch {
       /* archive md may not exist for manual review of a live goal */
     }
@@ -989,7 +990,13 @@ function fireReviewer(
     // — field-observed 2026-08-06: round-1 report sliced into 3 junk /list
     // items after the round-2 approval, auto-activated by autoResume).
     const auditTexts = curateAuditReviewSources(readAuditLog(ctx.cwd), source.goalId).map((e) => e.report);
-    for (const t of auditTexts) sources.push({ name: "audit", text: t });
+    // v0.35.x: automatic postaudit must not mine the archive's Objective or
+    // verification contract as if either were an independent finding. That
+    // metadata contains reviewer trigger words and can create truncated,
+    // contract-less queue items after an otherwise approved completion. An
+    // explicit /review may still inspect the archive; automatic review uses
+    // only curated auditor reports.
+    const sources = buildReviewerSources(archiveText, auditTexts, !!opts.manual);
     let ledgerEntries: Array<{ type: string; at?: string; value?: any }> = [];
     try {
       ledgerEntries = parseLedgerEntries(fs.readFileSync(ledgerPath(ctx.cwd), "utf-8"));
