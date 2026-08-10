@@ -63,6 +63,7 @@
       "maxItems": 10,
       "items": { "$ref": "#/definitions/objectiveRepair" }
     },
+    "objectiveProvenance": { "$ref": "#/definitions/objectiveProvenance" },
     "usage": {
       "type": "object",
       "required": ["tokensUsed", "tokensLimit"],
@@ -86,8 +87,20 @@
         "originalContract": { "type": "string" },
         "replacementContract": { "type": "string" },
         "source": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
         "evidence": { "type": "string", "minLength": 1 },
-        "confidence": { "type": "string", "enum": ["best-effort", "fallback"] }
+        "confidence": { "type": "string", "enum": ["best-effort", "fallback"] },
+        "revisionBefore": { "type": "integer", "minimum": 0 },
+        "revisionAfter": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "objectiveProvenance": {
+      "type": "object",
+      "required": ["originalObjective"],
+      "properties": {
+        "originalObjective": { "type": "string", "minLength": 1 },
+        "originalContract": { "type": "string" },
+        "userSeeds": { "type": "array", "maxItems": 10, "items": { "type": "string", "minLength": 1 } }
       }
     },
     "pendingCompletion": {

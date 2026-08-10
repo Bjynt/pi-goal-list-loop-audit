@@ -277,8 +277,19 @@ export interface ObjectiveRepairRecord {
   originalContract?: string;
   replacementContract?: string;
   source: string;
+  reason: string;
   evidence: string;
   confidence: "best-effort" | "fallback";
+  revisionBefore: number;
+  revisionAfter: number;
+}
+
+/** Durable intent captured before an objective can be overwritten by a
+ * reviewer fragment, transcript replay, or malformed queue restore. */
+export interface ObjectiveProvenance {
+  originalObjective: string;
+  originalContract?: string;
+  userSeeds?: string[];
 }
 
 export interface Goal {
@@ -367,6 +378,9 @@ export interface Goal {
   revision?: number;
   /** v0.35.x: durable record of suspicious-objective recovery decisions. */
   objectiveRepairHistory?: ObjectiveRepairRecord[];
+  /** v0.35.x: original/user-supplied intent retained for repair after a
+   * reviewer fragment or stale state overwrites the live objective. */
+  objectiveProvenance?: ObjectiveProvenance;
 }
 
 /**
