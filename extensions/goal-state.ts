@@ -45,8 +45,9 @@ export const state: State = { goal: null };
  * always mirrors what the caller passes (delete existing keys, then assign),
  * and object identity stays stable for every import site. */
 export function replaceState(next: State): void {
-  for (const key of Object.keys(state)) delete (state as Record<string, unknown>)[key];
-  Object.assign(state, next);
+  const mutable = state as unknown as Record<string, unknown>;
+  for (const key of Object.keys(mutable)) delete mutable[key];
+  Object.assign(mutable, next);
 }
 
 /** Persistence core: append the durable "state" ledger line (active.jsonl).
