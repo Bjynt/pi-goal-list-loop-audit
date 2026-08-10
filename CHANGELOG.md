@@ -1,6 +1,27 @@
 # Changelog
 
 ## Unreleased
+### v0.34.125 — quota-reset time claims removed from UI; temporary quota messages honored at their own short window
+  (`note.md` 2026-08-10, Screenshot_20260810_224142/224136/224132/224119/224114).
+  Field sessions parked on provider walls showed `next: quota reset at
+  23:00` / `no turns until quota reset at 23:00` / `waiting for quota
+  reset at HH:MM` on every surface (widget card, status bar, queued line,
+  paused line). The user's correction: the provider window is NOT a
+  guaranteed reset and the :00:30 hourly probe can pick work back up
+  earlier — the time claim is wrong, and it must not appear in the UI at
+  all. All four surfaces now say `parked on provider wall — retrying
+  automatically` (no clock claim).
+  Separately, a temporary quota message ("try again in 30 seconds",
+  "please wait 1 minute", "rate limit resets in 15 seconds", "available
+  again in 2 minutes", "temporarily over quota") previously fell through
+  to the hour-aligned fallback — the goal "gave up and waited for a
+  bigger reset" despite the provider stating a short window.
+  parseQuotaError now recognizes these prose shapes as upstream
+  Retry-After facts (honored up to the 5h probe cap), and explicitly
+  temporary wording classifies as a retryable rate-limit (plain
+  "temporarily unavailable" stays ambiguous). The hourly probe remains
+  setting-only (hourlyQuotaProbe toggle) with no UI surface.
+
 ### v0.34.124 — stale goal card actions + unexplained QUEUED status + false watchdog interrupt after recovery
   (`note.md` 2026-08-10, Screenshot_20260810_221249 + 221345). Three UI/UX
   findings from the field:
