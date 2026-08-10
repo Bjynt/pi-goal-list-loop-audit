@@ -173,6 +173,7 @@ export function createGoalContinuation(flagsArg: ContinuationFlags, d: Continuat
   goalNoun = d.goalNoun;
   activeGoalSurfaceCommand = d.activeGoalSurfaceCommand;
   scheduleSessionTimeout = d.scheduleSessionTimeout;
+  enqueueRepairTask = d.enqueueRepairTask;
 }
 
 /* ------------------------------------------------------------------ */

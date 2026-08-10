@@ -16,7 +16,7 @@ import "./goal-auditor-hooks.js";
 import "./goal-list-queue.js";
 import "./goal-tools.js";
 import "./goal-settings-ui.js";
-import { registerGoalRuntime } from "./goal-activation.js";
+import { enqueueFaultRepairTask, registerGoalRuntime } from "./goal-activation.js";
 
 import {
   createGoalContinuation,
@@ -274,6 +274,7 @@ const continuationDeps: ContinuationDeps = {
   goalNoun,
   activeGoalSurfaceCommand,
   scheduleSessionTimeout,
+  enqueueRepairTask: enqueueFaultRepairTask,
 };
 createGoalContinuation(continuationFlags, continuationDeps);
 
