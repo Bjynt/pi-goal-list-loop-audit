@@ -21,13 +21,15 @@ corrupted before `continuationPrompt()` rendered them.
 Automatic postaudit source selection now excludes archived goal markdown.
 Automatic review mines only curated auditor reports whose latest verdict is a
 live `disapproved` or `error`. An explicit manual `/review` retains archive
-access for inspection. This prevents Objective and verification-contract
-metadata from becoming new list findings after an approved completion while
-preserving genuine required-fix review paths.
+access for inspection. `runReviewer()` also filters a legacy automatic
+`archive` source as defense in depth. This prevents Objective and
+verification-contract metadata from becoming new list findings after an
+approved completion while preserving genuine required-fix review paths.
 
-The source helper is `buildReviewerSources()` in `extensions/reviewer.ts` and
-its automatic caller is `fireReviewer()` in
-`extensions/loops/goal-auditor-hooks.ts`.
+The source helper is `buildReviewerSources()` in `extensions/reviewer.ts`; its
+automatic caller is `fireReviewer()` in
+`extensions/loops/goal-auditor-hooks.ts`, with the lower-level guard in
+`runReviewer()`. 
 
 ## Regression coverage
 
@@ -42,7 +44,7 @@ npx tsc --noEmit
 TypeScript: No errors found
 
 bun test tests/reviewer-source-curation.test.ts
-8 pass / 0 fail
+9 pass / 0 fail
 ```
 
 Pi core/session lifecycle behavior is unchanged. This is a plugin-side source

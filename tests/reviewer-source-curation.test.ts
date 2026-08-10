@@ -75,6 +75,27 @@ test("automatic postaudit excludes archived objective/contract metadata; manual 
   assert.deepEqual(buildReviewerSources(archive, [], true), [{ name: "archive", text: archive }], "manual review may inspect the archive");
 });
 
+test("runReviewer also rejects a legacy archive source on automatic paths", () => {
+  const calls = { enqueued: [] as string[][], proposed: [] as string[] };
+  const out = runReviewer(
+    resolveReviewerConfig({ cascade: ["convert-findings-to-list"] }),
+    { kind: "goal", goalId: "g-archive", objective: "ship the approved change", terminal: "goal-complete" },
+    {
+      cwd: fs.mkdtempSync(path.join(os.tmpdir(), "glla-archive-guard-")),
+      nowMs: Date.parse("2026-08-10T07:30:00Z"),
+      ledgerEntries: [],
+      sources: [{ name: "archive", text: "## Objective\\nTODO: this archived metadata is not a new finding" }],
+      enqueueListItems: (items) => calls.enqueued.push(items),
+      proposeGoal: (goal) => { calls.proposed.push(goal); return true; },
+      notify: () => {},
+      ledger: () => {},
+    },
+  );
+  assert.equal(out.enqueued, 0);
+  assert.deepEqual(calls.enqueued, [], "legacy automatic callers cannot enqueue archive metadata");
+  assert.deepEqual(calls.proposed, []);
+});
+
 test("a DISAPPROVED report's required-fixes extract as findings; an APPROVED meta-report is inert", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-curate-"));
   const approvedMeta = "## Verification\n1. `REVIEWER_VOCAB` regex present covering problems/(improvements|architectural) — PASS.\n2. `{ class: \"architectural\", re: /rewrite|schema change/ }` present — PASS.";
