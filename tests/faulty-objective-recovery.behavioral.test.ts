@@ -3,7 +3,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
-import { sendContinuation } from "../extensions/goal-continuation.js";
+import { guardGoalBeforeContinuation, sendContinuation } from "../extensions/goal-continuation.js";
 import { readState } from "../extensions/goal-loop-core.js";
 import { MockPi, makeMockCtx, seedGoal, seedState, tick, tmpCwd } from "./harness/mock-pi.js";
 
@@ -17,7 +17,7 @@ function setGlobalAutoResume(enabled: boolean): void {
 }
 afterEach(() => setGlobalAutoResume(false));
 
-function suspiciousGoal(status: "active" | "paused" = "active", policy: "goal" | "list" = "goal"): Record<string, unknown> {
+function suspiciousGoal(status: "active" | "paused" | "auditing" | "aborted" = "active", policy: "goal" | "list" = "goal"): Record<string, unknown> {
   return seedGoal({
     status,
     policy,
@@ -43,7 +43,7 @@ test("session_start auto-resume blocks a suspicious active objective and queues 
   await boot(pi, cwd);
   const state = readState(cwd);
   assert.equal(state.goal?.status, "paused");
-  assert.equal(state.list?.[0]?.objective.startsWith("Repair suspicious objective:"), true);
+  assert.equal(state.list?.[0]?.objective, "Repair the blocked goal from saved intent");
   assert.match(ledger(cwd), /"faulty_objective_repair_queued"/);
   assert.doesNotMatch(ledger(cwd), /"goal_continuation_sent"/);
 });
@@ -76,9 +76,17 @@ test("list activation blocks a suspicious queued objective", async () => {
   await pi.command("list", "next", ctx);
   await tick(80);
   const state = readState(cwd);
-  assert.equal(state.goal?.status, "paused");
-  assert.equal(state.list?.[0]?.objective.startsWith("Repair suspicious objective:"), true);
-  assert.match(ledger(cwd), /"faulty_objective_repair_queued"/);
+  assert.equal(state.goal, null);
+  assert.equal(state.list?.[0]?.objective, "Repair the blocked list item from saved intent");
+  assert.equal(state.list?.[1]?.objective, item.objective);
+  assert.match(ledger(cwd), /"faulty_objective_list_activation_blocked"/);
+  // The safe repair item is executable and does not recursively trip the
+  // suspicious-objective detector.
+  await pi.command("list", "next", ctx);
+  await tick(80);
+  const repaired = readState(cwd);
+  assert.equal(repaired.goal?.objective, "Repair the blocked list item from saved intent");
+  assert.match(ledger(cwd), /"goal_continuation_sent"/);
 });
 
 test("provenance-backed repair auto-applies before dispatch", async () => {
@@ -107,6 +115,20 @@ test("direct continuation dispatch rechecks the suspicious objective", async () 
   await tick(80);
   assert.doesNotMatch(ledger(cwd), /"goal_continuation_sent"/);
   assert.equal(readState(cwd).goal?.status, "paused");
+});
+
+test("a canceled goal and stale continuation attempt are hard fences", async () => {
+  const cwd = tmpCwd();
+  const g = suspiciousGoal("aborted");
+  seedState(cwd, { goal: g, list: [] });
+  const pi = new MockPi();
+  activate(pi.api);
+  const ctx = await boot(pi, cwd);
+  assert.equal(guardGoalBeforeContinuation(ctx as any, "canceled-test", g.id), false);
+  await sendContinuation(`${g.id}-stale`);
+  await tick(40);
+  assert.doesNotMatch(ledger(cwd), /"goal_continuation_sent"/);
+  assert.match(ledger(cwd), /"faulty_objective_terminal_fence"|"faulty_objective_stale_attempt_fence"/);
 });
 
 test("an archived goal id is a hard fence against stale resurrection", async () => {
