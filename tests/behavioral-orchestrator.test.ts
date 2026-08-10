@@ -2660,6 +2660,63 @@ test("v0.35.x: explicit Auto-resume retries a parked claim on cold startup", asy
   }
 });
 
+test("v0.35.x: stale host replacement session_start auto-recovers the parked audit", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const fakePi = writeFakeAuditor(cwd, "disapproved", 350);
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = fakePi;
+  try {
+    const first = await freshSession(cwd, "startup");
+    await pi.command("goal", "stale replacement audit target — done when pinned", first);
+    await tick();
+    const audit = pi.runTool("complete_goal", {
+      completionSummary: "A dropped host must not require manual auditor resume.",
+      verificationSummary: "The replacement session retries the durable claim.",
+    }, first);
+    await waitUntil(() => (readState(cwd).goal as { status?: string } | null)?.status === "auditing");
+
+    invalidateHostSession(pi, first);
+    __testOnlyHeartbeatTick();
+    const released = readState(cwd).goal as { status?: string; pendingCompletion?: { attemptId?: string; phase?: string } };
+    assert.equal(released.status, "paused");
+    assert.equal(released.pendingCompletion?.phase, "recovery-pending");
+    const oldAttempt = released.pendingCompletion?.attemptId;
+    assert.ok(oldAttempt);
+
+    // No session_shutdown is delivered: this is the actual silent host-loss
+    // shape. A file-backed successor session_start supplies the rebind proof.
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    const successor = makeMockCtx(cwd, {
+      sessionManager: {
+        name: "stale-replacement-session-manager",
+        getSessionFile: () => path.join(cwd, "stale-replacement-session.jsonl"),
+        getSessionId: () => "stale-replacement-1",
+      },
+    });
+    await pi.fire("session_start", { reason: "startup" }, successor);
+    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "audit_recovery_started"));
+    const restarted = readState(cwd).goal as { status?: string; pendingCompletion?: { attemptId?: string } } | null;
+    assert.equal(restarted?.status, "auditing");
+    assert.notEqual(restarted?.pendingCompletion?.attemptId, oldAttempt);
+    assert.ok(successor.ui.matching("Fresh session recovered the interrupted completion audit").length >= 1);
+
+    await waitUntil(() => {
+      const settled = readState(cwd).goal as { status?: string; pendingCompletion?: unknown; auditHistory?: unknown[] } | null;
+      return settled?.status === "active" && !settled.pendingCompletion && (settled.auditHistory?.length ?? 0) >= 1;
+    });
+    await pi.fire("session_shutdown", { reason: "quit" }, successor);
+    await audit;
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    __testOnlyResetOwnerSession();
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
 test("v0.35.x: stale host loss releases an in-flight completion audit without a verdict", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();

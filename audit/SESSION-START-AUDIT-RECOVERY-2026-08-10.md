@@ -56,7 +56,7 @@ recovery, cold-start/manual holding, and successor/no-blind-resend behavior:
 
 ```text
 bun test tests/behavioral-orchestrator.test.ts
-88 pass / 0 fail
+89 pass / 0 fail
 ```
 
 The source contract remains TypeScript-clean:
