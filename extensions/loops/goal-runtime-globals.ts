@@ -122,6 +122,7 @@ declare global {
   var loopRearmStreak: any;
   var compactionGraceUntil: any;
   var lastCompactionAt: any;
+  var lastMainModelRecoveryResumeAt: any;
   var CONTEXT_STARVATION_REFUSE_THRESHOLD: any;
   var CONTEXT_STARVATION_RECENT_WINDOW_MS: any;
   var contextStarvedStreak: any;

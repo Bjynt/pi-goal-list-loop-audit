@@ -222,6 +222,18 @@ const loopDeps: LoopDeps = {
 };
 
 
+// v0.34.124: epoch of the last main-model-recovery resume (provider wall
+// lifted). Set by mainModelRecoverySucceeded (goal-recovery.ts via the
+// flags accessor); consumed by the continuation-start watchdog
+// (goal-continuation.ts) to grant the post-recovery turn-start grace.
+let lastMainModelRecoveryResumeAt = 0;
+
+/** Test-only: simulate a main-model-recovery resume at a controlled epoch
+ * without firing the full recovery plumbing. Pass null to clear. */
+export function __testOnlySetLastMainModelRecoveryResumeAt(at: number | null): void {
+  lastMainModelRecoveryResumeAt = at ?? 0;
+}
+
 // decomposition step 5 (v0.34.113): the continuation cluster (schedule/send,
 // dispatch sidecar, rearm accounting, queue-stuck probe, prompt assembly)
 // lives in goal-continuation.js — goal.ts owns the flags, observes them via
@@ -242,6 +254,8 @@ const continuationFlags: ContinuationFlags = {
   get abortedStandDown() { return abortedStandDown; },
   set abortedStandDown(v) { abortedStandDown = v; },
   get lastCompactionAt() { return lastCompactionAt; },
+  get lastMainModelRecoveryResumeAt() { return lastMainModelRecoveryResumeAt; },
+  set lastMainModelRecoveryResumeAt(v) { lastMainModelRecoveryResumeAt = v; },
   get lastActivityAt() { return lastActivityAt; },
   get lastRealActivityAt() { return lastRealActivityAt; },
   get loopRearmStreak() { return loopRearmStreak; },

@@ -129,6 +129,8 @@ export interface RecoveryFlags {
   set continuationDispatchStoodDown(v: boolean);
   get lastLongLivedFailureAt(): number;
   set lastLongLivedFailureAt(v: number);
+  get lastMainModelRecoveryResumeAt(): number;
+  set lastMainModelRecoveryResumeAt(v: number);
 }
 
 export interface RecoveryDeps {
@@ -763,6 +765,12 @@ export function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
       ? "loop"
       : undefined;
   appendLedger(ctx.cwd, "main_model_recovered", { model: modelRef(ctx.model), attempts: recovery.attempts, resumed });
+  // v0.34.124: stamp the resume so the continuation-start watchdog grants
+  // the post-recovery grace — pi's model chain is still warming and the
+  // first turn can take minutes to start (field: deals 2026-08-10 21:13
+  // "did not start turn" — the watchdog interrupted a goal whose turn
+  // started at +2m51s).
+  flags.lastMainModelRecoveryResumeAt = Date.now();
   if (resumed === "goal") {
     updateGoal({ status: "active", pauseKind: undefined, pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined }, ctx);
     scheduleContinuation(ctx, true, 1_000);

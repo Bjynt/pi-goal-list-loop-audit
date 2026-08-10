@@ -563,7 +563,11 @@ function noteToolResult(event: any): void {
   if (id) inFlightToolCalls.delete(id);
   const ok = !Boolean(event?.isError ?? event?.error);
   const name = f?.name ?? String(event?.toolName ?? "?");
-  recentActions.push({ name, arg: f?.arg ?? summarizeToolArg(name, event?.input ?? event?.args), ms: f ? Date.now() - f.at : 0, ok });
+  // v0.34.124: stamp the result epoch so the widget can drop actions that
+  // predate the CURRENT goal (the ring outlived a goal change and showed
+  // the previous goal's ✓ complete_goal on the new goal's card — note.md
+  // 221249 "time ticking but nothing else").
+  recentActions.push({ name, arg: f?.arg ?? summarizeToolArg(name, event?.input ?? event?.args), ms: f ? Date.now() - f.at : 0, ok, at: Date.now() });
   if (recentActions.length > 3) recentActions.shift();
 }
 
@@ -633,7 +637,7 @@ function refreshUI(ctx: ExtensionContext): void {
     // uses the room instead of cutting at fixed ~60-char floors.
     const width = process.stdout.columns || 80;
     const activity = displayActivityFor(ctx);
-    const extras = { stalls: consecutiveStalls, recent: recentActions, ...activity, auditorSilent: loadSettings(ctx.cwd).auditorSilent !== false, auditorProgressSignals: loadSettings(ctx.cwd).auditorProgressSignals !== false };
+    const extras = { stalls: consecutiveStalls, recent: recentActions, ...activity, turnPending: pendingContinuationDispatchRef() !== null, auditorSilent: loadSettings(ctx.cwd).auditorSilent !== false, auditorProgressSignals: loadSettings(ctx.cwd).auditorProgressSignals !== false };
     ctx.ui.setStatus("pi-glla", buildStatusText(state, latestAuditProgress, Date.now(), theme, extras));
     ctx.ui.setWidget("pi-glla", buildWidgetLines(state, latestAuditProgress, Date.now(), theme, width, extras));
   } catch {

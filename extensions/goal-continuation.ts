@@ -90,6 +90,12 @@ export interface ContinuationFlags {
   get abortedStandDown(): boolean;
   set abortedStandDown(v: boolean);
   get lastCompactionAt(): number;
+  // v0.34.124: epoch of the last main-model-recovery resume (provider wall
+  // lifted). The continuation start watchdog re-arms through a grace window
+  // after this — pi's model chain is still warming and the first turn can
+  // take minutes to start (field: deals 2026-08-10 21:11-21:14).
+  get lastMainModelRecoveryResumeAt(): number;
+  set lastMainModelRecoveryResumeAt(v: number);
   get lastActivityAt(): number;
   get lastRealActivityAt(): number;
   get loopRearmStreak(): number;
@@ -242,6 +248,24 @@ let continuationRearmMilestone = 0;
 // watchdog fires the unacknowledged warning so the user can intervene.
 const COMPACTION_REARM_CAP = 3;
 const continuationStartCompactionRearms = new Map<string, number>();
+
+// v0.34.124: post-recovery turn-start grace. mainModelRecoverySucceeded
+// schedules the continuation ~1s after the provider wall lifts, but pi's
+// model chain is still warming (provider 429 backoff) — the first turn
+// after a recovery can take minutes to start. Firing the 90s watchdog in
+// that window interrupted a live goal whose turn started at +2m51s
+// (field: deals 2026-08-10 21:13:15 "did not start turn"). Re-arm at the
+// same 30s cadence through the grace window, capped, then fall through
+// to the unacknowledged verdict exactly as before.
+const MAIN_MODEL_RECOVERY_START_GRACE_MS = 5 * 60_000;
+const RECOVERY_REARM_CAP = 10;
+const continuationStartRecoveryRearms = new Map<string, number>();
+
+function noteRecoveryRearm(id: string): number {
+  const n = (continuationStartRecoveryRearms.get(id) ?? 0) + 1;
+  continuationStartRecoveryRearms.set(id, n);
+  return n;
+}
 
 const SEND_REARM_LEDGER_MILESTONES_MS = [2 * 60_000, 5 * 60_000, 10 * 60_000];
 // v0.28.29: escalation is TIME-based and ACTIVITY-gated. A busy session is
@@ -593,6 +617,25 @@ function armContinuationStartWatchdog(ctx: ExtensionContext, record: Continuatio
       }
       // Cap reached: fall through to the unacknowledged warning so the
       // user can intervene. A stuck session must not loop forever.
+    }
+    // v0.34.124: post-recovery grace — same re-arm pattern for a goal
+    // resumed from a main-model-recovery park. pi just switched the model
+    // chain and the first turn start is legitimately slow (provider still
+    // backing off). Re-arm at 30s cadence through the 5-minute window;
+    // only a genuinely dead turn past the grace hits the verdict.
+    const recoveryResumeAt = flags.lastMainModelRecoveryResumeAt;
+    if (recoveryResumeAt > 0 && Date.now() - recoveryResumeAt < MAIN_MODEL_RECOVERY_START_GRACE_MS) {
+      const rearms = noteRecoveryRearm(record.id);
+      appendLedger(current.cwd, "continuation_start_paused_for_recovery", dispatchLedgerValue(record, {
+        recoveryResumeAgeMs: Date.now() - recoveryResumeAt,
+        rearmCount: rearms,
+        capped: rearms >= RECOVERY_REARM_CAP,
+      }));
+      if (rearms < RECOVERY_REARM_CAP) {
+        armContinuationStartWatchdog(current, record);
+        return;
+      }
+      // Cap reached: fall through to the unacknowledged warning.
     }
     if (dispatchTimedOut(record, Date.now(), record.timeoutMs ?? continuationStartTimeoutMs())) {
       // v0.34.88: exactly ONE automatic retry with backoff before declaring

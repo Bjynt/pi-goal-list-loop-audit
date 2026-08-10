@@ -90,12 +90,17 @@ export function meter(frac: number, cells = 5): string {
   return "▰".repeat(filled) + "▱".repeat(cells - filled);
 }
 
-/** v0.33.0: one finished tool call, for the slim card's "last action" line. */
+/** v0.33.0: one finished tool call, for the slim card's "last action" line.
+ * v0.34.124: `at` — epoch when the result landed — lets the card drop
+ * entries from a PREVIOUS goal (the ring outlived a goal change and
+ * showed the old goal's `✓ complete_goal (0s)` on the new goal's card
+ * for 14 minutes; note.md 221249). */
 export interface RecentActionDisplay {
   name: string;
   arg?: string;
   ms: number;
   ok: boolean;
+  at?: number;
 }
 
 /** v0.33.0: widget extras — the refire streak plus the recent-action feed. */
@@ -110,6 +115,10 @@ export interface WidgetExtras {
   lastActivityAt?: number;
   /** Last stream event used as proof for the live-work indicator. */
   lastStreamActivityAt?: number;
+  /** v0.34.124: an accepted continuation dispatch is pending — pi has the
+   * follow-up but has not started the turn (the QUEUED "why"; note.md
+   * 221249 "time ticking but nothing else"). */
+  turnPending?: boolean;
   /** v0.34.66: final-only gate for the auditor's streamed report. Default
    * on: the widget hides the live per-token tail while the detached worker
    * streams, showing the text once the verdict lands (note.md #4 — "auditor
@@ -847,6 +856,11 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       fmtElapsed(now - Date.parse(g.createdAt)),
       g.taskList ? `${countDone(g)}/${countTotal(g)} tasks` : "",
       live ? hostLastStream(extras, now).replace(/^ · /, "") : "",
+      // v0.34.124: the QUEUED "why" — an accepted dispatch that pi has not
+      // started, and the last real activity age. A ticking timer with no
+      // freshness told the user nothing (note.md 221249).
+      queued && extras?.turnPending ? "turn pending" : "",
+      queued ? hostLastActivity(extras, now).replace(/^ · /, "") : "",
       n > 0 ? `${n} queued` : "",
     ].filter(Boolean);
     return `glla: ${marker}${details.length > 0 ? ` ${details.join(" · ")}` : ""}${quotaSuffix}${heldSuffix}`;
@@ -1270,7 +1284,18 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   }
   // v0.33.0: "last action · next task" — Claude's done-row format meets the
   // pending queue. Segments join with a dim middot; missing ones drop out.
-  const act = extras?.recent?.[extras.recent.length - 1];
+  // v0.34.124: the ring is not goal-scoped — entries from the PREVIOUS
+  // goal outlive activation and painted the new goal's card with the old
+  // ✓ complete_goal (0s) while the new goal sat waiting (note.md 221249).
+  // Show only the latest action stamped after this goal's creation (5s
+  // grace absorbs the activation race); unstamped legacy entries stay
+  // visible (pre-v0.34.124 rings, test fixtures).
+  const goalStart = Date.parse(g.createdAt);
+  const goalScopedActions = [...(extras?.recent ?? [])].reverse().find((a) => {
+    if (a.at === undefined) return true;
+    return !Number.isFinite(goalStart) || a.at >= goalStart - 5_000;
+  });
+  const act = goalScopedActions;
   const mid: string[] = [];
   if (act) {
     mid.push(`${paint(theme, act.ok ? "success" : "error", act.ok ? "✓" : "✗")} ${act.name}${act.arg ? ` ${paint(theme, "dim", truncate(act.arg, 24))}` : ""}${act.ms > 0 ? ` ${paint(theme, "dim", `(${fmtElapsed(act.ms)})`)}` : ""}`);
