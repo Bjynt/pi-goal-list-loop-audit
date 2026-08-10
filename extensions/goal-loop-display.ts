@@ -696,7 +696,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     // A current tool is present-tense evidence only while its worker
     // heartbeat is fresh. Older snapshots stay useful as `last tool:` facts,
     // never as a claim that the detached process is still in that call.
-    const staleSnapshot = audit?.lastActivityAt !== undefined && !live;
+    const staleSnapshot = !live && (phase !== "running" || audit?.lastActivityAt !== undefined);
     const toolName = audit?.currentTool
       ? truncate(audit.currentTool, 30)
       : lastAuditorTool(audit);
@@ -1120,21 +1120,20 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
 
     const activity = auditorActivityAge(audit, now);
     const last = auditorLastActivity(audit, now);
-    const next = auditorNextTransition(phase);
     if (phase === "quiet") {
       const quietMs = activity ?? 0;
-      lines.push(`└─ ${paint(theme, "warning", `auditor quiet ${fmtElapsed(quietMs)}${last} — may be stuck; /goal cancel discards the claim · next: ${next}`)}`);
+      lines.push(`└─ ${paint(theme, "warning", `auditor quiet ${fmtElapsed(quietMs)}${last} — may be stuck; /goal cancel discards the claim`)}`);
     } else if (phase === "blocked") {
-      lines.push(`└─ ${paint(theme, "warning", `auditor blocked${audit?.label ? ` — ${truncate(audit.label, 44)}` : ""}${last} · next: ${next}`)}`);
+      lines.push(`└─ ${paint(theme, "warning", `auditor blocked${audit?.label ? ` — ${truncate(audit.label, 44)}` : ""}${last}`)}`);
     } else if (phase === "awaiting-verdict") {
-      lines.push(`└─ ${paint(theme, "dim", `waiting for detached verdict${last} · next: ${next}`)}`);
+      lines.push(`└─ ${paint(theme, "dim", `waiting for detached verdict${last}`)}`);
     } else if (phase === "queued") {
-      lines.push(`└─ ${paint(theme, "dim", `detached worker queued — completion claim is durable · next: ${next}`)}`);
+      lines.push(`└─ ${paint(theme, "dim", "detached worker queued — completion claim is durable")}`);
     } else if (audit?.elapsedMs) {
       const firstEvent = audit.lastActivityAt === undefined ? " · waiting for first worker event" : "";
-      lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(audit.elapsedMs)} in detached worker${firstEvent}${last} · next: ${next}`)}`);
+      lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(audit.elapsedMs)} in detached worker${firstEvent}${last}`)}`);
     } else {
-      lines.push(`└─ ${paint(theme, "dim", `detached worker, read-only tools${last || " · waiting for first worker event"} · next: ${next}`)}`);
+      lines.push(`└─ ${paint(theme, "dim", `detached worker, read-only tools${last || " · waiting for first worker event"}`)}`);
     }
     return lines;
   }
