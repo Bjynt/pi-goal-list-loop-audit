@@ -50,8 +50,11 @@ const TEMPORARY_QUOTA = /temporar(?:y|ily)[^.\n]{0,60}(?:quota|limit|throttl|too
 export function quotaSignal(error: string | undefined): QuotaSignal | undefined {
   if (!error) return undefined;
   if (BILLING.test(error)) return "billing";
+  // Explicitly-temporary wording wins over the generic plan-wall pattern:
+  // "temporarily over quota" is a short retry window, not a plan wall.
+  if (TEMPORARY_QUOTA.test(error)) return "rate-limit";
   if (PLAN_QUOTA.test(error) || PLAN_QUOTA_REVERSE.test(error)) return "plan-quota";
-  if (RATE_LIMIT.test(error) || TEMPORARY_QUOTA.test(error)) return "rate-limit";
+  if (RATE_LIMIT.test(error)) return "rate-limit";
   return undefined;
 }
 
