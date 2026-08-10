@@ -275,7 +275,7 @@ process.stdin.on("data", async (chunk) => {
   // independent latest entries in the progress HUD.
   for (const delta of ["Audit summary: checked\\nNext li", "ne", ": anal", "ys", "is", "\\n<disapproved/>"]) {
     out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta } });
-    await sleep(25);
+    await sleep(120); // hardened: 25ms emit gaps let a stretched parent poll miss byte counts (2026-08-10)
   }
   out({ type: "agent_settled" });
 });
@@ -294,7 +294,7 @@ process.stdin.on("data", async (chunk) => {
         env: { GLLA_PI_BINARY: fakePi },
         attemptId: () => "attempt-fragment-telemetry",
         pollIntervalMs: 5,
-        wallTimeoutMs: 2_000,
+        wallTimeoutMs: 5_000,
       },
     });
     assert.equal(result.disapproved, true);

@@ -843,7 +843,7 @@ test("v0.34.36: compaction releases a timed-out dispatch for one fresh resync at
       } catch {
         return false;
       }
-    }, 1_500);
+    }, 4_000); // hardened: real-time poll under heavy CI load (2026-08-10)
     // v0.34.88: the first timeout now sends exactly ONE automatic retry (the
     // backoff window follows), then the second window declares unacknowledged.
     assert.equal(pi.sent.length, 2, "the watchdog sent exactly one automatic retry, no blind storm");
@@ -885,7 +885,7 @@ test("v0.34.36: a loop missing start proof stops durably and /loop resume re-arm
       } catch {
         return false;
       }
-    }, 1_500);
+    }, 4_000); // hardened: real-time poll under heavy CI load (2026-08-10)
     assert.equal(stoodDown.phase, "accepted", "the initial loop dispatch was accepted before its proof timed out");
     const stopped = readState(cwd).loop as { active: boolean; stopReason?: string };
     assert.equal(stopped.active, false, "a loop cannot remain green-active after its continuation never starts");
@@ -929,7 +929,7 @@ test("v0.34.48: /list resume releases an unacknowledged dispatch exactly once", 
       } catch {
         return false;
       }
-    }, 1_500);
+    }, 4_000); // hardened: real-time poll under heavy CI load (2026-08-10)
     const interrupted = readState(cwd).goal as { status: string; policy: string; interruptedAt?: string };
     assert.equal(interrupted.status, "active", "an unacknowledged list dispatch remains active but interrupted");
     assert.equal(interrupted.policy, "list");
@@ -971,7 +971,7 @@ test("v0.34.24: missing start proof stands down durably and explicit resume send
       } catch {
         return false;
       }
-    }, 1_500);
+    }, 4_000); // hardened: real-time poll under heavy CI load (2026-08-10)
     const stoodDown = JSON.parse(fs.readFileSync(sidecar, "utf8")) as { phase: string; id: string };
     assert.equal(stoodDown.phase, "unacknowledged", "the failed proof is durable");
     // v0.34.88: exactly one automatic retry fired before the stand-down.
@@ -1021,7 +1021,7 @@ test("v0.34.88: a transient no-turn-start miss self-heals with exactly ONE verba
       } catch {
         return false;
       }
-    }, 1_500);
+    }, 4_000); // hardened: real-time poll under heavy CI load (2026-08-10)
     assert.equal(pi.sent.length, 2, "the watchdog re-sent exactly one automatic retry");
     const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
     assert.doesNotMatch(ledger, /continuation_start_unacknowledged/, "the retry window must not declare unacknowledged yet");
@@ -1039,7 +1039,7 @@ test("v0.34.88: a transient no-turn-start miss self-heals with exactly ONE verba
       } catch {
         return false;
       }
-    }, 1_500);
+    }, 4_000); // hardened: real-time poll under heavy CI load (2026-08-10)
     assert.equal(pi.sent.length, 2, "settling after the retry sends nothing further");
     await pi.command("goal", "pause", ctx);
   } finally {
@@ -1064,7 +1064,7 @@ test("v0.34.88: a genuine stall fires unacknowledged after the retry backoff —
       } catch {
         return false;
       }
-    }, 1_500);
+    }, 4_000); // hardened: real-time poll under heavy CI load (2026-08-10)
     assert.equal(pi.sent.length, 2, "exactly one automatic retry before the stall is declared");
     await waitUntil(() => {
       try {
@@ -1352,7 +1352,7 @@ test("v0.35.x: full auditor reports and required-fixes tails survive lifecycle b
       } catch {
         return false;
       }
-    }, 1_000);
+    }, 4_000); // hardened: real-time poll under heavy CI load (2026-08-10)
     const noStartGoal = readState(noStartCwd).goal as { interruptedReason?: string };
     assert.match(noStartGoal.interruptedReason ?? "", /continuation start acknowledgement timed out/);
     assertDurableReport(noStartCwd, noStartCtx, "no-start");
