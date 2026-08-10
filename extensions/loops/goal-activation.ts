@@ -381,7 +381,14 @@ import { defineGoalRuntimeGlobal } from "./goal-runtime-globals.js";
  * suspicious objective. The normal enqueue path keeps disk-first ordering,
  * duplicate guards, and list provenance intact. */
 export function enqueueFaultRepairTask(ctx: ExtensionContext, objective: string): void {
+  const before = new Set((state.list ?? []).map((item) => item.id));
   enqueueItems(ctx, [objective], "faulty-objective", { autoActivate: false });
+  const added = (state.list ?? []).find((item) => !before.has(item.id) && item.objective === objective);
+  if (!added) return;
+  const rest = (state.list ?? []).filter((item) => item.id !== added.id);
+  replaceState({ ...state, list: [added, ...rest] });
+  persistState(ctx);
+  appendLedger(ctx.cwd, "faulty_objective_repair_promoted", { goalId: added.id, position: 1 });
 }
 
 export function registerGoalRuntime(pi: ExtensionAPI): void {

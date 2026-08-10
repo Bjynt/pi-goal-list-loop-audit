@@ -43,7 +43,7 @@ test("session_start auto-resume blocks a suspicious active objective and queues 
   await boot(pi, cwd);
   const state = readState(cwd);
   assert.equal(state.goal?.status, "paused");
-  assert.ok(state.list?.some((item) => item.objective.startsWith("Repair suspicious objective:")));
+  assert.equal(state.list?.[0]?.objective.startsWith("Repair suspicious objective:"), true);
   assert.match(ledger(cwd), /"faulty_objective_repair_queued"/);
   assert.doesNotMatch(ledger(cwd), /"goal_continuation_sent"/);
 });
@@ -77,7 +77,7 @@ test("list activation blocks a suspicious queued objective", async () => {
   await tick(80);
   const state = readState(cwd);
   assert.equal(state.goal?.status, "paused");
-  assert.ok(state.list?.some((entry) => entry.objective.startsWith("Repair suspicious objective:")));
+  assert.equal(state.list?.[0]?.objective.startsWith("Repair suspicious objective:"), true);
   assert.match(ledger(cwd), /"faulty_objective_repair_queued"/);
 });
 
