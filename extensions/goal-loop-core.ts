@@ -269,6 +269,18 @@ export interface PendingCompletion {
   quotaAutoRetryUntil?: string;
 }
 
+export interface ObjectiveRepairRecord {
+  at: string;
+  action: "auto-applied" | "queued";
+  originalObjective: string;
+  replacementObjective?: string;
+  originalContract?: string;
+  replacementContract?: string;
+  source: string;
+  evidence: string;
+  confidence: "best-effort" | "fallback";
+}
+
 export interface Goal {
   id: string;
   objective: string;
@@ -353,6 +365,8 @@ export interface Goal {
    * their result if the captured revision no longer matches — a stale
    * handle cannot silently overwrite a goal that moved on. */
   revision?: number;
+  /** v0.35.x: durable record of suspicious-objective recovery decisions. */
+  objectiveRepairHistory?: ObjectiveRepairRecord[];
 }
 
 /**

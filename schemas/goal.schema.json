@@ -58,6 +58,11 @@
     "createdVia": { "type": "string" },
     "activePath": { "type": "string" },
     "archivedPath": { "type": "string" },
+    "objectiveRepairHistory": {
+      "type": "array",
+      "maxItems": 10,
+      "items": { "$ref": "#/definitions/objectiveRepair" }
+    },
     "usage": {
       "type": "object",
       "required": ["tokensUsed", "tokensLimit"],
@@ -70,6 +75,21 @@
     "updatedAt": { "type": "string", "format": "date-time" }
   },
   "definitions": {
+    "objectiveRepair": {
+      "type": "object",
+      "required": ["at", "action", "originalObjective", "source", "evidence", "confidence"],
+      "properties": {
+        "at": { "type": "string", "format": "date-time" },
+        "action": { "type": "string", "enum": ["auto-applied", "queued"] },
+        "originalObjective": { "type": "string", "minLength": 1 },
+        "replacementObjective": { "type": "string" },
+        "originalContract": { "type": "string" },
+        "replacementContract": { "type": "string" },
+        "source": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "string", "minLength": 1 },
+        "confidence": { "type": "string", "enum": ["best-effort", "fallback"] }
+      }
+    },
     "pendingCompletion": {
       "type": "object",
       "required": ["at"],
