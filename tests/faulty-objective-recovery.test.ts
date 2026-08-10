@@ -100,6 +100,32 @@ test("unverified completion prose is never promoted", () => {
   assert.equal(deriveObjectiveRepair(g, assessSuspiciousObjective(g.objective)), null);
 });
 
+test("audit history contributes only an actionable required-fix line", () => {
+  const g = goal({
+    objective: "## Required fixes",
+    auditHistory: [{
+      at: "2026-08-10T15:24:00.000Z",
+      approved: false,
+      disapproved: true,
+      impossible: false,
+      model: "test-auditor",
+      report: "## Required fixes\n- Implement the missing guard\n\n<disapproved/>",
+    }],
+  });
+  const proposal = deriveObjectiveRepair(g, assessSuspiciousObjective(g.objective));
+  assert.equal(proposal?.source, "auditHistory");
+  assert.equal(proposal?.objective, "Implement the missing guard");
+});
+
+test("all direct continuation and stored-audit paths retain the final gate", () => {
+  const continuation = fs.readFileSync(path.join(process.cwd(), "extensions", "goal-continuation.ts"), "utf8");
+  const auditorHooks = fs.readFileSync(path.join(process.cwd(), "extensions", "loops", "goal-auditor-hooks.ts"), "utf8");
+  assert.match(continuation, /sendStallEscalation[\s\S]{0,500}guardGoalBeforeContinuation/);
+  assert.match(continuation, /sendLengthContinue[\s\S]{0,500}guardGoalBeforeContinuation/);
+  assert.match(continuation, /retryContinuationDispatch[\s\S]{0,500}guardGoalBeforeContinuation/);
+  assert.match(auditorHooks, /stored-completion-audit/);
+});
+
 test("durable pending task is preferred when the objective cannot be normalized", () => {
   const g = goal({ objective: "verification contract", pendingTasks: ["Implement the paused recovery gate"] });
   const proposal = deriveObjectiveRepair(g, assessSuspiciousObjective(g.objective));
