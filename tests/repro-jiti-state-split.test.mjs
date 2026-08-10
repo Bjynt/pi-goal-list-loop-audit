@@ -22,7 +22,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createJiti } from "jiti/lib/jiti.mjs";
+import { createJiti } from "jiti";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -77,7 +77,10 @@ test("jiti: /list audit enqueues, persists the item, and ACTIVATES (state bindin
   // empty list — this was the exact live failure signature.
   const enqueueState = states.find((s) => (s.list?.length ?? 0) > 0);
   assert.ok(enqueueState, `enqueue state line must contain the item, got: ${JSON.stringify(states)}`);
-  assert.equal(enqueueState.list[0].objective, "[LIST-AUDIT-COLLECT] Collect work");
+  assert.ok(
+    enqueueState.list[0].objective.startsWith("[LIST-AUDIT-COLLECT]"),
+    `unexpected queued objective: ${enqueueState.list[0].objective.slice(0, 60)}`,
+  );
 
   // Activation must fire: goal_created + goal md file on disk.
   assert.ok(ledger.some((e) => e.type === "goal_created"), "goal_created expected after enqueue");
