@@ -724,6 +724,54 @@ test("auditor progress phases are explicit and retain worker activity", () => {
   assert.match(blocked, /auditor blocked/);
 });
 
+test("detached auditor status names phase, evidence, freshness, verdict wait, and next transition without pausing MAIN", () => {
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-contract" } });
+  const liveAudit = {
+    phase: "tool_executing" as const,
+    currentTool: "read",
+    recentOutput: ["checked the contract"],
+    toolCalls: [{ name: "grep", argsPrefix: "{}", finishedAt: NOW - 6_000 }],
+    reportBytes: 2_048,
+    elapsedMs: 42_000,
+    lastActivityAt: NOW - 5_000,
+  };
+  const liveStatus = buildStatusText({ goal: g, list: [] }, liveAudit, NOW)!;
+  assert.match(liveStatus, /MAIN HOST · SUPERVISING/);
+  assert.match(liveStatus, /auditor tool executing/);
+  assert.match(liveStatus, / · read/);
+  assert.match(liveStatus, /evidence: report stream observed · 2\.0 KB report · 1 read-only call/);
+  assert.match(liveStatus, /elapsed 42s/);
+  assert.match(liveStatus, /worker activity 5s ago · fresh/);
+  assert.match(liveStatus, /next: worker completion → verdict/);
+  assert.match(liveStatus, /detached worker/);
+  assert.doesNotMatch(liveStatus, /paused/);
+  const liveWidget = buildWidgetLines({ goal: g, list: [] }, liveAudit, NOW)!.join("\\n");
+  assert.match(liveWidget, /auditor: tool executing · detached worker/);
+  assert.match(liveWidget, /tool: read/);
+  assert.match(liveWidget, /evidence: report stream observed · 2\.0 KB report · 1 read-only call/);
+  assert.doesNotMatch(liveWidget, /paused/);
+
+  const completeAudit = {
+    phase: "complete" as const,
+    recentOutput: ["## Audit result", "<approved>"],
+    toolCalls: [{ name: "grep", argsPrefix: "{}", finishedAt: NOW - 2_000 }],
+    elapsedMs: 45_000,
+  };
+  const verdictStatus = buildStatusText({ goal: g, list: [] }, completeAudit, NOW)!;
+  assert.match(verdictStatus, /auditor awaiting verdict/);
+  assert.match(verdictStatus, /last tool: grep/);
+  assert.match(verdictStatus, /evidence: final report · 1 read-only call/);
+  assert.match(verdictStatus, /elapsed 45s/);
+  assert.match(verdictStatus, /worker finished/);
+  assert.match(verdictStatus, /next: apply detached verdict/);
+  assert.match(verdictStatus, /detached worker/);
+  assert.doesNotMatch(verdictStatus, /paused/);
+  const verdictWidget = buildWidgetLines({ goal: g, list: [] }, completeAudit, NOW)!.join("\\n");
+  assert.match(verdictWidget, /auditor: awaiting verdict · detached worker/);
+  assert.match(verdictWidget, /last tool: grep/);
+  assert.match(verdictWidget, /waiting for detached verdict/);
+});
+
 test("v0.34.86: silent audits show a fine phase label (reading source… / writing report…)", () => {
   const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-fine" } });
   const audit = { phase: "producing_report" as const, elapsedMs: 300_000, lastActivityAt: NOW - 5_000 };
