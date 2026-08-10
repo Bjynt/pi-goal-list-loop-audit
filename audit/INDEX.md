@@ -45,6 +45,7 @@ plus a `v0.34.x-<TOPIC>.md` symlink for versioned docs). Older docs
 ## Topic index (canonical docs, newest first)
 
 **2026-08-10**
+- FAULTY-OBJECTIVE-RECOVERY-2026-08-10.md — provenance-first repair/fallback gate blocks suspicious objectives across resume, startup, list activation, and continuation dispatch
 - REVIEWER-ARCHIVE-METADATA-GUARD-2026-08-10.md — automatic postaudit no longer mines archived Objective/verification metadata into truncated, contract-less queue items; manual archive review remains available
 - SESSION-START-AUDIT-RECOVERY-2026-08-10.md — validated fresh-session recovery for durable `recovery-pending` detached-auditor claims; ordinary cold starts remain held and Pi host replacement stays out of scope
 

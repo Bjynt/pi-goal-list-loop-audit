@@ -1,6 +1,15 @@
 # Changelog
 
 ## Unreleased
+### Faulty-objective recovery gate
+  (`audit/FAULTY-OBJECTIVE-RECOVERY-2026-08-10.md`). Suspicious objectives are
+  now checked before resume, session-start auto-resume, list activation, and
+  continuation dispatch. Durable provenance can produce an automatic repair
+  with a revisioned record; otherwise the item is paused, never dispatched,
+  and a short repair task is queued. Archived/canceled IDs are hard-fenced
+  against stale resurrection. Valid objectives and Pi core/host boundaries
+  remain unchanged.
+
 ### Prevent reviewer metadata from becoming malformed queue goals
   (`audit/REVIEWER-ARCHIVE-METADATA-GUARD-2026-08-10.md`). Automatic postaudit
   now mines only curated disapproved/error auditor reports; archived Objective
