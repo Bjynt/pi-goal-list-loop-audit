@@ -63,8 +63,12 @@ test("manual resume blocks a suspicious paused objective before dispatch", async
 
 test("list activation blocks a suspicious queued objective", async () => {
   const cwd = tmpCwd();
-  const queued = { ...seedGoal({ policy: "list" }), objective: "passes sequentially, including validated recovery (archive)", status: undefined };
-  const item = { id: queued.id, objective: queued.objective, addedAt: new Date().toISOString() };
+  const queued = seedGoal({ policy: "list" });
+  const item = {
+    id: String(queued.id),
+    objective: "passes sequentially, including validated recovery (archive)",
+    addedAt: new Date().toISOString(),
+  };
   seedState(cwd, { goal: null, list: [item] });
   const pi = new MockPi();
   activate(pi.api);
@@ -77,6 +81,21 @@ test("list activation blocks a suspicious queued objective", async () => {
   assert.match(ledger(cwd), /"faulty_objective_repair_queued"/);
 });
 
+test("provenance-backed repair auto-applies before dispatch", async () => {
+  const cwd = tmpCwd();
+  setGlobalAutoResume(true);
+  const g = suspiciousGoal("active");
+  g.objective = "Implement the recovery gate (archive)";
+  seedState(cwd, { goal: g, list: [] });
+  const pi = new MockPi();
+  activate(pi.api);
+  await boot(pi, cwd);
+  const state = readState(cwd);
+  assert.equal(state.goal?.objective, "Implement the recovery gate");
+  assert.match(ledger(cwd), /"faulty_objective_auto_repaired"/);
+  assert.match(ledger(cwd), /"goal_continuation_sent"/);
+});
+
 test("direct continuation dispatch rechecks the suspicious objective", async () => {
   const cwd = tmpCwd();
   const g = suspiciousGoal("active");
@@ -84,7 +103,7 @@ test("direct continuation dispatch rechecks the suspicious objective", async () 
   const pi = new MockPi();
   activate(pi.api);
   await boot(pi, cwd);
-  await sendContinuation(g.id);
+  await sendContinuation(String(g.id));
   await tick(80);
   assert.doesNotMatch(ledger(cwd), /"goal_continuation_sent"/);
   assert.equal(readState(cwd).goal?.status, "paused");
@@ -92,6 +111,7 @@ test("direct continuation dispatch rechecks the suspicious objective", async () 
 
 test("an archived goal id is a hard fence against stale resurrection", async () => {
   const cwd = tmpCwd();
+  setGlobalAutoResume(true);
   const g = suspiciousGoal("active");
   fs.mkdirSync(path.join(cwd, ".pi-glla", "archive"), { recursive: true });
   fs.writeFileSync(path.join(cwd, ".pi-glla", "archive", `${g.id}.md`), "# Goal\\n\\n**Status**: aborted\\n");
