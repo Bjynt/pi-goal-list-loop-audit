@@ -2,11 +2,12 @@
 // extensions/reviewer.ts
 //
 // The Reviewer: post-completion follow-up enqueuer. Fires after a /goal
-// completes or a /list queue empties, extracts findings from the archive
-// + ledger, classifies them by leverage, writes a review report, and
-// cascades: bug/refactor findings → /list items (no Confirm, per the
-// leverage principle), architectural findings → /goal proposal (Confirm),
-// clean completions → audit /goal proposal, strategic-only → notify+idle.
+// completes or a /list queue empties, extracts curated findings from audit
+// reports (and from the archive only for explicit manual review), classifies
+// them by leverage, writes a review report, and cascades: bug/refactor
+// findings → /list items (no Confirm, per the leverage principle),
+// architectural findings → /goal proposal (Confirm), clean completions →
+// audit /goal proposal, strategic-only → notify+idle.
 //
 // Deterministic by design (REVIEWER-DESIGN-2026-07-24: "makes NO new tool
 // calls — purely analytical"). All side effects are injected so tests
@@ -228,6 +229,26 @@ export function curateAuditReviewSources(
   const lastForGoal = entries.filter((e) => e.goalId === goalId).at(-1);
   if (lastForGoal && lastForGoal.verdict === "approved") return [];
   return mineable.map((e) => ({ report: e.report as string, verdict: e.verdict as string }));
+}
+
+/**
+ * Choose the text a reviewer may mine. An archived goal is state metadata:
+ * its Objective and verification-contract prose routinely contains words
+ * such as "bug", "regression", or "follow-up" and is not an independent
+ * finding. Automatic postaudit scans therefore use only curated auditor
+ * reports; an explicit manual review may still inspect the archive. This
+ * prevents a clean approved completion from enqueuing fragments of its own
+ * objective/contract as new list goals.
+ */
+export function buildReviewerSources(
+  archiveText: string | undefined,
+  auditReports: readonly string[],
+  manual: boolean,
+): Array<{ name: string; text: string }> {
+  const sources: Array<{ name: string; text: string }> = [];
+  if (manual && archiveText) sources.push({ name: "archive", text: archiveText });
+  for (const report of auditReports) sources.push({ name: "audit", text: report });
+  return sources;
 }
 
 /** Runaway prevention (contract item 6/9): a reviewer fire in the last
