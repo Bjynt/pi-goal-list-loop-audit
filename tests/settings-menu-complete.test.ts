@@ -105,6 +105,7 @@ test("key rows from v0.27.0 settings menu are all present (menu coverage contrac
     "aggressiveMode",
     "mainModelFallbacks",
     "mainModelRetryMinutes",
+    "hourlyQuotaProbe",
     "auditorModel",
     "auditorSilent",
     "auditCap",
@@ -121,6 +122,7 @@ test("key rows from v0.27.0 settings menu are all present (menu coverage contrac
     "subagentModelOverrides.general-purpose",
     "notifyCmd",
     "tokenLimit",
+    "toolOverrides",
     "postaudit",
   ]) {
     assert.ok(ids.has(id), `missing id: ${id}`);

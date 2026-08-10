@@ -647,6 +647,22 @@ async function promptModelRefs(
   return pick;
 }
 
+/** Parse a tool-override value: numbers, booleans, JSON objects/arrays, else
+ * string. Local mirror of goal-commands' parseToolOverrideValue — a direct
+ * import would make goal-settings-ui → goal-commands → goal-settings-ui a
+ * circular pair, so the tiny parser stays duplicated by design. */
+function parseToolOverrideValueLocal(s: string): unknown {
+  const trimmed = s.trim();
+  if (trimmed === "true") return true;
+  if (trimmed === "false") return false;
+  if (trimmed === "null") return null;
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try { return JSON.parse(trimmed); } catch { /* fall through */ }
+  }
+  return trimmed;
+}
+
 export async function handleSettingChoice(id: string, ctx: ExtensionContext): Promise<void> {
   switch (id) {
     case "autoResume": {
@@ -981,6 +997,63 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
         else if (!v.trim()) saveSettings("global", ctx.cwd, { tokenLimit: undefined });
         else ctx.ui.notify(`Not a non-negative integer: ${v}`, "warning");
       }
+      return;
+    }
+    case "toolOverrides": {
+      const current = loadSettings(ctx.cwd).toolOverrides ?? {};
+      const describe = (o: NonNullable<Settings["toolOverrides"]>) =>
+        `allow: ${o.allow?.length ? o.allow.join(", ") : "(none)"} · hide: ${o.hide?.length ? o.hide.join(", ") : "(none)"} · config: ${Object.keys(o.perToolConfig ?? {}).length ? `${Object.keys(o.perToolConfig!).length} tool(s)` : "(none)"}`;
+      const action = await ctx.ui.select(`Tool overrides — PROJECT scope (this project only) — ${describe(current)}`, [
+        "list — show current allow / hide / perToolConfig",
+        "allow — force a tool visible despite an external modlist",
+        "hide — force a tool hidden despite the session",
+        "unallow — remove a forced-visible override",
+        "unhide — remove a forced-hidden override",
+        "set — write a per-tool config knob (key=value)",
+        "unset — remove a per-tool config knob",
+      ]);
+      if (!action) return;
+      const verb = action.split(" ")[0]!.toLowerCase();
+      if (verb === "list") {
+        ctx.ui.notify(`toolOverrides (project):\n${describe(current)}`, "info");
+        return;
+      }
+      const toolName = await ctx.ui.input(`Tool name (${verb})`, "e.g. bash, complete_goal — empty cancels");
+      if (toolName === undefined || !toolName.trim()) return;
+      const tool = toolName.trim();
+      const apply = (patch: Partial<NonNullable<Settings["toolOverrides"]>>) =>
+        saveSettings("project", ctx.cwd, { toolOverrides: { ...current, ...patch } });
+      if (verb === "allow" || verb === "hide") {
+        const list = current[verb] ?? [];
+        if (!list.includes(tool)) apply({ [verb]: [...list, tool] });
+        ctx.ui.notify(`"${tool}" is now ${verb === "allow" ? "always visible" : "always hidden"} (project override saved).`, "info");
+        return;
+      }
+      if (verb === "unallow" || verb === "unhide") {
+        apply({ [verb]: (current[verb] ?? []).filter((t) => t !== tool) });
+        ctx.ui.notify(`"${tool}" ${verb.slice(2)} override removed — the session decides again.`, "info");
+        return;
+      }
+      const kv = await ctx.ui.input(
+        `Config ${verb} — ${verb === "set" ? "key=value" : "key"}`,
+        verb === "set" ? "e.g. timeout=60, stream=true — empty cancels" : "e.g. timeout — empty cancels",
+      );
+      if (kv === undefined || !kv.trim()) return;
+      const cfg = { ...(current.perToolConfig ?? {}) };
+      const toolCfg = { ...(cfg[tool] ?? {}) };
+      if (verb === "set") {
+        const eq = kv.indexOf("=");
+        if (eq < 0) {
+          ctx.ui.notify(`set needs key=value: got "${kv}"`, "warning");
+          return;
+        }
+        toolCfg[kv.slice(0, eq)] = parseToolOverrideValueLocal(kv.slice(eq + 1));
+      } else {
+        delete toolCfg[kv.trim()];
+      }
+      cfg[tool] = toolCfg;
+      apply({ perToolConfig: cfg });
+      ctx.ui.notify(`"${tool}" config ${verb === "set" ? "saved" : "removed"} (project override).`, "info");
       return;
     }
     case "postaudit":

@@ -209,6 +209,14 @@ export function buildSettingsRows(
       sourceText: src("mainModelRetryMinutes"),
       description: "first recovery wait; backs off to 30m, 1h, 2h, 4h, 5h; automatic probes stop after 24h"
     },
+    {
+      id: "hourlyQuotaProbe",
+      section: "backups",
+      label: "Hourly quota probe",
+      valueText: show("hourlyQuotaProbe", "on"),
+      sourceText: src("hourlyQuotaProbe"),
+      description: "extra recovery probe at :00:30 every hour while main-model recovery is parked — quota windows refresh at the top of the hour; off = normal retry cadence only"
+    },
   );
 
   // ── Subagent fallback chains (v0.34.115) ──
@@ -423,6 +431,23 @@ export function buildSettingsRows(
       valueText: show("tokenLimit", "off"),
       sourceText: src("tokenLimit"),
       description: "per-goal token budget; pause when exceeded (0 = off)",
+    },
+    {
+      id: "toolOverrides",
+      section: "other",
+      label: "Tool overrides",
+      valueText: (() => {
+        const o = settings.toolOverrides;
+        if (!o) return "none";
+        const parts: string[] = [];
+        if (o.allow?.length) parts.push(`allow ${o.allow.length}`);
+        if (o.hide?.length) parts.push(`hide ${o.hide.length}`);
+        const cfgN = Object.keys(o.perToolConfig ?? {}).length;
+        if (cfgN) parts.push(`cfg ${cfgN}`);
+        return parts.join(" · ") || "none";
+      })(),
+      sourceText: src("toolOverrides"),
+      description: "project-scoped per-tool policy — force tools visible/hidden despite modlists + per-tool config knobs; Enter opens the editor",
     },
     {
       id: "postaudit",

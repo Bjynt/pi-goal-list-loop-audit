@@ -85,7 +85,7 @@ export interface Settings {
    * (opt-in guard, v0.12.0): unset/0 = no budget. */
   tokenLimit?: number;
   /** v0.23.2: minutes of busy-but-silent before the wedge alert fires
-   * (hung-command detector). Unset = 45; 0 = off. */
+   * (hung-command detector). Unset = 30 (WEDGE_ALERT_DEFAULT_MINUTES); 0 = off. */
   wedgeAlertMinutes?: number;
   /** on → restored goals/loops/lists auto-resume even in fresh sessions
    * (unattended rigs). Default off: restore holds until /goal resume. */
@@ -284,6 +284,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "hourlyQuotaProbe",
   "subagentModelStrategy",
   "subagentModelOverrides",
+  "subagentFallbacks",
   "aggressiveMode",
   "quotaRetryMinutes",
   "stuckMaxInterventions",
