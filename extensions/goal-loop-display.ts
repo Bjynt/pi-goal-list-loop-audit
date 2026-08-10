@@ -405,6 +405,51 @@ function auditorLastActivity(audit: AuditDisplayProgress | null | undefined, now
   return ` · worker activity ${fmtElapsed(now - audit.lastActivityAt)} ago`;
 }
 
+/** Keep the always-on status line useful even when the widget is hidden:
+ * elapsed wall time, evidence freshness, and the next lifecycle transition
+ * are display facts, not claims that the host is paused or that a verdict has
+ * already landed. */
+function auditorElapsedSuffix(audit: AuditDisplayProgress | null | undefined): string {
+  if (!audit || !Number.isFinite(audit.elapsedMs) || audit.elapsedMs < 0) return "";
+  return ` · elapsed ${fmtElapsed(audit.elapsedMs)}`;
+}
+
+function auditorFreshnessSuffix(audit: AuditDisplayProgress | null | undefined, phase: AuditorDisplayPhase, now: number): string {
+  const at = audit?.lastActivityAt;
+  if (phase === "awaiting-verdict" && (at === undefined || !Number.isFinite(at))) return " · worker finished";
+  if (at === undefined || !Number.isFinite(at)) return " · freshness pending";
+  if (at > now) return " · freshness unknown";
+  return now - at <= LIVE_ACTIVITY_MS ? " · fresh" : " · stale";
+}
+
+function auditorNextTransition(phase: AuditorDisplayPhase): string {
+  switch (phase) {
+    case "queued": return "detached worker start";
+    case "running": return "worker completion → verdict";
+    case "quiet": return "worker event or /goal cancel";
+    case "blocked": return "retry/resolve or /goal cancel";
+    case "awaiting-verdict": return "apply detached verdict";
+  }
+}
+
+/** Summarize evidence without exposing the worker's report prose or think
+ * blocks. Tool names, call counts, report byte counts, and the existence of a
+ * final report are safe telemetry; the report itself remains behind the
+ * existing silent/final-only gate. */
+function auditorEvidenceSummary(audit: AuditDisplayProgress | null | undefined, phase: AuditorDisplayPhase): string | undefined {
+  if (!audit) return undefined;
+  const parts: string[] = [];
+  if ((audit.recentOutput?.length ?? 0) > 0) {
+    parts.push(phase === "awaiting-verdict" ? "final report" : "report stream observed");
+  }
+  if (typeof audit.reportBytes === "number" && Number.isFinite(audit.reportBytes) && audit.reportBytes > 0) {
+    parts.push(`${fmtByteCount(audit.reportBytes)} report`);
+  }
+  const calls = audit.toolCalls?.length ?? 0;
+  if (calls > 0) parts.push(`${calls} read-only call${calls === 1 ? "" : "s"}`);
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
 /** Project the detached worker's raw progress into the five user-facing
  * phases. A durable running claim without an observed progress event is not
  * green proof of work: it is explicitly waiting for a verdict. */
@@ -648,8 +693,22 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     const label = live
       ? `${paint(theme, "success", phaseText)} ${activityBadge("AUDITOR · DETACHED · LIVE", now, theme)}`
       : paint(theme, color, phaseText);
-    const tool = phase === "running" && audit?.currentTool ? ` · ${truncate(audit.currentTool, 30)}` : "";
-    return `glla: ${host} · ${label}${tool}${live ? auditorLastActivity(audit, now) : ""}${heldSuffix}`;
+    // A current tool is present-tense evidence only while its worker
+    // heartbeat is fresh. Older snapshots stay useful as `last tool:` facts,
+    // never as a claim that the detached process is still in that call.
+    const staleSnapshot = audit?.lastActivityAt !== undefined && !live;
+    const toolName = audit?.currentTool
+      ? truncate(audit.currentTool, 30)
+      : lastAuditorTool(audit);
+    const tool = toolName
+      ? staleSnapshot ? ` · last tool: ${toolName}` : ` · ${toolName}`
+      : "";
+    const evidence = auditorEvidenceSummary(audit, phase);
+    const elapsed = auditorElapsedSuffix(audit);
+    const workerActivity = auditorLastActivity(audit, now);
+    const freshness = auditorFreshnessSuffix(audit, phase, now);
+    const next = ` · next: ${auditorNextTransition(phase)}`;
+    return `glla: ${host} · ${label}${tool}${evidence ? ` · evidence: ${evidence}` : ""}${elapsed}${workerActivity}${freshness}${next} · detached worker${heldSuffix}`;
   }
   if (g.status === "paused") {
     // v0.28.22: the status line names the ACTIONABILITY, not the reason —
