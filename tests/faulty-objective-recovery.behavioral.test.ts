@@ -124,7 +124,7 @@ test("a canceled goal and stale continuation attempt are hard fences", async () 
   const pi = new MockPi();
   activate(pi.api);
   const ctx = await boot(pi, cwd);
-  assert.equal(guardGoalBeforeContinuation(ctx as any, "canceled-test", g.id), false);
+  assert.equal(guardGoalBeforeContinuation(ctx as any, "canceled-test", String(g.id)), false);
   await sendContinuation(`${g.id}-stale`);
   await tick(40);
   assert.doesNotMatch(ledger(cwd), /"goal_continuation_sent"/);
