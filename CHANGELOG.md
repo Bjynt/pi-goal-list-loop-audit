@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+### Prevent reviewer metadata from becoming malformed queue goals
+  (`audit/REVIEWER-ARCHIVE-METADATA-GUARD-2026-08-10.md`). Automatic postaudit
+  now mines only curated disapproved/error auditor reports; archived Objective
+  and verification-contract metadata is excluded because it can contain
+  reviewer trigger words and become truncated, contract-less `/list` items.
+  Explicit manual review still includes the archive. Regression coverage pins
+  the automatic/manual source split.
+
 ### Validated session-start recovery for parked detached audits
   (`audit/SESSION-START-AUDIT-RECOVERY-2026-08-10.md`). A durable completion
   claim already parked as `recovery-pending` now follows the existing
