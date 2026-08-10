@@ -573,11 +573,23 @@ function displayActivityFor(ctx: ExtensionContext): {
   lastStreamActivityAt?: number;
 } {
   const goal = state.goal;
-  if (!goal || goal.status !== "active") return {};
-  const telemetry = goal.telemetry;
+  if (!goal) return {};
   const goalStartedAt = Date.parse(goal.createdAt);
-  const hasRealActivity = lastRealActivityAt > 0
-    && (!Number.isFinite(goalStartedAt) || lastRealActivityAt >= goalStartedAt);
+  // Paused goals do not need an active/busy/queued host projection, but their
+  // last real timestamps remain useful evidence: the card must say when work
+  // last moved before it was safely parked instead of showing only a wall
+  // clock. Guard by goal creation so a previous item's activity cannot leak.
+  const lastActivityAt = lastRealActivityAt > 0
+    && (!Number.isFinite(goalStartedAt) || lastRealActivityAt >= goalStartedAt)
+    ? lastRealActivityAt
+    : undefined;
+  const streamAt = streamActivityObserved
+    && (!Number.isFinite(goalStartedAt) || lastStreamActivityAt >= goalStartedAt)
+    ? lastStreamActivityAt
+    : undefined;
+  if (goal.status !== "active") return { lastActivityAt, lastStreamActivityAt: streamAt };
+  const telemetry = goal.telemetry;
+  const hasRealActivity = lastActivityAt !== undefined;
   const noTurnYet = !telemetry
     && !hasRealActivity
     && (goal.usage?.tokensUsed ?? 0) === 0
@@ -594,14 +606,6 @@ function displayActivityFor(ctx: ExtensionContext): {
     return { activity: "active" };
   }
   const scheduled = continuationTimerRef() !== null || pendingContinuationDispatchRef() !== null || continuationDispatchStoodDownRef();
-  const lastActivityAt = lastRealActivityAt > 0
-    && (!Number.isFinite(goalStartedAt) || lastRealActivityAt >= goalStartedAt)
-    ? lastRealActivityAt
-    : undefined;
-  const streamAt = streamActivityObserved
-    && (!Number.isFinite(goalStartedAt) || lastStreamActivityAt >= goalStartedAt)
-    ? lastStreamActivityAt
-    : undefined;
   const streamFresh = streamAt !== undefined && Date.now() - streamAt <= LIVE_STREAM_PROOF_MS;
   const toolActive = inFlightToolCalls.size > 0;
   // A spinner means pi is busy AND we have recent stream/tool evidence. A

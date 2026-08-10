@@ -537,6 +537,66 @@ function hostLastStream(extras: WidgetExtras | undefined, now: number): string {
   return ` · last stream ${fmtElapsed(Math.max(0, now - at))} ago`;
 }
 
+/** Paused-state lifecycle projection. Pausing is durable, but it is not a
+ * blank state: users need to know who owns recovery, whether queue work is
+ * parked safely, when the host last made progress, and what happens next.
+ * These helpers are display-only; they never infer or mutate lifecycle state. */
+function pausedRecoveryOwner(g: Goal, state: State): string {
+  if (isCompletionAuditNoVerdict(g)) return "detached auditor recovery";
+  if (state.mainModelRecovery || /main model recovery|provider[ /]quota|quota wall/i.test(g.pauseReason ?? "")) {
+    return "main-model recovery";
+  }
+  switch (pauseKind(g)) {
+    case "decision": return "user decision";
+    case "error": return "user action";
+    case "wait": return "glla recovery timer";
+    case "blocked": return "manual action";
+    default: return "manual resume";
+  }
+}
+
+function pausedLastActivity(g: Goal, extras: WidgetExtras | undefined, now: number): string {
+  const at = extras?.lastActivityAt;
+  if (at !== undefined && Number.isFinite(at) && at > 0 && at <= now) {
+    return `last activity ${fmtElapsed(now - at)} ago`;
+  }
+  const hasEvidence = !!g.telemetry || (g.usage?.tokensUsed ?? 0) > 0 || (g.auditHistory?.length ?? 0) > 0;
+  return hasEvidence ? "last activity not available" : "last activity not observed";
+}
+
+function pausedNextTransition(g: Goal, state: State, now: number): string {
+  const resume = g.policy === "list" ? "/list resume" : "/goal resume";
+  const retryAt = state.mainModelRecovery?.retryAt ? Date.parse(state.mainModelRecovery.retryAt) : Number.NaN;
+  if (Number.isFinite(retryAt)) {
+    return retryAt <= now ? "resuming now" : `quota reset at ${formatClockTime(retryAt)}`;
+  }
+  const resumeAt = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) : Number.NaN;
+  if (Number.isFinite(resumeAt)) {
+    return resumeAt <= now ? "resuming now" : `auto-retry in ${fmtElapsed(resumeAt - now)}`;
+  }
+  if (isCompletionAuditNoVerdict(g)) return `${resume} starts a fresh auditor`;
+  switch (pauseKind(g)) {
+    case "decision": return `user decision → ${resume}`;
+    case "error": return `manual action → ${resume}`;
+    case "blocked": return resume;
+    case "wait": return "recovery timer";
+    default: return resume;
+  }
+}
+
+function pausedLifecycleLines(g: Goal, state: State, extras: WidgetExtras | undefined, now: number): [string, string] {
+  const queued = state.list?.length ?? 0;
+  return [
+    `lifecycle: safely parked · owner: ${pausedRecoveryOwner(g, state)} · ${queued > 0 ? `${queued} queued` : "queue empty"}`,
+    `${pausedLastActivity(g, extras, now)} · next: ${pausedNextTransition(g, state, now)}`,
+  ];
+}
+
+function pausedStatusSuffix(g: Goal, state: State, extras: WidgetExtras | undefined, now: number): string {
+  const [lifecycle, transition] = pausedLifecycleLines(g, state, extras, now);
+  return ` · ${lifecycle.replace(/^lifecycle: /, "")} · ${transition}`;
+}
+
 /**
  * One-line status for ctx.ui.setStatus("pi-glla", …).
  * Returns undefined when nothing is being supervised (clears the segment).
@@ -605,11 +665,11 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       // not host-bearing anymore.
       const queued = (state.list?.length ?? 0) > 0 ? ` · ${state.list!.length} queued` : "";
       const resume = g.policy === "list" ? "/list resume" : "/goal resume";
-      return `glla: ${paint(theme, "warning", "⏸ paused")} · ${paint(theme, "dim", "auditor parked — no verdict")} · ${resume}${queued}${heldSuffix}`;
+      return `glla: ${paint(theme, "warning", "⏸ paused")} · ${paint(theme, "dim", "auditor parked — no verdict")} · ${resume}${queued}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
     }
     const kind = pauseKind(g);
-    if (kind === "decision") return `glla: ${paint(theme, "accent", "⏸ decision needed")}${heldSuffix}`;
-    if (kind === "error") return `glla: ${paint(theme, "error", `⏸ action needed — ${truncate(g.pauseReason ?? "", 30)}`)}${heldSuffix}`;
+    if (kind === "decision") return `glla: ${paint(theme, "accent", "⏸ decision needed")}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
+    if (kind === "error") return `glla: ${paint(theme, "error", `⏸ action needed — ${truncate(g.pauseReason ?? "", 30)}`)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
     if (kind === "wait" || kind === "blocked") {
       // v0.34.12: live countdown (the UI ticker keeps rendering through a
       // timed wait) — "auto-retry in 23m" beats a static clock time, and a
@@ -626,7 +686,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
         ? rms <= 0 ? " · resuming…" : ` · auto-retry in ${fmtElapsed(rms)}`
         : "";
       if (kind === "blocked") {
-        return `glla: ${paint(theme, "warning", `⏸ action needed${when}`)}${queue}${heldSuffix}`;
+        return `glla: ${paint(theme, "warning", `⏸ action needed${when}`)}${queue}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
       }
       // v0.34.102 (field: dracon-platform 2026-08-08 091828 "pi did not
       // start a turn"): a wait-pause parked on mainModelRecovery must name
@@ -636,12 +696,12 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       // the v0.34.95 queued-envelope wording so both surfaces agree.
       const parked = state.mainModelRecovery?.retryAt ? Date.parse(state.mainModelRecovery.retryAt) : Number.NaN;
       if (Number.isFinite(parked)) {
-        return `glla: ${paint(theme, "dim", `⏳ parked on provider wall — no turns until quota reset at ${formatClockTime(parked)}`)}${queue}${heldSuffix}`;
+        return `glla: ${paint(theme, "dim", `⏳ parked on provider wall — no turns until quota reset at ${formatClockTime(parked)}`)}${queue}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
       }
-      return `glla: ${paint(theme, "dim", `⏳ auto-retrying${when}`)}${queue}${heldSuffix}`;
+      return `glla: ${paint(theme, "dim", `⏳ auto-retrying${when}`)}${queue}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
     }
     const label = `paused ⏸ ${truncate(g.pauseReason ?? "", 40)}`;
-    return `glla: ${paint(theme, pauseIsError(g) ? "error" : "warning", label)}${heldSuffix}`;
+    return `glla: ${paint(theme, pauseIsError(g) ? "error" : "warning", label)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
   }
   if (g.status === "active") {
     // v0.28.1 (S1/S2): a stale-handle interrupt keeps the goal ACTIVE.
