@@ -381,7 +381,13 @@ export function runReviewer(
     }
   }
 
-  const findings = extractFindings(deps.sources, config.maxFindingsPerReview, source.objective);
+  // Defense in depth: automatic callers must never mine archive metadata,
+  // even if a legacy caller still supplies an `archive` source. Manual review
+  // is the explicit opt-in for inspecting that file.
+  const reviewSources = deps.manual
+    ? deps.sources
+    : deps.sources.filter((s) => s.name !== "archive");
+  const findings = extractFindings(reviewSources, config.maxFindingsPerReview, source.objective);
   const bugs = findings.filter((f) => f.class === "bug" || f.class === "refactor");
   const architectural = findings.filter((f) => f.class === "architectural");
   const strategic = findings.filter((f) => f.class === "strategic");
