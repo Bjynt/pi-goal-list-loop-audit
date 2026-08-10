@@ -23,14 +23,30 @@ import { appendLedger, type State } from "./goal-loop-core.js";
 
 /** The single mutable state object. goal.ts reads `state.goal` etc. through
  * this imported binding (property reads/mutations are fine); replacing the
- * whole object must go through replaceState(). */
-export let state: State = { goal: null };
+ * whole object must go through replaceState().
+ *
+ * v0.34.122 (INCIDENT 2026-08-09/10): `state` is a `const`, NOT a `let` —
+ * replaceState() mutates it IN PLACE. Root cause of the live enqueue-
+ * no-activation bug: pi's extension loader (jiti 2.7.0, moduleCache:false)
+ * compiles `export let state` with a captured-value export binding, so
+ * after `state = next` every importer of the `state` binding kept the
+ * ORIGINAL object (e.g. `{goal:null, list:[]}`), while the module-local
+ * variable held the new object. persistStateLine serialized the stale
+ * object → the ledger froze on the first-read state → /list audit queued
+ * sidecars + events but the persisted state never showed the item and no
+ * goal ever activated. bun (harness) and node keep live bindings, so the
+ * 1209-test suite could not catch it. Mutating the shared object in place
+ * keeps every imported binding current under ANY loader. */
+export const state: State = { goal: null };
 
 /** Replace the whole state object (the 18 wholesale `state = ...` sites in
  * goal.ts). A function — not a bare exported `let` + reassignment — because
- * ES module imports are read-only bindings. */
+ * ES module imports are read-only bindings. In-place mutation: the shape
+ * always mirrors what the caller passes (delete existing keys, then assign),
+ * and object identity stays stable for every import site. */
 export function replaceState(next: State): void {
-  state = next;
+  for (const key of Object.keys(state)) delete (state as Record<string, unknown>)[key];
+  Object.assign(state, next);
 }
 
 /** Persistence core: append the durable "state" ledger line (active.jsonl).
