@@ -63,4 +63,9 @@ these states do not render the main goal as paused.
 
 ```text
 bun test tests/display.test.ts — 92 pass / 0 fail
+bun test tests/auditor-polish.test.ts — 12 pass / 0 fail
+bun test tests/auditor-process.test.ts — 14 pass / 0 fail
+bun test tests/auditor-unmatched-telemetry.test.ts — 12 pass / 0 fail
+npx tsc --noEmit — clean
+bun test — 1213 pass / 1 skip / 0 fail across 107 files
 ```
