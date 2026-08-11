@@ -53,6 +53,14 @@ test("repair detection: externally deleted/altered managed files are re-written 
   const first = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent", overrides: {} });
   assert.deepEqual(first.written, ["Explore"]);
   assert.deepEqual(first.repaired, []);
+  // An idempotent sync must preserve the managed-file snapshot even though
+  // its result has no write delta; a later external change still needs repair
+  // provenance for the user-facing notification.
+  const noop = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent", overrides: {} });
+  assert.deepEqual(noop.written, []);
+  assert.deepEqual(noop.repaired, []);
+  const syncState = JSON.parse(fs.readFileSync(path.join(dir, "agents", ".glla-subagent-sync.json"), "utf8"));
+  assert.deepEqual(syncState.written, ["Explore"], "idempotent sync preserves managed-file repair state");
   // External deletion:
   fs.unlinkSync(path.join(dir, "agents", "Explore.md"));
   const second = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent", overrides: {} });

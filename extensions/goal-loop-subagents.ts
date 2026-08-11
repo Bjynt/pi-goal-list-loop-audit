@@ -215,6 +215,11 @@ export function syncSubagentModelOverrides(opts: {
 }): SubagentSyncResult {
   const result: SubagentSyncResult = { written: [], removed: [], skipped: [], repaired: [] };
   const overrides = opts.overrides ?? {};
+  // Keep the repair-state snapshot separate from this run's write events.
+  // `result.written` is intentionally only the delta for user messaging; the
+  // persisted state must contain every managed file that still exists so an
+  // idempotent sync does not erase the evidence needed by the next repair.
+  const managedNow = new Set<string>();
   // v0.25.6: load the previous sync state for repair detection — a file
   // we wrote before that is now MISSING or CONTENT-CHANGED was touched
   // externally; re-writing it is a repair the user should hear about.
@@ -264,16 +269,20 @@ export function syncSubagentModelOverrides(opts: {
       result.skipped.push({ name, reason: "user-owned file (no glla marker) — left untouched" });
       continue;
     }
-    if (current === desired) continue; // idempotent no-op
+    if (current === desired) {
+      managedNow.add(name);
+      continue; // idempotent no-op
+    }
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, desired);
+    managedNow.add(name);
     result.written.push(name);
     if (prevWritten.includes(name)) result.repaired.push(name);
   }
-  // Persist what we manage now (best-effort).
+  // Persist what we manage now (not only this run's write delta), best-effort.
   try {
     fs.mkdirSync(path.join(opts.agentDir, "agents"), { recursive: true });
-    fs.writeFileSync(subagentSyncStatePath(opts.agentDir), JSON.stringify({ written: result.written, at: new Date().toISOString() }));
+    fs.writeFileSync(subagentSyncStatePath(opts.agentDir), JSON.stringify({ written: [...managedNow].sort(), at: new Date().toISOString() }));
   } catch {
     /* repair detection is best-effort */
   }
