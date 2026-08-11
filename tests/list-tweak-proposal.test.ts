@@ -151,6 +151,35 @@ test("bare /list tweak input carrying a 'Done when:' clause applies the new cont
   );
 });
 
+test("goal tweak rebases onto a pause that lands while confirmation is open", async () => {
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  try {
+    seedState(cwd, {
+      goal: seedGoal({ policy: "goal", status: "active", objective: "old goal objective" }),
+    });
+    const ctx = await freshSession(cwd, "reload");
+    await tick();
+    ctx.ui.inputImpl = async () => "new goal objective";
+    ctx.ui.confirmImpl = async () => {
+      // A real host event can mutate state while the confirm dialog yields.
+      // Pause through the registered command to reproduce that interleaving.
+      await pi.command("goal", "pause", ctx);
+      return true;
+    };
+
+    await pi.command("goal", "tweak", ctx);
+
+    const updated = readState(cwd).goal as { objective: string; status: string; pauseReason?: string; revision: number };
+    assert.equal(updated.objective, "new goal objective");
+    assert.equal(updated.status, "paused", "the pause that landed during confirmation must survive the tweak");
+    assert.equal(updated.pauseReason, "paused by user", "the latest pause metadata must not be restored from the old snapshot");
+    assert.equal(updated.revision, 1, "the tweak still bumps the latest goal revision once");
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("mirror: bare /goal tweak launches the same flow for an active goal", async () => {
   setGlobalAutoResume(true); // keep the active goal active past the restore gate
   const cwd = tmpCwd();
