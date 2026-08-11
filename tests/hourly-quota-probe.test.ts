@@ -19,8 +19,9 @@
 // (d) it re-arms after each fire until recovery clears, (e) session
 // replacement cancels the old ticker.
 
-import { afterEach, test } from "node:test";
+import { test } from "node:test";
 import * as assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -31,148 +32,11 @@ const CORE_SRC = readFileSync(join(here, "..", "extensions", "goal-loop-core.ts"
 const SETTINGS_SRC = readFileSync(join(here, "..", "extensions", "goal-settings.ts"), "utf8");
 const RECOVERY_SRC = readFileSync(join(here, "..", "extensions", "goal-recovery.ts"), "utf8"); // decomposition step 3 (v0.34.111)
 
-const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
-
-type ScheduledTimer = {
-  delayMs: number;
-  callback: () => void;
-  native: NodeJS.Timeout;
-  fired: boolean;
-};
-
-type HourlyRig = {
-  flags: RecoveryFlags;
-  scheduled: ScheduledTimer[];
-  probeCalls: () => number;
-  run: (timer: ScheduledTimer) => void;
-  dispose: () => void;
-};
-
-let activeRig: HourlyRig | null = null;
-
-function setHourlyProbeSetting(enabled: boolean): void {
-  writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({ hourlyQuotaProbe: enabled }));
-}
-
-function parkedRecovery(): MainModelRecovery {
-  return {
-    primary: "openai/backup",
-    active: "anthropic/mock-model",
-    attempted: ["anthropic/mock-model"],
-    attempts: 1,
-    reason: "main model quota: synthetic hourly probe failure",
-    kind: "goal",
-    firstFailureAt: new Date().toISOString(),
-    autoRetryUntil: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
-    retryAt: new Date(Date.now() + 60_000).toISOString(),
-  };
-}
-
-/** Build the actual goal-recovery module with a deterministic clock/timer
- * seam. The production schedule/fire/failure path still runs; only the
- * hour-long wait and host/model edges are controlled by the test. */
-function makeHourlyRig(ctx: MockCtx, enabled: boolean): HourlyRig {
-  setHourlyProbeSetting(enabled);
-  const extensionCtx = ctx as unknown as ExtensionContext;
-  const modelRegistry = {
-    find: () => ({ provider: "openai", id: "backup" }),
-  };
-  (ctx as unknown as { modelRegistry: typeof modelRegistry }).modelRegistry = modelRegistry;
-
-  let calls = 0;
-  const scheduled: ScheduledTimer[] = [];
-  const extensionApi = {
-    setModel: async (_model: unknown): Promise<boolean> => {
-      calls += 1;
-      throw new Error("synthetic hourly probe failure");
-    },
-  } as unknown as ExtensionAPI;
-  const flags: RecoveryFlags = {
-    completionAuditRecoveryArmed: false,
-    mainModelRecoveryTimer: null,
-    mainModelSwitchInFlight: false,
-    mainModelAbortForRecovery: false,
-    lastMainModelFailure: null,
-    hourlyProbeTimer: null,
-    hourlyProbeFireAt: null,
-    sessionGeneration: 1,
-    extensionApi,
-    extensionApiStale: false,
-    continuationDispatchStoodDown: false,
-    lastLongLivedFailureAt: 0,
-    lastMainModelRecoveryResumeAt: 0,
-  };
-  const deps: RecoveryDeps = {
-    activeGoalSurfaceCommand: (command) => `/${command}`,
-    clearDetachedAuditRuntime: () => {},
-    updateGoal: () => {},
-    clearContinuationTimer: () => {},
-    freshCtxForGeneration: (generation) => generation === flags.sessionGeneration ? extensionCtx : null,
-    isSupervising: () => true,
-    notifyExternal: () => {},
-    persistState: () => {},
-    recoverySurfaceCommand: (_kind, command) => `/${command}`,
-    scheduleContinuation: () => {},
-    scheduleSessionTimeout: (callback, delayMs) => {
-      const timer: ScheduledTimer = {
-        delayMs,
-        callback,
-        native: setTimeout(() => {}, 60 * 60_000),
-        fired: false,
-      };
-      scheduled.push(timer);
-      return timer.native;
-    },
-  };
-  createGoalRecovery(flags, deps);
-  const rig: HourlyRig = {
-    flags,
-    scheduled,
-    probeCalls: () => calls,
-    run: (timer) => {
-      assert.equal(timer.fired, false, "a scheduled timer fires once in this harness");
-      timer.fired = true;
-      timer.callback();
-    },
-    dispose: () => {
-      for (const timer of scheduled) clearTimeout(timer.native);
-    },
-  };
-  activeRig = rig;
-  return rig;
-}
-
-async function settleHourlyProbe(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
-  await tick(0);
-}
-
-afterEach(() => {
-  if (activeRig) {
-    cancelHourlyProbe();
-    activeRig.dispose();
-    activeRig = null;
-  }
-  replaceState({ goal: null });
-  setHourlyProbeSetting(true);
-});
-
 import {
   nextHourlyProbeMs,
   nextHourlyPromptMs,
-  type MainModelRecovery,
 } from "../extensions/goal-loop-core.js";
-import {
-  cancelHourlyProbe,
-  createGoalRecovery,
-  scheduleHourlyProbe,
-  type RecoveryDeps,
-  type RecoveryFlags,
-} from "../extensions/goal-recovery.js";
-import { state, replaceState } from "../extensions/goal-state.js";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { makeMockCtx, tick, tmpCwd, type MockCtx } from "./harness/mock-pi.js";
+import { tmpCwd } from "./harness/mock-pi.js";
 import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 // ---------------------------------------------------------------------------
