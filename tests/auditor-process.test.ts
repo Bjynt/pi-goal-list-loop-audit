@@ -17,7 +17,10 @@ import {
   type AuditorStalledInfo,
 } from "../extensions/goal-loop-auditor-process.ts";
 
-const workerPath = path.resolve(process.cwd(), "tests/fixtures/auditor-fake-worker.mjs");
+function workerPathFor(dir: string): string {
+  return path.join(dir, "auditor-fake-worker.mjs");
+}
+
 const workerSource = `
 import { readFile, writeFile } from "node:fs/promises";
 const dir = process.argv[process.argv.indexOf("--job-dir") + 1];
@@ -52,14 +55,12 @@ const goal = {
 
 async function setup(): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-process-"));
-  await mkdir(path.dirname(workerPath), { recursive: true });
-  await writeFile(workerPath, workerSource);
+  await writeFile(workerPathFor(dir), workerSource);
   return dir;
 }
 
 async function cleanup(dir: string): Promise<void> {
   await rm(dir, { recursive: true, force: true });
-  await rm(workerPath, { force: true });
 }
 
 async function runWithAttempt(dir: string, attemptId: string, env: NodeJS.ProcessEnv = {}) {
@@ -68,7 +69,7 @@ async function runWithAttempt(dir: string, attemptId: string, env: NodeJS.Proces
     goal,
     model: "test/provider-model" satisfies AuditorModel,
     thinkingLevel: "high",
-    runtime: { workerPath, env, attemptId: () => attemptId, pollIntervalMs: 10, wallTimeoutMs: 2_000 },
+    runtime: { workerPath: workerPathFor(dir), env, attemptId: () => attemptId, pollIntervalMs: 10, wallTimeoutMs: 2_000 },
   });
 }
 
@@ -120,7 +121,7 @@ test("detached parent forwards live worker telemetry to its progress callback", 
       model: "test/provider-model",
       thinkingLevel: "high",
       onProgress: (progress) => reports.push(progress),
-      runtime: { workerPath, env: { FAKE_TELEMETRY: "yes" }, attemptId: () => "attempt-telemetry", pollIntervalMs: 10, wallTimeoutMs: 2_000 },
+      runtime: { workerPath: workerPathFor(dir), env: { FAKE_TELEMETRY: "yes" }, attemptId: () => "attempt-telemetry", pollIntervalMs: 10, wallTimeoutMs: 2_000 },
     });
     const live = reports.find((progress) => progress.currentTool === "read");
     assert.ok(live, "the detached progress file reaches the parent");
