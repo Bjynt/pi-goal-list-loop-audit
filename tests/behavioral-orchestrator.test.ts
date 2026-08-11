@@ -2855,7 +2855,7 @@ test("v0.34.129: fan-out reports cap-deferred findings separately from true queu
   const ctx = await freshSession(cwd, "startup");
   const findingsDir = path.join(cwd, ".pi-glla", "audit-loop");
   fs.mkdirSync(findingsDir, { recursive: true });
-  const findings = Array.from({ length: 51 }, (_, i) => `- [ ] FIX: LOW: cap-only finding ${String(i + 1).padStart(2, "0")} (cap.ts:${i + 1})`).join("\\n") + "\\n";
+  const findings = Array.from({ length: 51 }, (_, i) => `- [ ] FIX: LOW: cap-only finding ${String(i + 1).padStart(2, "0")} (cap.ts:${i + 1})`).join("\n") + "\n";
   fs.writeFileSync(path.join(findingsDir, "findings.md"), findings);
 
   await __testOnlyRunFanOutListAuditFindings(cwd);
