@@ -509,6 +509,37 @@ test("paused lifecycle projection names owner, queue, last activity, and next tr
   assert.ok(widget.some((line) => line.includes("last activity 2m 00s ago") && line.includes("next: retrying automatically")), widget.join("\\n"));
 });
 
+test("passed provider retryAt stays parked until recovery state clears", () => {
+  const retryAt = new Date(NOW - 60_000).toISOString();
+  const state = {
+    goal: goalOf({
+      policy: "goal",
+      status: "paused",
+      pauseKind: "wait",
+      pauseReason: "main model recovery — retrying",
+      pauseResumeAt: retryAt,
+    }),
+    list: [],
+    mainModelRecovery: {
+      primary: "provider/session-model",
+      attempted: ["provider/session-model"],
+      attempts: 1,
+      retryAt,
+      reason: "provider unavailable",
+      kind: "goal",
+    },
+  } as State;
+
+  const status = buildStatusText(state, null, NOW)!;
+  assert.match(status, /parked on provider wall — retrying automatically/);
+  assert.match(status, /next: retrying automatically/);
+  assert.doesNotMatch(status, /next: resuming now/);
+
+  const widget = buildWidgetLines(state, null, NOW)!;
+  assert.ok(widget.some((line) => line.includes("parked on provider wall — retrying automatically")), widget.join("\\n"));
+  assert.ok(widget.some((line) => line.includes("next: retrying automatically")), widget.join("\\n"));
+});
+
 test("paused decision without activity says no turn was observed and names the manual path", () => {
   const state = {
     goal: goalOf({

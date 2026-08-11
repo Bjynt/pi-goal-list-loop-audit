@@ -617,7 +617,11 @@ function pausedNextTransition(g: Goal, state: State, now: number): string {
     // pick work back up earlier (note.md 2026-08-10: "this is just an
     // extra … not a guaranteed reset of course but possible to pick up
     // work a bit faster"). The next transition is an automatic retry.
-    return retryAt <= now ? "resuming now" : "retrying automatically";
+    // The parked head remains authoritative while recovery state is still
+    // present, including after retryAt has passed but before the recovery
+    // dispatch clears/unparks the goal. Do not claim "resuming now" on the
+    // same line that says the goal is still parked on the provider wall.
+    return "retrying automatically";
   }
   const resumeAt = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) : Number.NaN;
   if (Number.isFinite(resumeAt)) {
