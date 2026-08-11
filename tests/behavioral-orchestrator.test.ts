@@ -2430,7 +2430,7 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
 
 // ---- v0.34.91: the end-of-goal voice carries the recap (what happened) ----
 
-test("v0.35.x: provider-wall diagnostics stay durable while completion surfaces remain sanitized and deduplicated", async () => {
+test("v0.35.x: provider-wall diagnostics stay durable while completion surfaces remain sanitized and deduplicated", { timeout: 15_000 }, async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   const raw = '429 {"error":{"message":"Token Plan rate limit reached: upgrade your Token Plan"},"request_id":"abc123"}';
@@ -2459,7 +2459,7 @@ test("v0.35.x: provider-wall diagnostics stay durable while completion surfaces 
     if (previous === undefined) delete process.env.GLLA_PI_BINARY;
     else process.env.GLLA_PI_BINARY = previous;
   }
-}, { timeout: 15_000 });
+});
 
 test("v0.34.119: auditor-approved list completion archives the item and activates exactly the next queue item", async () => {
   __testOnlyResetStaleFlag();
