@@ -94,14 +94,18 @@ export function parseQuotaError(error: string, defaultRetryAfterSec = DEFAULT_QU
     ? Math.round(defaultRetryAfterSec)
     : DEFAULT_QUOTA_RETRY_SEC;
 
-  let m = error.match(/retry-after:\s*(\d+(?:\.\d+)?)/i);
-  const numeric = numericHint(m?.[1]);
+  // Capture one complete Retry-After header value before deciding whether it
+  // is delta-seconds or a date. The numeric form must be whole-value matched:
+  // an ISO reset such as `Retry-After: 2026-08-10T12:00:00Z` starts with digits
+  // but is an absolute date, not a ~34-minute delta.
+  let m = error.match(/retry-after:\s*([^\r\n]+)/i);
+  const headerValue = m?.[1]?.trim();
+  const numeric = numericHint(headerValue && /^\d+(?:\.\d+)?$/.test(headerValue) ? headerValue : undefined);
   if (numeric !== undefined) return { raw: error, retryAfterSec: Math.round(numeric), fromUpstream: true, signal };
 
   // RFC 7231 Retry-After date. Keep this separate from the numeric match so
   // a comma in the HTTP date cannot consume the next line of the error.
-  m = error.match(/retry-after:\s*([^\r\n]+)/i);
-  const headerDate = absoluteReset(m?.[1], nowMs);
+  const headerDate = absoluteReset(headerValue, nowMs);
   if (headerDate) return { raw: error, ...headerDate, fromUpstream: true, signal };
 
   // Providers often serialize one of these fields inside a larger wrapper.

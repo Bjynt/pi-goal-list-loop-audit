@@ -98,6 +98,14 @@ test("parseQuotaError: JSON reset fields and HTTP-date reset are understood", ()
   assert.equal(http.fromUpstream, true);
 });
 
+test("parseQuotaError: digit-leading Retry-After ISO date is not truncated as seconds", () => {
+  const now = Date.parse("2026-08-10T00:00:00Z");
+  const iso = parseQuotaError("429\nRetry-After: 2026-08-10T12:00:00Z", 3600, now);
+  assert.equal(iso.retryAfterSec, 12 * 3600);
+  assert.equal(iso.resetAt, "2026-08-10T12:00:00.000Z");
+  assert.equal(iso.fromUpstream, true);
+});
+
 test("quota retry cadence caps at five hours instead of retrying for a week", () => {
   assert.equal(quotaRetryDelaySeconds(1, 60), 60 * 60);
   assert.equal(quotaRetryDelaySeconds(2, 60), 2 * 60 * 60);
