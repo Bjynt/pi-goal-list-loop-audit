@@ -13,7 +13,7 @@
 import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth } from "@earendil-works/pi-tui";
 
 import type { Goal, State } from "./goal-loop-core.js";
-import { compactDisplayText, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
+import { compactDisplayText, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
 import { HELD_ON_RESTORE, type LoopState } from "./goal-loop-forever.js";
 
 /** v0.34.57 (OPEN-ISSUES bug #1.8 / tasklist item #2): the MAIN host is

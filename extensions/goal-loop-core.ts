@@ -10,7 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
-import { isQuotaError } from "./quota-retry.js";
+import { isQuotaError, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderDisplayText } from "./quota-retry.js";
 export { providerErrorFingerprint, providerErrorPresentation, sanitizeProviderDisplayText } from "./quota-retry.js";
 
 /** v0.26.1: consecutive heartbeat refires without a real agent turn

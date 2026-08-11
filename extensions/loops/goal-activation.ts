@@ -1459,14 +1459,17 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         const rawErrorText = [rawLastA?.errorMessage, text]
           .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
           .join(" — ");
-        const detail = rawErrorText ? ` (last: ${rawErrorText.replace(/\s+/g, " ").slice(0, 160)})` : "";
+        const failureCopy = providerErrorPresentation(rawErrorText, "main");
+        const detail = rawErrorText ? ` (last: ${failureCopy.sensitive ? failureCopy.display : rawErrorText.replace(/\s+/g, " ").slice(0, 160)})` : "";
+        const recoveryEpisodeKey = state.goal!.recoveryEpisodeKey ?? `${state.goal!.createdAt}:${failureCopy.fingerprint}`;
+        const recoveryNoticeKeys = state.goal!.recoveryNoticeKeys ?? [];
         // v0.34.26: an output-token-limit rejection is NOT a generic provider
         // flake — the same prompt shape deterministically fails, so
         // "transient flake auto-resume" and "switch provider / wait out the
         // window" guidance are both wrong for it. Name the real wall.
-        const outputLimitWall = /output[ -]?token|max_?tokens|length limit|output length|too many tokens/i.test(detail);
+        const outputLimitWall = /output[ -]?token|max_?tokens|length limit|output length|too many tokens/i.test(rawErrorText);
         const reason = outputLimitWall
-          ? `output-token limit — the provider rejected ${consecutiveErrorIterations} overlong responses${detail}`
+          ? `output-token limit — the provider rejected ${consecutiveErrorIterations} overlong responses`
           : `5 consecutive errors${detail}`;
         // v0.34.15: the streak now lives ON THE GOAL so it survives the
         // auto-recovery /reloads that used to zero the module counter —
@@ -1477,7 +1480,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         // v0.34.15: a quota/rate-limit wall is NOT a flake — the card must
         // say "resuming won't help; switch /model or wait out the window"
         // (the raw 429 text was in `detail` but nobody parses JSON on a card).
-        const quotaWall = /rate.?limit|usage limit|quota|insufficient|credits/i.test(detail);
+        const quotaWall = failureCopy.signal !== undefined || /rate.?limit|usage limit|quota|insufficient|credits/i.test(rawErrorText);
         // v0.34.26: deterministic output-limit wall — durable error pause,
         // no flake ladder, no hourly probes. Only re-scoping the work helps.
         if (outputLimitWall) {
@@ -1485,12 +1488,18 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
             status: "paused",
             pauseKind: "error",
             pauseReason: reason,
+            providerErrorDiagnostic: failureCopy.sensitive ? failureCopy.diagnostic : undefined,
+            recoveryEpisodeKey,
+            recoveryNoticeKeys,
             errorBrakeStreak: brakeStreak + 1,
             pauseSuggestedAction: `Deterministic wall — the provider rejects this response shape every time, so blind retries never help. Re-scope the work into smaller pieces (several smaller write/edit calls across turns), then ${activeGoalSurfaceCommand("resume")}.`,
           }, ctx);
-          ctx.ui.notify(`Goal paused: ${reason}. Re-scope into smaller pieces, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
-          notifyExternal(ctx, `Goal paused: ${reason}.`);
-          appendLedger(ctx.cwd, "goal_paused", { reason });
+          const notifyOutputLimit = claimRecoveryNotice(state.goal!, `${recoveryEpisodeKey}:output-limit`);
+          if (notifyOutputLimit) {
+            ctx.ui.notify(`Goal paused: ${reason}. Re-scope into smaller pieces, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
+            notifyExternal(ctx, `Goal paused: ${reason}.`);
+          }
+          appendLedger(ctx.cwd, "goal_paused", { reason, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
           return;
         }
         // v0.29.1: brake-cycle CAP. The v0.28.25 ladder slows the thrash
@@ -1512,13 +1521,19 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
             status: "paused",
             pauseKind: "error",
             pauseReason: `${reason} — 6 error-brakes in a row; the provider has been erroring for an extended window`,
+            providerErrorDiagnostic: failureCopy.sensitive ? failureCopy.diagnostic : undefined,
+            recoveryEpisodeKey,
+            recoveryNoticeKeys,
             pauseSuggestedAction: quotaWall
               ? "Provider quota/rate-limit wall — resuming won't help until the window resets. Hourly top-of-hour probes will pick work back up; switch /model to a different provider to continue immediately."
               : `Probing at the top of each hour — rate-limit windows typically expire on clock-hour boundaries. ${activeGoalSurfaceCommand("resume")} retries now.`,
           }, ctx);
-          ctx.ui.notify(`${goalNoun()} parked: ${reason} — 6 brakes in a row. ${quotaWall ? "Quota/rate-limit wall — switching /model continues immediately; otherwise hourly" : "Hourly"} top-of-hour probes will pick work back up when the window opens.`, "warning");
-          notifyExternal(ctx, `${goalNoun()} parked: provider erroring across 6 error-brake cycles — hourly top-of-hour probes scheduled.`);
-          appendLedger(ctx.cwd, "error_brake_capped", { streak: brakeStreak, reason });
+          const notifyCapped = claimRecoveryNotice(state.goal!, `${recoveryEpisodeKey}:error-brake-capped`);
+          if (notifyCapped) {
+            ctx.ui.notify(`${goalNoun()} parked: ${reason} — 6 brakes in a row. ${quotaWall ? "Quota/rate-limit wall — switching /model continues immediately; otherwise hourly" : "Hourly"} top-of-hour probes will pick work back up when the window opens.`, "warning");
+            notifyExternal(ctx, `${goalNoun()} parked: provider erroring across 6 error-brake cycles — hourly top-of-hour probes scheduled.`);
+          }
+          appendLedger(ctx.cwd, "error_brake_capped", { streak: brakeStreak, reason, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
           const probeMs = msUntilNextHourBoundary(Date.now());
           scheduleQuotaRetryForSession(ctx, probeMs / 1000, reason, (fresh: ExtensionContext) => {
             // Re-check: only probe if STILL parked by the error-brake cap —
@@ -1526,12 +1541,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
             if (state.goal && state.goal.status === "paused" && state.goal.pauseKind === "error"
               && (state.goal.pauseReason ?? "").includes("error-brakes in a row")) {
               appendLedger(fresh.cwd, "hourly_rate_probe", { goalId: state.goal.id, streak: state.goal.errorBrakeStreak ?? 0 });
-              updateGoal({ status: "active" }, fresh);
+              updateGoal({ status: "active", providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, fresh);
               appendLedger(fresh.cwd, "goal_resumed", { via: "hourly-rate-probe" });
               fresh.ui.notify("Hourly probe: resuming (rate-limit windows typically expire at the top of the hour).", "info");
               scheduleContinuation(fresh, true);
             }
-          }, "Hourly rate-limit probe");
+          }, "Hourly rate-limit probe", { episodeKey: recoveryEpisodeKey, noticeKey: `${recoveryEpisodeKey}:error-brake-capped`, suppressNotice: true });
           return;
         }
         // v0.28.25: the cooldown escalates per CONSECUTIVE brake — a fleet-wide
@@ -1543,24 +1558,30 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           pauseKind: "wait",
           pauseResumeAt: new Date(Date.now() + cooldownMs).toISOString(),
           pauseReason: reason,
+          providerErrorDiagnostic: failureCopy.sensitive ? failureCopy.diagnostic : undefined,
+          recoveryEpisodeKey,
+          recoveryNoticeKeys,
           errorBrakeStreak: brakeStreak + 1,
           pauseSuggestedAction: quotaWall
             ? `Provider quota/rate-limit wall — resuming won't help until the window resets. Switch /model to a different provider to continue now, or let the probe auto-resume in ${cooldownMin}m.`
             : `Transient provider flake? The goal auto-resumes once in ${cooldownMin}m if still paused for this reason — or ${activeGoalSurfaceCommand("resume")} now.`,
         }, ctx);
-        ctx.ui.notify(`Goal paused: ${reason}.${quotaWall ? " Quota/rate-limit wall — resuming won't help until the window resets; switch /model to continue now." : ""}`, "warning");
-        notifyExternal(ctx, `Goal paused: ${reason}.`);
-        appendLedger(ctx.cwd, "goal_paused", { reason });
+        const notifyBrake = claimRecoveryNotice(state.goal!, `${recoveryEpisodeKey}:error-brake-wait`);
+        if (notifyBrake) {
+          ctx.ui.notify(`Goal paused: ${reason}.${quotaWall ? " Quota/rate-limit wall — resuming won't help until the window resets; switch /model to continue now." : ""}`, "warning");
+          notifyExternal(ctx, `Goal paused: ${reason}.`);
+        }
+        appendLedger(ctx.cwd, "goal_paused", { reason, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
         scheduleQuotaRetryForSession(ctx, cooldownMs / 1000, reason, (fresh: ExtensionContext) => {
           // Re-check: only auto-resume if STILL paused for the error brake
           // (a user /goal pause during the window is not stomped).
           if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("5 consecutive errors")) {
-            updateGoal({ status: "active" }, fresh);
+            updateGoal({ status: "active", providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, fresh);
             appendLedger(fresh.cwd, "goal_resumed", { via: "error-brake-retry" });
             fresh.ui.notify("Auto-resumed after the 5-error brake (cooldown elapsed).", "info");
             scheduleContinuation(fresh, true);
           }
-        }, "5 consecutive errors — auto-retry");
+        }, "5 consecutive errors — auto-retry", { episodeKey: recoveryEpisodeKey, noticeKey: `${recoveryEpisodeKey}:error-brake-wait`, suppressNotice: true });
         return;
       }
       // v0.28.25: under the brake, the retry rides the exponential ladder —
