@@ -56,7 +56,8 @@ analysis: `dracon-utilities/docs/design/pi-goal-loop-audit-divergence-2026-08-09
 This repo hosts the pi-goal-loop audit machinery (`.pi-glla/`). The loop:
 
 - Reads `active.jsonl` / `list.jsonl` for the current goal contract.
-- Ships releases via `scripts/release.sh` and tags on all three forges.
+- Validates releases with `npm run release:check`; the tagged GitHub Release
+  workflow at `.github/workflows/publish.yml` publishes the package.
 - Writes audit evidence to `audit/` and `.pi-glla/audit-jobs/`.
 
 Rules:
