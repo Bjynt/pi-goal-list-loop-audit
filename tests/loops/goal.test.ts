@@ -115,11 +115,11 @@ test("v0.34.57: compaction rearm cap goes directly to unacknowledged without a r
     const cwd = tmpCwd();
     const ctx = await freshSession(cwd, "startup");
     pi.sent.length = 0;
+    // Use a future test timestamp so the simulated event is strictly after
+    // acceptedAt even when the dispatch and test share one millisecond clock.
+    __testOnlySetLastCompactionAt(Date.now() + 5_000);
     await pi.command("goal", "compaction cap target — done when pinned", ctx);
     await tick();
-    // Keep the simulated event strictly after acceptedAt; the dispatch and
-    // this test share the same millisecond clock.
-    __testOnlySetLastCompactionAt(Date.now() + 1_000);
     await waitUntil(() => {
       try {
         const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
