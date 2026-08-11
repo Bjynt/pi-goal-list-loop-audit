@@ -1160,7 +1160,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       const firstEvent = audit.lastActivityAt === undefined ? " · waiting for first worker event" : "";
       lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(audit.elapsedMs)} in detached worker${firstEvent}${last}`)}`);
     } else {
-      lines.push(`└─ ${paint(theme, "dim", `detached worker, audit tools (bash enabled)${last || " · waiting for first worker event"}`)}`);
+      lines.push(`└─ ${paint(theme, "dim", `detached worker, audit tools${last || " · waiting for first worker event"}`)}`);
     }
     return lines;
   }
