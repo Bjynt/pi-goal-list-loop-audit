@@ -384,6 +384,32 @@ test("v0.34.96: already-shipped abort binds the version attached to the claim", 
   assert.equal(event?.value?.matchedVersion, "v0.34.74");
 });
 
+test("v0.35.x: already-shipped completion honors an existing archive fence", async () => {
+  const cwd = tmpCwd();
+  const goal = seedGoal({ status: "active" });
+  const archivePath = path.join(cwd, ".pi-glla", "archive", `${goal.id}.md`);
+  fs.mkdirSync(path.dirname(archivePath), { recursive: true });
+  const sentinel = "# Existing terminal record — do not replace\\n";
+  fs.writeFileSync(archivePath, sentinel);
+  seedState(cwd, { goal });
+  __testOnlyLoadState(cwd);
+  const pi = new MockPi();
+  activate(pi.api);
+  __testOnlyRegisterAgentTools(pi.api);
+  rememberCtxFor(cwd);
+  const res = await pi.runTool(
+    "complete_goal",
+    { completionSummary: "Verified v0.34.74 covers this.", verificationSummary: "Prior release evidence." },
+    ownerCtx(cwd),
+  );
+  assert.doesNotMatch(res.content[0]!.text, /routed to status=aborted/i, "the stale claim is fenced before it can report success");
+  assert.equal(fs.readFileSync(archivePath, "utf8"), sentinel, "the existing archive is byte-for-byte preserved");
+  assert.equal(readState(cwd).goal, null, "the archive fence closes the stale live slot");
+  const ledger = readLedger(cwd);
+  assert.equal(ledger.filter((entry) => entry.type === "goal_archived").length, 0, "the stale call does not emit a second archive");
+  assert.equal(ledger.filter((entry) => entry.type === "complete_goal_already_shipped").length, 0, "the stale call does not claim the archive succeeded");
+});
+
 // v0.34.128 (field 2026-08-11, dracon-platform): a VERSION-LESS
 // "already shipped" / "no new work shipped" claim is not corroborated
 // (a restored session can hallucinate it from the old conversation's tail

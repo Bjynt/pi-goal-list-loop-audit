@@ -280,3 +280,14 @@ test("an archived goal id is a hard fence against stale resurrection", async () 
   assert.match(ledger(cwd), /"faulty_objective_archive_fence"/);
   assert.doesNotMatch(ledger(cwd), /"goal_continuation_sent"/);
 });
+
+test("an active goal with an interrupted terminal stopReason is not dispatched", () => {
+  const cwd = tmpCwd();
+  const g = seedGoal({ status: "active", stopReason: "already_shipped:v0.34.74" });
+  seedState(cwd, { goal: g, list: [] });
+  const pi = new MockPi();
+  activate(pi.api);
+  const ctx = makeMockCtx(cwd);
+  assert.equal(guardGoalBeforeContinuation(ctx as any, "interrupted-terminal-test", String(g.id)), false);
+  assert.match(ledger(cwd), /"faulty_objective_terminal_fence"/);
+});

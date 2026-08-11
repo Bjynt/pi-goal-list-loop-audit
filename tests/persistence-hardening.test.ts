@@ -88,6 +88,13 @@ test("E1: archive removes the active md ONLY when the archive landed", () => {
   assert.match(GOAL, /if \(archived\) \{\s*\n\s*try \{ fs\.unlinkSync\(goalMdPath/);
 });
 
+test("E1: archive destination is exclusive and cannot clobber a winner", () => {
+  assert.match(GOAL, /if \(fs\.existsSync\(target\)\) \{[\s\S]*?archiveFence = true/);
+  assert.match(GOAL, /fs\.writeFileSync\(temp, md, \{ encoding: "utf-8", flag: "wx" \}\)/);
+  assert.match(GOAL, /fs\.linkSync\(temp, target\)/);
+  assert.doesNotMatch(GOAL, /fs\.writeFileSync\(target, md\)/, "archive writes must not replace an existing same-id record");
+});
+
 test("E1: loud first-failure notify + recovery notify at the persistState choke point", () => {
   assert.match(GOAL, /notifyPersistenceState\(ctx\); \/\/ v0\.28\.6 \(E1\): loud on the first failure/);
   assert.match(GOAL, /if \(isPersistenceDegraded\(\) && !persistenceDegradedNotified\) \{/);
