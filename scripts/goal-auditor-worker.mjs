@@ -13,7 +13,10 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 const PROTOCOL_VERSION = 1;
-const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls", "bash"]);
+// Repository content is untrusted input. The worker's tool allowlist is the
+// security boundary; prompts never grant a shell or write capability.
+const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
+const DEFAULT_TOOL_TIMEOUT_MS = 5 * 60_000;
 
 function stableJson(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -165,6 +168,11 @@ async function main() {
   // "the worker IS making progress" without revealing the report text.
   let reportBytes = 0;
   const activeTools = new Map();
+  const toolTimers = new Map();
+  const configuredToolTimeoutMs = Number(process.env.GLLA_AUDITOR_TOOL_TIMEOUT_MS ?? DEFAULT_TOOL_TIMEOUT_MS);
+  const TOOL_TIMEOUT_MS = Number.isFinite(configuredToolTimeoutMs)
+    ? Math.max(50, configuredToolTimeoutMs)
+    : DEFAULT_TOOL_TIMEOUT_MS;
   /** Keys of active starts that arrived WITHOUT a toolCallId. An anonymous
    * end can only pair when exactly ONE anonymous start is open — with zero
    * or several it is an unmatched fact (any pairing would be a guess). */
@@ -244,6 +252,8 @@ async function main() {
     appendRecentOutput(recentOutput, recentReportLine, "", true);
     if (deadlineTimer) clearTimeout(deadlineTimer);
     if (inactivityTimer) clearInterval(inactivityTimer);
+    for (const timer of toolTimers.values()) clearTimeout(timer);
+    toolTimers.clear();
     if (pi && pi.exitCode === null) pi.kill("SIGTERM");
     const result = {
       protocolVersion: PROTOCOL_VERSION,
@@ -271,6 +281,23 @@ async function main() {
     await atomicJson(resultPath, result);
   };
 
+  const clearToolTimer = (key) => {
+    const timer = toolTimers.get(key);
+    if (timer) clearTimeout(timer);
+    toolTimers.delete(key);
+  };
+  const toolTimeoutLabel = TOOL_TIMEOUT_MS >= 60_000
+    ? `${Math.max(1, Math.round(TOOL_TIMEOUT_MS / 60_000))}m`
+    : `${Math.max(1, Math.round(TOOL_TIMEOUT_MS / 1_000))}s`;
+  const armToolTimer = (key, name) => {
+    clearToolTimer(key);
+    const timer = setTimeout(() => {
+      void finish(false, `Auditor stalled — read-only tool ${name} exceeded its ${toolTimeoutLabel} timeout; the worker was aborted.`).catch(() => {});
+    }, TOOL_TIMEOUT_MS);
+    timer.unref?.();
+    toolTimers.set(key, timer);
+  };
+
   // The parent may cancel the detached job after the goal is archived. Cleanly
   // terminate the nested RPC child too, rather than leaving it orphaned.
   process.once("SIGTERM", () => {
@@ -293,8 +320,8 @@ async function main() {
       "--no-prompt-templates",
       "--no-themes",
       "--no-context-files",
-      "--approve",
-      "--tools", "read,grep,find,ls,bash",
+      "--no-approve",
+      "--tools", "read,grep,find,ls",
       "--model", request.model,
       "--thinking", request.thinkingLevel,
     ];
@@ -370,6 +397,10 @@ async function main() {
         void finish(false, `RPC prompt rejected: ${streamError}`).catch(() => {});
         return;
       }
+      if (event.type === "tool_execution_start" && !READ_ONLY_TOOLS.has(event.toolName)) {
+        void finish(false, `Auditor attempted disallowed tool: ${String(event.toolName ?? "(unknown)")}`).catch(() => {});
+        return;
+      }
       if (event.type === "message_update") {
         if (update?.type === "text_delta" && typeof update.delta === "string") {
           outputParts.push(update.delta);
@@ -386,6 +417,7 @@ async function main() {
         const key = id !== undefined ? id : `${event.toolName}:${activeTools.size}:${Date.now()}`;
         activeTools.set(key, { name: event.toolName, argsPrefix: toolArgsPrefix(event.args), startedAt: Date.now(), toolCallId: id });
         if (id === undefined) anonymousStartKeys.add(key);
+        armToolTimer(key, event.toolName);
         setCurrentToolFromActive();
         void progress(phase).catch(() => {});
         return;
@@ -400,6 +432,7 @@ async function main() {
         }
         const active = key !== undefined ? activeTools.get(key) : undefined;
         if (active) {
+          clearToolTimer(key);
           const { startedAt: _startedAt, toolCallId: _toolCallId, ...toolCall } = active;
           toolCalls.push({ ...toolCall, finishedAt: Date.now() });
           while (toolCalls.length > MAX_TOOL_CALLS) toolCalls.shift();

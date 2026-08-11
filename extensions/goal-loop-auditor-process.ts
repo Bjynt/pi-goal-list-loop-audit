@@ -60,9 +60,13 @@ export interface AuditorProgress {
 
 export type AuditorModel = string | { provider: string; id: string };
 
-export const READ_ONLY_TOOLS = ["read", "grep", "find", "ls", "bash"] as const;
+// Detached completion auditors must never receive a shell or project-trust
+// override. Repository content is untrusted input, so the allowlist itself is
+// the security boundary rather than a prompt request to "please don't mutate".
+export const READ_ONLY_TOOLS = ["read", "grep", "find", "ls"] as const;
 const PROTOCOL_VERSION = 1;
 const DEFAULT_WALL_TIMEOUT_MS = 30 * 60_000;
+const DEFAULT_TOOL_TIMEOUT_MS = 5 * 60_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
 /** v0.34.57 (steal-list #7 / bug #1.4): heartbeat-without-progress watchdog.
  * A worker heartbeat (`lastActivityAt`) fresher than this is "activity";
@@ -197,6 +201,9 @@ export interface AuditorProcessRuntime {
   /** v0.34.57: freshness horizon for `lastActivityAt` — only heartbeats
    * younger than this count as "activity" for the watchdog (default 60s). */
   heartbeatFreshMs?: number;
+  /** v0.34.130: independent ceiling for one allowed read-only tool call.
+   * This remains armed while the tool is open, unlike the inactivity brake. */
+  toolTimeoutMs?: number;
   /** Environment is inherited by default; useful for a fake pi binary in tests. */
   env?: NodeJS.ProcessEnv;
 }
@@ -208,14 +215,19 @@ export type AuditorProgressCallback = (progress: AuditorProgress) => void;
 export interface AuditorStalledInfo {
   /** When the watchdog fired. */
   at: number;
+  /** Which independent watchdog fired. */
+  reason: "heartbeat-no-progress" | "tool-timeout";
   /** Age of the last worker heartbeat at detection (`now - lastActivityAt`).
-   * Fresh (≤ heartbeatFreshMs) by construction — this is activity without
-   * progress, not silence. */
+   * For heartbeat-no-progress this is fresh (≤ heartbeatFreshMs); a
+   * tool-timeout may deliberately have a stale heartbeat. */
   heartbeatAgeMs: number;
-  /** How long the no-progress streak had been running (≥ heartbeatNoProgressMs). */
+  /** How long the no-progress/tool-open streak had been running. */
   noProgressMs: number;
   /** The worker phase in the last progress snapshot. */
   phase: AuditorProgress["phase"];
+  /** Present when the tool-timeout watchdog fired. */
+  toolName?: string;
+  toolAgeMs?: number;
 }
 
 /** Return a stable JSON representation for request-hash validation. */
@@ -357,6 +369,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
   const pollIntervalMs = Math.max(10, runtime.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS);
   const heartbeatFreshMs = Math.max(10, runtime.heartbeatFreshMs ?? DEFAULT_HEARTBEAT_FRESH_MS);
   const heartbeatNoProgressMs = Math.max(50, runtime.heartbeatNoProgressMs ?? DEFAULT_HEARTBEAT_NO_PROGRESS_MS);
+  const toolTimeoutMs = Math.max(50, runtime.toolTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS);
   const attemptId = runtime.attemptId?.() ?? `${Date.now().toString(36)}-${randomUUID()}`;
   // v0.34.59: capture the focus revision token at dispatch. Every result
   // shape returned to the parent carries this token so the parent can
@@ -489,6 +502,38 @@ export async function runDetachedGoalCompletionAuditor(args: {
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") return infra(model, thinkingLevel, `invalid auditor result: ${error instanceof Error ? error.message : String(error)}`, "", capturedRevisionToken);
         }
+        // v0.34.130: a tool-open timeout is independent of both heartbeat
+        // freshness and the worker's inactivity brake. A stuck read/grep/find/
+        // ls call emits no further RPC event, so neither heartbeat axis can
+        // safely own its termination. Keep the detached job bounded well
+        // inside the 30m wall.
+        if (lastProgress?.currentToolStartedAt !== undefined) {
+          const toolAgeMs = Math.max(0, now() - lastProgress.currentToolStartedAt);
+          if (toolAgeMs >= toolTimeoutMs) {
+            args.onProgress?.({
+              phase: "running",
+              elapsedMs: now() - startedAt,
+              recentOutput: lastProgress.recentOutput,
+              toolCalls: lastProgress.toolCalls,
+              unmatchedToolStarts: lastProgress.unmatchedToolStarts ?? [],
+              unmatchedToolEnds: lastProgress.unmatchedToolEnds ?? [],
+            });
+            const toolLabel = toolTimeoutMs >= 60_000
+              ? `${Math.max(1, Math.round(toolTimeoutMs / 60_000))}m`
+              : `${Math.max(1, Math.round(toolTimeoutMs / 1_000))}s`;
+            args.onStalled?.({
+              at: now(),
+              reason: "tool-timeout",
+              heartbeatAgeMs: lastProgress.lastActivityAt === undefined ? toolAgeMs : Math.max(0, now() - lastProgress.lastActivityAt),
+              noProgressMs: toolAgeMs,
+              phase: lastProgress.phase,
+              toolName: lastProgress.currentTool,
+              toolAgeMs,
+            });
+            if (child && childAlive(child)) child.kill("SIGTERM");
+            return infra(model, thinkingLevel, `Auditor stalled — read-only tool ${lastProgress.currentTool ?? "unknown"} exceeded its ${toolLabel} timeout; the detached job was auto-cancelled.`, "", capturedRevisionToken);
+          }
+        }
         // v0.34.57: heartbeat-without-progress watchdog (steal-list #7 /
         // bug #1.4). The worker's own stall brake only fires on TOTAL silence
         // (and skips it while a read-only tool is running); a worker that
@@ -520,6 +565,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
               : `${Math.max(1, Math.round(heartbeatNoProgressMs / 1_000))}s`;
             args.onStalled?.({
               at: now(),
+              reason: "heartbeat-no-progress",
               heartbeatAgeMs: now() - lastProgress.lastActivityAt,
               noProgressMs,
               phase: lastProgress.phase,
