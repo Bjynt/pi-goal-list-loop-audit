@@ -94,6 +94,9 @@ test("docs/VISION-ASSIST.md documents the guidance AND the preapproval gate", ()
   assert.match(doc, /preapproval gate/i);
   assert.match(doc, /forbiddenModels/);
   assert.match(doc, /visionAssist/, "the setting is documented");
+  assert.match(doc, /`\/glla`\s+→\s+\*\*Keep-going\*\*\s+→\s+\*\*Vision assist\*\*/, "the documented navigation matches the settings menu");
+  assert.match(doc, /\*\*Forbidden models\*\*/, "the forbidden-model editor is documented as a settings row");
+  assert.doesNotMatch(doc, /\/glla\s+(?:forbiddenModels|visionAssist)=/, "invalid argument-style /glla syntax is not documented");
   assert.match(doc, /vision_assist/, "the ledger type is documented");
 });
 

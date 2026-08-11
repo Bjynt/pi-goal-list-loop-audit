@@ -32,8 +32,9 @@ NOT in the `forbiddenModels` policy:
 
 - Default forbidden list: `gpt-5.5`, `sonnet`, `opus` (matched
   case-insensitively as a substring against the `provider/id` ref).
-- `/glla forbiddenModels=...` edits the list; `blockForbiddenModelSwitches`
-  (default on) reverts a forbidden selection to the previous model.
+- `/glla` → **Keep-going** → **Forbidden models** edits the list;
+  `blockForbiddenModelSwitches` (default on) reverts a forbidden selection to
+  the previous model.
 - Every switch to a forbidden model is ledgered as `forbidden_model_switch`
   (with `blocked: true|false`).
 - With vision assist on (default), the same event also appends a
@@ -54,7 +55,7 @@ default for every vision check.
 - **off** → no vision guidance is injected; the `forbiddenModels` gate still
   stands (forbidden switches remain blocked/ledgered).
 
-Edit: `/glla` → Keep-going → Vision assist, or `/glla visionAssist=off`.
+Edit: `/glla` → **Keep-going** → **Vision assist**, then choose **off**.
 
 ## Implementation map
 
