@@ -83,7 +83,8 @@ test("VISION_ASSIST_GUIDANCE routes stuck-vision checks to mmx vision", () => {
   assert.match(VISION_ASSIST_GUIDANCE, /do NOT switch models/i);
   assert.match(VISION_ASSIST_GUIDANCE, /preapproved/i, "the preapproval rule is in the guidance");
   assert.match(VISION_ASSIST_GUIDANCE, /forbiddenModels/, "the gate is named");
-  assert.match(VISION_ASSIST_GUIDANCE, /gpt-5\.5|sonnet|opus/, "the default forbidden list is named");
+  assert.match(VISION_ASSIST_GUIDANCE, /default forbiddenModels list is empty/i, "the empty default is truthful");
+  assert.match(VISION_ASSIST_GUIDANCE, /gpt-5\.5|sonnet|opus/, "explicit policy examples remain named");
   assert.match(VISION_ASSIST_GUIDANCE, /forbidden_model_switch/, "violations are ledgered");
   assert.match(VISION_ASSIST_GUIDANCE, /vision_assist/, "the routing entry is ledgered");
 });
@@ -93,6 +94,7 @@ test("docs/VISION-ASSIST.md documents the guidance AND the preapproval gate", ()
   assert.match(doc, /mmx vision describe --image <path-or-url>/);
   assert.match(doc, /preapproval gate/i);
   assert.match(doc, /forbiddenModels/);
+  assert.match(doc, /Default forbidden list: empty/i, "the documented default is truthful");
   assert.match(doc, /visionAssist/, "the setting is documented");
   assert.match(doc, /`\/glla`\s+→\s+\*\*Keep-going\*\*\s+→\s+\*\*Vision assist\*\*/, "the documented navigation matches the settings menu");
   assert.match(doc, /\*\*Forbidden models\*\*/, "the forbidden-model editor is documented as a settings row");

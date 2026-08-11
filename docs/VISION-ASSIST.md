@@ -30,11 +30,12 @@ mmx vision describe --image <path-or-url> --prompt "<question>" --quiet --non-in
 A model switch is sanctioned **only when the target is preapproved** — i.e.
 NOT in the `forbiddenModels` policy:
 
-- Default forbidden list: `gpt-5.5`, `sonnet`, `opus` (matched
-  case-insensitively as a substring against the `provider/id` ref).
+- Default forbidden list: empty — no opinionated ban list ships. Users can
+  add patterns such as `gpt-5.5`, `sonnet`, or `opus`; matches are
+  case-insensitive substrings against the `provider/id` ref.
 - `/glla` → **Keep-going** → **Forbidden models** edits the list;
-  `blockForbiddenModelSwitches` (default on) reverts a forbidden selection to
-  the previous model.
+  `blockForbiddenModelSwitches` (default on) reverts an explicitly forbidden
+  selection to the previous model.
 - Every switch to a forbidden model is ledgered as `forbidden_model_switch`
   (with `blocked: true|false`).
 - With vision assist on (default), the same event also appends a

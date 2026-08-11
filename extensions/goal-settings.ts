@@ -21,9 +21,10 @@ import type { SubagentModelStrategy } from "./goal-loop-subagents.js";
 
 export interface Settings {
   /** v0.34.57: model refs/ids that must never be selected — the policy
-   * guard (bug #1.14). Default forbids gpt-5.5 / sonnet / opus; matched
-   * case-insensitively as a substring against the "provider/id" ref.
-   * Every switch to a forbidden model is ledgered as
+   * guard (bug #1.14). The v0.34.115 default is [] (no opinionated ban
+   * list); users can explicitly configure refs such as gpt-5.5 / sonnet /
+   * opus. Matches case-insensitively as a substring against the
+   * "provider/id" ref. Every switch to a forbidden model is ledgered as
    * `forbidden_model_switch`; with blockForbiddenModelSwitches on the
    * selection is reverted. */
   forbiddenModels?: string[];
@@ -175,8 +176,9 @@ export const DEFAULT_SETTINGS: Settings = {
   // session model behavior, while the recovery cadence still protects an
   // active supervised goal from a temporary quota wall.
   mainModelFallbacks: [],
-  // v0.34.57: the policy gate defaults ON — gpt-5.5/sonnet/opus must never
-  // be selected unattended (expense policy).
+  // v0.34.115: the default policy list is empty — no model is forbidden
+  // unless the user explicitly configures forbiddenModels. The blocking gate
+  // remains enabled for any explicit list.
   forbiddenModels: [...DEFAULT_FORBIDDEN_MODELS],
   blockForbiddenModelSwitches: true,
   // v0.34.72: vision-assist routing is the default — seeing is an mmx

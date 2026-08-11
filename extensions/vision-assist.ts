@@ -43,11 +43,12 @@ instead:
 MODEL-SWITCH GATE (preapproval only): switching models to "see" is exactly
 the too-eager behavior this setting exists to stop. A switch is sanctioned
 ONLY when the target model is preapproved — i.e. NOT in the forbiddenModels
-policy (gpt-5.5, sonnet, opus are forbidden by default; /glla
-forbiddenModels= edits the list). Any switch to a forbidden model is
-blocked and ledgered as a violation (forbidden_model_switch), and the
-vision-assist routing is ledgered as vision_assist. Prefer mmx vision for
-every vision check, even when a preapproved vision-capable model exists.`;
+policy. The default forbiddenModels list is empty; users can explicitly add
+patterns such as gpt-5.5, sonnet, or opus through /glla settings. Any switch
+to an explicitly forbidden model is blocked and ledgered as a violation
+(forbidden_model_switch), and the vision-assist routing is ledgered as
+vision_assist. Prefer mmx vision for every vision check, even when a
+preapproved vision-capable model exists.`;
 
 /** The exact mmx vision describe command for one check. */
 export function visionDescribeCommand(imagePath: string, question?: string): string {
