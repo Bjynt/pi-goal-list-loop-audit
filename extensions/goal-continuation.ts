@@ -624,8 +624,11 @@ function armContinuationStartWatchdog(ctx: ExtensionContext, record: Continuatio
         armContinuationStartWatchdog(current, record);
         return;
       }
-      // Cap reached: fall through to the unacknowledged warning so the
-      // user can intervene. A stuck session must not loop forever.
+      // Cap reached: go directly to the unacknowledged warning so the
+      // user can intervene. Do not enter the normal timeout branch: its
+      // one automatic retry would add another 60s after the cap.
+      dispatchStartUnacknowledged(current, record);
+      return;
     }
     // v0.34.124: post-recovery grace — same re-arm pattern for a goal
     // resumed from a main-model-recovery park. pi just switched the model
@@ -644,7 +647,11 @@ function armContinuationStartWatchdog(ctx: ExtensionContext, record: Continuatio
         armContinuationStartWatchdog(current, record);
         return;
       }
-      // Cap reached: fall through to the unacknowledged warning.
+      // Cap reached: go directly to the unacknowledged warning. The normal
+      // timeout branch below permits one automatic retry, which is no longer
+      // appropriate after the bounded recovery grace has been exhausted.
+      dispatchStartUnacknowledged(current, record);
+      return;
     }
     if (dispatchTimedOut(record, Date.now(), record.timeoutMs ?? continuationStartTimeoutMs())) {
       // v0.34.88: exactly ONE automatic retry with backoff before declaring

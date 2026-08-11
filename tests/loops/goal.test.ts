@@ -103,6 +103,39 @@ test("v0.34.57: a compaction inside the watchdog window pauses the watchdog inst
   }
 });
 
+test("v0.34.57: compaction rearm cap goes directly to unacknowledged without a retry", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  __testOnlySetContinuationStartTimeout(50);
+  // If the cap accidentally enters the normal timeout branch, this long
+  // retry window makes the forbidden continuation_retry_sent observable
+  // before the test's bounded wait expires.
+  __testOnlySetContinuationRetryBackoff(4_000);
+  try {
+    const cwd = tmpCwd();
+    const ctx = await freshSession(cwd, "startup");
+    pi.sent.length = 0;
+    await pi.command("goal", "compaction cap target — done when pinned", ctx);
+    await tick();
+    __testOnlySetLastCompactionAt(Date.now());
+    await waitUntil(() => {
+      try {
+        return fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes("continuation_start_unacknowledged");
+      } catch {
+        return false;
+      }
+    });
+    const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+    assert.match(ledger, /continuation_start_unacknowledged/, "the compaction cap reaches the user-facing warning");
+    assert.doesNotMatch(ledger, /continuation_retry_sent/, "the cap must not add the normal automatic retry window");
+    await pi.command("goal", "pause", ctx);
+  } finally {
+    __testOnlySetContinuationStartTimeout(null);
+    __testOnlySetContinuationRetryBackoff(null);
+    __testOnlySetLastCompactionAt(null);
+  }
+});
+
 test("v0.34.124: a recovery resume inside the watchdog window pauses the watchdog instead of firing the unacknowledged warning", async () => {
   // Field (deals 2026-08-10 21:11-21:14): the provider wall lifted, the
   // recovery resumed the goal and scheduled the continuation ~1s later,
