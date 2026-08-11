@@ -40,7 +40,7 @@ const BILLING = /insufficient[\s_-]+(?:credits?|balance|quota)|(?:credits?|balan
 // unavailable due to a rate limit" are retryable short windows, NOT
 // long-lived walls — and plain "temporarily unavailable" stays ambiguous
 // (ordinary outage) so we never turn a random transient into a quota wall.
-const TEMPORARY_QUOTA = /temporar(?:y|ily)[^.\n]{0,60}(?:quota|limit|throttl|too many requests)|over\s+(?:the\s+)?(?:quota|rate\s*limit)/i;
+const TEMPORARY_QUOTA = /temporar(?:y|ily)[^.\n]{0,60}(?:quota|limit|throttl|too many requests)/i;
 
 /** Return the strongest explicit provider signal, or undefined for an
  * ambiguous/transient message. Specific account/plan walls must win over a

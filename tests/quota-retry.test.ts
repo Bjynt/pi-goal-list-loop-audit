@@ -62,6 +62,11 @@ test("v0.34.125: 'temporarily over quota' is a retryable rate-limit, plain 'temp
   assert.equal(quotaSignal("temporarily over quota, try again shortly"), "rate-limit");
   assert.equal(isQuotaError("temporarily over quota"), true);
   assert.equal(isQuotaError("temporarily above the rate limit"), true);
+  // A plan wall that merely says "over quota" is not explicitly temporary;
+  // it must retain the plan-quota label instead of taking the short-window
+  // rate-limit branch.
+  assert.equal(quotaSignal("You are over your monthly quota — upgrade"), "plan-quota");
+  assert.equal(isQuotaError("You are over your monthly quota — upgrade"), true);
   // no numeric hint → the conservative fallback (3600s) — the bounded
   // cadence owns the wait, never a manual give-up.
   assert.equal(parseQuotaError("temporarily over quota").retryAfterSec, 3600);
