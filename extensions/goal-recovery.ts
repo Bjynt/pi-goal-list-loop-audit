@@ -491,7 +491,7 @@ export function scheduleMainModelRecoveryTimer(ctx: ExtensionContext, delayMs: n
  * scheduled (no duplicate schedules). */
 export function scheduleHourlyProbe(ctx: ExtensionContext): void {
   if (loadGlobalSettings().hourlyQuotaProbe !== true) return;
-  if (!state.mainModelRecovery) return; // nothing to recover — silent no-op
+  if (!state.mainModelRecovery || state.mainModelRecovery.manualResumeRequired === true) return; // nothing to recover — silent no-op
   if (flags.hourlyProbeTimer) return; // already pending
   const now = Date.now();
   const fireAt = nextHourlyProbeMs(now);
@@ -506,25 +506,33 @@ export function scheduleHourlyProbe(ctx: ExtensionContext): void {
     flags.hourlyProbeFireAt = null;
     const fresh = freshCtxForGeneration(generation);
     if (!fresh) return;
-    fireHourlyProbe(fresh);
-    // Re-arm if still parked after the probe — the ticker is continuous
-    // until the user / list resume or recovery succeeds.
-    if (state.mainModelRecovery) scheduleHourlyProbe(fresh);
+    void fireHourlyProbe(fresh);
   }, Math.max(1_000, fireAt - now));
 }
 
 /** Fire one :00:30 probe — invoke the same recovery probe path the normal
  * schedule uses. The probe is observed by the recovery envelope: a success
- * clears state.mainModelRecovery (and the ticker stops because the guard
- * on the next re-arm sees no recovery); a failure reschedules via the
- * normal schedule (v0.34.79/v0.34.84), and the hourly ticker's next fire
- * is already queued by the re-arm above. */
-export function fireHourlyProbe(ctx: ExtensionContext): void {
-  if (!state.mainModelRecovery) return; // wall already lifted — silent no-op
+ * clears state.mainModelRecovery (and the ticker stops); a failure may clear
+ * the current timer while updating the bounded retry state, so the ticker
+ * must re-arm only after the async probe settles. Re-arming in this finally
+ * block keeps the continuous hourly schedule alive without racing the
+ * recovery path's timer cleanup, and a generation/host check prevents a
+ * stale session from creating a new timer. */
+export async function fireHourlyProbe(ctx: ExtensionContext): Promise<void> {
+  if (!state.mainModelRecovery || state.mainModelRecovery.manualResumeRequired === true) return; // wall already lifted/held — silent no-op
+  const generation = flags.sessionGeneration;
   appendLedger(ctx.cwd, "hourly_probe_fired", {
     at: new Date().toISOString(),
   });
-  void probeMainModelRecovery(ctx).catch((err) => { if (isStaleApiError(err)) flags.extensionApiStale = true; });
+  try {
+    await probeMainModelRecovery(ctx);
+  } catch (err) {
+    if (isStaleApiError(err)) flags.extensionApiStale = true;
+  } finally {
+    if (generation !== flags.sessionGeneration) return;
+    const fresh = freshCtxForGeneration(generation);
+    if (fresh && state.mainModelRecovery && state.mainModelRecovery.manualResumeRequired !== true) scheduleHourlyProbe(fresh);
+  }
 }
 
 /** Cancel the hourly ticker — called on session replacement, recovery
