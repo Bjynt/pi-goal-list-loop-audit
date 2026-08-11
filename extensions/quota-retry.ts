@@ -26,6 +26,91 @@ export interface QuotaError {
   signal?: QuotaSignal;
 }
 
+export type ProviderErrorSurface = "recovery" | "completion" | "main";
+
+/** A provider failure has two deliberately separate projections: `diagnostic`
+ * is durable for forensics, while `display` and `action` are safe to put in
+ * chat, notifications, cards, or tool results. Never interpolate `diagnostic`
+ * into a user-facing string. */
+export interface ProviderErrorPresentation {
+  diagnostic: string;
+  display: string;
+  action: string;
+  fingerprint: string;
+  signal?: QuotaSignal;
+  sensitive: boolean;
+}
+
+// Provider payloads frequently contain account names, request ids, nested JSON,
+// and raw HTTP text. These markers identify text that must not cross a display
+// boundary verbatim. Keep the detector broader than quotaSignal: a provider
+// may say "Token Plan" or expose a bare HTTP 429 without enough surrounding
+// prose for classification.
+const PROVIDER_WALL_MARKER = /\b429\b|token[\s_-]*plan|rate[\s_-]*limit|too many requests|usage[\s_-]*limit|quota|insufficient[\s_-]+(?:credits?|balance)|key[\s_-]*limit|retry[\s_-]*after/i;
+
+function providerFingerprintText(error: string): string {
+  return error
+    .toLowerCase()
+    .replace(/retry[\s_-]*(?:after|in)[^\s,;)}\]]+/gi, "retry-hint")
+    .replace(/(?:reset|available|renews?)[\s_-]*(?:at|on|in)[^\s,;)}\]]+/gi, "reset-hint")
+    .replace(/\b(?:0x)?[a-f0-9]{8,}\b/gi, "id")
+    .replace(/\b\d+(?:\.\d+)?\b/g, "number")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180);
+}
+
+/** Stable logical identity for per-recovery-episode notice deduplication.
+ * Retry-after values, counters, timestamps, and request ids are intentionally
+ * removed so the same provider wall does not produce a new notice each time
+ * the upstream changes a number. */
+export function providerErrorFingerprint(error: string | undefined): string {
+  const raw = typeof error === "string" ? error : "";
+  return `${quotaSignal(raw) ?? "provider"}:${providerFingerprintText(raw) || "unknown"}`;
+}
+
+function providerWallLabel(signal: QuotaSignal | undefined, sensitive: boolean): string {
+  if (signal === "billing") return "provider billing/credit wall";
+  if (signal === "plan-quota") return "provider account/usage wall";
+  if (signal === "rate-limit") return "provider request-rate wall";
+  return sensitive ? "provider infrastructure wall" : "provider infrastructure error";
+}
+
+/** Convert untrusted provider text into safe action/display copy while
+ * retaining a bounded diagnostic projection for durable ledger/archive state. */
+export function providerErrorPresentation(error: string | undefined, surface: ProviderErrorSurface = "recovery"): ProviderErrorPresentation {
+  const diagnostic = typeof error === "string" ? error.slice(0, 4_000) : "";
+  const signal = quotaSignal(diagnostic);
+  const sensitive = PROVIDER_WALL_MARKER.test(diagnostic) || signal !== undefined;
+  const display = providerWallLabel(signal, sensitive);
+  const action = surface === "completion"
+    ? "The stored completion claim is safe; fix the provider/model, then resume to retry the auditor."
+    : surface === "main"
+      ? "Automatic recovery remains bounded; wait for the provider window or switch to a configured backup model."
+      : "Automatic recovery remains bounded; wait for the provider window or switch models if needed.";
+  return {
+    diagnostic,
+    display,
+    action,
+    fingerprint: providerErrorFingerprint(diagnostic),
+    ...(signal ? { signal } : {}),
+    sensitive,
+  };
+}
+
+/** Display projection for legacy pause/recovery strings that were persisted
+ * before provider diagnostics were separated from user-facing copy. */
+export function sanitizeProviderDisplayText(value: string): string {
+  const presentation = providerErrorPresentation(value, "recovery");
+  if (!presentation.sensitive) return value;
+  if (/completion audit timed out/i.test(value)) return "completion audit timed out — no verifier verdict was produced";
+  if (/auditor retry/i.test(value)) return `auditor retry — ${presentation.display}`;
+  if (/main model recovery/i.test(value)) return `main model recovery — ${presentation.display}`;
+  if (/consecutive errors|output[ -]?token/i.test(value)) return `provider recovery — ${presentation.display}`;
+  return presentation.display;
+}
+
 // Do not classify every "temporarily" or every 403 as a quota wall. Those
 // patterns include ordinary outages and auth failures. These signals are
 // deliberately explicit enough to survive provider wording changes without
@@ -175,6 +260,21 @@ export function quotaRetryDelaySeconds(attempt: number, baseMinutes = 60): numbe
 }
 
 let quotaRetryTimer: NodeJS.Timeout | null = null;
+let lastQuotaRetryNoticeKey: string | null = null;
+
+export interface QuotaRetryScheduleOptions {
+  /** Stable persisted recovery episode identity, if the caller has one. */
+  episodeKey?: string;
+  /** Stable notice identity; excludes changing retry-after/counter values. */
+  noticeKey?: string;
+  /** Caller already applied a durable per-episode notice fence. */
+  suppressNotice?: boolean;
+}
+
+/** Test hook — reset process-local notice deduplication between isolated rigs. */
+export function resetQuotaRetryNoticeDedup(): void {
+  lastQuotaRetryNoticeKey = null;
+}
 
 /** Test hook — is a quota retry currently scheduled? */
 export function isQuotaRetryPending(): boolean {
@@ -199,6 +299,7 @@ export function scheduleQuotaRetry(
   reason: string,
   fire: () => void,
   label = "Auditor quota exhausted — auto-retry",
+  options: QuotaRetryScheduleOptions = {},
 ): void {
   cancelQuotaRetry();
   const requestedSec = Number.isFinite(retryAfterSec) && retryAfterSec >= 0 ? Math.round(retryAfterSec) : DEFAULT_QUOTA_RETRY_SEC;
@@ -214,10 +315,16 @@ export function scheduleQuotaRetry(
     }
   }, ms);
   quotaRetryTimer.unref?.();
-  ctx.ui.notify(
-    `${label} in ${Math.round(safeSec / 60)}m${capped ? ` (provider requested ${Math.round(requestedSec / 3600)}h; automatic probes cap at 5h)` : ""} (${reason.slice(0, 80)}). /goal resume retries now.`,
-    "info",
-  );
+  const presentation = providerErrorPresentation(reason, "recovery");
+  const noticeKey = options.noticeKey
+    ?? `${options.episodeKey ?? "session"}:${presentation.fingerprint}:${label}`;
+  if (!options.suppressNotice && noticeKey !== lastQuotaRetryNoticeKey) {
+    lastQuotaRetryNoticeKey = noticeKey;
+    ctx.ui.notify(
+      `${label} in ${Math.round(safeSec / 60)}m${capped ? ` (provider hint capped at ${Math.round(safeSec / 3600)}h; automatic probes cap at 5h)` : ""} (${presentation.display}). /goal resume retries now.`,
+      "info",
+    );
+  }
 }
 
 /** v0.25.6: detect a SUBAGENT quota failure in a tool_result — the

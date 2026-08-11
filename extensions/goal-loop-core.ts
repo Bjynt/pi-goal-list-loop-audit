@@ -11,6 +11,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
 import { isQuotaError } from "./quota-retry.js";
+export { providerErrorFingerprint, providerErrorPresentation, sanitizeProviderDisplayText } from "./quota-retry.js";
 
 /** v0.26.1: consecutive heartbeat refires without a real agent turn
  * before the supervisor gives up (pauses the goal / stops the loop).
@@ -263,6 +264,12 @@ export interface PendingCompletion {
   /** Why the claim is waiting for a fresh attempt. */
   recoveryAt?: string;
   recoveryReason?: string;
+  /** Bounded raw provider/auditor diagnostic retained for forensics only. */
+  providerErrorDiagnostic?: string;
+  /** Stable identity for one detached-auditor provider recovery episode. */
+  recoveryEpisodeKey?: string;
+  /** Durable per-episode notice fence; display projections must consult it. */
+  recoveryNoticeKeys?: string[];
   /**
    * Durable one-shot recovery fence. A parked claim may receive one
    * automatic retry after a validated healthy lifecycle/recovery event;
@@ -375,6 +382,13 @@ export interface Goal {
   };
   createdAt: string;
   updatedAt: string;
+  /** Bounded raw provider diagnostic retained for the active/archive record;
+   * user-facing projections use the sanitized pause/recovery copy instead. */
+  providerErrorDiagnostic?: string;
+  /** Stable provider recovery episode identity for goal-level error brakes. */
+  recoveryEpisodeKey?: string;
+  /** Durable per-episode notice fence for goal-level recovery messages. */
+  recoveryNoticeKeys?: string[];
   /** v0.25.2: per-goal telemetry for /glla stats premature-success
    * detection. Bumped live: turns on agent_end, fileWrites/bashCalls on
    * tool_result while the goal is active. */
@@ -687,6 +701,12 @@ export function takeAt<T>(items: T[], n: number): [T, T[]] | null {
 export interface MainModelRecovery {
   /** The model selected when the provider wall was first observed. */
   primary: string;
+  /** Bounded raw provider diagnostic retained for ledger/archive forensics. */
+  providerErrorDiagnostic?: string;
+  /** Stable identity for one main-model provider recovery episode. */
+  recoveryEpisodeKey?: string;
+  /** Durable per-episode notice fence for recovery notifications. */
+  recoveryNoticeKeys?: string[];
   /** The model currently selected after one or more failovers. */
   active?: string;
   /** Candidates already tried in this recovery cycle. */
@@ -983,6 +1003,15 @@ export function readState(cwd: string): State {
   };
 }
 
+/** Claim one display/action notice in a durable recovery episode. The caller
+ * must persist the containing record after this returns true. */
+export function claimRecoveryNotice(record: { recoveryNoticeKeys?: string[] }, key: string): boolean {
+  const prior = Array.isArray(record.recoveryNoticeKeys) ? record.recoveryNoticeKeys : [];
+  if (prior.includes(key)) return false;
+  record.recoveryNoticeKeys = [...prior.slice(-15), key];
+  return true;
+}
+
 export function appendLedger(cwd: string, type: string, value: unknown): void {
   // v0.28.6 (E1): guarded — a disk failure degrades loudly, never throws
   // into an orchestrator handler.
@@ -1121,9 +1150,17 @@ export function renderGoalMarkdown(goal: Goal): string {
   lines.push(`**Auto-continue**: ${goal.autoContinue ? "on" : "off"}`);
   if (goal.activePath) lines.push(`**File**: \`${path.relative(path.dirname(goal.activePath), goal.activePath) || goal.activePath}\``);
   if (goal.archivedPath) lines.push(`**Archive**: \`${path.relative(path.dirname(goal.archivedPath), goal.archivedPath) || goal.archivedPath}\``);
-  if (goal.stopReason) lines.push(`**Stop reason**: ${goal.stopReason}`);
-  if (goal.pauseReason) lines.push(`**Pause reason**: ${goal.pauseReason}`);
-  if (goal.pauseSuggestedAction) lines.push(`**Agent suggests**: ${goal.pauseSuggestedAction}`);
+  if (goal.stopReason) lines.push(`**Stop reason**: ${sanitizeProviderDisplayText(goal.stopReason)}`);
+  if (goal.pauseReason) lines.push(`**Pause reason**: ${sanitizeProviderDisplayText(goal.pauseReason)}`);
+  if (goal.pauseSuggestedAction) lines.push(`**Agent suggests**: ${sanitizeProviderDisplayText(goal.pauseSuggestedAction)}`);
+  if (goal.providerErrorDiagnostic) {
+    lines.push("## Provider diagnostic (forensics)");
+    lines.push("");
+    lines.push("```text");
+    lines.push(goal.providerErrorDiagnostic.replace(/```/g, "'''"));
+    lines.push("```");
+    lines.push("");
+  }
   if (goal.pendingCompletion) {
     const phase = goal.pendingCompletion.phase ?? "recovery-pending";
     lines.push(`**Completion audit**: ${phase}`);
