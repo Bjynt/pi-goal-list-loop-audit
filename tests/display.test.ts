@@ -755,7 +755,7 @@ test("detached auditor status names phase, evidence, freshness, verdict wait, an
   assert.match(liveStatus, /MAIN HOST · SUPERVISING/);
   assert.match(liveStatus, /auditor tool executing/);
   assert.match(liveStatus, / · read/);
-  assert.match(liveStatus, /evidence: report stream observed · 2\.0 KB report · 1 read-only call/);
+  assert.match(liveStatus, /evidence: report stream observed · 2\.0 KB report · 1 audit call/);
   assert.match(liveStatus, /elapsed 42s/);
   assert.match(liveStatus, /worker activity 5s ago · fresh/);
   assert.match(liveStatus, /next: worker completion → verdict/);
@@ -764,7 +764,7 @@ test("detached auditor status names phase, evidence, freshness, verdict wait, an
   const liveWidget = buildWidgetLines({ goal: g, list: [] }, liveAudit, NOW)!.join("\\n");
   assert.match(liveWidget, /auditor: tool executing · detached worker/);
   assert.match(liveWidget, /tool: read/);
-  assert.match(liveWidget, /evidence: report stream observed · 2\.0 KB report · 1 read-only call/);
+  assert.match(liveWidget, /evidence: report stream observed · 2\.0 KB report · 1 audit call/);
   assert.doesNotMatch(liveWidget, /paused/);
 
   const completeAudit = {
@@ -776,7 +776,7 @@ test("detached auditor status names phase, evidence, freshness, verdict wait, an
   const verdictStatus = buildStatusText({ goal: g, list: [] }, completeAudit, NOW)!;
   assert.match(verdictStatus, /auditor awaiting verdict/);
   assert.match(verdictStatus, /last tool: grep/);
-  assert.match(verdictStatus, /evidence: final report · 1 read-only call/);
+  assert.match(verdictStatus, /evidence: final report · 1 audit call/);
   assert.match(verdictStatus, /elapsed 45s/);
   assert.match(verdictStatus, /worker finished/);
   assert.match(verdictStatus, /next: apply detached verdict/);

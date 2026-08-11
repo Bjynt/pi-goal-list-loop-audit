@@ -443,7 +443,7 @@ async function main() {
         } else {
           // v0.34.56: an end that provably closes nothing is an EXPLICIT
           // unmatched fact — never silently dropped. Only telemetry-relevant
-          // (read-only) tools are tracked, so only their stray ends are
+          // auditor tools are tracked, so only their stray ends are
           // surfaced; ends of untracked tools are outside the telemetry
           // scope by design.
           if (!event.toolName || AUDITOR_TOOLS.has(event.toolName)) {

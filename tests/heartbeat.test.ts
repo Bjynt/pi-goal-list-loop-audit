@@ -154,7 +154,7 @@ test("timing defaults: wedge 30m, measure 10m, auditor inactivity 10m, auditor w
 test("auditor watchdog: inactivity aborts only without a tool; wall bound always wins", () => {
   const base = { startedAtMs: 0, lastEventAtMs: 0 };
   assert.equal(auditorWatchdogAction({ ...base, nowMs: AUDITOR_STALL_MS + 1, toolActive: false }), "inactivity");
-  assert.equal(auditorWatchdogAction({ ...base, nowMs: AUDITOR_STALL_MS + 1, toolActive: true }), "none", "a long read-only tool may run past inactivity");
+  assert.equal(auditorWatchdogAction({ ...base, nowMs: AUDITOR_STALL_MS + 1, toolActive: true }), "none", "a long auditor tool may run past inactivity");
   assert.equal(auditorWatchdogAction({ ...base, nowMs: AUDITOR_WALL_TIMEOUT_MS, lastEventAtMs: AUDITOR_WALL_TIMEOUT_MS - 1, toolActive: true }), "wall", "the hard wall still bounds a live tool");
   assert.equal(auditorWatchdogAction({ ...base, nowMs: 5 * 60_000, lastEventAtMs: 5 * 60_000, toolActive: false }), "none");
 });
