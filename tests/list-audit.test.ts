@@ -54,6 +54,19 @@ test("parseAuditFindingsForFanout: tolerates the /loop audit format (no FIX: pre
   assert.equal(decisions.length, 0);
 });
 
+test("parseAuditFindingsForFanout: accepts aligned open checkbox spacing", () => {
+  const md = [
+    "- [  ] FIX: LOW: two-space box (two.ts:2)",
+    "- [   ] HIGH: wider box (three.ts:3)",
+    "- [x] MEDIUM: already fixed (four.ts:4)",
+  ].join("\n");
+  const { open, decisions } = parseAuditFindingsForFanout(md);
+  assert.equal(open.length, 2, "all whitespace-only open boxes are actionable");
+  assert.equal(open[0]!.text.startsWith("HIGH:"), true, "severity ordering is unchanged");
+  assert.equal(open[1]!.text.startsWith("LOW:"), true);
+  assert.equal(decisions.length, 0);
+});
+
 test("parseAuditFindingsForFanout: empty / missing content yields nothing", () => {
   const { open, decisions } = parseAuditFindingsForFanout("");
   assert.equal(open.length, 0);

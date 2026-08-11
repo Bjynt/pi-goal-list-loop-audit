@@ -572,7 +572,7 @@ export function parseAuditFindingsForFanout(md: string): { open: AuditFindingLin
       if (text) decisions.push(text);
       return;
     }
-    const box = line.match(/^\s*-\s*\[ \]\s*(.*)$/);
+    const box = line.match(/^\s*-\s*\[[ \t]+\]\s*(.*)$/);
     if (!box) return;
     const text = (box[1] ?? "").replace(/^FIX:\s*/i, "").trim();
     if (!text) return;
