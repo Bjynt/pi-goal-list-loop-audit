@@ -31,6 +31,20 @@ const GOAL_SRC = readGoalRuntimeSource();
 const CORE_SRC = readFileSync(join(here, "..", "extensions", "goal-loop-core.ts"), "utf8");
 const SETTINGS_SRC = readFileSync(join(here, "..", "extensions", "goal-settings.ts"), "utf8");
 const RECOVERY_SRC = readFileSync(join(here, "..", "extensions", "goal-recovery.ts"), "utf8"); // decomposition step 3 (v0.34.111)
+const RUNTIME_SCRIPT = join(here, "hourly-quota-probe-runtime.mjs");
+
+function runHourlyRuntime(): string {
+  const sandbox = tmpCwd();
+  const settingsPath = join(sandbox, "global-settings.json");
+  writeFileSync(settingsPath, JSON.stringify({ hourlyQuotaProbe: true }));
+  return execFileSync(process.execPath, [RUNTIME_SCRIPT], {
+    cwd: join(here, ".."),
+    env: { ...process.env, GLLA_GLOBAL_SETTINGS_PATH: settingsPath },
+    encoding: "utf8",
+    timeout: 30_000,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
 
 import {
   nextHourlyProbeMs,
@@ -132,59 +146,9 @@ test("v0.34.131: a failed hourly probe re-arms only after the async recovery set
   assert.match(fire, /generation !== flags\.sessionGeneration/, "stale generations cannot re-arm a timer");
 });
 
-test("v0.34.132: runtime failure re-arms a later hourly probe after recovery cleanup", async () => {
-  const cwd = tmpCwd();
-  const ctx = makeMockCtx(cwd);
-  const rig = makeHourlyRig(ctx, true);
-  const extensionCtx = ctx as unknown as ExtensionContext;
-  replaceState({ goal: null, mainModelRecovery: parkedRecovery() });
-
-  scheduleHourlyProbe(extensionCtx);
-  assert.equal(rig.scheduled.length, 1, "the parked recovery arms one hourly timer");
-  const firstHourly = rig.scheduled[0]!;
-  rig.run(firstHourly);
-  await settleHourlyProbe();
-
-  assert.equal(rig.probeCalls(), 1, "the first scheduled slot executes the provider probe");
-  const firstLedger = readFileSync(join(cwd, ".pi-glla", "active.jsonl"), "utf8");
-  assert.match(firstLedger, /\"main_model_probe_failed\"/, "the injected provider failure reaches recovery cleanup");
-  assert.equal(rig.flags.hourlyProbeTimer !== null, true, "cleanup leaves a newly armed hourly timer");
-  const pending = rig.scheduled.filter((timer) => !timer.fired);
-  assert.equal(pending.length, 2, "normal recovery and the later hourly slot are both pending");
-  const normalRetry = pending[0]!;
-  const secondHourly = pending[1]!;
-  assert.ok(secondHourly.delayMs > normalRetry.delayMs, "the later :00:30 hourly slot is distinct from the normal retry");
-  assert.notEqual(secondHourly.native, firstHourly.native, "failure cleanup did not retain the consumed timer");
-  assert.equal(rig.flags.hourlyProbeTimer, secondHourly.native, "the re-armed timer is the hourly handle");
-
-  rig.run(secondHourly);
-  await settleHourlyProbe();
-  const secondLedger = readFileSync(join(cwd, ".pi-glla", "active.jsonl"), "utf8");
-  assert.equal(rig.probeCalls(), 2, "the later scheduled slot executes a second provider probe");
-  assert.equal((secondLedger.match(/\"hourly_probe_fired\"/g) ?? []).length, 2, "both hourly slots fired");
-});
-
-test("v0.34.132: runtime opt-out and generation fencing prevent hourly execution", async () => {
-  const cwd = tmpCwd();
-  const ctx = makeMockCtx(cwd);
-  const rig = makeHourlyRig(ctx, false);
-  const extensionCtx = ctx as unknown as ExtensionContext;
-  replaceState({ goal: null, mainModelRecovery: parkedRecovery() });
-
-  scheduleHourlyProbe(extensionCtx);
-  assert.equal(rig.scheduled.length, 0, "opt-out prevents a new hourly timer");
-
-  setHourlyProbeSetting(true);
-  scheduleHourlyProbe(extensionCtx);
-  assert.equal(rig.scheduled.length, 1, "turning the setting on arms the timer");
-  const staleTimer = rig.scheduled[0]!;
-  rig.flags.sessionGeneration += 1;
-  rig.run(staleTimer);
-  await settleHourlyProbe();
-
-  assert.equal(rig.probeCalls(), 0, "a timer from the old generation never reaches the provider");
-  const ledger = readFileSync(join(cwd, ".pi-glla", "active.jsonl"), "utf8");
-  assert.doesNotMatch(ledger, /\"hourly_probe_fired\"/, "stale timer emits no hourly probe event");
+test("v0.34.132: executable runtime regression covers failure re-arm, opt-out, and generation fencing", () => {
+  const output = runHourlyRuntime();
+  assert.match(output, /hourly-runtime-ok/, "the isolated runtime harness completed every hourly-probe assertion");
 });
 
 test("v0.34.92: session_start re-arms the hourly ticker when recovery is parked", () => {
