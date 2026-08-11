@@ -60,6 +60,7 @@
     "@earendil-works/pi-ai": "^0.74.0",
     "@earendil-works/pi-coding-agent": "^0.81.1",
     "@earendil-works/pi-tui": "^0.74.0",
+    "jiti": "2.7.0",
     "typebox": "^1.0.58",
     "typescript": "^5.9.3"
   },
