@@ -4,11 +4,11 @@
 
 Interview-drafted goals, an audited task queue, and forever-loops (metric, spec, project-audit) that run for hours. Every goal starts as a **drafted contract you confirm** — nothing activates sight-unseen. The plugin then writes a durable goal to disk, drives the agent through an `agent_end`-driven loop, and on each `complete_goal` queues a **detached auditor worker process** to verify the work without holding the main pi turn open. Stall recovery, structured decision pauses, and consent gates keep you in charge while it works.
 
-The auditor runs in a fresh extension-less pi RPC process with no extensions, skills, prompts, themes, or context files. It has only `read` / `grep` / `find` / `ls` / `bash`. It cannot see the implementing conversation, cannot mutate glla state, and cannot plant evidence. Its durable result is identity-checked and revalidated by the parent before it can archive a goal.
+The auditor runs in a fresh extension-less pi RPC process with no extensions, skills, prompts, themes, or context files. It has `read` / `grep` / `find` / `ls` / `bash` in intentional power mode. It cannot see the implementing conversation and receives no glla extension APIs or parent state handles, but bash is not an OS sandbox: a prompt-injected command or verifier can write repository/glla files or plant evidence. Its durable result is attempt-identity-checked and revalidated by the parent (including the regression shield) before it can archive a goal.
 
 This is a detached process, not a nested session in the main pi process. `complete_goal` returns after writing the claim and job request; the status surface shows `auditor queued`, `auditor running`, or `audit recovery pending` while the worker runs or awaits a fresh lifecycle.
 
-**Current release:** `v0.34.121` — objective lifecycle closure, explicit start conflicts, and complete one-pass `/glla wipe` cleanup.
+**Current release:** `v0.34.131` — documented bash-enabled auditor power mode with bounded tool execution and synchronized release metadata.
 
 ## Why this exists
 

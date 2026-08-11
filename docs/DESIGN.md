@@ -285,9 +285,16 @@ The single most important property of this plugin is that the implementing agent
 1. The auditor runs in a **detached pi RPC process with a fresh agent session**.
 2. The auditor has **no extensions, no skills, no prompts, no themes, and no context files**.
 3. The auditor has the **power-mode audit tools**: `read`, `grep`, `find`, `ls`, and `bash`. Bash is intentionally available for bounded verifier scripts, tests, git inspection, and behavior reproduction; this is a policy-guided capability, not an OS-level read-only sandbox.
-4. The auditor **cannot see the implementing conversation or mutate glla state**.
+4. The auditor **cannot see the implementing conversation and receives no glla
+   extension APIs or parent state handles**. This is not an OS-level sandbox:
+   intentional bash power mode means a prompt-injected command or verifier can
+   write repository/glla files or plant evidence. The parent still validates
+   attempt/request identity, tool evidence, `regression_shield`, and revision
+   before applying a result.
 
-This is borrowed directly from `pi-goal-x/extensions/goal-auditor.ts:148-156`. The pattern is sound; we don't improve on it in v0.1.0, we just **fork the proven source and add regression_shield**.
+This is based on `pi-goal-x/extensions/goal-auditor.ts:148-156`, with the
+current detached worker adding the explicitly accepted bash power mode and
+`regression_shield` revalidation.
 
 ### Decision 2: regression_shield in v0.2.0
 
