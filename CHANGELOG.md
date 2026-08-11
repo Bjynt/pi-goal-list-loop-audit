@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+### Hourly provider-wall probe survives failed recovery probes
+  The optional `:00:30` recovery ticker now re-arms after its asynchronous
+  probe settles, even when the failed probe clears the normal recovery timer.
+  Generation and fresh-host checks prevent stale sessions from creating a
+  timer, and manual recovery holds remain quiet. Regression coverage pins the
+  failure-safe re-arm path.
+
 ### Power-mode auditor: bash restored with bounded tool execution
   The detached auditor intentionally restores `bash` alongside read/grep/find/ls
   so it can run bounded tests, inspect git state, and reproduce behavior. This

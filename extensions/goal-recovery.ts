@@ -531,7 +531,7 @@ export async function fireHourlyProbe(ctx: ExtensionContext): Promise<void> {
   } finally {
     if (generation !== flags.sessionGeneration) return;
     const fresh = freshCtxForGeneration(generation);
-    if (fresh && state.mainModelRecovery && state.mainModelRecovery.manualResumeRequired !== true) scheduleHourlyProbe(fresh);
+    if (fresh && state.mainModelRecovery && !state.mainModelRecovery.manualResumeRequired) scheduleHourlyProbe(fresh);
   }
 }
 

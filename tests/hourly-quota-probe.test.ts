@@ -85,7 +85,7 @@ test("v0.34.92: nextHourlyPromptMs (legacy) still returns :00:00 — kept for ca
 test("v0.34.92: scheduleHourlyProbe / fireHourlyProbe / cancelHourlyProbe are wired in goal-recovery.ts", () => {
   // decomposition step 3 (v0.34.111): the trio moved to goal-recovery.ts
   assert.match(RECOVERY_SRC, /function scheduleHourlyProbe\(ctx: ExtensionContext\): void/, "scheduleHourlyProbe exists");
-  assert.match(RECOVERY_SRC, /function fireHourlyProbe\(ctx: ExtensionContext\): void/, "fireHourlyProbe exists");
+  assert.match(RECOVERY_SRC, /(?:async )?function fireHourlyProbe\(ctx: ExtensionContext\)/, "fireHourlyProbe exists");
   assert.match(RECOVERY_SRC, /function cancelHourlyProbe\(\): void/, "cancelHourlyProbe exists");
 });
 
