@@ -773,6 +773,14 @@ export function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
       ? "loop"
       : undefined;
   appendLedger(ctx.cwd, "main_model_recovered", { model: modelRef(ctx.model), attempts: recovery.attempts, resumed });
+  // A successful bounded provider recovery is also a healthy recovery event
+  // for a parked detached-auditor claim. The auditor hook owns the durable
+  // one-shot marker and generation/context fence; this call never bypasses
+  // the explicit-manual-hold policy for cold startup.
+  const auditRetryStarted = recovery.kind === "goal"
+    && state.goal?.status === "paused"
+    && !!state.goal.pendingCompletion
+    && maybeAutoRetryParkedCompletionAudit("main-model-recovery");
   // v0.34.124: stamp the resume so the continuation-start watchdog grants
   // the post-recovery grace — pi's model chain is still warming and the
   // first turn can take minutes to start (field: deals 2026-08-10 21:13

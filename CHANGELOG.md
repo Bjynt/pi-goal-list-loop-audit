@@ -14,6 +14,14 @@
   markers and non-actionable fragments remain fenced, while saved list work
   such as the detached-auditor recovery item can activate normally.
 
+### Parked completion audits get one durable healthy-recovery retry
+  A `recovery-pending` detached-auditor claim now records and consumes one
+  automatic retry only after a validated lifecycle/recovery event. The retry
+  is generation/context fenced and repeated lifecycle events cannot create a
+  storm; a failed retry preserves the claim for explicit `/goal resume`, and
+  cold startup still holds it. Behavioral coverage exercises the persisted
+  one-shot marker, repeated events, and manual recovery.
+
 ### Power-mode auditor: bash restored with bounded tool execution
   The detached auditor intentionally restores `bash` alongside read/grep/find/ls
   so it can run bounded tests, inspect git state, and reproduce behavior. This
