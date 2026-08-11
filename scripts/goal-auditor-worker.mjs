@@ -2,7 +2,7 @@
 /**
  * Detached auditor worker. This file intentionally has no project imports:
  * the parent gives it one validated job directory and it launches a clean pi
- * RPC process with read-only tools only.
+ * RPC process with the auditor's full inspection/tooling allowlist.
  */
 
 import { spawn } from "node:child_process";
@@ -13,9 +13,10 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 const PROTOCOL_VERSION = 1;
-// Repository content is untrusted input. The worker's tool allowlist is the
-// security boundary; prompts never grant a shell or write capability.
-const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
+// Power-oriented auditor mode: bash is intentionally available so the model
+// can run bounded verification commands and reproduce behavior. The timeout
+// below still prevents one tool call from pinning the audit indefinitely.
+const AUDITOR_TOOLS = new Set(["read", "grep", "find", "ls", "bash"]);
 const DEFAULT_TOOL_TIMEOUT_MS = 5 * 60_000;
 
 function stableJson(value) {
@@ -292,7 +293,7 @@ async function main() {
   const armToolTimer = (key, name) => {
     clearToolTimer(key);
     const timer = setTimeout(() => {
-      void finish(false, `Auditor stalled — read-only tool ${name} exceeded its ${toolTimeoutLabel} timeout; the worker was aborted.`).catch(() => {});
+      void finish(false, `Auditor stalled — tool ${name} exceeded its ${toolTimeoutLabel} timeout; the worker was aborted.`).catch(() => {});
     }, TOOL_TIMEOUT_MS);
     timer.unref?.();
     toolTimers.set(key, timer);
@@ -321,7 +322,7 @@ async function main() {
       "--no-themes",
       "--no-context-files",
       "--no-approve",
-      "--tools", "read,grep,find,ls",
+      "--tools", "read,grep,find,ls,bash",
       "--model", request.model,
       "--thinking", request.thinkingLevel,
     ];
@@ -343,7 +344,7 @@ async function main() {
     inactivityTimer = setInterval(() => {
       if (finalized || activeTools.size > 0) return;
       if (Date.now() - lastActivityProbeAt >= AUDITOR_STALL_MS) {
-        void finish(false, `Auditor stalled — no session activity for ${stallLabel} while no read-only tool was running, so it was aborted.`).catch(() => {});
+        void finish(false, `Auditor stalled — no session activity for ${stallLabel} while no auditor tool was running, so it was aborted.`).catch(() => {});
       }
     }, Math.min(15_000, Math.max(10, Math.floor(AUDITOR_STALL_MS / 4))));
     inactivityTimer.unref?.();
@@ -373,7 +374,7 @@ async function main() {
       const update = event.type === "message_update" ? event.assistantMessageEvent : undefined;
       const phase = event.type === "message_update" && update?.type === "text_delta"
         ? "producing_report"
-        : event.type === "tool_execution_start" && READ_ONLY_TOOLS.has(event.toolName)
+        : event.type === "tool_execution_start" && AUDITOR_TOOLS.has(event.toolName)
           ? "tool_executing"
           : event.type === "tool_execution_end" || event.type === "agent_start" || event.type === "message_start" || event.type === "message_end" || event.type === "response" || event.type === "agent_end"
             ? "thinking"
@@ -397,8 +398,8 @@ async function main() {
         void finish(false, `RPC prompt rejected: ${streamError}`).catch(() => {});
         return;
       }
-      if (event.type === "tool_execution_start" && !READ_ONLY_TOOLS.has(event.toolName)) {
-        void finish(false, `Auditor attempted disallowed tool: ${String(event.toolName ?? "(unknown)")}`).catch(() => {});
+      if (event.type === "tool_execution_start" && !AUDITOR_TOOLS.has(event.toolName)) {
+        void finish(false, `Auditor attempted unsupported tool: ${String(event.toolName ?? "(unknown)")}`).catch(() => {});
         return;
       }
       if (event.type === "message_update") {
@@ -412,7 +413,7 @@ async function main() {
         }
         return;
       }
-      if (event.type === "tool_execution_start" && READ_ONLY_TOOLS.has(event.toolName)) {
+      if (event.type === "tool_execution_start" && AUDITOR_TOOLS.has(event.toolName)) {
         const id = event.toolCallId === undefined || event.toolCallId === null ? undefined : String(event.toolCallId);
         const key = id !== undefined ? id : `${event.toolName}:${activeTools.size}:${Date.now()}`;
         activeTools.set(key, { name: event.toolName, argsPrefix: toolArgsPrefix(event.args), startedAt: Date.now(), toolCallId: id });
@@ -445,7 +446,7 @@ async function main() {
           // (read-only) tools are tracked, so only their stray ends are
           // surfaced; ends of untracked tools are outside the telemetry
           // scope by design.
-          if (!event.toolName || READ_ONLY_TOOLS.has(event.toolName)) {
+          if (!event.toolName || AUDITOR_TOOLS.has(event.toolName)) {
             unmatchedToolEnds.push({ toolCallId: id, toolName: event.toolName, at: Date.now() });
             if (unmatchedToolEnds.length > MAX_UNMATCHED_EVENTS) unmatchedToolEnds.shift();
           }

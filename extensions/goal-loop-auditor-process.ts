@@ -60,10 +60,11 @@ export interface AuditorProgress {
 
 export type AuditorModel = string | { provider: string; id: string };
 
-// Detached completion auditors must never receive a shell or project-trust
-// override. Repository content is untrusted input, so the allowlist itself is
-// the security boundary rather than a prompt request to "please don't mutate".
-export const READ_ONLY_TOOLS = ["read", "grep", "find", "ls"] as const;
+// The detached auditor intentionally exposes the full inspection/tooling
+// surface, including bash, so it can run bounded tests and reproduce behavior.
+// This is a power-oriented mode, not a read-only security boundary; callers
+// still get the independent per-tool timeout below.
+export const AUDITOR_TOOLS = ["read", "grep", "find", "ls", "bash"] as const;
 const PROTOCOL_VERSION = 1;
 const DEFAULT_WALL_TIMEOUT_MS = 30 * 60_000;
 const DEFAULT_TOOL_TIMEOUT_MS = 5 * 60_000;
@@ -201,7 +202,7 @@ export interface AuditorProcessRuntime {
   /** v0.34.57: freshness horizon for `lastActivityAt` — only heartbeats
    * younger than this count as "activity" for the watchdog (default 60s). */
   heartbeatFreshMs?: number;
-  /** v0.34.130: independent ceiling for one allowed read-only tool call.
+  /** v0.34.130: independent ceiling for one allowed auditor tool call.
    * This remains armed while the tool is open, unlike the inactivity brake. */
   toolTimeoutMs?: number;
   /** Environment is inherited by default; useful for a fake pi binary in tests. */
@@ -481,13 +482,13 @@ export async function runDetachedGoalCompletionAuditor(args: {
           if (!output.trim()) return infra(model, thinkingLevel, "auditor produced no output", output, capturedRevisionToken);
           const parsed = parseAuditorVerdict(output);
           if (!parsed.approved && !parsed.disapproved && !parsed.impossible) return infra(model, thinkingLevel, "auditor produced no verdict marker", output, capturedRevisionToken);
-          const disallowedTool = result.toolCalls.find((call) => !(READ_ONLY_TOOLS as readonly string[]).includes(call.name));
+          const disallowedTool = result.toolCalls.find((call) => !(AUDITOR_TOOLS as readonly string[]).includes(call.name));
           if (disallowedTool) {
-            return infra(model, thinkingLevel, `Auditor reported disallowed tool: ${disallowedTool.name}`, output, capturedRevisionToken);
+            return infra(model, thinkingLevel, `Auditor reported unsupported tool: ${disallowedTool.name}`, output, capturedRevisionToken);
           }
-          const usedReadTool = result.toolCalls.some((call) => (READ_ONLY_TOOLS as readonly string[]).includes(call.name));
-          if (parsed.approved && !usedReadTool) {
-            return stampToken({ approved: false, disapproved: true, output, model, thinkingLevel, error: "Auditor approved without calling any read-only tool; treated as disapproved." }, capturedRevisionToken);
+          const usedAuditTool = result.toolCalls.some((call) => (AUDITOR_TOOLS as readonly string[]).includes(call.name));
+          if (parsed.approved && !usedAuditTool) {
+            return stampToken({ approved: false, disapproved: true, output, model, thinkingLevel, error: "Auditor approved without calling any audit tool; treated as disapproved." }, capturedRevisionToken);
           }
           if (parsed.approved && args.goal.verificationContract?.trim()) {
             const shield = checkRegressionShield(output, args.goal.verificationContract);
@@ -538,12 +539,12 @@ export async function runDetachedGoalCompletionAuditor(args: {
               toolAgeMs,
             });
             if (child && childAlive(child)) child.kill("SIGTERM");
-            return infra(model, thinkingLevel, `Auditor stalled — read-only tool ${lastProgress.currentTool ?? "unknown"} exceeded its ${toolLabel} timeout; the detached job was auto-cancelled.`, "", capturedRevisionToken);
+            return infra(model, thinkingLevel, `Auditor stalled — tool ${lastProgress.currentTool ?? "unknown"} exceeded its ${toolLabel} timeout; the detached job was auto-cancelled.`, "", capturedRevisionToken);
           }
         }
         // v0.34.57: heartbeat-without-progress watchdog (steal-list #7 /
         // bug #1.4). The worker's own stall brake only fires on TOTAL silence
-        // (and skips it while a read-only tool is running); a worker that
+        // (and skips it while an auditor tool is running); a worker that
         // keeps emitting RPC events — auto-retry loops, empty message
         // updates, a hung tool — refreshes `lastActivityAt` forever without
         // delivering any new tool call or report output. That is the 1h50m
