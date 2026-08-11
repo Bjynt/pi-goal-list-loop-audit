@@ -19,7 +19,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { state } from "./goal-state.js";
-import { appendLedger, nowIso, piGlaDir, isForbiddenModel, isStaleApiError, nextHourlyProbeMs, type Goal, type MainModelRecovery, type PendingCompletion } from "./goal-loop-core.js";
+import { appendLedger, claimRecoveryNotice, nowIso, piGlaDir, isForbiddenModel, isStaleApiError, nextHourlyProbeMs, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderDisplayText, type Goal, type MainModelRecovery, type PendingCompletion } from "./goal-loop-core.js";
 import { cancelDetachedGoalCompletionAuditor } from "./goal-loop-auditor-process.js";
 import { classifyMainModelFailure, isContextOverflowError, isLongLivedFailureKind, mainModelAutoRetryUntil, mainModelFailureDelayMs, mainModelRetryDelayMs, MAIN_MODEL_AUTO_RETRY_HORIZON_MS, modelRef, nextUntriedModelRef, normalizeModelRefs, splitModelRef, type MainModelFailure } from "./main-model-recovery.js";
 import { ModelSelector, type ModelScope } from "./model-selector.js";
@@ -265,8 +265,8 @@ export async function recoverFromContextOverflow(ctx: ExtensionContext, error: s
 export function mainModelRecoveryKind(): "goal" | "loop" { return state.loop?.active ? "loop" : "goal"; }
 
 export function mainModelRecoveryReason(failure: MainModelFailure): string {
-  const detail = failure.raw.replace(/\s+/g, " ").trim().slice(0, 180);
-  return `main model ${failure.kind}${detail ? `: ${detail}` : " failure"}`;
+  const presentation = providerErrorPresentation(failure.raw, "main");
+  return `main model ${failure.kind} — ${presentation.display}`;
 }
 
 export function withMainModelRecoveryWindow(recovery: MainModelRecovery, now = Date.now()): MainModelRecovery {
