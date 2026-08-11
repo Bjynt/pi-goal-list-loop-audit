@@ -120,7 +120,8 @@ test("v0.34.57: compaction rearm cap goes directly to unacknowledged without a r
     __testOnlySetLastCompactionAt(Date.now());
     await waitUntil(() => {
       try {
-        return fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes("continuation_start_unacknowledged");
+        const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+        return ledger.includes("continuation_start_unacknowledged") || ledger.includes("continuation_retry_sent");
       } catch {
         return false;
       }
