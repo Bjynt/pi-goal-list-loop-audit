@@ -4,7 +4,7 @@
 // Eager-continuation contract item 32 (Section H): end-to-end "the agent's
 // commit survives the daemon". This is ENV-GATED because it intentionally
 // creates an empty probe commit in a real daemon-managed repository. The
-// caller must provide that repository explicitly; creating a fresh mkdtemp
+// caller must provide that repository explicitly; creating a fresh temporary
 // repository here would make the test vacuous because no daemon watches it.
 //
 // Run the live check explicitly, for example:
