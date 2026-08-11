@@ -96,8 +96,12 @@ test("completion fan-out: collect items fan out + suppress the list-complete noi
   assert.match(SRC, /async function fanOutListAuditFindings\(cwd: string, generation: number\): Promise<void> \{/);
 });
 
-test("fan-out: dedupe, optional auto-accept, and decline keeps findings open", () => {
-  assert.match(SRC, /!queuedText\.includes\(f\.text\.slice\(0, 60\)\)/, "60-char dedupe against queued items");
+test("fan-out: canonical dedupe, cap accounting, optional auto-accept, and decline keeps findings open", () => {
+  assert.match(SRC, /const queuedObjectives = listQueue\(\)/, "dedupe reads queue items individually");
+  assert.match(SRC, /const prefix = `Fix audit finding: \$\{finding\.text\} — Done when:`/, "dedupe matches the canonical finding prefix, not a substring");
+  assert.match(SRC, /const alreadyQueued = open\.filter\(isQueuedFinding\)\.length/, "alreadyQueued counts only true queue matches");
+  assert.match(SRC, /const deferredByCap = eligible\.length - fresh\.length/, "cap-deferred items are tracked separately");
+  assert.match(SRC, /deferredByCap,/, "the ledger records cap-deferred findings");
   assert.match(SRC, /const autoAccepted = beforeConfirm\.hasUI && loadSettings\(cwd\)\.autoAcceptDrafts === true/, "auto-accept setting covers generated audit batches");
   assert.match(SRC, /beforeConfirm\.hasUI && !autoAccepted/);
   assert.match(SRC, /beforeConfirm\.ui\.confirm\(`Queue \$\{fresh\.length\} audit finding\(s\) as list items\?`, preview\)/);

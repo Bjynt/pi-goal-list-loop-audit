@@ -320,6 +320,7 @@ import {
   listAuditCollectTarget,
   parseAuditFindingsForFanout,
   listAuditFanoutItemText,
+  type AuditFindingLine,
   type LoopTickOutcome,
   HELD_ON_RESTORE,
   type LoopState,
@@ -788,13 +789,24 @@ async function fanOutListAuditFindings(cwd: string, generation: number): Promise
     /* no findings file — the audit was clean or never wrote */
   }
   const { open, decisions } = parseAuditFindingsForFanout(md);
-  // Dedupe against the live queue (a re-run must not double-queue a finding
-  // that's already waiting) — match on the finding text's first 60 chars.
-  const queuedText = listQueue().map((i: any) => i.objective).join("\n");
+  // v0.34.129: dedupe against each live queue item by the canonical finding
+  // prefix, not by searching one joined blob for the finding's first 60
+  // chars. A distinct finding can legitimately have that prefix inside a
+  // longer objective; the old substring check silently dropped it.
+  const queuedObjectives = listQueue()
+    .map((i: any) => typeof i?.objective === "string" ? i.objective : "")
+    .filter(Boolean);
+  const isQueuedFinding = (finding: AuditFindingLine): boolean => {
+    const prefix = `Fix audit finding: ${finding.text} — Done when:`;
+    return queuedObjectives.some((objective) => objective.startsWith(prefix));
+  };
+  const alreadyQueued = open.filter(isQueuedFinding).length;
+  const eligible = open.filter((f) => !isQueuedFinding(f));
   // v0.32.0: cap one fan-out — a runaway findings file must not enqueue
-  // hundreds of items on a single Confirm.
-  const fresh = open.filter((f) => !queuedText.includes(f.text.slice(0, 60))).slice(0, 50);
-  const alreadyQueued = open.length - fresh.length;
+  // hundreds of items on a single Confirm. Keep cap-deferred findings
+  // separate from true queue dedupes so the ledger and UI stay truthful.
+  const fresh = eligible.slice(0, 50);
+  const deferredByCap = eligible.length - fresh.length;
   const current = freshCtxForGeneration(generation);
   if (!current) return;
   // v0.33.3: DECIDE findings are RAISED TO THE USER as real questions
@@ -853,11 +865,12 @@ async function fanOutListAuditFindings(cwd: string, generation: number): Promise
   appendLedger(cwd, "list_audit_fanout", {
     queued: n,
     alreadyQueued,
+    deferredByCap,
     decisions: decisions.length,
     autoAccepted,
   });
   afterConfirm.ui.notify(
-    `Queued ${n} finding(s) — the list drains them fix by fix, each with its own audited commit.${alreadyQueued > 0 ? ` (${alreadyQueued} already queued.)` : ""}${autoAccepted ? " Auto-accepted by autoAcceptDrafts." : ""}${decideNote}`,
+    `Queued ${n} finding(s) — the list drains them fix by fix, each with its own audited commit.${alreadyQueued > 0 ? ` (${alreadyQueued} already queued.)` : ""}${deferredByCap > 0 ? ` ${deferredByCap} more held by the 50-item cap; rerun /list audit to queue them.` : ""}${autoAccepted ? " Auto-accepted by autoAcceptDrafts." : ""}${decideNote}`,
     "info",
   );
 }
