@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+### v0.34.129 — truthful list-audit fan-out dedupe and cap accounting
+  The list-audit collector previously joined every queued objective into one
+  string and searched for each finding's first 60 characters. A distinct
+  finding whose prefix appeared inside another objective was silently dropped.
+  Fan-out now matches each queue item against the canonical `Fix audit finding:
+  <finding> — Done when:` prefix, so only the same finding is deduped. The
+  50-item cap is also accounted separately: `alreadyQueued` counts true queue
+  matches, while `deferredByCap` counts eligible findings held for a later
+  `/list audit` run and is shown in the ledger and notification. Regression
+  coverage exercises both the substring collision and 51-item cap cases.
+
 ### v0.34.128 — already_shipped guard: version-less claims route to the normal audit
   Field evidence 2026-08-11 (dracon-platform): a session restart restored the
   OLD conversation; the continuation carried a NEW goal whose fix was genuinely

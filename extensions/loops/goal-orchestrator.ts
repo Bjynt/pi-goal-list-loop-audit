@@ -798,7 +798,7 @@ async function fanOutListAuditFindings(cwd: string, generation: number): Promise
     .filter(Boolean);
   const isQueuedFinding = (finding: AuditFindingLine): boolean => {
     const prefix = `Fix audit finding: ${finding.text} — Done when:`;
-    return queuedObjectives.some((objective) => objective.startsWith(prefix));
+    return queuedObjectives.some((objective: string) => objective.startsWith(prefix));
   };
   const alreadyQueued = open.filter(isQueuedFinding).length;
   const eligible = open.filter((f) => !isQueuedFinding(f));
