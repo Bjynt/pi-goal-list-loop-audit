@@ -627,7 +627,9 @@ function registerAgentTools(pi: any): void {
       const settings = loadSettings(ctx.cwd);
       const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(ctx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
       if (modelError) {
-        ctx.ui.notify(`Auditor model issue: ${modelError}`, "warning");
+        const modelFailureCopy = providerErrorPresentation(modelError, "completion");
+        ctx.ui.notify(`Auditor model issue: ${modelFailureCopy.display}. ${modelFailureCopy.action}`, "warning");
+        appendLedger(ctx.cwd, "auditor_model_issue", { error: modelFailureCopy.diagnostic, display: modelFailureCopy.display });
       }
       const auditorCandidates: AuditorModelCandidate[] = [{ model: auditorModel, via: via ?? "unset" }, ...(fallbackModels ?? [])];
       // v0.34.90: no redundant chat notify here — pi's own complete_goal

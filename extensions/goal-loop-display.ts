@@ -1173,7 +1173,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       const [lifecycle, transition] = pausedLifecycleLines(g, state, extras, now);
       lines.push(`├─ ${paint(theme, "dim", lifecycle)}`);
       lines.push(`│  ${paint(theme, "dim", transition)}`);
-      lines.push(`└─ ${paint(theme, "warning", g.pauseSuggestedAction ?? `The claim is safe; ${isList ? "/list resume" : "/goal resume"} starts exactly one fresh auditor.`)}`);
+      lines.push(`└─ ${paint(theme, "warning", sanitizeProviderDisplayText(g.pauseSuggestedAction ?? `The claim is safe; ${isList ? "/list resume" : "/goal resume"} starts exactly one fresh auditor.`))}`);
       return lines;
     }
     const [lifecycle, transition] = pausedLifecycleLines(g, state, extras, now);
@@ -1259,7 +1259,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       : `awaiting first turn — resumes exactly here`;
     if (g.pauseSuggestedAction) {
       lines.push(`├─ ${paint(theme, "dim", truncate(savedLine, budget))}`);
-      const wrapped = wrap(g.pauseSuggestedAction, budget, 3);
+      const wrapped = wrap(sanitizeProviderDisplayText(g.pauseSuggestedAction), budget, 3);
       // v0.28.22: for ACTION NEEDED pauses the action is the point — pop it.
       const actionPaint = kind === "error" ? "warning" : "dim";
       wrapped.forEach((w, i) => lines.push(`${i === wrapped.length - 1 ? "└─" : "│ "} ${paint(theme, actionPaint, w)}`));
@@ -1284,7 +1284,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       });
     }
     if (g.pauseSuggestedAction) {
-      wrap(g.pauseSuggestedAction, budget, 2).forEach((w, i, all) => {
+      wrap(sanitizeProviderDisplayText(g.pauseSuggestedAction), budget, 2).forEach((w, i, all) => {
         lines.push(`${i === all.length - 1 ? "└─" : "│ "} ${paint(theme, "warning", w)}`);
       });
     } else {

@@ -23,9 +23,41 @@ import {
   scheduleQuotaRetry,
   cancelQuotaRetry,
   isQuotaRetryPending,
+  providerErrorFingerprint,
+  providerErrorPresentation,
+  sanitizeProviderDisplayText,
+  resetQuotaRetryNoticeDedup,
 } from "../extensions/quota-retry.ts";
 
 const fakeCtx = { ui: { notify: () => {} } } as any;
+
+test("provider-wall copy separates safe display/action text from durable diagnostics", () => {
+  const raw = '429 {"error":{"message":"Token Plan rate limit reached: upgrade your Token Plan"},"request_id":"abc123"}';
+  const copy = providerErrorPresentation(raw, "completion");
+  assert.match(copy.diagnostic, /Token Plan/);
+  assert.doesNotMatch(`${copy.display} ${copy.action}`, /429|Token Plan|request_id|abc123/);
+  assert.doesNotMatch(sanitizeProviderDisplayText(`auditor retry: ${raw}`), /429|Token Plan|request_id/);
+  const variant = '429 {"error":{"message":"Token Plan rate limit reached: upgrade your Token Plan"},"retry_after":30,"request_id":"abc789"}';
+  assert.equal(providerErrorFingerprint(raw), providerErrorFingerprint(variant), "changing counters/hints/ids stay in one logical episode");
+});
+
+test("scheduleQuotaRetry deduplicates one notice key within an episode", () => {
+  resetQuotaRetryNoticeDedup();
+  const notifies: string[] = [];
+  const ctx = { ui: { notify: (message: string) => notifies.push(message) } } as any;
+  scheduleQuotaRetry(ctx, 3600, "429 Token Plan limit reached", () => {}, "Auditor retry", {
+    episodeKey: "episode-1",
+    noticeKey: "episode-1:retry",
+  });
+  cancelQuotaRetry();
+  scheduleQuotaRetry(ctx, 3600, "429 Token Plan limit reached; retry_after=30", () => {}, "Auditor retry", {
+    episodeKey: "episode-1",
+    noticeKey: "episode-1:retry",
+  });
+  assert.equal(notifies.length, 1);
+  cancelQuotaRetry();
+  resetQuotaRetryNoticeDedup();
+});
 
 test("parseQuotaError: 429 with Retry-After: 5 → retryAfterSec 5 (item 12 test 1)", () => {
   const q = parseQuotaError("Error: 429 Too Many Requests\nRetry-After: 5");

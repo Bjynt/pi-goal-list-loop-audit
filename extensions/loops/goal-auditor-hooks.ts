@@ -724,7 +724,11 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       : "Auditor quota window elapsed — starting a detached retry with your stored completion claim (no agent turn needed).", "info");
   const settings = loadSettings(liveCtx.cwd);
   const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(liveCtx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
-  if (modelError) liveCtx.ui.notify(`Auditor model issue: ${modelError}`, "warning");
+  if (modelError) {
+    const modelFailureCopy = providerErrorPresentation(modelError, "completion");
+    liveCtx.ui.notify(`Auditor model issue: ${modelFailureCopy.display}. ${modelFailureCopy.action}`, "warning");
+    appendLedger(liveCtx.cwd, "auditor_model_issue", { error: modelFailureCopy.diagnostic, display: modelFailureCopy.display });
+  }
   const auditorCandidates: AuditorModelCandidate[] = [{ model: auditorModel, via: via ?? "unset" }, ...(fallbackModels ?? [])];
   completionAuditInFlight = true;
   completionAuditGeneration = generation;

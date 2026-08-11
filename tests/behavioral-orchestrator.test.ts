@@ -80,6 +80,25 @@ function ledgerEvent(cwd: string, type: string): { type: string; value: Record<s
   return event!;
 }
 
+function writeFakeAuditorError(cwd: string, error: string, delayMs = 0): string {
+  const script = path.join(cwd, "fake-auditor-error-pi.mjs");
+  fs.writeFileSync(script, `#!/usr/bin/env node
+let input = "";
+let handled = false;
+const error = ${JSON.stringify(error)};
+process.stdin.on("data", async (chunk) => {
+  input += chunk;
+  if (handled || !input.includes("\\n")) return;
+  handled = true;
+  await new Promise((resolve) => setTimeout(resolve, ${delayMs}));
+  process.stdout.write(JSON.stringify({ type: "error", errorMessage: error }) + "\\n");
+  process.stdout.write(JSON.stringify({ type: "agent_settled" }) + "\\n");
+});
+`);
+  fs.chmodSync(script, 0o700);
+  return script;
+}
+
 function writeFakeAuditor(cwd: string, verdict: "approved" | "disapproved", delayMs = 0, reportOverride?: string): string {
   const script = path.join(cwd, "fake-auditor-pi.mjs");
   fs.writeFileSync(script, `#!/usr/bin/env node
