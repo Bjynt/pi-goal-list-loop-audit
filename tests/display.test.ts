@@ -1507,6 +1507,35 @@ test("v0.34.64: 24h horizon holds render as a paused card with the suggested act
   assert.match(w.join("\\n"), /\/goal resume/);
 });
 
+test("main-model recovery manual hold does not claim a non-quota block", () => {
+  const g = goalOf({
+    status: "paused",
+    pauseKind: "blocked",
+    pauseReason: "main model recovery — automatic probes stopped (the recovery horizon was reached) · main model quota: 429",
+    pauseSuggestedAction: "Check the provider or switch /model, then /goal resume.",
+  });
+  const state = {
+    goal: g,
+    list: [],
+    loop: null,
+    mainModelRecovery: {
+      primary: "minimax/MiniMax-M3",
+      attempted: ["minimax/MiniMax-M3"],
+      attempts: 3,
+      reason: "main model quota: 429",
+      manualResumeRequired: true,
+      kind: "goal" as const,
+    },
+  };
+  const widget = buildWidgetLines(state as never, null, NOW)!;
+  const widgetText = widget.join("\\n");
+  assert.match(widgetText, /manual recovery hold — automatic probes stopped/);
+  assert.doesNotMatch(widgetText, /blocked — waiting on a non-quota condition/);
+  const status = buildStatusText(state as never, null, NOW)!;
+  assert.match(status, /manual recovery hold/);
+  assert.doesNotMatch(status, /action needed/);
+});
+
 test("v0.34.51: a passed quota resumeAt says resuming…, never the old 'retrying now'", () => {
   const g = goalOf({
     status: "paused",

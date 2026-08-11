@@ -757,15 +757,18 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       // passed resumeAt says "resuming…" instead of lying about the past.
       // v0.34.64: the QUOTA WALL amber badge is gone. Every retry-class
       // pause renders the same ⏳ auto-retrying… line + countdown; blocked
-      // pauses without a recovery timer render as ⏸ action needed (the only
-      // honest non-quota "manual" state — agent-initiated blocks, decision
-      // pauses don't reach here).
+      // pauses without a recovery timer render as ⏸ action needed; a
+      // main-model recovery manual hold names its recovery owner instead of
+      // claiming it is a non-quota agent block.
       const rms = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) - now : Number.NaN;
       const when = Number.isFinite(rms)
         ? rms <= 0 ? " · resuming…" : ` · auto-retry in ${fmtElapsed(rms)}`
         : "";
       if (kind === "blocked") {
-        return `glla: ${paint(theme, "warning", `⏸ action needed${when}`)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
+        const label = state.mainModelRecovery?.manualResumeRequired === true
+          ? "⏸ manual recovery hold"
+          : `⏸ action needed${when}`;
+        return `glla: ${paint(theme, "warning", label)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
       }
       // v0.34.102 (field: dracon-platform 2026-08-08 091828 "pi did not
       // start a turn"): a wait-pause parked on mainModelRecovery must name
@@ -1212,6 +1215,8 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     else if (Number.isFinite(retryMs)) {
       const when = retryMs <= 0 ? "now" : `next probe in ${fmtElapsed(retryMs)}`;
       lines.push(`├─ ${paint(theme, "dim", `auto-retrying · ${when}`)}`);
+    } else if (kind === "blocked" && state.mainModelRecovery?.manualResumeRequired === true) {
+      lines.push(`├─ ${paint(theme, "warning", "manual recovery hold — automatic probes stopped")}`);
     } else if (kind === "blocked") {
       lines.push(`├─ ${paint(theme, "warning", "blocked — waiting on a non-quota condition")}`);
     } else if (kind === "wait") {
