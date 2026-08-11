@@ -204,7 +204,7 @@ test("effective resolution names the real session model for inherit-parent", () 
   assert.equal(effective?.valueText, "provider/session-model", "the compact row keeps the real model instead of generic session model");
 
   const ui = fs.readFileSync("extensions/loops/goal-settings-ui.ts", "utf-8");
-  assert.match(ui, /buildSettingsRows\\(settings, prov, \\{ sessionModel \\}\\)/, "interactive settings passes its session model to the row builder");
+  assert.match(ui, /buildSettingsRows\(settings, prov, \{ sessionModel \}\)/, "interactive settings passes its session model to the row builder");
 });
 
 test("provenance flows into sourceText (project/global/default tags)", () => {
