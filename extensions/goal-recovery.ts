@@ -781,6 +781,7 @@ export function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
   const auditRetryStarted = recovery.kind === "goal"
     && state.goal?.status === "paused"
     && !!state.goal.pendingCompletion
+    && typeof maybeAutoRetryParkedCompletionAudit === "function"
     && maybeAutoRetryParkedCompletionAudit("main-model-recovery");
   // v0.34.124: stamp the resume so the continuation-start watchdog grants
   // the post-recovery grace — pi's model chain is still warming and the

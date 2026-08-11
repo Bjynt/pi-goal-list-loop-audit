@@ -1887,7 +1887,7 @@ test("v0.35.x: a successful main-model recovery gives a parked audit its one aut
   try {
     const ctx = await freshSession(cwd, "startup");
     assert.equal((readState(cwd).goal as { status?: string }).status, "paused", "cold startup keeps the parked claim held");
-    mainModelRecoverySucceeded(ctx);
+    mainModelRecoverySucceeded(ctx as unknown as Parameters<typeof mainModelRecoverySucceeded>[0]);
     await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "audit_recovery_started"));
     const started = readState(cwd).goal as {
       status?: string;
