@@ -8,6 +8,7 @@ import { test } from "node:test";
 
 import {
   newDetachedAuditJobAttemptId,
+  READ_ONLY_TOOLS,
   requestHash,
   runDetachedGoalCompletionAuditor,
   stableJson,
@@ -472,6 +473,86 @@ test("detached worker treats silent provider time as infrastructure, not a verdi
   }
 });
 
+test("parent tool watchdog cancels a tool with no follow-up RPC events", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-tool-timeout-parent-"));
+  const stuckWorker = path.join(dir, "stuck-worker.mjs");
+  const stalled: AuditorStalledInfo[] = [];
+  await writeFile(stuckWorker, `
+import { readFile, writeFile } from "node:fs/promises";
+const dir = process.argv[process.argv.indexOf("--job-dir") + 1];
+const request = JSON.parse(await readFile(dir + "/request.json", "utf8"));
+await writeFile(dir + "/progress.json", JSON.stringify({
+  protocolVersion: 1, attemptId: request.attemptId, requestHash: request.requestHash,
+  phase: "tool_executing", elapsedMs: 1, lastActivityAt: Date.now() - 10_000,
+  recentOutput: [], toolCalls: [], currentTool: "read", currentToolArgs: "{}",
+  currentToolStartedAt: Date.now() - 10_000,
+}));
+setInterval(() => {}, 1_000);
+`);
+  try {
+    const result = await runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "high",
+      onStalled: (info) => stalled.push(info),
+      runtime: {
+        workerPath: stuckWorker,
+        attemptId: () => "attempt-parent-tool-timeout",
+        pollIntervalMs: 10,
+        wallTimeoutMs: 2_000,
+        toolTimeoutMs: 100,
+      },
+    });
+    assert.equal(result.approved, false);
+    assert.equal(result.disapproved, false);
+    assert.match(result.error ?? "", /read-only tool read exceeded its 1s timeout/);
+    assert.equal(stalled.length, 1);
+    assert.equal(stalled[0]?.reason, "tool-timeout");
+    assert.equal(stalled[0]?.toolName, "read");
+    assert.ok((stalled[0]?.toolAgeMs ?? 0) >= 100);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("worker aborts an unexpected tool event instead of treating it as read-only", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-disallowed-tool-"));
+  const fakePi = path.join(dir, "disallowed-pi.mjs");
+  const worker = path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs");
+  await writeFile(fakePi, `#!/usr/bin/env node
+let handled = false;
+process.stdin.on("data", (chunk) => {
+  if (handled || !String(chunk).includes("\\n")) return;
+  handled = true;
+  process.stdout.write(JSON.stringify({ type: "tool_execution_start", toolCallId: "bad-1", toolName: "bash", args: { command: "touch injected" } }) + "\\n");
+  setInterval(() => {}, 1_000);
+});
+`);
+  await chmod(fakePi, 0o700);
+  try {
+    const result = await runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "high",
+      runtime: {
+        workerPath: worker,
+        env: { GLLA_PI_BINARY: fakePi },
+        attemptId: () => "attempt-disallowed-tool",
+        pollIntervalMs: 10,
+        wallTimeoutMs: 2_000,
+      },
+    });
+    assert.equal(result.approved, false);
+    assert.equal(result.disapproved, false);
+    assert.match(result.error ?? "", /attempted disallowed tool: bash/);
+    assert.deepEqual([...READ_ONLY_TOOLS], ["read", "grep", "find", "ls"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("worker launches pi with the exact read-only RPC contract and one LF JSONL prompt", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-worker-"));
   const piLog = path.join(dir, "pi-log.json");
@@ -537,7 +618,7 @@ process.stdin.on("end", () => { process.exitCode = 41; });
     assert.equal(result.toolCalls[0].name, "read");
     assert.deepEqual(log.args, [
       "--mode", "rpc", "--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates",
-      "--no-themes", "--no-context-files", "--approve", "--tools", "read,grep,find,ls,bash",
+      "--no-themes", "--no-context-files", "--no-approve", "--tools", "read,grep,find,ls",
       "--model", "test/provider-model", "--thinking", "medium",
     ]);
     assert.equal(log.input.split("\n").length, 2);
