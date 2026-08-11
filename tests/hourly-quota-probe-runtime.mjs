@@ -111,10 +111,12 @@ assert.match(ledger(), /"main_model_probe_failed"/, "the injected provider failu
 assert.notEqual(flags.hourlyProbeTimer, null, "cleanup leaves a new hourly timer");
 const pending = scheduled.filter((timer) => !timer.fired);
 assert.equal(pending.length, 2, "normal retry and later hourly slot are both pending");
-const normalRetry = pending[0];
-const secondHourly = pending[1];
-assert.ok(secondHourly.delayMs > normalRetry.delayMs, "the later :00:30 slot is distinct from normal retry");
+const secondHourly = pending.find((timer) => timer.native === flags.hourlyProbeTimer);
+const normalRetry = pending.find((timer) => timer !== secondHourly);
+assert.ok(secondHourly, "cleanup leaves a distinct hourly timer among the pending schedules");
+assert.ok(normalRetry, "the normal recovery retry remains separately scheduled");
 assert.notEqual(secondHourly.native, firstHourly.native, "cleanup did not retain the consumed timer");
+assert.notEqual(secondHourly.native, normalRetry.native, "the hourly and normal retry handles are distinct");
 assert.equal(flags.hourlyProbeTimer, secondHourly.native, "the re-armed timer is the hourly handle");
 
 run(secondHourly);
