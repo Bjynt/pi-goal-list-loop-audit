@@ -630,14 +630,14 @@ async function promptModelRefs(
   initialRefs: string[],
   opts: { excludeRefs?: string[] } = {},
 ): Promise<string[] | undefined> {
-  const exclude = new Set(opts.excludeRefs ?? []);
+  const exclude = opts.excludeRefs ?? [];
   if (typeof (ctx.ui as { custom?: unknown }).custom !== "function" || !ctx.modelRegistry) {
     const v = await ctx.ui.input(title, initialRefs.length ? initialRefs.join(",") : "provider/model-a,provider/model-b");
     if (v === undefined) return undefined;
     // Enforce the same mutual exclusion in headless/free-form mode as in
     // the TUI picker; a typed forbidden ref must not sneak into a backup
     // chain (and a typed backup must not be added to forbiddenModels).
-    return normalizeModelRefs(v).filter((ref) => !exclude.has(ref));
+    return normalizeModelRefs(v).filter((ref) => !isForbiddenModel(ref, exclude));
   }
   const sessionModel = ctx.model as any;
   const sessionLabel = sessionModel ? `${sessionModel.provider}/${sessionModel.id}` : "pi session model";

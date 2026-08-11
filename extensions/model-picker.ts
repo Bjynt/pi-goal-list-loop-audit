@@ -59,9 +59,18 @@ export function buildModelPickItems(
     includeManualRow?: boolean;
   } = {},
 ): ModelPickItem[] {
-  const excluded = new Set(opts.excludeRefs ?? []);
+  // `excludeRefs` contains either canonical refs or policy entries such as
+  // `sonnet`; use the same case-insensitive substring semantics as
+  // `isForbiddenModel` so a raw setting hides every matching provider/id.
+  const excluded = (opts.excludeRefs ?? [])
+    .filter((ref): ref is string => typeof ref === "string")
+    .map((ref) => ref.trim().toLowerCase())
+    .filter(Boolean);
   const sorted = models
-    .filter((m) => !excluded.has(`${m.provider}/${m.id}`))
+    .filter((m) => {
+      const ref = `${m.provider}/${m.id}`.toLowerCase();
+      return !excluded.some((entry) => ref.includes(entry));
+    })
     .sort((a, b) =>
       a.provider === b.provider ? a.id.localeCompare(b.id) : a.provider.localeCompare(b.provider),
     );
