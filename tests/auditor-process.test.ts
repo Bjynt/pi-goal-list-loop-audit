@@ -77,6 +77,19 @@ async function run(dir: string, env: NodeJS.ProcessEnv = {}) {
   return runWithAttempt(dir, "attempt-test", env);
 }
 
+test("fake worker setup stays in per-test temp storage", async () => {
+  const dir = await setup();
+  const worker = workerPathFor(dir);
+  try {
+    assert.equal(path.dirname(worker), dir);
+    assert.ok(worker.startsWith(`${tmpdir()}${path.sep}`), `worker escaped temp storage: ${worker}`);
+    assert.ok(existsSync(worker), "the temporary worker was created");
+  } finally {
+    await cleanup(dir);
+  }
+  assert.equal(existsSync(worker), false, "temporary worker cleanup removes the test artifact");
+});
+
 test("detached parent accepts an identity-checked result and applies regression_shield", async () => {
   const dir = await setup();
   try {
