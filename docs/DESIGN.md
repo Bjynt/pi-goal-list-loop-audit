@@ -137,10 +137,12 @@ architectural decisions that changed the SHAPE of the system:
   persists the claim and job request, then returns immediately. A detached
   extension-less worker launches `pi --mode rpc` with only `read`, `grep`,
   `find`, `ls`, and `bash`; it never receives the parent `ExtensionContext`,
-  never loads glla extensions or project context files, and never writes goal
-  state. The worker has independent per-tool and wall-clock bounds. This
-  removes the previous nested `AgentSession` from the main pi process and
-  prevents a provider stall in the auditor from occupying the executor's turn.
+  never loads glla extensions or project context files. In current power mode,
+  bash is not an OS sandbox: it can write repository or goal-state files, so
+  the worker's isolation is process/API isolation rather than immutability. The
+  worker has independent per-tool and wall-clock bounds. This removes the
+  previous nested `AgentSession` from the main pi process and prevents a
+  provider stall in the auditor from occupying the executor's turn.
 - **Durable job protocol**: request, progress, lock, and result files live
   under `.pi-glla/audit-jobs/<attemptId>/`. Requests and results are hashed and
   atomically written. The parent validates attempt/request identity, verdict
