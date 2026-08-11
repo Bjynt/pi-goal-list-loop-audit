@@ -21,10 +21,11 @@
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const GOAL_SRC = readGoalRuntimeSource();
@@ -32,18 +33,20 @@ const CORE_SRC = readFileSync(join(here, "..", "extensions", "goal-loop-core.ts"
 const SETTINGS_SRC = readFileSync(join(here, "..", "extensions", "goal-settings.ts"), "utf8");
 const RECOVERY_SRC = readFileSync(join(here, "..", "extensions", "goal-recovery.ts"), "utf8"); // decomposition step 3 (v0.34.111)
 const RUNTIME_SCRIPT = join(here, "hourly-quota-probe-runtime.mjs");
+const execFileAsync = promisify(execFile);
 
-function runHourlyRuntime(): string {
+async function runHourlyRuntime(): Promise<string> {
   const sandbox = tmpCwd();
   const settingsPath = join(sandbox, "global-settings.json");
   writeFileSync(settingsPath, JSON.stringify({ hourlyQuotaProbe: true }));
-  return execFileSync(process.execPath, [RUNTIME_SCRIPT], {
+  const result = await execFileAsync(process.execPath, [RUNTIME_SCRIPT], {
     cwd: join(here, ".."),
     env: { ...process.env, GLLA_GLOBAL_SETTINGS_PATH: settingsPath },
     encoding: "utf8",
     timeout: 30_000,
-    stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: 1_000_000,
   });
+  return result.stdout;
 }
 
 import {
@@ -146,8 +149,8 @@ test("v0.34.131: a failed hourly probe re-arms only after the async recovery set
   assert.match(fire, /generation !== flags\.sessionGeneration/, "stale generations cannot re-arm a timer");
 });
 
-test("v0.34.132: executable runtime regression covers failure re-arm, opt-out, and generation fencing", () => {
-  const output = runHourlyRuntime();
+test("v0.34.132: executable runtime regression covers failure re-arm, opt-out, and generation fencing", async () => {
+  const output = await runHourlyRuntime();
   assert.match(output, /hourly-runtime-ok/, "the isolated runtime harness completed every hourly-probe assertion");
 });
 
