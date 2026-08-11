@@ -262,6 +262,13 @@ async function ensureRegularFile(file: string): Promise<void> {
   if (!stat.isFile()) throw new Error(`auditor protocol path is not a regular file: ${file}`);
 }
 
+/** Each attempt directory is parent-owned scratch space, not an audit
+ * archive. Remove it after the parent has consumed (or abandoned) the
+ * attempt, while leaving the shared jobs root available for concurrent jobs. */
+async function removeAuditJobDirectory(jobDir: string): Promise<void> {
+  await fs.rm(jobDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 10 }).catch(() => {});
+}
+
 async function readJson<T>(file: string): Promise<T> {
   await ensureRegularFile(file);
   const text = await fs.readFile(file, "utf8");
@@ -395,6 +402,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
   const startedAt = now();
   const wallDeadlineAt = startedAt + wallTimeoutMs;
   let lockHeld = false;
+  let jobDirCreated = false;
   let child: ChildProcess | undefined;
   let lastProgressSerialized = "";
   // v0.34.57: heartbeat-without-progress watchdog state. `lastProgressAt` is
@@ -408,6 +416,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
   try {
     await fs.mkdir(jobsRoot, { recursive: true, mode: 0o700 });
     await fs.mkdir(jobDir, { mode: 0o700 });
+    jobDirCreated = true;
     await acquireLock(lockPath, attemptId);
     lockHeld = true;
 
@@ -593,6 +602,10 @@ export async function runDetachedGoalCompletionAuditor(args: {
   } finally {
     activeChildren.delete(childKey(args.cwd, attemptId));
     if (lockHeld) await fs.unlink(lockPath).catch(() => {});
+    // request/progress/result are transport scratch files. Do not retain one
+    // directory per retry, and never remove a colliding directory we did not
+    // successfully create and therefore do not own.
+    if (jobDirCreated) await removeAuditJobDirectory(jobDir);
   }
 }
 

@@ -87,6 +87,7 @@ test("detached parent accepts an identity-checked result and applies regression_
     assert.equal(result.disapproved, false);
     assert.equal(result.regressionShieldPassed, true);
     assert.equal(result.model, "test/provider-model");
+    assert.equal(existsSync(path.join(dir, ".pi-glla", "audit-jobs", "attempt-test")), false, "completed auditor job scratch is removed");
   } finally {
     await cleanup(dir);
   }
@@ -192,6 +193,7 @@ setInterval(async () => {
     assert.ok(lastReport, "the demote-to-quiet snapshot was emitted");
     assert.equal(lastReport.lastActivityAt, undefined, "the demote snapshot carries no live heartbeat, so the HUD cannot render LIVE");
     assert.ok(existsSync(sigtermMarker), "the wedged worker was SIGTERMed — the detached job was cancelled");
+    assert.equal(existsSync(path.join(dir, ".pi-glla", "audit-jobs", "attempt-heartbeat-stall")), false, "cancelled auditor job scratch is removed");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -379,7 +381,7 @@ test("a verdict marker inside a think block is not accepted", async () => {
   }
 });
 
-test("detached retry identities create unique job directories with the logical claim as prefix", async () => {
+test("detached retry identities remain unique while completed job scratch is removed", async () => {
   const dir = await setup();
   const logicalAttemptId = "audit-logical-claim";
   const firstAttemptId = newDetachedAuditJobAttemptId(logicalAttemptId);
@@ -391,11 +393,7 @@ test("detached retry identities create unique job directories with the logical c
     await runWithAttempt(dir, firstAttemptId, { FAKE_AUDIT_OUTPUT: "<disapproved/>" });
     await runWithAttempt(dir, secondAttemptId, { FAKE_AUDIT_OUTPUT: "<disapproved/>" });
     const jobs = (await readdir(path.join(dir, ".pi-glla", "audit-jobs"))).sort();
-    assert.deepEqual(jobs, [firstAttemptId, secondAttemptId].sort(), "retries do not collide on the old job directory");
-    const firstRequest = JSON.parse(await readFile(path.join(dir, ".pi-glla", "audit-jobs", firstAttemptId, "request.json"), "utf8")) as { attemptId: string };
-    const secondRequest = JSON.parse(await readFile(path.join(dir, ".pi-glla", "audit-jobs", secondAttemptId, "request.json"), "utf8")) as { attemptId: string };
-    assert.equal(firstRequest.attemptId, firstAttemptId);
-    assert.equal(secondRequest.attemptId, secondAttemptId);
+    assert.deepEqual(jobs, [], "completed retries do not leave durable attempt directories");
   } finally {
     await cleanup(dir);
   }
@@ -465,6 +463,7 @@ setTimeout(() => process.exit(17), 25);
 test("detached worker treats silent provider time as infrastructure, not a verdict", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-stall-"));
   const fakePi = path.join(dir, "silent-pi.mjs");
+  const reports: AuditorProgress[] = [];
   await writeFile(fakePi, "#!/usr/bin/env node\\nprocess.stdin.resume(); setInterval(() => {}, 1000);\\n");
   await chmod(fakePi, 0o700);
   try {
@@ -473,6 +472,7 @@ test("detached worker treats silent provider time as infrastructure, not a verdi
       goal,
       model: "test/provider-model",
       thinkingLevel: "high",
+      onProgress: (progress) => reports.push(progress),
       runtime: {
         workerPath: path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs"),
         env: { GLLA_PI_BINARY: fakePi, GLLA_AUDITOR_STALL_MS: "60" },
@@ -486,8 +486,9 @@ test("detached worker treats silent provider time as infrastructure, not a verdi
     assert.match(result.error ?? "", /Auditor stalled/);
     assert.match(result.error ?? "", /for 1s/);
     assert.doesNotMatch(result.error ?? "", /for 10m/);
-    const progress = JSON.parse(await readFile(path.join(dir, ".pi-glla", "audit-jobs", "attempt-silent", "progress.json"), "utf8")) as Record<string, unknown>;
-    assert.equal("lastActivityAt" in progress, false, "startup silence is not rendered as worker activity");
+    assert.ok(reports.length > 0, "startup progress reaches the parent");
+    assert.equal(reports.some((progress) => progress.lastActivityAt !== undefined), false, "startup silence is not rendered as worker activity");
+    assert.equal(existsSync(path.join(dir, ".pi-glla", "audit-jobs", "attempt-silent")), false, "stalled auditor job scratch is removed");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
