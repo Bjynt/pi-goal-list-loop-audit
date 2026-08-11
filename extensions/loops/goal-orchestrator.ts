@@ -179,6 +179,7 @@ import {
   quotaRetryDelaySeconds,
   scheduleQuotaRetry,
   cancelQuotaRetry,
+  type QuotaRetryScheduleOptions,
 } from "../quota-retry.js";
 import {
   classifyMainModelFailure,
@@ -511,6 +512,7 @@ function scheduleQuotaRetryForSession(
   reason: string,
   fire: (ctx: ExtensionContext) => void | Promise<void>,
   label?: string,
+  options?: QuotaRetryScheduleOptions,
 ): void {
   const generation = sessionGeneration;
   scheduleQuotaRetry(ctx, retryAfterSec, reason, () => {
@@ -523,7 +525,7 @@ function scheduleQuotaRetryForSession(
     } catch (err) {
       if (isStaleApiError(err)) extensionApiStale = true;
     }
-  }, label);
+  }, label, options);
 }
 
 // clearMainModelRecoveryTimer / mainModelRecoveryActive / mainModelRecoveryKind /
