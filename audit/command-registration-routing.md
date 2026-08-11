@@ -1,6 +1,6 @@
 # Command registration routing (auto-recorded by tests/command-registration-collisions.test.ts)
 
-- Recorded: 2026-08-11T12:39:01.402Z
+- Recorded: 2026-08-11T12:41:02.683Z
 - Agent dir: /home/dracon/.pi/agent
 - Loaded extensions scanned: 16
 - Winner rule (pi resolveRegisteredCommands): a SINGLY-registered name keeps its bare command (that registrant wins). A DUPLICATED name suffixes EVERY registration — `name:1`, `name:2`, … — the bare command becomes owned by nobody and dispatch stops routing it. Within one extension, re-registration is last-wins (Map).
