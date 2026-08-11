@@ -10,7 +10,7 @@ import {
   hasQueuedObjectiveRepair,
 } from "../extensions/faulty-objective-recovery.js";
 import type { Goal } from "../extensions/goal-loop-core.js";
-import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
+import activate, { __testOnlyLoadState, __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
 import { guardGoalBeforeContinuation, sendContinuation } from "../extensions/goal-continuation.js";
 import { readState } from "../extensions/goal-loop-core.js";
 import { MockPi, makeMockCtx, seedGoal, seedState, tick, tmpCwd } from "./harness/mock-pi.js";
@@ -285,6 +285,7 @@ test("an active goal with an interrupted terminal stopReason is not dispatched",
   const cwd = tmpCwd();
   const g = seedGoal({ status: "active", stopReason: "already_shipped:v0.34.74" });
   seedState(cwd, { goal: g, list: [] });
+  __testOnlyLoadState(cwd);
   const pi = new MockPi();
   activate(pi.api);
   const ctx = makeMockCtx(cwd);

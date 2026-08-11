@@ -419,7 +419,27 @@ test("v0.35.x: already-shipped completion honors an existing archive fence", asy
 // tree: a true claim is approved into a truthful complete; a false claim
 // is disapproved and the finding stays queued. Only version-bearing
 // claims keep the v0.34.96 abort (see the two tests above).
-test("v0.34.128: a version-less 'no new work shipped' claim routes to the NORMAL audit and completes on approval", async () => {
+test("v0.35.x: archiveCurrentGoal preserves a same-id archive on cancel", async () => {
+  const cwd = tmpCwd();
+  const goal = seedGoal({ status: "active" });
+  const archivePath = path.join(cwd, ".pi-glla", "archive", `${goal.id}.md`);
+  fs.mkdirSync(path.dirname(archivePath), { recursive: true });
+  const sentinel = "# Existing archive wins\\n";
+  fs.writeFileSync(archivePath, sentinel);
+  seedState(cwd, { goal });
+  __testOnlyLoadState(cwd);
+  const pi = new MockPi();
+  activate(pi.api);
+  __testOnlyRegisterAgentTools(pi.api);
+  await pi.command("goal", "cancel", ownerCtx(cwd));
+  assert.equal(fs.readFileSync(archivePath, "utf8"), sentinel, "cancel cannot replace the existing archive");
+  assert.equal(readState(cwd).goal?.status, "active", "the live goal remains available after a fenced archive failure");
+  assert.match(readLedger(cwd).map((entry) => entry.type).join("\\n"), /faulty_objective_archive_fence/);
+  assert.equal(readLedger(cwd).filter((entry) => entry.type === "goal_archived").length, 0);
+});
+
+// v0.34.128: a version-less 'no new work shipped' claim routes to the NORMAL audit and completes on approval
+ test("v0.34.128: a version-less 'no new work shipped' claim routes to the NORMAL audit and completes on approval", async () => {
   const cwd = tmpCwd();
   seedState(cwd, { goal: seedGoal({ status: "active" }) });
   __testOnlyLoadState(cwd);
