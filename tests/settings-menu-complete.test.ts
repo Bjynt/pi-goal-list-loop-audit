@@ -219,21 +219,46 @@ test("haiku mention is dropped from any valueText / description / sourceText", (
 /*  Headless fallback contract                                            */
 /* --------------------------------------------------------------------- */
 
-test("the headless `/glla` fallback still lists stall brakes", () => {
+test("headless `/glla` fallback keeps stall brakes and the v0.34.127 sync list", () => {
   const src = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2: cmdSettings moved
   // v0.28.0: the headless fallback is the second branch in `if (typeof ctx.ui.custom !== "function")`
   // (the rare legacy shard) OR the original text fallback at the bottom of
-  // cmdSettings. Both forms must keep the stallBrakes key in the listing.
+  // cmdSettings. Isolate that fallback so this contract cannot pass because
+  // an unrelated settings reference elsewhere happens to match.
+  const start = src.indexOf("// Headless fallback:");
+  const end = src.indexOf("// Command-collision detector", start);
+  assert.ok(start >= 0 && end > start, "headless fallback block must remain discoverable");
+  const fallback = src.slice(start, end);
+
   assert.match(
-    src,
+    fallback,
     /fmt\("stallEscalationRefires", "stallEscalation"\)/,
     "headless fallback must still include stallEscalationRefires",
   );
   assert.match(
-    src,
+    fallback,
     /fmt\("wedgeAlertMinutes", "wedgeAlert"\)/,
     "headless fallback must still include wedgeAlertMinutes",
   );
+
+  // v0.34.127: every key copied into the interactive settings list must also
+  // be visible in the headless /glla listing. Keep this list explicit so a
+  // future edit cannot silently drop one of the eleven synced settings.
+  for (const key of [
+    "decisionPopup",
+    "carryover",
+    "auditorModelFallback",
+    "auditorSameSessionSwap",
+    "auditorSilent",
+    "auditorProgressSignals",
+    "hourlyQuotaProbe",
+    "subagentModelStrategy",
+    "subagentModelOverrides",
+    "subagentFallbacks",
+    "toolOverrides",
+  ]) {
+    assert.match(fallback, new RegExp(`fmt\\(\\"${key}\\"`), `headless fallback missing synced key: ${key}`);
+  }
 });
 
 test("the legacy flat-row startsWith logic is removed (no more `──` section headers in code)", () => {
