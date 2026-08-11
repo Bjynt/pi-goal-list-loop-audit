@@ -19,9 +19,9 @@
 // (d) it re-arms after each fire until recovery clears, (e) session
 // replacement cancels the old ticker.
 
-import { test } from "node:test";
+import { afterEach, test } from "node:test";
 import * as assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -34,7 +34,18 @@ const RECOVERY_SRC = readFileSync(join(here, "..", "extensions", "goal-recovery.
 import {
   nextHourlyProbeMs,
   nextHourlyPromptMs,
+  type MainModelRecovery,
 } from "../extensions/goal-loop-core.js";
+import {
+  cancelHourlyProbe,
+  createGoalRecovery,
+  scheduleHourlyProbe,
+  type RecoveryDeps,
+  type RecoveryFlags,
+} from "../extensions/goal-recovery.js";
+import { state, replaceState } from "../extensions/goal-state.js";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { makeMockCtx, tick, tmpCwd, type MockCtx } from "./harness/mock-pi.js";
 import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 // ---------------------------------------------------------------------------
