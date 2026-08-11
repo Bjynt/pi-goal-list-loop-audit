@@ -25,6 +25,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import activate, { __testOnlyLastConfirmDialog, __testOnlyLoadState, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyRunFanOutListAuditFindings, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
 import { __testOnlyHeartbeatTick } from "../extensions/goal-heartbeat.js";
+import { mainModelRecoverySucceeded } from "../extensions/goal-recovery.js";
 
 // v0.29.5: autoResume is GLOBAL-only now — tests opt in by writing the
 // harness's global settings path, and afterEach resets it so the opt-in
@@ -1853,6 +1854,63 @@ test("a successful core retry clears the quota wall and resumes the parked goal"
   assert.match(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8"), /"main_model_recovered".*"resumed":"goal"/);
 });
 
+test("v0.35.x: a successful main-model recovery gives a parked audit its one automatic retry", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const fakePi = writeFakeAuditor(cwd, "disapproved", 350);
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = fakePi;
+  seedState(cwd, {
+    goal: seedGoal({
+      status: "paused",
+      pauseKind: "blocked",
+      pauseReason: "completion audit blocked — no verdict: auditor infrastructure",
+      pendingCompletion: {
+        completionSummary: "The parked claim waits for a healthy recovery.",
+        verificationSummary: "The detached auditor must receive one fresh attempt.",
+        at: new Date().toISOString(),
+        phase: "recovery-pending",
+        attemptId: "parked-before-main-recovery",
+      },
+    }),
+    mainModelRecovery: {
+      primary: "mock/provider-model",
+      active: "mock/provider-model",
+      attempted: ["mock/provider-model"],
+      attempts: 1,
+      reason: "provider recovery",
+      firstFailureAt: new Date().toISOString(),
+      autoRetryUntil: new Date(Date.now() + 60_000).toISOString(),
+      kind: "goal",
+    },
+  } as unknown as Parameters<typeof seedState>[1]);
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    assert.equal((readState(cwd).goal as { status?: string }).status, "paused", "cold startup keeps the parked claim held");
+    mainModelRecoverySucceeded(ctx);
+    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "audit_recovery_started"));
+    const started = readState(cwd).goal as {
+      status?: string;
+      pendingCompletion?: { phase?: string; automaticRecoveryAttempted?: boolean; automaticRecoveryGeneration?: number };
+    } | null;
+    assert.equal(started?.status, "auditing");
+    assert.equal(started?.pendingCompletion?.phase, "running");
+    assert.equal(started?.pendingCompletion?.automaticRecoveryAttempted, true);
+    assert.equal(typeof started?.pendingCompletion?.automaticRecoveryGeneration, "number");
+    await waitUntil(() => {
+      const settled = readState(cwd).goal as { status?: string; pendingCompletion?: unknown } | null;
+      return settled?.status === "active" && !settled.pendingCompletion;
+    });
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    __testOnlyResetOwnerSession();
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
 test("error turns: a real nudge before the errors still counts after they pass (counter neither resets nor increments)", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
@@ -2722,7 +2780,6 @@ test("v0.35.x: one automatic parked-audit retry is durable across repeated lifec
     assert.equal(manualLedger.filter((entry) => entry.type === "audit_recovery_started").length, 1, "manual resume does not masquerade as automatic recovery");
     assert.equal(manualLedger.filter((entry) => entry.type === "audit_started").length >= 2, true, "manual resume starts a fresh stored-claim audit");
     await pi.fire("session_shutdown", { reason: "quit" }, second);
-    await pi.fire("session_shutdown", { reason: "quit" }, first);
   } finally {
     pi.sendMessageError = null;
     pi.sessionNameError = null;
