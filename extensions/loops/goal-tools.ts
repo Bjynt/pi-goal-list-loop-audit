@@ -627,7 +627,7 @@ function registerAgentTools(pi: any): void {
         runDetachedGoalCompletionAuditor({
           cwd: ctx.cwd,
           goal: auditGoal,
-          completionSummary: validatedSummary,
+          completionSummary: finalSummary,
           verificationSummary: p.verificationSummary,
           model: candidate.model,
           thinkingLevel: (settings.auditorThinkingLevel ?? "high") as any, // may be "max" — pi ≥0.83 understands it; the dev-types predate it

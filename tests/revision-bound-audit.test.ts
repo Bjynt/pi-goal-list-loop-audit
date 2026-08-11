@@ -357,26 +357,75 @@ test("v0.34.96: complete_goal routes to aborted when completionSummary says 'alr
   assert.equal(ledger.filter((l) => l.type === "audit_started").length, 0, "no auditor was started");
 });
 
-test("v0.34.96: complete_goal routes to aborted when completionSummary says 'no new work shipped'", async () => {
+// v0.34.128 (field 2026-08-11, dracon-platform): a VERSION-LESS
+// "already shipped" / "no new work shipped" claim is not corroborated
+// (a restored session can hallucinate it from the old conversation's tail
+// and abort a finding that still needs work, silently dropping it from the
+// queue). It now routes to the NORMAL completion audit with the
+// already_shipped label so the auditor verifies the work exists in the
+// tree: a true claim is approved into a truthful complete; a false claim
+// is disapproved and the finding stays queued. Only version-bearing
+// claims keep the v0.34.96 abort (see the two tests above).
+test("v0.34.128: a version-less 'no new work shipped' claim routes to the NORMAL audit and completes on approval", async () => {
   const cwd = tmpCwd();
   seedState(cwd, { goal: seedGoal({ status: "active" }) });
   __testOnlyLoadState(cwd);
-  const pi = new MockPi();
-  activate(pi.api);
-  __testOnlyRegisterAgentTools(pi.api);
-  rememberCtxFor(cwd);
-  const res = await pi.runTool(
-    "complete_goal",
-    { completionSummary: "All checklist items were no new work shipped — the audit shows prior versions." },
-    ownerCtx(cwd),
-  );
-  assert.match(res.content[0]!.text, /routed to status=aborted/i);
-  assert.match(res.content[0]!.text, /no version/i, "no version is named when summary has no vX.Y.Z");
-  const st = readState(cwd);
-  assert.equal(st.goal, null, "the live slot closes after the archived abort");
-  const archive = fs.readdirSync(path.join(cwd, ".pi-glla", "archive"));
-  assert.equal(archive.length, 1);
-  assert.match(fs.readFileSync(path.join(cwd, ".pi-glla", "archive", archive[0]!), "utf8"), /already_shipped:no new work shipped/, "the archive preserves the matched phrase");
+  const fakePi = writeFakeAuditor(cwd, "approved");
+  process.env.GLLA_PI_BINARY = fakePi;
+  try {
+    const pi = new MockPi();
+    activate(pi.api);
+    __testOnlyRegisterAgentTools(pi.api);
+    rememberCtxFor(cwd);
+    const res = await pi.runTool(
+      "complete_goal",
+      { completionSummary: "All checklist items were no new work shipped — the audit shows prior versions." },
+      ownerCtx(cwd),
+    );
+    assert.doesNotMatch(res.content[0]!.text, /routed to status=aborted/i, "no abort on a version-less claim");
+    assert.match(res.content[0]!.text, /auditor queued|detached/i, "the claim proceeds to the normal audit");
+    const st = readState(cwd);
+    assert.equal(st.goal?.status, "auditing", "the goal enters the normal audit");
+    assert.match(st.goal?.completionSummary ?? "", /version-less "no new work shipped" claim/, "the audited recap carries the verify-in-tree label");
+    const ledger = readLedger(cwd);
+    const evt = ledger.find((l) => l.type === "complete_goal_already_shipped");
+    assert.ok(evt, "the already_shipped ledger event is recorded");
+    assert.equal(evt?.value?.routedToAudit, true, "the event flags the normal-audit routing");
+    assert.ok(ledger.filter((l) => l.type === "audit_started").length >= 1, "the auditor actually ran");
+    await waitUntil(() => readState(cwd).goal === null, 10_000);
+  } finally {
+    delete process.env.GLLA_PI_BINARY;
+  }
+});
+
+test("v0.34.128: a version-less 'already shipped' claim disapproved by the auditor leaves the finding queued (no abort)", async () => {
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal({ status: "active" }) });
+  __testOnlyLoadState(cwd);
+  const fakePi = writeFakeAuditor(cwd, "disapproved");
+  process.env.GLLA_PI_BINARY = fakePi;
+  try {
+    const pi = new MockPi();
+    activate(pi.api);
+    __testOnlyRegisterAgentTools(pi.api);
+    rememberCtxFor(cwd);
+    const res = await pi.runTool(
+      "complete_goal",
+      { completionSummary: "Already shipped — the fix is in the tree from last week." },
+      ownerCtx(cwd),
+    );
+    assert.doesNotMatch(res.content[0]!.text, /routed to status=aborted/i, "no abort on a version-less claim");
+    const ledger = readLedger(cwd);
+    const evt = ledger.find((l) => l.type === "complete_goal_already_shipped");
+    assert.equal(evt?.value?.routedToAudit, true, "the event flags the normal-audit routing");
+    await waitUntil(() => readState(cwd).goal?.status === "active" && !readState(cwd).goal?.pendingCompletion, 10_000);
+    const st = readState(cwd);
+    assert.equal(st.goal?.status, "active", "the goal stays active after a false already-shipped claim — the finding is not dropped");
+    const archive = fs.readdirSync(path.join(cwd, ".pi-glla", "archive"));
+    assert.equal(archive.length, 0, "nothing was archived as aborted");
+  } finally {
+    delete process.env.GLLA_PI_BINARY;
+  }
 });
 
 test("v0.34.96: a NORMAL completionSummary still runs the auditor (no false-positive abort)", async () => {

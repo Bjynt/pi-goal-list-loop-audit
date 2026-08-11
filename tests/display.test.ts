@@ -1733,17 +1733,24 @@ test("v0.34.100: silent-default widget renders muted for ANY session model", () 
   }
 });
 
-// v0.34.96: complete-vs-aborted distinction when the work was already
-// shipped in a prior version. Field evidence: Screenshot_20260808_080536
+// v0.34.96/v0.34.128: complete-vs-aborted distinction when the work was
+// already shipped in a prior version. Field evidence: Screenshot_20260808_080536
 // — a recap ending `✓ complete` while saying "v0.34.74 already…"
 // contradicted itself. The fix: detect "already shipped" / "verified
-// vX.Y.Z covers this" / "no new work shipped" in the completionSummary
-// and route to status=aborted with stopReason already_shipped:vX.Y.Z.
+// vX.Y.Z covers this" / "no new work shipped" in the completionSummary.
+// Version-bearing claims route to status=aborted with stopReason
+// already_shipped:vX.Y.Z (the named version is the corroboration).
+// v0.34.128 (field 2026-08-11, dracon-platform): VERSION-LESS claims are
+// not corroborated — a restored session can hallucinate them from the old
+// conversation's tail and abort a finding that still needs work — so they
+// route to the NORMAL completion audit with the routedToAudit flag and the
+// label carried into the audited recap; the auditor verifies the work
+// exists in the tree.
 // This SRC-pinned assertion lives in tests/display.test.ts per the
-// verification contract item 12; the behavioral test (running the
-// complete_goal tool) is in tests/revision-bound-audit.test.ts for
+// verification contract item 12; the behavioral tests (running the
+// complete_goal tool) are in tests/revision-bound-audit.test.ts for
 // fixture convenience.
-test("v0.34.96: complete_goal detects 'already shipped' / 'verified vX covers this' / 'no new work shipped' and routes to aborted (SRC-pinned in display.test.ts)", () => {
+test("v0.34.96/v0.34.128: complete_goal detects 'already shipped' / 'verified vX covers this' / 'no new work shipped' — version-bearing aborts, version-less routes to the audit (SRC-pinned in display.test.ts)", () => {
   const loops = readGoalRuntimeSource();
   // The detection regex covers the three contracted phrases. The source
   // comment uses the literal user-facing phrase (the runtime reg-exp
@@ -1751,9 +1758,12 @@ test("v0.34.96: complete_goal detects 'already shipped' / 'verified vX covers th
   assert.match(loops, /already\s+shipped/i, "detects 'already shipped'");
   assert.match(loops, /verified vX covers this|verified\s+v\d+\.\d+\.\d+\s+covers\s+this/, "detects the regex for 'verified vX.Y.Z covers this'");
   assert.match(loops, /no\s+new\s+work\s+shipped/i, "detects 'no new work shipped'");
-  // The routing path: archiveCurrentGoal(ctx, "aborted", stopReason).
-  assert.match(loops, /archiveCurrentGoal\(ctx,\s*"aborted",\s*stopReason\)/, "routes to status=aborted via archiveCurrentGoal");
+  // Version-bearing routing: archiveCurrentGoal(ctx, "aborted", stopReason).
+  assert.match(loops, /archiveCurrentGoal\(ctx,\s*"aborted",\s*stopReason\)/, "version-bearing claims route to status=aborted via archiveCurrentGoal");
   assert.match(loops, /already_shipped:v[\d.]+|already_shipped:/, "stopReason names the matched version");
-  // The ledger event is recorded.
+  // Version-less routing: flagged for the normal audit + label in recap.
+  assert.match(loops, /routedToAudit: true/, "version-less claims are flagged for the normal audit");
+  assert.match(loops, /version-less "/, "the label is carried into the audited recap");
+  // The ledger event is recorded for both paths.
   assert.match(loops, /complete_goal_already_shipped/, "the ledger event is recorded");
 });
