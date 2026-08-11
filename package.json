@@ -44,7 +44,6 @@
   "scripts": {
     "check": "tsc --noEmit",
     "test": "bun test",
-    "test:node": "node --experimental-strip-types --test tests/*.test.ts",
     "test:all": "bun test && tsc --noEmit && node tests/repro-jiti-state-split.test.mjs",
     "release:check": "npm run test:all && npm pack --dry-run",
     "test:jiti": "node tests/repro-jiti-state-split.test.mjs"
