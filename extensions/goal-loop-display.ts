@@ -744,7 +744,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     }
     const kind = pauseKind(g);
     if (kind === "decision") return `glla: ${paint(theme, "accent", "⏸ decision needed")}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
-    if (kind === "error") return `glla: ${paint(theme, "error", `⏸ action needed — ${truncate(g.pauseReason ?? "", 30)}`)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
+    if (kind === "error") return `glla: ${paint(theme, "error", `⏸ action needed — ${truncate(displayPauseReason(g.pauseReason ?? ""), 30)}`)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
     if (kind === "wait" || kind === "blocked") {
       // v0.34.12: live countdown (the UI ticker keeps rendering through a
       // timed wait) — "auto-retry in 23m" beats a static clock time, and a
@@ -779,7 +779,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       }
       return `glla: ${paint(theme, "dim", `⏳ auto-retrying${when}`)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
     }
-    const label = `paused ⏸ ${truncate(g.pauseReason ?? "", 40)}`;
+    const label = `paused ⏸ ${truncate(displayPauseReason(g.pauseReason ?? ""), 40)}`;
     return `glla: ${paint(theme, pauseIsError(g) ? "error" : "warning", label)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
   }
   if (g.status === "active") {
@@ -1224,7 +1224,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     // under it just confuses the card.
     const reasonPaint = isErr ? "error" : kind === "wait" ? "dim" : "warning";
     if (!Number.isFinite(retryMs)) {
-      wrap(g.pauseReason, budget, kind === "decision" || kind === "wait" ? 2 : 3).forEach((w, i) => {
+      wrap(displayPauseReason(g.pauseReason), budget, kind === "decision" || kind === "wait" ? 2 : 3).forEach((w, i) => {
         lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, reasonPaint, w)}`);
       });
     }
@@ -1279,7 +1279,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
         lines.push(`│  ${paint(theme, attention.color, w)}`);
       });
     } else {
-      wrap(g.pauseReason!, budget, 3).forEach((w) => {
+      wrap(displayPauseReason(g.pauseReason!), budget, 3).forEach((w) => {
         lines.push(`│  ${paint(theme, attention.color, w)}`);
       });
     }

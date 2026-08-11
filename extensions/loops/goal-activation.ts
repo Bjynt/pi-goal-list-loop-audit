@@ -38,6 +38,8 @@ import {
   workCommand,
   workCommandRoot,
   appendLedger,
+  claimRecoveryNotice,
+  providerErrorPresentation,
   archiveDir,
   archivedGoalPath,
   buildTaskList,

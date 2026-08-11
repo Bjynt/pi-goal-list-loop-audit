@@ -11,7 +11,7 @@ import * as path from "node:path";
 import type { ExtensionContext, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { state, replaceState } from "./goal-state.js";
 import {
-  DEFAULT_TOKEN_LIMIT, Goal, ListItem, Status, appendLedger, archiveDir, archivedGoalPath, bumpGoalRevision,
+  DEFAULT_TOKEN_LIMIT, Goal, ListItem, Status, appendLedger, archiveDir, archivedGoalPath, bumpGoalRevision, sanitizeProviderDisplayText,
   computeListDepth, clearQueueItemFiles, deleteQueueItemFile, extractVerificationContract, formatAuditLog, formatGoalAuditHistory, queueItemSidecarCount,
   formatListDepth, goalArgsNeedDrafting, ledgerPath, newGoalId, nowIso, parseListImport, parseListItemDeclaration,
   readAuditLog, readQueueFromDisk, routeGoalArgs, routeListText, sanitizeDisplayText, statusLabel,
@@ -284,7 +284,7 @@ async function cmdStatus(ctx: ExtensionContext): Promise<void> {
   if (g.status === "auditing") {
     lines.push(`Completion audit: ${isCompletionAuditRecoveryPending(g) ? `recovery pending — ${activeGoalSurfaceCommand("resume")} retries the stored claim` : flags.completionAuditInFlight && flags.latestAuditProgress?.label === "queued" ? "detached auditor queued" : flags.completionAuditInFlight ? "detached auditor running" : "awaiting lifecycle recovery"}`);
   }
-  if (g.pauseReason) lines.push(`Paused: ${g.pauseReason}`);
+  if (g.pauseReason) lines.push(`Paused: ${sanitizeProviderDisplayText(g.pauseReason)}`);
   ctx.ui.notify(lines.join("\n"), "info");
 }
 
@@ -479,7 +479,7 @@ async function showDecisionPrompt(ctx: ExtensionContext): Promise<boolean> {
   if (!g || !ctx.hasUI || decisionPromptOpen) return false;
   decisionPromptOpen = true;
   try {
-    const title = `Decision needed — ${displaySlice(g.objective, 72)}${g.pauseReason ? ` · ${displaySlice(g.pauseReason, 80)}` : ""}`;
+    const title = `Decision needed — ${displaySlice(g.objective, 72)}${g.pauseReason ? ` · ${displaySlice(sanitizeProviderDisplayText(g.pauseReason), 80)}` : ""}`;
     const options = g.pauseOptions!.map((o, i) => (g.pauseRecommended === i + 1 ? `${o}  (recommended)` : o));
     const pick = await ctx.ui.select(title, options);
     if (!pick) return true; // Escape — the widget card remains the fallback
@@ -1865,7 +1865,7 @@ function cmdGllaStatus(ctx: ExtensionContext): void {
     const audit = g.status === "auditing"
       ? isCompletionAuditRecoveryPending(g) ? " (audit recovery pending)" : flags.completionAuditInFlight && flags.latestAuditProgress?.label === "queued" ? " (detached auditor queued)" : flags.completionAuditInFlight ? " (detached auditor running…)" : " (audit awaiting lifecycle recovery)"
       : "";
-    const pause = g.status === "paused" && g.pauseReason ? ` — ${displaySlice(g.pauseReason, 90)}` : "";
+    const pause = g.status === "paused" && g.pauseReason ? ` — ${displaySlice(sanitizeProviderDisplayText(g.pauseReason), 90)}` : "";
     lines.push(`goal [${g.policy}] ${g.status}${audit}${tok}: ${displaySlice(g.objective, 90)}${pause}`);
   } else {
     lines.push("goal: none");
