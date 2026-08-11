@@ -49,20 +49,6 @@ export function fmtElapsed(ms: number): string {
   return `${h}h ${String(m % 60).padStart(2, "0")}m`;
 }
 
-/** v0.34.95: format an absolute epoch (ms) as HH:MM in the local timezone.
- * Used by the quota-recovery status line so the user can glance at the
- * clock and see when the next probe will fire. The bounded envelope
- * records `retryAt` as ISO; converting to local HH:MM keeps the surface
- * readable without inventing a relative-time view (the existing
- * fmtElapsed() covers that case for live countdowns). */
-export function formatClockTime(epochMs: number): string {
-  if (!Number.isFinite(epochMs) || epochMs <= 0) return "—";
-  const d = new Date(epochMs);
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
-}
-
 export function fmtTokens(n: number): string {
   if (n < 1000) return `${n}`;
   if (n < 100_000) return `${(n / 1000).toFixed(1)}k`;

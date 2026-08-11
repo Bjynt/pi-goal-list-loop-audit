@@ -164,9 +164,8 @@ test("v0.34.95: queued + parked recovery surfaces 'parked on provider wall' on t
       retryAt: "2026-07-21T12:30:00.000Z",
     },
   };
-  // Pin NOW to a known hour:minute so the formatClockTime output is
-  // deterministic across timezones. NOW is already an epoch defined at
-  // the top of this file — we use the retryAt ISO string directly.
+  // The recovery envelope retains retryAt, but this surface intentionally
+  // renders the relative next-probe wording rather than an absolute clock.
   const status = buildStatusText(queuedWithRecovery, null, NOW, undefined, { activity: "queued" })!;
   assert.match(status, /\[QUEUED\]/);
   assert.match(status, /18 queued/);
