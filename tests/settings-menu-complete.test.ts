@@ -194,6 +194,19 @@ test("default fallbacks surface when settings + provenance both missing", () => 
   assert.match(byId.get("subagentModelStrategy")!.valueText, /inherit-parent/);
 });
 
+test("effective resolution names the real session model for inherit-parent", () => {
+  const rows = buildSettingsRows(
+    { subagentModelStrategy: "inherit-parent" },
+    EMPTY_PROV,
+    { sessionModel: "provider/session-model" },
+  );
+  const effective = rows.find((row) => row.id === "subagentResolved");
+  assert.equal(effective?.valueText, "provider/session-model", "the compact row keeps the real model instead of generic session model");
+
+  const ui = fs.readFileSync("extensions/loops/goal-settings-ui.ts", "utf-8");
+  assert.match(ui, /buildSettingsRows\\(settings, prov, \\{ sessionModel \\}\\)/, "interactive settings passes its session model to the row builder");
+});
+
 test("provenance flows into sourceText (project/global/default tags)", () => {
   const rows1 = buildSettingsRows(SAMPLE_SETTINGS, {
     autoResume: { value: true, source: "project" },

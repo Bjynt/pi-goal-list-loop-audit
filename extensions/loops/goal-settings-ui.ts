@@ -510,7 +510,12 @@ async function openSettingsUI(ctx: ExtensionContext, initialSection?: SettingsSe
   for (;;) {
     const settings = loadSettings(ctx.cwd);
     const prov = settingsProvenance(ctx.cwd);
-    const rows = buildSettingsRows(settings, prov);
+    // Keep the interactive Effective resolution row aligned with headless
+    // `/glla list`: inherit-parent must name the real session model rather
+    // than collapsing to the generic "session model" placeholder.
+    const session = ctx.model as any;
+    const sessionModel = session?.provider && session?.id ? `${session.provider}/${session.id}` : undefined;
+    const rows = buildSettingsRows(settings, prov, { sessionModel });
     const id = await promptSettingsMenu(ctx, rows, initialSection);
     // The section is only an entry-point hint; after the first render the
     // table owns navigation and keeps all grouped settings available.
