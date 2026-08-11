@@ -372,7 +372,7 @@ export interface AuditDisplayProgress {
   elapsedMs?: number;
   /** Latest non-verdict text observed from the worker's report stream. */
   recentOutput?: string[];
-  /** Completed read-only calls retained by the worker for live context. */
+  /** Completed auditor tool calls retained by the worker for live context. */
   toolCalls?: Array<{ name: string; argsPrefix: string; finishedAt: number }>;
   /** v0.34.56: explicit counts of unmatched tool start/end telemetry facts
    * (events that provably never paired). Shown honestly — never hidden, and
@@ -459,7 +459,7 @@ function auditorEvidenceSummary(audit: AuditDisplayProgress | null | undefined, 
     parts.push(`${fmtByteCount(audit.reportBytes)} report`);
   }
   const calls = audit.toolCalls?.length ?? 0;
-  if (calls > 0) parts.push(`${calls} read-only call${calls === 1 ? "" : "s"}`);
+  if (calls > 0) parts.push(`${calls} audit call${calls === 1 ? "" : "s"}`);
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
@@ -1160,7 +1160,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       const firstEvent = audit.lastActivityAt === undefined ? " · waiting for first worker event" : "";
       lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(audit.elapsedMs)} in detached worker${firstEvent}${last}`)}`);
     } else {
-      lines.push(`└─ ${paint(theme, "dim", `detached worker, read-only tools${last || " · waiting for first worker event"}`)}`);
+      lines.push(`└─ ${paint(theme, "dim", `detached worker, audit tools (bash enabled)${last || " · waiting for first worker event"}`)}`);
     }
     return lines;
   }

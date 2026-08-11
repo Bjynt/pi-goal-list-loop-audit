@@ -12,7 +12,7 @@ below cover the v0.1.0–v0.7.0 scaffold era; later decisions live in CHANGELOG.
 ## 0. Product definition (frozen)
 
 - **What it is**: a pi-coding-agent extension that supervises long-running work to *verified* completion.
-- **Core mechanism**: a shared goal state machine + an `agent_end`-driven continuation loop + an **isolated auditor** (fresh pi session, no extensions, no skills, read-only tools) that must approve before a goal is marked complete.
+- **Core mechanism**: a shared goal state machine + an `agent_end`-driven continuation loop + an **isolated auditor** (fresh pi session, no extensions, no skills, power-mode audit tools: read/grep/find/ls/bash) that must approve before a goal is marked complete.
 - **Three loops on one machine**:
   - **goal** — one ordered goal, audited (`/goal`)
   - **list** — a queue of goals, each audited in turn (`/list`)

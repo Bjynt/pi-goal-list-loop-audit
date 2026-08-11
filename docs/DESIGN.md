@@ -125,8 +125,9 @@ architectural decisions that changed the SHAPE of the system:
   supplies consent. A cold startup with autoResume off paints the pending
   claim and waits for `/goal resume`.
 - **Auditor bounds have two layers**: no-event inactivity aborts after 10m
-  only when no read-only tool is active; a live verification tool may finish,
-  but the complete isolated run has a 30m wall-clock cap. Both outcomes are
+  only when no auditor tool is active; a live verification tool may finish,
+  but the complete isolated run has a 30m wall-clock cap. Each auditor tool
+  also has an independent five-minute ceiling. Both outcomes are
   infrastructure failures, never verdicts, and the stored claim remains
   retryable.
 
@@ -137,9 +138,9 @@ architectural decisions that changed the SHAPE of the system:
   extension-less worker launches `pi --mode rpc` with only `read`, `grep`,
   `find`, `ls`, and `bash`; it never receives the parent `ExtensionContext`,
   never loads glla extensions or project context files, and never writes goal
-  state. This removes the previous nested `AgentSession` from the main pi
-  process and prevents a provider stall in the auditor from occupying the
-  executor's turn.
+  state. The worker has independent per-tool and wall-clock bounds. This
+  removes the previous nested `AgentSession` from the main pi process and
+  prevents a provider stall in the auditor from occupying the executor's turn.
 - **Durable job protocol**: request, progress, lock, and result files live
   under `.pi-glla/audit-jobs/<attemptId>/`. Requests and results are hashed and
   atomically written. The parent validates attempt/request identity, verdict
@@ -152,9 +153,9 @@ architectural decisions that changed the SHAPE of the system:
   rendering and accepting input while the worker audits; completion/archive or
   disapproval/continuation happens only after durable result consumption.
 - **Bounded worker liveness**: no session event for 10 minutes while no
-  read-only tool is active aborts the worker; a 30-minute wall-clock bound
-  always wins. Both are infrastructure failures, never verdicts, and the claim
-  remains retryable.
+  auditor tool is active aborts the worker; a five-minute per-tool ceiling and
+  30-minute wall-clock bound always win. Both are infrastructure failures,
+  never verdicts, and the claim remains retryable.
 
 ## Addendum v0.34.24 (dispatch proof and display projection safety)
 
@@ -283,7 +284,7 @@ The single most important property of this plugin is that the implementing agent
 
 1. The auditor runs in a **detached pi RPC process with a fresh agent session**.
 2. The auditor has **no extensions, no skills, no prompts, no themes, and no context files**.
-3. The auditor has only **read-only tools**: `read`, `grep`, `find`, `ls`, `bash` (and `bash` is for re-running user's verifier scripts, not arbitrary).
+3. The auditor has the **power-mode audit tools**: `read`, `grep`, `find`, `ls`, and `bash`. Bash is intentionally available for bounded verifier scripts, tests, git inspection, and behavior reproduction; this is a policy-guided capability, not an OS-level read-only sandbox.
 4. The auditor **cannot see the implementing conversation or mutate glla state**.
 
 This is borrowed directly from `pi-goal-x/extensions/goal-auditor.ts:148-156`. The pattern is sound; we don't improve on it in v0.1.0, we just **fork the proven source and add regression_shield**.

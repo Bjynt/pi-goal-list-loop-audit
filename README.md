@@ -501,10 +501,10 @@ it persists. Tune Wedge alert minutes in the `/glla` settings table (0 = off).
 Every other wait is bounded too: continuation retries are milliseconds,
 stuck backoff caps at 5 minutes then pauses, measure commands get a 10m
 hard timeout, and the detached auditor aborts after 10m with no activity while no
-read-only tool is running. A long-running verification tool is allowed to
-finish, but the worker has a 30m wall-clock safety cap. Both paths are
-infrastructure errors, never verdicts; interrupted claims remain stored for a
-direct retry after `/goal resume`.
+an auditor tool is running. A long-running verification tool is allowed to
+finish, but each tool has an independent five-minute ceiling and the worker
+has a 30m wall-clock safety cap. Both paths are infrastructure errors, never
+verdicts; interrupted claims remain stored for a direct retry after `/goal resume`.
 
 ## Compatibility (what goes well, what conflicts)
 
