@@ -190,6 +190,17 @@ test("T4: a dismissed editor (Esc → undefined) writes NOTHING", async () => {
   }
 });
 
+test("settings editor failures notify loudly and return to the menu", () => {
+  const menu = GOAL_SRC.slice(
+    GOAL_SRC.indexOf("async function openSettingsUI"),
+    GOAL_SRC.indexOf("async function promptSettingsMenu"),
+  );
+  assert.match(menu, /catch \(err\)/, "the menu catches editor failures");
+  assert.match(menu, /glla setting .* NOT saved/, "failed writes are announced");
+  assert.match(menu, /ctx\.ui\.notify\([\s\S]*?"warning"/, "the notification is a warning");
+  assert.doesNotMatch(menu, /catch \{\s*return;/, "an editor failure must not silently exit the whole menu");
+});
+
 test("T4: the switch has no confirm-class editors (select + input only)", () => {
   const sw = GOAL_SRC.slice(GOAL_SRC.indexOf("export async function handleSettingChoice"));
   const switchBody = sw.slice(0, sw.indexOf("\n}\n"));
