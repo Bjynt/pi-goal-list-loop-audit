@@ -410,15 +410,6 @@ test("v0.35.x: already-shipped completion honors an existing archive fence", asy
   assert.equal(ledger.filter((entry) => entry.type === "complete_goal_already_shipped").length, 0, "the stale call does not claim the archive succeeded");
 });
 
-// v0.34.128 (field 2026-08-11, dracon-platform): a VERSION-LESS
-// "already shipped" / "no new work shipped" claim is not corroborated
-// (a restored session can hallucinate it from the old conversation's tail
-// and abort a finding that still needs work, silently dropping it from the
-// queue). It now routes to the NORMAL completion audit with the
-// already_shipped label so the auditor verifies the work exists in the
-// tree: a true claim is approved into a truthful complete; a false claim
-// is disapproved and the finding stays queued. Only version-bearing
-// claims keep the v0.34.96 abort (see the two tests above).
 test("v0.35.x: archiveCurrentGoal preserves a same-id archive on cancel", async () => {
   const cwd = tmpCwd();
   const goal = seedGoal({ status: "active" });
@@ -438,8 +429,16 @@ test("v0.35.x: archiveCurrentGoal preserves a same-id archive on cancel", async 
   assert.equal(readLedger(cwd).filter((entry) => entry.type === "goal_archived").length, 0);
 });
 
-// v0.34.128: a version-less 'no new work shipped' claim routes to the NORMAL audit and completes on approval
- test("v0.34.128: a version-less 'no new work shipped' claim routes to the NORMAL audit and completes on approval", async () => {
+// v0.34.128 (field 2026-08-11, dracon-platform): a VERSION-LESS
+// "already shipped" / "no new work shipped" claim is not corroborated
+// (a restored session can hallucinate it from the old conversation's tail
+// and abort a finding that still needs work, silently dropping it from the
+// queue). It now routes to the NORMAL completion audit with the
+// already_shipped label so the auditor verifies the work exists in the
+// tree: a true claim is approved into a truthful complete; a false claim
+// is disapproved and the finding stays queued. Only version-bearing
+// claims keep the v0.34.96 abort (see the two tests above).
+test("v0.34.128: a version-less 'no new work shipped' claim routes to the NORMAL audit and completes on approval", async () => {
   const cwd = tmpCwd();
   seedState(cwd, { goal: seedGoal({ status: "active" }) });
   __testOnlyLoadState(cwd);
