@@ -13,11 +13,10 @@
 // cancelHourlyProbe trio + the Settings.hourlyQuotaProbe shape + the
 // __testOnly* hooks.
 //
-// Behavioral tests (this file's second half): drive the ticker through
-// the MockPi harness and assert (a) it fires only when recovery is parked,
-// (b) it does not fire when not parked, (c) opt-out default verified,
-// (d) it re-arms after each fire until recovery clears, (e) session
-// replacement cancels the old ticker.
+// Runtime regression: an isolated child harness drives the production
+// schedule/fire path with injected timers and a failing provider, then
+// verifies a later slot executes, opt-out blocks new timers, and stale
+// generations do not reach the provider.
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
