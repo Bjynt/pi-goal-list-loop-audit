@@ -38,6 +38,10 @@ import {
   workCommand,
   workCommandRoot,
   appendLedger,
+  claimRecoveryNotice,
+  providerErrorFingerprint,
+  providerErrorPresentation,
+  sanitizeProviderDisplayText,
   archiveDir,
   archivedGoalPath,
   buildTaskList,
@@ -676,9 +680,10 @@ function registerAgentTools(pi: any): void {
           onRetry: (candidate: AuditorModelCandidate, err: string) => {
             const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
             if (!current) return;
-            latestAuditProgress = { label: `infra error (${err.slice(0, 40)}) — retrying once`, lastEventAt: Date.now() };
+            const failureCopy = providerErrorPresentation(err, "completion");
+            latestAuditProgress = { label: `${failureCopy.display} — retrying once`, lastEventAt: Date.now() };
             refreshUI(current);
-            appendLedger(current.cwd, "audit_infra_retry", { goalId: auditGoalId, model: auditorCandidateLabel(candidate), error: err.slice(0, 200) });
+            appendLedger(current.cwd, "audit_infra_retry", { goalId: auditGoalId, model: auditorCandidateLabel(candidate), error: failureCopy.diagnostic.slice(0, 200), diagnostic: failureCopy.diagnostic });
           },
           onFallback: (from: AuditorModelCandidate, to: AuditorModelCandidate, err: string) => {
             const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
@@ -883,23 +888,34 @@ function registerAgentTools(pi: any): void {
         // directly. A timeout is not a verdict and must not be fed back into
         // the normal agent continuation path.
         if (isAuditorTimeoutError(result.error)) {
+          const failureCopy = providerErrorPresentation(result.error, "completion");
+          const recoveryEpisodeKey = completionClaim.recoveryEpisodeKey ?? `${completionClaim.at}:${failureCopy.fingerprint}`;
           const pending: PendingCompletion = {
             ...completionClaim,
             phase: "recovery-pending",
             recoveryAt: nowIso(),
             recoveryReason: result.error.startsWith("Auditor exceeded") ? "wall-timeout" : "inactivity-timeout",
+            providerErrorDiagnostic: failureCopy.diagnostic,
+            recoveryEpisodeKey,
+            recoveryNoticeKeys: completionClaim.recoveryNoticeKeys ?? [],
             automaticRecoveryAttempted: completionClaim.automaticRecoveryAttempted ?? false,
           };
+          const notifyTimeout = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:timeout`);
           updateGoal({
             status: "paused",
             auditHistory: history,
             pendingCompletion: pending,
+            providerErrorDiagnostic: failureCopy.diagnostic,
+            recoveryEpisodeKey,
+            recoveryNoticeKeys: pending.recoveryNoticeKeys,
             pauseKind: "error",
-            pauseReason: `completion audit timed out — ${result.error}`,
+            pauseReason: "completion audit timed out — no verifier verdict was produced",
             pauseSuggestedAction: `The claim is stored. Check long-running verification commands, then ${activeGoalSurfaceCommand("resume")} to retry the isolated auditor.`,
           }, ctx);
-          appendLedger(ctx.cwd, result.error.startsWith("Auditor exceeded") ? "audit_wall_timeout" : "audit_inactivity_timeout", { goalId: auditGoalId, attemptId: auditAttemptId, error: result.error.slice(0, 240) });
-          ctx.ui.notify(`Completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and ${activeGoalSurfaceCommand("resume")} to retry it.`, "warning");
+          appendLedger(ctx.cwd, result.error.startsWith("Auditor exceeded") ? "audit_wall_timeout" : "audit_inactivity_timeout", { goalId: auditGoalId, attemptId: auditAttemptId, error: failureCopy.diagnostic.slice(0, 240), diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
+          if (notifyTimeout) {
+            ctx.ui.notify(`Completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and ${activeGoalSurfaceCommand("resume")} to retry it.`, "warning");
+          }
           return {
             content: [{ type: "text", text: `The completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and ${activeGoalSurfaceCommand("resume")} to retry it.` }],
             details: {},
@@ -911,6 +927,8 @@ function registerAgentTools(pi: any): void {
         // "still failing" pauses with a one-shot scheduled retry at the
         // upstream's own Retry-After hint (default quotaRetryMinutes).
         if (result.error && !result.disapproved) {
+          const failureCopy = providerErrorPresentation(result.error, "completion");
+          const recoveryEpisodeKey = completionClaim.recoveryEpisodeKey ?? `${completionClaim.at}:${failureCopy.fingerprint}`;
           const settingsNow = loadSettings(ctx.cwd);
           const defaultMinutes = settingsNow.quotaRetryMinutes ?? DEFAULT_QUOTA_RETRY_MINUTES;
           const quota = parseQuotaError(result.error, defaultMinutes * 60);
@@ -921,29 +939,37 @@ function registerAgentTools(pi: any): void {
             phase: "quota-waiting" as const,
             recoveryAt: undefined,
             recoveryReason: undefined,
+            providerErrorDiagnostic: failureCopy.diagnostic,
+            recoveryEpisodeKey,
+            recoveryNoticeKeys: completionClaim.recoveryNoticeKeys ?? [],
             quotaAttempts: plan.attempt,
             quotaFirstAt: plan.firstAt,
             quotaAutoRetryUntil: plan.autoRetryUntil,
           };
           const providerHint = plan.requestedSec !== plan.retryAfterSec ? ` (provider hint capped at ${Math.round(plan.retryAfterSec / 60)}m)` : "";
           if (!plan.automatic) {
+            const notifyCapped = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:retry-capped`);
             updateGoal({
               status: "paused",
               auditHistory: history,
               auditInfraStreak: undefined,
               pendingCompletion: pending,
+              providerErrorDiagnostic: failureCopy.diagnostic,
+              recoveryEpisodeKey,
+              recoveryNoticeKeys: pending.recoveryNoticeKeys,
               pauseKind: "blocked",
               pauseResumeAt: undefined,
               pauseReason: `auditor retry: automatic retry horizon reached (${plan.attempt} attempts)`,
               pauseSuggestedAction: `The completion claim is stored, but automatic auditor probes are stopped. Check the provider reset/billing state, then ${activeGoalSurfaceCommand("resume")} to start a fresh bounded window.`,
             }, ctx);
-            appendLedger(ctx.cwd, "auditor_retry_capped", { streak: plan.attempt, autoRetryUntil: plan.autoRetryUntil, requestedSec: plan.requestedSec });
-            ctx.ui.notify(`Automatic auditor retries stopped after ${plan.attempt} bounded attempts — the claim stays stored; check the provider, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
+            appendLedger(ctx.cwd, "auditor_retry_capped", { streak: plan.attempt, autoRetryUntil: plan.autoRetryUntil, requestedSec: plan.requestedSec, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
+            if (notifyCapped) ctx.ui.notify(`Automatic auditor retries stopped after ${plan.attempt} bounded attempts — the claim stays stored; check the provider, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
             return {
               content: [{ type: "text", text: `The auditor hit an infrastructure wall (NOT a verdict). Automatic probes stopped after ${plan.attempt} bounded attempts; the exact completion claim is stored. Check the provider, then ${activeGoalSurfaceCommand("resume")}.` }],
               details: {},
             };
           }
+          const notifyRetry = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:retry-wait`);
           updateGoal({
             status: "paused",
             auditHistory: history,
@@ -951,12 +977,15 @@ function registerAgentTools(pi: any): void {
             // v0.28.26: store the claim — the retry re-runs the auditor
             // DIRECTLY with it (no agent turn to confuse).
             pendingCompletion: pending,
+            providerErrorDiagnostic: failureCopy.diagnostic,
+            recoveryEpisodeKey,
+            recoveryNoticeKeys: pending.recoveryNoticeKeys,
             pauseKind: "wait",
             pauseResumeAt: new Date(Date.now() + quota.retryAfterSec * 1000).toISOString(),
-            pauseReason: `auditor retry: ${result.error}`,
+            pauseReason: `auditor retry: ${failureCopy.display}`,
             pauseSuggestedAction: `Auto-retry in ${fmtRetryDelay(quota.retryAfterSec)}${providerHint} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
           }, ctx);
-          appendLedger(ctx.cwd, "goal_paused", { reason: `auditor retry: retry in ${quota.retryAfterSec}s (${quota.fromUpstream ? "upstream hint" : "bounded default"})`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil });
+          appendLedger(ctx.cwd, "goal_paused", { reason: `auditor retry: retry in ${quota.retryAfterSec}s (${quota.fromUpstream ? "upstream hint" : "bounded default"})`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
           scheduleQuotaRetryForSession(ctx, quota.retryAfterSec, result.error, (fresh: ExtensionContext) => {
             // Re-check: only auto-resume if STILL paused for the retry
             // reason (a user /goal pause during the window is not stomped).
@@ -979,7 +1008,7 @@ function registerAgentTools(pi: any): void {
           return {
             content: [{
               type: "text",
-              text: `The auditor hit an infrastructure error (NOT a verdict): ${result.error}\nThe goal is PAUSED with an automatic retry scheduled in ${fmtRetryDelay(quota.retryAfterSec)}${quota.fromUpstream ? " (upstream hint)" : " (bounded default — edit Quota retry minutes in /glla settings)"}${providerHint}. Your completion claim was not evaluated; do not change your deliverable for this. ${activeGoalSurfaceCommand("resume")} retries immediately.`,
+              text: `The auditor hit an infrastructure error (NOT a verdict): ${failureCopy.display}. The goal is PAUSED with an automatic retry scheduled in ${fmtRetryDelay(quota.retryAfterSec)}${quota.fromUpstream ? " (upstream hint)" : " (bounded default — edit Quota retry minutes in /glla settings)"}${providerHint}. Your completion claim was not evaluated; do not change your deliverable for this. ${activeGoalSurfaceCommand("resume")} retries immediately. ${failureCopy.action}`, 
             }],
             details: {},
           };

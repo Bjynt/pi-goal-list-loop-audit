@@ -296,15 +296,25 @@ export function mainModelFallbackRefs(ctx: ExtensionContext): string[] {
 }
 
 export function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModelRecovery, why: string): void {
-  const normalized = withMainModelRecoveryWindow(recovery);
+  const normalizedBase = withMainModelRecoveryWindow(recovery);
+  const diagnostic = normalizedBase.providerErrorDiagnostic ?? normalizedBase.reason;
+  const presentation = providerErrorPresentation(diagnostic, "main");
+  const normalized: MainModelRecovery = {
+    ...normalizedBase,
+    reason: sanitizeProviderDisplayText(normalizedBase.reason),
+    providerErrorDiagnostic: diagnostic,
+    recoveryEpisodeKey: normalizedBase.recoveryEpisodeKey ?? `${normalizedBase.firstFailureAt ?? nowIso()}:${presentation.fingerprint}`,
+    recoveryNoticeKeys: normalizedBase.recoveryNoticeKeys ?? [],
+  };
   clearMainModelRecoveryTimer();
   clearContinuationTimer();
   clearLoopTimer();
   flags.continuationDispatchStoodDown = true;
   state.mainModelRecovery = { ...normalized, retryAt: undefined, manualResumeRequired: true };
   const resumeCmd = recoverySurfaceCommand(normalized.kind, "resume");
-  const quotaMarker = /quota|rate.?limit|usage.?limit|token.?plan|plan.?limit/i.test(normalized.reason) ? ` · ${normalized.reason}` : "";
-  const pauseReason = `main model recovery — automatic probes stopped (${why})${quotaMarker}`;
+  const safeReason = sanitizeProviderDisplayText(normalized.reason);
+  const quotaMarker = /quota|rate.?limit|usage.?limit|token.?plan|plan.?limit|provider (?:account|request|billing)/i.test(safeReason) ? ` · ${safeReason}` : "";
+  const pauseReason = `main model recovery — automatic probes stopped (${sanitizeProviderDisplayText(why)})${quotaMarker}`;
   const action = `No automatic provider probes remain. Check the provider reset/billing state or switch /model, then ${resumeCmd} to start a fresh recovery window; ${activeGoalSurfaceCommand("cancel")} stops it.`;
   if (normalized.kind === "goal" && state.goal) {
     updateGoal({
@@ -313,6 +323,9 @@ export function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModel
       pauseResumeAt: undefined,
       pauseReason,
       pauseSuggestedAction: action,
+      providerErrorDiagnostic: normalized.providerErrorDiagnostic,
+      recoveryEpisodeKey: normalized.recoveryEpisodeKey,
+      recoveryNoticeKeys: normalized.recoveryNoticeKeys,
     }, ctx);
   } else if (normalized.kind === "loop" && state.loop) {
     state.loop = { ...state.loop, active: false, stopReason: `${pauseReason}; ${resumeCmd} to retry manually` };
@@ -325,9 +338,15 @@ export function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModel
     attempts: normalized.attempts,
     autoRetryUntil: normalized.autoRetryUntil,
     resetAt: normalized.resetAt,
-    why,
+    why: sanitizeProviderDisplayText(why),
+    diagnostic: normalized.providerErrorDiagnostic,
+    recoveryEpisodeKey: normalized.recoveryEpisodeKey,
   });
-  ctx.ui.notify(`Main-model recovery stopped automatic probes: ${why}. Work is saved; check the provider or switch /model, then ${resumeCmd}.`, "warning");
+  const noticeKey = `${normalized.recoveryEpisodeKey ?? "main-recovery"}:manual-hold`;
+  if (claimRecoveryNotice(state.mainModelRecovery, noticeKey)) {
+    persistState(ctx);
+    ctx.ui.notify(`Main-model recovery stopped automatic probes: ${sanitizeProviderDisplayText(why)}. Work is saved; check the provider or switch /model, then ${resumeCmd}.`, "warning");
+  }
   notifyExternal(ctx, `Main-model recovery requires manual resume: ${why}.`);
 }
 
@@ -376,7 +395,7 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
   if (!current) return false;
   const generation = flags.sessionGeneration;
   const existing = state.mainModelRecovery;
-  const recovery: MainModelRecovery = withMainModelRecoveryWindow(existing ?? {
+  const baseRecovery = withMainModelRecoveryWindow(existing ?? {
     primary: current,
     active: current,
     attempted: [current],
@@ -385,6 +404,15 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
     resetAt: failure.resetAt,
     kind: mainModelRecoveryKind(),
   });
+  const failureCopy = providerErrorPresentation(failure.raw, "main");
+  const recovery: MainModelRecovery = {
+    ...baseRecovery,
+    reason: mainModelRecoveryReason(failure),
+    providerErrorDiagnostic: failureCopy.diagnostic,
+    recoveryEpisodeKey: baseRecovery.recoveryEpisodeKey ?? `${baseRecovery.firstFailureAt ?? nowIso()}:${failureCopy.fingerprint}`,
+    recoveryNoticeKeys: baseRecovery.recoveryNoticeKeys ?? [],
+    resetAt: failure.resetAt ?? baseRecovery.resetAt,
+  };
   if (!recovery.attempted.includes(current)) recovery.attempted.push(current);
   const selector = sessionModelSelector(ctx);
   const scope: ModelScope = { kind: "session" };
@@ -392,7 +420,12 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
     const pick = selector.selectNextValid(scope, current, recovery.attempted);
     if (!("model" in pick)) {
       // exhausted (or all refs forbidden / unregistered) — fail closed.
-      state.mainModelRecovery = { ...recovery, active: current, reason: mainModelRecoveryReason(failure) };
+      state.mainModelRecovery = {
+        ...recovery,
+        active: current,
+        reason: mainModelRecoveryReason(failure),
+        providerErrorDiagnostic: failureCopy.diagnostic,
+      };
       persistState(ctx);
       return false;
     }
@@ -409,6 +442,7 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
       }
       recovery.active = candidateRef;
       recovery.reason = mainModelRecoveryReason(failure);
+      recovery.providerErrorDiagnostic = failureCopy.diagnostic;
       recovery.kind = mainModelRecoveryKind();
       state.mainModelRecovery = recovery;
       persistState(ctx);
@@ -425,7 +459,16 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
 }
 
 export function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainModelRecovery, delayMs: number): boolean {
-  const normalized = withMainModelRecoveryWindow(recovery);
+  const normalizedBase = withMainModelRecoveryWindow(recovery);
+  const diagnostic = normalizedBase.providerErrorDiagnostic ?? normalizedBase.reason;
+  const presentation = providerErrorPresentation(diagnostic, "main");
+  const normalized: MainModelRecovery = {
+    ...normalizedBase,
+    reason: sanitizeProviderDisplayText(normalizedBase.reason),
+    providerErrorDiagnostic: diagnostic,
+    recoveryEpisodeKey: normalizedBase.recoveryEpisodeKey ?? `${normalizedBase.firstFailureAt ?? nowIso()}:${presentation.fingerprint}`,
+    recoveryNoticeKeys: normalizedBase.recoveryNoticeKeys ?? [],
+  };
   const now = Date.now();
   const deadlineMs = normalized.autoRetryUntil ? Date.parse(normalized.autoRetryUntil) : Number.NaN;
   const requestedDelayMs = Math.max(1_000, delayMs);
@@ -437,7 +480,12 @@ export function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainM
   }
   const retryAt = new Date(now + requestedDelayMs).toISOString();
   const minutes = Math.max(1, Math.round(requestedDelayMs / 60_000));
-  state.mainModelRecovery = { ...normalized, retryAt, manualResumeRequired: undefined };
+  state.mainModelRecovery = {
+    ...normalized,
+    retryAt,
+    manualResumeRequired: undefined,
+    reason: sanitizeProviderDisplayText(normalized.reason),
+  };
   clearMainModelRecoveryTimer();
   clearContinuationTimer();
   clearLoopTimer();
@@ -448,17 +496,33 @@ export function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainM
       status: "paused",
       pauseKind: "wait",
       pauseResumeAt: retryAt,
-      pauseReason: `main model recovery — retrying in ${minutes}m (${normalized.reason})`,
+      pauseReason: `main model recovery — retrying in ${minutes}m (${sanitizeProviderDisplayText(normalized.reason)})`,
       pauseSuggestedAction: `The provider/quota wall is being retried automatically; configured backup models are tried in order. ${resumeCmd} retries immediately; ${activeGoalSurfaceCommand("cancel")} stops it.`,
+      providerErrorDiagnostic: normalized.providerErrorDiagnostic,
+      recoveryEpisodeKey: normalized.recoveryEpisodeKey,
+      recoveryNoticeKeys: normalized.recoveryNoticeKeys,
     }, ctx);
   } else if (normalized.kind === "loop" && state.loop) {
-    state.loop = { ...state.loop, active: false, stopReason: `main model recovery — retrying in ${minutes}m (${normalized.reason}); /loop resume retries immediately` };
+    state.loop = { ...state.loop, active: false, stopReason: `main model recovery — retrying in ${minutes}m (${sanitizeProviderDisplayText(normalized.reason)}); /loop resume retries immediately` };
     persistState(ctx);
   } else {
     persistState(ctx);
   }
-  appendLedger(ctx.cwd, "main_model_recovery_wait", { kind: normalized.kind, retryAt, attempts: normalized.attempts, autoRetryUntil: normalized.autoRetryUntil, resetAt: normalized.resetAt, reason: normalized.reason });
-  ctx.ui.notify(`Main model recovery: ${normalized.reason}. Trying again in ${minutes}m; work is saved and will not be abandoned.`, "warning");
+  appendLedger(ctx.cwd, "main_model_recovery_wait", {
+    kind: normalized.kind,
+    retryAt,
+    attempts: normalized.attempts,
+    autoRetryUntil: normalized.autoRetryUntil,
+    resetAt: normalized.resetAt,
+    reason: normalized.reason,
+    diagnostic: normalized.providerErrorDiagnostic,
+    recoveryEpisodeKey: normalized.recoveryEpisodeKey,
+  });
+  const noticeKey = `${normalized.recoveryEpisodeKey ?? "main-recovery"}:wait`;
+  if (claimRecoveryNotice(state.mainModelRecovery, noticeKey)) {
+    persistState(ctx);
+    ctx.ui.notify(`Main model recovery: ${sanitizeProviderDisplayText(normalized.reason)}. Trying again in ${minutes}m; work is saved and will not be abandoned.`, "warning");
+  }
   notifyExternal(ctx, `Main model recovery scheduled in ${minutes}m — work remains saved.`);
   return true;
 }
@@ -569,6 +633,9 @@ export function manuallyResumeMainModelRecovery(ctx: ExtensionContext): boolean 
     retryAt: undefined,
     manualResumeRequired: undefined,
     resumeCurrent: undefined,
+    providerErrorDiagnostic: undefined,
+    recoveryEpisodeKey: undefined,
+    recoveryNoticeKeys: [],
   };
   clearMainModelRecoveryTimer();
   flags.continuationDispatchStoodDown = false;
@@ -667,7 +734,17 @@ export async function probeMainModelRecovery(ctx: ExtensionContext): Promise<voi
     // v0.34.51: no billing special case — every provider failure retries on
     // the uniform durable envelope (credits can be topped up; a miss-classified
     // quota wall must not become a manual-action stop).
-    const next = withMainModelRecoveryWindow({ ...recovery, attempts: recovery.attempts + 1, attempted: [...(current ? [current] : []), target], reason: mainModelRecoveryReason(failure), resetAt: failure.resetAt ?? recovery.resetAt });
+    const failureCopy = providerErrorPresentation(failure.raw, "main");
+    const next = withMainModelRecoveryWindow({
+      ...recovery,
+      attempts: recovery.attempts + 1,
+      attempted: [...(current ? [current] : []), target],
+      reason: mainModelRecoveryReason(failure),
+      providerErrorDiagnostic: failureCopy.diagnostic,
+      recoveryEpisodeKey: recovery.recoveryEpisodeKey ?? `${recovery.firstFailureAt ?? nowIso()}:${failureCopy.fingerprint}`,
+      recoveryNoticeKeys: recovery.recoveryNoticeKeys ?? [],
+      resetAt: failure.resetAt ?? recovery.resetAt,
+    });
     // v0.34.58: no quota-only parking — an over-budget upstream reset hint
     // never holds the goal for a manual resume; the bounded envelope owns
     // the wait (mainModelFailureDelayMs falls back to the bounded cadence
@@ -692,11 +769,15 @@ export function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainMo
     resetAt: failure.resetAt,
     kind: mainModelRecoveryKind(),
   } satisfies MainModelRecovery);
+  const failureCopy = providerErrorPresentation(failure.raw, "main");
   const nextRecovery = withMainModelRecoveryWindow({
     ...existing,
     active: current,
     attempts: existing.attempts + 1,
     reason: mainModelRecoveryReason(failure),
+    providerErrorDiagnostic: failureCopy.diagnostic,
+    recoveryEpisodeKey: existing.recoveryEpisodeKey ?? `${existing.firstFailureAt ?? nowIso()}:${failureCopy.fingerprint}`,
+    recoveryNoticeKeys: existing.recoveryNoticeKeys ?? [],
     resetAt: failure.resetAt ?? existing.resetAt,
   });
   // v0.34.58: uniform envelope even for over-budget upstream hints — the
@@ -760,9 +841,10 @@ export function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
   // block that was authored in response to the wall. Decision/error pauses
   // (intentional user-action) are still NOT touched.
   const isQuotaPauseReason = (r: string | undefined): boolean =>
-    !!r && /^(main model recovery|quota|provider quota|provider rate limit|rate limit|Token Plan|insufficient|credits?|billing)/i.test(r);
+    !!r && /^(main model recovery|quota|provider quota|provider rate limit|provider (?:account|request|billing)|rate limit|Token Plan|insufficient|credits?|billing)/i.test(r);
   const recoveryPause = state.goal
     && state.goal.status === "paused"
+    && !state.goal.pendingCompletion
     && (state.goal.pauseKind === "wait" || state.goal.pauseKind === "blocked")
     && isQuotaPauseReason(state.goal.pauseReason);
   const recoveryLoop = state.loop
@@ -790,7 +872,7 @@ export function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
   // started at +2m51s).
   flags.lastMainModelRecoveryResumeAt = Date.now();
   if (resumed === "goal") {
-    updateGoal({ status: "active", pauseKind: undefined, pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined }, ctx);
+    updateGoal({ status: "active", pauseKind: undefined, pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined, providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, ctx);
     scheduleContinuation(ctx, true, 1_000);
   } else if (resumed === "loop") {
     state.loop = { ...state.loop!, active: true, stopReason: undefined };
