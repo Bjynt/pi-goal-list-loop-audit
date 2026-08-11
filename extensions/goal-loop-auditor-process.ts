@@ -1,9 +1,10 @@
 /**
  * Detached completion-auditor transport.
  *
- * The parent never creates an agent session. It owns a small, durable job in
- * `<cwd>/.pi-glla/audit-jobs/<attemptId>/`, starts the extension-less worker,
- * and accepts only an identity-checked result from that worker.
+ * The parent never creates an agent session. It owns a small, temporary job
+ * directory in `<cwd>/.pi-glla/audit-jobs/<attemptId>/`, starts the
+ * extension-less worker, accepts only an identity-checked result, and removes
+ * the attempt directory when the transport settles.
  */
 
 import * as fs from "node:fs/promises";

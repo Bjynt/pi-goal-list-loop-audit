@@ -381,6 +381,24 @@ test("a verdict marker inside a think block is not accepted", async () => {
   }
 });
 
+test("failed setup preserves a pre-existing attempt directory it does not own", async () => {
+  const dir = await setup();
+  const attemptId = "attempt-pre-existing";
+  const jobDir = path.join(dir, ".pi-glla", "audit-jobs", attemptId);
+  const marker = path.join(jobDir, "foreign-marker");
+  await mkdir(jobDir, { recursive: true });
+  await writeFile(marker, "keep");
+  try {
+    const result = await runWithAttempt(dir, attemptId);
+    assert.equal(result.approved, false);
+    assert.equal(result.disapproved, false);
+    assert.match(result.error ?? "", /EEXIST|already exists/);
+    assert.equal(await readFile(marker, "utf8"), "keep", "a colliding job directory is not parent-owned scratch");
+  } finally {
+    await cleanup(dir);
+  }
+});
+
 test("detached retry identities remain unique while completed job scratch is removed", async () => {
   const dir = await setup();
   const logicalAttemptId = "audit-logical-claim";
