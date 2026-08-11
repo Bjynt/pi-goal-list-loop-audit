@@ -39,7 +39,7 @@ import {
   WEDGE_ALERT_DEFAULT_MINUTES,
 } from "./goal-loop-backoff.ts";
 import type { Settings } from "./goal-settings.ts";
-import { resolveEffectiveSubagentModel, KNOWN_PINNED_DEFAULT_AGENTS } from "./goal-loop-subagents.ts";
+import { resolveEffectiveSubagentModel, OVERRIDABLE_AGENT_TYPES } from "./goal-loop-subagents.ts";
 
 // =================================================================
 // Pure row builder (testable + reusable from the headless fallback)
@@ -220,7 +220,11 @@ export function buildSettingsRows(
   );
 
   // ── Subagent fallback chains (v0.34.115) ──
-  for (const name of KNOWN_PINNED_DEFAULT_AGENTS) {
+  // Fallback chains are editable for every embedded agent type. This is
+  // intentionally broader than KNOWN_PINNED_DEFAULT_AGENTS: Plan and
+  // general-purpose do not have upstream model pins, but their explicit
+  // fallback chains are still valid settings and have menu dispatchers.
+  for (const name of OVERRIDABLE_AGENT_TYPES) {
     const chain = settings.subagentFallbacks?.[name] ?? [];
     rows.push({
       id: `subagentFallbacks:${name}`,

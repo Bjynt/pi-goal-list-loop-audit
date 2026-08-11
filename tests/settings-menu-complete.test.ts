@@ -89,11 +89,33 @@ test("every row's section is one of the 6 known section ids (no orphans)", () =>
 test("v0.34.118: backup controls live together in the dedicated Backups section", () => {
   const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
   const byId = new Map(rows.map((r) => [r.id, r]));
-  for (const id of ["mainModelFallbacks", "mainModelRetryMinutes", "subagentFallbacks:Explore"]) {
+  for (const id of [
+    "mainModelFallbacks",
+    "mainModelRetryMinutes",
+    "subagentFallbacks:Explore",
+    "subagentFallbacks:Plan",
+    "subagentFallbacks:general-purpose",
+  ]) {
     assert.equal(byId.get(id)?.section, "backups", `${id} must be in Backups`);
   }
   assert.ok(rows.filter((r) => r.id.startsWith("subagentFallbacks:")).every((r) => r.section === "backups"));
   assert.equal(byId.get("forbiddenModels")?.section, "keep-going", "policy gate stays with keep-going controls");
+});
+
+test("all embedded subagent types expose editable fallback-chain rows", () => {
+  const rows = buildSettingsRows(
+    {
+      subagentFallbacks: {
+        Plan: ["provider/plan-backup"],
+        "general-purpose": ["provider/general-backup"],
+      },
+    } as Settings,
+    EMPTY_PROV,
+  );
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  assert.equal(byId.get("subagentFallbacks:Explore")?.valueText, "none (uses pin or inherits)");
+  assert.equal(byId.get("subagentFallbacks:Plan")?.valueText, "provider/plan-backup");
+  assert.equal(byId.get("subagentFallbacks:general-purpose")?.valueText, "provider/general-backup");
 });
 
 test("key rows from v0.27.0 settings menu are all present (menu coverage contract)", () => {
