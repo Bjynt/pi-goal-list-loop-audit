@@ -158,18 +158,20 @@ test("defaultAgentDir points at ~/.pi/agent", () => {
 // in extensions/goal-loop-subagents.ts.
 
 const DRIFT_CANDIDATES = [
+  path.resolve("node_modules", "@tintinweb", "pi-subagents", "src", "default-agents.ts"),
   path.join(os.homedir(), ".pi", "agent", "npm", "node_modules", "@tintinweb", "pi-subagents", "src", "default-agents.ts"),
   process.env.PI_SUBAGENTS_DEFAULT_AGENTS ?? "",
 ].filter(Boolean);
 const DRIFT_SOURCE = DRIFT_CANDIDATES.find(p => fs.existsSync(p));
-const DRIFT_SKIP = !DRIFT_SOURCE
-  && "pi-subagents default-agents.ts not installed in this environment — drift guard skipped";
 
-test("drift: embedded Explore copy matches installed pi-subagents default", { skip: DRIFT_SKIP }, () => {
-  // Use the test option rather than t.skip(): Bun's node:test compatibility
-  // supports this form, and an unsupported runner must fail rather than turn
-  // a missing drift guard into a passing no-op.
-  assert.ok(DRIFT_SOURCE, "drift guard source was not resolved");
+test("drift: embedded Explore copy matches installed pi-subagents default", () => {
+  // This is a required compatibility guard, not an optional live-rig probe:
+  // CI installs the provider before the release test. A missing source must
+  // fail loudly so EXPLORE_DEFAULT_DESCRIPTION cannot drift unchecked.
+  assert.ok(
+    DRIFT_SOURCE,
+    "drift guard source is required — install @tintinweb/pi-subagents or set PI_SUBAGENTS_DEFAULT_AGENTS",
+  );
   const src = DRIFT_SOURCE!;
   const content = fs.readFileSync(src, "utf-8");
   const exploreBlock = content.slice(content.indexOf('"Explore",'), content.indexOf('"Plan",'));

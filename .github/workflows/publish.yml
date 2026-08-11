@@ -50,8 +50,17 @@ jobs:
           }
           NODE
 
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Install the pi-subagents drift-test source
+        # The release suite compares our embedded agent copy with the
+        # provider's current default-agents.ts; keep that required guard live
+        # without making pi-subagents a runtime dependency of this package.
+        run: npm install --no-save --ignore-scripts --legacy-peer-deps @tintinweb/pi-subagents@0.15.0
+
       - name: Test and inspect the package
-        run: npm ci && npm run release:check
+        run: npm run release:check
 
       # Configure npm Trusted Publishing for this repository/workflow once in
       # the package settings. No long-lived NPM_TOKEN is required here.
