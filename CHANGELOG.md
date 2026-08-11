@@ -1,6 +1,15 @@
 # Changelog
 
 ## Unreleased
+### v0.34.131 — power-mode auditor: bash restored with bounded tool execution
+  The detached auditor intentionally restores `bash` alongside read/grep/find/ls
+  so it can run bounded tests, inspect git state, and reproduce behavior. This
+  is an explicit power-over-safety decision, not a read-only contract. The
+  independent five-minute parent/worker tool timeout and `--no-approve` remain
+  in place; unsupported tool events are still rejected. The prompt now exposes
+  bash as an audit capability while telling the model not to mutate unless the
+  objective requires it.
+
 ### v0.34.130 — detached auditor hardening: no shell/trust privilege and bounded tools
   Completion auditors now run with only `read`, `grep`, `find`, and `ls`; the
   worker uses `--no-approve` and rejects any unexpected tool event, closing the

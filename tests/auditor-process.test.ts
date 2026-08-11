@@ -8,7 +8,7 @@ import { test } from "node:test";
 
 import {
   newDetachedAuditJobAttemptId,
-  READ_ONLY_TOOLS,
+  AUDITOR_TOOLS,
   requestHash,
   runDetachedGoalCompletionAuditor,
   stableJson,
@@ -332,10 +332,10 @@ process.stdin.on("data", async (chunk) => {
   }
 });
 
-test("parent rejects a result that reports a disallowed tool", async () => {
+test("parent rejects a result that reports an unsupported tool", async () => {
   const dir = await setup();
   const badWorker = path.join(dir, "bad-tool-worker.mjs");
-  await writeFile(badWorker, workerSource.replace('name: "read"', 'name: "bash"'));
+  await writeFile(badWorker, workerSource.replace('name: "read"', 'name: "write"'));
   try {
     const result = await runDetachedGoalCompletionAuditor({
       cwd: dir,
@@ -346,19 +346,19 @@ test("parent rejects a result that reports a disallowed tool", async () => {
     });
     assert.equal(result.approved, false);
     assert.equal(result.disapproved, false);
-    assert.match(result.error ?? "", /reported disallowed tool: bash/);
+    assert.match(result.error ?? "", /reported unsupported tool: write/);
   } finally {
     await cleanup(dir);
   }
 });
 
-test("approval without a read-only tool is a semantic disapproval", async () => {
+test("approval without an audit tool is a semantic disapproval", async () => {
   const dir = await setup();
   try {
     const result = await run(dir, { FAKE_AUDIT_OUTPUT: "<approved/>" });
     assert.equal(result.approved, false);
     assert.equal(result.disapproved, true);
-    assert.match(result.error ?? "", /read-only tool/);
+    assert.match(result.error ?? "", /audit tool/);
   } finally {
     await cleanup(dir);
   }
@@ -526,7 +526,7 @@ setInterval(() => {}, 1_000);
     });
     assert.equal(result.approved, false);
     assert.equal(result.disapproved, false);
-    assert.match(result.error ?? "", /read-only tool read exceeded its 1s timeout/);
+    assert.match(result.error ?? "", /tool read exceeded its 1s timeout/);
     assert.equal(stalled.length, 1);
     assert.equal(stalled[0]?.reason, "tool-timeout");
     assert.equal(stalled[0]?.toolName, "read");
@@ -536,7 +536,7 @@ setInterval(() => {}, 1_000);
   }
 });
 
-test("worker aborts an unexpected tool event instead of treating it as read-only", async () => {
+test("worker aborts an unsupported tool event instead of treating it as an audit tool", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-disallowed-tool-"));
   const fakePi = path.join(dir, "disallowed-pi.mjs");
   const worker = path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs");
@@ -545,7 +545,7 @@ let handled = false;
 process.stdin.on("data", (chunk) => {
   if (handled || !String(chunk).includes("\\n")) return;
   handled = true;
-  process.stdout.write(JSON.stringify({ type: "tool_execution_start", toolCallId: "bad-1", toolName: "bash", args: { command: "touch injected" } }) + "\\n");
+  process.stdout.write(JSON.stringify({ type: "tool_execution_start", toolCallId: "bad-1", toolName: "write", args: { path: "injected" } }) + "\\n");
   setInterval(() => {}, 1_000);
 });
 `);
@@ -566,14 +566,14 @@ process.stdin.on("data", (chunk) => {
     });
     assert.equal(result.approved, false);
     assert.equal(result.disapproved, false);
-    assert.match(result.error ?? "", /attempted disallowed tool: bash/);
-    assert.deepEqual([...READ_ONLY_TOOLS], ["read", "grep", "find", "ls"]);
+    assert.match(result.error ?? "", /attempted unsupported tool: write/);
+    assert.deepEqual([...AUDITOR_TOOLS], ["read", "grep", "find", "ls", "bash"]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test("worker-side tool timeout aborts a read-only tool that never emits an end event", async () => {
+test("worker-side tool timeout aborts an audit tool that never emits an end event", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-tool-timeout-worker-"));
   const fakePi = path.join(dir, "stuck-read-pi.mjs");
   const worker = path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs");
@@ -603,13 +603,13 @@ process.stdin.on("data", (chunk) => {
     });
     assert.equal(result.approved, false);
     assert.equal(result.disapproved, false);
-    assert.match(result.error ?? "", /read-only tool read exceeded its 1s timeout/);
+    assert.match(result.error ?? "", /tool read exceeded its 1s timeout/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test("worker launches pi with the exact read-only RPC contract and one LF JSONL prompt", async () => {
+test("worker launches pi with the exact auditor RPC contract and one LF JSONL prompt", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-worker-"));
   const piLog = path.join(dir, "pi-log.json");
   const fakePi = path.join(dir, "fake-pi.mjs");
@@ -674,7 +674,7 @@ process.stdin.on("end", () => { process.exitCode = 41; });
     assert.equal(result.toolCalls[0].name, "read");
     assert.deepEqual(log.args, [
       "--mode", "rpc", "--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates",
-      "--no-themes", "--no-context-files", "--no-approve", "--tools", "read,grep,find,ls",
+      "--no-themes", "--no-context-files", "--no-approve", "--tools", "read,grep,find,ls,bash",
       "--model", "test/provider-model", "--thinking", "medium",
     ]);
     assert.equal(log.input.split("\n").length, 2);
