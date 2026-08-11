@@ -357,6 +357,33 @@ test("v0.34.96: complete_goal routes to aborted when completionSummary says 'alr
   assert.equal(ledger.filter((l) => l.type === "audit_started").length, 0, "no auditor was started");
 });
 
+test("v0.34.96: already-shipped abort binds the version attached to the claim", async () => {
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal({ status: "active" }) });
+  __testOnlyLoadState(cwd);
+  const pi = new MockPi();
+  activate(pi.api);
+  __testOnlyRegisterAgentTools(pi.api);
+  rememberCtxFor(cwd);
+  const res = await pi.runTool(
+    "complete_goal",
+    {
+      completionSummary: "Dependency bump v2.1.0 is in the changelog; the fix was already shipped in v0.34.74.",
+      verificationSummary: "The prior release contains the fix.",
+    },
+    ownerCtx(cwd),
+  );
+  assert.match(res.content[0]!.text, /v0\.34\.74/, "the response names the claim's version");
+  assert.doesNotMatch(res.content[0]!.text, /v2\.1\.0/, "an earlier dependency version is not misattributed");
+  const archive = fs.readdirSync(path.join(cwd, ".pi-glla", "archive"));
+  assert.equal(archive.length, 1);
+  const archived = fs.readFileSync(path.join(cwd, ".pi-glla", "archive", archive[0]!), "utf8");
+  assert.match(archived, /already_shipped:v0\.34\.74/);
+  assert.doesNotMatch(archived, /already_shipped:v2\.1\.0/);
+  const event = readLedger(cwd).find((entry) => entry.type === "complete_goal_already_shipped");
+  assert.equal(event?.value?.matchedVersion, "v0.34.74");
+});
+
 // v0.34.128 (field 2026-08-11, dracon-platform): a VERSION-LESS
 // "already shipped" / "no new work shipped" claim is not corroborated
 // (a restored session can hallucinate it from the old conversation's tail

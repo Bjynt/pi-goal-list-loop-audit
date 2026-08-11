@@ -525,9 +525,15 @@ function registerAgentTools(pi: any): void {
       let versionlessAlreadyShipped: string | undefined;
       if (alreadyShippedMatch) {
         const matchedPhrase = alreadyShippedMatch[0];
-        const matchedVersion = summaryText.match(/v\d+\.\d+\.\d+/);
+        // Bind the version to the shipped/verified claim instead of taking
+        // the first version-looking token in the whole recap. A dependency
+        // bump or changelog quote can legitimately precede the claim.
+        const matchedVersion =
+          summaryText.match(/\b(?:already\s+shipped|no\s+new\s+work\s+shipped)\b[^.\n]{0,80}?\b(v\d+\.\d+\.\d+)\b/)?.[1]
+          ?? summaryText.match(/\b(?:verified|confirmed)\s+(v\d+\.\d+\.\d+)\s+(?:already\s+)?covers?\s+this\b/)?.[1]
+          ?? summaryText.match(/\b(v\d+\.\d+\.\d+)\s+already\s+shipped\b/)?.[1];
         if (matchedVersion) {
-          const stopReason = `already_shipped:${matchedVersion[0]}`;
+          const stopReason = `already_shipped:${matchedVersion}`;
           // Persist the recap as the abort reason so the user sees it in
           // /goal status; archive directly with the aborted status.
           if (state.goal) {
@@ -542,7 +548,7 @@ function registerAgentTools(pi: any): void {
             goalId: state.goal?.id,
             stopReason,
             matchedPhrase,
-            matchedVersion: matchedVersion[0],
+            matchedVersion,
             routedToAudit: false,
             recap: p.completionSummary?.slice(0, 300),
           });
@@ -551,7 +557,7 @@ function registerAgentTools(pi: any): void {
           return {
             content: [{
               type: "text",
-              text: `complete_goal routed to status=aborted — completionSummary matched "${matchedPhrase}" (${matchedVersion[0]}). The work was already shipped in a prior version; this turn shipped no new code. Use this status to differentiate "completed" from "verified-already-shipped".`,
+              text: `complete_goal routed to status=aborted — completionSummary matched "${matchedPhrase}" (${matchedVersion}). The work was already shipped in a prior version; this turn shipped no new code. Use this status to differentiate "completed" from "verified-already-shipped".`,
             }],
             details: {},
           };
