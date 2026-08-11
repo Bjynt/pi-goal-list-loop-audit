@@ -915,6 +915,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       phase: "recovery-pending",
       recoveryAt: nowIso(),
       recoveryReason: result.error.startsWith("Auditor exceeded") ? "wall-timeout" : "inactivity-timeout",
+      automaticRecoveryAttempted: claim.automaticRecoveryAttempted ?? false,
     };
     updateGoal({
       status: "paused",

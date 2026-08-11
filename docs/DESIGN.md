@@ -257,6 +257,24 @@ replacement without delivering a successor `session_start`:
   `mainModelFallbacks` (rotation) — an empty list means "park and probe the
   same model" instead of switching pools.
 
+## Addendum v0.35.x (one-shot parked completion-audit recovery)
+
+- **The parked claim owns a durable one-shot fence**: a
+  `recovery-pending` `pendingCompletion` records whether its automatic
+  recovery retry has been consumed, plus the dispatch time and session
+  generation. Missing metadata on legacy claims means eligible, so old
+  claims remain recoverable without inventing a new completion assertion.
+- **Healthy events, not timers, trigger the retry**: a validated lifecycle
+  successor/Auto-resume or successful bounded main-model recovery may claim
+  one parked audit. The helper rechecks the current generation, live context,
+  goal identity, phase, and objective guard before starting the detached
+  worker. The phase transition and durable marker land before the worker is
+  launched, so repeated events cannot create a retry storm.
+- **Manual recovery remains authoritative**: a failed automatic attempt keeps
+  the exact claim in `recovery-pending` and its marker consumed; cold startup
+  remains held unless the existing Auto-resume policy or a validated lifecycle
+  handoff supplies consent. `/goal resume` still starts a direct fresh audit.
+
 ## Addendum v0.4.0 (completion)
 
 - **Auditor compaction enabled** (flaw #3 — the last open one). Safety:

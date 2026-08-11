@@ -888,6 +888,7 @@ function registerAgentTools(pi: any): void {
             phase: "recovery-pending",
             recoveryAt: nowIso(),
             recoveryReason: result.error.startsWith("Auditor exceeded") ? "wall-timeout" : "inactivity-timeout",
+            automaticRecoveryAttempted: completionClaim.automaticRecoveryAttempted ?? false,
           };
           updateGoal({
             status: "paused",
@@ -1121,7 +1122,13 @@ function registerAgentTools(pi: any): void {
         if (!current || !state.goal || state.goal.id !== auditGoalId || state.goal.pendingCompletion?.attemptId !== auditAttemptId) return;
         updateGoal({
           status: "paused",
-          pendingCompletion: { ...completionClaim, phase: "recovery-pending", recoveryAt: nowIso(), recoveryReason: "auditor-infrastructure" },
+          pendingCompletion: {
+            ...completionClaim,
+            phase: "recovery-pending",
+            recoveryAt: nowIso(),
+            recoveryReason: "auditor-infrastructure",
+            automaticRecoveryAttempted: completionClaim.automaticRecoveryAttempted ?? false,
+          },
           pauseKind: "error",
           pauseReason: `completion auditor infrastructure failure — ${error instanceof Error ? error.message : String(error)}`,
           pauseSuggestedAction: `Fix the auditor worker/model, then ${activeGoalSurfaceCommand("resume")} to retry the stored claim.`,

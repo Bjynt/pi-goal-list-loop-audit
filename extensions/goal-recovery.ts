@@ -67,6 +67,7 @@ export function markCompletionAuditRecoveryPending(ctx: ExtensionContext, reason
     phase: "recovery-pending",
     recoveryAt: nowIso(),
     recoveryReason: reason,
+    automaticRecoveryAttempted: claim.automaticRecoveryAttempted ?? false,
   };
   // Kill any child still owned by this process before releasing the durable
   // claim. Its late result is rejected by the attempt/generation checks, and
