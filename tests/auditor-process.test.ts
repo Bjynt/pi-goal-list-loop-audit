@@ -387,7 +387,10 @@ test("a mismatched result hash fails closed as infrastructure", async () => {
     await writeFile(badWorker, workerSource.replace("request.requestHash, ok", '"wrong-hash", ok'));
     const result = await runDetachedGoalCompletionAuditor({
       cwd: dir, goal, model: "test/provider-model",
-      runtime: { workerPath: badWorker, attemptId: () => "attempt-bad", pollIntervalMs: 10, wallTimeoutMs: 2_000 },
+      runtime: { workerPath: badWorker, attemptId: () => "attempt-bad", pollIntervalMs: 10, wallTimeoutMs: 5_000 },
+      // hardened 2026-08-11: 2s wall let a load-stretched worker spawn be
+      // killed before writing its (wrong-hash) result — the parent then
+      // reported "exited without an atomic result" instead of /hash mismatch/.
     });
     assert.equal(result.approved, false);
     assert.equal(result.disapproved, false);
