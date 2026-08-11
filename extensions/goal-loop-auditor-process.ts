@@ -369,7 +369,10 @@ export async function runDetachedGoalCompletionAuditor(args: {
   const pollIntervalMs = Math.max(10, runtime.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS);
   const heartbeatFreshMs = Math.max(10, runtime.heartbeatFreshMs ?? DEFAULT_HEARTBEAT_FRESH_MS);
   const heartbeatNoProgressMs = Math.max(50, runtime.heartbeatNoProgressMs ?? DEFAULT_HEARTBEAT_NO_PROGRESS_MS);
-  const toolTimeoutMs = Math.max(50, runtime.toolTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS);
+  const configuredToolTimeoutMs = runtime.toolTimeoutMs;
+  const toolTimeoutMs = configuredToolTimeoutMs === undefined || !Number.isFinite(configuredToolTimeoutMs)
+    ? DEFAULT_TOOL_TIMEOUT_MS
+    : Math.max(50, configuredToolTimeoutMs);
   const attemptId = runtime.attemptId?.() ?? `${Date.now().toString(36)}-${randomUUID()}`;
   // v0.34.59: capture the focus revision token at dispatch. Every result
   // shape returned to the parent carries this token so the parent can

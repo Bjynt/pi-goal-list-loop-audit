@@ -1,6 +1,17 @@
 # Changelog
 
 ## Unreleased
+### v0.34.130 — detached auditor hardening: no shell/trust privilege and bounded tools
+  Completion auditors now run with only `read`, `grep`, `find`, and `ls`; the
+  worker uses `--no-approve` and rejects any unexpected tool event, closing the
+  prompt-injection path that paired repository-controlled content with an
+  approved shell. The auditor prompt treats inspected files as untrusted data
+  and no longer requests bash. A separate five-minute per-read-tool timeout is
+  enforced by both the detached parent and worker, independent of heartbeat
+  freshness and the inactivity brake, so a tool that emits no end event cannot
+  consume the full 30-minute audit wall. Regression tests cover the exact RPC
+  argv, disallowed bash events, parent and worker tool timeouts.
+
 ### v0.34.129 — truthful list-audit fan-out dedupe and cap accounting
   The list-audit collector previously joined every queued objective into one
   string and searched for each finding's first 60 characters. A distinct

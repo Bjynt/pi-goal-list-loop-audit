@@ -553,6 +553,42 @@ process.stdin.on("data", (chunk) => {
   }
 });
 
+test("worker-side tool timeout aborts a read-only tool that never emits an end event", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-tool-timeout-worker-"));
+  const fakePi = path.join(dir, "stuck-read-pi.mjs");
+  const worker = path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs");
+  await writeFile(fakePi, `#!/usr/bin/env node
+let handled = false;
+process.stdin.on("data", (chunk) => {
+  if (handled || !String(chunk).includes("\\n")) return;
+  handled = true;
+  process.stdout.write(JSON.stringify({ type: "tool_execution_start", toolCallId: "read-1", toolName: "read", args: { path: "artifact" } }) + "\\n");
+  setInterval(() => {}, 1_000);
+});
+`);
+  await chmod(fakePi, 0o700);
+  try {
+    const result = await runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "high",
+      runtime: {
+        workerPath: worker,
+        env: { GLLA_PI_BINARY: fakePi, GLLA_AUDITOR_TOOL_TIMEOUT_MS: "80" },
+        attemptId: () => "attempt-worker-tool-timeout",
+        pollIntervalMs: 10,
+        wallTimeoutMs: 2_000,
+      },
+    });
+    assert.equal(result.approved, false);
+    assert.equal(result.disapproved, false);
+    assert.match(result.error ?? "", /read-only tool read exceeded its 1s timeout/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("worker launches pi with the exact read-only RPC contract and one LF JSONL prompt", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-worker-"));
   const piLog = path.join(dir, "pi-log.json");
