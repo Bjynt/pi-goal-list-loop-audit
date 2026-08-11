@@ -652,7 +652,21 @@ async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "lis
     ctx.ui.notify("Tweak cancelled; goal unchanged.", "info");
     return;
   }
-  const priorProvenance = current.objectiveProvenance;
+  // The proposal dialog yields to the host. A pause, recovery mark, or other
+  // same-goal update may replace state.goal while it is open. Rebase the
+  // tweak onto that latest object instead of restoring the pre-dialog
+  // snapshot through bumpGoalRevision(current). If another goal replaced it,
+  // do not apply this confirmation to the new goal.
+  const latest = state.goal;
+  if (!latest || latest.id !== current.id) {
+    ctx.ui.notify("Tweak cancelled — the goal changed while confirmation was open; no stale state was restored.", "warning");
+    return;
+  }
+  if (latest.status === "complete" || latest.status === "aborted") {
+    ctx.ui.notify("Tweak cancelled — the goal finished while confirmation was open; no stale state was restored.", "warning");
+    return;
+  }
+  const priorProvenance = latest.objectiveProvenance;
   const userSeeds = [...(priorProvenance?.userSeeds ?? []), raw].slice(-10);
   const patch: Partial<Goal> = {
     objective: newObjective,
@@ -667,10 +681,10 @@ async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "lis
   // omitted clause → no verificationContract key in the patch: preserved.
   // v0.34.61: contract-scoped revision bump — one of exactly two sites
   // (the other: complete_goal newObjective). persistState no longer bumps.
-  state.goal = bumpGoalRevision(current);
+  state.goal = bumpGoalRevision(latest);
   updateGoal(patch, ctx);
   appendLedger(ctx.cwd, "goal_tweaked", {
-    goalId: current.id,
+    goalId: latest.id,
     objective: newObjective,
     via: mode === "list" ? "/list tweak" : "/goal tweak",
   });
