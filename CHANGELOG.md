@@ -8,6 +8,12 @@
   timer, and manual recovery holds remain quiet. Regression coverage pins the
   failure-safe re-arm path.
 
+### Valid imperative recovery objectives keep their saved intent
+  Faulty-objective recovery no longer treats every imperative mentioning
+  auditor or verification machinery as reviewer metadata. Explicit reviewer
+  markers and non-actionable fragments remain fenced, while saved list work
+  such as the detached-auditor recovery item can activate normally.
+
 ### Power-mode auditor: bash restored with bounded tool execution
   The detached auditor intentionally restores `bash` alongside read/grep/find/ls
   so it can run bounded tests, inspect git state, and reproduce behavior. This

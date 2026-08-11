@@ -75,7 +75,12 @@ export function assessSuspiciousObjective(objective: unknown, verificationContra
 
   if (!text) reasons.push("empty");
   if (archiveMetadata(text)) reasons.push("archive-metadata");
-  if (REVIEWER_MARKER.test(text) || REVIEWER_VOCABULARY.test(text) || /<\/?(?:evidence|approved|disapproved|impossible)\b/i.test(text)) reasons.push("verification-fragment");
+  // A real imperative can legitimately mention the auditor, verification,
+  // or regression machinery it is meant to repair. Treat evaluator
+  // vocabulary as a fragment signal only when the text is not already an
+  // actionable imperative; explicit reviewer markers/tags remain suspicious
+  // regardless of their opening word.
+  if (REVIEWER_MARKER.test(text) || (!IMPERATIVE_START.test(text) && REVIEWER_VOCABULARY.test(text)) || /<\/?(?:evidence|approved|disapproved|impossible)\b/i.test(text)) reasons.push("verification-fragment");
   if (/^#{1,6}\s+\S/.test(text)) reasons.push("heading");
   if (isAuditLikeNumberedText(text)) reasons.push("numbered-audit-fragment");
   if (SEMANTIC_REVIEW_FRAGMENT.test(text)) reasons.push("reviewer-fragment");

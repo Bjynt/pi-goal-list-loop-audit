@@ -54,6 +54,11 @@ test("valid imperative objectives are not flagged", () => {
   assert.equal(assessSuspiciousObjective("Fix the stale resume path", "run the focused tests").suspicious, false);
 });
 
+test("valid imperative objectives may mention auditor and verification machinery", () => {
+  const result = assessSuspiciousObjective("Fix the detached completion-auditor recovery path and add focused verification coverage");
+  assert.equal(result.suspicious, false);
+});
+
 test("normalization is an automatic provenance repair", () => {
   const g = goal({ objective: "Implement the repair gate (archive)" });
   const assessment = assessSuspiciousObjective(g.objective, g.verificationContract);
