@@ -1019,6 +1019,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
   // Any other outcome — disapproved or impossible — belongs to the agent:
   // resume and let the continuation drive the next step. The verdict is
   // durable in auditHistory + /goal status.
+  const residualFailureCopy = providerErrorPresentation(result.error, "completion");
   updateGoal({
     status: "active",
     auditHistory: history,
@@ -1027,7 +1028,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       ? `auditor disapproved on quota-retry — see ${activeGoalStatusCommand()}`
       : result.impossible
         ? `auditor verdict: IMPOSSIBLE on quota-retry — ${(result.impossibleReason ?? "").slice(0, 120)}`
-        : `auditor infrastructure error on quota-retry: ${(result.error ?? "").slice(0, 120)}`,
+        : `auditor infrastructure error on quota-retry: ${residualFailureCopy.display}`,
   }, liveCtx);
   liveCtx.ui.notify(
     result.disapproved

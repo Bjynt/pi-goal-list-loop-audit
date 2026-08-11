@@ -60,6 +60,10 @@ export function truncate(s: string, max: number): string {
   return safe.length <= max ? safe : safe.slice(0, Math.max(0, max - 1)) + "…";
 }
 
+function displayPauseReason(reason: string): string {
+  return compactDisplayText(sanitizeProviderDisplayText(reason));
+}
+
 /** v0.33.1: painted strings measure by their terminal-cell width. */
 function visibleLen(s: string): number {
   return tuiVisibleWidth(s);

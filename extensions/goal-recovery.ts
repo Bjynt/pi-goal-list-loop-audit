@@ -62,11 +62,16 @@ export function markCompletionAuditRecoveryPending(ctx: ExtensionContext, reason
     if (goal?.status === "auditing") clearDetachedAuditRuntime();
     return false;
   }
+  const failureCopy = providerErrorPresentation(reason, "completion");
+  const recoveryEpisodeKey = claim.recoveryEpisodeKey ?? `${claim.at}:${failureCopy.fingerprint}`;
   const pending: PendingCompletion = {
     ...claim,
     phase: "recovery-pending",
     recoveryAt: nowIso(),
     recoveryReason: reason,
+    providerErrorDiagnostic: failureCopy.sensitive ? failureCopy.diagnostic : claim.providerErrorDiagnostic,
+    recoveryEpisodeKey,
+    recoveryNoticeKeys: claim.recoveryNoticeKeys ?? [],
     automaticRecoveryAttempted: claim.automaticRecoveryAttempted ?? false,
   };
   // Kill any child still owned by this process before releasing the durable
@@ -77,9 +82,12 @@ export function markCompletionAuditRecoveryPending(ctx: ExtensionContext, reason
   updateGoal({
     status: "paused",
     pendingCompletion: pending,
+    providerErrorDiagnostic: pending.providerErrorDiagnostic,
+    recoveryEpisodeKey,
+    recoveryNoticeKeys: pending.recoveryNoticeKeys,
     pauseKind: "blocked",
     pauseResumeAt: undefined,
-    pauseReason: `completion audit blocked — no verdict: ${reason}`,
+    pauseReason: `completion audit blocked — no verdict${failureCopy.sensitive ? `: ${failureCopy.display}` : `: ${reason}`}`,
     pauseSuggestedAction: `The completion claim is stored and was not judged. Fix the auditor/session issue, then ${activeGoalSurfaceCommand("resume")} to start exactly one fresh audit.`,
     pauseOptions: undefined,
     pauseRecommended: undefined,
@@ -87,7 +95,9 @@ export function markCompletionAuditRecoveryPending(ctx: ExtensionContext, reason
   appendLedger(ctx.cwd, "audit_recovery_pending", {
     goalId: goal.id,
     attemptId: claim.attemptId,
-    reason,
+    reason: failureCopy.sensitive ? failureCopy.display : reason,
+    diagnostic: pending.providerErrorDiagnostic,
+    recoveryEpisodeKey,
     mainReleased: true,
     verdict: "none",
   });
