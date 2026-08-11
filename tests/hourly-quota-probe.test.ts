@@ -272,11 +272,12 @@ test("v0.34.132: runtime failure re-arms a later hourly probe after recovery cle
   const cwd = tmpCwd();
   const ctx = makeMockCtx(cwd);
   const rig = makeHourlyRig(ctx, true);
+  const extensionCtx = ctx as unknown as ExtensionContext;
   replaceState({ goal: null, mainModelRecovery: parkedRecovery() });
 
-  scheduleHourlyProbe(ctx);
+  scheduleHourlyProbe(extensionCtx);
   assert.equal(rig.scheduled.length, 1, "the parked recovery arms one hourly timer");
-  const firstHourly = rig.scheduled[0];
+  const firstHourly = rig.scheduled[0]!;
   rig.run(firstHourly);
   await settleHourlyProbe();
 
@@ -286,7 +287,8 @@ test("v0.34.132: runtime failure re-arms a later hourly probe after recovery cle
   assert.equal(rig.flags.hourlyProbeTimer !== null, true, "cleanup leaves a newly armed hourly timer");
   const pending = rig.scheduled.filter((timer) => !timer.fired);
   assert.equal(pending.length, 2, "normal recovery and the later hourly slot are both pending");
-  const [normalRetry, secondHourly] = pending;
+  const normalRetry = pending[0]!;
+  const secondHourly = pending[1]!;
   assert.ok(secondHourly.delayMs > normalRetry.delayMs, "the later :00:30 hourly slot is distinct from the normal retry");
   assert.notEqual(secondHourly.native, firstHourly.native, "failure cleanup did not retain the consumed timer");
   assert.equal(rig.flags.hourlyProbeTimer, secondHourly.native, "the re-armed timer is the hourly handle");
@@ -302,15 +304,16 @@ test("v0.34.132: runtime opt-out and generation fencing prevent hourly execution
   const cwd = tmpCwd();
   const ctx = makeMockCtx(cwd);
   const rig = makeHourlyRig(ctx, false);
+  const extensionCtx = ctx as unknown as ExtensionContext;
   replaceState({ goal: null, mainModelRecovery: parkedRecovery() });
 
-  scheduleHourlyProbe(ctx);
+  scheduleHourlyProbe(extensionCtx);
   assert.equal(rig.scheduled.length, 0, "opt-out prevents a new hourly timer");
 
   setHourlyProbeSetting(true);
-  scheduleHourlyProbe(ctx);
+  scheduleHourlyProbe(extensionCtx);
   assert.equal(rig.scheduled.length, 1, "turning the setting on arms the timer");
-  const staleTimer = rig.scheduled[0];
+  const staleTimer = rig.scheduled[0]!;
   rig.flags.sessionGeneration += 1;
   rig.run(staleTimer);
   await settleHourlyProbe();
