@@ -914,23 +914,32 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     // Watchdog timeouts stay ahead of the durable retry branch: a hanging
     // verification command will hang again, so pause loudly and let
     // /goal resume re-enter the direct-audit path with the stored claim.
+    const failureCopy = providerErrorPresentation(result.error, "completion");
+    const recoveryEpisodeKey = claim.recoveryEpisodeKey ?? `${claim.at}:${failureCopy.fingerprint}`;
     const pending: PendingCompletion = {
       ...claim,
       phase: "recovery-pending",
       recoveryAt: nowIso(),
       recoveryReason: result.error.startsWith("Auditor exceeded") ? "wall-timeout" : "inactivity-timeout",
+      providerErrorDiagnostic: failureCopy.diagnostic,
+      recoveryEpisodeKey,
+      recoveryNoticeKeys: claim.recoveryNoticeKeys ?? [],
       automaticRecoveryAttempted: claim.automaticRecoveryAttempted ?? false,
     };
+    const notifyTimeout = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:timeout`);
     updateGoal({
       status: "paused",
       auditHistory: history,
       pendingCompletion: pending,
+      providerErrorDiagnostic: failureCopy.diagnostic,
+      recoveryEpisodeKey,
+      recoveryNoticeKeys: pending.recoveryNoticeKeys,
       pauseKind: "error",
-      pauseReason: `completion audit timed out — ${result.error}`,
+      pauseReason: "completion audit timed out — no verifier verdict was produced",
       pauseSuggestedAction: `The claim is stored. Check long-running verification commands, then ${activeGoalSurfaceCommand("resume")} to retry the isolated auditor.`,
     }, liveCtx);
-    appendLedger(liveCtx.cwd, result.error.startsWith("Auditor exceeded") ? "audit_wall_timeout" : "audit_inactivity_timeout", { goalId, attemptId: claim.attemptId, error: result.error.slice(0, 240) });
-    liveCtx.ui.notify(`Completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and ${activeGoalSurfaceCommand("resume")} to retry it.`, "warning");
+    appendLedger(liveCtx.cwd, result.error.startsWith("Auditor exceeded") ? "audit_wall_timeout" : "audit_inactivity_timeout", { goalId, attemptId: claim.attemptId, error: failureCopy.diagnostic.slice(0, 240), diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
+    if (notifyTimeout) liveCtx.ui.notify(`Completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and ${activeGoalSurfaceCommand("resume")} to retry it.`, "warning");
     return;
   }
 
@@ -941,6 +950,8 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
   // after three strikes.
   if (result.error && !result.disapproved) {
     // Preserve the claim, but use a durable bounded plan.
+    const failureCopy = providerErrorPresentation(result.error, "completion");
+    const recoveryEpisodeKey = claim.recoveryEpisodeKey ?? `${claim.at}:${failureCopy.fingerprint}`;
     const settingsNow = loadSettings(liveCtx.cwd);
     const defaultMinutes = settingsNow.quotaRetryMinutes ?? DEFAULT_QUOTA_RETRY_MINUTES;
     const quota = parseQuotaError(result.error, defaultMinutes * 60);
@@ -950,40 +961,55 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       phase: "quota-waiting" as const,
       recoveryAt: undefined,
       recoveryReason: undefined,
+      providerErrorDiagnostic: failureCopy.diagnostic,
+      recoveryEpisodeKey,
+      recoveryNoticeKeys: claim.recoveryNoticeKeys ?? [],
       quotaAttempts: plan.attempt,
       quotaFirstAt: plan.firstAt,
       quotaAutoRetryUntil: plan.autoRetryUntil,
     };
     const providerHint = plan.requestedSec !== plan.retryAfterSec ? ` (provider hint capped at ${Math.round(plan.retryAfterSec / 60)}m)` : "";
     if (!plan.automatic) {
+      const notifyCapped = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:retry-capped`);
       updateGoal({
         status: "paused",
         auditHistory: history,
         pendingCompletion: pending,
+        providerErrorDiagnostic: failureCopy.diagnostic,
+        recoveryEpisodeKey,
+        recoveryNoticeKeys: pending.recoveryNoticeKeys,
         pauseKind: "blocked",
         pauseResumeAt: undefined,
         pauseReason: `auditor retry: automatic retry horizon reached (${plan.attempt} attempts)`,
         pauseSuggestedAction: `The completion claim is stored, but automatic auditor probes are stopped. Check the provider reset/billing state, then ${activeGoalSurfaceCommand("resume")} to start a fresh bounded window.`,
       }, liveCtx);
-      appendLedger(liveCtx.cwd, "auditor_retry_capped", { streak: plan.attempt, autoRetryUntil: plan.autoRetryUntil, requestedSec: plan.requestedSec });
-      liveCtx.ui.notify(`Automatic auditor retries stopped after ${plan.attempt} bounded attempts — the claim stays stored; check the provider, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
+      appendLedger(liveCtx.cwd, "auditor_retry_capped", { streak: plan.attempt, autoRetryUntil: plan.autoRetryUntil, requestedSec: plan.requestedSec, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
+      if (notifyCapped) liveCtx.ui.notify(`Automatic auditor retries stopped after ${plan.attempt} bounded attempts — the claim stays stored; check the provider, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
       return;
     }
+    const notifyRetry = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:retry-wait`);
     updateGoal({
       status: "paused",
       auditHistory: history,
       pendingCompletion: pending,
+      providerErrorDiagnostic: failureCopy.diagnostic,
+      recoveryEpisodeKey,
+      recoveryNoticeKeys: pending.recoveryNoticeKeys,
       pauseKind: "wait",
       pauseResumeAt: new Date(Date.now() + plan.retryAfterSec * 1000).toISOString(),
-      pauseReason: `auditor retry: ${result.error}`,
+      pauseReason: `auditor retry: ${failureCopy.display}`,
       pauseSuggestedAction: `Auto-retry in ${fmtRetryDelay(plan.retryAfterSec)}${providerHint} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
     }, liveCtx);
-    appendLedger(liveCtx.cwd, "goal_paused", { reason: `auditor retry: retry in ${plan.retryAfterSec}s (stored-claim retry)`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil });
-    liveCtx.ui.notify(`Auditor still failing — next auto-retry in ${fmtRetryDelay(plan.retryAfterSec)}${providerHint} (your completion claim is stored; no action needed).`, "warning");
+    appendLedger(liveCtx.cwd, "goal_paused", { reason: `auditor retry: retry in ${plan.retryAfterSec}s (stored-claim retry)`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
+    if (notifyRetry) liveCtx.ui.notify(`Auditor still failing — next auto-retry in ${fmtRetryDelay(plan.retryAfterSec)}${providerHint} (your completion claim is stored; no action needed).`, "warning");
     scheduleQuotaRetryForSession(liveCtx, plan.retryAfterSec, result.error, (fresh: ExtensionContext) => {
       if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor retry:") && state.goal.pendingCompletion) {
         void retryStoredCompletionAudit(origin);
       }
+    }, undefined, {
+      episodeKey: recoveryEpisodeKey,
+      noticeKey: `${recoveryEpisodeKey}:retry-wait`,
+      suppressNotice: true,
     });
     return;
   }
