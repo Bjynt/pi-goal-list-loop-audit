@@ -37,6 +37,7 @@ const pi = new MockPi();
 activate(pi.api);
 
 const MAIN_SM = { name: "main-session-manager" };
+const CONT = fs.readFileSync("extensions/goal-continuation.ts", "utf8");
 
 function ownerCtx(cwd: string): MockCtx {
   return makeMockCtx(cwd, { sessionManager: MAIN_SM });
@@ -138,6 +139,17 @@ test("v0.34.124: a recovery resume inside the watchdog window pauses the watchdo
     __testOnlySetContinuationStartTimeout(null);
     __testOnlySetLastMainModelRecoveryResumeAt(null);
   }
+});
+
+test("v0.34.124: recovery rearm counters clear when the dispatch watchdog settles", () => {
+  const cleanupIdx = CONT.indexOf("export function clearContinuationStartWatchdog");
+  assert.ok(cleanupIdx >= 0, "continuation watchdog cleanup remains present");
+  const cleanup = CONT.slice(cleanupIdx, cleanupIdx + 500);
+  assert.match(cleanup, /clearRecoveryRearms\(pendingContinuationDispatch\.id\)/, "terminal watchdog cleanup clears recovery rearm entries");
+  assert.match(CONT, /function clearRecoveryRearms\(id: string\): void \{\n\s*continuationStartRecoveryRearms\.delete\(id\);\n\s*\}/);
+  const resetIdx = CONT.indexOf("export function resetContinuationDispatchState");
+  assert.ok(resetIdx >= 0, "destructive dispatch reset remains present");
+  assert.match(CONT.slice(resetIdx, resetIdx + 700), /continuationStartRecoveryRearms\.clear\(\)/, "full dispatch reset clears any orphaned recovery entries");
 });
 
 test("v0.34.124: a recovery resume OUTSIDE the grace window does not pause the watchdog", async () => {

@@ -259,6 +259,9 @@ const continuationStartCompactionRearms = new Map<string, number>();
 // to the unacknowledged verdict exactly as before.
 const MAIN_MODEL_RECOVERY_START_GRACE_MS = 5 * 60_000;
 const RECOVERY_REARM_CAP = 10;
+// Keyed by the pending dispatch id; clearRecoveryRearms is called with every
+// terminal dispatch cleanup so one entry cannot survive its five-minute
+// post-recovery grace window.
 const continuationStartRecoveryRearms = new Map<string, number>();
 
 function noteRecoveryRearm(id: string): number {
@@ -395,7 +398,10 @@ export function clearContinuationStartWatchdog(): void {
     clearTimeout(continuationStartTimer);
     continuationStartTimer = null;
   }
-  if (pendingContinuationDispatch) clearCompactionRearms(pendingContinuationDispatch.id);
+  if (pendingContinuationDispatch) {
+    clearCompactionRearms(pendingContinuationDispatch.id);
+    clearRecoveryRearms(pendingContinuationDispatch.id);
+  }
   pendingContinuationDispatch = null;
   lastContinuationSentAt = 0;
   lastContinuationSentPayload = null;
@@ -408,6 +414,9 @@ function noteCompactionRearm(id: string): number {
 }
 function clearCompactionRearms(id: string): void {
   continuationStartCompactionRearms.delete(id);
+}
+function clearRecoveryRearms(id: string): void {
+  continuationStartRecoveryRearms.delete(id);
 }
 
 function dispatchLabel(record: ContinuationDispatch): string {
@@ -1160,5 +1169,6 @@ export function resetContinuationDispatchState(cwd: string): boolean {
   continuationRearmMilestone = 0;
   lastNoTurnStartedNotifiedAt = 0;
   continuationStartCompactionRearms.clear();
+  continuationStartRecoveryRearms.clear();
   return clearDispatchRecord(cwd);
 }
