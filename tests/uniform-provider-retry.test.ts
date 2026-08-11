@@ -73,7 +73,8 @@ test("v0.34.51: quota-only parking gates are widened to every non-transient fail
 test("v0.34.51: the auditor durable plan catches ANY non-timeout infra error with neutral wording", () => {
   assert.ok(!SRC.includes("isQuotaError"), "no quota classification gate left in goal.ts");
   assert.match(SRC, /v0\.34\.51: ANY infrastructure failure enters the durable bounded retry/);
-  assert.match(SRC, /auditor retry: \$\{result\.error\}/);
+  assert.match(SRC, /auditor retry: \$\{failureCopy\.display\}/, "pause copy uses sanitized provider classification");
+  assert.doesNotMatch(SRC, /auditor retry: \$\{result\.error\}/, "raw provider error is not used as pause copy");
   assert.match(SRC, /auditor retry: retry in \$\{plan\.retryAfterSec\}s \(stored-claim retry\)/);
   assert.match(SRC, /auditor_retry_capped/);
   assert.ok(!SRC.includes("quota_retry_capped"), "old quota-only ledger event gone");

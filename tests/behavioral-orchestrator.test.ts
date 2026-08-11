@@ -2430,6 +2430,37 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
 
 // ---- v0.34.91: the end-of-goal voice carries the recap (what happened) ----
 
+test("v0.35.x: provider-wall diagnostics stay durable while completion surfaces remain sanitized and deduplicated", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const raw = '429 {"error":{"message":"Token Plan rate limit reached: upgrade your Token Plan"},"request_id":"abc123"}';
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = writeFakeAuditorError(cwd, raw);
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    await pi.command("goal", "provider wall completion target — done when pinned", ctx);
+    await tick();
+    const result = await pi.runTool("complete_goal", {
+      completionSummary: "The provider-wall completion path is covered.",
+      verificationSummary: "The detached auditor returns a synthetic provider wall.",
+    }, ctx);
+    assert.doesNotMatch(result.content.map((part) => part.text).join("\\n"), /429|Token Plan|abc123/, "the immediate completion-tool result never dumps the provider payload");
+    await waitUntil(() => (readState(cwd).goal as { status?: string; pendingCompletion?: { phase?: string } } | null)?.pendingCompletion?.phase === "quota-waiting");
+    const parked = readState(cwd).goal as { pauseReason?: string; providerErrorDiagnostic?: string; pendingCompletion?: { providerErrorDiagnostic?: string; recoveryNoticeKeys?: string[] } };
+    assert.doesNotMatch(`${parked.pauseReason ?? ""} ${ctx.ui.notifies.map((notice) => notice.message).join("\\n")}`, /429|Token Plan|abc123/, "recovery notifications and pause copy are sanitized");
+    assert.match(parked.providerErrorDiagnostic ?? "", /Token Plan/);
+    assert.match(parked.pendingCompletion?.providerErrorDiagnostic ?? "", /429/);
+    assert.equal(parked.pendingCompletion?.recoveryNoticeKeys?.filter((key) => key.endsWith(":retry-wait")).length, 1, "the retry notice is durably claimed once for the episode");
+    const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+    assert.match(ledger, /Token Plan/);
+    assert.match(ledger, /429/);
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  } finally {
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
 test("v0.34.119: auditor-approved list completion archives the item and activates exactly the next queue item", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
