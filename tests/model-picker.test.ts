@@ -187,17 +187,24 @@ test("v0.31.2/0.31.3: auditor thinking defaults to sticky high — never the ses
   assert.equal(SRC.match(/thinkingLevel: \(settings\.auditorThinkingLevel \?\? "high"\) as any,/g)!.length, 2, "both audit call sites floor at high");
   assert.ok(!SRC.includes("getSessionThinkingLevel"), "the session-dial follower is gone");
   const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
-  // v0.31.4: no standalone thinking ROW — thinking is chained into the
-  // Auditor model drill-in ("we are setting the thinking when we select
-  // the model"); terse valueTexts: "session model" / "none".
-  assert.ok(!MENU.includes('id: "auditorThinkingLevel"'), "standalone thinking row removed");
+  // v0.31.4: thinking is chained into the Auditor model drill-in ("we are
+  // setting the thinking when we select the model"); v0.34.127 adds the
+  // standalone Auditor thinking row because the claimed "/glla thinking="
+  // direct path never existed — the level was otherwise only reachable by
+  // re-picking the model. The row reuses the SAME ladder/dialog.
+  assert.ok(MENU.includes('id: "auditorThinkingLevel"'), "standalone thinking row present (v0.34.127)");
   assert.match(MENU, /valueText: show\("auditorModel", "session model"\)/);
+  const UI = fs.readFileSync("extensions/loops/goal-settings-ui.ts", "utf-8");
+  assert.ok(UI.includes('case "auditorThinkingLevel"'), "standalone thinking row has a dispatcher case");
+  assert.ok(!UI.includes('/glla thinking='), "the never-existing /glla thinking= claim is gone");
   // v0.31.5: unset fallback displays as what it semantically IS — the
   // cascade's last rung ("maybe have a def fallback to session").
   assert.match(MENU, /valueText: show\("auditorModelFallback", "session model \(last resort\)"\)/);
   const caseIdx2 = SRC.indexOf('case "auditorModel": {');
   assert.match(SRC.slice(caseIdx2, caseIdx2 + 2600), /"Auditor thinking — DETACHED auditor worker ONLY/);
-  assert.ok(!SRC.includes('case "auditorThinkingLevel"'), "dead menu case removed");
+  // v0.34.127: the standalone row is dispatchable (no dead id) — the old
+  // v0.31.4 "no row" contract is superseded by the row + its case.
+  assert.ok(SRC.includes('case "auditorThinkingLevel"'), "standalone thinking row case present");
   const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
   assert.match(SETTINGS, /must NOT ride the session's coding-speed/);
 });
