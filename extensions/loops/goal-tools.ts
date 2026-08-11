@@ -534,25 +534,37 @@ function registerAgentTools(pi: any): void {
           ?? summaryText.match(/\b(?:verified|confirmed)\s+(v\d+\.\d+\.\d+)\s+(?:already\s+)?covers?\s+this\b/)?.[1];
         if (matchedVersion) {
           const stopReason = `already_shipped:${matchedVersion}`;
-          // Persist the recap as the abort reason so the user sees it in
-          // /goal status; archive directly with the aborted status.
-          if (state.goal) {
-            updateGoal({
-              completionSummary: p.completionSummary?.trim(),
-              stopReason,
-              pendingTasks: undefined,
-              pendingCompletion: undefined,
-            }, ctx);
+          // Fence the claim before any persistence. The normal audit path
+          // uses this same guard; without it a stale completion call can
+          // mutate a replaced goal or overwrite an archive that already won.
+          const alreadyShippedGoalId = state.goal?.id;
+          if (!guardGoalBeforeContinuation(ctx, "already-shipped-archive", alreadyShippedGoalId)) {
+            return staleToolResult();
+          }
+          // Archive the terminal snapshot directly. Do not first persist a
+          // terminal stopReason on an active goal: a crash in that gap leaves
+          // a live slot that looks resumable but is already claimed closed.
+          const archived = archiveCurrentGoal(ctx, "aborted", stopReason, {
+            completionSummary: p.completionSummary?.trim(),
+            pendingTasks: undefined,
+          });
+          if (!archived) {
+            return {
+              content: [{
+                type: "text",
+                text: "complete_goal could not archive the already-shipped claim safely — the goal remains active. Fix persistence or resolve the archive fence, then retry.",
+              }],
+              details: {},
+            };
           }
           appendLedger(ctx.cwd, "complete_goal_already_shipped", {
-            goalId: state.goal?.id,
+            goalId: alreadyShippedGoalId,
             stopReason,
             matchedPhrase,
             matchedVersion,
             routedToAudit: false,
             recap: p.completionSummary?.slice(0, 300),
           });
-          archiveCurrentGoal(ctx, "aborted", stopReason);
           ctx.ui.notify(`Goal archived as aborted — completionSummary indicated the work was ${matchedPhrase}; no new work shipped in this turn.`, "info");
           return {
             content: [{
