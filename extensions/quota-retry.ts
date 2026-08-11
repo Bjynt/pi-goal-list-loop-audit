@@ -109,7 +109,15 @@ export function sanitizeProviderDisplayText(value: string): string {
   if (!presentation.sensitive) return value;
   if (/completion audit timed out/i.test(value)) return "completion audit timed out — no verifier verdict was produced";
   if (/auditor retry/i.test(value)) return `auditor retry — ${presentation.display}`;
-  if (/main model recovery/i.test(value)) return `main model recovery — ${presentation.display}`;
+  if (/main model recovery.*automatic probes stopped/i.test(value)) {
+    const safePrefix = value.match(/^main model recovery — automatic probes stopped \\([^)]*\\)/i)?.[0]
+      ?? "main model recovery — automatic probes stopped";
+    return `${safePrefix} · ${presentation.display}`;
+  }
+  if (/main model recovery/i.test(value)) {
+    const safePrefix = value.match(/^main model recovery — [^(]*/i)?.[0]?.trim();
+    return safePrefix ? `${safePrefix} (${presentation.display})` : `main model recovery — ${presentation.display}`;
+  }
   if (/consecutive errors|output[ -]?token/i.test(value)) return `provider recovery — ${presentation.display}`;
   return presentation.display;
 }
