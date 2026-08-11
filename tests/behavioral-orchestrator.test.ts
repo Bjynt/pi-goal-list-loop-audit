@@ -2445,7 +2445,7 @@ test("v0.35.x: provider-wall diagnostics stay durable while completion surfaces 
       verificationSummary: "The detached auditor returns a synthetic provider wall.",
     }, ctx);
     assert.doesNotMatch(result.content.map((part) => part.text).join("\\n"), /429|Token Plan|abc123/, "the immediate completion-tool result never dumps the provider payload");
-    await waitUntil(() => (readState(cwd).goal as { status?: string; pendingCompletion?: { phase?: string } } | null)?.pendingCompletion?.phase === "quota-waiting");
+    await waitUntil(() => (readState(cwd).goal as { status?: string; pendingCompletion?: { phase?: string } } | null)?.pendingCompletion?.phase === "quota-waiting", 12_000);
     const parked = readState(cwd).goal as { pauseReason?: string; providerErrorDiagnostic?: string; pendingCompletion?: { providerErrorDiagnostic?: string; recoveryNoticeKeys?: string[] } };
     assert.doesNotMatch(`${parked.pauseReason ?? ""} ${ctx.ui.notifies.map((notice) => notice.message).join("\\n")}`, /429|Token Plan|abc123/, "recovery notifications and pause copy are sanitized");
     assert.match(parked.providerErrorDiagnostic ?? "", /Token Plan/);

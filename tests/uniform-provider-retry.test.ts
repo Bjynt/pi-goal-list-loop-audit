@@ -86,7 +86,7 @@ test("v0.34.51: the auditor durable plan catches ANY non-timeout infra error wit
   assert.ok(!SRC.includes("The auditor has failed ${infraStreak} times in a row"), "3-strike verdict wording gone");
   // Watchdog timeouts keep their loud branch (a hanging command will hang again):
   assert.match(SRC, /isAuditorTimeoutError\(result\.error\)\) \{\n    \/\/ Watchdog timeouts stay ahead/);
-  assert.match(SRC, /completion audit timed out — \$\{result\.error\}/);
+  assert.match(SRC, /completion audit timed out — no verifier verdict was produced/);
 });
 
 test("v0.34.51 + v0.34.64: the badge says resuming…, never 'retrying now' (a wait is not a retry)", () => {
