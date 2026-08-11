@@ -1,7 +1,7 @@
 # Changelog
 
 ## Unreleased
-### v0.34.131 — power-mode auditor: bash restored with bounded tool execution
+### Power-mode auditor: bash restored with bounded tool execution
   The detached auditor intentionally restores `bash` alongside read/grep/find/ls
   so it can run bounded tests, inspect git state, and reproduce behavior. This
   is an explicit power-over-safety decision, not a read-only contract. The
@@ -10,7 +10,7 @@
   bash as an audit capability while telling the model not to mutate unless the
   objective requires it.
 
-### v0.34.130 — detached auditor hardening: no shell/trust privilege and bounded tools
+### Detached auditor hardening: no shell/trust privilege and bounded tools
   Completion auditors now run with only `read`, `grep`, `find`, and `ls`; the
   worker uses `--no-approve` and rejects any unexpected tool event, closing the
   prompt-injection path that paired repository-controlled content with an
@@ -21,7 +21,7 @@
   consume the full 30-minute audit wall. Regression tests cover the exact RPC
   argv, disallowed bash events, parent and worker tool timeouts.
 
-### v0.34.129 — truthful list-audit fan-out dedupe and cap accounting
+### Truthful list-audit fan-out dedupe and cap accounting
   The list-audit collector previously joined every queued objective into one
   string and searched for each finding's first 60 characters. A distinct
   finding whose prefix appeared inside another objective was silently dropped.
@@ -32,7 +32,7 @@
   `/list audit` run and is shown in the ledger and notification. Regression
   coverage exercises both the substring collision and 51-item cap cases.
 
-### v0.34.128 — already_shipped guard: version-less claims route to the normal audit
+### Already-shipped guard: version-less claims route to the normal audit
   Field evidence 2026-08-11 (dracon-platform): a session restart restored the
   OLD conversation; the continuation carried a NEW goal whose fix was genuinely
   already shipped, and the v0.34.96 guard aborted it correctly. But the
@@ -49,7 +49,7 @@
   named version is the corroboration. Ledger event complete_goal_already_shipped
   now carries routedToAudit (true = normal audit, false = aborted).
 
-### v0.34.127 — standalone Auditor thinking row + headless /glla list sync
+### Standalone Auditor thinking row + headless /glla list sync
   The v0.31.4 comment claimed "/glla thinking= remains the direct path"
   for changing the auditor's thinking level — no such action ever
   existed, so the ONLY way to change it was re-picking the auditor model.
@@ -61,7 +61,7 @@
   auditorProgressSignals, hourlyQuotaProbe, subagentModelStrategy,
   subagentModelOverrides, subagentFallbacks and toolOverrides — synced.
 
-### v0.34.126 — /glla settings table completeness (hourlyQuotaProbe + toolOverrides rows, provenance fix)
+### /glla settings table completeness (hourlyQuotaProbe + toolOverrides rows, provenance fix)
   Settings-menu audit (2026-08-10): the hourly-quota-probe toggle had a
   dispatcher handler but NO row in the table — the setting the user asked
   to keep was only reachable by hand-editing the JSON. Added the row to
@@ -73,7 +73,7 @@
   comment claimed 45 but the real default is 30
   (WEDGE_ALERT_DEFAULT_MINUTES) — corrected.
 
-### v0.34.125 — quota-reset time claims removed from UI; temporary quota messages honored at their own short window
+### Quota-reset time claims removed from UI; temporary quota messages honored at their own short window
   (`note.md` 2026-08-10, Screenshot_20260810_224142/224136/224132/224119/224114).
   Field sessions parked on provider walls showed `next: quota reset at
   23:00` / `no turns until quota reset at 23:00` / `waiting for quota
@@ -94,7 +94,7 @@
   "temporarily unavailable" stays ambiguous). The hourly probe remains
   setting-only (hourlyQuotaProbe toggle) with no UI surface.
 
-### v0.34.124 — stale goal card actions + unexplained QUEUED status + false watchdog interrupt after recovery
+### Stale goal card actions + unexplained QUEUED status + false watchdog interrupt after recovery
   (`note.md` 2026-08-10, Screenshot_20260810_221249 + 221345). Three UI/UX
   findings from the field:
   - **Stale action on the goal card**: the `recentActions` ring was not
@@ -123,7 +123,7 @@
   - behavioral watchdog tests: real-time wait budgets widened (1.5s→4s) so
     heavy-CI load does not stretch 300ms test timers past the deadline.
 
-### v0.34.123 — widget spacer renders as a stray dot in π-web; agents-panel separator padding
+### Widget spacer renders as a stray dot in π-web; agents-panel separator padding
   (`note.md` 2026-08-10, Screenshot_20260810_220759 + 220051). The auditing
   card's paragraph spacer `WORKER_TEXT_SPACER` was a dim `│ ·` hairline;
   renderers that drop box-drawing glyphs (π-web) showed a lone `·` on its own
@@ -133,7 +133,7 @@
   (`description · stats`); pi-subagents' dist + src now join with two spaces
   around `·` (`  ·  `) in agent-widget.ts/index.ts row builders and stat lines.
 
-### v0.34.122 — jiti `export let state` binding split froze persistence and broke activation
+### Jiti `export let state` binding split froze persistence and broke activation
   (`audit/JITI-STATE-BINDING-SPLIT-2026-08-10.md`). pi's extension loader (jiti
   2.7.0, moduleCache:false) compiles `export let state` with a captured-value
   export binding: after `replaceState(next)` every importer of `state` kept the
@@ -175,7 +175,7 @@
   scope. Behavioral coverage pins validated handoff recovery, Auto-resume, and
   no-blind-resend/manual-hold paths.
 
-### 0.34.121 — close auditor lifecycle gaps in cancel, wipe, and blank startup
+## 0.34.121 — close auditor lifecycle gaps in cancel, wipe, and blank startup
   (v0.34.121, audit/OBJECTIVE-LIFECYCLE-FOLLOWUP-2026-08-09.md). `/glla
   cancel` now stops an active loop before considering unrelated waiting list
   work. `/glla wipe` treats provider recovery and continuation-dispatch state
@@ -185,7 +185,7 @@
   now runs before the blank-start transcript barrier returns. New behavioral
   regressions cover all three auditor objections.
 
-### 0.34.120 — objective lifecycle closure, conflict confirmation, and one-pass wipe
+## 0.34.120 — objective lifecycle closure, conflict confirmation, and one-pass wipe
   (v0.34.120, audit/OBJECTIVE-LIFECYCLE-2026-08-09.md). Approved objectives
   now persist their final recap in the archive, show exactly one final `✓ done`
   summary, and clear the live slot automatically; legacy terminal slots close
@@ -202,7 +202,7 @@
   docs and raw external-review evidence; pi core/host changes remain out of
   scope.
 
-### 0.34.119 — note.md triage: objective cancel, summary canonicalization, truthful stale-ctx recovery
+## 0.34.119 — note.md triage: objective cancel, summary canonicalization, truthful stale-ctx recovery
   (v0.34.119, audit/NOTE-REMAINING-TRIAGE-2026-08-09.md). Re-audited
   every item in `/home/dracon/chat/pi/note.md` and added regression coverage.
   `complete_goal` now validates impossible pass-count summaries BEFORE
@@ -220,7 +220,7 @@
   limitation, external-review fetch results, non-reproducible refresh icon
   issue, and current auditor/stacked-thread evidence.
 
-### 0.34.118 — dedicated Backups segment + forbidden-aware ordered picker
+## 0.34.118 — dedicated Backups segment + forbidden-aware ordered picker
   (v0.34.118, audit/BACKUPS-PICKER-2026-08-09.md). `/glla settings`
   now has a dedicated `Backups` segment rather than burying main-model
   recovery beside Keep-going controls. Main model backups, retry cadence,
@@ -231,7 +231,7 @@
   exclusion is enforced in headless/free-form input mode. New tests pin
   picker filtering, six-tab grouping, and both editor paths.
 
-### 0.34.117 — fresh-session auto-recovery on stale ctx (historical claim; superseded by v0.34.119)
+## 0.34.117 — fresh-session auto-recovery on stale ctx (historical claim; superseded by v0.34.119)
   (v0.34.117, audit/STALE-CTX-AUTO-RECOVERY-2026-08-09.md). Pi's compact
   subsystem holds a cached ctx; once it goes stale ("This extension ctx
   is stale after session replacement or reload") EVERY sendMessage
@@ -264,7 +264,7 @@
   to origin. Audit doc updated with the retroactive-ship section.
   `extensions/loops/goal.ts` ≤ 700 lines (387).
 
-### 0.34.116 — context-overflow fallback + /reload copy + stale-ctx one-liner
+## 0.34.116 — context-overflow fallback + /reload copy + stale-ctx one-liner
   (v0.34.116, audit/SESSION-COMPACT-FALLBACK-2026-08-09.md). When pi's
   `session_compact` cannot release the prompt (the model is smaller than
   the prompt needs), glla now walks the fallback chain to a larger-context
