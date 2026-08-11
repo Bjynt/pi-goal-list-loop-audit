@@ -481,6 +481,10 @@ export async function runDetachedGoalCompletionAuditor(args: {
           if (!output.trim()) return infra(model, thinkingLevel, "auditor produced no output", output, capturedRevisionToken);
           const parsed = parseAuditorVerdict(output);
           if (!parsed.approved && !parsed.disapproved && !parsed.impossible) return infra(model, thinkingLevel, "auditor produced no verdict marker", output, capturedRevisionToken);
+          const disallowedTool = result.toolCalls.find((call) => !(READ_ONLY_TOOLS as readonly string[]).includes(call.name));
+          if (disallowedTool) {
+            return infra(model, thinkingLevel, `Auditor reported disallowed tool: ${disallowedTool.name}`, output, capturedRevisionToken);
+          }
           const usedReadTool = result.toolCalls.some((call) => (READ_ONLY_TOOLS as readonly string[]).includes(call.name));
           if (parsed.approved && !usedReadTool) {
             return stampToken({ approved: false, disapproved: true, output, model, thinkingLevel, error: "Auditor approved without calling any read-only tool; treated as disapproved." }, capturedRevisionToken);

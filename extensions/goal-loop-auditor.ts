@@ -193,7 +193,7 @@ export function buildGoalAuditorPrompt(goal: Goal, completionSummary: string | n
     "1. Extract the real success criteria from the objective, including quality/reader outcomes.",
     "2. Inspect artifacts or command output that can prove or disprove those criteria.",
     ...(verificationSummary?.trim()
-      ? ["3. Check the <verification_summary> against real artifacts. If the executor claims to have run tests or searched for references, verify those claims with actual file/shell evidence. The summary is a claim, not proof — cross-check it."]
+      ? ["3. Check the <verification_summary> against real artifacts. If the executor claims to have run tests or searched for references, verify those claims with actual read/grep/find/ls evidence. The summary is a claim, not proof — cross-check it."]
       : []),
     ...(goal.verificationContract?.trim()
       ? ["4. Verify that the executor has satisfied every item in the <verification_contract>. If any item is missing or weakly addressed, disapprove."]
@@ -208,7 +208,7 @@ export function buildGoalAuditorPrompt(goal: Goal, completionSummary: string | n
           "",
           "REGRESSION SHIELD (mandatory because this goal has a verification contract):",
           "Your report MUST contain an <evidence> section. For EACH item in the verification contract,",
-          "quote the item, then paste the RAW tool output that proves it (real bash/grep/read output,",
+          "quote the item, then paste the RAW tool output that proves it (real read/grep/find/ls output,",
           "copied verbatim — not a paraphrase, not a description of what you saw). Format:",
           "",
           "<evidence>",

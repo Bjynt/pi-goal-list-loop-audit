@@ -332,6 +332,26 @@ process.stdin.on("data", async (chunk) => {
   }
 });
 
+test("parent rejects a result that reports a disallowed tool", async () => {
+  const dir = await setup();
+  const badWorker = path.join(dir, "bad-tool-worker.mjs");
+  await writeFile(badWorker, workerSource.replace('name: "read"', 'name: "bash"'));
+  try {
+    const result = await runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "high",
+      runtime: { workerPath: badWorker, env: { FAKE_AUDIT_OUTPUT: "<approved/>", FAKE_TOOL: "yes" }, attemptId: () => "attempt-parent-disallowed", pollIntervalMs: 10, wallTimeoutMs: 2_000 },
+    });
+    assert.equal(result.approved, false);
+    assert.equal(result.disapproved, false);
+    assert.match(result.error ?? "", /reported disallowed tool: bash/);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
 test("approval without a read-only tool is a semantic disapproval", async () => {
   const dir = await setup();
   try {
