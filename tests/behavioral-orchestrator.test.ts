@@ -2819,6 +2819,55 @@ test("v0.34.29: audit fan-out honors autoAcceptDrafts without opening confirmati
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
 });
 
+test("v0.34.129: fan-out dedupe does not drop a finding whose prefix appears inside another queue item", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const finding = "HIGH: distinct finding with a shared leading phrase that must still be queued (orchestrator.ts:793)";
+  const collidingPrefix = finding.slice(0, 60);
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ autoAcceptDrafts: true }));
+  seedState(cwd, {
+    goal: seedGoal({ status: "paused" }),
+    list: [{ id: "unrelated-queued-item", objective: `unrelated queued context: ${collidingPrefix}`, addedAt: new Date().toISOString() }],
+  });
+  const ctx = await freshSession(cwd, "startup");
+  const findingsDir = path.join(cwd, ".pi-glla", "audit-loop");
+  fs.mkdirSync(findingsDir, { recursive: true });
+  fs.writeFileSync(path.join(findingsDir, "findings.md"), `- [ ] FIX: ${finding}\n`);
+
+  await __testOnlyRunFanOutListAuditFindings(cwd);
+
+  const after = readState(cwd);
+  assert.equal(after.list?.length, 2, "the distinct finding is queued beside the unrelated item");
+  assert.ok(after.list?.some((item) => item.objective.startsWith(`Fix audit finding: ${finding}`)), "the canonical finding item landed");
+  const event = ledgerEvent(cwd, "list_audit_fanout");
+  assert.equal(event.value.alreadyQueued, 0, "substring collision is not counted as already queued");
+  assert.equal(event.value.deferredByCap, 0, "no item was deferred by the cap");
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
+
+test("v0.34.129: fan-out reports cap-deferred findings separately from true queue dedupes", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ autoAcceptDrafts: true }));
+  seedState(cwd, { goal: seedGoal({ status: "paused" }) });
+  const ctx = await freshSession(cwd, "startup");
+  const findingsDir = path.join(cwd, ".pi-glla", "audit-loop");
+  fs.mkdirSync(findingsDir, { recursive: true });
+  const findings = Array.from({ length: 51 }, (_, i) => `- [ ] FIX: LOW: cap-only finding ${String(i + 1).padStart(2, "0")} (cap.ts:${i + 1})`).join("\\n") + "\\n";
+  fs.writeFileSync(path.join(findingsDir, "findings.md"), findings);
+
+  await __testOnlyRunFanOutListAuditFindings(cwd);
+
+  assert.equal(readState(cwd).list?.length, 50, "one fan-out enqueues at most 50 findings");
+  const event = ledgerEvent(cwd, "list_audit_fanout");
+  assert.equal(event.value.alreadyQueued, 0, "none were already queued");
+  assert.equal(event.value.deferredByCap, 1, "the 51st finding is counted as cap-deferred");
+  assert.ok(ctx.ui.matching("1 more held by the 50-item cap").length >= 1, "the cap deferral is visible to the user");
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
+
 test("v0.34.20 lifecycle: fan-out confirmation from the old generation cannot queue into its replacement", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
