@@ -1,6 +1,18 @@
 # Changelog
 
 ## Unreleased
+### v0.34.127 — standalone Auditor thinking row + headless /glla list sync
+  The v0.31.4 comment claimed "/glla thinking= remains the direct path"
+  for changing the auditor's thinking level — no such action ever
+  existed, so the ONLY way to change it was re-picking the auditor model.
+  Added a standalone Auditor thinking row (same ladder + dialog as the
+  model flow; the v0.31.4 "no row to forget about" design was about the
+  CONFUSING dialog, fixed in v0.31.7, not about the row itself). The
+  headless /glla fallback list also missed decisionPopup, carryover,
+  auditorModelFallback, auditorSameSessionSwap, auditorSilent,
+  auditorProgressSignals, hourlyQuotaProbe, subagentModelStrategy,
+  subagentModelOverrides, subagentFallbacks and toolOverrides — synced.
+
 ### v0.34.126 — /glla settings table completeness (hourlyQuotaProbe + toolOverrides rows, provenance fix)
   Settings-menu audit (2026-08-10): the hourly-quota-probe toggle had a
   dispatcher handler but NO row in the table — the setting the user asked

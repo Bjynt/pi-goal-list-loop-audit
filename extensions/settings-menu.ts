@@ -243,6 +243,14 @@ export function buildSettingsRows(
       description: "provider/model override for the isolated auditor — you pick its thinking level right after the model",
     },
     {
+      id: "auditorThinkingLevel",
+      section: "auditor",
+      label: "Auditor thinking",
+      valueText: show("auditorThinkingLevel", "high (default)"),
+      sourceText: src("auditorThinkingLevel"),
+      description: "DETACHED auditor worker's reasoning level — also picked right after the auditor model; your session's thinking is untouched",
+    },
+    {
       id: "auditorModelFallback",
       section: "auditor",
       label: "Auditor fallback model",

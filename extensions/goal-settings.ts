@@ -187,8 +187,8 @@ export const DEFAULT_SETTINGS: Settings = {
   // verification gate: its depth must NOT ride the session's coding-speed
   // thinking dial (user 2026-07-31: "we should also select its thinking
   // level — we don't keep switching it"). v0.31.4: picked alongside the
-  // model in /glla → Auditor model (no standalone menu row); /glla
-  // thinking= remains the direct path.
+  // model in /glla → Auditor model; v0.34.127 adds the standalone Auditor
+  // thinking row (the claimed "/glla thinking=" action never existed).
   auditorThinkingLevel: undefined,
   // v0.34.66: final-only auditor stream is the default — the HUD never
   // shows the report assembling word-by-word again (note.md #4).

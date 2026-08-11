@@ -393,6 +393,18 @@ function auditorThinkingLevels(model: any): string[] {
   });
 }
 
+/** Token-cost ladder shared by the auditor-model flow and the standalone
+ * Auditor thinking row (v0.34.127). */
+const THINKING_DESCR: Record<string, string> = {
+  off: "no reasoning",
+  minimal: "~1k tokens",
+  low: "~2k tokens",
+  medium: "~8k tokens",
+  high: "the default; the gate must not ride the session's coding dial",
+  xhigh: "~32k tokens",
+  max: "maximum reasoning",
+};
+
 function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: string, sameSessionSwap = true): { model: any; error?: string; via?: string; fallbackModels?: AuditorModelCandidate[] } {
   const sessionModel = ctx.model as any;
   const tryRef = (trimmed: string): { model?: any; reason?: string } => {
@@ -834,13 +846,35 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
         ctx.ui.notify(`Auditor model: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref} — this model exposes no thinking levels (auditor runs with thinking off).`, "info");
         return;
       }
-      const DESCR: Record<string, string> = { off: "no reasoning", minimal: "~1k tokens", low: "~2k tokens", medium: "~8k tokens", high: "the default; the gate must not ride the session's coding dial", xhigh: "~32k tokens", max: "maximum reasoning" };
       const t = await ctx.ui.select(
         "Auditor thinking — DETACHED auditor worker ONLY (your session model's thinking is untouched)",
-        levels.map((lv) => `${lv} — ${DESCR[lv] ?? ""}${lv === (curThinking ?? "high") ? " (current)" : ""}`),
+        levels.map((lv) => `${lv} — ${THINKING_DESCR[lv] ?? ""}${lv === (curThinking ?? "high") ? " (current)" : ""}`),
       );
       if (t) saveSettings("global", ctx.cwd, { auditorThinkingLevel: t.split(" ")[0] as Settings["auditorThinkingLevel"] });
       ctx.ui.notify(`Auditor model: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref}${t ? ` · thinking ${t.split(" ")[0]}` : ""}`, "info");
+      return;
+    }
+    case "auditorThinkingLevel": {
+      // v0.34.127: standalone path — the v0.31.4 comment claimed "/glla
+      // thinking=" is the direct path, but no such action ever existed; the
+      // ONLY way to change the level was re-picking the auditor model. The
+      // Auditor thinking row fixes that with the same ladder + dialog the
+      // model flow uses.
+      const curThinking = loadSettings(ctx.cwd).auditorThinkingLevel;
+      const resolved = resolveAuditorModel(ctx);
+      const levels = auditorThinkingLevels(resolved.model);
+      if (levels.length <= 1) {
+        ctx.ui.notify(
+          `Auditor model ${resolved.model ? `${resolved.model.provider}/${resolved.model.id}` : "(session)"} exposes no thinking levels — the auditor runs with thinking off.`,
+          "info",
+        );
+        return;
+      }
+      const t = await ctx.ui.select(
+        "Auditor thinking — DETACHED auditor worker ONLY (your session model's thinking is untouched)",
+        levels.map((lv) => `${lv} — ${THINKING_DESCR[lv] ?? ""}${lv === (curThinking ?? "high") ? " (current)" : ""}`),
+      );
+      if (t) saveSettings("global", ctx.cwd, { auditorThinkingLevel: t.split(" ")[0] as Settings["auditorThinkingLevel"] });
       return;
     }
     case "auditorModelFallback": {
