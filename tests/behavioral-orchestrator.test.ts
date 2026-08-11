@@ -2660,6 +2660,78 @@ test("v0.35.x: explicit Auto-resume retries a parked claim on cold startup", asy
   }
 });
 
+test("v0.35.x: one automatic parked-audit retry is durable across repeated lifecycle events", async () => {
+  __testOnlyResetStaleFlag();
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  const fakePi = writeFakeAuditor(cwd, "disapproved", 900);
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = fakePi;
+  const oldAttempt = "parked-before-one-shot-recovery";
+  seedState(cwd, {
+    goal: seedGoal({
+      status: "paused",
+      pauseKind: "blocked",
+      pauseReason: "completion audit blocked — no verdict: auditor wall timeout",
+      pendingCompletion: {
+        completionSummary: "The durable one-shot recovery claim.",
+        verificationSummary: "The manual path must remain available.",
+        at: new Date().toISOString(),
+        phase: "recovery-pending",
+        attemptId: oldAttempt,
+      },
+    }),
+  });
+  try {
+    const first = await freshSession(cwd, "startup");
+    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "audit_recovery_started"));
+    const started = readState(cwd).goal as {
+      status?: string;
+      pendingCompletion?: { phase?: string; attemptId?: string; automaticRecoveryAttempted?: boolean; automaticRecoveryGeneration?: number };
+    } | null;
+    assert.equal(started?.status, "auditing");
+    assert.equal(started?.pendingCompletion?.phase, "running");
+    assert.notEqual(started?.pendingCompletion?.attemptId, oldAttempt);
+    assert.equal(started?.pendingCompletion?.automaticRecoveryAttempted, true, "the durable marker is consumed with the fresh attempt");
+    assert.equal(typeof started?.pendingCompletion?.automaticRecoveryGeneration, "number", "the consumed marker records the dispatch generation");
+
+    // A second healthy lifecycle event must not launch another automatic
+    // worker, even though it sees the claim in the old running phase.
+    const second = ownerCtx(cwd);
+    await pi.fire("session_start", { reason: "reload" }, second);
+    await tick(50);
+    const afterReload = readState(cwd).goal as {
+      status?: string;
+      pendingCompletion?: { phase?: string; automaticRecoveryAttempted?: boolean };
+    } | null;
+    const ledgerAfterReload = readLedger(cwd);
+    assert.equal(ledgerAfterReload.filter((entry) => entry.type === "audit_recovery_started").length, 1, "repeated lifecycle recovery launches no second automatic audit");
+    assert.equal(ledgerAfterReload.filter((entry) => entry.type === "audit_recovery_auto_retry_claimed").length, 1, "the durable claim is claimed once");
+    assert.equal(afterReload?.status, "paused", "the invalidated automatic attempt is parked safely");
+    assert.equal(afterReload?.pendingCompletion?.phase, "recovery-pending");
+    assert.equal(afterReload?.pendingCompletion?.automaticRecoveryAttempted, true);
+
+    // Explicit manual resume remains a separate consent path after the
+    // automatic one-shot has been consumed.
+    await pi.command("goal", "resume", second);
+    await waitUntil(() => {
+      const resumed = readState(cwd).goal as { status?: string; pendingCompletion?: { phase?: string; attemptId?: string } } | null;
+      return resumed?.status === "auditing" && resumed.pendingCompletion?.phase === "running";
+    });
+    const manualLedger = readLedger(cwd);
+    assert.equal(manualLedger.filter((entry) => entry.type === "audit_recovery_started").length, 1, "manual resume does not masquerade as automatic recovery");
+    assert.equal(manualLedger.filter((entry) => entry.type === "audit_started").length >= 2, true, "manual resume starts a fresh stored-claim audit");
+    await pi.fire("session_shutdown", { reason: "quit" }, second);
+    await pi.fire("session_shutdown", { reason: "quit" }, first);
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    __testOnlyResetOwnerSession();
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
 test("v0.35.x: stale host replacement session_start auto-recovers the parked audit", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();

@@ -185,6 +185,7 @@ declare global {
   var auditorCandidateLabel: any;
   var runDetachedCompletionWithFallback: any;
   var retryStoredCompletionAudit: any;
+  var maybeAutoRetryParkedCompletionAudit: any;
   var fireReviewer: any;
   var listQueue: any;
   var groupOpenChildren: any;

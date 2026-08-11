@@ -444,6 +444,9 @@ function validateCompletionSummary(text: string, ctx: ExtensionContext): string 
 function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, origin: CompletionAuditOrigin): PendingCompletion {
   completionAuditRecoveryArmed = true;
   const startedMs = Date.now();
+  const automaticRecoveryRetry = origin === "session-recovery"
+    && (claim.phase ?? "recovery-pending") === "recovery-pending"
+    && claim.automaticRecoveryAttempted !== true;
   const claimForAttempt = origin === "manual"
     ? { ...claim, quotaAttempts: undefined, quotaFirstAt: undefined, quotaAutoRetryUntil: undefined }
     : claim;
@@ -455,6 +458,13 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
     wallDeadlineAt: new Date(startedMs + AUDITOR_WALL_TIMEOUT_MS).toISOString(),
     recoveryAt: undefined,
     recoveryReason: undefined,
+    ...(automaticRecoveryRetry
+      ? {
+        automaticRecoveryAttempted: true,
+        automaticRecoveryAt: new Date(startedMs).toISOString(),
+        automaticRecoveryGeneration: sessionGeneration,
+      }
+      : {}),
   };
   // A stored claim may be retried after a previous infrastructure pause.
   // Clear that old operational note before rebuilding the immutable auditor
@@ -538,6 +548,54 @@ export function auditorQuotaRetryPlan(claim: PendingCompletion, quota: ReturnTyp
 
 export type AuditorModelCandidate = { model: any; via: string };
 type DetachedAuditResult = Awaited<ReturnType<typeof runDetachedGoalCompletionAuditor>>;
+
+export type AutomaticCompletionRecoveryTrigger = "session-start" | "host-rebind" | "main-model-recovery";
+
+/**
+ * Start the one durable automatic retry reserved for a parked completion
+ * claim. The caller must already have a healthy lifecycle/recovery signal;
+ * this helper adds the current-generation/context and goal guards. The
+ * transition to `phase: "running"` plus `automaticRecoveryAttempted: true`
+ * happens synchronously in beginCompletionAudit before the detached worker
+ * is launched, so repeated lifecycle events cannot create a second worker.
+ * A failed automatic retry keeps the claim safe for explicit /goal resume but
+ * is not eligible for another automatic event-triggered attempt.
+ */
+export function maybeAutoRetryParkedCompletionAudit(trigger: AutomaticCompletionRecoveryTrigger): boolean {
+  const goal = state.goal;
+  const claim = goal?.pendingCompletion;
+  if (!goal || goal.status !== "paused" || !claim) return false;
+  if ((claim.phase ?? "recovery-pending") !== "recovery-pending") return false;
+  if (claim.automaticRecoveryAttempted === true || completionAuditInFlight) return false;
+
+  const generation = sessionGeneration;
+  const ctx = freshCtxForGeneration(generation);
+  if (!ctx) return false;
+  if (!guardGoalBeforeContinuation(ctx, "stored-completion-audit", goal.id, { allowAuditing: true })) return false;
+
+  const current = state.goal;
+  const currentClaim = current?.pendingCompletion;
+  if (
+    !current
+    || current.id !== goal.id
+    || current.status !== "paused"
+    || !currentClaim
+    || (currentClaim.phase ?? "recovery-pending") !== "recovery-pending"
+    || currentClaim.automaticRecoveryAttempted === true
+  ) return false;
+
+  appendLedger(ctx.cwd, "audit_recovery_auto_retry_claimed", {
+    goalId: current.id,
+    previousAttemptId: currentClaim.attemptId,
+    trigger,
+    generation,
+  });
+  // beginCompletionAudit runs before retryStoredCompletionAudit reaches its
+  // first await, atomically replacing the parked claim with a running claim
+  // and consuming the durable one-shot marker.
+  void retryStoredCompletionAudit("session-recovery");
+  return true;
+}
 
 function auditorCandidateLabel(candidate: AuditorModelCandidate): string {
   const model = candidate.model;
@@ -1069,4 +1127,5 @@ defineGoalRuntimeGlobal("auditorQuotaRetryPlan", { get: () => auditorQuotaRetryP
 defineGoalRuntimeGlobal("auditorCandidateLabel", { get: () => auditorCandidateLabel });
 defineGoalRuntimeGlobal("runDetachedCompletionWithFallback", { get: () => runDetachedCompletionWithFallback });
 defineGoalRuntimeGlobal("retryStoredCompletionAudit", { get: () => retryStoredCompletionAudit });
+defineGoalRuntimeGlobal("maybeAutoRetryParkedCompletionAudit", { get: () => maybeAutoRetryParkedCompletionAudit });
 defineGoalRuntimeGlobal("fireReviewer", { get: () => fireReviewer });

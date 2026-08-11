@@ -263,6 +263,15 @@ export interface PendingCompletion {
   /** Why the claim is waiting for a fresh attempt. */
   recoveryAt?: string;
   recoveryReason?: string;
+  /**
+   * Durable one-shot recovery fence. A parked claim may receive one
+   * automatic retry after a validated healthy lifecycle/recovery event;
+   * manual /goal resume remains available after that attempt. Missing on
+   * legacy claims means "not yet consumed".
+   */
+  automaticRecoveryAttempted?: boolean;
+  automaticRecoveryAt?: string;
+  automaticRecoveryGeneration?: number;
   /** Durable quota recovery accounting; survives reloads and worker restarts. */
   quotaAttempts?: number;
   quotaFirstAt?: string;

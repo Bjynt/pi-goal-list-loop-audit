@@ -1150,7 +1150,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     const storedCompletionClaim = storedCompletionGoal?.pendingCompletion;
     const interruptedCompletionAudit = !!storedCompletionGoal && !!storedCompletionClaim && (
       storedCompletionGoal.status === "auditing" ||
-      (storedCompletionGoal.status === "paused" && storedCompletionClaim.phase === "recovery-pending")
+      (storedCompletionGoal.status === "paused" && (storedCompletionClaim.phase ?? "recovery-pending") === "recovery-pending")
     );
     if (interruptedCompletionAudit && storedCompletionGoal && storedCompletionClaim) {
       if (storedCompletionGoal.status === "auditing") {
@@ -1158,9 +1158,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       }
       const canRecoverNow = explicitRecovery || autoResume;
       const recoveredClaim = state.goal?.pendingCompletion;
-      if (canRecoverNow && recoveredClaim) {
+      if (canRecoverNow && recoveredClaim && (recoveredClaim.phase ?? "recovery-pending") === "recovery-pending") {
         completionAuditRecoveryArmed = true;
-        void retryStoredCompletionAudit("session-recovery");
+        const started = maybeAutoRetryParkedCompletionAudit(hostLifecycleStart || explicitRecovery ? "host-rebind" : "session-start");
+        if (!started) {
+          ctx.ui.notify(`Completion audit remains parked after its one automatic recovery attempt. The stored claim is safe; ${activeGoalSurfaceCommand("resume")} retries it explicitly.`, "warning");
+        }
       } else {
         ctx.ui.notify(`Completion audit blocked — no verdict. The stored claim is safe; ${activeGoalSurfaceCommand("resume")} retries the isolated auditor.`, "warning");
       }

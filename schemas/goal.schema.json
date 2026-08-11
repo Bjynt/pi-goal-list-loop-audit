@@ -117,6 +117,9 @@
         "wallDeadlineAt": { "type": "string", "format": "date-time" },
         "recoveryAt": { "type": "string", "format": "date-time" },
         "recoveryReason": { "type": "string" },
+        "automaticRecoveryAttempted": { "type": "boolean" },
+        "automaticRecoveryAt": { "type": "string", "format": "date-time" },
+        "automaticRecoveryGeneration": { "type": "integer", "minimum": 0 },
         "quotaAttempts": { "type": "integer", "minimum": 0 },
         "quotaFirstAt": { "type": "string", "format": "date-time" },
         "quotaAutoRetryUntil": { "type": "string", "format": "date-time" }
