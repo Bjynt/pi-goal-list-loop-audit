@@ -529,9 +529,9 @@ function registerAgentTools(pi: any): void {
         // the first version-looking token in the whole recap. A dependency
         // bump or changelog quote can legitimately precede the claim.
         const matchedVersion =
-          summaryText.match(/\b(?:already\s+shipped|no\s+new\s+work\s+shipped)\b[^.\n]{0,80}?\b(v\d+\.\d+\.\d+)\b/)?.[1]
-          ?? summaryText.match(/\b(?:verified|confirmed)\s+(v\d+\.\d+\.\d+)\s+(?:already\s+)?covers?\s+this\b/)?.[1]
-          ?? summaryText.match(/\b(v\d+\.\d+\.\d+)\s+already\s+shipped\b/)?.[1];
+          summaryText.match(/\b(?:already\s+shipped|no\s+new\s+work\s+shipped)\b\s*(?:(?:in|as|under|with|for)\s+)?[(:—–-]?\s*(v\d+\.\d+\.\d+)\b/)?.[1]
+          ?? summaryText.match(/\b(v\d+\.\d+\.\d+)\s+(?:(?:was|is|has\s+been|had\s+been)\s+)?already\s+shipped\b/)?.[1]
+          ?? summaryText.match(/\b(?:verified|confirmed)\s+(v\d+\.\d+\.\d+)\s+(?:already\s+)?covers?\s+this\b/)?.[1];
         if (matchedVersion) {
           const stopReason = `already_shipped:${matchedVersion}`;
           // Persist the recap as the abort reason so the user sees it in

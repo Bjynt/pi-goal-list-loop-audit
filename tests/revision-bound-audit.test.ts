@@ -368,7 +368,7 @@ test("v0.34.96: already-shipped abort binds the version attached to the claim", 
   const res = await pi.runTool(
     "complete_goal",
     {
-      completionSummary: "Dependency bump v2.1.0 is in the changelog; the fix was already shipped in v0.34.74.",
+      completionSummary: "Dependency bump v2.1.0 is in the changelog; the fix v0.34.74 was already shipped; changelog also mentions v3.0.0.",
       verificationSummary: "The prior release contains the fix.",
     },
     ownerCtx(cwd),
@@ -438,7 +438,7 @@ test("v0.34.128: a version-less 'already shipped' claim disapproved by the audit
     rememberCtxFor(cwd);
     const res = await pi.runTool(
       "complete_goal",
-      { completionSummary: "Already shipped — the fix is in the tree from last week." },
+      { completionSummary: "Already shipped — dependency bump v2.1.0 is in the changelog; the fix is in the tree from last week." },
       ownerCtx(cwd),
     );
     assert.doesNotMatch(res.content[0]!.text, /routed to status=aborted/i, "no abort on a version-less claim");
