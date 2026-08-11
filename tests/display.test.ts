@@ -1788,7 +1788,7 @@ test("v0.34.96/v0.34.128: complete_goal detects 'already shipped' / 'verified vX
   assert.match(loops, /verified vX covers this|verified\s+v\d+\.\d+\.\d+\s+covers\s+this/, "detects the regex for 'verified vX.Y.Z covers this'");
   assert.match(loops, /no\s+new\s+work\s+shipped/i, "detects 'no new work shipped'");
   // Version-bearing routing: archiveCurrentGoal(ctx, "aborted", stopReason).
-  assert.match(loops, /archiveCurrentGoal\(ctx,\s*"aborted",\s*stopReason\)/, "version-bearing claims route to status=aborted via archiveCurrentGoal");
+  assert.match(loops, /archiveCurrentGoal\(ctx,\s*"aborted",\s*stopReason(?:,\s*\{)?/, "version-bearing claims route to status=aborted via archiveCurrentGoal");
   assert.match(loops, /already_shipped:v[\d.]+|already_shipped:/, "stopReason names the matched version");
   // Version-less routing: flagged for the normal audit + label in recap.
   assert.match(loops, /routedToAudit: true/, "version-less claims are flagged for the normal audit");
