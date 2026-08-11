@@ -684,3 +684,68 @@ process.stdin.on("end", () => { process.exitCode = 41; });
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("worker force-kills a wedged RPC child before it exits", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-worker-kill-"));
+  const fakePi = path.join(dir, "wedged-pi.mjs");
+  const worker = path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs");
+  const sigtermMarker = path.join(dir, "sigterm-marker");
+  const heartbeatMarker = path.join(dir, "heartbeat-marker");
+  const attemptId = "worker-kill-test";
+  const jobDir = path.join(dir, ".pi-glla", "audit-jobs", attemptId);
+  await writeFile(fakePi, `#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+const sigtermMarker = ${JSON.stringify(sigtermMarker)};
+const heartbeatMarker = ${JSON.stringify(heartbeatMarker)};
+let handled = false;
+writeFileSync(heartbeatMarker, "alive");
+setInterval(() => writeFileSync(heartbeatMarker, String(Date.now())), 15);
+// Deliberately ignore SIGTERM: this models a provider/RPC process wedged in a
+// stream. The worker must escalate to SIGKILL instead of leaving us alive.
+process.on("SIGTERM", () => writeFileSync(sigtermMarker, "sigterm"));
+process.stdin.on("data", (chunk) => {
+  if (handled || !String(chunk).includes("\\n")) return;
+  handled = true;
+  const out = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+  out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "<disapproved/>" } });
+  out({ type: "agent_settled" });
+});
+`);
+  await chmod(fakePi, 0o700);
+  await mkdir(jobDir, { recursive: true });
+  await writeFile(path.join(jobDir, "lock"), "lock\n");
+  const withoutHash = {
+    protocolVersion: 1, attemptId, cwd: dir, prompt: "Inspect artifact.", model: "test/provider-model",
+    thinkingLevel: "medium", createdAt: new Date().toISOString(), wallDeadlineAt: Date.now() + 5_000,
+  };
+  await writeFile(path.join(jobDir, "request.json"), JSON.stringify({ ...withoutHash, requestHash: requestHash(withoutHash) }));
+  try {
+    const child = spawn(process.execPath, [worker, "--job-dir", jobDir], {
+      env: { ...process.env, GLLA_PI_BINARY: fakePi, GLLA_AUDITOR_CHILD_SHUTDOWN_MS: "80" },
+      stdio: "ignore",
+    });
+    const resultPath = path.join(jobDir, "result.json");
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("wedged-worker test timed out")), 2_000);
+      const poll = async () => {
+        try { await readFile(resultPath); clearTimeout(timer); resolve(); }
+        catch { setTimeout(poll, 10); }
+      };
+      void poll();
+    });
+    await new Promise<void>((resolve, reject) => {
+      if (child.exitCode !== null) { resolve(); return; }
+      const timer = setTimeout(() => reject(new Error("worker did not exit after force-killing RPC child")), 2_000);
+      child.once("exit", () => { clearTimeout(timer); resolve(); });
+    });
+    assert.ok(existsSync(sigtermMarker), "cooperative termination was attempted before SIGKILL");
+    const heartbeatAtWorkerExit = await readFile(heartbeatMarker, "utf8");
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    assert.equal(await readFile(heartbeatMarker, "utf8"), heartbeatAtWorkerExit, "the wedged RPC child stopped writing after the worker exited");
+    const result = JSON.parse(await readFile(resultPath, "utf8"));
+    assert.equal(result.ok, true);
+    assert.match(result.output, /<disapproved\/>/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
