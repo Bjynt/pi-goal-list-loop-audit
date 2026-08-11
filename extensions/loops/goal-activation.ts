@@ -1009,8 +1009,22 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       if (quotaConsent) {
         const delay = Number.isFinite(quotaAtMs) ? Math.max(0, quotaAtMs - Date.now()) : 0;
         if (delay > 0) {
+          const failureCopy = providerErrorPresentation(state.goal.pauseReason ?? "auditor quota", "completion");
+          const recoveryEpisodeKey = quotaClaim.recoveryEpisodeKey ?? `${quotaClaim.at}:${failureCopy.fingerprint}`;
+          const pending = {
+            ...quotaClaim,
+            providerErrorDiagnostic: quotaClaim.providerErrorDiagnostic ?? (failureCopy.sensitive ? failureCopy.diagnostic : undefined),
+            recoveryEpisodeKey,
+            recoveryNoticeKeys: quotaClaim.recoveryNoticeKeys ?? [],
+          };
+          const notifyRetry = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:retry-wait`);
+          updateGoal({ pendingCompletion: pending, providerErrorDiagnostic: pending.providerErrorDiagnostic, recoveryEpisodeKey, recoveryNoticeKeys: pending.recoveryNoticeKeys }, ctx);
           scheduleQuotaRetryForSession(ctx, delay / 1_000, state.goal.pauseReason ?? "auditor quota", () => {
             if (state.goal?.status === "paused" && state.goal.pendingCompletion?.phase === "quota-waiting") void retryStoredCompletionAudit("session-recovery");
+          }, undefined, {
+            episodeKey: recoveryEpisodeKey,
+            noticeKey: `${recoveryEpisodeKey}:retry-wait`,
+            suppressNotice: !notifyRetry,
           });
         } else {
           void retryStoredCompletionAudit("session-recovery");
