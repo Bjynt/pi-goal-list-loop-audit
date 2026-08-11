@@ -875,7 +875,12 @@ async function fanOutListAuditFindings(cwd: string, generation: number): Promise
   );
 }
 
-function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: string): boolean {
+function archiveCurrentGoal(
+  ctx: ExtensionContext,
+  status: Status,
+  stopReason?: string,
+  patch: Partial<Pick<Goal, "completionSummary" | "pendingTasks">> = {},
+): boolean {
   releaseContinuationDispatchStandDown();
   clearDispatchRecord(ctx.cwd);
   postCompactResumeOwed = false; // v0.33.1: the dead goal's compact debt/resync dies with it
@@ -883,32 +888,64 @@ function archiveCurrentGoal(ctx: ExtensionContext, status: Status, stopReason?: 
   if (!state.goal) return false;
   const goal = state.goal;
   const pendingAttemptId = goal.pendingCompletion?.attemptId;
-  ensureDirs(ctx.cwd);
   const target = archivedGoalPath(ctx.cwd, goal.id);
-  const md = renderGoalMarkdown({ ...goal, status, stopReason, pendingCompletion: undefined });
+  const terminalGoal: Goal = {
+    ...goal,
+    ...patch,
+    status,
+    archivedPath: path.relative(ctx.cwd, target) || target,
+    stopReason,
+    // A cancelled/archived goal cannot accept a late detached worker result.
+    pendingCompletion: undefined,
+  };
+  const md = renderGoalMarkdown(terminalGoal);
   // v0.28.6 (E1): guarded — and the active md is only removed when the
   // archive actually LANDED (degraded mode must not destroy the only copy).
+  // v0.35.x: create the destination without replacing an archive that may
+  // have won a race or survived a previous process. A temp file plus a hard
+  // link gives us an exclusive final name without renameSync's replacement
+  // semantics; a crash before the link leaves the live goal untouched.
+  let archiveFence = false;
   const archived = runPersistStep("archiveCurrentGoal", () => {
     ensureDirs(ctx.cwd);
-    fs.writeFileSync(target, md);
-    return true;
+    if (fs.existsSync(target)) {
+      archiveFence = true;
+      return false;
+    }
+    const temp = `${target}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 10)}.tmp`;
+    try {
+      fs.writeFileSync(temp, md, { encoding: "utf-8", flag: "wx" });
+      fs.linkSync(temp, target);
+      return true;
+    } catch (err) {
+      // Another writer can create the final archive after the existsSync
+      // check. Treat that EEXIST as the same archive fence, never as a cue
+      // to overwrite the winner.
+      if ((err as NodeJS.ErrnoException).code === "EEXIST" && fs.existsSync(target)) {
+        archiveFence = true;
+        return false;
+      }
+      throw err;
+    } finally {
+      try { fs.unlinkSync(temp); } catch {}
+    }
   }) === true;
   if (archived) {
     try { fs.unlinkSync(goalMdPath(ctx.cwd, goal.id)); } catch {}
   } else {
-    ctx.ui.notify(`Could not archive ${goal.policy === "list" ? "the list item" : "the goal"} — the live objective was kept open and no terminal state was recorded. Fix the project disk and retry.`, "warning");
+    if (archiveFence) {
+      appendLedger(ctx.cwd, "faulty_objective_archive_fence", {
+        goalId: goal.id,
+        where: "archiveCurrentGoal",
+        archive: target,
+      });
+    }
+    ctx.ui.notify(`Could not archive ${goal.policy === "list" ? "the list item" : "the goal"} — ${archiveFence ? "an existing archive was preserved and" : "the"} live objective was kept open; no terminal state was recorded. Fix the project disk and retry.`, "warning");
     return false;
   }
   replaceState({
     ...state,
-    goal: {
-      ...goal,
-      status,
-      archivedPath: path.relative(ctx.cwd, target) || target,
-      stopReason,
-      // A cancelled/archived goal cannot accept a late detached worker result.
-      pendingCompletion: undefined,
-    },
+    goal: terminalGoal,
   });
   if (pendingAttemptId) {
     // Drop the ephemeral widget projection immediately; the detached worker

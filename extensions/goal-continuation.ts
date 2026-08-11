@@ -817,6 +817,19 @@ export function guardGoalBeforeContinuation(
     ctx.ui.notify("The goal was already archived/cancelled; stale in-memory work was discarded.", "warning");
     return false;
   }
+  // v0.35.x: an interrupted terminal archive from the old ordering could
+  // leave an ACTIVE goal carrying its terminal stopReason. It is no longer
+  // actionable, even when the archive write never landed; do not dispatch
+  // it as if the completion claim were still open.
+  if (goal.stopReason) {
+    appendLedger(ctx.cwd, "faulty_objective_terminal_fence", {
+      goalId: goal.id,
+      status: goal.status,
+      stopReason: goal.stopReason,
+      where,
+    });
+    return false;
+  }
 
   const assessment = assessSuspiciousObjective(goal.objective, goal.verificationContract);
   if (!assessment.suspicious) return true;
