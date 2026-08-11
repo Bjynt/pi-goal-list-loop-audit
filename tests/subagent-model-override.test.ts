@@ -157,18 +157,20 @@ test("defaultAgentDir points at ~/.pi/agent", () => {
 // default agent), this test fails and prompts re-syncing the embedded copies
 // in extensions/goal-loop-subagents.ts.
 
-test("drift: embedded Explore copy matches installed pi-subagents default", () => {
-  const candidates = [
-    path.join(os.homedir(), ".pi", "agent", "npm", "node_modules", "@tintinweb", "pi-subagents", "src", "default-agents.ts"),
-    process.env.PI_SUBAGENTS_DEFAULT_AGENTS ?? "",
-  ].filter(Boolean);
-  const src = candidates.find(p => fs.existsSync(p));
-  if (!src) {
-    // Bun's node:test compatibility does not implement t.skip(). This is an
-    // optional drift guard: the package's CI image does not install pi itself.
-    assert.ok(true, "pi-subagents not installed in this environment — drift check skipped");
-    return;
-  }
+const DRIFT_CANDIDATES = [
+  path.join(os.homedir(), ".pi", "agent", "npm", "node_modules", "@tintinweb", "pi-subagents", "src", "default-agents.ts"),
+  process.env.PI_SUBAGENTS_DEFAULT_AGENTS ?? "",
+].filter(Boolean);
+const DRIFT_SOURCE = DRIFT_CANDIDATES.find(p => fs.existsSync(p));
+const DRIFT_SKIP = !DRIFT_SOURCE
+  && "pi-subagents default-agents.ts not installed in this environment — drift guard skipped";
+
+test("drift: embedded Explore copy matches installed pi-subagents default", { skip: DRIFT_SKIP }, () => {
+  // Use the test option rather than t.skip(): Bun's node:test compatibility
+  // supports this form, and an unsupported runner must fail rather than turn
+  // a missing drift guard into a passing no-op.
+  assert.ok(DRIFT_SOURCE, "drift guard source was not resolved");
+  const src = DRIFT_SOURCE!;
   const content = fs.readFileSync(src, "utf-8");
   const exploreBlock = content.slice(content.indexOf('"Explore",'), content.indexOf('"Plan",'));
 
@@ -183,7 +185,7 @@ test("drift: embedded Explore copy matches installed pi-subagents default", () =
       [...KNOWN_PINNED_DEFAULT_AGENTS], [],
       "upstream no longer pins any default agent model — empty KNOWN_PINNED_DEFAULT_AGENTS",
     );
-    assert.ok(true, "upstream removed model pins — no pinned Explore body to compare");
+    // There is no pinned Explore body to compare in this valid upstream shape.
     return;
   }
 

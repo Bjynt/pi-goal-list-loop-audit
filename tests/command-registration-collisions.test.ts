@@ -23,10 +23,11 @@
 //      settings.json packages), scans every loaded extension's entry source
 //      for registerCommand("list"|"glla"|"goal"|"loop"), computes the
 //      routing table with the model's rule, and RECORDS it to
-//      audit/command-registration-routing.md. When nothing registers the
-//      goal family (CI / non-pi rigs), the report records explicit
+//      audit/command-registration-routing.md. When the live scan runs but
+//      nothing registers the goal family, the report records explicit
 //      zero-registrant rows for goal/list/glla/loop instead of failing on
-//      an empty table; never writes to pi core.
+//      an empty table; never writes to pi core. If the agent dir is absent,
+//      the live test is skipped through the test options below.
 //
 // 2026-08-05 live finding: the only loaded registrant of goal/glla/list/loop
 // is this repo (global packages[10] = /home/dracon/Dev/pi-goal-loop-audit)
@@ -213,11 +214,14 @@ function scanEntryFiles(entry: ScanEntry): Registration[] {
   return out;
 }
 
-test("v0.34.55: live rig — the routing table records duplicate-command routing and identifies the winning registration", (t) => {
-  if (!fs.existsSync(AGENT_DIR)) {
-    t.skip(`pi agent dir not present (${AGENT_DIR}) — no live rig to scan`);
-    return;
-  }
+const LIVE_RIG_SKIP = !fs.existsSync(AGENT_DIR)
+  && `pi agent dir not present (${AGENT_DIR}) — live rig scan skipped`;
+
+test("v0.34.55: live rig — the routing table records duplicate-command routing and identifies the winning registration", { skip: LIVE_RIG_SKIP }, () => {
+  // Test options are used instead of t.skip(): Bun's node:test compatibility
+  // supports the former consistently, and a runner that ignores the skip must
+  // fail loudly rather than silently treating the scan as passed.
+  assert.ok(fs.existsSync(AGENT_DIR), `pi agent dir not present: ${AGENT_DIR}`);
 
   // The pi loader's load order: project .pi/extensions → agent dir
   // extensions → project packages → global settings.json packages
