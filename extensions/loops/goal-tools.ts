@@ -511,38 +511,62 @@ function registerAgentTools(pi: any): void {
       // "v0.34.74 already…", the two states contradicted each other.
       const summaryText = (p.completionSummary ?? "").toLowerCase();
       const alreadyShippedMatch = summaryText.match(/(?:already\s+shipped|verified\s+v\d+\.\d+\.\d+\s+covers\s+this|no\s+new\s+work\s+shipped)/);
+      // v0.34.128 (field 2026-08-11, dracon-platform): a VERSION-LESS
+      // "already shipped" claim is not corroborated — a restored session
+      // can hallucinate it from the OLD conversation's tail (a different,
+      // already-completed goal) and abort a finding that still needs work,
+      // silently dropping it from the queue. Version-less claims therefore
+      // route to the NORMAL completion audit (labeled already_shipped) so
+      // the auditor verifies the work exists in the tree: a true claim is
+      // approved into a truthful complete; a false claim is disapproved
+      // and the finding stays queued. Only version-bearing claims ("already
+      // shipped in vX.Y.Z", "verified vX.Y.Z covers this") keep the
+      // v0.34.96 abort — the named version is the corroboration.
+      let versionlessAlreadyShipped: string | undefined;
       if (alreadyShippedMatch) {
         const matchedPhrase = alreadyShippedMatch[0];
         const matchedVersion = summaryText.match(/v\d+\.\d+\.\d+/);
-        const stopReason = matchedVersion
-          ? `already_shipped:${matchedVersion[0]}`
-          : `already_shipped:${matchedPhrase}`;
-        // Persist the recap as the abort reason so the user sees it in
-        // /goal status; archive directly with the aborted status.
-        if (state.goal) {
-          updateGoal({
-            completionSummary: p.completionSummary?.trim(),
+        if (matchedVersion) {
+          const stopReason = `already_shipped:${matchedVersion[0]}`;
+          // Persist the recap as the abort reason so the user sees it in
+          // /goal status; archive directly with the aborted status.
+          if (state.goal) {
+            updateGoal({
+              completionSummary: p.completionSummary?.trim(),
+              stopReason,
+              pendingTasks: undefined,
+              pendingCompletion: undefined,
+            }, ctx);
+          }
+          appendLedger(ctx.cwd, "complete_goal_already_shipped", {
+            goalId: state.goal?.id,
             stopReason,
-            pendingTasks: undefined,
-            pendingCompletion: undefined,
-          }, ctx);
+            matchedPhrase,
+            matchedVersion: matchedVersion[0],
+            routedToAudit: false,
+            recap: p.completionSummary?.slice(0, 300),
+          });
+          archiveCurrentGoal(ctx, "aborted", stopReason);
+          ctx.ui.notify(`Goal archived as aborted — completionSummary indicated the work was ${matchedPhrase}; no new work shipped in this turn.`, "info");
+          return {
+            content: [{
+              type: "text",
+              text: `complete_goal routed to status=aborted — completionSummary matched "${matchedPhrase}" (${matchedVersion[0]}). The work was already shipped in a prior version; this turn shipped no new code. Use this status to differentiate "completed" from "verified-already-shipped".`,
+            }],
+            details: {},
+          };
         }
+        // Version-less: record the label and fall through to the normal
+        // completion audit below (auditor verifies the work exists).
+        versionlessAlreadyShipped = matchedPhrase;
         appendLedger(ctx.cwd, "complete_goal_already_shipped", {
           goalId: state.goal?.id,
-          stopReason,
           matchedPhrase,
-          matchedVersion: matchedVersion?.[0] ?? null,
+          matchedVersion: null,
+          routedToAudit: true,
           recap: p.completionSummary?.slice(0, 300),
         });
-        archiveCurrentGoal(ctx, "aborted", stopReason);
-        ctx.ui.notify(`Goal archived as aborted — completionSummary indicated the work was ${matchedPhrase}; no new work shipped in this turn.`, "info");
-        return {
-          content: [{
-            type: "text",
-            text: `complete_goal routed to status=aborted — completionSummary matched "${matchedPhrase}" (${matchedVersion?.[0] ?? "no version"}). The work was already shipped in a prior version; this turn shipped no new code. Use this status to differentiate "completed" from "verified-already-shipped".`,
-          }],
-          details: {},
-        };
+        ctx.ui.notify(`completionSummary says "${matchedPhrase}" with no version named — routing to the NORMAL audit so the auditor verifies the work exists in the tree.`, "info");
       }
       // v0.34.104 ([Image-#1] 2026-08-08 10:29 dracon-platform): the
       // completionSummary said "29/28 pass, 0 fail" — more tests passing
@@ -560,15 +584,22 @@ function registerAgentTools(pi: any): void {
       // needed to see.
       const validated = p.completionSummary?.trim() ? validateCompletionSummary(p.completionSummary, ctx) : p.completionSummary;
       const validatedSummary = validated?.trim() || undefined;
+      // v0.34.128: carry the version-less already-shipped label INTO the
+      // audited recap (mirrors validateCompletionSummary's NOTE amendment)
+      // so the auditor sees this is a verify-in-tree claim, not a
+      // this-turn-shipped claim.
+      const finalSummary = versionlessAlreadyShipped && validatedSummary
+        ? `${validatedSummary} — NOTE: version-less "${versionlessAlreadyShipped}" claim — the auditor must verify the work exists in the tree (commit hash or current code) before approving.`
+        : validatedSummary;
       if (!guardGoalBeforeContinuation(ctx, "completion-audit-dispatch", state.goal?.id)) {
         return staleToolResult();
       }
       const completionClaim = beginCompletionAudit(ctx, {
-        completionSummary: validatedSummary,
+        completionSummary: finalSummary,
         verificationSummary: p.verificationSummary,
         at: nowIso(),
       }, "complete-goal");
-      updateGoal({ pendingTasks: undefined, ...(validatedSummary ? { completionSummary: validatedSummary } : {}) }, ctx);
+      updateGoal({ pendingTasks: undefined, ...(finalSummary ? { completionSummary: finalSummary } : {}) }, ctx);
       const auditGoal = state.goal;
       if (!auditGoal) return staleToolResult();
       const auditGoalId = auditGoal.id;
