@@ -1837,17 +1837,23 @@ test("quota error turns enter durable main-model recovery instead of a resend st
   await pi.command("goal", "start behavioral 429 target — done when pinned", ctx);
   await tick();
   assert.equal((readState(cwd).goal as { status: string }).status, "active", "goal created and active");
-  const errTurn = { messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: "429: rate_limit_error" }] };
+  const rawProviderWall = '429 {"error":{"message":"Token Plan rate limit reached: upgrade your Token Plan"},"request_id":"main-abc123"}';
+  const errTurn = { messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: rawProviderWall }] };
   for (let i = 0; i < 3; i++) {
     await pi.fire("agent_end", errTurn, ctx);
     await tick();
   }
-  const snapshot = readState(cwd) as { goal: { status: string; pauseReason?: string }; mainModelRecovery?: { retryAt?: string } };
+  const snapshot = readState(cwd) as { goal: { status: string; pauseReason?: string; providerErrorDiagnostic?: string }; mainModelRecovery?: { retryAt?: string } };
   assert.equal(snapshot.goal.status, "paused", "a quota wall pauses into a durable wait, not blind re-sends");
   assert.match(snapshot.goal.pauseReason ?? "", /main model recovery/);
+  assert.doesNotMatch(snapshot.goal.pauseReason ?? "", /429|Token Plan|main-abc123/, "main recovery pause copy is sanitized");
+  assert.match(snapshot.goal.providerErrorDiagnostic ?? "", /Token Plan/);
   assert.ok(snapshot.mainModelRecovery?.retryAt, "recovery probe time persisted");
+  const userSurface = ctx.ui.notifies.map((notice) => notice.message).join("\\n");
+  assert.doesNotMatch(userSurface, /429|Token Plan|main-abc123/, "main recovery notifications stay sanitized");
   const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
   assert.ok(ledger.includes('"main_model_recovery_wait"'), "recovery wait ledgered");
+  assert.match(ledger, /Token Plan/, "raw provider diagnostics remain in durable state/ledger");
 });
 
 test("a successful core retry clears the quota wall and resumes the parked goal", async () => {
