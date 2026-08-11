@@ -18,6 +18,61 @@ const PROTOCOL_VERSION = 1;
 // below still prevents one tool call from pinning the audit indefinitely.
 const AUDITOR_TOOLS = new Set(["read", "grep", "find", "ls", "bash"]);
 const DEFAULT_TOOL_TIMEOUT_MS = 5 * 60_000;
+// A cancelled worker must not leave a wedged RPC child holding stdout/stderr
+// pipes open. Give a cooperative SIGTERM a short grace period, then force
+// kill and destroy the pipes so this worker can finish and exit too.
+const DEFAULT_CHILD_SHUTDOWN_GRACE_MS = 1_000;
+const FORCE_KILL_SETTLE_MS = 250;
+
+function configuredDuration(name, fallback) {
+  const value = Number(process.env[name] ?? fallback);
+  return Number.isFinite(value) ? Math.max(50, value) : fallback;
+}
+
+function childRunning(child) {
+  return child.exitCode === null && child.signalCode === null;
+}
+
+function destroyChildStreams(child) {
+  for (const stream of [child.stdin, child.stdout, child.stderr]) {
+    try { stream?.destroy(); } catch {}
+  }
+}
+
+function waitForChildExit(child, timeoutMs) {
+  if (!childRunning(child)) return Promise.resolve();
+  return new Promise((resolve) => {
+    let timer;
+    const done = () => {
+      if (timer) clearTimeout(timer);
+      child.removeListener("exit", done);
+      child.removeListener("close", done);
+      child.removeListener("error", done);
+      resolve();
+    };
+    child.once("exit", done);
+    child.once("close", done);
+    child.once("error", done);
+    timer = setTimeout(done, timeoutMs);
+    timer.unref?.();
+  });
+}
+
+async function terminateChild(child) {
+  if (!childRunning(child)) {
+    destroyChildStreams(child);
+    return;
+  }
+  try { child.kill("SIGTERM"); } catch {}
+  await waitForChildExit(child, configuredDuration("GLLA_AUDITOR_CHILD_SHUTDOWN_MS", DEFAULT_CHILD_SHUTDOWN_GRACE_MS));
+  if (childRunning(child)) {
+    try { child.kill("SIGKILL"); } catch {}
+    // SIGKILL should settle a direct child promptly; keep a second finite
+    // bound so a broken pipe/close event can never hold the worker forever.
+    await waitForChildExit(child, FORCE_KILL_SETTLE_MS);
+  }
+  destroyChildStreams(child);
+}
 
 function stableJson(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -255,7 +310,10 @@ async function main() {
     if (inactivityTimer) clearInterval(inactivityTimer);
     for (const timer of toolTimers.values()) clearTimeout(timer);
     toolTimers.clear();
-    if (pi && pi.exitCode === null) pi.kill("SIGTERM");
+    // Wait for the nested RPC child to settle before publishing the terminal
+    // result. SIGTERM alone is insufficient when a provider stream wedges the
+    // child and its stdout listener keeps this worker's event loop referenced.
+    if (pi) await terminateChild(pi);
     const result = {
       protocolVersion: PROTOCOL_VERSION,
       attemptId,
