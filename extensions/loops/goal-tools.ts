@@ -39,9 +39,7 @@ import {
   workCommandRoot,
   appendLedger,
   claimRecoveryNotice,
-  providerErrorFingerprint,
   providerErrorPresentation,
-  sanitizeProviderDisplayText,
   archiveDir,
   archivedGoalPath,
   buildTaskList,
@@ -1004,6 +1002,10 @@ function registerAgentTools(pi: any): void {
               }
               scheduleContinuation(fresh, true);
             }
+          }, undefined, {
+            episodeKey: recoveryEpisodeKey,
+            noticeKey: `${recoveryEpisodeKey}:retry-wait`,
+            suppressNotice: !notifyRetry,
           });
           return {
             content: [{
@@ -1149,21 +1151,31 @@ function registerAgentTools(pi: any): void {
       })().catch((error) => {
         const current = freshCtxForGeneration(auditGeneration);
         if (!current || !state.goal || state.goal.id !== auditGoalId || state.goal.pendingCompletion?.attemptId !== auditAttemptId) return;
+        const failureCopy = providerErrorPresentation(error instanceof Error ? error.message : String(error), "completion");
+        const recoveryEpisodeKey = completionClaim.recoveryEpisodeKey ?? `${completionClaim.at}:${failureCopy.fingerprint}`;
+        const pending: PendingCompletion = {
+          ...completionClaim,
+          phase: "recovery-pending",
+          recoveryAt: nowIso(),
+          recoveryReason: "auditor-infrastructure",
+          providerErrorDiagnostic: failureCopy.diagnostic,
+          recoveryEpisodeKey,
+          recoveryNoticeKeys: completionClaim.recoveryNoticeKeys ?? [],
+          automaticRecoveryAttempted: completionClaim.automaticRecoveryAttempted ?? false,
+        };
+        const notifyFailure = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:infrastructure`);
         updateGoal({
           status: "paused",
-          pendingCompletion: {
-            ...completionClaim,
-            phase: "recovery-pending",
-            recoveryAt: nowIso(),
-            recoveryReason: "auditor-infrastructure",
-            automaticRecoveryAttempted: completionClaim.automaticRecoveryAttempted ?? false,
-          },
+          pendingCompletion: pending,
+          providerErrorDiagnostic: failureCopy.diagnostic,
+          recoveryEpisodeKey,
+          recoveryNoticeKeys: pending.recoveryNoticeKeys,
           pauseKind: "error",
-          pauseReason: `completion auditor infrastructure failure — ${error instanceof Error ? error.message : String(error)}`,
+          pauseReason: "completion auditor infrastructure failure — no verdict was produced",
           pauseSuggestedAction: `Fix the auditor worker/model, then ${activeGoalSurfaceCommand("resume")} to retry the stored claim.`,
         }, current);
-        appendLedger(current.cwd, "audit_infra_waiting", { goalId: auditGoalId, attemptId: auditAttemptId, error: String(error).slice(0, 240) });
-        current.ui.notify(`Completion auditor worker failed to settle (infrastructure, not a verdict). The stored claim is safe; ${activeGoalSurfaceCommand("resume")} retries it.`, "warning");
+        appendLedger(current.cwd, "audit_infra_waiting", { goalId: auditGoalId, attemptId: auditAttemptId, error: failureCopy.diagnostic.slice(0, 240), diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
+        if (notifyFailure) current.ui.notify(`Completion auditor worker failed to settle (infrastructure, not a verdict). The stored claim is safe; ${activeGoalSurfaceCommand("resume")} retries it.`, "warning");
       });
       return {
         content: [{ type: "text", text: `Completion claim persisted; detached auditor queued (model: ${via ?? "setting"}). The verdict will be applied asynchronously.` }],
