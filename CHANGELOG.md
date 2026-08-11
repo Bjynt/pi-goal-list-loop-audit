@@ -1,6 +1,23 @@
 # Changelog
 
 ## Unreleased
+### v0.34.128 — already_shipped guard: version-less claims route to the normal audit
+  Field evidence 2026-08-11 (dracon-platform): a session restart restored the
+  OLD conversation; the continuation carried a NEW goal whose fix was genuinely
+  already shipped, and the v0.34.96 guard aborted it correctly. But the
+  version-less "already shipped" path is a pure phrase-trigger with zero
+  corroboration — a hallucinated version-less claim (from the same stale-
+  restore mechanism) would abort a finding that still needs work and silently
+  drop it from the queue. Version-less claims ("already shipped", "no new
+  work shipped", no vX.Y.Z anywhere in the summary) now route to the NORMAL
+  completion audit with the label carried into the audited recap ("NOTE:
+  version-less … claim — the auditor must verify the work exists in the tree"):
+  a true claim is approved into a truthful complete; a false claim is
+  disapproved and the finding stays queued. Version-bearing claims ("already
+  shipped in vX.Y.Z", "verified vX.Y.Z covers this") keep the abort — the
+  named version is the corroboration. Ledger event complete_goal_already_shipped
+  now carries routedToAudit (true = normal audit, false = aborted).
+
 ### v0.34.127 — standalone Auditor thinking row + headless /glla list sync
   The v0.31.4 comment claimed "/glla thinking= remains the direct path"
   for changing the auditor's thinking level — no such action ever
