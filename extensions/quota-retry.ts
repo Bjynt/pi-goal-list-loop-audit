@@ -55,9 +55,9 @@ function providerFingerprintText(error: string): string {
     .replace(/(?:reset|available|renews?)[\s_-]*(?:at|on|in)[^\s,;)}\]]+/gi, "reset-hint")
     .replace(/\b(?:0x)?[a-f0-9]{8,}\b/gi, "id")
     .replace(/\b\d+(?:\.\d+)?\b/g, "number")
-    .replace(/\bretry hint\b/g, "")
-    .replace(/\brequest id [a-z0-9]+(?: number)?\b/g, "request-id")
     .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\bretry hint\b/g, "")
+    .replace(/\brequest id (?:[a-z]+ )?number\b/g, "request-id")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 180);

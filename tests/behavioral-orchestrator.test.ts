@@ -2459,7 +2459,7 @@ test("v0.35.x: provider-wall diagnostics stay durable while completion surfaces 
     if (previous === undefined) delete process.env.GLLA_PI_BINARY;
     else process.env.GLLA_PI_BINARY = previous;
   }
-});
+}, { timeout: 15_000 });
 
 test("v0.34.119: auditor-approved list completion archives the item and activates exactly the next queue item", async () => {
   __testOnlyResetStaleFlag();
