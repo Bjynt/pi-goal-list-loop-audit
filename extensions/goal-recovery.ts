@@ -797,7 +797,7 @@ export function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
   } else {
     persistState(ctx);
   }
-  ctx.ui.notify(`Main session model recovered on ${modelRef(ctx.model) ?? "the active model"}; automatic recovery is cleared${resumed ? ` and the ${resumed} is resuming` : ""}.`, "info");
+  ctx.ui.notify(`Main session model recovered on ${modelRef(ctx.model) ?? "the active model"}; automatic recovery is cleared${resumed ? ` and the ${resumed} is resuming` : auditRetryStarted ? " and the stored completion audit is retrying" : ""}.`, "info");
 }
 
 /** Handle a provider error before loop/goal bookkeeping can mistake it for
