@@ -10,7 +10,7 @@ import { isBillingError, isQuotaError, parseQuotaError, type QuotaSignal } from 
 export const MAIN_MODEL_MAX_RETRY_DELAY_MS = 5 * 60 * 60_000;
 export const MAIN_MODEL_AUTO_RETRY_HORIZON_MS = 24 * 60 * 60_000;
 
-export type MainModelFailureKind = "quota" | "billing" | "auth" | "transient" | "unknown" | "non-recoverable" | "context-overflow";
+export type MainModelFailureKind = "rate-limit" | "quota" | "billing" | "auth" | "transient" | "unknown" | "non-recoverable" | "context-overflow";
 
 export interface MainModelFailure {
   kind: MainModelFailureKind;
@@ -94,7 +94,10 @@ export function classifyMainModelFailure(error: string | undefined, opts?: { isC
   if (isQuotaError(raw)) {
     const parsed = parseQuotaError(raw);
     return {
-      kind: "quota",
+      // A request-rate 429 gets its own operational class. `quotaSignal`
+      // remains durable metadata for plan/account/billing walls, while the
+      // main recovery policy can use a short backoff before its hourly slot.
+      kind: parsed.signal === "rate-limit" ? "rate-limit" : "quota",
       raw,
       retryAfterSec: parsed.retryAfterSec,
       retryFromUpstream: parsed.fromUpstream,
@@ -135,7 +138,7 @@ export const SEND_REARM_QUOTA_ESCALATE_MS = 3 * 60_000;
 export const SEND_REARM_GENERIC_ESCALATE_MS = 15 * 60_000;
 
 export function isLongLivedFailureKind(kind: MainModelFailureKind): boolean {
-  return kind === "quota" || kind === "billing" || kind === "auth";
+  return kind === "rate-limit" || kind === "quota" || kind === "billing" || kind === "auth";
 }
 
 /** Storm-escalation threshold: fast (3m) inside a fresh long-lived-failure
@@ -194,22 +197,21 @@ export function hourAlignedRetryDelayMs(nowMs = Date.now()): number {
 }
 
 /** v0.34.51: one uniform envelope for EVERY provider failure. Error text is
- * not trusted to pick a cadence — the only exception is the upstream
- * Retry-After hint, a factual provider fact, honored when it fits the
- * five-hour probe budget. Classification now serves display and the
- * no-retry class (context-length/aborted) only: billing, auth, transient,
- * and unknown all retry on the same bounded cadence, because a
- * miss-classified quota wall is the common case and "keep retrying" beats
- * confident stopping.
+ * not trusted to pick a cadence — the exception is a factual upstream
+ * Retry-After hint, honored when it fits the five-hour probe budget.
+ * v0.35.x: a pure request-rate wall gets one short bounded backoff before
+ * joining the hourly reset slot; account/plan/billing walls never inherit
+ * that eager request-rate retry. This keeps a 429 distinct without making
+ * either class unbounded.
  * v0.34.63: the bounded cadence is the next :00 clock hour (see
- * hourAlignedRetryDelayMs) — kind-independent, hint-overridable, and never
- * farther out than one hour per probe. */
+ * hourAlignedRetryDelayMs) — hint-overridable and never farther out than
+ * one hour per probe. */
 export function mainModelFailureDelayMs(failure: MainModelFailure, attempt: number, baseMinutes = 15, nowMs = Date.now()): number {
   if (failure.retryFromUpstream && Number.isFinite(failure.retryAfterSec)) {
     const hinted = Math.max(1_000, Math.round(failure.retryAfterSec! * 1_000));
     if (hinted <= MAIN_MODEL_MAX_RETRY_DELAY_MS) return hinted;
   }
-  void attempt;
+  if (failure.kind === "rate-limit" && attempt <= 1) return 5_000;
   void baseMinutes;
   return hourAlignedRetryDelayMs(nowMs);
 }

@@ -128,8 +128,13 @@ export function sanitizeProviderDisplayText(value: string): string {
 // deliberately explicit enough to survive provider wording changes without
 // turning an arbitrary transient error into a week-long retry loop.
 const RATE_LIMIT = /\b429\b|too many requests|rate[\s_-]*limit|throttl(?:e|ed|ing)|requests?\s+per\s+(?:second|minute)|\b(?:rpm|tpm)\b/i;
-const PLAN_QUOTA = /(?:quota|usage[\s_-]*limit|token[\s_-]*plan|plan[\s_-]*limit|monthly\s+limit|daily\s+limit|weekly\s+limit|key\s+limit\s+exceeded|limit\s+(?:reached|exceeded|exhausted|depleted)).{0,80}(?:quota|usage|token|plan|limit|reached|exceeded|exhausted|depleted)?/i;
-const PLAN_QUOTA_REVERSE = /(?:quota|usage|token[\s_-]*plan|plan|monthly|daily|weekly|key).{0,80}(?:limit\s+(?:reached|exceeded|exhausted|depleted)|exhausted|depleted)/i;
+// Account/plan markers are intentionally specific. A generic "429 rate limit
+// exceeded" contains the words "limit exceeded", but it is a request-rate
+// response, not evidence that the account's quota is exhausted. Keep the
+// generic limit phrase separate so quotaSignal can preserve that distinction.
+const PLAN_QUOTA = /(?:quota|usage[\s_-]*(?:limit|quota)|token[\s_-]*plan|plan[\s_-]*(?:limit|quota)|monthly\s+(?:limit|quota)|daily\s+(?:limit|quota)|weekly\s+(?:limit|quota)|key[\s_-]*(?:limit|quota)(?:\s+exceeded)?)/i;
+const PLAN_QUOTA_REVERSE = /(?:monthly|daily|weekly|key|usage|token[\s_-]*plan|plan).{0,80}(?:limit\s+(?:reached|exceeded|exhausted|depleted)|quota|exhausted|depleted)/i;
+const GENERIC_LIMIT_WALL = /\blimit\s+(?:reached|exceeded|exhausted|depleted)\b/i;
 const BILLING = /insufficient[\s_-]+(?:credits?|balance|quota)|(?:credits?|balance)\s+(?:exhausted|depleted|used\s+up)|billing\s+(?:required|issue|failure)|payment\s+required|buy\s+credits?/i;
 // v0.34.125: explicitly-TEMPORARY quota wording (note.md 2026-08-10 "we
 // received some quota message that would have been temporary but we gave up
@@ -151,6 +156,10 @@ export function quotaSignal(error: string | undefined): QuotaSignal | undefined 
   // "temporarily over quota" is a short retry window, not a plan wall.
   if (TEMPORARY_QUOTA.test(error)) return "rate-limit";
   if (PLAN_QUOTA.test(error) || PLAN_QUOTA_REVERSE.test(error)) return "plan-quota";
+  // Only a standalone account-style "limit reached" is a plan wall. When
+  // the same generic phrase is attached to an explicit rate-limit/429
+  // marker, preserve the stronger request-rate interpretation.
+  if (GENERIC_LIMIT_WALL.test(error) && !/(?:\b429\b|too many requests|rate[\s_-]*limit|throttl)/i.test(error)) return "plan-quota";
   if (RATE_LIMIT.test(error)) return "rate-limit";
   return undefined;
 }
