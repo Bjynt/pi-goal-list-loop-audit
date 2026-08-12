@@ -1503,6 +1503,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         // say "resuming won't help; switch /model or wait out the window"
         // (the raw 429 text was in `detail` but nobody parses JSON on a card).
         const quotaWall = failureCopy.signal !== undefined || /rate.?limit|usage limit|quota|insufficient|credits/i.test(rawErrorText);
+        const rateLimitWall = failureCopy.signal === "rate-limit";
+        const wallRecoveryAction = rateLimitWall
+          ? "Provider request-rate wall — the message was suppressed; bounded retries and hourly reset probes will pick work back up. Switch /model to a different provider to continue immediately."
+          : "Provider account/usage wall — automatic recovery waits for the provider window; switch /model to a different provider to continue immediately.";
         // v0.34.26: deterministic output-limit wall — durable error pause,
         // no flake ladder, no hourly probes. Only re-scoping the work helps.
         if (outputLimitWall) {
@@ -1547,12 +1551,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
             recoveryEpisodeKey,
             recoveryNoticeKeys,
             pauseSuggestedAction: quotaWall
-              ? "Provider quota/rate-limit wall — resuming won't help until the window resets. Hourly top-of-hour probes will pick work back up; switch /model to a different provider to continue immediately."
-              : `Probing at the top of each hour — rate-limit windows typically expire on clock-hour boundaries. ${activeGoalSurfaceCommand("resume")} retries now.`,
+              ? wallRecoveryAction
+              : `Probing at the top of each hour — provider windows typically expire on clock-hour boundaries. ${activeGoalSurfaceCommand("resume")} retries now.`,
           }, ctx);
           const notifyCapped = claimRecoveryNotice(state.goal!, `${recoveryEpisodeKey}:error-brake-capped`);
           if (notifyCapped) {
-            ctx.ui.notify(`${goalNoun()} parked: ${failureCopy.sensitive ? "provider recovery wall" : reason} — 6 brakes in a row. ${quotaWall ? "Quota/rate-limit wall — switching /model continues immediately; otherwise hourly" : "Hourly"} top-of-hour probes will pick work back up when the window opens.`, "warning");
+            ctx.ui.notify(`${goalNoun()} parked: ${failureCopy.sensitive ? "provider recovery wall" : reason} — 6 brakes in a row. ${quotaWall ? (rateLimitWall ? "Request-rate wall — switching /model continues immediately; otherwise hourly" : "Account/usage wall — switching /model continues immediately; otherwise hourly") : "Hourly"} top-of-hour probes will pick work back up when the window opens.`, "warning");
             notifyExternal(ctx, `${goalNoun()} parked: provider erroring across 6 error-brake cycles — hourly top-of-hour probes scheduled.`);
           }
           appendLedger(ctx.cwd, "error_brake_capped", { streak: brakeStreak, reason, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
@@ -1585,12 +1589,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           recoveryNoticeKeys,
           errorBrakeStreak: brakeStreak + 1,
           pauseSuggestedAction: quotaWall
-            ? `Provider quota/rate-limit wall — resuming won't help until the window resets. Switch /model to a different provider to continue now, or let the probe auto-resume in ${cooldownMin}m.`
+            ? `${rateLimitWall ? "Provider request-rate wall" : "Provider account/usage wall"} — the goal auto-resumes in ${cooldownMin}m if still paused; switch /model to continue now.`
             : `Transient provider flake? The goal auto-resumes once in ${cooldownMin}m if still paused for this reason — or ${activeGoalSurfaceCommand("resume")} now.`,
         }, ctx);
         const notifyBrake = claimRecoveryNotice(state.goal!, `${recoveryEpisodeKey}:error-brake-wait`);
         if (notifyBrake) {
-          ctx.ui.notify(`Goal paused: ${failureCopy.sensitive ? "provider recovery wall" : reason}.${quotaWall ? " Quota/rate-limit wall — resuming won't help until the window resets; switch /model to continue now." : ""}`, "warning");
+          ctx.ui.notify(`Goal paused: ${failureCopy.sensitive ? "provider recovery wall" : reason}.${quotaWall ? (rateLimitWall ? " Request-rate wall — bounded retries and hourly reset probes continue; switch /model to continue now." : " Account/usage wall — recovery waits for the provider window; switch /model to continue now.") : ""}`, "warning");
           notifyExternal(ctx, `Goal paused: ${failureCopy.sensitive ? "provider recovery wall" : reason}.`);
         }
         appendLedger(ctx.cwd, "goal_paused", { reason, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });

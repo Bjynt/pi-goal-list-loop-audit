@@ -134,6 +134,13 @@ test("quota classification stays conservative around ambiguous provider errors",
   assert.equal(isBillingError("429 Too Many Requests"), false);
 });
 
+test("generic 429 rate-limit wording is not mislabeled as account quota", () => {
+  assert.equal(quotaSignal("429 rate limit exceeded"), "rate-limit");
+  assert.equal(quotaSignal("429 Too Many Requests"), "rate-limit");
+  assert.equal(quotaSignal("429 usage limit"), "plan-quota");
+  assert.equal(quotaSignal("429 quota exceeded"), "plan-quota");
+});
+
 test("specific plan and billing walls outrank a generic 429", () => {
   const minimax = "429 {\"error\":{\"type\":\"rate_limit_error\",\"message\":\"Token Plan rate limit reached: Upgrade your Token Plan or switch to pay-as-you-go API usage. (2062)\"}}";
   assert.equal(quotaSignal(minimax), "plan-quota");

@@ -33,8 +33,12 @@ test("main model fallback candidates are ordered and never retried in a cycle", 
 test("main model errors distinguish quota recovery from deterministic prompt walls", () => {
   assert.equal(classifyMainModelFailure("429 usage limit; retry in 2 hours").kind, "quota");
   assert.equal(classifyMainModelFailure("Token Plan usage limit reached").kind, "quota");
+  assert.equal(classifyMainModelFailure("Token Plan rate limit reached (2062)").kind, "quota");
   assert.equal(classifyMainModelFailure("Token Plan rate limit reached (2062)").quotaSignal, "plan-quota");
+  assert.equal(classifyMainModelFailure("429 Too Many Requests").kind, "rate-limit");
   assert.equal(classifyMainModelFailure("429 Too Many Requests").quotaSignal, "rate-limit");
+  assert.equal(classifyMainModelFailure("429 rate limit exceeded").kind, "rate-limit");
+  assert.equal(classifyMainModelFailure("429 usage limit").kind, "quota");
   assert.equal(classifyMainModelFailure("503 temporarily unavailable").kind, "transient");
   assert.equal(classifyMainModelFailure("insufficient credits — buy credits").kind, "billing");
   assert.equal(classifyMainModelFailure("401 invalid API key").kind, "auth");
@@ -63,6 +67,10 @@ test("main model recovery backs off without giving up", () => {
   const nowMs = Date.parse("2026-08-07T01:18:01.930Z");
   const first = hourAligned(nowMs);
   assert.ok(first > 40 * 60_000 && first <= 60 * 60_000, `aligned first delay: ${first}`);
+  // A pure no-hint request-rate wall gets one bounded eager backoff, then
+  // joins the hourly reset slot instead of being called an account quota wall.
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 Too Many Requests"), 1, 15, nowMs), 5_000);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 Too Many Requests"), 2, 15, nowMs), first);
   // The upstream hint (a factual provider fact) still outranks the alignment:
   assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 rate limit; retry in 2 hours"), 1, 15, nowMs), 2 * 60 * 60_000);
   // v0.34.125: temporary-window prose is the same factual hint — a

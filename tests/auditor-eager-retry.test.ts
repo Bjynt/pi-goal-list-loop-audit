@@ -61,6 +61,19 @@ test("eager: an upstream Retry-After hint still wins over the eager default", ()
   assert.equal(plan.requestedSec, 3600);
 });
 
+test("v0.35.x: request-rate and account-wall retry plans stay separate", () => {
+  const rateFirst = auditorQuotaRetryPlan(claim(), quotaSignal(0, false, "rate-limit"), 60);
+  assert.equal(rateFirst.retryAfterSec, 5, "a pure request-rate wall gets one bounded eager retry");
+  const accountFirst = auditorQuotaRetryPlan(claim(), quotaSignal(0, false, "plan-quota"), 60);
+  assert.ok(accountFirst.retryAfterSec >= 60, "an account wall does not inherit the request-rate eager retry");
+  const rateSecond = auditorQuotaRetryPlan(
+    claim({ quotaAttempts: rateFirst.attempt, quotaFirstAt: rateFirst.firstAt, quotaAutoRetryUntil: rateFirst.autoRetryUntil }),
+    quotaSignal(0, false, "rate-limit"),
+    60,
+  );
+  assert.ok(rateSecond.retryAfterSec <= 60 * 60, "the next request-rate retry uses the hourly reset slot");
+});
+
 test("v0.34.84: quota-shaped errors get hour-aligned probes on attempts 2+ (not exponential 2h/4h rungs)", () => {
   // note.md Screenshots 160846–161010: the auditor sat 6232s–6367s ≈ 1h44m
   // between retries because exponential 2h/4h… rungs don't align with the

@@ -175,6 +175,20 @@ test("runWithInfraRetry: retriable infra failure retried exactly once", async ()
   assert.equal((await runWithInfraRetry(aborted, { sleep: noSleep })).retriedOnce, false);
 });
 
+test("runWithInfraRetry: provider Retry-After outranks the fixed backoff", async () => {
+  const { runWithInfraRetry } = await import("../extensions/goal-loop-core.ts");
+  type R = { error?: string; approved: boolean; disapproved: boolean; output: string };
+  const waits: number[] = [];
+  let calls = 0;
+  const run = async (): Promise<R> => (++calls === 1
+    ? { error: "429 Too Many Requests\\nRetry-After: 37", approved: false, disapproved: false, output: "" }
+    : { approved: true, disapproved: false, output: "ok" });
+  const out = await runWithInfraRetry(run, { backoffMs: 5_000, sleep: async (ms) => { waits.push(ms); } });
+  assert.equal(out.retriedOnce, true);
+  assert.deepEqual(waits, [37_000], "the provider hint is honored instead of the historical 5s retry");
+  assert.equal(calls, 2);
+});
+
 test("runWithInfraRetry: lifecycle guard prevents a second attempt", async () => {
   const { runWithInfraRetry } = await import("../extensions/goal-loop-core.ts");
   type R = { error?: string; approved: boolean; disapproved: boolean; output: string };
