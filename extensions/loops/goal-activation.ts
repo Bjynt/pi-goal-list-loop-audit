@@ -1475,7 +1475,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
           .join(" — ");
         const failureCopy = providerErrorPresentation(rawErrorText, "main");
-        const detail = rawErrorText ? ` (last: ${failureCopy.sensitive ? failureCopy.display : rawErrorText.replace(/\s+/g, " ").slice(0, 160)})` : "";
+        const detail = rawErrorText
+          ? ` (last: ${failureCopy.sensitive ? failureCopy.display : rawErrorText.replace(/\s+/g, " ").slice(0, 160)})`
+          : "";
         const recoveryEpisodeKey = state.goal!.recoveryEpisodeKey ?? `${state.goal!.createdAt}:${failureCopy.fingerprint}`;
         const recoveryNoticeKeys = state.goal!.recoveryNoticeKeys ?? [];
         // v0.34.26: an output-token-limit rejection is NOT a generic provider
@@ -1511,8 +1513,8 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           }, ctx);
           const notifyOutputLimit = claimRecoveryNotice(state.goal!, `${recoveryEpisodeKey}:output-limit`);
           if (notifyOutputLimit) {
-            ctx.ui.notify(`Goal paused: ${reason}. Re-scope into smaller pieces, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
-            notifyExternal(ctx, `Goal paused: ${reason}.`);
+            ctx.ui.notify(`Goal paused: ${failureCopy.sensitive ? "provider output-token wall" : reason}. Re-scope into smaller pieces, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
+            notifyExternal(ctx, `Goal paused: ${failureCopy.sensitive ? "provider output-token wall" : reason}.`);
           }
           appendLedger(ctx.cwd, "goal_paused", { reason, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
           return;
@@ -1535,7 +1537,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           updateGoal({
             status: "paused",
             pauseKind: "error",
-            pauseReason: `${reason} — 6 error-brakes in a row; the provider has been erroring for an extended window`,
+            pauseReason: `${failureCopy.sensitive ? "provider recovery wall" : reason} — 6 error-brakes in a row; the provider has been erroring for an extended window`,
             providerErrorDiagnostic: failureCopy.sensitive ? failureCopy.diagnostic : undefined,
             recoveryEpisodeKey,
             recoveryNoticeKeys,
@@ -1545,7 +1547,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           }, ctx);
           const notifyCapped = claimRecoveryNotice(state.goal!, `${recoveryEpisodeKey}:error-brake-capped`);
           if (notifyCapped) {
-            ctx.ui.notify(`${goalNoun()} parked: ${reason} — 6 brakes in a row. ${quotaWall ? "Quota/rate-limit wall — switching /model continues immediately; otherwise hourly" : "Hourly"} top-of-hour probes will pick work back up when the window opens.`, "warning");
+            ctx.ui.notify(`${goalNoun()} parked: ${failureCopy.sensitive ? "provider recovery wall" : reason} — 6 brakes in a row. ${quotaWall ? "Quota/rate-limit wall — switching /model continues immediately; otherwise hourly" : "Hourly"} top-of-hour probes will pick work back up when the window opens.`, "warning");
             notifyExternal(ctx, `${goalNoun()} parked: provider erroring across 6 error-brake cycles — hourly top-of-hour probes scheduled.`);
           }
           appendLedger(ctx.cwd, "error_brake_capped", { streak: brakeStreak, reason, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
@@ -1572,7 +1574,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           status: "paused",
           pauseKind: "wait",
           pauseResumeAt: new Date(Date.now() + cooldownMs).toISOString(),
-          pauseReason: reason,
+          pauseReason: failureCopy.sensitive ? `provider recovery wall — ${failureCopy.display}` : reason,
           providerErrorDiagnostic: failureCopy.sensitive ? failureCopy.diagnostic : undefined,
           recoveryEpisodeKey,
           recoveryNoticeKeys,
@@ -1583,8 +1585,8 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         }, ctx);
         const notifyBrake = claimRecoveryNotice(state.goal!, `${recoveryEpisodeKey}:error-brake-wait`);
         if (notifyBrake) {
-          ctx.ui.notify(`Goal paused: ${reason}.${quotaWall ? " Quota/rate-limit wall — resuming won't help until the window resets; switch /model to continue now." : ""}`, "warning");
-          notifyExternal(ctx, `Goal paused: ${reason}.`);
+          ctx.ui.notify(`Goal paused: ${failureCopy.sensitive ? "provider recovery wall" : reason}.${quotaWall ? " Quota/rate-limit wall — resuming won't help until the window resets; switch /model to continue now." : ""}`, "warning");
+          notifyExternal(ctx, `Goal paused: ${failureCopy.sensitive ? "provider recovery wall" : reason}.`);
         }
         appendLedger(ctx.cwd, "goal_paused", { reason, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
         scheduleQuotaRetryForSession(ctx, cooldownMs / 1000, reason, (fresh: ExtensionContext) => {
