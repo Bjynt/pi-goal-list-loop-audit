@@ -146,6 +146,43 @@ test("v0.34.63 — quit → blank startup → resume (new manager, same session 
   assert.match(readLedger(cwd), /main_model_probe/, "the probe runs after the restored timer");
 });
 
+test("blank restart paints the durable list objective, recovery owner, and next action before transcript load", async () => {
+  const cwd = tmpCwd();
+  const retryAt = new Date(Date.now() + 60_000).toISOString();
+  seedState(cwd, {
+    goal: seedGoal({
+      objective: "visible parked list objective",
+      status: "paused",
+      policy: "list",
+      pauseKind: "wait",
+      pauseResumeAt: retryAt,
+      pauseReason: "main model recovery — provider wall",
+      pauseSuggestedAction: "The saved item remains safe; /list resume retries immediately.",
+    }),
+    list: [{ id: "queued-next", objective: "next durable list item", addedAt: new Date().toISOString() }],
+    mainModelRecovery: {
+      primary: "anthropic/mock-model",
+      active: "anthropic/mock-model",
+      attempted: ["anthropic/mock-model"],
+      attempts: 1,
+      reason: "main model recovery — provider wall",
+      kind: "goal",
+      retryAt,
+    },
+  } as unknown as Parameters<typeof seedState>[1]);
+
+  const blank = makeManagerCtx(cwd, hostManager("visible-session", []));
+  await pi.fire("session_start", { reason: "startup" }, blank);
+  const status = blank.ui.statuses["pi-glla"] ?? "";
+  const widget = ((blank.ui.widgets["pi-glla"] as string[] | undefined) ?? []).join("\\n");
+  assert.match(widget, /visible parked list objective/, "the current objective is visible during blank startup");
+  assert.match(widget, /list item/, "the restored artifact is identified as a list item");
+  assert.match(widget, /owner: main-model recovery/, "the recovery owner is rendered from durable state");
+  assert.match(widget, /next: retrying automatically/, "the next transition is rendered from durable recovery state");
+  assert.match(widget, /\/list resume/, "the saved next action remains visible");
+  assert.match(status, /main-model recovery/, "the status bar also names the recovery owner");
+});
+
 test("v0.34.63 — a lifecycle start with a DIFFERENT session id stays refused while the barrier pends", async () => {
   const cwd = tmpCwd();
   seedParkedGoal(cwd, Date.now() + 200);
