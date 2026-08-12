@@ -61,9 +61,9 @@ test("paused card wraps the suggested action and closes the branch on its last l
 
 test("pause_goal tool notification carries the FULL reason AND suggested action", () => {
   const src = readGoalRuntimeSource();
-  assert.match(src, /ctx\.ui\.notify\(`\$\{goalNoun\(\)\} paused: \$\{p\.reason\}\$\{p\.suggestedAction \? `\\n\\n→ \$\{p\.suggestedAction\}`/);
-  // external push carries both too (bounded)
-  assert.match(src, /notifyExternal\(ctx, `\$\{goalNoun\(\)\} paused: \$\{\(p\.suggestedAction/);
+  assert.match(src, /ctx\.ui\.notify\(`\$\{goalNoun\(\)\} paused: \$\{safePauseReason\}\$\{safePauseAction \? `\\n\\n→ \$\{safePauseAction\}`/);
+  // external push carries both too (bounded), using the sanitized projections.
+  assert.match(src, /notifyExternal\(ctx, `\$\{goalNoun\(\)\} paused: \$\{\(safePauseAction/);
 });
 
 const SRC = readGoalRuntimeSource();
