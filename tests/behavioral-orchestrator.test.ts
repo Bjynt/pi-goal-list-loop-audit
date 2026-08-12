@@ -1856,6 +1856,23 @@ test("quota error turns enter durable main-model recovery instead of a resend st
   assert.match(ledger, /Token Plan/, "raw provider diagnostics remain in durable state/ledger");
 });
 
+test("main-model recovery external notices are deduplicated per provider episode", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "external notice dedup target — done when pinned", ctx);
+  await tick();
+  const raw = '429 {"error":{"message":"Token Plan rate limit reached"},"requestId":"req-aaa"}';
+  const errTurn = { messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: raw }] };
+  await pi.fire("agent_end", errTurn, ctx);
+  await tick();
+  await pi.fire("agent_end", { ...errTurn, messages: [{ ...errTurn.messages[0], errorMessage: raw.replace("req-aaa", "req-bbb") }] }, ctx);
+  await tick();
+  const state = readState(cwd) as { mainModelRecovery?: { recoveryNoticeKeys?: string[] } };
+  assert.equal(state.mainModelRecovery?.recoveryNoticeKeys?.filter((key) => key.endsWith(":external-wait")).length, 1);
+  assert.ok(ctx.ui.notifies.some((notice) => notice.message.includes("Main model recovery")), "the in-session warning remains visible");
+});
+
 test("a successful core retry clears the quota wall and resumes the parked goal", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();

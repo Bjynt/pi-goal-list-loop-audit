@@ -533,7 +533,11 @@ export function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainM
     persistState(ctx);
     ctx.ui.notify(`Main model recovery: ${sanitizeProviderDisplayText(normalized.reason)}. Trying again in ${minutes}m; work is saved and will not be abandoned.`, "warning");
   }
-  notifyExternal(ctx, `Main model recovery scheduled in ${minutes}m — work remains saved.`);
+  const externalNoticeKey = `${normalized.recoveryEpisodeKey ?? "main-recovery"}:external-wait`;
+  if (claimRecoveryNotice(state.mainModelRecovery, externalNoticeKey)) {
+    persistState(ctx);
+    notifyExternal(ctx, `Main model recovery scheduled in ${minutes}m — work remains saved.`);
+  }
   return true;
 }
 
