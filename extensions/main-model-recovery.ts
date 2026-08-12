@@ -211,7 +211,7 @@ export function mainModelFailureDelayMs(failure: MainModelFailure, attempt: numb
     const hinted = Math.max(1_000, Math.round(failure.retryAfterSec! * 1_000));
     if (hinted <= MAIN_MODEL_MAX_RETRY_DELAY_MS) return hinted;
   }
-  if (failure.kind === "rate-limit" && attempt <= 1) return 5_000;
+  if (failure.kind === "rate-limit" && attempt <= 1 && !failure.retryFromUpstream) return 5_000;
   void baseMinutes;
   return hourAlignedRetryDelayMs(nowMs);
 }

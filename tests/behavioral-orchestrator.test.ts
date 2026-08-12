@@ -1942,17 +1942,36 @@ test("a successful core retry clears the quota wall and resumes the parked goal"
   await tick();
   const errTurn = { messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: "429: rate_limit_error" }] };
   await pi.fire("agent_end", errTurn, ctx); await tick();
-  const parked = readState(cwd) as { goal: { status: string; pauseKind?: string }; mainModelRecovery?: unknown };
+  const parked = readState(cwd) as {
+    goal: { status: string; pauseKind?: string; objective?: string; pauseReason?: string; pauseSuggestedAction?: string };
+    mainModelRecovery?: { kind?: string; quotaSignal?: string; retryAt?: string };
+  };
+  const objective = parked.goal.objective;
   assert.equal(parked.goal.status, "paused");
   assert.equal(parked.goal.pauseKind, "wait");
+  assert.equal(parked.mainModelRecovery?.kind, "goal", "recovery owner remains the goal");
+  assert.equal(parked.mainModelRecovery?.quotaSignal, "rate-limit", "a pure 429 is a request-rate failure, not a generic quota wall");
+  assert.ok(parked.mainModelRecovery?.retryAt, "bounded request-rate retry is persisted");
+  const retryMs = Date.parse(parked.mainModelRecovery!.retryAt!) - Date.now();
+  assert.ok(retryMs > 0 && retryMs <= 5_500, `first request-rate retry is bounded: ${retryMs}ms`);
+  assert.match(parked.goal.pauseReason ?? "", /main model recovery|request-rate/);
+  assert.doesNotMatch(`${parked.goal.pauseReason} ${parked.goal.pauseSuggestedAction}`, /quota exhausted|quota wall|Token Plan|429|rate_limit_error/i, "rate-limit display copy does not claim quota exhaustion or leak the provider payload");
+  const hourly = readLedger(cwd).find((entry) => entry.type === "hourly_probe_scheduled");
+  assert.ok(hourly, "the hourly reset probe is durably scheduled");
+  const fireAt = new Date(String(hourly!.value.fireAt));
+  assert.equal(fireAt.getMinutes(), 0, "the reset probe uses the hourly slot");
+  assert.equal(fireAt.getSeconds(), 30, "the reset probe waits for the provider's post-hour skew window");
+  assert.equal(ctx.ui.matching("429").length, 0, "notifications never show the raw 429");
+  assert.equal(ctx.ui.matching("Token Plan").length, 0, "notifications never claim Token Plan exhaustion");
   assert.ok(parked.mainModelRecovery, "the test starts from a durable recovery wait");
 
   const success = { messages: [{ role: "assistant", content: [{ type: "text", text: "recovered" }], stopReason: "end_turn" }] };
   await pi.fire("agent_end", success, ctx);
   await tick(350);
-  const recovered = readState(cwd) as { goal: { status: string; pauseReason?: string }; mainModelRecovery?: unknown };
+  const recovered = readState(cwd) as { goal: { status: string; pauseReason?: string; objective?: string }; mainModelRecovery?: unknown };
   assert.equal(recovered.goal.status, "active", "a successful provider retry must not leave the goal parked");
   assert.equal(recovered.goal.pauseReason, undefined);
+  assert.equal(recovered.goal.objective, objective, "the saved objective remains resumable across the rate-limit recovery");
   assert.equal(recovered.mainModelRecovery, undefined);
   assert.match(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8"), /"main_model_recovered".*"resumed":"goal"/);
 });
