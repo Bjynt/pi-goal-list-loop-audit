@@ -1849,7 +1849,7 @@ test("quota error turns enter durable main-model recovery instead of a resend st
   assert.doesNotMatch(snapshot.goal.pauseReason ?? "", /429|Token Plan|main-abc123/, "main recovery pause copy is sanitized");
   assert.match(snapshot.goal.providerErrorDiagnostic ?? "", /Token Plan/);
   assert.ok(snapshot.mainModelRecovery?.retryAt, "recovery probe time persisted");
-  const userSurface = ctx.ui.notifies.map((notice) => notice.message).join("\\n");
+  const userSurface = ctx.ui.matching("Main model recovery").map((notice) => notice.message).join("\\n");
   assert.doesNotMatch(userSurface, /429|Token Plan|main-abc123/, "main recovery notifications stay sanitized");
   const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
   assert.ok(ledger.includes('"main_model_recovery_wait"'), "recovery wait ledgered");
