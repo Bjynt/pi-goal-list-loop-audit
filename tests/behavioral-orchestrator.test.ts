@@ -1866,11 +1866,20 @@ test("main-model recovery external notices are deduplicated per provider episode
   const errTurn = { messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: raw }] };
   await pi.fire("agent_end", errTurn, ctx);
   await tick();
+  const calls: string[] = [];
+  pi.execHandler = async (_cmd, args) => {
+    if (args[1] === "-c") calls.push(args[2] ?? "");
+    return { code: 0, stdout: "/usr/bin/notify-send\n", stderr: "" };
+  };
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ notifyCmd: "notify-send $1" }));
+  const before = calls.length;
   await pi.fire("agent_end", { ...errTurn, messages: [{ ...errTurn.messages[0], errorMessage: raw.replace("req-aaa", "req-bbb") }] }, ctx);
   await tick();
   const state = readState(cwd) as { mainModelRecovery?: { recoveryNoticeKeys?: string[] } };
   assert.equal(state.mainModelRecovery?.recoveryNoticeKeys?.filter((key) => key.endsWith(":external-wait")).length, 1);
+  assert.equal(calls.length - before, 0, "the second recovery wait does not invoke the external notifier");
   assert.ok(ctx.ui.notifies.some((notice) => notice.message.includes("Main model recovery")), "the in-session warning remains visible");
+  pi.execHandler = null;
 });
 
 test("a successful core retry clears the quota wall and resumes the parked goal", async () => {
