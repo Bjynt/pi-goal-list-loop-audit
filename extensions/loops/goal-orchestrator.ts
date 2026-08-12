@@ -91,6 +91,7 @@ import {
   newGoalId,
   nowIso,
   compactDisplayText,
+  normalizeProviderErrorText,
   sanitizeDisplayText,
   piGlaDir,
   normalizeDraftContract,
@@ -552,7 +553,7 @@ async function handleMainModelAgentEnd(ctx: ExtensionContext, rawLastA: any, las
     return true;
   }
   if (lastA?.stopReason === "error") {
-    const rawError = [rawLastA?.errorMessage, lastA.text].filter((v): v is string => typeof v === "string" && v.trim().length > 0).join(" — ");
+    const rawError = normalizeProviderErrorText(rawLastA, lastA.text);
     const failure = classifyMainModelFailure(rawError);
     lastMainModelFailure = failure;
     if (isLongLivedFailureKind(failure.kind)) lastLongLivedFailureAt = Date.now();

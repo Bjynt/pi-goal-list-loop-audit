@@ -17,6 +17,7 @@ import {
   capQuotaRetrySeconds,
   isBillingError,
   isQuotaError,
+  normalizeProviderErrorText,
   parseQuotaError,
   quotaSignal,
   quotaRetryDelaySeconds,
@@ -31,6 +32,16 @@ import {
 import { formatAuditLog, formatGoalAuditHistory } from "../extensions/goal-loop-core.ts";
 
 const fakeCtx = { ui: { notify: () => {} } } as any;
+
+test("structured HTTP status is normalized before provider classification", () => {
+  const raw = { statusCode: 429, errorMessage: { message: "limit exceeded", request_id: "abc123" } };
+  const normalized = normalizeProviderErrorText(raw);
+  assert.match(normalized, /HTTP 429/);
+  assert.match(normalized, /limit exceeded/);
+  assert.equal(quotaSignal(normalized), "rate-limit");
+  const plan = normalizeProviderErrorText({ response: { status: 429 }, error: { message: "Token Plan exhausted" } });
+  assert.equal(quotaSignal(plan), "plan-quota", "specific account/plan wording remains distinct from the HTTP status");
+});
 
 test("provider-wall copy separates safe display/action text from durable diagnostics", () => {
   const raw = '429 {"error":{"message":"Token Plan rate limit reached: upgrade your Token Plan"},"request_id":"abc123"}';

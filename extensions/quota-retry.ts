@@ -28,6 +28,54 @@ export interface QuotaError {
 
 export type ProviderErrorSurface = "recovery" | "completion" | "main";
 
+/** Normalize the structured failure shapes emitted by different providers and
+ * pi versions into one bounded diagnostic string. HTTP status fields are
+ * factual classification input: a 429 must remain a request-rate signal even
+ * when the accompanying message only says "limit exceeded". Keep this
+ * helper display-agnostic; callers still pass the result through
+ * providerErrorPresentation before showing anything to a user. */
+export function normalizeProviderErrorText(...values: unknown[]): string {
+  const statuses: number[] = [];
+  const messages: string[] = [];
+  const seen = new Set<object>();
+  const statusKeys = new Set(["status", "statusCode", "status_code", "httpStatus", "http_status"]);
+  const messageKeys = new Set(["errorMessage", "message", "detail", "reason", "description"]);
+  const nestedKeys = new Set(["error", "response", "cause", "body", "details", "data"]);
+
+  const visit = (value: unknown, depth: number): void => {
+    if (value === undefined || value === null || depth > 4) return;
+    if (typeof value === "string") {
+      if (value.trim()) messages.push(value.trim());
+      return;
+    }
+    if (typeof value === "number") {
+      if (Number.isInteger(value) && value >= 100 && value <= 599) statuses.push(value);
+      return;
+    }
+    if (typeof value !== "object") return;
+    const object = value as Record<string, unknown>;
+    if (seen.has(object)) return;
+    seen.add(object);
+    for (const [key, child] of Object.entries(object)) {
+      if (statusKeys.has(key)) {
+        if (typeof child === "number" && Number.isInteger(child) && child >= 100 && child <= 599) statuses.push(child);
+        else if (typeof child === "string" && /^\\d{3}$/.test(child.trim())) statuses.push(Number(child));
+      } else if (messageKeys.has(key)) {
+        visit(child, depth + 1);
+      } else if (nestedKeys.has(key)) {
+        visit(child, depth + 1);
+      }
+    }
+  };
+
+  for (const value of values) visit(value, 0);
+  const parts = [
+    ...[...new Set(statuses)].map((status) => `HTTP ${status}`),
+    ...messages,
+  ];
+  return [...new Set(parts)].join(" — ").slice(0, 4_000);
+}
+
 /** A provider failure has two deliberately separate projections: `diagnostic`
  * is durable for forensics, while `display` and `action` are safe to put in
  * chat, notifications, cards, or tool results. Never interpolate `diagnostic`

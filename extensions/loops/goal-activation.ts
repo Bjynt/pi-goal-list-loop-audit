@@ -39,6 +39,7 @@ import {
   workCommandRoot,
   appendLedger,
   claimRecoveryNotice,
+  normalizeProviderErrorText,
   providerErrorPresentation,
   archiveDir,
   archivedGoalPath,
@@ -1476,9 +1477,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         // provider error). And give transient flakes ONE auto-resume per brake
         // (escalating cooldown, reason re-checked) — the E8 incident lost 1.5h to a
         // 60-second provider hiccup waiting on a manual /goal resume.
-        const rawErrorText = [rawLastA?.errorMessage, text]
-          .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-          .join(" — ");
+        const rawErrorText = normalizeProviderErrorText(rawLastA, text);
         const failureCopy = providerErrorPresentation(rawErrorText, "main");
         const detail = rawErrorText
           ? ` (last: ${failureCopy.sensitive ? failureCopy.display : rawErrorText.replace(/\s+/g, " ").slice(0, 160)})`
