@@ -1967,7 +1967,9 @@ export function formatAuditLog(entries: AuditLogEntry[]): string {
   return entries
     .map((e) => {
       const day = e.at.slice(5, 16).replace("T", " ");
-      const firstLine = (e.report.split("\n").find((l) => l.trim()) ?? "").trim().slice(0, 90);
+      const firstLine = e.verdict === "error"
+        ? sanitizeProviderDisplayText(providerErrorPresentation(e.error, "completion").display)
+        : sanitizeProviderDisplayText((e.report.split("\n").find((l) => l.trim()) ?? "").trim().slice(0, 90));
       return `${VERDICT_GLYPH[e.verdict]} ${day} [${e.goalId.slice(-6)}] ${e.model} — ${firstLine}`;
     })
     .join("\n");
@@ -2047,7 +2049,9 @@ export function formatGoalAuditHistory(goal: { id: string; auditHistory?: Array<
       const glyph = verdict === "approved" ? "✔" : verdict === "shield-blocked" ? "🛡" : verdict === "impossible" ? "⛔" : verdict === "disapproved" ? "✖" : "⚠";
       const day = String(v.at ?? "").slice(5, 16).replace("T", " ");
       const elapsed = v.durationMs ? ` · ${Math.round(v.durationMs / 60000)}m` : "";
-      const firstLine = (String(v.report ?? "").split("\n").find((l: string) => l.trim()) ?? "").trim().slice(0, 80);
+      const firstLine = auditVerdictLabel(v) === "infrastructure failure"
+        ? sanitizeProviderDisplayText(providerErrorPresentation(v.error, "completion").display)
+        : sanitizeProviderDisplayText((String(v.report ?? "").split("\n").find((l: string) => l.trim()) ?? "").trim().slice(0, 80));
       return `${glyph} ${day} ${v.model ?? "?"}${elapsed} — ${firstLine}`;
     })
     .join("\n");

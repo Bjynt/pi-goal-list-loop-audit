@@ -28,6 +28,7 @@ import {
   sanitizeProviderDisplayText,
   resetQuotaRetryNoticeDedup,
 } from "../extensions/quota-retry.ts";
+import { formatAuditLog, formatGoalAuditHistory } from "../extensions/goal-loop-core.ts";
 
 const fakeCtx = { ui: { notify: () => {} } } as any;
 
@@ -39,6 +40,19 @@ test("provider-wall copy separates safe display/action text from durable diagnos
   assert.doesNotMatch(sanitizeProviderDisplayText(`auditor retry: ${raw}`), /429|Token Plan|request_id/);
   const variant = '429 {"error":{"message":"Token Plan rate limit reached: upgrade your Token Plan"},"retry_after":30,"request_id":"abc789"}';
   assert.equal(providerErrorFingerprint(raw), providerErrorFingerprint(variant), "changing counters/hints/ids stay in one logical episode");
+});
+
+test("audit history projections sanitize provider diagnostics", () => {
+  const raw = '429 Token Plan request_id=abc123';
+  const line = formatAuditLog([{
+    at: new Date().toISOString(), goalId: "goal-123456", objective: "provider wall", verdict: "error",
+    model: "provider/model", thinkingLevel: "high", report: "", error: raw,
+  }]);
+  const history = formatGoalAuditHistory({ id: "goal-123456", auditHistory: [{
+    at: new Date().toISOString(), approved: false, disapproved: false, model: "provider/model", error: raw,
+  }] });
+  assert.doesNotMatch(`${line}\n${history}`, /429|Token Plan|abc123/);
+  assert.match(`${line}\n${history}`, /provider (?:account\/usage|request-rate|infrastructure) wall|provider infrastructure error/);
 });
 
 test("scheduleQuotaRetry deduplicates one notice key within an episode", () => {
