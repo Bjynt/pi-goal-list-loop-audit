@@ -1976,8 +1976,6 @@ test("a successful core retry clears the quota wall and resumes the parked goal"
   assert.equal(restored.mainModelRecovery?.quotaSignal, "rate-limit", "reload preserves the request-rate signal");
   assert.doesNotMatch(`${restored.goal.pauseReason} ${reloaded.ui.notifies.map((notice) => notice.message).join("\\n")}`, /429|quota exhausted|Token Plan|rate_limit_error/i);
 
-  await pi.command("goal", "resume", reloaded);
-  await tick(100);
   const success = { messages: [{ role: "assistant", content: [{ type: "text", text: "recovered" }], stopReason: "end_turn" }] };
   await pi.fire("agent_end", success, reloaded);
   await tick(350);
