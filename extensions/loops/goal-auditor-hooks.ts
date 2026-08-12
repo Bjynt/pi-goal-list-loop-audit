@@ -450,18 +450,9 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
   const automaticRecoveryRetry = origin === "session-recovery"
     && (claim.phase ?? "recovery-pending") === "recovery-pending"
     && claim.automaticRecoveryAttempted !== true;
-  const claimForAttempt = {
-    ...claim,
-    ...(origin === "manual" ? { quotaAttempts: undefined, quotaFirstAt: undefined, quotaAutoRetryUntil: undefined } : {}),
-    // The next detached attempt must not inherit the previous provider wall
-    // as if it were a fresh result. Keep the attempt counter/horizon for the
-    // durable episode, but replace the signal and hint only when the worker
-    // produces a new failure.
-    quotaSignal: undefined,
-    retryAfterSec: undefined,
-    retryFromUpstream: undefined,
-    resetAt: undefined,
-  };
+  const claimForAttempt = origin === "manual"
+    ? { ...claim, quotaAttempts: undefined, quotaFirstAt: undefined, quotaAutoRetryUntil: undefined }
+    : claim;
   const pending: PendingCompletion = {
     ...claimForAttempt,
     phase: "running",
@@ -470,6 +461,14 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
     wallDeadlineAt: new Date(startedMs + AUDITOR_WALL_TIMEOUT_MS).toISOString(),
     recoveryAt: undefined,
     recoveryReason: undefined,
+    // The next detached attempt must not inherit the previous provider wall
+    // as if it were a fresh result. Keep the attempt counter/horizon for the
+    // durable episode, but replace the signal and hint only when the worker
+    // produces a new failure.
+    quotaSignal: undefined,
+    retryAfterSec: undefined,
+    retryFromUpstream: undefined,
+    resetAt: undefined,
     ...(automaticRecoveryRetry
       ? {
         automaticRecoveryAttempted: true,

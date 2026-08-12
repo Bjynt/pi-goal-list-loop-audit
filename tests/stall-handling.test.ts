@@ -533,7 +533,8 @@ test("v0.34.15: errorBrakeStreak persists ON THE GOAL — the 6-brake park survi
 test("v0.34.15: quota walls are CLASSIFIED on the card — resuming won't help, switch /model", () => {
   const g = readGoalRuntimeSource();
   assert.match(g, /const quotaWall = failureCopy\.signal !== undefined \|\| \/rate\.\?limit\|usage limit\|quota\|insufficient\|credits\/i\.test\(rawErrorText\);/);
-  assert.match(g, /Provider quota\/rate-limit wall — resuming won't help until the window resets\. Switch \/model/);
+  assert.match(g, /Provider request-rate wall — the message was suppressed; bounded retries and hourly reset probes/);
+  assert.match(g, /Provider account\/usage wall — automatic recovery waits for the provider window/);
   assert.ok((g.match(/quotaWall/g) ?? []).length >= 5, "both pause branches + notifies classify");
 });
 

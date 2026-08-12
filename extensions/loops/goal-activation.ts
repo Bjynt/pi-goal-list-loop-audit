@@ -1552,7 +1552,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
             recoveryNoticeKeys,
             pauseSuggestedAction: quotaWall
               ? wallRecoveryAction
-              : `Probing at the top of each hour — provider windows typically expire on clock-hour boundaries. ${activeGoalSurfaceCommand("resume")} retries now.`,
+              : `Probing at the top of each hour — rate-limit windows typically expire on clock-hour boundaries. ${activeGoalSurfaceCommand("resume")} retries now.`,
           }, ctx);
           const notifyCapped = claimRecoveryNotice(state.goal!, `${recoveryEpisodeKey}:error-brake-capped`);
           if (notifyCapped) {
