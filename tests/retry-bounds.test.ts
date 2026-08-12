@@ -117,7 +117,7 @@ test("E3: provider-held send storms enter durable main-model recovery", () => {
 
 test("E8: the error brake carries the REAL error text, not stopReason", () => {
   assert.match(SRC, /const rawErrorText = \[rawLastA\?\.errorMessage, text\]/, "provider error metadata is included with visible text");
-  assert.match(SRC, /const detail = rawErrorText \? ` \(last: \$\{failureCopy\.sensitive \? failureCopy\.display/);
+  assert.match(SRC, /const detail = rawErrorText\s*\n\s*\? ` \(last: \$\{failureCopy\.sensitive \? failureCopy\.display/);
   // v0.34.26: generic errors keep the legacy reason shape, while provider
   // walls use only a safe classification and retain raw text in diagnostics.
   assert.match(SRC, /const reason = outputLimitWall\n\s+\? `output-token limit — the provider rejected \$\{consecutiveErrorIterations\} overlong responses`\n\s+: `5 consecutive errors\$\{detail\}`;/);
