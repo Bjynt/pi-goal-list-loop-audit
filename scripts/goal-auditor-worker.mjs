@@ -85,6 +85,54 @@ function hashRequest(request) {
   return createHash("sha256").update(stableJson(withoutHash), "utf8").digest("hex");
 }
 
+// Provider/RPC errors may carry HTTP status and message as non-enumerable
+// Error properties or as nested JSON. Keep those facts in the bounded worker
+// diagnostic so the parent can preserve rate-limit/account-wall classification
+// instead of collapsing a structured 429 into generic infrastructure.
+function normalizeErrorText(...values) {
+  const statuses = [];
+  const messages = [];
+  const seen = new Set();
+  const statusKeys = new Set(["status", "statusCode", "status_code", "httpStatus", "http_status", "code"]);
+  const messageKeys = new Set(["errorMessage", "message", "detail", "reason", "description", "finalError"]);
+  const nestedKeys = new Set(["error", "response", "cause", "body", "details", "data"]);
+  const visit = (value, depth) => {
+    if (value === undefined || value === null || depth > 4) return;
+    if (typeof value === "string") {
+      if (value.trim()) messages.push(value.trim());
+      return;
+    }
+    if (typeof value === "number") {
+      if (Number.isInteger(value) && value >= 100 && value <= 599) statuses.push(value);
+      return;
+    }
+    if (typeof value !== "object" || seen.has(value)) return;
+    seen.add(value);
+    const keys = new Set([
+      ...Object.keys(value),
+      ...Object.getOwnPropertyNames(value),
+      ...statusKeys,
+      ...messageKeys,
+      ...nestedKeys,
+    ]);
+    for (const key of keys) {
+      let child;
+      try { child = value[key]; } catch { continue; }
+      if (statusKeys.has(key)) {
+        if (typeof child === "number" && Number.isInteger(child) && child >= 100 && child <= 599) statuses.push(child);
+        else if (typeof child === "string" && /^\\d{3}$/.test(child.trim())) statuses.push(Number(child));
+      } else if (messageKeys.has(key) || nestedKeys.has(key)) {
+        visit(child, depth + 1);
+      }
+    }
+  };
+  for (const value of values) visit(value, 0);
+  return [...new Set([
+    ...[...new Set(statuses)].map((status) => `HTTP ${status}`),
+    ...messages,
+  ])].join(" — ").slice(0, 500);
+}
+
 async function regular(file) {
   const stat = await lstat(file);
   if (!stat.isFile()) throw new Error(`not a regular protocol file: ${file}`);
@@ -443,16 +491,16 @@ async function main() {
       lastActivityAt = observedAt;
       lastActivityProbeAt = observedAt;
       if (event.type === "error" || event.type === "extension_error" || event.type === "auto_retry_start" || event.type === "auto_retry_end") {
-        const message = event.errorMessage ?? event.message ?? event.finalError ?? event.error;
-        if (typeof message === "string" && message.trim()) streamError = message.slice(0, 500);
+        const message = normalizeErrorText(event);
+        if (message) streamError = message;
       }
       if (event.type === "message_end" && event.message?.role === "assistant" && event.message.stopReason === "error") {
-        const message = event.message.errorMessage;
-        if (typeof message === "string" && message.trim()) streamError = message.slice(0, 500);
+        const message = normalizeErrorText(event.message);
+        if (message) streamError = message;
       }
       if (event.type === "response" && event.command === "prompt" && event.success === false) {
-        const message = event.error ?? event.errorMessage ?? "RPC prompt was rejected before acceptance";
-        streamError = String(message).slice(0, 500);
+        const message = normalizeErrorText(event) || "RPC prompt was rejected before acceptance";
+        streamError = message;
         void finish(false, `RPC prompt rejected: ${streamError}`).catch(() => {});
         return;
       }

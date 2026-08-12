@@ -38,8 +38,8 @@ export function normalizeProviderErrorText(...values: unknown[]): string {
   const statuses: number[] = [];
   const messages: string[] = [];
   const seen = new Set<object>();
-  const statusKeys = new Set(["status", "statusCode", "status_code", "httpStatus", "http_status"]);
-  const messageKeys = new Set(["errorMessage", "message", "detail", "reason", "description"]);
+  const statusKeys = new Set(["status", "statusCode", "status_code", "httpStatus", "http_status", "code"]);
+  const messageKeys = new Set(["errorMessage", "message", "detail", "reason", "description", "finalError"]);
   const nestedKeys = new Set(["error", "response", "cause", "body", "details", "data"]);
 
   const visit = (value: unknown, depth: number): void => {
@@ -56,7 +56,19 @@ export function normalizeProviderErrorText(...values: unknown[]): string {
     const object = value as Record<string, unknown>;
     if (seen.has(object)) return;
     seen.add(object);
-    for (const [key, child] of Object.entries(object)) {
+    // Error.message/statusCode are commonly non-enumerable own properties;
+    // include descriptors as well as enumerable transport fields. Reading a
+    // provider-defined getter is best effort and must never break recovery.
+    const keys = new Set([
+      ...Object.keys(object),
+      ...Object.getOwnPropertyNames(object),
+      ...statusKeys,
+      ...messageKeys,
+      ...nestedKeys,
+    ]);
+    for (const key of keys) {
+      let child: unknown;
+      try { child = object[key]; } catch { continue; }
       if (statusKeys.has(key)) {
         if (typeof child === "number" && Number.isInteger(child) && child >= 100 && child <= 599) statuses.push(child);
         else if (typeof child === "string" && /^\\d{3}$/.test(child.trim())) statuses.push(Number(child));

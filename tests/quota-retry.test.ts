@@ -41,6 +41,10 @@ test("structured HTTP status is normalized before provider classification", () =
   assert.equal(quotaSignal(normalized), "rate-limit");
   const plan = normalizeProviderErrorText({ response: { status: 429 }, error: { message: "Token Plan exhausted" } });
   assert.equal(quotaSignal(plan), "plan-quota", "specific account/plan wording remains distinct from the HTTP status");
+  const providerError = new Error("limit exceeded");
+  Object.defineProperty(providerError, "statusCode", { value: 429 });
+  assert.match(normalizeProviderErrorText(providerError), /HTTP 429.*limit exceeded/);
+  assert.equal(quotaSignal(normalizeProviderErrorText(providerError)), "rate-limit", "native Error fields are classified too");
 });
 
 test("provider-wall copy separates safe display/action text from durable diagnostics", () => {
