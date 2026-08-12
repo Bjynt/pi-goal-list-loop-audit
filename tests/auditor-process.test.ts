@@ -276,6 +276,42 @@ process.stdin.on("data", async (chunk) => {
   }
 });
 
+test("real worker preserves structured HTTP 429 diagnostics for the parent", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-structured-error-"));
+  const fakePi = path.join(dir, "structured-error-pi.mjs");
+  const fakePiSource = `
+let handled = false;
+process.stdin.on("data", (chunk) => {
+  if (handled || !String(chunk).includes("\\n")) return;
+  handled = true;
+  process.stdout.write(JSON.stringify({ type: "error", statusCode: 429, errorMessage: "limit exceeded" }) + "\\n");
+  process.stdout.write(JSON.stringify({ type: "agent_settled" }) + "\\n");
+});
+`;
+  await writeFile(fakePi, `#!/usr/bin/env node\n${fakePiSource}`);
+  await chmod(fakePi, 0o700);
+  try {
+    const result = await runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "high",
+      runtime: {
+        workerPath: path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs"),
+        env: { GLLA_PI_BINARY: fakePi },
+        attemptId: () => "attempt-structured-429",
+        pollIntervalMs: 5,
+        wallTimeoutMs: 2_000,
+      },
+    });
+    assert.equal(result.approved, false);
+    assert.equal(result.disapproved, false, "a provider failure never becomes a semantic verdict");
+    assert.match(result.error ?? "", /HTTP 429.*limit exceeded/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("worker assembles streamed report fragments into cumulative display lines without changing the exact result", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-fragment-telemetry-"));
   const fakePi = path.join(dir, "fragment-pi.mjs");
