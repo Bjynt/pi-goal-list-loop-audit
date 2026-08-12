@@ -895,7 +895,8 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         overrides: mergedOverrides,
       });
       for (const skip of sync.skipped) {
-        ctx.ui.notify(`glla subagent override skipped [${skip.name}]: ${skip.reason}`, "warning");
+        const overrideFailureCopy = providerErrorPresentation(skip.reason, "recovery");
+        ctx.ui.notify(`glla subagent override skipped [${skip.name}]: ${overrideFailureCopy.display}`, "warning");
       }
       // v0.25.6: notify-with-repair — a managed override that went missing
       // or was altered externally (pi update, manual edit, sync churn) is

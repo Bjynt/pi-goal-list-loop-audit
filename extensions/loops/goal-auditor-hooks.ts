@@ -39,7 +39,6 @@ import {
   workCommandRoot,
   appendLedger,
   claimRecoveryNotice,
-  providerErrorFingerprint,
   providerErrorPresentation,
   sanitizeProviderDisplayText,
   archiveDir,

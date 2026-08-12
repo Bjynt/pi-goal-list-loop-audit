@@ -1,6 +1,15 @@
 # Changelog
 
 ## Unreleased
+### Provider-wall recovery copy is sanitized and episode-deduplicated
+  Quota, provider-wall, and detached-auditor diagnostics now have separate
+  durable and user-facing projections. Chat/tool/recovery copy uses stable
+  classifications instead of raw Token Plan/429 payloads, while bounded raw
+  diagnostics remain in ledger, active, and archive state for forensics.
+  Recovery episodes persist a notice key so repeated retries do not replay the
+  same warning. Regressions cover raw-payload redaction, diagnostic retention,
+  changing retry hints/request ids, and one-notice-per-episode behavior.
+
 ### Hourly provider-wall probe survives failed recovery probes
   The optional `:00:30` recovery ticker now re-arms after its asynchronous
   probe settles, even when the failed probe clears the normal recovery timer.
