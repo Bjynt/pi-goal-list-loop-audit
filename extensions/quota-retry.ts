@@ -71,7 +71,7 @@ export function normalizeProviderErrorText(...values: unknown[]): string {
       try { child = object[key]; } catch { continue; }
       if (statusKeys.has(key)) {
         if (typeof child === "number" && Number.isInteger(child) && child >= 100 && child <= 599) statuses.push(child);
-        else if (typeof child === "string" && /^\\d{3}$/.test(child.trim())) statuses.push(Number(child));
+        else if (typeof child === "string" && /^\d{3}$/.test(child.trim())) statuses.push(Number(child));
       } else if (messageKeys.has(key)) {
         visit(child, depth + 1);
       } else if (nestedKeys.has(key)) {

@@ -120,7 +120,7 @@ function normalizeErrorText(...values) {
       try { child = value[key]; } catch { continue; }
       if (statusKeys.has(key)) {
         if (typeof child === "number" && Number.isInteger(child) && child >= 100 && child <= 599) statuses.push(child);
-        else if (typeof child === "string" && /^\\d{3}$/.test(child.trim())) statuses.push(Number(child));
+        else if (typeof child === "string" && /^\d{3}$/.test(child.trim())) statuses.push(Number(child));
       } else if (messageKeys.has(key) || nestedKeys.has(key)) {
         visit(child, depth + 1);
       }
