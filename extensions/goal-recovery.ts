@@ -665,7 +665,7 @@ export async function probeMainModelRecovery(ctx: ExtensionContext): Promise<voi
     state.mainModelRecovery = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: undefined };
     flags.continuationDispatchStoodDown = false;
     if (recovery.kind === "goal" && state.goal?.status === "paused" && (state.goal.pauseReason ?? "").startsWith("main model recovery")) {
-      updateGoal({ status: "active", pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined }, ctx);
+      updateGoal({ status: "active", pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined, providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, ctx);
       scheduleContinuation(ctx, true, 1_000);
     } else if (recovery.kind === "loop" && state.loop && !state.loop.active && (state.loop.stopReason ?? "").startsWith("main model recovery")) {
       state.loop = { ...state.loop, active: true, stopReason: undefined };
@@ -700,7 +700,7 @@ export async function probeMainModelRecovery(ctx: ExtensionContext): Promise<voi
     state.mainModelRecovery = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: undefined };
     flags.continuationDispatchStoodDown = false;
     if (recovery.kind === "goal" && state.goal?.status === "paused" && (state.goal.pauseReason ?? "").startsWith("main model recovery")) {
-      updateGoal({ status: "active", pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined }, ctx);
+      updateGoal({ status: "active", pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined, providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, ctx);
       scheduleContinuation(ctx, true, 1_000);
     } else if (recovery.kind === "loop" && state.loop && !state.loop.active && (state.loop.stopReason ?? "").startsWith("main model recovery")) {
       state.loop = { ...state.loop, active: true, stopReason: undefined };
@@ -730,7 +730,7 @@ export async function probeMainModelRecovery(ctx: ExtensionContext): Promise<voi
     appendLedger(ctx.cwd, "main_model_probe", { from: current, to: target, attempts: recovery.attempts });
     flags.continuationDispatchStoodDown = false;
     if (recovery.kind === "goal" && state.goal?.status === "paused" && (state.goal.pauseReason ?? "").startsWith("main model recovery")) {
-      updateGoal({ status: "active", pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined }, ctx);
+      updateGoal({ status: "active", pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined, providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, ctx);
       scheduleContinuation(ctx, true, 1_000);
     } else if (recovery.kind === "loop" && state.loop && !state.loop.active && (state.loop.stopReason ?? "").startsWith("main model recovery")) {
       state.loop = { ...state.loop, active: true, stopReason: undefined };

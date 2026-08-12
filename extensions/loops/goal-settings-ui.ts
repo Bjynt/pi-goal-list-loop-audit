@@ -38,6 +38,7 @@ import {
   workCommand,
   workCommandRoot,
   appendLedger,
+  providerErrorPresentation,
   archiveDir,
   archivedGoalPath,
   buildTaskList,
@@ -448,7 +449,8 @@ function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: 
       appendLedger(ctx.cwd, "auditor_model_fallback", { configured: pin, reason: r.reason });
       // v0.32.0: the last pin no longer pre-announces the session fallback —
       // the post-loop block does that (it notified twice before).
-      ctx.ui.notify(`Auditor model "${pin}" is unavailable (${r.reason})${i + 1 < pins.length ? " — trying the fallback pin" : ""}. Fix via /glla → Auditor model.`, "warning");
+      const modelFailureCopy = providerErrorPresentation(r.reason, "completion");
+      ctx.ui.notify(`Auditor model "${pin}" is unavailable (${modelFailureCopy.display})${i + 1 < pins.length ? " — trying the fallback pin" : ""}. Fix via /glla → Auditor model.`, "warning");
       continue;
     }
     if (sameSessionSwap && isSession(r.model) && i + 1 < pins.length) {
