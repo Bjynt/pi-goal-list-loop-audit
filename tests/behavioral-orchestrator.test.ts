@@ -3356,7 +3356,7 @@ test("v0.35.x: zero-stream zombie auto-aborts and parks a list item without a re
       pauseReason?: string;
       pauseSuggestedAction?: string;
     } | null;
-    if (aborts !== 1) console.error("ZOMBIE_DEBUG", { parked, goal: readState(cwd).goal, initialSessionLoadPending: (globalThis as any).initialSessionLoadPending, extensionApiStale: (globalThis as any).extensionApiStale, staleTerminalDone: (globalThis as any).staleTerminalDone, sessionHandoffPending: (globalThis as any).sessionHandoffPending, abortedStandDown: (globalThis as any).abortedStandDown, mainModelRecoveryTimer: Boolean((globalThis as any).mainModelRecoveryTimer), ledger: readLedger(cwd).map((entry) => entry.type) });
+    if (aborts !== 1) { const cont = await import("../extensions/goal-continuation.js"); console.error("ZOMBIE_DEBUG", { parked, goal: readState(cwd).goal, initialSessionLoadPending: (globalThis as any).initialSessionLoadPending, extensionApiStale: (globalThis as any).extensionApiStale, staleTerminalDone: (globalThis as any).staleTerminalDone, sessionHandoffPending: (globalThis as any).sessionHandoffPending, abortedStandDown: (globalThis as any).abortedStandDown, dispatchStoodDown: cont.continuationDispatchStoodDownRef(), pendingDispatch: cont.pendingContinuationDispatchRef(), streamAt: (globalThis as any).lastStreamActivityAt, now: Date.now(), ledger: readLedger(cwd).map((entry) => entry.type) }); }
     assert.equal(aborts, 1, "the confirmed zero-stream turn is aborted once");
     assert.equal(parked?.status, "paused", "the list item is no longer falsely ACTIVE");
     assert.equal(parked?.pauseKind, "error");
