@@ -35,7 +35,7 @@ export interface ObjectiveRepairProposal {
   confidence: "best-effort";
 }
 
-const IMPERATIVE_START = /^(add|allow|audit|build|cap|clarify|close|create|detect|document|ensure|fix|improve|implement|investigate|make|prevent|research|restore|support|test|update|verify|write|remove|repair|review|refactor|replace|preserve|resolve)\b/i;
+const IMPERATIVE_START = /^(add|allow|audit|build|cap|clarify|close|create|detect|document|ensure|fix|improve|implement|investigate|make|prevent|research|restore|recover|support|test|update|verify|write|remove|repair|review|refactor|replace|preserve|resolve)\b/i;
 const COMMAND_ONLY = /^(?:bun|npm|pnpm|yarn|npx|node|deno|git)\s+(?:test|run|check|diff|status|show|log|exec)\b/i;
 const REVIEWER_MARKER = /^(?:audit|review|verdict|evidence|output|item|required\s+fixes?|completion\s+claim)\s*:/i;
 const REVIEWER_VOCABULARY = /\b(?:passes\s+sequentially|zero\s+failures?|\d+\s+failures?|ran\s+\d+\s+tests?|verification\s+contract|regression\s+shield|auditor(?:[- ](?:approved|report|disapproved))?|completion\s+claim|<\/?(?:evidence|approved|disapproved|impossible)\b)\b/i;

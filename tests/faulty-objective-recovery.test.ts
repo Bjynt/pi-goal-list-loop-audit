@@ -59,6 +59,11 @@ test("valid imperative objectives may mention auditor and verification machinery
   assert.equal(result.suspicious, false);
 });
 
+test("recover is a valid imperative for the exact queued detached-auditor item", () => {
+  const result = assessSuspiciousObjective("Recover parked detached-auditor claims after infrastructure timeout (evidence: Screenshot_20260811_213659.png, Screenshot_20260811_214045.png, and the parked-auditor panels)");
+  assert.equal(result.suspicious, false);
+});
+
 test("normalization is an automatic provenance repair", () => {
   const g = goal({ objective: "Implement the repair gate (archive)" });
   const assessment = assessSuspiciousObjective(g.objective, g.verificationContract);
@@ -226,6 +231,27 @@ test("list activation blocks a suspicious queued objective and leaves its repair
   const repaired = readState(cwd);
   assert.equal(repaired.goal?.objective, "Repair the blocked list item from saved intent");
   assert.match(ledger(cwd), /"goal_continuation_sent"/);
+});
+
+test("exact queued detached-auditor objective activates without a repair task", async () => {
+  const cwd = tmpCwd();
+  const item = {
+    id: "20260812082104-tgb8p3",
+    objective: "Recover parked detached-auditor claims after infrastructure timeout (evidence: Screenshot_20260811_213659.png, Screenshot_20260811_214045.png, and the parked-auditor panels)",
+    addedAt: "2026-08-12T08:21:04.085Z",
+  };
+  seedState(cwd, { goal: null, list: [item] });
+  const pi = new MockPi();
+  activate(pi.api);
+  const ctx = await boot(pi, cwd);
+  await pi.command("list", "next", ctx);
+  await tick(80);
+  const state = readState(cwd);
+  assert.equal(state.goal?.objective, item.objective);
+  assert.deepEqual(state.list, []);
+  assert.doesNotMatch(ledger(cwd), /"faulty_objective_list_activation_blocked"/);
+  assert.doesNotMatch(ledger(cwd), /Repair the blocked list item from saved intent/);
+  assert.match(ledger(cwd), /"goal_created"/);
 });
 
 test("provenance-backed repair auto-applies before dispatch", async () => {
