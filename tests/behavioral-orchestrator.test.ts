@@ -1940,7 +1940,7 @@ test("a successful core retry clears the quota wall and resumes the parked goal"
   const ctx = await freshSession(cwd, "startup");
   await pi.command("goal", "start recovery resume target — done when pinned", ctx);
   await tick();
-  const errTurn = { messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: "429: rate_limit_error" }] };
+  const errTurn = { messages: [{ role: "assistant", content: [], stopReason: "error", statusCode: 429, errorMessage: "limit exceeded" }] };
   await pi.fire("agent_end", errTurn, ctx); await tick();
   const parked = readState(cwd) as {
     goal: { status: string; pauseKind?: string; objective?: string; pauseReason?: string; pauseSuggestedAction?: string };
@@ -1965,8 +1965,21 @@ test("a successful core retry clears the quota wall and resumes the parked goal"
   assert.equal(ctx.ui.matching("Token Plan").length, 0, "notifications never claim Token Plan exhaustion");
   assert.ok(parked.mainModelRecovery, "the test starts from a durable recovery wait");
 
+  // Rebind the real orchestrator to the same file-backed workspace before
+  // resuming. A provider wall must survive reload without losing the
+  // objective or turning into an account/quota claim.
+  const reloaded = await freshSession(cwd, "startup");
+  await tick();
+  const restored = readState(cwd) as { goal: { status: string; objective?: string; pauseReason?: string }; mainModelRecovery?: { quotaSignal?: string; retryAt?: string } };
+  assert.equal(restored.goal.status, "paused", "reload keeps the rate-limit recovery parked");
+  assert.equal(restored.goal.objective, objective, "reload preserves the saved objective");
+  assert.equal(restored.mainModelRecovery?.quotaSignal, "rate-limit", "reload preserves the request-rate signal");
+  assert.doesNotMatch(`${restored.goal.pauseReason} ${reloaded.ui.notifies.map((notice) => notice.message).join("\\n")}`, /429|quota exhausted|Token Plan|rate_limit_error/i);
+
+  await pi.command("goal", "resume", reloaded);
+  await tick(100);
   const success = { messages: [{ role: "assistant", content: [{ type: "text", text: "recovered" }], stopReason: "end_turn" }] };
-  await pi.fire("agent_end", success, ctx);
+  await pi.fire("agent_end", success, reloaded);
   await tick(350);
   const recovered = readState(cwd) as { goal: { status: string; pauseReason?: string; objective?: string }; mainModelRecovery?: unknown };
   assert.equal(recovered.goal.status, "active", "a successful provider retry must not leave the goal parked");
