@@ -387,21 +387,25 @@ test("v0.29.5: the stand-down survives the heartbeat + autoResume is GLOBAL-only
   assert.ok(!src.includes("resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).autoResume"), "no project-cascade autoResume read remains");
 });
 
-test("v0.29.16 — zombie-run watchdog: busy + zero stream events for 20 min = hung provider stream, loud Esc guidance", () => {
+test("v0.35.x — zombie-run watchdog: busy + zero stream events gets bounded abort and recovery guidance", () => {
   // Field (hellhunter + hegemon 2026-07-30): MiniMax streams died silently
   // (no error, no timeout — pi has no read timeout). pi reported BUSY
   // forever, continuations queued into the void, and the busy flag hid
   // the wedge from every other watchdog (busy≠wedged law). The detector
   // uses a stream-only clock (message_update / tool_call / agent_start /
   // turn_start / agent_end) — heartbeat-internal noteActivity() must never
-  // touch it. Detection + guidance only: Esc is the user's call.
+  // touch it. The first window warns; the bounded grace then parks + aborts
+  // once, leaving explicit resume/cancel recovery instead of 85–96m ACTIVE.
   const SRC = readGoalRuntimeSource();
   assert.ok(HEARTBEAT_SRC.includes("ZOMBIE_RUN_SILENT_MS = 20 * 60_000"), "20-min silence threshold");
+  assert.ok(HEARTBEAT_SRC.includes("ZOMBIE_RUN_ABORT_GRACE_MS = 10 * 60_000"), "bounded abort grace");
   assert.ok(HEARTBEAT_SRC.includes("ZOMBIE_RUN_ALERT_THROTTLE_MS = 10 * 60_000"), "alert throttle");
   assert.ok(SRC.includes("let lastStreamActivityAt = Date.now();"), "separate stream clock");
-  assert.match(HEARTBEAT_SRC, /isSupervising\(\) && !idle && streamSilentMs >= ZOMBIE_RUN_SILENT_MS/, "branch fires on busy + stream-silent");
-  assert.match(HEARTBEAT_SRC, /appendLedger\(ctx\.cwd, "zombie_run_suspected"/, "ledgered");
-  assert.ok(HEARTBEAT_SRC.includes("Press Esc to abort the zombie turn — the goal/loop refires itself"), "Esc guidance");
+  assert.match(HEARTBEAT_SRC, /isSupervising\(\) && !idle && streamSilentMs >= zombieWarningMs/, "branch fires on busy + stream-silent");
+  assert.match(HEARTBEAT_SRC, /abortZombieRun\(ctx, flags\.sessionGeneration, state\.goal\?\.id, flags\.lastStreamActivityAt\)/, "bounded abort is generation/stream fenced");
+  assert.match(HEARTBEAT_SRC, /appendLedger\(ctx\.cwd, "zombie_run_suspected"/, "warning ledgered");
+  assert.match(SRC, /"zombie_run_aborted"/, "abort path is durable");
+  assert.ok(HEARTBEAT_SRC.includes("Automatic cleanup will abort it after the bounded grace window"), "first warning explains the bounded cleanup");
   assert.match(SRC, /pi\.on\("message_update"/, "stream deltas feed the clock");
   assert.match(SRC, /pi\.on\("agent_start"/, "run starts feed the clock");
   assert.match(SRC, /pi\.on\("turn_start"/, "turn starts feed the clock");

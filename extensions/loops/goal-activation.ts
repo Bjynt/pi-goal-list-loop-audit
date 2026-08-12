@@ -164,6 +164,7 @@ import {
   setLastContinuationSentPayloadRef,
   setContinuationRearmStreak,
   setContinuationRearmSince,
+  resetContinuationDispatchState,
   type ContinuationFlags,
   type ContinuationDeps,
 } from "../goal-continuation.js";
