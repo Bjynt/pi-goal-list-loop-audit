@@ -394,6 +394,74 @@ export function enqueueFaultRepairTask(ctx: ExtensionContext, objective: string)
   appendLedger(ctx.cwd, "faulty_objective_repair_promoted", { goalId: added.id, position: 1 });
 }
 
+/** v0.35.x: terminate one confirmed zero-stream host turn and park the
+ * owning goal/list item before asking pi to abort. This is deliberately an
+ * activation-owned operation: it can clear the durable continuation sidecar,
+ * stand down re-arms, and validate the current generation before touching the
+ * host. A later /goal or /list resume explicitly clears the stand-down and
+ * starts a new attempt; no callback here schedules a blind retry. */
+export function abortZombieRun(
+  ctx: ExtensionContext,
+  generation: number,
+  goalId: string | undefined,
+  observedStreamAt: number,
+): boolean {
+  const current = freshCtxForGeneration(generation);
+  if (!current || sessionGeneration !== generation || mainModelRecoveryActive()) return false;
+  if (lastStreamActivityAt !== observedStreamAt) return false;
+  const goal = state.goal;
+  const loop = state.loop;
+  if (goal) {
+    if (goal.status !== "active" || (goalId !== undefined && goal.id !== goalId)) return false;
+  } else if (!loop?.active) {
+    return false;
+  }
+
+  // Remove every in-memory and file-backed dispatch artifact before the
+  // abort. Otherwise a queued follow-up can resurrect after the host turn is
+  // interrupted and recreate the exact retry storm this watchdog is curing.
+  resetContinuationDispatchState(current.cwd);
+  setContinuationDispatchStoodDownRef(true);
+  abortedStandDown = true;
+  const silentMinutes = Math.max(1, Math.round((Date.now() - observedStreamAt) / 60_000));
+  const reason = "automatic zero-stream abort — no provider activity was observed";
+  if (goal) {
+    const noun = goal.policy === "list" ? "list item" : "goal";
+    updateGoal({
+      status: "paused",
+      pauseKind: "error",
+      pauseReason: reason,
+      pauseSuggestedAction: `The stalled ${noun} turn was aborted safely and the work is saved. ${activeGoalSurfaceCommand("resume")} retries it once; ${activeGoalSurfaceCommand("cancel")} discards it.`,
+    }, current);
+  } else if (loop) {
+    clearLoopTimer();
+    loop.active = false;
+    loop.stopReason = `stopped: ${reason} after ${silentMinutes}m (iteration ${loop.iteration} preserved; /loop resume to retry)`;
+    persistState(current);
+    appendLedger(current.cwd, "loop_stopped", { reason: loop.stopReason, iterations: loop.iteration, zombie: true });
+  }
+
+  let abortError: string | undefined;
+  try {
+    current.abort();
+  } catch (error) {
+    abortError = error instanceof Error ? error.message : String(error);
+  }
+  appendLedger(current.cwd, "zombie_run_aborted", {
+    goalId: goal?.id,
+    generation,
+    observedStreamAt,
+    silentMs: Math.max(0, Date.now() - observedStreamAt),
+    abortError,
+  });
+  const resume = goal ? activeGoalSurfaceCommand("resume") : "/loop resume";
+  const cancel = goal ? activeGoalSurfaceCommand("cancel") : "/loop stop";
+  const message = `${goal ? goal.policy === "list" ? "List item" : "Goal" : "Loop"} paused after ${silentMinutes}m with zero stream activity; the zombie turn was aborted and queued retries were stopped. Work is saved. ${resume} retries it, or ${cancel} discards/stops it.`;
+  current.ui.notify(message, abortError ? "warning" : "info");
+  notifyExternal(current, message);
+  return true;
+}
+
 export function registerGoalRuntime(pi: ExtensionAPI): void {
   // Four top-level commands, that's all (v0.8.0 consolidation):
   //   /goal  — set/draft + status|pause|resume|cancel|tweak|archive subcommands

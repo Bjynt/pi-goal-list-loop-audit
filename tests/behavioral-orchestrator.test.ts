@@ -24,7 +24,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import activate, { __testOnlyLastConfirmDialog, __testOnlyLoadState, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyRunFanOutListAuditFindings, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
-import { __testOnlyHeartbeatTick } from "../extensions/goal-heartbeat.js";
+import { __testOnlyHeartbeatTick, __testOnlySetZombieRunWindows, __testOnlyResetZombieRunWatchdog } from "../extensions/goal-heartbeat.js";
 import { mainModelRecoverySucceeded } from "../extensions/goal-recovery.js";
 
 // v0.29.5: autoResume is GLOBAL-only now — tests opt in by writing the
@@ -3328,4 +3328,57 @@ test("v0.34.25: a resolved auditor model failure advances to the session fallbac
   assert.equal(result.result.approved, true);
   assert.equal(result.fallbackUsed, true);
   assert.equal(result.via, "session-fallback");
+});
+
+test("v0.35.x: zero-stream zombie auto-aborts and parks a list item without a retry storm", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlySetZombieRunWindows(0, 0);
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  ctx.isIdle = () => false;
+  let aborts = 0;
+  ctx.abort = () => { aborts++; };
+  try {
+    const added = await pi.runTool("list_add", {
+      items: ["zero-stream zombie item — done when the bounded abort is proven"],
+    }, ctx);
+    assert.match(added.content[0]?.text ?? "", /active/i);
+    const active = readState(cwd).goal as { id: string; policy: string; status: string } | null;
+    assert.equal(active?.policy, "list");
+    assert.equal(active?.status, "active");
+
+    // The timer-created continuation is intentionally left without a turn;
+    // the heartbeat sees a genuinely busy host with no stream proof.
+    __testOnlyHeartbeatTick();
+    const parked = readState(cwd).goal as {
+      status?: string;
+      pauseKind?: string;
+      pauseReason?: string;
+      pauseSuggestedAction?: string;
+    } | null;
+    assert.equal(aborts, 1, "the confirmed zero-stream turn is aborted once");
+    assert.equal(parked?.status, "paused", "the list item is no longer falsely ACTIVE");
+    assert.equal(parked?.pauseKind, "error");
+    assert.match(parked?.pauseReason ?? "", /zero-stream abort/);
+    assert.match(parked?.pauseSuggestedAction ?? "", /\/list resume/);
+    assert.match(parked?.pauseSuggestedAction ?? "", /\/list cancel/);
+    const afterAbort = readLedger(cwd);
+    assert.equal(afterAbort.filter((entry) => entry.type === "zombie_run_aborted").length, 1);
+
+    const sendsBefore = pi.sent.length;
+    await tick(200);
+    assert.equal(pi.sent.length, sendsBefore, "cleanup does not blind-retry the wedged item");
+    assert.equal(readLedger(cwd).filter((entry) => entry.type === "zombie_run_aborted").length, 1, "heartbeat ticks do not repeat the abort");
+
+    // Explicit list resume is the only re-entry path and may dispatch one
+    // fresh attempt after the user has restored an idle host.
+    ctx.isIdle = () => true;
+    await pi.command("list", "resume", ctx);
+    await tick(100);
+    assert.equal((readState(cwd).goal as { status?: string } | null)?.status, "active");
+    assert.ok(pi.sent.length <= sendsBefore + 1, "resume has at most one fresh dispatch");
+  } finally {
+    __testOnlyResetZombieRunWatchdog();
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  }
 });

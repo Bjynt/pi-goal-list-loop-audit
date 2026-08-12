@@ -48,6 +48,7 @@ export interface HeartbeatFlags {
   get zombieStoodDown(): boolean;
   set zombieStoodDown(v: boolean);
   get initialSessionLoadPending(): boolean;
+  get sessionGeneration(): number;
   get lastCtx(): ExtensionContext | null;
   get extensionApiStale(): boolean;
   set extensionApiStale(v: boolean);
@@ -102,6 +103,8 @@ export interface HeartbeatDeps {
   goalNoun(): string;
   continuationUnansweredMs: number;
   continuationUnansweredThrottleMs: number;
+  /** Abort and durably park the owner of a confirmed zero-stream turn. */
+  abortZombieRun(ctx: ExtensionContext, generation: number, goalId: string | undefined, lastStreamActivityAt: number): boolean;
 }
 
 let flags: HeartbeatFlags;
@@ -122,6 +125,7 @@ let isContextStarvedRefused: HeartbeatDeps["isContextStarvedRefused"];
 let goalNoun: HeartbeatDeps["goalNoun"];
 let continuationUnansweredMs: HeartbeatDeps["continuationUnansweredMs"];
 let continuationUnansweredThrottleMs: HeartbeatDeps["continuationUnansweredThrottleMs"];
+let abortZombieRun: HeartbeatDeps["abortZombieRun"];
 
 export function createGoalHeartbeat(flagsArg: HeartbeatFlags, d: HeartbeatDeps): void {
   flags = flagsArg;
@@ -142,6 +146,7 @@ export function createGoalHeartbeat(flagsArg: HeartbeatFlags, d: HeartbeatDeps):
   goalNoun = d.goalNoun;
   continuationUnansweredMs = d.continuationUnansweredMs;
   continuationUnansweredThrottleMs = d.continuationUnansweredThrottleMs;
+  abortZombieRun = d.abortZombieRun;
 }
 
 // ----------------------------------------------------------------------------
@@ -149,9 +154,43 @@ export function createGoalHeartbeat(flagsArg: HeartbeatFlags, d: HeartbeatDeps):
 // ----------------------------------------------------------------------------
 let lastZombieAlertAt = 0;
 let lastWedgeAlertAt = 0;
+// A zero-stream warning is intentionally not an immediate abort: a long
+// provider operation can be quiet briefly while its turn remains healthy.
+// Once the bounded grace expires, the owner parks the goal and aborts the
+// host turn exactly once. The key fences repeated heartbeat ticks and lets a
+// later explicit resume start a fresh, independently bounded attempt.
+let lastZombieAbortKey = "";
+let zombieRunSilentMsOverride: number | null = null;
+let zombieRunAbortGraceMsOverride: number | null = null;
 
 const ZOMBIE_RUN_SILENT_MS = 20 * 60_000;
+const ZOMBIE_RUN_ABORT_GRACE_MS = 10 * 60_000;
 const ZOMBIE_RUN_ALERT_THROTTLE_MS = 10 * 60_000;
+
+function zombieRunSilentMs(): number {
+  return zombieRunSilentMsOverride ?? ZOMBIE_RUN_SILENT_MS;
+}
+
+function zombieRunAbortGraceMs(): number {
+  return zombieRunAbortGraceMsOverride ?? ZOMBIE_RUN_ABORT_GRACE_MS;
+}
+
+/** Test-only: shrink the zero-stream windows without changing production
+ * defaults. Passing null restores the 20m warning + 10m abort grace. */
+export function __testOnlySetZombieRunWindows(silentMs: number | null, abortGraceMs: number | null = null): void {
+  zombieRunSilentMsOverride = silentMs;
+  zombieRunAbortGraceMsOverride = abortGraceMs;
+  lastZombieAlertAt = 0;
+  lastZombieAbortKey = "";
+}
+
+/** Test-only reset for the process-global watchdog state. */
+export function __testOnlyResetZombieRunWatchdog(): void {
+  zombieRunSilentMsOverride = null;
+  zombieRunAbortGraceMsOverride = null;
+  lastZombieAlertAt = 0;
+  lastZombieAbortKey = "";
+}
 
 let lastUnansweredAlertAt = 0;
 
@@ -465,18 +504,35 @@ function heartbeatTick(): void {
       }
     } catch { /* next tick */ }
   }
-  // v0.29.16: zombie-run watchdog. pi reports BUSY (a run is "active") but
-  // zero stream events for 20 min = the provider stream hung silently —
-  // queued continuations can't land, and every other watchdog stays quiet
-  // because busy≠wedged. Detection + loud guidance only: aborting a turn
-  // is the user's call (consent line); Esc frees the queue and the
-  // heartbeat refires the goal/loop by itself.
+  // v0.29.16/v0.35.x: zombie-run watchdog. pi reports BUSY (a run is
+  // "active") but zero stream events for the warning window — the provider
+  // stream has likely hung silently, and queued continuations cannot land.
+  // Keep the first warning human-readable, then apply one bounded automatic
+  // abort/cleanup after the grace window. A notification-only Esc instruction
+  // left list items ACTIVE for 85–96 minutes in the field; the bounded abort
+  // now parks the item and leaves /list resume + /list cancel as explicit,
+  // truthful recovery choices.
   const streamSilentMs = Date.now() - flags.lastStreamActivityAt;
-  if (isSupervising() && !idle && streamSilentMs >= ZOMBIE_RUN_SILENT_MS && Date.now() - lastZombieAlertAt >= ZOMBIE_RUN_ALERT_THROTTLE_MS) {
-    lastZombieAlertAt = Date.now();
-    appendLedger(ctx.cwd, "zombie_run_suspected", { streamSilentMs, pending });
-    ctx.ui.notify(`glla: the session has been BUSY with zero stream activity for ${Math.round(streamSilentMs / 60000)} min — the provider stream is hung (pi never times it out; queued continuations can't land). Press Esc to abort the zombie turn — the goal/loop refires itself.`, "warning");
-    notifyExternal(ctx, `glla: zombie run suspected (${Math.round(streamSilentMs / 60000)} min busy-silent) — press Esc to abort.`);
+  const zombieWarningMs = zombieRunSilentMs();
+  const zombieAbortMs = zombieWarningMs + zombieRunAbortGraceMs();
+  if (isSupervising() && !idle && streamSilentMs >= zombieWarningMs) {
+    const nowMs = Date.now();
+    const abortKey = `${flags.sessionGeneration}:${state.goal?.id ?? "loop"}:${flags.lastStreamActivityAt}`;
+    if (streamSilentMs >= zombieAbortMs && !flags.abortedStandDown && abortKey !== lastZombieAbortKey) {
+      lastZombieAbortKey = abortKey;
+      if (abortZombieRun(ctx, flags.sessionGeneration, state.goal?.id, flags.lastStreamActivityAt)) return;
+    }
+    if (nowMs - lastZombieAlertAt >= ZOMBIE_RUN_ALERT_THROTTLE_MS) {
+      lastZombieAlertAt = nowMs;
+      appendLedger(ctx.cwd, "zombie_run_suspected", { streamSilentMs, pending, abortDue: streamSilentMs >= zombieAbortMs });
+      if (streamSilentMs >= zombieAbortMs) {
+        ctx.ui.notify(`glla: the BUSY turn had zero stream activity for ${Math.round(streamSilentMs / 60000)} min and automatic cleanup was unable to claim it. Use ${activeGoalSurfaceCommand("resume")} or ${activeGoalSurfaceCommand("cancel")} after a fresh session rebind.`, "warning");
+        notifyExternal(ctx, `glla: zombie cleanup needs a fresh session (${Math.round(streamSilentMs / 60000)}m busy-silent).`);
+      } else {
+        ctx.ui.notify(`glla: the session has been BUSY with zero stream activity for ${Math.round(streamSilentMs / 60000)} min — the provider stream is likely hung. Automatic cleanup will abort it after the bounded grace window.`, "warning");
+        notifyExternal(ctx, `glla: zombie run suspected (${Math.round(streamSilentMs / 60000)} min busy-silent) — bounded cleanup is armed.`);
+      }
+    }
     return;
   }
   // v0.34.11: legacy unanswered-continuation diagnostics. The new

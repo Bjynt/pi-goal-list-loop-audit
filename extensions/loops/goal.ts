@@ -6,7 +6,7 @@
  * Runtime concerns live in named sibling modules under extensions/loops/.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import "./goal-runtime-globals.js";
 import "./goal-session.js";
@@ -16,7 +16,7 @@ import "./goal-auditor-hooks.js";
 import "./goal-list-queue.js";
 import "./goal-tools.js";
 import "./goal-settings-ui.js";
-import { enqueueFaultRepairTask, registerGoalRuntime } from "./goal-activation.js";
+import { abortZombieRun, enqueueFaultRepairTask, registerGoalRuntime } from "./goal-activation.js";
 
 import {
   createGoalContinuation,
@@ -61,7 +61,7 @@ import {
 } from "../goal-recovery.js";
 import { createGoalHeartbeat, startHeartbeat, type HeartbeatDeps, type HeartbeatFlags } from "../goal-heartbeat.js";
 import { createGoalCommands, type CommandDeps, type CommandFlags } from "../goal-commands.js";
-import { createGoalLoop, type LoopDeps, type LoopFlags } from "../goal-loop.js";
+import { clearLoopTimer, createGoalLoop, type LoopDeps, type LoopFlags } from "../goal-loop.js";
 
 export {
   classifyIdInvalidationReason,
@@ -343,6 +343,7 @@ const heartbeatFlags: HeartbeatFlags = {
   get zombieStoodDown() { return zombieStoodDown; },
   set zombieStoodDown(v) { zombieStoodDown = v; },
   get initialSessionLoadPending() { return initialSessionLoadPending; },
+  get sessionGeneration() { return sessionGeneration; },
   get lastCtx() { return lastCtx; },
   get extensionApiStale() { return extensionApiStale; },
   set extensionApiStale(v) { extensionApiStale = v; },
@@ -395,6 +396,7 @@ const heartbeatDeps: HeartbeatDeps = {
   updateGoal,
   continuationUnansweredMs: CONTINUATION_UNANSWERED_MS,
   continuationUnansweredThrottleMs: CONTINUATION_UNANSWERED_THROTTLE_MS,
+  abortZombieRun,
 };
 createGoalHeartbeat(heartbeatFlags, heartbeatDeps);
 
