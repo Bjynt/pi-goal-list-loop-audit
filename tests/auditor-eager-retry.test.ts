@@ -12,7 +12,7 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 
-import { auditorQuotaRetryPlan } from "../extensions/loops/goal.js";
+import { auditorQuotaRetryPlan, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
 import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 const SRC = readGoalRuntimeSource();
@@ -59,6 +59,26 @@ test("eager: an upstream Retry-After hint still wins over the eager default", ()
   assert.equal(plan.attempt, 1);
   assert.equal(plan.retryAfterSec, 3600, "the provider's own hint outranks the eager 5s");
   assert.equal(plan.requestedSec, 3600);
+});
+
+test("v0.35.x: initial detached auditor retry uses the stored account-wall hourly policy", async () => {
+  const waits: number[] = [];
+  let calls = 0;
+  const outcome = await runDetachedCompletionWithFallback(
+    [{ model: "provider/model", via: "test" }],
+    async () => {
+      calls++;
+      return calls === 1
+        ? { approved: false, disapproved: false, output: "", model: "provider/model", error: "HTTP 429 — Token Plan limit reached" }
+        : { approved: true, disapproved: false, output: "<approved/>", model: "provider/model" };
+    },
+    { sleep: async (ms) => { waits.push(ms); }, shouldRetry: () => true },
+  );
+  assert.equal(outcome.retriedOnce, true);
+  assert.equal(calls, 2);
+  assert.equal(waits.length, 1);
+  assert.ok(waits[0]! >= 60_000, `account-wall retry is not eager: ${waits[0]}ms`);
+  assert.ok(waits[0]! <= 60 * 60 * 1_000, `account-wall retry remains hourly-bounded: ${waits[0]}ms`);
 });
 
 test("v0.35.x: request-rate and account-wall retry plans stay separate", () => {

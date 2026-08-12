@@ -284,7 +284,7 @@ let handled = false;
 process.stdin.on("data", (chunk) => {
   if (handled || !String(chunk).includes("\\n")) return;
   handled = true;
-  process.stdout.write(JSON.stringify({ type: "error", statusCode: 429, errorMessage: "limit exceeded" }) + "\\n");
+  process.stdout.write(JSON.stringify({ type: "error", statusCode: "429", errorMessage: "limit exceeded" }) + "\\n");
   process.stdout.write(JSON.stringify({ type: "agent_settled" }) + "\\n");
 });
 `;

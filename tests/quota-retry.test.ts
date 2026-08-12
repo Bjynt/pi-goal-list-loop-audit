@@ -45,6 +45,9 @@ test("structured HTTP status is normalized before provider classification", () =
   Object.defineProperty(providerError, "statusCode", { value: 429 });
   assert.match(normalizeProviderErrorText(providerError), /HTTP 429.*limit exceeded/);
   assert.equal(quotaSignal(normalizeProviderErrorText(providerError)), "rate-limit", "native Error fields are classified too");
+  const stringStatus = normalizeProviderErrorText({ statusCode: "429", errorMessage: "limit exceeded" });
+  assert.match(stringStatus, /HTTP 429.*limit exceeded/);
+  assert.equal(quotaSignal(stringStatus), "rate-limit", "numeric-string HTTP statuses are classified too");
 });
 
 test("provider-wall copy separates safe display/action text from durable diagnostics", () => {

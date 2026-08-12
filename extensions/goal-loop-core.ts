@@ -2041,13 +2041,19 @@ export async function runWithInfraRetry<T extends { error?: string; approved: bo
   // A detached auditor may receive a provider 429 before the durable pause
   // branch gets control. Never let the historical fixed 5s retry ignore a
   // factual Retry-After/reset hint. A no-hint request-rate error retains the
-  // bounded eager retry; account walls and ordinary infra errors preserve the
+  // bounded eager retry; account/plan/billing walls join the same hourly
+  // reset slot as the durable stored-claim plan instead of receiving a
+  // request-rate-style eager probe. Ordinary infra errors preserve the
   // caller's backoff.
   const parsedProvider = isQuotaError(first.error!) ? parseQuotaError(first.error!) : undefined;
   const hintedRetryMs = parsedProvider?.fromUpstream
     ? Math.max(1_000, capQuotaRetrySeconds(parsedProvider.retryAfterSec) * 1_000)
     : undefined;
-  await sleep(hintedRetryMs ?? opts.backoffMs ?? 5000);
+  const retryNow = Date.now();
+  const accountWallRetryMs = parsedProvider?.signal === "plan-quota" || parsedProvider?.signal === "billing"
+    ? Math.max(60_000, nextHourlyPromptMs(retryNow) - retryNow)
+    : undefined;
+  await sleep(hintedRetryMs ?? accountWallRetryMs ?? opts.backoffMs ?? 5000);
   if (opts.shouldRetry) {
     try {
       if (!opts.shouldRetry()) return { result: first, retriedOnce: false };
