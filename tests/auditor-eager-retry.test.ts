@@ -61,24 +61,20 @@ test("eager: an upstream Retry-After hint still wins over the eager default", ()
   assert.equal(plan.requestedSec, 3600);
 });
 
-test("v0.35.x: initial detached auditor retry uses the stored account-wall hourly policy", async () => {
+test("v0.35.x: initial detached auditor does not eagerly retry an account wall", async () => {
   const waits: number[] = [];
   let calls = 0;
   const outcome = await runDetachedCompletionWithFallback(
     [{ model: "provider/model", via: "test" }],
     async () => {
       calls++;
-      return calls === 1
-        ? { approved: false, disapproved: false, output: "", model: "provider/model", error: "HTTP 429 — Token Plan limit reached" }
-        : { approved: true, disapproved: false, output: "<approved/>", model: "provider/model" };
+      return { approved: false, disapproved: false, output: "", model: "provider/model", error: "HTTP 429 — Token Plan limit reached" };
     },
     { sleep: async (ms) => { waits.push(ms); }, shouldRetry: () => true },
   );
-  assert.equal(outcome.retriedOnce, true);
-  assert.equal(calls, 2);
-  assert.equal(waits.length, 1);
-  assert.ok(waits[0]! >= 60_000, `account-wall retry is not eager: ${waits[0]}ms`);
-  assert.ok(waits[0]! <= 60 * 60 * 1_000, `account-wall retry remains hourly-bounded: ${waits[0]}ms`);
+  assert.equal(outcome.retriedOnce, false);
+  assert.equal(calls, 1, "the account wall is handed to the durable hourly plan");
+  assert.deepEqual(waits, [], "the account wall never receives the request-rate eager wait");
 });
 
 test("v0.35.x: request-rate and account-wall retry plans stay separate", () => {
