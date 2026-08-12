@@ -3376,7 +3376,7 @@ test("v0.35.x: zero-stream zombie auto-aborts and parks a list item without a re
     await pi.command("list", "resume", ctx);
     await tick(100);
     assert.equal((readState(cwd).goal as { status?: string } | null)?.status, "active");
-    assert.ok(pi.sent.length <= sendsBefore + 1, "resume has at most one fresh dispatch");
+    assert.equal(pi.sent.length, sendsBefore + 1, "resume creates exactly one fresh dispatch");
   } finally {
     __testOnlyResetZombieRunWatchdog();
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
