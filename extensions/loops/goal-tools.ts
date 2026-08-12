@@ -40,6 +40,7 @@ import {
   appendLedger,
   claimRecoveryNotice,
   providerErrorPresentation,
+  sanitizeProviderDisplayText,
   archiveDir,
   archivedGoalPath,
   buildTaskList,
@@ -1211,10 +1212,13 @@ function registerAgentTools(pi: any): void {
       if (state.goal.status !== "active") {
         return { content: [{ type: "text", text: `Goal is already ${state.goal.status}; pause request ignored.` }], details: {} };
       }
+      const pauseCopy = providerErrorPresentation(p.reason, "recovery");
+      const safePauseReason = pauseCopy.sensitive ? pauseCopy.display : p.reason;
+      const safePauseAction = p.suggestedAction ? sanitizeProviderDisplayText(p.suggestedAction) : p.suggestedAction;
       updateGoal({
         status: "paused",
-        pauseReason: p.reason,
-        pauseSuggestedAction: p.suggestedAction,
+        pauseReason: safePauseReason,
+        pauseSuggestedAction: safePauseAction,
         pauseKind: p.kind,
         pauseOptions: p.kind === "decision" && p.options && p.options.length > 0 ? p.options : undefined,
         pauseRecommended: p.kind === "decision" && p.recommended && p.recommended >= 1 ? Math.floor(p.recommended) : undefined,
@@ -1225,8 +1229,8 @@ function registerAgentTools(pi: any): void {
       // action. Before, the action only appeared in /goal status and the
       // widget truncated both at ~60 chars, so decision-pauses ("choose a
       // or b") reached the user as an unreadable fragment.
-      ctx.ui.notify(`${goalNoun()} paused: ${p.reason}${p.suggestedAction ? `\n\n→ ${p.suggestedAction}` : ""}`, "info");
-      notifyExternal(ctx, `${goalNoun()} paused: ${(p.suggestedAction ? `${p.reason} → ${p.suggestedAction}` : p.reason).slice(0, 200)}`);
+      ctx.ui.notify(`${goalNoun()} paused: ${safePauseReason}${safePauseAction ? `\n\n→ ${safePauseAction}` : ""}`, "info");
+      notifyExternal(ctx, `${goalNoun()} paused: ${(safePauseAction ? `${safePauseReason} → ${safePauseAction}` : safePauseReason).slice(0, 200)}`);
       // v0.34.70 — impossible list items auto-drop (note.md 2026-08-07:
       // "auto drop impossible ones i think or auto adjust instead of stopping").
       // DEFINED IMPOSSIBLE STATE: a /list item paused as kind="blocked" with

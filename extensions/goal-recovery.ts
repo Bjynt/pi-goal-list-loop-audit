@@ -357,7 +357,7 @@ export function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModel
     persistState(ctx);
     ctx.ui.notify(`Main-model recovery stopped automatic probes: ${sanitizeProviderDisplayText(why)}. Work is saved; check the provider or switch /model, then ${resumeCmd}.`, "warning");
   }
-  notifyExternal(ctx, `Main-model recovery requires manual resume: ${why}.`);
+  notifyExternal(ctx, `Main-model recovery requires manual resume: ${sanitizeProviderDisplayText(why)}.`);
 }
 
 /** Resolve a configured provider/model using only the public registry API. */
