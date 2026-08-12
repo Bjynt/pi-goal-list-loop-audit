@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { cancelHourlyProbe, createGoalRecovery, scheduleHourlyProbe } from "../extensions/goal-recovery.js";
+import { cancelHourlyProbe, createGoalRecovery, fireHourlyProbe, scheduleHourlyProbe } from "../extensions/goal-recovery.js";
 import { replaceState, state } from "../extensions/goal-state.js";
 
 const settingsPath = process.env.GLLA_GLOBAL_SETTINGS_PATH;
@@ -142,6 +142,16 @@ await settle();
 assert.equal(providerCalls, 2, "a stale generation never reaches the provider");
 assert.equal(scheduled.length, beforeStale, "a stale timer does not re-arm itself");
 assert.equal((ledger().match(/"hourly_probe_fired"/g) ?? []).length, 2, "stale execution emits no probe event");
+
+// The normal retry timer and the hourly slot can become ready together. The
+// recovery wrapper must serialize the provider call instead of launching two
+// overlapping probes against the same saved wall.
+cancelHourlyProbe();
+replaceState({ goal: null, mainModelRecovery: parkedRecovery() });
+const beforeOverlap = providerCalls;
+await Promise.all([fireHourlyProbe(ctx), fireHourlyProbe(ctx)]);
+assert.equal(providerCalls - beforeOverlap, 1, "overlapping hourly/normal probes share one in-flight provider call");
+assert.match(ledger(), /"main_model_probe_skipped_in_flight"/, "the overlap fence is observable");
 
 cancelHourlyProbe();
 for (const timer of scheduled) clearTimeout(timer.native);
