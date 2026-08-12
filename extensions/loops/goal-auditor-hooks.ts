@@ -768,12 +768,16 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
         shouldRetry: () => detachedAuditContext(generation, goalId, claim.attemptId!) !== null,
         onRetry: (candidate, err) => {
           const current = detachedAuditContext(generation, goalId, claim.attemptId!);
-          if (current) appendLedger(current.cwd, "audit_infra_retry", { goalId, model: auditorCandidateLabel(candidate), error: err.slice(0, 200) });
+          if (current) {
+            const failureCopy = providerErrorPresentation(err, "completion");
+            appendLedger(current.cwd, "audit_infra_retry", { goalId, model: auditorCandidateLabel(candidate), error: failureCopy.diagnostic.slice(0, 200), diagnostic: failureCopy.diagnostic, display: failureCopy.display });
+          }
         },
         onFallback: (from, to, err) => {
           const current = detachedAuditContext(generation, goalId, claim.attemptId!);
           if (!current) return;
-          appendLedger(current.cwd, "auditor_runtime_model_fallback", { goalId, from: auditorCandidateLabel(from), to: auditorCandidateLabel(to), error: err.slice(0, 200) });
+          const failureCopy = providerErrorPresentation(err, "completion");
+          appendLedger(current.cwd, "auditor_runtime_model_fallback", { goalId, from: auditorCandidateLabel(from), to: auditorCandidateLabel(to), error: failureCopy.diagnostic.slice(0, 200), diagnostic: failureCopy.diagnostic, display: failureCopy.display });
           current.ui.notify(`Detached auditor failed on ${auditorCandidateLabel(from)} — retrying with ${auditorCandidateLabel(to)}. This is infrastructure, not a verdict.`, "warning");
         },
       },
