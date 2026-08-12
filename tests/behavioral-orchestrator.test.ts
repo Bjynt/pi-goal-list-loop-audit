@@ -3334,7 +3334,7 @@ test("v0.35.x: zero-stream zombie auto-aborts and parks a list item without a re
   __testOnlyResetStaleFlag();
   __testOnlySetZombieRunWindows(0, 0);
   const cwd = tmpCwd();
-  const ctx = await freshSession(cwd, "startup");
+  const ctx = await freshSession(cwd, "reload");
   ctx.isIdle = () => false;
   let aborts = 0;
   ctx.abort = () => { aborts++; };
