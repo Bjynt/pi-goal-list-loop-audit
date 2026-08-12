@@ -3332,6 +3332,7 @@ test("v0.34.25: a resolved auditor model failure advances to the session fallbac
 
 test("v0.35.x: zero-stream zombie auto-aborts and parks a list item without a retry storm", async () => {
   __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
   __testOnlySetZombieRunWindows(0, 0);
   const cwd = tmpCwd();
   const ctx = await freshSession(cwd, "reload");
@@ -3348,7 +3349,11 @@ test("v0.35.x: zero-stream zombie auto-aborts and parks a list item without a re
     assert.equal(active?.status, "active");
 
     // The timer-created continuation is intentionally left without a turn;
-    // the heartbeat sees a genuinely busy host with no stream proof.
+    // the heartbeat sees a genuinely busy host with no stream proof. Clear
+    // any prior test's compaction grace because this watchdog is intentionally
+    // testing the post-grace production path.
+    (globalThis as any).compactionGraceUntil = 0;
+    (globalThis as any).postCompletionSettleUntil = 0;
     __testOnlyHeartbeatTick();
     const parked = readState(cwd).goal as {
       status?: string;
@@ -3356,7 +3361,7 @@ test("v0.35.x: zero-stream zombie auto-aborts and parks a list item without a re
       pauseReason?: string;
       pauseSuggestedAction?: string;
     } | null;
-    if (aborts !== 1) { const cont = await import("../extensions/goal-continuation.js"); console.error("ZOMBIE_DEBUG", { parked, goal: readState(cwd).goal, initialSessionLoadPending: (globalThis as any).initialSessionLoadPending, extensionApiStale: (globalThis as any).extensionApiStale, staleTerminalDone: (globalThis as any).staleTerminalDone, sessionHandoffPending: (globalThis as any).sessionHandoffPending, abortedStandDown: (globalThis as any).abortedStandDown, dispatchStoodDown: cont.continuationDispatchStoodDownRef(), pendingDispatch: cont.pendingContinuationDispatchRef(), streamAt: (globalThis as any).lastStreamActivityAt, now: Date.now(), ledger: readLedger(cwd).map((entry) => entry.type) }); }
+
     assert.equal(aborts, 1, "the confirmed zero-stream turn is aborted once");
     assert.equal(parked?.status, "paused", "the list item is no longer falsely ACTIVE");
     assert.equal(parked?.pauseKind, "error");
