@@ -633,6 +633,51 @@ test("v0.34.16: lifecycle handoff resumes same-process replacement but quit does
   assert.ok(foreignSession.ui.matching("held on restore").length >= 1, "foreign debt falls back to the normal restore gate");
 });
 
+test("stale list work survives invalidation and resumes only through a fresh file-backed session", async () => {
+  __testOnlyResetStaleFlag();
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  const first = await freshSession(cwd, "startup");
+  await pi.command("list", "add durable stale-list item — done when pinned", first);
+  await tick();
+  assert.equal((readState(cwd).goal as { objective: string }).objective.includes("durable stale-list item"), true);
+  const before = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+
+  invalidateHostSession(pi, first);
+  __testOnlyHeartbeatTick();
+  await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "late old callback" }], stopReason: "end_turn" }] }, first);
+  await tick(250);
+  const afterStale = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.equal(pi.sent.length, 1, "invalidated host does not enqueue another continuation");
+  assert.ok(afterStale.length > before.length, "stale interruption is durable");
+  const interrupted = readState(cwd).goal as { interruptedAt?: string; objective?: string };
+  assert.ok(interrupted.interruptedAt, "saved list work records the interruption");
+  assert.match(interrupted.objective ?? "", /durable stale-list item/);
+
+  pi.sendMessageError = null;
+  pi.sessionNameError = null;
+  const replacement = makeMockCtx(cwd, {
+    sessionManager: {
+      name: "durable-list-replacement",
+      getSessionFile: () => path.join(cwd, "durable-list-replacement.jsonl"),
+      getSessionId: () => "durable-list-replacement-1",
+    },
+  });
+  pi.sent.length = 0;
+  await pi.fire("session_start", { reason: "reload", previousSessionFile: path.join(cwd, "old-session.jsonl") }, replacement);
+  await tick();
+  const rebound = readState(cwd).goal as { objective?: string; status?: string; interruptedAt?: string };
+  assert.match(rebound.objective ?? "", /durable stale-list item/);
+  assert.equal(rebound.status, "active", "fresh host rebind restores the saved list item");
+  assert.equal(rebound.interruptedAt, undefined, "rebind clears the stale interruption marker");
+  assert.equal(pi.sent.length, 1, "fresh host sends one replacement continuation");
+  const ledger = readLedger(cwd);
+  assert.ok(ledger.some((entry) => entry.type === "session_rebound"), "fresh rebind is ledgered");
+  assert.ok(ledger.some((entry) => entry.type === "stale_flag_reset_on_rebind"), "stale latch reset is ledgered");
+  await pi.fire("session_shutdown", { reason: "quit" }, replacement);
+  __testOnlyResetOwnerSession();
+});
+
 test("v0.34.49: fresh MAIN session_start resets stale state and rejects the old dispatch generation", async () => {
   __testOnlyResetStaleFlag();
   setGlobalAutoResume(false);
