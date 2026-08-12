@@ -2852,6 +2852,67 @@ test("v0.35.x: explicit Auto-resume retries a parked claim on cold startup", asy
   }
 });
 
+test("v0.35.x: manual /list resume retries a parked list completion claim directly", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const fakePi = writeFakeAuditor(cwd, "disapproved", 350);
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = fakePi;
+  const oldAttempt = "parked-list-manual-resume";
+  seedState(cwd, {
+    goal: seedGoal({
+      policy: "list",
+      status: "paused",
+      pauseKind: "blocked",
+      pauseReason: "completion audit blocked — no verdict: detached auditor timeout",
+      pauseSuggestedAction: "/list resume retries the stored claim",
+      pendingCompletion: {
+        completionSummary: "The parked list claim remains authoritative.",
+        verificationSummary: "Manual list resume must retry the stored claim without an agent turn.",
+        at: new Date().toISOString(),
+        phase: "recovery-pending",
+        attemptId: oldAttempt,
+      },
+    }),
+  });
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    await tick();
+    const held = readState(cwd).goal as { status?: string; policy?: string; pendingCompletion?: { phase?: string } } | null;
+    assert.equal(held?.status, "paused", "cold startup keeps the parked list claim held");
+    assert.equal(held?.policy, "list");
+    assert.equal(held?.pendingCompletion?.phase, "recovery-pending");
+    assert.equal(readLedger(cwd).filter((entry) => entry.type === "audit_recovery_started").length, 0, "cold startup does not spend the automatic retry");
+
+    await pi.command("list", "resume", ctx);
+    await waitUntil(() => {
+      const resumed = readState(cwd).goal as { status?: string; pendingCompletion?: { phase?: string; attemptId?: string } } | null;
+      return resumed?.status === "auditing" && resumed.pendingCompletion?.phase === "running";
+    });
+    const started = readState(cwd).goal as { pendingCompletion?: { attemptId?: string } };
+    assert.notEqual(started.pendingCompletion?.attemptId, oldAttempt, "manual /list resume starts a fresh detached attempt");
+    const ledger = readLedger(cwd);
+    assert.equal(ledger.filter((entry) => entry.type === "audit_recovery_started").length, 0, "manual resume is not mislabeled as automatic recovery");
+    assert.equal(ledger.filter((entry) => entry.type === "audit_started").length, 1, "manual /list resume starts exactly one stored-claim audit");
+    assert.equal(ledger.filter((entry) => entry.type === "goal_continuation_sent").length, 0, "manual stored-claim recovery does not invent an agent turn");
+
+    await waitUntil(() => {
+      const settled = readState(cwd).goal as { status?: string; pendingCompletion?: unknown; auditHistory?: unknown[] } | null;
+      return settled?.status === "active" && !settled.pendingCompletion && (settled.auditHistory?.length ?? 0) >= 1;
+    });
+    const settled = readState(cwd).goal as { policy?: string; auditHistory?: Array<{ disapproved?: boolean }> } | null;
+    assert.equal(settled?.policy, "list");
+    assert.equal(settled?.auditHistory?.at(-1)?.disapproved, true, "the fresh manual audit produces a durable semantic verdict");
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    __testOnlyResetOwnerSession();
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
 test("v0.35.x: one automatic parked-audit retry is durable across repeated lifecycle events", async () => {
   __testOnlyResetStaleFlag();
   setGlobalAutoResume(true);
