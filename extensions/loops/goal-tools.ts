@@ -946,6 +946,10 @@ function registerAgentTools(pi: any): void {
             quotaAttempts: plan.attempt,
             quotaFirstAt: plan.firstAt,
             quotaAutoRetryUntil: plan.autoRetryUntil,
+            quotaSignal: quota.signal,
+            retryAfterSec: plan.retryAfterSec,
+            retryFromUpstream: quota.fromUpstream,
+            resetAt: quota.resetAt,
           };
           const providerHint = plan.requestedSec !== plan.retryAfterSec ? ` (provider hint capped at ${Math.round(plan.retryAfterSec / 60)}m)` : "";
           if (!plan.automatic) {

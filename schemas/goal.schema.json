@@ -58,6 +58,7 @@
     "auditInfraStreak": { "type": "number" },
     "errorBrakeStreak": { "type": "number" },
     "pendingCompletion": { "$ref": "#/definitions/pendingCompletion" },
+    "mainModelRecovery": { "$ref": "#/definitions/mainModelRecovery" },
     "createdVia": { "type": "string" },
     "activePath": { "type": "string" },
     "archivedPath": { "type": "string" },
@@ -128,7 +129,32 @@
         "automaticRecoveryGeneration": { "type": "integer", "minimum": 0 },
         "quotaAttempts": { "type": "integer", "minimum": 0 },
         "quotaFirstAt": { "type": "string", "format": "date-time" },
-        "quotaAutoRetryUntil": { "type": "string", "format": "date-time" }
+        "quotaAutoRetryUntil": { "type": "string", "format": "date-time" },
+        "quotaSignal": { "type": "string", "enum": ["rate-limit", "plan-quota", "billing"] },
+        "retryAfterSec": { "type": "number", "minimum": 0 },
+        "retryFromUpstream": { "type": "boolean" },
+        "resetAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "mainModelRecovery": {
+      "type": "object",
+      "required": ["primary", "attempted", "attempts", "reason", "kind"],
+      "properties": {
+        "primary": { "type": "string", "minLength": 1 },
+        "active": { "type": "string" },
+        "attempted": { "type": "array", "items": { "type": "string" } },
+        "retryAt": { "type": "string", "format": "date-time" },
+        "attempts": { "type": "integer", "minimum": 0 },
+        "reason": { "type": "string" },
+        "firstFailureAt": { "type": "string", "format": "date-time" },
+        "autoRetryUntil": { "type": "string", "format": "date-time" },
+        "manualResumeRequired": { "type": "boolean" },
+        "resetAt": { "type": "string", "format": "date-time" },
+        "quotaSignal": { "type": "string", "enum": ["rate-limit", "plan-quota", "billing"] },
+        "retryAfterSec": { "type": "number", "minimum": 0 },
+        "retryFromUpstream": { "type": "boolean" },
+        "resumeCurrent": { "type": "boolean" },
+        "kind": { "type": "string", "enum": ["goal", "loop"] }
       }
     },
     "task": {
