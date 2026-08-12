@@ -482,6 +482,9 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
     pauseOptions: undefined,
     pauseRecommended: undefined,
     pauseResumeAt: undefined,
+    providerErrorDiagnostic: undefined,
+    recoveryEpisodeKey: undefined,
+    recoveryNoticeKeys: undefined,
   }, ctx);
   appendLedger(ctx.cwd, "audit_started", { goalId: state.goal?.id, attemptId: pending.attemptId, origin, wallDeadlineAt: pending.wallDeadlineAt });
   return pending;
