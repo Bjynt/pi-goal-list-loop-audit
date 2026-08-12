@@ -40,6 +40,10 @@ test("provider-wall copy separates safe display/action text from durable diagnos
   assert.doesNotMatch(sanitizeProviderDisplayText(`auditor retry: ${raw}`), /429|Token Plan|request_id/);
   const variant = '429 {"error":{"message":"Token Plan rate limit reached: upgrade your Token Plan"},"retry_after":30,"request_id":"abc789"}';
   assert.equal(providerErrorFingerprint(raw), providerErrorFingerprint(variant), "changing counters/hints/ids stay in one logical episode");
+  for (const spelling of ["requestId", "request-id", "request id", "req_id", "requestIdentifier"]) {
+    const spellingVariant = raw.replace("request_id", spelling).replace("abc123", "different-id");
+    assert.equal(providerErrorFingerprint(spellingVariant), providerErrorFingerprint(raw), `${spelling} is normalized`);
+  }
 });
 
 test("audit history projections sanitize provider diagnostics", () => {

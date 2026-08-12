@@ -53,7 +53,7 @@ function providerFingerprintText(error: string): string {
     .toLowerCase()
     .replace(/retry[\s_-]*(?:after|in)[^\s,;)}\]]+/gi, "retry-hint")
     .replace(/(?:reset|available|renews?)[\s_-]*(?:at|on|in)[^\s,;)}\]]+/gi, "reset-hint")
-    .replace(/["']?\b(?:request|req)[\s_-]*(?:id|identifier)["']?\s*[:=]?\s*["']?[a-z0-9-]+["']?/gi, "request-id")
+    .replace(/["']?\b(?:request|req)[\s_-]*(?:id|identifier)\b["']?\s*[:=]?\s*["']?[a-z0-9-]+["']?/gi, "request-id")
     .replace(/\b(?:0x)?[a-f0-9]{8,}\b/gi, "id")
     .replace(/\b\d+(?:\.\d+)?\b/g, "number")
     .replace(/[^a-z0-9]+/g, " ")
