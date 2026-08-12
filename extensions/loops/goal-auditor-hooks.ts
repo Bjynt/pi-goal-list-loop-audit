@@ -450,9 +450,18 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
   const automaticRecoveryRetry = origin === "session-recovery"
     && (claim.phase ?? "recovery-pending") === "recovery-pending"
     && claim.automaticRecoveryAttempted !== true;
-  const claimForAttempt = origin === "manual"
-    ? { ...claim, quotaAttempts: undefined, quotaFirstAt: undefined, quotaAutoRetryUntil: undefined }
-    : claim;
+  const claimForAttempt = {
+    ...claim,
+    ...(origin === "manual" ? { quotaAttempts: undefined, quotaFirstAt: undefined, quotaAutoRetryUntil: undefined } : {}),
+    // The next detached attempt must not inherit the previous provider wall
+    // as if it were a fresh result. Keep the attempt counter/horizon for the
+    // durable episode, but replace the signal and hint only when the worker
+    // produces a new failure.
+    quotaSignal: undefined,
+    retryAfterSec: undefined,
+    retryFromUpstream: undefined,
+    resetAt: undefined,
+  };
   const pending: PendingCompletion = {
     ...claimForAttempt,
     phase: "running",
@@ -530,23 +539,24 @@ export function auditorQuotaRetryPlan(claim: PendingCompletion, quota: ReturnTyp
     ? Date.parse(claim.quotaAutoRetryUntil)
     : firstAtMs + MAIN_MODEL_AUTO_RETRY_HORIZON_MS;
   const attempt = (claim.quotaAttempts ?? 0) + 1;
-  // v0.34.79: eager first probe (5s) when the provider gave no hint — the
-  // main thread retries infra errors after 5s; the auditor must not sit an
-  // hour. Upstream Retry-After still wins.
-  // v0.34.84 (note.md Screenshots 160846–161010): quota-shaped errors
-  // (signal: "rate-limit" | "plan-quota" | "billing") get hour-aligned
-  // probes on attempts 2+, not exponential rungs — the user wants to react
-  // fast when the quota resets (which most providers do on a billing /
-  // top-of-hour boundary). Non-quota transient infra errors keep the
-  // exponential cadence (a stuck provider shouldn't be probed at 60m).
-  const isQuota = quota.signal !== undefined;
+  // v0.35.x: a pure request-rate wall gets one eager bounded retry, then
+  // the hourly reset slot. Plan/account/billing walls skip the eager retry
+  // when there is no provider hint; they should not be mislabeled as a
+  // request-rate condition or hammered in short loops. Upstream hints still
+  // win for every family.
+  const isRateLimit = quota.signal === "rate-limit";
+  const isAccountWall = quota.signal === "plan-quota" || quota.signal === "billing";
   const requestedSec = quota.fromUpstream
     ? quota.retryAfterSec
-    : attempt === 1
-      ? EAGER_AUDITOR_RETRY_SEC
-      : isQuota
+    : isRateLimit
+      ? attempt === 1
+        ? EAGER_AUDITOR_RETRY_SEC
+        : Math.max(60, Math.round((nextHourlyPromptMs(now) - now) / 1000))
+      : isAccountWall
         ? Math.max(60, Math.round((nextHourlyPromptMs(now) - now) / 1000))
-        : quotaRetryDelaySeconds(attempt, baseMinutes);
+        : attempt === 1
+          ? EAGER_AUDITOR_RETRY_SEC
+          : quotaRetryDelaySeconds(attempt, baseMinutes);
   const retryAfterSec = capQuotaRetrySeconds(requestedSec);
   const automatic = attempt < MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS && now + retryAfterSec * 1_000 <= untilMs;
   return { attempt, retryAfterSec, firstAt, autoRetryUntil: new Date(untilMs).toISOString(), automatic, requestedSec };

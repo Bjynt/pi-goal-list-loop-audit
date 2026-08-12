@@ -323,9 +323,12 @@ export function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModel
   state.mainModelRecovery = { ...normalized, retryAt: undefined, manualResumeRequired: true };
   const resumeCmd = recoverySurfaceCommand(normalized.kind, "resume");
   const safeReason = sanitizeProviderDisplayText(normalized.reason);
+  const rateLimited = normalized.quotaSignal === "rate-limit" || presentation.signal === "rate-limit";
   const quotaMarker = /quota|rate.?limit|usage.?limit|token.?plan|plan.?limit|provider (?:account|request|billing)/i.test(safeReason) ? ` · ${safeReason}` : "";
   const pauseReason = `main model recovery — automatic probes stopped (${sanitizeProviderDisplayText(why)})${quotaMarker}`;
-  const action = `No automatic provider probes remain. Check the provider reset/billing state or switch /model, then ${resumeCmd} to start a fresh recovery window; ${activeGoalSurfaceCommand("cancel")} stops it.`;
+  const action = rateLimited
+    ? `No automatic request-rate probes remain. Check the provider rate-limit window or switch /model, then ${resumeCmd} to start a fresh recovery window; ${activeGoalSurfaceCommand("cancel")} stops it.`
+    : `No automatic provider probes remain. Check the provider reset/billing state or switch /model, then ${resumeCmd} to start a fresh recovery window; ${activeGoalSurfaceCommand("cancel")} stops it.`;
   if (normalized.kind === "goal" && state.goal) {
     updateGoal({
       status: "paused",
@@ -413,6 +416,9 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
     reason: mainModelRecoveryReason(failure),
     resetAt: failure.resetAt,
     kind: mainModelRecoveryKind(),
+    quotaSignal: failure.quotaSignal,
+    retryAfterSec: failure.retryAfterSec,
+    retryFromUpstream: failure.retryFromUpstream,
   });
   const failureCopy = providerErrorPresentation(failure.raw, "main");
   const recovery: MainModelRecovery = {
@@ -421,6 +427,9 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
     providerErrorDiagnostic: failureCopy.diagnostic,
     recoveryEpisodeKey: baseRecovery.recoveryEpisodeKey ?? `${baseRecovery.firstFailureAt ?? nowIso()}:${failureCopy.fingerprint}`,
     recoveryNoticeKeys: baseRecovery.recoveryNoticeKeys ?? [],
+    quotaSignal: failure.quotaSignal ?? baseRecovery.quotaSignal,
+    retryAfterSec: failure.retryAfterSec ?? baseRecovery.retryAfterSec,
+    retryFromUpstream: failure.retryFromUpstream ?? baseRecovery.retryFromUpstream,
     resetAt: failure.resetAt ?? baseRecovery.resetAt,
   };
   if (!recovery.attempted.includes(current)) recovery.attempted.push(current);
@@ -501,13 +510,17 @@ export function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainM
   clearLoopTimer();
   flags.continuationDispatchStoodDown = true;
   const resumeCmd = recoverySurfaceCommand(normalized.kind, "resume");
+  const rateLimited = normalized.quotaSignal === "rate-limit" || presentation.signal === "rate-limit";
+  const recoveryAction = rateLimited
+    ? `The provider request-rate window is being retried automatically with bounded backoff and the hourly reset probe; configured backup models are tried in order. ${resumeCmd} retries immediately; ${activeGoalSurfaceCommand("cancel")} stops it.`
+    : `The provider account/usage recovery window is being retried automatically; configured backup models are tried in order. ${resumeCmd} retries immediately; ${activeGoalSurfaceCommand("cancel")} stops it.`;
   if (normalized.kind === "goal" && state.goal) {
     updateGoal({
       status: "paused",
       pauseKind: "wait",
       pauseResumeAt: retryAt,
       pauseReason: `main model recovery — retrying in ${minutes}m (${sanitizeProviderDisplayText(normalized.reason)})`,
-      pauseSuggestedAction: `The provider/quota wall is being retried automatically; configured backup models are tried in order. ${resumeCmd} retries immediately; ${activeGoalSurfaceCommand("cancel")} stops it.`,
+      pauseSuggestedAction: recoveryAction,
       providerErrorDiagnostic: normalized.providerErrorDiagnostic,
       recoveryEpisodeKey: normalized.recoveryEpisodeKey,
       recoveryNoticeKeys: normalized.recoveryNoticeKeys,
@@ -659,7 +672,25 @@ export function manuallyResumeMainModelRecovery(ctx: ExtensionContext): boolean 
   return true;
 }
 
+let mainModelRecoveryProbeInFlight = false;
+
+/** Normal and :00:30 hourly recovery timers share one provider probe. The
+ * durable timer state is not enough to fence the two callbacks once both
+ * have fired, so serialize the actual async probe as well. */
 export async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
+  if (mainModelRecoveryProbeInFlight) {
+    appendLedger(ctx.cwd, "main_model_probe_skipped_in_flight", { at: nowIso() });
+    return;
+  }
+  mainModelRecoveryProbeInFlight = true;
+  try {
+    await probeMainModelRecoveryImpl(ctx);
+  } finally {
+    mainModelRecoveryProbeInFlight = false;
+  }
+}
+
+async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> {
   const generation = flags.sessionGeneration;
   const recovery = state.mainModelRecovery;
   if (!recovery) return;
@@ -757,6 +788,9 @@ export async function probeMainModelRecovery(ctx: ExtensionContext): Promise<voi
       providerErrorDiagnostic: failureCopy.diagnostic,
       recoveryEpisodeKey: recovery.recoveryEpisodeKey ?? `${recovery.firstFailureAt ?? nowIso()}:${failureCopy.fingerprint}`,
       recoveryNoticeKeys: recovery.recoveryNoticeKeys ?? [],
+      quotaSignal: failure.quotaSignal ?? recovery.quotaSignal,
+      retryAfterSec: failure.retryAfterSec ?? recovery.retryAfterSec,
+      retryFromUpstream: failure.retryFromUpstream ?? recovery.retryFromUpstream,
       resetAt: failure.resetAt ?? recovery.resetAt,
     });
     // v0.34.58: no quota-only parking — an over-budget upstream reset hint
@@ -781,6 +815,9 @@ export function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainMo
     attempts: 0,
     reason: mainModelRecoveryReason(failure),
     resetAt: failure.resetAt,
+    quotaSignal: failure.quotaSignal,
+    retryAfterSec: failure.retryAfterSec,
+    retryFromUpstream: failure.retryFromUpstream,
     kind: mainModelRecoveryKind(),
   } satisfies MainModelRecovery);
   const failureCopy = providerErrorPresentation(failure.raw, "main");
@@ -792,6 +829,9 @@ export function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainMo
     providerErrorDiagnostic: failureCopy.diagnostic,
     recoveryEpisodeKey: existing.recoveryEpisodeKey ?? `${existing.firstFailureAt ?? nowIso()}:${failureCopy.fingerprint}`,
     recoveryNoticeKeys: existing.recoveryNoticeKeys ?? [],
+    quotaSignal: failure.quotaSignal ?? existing.quotaSignal,
+    retryAfterSec: failure.retryAfterSec ?? existing.retryAfterSec,
+    retryFromUpstream: failure.retryFromUpstream ?? existing.retryFromUpstream,
     resetAt: failure.resetAt ?? existing.resetAt,
   });
   // v0.34.58: uniform envelope even for over-budget upstream hints — the

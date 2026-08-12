@@ -10,7 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
-import { isQuotaError, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderDisplayText } from "./quota-retry.js";
+import { isQuotaError, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderDisplayText, type QuotaSignal } from "./quota-retry.js";
 export { providerErrorFingerprint, providerErrorPresentation, sanitizeProviderDisplayText } from "./quota-retry.js";
 
 /** v0.26.1: consecutive heartbeat refires without a real agent turn
@@ -283,6 +283,12 @@ export interface PendingCompletion {
   quotaAttempts?: number;
   quotaFirstAt?: string;
   quotaAutoRetryUntil?: string;
+  /** Last provider wall family observed for this stored claim. */
+  quotaSignal?: QuotaSignal;
+  /** Factual upstream retry metadata retained across a parked attempt. */
+  retryAfterSec?: number;
+  retryFromUpstream?: boolean;
+  resetAt?: string;
 }
 
 export interface ObjectiveRepairRecord {
@@ -725,6 +731,12 @@ export interface MainModelRecovery {
   manualResumeRequired?: boolean;
   /** Provider reset hint retained for truthful status/ledger output. */
   resetAt?: string;
+  /** Provider wall family retained so request-rate limits do not become
+   * account/quota claims after reload. */
+  quotaSignal?: QuotaSignal;
+  /** Factual retry metadata retained for restart-safe scheduling. */
+  retryAfterSec?: number;
+  retryFromUpstream?: boolean;
   /** Storm failover can resume the selected backup before probing primary. */
   resumeCurrent?: boolean;
   /** Whether the suspended supervisor is a goal/list item or a loop. */
