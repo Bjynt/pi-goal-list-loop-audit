@@ -1418,10 +1418,9 @@ let lastMainModelFailure: MainModelFailure | null = null;
 // "Provider quota wall — [TRIAGE-…]" messages in chat from peer sessions,
 // screenshots Screenshot_20260807_231717) showed the prompt itself was the
 // problem: we cannot reliably detect quota (provider text is inconsistent),
-// so the right answer is active retry (v0.34.79 eager first probe, v0.34.84
-// hour-aligned attempts 2+) + an opt-in hourly probe ticker for faster
-// pickup (this file, below). The plugin never says "Provider quota wall" in
-// chat again.
+// so the right answer is the configured bounded retry ladder plus an opt-in
+// :00:30 hourly probe ticker for faster pickup (this file, below). The plugin
+// never says "Provider quota wall" in chat again.
 
 // Drafting mode: a no-arg loop command starts a clarification turn; the agent
 // must call propose_goal_draft / propose_loop_draft, which opens the user's

@@ -188,9 +188,11 @@ import {
   mainModelFailureDelayMs,
   mainModelRetryDelayMs,
   MAIN_MODEL_AUTO_RETRY_HORIZON_MS,
+  MAX_MAIN_MODEL_FALLBACKS,
   modelRef,
   nextUntriedModelRef,
   normalizeModelRefs,
+  normalizeMainModelFallbackRefs,
   sendStormEscalateMs,
   splitModelRef,
   type MainModelFailure,
@@ -273,6 +275,7 @@ import {
   type HeartbeatFlags,
 } from "../goal-heartbeat.js"; // decomposition step 4 (v0.34.112)
 import {
+  cancelHourlyProbe,
   clearMainModelRecoveryTimer,
   createGoalRecovery,
   isCompletionAuditRecoveryPending,
@@ -602,10 +605,13 @@ async function promptModelRef(
   title: string,
   emptyLabel: string,
 ): Promise<{ kind: "session" } | { kind: "ref"; ref: string } | undefined> {
-  if (typeof (ctx.ui as { custom?: unknown }).custom !== "function" || !ctx.modelRegistry) {
+  const inputFallback = async (): Promise<{ kind: "session" } | { kind: "ref"; ref: string } | undefined> => {
     const v = await ctx.ui.input(title, "provider/model-id — empty keeps the default");
     if (v === undefined) return undefined;
     return v.trim() ? { kind: "ref", ref: v.trim() } : { kind: "session" };
+  };
+  if (typeof (ctx.ui as { custom?: unknown }).custom !== "function" || !ctx.modelRegistry) {
+    return inputFallback();
   }
   const sessionModel = ctx.model as any;
   const sessionLabel = sessionModel ? `${sessionModel.provider}/${sessionModel.id}` : "pi session model";
@@ -613,9 +619,14 @@ async function promptModelRef(
     .getAvailable()
     .filter((m: any) => ctx.modelRegistry.hasConfiguredAuth(m));
   const items = buildModelPickItems(models, sessionLabel);
+  let factoryInvoked = false;
   const pick = await ctx.ui.custom<ModelPickItem | undefined>((tui, theme, keybindings, done) => {
+    factoryInvoked = true;
     return new ModelPickerComponent({ title, items }, () => tui.requestRender(), theme, keybindings, done);
   });
+  // RPC/no-op hosts expose custom() but never invoke the factory. Use the
+  // typed escape hatch there; an invoked factory returning undefined is Esc.
+  if (!pick && !factoryInvoked) return inputFallback();
   if (!pick) return undefined;
   if (pick.kind === "session") return { kind: "session" };
   if (pick.kind === "model" && pick.ref) return { kind: "ref", ref: pick.ref };
@@ -633,24 +644,44 @@ async function promptModelRef(
  * v0.34.118: `opts.excludeRefs` filters out a set of refs from the picker
  * (typical use: when picking backups, exclude the user's forbidden models;
  * when picking forbidden models, exclude current backups — the two lists
- * are mutually exclusive by design). Stale initial refs that are no
- * longer available/allowed are not shown as selectable; opening the picker
- * itself does not rewrite the setting, and only currently visible/allowed
- * refs are persisted when the user confirms. */
+ * are mutually exclusive by design). Configured refs are kept at the top of
+ * the picker so their order is visible; an unavailable or policy-blocked ref
+ * is rendered with its reason and can be removed explicitly. */
 async function promptModelRefs(
   ctx: ExtensionContext,
   title: string,
   initialRefs: string[],
-  opts: { excludeRefs?: string[] } = {},
+  opts: { excludeRefs?: string[]; maxSelections?: number; currentRef?: string } = {},
 ): Promise<string[] | undefined> {
   const exclude = opts.excludeRefs ?? [];
-  if (typeof (ctx.ui as { custom?: unknown }).custom !== "function" || !ctx.modelRegistry) {
+  const maxSelections = opts.maxSelections;
+  const normalizeSelection = (value: unknown): string[] => {
+    const refs = normalizeModelRefs(value);
+    const seen = new Set<string>();
+    const unique = refs.filter((ref) => {
+      const key = maxSelections === MAX_MAIN_MODEL_FALLBACKS ? ref.toLowerCase() : ref;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const currentKey = opts.currentRef?.trim().toLowerCase();
+    return unique.filter((ref) => !isForbiddenModel(ref, exclude) && ref.toLowerCase() !== currentKey);
+  };
+  const inputFallback = async (): Promise<string[] | undefined> => {
     const v = await ctx.ui.input(title, initialRefs.length ? initialRefs.join(",") : "provider/model-a,provider/model-b");
     if (v === undefined) return undefined;
     // Enforce the same mutual exclusion in headless/free-form mode as in
     // the TUI picker; a typed forbidden ref must not sneak into a backup
     // chain (and a typed backup must not be added to forbiddenModels).
-    return normalizeModelRefs(v).filter((ref) => !isForbiddenModel(ref, exclude));
+    const refs = normalizeSelection(v);
+    if (maxSelections !== undefined && refs.length > maxSelections) {
+      ctx.ui.notify(`Only the first ${maxSelections} model backups are kept; the remaining selections were refused.`, "warning");
+      return refs.slice(0, maxSelections);
+    }
+    return refs;
+  };
+  if (typeof (ctx.ui as { custom?: unknown }).custom !== "function" || !ctx.modelRegistry) {
+    return inputFallback();
   }
   const sessionModel = ctx.model as any;
   const sessionLabel = sessionModel ? `${sessionModel.provider}/${sessionModel.id}` : "pi session model";
@@ -659,17 +690,36 @@ async function promptModelRefs(
     .filter((m: any) => ctx.modelRegistry.hasConfiguredAuth(m));
   const items = buildModelPickItems(models, sessionLabel, {
     excludeRefs: [...exclude],
+    preserveRefs: initialRefs,
     // Ordered backup/forbidden lists contain refs, not overrides; showing
     // session/manual rows here was confusing because MultiModelPicker treats
     // both as no-op rows. Keep those rows for single-value ModelPicker only.
     includeSessionRow: false,
     includeManualRow: false,
   });
+  let factoryInvoked = false;
   const pick = await ctx.ui.custom<MultiModelPickerResult>((tui, theme, keybindings, done) => {
-    return new MultiModelPickerComponent({ title, items, initialSelected: initialRefs }, () => tui.requestRender(), theme, keybindings, done);
+    factoryInvoked = true;
+    return new MultiModelPickerComponent({ title, items, initialSelected: initialRefs, currentRef: opts.currentRef, maxSelections }, () => tui.requestRender(), theme, keybindings, done);
   });
+  // pi's RPC/no-op UI exposes custom() but resolves undefined without
+  // invoking the factory. Treat that as headless, not as an Esc cancellation;
+  // an invoked factory returning undefined is a genuine user cancel.
+  if (pick === undefined && !factoryInvoked) return inputFallback();
   if (pick === undefined) return undefined;
-  return pick;
+  const normalizedPick = normalizeSelection(pick);
+  const omitted = pick.filter((ref) => !normalizedPick.some((kept) => kept.toLowerCase() === ref.toLowerCase()));
+  const omittedCurrent: string[] = opts.currentRef
+    ? omitted.filter((ref) => ref.toLowerCase() === opts.currentRef!.toLowerCase())
+    : [];
+  const omittedPolicy = omitted.filter((ref) => !omittedCurrent.some((current: string) => current.toLowerCase() === ref.toLowerCase()));
+  if (omittedCurrent.length) {
+    ctx.ui.notify(`Current session model is slot 0 and was not saved as a backup: ${omittedCurrent.join(", ")}`, "info");
+  }
+  if (omittedPolicy.length > 0) {
+    ctx.ui.notify(`Not saved because policy excludes: ${omittedPolicy.join(", ")}`, "warning");
+  }
+  return normalizedPick;
 }
 
 /** Parse a tool-override value: numbers, booleans, JSON objects/arrays, else
@@ -747,14 +797,14 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "mainModelFallbacks": {
-      const current = normalizeModelRefs(loadGlobalSettings().mainModelFallbacks);
+      const current = normalizeMainModelFallbackRefs(loadGlobalSettings().mainModelFallbacks);
       // v0.34.118: forbidden models cannot be valid backups, so hide them.
       const forbidden = normalizeModelRefs(loadGlobalSettings().forbiddenModels);
       const refs = await promptModelRefs(
         ctx,
-        "Main session model backups — ordered (space to toggle, enter/tab to confirm); forbidden models hidden",
+        `Main session model backups — try order is current → backup 1 → backup 2 … (space add/remove, [ ] reorder, enter save); forbidden models are skipped`,
         current,
-        { excludeRefs: forbidden },
+        { excludeRefs: forbidden, maxSelections: MAX_MAIN_MODEL_FALLBACKS, currentRef: modelRef(ctx.model) },
       );
       if (refs === undefined) return;
       saveSettings("global", ctx.cwd, { mainModelFallbacks: refs });
@@ -784,13 +834,16 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "hourlyQuotaProbe": {
-      const v = await ctx.ui.select("Hourly quota probe ticker — extra recovery probe at :00:30 every hour while main-model recovery is parked (quota windows tend to refresh at the top of the hour; the ticker gives faster pickup without spamming chat)", [
+      const v = await ctx.ui.select("Hourly main-model recovery probe — an extra :00:30 attempt while the main recovery is parked (the normal retry ladder is separate)", [
         "on — fire an extra probe at :00:30 every hour while parked (default)",
-        "off — rely on the normal retry cadence only (5s eager + hour-aligned attempts 2+)",
+        "off — rely on the configured retry ladder only",
       ]);
       if (v) {
-        saveSettings("global", ctx.cwd, { hourlyQuotaProbe: v.startsWith("off") ? false : undefined });
-        ctx.ui.notify(v.startsWith("off") ? "Hourly quota probe OFF — only the normal retry cadence will run." : "Hourly quota probe ON — extra :00:30 probe while parked.", "info");
+        const off = v.startsWith("off");
+        saveSettings("global", ctx.cwd, { hourlyQuotaProbe: off ? false : undefined });
+        if (off) cancelHourlyProbe();
+        else if (state.mainModelRecovery && !state.mainModelRecovery.manualResumeRequired) scheduleHourlyProbe(ctx);
+        ctx.ui.notify(off ? "Hourly main recovery probe OFF — only the configured retry ladder will run." : "Hourly main recovery probe ON — extra :00:30 probe while parked.", "info");
       }
       return;
     }
@@ -800,12 +853,12 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       // Include both the main chain and any glla-managed subagent chains.
       const global = loadGlobalSettings();
       const backups = [
-        ...normalizeModelRefs(global.mainModelFallbacks),
+        ...normalizeMainModelFallbackRefs(global.mainModelFallbacks),
         ...Object.values(global.subagentFallbacks ?? {}).flatMap((chain) => normalizeModelRefs(chain)),
       ];
       const refs = await promptModelRefs(
         ctx,
-        "Forbidden models — every ref here is ledgered as forbidden_model_switch on a switch attempt (space to toggle, enter/tab to confirm); current backups hidden",
+        "Forbidden model patterns — case-insensitive provider/id substrings; recovery always skips matches (space to toggle, enter/tab to confirm)",
         current,
         { excludeRefs: backups },
       );
@@ -823,7 +876,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "mainModelRetryMinutes": {
-      const v = await ctx.ui.input("Main session model recovery wait", "positive integer minutes; empty = default 15 (backs off to hourly)");
+      const v = await ctx.ui.input("Main recovery base wait", "positive integer minutes; empty = default 15 (then doubles per attempt, capped at 5h)");
       if (v !== undefined) {
         const raw = v.trim();
         const n = Number.parseInt(raw, 10);
@@ -1018,7 +1071,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const agentType = id.slice("subagentFallbacks:".length);
       const settings = loadSettings(ctx.cwd);
       const current = settings.subagentFallbacks?.[agentType] ?? [];
-      const refs = await promptModelRefs(ctx, `${agentType} fallback chain — ordered, the FIRST eligible ref is written as the override (space to toggle, enter/tab to confirm); forbidden models hidden`, current, { excludeRefs: normalizeModelRefs(loadGlobalSettings().forbiddenModels) });
+      const refs = await promptModelRefs(ctx, `${agentType} fallback chain — ordered, up to ${MAX_MAIN_MODEL_FALLBACKS} (space to toggle, enter/tab to confirm); forbidden models hidden`, current, { excludeRefs: normalizeModelRefs(loadGlobalSettings().forbiddenModels), maxSelections: MAX_MAIN_MODEL_FALLBACKS });
       if (refs === undefined) return;
       const next = { ...(settings.subagentFallbacks ?? {}) };
       if (refs.length > 0) next[agentType] = refs;

@@ -22,7 +22,7 @@ import { state } from "./goal-state.js";
 import { appendLedger, claimRecoveryNotice, nowIso, piGlaDir, isForbiddenModel, isStaleApiError, nextHourlyProbeMs, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderDisplayText, writeGoalMd, type Goal, type MainModelRecovery, type PendingCompletion } from "./goal-loop-core.js";
 import { persistStateLine } from "./goal-state.js";
 import { cancelDetachedGoalCompletionAuditor } from "./goal-loop-auditor-process.js";
-import { classifyMainModelFailure, isContextOverflowError, isLongLivedFailureKind, mainModelAutoRetryUntil, mainModelFailureDelayMs, mainModelRetryDelayMs, MAIN_MODEL_AUTO_RETRY_HORIZON_MS, modelRef, nextUntriedModelRef, normalizeModelRefs, splitModelRef, type MainModelFailure } from "./main-model-recovery.js";
+import { classifyMainModelFailure, isContextOverflowError, isLongLivedFailureKind, isMainModelFallbackFailure, mainModelAutoRetryUntil, mainModelFailureDelayMs, mainModelRetryDelayMs, MAIN_MODEL_AUTO_RETRY_HORIZON_MS, modelRef, normalizeMainModelFallbackRefs, requiresMainModelRecovery, splitModelRef, type MainModelFailure } from "./main-model-recovery.js";
 import { ModelSelector, type ModelScope } from "./model-selector.js";
 import { loadGlobalSettings, loadSettings } from "./goal-settings.js";
 import { clearLoopTimer, scheduleLoopTick } from "./goal-loop.js";
@@ -251,7 +251,9 @@ export function createGoalRecovery(flagsArg: RecoveryFlags, d: RecoveryDeps): vo
 /* via RecoveryFlags accessor)                                         */
 /* ------------------------------------------------------------------ */
 
-export function mainModelRecoveryActive(): boolean { return !!state.mainModelRecovery?.retryAt; }
+export function mainModelRecoveryActive(): boolean {
+  return !!state.mainModelRecovery?.retryAt || !!state.mainModelRecovery?.pendingModelSwitch;
+}
 
 /** v0.34.116: surface a one-liner when glla observes a session_compact
  * failure. The signal is a length-context exception caught during the
@@ -358,7 +360,7 @@ export function clearMainModelRecoveryTimer(): void {
 }
 
 export function mainModelFallbackRefs(ctx: ExtensionContext): string[] {
-  try { return normalizeModelRefs(loadGlobalSettings().mainModelFallbacks); } catch { return []; }
+  try { return normalizeMainModelFallbackRefs(loadGlobalSettings().mainModelFallbacks); } catch { return []; }
 }
 
 export function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModelRecovery, why: string): void {
@@ -424,18 +426,29 @@ export function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModel
 export function resolveMainModel(ctx: ExtensionContext, ref: string): any | undefined {
   const parts = splitModelRef(ref);
   if (!parts) return undefined;
-  try { return ctx.modelRegistry?.find?.(parts.provider, parts.id) as any; } catch { return undefined; }
+  try {
+    const model = ctx.modelRegistry?.find?.(parts.provider, parts.id) as any;
+    if (!model) return undefined;
+    const hasConfiguredAuth = (ctx.modelRegistry as any)?.hasConfiguredAuth;
+    // A registry entry without credentials is not a usable fallback. Keep
+    // the optional check for older/headless test registries that do not expose
+    // hasConfiguredAuth; setModel remains the final host-level gate.
+    if (typeof hasConfiguredAuth === "function" && !hasConfiguredAuth.call(ctx.modelRegistry, model)) return undefined;
+    return model;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Build a session-scoped ModelSelector that wires the chain provider,
  * forbidden gate, resolver, and the unified model_fallback_select ledger
  * event. Reused by tryMainModelFallback and (eventually) per-agent
  * subagent fallback paths. */
-function sessionModelSelector(ctx: ExtensionContext): ModelSelector {
+function sessionModelSelector(ctx: ExtensionContext, sessionChain?: string[]): ModelSelector {
   const settings = loadSettings(ctx.cwd);
   return new ModelSelector({
     getChain: (scope) => {
-      if (scope.kind === "session") return mainModelFallbackRefs(ctx);
+      if (scope.kind === "session") return sessionChain ?? mainModelFallbackRefs(ctx);
       return settings.subagentFallbacks?.[scope.agentName] ?? [];
     },
     resolve: (ref) => resolveMainModel(ctx, ref),
@@ -452,18 +465,42 @@ function sessionModelSelector(ctx: ExtensionContext): ModelSelector {
 }
 
 /** Select one configured backup before pi's own agent-level retry continues. */
+let modelSwitchOperationToken = 0;
+let activeModelSwitchToken = 0;
+let modelSwitchOperationGeneration: number | null = null;
+
 export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainModelFailure): Promise<boolean> {
-  if (flags.mainModelSwitchInFlight) return false;
-  // v0.34.116: context-overflow is the one failure the recovery path
-  // walks BACKUP because the prompt is no longer the problem — the model
-  // is. Every other non-recoverable (aborted, length-cap mid-stream) is
-  // still refused here.
-  if (failure.kind === "non-recoverable") return false;
-  const refs = mainModelFallbackRefs(ctx);
-  if (refs.length === 0) return false;
-  const current = modelRef(ctx.model);
-  if (!current) return false;
   const generation = flags.sessionGeneration;
+  // Context-overflow is the one deterministic prompt failure that can walk
+  // BACKUP because compaction proved the current model is too small. A pure
+  // 429/request-rate wall is different: keep retrying the current model and
+  // use the bounded retry + hourly probe cadence; do not spend a backup on it.
+  // User aborts and other non-recoverable failures are refused here.
+  if (failure.kind === "non-recoverable" || !isMainModelFallbackFailure(failure)) return false;
+  // A replacement session may arrive while the old setModel promise is still
+  // pending. Its fence must not block the fresh generation from recovering;
+  // the old finally below is token-guarded and cannot clear the new fence.
+  if (flags.mainModelSwitchInFlight && modelSwitchOperationGeneration !== generation) {
+    flags.mainModelSwitchInFlight = false;
+    activeModelSwitchToken = 0;
+    modelSwitchOperationGeneration = null;
+  }
+  if (flags.mainModelSwitchInFlight) return false;
+  const operationToken = ++modelSwitchOperationToken;
+  activeModelSwitchToken = operationToken;
+  modelSwitchOperationGeneration = generation;
+  const refs = mainModelFallbackRefs(ctx);
+  if (refs.length === 0) {
+    activeModelSwitchToken = 0;
+    modelSwitchOperationGeneration = null;
+    return false;
+  }
+  const current = modelRef(ctx.model);
+  if (!current) {
+    activeModelSwitchToken = 0;
+    modelSwitchOperationGeneration = null;
+    return false;
+  }
   const existing = state.mainModelRecovery;
   const baseRecovery = withMainModelRecoveryWindow(existing ?? {
     primary: current,
@@ -494,6 +531,19 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
   const scope: ModelScope = { kind: "session" };
   for (;;) {
     const pick = selector.selectNextValid(scope, current, recovery.attempted);
+    const visited = selector.lastVisitedRefs;
+    const attemptedKeys = new Set(recovery.attempted.map((ref) => ref.toLowerCase()));
+    const skipped = [...(recovery.skipped ?? [])];
+    for (const ref of visited) {
+      const key = ref.toLowerCase();
+      if (!attemptedKeys.has(key)) {
+        recovery.attempted.push(ref);
+        attemptedKeys.add(key);
+      }
+      const reason = isForbiddenModel(ref, loadSettings(ctx.cwd).forbiddenModels) ? "forbidden" : "unregistered";
+      if (!skipped.some((entry) => entry.ref.toLowerCase() === key)) skipped.push({ ref, reason });
+    }
+    recovery.skipped = skipped.slice(-16);
     if (!("model" in pick)) {
       // exhausted (or all refs forbidden / unregistered) — fail closed.
       state.mainModelRecovery = {
@@ -501,35 +551,74 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
         active: current,
         reason: mainModelRecoveryReason(failure),
         providerErrorDiagnostic: failureCopy.diagnostic,
+        skipped: recovery.skipped,
       };
       persistState(ctx);
       return false;
     }
     const candidateRef = pick.ref;
     const candidate = pick.model;
-    if (!recovery.attempted.includes(candidateRef)) recovery.attempted.push(candidateRef);
+    const backupIndex = refs.findIndex((ref) => ref.toLowerCase() === candidateRef.toLowerCase()) + 1;
+    const attempted = [...recovery.attempted];
+    recovery.attempted = attempted;
+    // Record the in-flight candidate before crossing the async host boundary.
+    // A process/session replacement during setModel must not forget which
+    // rung was already attempted and immediately retry it after reload. Keep
+    // a short parked deadline so a crash cannot strand the episode with
+    // retryAt undefined and no lifecycle callback to resume it.
+    state.mainModelRecovery = {
+      ...recovery,
+      attempted,
+      pendingModelSwitch: candidateRef,
+      retryAt: new Date(Date.now() + 1_000).toISOString(),
+    };
+    persistState(ctx);
     flags.mainModelSwitchInFlight = true;
     try {
-      const accepted = await flags.extensionApi?.setModel(candidate);
+      // Re-check immediately before crossing the host boundary. A session
+      // replacement can arrive after the durable pending marker was written;
+      // never invoke setModel on that stale generation.
       if (generation !== flags.sessionGeneration || !freshCtxForGeneration(generation)) return false;
+      const api = flags.extensionApi;
+      const accepted = await api?.setModel(candidate);
+      if (generation !== flags.sessionGeneration || !freshCtxForGeneration(generation)) return false;
+      if (state.mainModelRecovery?.pendingModelSwitch?.toLowerCase() !== candidateRef.toLowerCase()) return false;
       if (!accepted) {
-        appendLedger(ctx.cwd, "main_model_fallback_unavailable", { ref: candidateRef, reason: "no configured auth" });
+        state.mainModelRecovery = { ...state.mainModelRecovery, pendingModelSwitch: undefined, retryAt: undefined };
+        persistState(ctx);
+        appendLedger(ctx.cwd, "main_model_fallback_unavailable", { ref: candidateRef, backupIndex, backupCount: refs.length, reason: "no configured auth" });
         continue;
       }
-      recovery.active = candidateRef;
-      recovery.reason = mainModelRecoveryReason(failure);
-      recovery.providerErrorDiagnostic = failureCopy.diagnostic;
-      recovery.kind = mainModelRecoveryKind();
-      state.mainModelRecovery = recovery;
+      const nextRecovery = {
+        ...state.mainModelRecovery!,
+        active: candidateRef,
+        pendingModelSwitch: undefined,
+        retryAt: undefined,
+        reason: mainModelRecoveryReason(failure),
+        providerErrorDiagnostic: failureCopy.diagnostic,
+        kind: mainModelRecoveryKind(),
+      };
+      state.mainModelRecovery = nextRecovery;
       persistState(ctx);
-      appendLedger(ctx.cwd, "main_model_failover", { from: current, to: candidateRef, reason: failure.kind });
-      ctx.ui.notify(`Main session model failover: ${current} → ${candidateRef}. The next turn will use the backup; a successful turn clears recovery.`, "warning");
+      appendLedger(ctx.cwd, "main_model_failover", { from: current, to: candidateRef, backupIndex, backupCount: refs.length, reason: failure.kind });
+      ctx.ui.notify(`Main session model failover: ${current} → backup ${backupIndex}/${refs.length} ${candidateRef}. The next supervised turn tests it; a successful turn clears recovery.`, "warning");
       return true;
     } catch (err) {
-      appendLedger(ctx.cwd, "main_model_fallback_unavailable", { ref: candidateRef, reason: err instanceof Error ? err.message : String(err) });
-      if (isStaleApiError(err)) flags.extensionApiStale = true;
+      // A user cancellation or host replacement may have cleared/replaced the
+      // durable pending marker while setModel was awaiting. Never advance the
+      // old operation's cursor or recreate recovery after that boundary.
+      if (generation !== flags.sessionGeneration || state.mainModelRecovery?.pendingModelSwitch?.toLowerCase() !== candidateRef.toLowerCase()) return false;
+      appendLedger(ctx.cwd, "main_model_fallback_unavailable", { ref: candidateRef, backupIndex, backupCount: refs.length, reason: err instanceof Error ? err.message : String(err) });
+      if (isStaleApiError(err)) {
+        flags.extensionApiStale = true;
+        return false;
+      }
     } finally {
-      flags.mainModelSwitchInFlight = false;
+      if (activeModelSwitchToken === operationToken) {
+        activeModelSwitchToken = 0;
+        modelSwitchOperationGeneration = null;
+        flags.mainModelSwitchInFlight = false;
+      }
     }
   }
 }
@@ -569,7 +658,7 @@ export function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainM
   const resumeCmd = recoverySurfaceCommand(normalized.kind, "resume");
   const rateLimited = normalized.quotaSignal === "rate-limit" || presentation.signal === "rate-limit";
   const recoveryAction = rateLimited
-    ? `The provider request-rate window is being retried automatically with bounded backoff and the hourly reset probe; configured backup models are tried in order. ${resumeCmd} retries immediately; ${activeGoalSurfaceCommand("cancel")} stops it.`
+    ? `The provider request-rate window is being retried automatically with bounded backoff and an extra :00:30 probe after each hour starts when enabled; configured backups remain ordered and are tested one at a time. ${resumeCmd} retries immediately; ${activeGoalSurfaceCommand("cancel")} stops it.`
     : `The provider account/usage recovery window is being retried automatically; configured backup models are tried in order. ${resumeCmd} retries immediately; ${activeGoalSurfaceCommand("cancel")} stops it.`;
   if (normalized.kind === "goal" && state.goal) {
     updateGoal({
@@ -623,7 +712,10 @@ export function scheduleMainModelRecoveryTimer(ctx: ExtensionContext, delayMs: n
     if (!fresh || !state.mainModelRecovery) return;
     void probeMainModelRecovery(fresh).catch((err) => { if (isStaleApiError(err)) flags.extensionApiStale = true; });
   }, Math.max(1_000, delayMs));
-  void ctx;
+  // Arm the optional hourly slot beside every normal recovery timer, not
+  // only the initial park path. This covers fallback failures and later
+  // failed probes while preserving one timer per slot.
+  scheduleHourlyProbe(ctx);
 }
 
 // =================================================================
@@ -631,10 +723,9 @@ export function scheduleMainModelRecoveryTimer(ctx: ExtensionContext, delayMs: n
 // :00:30 every hour while main-model recovery is parked. Quota windows tend
 // to refresh at the top of the hour; the ticker gives the fastest pickup
 // the plugin can offer without spamming chat (no chat message — just an
-// extra probe). Co-resident with the normal retry schedule (v0.34.79 eager
-// 5s first probe + v0.34.84 hour-aligned attempts 2+); the ticker is
+// extra probe). Co-resident with the configured retry ladder; the ticker is
 // strictly an ADDITIONAL probe slot at :00:30. When the user opts out, the
-// normal retry cadence is unaffected — only the ticker stops.
+// configured retry ladder is unaffected — only the ticker stops.
 // =================================================================
 
 
@@ -643,7 +734,11 @@ export function scheduleMainModelRecoveryTimer(ctx: ExtensionContext, delayMs: n
  * scheduled (no duplicate schedules). */
 export function scheduleHourlyProbe(ctx: ExtensionContext): void {
   if (loadGlobalSettings().hourlyQuotaProbe !== true) return;
+  // The ticker is only for a parked recovery. After setModel succeeds,
+  // retryAt is cleared while the next supervised turn is being tested; do
+  // not let :00:30 switch models underneath that turn.
   if (!state.mainModelRecovery || state.mainModelRecovery.manualResumeRequired === true) return; // nothing to recover — silent no-op
+  if (state.mainModelRecovery.retryAt === undefined) return; // active supervised turn, not parked
   if (flags.hourlyProbeTimer) return; // already pending
   const now = Date.now();
   const fireAt = nextHourlyProbeMs(now);
@@ -673,6 +768,22 @@ export function scheduleHourlyProbe(ctx: ExtensionContext): void {
 export async function fireHourlyProbe(ctx: ExtensionContext): Promise<void> {
   if (!state.mainModelRecovery || state.mainModelRecovery.manualResumeRequired === true) return; // wall already lifted/held — silent no-op
   const generation = flags.sessionGeneration;
+  if (hourlyProbeInFlight && hourlyProbeGeneration !== generation) {
+    hourlyProbeInFlight = false;
+    hourlyProbeToken = 0;
+    hourlyProbeGeneration = null;
+  }
+  if (hourlyProbeInFlight) {
+    appendLedger(ctx.cwd, "main_model_probe_skipped_in_flight", { at: nowIso(), source: "hourly" });
+    return;
+  }
+  if (state.mainModelRecovery.retryAt === undefined) {
+    appendLedger(ctx.cwd, "main_model_probe_skipped_in_flight", { at: nowIso(), source: "hourly-active-turn" });
+    return; // setModel/probe has already claimed the active turn
+  }
+  hourlyProbeInFlight = true;
+  const probeToken = ++hourlyProbeToken;
+  hourlyProbeGeneration = generation;
   appendLedger(ctx.cwd, "hourly_probe_fired", {
     at: new Date().toISOString(),
   });
@@ -681,6 +792,10 @@ export async function fireHourlyProbe(ctx: ExtensionContext): Promise<void> {
   } catch (err) {
     if (isStaleApiError(err)) flags.extensionApiStale = true;
   } finally {
+    if (hourlyProbeToken === probeToken) {
+      hourlyProbeInFlight = false;
+      hourlyProbeGeneration = null;
+    }
     if (generation !== flags.sessionGeneration) return;
     const fresh = freshCtxForGeneration(generation);
     if (fresh && state.mainModelRecovery && !state.mainModelRecovery.manualResumeRequired) scheduleHourlyProbe(fresh);
@@ -733,20 +848,36 @@ export function manuallyResumeMainModelRecovery(ctx: ExtensionContext): boolean 
 }
 
 let mainModelRecoveryProbeInFlight = false;
+let mainModelRecoveryProbeToken = 0;
+let mainModelRecoveryProbeGeneration: number | null = null;
+let hourlyProbeInFlight = false;
+let hourlyProbeToken = 0;
+let hourlyProbeGeneration: number | null = null;
 
 /** Normal and :00:30 hourly recovery timers share one provider probe. The
  * durable timer state is not enough to fence the two callbacks once both
  * have fired, so serialize the actual async probe as well. */
 export async function probeMainModelRecovery(ctx: ExtensionContext): Promise<void> {
+  const generation = flags.sessionGeneration;
+  if (mainModelRecoveryProbeInFlight && mainModelRecoveryProbeGeneration !== generation) {
+    mainModelRecoveryProbeInFlight = false;
+    mainModelRecoveryProbeToken = 0;
+    mainModelRecoveryProbeGeneration = null;
+  }
   if (mainModelRecoveryProbeInFlight) {
     appendLedger(ctx.cwd, "main_model_probe_skipped_in_flight", { at: nowIso() });
     return;
   }
   mainModelRecoveryProbeInFlight = true;
+  const probeToken = ++mainModelRecoveryProbeToken;
+  mainModelRecoveryProbeGeneration = generation;
   try {
     await probeMainModelRecoveryImpl(ctx);
   } finally {
-    mainModelRecoveryProbeInFlight = false;
+    if (mainModelRecoveryProbeToken === probeToken) {
+      mainModelRecoveryProbeInFlight = false;
+      mainModelRecoveryProbeGeneration = null;
+    }
   }
 }
 
@@ -755,9 +886,17 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
   const recovery = state.mainModelRecovery;
   if (!recovery) return;
   const current = modelRef(ctx.model);
-  const refs = [recovery.primary, ...mainModelFallbackRefs(ctx)];
+  // Reconcile an async model switch that crossed a session boundary. If the
+  // restored host already uses the pending target, the switch committed; if
+  // it does not, the pending target is re-driven below before normal cursor
+  // selection instead of being silently skipped as already attempted.
+  if (recovery.pendingModelSwitch && current?.toLowerCase() === recovery.pendingModelSwitch.toLowerCase()) {
+    appendLedger(ctx.cwd, "main_model_switch_reconciled", { ref: recovery.pendingModelSwitch, generation });
+    state.mainModelRecovery = { ...recovery, active: current, pendingModelSwitch: undefined, retryAt: undefined };
+    persistState(ctx);
+  }
   if (recovery.resumeCurrent && current) {
-    state.mainModelRecovery = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: undefined };
+    state.mainModelRecovery = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: undefined, pendingModelSwitch: undefined };
     flags.continuationDispatchStoodDown = false;
     if (recovery.kind === "goal" && state.goal?.status === "paused" && (state.goal.pauseReason ?? "").startsWith("main model recovery")) {
       updateGoal({ status: "active", pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined, providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, ctx);
@@ -771,28 +910,74 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
     ctx.ui.notify(`Main model recovery probe: continuing on ${current}; primary will be tested after this supervised turn.`, "info");
     return;
   }
-  // v0.34.93: pick the first target that is neither the current model nor
-  // a forbidden ref. Without the gate the probe rotates to a forbidden
-  // model (e.g. when the user has both Anthropic and a non-Anthropic
-  // configured but the primary rotation lands on Anthropic).
-  const forbiddenList = loadSettings(ctx.cwd).forbiddenModels;
-  const target = refs.find((ref) => ref !== current && !isForbiddenModel(ref, forbiddenList));
-  if (target) {
-    const skipped = refs.find((ref) => ref !== current && isForbiddenModel(ref, forbiddenList));
-    if (skipped) appendLedger(ctx.cwd, "forbidden_model_fallback_blocked", { ref: skipped, reason: "recovery probe target was forbidden; skipping to next allowed", from: current });
+  // Use the same ordered selector for immediate failover and delayed probes.
+  // The primary is included at the front so a later cycle can return to it,
+  // while the durable attempted list prevents a probe from jumping backward
+  // through the chain after a reload.
+  const fallbackRefs = mainModelFallbackRefs(ctx);
+  const selectorChain = [recovery.primary, ...fallbackRefs];
+  const selector = sessionModelSelector(ctx, selectorChain);
+  const scope: ModelScope = { kind: "session" };
+  const pendingTarget = state.mainModelRecovery?.pendingModelSwitch;
+  const pendingCandidate = pendingTarget ? resolveMainModel(ctx, pendingTarget) : undefined;
+  if (pendingTarget && !pendingCandidate) {
+    const attemptedPending = recovery.attempted.some((ref) => ref.toLowerCase() === pendingTarget.toLowerCase())
+      ? recovery.attempted
+      : [...recovery.attempted, pendingTarget];
+    const skippedPending = [...(recovery.skipped ?? [])];
+    if (!skippedPending.some((entry) => entry.ref.toLowerCase() === pendingTarget.toLowerCase())) {
+      skippedPending.push({ ref: pendingTarget, reason: "unregistered" });
+    }
+    const next = { ...recovery, pendingModelSwitch: undefined, attempted: attemptedPending, skipped: skippedPending.slice(-16), attempts: recovery.attempts + 1 };
+    appendLedger(ctx.cwd, "main_model_fallback_unavailable", { ref: pendingTarget, reason: "pending switch target not in registry" });
+    state.mainModelRecovery = next;
+    persistState(ctx);
+    const delay = mainModelRetryDelayMs(next.attempts, loadGlobalSettings().mainModelRetryMinutes);
+    if (setMainModelRecoveryPause(ctx, next, delay)) scheduleMainModelRecoveryTimer(ctx, delay);
+    return;
   }
+  const pick = pendingTarget && pendingCandidate
+    ? { ref: pendingTarget, model: pendingCandidate }
+    : selector.selectNextValid(scope, current, recovery.attempted);
+  const target = "ref" in pick ? pick.ref : undefined;
+  const targetIndex = target === undefined
+    ? selectorChain.length - 1
+    : selectorChain.findIndex((ref) => ref.toLowerCase() === target.toLowerCase());
+  const attempted = [...recovery.attempted];
+  const attemptedKeys = new Set(attempted.map((ref) => ref.toLowerCase()));
+  if (current && !attemptedKeys.has(current.toLowerCase())) {
+    attempted.push(current);
+    attemptedKeys.add(current.toLowerCase());
+  }
+  // Persist every forbidden/unavailable ref visited by the selector so a
+  // reload cannot restart at the same rejected rung.
+  const visited = selector.lastVisitedRefs;
+  const skipped = [...(recovery.skipped ?? [])];
+  for (const ref of visited) {
+    const key = ref.toLowerCase();
+    if (!attemptedKeys.has(key)) {
+      attempted.push(ref);
+      attemptedKeys.add(key);
+    }
+    const reason = isForbiddenModel(ref, loadSettings(ctx.cwd).forbiddenModels) ? "forbidden" : "unregistered";
+    if (!skipped.some((entry) => entry.ref.toLowerCase() === key)) skipped.push({ ref, reason });
+  }
+  recovery.skipped = skipped.slice(-16);
   if (!target) {
     if (!current) {
       const delay = mainModelRetryDelayMs(recovery.attempts + 1, loadGlobalSettings().mainModelRetryMinutes);
-      if (setMainModelRecoveryPause(ctx, { ...withMainModelRecoveryWindow(recovery), attempts: recovery.attempts + 1, attempted: [] }, delay)) {
-        scheduleMainModelRecoveryTimer(ctx, delay);
-      }
+      const next = { ...withMainModelRecoveryWindow(recovery), attempts: recovery.attempts + 1, attempted };
+      if (setMainModelRecoveryPause(ctx, next, delay)) scheduleMainModelRecoveryTimer(ctx, delay);
       return;
     }
-    // No backup is configured (or every backup has already been tried):
-    // retry the currently selected model itself. This is the critical probe
-    // that notices a quota window returning after an otherwise quiet hour.
-    state.mainModelRecovery = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: undefined };
+    // The ordered chain has been visited for this recovery cycle. Start a
+    // deliberate new cycle by retrying the currently selected model; the
+    // next failure can then walk primary → backup 1 → … again. This is not a
+    // blind resend loop: it is one bounded probe per durable timer window.
+    const next = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: undefined, pendingModelSwitch: undefined };
+    state.mainModelRecovery = next;
+    persistState(ctx);
+    appendLedger(ctx.cwd, "main_model_fallback_cycle_reset", { current, attempted: recovery.attempted, attempts: recovery.attempts });
     flags.continuationDispatchStoodDown = false;
     if (recovery.kind === "goal" && state.goal?.status === "paused" && (state.goal.pauseReason ?? "").startsWith("main model recovery")) {
       updateGoal({ status: "active", pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined, providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, ctx);
@@ -802,27 +987,51 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
       persistState(ctx);
       scheduleLoopTick(ctx);
     }
-    appendLedger(ctx.cwd, "main_model_probe", { from: current, to: current, attempts: recovery.attempts });
-    ctx.ui.notify(`Main model recovery probe: retrying ${current} without rotating models.`, "info");
+    appendLedger(ctx.cwd, "main_model_probe", { from: current, to: current, attempts: recovery.attempts, mode: "cycle-reset" });
+    ctx.ui.notify(`Main model recovery probe: retrying ${current} after visiting the configured fallback chain.`, "info");
     return;
   }
+  // A candidate can be registered but still unusable (no configured auth or
+  // a provider-specific setModel rejection). Keep walking the same ordered
+  // chain instead of waiting an hour before trying the next real fallback.
   const candidate = resolveMainModel(ctx, target);
+  const targetTryLabel = targetIndex === 0 ? "primary" : `backup ${targetIndex}/${fallbackRefs.length}`;
   if (!candidate) {
-    appendLedger(ctx.cwd, "main_model_fallback_unavailable", { ref: target, reason: "recovery probe not in registry" });
-    const delay = mainModelRetryDelayMs(recovery.attempts + 1, loadGlobalSettings().mainModelRetryMinutes);
-    if (setMainModelRecoveryPause(ctx, { ...withMainModelRecoveryWindow(recovery), attempts: recovery.attempts + 1, attempted: [...(current ? [current] : []), target] }, delay)) {
-      scheduleMainModelRecoveryTimer(ctx, delay);
-    }
+    appendLedger(ctx.cwd, "main_model_fallback_unavailable", { ref: target, tryLabel: targetTryLabel, reason: "recovery probe not in registry" });
+    const next = { ...recovery, pendingModelSwitch: undefined, skipped: recovery.skipped, attempted, attempts: recovery.attempts + 1 };
+    state.mainModelRecovery = next;
+    persistState(ctx);
+    const delay = mainModelRetryDelayMs(next.attempts, loadGlobalSettings().mainModelRetryMinutes);
+    if (setMainModelRecoveryPause(ctx, next, delay)) scheduleMainModelRecoveryTimer(ctx, delay);
     return;
   }
+  state.mainModelRecovery = {
+    ...recovery,
+    active: current ?? recovery.active,
+    attempted,
+    pendingModelSwitch: target,
+    retryAt: new Date(Date.now() + 1_000).toISOString(),
+  };
+  persistState(ctx);
+  if (flags.mainModelSwitchInFlight && modelSwitchOperationGeneration !== generation) {
+    flags.mainModelSwitchInFlight = false;
+    activeModelSwitchToken = 0;
+    modelSwitchOperationGeneration = null;
+  }
+  if (flags.mainModelSwitchInFlight) return;
+  const operationToken = ++modelSwitchOperationToken;
+  activeModelSwitchToken = operationToken;
+  modelSwitchOperationGeneration = generation;
   flags.mainModelSwitchInFlight = true;
   try {
+    if (generation !== flags.sessionGeneration || !freshCtxForGeneration(generation)) return;
     const accepted = await flags.extensionApi?.setModel(candidate);
     if (generation !== flags.sessionGeneration || !freshCtxForGeneration(generation)) return;
+    if (state.mainModelRecovery?.pendingModelSwitch?.toLowerCase() !== target.toLowerCase()) return;
     if (!accepted) throw new Error(`no configured auth for ${target}`);
-    state.mainModelRecovery = { ...recovery, active: target, attempted: current ? [current, target] : [target], retryAt: undefined };
+    state.mainModelRecovery = { ...state.mainModelRecovery!, active: target, attempted, pendingModelSwitch: undefined, retryAt: undefined };
     persistState(ctx);
-    appendLedger(ctx.cwd, "main_model_probe", { from: current, to: target, attempts: recovery.attempts });
+    appendLedger(ctx.cwd, "main_model_probe", { from: current, to: target, tryLabel: targetTryLabel, attempts: recovery.attempts });
     flags.continuationDispatchStoodDown = false;
     if (recovery.kind === "goal" && state.goal?.status === "paused" && (state.goal.pauseReason ?? "").startsWith("main model recovery")) {
       updateGoal({ status: "active", pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined, providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, ctx);
@@ -832,18 +1041,23 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
       persistState(ctx);
       scheduleLoopTick(ctx);
     }
-    ctx.ui.notify(`Main model recovery probe: ${target} selected; sending one supervised probe.`, "info");
+    ctx.ui.notify(`Main model recovery probe: ${targetTryLabel} ${target} selected; sending one supervised probe.`, "info");
   } catch (err) {
-    appendLedger(ctx.cwd, "main_model_probe_failed", { ref: target, error: err instanceof Error ? err.message : String(err) });
+    // A cancellation, replacement, or another recovery operation may have
+    // consumed this pending switch while the host promise was in flight.
+    // Its late rejection must not resurrect a cleared episode.
+    if (generation !== flags.sessionGeneration || state.mainModelRecovery?.pendingModelSwitch?.toLowerCase() !== target.toLowerCase()) return;
+    appendLedger(ctx.cwd, "main_model_probe_failed", { ref: target, tryLabel: targetTryLabel, error: err instanceof Error ? err.message : String(err) });
     const failure = classifyMainModelFailure(err instanceof Error ? err.message : String(err));
-    // v0.34.51: no billing special case — every provider failure retries on
-    // the uniform durable envelope (credits can be topped up; a miss-classified
-    // quota wall must not become a manual-action stop).
+    // Account/plan/billing failures may have walked the ordered chain before
+    // reaching this probe. Any remaining provider failure uses the same
+    // durable bounded envelope; an explicit 429 keeps the current model.
     const failureCopy = providerErrorPresentation(failure.raw, "main");
     const next = withMainModelRecoveryWindow({
-      ...recovery,
+      ...(state.mainModelRecovery ?? recovery),
       attempts: recovery.attempts + 1,
-      attempted: [...(current ? [current] : []), target],
+      attempted,
+      skipped: state.mainModelRecovery?.skipped ?? recovery.skipped,
       reason: mainModelRecoveryReason(failure),
       providerErrorDiagnostic: failureCopy.diagnostic,
       recoveryEpisodeKey: recovery.recoveryEpisodeKey ?? `${recovery.firstFailureAt ?? nowIso()}:${failureCopy.fingerprint}`,
@@ -852,6 +1066,8 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
       retryAfterSec: failure.retryAfterSec ?? recovery.retryAfterSec,
       retryFromUpstream: failure.retryFromUpstream ?? recovery.retryFromUpstream,
       resetAt: failure.resetAt ?? recovery.resetAt,
+      resumeCurrent: failure.kind === "rate-limit" ? true : (state.mainModelRecovery ?? recovery).resumeCurrent,
+      pendingModelSwitch: undefined,
     });
     // v0.34.58: no quota-only parking — an over-budget upstream reset hint
     // never holds the goal for a manual resume; the bounded envelope owns
@@ -860,7 +1076,11 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
     const delay = mainModelFailureDelayMs(failure, next.attempts, loadGlobalSettings().mainModelRetryMinutes);
     if (setMainModelRecoveryPause(ctx, next, delay)) scheduleMainModelRecoveryTimer(ctx, delay);
   } finally {
-    flags.mainModelSwitchInFlight = false;
+    if (activeModelSwitchToken === operationToken) {
+      activeModelSwitchToken = 0;
+      modelSwitchOperationGeneration = null;
+      flags.mainModelSwitchInFlight = false;
+    }
   }
 }
 
@@ -893,6 +1113,9 @@ export function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainMo
     retryAfterSec: failure.retryAfterSec ?? existing.retryAfterSec,
     retryFromUpstream: failure.retryFromUpstream ?? existing.retryFromUpstream,
     resetAt: failure.resetAt ?? existing.resetAt,
+    // Explicit 429 means too many requests, not token-limit exhaustion: the
+    // next normal/hourly probe retries the currently selected model.
+    resumeCurrent: failure.kind === "rate-limit" ? true : existing.resumeCurrent,
   });
   // v0.34.58: uniform envelope even for over-budget upstream hints — the
   // goal never parks on a quota-only manual hold; the bounded cadence owns
@@ -902,13 +1125,10 @@ export function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainMo
   flags.mainModelAbortForRecovery = true;
   try { ctx.abort(); } catch { /* abort is best effort; the recovery guard prevents re-send storms */ }
   scheduleMainModelRecoveryTimer(ctx, delay);
-  // v0.34.92: no quota-prompt schedule — quota walls are not detected
-  // (provider text is unreliable; v0.34.64 established the principle).
-  // Active retry (v0.34.79 eager first probe + v0.34.84 hour-aligned
-  // attempts 2+) is the recovery. An opt-in hourly probe ticker
-  // (scheduleHourlyProbe) gives faster pickup at :00:30 when
-  // hourlyQuotaProbe is enabled (default ON).
-  scheduleHourlyProbe(ctx);
+  // The configured bounded ladder is the normal recovery. An opt-in hourly
+  // probe ticker (scheduleHourlyProbe) adds a :00:30 attempt when
+  // hourlyQuotaProbe is enabled (default ON). The recovery timer arms it
+  // beside the normal slot.
 }
 
 export async function recoverMainModelFromSendStorm(ctx: ExtensionContext, kind: "continuation" | "loop"): Promise<void> {

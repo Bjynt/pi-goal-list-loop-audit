@@ -18,6 +18,7 @@ import {
   piGlaDir,
 } from "./goal-loop-core.ts";
 import type { SubagentModelStrategy } from "./goal-loop-subagents.js";
+import { normalizeMainModelFallbackRefs } from "./main-model-recovery.js";
 
 export interface Settings {
   /** v0.34.57: model refs/ids that must never be selected — the policy
@@ -39,7 +40,7 @@ export interface Settings {
    * Off → no vision guidance is injected (the forbiddenModels gate still
    * stands). */
   visionAssist?: boolean;
-  /** Ordered provider/model refs to use when the MAIN session model hits a provider wall. */
+  /** Global-only ordered provider/model refs to use when the MAIN session model hits a provider wall. */
   mainModelFallbacks?: string[];
   /** v0.34.115: per-subagent fallback chains. Keyed by subagent name
    * (Explore, Plan, general-purpose, …). When set, the subagent sync uses
@@ -47,7 +48,7 @@ export interface Settings {
    * when unset, behavior is byte-identical to v0.34.114 (inherit-parent or
    * per-type pin). */
   subagentFallbacks?: Record<string, string[]>;
-  /** Minutes before the main-session recovery probe; the cadence caps at 5h and the automatic window at 24h. */
+  /** Global-only base minutes before main-session recovery; doubles per attempt, caps at 5h, and the automatic window ends at 24h. */
   mainModelRetryMinutes?: number;
   /** "provider/model-id" or bare "model-id". Unset → session model. */
   auditorModel?: string;
@@ -71,13 +72,12 @@ export interface Settings {
    * label ("reading source…" / "writing report…") + report byte-counter.
    * Default ON; off = the plain timer-only card. */
   auditorProgressSignals?: boolean;
-  /** v0.34.92: when the orchestrator is parked on main-model recovery, fire
-   * an extra probe at the next :00:30 every hour. Quota windows tend to
-   * refresh at the top of the hour; the ticker is the fastest pickup the
-   * plugin can give without spam. Default ON (the user opted in by asking
-   * for it: "additionally retry after the start of every hour"). Co-resident
-   * with the normal retry schedule — opt-out flips this off, the retry
-   * cadence is unaffected. */
+  /** Global-only: when main-model recovery is parked, fire an extra probe at
+   * the next :00:30 every hour. Quota windows tend to refresh at the top of
+   * the hour; the ticker is the fastest pickup the plugin can give without
+   * spam. Default ON (the user asked for an additional retry after each hour
+   * starts). Co-resident with the configured retry ladder — opt-out flips
+   * only this ticker off. */
   hourlyQuotaProbe?: boolean;
   auditorThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   /** Shell command run on goal complete / goal pause / loop stop; message passed as $1. */
@@ -171,6 +171,16 @@ export interface Settings {
   };
 }
 
+/** These settings describe the main session's provider-recovery policy, not a
+ * project artifact. The recovery runtime intentionally reads the global file
+ * for them; ignoring project copies keeps the settings table and behavior
+ * honest instead of showing a project value that the retry path cannot use. */
+const GLOBAL_MAIN_RECOVERY_KEYS: ReadonlySet<keyof Settings> = new Set([
+  "mainModelFallbacks",
+  "mainModelRetryMinutes",
+  "hourlyQuotaProbe",
+]);
+
 export const DEFAULT_SETTINGS: Settings = {
   // Main-model backups are opt-in: an empty list preserves pi's normal
   // session model behavior, while the recovery cadence still protects an
@@ -238,12 +248,22 @@ export function readSettingsFile(file: string): Partial<Settings> {
   }
 }
 
+function normalizeLoadedSettings(settings: Settings): Settings {
+  // Settings files can be edited by hand or survive an older UI. Normalize
+  // the main fallback chain at every read so runtime, display, and persistence
+  // all see the same bounded value.
+  settings.mainModelFallbacks = normalizeMainModelFallbackRefs(settings.mainModelFallbacks);
+  return settings;
+}
+
 export function loadSettings(cwd: string): Settings {
-  return mergeSettings(
+  const project = readSettingsFile(projectSettingsPath(cwd));
+  for (const key of GLOBAL_MAIN_RECOVERY_KEYS) delete project[key];
+  return normalizeLoadedSettings(mergeSettings(
     DEFAULT_SETTINGS as unknown as Record<string, unknown>,
     readSettingsFile(globalSettingsPath()) as Record<string, unknown>,
-    readSettingsFile(projectSettingsPath(cwd)) as Record<string, unknown>,
-  ) as unknown as Settings;
+    project as Record<string, unknown>,
+  ) as unknown as Settings);
 }
 
 /**
@@ -255,10 +275,10 @@ export function loadSettings(cwd: string): Settings {
  * list at every bare `pi` launch after the global default flipped off).
  */
 export function loadGlobalSettings(): Settings {
-  return mergeSettings(
+  return normalizeLoadedSettings(mergeSettings(
     DEFAULT_SETTINGS as unknown as Record<string, unknown>,
     readSettingsFile(globalSettingsPath()) as Record<string, unknown>,
-  ) as unknown as Settings;
+  ) as unknown as Settings);
 }
 
 /** Every provenance-tracked key (the /glla headless display + UI). */
@@ -305,7 +325,8 @@ export function settingsProvenance(cwd: string): Record<keyof Settings, { value:
   const effective = loadSettings(cwd);
   const out: Record<string, { value: unknown; source: "project" | "global" | "default" }> = {};
   for (const k of SETTINGS_KEYS) {
-    if ((proj as Record<string, unknown>)[k] !== undefined) out[k] = { value: (proj as any)[k], source: "project" };
+    const projectValue = GLOBAL_MAIN_RECOVERY_KEYS.has(k) ? undefined : (proj as Record<string, unknown>)[k];
+    if (projectValue !== undefined) out[k] = { value: projectValue, source: "project" };
     else if ((glob as Record<string, unknown>)[k] !== undefined) out[k] = { value: (glob as any)[k], source: "global" };
     else out[k] = { value: (effective as any)[k], source: "default" };
   }
@@ -316,9 +337,19 @@ export function saveSettings(scope: "global" | "project", cwd: string, patch: Pa
   const file = scope === "global" ? globalSettingsPath() : projectSettingsPath(cwd);
   const current = readSettingsFile(file);
   const next: Record<string, unknown> = { ...current };
+  if (scope === "project") {
+    for (const key of GLOBAL_MAIN_RECOVERY_KEYS) delete next[key];
+  }
   for (const [k, v] of Object.entries(patch)) {
+    // Main recovery settings are global-only. If an old project file still
+    // carries one, remove it rather than leaving a setting that appears saved
+    // but can never affect the runtime.
+    if (scope === "project" && GLOBAL_MAIN_RECOVERY_KEYS.has(k as keyof Settings)) {
+      delete next[k];
+      continue;
+    }
     if (v === undefined) delete next[k]; // key=unset removes the key
-    else next[k] = v;
+    else next[k] = k === "mainModelFallbacks" ? normalizeMainModelFallbackRefs(v) : v;
   }
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(next, null, 2));

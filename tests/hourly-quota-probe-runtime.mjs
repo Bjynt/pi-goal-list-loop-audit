@@ -68,7 +68,10 @@ const deps = {
   notifyExternal: () => {},
   persistState: () => {},
   recoverySurfaceCommand: (_kind, command) => `/${command}`,
-  scheduleContinuation: () => {},
+  // A cycle-reset probe resumes the supervised turn on the currently
+  // selected model; count that turn as the provider call in this isolated
+  // runtime instead of pretending setModel() itself sends a request.
+  scheduleContinuation: () => { providerCalls += 1; },
   scheduleSessionTimeout: (callback, delayMs) => {
     const timer = {
       delayMs,
@@ -100,7 +103,7 @@ function ledger() {
 }
 
 setHourlyProbeSetting(true);
-replaceState({ goal: null, mainModelRecovery: parkedRecovery() });
+replaceState({ goal: { status: "paused", pauseReason: "main model recovery" }, mainModelRecovery: parkedRecovery() });
 scheduleHourlyProbe(ctx);
 assert.equal(scheduled.length, 1, "parked recovery arms one hourly timer");
 const firstHourly = scheduled[0];
@@ -126,7 +129,7 @@ assert.equal((ledger().match(/"hourly_probe_fired"/g) ?? []).length, 2, "both ho
 
 cancelHourlyProbe();
 setHourlyProbeSetting(false);
-replaceState({ goal: null, mainModelRecovery: parkedRecovery() });
+replaceState({ goal: { status: "paused", pauseReason: "main model recovery" }, mainModelRecovery: parkedRecovery() });
 const beforeOptOut = scheduled.length;
 scheduleHourlyProbe(ctx);
 assert.equal(scheduled.length, beforeOptOut, "opt-out prevents a new hourly timer");
@@ -147,7 +150,7 @@ assert.equal((ledger().match(/"hourly_probe_fired"/g) ?? []).length, 2, "stale e
 // recovery wrapper must serialize the provider call instead of launching two
 // overlapping probes against the same saved wall.
 cancelHourlyProbe();
-replaceState({ goal: null, mainModelRecovery: parkedRecovery() });
+replaceState({ goal: { status: "paused", pauseReason: "main model recovery" }, mainModelRecovery: parkedRecovery() });
 const beforeOverlap = providerCalls;
 await Promise.all([fireHourlyProbe(ctx), fireHourlyProbe(ctx)]);
 assert.equal(providerCalls - beforeOverlap, 1, "overlapping hourly/normal probes share one in-flight provider call");

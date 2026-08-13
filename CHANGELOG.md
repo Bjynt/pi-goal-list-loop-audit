@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased — bounded main-model fallbacks and process cleanup
+### Main sessions keep an ordered fallback chain
+  Main-model backup settings are normalized case-insensitively, capped at ten
+  alternatives, and exposed in a dedicated Backups row with a visible count.
+  The picker now shows `current → backup 1 → backup 2`, numbers each selected
+  row, and supports explicit `[` / `]` reordering; provider failures walk the
+  durable ordered cursor one supervised model at a time. Main recovery base
+  minutes are effective, the optional :00:30 hourly probe is armed for every
+  parked recovery and can be toggled live, and the recovery settings are
+  global-only. Explicit HTTP 429/rate-limit diagnostics remain retryable
+  request-rate failures rather than token-limit labels; they stay on the
+  current model while account/plan/billing/auth failures may walk the backup chain.
+  Restore selections no longer cancel recovery, user aborts do not masquerade
+  as successful turns, and malformed saved recovery state is sanitized before
+  timers or model switches use it.
+
+### Detached workers are reaped as process trees
+  Parent cancellation and watchdog paths now wait for worker exit and escalate
+  when a detached worker ignores SIGTERM. Worker-owned lock metadata lets a
+  replacement host reap stale workers from a previous pi process. The smoke
+  harness and direct worker tests now clean up their tmux/process trees on
+  interruption or assertion failure.
+
 ## 0.34.138 — CI-safe auditor timing and release validation (2026-08-13)
 ### CI auditor timing has headroom
   Process-backed auditor regressions use a CI-safe wall-clock allowance, and

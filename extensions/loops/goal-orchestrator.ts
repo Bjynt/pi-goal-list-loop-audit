@@ -185,6 +185,8 @@ import {
 import {
   classifyMainModelFailure,
   isLongLivedFailureKind,
+  isMainModelFallbackFailure,
+  requiresMainModelRecovery,
   mainModelAutoRetryUntil,
   mainModelFailureDelayMs,
   mainModelRetryDelayMs,
@@ -567,17 +569,23 @@ async function handleMainModelAgentEnd(ctx: ExtensionContext, rawLastA: any, las
       const switched = await tryMainModelFallback(ctx, failure);
       if (switched) return true; // pi's core retry now uses the selected backup
       const backupRefs = mainModelFallbackRefs(ctx);
-      // v0.34.51: no quota/billing/auth gate — ANY failure parks into the
-      // durable recovery envelope. The one exemption is transient
-      // (5xx/timeout/network: positive evidence of a short-lived hiccup),
-      // which keeps the fast error ladder instead of a 15m probe — nothing
-      // ever STOPS on classification, only the pacing differs.
-      if ((state.goal?.status === "active" && failure.kind !== "transient") || backupRefs.length > 0) {
+      // Account/plan/billing failures can select one ordered backup here;
+      // explicit 429/request-rate failures stay on the current model and are
+      // handled by the bounded retry + optional hourly ticker. Do not park a
+      // second recovery record before the supervised turn starts. Other
+      // provider failures use the durable envelope when the active supervisor
+      // needs it; transient failures retain the fast error ladder.
+      if ((state.goal?.status === "active" && requiresMainModelRecovery(failure)) || (backupRefs.length > 0 && isMainModelFallbackFailure(failure))) {
         parkMainModelAfterFailure(ctx, failure);
         if (mainModelRecoveryActive() || state.mainModelRecovery) return true;
       }
     }
   } else if (lastA) {
+    // `agent_end` with stopReason=aborted is a user cancellation, not proof
+    // that the provider recovered. Clearing the durable fallback episode here
+    // made Escape silently discard the only retry plan. Only a non-aborted,
+    // non-error assistant end can settle main-model recovery.
+    if (lastA.stopReason === "aborted" || lastA.stopReason === "cancelled" || lastA.stopReason === "canceled") return false;
     if (state.mainModelRecovery) mainModelRecoverySucceeded(ctx);
     else lastMainModelFailure = null;
   }

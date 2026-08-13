@@ -43,11 +43,12 @@ type PickerResult = string[] | undefined;
 function makePicker(
   items: ReturnType<typeof buildModelPickItems>,
   initialSelected?: string[],
+  maxSelections?: number,
 ) {
   let rendered = 0;
   let result: PickerResult = "unset" as unknown as PickerResult;
   const comp = new MultiModelPickerComponent(
-    { title: "Main model backups", items, initialSelected },
+    { title: "Main model backups", items, initialSelected, maxSelections },
     () => { rendered++; },
     THEME,
     KB,
@@ -166,6 +167,58 @@ test("multi-model-picker: enter confirms with the refs in selection order", () =
   ]);
 });
 
+test("multi-model-picker: brackets reorder the configured try sequence", () => {
+  const items = buildModelPickItems(MODELS, "minimax/MiniMax-M3");
+  const p = makePicker(items, ["minimax/MiniMax-M3", "anthropic/claude-opus-4-7"]);
+  // Search makes the second configured ref the highlighted row, then `[`
+  // moves it ahead of the first backup without changing membership.
+  for (const ch of "opus") p.comp.handleInput(ch);
+  p.comp.handleInput("\x1b[B"); // fuzzy matching also leaves the sonnet row; move to opus
+  assert.deepEqual(p.comp.getSelected(), ["minimax/MiniMax-M3", "anthropic/claude-opus-4-7"]);
+  p.comp.handleInput("[");
+  assert.deepEqual(p.comp.getSelected(), ["anthropic/claude-opus-4-7", "minimax/MiniMax-M3"]);
+  assert.match(p.comp.render(100).join("\\n"), /1 backup  anthropic\/claude-opus-4-7/);
+});
+
+test("multi-model-picker: current session model is slot 0 and cannot be added as its own backup", () => {
+  const items = buildModelPickItems(MODELS, "minimax/MiniMax-M3");
+  const p = new MultiModelPickerComponent(
+    { title: "Main model backups", items, currentRef: "minimax/MiniMax-M3" },
+    () => undefined,
+    THEME,
+    KB,
+    () => undefined,
+  );
+  // Filter may include the session row as well; move to the actual model row.
+  for (const ch of "minimax-m3") p.handleInput(ch);
+  p.handleInput("\x1b[B");
+  p.handleInput(" ");
+  assert.deepEqual(p.getSelected(), []);
+  assert.match(p.render(100).join("\\n"), /current session model \(slot 0\)/);
+});
+
+test("multi-model-picker: configured unavailable and blocked refs remain visible with reasons", () => {
+  const items = buildModelPickItems(MODELS, "minimax/MiniMax-M3", {
+    excludeRefs: ["anthropic"],
+    preserveRefs: ["anthropic/claude-opus-4-7", "ghost/provider-model"],
+    includeSessionRow: false,
+    includeManualRow: false,
+  });
+  assert.equal(items[0]!.disabledReason, "blocked by policy");
+  assert.equal(items[1]!.disabledReason, "unavailable or unauthenticated");
+  const p = new MultiModelPickerComponent(
+    { title: "Main model backups", items, initialSelected: ["anthropic/claude-opus-4-7", "ghost/provider-model"], currentRef: "minimax/MiniMax-M3" },
+    () => undefined,
+    THEME,
+    KB,
+    () => undefined,
+  );
+  const text = p.render(100).join("\\n");
+  assert.match(text, /0 current  minimax\/MiniMax-M3/);
+  assert.match(text, /1 backup  anthropic\/claude-opus-4-7 · blocked by policy/);
+  assert.match(text, /2 backup  ghost\/provider-model · unavailable or unauthenticated/);
+});
+
 test("multi-model-picker: tab also confirms with the current selection", () => {
   const items = buildModelPickItems(MODELS, "minimax/MiniMax-M3");
   const p = makePicker(items, ["anthropic/claude-opus-4-7"]);
@@ -212,11 +265,28 @@ test("multi-model-picker: manual row is not toggleable — space is a no-op", ()
   assert.deepEqual(p.comp.getSelected(), []);
 });
 
-test("multi-model-picker: initialSelected drops refs that are not in the item list", () => {
+test("multi-model-picker: main backup cap refuses the 11th selection", () => {
+  const models = Array.from({ length: 11 }, (_, i) => ({
+    provider: "provider",
+    id: `model-${i + 1}`,
+    name: `Model ${i + 1}`,
+  }));
+  const items = buildModelPickItems(models, "provider/model-1", { includeSessionRow: true, includeManualRow: true });
+  const p = makePicker(items, undefined, 10);
+  for (let i = 0; i < 11; i++) {
+    p.comp.handleInput("\x1b[B");
+    p.comp.handleInput(" ");
+  }
+  assert.equal(p.comp.getSelected().length, 10);
+  assert.match(p.comp.render(100).join("\\n"), /maximum reached/);
+});
+
+test("multi-model-picker: initialSelected preserves stale refs for explicit cleanup", () => {
   const items = buildModelPickItems(MODELS, "minimax/MiniMax-M3");
-  // Pass a stale ref that doesn't exist in the items list.
+  // A stale configured ref remains visible in the try-order summary instead
+  // of disappearing merely because the registry cannot resolve it today.
   const p = makePicker(items, ["ghost-provider/ghost-model", "anthropic/claude-opus-4-7"]);
-  assert.deepEqual(p.comp.getSelected(), ["anthropic/claude-opus-4-7"]);
+  assert.deepEqual(p.comp.getSelected(), ["ghost-provider/ghost-model", "anthropic/claude-opus-4-7"]);
 });
 
 test("multi-model-picker: render — title, search, marked rows, and footer hint are all present", () => {
@@ -226,18 +296,18 @@ test("multi-model-picker: render — title, search, marked rows, and footer hint
   const text = lines.join("\n");
   assert.ok(text.includes("Main model backups"), "title present");
   assert.ok(text.includes("search:"), "search line present");
-  // The selected row is marked even when it is not the highlighted one.
-  assert.ok(text.includes("[x]"), "selected marker present");
+  // The selected row carries its explicit try-order rank.
+  assert.ok(text.includes("[1]"), "selected rank present");
   // Unselected rows show the empty marker.
   assert.ok(text.includes("[ ]"), "unselected marker present");
   assert.ok(text.includes("minimax/MiniMax-M3"), "selected row label present");
-  assert.ok(text.includes("space toggle · enter confirm · esc cancel"), "footer hint present");
+  assert.ok(text.includes("space add/remove · [ ] reorder · enter save · esc cancel"), "footer hint present");
 });
 
 test("multi-model-picker: render — highlighted row uses the available width for selection", () => {
   const items = buildModelPickItems(MODELS, "minimax/MiniMax-M3");
   // Row 0 is the session row (kind !== "model"). Skip it to focus on a
-  // model row that produces an `[x]` / `[ ]` marker.
+  // model row that produces an explicit rank / `[ ]` marker.
   const component = new MultiModelPickerComponent(
     { title: "Main model backups", items },
     () => undefined,
@@ -253,7 +323,7 @@ test("multi-model-picker: render — highlighted row uses the available width fo
   assert.ok(highlighted!.endsWith("</selected>"));
 });
 
-test("multi-model-picker: render — selected row shows [x] marker even when not highlighted", () => {
+test("multi-model-picker: render — selected row keeps its rank even when not highlighted", () => {
   const items = buildModelPickItems(MODELS, "minimax/MiniMax-M3");
   const component = new MultiModelPickerComponent(
     { title: "Main model backups", items, initialSelected: ["minimax/MiniMax-M3"] },
@@ -265,9 +335,9 @@ test("multi-model-picker: render — selected row shows [x] marker even when not
   component.handleInput("\x1b[B"); // move highlight to the first model row (not the selected one)
   const lines = component.render(80);
   const text = lines.join("\n");
-  // The selected row (M3) is at index 1 in the items list — the marker
-  // must appear on that row even though the highlight is elsewhere.
-  assert.match(text, /\[x\] .*minimax\/MiniMax-M3/);
+  // The selected row (M3) is at index 1 in the items list — its rank must
+  // appear even though the highlight is elsewhere.
+  assert.match(text, /\[1\] .*minimax\/MiniMax-M3/);
   // The first model row (highlighted) still shows the [ ] marker.
   assert.match(text, /<selected>→ \[ \] anthropic\/claude-opus-4-7/);
 });

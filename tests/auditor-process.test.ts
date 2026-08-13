@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -62,6 +62,46 @@ async function setup(): Promise<string> {
 
 async function cleanup(dir: string): Promise<void> {
   await rm(dir, { recursive: true, force: true });
+}
+
+/** Test-owned process cleanup must survive assertion/polling failures too.
+ * Bun's test timeout does not recursively kill children, so every direct
+ * worker spawn is detached into its own group and reaped in finally. */
+async function stopTestProcess(child: ChildProcess | undefined): Promise<void> {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  const wait = (ms: number): Promise<void> => new Promise((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) { resolve(); return; }
+    let timer: NodeJS.Timeout;
+    const done = (): void => {
+      clearTimeout(timer);
+      child.removeListener("exit", done);
+      child.removeListener("close", done);
+      child.removeListener("error", done);
+      resolve();
+    };
+    timer = setTimeout(done, ms);
+    child.once("exit", done);
+    child.once("close", done);
+    child.once("error", done);
+  });
+  try {
+    if (process.platform !== "win32" && child.pid) {
+      try { process.kill(-child.pid, "SIGTERM"); } catch { try { child.kill("SIGTERM"); } catch {} }
+    } else {
+      try { child.kill("SIGTERM"); } catch {}
+    }
+    await wait(500);
+    if (child.exitCode === null && child.signalCode === null) {
+      if (process.platform !== "win32" && child.pid) {
+        try { process.kill(-child.pid, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch {} }
+      } else {
+        try { child.kill("SIGKILL"); } catch {}
+      }
+      await wait(500);
+    }
+  } catch {
+    /* cleanup is best effort; the test result remains the assertion */
+  }
 }
 
 async function runWithAttempt(dir: string, attemptId: string, env: NodeJS.ProcessEnv = {}) {
@@ -288,6 +328,48 @@ setInterval(async () => {
     assert.equal(lastReport.lastActivityAt, undefined, "the demote snapshot carries no live heartbeat, so the HUD cannot render LIVE");
     assert.ok(existsSync(sigtermMarker), "the wedged worker was SIGTERMed — the detached job was cancelled");
     assert.equal(existsSync(path.join(dir, ".pi-glla", "audit-jobs", "attempt-heartbeat-stall")), false, "cancelled auditor job scratch is removed");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("parent abort escalates a detached TERM-ignoring worker and removes its job", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-parent-abort-"));
+  const worker = path.join(dir, "term-ignoring-worker.mjs");
+  const pidMarker = path.join(dir, "worker-pid");
+  await writeFile(worker, `
+import { readFile, writeFile } from "node:fs/promises";
+import { writeFileSync } from "node:fs";
+const dir = process.argv[process.argv.indexOf("--job-dir") + 1];
+const request = JSON.parse(await readFile(dir + "/request.json", "utf8"));
+await writeFile(dir + "/progress.json", JSON.stringify({ protocolVersion: 1, attemptId: request.attemptId, requestHash: request.requestHash, phase: "running", elapsedMs: 1, recentOutput: [], toolCalls: [] }));
+writeFileSync(${JSON.stringify(pidMarker)}, String(process.pid));
+process.on("SIGTERM", () => {});
+setInterval(() => {}, 1_000);
+`);
+  const controller = new AbortController();
+  try {
+    const pending = runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "high",
+      signal: controller.signal,
+      runtime: { workerPath: worker, attemptId: () => "attempt-parent-abort", pollIntervalMs: 10, wallTimeoutMs: 5_000 },
+    });
+    for (let i = 0; i < 100; i++) {
+      try { await readFile(pidMarker); break; }
+      catch { await new Promise((resolve) => setTimeout(resolve, 10)); }
+    }
+    controller.abort();
+    const result = await pending;
+    assert.equal(result.approved, false);
+    assert.equal(result.disapproved, false);
+    assert.match(result.error ?? "", /Auditor aborted/);
+    const workerPid = Number(await readFile(pidMarker, "utf8"));
+    assert.ok(Number.isInteger(workerPid) && workerPid > 1, "the term-ignoring worker started");
+    assert.throws(() => process.kill(workerPid, 0), /ESRCH|不存在|not found/i, "the detached worker is gone after parent abort");
+    assert.equal(existsSync(path.join(dir, ".pi-glla", "audit-jobs", "attempt-parent-abort")), false, "aborted job scratch is removed");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -800,10 +882,12 @@ process.stdin.on("end", () => { process.exitCode = 41; });
   };
   const request = { ...withoutHash, requestHash: requestHash(withoutHash) };
   await writeFile(path.join(jobDir, "request.json"), JSON.stringify(request));
+  let child: ChildProcess | undefined;
   try {
-    const child = spawn(process.execPath, [worker, "--job-dir", jobDir], {
+    child = spawn(process.execPath, [worker, "--job-dir", jobDir], {
       env: { ...process.env, GLLA_PI_BINARY: fakePi, PI_LOG: piLog },
       stdio: "ignore",
+      detached: true,
     });
     const resultPath = path.join(jobDir, "result.json");
     await new Promise<void>((resolve, reject) => {
@@ -815,8 +899,8 @@ process.stdin.on("end", () => { process.exitCode = 41; });
       void poll();
     });
     await new Promise<void>((resolve) => {
-      if (child.exitCode !== null) { resolve(); return; }
-      child.once("exit", () => resolve());
+      if (child!.exitCode !== null) { resolve(); return; }
+      child!.once("exit", () => resolve());
     });
     const result = JSON.parse(await readFile(resultPath, "utf8"));
     const log = JSON.parse(await readFile(piLog, "utf8"));
@@ -832,6 +916,7 @@ process.stdin.on("end", () => { process.exitCode = 41; });
     assert.equal(log.input.endsWith("\n"), true);
     assert.equal(JSON.parse(log.input).type, "prompt");
   } finally {
+    await stopTestProcess(child);
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -870,10 +955,12 @@ process.stdin.on("data", (chunk) => {
     thinkingLevel: "medium", createdAt: new Date().toISOString(), wallDeadlineAt: Date.now() + 5_000,
   };
   await writeFile(path.join(jobDir, "request.json"), JSON.stringify({ ...withoutHash, requestHash: requestHash(withoutHash) }));
+  let child: ChildProcess | undefined;
   try {
-    const child = spawn(process.execPath, [worker, "--job-dir", jobDir], {
+    child = spawn(process.execPath, [worker, "--job-dir", jobDir], {
       env: { ...process.env, GLLA_PI_BINARY: fakePi, GLLA_AUDITOR_CHILD_SHUTDOWN_MS: "80" },
       stdio: "ignore",
+      detached: true,
     });
     const resultPath = path.join(jobDir, "result.json");
     await new Promise<void>((resolve, reject) => {
@@ -885,9 +972,9 @@ process.stdin.on("data", (chunk) => {
       void poll();
     });
     await new Promise<void>((resolve, reject) => {
-      if (child.exitCode !== null) { resolve(); return; }
+      if (child!.exitCode !== null) { resolve(); return; }
       const timer = setTimeout(() => reject(new Error("worker did not exit after force-killing RPC child")), 2_000);
-      child.once("exit", () => { clearTimeout(timer); resolve(); });
+      child!.once("exit", () => { clearTimeout(timer); resolve(); });
     });
     assert.ok(existsSync(sigtermMarker), "cooperative termination was attempted before SIGKILL");
     const heartbeatAtWorkerExit = await readFile(heartbeatMarker, "utf8");
@@ -897,6 +984,7 @@ process.stdin.on("data", (chunk) => {
     assert.equal(result.ok, true);
     assert.match(result.output, /<disapproved\/>/);
   } finally {
+    await stopTestProcess(child);
     await rm(dir, { recursive: true, force: true });
   }
 });

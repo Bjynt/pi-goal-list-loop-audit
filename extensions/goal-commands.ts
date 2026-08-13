@@ -12,7 +12,7 @@ import type { ExtensionContext, ExtensionAPI } from "@earendil-works/pi-coding-a
 import { state, replaceState } from "./goal-state.js";
 import {
   DEFAULT_TOKEN_LIMIT, Goal, ListItem, Status, appendLedger, archiveDir, archivedGoalPath, bumpGoalRevision, sanitizeProviderDisplayText,
-  computeListDepth, clearQueueItemFiles, deleteQueueItemFile, extractVerificationContract, formatAuditLog, formatGoalAuditHistory, queueItemSidecarCount,
+  computeListDepth, clearQueueItemFiles, deleteQueueItemFile, extractVerificationContract, formatAuditLog, formatGoalAuditHistory, formatMainModelRecoveryStatus, queueItemSidecarCount,
   formatListDepth, goalArgsNeedDrafting, ledgerPath, newGoalId, nowIso, parseListImport, parseListItemDeclaration,
   readAuditLog, readQueueFromDisk, routeGoalArgs, routeListText, sanitizeDisplayText, sanitizeProviderAuditReport, statusLabel,
   writeQueueItemFile, type ModeCommand, type State, LIST_MUTATING_SUBCOMMANDS, SETTINGS_MUTATING_ACTIONS,
@@ -23,6 +23,7 @@ import { AUDIT_FINDINGS_REL, HELD_ON_RESTORE, LOOP_AUDIT_MARKER, listAuditCollec
 import { ProjectRollup, discoverGllaProjects, filterPremature, formatRollupJson, formatRollupTable, parseLedgerEntries, rollupProject } from "./goal-loop-stats.js";
 import { resolveEffectiveSubagentModel } from "./goal-loop-subagents.js";
 import { Settings, globalSettingsPath, loadSettings, projectSettingsPath, saveSettings, settingsProvenance } from "./goal-settings.js";
+import { formatMainModelFallbacks, normalizeMainModelFallbackRefs } from "./main-model-recovery.js";
 import { ReviewerConfig, normalizeObjective, resolveReviewerConfig, reviewerMenuOptions } from "./reviewer.js";
 import type { SettingsSectionId } from "./settings-menu.js";
 import { cmdLoop, clearLoopTimer, finishLoopGit, isLoopActive, scheduleLoopTick } from "./goal-loop.js";
@@ -282,6 +283,7 @@ async function cmdStatus(ctx: ExtensionContext): Promise<void> {
     `Auto-continue: ${g.autoContinue ? "on" : "off"}`,
     `Iteration: ${flags.iterationCounter}`,
     `Tokens: ${(g.usage?.tokensUsed ?? 0).toLocaleString()}${(g.usage?.tokensLimit ?? 0) > 0 ? ` / ${(g.usage!.tokensLimit).toLocaleString()}` : " (no cap — set Token limit in /glla settings)"}`, 
+    ...formatMainModelRecoveryStatus(state.mainModelRecovery, normalizeMainModelFallbackRefs(loadSettings(ctx.cwd).mainModelFallbacks)),
   ];
   if (g.auditHistory && g.auditHistory.length > 0) {
     lines.push(`Audits: ${g.auditHistory.length} (${g.auditHistory.filter((v) => v.approved).length} approved)`);
@@ -323,7 +325,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
   releaseInitialSessionLoadBarrier();
   const resumeCommand = activeGoalCommand("resume");
   if (manuallyResumeMainModelRecovery(ctx)) return;
-  if (state.mainModelRecovery?.retryAt) {
+  if (state.mainModelRecovery?.retryAt || state.mainModelRecovery?.pendingModelSwitch) {
     clearMainModelRecoveryTimer();
     flags.continuationDispatchStoodDown = false;
     // v0.34.92: quota-prompt re-arm removed (whole prompter deleted).
@@ -1093,6 +1095,8 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     } else {
       lines.push("Active: (none)");
     }
+    const recoveryLines = formatMainModelRecoveryStatus(state.mainModelRecovery, normalizeMainModelFallbackRefs(loadSettings(ctx.cwd).mainModelFallbacks));
+    if (recoveryLines.length > 0) lines.push(...recoveryLines);
     if (queue.length === 0) {
       lines.push("List: empty. /list <describe your tasks, or a plan file> — the agent shapes dumps into items, files import directly.");
     } else {
@@ -1774,7 +1778,7 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
   if (warnIfStaleAtEntry(ctx, "/glla resume")) return;
   releaseInitialSessionLoadBarrier();
   if (manuallyResumeMainModelRecovery(ctx)) return;
-  if (state.mainModelRecovery?.retryAt) {
+  if (state.mainModelRecovery?.retryAt || state.mainModelRecovery?.pendingModelSwitch) {
     clearMainModelRecoveryTimer();
     flags.continuationDispatchStoodDown = false;
     ctx.ui.notify("Retrying the saved main-model recovery now — one provider probe, then the configured backups if needed.", "info");
@@ -2068,10 +2072,11 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
     const v = p.value === undefined ? "(unset)" : String(p.value);
     return `${label}: ${v}  [${p.source}]`;
   };
+  const effectiveSettings = loadSettings(ctx.cwd);
   ctx.ui.notify(
     [
-      fmt("mainModelFallbacks", "mainModelBackups"),
-      fmt("mainModelRetryMinutes", "mainModelRetryMinutes"),
+      `mainModelBackups: ${formatMainModelFallbacks(effectiveSettings.mainModelFallbacks)}  [${prov.mainModelFallbacks?.source ?? "default"}]`,
+      fmt("mainModelRetryMinutes", "mainModelRetryMinutes (base minutes; doubles per attempt)"),
       fmt("forbiddenModels", "forbiddenModels"),
       fmt("blockForbiddenModelSwitches", "blockForbidden"),
       fmt("visionAssist", "visionAssist"),

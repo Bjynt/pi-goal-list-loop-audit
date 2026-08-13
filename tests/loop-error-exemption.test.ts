@@ -13,6 +13,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import activate, { __testOnlyResetStaleFlag, __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
+import { requiresMainModelRecovery } from "../extensions/main-model-recovery.js";
 import { readState } from "../extensions/goal-loop-core.js";
 import { auditMeasureCmd, AUDIT_FINDINGS_REL } from "../extensions/goal-loop-forever.js";
 import { MockPi, makeMockCtx, tmpCwd, seedState, seedLoop, tick, type MockCtx } from "./harness/mock-pi.js";
@@ -111,6 +112,11 @@ test("v0.29.19: a real turn after errors clears the streak and measures normally
   assert.equal(l.iteration, 2, "real turn measured as iteration 2");
   assert.equal(l.consecutiveErrors ?? 0, 0, "streak cleared by a real turn");
   assert.equal(l.stallCount, 1, "non-improving real turn counts the stall");
+});
+
+test("v0.35.x: explicit request-rate failures require durable current-model recovery", () => {
+  assert.equal(requiresMainModelRecovery({ kind: "rate-limit", raw: "429 too many requests" }), true);
+  assert.equal(requiresMainModelRecovery({ kind: "transient", raw: "503 unavailable" }), false);
 });
 
 test("v0.34.31: extended quota errors enter durable main-model recovery", async () => {

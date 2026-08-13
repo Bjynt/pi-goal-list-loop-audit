@@ -2109,6 +2109,21 @@ test("main-model recovery external notices are deduplicated per provider episode
   pi.execHandler = null;
 });
 
+test("explicit 429 rate limiting stays on the current model even when backups are configured", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ mainModelFallbacks: ["provider/backup"] }));
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "429 keeps current model — done when pinned", ctx);
+  await tick();
+  const before = readLedger(cwd).filter((entry) => entry.type === "main_model_failover").length;
+  await pi.fire("agent_end", { messages: [{ role: "assistant", content: [], stopReason: "error", statusCode: 429, errorMessage: "too many requests" }] }, ctx);
+  await tick();
+  assert.equal(readLedger(cwd).filter((entry) => entry.type === "main_model_failover").length, before);
+  assert.equal(readState(cwd).mainModelRecovery?.quotaSignal, "rate-limit");
+});
+
 test("a successful core retry clears the quota wall and resumes the parked goal", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
@@ -2217,6 +2232,23 @@ test("v0.35.x: a successful main-model recovery gives a parked audit its one aut
     if (previous === undefined) delete process.env.GLLA_PI_BINARY;
     else process.env.GLLA_PI_BINARY = previous;
   }
+});
+
+test("a user-aborted agent_end does not falsely clear main-model recovery", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "abort recovery target — done when pinned", ctx);
+  await tick();
+  await pi.fire("agent_end", { messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: "429 rate limit" }] }, ctx);
+  await tick();
+  const before = readState(cwd) as { mainModelRecovery?: unknown; goal?: { status?: string } };
+  assert.ok(before.mainModelRecovery, "the provider failure created durable recovery");
+  await pi.fire("agent_end", { messages: [{ role: "assistant", content: [], stopReason: "aborted" }] }, ctx);
+  await tick();
+  const after = readState(cwd) as { mainModelRecovery?: unknown; goal?: { status?: string } };
+  assert.ok(after.mainModelRecovery, "Escape/user abort does not discard the retry plan");
+  assert.equal(after.goal?.status, "paused");
 });
 
 test("error turns: a real nudge before the errors still counts after they pass (counter neither resets nor increments)", async () => {

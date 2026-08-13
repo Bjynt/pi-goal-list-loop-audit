@@ -187,6 +187,18 @@ test("rows map 1:1 to dispatchable ids (every id can drive a handler)", () => {
   assert.ok(covered >= 18, `expected at least 18 dispatcher-covered rows, saw ${covered}`);
 });
 
+test("main backup row shows the persisted numbered try order and truthful runtime semantics", () => {
+  const rows = buildSettingsRows(
+    { ...SAMPLE_SETTINGS, mainModelFallbacks: ["provider/first", "provider/second"] },
+    provFromSettings({ mainModelFallbacks: ["provider/first", "provider/second"] }),
+  );
+  const row = rows.find((candidate) => candidate.id === "mainModelFallbacks")!;
+  assert.match(row.valueText, /1\. provider\/first → 2\. provider\/second/);
+  assert.match(row.description, /current session model → backup 1 → backup 2/);
+  assert.match(row.description, /account\/plan\/billing failures switch/);
+  assert.match(row.description, /429\/rate-limit stays/);
+});
+
 test("valueText derives from settings (effective values surface for each row)", () => {
   const rows = buildSettingsRows(SAMPLE_SETTINGS, provFromSettings(SAMPLE_SETTINGS));
   const byId = new Map<string, SettingsRow>(rows.map((r) => [r.id, r]));

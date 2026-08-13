@@ -84,6 +84,7 @@ function seedParkedGoal(cwd: string, retryAtMs: number): void {
       firstFailureAt: new Date().toISOString(),
       autoRetryUntil: new Date(Date.now() + 24 * 3600_000).toISOString(),
       retryAt,
+      pendingModelSwitch: "anthropic/mock-model",
     },
   } as unknown as Parameters<typeof seedState>[1]);
   __testOnlyLoadState(cwd);

@@ -10,7 +10,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { constants as fsConstants } from "node:fs";
+import { constants as fsConstants, readdirSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { buildAuditorPiSpawnSpec, renameWithWindowsRetry } from "./goal-auditor-launch.mjs";
@@ -34,6 +34,54 @@ function configuredDuration(name, fallback) {
 
 function childRunning(child) {
   return child.exitCode === null && child.signalCode === null;
+}
+
+function linuxProcessGroupId(pid) {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const end = stat.lastIndexOf(")");
+    if (end < 0) return undefined;
+    const fields = stat.slice(end + 2).trim().split(/\s+/);
+    const processGroup = Number(fields[2]); // stat field 5, after pid/comm/state/ppid
+    return Number.isInteger(processGroup) && processGroup > 1 ? processGroup : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function signalPosixProcessGroup(group, signal) {
+  if (group === undefined || process.platform !== "linux") return false;
+  const workerGroup = linuxProcessGroupId(process.pid);
+  if (group !== workerGroup) {
+    try { process.kill(-group, signal); return true; } catch { return false; }
+  }
+  // The worker itself is the group leader. Enumerate members instead of
+  // signalling the whole group, otherwise this worker dies before it can
+  // publish result.json.
+  let entries;
+  try { entries = readdirSync("/proc"); } catch { return false; }
+  let signaled = false;
+  for (const entry of entries) {
+    if (!/^\d+$/.test(entry)) continue;
+    const pid = Number(entry);
+    if (pid <= 1 || pid === process.pid) continue;
+    if (linuxProcessGroupId(pid) !== group) continue;
+    try { process.kill(pid, signal); signaled = true; } catch {}
+  }
+  return signaled;
+}
+
+function signalPosixChildTree(child, signal) {
+  if (!child.pid) return;
+  // The worker itself is a detached process-group leader. Its RPC child and
+  // normal shell descendants therefore share the worker's group. If a child
+  // deliberately creates a separate group, signalling that group is safe and
+  // catches its nested bash/test/browser processes.
+  const childGroup = process.platform === "linux" ? linuxProcessGroupId(child.pid) : undefined;
+  const workerGroup = process.platform === "linux" ? linuxProcessGroupId(process.pid) : undefined;
+  if (childGroup !== undefined && childGroup !== workerGroup && signalPosixProcessGroup(childGroup, signal)) return;
+  try { child.kill(signal === "SIGTERM" ? "SIGTERM" : signal); } catch {}
+  signalPosixProcessGroup(childGroup, signal);
 }
 
 function destroyChildStreams(child) {
@@ -94,14 +142,22 @@ async function terminateChild(child) {
     destroyChildStreams(child);
     return;
   }
-  try { child.kill("SIGTERM"); } catch {}
+  const childGroup = process.platform === "linux" && child.pid !== undefined
+    ? linuxProcessGroupId(child.pid)
+    : undefined;
+  signalPosixChildTree(child, "SIGTERM");
   await waitForChildExit(child, configuredDuration("GLLA_AUDITOR_CHILD_SHUTDOWN_MS", DEFAULT_CHILD_SHUTDOWN_GRACE_MS));
   if (childRunning(child)) {
-    try { child.kill("SIGKILL"); } catch {}
-    // SIGKILL should settle a direct child promptly; keep a second finite
-    // bound so a broken pipe/close event can never hold the worker forever.
-    await waitForChildExit(child, FORCE_KILL_SETTLE_MS);
+    signalPosixChildTree(child, "SIGKILL");
+  } else {
+    // The direct RPC child may exit after TERM while a nested shell/browser
+    // ignores it. Reuse the captured group identity so those descendants still
+    // receive the finite KILL escalation.
+    signalPosixProcessGroup(childGroup, "SIGKILL");
   }
+  // SIGKILL should settle a direct child promptly; keep a second finite
+  // bound so a broken pipe/close event can never hold the worker forever.
+  await waitForChildExit(child, FORCE_KILL_SETTLE_MS);
   destroyChildStreams(child);
 }
 
@@ -289,6 +345,10 @@ async function main() {
   await regular(lockPath);
   const request = await readJson(requestPath);
   identity(request, attemptId);
+  // Mark the detached worker owner durably. A replacement pi host can reap
+  // this PID after the original host dies; parent-owned/pending locks are
+  // deliberately not safe to kill across a restart.
+  await atomicJson(lockPath, { protocolVersion: PROTOCOL_VERSION, attemptId, pid: process.pid, role: "worker", workerPath: path.resolve(process.argv[1]) });
 
   const startedAt = Date.now();
   const toolCalls = [];

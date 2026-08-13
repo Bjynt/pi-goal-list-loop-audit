@@ -94,6 +94,7 @@ test("selectNextValid returns the first registered, non-forbidden ref in chain o
   assert.equal(deps.events[0]!.reason, "ok");
   assert.equal(deps.events[0]!.toRef, "openai/a");
   assert.equal(deps.events[0]!.fromRef, "previous/x");
+  assert.deepEqual(sel.lastVisitedRefs, ["openai/a"]);
 });
 
 /* ------------------------------------------------------------------ */
@@ -164,6 +165,7 @@ test("selectNextValid skips forbidden refs and records each rejection", () => {
   assert.equal(deps.events.length, 3);
   assert.deepEqual(deps.events.map((e) => e.reason), ["forbidden", "forbidden", "ok"]);
   assert.deepEqual(deps.events.map((e) => e.toRef), ["forbidden/1", "forbidden/2", "openai/ok"]);
+  assert.deepEqual(sel.lastVisitedRefs, ["forbidden/1", "forbidden/2", "openai/ok"]);
 });
 
 test("selectNextValid records forbidden rejections until a valid ref is found", () => {
@@ -200,6 +202,7 @@ test("selectNextValid skips refs missing from the resolver and records each reje
   assert.deepEqual(deps.events.map((e) => e.reason), ["unregistered", "ok"]);
   assert.equal(deps.events[0]!.toRef, "missing/1");
   assert.equal(deps.events[1]!.toRef, "openai/ok");
+  assert.deepEqual(sel.lastVisitedRefs, ["missing/1", "openai/ok"]);
 });
 
 test("selectNextValid records forbidden before unregistered when both fail", () => {

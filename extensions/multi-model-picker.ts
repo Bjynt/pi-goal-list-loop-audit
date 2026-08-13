@@ -8,9 +8,8 @@
 //   • The single-select picker doesn't scale to ordered lists — the user
 //     needs to add 3-5 fallbacks in priority order, and the picker needs
 //     to remember what was already picked between confirm and re-edit.
-//   • Selection order = order items were toggled ON (not list order), so a
-//     late-ohh-this-one-also add moves to the end, not silently retreats
-//     behind the original picks.
+//   • Selection order is explicit: new items append, and `[ ]` moves the
+//     highlighted selected item earlier/later without changing membership.
 //
 // UX:
 //   • Space (" ") toggles the highlighted item. Models are toggleable;
@@ -18,9 +17,9 @@
 //     is a no-op (they're not model refs to pick).
 //   • Enter / Tab confirm with the current selection, refs in selection
 //     order. Esc cancels with undefined.
-//   • Selection state is visually marked: `[x]` for selected, `[ ]` for
-//     unselected. The marker is independent of the highlighted row —
-//     selected items stay marked even when they're not the cursor.
+//   • Selection state is visually ranked: `[1]`, `[2]`, … show the exact
+//     persisted try order; `[ ]` means unselected. The marker is independent
+//     of the highlighted row — ranks stay visible while navigating.
 //
 // Pure UI — no fs, no path, no os. Imports: ./model-picker.ts for the
 // item type, ./settings-menu.ts for the theme/keybindings shapes, and
@@ -36,12 +35,14 @@ export type { ModelPickItem };
 export interface MultiModelPickerDeps {
   title: string;
   items: ModelPickItem[];
-  /** Refs already in the selection, in canonical order. Stray refs that
-   *  don't appear in the item list are dropped — the caller may pass
-   *  stale values from a half-edited setting. */
+  /** Refs already in the selection, in canonical order. */
   initialSelected?: string[];
+  /** The model occupying slot 0 in the runtime try order. */
+  currentRef?: string;
   /** Cap on visible list rows (window scrolls with the selection). */
   maxVisibleRows?: number;
+  /** Maximum number of model refs that may be selected. Undefined = no cap. */
+  maxSelections?: number;
 }
 
 export type MultiModelPickerResult = string[] | undefined;
@@ -50,6 +51,8 @@ export class MultiModelPickerComponent {
   private readonly title: string;
   private readonly items: ModelPickItem[];
   private readonly maxRows: number;
+  private readonly maxSelections: number | undefined;
+  private readonly currentRef: string | undefined;
   private readonly requestRender: () => void;
   private readonly theme: SettingsMenuTheme;
   private readonly keybindings: KeybindingsManagerLike;
@@ -70,13 +73,31 @@ export class MultiModelPickerComponent {
     this.title = deps.title;
     this.items = deps.items;
     this.maxRows = deps.maxVisibleRows ?? 12;
+    this.maxSelections = deps.maxSelections !== undefined && Number.isInteger(deps.maxSelections) && deps.maxSelections >= 0
+      ? deps.maxSelections
+      : undefined;
+    this.currentRef = typeof deps.currentRef === "string" && deps.currentRef.trim() ? deps.currentRef.trim() : undefined;
     this.requestRender = requestRender;
     this.theme = theme;
     this.keybindings = keybindings;
     this.done = done;
-    this.selection = (deps.initialSelected ?? []).filter((ref) =>
-      this.items.some((it) => it.kind === "model" && it.ref === ref),
-    );
+    const itemRef = new Map<string, string>();
+    for (const item of this.items) {
+      if (item.kind === "model" && item.ref) itemRef.set(item.ref.toLowerCase(), item.ref);
+    }
+    const initial: string[] = [];
+    const seen = new Set<string>();
+    for (const candidate of deps.initialSelected ?? []) {
+      if (typeof candidate !== "string") continue;
+      const ref = candidate.trim();
+      const key = ref.toLowerCase();
+      if (!ref || seen.has(key)) continue;
+      seen.add(key);
+      // Prefer the registry's canonical spelling, but retain a stale ref so
+      // the order is visible and it is not silently deleted on save.
+      initial.push(itemRef.get(key) ?? ref);
+    }
+    this.selection = this.maxSelections === undefined ? initial : initial.slice(0, this.maxSelections);
   }
 
   /** Current search query. Exposed for tests. */
@@ -111,29 +132,102 @@ export class MultiModelPickerComponent {
     this.refresh();
   }
 
+  private selectionIndex(ref: string | undefined): number {
+    if (!ref) return -1;
+    const key = ref.toLowerCase();
+    return this.selection.findIndex((candidate) => candidate.toLowerCase() === key);
+  }
+
+  private selectedItem(): ModelPickItem | undefined {
+    const filtered = this.filteredItems();
+    return filtered[this.selectedIdx];
+  }
+
+  private isCurrent(ref: string | undefined): boolean {
+    return !!ref && !!this.currentRef && ref.toLowerCase() === this.currentRef.toLowerCase();
+  }
+
+  private effectiveDisabledReason(item: ModelPickItem | undefined): string | undefined {
+    if (!item || item.kind !== "model" || !item.ref) return undefined;
+    return item.disabledReason ?? (this.isCurrent(item.ref) ? "current session model (slot 0)" : undefined);
+  }
+
   private toggle(): void {
-    const it = this.filteredItems()[this.selectedIdx];
+    const it = this.selectedItem();
     if (!it || it.kind !== "model" || !it.ref) return;
-    const idx = this.selection.indexOf(it.ref);
+    const idx = this.selectionIndex(it.ref);
     if (idx >= 0) {
+      // Removing a stale/blocked ref is always allowed: the user is fixing
+      // the setting explicitly rather than having the editor do it silently.
       this.selection.splice(idx, 1);
     } else {
+      if (this.effectiveDisabledReason(it)) return;
+      if (this.maxSelections !== undefined && this.selection.length >= this.maxSelections) {
+        this.refresh();
+        return;
+      }
       this.selection.push(it.ref);
     }
     this.refresh();
   }
 
+  /** Move the highlighted selected ref earlier/later in the try order. */
+  private moveSelectedOrder(delta: number): void {
+    const it = this.selectedItem();
+    const idx = this.selectionIndex(it?.ref);
+    if (idx < 0) return;
+    const next = idx + delta;
+    if (next < 0 || next >= this.selection.length) return;
+    const current = this.selection[idx]!;
+    this.selection[idx] = this.selection[next]!;
+    this.selection[next] = current;
+    this.refresh();
+  }
+
   private isSelected(ref: string | undefined): boolean {
-    return ref !== undefined && this.selection.includes(ref);
+    return this.selectionIndex(ref) >= 0;
+  }
+
+  private orderLabel(ref: string | undefined): string {
+    const idx = this.selectionIndex(ref);
+    return idx >= 0 ? `[${idx + 1}]` : "[ ]";
+  }
+
+  private itemForRef(ref: string): ModelPickItem | undefined {
+    const key = ref.toLowerCase();
+    return this.items.find((item) => item.kind === "model" && item.ref?.toLowerCase() === key);
   }
 
   render(width: number): string[] {
     const w = Math.max(20, width - 2);
     const lines: string[] = [];
     lines.push(this.theme.fg("accent", this.theme.bold(this.title)));
+    if (this.currentRef) {
+      lines.push(this.theme.fg("muted", "try order on a provider failure (one supervised model at a time):"));
+      lines.push(truncateToWidth(`  0 current  ${this.currentRef}`, w, "…"));
+    } else {
+      lines.push(this.theme.fg("muted", "configured try order (first eligible ref wins):"));
+    }
+    if (this.selection.length === 0) {
+      lines.push(this.theme.fg("dim", this.currentRef
+        ? "  — no backups; keep probing the current model"
+        : "  — no fallback refs configured"));
+    } else {
+      for (let i = 0; i < this.selection.length; i++) {
+        const ref = this.selection[i]!;
+        const item = this.itemForRef(ref);
+        const status = this.effectiveDisabledReason(item) ? ` · ${this.effectiveDisabledReason(item)}` : "";
+        lines.push(truncateToWidth(`  ${i + 1} backup  ${ref}${status}`, w, "…"));
+      }
+    }
     lines.push("");
     const searchLine = `search: ${this.query}`;
     lines.push(this.theme.fg("muted", truncateToWidth(searchLine, w, "…") + "▏"));
+    if (this.maxSelections !== undefined) {
+      const count = `${this.selection.length}/${this.maxSelections}`;
+      lines.push(this.theme.fg(this.selection.length >= this.maxSelections ? "warning" : "muted", `selected: ${count}`));
+    }
+    lines.push(this.theme.fg("dim", "selected rows are tried top-to-bottom; [ / ] changes their order"));
     lines.push("");
     const filtered = this.filteredItems();
     if (filtered.length === 0) {
@@ -147,14 +241,16 @@ export class MultiModelPickerComponent {
       for (let i = 0; i < window.length; i++) {
         const idx = start + i;
         const it = window[i]!;
-        const marker = this.isSelected(it.ref) ? "[x]" : "[ ]";
-        const row = truncateToWidth(`${marker} ${it.label}`, w - 2, "…");
+        const marker = this.orderLabel(it.ref);
+        const disabledReason = this.effectiveDisabledReason(it);
+        const disabled = disabledReason && !this.isSelected(it.ref) ? ` · ${disabledReason}` : "";
+        const row = truncateToWidth(`${marker} ${it.label}${disabled}`, w - 2, "…");
         if (idx === sel) {
           // Use the available horizontal space for a high-contrast active
           // state. Accent-only text was easy to miss in dark terminals and
           // left the selected model indistinguishable from its neighbours.
-          // The `[x]/[ ]` marker is unrelated to the highlight — a selected
-          // non-highlighted row stays marked, and vice versa.
+          // The order marker is unrelated to the highlight — a selected
+          // non-highlighted row keeps its rank, and vice versa.
           const selectedRow = this.theme.bold(`→ ${row}`);
           const paddedRow = selectedRow + " ".repeat(Math.max(0, w - visibleWidth(selectedRow)));
           lines.push(this.theme.bg("selectedBg", paddedRow));
@@ -166,7 +262,9 @@ export class MultiModelPickerComponent {
       if (remaining > 0) lines.push(this.theme.fg("dim", `  ↓ ${remaining} more`));
     }
     lines.push("");
-    lines.push(this.theme.fg("dim", "space toggle · enter confirm · esc cancel"));
+    lines.push(this.theme.fg("dim", this.maxSelections !== undefined && this.selection.length >= this.maxSelections
+      ? "space add/remove · [ ] reorder · enter save · esc cancel · maximum reached"
+      : "space add/remove · [ ] reorder · enter save · esc cancel"));
     return lines;
   }
 
@@ -185,6 +283,17 @@ export class MultiModelPickerComponent {
     }
     if (this.keybindings.matches(data, "tui.select.down")) {
       this.move(+1);
+      return;
+    }
+    // Brackets reorder the highlighted selected model without changing
+    // which row is highlighted. This makes order an explicit, inspectable
+    // setting instead of an accidental side effect of toggle timing.
+    if (data === "[") {
+      this.moveSelectedOrder(-1);
+      return;
+    }
+    if (data === "]") {
+      this.moveSelectedOrder(+1);
       return;
     }
     // Space toggles the highlighted model in/out of the selection. Session

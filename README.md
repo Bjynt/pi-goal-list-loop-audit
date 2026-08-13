@@ -259,22 +259,35 @@ Activity is otherwise intentionally honest:
 Error text is **not trusted** to pick a retry policy: we only know that an
 error came, and provider messages vary. Every main-model failure — quota,
 rate limit, billing/credits, auth, transient, or unclassifiable — rides the
-same durable recovery envelope `15m → 30m → 1h → 2h → 4h → 5h` (probe cap
-5h, automatic window 24h, then an explicit `/goal resume`/`/list resume`/
-`/loop resume` starts a fresh window). The only failures that do not auto-retry
-are the ones identified by *positive evidence* as futile: context/output-token
-limits and user aborts (`non-recoverable`), plus auditor watchdog timeouts
-(a hanging verification command will hang again — the stored claim waits for
-an explicit resume).
-A provider hint (`retry_after`/`reset_at`) is honored when it fits the
-five-hour probe budget; an over-budget hint (e.g. a week-long reset) never
-parks the goal — the bounded cadence owns the wait, and only the 24h horizon
-ends automatic probes (a `/goal resume`/`/list resume`/`/loop resume` then
-starts a fresh window). With global `autoResume=on`, pending
-probes survive a session reload. For continuous work, configure ordered
-**Main model backups** in `/glla` using a model from a different provider or
-billing/quota pool — another model on the same exhausted plan is not a real
-fallback.
+same durable recovery envelope. The normal unhinted wait is
+`base → 2×base → 4×base → 8×base → 16×base → 5h`, where `base` is the
+`mainModelRetryMinutes` setting (15 minutes by default). A factual provider
+`Retry-After` hint wins when it fits the five-hour probe budget; an over-budget
+hint falls back to the configured ladder. `hourlyQuotaProbe=on` adds a separate
+`:00:30` probe while recovery is parked. The automatic window is 24h, then an
+explicit `/goal resume`/`/list resume`/`/loop resume` starts a fresh window.
+The only failures that do not auto-retry are the ones identified by *positive
+evidence* as futile: context/output-token limits and user aborts
+(`non-recoverable`), plus auditor watchdog timeouts (a hanging verification
+command will hang again — the stored claim waits for an explicit resume).
+With global `autoResume=on`, pending probes survive a session reload.
+
+For continuous work, configure up to **10 ordered Main model backups** in
+`/glla` using models from different providers or billing/quota pools when
+possible — another model on the same exhausted plan is not a real fallback.
+The editor shows the actual try order as `current → backup 1 → backup 2 …`,
+shows each configured backup's rank, and lets you move a selected backup with
+`[` / `]`. On an account/plan/billing/auth provider failure, glla calls `setModel` for the
+first eligible backup only; the next supervised turn tests it. If that
+candidate fails, the next backup is tried in order. An explicit HTTP 429 /
+request-rate failure stays on the current model and is retried with the
+configured cadence plus the extra post-hour probe; it is not a token-limit
+failure and does not consume a backup. Forbidden, unavailable, and
+unauthenticated refs are skipped; a successful supervised turn clears the
+episode. The chain
+is global, durable, and its attempted cursor survives reload; after the chain
+is exhausted, bounded recovery probes continue rather than silently abandoning
+work. The Backups section shows the `N/10` count and the numbered chain.
 
 **Quota walls engage fast** (v0.34.57): a surfaced long-lived failure
 (quota / billing / auth) records a 30-minute knowledge window; a send-rearm
@@ -413,7 +426,8 @@ Open `/glla` to edit these settings in the table (the rows show effective values
 - Auditor fallback model
 - Notify command, token limit, and wedge-alert minutes
 - Auto-resume, auto-accept drafts, decision popup, and carryover policy
-- Ordered main-session backups and recovery cadence
+- Ordered main-session backups and recovery cadence (including the optional hourly probe)
+- Forbidden model patterns and switch policy
 - Audit cap/report size, aggressive mode, quota retry, and stall brakes
 
 The argument namespace is reserved for actions such as `/glla status`, `/glla
@@ -422,19 +436,25 @@ and `/glla wipe`. Cancel stops the active objective; wipe clears all live state
 while preserving history.
 There is no top-level `/glla key=value` setting syntax.
 
-Resolution per key: **project > global > defaults** — EXCEPT `autoResume`,
-which is **global-only** (v0.29.5): per-project opt-ins from old versions
+Resolution per key: **project > global > defaults** — EXCEPT `autoResume` and
+main-session recovery settings (`mainModelFallbacks`, `mainModelRetryMinutes`,
+`hourlyQuotaProbe`), which are **global-only**: per-project opt-ins from old versions
 silently overrode the global hold at launch (the junk-runner incident), so
 the launch-restore gate and the reviewer-enqueue gate read only the global
-file now. Main-session backups are global and ordered: a quota/provider error
-switches to the next authenticated candidate before another supervised turn;
-when every candidate is down, glla cancels the provider-held retry and uses a
-bounded `15m → 30m → 1h → 2h → 4h → 5h` probe ladder. Automatic recovery stops
-at 24h (or earlier when the provider supplies a reset beyond the five-hour
-budget), preserves the saved work, and requires an explicit `/goal resume`,
-`/list resume`, or `/loop resume` to start a fresh window. A quota window
-returning within that horizon therefore resumes saved work without manual
-intervention; no blind 50ms resend loop is introduced. The detached auditor uses an explicit cascade: primary
+file now. Main-session recovery policy is likewise one global chain/cadence
+for the active session. Main-session backups are global and ordered (up to 10): a provider
+failure selects backup 1, then backup 2, and so on, one supervised turn at a
+time. The picker shows the numbered try order and `[ ]` reorders it; forbidden,
+unavailable, and unauthenticated refs are skipped. When every candidate is
+down, glla cancels the provider-held retry and uses the configured
+`base → 2×base → 4×base → 8×base → 16×base → 5h` ladder (`base` defaults to
+15m). `hourlyQuotaProbe=on` adds a separate :00:30 probe after each hour
+starts. Explicit HTTP 429/rate-limit errors remain request-rate failures, not
+token-limit labels, and continue through the bounded retry policy. Automatic
+recovery stops at 24h, preserves the saved work, and requires an explicit
+`/goal resume`, `/list resume`, or `/loop resume` to start a fresh window. A
+quota window returning within that horizon therefore resumes saved work without
+manual intervention; no blind 50ms resend loop is introduced. The detached auditor uses an explicit cascade: primary
 `auditorModel` → optional fallback pin → the pi session model. If a selected
 model fails after launch, the worker retries it once and then advances through
 that same cascade; every candidate is still audited in a detached,

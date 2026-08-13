@@ -295,6 +295,32 @@ test("appendLedger + readState roundtrip", () => {
   }
 });
 
+test("readState sanitizes a saved main-model recovery without dropping its retry plan", () => {
+  const cwd = tmpCwd();
+  try {
+    appendLedger(cwd, "state", {
+      goal: null,
+      mainModelRecovery: {
+        primary: "provider/primary",
+        attempted: Array.from({ length: 100 }, (_, i) => `provider/model-${i}`),
+        attempts: -4,
+        reason: "provider wall",
+        retryAt: "not-a-date",
+        autoRetryUntil: new Date(Date.now() + 60_000).toISOString(),
+      },
+    });
+    const recovery = readState(cwd).mainModelRecovery!;
+    assert.equal(recovery.kind, "goal", "legacy records default to goal recovery");
+    assert.equal(recovery.attempts, 0);
+    assert.ok(recovery.attempted.length <= 11, "restored attempted refs are bounded to primary plus ten backups");
+    assert.equal(recovery.attempted[0], "provider/primary");
+    assert.equal(recovery.retryAt, undefined);
+    assert.ok(recovery.autoRetryUntil);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("sumNewAssistantTokens accumulates assistant usage only", () => {
   const seen = new Set<string>();
   const msgs = [

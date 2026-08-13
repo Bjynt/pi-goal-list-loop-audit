@@ -8,8 +8,8 @@
  */
 
 import * as fs from "node:fs/promises";
-import { constants as fsConstants } from "node:fs";
-import { spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from "node:child_process";
+import { constants as fsConstants, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import { spawn as nodeSpawn, spawnSync as nodeSpawnSync, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -87,7 +87,10 @@ const DEFAULT_HEARTBEAT_FRESH_MS = 60_000;
  * observed 1h50m stuck case. */
 const DEFAULT_HEARTBEAT_NO_PROGRESS_MS = 10 * 60_000;
 const ATTEMPT_ID_RE = /^[A-Za-z0-9._-]{1,100}$/;
+const WORKER_SHUTDOWN_GRACE_MS = 1_000;
+const WORKER_FORCE_SETTLE_MS = 250;
 const activeChildren = new Map<string, ChildProcess>();
+const workerTermination = new WeakMap<ChildProcess, Promise<void>>();
 
 /**
  * Give each detached filesystem/child attempt a fresh identity while keeping
@@ -103,23 +106,222 @@ function childKey(cwd: string, attemptId: string): string {
   return `${path.resolve(cwd)}\u0000${attemptId}`;
 }
 
+/** Wait for a detached worker to actually exit. `ChildProcess.killed` only
+ * means a signal was sent; it is not proof that the worker or its descendants
+ * stopped. */
+function waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer: NodeJS.Timeout;
+    const done = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.removeListener("exit", done);
+      child.removeListener("close", done);
+      child.removeListener("error", done);
+      resolve();
+    };
+    timer = setTimeout(done, timeoutMs);
+    child.once("exit", done);
+    child.once("close", done);
+    child.once("error", done);
+  });
+}
+
+function signalWorkerTree(child: ChildProcess, signal: NodeJS.Signals): boolean {
+  if (!child.pid) return false;
+  try {
+    if (process.platform !== "win32") {
+      // detached:true gives the worker its own process group. Signal the group
+      // so a worker-launched shell/test/browser descendant cannot survive its
+      // parent after cancellation.
+      process.kill(-child.pid, signal);
+      return true;
+    }
+  } catch {
+    // Fall through to the direct child signal below.
+  }
+  try {
+    // Keep the explicit SIGTERM spelling visible in the teardown contract;
+    // the SIGKILL branch remains parameterized for escalation.
+    return signal === "SIGTERM" ? child.kill("SIGTERM") : child.kill(signal);
+  } catch { return false; }
+}
+
+async function terminateWorker(child: ChildProcess): Promise<void> {
+  const existing = workerTermination.get(child);
+  if (existing) return existing;
+  const termination = (async () => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    if (process.platform === "win32" && child.pid) {
+      // The worker is itself a detached Node process; taskkill /T reaches its
+      // nested cmd/npm/pi descendants as one tree.
+      let killer: ChildProcess | undefined;
+      try {
+        killer = nodeSpawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore", windowsHide: true });
+        await waitForChildExit(killer, WORKER_SHUTDOWN_GRACE_MS);
+      } catch {
+        /* direct fallback below */
+      }
+      if (child.exitCode === null && child.signalCode === null) {
+        try { child.kill(); } catch { /* best effort */ }
+        await waitForChildExit(child, WORKER_FORCE_SETTLE_MS);
+      }
+      return;
+    }
+    signalWorkerTree(child, "SIGTERM");
+    await waitForChildExit(child, WORKER_SHUTDOWN_GRACE_MS);
+    if (child.exitCode === null && child.signalCode === null) {
+      signalWorkerTree(child, "SIGKILL");
+      await waitForChildExit(child, WORKER_FORCE_SETTLE_MS);
+    }
+  })();
+  workerTermination.set(child, termination);
+  return termination;
+}
+
+function workerProcessMatches(cwd: string, pid: number, dir: string): boolean {
+  try {
+    const workerDir = path.resolve(dir);
+    const lock = JSON.parse(readFileSync(path.join(workerDir, "lock"), "utf8")) as Record<string, unknown>;
+    const workerPath = typeof lock.workerPath === "string" && lock.workerPath.trim()
+      ? path.resolve(lock.workerPath)
+      : "goal-auditor-worker";
+    let command: string;
+    if (process.platform === "win32") {
+      // Verify the command line before taskkill /T. A stale numeric PID can be
+      // reused by an unrelated process between host sessions; PowerShell's
+      // CIM query is available on supported Windows hosts and fails closed if
+      // it is unavailable.
+      const query = "$p = Get-CimInstance Win32_Process -Filter 'ProcessId = "
+        + String(pid)
+        + "' -ErrorAction SilentlyContinue; if ($null -ne $p) { $p.CommandLine }";
+      const inspected = nodeSpawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", query], {
+        encoding: "utf8",
+        timeout: 1_000,
+        windowsHide: true,
+      });
+      if (inspected.error || inspected.status !== 0) return false;
+      command = String(inspected.stdout ?? "");
+      const lower = command.toLowerCase();
+      return (lower.includes(workerPath.toLowerCase()) || lower.includes(path.basename(workerPath).toLowerCase()))
+        && lower.includes("--job-dir")
+        && lower.includes(workerDir.toLowerCase());
+    }
+    command = readFileSync(`/proc/${pid}/cmdline`, "utf8").replaceAll("\0", " ");
+    const cwdPath = readlinkSync(`/proc/${pid}/cwd`);
+    const expectedCwd = realpathSync(cwd);
+    return (command.includes(workerPath) || command.includes(path.basename(workerPath)))
+      && command.includes("--job-dir")
+      && command.includes(workerDir)
+      && (cwdPath === expectedCwd || cwdPath.startsWith(`${expectedCwd}${path.sep}`));
+  } catch {
+    // A dead process or an unreadable process inspection is not safe to signal.
+    return false;
+  }
+}
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function durableWorkerPids(cwd: string, logicalAttemptId: string): Array<{ pid: number; attemptId: string; dir: string }> {
+  const root = path.resolve(cwd, ".pi-glla", "audit-jobs");
+  const names: string[] = [];
+  try {
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name === logicalAttemptId || entry.name.startsWith(`${logicalAttemptId}-`)) names.push(entry.name);
+    }
+  } catch {
+    return [];
+  }
+  const out: Array<{ pid: number; attemptId: string; dir: string }> = [];
+  for (const attemptId of names) {
+    try {
+      const lock = JSON.parse(readFileSync(path.join(root, attemptId, "lock"), "utf8")) as Record<string, unknown>;
+      const pid = typeof lock.pid === "number" ? lock.pid : Number(lock.pid);
+      // Older locks contain the parent pid. Only the worker-owned marker is
+      // safe to reap across a host restart; never guess at a reused parent.
+      if (lock.role !== "worker" || !Number.isInteger(pid) || pid <= 1) continue;
+      out.push({ pid, attemptId, dir: path.join(root, attemptId) });
+    } catch {
+      /* job is still being created or already cleaned */
+    }
+  }
+  return out;
+}
+
+/** Reap workers left behind when their owning pi host died. This is the
+ * cross-process companion to activeChildren, which intentionally cannot
+ * survive a host restart. */
+function reapDurableWorkers(cwd: string, logicalAttemptId: string): boolean {
+  let killed = false;
+  for (const { pid, dir } of durableWorkerPids(cwd, logicalAttemptId)) {
+    // A stale numeric PID is not ownership proof. On POSIX require the live
+    // process to still advertise this exact worker/job directory before
+    // signalling its process group; otherwise a reused PID must be ignored.
+    if (!workerProcessMatches(cwd, pid, dir)) {
+      // An inspection failure is not proof that the PID is dead (notably when
+      // PowerShell/CIM is unavailable). Keep the scratch directory until the
+      // process is proven gone; deleting it here could strand a live worker.
+      if (!processAlive(pid)) {
+        try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+      }
+      continue;
+    }
+    try {
+      if (process.platform !== "win32") {
+        process.kill(-pid, "SIGTERM");
+        killed = true;
+        const force = setTimeout(() => {
+          if (!workerProcessMatches(cwd, pid, dir)) return;
+          try { process.kill(-pid, "SIGKILL"); } catch { try { process.kill(pid, "SIGKILL"); } catch {} }
+        }, WORKER_SHUTDOWN_GRACE_MS);
+        force.unref?.();
+      } else {
+        const killer = nodeSpawn("taskkill", ["/pid", String(pid), "/t", "/f"], { stdio: "ignore", windowsHide: true });
+        killer.unref?.();
+        killed = true;
+      }
+      // A dead host cannot run the normal parent finally block. Once the
+      // worker PID is gone, remove its orphaned scratch directory too; never
+      // remove it while the process may still write protocol files.
+      const cleanup = setTimeout(() => {
+        if (workerProcessMatches(cwd, pid, dir) || processAlive(pid)) return;
+        try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+      }, WORKER_SHUTDOWN_GRACE_MS + WORKER_FORCE_SETTLE_MS + 500);
+      cleanup.unref?.();
+    } catch {
+      if (workerProcessMatches(cwd, pid, dir)) {
+        try { process.kill(pid, "SIGTERM"); killed = true; } catch { /* already gone */ }
+      }
+    }
+  }
+  return killed;
+}
+
 /** Best-effort cancellation used after the owning goal is archived/cancelled. */
 export function cancelDetachedGoalCompletionAuditor(cwd: string, attemptId: string): boolean {
   const root = path.resolve(cwd);
   const exact = childKey(root, attemptId);
   const retryPrefix = `${exact}-`;
-  let killed = false;
+  let killed = reapDurableWorkers(root, attemptId);
   // Completion state keeps the logical claim attempt ID, while each detached
   // retry owns a unique filesystem/child identity (`<logical>-<nonce>`). Kill
   // both the exact legacy identity and every live retry for this claim.
   for (const [key, child] of activeChildren) {
     if (key !== exact && !key.startsWith(retryPrefix)) continue;
     if (!childAlive(child)) continue;
-    try {
-      killed = child.kill("SIGTERM") || killed;
-    } catch {
-      /* best effort — the worker's wall bound remains the final brake */
-    }
+    killed = signalWorkerTree(child, "SIGTERM") || killed;
+    void terminateWorker(child).catch(() => {});
   }
   return killed;
 }
@@ -214,6 +416,9 @@ export interface AuditorProcessRuntime {
   toolTimeoutMs?: number;
   /** Environment is inherited by default; useful for a fake pi binary in tests. */
   env?: NodeJS.ProcessEnv;
+  /** Logical completion claim id shared by unique retry attempt directories.
+   * Used to reap a worker whose owning pi host died before cleanup. */
+  logicalAttemptId?: string;
 }
 
 export type AuditorProgressCallback = (progress: AuditorProgress) => void;
@@ -298,7 +503,7 @@ export async function writeAtomicJson(file: string, value: unknown): Promise<voi
 async function acquireLock(lockPath: string, attemptId: string): Promise<void> {
   const handle = await fs.open(lockPath, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY, 0o600);
   try {
-    await handle.writeFile(`${JSON.stringify({ protocolVersion: PROTOCOL_VERSION, attemptId, pid: process.pid })}\n`, "utf8");
+    await handle.writeFile(`${JSON.stringify({ protocolVersion: PROTOCOL_VERSION, attemptId, pid: process.pid, role: "parent" })}\n`, "utf8");
   } finally {
     await handle.close();
   }
@@ -309,7 +514,8 @@ function defaultWorkerPath(): string {
 }
 
 function childAlive(child: ChildProcess): boolean {
-  return child.exitCode === null && !child.killed;
+  // ChildProcess.killed means a signal was sent, not that the process exited.
+  return child.exitCode === null && child.signalCode === null;
 }
 
 function asProgress(file: AuditorProgressFile, startedAt: number): AuditorProgress {
@@ -400,6 +606,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
     ? DEFAULT_TOOL_TIMEOUT_MS
     : Math.max(50, configuredToolTimeoutMs);
   const attemptId = runtime.attemptId?.() ?? `${Date.now().toString(36)}-${randomUUID()}`;
+  const logicalAttemptId = runtime.logicalAttemptId ?? attemptId;
   // v0.34.59: capture the focus revision token at dispatch. Every result
   // shape returned to the parent carries this token so the parent can
   // re-validate before applying a verdict. Pre-revision goals pass through
@@ -433,6 +640,9 @@ export async function runDetachedGoalCompletionAuditor(args: {
   let lastProgress: AuditorProgressFile | undefined;
 
   try {
+    // A fresh host has no in-memory activeChildren map. Reap only durable
+    // worker-owned locks for this claim before creating the next attempt.
+    reapDurableWorkers(args.cwd, logicalAttemptId);
     await fs.mkdir(jobsRoot, { recursive: true, mode: 0o700 });
     await fs.mkdir(jobDir, { mode: 0o700 });
     jobDirCreated = true;
@@ -482,16 +692,21 @@ export async function runDetachedGoalCompletionAuditor(args: {
       childSpawnError = error instanceof Error ? error.message : String(error);
     });
     activeChildren.set(childKey(args.cwd, attemptId), child);
+    // The worker rewrites this marker with its own pid immediately after
+    // reading the request. The durable role prevents a later host from
+    // mistaking an old parent pid for a worker it may safely reap.
+    const workerPathIdentity = path.isAbsolute(workerPath) ? path.resolve(workerPath) : path.resolve(args.cwd, workerPath);
+    await writeAtomicJson(lockPath, { protocolVersion: PROTOCOL_VERSION, attemptId, pid: child.pid, role: "worker", workerPath: workerPathIdentity });
     child.unref();
 
-    const abort = () => { if (child && childAlive(child)) child.kill("SIGTERM"); };
+    const abort = () => { if (child && childAlive(child)) void terminateWorker(child).catch(() => {}); };
     args.signal?.addEventListener("abort", abort, { once: true });
     try {
       while (true) {
         if (args.signal?.aborted) return infra(model, thinkingLevel, "Auditor aborted.", "", capturedRevisionToken, "transport");
         if (childSpawnError) return infra(model, thinkingLevel, `auditor worker launch failed: ${childSpawnError}`, "", capturedRevisionToken, "transport");
         if (now() >= wallDeadlineAt) {
-          if (childAlive(child)) child.kill("SIGTERM");
+          if (childAlive(child)) await terminateWorker(child);
           return infra(model, thinkingLevel, `Auditor exceeded its ${Math.round(wallTimeoutMs / 60_000)}m wall-clock bound and was aborted.`, "", capturedRevisionToken, "timeout");
         }
         try {
@@ -577,7 +792,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
               toolName: lastProgress.currentTool,
               toolAgeMs,
             });
-            if (child && childAlive(child)) child.kill("SIGTERM");
+            if (child && childAlive(child)) await terminateWorker(child);
             return infra(model, thinkingLevel, `Auditor stalled — tool ${lastProgress.currentTool ?? "unknown"} exceeded its ${toolLabel} timeout; the detached job was auto-cancelled.`, "", capturedRevisionToken, "timeout");
           }
         }
@@ -617,7 +832,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
               noProgressMs,
               phase: lastProgress.phase,
             });
-            if (child && childAlive(child)) child.kill("SIGTERM");
+            if (child && childAlive(child)) await terminateWorker(child);
             return infra(model, thinkingLevel, `Auditor stalled — heartbeats without progress for ${stallLabel} (no new tool call or output); the detached job was auto-cancelled.`, "", capturedRevisionToken, "timeout");
           }
         }
@@ -630,6 +845,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
   } catch (error) {
     return infra(model, thinkingLevel, error instanceof Error ? error.message : String(error), "", capturedRevisionToken, "transport");
   } finally {
+    if (child && childAlive(child)) await terminateWorker(child).catch(() => {});
     activeChildren.delete(childKey(args.cwd, attemptId));
     if (lockHeld) await fs.unlink(lockPath).catch(() => {});
     // request/progress/result are transport scratch files. Do not retain one

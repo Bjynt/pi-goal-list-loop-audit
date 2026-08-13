@@ -39,6 +39,7 @@ import {
   WEDGE_ALERT_DEFAULT_MINUTES,
 } from "./goal-loop-backoff.ts";
 import type { Settings } from "./goal-settings.ts";
+import { formatMainModelFallbacks, MAX_MAIN_MODEL_FALLBACKS } from "./main-model-recovery.ts";
 import { resolveEffectiveSubagentModel, OVERRIDABLE_AGENT_TYPES } from "./goal-loop-subagents.ts";
 
 // =================================================================
@@ -180,18 +181,20 @@ export function buildSettingsRows(
     {
       id: "mainModelFallbacks",
       section: "backups",
-      label: "Main model backups",
-      valueText: settings.mainModelFallbacks?.length ? settings.mainModelFallbacks.join(" → ") : "none",
+      label: `Main model backups (up to ${MAX_MAIN_MODEL_FALLBACKS})`,
+      valueText: settings.mainModelFallbacks?.length
+        ? `${settings.mainModelFallbacks.length}/${MAX_MAIN_MODEL_FALLBACKS} · ${formatMainModelFallbacks(settings.mainModelFallbacks)}`
+        : `0/${MAX_MAIN_MODEL_FALLBACKS} · none`,
       sourceText: src("mainModelFallbacks"),
-      description: "ordered provider/model refs; quota/provider errors rotate here, then use a bounded 5h-capped, 24h recovery window"
+      description: "try order is current session model → backup 1 → backup 2…; account/plan/billing/auth failures switch one eligible backup at a time, while explicit 429/rate-limit stays on the current model and uses the configured ladder plus the optional hourly probe"
     },
     {
       id: "forbiddenModels",
       section: "keep-going",
-      label: "Forbidden models",
+      label: "Forbidden model patterns",
       valueText: settings.forbiddenModels?.length ? settings.forbiddenModels.join(", ") : "none",
       sourceText: src("forbiddenModels"),
-      description: "policy gate: a switch to any of these is ledgered as forbidden_model_switch — blocked (reverted) when Block forbidden switches is on"
+      description: "case-insensitive substring patterns matched against provider/id; recovery always skips matches, while the explicit-switch gate may block or ledger them"
     },
     {
       id: "blockForbiddenModelSwitches",
@@ -204,18 +207,18 @@ export function buildSettingsRows(
     {
       id: "mainModelRetryMinutes",
       section: "backups",
-      label: "Main model retry minutes",
+      label: "Main recovery base minutes",
       valueText: show("mainModelRetryMinutes", "15"),
       sourceText: src("mainModelRetryMinutes"),
-      description: "first recovery wait; backs off to 30m, 1h, 2h, 4h, 5h; automatic probes stop after 24h"
+      description: "normal unhinted wait starts here, then doubles per attempt up to 5h; provider Retry-After wins; automatic recovery stops after 24h"
     },
     {
       id: "hourlyQuotaProbe",
       section: "backups",
-      label: "Hourly quota probe",
+      label: "Hourly main recovery probe",
       valueText: show("hourlyQuotaProbe", "on"),
       sourceText: src("hourlyQuotaProbe"),
-      description: "extra recovery probe at :00:30 every hour while main-model recovery is parked — quota windows refresh at the top of the hour; off = normal retry cadence only"
+      description: "adds a probe at :00:30 while any main-model recovery is parked; off disables only this extra ticker, not the configured retry ladder"
     },
   );
 

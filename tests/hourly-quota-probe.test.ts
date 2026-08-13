@@ -3,9 +3,8 @@
 //
 // Contract: when main-model recovery is parked, an opt-in hourly probe
 // ticker fires at :00:30 every hour to give faster pickup when quota
-// windows refresh at the top of the hour. Co-resident with the normal
-// retry cadence (v0.34.79 eager first probe + v0.34.84 hour-aligned
-// attempts 2+) — opt-out flips the ticker off, normal cadence is
+// windows refresh at the top of the hour. Co-resident with the configured
+// retry ladder — opt-out flips the ticker off, and the normal ladder is
 // unaffected.
 //
 // Source pins (this file's first half): nextHourlyProbeMs /
@@ -115,7 +114,9 @@ test("v0.34.92: parkMainModelAfterFailure schedules the hourly ticker alongside 
   assert.ok(parkIdx > 0, "parkMainModelAfterFailure is present");
   const tail = RECOVERY_SRC.slice(parkIdx, parkIdx + 2_500);
   assert.match(tail, /scheduleMainModelRecoveryTimer\(ctx, delay\);/, "park schedules the recovery timer");
-  assert.match(tail, /scheduleHourlyProbe\(ctx\);/, "park also schedules the hourly ticker");
+  const scheduleIdx = RECOVERY_SRC.indexOf("function scheduleMainModelRecoveryTimer");
+  const scheduleTail = RECOVERY_SRC.slice(scheduleIdx, scheduleIdx + 1_000);
+  assert.match(scheduleTail, /scheduleHourlyProbe\(ctx\);/, "the recovery timer also arms the hourly ticker");
 });
 
 test("v0.34.92: mainModelRecoverySucceeded cancels the hourly ticker", () => {
@@ -140,7 +141,9 @@ test("v0.34.131: a failed hourly probe re-arms only after the async recovery set
   assert.ok(scheduleIdx > 0 && fireIdx > scheduleIdx, "hourly schedule and async fire functions are present");
   const schedule = RECOVERY_SRC.slice(scheduleIdx, fireIdx);
   const fire = RECOVERY_SRC.slice(fireIdx, fireIdx + 2_200);
-  assert.match(schedule, /!state\.mainModelRecovery\s*\|\|\s*state\.mainModelRecovery\.manualResumeRequired\s*===\s*true/, "manual recovery holds do not re-arm the ticker");
+  assert.match(schedule, /!state\.mainModelRecovery[\s\S]*state\.mainModelRecovery\.manualResumeRequired\s*===\s*true/, "manual recovery holds do not re-arm the ticker");
+  assert.match(schedule, /state\.mainModelRecovery\.retryAt\s*===\s*undefined/, "active supervised turns do not arm the parked ticker");
+  assert.match(fire, /state\.mainModelRecovery\.retryAt\s*===\s*undefined/, "a stale hourly callback cannot probe during an active turn");
   assert.match(schedule, /void fireHourlyProbe\(fresh\);/, "the timer awaits the async probe path");
   assert.doesNotMatch(schedule, /fireHourlyProbe\(fresh\);[\s\S]*scheduleHourlyProbe\(fresh\);/, "the timer does not re-arm before the probe settles");
   assert.match(fire, /await probeMainModelRecovery\(ctx\)/, "the failed/successful probe is awaited");
@@ -172,7 +175,7 @@ test("v0.34.92: hourlyQuotaProbe setting exists and defaults to ON", () => {
 test("v0.34.92: the /glla menu exposes hourlyQuotaProbe with on/off options", () => {
   assert.match(GOAL_SRC, /case "hourlyQuotaProbe"/, "menu case exists");
   assert.match(GOAL_SRC, /on — fire an extra probe at :00:30 every hour while parked/, "menu prompt explains on shape");
-  assert.match(GOAL_SRC, /off — rely on the normal retry cadence only/, "menu prompt explains off shape");
+  assert.match(GOAL_SRC, /off — rely on the configured retry ladder only/, "menu prompt explains off shape");
 });
 
 test("v0.34.92: v0.34.58/v0.34.90 quota-prompt machinery is REMOVED from goal.ts and core.ts", () => {

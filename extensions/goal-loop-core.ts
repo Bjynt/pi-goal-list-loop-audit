@@ -11,6 +11,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
 import { capQuotaRetrySeconds, isQuotaError, normalizeProviderErrorText, parseQuotaError, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText, type QuotaSignal } from "./quota-retry.js";
+import { MAX_MAIN_MODEL_FALLBACKS } from "./main-model-recovery.js";
 export { normalizeProviderErrorText, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText } from "./quota-retry.js";
 
 /** v0.26.1: consecutive heartbeat refires without a real agent turn
@@ -742,8 +743,113 @@ export interface MainModelRecovery {
   retryFromUpstream?: boolean;
   /** Storm failover can resume the selected backup before probing primary. */
   resumeCurrent?: boolean;
+  /** Candidate currently crossing the async setModel boundary. A short-lived
+   * parked deadline keeps a crash during switching recoverable on reload. */
+  pendingModelSwitch?: string;
+  /** Refs rejected while walking the ordered chain, retained for status and
+   * reload diagnostics rather than silently disappearing. */
+  skipped?: Array<{ ref: string; reason: "forbidden" | "unregistered" }>;
   /** Whether the suspended supervisor is a goal/list item or a loop. */
   kind: "goal" | "loop";
+}
+
+/** Compact, truthful status shared by /goal status and /list show. */
+export function formatMainModelRecoveryStatus(recovery: MainModelRecovery | undefined, configuredBackups: string[] = []): string[] {
+  if (!recovery) return [];
+  const safeBackups = configuredBackups.filter((ref) => typeof ref === "string" && ref.trim()).slice(0, MAX_MAIN_MODEL_FALLBACKS);
+  const chain = [recovery.primary, ...safeBackups];
+  const current = recovery.active ?? recovery.primary;
+  const currentIndex = chain.findIndex((ref) => ref.toLowerCase() === current.toLowerCase());
+  const attempted = recovery.attempted.length ? recovery.attempted.join(", ") : "none";
+  const skipped = recovery.skipped?.length
+    ? recovery.skipped.map((entry) => `${entry.ref} (${entry.reason})`).join(", ")
+    : "none";
+  const lines = [
+    `Main-model recovery: ${currentIndex >= 0 ? `${currentIndex === 0 ? "primary" : `backup ${currentIndex}/${safeBackups.length}`} selected` : "active model selected"}`,
+    `  Current: ${current}`,
+    ...(recovery.pendingModelSwitch ? [`  Pending switch: ${recovery.pendingModelSwitch}`] : []),
+    `  Attempted: ${attempted}`,
+    `  Skipped: ${skipped}`,
+  ];
+  if (recovery.retryAt) lines.push(`  Retry at: ${recovery.retryAt}`);
+  if (recovery.manualResumeRequired) lines.push("  Automatic probes: stopped; explicit resume required");
+  return lines;
+}
+
+/** Sanitize the durable main-model recovery projection before it reaches
+ * timers or model-selection code. A truncated/hand-edited JSONL line must
+ * never manufacture an unbounded retry list, invalid Date, or arbitrary
+ * object that delayed lifecycle code later trusts. */
+export function sanitizeMainModelRecovery(value: unknown): MainModelRecovery | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  const primary = typeof raw.primary === "string" ? raw.primary.trim().slice(0, 300) : "";
+  // Pre-kind recovery records were goal-owned; default them to goal rather
+  // than silently discarding a saved provider wall during an upgrade.
+  const kind = raw.kind === "loop" ? "loop" : "goal";
+  if (!primary) return undefined;
+  const refs: string[] = [];
+  const seen = new Set<string>();
+  const addRef = (candidate: unknown): void => {
+    if (typeof candidate !== "string") return;
+    const ref = candidate.trim().slice(0, 300);
+    const key = ref.toLowerCase();
+    // The configured chain is capped at ten backups, but attempted also
+    // includes the primary and stale/unavailable entries from a prior cycle.
+    // Keep only a bounded projection; this is durable history, not a new
+    // selection source.
+    if (!ref || seen.has(key) || refs.length >= MAX_MAIN_MODEL_FALLBACKS + 1) return;
+    seen.add(key);
+    refs.push(ref);
+  };
+  addRef(primary);
+  if (Array.isArray(raw.attempted)) for (const candidate of raw.attempted) addRef(candidate);
+  const date = (candidate: unknown): string | undefined => {
+    if (typeof candidate !== "string" || Number.isNaN(Date.parse(candidate))) return undefined;
+    return candidate;
+  };
+  const bounded = (candidate: unknown, max: number): string | undefined =>
+    typeof candidate === "string" && candidate.trim() ? candidate.slice(0, max) : undefined;
+  const attempts = typeof raw.attempts === "number" && Number.isSafeInteger(raw.attempts) && raw.attempts >= 0
+    ? raw.attempts
+    : 0;
+  const quotaSignal = raw.quotaSignal === "rate-limit" || raw.quotaSignal === "plan-quota" || raw.quotaSignal === "billing"
+    ? raw.quotaSignal
+    : undefined;
+  const retryAfterSec = typeof raw.retryAfterSec === "number" && Number.isFinite(raw.retryAfterSec) && raw.retryAfterSec >= 0
+    ? Math.min(raw.retryAfterSec, 5 * 60 * 60)
+    : undefined;
+  return {
+    primary,
+    ...(typeof raw.active === "string" && raw.active.trim() ? { active: raw.active.trim().slice(0, 300) } : {}),
+    attempted: refs,
+    attempts,
+    reason: bounded(raw.reason, 600) ?? "main model recovery",
+    kind,
+    ...(bounded(raw.providerErrorDiagnostic, 2_000) ? { providerErrorDiagnostic: bounded(raw.providerErrorDiagnostic, 2_000) } : {}),
+    ...(bounded(raw.recoveryEpisodeKey, 300) ? { recoveryEpisodeKey: bounded(raw.recoveryEpisodeKey, 300) } : {}),
+    ...(Array.isArray(raw.recoveryNoticeKeys) ? { recoveryNoticeKeys: raw.recoveryNoticeKeys.filter((key): key is string => typeof key === "string").slice(-16).map((key) => key.slice(0, 300)) } : {}),
+    ...(date(raw.retryAt) ? { retryAt: date(raw.retryAt) } : {}),
+    ...(date(raw.firstFailureAt) ? { firstFailureAt: date(raw.firstFailureAt) } : {}),
+    ...(date(raw.autoRetryUntil) ? { autoRetryUntil: date(raw.autoRetryUntil) } : {}),
+    ...(raw.manualResumeRequired === true ? { manualResumeRequired: true } : {}),
+    ...(date(raw.resetAt) ? { resetAt: date(raw.resetAt) } : {}),
+    ...(quotaSignal ? { quotaSignal } : {}),
+    ...(retryAfterSec !== undefined ? { retryAfterSec } : {}),
+    ...(raw.retryFromUpstream === true ? { retryFromUpstream: true } : {}),
+    ...(raw.resumeCurrent === true ? { resumeCurrent: true } : {}),
+    ...(typeof raw.pendingModelSwitch === "string" && raw.pendingModelSwitch.trim() ? { pendingModelSwitch: raw.pendingModelSwitch.trim().slice(0, 300) } : {}),
+    ...(Array.isArray(raw.skipped) ? {
+      skipped: raw.skipped
+        .filter((entry): entry is { ref: string; reason: "forbidden" | "unregistered" } =>
+          !!entry && typeof entry === "object"
+          && typeof (entry as Record<string, unknown>).ref === "string"
+          && ((entry as Record<string, unknown>).reason === "forbidden" || (entry as Record<string, unknown>).reason === "unregistered"))
+        .slice(-16)
+        .map((entry) => ({ ref: entry.ref.trim().slice(0, 300), reason: entry.reason }))
+        .filter((entry) => entry.ref.length > 0),
+    } : {}),
+  };
 }
 
 export interface State {
@@ -1016,8 +1122,9 @@ export function readState(cwd: string): State {
     goal: parsed.goal ?? null,
     list: Array.isArray(parsed.list) ? parsed.list : [],
     loop: parsed.loop && typeof parsed.loop === "object" ? parsed.loop as State["loop"] : undefined,
-    mainModelRecovery: parsed.mainModelRecovery && typeof parsed.mainModelRecovery === "object" ? parsed.mainModelRecovery as State["mainModelRecovery"] : undefined,
+    mainModelRecovery: sanitizeMainModelRecovery(parsed.mainModelRecovery),
     lastModelRef: typeof parsed.lastModelRef === "string" ? parsed.lastModelRef : undefined,
+    lastCompactionAt: typeof parsed.lastCompactionAt === "number" && Number.isFinite(parsed.lastCompactionAt) ? parsed.lastCompactionAt : undefined,
   };
 }
 

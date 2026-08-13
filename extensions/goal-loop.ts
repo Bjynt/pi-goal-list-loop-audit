@@ -784,7 +784,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       manuallyResumeMainModelRecovery(ctx);
       return;
     }
-    if (state.mainModelRecovery?.retryAt && state.mainModelRecovery.kind === "loop") {
+    if ((state.mainModelRecovery?.retryAt || state.mainModelRecovery?.pendingModelSwitch) && state.mainModelRecovery.kind === "loop") {
       clearMainModelRecoveryTimer();
       flags.continuationDispatchStoodDown = false;
       ctx.ui.notify("Retrying the saved main-model recovery now — one provider probe, then the configured backups if needed.", "info");

@@ -41,7 +41,7 @@ test("structured HTTP status is normalized before provider classification", () =
   assert.match(normalized, /limit exceeded/);
   assert.equal(quotaSignal(normalized), "rate-limit");
   const plan = normalizeProviderErrorText({ response: { status: 429 }, error: { message: "Token Plan exhausted" } });
-  assert.equal(quotaSignal(plan), "plan-quota", "specific account/plan wording remains distinct from the HTTP status");
+  assert.equal(quotaSignal(plan), "rate-limit", "an HTTP 429 remains a request-rate signal even when the provider includes Token Plan wording");
   const providerError = new Error("limit exceeded");
   Object.defineProperty(providerError, "statusCode", { value: 429 });
   assert.match(normalizeProviderErrorText(providerError), /HTTP 429.*limit exceeded/);
@@ -205,18 +205,22 @@ test("quota classification stays conservative around ambiguous provider errors",
   assert.equal(isBillingError("429 Too Many Requests"), false);
 });
 
-test("generic 429 rate-limit wording is not mislabeled as account quota", () => {
+test("every explicit 429/rate-limit marker stays a retryable request-rate wall", () => {
   assert.equal(quotaSignal("429 rate limit exceeded"), "rate-limit");
   assert.equal(quotaSignal("429 Too Many Requests"), "rate-limit");
-  assert.equal(quotaSignal("429 usage limit"), "plan-quota");
-  assert.equal(quotaSignal("429 quota exceeded"), "plan-quota");
+  assert.equal(quotaSignal("too-many-requests"), "rate-limit");
+  assert.equal(quotaSignal("too_many_requests"), "rate-limit");
+  assert.equal(quotaSignal("429 usage limit"), "rate-limit");
+  assert.equal(quotaSignal("429 quota exceeded"), "rate-limit");
 });
 
-test("specific plan and billing walls outrank a generic 429", () => {
+test("plan wording without a 429 remains distinct, while 429 Token Plan text is rate-limit", () => {
   const minimax = "429 {\"error\":{\"type\":\"rate_limit_error\",\"message\":\"Token Plan rate limit reached: Upgrade your Token Plan or switch to pay-as-you-go API usage. (2062)\"}}";
-  assert.equal(quotaSignal(minimax), "plan-quota");
-  assert.equal(parseQuotaError(minimax).signal, "plan-quota");
-  assert.equal(quotaSignal("429 insufficient_quota"), "billing");
+  assert.equal(quotaSignal(minimax), "rate-limit");
+  assert.equal(parseQuotaError(minimax).signal, "rate-limit");
+  assert.equal(quotaSignal("Token Plan usage limit reached"), "plan-quota");
+  assert.equal(quotaSignal("429 insufficient_quota"), "rate-limit");
+  assert.equal(quotaSignal("insufficient_quota"), "billing");
   assert.equal(quotaSignal("temporarily rate-limited upstream"), "rate-limit");
   assert.equal(quotaSignal("Model stopped because it reached the maximum output token limit"), undefined);
 });

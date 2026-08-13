@@ -106,7 +106,7 @@ export interface ProviderErrorPresentation {
 // boundary verbatim. Keep the detector broader than quotaSignal: a provider
 // may say "Token Plan" or expose a bare HTTP 429 without enough surrounding
 // prose for classification.
-const PROVIDER_WALL_MARKER = /\b(?:403|429)\b|token[\s_-]*plan|rate[\s_-]*limit|too many requests|usage[\s_-]*limit|quota|insufficient[\s_-]+(?:credits?|balance)|key[\s_-]*limit|retry[\s_-]*after/i;
+const PROVIDER_WALL_MARKER = /\b(?:403|429)\b|token[\s_-]*plan|rate[\s_-]*limit|too[\s_-]+many[\s_-]+requests|usage[\s_-]*limit|quota|insufficient[\s_-]+(?:credits?|balance)|key[\s_-]*limit|retry[\s_-]*after/i;
 
 function providerFingerprintText(error: string): string {
   return error
@@ -271,7 +271,7 @@ export function sanitizeProviderAuditReport(report: string | undefined): string 
 // patterns include ordinary outages and auth failures. These signals are
 // deliberately explicit enough to survive provider wording changes without
 // turning an arbitrary transient error into a week-long retry loop.
-const RATE_LIMIT = /\b429\b|too many requests|rate[\s_-]*limit|throttl(?:e|ed|ing)|requests?\s+per\s+(?:second|minute)|\b(?:rpm|tpm)\b/i;
+const RATE_LIMIT = /\b429\b|too[\s_-]+many[\s_-]+requests|rate[\s_-]*limit|throttl(?:e|ed|ing)|requests?\s+per\s+(?:second|minute)|\b(?:rpm|tpm)\b/i;
 // Account/plan markers are intentionally specific. A generic "429 rate limit
 // exceeded" contains the words "limit exceeded", but it is a request-rate
 // response, not evidence that the account's quota is exhausted. Keep the
@@ -286,25 +286,26 @@ const BILLING = /insufficient[\s_-]+(?:credits?|balance|quota)|(?:credits?|balan
 // unavailable due to a rate limit" are retryable short windows, NOT
 // long-lived walls — and plain "temporarily unavailable" stays ambiguous
 // (ordinary outage) so we never turn a random transient into a quota wall.
-const TEMPORARY_QUOTA = /temporar(?:y|ily)[^.\n]{0,60}(?:quota|limit|throttl|too many requests)/i;
+const TEMPORARY_QUOTA = /temporar(?:y|ily)[^.\n]{0,60}(?:quota|limit|throttl|too[\s_-]+many[\s_-]+requests)/i;
 
 /** Return the strongest explicit provider signal, or undefined for an
- * ambiguous/transient message. Specific account/plan walls must win over a
- * generic 429/rate-limit match: MiniMax 2062, for example, says both
- * "Token Plan rate limit" and "rate limit", but asks the user to upgrade or
- * switch billing rather than retry a per-minute throttle. */
+ * ambiguous/transient message. An explicit HTTP 429 / "too many requests" /
+ * rate-limit marker is always a request-rate wall, even if a provider also
+ * includes billing, quota, or "Token Plan" wording. It is never relabeled as
+ * a token-limit wall. Account/plan/billing wording without a 429 or
+ * rate-limit marker remains in its own family. */
 export function quotaSignal(error: string | undefined): QuotaSignal | undefined {
   if (!error) return undefined;
-  if (BILLING.test(error)) return "billing";
-  // Explicitly-temporary wording wins over the generic plan-wall pattern:
+  // Explicitly-temporary wording wins over every account-wall pattern:
   // "temporarily over quota" is a short retry window, not a plan wall.
   if (TEMPORARY_QUOTA.test(error)) return "rate-limit";
-  if (PLAN_QUOTA.test(error) || PLAN_QUOTA_REVERSE.test(error)) return "plan-quota";
-  // Only a standalone account-style "limit reached" is a plan wall. When
-  // the same generic phrase is attached to an explicit rate-limit/429
-  // marker, preserve the stronger request-rate interpretation.
-  if (GENERIC_LIMIT_WALL.test(error) && !/(?:\b429\b|too many requests|rate[\s_-]*limit|throttl)/i.test(error)) return "plan-quota";
+  // An explicit 429/rate-limit signal is never a token-limit label. The
+  // recovery path keeps retrying it and the optional hourly ticker can add a
+  // probe after the start of each hour.
   if (RATE_LIMIT.test(error)) return "rate-limit";
+  if (BILLING.test(error)) return "billing";
+  if (PLAN_QUOTA.test(error) || PLAN_QUOTA_REVERSE.test(error)) return "plan-quota";
+  if (GENERIC_LIMIT_WALL.test(error)) return "plan-quota";
   return undefined;
 }
 

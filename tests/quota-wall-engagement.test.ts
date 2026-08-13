@@ -70,7 +70,7 @@ test("v0.34.57: no knowledge ever falls back to the generic 15m threshold", () =
   assert.equal(sendStormEscalateMs(now - 90 * 60_000, now), SEND_REARM_GENERIC_ESCALATE_MS);
 });
 
-test("v0.34.57: only quota/billing/auth record the long-lived signal", () => {
+test("v0.34.57: quota/rate-limit/billing/auth record the long-lived signal", () => {
   assert.ok(isLongLivedFailureKind("quota"));
   assert.ok(isLongLivedFailureKind("billing"));
   assert.ok(isLongLivedFailureKind("auth"));
@@ -81,13 +81,21 @@ test("v0.34.57: only quota/billing/auth record the long-lived signal", () => {
 
 test("v0.34.57: real quota texts classify as long-lived; stream drops do not", () => {
   // The rig's actual surfaced walls (2026-08-05): ChatGPT usage limit and the
-  // MiniMax/OpenCode "Token Plan usage limit" family.
+  // MiniMax/OpenCode "Token Plan usage limit" family. An explicit HTTP 429 is
+  // still a request-rate signal even when the provider includes plan wording.
   const chatGpt = classifyMainModelFailure("You have hit your ChatGPT usage limit (plus plan). Try again in ~6037 min.");
   assert.equal(chatGpt.kind, "quota");
   assert.ok(isLongLivedFailureKind(chatGpt.kind));
   const planWall = classifyMainModelFailure("429 Token Plan usage limit reached. Upgrade or switch billing.");
-  assert.equal(planWall.kind, "quota");
+  assert.equal(planWall.kind, "rate-limit");
   assert.ok(isLongLivedFailureKind(planWall.kind));
+  const plainRateLimit = classifyMainModelFailure("HTTP 429 too many requests; retry after 30 seconds");
+  assert.equal(plainRateLimit.kind, "rate-limit");
+  const tokenTextOnly = classifyMainModelFailure("output token limit exceeded");
+  assert.equal(tokenTextOnly.kind, "non-recoverable");
+  const accountWall = classifyMainModelFailure("Token Plan usage limit reached. Upgrade or switch billing.");
+  assert.equal(accountWall.kind, "quota");
+  assert.ok(isLongLivedFailureKind(accountWall.kind));
   // Stream/transport failures are transient-shaped: the fast ladder owns them.
   const stream = classifyMainModelFailure("Stream ended without finish_reason");
   assert.notEqual(stream.kind, "quota");

@@ -187,6 +187,7 @@ import {
 import {
   classifyMainModelFailure,
   isLongLivedFailureKind,
+  requiresMainModelRecovery,
   mainModelAutoRetryUntil,
   mainModelFailureDelayMs,
   mainModelRetryDelayMs,
@@ -1080,12 +1081,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     if (mainRecovery?.manualResumeRequired) {
       const recoveryResumeCmd = recoverySurfaceCommand(mainRecovery.kind, "resume");
       ctx.ui.notify(`Main-model recovery stopped automatic probes — the work is safe; ${recoveryResumeCmd} starts a fresh bounded window after you check the provider.`, "warning");
-    } else if (mainRecovery?.retryAt) {
-      const retryAtMs = Date.parse(mainRecovery.retryAt);
+    } else if (mainRecovery?.retryAt || mainRecovery?.pendingModelSwitch) {
+      const retryAtMs = mainRecovery.retryAt ? Date.parse(mainRecovery.retryAt) : Number.NaN;
       const recoveryConsent = autoResume || explicitRecovery;
       if (recoveryConsent) {
         const delay = Number.isFinite(retryAtMs) ? Math.max(0, retryAtMs - Date.now()) : 0;
-        ctx.ui.notify(`Restored main-model recovery (${mainRecovery.kind}) — ${delay > 0 ? `next probe in ${Math.max(1, Math.ceil(delay / 60_000))}m` : "probe is due now"}.`, "info");
+        ctx.ui.notify(`Restored main-model recovery (${mainRecovery.kind}) — ${mainRecovery.pendingModelSwitch ? `reconciling ${mainRecovery.pendingModelSwitch}` : delay > 0 ? `next probe in ${Math.max(1, Math.ceil(delay / 60_000))}m` : "probe is due now"}.`, "info");
         if (delay > 0) scheduleMainModelRecoveryTimer(ctx, delay);
         else void probeMainModelRecovery(ctx);
         // v0.34.92: re-arm the hourly probe ticker on session_start if the
@@ -1519,9 +1520,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         appendLedger(ctx.cwd, "loop_turn_exempt_error", { stopReason: sr, consecutive: loop.consecutiveErrors, iteration: loop.iteration });
         const cap = sr === "aborted" ? LOOP_MAX_CONSECUTIVE_ABORTS : LOOP_MAX_CONSECUTIVE_ERRORS;
         if (loop.consecutiveErrors >= cap) {
-          if (sr === "error" && lastMainModelFailure && lastMainModelFailure.kind !== "non-recoverable") {
-            // v0.34.51: any provider failure parks into durable recovery, not
-            // just quota — error text is not trusted to gate the envelope.
+          if (sr === "error" && lastMainModelFailure && requiresMainModelRecovery(lastMainModelFailure)) {
+            // Account/plan/billing failures may rotate through backups; explicit
+            // 429/request-rate failures stay on the current model and use
+            // their bounded + hourly retry path. Both are durable recovery.
             parkMainModelAfterFailure(ctx, lastMainModelFailure);
             if (state.mainModelRecovery) return;
           }
@@ -1838,11 +1840,15 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         // The violation is already ledgered; the session keeps the model.
       }
     }
-    if (mainModelSwitchInFlight || !state.mainModelRecovery) return;
+    // A host restore selection is lifecycle plumbing, not user consent to
+    // cancel a durable recovery episode. Only a real user/cycle selection
+    // rebases the automatic chain; the plugin's own recovery selection is
+    // fenced by mainModelSwitchInFlight above.
+    if (mainModelSwitchInFlight || source === "restore" || !state.mainModelRecovery) return;
     clearMainModelRecoveryTimer();
     state.mainModelRecovery = undefined;
     setContinuationDispatchStoodDownRef(false);
-    appendLedger(ctx.cwd, "main_model_recovery_cancelled", { via: "manual-model-select", model: modelRef(ctx.model) });
+    appendLedger(ctx.cwd, "main_model_recovery_cancelled", { via: "manual-model-select", model: modelRef(ctx.model), source });
     persistState(ctx);
     ctx.ui.notify("Manual model selection cancelled the automatic main-model recovery cycle. Resume the goal when ready.", "info");
   });

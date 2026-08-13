@@ -13,7 +13,7 @@
 import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth } from "@earendil-works/pi-tui";
 
 import type { Goal, State } from "./goal-loop-core.js";
-import { compactDisplayText, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
+import { compactDisplayText, formatMainModelRecoveryStatus, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
 import { HELD_ON_RESTORE, type LoopState } from "./goal-loop-forever.js";
 
 /** v0.34.57 (OPEN-ISSUES bug #1.8 / tasklist item #2): the MAIN host is
@@ -620,7 +620,7 @@ function pausedLastActivity(g: Goal, extras: WidgetExtras | undefined, now: numb
 function pausedNextTransition(g: Goal, state: State, now: number): string {
   const resume = g.policy === "list" ? "/list resume" : "/goal resume";
   const retryAt = state.mainModelRecovery?.retryAt ? Date.parse(state.mainModelRecovery.retryAt) : Number.NaN;
-  if (Number.isFinite(retryAt)) {
+  if (Number.isFinite(retryAt) || state.mainModelRecovery?.pendingModelSwitch) {
     // v0.34.125: never claim a "quota reset at HH:MM" — the provider
     // window is NOT a guaranteed reset, and the :00:30 hourly probe can
     // pick work back up earlier (note.md 2026-08-10: "this is just an
@@ -1002,7 +1002,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // storm streak 19 was firing while the head chip said ⏸ paused). The
   // status line already renders ⏳ auto-retrying for these; the widget head
   // must not contradict it.
-  const recovering = g.status === "paused" && !!state.mainModelRecovery && !!state.mainModelRecovery.retryAt;
+  const recovering = g.status === "paused" && !!state.mainModelRecovery && (!!state.mainModelRecovery.retryAt || !!state.mainModelRecovery.pendingModelSwitch);
   const icon =
     interrupted
       ? paint(theme, "error", "⚠")
@@ -1228,8 +1228,15 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     const parkedAt = state.mainModelRecovery?.retryAt ? Date.parse(state.mainModelRecovery.retryAt) : Number.NaN;
     if (kind === "decision") lines.push(`├─ ${paint(theme, "accent", "decision needed — your call unblocks this")}`);
     else if (kind === "error") lines.push(`├─ ${paint(theme, "error", "action needed — this won't fix itself")}`);
-    else if (Number.isFinite(parkedAt)) {
-      lines.push(`├─ ${paint(theme, "dim", `parked on provider wall — retrying automatically`)}`);
+    else if (Number.isFinite(parkedAt) || state.mainModelRecovery?.pendingModelSwitch) {
+      const recoveryLabel = state.mainModelRecovery?.quotaSignal === "rate-limit" || state.mainModelRecovery?.quotaSignal === "plan-quota" || state.mainModelRecovery?.quotaSignal === "billing"
+        || /quota|rate.?limit|provider wall|usage limit|provider unavailable/i.test(`${state.mainModelRecovery?.reason ?? ""} ${g.pauseReason ?? ""}`)
+        ? "parked on provider wall — retrying automatically"
+        : "main-model fallback recovery — retrying automatically";
+      lines.push(`├─ ${paint(theme, "dim", recoveryLabel)}`);
+      const recoverySummary = formatMainModelRecoveryStatus(state.mainModelRecovery);
+      if (state.mainModelRecovery?.pendingModelSwitch) lines.push(`│  ${paint(theme, "dim", `pending switch: ${state.mainModelRecovery.pendingModelSwitch}`)}`);
+      else if (recoverySummary[0]) lines.push(`│  ${paint(theme, "dim", recoverySummary[0].replace(/^Main-model recovery: /, ""))}`);
     }
     else if (Number.isFinite(retryMs)) {
       const when = retryMs <= 0 ? "now" : `next probe in ${fmtElapsed(retryMs)}`;

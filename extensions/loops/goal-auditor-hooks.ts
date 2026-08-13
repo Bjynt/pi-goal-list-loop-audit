@@ -852,7 +852,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
           verificationSummary: claim.verificationSummary,
           model: candidate.model,
           thinkingLevel: (settings.auditorThinkingLevel ?? "high") as any, // may be "max" — pi ≥0.83 understands it; the dev-types predate it
-          runtime: { attemptId: () => newDetachedAuditJobAttemptId(claim.attemptId!), wallTimeoutMs: AUDITOR_WALL_TIMEOUT_MS },
+          runtime: { attemptId: () => newDetachedAuditJobAttemptId(claim.attemptId!), logicalAttemptId: claim.attemptId!, wallTimeoutMs: AUDITOR_WALL_TIMEOUT_MS },
           onProgress: (progress) => {
             publishDetachedAuditProgress(generation, goalId, claim.attemptId!, progress);
           },

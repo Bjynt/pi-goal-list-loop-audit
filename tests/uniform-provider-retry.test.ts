@@ -22,20 +22,17 @@ const README = fs.readFileSync("README.md", "utf-8");
 
 test("v0.34.51: the cadence is kind-independent (unit proof)", () => {
   const at = (kind: string) => classifyMainModelFailure(kind);
-  // v0.34.63: the uniform cadence is hour-aligned — next :00 of the local
-  // clock hour (quota windows reset on the hour); the attempt number and
-  // failure class no longer shape the delay at all.
+  // v0.34.63+: the configured base is the normal unhinted ladder. The
+  // attempt and base are intentionally visible settings, while the hourly
+  // ticker remains a separate optional probe.
   const nowMs = Date.parse("2026-08-07T01:18:01.930Z");
-  const next = new Date(nowMs);
-  next.setMinutes(0, 0, 0);
-  next.setHours(next.getHours() + 1);
-  const first = Math.max(1_000, next.getTime() - nowMs);
-  assert.equal(mainModelFailureDelayMs(at("429 usage limit"), 1, 15, nowMs), first);
-  assert.equal(mainModelFailureDelayMs(at("Token Plan rate limit reached (2062)"), 1, 15, nowMs), first);
-  assert.equal(mainModelFailureDelayMs(at("insufficient credits — buy credits"), 1, 15, nowMs), first);
-  assert.equal(mainModelFailureDelayMs(at("401 invalid API key"), 1, 15, nowMs), first);
-  assert.equal(mainModelFailureDelayMs(at("503 temporarily unavailable"), 1, 15, nowMs), first);
-  assert.equal(mainModelFailureDelayMs(at("weird provider prose, no hint"), 1, 15, nowMs), first);
+  assert.equal(mainModelFailureDelayMs(at("429 usage limit"), 1, 15, nowMs), 5_000);
+  assert.equal(mainModelFailureDelayMs(at("Token Plan rate limit reached (2062)"), 1, 15, nowMs), 5_000);
+  assert.equal(mainModelFailureDelayMs(at("insufficient credits — buy credits"), 1, 15, nowMs), 15 * 60_000);
+  assert.equal(mainModelFailureDelayMs(at("401 invalid API key"), 1, 15, nowMs), 15 * 60_000);
+  assert.equal(mainModelFailureDelayMs(at("503 temporarily unavailable"), 1, 15, nowMs), 15 * 60_000);
+  assert.equal(mainModelFailureDelayMs(at("weird provider prose, no hint"), 1, 15, nowMs), 15 * 60_000);
+  assert.equal(mainModelFailureDelayMs(at("503 temporarily unavailable"), 2, 15, nowMs), 30 * 60_000);
   // The upstream hint still outranks (factual provider fact):
   assert.equal(mainModelFailureDelayMs(at("429 rate limit; retry in 4 hours"), 1, 15, nowMs), 4 * 60 * 60_000);
 });
@@ -55,12 +52,12 @@ test("v0.34.51: the billing manual-hold is gone — billing retries like everyth
 
 test("v0.34.51: quota-only parking gates are widened to every non-transient failure", () => {
   assert.ok(!SRC.includes('lastMainModelFailure?.kind === "quota"'), "loop-brake quota-only gate gone");
-  assert.match(SRC, /sr === "error" && lastMainModelFailure && lastMainModelFailure\.kind !== "non-recoverable"/);
+  assert.match(SRC, /sr === "error" && lastMainModelFailure && requiresMainModelRecovery\(lastMainModelFailure\)/);
   assert.ok(!SRC.includes('(failure.kind === "quota" && state.goal?.status === "active")'), "send-storm quota-only gate gone");
-  // Everything parks into the durable envelope except transient
-  // (5xx/timeout/network — positive evidence of a short-lived hiccup keeps
-  // the fast ladder). Nothing STOPS on classification anymore.
-  assert.match(SRC, /\(state\.goal\?\.status === "active" && failure\.kind !== "transient"\) \|\| backupRefs\.length > 0/);
+  // Non-transient failures park into the durable envelope; explicit
+  // request-rate failures are handled by the same current-model recovery
+  // path when the active supervisor needs a durable pause.
+  assert.match(SRC, /\(state\.goal\?\.status === "active" && requiresMainModelRecovery\(failure\)\) \|\| \(backupRefs\.length > 0 && isMainModelFallbackFailure\(failure\)\)/);
   // v0.34.58: even the upstream-hint budget gate is gone — an over-budget
   // provider reset hint falls back to the bounded cadence instead of parking
   // the goal for a manual resume. The kind-independent 24h horizon hold is
@@ -68,6 +65,7 @@ test("v0.34.51: quota-only parking gates are widened to every non-transient fail
   assert.ok(!SRC.includes("mainModelHintExceedsProbeBudget"), "quota-only upstream-hint parking gate gone");
   assert.ok(!SRC.includes("provider supplied a reset beyond"), "over-budget hint hold reason gone");
   assert.ok(!SRC.includes('failure.kind === "quota"'), "no kind==='quota' check left in goal.ts");
+  assert.match(SRC, /requiresMainModelRecovery\(failure\)/);
 });
 
 test("v0.34.51: the auditor durable plan catches ANY non-timeout infra error with neutral wording", () => {
@@ -101,5 +99,7 @@ test("v0.34.51: README no longer claims quota walls get no retries", () => {
   assert.ok(!README.includes("do **not** get more blind request retries"), "old no-retry claim gone");
   assert.ok(!README.includes("Credit/billing exhaustion gets a manual-action hold"), "old billing-hold claim gone");
   assert.match(README, /Error text is \*\*not trusted\*\* to pick a retry policy/);
-  assert.match(README, /durable recovery envelope `15m → 30m → 1h → 2h → 4h → 5h`/);
+  assert.match(README, /durable recovery envelope/);
+  assert.match(README, /`base → 2×base → 4×base → 8×base → 16×base → 5h`/);
+  assert.match(README, /hourlyQuotaProbe=on/);
 });

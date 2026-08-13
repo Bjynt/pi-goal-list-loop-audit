@@ -68,7 +68,7 @@ test("v0.35.x: initial detached auditor does not eagerly retry an account wall",
     [{ model: "provider/model", via: "test" }],
     async () => {
       calls++;
-      return { approved: false, disapproved: false, output: "", model: "provider/model", error: "HTTP 429 — Token Plan limit reached" };
+      return { approved: false, disapproved: false, output: "", model: "provider/model", error: "Token Plan limit reached" };
     },
     { sleep: async (ms) => { waits.push(ms); }, shouldRetry: () => true },
   );

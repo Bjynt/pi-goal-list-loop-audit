@@ -14,8 +14,9 @@
 //   ctx.modelRegistry, hosted via ctx.ui.custom, exactly like the v0.28.0
 //   settings table. Unit-testable via synthetic handleInput calls.
 //
-// Item order: "session model" (clear override) first, then every
-// configured-auth model sorted by provider/id, then "type manually…" last.
+// Item order: "session model" (clear override) first, then configured
+// refs in their saved order, remaining configured-auth models sorted by
+// provider/id, and "type manually…" last.
 
 import { fuzzyFilter, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { SettingsMenuTheme, KeybindingsManagerLike } from "./settings-menu.ts";
@@ -30,6 +31,8 @@ export interface ModelPickItem {
   label: string;
   /** Text the fuzzy filter matches against. */
   searchText: string;
+  /** A preserved configured ref that cannot currently be selected. */
+  disabledReason?: string;
 }
 
 export interface RegistryModelLike {
@@ -55,6 +58,10 @@ export function buildModelPickItems(
   sessionLabel: string,
   opts: {
     excludeRefs?: readonly string[];
+    /** Keep configured refs visible even when they are unavailable or
+     * excluded by policy. The editor can then show why they will not run
+     * instead of silently dropping them on confirm. */
+    preserveRefs?: readonly string[];
     includeSessionRow?: boolean;
     includeManualRow?: boolean;
   } = {},
@@ -66,6 +73,17 @@ export function buildModelPickItems(
     .filter((ref): ref is string => typeof ref === "string")
     .map((ref) => ref.trim().toLowerCase())
     .filter(Boolean);
+  const matchesExcluded = (ref: string): boolean => excluded.some((entry) => ref.toLowerCase().includes(entry));
+  const preserved: string[] = [];
+  const preservedSeen = new Set<string>();
+  for (const candidate of opts.preserveRefs ?? []) {
+    if (typeof candidate !== "string") continue;
+    const ref = candidate.trim();
+    const key = ref.toLowerCase();
+    if (!ref || preservedSeen.has(key)) continue;
+    preservedSeen.add(key);
+    preserved.push(ref);
+  }
   const sorted = models
     .filter((m) => {
       const ref = `${m.provider}/${m.id}`.toLowerCase();
@@ -83,13 +101,40 @@ export function buildModelPickItems(
       searchText: `${ref} ${m.name ?? ""}`,
     };
   });
+  const itemByKey = new Map(modelItems.map((item) => [item.ref!.toLowerCase(), item]));
+  // Put the already configured chain first. This makes the persisted order
+  // readable even before the user presses a key; the remaining registry
+  // models follow in their stable provider/id order.
+  const orderedModels: ModelPickItem[] = [];
+  const added = new Set<string>();
+  for (const configuredRef of preserved) {
+    const key = configuredRef.toLowerCase();
+    const available = itemByKey.get(key);
+    if (available) {
+      orderedModels.push(available);
+      added.add(key);
+      continue;
+    }
+    const blocked = matchesExcluded(configuredRef);
+    orderedModels.push({
+      kind: "model",
+      ref: configuredRef,
+      label: `${configuredRef} — ${blocked ? "blocked by policy" : "unavailable or unauthenticated"}`,
+      searchText: `${configuredRef} ${blocked ? "blocked forbidden policy" : "unavailable unauthenticated"}`,
+      disabledReason: blocked ? "blocked by policy" : "unavailable or unauthenticated",
+    });
+    added.add(key);
+  }
+  for (const item of modelItems) {
+    if (!added.has(item.ref!.toLowerCase())) orderedModels.push(item);
+  }
   return [
     ...(opts.includeSessionRow === false ? [] : [{
       kind: "session" as const,
       label: `session model (${sessionLabel}) — clear the override`,
       searchText: "session model default clear override follow",
     }]),
-    ...modelItems,
+    ...orderedModels,
     ...(opts.includeManualRow === false ? [] : [{
       kind: "manual" as const,
       label: "type provider/model manually…",

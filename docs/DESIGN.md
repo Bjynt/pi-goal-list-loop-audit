@@ -189,21 +189,32 @@ architectural decisions that changed the SHAPE of the system:
 
 ## Addendum v0.34.31 (main-session model recovery)
 
+- **Global recovery policy**: `mainModelFallbacks`, `mainModelRetryMinutes`, and
+  `hourlyQuotaProbe` are global-only, so the runtime and settings provenance
+  cannot disagree about which recovery policy is active.
 - **Ordered global backups**: `mainModelFallbacks` is an explicit ordered list
-  of `provider/model` references. A provider/quota error can rotate the MAIN
-  session through authenticated candidates; the detached auditor's model
-  cascade remains a separate subsystem.
+  of up to 10 `provider/model` references. A provider/quota error selects the
+  first eligible authenticated candidate for account/plan/billing/auth failures,
+  calls `setModel`, and lets the next supervised turn test it; later failures
+  walk the list left-to-right. Explicit HTTP 429/request-rate failures stay
+  on the current model and use the bounded retry + hourly probe cadence. The
+  detached auditor's model cascade remains a separate subsystem. The picker
+  renders and reorders the numbered chain, and the attempted cursor is
+  durable, so a reload cannot restart at an already-failed rung.
 - **No accepted-send inference**: model rotation occurs only after a provider
   failure is observed (or after a 15-minute, five-minute-silent provider-held
   retry storm). A successful `sendMessage()` return is never treated as a
   started turn.
 - **Durable recovery instead of abandonment**: when all candidates fail,
   `.pi-glla/active.jsonl` stores the primary, active candidate, attempted set,
-  retry time, and supervisor kind. Recovery probes back off 15m → 30m →
-  hourly forever (configurable base), while a paused goal/held loop remains
-  resumable. A fresh startup obeys the existing `autoResume` consent gate.
+  retry time, and supervisor kind. Unhinted recovery waits use the configured
+  `mainModelRetryMinutes` base and double per attempt up to 5h; factual
+  provider hints win when in budget, while `hourlyQuotaProbe` is a separate
+  optional :00:30 ticker. A paused goal/held loop remains resumable. A fresh
+  startup obeys the existing `autoResume` consent gate.
 - **Successful-turn reset**: a real non-error agent end clears the recovery
-  cycle. Manual model selection cancels it; goal/list/loop cancellation clears
+  cycle. Manual model selection cancels it; host restore selections do not, and
+  user aborts do not masquerade as success. Goal/list/loop cancellation clears
   its timer and durable state.
 
 ## Addendum v0.34.48–v0.34.56 (lifecycle/recovery hardening — the stale-handle era)
@@ -240,13 +251,14 @@ replacement without delivering a successor `session_start`:
   counterpart are represented as explicitly unmatched facts, never falsely paired —
   the report surface stays truthful (the AuditProgress/AuditorProgress dual-interface
   rule: display evidence-gates on `unmatchedStarts + unmatchedEnds > 0`).
-- **Uniform retry envelope, no text-trust** (v0.34.51): error text is not trusted to
-  pick a retry policy. Quota, billing, auth, transient, and unknown failures all ride
-  ONE bounded durable envelope `15m → 30m → 1h → 2h → 4h → 5h` (cap 5h, automatic
-  window 24h); classification only labels the display. The billing-hold special case
-  is removed (`main_model_billing_hold` is legacy). Positive-evidence futile classes
-  (context/output-token limits, user aborts) plus auditor watchdog timeouts never
-  auto-retry; provider hints are honored only within the 5h probe budget.
+- **Uniform retry envelope, no text-trust** (v0.34.51 historical baseline): error
+  text was not trusted to pick a retry policy. The current ordered-backup policy
+  supersedes that baseline: account/plan/billing/auth failures may walk the configured
+  chain, while explicit HTTP 429/request-rate failures remain on the current model
+  and use the configured bounded ladder plus the optional hourly ticker. Positive-
+  evidence futile classes (context/output-token limits, user aborts) plus auditor
+  watchdog timeouts never auto-retry; provider hints are honored only within the
+  5h probe budget.
 
 ## Addendum v0.34.57 (quota walls engage recovery fast)
 
@@ -261,7 +273,23 @@ replacement without delivering a successor `session_start`:
   the 5s→3m error ladder and the pi-core retry budget.
 - **Armed by configuration**: the envelope is inert without
   `mainModelFallbacks` (rotation) — an empty list means "park and probe the
-  same model" instead of switching pools.
+  same model" instead of switching pools. When the list is non-empty, the
+  runtime tries one eligible backup at a time in persisted order, skips
+  forbidden/unavailable refs, and parks only after the ordered chain is
+  exhausted. Explicit HTTP 429/rate-limit errors remain request-rate signals,
+  not token-limit labels, and the optional :00:30 hourly ticker can retry them.
+
+## Addendum Unreleased (process ownership and bounded fallback hardening)
+
+- **Worker ownership is durable**: detached auditor locks are rewritten with
+  the worker PID, allowing a replacement host to reap stale workers for the
+  same completion claim. Parent cancellation waits for exit and escalates to
+  the detached POSIX process group or Windows `taskkill /t` tree, so nested
+  shells/tests cannot outlive their worker.
+- **Test/smoke teardown is explicit**: direct worker fixtures and the tmux smoke
+  harness clean their owned process trees and temporary directories on normal,
+  failed, or interrupted exits. Browser processes are not launched by this
+  package; external Chrome automation remains outside this lifecycle boundary.
 
 ## Addendum v0.35.x (one-shot parked completion-audit recovery)
 

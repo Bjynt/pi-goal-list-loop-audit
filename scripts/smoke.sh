@@ -27,7 +27,102 @@ SCENARIO="${1:-goal}"
 EXT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(mktemp -d /tmp/pi-gla-smoke-XXXX)"
 SESS="gla-smoke-$$"
+BARE=""
 FAILURES=0
+CLEANED=0
+
+# Kill only process groups that this harness can prove it owns. tmux's
+# session teardown does not reap an auditor worker started with detached:true,
+# so inspect the worker-owned lock before deleting the scratch cwd. The
+# command/cwd checks avoid signalling a reused PID from another project.
+terminate_owned_group() {
+  local pid="$1"
+  [ "$pid" -gt 1 ] 2>/dev/null || return 0
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  for _ in 1 2 3 4 5; do
+    # Check the process group as well as its leader: a child can outlive a
+    # worker leader after TERM, and must still receive the KILL escalation.
+    if ! kill -0 -- "-$pid" 2>/dev/null && ! kill -0 "$pid" 2>/dev/null; then return 0; fi
+    sleep 0.1
+  done
+  kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+}
+
+reap_owned_workers() {
+  local lock role pid command cwd
+  [ -d "$WORK/.pi-glla/audit-jobs" ] || return 0
+  while IFS= read -r lock; do
+    role=""
+    pid=""
+    read -r role pid < <(python3 - "$lock" <<'PY'
+import json, sys
+try:
+    value = json.load(open(sys.argv[1]))
+    print(value.get("role", ""), value.get("pid", ""))
+except Exception:
+    pass
+PY
+    )
+    [ "$role" = "worker" ] || continue
+    [[ "$pid" =~ ^[0-9]+$ ]] || continue
+    command="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+    case "$command" in
+      *goal-auditor-worker.mjs*) ;;
+      *) continue ;;
+    esac
+    if [ -r "/proc/$pid/cwd" ]; then
+      cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+      [ "$cwd" = "$WORK" ] || continue
+    fi
+    terminate_owned_group "$pid"
+  done < <(find "$WORK/.pi-glla/audit-jobs" -type f -name lock -print 2>/dev/null)
+}
+
+# The lock is parent-owned for a tiny interval between spawn() and the
+# worker's first request read. Scan the process command line too, then repeat
+# briefly so an interrupted smoke run cannot delete WORK while that child is
+# still starting and thereby strand it without a readable lock.
+reap_owned_worker_processes() {
+  local pid command
+  while read -r pid command; do
+    [[ "$pid" =~ ^[0-9]+$ ]] || continue
+    case "$command" in
+      *goal-auditor-worker.mjs*"$WORK"*) terminate_owned_group "$pid" ;;
+    esac
+  done < <(ps -eo pid=,args= 2>/dev/null || true)
+}
+
+cleanup() {
+  [ "$CLEANED" -eq 1 ] && return 0
+  CLEANED=1
+  local pane_pids pid command
+  declare -A pane_commands=()
+  pane_pids="$(tmux list-panes -t "$SESS" -F '#{pane_pid}' 2>/dev/null || true)"
+  # Capture ownership before tmux tears down the pty; after kill-session the
+  # pane process may already have disappeared from ps.
+  for pid in $pane_pids; do
+    pane_commands["$pid"]="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+  done
+  tmux kill-session -t "$SESS" 2>/dev/null || true
+  # A pty teardown normally sends SIGHUP, but explicitly reap the owned pi
+  # process groups when a test is interrupted during startup or a provider
+  # call. This is intentionally scoped to PIDs reported by this tmux session.
+  for pid in $pane_pids; do
+    command="${pane_commands[$pid]-}"
+    case "$command" in
+      *pi*|*bash*|*sh*) terminate_owned_group "$pid" ;;
+    esac
+  done
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    reap_owned_workers
+    reap_owned_worker_processes
+    sleep 0.1
+  done
+  [ -z "$BARE" ] || rm -rf "$BARE"
+  [ "${KEEP_WORK:-0}" = "1" ] || rm -rf "$WORK"
+}
+trap 'exit 130' INT TERM HUP
+trap cleanup EXIT
 
 say()  { printf '\033[1m== %s\033[0m\n' "$*"; }
 pass() { printf '  \033[32mPASS\033[0m %s\n' "$*"; }
@@ -131,7 +226,6 @@ case "$SCENARIO" in
     if ledger_has 'loop_stopped'; then pass "loop_stopped recorded"; else fail "loop_stopped missing"; fi
     if ledger_has '"stall":1'; then pass "stall counting recorded"; else fail "no stall events"; fi
     if [ -s "$NOTIFY_LOG" ]; then pass "notify fired on loop stop ($(wc -l < "$NOTIFY_LOG") line(s))"; else fail "notify.log empty"; fi
-    rm -rf "$BARE"
     ;;
 
   draft-reject)
@@ -197,9 +291,6 @@ TEST
 esac
 
 say "teardown"
-tmux kill-session -t "$SESS" 2>/dev/null
-rm -rf "$BARE"
-[ "${KEEP_WORK:-0}" = "1" ] || rm -rf "$WORK"
 
 if [ "$FAILURES" -eq 0 ]; then
   say "SMOKE OK ($SCENARIO)"

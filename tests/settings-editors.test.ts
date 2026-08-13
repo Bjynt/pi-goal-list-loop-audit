@@ -15,8 +15,9 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { handleSettingChoice } from "../extensions/loops/goal.js";
-import { globalSettingsPath } from "../extensions/goal-settings.js";
+import { globalSettingsPath, loadSettings, projectSettingsPath, saveSettings, settingsProvenance } from "../extensions/goal-settings.js";
 import { makeMockCtx, tmpCwd } from "./harness/mock-pi.js";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { readGoalRuntimeSource } from "./harness/goal-source.js";
@@ -104,6 +105,50 @@ test("T4: select options stay concise — rationale lives in the title, not the 
   }
 });
 
+test("main recovery settings are global-only and project copies cannot create a UI/runtime mismatch", () => {
+  try {
+    const cwd = tmpCwd();
+    fs.mkdirSync(path.dirname(projectSettingsPath(cwd)), { recursive: true });
+    fs.writeFileSync(projectSettingsPath(cwd), JSON.stringify({
+      mainModelFallbacks: ["project/backup"],
+      mainModelRetryMinutes: 99,
+      hourlyQuotaProbe: false,
+    }));
+    fs.writeFileSync(GLOBAL_FILE, JSON.stringify({
+      mainModelFallbacks: ["global/backup"],
+      mainModelRetryMinutes: 22,
+      hourlyQuotaProbe: true,
+    }));
+    const settings = loadSettings(cwd);
+    assert.deepEqual(settings.mainModelFallbacks, ["global/backup"]);
+    saveSettings("project", cwd, { notifyCmd: "notify-send" });
+    const projectAfterUnrelatedSave = JSON.parse(fs.readFileSync(projectSettingsPath(cwd), "utf8"));
+    assert.equal(projectAfterUnrelatedSave.mainModelFallbacks, undefined);
+    assert.equal(projectAfterUnrelatedSave.mainModelRetryMinutes, undefined);
+    assert.equal(projectAfterUnrelatedSave.hourlyQuotaProbe, undefined);
+    assert.equal(settings.mainModelRetryMinutes, 22);
+    assert.equal(settings.hourlyQuotaProbe, true);
+    const prov = settingsProvenance(cwd);
+    assert.equal(prov.mainModelFallbacks?.source, "global");
+    assert.equal(prov.mainModelRetryMinutes?.source, "global");
+    assert.equal(prov.hourlyQuotaProbe?.source, "global");
+  } finally {
+    restoreGlobal();
+  }
+});
+
+test("RPC custom stub falls back to typed main-backup editing instead of silently canceling", async () => {
+  try {
+    const ctx = makeMockCtx(tmpCwd());
+    ctx.ui.customStubMode = true;
+    ctx.ui.inputImpl = async () => "rpc/backup-a, rpc/backup-b";
+    await handleSettingChoice("mainModelFallbacks", ctx as unknown as ExtensionContext);
+    assert.deepEqual(readGlobal().mainModelFallbacks, ["rpc/backup-a", "rpc/backup-b"]);
+  } finally {
+    restoreGlobal();
+  }
+});
+
 test("T4: input editor — main model backups preserve order and retry cadence", async () => {
   try {
     const ctx = makeMockCtx(tmpCwd());
@@ -117,6 +162,19 @@ test("T4: input editor — main model backups preserve order and retry cadence",
     ctx.ui.inputImpl = async () => "   ";
     await handleSettingChoice("mainModelFallbacks", ctx as unknown as ExtensionContext);
     assert.deepEqual(readGlobal().mainModelFallbacks, [], "empty input clears backups");
+  } finally {
+    restoreGlobal();
+  }
+});
+
+test("main backup editor refuses the 11th typed model and keeps the first ten in order", async () => {
+  try {
+    const ctx = makeMockCtx(tmpCwd());
+    const refs = Array.from({ length: 11 }, (_, i) => `provider/model-${i + 1}`);
+    ctx.ui.inputImpl = async (title) => title.startsWith("Main session model backups") ? refs.join(",") : undefined;
+    await handleSettingChoice("mainModelFallbacks", ctx as unknown as ExtensionContext);
+    assert.deepEqual(readGlobal().mainModelFallbacks, refs.slice(0, 10));
+    assert.ok(ctx.ui.matching("first 10 model backups").length >= 1, "the refused 11th selection is visible");
   } finally {
     restoreGlobal();
   }

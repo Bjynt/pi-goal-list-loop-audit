@@ -75,9 +75,17 @@ export type SelectResult =
  * per call site or to keep as a module-level singleton. */
 export class ModelSelector {
   private readonly deps: ModelSelectorDeps;
+  private visitedRefs: string[] = [];
 
   constructor(deps: ModelSelectorDeps) {
     this.deps = deps;
+  }
+
+  /** Refs visited by the most recent synchronous selection, including
+   * forbidden/unregistered candidates. Callers that persist a cursor can
+   * read this immediately after selectNextValid returns. */
+  get lastVisitedRefs(): readonly string[] {
+    return this.visitedRefs;
   }
 
   /** Classify a failure string into a MainModelFailure. Scope-agnostic —
@@ -105,6 +113,8 @@ export class ModelSelector {
    * appends each rejected/tried ref to it as it walks. */
   selectNextValid(scope: ModelScope, current: string | undefined, attempted: string[]): SelectResult {
     const tried = attempted.slice();
+    const visited: string[] = [];
+    this.visitedRefs = visited;
     for (;;) {
       const ref = this.selectNext(scope, current, tried);
       if (ref === undefined) {
@@ -112,6 +122,7 @@ export class ModelSelector {
         return { reason: "exhausted" };
       }
       tried.push(ref);
+      visited.push(ref);
       if (this.deps.isForbidden(ref)) {
         this.deps.record?.({ scope, fromRef: current, toRef: ref, reason: "forbidden" });
         continue;

@@ -9,6 +9,10 @@ import { isBillingError, isQuotaError, parseQuotaError, type QuotaSignal } from 
 
 export const MAIN_MODEL_MAX_RETRY_DELAY_MS = 5 * 60 * 60_000;
 export const MAIN_MODEL_AUTO_RETRY_HORIZON_MS = 24 * 60 * 60_000;
+/** Keep a fallback chain useful and bounded even when settings are edited
+ * outside the UI. Ten alternatives is enough to cross providers/quota pools
+ * without turning one failure into an unbounded registry walk. */
+export const MAX_MAIN_MODEL_FALLBACKS = 10;
 
 export type MainModelFailureKind = "rate-limit" | "quota" | "billing" | "auth" | "transient" | "unknown" | "non-recoverable" | "context-overflow";
 
@@ -18,7 +22,8 @@ export interface MainModelFailure {
   retryAfterSec?: number;
   retryFromUpstream?: boolean;
   resetAt?: string;
-  /** More specific quota family; plan walls must not be treated as generic 429s. */
+  /** More specific quota family; an explicit HTTP 429/rate-limit marker wins
+   * over overlapping plan/token wording. */
   quotaSignal?: QuotaSignal;
 }
 
@@ -59,6 +64,35 @@ export function normalizeModelRefs(value: unknown): string[] {
 }
 
 /**
+ * Canonical normalizer for the main-session fallback chain. Unlike the
+ * generic model-ref normalizer this is a settings boundary: duplicate model
+ * refs are compared case-insensitively and the persisted chain is capped at
+ * MAX_MAIN_MODEL_FALLBACKS. The original spelling/order is retained for
+ * registry lookup and display.
+ */
+export function normalizeMainModelFallbackRefs(value: unknown): string[] {
+  const raw = normalizeModelRefs(value);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const ref of raw) {
+    const key = ref.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(ref);
+    if (out.length >= MAX_MAIN_MODEL_FALLBACKS) break;
+  }
+  return out;
+}
+
+/** Render the persisted chain exactly as the runtime walks it. Numbering is
+ * deliberately part of the display so a settings row, headless /glla dump,
+ * and picker all answer the same question: which backup is tried first? */
+export function formatMainModelFallbacks(value: unknown): string {
+  const refs = normalizeMainModelFallbackRefs(value);
+  return refs.length ? refs.map((ref, index) => `${index + 1}. ${ref}`).join(" → ") : "none";
+}
+
+/**
  * Classify only provider failures. Context/output-token failures are
  * deterministic prompt-shape problems and must not trigger model rotation.
  *
@@ -77,6 +111,21 @@ export function classifyMainModelFailure(error: string | undefined, opts?: { isC
   const raw = typeof error === "string" ? error.trim() : "";
   const text = raw.toLowerCase();
   if (!raw) return { kind: "unknown", raw };
+  // An explicit HTTP 429/rate-limit signal outranks overlapping prose such
+  // as "Token Plan" or "output token limit": it means too many requests,
+  // not a deterministic prompt-size failure, and must keep retrying.
+  const explicitRateLimit = /\b429\b|too[\s_-]+many[\s_-]+requests|rate[\s_-]*limit|throttl(?:e|ed|ing)/i.test(raw);
+  if (explicitRateLimit) {
+    const parsed = parseQuotaError(raw);
+    return {
+      kind: "rate-limit",
+      raw,
+      retryAfterSec: parsed.retryAfterSec,
+      retryFromUpstream: parsed.fromUpstream,
+      resetAt: parsed.resetAt,
+      quotaSignal: "rate-limit",
+    };
+  }
   if (/aborted|cancelled|canceled|user interrupt/.test(text)) {
     return { kind: "non-recoverable", raw };
   }
@@ -124,6 +173,9 @@ export function classifyMainModelFailure(error: string | undefined, opts?: { isC
  * with `isContextOverflow: true` so the selector walks the chain. */
 export function isContextOverflowError(error: string | undefined): boolean {
   if (!error) return false;
+  // HTTP 429 / rate-limit is a provider request wall even when the payload
+  // contains overlapping "output token" or "context" wording.
+  if (/\b429\b|too[\s_-]+many[\s_-]+requests|rate[\s_-]*limit|throttl(?:e|ed|ing)/i.test(error)) return false;
   const text = error.toLowerCase();
   return /context|output[ -]?token|max_?tokens|length limit|too many tokens|prompt too large|context window/.test(text);
 }
@@ -141,6 +193,24 @@ export function isLongLivedFailureKind(kind: MainModelFailureKind): boolean {
   return kind === "rate-limit" || kind === "quota" || kind === "billing" || kind === "auth";
 }
 
+/** Only durable provider walls should spend an ordered backup. A transient
+ * transport outage or ambiguous provider message is retried on the current
+ * model; explicit 429/request-rate failures are deliberately excluded because
+ * they mean too many requests, not token-limit exhaustion. */
+export function isMainModelFallbackFailure(failure: MainModelFailure): boolean {
+  return failure.kind === "quota"
+    || failure.kind === "billing"
+    || failure.kind === "auth"
+    || failure.kind === "context-overflow";
+}
+
+/** A provider failure can require durable recovery without implying that a
+ * configured backup should be selected. Explicit 429/request-rate failures
+ * belong here: park and retry the current model, but never spend a backup. */
+export function requiresMainModelRecovery(failure: MainModelFailure): boolean {
+  return failure.kind !== "non-recoverable" && failure.kind !== "transient";
+}
+
 /** Storm-escalation threshold: fast (3m) inside a fresh long-lived-failure
  * knowledge window, generic (15m) otherwise. Pure — the orchestrator owns
  * the timestamp state. */
@@ -153,16 +223,16 @@ export function sendStormEscalateMs(lastLongLivedFailureAtMs: number, nowMs = Da
 
 /** Return the next configured candidate that has not been attempted. */
 export function nextUntriedModelRef(current: string | undefined, refs: string[], attempted: string[] = []): string | undefined {
-  const tried = new Set(attempted);
-  return refs.find((ref) => ref !== current && !tried.has(ref));
+  const key = (ref: string): string => ref.toLowerCase();
+  const currentKey = current === undefined ? undefined : key(current);
+  const tried = new Set(attempted.map(key));
+  return refs.find((ref) => key(ref) !== currentKey && !tried.has(key(ref)));
 }
 
 /**
- * Retry slowly rather than spin: 15m → 30m → 1h → 2h → 4h → 5h, then hold
- * after the 24h automatic window. v0.34.63: the failure-driven envelope is
- * hour-aligned (hourAlignedRetryDelayMs); this ladder survives as the
- * bounded fallback for the pathological no-model-ref probe path, and as the
- * knob for the mainModelRetryMinutes setting.
+ * Retry slowly rather than spin: base → 2×base → 4×base → 8×base → 16×base
+ * → 5h, then hold after the 24h automatic window. The base is the
+ * mainModelRetryMinutes setting and is used by ordinary provider failures.
  */
 export function mainModelRetryDelayMs(attempt: number, baseMinutes = 15): number {
   const base = Number.isFinite(baseMinutes) && baseMinutes > 0 ? baseMinutes : 15;
@@ -179,16 +249,10 @@ export function mainModelAutoRetryUntil(firstFailureAtMs = Date.now(), horizonMs
   return new Date(first + horizon).toISOString();
 }
 
-/**
- * v0.34.63: probe delays align to the next :00 of the LOCAL clock hour —
- * provider quota windows tend to reset on the hour, so a mid-hour probe is
- * a wasted attempt (field: 01:18 wall probed at 01:33 / 02:03 / 02:33 and
- * never once hit a fresh window). The ladder's job — bounded, slow probing
- * — is preserved: one probe per hour, still inside the 24h automatic
- * window and the 5h per-delay cap. Upstream Retry-After hints remain
- * factual facts and outrank the alignment (a per-minute RPM throttle says
- * so itself).
- */
+/** Compute the optional top-of-hour probe independently from the configured
+ * recovery ladder. Provider quota windows often refresh on the hour, so the
+ * hourlyQuotaProbe ticker can add a :00:30 attempt without changing the
+ * meaning of mainModelRetryMinutes or the normal bounded backoff. */
 export function hourAlignedRetryDelayMs(nowMs = Date.now()): number {
   const next = new Date(nowMs);
   next.setMinutes(0, 0, 0);
@@ -199,19 +263,15 @@ export function hourAlignedRetryDelayMs(nowMs = Date.now()): number {
 /** v0.34.51: one uniform envelope for EVERY provider failure. Error text is
  * not trusted to pick a cadence — the exception is a factual upstream
  * Retry-After hint, honored when it fits the five-hour probe budget.
- * v0.35.x: a pure request-rate wall gets one short bounded backoff before
- * joining the hourly reset slot; account/plan/billing walls never inherit
- * that eager request-rate retry. This keeps a 429 distinct without making
- * either class unbounded.
- * v0.34.63: the bounded cadence is the next :00 clock hour (see
- * hourAlignedRetryDelayMs) — hint-overridable and never farther out than
- * one hour per probe. */
+ * A pure request-rate wall gets one short bounded backoff before joining the
+ * normal ladder. The configured base is otherwise authoritative; the
+ * separate hourlyQuotaProbe ticker is the opt-in top-of-hour behavior. */
 export function mainModelFailureDelayMs(failure: MainModelFailure, attempt: number, baseMinutes = 15, nowMs = Date.now()): number {
+  void nowMs;
   if (failure.retryFromUpstream && Number.isFinite(failure.retryAfterSec)) {
     const hinted = Math.max(1_000, Math.round(failure.retryAfterSec! * 1_000));
     if (hinted <= MAIN_MODEL_MAX_RETRY_DELAY_MS) return hinted;
   }
   if (failure.kind === "rate-limit" && attempt <= 1 && !failure.retryFromUpstream) return 5_000;
-  void baseMinutes;
-  return hourAlignedRetryDelayMs(nowMs);
+  return mainModelRetryDelayMs(attempt, baseMinutes);
 }
