@@ -990,10 +990,12 @@ function standaloneRecoveryLines(recovery: MainModelRecovery, now: number, theme
   const retry = recovery.retryAt ? Date.parse(recovery.retryAt) : Number.NaN;
   const when = Number.isFinite(retry) ? (retry <= now ? "probe due now" : `probe in ${fmtElapsed(retry - now)}`) : recovery.manualResumeRequired ? "manual resume required" : "probe pending";
   const wall = recovery.quotaSignal ? "provider wall" : "main-model fallback recovery";
+  const order = [recovery.primary, ...(recovery.active && recovery.active.toLowerCase() !== recovery.primary.toLowerCase() ? [recovery.active] : [])].join(" → ");
+  const skipped = recovery.skipped?.length ? ` · skipped ${recovery.skipped.map((entry) => `${entry.ref} (${entry.reason})`).join(", ")}` : "";
   return [
     `${paint(theme, "warning", "⏳")} ${paint(theme, "accent", wall)} · ${truncate(current, budgetFor(width, 3, 36))}${pending}`,
-    `├─ ${paint(theme, "dim", `current: ${current} · ${when}`)}`,
-    `├─ ${paint(theme, "dim", `attempted: ${recovery.attempted.join(", ") || "none"}`)}`,
+    `├─ ${paint(theme, "dim", `order: ${order} · current: ${current} · ${when}`)}`,
+    `├─ ${paint(theme, "dim", `attempted: ${recovery.attempted.join(", ") || "none"}${skipped}`)}`,
     `└─ ${paint(theme, "dim", "work is saved · /glla resume or the matching goal/list/loop resume retries")}`,
   ];
 }
