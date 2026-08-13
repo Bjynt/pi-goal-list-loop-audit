@@ -695,6 +695,10 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
   }
   const g = state.goal;
   const held = heldLoop(state);
+  if (state.loop && !state.loop.active && state.mainModelRecovery?.kind === "loop") {
+    const summary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
+    return `glla: ${paint(theme, "warning", "⏳ loop recovery")}${summary.slice(0, 3).map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
+  }
   // v0.28.17: a held loop rides every goal state as a compact suffix.
   const heldSuffix = held ? paint(theme, "warning", " · loop⏸held") : "";
   if (!g) {
@@ -966,6 +970,7 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
 
 function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, width?: number, extras?: WidgetExtras): string[] | undefined {
   if (state.loop?.active) return loopLines(state.loop, now, theme, width, extras);
+  if (state.loop && state.mainModelRecovery?.kind === "loop") return parkedLoopRecoveryLines(state.loop, state.mainModelRecovery, now, theme, width, extras?.mainModelFallbacks);
   if (!state.goal && state.mainModelRecovery) return standaloneRecoveryLines(state.mainModelRecovery, now, theme, width, extras?.mainModelFallbacks);
   const g = state.goal;
   const held = heldLoop(state);
@@ -987,6 +992,15 @@ function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null
     lines.push(`└─ ${paint(theme, "dim", `loop held · iter ${held.iteration} — /loop to resume`)}`);
   }
   return lines;
+}
+
+/** Recovery card for a loop parked by the main-model wall. */
+function parkedLoopRecoveryLines(loop: LoopState, recovery: MainModelRecovery, now: number, theme?: DisplayTheme, width?: number, configuredBackups: string[] = []): string[] {
+  return [
+    `${paint(theme, "warning", "⏳")} ${truncate(loop.target, budgetFor(width, 3, 56))} · loop parked · iter ${loop.iteration}`,
+    ...formatMainModelRecoveryStatus(recovery, configuredBackups).map((line) => `├─ ${paint(theme, "dim", line)}`),
+    `└─ ${paint(theme, "warning", "work is saved · /loop resume retries the recovery, /loop stop drops it")}`,
+  ];
 }
 
 /** v0.28.17: standalone card for a restore-held loop (no goal visible). */

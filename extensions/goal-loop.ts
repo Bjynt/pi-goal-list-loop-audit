@@ -15,6 +15,7 @@ import type { ExtensionContext, ExtensionAPI } from "@earendil-works/pi-coding-a
 import { state, replaceState } from "./goal-state.js";
 import {
   appendLedger,
+  formatMainModelRecoveryStatus,
   isStaleApiError,
   nowIso,
   resolveEffectiveAggressiveSettings,
@@ -53,6 +54,7 @@ import {
   LOOP_DEFAULTS,
 } from "./goal-loop-forever.js";
 import { loadSettings } from "./goal-settings.js";
+import { normalizeMainModelFallbackRefs } from "./main-model-recovery.js";
 import { createContinuationDispatch, type ContinuationDispatch } from "./goal-loop-dispatch.js";
 import { attemptFreshSessionRecovery } from "./goal-recovery.js";
 import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-conflict.js";
@@ -132,6 +134,23 @@ export interface LoopDeps {
 }
 
 let deps: LoopDeps;
+
+function formatLoopRecoveryStatusLines(ctx: ExtensionContext): string[] {
+  return formatMainModelRecoveryStatus(
+    state.mainModelRecovery,
+    normalizeMainModelFallbackRefs(loadSettings(ctx.cwd).mainModelFallbacks),
+  );
+}
+
+function formatLoopRecoveryStatus(ctx: ExtensionContext): string {
+  const loop = state.loop;
+  const lines = [
+    `Loop: ${loop?.active ? "active" : "stopped"} — ${loop ? deps.displaySlice(loop.target, 80) : "loop parked during main-model recovery"}`,
+    ...formatLoopRecoveryStatusLines(ctx),
+    "Resume: /loop resume retries the saved loop recovery; /loop stop drops it.",
+  ];
+  return lines.join("\\n");
+}
 let flags: LoopFlags;
 let GOAL_EVENT_ENTRY: string;
 let accountSendRearm: LoopDeps["accountSendRearm"], armQueueStuckProbe: LoopDeps["armQueueStuckProbe"], buildPostCompactResync: LoopDeps["buildPostCompactResync"], clearMainModelRecoveryTimer: LoopDeps["clearMainModelRecoveryTimer"], dispatchAccepted: LoopDeps["dispatchAccepted"],
