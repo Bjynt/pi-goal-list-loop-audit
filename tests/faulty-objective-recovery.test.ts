@@ -59,6 +59,61 @@ test("valid imperative objectives may mention auditor and verification machinery
   assert.equal(result.suspicious, false);
 });
 
+test("imperative implementation requests mentioning audit, verification, or regression stay valid", () => {
+  for (const text of [
+    "Implement an audit verification regression for the recovery gate",
+    "Fix the auditor verification path and add regression coverage",
+    "Add regression tests for audit report verification",
+    "Harden the detached auditor verification contract",
+  ]) {
+    const result = assessSuspiciousObjective(text);
+    assert.equal(result.suspicious, false, text);
+    assert.deepEqual(result.reasons, [], text);
+  }
+});
+
+test("explicit reviewer and evidence fragments are rejected", () => {
+  for (const text of [
+    "Reviewer: the implementation is complete; evidence: 16 tests pass",
+    "The reviewer says the fix is complete; evidence: focused tests pass",
+    "Focused tests: 16 pass; Full suite: 1268 pass / 1 skip / 0 fail",
+  ]) {
+    const result = assessSuspiciousObjective(text);
+    assert.equal(result.suspicious, true, text);
+    assert.deepEqual(result.reasons, ["verification-fragment"], text);
+  }
+});
+
+test("the screenshot reviewer fragment records the exact saved-intent repair", () => {
+  const reviewerFragment = "The auditor’s objection was fixed.\n\n- Added an isolated executable runtime regression that injects a failed provider probe and verifies the later hourly slot runs.\n- Added runtime checks for opt-out and stale-generation fencing.\n- Focused tests: 16 pass\n- Full suite: 1268 pass / 1 skip / 0 fail\n- Typecheck and diff checks pass.\n- Resubmitted for detached-auditor approval.";
+  const savedObjective = "Fix the detached auditor verification regression";
+  const savedContract = "focused classifier tests pass";
+  const g = goal({
+    objective: reviewerFragment,
+    verificationContract: "",
+    objectiveProvenance: {
+      originalObjective: savedObjective,
+      originalContract: savedContract,
+      userSeeds: [savedObjective],
+    },
+  });
+  const assessment = assessSuspiciousObjective(g.objective, g.verificationContract);
+  assert.deepEqual(assessment.reasons, ["verification-fragment"]);
+  const proposal = deriveObjectiveRepair(g, assessment);
+  assert.ok(proposal);
+  assert.equal(proposal?.source, "original-record");
+  assert.equal(proposal?.objective, savedObjective);
+  assert.equal(proposal?.verificationContract, savedContract);
+  const record = applyObjectiveRepair(g, proposal!, "2026-08-13T10:06:00.000Z");
+  assert.equal(record.originalObjective, reviewerFragment);
+  assert.equal(record.replacementObjective, savedObjective);
+  assert.equal(record.replacementContract, savedContract);
+  assert.equal(record.source, "original-record");
+  assert.deepEqual(g.objectiveRepairHistory, [record]);
+  assert.equal(g.objective, savedObjective);
+  assert.equal(g.verificationContract, savedContract);
+});
+
 test("recover is a valid imperative for the exact queued detached-auditor item", () => {
   const result = assessSuspiciousObjective("Recover parked detached-auditor claims after infrastructure timeout (evidence: Screenshot_20260811_213659.png, Screenshot_20260811_214045.png, and the parked-auditor panels)");
   assert.equal(result.suspicious, false);
