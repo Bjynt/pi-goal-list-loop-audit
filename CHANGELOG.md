@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.34.136 — isolated release validation and stable queue ordering (2026-08-13)
+### Release validation isolates test files and normalizes queue order
+  Release tests now run each file in an isolated global context, while disk queue
+  readers sort sidecar names before parsing. This removes shared-runtime state
+  leakage and filesystem-dependent ordering from CI and package validation.
+
 ## 0.34.135 — deterministic release validation (2026-08-13)
 ### Release checks are deterministic under CI
   The package test scripts now run Bun tests with bounded serial concurrency and
