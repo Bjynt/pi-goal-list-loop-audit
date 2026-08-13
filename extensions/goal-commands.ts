@@ -28,6 +28,7 @@ import type { SettingsSectionId } from "./settings-menu.js";
 import { cmdLoop, clearLoopTimer, finishLoopGit, isLoopActive, scheduleLoopTick } from "./goal-loop.js";
 import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-conflict.js";
 import { formatGllaVersion } from "./glla-version.js";
+import { cancelDetachedGoalCompletionAuditor } from "./goal-loop-auditor-process.js";
 
 export interface CommandFlags {
   get draftingTarget(): "goal" | "list" | "loop" | null; set draftingTarget(v: "goal" | "list" | "loop" | null);
@@ -170,7 +171,10 @@ async function cmdGoal(args: string, ctx: ExtensionContext): Promise<void> {
       void retryStoredCompletionAudit("manual");
       return;
     }
-    if (route.name === "tweak") return cmdTweak(route.rest, ctx);
+    if (route.name === "tweak") {
+      await cmdTweak(route.rest, ctx);
+      return;
+    }
     if (route.name === "archive") return cmdGoals(ctx);
     // v0.16.0: /goal start <objective> — explicit skip-draft. Activates
     // immediately, no interview, no "Done when:" heuristic. Symmetric
@@ -197,11 +201,11 @@ async function resolveGoalStartConflict(ctx: ExtensionContext, objective: string
   if (choice === "update") {
     const one = current[0];
     if (one?.kind === "goal" && one.status === "active") {
-      await cmdTweak(objective, ctx);
+      await updateWholeObjectiveFromConflict(ctx, objective, "goal");
     } else if (one?.kind === "loop") {
       await cmdLoop(`refine ${objective}`, ctx);
     } else {
-      ctx.ui.notify("Update selected, but the current list item is not in its editable paused state. Use /list tweak after pausing it; no new goal was started.", "info");
+      ctx.ui.notify("Update selected, but the current list item has no safe cross-mode in-place edit. No new goal was started.", "info");
     }
     return false;
   }
@@ -558,17 +562,33 @@ async function cmdGoals(ctx: ExtensionContext): Promise<void> {
   );
 }
 
-async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "list" = "goal"): Promise<void> {
+export interface ConflictTweakOptions {
+  /** Allow the conflict resolver to update a live/auditing list item as one
+   * whole-objective transaction. The user already chose "Update current
+   * objective" in the conflict picker; normal `/list tweak` remains paused-only. */
+  allowLiveList?: boolean;
+}
+
+export async function cmdTweak(
+  args: string,
+  ctx: ExtensionContext,
+  mode: "goal" | "list" = "goal",
+  options: ConflictTweakOptions = {},
+): Promise<boolean> {
   const current = state.goal;
+  const liveListConflict = mode === "list"
+    && options.allowLiveList === true
+    && current?.policy === "list"
+    && (current.status === "active" || current.status === "auditing");
   const expectedStatus = mode === "list" ? "paused" : "active";
-  if (!current || current.status !== expectedStatus || (mode === "list" && current.policy !== "list")) {
+  if (!current || (current.status !== expectedStatus && !liveListConflict) || (mode === "list" && current.policy !== "list")) {
     ctx.ui.notify(
       mode === "list"
         ? "No paused list item to tweak. /list tweak <replacement objective, optional 'Done when: ...' clause>"
         : "No active goal to tweak. /goal <objective> to start one.",
       "info",
     );
-    return;
+    return false;
   }
   let raw = args.trim();
   if (raw.length >= 2 && ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'")))) {
@@ -599,7 +619,7 @@ async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "lis
     }
     if (v === undefined || !v.trim()) {
       ctx.ui.notify("Tweak cancelled; nothing changed.", "info");
-      return;
+      return false;
     }
     raw = v.trim();
   }
@@ -614,7 +634,7 @@ async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "lis
         : "No objective in the replacement text — include what the goal should become.",
       "info",
     );
-    return;
+    return false;
   }
   // v0.34.51 contract-text semantics (defined + pinned by tests):
   //   supplied clause  → REPLACE the stored contract
@@ -633,7 +653,7 @@ async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "lis
     && !clearsContract
   ) {
     ctx.ui.notify("Tweak cancelled — the objective is unchanged.", "info");
-    return;
+    return false;
   }
   let confirmed = false;
   try {
@@ -651,7 +671,7 @@ async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "lis
   }
   if (!confirmed) {
     ctx.ui.notify("Tweak cancelled; goal unchanged.", "info");
-    return;
+    return false;
   }
   // The proposal dialog yields to the host. A pause, recovery mark, or other
   // same-goal update may replace state.goal while it is open. Rebase the
@@ -661,14 +681,33 @@ async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "lis
   const latest = state.goal;
   if (!latest || latest.id !== current.id) {
     ctx.ui.notify("Tweak cancelled — the goal changed while confirmation was open; no stale state was restored.", "warning");
-    return;
+    return false;
   }
   if (latest.status === "complete" || latest.status === "aborted") {
     ctx.ui.notify("Tweak cancelled — the goal finished while confirmation was open; no stale state was restored.", "warning");
-    return;
+    return false;
   }
   const priorProvenance = latest.objectiveProvenance;
   const userSeeds = [...(priorProvenance?.userSeeds ?? []), raw].slice(-10);
+  const replacingLiveList = liveListConflict
+    && latest.policy === "list"
+    && (latest.status === "active" || latest.status === "auditing");
+  const cancellingAudit = replacingLiveList && latest.status === "auditing";
+  const pendingAuditAttempt = cancellingAudit ? latest.pendingCompletion?.attemptId : undefined;
+  if (cancellingAudit) {
+    if (pendingAuditAttempt) cancelDetachedGoalCompletionAuditor(ctx.cwd, pendingAuditAttempt);
+    // Invalidate the detached worker before clearing its durable claim. Its
+    // finally block then cannot clear a newer audit's ownership, and the
+    // next continuation is free to work the newly adopted whole objective.
+    flags.completionAuditInFlight = false;
+    flags.latestAuditProgress = null;
+    flags.completionAuditRecoveryArmed = false;
+    appendLedger(ctx.cwd, "objective_conflict_audit_cancelled", {
+      goalId: latest.id,
+      attemptId: pendingAuditAttempt,
+      reason: "whole-objective conflict update",
+    });
+  }
   const patch: Partial<Goal> = {
     objective: newObjective,
     objectiveProvenance: {
@@ -676,6 +715,9 @@ async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "lis
       ...(priorProvenance?.originalContract ? { originalContract: priorProvenance.originalContract } : {}),
       userSeeds,
     },
+    ...(cancellingAudit
+      ? { status: "active", pendingCompletion: undefined, completionSummary: undefined }
+      : {}),
   };
   if (hasNewContract) patch.verificationContract = proposed.verificationContract;
   else if (clearsContract) patch.verificationContract = "";
@@ -687,14 +729,51 @@ async function cmdTweak(args: string, ctx: ExtensionContext, mode: "goal" | "lis
   appendLedger(ctx.cwd, "goal_tweaked", {
     goalId: latest.id,
     objective: newObjective,
-    via: mode === "list" ? "/list tweak" : "/goal tweak",
+    via: replacingLiveList ? "objective conflict whole-list update" : mode === "list" ? "/list tweak" : "/goal tweak",
   });
+  if (replacingLiveList) {
+    appendLedger(ctx.cwd, "objective_conflict_updated", {
+      goalId: latest.id,
+      mode: "list",
+      wholeObjective: true,
+      objective: newObjective,
+      auditCancelled: cancellingAudit,
+    });
+    ctx.ui.notify("Whole list objective updated; the current item continues against the new objective.", "info");
+    scheduleContinuation(ctx, true);
+    return true;
+  }
   if (mode === "list") {
     ctx.ui.notify("List item tweaked; it remains paused. /list resume to continue.", "info");
-    return;
+    return true;
   }
   ctx.ui.notify("Goal tweaked. The loop continues against the new objective.", "info");
   scheduleContinuation(ctx, true);
+  return true;
+}
+
+/**
+ * Conflict resolution is a whole-objective operation. Try the incoming
+ * objective once as the proposed replacement; if that cannot be applied,
+ * retry the same whole-objective editor (bounded twice). Never descend into
+ * `taskList` or ask the user to update tasks one by one.
+ */
+export async function updateWholeObjectiveFromConflict(
+  ctx: ExtensionContext,
+  objective: string,
+  mode: "goal" | "list",
+): Promise<boolean> {
+  const options: ConflictTweakOptions = mode === "list" ? { allowLiveList: true } : {};
+  if (await cmdTweak(objective, ctx, mode, options)) return true;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    appendLedger(ctx.cwd, "objective_conflict_update_retry", {
+      mode,
+      attempt,
+      wholeObjective: true,
+    });
+    if (await cmdTweak("", ctx, mode, options)) return true;
+  }
+  return false;
 }
 
 // =================================================================
@@ -1143,7 +1222,11 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
           return;
         }
         if (choice === "update") {
-          ctx.ui.notify("Update selected, but /list next is a replacement action. Use /list tweak to edit the current item; no item was switched.", "info");
+          const incomingWholeList = targetItem.objective + (targetItem.verificationContract ? `\nDone when:\n${targetItem.verificationContract}` : "");
+          const updated = await updateWholeObjectiveFromConflict(ctx, incomingWholeList, "list");
+          if (!updated) {
+            ctx.ui.notify("Whole list update was not applied; the current objective and queue are unchanged.", "info");
+          }
           return;
         }
         for (const item of current) {

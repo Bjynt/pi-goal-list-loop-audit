@@ -353,6 +353,7 @@ import {
   cmdGoal,
   cmdList,
   cmdReview,
+  updateWholeObjectiveFromConflict,
   cmdReviewerSettings,
   cmdSettings,
   createGoalCommands,
@@ -383,22 +384,30 @@ import { chooseObjectiveConflict, liveObjectives, type ObjectiveKind } from "../
 
 type AuditorModelCandidate = any;
 type PendingCompletion = any;
+type DraftActivationConflictResult = "proceed" | "updated" | "cancelled";
 
-async function resolveDraftActivationConflict(ctx: ExtensionContext, incoming: ObjectiveKind, objective: string): Promise<boolean> {
+async function resolveDraftActivationConflict(ctx: ExtensionContext, incoming: ObjectiveKind, objective: string): Promise<DraftActivationConflictResult> {
   const current = liveObjectives(state);
-  if (current.length === 0) return true;
+  if (current.length === 0) return "proceed";
   const choice = await chooseObjectiveConflict(ctx, incoming, objective, current);
   if (choice === "cancel") {
     ctx.ui.notify(`New ${incoming} objective cancelled; the current objective is unchanged.`, "info");
-    return false;
+    return "cancelled";
   }
   if (choice === "update") {
     const one = current[0];
-    if (one?.kind === "goal" && incoming === "goal" && one.status === "active") await cmdGoal(`tweak ${objective}`, ctx);
-    else if (one?.kind === "list" && incoming === "list") await cmdList(`tweak ${objective}`, ctx);
-    else if (one?.kind === "loop" && incoming === "loop") await cmdLoop(`refine ${objective}`, ctx);
-    else ctx.ui.notify("Update selected, but this cross-mode start has no safe in-place edit. No replacement was started.", "info");
-    return false;
+    let updated = false;
+    if (one?.kind === "goal" && incoming === "goal" && one.status === "active") {
+      updated = await updateWholeObjectiveFromConflict(ctx, objective, "goal");
+    } else if (one?.kind === "list" && incoming === "list") {
+      updated = await updateWholeObjectiveFromConflict(ctx, objective, "list");
+    } else if (one?.kind === "loop" && incoming === "loop") {
+      await cmdLoop(`refine ${objective}`, ctx);
+      updated = true;
+    } else {
+      ctx.ui.notify("Update selected, but this cross-mode start has no safe in-place edit. No replacement was started.", "info");
+    }
+    return updated ? "updated" : "cancelled";
   }
   for (const item of current) {
     if (item.kind === "loop" && isLoopActive()) await cmdLoop("stop", ctx);
@@ -406,7 +415,7 @@ async function resolveDraftActivationConflict(ctx: ExtensionContext, incoming: O
       archiveCurrentGoal(ctx, "aborted", `replaced by new ${incoming} objective`);
     }
   }
-  return true;
+  return "proceed";
 }
 
 function registerAgentTools(pi: any): void {
@@ -1479,9 +1488,15 @@ function registerAgentTools(pi: any): void {
             details: {},
           };
         }
-        if (batchActivates && !(await resolveDraftActivationConflict(liveCtx, "list", p.items.join("; ")))) {
-          draftingTarget = null;
-          return { content: [{ type: "text", text: "List activation was not started; the current objective was preserved." }], details: {} };
+        if (batchActivates) {
+          const conflict = await resolveDraftActivationConflict(liveCtx, "list", p.items.join("; "));
+          if (conflict !== "proceed") {
+            draftingTarget = null;
+            return {
+              content: [{ type: "text", text: conflict === "updated" ? "Whole list objective updated; the batch was not activated." : "List activation was not started; the current objective was preserved." }],
+              details: {},
+            };
+          }
         }
         draftingTarget = null;
         const wasIdle = !state.goal || state.goal.status === "complete" || state.goal.status === "aborted";
@@ -1557,8 +1572,14 @@ function registerAgentTools(pi: any): void {
       resolveCarryover(liveCtx, "goal"); // v0.28.14: surface/clear stale leftovers
       // List drafting: the confirmed contract goes into the QUEUE, not active.
       if (confirmedTarget === "list") {
-        if (willActivate && !(await resolveDraftActivationConflict(liveCtx, "list", p.objective.trim()))) {
-          return { content: [{ type: "text", text: "List activation was not started; the current objective was preserved." }], details: {} };
+        if (willActivate) {
+          const conflict = await resolveDraftActivationConflict(liveCtx, "list", p.objective.trim());
+          if (conflict !== "proceed") {
+            return {
+              content: [{ type: "text", text: conflict === "updated" ? "Whole list objective updated; the draft was not activated." : "List activation was not started; the current objective was preserved." }],
+              details: {},
+            };
+          }
         }
         const extracted = parseListItemDeclaration(full);
         const item = { id: newGoalId(), objective: extracted.objective, verificationContract: extracted.verificationContract || undefined, ...(extracted.parallelSafe === undefined ? {} : { parallelSafe: extracted.parallelSafe }), addedAt: nowIso() };
@@ -1581,8 +1602,12 @@ function registerAgentTools(pi: any): void {
         }
         return { content: [{ type: "text", text: `Confirmed and added to the list (${listQueue().length} waiting). It activates when the current goal completes.` }], details: {} };
       }
-      if (!(await resolveDraftActivationConflict(liveCtx, "goal", p.objective.trim()))) {
-        return { content: [{ type: "text", text: "Goal activation was not started; the current objective was preserved." }], details: {} };
+      const goalConflict = await resolveDraftActivationConflict(liveCtx, "goal", p.objective.trim());
+      if (goalConflict !== "proceed") {
+        return {
+          content: [{ type: "text", text: goalConflict === "updated" ? "Whole goal objective updated; the draft was not activated." : "Goal activation was not started; the current objective was preserved." }],
+          details: {},
+        };
       }
       const goal = createGoal(full, liveCtx);
       if (!setGoal(goal, liveCtx, autoAccept ? "draft-autoaccepted" : "draft-confirmed")) {
@@ -1883,8 +1908,15 @@ function registerAgentTools(pi: any): void {
         return { content: [{ type: "text", text: "n must be a positive integer (1-based position)." }], details: {} };
       }
       const targetItem = listQueue()[n - 1];
-      if (targetItem && !(await resolveDraftActivationConflict(liveCtx, "list", targetItem.objective))) {
-        return { content: [{ type: "text", text: "List activation was cancelled; the current objective was preserved." }], details: {} };
+      if (targetItem) {
+        const incomingWholeList = targetItem.objective + (targetItem.verificationContract ? `\nDone when:\n${targetItem.verificationContract}` : "");
+        const conflict = await resolveDraftActivationConflict(liveCtx, "list", incomingWholeList);
+        if (conflict !== "proceed") {
+          return {
+            content: [{ type: "text", text: conflict === "updated" ? "Whole list objective updated; the requested item was not separately activated." : "List activation was cancelled; the current objective was preserved." }],
+            details: {},
+          };
+        }
       }
       if (!activateNextListItem(liveCtx, n, { explicit: true })) {
         return { content: [{ type: "text", text: listQueue().length === 0 ? "List is empty." : `No item #${n} (list has ${listQueue().length} items).` }], details: {} };

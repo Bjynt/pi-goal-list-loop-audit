@@ -408,6 +408,132 @@ test("v0.35.0: a conflicting /goal start offers update, replace, or cancel witho
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
 });
 
+test("v0.35.x: same-mode list conflict updates the whole objective, never individual tasks", async () => {
+  __testOnlyResetStaleFlag();
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  const queued = { id: "whole-list-incoming", objective: "incoming whole list objective", verificationContract: "the new proof exists", addedAt: new Date().toISOString() };
+  seedState(cwd, {
+    goal: seedGoal({
+      policy: "list",
+      status: "active",
+      objective: "current whole list objective — done when the old proof exists",
+      verificationContract: "old proof",
+    }),
+    list: [queued],
+  });
+  const ctx = await freshSession(cwd, "reload");
+  const originalId = readState(cwd).goal?.id;
+  ctx.ui.selectImpl = async (_title, options) => options.find((option) => option === "Update current objective");
+  ctx.ui.confirmImpl = async () => true;
+
+  await pi.command("list", "next", ctx);
+
+  const after = readState(cwd);
+  assert.equal(after.goal?.id, originalId);
+  assert.equal(after.goal?.objective, queued.objective);
+  assert.equal(after.goal?.verificationContract, queued.verificationContract);
+  assert.equal(after.goal?.status, "active");
+  assert.deepEqual(after.list, [queued], "the conflict update is whole-objective; it does not walk or consume task entries");
+  const update = ledgerEvent(cwd, "objective_conflict_updated");
+  assert.equal(update.value.wholeObjective, true);
+  assert.equal(update.value.mode, "list");
+  assert.equal(readLedger(cwd).some((entry) => entry.type === "update_task_status"), false);
+  assert.ok(ctx.ui.matching("Whole list objective updated").length >= 1);
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
+
+test("v0.35.x: auditing list conflict cancels the stale audit before whole-objective update", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const queued = { id: "whole-list-audit", objective: "replacement after audit conflict", addedAt: new Date().toISOString() };
+  const auditGoal = seedGoal({
+    policy: "list",
+    status: "auditing",
+    objective: "auditing list before conflict",
+    pendingCompletion: { attemptId: "stale-audit-attempt", at: new Date().toISOString(), phase: "running" },
+  });
+  seedState(cwd, { goal: auditGoal, list: [queued] });
+  const ctx = await freshSession(cwd, "reload");
+  // The restore gate deliberately parks a cold auditing claim. Re-seed the
+  // fixture after ownership is established so this test exercises the live
+  // conflict path, including stale-audit cancellation.
+  seedState(cwd, { goal: auditGoal, list: [queued] });
+  __testOnlyLoadState(cwd);
+  assert.equal(readState(cwd).goal?.status, "auditing");
+  ctx.ui.selectImpl = async (_title, options) => options.find((option) => option === "Update current objective");
+  ctx.ui.confirmImpl = async () => true;
+
+  await pi.command("list", "next", ctx);
+
+  const after = readState(cwd);
+  assert.equal(after.goal?.status, "active");
+  assert.equal(after.goal?.objective, queued.objective);
+  assert.equal(after.goal?.pendingCompletion, undefined);
+  assert.ok(readLedger(cwd).some((entry) => entry.type === "objective_conflict_audit_cancelled"));
+  assert.ok(readLedger(cwd).some((entry) => entry.type === "objective_conflict_updated"));
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
+
+test("v0.35.x: list_activate uses the same whole-objective conflict update", async () => {
+  __testOnlyResetStaleFlag();
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  const queued = { id: "whole-list-tool", objective: "tool-selected whole list objective", addedAt: new Date().toISOString() };
+  seedState(cwd, {
+    goal: seedGoal({ policy: "list", status: "active", objective: "tool current list objective" }),
+    list: [queued],
+  });
+  const ctx = await freshSession(cwd, "reload");
+  const originalId = readState(cwd).goal?.id;
+  ctx.ui.selectImpl = async (_title, options) => options.find((option) => option === "Update current objective");
+  ctx.ui.confirmImpl = async () => true;
+
+  const result = await pi.runTool("list_activate", { n: 1 }, ctx);
+
+  assert.match(result.content[0]!.text, /Whole list objective updated/);
+  assert.equal(readState(cwd).goal?.id, originalId);
+  assert.equal(readState(cwd).goal?.objective, queued.objective);
+  assert.deepEqual(readState(cwd).list, [queued]);
+  assert.equal(readLedger(cwd).some((entry) => entry.type === "update_task_status"), false);
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
+
+test("v0.35.x: failed conflict update retries the same whole-objective prompt", async () => {
+  __testOnlyResetStaleFlag();
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  const queued = { id: "whole-list-retry", objective: "incoming list after retry — done when the replacement proof exists", addedAt: new Date().toISOString() };
+  seedState(cwd, {
+    goal: seedGoal({
+      policy: "list",
+      status: "active",
+      objective: "current list before retry — done when the old proof exists",
+    }),
+    list: [queued],
+  });
+  const ctx = await freshSession(cwd, "reload");
+  ctx.ui.selectImpl = async (_title, options) => options.find((option) => option === "Update current objective");
+  let confirms = 0;
+  ctx.ui.confirmImpl = async () => ++confirms > 1;
+  let inputs = 0;
+  const inputTitles: string[] = [];
+  ctx.ui.inputImpl = async (title) => {
+    inputTitles.push(title);
+    inputs++;
+    return inputs === 2 ? "replacement whole list objective. Done when: retry proof exists" : undefined;
+  };
+
+  await pi.command("list", "next", ctx);
+
+  assert.equal(readState(cwd).goal?.objective, "replacement whole list objective");
+  assert.equal(inputs, 2, "the bounded fallback retries the same whole-objective editor, not individual tasks");
+  assert.deepEqual(new Set(inputTitles), new Set(["What should we update the list item into? (replacement objective, optional 'Done when: ...' clause)"]));
+  assert.equal(readLedger(cwd).filter((entry) => entry.type === "objective_conflict_update_retry").length, 2);
+  assert.equal(readLedger(cwd).some((entry) => entry.type === "update_task_status"), false);
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
+
 test("v0.35.0: a cross-mode replacement confirms before replacing a live loop", async () => {
   __testOnlyResetStaleFlag();
   setGlobalAutoResume(true);
