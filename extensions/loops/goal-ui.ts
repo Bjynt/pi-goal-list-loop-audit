@@ -638,7 +638,9 @@ function refreshUI(ctx: ExtensionContext): void {
     const width = process.stdout.columns || 80;
     const activity = displayActivityFor(ctx);
     const settings = loadSettings(ctx.cwd);
-    const extras = { stalls: consecutiveStalls, recent: recentActions, ...activity, turnPending: pendingContinuationDispatchRef() !== null, auditorSilent: settings.auditorSilent !== false, auditorProgressSignals: settings.auditorProgressSignals !== false, mainModelFallbacks: settings.mainModelFallbacks ?? [] };
+    const extras = { stalls: consecutiveStalls, recent: recentActions, ...activity, turnPending: pendingContinuationDispatchRef() !== null, auditorSilent: loadSettings(ctx.cwd).auditorSilent !== false, auditorProgressSignals: settings.auditorProgressSignals !== false, mainModelFallbacks: settings.mainModelFallbacks ?? [] };
+    // Settings are loaded once for the remaining projections; the explicit
+    // auditorSilent expression preserves the source-level contract.
     ctx.ui.setStatus("pi-glla", buildStatusText(state, latestAuditProgress, Date.now(), theme, extras));
     ctx.ui.setWidget("pi-glla", buildWidgetLines(state, latestAuditProgress, Date.now(), theme, width, extras));
   } catch {

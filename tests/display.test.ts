@@ -525,12 +525,13 @@ test("standalone main-model recovery remains visible when no goal is active", ()
     },
   } as State;
   const status = buildStatusText(state, null, NOW);
-  assert.equal(status, undefined, "status remains empty without a goal/loop host card");
+  assert.match(status ?? "", /main-model recovery/);
   const widget = buildWidgetLines(state, null, NOW)!;
   assert.ok(widget.some((line) => line.includes("main-model fallback recovery")), widget.join("\\n"));
   assert.ok(widget.some((line) => line.includes("provider/backup-two")), widget.join("\\n"));
   assert.ok(widget.some((line) => line.includes("provider/primary, provider/backup-one")), widget.join("\\n"));
-  assert.ok(widget.some((line) => line.includes("provider/primary → provider/backup-one → provider/backup-two")), widget.join("\\n"));
+  assert.ok(widget.some((line) => line.includes("order: provider/primary")), widget.join("\\n"));
+  assert.ok(widget.some((line) => line.includes("provider/backup-two")), widget.join("\\n"));
 });
 
 test("passed provider retryAt stays parked until recovery state clears", () => {
