@@ -37,15 +37,15 @@ export interface ObjectiveRepairProposal {
 
 const IMPERATIVE_START = /^(add|allow|audit|build|cap|clarify|close|collapse|consolidate|create|detect|document|ensure|enforce|fix|harden|improve|implement|instrument|investigate|make|migrate|overhaul|preserve|prevent|recover|refactor|remove|repair|replace|research|resolve|restore|review|ship|simplify|strengthen|support|test|update|validate|verify|wire|write)\b/i;
 const COMMAND_ONLY = /^(?:bun|npm|pnpm|yarn|npx|node|deno|git)\s+(?:test|run|check|diff|status|show|log|exec)\b/i;
-const REVIEWER_MARKER = /^(?:audit(?:\s+(?:report|result|findings?))?|review(?:er)?(?:\s+(?:report|result|feedback|findings?))?|verdict|evidence|output|item|required\s+fixes?|completion\s+claim)\s*:/i;
+const REVIEWER_MARKER = /(?:^|[.!?;]\s+|[-*]\s+)(?:audit(?:\s+(?:report|result|findings?))?|review(?:er)?(?:\s+(?:report|result|feedback|findings?))?|verdict|evidence|output|item|required\s+fixes?|completion\s+claim)\s*:/i;
 const REVIEWER_VOCABULARY = /\b(?:passes\s+sequentially|zero\s+failures?|\d+\s+failures?|ran\s+\d+\s+tests?|verification\s+contract|regression\s+shield|auditor(?:[- ](?:approved|report|disapproved))?|reviewer(?:[- ](?:approved|report|disapproved|feedback|finding))?|completion\s+claim|<\/?(?:evidence|approved|disapproved|impossible)\b)\b/i;
 // A report can look superficially task-like because it lists completed work
-// with imperative-shaped nouns ("Added ...", "Focused tests ..."). These
-// patterns are deliberately gated by IMPERATIVE_START below: "Add focused
-// tests for the audit path" remains a valid request, while "Focused tests:
-// 16 pass" remains evidence.
-const REVIEWER_NARRATIVE = /^(?:the\s+)?(?:auditor|reviewer|audit|review)(?:['’]s)?\s+(?:says?|reports?|found|finding|feedback|objection|verdict|assessment|result|is|was|has|have)\b/i;
-const EVIDENCE_SUMMARY = /(?:^|[.!?]\s+|[-*]\s+)(?:focused\s+tests?|full\s+suite|typecheck(?:\s+and\s+diff\s+checks?)?|diff\s+checks?|test\s+results?|resubmitted(?:\s+for)?)\s*:/i;
+// with imperative-shaped nouns ("Added ...", "Focused tests ..."). Keep
+// genuine phrases such as "Add focused tests for the audit path" valid, but
+// reject report markers that start a later sentence/tail, including
+// "Fix the gate. Evidence: ..." and "Review complete; Focused tests: ...".
+const REVIEWER_NARRATIVE = /(?:^|[.!?;]\s+|[-*]\s+)(?:the\s+)?(?:auditor|reviewer|audit|review)(?:['’]s)?\s+(?:says?|reports?|found|finding|feedback|objection|verdict|assessment|result|is|was|has|have)\b/i;
+const EVIDENCE_SUMMARY = /(?:^|[.!?;]\s+|[-*]\s+)(?:focused\s+tests?|full\s+suite|typecheck(?:\s+and\s+diff\s+checks?)?|diff\s+checks?|test\s+results?|resubmitted(?:\s+for)?)\s*:/i;
 const SEMANTIC_REVIEW_FRAGMENT = /\b(?:now\s+)?i\s+(?:need|should|must)\s+(?:to\s+)?(?:verify|check|inspect|confirm)\b/i;
 const DANGling_END = /\b(?:or|and|but|to|with|because|if|when|of|in|for|from)\s*$/i;
 
@@ -88,11 +88,9 @@ export function assessSuspiciousObjective(objective: unknown, verificationContra
   // text is not already an actionable imperative; explicit reviewer markers
   // and verdict tags remain suspicious regardless of their opening word.
   const explicitReviewerMarker = REVIEWER_MARKER.test(text) || /<\/?(?:evidence|approved|disapproved|impossible)\b/i.test(text);
-  const reviewerReport = !IMPERATIVE_START.test(text) && (
-    REVIEWER_VOCABULARY.test(text)
-      || REVIEWER_NARRATIVE.test(text)
-      || EVIDENCE_SUMMARY.test(text)
-  );
+  const reviewerReport = REVIEWER_NARRATIVE.test(text)
+    || EVIDENCE_SUMMARY.test(text)
+    || (!IMPERATIVE_START.test(text) && REVIEWER_VOCABULARY.test(text));
   if (explicitReviewerMarker || reviewerReport) reasons.push("verification-fragment");
   if (/^#{1,6}\s+\S/.test(text)) reasons.push("heading");
   if (isAuditLikeNumberedText(text)) reasons.push("numbered-audit-fragment");
