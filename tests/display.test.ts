@@ -509,6 +509,29 @@ test("paused lifecycle projection names owner, queue, last activity, and next tr
   assert.ok(widget.some((line) => line.includes("last activity 2m 00s ago") && line.includes("next: retrying automatically")), widget.join("\\n"));
 });
 
+test("standalone main-model recovery remains visible when no goal is active", () => {
+  const state = {
+    goal: null,
+    list: [],
+    mainModelRecovery: {
+      primary: "provider/primary",
+      active: "provider/backup-one",
+      attempted: ["provider/primary", "provider/backup-one"],
+      attempts: 2,
+      retryAt: new Date(NOW + 60_000).toISOString(),
+      pendingModelSwitch: "provider/backup-two",
+      reason: "account usage limit",
+      kind: "goal",
+    },
+  } as State;
+  const status = buildStatusText(state, null, NOW);
+  assert.equal(status, undefined, "status remains empty without a goal/loop host card");
+  const widget = buildWidgetLines(state, null, NOW)!;
+  assert.ok(widget.some((line) => line.includes("main-model fallback recovery")), widget.join("\\n"));
+  assert.ok(widget.some((line) => line.includes("provider/backup-two")), widget.join("\\n"));
+  assert.ok(widget.some((line) => line.includes("provider/primary, provider/backup-one")), widget.join("\\n"));
+});
+
 test("passed provider retryAt stays parked until recovery state clears", () => {
   const retryAt = new Date(NOW - 60_000).toISOString();
   const state = {
