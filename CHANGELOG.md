@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.34.134 — Windows detached auditor launch and package release (2026-08-13)
 ### Windows detached auditor launch and atomic protocol retries
   Windows npm installations expose `pi.cmd` rather than a directly executable
   `pi` binary. The detached auditor now uses an explicit, quoted `cmd.exe`
