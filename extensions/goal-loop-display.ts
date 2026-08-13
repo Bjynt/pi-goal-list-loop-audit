@@ -555,7 +555,11 @@ function auditorToolTarget(args: string | undefined): string | undefined {
  * second verdict surface. Join the retained fragments before stripping so an
  * unterminated streamed `<think>` block suppresses its later fragments too. */
 function latestAuditorOutput(audit: AuditDisplayProgress | null | undefined): string | undefined {
-  const stream = stripThinkBlocks((audit?.recentOutput ?? []).join("\n"))
+  // recentOutput is detached-worker telemetry, not durable diagnostics, but
+  // it can still contain the provider's raw 403/429/Token Plan payload while
+  // the worker is live or waiting for the verdict. Apply the same whole-report
+  // projection used by audit history before selecting the latest line.
+  const stream = sanitizeProviderAuditReport(stripThinkBlocks((audit?.recentOutput ?? []).join("\n")))
     .replace(/<\/?(?:approved|disapproved|impossible)(?:\s[^>]*)?\/?>(?:\s*)/gi, "");
   for (const entry of stream.split("\n").reverse()) {
     const clean = compactDisplayText(sanitizeDisplayText(entry)).trim();

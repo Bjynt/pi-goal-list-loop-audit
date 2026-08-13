@@ -818,6 +818,45 @@ test("detached auditor status names phase, evidence, freshness, verdict wait, an
   assert.match(verdictWidget, /waiting for detached verdict/);
 });
 
+test("detached recent auditor output is sanitized in live and awaiting-verdict widget paths", () => {
+  const g = goalOf({
+    status: "auditing",
+    pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-provider-output" },
+  });
+  const liveAudit = {
+    phase: "tool_executing" as const,
+    currentTool: "read",
+    recentOutput: [
+      "worker note",
+      '403 {"error":{"message":"upstream denied"},"request_id":"secret-403"}',
+    ],
+    elapsedMs: 42_000,
+    lastActivityAt: NOW - 5_000,
+  };
+  const liveState = { goal: g, list: [] };
+  const liveWidget = buildWidgetLines(liveState, liveAudit, NOW, undefined, undefined, { auditorSilent: false })!.join("\\n");
+  const liveStatus = buildStatusText(liveState, liveAudit, NOW)!;
+  assert.doesNotMatch(`${liveWidget}\\n${liveStatus}`, /403|upstream denied|secret-403/);
+  assert.match(liveWidget, /diagnostic redacted/);
+
+  const awaitingAudit = {
+    phase: "complete" as const,
+    recentOutput: [
+      "429",
+      "{",
+      '  "account": "secret-account",',
+      '  "message": "Token Plan rate limit reached"',
+      "}",
+      "<disapproved/>",
+    ],
+    elapsedMs: 45_000,
+  };
+  const awaitingWidget = buildWidgetLines(liveState, awaitingAudit, NOW)!.join("\\n");
+  const awaitingStatus = buildStatusText(liveState, awaitingAudit, NOW)!;
+  assert.doesNotMatch(`${awaitingWidget}\\n${awaitingStatus}`, /429|Token Plan|secret-account|rate limit/);
+  assert.match(awaitingWidget, /diagnostic redacted/);
+});
+
 test("v0.34.86: silent audits show a fine phase label (reading source… / writing report…)", () => {
   const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-fine" } });
   const audit = { phase: "producing_report" as const, elapsedMs: 300_000, lastActivityAt: NOW - 5_000 };
