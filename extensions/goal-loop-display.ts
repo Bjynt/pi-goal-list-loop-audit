@@ -793,8 +793,11 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       // is not a guaranteed reset and the :00:30 hourly probe picks work
       // up earlier; note.md 2026-08-10).
       const parked = state.mainModelRecovery?.retryAt ? Date.parse(state.mainModelRecovery.retryAt) : Number.NaN;
-      if (Number.isFinite(parked)) {
-        return `glla: ${paint(theme, "dim", `⏳ parked on provider wall — retrying automatically`)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
+      if (Number.isFinite(parked) || state.mainModelRecovery?.pendingModelSwitch) {
+        const label = state.mainModelRecovery?.quotaSignal || /quota|rate.?limit|provider wall|usage limit|provider unavailable/i.test(`${state.mainModelRecovery?.reason ?? ""} ${g.pauseReason ?? ""}`)
+          ? "⏳ parked on provider wall — retrying automatically"
+          : "⏳ main-model fallback recovery — retrying automatically";
+        return `glla: ${paint(theme, "dim", label)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
       }
       return `glla: ${paint(theme, "dim", `⏳ auto-retrying${when}`)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
     }
