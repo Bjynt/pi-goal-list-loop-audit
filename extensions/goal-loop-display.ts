@@ -697,14 +697,14 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
   const held = heldLoop(state);
   if (state.loop && !state.loop.active && state.mainModelRecovery?.kind === "loop") {
     const summary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
-    return `glla: ${paint(theme, "warning", "⏳ loop recovery")}${summary.slice(0, 3).map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
+    return `glla: ${paint(theme, "warning", "⏳ loop recovery")}${summary.map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
   }
   // v0.28.17: a held loop rides every goal state as a compact suffix.
   const heldSuffix = held ? paint(theme, "warning", " · loop⏸held") : "";
   if (!g) {
     if (state.mainModelRecovery) {
       const summary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
-      return `glla: ${paint(theme, "warning", "⏳ main-model recovery")}${summary.slice(0, 3).map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
+      return `glla: ${paint(theme, "warning", "⏳ main-model recovery")}${summary.map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
     }
     if (held) return `glla: loop ${paint(theme, "warning", "⏸ held")} · iter ${held.iteration} — /loop to resume`;
     return undefined;
@@ -1006,16 +1006,11 @@ function parkedLoopRecoveryLines(loop: LoopState, recovery: MainModelRecovery, n
 /** v0.28.17: standalone card for a restore-held loop (no goal visible). */
 function standaloneRecoveryLines(recovery: MainModelRecovery, now: number, theme?: DisplayTheme, width?: number, configuredBackups: string[] = []): string[] {
   const current = recovery.active ?? recovery.primary;
-  const pending = recovery.pendingModelSwitch ? ` · pending ${truncate(recovery.pendingModelSwitch, budgetFor(width, 3, 28))}` : "";
-  const retry = recovery.retryAt ? Date.parse(recovery.retryAt) : Number.NaN;
-  const when = Number.isFinite(retry) ? (retry <= now ? "probe due now" : `probe in ${fmtElapsed(retry - now)}`) : recovery.manualResumeRequired ? "manual resume required" : "probe pending";
   const wall = recovery.quotaSignal ? "provider wall" : "main-model fallback recovery";
-  const order = [recovery.primary, ...configuredBackups].filter((ref, index, refs) => refs.findIndex((candidate) => candidate.toLowerCase() === ref.toLowerCase()) === index).join(" → ");
-  const skipped = recovery.skipped?.length ? ` · skipped ${recovery.skipped.map((entry) => `${entry.ref} (${entry.reason})`).join(", ")}` : "";
+  const summary = formatMainModelRecoveryStatus(recovery, configuredBackups);
   return [
-    `${paint(theme, "warning", "⏳")} ${paint(theme, "accent", wall)} · ${truncate(current, budgetFor(width, 3, 36))}${pending}`,
-    `├─ ${paint(theme, "dim", `order: ${order} · current: ${current} · ${when}`)}`,
-    `├─ ${paint(theme, "dim", `attempted: ${recovery.attempted.join(", ") || "none"}${skipped}`)}`,
+    `${paint(theme, "warning", "⏳")} ${paint(theme, "accent", wall)} · ${truncate(current, budgetFor(width, 3, 36))}`,
+    ...summary.map((line) => `├─ ${paint(theme, "dim", line)}`),
     `└─ ${paint(theme, "dim", "work is saved · /glla resume or the matching goal/list/loop resume retries")}`,
   ];
 }
