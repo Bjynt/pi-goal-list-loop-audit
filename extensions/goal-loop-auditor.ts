@@ -31,6 +31,7 @@ export interface GoalAuditorResult {
   model: string;
   thinkingLevel?: string;
   error?: string;
+  infrastructureClass?: "no-verdict" | "timeout" | "transport" | "provider";
   /** regression_shield outcome when the goal has a verification contract. */
   regressionShieldPassed?: boolean;
   regressionShieldMissing?: string[];

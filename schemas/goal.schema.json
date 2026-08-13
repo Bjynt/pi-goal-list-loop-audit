@@ -120,6 +120,7 @@
         "wallDeadlineAt": { "type": "string", "format": "date-time" },
         "recoveryAt": { "type": "string", "format": "date-time" },
         "recoveryReason": { "type": "string" },
+        "recoveryRetryAt": { "type": "string", "format": "date-time" },
         "providerErrorDiagnostic": { "type": "string", "description": "Bounded provider/auditor diagnostic retained for forensics only." },
         "recoveryEpisodeKey": { "type": "string" },
         "recoveryNoticeKeys": { "type": "array", "maxItems": 16, "items": { "type": "string" } },

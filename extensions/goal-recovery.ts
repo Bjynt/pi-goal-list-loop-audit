@@ -19,7 +19,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { state } from "./goal-state.js";
-import { appendLedger, claimRecoveryNotice, nowIso, piGlaDir, isForbiddenModel, isStaleApiError, nextHourlyProbeMs, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderDisplayText, type Goal, type MainModelRecovery, type PendingCompletion } from "./goal-loop-core.js";
+import { appendLedger, claimRecoveryNotice, nowIso, piGlaDir, isForbiddenModel, isStaleApiError, nextHourlyProbeMs, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderDisplayText, writeGoalMd, type Goal, type MainModelRecovery, type PendingCompletion } from "./goal-loop-core.js";
+import { persistStateLine } from "./goal-state.js";
 import { cancelDetachedGoalCompletionAuditor } from "./goal-loop-auditor-process.js";
 import { classifyMainModelFailure, isContextOverflowError, isLongLivedFailureKind, mainModelAutoRetryUntil, mainModelFailureDelayMs, mainModelRetryDelayMs, MAIN_MODEL_AUTO_RETRY_HORIZON_MS, modelRef, nextUntriedModelRef, normalizeModelRefs, splitModelRef, type MainModelFailure } from "./main-model-recovery.js";
 import { ModelSelector, type ModelScope } from "./model-selector.js";
@@ -100,6 +101,61 @@ export function markCompletionAuditRecoveryPending(ctx: ExtensionContext, reason
     recoveryEpisodeKey,
     mainReleased: true,
     verdict: "none",
+  });
+  return true;
+}
+
+/** Park an interrupted completion claim using only its durable workspace path.
+ * This is the stale-terminal escape hatch: the retained ExtensionContext is
+ * explicitly probe-only, so the heartbeat must not pass it to updateGoal. */
+export function parkCompletionAuditRecovery(cwd: string, reason: string): boolean {
+  const goal = state.goal;
+  const claim = goal?.pendingCompletion;
+  if (!goal || goal.status !== "auditing" || !claim) {
+    if (goal?.status === "auditing") clearDetachedAuditRuntime();
+    return false;
+  }
+  const failureCopy = providerErrorPresentation(reason, "completion");
+  const recoveryEpisodeKey = claim.recoveryEpisodeKey ?? `${claim.at}:${failureCopy.fingerprint}`;
+  const pending: PendingCompletion = {
+    ...claim,
+    phase: "recovery-pending",
+    recoveryAt: nowIso(),
+    recoveryReason: reason,
+    providerErrorDiagnostic: failureCopy.sensitive ? failureCopy.diagnostic : claim.providerErrorDiagnostic,
+    recoveryEpisodeKey,
+    recoveryNoticeKeys: claim.recoveryNoticeKeys ?? [],
+    automaticRecoveryAttempted: claim.automaticRecoveryAttempted ?? false,
+  };
+  if (claim.attemptId) cancelDetachedGoalCompletionAuditor(cwd, claim.attemptId);
+  clearDetachedAuditRuntime();
+  const next: Goal = {
+    ...goal,
+    status: "paused",
+    pendingCompletion: pending,
+    providerErrorDiagnostic: pending.providerErrorDiagnostic,
+    recoveryEpisodeKey,
+    recoveryNoticeKeys: pending.recoveryNoticeKeys,
+    pauseKind: "blocked",
+    pauseResumeAt: undefined,
+    pauseReason: `completion audit blocked — no verdict${failureCopy.sensitive ? `: ${failureCopy.display}` : `: ${reason}`}`,
+    pauseSuggestedAction: `The completion claim is stored and was not judged. Fix the auditor/session issue, then ${activeGoalSurfaceCommand("resume")} to start exactly one fresh audit.`,
+    pauseOptions: undefined,
+    pauseRecommended: undefined,
+    updatedAt: nowIso(),
+  };
+  const file = writeGoalMd(cwd, next);
+  state.goal = { ...next, activePath: path.relative(cwd, file) || file };
+  persistStateLine(cwd, state);
+  appendLedger(cwd, "audit_recovery_pending", {
+    goalId: goal.id,
+    attemptId: claim.attemptId,
+    reason: failureCopy.sensitive ? failureCopy.display : reason,
+    diagnostic: pending.providerErrorDiagnostic,
+    recoveryEpisodeKey,
+    mainReleased: true,
+    verdict: "none",
+    via: "context-free-stale-latch",
   });
   return true;
 }

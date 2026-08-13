@@ -55,6 +55,7 @@ import {
   mainModelRecoveryActive,
   manuallyResumeMainModelRecovery,
   markCompletionAuditRecoveryPending,
+  parkCompletionAuditRecovery,
   probeMainModelRecovery,
   type RecoveryDeps,
   type RecoveryFlags,
@@ -75,7 +76,7 @@ export {
   __testOnlyRunFanOutListAuditFindings,
 } from "./goal-session.js";
 export { __testOnlySetLastCompactionAt, __testOnlyLoadState, __testOnlyRegisterAgentTools, __testOnlyRememberCtx } from "./goal-ui.js";
-export { auditorQuotaRetryPlan, runDetachedCompletionWithFallback, type AuditorModelCandidate } from "./goal-auditor-hooks.js";
+export { auditorQuotaRetryPlan, runDetachedCompletionWithFallback, __testOnlySetAuditorRecoveryRetryDelay, __testOnlyResetAuditorRecoveryRuntime, type AuditorModelCandidate } from "./goal-auditor-hooks.js";
 export { handleSettingChoice } from "./goal-settings-ui.js";
 
 /* ------------------------------------------------------------------ */
@@ -345,6 +346,7 @@ const heartbeatFlags: HeartbeatFlags = {
   get initialSessionLoadPending() { return initialSessionLoadPending; },
   get sessionGeneration() { return sessionGeneration; },
   get lastCtx() { return lastCtx; },
+  get extensionApi() { return extensionApi; },
   get extensionApiStale() { return extensionApiStale; },
   set extensionApiStale(v) { extensionApiStale = v; },
   get completionAuditInFlight() { return completionAuditInFlight; },
@@ -391,9 +393,11 @@ const heartbeatDeps: HeartbeatDeps = {
   noteActivity,
   notifyExternal,
   probeExtensionApiStaleRaw,
+  rememberCtx,
   scheduleContinuation,
   tryAbsorbHostSuccessor,
   updateGoal,
+  parkCompletionAuditRecovery,
   continuationUnansweredMs: CONTINUATION_UNANSWERED_MS,
   continuationUnansweredThrottleMs: CONTINUATION_UNANSWERED_THROTTLE_MS,
   abortZombieRun,

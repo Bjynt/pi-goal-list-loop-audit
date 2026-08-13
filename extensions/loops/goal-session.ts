@@ -278,6 +278,7 @@ import {
   mainModelFallbackRefs,
   manuallyResumeMainModelRecovery,
   markCompletionAuditRecoveryPending,
+  parkCompletionAuditRecovery,
   parkMainModelAfterFailure,
   probeMainModelRecovery,
   recoverMainModelFromSendStorm,
@@ -595,11 +596,16 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   // the durable goal in AUDITING. Release the MAIN-side wait immediately and
   // preserve the exact claim as infrastructure/no-verdict recovery debt.
   if (state.goal?.status === "auditing") {
-    markCompletionAuditRecoveryPending(ctx, `extension_api_stale:${where}`);
+    // The handle that triggered this path may already be stale. Use the
+    // context-free durable park so updateGoal/UI never receive a dead ctx.
+    parkCompletionAuditRecovery(ctx.cwd, `extension_api_stale:${where}`);
   }
   // v0.32.0: kill the continuation re-arm too — otherwise an orphaned goal
-  // keeps spinning a flat 50ms retry below every watchdog.
-  clearSessionOwnedTimers();
+  // keeps spinning a flat 50ms retry below every watchdog. Keep only the
+  // heartbeat/UI recovery probes alive: a stale handle cannot send, but the
+  // same host can become healthy again without delivering session_start.
+  // Stale gates still forbid all continuation/auditor sends.
+  clearSessionOwnedTimers(true);
   if (isLoopActive()) {
     clearLoopTimer();
     state.loop = { ...state.loop!, active: false, stopReason: `extension api stale: ${guidance}` };
@@ -1182,7 +1188,10 @@ function isHostSuccessorContact(ctx: ExtensionContext): boolean {
 function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   if (zombieStoodDown) return false; // a successor INSTANCE owns owner.json — this instance stands down forever
   if (!isHostSuccessorContact(ctx)) return false;
-  const interruptedAudit = state.goal?.status === "auditing" && !!state.goal.pendingCompletion;
+  const completionAuditNeedsRecovery = !!state.goal?.pendingCompletion && (
+    state.goal.status === "auditing"
+    || (state.goal.status === "paused" && (state.goal.pendingCompletion.phase ?? "recovery-pending") === "recovery-pending")
+  );
   // v0.34.73 (OPEN-ISSUES 1.12): a live successor absorbed WITHOUT
   // session_start is a silent-swap handoff — record the id pair when the
   // session identity actually changed.
@@ -1199,12 +1208,32 @@ function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   sessionGeneration++; // a dead generation's delayed callbacks must not fire into the new owner
   clearDraftingState(); // the old interview belongs to the disposed generation
   appendLedger(ctx.cwd, "session_rebind_via_live_ctx", { via, generation: sessionGeneration });
-  if (interruptedAudit) {
+  let auditRetryStarted = false;
+  if (completionAuditNeedsRecovery && state.goal?.status === "auditing") {
     // The old generation's detached worker/result handler is now stale. Do
     // not let its finally block leave completionAuditInFlight latched in the
-    // successor; release the MAIN and require explicit recovery consent.
+    // successor; release the MAIN and preserve the exact claim.
     markCompletionAuditRecoveryPending(ctx, `silent-host-successor:${via}`);
-    ctx.ui.notify(`glla: detached completion auditor lost with the old host — no verdict was reached; the MAIN is released. ${activeGoalSurfaceCommand("resume")} retries the stored claim.`, "warning");
+  }
+  // A validated file-backed successor is already the lifecycle consent needed
+  // for the bounded one-shot audit recovery. This closes the old gap where a
+  // silent replacement was absorbed but a parked no-verdict claim still
+  // waited forever for a manual /goal|/list resume.
+  if (
+    completionAuditNeedsRecovery
+    && state.goal?.status === "paused"
+    && state.goal.pendingCompletion?.phase === "recovery-pending"
+    && typeof maybeAutoRetryParkedCompletionAudit === "function"
+  ) {
+    auditRetryStarted = maybeAutoRetryParkedCompletionAudit("host-rebind");
+  }
+  if (completionAuditNeedsRecovery) {
+    ctx.ui.notify(
+      auditRetryStarted
+        ? "glla: detached completion auditor lost with the old host — no verdict was reached; the live replacement is retrying the stored claim once."
+        : `glla: detached completion auditor lost with the old host — no verdict was reached; the MAIN is released. ${activeGoalSurfaceCommand("resume")} retries the stored claim.`,
+      auditRetryStarted ? "info" : "warning",
+    );
   }
   ctx.ui.notify("glla: pi replaced this session without delivering session_start — absorbed the live replacement as the goal-plane owner (in-memory subagent sessions stay refused).", "info");
   startHeartbeat();
@@ -1263,7 +1292,13 @@ function selfHealStaleSameSession(ctx: ExtensionContext): boolean {
   appendLedger(ctx.cwd, "stale_self_healed", { was, via: "same-session command", generation: sessionGeneration });
   startHeartbeat();
   startUITicker();
-  if (state.goal && state.goal.status === "active" && state.goal.interruptedAt) {
+  const auditRetryStarted = state.goal?.status === "paused"
+    && state.goal.pendingCompletion?.phase === "recovery-pending"
+    && typeof maybeAutoRetryParkedCompletionAudit === "function"
+    && maybeAutoRetryParkedCompletionAudit("host-rebind");
+  if (auditRetryStarted) {
+    ctx.ui.notify("glla: the stale handle recovered in place — retrying the stored no-verdict completion audit once.", "info");
+  } else if (state.goal && state.goal.status === "active" && state.goal.interruptedAt) {
     // Mirror the session-load restore gate: autoResume=on (unattended rigs)
     // resumes; the hold-everything default keeps the interrupt marker and
     // asks for an explicit resume.

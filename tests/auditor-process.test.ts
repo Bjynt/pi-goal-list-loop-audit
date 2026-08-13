@@ -77,6 +77,30 @@ async function run(dir: string, env: NodeJS.ProcessEnv = {}) {
   return runWithAttempt(dir, "attempt-test", env);
 }
 
+test("transport failures carry an explicit no-verdict classification", async () => {
+  const dir = await setup();
+  try {
+    const result = await runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "high",
+      runtime: {
+        workerPath: workerPathFor(dir),
+        command: path.join(dir, "does-not-exist"),
+        attemptId: () => "attempt-transport-class",
+        pollIntervalMs: 10,
+        wallTimeoutMs: 500,
+      },
+    });
+    assert.equal(result.approved, false);
+    assert.equal(result.disapproved, false);
+    assert.equal(result.infrastructureClass, "transport");
+  } finally {
+    await cleanup(dir);
+  }
+});
+
 test("fake worker setup stays in per-test temp storage", async () => {
   const dir = await setup();
   const worker = workerPathFor(dir);
@@ -523,6 +547,7 @@ setTimeout(() => process.exit(17), 25);
     assert.equal(result.disapproved, false);
     assert.match(result.error ?? "", /RPC stdin stream failed|pi exited before audit completion|pi exited without an agent_settled|RPC stream ended/);
     assert.doesNotMatch(result.error ?? "", /worker exited without an atomic result/);
+    assert.equal(result.infrastructureClass, "no-verdict", "a worker that exits before a verdict is no-verdict infrastructure");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -554,6 +579,7 @@ test("detached worker treats silent provider time as infrastructure, not a verdi
     assert.match(result.error ?? "", /Auditor stalled/);
     assert.match(result.error ?? "", /for 1s/);
     assert.doesNotMatch(result.error ?? "", /for 10m/);
+    assert.equal(result.infrastructureClass, "timeout");
     assert.ok(reports.length > 0, "startup progress reaches the parent");
     assert.equal(reports.some((progress) => progress.lastActivityAt !== undefined), false, "startup silence is not rendered as worker activity");
     assert.equal(existsSync(path.join(dir, ".pi-glla", "audit-jobs", "attempt-silent")), false, "stalled auditor job scratch is removed");

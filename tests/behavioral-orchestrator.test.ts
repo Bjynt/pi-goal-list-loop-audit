@@ -23,7 +23,7 @@ import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import activate, { __testOnlyLastConfirmDialog, __testOnlyLoadState, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyRunFanOutListAuditFindings, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
+import activate, { __testOnlyLastConfirmDialog, __testOnlyLoadState, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyResetTerminalFlags, __testOnlyRunFanOutListAuditFindings, __testOnlySetAuditorRecoveryRetryDelay, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
 import { __testOnlyHeartbeatTick, __testOnlySetZombieRunWindows, __testOnlyResetZombieRunWatchdog } from "../extensions/goal-heartbeat.js";
 import { mainModelRecoverySucceeded } from "../extensions/goal-recovery.js";
 
@@ -1413,11 +1413,57 @@ test("T2b: stale before compaction → no late rebind, refire, or misleading act
 // IS the replacement host session — absorb it. In-memory subagent workers keep
 // failing closed.
 
+test("v0.35.x: stale terminal keeps a recovery probe and self-heals without reload", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetTerminalFlags();
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  try {
+    await pi.command("goal", "same-process stale recovery — done when pinned", ctx);
+    await tick();
+    pi.sent.length = 0;
+    const stale = staleError();
+    pi.sendMessageError = stale;
+    pi.sessionNameError = stale;
+    (ctx as any).isIdle = () => { throw stale; };
+    (ctx as any).hasPendingMessages = () => { throw stale; };
+    await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "boundary" }], stopReason: "end_turn" }] }, ctx);
+    await tick();
+    assert.ok((readState(cwd).goal as { interruptedAt?: string }).interruptedAt);
+
+    // The API and captured context become healthy again in the same process;
+    // no session_start/reload is delivered.
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    (ctx as any).isIdle = () => true;
+    (ctx as any).hasPendingMessages = () => false;
+    __testOnlyHeartbeatTick();
+    await tick();
+
+    const recovered = readState(cwd).goal as { status?: string; interruptedAt?: string } | null;
+    assert.equal(recovered?.status, "active");
+    assert.equal(recovered?.interruptedAt, undefined, "same-process recovery clears the stale interrupt marker");
+    const ledger = readLedger(cwd);
+    assert.ok(ledger.some((entry) => entry.type === "stale_terminal_recovered_via_probe"));
+    assert.ok(ledger.some((entry) => entry.type === "stale_self_healed"));
+    assert.ok(ctx.ui.matching("Recovered from the stale-handle park").length >= 1);
+    assert.ok(pi.sent.length >= 1, "healthy recovery resumes the supervised continuation without reload");
+    pi.sent.length = 0;
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    __testOnlyResetOwnerSession();
+  }
+});
+
 test("v0.34.48: host-session loss without replacement session_start parks durably and rejects late callbacks", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   const ctx = await freshSession(cwd, "startup");
   try {
+    pi.sent.length = 0;
     await pi.command("goal", "orphaned host target — done when pinned", ctx);
     await tick();
     assert.equal(pi.sent.length, 1, "the host sent the initial continuation");
@@ -3327,10 +3373,50 @@ test("v0.35.x: stale host replacement session_start auto-recovers the parked aud
   }
 });
 
-test("v0.35.x: stale host loss releases an in-flight completion audit without a verdict", async () => {
+test("v0.35.x: no-verdict auditor infrastructure failure schedules one durable automatic recovery", { timeout: 15_000 }, async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlySetAuditorRecoveryRetryDelay(120);
+  const cwd = tmpCwd();
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = writeFakeAuditorError(cwd, "Auditor stalled — no progress");
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    await pi.command("goal", "recover a no-verdict auditor failure — done when pinned", ctx);
+    await tick();
+    await pi.runTool("complete_goal", { completionSummary: "Stored claim", verificationSummary: "Stored evidence" }, ctx);
+    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "audit_recovery_retry_scheduled"), 12_000);
+
+    const parked = readState(cwd).goal as { status?: string; pauseKind?: string; pauseResumeAt?: string; pendingCompletion?: { phase?: string; recoveryRetryAt?: string; automaticRecoveryAttempted?: boolean } } | null;
+    assert.equal(parked?.status, "paused");
+    assert.equal(parked?.pendingCompletion?.phase, "recovery-pending");
+    assert.equal(parked?.pauseKind, "wait", "the no-verdict hold has a bounded recovery timer, not an indefinite manual block");
+    assert.ok(parked?.pauseResumeAt);
+    assert.equal(parked?.pendingCompletion?.recoveryRetryAt, parked?.pauseResumeAt);
+    assert.equal(parked?.pendingCompletion?.automaticRecoveryAttempted, false);
+
+    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "audit_recovery_started"));
+    const retrying = readState(cwd).goal as { status?: string; pendingCompletion?: { phase?: string; automaticRecoveryAttempted?: boolean } } | null;
+    assert.equal(retrying?.status, "auditing");
+    assert.equal(retrying?.pendingCompletion?.phase, "running");
+    assert.equal(retrying?.pendingCompletion?.automaticRecoveryAttempted, true);
+    const ledger = readLedger(cwd);
+    assert.equal(ledger.filter((entry) => entry.type === "audit_recovery_auto_retry_claimed").length, 1);
+    assert.equal(ledger.filter((entry) => entry.type === "audit_recovery_retry_scheduled").length, 1, "the one-shot recovery is not re-armed by its own retry");
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    __testOnlySetAuditorRecoveryRetryDelay(null);
+    __testOnlyResetOwnerSession();
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
+test("v0.35.x: stale host loss releases an in-flight completion audit without a verdict", { timeout: 15_000 }, async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
-  const fakePi = writeFakeAuditor(cwd, "approved", 5_000);
+  const fakePi = writeFakeAuditorError(cwd, "Auditor stalled — no progress", 100);
   const previous = process.env.GLLA_PI_BINARY;
   process.env.GLLA_PI_BINARY = fakePi;
   try {
@@ -3365,8 +3451,9 @@ test("v0.35.x: stale host loss releases an in-flight completion audit without a 
     assert.match(ledger, /"audit_recovery_pending"/);
     assert.match(ledger, /"mainReleased":true/);
 
-    // A live file-backed successor may reclaim MAIN ownership, but it must
-    // not mistake the old detached worker for a live audit or auto-resend it.
+    // A live file-backed successor may reclaim MAIN ownership. It is a
+    // validated recovery signal, so it spends the single durable automatic
+    // retry instead of leaving the no-verdict claim parked forever.
     const successor = makeMockCtx(cwd, {
       sessionManager: {
         name: "audit-successor-session-manager",
@@ -3376,20 +3463,24 @@ test("v0.35.x: stale host loss releases an in-flight completion audit without a 
     });
     const res = await pi.runTool("list_add", { items: ["after no-verdict recovery"] }, successor);
     assert.doesNotMatch(res.content[0]!.text, /only the MAIN session owns/);
-    const afterSuccessor = readState(cwd).goal as { status: string; pendingCompletion?: { phase?: string } };
-    assert.equal(afterSuccessor.status, "paused", "successor keeps the no-verdict hold visible");
-    assert.equal(afterSuccessor.pendingCompletion?.phase, "recovery-pending");
+    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "audit_recovery_started"));
+    const afterSuccessor = readState(cwd).goal as { status: string; pendingCompletion?: { phase?: string; automaticRecoveryAttempted?: boolean } };
+    assert.equal(afterSuccessor.status, "auditing", "successor starts the bounded no-verdict recovery audit");
+    assert.equal(afterSuccessor.pendingCompletion?.phase, "running");
+    assert.equal(afterSuccessor.pendingCompletion?.automaticRecoveryAttempted, true);
     const afterLedger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
-    assert.doesNotMatch(afterLedger, /"audit_recovery_started"/, "successor does not launch a blind retry");
+    assert.equal((afterLedger.match(/"audit_recovery_started"/g) ?? []).length, 1, "successor launches one recovery retry");
+    assert.equal((afterLedger.match(/"audit_recovery_auto_retry_claimed"/g) ?? []).length, 1, "successor claims the durable retry once");
 
-    const startsBeforeResume = (afterLedger.match(/"audit_started"/g) ?? []).length;
-    await pi.command("goal", "resume", successor);
     await waitUntil(() => {
-      const resumed = readState(cwd).goal as { status?: string; pendingCompletion?: { attemptId?: string } } | null;
-      return resumed?.status === "auditing" && resumed.pendingCompletion?.attemptId !== released.pendingCompletion?.attemptId;
-    });
-    const resumedLedger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
-    assert.equal((resumedLedger.match(/"audit_started"/g) ?? []).length, startsBeforeResume + 1, "explicit resume creates exactly one fresh audit dispatch");
+      const settled = readState(cwd).goal as { status?: string; pendingCompletion?: { phase?: string; automaticRecoveryAttempted?: boolean } } | null;
+      return settled?.status === "paused"
+        && settled.pendingCompletion?.phase === "recovery-pending"
+        && settled.pendingCompletion?.automaticRecoveryAttempted === true;
+    }, 8_000);
+    const exhausted = readLedger(cwd);
+    assert.equal(exhausted.filter((entry) => entry.type === "audit_recovery_auto_retry_claimed").length, 1, "the failed automatic retry is not repeated");
+    assert.equal(exhausted.filter((entry) => entry.type === "audit_recovery_retry_scheduled").length, 0, "the failed one-shot retry does not re-arm itself");
     await pi.fire("session_shutdown", { reason: "quit" }, successor);
     await audit;
     __testOnlyResetOwnerSession();

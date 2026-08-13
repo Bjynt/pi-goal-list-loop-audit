@@ -264,6 +264,8 @@ export interface PendingCompletion {
   /** Why the claim is waiting for a fresh attempt. */
   recoveryAt?: string;
   recoveryReason?: string;
+  /** Durable due time for the one bounded no-verdict recovery retry. */
+  recoveryRetryAt?: string;
   /** Bounded raw provider/auditor diagnostic retained for forensics only. */
   providerErrorDiagnostic?: string;
   /** Stable identity for one detached-auditor provider recovery episode. */

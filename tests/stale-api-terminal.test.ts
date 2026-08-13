@@ -85,7 +85,7 @@ test("v0.29.11 — heartbeat PROBES staleness before burning stall refires", () 
   // (HEARTBEAT_STALE_DEBOUNCE) — a single transient probe failure must not
   // park a live session (hegemon 2026-08-06); consecutive failures still
   // go terminal before any stall refire can burn.
-  assert.match(HB, /const knownCtx = flags\.lastCtx;[\s\S]*if \(flags\.extensionApiStale \|\| probeExtensionApiStaleRaw\(\)\) \{[\s\S]*if \(knownCtx && !absorbStaleIfSuperseded\(knownCtx\)\) goStaleTerminal\(knownCtx, "heartbeat probe"\);/);
+  assert.match(HB, /const knownCtx = flags\.lastCtx;[\s\S]*const rawApiStale = probeExtensionApiStaleRaw\(\);[\s\S]*if \(\(flags\.extensionApiStale && !staleTerminalRecovered\) \|\| rawApiStale\) \{[\s\S]*if \(knownCtx && !absorbStaleIfSuperseded\(knownCtx\)\) goStaleTerminal\(knownCtx, "heartbeat probe"\);/);
 });
 
 test("v0.30.0 — rebind-first survival: session_shutdown attribution, session_start rebind, zombie stand-down", () => {
@@ -189,7 +189,7 @@ test("v0.32.0: audit-opportunistic fix batch — dispose, keys, caps, message", 
   // the durable reset is quotaAttempts: undefined on a manual-origin audit claim.
   assert.match(GOAL, /origin === "manual"\n\s*\? \{ \.\.\.claim, quotaAttempts: undefined, quotaFirstAt: undefined, quotaAutoRetryUntil: undefined \}/); // streak resets on any non-quota outcome
   assert.match(GOAL, /handing off to a fresh pi context — /); // entry probe names the lifecycle handoff honestly
-  assert.match(GOAL, /function clearSessionOwnedTimers\(\): void/); // terminal kills all old-session timers
+  assert.match(GOAL, /function clearSessionOwnedTimers\(preserveStaleRecovery = false\): void/); // terminal keeps only the recovery probes
 });
 
 // v0.34.94 — host-session-lost self-heal. Field evidence (darklord/hegemon
@@ -213,11 +213,13 @@ test("v0.34.94: heartbeat self-heals stale-terminal when raw probe says pi is fr
   );
   assert.match(HB, /flags\.staleTerminalDone = false;\s*\n\s*flags\.extensionApiStale = false;/, "stale flags are cleared on probe-fresh-after-stale-terminal");
   assert.match(HB, /tryAbsorbHostSuccessor\(knownCtx, "heartbeat-self-heal"\)/, "tryAbsorbHostSuccessor is called against the knownCtx");
-  // No sends re-queued: the self-heal only resets flags and absorbs — it
-  // never calls scheduleContinuation / sendMessage / etc. The user has to
-  // either issue a fresh goal or resume explicitly.
-  const heartbeatRegion = HB.match(/stale_terminal_recovered_via_probe[\s\S]{0,800}return;\s*\n\s*\}/);
-  assert.ok(heartbeatRegion, "self-heal region is in scope");
-  assert.ok(!heartbeatRegion![0].includes("scheduleContinuation"), "no continuation scheduled during self-heal");
-  assert.ok(!heartbeatRegion![0].includes("sendMessage"), "no sendMessage during self-heal");
+  // The probe reuses the normal same-session recovery gate. It may resume
+  // unattended interrupted work, but it never sends until that gate has
+  // proved the handle/context healthy.
+  const selfHealStart = HB.indexOf("stale_terminal_recovered_via_probe");
+  const selfHealEnd = HB.indexOf("const ctx = freshCtx();", selfHealStart);
+  assert.ok(selfHealStart > 0 && selfHealEnd > selfHealStart, "self-heal region is in scope");
+  const heartbeatRegion = HB.slice(selfHealStart, selfHealEnd);
+  assert.match(heartbeatRegion, /rememberCtx\(knownCtx\)/, "same-session recovery gate is reused");
+  assert.match(heartbeatRegion, /if \(!flags\.staleTerminalDone && !flags\.extensionApiStale\) return;/, "the fallback returns only after the recovery gate clears stale flags");
 });

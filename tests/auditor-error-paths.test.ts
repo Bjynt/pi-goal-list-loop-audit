@@ -48,6 +48,10 @@ test("infra-flavored returns (no model / aborted) are not disapprovals", () => {
   assert.match(infraBody(), /disapproved:\s*false/);
   assert.match(infraBody(), /approved:\s*false/);
   assert.match(infraBody(), /error:/);
+  assert.match(infraBody(), /infrastructureClass/);
+  assert.match(SRC, /"no-verdict"/);
+  assert.match(SRC, /"transport"/);
+  assert.match(SRC, /failedResultClass/);
 });
 
 test("auditor watchdog exits are infrastructure failures, never verdicts", () => {

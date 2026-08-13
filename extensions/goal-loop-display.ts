@@ -636,7 +636,15 @@ function pausedNextTransition(g: Goal, state: State, now: number): string {
   if (Number.isFinite(resumeAt)) {
     return resumeAt <= now ? "resuming now" : `auto-retry in ${fmtElapsed(resumeAt - now)}`;
   }
-  if (isCompletionAuditNoVerdict(g)) return `${resume} starts a fresh auditor`;
+  if (isCompletionAuditNoVerdict(g)) {
+    const retryAt = g.pendingCompletion?.recoveryRetryAt
+      ? Date.parse(g.pendingCompletion.recoveryRetryAt)
+      : g.pauseResumeAt ? Date.parse(g.pauseResumeAt) : Number.NaN;
+    if (Number.isFinite(retryAt)) {
+      return retryAt <= now ? "automatic auditor retry due now" : `automatic auditor retry in ${fmtElapsed(retryAt - now)}`;
+    }
+    return `${resume} starts a fresh auditor`;
+  }
   switch (pauseKind(g)) {
     case "decision": return `user decision → ${resume}`;
     case "error": return `manual action → ${resume}`;
@@ -745,7 +753,13 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       // host-bearing states (auditing); this paused state is deliberately
       // not host-bearing anymore.
       const resume = g.policy === "list" ? "/list resume" : "/goal resume";
-      return `glla: ${paint(theme, "warning", "⏸ paused")} · ${paint(theme, "dim", "auditor parked — no verdict")} · ${resume}${pausedStatusSuffix(g, state, extras, now, true)}${heldSuffix}`;
+      const retryAt = g.pendingCompletion?.recoveryRetryAt
+        ? Date.parse(g.pendingCompletion.recoveryRetryAt)
+        : g.pauseResumeAt ? Date.parse(g.pauseResumeAt) : Number.NaN;
+      const retry = Number.isFinite(retryAt)
+        ? retryAt <= now ? "auto-retry due now" : `auto-retry in ${fmtElapsed(retryAt - now)}`
+        : resume;
+      return `glla: ${paint(theme, "warning", "⏸ paused")} · ${paint(theme, "dim", "auditor parked — no verdict")} · ${retry}${pausedStatusSuffix(g, state, extras, now, true)}${heldSuffix}`;
     }
     const kind = pauseKind(g);
     if (kind === "decision") return `glla: ${paint(theme, "accent", "⏸ decision needed")}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
@@ -1173,7 +1187,13 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       // to "⏸ paused" read as live failure ("auditor: blocked — no
       // verdict" while the session shows working…) — two contradictory
       // surfaces. Parked vocabulary names the goal state: the audit waits.
-      lines.push(`├─ ${paint(theme, "warning", "auditor: parked — no verdict")}`);
+      const retryAt = g.pendingCompletion?.recoveryRetryAt
+        ? Date.parse(g.pendingCompletion.recoveryRetryAt)
+        : g.pauseResumeAt ? Date.parse(g.pauseResumeAt) : Number.NaN;
+      const retryNote = Number.isFinite(retryAt)
+        ? retryAt <= now ? " · bounded retry due now" : " · bounded retry scheduled"
+        : "";
+      lines.push(`├─ ${paint(theme, "warning", `auditor: parked — no verdict${retryNote}`)}`);
       lines.push(`├─ ${paint(theme, "dim", "the stored completion claim was not evaluated — the audit waits while the item is paused")}`);
       const [lifecycle, transition] = pausedLifecycleLines(g, state, extras, now);
       lines.push(`├─ ${paint(theme, "dim", lifecycle)}`);

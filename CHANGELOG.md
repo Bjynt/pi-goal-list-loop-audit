@@ -37,6 +37,20 @@
   cold startup still holds it. Behavioral coverage exercises the persisted
   one-shot marker, repeated events, and manual recovery.
 
+### Host-loss and no-verdict auditor recovery no longer parks indefinitely
+  A stale terminal now keeps only a generation-fenced heartbeat/UI probe alive,
+  allowing a same-process handle to self-heal without requiring a reload while
+  all sends remain stopped. A validated file-backed successor also consumes the
+  existing one-shot detached-auditor recovery for parked claims instead of
+  requiring manual resume. Auditor timeout/infrastructure no-verdict claims now
+  persist a one-minute recovery due time, retry the stored claim exactly once,
+  and then remain available for explicit resume if that retry fails. Cold/manual
+  startup still holds the claim honestly, and status/widget copy distinguishes a
+  scheduled retry from an indefinite parked claim. Auditor transport results now
+  carry explicit provider/timeout/no-verdict classes, spawn failures surface
+  immediately instead of wall-timing out, and stale-context apply paths fail
+  closed without mutating through a retained handle.
+
 ### Power-mode auditor: bash restored with bounded tool execution
   The detached auditor intentionally restores `bash` alongside read/grep/find/ls
   so it can run bounded tests, inspect git state, and reproduce behavior. This

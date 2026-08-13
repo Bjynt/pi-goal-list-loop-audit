@@ -15,6 +15,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { stripThinkBlocks, captureGoalRevision, type Goal, type GoalRevisionToken } from "./goal-loop-core.js";
+import { quotaSignal } from "./quota-retry.js";
 import { buildGoalAuditorPrompt } from "./goal-loop-auditor.js";
 import { checkRegressionShield, parseAuditorVerdict } from "./goal-loop-shield.js";
 
@@ -27,6 +28,7 @@ export interface GoalAuditorResult {
   model: string;
   thinkingLevel?: string;
   error?: string;
+  infrastructureClass?: AuditorInfrastructureClass;
   regressionShieldPassed?: boolean;
   regressionShieldMissing?: string[];
   /** v0.34.59: focus revision token echoed from request.json. The parent
@@ -154,6 +156,7 @@ interface AuditorResultFile {
   thinkingLevel: string;
   toolCalls: AuditorToolCall[];
   error?: string;
+  infrastructureClass?: AuditorInfrastructureClass;
   /** v0.34.59: focus revision token echoed from request.json. The parent
    * compares this against the current state.goal.revision; mismatch → the
    * verdict is treated as stale-refused, not a silent overwrite. */
@@ -182,6 +185,8 @@ interface AuditorProgressFile {
   unmatchedToolStarts?: AuditorProgress["unmatchedToolStarts"];
   unmatchedToolEnds?: AuditorProgress["unmatchedToolEnds"];
 }
+
+export type AuditorInfrastructureClass = "no-verdict" | "timeout" | "transport" | "provider";
 
 export interface AuditorProcessRuntime {
   /** Override the worker launcher command (normally process.execPath). */
@@ -335,8 +340,19 @@ function progressSignature(file: AuditorProgressFile): string {
   return `${calls.length}|${lastToolFinishedAt}|${file.recentOutput.join("\u0000")}|${file.currentTool ?? ""}|${file.currentToolStartedAt ?? 0}`;
 }
 
-function infra(model: string, thinkingLevel: string, error: string, output = "", capturedToken?: GoalRevisionToken): GoalAuditorResult {
-  return { approved: false, disapproved: false, output, model, thinkingLevel, error, ...(capturedToken ? { goalRevision: capturedToken } : {}) };
+function infra(model: string, thinkingLevel: string, error: string, output = "", capturedToken?: GoalRevisionToken, infrastructureClass: AuditorInfrastructureClass = "transport"): GoalAuditorResult {
+  return { approved: false, disapproved: false, output, model, thinkingLevel, error, infrastructureClass, ...(capturedToken ? { goalRevision: capturedToken } : {}) };
+}
+
+function failedResultClass(error: string | undefined): AuditorInfrastructureClass {
+  if (/^Auditor (?:exceeded|stalled)\b/i.test(error ?? "")) return "timeout";
+  // A provider can return an arbitrary bare HTTP 403/5xx without quota
+  // wording. Keep it on the provider retry/sanitization path, while status-
+  // free worker exits, malformed protocol, and missing verdicts stay local
+  // no-verdict infrastructure failures.
+  return quotaSignal(error) || /(?:^|\b)(?:HTTP\s*)?(?:401|403|408|409|429|5\d\d)\b/i.test(error ?? "")
+    ? "provider"
+    : "no-verdict";
 }
 
 /** v0.34.59: stamp the captured focus revision onto a successful verdict
@@ -371,7 +387,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
   const runtime = args.runtime ?? {};
   const model = modelLabel(args.model);
   const thinkingLevel = args.thinkingLevel ?? "medium";
-  if (!args.model || !model.trim() || model === "(unset)") return infra(model, thinkingLevel, "no auditor model");
+  if (!args.model || !model.trim() || model === "(unset)") return infra(model, thinkingLevel, "no auditor model", "", undefined, "provider");
 
   const now = runtime.now ?? Date.now;
   const wallTimeoutMs = runtime.wallTimeoutMs ?? DEFAULT_WALL_TIMEOUT_MS;
@@ -391,7 +407,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
   try {
     assertAttemptId(attemptId);
   } catch (error) {
-    return infra(model, thinkingLevel, error instanceof Error ? error.message : String(error), "", capturedRevisionToken);
+    return infra(model, thinkingLevel, error instanceof Error ? error.message : String(error), "", capturedRevisionToken, "transport");
   }
 
   const jobDir = path.resolve(args.cwd, ".pi-glla", "audit-jobs", attemptId);
@@ -405,6 +421,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
   let lockHeld = false;
   let jobDirCreated = false;
   let child: ChildProcess | undefined;
+  let childSpawnError: string | undefined;
   let lastProgressSerialized = "";
   // v0.34.57: heartbeat-without-progress watchdog state. `lastProgressAt` is
   // reset whenever the progress signature changes; the watchdog fires when
@@ -456,6 +473,13 @@ export async function runDetachedGoalCompletionAuditor(args: {
       stdio: "ignore",
       env,
     } satisfies SpawnOptions);
+    // `spawn()` reports ENOENT/EACCES asynchronously instead of throwing.
+    // Attach the listener immediately so a launcher failure becomes a bounded
+    // transport result rather than an unhandled error followed by a wall
+    // timeout that hides the actual cause.
+    child.once("error", (error) => {
+      childSpawnError = error instanceof Error ? error.message : String(error);
+    });
     activeChildren.set(childKey(args.cwd, attemptId), child);
     child.unref();
 
@@ -463,15 +487,16 @@ export async function runDetachedGoalCompletionAuditor(args: {
     args.signal?.addEventListener("abort", abort, { once: true });
     try {
       while (true) {
-        if (args.signal?.aborted) return infra(model, thinkingLevel, "Auditor aborted.", "", capturedRevisionToken);
+        if (args.signal?.aborted) return infra(model, thinkingLevel, "Auditor aborted.", "", capturedRevisionToken, "transport");
+        if (childSpawnError) return infra(model, thinkingLevel, `auditor worker launch failed: ${childSpawnError}`, "", capturedRevisionToken, "transport");
         if (now() >= wallDeadlineAt) {
           if (childAlive(child)) child.kill("SIGTERM");
-          return infra(model, thinkingLevel, `Auditor exceeded its ${Math.round(wallTimeoutMs / 60_000)}m wall-clock bound and was aborted.`, "", capturedRevisionToken);
+          return infra(model, thinkingLevel, `Auditor exceeded its ${Math.round(wallTimeoutMs / 60_000)}m wall-clock bound and was aborted.`, "", capturedRevisionToken, "timeout");
         }
         try {
           const progress = await readJson<AuditorProgressFile>(progressPath);
           if (progress.protocolVersion !== PROTOCOL_VERSION || progress.attemptId !== attemptId || progress.requestHash !== request.requestHash) {
-            return infra(model, thinkingLevel, "auditor progress identity/request-hash mismatch", "", capturedRevisionToken);
+            return infra(model, thinkingLevel, "auditor progress identity/request-hash mismatch", "", capturedRevisionToken, "no-verdict");
           }
           lastProgress = progress;
           const serialized = stableJson(progress);
@@ -480,21 +505,24 @@ export async function runDetachedGoalCompletionAuditor(args: {
             args.onProgress?.(asProgress(progress, startedAt));
           }
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") return infra(model, thinkingLevel, `invalid auditor progress: ${error instanceof Error ? error.message : String(error)}`, "", capturedRevisionToken);
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") return infra(model, thinkingLevel, `invalid auditor progress: ${error instanceof Error ? error.message : String(error)}`, "", capturedRevisionToken, "no-verdict");
         }
         try {
           const result = await readJson<AuditorResultFile>(resultPath);
           if (result.protocolVersion !== PROTOCOL_VERSION || result.attemptId !== attemptId || result.requestHash !== request.requestHash) {
-            return infra(model, thinkingLevel, "auditor result identity/request-hash mismatch", "", capturedRevisionToken);
+            return infra(model, thinkingLevel, "auditor result identity/request-hash mismatch", "", capturedRevisionToken, "no-verdict");
           }
           const output = stripThinkBlocks(result.output);
-          if (!result.ok) return infra(model, thinkingLevel, result.error || "detached auditor failed", output, capturedRevisionToken);
-          if (!output.trim()) return infra(model, thinkingLevel, "auditor produced no output", output, capturedRevisionToken);
+          if (!result.ok) {
+            const error = result.error || "detached auditor failed";
+            return infra(model, thinkingLevel, error, output, capturedRevisionToken, failedResultClass(error));
+          }
+          if (!output.trim()) return infra(model, thinkingLevel, "auditor produced no output", output, capturedRevisionToken, "no-verdict");
           const parsed = parseAuditorVerdict(output);
-          if (!parsed.approved && !parsed.disapproved && !parsed.impossible) return infra(model, thinkingLevel, "auditor produced no verdict marker", output, capturedRevisionToken);
+          if (!parsed.approved && !parsed.disapproved && !parsed.impossible) return infra(model, thinkingLevel, "auditor produced no verdict marker", output, capturedRevisionToken, "no-verdict");
           const disallowedTool = result.toolCalls.find((call) => !(AUDITOR_TOOLS as readonly string[]).includes(call.name));
           if (disallowedTool) {
-            return infra(model, thinkingLevel, `Auditor reported unsupported tool: ${disallowedTool.name}`, output, capturedRevisionToken);
+            return infra(model, thinkingLevel, `Auditor reported unsupported tool: ${disallowedTool.name}`, output, capturedRevisionToken, "no-verdict");
           }
           const usedAuditTool = result.toolCalls.some((call) => (AUDITOR_TOOLS as readonly string[]).includes(call.name));
           if (parsed.approved && !usedAuditTool) {
@@ -518,7 +546,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
           args.onProgress?.({ phase: "complete", elapsedMs: now() - startedAt, recentOutput: output.split("\n").filter(Boolean).slice(-8), toolCalls: result.toolCalls, unmatchedToolStarts: [], unmatchedToolEnds: [] });
           return stampToken({ approved: parsed.approved, disapproved: parsed.disapproved, impossible: parsed.impossible, impossibleReason: parsed.impossibleReason, output, model, thinkingLevel }, capturedRevisionToken);
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") return infra(model, thinkingLevel, `invalid auditor result: ${error instanceof Error ? error.message : String(error)}`, "", capturedRevisionToken);
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") return infra(model, thinkingLevel, `invalid auditor result: ${error instanceof Error ? error.message : String(error)}`, "", capturedRevisionToken, "no-verdict");
         }
         // v0.34.130: a tool-open timeout is independent of both heartbeat
         // freshness and the worker's inactivity brake. A stuck read/grep/find/
@@ -549,7 +577,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
               toolAgeMs,
             });
             if (child && childAlive(child)) child.kill("SIGTERM");
-            return infra(model, thinkingLevel, `Auditor stalled — tool ${lastProgress.currentTool ?? "unknown"} exceeded its ${toolLabel} timeout; the detached job was auto-cancelled.`, "", capturedRevisionToken);
+            return infra(model, thinkingLevel, `Auditor stalled — tool ${lastProgress.currentTool ?? "unknown"} exceeded its ${toolLabel} timeout; the detached job was auto-cancelled.`, "", capturedRevisionToken, "timeout");
           }
         }
         // v0.34.57: heartbeat-without-progress watchdog (steal-list #7 /
@@ -589,17 +617,17 @@ export async function runDetachedGoalCompletionAuditor(args: {
               phase: lastProgress.phase,
             });
             if (child && childAlive(child)) child.kill("SIGTERM");
-            return infra(model, thinkingLevel, `Auditor stalled — heartbeats without progress for ${stallLabel} (no new tool call or output); the detached job was auto-cancelled.`, "", capturedRevisionToken);
+            return infra(model, thinkingLevel, `Auditor stalled — heartbeats without progress for ${stallLabel} (no new tool call or output); the detached job was auto-cancelled.`, "", capturedRevisionToken, "timeout");
           }
         }
-        if (child && !childAlive(child)) return infra(model, thinkingLevel, "auditor worker exited without an atomic result", "", capturedRevisionToken);
+        if (child && !childAlive(child)) return infra(model, thinkingLevel, "auditor worker exited without an atomic result", "", capturedRevisionToken, "no-verdict");
         await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
       }
     } finally {
       args.signal?.removeEventListener("abort", abort);
     }
   } catch (error) {
-    return infra(model, thinkingLevel, error instanceof Error ? error.message : String(error), "", capturedRevisionToken);
+    return infra(model, thinkingLevel, error instanceof Error ? error.message : String(error), "", capturedRevisionToken, "transport");
   } finally {
     activeChildren.delete(childKey(args.cwd, attemptId));
     if (lockHeld) await fs.unlink(lockPath).catch(() => {});

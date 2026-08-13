@@ -119,7 +119,7 @@ test("v0.28.27: stale handle silences ALL stall machinery — refiring into a de
   // v0.34.62: the heartbeat probe is the RAW non-caching form (debounced)
   // — single transient failures must not park a live session; consecutive
   // failures still reach the terminal before any stall machinery.
-  const probe = HEARTBEAT_SRC.indexOf("if (flags.extensionApiStale || probeExtensionApiStaleRaw()) {", knownCtx);
+  const probe = HEARTBEAT_SRC.indexOf("const rawApiStale = probeExtensionApiStaleRaw();", knownCtx);
   const stale = HEARTBEAT_SRC.indexOf('if (knownCtx && !absorbStaleIfSuperseded(knownCtx)) goStaleTerminal(knownCtx, "heartbeat probe");', probe); // v0.34.48: probe the API before freshCtx() can discard the orphan context.
   const grace = HEARTBEAT_SRC.indexOf("if (Date.now() < flags.compactionGraceUntil) return;", stale);
   const watchdog = HEARTBEAT_SRC.indexOf("pending-latch watchdog");

@@ -148,7 +148,7 @@ test("v0.34.36: a loop whose continuation never starts is durably stopped and re
 test("v0.34.51: stored-claim auditor retries enter the durable plan on ANY infra error", () => {
   const retry = SRC.slice(SRC.indexOf("async function retryStoredCompletionAudit"));
   // timeout branch first (a hanging command keeps its loud pause)…
-  assert.match(retry, /isAuditorTimeoutError\(result\.error\)\) \{[\s\S]{0,160}?Watchdog timeouts stay ahead/);
+  assert.match(retry, /isAuditorNoVerdictInfrastructureError\(result\.error, result\.infrastructureClass\)\) \{[\s\S]{0,220}?Watchdog timeouts stay ahead/);
   // …then the widened durable branch — no kind gate, neutral wording:
   assert.match(retry, /v0\.34\.51: ANY infrastructure failure enters the durable bounded retry/);
   assert.match(retry, /phase: "quota-waiting" as const/);

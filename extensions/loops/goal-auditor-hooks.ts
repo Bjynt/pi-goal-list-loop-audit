@@ -394,6 +394,18 @@ function clearDetachedAuditRuntime(): void {
 
 type CompletionAuditOrigin = "complete-goal" | "quota-retry" | "manual" | "session-recovery";
 
+function clearScheduledAuditorRecoveryTimer(): void {
+  if (scheduledAuditorRecoveryTimer) clearTimeout(scheduledAuditorRecoveryTimer);
+  scheduledAuditorRecoveryTimer = null;
+  scheduledAuditorRecoveryAt = null;
+  scheduledAuditorRecoveryGeneration = null;
+}
+
+export function __testOnlyResetAuditorRecoveryRuntime(): void {
+  clearScheduledAuditorRecoveryTimer();
+  auditorRecoveryRetryDelayOverrideMs = null;
+}
+
 function newCompletionAuditAttemptId(): string {
   return `audit-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -444,7 +456,73 @@ function validateCompletionSummary(text: string, ctx: ExtensionContext): string 
   return `${text.trimEnd()} — NOTE: ${flags.join(" ")}`;
 }
 
+const AUDITOR_RECOVERY_RETRY_DELAY_MS = Number(process.env.GLLA_AUDITOR_RECOVERY_RETRY_DELAY_MS ?? 60_000);
+let auditorRecoveryRetryDelayOverrideMs: number | null = null;
+let scheduledAuditorRecoveryAt: string | null = null;
+let scheduledAuditorRecoveryGeneration: number | null = null;
+let scheduledAuditorRecoveryTimer: NodeJS.Timeout | null = null;
+
+function auditorRecoveryRetryDelayMs(): number {
+  return auditorRecoveryRetryDelayOverrideMs ?? (Number.isFinite(AUDITOR_RECOVERY_RETRY_DELAY_MS) ? Math.max(1_000, AUDITOR_RECOVERY_RETRY_DELAY_MS) : 60_000);
+}
+
+/** Test-only: shrink the bounded no-verdict recovery delay without changing
+ * production defaults. Null restores the one-minute retry window. */
+export function __testOnlySetAuditorRecoveryRetryDelay(delayMs: number | null): void {
+  clearScheduledAuditorRecoveryTimer();
+  auditorRecoveryRetryDelayOverrideMs = delayMs;
+}
+
+/** Arm exactly one durable, generation-fenced retry for a parked
+ * infrastructure/no-verdict claim. This is deliberately separate from the
+ * provider/quota retry ladder: a hung auditor gets one fresh attempt, then
+ * the durable claim remains available for explicit resume. */
+export function scheduleParkedCompletionAuditRecovery(ctx: ExtensionContext, pending: PendingCompletion, reason: string): PendingCompletion {
+  if (pending.automaticRecoveryAttempted === true) return pending;
+  const now = Date.now();
+  const storedRetryMs = pending.recoveryRetryAt ? Date.parse(pending.recoveryRetryAt) : Number.NaN;
+  const retryAt = Number.isFinite(storedRetryMs) && storedRetryMs > now
+    ? pending.recoveryRetryAt!
+    : new Date(now + auditorRecoveryRetryDelayMs()).toISOString();
+  const next = { ...pending, recoveryRetryAt: retryAt };
+  const generation = sessionGeneration;
+  if (scheduledAuditorRecoveryAt === retryAt && scheduledAuditorRecoveryGeneration === generation && scheduledAuditorRecoveryTimer) return next;
+  clearScheduledAuditorRecoveryTimer();
+  scheduledAuditorRecoveryAt = retryAt;
+  scheduledAuditorRecoveryGeneration = generation;
+  const delayMs = Math.max(1_000, Date.parse(retryAt) - Date.now());
+  appendLedger(ctx.cwd, "audit_recovery_retry_scheduled", {
+    goalId: state.goal?.id,
+    attemptId: pending.attemptId,
+    retryAt,
+    delayMs,
+    reason,
+    generation,
+  });
+  let scheduledTimer: NodeJS.Timeout;
+  scheduledTimer = scheduleSessionTimeout(() => {
+    // A callback already queued when a newer episode replaced this timer must
+    // not clear the newer timer's ownership metadata or launch its claim.
+    if (scheduledAuditorRecoveryTimer !== scheduledTimer) return;
+    scheduledAuditorRecoveryTimer = null;
+    scheduledAuditorRecoveryAt = null;
+    scheduledAuditorRecoveryGeneration = null;
+    const fresh = freshCtxForGeneration(generation);
+    if (!fresh) return;
+    const goal = state.goal;
+    const claim = goal?.pendingCompletion;
+    if (!goal || goal.status !== "paused" || !claim || (claim.phase ?? "recovery-pending") !== "recovery-pending" || claim.automaticRecoveryAttempted === true || claim.recoveryRetryAt !== retryAt) return;
+    appendLedger(fresh.cwd, "audit_recovery_retry_due", { goalId: goal.id, attemptId: claim.attemptId, retryAt, generation });
+    if (!maybeAutoRetryParkedCompletionAudit("auditor-recovery-timer")) {
+      appendLedger(fresh.cwd, "audit_recovery_retry_not_started", { goalId: goal.id, attemptId: claim.attemptId, reason: "guard-rejected" });
+    }
+  }, delayMs);
+  scheduledAuditorRecoveryTimer = scheduledTimer;
+  return next;
+}
+
 function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, origin: CompletionAuditOrigin): PendingCompletion {
+  clearScheduledAuditorRecoveryTimer();
   completionAuditRecoveryArmed = true;
   const startedMs = Date.now();
   const automaticRecoveryRetry = origin === "session-recovery"
@@ -461,6 +539,7 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
     wallDeadlineAt: new Date(startedMs + AUDITOR_WALL_TIMEOUT_MS).toISOString(),
     recoveryAt: undefined,
     recoveryReason: undefined,
+    recoveryRetryAt: undefined,
     // The next detached attempt must not inherit the previous provider wall
     // as if it were a fresh result. Keep the attempt counter/horizon for the
     // durable episode, but replace the signal and hint only when the worker
@@ -502,6 +581,17 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
 
 function isAuditorTimeoutError(error: string | undefined): boolean {
   return !!error && (/^Auditor exceeded its .* wall-clock bound/i.test(error) || /^Auditor stalled —/i.test(error));
+}
+
+/** Errors proving the detached worker failed to produce a semantic verdict.
+ * Keep these off the provider/quota ladder: a dead worker, malformed result,
+ * or missing marker is a local auditor-infrastructure failure and gets one
+ * bounded stored-claim retry instead of an indefinite quota-style wait. */
+function isAuditorNoVerdictInfrastructureError(error: string | undefined, infrastructureClass?: string): boolean {
+  if (!error || /^Auditor aborted\.?$/i.test(error.trim())) return false;
+  if (infrastructureClass === "no-verdict" || infrastructureClass === "timeout" || infrastructureClass === "transport") return true;
+  if (isAuditorTimeoutError(error)) return true;
+  return /^(?:auditor worker exited without an atomic result|auditor produced no (?:output|verdict marker)|auditor (?:progress|result) identity\/request-hash mismatch|invalid auditor (?:progress|result)(?::|$)|auditor reported unsupported tool:|detached auditor failed$)/i.test(error.trim());
 }
 
 // isCompletionAuditRecoveryPending moved to extensions/goal-recovery.ts (decomposition step 3, v0.34.111, cluster C).
@@ -564,7 +654,7 @@ export function auditorQuotaRetryPlan(claim: PendingCompletion, quota: ReturnTyp
 export type AuditorModelCandidate = { model: any; via: string };
 type DetachedAuditResult = Awaited<ReturnType<typeof runDetachedGoalCompletionAuditor>>;
 
-export type AutomaticCompletionRecoveryTrigger = "session-start" | "host-rebind" | "main-model-recovery";
+export type AutomaticCompletionRecoveryTrigger = "session-start" | "host-rebind" | "main-model-recovery" | "auditor-recovery-timer";
 
 /**
  * Start the one durable automatic retry reserved for a parked completion
@@ -810,9 +900,18 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     // verdict (result.json) sat complete on disk for 30m+ while the queue
     // was blocked. Leave a durable marker via the kept last context so the
     // fresh session's recovery path parks the claim for an explicit resume.
-    if (state.goal?.status === "auditing" && state.goal.pendingCompletion?.attemptId === claim.attemptId && lastCtx) {
-      appendLedger(lastCtx.cwd, "audit_verdict_deferred", { goalId, attemptId: claim.attemptId, reason: "stale-latch-apply-gate" });
-      markCompletionAuditRecoveryPending(lastCtx, "verdict-apply-gate");
+    if (state.goal?.status === "auditing" && state.goal.pendingCompletion?.attemptId === claim.attemptId) {
+      const recoveryCtx = freshCtxForGeneration(generation);
+      if (recoveryCtx) {
+        appendLedger(recoveryCtx.cwd, "audit_verdict_deferred", { goalId, attemptId: claim.attemptId, reason: "stale-latch-apply-gate" });
+        markCompletionAuditRecoveryPending(recoveryCtx, "verdict-apply-gate");
+      } else {
+        // No valid context exists in this generation. The next lifecycle must
+        // rehydrate the still-auditing claim; never call updateGoal with the
+        // retained stale context merely to force a durable write.
+        const cwd = liveCtx.cwd;
+        appendLedger(cwd, "audit_verdict_deferred", { goalId, attemptId: claim.attemptId, reason: "stale-latch-apply-gate-no-context" });
+      }
     }
     return;
   }
@@ -929,23 +1028,31 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     return;
   }
 
-  if (result.error && !result.disapproved && isAuditorTimeoutError(result.error)) {
+  if (result.error && !result.disapproved && isAuditorNoVerdictInfrastructureError(result.error, result.infrastructureClass)) {
     // Watchdog timeouts stay ahead of the durable retry branch: a hanging
     // verification command will hang again, so pause loudly and let
     // /goal resume re-enter the direct-audit path with the stored claim.
     const failureCopy = providerErrorPresentation(result.error, "completion");
     const recoveryEpisodeKey = claim.recoveryEpisodeKey ?? `${claim.at}:${failureCopy.fingerprint}`;
-    const pending: PendingCompletion = {
+    let pending: PendingCompletion = {
       ...claim,
       phase: "recovery-pending",
       recoveryAt: nowIso(),
-      recoveryReason: result.error.startsWith("Auditor exceeded") ? "wall-timeout" : "inactivity-timeout",
+      recoveryReason: result.error.startsWith("Auditor exceeded")
+        ? "wall-timeout"
+        : result.error.startsWith("Auditor stalled")
+          ? "inactivity-timeout"
+          : "auditor-no-verdict",
       providerErrorDiagnostic: failureCopy.diagnostic,
       recoveryEpisodeKey,
       recoveryNoticeKeys: claim.recoveryNoticeKeys ?? [],
       automaticRecoveryAttempted: claim.automaticRecoveryAttempted ?? false,
     };
+    if (typeof scheduleParkedCompletionAuditRecovery === "function") {
+      pending = scheduleParkedCompletionAuditRecovery(liveCtx, pending, pending.recoveryReason ?? "auditor-timeout");
+    }
     const notifyTimeout = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:timeout`);
+    const timeoutInfrastructure = result.infrastructureClass === "timeout" || /^Auditor (?:exceeded|stalled)\b/i.test(result.error);
     updateGoal({
       status: "paused",
       auditHistory: history,
@@ -953,12 +1060,29 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       providerErrorDiagnostic: failureCopy.diagnostic,
       recoveryEpisodeKey,
       recoveryNoticeKeys: pending.recoveryNoticeKeys,
-      pauseKind: "error",
-      pauseReason: "completion audit timed out — no verifier verdict was produced",
-      pauseSuggestedAction: `The claim is stored. Check long-running verification commands, then ${activeGoalSurfaceCommand("resume")} to retry the isolated auditor.`,
+      pauseKind: pending.recoveryRetryAt ? "wait" : "error",
+      pauseResumeAt: pending.recoveryRetryAt,
+      pauseReason: timeoutInfrastructure
+        ? "completion audit timed out — no verifier verdict was produced"
+        : "completion audit stopped before a verifier verdict — no semantic verdict was produced",
+      pauseSuggestedAction: pending.recoveryRetryAt
+        ? `One bounded auditor retry is scheduled in ${fmtRetryDelay(Math.max(1, (Date.parse(pending.recoveryRetryAt) - Date.now()) / 1000))}; ${activeGoalSurfaceCommand("resume")} retries immediately.`
+        : `The claim is stored. Check long-running verification commands, then ${activeGoalSurfaceCommand("resume")} to retry the isolated auditor.`,
     }, liveCtx);
-    appendLedger(liveCtx.cwd, result.error.startsWith("Auditor exceeded") ? "audit_wall_timeout" : "audit_inactivity_timeout", { goalId, attemptId: claim.attemptId, error: failureCopy.diagnostic.slice(0, 240), diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
-    if (notifyTimeout) liveCtx.ui.notify(`Completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and ${activeGoalSurfaceCommand("resume")} to retry it.`, "warning");
+    appendLedger(liveCtx.cwd,
+      result.error.startsWith("Auditor exceeded")
+        ? "audit_wall_timeout"
+        : result.error.startsWith("Auditor stalled")
+          ? "audit_inactivity_timeout"
+          : "audit_no_verdict_infrastructure",
+      { goalId, attemptId: claim.attemptId, error: failureCopy.diagnostic.slice(0, 240), diagnostic: failureCopy.diagnostic, recoveryEpisodeKey },
+    );
+    if (notifyTimeout) liveCtx.ui.notify(
+      timeoutInfrastructure
+        ? `Completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and ${activeGoalSurfaceCommand("resume")} to retry it.`
+        : `Completion auditor stopped before a verdict (infrastructure, not a judgment). The stored claim is safe; fix the auditor/session issue and ${activeGoalSurfaceCommand("resume")} to retry it.`,
+      "warning",
+    );
     return;
   }
 
@@ -980,6 +1104,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       phase: "quota-waiting" as const,
       recoveryAt: undefined,
       recoveryReason: undefined,
+      recoveryRetryAt: undefined,
       providerErrorDiagnostic: failureCopy.diagnostic,
       recoveryEpisodeKey,
       recoveryNoticeKeys: claim.recoveryNoticeKeys ?? [],
@@ -1175,6 +1300,7 @@ defineGoalRuntimeGlobal("newCompletionAuditAttemptId", { get: () => newCompletio
 defineGoalRuntimeGlobal("validateCompletionSummary", { get: () => validateCompletionSummary });
 defineGoalRuntimeGlobal("beginCompletionAudit", { get: () => beginCompletionAudit });
 defineGoalRuntimeGlobal("isAuditorTimeoutError", { get: () => isAuditorTimeoutError });
+defineGoalRuntimeGlobal("isAuditorNoVerdictInfrastructureError", { get: () => isAuditorNoVerdictInfrastructureError });
 defineGoalRuntimeGlobal("MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS", { get: () => MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS });
 defineGoalRuntimeGlobal("EAGER_AUDITOR_RETRY_SEC", { get: () => EAGER_AUDITOR_RETRY_SEC });
 defineGoalRuntimeGlobal("fmtRetryDelay", { get: () => fmtRetryDelay });
@@ -1183,4 +1309,5 @@ defineGoalRuntimeGlobal("auditorCandidateLabel", { get: () => auditorCandidateLa
 defineGoalRuntimeGlobal("runDetachedCompletionWithFallback", { get: () => runDetachedCompletionWithFallback });
 defineGoalRuntimeGlobal("retryStoredCompletionAudit", { get: () => retryStoredCompletionAudit });
 defineGoalRuntimeGlobal("maybeAutoRetryParkedCompletionAudit", { get: () => maybeAutoRetryParkedCompletionAudit });
+defineGoalRuntimeGlobal("scheduleParkedCompletionAuditRecovery", { get: () => scheduleParkedCompletionAuditRecovery });
 defineGoalRuntimeGlobal("fireReviewer", { get: () => fireReviewer });

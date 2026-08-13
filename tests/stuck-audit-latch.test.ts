@@ -17,9 +17,10 @@
 //           markCompletionAuditRecoveryPending (recovery-pending phase) so a
 //           fresh session's recovery path surfaces it for /goal resume.
 //   Fix B — heartbeatTick parks a stuck auditing goal (stale-latch branch)
-//           BEFORE the extensionApiStale early return, via the kept last
-//           context — the park is the explicit-resume gate; a heartbeat
-//           still never launches another worker.
+//           BEFORE the extensionApiStale early return, using a fresh context
+//           when available or a context-free cwd bridge — the park is the
+//           explicit-resume gate; a heartbeat still never launches another
+//           worker.
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
@@ -33,19 +34,22 @@ test("Fix A: the apply gate defers + parks instead of silently dropping a comple
   // The two silent returns became one guarded path:
   assert.match(SRC, /const currentAfterAudit = freshCtxForGeneration\(generation\);\n  if \(!currentAfterAudit \|\| !state\.goal \|\| state\.goal\.id !== goalId\) \{/);
   assert.match(SRC, /audit_verdict_deferred/, "the deferred-verdict ledger event exists");
-  assert.match(SRC, /markCompletionAuditRecoveryPending\(lastCtx, "verdict-apply-gate"\)/, "the claim parks as recovery-pending");
+  assert.match(SRC, /markCompletionAuditRecoveryPending\((?:recoveryCtx|lastCtx), "verdict-apply-gate"\)/, "the claim parks as recovery-pending");
   assert.match(SRC, /NEVER drop a completed verdict silently/, "the intent comment is pinned");
   // The legit-supersede case (a NEWER attempt owns the durable claim) stays silent:
   assert.match(SRC, /if \(state\.goal\.pendingCompletion\?\.attemptId !== claim\.attemptId\) return; \/\/ a newer attempt owns the durable claim/);
 });
 
 test("Fix B: the stale-latch stranded park runs BEFORE the extensionApiStale early return", () => {
-  const staleBranch = HB.indexOf("if (flags.extensionApiStale || probeExtensionApiStaleRaw()) {");
+  const staleBranch = HB.indexOf("const rawApiStale = probeExtensionApiStaleRaw();");
   const parked = HB.indexOf("stranded_audit_recovered");
   assert.ok(staleBranch > 0 && parked > 0, "both branches exist");
   assert.ok(parked < staleBranch, "the stale-latch park is ordered BEFORE the stale probe branch — the backstop is reachable while latched");
   assert.match(HB, /via: "stale-latch"/, "the park is attributed to the stale latch");
-  assert.match(HB, /markCompletionAuditRecoveryPending\(knownCtx, "stale-latch-recovery"\)/, "the park uses the kept last context");
+  assert.match(HB, /const current = freshCtx\(\);/, "the retained stale context is not used for mutation");
+  assert.match(HB, /markCompletionAuditRecoveryPending\(current, "stale-latch-recovery"\)/, "the park uses a freshly validated context");
+  assert.match(HB, /parkCompletionAuditRecovery\(cwd, "stale-latch-recovery"\)/, "the no-context fallback uses the durable cwd bridge");
+  assert.doesNotMatch(HB, /markCompletionAuditRecoveryPending\(knownCtx, "stale-latch-recovery"\)/, "the retained stale context is probe-only");
   // A heartbeat must never launch another worker — only the park. The
   // pre-branch block (between the park and the stale probe branch) contains
   // no dispatch call:

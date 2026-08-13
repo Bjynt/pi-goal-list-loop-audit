@@ -178,6 +178,7 @@ declare global {
   var validateCompletionSummary: any;
   var beginCompletionAudit: any;
   var isAuditorTimeoutError: any;
+  var isAuditorNoVerdictInfrastructureError: any;
   var MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS: any;
   var EAGER_AUDITOR_RETRY_SEC: any;
   var fmtRetryDelay: any;
@@ -186,6 +187,9 @@ declare global {
   var runDetachedCompletionWithFallback: any;
   var retryStoredCompletionAudit: any;
   var maybeAutoRetryParkedCompletionAudit: any;
+  var scheduleParkedCompletionAuditRecovery: any;
+  var clearScheduledAuditorRecoveryTimer: any;
+  var __testOnlyResetAuditorRecoveryRuntime: any;
   var fireReviewer: any;
   var listQueue: any;
   var groupOpenChildren: any;

@@ -784,6 +784,28 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       }
       completionAuditRecoveryArmed = false;
     }
+    // A user quit is explicit stop consent. Do not let a scheduled
+    // infrastructure retry silently resume on a later cold startup; the
+    // claim remains durable and /goal|/list resume is still available.
+    if (
+      shutdownReason.trim().toLowerCase() === "quit"
+      && state.goal?.status === "paused"
+      && state.goal.pendingCompletion?.phase === "recovery-pending"
+      && state.goal.pendingCompletion.recoveryRetryAt
+    ) {
+      const pending = { ...state.goal.pendingCompletion, recoveryRetryAt: undefined };
+      updateGoal({
+        pendingCompletion: pending,
+        pauseKind: "blocked",
+        pauseResumeAt: undefined,
+        pauseSuggestedAction: `The automatic auditor retry was stopped by quit. ${activeGoalSurfaceCommand("resume")} retries the stored claim explicitly.`,
+      }, ctx);
+      appendLedger(ctx.cwd, "audit_recovery_retry_suppressed", {
+        goalId: state.goal.id,
+        attemptId: pending.attemptId,
+        reason: "quit",
+      });
+    }
     appendLedger(ctx.cwd, "session_shutdown", { reason: shutdownReason });
     markSessionOwnerShutdown(ctx.cwd, shutdownReason);
     writeSessionHandoff(ctx, shutdownReason);
@@ -1249,8 +1271,13 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       if (storedCompletionGoal.status === "auditing") {
         markCompletionAuditRecoveryPending(ctx, `session_start:${startReason}`);
       }
-      const canRecoverNow = explicitRecovery || autoResume;
       const recoveredClaim = state.goal?.pendingCompletion;
+      // A timeout/no-verdict claim may already own one durable recovery slot.
+      // A validated host lifecycle can consume that slot even when global
+      // Auto-resume is off; ordinary cold startup still holds legacy/manual
+      // parked claims for explicit consent.
+      const scheduledRecovery = !!recoveredClaim?.recoveryRetryAt;
+      const canRecoverNow = explicitRecovery || autoResume || (hostLifecycleStart && scheduledRecovery);
       if (canRecoverNow && recoveredClaim && (recoveredClaim.phase ?? "recovery-pending") === "recovery-pending") {
         completionAuditRecoveryArmed = true;
         const started = maybeAutoRetryParkedCompletionAudit(hostLifecycleStart || explicitRecovery ? "host-rebind" : "session-start");
@@ -1258,6 +1285,15 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           ctx.ui.notify(`Completion audit remains parked after its one automatic recovery attempt. The stored claim is safe; ${activeGoalSurfaceCommand("resume")} retries it explicitly.`, "warning");
         }
       } else {
+        if (recoveredClaim?.recoveryRetryAt) {
+          updateGoal({
+            pendingCompletion: { ...recoveredClaim, recoveryRetryAt: undefined },
+            pauseKind: "blocked",
+            pauseResumeAt: undefined,
+            pauseSuggestedAction: `The automatic recovery was held for this cold/manual startup. ${activeGoalSurfaceCommand("resume")} retries the stored claim.`,
+          }, ctx);
+          appendLedger(ctx.cwd, "audit_recovery_retry_deferred", { goalId: storedCompletionGoal.id, retryAt: recoveredClaim.recoveryRetryAt, reason: "cold-start-without-consent" });
+        }
         ctx.ui.notify(`Completion audit blocked — no verdict. The stored claim is safe; ${activeGoalSurfaceCommand("resume")} retries the isolated auditor.`, "warning");
       }
     }

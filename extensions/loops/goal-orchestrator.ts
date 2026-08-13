@@ -438,7 +438,7 @@ function scheduleSessionTimeout(callback: () => void, delayMs: number): NodeJS.T
   return timer;
 }
 
-function clearSessionOwnedTimers(): void {
+function clearSessionOwnedTimers(preserveStaleRecovery = false): void {
   sessionHandoffPending = true;
   sessionGeneration++;
   initialSessionLoadPending = false;
@@ -446,8 +446,11 @@ function clearSessionOwnedTimers(): void {
   clearContinuationStartWatchdog();
   clearLoopTimer();
   clearQueueStuckProbe();
-  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
-  if (uiTicker) { clearInterval(uiTicker); uiTicker = null; }
+  // A stale terminal keeps a minimal probe alive so a same-process handle
+  // that becomes healthy again can self-heal without waiting for /reload.
+  // Normal shutdown/rebind still clears both tickers completely.
+  if (!preserveStaleRecovery && heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  if (!preserveStaleRecovery && uiTicker) { clearInterval(uiTicker); uiTicker = null; }
   clearMainModelRecoveryTimer();
   mainModelAbortForRecovery = false;
   lastMainModelFailure = null;
@@ -458,7 +461,10 @@ function clearSessionOwnedTimers(): void {
     deadOwnerSession = ownerSession; // v0.34.25: keep the dead identity for successor absorption
     deadOwnerCwd = ownerCwd ?? lastCtx?.cwd ?? null;
   }
-  lastCtx = null;
+  // Keep the last context only for the stale-recovery probe. freshCtx() still
+  // refuses it while sessionHandoffPending is set, so no stale send can leak
+  // through; self-heal verifies the API before reopening the generation.
+  if (!preserveStaleRecovery) lastCtx = null;
   ownerSession = null;
   ownerCwd = null;
 }

@@ -50,6 +50,7 @@ export interface HeartbeatFlags {
   get initialSessionLoadPending(): boolean;
   get sessionGeneration(): number;
   get lastCtx(): ExtensionContext | null;
+  get extensionApi(): unknown;
   get extensionApiStale(): boolean;
   set extensionApiStale(v: boolean);
   get completionAuditInFlight(): boolean;
@@ -90,10 +91,13 @@ export interface HeartbeatDeps {
   goStaleTerminal(ctx: ExtensionContext, where: string): void;
   probeExtensionApiStaleRaw(): boolean;
   tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean;
+  rememberCtx(ctx: ExtensionContext): void;
   freshCtx(): ExtensionContext | null;
   activeGoalSurfaceCommand(command: string): string;
   notifyExternal(ctx: ExtensionContext, message: string): void;
   updateGoal(patch: Partial<Goal>, ctx: ExtensionContext): void;
+  /** Park durable completion debt without touching a retained stale context. */
+  parkCompletionAuditRecovery(cwd: string, reason: string): boolean;
   isSupervising(): boolean;
   isActionableGoal(): boolean;
   scheduleContinuation(ctx: ExtensionContext, force?: boolean, delayMs?: number): void;
@@ -112,10 +116,12 @@ let absorbStaleIfSuperseded: HeartbeatDeps["absorbStaleIfSuperseded"];
 let goStaleTerminal: HeartbeatDeps["goStaleTerminal"];
 let probeExtensionApiStaleRaw: HeartbeatDeps["probeExtensionApiStaleRaw"];
 let tryAbsorbHostSuccessor: HeartbeatDeps["tryAbsorbHostSuccessor"];
+let rememberCtx: HeartbeatDeps["rememberCtx"];
 let freshCtx: HeartbeatDeps["freshCtx"];
 let activeGoalSurfaceCommand: HeartbeatDeps["activeGoalSurfaceCommand"];
 let notifyExternal: HeartbeatDeps["notifyExternal"];
 let updateGoal: HeartbeatDeps["updateGoal"];
+let parkCompletionAuditRecovery: HeartbeatDeps["parkCompletionAuditRecovery"];
 let isSupervising: HeartbeatDeps["isSupervising"];
 let isActionableGoal: HeartbeatDeps["isActionableGoal"];
 let scheduleContinuation: HeartbeatDeps["scheduleContinuation"];
@@ -133,10 +139,12 @@ export function createGoalHeartbeat(flagsArg: HeartbeatFlags, d: HeartbeatDeps):
   goStaleTerminal = d.goStaleTerminal;
   probeExtensionApiStaleRaw = d.probeExtensionApiStaleRaw;
   tryAbsorbHostSuccessor = d.tryAbsorbHostSuccessor;
+  rememberCtx = d.rememberCtx;
   freshCtx = d.freshCtx;
   activeGoalSurfaceCommand = d.activeGoalSurfaceCommand;
   notifyExternal = d.notifyExternal;
   updateGoal = d.updateGoal;
+  parkCompletionAuditRecovery = d.parkCompletionAuditRecovery;
   isSupervising = d.isSupervising;
   isActionableGoal = d.isActionableGoal;
   scheduleContinuation = d.scheduleContinuation;
@@ -365,16 +373,35 @@ function heartbeatTick(): void {
     state.goal.pendingCompletion &&
     Date.now() - flags.lastActivityAt >= 90_000
   ) {
-    appendLedger(knownCtx.cwd, "stranded_audit_recovered", { goalId: state.goal.id, via: "stale-latch" });
-    markCompletionAuditRecoveryPending(knownCtx, "stale-latch-recovery");
-    try {
-      knownCtx.ui.notify(`Completion audit blocked — no verdict (stale session). The stored claim is safe; ${activeGoalSurfaceCommand("resume")} starts exactly one fresh auditor.`, "warning");
-    } catch {
-      /* stale handle — the ledger + park are the durable record */
+    // The retained context is probe-only after a stale terminal. Never use it
+    // for state/UI mutation: a stale ctx can throw halfway through the park.
+    const current = freshCtx();
+    if (current) {
+      appendLedger(current.cwd, "stranded_audit_recovered", { goalId: state.goal.id, via: "stale-latch" });
+      markCompletionAuditRecoveryPending(current, "stale-latch-recovery");
+      try {
+        current.ui.notify(`Completion audit blocked — no verdict (stale session). The stored claim is safe; ${activeGoalSurfaceCommand("resume")} starts exactly one fresh auditor.`, "warning");
+      } catch {
+        /* the ledger + park are durable; notification is best-effort */
+      }
+      return;
     }
+    // A stale terminal intentionally makes freshCtx() return null. Recover the
+    // durable claim through a context-free cwd bridge instead of passing the
+    // retained stale ExtensionContext into updateGoal/persistState/UI.
+    let cwd: string | null = null;
+    try { cwd = knownCtx.cwd; } catch { /* no durable path available */ }
+    if (!cwd) return;
+    appendLedger(cwd, "stranded_audit_recovered", { goalId: state.goal.id, via: "stale-latch" });
+    parkCompletionAuditRecovery(cwd, "stale-latch-recovery");
     return;
   }
-  if (flags.extensionApiStale || probeExtensionApiStaleRaw()) {
+  const rawApiStale = probeExtensionApiStaleRaw();
+  const staleTerminalRecovered = flags.staleTerminalDone
+    && !!knownCtx
+    && flags.extensionApi !== null
+    && !rawApiStale;
+  if ((flags.extensionApiStale && !staleTerminalRecovered) || rawApiStale) {
     if (!flags.extensionApiStale) {
       // v0.34.62: debounce — ONE transient probe failure (pi mid-settle,
       // compaction settle, provider pause) must not park a live session.
@@ -402,6 +429,16 @@ function heartbeatTick(): void {
   // is no blind queue storm risk.
   if (flags.staleTerminalDone && knownCtx) {
     appendLedger(knownCtx.cwd, "stale_terminal_recovered_via_probe", { via: "heartbeat-self-heal" });
+    // Try the real successor and same-session recovery gates while the stale
+    // flags are still set. Clearing them first bypasses selfHealStaleSameSession
+    // and leaves the durable interrupted marker behind.
+    if (tryAbsorbHostSuccessor(knownCtx, "heartbeat-self-heal")) return;
+    rememberCtx(knownCtx);
+    // Reuse the same-session recovery gate as ordinary commands. It clears
+    // the durable interrupted marker and can resume unattended work; the
+    // fallback below preserves the old probe-only behavior if ownership is
+    // still ambiguous.
+    if (!flags.staleTerminalDone && !flags.extensionApiStale) return;
     flags.staleTerminalDone = false;
     flags.extensionApiStale = false;
     flags.zombieStoodDown = false;
@@ -411,7 +448,6 @@ function heartbeatTick(): void {
     } catch {
       /* the ledger is the durable record; notify is best-effort */
     }
-    if (tryAbsorbHostSuccessor(knownCtx, "heartbeat-self-heal")) return;
   }
   const ctx = freshCtx();
   if (!ctx) return;
