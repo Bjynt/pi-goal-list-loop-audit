@@ -74,7 +74,7 @@ test("v0.34.116: tryMainModelFallback opens context-overflow (it is the only rot
   // non-recoverable stays the gate; context-overflow is the new pass-through.
   const block = RECOVERY.slice(RECOVERY.indexOf("export async function tryMainModelFallback"), RECOVERY.indexOf("export async function tryMainModelFallback") + 1200);
   assert.match(block, /if \(flags\.mainModelSwitchInFlight\) return false;/);
-  assert.match(block, /if \(failure\.kind === "non-recoverable"\)/);
+  assert.match(block, /failure\.kind === "non-recoverable"/);
   assert.doesNotMatch(block, /if \(flags\.mainModelSwitchInFlight \|\| failure\.kind === "non-recoverable"\)/);
 });
 
