@@ -534,6 +534,44 @@ test("standalone main-model recovery remains visible when no goal is active", ()
   assert.ok(widget.some((line) => line.includes("provider/backup-two")), widget.join("\\n"));
 });
 
+test("loop recovery remains visible while the loop is parked", () => {
+  const loop = {
+    active: false,
+    target: "repair the audit findings",
+    iteration: 4,
+    startedAt: new Date(NOW - 60_000).toISOString(),
+    maxIterations: 20,
+    plateauWindow: 5,
+    stallCount: 0,
+    bestValue: 2,
+    lastValue: 2,
+    history: [],
+  } as unknown as LoopState;
+  const state = {
+    goal: null,
+    list: [],
+    loop,
+    mainModelRecovery: {
+      primary: "provider/primary",
+      active: "provider/backup-one",
+      attempted: ["provider/primary", "provider/backup-one"],
+      attempts: 2,
+      retryAt: new Date(NOW + 60_000).toISOString(),
+      pendingModelSwitch: "provider/backup-two",
+      reason: "account usage limit",
+      kind: "loop",
+    },
+  } as State;
+  const extras = { mainModelFallbacks: ["provider/backup-one", "provider/backup-two"] };
+  const status = buildStatusText(state, null, NOW, undefined, extras)!;
+  assert.match(status, /loop recovery/);
+  assert.match(status, /provider\/backup-two/);
+  const widget = buildWidgetLines(state, null, NOW, undefined, undefined, extras)!;
+  assert.match(widget.join("\\n"), /loop parked/);
+  assert.match(widget.join("\\n"), /Order: provider\/primary → provider\/backup-one → provider\/backup-two/);
+  assert.match(widget.join("\\n"), /Attempted: provider\/primary, provider\/backup-one/);
+});
+
 test("passed provider retryAt stays parked until recovery state clears", () => {
   const retryAt = new Date(NOW - 60_000).toISOString();
   const state = {

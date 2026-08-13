@@ -149,7 +149,7 @@ function formatLoopRecoveryStatus(ctx: ExtensionContext): string {
     ...formatLoopRecoveryStatusLines(ctx),
     "Resume: /loop resume retries the saved loop recovery; /loop stop drops it.",
   ];
-  return lines.join("\\n");
+  return lines.join("\n");
 }
 let flags: LoopFlags;
 let GOAL_EVENT_ENTRY: string;
