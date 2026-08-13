@@ -40,6 +40,7 @@ import {
   appendLedger,
   claimRecoveryNotice,
   providerErrorPresentation,
+  sanitizeProviderAuditReport,
   sanitizeProviderDisplayText,
   archiveDir,
   archivedGoalPath,
@@ -1072,8 +1073,9 @@ function registerAgentTools(pi: any): void {
       const auditFeedbackChars = Number.isInteger(configuredFeedbackChars) && configuredFeedbackChars! >= 0
         ? configuredFeedbackChars!
         : DEFAULT_AUDIT_FEEDBACK_CHARS;
-      const auditFeedback = auditFeedbackExcerpt(result.output, auditFeedbackChars);
-      const auditFeedbackIsFull = auditFeedbackChars === 0 || result.output.length <= auditFeedbackChars;
+      const safeAuditOutput = sanitizeProviderAuditReport(result.output);
+      const auditFeedback = auditFeedbackExcerpt(safeAuditOutput, auditFeedbackChars);
+      const auditFeedbackIsFull = auditFeedbackChars === 0 || safeAuditOutput.length <= auditFeedbackChars;
       const auditFeedbackLabel = auditFeedbackIsFull
         ? "full report"
         : `last ${auditFeedbackChars} chars (Required-fixes tail)`;
@@ -1087,7 +1089,7 @@ function registerAgentTools(pi: any): void {
         // rendered into every continuation until addressed. OFF preserves
         // the pause (contract item 24 test 2).
         if (effectiveCap.aggressiveMode) {
-          const pendingTasks = extractPendingTasks(result.output, 5);
+          const pendingTasks = extractPendingTasks(safeAuditOutput, 5);
           updateGoal({
             status: "active",
             auditHistory: history,
@@ -1142,7 +1144,7 @@ function registerAgentTools(pi: any): void {
       // turn starts. Surface a bounded report directly as well, so a missing
       // turn-start acknowledgement cannot turn a real disapproval into an
       // apparently empty red card.
-      const userFeedback = auditFeedbackExcerpt(result.output, 1200)
+      const userFeedback = auditFeedbackExcerpt(safeAuditOutput, 1200)
         .replace(/<\/?(?:approved|disapproved|impossible)\s*\/?>/gi, "")
         .trim()
         || "(no actionable feedback returned; use /glla audits full to inspect the raw report)";

@@ -606,9 +606,10 @@ export const DEFAULT_AUDIT_FEEDBACK_CHARS = 0;
  * ends disapprovals with the actionable `## Required fixes` section —
  * head-slicing would cut exactly what the executor needs. */
 export function auditFeedbackExcerpt(output: string, maxChars: number): string {
-  if (maxChars === 0 || output.length <= maxChars) return output;
+  const safeOutput = sanitizeProviderAuditReport(output);
+  if (maxChars === 0 || safeOutput.length <= maxChars) return safeOutput;
   return `[head truncated — full report via /goal status]
-…${output.slice(-maxChars)}`;
+…${safeOutput.slice(-maxChars)}`;
 }
 
 export interface ListItem {

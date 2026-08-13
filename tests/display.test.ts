@@ -1405,6 +1405,33 @@ test("active auditor verdicts never masquerade as infrastructure no-verdict", ()
   assert.match(buildStatusText(disapprovalState as never)!, /auditor disapproved — fix the gap/);
 });
 
+test("provider payloads stay out of durable disapproval widget feedback", () => {
+  const disapproved = goalOf({
+    status: "active",
+    pauseReason: "auditor disapproved",
+    pauseSuggestedAction: "Inspect the required fixes, then /goal resume.",
+    auditHistory: [{
+      at: "2026-07-21T11:59:30Z",
+      approved: false,
+      disapproved: true,
+      model: "auditor",
+      report: [
+        "## Required fixes",
+        "- provider returned 429 Token Plan request_id=secret-request",
+        "403",
+        "{",
+        '  "account": "secret-account",',
+        '  "message": "Token Plan rate limit reached"',
+        "}",
+        "<disapproved/>",
+      ].join("\n"),
+    }],
+  });
+  const widget = buildWidgetLines({ goal: disapproved, list: [], loop: null } as never)!.join("\n");
+  assert.doesNotMatch(widget, /403|429|Token Plan|secret-request|secret-account|rate limit/);
+  assert.match(widget, /diagnostic redacted/);
+});
+
 test("v0.34.64: retry-class pause shows uniform auto-retrying countdown; no QUOTA WALL anywhere", () => {
   // v0.34.64: the QUOTA WALL display concept is gone. Every retry-class pause
   // (wait/blocked with a recovery timer) renders the same "auto-retrying ·

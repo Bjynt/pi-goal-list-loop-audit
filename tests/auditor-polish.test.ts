@@ -89,6 +89,22 @@ test("tail-aware excerpt: capped output keeps the Required-fixes tail", () => {
   assert.equal(auditFeedbackExcerpt("short", 100), "short");
 });
 
+test("audit feedback excerpts redact provider payloads before executor output", () => {
+  const report = [
+    "403",
+    "{",
+    '  "account": "secret-account",',
+    '  "message": "Token Plan rate limit reached"',
+    "}",
+    "## Required fixes",
+    "- keep the safe finding",
+  ].join("\n");
+  const excerpt = auditFeedbackExcerpt(report, 0);
+  assert.match(excerpt, /safe finding/);
+  assert.doesNotMatch(excerpt, /403|secret-account|Token Plan|rate limit/);
+  assert.match(excerpt, /provider diagnostic redacted/);
+});
+
 test("disapproval feedback is surfaced even when the continuation turn never starts", () => {
   const src = readGoalRuntimeSource();
   assert.match(src, /returned tool text reaches the executor only if a continuation/);

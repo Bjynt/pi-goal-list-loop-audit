@@ -2781,24 +2781,42 @@ test("v0.34.87: complete_goal on a paused item names the pause + resume verb, no
 test("v0.34.22: detached disapproval resumes the goal with a durable report", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
-  const fakePi = writeFakeAuditor(cwd, "disapproved", 0);
+  const rawReport = [
+    "## Required fixes",
+    "- provider returned 429 Token Plan request_id=secret-request",
+    "403",
+    "{",
+    '  "account": "secret-account",',
+    '  "message": "Token Plan rate limit reached"',
+    "}",
+    "<disapproved/>",
+  ].join("\n");
+  const fakePi = writeFakeAuditor(cwd, "disapproved", 0, rawReport);
   const previous = process.env.GLLA_PI_BINARY;
   process.env.GLLA_PI_BINARY = fakePi;
   try {
     const ctx = await freshSession(cwd, "startup");
     await pi.command("goal", "start detached disapproval target — done when pinned", ctx);
     await tick();
-    await pi.runTool("complete_goal", { completionSummary: "Claim", verificationSummary: "Evidence" }, ctx);
+    const completionResult = await pi.runTool("complete_goal", { completionSummary: "Claim", verificationSummary: "Evidence" }, ctx);
+    assert.doesNotMatch(completionResult.content.map((part) => part.text).join("\n"), /403|429|Token Plan|secret-request|secret-account/);
     await waitUntil(() => {
       const goal = readState(cwd).goal as { status?: string; pendingCompletion?: unknown; auditHistory?: unknown[] } | null;
       return goal?.status === "active" && !goal.pendingCompletion && (goal.auditHistory?.length ?? 0) > 0;
     });
-    const goal = readState(cwd).goal as { status: string; auditHistory?: Array<{ disapproved?: boolean }> };
+    const goal = readState(cwd).goal as { status: string; auditHistory?: Array<{ disapproved?: boolean; report?: string }> };
     assert.equal(goal.status, "active");
     assert.equal(goal.auditHistory?.at(-1)?.disapproved, true);
+    assert.match(goal.auditHistory?.at(-1)?.report ?? "", /secret-account|Token Plan/);
+    const userFacing = [
+      ...ctx.ui.notifies.map((notice) => notice.message),
+      ...(((ctx.ui.widgets["pi-glla"] as string[] | undefined) ?? [])),
+    ].join("\n");
+    assert.doesNotMatch(userFacing, /403|429|Token Plan|secret-request|secret-account|rate limit/);
+    assert.match(userFacing, /provider diagnostic redacted/);
     assert.ok(
-      ctx.ui.matching("Report excerpt").some((n) => n.message.includes("fix the pinned gap")),
-      "the disapproval report is notified directly, not only returned to a continuation turn",
+      ctx.ui.matching("Report excerpt").some((n) => n.message.includes("provider diagnostic redacted")),
+      "the sanitized disapproval report is notified directly, not only returned to a continuation turn",
     );
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   } finally {

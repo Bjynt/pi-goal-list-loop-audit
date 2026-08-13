@@ -13,7 +13,7 @@
 import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth } from "@earendil-works/pi-tui";
 
 import type { Goal, State } from "./goal-loop-core.js";
-import { compactDisplayText, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
+import { compactDisplayText, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
 import { HELD_ON_RESTORE, type LoopState } from "./goal-loop-forever.js";
 
 /** v0.34.57 (OPEN-ISSUES bug #1.8 / tasklist item #2): the MAIN host is
@@ -294,8 +294,9 @@ function latestAuditFeedback(g: Goal): LatestAuditFeedback | undefined {
   // Keep the actionable tail when the report has one. Verdict markers alone
   // are not feedback; naming that explicitly is better than rendering a
   // blank-looking disapproval card.
-  const requiredFixes = verdict.report.match(/(?:^|\n)\s*(?:#{1,6}\s*)?required fixes\b[\s\S]*/i)?.[0];
-  const report = sanitizeDisplayText(requiredFixes ?? verdict.report.slice(-320))
+  const safeReport = sanitizeProviderAuditReport(verdict.report);
+  const requiredFixes = safeReport.match(/(?:^|\n)\s*(?:#{1,6}\s*)?required fixes\b[\s\S]*/i)?.[0];
+  const report = sanitizeDisplayText(requiredFixes ?? safeReport.slice(-320))
     .replace(/<\/?(?:approved|disapproved|impossible)(?:\s[^>]*)?\s*\/?>(?:\s*)/gi, "")
     .trim();
   if (!report) return undefined;

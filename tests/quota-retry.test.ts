@@ -93,6 +93,24 @@ test("full auditor reports redact raw provider payload lines while preserving sa
   assert.match(sanitized, /provider diagnostic redacted/);
 });
 
+test("multiline provider markers redact the following arbitrary JSON payload", () => {
+  const report = [
+    "## Audit",
+    "403",
+    "{",
+    '  "account": "secret-account",',
+    '  "organization": "secret-organization",',
+    '  "nested": { "request_id": "secret-request", "message": "Token Plan rate limit reached" }',
+    "}",
+    "## Required fixes",
+    "- keep the safe finding",
+  ].join("\n");
+  const sanitized = sanitizeProviderAuditReport(report);
+  assert.match(sanitized, /safe finding/);
+  assert.doesNotMatch(sanitized, /403|secret-account|secret-organization|secret-request|Token Plan|rate limit/);
+  assert.match(sanitized, /provider diagnostic redacted/);
+});
+
 test("audit history projections sanitize provider diagnostics", () => {
   const raw = '429 Token Plan request_id=abc123';
   const bare403 = '403 {"error":{"message":"upstream denied this request"},"request_id":"auth-sensitive-id"}';

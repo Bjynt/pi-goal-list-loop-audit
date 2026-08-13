@@ -197,14 +197,72 @@ export function sanitizeProviderAuditReport(report: string | undefined): string 
     "i",
   );
   const structuredLine = /["']?(?:status(?:code)?|error(?:message)?|message|detail|reason|request[\s_-]*(?:id|identifier)|retry[\s_-]*after|reset[\s_-]*(?:at|after))\b["']?\s*[:=]/i;
+  // Count JSON delimiters without treating braces inside a quoted value as
+  // structure. A provider marker is often emitted on its own line followed
+  // by a multiline payload, so `pendingJsonLines` enters the next balanced
+  // block instead of redacting only the marker line.
+  const bracketDelta = (line: string): number => {
+    let delta = 0;
+    let quoted = false;
+    let escaped = false;
+    for (const char of line) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === String.fromCharCode(92) && quoted) {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') {
+        quoted = !quoted;
+        continue;
+      }
+      if (quoted) continue;
+      if (char === "{" || char === "[") delta++;
+      else if (char === "}" || char === "]") delta--;
+    }
+    return delta;
+  };
+
   let jsonDepth = 0;
+  let pendingJsonLines = 0;
   return report.split(/\r?\n/).map((line) => {
-    const marked = jsonDepth > 0 || providerLine.test(line) || structuredLine.test(line);
-    if (!marked) return line;
+    const trimmed = line.trim();
+    const providerMarked = providerLine.test(line);
+    const structuredMarked = structuredLine.test(line);
+    const beginsJson = /^[{[]/.test(trimmed);
+    const inJson = jsonDepth > 0;
+    const entersPendingJson = pendingJsonLines > 0 && beginsJson;
+    const marked = inJson || providerMarked || structuredMarked || entersPendingJson;
+
+    if (!marked) {
+      // Permit a blank line or a fenced-code opener between a standalone
+      // provider marker and its JSON payload, but do not carry the pending
+      // state across ordinary prose.
+      if (pendingJsonLines > 0) {
+        if (!trimmed || /^```(?:json)?\s*$/i.test(trimmed)) return line;
+        pendingJsonLines = 0;
+      }
+      return line;
+    }
+
     const copy = providerErrorPresentation(line, "completion");
-    const opens = (line.match(/[\[{]/g) ?? []).length;
-    const closes = (line.match(/[\]}]/g) ?? []).length;
-    jsonDepth = Math.max(0, jsonDepth + opens - closes);
+    const delta = bracketDelta(line);
+    if (inJson || entersPendingJson) {
+      jsonDepth = Math.max(0, jsonDepth + delta);
+      pendingJsonLines = 0;
+    } else if (providerMarked && delta > 0) {
+      jsonDepth = delta;
+      pendingJsonLines = 0;
+    } else if (providerMarked && delta === 0 && !beginsJson) {
+      // A bare `403`/`429` or `Token Plan` line may introduce the payload on
+      // the next line. Only wait a couple of lines so a later unrelated JSON
+      // example is never swallowed by an old marker.
+      pendingJsonLines = 2;
+    } else {
+      pendingJsonLines = 0;
+    }
     return `[provider diagnostic redacted — ${copy.display}]`;
   }).join("\n");
 }
