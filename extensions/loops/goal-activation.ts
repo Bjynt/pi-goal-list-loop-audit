@@ -1087,10 +1087,6 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       if (recoveryConsent) {
         const delay = Number.isFinite(retryAtMs) ? Math.max(0, retryAtMs - Date.now()) : 0;
         ctx.ui.notify(`Restored main-model recovery (${mainRecovery.kind}) — ${mainRecovery.pendingModelSwitch ? `reconciling ${mainRecovery.pendingModelSwitch}` : delay > 0 ? `next probe in ${Math.max(1, Math.ceil(delay / 60_000))}m` : "probe is due now"}.`, "info");
-        if (mainRecovery.kind === "loop" && state.loop && !state.loop.active && (state.loop.stopReason ?? "").startsWith("main model recovery")) {
-          state.loop = { ...state.loop, active: false };
-          persistState(ctx);
-        }
         if (delay > 0) scheduleMainModelRecoveryTimer(ctx, delay);
         else void probeMainModelRecovery(ctx);
         // v0.34.92: re-arm the hourly probe ticker on session_start if the
