@@ -119,6 +119,8 @@ export interface WidgetExtras {
    * report byte-counter render while the prose tail is muted. false =
    * the plain timer-only card (the pre-v0.34.86 silent look). */
   auditorProgressSignals?: boolean;
+  /** Effective global main-model backup order for truthful recovery HUDs. */
+  mainModelFallbacks?: string[];
 }
 
 /**
@@ -696,6 +698,10 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
   // v0.28.17: a held loop rides every goal state as a compact suffix.
   const heldSuffix = held ? paint(theme, "warning", " · loop⏸held") : "";
   if (!g) {
+    if (state.mainModelRecovery) {
+      const summary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
+      return `glla: ${paint(theme, "warning", "⏳ main-model recovery")}${summary[0] ? ` · ${summary[0].replace(/^Main-model recovery: /, "")}` : ""}`;
+    }
     if (held) return `glla: loop ${paint(theme, "warning", "⏸ held")} · iter ${held.iteration} — /loop to resume`;
     return undefined;
   }
@@ -960,7 +966,7 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
 
 function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, width?: number, extras?: WidgetExtras): string[] | undefined {
   if (state.loop?.active) return loopLines(state.loop, now, theme, width, extras);
-  if (!state.goal && state.mainModelRecovery) return standaloneRecoveryLines(state.mainModelRecovery, now, theme, width);
+  if (!state.goal && state.mainModelRecovery) return standaloneRecoveryLines(state.mainModelRecovery, now, theme, width, extras?.mainModelFallbacks);
   const g = state.goal;
   const held = heldLoop(state);
   if (!g) {
@@ -984,13 +990,13 @@ function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null
 }
 
 /** v0.28.17: standalone card for a restore-held loop (no goal visible). */
-function standaloneRecoveryLines(recovery: MainModelRecovery, now: number, theme?: DisplayTheme, width?: number): string[] {
+function standaloneRecoveryLines(recovery: MainModelRecovery, now: number, theme?: DisplayTheme, width?: number, configuredBackups: string[] = []): string[] {
   const current = recovery.active ?? recovery.primary;
   const pending = recovery.pendingModelSwitch ? ` · pending ${truncate(recovery.pendingModelSwitch, budgetFor(width, 3, 28))}` : "";
   const retry = recovery.retryAt ? Date.parse(recovery.retryAt) : Number.NaN;
   const when = Number.isFinite(retry) ? (retry <= now ? "probe due now" : `probe in ${fmtElapsed(retry - now)}`) : recovery.manualResumeRequired ? "manual resume required" : "probe pending";
   const wall = recovery.quotaSignal ? "provider wall" : "main-model fallback recovery";
-  const order = [recovery.primary, ...(recovery.active && recovery.active.toLowerCase() !== recovery.primary.toLowerCase() ? [recovery.active] : [])].join(" → ");
+  const order = [recovery.primary, ...configuredBackups].join(" → ");
   const skipped = recovery.skipped?.length ? ` · skipped ${recovery.skipped.map((entry) => `${entry.ref} (${entry.reason})`).join(", ")}` : "";
   return [
     `${paint(theme, "warning", "⏳")} ${paint(theme, "accent", wall)} · ${truncate(current, budgetFor(width, 3, 36))}${pending}`,
@@ -1254,7 +1260,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
         ? "parked on provider wall — retrying automatically"
         : "main-model fallback recovery — retrying automatically";
       lines.push(`├─ ${paint(theme, "dim", recoveryLabel)}`);
-      const recoverySummary = formatMainModelRecoveryStatus(state.mainModelRecovery);
+      const recoverySummary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
       recoverySummary.slice(0, 4).forEach((line) => lines.push(`│  ${paint(theme, "dim", line.replace(/^Main-model recovery: /, ""))}`));
     }
     else if (Number.isFinite(retryMs)) {
