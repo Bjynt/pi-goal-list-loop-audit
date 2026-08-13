@@ -27,6 +27,7 @@ import { ReviewerConfig, normalizeObjective, resolveReviewerConfig, reviewerMenu
 import type { SettingsSectionId } from "./settings-menu.js";
 import { cmdLoop, clearLoopTimer, finishLoopGit, isLoopActive, scheduleLoopTick } from "./goal-loop.js";
 import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-conflict.js";
+import { formatGllaVersion } from "./glla-version.js";
 
 export interface CommandFlags {
   get draftingTarget(): "goal" | "list" | "loop" | null; set draftingTarget(v: "goal" | "list" | "loop" | null);
@@ -1852,6 +1853,13 @@ function cmdAudits(args: string, ctx: ExtensionContext): void {
   ctx.ui.notify(`glla audits — last ${entries.length} verdict(s) in ${ctx.cwd}\n${formatAuditLog(entries)}`, "info");
 }
 
+// /glla version is intentionally read-only and package-backed. Keeping the
+// version lookup next to the command surface makes an installed extension
+// identify itself even when its host session is stale or no live goal exists.
+function cmdGllaVersion(ctx: ExtensionContext): void {
+  ctx.ui.notify(formatGllaVersion(), "info");
+}
+
 // v0.29.8: /glla status — the unified "what's running" surface (user: "we
 // need to type goal status [to check], so that command at least is missing
 // for checking on whatever active process we have"). Read-only aggregate of
@@ -1905,6 +1913,10 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
     return;
   }
   // v0.25.2: /glla stats sub-mode — cross-project telemetry rollups.
+  if (/^version(?:\s|$)/.test(trimmed)) {
+    cmdGllaVersion(ctx);
+    return;
+  }
   if (/^stats(?:\s|$)/.test(trimmed)) {
     cmdStats(trimmed.slice("stats".length).trim(), ctx);
     return;
