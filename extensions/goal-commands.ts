@@ -272,6 +272,11 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
 
 async function cmdStatus(ctx: ExtensionContext): Promise<void> {
   if (!state.goal) {
+    const recoveryLines = formatMainModelRecoveryStatus(state.mainModelRecovery, normalizeMainModelFallbackRefs(loadSettings(ctx.cwd).mainModelFallbacks));
+    if (recoveryLines.length > 0) {
+      ctx.ui.notify(["No active goal.", ...recoveryLines, "Use /goal <objective>, /list show, or /loop status for the owning surface."].join("\n"), "info");
+      return;
+    }
     ctx.ui.notify("No active goal. Use /goal <objective>.", "info");
     return;
   }

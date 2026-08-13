@@ -847,6 +847,10 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
   if (sub === "status") {
     const loop = state.loop;
     if (!loop) {
+      if (state.mainModelRecovery?.kind === "loop") {
+        ctx.ui.notify(formatLoopRecoveryStatus(ctx), "info");
+        return;
+      }
       ctx.ui.notify("No loop. /loop to draft one, /loop start \"<target>\" for an infinite metricless loop, or add measure=\"<cmd>\" direction=min|max for a metric loop [window=5] [max=50] [time=<hours>] [tokens=<budget>]", "info");
       return;
     }
@@ -861,6 +865,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     if (bounds.length) lines.push(`Bounds: ${bounds.join(" · ")}`);
     if (loop.refinements?.length) lines.push(`Spec refined ${loop.refinements.length}× (latest: iteration ${loop.refinements[loop.refinements.length - 1]!.iteration})`);
     if (loop.stopReason) lines.push(`Stopped: ${loop.stopReason}`);
+    if (state.mainModelRecovery?.kind === "loop") lines.push(...formatLoopRecoveryStatusLines(ctx));
     const tail = loop.history.slice(-5);
     if (tail.length > 0) {
       lines.push("Recent: " + tail.map((h) => `${h.value ?? "ERR"}${h.improved ? "↑" : ""}`).join(" "));

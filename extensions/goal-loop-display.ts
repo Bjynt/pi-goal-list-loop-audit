@@ -700,7 +700,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
   if (!g) {
     if (state.mainModelRecovery) {
       const summary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
-      return `glla: ${paint(theme, "warning", "⏳ main-model recovery")}${summary[0] ? ` · ${summary[0].replace(/^Main-model recovery: /, "")}` : ""}`;
+      return `glla: ${paint(theme, "warning", "⏳ main-model recovery")}${summary.slice(0, 3).map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
     }
     if (held) return `glla: loop ${paint(theme, "warning", "⏸ held")} · iter ${held.iteration} — /loop to resume`;
     return undefined;
@@ -1261,7 +1261,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
         : "main-model fallback recovery — retrying automatically";
       lines.push(`├─ ${paint(theme, "dim", recoveryLabel)}`);
       const recoverySummary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
-      recoverySummary.slice(0, 4).forEach((line) => lines.push(`│  ${paint(theme, "dim", line.replace(/^Main-model recovery: /, ""))}`));
+      recoverySummary.forEach((line) => lines.push(`│  ${paint(theme, "dim", line.replace(/^Main-model recovery: /, ""))}`));
     }
     else if (Number.isFinite(retryMs)) {
       const when = retryMs <= 0 ? "now" : `next probe in ${fmtElapsed(retryMs)}`;
