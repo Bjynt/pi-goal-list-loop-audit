@@ -2575,6 +2575,68 @@ test("v0.35.x: provider-wall diagnostics stay durable while completion surfaces 
   }
 });
 
+test("v0.35.x: bare 403 main recovery sanitizes live surfaces while retaining diagnostics", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "bare provider recovery target — done when pinned", ctx);
+  await tick();
+  const raw = '403 {"error":{"message":"upstream denied this request"},"request_id":"auth-sensitive-id"}';
+  await pi.fire("agent_end", {
+    messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: raw }],
+  }, ctx);
+  await tick();
+
+  const parked = readState(cwd) as {
+    goal: { status: string; pauseReason?: string; pauseSuggestedAction?: string; providerErrorDiagnostic?: string };
+    mainModelRecovery?: { retryAt?: string; providerErrorDiagnostic?: string };
+  };
+  assert.equal(parked.goal.status, "paused", "the auth-shaped provider failure enters durable recovery");
+  assert.ok(parked.mainModelRecovery?.retryAt, "recovery retry is durable");
+  const liveCopy = [
+    parked.goal.pauseReason,
+    parked.goal.pauseSuggestedAction,
+    parked.mainModelRecovery?.providerErrorDiagnostic && "diagnostic",
+    ...ctx.ui.notifies.map((notice) => notice.message),
+    ...Object.values(ctx.ui.widgets).map((lines) => JSON.stringify(lines)),
+  ].filter(Boolean).join("\\n");
+  assert.doesNotMatch(liveCopy, /403|upstream denied|auth-sensitive-id/, "live notifications/cards never expose the raw 403 payload");
+  assert.match(parked.goal.providerErrorDiagnostic ?? "", /403|auth-sensitive-id/, "goal diagnostics remain durable");
+  assert.match(parked.mainModelRecovery?.providerErrorDiagnostic ?? "", /403|auth-sensitive-id/, "recovery diagnostics remain durable");
+
+  await pi.command("glla", "status", ctx);
+  assert.doesNotMatch(ctx.ui.notifies.at(-1)?.message ?? "", /403|upstream denied|auth-sensitive-id/, "status remains sanitized");
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
+
+test("v0.35.x: bare 403 completion diagnostics stay durable while completion surfaces remain sanitized", { timeout: 15_000 }, async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const raw = '403 {"error":{"message":"upstream denied this request"},"request_id":"auth-sensitive-id"}';
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = writeFakeAuditorError(cwd, raw);
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    await pi.command("goal", "bare provider completion target — done when pinned", ctx);
+    await tick();
+    const result = await pi.runTool("complete_goal", {
+      completionSummary: "The completion path is covered.",
+      verificationSummary: "The detached auditor returns a synthetic HTTP error.",
+    }, ctx);
+    assert.doesNotMatch(result.content.map((part) => part.text).join("\\n"), /403|upstream denied|auth-sensitive-id/, "completion-tool output is sanitized");
+    await waitUntil(() => (readState(cwd).goal as { pendingCompletion?: { phase?: string } } | null)?.pendingCompletion?.phase === "quota-waiting", 12_000);
+    const parked = readState(cwd).goal as { pauseReason?: string; pauseSuggestedAction?: string; providerErrorDiagnostic?: string; pendingCompletion?: { providerErrorDiagnostic?: string } };
+    const liveCopy = [parked.pauseReason, parked.pauseSuggestedAction, ...ctx.ui.notifies.map((notice) => notice.message)].filter(Boolean).join("\\n");
+    assert.doesNotMatch(liveCopy, /403|upstream denied|auth-sensitive-id/, "completion recovery copy is sanitized");
+    assert.match(parked.providerErrorDiagnostic ?? "", /403|auth-sensitive-id/, "completion goal diagnostic remains durable");
+    assert.match(parked.pendingCompletion?.providerErrorDiagnostic ?? "", /403|auth-sensitive-id/, "pending claim diagnostic remains durable");
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  } finally {
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
 test("v0.34.119: auditor-approved list completion archives the item and activates exactly the next queue item", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();

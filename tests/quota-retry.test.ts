@@ -64,16 +64,32 @@ test("provider-wall copy separates safe display/action text from durable diagnos
   }
 });
 
+test("bare 403 provider payloads are sensitive diagnostics, not raw display copy", () => {
+  const raw = '403 {"error":{"message":"upstream denied this request"},"request_id":"auth-sensitive-id"}';
+  const copy = providerErrorPresentation(raw, "completion");
+  assert.equal(copy.signal, undefined, "a bare 403 is not automatically called a quota wall");
+  assert.equal(copy.sensitive, true, "HTTP 403 is still untrusted provider payload");
+  assert.match(copy.diagnostic, /auth-sensitive-id/);
+  assert.doesNotMatch(`${copy.display} ${copy.action}`, /403|upstream denied|auth-sensitive-id/);
+  assert.doesNotMatch(sanitizeProviderDisplayText(`auditor retry: ${raw}`), /403|upstream denied|auth-sensitive-id/);
+});
+
 test("audit history projections sanitize provider diagnostics", () => {
   const raw = '429 Token Plan request_id=abc123';
+  const bare403 = '403 {"error":{"message":"upstream denied this request"},"request_id":"auth-sensitive-id"}';
   const line = formatAuditLog([{
     at: new Date().toISOString(), goalId: "goal-123456", objective: "provider wall", verdict: "error",
     model: "provider/model", thinkingLevel: "high", report: "", error: raw,
+  }, {
+    at: new Date().toISOString(), goalId: "goal-auth", objective: "provider auth wall", verdict: "error",
+    model: "provider/model", thinkingLevel: "high", report: "", error: bare403,
   }]);
   const history = formatGoalAuditHistory({ id: "goal-123456", auditHistory: [{
     at: new Date().toISOString(), approved: false, disapproved: false, model: "provider/model", error: raw,
+  }, {
+    at: new Date().toISOString(), approved: false, disapproved: false, model: "provider/model", error: bare403,
   }] });
-  assert.doesNotMatch(`${line}\n${history}`, /429|Token Plan|abc123/);
+  assert.doesNotMatch(`${line}\n${history}`, /429|Token Plan|abc123|403|upstream denied|auth-sensitive-id/);
   assert.match(`${line}\n${history}`, /provider (?:account\/usage|request-rate|infrastructure) wall|provider infrastructure error/);
 });
 

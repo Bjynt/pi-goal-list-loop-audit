@@ -106,7 +106,7 @@ export interface ProviderErrorPresentation {
 // boundary verbatim. Keep the detector broader than quotaSignal: a provider
 // may say "Token Plan" or expose a bare HTTP 429 without enough surrounding
 // prose for classification.
-const PROVIDER_WALL_MARKER = /\b429\b|token[\s_-]*plan|rate[\s_-]*limit|too many requests|usage[\s_-]*limit|quota|insufficient[\s_-]+(?:credits?|balance)|key[\s_-]*limit|retry[\s_-]*after/i;
+const PROVIDER_WALL_MARKER = /\b(?:403|429)\b|token[\s_-]*plan|rate[\s_-]*limit|too many requests|usage[\s_-]*limit|quota|insufficient[\s_-]+(?:credits?|balance)|key[\s_-]*limit|retry[\s_-]*after/i;
 
 function providerFingerprintText(error: string): string {
   return error
