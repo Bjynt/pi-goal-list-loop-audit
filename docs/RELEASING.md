@@ -50,6 +50,11 @@ npm install -g pi-goal-list-loop-audit
 pi install npm:pi-goal-list-loop-audit
 ```
 
+After installing in pi, run `/glla version` to confirm which package version
+that running extension loaded. The command also prints the `npm view` check so
+a stale global/package install is easy to spot; the registry query remains the
+authoritative published-version check.
+
 `publishConfig.access=public` is necessary for the scoped/public policy, but
 it does not publish anything by itself. A commit, tag, or GitHub Release alone
 is not proof that npm has the package; the registry check above is the proof.

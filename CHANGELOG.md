@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+### `/glla version` identifies the installed package
+  The new read-only `/glla version` action reads the adjacent package manifest,
+  reports the version loaded by the running extension, and includes the
+  registry comparison command so stale installations are visible without
+  mutating live goal state. Completion and documentation cover the command.
+
 ### Provider-wall recovery copy is sanitized and episode-deduplicated
   Quota, provider-wall, and detached-auditor diagnostics now have separate
   durable and user-facing projections. Chat/tool/recovery copy uses stable

@@ -8,7 +8,7 @@ The auditor runs in a fresh extension-less pi RPC process with no extensions, sk
 
 This is a detached process, not a nested session in the main pi process. `complete_goal` returns after writing the claim and job request; the status surface shows `auditor queued`, `auditor running`, or `audit recovery pending` while the worker runs or awaits a fresh lifecycle.
 
-**Current release:** `v0.34.131` — documented bash-enabled auditor power mode with bounded tool execution and synchronized release metadata.
+**Current package version:** `v0.34.131` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
 
 ## Why this exists
 
@@ -48,7 +48,7 @@ Five top-level commands — `/goal`, `/list`, `/loop`, `/glla`, `/review`:
 /goal verify                       # queue a detached auditor for the current goal — no agent turn (v0.28.27, renamed from /goal audit in v0.29.8)
 /goal tweak "<new objective>"      # edit in place (Confirm dialog)
 /goal archive                      # archived goals, newest first
-/glla                               # settings UI table · actions include /glla status · /glla stats · /glla audits [N|full] · /glla cancel (cancel the active objective) · /glla postaudit · /glla wipe (idempotent all-live-state reset, Confirm-gated)
+/glla                               # settings UI table · actions include /glla version · /glla status · /glla stats · /glla audits [N|full] · /glla cancel (cancel the active objective) · /glla postaudit · /glla wipe (idempotent all-live-state reset, Confirm-gated)
 /list fix the login bug, add dark mode, write docs   # dump it — the agent shapes it into items, one Confirm
 /list plan.md                      # file detected → bulk import, one Confirm (sisyphus/Ralph style)
 /list <paste a checklist>          # multi-line paste → same batch flow
