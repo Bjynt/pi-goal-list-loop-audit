@@ -14,7 +14,7 @@ import {
   DEFAULT_TOKEN_LIMIT, Goal, ListItem, Status, appendLedger, archiveDir, archivedGoalPath, bumpGoalRevision, sanitizeProviderDisplayText,
   computeListDepth, clearQueueItemFiles, deleteQueueItemFile, extractVerificationContract, formatAuditLog, formatGoalAuditHistory, queueItemSidecarCount,
   formatListDepth, goalArgsNeedDrafting, ledgerPath, newGoalId, nowIso, parseListImport, parseListItemDeclaration,
-  readAuditLog, readQueueFromDisk, routeGoalArgs, routeListText, sanitizeDisplayText, statusLabel,
+  readAuditLog, readQueueFromDisk, routeGoalArgs, routeListText, sanitizeDisplayText, sanitizeProviderAuditReport, statusLabel,
   writeQueueItemFile, type ModeCommand, type State, LIST_MUTATING_SUBCOMMANDS, SETTINGS_MUTATING_ACTIONS,
 } from "./goal-loop-core.js";
 import { clearDispatchRecord, dispatchRecordExists } from "./goal-loop-dispatch.js";
@@ -1832,11 +1832,11 @@ function cmdAudits(args: string, ctx: ExtensionContext): void {
     // Latest report — active goal's history first, then the log.
     const fromGoal = state.goal?.auditHistory?.at(-1);
     if (fromGoal?.report) {
-      ctx.ui.notify(`Latest audit on this goal — ${fromGoal.model} (${fromGoal.at})\n${fromGoal.report}`, "info");
+      ctx.ui.notify(`Latest audit on this goal — ${fromGoal.model} (${fromGoal.at})\n${sanitizeProviderAuditReport(fromGoal.report)}`, "info");
       return;
     }
     const latest = readAuditLog(ctx.cwd).at(-1);
-    ctx.ui.notify(latest ? `Latest audit — ${latest.verdict} (${latest.model}, ${latest.at})\n${latest.report}` : "No audits logged yet.", "info");
+    ctx.ui.notify(latest ? `Latest audit — ${latest.verdict} (${latest.model}, ${latest.at})\n${sanitizeProviderAuditReport(latest.report)}` : "No audits logged yet.", "info");
     return;
   }
   // Default: the ACTIVE goal's own audit history (with per-audit elapsed);

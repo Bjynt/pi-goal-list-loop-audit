@@ -10,8 +10,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
-import { capQuotaRetrySeconds, isQuotaError, normalizeProviderErrorText, parseQuotaError, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderDisplayText, type QuotaSignal } from "./quota-retry.js";
-export { normalizeProviderErrorText, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderDisplayText } from "./quota-retry.js";
+import { capQuotaRetrySeconds, isQuotaError, normalizeProviderErrorText, parseQuotaError, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText, type QuotaSignal } from "./quota-retry.js";
+export { normalizeProviderErrorText, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText } from "./quota-retry.js";
 
 /** v0.26.1: consecutive heartbeat refires without a real agent turn
  * before the supervisor gives up (pauses the goal / stops the loop).

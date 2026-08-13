@@ -36,7 +36,7 @@ function setGlobalAutoResume(v: boolean): void {
 }
 afterEach(() => setGlobalAutoResume(false));
 
-import { readState } from "../extensions/goal-loop-core.js";
+import { appendAuditLog, readState } from "../extensions/goal-loop-core.js";
 import { MockPi, invalidateHostSession, makeMockCtx, tmpCwd, seedState, seedGoal, seedLoop, staleError, tick, type MockCtx } from "./harness/mock-pi.js";
 import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
@@ -2573,6 +2573,56 @@ test("v0.35.x: provider-wall diagnostics stay durable while completion surfaces 
     if (previous === undefined) delete process.env.GLLA_PI_BINARY;
     else process.env.GLLA_PI_BINARY = previous;
   }
+});
+
+test("v0.35.x: /glla audits full sanitizes active and global reports", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const raw403 = '403 {"error":{"message":"upstream denied this request"},"request_id":"auth-sensitive-id"}';
+  const raw429 = '429 {"error":{"message":"Token Plan rate limit reached"},"request_id":"quota-sensitive-id"}';
+  const report403 = [
+    "## Audit report",
+    "Safe finding remains visible.",
+    raw403,
+    "The implementation is otherwise correct.",
+  ].join("\n");
+  seedState(cwd, {
+    goal: seedGoal({
+      status: "paused",
+      auditHistory: [{
+        at: new Date().toISOString(),
+        approved: false,
+        disapproved: false,
+        model: "provider/model",
+        report: report403,
+      }],
+    }),
+  });
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("glla", "audits full", ctx);
+  const activeFull = ctx.ui.notifies.at(-1)?.message ?? "";
+  assert.match(activeFull, /Safe finding remains visible/);
+  assert.doesNotMatch(activeFull, /403|upstream denied|auth-sensitive-id/);
+  assert.match(activeFull, /provider diagnostic redacted/);
+
+  appendAuditLog(cwd, {
+    at: new Date().toISOString(),
+    goalId: "global-403-429",
+    objective: "global provider recovery",
+    verdict: "error",
+    model: "provider/model",
+    thinkingLevel: "high",
+    report: `Safe global finding\n${raw429}`,
+    error: raw429,
+  });
+  seedState(cwd, { goal: seedGoal({ status: "paused" }) });
+  __testOnlyLoadState(cwd);
+  await pi.command("glla", "audits full all", ctx);
+  const globalFull = ctx.ui.notifies.at(-1)?.message ?? "";
+  assert.match(globalFull, /Safe global finding/);
+  assert.doesNotMatch(globalFull, /429|Token Plan|quota-sensitive-id/);
+  assert.match(globalFull, /provider diagnostic redacted/);
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
 });
 
 test("v0.35.x: bare 403 main recovery sanitizes live surfaces while retaining diagnostics", async () => {

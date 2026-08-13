@@ -183,6 +183,32 @@ export function sanitizeProviderDisplayText(value: string): string {
   return presentation.display;
 }
 
+/**
+ * Sanitize an entire auditor report before it crosses a user-facing history
+ * surface. Short pause strings go through sanitizeProviderDisplayText, but a
+ * full report can contain the original provider payload inside evidence or a
+ * fenced JSON block. Redact marked payload lines (and their continued JSON)
+ * while preserving the rest of the report for inspection.
+ */
+export function sanitizeProviderAuditReport(report: string | undefined): string {
+  if (!report) return "";
+  const providerLine = new RegExp(
+    `${PROVIDER_WALL_MARKER.source}|request[\\s_-]*(?:id|identifier)|rate_limit_error|insufficient_quota`,
+    "i",
+  );
+  const structuredLine = /["']?(?:status(?:code)?|error(?:message)?|message|detail|reason|request[\s_-]*(?:id|identifier)|retry[\s_-]*after|reset[\s_-]*(?:at|after))\b["']?\s*[:=]/i;
+  let jsonDepth = 0;
+  return report.split(/\r?\n/).map((line) => {
+    const marked = jsonDepth > 0 || providerLine.test(line) || structuredLine.test(line);
+    if (!marked) return line;
+    const copy = providerErrorPresentation(line, "completion");
+    const opens = (line.match(/[\[{]/g) ?? []).length;
+    const closes = (line.match(/[\]}]/g) ?? []).length;
+    jsonDepth = Math.max(0, jsonDepth + opens - closes);
+    return `[provider diagnostic redacted — ${copy.display}]`;
+  }).join("\n");
+}
+
 // Do not classify every "temporarily" or every 403 as a quota wall. Those
 // patterns include ordinary outages and auth failures. These signals are
 // deliberately explicit enough to survive provider wording changes without

@@ -26,6 +26,7 @@ import {
   isQuotaRetryPending,
   providerErrorFingerprint,
   providerErrorPresentation,
+  sanitizeProviderAuditReport,
   sanitizeProviderDisplayText,
   resetQuotaRetryNoticeDedup,
 } from "../extensions/quota-retry.ts";
@@ -72,6 +73,24 @@ test("bare 403 provider payloads are sensitive diagnostics, not raw display copy
   assert.match(copy.diagnostic, /auth-sensitive-id/);
   assert.doesNotMatch(`${copy.display} ${copy.action}`, /403|upstream denied|auth-sensitive-id/);
   assert.doesNotMatch(sanitizeProviderDisplayText(`auditor retry: ${raw}`), /403|upstream denied|auth-sensitive-id/);
+});
+
+test("full auditor reports redact raw provider payload lines while preserving safe findings", () => {
+  const report = [
+    "## Audit report",
+    "The implementation is otherwise correct.",
+    '403 {"error":{"message":"upstream denied this request"},"request_id":"auth-sensitive-id"}',
+    "A safe conclusion remains visible.",
+    "{",
+    '  "status": 429,',
+    '  "error": { "message": "Token Plan rate limit reached" }',
+    "}",
+  ].join("\n");
+  const sanitized = sanitizeProviderAuditReport(report);
+  assert.match(sanitized, /implementation is otherwise correct/);
+  assert.match(sanitized, /safe conclusion remains visible/);
+  assert.doesNotMatch(sanitized, /403|429|upstream denied|Token Plan|auth-sensitive-id/);
+  assert.match(sanitized, /provider diagnostic redacted/);
 });
 
 test("audit history projections sanitize provider diagnostics", () => {
