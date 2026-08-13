@@ -1,6 +1,6 @@
 {
   "name": "pi-goal-list-loop-audit",
-  "version": "0.34.134",
+  "version": "0.34.135",
   "description": "Mission control for autonomous pi: interview-drafted goals, an audited task queue, and forever-loops (metric, spec, project-audit) that run for hours. A detached extension-less auditor process re-verifies every completion with raw evidence without holding the main pi turn; confirmed drafts, decision pauses and consent gates keep you in charge.",
   "license": "AGPL-3.0-only",
   "author": "dracon",
@@ -43,8 +43,8 @@
   },
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "bun test",
-    "test:all": "bun test && tsc --noEmit && node tests/repro-jiti-state-split.test.mjs",
+    "test": "bun test --max-concurrency=1 --timeout=15000",
+    "test:all": "bun test --max-concurrency=1 --timeout=15000 && tsc --noEmit && node tests/repro-jiti-state-split.test.mjs",
     "release:check": "npm run test:all && npm pack --dry-run",
     "test:jiti": "node tests/repro-jiti-state-split.test.mjs"
   },

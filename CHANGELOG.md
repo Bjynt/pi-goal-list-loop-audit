@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.34.135 — deterministic release validation (2026-08-13)
+### Release checks are deterministic under CI
+  The package test scripts now run Bun tests with bounded serial concurrency and
+  an explicit per-test timeout, preventing shared temporary-fixture races in
+  the release workflow.
+
 ## 0.34.134 — Windows detached auditor launch and package release (2026-08-13)
 ### Windows detached auditor launch and atomic protocol retries
   Windows npm installations expose `pi.cmd` rather than a directly executable
