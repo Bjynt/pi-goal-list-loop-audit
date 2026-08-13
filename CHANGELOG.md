@@ -1,6 +1,19 @@
 # Changelog
 
 ## Unreleased
+### Windows detached auditor launch and atomic protocol retries
+  Windows npm installations expose `pi.cmd` rather than a directly executable
+  `pi` binary. The detached auditor now uses an explicit, quoted `cmd.exe`
+  shim boundary without Node's unsafe shell-argument concatenation. Worker and
+  parent atomic JSON writes retry transient Windows rename locks while keeping
+  the previous snapshot visible. This addresses GitHub issue #7 and supersedes
+  the equivalent launch portions of PRs #8 and #9. Regression coverage pins the
+  launch and retry contracts.
+
+### License switched to AGPL-3.0-only
+  The package metadata, lockfile, README, and bundled `LICENSE` now identify the
+  project as GNU Affero General Public License v3.0-only.
+
 ### `/glla version` identifies the installed package
   The new read-only `/glla version` action reads the adjacent package manifest,
   reports the version loaded by the running extension, and includes the

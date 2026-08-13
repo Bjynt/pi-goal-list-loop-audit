@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 /**
- * Detached auditor worker. This file intentionally has no project imports:
- * the parent gives it one validated job directory and it launches a clean pi
- * RPC process with the auditor's full inspection/tooling allowlist.
+ * Detached auditor worker. This file intentionally has no extension or
+ * project-runtime dependencies: the parent gives it one validated job
+ * directory and it launches a clean pi RPC process with the auditor's full
+ * inspection/tooling allowlist. The sibling launcher helper is Node-only and
+ * contains no glla/session state.
  */
 
 import { spawn } from "node:child_process";
@@ -11,6 +13,7 @@ import { lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { buildAuditorPiSpawnSpec, renameWithWindowsRetry } from "./goal-auditor-launch.mjs";
 
 const PROTOCOL_VERSION = 1;
 // Power-oriented auditor mode: bash is intentionally available so the model
@@ -58,8 +61,36 @@ function waitForChildExit(child, timeoutMs) {
   });
 }
 
+async function terminateWindowsProcessTree(child) {
+  if (!child.pid) return;
+  let killer;
+  try {
+    // The Windows launch is a cmd.exe shim boundary. taskkill /T is needed to
+    // terminate the npm shim and the Node/pi descendants as one tree; killing
+    // only cmd.exe can leave the RPC child alive with the worker's pipes gone.
+    killer = spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+  } catch {
+    return;
+  }
+  await waitForChildExit(killer, configuredDuration("GLLA_AUDITOR_CHILD_SHUTDOWN_MS", DEFAULT_CHILD_SHUTDOWN_GRACE_MS));
+}
+
 async function terminateChild(child) {
   if (!childRunning(child)) {
+    destroyChildStreams(child);
+    return;
+  }
+  if (process.platform === "win32") {
+    await terminateWindowsProcessTree(child);
+    // If taskkill was unavailable or raced the process exit, retain the direct
+    // finite fallback so worker shutdown remains bounded.
+    if (childRunning(child)) {
+      try { child.kill(); } catch {}
+      await waitForChildExit(child, FORCE_KILL_SETTLE_MS);
+    }
     destroyChildStreams(child);
     return;
   }
@@ -147,7 +178,10 @@ async function atomicJson(file, value) {
   const temp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${randomUUID()}.tmp`);
   await writeFile(temp, `${JSON.stringify(value)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
   try {
-    await rename(temp, file);
+    // Keep the old destination in place while Windows readers/AV release it;
+    // unlinking first would make the supposedly atomic protocol observable as
+    // a missing file and could lose the previous valid snapshot on a retry.
+    await renameWithWindowsRetry(rename, temp, file);
   } catch (error) {
     await rm(temp, { force: true }).catch(() => {});
     throw error;
@@ -432,10 +466,12 @@ async function main() {
       "--model", request.model,
       "--thinking", request.thinkingLevel,
     ];
-    pi = spawn(piBinary, piArgs, {
+    const launch = buildAuditorPiSpawnSpec(piBinary, piArgs);
+    pi = spawn(launch.file, launch.args, {
       cwd: request.cwd,
       env: process.env,
       stdio: ["pipe", "pipe", "pipe"],
+      ...launch.options,
     });
 
     const remaining = Math.max(1, request.wallDeadlineAt - Date.now());

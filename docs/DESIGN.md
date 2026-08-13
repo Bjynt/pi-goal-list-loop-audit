@@ -150,6 +150,12 @@ architectural decisions that changed the SHAPE of the system:
   A result from a stale generation is ignored; fresh lifecycle recovery creates
   a new attempt. Cancellation clears the pending claim and best-effort stops
   the worker.
+- **Windows launch and rename safety**: Windows npm installations expose the
+  `pi.cmd` shim rather than a directly executable `pi` binary. The worker uses
+  an explicitly quoted `cmd.exe /d /s /c` boundary with verbatim arguments,
+  while POSIX keeps direct shell-less execution. Parent and worker atomic JSON
+  writes retry transient Windows rename locks without unlinking the prior
+  snapshot first, preserving the old-or-new reader guarantee.
 - **Truthful asynchronous UI**: `auditor queued`, `auditor running`, and
   `audit recovery pending` are distinct. The main session can continue
   rendering and accepting input while the worker audits; completion/archive or

@@ -16,6 +16,7 @@ import {
   type AuditorProgress,
   type AuditorStalledInfo,
 } from "../extensions/goal-loop-auditor-process.ts";
+import { buildAuditorPiSpawnSpec, quoteWindowsCommandArgument, renameWithWindowsRetry } from "../scripts/goal-auditor-launch.mjs";
 
 function workerPathFor(dir: string): string {
   return path.join(dir, "auditor-fake-worker.mjs");
@@ -76,6 +77,61 @@ async function runWithAttempt(dir: string, attemptId: string, env: NodeJS.Proces
 async function run(dir: string, env: NodeJS.ProcessEnv = {}) {
   return runWithAttempt(dir, "attempt-test", env);
 }
+
+test("Windows auditor launch uses an explicit cmd shim boundary without shell arg concatenation", () => {
+  const posix = buildAuditorPiSpawnSpec("pi", ["--mode", "rpc"], "linux");
+  assert.deepEqual(posix, { file: "pi", args: ["--mode", "rpc"], options: {} });
+
+  const windows = buildAuditorPiSpawnSpec(
+    "C:\\Program Files\\pi\\pi.cmd",
+    ["--mode", "rpc", "--model", "provider/model", "--thinking", "medium"],
+    "win32",
+    "C:\\Windows\\System32\\cmd.exe",
+  );
+  assert.equal(windows.file, "C:\\Windows\\System32\\cmd.exe");
+  assert.deepEqual(windows.args.slice(0, 3), ["/d", "/s", "/c"]);
+  assert.ok(windows.args[3]?.startsWith('""C:\\Program Files\\pi\\pi.cmd"'));
+
+  assert.equal(windows.options.windowsVerbatimArguments, true);
+  assert.equal(quoteWindowsCommandArgument("provider/model & echo pwned"), '"provider/model & echo pwned"');
+  assert.throws(() => quoteWindowsCommandArgument("provider/%PATH%"), /unsafe Windows/);
+  assert.throws(() => quoteWindowsCommandArgument("provider\nmodel"), /unsafe Windows/);
+});
+
+test("Windows worker shutdown kills the cmd/pi process tree", async () => {
+  const workerSource = await readFile(path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs"), "utf8");
+  assert.match(workerSource, /taskkill/);
+  assert.ok(workerSource.includes('"/t"'), "process-tree termination uses /t");
+  assert.match(workerSource, /process\.platform === "win32"/);
+});
+
+test("Windows atomic protocol retries transient rename locks without unlinking the old snapshot", async () => {
+  let calls = 0;
+  const delays: number[] = [];
+  await renameWithWindowsRetry(
+    async () => {
+      calls++;
+      if (calls < 3) throw Object.assign(new Error("destination busy"), { code: "EPERM" });
+    },
+    "snapshot.tmp",
+    "snapshot.json",
+    "win32",
+    async (delay) => { delays.push(delay); },
+  );
+  assert.equal(calls, 3);
+  assert.deepEqual(delays, [25, 50]);
+
+  await assert.rejects(
+    renameWithWindowsRetry(
+      async () => { throw Object.assign(new Error("destination busy"), { code: "EPERM" }); },
+      "snapshot.tmp",
+      "snapshot.json",
+      "linux",
+      async () => {},
+    ),
+    /destination busy/,
+  );
+});
 
 test("transport failures carry an explicit no-verdict classification", async () => {
   const dir = await setup();

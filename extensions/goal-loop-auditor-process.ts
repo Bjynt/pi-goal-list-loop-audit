@@ -18,6 +18,7 @@ import { stripThinkBlocks, captureGoalRevision, type Goal, type GoalRevisionToke
 import { quotaSignal } from "./quota-retry.js";
 import { buildGoalAuditorPrompt } from "./goal-loop-auditor.js";
 import { checkRegressionShield, parseAuditorVerdict } from "./goal-loop-shield.js";
+import { renameWithWindowsRetry } from "../scripts/goal-auditor-launch.mjs";
 
 export interface GoalAuditorResult {
   approved: boolean;
@@ -287,7 +288,7 @@ export async function writeAtomicJson(file: string, value: unknown): Promise<voi
   const temp = path.join(dir, `.${path.basename(file)}.${process.pid}.${randomUUID()}.tmp`);
   await fs.writeFile(temp, `${JSON.stringify(value)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
   try {
-    await fs.rename(temp, file);
+    await renameWithWindowsRetry((from, to) => fs.rename(from, to), temp, file);
   } catch (error) {
     await fs.rm(temp, { force: true }).catch(() => {});
     throw error;
