@@ -766,6 +766,7 @@ export function formatMainModelRecoveryStatus(recovery: MainModelRecovery | unde
     : "none";
   const lines = [
     `Main-model recovery: ${currentIndex >= 0 ? `${currentIndex === 0 ? "primary" : `backup ${currentIndex}/${safeBackups.length}`} selected` : "active model selected"}`,
+    `  Order: ${chain.join(" → ")}`,
     `  Current: ${current}`,
     ...(recovery.pendingModelSwitch ? [`  Pending switch: ${recovery.pendingModelSwitch}`] : []),
     `  Attempted: ${attempted}`,

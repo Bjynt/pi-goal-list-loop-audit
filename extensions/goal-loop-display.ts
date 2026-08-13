@@ -12,7 +12,7 @@
 
 import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth } from "@earendil-works/pi-tui";
 
-import type { Goal, State } from "./goal-loop-core.js";
+import type { Goal, MainModelRecovery, State } from "./goal-loop-core.js";
 import { compactDisplayText, formatMainModelRecoveryStatus, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
 import { HELD_ON_RESTORE, type LoopState } from "./goal-loop-forever.js";
 
@@ -960,6 +960,7 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
 
 function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, width?: number, extras?: WidgetExtras): string[] | undefined {
   if (state.loop?.active) return loopLines(state.loop, now, theme, width, extras);
+  if (!state.goal && state.mainModelRecovery) return standaloneRecoveryLines(state.mainModelRecovery, now, theme, width);
   const g = state.goal;
   const held = heldLoop(state);
   if (!g) {
@@ -983,6 +984,20 @@ function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null
 }
 
 /** v0.28.17: standalone card for a restore-held loop (no goal visible). */
+function standaloneRecoveryLines(recovery: MainModelRecovery, now: number, theme?: DisplayTheme, width?: number): string[] {
+  const current = recovery.active ?? recovery.primary;
+  const pending = recovery.pendingModelSwitch ? ` · pending ${truncate(recovery.pendingModelSwitch, budgetFor(width, 3, 28))}` : "";
+  const retry = recovery.retryAt ? Date.parse(recovery.retryAt) : Number.NaN;
+  const when = Number.isFinite(retry) ? (retry <= now ? "probe due now" : `probe in ${fmtElapsed(retry - now)}`) : recovery.manualResumeRequired ? "manual resume required" : "probe pending";
+  const wall = recovery.quotaSignal ? "provider wall" : "main-model fallback recovery";
+  return [
+    `${paint(theme, "warning", "⏳")} ${paint(theme, "accent", wall)} · ${truncate(current, budgetFor(width, 3, 36))}${pending}`,
+    `├─ ${paint(theme, "dim", `current: ${current} · ${when}`)}`,
+    `├─ ${paint(theme, "dim", `attempted: ${recovery.attempted.join(", ") || "none"}`)}`,
+    `└─ ${paint(theme, "dim", "work is saved · /glla resume or the matching goal/list/loop resume retries")}`,
+  ];
+}
+
 function heldLoopLines(l: LoopState, now: number, theme?: DisplayTheme, width?: number): string[] {
   return [
     `${paint(theme, "warning", "⏸")} ${truncate(l.target, budgetFor(width, 3, 64))}`,
@@ -1238,8 +1253,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
         : "main-model fallback recovery — retrying automatically";
       lines.push(`├─ ${paint(theme, "dim", recoveryLabel)}`);
       const recoverySummary = formatMainModelRecoveryStatus(state.mainModelRecovery);
-      if (state.mainModelRecovery?.pendingModelSwitch) lines.push(`│  ${paint(theme, "dim", `pending switch: ${state.mainModelRecovery.pendingModelSwitch}`)}`);
-      else if (recoverySummary[0]) lines.push(`│  ${paint(theme, "dim", recoverySummary[0].replace(/^Main-model recovery: /, ""))}`);
+      recoverySummary.slice(0, 4).forEach((line) => lines.push(`│  ${paint(theme, "dim", line.replace(/^Main-model recovery: /, ""))}`));
     }
     else if (Number.isFinite(retryMs)) {
       const when = retryMs <= 0 ? "now" : `next probe in ${fmtElapsed(retryMs)}`;
