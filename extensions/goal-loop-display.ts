@@ -697,14 +697,14 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
   const held = heldLoop(state);
   if (state.loop && !state.loop.active && state.mainModelRecovery?.kind === "loop") {
     const summary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
-    return `glla: ${paint(theme, "warning", "⏳ loop recovery")}${summary.map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
+    return `glla: ${paint(theme, "warning", "⏳ loop recovery")}${summary.slice(0, 3).map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
   }
   // v0.28.17: a held loop rides every goal state as a compact suffix.
   const heldSuffix = held ? paint(theme, "warning", " · loop⏸held") : "";
   if (!g) {
     if (state.mainModelRecovery) {
       const summary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
-      return `glla: ${paint(theme, "warning", "⏳ main-model recovery")}${summary.map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
+      return `glla: ${paint(theme, "warning", "⏳ main-model recovery")}${summary.slice(0, 3).map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
     }
     if (held) return `glla: loop ${paint(theme, "warning", "⏸ held")} · iter ${held.iteration} — /loop to resume`;
     return undefined;
