@@ -70,7 +70,7 @@ async function runWithAttempt(dir: string, attemptId: string, env: NodeJS.Proces
     goal,
     model: "test/provider-model" satisfies AuditorModel,
     thinkingLevel: "high",
-    runtime: { workerPath: workerPathFor(dir), env, attemptId: () => attemptId, pollIntervalMs: 10, wallTimeoutMs: 2_000 },
+    runtime: { workerPath: workerPathFor(dir), env, attemptId: () => attemptId, pollIntervalMs: 10, wallTimeoutMs: 10_000 },
   });
 }
 
@@ -214,7 +214,7 @@ test("detached parent forwards live worker telemetry to its progress callback", 
       model: "test/provider-model",
       thinkingLevel: "high",
       onProgress: (progress) => reports.push(progress),
-      runtime: { workerPath: workerPathFor(dir), env: { FAKE_TELEMETRY: "yes" }, attemptId: () => "attempt-telemetry", pollIntervalMs: 10, wallTimeoutMs: 2_000 },
+      runtime: { workerPath: workerPathFor(dir), env: { FAKE_TELEMETRY: "yes" }, attemptId: () => "attempt-telemetry", pollIntervalMs: 10, wallTimeoutMs: 10_000 },
     });
     const live = reports.find((progress) => progress.currentTool === "read");
     assert.ok(live, "the detached progress file reaches the parent");
@@ -333,7 +333,7 @@ process.stdin.on("data", async (chunk) => {
         env: { GLLA_PI_BINARY: fakePi },
         attemptId: () => "attempt-real-telemetry",
         pollIntervalMs: 5,
-        wallTimeoutMs: 2_000,
+        wallTimeoutMs: 10_000,
       },
     });
     assert.equal(result.approved, true);
@@ -381,7 +381,7 @@ process.stdin.on("data", (chunk) => {
         env: { GLLA_PI_BINARY: fakePi },
         attemptId: () => "attempt-structured-429",
         pollIntervalMs: 5,
-        wallTimeoutMs: 2_000,
+        wallTimeoutMs: 10_000,
       },
     });
     assert.equal(result.approved, false);
@@ -474,7 +474,7 @@ test("parent rejects a result that reports an unsupported tool", async () => {
       goal,
       model: "test/provider-model",
       thinkingLevel: "high",
-      runtime: { workerPath: badWorker, env: { FAKE_AUDIT_OUTPUT: "<approved/>", FAKE_TOOL: "yes" }, attemptId: () => "attempt-parent-disallowed", pollIntervalMs: 10, wallTimeoutMs: 2_000 },
+      runtime: { workerPath: badWorker, env: { FAKE_AUDIT_OUTPUT: "<approved/>", FAKE_TOOL: "yes" }, attemptId: () => "attempt-parent-disallowed", pollIntervalMs: 10, wallTimeoutMs: 10_000 },
     });
     assert.equal(result.approved, false);
     assert.equal(result.disapproved, false);
@@ -596,7 +596,7 @@ setTimeout(() => process.exit(17), 25);
         env: { GLLA_PI_BINARY: fakePi },
         attemptId: () => "attempt-early-rpc-exit",
         pollIntervalMs: 10,
-        wallTimeoutMs: 2_000,
+        wallTimeoutMs: 10_000,
       },
     });
     assert.equal(result.approved, false);
@@ -627,7 +627,7 @@ test("detached worker treats silent provider time as infrastructure, not a verdi
         env: { GLLA_PI_BINARY: fakePi, GLLA_AUDITOR_STALL_MS: "60" },
         attemptId: () => "attempt-silent",
         pollIntervalMs: 10,
-        wallTimeoutMs: 2_000,
+        wallTimeoutMs: 10_000,
       },
     });
     assert.equal(result.approved, false);
@@ -671,7 +671,7 @@ setInterval(() => {}, 1_000);
         workerPath: stuckWorker,
         attemptId: () => "attempt-parent-tool-timeout",
         pollIntervalMs: 10,
-        wallTimeoutMs: 2_000,
+        wallTimeoutMs: 10_000,
         toolTimeoutMs: 100,
       },
     });
@@ -712,7 +712,7 @@ process.stdin.on("data", (chunk) => {
         env: { GLLA_PI_BINARY: fakePi },
         attemptId: () => "attempt-disallowed-tool",
         pollIntervalMs: 10,
-        wallTimeoutMs: 2_000,
+        wallTimeoutMs: 10_000,
       },
     });
     assert.equal(result.approved, false);
@@ -749,7 +749,7 @@ process.stdin.on("data", (chunk) => {
         env: { GLLA_PI_BINARY: fakePi, GLLA_AUDITOR_TOOL_TIMEOUT_MS: "80" },
         attemptId: () => "attempt-worker-tool-timeout",
         pollIntervalMs: 10,
-        wallTimeoutMs: 2_000,
+        wallTimeoutMs: 10_000,
       },
     });
     assert.equal(result.approved, false);

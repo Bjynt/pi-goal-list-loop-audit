@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.34.138 — CI-safe auditor timing and release validation (2026-08-13)
+### CI auditor timing has headroom
+  Process-backed auditor regressions use a CI-safe wall-clock allowance, and
+  lifecycle polling tolerates slower hosted runners without changing production
+  watchdog behavior.
+
+### Restore-gate release test is hermetic
+  The first default-settings restore-gate regression explicitly disables global
+  auto-resume before seeding its fixture, preventing a reused CI preload settings
+  file from changing the expected held-on-start result.
+
 ## 0.34.136 — isolated release validation and stable queue ordering (2026-08-13)
 ### Release validation isolates test files and normalizes queue order
   Release tests now run each file in an isolated global context, while disk queue

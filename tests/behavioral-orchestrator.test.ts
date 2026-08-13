@@ -57,7 +57,7 @@ async function freshSession(cwd: string, reason: string): Promise<MockCtx> {
   return ctx;
 }
 
-async function waitUntil(predicate: () => boolean, timeoutMs = 4_000): Promise<void> {
+async function waitUntil(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!predicate()) {
     if (Date.now() >= deadline) throw new Error("timed out waiting for detached-auditor state");
@@ -127,6 +127,9 @@ process.stdin.on("data", async (chunk) => {
 // ────────────────────────────────────────────────────────────────────
 
 test("T3a: active goal + human load (startup) + default settings → HELD for explicit resume", async () => {
+  // Keep this first restore-gate assertion hermetic even when Bun reuses the
+  // preload settings path across serial worker files.
+  setGlobalAutoResume(false);
   const cwd = tmpCwd();
   seedState(cwd, { goal: seedGoal() });
   const ctx = await freshSession(cwd, "startup");
