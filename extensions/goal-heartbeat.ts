@@ -357,7 +357,10 @@ function heartbeatTick(): void {
   // "session invalidated" warning after the work is already safe on disk.
   // Keep the probe for active goals/loops, detached completion audits, and
   // tracked subagents, where a dead handle can strand live work.
-  if (!isSupervising() && state.goal?.status !== "auditing" && subagentHangProbes.size === 0) return;
+  if (state.goal?.status !== "active" && state.goal?.status !== "auditing" && !isLoopActive() && subagentHangProbes.size === 0) {
+    console.error("DEBUG heartbeat idle", state.goal?.status, state.goal?.autoContinue, isLoopActive(), subagentHangProbes.size);
+    return;
+  }
   // Probe the ExtensionAPI BEFORE probing the captured context. When pi
   // invalidates both handles and emits no replacement session_start,
   // freshCtx() deliberately returns null; probing it first used to make the
