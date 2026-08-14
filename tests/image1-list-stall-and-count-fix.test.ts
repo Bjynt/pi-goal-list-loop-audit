@@ -40,15 +40,15 @@ test("v0.34.104 [Image-#1] Problem 1: LIST_COMPLETION_SETTLE_MS constant + flag 
 
 test("v0.34.104 [Image-#1] Problem 1: archiveCurrentGoal arms the settle window BEFORE activating the next item", () => {
   const archive = SRC.slice(SRC.indexOf("if (goal.policy === \"list\" && status === \"complete\")"));
-  // The flag is armed in the cascade, and the advance runs BEFORE the
-  // arm so the scheduleContinuation inside activateNextListItem picks
-  // up the settle delay:
+  // The flag is armed before the cascade, so the scheduleContinuation inside
+  // activateNextListItem picks up the settle delay instead of dispatching in
+  // the same millisecond as completion acknowledgement:
   assert.match(archive, /postCompletionSettleUntil = Date\.now\(\) \+ LIST_COMPLETION_SETTLE_MS;/);
   assert.match(archive, /"list_completion_settle_armed"/);
-  // Ordering: advance runs first, then arm:
+  // Ordering: arm runs before advance:
   const advanceAt = archive.indexOf("activateNextListItem(ctx)");
   const armAt = archive.indexOf("postCompletionSettleUntil = Date.now()");
-  assert.ok(advanceAt > -1 && armAt > advanceAt, "the arm follows the activation so the scheduled continuation picks up the settle delay");
+  assert.ok(advanceAt > -1 && armAt > -1 && armAt < advanceAt, "the arm precedes activation so the scheduled continuation picks up the settle delay");
 });
 
 test("v0.34.104 [Image-#1] Problem 1: scheduleContinuation honours the settle window", () => {
@@ -67,8 +67,10 @@ test("v0.34.104 [Image-#1] Problem 1: agent activity during settle cancels the d
   assert.match(ack, /postCompletionSettleUntil = 0;/);
 });
 
-test("v0.34.104 [Image-#1] Problem 1: sendContinuation clears the flag on dispatch", () => {
+test("v0.34.104 [Image-#1] Problem 1: sendContinuation honors an early settle callback", () => {
   const send = CONT.slice(CONT.indexOf("function sendContinuation"), CONT.indexOf("function sendStallEscalation")); // decomposition step 5
+  assert.match(send, /const settleRemaining = flags\.postCompletionSettleUntil - Date\.now\(\);/);
+  assert.match(send, /if \(settleRemaining > 0\)[\s\S]*scheduleSessionTimeout\(\(\) => sendContinuation\(goalId\), settleRemaining\)/);
   assert.match(send, /postCompletionSettleUntil = 0;/);
 });
 
