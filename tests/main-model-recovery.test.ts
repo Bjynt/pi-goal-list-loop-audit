@@ -137,6 +137,24 @@ test("runtime fallback walk uses one supervised model at a time and preserves le
     ctx.model = { provider: "provider", id: "first" };
     assert.equal(await tryMainModelFallback(ctx, classifyMainModelFailure("HTTP 429 too many requests")), true);
     assert.equal(calls.at(-1), "provider/second");
+
+    fs.writeFileSync(settingsFile, JSON.stringify({
+      mainModelFallbacks: ["provider/first"],
+      mainModelFallbackOnRateLimit: false,
+    }));
+    ctx.model = { provider: "provider", id: "primary" };
+    state.mainModelRecovery = {
+      primary: "provider/primary",
+      active: "provider/primary",
+      attempted: ["provider/primary"],
+      attempts: 0,
+      reason: "request-rate wall",
+      kind: "goal",
+      quotaSignal: "rate-limit",
+    };
+    const beforeOptOut = calls.length;
+    assert.equal(await tryMainModelFallback(ctx, classifyMainModelFailure("HTTP 429 too many requests")), false);
+    assert.equal(calls.length, beforeOptOut, "explicit opt-out keeps 429 on the current model");
   } finally {
     replaceState({ goal: null } as any);
     if (original === undefined) {

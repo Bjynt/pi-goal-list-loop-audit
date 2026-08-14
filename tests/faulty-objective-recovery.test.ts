@@ -310,6 +310,7 @@ test("repair cards require a concrete replan objective and clear the latch only 
   state.goal!.status = "active";
   ctx.ui.confirmImpl = async () => true;
   ctx.ui.selectImpl = async () => "Yes";
+  ctx.ui.customStubMode = true;
   const rejected = await pi.runTool("propose_task_list", { tasks: [{ title: "Do the thing" }] }, ctx);
   assert.match(rejected.content[0]?.text ?? "", /include.*objective/i);
   assert.equal(readState(cwd).goal?.repairTarget?.objective, target);

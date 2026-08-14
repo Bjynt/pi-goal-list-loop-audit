@@ -926,7 +926,11 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
   // The primary is included at the front so a later cycle can return to it,
   // while the durable attempted list prevents a probe from jumping backward
   // through the chain after a reload.
-  const fallbackRefs = mainModelFallbackRefs(ctx);
+  const allowRateLimitFallback = recovery.quotaSignal === "rate-limit"
+    && loadSettings(ctx.cwd).mainModelFallbackOnRateLimit === true;
+  const fallbackRefs = allowRateLimitFallback || recovery.quotaSignal !== "rate-limit"
+    ? mainModelFallbackRefs(ctx)
+    : [];
   const selectorChain = [recovery.primary, ...fallbackRefs];
   const selector = sessionModelSelector(ctx, selectorChain);
   const scope: ModelScope = { kind: "session" };
