@@ -293,6 +293,23 @@ function scanEntryFiles(entry: ScanEntry): Registration[] {
   return out;
 }
 
+test("v0.34.138: routing scan follows local imports and keeps winner paths portable", () => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "glla-routing-"));
+  try {
+    const entry = path.join(fixture, "entry.ts");
+    const registrations = path.join(fixture, "registrations.ts");
+    fs.writeFileSync(entry, `import { install } from "./registrations.js";\nvoid install;\n`);
+    fs.writeFileSync(registrations, `export function install(pi: any) { pi.registerCommand("list", {}); }\n`);
+    const found = scanEntryFiles({ source: "fixture", files: [entry] });
+    assert.deepEqual(found.map((registration) => registration.command), ["list"]);
+    assert.equal(path.basename(found[0]!.entry), "registrations.ts");
+    assert.equal(reportPath(path.join(process.cwd(), "extensions", "loops", "goal-activation.ts")), "extensions/loops/goal-activation.ts");
+    assert.doesNotMatch(reportPath(found[0]!.entry), /(?:^|[/\\])home(?:[/\\])|(?:^|[/\\])tmp(?:[/\\])/);
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
 const LIVE_RIG_SKIP = !fs.existsSync(AGENT_DIR)
   && `pi agent dir not present (${AGENT_DIR}) — live rig scan skipped`;
 

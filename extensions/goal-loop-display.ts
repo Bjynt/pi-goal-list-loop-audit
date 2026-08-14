@@ -815,22 +815,21 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     return `glla: ${paint(theme, pauseIsError(g) ? "error" : "warning", label)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
   }
   if (g.status === "active") {
-    const mainRecovery = state.mainModelRecovery;
-    if (mainRecovery && extras?.activity !== "working" && extras?.activity !== "queued") {
-      const summary = formatMainModelRecoveryStatus(mainRecovery, extras?.mainModelFallbacks);
-      return `glla: ${paint(theme, "warning", "⏳ main-model recovery")}${summary.map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
-    }
+    const recoverySummary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
+    const withRecovery = (value: string): string => recoverySummary.length > 0
+      ? `${value} · ${recoverySummary.map((line) => line.replace(/^Main-model recovery: /, "")).join(" · ")}`
+      : value;
     // v0.28.1 (S1/S2): a stale-handle interrupt keeps the goal ACTIVE.
     // It outranks any older operational note on the same state snapshot.
     if (g.interruptedAt) {
       const label = interruptedForNoStart(g)
         ? "⚠ turn start not observed — automatic retry held"
         : "⚠ interrupted — stale handle · /new (or a fresh session_start) rebinds";
-      return `glla: ${paint(theme, "error", label)}${heldSuffix}`;
+      return withRecovery(`glla: ${paint(theme, "error", label)}${heldSuffix}`);
     }
     const attention = activeAttention(g);
     if (attention) {
-      return `glla: ${paint(theme, attention.color, `⚠ ${attention.label}`)}${heldSuffix}`;
+      return withRecovery(`glla: ${paint(theme, attention.color, `⚠ ${attention.label}`)}${heldSuffix}`);
     }
     const activity = goalDisplayActivity(g, extras);
     // v0.34.97: while the post-compaction grace window is open, surface
@@ -839,10 +838,10 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     const compactAgeMs = state.lastCompactionAt ? now - state.lastCompactionAt : Number.POSITIVE_INFINITY;
     const compacting = Number.isFinite(compactAgeMs) && compactAgeMs >= 0 && compactAgeMs < 180_000; // COMPACTION_GRACE_MS = 3 min
     if (compacting) {
-      return `glla: ${paint(theme, "warning", `⏳ compacting… (${fmtElapsed(compactAgeMs)} ago)`)}${heldSuffix}`;
+      return withRecovery(`glla: ${paint(theme, "warning", `⏳ compacting… (${fmtElapsed(compactAgeMs)} ago)`)}${heldSuffix}`);
     }
     if (activity === "awaiting-first-turn") {
-      return `glla: ${activityStateBadge("AWAITING FIRST TURN", theme, "warning")}${heldSuffix}`;
+      return withRecovery(`glla: ${activityStateBadge("AWAITING FIRST TURN", theme, "warning")}${heldSuffix}`);
     }
     if (activity === "idle") {
       const idleDetails = [
@@ -850,7 +849,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
         hostLastActivity(extras, now).replace(/^ · /, ""),
         (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "",
       ].filter(Boolean);
-      return `glla: ${activityStateBadge("IDLE", theme, "warning")}${idleDetails.length > 0 ? ` ${idleDetails.join(" · ")}` : ""}${heldSuffix}`;
+      return withRecovery(`glla: ${activityStateBadge("IDLE", theme, "warning")}${idleDetails.length > 0 ? ` ${idleDetails.join(" · ")}` : ""}${heldSuffix}`);
     }
     // v0.34.39: distinguish durable state from evidence of a live host turn.
     // A spinner is reserved for recent stream/tool evidence; BUSY without
@@ -863,7 +862,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
         hostLastStream(extras, now).replace(/^ · /, ""),
         (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "",
       ].filter(Boolean);
-      return `glla: ${activityStateBadge("BUSY", theme, "warning")}${busyDetails.length > 0 ? ` ${busyDetails.join(" · ")}` : ""}${heldSuffix}`;
+      return withRecovery(`glla: ${activityStateBadge("BUSY", theme, "warning")}${busyDetails.length > 0 ? ` ${busyDetails.join(" · ")}` : ""}${heldSuffix}`);
     }
     // v0.34.16: a fresh session_start owns the handoff. A cold boot still
     // follows the global autoResume setting, so the widget names the actual
@@ -906,7 +905,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       queued ? hostLastActivity(extras, now).replace(/^ · /, "") : "",
       n > 0 ? `${n} queued` : "",
     ].filter(Boolean);
-    return `glla: ${marker}${details.length > 0 ? ` ${details.join(" · ")}` : ""}${quotaSuffix}${heldSuffix}`;
+    return withRecovery(`glla: ${marker}${details.length > 0 ? ` ${details.join(" · ")}` : ""}${quotaSuffix}${heldSuffix}`);
   }
   // v0.34.65: a terminal goal names its outcome + wall duration instead of
   // clearing the segment (note.md 2026-08-07: "this seems weak for a complete
@@ -1100,6 +1099,16 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     : 48;
   const head = `${icon} ${truncate(g.objective.replace(/\s+/g, " "), objBudget)} ${paint(theme, "dim", "·")} ${segsText}`;
   const lines = [head];
+  // A model switch crosses an asynchronous boundary while the goal remains
+  // active. Keep the complete durable recovery projection on the widget too;
+  // otherwise the head says only "active" while pending/attempted/skipped
+  // candidates are invisible until the goal is parked.
+  if (g.status === "active" && state.mainModelRecovery) {
+    const recoverySummary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
+    recoverySummary.forEach((line, i) => {
+      lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, "dim", line.replace(/^Main-model recovery: /, ""))}`);
+    });
+  }
   if (interrupted) {
     const resumeCmd = isList ? "/list resume" : "/goal resume";
     if (interruptedForNoStart(g)) {
