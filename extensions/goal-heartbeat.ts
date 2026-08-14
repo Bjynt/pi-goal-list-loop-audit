@@ -355,12 +355,14 @@ function heartbeatTick(): void {
   // session handle during an unrelated session transition, and reporting
   // that disposed handle as a host loss only creates the repeated
   // "session invalidated" warning after the work is already safe on disk.
-  // Keep the probe for active goals/loops, detached completion audits, and
-  // tracked subagents, where a dead handle can strand live work.
-  if (state.goal?.status !== "active" && state.goal?.status !== "auditing" && !isLoopActive() && subagentHangProbes.size === 0) {
-    console.error("DEBUG heartbeat idle", state.goal?.status, state.goal?.autoContinue, isLoopActive(), subagentHangProbes.size);
-    return;
-  }
+  // Keep the probe for active goals/loops, detached completion audits,
+  // recoverable stale debt, and tracked subagents, where a dead handle can
+  // strand live work. A normal user pause does not count as host-bound work;
+  // stale interruption debt does, because same-process self-heal still needs
+  // a heartbeat opportunity.
+  const staleRecoveryDebt = state.goal?.interruptedReason?.startsWith("extension api stale")
+    || state.loop?.stopReason?.startsWith("extension api stale");
+  if (state.goal?.status !== "active" && state.goal?.status !== "auditing" && !isLoopActive() && !staleRecoveryDebt && subagentHangProbes.size === 0) return;
   // Probe the ExtensionAPI BEFORE probing the captured context. When pi
   // invalidates both handles and emits no replacement session_start,
   // freshCtx() deliberately returns null; probing it first used to make the
