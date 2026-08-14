@@ -175,7 +175,7 @@ test("T4: input editor — main model backups preserve order and retry cadence",
 
     ctx.ui.inputImpl = async () => "   ";
     await handleSettingChoice("mainModelFallbacks", ctx as unknown as ExtensionContext);
-    assert.deepEqual(readGlobal().mainModelFallbacks, [], "empty input clears backups");
+    assert.equal(readGlobal().mainModelFallbacks, undefined, "empty input unsets backups");
   } finally {
     restoreGlobal();
   }

@@ -362,23 +362,68 @@ function writeSettingsAtomically(file: string, value: Record<string, unknown>): 
   }
 }
 
+const SETTINGS_LOCK_TIMEOUT_MS = 5_000;
+const SETTINGS_LOCK_STALE_MS = 30_000;
+
+function sleepSettingsLock(ms: number): void {
+  const signal = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(signal, 0, 0, ms);
+}
+
+/** Serialize read/modify/write across simultaneous pi processes. Atomic
+ * rename prevents torn JSON; this lock prevents an older snapshot from
+ * writing a stale fallback array after another process cleared it. */
+function withSettingsFileLock<T>(file: string, fn: () => T): T {
+  const lock = `${file}.lock`;
+  const started = Date.now();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  for (;;) {
+    try {
+      fs.mkdirSync(lock);
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      try {
+        const age = Date.now() - fs.statSync(lock).mtimeMs;
+        if (age > SETTINGS_LOCK_STALE_MS) {
+          fs.rmSync(lock, { recursive: true, force: true });
+          continue;
+        }
+      } catch {
+        // A competing process may have released the lock between stat/rm.
+      }
+      if (Date.now() - started >= SETTINGS_LOCK_TIMEOUT_MS) {
+        throw new Error(`timed out waiting for settings lock: ${file}`);
+      }
+      sleepSettingsLock(10);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    fs.rmSync(lock, { recursive: true, force: true });
+  }
+}
+
 export function saveSettings(scope: "global" | "project", cwd: string, patch: Partial<Settings>): void {
   const file = scope === "global" ? globalSettingsPath() : projectSettingsPath(cwd);
-  const current = readSettingsFile(file);
-  const next: Record<string, unknown> = { ...current };
-  if (scope === "project") {
-    for (const key of GLOBAL_MAIN_RECOVERY_KEYS) delete next[key];
-  }
-  for (const [k, v] of Object.entries(patch)) {
-    // Main recovery settings are global-only. If an old project file still
-    // carries one, remove it rather than leaving a setting that appears saved
-    // but can never affect the runtime.
-    if (scope === "project" && GLOBAL_MAIN_RECOVERY_KEYS.has(k as keyof Settings)) {
-      delete next[k];
-      continue;
+  withSettingsFileLock(file, () => {
+    const current = readSettingsFile(file);
+    const next: Record<string, unknown> = { ...current };
+    if (scope === "project") {
+      for (const key of GLOBAL_MAIN_RECOVERY_KEYS) delete next[key];
     }
-    if (v === undefined) delete next[k]; // key=unset removes the key
-    else next[k] = k === "mainModelFallbacks" ? normalizeMainModelFallbackRefs(v) : v;
-  }
-  writeSettingsAtomically(file, next);
+    for (const [k, v] of Object.entries(patch)) {
+      // Main recovery settings are global-only. If an old project file still
+      // carries one, remove it rather than leaving a setting that appears saved
+      // but can never affect the runtime.
+      if (scope === "project" && GLOBAL_MAIN_RECOVERY_KEYS.has(k as keyof Settings)) {
+        delete next[k];
+        continue;
+      }
+      if (v === undefined) delete next[k]; // key=unset removes the key
+      else next[k] = k === "mainModelFallbacks" ? normalizeMainModelFallbackRefs(v) : v;
+    }
+    writeSettingsAtomically(file, next);
+  });
 }

@@ -807,7 +807,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
         { excludeRefs: forbidden, maxSelections: MAX_MAIN_MODEL_FALLBACKS, currentRef: modelRef(ctx.model) },
       );
       if (refs === undefined) return;
-      saveSettings("global", ctx.cwd, { mainModelFallbacks: refs });
+      saveSettings("global", ctx.cwd, { mainModelFallbacks: refs.length ? refs : undefined });
       if (!refs.length && state.mainModelRecovery) {
         const recovery = state.mainModelRecovery;
         const current = recovery.active ?? recovery.primary;
