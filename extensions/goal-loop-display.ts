@@ -816,7 +816,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
   }
   if (g.status === "active") {
     const mainRecovery = state.mainModelRecovery;
-    if (mainRecovery) {
+    if (mainRecovery && extras?.activity !== "working" && extras?.activity !== "queued") {
       const summary = formatMainModelRecoveryStatus(mainRecovery, extras?.mainModelFallbacks);
       return `glla: ${paint(theme, "warning", "⏳ main-model recovery")}${summary.map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
     }
@@ -889,7 +889,9 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     // "waiting for quota reset at HH:MM" — the window is not a guaranteed
     // reset (note.md 2026-08-10) and the :00:30 hourly probe may pick the
     // work up earlier.
-    const quotaSuffix = "";
+    const recovery = state.mainModelRecovery;
+    const blockedByQuota = queued && recovery && recovery.retryAt;
+    const quotaSuffix = blockedByQuota ? ` · parked on provider wall` : "";
     // Keep the screenshot-proven order: state, elapsed, freshness, then
     // queue/task context. It scans like a compact instrument readout and
     // remains useful when the above-editor card is hidden or scrolled away.
