@@ -2029,6 +2029,31 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
     cmdSwitchlog(trimmed.slice("switchlog".length).trim(), ctx);
     return;
   }
+  if (/^fallbacks(?:\s|$)/.test(trimmed)) {
+    const action = trimmed.slice("fallbacks".length).trim().toLowerCase();
+    if (action === "clear" || action === "off" || action === "unset" || action === "none") {
+      saveSettings("global", ctx.cwd, { mainModelFallbacks: [] });
+      if (state.mainModelRecovery) {
+        const recovery = state.mainModelRecovery;
+        const current = recovery.active ?? recovery.primary;
+        state.mainModelRecovery = {
+          ...recovery,
+          active: current,
+          attempted: [current],
+          skipped: [],
+          pendingModelSwitch: undefined,
+          resumeCurrent: undefined,
+        };
+        clearMainModelRecoveryTimer();
+        persistState(ctx);
+      }
+      ctx.ui.notify("Main model backups cleared globally and any pending backup switch was cancelled.", "info");
+    } else {
+      const settings = loadSettings(ctx.cwd);
+      ctx.ui.notify(`Main model backups: ${formatMainModelFallbacks(settings.mainModelFallbacks)}. Use /glla fallbacks clear to remove them.`, "info");
+    }
+    return;
+  }
   if (/^wipe(?:\s|$)/.test(trimmed)) {
     await cmdGllaWipe(ctx, true);
     return;
@@ -2081,6 +2106,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   ctx.ui.notify(
     [
       `mainModelBackups: ${formatMainModelFallbacks(effectiveSettings.mainModelFallbacks)}  [${prov.mainModelFallbacks?.source ?? "default"}]`,
+      fmt("mainModelFallbackOnRateLimit", "fallbackOnRateLimit"),
       fmt("mainModelRetryMinutes", "mainModelRetryMinutes (base minutes; doubles per attempt)"),
       fmt("forbiddenModels", "forbiddenModels"),
       fmt("blockForbiddenModelSwitches", "blockForbidden"),

@@ -519,6 +519,7 @@ export const SETTINGS_MUTATING_ACTIONS = new Set([
   "wipe",
   "reset",
   "cancel",
+  "fallbacks",
   "resume",
   "reviewer",
   "postaudit",

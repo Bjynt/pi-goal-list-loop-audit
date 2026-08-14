@@ -569,13 +569,13 @@ async function handleMainModelAgentEnd(ctx: ExtensionContext, rawLastA: any, las
       const switched = await tryMainModelFallback(ctx, failure);
       if (switched) return true; // pi's core retry now uses the selected backup
       const backupRefs = mainModelFallbackRefs(ctx);
-      // Account/plan/billing failures can select one ordered backup here;
-      // explicit 429/request-rate failures stay on the current model and are
-      // handled by the bounded retry + optional hourly ticker. Do not park a
-      // second recovery record before the supervised turn starts. Other
-      // provider failures use the durable envelope when the active supervisor
-      // needs it; transient failures retain the fast error ladder.
-      if ((state.goal?.status === "active" && requiresMainModelRecovery(failure)) || (backupRefs.length > 0 && isMainModelFallbackFailure(failure))) {
+      const allowRateLimitFallback = failure.kind === "rate-limit"
+        && loadSettings(ctx.cwd).mainModelFallbackOnRateLimit === true;
+      // Account/plan/billing/auth failures and (when enabled) explicit
+      // request-rate failures can select one ordered backup here. If the
+      // chain is empty or every candidate is rejected, the durable envelope
+      // still owns bounded retry on the current model.
+      if ((state.goal?.status === "active" && requiresMainModelRecovery(failure)) || (backupRefs.length > 0 && isMainModelFallbackFailure(failure, { allowRateLimit: allowRateLimitFallback }))) {
         parkMainModelAfterFailure(ctx, failure);
         if (mainModelRecoveryActive() || state.mainModelRecovery) return true;
       }
