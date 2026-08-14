@@ -476,7 +476,9 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
   // 429/request-rate wall is different: keep retrying the current model and
   // use the bounded retry + hourly probe cadence; do not spend a backup on it.
   // User aborts and other non-recoverable failures are refused here.
-  if (failure.kind === "non-recoverable" || !isMainModelFallbackFailure(failure)) return false;
+  const allowRateLimitFallback = failure.kind === "rate-limit"
+    && loadSettings(ctx.cwd).mainModelFallbackOnRateLimit === true;
+  if (failure.kind === "non-recoverable" || !isMainModelFallbackFailure(failure, { allowRateLimit: allowRateLimitFallback })) return false;
   // A replacement session may arrive while the old setModel promise is still
   // pending. Its fence must not block the fresh generation from recovering;
   // the old finally below is token-guarded and cannot clear the new fence.

@@ -42,6 +42,9 @@ export interface Settings {
   visionAssist?: boolean;
   /** Global-only ordered provider/model refs to use when the MAIN session model hits a provider wall. */
   mainModelFallbacks?: string[];
+  /** Global-only: when true (default), an explicit 429/request-rate wall may
+   * fail over to ordered backups. False preserves current-model retry. */
+  mainModelFallbackOnRateLimit?: boolean;
   /** v0.34.115: per-subagent fallback chains. Keyed by subagent name
    * (Explore, Plan, general-purpose, …). When set, the subagent sync uses
    * the FIRST eligible ref in the chain via ModelSelector.selectNextValid;
@@ -177,6 +180,7 @@ export interface Settings {
  * honest instead of showing a project value that the retry path cannot use. */
 const GLOBAL_MAIN_RECOVERY_KEYS: ReadonlySet<keyof Settings> = new Set([
   "mainModelFallbacks",
+  "mainModelFallbackOnRateLimit",
   "mainModelRetryMinutes",
   "hourlyQuotaProbe",
 ]);
@@ -186,6 +190,9 @@ export const DEFAULT_SETTINGS: Settings = {
   // session model behavior, while the recovery cadence still protects an
   // active supervised goal from a temporary quota wall.
   mainModelFallbacks: [],
+  // Cross-provider backups are useful for request-rate walls; users can turn
+  // this off explicitly when they want current-model-only retry.
+  mainModelFallbackOnRateLimit: true,
   // v0.34.115: the default policy list is empty — no model is forbidden
   // unless the user explicitly configures forbiddenModels. The blocking gate
   // remains enabled for any explicit list.
@@ -284,6 +291,7 @@ export function loadGlobalSettings(): Settings {
 /** Every provenance-tracked key (the /glla headless display + UI). */
 export const SETTINGS_KEYS: Array<keyof Settings> = [
   "mainModelFallbacks",
+  "mainModelFallbackOnRateLimit",
   "mainModelRetryMinutes",
   "forbiddenModels",
   "blockForbiddenModelSwitches",

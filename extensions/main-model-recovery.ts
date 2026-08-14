@@ -193,15 +193,18 @@ export function isLongLivedFailureKind(kind: MainModelFailureKind): boolean {
   return kind === "rate-limit" || kind === "quota" || kind === "billing" || kind === "auth";
 }
 
-/** Only durable provider walls should spend an ordered backup. A transient
- * transport outage or ambiguous provider message is retried on the current
- * model; explicit 429/request-rate failures are deliberately excluded because
- * they mean too many requests, not token-limit exhaustion. */
-export function isMainModelFallbackFailure(failure: MainModelFailure): boolean {
+/** Only durable provider walls should spend an ordered backup by default.
+ * Request-rate walls are opt-in at the call site because some providers share
+ * account-wide limits; cross-provider chains can enable the hop explicitly. */
+export function isMainModelFallbackFailure(
+  failure: MainModelFailure,
+  opts: { allowRateLimit?: boolean } = {},
+): boolean {
   return failure.kind === "quota"
     || failure.kind === "billing"
     || failure.kind === "auth"
-    || failure.kind === "context-overflow";
+    || failure.kind === "context-overflow"
+    || (failure.kind === "rate-limit" && opts.allowRateLimit === true);
 }
 
 /** A provider failure can require durable recovery without implying that a

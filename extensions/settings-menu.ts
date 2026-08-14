@@ -186,7 +186,15 @@ export function buildSettingsRows(
         ? `${settings.mainModelFallbacks.length}/${MAX_MAIN_MODEL_FALLBACKS} · ${formatMainModelFallbacks(settings.mainModelFallbacks)}`
         : `0/${MAX_MAIN_MODEL_FALLBACKS} · none`,
       sourceText: src("mainModelFallbacks"),
-      description: "try order is current session model → backup 1 → backup 2…; account/plan/billing failures switch one eligible backup at a time (auth failures are also eligible), while explicit 429/rate-limit stays on the current model and uses the configured ladder plus the optional hourly probe"
+      description: "try order is current session model → backup 1 → backup 2…; account/plan/billing/auth and (when enabled) request-rate failures switch one eligible backup at a time"
+    },
+    {
+      id: "mainModelFallbackOnRateLimit",
+      section: "backups",
+      label: "Fallback on request-rate wall",
+      valueText: show("mainModelFallbackOnRateLimit", "on"),
+      sourceText: src("mainModelFallbackOnRateLimit"),
+      description: "on: 429/request-rate failures walk configured backups; off: keep retrying the current model with bounded backoff and hourly probe",
     },
     {
       id: "forbiddenModels",

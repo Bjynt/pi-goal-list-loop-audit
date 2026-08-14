@@ -808,7 +808,19 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       );
       if (refs === undefined) return;
       saveSettings("global", ctx.cwd, { mainModelFallbacks: refs });
-      ctx.ui.notify(refs.length ? `Main model backups saved in order: ${refs.join(" → ")}` : "Main model backups cleared — quota recovery will keep probing the current model.", "info");
+      ctx.ui.notify(refs.length ? `Main model backups saved in order: ${refs.join(" → ")}` : "Main model backups cleared — recovery will keep probing the current model.", "info");
+      return;
+    }
+    case "mainModelFallbackOnRateLimit": {
+      const v = await ctx.ui.select("Fallback on request-rate wall", [
+        "on — 429/request-rate failures walk configured backups (default)",
+        "off — keep retrying the current model; never spend backups on 429s",
+      ]);
+      if (v) {
+        const off = v.startsWith("off");
+        saveSettings("global", ctx.cwd, { mainModelFallbackOnRateLimit: off ? false : undefined });
+        ctx.ui.notify(off ? "Request-rate fallback OFF — 429s stay on the current model." : "Request-rate fallback ON — 429s may walk configured backups.", "info");
+      }
       return;
     }
     case "auditorSilent": {
