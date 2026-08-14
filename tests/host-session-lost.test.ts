@@ -25,7 +25,12 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 
 import { classifySessionHandleInvalidation } from "../extensions/loops/goal.js";
-import { __testOnlyHeartbeatTick } from "../extensions/goal-heartbeat.js";
+import {
+  endSubagentHangProbe,
+  __testOnlyClearSubagentHangProbes,
+  __testOnlyHeartbeatTick,
+  upsertSubagentHangProbe,
+} from "../extensions/goal-heartbeat.js";
 import activate, {
   __testOnlyResetOwnerSession,
   __testOnlyResetStaleFlag,
@@ -33,6 +38,7 @@ import activate, {
   __testOnlySetSessionReplacementUntil,
 } from "../extensions/loops/goal.js";
 import { MockPi, invalidateHostSession, makeMockCtx, tmpCwd, seedState, seedGoal, tick, type MockCtx } from "./harness/mock-pi.js";
+import { HELD_ON_RESTORE } from "../extensions/goal-loop-forever.js";
 import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
@@ -55,8 +61,12 @@ beforeEach(() => {
   __testOnlyResetOwnerSession();
   __testOnlyResetStaleFlag();
   __testOnlyResetTerminalFlags();
+  __testOnlyClearSubagentHangProbes();
 });
-afterEach(() => __testOnlyResetOwnerSession());
+afterEach(() => {
+  __testOnlyResetOwnerSession();
+  __testOnlyClearSubagentHangProbes();
+});
 
 // ── (a) the reason classifier (pure) ───────────────────────────────────
 
@@ -95,7 +105,52 @@ test("host loss without any lifecycle shutdown classifies silent_handle_death", 
   }
 });
 
-test("idle completed/held state does not probe a disposed session handle", async () => {
+async function assertIdleStateDoesNotProbe(seed: { goal?: unknown; loop?: unknown }, label: string): Promise<void> {
+  setGlobalAutoResume(false);
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: null, list: [], ...seed });
+  __testOnlyResetOwnerSession();
+  const ctx = makeMockCtx(cwd);
+  await pi.fire("session_start", { reason: "startup" }, ctx);
+  await tick();
+
+  // A host transition may dispose the old handle even though this durable
+  // plane is not running work. That is not a work-plane host loss and must
+  // not produce the recurring invalidation warning.
+  invalidateHostSession(pi, ctx);
+  __testOnlyHeartbeatTick();
+  try {
+    assert.equal(invalidations(cwd).length, 0, `${label}: no session_handle_invalidated`);
+    const ledger = fs.readFileSync(`${cwd}/.pi-glla/active.jsonl`, "utf8");
+    assert.doesNotMatch(ledger, /"extension_api_stale"/, `${label}: no stale recovery latch`);
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+  }
+}
+
+test("completed idle state does not probe a disposed session handle", async () => {
+  await assertIdleStateDoesNotProbe(
+    { goal: seedGoal({ status: "complete" }) },
+    "completed",
+  );
+});
+
+test("paused idle state does not probe a disposed session handle", async () => {
+  await assertIdleStateDoesNotProbe(
+    { goal: seedGoal({ status: "paused", pauseKind: "blocked", pauseReason: "user paused" }) },
+    "paused",
+  );
+});
+
+test("held loop does not probe a disposed session handle", async () => {
+  await assertIdleStateDoesNotProbe(
+    { loop: { ...seedLoop({ active: false, stopReason: HELD_ON_RESTORE }) } },
+    "held loop",
+  );
+});
+
+test("ended subagent probes do not keep idle state probing a disposed handle", async () => {
   setGlobalAutoResume(false);
   const cwd = tmpCwd();
   seedState(cwd, { goal: null, list: [] });
@@ -104,15 +159,43 @@ test("idle completed/held state does not probe a disposed session handle", async
   await pi.fire("session_start", { reason: "startup" }, ctx);
   await tick();
 
-  // A host transition may dispose the old handle even though no goal, loop,
-  // auditor, or subagent remains. That is not a work-plane host loss and
-  // must not produce the recurring invalidation warning.
+  upsertSubagentHangProbe("ended-idle-probe", "Explore", "completed child");
+  endSubagentHangProbe("ended-idle-probe");
   invalidateHostSession(pi, ctx);
   __testOnlyHeartbeatTick();
   try {
-    assert.equal(invalidations(cwd).length, 0, "idle state does not emit session_handle_invalidated");
+    assert.equal(invalidations(cwd).length, 0, "ended probes do not own the idle host");
     const ledger = fs.readFileSync(`${cwd}/.pi-glla/active.jsonl`, "utf8");
-    assert.doesNotMatch(ledger, /"extension_api_stale"/, "idle state does not latch stale recovery");
+    assert.doesNotMatch(ledger, /"extension_api_stale"/, "ended probes do not latch stale recovery");
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+  }
+});
+
+test("stale-recovery debt still probes for same-process self-heal", async () => {
+  setGlobalAutoResume(false);
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    goal: seedGoal({
+      status: "paused",
+      pauseKind: "blocked",
+      interruptedAt: new Date().toISOString(),
+      interruptedReason: "extension api stale (heartbeat probe)",
+    }),
+    list: [],
+  });
+  __testOnlyResetOwnerSession();
+  const ctx = makeMockCtx(cwd);
+  await pi.fire("session_start", { reason: "startup" }, ctx);
+  await tick();
+
+  invalidateHostSession(pi, ctx);
+  __testOnlyHeartbeatTick();
+  try {
+    const evs = invalidations(cwd);
+    assert.equal(evs.length, 1, "stale-recovery debt keeps the host probe armed");
+    assert.equal(evs[0]!.value.reason, "silent_handle_death");
   } finally {
     pi.sendMessageError = null;
     pi.sessionNameError = null;

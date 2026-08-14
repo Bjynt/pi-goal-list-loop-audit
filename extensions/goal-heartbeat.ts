@@ -238,6 +238,22 @@ const SUBAGENT_HANG_ALERT_THROTTLE_MS = 5 * 60_000;
 /** Ended probes are pruned an hour after completion (HUD/final-state reads). */
 const SUBAGENT_HANG_PRUNE_MS = 60 * 60_000;
 
+function pruneEndedSubagentHangProbes(now = Date.now()): void {
+  for (const [id, probe] of subagentHangProbes) {
+    if (probe.endedAt !== undefined && now - probe.endedAt >= SUBAGENT_HANG_PRUNE_MS) {
+      subagentHangProbes.delete(id);
+    }
+  }
+}
+
+function hasLiveSubagentHangProbes(now = Date.now()): boolean {
+  pruneEndedSubagentHangProbes(now);
+  for (const probe of subagentHangProbes.values()) {
+    if (probe.endedAt === undefined) return true;
+  }
+  return false;
+}
+
 interface SubagentHangProbe {
   recordId: string;
   agentType?: string;
@@ -356,13 +372,17 @@ function heartbeatTick(): void {
   // that disposed handle as a host loss only creates the repeated
   // "session invalidated" warning after the work is already safe on disk.
   // Keep the probe for active goals/loops, detached completion audits,
-  // recoverable stale debt, and tracked subagents, where a dead handle can
-  // strand live work. A normal user pause does not count as host-bound work;
-  // stale interruption debt does, because same-process self-heal still needs
-  // a heartbeat opportunity.
-  const staleRecoveryDebt = state.goal?.interruptedReason?.startsWith("extension api stale")
-    || state.loop?.stopReason?.startsWith("extension api stale");
-  if (state.goal?.status !== "active" && state.goal?.status !== "auditing" && !isLoopActive() && !staleRecoveryDebt && subagentHangProbes.size === 0) return;
+  // recoverable stale debt, and LIVE tracked subagents, where a dead handle
+  // can strand live work. A normal user pause does not count as host-bound
+  // work; stale interruption debt does, because same-process self-heal still
+  // needs a heartbeat opportunity. Ended subagent probes remain in memory
+  // briefly for HUD/final-state reads, but they no longer own the host and
+  // must not keep this guard probing a disposed handle.
+  const staleRecoveryDebt = state.goal?.status !== "complete"
+    && state.goal?.status !== "aborted"
+    && (state.goal?.interruptedReason?.startsWith("extension api stale")
+      || state.loop?.stopReason?.startsWith("extension api stale"));
+  if (state.goal?.status !== "active" && state.goal?.status !== "auditing" && !isLoopActive() && !staleRecoveryDebt && !hasLiveSubagentHangProbes()) return;
   // Probe the ExtensionAPI BEFORE probing the captured context. When pi
   // invalidates both handles and emits no replacement session_start,
   // freshCtx() deliberately returns null; probing it first used to make the
@@ -476,9 +496,7 @@ function heartbeatTick(): void {
     const nowMs = Date.now();
     const poll = subagentManagerPoller();
     const hung = classifyHungSubagents([...subagentHangProbes.values()], (id) => poll.getRecord?.(id), nowMs);
-    for (const [id, p] of subagentHangProbes) {
-      if (p.endedAt !== undefined && nowMs - p.endedAt >= SUBAGENT_HANG_PRUNE_MS) subagentHangProbes.delete(id);
-    }
+    pruneEndedSubagentHangProbes(nowMs);
     for (const h of hung) {
       const p = subagentHangProbes.get(h.recordId);
       if (!p || (p.hangAlertedAt !== undefined && nowMs - p.hangAlertedAt < SUBAGENT_HANG_ALERT_THROTTLE_MS)) continue;
