@@ -68,7 +68,7 @@ test("terminal path: ledger event, single-fire, goal ACTIVE+marker / loop stop w
   // v0.28.1 (S1/S2): the stale goal branch keeps status ACTIVE and sets the
   // interrupt marker — pausing here stranded goals (restore only
   // auto-resumes active goals).
-  assert.match(SRC, /updateGoal\(\{ interruptedAt: nowIso\(\), interruptedReason: `extension api stale \(\$\{where\}\)` \}, ctx\)/);
+  assert.match(SRC, /persistInterruptedGoalWithoutContext\(ctx\.cwd, where\)/);
   assert.ok(!SRC.includes('pauseReason: "extension api stale (pi session replacement)"'), "old pause shape gone");
   assert.match(SRC, /without delivering a replacement session\. glla stopped stale sends and kept the work safe in \.pi-glla\//);
   // guidance names the lifecycle handoff and the genuine orphan case:
