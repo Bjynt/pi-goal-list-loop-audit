@@ -1976,6 +1976,9 @@ function registerAgentTools(pi: any): void {
       if (state.goal) {
         const terminal = state.goal.status === "complete" || state.goal.status === "aborted";
         lines.push(`${terminal ? "Last" : "Active"} [${state.goal.policy}] (${statusLabel(state.goal.status)}): ${sanitizeDisplayText(state.goal.objective)}`);
+        if (state.goal.repairTarget) {
+          lines.push(`Replan target (preserved): ${sanitizeDisplayText(state.goal.repairTarget.objective)}`);
+        }
       } else {
         lines.push("Active: (none)");
       }
@@ -2032,7 +2035,7 @@ function registerAgentTools(pi: any): void {
       if (!state.goal || state.goal.status !== "active") {
         return { content: [{ type: "text", text: "No active goal to break down." }], details: {} };
       }
-      if (state.goal.taskList && state.goal.taskList.tasks.length > 0) {
+      if (state.goal.taskList && state.goal.taskList.tasks.length > 0 && !state.goal.repairTarget) {
         return { content: [{ type: "text", text: "A task list already exists. Use update_task_status / complete_task to work it." }], details: {} };
       }
       const p = params as { objective?: string; tasks: TaskProposal[] };

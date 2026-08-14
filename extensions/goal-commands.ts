@@ -1097,6 +1097,9 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     if (state.goal) {
       const terminal = state.goal.status === "complete" || state.goal.status === "aborted";
       lines.push(`${terminal ? "Last" : "Active"}: [${state.goal.policy}] ${displaySlice(state.goal.objective, 80)} (${statusLabel(state.goal.status)})`);
+      if (state.goal.repairTarget) {
+        lines.push(`Replan target (preserved): ${displaySlice(state.goal.repairTarget.objective, 180)}`);
+      }
     } else {
       lines.push("Active: (none)");
     }
@@ -1127,6 +1130,9 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
         if (open > 0) labels.push(`group: ${open} open`);
         const tag = labels.length ? ` [${labels.join(", ")}]` : "";
         lines.push(`  ${flat}. ${displaySlice(item.objective, 90)}${tag}`);
+        if (item.repairTarget) {
+          lines.push(`     ↳ REPLAN TARGET: ${displaySlice(item.repairTarget.objective, 180)}`);
+        }
         children.forEach((c, ci) =>
           lines.push(`     ${flat}.${ci + 1} ${displaySlice(c.objective, 80)}${c.parallelSafe ? " [parallel]" : ""}`),
         );

@@ -935,25 +935,42 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
   const selector = sessionModelSelector(ctx, selectorChain);
   const scope: ModelScope = { kind: "session" };
   const pendingTarget = state.mainModelRecovery?.pendingModelSwitch;
-  const pendingCandidate = pendingTarget ? resolveMainModel(ctx, pendingTarget) : undefined;
-  if (pendingTarget && !pendingCandidate) {
-    const attemptedPending = recovery.attempted.some((ref) => ref.toLowerCase() === pendingTarget.toLowerCase())
+  const pendingConfigured = pendingTarget !== undefined
+    && selectorChain.some((ref) => ref.toLowerCase() === pendingTarget.toLowerCase());
+  if (pendingTarget && !pendingConfigured) {
+    // Settings can be cleared while setModel is in flight or while a parked
+    // recovery is being restored. Never resurrect a removed backup merely
+    // because its old intent survived in active.jsonl.
+    state.mainModelRecovery = {
+      ...recovery,
+      pendingModelSwitch: undefined,
+      retryAt: undefined,
+      attempted: recovery.attempted.filter((ref) => ref.toLowerCase() !== pendingTarget.toLowerCase()),
+      skipped: (recovery.skipped ?? []).filter((entry) => entry.ref.toLowerCase() !== pendingTarget.toLowerCase()),
+    };
+    persistState(ctx);
+    appendLedger(ctx.cwd, "main_model_switch_stale_cleared", { ref: pendingTarget, reason: "removed from configured fallback chain" });
+  }
+  const effectivePendingTarget = pendingConfigured ? pendingTarget : undefined;
+  const pendingCandidate = effectivePendingTarget ? resolveMainModel(ctx, effectivePendingTarget) : undefined;
+  if (effectivePendingTarget && !pendingCandidate) {
+    const attemptedPending = recovery.attempted.some((ref) => ref.toLowerCase() === effectivePendingTarget.toLowerCase())
       ? recovery.attempted
-      : [...recovery.attempted, pendingTarget];
+      : [...recovery.attempted, effectivePendingTarget];
     const skippedPending = [...(recovery.skipped ?? [])];
-    if (!skippedPending.some((entry) => entry.ref.toLowerCase() === pendingTarget.toLowerCase())) {
-      skippedPending.push({ ref: pendingTarget, reason: "unregistered" });
+    if (!skippedPending.some((entry) => entry.ref.toLowerCase() === effectivePendingTarget.toLowerCase())) {
+      skippedPending.push({ ref: effectivePendingTarget, reason: "unregistered" });
     }
     const next = { ...recovery, pendingModelSwitch: undefined, attempted: attemptedPending, skipped: skippedPending.slice(-16), attempts: recovery.attempts + 1 };
-    appendLedger(ctx.cwd, "main_model_fallback_unavailable", { ref: pendingTarget, reason: "pending switch target not in registry" });
+    appendLedger(ctx.cwd, "main_model_fallback_unavailable", { ref: effectivePendingTarget, reason: "pending switch target not in registry" });
     state.mainModelRecovery = next;
     persistState(ctx);
     const delay = mainModelRetryDelayMs(next.attempts, loadGlobalSettings().mainModelRetryMinutes);
     if (setMainModelRecoveryPause(ctx, next, delay)) scheduleMainModelRecoveryTimer(ctx, delay);
     return;
   }
-  const pick = pendingTarget && pendingCandidate
-    ? { ref: pendingTarget, model: pendingCandidate }
+  const pick = effectivePendingTarget && pendingCandidate
+    ? { ref: effectivePendingTarget, model: pendingCandidate }
     : selector.selectNextValid(scope, current, recovery.attempted);
   const target = "ref" in pick ? pick.ref : undefined;
   const targetIndex = target === undefined

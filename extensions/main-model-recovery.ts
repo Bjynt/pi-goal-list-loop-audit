@@ -194,8 +194,8 @@ export function isLongLivedFailureKind(kind: MainModelFailureKind): boolean {
 }
 
 /** Only durable provider walls should spend an ordered backup by default.
- * Request-rate walls are opt-in at the call site because some providers share
- * account-wide limits; cross-provider chains can enable the hop explicitly. */
+ * Request-rate walls are opt-in at the classification helper call site; the
+ * main-session recovery policy supplies that opt-in from the global setting.
 export function isMainModelFallbackFailure(
   failure: MainModelFailure,
   opts: { allowRateLimit?: boolean } = {},
@@ -208,8 +208,9 @@ export function isMainModelFallbackFailure(
 }
 
 /** A provider failure can require durable recovery without implying that a
- * configured backup should be selected. Explicit 429/request-rate failures
- * belong here: park and retry the current model, but never spend a backup. */
+ * configured backup is available. Explicit 429/request-rate failures belong
+ * here so an empty chain or an explicit opt-out still parks the current model;
+ * the main-session policy may select a backup before parking.
 export function requiresMainModelRecovery(failure: MainModelFailure): boolean {
   return failure.kind !== "non-recoverable" && failure.kind !== "transient";
 }
