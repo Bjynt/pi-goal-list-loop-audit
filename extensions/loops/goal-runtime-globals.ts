@@ -29,6 +29,9 @@ declare global {
   var sessionHandoffPath: any;
   var writeSessionHandoff: any;
   var consumeSessionHandoff: any;
+  var queuePendingListOperation: any;
+  var consumePendingListOperations: any;
+  var discardPendingListOperations: any;
   var SESSION_OWNER_FILE: any;
   var markSessionOwnerShutdown: any;
   var claimSessionOwnerAndDetectRebind: any;

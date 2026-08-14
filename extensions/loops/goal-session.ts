@@ -729,6 +729,116 @@ function consumeSessionHandoff(
   }
 }
 
+// v0.35.x: a mutating `/list` command can arrive after session_shutdown has
+// invalidated the old extension handle but before the replacement emits
+// session_start. Refusing the command is safe, but telling the user it will
+// be handled later is false unless the exact arguments are durably retained.
+// Keep a small ordered command journal separate from the lifecycle marker so
+// the handoff marker can remain one-shot and identity-fenced.
+const PENDING_LIST_OPERATION_FILE = "pending-list-operation.json";
+const PENDING_LIST_OPERATION_VERSION = 1;
+const MAX_PENDING_LIST_OPERATIONS = 8;
+const PENDING_LIST_OPERATION_FRESH_MS = SESSION_HANDOFF_FRESH_MS;
+interface PendingListOperationRecord {
+  version: typeof PENDING_LIST_OPERATION_VERSION;
+  pid: number;
+  at: string;
+  generation: number;
+  ownerSessionId: string;
+  operations: string[];
+}
+function pendingListOperationPath(cwd: string): string {
+  return path.join(piGlaDir(cwd), PENDING_LIST_OPERATION_FILE);
+}
+function queuePendingListOperation(ctx: ExtensionContext, args: string): boolean {
+  if (!sessionHandoffPending) return false;
+  const operation = args.trim();
+  if (!operation || operation.length > 8_000) return false;
+  const p = pendingListOperationPath(ctx.cwd);
+  let operations: string[] = [];
+  try {
+    const prior = JSON.parse(fs.readFileSync(p, "utf-8")) as Partial<PendingListOperationRecord>;
+    const priorAt = Date.parse(prior.at ?? "");
+    const sameOwner = prior.version === PENDING_LIST_OPERATION_VERSION
+      && prior.pid === process.pid
+      && prior.generation === sessionGeneration
+      && prior.ownerSessionId === sessionManagerId(ctx)
+      && Number.isFinite(priorAt)
+      && Date.now() - priorAt < PENDING_LIST_OPERATION_FRESH_MS
+      && Array.isArray(prior.operations);
+    if (sameOwner) operations = prior.operations.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, MAX_PENDING_LIST_OPERATIONS);
+  } catch { /* no prior deferred command */ }
+  if (operations.length >= MAX_PENDING_LIST_OPERATIONS) {
+    appendLedger(ctx.cwd, "list_operation_handoff_queue_full", { count: operations.length });
+    return false;
+  }
+  operations.push(operation);
+  const record: PendingListOperationRecord = {
+    version: PENDING_LIST_OPERATION_VERSION,
+    pid: process.pid,
+    at: new Date().toISOString(),
+    generation: sessionGeneration,
+    ownerSessionId: sessionManagerId(ctx),
+    operations,
+  };
+  try {
+    fs.mkdirSync(piGlaDir(ctx.cwd), { recursive: true });
+    const tmp = `${p}.tmp-${process.pid}-${Date.now()}`;
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(record));
+      fs.renameSync(tmp, p);
+    } finally {
+      try { fs.rmSync(tmp, { force: true }); } catch { /* best effort */ }
+    }
+    appendLedger(ctx.cwd, "list_operation_deferred_for_handoff", { count: operations.length, chars: operation.length });
+    return true;
+  } catch {
+    appendLedger(ctx.cwd, "list_operation_handoff_write_failed", { chars: operation.length });
+    return false;
+  }
+}
+function consumePendingListOperations(
+  cwd: string,
+  expectedGeneration: number | null,
+  expectedOwnerSessionId: string | null,
+): string[] {
+  const p = pendingListOperationPath(cwd);
+  try {
+    if (!fs.existsSync(p)) return [];
+    const raw = fs.readFileSync(p, "utf-8");
+    fs.unlinkSync(p);
+    const data = JSON.parse(raw) as Partial<PendingListOperationRecord>;
+    const at = Date.parse(data.at ?? "");
+    const operations = Array.isArray(data.operations)
+      ? data.operations.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, MAX_PENDING_LIST_OPERATIONS)
+      : [];
+    const valid = data.version === PENDING_LIST_OPERATION_VERSION
+      && data.pid === process.pid
+      && Number.isFinite(at)
+      && Date.now() - at < PENDING_LIST_OPERATION_FRESH_MS
+      && (expectedGeneration === null || data.generation === expectedGeneration)
+      && (expectedOwnerSessionId === null || data.ownerSessionId === expectedOwnerSessionId)
+      && operations.length > 0;
+    if (!valid) {
+      appendLedger(cwd, "list_operation_handoff_rejected", { expectedGeneration, actualGeneration: data.generation ?? null, count: operations.length });
+      return [];
+    }
+    appendLedger(cwd, "list_operation_handoff_consumed", { count: operations.length });
+    return operations;
+  } catch {
+    try { fs.rmSync(p, { force: true }); } catch { /* best effort */ }
+    appendLedger(cwd, "list_operation_handoff_rejected", { reason: "read-or-parse-failed" });
+    return [];
+  }
+}
+function discardPendingListOperations(cwd: string, reason: string): void {
+  try {
+    if (!fs.existsSync(pendingListOperationPath(cwd))) return;
+    fs.rmSync(pendingListOperationPath(cwd), { force: true });
+    appendLedger(cwd, "list_operation_handoff_discarded", { reason });
+  } catch { /* advisory cleanup */ }
+}
+
 /** v0.34.14: /reload rebind detector. The extension runs INSIDE pi, so
  * process.pid IS pi's pid: an instance that boots and finds its OWN pid
  * already in the owner file is normally a same-process rebuild, not a cold
