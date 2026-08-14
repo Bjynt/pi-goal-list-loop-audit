@@ -139,6 +139,8 @@ test("v0.34.55: model — within-extension re-registration is last-wins (Map.set
 // ────────────────────────────────────────────────────────────────────
 
 const REGISTERED_RE = /registerCommand\(\s*["'](list|glla|goal|loop)["']/g;
+const LOCAL_IMPORT_RE = /^\s*(?:import|export)\s+(?:type\s+)?(?:[^"'();]*?\sfrom\s+)?["'](\.{1,2}\/[^"']+)["']/gm;
+const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs", ".cts", ".cjs"];
 const REPORT_PATH = path.join(process.cwd(), "audit", "command-registration-routing.md");
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? path.join(os.homedir(), ".pi", "agent");
 
@@ -183,6 +185,40 @@ function resolvePackageSource(source: string): string {
   return path.resolve(process.cwd(), source);
 }
 
+function isWithin(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+}
+
+/** Keep committed routing evidence portable: no host-specific absolute paths. */
+function reportPath(file: string): string {
+  const absolute = path.resolve(file);
+  if (isWithin(process.cwd(), absolute)) {
+    return (path.relative(process.cwd(), absolute) || ".").split(path.sep).join("/");
+  }
+  if (isWithin(AGENT_DIR, absolute)) {
+    return `<configured pi agent dir>/${path.relative(AGENT_DIR, absolute).split(path.sep).join("/")}`;
+  }
+  const nodeModules = `${path.sep}node_modules${path.sep}`;
+  const marker = absolute.lastIndexOf(nodeModules);
+  if (marker >= 0) return `node_modules/${absolute.slice(marker + nodeModules.length).split(path.sep).join("/")}`;
+  return `<external>/${path.basename(absolute)}`;
+}
+
+function packageSourceLabel(scope: string, spec: string): string {
+  if (spec.startsWith("npm:")) return `${scope}: ${spec}`;
+  const resolved = resolvePackageSource(spec);
+  if (isWithin(process.cwd(), resolved)) {
+    const relative = path.relative(process.cwd(), resolved).split(path.sep).join("/");
+    return `${scope}: <project>${relative ? `/${relative}` : ""}`;
+  }
+  if (isWithin(AGENT_DIR, resolved)) {
+    const relative = path.relative(AGENT_DIR, resolved).split(path.sep).join("/");
+    return `${scope}: <configured pi agent dir>/${relative}`;
+  }
+  return `${scope}: <external package>`;
+}
+
 function readPackages(settingsPath: string): string[] {
   try {
     return (JSON.parse(fs.readFileSync(settingsPath, "utf-8")) as { packages?: string[] }).packages ?? [];
@@ -200,16 +236,59 @@ interface Registration {
   entry: string;
 }
 
+function resolveLocalSource(fromFile: string, specifier: string): string | undefined {
+  const base = path.resolve(path.dirname(fromFile), specifier);
+  const candidates: string[] = [base];
+  const extension = path.extname(base);
+  if (SOURCE_EXTENSIONS.includes(extension)) {
+    const stem = base.slice(0, -extension.length);
+    for (const replacement of SOURCE_EXTENSIONS) candidates.push(`${stem}${replacement}`);
+  } else if (!extension) {
+    for (const replacement of SOURCE_EXTENSIONS) candidates.push(`${base}${replacement}`);
+  }
+  for (const replacement of SOURCE_EXTENSIONS) candidates.push(path.join(base, `index${replacement}`));
+  for (const candidate of new Set(candidates)) {
+    try {
+      if (fs.statSync(candidate).isFile()) return candidate;
+    } catch {
+      /* unresolved optional import — keep scanning the rest of the graph */
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Scan the loader entry plus its local static-import graph. pi registers
+ * commands from the runtime module imported by extensions/loops/goal.ts;
+ * entry-only text scanning falsely reported zero registrants.
+ */
 function scanEntryFiles(entry: ScanEntry): Registration[] {
   const out: Registration[] = [];
-  for (const file of entry.files) {
-    let src: string;
+  const queue = [...entry.files];
+  const visited = new Set<string>();
+  while (queue.length > 0) {
+    const file = queue.shift()!;
+    let canonical: string;
     try {
-      src = fs.readFileSync(file, "utf-8");
+      canonical = fs.realpathSync(file);
     } catch {
       continue;
     }
-    for (const m of src.matchAll(REGISTERED_RE)) out.push({ command: m[1]!, entry: file });
+    if (visited.has(canonical)) continue;
+    visited.add(canonical);
+    let src: string;
+    try {
+      src = fs.readFileSync(canonical, "utf-8");
+    } catch {
+      continue;
+    }
+    for (const m of src.matchAll(new RegExp(REGISTERED_RE.source, REGISTERED_RE.flags))) {
+      out.push({ command: m[1]!, entry: canonical });
+    }
+    for (const m of src.matchAll(new RegExp(LOCAL_IMPORT_RE.source, LOCAL_IMPORT_RE.flags))) {
+      const imported = resolveLocalSource(canonical, m[1]!);
+      if (imported) queue.push(imported);
+    }
   }
   return out;
 }
@@ -234,11 +313,11 @@ test("v0.34.55: live rig — the routing table records duplicate-command routing
     ...discoverDir(path.join(AGENT_DIR, "extensions")).map((f) => ({ source: "agent dir extensions", files: [f] })),
     ...projectPkgs.map((p) => {
       const dir = resolvePackageSource(p);
-      return { source: `project packages: ${p}`, files: resolvePackageEntries(dir) };
+      return { source: packageSourceLabel("project packages", p), files: resolvePackageEntries(dir) };
     }),
     ...globalPkgs.map((p) => {
       const dir = resolvePackageSource(p);
-      return { source: `global packages: ${p}`, files: resolvePackageEntries(dir) };
+      return { source: packageSourceLabel("global packages", p), files: resolvePackageEntries(dir) };
     }),
   ];
   // Dedupe exact file paths (loader dedupes resolved paths).
@@ -258,7 +337,7 @@ test("v0.34.55: live rig — the routing table records duplicate-command routing
   for (const e of loaded) {
     for (const reg of scanEntryFiles(e)) {
       const list = perCommand.get(reg.command) ?? [];
-      list.push({ source: e.source, entry: reg.entry });
+      list.push({ source: e.source, entry: reportPath(reg.entry) });
       perCommand.set(reg.command, list);
     }
   }
@@ -344,7 +423,6 @@ test("v0.34.55: live rig — the routing table records duplicate-command routing
 
   // Assertions: the recorded table is self-consistent and identifies the
   // winner; on THIS rig the repo is the sole registrant of /list and /glla.
-  const repoRoot = process.cwd();
   for (const command of ["list", "glla"]) {
     const row = routing.find((r) => r.command === command);
     if (!row) {
@@ -354,7 +432,7 @@ test("v0.34.55: live rig — the routing table records duplicate-command routing
     assert.match(recorded, new RegExp(`\\| ${command} \\|`), `report records ${command}`);
     if (row.registrants === 0) continue; // zero-registrant rig: nothing to win
     assert.equal(row.registrants, row.registrants, "self-consistent count");
-    if (row.winner.entry.startsWith(repoRoot) || row.winner.source.includes("pi-goal-loop-audit")) {
+    if (row.winner.entry.startsWith("extensions/") || row.winner.source.includes("<project>")) {
       assert.ok(row.bareOwned, `on this rig the repo is the SOLE registrant of /${command} — the bare name is owned and routes`);
       assert.ok(row.suffixed.length === 0, `no suffixed shadow names for /${command}`);
     } else {
