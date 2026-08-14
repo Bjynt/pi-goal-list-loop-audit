@@ -279,12 +279,13 @@ The editor shows the actual try order as `current → backup 1 → backup 2 …`
 shows each configured backup's rank, and lets you move a selected backup with
 `[` / `]`. On an account/plan/billing/auth provider failure, glla calls `setModel` for the
 first eligible backup only; the next supervised turn tests it. If that
-candidate fails, the next backup is tried in order. An explicit HTTP 429 /
-request-rate failure stays on the current model and is retried with the
-configured cadence plus the extra post-hour probe; it is not a token-limit
-failure and does not consume a backup. Forbidden, unavailable, and
-unauthenticated refs are skipped; a successful supervised turn clears the
-episode. The chain
+candidate fails, the next backup is tried in order. With the global
+`mainModelFallbackOnRateLimit=on` default, an explicit HTTP 429/request-rate
+failure also walks the ordered chain; set it off to keep 429s on the current
+model with the bounded cadence plus extra post-hour probe. A 429 remains a
+request-rate classification, not a token-limit failure. Forbidden,
+unavailable, and unauthenticated refs are skipped; a successful supervised
+turn clears the episode. The chain
 is global, durable, and its attempted cursor survives reload; after the chain
 is exhausted, bounded recovery probes continue rather than silently abandoning
 work. The Backups section shows the `N/10` count and the numbered chain.
@@ -296,8 +297,9 @@ minutes** of failed sends instead of the generic 15 — a wedge right after a
 quota wall is almost always the same wall. Transient (5xx/stream/network)
 failures never record the signal and keep the fast error ladder. The
 envelope is armed by configuration: an empty `mainModelFallbacks` list means
-"park and probe the same model" rather than switching pools — the
-never-switch posture is a first-class policy, not an accident.
+"park and probe the same model" rather than switching pools. The
+`mainModelFallbackOnRateLimit=off` setting is the explicit never-switch
+posture for non-empty chains.
 
 Classification still exists, but it only *labels*: the card and badge show
 what the provider said (quota wall, billing, rate limit) so the reason is
@@ -437,8 +439,9 @@ while preserving history.
 There is no top-level `/glla key=value` setting syntax.
 
 Resolution per key: **project > global > defaults** — EXCEPT `autoResume` and
-main-session recovery settings (`mainModelFallbacks`, `mainModelRetryMinutes`,
-`hourlyQuotaProbe`), which are **global-only**: per-project opt-ins from old versions
+main-session recovery settings (`mainModelFallbacks`,
+`mainModelFallbackOnRateLimit`, `mainModelRetryMinutes`, `hourlyQuotaProbe`),
+which are **global-only**: per-project opt-ins from old versions
 silently overrode the global hold at launch (the junk-runner incident), so
 the launch-restore gate and the reviewer-enqueue gate read only the global
 file now. Main-session recovery policy is likewise one global chain/cadence
@@ -450,8 +453,10 @@ down, glla cancels the provider-held retry and uses the configured
 `base → 2×base → 4×base → 8×base → 16×base → 5h` ladder (`base` defaults to
 15m). `hourlyQuotaProbe=on` adds a separate :00:30 probe after each hour
 starts. Explicit HTTP 429/rate-limit errors remain request-rate failures, not
-token-limit labels, and continue through the bounded retry policy. Automatic
-recovery stops at 24h, preserves the saved work, and requires an explicit
+token-limit labels. With `mainModelFallbackOnRateLimit=on` (default) they
+walk the ordered backups; with it off they stay on the current model through
+the bounded retry policy. Automatic recovery stops at 24h, preserves the saved
+work, and requires an explicit
 `/goal resume`, `/list resume`, or `/loop resume` to start a fresh window. A
 quota window returning within that horizon therefore resumes saved work without
 manual intervention; no blind 50ms resend loop is introduced. The detached auditor uses an explicit cascade: primary

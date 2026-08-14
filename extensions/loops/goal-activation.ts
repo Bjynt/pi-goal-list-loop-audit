@@ -187,6 +187,7 @@ import {
 import {
   classifyMainModelFailure,
   isLongLivedFailureKind,
+  isMainModelFallbackFailure,
   requiresMainModelRecovery,
   mainModelAutoRetryUntil,
   mainModelFailureDelayMs,
@@ -386,6 +387,17 @@ import { defineGoalRuntimeGlobal } from "./goal-runtime-globals.js";
  * suspicious objective. The normal enqueue path keeps disk-first ordering,
  * duplicate guards, and list provenance intact. */
 export function enqueueFaultRepairTask(ctx: ExtensionContext, objective: string, target?: Goal["repairTarget"]): void {
+  const existing = (state.list ?? []).find((item) => item.objective === objective);
+  if (existing) {
+    if (target && !existing.repairTarget) {
+      const repaired = { ...existing, repairTarget: target };
+      replaceState({ ...state, list: (state.list ?? []).map((item) => item.id === existing.id ? repaired : item) });
+      writeQueueItemFile(ctx.cwd, repaired);
+      persistState(ctx);
+      appendLedger(ctx.cwd, "faulty_objective_repair_target_recovered", { goalId: existing.id, targetId: target.id, source: target.source });
+    }
+    return;
+  }
   const before = new Set((state.list ?? []).map((item) => item.id));
   enqueueItems(ctx, [objective], "faulty-objective", { autoActivate: false });
   const added = (state.list ?? []).find((item) => !before.has(item.id) && item.objective === objective);
@@ -1522,10 +1534,15 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         appendLedger(ctx.cwd, "loop_turn_exempt_error", { stopReason: sr, consecutive: loop.consecutiveErrors, iteration: loop.iteration });
         const cap = sr === "aborted" ? LOOP_MAX_CONSECUTIVE_ABORTS : LOOP_MAX_CONSECUTIVE_ERRORS;
         if (loop.consecutiveErrors >= cap) {
-          if (sr === "error" && lastMainModelFailure && requiresMainModelRecovery(lastMainModelFailure)) {
-            // Account/plan/billing failures may rotate through backups; explicit
-            // 429/request-rate failures stay on the current model and use
-            // their bounded + hourly retry path. Both are durable recovery.
+          const allowRateLimitFallback = lastMainModelFailure?.kind === "rate-limit"
+            && loadSettings(ctx.cwd).mainModelFallbackOnRateLimit === true;
+          const durableProviderFailure = lastMainModelFailure
+            && (requiresMainModelRecovery(lastMainModelFailure)
+              || isMainModelFallbackFailure(lastMainModelFailure, { allowRateLimit: allowRateLimitFallback }));
+          if (sr === "error" && durableProviderFailure) {
+            // Account/plan/billing failures and (when enabled) request-rate
+            // failures may rotate through backups; the bounded recovery
+            // envelope owns the loop instead of stopping on a dead turn.
             parkMainModelAfterFailure(ctx, lastMainModelFailure);
             if (state.mainModelRecovery) return;
           }

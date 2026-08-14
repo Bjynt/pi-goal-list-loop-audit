@@ -72,7 +72,7 @@ test("v0.34.116: observeCompactFailure is the one-liner surface (notify + ledger
 
 test("v0.34.116: tryMainModelFallback opens context-overflow (it is the only rotation kind beyond provider failures)", () => {
   // non-recoverable stays the gate; context-overflow is the new pass-through.
-  const block = RECOVERY.slice(RECOVERY.indexOf("export async function tryMainModelFallback"), RECOVERY.indexOf("export async function tryMainModelFallback") + 1200);
+  const block = RECOVERY.slice(RECOVERY.indexOf("export async function tryMainModelFallback"), RECOVERY.indexOf("export async function tryMainModelFallback") + 1800);
   assert.match(block, /if \(flags\.mainModelSwitchInFlight\) return false;/);
   assert.match(block, /failure\.kind === "non-recoverable"/);
   assert.doesNotMatch(block, /if \(flags\.mainModelSwitchInFlight \|\| failure\.kind === "non-recoverable"\)/);

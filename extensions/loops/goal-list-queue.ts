@@ -407,11 +407,6 @@ function groupOpenChildren(groupId: string): number {
  * archived merely because activation was attempted. */
 function queueRepairAheadOfListItem(ctx: ExtensionContext, item: ListItem, assessment: ReturnType<typeof assessSuspiciousObjective>): void {
   const repairObjective = buildRepairTaskObjective({ policy: "list", objective: item.objective } as Goal, assessment);
-  if (listQueue().some((queued) => queued.objective === repairObjective)) return;
-  const before = new Set(listQueue().map((queued) => queued.id));
-  enqueueItems(ctx, [repairObjective], "faulty-objective", { autoActivate: false });
-  const added = listQueue().find((queued) => !before.has(queued.id) && queued.objective === repairObjective);
-  if (!added) return;
   const target: ObjectiveRepairTarget = {
     id: item.id,
     objective: item.objective,
@@ -419,6 +414,21 @@ function queueRepairAheadOfListItem(ctx: ExtensionContext, item: ListItem, asses
     reasons: [...assessment.reasons],
     source: "list-activation",
   };
+  const existing = listQueue().find((queued) => queued.objective === repairObjective);
+  if (existing) {
+    if (!existing.repairTarget) {
+      const repaired = { ...existing, repairTarget: target };
+      replaceState({ ...state, list: listQueue().map((queued) => queued.id === existing.id ? repaired : queued) });
+      writeQueueItemFile(ctx.cwd, repaired);
+      persistState(ctx);
+      appendLedger(ctx.cwd, "faulty_objective_repair_target_recovered", { goalId: existing.id, targetId: item.id, source: "list-activation" });
+    }
+    return;
+  }
+  const before = new Set(listQueue().map((queued) => queued.id));
+  enqueueItems(ctx, [repairObjective], "faulty-objective", { autoActivate: false });
+  const added = listQueue().find((queued) => !before.has(queued.id) && queued.objective === repairObjective);
+  if (!added) return;
   const repair = { ...added, repairTarget: target };
   const rest = listQueue().filter((queued) => queued.id !== added.id);
   replaceState({ ...state, list: [repair, ...rest] });

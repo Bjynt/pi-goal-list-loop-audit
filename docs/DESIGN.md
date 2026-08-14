@@ -189,16 +189,18 @@ architectural decisions that changed the SHAPE of the system:
 
 ## Addendum v0.34.31 (main-session model recovery)
 
-- **Global recovery policy**: `mainModelFallbacks`, `mainModelRetryMinutes`, and
+- **Global recovery policy**: `mainModelFallbacks`,
+  `mainModelFallbackOnRateLimit`, `mainModelRetryMinutes`, and
   `hourlyQuotaProbe` are global-only, so the runtime and settings provenance
   cannot disagree about which recovery policy is active.
 - **Ordered global backups**: `mainModelFallbacks` is an explicit ordered list
   of up to 10 `provider/model` references. A provider/quota error selects the
   first eligible authenticated candidate for account/plan/billing/auth failures,
   calls `setModel`, and lets the next supervised turn test it; later failures
-  walk the list left-to-right. Explicit HTTP 429/request-rate failures stay
-  on the current model and use the bounded retry + hourly probe cadence. The
-  detached auditor's model cascade remains a separate subsystem. The picker
+  walk the list left-to-right. Explicit HTTP 429/request-rate failures also
+  walk the list when global `mainModelFallbackOnRateLimit` is on (default); off
+  keeps them on the current model with bounded retry + hourly probe cadence.
+  The detached auditor's model cascade remains a separate subsystem. The picker
   renders and reorders the numbered chain, and the attempted cursor is
   durable, so a reload cannot restart at an already-failed rung.
 - **No accepted-send inference**: model rotation occurs only after a provider
@@ -254,8 +256,10 @@ replacement without delivering a successor `session_start`:
 - **Uniform retry envelope, no text-trust** (v0.34.51 historical baseline): error
   text was not trusted to pick a retry policy. The current ordered-backup policy
   supersedes that baseline: account/plan/billing/auth failures may walk the configured
-  chain, while explicit HTTP 429/request-rate failures remain on the current model
-  and use the configured bounded ladder plus the optional hourly ticker. Positive-
+  chain, while explicit HTTP 429/request-rate failures walk it when
+  `mainModelFallbackOnRateLimit` is on (default), or remain on the current model
+  when it is off. Both paths use the configured bounded ladder plus optional
+  hourly ticker. Positive-
   evidence futile classes (context/output-token limits, user aborts) plus auditor
   watchdog timeouts never auto-retry; provider hints are honored only within the
   5h probe budget.
@@ -277,7 +281,9 @@ replacement without delivering a successor `session_start`:
   runtime tries one eligible backup at a time in persisted order, skips
   forbidden/unavailable refs, and parks only after the ordered chain is
   exhausted. Explicit HTTP 429/rate-limit errors remain request-rate signals,
-  not token-limit labels, and the optional :00:30 hourly ticker can retry them.
+  not token-limit labels; the global `mainModelFallbackOnRateLimit` switch
+  controls whether they walk that chain or stay current, and the optional
+  :00:30 hourly ticker can retry them.
 
 ## Addendum Unreleased (process ownership and bounded fallback hardening)
 

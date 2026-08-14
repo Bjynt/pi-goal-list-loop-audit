@@ -57,7 +57,7 @@ test("v0.34.51: quota-only parking gates are widened to every non-transient fail
   // Non-transient failures park into the durable envelope; explicit
   // request-rate failures are handled by the same current-model recovery
   // path when the active supervisor needs a durable pause.
-  assert.match(SRC, /\(state\.goal\?\.status === "active" && requiresMainModelRecovery\(failure\)\) \|\| \(backupRefs\.length > 0 && isMainModelFallbackFailure\(failure\)\)/);
+  assert.match(SRC, /\(state\.goal\?\.status === "active" && requiresMainModelRecovery\(failure\)\) \|\| \(backupRefs\.length > 0 && isMainModelFallbackFailure\(failure, \{ allowRateLimit: allowRateLimitFallback \}\)\)/);
   // v0.34.58: even the upstream-hint budget gate is gone — an over-budget
   // provider reset hint falls back to the bounded cadence instead of parking
   // the goal for a manual resume. The kind-independent 24h horizon hold is

@@ -471,10 +471,10 @@ let modelSwitchOperationGeneration: number | null = null;
 
 export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainModelFailure): Promise<boolean> {
   const generation = flags.sessionGeneration;
-  // Context-overflow is the one deterministic prompt failure that can walk
-  // BACKUP because compaction proved the current model is too small. A pure
-  // 429/request-rate wall is different: keep retrying the current model and
-  // use the bounded retry + hourly probe cadence; do not spend a backup on it.
+  // Context-overflow is the deterministic prompt failure that can walk
+  // BACKUP because compaction proved the current model is too small. An
+  // explicit 429/request-rate wall walks backups when the global opt-in is on;
+  // otherwise it stays on the current model and uses bounded retry/probes.
   // User aborts and other non-recoverable failures are refused here.
   const allowRateLimitFallback = failure.kind === "rate-limit"
     && loadSettings(ctx.cwd).mainModelFallbackOnRateLimit === true;
@@ -1077,7 +1077,8 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
     const failure = classifyMainModelFailure(err instanceof Error ? err.message : String(err));
     // Account/plan/billing failures may have walked the ordered chain before
     // reaching this probe. Any remaining provider failure uses the same
-    // durable bounded envelope; an explicit 429 keeps the current model.
+    // durable bounded envelope; a 429 resumes the current model after a
+    // rejected asynchronous switch.
     const failureCopy = providerErrorPresentation(failure.raw, "main");
     const next = withMainModelRecoveryWindow({
       ...(state.mainModelRecovery ?? recovery),
