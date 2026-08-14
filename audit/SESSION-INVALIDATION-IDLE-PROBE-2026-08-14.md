@@ -93,7 +93,7 @@ Current pre-release state after the follow-up:
 
 ```text
 version=0.34.138
-implementation_commits=b3a64945be61481a571f175fad65c8b4428da4e2,11646602
+implementation_commits=b3a64945be61481a571f175fad65c8b4428da4e2,11646602,dde31f14
 HEAD_tags=
 release_tag=8e83f127889c8d54a7b0342afd4c6d273c64e762
 ```
