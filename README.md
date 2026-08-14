@@ -275,9 +275,10 @@ With global `autoResume=on`, pending probes survive a session reload.
 For continuous work, configure up to **10 ordered Main model backups** in
 `/glla` using models from different providers or billing/quota pools when
 possible — another model on the same exhausted plan is not a real fallback.
-The editor shows the actual try order as `current → backup 1 → backup 2 …`,
-shows each configured backup's rank, and lets you move a selected backup with
-`[` / `]`. On an account/plan/billing/auth provider failure, glla calls `setModel` for the
+The editor lives in the dedicated **Main fallbacks** settings tab. It shows the
+actual try order as `current → backup 1 → backup 2 …`, shows each configured
+backup's rank, lets **Space** add/remove a backup, and lets `[` / `]` move a
+selected backup without changing membership. On an account/plan/billing/auth provider failure, glla calls `setModel` for the
 first eligible backup only; the next supervised turn tests it. If that
 candidate fails, the next backup is tried in order. With the global
 `mainModelFallbackOnRateLimit=on` default, an explicit HTTP 429/request-rate
@@ -288,7 +289,7 @@ unavailable, and unauthenticated refs are skipped; a successful supervised
 turn clears the episode. The chain
 is global, durable, and its attempted cursor survives reload; after the chain
 is exhausted, bounded recovery probes continue rather than silently abandoning
-work. The Backups section shows the `N/10` count and the numbered chain.
+work. The Main fallbacks tab shows the `N/10` count and the numbered chain.
 
 **Quota walls engage fast** (v0.34.57): a surfaced long-lived failure
 (quota / billing / auth) records a 30-minute knowledge window; a send-rearm
@@ -428,7 +429,7 @@ Open `/glla` to edit these settings in the table (the rows show effective values
 - Auditor fallback model
 - Notify command, token limit, and wedge-alert minutes
 - Auto-resume, auto-accept drafts, decision popup, and carryover policy
-- Ordered main-session backups and recovery cadence (including the optional hourly probe)
+- Ordered main-session backups in the dedicated Main fallbacks tab, plus recovery cadence (including the optional hourly probe)
 - Forbidden model patterns and switch policy
 - Audit cap/report size, aggressive mode, quota retry, and stall brakes
 
@@ -448,7 +449,9 @@ the launch-restore gate and the reviewer-enqueue gate read only the global
 file now. Main-session recovery policy is likewise one global chain/cadence
 for the active session. Main-session backups are global and ordered (up to 10): a provider
 failure selects backup 1, then backup 2, and so on, one supervised turn at a
-time. The picker shows the numbered try order and `[ ]` reorders it; forbidden,
+time. The Main fallbacks tab opens a multi-select picker where Space toggles
+membership and `[` / `]` reorders selected refs; clearing the selection removes
+the global key. Forbidden,
 unavailable, and unauthenticated refs are skipped. When every candidate is
 down, glla cancels the provider-held retry and uses the configured
 `base → 2×base → 4×base → 8×base → 16×base → 5h` ladder (`base` defaults to

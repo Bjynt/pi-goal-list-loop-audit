@@ -120,13 +120,28 @@ test("grouped entry points can open a specific settings section", () => {
   assert.ok(component.visibleRows().every((row) => row.section === "stall-brakes"));
 });
 
-test("render: tabs row lists all 6 sections", () => {
+test("render: tabs row lists all 7 sections", () => {
   const { component } = makeComponent(SAMPLE_ROWS);
   const lines = component.render(120);
   // Tabs row is index 1 (after title).
   for (const s of SETTINGS_SECTIONS) {
     assert.match(lines[1]!, new RegExp(s.label.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")), `tabs row mentions ${s.label}`);
   }
+});
+
+test("main fallback tab is a real drill-in section", () => {
+  const rows = buildSettingsRows({ mainModelFallbacks: ["provider/backup"] } as Settings, {});
+  let selected: string | undefined;
+  const component = new SettingsMenuComponent(
+    { rows, title: "test", initialSection: "main-fallbacks" },
+    () => undefined,
+    THEME,
+    KB,
+    (id) => { selected = id; },
+  );
+  assert.deepEqual(component.visibleRows().map((row) => row.id), ["mainModelFallbacks"]);
+  component.handleInput("\r");
+  assert.equal(selected, "mainModelFallbacks");
 });
 
 test("render: at width=120, the keep-going section renders its rows (v0.28.23: +decisionPopup)", () => {
@@ -227,9 +242,9 @@ test("nav: Tab advances to the next section", () => {
 test("nav: Back-tab (\\x1b[Z) retreats to the previous section", () => {
   const { component } = makeComponent(SAMPLE_ROWS);
   // Move to last section, then back-tab.
-  component.switchSection(5); // → "other" (idx 5)
+  component.switchSection(6); // → "other" (idx 6)
   component.handleInput("\x1b[Z");
-  assert.equal(component.getActiveSectionIdx(), 4); // → "subagents"
+  assert.equal(component.getActiveSectionIdx(), 5); // → "subagents"
 });
 
 test("nav: Right-arrow CSI sequence (\\x1b[C) advances section", () => {
@@ -314,7 +329,7 @@ test("structural: Class implements Component (has render + invalidate + handleIn
   assert.equal(typeof component.invalidate, "function");
 });
 
-test("structural: buildSettingsRows returns ≥20 rows across all 6 sections (coverage)", () => {
+test("structural: buildSettingsRows returns ≥20 rows across all 7 sections (coverage)", () => {
   const rows = buildSettingsRows({} as Settings, {});
   assert.ok(rows.length >= 20, `expected ≥20 rows, got ${rows.length}`);
 });
@@ -370,7 +385,7 @@ test("render: column widths are stable across tab switches (no grid reflow)", ()
   const headerA = component.render(120)[2]!;
   component.switchSection(+1); // backups
   const headerB = component.render(120)[2]!;
-  component.switchSection(+3); // subagents
+  component.switchSection(+4); // subagents
   const headerC = component.render(120)[2]!;
   assert.equal(headerB, headerA, "header must not reflow on tab switch");
   assert.equal(headerC, headerA, "header must not reflow on tab switch");
