@@ -117,6 +117,7 @@ isGoalRevisionCurrent,
   nextHourlyProbeMs,
   type ModelSwitchRecord,
   type ListItem,
+  type ObjectiveRepairTarget,
 } from "../goal-loop-core.js";
 import {
   createContinuationDispatch,
@@ -411,10 +412,19 @@ function queueRepairAheadOfListItem(ctx: ExtensionContext, item: ListItem, asses
   enqueueItems(ctx, [repairObjective], "faulty-objective", { autoActivate: false });
   const added = listQueue().find((queued) => !before.has(queued.id) && queued.objective === repairObjective);
   if (!added) return;
+  const target: ObjectiveRepairTarget = {
+    id: item.id,
+    objective: item.objective,
+    ...(item.verificationContract ? { verificationContract: item.verificationContract } : {}),
+    reasons: [...assessment.reasons],
+    source: "list-activation",
+  };
+  const repair = { ...added, repairTarget: target };
   const rest = listQueue().filter((queued) => queued.id !== added.id);
-  replaceState({ ...state, list: [added, ...rest] });
+  replaceState({ ...state, list: [repair, ...rest] });
+  writeQueueItemFile(ctx.cwd, repair);
   persistState(ctx);
-  appendLedger(ctx.cwd, "faulty_objective_repair_promoted", { goalId: added.id, position: 1, source: "list-activation" });
+  appendLedger(ctx.cwd, "faulty_objective_repair_promoted", { goalId: repair.id, targetId: item.id, position: 1, source: "list-activation", reasons: assessment.reasons });
 }
 
 function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: boolean }): boolean {
@@ -489,6 +499,13 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
   // in archiveCurrentGoal can find the parent at completion time, and so the
   // group-open counter (active child = +1) stays accurate while a child runs.
   if (next.parentId) goal.parentId = next.parentId;
+  if (next.repairTarget) {
+    goal.repairTarget = next.repairTarget;
+    goal.objectiveProvenance = {
+      ...(goal.objectiveProvenance ?? { originalObjective: next.objective }),
+      ...(next.repairTarget.verificationContract ? { originalContract: next.repairTarget.verificationContract } : {}),
+    };
+  }
   if (!setGoal(goal, ctx, "list-cascade")) {
     // The queue item was removed before activation so its sidecar could not
     // masquerade as waiting work. Restore both durable representations when

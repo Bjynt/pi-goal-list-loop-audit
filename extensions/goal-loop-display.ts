@@ -668,10 +668,11 @@ function pausedStatusSuffix(g: Goal, state: State, extras: WidgetExtras | undefi
   const [lifecycle, transition] = pausedLifecycleLines(g, state, extras, now);
   const queueLabel = (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "queue empty";
   const lifecycleText = lifecycle.replace(/^lifecycle: /, "");
+  const repair = g.repairTarget ? ` · replan required: ${truncate(g.repairTarget.objective.replace(/\s+/g, " "), 100)}` : "";
   if (queueFirst) {
-    return ` · ${queueLabel} · ${lifecycleText.replace(` · ${queueLabel}`, "")} · ${transition}`;
+    return ` · ${queueLabel} · ${lifecycleText.replace(` · ${queueLabel}`, "")} · ${transition}${repair}`;
   }
-  return ` · ${lifecycleText} · ${transition}`;
+  return ` · ${lifecycleText} · ${transition}${repair}`;
 }
 
 /**
@@ -1099,6 +1100,9 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     : 48;
   const head = `${icon} ${truncate(g.objective.replace(/\s+/g, " "), objBudget)} ${paint(theme, "dim", "·")} ${segsText}`;
   const lines = [head];
+  if (g.repairTarget) {
+    lines.push(`├─ ${paint(theme, "warning", `REPLAN REQUIRED · original target: ${truncate(g.repairTarget.objective.replace(/\s+/g, " "), Math.max(30, (width ?? 80) - 28))}`)}`);
+  }
   // A model switch crosses an asynchronous boundary while the goal remains
   // active. Keep the complete durable recovery projection on the widget too;
   // otherwise the head says only "active" while pending/attempted/skipped

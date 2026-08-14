@@ -44,6 +44,7 @@ import {
   resolveEffectiveAggressiveSettings,
   isStaleApiError,
   type Goal,
+  type ObjectiveRepairTarget,
 } from "./goal-loop-core.js";
 import {
   createContinuationDispatch,
@@ -131,7 +132,7 @@ export interface ContinuationDeps {
   goalNoun(): string;
   activeGoalSurfaceCommand(command: string): string;
   scheduleSessionTimeout(callback: () => void, delayMs: number): NodeJS.Timeout;
-  enqueueRepairTask(ctx: ExtensionContext, objective: string): void;
+  enqueueRepairTask(ctx: ExtensionContext, objective: string, target?: ObjectiveRepairTarget): void;
 }
 
 let flags: ContinuationFlags;
@@ -831,6 +832,22 @@ export function guardGoalBeforeContinuation(
     return false;
   }
 
+  // A repair/replan card is intentionally not auto-repaired again. Its
+  // original target is durable in repairTarget; only a confirmed task-list
+  // redraft may clear that latch. This prevents the generic repair objective
+  // from becoming an endlessly self-repeating successor.
+  if (goal.repairTarget) {
+    appendLedger(ctx.cwd, "faulty_objective_replan_required", {
+      goalId: goal.id,
+      where,
+      targetId: goal.repairTarget.id,
+      originalObjective: goal.repairTarget.objective,
+      reasons: goal.repairTarget.reasons,
+    });
+    ctx.ui.notify(`Replan required before continuing: ${goal.repairTarget.objective.slice(0, 140)}`, "warning");
+    return false;
+  }
+
   const assessment = assessSuspiciousObjective(goal.objective, goal.verificationContract);
   if (!assessment.suspicious) return true;
 
@@ -852,7 +869,13 @@ export function guardGoalBeforeContinuation(
   if (!hasQueuedObjectiveRepair(goal)) {
     const record = buildQueuedRepairRecord(goal, assessment, nowIso());
     appendObjectiveRepairRecord(goal, record);
-    enqueueRepairTask(ctx, buildRepairTaskObjective(goal, assessment));
+    enqueueRepairTask(ctx, buildRepairTaskObjective(goal, assessment), {
+      id: goal.id,
+      objective: goal.objective,
+      ...(goal.verificationContract ? { verificationContract: goal.verificationContract } : {}),
+      reasons: [...assessment.reasons],
+      source: where,
+    });
     appendLedger(ctx.cwd, "faulty_objective_repair_queued", {
       goalId: goal.id,
       where,
@@ -1097,6 +1120,12 @@ export function continuationPrompt(goal: Goal): string {
   // TODOs from the audit cap, and the full-audit fan-out directive when the
   // objective reads as a survey pivot.
   const directives: string[] = [];
+  if (goal.repairTarget) {
+    const target = goal.repairTarget;
+    directives.push(
+      `## REPLAN REQUIRED — DO NOT COMPLETE THIS REPAIR CARD\n\nThe saved objective below was reviewer/verification text and is preserved as the real target. Redraft a task list for the original target now. Call \`propose_task_list\` with a concise, concrete \`objective\` describing that target and the tasks needed to verify it. The user must confirm the new plan before work resumes. Do not call \`complete_goal\` until the task list is accepted.\n\nOriginal target: ${target.objective}\nOriginal contract: ${target.verificationContract || "(none recorded)"}\nDetected reasons: ${target.reasons.join(", ")}`,
+    );
+  }
   const effSettings = resolveEffectiveAggressiveSettings(loadSettings(freshCtx()?.cwd ?? process.cwd()));
   if (goal.pendingTasks && goal.pendingTasks.length > 0) {
     directives.push(

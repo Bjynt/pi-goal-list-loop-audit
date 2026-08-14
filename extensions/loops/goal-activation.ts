@@ -385,15 +385,17 @@ import { defineGoalRuntimeGlobal } from "./goal-runtime-globals.js";
 /** v0.35.x: queue a repair task without auto-activating over the paused
  * suspicious objective. The normal enqueue path keeps disk-first ordering,
  * duplicate guards, and list provenance intact. */
-export function enqueueFaultRepairTask(ctx: ExtensionContext, objective: string): void {
+export function enqueueFaultRepairTask(ctx: ExtensionContext, objective: string, target?: Goal["repairTarget"]): void {
   const before = new Set((state.list ?? []).map((item) => item.id));
   enqueueItems(ctx, [objective], "faulty-objective", { autoActivate: false });
   const added = (state.list ?? []).find((item) => !before.has(item.id) && item.objective === objective);
   if (!added) return;
+  const repair = target ? { ...added, repairTarget: target } : added;
   const rest = (state.list ?? []).filter((item) => item.id !== added.id);
-  replaceState({ ...state, list: [added, ...rest] });
+  replaceState({ ...state, list: [repair, ...rest] });
+  writeQueueItemFile(ctx.cwd, repair);
   persistState(ctx);
-  appendLedger(ctx.cwd, "faulty_objective_repair_promoted", { goalId: added.id, position: 1 });
+  appendLedger(ctx.cwd, "faulty_objective_repair_promoted", { goalId: repair.id, targetId: target?.id, position: 1, source: target?.source ?? "unknown" });
 }
 
 /** v0.35.x: terminate one confirmed zero-stream host turn and park the

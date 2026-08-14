@@ -381,6 +381,7 @@ import {
 } from "../goal-loop.js";
 import { defineGoalRuntimeGlobal } from "./goal-runtime-globals.js";
 import { chooseObjectiveConflict, liveObjectives, type ObjectiveKind } from "../goal-objective-conflict.js";
+import { assessSuspiciousObjective } from "../faulty-objective-recovery.js";
 
 type AuditorModelCandidate = any;
 type PendingCompletion = any;
@@ -451,6 +452,12 @@ function registerAgentTools(pi: any): void {
         return { content: [{ type: "text", text: `No active goal — it is ${state.goal.status}.` }], details: {} };
       }
       const p = params as { completionSummary?: string; verificationSummary?: string; newObjective?: string };
+      if (state.goal.repairTarget) {
+        return {
+          content: [{ type: "text", text: `This repair card cannot be completed yet. Redraft the original target as a confirmed task list with propose_task_list (include objective: ${state.goal.repairTarget.objective.slice(0, 180)}), then continue the real work.` }],
+          details: {},
+        };
+      }
       // v0.25.0 (contract item 15): atomic objective update + audit in one
       // call — the objective-drift disapprove loop (ship shifted work →
       // auditor disapproves the ORIGINAL objective) ends here. Ledgered so
@@ -1992,6 +1999,9 @@ function registerAgentTools(pi: any): void {
           if (open > 0) labels.push(`group: ${open} open`);
           const tag = labels.length ? ` [${labels.join(", ")}]` : "";
           lines.push(`${flat}. ${sanitizeDisplayText(item.objective)}${tag}`);
+          if (item.repairTarget) {
+            lines.push(`   ↳ REPLAN TARGET: ${sanitizeDisplayText(item.repairTarget.objective)}`);
+          }
           children.forEach((c: any, ci: number) =>
             lines.push(`   ${flat}.${ci + 1} ${sanitizeDisplayText(c.objective)}${c.parallelSafe ? " [parallel]" : ""}`),
           );
@@ -2008,8 +2018,9 @@ function registerAgentTools(pi: any): void {
   pi.registerTool(defineTool({
     name: "propose_task_list",
     label: "Propose task list",
-    description: "Propose a task breakdown for the active goal. Opens the user's Confirm dialog. Limits: 20 top-level tasks, 5 subtasks per task.",
+    description: "Propose a task breakdown for the active goal. During a repair/replan card, include the concrete objective being redrafted. Opens the user's Confirm dialog. Limits: 20 top-level tasks, 5 subtasks per task.",
     parameters: Type.Object({
+      objective: Type.Optional(Type.String({ description: "Required for a repair/replan card: the concrete original target being restored." })),
       tasks: Type.Array(Type.Object({
         title: Type.String(),
         subtasks: Type.Optional(Type.Array(Type.String())),
@@ -2024,17 +2035,28 @@ function registerAgentTools(pi: any): void {
       if (state.goal.taskList && state.goal.taskList.tasks.length > 0) {
         return { content: [{ type: "text", text: "A task list already exists. Use update_task_status / complete_task to work it." }], details: {} };
       }
-      const p = params as { tasks: TaskProposal[] };
+      const p = params as { objective?: string; tasks: TaskProposal[] };
       const liveCtx = currentToolContext(execCtx);
       if (!liveCtx) return staleToolResult();
+      const repairTarget = state.goal.repairTarget;
+      const redraftedObjective = p.objective?.trim() ?? "";
+      if (repairTarget) {
+        if (!redraftedObjective) {
+          return { content: [{ type: "text", text: "This is a repair/replan card. Include a concrete `objective` in propose_task_list so the original target is not lost." }], details: {} };
+        }
+        const assessment = assessSuspiciousObjective(redraftedObjective, repairTarget.verificationContract);
+        if (assessment.suspicious) {
+          return { content: [{ type: "text", text: `The replacement objective is still too weak (${assessment.reasons.join(", ")}). Redraft it as a concrete target, not reviewer instructions.` }], details: {} };
+        }
+      }
       const invalid = validateTaskProposal(p.tasks);
       if (invalid) {
         return { content: [{ type: "text", text: invalid }], details: {} };
       }
-      const preview = p.tasks.map((t, i) => {
+      const preview = `${redraftedObjective ? `Objective: ${redraftedObjective}\n\n` : ""}${p.tasks.map((t, i) => {
         const subs = (t.subtasks ?? []).map((s, j) => `   ${i + 1}.${j + 1} ${s}`).join("\n");
         return `${i + 1}. ${t.title}` + (subs ? `\n${subs}` : "");
-      }).join("\n");
+      }).join("\n")}`;
       const autoAcceptTasks = loadSettings(liveCtx.cwd).autoAcceptDrafts === true;
       let confirmed = false;
       if (autoAcceptTasks) {
@@ -2052,7 +2074,31 @@ function registerAgentTools(pi: any): void {
         return { content: [{ type: "text", text: "Task list rejected by the user. Adjust and propose again." }], details: {} };
       }
       const taskList = buildTaskList(p.tasks);
-      updateGoal({ taskList }, liveCtx);
+      if (repairTarget) {
+        const prior = state.goal;
+        const parsed = extractVerificationContract(redraftedObjective);
+        updateGoal({
+          objective: parsed.objective,
+          ...(parsed.verificationContract ? { verificationContract: parsed.verificationContract } : repairTarget.verificationContract ? { verificationContract: repairTarget.verificationContract } : {}),
+          taskList,
+          repairTarget: undefined,
+          objectiveProvenance: {
+            originalObjective: repairTarget.objective,
+            ...(repairTarget.verificationContract ? { originalContract: repairTarget.verificationContract } : {}),
+            userSeeds: [...(prior.objectiveProvenance?.userSeeds ?? []), redraftedObjective].slice(-10),
+          },
+        }, liveCtx);
+        appendLedger(liveCtx.cwd, "faulty_objective_replanned", {
+          goalId: prior.id,
+          targetId: repairTarget.id,
+          objective: parsed.objective,
+          reasons: repairTarget.reasons,
+          taskCount: taskList.tasks.length,
+        });
+        liveCtx.ui.notify(`Repair target restored and task list accepted: ${parsed.objective.slice(0, 120)}`, "info");
+      } else {
+        updateGoal({ taskList }, liveCtx);
+      }
       const subCount = taskList.tasks.reduce((n, t) => n + (t.subtasks?.length ?? 0), 0);
       return {
         content: [{ type: "text", text: `Task list set: ${taskList.tasks.length} tasks, ${subCount} subtasks. Track progress with complete_task / update_task_status.` }],
