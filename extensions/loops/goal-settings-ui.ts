@@ -808,7 +808,21 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       );
       if (refs === undefined) return;
       saveSettings("global", ctx.cwd, { mainModelFallbacks: refs });
-      ctx.ui.notify(refs.length ? `Main model backups saved in order: ${refs.join(" → ")}` : "Main model backups cleared — recovery will keep probing the current model.", "info");
+      if (!refs.length && state.mainModelRecovery) {
+        const recovery = state.mainModelRecovery;
+        const current = recovery.active ?? recovery.primary;
+        state.mainModelRecovery = {
+          ...recovery,
+          active: current,
+          attempted: [current],
+          skipped: [],
+          pendingModelSwitch: undefined,
+          resumeCurrent: undefined,
+        };
+        clearMainModelRecoveryTimer();
+        persistState(ctx);
+      }
+      ctx.ui.notify(refs.length ? `Main model backups saved in order: ${refs.join(" → ")}` : "Main model backups cleared — any pending backup switch was cancelled and recovery will probe the current model.", "info");
       return;
     }
     case "mainModelFallbackOnRateLimit": {

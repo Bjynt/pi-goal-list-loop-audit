@@ -341,6 +341,27 @@ export function settingsProvenance(cwd: string): Record<keyof Settings, { value:
   return out as Record<keyof Settings, { value: unknown; source: "project" | "global" | "default" }>;
 }
 
+/** Persist settings as one complete file. A picker save must never leave a
+ * truncated JSON document that a later session interprets as "missing" and
+ * replaces with an older/default fallback chain. */
+function writeSettingsAtomically(file: string, value: Record<string, unknown>): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
+  try {
+    const fd = fs.openSync(tmp, "w", 0o600);
+    try {
+      fs.writeFileSync(fd, JSON.stringify(value, null, 2));
+      try { fs.fsyncSync(fd); } catch { /* fsync is best effort on unusual filesystems */ }
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    try { fs.rmSync(tmp, { force: true }); } catch { /* preserve original error */ }
+    throw err;
+  }
+}
+
 export function saveSettings(scope: "global" | "project", cwd: string, patch: Partial<Settings>): void {
   const file = scope === "global" ? globalSettingsPath() : projectSettingsPath(cwd);
   const current = readSettingsFile(file);
@@ -359,6 +380,5 @@ export function saveSettings(scope: "global" | "project", cwd: string, patch: Pa
     if (v === undefined) delete next[k]; // key=unset removes the key
     else next[k] = k === "mainModelFallbacks" ? normalizeMainModelFallbackRefs(v) : v;
   }
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(next, null, 2));
+  writeSettingsAtomically(file, next);
 }

@@ -13,6 +13,7 @@ import type { Goal } from "../extensions/goal-loop-core.js";
 import activate, { __testOnlyLoadState, __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
 import { guardGoalBeforeContinuation, sendContinuation } from "../extensions/goal-continuation.js";
 import { readState } from "../extensions/goal-loop-core.js";
+import { state } from "../extensions/goal-state.js";
 import { MockPi, makeMockCtx, seedGoal, seedState, tick, tmpCwd } from "./harness/mock-pi.js";
 
 function goal(overrides: Partial<Goal> = {}): Goal {
@@ -292,6 +293,36 @@ test("list activation blocks a suspicious queued objective and leaves its repair
   assert.equal(repaired.goal?.repairTarget?.objective, item.objective);
   assert.doesNotMatch(ledger(cwd), /"goal_continuation_sent"/);
   assert.match(ledger(cwd), /"faulty_objective_replan_required"/);
+});
+
+test("repair cards require a concrete replan objective and clear the latch only after confirmation", async () => {
+  const cwd = tmpCwd();
+  const target = "Implement the saved recovery behavior";
+  const g = suspiciousGoal("active", "list");
+  g.objective = "Repair the blocked list item from saved intent";
+  g.repairTarget = { id: "original-1", objective: target, reasons: ["verification-fragment"], source: "test" };
+  seedState(cwd, { goal: g, list: [] });
+  const pi = new MockPi();
+  activate(pi.api);
+  const ctx = await boot(pi, cwd);
+  // Restore the active phase only for the tool contract test; the session
+  // restore guard intentionally parks repair cards before dispatch.
+  state.goal!.status = "active";
+  ctx.ui.confirmImpl = async () => true;
+  ctx.ui.selectImpl = async () => "Yes";
+  const rejected = await pi.runTool("propose_task_list", { tasks: [{ title: "Do the thing" }] }, ctx);
+  assert.match(rejected.content[0]?.text ?? "", /include.*objective/i);
+  assert.equal(readState(cwd).goal?.repairTarget?.objective, target);
+  const accepted = await pi.runTool("propose_task_list", {
+    objective: target,
+    tasks: [{ title: "Implement the recovery behavior" }, { title: "Run focused verification" }],
+  }, ctx);
+  assert.match(accepted.content[0]?.text ?? "", /Task list set/);
+  const restored = readState(cwd);
+  assert.equal(restored.goal?.objective, target);
+  assert.equal(restored.goal?.repairTarget, undefined);
+  assert.equal(restored.goal?.taskList?.tasks.length, 2);
+  assert.match(ledger(cwd), /"faulty_objective_replanned"/);
 });
 
 test("exact queued detached-auditor objective activates without a repair task", async () => {
