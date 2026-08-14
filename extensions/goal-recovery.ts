@@ -534,7 +534,7 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
     const visited = selector.lastVisitedRefs;
     const selectedKey = "model" in pick ? pick.ref.toLowerCase() : undefined;
     const attemptedKeys = new Set(recovery.attempted.map((ref) => ref.toLowerCase()));
-    const skipped = [...(recovery.skipped ?? [])];
+    const skipped = [...(recovery.skipped ?? [])].filter((entry) => !selectedKey || entry.ref.toLowerCase() !== selectedKey);
     for (const ref of visited) {
       const key = ref.toLowerCase();
       if (selectedKey === key) {
