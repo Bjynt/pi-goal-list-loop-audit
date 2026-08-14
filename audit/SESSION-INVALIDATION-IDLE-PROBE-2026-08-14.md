@@ -74,22 +74,26 @@ handoff recovery, and live/ended subagent watchdog behavior.
 The bounded follow-up validation also reports:
 
 ```text
+npm run release:check
+1349 pass
+1 skip
+0 fail
+Ran 1350 tests across 112 files.
+jiti: 1 pass, 0 fail
 npx tsc --noEmit: exit 0 (TypeScript: No errors found)
+npm pack --dry-run: pi-goal-list-loop-audit@0.34.138
 git diff --check: exit 0
 ```
 
-The full suite and final release-gate evidence remain to be rerun after this
-follow-up before requesting detached approval.
+The release check passed without changing the package version or publishing.
 
 ## Release boundary
-
-Before approval/publication:
 
 Current pre-release state after the follow-up:
 
 ```text
 version=0.34.138
-HEAD=b3a64945be61481a571f175fad65c8b4428da4e
+implementation_commits=b3a64945be61481a571f175fad65c8b4428da4e2,11646602
 HEAD_tags=
 release_tag=8e83f127889c8d54a7b0342afd4c6d273c64e762
 ```
