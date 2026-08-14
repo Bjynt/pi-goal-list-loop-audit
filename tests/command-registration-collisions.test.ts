@@ -20,8 +20,8 @@
 //      lacks.
 //   2. A LIVE RIG SCAN: resolves the real extension load order (project
 //      .pi/extensions → agent dir extensions → project packages → global
-//      settings.json packages), scans every loaded extension's entry source
-//      for registerCommand("list"|"glla"|"goal"|"loop"), computes the
+//      settings.json packages), scans every loaded extension's entry plus its
+//      local static-import graph for registerCommand("list"|"glla"|"goal"|"loop"), computes the
 //      routing table with the model's rule, and RECORDS it to
 //      audit/command-registration-routing.md. When the live scan runs but
 //      nothing registers the goal family, the report records explicit
@@ -349,7 +349,9 @@ test("v0.34.55: live rig — the routing table records duplicate-command routing
     if (files.length > 0) loaded.push({ source: e.source, files });
   }
 
-  // Scan every loaded entry source for the goal-family commands.
+  // Scan every loaded entry and its local static-import graph for the
+  // goal-family commands; runtime registrations often live in an imported
+  // activation module rather than in pi's manifest entry itself.
   const perCommand = new Map<string, Array<{ source: string; entry: string }>>();
   for (const e of loaded) {
     for (const reg of scanEntryFiles(e)) {
