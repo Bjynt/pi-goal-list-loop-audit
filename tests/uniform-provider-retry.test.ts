@@ -52,7 +52,7 @@ test("v0.34.51: the billing manual-hold is gone — billing retries like everyth
 
 test("v0.34.51: quota-only parking gates are widened to every non-transient failure", () => {
   assert.ok(!SRC.includes('lastMainModelFailure?.kind === "quota"'), "loop-brake quota-only gate gone");
-  assert.match(SRC, /sr === "error" && lastMainModelFailure && requiresMainModelRecovery\(lastMainModelFailure\)/);
+  assert.match(SRC, /const durableProviderFailure = lastMainModelFailure[\s\S]{0,240}requiresMainModelRecovery\(lastMainModelFailure\)/);
   assert.ok(!SRC.includes('(failure.kind === "quota" && state.goal?.status === "active")'), "send-storm quota-only gate gone");
   // Non-transient failures park into the durable envelope; explicit
   // request-rate failures are handled by the same current-model recovery

@@ -434,8 +434,9 @@ Open `/glla` to edit these settings in the table (the rows show effective values
 
 The argument namespace is reserved for actions such as `/glla status`, `/glla
 resume`, `/glla cancel`, `/glla stats`, `/glla audits`, `/glla tooloverride`,
-and `/glla wipe`. Cancel stops the active objective; wipe clears all live state
-while preserving history.
+`/glla fallbacks clear`, and `/glla wipe`. `fallbacks clear` atomically removes
+the global backup chain and cancels any pending backup switch. Cancel stops the
+active objective; wipe clears all live state while preserving history.
 There is no top-level `/glla key=value` setting syntax.
 
 Resolution per key: **project > global > defaults** — EXCEPT `autoResume` and
