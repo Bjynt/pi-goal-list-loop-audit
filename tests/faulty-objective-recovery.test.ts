@@ -288,7 +288,10 @@ test("list activation blocks a suspicious queued objective and leaves its repair
   await tick(80);
   const repaired = readState(cwd);
   assert.equal(repaired.goal?.objective, "Repair the blocked list item from saved intent");
-  assert.match(ledger(cwd), /"goal_continuation_sent"/);
+  assert.equal(repaired.goal?.repairTarget?.id, item.id);
+  assert.equal(repaired.goal?.repairTarget?.objective, item.objective);
+  assert.doesNotMatch(ledger(cwd), /"goal_continuation_sent"/);
+  assert.match(ledger(cwd), /"faulty_objective_replan_required"/);
 });
 
 test("exact queued detached-auditor objective activates without a repair task", async () => {

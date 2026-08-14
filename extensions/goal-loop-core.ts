@@ -1314,6 +1314,15 @@ export function renderGoalMarkdown(goal: Goal): string {
   lines.push("");
   lines.push("> " + goal.objective);
   lines.push("");
+  if (goal.repairTarget) {
+    lines.push("## Replan target (preserved)");
+    lines.push("");
+    lines.push(`- Source item: \`${goal.repairTarget.id}\``);
+    lines.push(`- Original objective: ${goal.repairTarget.objective}`);
+    if (goal.repairTarget.verificationContract) lines.push(`- Original contract: ${goal.repairTarget.verificationContract}`);
+    lines.push(`- Detected reasons: ${goal.repairTarget.reasons.join(", ")}`);
+    lines.push("");
+  }
   if (goal.completionSummary) {
     // v0.34.91: the agent's completion recap lands in the durable record
     // (active goal .md → archive), so the one-line widget recap has a
