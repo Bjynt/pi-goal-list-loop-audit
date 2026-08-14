@@ -39,6 +39,16 @@ export interface LoopRefinement {
  * unlike stopped loops which are genuinely gone. */
 export const HELD_ON_RESTORE = "held: restored in a fresh session";
 
+/** Reasons that represent a lifecycle/recovery hold rather than deliberate
+ * operator intent. These may auto-resume on a validated successor session;
+ * user stops, provider/manual safety stops, plateaus, and stuck brakes do not. */
+export function isLifecycleHeldLoopReason(reason?: string): boolean {
+  return reason === HELD_ON_RESTORE
+    || !!reason?.startsWith("extension api stale")
+    || !!reason?.startsWith("stalled:")
+    || !!reason?.startsWith("send-retry storm:");
+}
+
 export interface LoopState {
   target: string;
   /** v0.23.0: optional — a metricless "spec loop" (measure=none) has no

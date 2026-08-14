@@ -330,6 +330,7 @@ import {
   listAuditFanoutItemText,
   type LoopTickOutcome,
   HELD_ON_RESTORE,
+  isLifecycleHeldLoopReason,
   type LoopState,
 } from "../goal-loop-forever.js";
 import {
