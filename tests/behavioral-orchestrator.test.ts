@@ -688,7 +688,7 @@ test("v0.35.x: a successor auto-resumes lifecycle-held loops intact but preserve
     recentTexts: ["prior-text"],
   }) });
   const first = await freshSession(cwd, "startup");
-  const held = readState(cwd).loop as Record<string, unknown>;
+  const held = readState(cwd).loop as unknown as Record<string, unknown>;
   assert.equal(held.active, false, "human startup first parks the active loop");
   assert.equal(held.stopReason, HELD, "the lifecycle hold is explicit");
   const heldSnapshot = { ...held };
@@ -699,7 +699,7 @@ test("v0.35.x: a successor auto-resumes lifecycle-held loops intact but preserve
   const replacement = ownerCtx(cwd);
   pi.sent.length = 0;
   await pi.fire("session_start", { reason: "reload" }, replacement);
-  const resumed = readState(cwd).loop as Record<string, unknown>;
+  const resumed = readState(cwd).loop as unknown as Record<string, unknown>;
   assert.equal(resumed.active, true, "the successor resumes the lifecycle-held loop");
   assert.equal(resumed.stopReason, undefined, "the lifecycle hold marker is consumed");
   const resumedSnapshot = { ...resumed };
