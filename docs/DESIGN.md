@@ -200,9 +200,11 @@ architectural decisions that changed the SHAPE of the system:
   walk the list left-to-right. Explicit HTTP 429/request-rate failures also
   walk the list when global `mainModelFallbackOnRateLimit` is on (default); off
   keeps them on the current model with bounded retry + hourly probe cadence.
-  The detached auditor's model cascade remains a separate subsystem. The picker
-  renders and reorders the numbered chain, and the attempted cursor is
-  durable, so a reload cannot restart at an already-failed rung.
+  The detached auditor's model cascade remains a separate subsystem. The
+  dedicated **Main fallbacks** settings tab opens a multi-select editor: Space
+  toggles membership, `[` / `]` reorders selected refs, and clearing the list
+  removes the global key. The attempted cursor is durable, so a reload cannot
+  restart at an already-failed rung.
 - **No accepted-send inference**: model rotation occurs only after a provider
   failure is observed (or after a 15-minute, five-minute-silent provider-held
   retry storm). A successful `sendMessage()` return is never treated as a
