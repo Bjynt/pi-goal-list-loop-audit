@@ -1039,13 +1039,18 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       hadShutdown: ownerClaim.hadShutdown,
       previousPid: ownerClaim.previousPid,
     }), ownerClaim.previousShutdownReason);
+    // A pending list journal may use the looser owner-shutdown fallback only
+    // when the primary handoff marker is genuinely absent. If a marker is
+    // present but malformed/foreign/mismatched, its rejection is authoritative
+    // and the journal must be discarded rather than replayed via hadShutdown.
+    const handoffMarkerPresent = fs.existsSync(sessionHandoffPath(ctx.cwd));
     const handoffResume = consumeSessionHandoff(ctx.cwd, ownerClaim.previousGeneration, ownerClaim.previousOwnerSessionId);
     if (handoffResume) appendLedger(ctx.cwd, "session_handoff_resumed", { pid: process.pid, reason: startReason });
     const listOperationLifecycleResume = handoffResume
-      || (ownerClaim.hadShutdown && ownerClaim.previousShutdownReason?.trim().toLowerCase() !== "quit");
+      || (!handoffMarkerPresent && ownerClaim.hadShutdown && ownerClaim.previousShutdownReason?.trim().toLowerCase() !== "quit");
     const pendingListOperations = listOperationLifecycleResume
       ? consumePendingListOperations(ctx.cwd, ownerClaim.previousGeneration, ownerClaim.previousOwnerSessionId)
-      : (discardPendingListOperations(ctx.cwd, "handoff-not-resumed"), [] as string[]);
+      : (discardPendingListOperations(ctx.cwd, handoffMarkerPresent ? "handoff-rejected" : "handoff-not-resumed"), [] as string[]);
     const rebindResume = ownerClaim.rebind;
     if (rebindResume) appendLedger(ctx.cwd, "rebind_resume", { pid: process.pid });
     const explicitRecovery = handoffResume || recoveryResume || rebindResume;

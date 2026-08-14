@@ -131,6 +131,49 @@ test("v0.35.x: a mutating /list command during handoff is replayed once by the s
 // Phase 1: before rebind — honest results, no pretend success
 // ────────────────────────────────────────────────────────────────────
 
+test("v0.35.x: a mismatched handoff discards a deferred list command without replay", async () => {
+  __testOnlyResetStaleFlag();
+  setGlobalAutoResume(false);
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    goal: {
+      id: "handoff-owner-goal",
+      objective: "owner goal — done when pinned",
+      status: "active",
+      policy: "goal",
+      autoContinue: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  });
+  const first = await freshSession(cwd, "startup");
+  await pi.command("goal", "resume", first);
+  await tick();
+  await pi.fire("session_shutdown", { reason: "reload" }, first);
+  invalidateHostSession(pi, first);
+
+  await pi.command("list", "add MUST-NOT-REPLAY — done when rejected", first);
+  const pendingPath = path.join(cwd, ".pi-glla", "pending-list-operation.json");
+  const handoffPath = path.join(cwd, ".pi-glla", "session-handoff.json");
+  assert.ok(fs.existsSync(pendingPath));
+  const handoff = JSON.parse(fs.readFileSync(handoffPath, "utf8")) as Record<string, unknown>;
+  fs.writeFileSync(handoffPath, JSON.stringify({ ...handoff, generation: Number(handoff.generation) + 1, ownerSessionId: "foreign-owner" }));
+
+  pi.sendMessageError = null;
+  pi.sessionNameError = null;
+  const replacement = ownerCtx(cwd);
+  await pi.fire("session_start", { reason: "reload" }, replacement);
+  await tick();
+
+  const rebound = readState(cwd);
+  assert.equal(rebound.list?.some((item) => item.objective.includes("MUST-NOT-REPLAY")), false, "a rejected handoff never adds its command to the queue");
+  assert.equal(fs.existsSync(pendingPath), false, "the deferred journal is discarded with the rejected marker");
+  const ledger = ledgerText(cwd);
+  assert.match(ledger, /session_handoff_rejected/);
+  assert.match(ledger, /list_operation_handoff_discarded/);
+  assert.doesNotMatch(ledger, /list_operation_handoff_replayed/);
+});
+
 test("v0.34.54: /list show before rebind — honest stale result: the recovery warning accompanies the read", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
