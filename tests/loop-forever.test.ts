@@ -24,6 +24,8 @@ import {
   auditMeasureCmd,
   auditTarget,
   AUDIT_FINDINGS_REL,
+  HELD_ON_RESTORE,
+  isLifecycleHeldLoopReason,
   type LoopState,
 } from "../extensions/goal-loop-forever.ts";
 import { readGoalRuntimeSource } from "./harness/goal-source.js";
@@ -45,6 +47,18 @@ function freshLoop(overrides: Partial<LoopState> = {}): LoopState {
     ...overrides,
   };
 }
+
+test("isLifecycleHeldLoopReason separates recoverable lifecycle holds from deliberate/safety stops", () => {
+  assert.equal(isLifecycleHeldLoopReason(HELD_ON_RESTORE), true);
+  assert.equal(isLifecycleHeldLoopReason("extension api stale: host replacement"), true);
+  assert.equal(isLifecycleHeldLoopReason("stalled: continuation did not land"), true);
+  assert.equal(isLifecycleHeldLoopReason("send-retry storm: no turn"), true);
+  assert.equal(isLifecycleHeldLoopReason("stopped by user (/loop stop)"), false);
+  assert.equal(isLifecycleHeldLoopReason("stopped by user — 3 consecutive aborts"), false);
+  assert.equal(isLifecycleHeldLoopReason("provider errors — quota"), false);
+  assert.equal(isLifecycleHeldLoopReason("plateau — no improvement"), false);
+  assert.equal(isLifecycleHeldLoopReason("stuck — repeated output"), false);
+});
 
 // ---- parseMetric ----
 
