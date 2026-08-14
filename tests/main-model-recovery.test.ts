@@ -137,6 +137,8 @@ test("main model errors distinguish quota recovery from deterministic prompt wal
   assert.equal(classifyMainModelFailure("HTTP 429 request cancelled by upstream").kind, "rate-limit");
   assert.equal(classifyMainModelFailure("too-many-requests").kind, "rate-limit");
   assert.equal(classifyMainModelFailure("too_many_requests").kind, "rate-limit");
+  assert.equal(classifyMainModelFailure("request rate exceeded").kind, "rate-limit");
+  assert.equal(classifyMainModelFailure("request-rate exceeded").kind, "rate-limit");
   assert.equal(classifyMainModelFailure("429 Too Many Requests").quotaSignal, "rate-limit");
   assert.equal(classifyMainModelFailure("HTTP 429 — Token Plan output token limit reached").kind, "rate-limit");
   assert.equal(classifyMainModelFailure("HTTP 429 — Token Plan output token limit reached").quotaSignal, "rate-limit");
@@ -145,6 +147,7 @@ test("main model errors distinguish quota recovery from deterministic prompt wal
   assert.equal(classifyMainModelFailure("503 temporarily unavailable").kind, "transient");
   assert.equal(isMainModelFallbackFailure(classifyMainModelFailure("usage limit reached")), true);
   assert.equal(isMainModelFallbackFailure(classifyMainModelFailure("429 too many requests")), false);
+  assert.equal(isMainModelFallbackFailure(classifyMainModelFailure("request rate exceeded")), false);
   assert.equal(isMainModelFallbackFailure(classifyMainModelFailure("503 temporarily unavailable")), false);
   assert.equal(classifyMainModelFailure("429 Token Plan rate limit reached").kind, "rate-limit");
   assert.equal(classifyMainModelFailure("429 Token Plan rate limit reached").quotaSignal, "rate-limit");

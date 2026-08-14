@@ -2109,6 +2109,21 @@ test("main-model recovery external notices are deduplicated per provider episode
   pi.execHandler = null;
 });
 
+test("request-rate prose stays on the current model even when backups are configured", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ mainModelFallbacks: ["provider/backup"] }));
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "request-rate stays current — done when pinned", ctx);
+  await tick();
+  const before = readLedger(cwd).filter((entry) => entry.type === "main_model_failover").length;
+  await pi.fire("agent_end", { messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: "request rate exceeded" }] }, ctx);
+  await tick();
+  assert.equal(readLedger(cwd).filter((entry) => entry.type === "main_model_failover").length, before);
+  assert.equal(readState(cwd).mainModelRecovery?.quotaSignal, "rate-limit");
+});
+
 test("explicit 429 rate limiting stays on the current model even when backups are configured", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();

@@ -114,7 +114,7 @@ export function classifyMainModelFailure(error: string | undefined, opts?: { isC
   // An explicit HTTP 429/rate-limit signal outranks overlapping prose such
   // as "Token Plan" or "output token limit": it means too many requests,
   // not a deterministic prompt-size failure, and must keep retrying.
-  const explicitRateLimit = /\b429\b|too[\s_-]+many[\s_-]+requests|rate[\s_-]*limit|throttl(?:e|ed|ing)/i.test(raw);
+  const explicitRateLimit = /\b429\b|too[\s_-]+many[\s_-]+requests|request[\s_-]*rate(?:\s+(?:exceeded|limit|limited))?|rate[\s_-]*limit|throttl(?:e|ed|ing)/i.test(raw);
   if (explicitRateLimit) {
     const parsed = parseQuotaError(raw);
     return {

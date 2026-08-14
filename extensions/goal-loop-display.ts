@@ -697,14 +697,14 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
   const held = heldLoop(state);
   if (state.loop && !state.loop.active && state.mainModelRecovery?.kind === "loop") {
     const summary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
-    return `glla: ${paint(theme, "warning", "⏳ loop recovery")}${summary.slice(0, 3).map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
+    return `glla: ${paint(theme, "warning", "⏳ loop recovery")}${summary.map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
   }
   // v0.28.17: a held loop rides every goal state as a compact suffix.
   const heldSuffix = held ? paint(theme, "warning", " · loop⏸held") : "";
   if (!g) {
     if (state.mainModelRecovery) {
       const summary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
-      return `glla: ${paint(theme, "warning", "⏳ main-model recovery")}${summary.slice(0, 3).map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
+      return `glla: ${paint(theme, "warning", "⏳ main-model recovery")}${summary.map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
     }
     if (held) return `glla: loop ${paint(theme, "warning", "⏸ held")} · iter ${held.iteration} — /loop to resume`;
     return undefined;
@@ -815,6 +815,11 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     return `glla: ${paint(theme, pauseIsError(g) ? "error" : "warning", label)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
   }
   if (g.status === "active") {
+    const mainRecovery = state.mainModelRecovery;
+    if (mainRecovery) {
+      const summary = formatMainModelRecoveryStatus(mainRecovery, extras?.mainModelFallbacks);
+      return `glla: ${paint(theme, "warning", "⏳ main-model recovery")}${summary.map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
+    }
     // v0.28.1 (S1/S2): a stale-handle interrupt keeps the goal ACTIVE.
     // It outranks any older operational note on the same state snapshot.
     if (g.interruptedAt) {
@@ -884,9 +889,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     // "waiting for quota reset at HH:MM" — the window is not a guaranteed
     // reset (note.md 2026-08-10) and the :00:30 hourly probe may pick the
     // work up earlier.
-    const recovery = state.mainModelRecovery;
-    const blockedByQuota = queued && recovery && recovery.retryAt;
-    const quotaSuffix = blockedByQuota ? ` · parked on provider wall` : "";
+    const quotaSuffix = "";
     // Keep the screenshot-proven order: state, elapsed, freshness, then
     // queue/task context. It scans like a compact instrument readout and
     // remains useful when the above-editor card is hidden or scrolled away.
