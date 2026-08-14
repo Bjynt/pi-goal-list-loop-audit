@@ -9,10 +9,10 @@
 
 | command | registrants | bare name owned? | winner (source) | winner (entry) | suffixed names |
 |---|---|---|---|---|---|
-| glla | 0 | no registrant | — | — |  |
-| goal | 0 | no registrant | — | — |  |
-| list | 0 | no registrant | — | — |  |
-| loop | 0 | no registrant | — | — |  |
+| glla | 1 | yes | global packages: <project> | extensions/loops/goal-activation.ts |  |
+| goal | 1 | yes | global packages: <project> | extensions/loops/goal-activation.ts |  |
+| list | 1 | yes | global packages: <project> | extensions/loops/goal-activation.ts |  |
+| loop | 1 | yes | global packages: <project> | extensions/loops/goal-activation.ts |  |
 
 ## Installed-but-unconfigured goal-family registrants (hazard list)
 
@@ -20,6 +20,7 @@
 - `npm:@fractaal/pi-goal-x` (installed, NOT configured) registers: goal
 - `npm:@capyup/pi-goal` (installed, NOT configured) registers: goal
 - `npm:pi-goal-loop-audit` (installed, NOT configured) registers: goal, list, loop
+- `npm:pi-codex-goal` (installed, NOT configured) registers: goal
 - `npm:pi-goal-list-loop-audit` (installed, NOT configured) registers: goal, glla, list, loop
 - `npm:pi-goal-x` (installed, NOT configured) registers: goal
 - `npm:@misunders2d/pi-goal` (installed, NOT configured) registers: goal

@@ -509,6 +509,32 @@ test("paused lifecycle projection names owner, queue, last activity, and next tr
   assert.ok(widget.some((line) => line.includes("last activity 2m 00s ago") && line.includes("next: retrying automatically")), widget.join("\\n"));
 });
 
+test("active/in-flight main-model recovery keeps full chain state on status and widget", () => {
+  const state = {
+    goal: goalOf({ status: "active", objective: "continue on the selected model — done when pinned" }),
+    list: [],
+    mainModelRecovery: {
+      primary: "provider/primary",
+      active: "provider/primary",
+      attempted: ["provider/primary"],
+      attempts: 1,
+      pendingModelSwitch: "provider/backup-two",
+      skipped: [{ ref: "provider/backup-one", reason: "unregistered" as const }],
+      reason: "model switch in flight",
+      kind: "goal" as const,
+    },
+  } as State;
+  const extras = { mainModelFallbacks: ["provider/backup-one", "provider/backup-two"] };
+  const status = buildStatusText(state, null, NOW, undefined, extras)!;
+  const widget = buildWidgetLines(state, null, NOW, undefined, undefined, extras)!;
+  for (const surface of [status, widget.join("\\n")]) {
+    assert.ok(surface.includes("Order: provider/primary → provider/backup-one → provider/backup-two"), surface);
+    assert.ok(surface.includes("Pending switch: provider/backup-two"), surface);
+    assert.ok(surface.includes("Attempted: provider/primary"), surface);
+    assert.ok(surface.includes("Skipped: provider/backup-one (unregistered)"), surface);
+  }
+});
+
 test("standalone main-model recovery remains visible when no goal is active", () => {
   const state = {
     goal: null,
