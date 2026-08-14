@@ -634,9 +634,9 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   // The stale process loses its ticker immediately, so paint the durable
   // interrupted state synchronously while the old UI handle can still accept
   // updates. The next session_start paints it again from disk.
-  refreshUI(ctx);
-  ctx.ui.notify(`glla: ${guidance}`, "warning");
-  notifyExternal(ctx, `glla: extension api stale — waiting for a fresh session_start; restart pi normally only if no replacement arrives. (${where})`);
+  try { refreshUI(ctx); } catch { /* stale UI handle is best effort */ }
+  try { ctx.ui.notify(`glla: ${guidance}`, "warning"); } catch { /* stale UI handle is best effort */ }
+  try { notifyExternal(ctx, `glla: extension api stale — waiting for a fresh session_start; restart pi normally only if no replacement arrives. (${where})`); } catch { /* stale notifier is best effort */ }
 }
 
 /** v0.34.16: lifecycle handoff replaces terminal keystroke injection. A
