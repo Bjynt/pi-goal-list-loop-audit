@@ -194,6 +194,26 @@ test("main backup editor refuses the 11th typed model and keeps the first ten in
   }
 });
 
+test("main-model fallback reload preserves explicit order and does not reintroduce a cleared key", async () => {
+  try {
+    const cwd = tmpCwd();
+    const refs = ["persisted/first", "persisted/second"];
+    const ctx = makeMockCtx(cwd);
+    ctx.ui.inputImpl = async (title) => title.startsWith("Main session model backups") ? refs.join(",") : undefined;
+    await handleSettingChoice("mainModelFallbacks", ctx as unknown as ExtensionContext);
+    assert.deepEqual(loadSettings(cwd).mainModelFallbacks, refs, "explicitly selected order is persisted");
+    assert.deepEqual(loadSettings(cwd).mainModelFallbacks, refs, "explicit order survives reload");
+
+    ctx.ui.inputImpl = async () => "   ";
+    await handleSettingChoice("mainModelFallbacks", ctx as unknown as ExtensionContext);
+    assert.equal("mainModelFallbacks" in readGlobal(), false, "clearing removes the persisted key");
+    assert.deepEqual(loadSettings(cwd).mainModelFallbacks, [], "reload uses the empty default");
+    assert.equal("mainModelFallbacks" in readGlobal(), false, "reload does not reintroduce the absent key");
+  } finally {
+    restoreGlobal();
+  }
+});
+
 test("v0.34.118: backup and forbidden editors enforce mutual exclusion even in headless input mode", async () => {
   try {
     fs.writeFileSync(GLOBAL_FILE, JSON.stringify({ forbiddenModels: ["sonnet"] }, null, 2));
