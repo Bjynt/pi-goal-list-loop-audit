@@ -18,55 +18,80 @@ ExtensionAPI probe when all of these are false:
 - the goal is not `active` or `auditing`;
 - no loop is active;
 - no stale-recovery debt exists;
-- no tracked subagent exists.
+- no **live** tracked subagent exists.
 
-The raw probe remains in place for live/recoverable work, so a genuinely lost
-host handle cannot silently strand active work.
+Ended subagent probes remain available briefly for HUD/final-state reads, but
+`hasLiveSubagentHangProbes()` ignores them for host ownership and prunes them
+after the existing one-hour retention window. Terminal `complete`/`aborted`
+goals cannot re-arm stale-recovery probing merely because an old interruption
+marker remains. The raw probe remains in place for live/recoverable work, so a
+genuinely lost host handle cannot silently strand active work.
+
+## Follow-up to detached disapproval
+
+The first detached verdict was `<disapproved/>` because the prior regression
+seeded `goal: null`/`list: []` rather than explicit completed, paused, and held
+states, and because an ended subagent probe still made `subagentHangProbes`
+nonempty until pruning. The required raw objection was:
+
+```text
+Ignore ended subagent probes in the idle heartbeat guard (or remove them on completion), and add a regression reproducing the disposed-handle case.
+Add explicit completed, paused, held, and stale-recovery-debt behavioral tests.
+```
+
+Both objections are now addressed. `tests/host-session-lost.test.ts` covers:
+
+```text
+(pass) completed idle state does not probe a disposed session handle
+(pass) paused idle state does not probe a disposed session handle
+(pass) held loop does not probe a disposed session handle
+(pass) ended subagent probes do not keep idle state probing a disposed handle
+(pass) stale-recovery debt still probes for same-process self-heal
+```
 
 ## Focused regression evidence
 
 Command:
 
 ```text
-bun test --parallel=1 --max-concurrency=1 --timeout=20000 tests/stale-self-heal.test.ts tests/host-session-lost.test.ts tests/stale-api-terminal.test.ts tests/lifecycle-recovery.test.ts
+bun test --parallel=1 --max-concurrency=1 --timeout=20000 tests/stale-self-heal.test.ts tests/host-session-lost.test.ts tests/stale-api-terminal.test.ts tests/lifecycle-recovery.test.ts tests/subagent-hang-detection.test.ts
 ```
 
 Raw result:
 
 ```text
-34 pass
+53 pass
 0 fail
-Ran 34 tests across 4 files.
+Ran 53 tests across 5 files.
 ```
 
-The new behavioral regression is:
-
-```text
-(pass) idle completed/held state does not probe a disposed session handle
-```
-
-The existing active-work protections also remain green, including genuine
-silent host-loss classification, stale self-heal, stale terminal fencing, and
-lifecycle handoff recovery.
+The existing active-work protections remain green, including genuine silent
+host-loss classification, stale self-heal, stale terminal fencing, lifecycle
+handoff recovery, and live/ended subagent watchdog behavior.
 
 ## Full validation evidence
 
+The bounded follow-up validation also reports:
+
 ```text
-1345 pass
-1 skip
-0 fail
-Ran 1346 tests across 112 files.
-TypeScript: No errors found
+npx tsc --noEmit: exit 0 (TypeScript: No errors found)
+git diff --check: exit 0
 ```
 
-`git diff --check` passes and the working tree is clean.
+The full suite and final release-gate evidence remain to be rerun after this
+follow-up before requesting detached approval.
 
 ## Release boundary
 
 Before approval/publication:
 
-```json
-{"version":"0.34.138","headTags":"","releaseTag":"8e83f127889c8d54a7b0342afd4c6d273c64e762"}
+Current pre-release state after the follow-up:
+
+```text
+version=0.34.138
+HEAD=b3a64945be61481a571f175fad65c8b4428da4e
+HEAD_tags=
+release_tag=8e83f127889c8d54a7b0342afd4c6d273c64e762
 ```
 
 No package version, release tag, or npm publication was changed by this
@@ -74,6 +99,7 @@ bounded audit.
 
 ## Conclusion
 
-The false invalidation loop is covered by source and behavioral evidence while
-genuine active-work detection remains protected. This report is submitted for
-independent detached approval before the patch version is updated.
+The false invalidation loop is now covered by explicit terminal/paused/held,
+ended-subagent, stale-debt, and active-work evidence. This report is ready for
+the final full-suite gate and independent detached approval before the patch
+version is updated.
