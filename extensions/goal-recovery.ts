@@ -532,10 +532,20 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
   for (;;) {
     const pick = selector.selectNextValid(scope, current, recovery.attempted);
     const visited = selector.lastVisitedRefs;
+    const selectedKey = "model" in pick ? pick.ref.toLowerCase() : undefined;
     const attemptedKeys = new Set(recovery.attempted.map((ref) => ref.toLowerCase()));
     const skipped = [...(recovery.skipped ?? [])];
     for (const ref of visited) {
       const key = ref.toLowerCase();
+      if (selectedKey === key) {
+        // lastVisitedRefs includes the successful selector hit as well as
+        // rejected refs. It belongs in attempted, but it is not skipped.
+        if (!attemptedKeys.has(key)) {
+          recovery.attempted.push(ref);
+          attemptedKeys.add(key);
+        }
+        continue;
+      }
       if (!attemptedKeys.has(key)) {
         recovery.attempted.push(ref);
         attemptedKeys.add(key);

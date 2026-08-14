@@ -107,11 +107,14 @@ test("runtime fallback walk uses one supervised model at a time and preserves le
     assert.equal(await tryMainModelFallback(ctx, accountFailure), true);
     assert.deepEqual(calls, ["provider/first"], "the first failure selects only the first eligible backup");
     assert.deepEqual(state.mainModelRecovery?.attempted, ["provider/primary", "provider/blocked", "provider/first"]);
+    assert.deepEqual(state.mainModelRecovery?.skipped, [{ ref: "provider/blocked", reason: "forbidden" }]);
+    assert.equal(state.mainModelRecovery?.skipped?.some((entry) => entry.ref === "provider/first"), false, "the selected backup is not labelled skipped");
 
     ctx.model = { provider: "provider", id: "first" };
     assert.equal(await tryMainModelFallback(ctx, accountFailure), true);
     assert.deepEqual(calls, ["provider/first", "provider/second"], "the next failure advances to the next backup");
     assert.deepEqual(state.mainModelRecovery?.attempted, ["provider/primary", "provider/blocked", "provider/first", "provider/second"]);
+    assert.equal(state.mainModelRecovery?.skipped?.some((entry) => entry.ref === "provider/first" || entry.ref === "provider/second"), false, "successful backups remain absent from skipped");
 
     // An explicit HTTP 429 is request-rate recovery on the current model; it
     // must not call setModel even when backups are configured.
