@@ -1,0 +1,101 @@
+// pi-goal-list-loop-audit — v0.2.0
+// tests/hegemon-queue-unblock-evidence.test.ts
+//
+// Evidence for repair goal 20260814124631-4wstd3 (hegemon list-queue repair).
+// Reproduces the REAL blocked cascade: a 43-item list whose head holds 12
+// empty-objective items (20260811120417-*) trips faulty_objective_list_activation_blocked;
+// the same queue with those 12 removed (31 items, head = main-menu-deeper-polish)
+// activates cleanly with no blocked event. This is the harness-level proof of
+// the auditor's required fix #3 ("verify the unblock") at activation granularity.
+
+import { test, afterEach } from "node:test";
+import * as assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
+import { readState } from "../extensions/goal-loop-core.js";
+import { MockPi, makeMockCtx, seedState, tick, tmpCwd } from "./harness/mock-pi.js";
+
+const EMPTY_IDS = [
+  "20260811120417-t12dn0",
+  "20260811120417-0y3e1s",
+  "20260811120417-1zduyg",
+  "20260811120417-5ib013",
+  "20260811120417-5m88cw",
+  "20260811120417-5ygj7d",
+  "20260811120417-88l2xy",
+  "20260811120417-doefpl",
+  "20260811120417-k3len7",
+  "20260811120417-t18ljq",
+  "20260811120417-t9pz2o",
+  "20260811120417-uemv69",
+];
+
+const REAL_HEAD = {
+  id: "20260811120442-b5waz6",
+  objective:
+    "main-menu-deeper-polish: resolve the 4 vision-flagged items on / (LORD VARK caption framing, v1.0.0-PREP version chip styling, tagline container panel, music-toggle frame). MmX vision re-rate targets ≥9/10. Single focused change — menu page only.",
+  addedAt: "2026-08-11T12:04:42.000Z",
+};
+
+function realItem(i: number) {
+  return {
+    id: `20260811120442-real-${String(i).padStart(3, "0")}`,
+    objective: `real backlog item ${i}: polish the page to premium standard`,
+    addedAt: "2026-08-11T12:04:42.000Z",
+  };
+}
+
+function ledger(cwd: string): string {
+  return fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+}
+
+async function boot(pi: MockPi, cwd: string): Promise<ReturnType<typeof makeMockCtx>> {
+  __testOnlyResetOwnerSession();
+  const ctx = makeMockCtx(cwd, { sessionManager: { name: `unblock-${Date.now()}-${Math.random()}` } });
+  await pi.fire("session_start", { reason: "startup" }, ctx);
+  await tick(80);
+  return ctx;
+}
+
+test("REAL SHAPE: 12 empty head items block list activation exactly as in the hegemon ledger", async () => {
+  const cwd = tmpCwd();
+  const empties = EMPTY_IDS.map((id) => ({ id, objective: "", addedAt: "2026-08-11T12:04:17.974Z" }));
+  const rest = [REAL_HEAD, ...Array.from({ length: 30 }, (_, i) => realItem(i))];
+  seedState(cwd, { goal: null, list: [...empties, ...rest] });
+  const pi = new MockPi();
+  activate(pi.api);
+  const ctx = await boot(pi, cwd);
+  await pi.command("list", "next", ctx);
+  await tick(100);
+  const s = readState(cwd);
+  assert.equal(s.goal, null, "a blocked activation must not create a goal");
+  assert.equal(s.list?.length, 44, "repair item is queued ahead of the 43");
+  assert.equal(s.list?.[0]?.objective, "Repair the blocked list item from saved intent");
+  assert.match(ledger(cwd), /"faulty_objective_list_activation_blocked"/);
+  // repaired target binding survives onto the repair item
+  assert.equal(s.list?.[0]?.repairTarget?.id, "20260811120417-t12dn0");
+  assert.deepEqual(s.list?.[0]?.repairTarget?.reasons, ["empty"]);
+  fs.rmSync(cwd, { recursive: true, force: true });
+});
+
+test("REAL SHAPE: the clean 31-item queue (empties removed) activates main-menu without any blocked event", async () => {
+  const cwd = tmpCwd();
+  const rest = [REAL_HEAD, ...Array.from({ length: 30 }, (_, i) => realItem(i))];
+  seedState(cwd, { goal: null, list: rest });
+  const pi = new MockPi();
+  activate(pi.api);
+  const ctx = await boot(pi, cwd);
+  await pi.command("list", "next", ctx);
+  await tick(100);
+  const s = readState(cwd);
+  assert.equal(s.goal?.objective, REAL_HEAD.objective, "main-menu-deeper-polish is the activated goal");
+  assert.equal(s.goal?.status, "active");
+  assert.equal(s.goal?.policy, "list");
+  assert.equal(s.list?.length, 30, "the taken item is gone from the queue");
+  assert.doesNotMatch(ledger(cwd), /"faulty_objective_list_activation_blocked"/);
+  assert.match(ledger(cwd), /List item #1 activated|"goal_created"/);
+  fs.rmSync(cwd, { recursive: true, force: true });
+});
+
+afterEach(() => {});
