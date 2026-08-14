@@ -378,10 +378,9 @@ function heartbeatTick(): void {
   // needs a heartbeat opportunity. Ended subagent probes remain in memory
   // briefly for HUD/final-state reads, but they no longer own the host and
   // must not keep this guard probing a disposed handle.
-  const staleRecoveryDebt = state.goal?.status !== "complete"
-    && state.goal?.status !== "aborted"
-    && (state.goal?.interruptedReason?.startsWith("extension api stale")
-      || state.loop?.stopReason?.startsWith("extension api stale"));
+  const terminalGoal = state.goal?.status === "complete" || state.goal?.status === "aborted";
+  const staleRecoveryDebt = (!terminalGoal && state.goal?.interruptedReason?.startsWith("extension api stale"))
+    || state.loop?.stopReason?.startsWith("extension api stale");
   if (state.goal?.status !== "active" && state.goal?.status !== "auditing" && !isLoopActive() && !staleRecoveryDebt && !hasLiveSubagentHangProbes()) return;
   // Probe the ExtensionAPI BEFORE probing the captured context. When pi
   // invalidates both handles and emits no replacement session_start,
