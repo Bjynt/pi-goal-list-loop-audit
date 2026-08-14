@@ -564,6 +564,22 @@ function absorbStaleIfSuperseded(ctx: ExtensionContext): boolean {
   return false;
 }
 
+function persistInterruptedGoalWithoutContext(cwd: string, where: string): void {
+  const goal = state.goal;
+  if (!goal || goal.status !== "active") return;
+  goal.interruptedAt = nowIso();
+  goal.interruptedReason = `extension api stale (${where})`;
+  goal.updatedAt = nowIso();
+  try {
+    const file = writeGoalMd(cwd, goal);
+    goal.activePath = path.relative(cwd, file) || file;
+    persistStateLine(cwd, state);
+  } catch {
+    // The persistence-degraded path will surface a later retry; do not call
+    // a context-bound UI/update helper from a stale handle.
+  }
+}
+
 function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   if (staleTerminalDone) return; // already terminal — don't re-spam
   staleTerminalDone = true;
@@ -609,9 +625,11 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   if (isLoopActive()) {
     clearLoopTimer();
     state.loop = { ...state.loop!, active: false, stopReason: `extension api stale: ${guidance}` };
-    persistState(ctx);
+    try { persistStateLine(ctx.cwd, state); } catch { /* stale handle: next lifecycle persists the held loop */ }
   } else if (state.goal && state.goal.status === "active") {
-    updateGoal({ interruptedAt: nowIso(), interruptedReason: `extension api stale (${where})` }, ctx);
+    // The triggering ctx is precisely the handle that just proved stale;
+    // persist through the cwd-only state path instead of updateGoal(ctx).
+    persistInterruptedGoalWithoutContext(ctx.cwd, where);
   }
   // The stale process loses its ticker immediately, so paint the durable
   // interrupted state synchronously while the old UI handle can still accept
