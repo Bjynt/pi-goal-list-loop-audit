@@ -350,6 +350,14 @@ export function classifyHungSubagents(
 
 function heartbeatTick(): void {
   if (flags.zombieStoodDown || flags.initialSessionLoadPending) return; // blank startup waits for pi to bind a real session
+  // A completed/paused/held plane has no host-bound work to supervise. Do
+  // not probe the retained ExtensionAPI in that idle state: pi may dispose a
+  // session handle during an unrelated session transition, and reporting
+  // that disposed handle as a host loss only creates the repeated
+  // "session invalidated" warning after the work is already safe on disk.
+  // Keep the probe for active goals/loops, detached completion audits, and
+  // tracked subagents, where a dead handle can strand live work.
+  if (!isSupervising() && state.goal?.status !== "auditing" && subagentHangProbes.size === 0) return;
   // Probe the ExtensionAPI BEFORE probing the captured context. When pi
   // invalidates both handles and emits no replacement session_start,
   // freshCtx() deliberately returns null; probing it first used to make the

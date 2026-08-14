@@ -95,6 +95,30 @@ test("host loss without any lifecycle shutdown classifies silent_handle_death", 
   }
 });
 
+test("idle completed/held state does not probe a disposed session handle", async () => {
+  setGlobalAutoResume(false);
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: null, list: [] });
+  __testOnlyResetOwnerSession();
+  const ctx = makeMockCtx(cwd);
+  await pi.fire("session_start", { reason: "startup" }, ctx);
+  await tick();
+
+  // A host transition may dispose the old handle even though no goal, loop,
+  // auditor, or subagent remains. That is not a work-plane host loss and
+  // must not produce the recurring invalidation warning.
+  invalidateHostSession(pi, ctx);
+  __testOnlyHeartbeatTick();
+  try {
+    assert.equal(invalidations(cwd).length, 0, "idle state does not emit session_handle_invalidated");
+    const ledger = fs.readFileSync(`${cwd}/.pi-glla/active.jsonl`, "utf8");
+    assert.doesNotMatch(ledger, /"extension_api_stale"/, "idle state does not latch stale recovery");
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+  }
+});
+
 // ── (c) behavioral — a proper lifecycle shutdown precedes the death ─────
 
 test("a lifecycle shutdown suppresses the terminal entirely — no loss event", async () => {
