@@ -962,9 +962,19 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
   // Persist every forbidden/unavailable ref visited by the selector so a
   // reload cannot restart at the same rejected rung.
   const visited = selector.lastVisitedRefs;
-  const skipped = [...(recovery.skipped ?? [])];
+  const selectedKey = target?.toLowerCase();
+  const skipped = [...(recovery.skipped ?? [])].filter((entry) => !selectedKey || entry.ref.toLowerCase() !== selectedKey);
   for (const ref of visited) {
     const key = ref.toLowerCase();
+    if (selectedKey === key) {
+      // The selector reports its successful hit in lastVisitedRefs too. It is
+      // attempted, but it is not a rejected/skipped fallback.
+      if (!attemptedKeys.has(key)) {
+        attempted.push(ref);
+        attemptedKeys.add(key);
+      }
+      continue;
+    }
     if (!attemptedKeys.has(key)) {
       attempted.push(ref);
       attemptedKeys.add(key);

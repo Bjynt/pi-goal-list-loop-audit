@@ -19,7 +19,7 @@ import {
   formatMainModelFallbacks,
   splitModelRef,
 } from "../extensions/main-model-recovery.js";
-import { createGoalRecovery, tryMainModelFallback } from "../extensions/goal-recovery.js";
+import { createGoalRecovery, probeMainModelRecovery, tryMainModelFallback } from "../extensions/goal-recovery.js";
 import { replaceState, state } from "../extensions/goal-state.js";
 import { globalSettingsPath } from "../extensions/goal-settings.js";
 
@@ -115,6 +115,22 @@ test("runtime fallback walk uses one supervised model at a time and preserves le
     assert.deepEqual(calls, ["provider/first", "provider/second"], "the next failure advances to the next backup");
     assert.deepEqual(state.mainModelRecovery?.attempted, ["provider/primary", "provider/blocked", "provider/first", "provider/second"]);
     assert.equal(state.mainModelRecovery?.skipped?.some((entry) => entry.ref === "provider/first" || entry.ref === "provider/second"), false, "successful backups remain absent from skipped");
+
+    // The delayed/scheduled probe has its own selector path. A successful
+    // probe target must be attempted, not persisted as an unregistered skip.
+    ctx.model = { provider: "provider", id: "primary" };
+    state.mainModelRecovery = {
+      primary: "provider/primary",
+      active: "provider/primary",
+      attempted: ["provider/primary"],
+      attempts: 1,
+      reason: "main model quota — provider account/usage wall",
+      kind: "goal",
+    };
+    await probeMainModelRecovery(ctx);
+    assert.equal(calls.at(-1), "provider/first", "the scheduled probe selects the first eligible backup");
+    assert.deepEqual(state.mainModelRecovery?.skipped, [{ ref: "provider/blocked", reason: "forbidden" }]);
+    assert.equal(state.mainModelRecovery?.skipped?.some((entry) => entry.ref === "provider/first"), false, "the scheduled probe target is not labelled skipped");
 
     // An explicit HTTP 429 is request-rate recovery on the current model; it
     // must not call setModel even when backups are configured.
