@@ -886,7 +886,7 @@ export function guardGoalBeforeContinuation(
   goal.status = "paused";
   goal.pauseKind = "blocked";
   goal.pauseReason = `Suspicious objective detected (${assessment.reasons.join(", ")}).`;
-  goal.pauseSuggestedAction = `${activeGoalSurfaceCommand("tweak")} the objective, then resume after the repair task is complete.`;
+  goal.pauseSuggestedAction = `${activeGoalSurfaceCommand("tweak")} the objective if needed; /list next starts the preserved repair/replan task, then resume the original target after its confirmed task list is accepted.`;
   goal.pauseResumeAt = undefined;
   goal.updatedAt = nowIso();
   persistState(ctx);

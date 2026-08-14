@@ -73,7 +73,7 @@
       "required": ["tokensUsed", "tokensLimit"],
       "properties": {
         "tokensUsed": { "type": "integer", "minimum": 0 },
-        "tokensLimit": { "type": "integer", "minimum": 1, "default": 10000000 }
+        "tokensLimit": { "type": "integer", "minimum": 0, "default": 0, "description": "0 = unlimited; positive values enable the per-goal token guard" }
       }
     },
     "createdAt": { "type": "string", "format": "date-time" },
