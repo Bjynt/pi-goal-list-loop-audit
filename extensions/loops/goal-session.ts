@@ -1238,11 +1238,19 @@ function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   ctx.ui.notify("glla: pi replaced this session without delivering session_start — absorbed the live replacement as the goal-plane owner (in-memory subagent sessions stay refused).", "info");
   startHeartbeat();
   heartbeatStaleStreak = 0;
-  if (state.goal && state.goal.status === "active" && state.goal.interruptedAt) {
-    updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
-    ctx.ui.notify(`Resuming ${state.goal.policy === "list" ? "list item" : "goal"}: ${displaySlice(state.goal.objective, 70)} — auto-resumed after the silent session swap`, "info");
-    postRestoreGraceTurns = 2;
-    scheduleContinuation(ctx, true);
+  if (state.goal && state.goal.status === "active") {
+    const wasInterrupted = Boolean(state.goal.interruptedAt);
+    if (wasInterrupted) {
+      updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
+      ctx.ui.notify(`Resuming ${state.goal.policy === "list" ? "list item" : "goal"}: ${displaySlice(state.goal.objective, 70)} — auto-resumed after the silent session swap`, "info");
+      postRestoreGraceTurns = 2;
+    }
+    // A silent successor can contact the extension before any interruptedAt
+    // marker was persisted. Never leave an active objective idle merely
+    // because the rebind arrived through a non-turn event.
+    if (!continuationTimerPending() && !pendingContinuationDispatchRef()) {
+      scheduleContinuation(ctx, true);
+    }
   }
   refreshUI(ctx);
   return true;

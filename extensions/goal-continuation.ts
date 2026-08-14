@@ -931,11 +931,6 @@ export function scheduleContinuation(ctx: ExtensionContext, force = false, delay
 export function sendContinuation(goalId: string): void {
   if (mainModelRecoveryActive()) return;
   if (flags.sessionHandoffPending || flags.initialSessionLoadPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown || continuationDispatchStoodDown || pendingContinuationDispatch) return;
-  // v0.34.104 ([Image-#1]): the settle window armed by the list-complete
-  // cascade has expired (or was cleared by activity) — the deferred
-  // continuation is firing. Reset the flag so it doesn't apply to a
-  // later, unrelated continuation.
-  flags.postCompletionSettleUntil = 0;
   continuationTimer = null;
   continuationScheduledFor = null;
   if (!state.goal || state.goal.id !== goalId) {
@@ -943,6 +938,21 @@ export function sendContinuation(goalId: string): void {
     if (stale) appendLedger(stale.cwd, "faulty_objective_stale_attempt_fence", { expectedGoalId: goalId, currentGoalId: state.goal?.id ?? null, where: "sendContinuation" });
     return;
   }
+  // Keep the settle fence authoritative even if a compatibility path calls
+  // sendContinuation directly instead of going through scheduleContinuation.
+  // Activity clears this flag through dispatchStartAcknowledged; otherwise a
+  // premature timer callback is deferred for the remaining window.
+  const settleRemaining = flags.postCompletionSettleUntil - Date.now();
+  if (settleRemaining > 0) {
+    const ctx = freshCtx();
+    if (ctx) appendLedger(ctx.cwd, "list_completion_settle_pending", { goalId, settleMs: LIST_COMPLETION_SETTLE_MS, remainingMs: settleRemaining, source: "sendContinuation" });
+    continuationScheduledFor = goalId;
+    continuationTimer = scheduleSessionTimeout(() => sendContinuation(goalId), settleRemaining);
+    return;
+  }
+  // The settle window expired (or was cleared by real activity). Reset it so
+  // it cannot affect a later, unrelated continuation.
+  flags.postCompletionSettleUntil = 0;
   if (!isActionableGoal()) return;
   const ctx = freshCtx();
   if (!ctx) {
@@ -1144,13 +1154,16 @@ export function continuationPrompt(goal: Goal): string {
     );
   }
   const dynamicDirectives = directives.length > 0 ? directives.join("\n\n") : "(no active directives)";
+  // Use replacement callbacks: String.replace interprets `$&`, `$1`, `$'`,
+  // and ``$``` inside replacement strings, which can corrupt perfectly valid
+  // user objectives/contracts while the durable state remains intact.
   return tmpl
-    .replace(/\$\{GOAL_ID\}/g, goal.id)
-    .replace(/\$\{OBJECTIVE\}/g, goal.objective)
-    .replace(/\$\{VERIFICATION_CONTRACT\}/g, goal.verificationContract || "(none — auditor will decide based on objective)")
-    .replace(/\$\{TASK_LIST\}/g, taskSummary)
-    .replace(/\$\{NEXT_PENDING_TASK_BLOCK\}/g, nextBlock)
-    .replace(/\$\{DYNAMIC_DIRECTIVES\}/g, dynamicDirectives);
+    .replace(/\$\{GOAL_ID\}/g, () => goal.id)
+    .replace(/\$\{OBJECTIVE\}/g, () => goal.objective)
+    .replace(/\$\{VERIFICATION_CONTRACT\}/g, () => goal.verificationContract || "(none — auditor will decide based on objective)")
+    .replace(/\$\{TASK_LIST\}/g, () => taskSummary)
+    .replace(/\$\{NEXT_PENDING_TASK_BLOCK\}/g, () => nextBlock)
+    .replace(/\$\{DYNAMIC_DIRECTIVES\}/g, () => dynamicDirectives);
 }
 
 /* ------------------------------------------------------------------ */

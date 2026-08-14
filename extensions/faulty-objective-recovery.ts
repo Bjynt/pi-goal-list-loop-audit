@@ -185,6 +185,10 @@ function proposalFrom(
 function approvedCompletionContext(goal: Goal): string | null {
   const latest = goal.auditHistory?.at(-1);
   if (!latest?.approved || latest.disapproved || latest.regressionShieldPassed === false) return null;
+  // A completion summary approved for an older contract is not saved intent
+  // for the current objective. Legacy verdicts without a revision retain the
+  // historical compatibility policy; revisioned verdicts must match exactly.
+  if (latest.revision !== undefined && goal.revision !== undefined && latest.revision !== goal.revision) return null;
   return usableCandidate(goal.completionSummary);
 }
 

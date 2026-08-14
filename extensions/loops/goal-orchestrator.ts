@@ -679,18 +679,6 @@ function notifyPersistenceState(ctx: ExtensionContext): void {
 }
 
 function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): boolean {
-  // v0.33.1: per-goal module state resets at activation — a new goal must
-  // not inherit the previous goal's compact debt/resync, quota streak,
-  // token-message dedupe set, or widget action feed.
-  postCompactResumeOwed = false;
-  postCompactResyncPending = false;
-  clearMainModelRecoveryTimer();
-  state.mainModelRecovery = undefined;
-  mainModelAbortForRecovery = false;
-  lastMainModelFailure = null;
-  releaseContinuationDispatchStandDown();
-  countedTokenMessages.clear();
-  recentActions.length = 0;
   // v0.28.14: never silently orphan a live goal — a paused/active goal
   // being replaced is archived honestly first (the old behavior left it in
   // goals/ but untracked: "older goals lying around leading to confusion").
@@ -721,6 +709,18 @@ function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): boolean {
       notifyExternal(ctx, `pi-goal-list-loop-audit: a paused goal with a scheduled auto-resume was replaced; the resume was cancelled.`);
     }
   }
+  // v0.33.1: reset per-goal runtime state only after any superseded goal
+  // has archived successfully. If archival fails, the old objective, recovery
+  // timer, dispatch sidecar, and stand-down remain untouched for retry.
+  postCompactResumeOwed = false;
+  postCompactResyncPending = false;
+  clearMainModelRecoveryTimer();
+  state.mainModelRecovery = undefined;
+  mainModelAbortForRecovery = false;
+  lastMainModelFailure = null;
+  releaseContinuationDispatchStandDown();
+  countedTokenMessages.clear();
+  recentActions.length = 0;
   goal.createdVia = via; // v0.28.28: provenance — answerable from the ledger + /glla log
   // v0.34.60: disk-first write order. The active-goal .md lands BEFORE
   // the in-memory state commit, so a stale extension handle (post
@@ -898,10 +898,6 @@ function archiveCurrentGoal(
   stopReason?: string,
   patch: Partial<Pick<Goal, "completionSummary" | "pendingTasks">> = {},
 ): boolean {
-  releaseContinuationDispatchStandDown();
-  clearDispatchRecord(ctx.cwd);
-  postCompactResumeOwed = false; // v0.33.1: the dead goal's compact debt/resync dies with it
-  postCompactResyncPending = false;
   if (!state.goal) return false;
   const goal = state.goal;
   const pendingAttemptId = goal.pendingCompletion?.attemptId;
@@ -949,6 +945,13 @@ function archiveCurrentGoal(
   }) === true;
   if (archived) {
     try { fs.unlinkSync(goalMdPath(ctx.cwd, goal.id)); } catch {}
+    // Destructive lifecycle cleanup belongs after the archive is durable. A
+    // failed archive must leave the old objective's recovery/dispatch state
+    // available for an explicit retry rather than looking silently stopped.
+    releaseContinuationDispatchStandDown();
+    clearDispatchRecord(ctx.cwd);
+    postCompactResumeOwed = false; // v0.33.1: the dead goal's compact debt/resync dies with it
+    postCompactResyncPending = false;
   } else {
     if (archiveFence) {
       appendLedger(ctx.cwd, "faulty_objective_archive_fence", {
@@ -1040,14 +1043,20 @@ function archiveCurrentGoal(
         appendLedger(fanoutCwd, "list_audit_fanout_error", { error: String(err).slice(0, 200) });
       });
     }
+    // v0.34.104 ([Image-#1]): arm the settle window BEFORE activation. The
+    // successor schedules its first continuation inside activateNextListItem;
+    // arming afterward created a same-timestamp dispatch race that defeated
+    // the intended completion-acknowledgement delay.
+    postCompletionSettleUntil = Date.now() + LIST_COMPLETION_SETTLE_MS;
     const advanced = activateNextListItem(ctx);
-    // v0.34.104 ([Image-#1]): delay the first continuation dispatched
-    // from the cascade so pi has time to settle the completion
-    // acknowledgement; any agent activity during the window clears the
-    // settle so a wake-up doesn't double-dispatch.
     if (advanced) {
-      postCompletionSettleUntil = Date.now() + LIST_COMPLETION_SETTLE_MS;
-      appendLedger(ctx.cwd, "list_completion_settle_armed", { goalId: goal.id, settleMs: LIST_COMPLETION_SETTLE_MS, nextObjective: goal.objective.slice(0, 120) });
+      appendLedger(ctx.cwd, "list_completion_settle_armed", {
+        goalId: goal.id,
+        settleMs: LIST_COMPLETION_SETTLE_MS,
+        nextObjective: state.goal?.objective?.slice(0, 120),
+      });
+    } else {
+      postCompletionSettleUntil = 0;
     }
     // v0.26.0: the queue just EMPTIED on a completion → list-complete.
     if (!advanced && !isListAuditCollect) {
