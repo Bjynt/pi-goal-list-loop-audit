@@ -276,7 +276,7 @@ test("v0.34.51: source — cmdList captures the entry probe and gates every muta
   assert.match(SRC, /const staleEntry = warnIfStaleAtEntry\(ctx, "\/list"\);/, "entry probe result is captured");
   assert.match(SRC, /if \(staleEntry && LIST_MUTATING_SUBCOMMANDS\.has\(sub\)\) \{/, "top-level mutation gate");
   assert.match(SRC, /appendLedger\(ctx\.cwd, "list_mutation_refused_stale", \{ sub \}\)/, "refusal is ledgered with the verb");
-  assert.match(SRC, /if \(staleEntry\) \{\n    appendLedger\(ctx\.cwd, "list_mutation_refused_stale", \{ sub: "dump" \}\);\n    return;\n  \}/, "dump fallthrough is gated");
+  assert.match(SRC, /if \(staleEntry\) \{\n    if \(queuePendingListOperation\(ctx, args\)\) return;\n    appendLedger\(ctx\.cwd, "list_mutation_refused_stale", \{ sub: "dump" \}\);\n    return;\n  \}/, "dump fallthrough is deferred only for a validated handoff");
   // Probe runs before the gate, and the gate runs after sub parsing:
   const probeIdx = SRC.indexOf("const staleEntry = warnIfStaleAtEntry(ctx, \"/list\");");
   const gateIdx = SRC.indexOf("if (staleEntry && LIST_MUTATING_SUBCOMMANDS.has(sub))");
