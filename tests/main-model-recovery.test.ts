@@ -132,11 +132,11 @@ test("runtime fallback walk uses one supervised model at a time and preserves le
     assert.deepEqual(state.mainModelRecovery?.skipped, [{ ref: "provider/blocked", reason: "forbidden" }]);
     assert.equal(state.mainModelRecovery?.skipped?.some((entry) => entry.ref === "provider/first"), false, "the scheduled probe target is not labelled skipped");
 
-    // An explicit HTTP 429 is request-rate recovery on the current model; it
-    // must not call setModel even when backups are configured.
-    const before429 = calls.slice();
-    assert.equal(await tryMainModelFallback(ctx, classifyMainModelFailure("HTTP 429 too many requests")), false);
-    assert.deepEqual(calls, before429);
+    // With request-rate fallback enabled by default, a 429 walks the next
+    // configured backup instead of consuming another current-model retry.
+    ctx.model = { provider: "provider", id: "first" };
+    assert.equal(await tryMainModelFallback(ctx, classifyMainModelFailure("HTTP 429 too many requests")), true);
+    assert.equal(calls.at(-1), "provider/second");
   } finally {
     replaceState({ goal: null } as any);
     if (original === undefined) {
@@ -166,6 +166,7 @@ test("main model errors distinguish quota recovery from deterministic prompt wal
   assert.equal(classifyMainModelFailure("503 temporarily unavailable").kind, "transient");
   assert.equal(isMainModelFallbackFailure(classifyMainModelFailure("usage limit reached")), true);
   assert.equal(isMainModelFallbackFailure(classifyMainModelFailure("429 too many requests")), false);
+  assert.equal(isMainModelFallbackFailure(classifyMainModelFailure("429 too many requests"), { allowRateLimit: true }), true);
   assert.equal(isMainModelFallbackFailure(classifyMainModelFailure("request rate exceeded")), false);
   assert.equal(isMainModelFallbackFailure(classifyMainModelFailure("503 temporarily unavailable")), false);
   assert.equal(classifyMainModelFailure("429 Token Plan rate limit reached").kind, "rate-limit");

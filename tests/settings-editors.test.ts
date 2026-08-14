@@ -61,6 +61,20 @@ test("T4: select editor — autoResume writes on/off/default with the right key"
   }
 });
 
+test("request-rate fallback setting writes an explicit off and clears back to default", async () => {
+  try {
+    const ctx = makeMockCtx(tmpCwd());
+    ctx.ui.selectImpl = async () => "off — keep retrying the current model; never spend backups on 429s";
+    await handleSettingChoice("mainModelFallbackOnRateLimit", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().mainModelFallbackOnRateLimit, false);
+    ctx.ui.selectImpl = async () => "on — 429/request-rate failures walk configured backups (default)";
+    await handleSettingChoice("mainModelFallbackOnRateLimit", ctx as unknown as ExtensionContext);
+    assert.equal("mainModelFallbackOnRateLimit" in readGlobal(), false);
+  } finally {
+    restoreGlobal();
+  }
+});
+
 test("T4: select editor — aggressiveMode writes the boolean + notifies", async () => {
   try {
     const ctx = makeMockCtx(tmpCwd());

@@ -195,8 +195,8 @@ test("main backup row shows the persisted numbered try order and truthful runtim
   const row = rows.find((candidate) => candidate.id === "mainModelFallbacks")!;
   assert.match(row.valueText, /1\. provider\/first → 2\. provider\/second/);
   assert.match(row.description, /current session model → backup 1 → backup 2/);
-  assert.match(row.description, /account\/plan\/billing failures switch/);
-  assert.match(row.description, /429\/rate-limit stays/);
+  assert.match(row.description, /account\/plan\/billing\/auth/);
+  assert.match(row.description, /request-rate failures switch/);
 });
 
 test("valueText derives from settings (effective values surface for each row)", () => {

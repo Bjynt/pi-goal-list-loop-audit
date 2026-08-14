@@ -66,6 +66,7 @@
       "maxItems": 10,
       "items": { "$ref": "#/definitions/objectiveRepair" }
     },
+    "repairTarget": { "$ref": "#/definitions/objectiveRepairTarget" },
     "objectiveProvenance": { "$ref": "#/definitions/objectiveProvenance" },
     "usage": {
       "type": "object",
@@ -79,6 +80,17 @@
     "updatedAt": { "type": "string", "format": "date-time" }
   },
   "definitions": {
+    "objectiveRepairTarget": {
+      "type": "object",
+      "required": ["id", "objective", "reasons", "source"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "objective": { "type": "string", "minLength": 1 },
+        "verificationContract": { "type": "string" },
+        "reasons": { "type": "array", "items": { "type": "string" } },
+        "source": { "type": "string", "minLength": 1 }
+      }
+    },
     "objectiveRepair": {
       "type": "object",
       "required": ["at", "action", "originalObjective", "source", "reason", "evidence", "confidence", "revisionBefore", "revisionAfter"],

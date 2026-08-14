@@ -294,6 +294,15 @@ export interface PendingCompletion {
   resetAt?: string;
 }
 
+export interface ObjectiveRepairTarget {
+  /** Queue/goal identity of the malformed intent that needs a replan. */
+  id: string;
+  objective: string;
+  verificationContract?: string;
+  reasons: string[];
+  source: string;
+}
+
 export interface ObjectiveRepairRecord {
   at: string;
   action: "auto-applied" | "queued";
@@ -332,6 +341,11 @@ export interface Goal {
    * does not carry this — a crash-restart that drops it leaves the parent
    * visible as a plain queue item rather than mis-handling the cascade). */
   parentId?: string;
+  /** v0.35.1: a control goal created to re-plan suspicious saved intent.
+   * It is cleared only after a confirmed task-list re-draft, so the generic
+   * repair card cannot complete repeatedly while the original target remains
+   * opaque in the queue. */
+  repairTarget?: ObjectiveRepairTarget;
   taskList?: TaskList;
   auditHistory?: AuditVerdict[];
   stopReason?: string;
@@ -637,6 +651,8 @@ export interface ListItem {
    * itself a child is refused at enqueue time (nesting is a later milestone
    * parked behind focus/unfocus in the runtime). */
   parentId?: string;
+  /** Durable link from a repair/replan queue item back to the malformed item. */
+  repairTarget?: ObjectiveRepairTarget;
   addedAt: string;
 }
 

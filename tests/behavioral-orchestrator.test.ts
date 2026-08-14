@@ -2113,7 +2113,7 @@ test("request-rate prose stays on the current model even when backups are config
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
-  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ mainModelFallbacks: ["provider/backup"] }));
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ mainModelFallbacks: ["provider/backup"], mainModelFallbackOnRateLimit: false }));
   const ctx = await freshSession(cwd, "startup");
   await pi.command("goal", "request-rate stays current — done when pinned", ctx);
   await tick();
@@ -2128,7 +2128,7 @@ test("explicit 429 rate limiting stays on the current model even when backups ar
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
-  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ mainModelFallbacks: ["provider/backup"] }));
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ mainModelFallbacks: ["provider/backup"], mainModelFallbackOnRateLimit: false }));
   const ctx = await freshSession(cwd, "startup");
   await pi.command("goal", "429 keeps current model — done when pinned", ctx);
   await tick();
