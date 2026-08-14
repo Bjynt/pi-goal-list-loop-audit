@@ -1047,14 +1047,20 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     const handoffMarkerPresent = fs.existsSync(sessionHandoffPath(ctx.cwd));
     const handoffResume = consumeSessionHandoff(ctx.cwd, ownerClaim.previousGeneration, ownerClaim.previousOwnerSessionId);
     if (handoffResume) appendLedger(ctx.cwd, "session_handoff_resumed", { pid: process.pid, reason: startReason });
+    const nonQuitShutdownResume = ownerClaim.hadShutdown && ownerClaim.previousShutdownReason?.trim().toLowerCase() !== "quit";
     const listOperationLifecycleResume = handoffResume
-      || (!handoffMarkerPresent && ownerClaim.hadShutdown && ownerClaim.previousShutdownReason?.trim().toLowerCase() !== "quit");
+      || (!handoffMarkerPresent && nonQuitShutdownResume);
     const pendingListOperations = listOperationLifecycleResume
       ? consumePendingListOperations(ctx.cwd, ownerClaim.previousGeneration, ownerClaim.previousOwnerSessionId)
       : (discardPendingListOperations(ctx.cwd, handoffMarkerPresent ? "handoff-rejected" : "handoff-not-resumed"), [] as string[]);
     const rebindResume = ownerClaim.rebind;
     if (rebindResume) appendLedger(ctx.cwd, "rebind_resume", { pid: process.pid });
     const explicitRecovery = handoffResume || recoveryResume || rebindResume;
+    // A successor after a non-quit shutdown is lifecycle consent for a held
+    // loop even when the old inactive loop did not qualify for a handoff
+    // marker. Keep this loop-specific; standalone goals retain their normal
+    // cold-start hold policy.
+    const loopSuccessorResume = explicitRecovery || nonQuitShutdownResume;
     // Close terminal slots before the blank-start barrier as well. A blank
     // startup is still a real state load, and returning before this cleanup
     // used to leave legacy `complete`/`aborted` cards visible until a second
@@ -1065,7 +1071,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       persistState(ctx);
       appendLedger(ctx.cwd, "terminal_goal_slot_closed", { goalId: terminal.id, status: terminal.status, via: "session-start" });
     }
-    if (initialSessionLoadPending && !explicitRecovery) {
+    if (initialSessionLoadPending && !loopSuccessorResume) {
       // Even a blank startup must not leave a stored completion claim in the
       // old AUDITING state: there is no worker verdict to wait for after a
       // session boundary. Release it before the transcript-load barrier;
@@ -1170,11 +1176,32 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // escalation told the user "restart pi, then /loop start" — but a
     // fresh start discards iteration/best/history. Hold them on load like
     // any restore-held loop: /loop resume continues from the saved state.
-    if (state.loop && !state.loop.active &&
-        (state.loop.stopReason?.startsWith("extension api stale") || state.loop.stopReason?.startsWith("stalled:") || state.loop.stopReason?.startsWith("send-retry storm:"))) {
+    if (state.loop && !state.loop.active && isLifecycleHeldLoopReason(state.loop.stopReason)
+        && state.loop.stopReason !== HELD_ON_RESTORE) {
       appendLedger(ctx.cwd, "loop_held_for_resume", { was: (state.loop.stopReason ?? "").slice(0, 40) });
       state.loop = { ...state.loop, stopReason: HELD_ON_RESTORE };
       persistState(ctx);
+    }
+    // Lifecycle/provider holds resume from the durable loop object without
+    // resetting metric, bounds, history, iteration, or progress counters.
+    // Deliberate `/loop stop`/`cancel`, provider/manual safety stops, plateau,
+    // stuck, and zero-stream abort reasons are intentionally excluded by the
+    // shared predicate and remain explicitly resumable only.
+    if (state.loop && !state.loop.active && isLifecycleHeldLoopReason(state.loop.stopReason)
+        && (autoResume || loopSuccessorResume)) {
+      const held = state.loop;
+      state.loop = { ...held, active: true, stopReason: undefined };
+      persistState(ctx);
+      releaseContinuationDispatchStandDown();
+      appendLedger(ctx.cwd, "loop_auto_resumed_on_restore", {
+        via: loopSuccessorResume ? "successor" : "auto-resume",
+        iteration: held.iteration,
+        best: held.bestValue,
+      });
+      ctx.ui.notify(
+        `Resuming held loop (iteration ${held.iteration}/${held.maxIterations > 0 ? held.maxIterations : "∞"}, best ${held.bestValue ?? "n/a"}): ${displaySlice(held.target, 60)}`,
+        "info",
+      );
     }
     // v0.29.14: migrate live/held audit loops off the open-count/min
     // metric — it punished DISCOVERY (11 new real findings read as a
@@ -1204,7 +1231,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // rebind marker were consumed before the startup barrier above.
     if (isLoopActive()) {
       const l = state.loop!;
-      if (autoResume || recoveryResume || rebindResume || handoffResume) {
+      if (autoResume || loopSuccessorResume) {
         ctx.ui.notify(
           `Resuming loop (iteration ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"}, best ${l.bestValue ?? "n/a"}, stall ${l.stallCount}/${l.plateauWindow}): ${displaySlice(l.target, 60)}`,
           "info",
