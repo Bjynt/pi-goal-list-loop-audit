@@ -169,6 +169,23 @@ test("unverified completion prose is never promoted", () => {
   assert.equal(deriveObjectiveRepair(g, assessSuspiciousObjective(g.objective)), null);
 });
 
+test("approved completion context from an older revision cannot resurrect saved intent", () => {
+  const g = goal({
+    objective: "The gate and both apply sites exist. Now I need to verify the retry path.",
+    revision: 2,
+    completionSummary: "Implement the obsolete pre-tweak objective",
+    auditHistory: [{
+      at: "2026-08-10T15:24:00.000Z",
+      approved: true,
+      disapproved: false,
+      impossible: false,
+      model: "test-auditor",
+      revision: 1,
+    }],
+  });
+  assert.equal(deriveObjectiveRepair(g, assessSuspiciousObjective(g.objective)), null);
+});
+
 test("audit history contributes only an actionable required-fix line", () => {
   const g = goal({
     objective: "## Required fixes",
