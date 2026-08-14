@@ -1315,6 +1315,19 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         ctx.ui.notify(`Completion audit blocked — no verdict. The stored claim is safe; ${activeGoalSurfaceCommand("resume")} retries the isolated auditor.`, "warning");
       }
     }
+    // v0.35.x: commands received during a validated lifecycle handoff are
+    // replayed only after the fresh context has restored durable state. The
+    // operation journal is consumed once, ordered, and identity-fenced; a
+    // stale handle never mutates the queue or starts an unreachable item.
+    for (const operation of pendingListOperations) {
+      try {
+        await cmdList(operation, ctx);
+        appendLedger(ctx.cwd, "list_operation_handoff_replayed", { chars: operation.length });
+      } catch (error) {
+        appendLedger(ctx.cwd, "list_operation_handoff_replay_failed", { chars: operation.length, error: error instanceof Error ? error.message.slice(0, 160) : String(error).slice(0, 160) });
+        ctx.ui.notify(`glla: deferred /list operation could not be replayed after session_start: ${operation.slice(0, 120)}`, "warning");
+      }
+    }
     // v0.29.6: the 0.28.21 loop-vs-goal decision picker is SUPERSEDED by
     // auto-arbitration above — stacked states resolve deterministically
     // (most recent activity keeps the slot; the loser is archived) before

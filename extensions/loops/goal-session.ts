@@ -767,7 +767,10 @@ function queuePendingListOperation(ctx: ExtensionContext, args: string): boolean
       && Number.isFinite(priorAt)
       && Date.now() - priorAt < PENDING_LIST_OPERATION_FRESH_MS
       && Array.isArray(prior.operations);
-    if (sameOwner) operations = prior.operations.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, MAX_PENDING_LIST_OPERATIONS);
+    if (sameOwner) {
+      const priorOperations = prior.operations ?? [];
+      operations = priorOperations.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, MAX_PENDING_LIST_OPERATIONS);
+    }
   } catch { /* no prior deferred command */ }
   if (operations.length >= MAX_PENDING_LIST_OPERATIONS) {
     appendLedger(ctx.cwd, "list_operation_handoff_queue_full", { count: operations.length });
