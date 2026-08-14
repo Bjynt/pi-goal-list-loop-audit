@@ -93,6 +93,40 @@ function seedListState(cwd: string): void {
   });
 }
 
+test("v0.35.x: a mutating /list command during handoff is replayed once by the successor", async () => {
+  __testOnlyResetStaleFlag();
+  setGlobalAutoResume(false);
+  const cwd = tmpCwd();
+  const first = await freshSession(cwd, "startup");
+  await pi.fire("session_shutdown", { reason: "reload" }, first);
+  invalidateHostSession(pi, first);
+
+  await pi.command("list", "add deferred handoff item — done when successor starts it", first);
+  const pendingPath = path.join(cwd, ".pi-glla", "pending-list-operation.json");
+  assert.ok(fs.existsSync(pendingPath), "the stale command arguments are durable before the old context disappears");
+  assert.equal(readState(cwd).list?.length ?? 0, 0, "the stale context does not mutate or activate the list");
+
+  pi.sendMessageError = null;
+  pi.sessionNameError = null;
+  pi.sent.length = 0;
+  const replacement = ownerCtx(cwd);
+  await pi.fire("session_start", { reason: "reload" }, replacement);
+  await tick();
+
+  const rebound = readState(cwd);
+  assert.equal(rebound.goal?.policy, "list", "the successor activates the deferred list item");
+  assert.match(rebound.goal?.objective ?? "", /deferred handoff item/);
+  assert.equal(fs.existsSync(pendingPath), false, "the operation journal is consumed once");
+  assert.equal(pi.sent.length, 1, "the successor dispatches exactly one continuation");
+  const ledger = ledgerText(cwd);
+  assert.equal((ledger.match(/list_operation_handoff_replayed/g) ?? []).length, 1, "replay is ledgered once");
+
+  await pi.fire("session_start", { reason: "reload" }, replacement);
+  await tick();
+  const afterSecondStart = ledgerText(cwd);
+  assert.equal((afterSecondStart.match(/list_operation_handoff_replayed/g) ?? []).length, 1, "a second session_start cannot duplicate the command");
+});
+
 // ────────────────────────────────────────────────────────────────────
 // Phase 1: before rebind — honest results, no pretend success
 // ────────────────────────────────────────────────────────────────────
