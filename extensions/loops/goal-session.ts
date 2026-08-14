@@ -756,13 +756,17 @@ function queuePendingListOperation(ctx: ExtensionContext, args: string): boolean
   const operation = args.trim();
   if (!operation || operation.length > 8_000) return false;
   const p = pendingListOperationPath(ctx.cwd);
+  // clearSessionOwnedTimers() fences the old generation before the stale
+  // command can arrive. The handoff marker was written just before that
+  // increment, so bind the deferred operation to the predecessor generation.
+  const handoffGeneration = sessionHandoffPending ? Math.max(0, sessionGeneration - 1) : sessionGeneration;
   let operations: string[] = [];
   try {
     const prior = JSON.parse(fs.readFileSync(p, "utf-8")) as Partial<PendingListOperationRecord>;
     const priorAt = Date.parse(prior.at ?? "");
     const sameOwner = prior.version === PENDING_LIST_OPERATION_VERSION
       && prior.pid === process.pid
-      && prior.generation === sessionGeneration
+      && prior.generation === handoffGeneration
       && prior.ownerSessionId === sessionManagerId(ctx)
       && Number.isFinite(priorAt)
       && Date.now() - priorAt < PENDING_LIST_OPERATION_FRESH_MS
@@ -781,7 +785,7 @@ function queuePendingListOperation(ctx: ExtensionContext, args: string): boolean
     version: PENDING_LIST_OPERATION_VERSION,
     pid: process.pid,
     at: new Date().toISOString(),
-    generation: sessionGeneration,
+    generation: handoffGeneration,
     ownerSessionId: sessionManagerId(ctx),
     operations,
   };
