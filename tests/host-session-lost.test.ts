@@ -37,7 +37,7 @@ import activate, {
   __testOnlyResetTerminalFlags,
   __testOnlySetSessionReplacementUntil,
 } from "../extensions/loops/goal.js";
-import { MockPi, invalidateHostSession, makeMockCtx, tmpCwd, seedState, seedGoal, tick, type MockCtx } from "./harness/mock-pi.js";
+import { MockPi, invalidateHostSession, makeMockCtx, tmpCwd, seedState, seedGoal, seedLoop, tick, type MockCtx } from "./harness/mock-pi.js";
 import { HELD_ON_RESTORE } from "../extensions/goal-loop-forever.js";
 import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
