@@ -711,8 +711,14 @@ test("v0.35.x: a successor auto-resumes lifecycle-held loops intact but preserve
 
   const deliberateCwd = tmpCwd();
   const deliberateReason = "stopped by user (/loop stop)";
-  seedState(deliberateCwd, { loop: seedLoop({ active: false, stopReason: deliberateReason, iteration: 11, bestValue: 9 }) });
+  seedState(deliberateCwd, { loop: seedLoop({ active: true, iteration: 11, bestValue: 9 }) });
   const deliberateFirst = await freshSession(deliberateCwd, "startup");
+  const heldBeforeStop = readState(deliberateCwd).loop as { active: boolean; stopReason?: string };
+  assert.equal(heldBeforeStop.stopReason, HELD, "the held loop is present before the operator stops it");
+  await pi.command("loop", "stop", deliberateFirst);
+  const stoppedByUser = readState(deliberateCwd).loop as { active: boolean; stopReason?: string };
+  assert.equal(stoppedByUser.active, false, "the operator stop leaves the loop inactive");
+  assert.equal(stoppedByUser.stopReason, deliberateReason, "the operator stop overwrites the lifecycle hold");
   await pi.fire("session_shutdown", { reason: "reload" }, deliberateFirst);
   const deliberateReplacement = ownerCtx(deliberateCwd);
   await pi.fire("session_start", { reason: "reload" }, deliberateReplacement);

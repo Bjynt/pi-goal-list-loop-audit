@@ -944,7 +944,10 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       flags.mainModelAbortForRecovery = false;
       flags.continuationDispatchStoodDown = false;
     }
-    state.loop = { ...state.loop, active: false, stopReason: state.loop.stopReason ?? `stopped by user (/loop ${sub})` };
+    // A user stop is authoritative even when the loop was already held by a
+    // lifecycle marker. Do not let HELD_ON_RESTORE survive `/loop stop` and
+    // become an automatic successor resume later.
+    state.loop = { ...state.loop, active: false, stopReason: `stopped by user (/loop ${sub})` };
     persistState(ctx);
     const stopGeneration = flags.sessionGeneration;
     await finishLoopGit(ctx, state.loop);

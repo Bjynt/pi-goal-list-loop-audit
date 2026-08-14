@@ -51,7 +51,9 @@ function freshLoop(overrides: Partial<LoopState> = {}): LoopState {
 test("isLifecycleHeldLoopReason separates recoverable lifecycle holds from deliberate/safety stops", () => {
   assert.equal(isLifecycleHeldLoopReason(HELD_ON_RESTORE), true);
   assert.equal(isLifecycleHeldLoopReason("extension api stale: host replacement"), true);
-  assert.equal(isLifecycleHeldLoopReason("stalled: continuation did not land"), true);
+  assert.equal(isLifecycleHeldLoopReason("stalled: continuation refires landed no turn — the session is not continuing"), true);
+  assert.equal(isLifecycleHeldLoopReason("stalled: continuation start acknowledgement timed out (dispatch-1) — /loop resume to retry explicitly"), true);
+  assert.equal(isLifecycleHeldLoopReason("stalled: 3 consecutive unproductive turns (no tools, short or repetitive)"), false);
   assert.equal(isLifecycleHeldLoopReason("send-retry storm: no turn"), true);
   assert.equal(isLifecycleHeldLoopReason("stopped by user (/loop stop)"), false);
   assert.equal(isLifecycleHeldLoopReason("stopped by user — 3 consecutive aborts"), false);
