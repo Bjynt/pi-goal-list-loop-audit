@@ -506,7 +506,8 @@ test("v0.34.14: /reload rebind resumes mid-work — the 'list is not continuing'
   assert.match(g, /appendLedger\(ctx\.cwd, "rebind_resume", \{ pid: process\.pid \}\);/, "rebind resumes are ledger-visible");
   // Cold boots (new pid) still honor autoresume=off; lifecycle handoff and
   // same-pid rebind are explicit same-process continuations.
-  assert.ok((g.match(/if \(autoResume \|\| recoveryResume \|\| rebindResume \|\| handoffResume\) \{/g) ?? []).length >= 2, "goal + loop branches");
+  assert.ok(g.includes("if (autoResume || loopSuccessorResume) {"), "loop branch includes validated successor consent");
+  assert.ok((g.match(/if \(autoResume \|\| recoveryResume \|\| rebindResume \|\| handoffResume\) \{/g) ?? []).length >= 1, "goal branch keeps its existing lifecycle consent");
 });
 
 test("v0.34.51: the hanging-verification cause is named by the timeout branch (pully ssh/sudo stall)", () => {

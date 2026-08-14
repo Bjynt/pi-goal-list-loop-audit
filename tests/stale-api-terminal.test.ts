@@ -117,7 +117,8 @@ test("v0.30.0 — rebind-first survival: session_shutdown attribution, session_s
 test("v0.29.11 — stale/stall-stopped loops HOLD on next load (resume, not restart-from-scratch)", () => {
   // "loops need /loop start" discarded iteration/best/history; the loop
   // now holds on restore and /loop resume continues from the saved state.
-  assert.match(SRC, /stopReason\?\.startsWith\("extension api stale"\) \|\| state\.loop\.stopReason\?\.startsWith\("stalled:"\)/);
+  assert.match(SRC, /isLifecycleHeldLoopReason\(state\.loop\.stopReason\)/, "lifecycle-held loop predicate controls restore normalization and resume");
+  assert.match(SRC, /loop_auto_resumed_on_restore/, "lifecycle-held loops have a durable auto-resume path");
   assert.match(SRC, /appendLedger\(ctx\.cwd, "loop_held_for_resume"/);
   assert.match(SRC, /then \/loop resume — the loop holds on restore\./);
   assert.ok(!SRC.includes("loops need /loop start"), "stale guidance no longer discards loop state");
