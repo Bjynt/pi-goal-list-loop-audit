@@ -57,6 +57,7 @@ export interface CommandDeps {
   healGoalPolicy: (ctx: ExtensionContext) => boolean;
   startDrafting: (ctx: ExtensionContext, target: "goal" | "list" | "loop", seed?: string) => Promise<boolean>;
   warnIfStaleAtEntry: (ctx: ExtensionContext, what: string) => boolean;
+  queuePendingListOperation: (ctx: ExtensionContext, args: string) => boolean;
   freshCtx: () => ExtensionContext | null;
   freshCtxForGeneration: (generation: number) => ExtensionContext | null;
   goStaleTerminal: (ctx: ExtensionContext, where: string) => void;
@@ -91,7 +92,7 @@ export interface CommandDeps {
 let deps: CommandDeps;
 let flags: CommandFlags;
 let listQueue: CommandDeps["listQueue"], notifyExternal: CommandDeps["notifyExternal"], persistState: CommandDeps["persistState"], updateGoal: CommandDeps["updateGoal"], setGoal: CommandDeps["setGoal"],
-    archiveCurrentGoal: CommandDeps["archiveCurrentGoal"], healGoalPolicy: CommandDeps["healGoalPolicy"], startDrafting: CommandDeps["startDrafting"], warnIfStaleAtEntry: CommandDeps["warnIfStaleAtEntry"], freshCtx: CommandDeps["freshCtx"],
+    archiveCurrentGoal: CommandDeps["archiveCurrentGoal"], healGoalPolicy: CommandDeps["healGoalPolicy"], startDrafting: CommandDeps["startDrafting"], warnIfStaleAtEntry: CommandDeps["warnIfStaleAtEntry"], queuePendingListOperation: CommandDeps["queuePendingListOperation"], freshCtx: CommandDeps["freshCtx"],
     freshCtxForGeneration: CommandDeps["freshCtxForGeneration"], goStaleTerminal: CommandDeps["goStaleTerminal"], groupOpenChildren: CommandDeps["groupOpenChildren"], activateNextListItem: CommandDeps["activateNextListItem"], clearMainModelRecoveryTimer: CommandDeps["clearMainModelRecoveryTimer"], mainModelRecoveryTimerActive: CommandDeps["mainModelRecoveryTimerActive"], continuationDispatchPending: CommandDeps["continuationDispatchPending"], resetContinuationDispatchState: CommandDeps["resetContinuationDispatchState"],
     isCompletionAuditRecoveryPending: CommandDeps["isCompletionAuditRecoveryPending"], markCompletionAuditRecoveryPending: CommandDeps["markCompletionAuditRecoveryPending"], retryStoredCompletionAudit: CommandDeps["retryStoredCompletionAudit"], probeMainModelRecovery: CommandDeps["probeMainModelRecovery"], releaseContinuationDispatchStandDown: CommandDeps["releaseContinuationDispatchStandDown"],
     releaseInitialSessionLoadBarrier: CommandDeps["releaseInitialSessionLoadBarrier"], resolveCarryover: CommandDeps["resolveCarryover"], safeSteerUser: CommandDeps["safeSteerUser"], scheduleContinuation: CommandDeps["scheduleContinuation"], scheduleSessionTimeout: CommandDeps["scheduleSessionTimeout"],
@@ -101,7 +102,7 @@ let listQueue: CommandDeps["listQueue"], notifyExternal: CommandDeps["notifyExte
 export function createGoalCommands(d: CommandDeps): void {
   deps = d; flags = d.flags;
   listQueue = d.listQueue; notifyExternal = d.notifyExternal; persistState = d.persistState; updateGoal = d.updateGoal; setGoal = d.setGoal;
-  archiveCurrentGoal = d.archiveCurrentGoal; healGoalPolicy = d.healGoalPolicy; startDrafting = d.startDrafting; warnIfStaleAtEntry = d.warnIfStaleAtEntry; freshCtx = d.freshCtx;
+  archiveCurrentGoal = d.archiveCurrentGoal; healGoalPolicy = d.healGoalPolicy; startDrafting = d.startDrafting; warnIfStaleAtEntry = d.warnIfStaleAtEntry; queuePendingListOperation = d.queuePendingListOperation; freshCtx = d.freshCtx;
   freshCtxForGeneration = d.freshCtxForGeneration; goStaleTerminal = d.goStaleTerminal; groupOpenChildren = d.groupOpenChildren; activateNextListItem = d.activateNextListItem; clearMainModelRecoveryTimer = d.clearMainModelRecoveryTimer; mainModelRecoveryTimerActive = d.mainModelRecoveryTimerActive; continuationDispatchPending = d.continuationDispatchPending; resetContinuationDispatchState = d.resetContinuationDispatchState;
   isCompletionAuditRecoveryPending = d.isCompletionAuditRecoveryPending; markCompletionAuditRecoveryPending = d.markCompletionAuditRecoveryPending; retryStoredCompletionAudit = d.retryStoredCompletionAudit; probeMainModelRecovery = d.probeMainModelRecovery; releaseContinuationDispatchStandDown = d.releaseContinuationDispatchStandDown;
   releaseInitialSessionLoadBarrier = d.releaseInitialSessionLoadBarrier; resolveCarryover = d.resolveCarryover; safeSteerUser = d.safeSteerUser; scheduleContinuation = d.scheduleContinuation; scheduleSessionTimeout = d.scheduleSessionTimeout;
@@ -979,6 +980,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
   // the honest recovery result; the user's command belongs to the fresh
   // instance after the lifecycle replacement.
   if (staleEntry && LIST_MUTATING_SUBCOMMANDS.has(sub)) {
+    if (queuePendingListOperation(ctx, args)) return;
     appendLedger(ctx.cwd, "list_mutation_refused_stale", { sub });
     return;
   }
@@ -1304,6 +1306,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
   }
   // The dump fallthrough is always mutating — refuse it on a stale handle.
   if (staleEntry) {
+    if (queuePendingListOperation(ctx, args)) return;
     appendLedger(ctx.cwd, "list_mutation_refused_stale", { sub: "dump" });
     return;
   }

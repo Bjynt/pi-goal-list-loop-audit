@@ -669,6 +669,7 @@ function writeSessionHandoff(ctx: ExtensionContext, reason: string): boolean {
   // global autoResume may still apply by its own explicit policy.
   if (reason.trim().toLowerCase() === "quit") {
     try { fs.rmSync(sessionHandoffPath(ctx.cwd), { force: true }); } catch { /* advisory cleanup */ }
+    discardPendingListOperations(ctx.cwd, "quit");
     appendLedger(ctx.cwd, "session_handoff_suppressed", { reason });
     return false;
   }
@@ -1600,6 +1601,9 @@ defineGoalRuntimeGlobal("SESSION_HANDOFF_FRESH_MS", { get: () => SESSION_HANDOFF
 defineGoalRuntimeGlobal("sessionHandoffPath", { get: () => sessionHandoffPath });
 defineGoalRuntimeGlobal("writeSessionHandoff", { get: () => writeSessionHandoff });
 defineGoalRuntimeGlobal("consumeSessionHandoff", { get: () => consumeSessionHandoff });
+defineGoalRuntimeGlobal("queuePendingListOperation", { get: () => queuePendingListOperation });
+defineGoalRuntimeGlobal("consumePendingListOperations", { get: () => consumePendingListOperations });
+defineGoalRuntimeGlobal("discardPendingListOperations", { get: () => discardPendingListOperations });
 defineGoalRuntimeGlobal("SESSION_OWNER_FILE", { get: () => SESSION_OWNER_FILE });
 defineGoalRuntimeGlobal("markSessionOwnerShutdown", { get: () => markSessionOwnerShutdown });
 defineGoalRuntimeGlobal("claimSessionOwnerAndDetectRebind", { get: () => claimSessionOwnerAndDetectRebind });

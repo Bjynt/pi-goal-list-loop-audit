@@ -158,6 +158,7 @@ const commandDeps: CommandDeps = {
   healGoalPolicy,
   startDrafting,
   warnIfStaleAtEntry,
+  queuePendingListOperation,
   freshCtx,
   freshCtxForGeneration,
   goStaleTerminal,

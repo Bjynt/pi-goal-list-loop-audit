@@ -1041,6 +1041,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     }), ownerClaim.previousShutdownReason);
     const handoffResume = consumeSessionHandoff(ctx.cwd, ownerClaim.previousGeneration, ownerClaim.previousOwnerSessionId);
     if (handoffResume) appendLedger(ctx.cwd, "session_handoff_resumed", { pid: process.pid, reason: startReason });
+    const pendingListOperations = handoffResume
+      ? consumePendingListOperations(ctx.cwd, ownerClaim.previousGeneration, ownerClaim.previousOwnerSessionId)
+      : (discardPendingListOperations(ctx.cwd, "handoff-not-resumed"), [] as string[]);
     const rebindResume = ownerClaim.rebind;
     if (rebindResume) appendLedger(ctx.cwd, "rebind_resume", { pid: process.pid });
     const explicitRecovery = handoffResume || recoveryResume || rebindResume;
