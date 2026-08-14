@@ -5,14 +5,15 @@
 //
 // Pre-0.28.0 used `ctx.ui.select` with flat single-line rows; v0.28.0
 // replaces it with a `ctx.ui.custom` Container/Text layout featuring:
-//   • a top TABS row listing all 6 sections (left/right to switch sections)
+//   • a top TABS row listing all 7 sections (left/right to switch sections)
 //   • a 4-column table for the active section (KEY | VALUE | SOURCE | DESCRIPTION)
 //   • up/down navigation scoped to the active section's rows
 //   • Enter → emit the selected row's id (caller dispatches handler)
 //   • Esc / Ctrl+C → emit undefined (caller exits)
 //
-// Sections (6 total) map to the pre-0.28.0 menu groupings plus Backups:
-//   keep-going | backups | auditor | stall-brakes | subagents | other
+// Sections (7 total) map to the pre-0.28.0 menu groupings plus Backups and
+// the dedicated ordered main-model fallback editor:
+//   keep-going | backups | main-fallbacks | auditor | stall-brakes | subagents | other
 //
 // Extracted into its own module so tests can import `buildSettingsRows` directly
 // (mirrors how `readState` lives in goal-loop-core.ts) and so the renderer is
@@ -49,6 +50,7 @@ import { resolveEffectiveSubagentModel, OVERRIDABLE_AGENT_TYPES } from "./goal-l
 export type SettingsSectionId =
   | "keep-going"
   | "backups"
+  | "main-fallbacks"
   | "auditor"
   | "stall-brakes"
   | "subagents"
@@ -57,6 +59,7 @@ export type SettingsSectionId =
 export const SETTINGS_SECTIONS: readonly { id: SettingsSectionId; label: string }[] = [
   { id: "keep-going", label: "Keep-going" },
   { id: "backups", label: "Backups" },
+  { id: "main-fallbacks", label: "Main fallbacks" },
   { id: "auditor", label: "Auditor" },
   { id: "stall-brakes", label: "Stall brakes" },
   { id: "subagents", label: "Subagents" },
@@ -179,16 +182,6 @@ export function buildSettingsRows(
         "on: continuation prompts route 'can't see' checks to the mmx vision CLI instead of switching models; switches stay preapproved-only (forbiddenModels gate)",
     },
     {
-      id: "mainModelFallbacks",
-      section: "backups",
-      label: `Main model backups (up to ${MAX_MAIN_MODEL_FALLBACKS})`,
-      valueText: settings.mainModelFallbacks?.length
-        ? `${settings.mainModelFallbacks.length}/${MAX_MAIN_MODEL_FALLBACKS} · ${formatMainModelFallbacks(settings.mainModelFallbacks)}`
-        : `0/${MAX_MAIN_MODEL_FALLBACKS} · none`,
-      sourceText: src("mainModelFallbacks"),
-      description: "try order is current session model → backup 1 → backup 2…; account/plan/billing/auth and (when enabled) request-rate failures switch one eligible backup at a time"
-    },
-    {
       id: "mainModelFallbackOnRateLimit",
       section: "backups",
       label: "Fallback on request-rate wall",
@@ -229,6 +222,21 @@ export function buildSettingsRows(
       description: "adds a probe at :00:30 while any main-model recovery is parked; off disables only this extra ticker, not the configured retry ladder"
     },
   );
+
+  // ── Main-model fallback chain (v0.34.139) ──
+  // This gets its own tab because it is an ordered, user-curated chain:
+  // Space toggles membership, [/] changes order, and removing the last ref
+  // clears the global key. The runtime consumes the same left-to-right list.
+  rows.push({
+    id: "mainModelFallbacks",
+    section: "main-fallbacks",
+    label: `Main model backups (up to ${MAX_MAIN_MODEL_FALLBACKS})`,
+    valueText: settings.mainModelFallbacks?.length
+      ? `${settings.mainModelFallbacks.length}/${MAX_MAIN_MODEL_FALLBACKS} · ${formatMainModelFallbacks(settings.mainModelFallbacks)}`
+      : `0/${MAX_MAIN_MODEL_FALLBACKS} · none`,
+    sourceText: src("mainModelFallbacks"),
+    description: "ordered and deselectable: current session model → backup 1 → backup 2…; account/plan/billing/auth and (when enabled) request-rate failures switch one eligible backup at a time",
+  });
 
   // ── Subagent fallback chains (v0.34.115) ──
   // Fallback chains are editable for every embedded agent type. This is

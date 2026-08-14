@@ -72,13 +72,13 @@ test("every row carries every required column field", () => {
   }
 });
 
-test("the 6 sections are exactly {keep-going, backups, auditor, stall-brakes, subagents, other}", () => {
+test("the 7 sections include a dedicated main-fallbacks tab", () => {
   const ids = SETTINGS_SECTIONS.map((s) => s.id);
-  assert.deepEqual(ids, ["keep-going", "backups", "auditor", "stall-brakes", "subagents", "other"]);
+  assert.deepEqual(ids, ["keep-going", "backups", "main-fallbacks", "auditor", "stall-brakes", "subagents", "other"]);
   assert.ok(SETTINGS_SECTIONS.every((s) => typeof s.label === "string" && s.label.length > 0));
 });
 
-test("every row's section is one of the 6 known section ids (no orphans)", () => {
+test("every row's section is one of the 7 known section ids (no orphans)", () => {
   const validSections = new Set<string>(SETTINGS_SECTIONS.map((s) => s.id));
   const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
   for (const r of rows) {
@@ -86,11 +86,11 @@ test("every row's section is one of the 6 known section ids (no orphans)", () =>
   }
 });
 
-test("v0.34.118: backup controls live together in the dedicated Backups section", () => {
+test("v0.34.139: main fallback editing has its own tab; other backup controls stay together", () => {
   const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
   const byId = new Map(rows.map((r) => [r.id, r]));
+  assert.equal(byId.get("mainModelFallbacks")?.section, "main-fallbacks");
   for (const id of [
-    "mainModelFallbacks",
     "mainModelRetryMinutes",
     "subagentFallbacks:Explore",
     "subagentFallbacks:Plan",
@@ -100,6 +100,16 @@ test("v0.34.118: backup controls live together in the dedicated Backups section"
   }
   assert.ok(rows.filter((r) => r.id.startsWith("subagentFallbacks:")).every((r) => r.section === "backups"));
   assert.equal(byId.get("forbiddenModels")?.section, "keep-going", "policy gate stays with keep-going controls");
+});
+
+test("main fallback row explains ordered, deselectable selection", () => {
+  const rows = buildSettingsRows(
+    { ...SAMPLE_SETTINGS, mainModelFallbacks: ["provider/first", "provider/second"] },
+    provFromSettings({ mainModelFallbacks: ["provider/first", "provider/second"] }),
+  );
+  const row = rows.find((candidate) => candidate.id === "mainModelFallbacks")!;
+  assert.equal(row.section, "main-fallbacks");
+  assert.match(row.description, /ordered and deselectable/);
 });
 
 test("all embedded subagent types expose editable fallback-chain rows", () => {
@@ -187,7 +197,7 @@ test("rows map 1:1 to dispatchable ids (every id can drive a handler)", () => {
   assert.ok(covered >= 18, `expected at least 18 dispatcher-covered rows, saw ${covered}`);
 });
 
-test("main backup row shows the persisted numbered try order and truthful runtime semantics", () => {
+test("main fallback row shows the persisted numbered try order and truthful runtime semantics", () => {
   const rows = buildSettingsRows(
     { ...SAMPLE_SETTINGS, mainModelFallbacks: ["provider/first", "provider/second"] },
     provFromSettings({ mainModelFallbacks: ["provider/first", "provider/second"] }),
