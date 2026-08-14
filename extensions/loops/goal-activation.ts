@@ -1061,6 +1061,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // marker. Keep this loop-specific; standalone goals retain their normal
     // cold-start hold policy.
     const loopSuccessorResume = explicitRecovery || nonQuitShutdownResume;
+    const heldLoopSuccessorResume = !!state.loop
+      && !state.loop.active
+      && isLifecycleHeldLoopReason(state.loop.stopReason)
+      && nonQuitShutdownResume;
     // Close terminal slots before the blank-start barrier as well. A blank
     // startup is still a real state load, and returning before this cleanup
     // used to leave legacy `complete`/`aborted` cards visible until a second
@@ -1071,7 +1075,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       persistState(ctx);
       appendLedger(ctx.cwd, "terminal_goal_slot_closed", { goalId: terminal.id, status: terminal.status, via: "session-start" });
     }
-    if (initialSessionLoadPending && !loopSuccessorResume) {
+    if (initialSessionLoadPending && !explicitRecovery && !heldLoopSuccessorResume) {
       // Even a blank startup must not leave a stored completion claim in the
       // old AUDITING state: there is no worker verdict to wait for after a
       // session boundary. Release it before the transcript-load barrier;

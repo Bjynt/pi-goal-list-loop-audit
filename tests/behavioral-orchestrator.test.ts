@@ -667,6 +667,61 @@ test("T3d: active loop + human load → HELD_ON_RESTORE (loop deactivated loudly
   assert.ok(ctx.ui.matching("loop held on restore").length >= 1, "held notify names the loop");
 });
 
+test("v0.35.x: a successor auto-resumes lifecycle-held loops intact but preserves deliberate stops", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  setGlobalAutoResume(false);
+  const cwd = tmpCwd();
+  seedState(cwd, { loop: seedLoop({
+    active: true,
+    iteration: 7,
+    maxIterations: 123,
+    plateauWindow: 9,
+    stallCount: 2,
+    bestValue: 42,
+    lastValue: 44,
+    history: [{ iteration: 6, value: 44, improved: false, at: new Date().toISOString() }],
+    timeLimitHours: 4,
+    tokenBudget: 12_345,
+    tokensUsed: 678,
+    recentPrints: ["prior-print"],
+    recentTexts: ["prior-text"],
+  }) });
+  const first = await freshSession(cwd, "startup");
+  const held = readState(cwd).loop as Record<string, unknown>;
+  assert.equal(held.active, false, "human startup first parks the active loop");
+  assert.equal(held.stopReason, HELD, "the lifecycle hold is explicit");
+  const heldSnapshot = { ...held };
+  delete heldSnapshot.active;
+  delete heldSnapshot.stopReason;
+
+  await pi.fire("session_shutdown", { reason: "reload" }, first);
+  const replacement = ownerCtx(cwd);
+  pi.sent.length = 0;
+  await pi.fire("session_start", { reason: "reload" }, replacement);
+  const resumed = readState(cwd).loop as Record<string, unknown>;
+  assert.equal(resumed.active, true, "the successor resumes the lifecycle-held loop");
+  assert.equal(resumed.stopReason, undefined, "the lifecycle hold marker is consumed");
+  const resumedSnapshot = { ...resumed };
+  delete resumedSnapshot.active;
+  delete resumedSnapshot.stopReason;
+  assert.deepEqual(resumedSnapshot, heldSnapshot, "metric, bounds, history, iteration, and progress survive unchanged");
+  assert.ok(readLedger(cwd).some((entry) => entry.type === "loop_auto_resumed_on_restore"), "automatic lifecycle resume is ledgered");
+  await pi.command("loop", "stop", replacement);
+
+  const deliberateCwd = tmpCwd();
+  const deliberateReason = "stopped by user (/loop stop)";
+  seedState(deliberateCwd, { loop: seedLoop({ active: false, stopReason: deliberateReason, iteration: 11, bestValue: 9 }) });
+  const deliberateFirst = await freshSession(deliberateCwd, "startup");
+  await pi.fire("session_shutdown", { reason: "reload" }, deliberateFirst);
+  const deliberateReplacement = ownerCtx(deliberateCwd);
+  await pi.fire("session_start", { reason: "reload" }, deliberateReplacement);
+  const deliberate = readState(deliberateCwd).loop as { active: boolean; stopReason?: string };
+  assert.equal(deliberate.active, false, "a deliberate user stop stays stopped");
+  assert.equal(deliberate.stopReason, deliberateReason, "the deliberate stop reason is preserved");
+  assert.equal(readLedger(deliberateCwd).some((entry) => entry.type === "loop_auto_resumed_on_restore"), false, "deliberate stop never enters lifecycle auto-resume");
+});
+
 test("v0.29.14: live audit loop on open-count/min migrates to closed-count/max on load (discovery no longer reads as regression)", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
