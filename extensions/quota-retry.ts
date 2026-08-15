@@ -33,10 +33,9 @@ export interface QuotaError {
 export type ProviderErrorSurface = "recovery" | "completion" | "main";
 
 /** Normalize the structured failure shapes emitted by different providers and
- * pi versions into one bounded diagnostic string. HTTP status fields are
- * factual classification input: a 429 must remain a request-rate signal even
- * when the accompanying message only says "limit exceeded". Keep this
- * helper display-agnostic; callers still pass the result through
+ * pi versions into one bounded diagnostic string. Status fields and provider
+ * wording are retained for diagnostics only; they never select recovery.
+ * Keep this helper display-agnostic; callers still pass the result through
  * providerErrorPresentation before showing anything to a user. */
 export function normalizeProviderErrorText(...values: unknown[]): string {
   const statuses: number[] = [];
@@ -109,7 +108,7 @@ export interface ProviderErrorPresentation {
 // Provider payloads frequently contain account names, request ids, nested JSON,
 // and raw HTTP text. These markers only decide whether raw text must be
 // redacted; they never decide whether or when recovery retries.
-const PROVIDER_WALL_MARKER = /\b(?:401|403|408|409|429|5\d\d)\b|api[\s_-]*key|authorization|token[\s_-]*plan|rate[\s_-]*limit|too[\s_-]+many[\s_-]+requests|usage[\s_-]*limit|quota|insufficient[\s_-]+(?:credits?|balance)|key[\s_-]*limit|retry[\s_-]*after|request[\s_-]*(?:id|identifier)/i;
+const PROVIDER_SENSITIVE_MARKER = /\b(?:401|403|408|409|429|5\d\d)\b|api[\s_-]*key|authorization|token[\s_-]*plan|rate[\s_-]*limit|too[\s_-]+many[\s_-]+requests|usage[\s_-]*limit|quota|insufficient[\s_-]+(?:credits?|balance)|key[\s_-]*limit|retry[\s_-]*after|request[\s_-]*(?:id|identifier)/i;
 
 function providerFingerprintText(error: string): string {
   return error
@@ -129,7 +128,7 @@ function providerFingerprintText(error: string): string {
 
 /** Stable logical identity for per-recovery-episode notice deduplication.
  * Retry-after values, counters, timestamps, and request ids are intentionally
- * removed so the same provider wall does not produce a new notice each time
+ * removed so the same provider failure does not produce a new notice each time
  * the upstream changes a number. */
 export function providerErrorFingerprint(error: string | undefined): string {
   const raw = typeof error === "string" ? error : "";
@@ -140,13 +139,13 @@ export function providerErrorFingerprint(error: string | undefined): string {
  * retaining a bounded diagnostic projection for durable ledger/archive state. */
 export function providerErrorPresentation(error: string | undefined, surface: ProviderErrorSurface = "recovery"): ProviderErrorPresentation {
   const diagnostic = typeof error === "string" ? error.slice(0, 4_000) : "";
-  const sensitive = PROVIDER_WALL_MARKER.test(diagnostic);
+  const sensitive = PROVIDER_SENSITIVE_MARKER.test(diagnostic);
   const display = sensitive ? "provider error" : "provider error";
   const action = surface === "completion"
     ? "The stored completion claim is safe; fix the provider/model, then resume to retry the auditor."
     : surface === "main"
-      ? "Automatic recovery remains bounded; wait for the provider window or switch to a configured backup model."
-      : "Automatic recovery remains bounded; wait for the provider window or switch models if needed.";
+      ? "Automatic recovery remains bounded; wait for a later retry or switch to a configured backup model."
+      : "Automatic recovery remains bounded; wait for a later retry or switch models if needed.";
   return {
     diagnostic,
     display,
@@ -166,7 +165,7 @@ export function sanitizeProviderDisplayText(value: string): string {
   if (/main model recovery.*automatic probes stopped/i.test(value)) {
     const match = value.match(/^main model recovery — automatic probes stopped \(([^)]*)\)/i);
     const why = match?.[1]?.trim() ?? "provider recovery horizon reached";
-    const safeWhy = PROVIDER_WALL_MARKER.test(why) ? presentation.display : why;
+    const safeWhy = PROVIDER_SENSITIVE_MARKER.test(why) ? presentation.display : why;
     return `main model recovery — automatic probes stopped (${safeWhy}) · ${presentation.display}`;
   }
   if (/main model recovery/i.test(value)) {
@@ -187,7 +186,7 @@ export function sanitizeProviderDisplayText(value: string): string {
 export function sanitizeProviderAuditReport(report: string | undefined): string {
   if (!report) return "";
   const providerLine = new RegExp(
-    `${PROVIDER_WALL_MARKER.source}|request[\\s_-]*(?:id|identifier)|rate_limit_error|insufficient_quota`,
+    `${PROVIDER_SENSITIVE_MARKER.source}|request[\\s_-]*(?:id|identifier)|rate_limit_error|insufficient_quota`,
     "i",
   );
   const structuredLine = /["']?(?:status(?:code)?|error(?:message)?|message|detail|reason|request[\s_-]*(?:id|identifier)|retry[\s_-]*after|reset[\s_-]*(?:at|after))\b["']?\s*[:=]/i;

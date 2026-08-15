@@ -713,7 +713,7 @@ export function takeAt<T>(items: T[], n: number): [T, T[]] | null {
 }
 
 export interface MainModelRecovery {
-  /** The model selected when the provider wall was first observed. */
+  /** The model selected when this recovery episode was first observed. */
   primary: string;
   /** Bounded raw provider diagnostic retained for ledger/archive forensics. */
   providerErrorDiagnostic?: string;
@@ -789,7 +789,7 @@ export function sanitizeMainModelRecovery(value: unknown): MainModelRecovery | u
   const raw = value as Record<string, unknown>;
   const primary = typeof raw.primary === "string" ? raw.primary.trim().slice(0, 300) : "";
   // Pre-kind recovery records were goal-owned; default them to goal rather
-  // than silently discarding a saved provider wall during an upgrade.
+  // than silently discarding a saved recovery episode during an upgrade.
   const kind = raw.kind === "loop" ? "loop" : "goal";
   if (!primary) return undefined;
   const refs: string[] = [];
