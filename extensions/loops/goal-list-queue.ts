@@ -383,7 +383,10 @@ function listQueue(): NonNullable<State["list"]> {
 
 interface DraftingModelLease {
   originalModel: any;
+  originalThinkingLevel: string;
   activeRef: string;
+  activeThinkingLevel: string;
+  requestedThinkingLevel: string;
   candidates: DrafterModelCandidate[];
   attempted: string[];
   generation: number;
@@ -392,6 +395,34 @@ interface DraftingModelLease {
 let draftingModelLease: DraftingModelLease | null = null;
 let draftingModelRestoreInFlight: Promise<void> | null = null;
 const DRAFTER_RECOVERY_PROMPT = "The drafting model turn failed. Resume the existing drafting interview from the conversation, keep the user's intent, ask at most one focused decision question if truly necessary, and continue toward the appropriate propose_* tool. Do not restart the interview or implement work.";
+
+/** Read the host's current thinking level without making older/test hosts a
+ * hard failure. The real ExtensionAPI exposes both accessors; the fallback to
+ * the event context keeps the lease logic honest when only the read-only side
+ * is available. */
+function currentThinkingLevel(ctx: ExtensionContext): string {
+  const api = extensionApi as any;
+  try {
+    if (typeof api?.getThinkingLevel === "function") return String(api.getThinkingLevel());
+  } catch {
+    // Fall through to the context snapshot.
+  }
+  return String(ctx.thinkingLevel ?? "off");
+}
+
+/** Apply the configured drafting level to the temporary agent. Pi clamps the
+ * request to the selected model's capabilities, so the returned value is the
+ * effective level that must be compared during restoration. */
+function applyDrafterThinkingLevel(ctx: ExtensionContext, requested: string): string {
+  const api = extensionApi as any;
+  try {
+    if (typeof api?.setThinkingLevel === "function") api.setThinkingLevel(requested);
+  } catch {
+    // A missing/stale host action must not turn a drafting model switch into
+    // a new failure; the model lease remains independently recoverable.
+  }
+  return currentThinkingLevel(ctx);
+}
 
 /** Select the drafting-only model and retain a generation-fenced restore lease. */
 async function beginDrafterModel(ctx: ExtensionContext): Promise<void> {
@@ -409,10 +440,16 @@ async function beginDrafterModel(ctx: ExtensionContext): Promise<void> {
   const originalModel = ctx.model;
   const beforeRef = modelRef(originalModel);
   if (!beforeRef) return;
+  const originalThinkingLevel = currentThinkingLevel(ctx);
+  const requestedThinkingLevel = String(settings.drafterThinkingLevel ?? originalThinkingLevel);
   if (selected.via === "session-last-resort") {
+    const activeThinkingLevel = applyDrafterThinkingLevel(ctx, requestedThinkingLevel);
     draftingModelLease = {
       originalModel,
+      originalThinkingLevel,
       activeRef: selected.ref,
+      activeThinkingLevel,
+      requestedThinkingLevel,
       candidates: resolution.candidates,
       // The current session model is a bounded same-model retry, not a model
       // switch. It must remain unattempted so one drafting error can replay
@@ -427,9 +464,13 @@ async function beginDrafterModel(ctx: ExtensionContext): Promise<void> {
     return;
   }
   if (beforeRef.toLowerCase() === selected.ref.toLowerCase()) {
+    const activeThinkingLevel = applyDrafterThinkingLevel(ctx, requestedThinkingLevel);
     draftingModelLease = {
       originalModel,
+      originalThinkingLevel,
       activeRef: selected.ref,
+      activeThinkingLevel,
+      requestedThinkingLevel,
       candidates: resolution.candidates,
       attempted: [selected.ref],
       generation: sessionGeneration,
@@ -444,9 +485,13 @@ async function beginDrafterModel(ctx: ExtensionContext): Promise<void> {
     ctx.ui.notify(`Drafter model ${selected.ref} could not be selected; drafting stays on the current session model.`, "warning");
     return;
   }
+  const activeThinkingLevel = applyDrafterThinkingLevel(ctx, requestedThinkingLevel);
   draftingModelLease = {
     originalModel,
+    originalThinkingLevel,
     activeRef: selected.ref,
+    activeThinkingLevel,
+    requestedThinkingLevel,
     candidates: resolution.candidates,
     attempted: [selected.ref],
     generation: sessionGeneration,
@@ -477,13 +522,17 @@ async function restoreDrafterModel(): Promise<void> {
     return;
   }
   const originalRef = modelRef(lease.originalModel);
+  const currentThinking = currentCtx ? currentThinkingLevel(currentCtx) : undefined;
+  const shouldRestoreThinking = currentThinking === lease.activeThinkingLevel;
   if (currentRef && originalRef && currentRef.toLowerCase() === originalRef.toLowerCase()) {
+    if (shouldRestoreThinking && currentCtx) applyDrafterThinkingLevel(currentCtx, lease.originalThinkingLevel);
     appendLedger(currentCtx?.cwd ?? process.cwd(), "drafter_model_restored", { to: originalRef, alreadyActive: true });
     return;
   }
   const restore = (async () => {
     try {
       const restored = await extensionApi.setModel(lease.originalModel);
+      if (restored && shouldRestoreThinking && currentCtx) applyDrafterThinkingLevel(currentCtx, lease.originalThinkingLevel);
       appendLedger(currentCtx?.cwd ?? process.cwd(), restored ? "drafter_model_restored" : "drafter_model_restore_failed", { to: originalRef });
       if (!restored) currentCtx?.ui.notify("The drafting model could not be restored; the current model remains active. Main and auditor settings were not changed.", "warning");
     } catch {
@@ -516,6 +565,7 @@ async function handleDrafterModelFailure(ctx: ExtensionContext): Promise<boolean
     if (!switched && !alreadyActive) continue;
     const previous = lease.activeRef;
     lease.activeRef = candidate.ref;
+    lease.activeThinkingLevel = applyDrafterThinkingLevel(ctx, lease.requestedThinkingLevel);
     appendLedger(ctx.cwd, alreadyActive ? "drafter_model_retry" : "drafter_model_fallback", { from: previous, to: candidate.ref, attempted: lease.attempted });
     ctx.ui.notify(`Drafting provider failed; retrying the existing interview on ${candidate.ref}.`, "warning");
     const safeSteer = (globalThis as any).safeSteerUser as ((context: ExtensionContext, text: string) => boolean) | undefined;
