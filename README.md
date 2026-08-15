@@ -271,7 +271,7 @@ Activity is otherwise intentionally honest:
 | `auditor …` | A detached, extension-less verifier is queued, running, quiet, or waiting for its verdict. |
 | `RECOVERING` | A bounded automatic retry is pending; the status does not guess why the provider failed. |
 
-## Provider failures: aggressive retry envelope, bounded (v0.34.142)
+## Provider failures: aggressive retry envelope, bounded (v0.35.0)
 
 Error text is **not trusted** to pick a retry policy. The runtime does not
 query or infer provider quota state, and it does not use status codes, billing

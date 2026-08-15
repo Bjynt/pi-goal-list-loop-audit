@@ -24,7 +24,7 @@ looking like every incident is still open.
 | Restart/resume was needed to get moving | **Mostly resolved** | Generation-bound dispatch, lifecycle handoff, rebind, and same-process self-healing are covered. A true stale host context still depends on Pi delivering a fresh lifecycle boundary. |
 | Auditor timed out | **Resolved handling; root cause remains observable** | Timeout and inactivity are treated as infrastructure failures, the completion claim is retained, and the auditor is retried. A genuinely hung verification command can still time out; it no longer loses the claim or becomes a verdict. |
 | Auditor parked with no verdict and stopped | **Resolved within bounds** | No-verdict claims use the same durable generic retry plan. Aggressive mode keeps retrying inside its bounded window; after the cap, explicit resume starts a fresh window. |
-| Quota checking / waiting for a reset | **Resolved in v0.34.142** | Live recovery does not query, infer, or classify quota availability and does not use `Retry-After` or quota wording to choose a path. |
+| Quota checking / waiting for a reset | **Resolved in v0.35.0** | Live recovery does not query, infer, or classify quota availability and does not use `Retry-After` or quota wording to choose a path. |
 | Host session lost / resume could not recover it | **Partly resolved; Pi limitation remains** | The plugin preserves work, classifies stale handles honestly, rebinds when Pi supplies a replacement, and points to `/new` when the cached event context cannot be repaired. Automatic session creation is not available from Pi's public event context. |
 | Total time spent / UI review | **Resolved** | Goal, loop, queue, auditor, and terminal surfaces expose elapsed or duration information; focused display and philosophy tests pass. |
 | Long-term-minded vs opportunistic fixes / unnecessary questions | **Resolved in v0.35.0** | Drafting and continuation now state the durable-fix preference, safe-workaround conditions, unattended fallback, and genuine decision boundaries for questions. This is policy guidance, not a new user preference, by design. |
@@ -32,11 +32,14 @@ looking like every incident is still open.
 | Dedicated drafter model with fallbacks | **Resolved in v0.35.0** | Drafting has a separate temporary primary/fallback chain, generic existing-interview recovery, serialized restore, session last resort, settings UI, and focused tests. Main and auditor chains are untouched. |
 | External continuation research | **Resolved as documented no-change** | Codex, Claude Code, and DeepSeek Harness confirm the durable checkpoint/resume direction and produce a concrete Pi host-session API request; no provider-specific retry redesign is needed. |
 
-Focused evidence for this triage: 229 relevant tests pass on the current
-checkout before the v0.35.0 work. The final release-check evidence is recorded
-below after the versioned implementation is validated. The only remaining
-dependency is Pi itself: event-safe host session replacement is documented but
-cannot be implemented inside this plugin.
+Focused evidence for this triage: 229 relevant tests passed before the v0.35.0
+implementation, and the new policy/designer/drafter slice adds 36 focused
+passing tests. The final release check below is clean: 1,357 passed, 1 skipped
+(the environment-gated daemon test), and 0 failed across 1,358 tests; TypeScript
+type-checking, the Jiti state-split regression, and `npm pack --dry-run` for
+`pi-goal-list-loop-audit@0.35.0` also pass. The only remaining dependency is Pi
+itself: event-safe host session replacement is documented but cannot be
+implemented inside this plugin.
 
 ## Remaining tasklist — v0.35.0
 
