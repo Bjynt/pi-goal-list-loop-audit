@@ -851,7 +851,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     }
     if (activity === "idle") {
       const idleDetails = [
-        fmtElapsed(now - Date.parse(g.createdAt)),
+        goalTotalText(g, now),
         hostLastActivity(extras, now).replace(/^ · /, ""),
         (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "",
       ].filter(Boolean);
@@ -863,7 +863,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     // like progress. Queued work is neither idle nor currently executing.
     if (activity === "busy") {
       const busyDetails = [
-        fmtElapsed(now - Date.parse(g.createdAt)),
+        goalTotalText(g, now),
         g.taskList ? `${countDone(g)}/${countTotal(g)} tasks` : "",
         hostLastStream(extras, now).replace(/^ · /, ""),
         (state.list?.length ?? 0) > 0 ? `${state.list!.length} queued` : "",
@@ -896,7 +896,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     // queue/task context. It scans like a compact instrument readout and
     // remains useful when the above-editor card is hidden or scrolled away.
     const details = [
-      fmtElapsed(now - Date.parse(g.createdAt)),
+      goalTotalText(g, now),
       g.taskList ? `${countDone(g)}/${countTotal(g)} tasks` : "",
       live ? hostLastStream(extras, now).replace(/^ · /, "") : "",
       // v0.34.124: the QUEUED "why" — an accepted dispatch that pi has not

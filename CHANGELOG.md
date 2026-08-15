@@ -9,9 +9,9 @@
   and hit the existing watchdogs.
 
 ### Total time and recovery activity are labeled honestly
-  Goal cards now label wall-clock lifetime as `total`, while recovery surfaces
-  say `last host activity` so retry/error events are not confused with useful
-  goal progress.
+  Goal cards and the active status HUD now label wall-clock lifetime as
+  `total`, while recovery surfaces say `last host activity` so retry/error
+  events are not confused with useful goal progress.
 
 ## 0.35.2 — role-specific agent settings and compact values (2026-08-15)
 

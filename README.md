@@ -261,7 +261,7 @@ an animated pulse waveform so live work is obvious at a glance without turning
 the line into a progress meter. Fresh stream age is the proof of live work:
 
 ```text
-glla: [▁▂▄▆█▆ LIVE · WORKING] 1m 09s · last stream 11s ago · 3 queued
+glla: [▁▂▄▆█▆ LIVE · WORKING] total 1m 09s · last stream 11s ago · 3 queued
 glla: [QUEUED] 44s · 18 queued
 ```
 

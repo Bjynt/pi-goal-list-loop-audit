@@ -79,7 +79,7 @@ test("empty state → undefined (segment cleared)", () => {
 
 test("active goal shows a compact state capsule + elapsed", () => {
   const s = buildStatusText({ goal: goalOf(), list: [] }, null, NOW)!;
-  assert.match(s, /glla: \[ACTIVE\] 3m/);
+  assert.match(s, /glla: \[ACTIVE\] total 3m/);
   assert.doesNotMatch(s, /glla: goal/, 'v0.34.1: the status line drops the policy word — the widget owns type naming');
 });
 
@@ -103,28 +103,28 @@ test("stream-proven work uses one compact status-bar HUD; the card stays quiet",
   };
   const stream = { activity: "working" as const, lastStreamActivityAt: NOW - 11_000 };
   const status = buildStatusText(state, null, NOW, undefined, stream)!;
-  assert.match(status, /^glla: \[[▁▂▄▆█]{6} LIVE · WORKING\] 1m 09s · last stream 11s ago · 3 queued$/);
+  assert.match(status, /^glla: \[[▁▂▄▆█]{6} LIVE · WORKING\] total 1m 09s · last stream 11s ago · 3 queued$/);
   const lines = buildWidgetLines(state, null, NOW, undefined, undefined, stream)!;
   assert.match(lines[0]!, /^● /);
   assert.match(lines[0]!, /· active ·/);
   assert.doesNotMatch(lines.join("\n"), /LIVE WORK|last stream 11s ago/);
 
   const busy = buildStatusText(state, null, NOW, undefined, { activity: "busy", lastStreamActivityAt: NOW - 20_000 })!;
-  assert.match(busy, /glla: \[BUSY\] 1m 09s · last stream 20s ago · 3 queued/);
+  assert.match(busy, /glla: \[BUSY\] total 1m 09s · last stream 20s ago · 3 queued/);
   assert.doesNotMatch(busy, /WORKING/);
 
   const queued = buildStatusText(state, null, NOW, undefined, { activity: "queued" })!;
-  assert.match(queued, /glla: \[QUEUED\] 1m 09s · 3 queued/);
+  assert.match(queued, /glla: \[QUEUED\] total 1m 09s · 3 queued/);
   assert.doesNotMatch(queued, /WORKING/);
 
   // v0.34.124: the QUEUED "why" — an accepted-but-unstarted dispatch and
   // the last real activity age. A ticking timer with no freshness told the
   // user nothing (note.md 221249 "time ticking but nothing else").
   const queuedPending = buildStatusText(state, null, NOW, undefined, { activity: "queued", turnPending: true, lastActivityAt: NOW - 180_000 })!;
-  assert.match(queuedPending, /\[QUEUED\] 1m 09s · turn pending · last host activity 3m 00s ago · 3 queued/);
+  assert.match(queuedPending, /\[QUEUED\] total 1m 09s · turn pending · last host activity 3m 00s ago · 3 queued/);
   // turnPending WITHOUT a known last-activity epoch still names the pending turn.
   const queuedPendingNoAge = buildStatusText(state, null, NOW, undefined, { activity: "queued", turnPending: true })!;
-  assert.match(queuedPendingNoAge, /\[QUEUED\] 1m 09s · turn pending · 3 queued/);
+  assert.match(queuedPendingNoAge, /\[QUEUED\] total 1m 09s · turn pending · 3 queued/);
   // No turnPending (scheduled-but-not-yet-sent) stays the plain QUEUED line.
   const queuedScheduled = buildStatusText(state, null, NOW, undefined, { activity: "queued" })!;
   assert.doesNotMatch(queuedScheduled, /turn pending/);
@@ -135,7 +135,7 @@ test("stream-proven work uses one compact status-bar HUD; the card stays quiet",
   };
   assert.equal(
     buildStatusText(goldenQueued, null, NOW, undefined, { activity: "queued" }),
-    "glla: [QUEUED] 44s · 18 queued",
+    "glla: [QUEUED] total 44s · 18 queued",
   );
 });
 
@@ -179,7 +179,7 @@ test("v0.34.95: queued WITHOUT a parked recovery does NOT show quota text (no fa
     list: [{ id: "queued-0", objective: "queued", addedAt: "z" }],
   };
   const status = buildStatusText(queuedNoRecovery, null, NOW, undefined, { activity: "queued" })!;
-  assert.equal(status, "glla: [QUEUED] 44s · 1 queued");
+  assert.equal(status, "glla: [QUEUED] total 44s · 1 queued");
   assert.doesNotMatch(status, /quota/);
 });
 
