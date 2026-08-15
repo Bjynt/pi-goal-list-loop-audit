@@ -499,7 +499,7 @@ function freshCtxForGeneration(generation: number): ExtensionContext | null {
 }
 
 /**
- * v0.34.20: the generic quota helper owns only the wall-clock timer and the
+ * v0.34.20: the generic provider-retry helper owns only the wall-clock timer and the
  * immediate notification. This adapter owns the session boundary: callbacks
  * receive a context proven fresh at fire time and may not close over the
  * scheduling event's ctx.

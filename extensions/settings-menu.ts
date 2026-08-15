@@ -191,7 +191,7 @@ export function buildSettingsRows(
         ? `${settings.mainModelFallbacks.length}/${MAX_MAIN_MODEL_FALLBACKS} · ${formatMainModelFallbacks(settings.mainModelFallbacks)}`
         : `0/${MAX_MAIN_MODEL_FALLBACKS} · none`,
       sourceText: src("mainModelFallbacks"),
-      description: "ordered and deselectable: current session model → backup 1 → backup 2…; account/plan/billing/auth and (when enabled) request-rate failures switch one eligible backup at a time",
+      description: "ordered and deselectable: current session model → backup 1 → backup 2…; every recoverable provider failure switches one eligible backup at a time",
     },
     {
       id: "forbiddenModels",
@@ -370,7 +370,7 @@ export function buildSettingsRows(
       valueText: show("subagentModelStrategy", "inherit-parent"),
       sourceText: src("subagentModelStrategy"),
       description:
-        "inherit-parent shares your session model + quota pool; agent-default uses the upstream pi-subagents default agents",
+        "inherit-parent shares your session model; agent-default uses the upstream pi-subagents default agents",
     },
     {
       id: "subagentModelOverrides.Explore",

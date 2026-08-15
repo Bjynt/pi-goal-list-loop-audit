@@ -257,16 +257,11 @@ function isCompletionAuditNoVerdict(g: Goal): boolean {
     && /audit|verdict/i.test(g.pauseReason ?? "");
 }
 
-/** v0.34.64: the QUOTA WALL display concept is gone. We removed the dedicated
- * wall banner, the "manual resume required" wording, and the kind === "blocked"
- * false-positive surface so the card never lies about a wall that's actually
- * already cleared. Pause-rendering classifies by pauseKind (decision / error /
- * wait / blocked) and shows a uniform `auto-retrying · next probe in X` for
- * any retry-class pause that has a recovery timer — quota or otherwise. The
- * durable reason still lives in the ledger for forensics; the card no longer
- * carries a special "this is a wall" treatment. Auto-resume (`autoResume:true`)
- * honors "keep going" through blocked-pause + recovery-cleared transitions
- * via the broadened recoveryPause check in mainModelRecoverySucceeded. */
+/** Recovery display is intentionally generic. Pause-rendering classifies by
+ * pauseKind (decision / error / wait / blocked) and uses one
+ * `auto-retrying · next probe in X` surface for retry-class pauses. Bounded
+ * diagnostics remain in durable state and the ledger; cards do not guess a
+ * provider-side reason. */
 
 /** Active goals can carry an operational warning while the agent is being
  * re-engaged. Do not render those as an ordinary green `active` card: a
@@ -623,11 +618,9 @@ function pausedNextTransition(g: Goal, state: State, now: number): string {
   const resume = g.policy === "list" ? "/list resume" : "/goal resume";
   const retryAt = state.mainModelRecovery?.retryAt ? Date.parse(state.mainModelRecovery.retryAt) : Number.NaN;
   if (Number.isFinite(retryAt) || state.mainModelRecovery?.pendingModelSwitch) {
-    // v0.34.125: never claim a "quota reset at HH:MM" — the provider
-    // window is NOT a guaranteed reset, and the :00:30 hourly probe can
-    // pick work back up earlier (note.md 2026-08-10: "this is just an
-    // extra … not a guaranteed reset of course but possible to pick up
-    // work a bit faster"). The next transition is an automatic retry.
+    // Never claim a provider-side reset at a particular time. The :00:30
+    // hourly retry is only an extra attempt, and the next transition is an
+    // automatic retry.
     // The parked head remains authoritative while recovery state is still
     // present, including after retryAt has passed but before the recovery
     // dispatch clears/unparks the goal. Do not claim "resuming now" on the
@@ -779,11 +772,9 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       // v0.34.12: live countdown (the UI ticker keeps rendering through a
       // timed wait) — "auto-retry in 23m" beats a static clock time, and a
       // passed resumeAt says "resuming…" instead of lying about the past.
-      // v0.34.64: the QUOTA WALL amber badge is gone. Every retry-class
-      // pause renders the same ⏳ auto-retrying… line + countdown; blocked
-      // pauses without a recovery timer render as ⏸ action needed; a
-      // main-model recovery manual hold names its recovery owner instead of
-      // claiming it is a non-quota agent block.
+      // Every retry-class pause renders the same ⏳ auto-retrying… line +
+      // countdown; blocked pauses without a recovery timer render as
+      // ⏸ action needed. A main-model manual hold names its recovery owner.
       const rms = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) - now : Number.NaN;
       const when = Number.isFinite(rms)
         ? rms <= 0 ? " · resuming…" : ` · auto-retry in ${fmtElapsed(rms)}`
@@ -1253,21 +1244,18 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     // v0.28.22: actionability banner — a decision pause, an operational
     // failure, and a time-gated wait must not look alike (user report:
     // "if something actionable is going on it can be hard to tell").
-    // v0.34.64: the QUOTA WALL banner is gone. Every retry-class pause with
-    // a recovery timer renders the same uniform "auto-retrying · next probe
-    // in X" line — quota, billing, 429, transient — regardless of the
-    // underlying reason (the reason still lives in durable state + ledger
-    // for forensics). Manual-resume wording is removed; autoResume:true
-    // honors "keep going" and the recovery-cleared path auto-unparks
-    // blocked pauses whose underlying condition has resolved.
+    // Every retry-class pause with a recovery timer renders the same uniform
+    // "auto-retrying · next probe in X" line regardless of the underlying
+    // provider wording. Manual-resume wording is removed; autoResume:true
+    // honors "keep going" and recovery-cleared paths auto-unpark blocked
+    // pauses whose retry state has resolved.
     const retryMs = (kind === "wait" || kind === "blocked") && g.pauseResumeAt
       ? Date.parse(g.pauseResumeAt) - now
       : Number.NaN;
     // v0.34.102: a paused goal parked on mainModelRecovery is recovering —
     // name the park in the card body too (field: dracon-platform
-    // 2026-08-08 090343 "working while displaying paused"). v0.34.125: no
-    // "until quota reset at HH:MM" — not a guaranteed reset; the :00:30
-    // hourly probe picks work up earlier (note.md 2026-08-10).
+    // 2026-08-08 090343 "working while displaying paused"). The hourly
+    // retry is an extra attempt, not a provider reset-time claim.
     const parkedAt = state.mainModelRecovery?.retryAt ? Date.parse(state.mainModelRecovery.retryAt) : Number.NaN;
     if (kind === "decision") lines.push(`├─ ${paint(theme, "accent", "decision needed — your call unblocks this")}`);
     else if (kind === "error") lines.push(`├─ ${paint(theme, "error", "action needed — this won't fix itself")}`);

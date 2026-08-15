@@ -483,14 +483,14 @@ function heartbeatTick(): void {
   }
   const ctx = freshCtx();
   if (!ctx) return;
-  // v0.34.105 (field: 2026-08-08 16:18 — quota wall froze subagent
+  // v0.34.105 (field: 2026-08-08 16:18 — provider failure froze subagent
   // 74305f7e while the MAIN model was also in recovery; heartbeatTick
   // returned at the `mainModelRecoveryActive()` gate BELOW, so the
   // subagent hang scan never ran and the 12m+ wedge produced ZERO
   // `subagent_hang_detected`). The scan is detection + notify only
   // (never an auto-kill, never a send) — it MUST run even while the
-  // main model is quota-parked, because a shared-provider quota wall
-  // freezes subagents and main model at the same time.
+  // main model is parked, because a shared provider failure can freeze
+  // subagents and the main model at the same time.
   if (subagentHangProbes.size > 0) {
     const nowMs = Date.now();
     const poll = subagentManagerPoller();

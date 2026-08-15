@@ -355,7 +355,7 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
     // exact trigger shape, so completing a goal under a wedged queue used
     // to guarantee a mid-audit pause (field-observed in pully + hellhunter
     // + junk-runner: "complete ending in a pause retry storm"). The audit
-    // lifecycle owns its own pauses (quota etc.).
+    // lifecycle owns its own pauses.
     appendLedger(ctx.cwd, "send_rearm_escalated_suppressed", { reason: "audit-lifecycle" });
     ctx.ui.notify("Send-retry storm during the completion audit — NOT pausing; the auditor's silence is expected. If pi is wedged, Escape cancels the stuck run; the stored claim survives.", "info");
     return;
@@ -364,7 +364,7 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
   // zero stream activity, stop the stuck core retry, rotate to a configured
   // backup when possible, and install a durable recovery probe. This keeps
   // the old no-blind-resend invariant without requiring the user to notice
-  // the wedge and press Escape two hours before quota returns.
+  // the wedge and press Escape while waiting for an assumed provider change.
   if (isSupervising()) {
     void recoverMainModelFromSendStorm(ctx, kind);
     return;
@@ -374,7 +374,7 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
       status: "paused",
       pauseKind: "error",
       pauseReason: `send-retry storm: ${mins}m of re-arms with no session activity for ${silent}m — the session never went idle for the continuation`,
-      pauseSuggestedAction: `The session produced no events while the send retried (wedged queue — often pi's own rate-limit retry holding the run; pi prints 'escape to cancel'). Press Escape, then ${activeGoalSurfaceCommand("resume")}. A fresh session_start rebinds the goal; restart pi normally only if no replacement arrives.`,
+      pauseSuggestedAction: `The session produced no events while the send retried (wedged queue — pi may still be holding the provider retry; pi prints 'escape to cancel'). Press Escape, then ${activeGoalSurfaceCommand("resume")}. A fresh session_start rebinds the goal; restart pi normally only if no replacement arrives.`,
     }, ctx);
     ctx.ui.notify(`${goalNoun()} paused: send-retry storm (${mins}m, session silent ${silent}m). Escape cancels the stuck run, then ${activeGoalSurfaceCommand("resume")}. A fresh session_start rebinds it; restart pi normally only if no replacement arrives.`, "warning");
     notifyExternal(ctx, `${goalNoun()} paused: send-retry storm.`);

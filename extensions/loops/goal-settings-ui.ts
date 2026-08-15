@@ -406,9 +406,8 @@ function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: 
       const provider = trimmed.slice(0, slash);
       const model = ctx.modelRegistry.find(provider, trimmed.slice(slash + 1));
       if (!model) return { reason: "model not found" };
-      // v0.29.17: an unkeyed provider counts as unavailable. (Quota-exhausted
-      // keys stay on the quota-retry path — the model IS available there;
-      // the key's window is the failure, not the model.)
+      // v0.29.17: an unkeyed provider counts as unavailable. This is a
+      // registry/auth distinction only; recovery itself remains generic.
       if (!ctx.modelRegistry.hasConfiguredAuth(model)) return { reason: `no configured auth for ${provider}` };
       return { model };
     }
@@ -1034,7 +1033,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     }
     case "subagentModelStrategy": {
       const v = await ctx.ui.select("Subagent model (pi-subagents default agents)", [
-        "inherit-parent — share your session model + quota pool (recommended)",
+        "inherit-parent — share your session model (recommended)",
         "agent-default — use the upstream pi-subagents default agents",
       ]);
       if (v) {
