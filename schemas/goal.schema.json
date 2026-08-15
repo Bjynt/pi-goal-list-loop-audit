@@ -149,9 +149,9 @@
         "quotaFirstAt": { "type": "string", "format": "date-time", "description": "Legacy field; ignored by the generic retry policy." },
         "quotaAutoRetryUntil": { "type": "string", "format": "date-time", "description": "Legacy field; ignored by the generic retry policy." },
         "quotaSignal": { "type": "string", "enum": ["rate-limit", "plan-quota", "billing"], "description": "Legacy diagnostic field; never used for scheduling or fallback." },
-        "retryAfterSec": { "type": "number", "minimum": 0 },
-        "retryFromUpstream": { "type": "boolean" },
-        "resetAt": { "type": "string", "format": "date-time" }
+        "retryAfterSec": { "type": "number", "minimum": 0, "description": "Legacy provider hint; retained only when reading older files and never used for scheduling." },
+        "retryFromUpstream": { "type": "boolean", "description": "Legacy provider hint marker; never used for scheduling." },
+        "resetAt": { "type": "string", "format": "date-time", "description": "Legacy provider reset hint; never used for scheduling." }
       }
     },
     "task": {

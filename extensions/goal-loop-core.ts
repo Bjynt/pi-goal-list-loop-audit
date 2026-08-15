@@ -735,7 +735,7 @@ export interface MainModelRecovery {
   firstFailureAt?: string;
   /** Automatic probes stop at this durable deadline; manual resume starts a new window. */
   autoRetryUntil?: string;
-  /** A long provider hint or exhausted horizon requires explicit resume. */
+  /** The bounded automatic horizon requires explicit resume once exhausted. */
   manualResumeRequired?: boolean;
   /** Legacy provider hint retained only when reading old state. */
   resetAt?: string;
