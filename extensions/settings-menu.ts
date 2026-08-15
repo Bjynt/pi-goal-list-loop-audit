@@ -39,7 +39,7 @@ import {
   WEDGE_ALERT_DEFAULT_MINUTES,
 } from "./goal-loop-backoff.ts";
 import type { Settings } from "./goal-settings.ts";
-import { formatMainModelFallbacks, MAX_MAIN_MODEL_FALLBACKS } from "./main-model-recovery.ts";
+import { MAX_MAIN_MODEL_FALLBACKS } from "./main-model-recovery.ts";
 import { resolveEffectiveSubagentModel, OVERRIDABLE_AGENT_TYPES } from "./goal-loop-subagents.ts";
 
 // =================================================================
@@ -151,6 +151,12 @@ export function buildSettingsRows(
   const src = (k: keyof Settings): string => provFor(k).source;
 
   const rows: SettingsRow[] = [];
+  const sessionRef = subagent.sessionModel ?? "session model";
+  const sessionThinking = subagent.sessionThinkingLevel ?? "session thinking";
+  const drafterRef = settings.drafterModel ?? sessionRef;
+  const drafterThinking = settings.drafterThinkingLevel ?? sessionThinking;
+  const auditorRef = settings.auditorModel ?? sessionRef;
+  const auditorThinking = settings.auditorThinkingLevel ?? "high";
 
   // ── Keep-going ──
   rows.push(
@@ -207,18 +213,21 @@ export function buildSettingsRows(
       description:
         "on: continuation prompts route 'can't see' checks to the mmx vision CLI instead of switching models; switches stay preapproved-only (forbiddenModels gate)",
     },
-    // ── Agent fallback chains (v0.34.139) ──
-    // Top of the Agents tab: each runtime role has an agent/model and may
-    // optionally have an ordered fallback chain. Space toggles membership,
-    // Tab enters order mode where ↑/↓ moves a chain row, and removing the last
-    // ref clears the global key. The runtime consumes the same left-to-right
-    // list.
+    // ── Main agent ──
+    {
+      id: "mainAgent",
+      section: "main-agent",
+      label: "Current main agent",
+      valueText: modelThinkingText(sessionRef, sessionThinking, subagent),
+      sourceText: "runtime",
+      description: "the active pi session agent/model and thinking level — change it with pi's regular model and thinking selectors",
+    },
     {
       id: "mainModelFallbacks",
-      section: "agents",
-      label: `Main agent fallback models (up to ${MAX_MAIN_MODEL_FALLBACKS})`,
+      section: "main-agent",
+      label: `Fallback models (up to ${MAX_MAIN_MODEL_FALLBACKS})`,
       valueText: settings.mainModelFallbacks?.length
-        ? `${settings.mainModelFallbacks.length}/${MAX_MAIN_MODEL_FALLBACKS} · ${formatMainModelFallbacks(settings.mainModelFallbacks)}`
+        ? `${settings.mainModelFallbacks.length}/${MAX_MAIN_MODEL_FALLBACKS} · ${settings.mainModelFallbacks.map((ref, index) => `${index + 1}. ${modelThinkingText(ref, sessionThinking, subagent)}`).join(" → ")}`
         : `0/${MAX_MAIN_MODEL_FALLBACKS} · none`,
       sourceText: src("mainModelFallbacks"),
       description: "ordered and deselectable: current main agent → fallback 1 → fallback 2…; every recoverable provider failure switches one eligible fallback at a time",
@@ -241,7 +250,7 @@ export function buildSettingsRows(
     },
     {
       id: "mainModelRetryMinutes",
-      section: "agents",
+      section: "main-agent",
       label: "Main recovery base minutes",
       valueText: show("mainModelRetryMinutes", "15"),
       sourceText: src("mainModelRetryMinutes"),
@@ -249,35 +258,41 @@ export function buildSettingsRows(
     },
     {
       id: "hourlyRetryProbe",
-      section: "agents",
+      section: "main-agent",
       label: "Hourly main recovery probe",
       valueText: show("hourlyRetryProbe", "on"),
       sourceText: src("hourlyRetryProbe"),
       description: "adds a probe at :00:30 while any main-model recovery is parked; off disables only this extra ticker, not the configured retry ladder"
     },
+  );
+
+  // ── Drafter ──
+  rows.push(
     {
       id: "drafterModel",
-      section: "agents",
+      section: "drafter",
       label: "Drafter agent",
-      valueText: show("drafterModel", "session model"),
+      valueText: modelThinkingText(drafterRef, drafterThinking, subagent),
       sourceText: src("drafterModel"),
       description: "temporary agent/model used only during /goal, /list, and /loop drafting; after confirmation or interruption the session agent is restored",
     },
     {
       id: "drafterThinkingLevel",
-      section: "agents",
+      section: "drafter",
       label: "Drafter thinking",
-      valueText: show("drafterThinkingLevel", "session level (inherited)"),
+      valueText: settings.drafterThinkingLevel ? settings.drafterThinkingLevel : `inherit ${sessionThinking}`,
       sourceText: src("drafterThinkingLevel"),
-      description: "temporary drafting agent's reasoning level — unset inherits the session level and restores it after drafting",
+      description: "requested drafting-agent reasoning level — the same request follows the drafter fallback chain and Pi clamps it per model; unset inherits the session level",
     },
     {
       id: "drafterModelFallbacks",
-      section: "agents",
+      section: "drafter",
       label: "Drafter fallback agents",
-      valueText: settings.drafterModelFallbacks?.length ? settings.drafterModelFallbacks.join(" → ") : "none (session last resort)",
+      valueText: settings.drafterModelFallbacks?.length
+        ? modelChainText(settings.drafterModelFallbacks, drafterThinking, subagent)
+        : "none (session last resort)",
       sourceText: src("drafterModelFallbacks"),
-      description: "ordered drafting-only fallback agents; generic provider errors retry the next eligible candidate without changing main or auditor chains",
+      description: "ordered drafting-only fallback agents; each shows its effective/requested thinking level when the model registry exposes capabilities",
     },
   );
 
@@ -290,7 +305,7 @@ export function buildSettingsRows(
     const chain = settings.subagentFallbacks?.[name] ?? [];
     rows.push({
       id: `subagentFallbacks:${name}`,
-      section: "agents",
+      section: "subagents",
       label: `${name} fallback agents`,
       valueText: chain.length ? chain.join(" → ") : "none (uses pin or inherits)",
       sourceText: src("subagentFallbacks"),
@@ -304,7 +319,7 @@ export function buildSettingsRows(
       id: "auditorModel",
       section: "auditor",
       label: "Auditor agent",
-      valueText: show("auditorModel", "session model"),
+      valueText: modelThinkingText(auditorRef, auditorThinking, subagent),
       sourceText: src("auditorModel"),
       description: "provider/model override for the isolated auditor agent — you pick its thinking level right after the agent",
     },
@@ -312,7 +327,7 @@ export function buildSettingsRows(
       id: "auditorThinkingLevel",
       section: "auditor",
       label: "Auditor thinking",
-      valueText: show("auditorThinkingLevel", "high (default)"),
+      valueText: settings.auditorThinkingLevel ?? "high (default)",
       sourceText: src("auditorThinkingLevel"),
       description: "DETACHED auditor worker's reasoning level — also picked right after the auditor model; your session's thinking is untouched",
     },
@@ -320,7 +335,9 @@ export function buildSettingsRows(
       id: "auditorModelFallback",
       section: "auditor",
       label: "Auditor fallback agent",
-      valueText: show("auditorModelFallback", "session model (last resort)"),
+      valueText: settings.auditorModelFallback
+        ? modelThinkingText(settings.auditorModelFallback, auditorThinking, subagent)
+        : `${sessionRef} · ${auditorThinking} (last resort)`,
       sourceText: src("auditorModelFallback"),
       description: "walked when the primary agent is unavailable OR IS the session model (the verifier should differ) — unset = the session model is the last resort",
     },
@@ -557,6 +574,7 @@ export class SettingsMenuComponent implements Component {
   private selectedIdx: number;
   private cachedWidth?: number;
   private cachedLines?: string[];
+  private showDescriptions = false;
 
   constructor(
     deps: SettingsMenuFactoryDeps,
@@ -586,6 +604,11 @@ export class SettingsMenuComponent implements Component {
   /** Index into the active-section's visible rows. Exposed for tests. */
   getSelectedIdx(): number {
     return this.selectedIdx;
+  }
+
+  /** Whether the optional long-description column is currently visible. */
+  descriptionsVisible(): boolean {
+    return this.showDescriptions;
   }
 
   /** Rows in the active section. Exposed for tests. */
@@ -637,8 +660,16 @@ export class SettingsMenuComponent implements Component {
       if (visibleWidth(r.sourceText) > sourceW) sourceW = visibleWidth(r.sourceText);
     }
     keyW = Math.min(keyW, MAX_KEY_W);
-    valueW = Math.min(valueW, MAX_VALUE_W);
     sourceW = Math.min(sourceW, MAX_SOURCE_W);
+    if (!this.showDescriptions) {
+      // With details hidden, give the saved model/thinking value the space
+      // formerly consumed by the hint column. This is the compact/default
+      // view users need to compare a primary with its fallback chain.
+      const sepW = visibleWidth(COL_SEP);
+      valueW = Math.max(valueW, width - keyW - sourceW - 2 * sepW);
+      return { keyW, valueW, sourceW, descW: 0 };
+    }
+    valueW = Math.min(valueW, MAX_VALUE_W);
     const descW = Math.max(MIN_DESC_W, width - keyW - valueW - sourceW - 3 * visibleWidth(COL_SEP));
     return { keyW, valueW, sourceW, descW };
   }
@@ -666,19 +697,23 @@ export class SettingsMenuComponent implements Component {
       ).join("  "),
     );
 
-    lines.push(
-      [
-        this.padEnd(this.theme.bold("KEY"), keyW),
-        this.padEnd(this.theme.bold("VALUE"), valueW),
-        this.padEnd(this.theme.bold("SOURCE"), sourceW),
-        this.theme.bold("DESCRIPTION"),
-      ].join(sep),
-    );
+    const headerCells = [
+      this.padEnd(this.theme.bold("KEY"), keyW),
+      this.padEnd(this.theme.bold("VALUE"), valueW),
+      this.padEnd(this.theme.bold("SOURCE"), sourceW),
+    ];
+    if (this.showDescriptions) headerCells.push(this.theme.bold("DESCRIPTION"));
+    lines.push(headerCells.join(sep));
     // Header rule — the grid line that makes it read as a table.
     lines.push(
       this.theme.fg(
         "dim",
-        ["─".repeat(keyW), "─".repeat(valueW), "─".repeat(sourceW), "─".repeat(descW)].join(COL_RULE_SEP),
+        [
+          "─".repeat(keyW),
+          "─".repeat(valueW),
+          "─".repeat(sourceW),
+          ...(this.showDescriptions ? ["─".repeat(descW)] : []),
+        ].join(COL_RULE_SEP),
       ),
     );
 
@@ -693,17 +728,20 @@ export class SettingsMenuComponent implements Component {
         // column — before, an over-long VALUE (e.g. the subagent effective-
         // resolution composite) overflowed and shoved SOURCE/DESCRIPTION
         // right on that row only, breaking the grid.
-        const row = [
+        const rowCells = [
           this.padEnd(truncateToWidth(prefix + r.label, keyW, "…"), keyW),
           this.padEnd(truncateToWidth(r.valueText, valueW, "…"), valueW),
           this.padEnd(truncateToWidth(r.sourceText, sourceW, "…"), sourceW),
+        ];
+        if (this.showDescriptions) {
           // Keep the active background visible across the whole table width,
           // including otherwise-empty description space. This is intentionally
           // display-only; row values and persisted settings remain unchanged.
-          this.padEnd(truncateToWidth(r.description, descW, "…"), descW),
+          rowCells.push(this.padEnd(truncateToWidth(r.description, descW, "…"), descW));
+        }
         // Selected row: plain separators — the whole row gets one selected-bg
         // wrap; a nested dim separator's reset code would end it early.
-        ].join(selected ? COL_SEP : sep);
+        const row = rowCells.join(selected ? COL_SEP : sep);
         lines.push(
           selected
             ? this.theme.bg("selectedBg", this.theme.bold(row))
@@ -715,7 +753,7 @@ export class SettingsMenuComponent implements Component {
     lines.push(
       this.theme.fg(
         "dim",
-        "←/→ tab · ↑/↓ move · enter drill-in · esc exit",
+        `←/→ tab · ↑/↓ move · d details ${this.showDescriptions ? "off" : "on"} · enter drill-in · esc exit`,
       ),
     );
 
@@ -744,6 +782,11 @@ export class SettingsMenuComponent implements Component {
     }
     if (this.keybindings.matches(data, "tui.select.down")) {
       this.move(+1);
+      return;
+    }
+    if (data === "d" || data === "D") {
+      this.showDescriptions = !this.showDescriptions;
+      this.refresh();
       return;
     }
     // Left/right cycle sections. The Keybindings type only has up/down, so we

@@ -410,6 +410,20 @@ function thinkingChoiceOptions(levels: string[], current: string | undefined): s
   return levels.map((lv) => `${lv} — ${THINKING_DESCR[lv] ?? ""}${lv === current ? " (current)" : ""}`);
 }
 
+function menuThinkingLevelsByRef(ctx: ExtensionContext): Record<string, readonly string[]> {
+  const out: Record<string, readonly string[]> = {};
+  try {
+    for (const model of ctx.modelRegistry?.getAvailable?.() ?? []) {
+      const ref = modelRef(model);
+      if (ref) out[ref.toLowerCase()] = auditorThinkingLevels(model);
+    }
+  } catch {
+    // The interactive menu still renders refs and requested thinking when a
+    // legacy/headless registry cannot enumerate model metadata.
+  }
+  return out;
+}
+
 const DRAFTER_INHERIT_THINKING = "session — inherit current session level (default)";
 
 function drafterThinkingChoiceOptions(
@@ -545,7 +559,11 @@ async function openSettingsUI(ctx: ExtensionContext, initialSection?: SettingsSe
     // than collapsing to the generic "session model" placeholder.
     const session = ctx.model as any;
     const sessionModel = session?.provider && session?.id ? `${session.provider}/${session.id}` : undefined;
-    const rows = buildSettingsRows(settings, prov, { sessionModel });
+    const rows = buildSettingsRows(settings, prov, {
+      sessionModel,
+      sessionThinkingLevel: ctx.thinkingLevel ?? "off",
+      thinkingLevelsByRef: menuThinkingLevelsByRef(ctx),
+    });
     const id = await promptSettingsMenu(ctx, rows, initialSection);
     // The section is only an entry-point hint; after the first render the
     // table owns navigation and keeps all grouped settings available.
@@ -819,6 +837,10 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
         saveSettings("global", ctx.cwd, { visionAssist: v.startsWith("off") ? false : undefined });
         ctx.ui.notify(v.startsWith("off") ? "Vision assist OFF — no mmx routing guidance; the model-switch gate still stands." : "Vision assist ON — 'can't see' checks route to mmx vision, switches stay preapproved-only.", "info");
       }
+      return;
+    }
+    case "mainAgent": {
+      ctx.ui.notify("The current main agent and thinking level are controlled by pi's regular model/thinking selectors. The fallback chain is configured in this tab.", "info");
       return;
     }
     case "mainModelFallbacks": {
