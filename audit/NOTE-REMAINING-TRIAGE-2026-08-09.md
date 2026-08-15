@@ -106,5 +106,7 @@ Legacy quota-named fields and parser exports are retained only for loading old
 state and compatibility tests; no live recovery path imports or calls them.
 Canonical state/settings are generic (`retry-waiting`, `retryAttempts`,
 `retryFirstAt`, `retryUntil`, and `hourlyRetryProbe`). Obsolete settings are
-migrated away and cannot alter the effective policy. The release check and
-focused recovery suite must be rerun for the final v0.34.142 evidence.
+migrated away and cannot alter the effective policy. Final evidence: `npm run
+release:check` passed with **1346 pass / 1 skip / 0 fail** across 112 files;
+TypeScript, the jiti state-split reproduction, and `npm pack --dry-run` all
+passed. The dry-run package is `pi-goal-list-loop-audit@0.34.142`.
