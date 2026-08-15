@@ -386,6 +386,30 @@ function auditorThinkingLevels(model: any): string[] {
   });
 }
 
+type ConfiguredThinkingLevel = NonNullable<Settings["auditorThinkingLevel"]>;
+
+/** Resolve the model returned by the shared model picker. Keeping this in the
+ * settings layer means every role can derive its thinking menu from the model
+ * the user actually selected, including the session-model row. */
+function resolvePickedModel(
+  ctx: ExtensionContext,
+  pick: { kind: "session" } | { kind: "ref"; ref: string },
+): any | undefined {
+  if (pick.kind === "session") return ctx.model as any;
+  if (!pick.ref || !ctx.modelRegistry) return undefined;
+  const slash = pick.ref.indexOf("/");
+  try {
+    if (slash > 0) return ctx.modelRegistry.find(pick.ref.slice(0, slash), pick.ref.slice(slash + 1)) as any;
+    return ctx.modelRegistry.getAvailable().find((m: any) => m.id === pick.ref || m.name === pick.ref) as any;
+  } catch {
+    return undefined;
+  }
+}
+
+function thinkingChoiceOptions(levels: string[], current: string | undefined): string[] {
+  return levels.map((lv) => `${lv} — ${THINKING_DESCR[lv] ?? ""}${lv === current ? " (current)" : ""}`);
+}
+
 /** Token-cost ladder shared by the auditor-model flow and the standalone
  * Auditor thinking row (v0.34.127). */
 const THINKING_DESCR: Record<string, string> = {
@@ -850,10 +874,53 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "drafterModel": {
-      const pick = await promptModelRef(ctx, "Drafter model — temporary model for drafting only", "provider/model-id — empty keeps the current session model");
+      const pick = await promptModelRef(ctx, "Drafter agent — temporary agent for drafting only", "provider/model-id — empty keeps the current session model");
       if (pick === undefined) return;
-      saveSettings("global", ctx.cwd, { drafterModel: pick.kind === "session" ? undefined : pick.ref });
-      ctx.ui.notify(`Drafter model: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref} — main and auditor chains are unchanged.`, "info");
+      const pickedModel = resolvePickedModel(ctx, pick);
+      const currentThinking = loadSettings(ctx.cwd).drafterThinkingLevel;
+      const levels = auditorThinkingLevels(pickedModel);
+      let pickedThinking: ConfiguredThinkingLevel | undefined;
+      if (levels.length <= 1) {
+        ctx.ui.notify(`Drafter agent: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref} — this model exposes no thinking levels (drafting runs with thinking off).`, "info");
+      } else {
+        const inherited = ctx.thinkingLevel ?? "high";
+        const preferred = currentThinking ?? inherited;
+        const thinking = await ctx.ui.select(
+          "Drafter thinking — TEMPORARY DRAFTING AGENT ONLY (your session thinking is restored afterward)",
+          thinkingChoiceOptions(levels, levels.includes(preferred) ? preferred : levels.includes("high") ? "high" : levels[levels.length - 1]),
+        );
+        if (thinking) pickedThinking = thinking.split(" ")[0] as ConfiguredThinkingLevel;
+      }
+      saveSettings("global", ctx.cwd, {
+        drafterModel: pick.kind === "session" ? undefined : pick.ref,
+        ...(pickedThinking ? { drafterThinkingLevel: pickedThinking } : {}),
+      });
+      ctx.ui.notify(`Drafter agent: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref}${pickedThinking ? ` · thinking ${pickedThinking}` : ""} — main and auditor agents are unchanged.`, "info");
+      return;
+    }
+    case "drafterThinkingLevel": {
+      const settings = loadSettings(ctx.cwd);
+      const pickedModel = settings.drafterModel
+        ? resolvePickedModel(ctx, { kind: "ref", ref: settings.drafterModel })
+        : (ctx.model as any);
+      const levels = auditorThinkingLevels(pickedModel);
+      if (levels.length <= 1) {
+        ctx.ui.notify(
+          `Drafter agent ${pickedModel ? `${pickedModel.provider}/${pickedModel.id}` : "(session)"} exposes no thinking levels — drafting runs with thinking off.`,
+          "info",
+        );
+        return;
+      }
+      const preferred = settings.drafterThinkingLevel ?? ctx.thinkingLevel ?? "high";
+      const thinking = await ctx.ui.select(
+        "Drafter thinking — TEMPORARY DRAFTING AGENT ONLY (your session thinking is restored afterward)",
+        thinkingChoiceOptions(levels, levels.includes(preferred) ? preferred : levels.includes("high") ? "high" : levels[levels.length - 1]),
+      );
+      if (thinking) {
+        const level = thinking.split(" ")[0] as ConfiguredThinkingLevel;
+        saveSettings("global", ctx.cwd, { drafterThinkingLevel: level });
+        ctx.ui.notify(`Drafter thinking: ${level}.`, "info");
+      }
       return;
     }
     case "drafterModelFallbacks": {
@@ -861,13 +928,13 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const current = normalizeMainModelFallbackRefs(global.drafterModelFallbacks);
       const refs = await promptModelRefs(
         ctx,
-        `Drafter fallback chain — ordered, up to ${MAX_MAIN_MODEL_FALLBACKS}; the session model is the last resort; forbidden models are hidden`,
+        `Drafter fallback agents — ordered, up to ${MAX_MAIN_MODEL_FALLBACKS}; the session agent is the last resort; forbidden models are hidden`,
         current,
         { excludeRefs: normalizeModelRefs(global.forbiddenModels), maxSelections: MAX_MAIN_MODEL_FALLBACKS, currentRef: modelRef(ctx.model) },
       );
       if (refs === undefined) return;
       saveSettings("global", ctx.cwd, { drafterModelFallbacks: refs.length ? refs : undefined });
-      ctx.ui.notify(refs.length ? `Drafter fallback chain saved: ${refs.join(" → ")}.` : "Drafter fallback chain cleared — the session model remains the last resort.", "info");
+      ctx.ui.notify(refs.length ? `Drafter fallback agents saved: ${refs.join(" → ")}.` : "Drafter fallback agents cleared — the session model remains the last resort.", "info");
       return;
     }
     case "forbiddenModels": {
