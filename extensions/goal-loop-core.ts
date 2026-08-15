@@ -677,7 +677,7 @@ export function goalArgsNeedDrafting(args: string): boolean {
  * via draftProposalBlock: propose is blocked until the user has replied.
  */
 export function buildSeedGrillMessage(tmpl: string, seed: string, tool: string): string {
-  return `${tmpl}\n\nThe user's initial objective (verbatim): ${seed}\n\nGRILL THEM ABOUT THIS SEED BEFORE PROPOSING. ${tool} is BLOCKED until the user has replied to at least one of your questions — proposing without interviewing returns an error.\n\nHow to grill:\n- Ask ONE sharp, seed-specific question at a time — about THIS objective, not generic filler. If an ask_user_question tool is available in this session, prefer it (structured options render better); plain conversation is fine for free-form answers.\n- Every question ships with a recommended default the user can accept with "yes".\n- Probe what matters: what "done" concretely looks like (checkable evidence — files, commands, behaviors), scope boundaries (what is explicitly OUT), constraints (what must not change), and priorities when the seed bundles several wishes.\n- A non-answer ("not sure", "none", "whatever") is a trigger to offer 2-3 concrete options to pick from — never silently proceed on a non-answer.\n- Do targeted read-only research first when it makes your questions sharper (repo layout, existing docs).\n- Do NOT activate the raw seed. Do NOT implement anything. When the contract is concrete, call ${tool}.`;
+  return `${tmpl}\n\n${LONG_RUNNING_JUDGMENT_POLICY}\n\nThe user's initial objective (verbatim): ${seed}\n\nGRILL THEM ABOUT THIS SEED BEFORE PROPOSING. ${tool} is BLOCKED until the user has replied to at least one of your questions — proposing without interviewing returns an error.\n\nHow to grill:\n- Ask ONE sharp, seed-specific question at a time — about THIS objective, not generic filler. If an ask_user_question tool is available in this session, prefer it (structured options render better); plain conversation is fine for free-form answers.\n- Every question ships with a recommended default the user can accept with "yes".\n- Probe what matters: what "done" concretely looks like (checkable evidence — files, commands, behaviors), scope boundaries (what is explicitly OUT), constraints (what must not change), and priorities when the seed bundles several wishes.\n- A non-answer ("not sure", "none", "whatever") is a trigger to offer 2-3 concrete options to pick from — never silently proceed on a non-answer.\n- Do targeted read-only research first when it makes your questions sharper (repo layout, existing docs).\n- Do NOT activate the raw seed. Do NOT implement anything. When the contract is concrete, call ${tool}.`;
 }
 
 /**
@@ -1539,6 +1539,17 @@ export function shouldAutoResumeOnSessionStart(reason: string | undefined, autoR
 }
 
 /**
+ * Canonical judgment policy for unattended and multi-turn work. This is a
+ * product rule, not a user preference toggle: changing it between sessions
+ * would make the same verification contract produce different decisions.
+ */
+export const LONG_RUNNING_JUDGMENT_POLICY = `LONG-RUNNING JUDGMENT POLICY:
+- Preserve the objective and verification contract as the source of truth. Prefer a durable, maintainable root-cause fix when it is inside scope; do not stop at a cosmetic workaround merely because it is faster.
+- Use an opportunistic workaround only when it is safe, reversible, testable, and clearly within scope. Record the durable follow-up instead of silently treating the workaround as the final fix.
+- Keep working through local implementation choices without interrupting the user. Ask one focused question only at a genuine decision boundary: ambiguous scope, conflicting priorities, an irreversible/destructive external action, or a missing permission/credential that cannot be worked around safely.
+- In unattended mode, choose the safest contract-preserving path and continue. If no safe choice exists, raise a concrete DECIDE question with a recommended default; never ask a vague progress question or wait on a guessed provider/quota reset.`;
+
+/**
  * v0.23.5: normalize a drafter-supplied verification contract for the
  * Confirm dialog AND for storage. Three cleanups, all mechanical:
  *  1. Drop bare introducer lines ("Done when:", "Done when ALL of the
@@ -1624,6 +1635,24 @@ export function extractSubtaskParent(raw: string): { objective: string; parentOb
   return { objective, parentObjective };
 }
 
+/**
+ * Explicit specialist declaration for goals, list items, and task plans.
+ * Natural-language mentions of design work are intentionally untouched; the
+ * role is selected only by a declaration such as `Agent: Designer` or
+ * `Role: designer` (the `Designer: yes` shorthand is also accepted).
+ */
+export const AGENT_ROLE_MARKER = /[ \t]*(?:\b(?:agent|role)\s*:\s*designer\b|\bdesigner\s*:\s*(?:yes|true|on)\b)[.,;]?[ \t]*/i;
+
+export function extractAgentRole(raw: string): { objective: string; agentRole: AgentRole | undefined } {
+  const m = raw.match(AGENT_ROLE_MARKER);
+  if (!m) return { objective: raw.trim(), agentRole: undefined };
+  const objective = (raw.slice(0, m.index ?? 0) + " " + raw.slice((m.index ?? 0) + m[0].length))
+    .replace(/[ \t]{2,}/g, " ")
+    .split("\n").map((line) => line.trimEnd()).join("\n")
+    .trim();
+  return { objective, agentRole: "designer" };
+}
+
 export function extractParallelFlag(raw: string): { objective: string; parallelSafe: boolean | undefined } {
   const m = raw.match(PARALLEL_MARKER);
   if (!m) return { objective: raw.trim(), parallelSafe: undefined };
@@ -1654,11 +1683,12 @@ export function extractParallelFlag(raw: string): { objective: string; parallelS
  * match; the binding itself (queue-item id lookup) lives in goal.ts where
  * the queue context exists.
  */
-export function parseListItemDeclaration(raw: string): { objective: string; parallelSafe: boolean | undefined; verificationContract: string; parentObjective: string | undefined } {
+export function parseListItemDeclaration(raw: string): { objective: string; agentRole: AgentRole | undefined; parallelSafe: boolean | undefined; verificationContract: string; parentObjective: string | undefined } {
   const { objective, parentObjective } = extractSubtaskParent(raw);
-  const { objective: obj2, parallelSafe } = extractParallelFlag(objective);
+  const { objective: obj1, agentRole } = extractAgentRole(objective);
+  const { objective: obj2, parallelSafe } = extractParallelFlag(obj1);
   const ext = extractVerificationContract(obj2);
-  return { objective: ext.objective, parallelSafe, verificationContract: ext.verificationContract, parentObjective };
+  return { objective: ext.objective, agentRole, parallelSafe, verificationContract: ext.verificationContract, parentObjective };
 }
 
 export function extractVerificationContract(raw: string): { objective: string; verificationContract: string; explicitClear: boolean } {
