@@ -72,13 +72,13 @@ test("every row carries every required column field", () => {
   }
 });
 
-test("the 6 sections place agent chains inside Agents (no separate fallback tab)", () => {
+test("role-specific tabs keep each agent's model, thinking, and fallback controls together", () => {
   const ids = SETTINGS_SECTIONS.map((s) => s.id);
-  assert.deepEqual(ids, ["keep-going", "agents", "auditor", "stall-brakes", "subagents", "other"]);
+  assert.deepEqual(ids, ["keep-going", "main-agent", "drafter", "auditor", "subagents", "stall-brakes", "other"]);
   assert.ok(SETTINGS_SECTIONS.every((s) => typeof s.label === "string" && s.label.length > 0));
 });
 
-test("every row's section is one of the 6 known section ids (no orphans)", () => {
+test("every row's section is one of the 7 known section ids (no orphans)", () => {
   const validSections = new Set<string>(SETTINGS_SECTIONS.map((s) => s.id));
   const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
   for (const r of rows) {
@@ -86,21 +86,16 @@ test("every row's section is one of the 6 known section ids (no orphans)", () =>
   }
 });
 
-test("v0.34.139: the main agent leads the Agents tab; timing and subagent fallbacks follow", () => {
+test("main-agent tab starts with the runtime agent; drafter and subagent chains have their own tabs", () => {
   const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
   const byId = new Map(rows.map((r) => [r.id, r]));
-  const agentRows = rows.filter((r) => r.section === "agents");
-  assert.equal(byId.get("mainModelFallbacks")?.section, "agents");
-  assert.equal(agentRows[0]!.id, "mainModelFallbacks", "main agent is the first Agents row");
-  for (const id of [
-    "mainModelRetryMinutes",
-    "subagentFallbacks:Explore",
-    "subagentFallbacks:Plan",
-    "subagentFallbacks:general-purpose",
-  ]) {
-    assert.equal(byId.get(id)?.section, "agents", `${id} must be in Agents`);
-  }
-  assert.ok(rows.filter((r) => r.id.startsWith("subagentFallbacks:")).every((r) => r.section === "agents"));
+  assert.equal(byId.get("mainAgent")?.section, "main-agent");
+  assert.equal(byId.get("mainModelFallbacks")?.section, "main-agent");
+  assert.equal(rows.filter((r) => r.section === "main-agent")[0]!.id, "mainAgent");
+  assert.equal(byId.get("drafterModel")?.section, "drafter");
+  assert.equal(byId.get("drafterThinkingLevel")?.section, "drafter");
+  assert.equal(byId.get("drafterModelFallbacks")?.section, "drafter");
+  assert.ok(rows.filter((r) => r.id.startsWith("subagentFallbacks:")).every((r) => r.section === "subagents"));
   assert.equal(byId.get("forbiddenModels")?.section, "keep-going", "policy gate stays with keep-going controls");
 });
 
@@ -110,7 +105,7 @@ test("main fallback row explains ordered, deselectable selection", () => {
     provFromSettings({ mainModelFallbacks: ["provider/first", "provider/second"] }),
   );
   const row = rows.find((candidate) => candidate.id === "mainModelFallbacks")!;
-  assert.equal(row.section, "agents");
+  assert.equal(row.section, "main-agent");
   assert.match(row.description, /ordered and deselectable/);
 });
 
@@ -205,7 +200,7 @@ test("main fallback row shows the persisted numbered try order and truthful runt
     provFromSettings({ mainModelFallbacks: ["provider/first", "provider/second"] }),
   );
   const row = rows.find((candidate) => candidate.id === "mainModelFallbacks")!;
-  assert.match(row.valueText, /1\. provider\/first → 2\. provider\/second/);
+  assert.match(row.valueText, /1\. provider\/first · session thinking → 2\. provider\/second · session thinking/);
   assert.match(row.description, /current main agent → fallback 1 → fallback 2/);
   assert.match(row.description, /every recoverable provider failure switches one eligible fallback at a time/);
   assert.doesNotMatch(row.description, /account\/plan\/billing\/auth|request-rate/);
@@ -215,7 +210,7 @@ test("valueText derives from settings (effective values surface for each row)", 
   const rows = buildSettingsRows(SAMPLE_SETTINGS, provFromSettings(SAMPLE_SETTINGS));
   const byId = new Map<string, SettingsRow>(rows.map((r) => [r.id, r]));
   assert.equal(byId.get("autoResume")!.valueText, "true");
-  assert.equal(byId.get("auditorModel")!.valueText, "anthropic/claude-sonnet-4");
+  assert.equal(byId.get("auditorModel")!.valueText, "anthropic/claude-sonnet-4 · high");
   assert.equal(byId.get("wedgeAlertMinutes")!.valueText, "0");
   assert.equal(
     byId.get("subagentModelOverrides.Explore")!.valueText,
@@ -250,7 +245,7 @@ test("effective resolution names the real session model for inherit-parent", () 
   assert.equal(effective?.valueText, "provider/session-model", "the compact row keeps the real model instead of generic session model");
 
   const ui = fs.readFileSync("extensions/loops/goal-settings-ui.ts", "utf-8");
-  assert.match(ui, /buildSettingsRows\(settings, prov, \{ sessionModel \}\)/, "interactive settings passes its session model to the row builder");
+  assert.match(ui, /buildSettingsRows\(settings, prov, \{\s*sessionModel,\s*sessionThinkingLevel:/, "interactive settings passes its session model and thinking to the row builder");
 });
 
 test("provenance flows into sourceText (project/global/default tags)", () => {

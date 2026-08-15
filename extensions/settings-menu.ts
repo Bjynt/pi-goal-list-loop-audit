@@ -48,6 +48,8 @@ import { resolveEffectiveSubagentModel, OVERRIDABLE_AGENT_TYPES } from "./goal-l
 
 export type SettingsSectionId =
   | "keep-going"
+  /** Legacy entry-point alias; it opens the Main agent tab. */
+  | "agents"
   | "main-agent"
   | "drafter"
   | "auditor"
@@ -589,9 +591,10 @@ export class SettingsMenuComponent implements Component {
     this.theme = theme;
     this.keybindings = keybindings;
     this.done = done;
+    const initialSection = deps.initialSection === "agents" ? "main-agent" : deps.initialSection;
     this.activeSectionIdx = Math.max(
       0,
-      SETTINGS_SECTIONS.findIndex((section) => section.id === deps.initialSection),
+      SETTINGS_SECTIONS.findIndex((section) => section.id === initialSection),
     );
     this.selectedIdx = 0;
   }

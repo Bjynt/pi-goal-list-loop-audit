@@ -208,13 +208,13 @@ test("v0.31.2/0.31.3: auditor thinking defaults to sticky high — never the ses
   // direct path never existed — the level was otherwise only reachable by
   // re-picking the model. The row reuses the SAME ladder/dialog.
   assert.ok(MENU.includes('id: "auditorThinkingLevel"'), "standalone thinking row present (v0.34.127)");
-  assert.match(MENU, /valueText: show\("auditorModel", "session model"\)/);
+  assert.match(MENU, /valueText: modelThinkingText\(auditorRef, auditorThinking, subagent\)/);
   const UI = fs.readFileSync("extensions/loops/goal-settings-ui.ts", "utf-8");
   assert.ok(UI.includes('case "auditorThinkingLevel"'), "standalone thinking row has a dispatcher case");
   assert.ok(!UI.includes('/glla thinking='), "the never-existing /glla thinking= claim is gone");
   // v0.31.5: unset fallback displays as what it semantically IS — the
   // cascade's last rung ("maybe have a def fallback to session").
-  assert.match(MENU, /valueText: show\("auditorModelFallback", "session model \(last resort\)"\)/);
+  assert.match(MENU, /valueText: settings\.auditorModelFallback/);
   const caseIdx2 = SRC.indexOf('case "auditorModel": {');
   assert.match(SRC.slice(caseIdx2, caseIdx2 + 2600), /"Auditor thinking — DETACHED auditor worker ONLY/);
   // v0.34.127: the standalone row is dispatchable (no dead id) — the old

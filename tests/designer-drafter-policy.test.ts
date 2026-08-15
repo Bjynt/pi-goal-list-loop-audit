@@ -132,10 +132,10 @@ test("settings expose drafting-only primary and fallback controls", () => {
     drafterModelFallbacks: { value: ["test/backup"], source: "global" },
   });
   const byId = new Map(rows.map((row) => [row.id, row]));
-  assert.equal(byId.get("drafterModel")?.valueText, "test/primary");
-  assert.equal(byId.get("drafterThinkingLevel")?.valueText, "session level (inherited)");
-  assert.equal(byId.get("drafterModelFallbacks")?.valueText, "test/backup");
-  assert.match(byId.get("drafterModelFallbacks")!.description, /without changing main or auditor chains/);
+  assert.equal(byId.get("drafterModel")?.valueText, "test/primary · session thinking");
+  assert.equal(byId.get("drafterThinkingLevel")?.valueText, "inherit session thinking");
+  assert.equal(byId.get("drafterModelFallbacks")?.valueText, "test/backup · session thinking");
+  assert.match(byId.get("drafterModelFallbacks")!.description, /effective\/requested thinking level/);
 });
 
 test("drafting recovery stays on the dedicated chain and uses the existing interview", () => {

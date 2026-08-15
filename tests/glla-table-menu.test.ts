@@ -120,7 +120,7 @@ test("grouped entry points can open a specific settings section", () => {
   assert.ok(component.visibleRows().every((row) => row.section === "stall-brakes"));
 });
 
-test("render: tabs row lists all 6 sections", () => {
+test("render: tabs row lists all 7 sections", () => {
   const { component } = makeComponent(SAMPLE_ROWS);
   const lines = component.render(120);
   // Tabs row is index 1 (after title).
@@ -129,19 +129,19 @@ test("render: tabs row lists all 6 sections", () => {
   }
 });
 
-test("main agent is the first Agents row and drills in", () => {
+test("main agent tab starts with the current agent and drills in", () => {
   const rows = buildSettingsRows({ mainModelFallbacks: ["provider/backup"] } as Settings, {});
   let selected: string | undefined;
   const component = new SettingsMenuComponent(
-    { rows, title: "test", initialSection: "agents" },
+    { rows, title: "test", initialSection: "main-agent" },
     () => undefined,
     THEME,
     KB,
     (id) => { selected = id; },
   );
-  assert.deepEqual(component.visibleRows().map((row) => row.id), ["mainModelFallbacks", "mainModelRetryMinutes", "hourlyRetryProbe", "drafterModel", "drafterThinkingLevel", "drafterModelFallbacks", "subagentFallbacks:Explore", "subagentFallbacks:Plan", "subagentFallbacks:general-purpose", "subagentFallbacks:Designer"]);
+  assert.deepEqual(component.visibleRows().map((row) => row.id), ["mainAgent", "mainModelFallbacks", "mainModelRetryMinutes", "hourlyRetryProbe"]);
   component.handleInput("\r");
-  assert.equal(selected, "mainModelFallbacks");
+  assert.equal(selected, "mainAgent");
 });
 
 test("render: at width=120, the keep-going section renders its rows (v0.28.23: +decisionPopup)", () => {
@@ -179,22 +179,23 @@ test("render: active row uses a full-width selected background", () => {
   );
 });
 
-test("render: header row has KEY, VALUE, SOURCE, DESCRIPTION columns", () => {
+test("render: compact header row has KEY, VALUE, SOURCE columns", () => {
   const { component } = makeComponent(SAMPLE_ROWS, 120);
   const lines = component.render(120);
   const header = lines[2]!;
   assert.match(header, /KEY/);
   assert.match(header, /VALUE/);
   assert.match(header, /SOURCE/);
-  assert.match(header, /DESCRIPTION/);
+  assert.doesNotMatch(header, /DESCRIPTION/);
 });
 
-test("render: footer pin (←/→ tab · ↑/↓ move · enter drill-in · esc exit)", () => {
+test("render: footer pin includes the optional details toggle", () => {
   const { component } = makeComponent(SAMPLE_ROWS, 120);
   const lines = component.render(120);
   const footer = lines[lines.length - 1]!;
   assert.match(footer, /←\/→ tab/);
   assert.match(footer, /↑\/↓ move/);
+  assert.match(footer, /d details on/);
   assert.match(footer, /enter drill-in/);
   assert.match(footer, /esc exit/);
 });
@@ -235,7 +236,7 @@ test("nav: Esc emits undefined (close)", () => {
 test("nav: Tab advances to the next section", () => {
   const { component } = makeComponent(SAMPLE_ROWS);
   component.handleInput("\t");
-  assert.equal(component.getActiveSectionIdx(), 1); // agents
+  assert.equal(component.getActiveSectionIdx(), 1); // main-agent
   assert.equal(component.getSelectedIdx(), 0);     // reset
 });
 
@@ -244,7 +245,7 @@ test("nav: Back-tab (\\x1b[Z) retreats to the previous section", () => {
   // Move to last section, then back-tab.
   component.switchSection(6); // → "other" (idx 6)
   component.handleInput("\x1b[Z");
-  assert.equal(component.getActiveSectionIdx(), 5); // → "subagents"
+  assert.equal(component.getActiveSectionIdx(), 5); // → "stall-brakes"
 });
 
 test("nav: Right-arrow CSI sequence (\\x1b[C) advances section", () => {
@@ -264,8 +265,9 @@ test("nav: Left-arrow CSI sequence (\\x1b[D) retreats section", () => {
 /*  Pin 3: truncation                                                    */
 /* --------------------------------------------------------------------- */
 
-test("truncate: at width=60 the description column is itself truncated to ≤ descW", () => {
+test("details toggle: descriptions can be shown and truncated when requested", () => {
   const { component } = makeComponent(SAMPLE_ROWS, 60);
+  component.handleInput("d");
   const lines = component.render(60);
   // Find the body rows (skip title, tabs, header, footer).
   const body = lines.slice(3, -1);
@@ -283,12 +285,13 @@ test("truncate: at width=60 the description column is itself truncated to ≤ de
   assert.ok(anyTruncated, `expected at least one body row to show "…" at width=60`);
 });
 
-test("truncate: at width=120 the description column shows most of the row text", () => {
+test("details toggle: at width=120 the description column shows most of the row text", () => {
   // Don't assert full passthrough — at 120 cols, the aggressiveMode description
   // ("ON by default: keep-going defaults (autoResume, cap 10, …); explicit
   // per-key settings still win") still fits in the descW budget. The truncate
   // suffix only kicks in when descW < description length.
   const { component } = makeComponent(SAMPLE_ROWS, 120);
+  component.handleInput("d");
   const lines = component.render(120);
   const body = lines.slice(3, -1).join("\n");
   // The aggressiveMode row should at minimum keep its opening phrase visible.
@@ -318,6 +321,24 @@ test("cache: state change invalidates cache (move → next render produces new l
   assert.notEqual(first, second, "selection move must invalidate the render cache");
 });
 
+test("compact view expands VALUE so model + thinking are visible", () => {
+  const rows: SettingsRow[] = [{
+    id: "agent",
+    section: "main-agent",
+    label: "Current main agent",
+    valueText: "openrouter/provider/a-very-long-model-id · max",
+    sourceText: "runtime",
+    description: "long optional hint",
+  }];
+  const { component } = makeComponent(rows, 120);
+  component.switchSection(1);
+  const line = component.render(120)[4]!;
+  assert.match(line, /openrouter\/provider\/a-very-long-model-id · max/);
+  component.handleInput("d");
+  assert.doesNotMatch(component.render(120)[4]!, /openrouter\/provider\/a-very-long-model-id · max/);
+  assert.equal(component.descriptionsVisible(), true);
+});
+
 /* --------------------------------------------------------------------- */
 /*  Pin 5: structural                                                    */
 /* --------------------------------------------------------------------- */
@@ -329,7 +350,7 @@ test("structural: Class implements Component (has render + invalidate + handleIn
   assert.equal(typeof component.invalidate, "function");
 });
 
-test("structural: buildSettingsRows returns ≥20 rows across all 6 sections (coverage)", () => {
+test("structural: buildSettingsRows returns ≥20 rows across all 7 sections (coverage)", () => {
   const rows = buildSettingsRows({} as Settings, {});
   assert.ok(rows.length >= 20, `expected ≥20 rows, got ${rows.length}`);
 });
@@ -349,6 +370,7 @@ test("render: tab bar is color-only (v0.28.19: brackets dropped), all sections p
 
 test("render: a header rule with ┼ junctions follows the header row", () => {
   const { component } = makeComponent(SAMPLE_ROWS, 120);
+  component.handleInput("d");
   const lines = component.render(120);
   assert.match(lines[3]!, /─+┼─+┼─+┼─+/, `line 3 must be the header rule: ${lines[3]}`);
 });
@@ -369,6 +391,7 @@ test("render: a too-long VALUE is truncated with … — it must NOT break the g
     { id: "b", section: "keep-going", label: "Effective resolution", valueText: "session model · session model · session model", sourceText: "runtime", description: "long composite value" },
   ];
   const { component } = makeComponent(rows, 120);
+  component.handleInput("d");
   const lines = component.render(120);
   const body = lines.slice(4, -1);
   const longRow = body.find((l) => l.includes("Effective resolution"))!;
