@@ -10,7 +10,7 @@ const settingsPath = process.env.GLLA_GLOBAL_SETTINGS_PATH;
 assert.ok(settingsPath, "the parent test supplies an isolated global-settings path");
 
 function setHourlyProbeSetting(enabled) {
-  fs.writeFileSync(settingsPath, JSON.stringify({ hourlyQuotaProbe: enabled }));
+  fs.writeFileSync(settingsPath, JSON.stringify({ hourlyRetryProbe: enabled }));
 }
 
 function parkedRecovery() {

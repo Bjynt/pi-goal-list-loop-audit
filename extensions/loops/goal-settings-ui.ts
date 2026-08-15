@@ -844,14 +844,14 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       }
       return;
     }
-    case "hourlyQuotaProbe": {
-      const v = await ctx.ui.select("Hourly main-model recovery probe — an extra :00:30 attempt while the main recovery is parked (the normal retry ladder is separate)", [
+    case "hourlyRetryProbe": {
+      const v = await ctx.ui.select("Hourly main-model retry — an extra blind :00:30 attempt while recovery is parked (the normal retry ladder is separate)", [
         "on — fire an extra probe at :00:30 every hour while parked (default)",
         "off — rely on the configured retry ladder only",
       ]);
       if (v) {
         const off = v.startsWith("off");
-        saveSettings("global", ctx.cwd, { hourlyQuotaProbe: off ? false : undefined });
+        saveSettings("global", ctx.cwd, { hourlyRetryProbe: off ? false : undefined });
         if (off) cancelHourlyProbe();
         else if (state.mainModelRecovery && !state.mainModelRecovery.manualResumeRequired) scheduleHourlyProbe(ctx);
         ctx.ui.notify(off ? "Hourly main recovery probe OFF — only the configured retry ladder will run." : "Hourly main recovery probe ON — extra :00:30 probe while parked.", "info");

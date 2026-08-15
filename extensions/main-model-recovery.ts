@@ -8,7 +8,7 @@
 export const MAIN_MODEL_MAX_RETRY_DELAY_MS = 5 * 60 * 60_000;
 export const MAIN_MODEL_AUTO_RETRY_HORIZON_MS = 24 * 60 * 60_000;
 /** Keep a fallback chain useful and bounded even when settings are edited
- * outside the UI. Ten alternatives is enough to cross providers/quota pools
+ * outside the UI. Ten alternatives is enough to cross providers/model pools
  * without turning one failure into an unbounded registry walk. */
 export const MAX_MAIN_MODEL_FALLBACKS = 10;
 
@@ -196,8 +196,7 @@ export function mainModelAutoRetryUntil(firstFailureAtMs = Date.now(), horizonMs
 }
 
 /** Compute the optional top-of-hour probe independently from the configured
- * recovery ladder. Provider quota windows often refresh on the hour, so the
- * hourlyQuotaProbe ticker can add a :00:30 attempt without changing the
+ * recovery ladder. The hourlyRetryProbe ticker can add a :00:30 attempt without changing the
  * meaning of mainModelRetryMinutes or the normal bounded backoff. */
 export function hourAlignedRetryDelayMs(nowMs = Date.now()): number {
   const next = new Date(nowMs);
@@ -209,7 +208,7 @@ export function hourAlignedRetryDelayMs(nowMs = Date.now()): number {
 /** One uniform envelope for EVERY provider failure. Error text and upstream
  * Retry-After prose are not trusted to choose a cadence. Every recoverable
  * failure gets the same eager first retry, then the bounded configured ladder;
- * the separate hourly probe adds the :00:30 slot. */
+ * the separate hourly retry adds the :00:30 slot. */
 export function mainModelFailureDelayMs(failure: MainModelFailure, attempt: number, baseMinutes = 15, nowMs = Date.now()): number {
   void failure;
   void nowMs;

@@ -218,11 +218,11 @@ export function buildSettingsRows(
       description: "first retry is eager, later retries use this bounded ladder; an extra :00:30 probe runs after each hour starts; automatic recovery stops after 24h"
     },
     {
-      id: "hourlyQuotaProbe",
+      id: "hourlyRetryProbe",
       section: "backups",
       label: "Hourly main recovery probe",
-      valueText: show("hourlyQuotaProbe", "on"),
-      sourceText: src("hourlyQuotaProbe"),
+      valueText: show("hourlyRetryProbe", "on"),
+      sourceText: src("hourlyRetryProbe"),
       description: "adds a probe at :00:30 while any main-model recovery is parked; off disables only this extra ticker, not the configured retry ladder"
     },
   );

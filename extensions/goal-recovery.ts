@@ -165,7 +165,7 @@ export function isCompletionAuditRecoveryPending(goal: Goal | null | undefined):
 }
 
 /* ------------------------------------------------------------------ */
-/* Cluster B — main-model recovery + hourly quota probe               */
+/* Cluster B — main-model recovery + hourly retry                      */
 /* ------------------------------------------------------------------ */
 
 /* The module flags stay owned by goal.ts (they're read by goal.ts
@@ -717,13 +717,10 @@ export function scheduleMainModelRecoveryTimer(ctx: ExtensionContext, delayMs: n
 }
 
 // =================================================================
-// v0.34.92: hourly quota probe ticker — opt-in (default ON) extra probe at
-// :00:30 every hour while main-model recovery is parked. Quota windows tend
-// to refresh at the top of the hour; the ticker gives the fastest pickup
-// the plugin can offer without spamming chat (no chat message — just an
-// extra probe). Co-resident with the configured retry ladder; the ticker is
-// strictly an ADDITIONAL probe slot at :00:30. When the user opts out, the
-// configured retry ladder is unaffected — only the ticker stops.
+// v0.34.142: hourly retry ticker — opt-in (default ON) extra retry at :00:30
+// every hour while main-model recovery is parked. This is a blind retry slot:
+// the plugin does not query or infer provider quota state. It is co-resident
+// with the configured retry ladder and only adds this extra opportunity.
 // =================================================================
 
 
@@ -731,7 +728,7 @@ export function scheduleMainModelRecoveryTimer(ctx: ExtensionContext, delayMs: n
  * as recovery is parked and the setting is on. Safe to call when already
  * scheduled (no duplicate schedules). */
 export function scheduleHourlyProbe(ctx: ExtensionContext): void {
-  if (loadGlobalSettings().hourlyQuotaProbe !== true) return;
+  if (loadGlobalSettings().hourlyRetryProbe !== true) return;
   // The ticker is only for a parked recovery. After setModel succeeds,
   // retryAt is cleared while the next supervised turn is being tested; do
   // not let :00:30 switch models underneath that turn.
@@ -1153,7 +1150,7 @@ export function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainMo
   scheduleMainModelRecoveryTimer(ctx, delay);
   // The configured bounded ladder is the normal recovery. An opt-in hourly
   // probe ticker (scheduleHourlyProbe) adds a :00:30 attempt when
-  // hourlyQuotaProbe is enabled (default ON). The recovery timer arms it
+  // hourlyRetryProbe is enabled (default ON). The recovery timer arms it
   // beside the normal slot.
 }
 

@@ -1547,7 +1547,7 @@ let mainModelRecoveryTimer: NodeJS.Timeout | null = null;
 let mainModelSwitchInFlight = false;
 let mainModelAbortForRecovery = false;
 // hourly quota-probe ticker (v0.34.92) — co-resident with the normal retry
-// cadence; opt-in via hourlyQuotaProbe (default ON). Flags stay owned here;
+// cadence; opt-in via hourlyRetryProbe (default ON). Flags stay owned here;
 // goal-recovery.ts observes them through the RecoveryFlags accessor.
 let hourlyProbeTimer: NodeJS.Timeout | null = null;
 let hourlyProbeFireAt: number | null = null;
