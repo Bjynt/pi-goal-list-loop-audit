@@ -342,6 +342,31 @@ replacement without delivering a successor `session_start`:
   and normalize old files. Canonical persisted state uses `retry-waiting`,
   `retryAttempts`, `retryFirstAt`, and `retryUntil`.
 
+## Addendum v0.35.0 (long-running judgment, Designer, and drafting chain)
+
+- **Judgment is a prompt-level contract**: drafting and continuation preserve
+  the objective and verification contract, prefer durable root-cause fixes,
+  allow only safe/reversible/testable in-scope workarounds, and ask one focused
+  question only at a genuine scope, priority, permission, or irreversible-action
+  boundary. The unattended fallback is explicit and never infers provider or
+  quota state.
+- **Designer routing is explicit, persisted, and read-only**: `Agent: Designer`,
+  `Role: designer`, and `Designer: yes` are declarations rather than natural
+  language classification. The role is carried by goals, queue items, and task
+  plans; continuation injects the hand-off; a managed `Designer.md` uses only
+  read/search tools; unavailable role/provider falls back to an inline design
+  checkpoint.
+- **Drafting owns a temporary model lease**: the `/goal`, `/list`, and `/loop`
+  interviews resolve a separate primary/fallback chain, retry the existing
+  interview after generic provider errors, and restore the original model after
+  confirmation or interruption. A current-session last resort is bounded and
+  does not enter main-goal recovery. A generation fence and serialized restore
+  prevent stale-session or overlapping-draft model changes.
+- **Host replacement remains host-owned**: Pi event contexts do not expose the
+  command-only `newSession`/`fork`/`switchSession` operations. glla therefore
+  persists the work and truthfully asks for `/new` when no replacement boundary
+  arrives; the proposed event-safe host API is recorded in the audit docs.
+
 ## Addendum v0.4.0 (completion)
 
 - **Auditor compaction enabled** (flaw #3 — the last open one). Safety:

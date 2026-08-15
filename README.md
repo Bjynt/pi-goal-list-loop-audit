@@ -10,7 +10,7 @@ This is a detached process, not a nested session in the main pi process. `comple
 
 On Windows, npm installs the `pi.cmd` shim rather than a directly executable `pi` binary. The auditor launches it through an explicitly quoted `cmd.exe` boundary; POSIX keeps direct shell-less execution. Protocol snapshots also tolerate transient Windows file-locks without deleting the last valid snapshot first.
 
-**Current package version:** `v0.34.142` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
+**Current package version:** `v0.35.0` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
 
 ## Why this exists
 
@@ -121,6 +121,23 @@ batches: asking for "these 50 tasks" in a `/list` drafting session produces
 ONE confirmed batch, not 50 dialogs.
 Note: every list item is audited individually, so at hundreds of items the
 audit cost per item is the thing to think about.
+
+Long-running judgment is explicit: the drafter preserves the objective and
+verification contract, prefers a durable root-cause fix, allows a safe,
+reversible workaround when it is genuinely useful, and asks only at an actual
+scope/permission/irreversible-action decision boundary. If you want a design
+checkpoint before implementation, mark a goal, list item, or task-plan entry
+with `Agent: Designer` (also accepted: `Role: designer` or `Designer: yes`).
+The managed Designer is read-only; if it is unavailable, the main agent keeps
+the same checkpoint inline.
+
+Drafting can use a separate temporary model chain configured in `/glla` under
+Backups (`Drafter model` and `Drafter fallback chain`). A drafting failure
+retries the existing interview through that chain and restores the original
+session model after confirmation or interruption. Main-model and auditor
+recovery chains remain separate. Provider recovery is intentionally blind:
+there is no live quota checking or reset inference; the generic retry envelope
+and the optional hourly `:00:30` probe remain the policy.
 
 **Drafting is the default for long-running things.** `/goal` and
 `/loop` with no arguments — and any vague `/list` dump — all start a

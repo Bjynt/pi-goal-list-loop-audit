@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.35.0 — explicit designer routing and drafting recovery (2026-08-15)
+
+### Long-running judgment is a prompt contract
+  Drafting and continuation now preserve the objective and verification
+  contract, prefer durable root-cause fixes, permit safe reversible workarounds
+  when useful, and reserve questions for genuine decision boundaries. The
+  unattended fallback is explicit and never guesses a provider reset.
+
+### Designer is a real managed role
+  `Agent: Designer`, `Role: designer`, and `Designer: yes` route an explicit
+  goal, list item, or task-plan checkpoint to a managed read-only Designer
+  subagent. The role persists through queue/goal/task state, appears in status
+  and markdown, has editable model/fallback settings, and falls back inline
+  when the role or provider is unavailable.
+
+### Drafting has its own temporary model chain
+  `/goal`, `/list`, and `/loop` drafting can use a dedicated primary plus
+  ordered fallbacks. Provider failures retry the existing interview on the
+  next eligible drafter candidate, including one bounded same-session retry as
+  the last resort. The lease is generation-fenced, restored after confirmation
+  or interruption, and never consumes the main-model or auditor chains.
+
+### Host and continuation audit
+  The Pi session-replacement limitation is documented with a concrete
+  event-safe API request and acceptance tests. Codex, Claude Code, and DeepSeek
+  Harness continuation approaches were compared; the result is a durable
+  checkpoint/resume design decision, not a provider-specific retry change.
+
 ## 0.34.142 — fully reason-agnostic provider recovery (2026-08-15)
 
 ### No quota policy or availability inference
