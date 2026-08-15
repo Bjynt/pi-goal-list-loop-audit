@@ -16,6 +16,16 @@ import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.
 import { readState } from "../extensions/goal-loop-core.js";
 import { MockPi, makeMockCtx, seedState, tick, tmpCwd } from "./harness/mock-pi.js";
 
+// v0.34.139: the blocked-activation contract assumes the DEFAULT restore
+// gate (no autoResume). Pin it explicitly: the shared worker-process
+// settings file is reset per file by harness/setup.ts, but a poison write
+// would otherwise turn session_start into an auto-activation that makes
+// the repair item a live goal before /list next runs.
+const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH;
+function pinNoAutoResume(): void {
+  if (GLOBAL_SETTINGS_PATH) fs.writeFileSync(GLOBAL_SETTINGS_PATH, "{}");
+}
+
 const EMPTY_IDS = [
   "20260811120417-t12dn0",
   "20260811120417-0y3e1s",
@@ -59,6 +69,7 @@ async function boot(pi: MockPi, cwd: string): Promise<ReturnType<typeof makeMock
 }
 
 test("REAL SHAPE: 12 empty head items block list activation exactly as in the hegemon ledger", async () => {
+  pinNoAutoResume();
   const cwd = tmpCwd();
   const empties = EMPTY_IDS.map((id) => ({ id, objective: "", addedAt: "2026-08-11T12:04:17.974Z" }));
   const rest = [REAL_HEAD, ...Array.from({ length: 30 }, (_, i) => realItem(i))];
@@ -80,6 +91,7 @@ test("REAL SHAPE: 12 empty head items block list activation exactly as in the he
 });
 
 test("REAL SHAPE: the clean 31-item queue (empties removed) activates main-menu without any blocked event", async () => {
+  pinNoAutoResume();
   const cwd = tmpCwd();
   const rest = [REAL_HEAD, ...Array.from({ length: 30 }, (_, i) => realItem(i))];
   seedState(cwd, { goal: null, list: rest });

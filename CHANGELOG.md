@@ -25,6 +25,15 @@
   harness and direct worker tests now clean up their tmux/process trees on
   interruption or assertion failure.
 
+### Release-test isolation is order-independent
+  bun test runs every file through the same worker process under
+  `--max-concurrency=1`, so the pid-scoped test settings file was shared
+  across all files: a test writing `autoResume:true` poisoned later files
+  whenever discovery order differed (CI surfaced this as
+  hegemon-queue-unblock-evidence auto-activating a repair goal). The preload
+  now resets the shared settings file before each file, and the blocked-
+  activation regression pins its no-autoResume precondition explicitly.
+
 ## 0.34.138 — CI-safe auditor timing and release validation (2026-08-13)
 ### CI auditor timing has headroom
   Process-backed auditor regressions use a CI-safe wall-clock allowance, and
