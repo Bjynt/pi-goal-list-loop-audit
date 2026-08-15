@@ -61,7 +61,7 @@ test("build: unknown agent name throws", () => {
 test("sync: file absent + inherit-parent → managed file created without pin", () => {
   const dir = tmpAgentDir();
   const r = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent" });
-  assert.deepEqual(r.written, ["Explore"]);
+  assert.deepEqual(r.written, ["Explore", "Designer"]);
   assert.deepEqual(r.removed, []);
   assert.deepEqual(r.skipped, []);
   const md = readOverride(dir, "Explore")!;
@@ -95,7 +95,7 @@ test("sync: user-owned file (no marker) → refused, untouched, noted", () => {
   const userContent = "---\ndescription: my own explore\n---\n\nuser prompt\n";
   fs.writeFileSync(file, userContent);
   const r = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent" });
-  assert.deepEqual(r.written, []);
+  assert.deepEqual(r.written, ["Designer"]);
   assert.equal(r.skipped.length, 1);
   assert.equal(r.skipped[0]!.name, "Explore");
   assert.match(r.skipped[0]!.reason, /user-owned/);
@@ -128,7 +128,7 @@ test("sync: per-type override always wins over strategy", () => {
     strategy: "agent-default", // would normally delete — override must win
     overrides: { Explore: "minimax/MiniMax-M3" },
   });
-  assert.deepEqual(r.written, ["Explore"]);
+  assert.deepEqual(r.written, ["Explore", "Designer"]);
   assert.deepEqual(r.removed, []);
   assert.ok(/^model: minimax\/MiniMax-M3$/m.test(readOverride(dir, "Explore")!));
 });
@@ -141,7 +141,7 @@ test("sync: override for a non-embedded agent type → skipped with note", () =>
     overrides: { Custom: "minimax/MiniMax-M3" },
   });
   // Explore still synced normally
-  assert.deepEqual(r.written, ["Explore"]);
+  assert.deepEqual(r.written, ["Explore", "Designer"]);
   const customSkip = r.skipped.find(s => s.name === "Custom");
   assert.ok(customSkip, "Custom override must be skipped");
   assert.match(customSkip!.reason, /no embedded default config/);

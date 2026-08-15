@@ -20,7 +20,7 @@ import {
 import { isSubagentProviderFailure } from "../extensions/quota-retry.ts";
 
 test("per-type pins: Plan and general-purpose are overridable with embedded defaults", () => {
-  assert.deepEqual([...OVERRIDABLE_AGENT_TYPES].sort(), ["Explore", "Plan", "general-purpose"]);
+  assert.deepEqual([...OVERRIDABLE_AGENT_TYPES].sort(), ["Designer", "Explore", "Plan", "general-purpose"]);
   // Plan pin: read-only tools + replace mode + model pin + marker:
   const plan = buildAgentOverrideMd("Plan", "minimax/MiniMax-M3");
   assert.match(plan, /model: minimax\/MiniMax-M3/);
@@ -35,10 +35,10 @@ test("per-type pins: Plan and general-purpose are overridable with embedded defa
   assert.match(gp, /model: minimax\/MiniMax-M3/);
 });
 
-test("strategy-driven sync writes ONLY Explore; Plan/general-purpose need explicit pins", () => {
+test("strategy-driven sync writes Explore plus the glla Designer role; Plan/general-purpose need explicit pins", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-subagent-"));
   const sync = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent", overrides: {} });
-  assert.deepEqual(sync.written, ["Explore"]);
+  assert.deepEqual(sync.written, ["Explore", "Designer"]);
   assert.ok(fs.existsSync(path.join(dir, "agents", "Explore.md")));
   assert.ok(!fs.existsSync(path.join(dir, "agents", "Plan.md")), "Plan must NOT get a strategy-driven file");
   // Explicit Plan pin writes it:
@@ -51,7 +51,7 @@ test("repair detection: externally deleted/altered managed files are re-written 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-subagent-repair-"));
   // First sync: initial write, NOT a repair:
   const first = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent", overrides: {} });
-  assert.deepEqual(first.written, ["Explore"]);
+  assert.deepEqual(first.written, ["Explore", "Designer"]);
   assert.deepEqual(first.repaired, []);
   // An idempotent sync must preserve the managed-file snapshot even though
   // its result has no write delta; a later external change still needs repair
@@ -60,7 +60,7 @@ test("repair detection: externally deleted/altered managed files are re-written 
   assert.deepEqual(noop.written, []);
   assert.deepEqual(noop.repaired, []);
   const syncState = JSON.parse(fs.readFileSync(path.join(dir, "agents", ".glla-subagent-sync.json"), "utf8"));
-  assert.deepEqual(syncState.written, ["Explore"], "idempotent sync preserves managed-file repair state");
+  assert.deepEqual(syncState.written, ["Designer", "Explore"], "idempotent sync preserves managed-file repair state");
   // External deletion:
   fs.unlinkSync(path.join(dir, "agents", "Explore.md"));
   const second = syncSubagentModelOverrides({ agentDir: dir, strategy: "inherit-parent", overrides: {} });
