@@ -567,17 +567,36 @@ test("v0.35.4: a refused branch-mode loop start restores the original branch", a
   execSync("git init -b main -q", { cwd });
   execSync("git add seed.txt", { cwd });
   execSync("git -c user.name=t -c user.email=t@example.test commit -qm init", { cwd });
-  const ctx = await freshSession(cwd, "startup");
-  await pi.command("loop", 'start refusal target branch=1 measure="cat /definitely-not-here-xyz" direction=min', ctx);
-  assert.equal(readState(cwd).loop, null, "the refused start must not create a loop state");
-  const branch = execSync("git branch --show-current", { cwd }).toString().trim();
-  assert.equal(branch, "main", "the user is back on the original branch after the refusal");
-  const leftovers = execSync("git branch --list 'pi-glla-loop/*'", { cwd }).toString().trim();
-  assert.ok(leftovers.length > 0, "the empty scratch branch remains but is not checked out");
-  assert.ok(
-    ctx.ui.notifies.some((n) => n.message.includes("Loop start refused")),
-    "the refusal is loud",
-  );
+  // MockPi's default exec fakes success for every command — loop branch
+  // operations need REAL git for this test, so program the handler.
+  const realExec = pi.execHandler;
+  pi.execHandler = (cmd, args, opts) => {
+    try {
+      const out = execSync(
+        `${cmd} ${args.map((a) => `'${String(a).replace(/'/g, `'\''`)}'`).join(" ")}`,
+        { cwd: (opts as { cwd?: string })?.cwd ?? cwd, encoding: "utf8" },
+      );
+      return { code: 0, stdout: out, stderr: "" };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: string; stderr?: string };
+      return { code: e.status ?? 1, stdout: e.stdout ?? "", stderr: e.stderr ?? String(err) };
+    }
+  };
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    await pi.command("loop", 'start refusal target branch=1 measure="cat /definitely-not-here-xyz" direction=min', ctx);
+    assert.equal(readState(cwd).loop, null, "the refused start must not create a loop state");
+    const branch = execSync("git branch --show-current", { cwd }).toString().trim();
+    assert.equal(branch, "main", "the user is back on the original branch after the refusal");
+    const leftovers = execSync("git branch --list 'pi-glla-loop/*'", { cwd }).toString().trim();
+    assert.ok(leftovers.length > 0, "the empty scratch branch remains but is not checked out");
+    assert.ok(
+      ctx.ui.notifies.some((n) => n.message.includes("Loop start refused")),
+      "the refusal is loud",
+    );
+  } finally {
+    pi.execHandler = realExec;
+  }
 });
 
 test("v0.35.0: a direct /loop start also confirms before replacing a live goal", async () => {
