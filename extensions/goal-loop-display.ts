@@ -598,7 +598,7 @@ function hostLastStream(extras: WidgetExtras | undefined, now: number): string {
  * These helpers are display-only; they never infer or mutate lifecycle state. */
 function pausedRecoveryOwner(g: Goal, state: State): string {
   if (isCompletionAuditNoVerdict(g)) return "detached auditor recovery";
-  if (state.mainModelRecovery || /main model recovery|provider[ /]quota|quota wall/i.test(g.pauseReason ?? "")) {
+  if (state.mainModelRecovery) {
     return "main-model recovery";
   }
   switch (pauseKind(g)) {
@@ -805,9 +805,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       // up earlier; note.md 2026-08-10).
       const parked = state.mainModelRecovery?.retryAt ? Date.parse(state.mainModelRecovery.retryAt) : Number.NaN;
       if (Number.isFinite(parked) || state.mainModelRecovery?.pendingModelSwitch) {
-        const label = state.mainModelRecovery?.quotaSignal || /quota|rate.?limit|provider wall|usage limit|provider unavailable/i.test(`${state.mainModelRecovery?.reason ?? ""} ${g.pauseReason ?? ""}`)
-          ? "⏳ parked on provider wall — retrying automatically"
-          : "⏳ main-model fallback recovery — retrying automatically";
+        const label = "⏳ main-model recovery — retrying automatically";
         return `glla: ${paint(theme, "dim", label)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
       }
       return `glla: ${paint(theme, "dim", `⏳ auto-retrying${when}`)}${pausedStatusSuffix(g, state, extras, now)}${heldSuffix}`;
@@ -890,8 +888,8 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     // reset (note.md 2026-08-10) and the :00:30 hourly probe may pick the
     // work up earlier.
     const recovery = state.mainModelRecovery;
-    const blockedByQuota = queued && recovery && recovery.retryAt;
-    const quotaSuffix = blockedByQuota ? ` · parked on provider wall` : "";
+    const blockedByRecovery = queued && recovery && recovery.retryAt;
+    const recoverySuffix = blockedByRecovery ? ` · parked on provider recovery` : "";
     // Keep the screenshot-proven order: state, elapsed, freshness, then
     // queue/task context. It scans like a compact instrument readout and
     // remains useful when the above-editor card is hidden or scrolled away.
@@ -906,7 +904,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       queued ? hostLastActivity(extras, now).replace(/^ · /, "") : "",
       n > 0 ? `${n} queued` : "",
     ].filter(Boolean);
-    return withRecovery(`glla: ${marker}${details.length > 0 ? ` ${details.join(" · ")}` : ""}${quotaSuffix}${heldSuffix}`);
+    return withRecovery(`glla: ${marker}${details.length > 0 ? ` ${details.join(" · ")}` : ""}${recoverySuffix}${heldSuffix}`);
   }
   // v0.34.65: a terminal goal names its outcome + wall duration instead of
   // clearing the segment (note.md 2026-08-07: "this seems weak for a complete
@@ -1011,7 +1009,7 @@ function parkedLoopRecoveryLines(loop: LoopState, recovery: MainModelRecovery, n
 /** v0.28.17: standalone card for a restore-held loop (no goal visible). */
 function standaloneRecoveryLines(recovery: MainModelRecovery, now: number, theme?: DisplayTheme, width?: number, configuredBackups: string[] = []): string[] {
   const current = recovery.active ?? recovery.primary;
-  const wall = recovery.quotaSignal ? "provider wall" : "main-model fallback recovery";
+  const wall = "main-model recovery";
   const summary = formatMainModelRecoveryStatus(recovery, configuredBackups);
   return [
     `${paint(theme, "warning", "⏳")} ${paint(theme, "accent", wall)} · ${truncate(current, budgetFor(width, 3, 36))}`,
@@ -1282,10 +1280,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     if (kind === "decision") lines.push(`├─ ${paint(theme, "accent", "decision needed — your call unblocks this")}`);
     else if (kind === "error") lines.push(`├─ ${paint(theme, "error", "action needed — this won't fix itself")}`);
     else if (Number.isFinite(parkedAt) || state.mainModelRecovery?.pendingModelSwitch) {
-      const recoveryLabel = state.mainModelRecovery?.quotaSignal === "rate-limit" || state.mainModelRecovery?.quotaSignal === "plan-quota" || state.mainModelRecovery?.quotaSignal === "billing"
-        || /quota|rate.?limit|provider wall|usage limit|provider unavailable/i.test(`${state.mainModelRecovery?.reason ?? ""} ${g.pauseReason ?? ""}`)
-        ? "parked on provider wall — retrying automatically"
-        : "main-model fallback recovery — retrying automatically";
+      const recoveryLabel = "main-model recovery — retrying automatically";
       lines.push(`├─ ${paint(theme, "dim", recoveryLabel)}`);
       const recoverySummary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
       recoverySummary.forEach((line) => lines.push(`│  ${paint(theme, "dim", line.replace(/^Main-model recovery: /, ""))}`));
@@ -1296,7 +1291,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     } else if (kind === "blocked" && state.mainModelRecovery?.manualResumeRequired === true) {
       lines.push(`├─ ${paint(theme, "warning", "manual recovery hold — automatic probes stopped")}`);
     } else if (kind === "blocked") {
-      lines.push(`├─ ${paint(theme, "warning", "blocked — waiting on a non-quota condition")}`);
+      lines.push(`├─ ${paint(theme, "warning", "blocked — waiting for manual action")}`);
     } else if (kind === "wait") {
       lines.push(`├─ ${paint(theme, "dim", "paused — waiting on a recovery timer")}`);
     }

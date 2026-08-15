@@ -156,7 +156,7 @@ declare global {
   var isActionableGoal: any;
   var freshCtx: any;
   var freshCtxForGeneration: any;
-  var scheduleQuotaRetryForSession: any;
+  var scheduleProviderRetryForSession: any;
   var handleMainModelAgentEnd: any;
   var createGoal: any;
   var persistState: any;

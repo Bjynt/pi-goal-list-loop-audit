@@ -15,7 +15,6 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { stripThinkBlocks, captureGoalRevision, type Goal, type GoalRevisionToken } from "./goal-loop-core.js";
-import { quotaSignal } from "./quota-retry.js";
 import { buildGoalAuditorPrompt } from "./goal-loop-auditor.js";
 import { checkRegressionShield, parseAuditorVerdict } from "./goal-loop-shield.js";
 import { renameWithWindowsRetry } from "../scripts/goal-auditor-launch.mjs";
@@ -553,11 +552,11 @@ function infra(model: string, thinkingLevel: string, error: string, output = "",
 
 function failedResultClass(error: string | undefined): AuditorInfrastructureClass {
   if (/^Auditor (?:exceeded|stalled)\b/i.test(error ?? "")) return "timeout";
-  // A provider can return an arbitrary bare HTTP 403/5xx without quota
-  // wording. Keep it on the provider retry/sanitization path, while status-
-  // free worker exits, malformed protocol, and missing verdicts stay local
-  // no-verdict infrastructure failures.
-  return quotaSignal(error) || /(?:^|\b)(?:HTTP\s*)?(?:401|403|408|409|429|5\d\d)\b/i.test(error ?? "")
+  // A provider can return an arbitrary HTTP status without any useful
+  // wording. Keep status-bearing failures on the generic provider retry
+  // path; status-free worker exits and missing verdicts stay no-verdict
+  // infrastructure failures.
+  return /(?:^|\b)(?:HTTP\s*)?(?:401|403|408|409|429|5\d\d)\b/i.test(error ?? "")
     ? "provider"
     : "no-verdict";
 }

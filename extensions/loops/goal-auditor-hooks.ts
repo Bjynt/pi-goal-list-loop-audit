@@ -174,12 +174,7 @@ import {
   resetLengthContinue,
   tickLengthContinue,
 } from "../length-continue.js";
-import {
-  capQuotaRetrySeconds,
-  isSubagentQuotaResult,
-  scheduleQuotaRetry,
-  cancelQuotaRetry,
-} from "../quota-retry.js";
+import { capProviderRetrySeconds } from "../quota-retry.js";
 import {
   classifyMainModelFailure,
   mainModelAutoRetryUntil,
@@ -707,7 +702,7 @@ export function auditorRetryPlan(claim: PendingCompletion, _legacyQuota?: unknow
   const requestedSec = attempt === 1
     ? EAGER_AUDITOR_RETRY_SEC
     : Math.max(60, Math.round((nextHourlyProbeMs(now) - now) / 1000));
-  const retryAfterSec = capQuotaRetrySeconds(requestedSec);
+  const retryAfterSec = capProviderRetrySeconds(requestedSec);
   const automatic = attempt < MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS && now + retryAfterSec * 1_000 <= untilMs;
   return { attempt, retryAfterSec, firstAt, autoRetryUntil: new Date(untilMs).toISOString(), automatic, requestedSec };
 }
@@ -1212,7 +1207,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     }, liveCtx);
     appendLedger(liveCtx.cwd, "goal_paused", { reason: `auditor retry: retry in ${plan.retryAfterSec}s (uniform schedule)`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
     if (notifyRetry) liveCtx.ui.notify(`Auditor still failing — next auto-retry in ${fmtRetryDelay(plan.retryAfterSec)} (your completion claim is stored; no action needed).`, "warning");
-    scheduleQuotaRetryForSession(liveCtx, plan.retryAfterSec, result.error, (fresh: ExtensionContext) => {
+    scheduleProviderRetryForSession(liveCtx, plan.retryAfterSec, result.error, (fresh: ExtensionContext) => {
       if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor retry:") && state.goal.pendingCompletion) {
         void retryStoredCompletionAudit(origin);
       }

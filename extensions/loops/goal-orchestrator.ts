@@ -172,15 +172,7 @@ import {
   resetLengthContinue,
   tickLengthContinue,
 } from "../length-continue.js";
-import {
-  capQuotaRetrySeconds,
-  isSubagentQuotaResult,
-  parseQuotaError,
-  quotaRetryDelaySeconds,
-  scheduleQuotaRetry,
-  cancelQuotaRetry,
-  type QuotaRetryScheduleOptions,
-} from "../quota-retry.js";
+import { scheduleProviderRetry, cancelProviderRetry, type ProviderRetryScheduleOptions } from "../quota-retry.js";
 import {
   classifyMainModelFailure,
   isMainModelFallbackFailure,
@@ -455,7 +447,7 @@ function clearSessionOwnedTimers(preserveStaleRecovery = false): void {
   lastMainModelFailure = null;
   for (const timer of sessionTimeouts) clearTimeout(timer);
   sessionTimeouts.clear();
-  cancelQuotaRetry();
+  cancelProviderRetry();
   if (ownerSession) {
     deadOwnerSession = ownerSession; // v0.34.25: keep the dead identity for successor absorption
     deadOwnerCwd = ownerCwd ?? lastCtx?.cwd ?? null;
@@ -512,16 +504,16 @@ function freshCtxForGeneration(generation: number): ExtensionContext | null {
  * receive a context proven fresh at fire time and may not close over the
  * scheduling event's ctx.
  */
-function scheduleQuotaRetryForSession(
+function scheduleProviderRetryForSession(
   ctx: ExtensionContext,
   retryAfterSec: number,
   reason: string,
   fire: (ctx: ExtensionContext) => void | Promise<void>,
   label?: string,
-  options?: QuotaRetryScheduleOptions,
+  options?: ProviderRetryScheduleOptions,
 ): void {
   const generation = sessionGeneration;
-  scheduleQuotaRetry(ctx, retryAfterSec, reason, () => {
+  scheduleProviderRetry(ctx, retryAfterSec, reason, () => {
     const current = freshCtxForGeneration(generation);
     if (!current) return;
     try {
@@ -1087,7 +1079,7 @@ defineGoalRuntimeGlobal("clearSessionOwnedTimers", { get: () => clearSessionOwne
 defineGoalRuntimeGlobal("isActionableGoal", { get: () => isActionableGoal });
 defineGoalRuntimeGlobal("freshCtx", { get: () => freshCtx });
 defineGoalRuntimeGlobal("freshCtxForGeneration", { get: () => freshCtxForGeneration });
-defineGoalRuntimeGlobal("scheduleQuotaRetryForSession", { get: () => scheduleQuotaRetryForSession });
+defineGoalRuntimeGlobal("scheduleProviderRetryForSession", { get: () => scheduleProviderRetryForSession });
 defineGoalRuntimeGlobal("handleMainModelAgentEnd", { get: () => handleMainModelAgentEnd });
 defineGoalRuntimeGlobal("createGoal", { get: () => createGoal });
 defineGoalRuntimeGlobal("persistState", { get: () => persistState });

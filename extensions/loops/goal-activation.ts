@@ -175,14 +175,7 @@ import {
   resetLengthContinue,
   tickLengthContinue,
 } from "../length-continue.js";
-import {
-  capQuotaRetrySeconds,
-  isSubagentQuotaResult,
-  parseQuotaError,
-  quotaRetryDelaySeconds,
-  scheduleQuotaRetry,
-  cancelQuotaRetry,
-} from "../quota-retry.js";
+import { isSubagentProviderFailure } from "../quota-retry.js";
 import {
   classifyMainModelFailure,
   isMainModelFallbackFailure,
@@ -760,17 +753,16 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         state.goal.telemetry = t;
       }
     }
-    // v0.25.6: subagent quota errors (the pi-subagents#175 shape —
-    // Explore's upstream haiku pin 403s on shared keys). Surface the
-    // repair path immediately; the continuation prompt's WHEN SUBAGENTS
-    // HIT QUOTA ERRORS section carries the full guidance.
-    if (isSubagentQuotaResult(String(event?.toolName ?? ""), Boolean(event?.isError ?? event?.error), event?.output ?? event?.result ?? event?.details ?? "")) {
+    // A failed subagent result is surfaced as a generic provider/runtime
+    // failure. Recovery deliberately does not inspect status or quota
+    // wording before deciding what to do.
+    if (isSubagentProviderFailure(String(event?.toolName ?? ""), Boolean(event?.isError ?? event?.error), event?.output ?? event?.result ?? event?.details ?? "")) {
       const errText = typeof (event?.output ?? event?.result) === "string" ? (event?.output ?? event?.result) : JSON.stringify(event?.output ?? event?.result ?? event?.details ?? "");
       const current = currentToolContext(eventCtx);
       if (current) {
-        appendLedger(current.cwd, "subagent_quota_error", { error: String(errText).slice(0, 200) });
+        appendLedger(current.cwd, "subagent_provider_error", { error: String(errText).slice(0, 200) });
         current.ui.notify(
-          "Subagent hit a quota error (403/limit). Repair: re-spawn with an explicit model= on your quota pool, or do the work inline — see the continuation prompt's WHEN SUBAGENTS HIT QUOTA ERRORS. Explore's upstream haiku pin is the usual cause (pi-subagents#175); glla's inherit-parent strategy removes it for NEW sessions.",
+          "Subagent provider/runtime error. Retry the subagent, choose a configured model if needed, or do the work inline; the continuation path does not classify quota state.",
           "warning",
         );
       }
@@ -1151,7 +1143,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           };
           const notifyRetry = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:retry-wait`);
           updateGoal({ pendingCompletion: pending, providerErrorDiagnostic: pending.providerErrorDiagnostic, recoveryEpisodeKey, recoveryNoticeKeys: pending.recoveryNoticeKeys }, ctx);
-          scheduleQuotaRetryForSession(ctx, delay / 1_000, state.goal.pauseReason ?? "auditor quota", () => {
+          scheduleProviderRetryForSession(ctx, delay / 1_000, state.goal.pauseReason ?? "auditor retry", () => {
             if (state.goal?.status === "paused" && state.goal.pendingCompletion?.phase === "quota-waiting") void retryStoredCompletionAudit("session-recovery");
           }, undefined, {
             episodeKey: recoveryEpisodeKey,
@@ -1727,7 +1719,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           }
           appendLedger(ctx.cwd, "error_brake_capped", { streak: brakeStreak, reason, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
           const probeMs = Math.max(1_000, nextHourlyProbeMs(Date.now()) - Date.now());
-          scheduleQuotaRetryForSession(ctx, probeMs / 1000, reason, (fresh: ExtensionContext) => {
+          scheduleProviderRetryForSession(ctx, probeMs / 1000, reason, (fresh: ExtensionContext) => {
             // Re-check: only probe if STILL parked by the error-brake cap —
             // a user pause/resume/cancel meanwhile is never stomped.
             if (state.goal && state.goal.status === "paused" && state.goal.pauseKind === "error"
@@ -1762,7 +1754,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           notifyExternal(ctx, `Goal paused: ${failureCopy.sensitive ? "provider error" : reason}.`);
         }
         appendLedger(ctx.cwd, "goal_paused", { reason, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
-        scheduleQuotaRetryForSession(ctx, cooldownMs / 1000, reason, (fresh: ExtensionContext) => {
+        scheduleProviderRetryForSession(ctx, cooldownMs / 1000, reason, (fresh: ExtensionContext) => {
           // Re-check: only auto-resume if STILL paused for the error brake
           // (a user /goal pause during the window is not stomped).
           if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("5 consecutive errors")) {

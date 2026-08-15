@@ -177,13 +177,6 @@ import {
   tickLengthContinue,
 } from "../length-continue.js";
 import {
-  capQuotaRetrySeconds,
-  isSubagentQuotaResult,
-  quotaRetryDelaySeconds,
-  scheduleQuotaRetry,
-  cancelQuotaRetry,
-} from "../quota-retry.js";
-import {
   classifyMainModelFailure,
   mainModelAutoRetryUntil,
   mainModelFailureDelayMs,
@@ -1026,7 +1019,7 @@ function registerAgentTools(pi: any): void {
             pauseSuggestedAction: `Auto-retry in ${fmtRetryDelay(plan.retryAfterSec)} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
           }, ctx);
           appendLedger(ctx.cwd, "goal_paused", { reason: `auditor retry: retry in ${plan.retryAfterSec}s (uniform schedule)`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
-          scheduleQuotaRetryForSession(ctx, plan.retryAfterSec, result.error, (fresh: ExtensionContext) => {
+          scheduleProviderRetryForSession(ctx, plan.retryAfterSec, result.error, (fresh: ExtensionContext) => {
             // Re-check: only auto-resume if STILL paused for the retry
             // reason (a user /goal pause during the window is not stomped).
             if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor retry:")) {
