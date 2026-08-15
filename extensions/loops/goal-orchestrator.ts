@@ -64,6 +64,7 @@ import {
   ledgerPath,
   crossRecommendMode,
   formatListDepth,
+  extractAgentRole,
   parseListItemDeclaration,
   shouldEscalateStall,
   isStaleApiError,
@@ -586,13 +587,15 @@ async function handleMainModelAgentEnd(ctx: ExtensionContext, rawLastA: any, las
 function createGoal(objective: string, ctx: ExtensionContext, policy: "goal" | "list" = "goal"): Goal {
   ensureDirs(ctx.cwd);
   // Extract verification contract if present in objective.
-  const { objective: cleanObj, verificationContract } = extractVerificationContract(objective);
+  const { objective: roleCleaned, agentRole } = extractAgentRole(objective);
+  const { objective: cleanObj, verificationContract } = extractVerificationContract(roleCleaned);
   const id = newGoalId();
   const goal: Goal = {
     id,
     objective: cleanObj,
     status: "active",
     policy,
+    ...(agentRole ? { agentRole } : {}),
     autoContinue: true,
     verificationContract: verificationContract || "",
     objectiveProvenance: {

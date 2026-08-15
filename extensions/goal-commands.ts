@@ -849,6 +849,7 @@ function enqueueItems(ctx: ExtensionContext, texts: string[], source: string, op
     return {
       id: newGoalId(),
       objective: extracted.objective,
+      ...(extracted.agentRole ? { agentRole: extracted.agentRole } : {}),
       verificationContract: extracted.verificationContract || undefined,
       ...(extracted.parallelSafe === undefined ? {} : { parallelSafe: extracted.parallelSafe }),
       // parentObjective is the parse step's transient; the resolved
@@ -1328,8 +1329,15 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
 
 /** Append one objective to the list; activate immediately when idle. */
 function addSingleItem(ctx: ExtensionContext, raw: string): void {
-  const { objective, verificationContract } = extractVerificationContract(raw);
-  const item = { id: newGoalId(), objective, verificationContract: verificationContract || undefined, addedAt: nowIso() };
+  const extracted = parseListItemDeclaration(raw);
+  const item = {
+    id: newGoalId(),
+    objective: extracted.objective,
+    ...(extracted.agentRole ? { agentRole: extracted.agentRole } : {}),
+    verificationContract: extracted.verificationContract || undefined,
+    ...(extracted.parallelSafe === undefined ? {} : { parallelSafe: extracted.parallelSafe }),
+    addedAt: nowIso(),
+  };
   // v0.34.61: disk-first — write the sidecar BEFORE mutating state so the
   // item survives an orchestrator-turn death between state mutation and
   // persistState (the original bug for /list add "<direct text>").

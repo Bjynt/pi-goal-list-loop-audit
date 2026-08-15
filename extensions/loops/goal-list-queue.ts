@@ -487,6 +487,7 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
   // as queued if a stale-handle /list read happened later.
   deleteQueueItemFile(ctx.cwd, next.id);
   const goal = createGoal(next.objective, ctx, "list");
+  if (next.agentRole) goal.agentRole = next.agentRole;
   if (next.verificationContract) {
     goal.verificationContract = next.verificationContract;
     goal.objectiveProvenance = {
