@@ -35,7 +35,7 @@ test("explicit Designer declarations are consumed without changing ordinary desi
   assert.equal(ordinary.objective, "Design the settings flow");
 
   const parsed = parseListItemDeclaration("Fix the settings flow. Agent: Designer. Parallel: yes. Done when: npm test");
-  assert.equal(parsed.objective, "Fix the settings flow.");
+  assert.equal(parsed.objective, "Fix the settings flow");
   assert.equal(parsed.agentRole, "designer");
   assert.equal(parsed.parallelSafe, true);
   assert.equal(parsed.verificationContract, "npm test");
@@ -99,11 +99,25 @@ test("drafter resolution skips forbidden candidates without inspecting provider 
   assert.notEqual(resolved.selected?.model, backup);
 });
 
+test("drafter keeps a configured current primary so its fallback remains reachable", () => {
+  const { ctx, session, backup } = fakeContext();
+  const resolved = resolveDrafterModel(ctx, {
+    drafterModel: "test/session",
+    drafterModelFallbacks: ["test/backup"],
+    forbiddenModels: [],
+  });
+  assert.equal(resolved.selected?.model, session);
+  assert.deepEqual(resolved.candidates.map((candidate) => candidate.ref), ["test/session", "test/backup"]);
+});
+
 test("settings expose drafting-only primary and fallback controls", () => {
   const rows = buildSettingsRows({
     drafterModel: "test/primary",
     drafterModelFallbacks: ["test/backup"],
-  } as Settings, {});
+  } as Settings, {
+    drafterModel: { value: "test/primary", source: "global" },
+    drafterModelFallbacks: { value: ["test/backup"], source: "global" },
+  });
   const byId = new Map(rows.map((row) => [row.id, row]));
   assert.equal(byId.get("drafterModel")?.valueText, "test/primary");
   assert.equal(byId.get("drafterModelFallbacks")?.valueText, "test/backup");
@@ -118,6 +132,7 @@ test("drafting recovery stays on the dedicated chain and uses the existing inter
   assert.match(queueSource, /Main and auditor recovery chains are unchanged/);
   assert.match(activationSource, /handleDrafterModelFailure/);
   assert.match(activationSource, /draftingTarget !== null/);
+  assert.match(activationSource, /Leave the interview open/);
 });
 
 test("continuation prompt names the explicit Designer hand-off syntax", () => {
@@ -126,4 +141,3 @@ test("continuation prompt names the explicit Designer hand-off syntax", () => {
   assert.match(prompt, /Role: designer/);
   assert.match(prompt, /continue inline/);
 });
-

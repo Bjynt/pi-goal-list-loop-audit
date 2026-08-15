@@ -18,8 +18,8 @@
 //
 // This module manages the upstream pinned Explore.md plus glla's explicit
 // read-only Designer.md role. It writes/updates/removes only files carrying
-// its marker and
-// according to glla settings, and NEVER touches a file it didn't write
+// its marker and according to glla settings, and NEVER touches a file it
+// didn't write
 // (marker frontmatter field). If tintinweb pins more defaults later, the
 // drift test in tests/subagent-model-override.test.ts fails and prompts us
 // to add embedded copies here.

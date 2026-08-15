@@ -407,7 +407,18 @@ async function beginDrafterModel(ctx: ExtensionContext): Promise<void> {
   }
   const originalModel = ctx.model;
   const beforeRef = modelRef(originalModel);
-  if (!beforeRef || beforeRef.toLowerCase() === selected.ref.toLowerCase()) return;
+  if (!beforeRef) return;
+  if (beforeRef.toLowerCase() === selected.ref.toLowerCase()) {
+    draftingModelLease = {
+      originalModel,
+      activeRef: selected.ref,
+      candidates: resolution.candidates,
+      attempted: [selected.ref],
+      generation: sessionGeneration,
+    };
+    appendLedger(ctx.cwd, "drafter_model_selected", { from: beforeRef, to: selected.ref, candidates: resolution.configuredRefs, alreadyActive: true });
+    return;
+  }
   let switched = false;
   try { switched = await extensionApi.setModel(selected.model); } catch { switched = false; }
   if (!switched) {
@@ -431,18 +442,30 @@ async function restoreDrafterModel(): Promise<void> {
   const lease = draftingModelLease;
   draftingModelLease = null;
   if (!lease || lease.generation !== sessionGeneration || !extensionApi) return;
-  const currentRef = modelRef(lastCtx?.model);
+  const fresh = (globalThis as any).freshCtx as (() => ExtensionContext | null) | undefined;
+  const liveCtx = fresh ? fresh() : null;
+  const currentCtx = liveCtx ?? lastCtx;
+  const currentRef = modelRef(currentCtx?.model);
   if (currentRef && currentRef.toLowerCase() !== lease.activeRef.toLowerCase()) {
-    appendLedger(lastCtx?.cwd ?? process.cwd(), "drafter_model_restore_skipped", { active: lease.activeRef, current: currentRef, reason: "model changed during drafting" });
+    appendLedger(currentCtx?.cwd ?? process.cwd(), "drafter_model_restore_skipped", { active: lease.activeRef, current: currentRef, reason: "model changed during drafting" });
+    return;
+  }
+  if ((globalThis as any).extensionApiStale) {
+    appendLedger(currentCtx?.cwd ?? process.cwd(), "drafter_model_restore_skipped", { active: lease.activeRef, reason: "extension handle stale" });
+    return;
+  }
+  const originalRef = modelRef(lease.originalModel);
+  if (currentRef && originalRef && currentRef.toLowerCase() === originalRef.toLowerCase()) {
+    appendLedger(currentCtx?.cwd ?? process.cwd(), "drafter_model_restored", { to: originalRef, alreadyActive: true });
     return;
   }
   try {
     const restored = await extensionApi.setModel(lease.originalModel);
-    appendLedger(lastCtx?.cwd ?? process.cwd(), restored ? "drafter_model_restored" : "drafter_model_restore_failed", { to: modelRef(lease.originalModel) });
-    if (!restored) lastCtx?.ui.notify("The drafting model could not be restored; the current model remains active. Main and auditor settings were not changed.", "warning");
+    appendLedger(currentCtx?.cwd ?? process.cwd(), restored ? "drafter_model_restored" : "drafter_model_restore_failed", { to: originalRef });
+    if (!restored) currentCtx?.ui.notify("The drafting model could not be restored; the current model remains active. Main and auditor settings were not changed.", "warning");
   } catch {
-    appendLedger(lastCtx?.cwd ?? process.cwd(), "drafter_model_restore_failed", { to: modelRef(lease.originalModel) });
-    lastCtx?.ui.notify("The drafting model could not be restored; the current model remains active. Main and auditor settings were not changed.", "warning");
+    appendLedger(currentCtx?.cwd ?? process.cwd(), "drafter_model_restore_failed", { to: originalRef });
+    currentCtx?.ui.notify("The drafting model could not be restored; the current model remains active. Main and auditor settings were not changed.", "warning");
   }
 }
 

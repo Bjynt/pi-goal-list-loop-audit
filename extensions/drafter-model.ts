@@ -66,6 +66,24 @@ export function resolveDrafterModel(ctx: ExtensionContext, settings: Pick<Settin
   });
   const attempted: string[] = [];
   const candidates: DrafterModelCandidate[] = [];
+
+  // ModelSelector deliberately skips the current model so the main recovery
+  // walker never selects the model that just failed. Drafting is different:
+  // its configured primary may intentionally be the current session model,
+  // and that primary still needs a lease so its later fallbacks remain
+  // available if the first drafting turn fails.
+  const configuredPrimary = configuredRefs[0];
+  if (
+    configuredPrimary &&
+    currentRef &&
+    configuredPrimary.toLowerCase() === currentRef.toLowerCase() &&
+    !forbidden(configuredPrimary) &&
+    ctx.model
+  ) {
+    candidates.push({ ref: configuredPrimary, model: ctx.model, via: "configured" });
+    attempted.push(configuredPrimary);
+  }
+
   for (;;) {
     const selected = selector.selectNextValid({ kind: "drafter" }, currentRef, attempted);
     if (!("model" in selected) || typeof selected.ref !== "string") break;
