@@ -996,7 +996,6 @@ function registerAgentTools(pi: any): void {
             retryFromUpstream: quota.fromUpstream,
             resetAt: quota.resetAt,
           };
-          const providerHint = plan.requestedSec !== plan.retryAfterSec ? ` (provider hint capped at ${Math.round(plan.retryAfterSec / 60)}m)` : "";
           if (!plan.automatic) {
             const notifyCapped = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:retry-capped`);
             updateGoal({
@@ -1033,9 +1032,9 @@ function registerAgentTools(pi: any): void {
             pauseKind: "wait",
             pauseResumeAt: new Date(Date.now() + quota.retryAfterSec * 1000).toISOString(),
             pauseReason: `auditor retry: ${failureCopy.display}`,
-            pauseSuggestedAction: `Auto-retry in ${fmtRetryDelay(quota.retryAfterSec)}${providerHint} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
+            pauseSuggestedAction: `Auto-retry in ${fmtRetryDelay(quota.retryAfterSec)} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
           }, ctx);
-          appendLedger(ctx.cwd, "goal_paused", { reason: `auditor retry: retry in ${quota.retryAfterSec}s (${quota.fromUpstream ? "upstream hint" : "bounded default"})`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
+          appendLedger(ctx.cwd, "goal_paused", { reason: `auditor retry: retry in ${quota.retryAfterSec}s (uniform schedule)`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
           scheduleQuotaRetryForSession(ctx, quota.retryAfterSec, result.error, (fresh: ExtensionContext) => {
             // Re-check: only auto-resume if STILL paused for the retry
             // reason (a user /goal pause during the window is not stomped).
@@ -1062,7 +1061,7 @@ function registerAgentTools(pi: any): void {
           return {
             content: [{
               type: "text",
-              text: `The auditor hit an infrastructure error (NOT a verdict): ${failureCopy.display}. The goal is PAUSED with an automatic retry scheduled in ${fmtRetryDelay(quota.retryAfterSec)}${quota.fromUpstream ? " (upstream hint)" : " (bounded default — edit Quota retry minutes in /glla settings)"}${providerHint}. Your completion claim was not evaluated; do not change your deliverable for this. ${activeGoalSurfaceCommand("resume")} retries immediately. ${failureCopy.action}`, 
+              text: `The auditor hit an infrastructure error (NOT a verdict): ${failureCopy.display}. The goal is PAUSED with an automatic retry scheduled in ${fmtRetryDelay(quota.retryAfterSec)} (uniform retry schedule). Your completion claim was not evaluated; do not change your deliverable for this. ${activeGoalSurfaceCommand("resume")} retries immediately. ${failureCopy.action}`,
             }],
             details: {},
           };

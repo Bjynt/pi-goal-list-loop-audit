@@ -1190,7 +1190,6 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       retryFromUpstream: quota.fromUpstream,
       resetAt: quota.resetAt,
     };
-    const providerHint = plan.requestedSec !== plan.retryAfterSec ? ` (provider hint capped at ${Math.round(plan.retryAfterSec / 60)}m)` : "";
     if (!plan.automatic) {
       const notifyCapped = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:retry-capped`);
       updateGoal({
@@ -1220,10 +1219,10 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       pauseKind: "wait",
       pauseResumeAt: new Date(Date.now() + plan.retryAfterSec * 1000).toISOString(),
       pauseReason: `auditor retry: ${failureCopy.display}`,
-      pauseSuggestedAction: `Auto-retry in ${fmtRetryDelay(plan.retryAfterSec)}${providerHint} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
+      pauseSuggestedAction: `Auto-retry in ${fmtRetryDelay(plan.retryAfterSec)} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
     }, liveCtx);
-    appendLedger(liveCtx.cwd, "goal_paused", { reason: `auditor retry: retry in ${plan.retryAfterSec}s (stored-claim retry)`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
-    if (notifyRetry) liveCtx.ui.notify(`Auditor still failing — next auto-retry in ${fmtRetryDelay(plan.retryAfterSec)}${providerHint} (your completion claim is stored; no action needed).`, "warning");
+    appendLedger(liveCtx.cwd, "goal_paused", { reason: `auditor retry: retry in ${plan.retryAfterSec}s (uniform schedule)`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
+    if (notifyRetry) liveCtx.ui.notify(`Auditor still failing — next auto-retry in ${fmtRetryDelay(plan.retryAfterSec)} (your completion claim is stored; no action needed).`, "warning");
     scheduleQuotaRetryForSession(liveCtx, plan.retryAfterSec, result.error, (fresh: ExtensionContext) => {
       if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("auditor retry:") && state.goal.pendingCompletion) {
         void retryStoredCompletionAudit(origin);

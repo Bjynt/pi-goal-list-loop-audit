@@ -2153,9 +2153,10 @@ export interface InfraRetryOutcome<T> {
   retriedOnce: boolean;
 }
 
-/** Run the auditor; on a retriable infra failure, wait `backoffMs` and
- * retry EXACTLY once before reporting "auditor infrastructure error
- * (retried once)". The failed pair is never a verdict on the work. */
+/** Run the auditor; on any retriable infrastructure failure, wait
+ * `backoffMs` and retry EXACTLY once before reporting "auditor
+ * infrastructure error (retried once)". The failed pair is never a verdict
+ * on the work; quota/account text is not consulted to suppress this retry. */
 export async function runWithInfraRetry<T extends { error?: string; approved: boolean; disapproved: boolean }>(
   run: () => Promise<T>,
   opts: {

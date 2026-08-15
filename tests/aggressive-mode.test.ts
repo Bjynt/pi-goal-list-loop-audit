@@ -19,7 +19,7 @@ import {
   AGGRESSIVE_STUCK_MAX_INTERVENTIONS,
   DEFAULT_QUOTA_RETRY_MINUTES,
 } from "../extensions/goal-loop-core.ts";
-import { saveSettings, loadSettings } from "../extensions/goal-settings.ts";
+import { DEFAULT_SETTINGS, saveSettings, loadSettings } from "../extensions/goal-settings.ts";
 
 test("aggressiveMode persists through the settings file (item 8)", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-aggr-"));
@@ -38,8 +38,18 @@ test("effective settings: aggressiveMode ON flips the defaults (items 5+7)", () 
   assert.equal(eff.autoResume, true);
 });
 
-test("effective settings: OFF keeps base defaults; auditCap base is 5 (item 7)", () => {
+test("effective settings: missing aggressiveMode uses the production keep-going default", () => {
   const eff = resolveEffectiveAggressiveSettings({});
+  assert.equal(eff.aggressiveMode, true);
+  assert.equal(eff.auditCap, AGGRESSIVE_AUDIT_CAP);
+  assert.equal(eff.stuckMaxInterventions, AGGRESSIVE_STUCK_MAX_INTERVENTIONS);
+  assert.equal(eff.wedgeAlertMinutes, 0);
+  assert.equal(eff.autoResume, true);
+  assert.equal(DEFAULT_SETTINGS.aggressiveMode, true);
+});
+
+test("effective settings: explicit OFF keeps base defaults; auditCap base is 5", () => {
+  const eff = resolveEffectiveAggressiveSettings({ aggressiveMode: false });
   assert.equal(eff.aggressiveMode, false);
   assert.equal(eff.auditCap, BASE_AUDIT_CAP);
   assert.equal(BASE_AUDIT_CAP, 5);
