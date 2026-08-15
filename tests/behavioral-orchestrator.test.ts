@@ -23,6 +23,7 @@ import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execSync } from "node:child_process";
 import activate, { __testOnlyLastConfirmDialog, __testOnlyLoadState, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyResetTerminalFlags, __testOnlyRunFanOutListAuditFindings, __testOnlySetAuditorRecoveryRetryDelay, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
 import { __testOnlyHeartbeatTick, __testOnlySetZombieRunWindows, __testOnlyResetZombieRunWatchdog } from "../extensions/goal-heartbeat.js";
 import { mainModelRecoverySucceeded } from "../extensions/goal-recovery.js";
@@ -551,6 +552,32 @@ test("v0.35.0: a cross-mode replacement confirms before replacing a live loop", 
   assert.match((readState(cwd).goal as { objective: string }).objective, /goal replacing loop/);
   assert.equal((readState(cwd).loop as { active?: boolean } | undefined)?.active, false, "the replaced loop is no longer active");
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
+
+test("v0.35.4: a refused branch-mode loop start restores the original branch", async () => {
+  // startLoopFromConfig creates the scratch branch BEFORE the baseline
+  // measure and the objective-conflict re-check; a refusal after the
+  // checkout stranded the repo on the empty pi-glla-loop branch, and no
+  // state.loop existed to remember the user's branch. The refusal must
+  // checkout the original branch again (the scratch branch stays — the
+  // auto-commit daemon may have landed commits on it).
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  fs.writeFileSync(path.join(cwd, "seed.txt"), "tracked\n");
+  execSync("git init -b main -q", { cwd });
+  execSync("git add seed.txt", { cwd });
+  execSync("git -c user.name=t -c user.email=t@example.test commit -qm init", { cwd });
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("loop", 'start refusal target branch=1 measure="cat /definitely-not-here-xyz" direction=min', ctx);
+  assert.equal(readState(cwd).loop, null, "the refused start must not create a loop state");
+  const branch = execSync("git branch --show-current", { cwd }).toString().trim();
+  assert.equal(branch, "main", "the user is back on the original branch after the refusal");
+  const leftovers = execSync("git branch --list 'pi-glla-loop/*'", { cwd }).toString().trim();
+  assert.ok(leftovers.length > 0, "the empty scratch branch remains but is not checked out");
+  assert.ok(
+    ctx.ui.notifies.some((n) => n.message.includes("Loop start refused")),
+    "the refusal is loud",
+  );
 });
 
 test("v0.35.0: a direct /loop start also confirms before replacing a live goal", async () => {
