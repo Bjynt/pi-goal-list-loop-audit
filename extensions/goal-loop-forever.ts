@@ -334,13 +334,27 @@ export function parseLoopStartArgs(raw: string): {
   toolSameRepeat?: number;
 } {
   // Key=value pairs first (measure= and direction= may hold quoted values),
-  // the remaining text is the target.
+  // the remaining text is the target. v0.35.4: quoted spans are TARGET
+  // territory — a word=value inside the target's quotes ("make a=b work")
+  // must not be consumed as a key — and UNKNOWN keys (typos such as
+  // direcion=min, or target words containing =) are restored to the target
+  // instead of silently vanishing.
   let rest = raw.trim();
   const kv = new Map<string, string>();
   const kvRe = /(\w+)=(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+  const KNOWN_KEYS = new Set(["measure", "direction", "window", "max", "branch", "force", "done", "time", "tokens", "toolsamerepeat"]);
+  const quoteSpans: Array<[number, number]> = [];
+  const quoteRe = /"([^"]*)"|'([^']*)'/g;
+  let qm: RegExpExecArray | null;
+  while ((qm = quoteRe.exec(rest)) !== null) {
+    quoteSpans.push([qm.index, qm.index + qm[0].length]);
+  }
+  const insideQuote = (index: number): boolean => quoteSpans.some(([s, e]) => index >= s && index < e);
   let m: RegExpExecArray | null;
   const spans: Array<[number, number]> = [];
   while ((m = kvRe.exec(rest)) !== null) {
+    if (insideQuote(m.index)) continue; // key-looking text inside the target's quotes — leave it
+    if (!KNOWN_KEYS.has(m[1]!.toLowerCase())) continue; // unknown key — leave it in the target
     kv.set(m[1]!.toLowerCase(), m[2] ?? m[3] ?? m[4] ?? "");
     spans.push([m.index, m.index + m[0].length]);
   }
@@ -458,7 +472,12 @@ export const AUDIT_FINDINGS_REL = ".pi-glla/audit-loop/findings.md";
  * discovery alone doesn't move it, landing fixes does — so the plateau
  * stop fires only when NO FIXES LAND for the window: the honest dry well. */
 export function auditMeasureCmd(): string {
-  return `c=$(grep -cE '^- \\[[xX]\\]' ${AUDIT_FINDINGS_REL} 2>/dev/null); echo \${c:-0}`;
+  // v0.35.4: count only closed FIX findings. Checked DECIDED/DEFERRED lines
+  // (the one-shot audit's decision records, projectAuditTarget step 4) carry
+  // no fix commit — counting them as "closed findings" inflated the
+  // monotonic metric without any fix landing and delayed the dry-well
+  // plateau stop.
+  return `c=$(grep -cE '^- \\[[xX]\\] FIX' ${AUDIT_FINDINGS_REL} 2>/dev/null); echo \${c:-0}`;
 }
 
 /**
@@ -487,7 +506,7 @@ export function countOpenAuditFindings(cwd: string): number {
   try {
     const p = join(cwd, AUDIT_FINDINGS_REL);
     if (!existsSync(p)) return 0;
-    return readFileSync(p, "utf-8").split("\n").filter((l) => /^- \[ \]/.test(l)).length;
+    return readFileSync(p, "utf-8").split("\n").filter((l) => /^- \[[ \t]\]/.test(l)).length;
   } catch {
     return 0;
   }
@@ -499,7 +518,7 @@ export function topOpenAuditFinding(cwd: string): string | null {
   try {
     const p = join(cwd, AUDIT_FINDINGS_REL);
     if (!existsSync(p)) return null;
-    const line = readFileSync(p, "utf-8").split("\n").find((l) => /^- \[ \]/.test(l));
+    const line = readFileSync(p, "utf-8").split("\n").find((l) => /^- \[[ \t]\]/.test(l));
     return line ? line.replace(/^- \[ \]\s*/, "").trim().slice(0, 120) : null;
   } catch {
     return null;
