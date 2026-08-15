@@ -86,6 +86,19 @@ test("drafter resolution walks its own ordered chain and falls back to the sessi
   assert.equal(resolved.selected?.model, backup);
   assert.deepEqual(resolved.candidates.map((c) => c.ref), ["test/backup", "test/session"]);
   assert.equal(resolved.candidates.at(-1)?.model, session);
+  assert.equal(resolved.candidates.at(-1)?.via, "session-last-resort");
+});
+
+test("drafter resolution always retains one current-session last resort", () => {
+  const { ctx, session } = fakeContext();
+  const resolved = resolveDrafterModel(ctx, {
+    drafterModel: "test/missing",
+    drafterModelFallbacks: [],
+    forbiddenModels: [],
+  });
+  assert.deepEqual(resolved.candidates.map((candidate) => candidate.ref), ["test/session"]);
+  assert.equal(resolved.candidates[0]?.via, "session-last-resort");
+  assert.equal(resolved.selected?.model, session);
 });
 
 test("drafter resolution skips forbidden candidates without inspecting provider text", () => {
@@ -129,6 +142,8 @@ test("drafting recovery stays on the dedicated chain and uses the existing inter
   const activationSource = fs.readFileSync("extensions/loops/goal-activation.ts", "utf8");
   assert.match(queueSource, /DRAFTER_RECOVERY_PROMPT/);
   assert.match(queueSource, /drafter_model_fallback_exhausted/);
+  assert.match(queueSource, /drafter_model_retry/);
+  assert.match(queueSource, /draftingModelRestoreInFlight/);
   assert.match(queueSource, /Main and auditor recovery chains are unchanged/);
   assert.match(activationSource, /handleDrafterModelFailure/);
   assert.match(activationSource, /draftingTarget !== null/);

@@ -390,6 +390,7 @@ interface DraftingModelLease {
 }
 
 let draftingModelLease: DraftingModelLease | null = null;
+let draftingModelRestoreInFlight: Promise<void> | null = null;
 const DRAFTER_RECOVERY_PROMPT = "The drafting model turn failed. Resume the existing drafting interview from the conversation, keep the user's intent, ask at most one focused decision question if truly necessary, and continue toward the appropriate propose_* tool. Do not restart the interview or implement work.";
 
 /** Select the drafting-only model and retain a generation-fenced restore lease. */
@@ -398,7 +399,7 @@ async function beginDrafterModel(ctx: ExtensionContext): Promise<void> {
   const settings = loadSettings(ctx.cwd);
   const resolution = resolveDrafterModel(ctx, settings);
   const selected = resolution.selected;
-  if (!selected || selected.via === "session-last-resort" || !ctx.model || !extensionApi) {
+  if (!selected || !ctx.model || !extensionApi) {
     if (resolution.configuredRefs.length > 0 && selected?.via === "session-last-resort") {
       appendLedger(ctx.cwd, "drafter_model_fallback", { configured: resolution.configuredRefs, via: "session-model" });
       ctx.ui.notify("Configured drafter models were unavailable; drafting stays on the current session model. Main and auditor recovery chains are unchanged.", "warning");
@@ -408,6 +409,23 @@ async function beginDrafterModel(ctx: ExtensionContext): Promise<void> {
   const originalModel = ctx.model;
   const beforeRef = modelRef(originalModel);
   if (!beforeRef) return;
+  if (selected.via === "session-last-resort") {
+    draftingModelLease = {
+      originalModel,
+      activeRef: selected.ref,
+      candidates: resolution.candidates,
+      // The current session model is a bounded same-model retry, not a model
+      // switch. It must remain unattempted so one drafting error can replay
+      // the interview without consulting main-goal recovery.
+      attempted: [],
+      generation: sessionGeneration,
+    };
+    if (resolution.configuredRefs.length > 0) {
+      appendLedger(ctx.cwd, "drafter_model_fallback", { configured: resolution.configuredRefs, via: "session-model" });
+      ctx.ui.notify("Configured drafter models were unavailable; drafting stays on the current session model. Main and auditor recovery chains are unchanged.", "warning");
+    }
+    return;
+  }
   if (beforeRef.toLowerCase() === selected.ref.toLowerCase()) {
     draftingModelLease = {
       originalModel,
@@ -439,6 +457,10 @@ async function beginDrafterModel(ctx: ExtensionContext): Promise<void> {
 
 /** Restore the pre-drafting model unless the user changed it meanwhile. */
 async function restoreDrafterModel(): Promise<void> {
+  if (draftingModelRestoreInFlight) {
+    await draftingModelRestoreInFlight;
+    return;
+  }
   const lease = draftingModelLease;
   draftingModelLease = null;
   if (!lease || lease.generation !== sessionGeneration || !extensionApi) return;
@@ -459,13 +481,21 @@ async function restoreDrafterModel(): Promise<void> {
     appendLedger(currentCtx?.cwd ?? process.cwd(), "drafter_model_restored", { to: originalRef, alreadyActive: true });
     return;
   }
+  const restore = (async () => {
+    try {
+      const restored = await extensionApi.setModel(lease.originalModel);
+      appendLedger(currentCtx?.cwd ?? process.cwd(), restored ? "drafter_model_restored" : "drafter_model_restore_failed", { to: originalRef });
+      if (!restored) currentCtx?.ui.notify("The drafting model could not be restored; the current model remains active. Main and auditor settings were not changed.", "warning");
+    } catch {
+      appendLedger(currentCtx?.cwd ?? process.cwd(), "drafter_model_restore_failed", { to: originalRef });
+      currentCtx?.ui.notify("The drafting model could not be restored; the current model remains active. Main and auditor settings were not changed.", "warning");
+    }
+  })();
+  draftingModelRestoreInFlight = restore;
   try {
-    const restored = await extensionApi.setModel(lease.originalModel);
-    appendLedger(currentCtx?.cwd ?? process.cwd(), restored ? "drafter_model_restored" : "drafter_model_restore_failed", { to: originalRef });
-    if (!restored) currentCtx?.ui.notify("The drafting model could not be restored; the current model remains active. Main and auditor settings were not changed.", "warning");
-  } catch {
-    appendLedger(currentCtx?.cwd ?? process.cwd(), "drafter_model_restore_failed", { to: originalRef });
-    currentCtx?.ui.notify("The drafting model could not be restored; the current model remains active. Main and auditor settings were not changed.", "warning");
+    await restore;
+  } finally {
+    if (draftingModelRestoreInFlight === restore) draftingModelRestoreInFlight = null;
   }
 }
 
@@ -482,10 +512,11 @@ async function handleDrafterModelFailure(ctx: ExtensionContext): Promise<boolean
     lease.attempted.push(candidate.ref);
     let switched = false;
     try { switched = await extensionApi.setModel(candidate.model); } catch { switched = false; }
-    if (!switched) continue;
+    const alreadyActive = candidate.ref.toLowerCase() === lease.activeRef.toLowerCase();
+    if (!switched && !alreadyActive) continue;
     const previous = lease.activeRef;
     lease.activeRef = candidate.ref;
-    appendLedger(ctx.cwd, "drafter_model_fallback", { from: previous, to: candidate.ref, attempted: lease.attempted });
+    appendLedger(ctx.cwd, alreadyActive ? "drafter_model_retry" : "drafter_model_fallback", { from: previous, to: candidate.ref, attempted: lease.attempted });
     ctx.ui.notify(`Drafting provider failed; retrying the existing interview on ${candidate.ref}.`, "warning");
     const safeSteer = (globalThis as any).safeSteerUser as ((context: ExtensionContext, text: string) => boolean) | undefined;
     if (!safeSteer || !safeSteer(ctx, DRAFTER_RECOVERY_PROMPT)) return false;
