@@ -410,6 +410,19 @@ function thinkingChoiceOptions(levels: string[], current: string | undefined): s
   return levels.map((lv) => `${lv} — ${THINKING_DESCR[lv] ?? ""}${lv === current ? " (current)" : ""}`);
 }
 
+const DRAFTER_INHERIT_THINKING = "session — inherit current session level (default)";
+
+function drafterThinkingChoiceOptions(
+  levels: string[],
+  current: string | undefined,
+  inheritCurrent: boolean,
+): string[] {
+  return [
+    `${DRAFTER_INHERIT_THINKING}${inheritCurrent ? " (current)" : ""}`,
+    ...thinkingChoiceOptions(levels, current),
+  ];
+}
+
 /** Token-cost ladder shared by the auditor-model flow and the standalone
  * Auditor thinking row (v0.34.127). */
 const THINKING_DESCR: Record<string, string> = {
@@ -880,6 +893,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const currentThinking = loadSettings(ctx.cwd).drafterThinkingLevel;
       const levels = auditorThinkingLevels(pickedModel);
       let pickedThinking: ConfiguredThinkingLevel | undefined;
+      let inheritThinking = false;
       if (levels.length <= 1) {
         ctx.ui.notify(`Drafter agent: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref} — this model exposes no thinking levels (drafting runs with thinking off).`, "info");
       } else {
@@ -887,15 +901,23 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
         const preferred = currentThinking ?? inherited;
         const thinking = await ctx.ui.select(
           "Drafter thinking — TEMPORARY DRAFTING AGENT ONLY (your session thinking is restored afterward)",
-          thinkingChoiceOptions(levels, levels.includes(preferred) ? preferred : levels.includes("high") ? "high" : levels[levels.length - 1]),
+          drafterThinkingChoiceOptions(
+            levels,
+            levels.includes(preferred) ? preferred : levels.includes("high") ? "high" : levels[levels.length - 1],
+            currentThinking === undefined,
+          ),
         );
-        if (thinking) pickedThinking = thinking.split(" ")[0] as ConfiguredThinkingLevel;
+        if (thinking?.startsWith("session —")) inheritThinking = true;
+        else if (thinking) pickedThinking = thinking.split(" ")[0] as ConfiguredThinkingLevel;
       }
       saveSettings("global", ctx.cwd, {
         drafterModel: pick.kind === "session" ? undefined : pick.ref,
-        ...(pickedThinking ? { drafterThinkingLevel: pickedThinking } : {}),
+        ...(inheritThinking ? { drafterThinkingLevel: undefined } : pickedThinking ? { drafterThinkingLevel: pickedThinking } : {}),
       });
-      ctx.ui.notify(`Drafter agent: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref}${pickedThinking ? ` · thinking ${pickedThinking}` : ""} — main and auditor agents are unchanged.`, "info");
+      ctx.ui.notify(
+        `Drafter agent: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref}${inheritThinking ? " · thinking inherited from the session" : pickedThinking ? ` · thinking ${pickedThinking}` : ""} — main and auditor agents are unchanged.`,
+        "info",
+      );
       return;
     }
     case "drafterThinkingLevel": {
@@ -914,12 +936,21 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const preferred = settings.drafterThinkingLevel ?? ctx.thinkingLevel ?? "high";
       const thinking = await ctx.ui.select(
         "Drafter thinking — TEMPORARY DRAFTING AGENT ONLY (your session thinking is restored afterward)",
-        thinkingChoiceOptions(levels, levels.includes(preferred) ? preferred : levels.includes("high") ? "high" : levels[levels.length - 1]),
+        drafterThinkingChoiceOptions(
+          levels,
+          levels.includes(preferred) ? preferred : levels.includes("high") ? "high" : levels[levels.length - 1],
+          settings.drafterThinkingLevel === undefined,
+        ),
       );
       if (thinking) {
-        const level = thinking.split(" ")[0] as ConfiguredThinkingLevel;
-        saveSettings("global", ctx.cwd, { drafterThinkingLevel: level });
-        ctx.ui.notify(`Drafter thinking: ${level}.`, "info");
+        if (thinking.startsWith("session —")) {
+          saveSettings("global", ctx.cwd, { drafterThinkingLevel: undefined });
+          ctx.ui.notify("Drafter thinking: inherited from the session.", "info");
+        } else {
+          const level = thinking.split(" ")[0] as ConfiguredThinkingLevel;
+          saveSettings("global", ctx.cwd, { drafterThinkingLevel: level });
+          ctx.ui.notify(`Drafter thinking: ${level}.`, "info");
+        }
       }
       return;
     }

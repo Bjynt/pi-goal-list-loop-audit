@@ -273,6 +273,12 @@ test("drafter agent picker immediately offers model-specific thinking and persis
     assert.equal(saved.drafterModel, "openai/drafter");
     assert.equal(saved.drafterThinkingLevel, "medium");
     assert.ok(ctx.ui.matching("Drafter agent").length >= 1);
+
+    ctx.ui.selectImpl = async (title: string) => title.startsWith("Drafter thinking")
+      ? "session — inherit current session level (default) (current)"
+      : undefined;
+    await handleSettingChoice("drafterThinkingLevel", ctx as ExtensionContext);
+    assert.equal("drafterThinkingLevel" in readGlobal(), false, "the drafter row can restore session-level inheritance");
   } finally {
     restoreGlobal();
   }
