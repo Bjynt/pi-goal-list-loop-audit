@@ -1226,11 +1226,14 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       lines.push(`└─ ${paint(theme, "dim", `waiting for detached verdict${last}`)}`);
     } else if (phase === "queued") {
       lines.push(`└─ ${paint(theme, "dim", "detached worker queued — completion claim is durable")}`);
-    } else if (auditorElapsedMs(audit, now)) {
-      const firstEvent = audit.lastActivityAt === undefined ? " · waiting for first worker event" : "";
-      lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(auditorElapsedMs(audit, now)!)} in detached worker${firstEvent}${last}`)}`);
     } else {
-      lines.push(`└─ ${paint(theme, "dim", `detached worker, audit tools${last || " · waiting for first worker event"}`)}`);
+      const detachedElapsed = auditorElapsedMs(audit, now);
+      if (detachedElapsed !== undefined && detachedElapsed > 0) {
+        const firstEvent = audit?.lastActivityAt === undefined ? " · waiting for first worker event" : "";
+        lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(detachedElapsed)} in detached worker${firstEvent}${last}`)}`);
+      } else {
+        lines.push(`└─ ${paint(theme, "dim", `detached worker, audit tools${last || " · waiting for first worker event"}`)}`);
+      }
     }
     return lines;
   }

@@ -10,7 +10,7 @@ This is a detached process, not a nested session in the main pi process. `comple
 
 On Windows, npm installs the `pi.cmd` shim rather than a directly executable `pi` binary. The auditor launches it through an explicitly quoted `cmd.exe` boundary; POSIX keeps direct shell-less execution. Protocol snapshots also tolerate transient Windows file-locks without deleting the last valid snapshot first.
 
-**Current package version:** `v0.35.2` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
+**Current package version:** `v0.35.3` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
 
 ## Why this exists
 
@@ -251,6 +251,10 @@ A persistent `glla:` status segment + an above-editor widget show the current
 goal/list item/loop at all times: objective, durable state, elapsed time,
 tokens, next task or loop metric, pause reason, and live auditor progress
 during audits. If something is running, you can see it — no command needed.
+Goal cards label their total wall-clock age explicitly; it includes time parked
+for recovery or waiting on a verdict, so it should not be read as active model
+compute. Recovery cards call the timestamp `last host activity` for the same
+reason: a retry/error event is liveness evidence, not proof of useful work.
 
 The status bar is the single activity HUD. It uses compact state capsules plus
 an animated pulse waveform so live work is obvious at a glance without turning
@@ -273,6 +277,11 @@ Activity is otherwise intentionally honest:
 | `IDLE` | The durable item remains active, but no recent work is observed. |
 | `auditor …` | A detached, extension-less verifier is queued, running, quiet, or waiting for its verdict. |
 | `RECOVERING` | A bounded automatic retry is pending; the status does not guess why the provider failed. |
+
+Detached-auditor elapsed time keeps advancing between worker events. A long
+tool call or hidden reasoning interval therefore remains visibly timed; after
+three minutes without worker activity the UI changes to `auditor quiet` and
+names the cancellation/recovery path instead of presenting a frozen live card.
 
 ## Provider failures: aggressive retry envelope, bounded (v0.35.0)
 

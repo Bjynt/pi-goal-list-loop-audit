@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.35.3 — live auditor clock and clearer recovery timing (2026-08-15)
+
+### Detached auditor status keeps moving between worker events
+  The UI ticker now refreshes auditing states, and the auditor elapsed clock
+  advances from its attempt start between progress-file updates. Long bash or
+  thinking intervals no longer look frozen; stale workers still become quiet
+  and hit the existing watchdogs.
+
+### Total time and recovery activity are labeled honestly
+  Goal cards now label wall-clock lifetime as `total`, while recovery surfaces
+  say `last host activity` so retry/error events are not confused with useful
+  goal progress.
+
 ## 0.35.2 — role-specific agent settings and compact values (2026-08-15)
 
 ### Agent settings are separated by role
