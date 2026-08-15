@@ -585,7 +585,7 @@ test("v0.35.4: a refused branch-mode loop start restores the original branch", a
   try {
     const ctx = await freshSession(cwd, "startup");
     await pi.command("loop", 'start refusal target branch=1 measure="cat /definitely-not-here-xyz" direction=min', ctx);
-    assert.equal(readState(cwd).loop, null, "the refused start must not create a loop state");
+    assert.equal(readState(cwd).loop ?? null, null, "the refused start must not create a loop state");
     const branch = execSync("git branch --show-current", { cwd }).toString().trim();
     assert.equal(branch, "main", "the user is back on the original branch after the refusal");
     const leftovers = execSync("git branch --list 'pi-glla-loop/*'", { cwd }).toString().trim();
