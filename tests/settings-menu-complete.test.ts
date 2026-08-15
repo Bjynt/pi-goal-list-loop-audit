@@ -72,9 +72,9 @@ test("every row carries every required column field", () => {
   }
 });
 
-test("the 6 sections place the main chain inside Backups (no separate fallback tab)", () => {
+test("the 6 sections place agent chains inside Agents (no separate fallback tab)", () => {
   const ids = SETTINGS_SECTIONS.map((s) => s.id);
-  assert.deepEqual(ids, ["keep-going", "backups", "auditor", "stall-brakes", "subagents", "other"]);
+  assert.deepEqual(ids, ["keep-going", "agents", "auditor", "stall-brakes", "subagents", "other"]);
   assert.ok(SETTINGS_SECTIONS.every((s) => typeof s.label === "string" && s.label.length > 0));
 });
 
@@ -86,21 +86,21 @@ test("every row's section is one of the 6 known section ids (no orphans)", () =>
   }
 });
 
-test("v0.34.139: the main chain leads the Backups tab; timing and subagent chains follow", () => {
+test("v0.34.139: the main agent leads the Agents tab; timing and subagent fallbacks follow", () => {
   const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
   const byId = new Map(rows.map((r) => [r.id, r]));
-  const backupsRows = rows.filter((r) => r.section === "backups");
-  assert.equal(byId.get("mainModelFallbacks")?.section, "backups");
-  assert.equal(backupsRows[0]!.id, "mainModelFallbacks", "main chain is the first Backups row");
+  const agentRows = rows.filter((r) => r.section === "agents");
+  assert.equal(byId.get("mainModelFallbacks")?.section, "agents");
+  assert.equal(agentRows[0]!.id, "mainModelFallbacks", "main agent is the first Agents row");
   for (const id of [
     "mainModelRetryMinutes",
     "subagentFallbacks:Explore",
     "subagentFallbacks:Plan",
     "subagentFallbacks:general-purpose",
   ]) {
-    assert.equal(byId.get(id)?.section, "backups", `${id} must be in Backups`);
+    assert.equal(byId.get(id)?.section, "agents", `${id} must be in Agents`);
   }
-  assert.ok(rows.filter((r) => r.id.startsWith("subagentFallbacks:")).every((r) => r.section === "backups"));
+  assert.ok(rows.filter((r) => r.id.startsWith("subagentFallbacks:")).every((r) => r.section === "agents"));
   assert.equal(byId.get("forbiddenModels")?.section, "keep-going", "policy gate stays with keep-going controls");
 });
 
@@ -110,7 +110,7 @@ test("main fallback row explains ordered, deselectable selection", () => {
     provFromSettings({ mainModelFallbacks: ["provider/first", "provider/second"] }),
   );
   const row = rows.find((candidate) => candidate.id === "mainModelFallbacks")!;
-  assert.equal(row.section, "backups");
+  assert.equal(row.section, "agents");
   assert.match(row.description, /ordered and deselectable/);
 });
 
@@ -140,6 +140,7 @@ test("key rows from v0.27.0 settings menu are all present (menu coverage contrac
     "mainModelFallbacks",
     "mainModelRetryMinutes",
     "hourlyRetryProbe",
+    "drafterThinkingLevel",
     "auditorModel",
     "auditorThinkingLevel",
     "auditorSilent",

@@ -654,8 +654,8 @@ async function promptModelRef(
  * ctx.modelRegistry are unavailable (headless tests).
  *
  * v0.34.118: `opts.excludeRefs` filters out a set of refs from the picker
- * (typical use: when picking backups, exclude the user's forbidden models;
- * when picking forbidden models, exclude current backups — the two lists
+ * (typical use: when picking fallback agents, exclude the user's forbidden
+ * models; when picking forbidden models, exclude current fallback agents — the two lists
  * are mutually exclusive by design). Configured refs are kept at the top of
  * the picker so their order is visible; an unavailable or policy-blocked ref
  * is rendered with its reason and can be removed explicitly. */
@@ -687,7 +687,7 @@ async function promptModelRefs(
     // chain (and a typed backup must not be added to forbiddenModels).
     const refs = normalizeSelection(v);
     if (maxSelections !== undefined && refs.length > maxSelections) {
-      ctx.ui.notify(`Only the first ${maxSelections} model backups are kept; the remaining selections were refused.`, "warning");
+      ctx.ui.notify(`Only the first ${maxSelections} fallback agents are kept; the remaining selections were refused.`, "warning");
       return refs.slice(0, maxSelections);
     }
     return refs;
@@ -810,11 +810,11 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     }
     case "mainModelFallbacks": {
       const current = normalizeMainModelFallbackRefs(loadGlobalSettings().mainModelFallbacks);
-      // v0.34.118: forbidden models cannot be valid backups, so hide them.
+      // v0.34.118: forbidden models cannot be valid fallback agents, so hide them.
       const forbidden = normalizeModelRefs(loadGlobalSettings().forbiddenModels);
       const refs = await promptModelRefs(
         ctx,
-        `Main session model backups — try order is current → backup 1 → backup 2 … (space add/remove, tab order mode with ↑/↓, enter save); forbidden models are skipped`,
+        `Main agent fallback models — try order is current → fallback 1 → fallback 2 … (space add/remove, tab order mode with ↑/↓, enter save); forbidden models are skipped`,
         current,
         { excludeRefs: forbidden, maxSelections: MAX_MAIN_MODEL_FALLBACKS, currentRef: modelRef(ctx.model) },
       );
@@ -834,7 +834,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
         clearMainModelRecoveryTimer();
         persistState(ctx);
       }
-      ctx.ui.notify(refs.length ? `Main model backups saved in order: ${refs.join(" → ")}` : "Main model backups cleared — any pending backup switch was cancelled and recovery will probe the current model.", "info");
+      ctx.ui.notify(refs.length ? `Main agent fallback models saved in order: ${refs.join(" → ")}` : "Main agent fallback models cleared — any pending fallback switch was cancelled and recovery will probe the current model.", "info");
       return;
     }
     case "auditorSilent": {

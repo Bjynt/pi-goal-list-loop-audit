@@ -108,5 +108,5 @@ test("/glla completions stay concise: actions only; settings live in the table",
   assert.ok((glla.match(/\["[^"]+",/g) ?? []).length <= 10, "glla autocomplete stays concise");
   assert.ok(!/\["[a-zA-Z]+=",/.test(glla), "no key=value setting aliases in autocomplete");
   assert.doesNotMatch(glla, /key=value|project key/);
-  assert.doesNotMatch(SRC, /\^\(keep-going\|backups\|auditor\|stall-brakes\|subagents\|other\)\\b/);
+  assert.doesNotMatch(SRC, /\^\(keep-going\|agents\|auditor\|stall-brakes\|subagents\|other\)\\b/);
 });

@@ -164,7 +164,7 @@ test("RPC custom stub falls back to typed main-backup editing instead of silentl
 test("T4: input editor — main model backups preserve order and retry cadence", async () => {
   try {
     const ctx = makeMockCtx(tmpCwd());
-    ctx.ui.inputImpl = async (title) => title.startsWith("Main session model backups") ? "openai/gpt-5, minimax/MiniMax-M2" : "15";
+    ctx.ui.inputImpl = async (title) => title.startsWith("Main agent fallback models") ? "openai/gpt-5, minimax/MiniMax-M2" : "15";
     await handleSettingChoice("mainModelFallbacks", ctx as unknown as ExtensionContext);
     assert.deepEqual(readGlobal().mainModelFallbacks, ["openai/gpt-5", "minimax/MiniMax-M2"]);
 
@@ -183,10 +183,10 @@ test("main backup editor refuses the 11th typed model and keeps the first ten in
   try {
     const ctx = makeMockCtx(tmpCwd());
     const refs = Array.from({ length: 11 }, (_, i) => `provider/model-${i + 1}`);
-    ctx.ui.inputImpl = async (title) => title.startsWith("Main session model backups") ? refs.join(",") : undefined;
+    ctx.ui.inputImpl = async (title) => title.startsWith("Main agent fallback models") ? refs.join(",") : undefined;
     await handleSettingChoice("mainModelFallbacks", ctx as unknown as ExtensionContext);
     assert.deepEqual(readGlobal().mainModelFallbacks, refs.slice(0, 10));
-    assert.ok(ctx.ui.matching("first 10 model backups").length >= 1, "the refused 11th selection is visible");
+    assert.ok(ctx.ui.matching("first 10 fallback agents").length >= 1, "the refused 11th selection is visible");
   } finally {
     restoreGlobal();
   }
@@ -197,7 +197,7 @@ test("main-model fallback reload preserves explicit order and does not reintrodu
     const cwd = tmpCwd();
     const refs = ["persisted/first", "persisted/second"];
     const ctx = makeMockCtx(cwd);
-    ctx.ui.inputImpl = async (title) => title.startsWith("Main session model backups") ? refs.join(",") : undefined;
+    ctx.ui.inputImpl = async (title) => title.startsWith("Main agent fallback models") ? refs.join(",") : undefined;
     await handleSettingChoice("mainModelFallbacks", ctx as unknown as ExtensionContext);
     assert.deepEqual(loadSettings(cwd).mainModelFallbacks, refs, "explicitly selected order is persisted");
     assert.deepEqual(loadSettings(cwd).mainModelFallbacks, refs, "explicit order survives reload");
@@ -216,7 +216,7 @@ test("v0.34.118: backup and forbidden editors enforce mutual exclusion even in h
   try {
     fs.writeFileSync(GLOBAL_FILE, JSON.stringify({ forbiddenModels: ["sonnet"] }, null, 2));
     const ctx = makeMockCtx(tmpCwd());
-    ctx.ui.inputImpl = async (title) => title.startsWith("Main session model backups")
+    ctx.ui.inputImpl = async (title) => title.startsWith("Main agent fallback models")
       ? "openrouter/anthropic/claude-sonnet-4.5,good/provider"
       : "good/provider,other/provider";
     await handleSettingChoice("mainModelFallbacks", ctx as unknown as ExtensionContext);

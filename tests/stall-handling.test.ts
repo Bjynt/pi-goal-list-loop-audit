@@ -110,7 +110,7 @@ test("/glla surface: bare command opens settings; arguments are actions", () => 
   // operational verbs and must not expose section or key=value routes.
   assert.doesNotMatch(SRC, /\["stall-brakes",/);
   assert.doesNotMatch(SRC, /\["stallescalation=",/);
-  assert.doesNotMatch(SRC, /\^\(keep-going\|backups\|auditor\|stall-brakes\|subagents\|other\)\\b/);
+  assert.doesNotMatch(SRC, /\^\(keep-going\|agents\|auditor\|stall-brakes\|subagents\|other\)\\b/);
   assert.match(CMDS, /Unknown \/glla action/);
   assert.doesNotMatch(SRC, /const kvRe =/);
 });

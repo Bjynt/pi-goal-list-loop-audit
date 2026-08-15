@@ -129,17 +129,17 @@ test("render: tabs row lists all 6 sections", () => {
   }
 });
 
-test("main chain is the first Backups row and drills in", () => {
+test("main agent is the first Agents row and drills in", () => {
   const rows = buildSettingsRows({ mainModelFallbacks: ["provider/backup"] } as Settings, {});
   let selected: string | undefined;
   const component = new SettingsMenuComponent(
-    { rows, title: "test", initialSection: "backups" },
+    { rows, title: "test", initialSection: "agents" },
     () => undefined,
     THEME,
     KB,
     (id) => { selected = id; },
   );
-  assert.deepEqual(component.visibleRows().map((row) => row.id), ["mainModelFallbacks", "mainModelRetryMinutes", "hourlyRetryProbe", "drafterModel", "drafterModelFallbacks", "subagentFallbacks:Explore", "subagentFallbacks:Plan", "subagentFallbacks:general-purpose", "subagentFallbacks:Designer"]);
+  assert.deepEqual(component.visibleRows().map((row) => row.id), ["mainModelFallbacks", "mainModelRetryMinutes", "hourlyRetryProbe", "drafterModel", "drafterThinkingLevel", "drafterModelFallbacks", "subagentFallbacks:Explore", "subagentFallbacks:Plan", "subagentFallbacks:general-purpose", "subagentFallbacks:Designer"]);
   component.handleInput("\r");
   assert.equal(selected, "mainModelFallbacks");
 });
@@ -235,7 +235,7 @@ test("nav: Esc emits undefined (close)", () => {
 test("nav: Tab advances to the next section", () => {
   const { component } = makeComponent(SAMPLE_ROWS);
   component.handleInput("\t");
-  assert.equal(component.getActiveSectionIdx(), 1); // backups
+  assert.equal(component.getActiveSectionIdx(), 1); // agents
   assert.equal(component.getSelectedIdx(), 0);     // reset
 });
 
@@ -255,7 +255,7 @@ test("nav: Right-arrow CSI sequence (\\x1b[C) advances section", () => {
 
 test("nav: Left-arrow CSI sequence (\\x1b[D) retreats section", () => {
   const { component } = makeComponent(SAMPLE_ROWS);
-  component.switchSection(1); // → backups
+  component.switchSection(1); // → agents
   component.handleInput("\x1b[D");
   assert.equal(component.getActiveSectionIdx(), 0);
 });
@@ -383,7 +383,7 @@ test("render: a too-long VALUE is truncated with … — it must NOT break the g
 test("render: column widths are stable across tab switches (no grid reflow)", () => {
   const { component } = makeComponent(SAMPLE_ROWS, 120);
   const headerA = component.render(120)[2]!;
-  component.switchSection(+1); // backups
+  component.switchSection(+1); // agents
   const headerB = component.render(120)[2]!;
   component.switchSection(+4); // subagents
   const headerC = component.render(120)[2]!;
