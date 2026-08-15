@@ -71,13 +71,10 @@ export interface Settings {
    * label ("reading source…" / "writing report…") + report byte-counter.
    * Default ON; off = the plain timer-only card. */
   auditorProgressSignals?: boolean;
-  /** Global-only: when main-model recovery is parked, fire an extra probe at
-   * the next :00:30 every hour. Quota windows tend to refresh at the top of
-   * the hour; the ticker is the fastest pickup the plugin can give without
-   * spam. Default ON (the user asked for an additional retry after each hour
-   * starts). Co-resident with the configured retry ladder — opt-out flips
-   * only this ticker off. */
-  hourlyQuotaProbe?: boolean;
+  /** Global-only: when main-model recovery is parked, fire an extra retry at
+   * the next :00:30 every hour. This is a blind retry slot; the plugin does
+   * not query or infer provider quota state. Default ON. */
+  hourlyRetryProbe?: boolean;
   auditorThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   /** Shell command run on goal complete / goal pause / loop stop; message passed as $1. */
   notifyCmd?: string;
@@ -177,7 +174,7 @@ export interface Settings {
 const GLOBAL_MAIN_RECOVERY_KEYS: ReadonlySet<keyof Settings> = new Set([
   "mainModelFallbacks",
   "mainModelRetryMinutes",
-  "hourlyQuotaProbe",
+  "hourlyRetryProbe",
 ]);
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -207,13 +204,10 @@ export const DEFAULT_SETTINGS: Settings = {
   // v0.34.86: progress signals are on by default — silent audits still
   // show a phase label + byte counter (note.md Screenshots 161837/175627).
   auditorProgressSignals: true,
-  // v0.34.92: hourly probe ticker on by default — quota windows refresh
-  // at the top of the hour; the ticker gives faster pickup without spam
-  // (no chat message — just an extra recovery probe at :00:30). The
-  // default constant lives in extensions/goal-loop-core.ts
-  // (DEFAULT_HOURLY_QUOTA_PROBE) so the contract grep on goal-loop-core
-  // matches; this is the wire-up to the settings loader.
-  hourlyQuotaProbe: true, // mirrors DEFAULT_HOURLY_QUOTA_PROBE in goal-loop-core.ts
+  // v0.34.142: an extra blind retry at :00:30 after every hour starts.
+  // It never checks quota state; it simply gives parked recovery another
+  // opportunity to make progress.
+  hourlyRetryProbe: true,
   // v0.24.6: subagents inherit the session model by default — one quota
   // pool, no surprise 403s from a pinned default agent's provider.
   subagentModelStrategy: "inherit-parent",
@@ -252,21 +246,37 @@ function normalizeLoadedSettings(settings: Settings): Settings {
   // the main fallback chain at every read so runtime, display, and persistence
   // all see the same bounded value.
   settings.mainModelFallbacks = normalizeMainModelFallbackRefs(settings.mainModelFallbacks);
-  // v0.34.142: these old quota-policy knobs no longer control recovery. Drop
+  // v0.34.142: these old policy knobs no longer control recovery. Drop
   // them from the effective object so stale files cannot resurrect the old
   // behavior or make the settings UI imply that quota inspection exists.
   const legacy = settings as unknown as Record<string, unknown>;
+  if (legacy.hourlyRetryProbe === undefined && typeof legacy.hourlyQuotaProbe === "boolean") {
+    legacy.hourlyRetryProbe = legacy.hourlyQuotaProbe;
+  }
+  delete legacy.hourlyQuotaProbe;
   delete legacy.mainModelFallbackOnRateLimit;
   delete legacy.quotaRetryMinutes;
   return settings;
 }
 
+function migrateLegacySettings(value: Partial<Settings>): Record<string, unknown> {
+  const migrated = { ...(value as Record<string, unknown>) };
+  if (migrated.hourlyRetryProbe === undefined && typeof migrated.hourlyQuotaProbe === "boolean") {
+    migrated.hourlyRetryProbe = migrated.hourlyQuotaProbe;
+  }
+  delete migrated.hourlyQuotaProbe;
+  delete migrated.mainModelFallbackOnRateLimit;
+  delete migrated.quotaRetryMinutes;
+  return migrated;
+}
+
 export function loadSettings(cwd: string): Settings {
-  const project = readSettingsFile(projectSettingsPath(cwd));
+  const project = migrateLegacySettings(readSettingsFile(projectSettingsPath(cwd)));
+  const global = migrateLegacySettings(readSettingsFile(globalSettingsPath()));
   for (const key of GLOBAL_MAIN_RECOVERY_KEYS) delete project[key];
   return normalizeLoadedSettings(mergeSettings(
     DEFAULT_SETTINGS as unknown as Record<string, unknown>,
-    readSettingsFile(globalSettingsPath()) as Record<string, unknown>,
+    global,
     project as Record<string, unknown>,
   ) as unknown as Settings);
 }
@@ -282,7 +292,7 @@ export function loadSettings(cwd: string): Settings {
 export function loadGlobalSettings(): Settings {
   return normalizeLoadedSettings(mergeSettings(
     DEFAULT_SETTINGS as unknown as Record<string, unknown>,
-    readSettingsFile(globalSettingsPath()) as Record<string, unknown>,
+    migrateLegacySettings(readSettingsFile(globalSettingsPath())),
   ) as unknown as Settings);
 }
 
@@ -308,7 +318,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "auditFeedbackChars",
   "auditorSilent",
   "auditorProgressSignals",
-  "hourlyQuotaProbe",
+  "hourlyRetryProbe",
   "subagentModelStrategy",
   "subagentModelOverrides",
   "subagentFallbacks",
@@ -324,8 +334,8 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
 
 /** Where each effective setting comes from (for the /glla display). */
 export function settingsProvenance(cwd: string): Record<keyof Settings, { value: unknown; source: "project" | "global" | "default" }> {
-  const proj = readSettingsFile(projectSettingsPath(cwd));
-  const glob = readSettingsFile(globalSettingsPath());
+  const proj = migrateLegacySettings(readSettingsFile(projectSettingsPath(cwd)));
+  const glob = migrateLegacySettings(readSettingsFile(globalSettingsPath()));
   const effective = loadSettings(cwd);
   const out: Record<string, { value: unknown; source: "project" | "global" | "default" }> = {};
   for (const k of SETTINGS_KEYS) {
@@ -404,12 +414,13 @@ function withSettingsFileLock<T>(file: string, fn: () => T): T {
 export function saveSettings(scope: "global" | "project", cwd: string, patch: Partial<Settings>): void {
   const file = scope === "global" ? globalSettingsPath() : projectSettingsPath(cwd);
   withSettingsFileLock(file, () => {
-    const current = readSettingsFile(file);
+    const current = migrateLegacySettings(readSettingsFile(file));
     const next: Record<string, unknown> = { ...current };
     if (scope === "project") {
       for (const key of GLOBAL_MAIN_RECOVERY_KEYS) delete next[key];
     }
-    for (const [k, v] of Object.entries(patch)) {
+    const migratedPatch = migrateLegacySettings(patch);
+    for (const [k, v] of Object.entries(migratedPatch)) {
       // Main recovery settings are global-only. If an old project file still
       // carries one, remove it rather than leaving a setting that appears saved
       // but can never affect the runtime.

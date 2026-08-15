@@ -10,7 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
-import { isQuotaError, normalizeProviderErrorText, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText, type QuotaSignal } from "./quota-retry.js";
+import { normalizeProviderErrorText, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText, type QuotaSignal } from "./quota-retry.js";
 import { MAX_MAIN_MODEL_FALLBACKS } from "./main-model-recovery.js";
 export { normalizeProviderErrorText, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText } from "./quota-retry.js";
 
@@ -25,28 +25,7 @@ export function shouldEscalateStall(consecutiveStalls: number, threshold: number
   return threshold > 0 && consecutiveStalls >= threshold;
 }
 
-// =================================================================
-// Hourly quota-resume prompter (v0.34.58, bug #1.15)
-//
-// Provider quota walls park the goal into durable recovery; the user then
-// has to notice the stall and re-prompt manually. The prompter schedules
-// ONE sendUserMessage at the next :00 clock minute (quota windows refresh
-// on the hour) asking the user to resume. NOT a self-resume — the message
-// only asks; gating lives in goal.ts (autoResume: true). The detector and
-// the :00 math are pure so they are unit-pinned here.
-// =================================================================
-
-/** Quota-wall detector: recognizes provider quota-wall events from error
- * text — rate-limit / plan-quota / billing families, per the quota-retry
- * recognition. Context-token errors, transient 5xx, and stream deaths are
- * NOT quota walls (they have different recovery semantics). */
-export function isQuotaWallError(error: string | undefined): boolean {
-  return isQuotaError(error);
-}
-
 /** The next top-of-hour (:00:00.000) strictly after now — the hourly
- * quota-resume prompt slot. At exactly :00 the next slot is the following
- * hour (the wall was hit in the current hour).
  *
  * v0.34.92: superseded by nextHourlyProbeMs for the actual probe ticker
  * (the prompt slot is no longer used — the v0.34.58/v0.34.90 prompt
@@ -1216,15 +1195,11 @@ export function modelSwitch(from: string | undefined, to: string | undefined, re
  * covers "anthropic/claude-sonnet-4-5". */
 export const DEFAULT_FORBIDDEN_MODELS: string[] = [];
 
-/** v0.34.92: hourly quota probe ticker default — fires at :00:30 every
- * hour when main-model recovery is parked to give faster pickup when
- * quota windows refresh at the top of the hour. The runtime lives in
- * extensions/goal-loop-core.ts (nextHourlyProbeMs); the default lives
- * HERE so the verification contract's literal `grep 'hourlyQuotaProbe'
- * extensions/goal-loop-core.ts` matches. extensions/goal-settings.ts
- * re-exports this constant for its settings-loader. The default is ON
- * (opt-out) — the user can flip it off via /glla settings. */
-export const DEFAULT_HOURLY_QUOTA_PROBE = true;
+/** v0.34.142: hourly retry ticker default — fires at :00:30 every hour
+ * while main-model recovery is parked. This is an unconditional retry slot,
+ * not a quota check or provider-status probe. The default is ON (opt-out)
+ * so work is picked up quickly after an hourly provider reset if one exists. */
+export const DEFAULT_HOURLY_RETRY_PROBE = true;
 
 /** v0.34.57: forbidden-model matcher. Empty/unknown refs are never
  * forbidden; an empty forbidden list forbids nothing. */
