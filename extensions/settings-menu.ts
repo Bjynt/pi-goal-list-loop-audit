@@ -11,9 +11,9 @@
 //   • Enter → emit the selected row's id (caller dispatches handler)
 //   • Esc / Ctrl+C → emit undefined (caller exits)
 //
-// Sections (6 total) map to the pre-0.28.0 menu groupings; the ordered
-// agent/fallback editors live at the top of the Agents tab:
-//   keep-going | agents | auditor | stall-brakes | subagents | other
+// Sections separate runtime roles so each agent's model, thinking, and
+// fallback controls stay together:
+//   keep-going | main-agent | drafter | auditor | subagents | stall-brakes | other
 //
 // Extracted into its own module so tests can import `buildSettingsRows` directly
 // (mirrors how `readState` lives in goal-loop-core.ts) and so the renderer is
@@ -48,18 +48,20 @@ import { resolveEffectiveSubagentModel, OVERRIDABLE_AGENT_TYPES } from "./goal-l
 
 export type SettingsSectionId =
   | "keep-going"
-  | "agents"
+  | "main-agent"
+  | "drafter"
   | "auditor"
-  | "stall-brakes"
   | "subagents"
+  | "stall-brakes"
   | "other";
 
 export const SETTINGS_SECTIONS: readonly { id: SettingsSectionId; label: string }[] = [
   { id: "keep-going", label: "Keep-going" },
-  { id: "agents", label: "Agents" },
+  { id: "main-agent", label: "Main agent" },
+  { id: "drafter", label: "Drafter" },
   { id: "auditor", label: "Auditor" },
-  { id: "stall-brakes", label: "Stall brakes" },
   { id: "subagents", label: "Subagents" },
+  { id: "stall-brakes", label: "Stall brakes" },
   { id: "other", label: "Other" },
 ];
 
@@ -101,6 +103,33 @@ export const DEFAULT_MENU_DEFAULTS: MenuDefaults = {
 export interface MenuSubagentContext {
   /** Active session model id (provider/model) — used by inherit-parent resolution. */
   sessionModel?: string;
+  /** Active session thinking level — used to show inherited agent settings. */
+  sessionThinkingLevel?: string;
+  /** Known model capabilities, keyed by lowercase provider/model ref. */
+  thinkingLevelsByRef?: Readonly<Record<string, readonly string[]>>;
+}
+
+function modelThinkingText(
+  ref: string,
+  requested: string,
+  context: MenuSubagentContext,
+): string {
+  const levels = context.thinkingLevelsByRef?.[ref.toLowerCase()];
+  if (!levels || levels.length === 0 || requested === "session thinking" || requested === "session level") {
+    return `${ref} · ${requested}`;
+  }
+  const effective = levels.includes(requested) ? requested : levels[levels.length - 1] ?? "off";
+  return effective === requested
+    ? `${ref} · ${effective}`
+    : `${ref} · ${effective} (requested ${requested})`;
+}
+
+function modelChainText(
+  refs: readonly string[] | undefined,
+  requested: string,
+  context: MenuSubagentContext,
+): string {
+  return (refs ?? []).map((ref) => modelThinkingText(ref, requested, context)).join(" → ");
 }
 
 /**
