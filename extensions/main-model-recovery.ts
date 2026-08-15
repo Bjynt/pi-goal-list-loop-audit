@@ -2,8 +2,8 @@
 //
 // These helpers deliberately contain no pi runtime calls. The orchestration
 // layer owns model switching and durable state; this module only normalizes
-// configured candidates, classifies provider failures, and computes a
-// bounded-but-persistent retry cadence.
+// configured candidates, recognizes positively non-recoverable failures, and
+// computes a bounded-but-persistent retry cadence.
 
 export const MAIN_MODEL_MAX_RETRY_DELAY_MS = 5 * 60 * 60_000;
 export const MAIN_MODEL_AUTO_RETRY_HORIZON_MS = 24 * 60 * 60_000;
@@ -17,8 +17,8 @@ export type MainModelFailureKind = "rate-limit" | "quota" | "billing" | "auth" |
 export interface MainModelFailure {
   kind: MainModelFailureKind;
   raw: string;
-  /** Legacy provider-hint fields remain readable in persisted recovery data,
-   * but the retry policy never consults them. */
+  /** Legacy provider-hint fields are accepted by old callers only; the
+   * classifier and retry policy never populate or consult them. */
   retryAfterSec?: number;
   retryFromUpstream?: boolean;
   resetAt?: string;
@@ -141,8 +141,8 @@ export function isContextOverflowError(error: string | undefined): boolean {
 }
 
 /** Provider failures use one generic send-storm threshold. The old
- * quota/billing/auth distinction was intentionally removed: error wording is
- * too unreliable to justify a faster or slower escalation branch. */
+ * quota/billing/rate-limit distinction is intentionally unused: wording is
+ * too unreliable to justify a special escalation branch. */
 export const SEND_REARM_GENERIC_ESCALATE_MS = 15 * 60_000;
 
 /** Every recoverable provider failure may use the same configured backup

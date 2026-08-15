@@ -135,10 +135,10 @@ export interface Settings {
   autoAcceptDrafts?: boolean;
   /** v0.24.6: subagent model strategy for pi-subagents default agents that
    * pin a model (Explore pins claude-haiku-4-5, which silently routes
-   * subagents to a different provider/quota pool than the session).
+   * subagents to a different provider/model than the session).
    * "inherit-parent" (default) writes a managed ~/.pi/agent/agents/Explore.md
-   * override without the model pin so subagents share the session model and
-   * its quota; "agent-default" restores upstream behavior. Applies to NEW
+   * override without the model pin so subagents share the session model;
+   * "agent-default" restores upstream behavior. Applies to NEW
    * sessions (pi-subagents registers agents at session start). */
   /** v0.26.0: reviewer (post-completion follow-up enqueuer) config —
    * project-scoped; see extensions/reviewer.ts DEFAULT_REVIEWER_CONFIG.
@@ -205,11 +205,11 @@ export const DEFAULT_SETTINGS: Settings = {
   // show a phase label + byte counter (note.md Screenshots 161837/175627).
   auditorProgressSignals: true,
   // v0.34.142: an extra blind retry at :00:30 after every hour starts.
-  // It never checks quota state; it simply gives parked recovery another
+  // It never checks provider state; it simply gives parked recovery another
   // opportunity to make progress.
   hourlyRetryProbe: true,
-  // v0.24.6: subagents inherit the session model by default — one quota
-  // pool, no surprise 403s from a pinned default agent's provider.
+  // v0.24.6: subagents inherit the session model by default, avoiding a
+  // surprise provider/model pin from the upstream default agent.
   subagentModelStrategy: "inherit-parent",
   auditFeedbackChars: DEFAULT_AUDIT_FEEDBACK_CHARS,
   // v0.34.141: keep-going is the production default. Set false explicitly

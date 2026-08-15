@@ -38,11 +38,10 @@ export function nextHourlyPromptMs(now = Date.now()): number {
   return d.getTime();
 }
 
-/** v0.34.92: the next :00:30 strictly after now — the hourly probe ticker
- * slot. We use :00:30 (not :00:00) so the provider has a 30s skew window to
- * roll its quota counters before we probe; a probe at exactly :00:00 can
- * race the provider's reset. The slot is per-hour: at 14:00:01 the next
- * slot is 14:00:30 (29s away); at 14:00:31 the next slot is 15:00:30. */
+/** v0.34.92: the next :00:30 strictly after now — the hourly retry ticker
+ * slot. We use :00:30 (not :00:00) to leave a small clock-skew margin before
+ * the extra attempt. The slot is per-hour: at 14:00:01 the next slot is
+ * 14:00:30 (29s away); at 14:00:31 the next slot is 15:00:30. */
 export function nextHourlyProbeMs(now = Date.now()): number {
   const d = new Date(now);
   // Start with this hour's :00:30
@@ -368,14 +367,14 @@ export interface Goal {
   auditInfraStreak?: number;
   /** v0.34.15: persisted error-brake rung — survives /reload so the 6-brake park can engage. */
   errorBrakeStreak?: number;
-  /** v0.28.26: the completion claim captured when an audit attempt is
-   * quota-blocked. The quota retry re-runs the AUDITOR directly with this
-   * stored claim instead of re-engaging the agent — re-engaging produced a
+  /** v0.28.26: the completion claim captured when an audit attempt stops
+   * before a verdict. The stored-claim retry re-runs the AUDITOR directly
+   * instead of re-engaging the agent — re-engaging produced a
    * hallucinated-closure repetition loop in the field (π-games 2026-07-29:
    * the agent concluded the goal was closed, stopped calling complete_goal,
    * and repeated the same essay until the stall brake fired). Cleared when
-   * the retry resolves. Only consumed while paused with an "auditor quota:"
-   * reason, so a stale value is unreachable by construction. */
+   * the retry resolves. Only consumed while paused in the auditor-retry
+   * lifecycle, so a stale value is unreachable by construction. */
   pendingCompletion?: PendingCompletion;
   /** v0.28.28: provenance — who created this goal ("user", "list-cascade",
    * "draft-confirmed", "draft-autoaccepted"). Ledgered on goal_created so
@@ -738,12 +737,11 @@ export interface MainModelRecovery {
   autoRetryUntil?: string;
   /** A long provider hint or exhausted horizon requires explicit resume. */
   manualResumeRequired?: boolean;
-  /** Provider reset hint retained for truthful status/ledger output. */
+  /** Legacy provider hint retained only when reading old state. */
   resetAt?: string;
-  /** Provider wall family retained so request-rate limits do not become
-   * account/quota claims after reload. */
+  /** Legacy provider family retained only when reading old state. */
   quotaSignal?: QuotaSignal;
-  /** Factual retry metadata retained for restart-safe scheduling. */
+  /** Legacy retry metadata; canonical scheduling uses retryAt/attempts. */
   retryAfterSec?: number;
   retryFromUpstream?: boolean;
   /** Storm failover can resume the selected backup before probing primary. */
@@ -819,12 +817,6 @@ export function sanitizeMainModelRecovery(value: unknown): MainModelRecovery | u
   const attempts = typeof raw.attempts === "number" && Number.isSafeInteger(raw.attempts) && raw.attempts >= 0
     ? raw.attempts
     : 0;
-  const quotaSignal = raw.quotaSignal === "rate-limit" || raw.quotaSignal === "plan-quota" || raw.quotaSignal === "billing"
-    ? raw.quotaSignal
-    : undefined;
-  const retryAfterSec = typeof raw.retryAfterSec === "number" && Number.isFinite(raw.retryAfterSec) && raw.retryAfterSec >= 0
-    ? Math.min(raw.retryAfterSec, 5 * 60 * 60)
-    : undefined;
   return {
     primary,
     ...(typeof raw.active === "string" && raw.active.trim() ? { active: raw.active.trim().slice(0, 300) } : {}),
@@ -839,10 +831,6 @@ export function sanitizeMainModelRecovery(value: unknown): MainModelRecovery | u
     ...(date(raw.firstFailureAt) ? { firstFailureAt: date(raw.firstFailureAt) } : {}),
     ...(date(raw.autoRetryUntil) ? { autoRetryUntil: date(raw.autoRetryUntil) } : {}),
     ...(raw.manualResumeRequired === true ? { manualResumeRequired: true } : {}),
-    ...(date(raw.resetAt) ? { resetAt: date(raw.resetAt) } : {}),
-    ...(quotaSignal ? { quotaSignal } : {}),
-    ...(retryAfterSec !== undefined ? { retryAfterSec } : {}),
-    ...(raw.retryFromUpstream === true ? { retryFromUpstream: true } : {}),
     ...(raw.resumeCurrent === true ? { resumeCurrent: true } : {}),
     ...(typeof raw.pendingModelSwitch === "string" && raw.pendingModelSwitch.trim() ? { pendingModelSwitch: raw.pendingModelSwitch.trim().slice(0, 300) } : {}),
     ...(Array.isArray(raw.skipped) ? {
@@ -864,7 +852,7 @@ export interface State {
   list?: ListItem[];
   /** Loop 3: metric-driven forever loop. */
   loop?: import("./goal-loop-forever.js").LoopState;
-  /** Main-session provider recovery; independent of detached auditor quota state. */
+  /** Main-session provider recovery; independent of detached auditor state. */
   mainModelRecovery?: MainModelRecovery;
   /** v0.34.57: last provider/model ref the main session was observed on.
    * Persisted so the turn-boundary check can detect drift across sessions
@@ -1146,9 +1134,19 @@ export function readState(cwd: string): State {
  * Runtime policy only sees the generic names; old records remain readable. */
 function normalizePendingCompletion(value: unknown): PendingCompletion {
   const raw = value as Record<string, unknown>;
+  const {
+    quotaAttempts: _quotaAttempts,
+    quotaFirstAt: _quotaFirstAt,
+    quotaAutoRetryUntil: _quotaAutoRetryUntil,
+    quotaSignal: _quotaSignal,
+    retryAfterSec: _retryAfterSec,
+    retryFromUpstream: _retryFromUpstream,
+    resetAt: _resetAt,
+    ...canonicalOrUnknown
+  } = raw;
   const phase = raw.phase === "quota-waiting" ? "retry-waiting" : raw.phase;
   return {
-    ...raw,
+    ...canonicalOrUnknown,
     ...(phase === "running" || phase === "recovery-pending" || phase === "retry-waiting" ? { phase } : {}),
     ...(typeof raw.retryAttempts === "number"
       ? { retryAttempts: raw.retryAttempts }
@@ -1230,8 +1228,8 @@ export const DEFAULT_FORBIDDEN_MODELS: string[] = [];
 
 /** v0.34.142: hourly retry ticker default — fires at :00:30 every hour
  * while main-model recovery is parked. This is an unconditional retry slot,
- * not a quota check or provider-status probe. The default is ON (opt-out)
- * so work is picked up quickly after an hourly provider reset if one exists. */
+ * not a provider-status probe. The default is ON (opt-out) so work gets an
+ * extra attempt shortly after each hour starts. */
 export const DEFAULT_HOURLY_RETRY_PROBE = true;
 
 /** v0.34.57: forbidden-model matcher. Empty/unknown refs are never
@@ -2163,7 +2161,7 @@ export interface InfraRetryOutcome<T> {
 /** Run the auditor; on any retriable infrastructure failure, wait
  * `backoffMs` and retry EXACTLY once before reporting "auditor
  * infrastructure error (retried once)". The failed pair is never a verdict
- * on the work; quota/account text is not consulted to suppress this retry. */
+ * on the work; provider wording is not consulted to suppress this retry. */
 export async function runWithInfraRetry<T extends { error?: string; approved: boolean; disapproved: boolean }>(
   run: () => Promise<T>,
   opts: {
@@ -2194,8 +2192,8 @@ export async function runWithInfraRetry<T extends { error?: string; approved: bo
     }
   }
   opts.onRetry?.(first.error!);
-  // v0.34.141: do not inspect quota/account families to decide whether the
-  // eager retry is allowed. Provider text is retained by the caller for
+  // v0.34.141: do not inspect provider families to decide whether the eager
+  // retry is allowed. Provider text is retained by the caller for
   // sanitized diagnostics; this scheduler simply retries every retriable
   // infrastructure failure once, then the durable hourly plan takes over.
   await sleep(opts.backoffMs ?? 5000);

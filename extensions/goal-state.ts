@@ -53,7 +53,7 @@ export function replaceState(next: State): void {
 /** Persistence core: append the durable "state" ledger line (active.jsonl).
  * JSON omits undefined, while readState intentionally merges state
  * snapshots; explicit nulls for the optional top-level recovery slot
- * prevent resurrecting an older quota wall after a successful retry.
+ * prevent resurrecting an older recovery episode after a successful retry.
  *
  * v0.34.57: lastModelRef is carried on the state line so a fresh process
  * can restore it (readState) and the turn-boundary check can catch a
