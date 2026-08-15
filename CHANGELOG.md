@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.35.1 — drafter agent controls and settings taxonomy (2026-08-15)
+
+### Drafter thinking follows the selected agent
+  The drafter picker now offers the thinking levels supported by the selected
+  model, persists an explicit `drafterThinkingLevel`, reapplies it across the
+  drafter fallback chain, and restores the user's original session thinking
+  level after the temporary drafting lease ends.
+
+### Settings name agents and fallbacks honestly
+  The former **Backups** tab is now **Agents**. Main, drafter, and subagent
+  entries are presented as agents with optional fallback agents/models; the
+  persisted setting keys and operational fallback commands remain compatible.
+
 ## 0.35.0 — explicit designer routing and drafting recovery (2026-08-15)
 
 ### Long-running judgment is a prompt contract
