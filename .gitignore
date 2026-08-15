@@ -48,6 +48,7 @@ locks/
 nixos/.fusion/
 nixos/result
 node_modules/
+pi-session-2026-08-10T18-56-45-153Z_019fed08-ce61-7c05-adeb-2376e8c157e9.html
 rag_index.json
 repo-runtime/
 repo-scanner/
@@ -74,6 +75,7 @@ tasks*.json
 !*.age
 !test_secret.txt
 !secrets/**
+!affiliate/credentials.md
 !*.dll
 !*.dylib
 !*.events.jsonl
@@ -105,8 +107,6 @@ tasks*.json
 !rust-toolchain.toml
 !rustfmt.toml
 !state/events/*.jsonl
-# Large files (auto-added by dracon-sync)
-pi-session-2026-08-10T18-56-45-153Z_019fed08-ce61-7c05-adeb-2376e8c157e9.html
 # --- END DRACON MANAGED BLOCK ---
 .research/
 
