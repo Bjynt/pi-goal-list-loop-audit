@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.34.141 — aggressive default and quota-agnostic hourly recovery (2026-08-15)
+### Aggressive mode is now the default
+  `aggressiveMode` resolves to ON when unset, enabling keep-going defaults for
+  auto-resume, audit/stall limits, wedge alerts, and infrastructure recovery.
+  Set it explicitly to `false` for the conservative pause-first policy;
+  explicit per-key settings still win.
+
+### Recovery retries without quota checks
+  Detached-auditor infrastructure failures no longer suppress the eager retry
+  based on account, billing, rate-limit, or upstream Retry-After wording. The
+  shared plan retries once after 5 seconds, then schedules stored-claim probes
+  at `:00:30` after every local hour starts. Provider classifications remain
+  sanitized diagnostics only; the existing durable 5-attempt/24-hour safety
+  envelope remains in place.
+
 ## 0.34.140 — resilient completion auditing and zombie recovery (2026-08-15)
 ### No-verdict completion audits keep a safe recovery path
   Completion-auditor timeouts and infrastructure failures remain explicitly

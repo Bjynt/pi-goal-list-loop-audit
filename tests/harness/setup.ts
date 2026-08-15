@@ -26,8 +26,10 @@ process.env.GLLA_GLOBAL_SETTINGS_PATH ??= path.join(
 // a dev machine, which surfaced as hegemon-queue-unblock-evidence creating
 // a repair goal after the poisoned session_start auto-activation. This
 // preload runs before EACH test file (verified), so resetting the shared
-// file here makes the suite hermetic regardless of file order. Tests that
-// need a setting write it at module scope, after this reset.
+// file here makes the suite hermetic regardless of file order. The
+// production default is aggressiveMode=on; legacy behavioral fixtures that
+// assert pause-first behavior write an explicit false. Tests that need a
+// setting write it at module scope, after this reset.
 fs.writeFileSync(process.env.GLLA_GLOBAL_SETTINGS_PATH, JSON.stringify({ aggressiveMode: false }));
 
 // v0.34.12: the eager continuation settles 2.5s past agent_end in production

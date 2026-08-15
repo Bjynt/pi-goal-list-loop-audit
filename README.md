@@ -10,7 +10,7 @@ This is a detached process, not a nested session in the main pi process. `comple
 
 On Windows, npm installs the `pi.cmd` shim rather than a directly executable `pi` binary. The auditor launches it through an explicitly quoted `cmd.exe` boundary; POSIX keeps direct shell-less execution. Protocol snapshots also tolerate transient Windows file-locks without deleting the last valid snapshot first.
 
-**Current package version:** `v0.34.140` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
+**Current package version:** `v0.34.141` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
 
 ## Why this exists
 
@@ -254,7 +254,7 @@ Activity is otherwise intentionally honest:
 | `auditor …` | A detached, extension-less verifier is queued, running, quiet, or waiting for its verdict. |
 | `QUOTA WALL` | The provider rejected the request for a quota/plan window (by its own wording); saved work is waiting for a durable probe. |
 
-## Provider failures: one retry envelope, bounded (v0.34.51)
+## Provider failures: aggressive retry envelope, bounded (v0.34.141)
 
 Error text is **not trusted** to pick a retry policy: we only know that an
 error came, and provider messages vary. Every main-model failure — quota,
@@ -262,10 +262,12 @@ rate limit, billing/credits, auth, transient, or unclassifiable — rides the
 same durable recovery envelope. The normal unhinted wait is
 `base → 2×base → 4×base → 8×base → 16×base → 5h`, where `base` is the
 `mainModelRetryMinutes` setting (15 minutes by default). A factual provider
-`Retry-After` hint wins when it fits the five-hour probe budget; an over-budget
-hint falls back to the configured ladder. `hourlyQuotaProbe=on` adds a separate
-`:00:30` probe while recovery is parked. The automatic window is 24h, then an
-explicit `/goal resume`/`/list resume`/`/loop resume` starts a fresh window.
+`Retry-After` metadata may be retained for diagnostics, but recovery does not
+probe or check quota state before retrying. `hourlyQuotaProbe=on` adds a
+separate `:00:30` probe while recovery is parked, so a possible reset at
+15:00/16:00 is picked up just after the hour starts. The automatic window is
+24h, then an explicit `/goal resume`/`/list resume`/`/loop resume` starts a
+fresh window.
 The only failures that do not auto-retry are the ones identified by *positive
 evidence* as futile: context/output-token limits and user aborts
 (`non-recoverable`), plus auditor watchdog timeouts (a hanging verification
@@ -309,10 +311,11 @@ what the provider said (quota wall, billing, rate limit) so the reason is
 diagnosable, and `QUOTA WALL` is only shown when the provider's own words say
 quota — ambiguous prose is never relabeled. The raw provider message stays in
 the ledger/durable state; the card shows the classified reason and recovery
-action. Detached-auditor failures get the same treatment: any infrastructure
-error on a stored completion claim pauses the goal with a durable bounded
-one-shot retry (`auditor retry: …`), and only the plan's 24h horizon stops
-automatic probes.
+action. Detached-auditor failures use the same quota-agnostic policy: every
+retriable infrastructure error gets one eager 5s retry, then stored-claim
+probes at `:00:30` after each hour starts. The durable 5-attempt/24h safety
+envelope still prevents a dead verifier from creating an unbounded worker
+storm; explicit resume starts a fresh window.
 
 The quota-specific card hides raw provider JSON while preserving it in durable
 state and the ledger:
@@ -433,7 +436,8 @@ Open `/glla` to edit these settings in the table (the rows show effective values
 - Auto-resume, auto-accept drafts, decision popup, and carryover policy
 - Ordered main-session backups at the top of the Backups tab, plus recovery cadence (including the optional hourly probe)
 - Forbidden model patterns and switch policy
-- Audit cap/report size, aggressive mode, quota retry, and stall brakes
+- Audit cap/report size, aggressive mode (ON by default), retry cadence, and
+  stall brakes
 
 The argument namespace is reserved for actions such as `/glla status`, `/glla
 resume`, `/glla cancel`, `/glla stats`, `/glla audits`, `/glla tooloverride`,
@@ -458,14 +462,16 @@ unavailable, and unauthenticated refs are skipped. When every candidate is
 down, glla cancels the provider-held retry and uses the configured
 `base → 2×base → 4×base → 8×base → 16×base → 5h` ladder (`base` defaults to
 15m). `hourlyQuotaProbe=on` adds a separate :00:30 probe after each hour
-starts. Explicit HTTP 429/rate-limit errors remain request-rate failures, not
-token-limit labels. With `mainModelFallbackOnRateLimit=on` (default) they
+starts. No quota-availability check is made before a retry; explicit HTTP
+429/rate-limit errors remain request-rate labels, not token-limit labels. With
+`mainModelFallbackOnRateLimit=on` (default) they
 walk the ordered backups; with it off they stay on the current model through
 the bounded retry policy. Automatic recovery stops at 24h, preserves the saved
 work, and requires an explicit
 `/goal resume`, `/list resume`, or `/loop resume` to start a fresh window. A
-quota window returning within that horizon therefore resumes saved work without
-manual intervention; no blind 50ms resend loop is introduced. The detached auditor uses an explicit cascade: primary
+provider becoming available within that horizon therefore resumes saved work
+without manual intervention; no blind 50ms resend loop is introduced. The
+detached auditor uses an explicit cascade: primary
 `auditorModel` → optional fallback pin → the pi session model. If a selected
 model fails after launch, the worker retries it once and then advances through
 that same cascade; every candidate is still audited in a detached,
