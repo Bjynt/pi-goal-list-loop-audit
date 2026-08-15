@@ -10,7 +10,21 @@ one generic retry envelope, with a 5-second eager retry and an extra
 attempt/window safety limits remain. Old quota-named state is compatibility
 data only and cannot change the runtime policy.
 
-## Current triage — v0.35.0 (2026-08-15)
+## Resolved in v0.35.1 (2026-08-15)
+
+The drafter controls now behave like the regular model controls: selecting a
+drafter immediately offers the thinking levels supported by that agent, and a
+standalone Drafter thinking row edits the same setting. The default is an
+explicit `session — inherit current session level` choice, so a saved thinking
+level can be cleared without editing JSON. The temporary drafter lease applies
+the requested level across fallback agents and restores the original model and
+thinking level after drafting.
+
+The former **Backups** settings section is now **Agents**. Main, drafter,
+auditor, and subagent entries are described as agents with optional fallback
+agents/models; persisted keys and command behavior remain compatible.
+
+## Current triage — v0.35.1 (2026-08-15)
 
 The screenshots and observations below are historical captures. Their current
 status is recorded here so this note stays useful as a backlog rather than
@@ -29,7 +43,7 @@ looking like every incident is still open.
 | Total time spent / UI review | **Resolved** | Goal, loop, queue, auditor, and terminal surfaces expose elapsed or duration information; focused display and philosophy tests pass. |
 | Long-term-minded vs opportunistic fixes / unnecessary questions | **Resolved in v0.35.0** | Drafting and continuation now state the durable-fix preference, safe-workaround conditions, unattended fallback, and genuine decision boundaries for questions. This is policy guidance, not a new user preference, by design. |
 | Designer subagent with fallback | **Resolved in v0.35.0** | Explicit role declarations persist on goals, queue items, and task plans; the managed read-only Designer has routing, settings, status/prompt surfaces, provider/model fallback, and inline fallback behavior. |
-| Dedicated drafter model with fallbacks | **Resolved in v0.35.0** | Drafting has a separate temporary primary/fallback chain, generic existing-interview recovery, serialized restore, session last resort, settings UI, and focused tests. Main and auditor chains are untouched. |
+| Dedicated drafter model with fallbacks | **Resolved in v0.35.1** | Drafting has a separate temporary primary/fallback chain, model-specific thinking selection with session-level inheritance, generic existing-interview recovery, serialized restore of model and thinking, session last resort, settings UI, and focused tests. Main and auditor chains are untouched. |
 | External continuation research | **Resolved as documented no-change** | Codex, Claude Code, and DeepSeek Harness confirm the durable checkpoint/resume direction and produce a concrete Pi host-session API request; no provider-specific retry redesign is needed. |
 
 Focused evidence for this triage: 229 relevant tests passed before the v0.35.0
@@ -37,11 +51,11 @@ implementation, and the new policy/designer/drafter slice adds 36 focused
 passing tests. The final release check below is clean: 1,357 passed, 1 skipped
 (the environment-gated daemon test), and 0 failed across 1,358 tests; TypeScript
 type-checking, the Jiti state-split regression, and `npm pack --dry-run` for
-`pi-goal-list-loop-audit@0.35.0` also pass. The only remaining dependency is Pi
+`pi-goal-list-loop-audit@0.35.1` also pass. The only remaining dependency is Pi
 itself: event-safe host session replacement is documented but cannot be
 implemented inside this plugin.
 
-## Remaining tasklist — v0.35.0
+## Remaining tasklist — v0.35.1
 
 The previous leftovers are now closed or explicitly handed to the host. The
 checkboxes remain as an auditable record of the decisions and implementation.
@@ -70,6 +84,10 @@ checkboxes remain as an auditable record of the decisions and implementation.
   `audit/CONTINUATION-APPROACH-COMPARISON-2026-08-15.md`; decision: retain
   durable glla checkpoints and request a host replacement seam, with no quota
   inference or provider-specific retry redesign.
+- [x] **Align drafter controls and agent terminology.** The drafter exposes
+  model-specific thinking with an explicit session-level inheritance choice;
+  the temporary lease reapplies it through fallbacks and restores the session
+  state. The Backups menu is now Agents, while persisted keys stay compatible.
 
 ##
 /home/dracon/Pictures/Screenshots/Screenshot_20260814_140543.png 
