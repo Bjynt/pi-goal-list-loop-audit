@@ -13,4 +13,7 @@ this also leads to more questions i think, that interrupts long running goals ne
 
 we need to audito others pi goal plugins see if we can learn anything from them
 
+pi goal x and others dont have the host session lost problem, why 
+this our THE problem
+
 # LATER
