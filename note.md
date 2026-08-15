@@ -24,4 +24,8 @@ we are not showing the models selected on the goal
 
 in fact we should review what we puttting on the goal nad hte footer
 
+##
+
+loop caused heavy resources consupstion
+
 # LATER
