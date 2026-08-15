@@ -1,18 +1,22 @@
-// pi-goal-list-loop-audit — quota-aware recovery policy.
+// pi-goal-list-loop-audit — provider diagnostics and bounded retry helpers.
 //
-// Provider errors are messy: some expose HTTP 429, some return a JSON plan
-// limit, some use a reset timestamp, and some only say "try again later".
-// Keep recognition conservative and keep automatic probes bounded. A quota
-// wall is a recovery signal, not permission to hammer a provider forever.
+// Provider errors are deliberately opaque to recovery policy. This module
+// keeps safe diagnostic projections and a generic timer; legacy quota parser
+// exports remain below for reading old records/tests, but runtime scheduling
+// never uses them.
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export type QuotaSignal = "rate-limit" | "plan-quota" | "billing";
 
-/** Never let an automatic quota probe schedule farther than five hours out. */
-export const MAX_AUTOMATIC_QUOTA_RETRY_SEC = 5 * 60 * 60;
-/** The default no-hint window remains one hour for compatibility/settings. */
-export const DEFAULT_QUOTA_RETRY_SEC = 60 * 60;
+/** Never let one automatic provider retry schedule farther than five hours. */
+export const MAX_AUTOMATIC_PROVIDER_RETRY_SEC = 5 * 60 * 60;
+/** Compatibility default for callers that do not provide a delay. */
+export const DEFAULT_PROVIDER_RETRY_SEC = 60 * 60;
+/** @deprecated Use MAX_AUTOMATIC_PROVIDER_RETRY_SEC. */
+export const MAX_AUTOMATIC_QUOTA_RETRY_SEC = MAX_AUTOMATIC_PROVIDER_RETRY_SEC;
+/** @deprecated Use DEFAULT_PROVIDER_RETRY_SEC. */
+export const DEFAULT_QUOTA_RETRY_SEC = DEFAULT_PROVIDER_RETRY_SEC;
 
 export interface QuotaError {
   raw: string;
@@ -97,16 +101,15 @@ export interface ProviderErrorPresentation {
   display: string;
   action: string;
   fingerprint: string;
+  /** Legacy diagnostic field; runtime recovery never branches on it. */
   signal?: QuotaSignal;
   sensitive: boolean;
 }
 
 // Provider payloads frequently contain account names, request ids, nested JSON,
-// and raw HTTP text. These markers identify text that must not cross a display
-// boundary verbatim. Keep the detector broader than quotaSignal: a provider
-// may say "Token Plan" or expose a bare HTTP 429 without enough surrounding
-// prose for classification.
-const PROVIDER_WALL_MARKER = /\b(?:403|429)\b|token[\s_-]*plan|rate[\s_-]*limit|too[\s_-]+many[\s_-]+requests|usage[\s_-]*limit|quota|insufficient[\s_-]+(?:credits?|balance)|key[\s_-]*limit|retry[\s_-]*after/i;
+// and raw HTTP text. These markers only decide whether raw text must be
+// redacted; they never decide whether or when recovery retries.
+const PROVIDER_WALL_MARKER = /\b(?:401|403|408|409|429|5\d\d)\b|api[\s_-]*key|authorization|token[\s_-]*plan|rate[\s_-]*limit|too[\s_-]+many[\s_-]+requests|usage[\s_-]*limit|quota|insufficient[\s_-]+(?:credits?|balance)|key[\s_-]*limit|retry[\s_-]*after|request[\s_-]*(?:id|identifier)/i;
 
 function providerFingerprintText(error: string): string {
   return error
@@ -130,23 +133,15 @@ function providerFingerprintText(error: string): string {
  * the upstream changes a number. */
 export function providerErrorFingerprint(error: string | undefined): string {
   const raw = typeof error === "string" ? error : "";
-  return `${quotaSignal(raw) ?? "provider"}:${providerFingerprintText(raw) || "unknown"}`;
-}
-
-function providerWallLabel(signal: QuotaSignal | undefined, sensitive: boolean): string {
-  if (signal === "billing") return "provider billing/credit wall";
-  if (signal === "plan-quota") return "provider account/usage wall";
-  if (signal === "rate-limit") return "provider request-rate wall";
-  return sensitive ? "provider infrastructure wall" : "provider infrastructure error";
+  return `provider:${providerFingerprintText(raw) || "unknown"}`;
 }
 
 /** Convert untrusted provider text into safe action/display copy while
  * retaining a bounded diagnostic projection for durable ledger/archive state. */
 export function providerErrorPresentation(error: string | undefined, surface: ProviderErrorSurface = "recovery"): ProviderErrorPresentation {
   const diagnostic = typeof error === "string" ? error.slice(0, 4_000) : "";
-  const signal = quotaSignal(diagnostic);
-  const sensitive = PROVIDER_WALL_MARKER.test(diagnostic) || signal !== undefined;
-  const display = providerWallLabel(signal, sensitive);
+  const sensitive = PROVIDER_WALL_MARKER.test(diagnostic);
+  const display = sensitive ? "provider error" : "provider error";
   const action = surface === "completion"
     ? "The stored completion claim is safe; fix the provider/model, then resume to retry the auditor."
     : surface === "main"
@@ -157,7 +152,6 @@ export function providerErrorPresentation(error: string | undefined, surface: Pr
     display,
     action,
     fingerprint: providerErrorFingerprint(diagnostic),
-    ...(signal ? { signal } : {}),
     sensitive,
   };
 }
@@ -411,24 +405,23 @@ function retryWindow(m: RegExpMatchArray | null): number | undefined {
   return Number.isFinite(n) && n >= 0 ? Math.round(n * mult) : undefined;
 }
 
-/** Clamp one automatic probe. A provider may claim a one-week reset; glla
- * will not hide a week-long timer or wake up blindly after it. Callers can
- * preserve the raw/reset hint and require an explicit resume instead. */
-export function capQuotaRetrySeconds(seconds: number): number {
-  if (!Number.isFinite(seconds) || seconds < 0) return DEFAULT_QUOTA_RETRY_SEC;
-  return Math.min(Math.max(1, Math.round(seconds)), MAX_AUTOMATIC_QUOTA_RETRY_SEC);
+/** Clamp one automatic retry delay. The bound is a safety envelope, not a
+ * provider/quota decision. */
+export function capProviderRetrySeconds(seconds: number): number {
+  if (!Number.isFinite(seconds) || seconds < 0) return DEFAULT_PROVIDER_RETRY_SEC;
+  return Math.min(Math.max(1, Math.round(seconds)), MAX_AUTOMATIC_PROVIDER_RETRY_SEC);
 }
 
-/** Exponential automatic probe cadence, capped at five hours. */
-export function quotaRetryDelaySeconds(attempt: number, baseMinutes = 60): number {
-  const base = Number.isFinite(baseMinutes) && baseMinutes > 0 ? baseMinutes * 60 : DEFAULT_QUOTA_RETRY_SEC;
-  return capQuotaRetrySeconds(base * 2 ** Math.max(0, attempt - 1));
+/** Exponential automatic retry cadence, capped at five hours. */
+export function providerRetryDelaySeconds(attempt: number, baseMinutes = 60): number {
+  const base = Number.isFinite(baseMinutes) && baseMinutes > 0 ? baseMinutes * 60 : DEFAULT_PROVIDER_RETRY_SEC;
+  return capProviderRetrySeconds(base * 2 ** Math.max(0, attempt - 1));
 }
 
-let quotaRetryTimer: NodeJS.Timeout | null = null;
-let lastQuotaRetryNoticeKey: string | null = null;
+let providerRetryTimer: NodeJS.Timeout | null = null;
+let lastProviderRetryNoticeKey: string | null = null;
 
-export interface QuotaRetryScheduleOptions {
+export interface ProviderRetryScheduleOptions {
   /** Stable persisted recovery episode identity, if the caller has one. */
   episodeKey?: string;
   /** Stable notice identity; excludes changing retry-after/counter values. */
@@ -438,67 +431,81 @@ export interface QuotaRetryScheduleOptions {
 }
 
 /** Test hook — reset process-local notice deduplication between isolated rigs. */
-export function resetQuotaRetryNoticeDedup(): void {
-  lastQuotaRetryNoticeKey = null;
+export function resetProviderRetryNoticeDedup(): void {
+  lastProviderRetryNoticeKey = null;
 }
 
-/** Test hook — is a quota retry currently scheduled? */
-export function isQuotaRetryPending(): boolean {
-  return quotaRetryTimer !== null;
+/** Test hook — is a provider retry currently scheduled? */
+export function isProviderRetryPending(): boolean {
+  return providerRetryTimer !== null;
 }
 
-/** Cancel any pending quota retry (e.g. the user resumed manually). */
-export function cancelQuotaRetry(): void {
-  if (quotaRetryTimer) {
-    clearTimeout(quotaRetryTimer);
-    quotaRetryTimer = null;
+/** Cancel any pending provider retry (e.g. the user resumed manually). */
+export function cancelProviderRetry(): void {
+  if (providerRetryTimer) {
+    clearTimeout(providerRetryTimer);
+    providerRetryTimer = null;
   }
 }
 
-/** Schedule a one-shot auto-resume after a bounded quota window. The fire
- * callback re-checks the goal is STILL paused for the quota reason before
- * resuming (contract item 10/12 — a user /goal pause during the window must
- * not be stomped). */
-export function scheduleQuotaRetry(
+/** Schedule a one-shot automatic provider retry. The caller's callback owns
+ * the durable-state guard; this helper only owns timer fencing and safe copy. */
+export function scheduleProviderRetry(
   ctx: ExtensionContext,
   retryAfterSec: number,
   reason: string,
   fire: () => void,
-  label = "Auditor quota exhausted — auto-retry",
-  options: QuotaRetryScheduleOptions = {},
+  label = "Provider retry",
+  options: ProviderRetryScheduleOptions = {},
 ): void {
-  cancelQuotaRetry();
-  const requestedSec = Number.isFinite(retryAfterSec) && retryAfterSec >= 0 ? Math.round(retryAfterSec) : DEFAULT_QUOTA_RETRY_SEC;
-  const safeSec = capQuotaRetrySeconds(requestedSec);
+  cancelProviderRetry();
+  const requestedSec = Number.isFinite(retryAfterSec) && retryAfterSec >= 0 ? Math.round(retryAfterSec) : DEFAULT_PROVIDER_RETRY_SEC;
+  const safeSec = capProviderRetrySeconds(requestedSec);
   const capped = safeSec !== requestedSec;
   const ms = Math.max(1_000, safeSec * 1_000);
-  quotaRetryTimer = setTimeout(() => {
-    quotaRetryTimer = null;
+  providerRetryTimer = setTimeout(() => {
+    providerRetryTimer = null;
     try {
       fire();
     } catch {
       /* session may be gone; session_start will re-evaluate */
     }
   }, ms);
-  quotaRetryTimer.unref?.();
+  providerRetryTimer.unref?.();
   const presentation = providerErrorPresentation(reason, "recovery");
   const noticeKey = options.noticeKey
     ?? `${options.episodeKey ?? "session"}:${presentation.fingerprint}:${label}`;
-  if (!options.suppressNotice && noticeKey !== lastQuotaRetryNoticeKey) {
-    lastQuotaRetryNoticeKey = noticeKey;
+  if (!options.suppressNotice && noticeKey !== lastProviderRetryNoticeKey) {
+    lastProviderRetryNoticeKey = noticeKey;
     ctx.ui.notify(
-      `${label} in ${Math.round(safeSec / 60)}m${capped ? ` (provider hint capped at ${Math.round(safeSec / 3600)}h; automatic probes cap at 5h)` : ""} (${presentation.display}). /goal resume retries now.`,
+      `${label} in ${Math.round(safeSec / 60)}m${capped ? ` (automatic retry capped at ${Math.round(safeSec / 3600)}h)` : ""} (${presentation.display}). /goal resume retries now.`,
       "info",
     );
   }
 }
 
-/** v0.25.6: detect a SUBAGENT quota failure in a tool_result — the
- * pi-subagents#175 shape (Explore's upstream haiku pin 403s on shared
- * keys). Tool must be an Agent spawn and the payload a quota error. */
-export function isSubagentQuotaResult(toolName: string, isError: boolean, payload: unknown): boolean {
+/** A failed Agent result is a provider/runtime failure. Keep this generic:
+ * no status, quota, billing, or message parsing is used to choose a path. */
+export function isSubagentProviderFailure(toolName: string, isError: boolean, payload: unknown): boolean {
   if (!isError) return false;
   if (toolName !== "Agent" && toolName !== "agent") return false;
   const text = typeof payload === "string" ? payload : JSON.stringify(payload ?? "");
-  return isQuotaError(text);
+  return text.trim().length > 0;
 }
+
+/** @deprecated Use capProviderRetrySeconds. */
+export const capQuotaRetrySeconds = capProviderRetrySeconds;
+/** @deprecated Use providerRetryDelaySeconds. */
+export const quotaRetryDelaySeconds = providerRetryDelaySeconds;
+/** @deprecated Use ProviderRetryScheduleOptions. */
+export type QuotaRetryScheduleOptions = ProviderRetryScheduleOptions;
+/** @deprecated Use resetProviderRetryNoticeDedup. */
+export const resetQuotaRetryNoticeDedup = resetProviderRetryNoticeDedup;
+/** @deprecated Use isProviderRetryPending. */
+export const isQuotaRetryPending = isProviderRetryPending;
+/** @deprecated Use cancelProviderRetry. */
+export const cancelQuotaRetry = cancelProviderRetry;
+/** @deprecated Use scheduleProviderRetry. */
+export const scheduleQuotaRetry = scheduleProviderRetry;
+/** @deprecated Use isSubagentProviderFailure. */
+export const isSubagentQuotaResult = isSubagentProviderFailure;
