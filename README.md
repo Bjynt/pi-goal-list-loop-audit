@@ -428,7 +428,7 @@ time. The Backups tab leads with the ordered-chain editor — a multi-select
 picker where Space toggles membership, Tab enters order mode (↑/↓ moves a
 chain row), and clearing the selection removes the global key. Forbidden,
 unavailable, and unauthenticated refs are skipped. When every candidate is
-down, glla cancels the provider-held retry and uses the configured
+down, glla stops the current send attempt and uses the configured
 `base → 2×base → 4×base → 8×base → 16×base → 5h` ladder (`base` defaults to
 15m). `hourlyRetryProbe=on` adds a blind :00:30 retry after each hour starts.
 No provider availability or quota check is made before any retry; all

@@ -1690,7 +1690,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         }
         // v0.29.1: brake-cycle CAP. The v0.28.25 ladder slows the thrash
         // (1m→16m) but never STOPS it — junk-runner/hellhunter/pully each
-        // burned 4+ pause↔retry cycles against provider windows that last
+        // burned 4+ pause↔retry cycles against repeated provider failures that last
         // hours. After 6 consecutive brakes: park. v0.29.9: the park keeps
         // probing at the top of each hour (clock-aligned window resets).
         if (brakeStreak >= 6) {

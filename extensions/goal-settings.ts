@@ -39,7 +39,7 @@ export interface Settings {
    * Off → no vision guidance is injected (the forbiddenModels gate still
    * stands). */
   visionAssist?: boolean;
-  /** Global-only ordered provider/model refs to use when the MAIN session model hits a provider wall. */
+  /** Global-only ordered provider/model refs to use when the MAIN session model fails. */
   mainModelFallbacks?: string[];
   /** v0.34.115: per-subagent fallback chains. Keyed by subagent name
    * (Explore, Plan, general-purpose, …). When set, the subagent sync uses

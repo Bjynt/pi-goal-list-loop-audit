@@ -224,7 +224,7 @@ const loopDeps: LoopDeps = {
 };
 
 
-// v0.34.124: epoch of the last main-model-recovery resume (provider wall
+// v0.34.124: epoch of the last main-model-recovery resume (provider failure
 // lifted). Set by mainModelRecoverySucceeded (goal-recovery.ts via the
 // flags accessor); consumed by the continuation-start watchdog
 // (goal-continuation.ts) to grant the post-recovery turn-start grace.

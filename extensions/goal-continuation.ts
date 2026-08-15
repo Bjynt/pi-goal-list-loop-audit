@@ -91,7 +91,7 @@ export interface ContinuationFlags {
   get abortedStandDown(): boolean;
   set abortedStandDown(v: boolean);
   get lastCompactionAt(): number;
-  // v0.34.124: epoch of the last main-model-recovery resume (provider wall
+  // v0.34.124: epoch of the last main-model-recovery resume (provider failure
   // lifted). The continuation start watchdog re-arms through a grace window
   // after this — pi's model chain is still warming and the first turn can
   // take minutes to start (field: deals 2026-08-10 21:11-21:14).
@@ -250,7 +250,7 @@ const COMPACTION_REARM_CAP = 3;
 const continuationStartCompactionRearms = new Map<string, number>();
 
 // v0.34.124: post-recovery turn-start grace. mainModelRecoverySucceeded
-// schedules the continuation ~1s after the provider wall lifts, but pi's
+// schedules the continuation ~1s after recovery, but pi's
 // model chain is still warming (provider 429 backoff) — the first turn
 // after a recovery can take minutes to start. Firing the 90s watchdog in
 // that window interrupted a live goal whose turn started at +2m51s
@@ -322,7 +322,7 @@ export function accountSendRearm(ctx: ExtensionContext, kind: "continuation" | "
       if (noDispatchAccepted && lastNoTurnStartedNotifiedAt + SEND_REARM_LEDGER_MILESTONES_MS[0]! <= Date.now()) {
         lastNoTurnStartedNotifiedAt = Date.now();
         appendLedger(ctx.cwd, "rearm_no_turn_started", { streak, minutes: Math.round(elapsed / 60000) });
-        const msg = `glla: pi accepted no continuation for ${Math.round(elapsed / 60000)}m (${streak} re-arms, no turn started) — likely the same provider wall. The recovery probe is retrying automatically; no action needed unless it outlives the reset time.`;
+        const msg = `glla: pi accepted no continuation for ${Math.round(elapsed / 60000)}m (${streak} re-arms, no turn started) — the send queue may be stuck. The generic recovery probe is retrying automatically; no action needed unless it reaches the automatic horizon.`;
         ctx.ui.notify(msg, "warning");
         notifyExternal(ctx, msg);
       }
@@ -360,11 +360,11 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
     ctx.ui.notify("Send-retry storm during the completion audit — NOT pausing; the auditor's silence is expected. If pi is wedged, Escape cancels the stuck run; the stored claim survives.", "info");
     return;
   }
-  // A provider-held retry is different from a dead dispatch: after 15m of
+  // A core send retry is different from a dead dispatch: after 15m of
   // zero stream activity, stop the stuck core retry, rotate to a configured
   // backup when possible, and install a durable recovery probe. This keeps
   // the old no-blind-resend invariant without requiring the user to notice
-  // the wedge and press Escape while waiting for an assumed provider change.
+  // the wedge and press Escape while waiting for an assumed external change.
   if (isSupervising()) {
     void recoverMainModelFromSendStorm(ctx, kind);
     return;
