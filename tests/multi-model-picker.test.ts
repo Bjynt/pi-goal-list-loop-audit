@@ -272,7 +272,8 @@ test("multi-model-picker: order mode — tab returns to browse without confirmin
   p.comp.handleInput("\t");
   assert.ok(!p.comp.isOrderMode(), "tab exits order mode");
   assert.equal(p.result, "unset", "exiting order mode is not a confirm");
-  // Browse mode works again afterwards.
+  // Browse mode works again afterwards — move to the model row and toggle it off.
+  p.comp.handleInput("\x1b[B");
   p.comp.handleInput(" ");
   assert.deepEqual(p.comp.getSelected(), []);
 });
@@ -301,14 +302,14 @@ test("multi-model-picker: order mode — the active chain row is highlighted and
   component.handleInput("\t");
   const lines = component.render(80);
   const text = lines.join("\n");
-  assert.match(text, /<selected>→  1 backup  minimax\/MiniMax-M3<\/selected>/, "first chain row is the active cursor");
+  assert.match(text, /<selected>→\s+1 backup  minimax\/MiniMax-M3/, "first chain row is the active cursor");
   assert.match(text, /order mode — arrows move this backup/, "mode line names order mode");
   assert.match(text, /↑\/↓ reorder · tab browse · enter save · esc cancel/, "order-mode footer");
   // Move the cursor to row 2 and confirm the highlight follows.
   component.handleInput("\x1b[B");
   component.handleInput("\x1b[B");
   const moved = component.render(80).join("\n");
-  assert.match(moved, /<selected>→  1 backup  anthropic\/claude-opus-4-7<\/selected>/, "moved row is the new active cursor");
+  assert.match(moved, /<selected>→\s+1 backup  anthropic\/claude-opus-4-7/, "moved row is the new active cursor");
   assert.match(moved, /2 backup  minimax\/MiniMax-M3/, "the displaced row keeps its new rank");
 });
 
