@@ -9,7 +9,7 @@
 //
 // Source pins (this file's first half): nextHourlyProbeMs /
 // nextHourlyPromptMs helpers + the scheduleHourlyProbe / fireHourlyProbe /
-// cancelHourlyProbe trio + the Settings.hourlyQuotaProbe shape + the
+// cancelHourlyProbe trio + the Settings.hourlyRetryProbe shape + the
 // __testOnly* hooks.
 //
 // Runtime regression: an isolated child harness drives the production
@@ -36,7 +36,7 @@ const execFileAsync = promisify(execFile);
 async function runHourlyRuntime(): Promise<string> {
   const sandbox = tmpCwd();
   const settingsPath = join(sandbox, "global-settings.json");
-  writeFileSync(settingsPath, JSON.stringify({ hourlyQuotaProbe: true }));
+  writeFileSync(settingsPath, JSON.stringify({ hourlyRetryProbe: true }));
   const result = await execFileAsync(process.execPath, [RUNTIME_SCRIPT], {
     cwd: join(here, ".."),
     env: { ...process.env, GLLA_GLOBAL_SETTINGS_PATH: settingsPath },
@@ -167,13 +167,13 @@ test("v0.34.92: session_start re-arms the hourly ticker when recovery is parked"
   assert.match(tail, /scheduleHourlyProbe\(ctx\);/, "session_start also re-arms the hourly ticker");
 });
 
-test("v0.34.92: hourlyQuotaProbe setting exists and defaults to ON", () => {
-  assert.match(SETTINGS_SRC, /hourlyQuotaProbe\?\s*:\s*boolean/, "type exists");
-  assert.match(SETTINGS_SRC, /hourlyQuotaProbe: true/, "default is ON");
+test("v0.34.142: hourlyRetryProbe setting exists and defaults to ON", () => {
+  assert.match(SETTINGS_SRC, /hourlyRetryProbe\?\s*:\s*boolean/, "type exists");
+  assert.match(SETTINGS_SRC, /hourlyRetryProbe: true/, "default is ON");
 });
 
-test("v0.34.92: the /glla menu exposes hourlyQuotaProbe with on/off options", () => {
-  assert.match(GOAL_SRC, /case "hourlyQuotaProbe"/, "menu case exists");
+test("v0.34.142: the /glla menu exposes hourlyRetryProbe with on/off options", () => {
+  assert.match(GOAL_SRC, /case "hourlyRetryProbe"/, "menu case exists");
   assert.match(GOAL_SRC, /on — fire an extra probe at :00:30 every hour while parked/, "menu prompt explains on shape");
   assert.match(GOAL_SRC, /off — rely on the configured retry ladder only/, "menu prompt explains off shape");
 });

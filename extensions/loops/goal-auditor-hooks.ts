@@ -599,14 +599,9 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
     recoveryAt: undefined,
     recoveryReason: undefined,
     recoveryRetryAt: undefined,
-    // The next detached attempt must not inherit the previous provider wall
-    // as if it were a fresh result. Keep the attempt counter/horizon for the
-    // durable episode, but replace the signal and hint only when the worker
-    // produces a new failure.
-    quotaSignal: undefined,
-    retryAfterSec: undefined,
-    retryFromUpstream: undefined,
-    resetAt: undefined,
+    // The next detached attempt must not inherit the previous diagnostic as
+    // if it were a fresh result. Keep the generic retry window and replace
+    // the diagnostic when the worker produces a new failure.
       ...(automaticRecoveryRetry
       ? {
         automaticRecoveryAttempted: true,
@@ -661,7 +656,7 @@ function isAuditorNoVerdictInfrastructureError(error: string | undefined, infras
 // isCompletionAuditRecoveryPending moved to extensions/goal-recovery.ts (decomposition step 3, v0.34.111, cluster C).
 // goal-commands.ts (decomposition step 2) imports it directly from there.
 
-const MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS = 5;
+const MAX_AUDITOR_AUTO_RETRY_ATTEMPTS = 5;
 /** v0.34.79/v0.34.141: the FIRST auditor retry after an infrastructure
  * failure is eager — 5s, mirroring runWithInfraRetry's default backoff. The
  * scheduler does not inspect quota/account families or provider hints to
@@ -703,7 +698,7 @@ export function auditorRetryPlan(claim: PendingCompletion, _legacyQuota?: unknow
     ? EAGER_AUDITOR_RETRY_SEC
     : Math.max(60, Math.round((nextHourlyProbeMs(now) - now) / 1000));
   const retryAfterSec = capProviderRetrySeconds(requestedSec);
-  const automatic = attempt < MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS && now + retryAfterSec * 1_000 <= untilMs;
+  const automatic = attempt < MAX_AUDITOR_AUTO_RETRY_ATTEMPTS && now + retryAfterSec * 1_000 <= untilMs;
   return { attempt, retryAfterSec, firstAt, autoRetryUntil: new Date(untilMs).toISOString(), automatic, requestedSec };
 }
 
@@ -1168,10 +1163,6 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       retryAttempts: plan.attempt,
       retryFirstAt: plan.firstAt,
       retryUntil: plan.autoRetryUntil,
-      quotaSignal: undefined,
-      retryAfterSec: plan.retryAfterSec,
-      retryFromUpstream: undefined,
-      resetAt: undefined,
     };
     if (!plan.automatic) {
       const notifyCapped = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:retry-capped`);

@@ -139,7 +139,7 @@ test("main chain is the first Backups row and drills in", () => {
     KB,
     (id) => { selected = id; },
   );
-  assert.deepEqual(component.visibleRows().map((row) => row.id), ["mainModelFallbacks", "mainModelFallbackOnRateLimit", "mainModelRetryMinutes", "hourlyQuotaProbe", "subagentFallbacks:Explore", "subagentFallbacks:Plan", "subagentFallbacks:general-purpose"]);
+  assert.deepEqual(component.visibleRows().map((row) => row.id), ["mainModelFallbacks", "mainModelRetryMinutes", "hourlyRetryProbe", "subagentFallbacks:Explore", "subagentFallbacks:Plan", "subagentFallbacks:general-purpose"]);
   component.handleInput("\r");
   assert.equal(selected, "mainModelFallbacks");
 });

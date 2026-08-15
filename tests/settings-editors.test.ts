@@ -126,12 +126,12 @@ test("main recovery settings are global-only and project copies cannot create a 
     fs.writeFileSync(projectSettingsPath(cwd), JSON.stringify({
       mainModelFallbacks: ["project/backup"],
       mainModelRetryMinutes: 99,
-      hourlyQuotaProbe: false,
+      hourlyRetryProbe: false,
     }));
     fs.writeFileSync(GLOBAL_FILE, JSON.stringify({
       mainModelFallbacks: ["global/backup"],
       mainModelRetryMinutes: 22,
-      hourlyQuotaProbe: true,
+      hourlyRetryProbe: true,
     }));
     const settings = loadSettings(cwd);
     assert.deepEqual(settings.mainModelFallbacks, ["global/backup"]);
@@ -139,13 +139,13 @@ test("main recovery settings are global-only and project copies cannot create a 
     const projectAfterUnrelatedSave = JSON.parse(fs.readFileSync(projectSettingsPath(cwd), "utf8"));
     assert.equal(projectAfterUnrelatedSave.mainModelFallbacks, undefined);
     assert.equal(projectAfterUnrelatedSave.mainModelRetryMinutes, undefined);
-    assert.equal(projectAfterUnrelatedSave.hourlyQuotaProbe, undefined);
+    assert.equal(projectAfterUnrelatedSave.hourlyRetryProbe, undefined);
     assert.equal(settings.mainModelRetryMinutes, 22);
-    assert.equal(settings.hourlyQuotaProbe, true);
+    assert.equal(settings.hourlyRetryProbe, true);
     const prov = settingsProvenance(cwd);
     assert.equal(prov.mainModelFallbacks?.source, "global");
     assert.equal(prov.mainModelRetryMinutes?.source, "global");
-    assert.equal(prov.hourlyQuotaProbe?.source, "global");
+    assert.equal(prov.hourlyRetryProbe?.source, "global");
   } finally {
     restoreGlobal();
   }

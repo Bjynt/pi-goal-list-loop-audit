@@ -17,16 +17,15 @@ import {
   BASE_AUDIT_CAP,
   AGGRESSIVE_AUDIT_CAP,
   AGGRESSIVE_STUCK_MAX_INTERVENTIONS,
-  DEFAULT_QUOTA_RETRY_MINUTES,
 } from "../extensions/goal-loop-core.ts";
 import { DEFAULT_SETTINGS, saveSettings, loadSettings } from "../extensions/goal-settings.ts";
 
 test("aggressiveMode persists through the settings file (item 8)", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-aggr-"));
-  saveSettings("project", dir, { aggressiveMode: true, quotaRetryMinutes: 45 });
+  saveSettings("project", dir, { aggressiveMode: true });
   const raw = JSON.parse(fs.readFileSync(path.join(dir, ".pi-glla", "settings.json"), "utf-8"));
   assert.equal(raw.aggressiveMode, true);
-  assert.equal(raw.quotaRetryMinutes, 45);
+  assert.equal(raw.quotaRetryMinutes, undefined, "obsolete quota policy is not persisted");
   assert.equal(loadSettings(dir).aggressiveMode, true);
 });
 
@@ -74,6 +73,11 @@ test("explicit per-key settings WIN over aggressiveMode (advisor semantics)", ()
   assert.equal(eff.stuckMaxInterventions, AGGRESSIVE_STUCK_MAX_INTERVENTIONS);
 });
 
-test("quotaRetryMinutes default constant is 60 (item 11)", () => {
-  assert.equal(DEFAULT_QUOTA_RETRY_MINUTES, 60);
+test("obsolete quota policy files cannot change the generic retry settings", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-legacy-policy-"));
+  fs.mkdirSync(path.join(dir, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(dir, ".pi-glla", "settings.json"), JSON.stringify({ quotaRetryMinutes: 1, mainModelFallbackOnRateLimit: false }));
+  const loaded = loadSettings(dir) as Record<string, unknown>;
+  assert.equal(loaded.quotaRetryMinutes, undefined);
+  assert.equal(loaded.mainModelFallbackOnRateLimit, undefined);
 });

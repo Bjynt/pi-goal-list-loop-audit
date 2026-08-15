@@ -975,9 +975,6 @@ function registerAgentTools(pi: any): void {
             retryAttempts: plan.attempt,
             retryFirstAt: plan.firstAt,
             retryUntil: plan.autoRetryUntil,
-            retryAfterSec: plan.retryAfterSec,
-            retryFromUpstream: undefined,
-            resetAt: undefined,
           };
           if (!plan.automatic) {
             const notifyCapped = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:retry-capped`);

@@ -8,12 +8,12 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
-import { auditorQuotaRetryPlan, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
+import { auditorRetryPlan, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
 import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
 const SRC = readGoalRuntimeSource();
 
-/** Minimal claim the plan reads: quotaAttempts / quotaFirstAt / quotaAutoRetryUntil. */
+/** Minimal claim the plan reads: generic retryAttempts / retryFirstAt / retryUntil. */
 function claim(over: Partial<Record<string, unknown>> = {}): any {
   return {
     phase: "auditing" as const,
@@ -24,18 +24,18 @@ function claim(over: Partial<Record<string, unknown>> = {}): any {
   };
 }
 
-function quota(retryAfterSec: number, fromUpstream: boolean, signal?: "rate-limit" | "plan-quota" | "billing"): any {
+function providerFailure(retryAfterSec: number, fromUpstream: boolean, signal?: "rate-limit" | "plan-quota" | "billing"): any {
   return { raw: "", retryAfterSec, fromUpstream, signal };
 }
 
 test("eager: first attempt is 5s for every provider failure family", () => {
   for (const failure of [
-    quota(0, false),
-    quota(0, false, "rate-limit"),
-    quota(0, false, "plan-quota"),
-    quota(0, false, "billing"),
+    providerFailure(0, false),
+    providerFailure(0, false, "rate-limit"),
+    providerFailure(0, false, "plan-quota"),
+    providerFailure(0, false, "billing"),
   ]) {
-    const plan = auditorQuotaRetryPlan(claim(), failure, 60);
+    const plan = auditorRetryPlan(claim(), failure, 60);
     assert.equal(plan.attempt, 1);
     assert.equal(plan.retryAfterSec, 5, "the first probe is eager regardless of provider wording");
     assert.equal(plan.automatic, true);
@@ -43,9 +43,9 @@ test("eager: first attempt is 5s for every provider failure family", () => {
 });
 
 test("hourly: later attempts align just after the next local hour", () => {
-  const plan = auditorQuotaRetryPlan(
-    claim({ quotaAttempts: 1, quotaFirstAt: new Date().toISOString() }),
-    quota(0, false, "plan-quota"),
+  const plan = auditorRetryPlan(
+    claim({ retryAttempts: 1, retryFirstAt: new Date().toISOString() }),
+    providerFailure(0, false, "plan-quota"),
     60,
   );
   assert.equal(plan.attempt, 2);
@@ -56,12 +56,12 @@ test("hourly: later attempts align just after the next local hour", () => {
 
 test("hourly: rate-limit, billing, and transient-shaped failures share the same later schedule", () => {
   const attempts = [
-    quota(0, false),
-    quota(0, false, "rate-limit"),
-    quota(0, false, "plan-quota"),
-    quota(0, false, "billing"),
-  ].map((failure) => auditorQuotaRetryPlan(
-    claim({ quotaAttempts: 1, quotaFirstAt: new Date().toISOString() }),
+    providerFailure(0, false),
+    providerFailure(0, false, "rate-limit"),
+    providerFailure(0, false, "plan-quota"),
+    providerFailure(0, false, "billing"),
+  ].map((failure) => auditorRetryPlan(
+    claim({ retryAttempts: 1, retryFirstAt: new Date().toISOString() }),
     failure,
     1,
   ));
@@ -74,13 +74,13 @@ test("hourly: rate-limit, billing, and transient-shaped failures share the same 
 });
 
 test("eager: an upstream Retry-After hint does not suppress the uniform retry", () => {
-  const first = auditorQuotaRetryPlan(claim(), quota(3600, true, "rate-limit"), 60);
+  const first = auditorRetryPlan(claim(), providerFailure(3600, true, "rate-limit"), 60);
   assert.equal(first.attempt, 1);
   assert.equal(first.retryAfterSec, 5, "the scheduler retries instead of waiting on a quota hint");
 
-  const later = auditorQuotaRetryPlan(
-    claim({ quotaAttempts: 1, quotaFirstAt: first.firstAt, quotaAutoRetryUntil: first.autoRetryUntil }),
-    quota(7200, true, "billing"),
+  const later = auditorRetryPlan(
+    claim({ retryAttempts: 1, retryFirstAt: first.firstAt, retryUntil: first.autoRetryUntil }),
+    providerFailure(7200, true, "billing"),
     60,
   );
   assert.equal(later.requestedSec, later.retryAfterSec, "the later retry stays hour-aligned");
@@ -105,7 +105,7 @@ test("eager: detached auditor retries an account-shaped failure once before dura
 
 test("eager: attempts remain bounded by the existing durable safety window", () => {
   const horizon = new Date(Date.now() + 2 * 60_000).toISOString();
-  const plan = auditorQuotaRetryPlan(claim({ quotaAttempts: 4, quotaFirstAt: new Date().toISOString(), quotaAutoRetryUntil: horizon }), quota(0, false), 60);
+  const plan = auditorRetryPlan(claim({ retryAttempts: 4, retryFirstAt: new Date().toISOString(), retryUntil: horizon }), providerFailure(0, false), 60);
   assert.equal(plan.attempt, 5);
   assert.ok(plan.retryAfterSec >= 1);
 });
@@ -115,7 +115,7 @@ test("source pins: uniform eager retry and hourly probe wording are present at b
   assert.match(SRC, /attempt === 1\s*\?\s*EAGER_AUDITOR_RETRY_SEC/);
   assert.match(SRC, /nextHourlyProbeMs\(now\)/);
   assert.match(SRC, /fmtRetryDelay\(plan\.retryAfterSec\)/);
-  assert.match(SRC, /fmtRetryDelay\(quota\.retryAfterSec\)/);
+  assert.match(SRC, /fmtRetryDelay\(plan\.retryAfterSec\)/);
   assert.match(SRC, /uniform retry schedule/);
   assert.doesNotMatch(SRC, /quota\.signal === "rate-limit"/);
   assert.doesNotMatch(SRC, /quotaRetryDelaySeconds\(attempt, baseMinutes\)/);
