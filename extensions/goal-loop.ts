@@ -754,6 +754,20 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
       return false;
     }
   }
+  // v0.35.4: refusals AFTER the scratch-branch checkout must put the user
+  // back on their original branch — nothing else remembers it (state.loop
+  // is only created on success). The scratch branch is never deleted here:
+  // the auto-commit daemon may have landed commits on it while the baseline
+  // measure ran, and deleting it would discard them.
+  const restoreOriginalBranch = async (): Promise<void> => {
+    if (!branchName || !originalBranch) return;
+    const back = await runGit(ctx, ["checkout", originalBranch]);
+    if (!back.ok) {
+      ctx.ui.notify(
+        `Loop start refused AND the branch restore failed — you are still on scratch branch ${branchName} (the measure may have left uncommitted changes blocking checkout).`, "warning",
+      );
+    }
+  };
   // Baseline measurement before the first agent turn. A measure that
   // produces no number is a footgun: without a baseline the loop burns stall
   // iterations before plateau stops it. Refuse fast (force=1 overrides for
@@ -767,10 +781,14 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
       `/loop start refused: the measure produced no number.\nCommand: ${cfg.measureCmd}\nFix it so it prints exactly one number, or re-run with force=1 if it only works after the agent builds something first.\n(Non-numeric goal — research, docs, features? Use /goal: the independent auditor verifies semantically. /loop only believes a number.)`,
       "warning",
     );
+    await restoreOriginalBranch();
     return false;
   }
   const conflictIdsNow = liveObjectives(state).map((item) => item.id).sort().join(",");
-  if (conflictIdsNow !== conflictIdsAtStart && !(await resolveLoopStartConflict(ctx, cfg.target))) return false;
+  if (conflictIdsNow !== conflictIdsAtStart && !(await resolveLoopStartConflict(ctx, cfg.target))) {
+    await restoreOriginalBranch();
+    return false;
+  }
   resolveCarryover(ctx, "loop"); // v0.28.14: surface/clear stale leftovers
   releaseContinuationDispatchStandDown();
   replaceState({
