@@ -3524,6 +3524,46 @@ test("v0.35.x: no-verdict auditor infrastructure failure schedules one durable a
   }
 });
 
+test("v0.34.140: aggressive mode keeps no-verdict auditor recovery alive inside its durable window", { timeout: 30_000 }, async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlySetAuditorRecoveryRetryDelay(120);
+  const cwd = tmpCwd();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ aggressiveMode: true }));
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = writeFakeAuditorError(cwd, "Auditor stalled — no progress");
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    await pi.command("goal", "aggressive no-verdict recovery — done when the stored claim is audited", ctx);
+    await tick();
+    await pi.runTool("complete_goal", { completionSummary: "Stored claim", verificationSummary: "Stored evidence" }, ctx);
+
+    await waitUntil(() => readLedger(cwd).filter((entry) => entry.type === "audit_recovery_retry_scheduled").length >= 2, 25_000);
+    await waitUntil(() => readLedger(cwd).filter((entry) => entry.type === "audit_recovery_auto_retry_claimed").length >= 2, 25_000);
+
+    const persisted = readState(cwd).goal as {
+      pendingCompletion?: {
+        automaticRecoveryAttempted?: boolean;
+        automaticRecoveryAttempts?: number;
+        automaticRecoveryFirstAt?: string;
+        automaticRecoveryUntil?: string;
+      };
+    } | null;
+    assert.equal(persisted?.pendingCompletion?.automaticRecoveryAttempted, true);
+    assert.ok((persisted?.pendingCompletion?.automaticRecoveryAttempts ?? 0) >= 2, "retries are counted durably");
+    assert.ok(persisted?.pendingCompletion?.automaticRecoveryFirstAt, "the aggressive recovery start is durable");
+    assert.ok(persisted?.pendingCompletion?.automaticRecoveryUntil, "the aggressive recovery horizon is durable");
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    __testOnlySetAuditorRecoveryRetryDelay(null);
+    __testOnlyResetOwnerSession();
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
 test("v0.35.x: stale host loss releases an in-flight completion audit without a verdict", { timeout: 15_000 }, async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();

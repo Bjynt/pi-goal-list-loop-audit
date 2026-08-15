@@ -415,6 +415,18 @@ test("v0.35.x — zombie-run watchdog: busy + zero stream events gets bounded ab
   assert.ok(!noteBody.includes("lastStreamActivityAt"), "noteActivity never touches the stream clock");
 });
 
+test("v0.35.x — a rejected zombie cleanup does not consume the abort latch", () => {
+  const call = HEARTBEAT_SRC.indexOf("if (abortZombieRun(ctx, flags.sessionGeneration, state.goal?.id, flags.lastStreamActivityAt))");
+  const latch = HEARTBEAT_SRC.indexOf("lastZombieAbortKey = abortKey", call);
+  assert.ok(call >= 0, "the watchdog calls the activation-owned abort");
+  assert.ok(latch > call, "the abort key is committed only after abortZombieRun succeeds");
+  assert.doesNotMatch(
+    HEARTBEAT_SRC.slice(Math.max(0, call - 260), call),
+    /lastZombieAbortKey\s*=\s*abortKey/,
+    "a failed guard must remain eligible for a later heartbeat cleanup attempt",
+  );
+});
+
 test("v0.32.1: post-compaction resume debt + deterministic resync (pi-goal-x's lesson)", () => {
   const SRC = readGoalRuntimeSource();
   assert.match(SRC, /let postCompactResumeOwed = false;/);
