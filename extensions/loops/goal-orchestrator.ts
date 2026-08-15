@@ -564,18 +564,14 @@ async function handleMainModelAgentEnd(ctx: ExtensionContext, rawLastA: any, las
     const rawError = normalizeProviderErrorText(rawLastA, lastA.text);
     const failure = classifyMainModelFailure(rawError);
     lastMainModelFailure = failure;
-    if (isLongLivedFailureKind(failure.kind)) lastLongLivedFailureAt = Date.now();
     if (failure.kind !== "non-recoverable") {
       const switched = await tryMainModelFallback(ctx, failure);
       if (switched) return true; // pi's core retry now uses the selected backup
       const backupRefs = mainModelFallbackRefs(ctx);
-      const allowRateLimitFallback = failure.kind === "rate-limit"
-        && loadSettings(ctx.cwd).mainModelFallbackOnRateLimit === true;
-      // Account/plan/billing/auth failures and (when enabled) explicit
-      // request-rate failures can select one ordered backup here. If the
-      // chain is empty or every candidate is rejected, the durable envelope
-      // still owns bounded retry on the current model.
-      if ((state.goal?.status === "active" && requiresMainModelRecovery(failure)) || (backupRefs.length > 0 && isMainModelFallbackFailure(failure, { allowRateLimit: allowRateLimitFallback }))) {
+      // Every recoverable provider failure uses the same ordered backup and
+      // bounded retry envelope. If the chain is empty or every candidate is
+      // rejected, the durable envelope owns retry on the current model.
+      if ((state.goal?.status === "active" && requiresMainModelRecovery(failure)) || (backupRefs.length > 0 && isMainModelFallbackFailure(failure))) {
         parkMainModelAfterFailure(ctx, failure);
         if (mainModelRecoveryActive() || state.mainModelRecovery) return true;
       }

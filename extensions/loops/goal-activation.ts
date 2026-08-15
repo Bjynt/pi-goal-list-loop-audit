@@ -1589,11 +1589,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         appendLedger(ctx.cwd, "loop_turn_exempt_error", { stopReason: sr, consecutive: loop.consecutiveErrors, iteration: loop.iteration });
         const cap = sr === "aborted" ? LOOP_MAX_CONSECUTIVE_ABORTS : LOOP_MAX_CONSECUTIVE_ERRORS;
         if (loop.consecutiveErrors >= cap) {
-          const allowRateLimitFallback = lastMainModelFailure?.kind === "rate-limit"
-            && loadSettings(ctx.cwd).mainModelFallbackOnRateLimit === true;
           const durableProviderFailure = lastMainModelFailure
             && (requiresMainModelRecovery(lastMainModelFailure)
-              || isMainModelFallbackFailure(lastMainModelFailure, { allowRateLimit: allowRateLimitFallback }));
+              || isMainModelFallbackFailure(lastMainModelFailure));
           if (sr === "error" && durableProviderFailure) {
             // Account/plan/billing failures and (when enabled) request-rate
             // failures may rotate through backups; the bounded recovery
@@ -1680,14 +1678,6 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         // probes for an hour because every reload reset the ladder to rung 1
         // and the 6-brake park (v0.29.9) could never engage.
         const brakeStreak = state.goal!.errorBrakeStreak ?? 0;
-        // v0.34.15: a quota/rate-limit wall is NOT a flake — the card must
-        // say "resuming won't help; switch /model or wait out the window"
-        // (the raw 429 text was in `detail` but nobody parses JSON on a card).
-        const quotaWall = failureCopy.signal !== undefined || /rate.?limit|usage limit|quota|insufficient|credits/i.test(rawErrorText);
-        const rateLimitWall = failureCopy.signal === "rate-limit";
-        const wallRecoveryAction = rateLimitWall
-          ? "Provider request-rate wall — the message was suppressed; bounded retries and hourly reset probes will pick work back up. Switch /model to a different provider to continue immediately."
-          : "Provider account/usage wall — automatic recovery waits for the provider window; switch /model to a different provider to continue immediately.";
         // v0.34.26: deterministic output-limit wall — durable error pause,
         // no flake ladder, no hourly probes. Only re-scoping the work helps.
         if (outputLimitWall) {
@@ -1731,29 +1721,27 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
             providerErrorDiagnostic: failureCopy.sensitive ? failureCopy.diagnostic : undefined,
             recoveryEpisodeKey,
             recoveryNoticeKeys,
-            pauseSuggestedAction: quotaWall
-              ? wallRecoveryAction
-              : `Probing at the top of each hour — rate-limit windows typically expire on clock-hour boundaries. ${activeGoalSurfaceCommand("resume")} retries now.`,
+            pauseSuggestedAction: `Probing at :00:30 after each hour starts; ${activeGoalSurfaceCommand("resume")} retries now.`,
           }, ctx);
           const notifyCapped = claimRecoveryNotice(state.goal!, `${recoveryEpisodeKey}:error-brake-capped`);
           if (notifyCapped) {
-            ctx.ui.notify(`${goalNoun()} parked: ${failureCopy.sensitive ? "provider recovery wall" : reason} — 6 brakes in a row. ${quotaWall ? (rateLimitWall ? "Request-rate wall — switching /model continues immediately; otherwise hourly" : "Account/usage wall — switching /model continues immediately; otherwise hourly") : "Hourly"} top-of-hour probes will pick work back up when the window opens.`, "warning");
+            ctx.ui.notify(`${goalNoun()} parked: ${failureCopy.sensitive ? "provider error" : reason} — 6 brakes in a row. An automatic probe is scheduled for :00:30 after the next hour starts.`, "warning");
             notifyExternal(ctx, `${goalNoun()} parked: provider erroring across 6 error-brake cycles — hourly top-of-hour probes scheduled.`);
           }
           appendLedger(ctx.cwd, "error_brake_capped", { streak: brakeStreak, reason, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
-          const probeMs = msUntilNextHourBoundary(Date.now());
+          const probeMs = Math.max(1_000, nextHourlyProbeMs(Date.now()) - Date.now());
           scheduleQuotaRetryForSession(ctx, probeMs / 1000, reason, (fresh: ExtensionContext) => {
             // Re-check: only probe if STILL parked by the error-brake cap —
             // a user pause/resume/cancel meanwhile is never stomped.
             if (state.goal && state.goal.status === "paused" && state.goal.pauseKind === "error"
               && (state.goal.pauseReason ?? "").includes("error-brakes in a row")) {
-              appendLedger(fresh.cwd, "hourly_rate_probe", { goalId: state.goal.id, streak: state.goal.errorBrakeStreak ?? 0 });
+              appendLedger(fresh.cwd, "hourly_provider_retry", { goalId: state.goal.id, streak: state.goal.errorBrakeStreak ?? 0 });
               updateGoal({ status: "active", providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, fresh);
-              appendLedger(fresh.cwd, "goal_resumed", { via: "hourly-rate-probe" });
-              fresh.ui.notify("Hourly probe: resuming (rate-limit windows typically expire at the top of the hour).", "info");
+              appendLedger(fresh.cwd, "goal_resumed", { via: "hourly-provider-retry" });
+              fresh.ui.notify("Hourly provider retry: resuming after the hour boundary.", "info");
               scheduleContinuation(fresh, true);
             }
-          }, "Hourly rate-limit probe", { episodeKey: recoveryEpisodeKey, noticeKey: `${recoveryEpisodeKey}:error-brake-capped`, suppressNotice: true });
+          }, "Hourly provider retry", { episodeKey: recoveryEpisodeKey, noticeKey: `${recoveryEpisodeKey}:error-brake-capped`, suppressNotice: true });
           return;
         }
         // v0.28.25: the cooldown escalates per CONSECUTIVE brake — a fleet-wide
@@ -1769,14 +1757,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           recoveryEpisodeKey,
           recoveryNoticeKeys,
           errorBrakeStreak: brakeStreak + 1,
-          pauseSuggestedAction: quotaWall
-            ? `${rateLimitWall ? "Provider request-rate wall" : "Provider account/usage wall"} — the goal auto-resumes in ${cooldownMin}m if still paused; switch /model to continue now.`
-            : `Transient provider flake? The goal auto-resumes once in ${cooldownMin}m if still paused for this reason — or ${activeGoalSurfaceCommand("resume")} now.`,
+          pauseSuggestedAction: `The provider error will be retried in ${cooldownMin}m if still paused for this reason — or ${activeGoalSurfaceCommand("resume")} now.`,
         }, ctx);
         const notifyBrake = claimRecoveryNotice(state.goal!, `${recoveryEpisodeKey}:error-brake-wait`);
         if (notifyBrake) {
-          ctx.ui.notify(`Goal paused: ${failureCopy.sensitive ? "provider recovery wall" : reason}.${quotaWall ? (rateLimitWall ? " Request-rate wall — bounded retries and hourly reset probes continue; switch /model to continue now." : " Account/usage wall — recovery waits for the provider window; switch /model to continue now.") : ""}`, "warning");
-          notifyExternal(ctx, `Goal paused: ${failureCopy.sensitive ? "provider recovery wall" : reason}.`);
+          ctx.ui.notify(`Goal paused: ${failureCopy.sensitive ? "provider error" : reason}. Automatic retries continue; ${activeGoalSurfaceCommand("resume")} retries now.`, "warning");
+          notifyExternal(ctx, `Goal paused: ${failureCopy.sensitive ? "provider error" : reason}.`);
         }
         appendLedger(ctx.cwd, "goal_paused", { reason, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
         scheduleQuotaRetryForSession(ctx, cooldownMs / 1000, reason, (fresh: ExtensionContext) => {

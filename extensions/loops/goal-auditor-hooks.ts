@@ -48,7 +48,6 @@ import {
   auditFeedbackExcerpt,
   auditVerdictLabel,
   DEFAULT_AUDIT_FEEDBACK_CHARS,
-  DEFAULT_QUOTA_RETRY_MINUTES,
   DEFAULT_STALL_ESCALATION_REFIRES,
   DEFAULT_TOKEN_LIMIT,
   classifyImpossibleReason,
@@ -178,7 +177,6 @@ import {
 import {
   capQuotaRetrySeconds,
   isSubagentQuotaResult,
-  parseQuotaError,
   scheduleQuotaRetry,
   cancelQuotaRetry,
 } from "../quota-retry.js";
@@ -685,7 +683,7 @@ function fmtRetryDelay(seconds: number): string {
 }
 
 // v0.34.79: exported for tests — the eager-first-retry schedule is pure.
-export function auditorQuotaRetryPlan(claim: PendingCompletion, quota: ReturnType<typeof parseQuotaError>, baseMinutes: number): {
+export function auditorRetryPlan(claim: PendingCompletion, _legacyQuota?: unknown, _legacyBaseMinutes?: number): {
   attempt: number;
   retryAfterSec: number;
   firstAt: string;
@@ -693,12 +691,8 @@ export function auditorQuotaRetryPlan(claim: PendingCompletion, quota: ReturnTyp
   automatic: boolean;
   requestedSec: number;
 } {
-  // The parameter names remain part of the compatibility surface for stored
-  // completion claims and callers, but retry scheduling is deliberately
-  // quota-agnostic. `quota` is parsed for diagnostics; `baseMinutes` remains
-  // accepted for older callers/settings.
-  void quota;
-  void baseMinutes;
+  // The optional legacy parameters are accepted so older embedded callers do
+  // not break, but retry scheduling is deliberately reason-agnostic.
   const now = Date.now();
   const firstMs = claim.quotaFirstAt ? Date.parse(claim.quotaFirstAt) : Number.NaN;
   const firstAtMs = Number.isFinite(firstMs) ? firstMs : now;
@@ -707,7 +701,7 @@ export function auditorQuotaRetryPlan(claim: PendingCompletion, quota: ReturnTyp
     ? Date.parse(claim.quotaAutoRetryUntil)
     : firstAtMs + MAIN_MODEL_AUTO_RETRY_HORIZON_MS;
   const attempt = (claim.quotaAttempts ?? 0) + 1;
-  // v0.34.141: all failure families use one retry schedule. Do not wait on
+  // v0.34.142: all failure families use one retry schedule. Do not wait on
   // a quota probe or trust a reset/Retry-After classification; retry eagerly
   // once, then probe at :00:30 after each hour starts (15:00 → 15:00:30,
   // 16:00 → 16:00:30, …). This picks up a possible reset without making a
@@ -1169,10 +1163,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     // Preserve the claim, but use a durable bounded plan.
     const failureCopy = providerErrorPresentation(result.error, "completion");
     const recoveryEpisodeKey = claim.recoveryEpisodeKey ?? `${claim.at}:${failureCopy.fingerprint}`;
-    const settingsNow = loadSettings(liveCtx.cwd);
-    const defaultMinutes = settingsNow.quotaRetryMinutes ?? DEFAULT_QUOTA_RETRY_MINUTES;
-    const quota = parseQuotaError(result.error, defaultMinutes * 60);
-    const plan = auditorQuotaRetryPlan(claim, quota, defaultMinutes);
+    const plan = auditorRetryPlan(claim);
     const pending = {
       ...claim,
       phase: "quota-waiting" as const,
@@ -1185,10 +1176,10 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
       quotaAttempts: plan.attempt,
       quotaFirstAt: plan.firstAt,
       quotaAutoRetryUntil: plan.autoRetryUntil,
-      quotaSignal: quota.signal,
+      quotaSignal: undefined,
       retryAfterSec: plan.retryAfterSec,
-      retryFromUpstream: quota.fromUpstream,
-      resetAt: quota.resetAt,
+      retryFromUpstream: undefined,
+      resetAt: undefined,
     };
     if (!plan.automatic) {
       const notifyCapped = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:retry-capped`);
@@ -1377,7 +1368,7 @@ defineGoalRuntimeGlobal("isAuditorNoVerdictInfrastructureError", { get: () => is
 defineGoalRuntimeGlobal("MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS", { get: () => MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS });
 defineGoalRuntimeGlobal("EAGER_AUDITOR_RETRY_SEC", { get: () => EAGER_AUDITOR_RETRY_SEC });
 defineGoalRuntimeGlobal("fmtRetryDelay", { get: () => fmtRetryDelay });
-defineGoalRuntimeGlobal("auditorQuotaRetryPlan", { get: () => auditorQuotaRetryPlan });
+defineGoalRuntimeGlobal("auditorRetryPlan", { get: () => auditorRetryPlan });
 defineGoalRuntimeGlobal("auditorCandidateLabel", { get: () => auditorCandidateLabel });
 defineGoalRuntimeGlobal("runDetachedCompletionWithFallback", { get: () => runDetachedCompletionWithFallback });
 defineGoalRuntimeGlobal("retryStoredCompletionAudit", { get: () => retryStoredCompletionAudit });

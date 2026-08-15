@@ -967,18 +967,13 @@ function registerAgentTools(pi: any): void {
           };
         }
         // v0.34.51: ANY infrastructure failure enters the durable bounded
-        // retry plan — error text is not trusted to pick quota vs other
+        // retry plan — error text is not trusted to pick one failure family
         // failures (a miss-classified quota wall is the common case), so
-        // "still failing" pauses with a one-shot scheduled retry at the
-        // upstream's own Retry-After hint (default quotaRetryMinutes).
+        // "still failing" pauses with the same uniform retry schedule.
         if (result.error && !result.disapproved) {
           const failureCopy = providerErrorPresentation(result.error, "completion");
           const recoveryEpisodeKey = completionClaim.recoveryEpisodeKey ?? `${completionClaim.at}:${failureCopy.fingerprint}`;
-          const settingsNow = loadSettings(ctx.cwd);
-          const defaultMinutes = settingsNow.quotaRetryMinutes ?? DEFAULT_QUOTA_RETRY_MINUTES;
-          const quota = parseQuotaError(result.error, defaultMinutes * 60);
-          const plan = auditorQuotaRetryPlan(completionClaim, quota, defaultMinutes);
-          quota.retryAfterSec = plan.retryAfterSec; // retain the legacy source/API shape after clamping
+          const plan = auditorRetryPlan(completionClaim);
           const pending = {
             ...completionClaim,
             phase: "quota-waiting" as const,
@@ -991,10 +986,10 @@ function registerAgentTools(pi: any): void {
             quotaAttempts: plan.attempt,
             quotaFirstAt: plan.firstAt,
             quotaAutoRetryUntil: plan.autoRetryUntil,
-            quotaSignal: quota.signal,
+            quotaSignal: undefined,
             retryAfterSec: plan.retryAfterSec,
-            retryFromUpstream: quota.fromUpstream,
-            resetAt: quota.resetAt,
+            retryFromUpstream: undefined,
+            resetAt: undefined,
           };
           if (!plan.automatic) {
             const notifyCapped = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:retry-capped`);

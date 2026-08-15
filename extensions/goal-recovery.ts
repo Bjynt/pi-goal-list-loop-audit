@@ -380,7 +380,6 @@ export function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModel
   flags.continuationDispatchStoodDown = true;
   state.mainModelRecovery = { ...normalized, retryAt: undefined, manualResumeRequired: true };
   const resumeCmd = recoverySurfaceCommand(normalized.kind, "resume");
-  const safeReason = sanitizeProviderDisplayText(normalized.reason);
   const pauseReason = `main model recovery — automatic probes stopped (${sanitizeProviderDisplayText(why)})`;
   const action = `No automatic provider probes remain. Switch /model if desired, then ${resumeCmd} to start a fresh recovery window; ${activeGoalSurfaceCommand("cancel")} stops it.`;
   if (normalized.kind === "goal" && state.goal) {
@@ -915,11 +914,7 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
   // The primary is included at the front so a later cycle can return to it,
   // while the durable attempted list prevents a probe from jumping backward
   // through the chain after a reload.
-  const allowRateLimitFallback = recovery.quotaSignal === "rate-limit"
-    && loadSettings(ctx.cwd).mainModelFallbackOnRateLimit === true;
-  const fallbackRefs = allowRateLimitFallback || recovery.quotaSignal !== "rate-limit"
-    ? mainModelFallbackRefs(ctx)
-    : [];
+  const fallbackRefs = mainModelFallbackRefs(ctx);
   const selectorChain = [recovery.primary, ...fallbackRefs];
   const selector = sessionModelSelector(ctx, selectorChain);
   const scope: ModelScope = { kind: "session" };
@@ -1099,7 +1094,7 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
       retryAfterSec: failure.retryAfterSec ?? recovery.retryAfterSec,
       retryFromUpstream: failure.retryFromUpstream ?? recovery.retryFromUpstream,
       resetAt: failure.resetAt ?? recovery.resetAt,
-      resumeCurrent: failure.kind === "rate-limit" ? true : (state.mainModelRecovery ?? recovery).resumeCurrent,
+      resumeCurrent: (state.mainModelRecovery ?? recovery).resumeCurrent,
       pendingModelSwitch: undefined,
     });
     // v0.34.58: no quota-only parking — an over-budget upstream reset hint
@@ -1146,9 +1141,9 @@ export function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainMo
     retryAfterSec: failure.retryAfterSec ?? existing.retryAfterSec,
     retryFromUpstream: failure.retryFromUpstream ?? existing.retryFromUpstream,
     resetAt: failure.resetAt ?? existing.resetAt,
-    // Explicit 429 means too many requests, not token-limit exhaustion: the
-    // next normal/hourly probe retries the currently selected model.
-    resumeCurrent: failure.kind === "rate-limit" ? true : existing.resumeCurrent,
+    // The next normal/hourly probe retries the current model after the
+    // configured backup chain has been visited.
+    resumeCurrent: existing.resumeCurrent,
   });
   // v0.34.58: uniform envelope even for over-budget upstream hints — the
   // goal never parks on a quota-only manual hold; the bounded cadence owns
