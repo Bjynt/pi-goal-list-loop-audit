@@ -206,8 +206,8 @@ test("main fallback row shows the persisted numbered try order and truthful runt
   const row = rows.find((candidate) => candidate.id === "mainModelFallbacks")!;
   assert.match(row.valueText, /1\. provider\/first → 2\. provider\/second/);
   assert.match(row.description, /current session model → backup 1 → backup 2/);
-  assert.match(row.description, /account\/plan\/billing\/auth/);
-  assert.match(row.description, /request-rate failures switch/);
+  assert.match(row.description, /every recoverable provider failure switches one eligible backup at a time/);
+  assert.doesNotMatch(row.description, /account\/plan\/billing\/auth|request-rate/);
 });
 
 test("valueText derives from settings (effective values surface for each row)", () => {

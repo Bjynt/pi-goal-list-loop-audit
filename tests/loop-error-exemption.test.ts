@@ -114,9 +114,9 @@ test("v0.29.19: a real turn after errors clears the streak and measures normally
   assert.equal(l.stallCount, 1, "non-improving real turn counts the stall");
 });
 
-test("v0.35.x: explicit request-rate failures require durable current-model recovery", () => {
+test("v0.35.x: recoverable provider failures use the same durable recovery envelope", () => {
   assert.equal(requiresMainModelRecovery({ kind: "rate-limit", raw: "429 too many requests" }), true);
-  assert.equal(requiresMainModelRecovery({ kind: "transient", raw: "503 unavailable" }), false);
+  assert.equal(requiresMainModelRecovery({ kind: "transient", raw: "503 unavailable" }), true);
 });
 
 test("v0.34.31: extended quota errors enter durable main-model recovery", async () => {
