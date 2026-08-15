@@ -204,7 +204,7 @@ const MAIN_SM = { name: "main-session-manager" };
 // to flip autoResume, restore it after each test.
 const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
 function setGlobalAutoResume(v: boolean): void {
-  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(v ? { autoResume: true } : {}));
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(v ? { autoResume: true, aggressiveMode: false } : { aggressiveMode: false }));
 }
 
 function readLedger(cwd: string): Array<{ type: string; value: Record<string, unknown> }> {

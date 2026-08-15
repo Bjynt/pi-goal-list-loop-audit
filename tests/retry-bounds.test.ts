@@ -226,7 +226,7 @@ test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUD
   assert.match(SRC, /archiveCurrentGoal\(liveCtx, "complete", `auditor \$\{result\.model\} approved \(\$\{origin\}\)`\)/);
   assert.match(SRC, /updateGoal\(\{ auditHistory: history, pendingCompletion: undefined \}, liveCtx\)/);
   // 5. still-failing → re-pause with the claim PRESERVED + another scheduled retry:
-  assert.match(SRC, /auditor retry: retry in \$\{plan\.retryAfterSec\}s \(stored-claim retry\)/);
+  assert.match(SRC, /auditor retry: retry in \$\{plan\.retryAfterSec\}s \(uniform schedule\)/);
   assert.match(SRC, /quotaAutoRetryUntil: plan\.autoRetryUntil/);
   // 6. any other verdict hands back to the agent:
   assert.match(SRC, /appendLedger\(liveCtx\.cwd, "quota_retry_audit_verdict", \{/);

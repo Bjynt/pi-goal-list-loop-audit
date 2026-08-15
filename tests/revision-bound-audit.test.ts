@@ -56,7 +56,7 @@ function readLedger(cwd: string): Array<{ type: string; value: any; at: string }
 }
 
 function writeSettings(settings: Record<string, unknown>): void {
-  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(settings));
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({ aggressiveMode: false, ...settings }));
 }
 
 /** A goal at `revision` carrying a prior audit at `auditedRevision`

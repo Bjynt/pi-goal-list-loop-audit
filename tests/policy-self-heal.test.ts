@@ -32,7 +32,7 @@ import {
 
 const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
 afterEach(() => {
-  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({}));
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({ aggressiveMode: false }));
   __testOnlyResetOwnerSession();
   __testOnlyResetStaleFlag();
 });
@@ -155,7 +155,7 @@ function ownerCtx(cwd: string): MockCtx {
   return makeMockCtx(cwd, { sessionManager: MAIN_SM });
 }
 function setGlobalAutoResume(v: boolean): void {
-  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(v ? { autoResume: true } : {}));
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(v ? { autoResume: true, aggressiveMode: false } : { aggressiveMode: false }));
 }
 async function freshSession(cwd: string, reason: string): Promise<MockCtx> {
   __testOnlyResetOwnerSession();

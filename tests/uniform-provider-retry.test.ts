@@ -73,7 +73,7 @@ test("v0.34.51: the auditor durable plan catches ANY non-timeout infra error wit
   assert.match(SRC, /v0\.34\.51: ANY infrastructure failure enters the durable bounded retry/);
   assert.match(SRC, /auditor retry: \$\{failureCopy\.display\}/, "pause copy uses sanitized provider classification");
   assert.doesNotMatch(SRC, /auditor retry: \$\{result\.error\}/, "raw provider error is not used as pause copy");
-  assert.match(SRC, /auditor retry: retry in \$\{plan\.retryAfterSec\}s \(stored-claim retry\)/);
+  assert.match(SRC, /auditor retry: retry in \$\{plan\.retryAfterSec\}s \(uniform schedule\)/);
   assert.match(SRC, /auditor_retry_capped/);
   assert.ok(!SRC.includes("quota_retry_capped"), "old quota-only ledger event gone");
   assert.ok(!SRC.includes("Auditor still quota-limited"), "old quota-only notify gone");

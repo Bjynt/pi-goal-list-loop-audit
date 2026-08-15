@@ -23,7 +23,7 @@ import { MockPi, makeMockCtx, seedState, tick, tmpCwd } from "./harness/mock-pi.
 // the repair item a live goal before /list next runs.
 const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH;
 function pinNoAutoResume(): void {
-  if (GLOBAL_SETTINGS_PATH) fs.writeFileSync(GLOBAL_SETTINGS_PATH, "{}");
+  if (GLOBAL_SETTINGS_PATH) fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({ aggressiveMode: false }));
 }
 
 const EMPTY_IDS = [

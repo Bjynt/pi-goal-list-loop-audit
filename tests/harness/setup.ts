@@ -28,7 +28,7 @@ process.env.GLLA_GLOBAL_SETTINGS_PATH ??= path.join(
 // preload runs before EACH test file (verified), so resetting the shared
 // file here makes the suite hermetic regardless of file order. Tests that
 // need a setting write it at module scope, after this reset.
-fs.writeFileSync(process.env.GLLA_GLOBAL_SETTINGS_PATH, "{}");
+fs.writeFileSync(process.env.GLLA_GLOBAL_SETTINGS_PATH, JSON.stringify({ aggressiveMode: false }));
 
 // v0.34.12: the eager continuation settles 2.5s past agent_end in production
 // (pi's turn-teardown blackhole window); tests flush with tick() and must not

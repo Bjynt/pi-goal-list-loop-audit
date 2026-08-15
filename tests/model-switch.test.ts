@@ -62,14 +62,14 @@ beforeEach(() => {
   __testOnlyResetTerminalFlags();
   __testOnlyResetOwnerSession();
   __testOnlySetLastModelRef(undefined);
-  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({}));
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({ aggressiveMode: false }));
 });
 
 afterEach(() => {
   __testOnlyResetStaleFlag();
   __testOnlyResetTerminalFlags();
   __testOnlyResetOwnerSession();
-  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({}));
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({ aggressiveMode: false }));
 });
 
 test("v0.34.57: persistState carries lastModelRef on the state line for a fresh process to restore", async () => {

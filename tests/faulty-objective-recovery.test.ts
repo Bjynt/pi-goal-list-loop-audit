@@ -235,7 +235,7 @@ function ledger(cwd: string): string {
 
 const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH;
 function setGlobalAutoResume(enabled: boolean): void {
-  if (GLOBAL_SETTINGS_PATH) fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(enabled ? { autoResume: true } : {}));
+  if (GLOBAL_SETTINGS_PATH) fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(enabled ? { autoResume: true, aggressiveMode: false } : { aggressiveMode: false }));
 }
 afterEach(() => setGlobalAutoResume(false));
 

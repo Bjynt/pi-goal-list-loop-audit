@@ -285,7 +285,7 @@ test("truncate: at width=60 the description column is itself truncated to ≤ de
 
 test("truncate: at width=120 the description column shows most of the row text", () => {
   // Don't assert full passthrough — at 120 cols, the aggressiveMode description
-  // ("flips DEFAULTS toward keep-going (autoResume, cap 10, …); explicit
+  // ("ON by default: keep-going defaults (autoResume, cap 10, …); explicit
   // per-key settings still win") still fits in the descW budget. The truncate
   // suffix only kicks in when descW < description length.
   const { component } = makeComponent(SAMPLE_ROWS, 120);
@@ -294,7 +294,7 @@ test("truncate: at width=120 the description column shows most of the row text",
   // The aggressiveMode row should at minimum keep its opening phrase visible.
   assert.match(
     body,
-    /flips DEFAULTS toward keep-going/,
+    /ON by default: keep-going defaults/,
     "aggressiveMode description should remain visible at 120 cols",
   );
 });
