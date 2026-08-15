@@ -10,7 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
-import { capQuotaRetrySeconds, isQuotaError, normalizeProviderErrorText, parseQuotaError, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText, type QuotaSignal } from "./quota-retry.js";
+import { isQuotaError, normalizeProviderErrorText, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText, type QuotaSignal } from "./quota-retry.js";
 import { MAX_MAIN_MODEL_FALLBACKS } from "./main-model-recovery.js";
 export { normalizeProviderErrorText, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText } from "./quota-retry.js";
 
@@ -1753,8 +1753,8 @@ export function missingGllaTools(activeNames: readonly string[]): readonly GllaT
 // v0.25.0 — eager-continuation contract helpers
 // -----------------------------------------------------------------
 
-/** Base defaults (aggressiveMode OFF). auditCap base raised 3 → 5 in
- * v0.25.0 (contract item 7 — the "fairly eager" baseline). */
+/** Base defaults (explicit aggressiveMode OFF). auditCap base raised 3 → 5
+ * in v0.25.0 (contract item 7 — the "fairly eager" baseline). */
 export const BASE_AUDIT_CAP = 5;
 export const BASE_STUCK_MAX_INTERVENTIONS = 5;
 /** aggressiveMode defaults (contract item 5). Explicit per-key settings
@@ -1778,7 +1778,8 @@ export interface EffectiveAggressiveSettings {
 }
 
 /** Layered resolution: explicit per-key value > aggressiveMode default >
- * base default (contract items 5+7). Pure so tests can assert the matrix
+ * base default (contract items 5+7). Missing aggressiveMode is ON; false is
+ * the explicit conservative opt-out. Pure so tests can assert the matrix
  * without a settings file. */
 export function resolveEffectiveAggressiveSettings(s: {
   aggressiveMode?: boolean;
@@ -1787,7 +1788,7 @@ export function resolveEffectiveAggressiveSettings(s: {
   wedgeAlertMinutes?: number;
   autoResume?: boolean;
 }): EffectiveAggressiveSettings {
-  const aggressiveMode = s.aggressiveMode === true;
+  const aggressiveMode = s.aggressiveMode !== false;
   return {
     aggressiveMode,
     auditCap: s.auditCap ?? (aggressiveMode ? AGGRESSIVE_AUDIT_CAP : BASE_AUDIT_CAP),
@@ -2185,25 +2186,11 @@ export async function runWithInfraRetry<T extends { error?: string; approved: bo
     }
   }
   opts.onRetry?.(first.error!);
-  // A detached auditor may receive a provider 429 before the durable pause
-  // branch gets control. Never let the historical fixed 5s retry ignore a
-  // factual Retry-After/reset hint. A no-hint request-rate error retains the
-  // bounded eager retry; account/plan/billing walls without an upstream
-  // Retry-After are handed straight to the durable stored-claim branch. That
-  // branch persists the claim and owns the hourly reset slot; keeping this
-  // first call non-blocking avoids holding the completion turn open for an
-  // hour while still preventing a request-rate-style eager probe. Explicit
-  // provider hints remain authoritative for every signal family. Ordinary
-  // infra errors preserve the caller's backoff.
-  const parsedProvider = isQuotaError(first.error!) ? parseQuotaError(first.error!) : undefined;
-  const hintedRetryMs = parsedProvider?.fromUpstream
-    ? Math.max(1_000, capQuotaRetrySeconds(parsedProvider.retryAfterSec) * 1_000)
-    : undefined;
-  const accountWallWithoutHint = parsedProvider
-    && !parsedProvider.fromUpstream
-    && (parsedProvider.signal === "plan-quota" || parsedProvider.signal === "billing");
-  if (accountWallWithoutHint) return { result: first, retriedOnce: false };
-  await sleep(hintedRetryMs ?? opts.backoffMs ?? 5000);
+  // v0.34.141: do not inspect quota/account families to decide whether the
+  // eager retry is allowed. Provider text is retained by the caller for
+  // sanitized diagnostics; this scheduler simply retries every retriable
+  // infrastructure failure once, then the durable hourly plan takes over.
+  await sleep(opts.backoffMs ?? 5000);
   if (opts.shouldRetry) {
     try {
       if (!opts.shouldRetry()) return { result: first, retriedOnce: false };

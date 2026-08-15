@@ -111,12 +111,14 @@ export interface Settings {
   auditFeedbackChars?: number;
   /** v0.25.0: flip the continuation defaults toward keep-going
    * (contract item 5): autoResume on, auditCap 10, stuckMax 10, wedge off,
-   * quota errors auto-retry silently. v0.34.140: no-verdict auditor recovery
-   * also keeps retrying inside its bounded 24-hour window. Explicit per-key
-   * settings still win. */
+   * provider errors auto-retry silently. v0.34.140: no-verdict auditor
+   * recovery also keeps retrying inside its bounded 24-hour window. Default
+   * ON since v0.34.141; set false for the conservative pause-first policy.
+   * Explicit per-key settings still win. */
   aggressiveMode?: boolean;
-  /** Minutes to wait before auto-retrying a quota-exhausted auditor when
-   * the upstream gave no Retry-After hint (contract item 11). Default 60. */
+  /** Minutes used by the provider/auditor recovery ladder when the normal
+   * retry schedule has no more specific delay (contract item 11). Default
+   * 60; scheduling does not probe or check quota state. */
   quotaRetryMinutes?: number;
   /** Consecutive stuck interventions before a loop stops (default 5,
    * 10 under aggressiveMode). */
@@ -228,9 +230,10 @@ export const DEFAULT_SETTINGS: Settings = {
   // pool, no surprise 403s from a pinned default agent's provider.
   subagentModelStrategy: "inherit-parent",
   auditFeedbackChars: DEFAULT_AUDIT_FEEDBACK_CHARS,
-  // v0.25.0 (contract Section B): keep-going is opt-in via aggressiveMode;
-  // the dial flips DEFAULTS, never explicit per-key user settings.
-  aggressiveMode: false,
+  // v0.34.141: keep-going is the production default. Set false explicitly
+  // for the conservative pause-first policy; the dial flips DEFAULTS, never
+  // explicit per-key user settings.
+  aggressiveMode: true,
   quotaRetryMinutes: DEFAULT_QUOTA_RETRY_MINUTES,
 };
 

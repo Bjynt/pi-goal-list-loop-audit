@@ -116,7 +116,6 @@ import {
   modelSwitch,
   isForbiddenModel,
 isGoalRevisionCurrent,
-  nextHourlyPromptMs,
   nextHourlyProbeMs,
   type ModelSwitchRecord,
   type ListItem,
@@ -180,7 +179,6 @@ import {
   capQuotaRetrySeconds,
   isSubagentQuotaResult,
   parseQuotaError,
-  quotaRetryDelaySeconds,
   scheduleQuotaRetry,
   cancelQuotaRetry,
 } from "../quota-retry.js";
@@ -673,12 +671,12 @@ function isAuditorNoVerdictInfrastructureError(error: string | undefined, infras
 // goal-commands.ts (decomposition step 2) imports it directly from there.
 
 const MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS = 5;
-/** v0.34.79 (note.md 112555): the FIRST auditor retry after an infra
- * failure is eager — 5s, mirroring runWithInfraRetry's default backoff for
- * the main thread — when the provider gave no upstream hint. A quota that
- * expired mid-audit must not park the goal for the base window (default
- * 60m) before the first probe; later attempts keep the exponential
- * minute-scale cadence. Provider hints still win (they are authoritative). */
+/** v0.34.79/v0.34.141: the FIRST auditor retry after an infrastructure
+ * failure is eager — 5s, mirroring runWithInfraRetry's default backoff. The
+ * scheduler does not inspect quota/account families or provider hints to
+ * decide whether to retry: every retriable failure gets the same first probe,
+ * then the next probe is aligned just after the next local hour starts. The
+ * parsed provider object remains durable diagnostic metadata only. */
 const EAGER_AUDITOR_RETRY_SEC = 5;
 
 /** Seconds-aware "auto-retry in …" label: "5s" under a minute, else "60m". */
@@ -695,6 +693,12 @@ export function auditorQuotaRetryPlan(claim: PendingCompletion, quota: ReturnTyp
   automatic: boolean;
   requestedSec: number;
 } {
+  // The parameter names remain part of the compatibility surface for stored
+  // completion claims and callers, but retry scheduling is deliberately
+  // quota-agnostic. `quota` is parsed for diagnostics; `baseMinutes` remains
+  // accepted for older callers/settings.
+  void quota;
+  void baseMinutes;
   const now = Date.now();
   const firstMs = claim.quotaFirstAt ? Date.parse(claim.quotaFirstAt) : Number.NaN;
   const firstAtMs = Number.isFinite(firstMs) ? firstMs : now;
@@ -703,24 +707,14 @@ export function auditorQuotaRetryPlan(claim: PendingCompletion, quota: ReturnTyp
     ? Date.parse(claim.quotaAutoRetryUntil)
     : firstAtMs + MAIN_MODEL_AUTO_RETRY_HORIZON_MS;
   const attempt = (claim.quotaAttempts ?? 0) + 1;
-  // v0.35.x: a pure request-rate wall gets one eager bounded retry, then
-  // the hourly reset slot. Plan/account/billing walls skip the eager retry
-  // when there is no provider hint; they should not be mislabeled as a
-  // request-rate condition or hammered in short loops. Upstream hints still
-  // win for every family.
-  const isRateLimit = quota.signal === "rate-limit";
-  const isAccountWall = quota.signal === "plan-quota" || quota.signal === "billing";
-  const requestedSec = quota.fromUpstream
-    ? quota.retryAfterSec
-    : isRateLimit
-      ? attempt === 1
-        ? EAGER_AUDITOR_RETRY_SEC
-        : Math.max(60, Math.round((nextHourlyPromptMs(now) - now) / 1000))
-      : isAccountWall
-        ? Math.max(60, Math.round((nextHourlyPromptMs(now) - now) / 1000))
-        : attempt === 1
-          ? EAGER_AUDITOR_RETRY_SEC
-          : quotaRetryDelaySeconds(attempt, baseMinutes);
+  // v0.34.141: all failure families use one retry schedule. Do not wait on
+  // a quota probe or trust a reset/Retry-After classification; retry eagerly
+  // once, then probe at :00:30 after each hour starts (15:00 → 15:00:30,
+  // 16:00 → 16:00:30, …). This picks up a possible reset without making a
+  // quota-availability request first.
+  const requestedSec = attempt === 1
+    ? EAGER_AUDITOR_RETRY_SEC
+    : Math.max(60, Math.round((nextHourlyProbeMs(now) - now) / 1000));
   const retryAfterSec = capQuotaRetrySeconds(requestedSec);
   const automatic = attempt < MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS && now + retryAfterSec * 1_000 <= untilMs;
   return { attempt, retryAfterSec, firstAt, autoRetryUntil: new Date(untilMs).toISOString(), automatic, requestedSec };
