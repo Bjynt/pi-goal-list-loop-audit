@@ -606,7 +606,11 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
   });
   // branch=1 mode: commit improvements, hard-reset regressions — always and
   // only on the scratch branch. v0.23.0: a metricless loop has no regression
-  // signal, so every iteration stands and is committed.
+  // signal, so every iteration stands and is committed. v0.35.4: a FLAT
+  // (tied-best) or NULL measure is NOT a regression (v0.29.10/E5 — null
+  // carries no movement information), so only a genuine worse-than-best
+  // value hard-resets; flat/null iterations keep their work in the tree
+  // for the next tick (or the terminal commit below).
   if (loop.branchName && outcome.kind === "continue") {
     if (metricless || outcome.improved) {
       await runGit(ctx, ["add", "-A"]);
@@ -614,13 +618,30 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
       const committed = await runGit(ctx, ["commit", "-m", metricless ? `pi-glla-loop: iteration ${loop.iteration}` : `pi-glla-loop: iteration ${loop.iteration} (${loop.direction}=${loop.bestValue})`]);
       if (!rebindLoop()) return;
       appendLedger(ctx.cwd, "loop_git", { action: "commit", iteration: loop.iteration, ok: committed.ok });
-    } else {
+    } else if (value !== null && value !== loop.bestValue) {
       const reset = await runGit(ctx, ["reset", "--hard", "HEAD"]);
       if (!rebindLoop()) return;
       appendLedger(ctx.cwd, "loop_git", { action: "reset", iteration: loop.iteration, ok: reset.ok });
     }
     persistState(ctx);
   }
+  // v0.35.4: a terminal stop never destroys the last iteration's work.
+  // The continue-gate above means plateau/bounds/stuck stops skipped the
+  // commit; finishLoopGit's unconditional reset --hard then erased the
+  // final iteration — including an IMPROVING one stopped by maxIterations.
+  // Commit any pending diff before the git-finish so the scratch branch
+  // carries the terminal iteration.
+  const commitPendingTerminalWork = async (): Promise<void> => {
+    if (!loop.branchName) return;
+    const pending = await runGit(ctx, ["status", "--porcelain"]);
+    if (!rebindLoop()) return;
+    if (!pending.ok || pending.stdout.length === 0) return;
+    await runGit(ctx, ["add", "-A"]);
+    if (!rebindLoop()) return;
+    const committed = await runGit(ctx, ["commit", "-m", `pi-glla-loop: iteration ${loop.iteration} (${loop.direction ?? "spec"}=${loop.bestValue ?? "n/a"})`]);
+    if (!rebindLoop()) return;
+    appendLedger(ctx.cwd, "loop_git", { action: "commit-terminal", iteration: loop.iteration, ok: committed.ok });
+  };
   // v0.24.0: the top of the stuck ladder — bounded and surfaced, same
   // philosophy as a plateau stop. The loop ends WITH the reason, not in silence.
   // v0.25.0: aggressiveMode raises the ladder (default 5 → 10, explicit wins).
@@ -629,6 +650,7 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
     loop.active = false;
     loop.stopReason = `stuck — ${loop.lastStuckReason} (${loop.consecutiveStuck} consecutive interventions)`;
     persistState(ctx);
+    await commitPendingTerminalWork();
     await finishLoopGit(ctx, loop);
     if (!rebindLoop()) return;
     ctx.ui.notify(`Loop stopped: ${loop.stopReason}. ${loop.history.length} iterations recorded.`, "warning");
@@ -666,6 +688,7 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
         outcome = { kind: "stop", reason: honest };
       }
     }
+    await commitPendingTerminalWork();
     await finishLoopGit(ctx, loop);
     if (!rebindLoop()) return;
     ctx.ui.notify(`Loop stopped: ${outcome.reason}. ${loop.history.length} iterations recorded.`, "info");
