@@ -66,6 +66,9 @@ export type Status =
 
 export type Policy = "goal" | "list"; // v0.3.0: "loop".
 
+/** Explicit specialist routing requested by the user or by a task plan. */
+export type AgentRole = "designer";
+
 /** User-facing controls whose command root follows the active goal policy. */
 export type ModeCommand = "pause" | "tweak" | "resume";
 
@@ -90,6 +93,8 @@ export interface Task {
   id: string;
   title: string;
   status: "pending" | "in_progress" | "complete";
+  /** Optional specialist hand-off for this task. */
+  agentRole?: AgentRole;
   subtasks?: Task[];
 }
 
@@ -111,6 +116,7 @@ export const MAX_SUBTASKS_PER_TASK = 5;
 
 export interface TaskProposal {
   title: string;
+  agentRole?: AgentRole;
   subtasks?: string[];
 }
 
@@ -138,6 +144,7 @@ export function buildTaskList(tasks: TaskProposal[]): TaskList {
       id: String(i + 1),
       title: t.title.trim(),
       status: "pending" as const,
+      ...(t.agentRole ? { agentRole: t.agentRole } : {}),
       subtasks: (t.subtasks ?? []).map((s, j) => ({
         id: `${i + 1}.${j + 1}`,
         title: s.trim(),
@@ -318,6 +325,8 @@ export interface Goal {
   objective: string;
   status: Status;
   policy: Policy;
+  /** Explicit specialist routing requested for this goal/list item. */
+  agentRole?: AgentRole;
   verificationContract?: string;
   autoContinue: boolean;
   /** v0.34.81 (LIGHT parent/child): set ONLY when this goal was activated
@@ -620,6 +629,8 @@ export function auditFeedbackExcerpt(output: string, maxChars: number): string {
 export interface ListItem {
   id: string;
   objective: string;
+  /** Explicit specialist routing requested for this queued item. */
+  agentRole?: AgentRole;
   verificationContract?: string;
   /** v0.34.76 (OPEN-ISSUES 1.11): parallel-execution metadata DECLARATION.
    * Parsed from a `Parallel: yes|no` clause on the item text; surfaced in
@@ -1027,6 +1038,7 @@ export function readQueueFromDisk(cwd: string, excludeIds: ReadonlySet<string> =
     out.push({
       id: e.id,
       objective: e.objective,
+      ...(e.agentRole === "designer" ? { agentRole: "designer" as const } : {}),
       ...(typeof e.verificationContract === "string" && e.verificationContract ? { verificationContract: e.verificationContract } : {}),
       ...(typeof e.parallelSafe === "boolean" ? { parallelSafe: e.parallelSafe } : {}),
       // v0.34.81: subtask binding round-trips from the sidecar the same way
@@ -1303,6 +1315,7 @@ export function renderGoalMarkdown(goal: Goal): string {
   lines.push("");
   lines.push(`**Status**: ${statusLabel(goal.status)}`);
   lines.push(`**Policy**: ${goal.policy}`);
+  if (goal.agentRole) lines.push(`**Agent role**: ${goal.agentRole}`);
   lines.push(`**Auto-continue**: ${goal.autoContinue ? "on" : "off"}`);
   if (goal.activePath) lines.push(`**File**: \`${path.relative(path.dirname(goal.activePath), goal.activePath) || goal.activePath}\``);
   if (goal.archivedPath) lines.push(`**Archive**: \`${path.relative(path.dirname(goal.archivedPath), goal.archivedPath) || goal.archivedPath}\``);
@@ -1372,7 +1385,7 @@ function renderTaskTreeMarkdown(tasks: Task[], out: string[], depth: number): vo
   for (const t of tasks) {
     const indent = "  ".repeat(depth);
     const bullet = t.status === "complete" ? "- [x]" : t.status === "in_progress" ? "- [~]" : "- [ ]";
-    out.push(`${indent}${bullet} ${t.title} \`${t.id}\``);
+    out.push(`${indent}${bullet} ${t.title}${t.agentRole ? ` [${t.agentRole}]` : ""} \`${t.id}\``);
     if (t.subtasks && t.subtasks.length > 0) {
       renderTaskTreeMarkdown(t.subtasks, out, depth + 1);
     }
@@ -1464,11 +1477,11 @@ export function newGoalId(): string {
 // Task helpers
 // =================================================================
 
-export function findNextPendingTask(tasks: Task[]): { id: string; title: string } | undefined {
+export function findNextPendingTask(tasks: Task[]): { id: string; title: string; agentRole?: AgentRole } | undefined {
   const queue = [...tasks];
   while (queue.length > 0) {
     const t = queue.shift()!;
-    if (t.status === "pending") return { id: t.id, title: t.title };
+    if (t.status === "pending") return { id: t.id, title: t.title, ...(t.agentRole ? { agentRole: t.agentRole } : {}) };
     // Push subtasks regardless of parent status; we want BFS to find
     // the first pending task anywhere in the tree. A parent's status
     // does not preclude one of its subtasks being pending.
