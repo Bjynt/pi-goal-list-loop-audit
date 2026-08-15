@@ -10,6 +10,34 @@ one generic retry envelope, with a 5-second eager retry and an extra
 attempt/window safety limits remain. Old quota-named state is compatibility
 data only and cannot change the runtime policy.
 
+## Current triage — v0.34.142 (2026-08-15)
+
+The screenshots and observations below are historical captures. Their current
+status is recorded here so this note stays useful as a backlog rather than
+looking like every incident is still open.
+
+| Finding | Status | Current disposition |
+|---|---|---|
+| Draft accepted but did not auto-start | **Resolved / clarified** | In-session confirmed or auto-accepted drafts start immediately. Fresh-session restore intentionally holds by default unless `autoResume` is enabled; queued list items also wait behind active work. |
+| No provider activity / give up too eagerly | **Resolved within bounds** | Recoverable failures retry eagerly after 5 seconds, use the generic bounded ladder, and receive an extra `:00:30` hourly retry. The safety envelope remains finite: main recovery is horizon-bounded and auditor recovery is capped; this is not infinite retry. |
+| Pi accepted work but did not start a turn | **Resolved within plugin boundary** | The dispatch has a 30-second start-proof window plus one verbatim retry with backoff, then durable recovery guidance. The plugin does not blind-loop forever when Pi never acknowledges a turn. |
+| Restart/resume was needed to get moving | **Mostly resolved** | Generation-bound dispatch, lifecycle handoff, rebind, and same-process self-healing are covered. A true stale host context still depends on Pi delivering a fresh lifecycle boundary. |
+| Auditor timed out | **Resolved handling; root cause remains observable** | Timeout and inactivity are treated as infrastructure failures, the completion claim is retained, and the auditor is retried. A genuinely hung verification command can still time out; it no longer loses the claim or becomes a verdict. |
+| Auditor parked with no verdict and stopped | **Resolved within bounds** | No-verdict claims use the same durable generic retry plan. Aggressive mode keeps retrying inside its bounded window; after the cap, explicit resume starts a fresh window. |
+| Quota checking / waiting for a reset | **Resolved in v0.34.142** | Live recovery does not query, infer, or classify quota availability and does not use `Retry-After` or quota wording to choose a path. |
+| Host session lost / resume could not recover it | **Partly resolved; Pi limitation remains** | The plugin preserves work, classifies stale handles honestly, rebinds when Pi supplies a replacement, and points to `/new` when the cached event context cannot be repaired. Automatic session creation is not available from Pi's public event context. |
+| Total time spent / UI review | **Resolved** | Goal, loop, queue, auditor, and terminal surfaces expose elapsed or duration information; focused display and philosophy tests pass. |
+| Long-term-minded vs opportunistic fixes / unnecessary questions | **Partly addressed** | Drafting has explicit long-running mode guidance, ROI/brief discipline, and question gates. There is no separate user preference that selects long-term purity over opportunistic progress; retain this as a design decision, not a bug. |
+| Designer subagent with fallback | **Open feature** | No dedicated designer role or routing/fallback setting exists yet. Existing Explore/Plan/general-purpose subagent chains are not a designer role. |
+| Dedicated drafter model with fallbacks | **Open feature** | Main-model, auditor, and embedded subagent fallback chains exist, but drafting does not have its own model selector/fallback chain. |
+| External continuation research | **Optional research** | The Codex, Claude Code, and deepseek-harness comparison is not a current plugin defect or release blocker. |
+
+Focused evidence for this triage: 229 relevant tests pass on the current
+checkout; the v0.34.142 release suite passed with 1,346 pass / 1 skip / 0
+fail, TypeScript and the jiti reproduction are clean, and the repository is
+clean and synchronized. The remaining actionable product work is the Pi host
+session limitation and the two open model-role features above.
+
 ##
 /home/dracon/Pictures/Screenshots/Screenshot_20260814_140543.png 
 after draft we get this not even sure why
