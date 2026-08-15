@@ -593,10 +593,10 @@ test("v0.35.4: a refused branch-mode loop start restores the original branch", a
     assert.equal(branch, "main", "the user is back on the original branch after the refusal");
     const leftovers = execSync("git branch --list 'pi-glla-loop/*'", { cwd }).toString().trim();
     assert.ok(leftovers.length > 0, "the empty scratch branch remains but is not checked out");
-    console.log("NOTIFY-DEBUG:", JSON.stringify(ctx.ui.notifies.map((n) => n.message.slice(0, 100))));
-    const loud = ctx.ui.notifies.filter((n) => n.message.includes("Loop start refused"));
-    console.log("LOUD-DEBUG:", loud.length, typeof ctx.ui.notifies);
-    assert.ok(loud.length > 0, "the refusal is loud");
+    assert.ok(
+      ctx.ui.notifies.some((n) => n.message.includes("loop start refused")),
+      "the refusal is loud",
+    );
   } finally {
     pi.execHandler = realExec;
   }
