@@ -90,23 +90,23 @@ When the user says "do a full audit", "survey the project", "find all problems",
 
 ## WHEN SUBAGENTS DIE: RESUME, DON'T RESPAWN
 
-A failed subagent's SESSION survives its death (verified in pi-subagents source: `resume` has no status guard — it re-prompts the existing session, context intact). The 56 tool uses of work are NOT lost unless you throw them away. On any subagent failure — output token limit, quota, provider error:
+A failed subagent's SESSION survives its death (verified in pi-subagents source: `resume` has no status guard — it re-prompts the existing session, context intact). The 56 tool uses of work are NOT lost unless you throw them away. On any subagent failure — output token limit, provider/runtime error, or temporary upstream failure:
 
-1. **Resume it**: `Agent(resume: "<id>", prompt: "Wrap up now: report what you found within ~150 lines.")` — for quota deaths, wait for the quota window first (see below). A resumed agent already HAS its research; it only needs to report.
+1. **Resume it immediately**: `Agent(resume: "<id>", prompt: "Wrap up now: report what you found within ~150 lines.")`. A resumed agent already HAS its research; it only needs to report. Do not infer a reset time from the error text.
 2. **Resume failed with "not found"?** The manager forgot it (a /reload wipes the in-process registry — old IDs are unresumable). Only NOW respawn, and never the same wide brief: SPLIT into 2 narrower agents or ABSORB the remainder inline.
 
 ## AFTER A SESSION RESTART: YOUR SUBAGENTS ARE DEAD
 
 Subagents run IN-PROCESS — a /reload or restart kills every running one instantly and silently (no failure event, no ✗), and their IDs become unresumable. On a restored session, check your transcript for in-flight agents and relaunch them (tight briefs) or absorb their scope — do NOT sit waiting for results that can never arrive. This is why long fan-out passes belong under a glla goal/list item: the goal plane survives restarts and re-drives the fan-out through the continuation; an ad-hoc fan-out dies with the tab.
 
-## WHEN SUBAGENTS HIT QUOTA ERRORS
+## WHEN SUBAGENTS HIT PROVIDER/RUNTIME ERRORS
 
-If a subagent fails with `Key limit exceeded (total limit)`, `429 Too Many Requests`, or another rate-limit error, the parent model and subagent model have DIFFERENT quota pools. Two fixes:
-
-1. **Switch subagent model strategy to `inherit-parent`** (`/glla` → Settings → Subagent model strategy). The subagent then shares your session model and its quota pool.
-2. **Wait for the upstream quota to reset.** OpenRouter free keys typically reset every 24h. Check the error message for the specific key URL.
-
-Do NOT spawn more subagents of the failed type until quota resets — you will just pile up more failed calls. Do the work inline meanwhile, or spawn a different agent type.
+Treat provider/runtime failures as generic recoverable failures. Resume the
+existing subagent immediately, or retry a bounded narrower spawn when the
+session is gone. Do not query, infer, or wait for a guessed quota/reset time,
+and do not suppress retries because the error contains rate-limit, billing,
+usage, or similar wording. The runtime's recovery envelope retries blindly;
+continue inline only when the subagent itself cannot be recovered.
 
 ## DETACHED COMMIT DETECTION
 

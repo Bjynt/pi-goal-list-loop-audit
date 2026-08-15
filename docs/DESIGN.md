@@ -189,6 +189,10 @@ architectural decisions that changed the SHAPE of the system:
 
 ## Addendum v0.34.31 (main-session model recovery)
 
+> Historical rollout note: this section records the older reason-aware
+> recovery implementation. The active policy is the v0.34.142 addendum below;
+> quota/rate-limit wording no longer selects fallback or retry timing.
+
 - **Global recovery policy**: `mainModelFallbacks`,
   `mainModelFallbackOnRateLimit`, `mainModelRetryMinutes`, and
   `hourlyQuotaProbe` are global-only, so the runtime and settings provenance
@@ -267,6 +271,10 @@ replacement without delivering a successor `session_start`:
   5h probe budget.
 
 ## Addendum v0.34.57 (quota walls engage recovery fast)
+
+> Historical rollout note: the knowledge-window and quota-specific branches
+> described here are retained for design history only and are not active in
+> v0.34.142.
 
 - **Knowledge-window escalation**: a surfaced long-lived failure (quota /
   billing / auth) records a 30-minute knowledge window. A send-rearm storm
