@@ -81,7 +81,6 @@ test("runtime fallback walk uses one supervised model at a time and preserves le
     extensionApi: { setModel: async (model: any) => { calls.push(`${model.provider}/${model.id}`); return true; } },
     extensionApiStale: false,
     continuationDispatchStoodDown: false,
-    lastLongLivedFailureAt: 0,
     lastMainModelRecoveryResumeAt: 0,
   };
   try {
@@ -124,7 +123,7 @@ test("runtime fallback walk uses one supervised model at a time and preserves le
       active: "provider/primary",
       attempted: ["provider/primary"],
       attempts: 1,
-      reason: "main model quota — provider account/usage wall",
+      reason: "main model recovery — provider error",
       kind: "goal",
     };
     await probeMainModelRecovery(ctx);
@@ -132,8 +131,8 @@ test("runtime fallback walk uses one supervised model at a time and preserves le
     assert.deepEqual(state.mainModelRecovery?.skipped, [{ ref: "provider/blocked", reason: "forbidden" }]);
     assert.equal(state.mainModelRecovery?.skipped?.some((entry) => entry.ref === "provider/first"), false, "the scheduled probe target is not labelled skipped");
 
-    // With request-rate fallback enabled by default, a 429 walks the next
-    // configured backup instead of consuming another current-model retry.
+    // Error wording does not suppress fallback: a 429-shaped failure uses
+    // the same generic chain as every other recoverable provider failure.
     ctx.model = { provider: "provider", id: "first" };
     assert.equal(await tryMainModelFallback(ctx, classifyMainModelFailure("HTTP 429 too many requests")), true);
     assert.equal(calls.at(-1), "provider/second");
@@ -148,26 +147,26 @@ test("runtime fallback walk uses one supervised model at a time and preserves le
       active: "provider/primary",
       attempted: ["provider/primary"],
       attempts: 0,
-      reason: "request-rate wall",
+      reason: "provider error",
       kind: "goal",
       quotaSignal: "rate-limit",
     };
-    const beforeOptOut = calls.length;
-    assert.equal(await tryMainModelFallback(ctx, classifyMainModelFailure("HTTP 429 too many requests")), false);
-    assert.equal(calls.length, beforeOptOut, "explicit opt-out keeps 429 on the current model");
+    const beforeLegacySetting = calls.length;
+    assert.equal(await tryMainModelFallback(ctx, classifyMainModelFailure("HTTP 429 too many requests")), true);
+    assert.equal(calls.length, beforeLegacySetting + 1, "the removed legacy opt-out cannot suppress generic fallback");
 
     state.mainModelRecovery = {
       primary: "provider/primary",
       active: "provider/primary",
       attempted: ["provider/primary"],
       attempts: 0,
-      reason: "request-rate wall",
+      reason: "provider error",
       kind: "goal",
       quotaSignal: "rate-limit",
       pendingModelSwitch: "provider/removed",
     };
     await probeMainModelRecovery(ctx);
-    assert.equal(calls.length, beforeOptOut, "a removed pending backup is not resurrected by a delayed probe");
+    assert.equal(calls.length, beforeLegacySetting + 1, "a removed pending backup is not resurrected by a delayed probe");
     assert.equal(state.mainModelRecovery?.pendingModelSwitch, undefined);
   } finally {
     replaceState({ goal: null } as any);
@@ -179,32 +178,24 @@ test("runtime fallback walk uses one supervised model at a time and preserves le
   }
 });
 
-test("main model errors distinguish quota recovery from deterministic prompt walls", () => {
-  assert.equal(classifyMainModelFailure("429 usage limit; retry in 2 hours").kind, "rate-limit");
-  assert.equal(classifyMainModelFailure("Token Plan usage limit reached").kind, "quota");
-  assert.equal(classifyMainModelFailure("Token Plan rate limit reached (2062)").kind, "rate-limit");
-  assert.equal(classifyMainModelFailure("Token Plan rate limit reached (2062)").quotaSignal, "rate-limit");
-  assert.equal(classifyMainModelFailure("429 Too Many Requests").kind, "rate-limit");
-  assert.equal(classifyMainModelFailure("HTTP 429 request cancelled by upstream").kind, "rate-limit");
-  assert.equal(classifyMainModelFailure("too-many-requests").kind, "rate-limit");
-  assert.equal(classifyMainModelFailure("too_many_requests").kind, "rate-limit");
-  assert.equal(classifyMainModelFailure("request rate exceeded").kind, "rate-limit");
-  assert.equal(classifyMainModelFailure("request-rate exceeded").kind, "rate-limit");
-  assert.equal(classifyMainModelFailure("429 Too Many Requests").quotaSignal, "rate-limit");
-  assert.equal(classifyMainModelFailure("HTTP 429 — Token Plan output token limit reached").kind, "rate-limit");
-  assert.equal(classifyMainModelFailure("HTTP 429 — Token Plan output token limit reached").quotaSignal, "rate-limit");
-  assert.equal(classifyMainModelFailure("429 rate limit exceeded").kind, "rate-limit");
-  assert.equal(classifyMainModelFailure("429 usage limit").kind, "rate-limit");
+test("main model errors stay opaque to the recovery policy", () => {
+  for (const raw of [
+    "429 usage limit; retry in 2 hours",
+    "Token Plan usage limit reached",
+    "Token Plan rate limit reached (2062)",
+    "HTTP 429 Too Many Requests",
+    "too-many-requests",
+    "request rate exceeded",
+    "insufficient credits — buy credits",
+  ]) {
+    assert.equal(classifyMainModelFailure(raw).kind, "unknown", raw);
+    assert.equal(classifyMainModelFailure(raw).quotaSignal, undefined, raw);
+    assert.equal(isMainModelFallbackFailure(classifyMainModelFailure(raw)), true, raw);
+  }
   assert.equal(classifyMainModelFailure("503 temporarily unavailable").kind, "transient");
-  assert.equal(isMainModelFallbackFailure(classifyMainModelFailure("usage limit reached")), true);
-  assert.equal(isMainModelFallbackFailure(classifyMainModelFailure("429 too many requests")), false);
-  assert.equal(isMainModelFallbackFailure(classifyMainModelFailure("429 too many requests"), { allowRateLimit: true }), true);
-  assert.equal(isMainModelFallbackFailure(classifyMainModelFailure("request rate exceeded")), false);
-  assert.equal(isMainModelFallbackFailure(classifyMainModelFailure("503 temporarily unavailable")), false);
-  assert.equal(classifyMainModelFailure("429 Token Plan rate limit reached").kind, "rate-limit");
-  assert.equal(classifyMainModelFailure("429 Token Plan rate limit reached").quotaSignal, "rate-limit");
-  assert.equal(classifyMainModelFailure("insufficient credits — buy credits").kind, "billing");
+  assert.equal(isMainModelFallbackFailure(classifyMainModelFailure("503 temporarily unavailable")), true);
   assert.equal(classifyMainModelFailure("401 invalid API key").kind, "auth");
+  assert.equal(isMainModelFallbackFailure(classifyMainModelFailure("401 invalid API key")), true);
   assert.equal(classifyMainModelFailure("503 upstream overloaded").kind, "transient");
   assert.equal(classifyMainModelFailure("max_tokens exceeds context window").kind, "non-recoverable");
   assert.equal(classifyMainModelFailure("user aborted").kind, "non-recoverable");
@@ -219,37 +210,23 @@ test("main model recovery backs off without giving up", () => {
   assert.equal(mainModelRetryDelayMs(6, 15), 5 * 60 * 60_000);
   assert.equal(mainModelRetryDelayMs(20, 15), 5 * 60 * 60_000);
   const nowMs = Date.parse("2026-08-07T01:18:01.930Z");
-  // A pure no-hint request-rate wall gets one bounded eager backoff; the
-  // following attempt uses the configured base ladder.
+  // Every recoverable provider failure gets the same eager retry, then joins
+  // the configured ladder.
   assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 Too Many Requests"), 1, 15, nowMs), 5_000);
   assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 Too Many Requests"), 2, 15, nowMs), 30 * 60_000);
-  // The upstream hint (a factual provider fact) still outranks the ladder.
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 rate limit; retry in 2 hours"), 1, 15, nowMs), 2 * 60 * 60_000);
-  // Temporary-window prose remains a factual hint rather than waiting for
-  // the optional hourly ticker.
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 Too Many Requests — try again in 30 seconds"), 1, 15, nowMs), 30_000);
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("rate limit resets in 15 seconds"), 1, 15, nowMs), 15_000);
-  // An over-budget hint falls back to the configured bounded ladder.
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("429 rate limit; retry in 1 week"), 1, 15, nowMs), 15 * 60_000);
-  // Every non-rate-limit failure family uses the same configured base and
-  // attempt ladder. An explicit 429/rate-limit marker gets the 5s first
-  // retry, then joins that same ladder.
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("Token Plan rate limit reached (2062)"), 1, 15, nowMs), 5_000);
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("Token Plan rate limit reached (2062)"), 2, 15, nowMs), 30 * 60_000);
   for (const raw of [
     "503 temporarily unavailable",
     "insufficient credits — buy credits",
     "401 invalid API key",
     "mysterious provider prose with no hint",
   ]) {
-    assert.equal(mainModelFailureDelayMs(classifyMainModelFailure(raw), 1, 15, nowMs), 15 * 60_000, raw);
+    assert.equal(mainModelFailureDelayMs(classifyMainModelFailure(raw), 1, 15, nowMs), 5_000, raw);
     assert.equal(mainModelFailureDelayMs(classifyMainModelFailure(raw), 2, 15, nowMs), 30 * 60_000, raw);
   }
-  // The setting is effective for ordinary failures, not just a dead-end
-  // branch: a 45-minute base means 45m, then 90m.
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("503 temporarily unavailable"), 1, 45, nowMs), 45 * 60_000);
+  // The setting controls the later ladder; the first retry stays eager.
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("503 temporarily unavailable"), 1, 45, nowMs), 5_000);
   assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("503 temporarily unavailable"), 2, 45, nowMs), 90 * 60_000);
-  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("Token Plan rate limit reached (2062); retry after 3 hours"), 1, 15, nowMs), 3 * 60 * 60_000);
+  assert.equal(mainModelFailureDelayMs(classifyMainModelFailure("Token Plan rate limit reached (2062); retry after 3 hours"), 1, 15, nowMs), 5_000);
   assert.equal(mainModelAutoRetryUntil(Date.parse("2026-08-03T00:00:00Z")), "2026-08-04T00:00:00.000Z");
   assert.equal(modelRef({ provider: "openai", id: "gpt" }), "openai/gpt");
   assert.equal(modelRef({ provider: "openai" }), undefined);
@@ -257,9 +234,8 @@ test("main model recovery backs off without giving up", () => {
   assert.equal(formatMainModelFallbacks([]), "none");
 });
 
-test("main recovery requirements keep rate limits current-model-only while parking them durably", () => {
-  const rateLimit = classifyMainModelFailure("HTTP 429 too many requests");
-  const account = classifyMainModelFailure("account usage limit reached");
-  assert.equal(isMainModelFallbackFailure(rateLimit), false);
-  assert.equal(isMainModelFallbackFailure(account), true);
+test("main recovery requirements are generic across provider wording", () => {
+  for (const raw of ["HTTP 429 too many requests", "account usage limit reached", "503 unavailable"]) {
+    assert.equal(isMainModelFallbackFailure(classifyMainModelFailure(raw)), true, raw);
+  }
 });
