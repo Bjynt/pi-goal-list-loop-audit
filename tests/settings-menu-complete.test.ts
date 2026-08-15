@@ -72,13 +72,13 @@ test("every row carries every required column field", () => {
   }
 });
 
-test("the 7 sections include a dedicated main-fallbacks tab", () => {
+test("the 6 sections place the main chain inside Backups (no separate fallback tab)", () => {
   const ids = SETTINGS_SECTIONS.map((s) => s.id);
-  assert.deepEqual(ids, ["keep-going", "backups", "main-fallbacks", "auditor", "stall-brakes", "subagents", "other"]);
+  assert.deepEqual(ids, ["keep-going", "backups", "auditor", "stall-brakes", "subagents", "other"]);
   assert.ok(SETTINGS_SECTIONS.every((s) => typeof s.label === "string" && s.label.length > 0));
 });
 
-test("every row's section is one of the 7 known section ids (no orphans)", () => {
+test("every row's section is one of the 6 known section ids (no orphans)", () => {
   const validSections = new Set<string>(SETTINGS_SECTIONS.map((s) => s.id));
   const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
   for (const r of rows) {
@@ -86,10 +86,12 @@ test("every row's section is one of the 7 known section ids (no orphans)", () =>
   }
 });
 
-test("v0.34.139: main fallback editing has its own tab; other backup controls stay together", () => {
+test("v0.34.139: the main chain leads the Backups tab; timing and subagent chains follow", () => {
   const rows = buildSettingsRows(SAMPLE_SETTINGS, EMPTY_PROV);
   const byId = new Map(rows.map((r) => [r.id, r]));
-  assert.equal(byId.get("mainModelFallbacks")?.section, "main-fallbacks");
+  const backupsRows = rows.filter((r) => r.section === "backups");
+  assert.equal(byId.get("mainModelFallbacks")?.section, "backups");
+  assert.equal(backupsRows[0]!.id, "mainModelFallbacks", "main chain is the first Backups row");
   for (const id of [
     "mainModelRetryMinutes",
     "subagentFallbacks:Explore",
@@ -108,7 +110,7 @@ test("main fallback row explains ordered, deselectable selection", () => {
     provFromSettings({ mainModelFallbacks: ["provider/first", "provider/second"] }),
   );
   const row = rows.find((candidate) => candidate.id === "mainModelFallbacks")!;
-  assert.equal(row.section, "main-fallbacks");
+  assert.equal(row.section, "backups");
   assert.match(row.description, /ordered and deselectable/);
 });
 

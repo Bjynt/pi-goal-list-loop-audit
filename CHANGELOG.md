@@ -3,10 +3,11 @@
 ## Unreleased — bounded main-model fallbacks and process cleanup
 ### Main sessions keep an ordered fallback chain
   Main-model backup settings are normalized case-insensitively, capped at ten
-  alternatives, and exposed in a dedicated Main fallbacks tab with a visible
+  alternatives, and the ordered chain leads the Backups tab with a visible
   count. The multi-select picker shows `current → backup 1 → backup 2`, numbers
-  each selected row, supports Space add/remove, and supports explicit `[` / `]`
-  reordering; provider failures walk the
+  each selected row, supports Space add/remove, and Tab enters an explicit
+  order mode where ↑/↓ moves a chain row (brackets also reorder while
+  browsing); provider failures walk the
   durable ordered cursor one supervised model at a time. Main recovery base
   minutes are effective, the optional :00:30 hourly probe is armed for every
   parked recovery and can be toggled live, and the recovery settings are

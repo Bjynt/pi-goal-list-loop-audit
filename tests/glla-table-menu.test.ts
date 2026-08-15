@@ -120,7 +120,7 @@ test("grouped entry points can open a specific settings section", () => {
   assert.ok(component.visibleRows().every((row) => row.section === "stall-brakes"));
 });
 
-test("render: tabs row lists all 7 sections", () => {
+test("render: tabs row lists all 6 sections", () => {
   const { component } = makeComponent(SAMPLE_ROWS);
   const lines = component.render(120);
   // Tabs row is index 1 (after title).
@@ -129,17 +129,17 @@ test("render: tabs row lists all 7 sections", () => {
   }
 });
 
-test("main fallback tab is a real drill-in section", () => {
+test("main chain is the first Backups row and drills in", () => {
   const rows = buildSettingsRows({ mainModelFallbacks: ["provider/backup"] } as Settings, {});
   let selected: string | undefined;
   const component = new SettingsMenuComponent(
-    { rows, title: "test", initialSection: "main-fallbacks" },
+    { rows, title: "test", initialSection: "backups" },
     () => undefined,
     THEME,
     KB,
     (id) => { selected = id; },
   );
-  assert.deepEqual(component.visibleRows().map((row) => row.id), ["mainModelFallbacks"]);
+  assert.deepEqual(component.visibleRows().map((row) => row.id), ["mainModelFallbacks", "mainModelFallbackOnRateLimit", "mainModelRetryMinutes", "hourlyQuotaProbe", "subagentFallbacks:Explore", "subagentFallbacks:Plan", "subagentFallbacks:general-purpose"]);
   component.handleInput("\r");
   assert.equal(selected, "mainModelFallbacks");
 });
@@ -329,7 +329,7 @@ test("structural: Class implements Component (has render + invalidate + handleIn
   assert.equal(typeof component.invalidate, "function");
 });
 
-test("structural: buildSettingsRows returns ≥20 rows across all 7 sections (coverage)", () => {
+test("structural: buildSettingsRows returns ≥20 rows across all 6 sections (coverage)", () => {
   const rows = buildSettingsRows({} as Settings, {});
   assert.ok(rows.length >= 20, `expected ≥20 rows, got ${rows.length}`);
 });
