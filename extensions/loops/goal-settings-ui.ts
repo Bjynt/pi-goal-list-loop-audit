@@ -802,7 +802,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const forbidden = normalizeModelRefs(loadGlobalSettings().forbiddenModels);
       const refs = await promptModelRefs(
         ctx,
-        `Main session model backups — try order is current → backup 1 → backup 2 … (space add/remove, [ ] reorder, enter save); forbidden models are skipped`,
+        `Main session model backups — try order is current → backup 1 → backup 2 … (space add/remove, tab order mode with ↑/↓, enter save); forbidden models are skipped`,
         current,
         { excludeRefs: forbidden, maxSelections: MAX_MAIN_MODEL_FALLBACKS, currentRef: modelRef(ctx.model) },
       );
@@ -884,7 +884,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       ];
       const refs = await promptModelRefs(
         ctx,
-        "Forbidden model patterns — case-insensitive provider/id substrings; recovery always skips matches (space to toggle, enter/tab to confirm)",
+        "Forbidden model patterns — case-insensitive provider/id substrings; recovery always skips matches (space to toggle, tab = order mode with ↑/↓, enter to confirm)",
         current,
         { excludeRefs: backups },
       );
@@ -1097,7 +1097,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const agentType = id.slice("subagentFallbacks:".length);
       const settings = loadSettings(ctx.cwd);
       const current = settings.subagentFallbacks?.[agentType] ?? [];
-      const refs = await promptModelRefs(ctx, `${agentType} fallback chain — ordered, up to ${MAX_MAIN_MODEL_FALLBACKS} (space to toggle, enter/tab to confirm); forbidden models hidden`, current, { excludeRefs: normalizeModelRefs(loadGlobalSettings().forbiddenModels), maxSelections: MAX_MAIN_MODEL_FALLBACKS });
+      const refs = await promptModelRefs(ctx, `${agentType} fallback chain — ordered, up to ${MAX_MAIN_MODEL_FALLBACKS} (space to toggle, tab = order mode with ↑/↓, enter to confirm); forbidden models hidden`, current, { excludeRefs: normalizeModelRefs(loadGlobalSettings().forbiddenModels), maxSelections: MAX_MAIN_MODEL_FALLBACKS });
       if (refs === undefined) return;
       const next = { ...(settings.subagentFallbacks ?? {}) };
       if (refs.length > 0) next[agentType] = refs;

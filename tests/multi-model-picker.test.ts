@@ -305,12 +305,13 @@ test("multi-model-picker: order mode — the active chain row is highlighted and
   assert.match(text, /<selected>→\s+1 backup  minimax\/MiniMax-M3/, "first chain row is the active cursor");
   assert.match(text, /order mode — arrows move this backup/, "mode line names order mode");
   assert.match(text, /↑\/↓ reorder · tab browse · enter save · esc cancel/, "order-mode footer");
-  // Move the cursor to row 2 and confirm the highlight follows.
+  // Move the cursor to the end and confirm the highlight follows the moved row
+  // (it is now rank 2, so the displaced first row is unhighlighted).
   component.handleInput("\x1b[B");
   component.handleInput("\x1b[B");
   const moved = component.render(80).join("\n");
-  assert.match(moved, /<selected>→\s+1 backup  anthropic\/claude-opus-4-7/, "moved row is the new active cursor");
-  assert.match(moved, /2 backup  minimax\/MiniMax-M3/, "the displaced row keeps its new rank");
+  assert.match(moved, /<selected>→\s+2 backup  minimax\/MiniMax-M3/, "moved row stays the active cursor at its new rank");
+  assert.match(moved, /^  1 backup  anthropic\/claude-opus-4-7/m, "displaced row renders unhighlighted");
 });
 
 test("multi-model-picker: empty selection confirms as an empty array (not undefined)", () => {
