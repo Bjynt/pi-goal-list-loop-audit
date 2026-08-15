@@ -564,6 +564,9 @@ test("v0.35.4: a refused branch-mode loop start restores the original branch", a
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   fs.writeFileSync(path.join(cwd, "seed.txt"), "tracked\n");
+  // session_start writes cwd/.pi-glla ledger files; the branch-mode tree
+  // check refuses a dirty repo, so ignore them like the real repo does.
+  fs.writeFileSync(path.join(cwd, ".gitignore"), ".pi-glla/\n");
   execSync("git init -b main -q", { cwd });
   execSync("git add seed.txt", { cwd });
   execSync("git -c user.name=t -c user.email=t@example.test commit -qm init", { cwd });
