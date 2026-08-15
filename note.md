@@ -1,6 +1,6 @@
-# NExt
+# Next
 
-## Resolved in v0.34.142
+## Resolved in v0.35.0
 
 The provider-recovery policy is now intentionally blind: it does not query or
 infer quota availability, classify quota-shaped wording, honor `Retry-After`,
@@ -10,7 +10,7 @@ one generic retry envelope, with a 5-second eager retry and an extra
 attempt/window safety limits remain. Old quota-named state is compatibility
 data only and cannot change the runtime policy.
 
-## Current triage — v0.34.142 (2026-08-15)
+## Current triage — v0.35.0 (2026-08-15)
 
 The screenshots and observations below are historical captures. Their current
 status is recorded here so this note stays useful as a backlog rather than
@@ -27,41 +27,46 @@ looking like every incident is still open.
 | Quota checking / waiting for a reset | **Resolved in v0.34.142** | Live recovery does not query, infer, or classify quota availability and does not use `Retry-After` or quota wording to choose a path. |
 | Host session lost / resume could not recover it | **Partly resolved; Pi limitation remains** | The plugin preserves work, classifies stale handles honestly, rebinds when Pi supplies a replacement, and points to `/new` when the cached event context cannot be repaired. Automatic session creation is not available from Pi's public event context. |
 | Total time spent / UI review | **Resolved** | Goal, loop, queue, auditor, and terminal surfaces expose elapsed or duration information; focused display and philosophy tests pass. |
-| Long-term-minded vs opportunistic fixes / unnecessary questions | **Partly addressed** | Drafting has explicit long-running mode guidance, ROI/brief discipline, and question gates. There is no separate user preference that selects long-term purity over opportunistic progress; retain this as a design decision, not a bug. |
-| Designer subagent with fallback | **Open feature** | No dedicated designer role or routing/fallback setting exists yet. Existing Explore/Plan/general-purpose subagent chains are not a designer role. |
-| Dedicated drafter model with fallbacks | **Open feature** | Main-model, auditor, and embedded subagent fallback chains exist, but drafting does not have its own model selector/fallback chain. |
-| External continuation research | **Optional research** | The Codex, Claude Code, and deepseek-harness comparison is not a current plugin defect or release blocker. |
+| Long-term-minded vs opportunistic fixes / unnecessary questions | **Resolved in v0.35.0** | Drafting and continuation now state the durable-fix preference, safe-workaround conditions, unattended fallback, and genuine decision boundaries for questions. This is policy guidance, not a new user preference, by design. |
+| Designer subagent with fallback | **Resolved in v0.35.0** | Explicit role declarations persist on goals, queue items, and task plans; the managed read-only Designer has routing, settings, status/prompt surfaces, provider/model fallback, and inline fallback behavior. |
+| Dedicated drafter model with fallbacks | **Resolved in v0.35.0** | Drafting has a separate temporary primary/fallback chain, generic existing-interview recovery, serialized restore, session last resort, settings UI, and focused tests. Main and auditor chains are untouched. |
+| External continuation research | **Resolved as documented no-change** | Codex, Claude Code, and DeepSeek Harness confirm the durable checkpoint/resume direction and produce a concrete Pi host-session API request; no provider-specific retry redesign is needed. |
 
 Focused evidence for this triage: 229 relevant tests pass on the current
-checkout; the v0.34.142 release suite passed with 1,346 pass / 1 skip / 0
-fail, TypeScript and the jiti reproduction are clean, and the repository is
-clean and synchronized. The remaining actionable product work is the Pi host
-session limitation and the two open model-role features above.
+checkout before the v0.35.0 work. The final release-check evidence is recorded
+below after the versioned implementation is validated. The only remaining
+dependency is Pi itself: event-safe host session replacement is documented but
+cannot be implemented inside this plugin.
 
-## Remaining tasklist — v0.34.142
+## Remaining tasklist — v0.35.0
 
-These are the actual leftovers, ordered by dependency and value. The first
-three are product/design work; the host item cannot be completed by this
-plugin alone.
+The previous leftovers are now closed or explicitly handed to the host. The
+checkboxes remain as an auditable record of the decisions and implementation.
 
-- [ ] **Decide the long-running judgment policy.** Define when the agent
-  should prefer the durable/long-term fix over a quick opportunistic fix, and
-  when a question is worth interrupting an unattended run.
-- [ ] **Design the designer role.** Specify the designer subagent contract,
-  when a task is routed to it, how its output enters a goal/list plan, and the
-  fallback behavior when no designer model is configured or available.
-- [ ] **Implement and test the designer role.** Add settings, model
-  resolution/fallback, prompt routing, status surfaces, and focused lifecycle
-  tests after the contract is agreed.
-- [ ] **Design and implement a drafter model chain.** Add a dedicated drafting
-  model selector with ordered fallbacks, provider failure recovery, settings
-  UI, and tests without changing the main-model or auditor chains.
-- [ ] **Coordinate the Pi host-session API gap.** Track a Pi-side capability
-  for safe session replacement from event handlers; until it exists, retain
-  truthful `/new` guidance and do not invent a plugin-side session factory.
-- [ ] **Optional: compare continuation approaches.** Review Codex, Claude Code,
-  and deepseek-harness only if the comparison can produce a concrete design
-  decision or testable improvement.
+- [x] **Decide the long-running judgment policy.** Durable root-cause fixes are
+  preferred; safe/reversible/testable in-scope workarounds are allowed when
+  useful; unattended runs ask only at genuine decision boundaries and otherwise
+  take the safest contract-preserving path.
+- [x] **Design the designer role.** Explicit `Agent: Designer` / `Role:
+  designer` / `Designer: yes` declarations route a read-only architecture,
+  risk, affected-file, and verification checkpoint; unavailable Designer
+  capability falls back inline.
+- [x] **Implement and test the designer role.** Persistence, settings, managed
+  agent provisioning, prompt routing, status/markdown surfaces, fallback, and
+  focused tests are shipped in v0.35.0.
+- [x] **Design and implement a drafter model chain.** Dedicated primary and
+  ordered fallback settings resolve without provider requests, retry the
+  existing interview generically, use a bounded session last resort, serialize
+  model restoration, and leave main/auditor recovery unchanged.
+- [x] **Coordinate the Pi host-session API gap.** The exact SDK boundary and
+  event-safe replacement contract are documented in
+  `audit/PI-HOST-SESSION-REPLACEMENT-REQUEST-2026-08-15.md`; `/new` remains
+  truthful until Pi supplies the capability.
+- [x] **Compare continuation approaches.** The official Codex, Claude Code, and
+  DeepSeek Harness comparison is recorded in
+  `audit/CONTINUATION-APPROACH-COMPARISON-2026-08-15.md`; decision: retain
+  durable glla checkpoints and request a host replacement seam, with no quota
+  inference or provider-specific retry redesign.
 
 ##
 /home/dracon/Pictures/Screenshots/Screenshot_20260814_140543.png 
