@@ -282,6 +282,13 @@ export interface PendingCompletion {
   automaticRecoveryAttempted?: boolean;
   automaticRecoveryAt?: string;
   automaticRecoveryGeneration?: number;
+  /** When aggressiveMode is enabled, the no-verdict recovery path keeps
+   * probing inside this durable window instead of stopping after one retry.
+   * These fields are intentionally separate from quotaAttempts: a timeout
+   * or dead worker is not a quota classification. */
+  automaticRecoveryAttempts?: number;
+  automaticRecoveryFirstAt?: string;
+  automaticRecoveryUntil?: string;
   /** Durable quota recovery accounting; survives reloads and worker restarts. */
   quotaAttempts?: number;
   quotaFirstAt?: string;
