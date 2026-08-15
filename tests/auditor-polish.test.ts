@@ -191,7 +191,7 @@ test("runWithInfraRetry: retriable infra failure retried exactly once", async ()
   assert.equal((await runWithInfraRetry(aborted, { sleep: noSleep })).retriedOnce, false);
 });
 
-test("runWithInfraRetry: provider Retry-After outranks the fixed backoff", async () => {
+test("runWithInfraRetry: provider Retry-After does not suppress the uniform backoff", async () => {
   const { runWithInfraRetry } = await import("../extensions/goal-loop-core.ts");
   type R = { error?: string; approved: boolean; disapproved: boolean; output: string };
   const waits: number[] = [];
@@ -201,7 +201,7 @@ test("runWithInfraRetry: provider Retry-After outranks the fixed backoff", async
     : { approved: true, disapproved: false, output: "ok" });
   const out = await runWithInfraRetry(run, { backoffMs: 5_000, sleep: async (ms) => { waits.push(ms); } });
   assert.equal(out.retriedOnce, true);
-  assert.deepEqual(waits, [37_000], "the provider hint is honored instead of the historical 5s retry");
+  assert.deepEqual(waits, [5_000], "quota hints are diagnostic only; the eager retry stays uniform");
   assert.equal(calls, 2);
 });
 
