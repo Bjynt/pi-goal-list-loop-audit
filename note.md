@@ -47,9 +47,10 @@ looking like every incident is still open.
 | External continuation research | **Resolved as documented no-change** | Codex, Claude Code, and DeepSeek Harness confirm the durable checkpoint/resume direction and produce a concrete Pi host-session API request; no provider-specific retry redesign is needed. |
 
 Focused evidence for this triage: 229 relevant tests passed before the v0.35.0
-implementation, and the new policy/designer/drafter slice adds 36 focused
-passing tests. The final release check below is clean: 1,357 passed, 1 skipped
-(the environment-gated daemon test), and 0 failed across 1,358 tests; TypeScript
+implementation, the policy/designer/drafter slice adds 36 focused passing
+tests, and the v0.35.1 editor/menu slice passes 91 focused tests. The final
+release check below is clean: 1,358 passed, 1 skipped (the environment-gated
+daemon test), and 0 failed across 1,359 tests; TypeScript
 type-checking, the Jiti state-split regression, and `npm pack --dry-run` for
 `pi-goal-list-loop-audit@0.35.1` also pass. The only remaining dependency is Pi
 itself: event-safe host session replacement is documented but cannot be
