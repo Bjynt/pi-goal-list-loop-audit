@@ -365,6 +365,10 @@ import {
 } from "../goal-loop.js";
 import { defineGoalRuntimeGlobal } from "./goal-runtime-globals.js";
 import {
+  resolveDrafterModel,
+  type DrafterModelCandidate,
+} from "../drafter-model.js";
+import {
   assessSuspiciousObjective,
   buildRepairTaskObjective,
 } from "../faulty-objective-recovery.js";
@@ -375,6 +379,100 @@ import {
 
 function listQueue(): NonNullable<State["list"]> {
   return state.list ?? [];
+}
+
+interface DraftingModelLease {
+  originalModel: any;
+  activeRef: string;
+  candidates: DrafterModelCandidate[];
+  attempted: string[];
+  generation: number;
+}
+
+let draftingModelLease: DraftingModelLease | null = null;
+const DRAFTER_RECOVERY_PROMPT = "The drafting model turn failed. Resume the existing drafting interview from the conversation, keep the user's intent, ask at most one focused decision question if truly necessary, and continue toward the appropriate propose_* tool. Do not restart the interview or implement work.";
+
+/** Select the drafting-only model and retain a generation-fenced restore lease. */
+async function beginDrafterModel(ctx: ExtensionContext): Promise<void> {
+  await restoreDrafterModel();
+  const settings = loadSettings(ctx.cwd);
+  const resolution = resolveDrafterModel(ctx, settings);
+  const selected = resolution.selected;
+  if (!selected || selected.via === "session-last-resort" || !ctx.model || !extensionApi) {
+    if (resolution.configuredRefs.length > 0 && selected?.via === "session-last-resort") {
+      appendLedger(ctx.cwd, "drafter_model_fallback", { configured: resolution.configuredRefs, via: "session-model" });
+      ctx.ui.notify("Configured drafter models were unavailable; drafting stays on the current session model. Main and auditor recovery chains are unchanged.", "warning");
+    }
+    return;
+  }
+  const originalModel = ctx.model;
+  const beforeRef = modelRef(originalModel);
+  if (!beforeRef || beforeRef.toLowerCase() === selected.ref.toLowerCase()) return;
+  let switched = false;
+  try { switched = await extensionApi.setModel(selected.model); } catch { switched = false; }
+  if (!switched) {
+    appendLedger(ctx.cwd, "drafter_model_fallback", { configured: resolution.configuredRefs, selected: selected.ref, via: "session-model", reason: "setModel rejected" });
+    ctx.ui.notify(`Drafter model ${selected.ref} could not be selected; drafting stays on the current session model.`, "warning");
+    return;
+  }
+  draftingModelLease = {
+    originalModel,
+    activeRef: selected.ref,
+    candidates: resolution.candidates,
+    attempted: [selected.ref],
+    generation: sessionGeneration,
+  };
+  appendLedger(ctx.cwd, "drafter_model_selected", { from: beforeRef, to: selected.ref, candidates: resolution.configuredRefs });
+  ctx.ui.notify(`Drafting uses ${selected.ref} temporarily; the session model will be restored when drafting ends.`, "info");
+}
+
+/** Restore the pre-drafting model unless the user changed it meanwhile. */
+async function restoreDrafterModel(): Promise<void> {
+  const lease = draftingModelLease;
+  draftingModelLease = null;
+  if (!lease || lease.generation !== sessionGeneration || !extensionApi) return;
+  const currentRef = modelRef(lastCtx?.model);
+  if (currentRef && currentRef.toLowerCase() !== lease.activeRef.toLowerCase()) {
+    appendLedger(lastCtx?.cwd ?? process.cwd(), "drafter_model_restore_skipped", { active: lease.activeRef, current: currentRef, reason: "model changed during drafting" });
+    return;
+  }
+  try {
+    const restored = await extensionApi.setModel(lease.originalModel);
+    appendLedger(lastCtx?.cwd ?? process.cwd(), restored ? "drafter_model_restored" : "drafter_model_restore_failed", { to: modelRef(lease.originalModel) });
+    if (!restored) lastCtx?.ui.notify("The drafting model could not be restored; the current model remains active. Main and auditor settings were not changed.", "warning");
+  } catch {
+    appendLedger(lastCtx?.cwd ?? process.cwd(), "drafter_model_restore_failed", { to: modelRef(lease.originalModel) });
+    lastCtx?.ui.notify("The drafting model could not be restored; the current model remains active. Main and auditor settings were not changed.", "warning");
+  }
+}
+
+/**
+ * Generic drafting recovery: walk the dedicated chain after any provider
+ * error and replay a continuation of the existing interview. No error text
+ * is classified and the main-model recovery chain is never consulted.
+ */
+async function handleDrafterModelFailure(ctx: ExtensionContext): Promise<boolean> {
+  const lease = draftingModelLease;
+  if (!lease || draftingTarget === null || lease.generation !== sessionGeneration || !extensionApi) return false;
+  for (const candidate of lease.candidates) {
+    if (lease.attempted.some((ref) => ref.toLowerCase() === candidate.ref.toLowerCase())) continue;
+    lease.attempted.push(candidate.ref);
+    let switched = false;
+    try { switched = await extensionApi.setModel(candidate.model); } catch { switched = false; }
+    if (!switched) continue;
+    const previous = lease.activeRef;
+    lease.activeRef = candidate.ref;
+    appendLedger(ctx.cwd, "drafter_model_fallback", { from: previous, to: candidate.ref, attempted: lease.attempted });
+    ctx.ui.notify(`Drafting provider failed; retrying the existing interview on ${candidate.ref}.`, "warning");
+    const safeSteer = (globalThis as any).safeSteerUser as ((context: ExtensionContext, text: string) => boolean) | undefined;
+    if (!safeSteer || !safeSteer(ctx, DRAFTER_RECOVERY_PROMPT)) return false;
+    draftingSeedInFlight = true;
+    return true;
+  }
+  draftingModelLease = null;
+  appendLedger(ctx.cwd, "drafter_model_fallback_exhausted", { attempted: lease.attempted });
+  ctx.ui.notify("The dedicated drafter chain is exhausted; the drafting interview remains open on the current model. Retry the drafting command when ready.", "warning");
+  return false;
 }
 
 /**
@@ -581,6 +679,7 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
       if (xr) tmpl += `\n\n${xr}`;
     }
   }
+  await beginDrafterModel(ctx);
   try {
     const wasStale = extensionApiStale;
     const sent = safeSteerUser(ctx, tmpl);
@@ -699,6 +798,8 @@ defineGoalRuntimeGlobal("listQueue", { get: () => listQueue });
 defineGoalRuntimeGlobal("groupOpenChildren", { get: () => groupOpenChildren });
 defineGoalRuntimeGlobal("activateNextListItem", { get: () => activateNextListItem });
 defineGoalRuntimeGlobal("startDrafting", { get: () => startDrafting });
+defineGoalRuntimeGlobal("restoreDrafterModel", { get: () => restoreDrafterModel });
+defineGoalRuntimeGlobal("handleDrafterModelFailure", { get: () => handleDrafterModelFailure });
 defineGoalRuntimeGlobal("healGoalPolicy", { get: () => healGoalPolicy });
 defineGoalRuntimeGlobal("notifyExternal", { get: () => notifyExternal });
 defineGoalRuntimeGlobal("staleToolResult", { get: () => staleToolResult });

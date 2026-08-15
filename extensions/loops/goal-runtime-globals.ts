@@ -81,6 +81,8 @@ declare global {
   var draftingUserReplies: any;
   var draftingBlockedProposals: any;
   var draftingSeedInFlight: any;
+  var restoreDrafterModel: any;
+  var handleDrafterModelFailure: any;
   var clearDraftingState: any;
   var DRAFT_SESSION_INTERRUPTED_MESSAGE: any;
   var countedTokenMessages: any;
