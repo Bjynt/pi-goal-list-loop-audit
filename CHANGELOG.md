@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.35.2 — role-specific agent settings and compact values (2026-08-15)
+
+### Agent settings are separated by role
+  Main agent, Drafter, Auditor, and Subagents now have separate settings tabs.
+  Each role keeps its model, thinking, and fallback controls together; the
+  current main agent is shown as a runtime value rather than being confused
+  with its fallback chain.
+
+### Model values remain visible
+  The settings table defaults to a compact view that gives the VALUE column the
+  available width. Press `d` to toggle the long descriptions. Drafter and
+  auditor fallback values show the effective/requested thinking level when the
+  model registry exposes the capability map.
+
 ## 0.35.1 — drafter agent controls and settings taxonomy (2026-08-15)
 
 ### Drafter thinking follows the selected agent

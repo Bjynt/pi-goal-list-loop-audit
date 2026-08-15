@@ -10,7 +10,7 @@ This is a detached process, not a nested session in the main pi process. `comple
 
 On Windows, npm installs the `pi.cmd` shim rather than a directly executable `pi` binary. The auditor launches it through an explicitly quoted `cmd.exe` boundary; POSIX keeps direct shell-less execution. Protocol snapshots also tolerate transient Windows file-locks without deleting the last valid snapshot first.
 
-**Current package version:** `v0.35.1` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
+**Current package version:** `v0.35.2` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
 
 ## Why this exists
 
@@ -131,8 +131,9 @@ with `Agent: Designer` (also accepted: `Role: designer` or `Designer: yes`).
 The managed Designer is read-only; if it is unavailable, the main agent keeps
 the same checkpoint inline.
 
-Drafting can use a separate temporary agent configured in `/glla` under
-Agents (`Drafter agent`, `Drafter thinking`, and `Drafter fallback agents`).
+Drafting can use a separate temporary agent configured in `/glla` under the
+**Drafter** tab (`Drafter agent`, `Drafter thinking`, and `Drafter fallback
+agents`).
 The thinking choice is derived from the selected model, applies only while the
 drafting agent is active, and restores the original session thinking level
 after confirmation or interruption. A drafting failure retries the existing
@@ -294,9 +295,9 @@ verification command immediately would repeat the same local failure; the
 stored claim remains available for explicit resume.
 
 For continuous work, configure up to **10 ordered Main-agent fallback models**
-in `/glla` using independent model references when possible. The editor is the
-top row of the **Agents** settings tab (one place for agent and fallback
-configuration). It shows the actual try order as
+in `/glla` using independent model references when possible. The editor is in
+the **Main agent** settings tab (one role per tab, with the current agent,
+thinking level, and fallback chain together). It shows the actual try order as
 `current → fallback 1 → fallback 2 …`, shows each configured fallback's rank,
 lets **Space** add/remove a fallback, and **Tab** enters order mode where
 **↑/↓** moves the highlighted fallback (brackets `[` `]` also reorder without
@@ -307,7 +308,12 @@ unavailable, and unauthenticated references are skipped; a successful
 supervised turn clears the episode. The chain is global, durable, and its
 attempted cursor survives reload. After the chain is exhausted, bounded
 retries continue on the active model rather than silently abandoning work.
-The Agents tab shows the `N/10` count and numbered chain.
+The Main agent tab shows the `N/10` count and numbered chain. The Drafter and
+Auditor tabs likewise show each selected model together with its requested
+thinking level; fallback rows show the effective/requested thinking level when
+the model registry exposes the capability map. Press `d` in the settings table
+to toggle the long descriptions and give the model/value column the available
+width.
 
 Provider payloads are never copied into chat cards or notifications. A bounded
 diagnostic may remain in the ledger and durable state for forensics, while
@@ -421,7 +427,9 @@ Open `/glla` to edit these settings in the table (the rows show effective values
 - Auditor fallback agent
 - Notify command, token limit, and wedge-alert minutes
 - Auto-resume, auto-accept drafts, decision popup, and carryover policy
-- Main-agent fallback models, drafter agent/thinking/fallback agents, and recovery cadence (including the optional hourly probe) in the Agents tab
+- Main-agent current model/thinking, fallback models, and recovery cadence in the Main agent tab
+- Drafter agent/thinking/fallback agents in the Drafter tab
+- Auditor agent/thinking/fallback agent in the Auditor tab
 - Forbidden model patterns and switch policy
 - Audit cap/report size, aggressive mode (ON by default), retry cadence, and
   stall brakes
@@ -443,7 +451,7 @@ the launch-restore gate and the reviewer-enqueue gate read only the global
 file now. Main-session recovery policy is likewise one global chain/cadence
 for the active session. Main-agent fallback models are global and ordered (up to 10): a provider
 failure selects fallback 1, then fallback 2, and so on, one supervised turn at a
-time. The Agents tab leads with the ordered-chain editor — a multi-select
+time. The Main agent tab leads with the ordered-chain editor — a multi-select
 picker where Space toggles membership, Tab enters order mode (↑/↓ moves a
 chain row), and clearing the selection removes the global key. Forbidden,
 unavailable, and unauthenticated refs are skipped. When every candidate is

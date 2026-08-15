@@ -3,14 +3,29 @@
 we want to show the total time spent
 in fact coudl lets double check how we do the ui
 
-# LATER
+## 
 
-## research
+many parked, they even make sme progress i think not normal operation we need to fully explore this 
 
-codex is doing pretty good continuation without anything we seem to have we check it
-we are also checking claude clode and the newest deepseek-harness too, we have all lcally
+/home/dracon/Pictures/Screenshots/Screenshot_20260815_180007.png /home/dracon/Pictures/Screenshots/Screenshot_20260815_180005.png /home/dracon/Pictures/Screenshots/Screenshot_20260815_175523.png /home/dracon/Pictures/Screenshots/Screenshot_20260815_175459.png /home/dracon/Pictures/Screenshots/Screenshot_20260815_175457.png /home/dracon/Pictures/Screenshots/Screenshot_20260815_175453.png /home/dracon/Pictures/Screenshots/Screenshot_20260815_175450.png /home/dracon/Pictures/Screenshots/Screenshot_20260815_174832.png 
 
-https://github.com/deepseek-ai/deepseek-harness
+
+##
+
+audtior deatch live tends to loo frozen in fact i thik it is frozen here 
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260815_180233.png 
+
+18:03
+
+restarting it 
+
+ok that working and the timer is ticking 
+
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260815_180351.png 
+we would also want to work on the look
+
 
 ## idea
 i wonder about a preference ai has, now generaly this can be argued to be fine but doesnt fit the long running task vibe that ai is not always long term minded
@@ -23,12 +38,4 @@ this also leads to more questions i think, that interrupts long running goals ne
 /home/dracon/Pictures/Screenshots/Screenshot_20260812_054032.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260812_054236.png 
 
-## feat
-this is soemwhat more general but still a feature we can build in cosndiering we have an auditor too
-we can have a designer sub agent and when specified then tasks that are called for the designer are delegated to it 
-of course this can have fallback too and if deisgner not set, or not available then we fallback
-designer subagent as an option and the plan / list is made with space for it 
-
-## feat 
-
-drafter model with fallbacks
+# LATER

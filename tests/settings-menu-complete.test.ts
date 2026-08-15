@@ -109,6 +109,39 @@ test("main fallback row explains ordered, deselectable selection", () => {
   assert.match(row.description, /ordered and deselectable/);
 });
 
+test("role rows show each selected model with requested/effective thinking", () => {
+  const rows = buildSettingsRows(
+    {
+      drafterModel: "provider/primary",
+      drafterThinkingLevel: "max",
+      drafterModelFallbacks: ["provider/no-max", "provider/also-max"],
+      auditorModel: "provider/auditor",
+      auditorThinkingLevel: "high",
+      auditorModelFallback: "provider/auditor-fallback",
+    } as Settings,
+    EMPTY_PROV,
+    {
+      sessionModel: "provider/session",
+      sessionThinkingLevel: "high",
+      thinkingLevelsByRef: {
+        "provider/primary": ["off", "high", "max"],
+        "provider/no-max": ["off", "low", "high"],
+        "provider/also-max": ["off", "high", "max"],
+        "provider/auditor": ["off", "high"],
+        "provider/auditor-fallback": ["off", "low"],
+      },
+    },
+  );
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  assert.equal(byId.get("mainAgent")?.valueText, "provider/session · high");
+  assert.equal(byId.get("drafterModel")?.valueText, "provider/primary · max");
+  assert.equal(
+    byId.get("drafterModelFallbacks")?.valueText,
+    "provider/no-max · high (requested max) → provider/also-max · max",
+  );
+  assert.equal(byId.get("auditorModelFallback")?.valueText, "provider/auditor-fallback · low (requested high)");
+});
+
 test("all embedded subagent types expose editable fallback-chain rows", () => {
   const rows = buildSettingsRows(
     {
