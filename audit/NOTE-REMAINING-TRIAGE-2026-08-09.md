@@ -67,3 +67,27 @@ disposition; detailed root-cause audit ran in parallel (see
 | Working while showing pause state (162121/170713/170710) | **Under audit** | "Working..." + task "paused" simultaneously (3h+ pauses). |
 | Auditor disapproval chat leak | **Known constraint** | Verdict text may flash in chat briefly then vanish; user: "we never want to show error there". |
 | Registry-vs-disk mismatch (212014, no note text) | **Pre-fix window; verify post-fix** | `complete_goal` says "No active goal" while `goals/20260810201156-mccwc3.md` exists on disk; 21:20 UTC, before the v0.34.122 in-place-state fix (21:45). Verify the fence path can't leave memory/disk divergent post-fix. |
+
+---
+
+## Addendum 2026-08-15 (v0.34.141) — retry-policy audit
+
+The retry policy was re-audited against the session export, the source, and
+the full release suite. The older rows above are historical findings; these
+are the current dispositions for the retry behavior requested in the latest
+pass.
+
+| Finding | Current result | Evidence / action |
+|---|---|---|
+| Quota wall chat dump | **Fixed in current source** | Provider payloads remain durable diagnostics, while notifications/cards/tool results use the sanitized provider label. `tests/quota-retry.test.ts`, `tests/display.test.ts`, and behavioral recovery tests pin the boundary. |
+| Retry not picking up the hour boundary | **Fixed** | Main recovery's hourly ticker is ON by default and fires at `:00:30`; stored auditor claims use the same next-hour `:00:30` slot on attempts 2+. |
+| Auditor frozen after an infrastructure/no-verdict failure | **Fixed within the bounded safety envelope** | Recovery state, retry count, and horizon persist across lifecycle changes; aggressive mode re-arms the stored claim. The existing 5-attempt/24-hour cap still requires explicit resume after the envelope ends. |
+| Quota availability checking | **Removed from scheduling decisions** | The plugin does not query quota state before retrying. Retriable failures get the same eager retry; provider quota/rate-limit wording is retained only as sanitized diagnostics/metadata. |
+| Aggressive default | **Enabled in v0.34.141** | Missing `aggressiveMode` resolves to ON; explicit `aggressiveMode: false` remains the conservative opt-out, and explicit per-setting values still win. |
+
+Focused retry tests pass, the full release check passes with `1352 pass / 1
+skip / 0 fail` across 112 files, TypeScript and the jiti reproduction are
+clean, the package dry-run is `pi-goal-list-loop-audit@0.34.141`, and npm
+reports zero vulnerabilities. Remaining session replacement and native
+subagent transcript limitations are pi-host concerns documented above, not
+retry-policy defects in this plugin.
