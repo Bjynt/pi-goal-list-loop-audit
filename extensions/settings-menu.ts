@@ -274,10 +274,10 @@ export function buildSettingsRows(
     {
       id: "auditorModel",
       section: "auditor",
-      label: "Auditor model",
+      label: "Auditor agent",
       valueText: show("auditorModel", "session model"),
       sourceText: src("auditorModel"),
-      description: "provider/model override for the isolated auditor — you pick its thinking level right after the model",
+      description: "provider/model override for the isolated auditor agent — you pick its thinking level right after the agent",
     },
     {
       id: "auditorThinkingLevel",
@@ -290,10 +290,10 @@ export function buildSettingsRows(
     {
       id: "auditorModelFallback",
       section: "auditor",
-      label: "Auditor fallback model",
+      label: "Auditor fallback agent",
       valueText: show("auditorModelFallback", "session model (last resort)"),
       sourceText: src("auditorModelFallback"),
-      description: "walked when the primary is unavailable OR IS the session model (the verifier should differ) — unset = the session model is the last resort",
+      description: "walked when the primary agent is unavailable OR IS the session model (the verifier should differ) — unset = the session model is the last resort",
     },
     {
       id: "auditorSameSessionSwap",

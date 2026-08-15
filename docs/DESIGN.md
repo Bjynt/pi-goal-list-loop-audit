@@ -197,7 +197,7 @@ architectural decisions that changed the SHAPE of the system:
   `mainModelFallbackOnRateLimit`, `mainModelRetryMinutes`, and
   `hourlyQuotaProbe` are global-only, so the runtime and settings provenance
   cannot disagree about which recovery policy is active.
-- **Ordered global backups**: `mainModelFallbacks` is an explicit ordered list
+- **Ordered global fallback agents**: `mainModelFallbacks` is an explicit ordered list
   of up to 10 `provider/model` references. A provider/quota error selects the
   first eligible authenticated candidate for account/plan/billing/auth failures,
   calls `setModel`, and lets the next supervised turn test it; later failures
@@ -205,7 +205,7 @@ architectural decisions that changed the SHAPE of the system:
   walk the list when global `mainModelFallbackOnRateLimit` is on (default); off
   keeps them on the current model with bounded retry + hourly probe cadence.
   The detached auditor's model cascade remains a separate subsystem. The
-  ordered-chain editor leads the **Backups** settings tab: Space toggles
+  ordered-chain editor leads the **Agents** settings tab: Space toggles
   membership, Tab enters an explicit order mode where ↑/↓ moves a chain row,
   and clearing the list removes the global key. The attempted cursor is durable, so a reload cannot
   restart at an already-failed rung.
@@ -356,12 +356,13 @@ replacement without delivering a successor `session_start`:
   plans; continuation injects the hand-off; a managed `Designer.md` uses only
   read/search tools; unavailable role/provider falls back to an inline design
   checkpoint.
-- **Drafting owns a temporary model lease**: the `/goal`, `/list`, and `/loop`
-  interviews resolve a separate primary/fallback chain, retry the existing
-  interview after generic provider errors, and restore the original model after
-  confirmation or interruption. A current-session last resort is bounded and
-  does not enter main-goal recovery. A generation fence and serialized restore
-  prevent stale-session or overlapping-draft model changes.
+- **Drafting owns a temporary agent lease**: the `/goal`, `/list`, and `/loop`
+  interviews resolve a separate primary/fallback chain, select a model-specific
+  thinking level, retry the existing interview after generic provider errors,
+  and restore the original model and thinking level after confirmation or
+  interruption. A current-session last resort is bounded and does not enter
+  main-goal recovery. A generation fence and serialized restore prevent
+  stale-session or overlapping-draft agent changes.
 - **Host replacement remains host-owned**: Pi event contexts do not expose the
   command-only `newSession`/`fork`/`switchSession` operations. glla therefore
   persists the work and truthfully asks for `/new` when no replacement boundary

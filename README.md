@@ -131,10 +131,12 @@ with `Agent: Designer` (also accepted: `Role: designer` or `Designer: yes`).
 The managed Designer is read-only; if it is unavailable, the main agent keeps
 the same checkpoint inline.
 
-Drafting can use a separate temporary model chain configured in `/glla` under
-Backups (`Drafter model` and `Drafter fallback chain`). A drafting failure
-retries the existing interview through that chain and restores the original
-session model after confirmation or interruption. Main-model and auditor
+Drafting can use a separate temporary agent configured in `/glla` under
+Agents (`Drafter agent`, `Drafter thinking`, and `Drafter fallback agents`).
+The thinking choice is derived from the selected model, applies only while the
+drafting agent is active, and restores the original session thinking level
+after confirmation or interruption. A drafting failure retries the existing
+interview through that agent's fallback chain. Main-agent and auditor-agent
 recovery chains remain separate. Provider recovery is intentionally blind:
 there is no live quota checking or reset inference; the generic retry envelope
 and the optional hourly `:00:30` probe remain the policy.
@@ -291,22 +293,21 @@ watchdog timeouts are also kept separate because rerunning a hanging local
 verification command immediately would repeat the same local failure; the
 stored claim remains available for explicit resume.
 
-For continuous work, configure up to **10 ordered Main model backups** in
-`/glla` using independent model references when possible. The editor is the
-top row of the **Backups** settings tab (one place for main-session backup
-policy).
-It shows the actual try order as
-`current → backup 1 → backup 2 …`, shows each configured backup's rank, lets
-**Space** add/remove a backup, and **Tab** enters order mode where **↑/↓**
-moves the highlighted backup (brackets `[` `]` also reorder without leaving
-the list). Every recoverable provider failure uses the same ordered chain:
-glla calls `setModel` for the first eligible backup, the next supervised turn
-tests it, and later failures advance left-to-right. Forbidden, unavailable,
-and unauthenticated references are skipped; a successful supervised turn
-clears the episode. The chain is global, durable, and its attempted cursor
-survives reload. After the chain is exhausted, bounded retries continue on
-the active model rather than silently abandoning work. The Backups tab shows
-the `N/10` count and numbered chain.
+For continuous work, configure up to **10 ordered Main-agent fallback models**
+in `/glla` using independent model references when possible. The editor is the
+top row of the **Agents** settings tab (one place for agent and fallback
+configuration). It shows the actual try order as
+`current → fallback 1 → fallback 2 …`, shows each configured fallback's rank,
+lets **Space** add/remove a fallback, and **Tab** enters order mode where
+**↑/↓** moves the highlighted fallback (brackets `[` `]` also reorder without
+leaving the list). Every recoverable provider failure uses the same ordered
+chain: glla calls `setModel` for the first eligible fallback, the next
+supervised turn tests it, and later failures advance left-to-right. Forbidden,
+unavailable, and unauthenticated references are skipped; a successful
+supervised turn clears the episode. The chain is global, durable, and its
+attempted cursor survives reload. After the chain is exhausted, bounded
+retries continue on the active model rather than silently abandoning work.
+The Agents tab shows the `N/10` count and numbered chain.
 
 Provider payloads are never copied into chat cards or notifications. A bounded
 diagnostic may remain in the ledger and durable state for forensics, while
@@ -420,7 +421,7 @@ Open `/glla` to edit these settings in the table (the rows show effective values
 - Auditor fallback model
 - Notify command, token limit, and wedge-alert minutes
 - Auto-resume, auto-accept drafts, decision popup, and carryover policy
-- Ordered main-session backups at the top of the Backups tab, plus recovery cadence (including the optional hourly probe)
+- Main-agent fallback models, drafter agent/thinking/fallback agents, and recovery cadence (including the optional hourly probe) in the Agents tab
 - Forbidden model patterns and switch policy
 - Audit cap/report size, aggressive mode (ON by default), retry cadence, and
   stall brakes
@@ -433,15 +434,16 @@ active objective; wipe clears all live state while preserving history.
 There is no top-level `/glla key=value` setting syntax.
 
 Resolution per key: **project > global > defaults** — EXCEPT `autoResume` and
-main-session recovery settings (`mainModelFallbacks`,
-`mainModelRetryMinutes`, `hourlyRetryProbe`),
+agent recovery settings (`mainModelFallbacks`, `mainModelRetryMinutes`,
+`drafterModel`, `drafterThinkingLevel`, `drafterModelFallbacks`,
+`hourlyRetryProbe`),
 which are **global-only**: per-project opt-ins from old versions
 silently overrode the global hold at launch (the junk-runner incident), so
 the launch-restore gate and the reviewer-enqueue gate read only the global
 file now. Main-session recovery policy is likewise one global chain/cadence
-for the active session. Main-session backups are global and ordered (up to 10): a provider
-failure selects backup 1, then backup 2, and so on, one supervised turn at a
-time. The Backups tab leads with the ordered-chain editor — a multi-select
+for the active session. Main-agent fallback models are global and ordered (up to 10): a provider
+failure selects fallback 1, then fallback 2, and so on, one supervised turn at a
+time. The Agents tab leads with the ordered-chain editor — a multi-select
 picker where Space toggles membership, Tab enters order mode (↑/↓ moves a
 chain row), and clearing the selection removes the global key. Forbidden,
 unavailable, and unauthenticated refs are skipped. When every candidate is
@@ -449,7 +451,7 @@ down, glla stops the current send attempt and uses the configured
 `base → 2×base → 4×base → 8×base → 16×base → 5h` ladder (`base` defaults to
 15m). `hourlyRetryProbe=on` adds a blind :00:30 retry after each hour starts.
 No provider availability or quota check is made before any retry; all
-recoverable failures walk the ordered backups and then continue on the active
+recoverable failures walk the ordered fallbacks and then continue on the active
 model through the bounded retry policy. Automatic recovery stops at 24h,
 preserves the saved work, and requires an explicit
 `/goal resume`, `/list resume`, or `/loop resume` to start a fresh window. A
