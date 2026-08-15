@@ -244,6 +244,40 @@ test("T4: input editor — auditorModel set / cleared on empty", async () => {
   }
 });
 
+test("drafter agent picker immediately offers model-specific thinking and persists both choices", async () => {
+  try {
+    restoreGlobal();
+    const ctx = makeMockCtx(tmpCwd()) as any;
+    const session = { provider: "anthropic", id: "session", reasoning: true };
+    const drafter = {
+      provider: "openai",
+      id: "drafter",
+      reasoning: true,
+      thinkingLevelMap: { xhigh: "xhigh", max: "max" },
+    };
+    ctx.model = session;
+    ctx.thinkingLevel = "high";
+    ctx.modelRegistry = {
+      find(provider: string, id: string) {
+        return provider === "openai" && id === "drafter" ? drafter : provider === "anthropic" && id === "session" ? session : undefined;
+      },
+      getAvailable() { return [session, drafter]; },
+      hasConfiguredAuth() { return true; },
+    };
+    ctx.ui.customImpl = async () => ({ kind: "model", ref: "openai/drafter" });
+    ctx.ui.selectImpl = async (title: string) => title.startsWith("Drafter thinking") ? "medium — ~8k tokens" : undefined;
+
+    await handleSettingChoice("drafterModel", ctx as ExtensionContext);
+
+    const saved = readGlobal();
+    assert.equal(saved.drafterModel, "openai/drafter");
+    assert.equal(saved.drafterThinkingLevel, "medium");
+    assert.ok(ctx.ui.matching("Drafter agent").length >= 1);
+  } finally {
+    restoreGlobal();
+  }
+});
+
 test("T4: input editor validation — auditCap rejects garbage loudly, accepts integers, clears on empty", async () => {
   try {
     const ctx = makeMockCtx(tmpCwd());

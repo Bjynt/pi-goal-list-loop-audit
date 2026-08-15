@@ -2127,8 +2127,9 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
     [
       `mainModelBackups: ${formatMainModelFallbacks(effectiveSettings.mainModelFallbacks)}  [${prov.mainModelFallbacks?.source ?? "default"}]`,
       fmt("mainModelRetryMinutes", "mainModelRetryMinutes (base minutes; doubles per attempt)"),
-      fmt("drafterModel", "drafterModel (drafting only)"),
-      fmt("drafterModelFallbacks", "drafterModelFallbacks (drafting only)"),
+      fmt("drafterModel", "drafterAgent (drafting only)"),
+      fmt("drafterThinkingLevel", "drafterThinking (drafting only)"),
+      fmt("drafterModelFallbacks", "drafterFallbackAgents (drafting only)"),
       fmt("forbiddenModels", "forbiddenModels"),
       fmt("blockForbiddenModelSwitches", "blockForbidden"),
       fmt("visionAssist", "visionAssist"),

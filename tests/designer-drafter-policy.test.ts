@@ -133,6 +133,7 @@ test("settings expose drafting-only primary and fallback controls", () => {
   });
   const byId = new Map(rows.map((row) => [row.id, row]));
   assert.equal(byId.get("drafterModel")?.valueText, "test/primary");
+  assert.equal(byId.get("drafterThinkingLevel")?.valueText, "session level (inherited)");
   assert.equal(byId.get("drafterModelFallbacks")?.valueText, "test/backup");
   assert.match(byId.get("drafterModelFallbacks")!.description, /without changing main or auditor chains/);
 });
@@ -144,6 +145,8 @@ test("drafting recovery stays on the dedicated chain and uses the existing inter
   assert.match(queueSource, /drafter_model_fallback_exhausted/);
   assert.match(queueSource, /drafter_model_retry/);
   assert.match(queueSource, /draftingModelRestoreInFlight/);
+  assert.match(queueSource, /originalThinkingLevel/);
+  assert.match(queueSource, /applyDrafterThinkingLevel/);
   assert.match(queueSource, /Main and auditor recovery chains are unchanged/);
   assert.match(activationSource, /handleDrafterModelFailure/);
   assert.match(activationSource, /draftingTarget !== null/);
