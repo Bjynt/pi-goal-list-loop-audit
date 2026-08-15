@@ -166,7 +166,8 @@ test("runtime fallback walk uses one supervised model at a time and preserves le
       pendingModelSwitch: "provider/removed",
     };
     await probeMainModelRecovery(ctx);
-    assert.equal(calls.length, beforeLegacySetting + 1, "a removed pending backup is not resurrected by a delayed probe");
+    assert.ok(calls.length > beforeLegacySetting, "the removed pending target is replaced by the configured generic fallback");
+    assert.equal(calls.includes("provider/removed"), false, "a removed pending backup is not resurrected by a delayed probe");
     assert.equal(state.mainModelRecovery?.pendingModelSwitch, undefined);
   } finally {
     replaceState({ goal: null } as any);
