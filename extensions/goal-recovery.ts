@@ -401,8 +401,6 @@ export function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModel
     kind: normalized.kind,
     attempts: normalized.attempts,
     autoRetryUntil: normalized.autoRetryUntil,
-    resetAt: normalized.resetAt,
-    quotaSignal: normalized.quotaSignal,
     why: sanitizeProviderDisplayText(why),
     diagnostic: normalized.providerErrorDiagnostic,
     recoveryEpisodeKey: normalized.recoveryEpisodeKey,
@@ -499,11 +497,7 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
     attempted: [current],
     attempts: 0,
     reason: mainModelRecoveryReason(failure),
-    resetAt: failure.resetAt,
     kind: mainModelRecoveryKind(),
-      quotaSignal: failure.quotaSignal,
-      retryAfterSec: failure.retryAfterSec,
-      retryFromUpstream: failure.retryFromUpstream,
   });
   const failureCopy = providerErrorPresentation(failure.raw, "main");
   const recovery: MainModelRecovery = {
@@ -512,10 +506,6 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
     providerErrorDiagnostic: failureCopy.diagnostic,
     recoveryEpisodeKey: baseRecovery.recoveryEpisodeKey ?? `${baseRecovery.firstFailureAt ?? nowIso()}:${failureCopy.fingerprint}`,
     recoveryNoticeKeys: baseRecovery.recoveryNoticeKeys ?? [],
-    quotaSignal: failure.quotaSignal ?? baseRecovery.quotaSignal,
-    retryAfterSec: failure.retryAfterSec ?? baseRecovery.retryAfterSec,
-    retryFromUpstream: failure.retryFromUpstream ?? baseRecovery.retryFromUpstream,
-    resetAt: failure.resetAt ?? baseRecovery.resetAt,
   };
   if (!recovery.attempted.includes(current)) recovery.attempted.push(current);
   const selector = sessionModelSelector(ctx);
@@ -680,10 +670,6 @@ export function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainM
     retryAt,
     attempts: normalized.attempts,
     autoRetryUntil: normalized.autoRetryUntil,
-    resetAt: normalized.resetAt,
-    quotaSignal: normalized.quotaSignal,
-    retryAfterSec: normalized.retryAfterSec,
-    retryFromUpstream: normalized.retryFromUpstream,
     reason: normalized.reason,
     diagnostic: normalized.providerErrorDiagnostic,
     recoveryEpisodeKey: normalized.recoveryEpisodeKey,
@@ -1085,17 +1071,11 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
       providerErrorDiagnostic: failureCopy.diagnostic,
       recoveryEpisodeKey: recovery.recoveryEpisodeKey ?? `${recovery.firstFailureAt ?? nowIso()}:${failureCopy.fingerprint}`,
       recoveryNoticeKeys: recovery.recoveryNoticeKeys ?? [],
-      quotaSignal: failure.quotaSignal ?? recovery.quotaSignal,
-      retryAfterSec: failure.retryAfterSec ?? recovery.retryAfterSec,
-      retryFromUpstream: failure.retryFromUpstream ?? recovery.retryFromUpstream,
-      resetAt: failure.resetAt ?? recovery.resetAt,
       resumeCurrent: (state.mainModelRecovery ?? recovery).resumeCurrent,
       pendingModelSwitch: undefined,
     });
-    // v0.34.58: no quota-only parking — an over-budget upstream reset hint
-    // never holds the goal for a manual resume; the bounded envelope owns
-    // the wait (mainModelFailureDelayMs falls back to the bounded cadence
-    // when the hint exceeds the 5h probe budget).
+    // All provider failures use the same bounded envelope. Error text and
+    // upstream retry hints do not alter the delay.
     const delay = mainModelFailureDelayMs(failure, next.attempts, loadGlobalSettings().mainModelRetryMinutes);
     if (setMainModelRecoveryPause(ctx, next, delay)) scheduleMainModelRecoveryTimer(ctx, delay);
   } finally {
@@ -1117,10 +1097,6 @@ export function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainMo
     attempted: [current],
     attempts: 0,
     reason: mainModelRecoveryReason(failure),
-    resetAt: failure.resetAt,
-    quotaSignal: failure.quotaSignal,
-    retryAfterSec: failure.retryAfterSec,
-    retryFromUpstream: failure.retryFromUpstream,
     kind: mainModelRecoveryKind(),
   } satisfies MainModelRecovery);
   const failureCopy = providerErrorPresentation(failure.raw, "main");
@@ -1132,17 +1108,12 @@ export function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainMo
     providerErrorDiagnostic: failureCopy.diagnostic,
     recoveryEpisodeKey: existing.recoveryEpisodeKey ?? `${existing.firstFailureAt ?? nowIso()}:${failureCopy.fingerprint}`,
     recoveryNoticeKeys: existing.recoveryNoticeKeys ?? [],
-    quotaSignal: failure.quotaSignal ?? existing.quotaSignal,
-    retryAfterSec: failure.retryAfterSec ?? existing.retryAfterSec,
-    retryFromUpstream: failure.retryFromUpstream ?? existing.retryFromUpstream,
-    resetAt: failure.resetAt ?? existing.resetAt,
     // The next normal/hourly probe retries the current model after the
     // configured backup chain has been visited.
     resumeCurrent: existing.resumeCurrent,
   });
-  // v0.34.58: uniform envelope even for over-budget upstream hints — the
-  // goal never parks on a quota-only manual hold; the bounded cadence owns
-  // the wait and the 24h horizon ends automatic probes (kind-independent).
+  // The generic envelope owns the wait; the 24h horizon ends automatic
+  // probes regardless of the provider's wording.
   const delay = mainModelFailureDelayMs(failure, nextRecovery.attempts, loadGlobalSettings().mainModelRetryMinutes);
   if (!setMainModelRecoveryPause(ctx, nextRecovery, delay)) return;
   flags.mainModelAbortForRecovery = true;
@@ -1156,7 +1127,7 @@ export function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainMo
 
 export async function recoverMainModelFromSendStorm(ctx: ExtensionContext, kind: "continuation" | "loop"): Promise<void> {
   if (!isSupervising() || mainModelRecoveryActive()) return;
-  const failure = classifyMainModelFailure("429 rate limit: pi held the provider retry with no stream activity");
+  const failure = classifyMainModelFailure("provider retry stalled with no stream activity");
   const switched = await tryMainModelFallback(ctx, failure);
   if (switched) {
     const current = modelRef(ctx.model);
@@ -1186,23 +1157,13 @@ export function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
   flags.mainModelAbortForRecovery = false;
   flags.continuationDispatchStoodDown = false;
 
-  // A pi-core retry can succeed after glla has already parked the goal. The
-  // old code cleared only the recovery record, leaving the goal durably
-  // paused (the next screenshot then looked like a stale QUOTA WALL). Resume
+  // A core retry can succeed after glla has already parked the goal. Resume
   // only our own recovery wait — never a user decision/error pause.
-  // v0.34.64: also auto-clear a blocked pause whose reason indicates a quota
-  // / rate-limit / billing cause. autoResume:true honors "keep going" — when
-  // the underlying condition (the quota wall) has resolved, we un-park and
-  // re-engage, instead of leaving the goal stuck on an agent-initiated
-  // block that was authored in response to the wall. Decision/error pauses
-  // (intentional user-action) are still NOT touched.
-  const isQuotaPauseReason = (r: string | undefined): boolean =>
-    !!r && /^(main model recovery|quota|provider quota|provider rate limit|provider (?:account|request|billing)|rate limit|Token Plan|insufficient|credits?|billing)/i.test(r);
   const recoveryPause = state.goal
     && state.goal.status === "paused"
     && !state.goal.pendingCompletion
     && (state.goal.pauseKind === "wait" || state.goal.pauseKind === "blocked")
-    && isQuotaPauseReason(state.goal.pauseReason);
+    && (state.goal.pauseReason ?? "").startsWith("main model recovery");
   const recoveryLoop = state.loop
     && !state.loop.active
     && (state.loop.stopReason ?? "").startsWith("main model recovery —");

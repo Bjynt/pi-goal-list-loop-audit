@@ -136,9 +136,6 @@ export function classifyMainModelFailure(error: string | undefined, opts?: { isC
  * with `isContextOverflow: true` so the selector walks the chain. */
 export function isContextOverflowError(error: string | undefined): boolean {
   if (!error) return false;
-  // HTTP 429 / rate-limit is a provider request wall even when the payload
-  // contains overlapping "output token" or "context" wording.
-  if (/\b429\b|too[\s_-]+many[\s_-]+requests|rate[\s_-]*limit|throttl(?:e|ed|ing)/i.test(error)) return false;
   const text = error.toLowerCase();
   return /context|output[ -]?token|max_?tokens|length limit|too many tokens|prompt too large|context window/.test(text);
 }
