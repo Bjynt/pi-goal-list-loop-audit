@@ -3568,7 +3568,7 @@ test("v0.34.140: aggressive mode keeps no-verdict auditor recovery alive inside 
         && !goal.pauseResumeAt
         && !goal.pendingCompletion?.recoveryRetryAt;
     }, 8_000);
-    assert.ok(readLedger(cwd).some((entry) => entry.type === "audit_recovery_retry_suppressed" && entry.reason === "aggressive-mode-disabled"));
+    assert.ok(readLedger(cwd).some((entry) => entry.type === "audit_recovery_retry_suppressed" && entry.value.reason === "aggressive-mode-disabled"));
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   } finally {
     pi.sendMessageError = null;
