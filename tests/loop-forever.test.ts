@@ -23,6 +23,8 @@ import {
   respecTarget,
   auditMeasureCmd,
   auditTarget,
+  countOpenAuditFindings,
+  topOpenAuditFinding,
   AUDIT_FINDINGS_REL,
   HELD_ON_RESTORE,
   isLifecycleHeldLoopReason,
@@ -573,7 +575,7 @@ test("v0.29.0: /loop audit — metric loop over open findings; plateau = the wel
   assert.match(F, /export function auditMeasureCmd\(\): string/);
   assert.match(F, /export function auditTarget\(\): string/);
   const measureCmd = auditMeasureCmd();
-  assert.ok(measureCmd.includes("grep -cE '^- \\[[xX]\\]' .pi-glla/audit-loop/findings.md"), measureCmd);
+  assert.ok(measureCmd.includes("grep -cE '^- \\[[xX]\\] FIX' .pi-glla/audit-loop/findings.md"), measureCmd);
   assert.ok(measureCmd.includes("echo ${c:-0}"), measureCmd);
   // the target carries the honesty laws:
   const t = auditTarget();
