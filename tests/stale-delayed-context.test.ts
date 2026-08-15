@@ -87,9 +87,20 @@ test("v0.34.20: loop measurement and branch cleanup rebind after async work", ()
   const tick = between(LOOP, "async function runLoopTick", "async function finishLoopGit");
   assert.match(tick, /const generation = flags\.sessionGeneration/); // flag accessor re-spelling (decomposition step 2)
   assert.match(tick, /const rebind = \(\): boolean =>/);
-  assert.match(tick, /await runMeasure\(ctx, loop\.measureCmd!\);\n  if \(!rebind\(\)\) return;/);
-  assert.match(tick, /await runGit\(ctx, \["rev-parse", "HEAD"\]\);\n  if \(!rebind\(\)\) return;/);
-  assert.match(tick, /await finishLoopGit\(ctx, loop\);\n    if \(!rebind\(\)\) return;/);
+  // v0.35.4: the tick captures state.loop before its first await and must
+  // rebind the LOOP OBJECT too — a concurrent /loop stop/pause/park/refine
+  // replaces state.loop (spread sites) while runMeasure is up to 10 min in
+  // flight; mutations on the stale object never persist and finishLoopGit
+  // runs git against the wrong run.
+  assert.match(tick, /let loop = state\.loop!;/);
+  assert.match(tick, /const rebindLoop = \(\): boolean =>/);
+  assert.match(tick, /if \(state\.loop === loop\) return true;/);
+  assert.match(tick, /if \(replaced && replaced\.active\) \{\n\s*loop = replaced;/);
+  assert.match(tick, /appendLedger\(ctx\.cwd, "loop_tick_abandoned"/);
+  assert.match(tick, /await runMeasure\(ctx, loop\.measureCmd!\);\n  if \(!rebindLoop\(\)\) return;/);
+  assert.match(tick, /await runGit\(ctx, \["rev-parse", "HEAD"\]\);\n  if \(!rebindLoop\(\)\) return;/);
+  assert.match(tick, /await finishLoopGit\(ctx, loop\);\n    if \(!rebindLoop\(\)\) return;/);
+  assert.doesNotMatch(tick, /await runMeasure\(ctx, loop\.measureCmd!\);\n  if \(!rebind\(\)\) return;/);
   const finish = between(LOOP, "async function finishLoopGit", "interface LoopConfig");
   assert.match(finish, /const afterReset = freshCtxForGeneration\(generation\)/);
   assert.match(finish, /const afterCheckout = freshCtxForGeneration\(generation\)/);
