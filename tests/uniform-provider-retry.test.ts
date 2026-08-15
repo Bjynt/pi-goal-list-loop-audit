@@ -37,7 +37,7 @@ test("later provider retries use one bounded configured ladder", () => {
 });
 
 test("main-model recovery has no quota-derived policy branch", () => {
-  assert.match(RECOVERY, /one uniform envelope for EVERY provider failure/);
+  assert.match(RECOVERY, /One uniform envelope for EVERY provider failure/);
   assert.doesNotMatch(RECOVERY, /Retry-After.*(?:honor|wins|outrank)/i);
   assert.doesNotMatch(RECOVERY, /allowRateLimit|isLongLivedFailureKind|SEND_REARM_QUOTA/);
   assert.doesNotMatch(SRC, /mainModelFallbackOnRateLimit|quotaRetryMinutes|failure\.kind === "quota"/);

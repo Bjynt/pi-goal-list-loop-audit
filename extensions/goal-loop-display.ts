@@ -631,7 +631,7 @@ function pausedNextTransition(g: Goal, state: State, now: number): string {
     // The parked head remains authoritative while recovery state is still
     // present, including after retryAt has passed but before the recovery
     // dispatch clears/unparks the goal. Do not claim "resuming now" on the
-    // same line that says the goal is still parked on the provider wall.
+    // same line that says the goal is still parked in recovery.
     return "retrying automatically";
   }
   const resumeAt = g.pauseResumeAt ? Date.parse(g.pauseResumeAt) : Number.NaN;
@@ -798,11 +798,9 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       // start a turn"): a wait-pause parked on mainModelRecovery must name
       // the blocker, not promise a live retry. "auto-retrying · auto-retry
       // in 42m" read as pi actively starting turns; in fact NO turn starts
-      // while the goal is parked on the provider wall. Mirror the v0.34.95
-      // queued-envelope wording so both surfaces agree. v0.34.125: no
-      // time claim — "until quota reset at HH:MM" overpromised (the window
-      // is not a guaranteed reset and the :00:30 hourly probe picks work
-      // up earlier; note.md 2026-08-10).
+      // while the goal is parked in recovery. Mirror the queued-envelope
+      // wording so both surfaces agree. Do not promise a provider-side reset
+      // time; the hourly retry is only an extra retry.
       const parked = state.mainModelRecovery?.retryAt ? Date.parse(state.mainModelRecovery.retryAt) : Number.NaN;
       if (Number.isFinite(parked) || state.mainModelRecovery?.pendingModelSwitch) {
         const label = "⏳ main-model recovery — retrying automatically";
@@ -878,15 +876,10 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       : queued
         ? activityStateBadge("QUEUED", theme, "warning")
         : activityStateBadge("ACTIVE", theme, "accent");
-    // v0.34.95: when parked on quota, name the blocker — `[QUEUED] 12m 26s`
-    // reads as a stalled queue with no WHY (Screenshot_20260808_014303
-    // darklord LIST-AUDIT-COLLECT). State.mainModelRecovery is the
-    // bounded envelope's parked state; when set, render "parked on
-    // provider wall" alongside the queue depth. No chat spam, no extra
-    // prompt — the status line just says what's blocking. v0.34.125: no
-    // "waiting for quota reset at HH:MM" — the window is not a guaranteed
-    // reset (note.md 2026-08-10) and the :00:30 hourly probe may pick the
-    // work up earlier.
+    // When recovery parks a queued goal, name the blocker — `[QUEUED] 12m
+    // 26s` reads as a stalled queue with no WHY. State.mainModelRecovery is
+    // the bounded envelope's parked state; the status line says what is
+    // blocking without adding chat spam or a guessed reset time.
     const recovery = state.mainModelRecovery;
     const blockedByRecovery = queued && recovery && recovery.retryAt;
     const recoverySuffix = blockedByRecovery ? ` · parked on provider recovery` : "";
@@ -1035,11 +1028,10 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   const attention = activeAttention(g);
   // v0.34.102: a paused goal with a live mainModelRecovery park is
   // RECOVERING, not paused — the loop is actively probing/rearming in the
-  // background while the provider wall holds (field: dracon-platform
-  // 2026-08-08 090343 "working while displaying paused here"; the rearm
-  // storm streak 19 was firing while the head chip said ⏸ paused). The
-  // status line already renders ⏳ auto-retrying for these; the widget head
-  // must not contradict it.
+  // background while recovery holds (field: dracon-platform 2026-08-08
+  // 090343 "working while displaying paused here"; the rearm storm streak
+  // 19 was firing while the head chip said ⏸ paused). The status line already
+  // renders ⏳ auto-retrying for these; the widget head must not contradict it.
   const recovering = g.status === "paused" && !!state.mainModelRecovery && (!!state.mainModelRecovery.retryAt || !!state.mainModelRecovery.pendingModelSwitch);
   const icon =
     interrupted
