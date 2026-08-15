@@ -487,7 +487,8 @@ test("v0.34.12 + v0.34.64: wait-pause status line counts down live + ticker surv
   const d = fs.readFileSync(path.resolve("extensions/goal-loop-display.ts"), "utf-8");
   assert.match(d, /rms <= 0 \? " · resuming…" : ` · auto-retry in \$\{fmtElapsed\(rms\)\}`/, "live countdown, honest past-resumeAt");
   const g = readGoalRuntimeSource();
-  assert.match(g, /isSupervising\(\) \|\| \(state\.goal\?\.status === "paused" && !!state\.goal\.pauseResumeAt\)/, "ticker keeps rendering through a timed wait");
+  assert.match(g, /const auditVisible = state\.goal\?\.status === "auditing";/, "ticker keeps detached-auditor clocks live between worker events");
+  assert.match(g, /isSupervising\(\) \|\| auditVisible \|\| \(state\.goal\?\.status === "paused" && !!state\.goal\.pauseResumeAt\)/, "ticker keeps rendering through a timed wait");
 });
 
 // ---------- v0.34.16: lifecycle recovery ("keep going unless we MUST stop") ----------
