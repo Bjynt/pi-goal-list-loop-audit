@@ -111,7 +111,9 @@ export interface Settings {
   auditFeedbackChars?: number;
   /** v0.25.0: flip the continuation defaults toward keep-going
    * (contract item 5): autoResume on, auditCap 10, stuckMax 10, wedge off,
-   * quota errors auto-retry silently. Explicit per-key settings still win. */
+   * quota errors auto-retry silently. v0.34.140: no-verdict auditor recovery
+   * also keeps retrying inside its bounded 24-hour window. Explicit per-key
+   * settings still win. */
   aggressiveMode?: boolean;
   /** Minutes to wait before auto-retrying a quota-exhausted auditor when
    * the upstream gave no Retry-After hint (contract item 11). Default 60. */

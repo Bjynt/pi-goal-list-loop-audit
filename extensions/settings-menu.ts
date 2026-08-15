@@ -168,7 +168,7 @@ export function buildSettingsRows(
       valueText: show("aggressiveMode", "off"),
       sourceText: src("aggressiveMode"),
       description:
-        "flips DEFAULTS toward keep-going (autoResume, cap 10, stuck 10, wedge off, quota auto-retry, cap→TODOs); explicit per-key settings still win",
+        "flips DEFAULTS toward keep-going (autoResume, cap 10, stuck 10, wedge off, quota + no-verdict auditor retries, cap→TODOs); explicit per-key settings still win",
     },
     {
       id: "visionAssist",

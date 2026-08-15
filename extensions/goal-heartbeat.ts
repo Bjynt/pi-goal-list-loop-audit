@@ -585,8 +585,14 @@ function heartbeatTick(): void {
     const nowMs = Date.now();
     const abortKey = `${flags.sessionGeneration}:${state.goal?.id ?? "loop"}:${flags.lastStreamActivityAt}`;
     if (streamSilentMs >= zombieAbortMs && !flags.abortedStandDown && abortKey !== lastZombieAbortKey) {
-      lastZombieAbortKey = abortKey;
-      if (abortZombieRun(ctx, flags.sessionGeneration, state.goal?.id, flags.lastStreamActivityAt)) return;
+      // Claim the key only after the activation-owned abort succeeds. A
+      // generation/stream/goal guard can legitimately reject this attempt
+      // while the heartbeat is still observing the same silent run; latching
+      // first strands that run in warning-only state forever.
+      if (abortZombieRun(ctx, flags.sessionGeneration, state.goal?.id, flags.lastStreamActivityAt)) {
+        lastZombieAbortKey = abortKey;
+        return;
+      }
     }
     if (nowMs - lastZombieAlertAt >= ZOMBIE_RUN_ALERT_THROTTLE_MS) {
       lastZombieAlertAt = nowMs;

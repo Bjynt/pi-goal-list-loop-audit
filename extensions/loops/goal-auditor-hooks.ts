@@ -1079,9 +1079,10 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
   }
 
   if (result.error && !result.disapproved && isAuditorNoVerdictInfrastructureError(result.error, result.infrastructureClass)) {
-    // Watchdog timeouts stay ahead of the durable retry branch: a hanging
-    // verification command will hang again, so pause loudly and let
-    // /goal resume re-enter the direct-audit path with the stored claim.
+    // Watchdog timeouts stay ahead of the provider/quota retry branch: a
+    // hanging verification command is not evidence of a quota wall. Normal
+    // mode gets one fresh stored-claim retry; aggressiveMode keeps this
+    // independent recovery loop alive inside its durable window.
     const failureCopy = providerErrorPresentation(result.error, "completion");
     const recoveryEpisodeKey = claim.recoveryEpisodeKey ?? `${claim.at}:${failureCopy.fingerprint}`;
     let pending: PendingCompletion = {
@@ -1101,6 +1102,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     if (typeof scheduleParkedCompletionAuditRecovery === "function") {
       pending = scheduleParkedCompletionAuditRecovery(liveCtx, pending, pending.recoveryReason ?? "auditor-timeout");
     }
+    const persistentRecovery = pending.recoveryRetryAt !== undefined && aggressiveAuditorRecoveryEnabled(liveCtx.cwd);
     const notifyTimeout = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:timeout`);
     const timeoutInfrastructure = result.infrastructureClass === "timeout" || /^Auditor (?:exceeded|stalled)\b/i.test(result.error);
     updateGoal({
@@ -1116,7 +1118,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
         ? "completion audit timed out — no verifier verdict was produced"
         : "completion audit stopped before a verifier verdict — no semantic verdict was produced",
       pauseSuggestedAction: pending.recoveryRetryAt
-        ? `One bounded auditor retry is scheduled in ${fmtRetryDelay(Math.max(1, (Date.parse(pending.recoveryRetryAt) - Date.now()) / 1000))}; ${activeGoalSurfaceCommand("resume")} retries immediately.`
+        ? `${persistentRecovery ? "Aggressive mode keeps automatic auditor retries active" : "One bounded auditor retry is scheduled"} in ${fmtRetryDelay(Math.max(1, (Date.parse(pending.recoveryRetryAt) - Date.now()) / 1000))}; ${activeGoalSurfaceCommand("resume")} retries immediately.`
         : `The claim is stored. Check long-running verification commands, then ${activeGoalSurfaceCommand("resume")} to retry the isolated auditor.`,
     }, liveCtx);
     appendLedger(liveCtx.cwd,
@@ -1129,8 +1131,8 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     );
     if (notifyTimeout) liveCtx.ui.notify(
       timeoutInfrastructure
-        ? `Completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; fix the command/model and ${activeGoalSurfaceCommand("resume")} to retry it.`
-        : `Completion auditor stopped before a verdict (infrastructure, not a judgment). The stored claim is safe; fix the auditor/session issue and ${activeGoalSurfaceCommand("resume")} to retry it.`,
+        ? `Completion auditor timed out (infrastructure, not a verdict). The stored claim is safe; ${persistentRecovery ? "aggressive mode will keep retrying it" : `fix the command/model and ${activeGoalSurfaceCommand("resume")} to retry it`}.`
+        : `Completion auditor stopped before a verdict (infrastructure, not a judgment). The stored claim is safe; ${persistentRecovery ? "aggressive mode will keep retrying it" : `fix the auditor/session issue and ${activeGoalSurfaceCommand("resume")} to retry it`}.`,
       "warning",
     );
     return;
