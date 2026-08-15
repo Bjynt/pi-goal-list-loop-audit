@@ -1519,6 +1519,7 @@ function registerAgentTools(pi: any): void {
           }
         }
         draftingTarget = null;
+        await ((globalThis as any).restoreDrafterModel?.() ?? Promise.resolve());
         const wasIdle = !state.goal || state.goal.status === "complete" || state.goal.status === "aborted";
         const n = enqueueItems(liveCtx, p.items, "drafted batch");
         if (wasIdle) {
@@ -1585,6 +1586,7 @@ function registerAgentTools(pi: any): void {
       }
       const confirmedTarget = draftingTarget;
       draftingTarget = null;
+      await ((globalThis as any).restoreDrafterModel?.() ?? Promise.resolve());
       const full = p.objective.trim() + (normContract ? `\nDone when:\n${normContract}` : "");
       // The user has just confirmed this activation; release the blank-start
       // barrier before the direct goal path schedules its first continuation.
@@ -1759,6 +1761,7 @@ function registerAgentTools(pi: any): void {
         };
       }
       draftingTarget = null;
+      await ((globalThis as any).restoreDrafterModel?.() ?? Promise.resolve());
       const started = await startLoopFromConfig(liveCtx, {
         target: p.target.trim(),
         measureCmd: metricless ? "" : p.measureCmd!.trim(),

@@ -365,6 +365,8 @@ import {
 import { defineGoalRuntimeGlobal } from "./goal-runtime-globals.js";
 
 function clearDraftingState(): void {
+  const restore = (globalThis as any).restoreDrafterModel as (() => Promise<void>) | undefined;
+  if (restore) void restore();
   draftingTarget = null;
   draftingUserReplies = 0;
   draftingBlockedProposals = 0;

@@ -1478,6 +1478,13 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       if (lc.fire && !ctx.hasPendingMessages()) sendLengthContinue(ctx, lc.consecutive);
       return;
     }
+    // Drafting owns its temporary model chain. Provider/runtime errors during
+    // an interview must retry that chain before the main-goal recovery path;
+    // otherwise a drafting failure would silently consume main-model backups.
+    if (lastA?.stopReason === "error" && draftingTarget !== null) {
+      const retryDrafting = (globalThis as any).handleDrafterModelFailure as ((context: ExtensionContext) => Promise<boolean>) | undefined;
+      if (retryDrafting && await retryDrafting(ctx)) return;
+    }
     if (await handleMainModelAgentEnd(ctx, rawLastA, lastA)) return;
     // v0.25.2: per-goal turn telemetry (/glla stats).
     if (state.goal && state.goal.status === "active") {
