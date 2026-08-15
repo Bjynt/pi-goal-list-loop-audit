@@ -121,7 +121,7 @@ test("settings expose drafting-only primary and fallback controls", () => {
   const byId = new Map(rows.map((row) => [row.id, row]));
   assert.equal(byId.get("drafterModel")?.valueText, "test/primary");
   assert.equal(byId.get("drafterModelFallbacks")?.valueText, "test/backup");
-  assert.match(byId.get("drafterModelFallbacks")!.description, /main or auditor chains are unchanged/);
+  assert.match(byId.get("drafterModelFallbacks")!.description, /without changing main or auditor chains/);
 });
 
 test("drafting recovery stays on the dedicated chain and uses the existing interview", () => {
