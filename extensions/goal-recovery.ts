@@ -703,9 +703,9 @@ export function scheduleMainModelRecoveryTimer(ctx: ExtensionContext, delayMs: n
 }
 
 // =================================================================
-// v0.34.142: hourly retry ticker — opt-in (default ON) extra retry at :00:30
+// v0.34.142: hourly retry ticker — optional (default ON) extra retry at :00:30
 // every hour while main-model recovery is parked. This is a blind retry slot:
-// the plugin does not query or infer provider quota state. It is co-resident
+// the plugin does not query or infer provider availability state. It is co-resident
 // with the configured retry ladder and only adds this extra opportunity.
 // =================================================================
 
@@ -795,7 +795,7 @@ export function cancelHourlyProbe(): void {
 
 // v0.34.108: the hourly-ticker test-only hooks (__testOnlySetHourlyProbeNow /
 // __testOnlyResetHourlyProbe / __testOnlyHourlyProbeState) were dead —
-// hourly-quota-probe.test.ts is source-pin only and never called them.
+// hourly-retry-probe.test.ts is source-pin only and never called them.
 // Removed with the v0.34.108 dead-code sweep.
 
 /** An explicit resume is consent to start a fresh automatic window after the
@@ -1057,10 +1057,9 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
     if (generation !== flags.sessionGeneration || state.mainModelRecovery?.pendingModelSwitch?.toLowerCase() !== target.toLowerCase()) return;
     appendLedger(ctx.cwd, "main_model_probe_failed", { ref: target, tryLabel: targetTryLabel, error: err instanceof Error ? err.message : String(err) });
     const failure = classifyMainModelFailure(err instanceof Error ? err.message : String(err));
-    // Account/plan/billing failures may have walked the ordered chain before
-    // reaching this probe. Any remaining provider failure uses the same
-    // durable bounded envelope; a 429 resumes the current model after a
-    // rejected asynchronous switch.
+    // A recoverable failure may have walked the ordered chain before reaching
+    // this probe. Any remaining provider failure uses the same durable
+    // bounded envelope; the current model resumes after a rejected switch.
     const failureCopy = providerErrorPresentation(failure.raw, "main");
     const next = withMainModelRecoveryWindow({
       ...(state.mainModelRecovery ?? recovery),
@@ -1148,10 +1147,7 @@ export function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
   const recovery = state.mainModelRecovery;
   if (!recovery) return;
   clearMainModelRecoveryTimer();
-  cancelHourlyProbe(); // v0.34.92: wall lifted — ticker stops
-  // v0.34.92: clearQuotaPromptTimer() call removed — the quota-prompt
-  // timer was deleted with the rest of v0.34.58/v0.34.90. Recovery now
-  // clears only its own timer (above).
+  cancelHourlyProbe(); // recovery settled — ticker stops
   state.mainModelRecovery = undefined;
   flags.lastMainModelFailure = null;
   flags.mainModelAbortForRecovery = false;

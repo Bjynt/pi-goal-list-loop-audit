@@ -491,8 +491,8 @@ export function __testOnlySetAuditorRecoveryRetryDelay(delayMs: number | null): 
 /** Arm a durable, generation-fenced retry for a parked infrastructure/no-
  * verdict claim. Normal mode gets one fresh attempt; aggressiveMode keeps
  * re-arming the claim inside its 24-hour window. This remains separate from
- * the provider/quota retry ladder: no-verdict recovery never guesses that a
- * dead worker was a quota wall. */
+ * the provider retry ladder: no-verdict recovery never guesses a provider
+ * reason for a dead worker. */
 export function scheduleParkedCompletionAuditRecovery(ctx: ExtensionContext, pending: PendingCompletion, reason: string): PendingCompletion {
   const now = Date.now();
   const aggressive = aggressiveAuditorRecoveryEnabled(ctx.cwd);
@@ -643,9 +643,9 @@ function isAuditorTimeoutError(error: string | undefined): boolean {
 }
 
 /** Errors proving the detached worker failed to produce a semantic verdict.
- * Keep these off the provider/quota ladder: a dead worker, malformed result,
+ * Keep these off the provider retry ladder: a dead worker, malformed result,
  * or missing marker is a local auditor-infrastructure failure and gets one
- * bounded stored-claim retry instead of an indefinite quota-style wait. */
+ * bounded stored-claim retry instead of an indefinite provider wait. */
 function isAuditorNoVerdictInfrastructureError(error: string | undefined, infrastructureClass?: string): boolean {
   if (!error || /^Auditor aborted\.?$/i.test(error.trim())) return false;
   if (infrastructureClass === "no-verdict" || infrastructureClass === "timeout" || infrastructureClass === "transport") return true;
@@ -659,7 +659,7 @@ function isAuditorNoVerdictInfrastructureError(error: string | undefined, infras
 const MAX_AUDITOR_AUTO_RETRY_ATTEMPTS = 5;
 /** v0.34.79/v0.34.141: the FIRST auditor retry after an infrastructure
  * failure is eager — 5s, mirroring runWithInfraRetry's default backoff. The
- * scheduler does not inspect quota/account families or provider hints to
+ * scheduler does not inspect provider families or provider hints to
  * decide whether to retry: every retriable failure gets the same first probe,
  * then the next probe is aligned just after the next local hour starts. The
  * parsed provider object remains durable diagnostic metadata only. */
@@ -690,10 +690,10 @@ export function auditorRetryPlan(claim: PendingCompletion, _legacyQuota?: unknow
     : firstAtMs + MAIN_MODEL_AUTO_RETRY_HORIZON_MS;
   const attempt = (claim.retryAttempts ?? 0) + 1;
   // v0.34.142: all failure families use one retry schedule. Do not wait on
-  // a quota probe or trust a reset/Retry-After classification; retry eagerly
+  // an availability probe or trust a reset/Retry-After classification; retry eagerly
   // once, then probe at :00:30 after each hour starts (15:00 → 15:00:30,
   // 16:00 → 16:00:30, …). This picks up a possible reset without making a
-  // quota-availability request first.
+  // availability request first.
   const requestedSec = attempt === 1
     ? EAGER_AUDITOR_RETRY_SEC
     : Math.max(60, Math.round((nextHourlyProbeMs(now) - now) / 1000));
@@ -834,19 +834,19 @@ export async function runDetachedCompletionWithFallback(
 }
 
 /**
- * v0.28.26: quota-window retry for a STORED completion claim. The auditor
- * was quota-blocked at complete_goal time; the claim (completionSummary +
- * verificationSummary) was persisted on the goal, and when the quota window
- * elapses we re-run the AUDITOR directly — no agent turn. Re-engaging the
+ * v0.28.26: stored-claim retry for a completion claim. The auditor stopped
+ * at complete_goal time; the claim (completionSummary + verificationSummary)
+ * was persisted on the goal, and the next retry runs the AUDITOR directly —
+ * no agent turn. Re-engaging the
  * agent to re-submit an unchanged claim produced a hallucinated-closure
  * repetition loop in the field (π-games: the model concluded the goal was
  * closed, repeated the same essay 4×+, stormed continuations, compacted 14×
  * in 35 minutes, and burned the stall brake).
  *
  * Outcomes: approved → close + cascade (archiveCurrentGoal handles list
- * advance + reviewer); quota again → re-pause with a fresh scheduled retry
- * (claim preserved); anything else (disapproved, impossible, non-quota
- * infra) → preserve the claim and pause for explicit `/goal resume`, while
+ * advance + reviewer); another infrastructure failure → re-pause with a
+ * fresh scheduled retry (claim preserved); anything else (disapproved,
+ * impossible, semantic infra) → preserve the claim and pause for explicit `/goal resume`, while
  * semantic verdicts remain durable in auditHistory.
  */
 async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provider-retry"): Promise<void> {
@@ -1054,7 +1054,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       ? state.goal.completionSummary.replace(/\s+/g, " ")
       : state.goal.objective;
     const recap = displaySlice(recapSrc, 110);
-    const approvalVia = `${origin === "manual" ? " on /goal verify" : origin === "session-recovery" ? " after session recovery" : " on the quota retry"}${fallbackUsed ? " after an auditor-model fallback" : ""}`;
+    const approvalVia = `${origin === "manual" ? " on /goal verify" : origin === "session-recovery" ? " after session recovery" : " on the provider retry"}${fallbackUsed ? " after an auditor-model fallback" : ""}`;
     archiveCurrentGoal(liveCtx, "complete", `auditor ${result.model} approved (${origin})`);
     liveCtx.ui.notify(`✓ done: ${recap} — auditor ${result.model} approved${approvalVia}.`, "info");
     notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${displaySlice(recapSrc, 120)}`);
@@ -1083,8 +1083,8 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
   }
 
   if (result.error && !result.disapproved && isAuditorNoVerdictInfrastructureError(result.error, result.infrastructureClass)) {
-    // Watchdog timeouts stay ahead of the provider/quota retry branch: a
-    // hanging verification command is not evidence of a quota wall. Normal
+    // Watchdog timeouts stay ahead of the provider retry branch: a hanging
+    // verification command is a local infrastructure failure. Normal
     // mode gets one fresh stored-claim retry; aggressiveMode keeps this
     // independent recovery loop alive inside its durable window.
     const failureCopy = providerErrorPresentation(result.error, "completion");
@@ -1176,7 +1176,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
         pauseKind: "blocked",
         pauseResumeAt: undefined,
         pauseReason: `auditor retry: automatic retry horizon reached (${plan.attempt} attempts)`,
-        pauseSuggestedAction: `The completion claim is stored, but automatic auditor probes are stopped. Check the provider reset/billing state, then ${activeGoalSurfaceCommand("resume")} to start a fresh bounded window.`,
+        pauseSuggestedAction: `The completion claim is stored, but automatic auditor retries are stopped. Check the auditor/model setup, then ${activeGoalSurfaceCommand("resume")} to start a fresh bounded window.`,
       }, liveCtx);
       appendLedger(liveCtx.cwd, "auditor_retry_capped", { streak: plan.attempt, autoRetryUntil: plan.autoRetryUntil, requestedSec: plan.requestedSec, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
       if (notifyCapped) liveCtx.ui.notify(`Automatic auditor retries stopped after ${plan.attempt} bounded attempts — the claim stays stored; check the provider, then ${activeGoalSurfaceCommand("resume")}.`, "warning");

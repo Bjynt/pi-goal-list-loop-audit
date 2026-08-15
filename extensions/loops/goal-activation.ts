@@ -1502,7 +1502,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         appendLedger(ctx.cwd, "post_restore_grace", { remaining: postRestoreGraceTurns });
       } else if (lastA?.stopReason === "error") {
         // v0.28.13 (endless-td 429 incident 2026-07-28): provider-error
-        // turns (429 quota exhaustion, 5xx) are NOT model unproductivity —
+        // turns (provider errors) are NOT model unproductivity —
         // the model never got a say. Counting them tripped the brake on a
         // healthy goal mid-CDP-capture (4 MiniMax-M3 429s → wrong
         // "unproductive turns" pause). pi's own retry owns the backoff;
@@ -1582,9 +1582,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
             && (requiresMainModelRecovery(lastMainModelFailure)
               || isMainModelFallbackFailure(lastMainModelFailure));
           if (sr === "error" && durableProviderFailure) {
-            // Account/plan/billing failures and (when enabled) request-rate
-            // failures may rotate through backups; the bounded recovery
-            // envelope owns the loop instead of stopping on a dead turn.
+            // Recoverable provider failures may rotate through backups; the
+            // bounded recovery envelope owns the loop instead of stopping on
+            // a dead turn.
             parkMainModelAfterFailure(ctx, lastMainModelFailure);
             if (state.mainModelRecovery) return;
           }
@@ -1696,13 +1696,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         if (brakeStreak >= 6) {
           // v0.29.9: park — but keep probing at the top of each hour
           // (user: "simply adding an hourly retry … just to pick up work
-          // faster assuming the retry expired"). Coding-plan rate-limit
-          // windows typically expire on clock-hour boundaries, so a probe
-          // scheduled for :01 catches the reset within seconds. One dunk
-          // per hour, free (429s are rejected pre-billing); a successful
-          // probe resets the whole error cycle. If the wall is something
-          // else (auth, outage), the hourly probe is a harmless failed
-          // resume attempt that re-parks via the same brake.
+          // faster assuming the retry expired"). The hourly retry is simply
+          // an additional bounded attempt; it makes no claim about why the
+          // provider failed or whether a reset occurred.
           updateGoal({
             status: "paused",
             pauseKind: "error",

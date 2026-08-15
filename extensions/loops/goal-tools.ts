@@ -817,7 +817,7 @@ function registerAgentTools(pi: any): void {
       if (result.approved && result.regressionShieldPassed !== false) {
         updateGoal({ auditHistory: history, pendingCompletion: undefined }, ctx);
         // v0.34.91: the end-of-goal voice carries the recap (what happened)
-        // on EVERY approve path — fresh complete_goal approve + quota-retry
+        // on EVERY approve path — fresh complete_goal approval + provider retry
         // approve + manual-verify approve. Captured BEFORE archive (it
         // mutates state.goal). The widget card and the external notify both
         // already use the recap; the chat notify was the lone surface still
@@ -956,8 +956,8 @@ function registerAgentTools(pi: any): void {
           };
         }
         // v0.34.51: ANY infrastructure failure enters the durable bounded
-        // retry plan — error text is not trusted to pick one failure family
-        // failures (a miss-classified quota wall is the common case), so
+        // retry plan — error text is not trusted to pick one failure family,
+        // so
         // "still failing" pauses with the same uniform retry schedule.
         if (result.error && !result.disapproved) {
           const failureCopy = providerErrorPresentation(result.error, "completion");
@@ -989,7 +989,7 @@ function registerAgentTools(pi: any): void {
               pauseKind: "blocked",
               pauseResumeAt: undefined,
               pauseReason: `auditor retry: automatic retry horizon reached (${plan.attempt} attempts)`,
-              pauseSuggestedAction: `The completion claim is stored, but automatic auditor probes are stopped. Check the provider reset/billing state, then ${activeGoalSurfaceCommand("resume")} to start a fresh bounded window.`,
+              pauseSuggestedAction: `The completion claim is stored, but automatic auditor retries are stopped. Check the auditor/model setup, then ${activeGoalSurfaceCommand("resume")} to start a fresh bounded window.`,
             }, ctx);
             appendLedger(ctx.cwd, "auditor_retry_capped", { streak: plan.attempt, autoRetryUntil: plan.autoRetryUntil, requestedSec: plan.requestedSec, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
             if (notifyCapped) ctx.ui.notify(`Automatic auditor retries stopped after ${plan.attempt} bounded attempts — the claim stays stored; check the provider, then ${activeGoalSurfaceCommand("resume")}.`, "warning");

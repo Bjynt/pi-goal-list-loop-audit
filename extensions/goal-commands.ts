@@ -152,8 +152,8 @@ async function cmdGoal(args: string, ctx: ExtensionContext): Promise<void> {
     // isolated auditor on the current goal
     // RIGHT NOW, without engaging the agent. The user's "the work looks
     // done — just verify it" handle (and the manual counterpart of the
-    // v0.28.26 stored-claim quota retry). Seeds a synthesized claim so a
-    // quota block falls into the same pendingCompletion retry machinery.
+    // v0.28.26 stored-claim provider retry). Seeds a synthesized claim so an
+    // infrastructure failure falls into the same pendingCompletion machinery.
     if (route.name === "verify") {
       if (!state.goal) {
         ctx.ui.notify("No active goal — /goal verify needs a goal to verify.", "warning");
@@ -334,7 +334,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
   if (state.mainModelRecovery?.retryAt || state.mainModelRecovery?.pendingModelSwitch) {
     clearMainModelRecoveryTimer();
     flags.continuationDispatchStoodDown = false;
-    // v0.34.92: quota-prompt re-arm removed (whole prompter deleted).
+    // v0.34.92: the chat-prompt re-arm was removed; recovery is timer-driven.
     ctx.ui.notify("Retrying the saved main-model recovery now — one provider probe, then the configured backups if needed.", "info");
     void probeMainModelRecovery(ctx);
     return;

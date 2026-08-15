@@ -458,7 +458,7 @@ export function classifyIdInvalidationReason(flags: {
  *   the rare race where a send-path stale error beats the shutdown handler's
  *   cleanup, and any future caller with better knowledge;
  * - provider_disconnect — the main model was in provider-failure recovery when
- *   the handle died (weak signal: quota/billing walls often coincide);
+ *   the handle died (weak signal: provider recovery was active);
  * - silent_handle_death — neither: pi invalidated the handle WITHOUT delivering
  *   a replacement session and without a shutdown record. This is the exact
  *   "host session lost" case the user keeps hitting (13 screenshots 08-05→08-07);
@@ -1531,29 +1531,23 @@ function foreignToolGuard(execCtx: unknown): string | null {
 // v0.34.109: `state` singleton moved to goal-state.ts (single owner).
 // This module imports it and mutates through replaceState() only.
 
-// Main-session model recovery is separate from detached-auditor quota retry.
-// It is opt-in for model rotation (via mainModelFallbacks), but the durable
-// wait also protects a supervised goal when every configured model is
-// temporarily quota-blocked. One timer, one probe, no blind resend storm.
+// Main-session model recovery is separate from detached-auditor retry.
+// It can rotate through mainModelFallbacks, while the durable wait protects a
+// supervised goal when the active model keeps failing. One timer, one probe,
+// no blind resend storm.
 let mainModelRecoveryTimer: NodeJS.Timeout | null = null;
 let mainModelSwitchInFlight = false;
 let mainModelAbortForRecovery = false;
-// hourly quota-probe ticker (v0.34.92) — co-resident with the normal retry
+// hourly retry ticker (v0.34.92) — co-resident with the normal retry
 // cadence; opt-in via hourlyRetryProbe (default ON). Flags stay owned here;
 // goal-recovery.ts observes them through the RecoveryFlags accessor.
 let hourlyProbeTimer: NodeJS.Timeout | null = null;
 let hourlyProbeFireAt: number | null = null;
 let lastMainModelFailure: MainModelFailure | null = null;
 
-// v0.34.92: hourly quota-resume prompter REMOVED. v0.34.58/v0.34.90 added a
-// sendUserMessage at the next :00 telling the user "Provider quota wall —
-// run /list resume". Field evidence 2026-08-07 (four identical
-// "Provider quota wall — [TRIAGE-…]" messages in chat from peer sessions,
-// screenshots Screenshot_20260807_231717) showed the prompt itself was the
-// problem: we cannot reliably detect quota (provider text is inconsistent),
-// so the right answer is the configured bounded retry ladder plus an opt-in
-// :00:30 hourly probe ticker for faster pickup (this file, below). The plugin
-// never says "Provider quota wall" in chat again.
+// v0.34.92: the old hourly chat prompt was removed. It used to send a
+// message at the next hour, but provider wording is not reliable enough for a
+// user-facing claim. Recovery now uses a silent :00:30 retry ticker instead.
 
 // Drafting mode: a no-arg loop command starts a clarification turn; the agent
 // must call propose_goal_draft / propose_loop_draft, which opens the user's
