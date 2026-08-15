@@ -245,7 +245,7 @@ test("v0.31.3: the auditor chain — pinned primary → pinned fallback → sess
   assert.match(SETTINGS, /auditorModelFallback\?: string;/);
   const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
   assert.match(MENU, /id: "auditorModelFallback"/);
-  assert.match(MENU, /section: "auditor",[\s\S]{0,200}?Auditor fallback model/);
+  assert.match(MENU, /section: "auditor",[\s\S]{0,200}?Auditor fallback agent/);
   assert.match(SRC, /case "auditorModelFallback": \{/);
   // The v0.31.2 "diverse" machinery is gone (complexity cost > benefit):
   assert.ok(!SRC.includes("pickDiverseAuditorModel") && !SRC.includes('"diverse"'), "diverse strategy removed");
