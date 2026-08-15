@@ -117,15 +117,15 @@ disables the legacy check entirely; `/loop finish [reason]` ends a loop
 cleanly with stopReason `completed: <reason>` (distinct from
 stuck/plateau/stopped-by-user).
 
-## Quota handling + aggressive mode (v0.25.0)
+## Provider recovery + aggressive mode
 
-**Quota-aware retry.** When the auditor dies on a quota / rate-limit error
-(429, `Key limit exceeded`, `temporarily rate-limited upstream`, credits),
-that is infrastructure, not a verdict: the goal PAUSES with a one-shot
-auto-retry scheduled at the upstream's `Retry-After` hint (default 60m;
-edit Quota retry minutes in `/glla`). Before v0.25.0 this re-fired the
-continuation forever against a window that only resets in an hour. `/goal
-resume` retries immediately; a user pause during the window is never stomped.
+**Reason-agnostic retry.** Provider wording and upstream retry hints are not
+used as availability or quota checks. Any retriable auditor failure is
+infrastructure, not a verdict: the goal pauses with one eager 5-second retry,
+then retries at the next `:00:30` slot after each hour starts. The durable
+attempt and 24-hour bounds prevent an unbounded worker storm. `/goal resume`
+retries immediately; a user pause is never stomped. Main-model recovery uses
+the same generic policy and an ordered backup chain when configured.
 
 **Aggressive mode** (Settings → Aggressive mode in `/glla`) flips the
 continuation DEFAULTS toward keep-going:
