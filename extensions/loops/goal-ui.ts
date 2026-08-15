@@ -507,6 +507,11 @@ function publishDetachedAuditProgress(
     currentToolStartedAt: progress.currentToolStartedAt,
     phase: progress.phase,
     elapsedMs: progress.elapsedMs,
+    // Progress files only change on worker events. Preserve an inferred start
+    // epoch so the UI ticker can advance the elapsed counter during a long
+    // read/bash/thinking interval instead of looking frozen between events.
+    startedAt: latestAuditProgress?.startedAt
+      ?? Date.now() - Math.max(0, progress.elapsedMs),
     reportBytes: progress.reportBytes,
     recentOutput: progress.recentOutput,
     toolCalls: progress.toolCalls,
@@ -645,7 +650,8 @@ function startUITicker(): void {
     const ctx = freshCtx();
     // v0.34.12: keep ticking during a timed wait-pause too — the status
     // line counts down to resumeAt live (pully field request 2026-08-01).
-    if (ctx && (isSupervising() || (state.goal?.status === "paused" && !!state.goal.pauseResumeAt))) refreshUI(ctx);
+    const auditVisible = state.goal?.status === "auditing";
+    if (ctx && (isSupervising() || auditVisible || (state.goal?.status === "paused" && !!state.goal.pauseResumeAt))) refreshUI(ctx);
   }, 1_000);
   uiTicker.unref?.();
 }

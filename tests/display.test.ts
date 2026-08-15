@@ -121,7 +121,7 @@ test("stream-proven work uses one compact status-bar HUD; the card stays quiet",
   // the last real activity age. A ticking timer with no freshness told the
   // user nothing (note.md 221249 "time ticking but nothing else").
   const queuedPending = buildStatusText(state, null, NOW, undefined, { activity: "queued", turnPending: true, lastActivityAt: NOW - 180_000 })!;
-  assert.match(queuedPending, /\[QUEUED\] 1m 09s · turn pending · last activity 3m 00s ago · 3 queued/);
+  assert.match(queuedPending, /\[QUEUED\] 1m 09s · turn pending · last host activity 3m 00s ago · 3 queued/);
   // turnPending WITHOUT a known last-activity epoch still names the pending turn.
   const queuedPendingNoAge = buildStatusText(state, null, NOW, undefined, { activity: "queued", turnPending: true })!;
   assert.match(queuedPendingNoAge, /\[QUEUED\] 1m 09s · turn pending · 3 queued/);
@@ -383,7 +383,7 @@ test("widget lines reserve pi-tui's horizontal padding", () => {
   // pi wraps string-array widget lines inside Text(paddingX=1), so the
   // extension must keep every source line within width - 2.
   assert.ok(lines.every((line) => line.length <= 78), lines.join("\\n"));
-  assert.match(lines[0]!, / · list item · auditing · 50s/);
+  assert.match(lines[0]!, / · list item · auditing · total 50s/);
   assert.ok(!lines.includes("50s"), "elapsed segment must not wrap onto its own line");
 });
 
@@ -502,11 +502,11 @@ test("paused lifecycle projection names owner, queue, last activity, and next tr
   const status = buildStatusText(state, null, NOW, undefined, extras)!;
   assert.match(status, /owner: main-model recovery/);
   assert.match(status, /2 queued/);
-  assert.match(status, /last activity 2m 00s ago/);
+  assert.match(status, /last host activity 2m 00s ago/);
   assert.match(status, /next: retrying automatically/);
   const widget = buildWidgetLines(state, null, NOW, undefined, undefined, extras)!;
   assert.ok(widget.some((line) => line.includes("lifecycle: safely parked") && line.includes("owner: main-model recovery") && line.includes("2 queued")), widget.join("\\n"));
-  assert.ok(widget.some((line) => line.includes("last activity 2m 00s ago") && line.includes("next: retrying automatically")), widget.join("\\n"));
+  assert.ok(widget.some((line) => line.includes("last host activity 2m 00s ago") && line.includes("next: retrying automatically")), widget.join("\\n"));
 });
 
 test("active/in-flight main-model recovery keeps full chain state on status and widget", () => {
@@ -645,12 +645,12 @@ test("paused decision without activity says no turn was observed and names the m
   } as State;
   const status = buildStatusText(state, null, NOW)!;
   assert.match(status, /owner: user decision/);
-  assert.match(status, /last activity not observed/);
+  assert.match(status, /last host activity not observed/);
   assert.match(status, /next: user decision → \/goal resume/);
   const widget = buildWidgetLines(state, null, NOW)!;
   const joined = widget.join("\\n");
   assert.match(joined, /lifecycle: safely parked · owner: user decision · queue empty/);
-  assert.match(joined, /last activity not observed · next: user decision → \/goal resume/);
+  assert.match(joined, /last host activity not observed · next: user decision → \/goal resume/);
   assert.match(joined, /1\. staging/);
 });
 
@@ -905,6 +905,20 @@ test("detached auditor status names phase, evidence, freshness, verdict wait, an
   assert.match(verdictWidget, /auditor: awaiting verdict · detached worker/);
   assert.match(verdictWidget, /last tool: grep/);
   assert.match(verdictWidget, /waiting for detached verdict/);
+});
+
+test("detached auditor elapsed time keeps ticking between worker progress events", () => {
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-clock" } });
+  const audit = {
+    phase: "thinking" as const,
+    elapsedMs: 42_000,
+    startedAt: NOW - 2 * 60_000,
+    lastActivityAt: NOW - 20_000,
+  };
+  const status = buildStatusText({ goal: g, list: [] }, audit, NOW)!;
+  assert.match(status, /elapsed 2m 00s/);
+  const lines = buildWidgetLines({ goal: g, list: [] }, audit, NOW)!;
+  assert.ok(lines.some((line) => line.includes("2m 00s in detached worker")), lines.join("\\n"));
 });
 
 test("detached recent auditor output is sanitized in live and awaiting-verdict widget paths", () => {

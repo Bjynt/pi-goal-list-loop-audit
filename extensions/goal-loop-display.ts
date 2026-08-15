@@ -358,6 +358,8 @@ export interface AuditDisplayProgress {
   label?: string;
   phase?: "starting" | "running" | "thinking" | "tool_executing" | "producing_report" | "complete";
   elapsedMs?: number;
+  /** Inferred start epoch for a live elapsed counter between worker events. */
+  startedAt?: number;
   /** Latest non-verdict text observed from the worker's report stream. */
   recentOutput?: string[];
   /** Completed auditor tool calls retained by the worker for live context. */
@@ -409,10 +411,19 @@ function auditorLastActivity(audit: AuditDisplayProgress | null | undefined, now
  * elapsed wall time, evidence freshness, and the next lifecycle transition
  * are display facts, not claims that the host is paused or that a verdict has
  * already landed. */
-function auditorElapsedSuffix(audit: AuditDisplayProgress | null | undefined): string {
+function auditorElapsedMs(audit: AuditDisplayProgress | null | undefined, now: number): number | undefined {
   const elapsed = audit?.elapsedMs;
-  if (elapsed === undefined || !Number.isFinite(elapsed) || elapsed < 0) return "";
-  return ` · elapsed ${fmtElapsed(elapsed)}`;
+  if (elapsed === undefined || !Number.isFinite(elapsed) || elapsed < 0) return undefined;
+  const startedAt = audit?.startedAt;
+  if (startedAt !== undefined && Number.isFinite(startedAt) && startedAt <= now) {
+    return Math.max(elapsed, now - startedAt);
+  }
+  return elapsed;
+}
+
+function auditorElapsedSuffix(audit: AuditDisplayProgress | null | undefined, now: number): string {
+  const elapsed = auditorElapsedMs(audit, now);
+  return elapsed === undefined ? "" : ` · elapsed ${fmtElapsed(elapsed)}`;
 }
 
 function auditorFreshnessSuffix(audit: AuditDisplayProgress | null | undefined, phase: AuditorDisplayPhase, now: number): string {
@@ -578,7 +589,7 @@ function goalDisplayActivity(g: Goal, extras?: WidgetExtras): GoalDisplayActivit
 function hostLastActivity(extras: WidgetExtras | undefined, now: number): string {
   const at = extras?.lastActivityAt;
   if (at === undefined || !Number.isFinite(at)) return "";
-  return ` · last activity ${fmtElapsed(Math.max(0, now - at))} ago`;
+  return ` · last host activity ${fmtElapsed(Math.max(0, now - at))} ago`;
 }
 
 function hostLastStream(extras: WidgetExtras | undefined, now: number): string {
@@ -608,10 +619,17 @@ function pausedRecoveryOwner(g: Goal, state: State): string {
 function pausedLastActivity(g: Goal, extras: WidgetExtras | undefined, now: number): string {
   const at = extras?.lastActivityAt;
   if (at !== undefined && Number.isFinite(at) && at > 0 && at <= now) {
-    return `last activity ${fmtElapsed(now - at)} ago`;
+    return `last host activity ${fmtElapsed(now - at)} ago`;
   }
   const hasEvidence = !!g.telemetry || (g.usage?.tokensUsed ?? 0) > 0 || (g.auditHistory?.length ?? 0) > 0;
-  return hasEvidence ? "last activity not available" : "last activity not observed";
+  return hasEvidence ? "last host activity not available" : "last host activity not observed";
+}
+
+/** The goal's total wall-clock age. This intentionally includes parked,
+ * recovery, and auditor time; it is not a claim about active model compute. */
+function goalTotalText(g: Goal, now: number): string {
+  const startedAt = Date.parse(g.createdAt);
+  return Number.isFinite(startedAt) ? `total ${fmtElapsed(Math.max(0, now - startedAt))}` : "";
 }
 
 function pausedNextTransition(g: Goal, state: State, now: number): string {
@@ -733,7 +751,7 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
       ? staleSnapshot ? ` · last tool: ${toolName}` : ` · ${toolName}`
       : "";
     const evidence = auditorEvidenceSummary(audit, phase);
-    const elapsed = auditorElapsedSuffix(audit);
+    const elapsed = auditorElapsedSuffix(audit, now);
     const workerActivity = auditorLastActivity(audit, now);
     const freshness = auditorFreshnessSuffix(audit, phase, now);
     const next = ` · next: ${auditorNextTransition(phase)}`;
@@ -1062,7 +1080,8 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   if (isList) headSegs.push("list item");
   if (g.agentRole) headSegs.push(`${g.agentRole} role`);
   headSegs.push(statusWord);
-  headSegs.push(fmtElapsed(now - Date.parse(g.createdAt)));
+  const total = goalTotalText(g, now);
+  if (total) headSegs.push(total);
   const taskTotal = countTotal(g);
   if (taskTotal > 0) headSegs.push(`${countDone(g)}/${taskTotal} ${paint(theme, "dim", meter(countDone(g) / taskTotal))}`);
   const tokUsed0 = g.usage?.tokensUsed ?? 0;
@@ -1207,9 +1226,9 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       lines.push(`└─ ${paint(theme, "dim", `waiting for detached verdict${last}`)}`);
     } else if (phase === "queued") {
       lines.push(`└─ ${paint(theme, "dim", "detached worker queued — completion claim is durable")}`);
-    } else if (audit?.elapsedMs) {
+    } else if (auditorElapsedMs(audit, now)) {
       const firstEvent = audit.lastActivityAt === undefined ? " · waiting for first worker event" : "";
-      lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(audit.elapsedMs)} in detached worker${firstEvent}${last}`)}`);
+      lines.push(`└─ ${paint(theme, "dim", `${fmtElapsed(auditorElapsedMs(audit, now)!)} in detached worker${firstEvent}${last}`)}`);
     } else {
       lines.push(`└─ ${paint(theme, "dim", `detached worker, audit tools${last || " · waiting for first worker event"}`)}`);
     }

@@ -104,6 +104,7 @@ test("v0.30.0 — rebind-first survival: session_shutdown attribution, session_s
   assert.ok(SRC.includes('appendLedger(ctx.cwd, "session_handoff_resumed", { pid: process.pid, reason: startReason });'), "handoff consumption is ledgered");
   assert.ok(SRC.includes("sessionHandoffPending = false;"), "fresh session reopens the runtime");
   assert.ok(SRC.includes("startHeartbeat();") && SRC.includes("startUITicker();"), "fresh session restarts timers");
+  assert.match(SRC, /const auditVisible = state\.goal\?\.status === "auditing";/, "the UI ticker must keep detached-auditor clocks live between worker events");
   assert.ok(SRC.includes("writeOwnerFile(ctx.cwd);"), "session_start claims ownership");
   assert.ok(SRC.includes('appendLedger(ctx.cwd, "zombie_stood_down", { owner: owner.instanceId });'), "successor stand-down ledgered");
   assert.ok(SRC.includes('appendLedger(ctx.cwd, "stale_awaiting_rebind", {});'), "rebind window absorbs stale probes");
