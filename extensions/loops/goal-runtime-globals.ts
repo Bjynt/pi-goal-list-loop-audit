@@ -181,7 +181,7 @@ declare global {
   var beginCompletionAudit: any;
   var isAuditorTimeoutError: any;
   var isAuditorNoVerdictInfrastructureError: any;
-  var MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS: any;
+  var MAX_AUDITOR_AUTO_RETRY_ATTEMPTS: any;
   var EAGER_AUDITOR_RETRY_SEC: any;
   var fmtRetryDelay: any;
   var auditorRetryPlan: any;

@@ -26,7 +26,7 @@ const CONT = fs.readFileSync("extensions/goal-continuation.ts", "utf-8"); // dec
 const RECOVERY = fs.readFileSync("extensions/goal-recovery.ts", "utf-8"); // decomposition step 3 (v0.34.111)
 const LOOP = fs.readFileSync("extensions/goal-loop.ts", "utf-8");
 const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
-const QUOTA = fs.readFileSync("extensions/quota-retry.ts", "utf-8");
+const PROVIDER_RETRY = fs.readFileSync("extensions/quota-retry.ts", "utf-8");
 const SCHEMA = fs.readFileSync("schemas/goal.schema.json", "utf-8");
 
 test("E2: persisted auditInfraStreak field (type + schema)", () => {
@@ -46,9 +46,9 @@ test("E2: auditor infra errors enter the durable bounded retry plan (v0.34.51 �
   // ("Fix the auditor/session issue" — a different feature from the
   // 3-strike stop):
   assert.match(RECOVERY, /The completion claim is stored and was not judged\. Fix the auditor\/session issue/); // decomposition step 3 (v0.34.111)
-  // The durable plan owns the wait: quota-waiting phase, wait-kind pause,
+  // The durable plan owns the wait: retry-waiting phase, wait-kind pause,
   // horizon-capped blocked stop, and a re-checked auto-resume callback.
-  assert.match(SRC, /phase: "quota-waiting" as const/);
+  assert.match(SRC, /phase: "retry-waiting" as const/);
   assert.match(SRC, /auditor retry: automatic retry horizon reached \(\$\{plan\.attempt\} attempts\)/);
   assert.match(SRC, /startsWith\("auditor retry:"\)/);
   // a real auditor run still clears the persisted streak:
@@ -135,7 +135,7 @@ test("v0.34.26: output-token-limit provider errors are classified as a determini
   assert.match(wallBranch, /pauseKind: "error",/);
   assert.match(wallBranch, /Deterministic wall — the provider rejects this response shape every time/);
   assert.match(wallBranch, /activeGoalSurfaceCommand\("resume"\)\}/); // v0.34.51 mode-aware
-  assert.ok(!wallBranch.includes("scheduleQuotaRetryForSession"), "no flake auto-resume for a deterministic wall");
+  assert.ok(!wallBranch.includes("scheduleProviderRetryForSession"), "no flake auto-resume for a deterministic wall");
   assert.ok(!wallBranch.includes("pauseResumeAt"), "no wait-timer for a deterministic wall");
 });
 
@@ -151,7 +151,7 @@ test("v0.34.51: stored-claim auditor retries enter the durable plan on ANY infra
   assert.match(retry, /isAuditorNoVerdictInfrastructureError\(result\.error, result\.infrastructureClass\)\) \{[\s\S]{0,220}?Watchdog timeouts stay ahead/);
   // …then the widened durable branch — no kind gate, neutral wording:
   assert.match(retry, /v0\.34\.51: ANY infrastructure failure enters the durable bounded retry/);
-  assert.match(retry, /phase: "quota-waiting" as const/);
+  assert.match(retry, /phase: "retry-waiting" as const/);
   assert.match(retry, /startsWith\("auditor retry:"\)/);
   assert.ok(!retry.includes("audit_infra_waiting\", { goalId, attemptId: claim.attemptId, error: result.error.slice(0, 240), infraStreak }"), "3-strike ledger payload gone from stored-claim retries");
 });
@@ -181,12 +181,12 @@ test("E8: provider-error brake gets ONE capped escalating auto-resume with reaso
   // 8m, 16m cap. First brake is still 60s (60_000 * 2^0).
   assert.match(SRC, /const cooldownMs = 60_000 \* 2 \*\* Math\.min\(brakeStreak, 4\);/);
   assert.match(SRC, /errorBrakeStreak: brakeStreak \+ 1,/, "v0.34.15: the rung is stamped ON THE GOAL (survives /reload)");
-  assert.match(SRC, /scheduleQuotaRetryForSession\(ctx, cooldownMs \/ 1000, reason, \(fresh(?:: ExtensionContext)?\) => \{/);
+  assert.match(SRC, /scheduleProviderRetryForSession\(ctx, cooldownMs \/ 1000, reason, \(fresh(?:: ExtensionContext)?\) => \{/);
   assert.match(SRC, /if \(\(state\.goal\?\.errorBrakeStreak \?\? 0\) > 0\) updateGoal\(\{ errorBrakeStreak: undefined \}, ctx\);/, "a healthy turn clears the persisted brake streak");
   assert.match(SRC, /\(state\.goal\.pauseReason \?\? ""\)\.startsWith\("5 consecutive errors"\)/);
   assert.match(SRC, /appendLedger\(fresh\.cwd, "goal_resumed", \{ via: "error-brake-retry" \}\)/);
-  // scheduleQuotaRetry generalized with a label param (quota default intact):
-  assert.match(QUOTA, /label = "Auditor quota exhausted — auto-retry",/);
+  // The generic scheduler still accepts a caller label:
+  assert.match(PROVIDER_RETRY, /label = "Provider retry",/);
 });
 
 test("v0.28.25: inter-error retries ride an exponential ladder, not the immediate continuation", () => {
@@ -210,16 +210,16 @@ test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUD
   // continuation storm + 14 compactions in 35 minutes.
   // 1. the claim is persisted at the quota block:
   assert.match(SRC, /pendingCompletion: pending/);
-  assert.match(SRC, /phase: "quota-waiting" as const/);
+  assert.match(SRC, /phase: "retry-waiting" as const/);
   // 2. the retry callback prefers the direct-audit path (v0.34.51: any
   //    infra error, not just quota):
   const cbIdx = SRC.indexOf('(state.goal.pauseReason ?? "").startsWith("auditor retry:")');
   const directIdx = SRC.indexOf("void retryStoredCompletionAudit();");
   assert.ok(cbIdx > 0 && directIdx > cbIdx, "direct-audit branch inside the quota callback");
-  const legacyIdx = SRC.indexOf('appendLedger(fresh.cwd, "goal_resumed", { via: "quota-retry" });');
+  const legacyIdx = SRC.indexOf('appendLedger(fresh.cwd, "goal_resumed", { via: "provider-retry" });');
   assert.ok(legacyIdx > directIdx, "agent-resume is the FALLBACK (no stored claim), not the default");
   // 3. the retry function re-runs the auditor with the stored claim:
-  assert.match(SRC, /async function retryStoredCompletionAudit\(origin: CompletionAuditOrigin = "quota-retry"\): Promise<void> \{/);
+  assert.match(SRC, /async function retryStoredCompletionAudit\(origin: CompletionAuditOrigin = "provider-retry"\): Promise<void> \{/);
   assert.match(SRC, /completionSummary: claim\.completionSummary,/);
   assert.match(SRC, /verificationSummary: claim\.verificationSummary,/);
   // 4. approved → archive (cascade inside archiveCurrentGoal); claim cleared:
@@ -227,9 +227,9 @@ test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUD
   assert.match(SRC, /updateGoal\(\{ auditHistory: history, pendingCompletion: undefined \}, liveCtx\)/);
   // 5. still-failing → re-pause with the claim PRESERVED + another scheduled retry:
   assert.match(SRC, /auditor retry: retry in \$\{plan\.retryAfterSec\}s \(uniform schedule\)/);
-  assert.match(SRC, /quotaAutoRetryUntil: plan\.autoRetryUntil/);
+  assert.match(SRC, /retryUntil: plan\.autoRetryUntil/);
   // 6. any other verdict hands back to the agent:
-  assert.match(SRC, /appendLedger\(liveCtx\.cwd, "quota_retry_audit_verdict", \{/);
+  assert.match(SRC, /appendLedger\(liveCtx\.cwd, "provider_retry_audit_verdict", \{/);
 });
 
 test("v0.28.26: pendingCompletion typed + schematized", () => {
@@ -238,5 +238,5 @@ test("v0.28.26: pendingCompletion typed + schematized", () => {
   assert.match(CORE, /pendingCompletion\?: PendingCompletion;/);
   const SCHEMA = fs.readFileSync("schemas/goal.schema.json", "utf-8");
   assert.match(SCHEMA, /"pendingCompletion": \{ "\$ref": "#\/definitions\/pendingCompletion" \}/);
-  assert.match(SCHEMA, /"phase": \{ "type": "string", "enum": \["running", "recovery-pending", "quota-waiting"\] \}/);
+  assert.match(SCHEMA, /"phase": \{ "type": "string", "enum": \["running", "recovery-pending", "retry-waiting", "quota-waiting"\] \}/);
 });

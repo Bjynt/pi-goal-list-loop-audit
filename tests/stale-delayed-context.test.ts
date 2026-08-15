@@ -29,15 +29,15 @@ test("v0.34.20: registered agent tools resolve the invocation context", () => {
   assert.doesNotMatch(GOAL, /registeredCtx\?\./);
 });
 
-test("v0.34.20: quota timers have one session-boundary adapter", () => {
-  const directCalls = GOAL.match(/scheduleQuotaRetry\(/g) ?? [];
+test("v0.34.20: provider retry timers have one session-boundary adapter", () => {
+  const directCalls = GOAL.match(/scheduleProviderRetry\(/g) ?? [];
   assert.equal(directCalls.length, 1, "goal.ts may call the generic timer only through its adapter");
-  assert.match(GOAL, /function scheduleQuotaRetryForSession\(/);
+  assert.match(GOAL, /function scheduleProviderRetryForSession\(/);
   assert.match(GOAL, /const generation = sessionGeneration;/);
   assert.match(GOAL, /const current = freshCtxForGeneration\(generation\);/);
   assert.match(GOAL, /fire: \(ctx: ExtensionContext\) => void \| Promise<void>/);
-  assert.match(GOAL, /scheduleQuotaRetryForSession\(ctx, quota\.retryAfterSec, result\.error, \(fresh(?:: ExtensionContext)?\) =>/);
-  assert.match(GOAL, /scheduleQuotaRetryForSession\(ctx, cooldownMs \/ 1000, reason, \(fresh(?:: ExtensionContext)?\) =>/);
+  assert.match(GOAL, /scheduleProviderRetryForSession\(liveCtx, plan\.retryAfterSec, result\.error, \(fresh(?:: ExtensionContext)?\) =>/);
+  assert.match(GOAL, /scheduleProviderRetryForSession\(ctx, cooldownMs \/ 1000, reason, \(fresh(?:: ExtensionContext)?\) =>/);
 });
 
 test("v0.34.20: detached fan-out revalidates after user confirmation", () => {
@@ -66,7 +66,7 @@ test("v0.34.22: detached completion audits persist lifecycle claims and stop app
   assert.match(complete, /detachedAuditContext\(auditGeneration, auditGoalId, auditAttemptId\)/);
   assert.match(complete, /if \(!auditContextAfterRun \|\| !state\.goal \|\| state\.goal\.id !== auditGoalId\)/);
   assert.match(GOAL, /shouldRetry: \(\) => detachedAuditContext\(generation, goalId, claim\.attemptId!\) !== null/);
-  assert.match(GOAL, /async function retryStoredCompletionAudit\(origin: CompletionAuditOrigin = "quota-retry"\)/);
+  assert.match(GOAL, /async function retryStoredCompletionAudit\(origin: CompletionAuditOrigin = "provider-retry"\)/);
   assert.doesNotMatch(GOAL, /retryStoredCompletionAudit\(ctx,/);
 });
 

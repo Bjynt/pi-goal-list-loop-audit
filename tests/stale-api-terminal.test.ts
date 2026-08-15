@@ -185,10 +185,10 @@ test("v0.32.0: audit-opportunistic fix batch — dispose, keys, caps, message", 
   assert.match(GS, /"auditorSameSessionSwap",/);
   const GOAL = readGoalRuntimeSource();
   assert.match(GOAL, /slice\(0, 50\)/); // fan-out cap
-  assert.match(GOAL, /MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS = 5/); // durable quota retry terminal cap
-  // v0.34.108: quotaRetryStreak (process-local mirror) was dead code and removed;
-  // the durable reset is quotaAttempts: undefined on a manual-origin audit claim.
-  assert.match(GOAL, /origin === "manual"\n\s*\? \{ \.\.\.claim, quotaAttempts: undefined, quotaFirstAt: undefined, quotaAutoRetryUntil: undefined \}/); // streak resets on any non-quota outcome
+  assert.match(GOAL, /MAX_AUDITOR_AUTO_RETRY_ATTEMPTS = 5/); // durable generic retry terminal cap
+  // v0.34.108/0.34.142: the old process-local/provider-specific counters
+  // are gone; a manual-origin audit starts a fresh generic retry window.
+  assert.match(GOAL, /origin === "manual"\n\s*\? \{ \.\.\.claim, retryAttempts: undefined, retryFirstAt: undefined, retryUntil: undefined \}/);
   assert.match(GOAL, /handing off to a fresh pi context — /); // entry probe names the lifecycle handoff honestly
   assert.match(GOAL, /function clearSessionOwnedTimers\(preserveStaleRecovery = false\): void/); // terminal keeps only the recovery probes
 });
