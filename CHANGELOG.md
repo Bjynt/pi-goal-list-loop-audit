@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — bounded main-model fallbacks and process cleanup
+## 0.34.139 — bounded main-model fallbacks and process cleanup (2026-08-15)
 ### Main sessions keep an ordered fallback chain
   Main-model backup settings are normalized case-insensitively, capped at ten
   alternatives, and the ordered chain leads the Backups tab with a visible
