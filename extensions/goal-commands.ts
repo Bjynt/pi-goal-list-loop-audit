@@ -1352,7 +1352,7 @@ function addSingleItem(ctx: ExtensionContext, raw: string): void {
   if (!state.goal || state.goal.status === "complete" || state.goal.status === "aborted") {
     activateNextListItem(ctx);
   } else {
-    ctx.ui.notify(`Added to the list (${listQueue().length} waiting): ${displaySlice(objective, 80)}`, "info");
+    ctx.ui.notify(`Added to the list (${listQueue().length} waiting): ${displaySlice(extracted.objective, 80)}`, "info");
   }
 }
 

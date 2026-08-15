@@ -68,7 +68,7 @@ export function resolveDrafterModel(ctx: ExtensionContext, settings: Pick<Settin
   const candidates: DrafterModelCandidate[] = [];
   for (;;) {
     const selected = selector.selectNextValid({ kind: "drafter" }, currentRef, attempted);
-    if (!("ref" in selected)) break;
+    if (!("model" in selected) || typeof selected.ref !== "string") break;
     attempted.push(selected.ref);
     candidates.push({ ref: selected.ref, model: selected.model, via: "configured" });
   }
@@ -77,4 +77,3 @@ export function resolveDrafterModel(ctx: ExtensionContext, settings: Pick<Settin
   }
   return { configuredRefs, candidates, selected: candidates[0] };
 }
-

@@ -144,7 +144,7 @@ For the assigned objective:
 3. Call out assumptions and unresolved user decisions as explicit questions with a recommended default.
 4. Prefer durable, maintainable fixes over cosmetic workarounds. The parent agent owns implementation and decides whether to apply the design.
 
-Use only read, bash, grep, find, and ls. End with a short `DESIGN CHECKPOINT` summary the parent agent can turn into a task or plan.`;
+Use only read, bash, grep, find, and ls. End with a short DESIGN CHECKPOINT summary the parent agent can turn into a task or plan.`;
 
 /** Embedded copies keyed by agent name. Explore needs an entry for the
  * strategy-driven sync (KNOWN_PINNED_DEFAULT_AGENTS); Plan and

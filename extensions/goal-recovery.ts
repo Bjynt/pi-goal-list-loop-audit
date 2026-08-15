@@ -440,13 +440,14 @@ function sessionModelSelector(ctx: ExtensionContext, sessionChain?: string[]): M
   return new ModelSelector({
     getChain: (scope) => {
       if (scope.kind === "session") return sessionChain ?? mainModelFallbackRefs(ctx);
-      return settings.subagentFallbacks?.[scope.agentName] ?? [];
+      if (scope.kind === "subagent") return settings.subagentFallbacks?.[scope.agentName] ?? [];
+      return [];
     },
     resolve: (ref) => resolveMainModel(ctx, ref),
     isForbidden: (ref) => isForbiddenModel(ref, settings.forbiddenModels),
     record: (event) => {
       appendLedger(ctx.cwd, "model_fallback_select", {
-        scope: event.scope.kind === "session" ? "session" : `subagent:${event.scope.agentName}`,
+        scope: event.scope.kind === "session" ? "session" : event.scope.kind === "subagent" ? `subagent:${event.scope.agentName}` : "drafter",
         fromRef: event.fromRef,
         toRef: event.toRef,
         reason: event.reason,
