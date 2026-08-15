@@ -381,12 +381,8 @@ export function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModel
   state.mainModelRecovery = { ...normalized, retryAt: undefined, manualResumeRequired: true };
   const resumeCmd = recoverySurfaceCommand(normalized.kind, "resume");
   const safeReason = sanitizeProviderDisplayText(normalized.reason);
-  const rateLimited = normalized.quotaSignal === "rate-limit" || presentation.signal === "rate-limit";
-  const quotaMarker = /quota|rate.?limit|usage.?limit|token.?plan|plan.?limit|provider (?:account|request|billing)/i.test(safeReason) ? ` · ${safeReason}` : "";
-  const pauseReason = `main model recovery — automatic probes stopped (${sanitizeProviderDisplayText(why)})${quotaMarker}`;
-  const action = rateLimited
-    ? `No automatic request-rate probes remain. Check the provider rate-limit window or switch /model, then ${resumeCmd} to start a fresh recovery window; ${activeGoalSurfaceCommand("cancel")} stops it.`
-    : `No automatic provider probes remain. Check the provider reset/billing state or switch /model, then ${resumeCmd} to start a fresh recovery window; ${activeGoalSurfaceCommand("cancel")} stops it.`;
+  const pauseReason = `main model recovery — automatic probes stopped (${sanitizeProviderDisplayText(why)})`;
+  const action = `No automatic provider probes remain. Switch /model if desired, then ${resumeCmd} to start a fresh recovery window; ${activeGoalSurfaceCommand("cancel")} stops it.`;
   if (normalized.kind === "goal" && state.goal) {
     updateGoal({
       status: "paused",
@@ -471,14 +467,10 @@ let modelSwitchOperationGeneration: number | null = null;
 
 export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainModelFailure): Promise<boolean> {
   const generation = flags.sessionGeneration;
-  // Context-overflow is the deterministic prompt failure that can walk
-  // BACKUP because compaction proved the current model is too small. An
-  // explicit 429/request-rate wall walks backups when the global opt-in is on;
-  // otherwise it stays on the current model and uses bounded retry/probes.
-  // User aborts and other non-recoverable failures are refused here.
-  const allowRateLimitFallback = failure.kind === "rate-limit"
-    && loadSettings(ctx.cwd).mainModelFallbackOnRateLimit === true;
-  if (failure.kind === "non-recoverable" || !isMainModelFallbackFailure(failure, { allowRateLimit: allowRateLimitFallback })) return false;
+  // Every recoverable failure may walk the configured backup chain. Error
+  // wording never opts a failure in or out of fallback behavior; only an
+  // explicit user abort/non-recoverable result is refused here.
+  if (failure.kind === "non-recoverable" || !isMainModelFallbackFailure(failure)) return false;
   // A replacement session may arrive while the old setModel promise is still
   // pending. Its fence must not block the fresh generation from recovering;
   // the old finally below is token-guarded and cannot clear the new fence.
@@ -512,9 +504,9 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
     reason: mainModelRecoveryReason(failure),
     resetAt: failure.resetAt,
     kind: mainModelRecoveryKind(),
-    quotaSignal: failure.quotaSignal,
-    retryAfterSec: failure.retryAfterSec,
-    retryFromUpstream: failure.retryFromUpstream,
+      quotaSignal: failure.quotaSignal,
+      retryAfterSec: failure.retryAfterSec,
+      retryFromUpstream: failure.retryFromUpstream,
   });
   const failureCopy = providerErrorPresentation(failure.raw, "main");
   const recovery: MainModelRecovery = {
@@ -668,10 +660,7 @@ export function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainM
   clearLoopTimer();
   flags.continuationDispatchStoodDown = true;
   const resumeCmd = recoverySurfaceCommand(normalized.kind, "resume");
-  const rateLimited = normalized.quotaSignal === "rate-limit" || presentation.signal === "rate-limit";
-  const recoveryAction = rateLimited
-    ? `The provider request-rate window is being retried automatically with bounded backoff and an extra :00:30 probe after each hour starts when enabled; configured backups remain ordered and are tested one at a time. ${resumeCmd} retries immediately; ${activeGoalSurfaceCommand("cancel")} stops it.`
-    : `The provider account/usage recovery window is being retried automatically; configured backup models are tried in order. ${resumeCmd} retries immediately; ${activeGoalSurfaceCommand("cancel")} stops it.`;
+  const recoveryAction = `The provider failure is being retried automatically with bounded backoff and an extra :00:30 probe after each hour starts; configured backups are tried in order. ${resumeCmd} retries immediately; ${activeGoalSurfaceCommand("cancel")} stops it.`;
   if (normalized.kind === "goal" && state.goal) {
     updateGoal({
       status: "paused",

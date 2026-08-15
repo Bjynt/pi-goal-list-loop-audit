@@ -5,8 +5,6 @@
 // configured candidates, classifies provider failures, and computes a
 // bounded-but-persistent retry cadence.
 
-import { isBillingError, isQuotaError, parseQuotaError, type QuotaSignal } from "./quota-retry.js";
-
 export const MAIN_MODEL_MAX_RETRY_DELAY_MS = 5 * 60 * 60_000;
 export const MAIN_MODEL_AUTO_RETRY_HORIZON_MS = 24 * 60 * 60_000;
 /** Keep a fallback chain useful and bounded even when settings are edited
@@ -19,12 +17,12 @@ export type MainModelFailureKind = "rate-limit" | "quota" | "billing" | "auth" |
 export interface MainModelFailure {
   kind: MainModelFailureKind;
   raw: string;
+  /** Legacy provider-hint fields remain readable in persisted recovery data,
+   * but the retry policy never consults them. */
   retryAfterSec?: number;
   retryFromUpstream?: boolean;
   resetAt?: string;
-  /** More specific quota family; an explicit HTTP 429/rate-limit marker wins
-   * over overlapping plan/token wording. */
-  quotaSignal?: QuotaSignal;
+  quotaSignal?: "rate-limit" | "plan-quota" | "billing";
 }
 
 /** Return a canonical provider/model reference for a pi model-like object. */
@@ -111,21 +109,6 @@ export function classifyMainModelFailure(error: string | undefined, opts?: { isC
   const raw = typeof error === "string" ? error.trim() : "";
   const text = raw.toLowerCase();
   if (!raw) return { kind: "unknown", raw };
-  // An explicit HTTP 429/rate-limit signal outranks overlapping prose such
-  // as "Token Plan" or "output token limit": it means too many requests,
-  // not a deterministic prompt-size failure, and must keep retrying.
-  const explicitRateLimit = /\b429\b|too[\s_-]+many[\s_-]+requests|request[\s_-]*rate(?:\s+(?:exceeded|limit|limited))?|rate[\s_-]*limit|throttl(?:e|ed|ing)/i.test(raw);
-  if (explicitRateLimit) {
-    const parsed = parseQuotaError(raw);
-    return {
-      kind: "rate-limit",
-      raw,
-      retryAfterSec: parsed.retryAfterSec,
-      retryFromUpstream: parsed.fromUpstream,
-      resetAt: parsed.resetAt,
-      quotaSignal: "rate-limit",
-    };
-  }
   if (/aborted|cancelled|canceled|user interrupt/.test(text)) {
     return { kind: "non-recoverable", raw };
   }
@@ -133,26 +116,6 @@ export function classifyMainModelFailure(error: string | undefined, opts?: { isC
     return opts?.isContextOverflow
       ? { kind: "context-overflow", raw }
       : { kind: "non-recoverable", raw };
-  }
-  // Billing/credit exhaustion is not evidence of a future reset. It may be
-  // solved by a configured backup, but with no backup it needs user action.
-  if (isBillingError(raw)) return { kind: "billing", raw };
-  // Quota/rate-limit errors are the important long-lived case. Preserve the
-  // provider's hint when it exists; the orchestration layer caps the automatic
-  // wait and the total recovery horizon.
-  if (isQuotaError(raw)) {
-    const parsed = parseQuotaError(raw);
-    return {
-      // A request-rate 429 gets its own operational class. `quotaSignal`
-      // remains durable metadata for plan/account/billing walls, while the
-      // main recovery policy can use a short backoff before its hourly slot.
-      kind: parsed.signal === "rate-limit" ? "rate-limit" : "quota",
-      raw,
-      retryAfterSec: parsed.retryAfterSec,
-      retryFromUpstream: parsed.fromUpstream,
-      resetAt: parsed.resetAt,
-      quotaSignal: parsed.signal,
-    };
   }
   if (/401|403|unauthori[sz]ed|forbidden|invalid (?:api|access) key|authentication|no api key|credential/.test(text)) {
     return { kind: "auth", raw };
@@ -180,49 +143,36 @@ export function isContextOverflowError(error: string | undefined): boolean {
   return /context|output[ -]?token|max_?tokens|length limit|too many tokens|prompt too large|context window/.test(text);
 }
 
-/** v0.34.57: long-lived failure classes (quota/billing/auth) are durable
- * knowledge for a window: a send-wedge that follows one of them within the
- * window is almost certainly the same wall, so recovery engages in minutes
- * instead of the generic 15m storm threshold. Transient (5xx/timeout/stream)
- * failures are short-lived by definition and never record this signal. */
+/** Provider failures use one generic send-storm threshold. The old
+ * quota/billing/auth distinction was intentionally removed: error wording is
+ * too unreliable to justify a faster or slower escalation branch. */
 export const LONG_LIVED_FAILURE_KNOWLEDGE_MS = 30 * 60_000;
-export const SEND_REARM_QUOTA_ESCALATE_MS = 3 * 60_000;
 export const SEND_REARM_GENERIC_ESCALATE_MS = 15 * 60_000;
 
 export function isLongLivedFailureKind(kind: MainModelFailureKind): boolean {
-  return kind === "rate-limit" || kind === "quota" || kind === "billing" || kind === "auth";
+  void kind;
+  return false;
 }
 
-/** Only durable provider walls should spend an ordered backup by default.
- * Request-rate walls are opt-in at the classification helper call site; the
- * main-session recovery policy supplies that opt-in from the global setting. */
-export function isMainModelFallbackFailure(
-  failure: MainModelFailure,
-  opts: { allowRateLimit?: boolean } = {},
-): boolean {
-  return failure.kind === "quota"
-    || failure.kind === "billing"
-    || failure.kind === "auth"
-    || failure.kind === "context-overflow"
-    || (failure.kind === "rate-limit" && opts.allowRateLimit === true);
+/** Every recoverable provider failure may use the same configured backup
+ * chain. No error family gets a special opt-in or fallback gate. */
+export function isMainModelFallbackFailure(failure: MainModelFailure): boolean {
+  return failure.kind !== "non-recoverable";
 }
 
 /** A provider failure can require durable recovery without implying that a
- * configured backup is available. Explicit 429/request-rate failures belong
- * here so an empty chain or an explicit opt-out still parks the current model;
- * the main-session policy may select a backup before parking. */
+ * configured backup is available. All recoverable failures use the same
+ * bounded retry envelope. */
 export function requiresMainModelRecovery(failure: MainModelFailure): boolean {
-  return failure.kind !== "non-recoverable" && failure.kind !== "transient";
+  return failure.kind !== "non-recoverable";
 }
 
-/** Storm-escalation threshold: fast (3m) inside a fresh long-lived-failure
- * knowledge window, generic (15m) otherwise. Pure — the orchestrator owns
- * the timestamp state. */
+/** Generic send-storm escalation threshold. The timestamp parameter remains
+ * for compatibility with the runtime wiring; it is deliberately ignored. */
 export function sendStormEscalateMs(lastLongLivedFailureAtMs: number, nowMs = Date.now()): number {
-  return Number.isFinite(lastLongLivedFailureAtMs) && lastLongLivedFailureAtMs > 0
-    && nowMs - lastLongLivedFailureAtMs < LONG_LIVED_FAILURE_KNOWLEDGE_MS
-    ? SEND_REARM_QUOTA_ESCALATE_MS
-    : SEND_REARM_GENERIC_ESCALATE_MS;
+  void lastLongLivedFailureAtMs;
+  void nowMs;
+  return SEND_REARM_GENERIC_ESCALATE_MS;
 }
 
 /** Return the next configured candidate that has not been attempted. */
@@ -264,18 +214,13 @@ export function hourAlignedRetryDelayMs(nowMs = Date.now()): number {
   return Math.max(1_000, next.getTime() - nowMs);
 }
 
-/** v0.34.51: one uniform envelope for EVERY provider failure. Error text is
- * not trusted to pick a cadence — the exception is a factual upstream
- * Retry-After hint, honored when it fits the five-hour probe budget.
- * A pure request-rate wall gets one short bounded backoff before joining the
- * normal ladder. The configured base is otherwise authoritative; the
- * separate hourlyQuotaProbe ticker is the opt-in top-of-hour behavior. */
+/** One uniform envelope for EVERY provider failure. Error text and upstream
+ * Retry-After prose are not trusted to choose a cadence. Every recoverable
+ * failure gets the same eager first retry, then the bounded configured ladder;
+ * the separate hourly probe adds the :00:30 slot. */
 export function mainModelFailureDelayMs(failure: MainModelFailure, attempt: number, baseMinutes = 15, nowMs = Date.now()): number {
+  void failure;
   void nowMs;
-  if (failure.retryFromUpstream && Number.isFinite(failure.retryAfterSec)) {
-    const hinted = Math.max(1_000, Math.round(failure.retryAfterSec! * 1_000));
-    if (hinted <= MAIN_MODEL_MAX_RETRY_DELAY_MS) return hinted;
-  }
-  if (failure.kind === "rate-limit" && attempt <= 1 && !failure.retryFromUpstream) return 5_000;
+  if (attempt <= 1) return 5_000;
   return mainModelRetryDelayMs(attempt, baseMinutes);
 }
