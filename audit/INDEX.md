@@ -44,6 +44,10 @@ plus a `v0.34.x-<TOPIC>.md` symlink for versioned docs). Older docs
 
 ## Topic index (canonical docs, newest first)
 
+**2026-08-15**
+- PI-HOST-SESSION-REPLACEMENT-REQUEST-2026-08-15.md — Pi SDK boundary, requested event-safe replacement contract, and host acceptance tests
+- CONTINUATION-APPROACH-COMPARISON-2026-08-15.md — Codex, Claude Code, and DeepSeek Harness continuation comparison and no-change decision
+
 **2026-08-10**
 - FAULTY-OBJECTIVE-RECOVERY-2026-08-10.md — provenance-first repair, non-recursive fallback queueing, and stale/auditor/continuation fences for suspicious objectives
 - REVIEWER-ARCHIVE-METADATA-GUARD-2026-08-10.md — automatic postaudit no longer mines archived Objective/verification metadata into truncated, contract-less queue items; manual archive review remains available
