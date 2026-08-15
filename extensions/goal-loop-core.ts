@@ -1761,7 +1761,6 @@ export const BASE_STUCK_MAX_INTERVENTIONS = 5;
  * always win over these — aggressiveMode flips DEFAULTS, not user choices. */
 export const AGGRESSIVE_AUDIT_CAP = 10;
 export const AGGRESSIVE_STUCK_MAX_INTERVENTIONS = 10;
-export const DEFAULT_QUOTA_RETRY_MINUTES = 60;
 
 export interface EffectiveAggressiveSettings {
   auditCap: number;

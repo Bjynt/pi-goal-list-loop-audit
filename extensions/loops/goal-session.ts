@@ -45,7 +45,6 @@ import {
   auditFeedbackExcerpt,
   auditVerdictLabel,
   DEFAULT_AUDIT_FEEDBACK_CHARS,
-  DEFAULT_QUOTA_RETRY_MINUTES,
   DEFAULT_STALL_ESCALATION_REFIRES,
   DEFAULT_TOKEN_LIMIT,
   classifyImpossibleReason,
@@ -182,7 +181,6 @@ import {
 } from "../quota-retry.js";
 import {
   classifyMainModelFailure,
-  isLongLivedFailureKind,
   mainModelAutoRetryUntil,
   mainModelFailureDelayMs,
   mainModelRetryDelayMs,
@@ -339,7 +337,6 @@ import {
   shouldWedgeAlert,
   PENDING_LATCH_STUCK_MS,
   shouldFirePendingLatchWatchdog,
-  msUntilNextHourBoundary,
   AUDITOR_WALL_TIMEOUT_MS,
 } from "../goal-loop-backoff.js";
 

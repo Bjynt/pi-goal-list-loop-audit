@@ -10,17 +10,6 @@
 
 export const BACKOFF_HARD_CAP_MS = 5 * 60 * 1000;
 
-// v0.29.9: ms until the next clock-hour boundary (+ grace). Coding-plan
-// rate-limit windows typically expire at the top of the hour, so a probe
-// scheduled there catches the reset within seconds instead of mid-window.
-// Robust when the premise is wrong too: a non-clock-aligned window is
-// still caught within the hour.
-export function msUntilNextHourBoundary(nowMs: number, graceMs = 60_000): number {
-  const d = new Date(nowMs);
-  d.setMinutes(0, 0, 0);
-  d.setHours(d.getHours() + 1);
-  return d.getTime() + graceMs - nowMs;
-}
 export const BACKOFF_IDLE_RETRY_MS = 50;     // when adding another iter to queue
 export const BACKOFF_ERROR_BASE_MS = 5_000;  // first error retry
 export const BACKOFF_ERROR_MAX_MS = 60_000;  // max error retry (separate from stuck cap)

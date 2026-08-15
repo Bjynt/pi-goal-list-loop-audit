@@ -146,13 +146,7 @@ export function isContextOverflowError(error: string | undefined): boolean {
 /** Provider failures use one generic send-storm threshold. The old
  * quota/billing/auth distinction was intentionally removed: error wording is
  * too unreliable to justify a faster or slower escalation branch. */
-export const LONG_LIVED_FAILURE_KNOWLEDGE_MS = 30 * 60_000;
 export const SEND_REARM_GENERIC_ESCALATE_MS = 15 * 60_000;
-
-export function isLongLivedFailureKind(kind: MainModelFailureKind): boolean {
-  void kind;
-  return false;
-}
 
 /** Every recoverable provider failure may use the same configured backup
  * chain. No error family gets a special opt-in or fallback gate. */
@@ -169,9 +163,7 @@ export function requiresMainModelRecovery(failure: MainModelFailure): boolean {
 
 /** Generic send-storm escalation threshold. The timestamp parameter remains
  * for compatibility with the runtime wiring; it is deliberately ignored. */
-export function sendStormEscalateMs(lastLongLivedFailureAtMs: number, nowMs = Date.now()): number {
-  void lastLongLivedFailureAtMs;
-  void nowMs;
+export function sendStormEscalateMs(): number {
   return SEND_REARM_GENERIC_ESCALATE_MS;
 }
 

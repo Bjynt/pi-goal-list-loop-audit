@@ -185,7 +185,6 @@ import {
 } from "../quota-retry.js";
 import {
   classifyMainModelFailure,
-  isLongLivedFailureKind,
   mainModelAutoRetryUntil,
   mainModelFailureDelayMs,
   mainModelRetryDelayMs,
@@ -341,7 +340,6 @@ import {
   shouldWedgeAlert,
   PENDING_LATCH_STUCK_MS,
   shouldFirePendingLatchWatchdog,
-  msUntilNextHourBoundary,
   AUDITOR_WALL_TIMEOUT_MS,
 } from "../goal-loop-backoff.js";
 
