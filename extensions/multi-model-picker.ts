@@ -15,8 +15,12 @@
 //   • Space (" ") toggles the highlighted item. Models are toggleable;
 //     session-row and manual-row both render but pressing space on them
 //     is a no-op (they're not model refs to pick).
-//   • Enter / Tab confirm with the current selection, refs in selection
-//     order. Esc cancels with undefined.
+//   • Tab enters/exits ORDER MODE: while active, ↑/↓ moves the highlighted
+//     chain row earlier/later in the try order (membership unchanged). The
+//     active chain row is highlighted in the summary pane. Browsing/search
+//     keys are suspended in order mode so ↑/↓ are unambiguous.
+//   • Enter confirms with the current selection, refs in selection order.
+//     Esc cancels with undefined.
 //   • Selection state is visually ranked: `[1]`, `[2]`, … show the exact
 //     persisted try order; `[ ]` means unselected. The marker is independent
 //     of the highlighted row — ranks stay visible while navigating.
@@ -62,6 +66,10 @@ export class MultiModelPickerComponent {
   private selectedIdx = 0;
   /** Ordered list of selected refs — toggle order, not list order. */
   private readonly selection: string[];
+  /** Order mode: ↑/↓ move the chain instead of navigating the list. */
+  private orderMode = false;
+  /** Chain index the order-mode cursor sits on (follows the moved row). */
+  private orderIdx = 0;
 
   constructor(
     deps: MultiModelPickerDeps,
@@ -184,6 +192,39 @@ export class MultiModelPickerComponent {
     this.refresh();
   }
 
+  /**
+   * Order-mode reorder: move the chain row under the order cursor by
+   * `delta` and keep the cursor on that row so repeated presses keep
+   * moving the same item. Membership never changes.
+   */
+  private moveChainRow(delta: number): void {
+    if (this.selection.length === 0) return;
+    const next = this.orderIdx + delta;
+    if (next < 0 || next >= this.selection.length) return;
+    const current = this.selection[this.orderIdx]!;
+    this.selection[this.orderIdx] = this.selection[next]!;
+    this.selection[next] = current;
+    this.orderIdx = next;
+    this.refresh();
+  }
+
+  private setOrderMode(on: boolean): void {
+    if (this.orderMode === on) return;
+    this.orderMode = on;
+    this.orderIdx = 0;
+    this.refresh();
+  }
+
+  /** Whether order mode is active. Exposed for tests. */
+  isOrderMode(): boolean {
+    return this.orderMode;
+  }
+
+  /** Chain index of the order-mode cursor. Exposed for tests. */
+  getOrderIdx(): number {
+    return this.orderIdx;
+  }
+
   private isSelected(ref: string | undefined): boolean {
     return this.selectionIndex(ref) >= 0;
   }
@@ -217,17 +258,27 @@ export class MultiModelPickerComponent {
         const ref = this.selection[i]!;
         const item = this.itemForRef(ref);
         const status = this.effectiveDisabledReason(item) ? ` · ${this.effectiveDisabledReason(item)}` : "";
-        lines.push(truncateToWidth(`  ${i + 1} backup  ${ref}${status}`, w, "…"));
+        const row = truncateToWidth(`  ${i + 1} backup  ${ref}${status}`, w, "…");
+        if (this.orderMode && i === this.orderIdx) {
+          // In order mode the active chain row is the cursor: ↑/↓ moves it.
+          const selectedRow = this.theme.bold(`→ ${row}`);
+          const paddedRow = selectedRow + " ".repeat(Math.max(0, w - visibleWidth(selectedRow)));
+          lines.push(this.theme.bg("selectedBg", paddedRow));
+        } else {
+          lines.push(row);
+        }
       }
     }
     lines.push("");
-    const searchLine = `search: ${this.query}`;
+    const searchLine = this.orderMode ? "order mode — arrows move this backup" : `search: ${this.query}`;
     lines.push(this.theme.fg("muted", truncateToWidth(searchLine, w, "…") + "▏"));
     if (this.maxSelections !== undefined) {
       const count = `${this.selection.length}/${this.maxSelections}`;
       lines.push(this.theme.fg(this.selection.length >= this.maxSelections ? "warning" : "muted", `selected: ${count}`));
     }
-    lines.push(this.theme.fg("dim", "selected rows are tried top-to-bottom; [ / ] changes their order"));
+    lines.push(this.theme.fg("dim", this.orderMode
+      ? "↑/↓ moves the highlighted backup · tab returns to browsing"
+      : "selected rows are tried top-to-bottom · tab = order mode"));
     lines.push("");
     const filtered = this.filteredItems();
     if (filtered.length === 0) {
@@ -262,14 +313,49 @@ export class MultiModelPickerComponent {
       if (remaining > 0) lines.push(this.theme.fg("dim", `  ↓ ${remaining} more`));
     }
     lines.push("");
-    lines.push(this.theme.fg("dim", this.maxSelections !== undefined && this.selection.length >= this.maxSelections
-      ? "space add/remove · [ ] reorder · enter save · esc cancel · maximum reached"
-      : "space add/remove · [ ] reorder · enter save · esc cancel"));
+    lines.push(this.theme.fg("dim", this.orderMode
+      ? "↑/↓ reorder · tab browse · enter save · esc cancel"
+      : this.maxSelections !== undefined && this.selection.length >= this.maxSelections
+        ? "space add/remove · tab order · enter save · esc cancel · maximum reached"
+        : "space add/remove · tab order · enter save · esc cancel"));
     return lines;
   }
 
   handleInput(data: string): void {
-    if (this.keybindings.matches(data, "tui.select.confirm") || data === "\t") {
+    if (this.orderMode) {
+      // Order mode: only ordering, mode-exit, and confirm/cancel keys act.
+      // Search/toggle keys are suspended so ↑/↓ are unambiguous.
+      if (this.keybindings.matches(data, "tui.select.up")) {
+        this.moveChainRow(-1);
+        return;
+      }
+      if (this.keybindings.matches(data, "tui.select.down")) {
+        this.moveChainRow(+1);
+        return;
+      }
+      if (data === "[") {
+        this.moveChainRow(-1);
+        return;
+      }
+      if (data === "]") {
+        this.moveChainRow(+1);
+        return;
+      }
+      if (data === "\t") {
+        this.setOrderMode(false);
+        return;
+      }
+      if (this.keybindings.matches(data, "tui.select.confirm")) {
+        this.done([...this.selection]);
+        return;
+      }
+      if (this.keybindings.matches(data, "tui.select.cancel") || data === "\x1b") {
+        this.done(undefined);
+        return;
+      }
+      return;
+    }
+    if (this.keybindings.matches(data, "tui.select.confirm")) {
       this.done([...this.selection]);
       return;
     }
@@ -285,9 +371,14 @@ export class MultiModelPickerComponent {
       this.move(+1);
       return;
     }
-    // Brackets reorder the highlighted selected model without changing
-    // which row is highlighted. This makes order an explicit, inspectable
-    // setting instead of an accidental side effect of toggle timing.
+    // Tab switches to order mode instead of confirming: ordering an ordered
+    // fallback chain is a first-class step, not a hidden bracket key.
+    if (data === "\t") {
+      this.setOrderMode(true);
+      return;
+    }
+    // Brackets still reorder the highlighted selected model in browse mode
+    // (same semantics as the order-mode arrows, but without leaving browse).
     if (data === "[") {
       this.moveSelectedOrder(-1);
       return;

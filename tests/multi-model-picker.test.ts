@@ -4,9 +4,10 @@
 // (main-model fallbacks, forbidden-models list, subagent fallbacks).
 //
 // The interaction model is: type a search query → navigate with ↑/↓ → press
-// space to toggle the highlighted model in/out of the selection → enter (or
-// tab) to confirm with the refs in toggle order. Esc cancels with
-// undefined. Session and manual rows render but are not toggleable.
+// space to toggle the highlighted model in/out of the selection → tab enters
+// order mode (↑/↓ moves a chain row) → enter confirms with the refs in toggle
+// order. Esc cancels with undefined. Session and manual rows render but are
+// not toggleable.
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
@@ -219,11 +220,96 @@ test("multi-model-picker: configured unavailable and blocked refs remain visible
   assert.match(text, /2 backup  ghost\/provider-model · unavailable or unauthenticated/);
 });
 
-test("multi-model-picker: tab also confirms with the current selection", () => {
+test("multi-model-picker: tab enters order mode; enter still confirms", () => {
   const items = buildModelPickItems(MODELS, "minimax/MiniMax-M3");
   const p = makePicker(items, ["anthropic/claude-opus-4-7"]);
   p.comp.handleInput("\t");
+  assert.ok(p.comp.isOrderMode(), "tab enters order mode");
+  assert.equal(p.result, "unset", "no confirm on tab");
+  // Order mode does not change membership or cursor semantics.
+  assert.deepEqual(p.comp.getSelected(), ["anthropic/claude-opus-4-7"]);
+  // Enter still confirms from order mode.
+  p.comp.handleInput("\r");
   assert.deepEqual(p.result, ["anthropic/claude-opus-4-7"]);
+});
+
+test("multi-model-picker: order mode — ↑/↓ moves the chain row and the cursor follows", () => {
+  const items = buildModelPickItems(MODELS, "minimax/MiniMax-M3");
+  const p = makePicker(items, ["minimax/MiniMax-M3", "anthropic/claude-opus-4-7", "openrouter/anthropic/claude-sonnet-4.5"]);
+  p.comp.handleInput("\t");
+  assert.equal(p.comp.getOrderIdx(), 0);
+  // Move the first backup down two slots: it must follow the cursor.
+  p.comp.handleInput("\x1b[B");
+  p.comp.handleInput("\x1b[B");
+  assert.deepEqual(p.comp.getSelected(), [
+    "anthropic/claude-opus-4-7",
+    "openrouter/anthropic/claude-sonnet-4.5",
+    "minimax/MiniMax-M3",
+  ]);
+  assert.equal(p.comp.getOrderIdx(), 2, "cursor follows the moved row");
+  // Up moves it back to the top.
+  p.comp.handleInput("\x1b[A");
+  p.comp.handleInput("\x1b[A");
+  assert.deepEqual(p.comp.getSelected(), [
+    "minimax/MiniMax-M3",
+    "anthropic/claude-opus-4-7",
+    "openrouter/anthropic/claude-sonnet-4.5",
+  ]);
+  assert.equal(p.comp.getOrderIdx(), 0);
+});
+
+test("multi-model-picker: order mode — tab returns to browse without confirming; space is suspended", () => {
+  const items = buildModelPickItems(MODELS, "minimax/MiniMax-M3");
+  const p = makePicker(items, ["anthropic/claude-opus-4-7"]);
+  p.comp.handleInput("\t");
+  assert.ok(p.comp.isOrderMode());
+  // Space must not toggle membership while ordering.
+  p.comp.handleInput(" ");
+  assert.deepEqual(p.comp.getSelected(), ["anthropic/claude-opus-4-7"]);
+  // Typing must not pollute the search query while ordering.
+  p.comp.handleInput("opus");
+  assert.equal(p.comp.getQuery(), "");
+  p.comp.handleInput("\t");
+  assert.ok(!p.comp.isOrderMode(), "tab exits order mode");
+  assert.equal(p.result, "unset", "exiting order mode is not a confirm");
+  // Browse mode works again afterwards.
+  p.comp.handleInput(" ");
+  assert.deepEqual(p.comp.getSelected(), []);
+});
+
+test("multi-model-picker: order mode — empty chain is a no-op and esc still cancels", () => {
+  const items = buildModelPickItems(MODELS, "minimax/MiniMax-M3");
+  const p = makePicker(items);
+  p.comp.handleInput("\t");
+  assert.ok(p.comp.isOrderMode());
+  p.comp.handleInput("\x1b[B");
+  p.comp.handleInput("\x1b[A");
+  assert.deepEqual(p.comp.getSelected(), []);
+  p.comp.handleInput("\x1b");
+  assert.equal(p.result, undefined, "esc cancels even from order mode");
+});
+
+test("multi-model-picker: order mode — the active chain row is highlighted and the footer switches", () => {
+  const items = buildModelPickItems(MODELS, "minimax/MiniMax-M3");
+  const component = new MultiModelPickerComponent(
+    { title: "Main model backups", items, initialSelected: ["minimax/MiniMax-M3", "anthropic/claude-opus-4-7"] },
+    () => undefined,
+    HIGHLIGHT_THEME,
+    KB,
+    () => undefined,
+  );
+  component.handleInput("\t");
+  const lines = component.render(80);
+  const text = lines.join("\n");
+  assert.match(text, /<selected>→  1 backup  minimax\/MiniMax-M3<\/selected>/, "first chain row is the active cursor");
+  assert.match(text, /order mode — arrows move this backup/, "mode line names order mode");
+  assert.match(text, /↑\/↓ reorder · tab browse · enter save · esc cancel/, "order-mode footer");
+  // Move the cursor to row 2 and confirm the highlight follows.
+  component.handleInput("\x1b[B");
+  component.handleInput("\x1b[B");
+  const moved = component.render(80).join("\n");
+  assert.match(moved, /<selected>→  1 backup  anthropic\/claude-opus-4-7<\/selected>/, "moved row is the new active cursor");
+  assert.match(moved, /2 backup  minimax\/MiniMax-M3/, "the displaced row keeps its new rank");
 });
 
 test("multi-model-picker: empty selection confirms as an empty array (not undefined)", () => {
@@ -301,7 +387,7 @@ test("multi-model-picker: render — title, search, marked rows, and footer hint
   // Unselected rows show the empty marker.
   assert.ok(text.includes("[ ]"), "unselected marker present");
   assert.ok(text.includes("minimax/MiniMax-M3"), "selected row label present");
-  assert.ok(text.includes("space add/remove · [ ] reorder · enter save · esc cancel"), "footer hint present");
+  assert.ok(text.includes("space add/remove · tab order · enter save · esc cancel"), "footer hint present");
 });
 
 test("multi-model-picker: render — highlighted row uses the available width for selection", () => {

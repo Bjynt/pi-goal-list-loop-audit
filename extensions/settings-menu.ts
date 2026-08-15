@@ -179,6 +179,21 @@ export function buildSettingsRows(
       description:
         "on: continuation prompts route 'can't see' checks to the mmx vision CLI instead of switching models; switches stay preapproved-only (forbiddenModels gate)",
     },
+    // ── Main-model fallback chain (v0.34.139) ──
+    // Top of the Backups tab: one place for everything backup-related. The
+    // chain is an ordered, user-curated list — Space toggles membership, Tab
+    // enters order mode where ↑/↓ moves a chain row, and removing the last ref
+    // clears the global key. The runtime consumes the same left-to-right list.
+    {
+      id: "mainModelFallbacks",
+      section: "backups",
+      label: `Main model backups (up to ${MAX_MAIN_MODEL_FALLBACKS})`,
+      valueText: settings.mainModelFallbacks?.length
+        ? `${settings.mainModelFallbacks.length}/${MAX_MAIN_MODEL_FALLBACKS} · ${formatMainModelFallbacks(settings.mainModelFallbacks)}`
+        : `0/${MAX_MAIN_MODEL_FALLBACKS} · none`,
+      sourceText: src("mainModelFallbacks"),
+      description: "ordered and deselectable: current session model → backup 1 → backup 2…; account/plan/billing/auth and (when enabled) request-rate failures switch one eligible backup at a time",
+    },
     {
       id: "mainModelFallbackOnRateLimit",
       section: "backups",
@@ -220,21 +235,6 @@ export function buildSettingsRows(
       description: "adds a probe at :00:30 while any main-model recovery is parked; off disables only this extra ticker, not the configured retry ladder"
     },
   );
-
-  // ── Main-model fallback chain (v0.34.139) ──
-  // This gets its own tab because it is an ordered, user-curated chain:
-  // Space toggles membership, [/] changes order, and removing the last ref
-  // clears the global key. The runtime consumes the same left-to-right list.
-  rows.push({
-    id: "mainModelFallbacks",
-    section: "main-fallbacks",
-    label: `Main model backups (up to ${MAX_MAIN_MODEL_FALLBACKS})`,
-    valueText: settings.mainModelFallbacks?.length
-      ? `${settings.mainModelFallbacks.length}/${MAX_MAIN_MODEL_FALLBACKS} · ${formatMainModelFallbacks(settings.mainModelFallbacks)}`
-      : `0/${MAX_MAIN_MODEL_FALLBACKS} · none`,
-    sourceText: src("mainModelFallbacks"),
-    description: "ordered and deselectable: current session model → backup 1 → backup 2…; account/plan/billing/auth and (when enabled) request-rate failures switch one eligible backup at a time",
-  });
 
   // ── Subagent fallback chains (v0.34.115) ──
   // Fallback chains are editable for every embedded agent type. This is
