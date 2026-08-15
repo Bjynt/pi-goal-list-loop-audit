@@ -1721,7 +1721,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
             if (state.goal && state.goal.status === "paused" && state.goal.pauseKind === "error"
               && (state.goal.pauseReason ?? "").includes("error-brakes in a row")) {
               appendLedger(fresh.cwd, "hourly_provider_retry", { goalId: state.goal.id, streak: state.goal.errorBrakeStreak ?? 0 });
-              updateGoal({ status: "active", providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, fresh);
+              updateGoal({ status: "active", pauseKind: undefined, pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined, providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, fresh);
               appendLedger(fresh.cwd, "goal_resumed", { via: "hourly-provider-retry" });
               fresh.ui.notify("Hourly provider retry: resuming after the hour boundary.", "info");
               scheduleContinuation(fresh, true);
@@ -1754,7 +1754,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           // Re-check: only auto-resume if STILL paused for the error brake
           // (a user /goal pause during the window is not stomped).
           if (state.goal && state.goal.status === "paused" && (state.goal.pauseReason ?? "").startsWith("5 consecutive errors")) {
-            updateGoal({ status: "active", providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, fresh);
+            updateGoal({ status: "active", pauseKind: undefined, pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined, providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, fresh);
             appendLedger(fresh.cwd, "goal_resumed", { via: "error-brake-retry" });
             fresh.ui.notify("Auto-resumed after the 5-error brake (cooldown elapsed).", "info");
             scheduleContinuation(fresh, true);

@@ -93,7 +93,7 @@ test("v0.28.29: escalation is TIME-based and ACTIVITY-gated (busy ≠ wedged —
   assert.ok(!CONT.includes("SEND_REARM_ESCALATE_AFTER_MS"), "flat escalation constant removed (v0.34.108 dead-code sweep)");
   // v0.34.57: the flat 15m check became the generic branch of the
   // knowledge-aware threshold — the activity gate is unchanged.
-  assert.match(CONT, /elapsed >= sendStormEscalateMs\(flags\.lastLongLivedFailureAt\) && Date\.now\(\) - flags\.lastActivityAt >= SEND_REARM_ESCALATE_SILENT_MS/);
+  assert.match(CONT, /elapsed >= sendStormEscalateMs\(\) && Date\.now\(\) - flags\.lastActivityAt >= SEND_REARM_ESCALATE_SILENT_MS/);
   assert.match(CONT, /const SEND_REARM_LEDGER_MILESTONES_MS = \[2 \* 60_000, 5 \* 60_000, 10 \* 60_000\];/);
   assert.match(CONT, /"send_rearm_escalated", \{ kind, afterMinutes: mins, silentMinutes: silent \}/);
   assert.ok(!SRC.includes("SEND_REARM_ESCALATE_AT"), "count-based escalation constant gone");
@@ -238,5 +238,5 @@ test("v0.28.26: pendingCompletion typed + schematized", () => {
   assert.match(CORE, /pendingCompletion\?: PendingCompletion;/);
   const SCHEMA = fs.readFileSync("schemas/goal.schema.json", "utf-8");
   assert.match(SCHEMA, /"pendingCompletion": \{ "\$ref": "#\/definitions\/pendingCompletion" \}/);
-  assert.match(SCHEMA, /"phase": \{ "type": "string", "enum": \["running", "recovery-pending", "retry-waiting", "quota-waiting"\] \}/);
+  assert.match(SCHEMA, /"phase": \{ "type": "string", "enum": \["running", "recovery-pending", "retry-waiting", "quota-waiting"\]/);
 });

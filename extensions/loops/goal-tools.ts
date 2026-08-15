@@ -1026,7 +1026,7 @@ function registerAgentTools(pi: any): void {
                 void retryStoredCompletionAudit();
                 return;
               }
-              updateGoal({ status: "active" }, fresh);
+              updateGoal({ status: "active", pauseKind: undefined, pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined }, fresh);
               appendLedger(fresh.cwd, "goal_resumed", { via: "provider-retry" });
               if (resolveEffectiveAggressiveSettings(loadSettings(fresh.cwd)).aggressiveMode) {
                 fresh.ui.notify("Auto-resume fired (event: auditor provider retry elapsed). Continue working.", "info");
