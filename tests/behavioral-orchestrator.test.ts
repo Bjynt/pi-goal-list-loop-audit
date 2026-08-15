@@ -3553,6 +3553,22 @@ test("v0.34.140: aggressive mode keeps no-verdict auditor recovery alive inside 
     assert.ok((persisted?.pendingCompletion?.automaticRecoveryAttempts ?? 0) >= 2, "retries are counted durably");
     assert.ok(persisted?.pendingCompletion?.automaticRecoveryFirstAt, "the aggressive recovery start is durable");
     assert.ok(persisted?.pendingCompletion?.automaticRecoveryUntil, "the aggressive recovery horizon is durable");
+
+    // Turning aggressive mode off while a retry is waiting must leave a
+    // truthful blocked card, not an expired wait deadline with no timer.
+    await waitUntil(() => {
+      const goal = readState(cwd).goal as { status?: string; pendingCompletion?: { recoveryRetryAt?: string } } | null;
+      return goal?.status === "paused" && !!goal.pendingCompletion?.recoveryRetryAt;
+    }, 8_000);
+    fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ aggressiveMode: false }));
+    await waitUntil(() => {
+      const goal = readState(cwd).goal as { status?: string; pauseKind?: string; pauseResumeAt?: string; pendingCompletion?: { recoveryRetryAt?: string } } | null;
+      return goal?.status === "paused"
+        && goal.pauseKind === "blocked"
+        && !goal.pauseResumeAt
+        && !goal.pendingCompletion?.recoveryRetryAt;
+    }, 8_000);
+    assert.ok(readLedger(cwd).some((entry) => entry.type === "audit_recovery_retry_suppressed" && entry.reason === "aggressive-mode-disabled"));
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   } finally {
     pi.sendMessageError = null;

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.34.140 — resilient completion auditing and zombie recovery (2026-08-15)
+### No-verdict completion audits keep a safe recovery path
+  Completion-auditor timeouts and infrastructure failures remain explicitly
+  non-verdict outcomes. Normal mode keeps one durable retry; `aggressiveMode`
+  re-arms the isolated auditor inside a durable 24-hour recovery window,
+  persisting the retry count and horizon across lifecycle changes.
+
+### Zombie cleanup remains retryable after a rejected claim
+  The zero-stream watchdog records its abort latch only after the activation
+  guard accepts and completes cleanup, so a transient stale-generation or
+  session guard rejection can be retried by a later heartbeat. Regression tests
+  cover both the durable auditor retry and the cleanup ordering.
+
 ## 0.34.139 — bounded main-model fallbacks and process cleanup (2026-08-15)
 ### Main sessions keep an ordered fallback chain
   Main-model backup settings are normalized case-insensitively, capped at ten
@@ -7391,4 +7404,3 @@ running the loop end-to-end in a real pi session.
 We deliberately **fork pi-goal-x 0.19.0** as the architectural basis. We **do not** support interop with `pi-goal-x`'s `.pi/goals/` directory. This is a clean break.
 
 We **copy and adapt** the isolated auditor pattern (it's the architectural part that matters), but reduce the per-loop file count (no per-loop plugin files) and replace the hand-concat markdown renderer with structured JSON.
-

@@ -549,8 +549,36 @@ export function scheduleParkedCompletionAuditRecovery(ctx: ExtensionContext, pen
     const claim = goal?.pendingCompletion;
     if (!goal || goal.status !== "paused" || !claim || (claim.phase ?? "recovery-pending") !== "recovery-pending" || claim.recoveryRetryAt !== retryAt) return;
     const aggressiveNow = aggressiveAuditorRecoveryEnabled(fresh.cwd);
-    if (claim.automaticRecoveryAttempted === true && !aggressiveNow) return;
-    if (aggressiveNow && Date.now() >= automaticRecoveryWindow(claim).untilMs) return;
+    if (claim.automaticRecoveryAttempted === true && !aggressiveNow) {
+      updateGoal({
+        pendingCompletion: { ...claim, recoveryRetryAt: undefined },
+        pauseKind: "blocked",
+        pauseResumeAt: undefined,
+        pauseReason: "completion auditor automatic recovery disabled — no verdict was produced",
+        pauseSuggestedAction: `Aggressive auditor recovery is off. ${activeGoalSurfaceCommand("resume")} retries the stored claim explicitly.`,
+      }, fresh);
+      appendLedger(fresh.cwd, "audit_recovery_retry_suppressed", {
+        goalId: goal.id,
+        attemptId: claim.attemptId,
+        reason: "aggressive-mode-disabled",
+      });
+      return;
+    }
+    if (aggressiveNow && Date.now() >= automaticRecoveryWindow(claim).untilMs) {
+      updateGoal({
+        pendingCompletion: { ...claim, recoveryRetryAt: undefined },
+        pauseKind: "blocked",
+        pauseResumeAt: undefined,
+        pauseReason: "completion auditor aggressive recovery horizon reached — no verdict was produced",
+        pauseSuggestedAction: `The aggressive auditor recovery window ended. ${activeGoalSurfaceCommand("resume")} starts a fresh bounded window.`,
+      }, fresh);
+      appendLedger(fresh.cwd, "audit_recovery_retry_suppressed", {
+        goalId: goal.id,
+        attemptId: claim.attemptId,
+        reason: "aggressive-recovery-horizon",
+      });
+      return;
+    }
     appendLedger(fresh.cwd, "audit_recovery_retry_due", { goalId: goal.id, attemptId: claim.attemptId, retryAt, generation });
     if (!maybeAutoRetryParkedCompletionAudit("auditor-recovery-timer")) {
       appendLedger(fresh.cwd, "audit_recovery_retry_not_started", { goalId: goal.id, attemptId: claim.attemptId, reason: "guard-rejected" });
