@@ -38,6 +38,31 @@ fail, TypeScript and the jiti reproduction are clean, and the repository is
 clean and synchronized. The remaining actionable product work is the Pi host
 session limitation and the two open model-role features above.
 
+## Remaining tasklist — v0.34.142
+
+These are the actual leftovers, ordered by dependency and value. The first
+three are product/design work; the host item cannot be completed by this
+plugin alone.
+
+- [ ] **Decide the long-running judgment policy.** Define when the agent
+  should prefer the durable/long-term fix over a quick opportunistic fix, and
+  when a question is worth interrupting an unattended run.
+- [ ] **Design the designer role.** Specify the designer subagent contract,
+  when a task is routed to it, how its output enters a goal/list plan, and the
+  fallback behavior when no designer model is configured or available.
+- [ ] **Implement and test the designer role.** Add settings, model
+  resolution/fallback, prompt routing, status surfaces, and focused lifecycle
+  tests after the contract is agreed.
+- [ ] **Design and implement a drafter model chain.** Add a dedicated drafting
+  model selector with ordered fallbacks, provider failure recovery, settings
+  UI, and tests without changing the main-model or auditor chains.
+- [ ] **Coordinate the Pi host-session API gap.** Track a Pi-side capability
+  for safe session replacement from event handlers; until it exists, retain
+  truthful `/new` guidance and do not invent a plugin-side session factory.
+- [ ] **Optional: compare continuation approaches.** Review Codex, Claude Code,
+  and deepseek-harness only if the comparison can produce a concrete design
+  decision or testable improvement.
+
 ##
 /home/dracon/Pictures/Screenshots/Screenshot_20260814_140543.png 
 after draft we get this not even sure why
