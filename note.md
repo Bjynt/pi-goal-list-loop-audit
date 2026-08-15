@@ -38,4 +38,8 @@ this also leads to more questions i think, that interrupts long running goals ne
 /home/dracon/Pictures/Screenshots/Screenshot_20260812_054032.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260812_054236.png 
 
+##
+
+we need to audito others pi goal plugins see if we can learn anything from them
+
 # LATER
