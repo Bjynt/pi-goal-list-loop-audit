@@ -12,8 +12,8 @@
 //   • Esc / Ctrl+C → emit undefined (caller exits)
 //
 // Sections (6 total) map to the pre-0.28.0 menu groupings; the ordered
-// main-model fallback editor lives at the top of the Backups tab:
-//   keep-going | backups | auditor | stall-brakes | subagents | other
+// agent/fallback editors live at the top of the Agents tab:
+//   keep-going | agents | auditor | stall-brakes | subagents | other
 //
 // Extracted into its own module so tests can import `buildSettingsRows` directly
 // (mirrors how `readState` lives in goal-loop-core.ts) and so the renderer is
@@ -48,7 +48,7 @@ import { resolveEffectiveSubagentModel, OVERRIDABLE_AGENT_TYPES } from "./goal-l
 
 export type SettingsSectionId =
   | "keep-going"
-  | "backups"
+  | "agents"
   | "auditor"
   | "stall-brakes"
   | "subagents"
@@ -56,7 +56,7 @@ export type SettingsSectionId =
 
 export const SETTINGS_SECTIONS: readonly { id: SettingsSectionId; label: string }[] = [
   { id: "keep-going", label: "Keep-going" },
-  { id: "backups", label: "Backups" },
+  { id: "agents", label: "Agents" },
   { id: "auditor", label: "Auditor" },
   { id: "stall-brakes", label: "Stall brakes" },
   { id: "subagents", label: "Subagents" },
@@ -178,20 +178,21 @@ export function buildSettingsRows(
       description:
         "on: continuation prompts route 'can't see' checks to the mmx vision CLI instead of switching models; switches stay preapproved-only (forbiddenModels gate)",
     },
-    // ── Main-model fallback chain (v0.34.139) ──
-    // Top of the Backups tab: one place for everything backup-related. The
-    // chain is an ordered, user-curated list — Space toggles membership, Tab
-    // enters order mode where ↑/↓ moves a chain row, and removing the last ref
-    // clears the global key. The runtime consumes the same left-to-right list.
+    // ── Agent fallback chains (v0.34.139) ──
+    // Top of the Agents tab: each runtime role has an agent/model and may
+    // optionally have an ordered fallback chain. Space toggles membership,
+    // Tab enters order mode where ↑/↓ moves a chain row, and removing the last
+    // ref clears the global key. The runtime consumes the same left-to-right
+    // list.
     {
       id: "mainModelFallbacks",
-      section: "backups",
-      label: `Main model backups (up to ${MAX_MAIN_MODEL_FALLBACKS})`,
+      section: "agents",
+      label: `Main agent fallback models (up to ${MAX_MAIN_MODEL_FALLBACKS})`,
       valueText: settings.mainModelFallbacks?.length
         ? `${settings.mainModelFallbacks.length}/${MAX_MAIN_MODEL_FALLBACKS} · ${formatMainModelFallbacks(settings.mainModelFallbacks)}`
         : `0/${MAX_MAIN_MODEL_FALLBACKS} · none`,
       sourceText: src("mainModelFallbacks"),
-      description: "ordered and deselectable: current session model → backup 1 → backup 2…; every recoverable provider failure switches one eligible backup at a time",
+      description: "ordered and deselectable: current main agent → fallback 1 → fallback 2…; every recoverable provider failure switches one eligible fallback at a time",
     },
     {
       id: "forbiddenModels",
@@ -211,7 +212,7 @@ export function buildSettingsRows(
     },
     {
       id: "mainModelRetryMinutes",
-      section: "backups",
+      section: "agents",
       label: "Main recovery base minutes",
       valueText: show("mainModelRetryMinutes", "15"),
       sourceText: src("mainModelRetryMinutes"),
@@ -219,7 +220,7 @@ export function buildSettingsRows(
     },
     {
       id: "hourlyRetryProbe",
-      section: "backups",
+      section: "agents",
       label: "Hourly main recovery probe",
       valueText: show("hourlyRetryProbe", "on"),
       sourceText: src("hourlyRetryProbe"),
@@ -227,19 +228,27 @@ export function buildSettingsRows(
     },
     {
       id: "drafterModel",
-      section: "backups",
-      label: "Drafter model",
+      section: "agents",
+      label: "Drafter agent",
       valueText: show("drafterModel", "session model"),
       sourceText: src("drafterModel"),
-      description: "temporary model used only during /goal, /list, and /loop drafting; after confirmation or interruption the session model is restored",
+      description: "temporary agent/model used only during /goal, /list, and /loop drafting; after confirmation or interruption the session agent is restored",
+    },
+    {
+      id: "drafterThinkingLevel",
+      section: "agents",
+      label: "Drafter thinking",
+      valueText: show("drafterThinkingLevel", "session level (inherited)"),
+      sourceText: src("drafterThinkingLevel"),
+      description: "temporary drafting agent's reasoning level — unset inherits the session level and restores it after drafting",
     },
     {
       id: "drafterModelFallbacks",
-      section: "backups",
-      label: "Drafter fallback chain",
+      section: "agents",
+      label: "Drafter fallback agents",
       valueText: settings.drafterModelFallbacks?.length ? settings.drafterModelFallbacks.join(" → ") : "none (session last resort)",
       sourceText: src("drafterModelFallbacks"),
-      description: "ordered drafting-only backups; generic provider errors retry the next eligible drafter candidate without changing main or auditor chains",
+      description: "ordered drafting-only fallback agents; generic provider errors retry the next eligible candidate without changing main or auditor chains",
     },
   );
 
@@ -252,11 +261,11 @@ export function buildSettingsRows(
     const chain = settings.subagentFallbacks?.[name] ?? [];
     rows.push({
       id: `subagentFallbacks:${name}`,
-      section: "backups",
-      label: `${name} fallback chain`,
+      section: "agents",
+      label: `${name} fallback agents`,
       valueText: chain.length ? chain.join(" → ") : "none (uses pin or inherits)",
       sourceText: src("subagentFallbacks"),
-      description: `ordered provider/model refs; the FIRST eligible ref in the chain is written as the ${name}.md override. Empty → falls through to subagentModelOverrides / subagentModelStrategy.`,
+      description: `ordered fallback agents; the FIRST eligible provider/model ref is written as the ${name}.md override. Empty → falls through to subagentModelOverrides / subagentModelStrategy.`,
     });
   }
 

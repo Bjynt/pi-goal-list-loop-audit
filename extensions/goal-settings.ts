@@ -43,7 +43,10 @@ export interface Settings {
   mainModelFallbacks?: string[];
   /** Global-only primary model used temporarily for goal/list/loop drafting. */
   drafterModel?: string;
-  /** Global-only ordered drafting backups; the current session model is the final fallback. */
+  /** Global-only thinking level for the temporary drafting agent. Unset means
+   * inherit the session's current level for the duration of drafting. */
+  drafterThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+  /** Global-only ordered drafting fallback agents; the current session model is the final fallback. */
   drafterModelFallbacks?: string[];
   /** v0.34.115: per-subagent fallback chains. Keyed by subagent name
    * (Explore, Plan, general-purpose, …). When set, the subagent sync uses
@@ -180,11 +183,12 @@ const GLOBAL_MAIN_RECOVERY_KEYS: ReadonlySet<keyof Settings> = new Set([
   "mainModelRetryMinutes",
   "hourlyRetryProbe",
   "drafterModel",
+  "drafterThinkingLevel",
   "drafterModelFallbacks",
 ]);
 
 export const DEFAULT_SETTINGS: Settings = {
-  // Main-model backups are opt-in: an empty list preserves pi's normal
+  // Main-agent fallback models are opt-in: an empty list preserves pi's normal
   // session model behavior, while the recovery cadence still protects an
   // active supervised goal from provider failures.
   mainModelFallbacks: [],
@@ -197,6 +201,9 @@ export const DEFAULT_SETTINGS: Settings = {
   // vision CLI job, never a reason to switch models (note.md 2026-08-07).
   visionAssist: true,
   mainModelRetryMinutes: 15,
+  // Unset = inherit the session thinking level while the temporary drafter
+  // agent is active; the original session level is restored afterward.
+  drafterThinkingLevel: undefined,
   // Unset = "high" at the call site (v0.31.2). The auditor is the
   // verification gate: its depth must NOT ride the session's coding-speed
   // thinking dial (user 2026-07-31: "we should also select its thinking
@@ -307,6 +314,7 @@ export function loadGlobalSettings(): Settings {
 export const SETTINGS_KEYS: Array<keyof Settings> = [
   "mainModelFallbacks",
   "drafterModel",
+  "drafterThinkingLevel",
   "drafterModelFallbacks",
   "mainModelRetryMinutes",
   "forbiddenModels",
