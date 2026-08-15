@@ -284,6 +284,7 @@ async function cmdStatus(ctx: ExtensionContext): Promise<void> {
   const g = state.goal;
   const lines = [
     `${statusLabel(g.status)}: ${sanitizeDisplayText(g.objective)}`,
+    ...(g.agentRole ? [`Agent role: ${g.agentRole} subagent checkpoint requested`] : []),
     // v0.24.7: name WHERE the work came from — a queue item is not a goal.
     ...(g.policy === "list" ? [`Source: /list queue (${listQueue().length} waiting) — /list to manage`] : []),
     `Auto-continue: ${g.autoContinue ? "on" : "off"}`,
@@ -1129,6 +1130,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
         const open = groupOpenChildren(item.id);
         flat++;
         const labels: string[] = [];
+        if (item.agentRole) labels.push(item.agentRole);
         if (item.parallelSafe) labels.push("parallel");
         if (open > 0) labels.push(`group: ${open} open`);
         const tag = labels.length ? ` [${labels.join(", ")}]` : "";
@@ -1137,7 +1139,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
           lines.push(`     ↳ REPLAN TARGET: ${displaySlice(item.repairTarget.objective, 180)}`);
         }
         children.forEach((c, ci) =>
-          lines.push(`     ${flat}.${ci + 1} ${displaySlice(c.objective, 80)}${c.parallelSafe ? " [parallel]" : ""}`),
+          lines.push(`     ${flat}.${ci + 1} ${displaySlice(c.objective, 80)}${c.agentRole ? ` [${c.agentRole}]` : ""}${c.parallelSafe ? " [parallel]" : ""}`),
         );
       }
       if (omitted > 0) {

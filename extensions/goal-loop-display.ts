@@ -1060,6 +1060,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   const tokenLimit = g.usage?.tokensLimit ?? 0;
   const headSegs: string[] = [];
   if (isList) headSegs.push("list item");
+  if (g.agentRole) headSegs.push(`${g.agentRole} role`);
   headSegs.push(statusWord);
   headSegs.push(fmtElapsed(now - Date.parse(g.createdAt)));
   const taskTotal = countTotal(g);

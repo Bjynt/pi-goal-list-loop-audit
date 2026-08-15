@@ -1,5 +1,9 @@
 # Goal drafting — pi-goal-list-loop-audit
 
+## Judgment policy
+
+Prefer a durable, maintainable fix when it is inside scope. Use a quick workaround only when it is safe, reversible, testable, and its durable follow-up is recorded. Ask one focused question only for an actual scope, priority, irreversible-action, or missing-permission decision; do not interrupt for local reversible choices. If the user requests design help, mark the objective or item with `Agent: Designer` (or `Role: designer`) so the continuation routes a Designer checkpoint.
+
 # Long-running philosophy
 
 The three modes are NOT redundant — each has a distinct source of

@@ -41,6 +41,10 @@ export interface Settings {
   visionAssist?: boolean;
   /** Global-only ordered provider/model refs to use when the MAIN session model fails. */
   mainModelFallbacks?: string[];
+  /** Global-only primary model used temporarily for goal/list/loop drafting. */
+  drafterModel?: string;
+  /** Global-only ordered drafting backups; the current session model is the final fallback. */
+  drafterModelFallbacks?: string[];
   /** v0.34.115: per-subagent fallback chains. Keyed by subagent name
    * (Explore, Plan, general-purpose, …). When set, the subagent sync uses
    * the FIRST eligible ref in the chain via ModelSelector.selectNextValid;
@@ -175,6 +179,8 @@ const GLOBAL_MAIN_RECOVERY_KEYS: ReadonlySet<keyof Settings> = new Set([
   "mainModelFallbacks",
   "mainModelRetryMinutes",
   "hourlyRetryProbe",
+  "drafterModel",
+  "drafterModelFallbacks",
 ]);
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -246,6 +252,7 @@ function normalizeLoadedSettings(settings: Settings): Settings {
   // the main fallback chain at every read so runtime, display, and persistence
   // all see the same bounded value.
   settings.mainModelFallbacks = normalizeMainModelFallbackRefs(settings.mainModelFallbacks);
+  settings.drafterModelFallbacks = normalizeMainModelFallbackRefs(settings.drafterModelFallbacks);
   // v0.34.142: these old policy knobs no longer control recovery. Drop
   // them from the effective object so stale files cannot resurrect the old
   // behavior or make the settings UI imply that quota inspection exists.
@@ -299,6 +306,8 @@ export function loadGlobalSettings(): Settings {
 /** Every provenance-tracked key (the /glla headless display + UI). */
 export const SETTINGS_KEYS: Array<keyof Settings> = [
   "mainModelFallbacks",
+  "drafterModel",
+  "drafterModelFallbacks",
   "mainModelRetryMinutes",
   "forbiddenModels",
   "blockForbiddenModelSwitches",

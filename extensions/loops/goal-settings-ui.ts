@@ -849,6 +849,27 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       }
       return;
     }
+    case "drafterModel": {
+      const pick = await promptModelRef(ctx, "Drafter model — temporary model for drafting only", "provider/model-id — empty keeps the current session model");
+      if (pick === undefined) return;
+      saveSettings("global", ctx.cwd, { drafterModel: pick.kind === "session" ? undefined : pick.ref });
+      ctx.ui.notify(`Drafter model: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref} — main and auditor chains are unchanged.`, "info");
+      return;
+    }
+    case "drafterModelFallbacks": {
+      const global = loadGlobalSettings();
+      const current = normalizeMainModelFallbackRefs(global.drafterModelFallbacks);
+      const refs = await promptModelRefs(
+        ctx,
+        `Drafter fallback chain — ordered, up to ${MAX_MAIN_MODEL_FALLBACKS}; the session model is the last resort; forbidden models are hidden`,
+        current,
+        { excludeRefs: normalizeModelRefs(global.forbiddenModels), maxSelections: MAX_MAIN_MODEL_FALLBACKS, currentRef: modelRef(ctx.model) },
+      );
+      if (refs === undefined) return;
+      saveSettings("global", ctx.cwd, { drafterModelFallbacks: refs.length ? refs : undefined });
+      ctx.ui.notify(refs.length ? `Drafter fallback chain saved: ${refs.join(" → ")}.` : "Drafter fallback chain cleared — the session model remains the last resort.", "info");
+      return;
+    }
     case "forbiddenModels": {
       const current = normalizeModelRefs(loadGlobalSettings().forbiddenModels);
       // v0.34.118: a current backup cannot simultaneously be forbidden.
@@ -1045,7 +1066,8 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     }
     case "subagentModelOverrides.Explore":
     case "subagentModelOverrides.Plan":
-    case "subagentModelOverrides.general-purpose": {
+    case "subagentModelOverrides.general-purpose":
+    case "subagentModelOverrides.Designer": {
       const agentType = id.slice("subagentModelOverrides.".length);
       const pick = await promptModelRef(ctx, `Model pin for ${agentType} subagents`, "provider/model-id e.g. minimax/MiniMax-M3 — always wins over strategy; empty = follow strategy");
       if (pick === undefined) return;
@@ -1059,7 +1081,8 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     }
     case "subagentFallbacks:Explore":
     case "subagentFallbacks:Plan":
-    case "subagentFallbacks:general-purpose": {
+    case "subagentFallbacks:general-purpose":
+    case "subagentFallbacks:Designer": {
       const agentType = id.slice("subagentFallbacks:".length);
       const settings = loadSettings(ctx.cwd);
       const current = settings.subagentFallbacks?.[agentType] ?? [];

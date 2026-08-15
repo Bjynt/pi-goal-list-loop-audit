@@ -6,11 +6,9 @@
 // "anthropic/claude-haiku-4-5" (default-agents.ts:40). Its model resolution is
 // explicit option > agent config > parent model (agent-runner.ts:720), so an
 // Explore spawn NEVER inherits the session model — it silently routes to a
-// different provider with a different quota pool. On rigs where the session
-// model is local/alternative (e.g. MiniMax-M3) and claude-haiku-4-5 resolves
-// through a quota-capped key (OpenRouter), three concurrent Explore spawns
-// exhaust the key with 403 "Key limit exceeded" while the parent session is
-// unaffected.
+// different provider/model path. On rigs where the session model is
+// local/alternative, an upstream pinned Explore can otherwise fail for
+// reasons unrelated to the parent session.
 //
 // pi-subagents has no per-agent model setting (subagents.json covers
 // concurrency/scope/etc., not models). Its supported override mechanism is
@@ -18,8 +16,9 @@
 // config of the same name (custom-agents.ts + agent-types.ts overlay by
 // exact key). A file that omits "model:" falls through to the parent model.
 //
-// This module manages exactly one override file — Explore.md — the only
-// default agent with a model pin today. It writes/updates/removes the file
+// This module manages the upstream pinned Explore.md plus glla's explicit
+// read-only Designer.md role. It writes/updates/removes only files carrying
+// its marker and
 // according to glla settings, and NEVER touches a file it didn't write
 // (marker frontmatter field). If tintinweb pins more defaults later, the
 // drift test in tests/subagent-model-override.test.ts fails and prompts us
@@ -38,9 +37,12 @@ export const SUBAGENT_MANAGED_MARKER = "pi-goal-list-loop-audit";
  * parent model. Guarded by the drift test. */
 export const KNOWN_PINNED_DEFAULT_AGENTS = ["Explore"] as const;
 
+/** Managed roles that should exist even when no model pin is configured. */
+export const KNOWN_MANAGED_AGENT_NAMES = ["Explore", "Designer"] as const;
+
 /** Strategy for subagent model selection. Default "inherit-parent": managed
  * override drops the model pin so subagents share the session model AND its
- * quota pool. "agent-default": upstream behavior (Explore pins haiku). */
+ * provider/model path. "agent-default": upstream behavior (Explore pins haiku). */
 export type SubagentModelStrategy = "inherit-parent" | "agent-default";
 
 // ---- Embedded default-agent copies (verbatim from pi-subagents v0.14.3
@@ -131,6 +133,19 @@ List 3-5 files most critical for implementing this plan:
 
 export const GENERAL_PURPOSE_DEFAULT_DESCRIPTION = "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you.";
 
+export const DESIGNER_DEFAULT_DESCRIPTION = "Read-only design specialist for turning an explicit design request into an architecture, affected-file map, risks, trade-offs, and a verification plan before implementation.";
+
+export const DESIGNER_DEFAULT_SYSTEM_PROMPT = `# DESIGNER ROLE — READ-ONLY DESIGN CHECKPOINT
+You are the Designer subagent. Do not edit, create, delete, or move files and do not run commands that change repository state.
+
+For the assigned objective:
+1. Inspect the relevant repository files and existing conventions.
+2. Return a concise implementation design: current behavior, proposed shape, affected files, interfaces/data flow, risks, and concrete verification steps.
+3. Call out assumptions and unresolved user decisions as explicit questions with a recommended default.
+4. Prefer durable, maintainable fixes over cosmetic workarounds. The parent agent owns implementation and decides whether to apply the design.
+
+Use only read, bash, grep, find, and ls. End with a short `DESIGN CHECKPOINT` summary the parent agent can turn into a task or plan.`;
+
 /** Embedded copies keyed by agent name. Explore needs an entry for the
  * strategy-driven sync (KNOWN_PINNED_DEFAULT_AGENTS); Plan and
  * general-purpose entries exist so users can pin them per-type via
@@ -150,6 +165,11 @@ const EMBEDDED_DEFAULTS: Record<string, EmbeddedAgentDefault> = {
     description: GENERAL_PURPOSE_DEFAULT_DESCRIPTION,
     systemPrompt: "", // upstream: empty prompt, promptMode append
     tools: "", // upstream: all tools (builtinToolNames omitted)
+  },
+  Designer: {
+    description: DESIGNER_DEFAULT_DESCRIPTION,
+    systemPrompt: DESIGNER_DEFAULT_SYSTEM_PROMPT,
+    tools: EXPLORE_DEFAULT_TOOLS,
   },
 };
 
@@ -177,7 +197,7 @@ export function buildAgentOverrideMd(name: string, model?: string): string {
     `x-managed-by: ${SUBAGENT_MANAGED_MARKER}`,
     model
       ? `x-glla-note: model pinned to ${model} by glla subagentModelOverrides. Remove the file or change /glla subagent settings to inherit the session model.`
-      : "x-glla-note: model pin removed (upstream default pins a fixed model) so this agent inherits the parent session model and its quota pool. Managed by glla — flip /glla subagent strategy to agent-default to restore upstream behavior.",
+      : "x-glla-note: model pin removed (upstream default pins a fixed model) so this agent inherits the parent session model. Managed by glla — flip /glla subagent strategy to agent-default to restore upstream behavior.",
     "---",
     "",
     def.systemPrompt || "(no system-prompt override — upstream default is an empty append-mode prompt)",
@@ -230,25 +250,25 @@ export function syncSubagentModelOverrides(opts: {
   } catch {
     /* first sync or unreadable state */
   }
-  const names = new Set<string>([...KNOWN_PINNED_DEFAULT_AGENTS, ...Object.keys(overrides)]);
+  const names = new Set<string>([...KNOWN_MANAGED_AGENT_NAMES, ...Object.keys(overrides)]);
 
   for (const name of names) {
     const overrideModel = overrides[name];
     if (overrideModel !== undefined && !EMBEDDED_DEFAULTS[name]) {
       result.skipped.push({
         name,
-        reason: `no embedded default config for "${name}" — create ${name}.md manually (only ${KNOWN_PINNED_DEFAULT_AGENTS.join("/")} are glla-managed)`,
+        reason: `no embedded default config for "${name}" — create ${name}.md manually (managed roles: ${KNOWN_MANAGED_AGENT_NAMES.join("/")})`,
       });
       continue;
     }
     const file = path.join(opts.agentDir, "agents", `${name}.md`);
-    // v0.25.6: the strategy-driven (model-less) write applies ONLY to
-    // agents that pin a model upstream (Explore) — Plan/general-purpose
-    // don't pin, so inherit-parent needs no file for them; they get
-    // managed files only via an explicit per-type override.
+    // The strategy-driven model-less write applies to upstream agents that
+    // pin a model (Explore) and to glla's explicit Designer role. Plan and
+    // general-purpose do not need a file unless the user pins them.
     const desired = overrideModel
       ? buildAgentOverrideMd(name, overrideModel)
-      : opts.strategy === "inherit-parent" && (KNOWN_PINNED_DEFAULT_AGENTS as readonly string[]).includes(name)
+      : ((opts.strategy === "inherit-parent" && (KNOWN_PINNED_DEFAULT_AGENTS as readonly string[]).includes(name))
+        || name === "Designer")
         ? buildAgentOverrideMd(name)
         : undefined; // agent-default / no pin upstream + no override → file should be absent
 

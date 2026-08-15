@@ -225,6 +225,22 @@ export function buildSettingsRows(
       sourceText: src("hourlyRetryProbe"),
       description: "adds a probe at :00:30 while any main-model recovery is parked; off disables only this extra ticker, not the configured retry ladder"
     },
+    {
+      id: "drafterModel",
+      section: "backups",
+      label: "Drafter model",
+      valueText: show("drafterModel", "session model"),
+      sourceText: src("drafterModel"),
+      description: "temporary model used only during /goal, /list, and /loop drafting; after confirmation or interruption the session model is restored",
+    },
+    {
+      id: "drafterModelFallbacks",
+      section: "backups",
+      label: "Drafter fallback chain",
+      valueText: settings.drafterModelFallbacks?.length ? settings.drafterModelFallbacks.join(" → ") : "none (session last resort)",
+      sourceText: src("drafterModelFallbacks"),
+      description: "ordered drafting-only backups; generic provider errors retry the next eligible drafter candidate without changing main or auditor chains",
+    },
   );
 
   // ── Subagent fallback chains (v0.34.115) ──
@@ -362,69 +378,40 @@ export function buildSettingsRows(
   );
 
   // ── Subagents ──
-  rows.push(
-    {
-      id: "subagentModelStrategy",
+  rows.push({
+    id: "subagentModelStrategy",
+    section: "subagents",
+    label: "Subagent model strategy",
+    valueText: show("subagentModelStrategy", "inherit-parent"),
+    sourceText: src("subagentModelStrategy"),
+    description:
+      "inherit-parent shares your session model; agent-default uses upstream defaults; Designer remains available as a glla role",
+  });
+  for (const name of OVERRIDABLE_AGENT_TYPES) {
+    rows.push({
+      id: `subagentModelOverrides.${name}`,
       section: "subagents",
-      label: "Subagent model strategy",
-      valueText: show("subagentModelStrategy", "inherit-parent"),
-      sourceText: src("subagentModelStrategy"),
-      description:
-        "inherit-parent shares your session model; agent-default uses the upstream pi-subagents default agents",
-    },
-    {
-      id: "subagentModelOverrides.Explore",
-      section: "subagents",
-      label: "Subagent Explore pin",
-      valueText: settings.subagentModelOverrides?.Explore ?? "follows strategy",
-      sourceText:
-        settings.subagentModelOverrides?.Explore !== undefined
-          ? src("subagentModelOverrides")
-          : "default",
+      label: `Subagent ${name} pin`,
+      valueText: settings.subagentModelOverrides?.[name] ?? "follows strategy",
+      sourceText: settings.subagentModelOverrides?.[name] !== undefined ? src("subagentModelOverrides") : "default",
       description: "provider/model pin; always wins over strategy",
-    },
-    {
-      id: "subagentModelOverrides.Plan",
-      section: "subagents",
-      label: "Subagent Plan pin",
-      valueText: settings.subagentModelOverrides?.Plan ?? "follows strategy",
-      sourceText:
-        settings.subagentModelOverrides?.Plan !== undefined
-          ? src("subagentModelOverrides")
-          : "default",
-      description: "provider/model pin; always wins over strategy",
-    },
-    {
-      id: "subagentModelOverrides.general-purpose",
-      section: "subagents",
-      label: "Subagent general-purpose pin",
-      valueText: settings.subagentModelOverrides?.["general-purpose"] ?? "follows strategy",
-      sourceText:
-        settings.subagentModelOverrides?.["general-purpose"] !== undefined
-          ? src("subagentModelOverrides")
-          : "default",
-      description: "provider/model pin; always wins over strategy",
-    },
-    {
-      id: "subagentResolved",
-      section: "subagents",
-      label: "Effective resolution",
-      // v0.28.20: compact — strip the parenthesized qualifier (the
-      // DESCRIPTION column carries semantics) and dedupe identical
-      // resolutions; the old 3-part parenthesized composite never fit.
-      valueText: (() => {
-        const strip = (r: string) => r.replace(/ \([^)]*\)$/, "").replace(/^\((.*)\)$/, "$1");
-        const parts = [
-          resolveEffectiveSubagentModel("Explore", settings, subagent.sessionModel),
-          resolveEffectiveSubagentModel("Plan", settings, subagent.sessionModel),
-          resolveEffectiveSubagentModel("general-purpose", settings, subagent.sessionModel),
-        ].map(strip);
-        return parts.every((p) => p === parts[0]) ? parts[0]! : parts.join(" · ");
-      })(),
-      sourceText: "runtime",
-      description: "effective Explore / Plan / general-purpose model given current settings",
-    },
-  );
+    });
+  }
+  rows.push({
+    id: "subagentResolved",
+    section: "subagents",
+    label: "Effective resolution",
+    // v0.28.20: compact — strip the parenthesized qualifier (the
+    // DESCRIPTION column carries semantics) and dedupe identical
+    // resolutions.
+    valueText: (() => {
+      const strip = (r: string) => r.replace(/ \([^)]*\)$/, "").replace(/^\((.*)\)$/, "$1");
+      const parts = OVERRIDABLE_AGENT_TYPES.map((name) => resolveEffectiveSubagentModel(name, settings, subagent.sessionModel)).map(strip);
+      return parts.every((p) => p === parts[0]) ? parts[0]! : parts.join(" · ");
+    })(),
+    sourceText: "runtime",
+    description: `effective ${OVERRIDABLE_AGENT_TYPES.join(" / ")} model given current settings`,
+  });
 
   // ── Other ──
   rows.push(

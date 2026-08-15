@@ -1602,7 +1602,14 @@ function registerAgentTools(pi: any): void {
           }
         }
         const extracted = parseListItemDeclaration(full);
-        const item = { id: newGoalId(), objective: extracted.objective, verificationContract: extracted.verificationContract || undefined, ...(extracted.parallelSafe === undefined ? {} : { parallelSafe: extracted.parallelSafe }), addedAt: nowIso() };
+        const item = {
+          id: newGoalId(),
+          objective: extracted.objective,
+          ...(extracted.agentRole ? { agentRole: extracted.agentRole } : {}),
+          verificationContract: extracted.verificationContract || undefined,
+          ...(extracted.parallelSafe === undefined ? {} : { parallelSafe: extracted.parallelSafe }),
+          addedAt: nowIso(),
+        };
         // v0.34.61: disk-first — same invariant as addSingleItem. The list
         // draft path was the second-missed place: previously the in-memory
         // state mutated without a sidecar, so a torn-rename or post-mutation
@@ -2005,6 +2012,7 @@ function registerAgentTools(pi: any): void {
       objective: Type.Optional(Type.String({ description: "Required for a repair/replan card: the concrete original target being restored." })),
       tasks: Type.Array(Type.Object({
         title: Type.String(),
+        agentRole: Type.Optional(Type.Literal("designer", { description: "Route this task through the read-only Designer subagent before implementation." })),
         subtasks: Type.Optional(Type.Array(Type.String())),
       })),
     }),
@@ -2037,7 +2045,7 @@ function registerAgentTools(pi: any): void {
       }
       const preview = `${redraftedObjective ? `Objective: ${redraftedObjective}\n\n` : ""}${p.tasks.map((t, i) => {
         const subs = (t.subtasks ?? []).map((s, j) => `   ${i + 1}.${j + 1} ${s}`).join("\n");
-        return `${i + 1}. ${t.title}` + (subs ? `\n${subs}` : "");
+        return `${i + 1}. ${t.title}${t.agentRole ? ` [${t.agentRole}]` : ""}` + (subs ? `\n${subs}` : "");
       }).join("\n")}`;
       const autoAcceptTasks = loadSettings(liveCtx.cwd).autoAcceptDrafts === true;
       let confirmed = false;

@@ -43,6 +43,12 @@ ${NEXT_PENDING_TASK_BLOCK}
 
 ${DYNAMIC_DIRECTIVES}
 
+## Long-running judgment
+
+${LONG_RUNNING_JUDGMENT_POLICY}
+
+When a goal, list item, or pending task explicitly says `Agent: Designer`, `Role: designer`, or `Designer: yes`, call the `Agent` tool with agent name `Designer` for a design checkpoint before implementation. If that specialist is unavailable, continue inline with the same checkpoint and record the fallback.
+
 ## Available tools
 
 You have `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`, the `Agent` subagent tool, and the goal toolkit (`propose_task_list`, `complete_task`, `update_task_status`, `pause_goal`, `complete_goal`), plus the list tools (`list_add`, `list_status`, `list_activate`) — when the user asks to queue more work ("add these to my list", "queue these 10 things"), call `list_add` with the items; when unsure what is running or waiting, call `list_status`.

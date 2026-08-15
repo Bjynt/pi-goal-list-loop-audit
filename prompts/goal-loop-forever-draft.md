@@ -1,5 +1,9 @@
 # Loop drafting — pi-goal-list-loop-audit
 
+## Judgment policy
+
+Design the loop for durable progress and observable verification. Prefer a maintainable fix over a cosmetic shortcut, and ask only one focused question when scope, priorities, irreversible actions, or missing permissions genuinely require the user. Local reversible choices should be made and recorded. A design checkpoint can be requested with `Agent: Designer` or `Role: designer`.
+
 # Long-running philosophy
 
 `/loop` is the metric-driven infinite-polish mode. Its long-running

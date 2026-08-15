@@ -39,6 +39,7 @@ import {
   sanitizeDisplayText,
   findNextPendingTask,
   buildTaskSummary,
+  LONG_RUNNING_JUDGMENT_POLICY,
   auditVerdictLabel,
   isFullAuditObjective,
   resolveEffectiveAggressiveSettings,
@@ -1113,7 +1114,7 @@ export function continuationPrompt(goal: Goal): string {
   // For v0.1.0 we inline-substitute so we don't need fs at runtime.
   const next = findNextPendingTask(goal.taskList?.tasks ?? []);
   const nextBlock = next
-    ? `**Next pending task**: \`${next.id}\` — ${next.title}`
+    ? `**Next pending task**: \`${next.id}\` — ${next.title}${next.agentRole ? ` [${next.agentRole}]` : ""}`
     : "**Next pending task**: (none — only call complete_goal when the objective is satisfied)";
   const taskSummary = goal.taskList?.tasks.length
     ? buildTaskSummary(goal.taskList.tasks)
@@ -1129,6 +1130,13 @@ export function continuationPrompt(goal: Goal): string {
   // TODOs from the audit cap, and the full-audit fan-out directive when the
   // objective reads as a survey pivot.
   const directives: string[] = [];
+  directives.push(`## ${LONG_RUNNING_JUDGMENT_POLICY}`);
+  const requestedDesigner = goal.agentRole === "designer" || next?.agentRole === "designer";
+  if (requestedDesigner) {
+    directives.push(
+      "## DESIGNER ROLE REQUESTED\n\nThis objective or the next pending task explicitly requests design review. Use the `Agent` tool with agent name `Designer` before implementation to produce a concise architecture, risks, affected files, and verification plan. If that agent is unavailable or its provider fails, continue inline with the same design checkpoint and record the fallback; do not wait for or infer a provider reset.",
+    );
+  }
   if (goal.repairTarget) {
     const target = goal.repairTarget;
     directives.push(
@@ -1162,6 +1170,7 @@ export function continuationPrompt(goal: Goal): string {
     .replace(/\$\{VERIFICATION_CONTRACT\}/g, () => goal.verificationContract || "(none — auditor will decide based on objective)")
     .replace(/\$\{TASK_LIST\}/g, () => taskSummary)
     .replace(/\$\{NEXT_PENDING_TASK_BLOCK\}/g, () => nextBlock)
+    .replace(/\$\{LONG_RUNNING_JUDGMENT_POLICY\}/g, () => LONG_RUNNING_JUDGMENT_POLICY)
     .replace(/\$\{DYNAMIC_DIRECTIVES\}/g, () => dynamicDirectives);
 }
 
