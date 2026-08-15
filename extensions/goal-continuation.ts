@@ -106,7 +106,6 @@ export interface ContinuationFlags {
   get loopRearmMilestone(): number;
   set loopRearmMilestone(v: number);
   get completionAuditInFlight(): boolean;
-  get lastLongLivedFailureAt(): number;
 }
 
 /** goal.ts functions/consts the continuation cluster calls. Wired by goal.ts
@@ -329,7 +328,7 @@ export function accountSendRearm(ctx: ExtensionContext, kind: "continuation" | "
       }
     }
   }
-  if (elapsed >= sendStormEscalateMs(flags.lastLongLivedFailureAt) && Date.now() - flags.lastActivityAt >= SEND_REARM_ESCALATE_SILENT_MS) {
+  if (elapsed >= sendStormEscalateMs() && Date.now() - flags.lastActivityAt >= SEND_REARM_ESCALATE_SILENT_MS) {
     if (kind === "continuation") { continuationRearmStreak = 0; continuationRearmSince = 0; } else { flags.loopRearmStreak = 0; flags.loopRearmSince = 0; }
     escalateSendRearmStorm(ctx, kind);
   }
@@ -339,7 +338,7 @@ function escalateSendRearmStorm(ctx: ExtensionContext, kind: "continuation" | "l
   // Same loud-terminal shape as escalateStallNow (v0.24.7). v0.28.29: this
   // only fires on a REAL wedge now (15m of failed sends + 5m of zero
   // session activity) — busy-but-alive sessions never reach it.
-  const mins = Math.round(sendStormEscalateMs(flags.lastLongLivedFailureAt) / 60000);
+  const mins = Math.round(sendStormEscalateMs() / 60000);
   const silent = Math.round(SEND_REARM_ESCALATE_SILENT_MS / 60000);
   appendLedger(ctx.cwd, "send_rearm_escalated", { kind, afterMinutes: mins, silentMinutes: silent });
   if (kind === "loop" && isLoopActive()) {

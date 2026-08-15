@@ -49,7 +49,6 @@ import {
   auditFeedbackExcerpt,
   auditVerdictLabel,
   DEFAULT_AUDIT_FEEDBACK_CHARS,
-  DEFAULT_QUOTA_RETRY_MINUTES,
   DEFAULT_STALL_ESCALATION_REFIRES,
   DEFAULT_TOKEN_LIMIT,
   classifyImpossibleReason,
@@ -180,7 +179,6 @@ import {
 import {
   capQuotaRetrySeconds,
   isSubagentQuotaResult,
-  parseQuotaError,
   quotaRetryDelaySeconds,
   scheduleQuotaRetry,
   cancelQuotaRetry,
@@ -1029,7 +1027,7 @@ function registerAgentTools(pi: any): void {
             pauseReason: `auditor retry: ${failureCopy.display}`,
             pauseSuggestedAction: `Auto-retry in ${fmtRetryDelay(quota.retryAfterSec)} — or ${activeGoalSurfaceCommand("resume")} to retry now`,
           }, ctx);
-          appendLedger(ctx.cwd, "goal_paused", { reason: `auditor retry: retry in ${quota.retryAfterSec}s (uniform schedule)`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
+          appendLedger(ctx.cwd, "goal_paused", { reason: `auditor retry: retry in ${plan.retryAfterSec}s (uniform schedule)`, attempt: plan.attempt, autoRetryUntil: plan.autoRetryUntil, diagnostic: failureCopy.diagnostic, recoveryEpisodeKey });
           scheduleQuotaRetryForSession(ctx, quota.retryAfterSec, result.error, (fresh: ExtensionContext) => {
             // Re-check: only auto-resume if STILL paused for the retry
             // reason (a user /goal pause during the window is not stomped).
@@ -1056,7 +1054,7 @@ function registerAgentTools(pi: any): void {
           return {
             content: [{
               type: "text",
-              text: `The auditor hit an infrastructure error (NOT a verdict): ${failureCopy.display}. The goal is PAUSED with an automatic retry scheduled in ${fmtRetryDelay(quota.retryAfterSec)} (uniform retry schedule). Your completion claim was not evaluated; do not change your deliverable for this. ${activeGoalSurfaceCommand("resume")} retries immediately. ${failureCopy.action}`,
+            text: `The auditor hit an infrastructure error (NOT a verdict): ${failureCopy.display}. The goal is PAUSED with an automatic retry scheduled in ${fmtRetryDelay(plan.retryAfterSec)} (uniform retry schedule). Your completion claim was not evaluated; do not change your deliverable for this. ${activeGoalSurfaceCommand("resume")} retries immediately. ${failureCopy.action}`,
             }],
             details: {},
           };

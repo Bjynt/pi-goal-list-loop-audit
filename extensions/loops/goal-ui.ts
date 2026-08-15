@@ -772,10 +772,6 @@ const COMPACTION_GRACE_MS = 3 * 60_000;
 // brake (1m, 2m, 4m, 8m, 16m cap). A successful turn resets both.
 const ERROR_RETRY_LADDER_MS = [5_000, 15_000, 45_000, 90_000, 180_000];
 let loopRearmSince = 0;
-// v0.34.57: when the last surfaced provider failure was a long-lived class
-// (quota/billing/auth), a send wedge inside this window is almost certainly
-// the same wall — escalate the storm into recovery after 3m, not 15m.
-let lastLongLivedFailureAt = 0;
 let loopRearmMilestone = 0;
 
 
@@ -843,5 +839,4 @@ defineGoalRuntimeGlobal("postCompactResyncPending", { get: () => postCompactResy
 defineGoalRuntimeGlobal("COMPACTION_GRACE_MS", { get: () => COMPACTION_GRACE_MS });
 defineGoalRuntimeGlobal("ERROR_RETRY_LADDER_MS", { get: () => ERROR_RETRY_LADDER_MS });
 defineGoalRuntimeGlobal("loopRearmSince", { get: () => loopRearmSince, set: (v) => { loopRearmSince = v as any; } });
-defineGoalRuntimeGlobal("lastLongLivedFailureAt", { get: () => lastLongLivedFailureAt, set: (v) => { lastLongLivedFailureAt = v as any; } });
 defineGoalRuntimeGlobal("loopRearmMilestone", { get: () => loopRearmMilestone, set: (v) => { loopRearmMilestone = v as any; } });

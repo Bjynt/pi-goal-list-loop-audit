@@ -10,7 +10,7 @@
  *   mainModelSwitchInFlight, mainModelAbortForRecovery, lastMainModelFailure,
  *   completionAuditRecoveryArmed, hourlyProbeTimer, hourlyProbeFireAt,
  *   sessionGeneration, extensionApi, extensionApiStale,
- *   continuationDispatchStoodDown, lastLongLivedFailureAt); this module
+ *   continuationDispatchStoodDown); this module
  *   observes them through the RecoveryFlags accessor object (the same
  *   mirror-lets pattern as goal-loop.ts's flags).
  */
@@ -22,7 +22,7 @@ import { state } from "./goal-state.js";
 import { appendLedger, claimRecoveryNotice, nowIso, piGlaDir, isForbiddenModel, isStaleApiError, nextHourlyProbeMs, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderDisplayText, writeGoalMd, type Goal, type MainModelRecovery, type PendingCompletion } from "./goal-loop-core.js";
 import { persistStateLine } from "./goal-state.js";
 import { cancelDetachedGoalCompletionAuditor } from "./goal-loop-auditor-process.js";
-import { classifyMainModelFailure, isContextOverflowError, isLongLivedFailureKind, isMainModelFallbackFailure, mainModelAutoRetryUntil, mainModelFailureDelayMs, mainModelRetryDelayMs, MAIN_MODEL_AUTO_RETRY_HORIZON_MS, modelRef, normalizeMainModelFallbackRefs, requiresMainModelRecovery, splitModelRef, type MainModelFailure } from "./main-model-recovery.js";
+import { classifyMainModelFailure, isContextOverflowError, isMainModelFallbackFailure, mainModelAutoRetryUntil, mainModelFailureDelayMs, mainModelRetryDelayMs, MAIN_MODEL_AUTO_RETRY_HORIZON_MS, modelRef, normalizeMainModelFallbackRefs, requiresMainModelRecovery, splitModelRef, type MainModelFailure } from "./main-model-recovery.js";
 import { ModelSelector, type ModelScope } from "./model-selector.js";
 import { loadGlobalSettings, loadSettings } from "./goal-settings.js";
 import { clearLoopTimer, scheduleLoopTick } from "./goal-loop.js";
@@ -194,8 +194,6 @@ export interface RecoveryFlags {
   set extensionApiStale(v: boolean);
   get continuationDispatchStoodDown(): boolean;
   set continuationDispatchStoodDown(v: boolean);
-  get lastLongLivedFailureAt(): number;
-  set lastLongLivedFailureAt(v: number);
   get lastMainModelRecoveryResumeAt(): number;
   set lastMainModelRecoveryResumeAt(v: number);
 }
@@ -1162,7 +1160,6 @@ export function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainMo
 export async function recoverMainModelFromSendStorm(ctx: ExtensionContext, kind: "continuation" | "loop"): Promise<void> {
   if (!isSupervising() || mainModelRecoveryActive()) return;
   const failure = classifyMainModelFailure("429 rate limit: pi held the provider retry with no stream activity");
-  flags.lastLongLivedFailureAt = Date.now();
   const switched = await tryMainModelFallback(ctx, failure);
   if (switched) {
     const current = modelRef(ctx.model);

@@ -46,7 +46,6 @@ import {
   auditFeedbackExcerpt,
   auditVerdictLabel,
   DEFAULT_AUDIT_FEEDBACK_CHARS,
-  DEFAULT_QUOTA_RETRY_MINUTES,
   DEFAULT_STALL_ESCALATION_REFIRES,
   DEFAULT_TOKEN_LIMIT,
   classifyImpossibleReason,
@@ -825,18 +824,6 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       ctx.ui.notify(refs.length ? `Main model backups saved in order: ${refs.join(" → ")}` : "Main model backups cleared — any pending backup switch was cancelled and recovery will probe the current model.", "info");
       return;
     }
-    case "mainModelFallbackOnRateLimit": {
-      const v = await ctx.ui.select("Fallback on request-rate wall", [
-        "on — 429/request-rate failures walk configured backups (default)",
-        "off — keep retrying the current model; never spend backups on 429s",
-      ]);
-      if (v) {
-        const off = v.startsWith("off");
-        saveSettings("global", ctx.cwd, { mainModelFallbackOnRateLimit: off ? false : undefined });
-        ctx.ui.notify(off ? "Request-rate fallback OFF — 429s stay on the current model." : "Request-rate fallback ON — 429s may walk configured backups.", "info");
-      }
-      return;
-    }
     case "auditorSilent": {
       const v = await ctx.ui.select("Silent auditor stream — how the auditor's report text renders in the widget while the detached worker streams", [
         "on — final-only: the text appears once the verdict lands, never word-by-word (default)",
@@ -1002,16 +989,6 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
         if (/^\d+$/.test(raw) && Number.isSafeInteger(n)) saveSettings("global", ctx.cwd, { auditFeedbackChars: n });
         else if (!v.trim()) saveSettings("global", ctx.cwd, { auditFeedbackChars: undefined });
         else ctx.ui.notify(`Not a non-negative integer: ${v}`, "warning");
-      }
-      return;
-    }
-    case "quotaRetryMinutes": {
-      const v = await ctx.ui.input("Minutes before auto-retrying a quota-exhausted auditor", `positive integer; empty = default ${DEFAULT_QUOTA_RETRY_MINUTES}`);
-      if (v !== undefined) {
-        const n = Number.parseInt(v.trim(), 10);
-        if (Number.isFinite(n) && n > 0) saveSettings("global", ctx.cwd, { quotaRetryMinutes: n });
-        else if (!v.trim()) saveSettings("global", ctx.cwd, { quotaRetryMinutes: undefined });
-        else ctx.ui.notify(`Not a positive integer: ${v}`, "warning");
       }
       return;
     }

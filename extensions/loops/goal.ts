@@ -76,7 +76,7 @@ export {
   __testOnlyRunFanOutListAuditFindings,
 } from "./goal-session.js";
 export { __testOnlySetLastCompactionAt, __testOnlyLoadState, __testOnlyRegisterAgentTools, __testOnlyRememberCtx } from "./goal-ui.js";
-export { auditorQuotaRetryPlan, runDetachedCompletionWithFallback, __testOnlySetAuditorRecoveryRetryDelay, __testOnlyResetAuditorRecoveryRuntime, type AuditorModelCandidate } from "./goal-auditor-hooks.js";
+export { auditorRetryPlan, runDetachedCompletionWithFallback, __testOnlySetAuditorRecoveryRetryDelay, __testOnlyResetAuditorRecoveryRuntime, type AuditorModelCandidate } from "./goal-auditor-hooks.js";
 export { handleSettingChoice } from "./goal-settings-ui.js";
 
 /* ------------------------------------------------------------------ */
@@ -267,7 +267,6 @@ const continuationFlags: ContinuationFlags = {
   get loopRearmMilestone() { return loopRearmMilestone; },
   set loopRearmMilestone(v) { loopRearmMilestone = v; },
   get completionAuditInFlight() { return completionAuditInFlight; },
-  get lastLongLivedFailureAt() { return lastLongLivedFailureAt; },
 };
 const continuationDeps: ContinuationDeps = {
   instanceId,
@@ -319,8 +318,6 @@ const recoveryFlags: RecoveryFlags = {
   set extensionApiStale(v) { extensionApiStale = v; },
   get continuationDispatchStoodDown() { return continuationDispatchStoodDownRef(); },
   set continuationDispatchStoodDown(v) { setContinuationDispatchStoodDownRef(v); },
-  get lastLongLivedFailureAt() { return lastLongLivedFailureAt; },
-  set lastLongLivedFailureAt(v) { lastLongLivedFailureAt = v; },
   get lastMainModelRecoveryResumeAt() { return lastMainModelRecoveryResumeAt; },
   set lastMainModelRecoveryResumeAt(v) { lastMainModelRecoveryResumeAt = v; },
 };

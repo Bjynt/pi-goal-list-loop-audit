@@ -31,7 +31,6 @@ import {
 
 import {
   DEFAULT_AUDIT_FEEDBACK_CHARS,
-  DEFAULT_QUOTA_RETRY_MINUTES,
   DEFAULT_STALL_ESCALATION_REFIRES,
 } from "./goal-loop-core.ts";
 import {
@@ -195,14 +194,6 @@ export function buildSettingsRows(
       description: "ordered and deselectable: current session model → backup 1 → backup 2…; account/plan/billing/auth and (when enabled) request-rate failures switch one eligible backup at a time",
     },
     {
-      id: "mainModelFallbackOnRateLimit",
-      section: "backups",
-      label: "Fallback on request-rate wall",
-      valueText: show("mainModelFallbackOnRateLimit", "on"),
-      sourceText: src("mainModelFallbackOnRateLimit"),
-      description: "on: 429/request-rate failures walk configured backups; off: keep retrying the current model with bounded backoff and hourly probe",
-    },
-    {
       id: "forbiddenModels",
       section: "keep-going",
       label: "Forbidden model patterns",
@@ -224,7 +215,7 @@ export function buildSettingsRows(
       label: "Main recovery base minutes",
       valueText: show("mainModelRetryMinutes", "15"),
       sourceText: src("mainModelRetryMinutes"),
-      description: "normal unhinted wait starts here, then doubles per attempt up to 5h; provider Retry-After wins; automatic recovery stops after 24h"
+      description: "first retry is eager, later retries use this bounded ladder; an extra :00:30 probe runs after each hour starts; automatic recovery stops after 24h"
     },
     {
       id: "hourlyQuotaProbe",
@@ -321,14 +312,6 @@ export function buildSettingsRows(
       ),
       sourceText: src("auditFeedbackChars"),
       description: "cap the executor-visible disapproval report (0 = full report)",
-    },
-    {
-      id: "quotaRetryMinutes",
-      section: "auditor",
-      label: "Quota retry minutes",
-      valueText: show("quotaRetryMinutes", `${DEFAULT_QUOTA_RETRY_MINUTES}`),
-      sourceText: src("quotaRetryMinutes"),
-      description: "auto-retry a quota-exhausted auditor after N minutes",
     },
   );
 

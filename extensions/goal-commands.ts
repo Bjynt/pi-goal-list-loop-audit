@@ -2115,7 +2115,6 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   ctx.ui.notify(
     [
       `mainModelBackups: ${formatMainModelFallbacks(effectiveSettings.mainModelFallbacks)}  [${prov.mainModelFallbacks?.source ?? "default"}]`,
-      fmt("mainModelFallbackOnRateLimit", "fallbackOnRateLimit"),
       fmt("mainModelRetryMinutes", "mainModelRetryMinutes (base minutes; doubles per attempt)"),
       fmt("forbiddenModels", "forbiddenModels"),
       fmt("blockForbiddenModelSwitches", "blockForbidden"),
@@ -2140,7 +2139,6 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
       fmt("auditCap", "auditCap"),
       fmt("auditFeedbackChars", "auditFeedbackChars"),
       fmt("aggressiveMode", "aggressiveMode"),
-      fmt("quotaRetryMinutes", "quotaRetryMinutes"),
       fmt("stuckMaxInterventions", "stuckMaxInterventions"),
       fmt("stallEscalationRefires", "stallEscalation"),
       fmt("wedgeAlertMinutes", "wedgeAlert"),

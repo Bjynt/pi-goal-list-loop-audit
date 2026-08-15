@@ -143,7 +143,6 @@ declare global {
   var COMPACTION_GRACE_MS: any;
   var ERROR_RETRY_LADDER_MS: any;
   var loopRearmSince: any;
-  var lastLongLivedFailureAt: any;
   var loopRearmMilestone: any;
   var escalateStallNow: any;
   var heartbeatStaleStreak: any;
@@ -185,7 +184,7 @@ declare global {
   var MAX_AUDITOR_QUOTA_AUTO_ATTEMPTS: any;
   var EAGER_AUDITOR_RETRY_SEC: any;
   var fmtRetryDelay: any;
-  var auditorQuotaRetryPlan: any;
+  var auditorRetryPlan: any;
   var auditorCandidateLabel: any;
   var runDetachedCompletionWithFallback: any;
   var retryStoredCompletionAudit: any;

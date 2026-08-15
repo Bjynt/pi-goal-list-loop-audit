@@ -13,7 +13,6 @@ import * as path from "node:path";
 import {
   DEFAULT_AUDIT_FEEDBACK_CHARS,
   DEFAULT_FORBIDDEN_MODELS,
-  DEFAULT_QUOTA_RETRY_MINUTES,
   mergeSettings,
   piGlaDir,
 } from "./goal-loop-core.ts";
@@ -42,9 +41,6 @@ export interface Settings {
   visionAssist?: boolean;
   /** Global-only ordered provider/model refs to use when the MAIN session model hits a provider wall. */
   mainModelFallbacks?: string[];
-  /** Global-only: when true (default), an explicit 429/request-rate wall may
-   * fail over to ordered backups. False preserves current-model retry. */
-  mainModelFallbackOnRateLimit?: boolean;
   /** v0.34.115: per-subagent fallback chains. Keyed by subagent name
    * (Explore, Plan, general-purpose, …). When set, the subagent sync uses
    * the FIRST eligible ref in the chain via ModelSelector.selectNextValid;
@@ -116,10 +112,6 @@ export interface Settings {
    * ON since v0.34.141; set false for the conservative pause-first policy.
    * Explicit per-key settings still win. */
   aggressiveMode?: boolean;
-  /** Minutes used by the provider/auditor recovery ladder when the normal
-   * retry schedule has no more specific delay (contract item 11). Default
-   * 60; scheduling does not probe or check quota state. */
-  quotaRetryMinutes?: number;
   /** Consecutive stuck interventions before a loop stops (default 5,
    * 10 under aggressiveMode). */
   stuckMaxInterventions?: number;
@@ -184,7 +176,6 @@ export interface Settings {
  * honest instead of showing a project value that the retry path cannot use. */
 const GLOBAL_MAIN_RECOVERY_KEYS: ReadonlySet<keyof Settings> = new Set([
   "mainModelFallbacks",
-  "mainModelFallbackOnRateLimit",
   "mainModelRetryMinutes",
   "hourlyQuotaProbe",
 ]);
@@ -192,11 +183,8 @@ const GLOBAL_MAIN_RECOVERY_KEYS: ReadonlySet<keyof Settings> = new Set([
 export const DEFAULT_SETTINGS: Settings = {
   // Main-model backups are opt-in: an empty list preserves pi's normal
   // session model behavior, while the recovery cadence still protects an
-  // active supervised goal from a temporary quota wall.
+  // active supervised goal from provider failures.
   mainModelFallbacks: [],
-  // Cross-provider backups are useful for request-rate walls; users can turn
-  // this off explicitly when they want current-model-only retry.
-  mainModelFallbackOnRateLimit: true,
   // v0.34.115: the default policy list is empty — no model is forbidden
   // unless the user explicitly configures forbiddenModels. The blocking gate
   // remains enabled for any explicit list.
@@ -234,7 +222,6 @@ export const DEFAULT_SETTINGS: Settings = {
   // for the conservative pause-first policy; the dial flips DEFAULTS, never
   // explicit per-key user settings.
   aggressiveMode: true,
-  quotaRetryMinutes: DEFAULT_QUOTA_RETRY_MINUTES,
 };
 
 export function globalSettingsPath(): string {
@@ -265,6 +252,12 @@ function normalizeLoadedSettings(settings: Settings): Settings {
   // the main fallback chain at every read so runtime, display, and persistence
   // all see the same bounded value.
   settings.mainModelFallbacks = normalizeMainModelFallbackRefs(settings.mainModelFallbacks);
+  // v0.34.142: these old quota-policy knobs no longer control recovery. Drop
+  // them from the effective object so stale files cannot resurrect the old
+  // behavior or make the settings UI imply that quota inspection exists.
+  const legacy = settings as unknown as Record<string, unknown>;
+  delete legacy.mainModelFallbackOnRateLimit;
+  delete legacy.quotaRetryMinutes;
   return settings;
 }
 
@@ -296,7 +289,6 @@ export function loadGlobalSettings(): Settings {
 /** Every provenance-tracked key (the /glla headless display + UI). */
 export const SETTINGS_KEYS: Array<keyof Settings> = [
   "mainModelFallbacks",
-  "mainModelFallbackOnRateLimit",
   "mainModelRetryMinutes",
   "forbiddenModels",
   "blockForbiddenModelSwitches",
@@ -321,7 +313,6 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "subagentModelOverrides",
   "subagentFallbacks",
   "aggressiveMode",
-  "quotaRetryMinutes",
   "stuckMaxInterventions",
   "stallEscalationRefires",
   "stallShortWords",
