@@ -11,9 +11,9 @@
 //   • Enter → emit the selected row's id (caller dispatches handler)
 //   • Esc / Ctrl+C → emit undefined (caller exits)
 //
-// Sections (7 total) map to the pre-0.28.0 menu groupings plus Backups and
-// the dedicated ordered main-model fallback editor:
-//   keep-going | backups | main-fallbacks | auditor | stall-brakes | subagents | other
+// Sections (6 total) map to the pre-0.28.0 menu groupings; the ordered
+// main-model fallback editor lives at the top of the Backups tab:
+//   keep-going | backups | auditor | stall-brakes | subagents | other
 //
 // Extracted into its own module so tests can import `buildSettingsRows` directly
 // (mirrors how `readState` lives in goal-loop-core.ts) and so the renderer is
@@ -50,7 +50,6 @@ import { resolveEffectiveSubagentModel, OVERRIDABLE_AGENT_TYPES } from "./goal-l
 export type SettingsSectionId =
   | "keep-going"
   | "backups"
-  | "main-fallbacks"
   | "auditor"
   | "stall-brakes"
   | "subagents"
@@ -59,7 +58,6 @@ export type SettingsSectionId =
 export const SETTINGS_SECTIONS: readonly { id: SettingsSectionId; label: string }[] = [
   { id: "keep-going", label: "Keep-going" },
   { id: "backups", label: "Backups" },
-  { id: "main-fallbacks", label: "Main fallbacks" },
   { id: "auditor", label: "Auditor" },
   { id: "stall-brakes", label: "Stall brakes" },
   { id: "subagents", label: "Subagents" },
