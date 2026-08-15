@@ -317,6 +317,23 @@ replacement without delivering a successor `session_start`:
   remains held unless the existing Auto-resume policy or a validated lifecycle
   handoff supplies consent. `/goal resume` still starts a direct fresh audit.
 
+## Addendum v0.34.142 (generic provider recovery)
+
+- **No quota availability check exists in the live policy**: provider text,
+  status codes, billing/rate-limit words, and upstream retry hints do not
+  select a recovery branch, fallback gate, or delay. They may remain as
+  bounded diagnostics for forensics and redaction only.
+- **One retry envelope covers every recoverable provider failure**: the first
+  retry is eager at 5 seconds, later retries use the configured bounded
+  ladder, and the optional `hourlyRetryProbe` adds a blind `:00:30` retry
+  after every hour starts. Main-model recovery and detached-auditor recovery
+  use this same reason-agnostic rule, with existing context/user-abort and
+  safety-horizon exceptions.
+- **Legacy state is inert**: old `quota-waiting` phases, quota-named retry
+  counters, and provider-hint fields are accepted only long enough to load
+  and normalize old files. Canonical persisted state uses `retry-waiting`,
+  `retryAttempts`, `retryFirstAt`, and `retryUntil`.
+
 ## Addendum v0.4.0 (completion)
 
 - **Auditor compaction enabled** (flaw #3 — the last open one). Safety:

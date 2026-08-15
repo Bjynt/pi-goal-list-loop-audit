@@ -1,5 +1,15 @@
 # NExt
 
+## Resolved in v0.34.142
+
+The provider-recovery policy is now intentionally blind: it does not query or
+infer quota availability, classify quota-shaped wording, honor `Retry-After`,
+or gate model fallback on a guessed provider state. Recoverable failures use
+one generic retry envelope, with a 5-second eager retry and an extra
+`hourlyRetryProbe` at `:00:30` after each hour starts. The existing bounded
+attempt/window safety limits remain. Old quota-named state is compatibility
+data only and cannot change the runtime policy.
+
 ##
 /home/dracon/Pictures/Screenshots/Screenshot_20260814_140543.png 
 after draft we get this not even sure why
@@ -99,4 +109,3 @@ advisor subagent
 we used to have the advisor plugin but it had a weak selector but the idea here is that auditor after or review
 while advisor is up front intelligence or perspective escalation so instead of B model does X then C model tells nuhuh, B calls D model right away if correct 
 the question is when it is correct so needs discussion 
-

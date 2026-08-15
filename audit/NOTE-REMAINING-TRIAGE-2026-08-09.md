@@ -91,3 +91,20 @@ clean, the package dry-run is `pi-goal-list-loop-audit@0.34.141`, and npm
 reports zero vulnerabilities. Remaining session replacement and native
 subagent transcript limitations are pi-host concerns documented above, not
 retry-policy defects in this plugin.
+
+## Addendum 2026-08-15 (v0.34.142) — quota policy removed from live recovery
+
+The final cleanup pass removed the remaining reason-derived runtime behavior.
+The plugin now deliberately does not query, infer, or classify provider quota
+availability. It blindly retries every recoverable provider failure using one
+generic envelope: an eager 5-second retry, the configured bounded ladder, and
+the optional `hourlyRetryProbe` at `:00:30` after each hour starts. Main-model
+fallback selection is no longer gated by request-rate wording, and upstream
+`Retry-After`/reset hints no longer affect scheduling.
+
+Legacy quota-named fields and parser exports are retained only for loading old
+state and compatibility tests; no live recovery path imports or calls them.
+Canonical state/settings are generic (`retry-waiting`, `retryAttempts`,
+`retryFirstAt`, `retryUntil`, and `hourlyRetryProbe`). Obsolete settings are
+migrated away and cannot alter the effective policy. The release check and
+focused recovery suite must be rerun for the final v0.34.142 evidence.

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.34.142 — fully reason-agnostic provider recovery (2026-08-15)
+
+### No quota policy or availability inference
+  Main-model and detached-auditor recovery no longer classify provider text,
+  status codes, billing/rate-limit wording, or `Retry-After` hints to choose a
+  fallback or delay. All recoverable provider failures use the same eager
+  retry, bounded ladder, and optional blind `hourlyRetryProbe` at `:00:30`
+  after each hour starts. Legacy quota-named state is normalized as inert
+  compatibility metadata only.
+
+### Current recovery surface is generic
+  User-facing cards, notifications, and pause actions use generic provider
+  recovery copy. Diagnostics remain bounded and sanitized for the ledger and
+  audit history. Obsolete `mainModelFallbackOnRateLimit`, `hourlyQuotaProbe`,
+  and `quotaRetryMinutes` settings are migrated away and cannot change the
+  effective policy.
+
 ## 0.34.141 — aggressive default and quota-agnostic hourly recovery (2026-08-15)
 ### Aggressive mode is now the default
   `aggressiveMode` resolves to ON when unset, enabling keep-going defaults for
