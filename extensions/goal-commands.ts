@@ -21,7 +21,7 @@ import { clearDispatchRecord, dispatchRecordExists } from "./goal-loop-dispatch.
 import type { AuditDisplayProgress } from "./goal-loop-display.js";
 import { AUDIT_FINDINGS_REL, HELD_ON_RESTORE, LOOP_AUDIT_MARKER, listAuditCollectTarget, projectAuditTarget } from "./goal-loop-forever.js";
 import { ProjectRollup, discoverGllaProjects, filterPremature, formatRollupJson, formatRollupTable, parseLedgerEntries, rollupProject } from "./goal-loop-stats.js";
-import { resolveEffectiveSubagentModel } from "./goal-loop-subagents.js";
+import { OVERRIDABLE_AGENT_TYPES, resolveEffectiveSubagentModel } from "./goal-loop-subagents.js";
 import { Settings, globalSettingsPath, loadSettings, projectSettingsPath, saveSettings, settingsProvenance } from "./goal-settings.js";
 import { formatMainModelFallbacks, normalizeMainModelFallbackRefs } from "./main-model-recovery.js";
 import { ReviewerConfig, normalizeObjective, resolveReviewerConfig, reviewerMenuOptions } from "./reviewer.js";
@@ -2126,6 +2126,8 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
     [
       `mainModelBackups: ${formatMainModelFallbacks(effectiveSettings.mainModelFallbacks)}  [${prov.mainModelFallbacks?.source ?? "default"}]`,
       fmt("mainModelRetryMinutes", "mainModelRetryMinutes (base minutes; doubles per attempt)"),
+      fmt("drafterModel", "drafterModel (drafting only)"),
+      fmt("drafterModelFallbacks", "drafterModelFallbacks (drafting only)"),
       fmt("forbiddenModels", "forbiddenModels"),
       fmt("blockForbiddenModelSwitches", "blockForbidden"),
       fmt("visionAssist", "visionAssist"),
@@ -2158,7 +2160,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
       // `postaudit` key or the legacy `reviewer` key (postaudit wins).
       `postaudit: ${JSON.stringify(loadSettings(ctx.cwd).postaudit ?? loadSettings(ctx.cwd).reviewer ?? {}) || '(unset — defaults)'}`,
       // v0.25.6: effective per-type subagent model resolution.
-      ...["Explore", "Plan", "general-purpose"].map(
+      ...OVERRIDABLE_AGENT_TYPES.map(
         (t) => `subagent ${t}: ${resolveEffectiveSubagentModel(t, loadSettings(ctx.cwd), (ctx.model as any)?.id ? `${(ctx.model as any).provider}/${(ctx.model as any).id}` : undefined)}`,
       ),
       `\nglobal:  ${globalSettingsPath()}`,

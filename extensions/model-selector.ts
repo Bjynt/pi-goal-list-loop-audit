@@ -40,7 +40,8 @@ import {
  * general-purpose) and live in goal-loop-subagents.ts. */
 export type ModelScope =
   | { kind: "session" }
-  | { kind: "subagent"; agentName: string };
+  | { kind: "subagent"; agentName: string }
+  | { kind: "drafter" };
 
 export interface ModelSelectorDeps {
   /** Read the fallback chain for a scope (returns the configured list of
