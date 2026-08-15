@@ -2,24 +2,16 @@
 // tests/blocked-pause-autoclear.test.ts
 //
 // Field: dracon-platform/web 2026-08-07 — a goal paused on kind="blocked"
-// with a quota-flavored pauseReason ("Quota recovered, but the two
-// contract blockers…") was NOT auto-cleared when mainModelRecovery went
-// from set → null, even though the underlying quota condition had
-// resolved. The user came back from sleep to a parked goal they could
-// not unstick without manual intervention ("manual resume is the exact
-// wrong idea — we want to keep going"). The v0.34.64 fix extends the
-// recovery-cleared path in mainModelRecoverySucceeded to also accept
-// pauseKind === "blocked" when the pauseReason matches a quota-style
-// indicator. autoResume:true honors "keep going" — when the wall has
-// resolved, we un-park and re-engage, instead of waiting for a manual
-// `/list resume`.
+// with a main-model recovery pauseReason was NOT auto-cleared when
+// mainModelRecovery went from set → null, even though the supervised
+// provider retry had succeeded. The generic recovery-cleared path must
+// un-park only pauses owned by main-model recovery; it must never inspect
+// provider/quota wording or override an unrelated user decision.
 //
 // Contract under test:
-//   1. blocked pause + quota-style reason + recovery success → status:active
-//   2. blocked pause + NON-quota reason → STAYS blocked (we never override
-//      a pause the agent authored for a non-quota reason)
-//   3. wait pause + quota-style reason → still auto-clears (regression guard
-//      for the original v0.34.51 behavior, now broadened)
+//   1. blocked pause owned by main-model recovery + recovery success → active
+//   2. blocked pause with a NON-recovery reason → STAYS blocked
+//   3. wait pause owned by main-model recovery → still auto-clears
 //
 // Sequence: seed a paused goal + an active mainModelRecovery, fire
 // session_start (restore path schedules the recovery probe timer), wait for
@@ -85,7 +77,7 @@ function seedPausedGoal(cwd: string, pauseReason: string, pauseKind: "wait" | "b
       active: "anthropic/mock-model",
       attempted: ["anthropic/mock-model"],
       attempts: 1,
-      reason: "main model quota: 429 rate limit: pi held the provider retry with no stream activity",
+      reason: "main model provider error: pi held the retry with no stream activity",
       kind: "goal",
       firstFailureAt: new Date().toISOString(),
       autoRetryUntil: new Date(Date.now() + 24 * 3600_000).toISOString(),
@@ -139,31 +131,29 @@ async function restoreAndRecover(cwd: string): Promise<MockCtx> {
   return ctx;
 }
 
-test("v0.34.64 — blocked pause with a quota-style reason auto-clears when the recovery probe succeeds", async () => {
+test("v0.34.64 — blocked pause owned by recovery auto-clears when the probe succeeds", async () => {
   const cwd = tmpCwd();
-  // The field's exact shape: agent wrote "Quota recovered, but ..." in
-  // pauseReason — the leading "Quota" prefix matches isQuotaPauseReason.
   seedPausedGoal(
     cwd,
-    "Quota recovered, but the two contract blockers from my previous pause are unchanged (run /list remove 1-4 to unblock)",
+    "main model recovery — provider error; retry succeeded",
     "blocked",
   );
 
   await restoreAndRecover(cwd);
 
-  // After recovery-cleared: blocked pause with quota reason → un-park to
+  // After recovery-cleared: blocked pause owned by recovery → un-park to
   // active. The ledger section after main_model_recovered carries the new
   // state (persistState runs on the un-park).
   const l = readLedger(cwd);
   const after = l.slice(l.indexOf("main_model_recovered"));
-  assert.match(after, /"status"\s*:\s*"active"/, "blocked+quota un-parks to active after recovery cleared");
+  assert.match(after, /"status"\s*:\s*"active"/, "blocked recovery pause un-parks after recovery cleared");
   assert.doesNotMatch(after, /"pauseKind"\s*:\s*"blocked"/, "blocked pauseKind was cleared");
   assert.doesNotMatch(after, /"pauseReason"/, "pause reason was cleared on un-park");
 });
 
-test("v0.34.64 — blocked pause with a NON-quota reason stays blocked (we never override agent intent)", async () => {
+test("v0.34.64 — blocked pause with a NON-recovery reason stays blocked", async () => {
   const cwd = tmpCwd();
-  // An agent blocks for a non-quota reason ("contract review required").
+  // An agent blocks for a reason unrelated to main-model recovery.
   // autoResume must NOT override that.
   seedPausedGoal(
     cwd,
@@ -179,11 +169,11 @@ test("v0.34.64 — blocked pause with a NON-quota reason stays blocked (we never
   assert.doesNotMatch(after, /"status"\s*:\s*"active"/, "no un-park to active for a non-quota reason");
 });
 
-test("v0.34.64 — wait pause with a quota-style reason still auto-clears (regression: original v0.34.51 path)", async () => {
+test("v0.34.64 — wait pause owned by recovery still auto-clears", async () => {
   const cwd = tmpCwd();
   seedPausedGoal(
     cwd,
-    "main model recovery — retrying in 15m (main model quota: 429 Token Plan usage limit)",
+    "main model recovery — retrying automatically (provider error)",
     "wait",
   );
 
@@ -194,10 +184,11 @@ test("v0.34.64 — wait pause with a quota-style reason still auto-clears (regre
   assert.match(after, /"status"\s*:\s*"active"/, "wait+quota un-parks to active (v0.34.51 path preserved)");
 });
 
-test("v0.34.64 — source guard: isQuotaPauseReason broadens the recoveryPause check", () => {
+test("v0.34.64 — source guard: only main-model recovery owns the auto-clear", () => {
   const SRC = fs.readFileSync("extensions/goal-recovery.ts", "utf-8"); // decomposition step 3 (v0.34.111): mainModelRecoverySucceeded moved here
   // The function exists and accepts a blocked pauseKind now:
   assert.match(SRC, /pauseKind === "wait" \|\| state\.goal\.pauseKind === "blocked"/);
-  // ...with the broader reason predicate:
-  assert.match(SRC, /isQuotaPauseReason\(state\.goal\.pauseReason\)/);
+  // ...with a reason predicate that never parses provider/quota wording:
+  assert.match(SRC, /\(state\.goal\.pauseReason \?\? ""\)\.startsWith\("main model recovery"\)/);
+  assert.doesNotMatch(SRC, /isQuotaPauseReason/);
 });
