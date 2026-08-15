@@ -381,7 +381,7 @@ function clearDetachedAuditRuntime(): void {
   completionAuditRecoveryArmed = false;
 }
 
-type CompletionAuditOrigin = "complete-goal" | "quota-retry" | "manual" | "session-recovery";
+type CompletionAuditOrigin = "complete-goal" | "provider-retry" | "manual" | "session-recovery";
 
 function clearScheduledAuditorRecoveryTimer(): void {
   if (scheduledAuditorRecoveryTimer) clearTimeout(scheduledAuditorRecoveryTimer);
@@ -588,7 +588,7 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
     && (claim.automaticRecoveryAttempted !== true || aggressive)
     && (!aggressive || startedMs < recoveryWindow.untilMs);
   const claimForAttempt = origin === "manual"
-    ? { ...claim, quotaAttempts: undefined, quotaFirstAt: undefined, quotaAutoRetryUntil: undefined }
+    ? { ...claim, retryAttempts: undefined, retryFirstAt: undefined, retryUntil: undefined }
     : claim;
   const pending: PendingCompletion = {
     ...claimForAttempt,
@@ -687,13 +687,13 @@ export function auditorRetryPlan(claim: PendingCompletion, _legacyQuota?: unknow
   // The optional legacy parameters are accepted so older embedded callers do
   // not break, but retry scheduling is deliberately reason-agnostic.
   const now = Date.now();
-  const firstMs = claim.quotaFirstAt ? Date.parse(claim.quotaFirstAt) : Number.NaN;
+  const firstMs = claim.retryFirstAt ? Date.parse(claim.retryFirstAt) : Number.NaN;
   const firstAtMs = Number.isFinite(firstMs) ? firstMs : now;
   const firstAt = new Date(firstAtMs).toISOString();
-  const untilMs = claim.quotaAutoRetryUntil && Number.isFinite(Date.parse(claim.quotaAutoRetryUntil))
-    ? Date.parse(claim.quotaAutoRetryUntil)
+  const untilMs = claim.retryUntil && Number.isFinite(Date.parse(claim.retryUntil))
+    ? Date.parse(claim.retryUntil)
     : firstAtMs + MAIN_MODEL_AUTO_RETRY_HORIZON_MS;
-  const attempt = (claim.quotaAttempts ?? 0) + 1;
+  const attempt = (claim.retryAttempts ?? 0) + 1;
   // v0.34.142: all failure families use one retry schedule. Do not wait on
   // a quota probe or trust a reset/Retry-After classification; retry eagerly
   // once, then probe at :00:30 after each hour starts (15:00 → 15:00:30,
@@ -854,7 +854,7 @@ export async function runDetachedCompletionWithFallback(
  * infra) → preserve the claim and pause for explicit `/goal resume`, while
  * semantic verdicts remain durable in auditHistory.
  */
-async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota-retry"): Promise<void> {
+async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provider-retry"): Promise<void> {
   const goal = state.goal;
   if (!goal?.pendingCompletion) return;
   const goalId = goal.id;
@@ -875,13 +875,13 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
   if (origin === "session-recovery") {
     appendLedger(liveCtx.cwd, "audit_recovery_started", { goalId, attemptId: claim.attemptId });
   } else {
-    appendLedger(liveCtx.cwd, "goal_resumed", { via: origin === "manual" ? "manual-audit" : "quota-retry-direct-audit" });
+    appendLedger(liveCtx.cwd, "goal_resumed", { via: origin === "manual" ? "manual-audit" : "provider-retry-direct-audit" });
   }
   liveCtx.ui.notify(origin === "manual"
     ? "Manual /goal verify — starting the detached auditor now (no agent turn needed)."
     : origin === "session-recovery"
       ? "Fresh session recovered the interrupted completion audit — starting a detached retry for the stored claim."
-      : "Auditor quota window elapsed — starting a detached retry with your stored completion claim (no agent turn needed).", "info");
+      : "Auditor provider retry is due — starting a detached retry with your stored completion claim (no agent turn needed).", "info");
   const settings = loadSettings(liveCtx.cwd);
   const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(liveCtx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
   if (modelError) {
@@ -893,7 +893,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
   completionAuditInFlight = true;
   completionAuditGeneration = generation;
   latestAuditProgress = {
-    label: origin === "session-recovery" ? "recovery starting" : origin === "manual" ? "manual verify" : "quota retry",
+    label: origin === "session-recovery" ? "recovery starting" : origin === "manual" ? "manual verify" : "provider retry",
     phase: "starting",
     lastEventAt: Date.now(),
   };
@@ -1147,9 +1147,8 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     return;
   }
 
-  // v0.34.51: ANY infrastructure failure enters the durable bounded retry
-  // plan — error text is not trusted to pick quota vs other failures (a
-  // miss-classified quota wall is the common case), so "still failing"
+  // ANY infrastructure failure enters the durable bounded retry plan — error
+  // text is not trusted to pick a failure family, so "still failing"
   // preserves the claim on a bounded one-shot schedule instead of stopping
   // after three strikes.
   if (result.error && !result.disapproved) {
@@ -1159,16 +1158,16 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     const plan = auditorRetryPlan(claim);
     const pending = {
       ...claim,
-      phase: "quota-waiting" as const,
+      phase: "retry-waiting" as const,
       recoveryAt: undefined,
       recoveryReason: undefined,
       recoveryRetryAt: undefined,
       providerErrorDiagnostic: failureCopy.diagnostic,
       recoveryEpisodeKey,
       recoveryNoticeKeys: claim.recoveryNoticeKeys ?? [],
-      quotaAttempts: plan.attempt,
-      quotaFirstAt: plan.firstAt,
-      quotaAutoRetryUntil: plan.autoRetryUntil,
+      retryAttempts: plan.attempt,
+      retryFirstAt: plan.firstAt,
+      retryUntil: plan.autoRetryUntil,
       quotaSignal: undefined,
       retryAfterSec: plan.retryAfterSec,
       retryFromUpstream: undefined,
@@ -1230,10 +1229,10 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
     auditHistory: history,
     pendingCompletion: undefined,
     pauseReason: result.disapproved
-      ? `auditor disapproved on quota-retry — see ${activeGoalStatusCommand()}`
+      ? `auditor disapproved on provider retry — see ${activeGoalStatusCommand()}`
       : result.impossible
-        ? `auditor verdict: IMPOSSIBLE on quota-retry — ${(result.impossibleReason ?? "").slice(0, 120)}`
-        : `auditor infrastructure error on quota-retry: ${residualFailureCopy.display}`,
+        ? `auditor verdict: IMPOSSIBLE on provider retry — ${(result.impossibleReason ?? "").slice(0, 120)}`
+        : `auditor infrastructure error on provider retry: ${residualFailureCopy.display}`,
   }, liveCtx);
   liveCtx.ui.notify(
     result.disapproved
@@ -1243,7 +1242,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "quota
         : `Auditor (${origin}) hit an infrastructure error — resuming; re-call complete_goal when ready.`,
     "warning",
   );
-  appendLedger(liveCtx.cwd, "quota_retry_audit_verdict", {
+  appendLedger(liveCtx.cwd, "provider_retry_audit_verdict", {
     approved: false,
     disapproved: result.disapproved,
     impossible: result.impossible,

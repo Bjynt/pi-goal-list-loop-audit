@@ -1121,30 +1121,30 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         ctx.ui.notify(`Main-model recovery is waiting with the work safe — ${recoveryResumeCmd} retries the provider, or enable Auto-resume in /glla settings.`, "info");
       }
     }
-    // Stored completion-auditor quota waits are also durable. The old timer
+    // Stored completion-auditor retry waits are also durable. The old timer
     // dies with the session, so a reload must restore only the same bounded
     // probe when auto-resume/rebind consent exists; otherwise the claim waits
     // for an explicit /goal resume.
-    const quotaClaim = state.goal?.pendingCompletion;
-    if (state.goal?.status === "paused" && quotaClaim?.phase === "quota-waiting" && state.goal.pauseKind === "wait" && state.goal.pauseResumeAt) {
-      const quotaConsent = autoResume || explicitRecovery;
-      const quotaResumeCmd = activeGoalSurfaceCommand("resume");
-      const quotaAtMs = Date.parse(state.goal.pauseResumeAt);
-      if (quotaConsent) {
-        const delay = Number.isFinite(quotaAtMs) ? Math.max(0, quotaAtMs - Date.now()) : 0;
+    const retryClaim = state.goal?.pendingCompletion;
+    if (state.goal?.status === "paused" && retryClaim?.phase === "retry-waiting" && state.goal.pauseKind === "wait" && state.goal.pauseResumeAt) {
+      const retryConsent = autoResume || explicitRecovery;
+      const retryResumeCmd = activeGoalSurfaceCommand("resume");
+      const retryAtMs = Date.parse(state.goal.pauseResumeAt);
+      if (retryConsent) {
+        const delay = Number.isFinite(retryAtMs) ? Math.max(0, retryAtMs - Date.now()) : 0;
         if (delay > 0) {
-          const failureCopy = providerErrorPresentation(state.goal.pauseReason ?? "auditor quota", "completion");
-          const recoveryEpisodeKey = quotaClaim.recoveryEpisodeKey ?? `${quotaClaim.at}:${failureCopy.fingerprint}`;
+          const failureCopy = providerErrorPresentation(state.goal.pauseReason ?? "auditor retry", "completion");
+          const recoveryEpisodeKey = retryClaim.recoveryEpisodeKey ?? `${retryClaim.at}:${failureCopy.fingerprint}`;
           const pending = {
-            ...quotaClaim,
-            providerErrorDiagnostic: quotaClaim.providerErrorDiagnostic ?? (failureCopy.sensitive ? failureCopy.diagnostic : undefined),
+            ...retryClaim,
+            providerErrorDiagnostic: retryClaim.providerErrorDiagnostic ?? (failureCopy.sensitive ? failureCopy.diagnostic : undefined),
             recoveryEpisodeKey,
-            recoveryNoticeKeys: quotaClaim.recoveryNoticeKeys ?? [],
+            recoveryNoticeKeys: retryClaim.recoveryNoticeKeys ?? [],
           };
           const notifyRetry = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:retry-wait`);
           updateGoal({ pendingCompletion: pending, providerErrorDiagnostic: pending.providerErrorDiagnostic, recoveryEpisodeKey, recoveryNoticeKeys: pending.recoveryNoticeKeys }, ctx);
           scheduleProviderRetryForSession(ctx, delay / 1_000, state.goal.pauseReason ?? "auditor retry", () => {
-            if (state.goal?.status === "paused" && state.goal.pendingCompletion?.phase === "quota-waiting") void retryStoredCompletionAudit("session-recovery");
+            if (state.goal?.status === "paused" && state.goal.pendingCompletion?.phase === "retry-waiting") void retryStoredCompletionAudit("session-recovery");
           }, undefined, {
             episodeKey: recoveryEpisodeKey,
             noticeKey: `${recoveryEpisodeKey}:retry-wait`,
@@ -1154,7 +1154,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           void retryStoredCompletionAudit("session-recovery");
         }
       } else {
-        ctx.ui.notify(`Stored completion claim is waiting on an auditor quota probe — ${quotaResumeCmd} retries it, or enable Auto-resume in /glla settings.`, "info");
+        ctx.ui.notify(`Stored completion claim is waiting on an auditor provider retry — ${retryResumeCmd} retries it, or enable Auto-resume in /glla settings.`, "info");
       }
     }
     // v0.25.0 (contract item 6): aggressiveMode announces every auto-event.

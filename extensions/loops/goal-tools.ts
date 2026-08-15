@@ -965,17 +965,16 @@ function registerAgentTools(pi: any): void {
           const plan = auditorRetryPlan(completionClaim);
           const pending = {
             ...completionClaim,
-            phase: "quota-waiting" as const,
+            phase: "retry-waiting" as const,
             recoveryAt: undefined,
             recoveryReason: undefined,
             recoveryRetryAt: undefined,
             providerErrorDiagnostic: failureCopy.diagnostic,
             recoveryEpisodeKey,
             recoveryNoticeKeys: completionClaim.recoveryNoticeKeys ?? [],
-            quotaAttempts: plan.attempt,
-            quotaFirstAt: plan.firstAt,
-            quotaAutoRetryUntil: plan.autoRetryUntil,
-            quotaSignal: undefined,
+            retryAttempts: plan.attempt,
+            retryFirstAt: plan.firstAt,
+            retryUntil: plan.autoRetryUntil,
             retryAfterSec: plan.retryAfterSec,
             retryFromUpstream: undefined,
             resetAt: undefined,
@@ -1031,9 +1030,9 @@ function registerAgentTools(pi: any): void {
                 return;
               }
               updateGoal({ status: "active" }, fresh);
-              appendLedger(fresh.cwd, "goal_resumed", { via: "quota-retry" });
+              appendLedger(fresh.cwd, "goal_resumed", { via: "provider-retry" });
               if (resolveEffectiveAggressiveSettings(loadSettings(fresh.cwd)).aggressiveMode) {
-                fresh.ui.notify("Auto-resume fired (event: auditor quota window elapsed). Continue working.", "info");
+                fresh.ui.notify("Auto-resume fired (event: auditor provider retry elapsed). Continue working.", "info");
               }
               scheduleContinuation(fresh, true);
             }

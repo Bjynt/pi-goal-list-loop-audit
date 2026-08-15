@@ -223,7 +223,7 @@ export function sumNewAssistantTokens(messages: unknown[], seen: Set<string>): n
   return total;
 }
 
-export type CompletionAuditPhase = "running" | "recovery-pending" | "quota-waiting";
+export type CompletionAuditPhase = "running" | "recovery-pending" | "retry-waiting" | "quota-waiting";
 
 /** Durable completion claim metadata. The claim itself is the user's exact
  * completion assertion; the lifecycle fields make an interrupted isolated
@@ -262,19 +262,21 @@ export interface PendingCompletion {
   automaticRecoveryAt?: string;
   automaticRecoveryGeneration?: number;
   /** When aggressiveMode is enabled, the no-verdict recovery path keeps
-   * probing inside this durable window instead of stopping after one retry.
-   * These fields are intentionally separate from quotaAttempts: a timeout
-   * or dead worker is not a quota classification. */
+   * retrying inside this durable window instead of stopping after one retry. */
   automaticRecoveryAttempts?: number;
   automaticRecoveryFirstAt?: string;
   automaticRecoveryUntil?: string;
-  /** Durable quota recovery accounting; survives reloads and worker restarts. */
+  /** Durable generic retry accounting; survives reloads and worker restarts. */
+  retryAttempts?: number;
+  retryFirstAt?: string;
+  retryUntil?: string;
+  /** @deprecated v0.34.142: migrated to the generic retry fields on load. */
   quotaAttempts?: number;
   quotaFirstAt?: string;
   quotaAutoRetryUntil?: string;
-  /** Last provider wall family observed for this stored claim. */
+  /** @deprecated v0.34.142: retained only when reading older state. */
   quotaSignal?: QuotaSignal;
-  /** Factual upstream retry metadata retained across a parked attempt. */
+  /** @deprecated v0.34.142: upstream hints never control scheduling. */
   retryAfterSec?: number;
   retryFromUpstream?: boolean;
   resetAt?: string;
@@ -1122,14 +1124,45 @@ export function readState(cwd: string): State {
       // must not lose the rest of the state
     }
   }
+  const goal = parsed.goal && typeof parsed.goal === "object"
+    ? {
+      ...parsed.goal,
+      ...(parsed.goal.pendingCompletion && typeof parsed.goal.pendingCompletion === "object"
+        ? { pendingCompletion: normalizePendingCompletion(parsed.goal.pendingCompletion) }
+        : {}),
+    }
+    : null;
   return {
-    goal: parsed.goal ?? null,
+    goal: goal as State["goal"],
     list: Array.isArray(parsed.list) ? parsed.list : [],
     loop: parsed.loop && typeof parsed.loop === "object" ? parsed.loop as State["loop"] : undefined,
     mainModelRecovery: sanitizeMainModelRecovery(parsed.mainModelRecovery),
     lastModelRef: typeof parsed.lastModelRef === "string" ? parsed.lastModelRef : undefined,
     lastCompactionAt: typeof parsed.lastCompactionAt === "number" && Number.isFinite(parsed.lastCompactionAt) ? parsed.lastCompactionAt : undefined,
   };
+}
+
+/** Migrate the old quota-named completion retry fields at the state boundary.
+ * Runtime policy only sees the generic names; old records remain readable. */
+function normalizePendingCompletion(value: unknown): PendingCompletion {
+  const raw = value as Record<string, unknown>;
+  const phase = raw.phase === "quota-waiting" ? "retry-waiting" : raw.phase;
+  return {
+    ...raw,
+    ...(phase === "running" || phase === "recovery-pending" || phase === "retry-waiting" ? { phase } : {}),
+    ...(typeof raw.retryAttempts === "number"
+      ? { retryAttempts: raw.retryAttempts }
+      : typeof raw.quotaAttempts === "number" ? { retryAttempts: raw.quotaAttempts } : {}),
+    ...(typeof raw.retryFirstAt === "string"
+      ? { retryFirstAt: raw.retryFirstAt }
+      : typeof raw.quotaFirstAt === "string" ? { retryFirstAt: raw.quotaFirstAt } : {}),
+    ...(typeof raw.retryUntil === "string"
+      ? { retryUntil: raw.retryUntil }
+      : typeof raw.quotaAutoRetryUntil === "string" ? { retryUntil: raw.quotaAutoRetryUntil } : {}),
+    quotaAttempts: undefined,
+    quotaFirstAt: undefined,
+    quotaAutoRetryUntil: undefined,
+  } as PendingCompletion;
 }
 
 /** Claim one display/action notice in a durable recovery episode. The caller
