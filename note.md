@@ -103,9 +103,3 @@ designer subagent as an option and the plan / list is made with space for it
 ## feat 
 
 drafter model with fallbacks
-
-## feat 
-advisor subagent
-we used to have the advisor plugin but it had a weak selector but the idea here is that auditor after or review
-while advisor is up front intelligence or perspective escalation so instead of B model does X then C model tells nuhuh, B calls D model right away if correct 
-the question is when it is correct so needs discussion 
