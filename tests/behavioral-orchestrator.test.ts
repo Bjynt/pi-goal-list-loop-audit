@@ -2170,7 +2170,7 @@ test("main-model recovery external notices are deduplicated per provider episode
   pi.execHandler = null;
 });
 
-test("request-rate prose stays on the current model even when backups are configured", async () => {
+test("request-rate prose uses the generic fallback chain", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
@@ -2181,11 +2181,11 @@ test("request-rate prose stays on the current model even when backups are config
   const before = readLedger(cwd).filter((entry) => entry.type === "main_model_failover").length;
   await pi.fire("agent_end", { messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: "request rate exceeded" }] }, ctx);
   await tick();
-  assert.equal(readLedger(cwd).filter((entry) => entry.type === "main_model_failover").length, before);
-  assert.equal(readState(cwd).mainModelRecovery?.quotaSignal, "rate-limit");
+  assert.equal(readLedger(cwd).filter((entry) => entry.type === "main_model_failover").length, before + 1);
+  assert.equal(readState(cwd).mainModelRecovery?.quotaSignal, undefined);
 });
 
-test("explicit 429 rate limiting stays on the current model even when backups are configured", async () => {
+test("explicit 429-shaped errors use the generic fallback chain", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
@@ -2196,11 +2196,11 @@ test("explicit 429 rate limiting stays on the current model even when backups ar
   const before = readLedger(cwd).filter((entry) => entry.type === "main_model_failover").length;
   await pi.fire("agent_end", { messages: [{ role: "assistant", content: [], stopReason: "error", statusCode: 429, errorMessage: "too many requests" }] }, ctx);
   await tick();
-  assert.equal(readLedger(cwd).filter((entry) => entry.type === "main_model_failover").length, before);
-  assert.equal(readState(cwd).mainModelRecovery?.quotaSignal, "rate-limit");
+  assert.equal(readLedger(cwd).filter((entry) => entry.type === "main_model_failover").length, before + 1);
+  assert.equal(readState(cwd).mainModelRecovery?.quotaSignal, undefined);
 });
 
-test("a successful core retry clears the quota wall and resumes the parked goal", async () => {
+test("a successful core retry clears generic provider recovery and resumes the parked goal", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   const ctx = await freshSession(cwd, "startup");
@@ -2216,16 +2216,16 @@ test("a successful core retry clears the quota wall and resumes the parked goal"
   assert.equal(parked.goal.status, "paused");
   assert.equal(parked.goal.pauseKind, "wait");
   assert.equal(parked.mainModelRecovery?.kind, "goal", "recovery owner remains the goal");
-  assert.equal(parked.mainModelRecovery?.quotaSignal, "rate-limit", "a pure 429 is a request-rate failure, not a generic quota wall");
-  assert.ok(parked.mainModelRecovery?.retryAt, "bounded request-rate retry is persisted");
+  assert.equal(parked.mainModelRecovery?.quotaSignal, undefined, "provider wording is not persisted as a policy signal");
+  assert.ok(parked.mainModelRecovery?.retryAt, "bounded provider retry is persisted");
   const retryMs = Date.parse(parked.mainModelRecovery!.retryAt!) - Date.now();
-  assert.ok(retryMs > 0 && retryMs <= 5_500, `first request-rate retry is bounded: ${retryMs}ms`);
-  assert.match(parked.goal.pauseReason ?? "", /main model recovery|request-rate/);
+  assert.ok(retryMs > 0 && retryMs <= 5_500, `first provider retry is bounded: ${retryMs}ms`);
+  assert.match(parked.goal.pauseReason ?? "", /main model recovery/);
   assert.doesNotMatch(`${parked.goal.pauseReason} ${parked.goal.pauseSuggestedAction}`, /quota exhausted|quota wall|Token Plan|429|rate_limit_error/i, "rate-limit display copy does not claim quota exhaustion or leak the provider payload");
   const hourly = readLedger(cwd).find((entry) => entry.type === "hourly_probe_scheduled");
   assert.ok(hourly, "the hourly reset probe is durably scheduled");
   const fireAt = new Date(String(hourly!.value.fireAt));
-  assert.equal(fireAt.getMinutes(), 0, "the reset probe uses the hourly slot");
+  assert.equal(fireAt.getMinutes(), 0, "the hourly retry uses the hourly slot");
   assert.equal(fireAt.getSeconds(), 30, "the reset probe waits for the provider's post-hour skew window");
   assert.equal(ctx.ui.matching("429").length, 0, "notifications never show the raw 429");
   assert.equal(ctx.ui.matching("Token Plan").length, 0, "notifications never claim Token Plan exhaustion");
@@ -2239,7 +2239,7 @@ test("a successful core retry clears the quota wall and resumes the parked goal"
   const restored = readState(cwd) as { goal: { status: string; objective?: string; pauseReason?: string }; mainModelRecovery?: { quotaSignal?: string; retryAt?: string } };
   assert.equal(restored.goal.status, "paused", "reload keeps the rate-limit recovery parked");
   assert.equal(restored.goal.objective, objective, "reload preserves the saved objective");
-  assert.equal(restored.mainModelRecovery?.quotaSignal, "rate-limit", "reload preserves the request-rate signal");
+  assert.equal(restored.mainModelRecovery?.quotaSignal, undefined, "reload preserves generic recovery without a quota signal");
   assert.doesNotMatch(`${restored.goal.pauseReason} ${reloaded.ui.notifies.map((notice) => notice.message).join("\\n")}`, /429|quota exhausted|Token Plan|rate_limit_error/i);
 
   const success = { messages: [{ role: "assistant", content: [{ type: "text", text: "recovered" }], stopReason: "end_turn" }] };

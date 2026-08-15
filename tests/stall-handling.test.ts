@@ -15,6 +15,7 @@ import * as path from "node:path";
 
 import {
   DEFAULT_STALL_ESCALATION_REFIRES,
+  nextHourlyProbeMs,
   shouldEscalateStall,
 } from "../extensions/goal-loop-core.ts";
 import { loadSettings, saveSettings } from "../extensions/goal-settings.ts";
@@ -255,30 +256,27 @@ test("v0.29.1: completion lifecycle survives the wedged-queue window (storm supp
 
 test("v0.29.9: hourly top-of-hour probe — the park keeps retrying on clock-hour boundaries", () => {
   const src = readGoalRuntimeSource();
-  // The park is no longer terminal: a probe is scheduled for the next
-  // top-of-hour boundary (+60s grace) via the shared quota-retry timer.
-  assert.match(src, /const probeMs = msUntilNextHourBoundary\(Date\.now\(\)\);/);
-  assert.ok(src.includes('"Hourly rate-limit probe"'));
-  assert.match(src, /hourly_rate_probe/);
-  assert.match(src, /via: "hourly-rate-probe"/);
+  // The park is no longer terminal: a blind retry is scheduled for the next
+  // :00:30 slot via the generic provider-retry timer.
+  assert.match(src, /const probeMs = Math\.max\(1_000, nextHourlyProbeMs\(Date\.now\(\)\) - Date\.now\(\)\);/);
+  assert.ok(src.includes('"Hourly provider retry"'));
+  assert.match(src, /hourly_provider_retry/);
+  assert.match(src, /via: "hourly-provider-retry"/);
   // The probe ONLY fires while still error-parked (user pauses/resumes/
   // cancels are never stomped), and it re-checks kind + reason.
   assert.match(src, /state\.goal\.pauseKind === "error"\s*\n\s*&& \(state\.goal\.pauseReason \?\? ""\)\.includes\("error-brakes in a row"\)/);
-  // The park messaging names the hourly probe (no more "no more auto-retries").
-  assert.match(src, /Probing at the top of each hour — rate-limit windows typically expire on clock-hour boundaries/);
+  // The park messaging names the hourly retry (no more "no more auto-retries").
+  assert.match(src, /Probing at :00:30 after each hour starts/);
   assert.ok(!src.includes("no more auto-retries"), "park is no longer terminal");
 });
 
-test("v0.29.9: msUntilNextHourBoundary — next clock-hour + grace, correct across the day", async () => {
-  const { msUntilNextHourBoundary } = await import("../extensions/goal-loop-backoff.ts");
-  // 10:47:30 → 11:01:00 = 12.5 minutes + 60s grace.
-  const t = new Date("2026-07-30T10:47:30").getTime();
-  assert.equal(msUntilNextHourBoundary(t), (12 * 60 + 30 + 60) * 1000);
-  // Exactly on the hour → the NEXT hour + grace (never 0/negative).
-  const onHour = new Date("2026-07-30T10:00:00").getTime();
-  assert.equal(msUntilNextHourBoundary(onHour), (60 * 60 + 60) * 1000);
-  // Custom grace.
-  assert.equal(msUntilNextHourBoundary(t, 0), (12 * 60 + 30) * 1000);
+test("v0.34.142: nextHourlyProbeMs selects the next :00:30 slot", () => {
+  const t = new Date(2026, 6, 30, 10, 47, 30).getTime();
+  const next = new Date(nextHourlyProbeMs(t));
+  assert.equal(next.getHours(), 11);
+  assert.equal(next.getMinutes(), 0);
+  assert.equal(next.getSeconds(), 30);
+  assert.ok(next.getTime() > t);
 });
 
 test("v0.29.1: zombie-twin guard — drafts/enqueues duplicating a goal completed <24h ago are refused loudly", () => {
