@@ -3,7 +3,7 @@
 //
 // Subagent polish: per-type pins for Plan/general-purpose, managed-file
 // repair detection + notify, effective-resolution display, subagent
-// quota-error detection (pi-subagents#175).
+// generic provider-error detection (pi-subagents#175).
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
@@ -17,7 +17,7 @@ import {
   syncSubagentModelOverrides,
   OVERRIDABLE_AGENT_TYPES,
 } from "../extensions/goal-loop-subagents.ts";
-import { isSubagentQuotaResult } from "../extensions/quota-retry.ts";
+import { isSubagentProviderFailure } from "../extensions/quota-retry.ts";
 
 test("per-type pins: Plan and general-purpose are overridable with embedded defaults", () => {
   assert.deepEqual([...OVERRIDABLE_AGENT_TYPES].sort(), ["Explore", "Plan", "general-purpose"]);
@@ -95,12 +95,11 @@ test("effective resolution: per-type pin > inherit-parent > agent-default", () =
   );
 });
 
-test("subagent quota detection: Agent + quota payload only", () => {
-  // The wild pi-subagents#175 shape:
-  assert.equal(isSubagentQuotaResult("Agent", true, "Error: 403 Key limit exceeded"), true);
-  assert.equal(isSubagentQuotaResult("Agent", true, JSON.stringify({ error: "429 rate limit" })), true);
-  // Not errors / not quota / not Agent:
-  assert.equal(isSubagentQuotaResult("Agent", false, "403 Key limit exceeded"), false);
-  assert.equal(isSubagentQuotaResult("Agent", true, "file not found"), false);
-  assert.equal(isSubagentQuotaResult("bash", true, "403 Key limit exceeded"), false);
+test("subagent provider failure: any failed Agent payload, without classification", () => {
+  assert.equal(isSubagentProviderFailure("Agent", true, "Error: 403 Key limit exceeded"), true);
+  assert.equal(isSubagentProviderFailure("Agent", true, JSON.stringify({ error: "429 rate limit" })), true);
+  assert.equal(isSubagentProviderFailure("Agent", true, "file not found"), true);
+  // Not errors / not Agent:
+  assert.equal(isSubagentProviderFailure("Agent", false, "403 Key limit exceeded"), false);
+  assert.equal(isSubagentProviderFailure("bash", true, "403 Key limit exceeded"), false);
 });

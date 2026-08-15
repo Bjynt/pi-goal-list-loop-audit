@@ -34,6 +34,9 @@ const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
 function setGlobalAutoResume(v: boolean): void {
   fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(v ? { autoResume: true, aggressiveMode: false } : { aggressiveMode: false }));
 }
+function setGlobalSettings(value: Record<string, unknown>): void {
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(value));
+}
 afterEach(() => setGlobalAutoResume(false));
 
 import { appendAuditLog, readState } from "../extensions/goal-loop-core.js";
@@ -2173,9 +2176,9 @@ test("main-model recovery external notices are deduplicated per provider episode
 test("request-rate prose uses the generic fallback chain", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
-  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
-  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ mainModelFallbacks: ["provider/backup"], mainModelFallbackOnRateLimit: false }));
+  setGlobalSettings({ mainModelFallbacks: ["provider/backup"], aggressiveMode: false });
   const ctx = await freshSession(cwd, "startup");
+  (ctx as any).modelRegistry = { find: (provider: string, id: string) => ({ provider, id }), hasConfiguredAuth: () => true };
   await pi.command("goal", "request-rate stays current — done when pinned", ctx);
   await tick();
   const before = readLedger(cwd).filter((entry) => entry.type === "main_model_failover").length;
@@ -2188,9 +2191,9 @@ test("request-rate prose uses the generic fallback chain", async () => {
 test("explicit 429-shaped errors use the generic fallback chain", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
-  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
-  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ mainModelFallbacks: ["provider/backup"], mainModelFallbackOnRateLimit: false }));
+  setGlobalSettings({ mainModelFallbacks: ["provider/backup"], aggressiveMode: false });
   const ctx = await freshSession(cwd, "startup");
+  (ctx as any).modelRegistry = { find: (provider: string, id: string) => ({ provider, id }), hasConfiguredAuth: () => true };
   await pi.command("goal", "429 keeps current model — done when pinned", ctx);
   await tick();
   const before = readLedger(cwd).filter((entry) => entry.type === "main_model_failover").length;
@@ -2327,27 +2330,19 @@ test("a user-aborted agent_end does not falsely clear main-model recovery", asyn
   assert.equal(after.goal?.status, "paused");
 });
 
-test("error turns: a real nudge before the errors still counts after they pass (counter neither resets nor increments)", async () => {
+test("recoverable error turns enter generic recovery before stall accounting", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   const ctx = await freshSession(cwd, "startup");
   await pi.command("goal", "start behavioral mixed target — done when pinned", ctx);
   await tick();
-  const nudgeTurn = { messages: [{ role: "assistant", content: [{ type: "text", text: "hmm" }], stopReason: "end_turn" }] };
   const errTurn = { messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: "500 upstream" }] };
-  // 1 short nudge (count=1) → 2 error turns (exempt) → 2 more short nudges (count=2,3 → pause).
-  // If errors wrongly incremented, the pause would land one turn earlier;
-  // if they wrongly reset, it would never land here.
-  await pi.fire("agent_end", nudgeTurn, ctx); await tick();
   await pi.fire("agent_end", errTurn, ctx); await tick();
-  await pi.fire("agent_end", errTurn, ctx); await tick();
-  assert.equal((readState(cwd).goal as { status: string }).status, "active", "still active after 1 nudge + 2 errors");
-  await pi.fire("agent_end", nudgeTurn, ctx); await tick();
-  assert.equal((readState(cwd).goal as { status: string }).status, "active", "still active at nudge count 2");
-  await pi.fire("agent_end", nudgeTurn, ctx); await tick();
-  const g = readState(cwd).goal as { status: string; pauseReason?: string };
-  assert.equal(g.status, "paused", "third real nudge pauses (errors neither reset nor incremented)");
-  assert.match(g.pauseReason ?? "", /unproductive turns/);
+  const snapshot = readState(cwd) as { goal: { status: string; pauseKind?: string; pauseReason?: string }; mainModelRecovery?: unknown };
+  assert.equal(snapshot.goal.status, "paused", "recoverable errors are parked by the generic recovery envelope");
+  assert.equal(snapshot.goal.pauseKind, "wait");
+  assert.match(snapshot.goal.pauseReason ?? "", /main model recovery/);
+  assert.ok(snapshot.mainModelRecovery, "the retry plan is durable before stall accounting");
 });
 
 // ────────────────────────────────────────────────────────────────────

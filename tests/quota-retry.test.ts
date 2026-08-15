@@ -127,7 +127,7 @@ test("audit history projections sanitize provider diagnostics", () => {
     at: new Date().toISOString(), approved: false, disapproved: false, model: "provider/model", error: bare403,
   }] });
   assert.doesNotMatch(`${line}\n${history}`, /429|Token Plan|abc123|403|upstream denied|auth-sensitive-id/);
-  assert.match(`${line}\n${history}`, /provider (?:account\/usage|request-rate|infrastructure) wall|provider infrastructure error/);
+  assert.match(`${line}\n${history}`, /provider error/);
 });
 
 test("scheduleQuotaRetry deduplicates one notice key within an episode", () => {

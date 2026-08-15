@@ -148,7 +148,7 @@ test("stream-proven work uses one compact status-bar HUD; the card stays quiet",
 // earlier (note.md 2026-08-10).
 // Field evidence: Screenshot_20260808_014303 darklord LIST-AUDIT-COLLECT
 // showed `[QUEUED] 12m 26s` with no WHY.
-test("v0.34.95: queued + parked recovery surfaces 'parked on provider wall' on the status line (no reset-time claim)", () => {
+test("v0.34.95: queued + parked recovery surfaces 'parked on provider recovery' on the status line", () => {
   const queuedWithRecovery = {
     goal: goalOf({ policy: "list", createdAt: "2026-07-21T11:59:16Z" }),
     list: Array.from({ length: 18 }, (_, i) => ({ id: `queued-${i}`, objective: "queued", addedAt: "z" })),
@@ -169,7 +169,7 @@ test("v0.34.95: queued + parked recovery surfaces 'parked on provider wall' on t
   const status = buildStatusText(queuedWithRecovery, null, NOW, undefined, { activity: "queued" })!;
   assert.match(status, /\[QUEUED\]/);
   assert.match(status, /18 queued/);
-  assert.match(status, /parked on provider wall/);
+  assert.match(status, /parked on provider recovery/);
   assert.doesNotMatch(status, /quota reset/);
 });
 
@@ -553,7 +553,7 @@ test("standalone main-model recovery remains visible when no goal is active", ()
   const status = buildStatusText(state, null, NOW);
   assert.match(status ?? "", /main-model recovery/);
   const widget = buildWidgetLines(state, null, NOW)!;
-  assert.ok(widget.some((line) => line.includes("main-model fallback recovery")), widget.join("\\n"));
+  assert.ok(widget.some((line) => line.includes("main-model recovery")), widget.join("\\n"));
   assert.ok(widget.some((line) => line.includes("provider/backup-two")), widget.join("\\n"));
   assert.ok(widget.some((line) => line.includes("provider/primary, provider/backup-one")), widget.join("\\n"));
   assert.ok(widget.some((line) => line.includes("Order: provider/primary")), widget.join("\\n"));
@@ -620,12 +620,12 @@ test("passed provider retryAt stays parked until recovery state clears", () => {
   } as State;
 
   const status = buildStatusText(state, null, NOW)!;
-  assert.match(status, /parked on provider wall — retrying automatically/);
+  assert.match(status, /main-model recovery — retrying automatically/);
   assert.match(status, /next: retrying automatically/);
   assert.doesNotMatch(status, /next: resuming now/);
 
   const widget = buildWidgetLines(state, null, NOW)!;
-  assert.ok(widget.some((line) => line.includes("parked on provider wall — retrying automatically")), widget.join("\\n"));
+  assert.ok(widget.some((line) => line.includes("main-model recovery — retrying automatically")), widget.join("\\n"));
   assert.ok(widget.some((line) => line.includes("next: retrying automatically")), widget.join("\\n"));
 });
 
@@ -1635,11 +1635,11 @@ test("v0.34.102: paused goal parked on mainModelRecovery renders as RECOVERING, 
   };
   const w = buildWidgetLines(state as never)!;
   assert.ok(w.some((l) => l.includes("recovering")), `head says recovering: ${w.join("\n")}`);
-  assert.ok(w.some((l) => l.includes("parked on provider wall") && l.includes("retrying automatically")), `card names the park without a reset-time claim: ${w.join("\n")}`);
+  assert.ok(w.some((l) => l.includes("main-model recovery — retrying automatically")), `card names the park without a reset-time claim: ${w.join("\n")}`);
   assert.doesNotMatch(w.join("\n"), /⏸ paused/, "the head chip no longer reads paused");
   assert.doesNotMatch(w.join("\n"), /quota reset/, "no guaranteed-reset time claim on the card");
   const s = buildStatusText(state as never)!;
-  assert.ok(s.includes("parked on provider wall") && s.includes("retrying automatically"), `status names the blocker without a reset-time claim: ${s}`);
+  assert.ok(s.includes("main-model recovery — retrying automatically"), `status names the blocker without a reset-time claim: ${s}`);
   assert.ok(!s.includes("auto-retrying"), "auto-retrying promise is gone for the parked case (it read as live retry)");
 });
 

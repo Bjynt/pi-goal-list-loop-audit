@@ -360,8 +360,9 @@ test("retryDelayMs returns the same value as mainModelFailureDelayMs (default ba
   const fromSel = sel.retryDelayMs(SESSION, failure, attempt, nowMs);
   const fromRaw = mainModelFailureDelayMs(failure, attempt, 15, nowMs);
   assert.equal(fromSel, fromRaw);
-  // The upstream hint outranks the alignment (provider hint is a factual fact):
-  assert.equal(sel.retryDelayMs(SESSION, failure, 1, nowMs), 2 * 60 * 60_000);
+  // Retry-after prose is deliberately ignored: every first provider retry is
+  // eager and uniform.
+  assert.equal(sel.retryDelayMs(SESSION, failure, 1, nowMs), 5_000);
   // Scope does not change the outcome (currently scope-agnostic):
   assert.equal(sel.retryDelayMs(EXPLORE, failure, attempt, nowMs), fromSel);
   // Default nowMs is also wired:
