@@ -150,7 +150,7 @@ test("v0.34.51: stored-claim auditor retries enter the durable plan on ANY infra
   // timeout branch first (a hanging command keeps its loud pause)…
   assert.match(retry, /isAuditorNoVerdictInfrastructureError\(result\.error, result\.infrastructureClass\)\) \{[\s\S]{0,220}?Watchdog timeouts stay ahead/);
   // …then the widened durable branch — no kind gate, neutral wording:
-  assert.match(retry, /v0\.34\.51: ANY infrastructure failure enters the durable bounded retry/);
+  assert.match(retry, /ANY infrastructure failure enters the durable bounded\s+retry plan/);
   assert.match(retry, /phase: "retry-waiting" as const/);
   assert.match(retry, /startsWith\("auditor retry:"\)/);
   assert.ok(!retry.includes("audit_infra_waiting\", { goalId, attemptId: claim.attemptId, error: result.error.slice(0, 240), infraStreak }"), "3-strike ledger payload gone from stored-claim retries");
