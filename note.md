@@ -34,7 +34,7 @@ many parked, they even make sme progress i think not normal operation we need to
   not presented as useful progress. The retry and hourly `:00:30` behavior was
   intentionally left unchanged.
 
-##
+## detached auditor live UI
 
 audtior deatch live tends to loo frozen in fact i thik it is frozen here 
 
