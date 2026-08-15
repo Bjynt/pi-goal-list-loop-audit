@@ -105,7 +105,7 @@ test("v0.34.20: loop measurement and branch cleanup rebind after async work", ()
   // work (finishLoopGit resets --hard), and flat/null measures are not
   // regressions (v0.29.10/E5) — only worse-than-best values hard-reset.
   assert.match(tick, /const commitPendingTerminalWork = async \(\): Promise<void> =>/);
-  assert.match(tick, /\) else if \(value !== null && value !== loop\.bestValue\) \{/);
+  assert.match(tick, /} else if \(value !== null && value !== loop\.bestValue\) \{/);
   assert.match(tick, /await commitPendingTerminalWork\(\);\n    await finishLoopGit\(ctx, loop\);/);
   const finish = between(LOOP, "async function finishLoopGit", "interface LoopConfig");
   assert.match(finish, /const afterReset = freshCtxForGeneration\(generation\)/);
