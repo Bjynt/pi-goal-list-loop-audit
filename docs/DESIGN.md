@@ -260,7 +260,7 @@ replacement without delivering a successor `session_start`:
   the report surface stays truthful (the AuditProgress/AuditorProgress dual-interface
   rule: display evidence-gates on `unmatchedStarts + unmatchedEnds > 0`).
 - **Uniform retry envelope, no text-trust** (v0.34.51 historical baseline): error
-  text was not trusted to pick a retry policy. The current ordered-backup policy
+  text was not trusted to pick a retry policy. The current ordered-fallback policy
   supersedes that baseline: account/plan/billing/auth failures may walk the configured
   chain, while explicit HTTP 429/request-rate failures walk it when
   `mainModelFallbackOnRateLimit` is on (default), or remain on the current model
@@ -288,7 +288,7 @@ replacement without delivering a successor `session_start`:
 - **Armed by configuration**: the envelope is inert without
   `mainModelFallbacks` (rotation) — an empty list means "park and probe the
   same model" instead of switching pools. When the list is non-empty, the
-  runtime tries one eligible backup at a time in persisted order, skips
+  runtime tries one eligible fallback at a time in persisted order, skips
   forbidden/unavailable refs, and parks only after the ordered chain is
   exhausted. Explicit HTTP 429/rate-limit errors remain request-rate signals,
   not token-limit labels; the global `mainModelFallbackOnRateLimit` switch

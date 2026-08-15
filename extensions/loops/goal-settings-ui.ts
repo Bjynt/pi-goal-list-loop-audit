@@ -497,7 +497,7 @@ function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: 
       // ever pinned — the model stands (the session IS the last resort);
       // one loud nudge so the user can wire the swap.
       appendLedger(ctx.cwd, "auditor_model_same_as_session", { model: `${r.model.provider}/${r.model.id}`, fallback: null });
-      ctx.ui.notify(`The session model IS the pinned auditor (${r.model.provider}/${r.model.id}) — pin a different /glla → Auditor fallback model so the verifier can differ.`, "warning");
+      ctx.ui.notify(`The session model IS the pinned auditor (${r.model.provider}/${r.model.id}) — pin a different /glla → Auditor fallback agent so the verifier can differ.`, "warning");
     }
     addCandidate(r.model, pins[i]!.src);
   }
@@ -970,10 +970,10 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     }
     case "forbiddenModels": {
       const current = normalizeModelRefs(loadGlobalSettings().forbiddenModels);
-      // v0.34.118: a current backup cannot simultaneously be forbidden.
+      // v0.34.118: a current fallback cannot simultaneously be forbidden.
       // Include both the main chain and any glla-managed subagent chains.
       const global = loadGlobalSettings();
-      const backups = [
+      const fallbackRefs = [
         ...normalizeMainModelFallbackRefs(global.mainModelFallbacks),
         ...Object.values(global.subagentFallbacks ?? {}).flatMap((chain) => normalizeModelRefs(chain)),
       ];
@@ -981,7 +981,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
         ctx,
         "Forbidden model patterns — case-insensitive provider/id substrings; recovery always skips matches (space to toggle, tab = order mode with ↑/↓, enter to confirm)",
         current,
-        { excludeRefs: backups },
+        { excludeRefs: fallbackRefs },
       );
       if (refs === undefined) return;
       saveSettings("global", ctx.cwd, { forbiddenModels: refs });
@@ -1065,7 +1065,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "auditorModelFallback": {
-      const pick = await promptModelRef(ctx, "Auditor fallback model (runtime failure or same-session swap)", "provider/model-id — empty clears the fallback");
+      const pick = await promptModelRef(ctx, "Auditor fallback agent (runtime failure or same-session swap)", "provider/model-id — empty clears the fallback");
       if (pick === undefined) return;
       saveSettings("global", ctx.cwd, { auditorModelFallback: pick.kind === "session" ? undefined : pick.ref });
       if (pick.kind === "session") ctx.ui.notify("Auditor fallback cleared — a session on the pinned auditor model keeps that model.", "info");

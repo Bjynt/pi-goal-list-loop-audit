@@ -236,7 +236,7 @@ test("v0.31.3: the auditor chain — pinned primary → pinned fallback → sess
   // the auditorSameSessionSwap toggle (default ON).
   assert.match(SRC, /if \(sameSessionSwap && isSession\(r\.model\) && i \+ 1 < pins\.length\) \{/);
   assert.match(SRC, /auditor_model_same_as_session/);
-  assert.match(SRC, /pin a different \/glla → Auditor fallback model so the verifier can differ/);
+  assert.match(SRC, /pin a different \/glla → Auditor fallback agent so the verifier can differ/);
   // Both audit call sites pass the fallback pin (v0.31.6: + the swap toggle):
   assert.match(SRC, /resolveAuditorModel\(liveCtx, settings\.auditorModel, settings\.auditorModelFallback, settings\.auditorSameSessionSwap !== false\)/);
   assert.match(SRC, /resolveAuditorModel\(ctx, settings\.auditorModel, settings\.auditorModelFallback, settings\.auditorSameSessionSwap !== false\)/);

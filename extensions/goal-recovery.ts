@@ -456,14 +456,14 @@ function sessionModelSelector(ctx: ExtensionContext, sessionChain?: string[]): M
   });
 }
 
-/** Select one configured backup before pi's own agent-level retry continues. */
+/** Select one configured fallback model before pi's own agent-level retry continues. */
 let modelSwitchOperationToken = 0;
 let activeModelSwitchToken = 0;
 let modelSwitchOperationGeneration: number | null = null;
 
 export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainModelFailure): Promise<boolean> {
   const generation = flags.sessionGeneration;
-  // Every recoverable failure may walk the configured backup chain. Error
+  // Every recoverable failure may walk the configured fallback chain. Error
   // wording never opts a failure in or out of fallback behavior; only an
   // explicit user abort/non-recoverable result is refused here.
   if (failure.kind === "non-recoverable" || !isMainModelFallbackFailure(failure)) return false;
@@ -648,7 +648,7 @@ export function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainM
   clearLoopTimer();
   flags.continuationDispatchStoodDown = true;
   const resumeCmd = recoverySurfaceCommand(normalized.kind, "resume");
-  const recoveryAction = `The provider failure is being retried automatically with bounded backoff and an extra :00:30 probe after each hour starts; configured backups are tried in order. ${resumeCmd} retries immediately; ${activeGoalSurfaceCommand("cancel")} stops it.`;
+  const recoveryAction = `The provider failure is being retried automatically with bounded backoff and an extra :00:30 probe after each hour starts; configured fallback models are tried in order. ${resumeCmd} retries immediately; ${activeGoalSurfaceCommand("cancel")} stops it.`;
   if (normalized.kind === "goal" && state.goal) {
     updateGoal({
       status: "paused",
@@ -824,7 +824,7 @@ export function manuallyResumeMainModelRecovery(ctx: ExtensionContext): boolean 
   clearMainModelRecoveryTimer();
   flags.continuationDispatchStoodDown = false;
   persistState(ctx);
-  ctx.ui.notify("Manual resume starts a fresh bounded main-model recovery window — one provider probe, then configured backups if needed.", "info");
+  ctx.ui.notify("Manual resume starts a fresh bounded main-model recovery window — one provider probe, then configured fallback models if needed.", "info");
   void probeMainModelRecovery(ctx);
   return true;
 }
@@ -1109,7 +1109,7 @@ export function parkMainModelAfterFailure(ctx: ExtensionContext, failure: MainMo
     recoveryEpisodeKey: existing.recoveryEpisodeKey ?? `${existing.firstFailureAt ?? nowIso()}:${failureCopy.fingerprint}`,
     recoveryNoticeKeys: existing.recoveryNoticeKeys ?? [],
     // The next normal/hourly probe retries the current model after the
-    // configured backup chain has been visited.
+    // configured fallback chain has been visited.
     resumeCurrent: existing.resumeCurrent,
   });
   // The generic envelope owns the wait; the 24h horizon ends automatic

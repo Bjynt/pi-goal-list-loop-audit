@@ -337,7 +337,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
     clearMainModelRecoveryTimer();
     flags.continuationDispatchStoodDown = false;
     // v0.34.92: the chat-prompt re-arm was removed; recovery is timer-driven.
-    ctx.ui.notify("Retrying the saved main-model recovery now — one provider probe, then the configured backups if needed.", "info");
+    ctx.ui.notify("Retrying the saved main-model recovery now — one provider probe, then the configured fallback models if needed.", "info");
     void probeMainModelRecovery(ctx);
     return;
   }
@@ -1806,7 +1806,7 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
   if (state.mainModelRecovery?.retryAt || state.mainModelRecovery?.pendingModelSwitch) {
     clearMainModelRecoveryTimer();
     flags.continuationDispatchStoodDown = false;
-    ctx.ui.notify("Retrying the saved main-model recovery now — one provider probe, then the configured backups if needed.", "info");
+    ctx.ui.notify("Retrying the saved main-model recovery now — one provider probe, then the configured fallback models if needed.", "info");
     void probeMainModelRecovery(ctx);
     return;
   }
@@ -2067,10 +2067,10 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
         clearMainModelRecoveryTimer();
         persistState(ctx);
       }
-      ctx.ui.notify("Main model backups cleared globally and any pending backup switch was cancelled.", "info");
+      ctx.ui.notify("Main agent fallback models cleared globally and any pending fallback switch was cancelled.", "info");
     } else {
       const settings = loadSettings(ctx.cwd);
-      ctx.ui.notify(`Main model backups: ${formatMainModelFallbacks(settings.mainModelFallbacks)}. Use /glla fallbacks clear to remove them.`, "info");
+      ctx.ui.notify(`Main agent fallback models: ${formatMainModelFallbacks(settings.mainModelFallbacks)}. Use /glla fallbacks clear to remove them.`, "info");
     }
     return;
   }
@@ -2125,7 +2125,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   const effectiveSettings = loadSettings(ctx.cwd);
   ctx.ui.notify(
     [
-      `mainModelBackups: ${formatMainModelFallbacks(effectiveSettings.mainModelFallbacks)}  [${prov.mainModelFallbacks?.source ?? "default"}]`,
+      `mainAgentFallbackModels: ${formatMainModelFallbacks(effectiveSettings.mainModelFallbacks)}  [${prov.mainModelFallbacks?.source ?? "default"}]`,
       fmt("mainModelRetryMinutes", "mainModelRetryMinutes (base minutes; doubles per attempt)"),
       fmt("drafterModel", "drafterAgent (drafting only)"),
       fmt("drafterThinkingLevel", "drafterThinking (drafting only)"),

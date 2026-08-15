@@ -418,7 +418,7 @@ confirmation is intentionally not bypassed.
 Open `/glla` to edit these settings in the table (the rows show effective values and provenance):
 
 - Auditor model and thinking level
-- Auditor fallback model
+- Auditor fallback agent
 - Notify command, token limit, and wedge-alert minutes
 - Auto-resume, auto-accept drafts, decision popup, and carryover policy
 - Main-agent fallback models, drafter agent/thinking/fallback agents, and recovery cadence (including the optional hourly probe) in the Agents tab
@@ -429,7 +429,7 @@ Open `/glla` to edit these settings in the table (the rows show effective values
 The argument namespace is reserved for actions such as `/glla status`, `/glla
 resume`, `/glla cancel`, `/glla stats`, `/glla audits`, `/glla tooloverride`,
 `/glla fallbacks clear`, and `/glla wipe`. `fallbacks clear` atomically removes
-the global backup chain and cancels any pending backup switch. Cancel stops the
+the global main-agent fallback chain and cancels any pending fallback switch. Cancel stops the
 active objective; wipe clears all live state while preserving history.
 There is no top-level `/glla key=value` setting syntax.
 
