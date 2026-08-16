@@ -30,6 +30,7 @@ test("debug starved", async () => {
   console.log("noteContextStarvedYield:", typeof g.noteContextStarvedYield);
   console.log("isContextStarvedRefused:", typeof g.isContextStarvedRefused);
   console.log("lastActivityAt setter:", typeof g.lastActivityAt);
+  g.__GLLA_DEBUG_TICK = true;
   g.lastActivityAt = Date.now() - 120_000;
   console.log("after backdate:", Date.now() - g.lastActivityAt);
   g.noteContextStarvedYield();
