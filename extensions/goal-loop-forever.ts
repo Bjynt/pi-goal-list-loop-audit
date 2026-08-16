@@ -506,7 +506,7 @@ export function countOpenAuditFindings(cwd: string): number {
   try {
     const p = join(cwd, AUDIT_FINDINGS_REL);
     if (!existsSync(p)) return 0;
-    return readFileSync(p, "utf-8").split("\n").filter((l) => /^- \[[ \t]\]/.test(l)).length;
+    return readFileSync(p, "utf-8").split("\n").filter((l) => /^- \[[ \t]+\]/.test(l)).length;
   } catch {
     return 0;
   }
@@ -518,7 +518,7 @@ export function topOpenAuditFinding(cwd: string): string | null {
   try {
     const p = join(cwd, AUDIT_FINDINGS_REL);
     if (!existsSync(p)) return null;
-    const line = readFileSync(p, "utf-8").split("\n").find((l) => /^- \[[ \t]\]/.test(l));
+    const line = readFileSync(p, "utf-8").split("\n").find((l) => /^- \[[ \t]+\]/.test(l));
     return line ? line.replace(/^- \[ \]\s*/, "").trim().slice(0, 120) : null;
   } catch {
     return null;
