@@ -25,7 +25,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
 import activate, { __testOnlyLastConfirmDialog, __testOnlyLoadState, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyResetTerminalFlags, __testOnlyRunFanOutListAuditFindings, __testOnlySetAuditorRecoveryRetryDelay, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
-import { __testOnlyHeartbeatTick, __testOnlySetZombieRunWindows, __testOnlyResetZombieRunWatchdog } from "../extensions/goal-heartbeat.js";
+import { __testOnlyHeartbeatTick, __testOnlySetZombieRunWindows, __testOnlyResetZombieRunWatchdog, __testOnlyClearSubagentHangProbes, upsertSubagentHangProbe, endSubagentHangProbe } from "../extensions/goal-heartbeat.js";
 import { mainModelRecoverySucceeded } from "../extensions/goal-recovery.js";
 
 // v0.29.5: autoResume is GLOBAL-only now — tests opt in by writing the
@@ -3943,6 +3943,83 @@ test("v0.35.x: zero-stream zombie auto-aborts and parks a list item without a re
     assert.equal(pi.sent.length, sendsBefore + 1, "resume creates exactly one fresh dispatch");
   } finally {
     __testOnlyResetZombieRunWatchdog();
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  }
+});
+
+test("v0.35.4: zombie watchdog stands down while a subagent wait is in flight", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  __testOnlyClearSubagentHangProbes();
+  __testOnlySetZombieRunWindows(0, 0);
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "reload");
+  ctx.isIdle = () => false;
+  let aborts = 0;
+  ctx.abort = () => { aborts++; };
+  try {
+    const added = await pi.runTool("list_add", {
+      items: ["zombie carve-out item — done when the subagent-wait stand-down is proven"],
+    }, ctx);
+    assert.match(added.content[0]?.text ?? "", /active/i);
+    (globalThis as any).compactionGraceUntil = 0;
+    (globalThis as any).postCompletionSettleUntil = 0;
+
+    // A live subagent-hang probe = the parent is BUSY-waiting on a child;
+    // stream silence is expected and the bounded abort must NOT fire.
+    upsertSubagentHangProbe("probe-carveout-1", "Explore", "carve-out probe");
+    __testOnlyHeartbeatTick();
+    assert.equal(aborts, 0, "a live subagent wait stands down the zombie abort");
+    assert.equal((readState(cwd).goal as { status?: string } | null)?.status, "active");
+    assert.equal(readLedger(cwd).filter((entry) => entry.type === "zombie_run_stood_down_subagent_wait").length, 1);
+    assert.equal(readLedger(cwd).filter((entry) => entry.type === "zombie_run_aborted").length, 0);
+
+    // The wait ends (subagent completed) → the next tick aborts as before.
+    endSubagentHangProbe("probe-carveout-1");
+    __testOnlyHeartbeatTick();
+    assert.equal(aborts, 1, "abort proceeds once the wait is gone");
+    assert.equal((readState(cwd).goal as { status?: string } | null)?.status, "paused");
+  } finally {
+    __testOnlyClearSubagentHangProbes();
+    __testOnlyResetZombieRunWatchdog();
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  }
+});
+
+test("v0.35.4: context-starved warning is one-shot per refusal episode", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "reload");
+  (globalThis as any).compactionGraceUntil = 0;
+  (globalThis as any).postCompletionSettleUntil = 0;
+  try {
+    await pi.runTool("list_add", {
+      items: ["starved one-shot item — done when the refusal warning is proven one-shot"],
+    }, ctx);
+    const yieldOnce = () => (globalThis as any).noteContextStarvedYield();
+    // Backdate the quiet window so the refire gate (>= 60s) passes.
+    (globalThis as any).lastActivityAt = Date.now() - 120_000;
+    yieldOnce();
+    yieldOnce();
+    __testOnlyHeartbeatTick();
+    assert.equal(readLedger(cwd).filter((entry) => entry.type === "continuation_refused_context_starved").length, 1);
+    __testOnlyHeartbeatTick();
+    __testOnlyHeartbeatTick();
+    assert.equal(readLedger(cwd).filter((entry) => entry.type === "continuation_refused_context_starved").length, 1, "no re-fire while the same refusal episode holds");
+
+    // Compaction lands → the refusal clears → no warning while cleared.
+    (globalThis as any).onCompactionLanded();
+    __testOnlyHeartbeatTick();
+    assert.equal(readLedger(cwd).filter((entry) => entry.type === "continuation_refused_context_starved").length, 1, "cleared episode does not re-fire");
+
+    // A NEW refusal episode gets its own single warning (latch re-armed).
+    (globalThis as any).lastActivityAt = Date.now() - 120_000;
+    yieldOnce();
+    yieldOnce();
+    __testOnlyHeartbeatTick();
+    assert.equal(readLedger(cwd).filter((entry) => entry.type === "continuation_refused_context_starved").length, 2, "the next episode re-arms the one-shot");
+  } finally {
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   }
 });
