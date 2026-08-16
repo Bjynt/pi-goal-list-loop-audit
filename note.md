@@ -32,4 +32,8 @@ i think one problm we have that we detach the main thread that coudl be causing 
 
 loop caused heavy resources consupstion
 
+##
+
+we want to work on our ui to show what matters,  but also better looking if possible
+
 # LATER
