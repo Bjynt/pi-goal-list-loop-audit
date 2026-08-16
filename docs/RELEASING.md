@@ -18,10 +18,13 @@ the repository.
 ## Release checklist
 
 Accumulated changes since the last release live under an `## Unreleased`
-section at the top of `CHANGELOG.md` (with the in-repo milestone labels such
-as `### 0.34.51`); the release commit renames that section to the released
-version. Do not invent version headers for work that was never tagged —
-untagged work stays under `Unreleased` until the release commit.
+section at the top of `CHANGELOG.md`; each milestone gets its own
+`## <version> — <one-line title> (<date>)` header plus `###` topic
+subsections (e.g. `## 0.35.3 — live auditor clock and clearer recovery
+timing (2026-08-15)`). The release commit renames the `Unreleased` section
+to the released version. Do not invent version headers for work that was
+never tagged — untagged work stays under `Unreleased` until the release
+commit.
 
 ```bash
 npm version <major.minor.patch> --no-git-tag-version

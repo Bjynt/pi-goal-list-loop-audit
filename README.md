@@ -541,7 +541,10 @@ in-session warning + your configured notify push, once per interval while
 it persists. Tune Wedge alert minutes in the `/glla` settings table (0 = off).
 
 Every other wait is bounded too: continuation retries are milliseconds,
-stuck backoff caps at 5 minutes then pauses, measure commands get a 10m
+nudge accounting counts consecutive unproductive turns (substantive text
+or tool calls reset the counter) and pauses the goal / stops the loop after
+3 — provider-error and user-abort turns are exempt (v0.27.3+). Measure
+commands get a 10m
 hard timeout, and the detached auditor aborts after 10m with no activity while no
 an auditor tool is running. A long-running verification tool is allowed to
 finish, but each tool has an independent five-minute ceiling and the worker
