@@ -58,7 +58,7 @@ seeming host sesion lost but we are working
 
 ##
 
-notificaion on asking user a question 
+notification on asking user a question 
 
 ## 
 yea i think we need more auto intelligence
