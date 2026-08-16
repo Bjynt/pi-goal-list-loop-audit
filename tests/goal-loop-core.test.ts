@@ -40,12 +40,6 @@ import {
   missingGllaTools,
   GLLA_TOOL_NAMES,
 } from "../extensions/goal-loop-core.ts";
-import {
-  BACKOFF_HARD_CAP_MS,
-  backoffMs,
-  humanMs,
-  shouldPauseAfterBackoff,
-} from "../extensions/goal-loop-backoff.ts";
 
 // ---- helpers ----
 
@@ -132,38 +126,6 @@ test("list policy and aborted status remain separate display facts", () => {
   assert.match(md, /\*\*Status\*\*: aborted/);
   assert.match(md, /\*\*Policy\*\*: list/);
   assert.match(md, /\*\*Stop reason\*\*: list cancelled/);
-});
-
-test("backoffMs caps at 5 min", () => {
-  assert.equal(backoffMs(0, "stuck"), 0);
-  assert.equal(backoffMs(1, "stuck"), 30_000);
-  assert.equal(backoffMs(2, "stuck"), 60_000);
-  assert.equal(backoffMs(3, "stuck"), 120_000);
-  assert.equal(backoffMs(4, "stuck"), 240_000);
-  assert.equal(backoffMs(5, "stuck"), BACKOFF_HARD_CAP_MS);  // 5 min cap
-  assert.equal(backoffMs(100, "stuck"), BACKOFF_HARD_CAP_MS); // never exceeds 5 min
-});
-
-test("backoffMs error mode exponential", () => {
-  assert.equal(backoffMs(0, "error"), 5_000);
-  // Note: our error mode uses (count - 1) exponent; verify it doesn't exceed max.
-  assert.ok(backoffMs(50, "error") <= 60_000);
-});
-
-test("shouldPauseAfterBackoff", () => {
-  assert.ok(shouldPauseAfterBackoff(BACKOFF_HARD_CAP_MS, 1));  // exactly the cap
-  assert.ok(shouldPauseAfterBackoff(BACKOFF_HARD_CAP_MS + 1000, 1));
-  assert.ok(shouldPauseAfterBackoff(10_000, 3)); // 3 empty turns
-  assert.ok(!shouldPauseAfterBackoff(60_000, 1));
-});
-
-test("humanMs formatting", () => {
-  assert.equal(humanMs(0), "0ms");
-  assert.equal(humanMs(500), "500ms");
-  assert.equal(humanMs(1500), "2s");
-  assert.equal(humanMs(60_000), "1m");
-  assert.equal(humanMs(120_000), "2m");
-  assert.equal(humanMs(300_000), "5m"); // the cap
 });
 
 test("findNextPendingTask BFSes subtasks", () => {

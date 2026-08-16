@@ -9,8 +9,6 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
 import {
-  accountTurnForNudges,
-  BACKOFF_HARD_CAP_MS,
   HEARTBEAT_INTERVAL_MS,
   HEARTBEAT_MAX_NUDGES,
   HEARTBEAT_STALL_MS,
@@ -80,19 +78,6 @@ test("custom stall threshold is honored", () => {
   }), true);
 });
 
-// ---- accountTurnForNudges ----
-
-test("zero-tool turn increments the nudge count", () => {
-  assert.equal(accountTurnForNudges(0, 0), 1);
-  assert.equal(accountTurnForNudges(0, 1), 2);
-  assert.equal(accountTurnForNudges(0, 2), HEARTBEAT_MAX_NUDGES);
-});
-
-test("tool-using turn resets the count", () => {
-  assert.equal(accountTurnForNudges(1, 2), 0);
-  assert.equal(accountTurnForNudges(7, 0), 0);
-});
-
 // ---- v0.23.2: wedge alert (busy-but-silent = hung command) ----
 
 test("shouldWedgeAlert: fires when supervising + busy + silent past threshold", () => {
@@ -146,7 +131,7 @@ test("timing defaults: wedge 30m, measure 10m, auditor inactivity 10m, auditor w
   assert.equal(AUDITOR_WALL_TIMEOUT_MS, 30 * 60_000);
   // The family invariant: every wait has a bound, every bound is minutes
   // not hours, and no bound is infinite.
-  for (const ms of [HEARTBEAT_INTERVAL_MS, HEARTBEAT_STALL_MS, MEASURE_TIMEOUT_MS, AUDITOR_STALL_MS, AUDITOR_WALL_TIMEOUT_MS, BACKOFF_HARD_CAP_MS]) {
+  for (const ms of [HEARTBEAT_INTERVAL_MS, HEARTBEAT_STALL_MS, MEASURE_TIMEOUT_MS, AUDITOR_STALL_MS, AUDITOR_WALL_TIMEOUT_MS]) {
     assert.ok(ms > 0 && ms <= 30 * 60_000, `bound out of range: ${ms}`);
   }
 });
