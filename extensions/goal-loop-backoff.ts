@@ -2,59 +2,19 @@
  * pi-goal-list-loop-audit — v0.1.0
  * extensions/goal-loop-backoff.ts
  *
- * Hard 5-minute ceiling on backoff. Anything beyond the ceiling pauses the
- * loop and notifies the user (TUI badge + optional push).
+ * Backoff and self-watchdog constants for goal/loop scheduling, plus the
+ * pure stall/nudge/heartbeat/wedge/pending-latch/auditor decisions.
  *
- * Design: see docs/DESIGN.md, decision #3.
+ * v0.35.4: the old "hard 5-minute ceiling — beyond it the orchestrator
+ * pauses the loop and notifies the user" contract (backoffMs /
+ * shouldPauseAfterBackoff / humanMs) had zero production call sites: the
+ * stall ladder and pause decisions moved into goal-loop.ts, the heartbeat
+ * and goal-loop-core, leaving the promise unenforced. Those functions and
+ * the unused BACKOFF_HARD_CAP_MS / BACKOFF_ERROR_* constants are removed;
+ * the live scheduling constants remain below.
  */
-
-export const BACKOFF_HARD_CAP_MS = 5 * 60 * 1000;
 
 export const BACKOFF_IDLE_RETRY_MS = 50;     // when adding another iter to queue
-export const BACKOFF_ERROR_BASE_MS = 5_000;  // first error retry
-export const BACKOFF_ERROR_MAX_MS = 60_000;  // max error retry (separate from stuck cap)
-
-/**
- * Return the backoff (ms) before scheduling the next iteration, based on
- * consecutive iterations that produced no meaningful progress.
- *
- * Caps at BACKOFF_HARD_CAP_MS (5 min). Beyond that, the orchestrator should
- * pause and notify the user.
- */
-export function backoffMs(stuckCount: number, mode: "stuck" | "error" | "context" = "stuck"): number {
-  if (mode === "error") {
-    return Math.min(BACKOFF_ERROR_BASE_MS * 2 ** Math.max(0, stuckCount - 1), BACKOFF_ERROR_MAX_MS);
-  }
-  if (mode === "context") {
-    return Math.min(30_000 * Math.max(1, stuckCount), BACKOFF_HARD_CAP_MS);
-  }
-  // "stuck" — the main case the user complained about.
-  const schedule = [0, 30_000, 60_000, 120_000, 240_000, BACKOFF_HARD_CAP_MS];
-  const idx = Math.max(0, Math.min(schedule.length - 1, stuckCount));
-  return schedule[idx] ?? BACKOFF_HARD_CAP_MS;
-}
-
-/**
- * Determine whether the orchestrator should pause (vs. reschedule).
- *
- * Pause conditions:
- *   - stuck for >= 5 minutes
- *   - any single iteration has been silent (no tool call) for > N seconds
- */
-export function shouldPauseAfterBackoff(stuckElapsedMs: number, idleIterCount: number): boolean {
-  if (stuckElapsedMs >= BACKOFF_HARD_CAP_MS) return true;
-  if (idleIterCount >= 3) return true;
-  return false;
-}
-
-/**
- * Human-readable label, e.g. "5m", "30s", "1m".
- */
-export function humanMs(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
-  return `${Math.round(ms / 60_000)}m`;
-}
 
 // =================================================================
 // Heartbeat self-watchdog (v0.5.0)
@@ -206,15 +166,6 @@ export function shouldHeartbeatRefire(input: HeartbeatInput): boolean {
   const stallMs = input.stallMs ?? HEARTBEAT_STALL_MS;
   const scale = 2 ** Math.min(input.consecutiveStalls ?? 0, 3);
   return input.msSinceActivity >= stallMs * scale;
-}
-
-/**
- * Judge a finished turn for nudge accounting. A supervising turn with zero
- * tool calls produced no real progress — that is a nudge. Anything with a
- * tool call resets the counter. Returns the new consecutive-nudge count.
- */
-export function accountTurnForNudges(toolCalls: number, currentNudges: number): number {
-  return toolCalls > 0 ? 0 : currentNudges + 1;
 }
 
 /**
