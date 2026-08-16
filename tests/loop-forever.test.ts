@@ -6,6 +6,7 @@
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
+import { execSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -673,6 +674,5 @@ test("v0.35.4: parseLoopStartArgs keeps =-bearing text inside quotes and restore
 });
 
 function runIn(cwd: string, cmd: string): string {
-  const { execSync } = require("node:child_process") as typeof import("node:child_process");
-  return execSync(cmd, { cwd, shell: "/bin/bash", encoding: "utf8" }).trim();
+  return execSync(cmd, { cwd, encoding: "utf8" }).trim();
 }
