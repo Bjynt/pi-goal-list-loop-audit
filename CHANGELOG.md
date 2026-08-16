@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.35.4 — auditor reports in continuation prompts and repair-loop closure (2026-08-16)
+
+### Continuation prompts carry the latest auditor verdict
+  After a disapproval the continuation now includes the full auditor report
+  verbatim (LATEST AUDITOR DISAPPROVAL / IMPOSSIBLE / REGRESSION SHIELD
+  BLOCKED sections), so the agent sees the actual objections instead of
+  digging them out of the audit journal by hand. A STALE AUDITOR APPROVAL
+  directive mirrors the `complete_goal` revision gate exactly: it fires only
+  on a numeric revision mismatch (legacy audit entries without a revision
+  field pass the gate unchanged and are never called stale), and its advice
+  matches the gate's real escapes — `/goal verify` first, or a claim carrying
+  `newObjective` — never a bare retry, which the gate rejects.
+
+### Replan confirmation consumes the source queue fragment
+  Confirming a replan card for a faulty queued fragment now removes that
+  source item from the durable queue and its sidecar (matched by the repair
+  target id and an unchanged fragment objective; user edits to the item win).
+  This breaks the repair-respawn loop where a fixed fragment reactivated a
+  third repair card after the repair goal archived.
+
+### DECIDE findings default to a decision
+  DECIDE findings are raised to the user once and resolved as decided unless
+  genuinely blocked; the policy-flip keeps the loop moving instead of
+  re-asking the same question.
+
+### Settings honesty and audit-loop cleanups
+  The settings menu shows the EFFECTIVE aggressive defaults for unset rows
+  (unset no longer reads as off); the auditor prompt no longer claims an
+  auto-continue the detached auditor does not perform; recovery surfaces
+  bound non-sensitive provider errors; the smoke test matches verdict-time
+  surfaces instead of prose; the schema documents revision, pendingTasks and
+  completionSummary; dead reviewer knobs are gone; examples and install docs
+  no longer state stale claims.
+
 ## 0.35.3 — live auditor clock and clearer recovery timing (2026-08-15)
 
 ### Detached auditor status keeps moving between worker events
