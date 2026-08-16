@@ -1555,7 +1555,6 @@ async function cmdReviewerSettings(ctx: ExtensionContext): Promise<void> {
         const next = order[(i + 1) % order.length]!;
         save({ mode: next });
       }
-      else if (choice.startsWith("Leverage mode")) save({ leverageMode: cfg.leverageMode === "fix-without-confirm" ? "confirm-all" : "fix-without-confirm" });
       else if (choice.startsWith("Fire on goal-complete")) save({ fireOn: cfg.fireOn.includes("goal-complete") ? cfg.fireOn.filter((e) => e !== "goal-complete") : [...cfg.fireOn, "goal-complete"] });
       else if (choice.startsWith("Fire on list-complete")) save({ fireOn: cfg.fireOn.includes("list-complete") ? cfg.fireOn.filter((e) => e !== "list-complete") : [...cfg.fireOn, "list-complete"] });
       else if (choice.startsWith("Cascade: audit-on-clean")) save({ cascade: cfg.cascade.includes("fire-audit-on-clean") ? cfg.cascade.filter((c) => c !== "fire-audit-on-clean") : [...cfg.cascade, "fire-audit-on-clean"] });

@@ -30,8 +30,6 @@ export interface ReviewerConfig {
   cascade: Array<"convert-findings-to-list" | "queue-leftovers" | "fire-audit-on-clean" | "notify-and-idle">;
   auditCadence: string;
   auditScope: string;
-  leverageMode: "fix-without-confirm" | "confirm-all";
-  confirmOn: string[];
   maxFindingsPerReview: number;
   maxReviewsPerDay: number;
 }
@@ -44,8 +42,6 @@ export const DEFAULT_REVIEWER_CONFIG: ReviewerConfig = {
   cascade: ["convert-findings-to-list", "queue-leftovers", "notify-and-idle"],
   auditCadence: "every-clean-completion",
   auditScope: "regression-scan",
-  leverageMode: "fix-without-confirm",
-  confirmOn: ["architectural-decision", "new-dependency", "schema-change"],
   maxFindingsPerReview: 10,
   maxReviewsPerDay: 20,
 };
@@ -502,7 +498,6 @@ export function reviewerMenuOptions(cfg: ReviewerConfig): string[] {
   return [
     `Enabled — ${cfg.enabled ? "ON" : "OFF"}`,
     `Mode — ${cfg.mode} (off = silenced · on = Confirm-gated cascade · auto = auto-loop, no Confirms · aggressive = auto + relaunch)`,
-    `Leverage mode — ${cfg.leverageMode} (bug/refactor findings)`,
     `Fire on goal-complete — ${cfg.fireOn.includes("goal-complete") ? "ON" : "OFF"}`,
     `Fire on list-complete — ${cfg.fireOn.includes("list-complete") ? "ON" : "OFF"}`,
     `Cascade: audit-on-clean — ${cfg.cascade.includes("fire-audit-on-clean") ? "ON" : "OFF"}`,

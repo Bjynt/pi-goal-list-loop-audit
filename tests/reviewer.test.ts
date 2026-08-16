@@ -153,14 +153,16 @@ test("review report written to .pi-glla/reviews/<goal-id>-<timestamp>.md", () =>
 
 test("menu options reflect the config", () => {
   const opts = reviewerMenuOptions(DEFAULT_REVIEWER_CONFIG);
-  assert.equal(opts.length, 9);
+  // v0.35.4: the dead Leverage-mode row (leverageMode/confirmOn were never
+  // branched on anywhere) is removed — 8 options + Done.
+  assert.equal(opts.length, 8);
   assert.match(opts[0]!, /Enabled — ON/);
   assert.match(opts[1]!, /Mode — on/);
-  assert.match(opts[2]!, /fix-without-confirm/);
-  assert.match(opts[7]!, /Max reviews per day — 20/);
+  assert.doesNotMatch(opts[2]!, /Leverage mode/);
+  assert.match(opts[6]!, /Max reviews per day — 20/);
   const off = reviewerMenuOptions({ ...DEFAULT_REVIEWER_CONFIG, enabled: false, maxReviewsPerDay: 3 });
   assert.match(off[0]!, /Enabled — OFF/);
-  assert.match(off[7]!, /— 3/);
+  assert.match(off[6]!, /— 3/);
 });
 
 test("no /loop triggering: the loop stop path never calls runReviewer", () => {
