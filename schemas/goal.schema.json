@@ -62,7 +62,23 @@
     "interruptedReason": { "type": "string" },
     "auditInfraStreak": { "type": "number" },
     "errorBrakeStreak": { "type": "number" },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Contract-change counter: bumped on every /goal tweak (and objective repair). Auditors capture it at dispatch; the revision-bound validity gate refuses stale verdicts after the contract moved."
+    },
     "pendingCompletion": { "$ref": "#/definitions/pendingCompletion" },
+    "pendingTasks": {
+      "type": "array",
+      "maxItems": 5,
+      "items": { "type": "string" },
+      "description": "aggressiveMode audit-cap TODOs: objections extracted from the latest disapproved report, rendered into every continuation until addressed."
+    },
+    "completionSummary": {
+      "type": "string",
+      "description": "The final completion claim text passed to complete_goal; mirrored into the archive markdown as the final record."
+    },
     "createdVia": { "type": "string" },
     "activePath": { "type": "string" },
     "archivedPath": { "type": "string" },
@@ -191,6 +207,21 @@
         "regressionShieldPassed": {
           "type": "boolean",
           "description": "Present when the goal had a verification contract: did the auditor's <evidence> block satisfy the orchestrator-side shield?"
+        },
+        "regressionShieldMissing": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Contract items the shield found unreferenced in the auditor's evidence (present when regressionShieldPassed is false)."
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The goal revision the worker audited (captured at dispatch); the revision-bound validity gate reads this."
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Wall-clock duration of the audit run."
         }
       }
     }
