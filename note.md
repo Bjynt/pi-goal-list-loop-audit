@@ -41,3 +41,8 @@ loop caused heavy resources consupstion
 we want to work on our ui to show what matters,  but also better looking if possible
 
 # LATER
+
+## 
+yea i think we need more auto intelligence
+prefer long term
+prefer auto tweaking 
