@@ -26,6 +26,10 @@ in fact we should review what we puttting on the goal nad hte footer
 
 ##
 
+i think one problm we have that we detach the main thread that coudl be causing the dropping if i am right 
+
+##
+
 loop caused heavy resources consupstion
 
 # LATER
