@@ -643,7 +643,7 @@ test("v0.35.4: countOpenAuditFindings/topOpenAuditFinding tolerate aligned open 
         "# findings",
         "- [ ] FIX: LOW: normal box",
         "- [  ] FIX: MEDIUM: aligned two-space box",
-        "- [\t] FIX: HIGH: tab box",
+        "- [	] FIX: HIGH: tab box",
         "- [x] FIX: MEDIUM: closed one — fixed in aa11", 
       ].join("\n") + "\n",
     );
