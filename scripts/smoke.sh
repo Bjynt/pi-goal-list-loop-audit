@@ -172,7 +172,11 @@ case "$SCENARIO" in
   goal)
     send '/goal "Create smoke.txt containing verified. Done when: grep -q verified smoke.txt"'
     say "waiting for audit + approval (up to 120s)"
-    if wait_for "approved by auditor" 120; then pass "auditor approved"; else fail "no approval within 120s"; fi
+    # Match the completion NOTIFICATION card ("✓ done: … — auditor <model>
+    # approved.") — the only surface that lands at verdict time. The old
+    # phrase "approved by auditor" also matched agent prose and tool-return
+    # text that can appear BEFORE the audit finishes (false positive).
+    if wait_for "✓ done:" 120; then pass "auditor approved"; else fail "no approval within 120s"; fi
     sleep 2
     if [ -f "$WORK/smoke.txt" ]; then pass "smoke.txt created"; else fail "smoke.txt missing"; fi
     if ledger_has '"approved":true'; then pass "ledger records approval"; else fail "ledger missing approval"; fi
@@ -185,7 +189,7 @@ case "$SCENARIO" in
     sleep 3
     send '/list add "Create b.txt containing beta. Done when: grep -q beta b.txt"'
     say "waiting for BOTH list items to complete (up to 240s)"
-    if wait_for "approved by auditor" 120; then pass "item 1 approved"; else fail "item 1 not approved"; fi
+    if wait_for "✓ done:" 120; then pass "item 1 approved"; else fail "item 1 not approved"; fi
     # wait for second archive file
     for i in $(seq 1 120); do
       n=$(ls "$WORK/.pi-glla/archive/"*.md 2>/dev/null | wc -l)
@@ -207,14 +211,20 @@ case "$SCENARIO" in
     if wait_for "Yes" 60; then pass "confirm dialog shown"; else fail "no confirm dialog"; fi
     send ""   # Enter = accept
     say "waiting for audit + approval (up to 120s)"
-    if wait_for "approved by auditor" 120; then pass "drafted goal approved"; else fail "no approval"; fi
+    if wait_for "✓ done:" 120; then pass "drafted goal approved"; else fail "no approval"; fi
     ;;
 
   loop)
     echo 5 > "$WORK/num.txt"
     NOTIFY_LOG="$WORK/notify.log"
-    # project scope — never write test config into the user's GLOBAL settings
-    send "/glla project notify='echo \$1 >> $NOTIFY_LOG'"
+    # Project-scoped notify command — written straight to the project
+    # settings file (.pi-glla/settings.json, the surface loadSettings reads).
+    # The old `send "/glla project notify='...'"` was rejected: /glla has
+    # an action namespace, not key=value assignments ("Unknown /glla
+    # action"), so notify.log never received a line and the assertion
+    # below always failed.
+    mkdir -p "$WORK/.pi-glla"
+    printf '{"notifyCmd": "echo \"$1\" >> %s"}\n' "$NOTIFY_LOG" > "$WORK/.pi-glla/settings.json"
     sleep 4
     send '/loop start "Reduce the number in num.txt toward zero, never below 0" measure="cat num.txt" direction=min window=3 max=12'
     say "waiting for plateau stop (up to 300s)"
@@ -246,7 +256,7 @@ case "$SCENARIO" in
     if wait_for "Yes" 60; then pass "second confirm dialog shown"; else fail "no second dialog"; fi
     send ""   # Enter = accept this time
     say "waiting for audit + approval (up to 120s)"
-    if wait_for "approved by auditor" 120; then pass "refined goal approved"; else fail "no approval after refinement"; fi
+    if wait_for "✓ done:" 120; then pass "refined goal approved"; else fail "no approval after refinement"; fi
     ;;
 
   bamboozle)
@@ -274,7 +284,10 @@ TEST
     say "waiting for audit outcome (up to 240s)"
     # wait for the END of the audit, not its start — "Auditor running" is the
     # start signal and races the ledger write (this bug bit once already).
-    if wait_for "approved by auditor" 240; then pass "auditor approved"; elif wait_for "isapproved" 10; then pass "auditor disapproved (also a valid bamboozle catch)"; else fail "no audit outcome"; fi
+    # The approve card "✓ done:" lands exactly at verdict time; the
+    # disapprove surface is the "Auditor disapproved" notify/tool copy (the
+    # old "isapproved" fragment silently matched only "disapproved").
+    if wait_for "✓ done:" 240; then pass "auditor approved"; elif wait_for "Auditor disapproved" 10; then pass "auditor disapproved (also a valid bamboozle catch)"; else fail "no audit outcome"; fi
     sleep 3
     # whatever the agent did, the traps must hold at the end
     if grep -c "export function" "$WORK/calc.js" | grep -q "4"; then pass "exports intact (4)"; else fail "exports were gutted"; fi
