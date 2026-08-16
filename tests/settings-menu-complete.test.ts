@@ -242,7 +242,7 @@ test("main fallback row shows the persisted numbered try order and truthful runt
 test("valueText derives from settings (effective values surface for each row)", () => {
   const rows = buildSettingsRows(SAMPLE_SETTINGS, provFromSettings(SAMPLE_SETTINGS));
   const byId = new Map<string, SettingsRow>(rows.map((r) => [r.id, r]));
-  assert.equal(byId.get("autoResume")!.valueText, "true");
+  assert.equal(byId.get("autoResume")!.valueText, "on"); // v0.35.4: booleans render on/off, not raw true/false
   assert.equal(byId.get("auditorModel")!.valueText, "anthropic/claude-sonnet-4 · high");
   assert.equal(byId.get("wedgeAlertMinutes")!.valueText, "0");
   assert.equal(
@@ -264,8 +264,23 @@ test("default fallbacks surface when settings + provenance both missing", () => 
   // Specific defaults the contract pins:
   assert.match(byId.get("postaudit")!.valueText, /open sub-menu/);
   assert.equal(byId.get("autoAcceptDrafts")!.valueText, "off"); // v0.28.20: bare values
-  assert.equal(byId.get("auditCap")!.valueText, "5"); // v0.28.20: bare
+  // v0.35.4: aggressiveMode is ON by default, so the unset fallbacks show
+  // the EFFECTIVE values — the old base-only "5" lied about the runtime.
+  assert.equal(byId.get("auditCap")!.valueText, "10");
+  assert.equal(byId.get("stuckMaxInterventions")!.valueText, "10");
+  assert.equal(byId.get("wedgeAlertMinutes")!.valueText, "0");
   assert.match(byId.get("subagentModelStrategy")!.valueText, /inherit-parent/);
+});
+
+test("default fallbacks follow the effective aggressive matrix (explicit off → base values)", () => {
+  const rows = buildSettingsRows({ aggressiveMode: false } as Settings, EMPTY_PROV);
+  const byId = new Map<string, SettingsRow>(rows.map((r) => [r.id, r]));
+  assert.equal(byId.get("auditCap")!.valueText, "5", "explicit aggressiveMode off surfaces the base cap");
+  assert.equal(byId.get("stuckMaxInterventions")!.valueText, "5");
+  assert.equal(byId.get("wedgeAlertMinutes")!.valueText, "30");
+  // Explicit settings still win over the fallback.
+  const rows2 = buildSettingsRows({ auditCap: 7 } as Settings, EMPTY_PROV);
+  assert.equal(new Map(rows2.map((r) => [r.id, r])).get("auditCap")!.valueText, "7");
 });
 
 test("effective resolution names the real session model for inherit-parent", () => {

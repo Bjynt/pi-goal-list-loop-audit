@@ -32,11 +32,11 @@ import {
 import {
   DEFAULT_AUDIT_FEEDBACK_CHARS,
   DEFAULT_STALL_ESCALATION_REFIRES,
+  resolveEffectiveAggressiveSettings,
 } from "./goal-loop-core.ts";
 import {
   DEFAULT_STALL_SIM_THRESHOLD,
   DEFAULT_STALL_SHORT_WORDS,
-  WEDGE_ALERT_DEFAULT_MINUTES,
 } from "./goal-loop-backoff.ts";
 import type { Settings } from "./goal-settings.ts";
 import { MAX_MAIN_MODEL_FALLBACKS } from "./main-model-recovery.ts";
@@ -90,16 +90,6 @@ export interface MenuProvenance {
   source: ProvenanceSource;
 }
 
-/** Defaults surfaced in the menu when the user has not set a value. */
-export interface MenuDefaults {
-  auditCap: number;
-  stuckMaxInterventions: number;
-}
-
-export const DEFAULT_MENU_DEFAULTS: MenuDefaults = {
-  auditCap: 5,
-  stuckMaxInterventions: 5,
-};
 
 /** Subagent model provenance context needed to render the subagent pins column. */
 export interface MenuSubagentContext {
@@ -142,13 +132,20 @@ export function buildSettingsRows(
   settings: Settings,
   prov: Partial<Record<keyof Settings, MenuProvenance>>,
   subagent: MenuSubagentContext = {},
-  defaults: MenuDefaults = DEFAULT_MENU_DEFAULTS,
 ): SettingsRow[] {
   const provFor = (k: keyof Settings): MenuProvenance =>
     prov[k] ?? { value: undefined, source: "default" };
+  // v0.35.4: unset fallbacks surface the EFFECTIVE value (aggressiveMode is
+  // ON by default: audit cap 10, stuck max 10, wedge alerts 0). The old
+  // base-only "5 [default]" row lied about what the runtime would do.
+  const effective = resolveEffectiveAggressiveSettings(settings);
   const show = (k: keyof Settings, fallback: string): string => {
     const p = provFor(k);
-    return p.value === undefined ? fallback : String(p.value);
+    if (p.value === undefined) return fallback;
+    // v0.35.4: booleans render as on/off — the same vocabulary the select
+    // editors and fallback labels use ("true"/"false" was a raw String()
+    // leak in the VALUE column).
+    return typeof p.value === "boolean" ? (p.value ? "on" : "off") : String(p.value);
   };
   const src = (k: keyof Settings): string => provFor(k).source;
 
@@ -371,7 +368,7 @@ export function buildSettingsRows(
       id: "auditCap",
       section: "auditor",
       label: "Audit cap",
-      valueText: show("auditCap", `${defaults.auditCap}`),
+      valueText: show("auditCap", `${effective.auditCap}`),
       sourceText: src("auditCap"),
       description: "pause the goal after N consecutive disapprovals (0 = unlimited)",
     },
@@ -394,7 +391,7 @@ export function buildSettingsRows(
       id: "wedgeAlertMinutes",
       section: "stall-brakes",
       label: "Wedge alert minutes",
-      valueText: show("wedgeAlertMinutes", `${WEDGE_ALERT_DEFAULT_MINUTES}`),
+      valueText: show("wedgeAlertMinutes", `${effective.wedgeAlertMinutes}`),
       sourceText: src("wedgeAlertMinutes"),
       description: "hung-command alert while the session is busy (0 = off)",
     },
@@ -402,7 +399,7 @@ export function buildSettingsRows(
       id: "stuckMaxInterventions",
       section: "stall-brakes",
       label: "Stuck max interventions",
-      valueText: show("stuckMaxInterventions", `${defaults.stuckMaxInterventions}`),
+      valueText: show("stuckMaxInterventions", `${effective.stuckMaxInterventions}`),
       sourceText: src("stuckMaxInterventions"),
       description: "consecutive stuck interventions before a loop stops",
     },
