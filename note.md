@@ -30,6 +30,8 @@ i think one problm we have that we detach the main thread that coudl be causing 
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260816_103706.png 
 
+so the detached main thread likely leads to host session lost
+
 ##
 
 loop caused heavy resources consupstion
