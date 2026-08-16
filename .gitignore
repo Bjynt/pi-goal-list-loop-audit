@@ -113,3 +113,13 @@ tasks*.json
 # pi-goal-list-loop-audit runtime state — out of git per v0.34.115 release
 # contract (the .pi-glla tree is per-session runtime, not source-of-truth).
 .pi-glla/
+
+# pi-goal-loop machine-local state (added 2026-08-16 fleet audit)
+# Loop journals/screenshots bloated polis past its GitLab storage quota
+# (2026-08-15); same protection applied fleet-wide so pushes never block.
+.pi-glla/active.jsonl
+.pi-glla/audits.jsonl
+.pi-glla/audit-loop/
+.pi-glla/scratch/
+pi-session-*.html
+.pi/
