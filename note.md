@@ -54,7 +54,7 @@ we want to work on our ui to show what matters,  but also better looking if poss
 
 seeming host sesion lost but we are working
 
-# LATER
+# Later
 
 ##
 
