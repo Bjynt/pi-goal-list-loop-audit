@@ -1,10 +1,8 @@
-##prio
+# prio
 
 we got a github issue lets check it
 
-
-
-
+https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
 
 # do
 
