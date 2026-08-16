@@ -1,3 +1,9 @@
+# prio
+
+we got a github issue lets check it
+
+# do
+
 ## idea
 i wonder about a preference ai has, now generaly this can be argued to be fine but doesnt fit the long running task vibe that ai is not always long term minded
 ai suggest fixes that work fine now an in cases are fine jsut to get to the next step but generally we want long term solution and esp in brownfield projects with tests ai coudl be a bit too status quo
