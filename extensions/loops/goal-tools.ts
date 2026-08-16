@@ -2098,10 +2098,10 @@ function registerAgentTools(pi: any): void {
         // Guard: only consume when the queued item is still the original
         // fragment — if the user edited the item meanwhile, their edit wins.
         const srcId = repairTarget.id;
-        const queuedSrc = listQueue().find((q) => q.id === srcId);
+        const queuedSrc = listQueue().find((q: NonNullable<State["list"]>[number]) => q.id === srcId);
         if (queuedSrc && queuedSrc.objective === repairTarget.objective && !queuedSrc.repairTarget) {
           deleteQueueItemFile(liveCtx.cwd, srcId);
-          replaceState({ ...state, list: listQueue().filter((q) => q.id !== srcId) });
+          replaceState({ ...state, list: listQueue().filter((q: NonNullable<State["list"]>[number]) => q.id !== srcId) });
           persistState(liveCtx);
           appendLedger(liveCtx.cwd, "faulty_objective_source_consumed", {
             targetId: srcId,
