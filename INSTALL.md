@@ -178,7 +178,7 @@ conflicts with the current pi release.
 npm test
 ```
 
-Expected output at v0.35.3: 700+ passing tests across 60+ files.
+Expected output at v0.35.3: 1363 passing tests across 113 files (1 env-gated skip).
 Counts change as bounded regressions are added; use the command output
 as the source of truth ("N pass / 0 fail").
 
