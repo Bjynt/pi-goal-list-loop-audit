@@ -3990,13 +3990,15 @@ test("v0.35.4: context-starved warning is one-shot per refusal episode", async (
   __testOnlyResetStaleFlag();
   __testOnlyResetOwnerSession();
   const cwd = tmpCwd();
+  // Seed the goal directly: list_add arms a continuation start timer whose
+  // pending flag makes the heartbeat's refire gate return before the
+  // starved branch; a seeded active goal is HELD on session_start
+  // (autoResume off) and leaves the timer plane empty.
+  seedState(cwd, { goal: seedGoal({ objective: "starved one-shot item — done when the refusal warning is proven one-shot" }) });
   const ctx = await freshSession(cwd, "reload");
   (globalThis as any).compactionGraceUntil = 0;
   (globalThis as any).postCompletionSettleUntil = 0;
   try {
-    await pi.runTool("list_add", {
-      items: ["starved one-shot item — done when the refusal warning is proven one-shot"],
-    }, ctx);
     const yieldOnce = () => (globalThis as any).noteContextStarvedYield();
     // Backdate the quiet window so the refire gate (>= 60s) passes.
     (globalThis as any).lastActivityAt = Date.now() - 120_000;
