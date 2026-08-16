@@ -56,8 +56,7 @@ Each item is a full goal with its own contract and audit. When one completes
 (or is aborted), the next activates automatically. Order is the default, not
 the law — `/list next 3` activates item 3 directly. On session restore the
 list HOLDS in a fresh session (nothing auto-starts); it auto-activates only
-when you resume a session with history, or when the project sets
-`/glla project autoresume=on`.
+when Auto-resume is enabled in `/glla` settings (global-only since v0.29.5).
 
 ## Loop 3: `/loop` — metric-driven forever loop
 
@@ -80,8 +79,15 @@ original branch with merge instructions. Requires a clean working tree.
 
 ## Notifications (optional)
 
+Run `/glla` and set the **Notify command** row (the event message is passed
+as `$1`); `off` silences pushes, empty re-enables auto-detection. `/glla`
+has an action namespace (`status`, `log`, `stats`, `audits`, `wipe`, …) —
+it does NOT accept inline `key=value` assignments. Headless/scripted setups
+can write the project settings file directly instead:
+
 ```
-/glla notify='echo $1 >> ~/goal-events.log'
+# .pi-glla/settings.json
+{ "notifyCmd": "echo \"$1\" >> ~/goal-events.log" }
 ```
 
 Fires on goal complete, goal pause, and loop stop; message as `$1`.
@@ -91,7 +97,8 @@ Fires on goal complete, goal pause, and loop stop; message as `$1`.
 Off by default. Set a per-goal budget and crossing it pauses the goal:
 
 ```
-/glla tokenlimit=2000000
+# /glla → Token limit row, or .pi-glla/settings.json
+{ "tokenLimit": 2000000 }
 ```
 
 ## The auditor model rule
@@ -102,7 +109,8 @@ at runtime is retried once and the next detached candidate is tried; the
 plugin never falls back into the parent in-process session.
 
 ```
-/glla model=provider/model-id
+# /glla → Auditor model row (and Auditor fallback), or .pi-glla/settings.json
+{ "auditorModel": "provider/model-id" }
 ```
 
 If every candidate errors with auth/provider failures, the stored completion
