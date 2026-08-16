@@ -44,3 +44,24 @@ test("orchestrator injects the FULL-AUDIT directive conditionally (item 28)", ()
   assert.match(src, /FULL-AUDIT MODE \(aggressiveMode \+ survey objective\)/);
   assert.match(src, /effSettings\.aggressiveMode && isFullAuditObjective\(goal\.objective\)/);
 });
+
+test("continuation prompt includes the latest auditor report verbatim", () => {
+  const src = fs.readFileSync(path.resolve("extensions", "goal-continuation.ts"), "utf-8");
+  assert.match(src, /LATEST AUDITOR \$\{label\} \(\$\{lastAudit\.at\}\)/);
+  assert.match(src, /lastAudit\.report/);
+  assert.match(src, /full report/);
+  assert.match(src, /REGRESSION SHIELD BLOCKED/);
+});
+
+test("stale-approval directive mirrors the numeric-revision gate, never legacy entries", () => {
+  const src = fs.readFileSync(path.resolve("extensions", "goal-continuation.ts"), "utf-8");
+  // the directive must fire only when the gate would reject: a NUMERIC
+  // audited revision differing from the current one; legacy entries without
+  // a revision field pass the gate unchanged and must not be called stale.
+  assert.match(src, /typeof lastAudit\.revision === "number"/);
+  assert.match(src, /lastAudit\.revision !== \(goal\.revision \?\? 0\)/);
+  assert.doesNotMatch(src, /lastAudit\??\.revision \?\? 0/);
+  // the gate's real escapes — a bare complete_goal retry is rejected.
+  assert.match(src, /\/goal verify/);
+  assert.match(src, /newObjective/);
+});

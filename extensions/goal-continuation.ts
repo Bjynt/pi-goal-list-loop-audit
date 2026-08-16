@@ -1160,6 +1160,48 @@ export function continuationPrompt(goal: Goal): string {
       "## FULL-AUDIT MODE (aggressiveMode + survey objective)\n\nThis objective is a survey, not a single fix. Spawn 3+ `Explore` subagents NOW — one per subsystem, in a single message so they run in parallel — synthesize their findings, and call `propose_task_list` with the result. Do not start fixing before the task list exists.",
     );
   }
+  // v0.35.x: include the latest auditor report in the continuation prompt so
+  // the agent sees the actual objections instead of a generic instruction
+  // (field-observed 2026-08-16: after a disapproval the continuation carried
+  // no report text and the agent had to dig through .pi-glla/audits.jsonl).
+  const lastAudit = goal.auditHistory?.[goal.auditHistory.length - 1];
+  if (lastAudit && lastAudit.report) {
+    const report = lastAudit.report.trim();
+    let label = "DISAPPROVAL";
+    let verb = "disapproved the last completion claim";
+    if (lastAudit.impossible) {
+      label = "IMPOSSIBLE";
+      verb = "found the goal impossible as stated";
+    } else if (lastAudit.approved && lastAudit.regressionShieldPassed === false) {
+      label = "REGRESSION SHIELD BLOCKED";
+      verb = "blocked the last completion claim behind the regression shield";
+    }
+    directives.push(
+      `## LATEST AUDITOR ${label} (${lastAudit.at})\n\nThe auditor ${verb}. Here is the full report:\n\n${report}`,
+    );
+  }
+  // v0.35.x: stale-approval guidance that EXACTLY mirrors the complete_goal
+  // revision gate (goal-tools.ts): only a NUMERIC revision mismatch rejects;
+  // legacy audit entries without a revision field pass unchanged, so the
+  // directive must not fire for them (a `?? 0` fallback would invent a stale
+  // refusal the gate never made). And the gate's own escapes are `/goal verify`
+  // or a newObjective-carrying claim — a bare complete_goal retry is REJECTED,
+  // so advising one would stall the loop (reject -> retry -> reject forever).
+  if (
+    goal.status === "active" &&
+    !goal.pendingCompletion &&
+    lastAudit?.approved &&
+    !lastAudit.impossible &&
+    lastAudit.regressionShieldPassed !== false &&
+    typeof lastAudit.revision === "number" &&
+    lastAudit.revision !== (goal.revision ?? 0)
+  ) {
+    directives.push(
+      "## STALE AUDITOR APPROVAL — REVISION MISMATCH\n\n" +
+        `The auditor APPROVED the last completion claim at revision ${lastAudit.revision}, but the goal contract is now at revision ${goal.revision ?? 0}. That approval is invalid for the current contract, and complete_goal REJECTS the claim until the current contract gets its own audit.\n\n` +
+        "**Action required:** run `/goal verify` to audit the current contract, then call `complete_goal` again. If the contract change is part of this work, re-submit the claim with `newObjective` instead — the fresh audit then covers the new contract in the same call.",
+    );
+  }
   const dynamicDirectives = directives.length > 0 ? directives.join("\n\n") : "(no active directives)";
   // Use replacement callbacks: String.replace interprets `$&`, `$1`, `$'`,
   // and ``$``` inside replacement strings, which can corrupt perfectly valid
