@@ -126,6 +126,14 @@ function providerFingerprintText(error: string): string {
     .slice(0, 180);
 }
 
+/** Bounded single-line display projection for NON-sensitive provider text.
+ * Sensitive payloads never reach this — the marker gate above keeps them
+ * at the generic "provider error" copy. */
+function providerDisplayText(error: string): string {
+  const oneLine = error.replace(/\s+/g, " ").trim();
+  return oneLine ? oneLine.slice(0, 160) : "provider error";
+}
+
 /** Stable logical identity for per-recovery-episode notice deduplication.
  * Retry-after values, counters, timestamps, and request ids are intentionally
  * removed so the same provider failure does not produce a new notice each time
@@ -140,7 +148,7 @@ export function providerErrorFingerprint(error: string | undefined): string {
 export function providerErrorPresentation(error: string | undefined, surface: ProviderErrorSurface = "recovery"): ProviderErrorPresentation {
   const diagnostic = typeof error === "string" ? error.slice(0, 4_000) : "";
   const sensitive = PROVIDER_SENSITIVE_MARKER.test(diagnostic);
-  const display = sensitive ? "provider error" : "provider error";
+  const display = sensitive ? "provider error" : providerDisplayText(diagnostic);
   const action = surface === "completion"
     ? "The stored completion claim is safe; fix the provider/model, then resume to retry the auditor."
     : surface === "main"
@@ -240,7 +248,6 @@ export function sanitizeProviderAuditReport(report: string | undefined): string 
       return line;
     }
 
-    const copy = providerErrorPresentation(line, "completion");
     const delta = bracketDelta(line);
     if (inJson || entersPendingJson) {
       jsonDepth = Math.max(0, jsonDepth + delta);
@@ -256,7 +263,12 @@ export function sanitizeProviderAuditReport(report: string | undefined): string 
     } else {
       pendingJsonLines = 0;
     }
-    return `[provider diagnostic redacted — ${copy.display}]`;
+    // v0.35.4: the marker is a FIXED generic tag. It previously interpolated
+    // presentation.display, which since the display-projection fix can carry
+    // bounded raw text for non-sensitive lines — interpolating that here
+    // would turn the redaction itself into a leak for structured lines that
+    // contain account/org names.
+    return `[provider diagnostic redacted — provider error]`;
   }).join("\n");
 }
 

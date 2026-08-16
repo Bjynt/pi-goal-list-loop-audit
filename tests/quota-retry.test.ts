@@ -65,6 +65,17 @@ test("provider-wall copy separates safe display/action text from durable diagnos
   }
 });
 
+test("non-sensitive provider text projects a bounded display while staying redaction-capable", () => {
+  const copy = providerErrorPresentation('connection reset by peer after a long idle', "recovery");
+  assert.equal(copy.sensitive, false);
+  assert.match(copy.display, /connection reset by peer/);
+  assert.match(copy.display, /^[^\n]{1,160}$/, "display is a bounded single line");
+  const empty = providerErrorPresentation("", "recovery");
+  assert.equal(empty.display, "provider error", "empty input falls back to the generic copy");
+  const multiline = providerErrorPresentation("line one\n\nline two", "recovery");
+  assert.match(multiline.display, /^line one line two$/, "newlines collapse to one line");
+});
+
 test("bare 403 provider payloads are sensitive diagnostics, not raw display copy", () => {
   const raw = '403 {"error":{"message":"upstream denied this request"},"request_id":"auth-sensitive-id"}';
   const copy = providerErrorPresentation(raw, "completion");
