@@ -371,8 +371,7 @@ export function classifyHungSubagents(
 }
 
 function heartbeatTick(): void {
-  if ((globalThis as any).__GLLA_DEBUG_TICK) console.log("TICK start: zombieStoodDown", flags.zombieStoodDown, "loadPending", flags.initialSessionLoadPending);
-  if (flags.zombieStoodDown || flags.initialSessionLoadPending) { if ((globalThis as any).__GLLA_DEBUG_TICK) console.log("TICK: top gate"); return; } // blank startup waits for pi to bind a real session
+  if (flags.zombieStoodDown || flags.initialSessionLoadPending) return; // blank startup waits for pi to bind a real session
   // A completed/paused/held plane has no host-bound work to supervise. Do
   // not probe the retained ExtensionAPI in that idle state: pi may dispose a
   // session handle during an unrelated session transition, and reporting
@@ -489,8 +488,7 @@ function heartbeatTick(): void {
     }
   }
   const ctx = freshCtx();
-  if (!ctx) { if ((globalThis as any).__GLLA_DEBUG_TICK) console.log("TICK: no ctx"); return; }
-  if ((globalThis as any).__GLLA_DEBUG_TICK) console.log("TICK: ctx", ctx.cwd, "idle", (ctx as any).isIdle?.());
+  if (!ctx) return;
   // v0.34.105 (field: 2026-08-08 16:18 — provider failure froze subagent
   // 74305f7e while the MAIN model was also in recovery; heartbeatTick
   // returned at the `mainModelRecoveryActive()` gate BELOW, so the
@@ -533,7 +531,7 @@ function heartbeatTick(): void {
       notifyExternal(ctx, msg);
     }
   }
-  if (mainModelRecoveryActive()) { if ((globalThis as any).__GLLA_DEBUG_TICK) console.log("TICK: mainModelRecoveryActive"); return; }
+  if (mainModelRecoveryActive()) return;
   let idle = false;
   let pending = false;
   try {
@@ -546,12 +544,12 @@ function heartbeatTick(): void {
   // v0.28.24: post-compaction grace — the whole stall/refire/watchdog
   // machinery below stays quiet for 3 minutes while the replaced session
   // settles (latch watchdog, wedge alert, refire counting all resume after).
-  if (Date.now() < flags.compactionGraceUntil) { if ((globalThis as any).__GLLA_DEBUG_TICK) console.log("TICK: compactionGrace", flags.compactionGraceUntil); return; }
+  if (Date.now() < flags.compactionGraceUntil) return;
   // v0.34.24: an accepted dispatch with no start proof owns the watchdog
   // until its bounded timeout. Do not let the generic heartbeat create a
   // second blind send underneath it; explicit resume or a fresh session
   // releases the stand-down latch.
-  if (flags.continuationDispatchStoodDown || flags.pendingContinuationDispatch) { if ((globalThis as any).__GLLA_DEBUG_TICK) console.log("TICK: dispatch stood down"); return; }
+  if (flags.continuationDispatchStoodDown || flags.pendingContinuationDispatch) return;
   // v0.33.1: nothing supervised → the compact debt/resync belong to a dead
   // goal/loop. Discharge here so a later goal can't inherit a bogus RESYNC
   // block or a spurious forced refire (the old in-guard `else` was
@@ -586,7 +584,6 @@ function heartbeatTick(): void {
   // left list items ACTIVE for 85–96 minutes in the field; the bounded abort
   // now parks the item and leaves /list resume + /list cancel as explicit,
   // truthful recovery choices.
-  if ((globalThis as any).__GLLA_DEBUG_TICK) console.log("TICK: supervising", isSupervising(), "idle", idle, "pending", pending, "fire-gates ok");
   const streamSilentMs = Date.now() - flags.lastStreamActivityAt;
   const zombieWarningMs = zombieRunSilentMs();
   const zombieAbortMs = zombieWarningMs + zombieRunAbortGraceMs();

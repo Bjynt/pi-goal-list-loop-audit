@@ -19,6 +19,7 @@
 // cwd's .pi-glla, so tests stay independent despite shared module state.
 
 import { resetLengthContinue } from "../extensions/length-continue.js";
+import { resetContinuationDispatchState, clearContinuationTimer } from "../extensions/goal-continuation.js";
 import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -3990,12 +3991,17 @@ test("v0.35.4: context-starved warning is one-shot per refusal episode", async (
   __testOnlyResetStaleFlag();
   __testOnlyResetOwnerSession();
   const cwd = tmpCwd();
-  // Seed the goal directly: list_add arms a continuation start timer whose
-  // pending flag makes the heartbeat's refire gate return before the
-  // starved branch; a seeded active goal is HELD on session_start
-  // (autoResume off) and leaves the timer plane empty.
+  // Seed the goal directly and opt into global autoResume so session_start
+  // runs the real restore gate into an ACTIVE goal. That path arms the
+  // first continuation dispatch; clear the dispatch plane (timer + start
+  // watchdog + dispatch record) so the heartbeat's refire gate passes —
+  // exactly the production shape after the starved yield path refused to
+  // schedule a continuation.
   seedState(cwd, { goal: seedGoal({ objective: "starved one-shot item — done when the refusal warning is proven one-shot" }) });
+  setGlobalAutoResume(true);
   const ctx = await freshSession(cwd, "reload");
+  resetContinuationDispatchState(cwd);
+  clearContinuationTimer();
   (globalThis as any).compactionGraceUntil = 0;
   (globalThis as any).postCompletionSettleUntil = 0;
   try {
@@ -4014,6 +4020,10 @@ test("v0.35.4: context-starved warning is one-shot per refusal episode", async (
     (globalThis as any).onCompactionLanded();
     __testOnlyHeartbeatTick();
     assert.equal(readLedger(cwd).filter((entry) => entry.type === "continuation_refused_context_starved").length, 1, "cleared episode does not re-fire");
+    // That tick's refire path re-armed a continuation timer; clear the
+    // dispatch plane again so the second episode reaches the starved branch.
+    resetContinuationDispatchState(cwd);
+    clearContinuationTimer();
 
     // A NEW refusal episode gets its own single warning (latch re-armed).
     (globalThis as any).lastActivityAt = Date.now() - 120_000;
