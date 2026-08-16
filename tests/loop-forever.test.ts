@@ -606,3 +606,73 @@ test("v0.29.0: /loop audit — metric loop over open findings; plateau = the wel
   assert.match(defaultBlock, /cascade: \["convert-findings-to-list", "queue-leftovers", "notify-and-idle"\]/);
   assert.doesNotMatch(defaultBlock, /fire-audit-on-clean/);
 });
+
+// ---- v0.35.4: findings-file counting + parse regression ----
+
+test("v0.35.4: auditMeasureCmd counts closed FIX findings only (DECIDED/DEFERRED excluded)", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "glla-measure-"));
+  try {
+    mkdirSync(join(cwd, ".pi-glla/audit-loop"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".pi-glla/audit-loop/findings.md"),
+      [
+        "# findings",
+        "- [ ] FIX: LOW: open one",
+        "- [x] FIX: MEDIUM: closed fix one — fixed in abc123",
+        "- [x] FIX: LOW: closed fix two — fixed in def456",
+        "- [x] DECIDED: a direction call was resolved (2026-08-11)",
+        "- [x] DEFERRED: a direction call was parked (2026-08-11)",
+        "- [?] DECIDE: still-open question",
+      ].join("\n") + "\n",
+    );
+    const out = runIn(cwd, auditMeasureCmd());
+    assert.equal(out, "2", "only the two closed FIX boxes count");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("v0.35.4: countOpenAuditFindings/topOpenAuditFinding tolerate aligned open boxes", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "glla-open-"));
+  try {
+    mkdirSync(join(cwd, ".pi-glla/audit-loop"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".pi-glla/audit-loop/findings.md"),
+      [
+        "# findings",
+        "- [ ] FIX: LOW: normal box",
+        "- [  ] FIX: MEDIUM: aligned two-space box",
+        "- [\t] FIX: HIGH: tab box",
+        "- [x] FIX: MEDIUM: closed one — fixed in aa11", 
+      ].join("\n") + "\n",
+    );
+    assert.equal(countOpenAuditFindings(cwd), 3, "all three open box shapes count");
+    const top = topOpenAuditFinding(cwd);
+    assert.equal(top, "FIX: LOW: normal box", "top open finding is the first box line");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("v0.35.4: parseLoopStartArgs keeps =-bearing text inside quotes and restores unknown keys", () => {
+  const quoted = parseLoopStartArgs('"make a=b work" measure="echo 1" direction=min');
+  assert.equal(quoted.target, "make a=b work", "an = pair inside the quoted target is not consumed as a key");
+  assert.equal(quoted.measureCmd, "echo 1");
+  assert.equal(quoted.direction, "min");
+  const unknown = parseLoopStartArgs('fix x=y measure="echo 1" direction=min');
+  assert.equal(unknown.target, "fix x=y", "an unknown key stays in the target instead of vanishing");
+  assert.equal(unknown.direction, "min");
+  // known keys are still consumed anywhere outside quotes:
+  const mixed = parseLoopStartArgs('make b=c and d=e work measure="echo 1" direction=min branch=1');
+  assert.equal(mixed.target, "make b=c and d=e work", "multiple unknown = pairs stay in the target");
+  assert.equal(mixed.branch, true);
+  // a typo'd key no longer silently disappears from the config AND target:
+  const typo = parseLoopStartArgs('t direcion=min measure="echo 1" direction=min');
+  assert.equal(typo.target, "t direcion=min", "the typo is visible in the target");
+  assert.equal(typo.direction, "min");
+});
+
+function runIn(cwd: string, cmd: string): string {
+  const { execSync } = require("node:child_process") as typeof import("node:child_process");
+  return execSync(cmd, { cwd, shell: "/bin/bash", encoding: "utf8" }).trim();
+}
