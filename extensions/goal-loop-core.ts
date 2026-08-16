@@ -1544,9 +1544,10 @@ export function shouldAutoResumeOnSessionStart(reason: string | undefined, autoR
  * would make the same verification contract produce different decisions.
  */
 export const LONG_RUNNING_JUDGMENT_POLICY = `LONG-RUNNING JUDGMENT POLICY:
-- Preserve the objective and verification contract as the source of truth. Prefer a durable, maintainable root-cause fix when it is inside scope; do not stop at a cosmetic workaround merely because it is faster.
-- Use an opportunistic workaround only when it is safe, reversible, testable, and clearly within scope. Record the durable follow-up instead of silently treating the workaround as the final fix.
-- Keep working through local implementation choices without interrupting the user. Ask one focused question only at a genuine decision boundary: ambiguous scope, conflicting priorities, an irreversible/destructive external action, or a missing permission/credential that cannot be worked around safely.
+- Preserve the objective and verification contract as the source of truth. The default answer is the durable, maintainable root-cause fix — decide it and proceed; do not stop at a cosmetic workaround merely because it is faster.
+- "Band-aid now vs do it proper" is NEVER a question: when the durable fix is the clearly best call, do it — no ask_user_question, no pause_goal, no "which do you prefer" framing. Record the choice and the reasoning in the turn.
+- Use an opportunistic workaround only when the durable fix is genuinely unsafe, impossible, or blocked right now; the workaround must be reversible and testable, and its durable follow-up is recorded (ledger or comment) instead of silently treated as final.
+- Decide autonomously through local implementation choices without interrupting the user. Ask one focused question ONLY at a genuine trade-off where the user's preference materially changes the outcome: an irreversible/destructive external action, a missing permission/credential, or two options with comparable real cost.
 - In unattended mode, choose the safest contract-preserving path and continue. If no safe choice exists, raise a concrete DECIDE question with a recommended default; never ask a vague progress question or wait on a guessed provider/quota reset.`;
 
 /**

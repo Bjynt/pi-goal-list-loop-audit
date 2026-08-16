@@ -20,9 +20,14 @@ import { resolveDrafterModel } from "../extensions/drafter-model.ts";
 import { buildSettingsRows } from "../extensions/settings-menu.ts";
 import type { Settings } from "../extensions/goal-settings.ts";
 
-test("long-running judgment policy is explicit and question-gated", () => {
+test("long-running judgment policy is default-decide and bans band-aid-vs-proper questions", () => {
   assert.match(LONG_RUNNING_JUDGMENT_POLICY, /durable, maintainable root-cause fix/);
-  assert.match(LONG_RUNNING_JUDGMENT_POLICY, /genuine decision boundary/);
+  // v0.35.4: the question gate flipped from permissive ("ask only at a
+  // genuine decision boundary") to default-decide — the band-aid-vs-proper
+  // choice is never presented to the user.
+  assert.doesNotMatch(LONG_RUNNING_JUDGMENT_POLICY, /genuine decision boundary/);
+  assert.match(LONG_RUNNING_JUDGMENT_POLICY, /NEVER a question/);
+  assert.match(LONG_RUNNING_JUDGMENT_POLICY, /decide it and proceed/);
   assert.match(LONG_RUNNING_JUDGMENT_POLICY, /DECIDE question/);
   const seeded = buildSeedGrillMessage("[DRAFT]", "ship the plugin", "propose_goal_draft");
   assert.match(seeded, /LONG-RUNNING JUDGMENT POLICY/);
