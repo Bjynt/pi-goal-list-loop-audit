@@ -202,7 +202,13 @@ export function __testOnlyResetZombieRunWatchdog(): void {
 
 let lastUnansweredAlertAt = 0;
 
-let lastStarvedRefusedAt = "";
+// v0.35.4: one-shot-per-episode latch for the context-starved warning. The
+// old second-precision timestamp gate re-emitted on every heartbeat tick
+// that landed in a fresh second (~once per 15s tick while the 90s refusal
+// window held — six re-fires per episode). Fires once per refusal episode
+// and re-arms only after isContextStarvedRefused() clears (a real
+// compaction or the window lapsing).
+let starvedRefusedNotified = false;
 
 // heartbeatStaleDebounce is overridable via __testOnlySetHeartbeatStaleDebounce.
 const HEARTBEAT_STALE_DEBOUNCE = 3;
@@ -583,6 +589,23 @@ function heartbeatTick(): void {
   const zombieAbortMs = zombieWarningMs + zombieRunAbortGraceMs();
   if (isSupervising() && !idle && streamSilentMs >= zombieWarningMs) {
     const nowMs = Date.now();
+    // v0.35.4: subagent-wait carve-out (field: 2026-08-01 — a 31-minute
+    // Explore "thinking" with zero parent stream events tripped the bounded
+    // abort and parked a run whose child was legitimately working). A parent
+    // BUSY-waiting on Agent / steer_subagent / get_subagent_result is
+    // EXPECTED to be stream-silent; child liveness is the subagent-hang
+    // watchdog's detection+notify territory and the wedge alert names the
+    // wait. Stand down the whole branch while a live probe or an in-flight
+    // subagent tool call is recorded — the abort must not own that case.
+    const subagentWaitInFlight =
+      hasLiveSubagentHangProbes() ||
+      [...flags.inFlightToolCalls.values()].some((t) => t.name === "Agent" || t.name === "get_subagent_result" || t.name === "steer_subagent");
+    if (subagentWaitInFlight) {
+      if (streamSilentMs >= zombieAbortMs && !flags.abortedStandDown) {
+        appendLedger(ctx.cwd, "zombie_run_stood_down_subagent_wait", { streamSilentMs });
+      }
+      return;
+    }
     const abortKey = `${flags.sessionGeneration}:${state.goal?.id ?? "loop"}:${flags.lastStreamActivityAt}`;
     if (streamSilentMs >= zombieAbortMs && !flags.abortedStandDown && abortKey !== lastZombieAbortKey) {
       // Claim the key only after the activation-owned abort succeeds. A
@@ -745,8 +768,8 @@ function heartbeatTick(): void {
   // A real `session_compact` clears the streak and the heartbeat resumes
   // its normal refire (goal.ts:9411).
   if (isContextStarvedRefused()) {
-    if (lastStarvedRefusedAt !== Date.now().toString().slice(0, -3)) {
-      lastStarvedRefusedAt = Date.now().toString().slice(0, -3);
+    if (!starvedRefusedNotified) {
+      starvedRefusedNotified = true;
       appendLedger(ctx.cwd, "continuation_refused_context_starved", { streak: flags.contextStarvedStreak, sinceMs: Date.now() - flags.lastContextStarvedAt });
       ctx.ui.notify(
         "glla: auto-compaction appears to be off (or not running) — context is starving and the next turn would just truncate again. Run `/compact` once, or set `compaction.enabled:true` in ~/.pi/agent/settings.json to let pi handle this automatically.",
@@ -755,6 +778,9 @@ function heartbeatTick(): void {
     }
     return;
   }
+  // v0.35.4: the refusal cleared (compaction landed or the window lapsed) —
+  // re-arm the one-shot so the NEXT episode gets its single warning.
+  starvedRefusedNotified = false;
   // v0.26.6: the 0.25.0 "recent ship (<5m)" suppression was REMOVED. It fed
   // lastShippedAtMs, which read the state-file MTIME — and the heartbeat's
   // own suppressed-tick ledger writes refreshed that mtime every 15s,
