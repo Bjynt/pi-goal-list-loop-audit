@@ -62,6 +62,14 @@ export interface Settings {
    * model is the session model or fails at runtime. Unset → session model
    * remains the final fallback. */
   auditorModelFallback?: string;
+  /** v0.35.5: plural auditor fallback chain (replaces the singular
+   * auditorModelFallback). Refs are normalized via normalizeMainModelFallbackRefs
+   * (case-insensitive dedup, cap at MAX_MAIN_MODEL_FALLBACKS, original
+   * spelling preserved for display) and walked through ModelSelector so the
+   * forbidden-gate is applied uniformly with main and drafter. The singular
+   * auditorModelFallback above remains as a deprecated alias during the
+   * migration window — it is appended to the chain when set. */
+  auditorModelFallbacks?: string[];
   /** v0.31.6: when the pinned auditor IS the session model, walk the
    * fallback pin (verifier ≠ executor). Default ON (undefined); false =
    * same-model audits stand — the isolated session + evidence contract is
@@ -322,6 +330,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "visionAssist",
   "auditorModel",
   "auditorModelFallback",
+  "auditorModelFallbacks",
   "auditorSameSessionSwap",
   "auditorThinkingLevel",
   "notifyCmd",

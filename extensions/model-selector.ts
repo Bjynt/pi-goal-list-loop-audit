@@ -41,7 +41,8 @@ import {
 export type ModelScope =
   | { kind: "session" }
   | { kind: "subagent"; agentName: string }
-  | { kind: "drafter" };
+  | { kind: "drafter" }
+  | { kind: "auditor" };
 
 export interface ModelSelectorDeps {
   /** Read the fallback chain for a scope (returns the configured list of
