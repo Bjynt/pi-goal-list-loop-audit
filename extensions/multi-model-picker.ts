@@ -14,7 +14,8 @@
 // UX:
 //   • Space (" ") toggles the highlighted item. Models are toggleable;
 //     session-row and manual-row both render but pressing space on them
-//     is a no-op (they're not model refs to pick).
+//     is a no-op (they're not model refs to pick). An optional explicit
+//     inherit-from-session row is a dynamic choice, distinct from both.
 //   • Tab enters/exits ORDER MODE: while active, ↑/↓ moves the highlighted
 //     chain row earlier/later in the try order (membership unchanged). The
 //     active chain row is highlighted in the summary pane. Browsing/search
@@ -47,13 +48,26 @@ export interface MultiModelPickerDeps {
   maxVisibleRows?: number;
   /** Maximum number of model refs that may be selected. Undefined = no cap. */
   maxSelections?: number;
+  /** Add a distinct dynamic "inherit from session" choice row. */
+  includeInheritOption?: boolean;
+  /** Initial state for the explicit inherit choice. */
+  initialInheritFromSession?: boolean;
 }
 
-export type MultiModelPickerResult = string[] | undefined;
+export interface MultiModelPickerSelection {
+  refs: string[];
+  inheritFromSession: boolean;
+}
+
+/** The legacy string[] result remains the default; enabling the inherit row
+ * returns a selection object so callers cannot confuse inheritance with the
+ * old session-clear or manual-entry rows. */
+export type MultiModelPickerResult = string[] | MultiModelPickerSelection | undefined;
 
 export class MultiModelPickerComponent {
   private readonly title: string;
   private readonly items: ModelPickItem[];
+  private readonly includeInheritOption: boolean;
   private readonly maxRows: number;
   private readonly maxSelections: number | undefined;
   private readonly currentRef: string | undefined;
@@ -66,6 +80,8 @@ export class MultiModelPickerComponent {
   private selectedIdx = 0;
   /** Ordered list of selected refs — toggle order, not list order. */
   private readonly selection: string[];
+  /** Explicit dynamic choice; it never becomes a fake provider/model ref. */
+  private inheritFromSession: boolean;
   /** Order mode: ↑/↓ move the chain instead of navigating the list. */
   private orderMode = false;
   /** Chain index the order-mode cursor sits on (follows the moved row). */

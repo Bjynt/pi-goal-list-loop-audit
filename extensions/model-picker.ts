@@ -21,7 +21,7 @@
 import { fuzzyFilter, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { SettingsMenuTheme, KeybindingsManagerLike } from "./settings-menu.ts";
 
-export type ModelPickKind = "session" | "model" | "manual";
+export type ModelPickKind = "session" | "inherit" | "model" | "manual";
 
 export interface ModelPickItem {
   kind: ModelPickKind;
@@ -33,6 +33,8 @@ export interface ModelPickItem {
   searchText: string;
   /** A preserved configured ref that cannot currently be selected. */
   disabledReason?: string;
+  /** True for the explicit dynamic session-inheritance choice. */
+  inheritFromSession?: boolean;
 }
 
 export interface RegistryModelLike {
