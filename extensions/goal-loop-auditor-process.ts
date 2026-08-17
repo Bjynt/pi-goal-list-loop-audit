@@ -153,18 +153,26 @@ export async function runAuditorFallbackWithPolicy(
   let fallbackError: string | undefined;
   let fallbackDelayMs = 0;
   let pendingResult: GoalAuditorResult | undefined;
+  const noCandidateResult = (): GoalAuditorResult => ({
+    approved: false,
+    disapproved: false,
+    output: "",
+    model: modelRef(sequence[0]!.model) ?? "",
+    error: "no auditor model",
+    infrastructureClass: "no-verdict",
+  });
 
   for (;;) {
     // Keep the explicit pure cursor call here. ModelSelector.selectNextValid
     // composes the same helper while adding the forbidden/unregistered walk.
     if (nextUntriedModelRef(currentRef, refs, attempted) === undefined) {
-      const last = pendingResult ?? await run(sequence[0]!);
+      const last = pendingResult ?? noCandidateResult();
       return { result: last, retriedOnce, fallbackUsed, via: fallbackFrom?.via ?? sequence[0]!.via };
     }
     const selected = selector.selectNextValid(scope, currentRef, attempted);
     for (const visited of selector.lastVisitedRefs) addAttempted(visited);
     if (!("model" in selected) || typeof selected.ref !== "string") {
-      const result = pendingResult ?? await run(sequence[0]!);
+      const result = pendingResult ?? noCandidateResult();
       return { result, retriedOnce, fallbackUsed, via: fallbackFrom?.via ?? sequence[0]!.via };
     }
     const selectedRef = selected.ref;

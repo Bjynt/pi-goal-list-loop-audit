@@ -194,6 +194,18 @@ test("auditor forbidden and duplicate refs are skipped before retry ordering", a
   assert.ok(events.includes("forbidden:test/forbidden"));
 });
 
+test("an all-forbidden auditor chain does not launch a forbidden worker", async () => {
+  let calls = 0;
+  const outcome = await runAuditorFallbackWithPolicy([
+    { ref: "test/forbidden", model: { provider: "test", id: "forbidden" }, via: "setting" },
+  ], async () => {
+    calls++;
+    return result({ approved: true });
+  }, { forbiddenRefs: ["forbidden"], shouldRetry: () => true });
+  assert.equal(calls, 0);
+  assert.equal(outcome.result.error, "no auditor model");
+});
+
 test("non-recoverable auditor failures stop without retrying or advancing", async () => {
   const waits: number[] = [];
   let calls = 0;
