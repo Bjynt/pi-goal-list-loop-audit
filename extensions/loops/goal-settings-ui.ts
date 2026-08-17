@@ -449,7 +449,7 @@ const THINKING_DESCR: Record<string, string> = {
   max: "maximum reasoning",
 };
 
-function resolveAuditorModel(
+export function resolveAuditorModel(
   ctx: ExtensionContext,
   ref?: string,
   fallbackRef?: string,

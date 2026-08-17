@@ -237,23 +237,29 @@ test("v0.31.3: the auditor chain — pinned primary → pinned fallback → sess
   assert.match(SRC, /if \(sameSessionSwap && isSession\(r\.model\) && i \+ 1 < pins\.length\) \{/);
   assert.match(SRC, /auditor_model_same_as_session/);
   assert.match(SRC, /pin a different \/glla → Auditor fallback agent so the verifier can differ/);
-  // Both audit call sites pass the fallback pin (v0.31.6: + the swap toggle):
-  assert.match(SRC, /resolveAuditorModel\(liveCtx, settings\.auditorModel, settings\.auditorModelFallback, settings\.auditorSameSessionSwap !== false\)/);
-  assert.match(SRC, /resolveAuditorModel\(ctx, settings\.auditorModel, settings\.auditorModelFallback, settings\.auditorSameSessionSwap !== false\)/);
+  // Both audit call sites pass the fallback pin (v0.31.6: + the swap toggle);
+  // v0.35.5: + the plural chain so resolveAuditorModel walks through the same
+  // normalizeMainModelFallbackRefs + ModelSelector / forbidden-gate / cap (≤10)
+  // primitives as main + drafter.
+  assert.match(SRC, /resolveAuditorModel\(liveCtx, settings\.auditorModel, settings\.auditorModelFallback, settings\.auditorSameSessionSwap !== false, settings\.auditorModelFallbacks\)/);
+  assert.match(SRC, /resolveAuditorModel\(ctx, settings\.auditorModel, settings\.auditorModelFallback, settings\.auditorSameSessionSwap !== false, settings\.auditorModelFallbacks\)/);
   // The settings key + menu row + editor case:
   const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
   assert.match(SETTINGS, /auditorModelFallback\?: string;/);
+  assert.match(SETTINGS, /auditorModelFallbacks\?: string\[\];/);
   const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
   assert.match(MENU, /id: "auditorModelFallback"/);
+  assert.match(MENU, /id: "auditorModelFallbacks"/);
   assert.match(MENU, /section: "auditor",[\s\S]{0,200}?Auditor fallback agent/);
   assert.match(SRC, /case "auditorModelFallback": \{/);
+  assert.match(SRC, /case "auditorModelFallbacks": \{/);
   // The v0.31.2 "diverse" machinery is gone (complexity cost > benefit):
   assert.ok(!SRC.includes("pickDiverseAuditorModel") && !SRC.includes('"diverse"'), "diverse strategy removed");
 });
 
 test("v0.31.6: same-model swap toggle — default ON, off = same-model audits stand", () => {
   const SRC = readGoalRuntimeSource();
-  assert.match(SRC, /sameSessionSwap = true\): \{ model: any; error\?: string; via\?: string; fallbackModels\?: AuditorModelCandidate\[\]\s*\}/);
+  assert.match(SRC, /sameSessionSwap = true,\n  fallbackRefs\?: string\[\],\n\): \{ model: any; error\?: string; via\?: string; fallbackModels\?: AuditorModelCandidate\[\] \} \{/);
   assert.equal(SRC.match(/settings\.auditorSameSessionSwap !== false/g)!.length, 2, "both audit call sites pass the toggle (undefined = on)");
   assert.match(SRC, /if \(sameSessionSwap && isSession\(r\.model\) && i \+ 1 >= pins\.length\) \{/); // v0.32.0: last-pin guard — the fallback hop landing on the session model nudges too
   assert.match(SRC, /case "auditorSameSessionSwap": \{/);
