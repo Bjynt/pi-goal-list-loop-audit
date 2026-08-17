@@ -35,10 +35,21 @@ export interface ObjectiveRepairProposal {
   confidence: "best-effort";
 }
 
-const IMPERATIVE_START = /^(add|allow|audit|build|cap|clarify|close|collapse|consolidate|create|detect|document|ensure|enforce|fix|harden|improve|implement|instrument|investigate|make|migrate|overhaul|preserve|prevent|recover|refactor|remove|repair|replace|research|resolve|restore|review|ship|simplify|strengthen|support|test|update|validate|verify|wire|write)\b/i;
+// A verb that plausibly opens a real, actionable objective. The reviewer/
+// verification momentum lives in the vocabulary and narrative regexes below;
+// this list is the escape hatch that keeps genuine imperatives (including
+// ones that mention the auditor/reviewer machinery legitimately, e.g.
+// "Show the selected models … (main/auditor/drafter) on the goal card")
+// from being misread as report text. Keep it broad: an objective that starts
+// with any of these is actionable on its face.
+const IMPERATIVE_START = /^(add|allow|audit|benchmark|build|cap|check|clarify|close|collapse|collect|compare|consolidate|create|describe|detect|diagnose|display|document|ensure|enforce|explain|expose|fix|harden|improve|implement|inspect|instrument|investigate|list|make|measure|migrate|monitor|open|optimize|overhaul|plan|preserve|prevent|print|profile|publish|read|recover|refactor|remove|render|repair|replace|research|resolve|restore|review|ship|show|simplify|strengthen|summarize|support|surface|test|trace|update|validate|verify|watch|wire|write)\b/i;
 const COMMAND_ONLY = /^(?:bun|npm|pnpm|yarn|npx|node|deno|git)\s+(?:test|run|check|diff|status|show|log|exec)\b/i;
 const REVIEWER_MARKER = /(?:^|[.!?;]\s+|[-*]\s+)(?:audit(?:\s+(?:report|result|findings?))?|review(?:er)?(?:\s+(?:report|result|feedback|findings?))?|verdict|evidence|output|item|required\s+fixes?|completion\s+claim)\s*:/i;
-const REVIEWER_VOCABULARY = /\b(?:passes\s+sequentially|zero\s+failures?|\d+\s+failures?|ran\s+\d+\s+tests?|verification\s+contract|regression\s+shield|auditor(?:[- ](?:approved|report|disapproved))?|reviewer(?:[- ](?:approved|report|disapproved|feedback|finding))?|completion\s+claim|<\/?(?:evidence|approved|disapproved|impossible)\b)\b/i;
+// Report vocabulary. "auditor"/"reviewer" count ONLY when tied to a verdict
+// shape ("auditor approved", "reviewer finding") — a bare mention of the
+// role ("(main/auditor/drafter)", "auditor workers") is legitimate task
+// vocabulary and must not trip verification-fragment on its own.
+const REVIEWER_VOCABULARY = /\b(?:passes\s+sequentially|zero\s+failures?|\d+\s+failures?|ran\s+\d+\s+tests?|verification\s+contract|regression\s+shield|auditor[- ]+(?:approved|report|disapproved)|reviewer[- ]+(?:approved|report|disapproved|feedback|finding)|completion\s+claim|<\/?(?:evidence|approved|disapproved|impossible)\b)\b/i;
 // A report can look superficially task-like because it lists completed work
 // with imperative-shaped nouns ("Added ...", "Focused tests ..."). Keep
 // genuine phrases such as "Add focused tests for the audit path" valid, but
