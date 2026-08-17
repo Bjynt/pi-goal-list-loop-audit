@@ -632,7 +632,7 @@ function registerAgentTools(pi: any): void {
       const auditGoalId = auditGoal.id;
       const auditAttemptId = completionClaim.attemptId!;
       const settings = loadSettings(ctx.cwd);
-      const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(ctx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
+      const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(ctx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false, settings.auditorModelFallbacks);
       if (modelError) {
         const modelFailureCopy = providerErrorPresentation(modelError, "completion");
         ctx.ui.notify(`Auditor model issue: ${modelFailureCopy.display}. ${modelFailureCopy.action}`, "warning");

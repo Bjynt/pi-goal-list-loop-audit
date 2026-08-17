@@ -878,7 +878,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       ? "Fresh session recovered the interrupted completion audit — starting a detached retry for the stored claim."
       : "Auditor provider retry is due — starting a detached retry with your stored completion claim (no agent turn needed).", "info");
   const settings = loadSettings(liveCtx.cwd);
-  const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(liveCtx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
+  const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(liveCtx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false, settings.auditorModelFallbacks);
   if (modelError) {
     const modelFailureCopy = providerErrorPresentation(modelError, "completion");
     liveCtx.ui.notify(`Auditor model issue: ${modelFailureCopy.display}. ${modelFailureCopy.action}`, "warning");

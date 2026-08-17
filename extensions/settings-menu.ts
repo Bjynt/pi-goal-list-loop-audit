@@ -333,12 +333,22 @@ export function buildSettingsRows(
     {
       id: "auditorModelFallback",
       section: "auditor",
-      label: "Auditor fallback agent",
+      label: "Auditor fallback agent (legacy)",
       valueText: settings.auditorModelFallback
         ? modelThinkingText(settings.auditorModelFallback, auditorThinking, subagent)
         : `${sessionRef} · ${auditorThinking} (last resort)`,
       sourceText: src("auditorModelFallback"),
-      description: "walked when the primary agent is unavailable OR IS the session model (the verifier should differ) — unset = the session model is the last resort",
+      description: "DEPRECATED — single slot kept as a migration alias; configure the new plural chain below instead",
+    },
+    {
+      id: "auditorModelFallbacks",
+      section: "auditor",
+      label: "Auditor fallback agents",
+      valueText: (settings.auditorModelFallbacks ?? []).length > 0
+        ? (settings.auditorModelFallbacks ?? []).map((ref) => modelThinkingText(ref, auditorThinking, subagent)).join(" → ")
+        : `${sessionRef} · ${auditorThinking} (last resort)`,
+      sourceText: src("auditorModelFallbacks"),
+      description: "walked in order when the primary agent is unavailable OR IS the session model — refs go through the same forbidden-gate + dedup + cap (≤10) as the main + drafter chains",
     },
     {
       id: "auditorSameSessionSwap",

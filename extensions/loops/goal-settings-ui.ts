@@ -449,7 +449,13 @@ const THINKING_DESCR: Record<string, string> = {
   max: "maximum reasoning",
 };
 
-function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: string, sameSessionSwap = true): { model: any; error?: string; via?: string; fallbackModels?: AuditorModelCandidate[] } {
+function resolveAuditorModel(
+  ctx: ExtensionContext,
+  ref?: string,
+  fallbackRef?: string,
+  sameSessionSwap = true,
+  fallbackRefs?: string[],
+): { model: any; error?: string; via?: string; fallbackModels?: AuditorModelCandidate[] } {
   const sessionModel = ctx.model as any;
   const tryRef = (trimmed: string): { model?: any; reason?: string } => {
     const slash = trimmed.indexOf("/");
@@ -478,11 +484,26 @@ function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: 
     seen.add(key);
     candidates.push({ model, via });
   };
+  // v0.35.5: chain assembly goes through the canonical main-model-recovery
+  // normalizer so case-insensitive dedup and the MAX_MAIN_MODEL_FALLBACKS
+  // cap apply uniformly across main, drafter, and auditor. The singular
+  // auditorModelFallback remains as a deprecated alias during the migration
+  // window — when set it is appended to the plural chain so a legacy
+  // global.json entry keeps working unchanged.
+  const pluralChain = normalizeMainModelFallbackRefs(fallbackRefs ?? []);
+  const chain = normalizeMainModelFallbackRefs([
+    ...(ref?.trim() ? [ref.trim()] : []),
+    ...(fallbackRef?.trim() ? [fallbackRef.trim()] : []),
+    ...pluralChain,
+  ]);
   // v0.32.0: per-pin source labels — when the primary is unset, pins[0] IS
   // the fallback and the old i===0→"setting" map mislabeled it.
   const pins: Array<{ pin: string; src: "setting" | "fallback-pin" }> = [];
   if (ref?.trim()) pins.push({ pin: ref.trim(), src: "setting" });
-  if (fallbackRef?.trim()) pins.push({ pin: fallbackRef.trim(), src: "fallback-pin" });
+  if (fallbackRef?.trim() && chain.includes(fallbackRef.trim())) pins.push({ pin: fallbackRef.trim(), src: "fallback-pin" });
+  for (const refRaw of pluralChain) {
+    if (chain.includes(refRaw) && !pins.some((p) => p.pin === refRaw)) pins.push({ pin: refRaw, src: "fallback-pin" });
+  }
   for (let i = 0; i < pins.length; i++) {
     const { pin } = pins[i]!;
     const r = tryRef(pin);
@@ -514,6 +535,30 @@ function resolveAuditorModel(ctx: ExtensionContext, ref?: string, fallbackRef?: 
       ctx.ui.notify(`The session model IS the pinned auditor (${r.model.provider}/${r.model.id}) — pin a different /glla → Auditor fallback agent so the verifier can differ.`, "warning");
     }
     addCandidate(r.model, pins[i]!.src);
+  }
+  // v0.35.5: forbidden-gate pass — any pin in the normalized chain that
+  // was not added by the loud-warn walker above (e.g. a chain entry beyond
+  // the first two slots that the legacy walker never considered) is
+  // dropped silently if it is in the configured forbiddenModels list.
+  // This matches main-model-recovery / drafter semantics: the gate is
+  // user-intent and must NOT raise a warning. Already-added pins are
+  // skipped so we don't surface them twice.
+  if (pluralChain.length > 0) {
+    const forbiddenSet = new Set<string>(
+      (loadSettings(ctx.cwd).forbiddenModels ?? []).map((s) => s.toLowerCase()),
+    );
+    const pinnedSet = new Set(pins.map((p) => p.pin.toLowerCase()));
+    for (const refRaw of pluralChain) {
+      const key = refRaw.toLowerCase();
+      if (pinnedSet.has(key)) continue;
+      if (forbiddenSet.has(key)) {
+        appendLedger(ctx.cwd, "auditor_model_fallback", { configured: refRaw, reason: "forbidden" });
+        continue;
+      }
+      const r = tryRef(refRaw);
+      if (!r.model) continue; // already warned by the legacy walker; silent skip for extra slots
+      addCandidate(r.model, "fallback-pin");
+    }
   }
   if (sessionModel) addCandidate(sessionModel, pins.length > 0 ? "session-fallback" : "session");
   if (candidates.length > 0) {
@@ -1091,6 +1136,43 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       if (pick === undefined) return;
       saveSettings("global", ctx.cwd, { auditorModelFallback: pick.kind === "session" ? undefined : pick.ref });
       if (pick.kind === "session") ctx.ui.notify("Auditor fallback cleared — a session on the pinned auditor model keeps that model.", "info");
+      return;
+    }
+    case "auditorModelFallbacks": {
+      // v0.35.5: plural chain picker. Shows the current list, lets the user
+      // append, replace, or clear. The chain is walked in order through the
+      // same ModelSelector / forbidden-gate / dedup / cap (≤10) the main
+      // and drafter chains use.
+      const cur = loadSettings(ctx.cwd).auditorModelFallbacks ?? [];
+      const action = await ctx.ui.select(`Auditor fallback chain (currently ${cur.length} ref${cur.length === 1 ? "" : "s"}) — choose how to edit`, [
+        "append — pick the next ref",
+        "replace — clear and pick a new chain",
+        "clear — remove every ref (session model is the last resort)",
+      ]);
+      if (!action) return;
+      if (action.startsWith("clear")) {
+        saveSettings("global", ctx.cwd, { auditorModelFallbacks: [] });
+        ctx.ui.notify("Auditor fallback chain cleared — session model is the last resort.", "info");
+        return;
+      }
+      if (action.startsWith("replace")) {
+        const next: string[] = [];
+        for (;;) {
+          const pick = await promptModelRef(ctx, "Auditor fallback ref (empty or cancel finishes)", "provider/model-id — empty or Esc finishes");
+          if (pick === undefined || (pick.kind === "session")) break;
+          next.push(pick.ref);
+          const more = await ctx.ui.select(`Chain so far: ${next.join(" → ")}`, ["add another", "finish"]);
+          if (!more || more.startsWith("finish")) break;
+        }
+        saveSettings("global", ctx.cwd, { auditorModelFallbacks: next });
+        ctx.ui.notify(`Auditor fallback chain replaced (${next.length} ref${next.length === 1 ? "" : "s"}).`, "info");
+        return;
+      }
+      // append
+      const pick = await promptModelRef(ctx, "Auditor fallback ref to append", "provider/model-id — empty or cancel cancels");
+      if (pick === undefined || pick.kind === "session") return;
+      saveSettings("global", ctx.cwd, { auditorModelFallbacks: [...cur, pick.ref] });
+      ctx.ui.notify(`Auditor fallback chain now ${[...cur, pick.ref].join(" → ")}.`, "info");
       return;
     }
     case "auditorSameSessionSwap": {
