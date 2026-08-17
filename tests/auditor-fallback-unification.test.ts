@@ -1,29 +1,8 @@
 // tests/auditor-fallback-unification.test.ts
 //
-// v0.35.5: regression test pinning auditor fallback behavior to the same
-// primitives main-model-recovery / drafter-model already use. The audit
-// (audit/FALLBACK-UNIFICATION-2026-08-17.md) flagged the auditor resolver
-// as the thin path — it had its own hand-rolled two-slot walker that did
-// not share normalizeMainModelFallbackRefs, the forbidden-gate, the
-// MAX_MAIN_MODEL_FALLBACKS cap, or the uniform envelope from
-// mainModelFailureDelayMs. This test pins:
-//
-//   1. Plural chain (auditorModelFallbacks) goes through the same
-//      canonical normalizer — case-insensitive dedup, cap at 10, original
-//      spelling preserved for the per-pin source label.
-//   2. Forbidden refs in auditorModelFallbacks are silently skipped — no
-//      loud warning, the gate matches main / drafter semantics.
-//   3. The deprecated auditorModelFallback (singular) alias still works —
-//      it is appended to the chain when set so a legacy global.json entry
-//      keeps working unchanged.
-//   4. The chain emits the auditor_model_fallback ledger event with
-//      reason:"forbidden" for forbidden refs (forensic trail) while
-//      remaining silent in the user-facing notify surface.
-//
-// Tests live in node:test style to match the rest of the suite. The
-// resolveAuditorModel function is now exported from goal-settings-ui.ts
-// specifically so this regression can drive it without booting the
-// runtime global.
+// The auditor keeps its existing two configured slots and detached-worker
+// spawn shape, but its resolver and runtime retry walker must use the same
+// ordering primitives as main-model-recovery and drafter-model.
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
@@ -31,12 +10,17 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import {
+  MAIN_MODEL_MAX_RETRY_DELAY_MS,
+  MAX_MAIN_MODEL_FALLBACKS,
+  normalizeMainModelFallbackRefs,
+} from "../extensions/main-model-recovery.ts";
+import {
+  runAuditorFallbackWithPolicy,
+  type AuditorFallbackCandidate,
+  type GoalAuditorResult,
+} from "../extensions/goal-loop-auditor-process.ts";
 import { resolveAuditorModel } from "../extensions/loops/goal-settings-ui.ts";
-import { MAX_MAIN_MODEL_FALLBACKS } from "../extensions/main-model-recovery.ts";
-
-/* ------------------------------------------------------------------ */
-/* Fixtures                                                            */
-/* ------------------------------------------------------------------ */
 
 interface FakeContext {
   ctx: any;
@@ -46,6 +30,7 @@ interface FakeContext {
   fallback2: any;
   forbiddenRef: any;
   tmpDir: string;
+  restore: () => void;
 }
 
 function fakeContext(): FakeContext {
@@ -73,191 +58,169 @@ function fakeContext(): FakeContext {
     },
   };
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-auditor-fb-"));
-  // Seed a hermetic global settings file with forbiddenModels = ["test/forbidden"]
-  // so the resolver's loadSettings(ctx.cwd).forbiddenModels returns the gate.
-  // Use the env var to override globalSettingsPath() so the suite is hermetic
-  // from the developer's real ~/.pi/agent/pi-goal-list-loop-audit.settings.json.
   const globalSettingsFile = path.join(tmpDir, "global.settings.json");
-  fs.writeFileSync(globalSettingsFile, JSON.stringify({ forbiddenModels: ["test/forbidden"] }), "utf-8");
-  const prevEnv = process.env.GLLA_GLOBAL_SETTINGS_PATH;
+  fs.writeFileSync(globalSettingsFile, JSON.stringify({ forbiddenModels: ["test/forbidden"] }), "utf8");
+  const previous = process.env.GLLA_GLOBAL_SETTINGS_PATH;
   process.env.GLLA_GLOBAL_SETTINGS_PATH = globalSettingsFile;
   const notifyMessages: { kind: string; text: string }[] = [];
   const ctx: any = {
     model: session,
     modelRegistry: registry,
     cwd: tmpDir,
-    ui: {
-      notify(text: string, kind: string) {
-        notifyMessages.push({ kind, text });
-      },
-    },
+    ui: { notify(text: string, kind: string) { notifyMessages.push({ kind, text }); } },
     __notifyMessages: notifyMessages,
-    __restoreEnv: () => {
-      if (prevEnv === undefined) delete process.env.GLLA_GLOBAL_SETTINGS_PATH;
-      else process.env.GLLA_GLOBAL_SETTINGS_PATH = prevEnv;
-    },
   };
-  return { ctx, session, primary, fallback1, fallback2, forbiddenRef, tmpDir };
+  const restore = () => {
+    if (previous === undefined) delete process.env.GLLA_GLOBAL_SETTINGS_PATH;
+    else process.env.GLLA_GLOBAL_SETTINGS_PATH = previous;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  };
+  return { ctx, session, primary, fallback1, fallback2, forbiddenRef, tmpDir, restore };
+}
+
+async function withFakeContext<T>(fn: (fixture: FakeContext) => T | Promise<T>): Promise<T> {
+  const fixture = fakeContext();
+  try {
+    return await fn(fixture);
+  } finally {
+    fixture.restore();
+  }
 }
 
 function readLedger(tmpDir: string): any[] {
-  // Ledger writes go to <cwd>/.pi-glla/active.jsonl (ledgerPath in
-  // extensions/goal-loop-core.ts). Each line is JSON: { type, value, at }.
   const file = path.join(tmpDir, ".pi-glla", "active.jsonl");
   if (!fs.existsSync(file)) return [];
-  return fs
-    .readFileSync(file, "utf-8")
+  return fs.readFileSync(file, "utf8")
     .split("\n")
-    .filter((line) => line.trim().length > 0)
+    .filter(Boolean)
     .map((line) => JSON.parse(line));
 }
 
-/* ------------------------------------------------------------------ */
-/* 1. Plural chain — case-insensitive dedup, MAX_MAIN_MODEL_FALLBACKS cap */
-/* ------------------------------------------------------------------ */
+function result(overrides: Partial<GoalAuditorResult> = {}): GoalAuditorResult {
+  return {
+    approved: false,
+    disapproved: false,
+    output: "",
+    model: "test/model",
+    ...overrides,
+  };
+}
 
-test("auditor fallback chain is normalized via normalizeMainModelFallbackRefs (case-insensitive dedup, cap at MAX_MAIN_MODEL_FALLBACKS)", () => {
-  const { ctx, primary, fallback1, fallback2 } = fakeContext();
-  // Case-insensitive dedup: the normalizer keeps the first-seen casing,
-  // but every case-folded duplicate is dropped from the chain. We use
-  // lowercase refs here so the registry's exact-string lookup succeeds;
-  // the dedup is verified by passing two case-different duplicates of the
-  // SAME registered id — only one survives the chain.
-  const refs = [
-    "test/fallback-1",
-    "test/FALLBACK-1", // case-folded duplicate — dropped by normalizer
-    "test/fallback-2",
-    "test/primary", // case-folded duplicate of the primary pin — dropped
+test("auditor configured refs retain order and use the main normalizer", async () => {
+  await withFakeContext(({ ctx, primary, fallback1, session }) => {
+    const resolved = resolveAuditorModel(ctx, "test/primary", "test/fallback-1", true);
+    const walked = [resolved.model, ...(resolved.fallbackModels ?? []).map((candidate: any) => candidate.model)];
+    assert.deepEqual(walked, [primary, fallback1, session]);
+    assert.deepEqual(
+      normalizeMainModelFallbackRefs(["test/primary", "TEST/PRIMARY", "test/fallback-1"]),
+      ["test/primary", "test/fallback-1"],
+    );
+    assert.equal(MAX_MAIN_MODEL_FALLBACKS, 10);
+  });
+});
+
+test("auditor forbidden refs are skipped silently and recorded", async () => {
+  await withFakeContext(({ ctx, primary, forbiddenRef }) => {
+    const before = ctx.__notifyMessages.length;
+    const resolved = resolveAuditorModel(ctx, "test/primary", "test/forbidden", true);
+    const walked = [resolved.model, ...(resolved.fallbackModels ?? []).map((candidate: any) => candidate.model)];
+    assert.ok(walked.includes(primary));
+    assert.ok(!walked.includes(forbiddenRef));
+    const forbiddenEvents = readLedger(ctx.cwd).filter(
+      (entry) => entry.type === "auditor_model_fallback" && entry.value?.reason === "forbidden",
+    );
+    assert.ok(forbiddenEvents.length >= 1);
+    const newWarnings = ctx.__notifyMessages.slice(before).filter((entry: any) => entry.kind === "warning" && /forbidden/i.test(entry.text));
+    assert.equal(newWarnings.length, 0);
+  });
+});
+
+test("auditor retries the same ref, then walks the next untried ref with bounded shared backoff", async () => {
+  const candidates: AuditorFallbackCandidate[] = [
+    { ref: "test/primary", model: { provider: "test", id: "primary" }, via: "setting" },
+    { ref: "test/primary", model: { provider: "test", id: "primary" }, via: "duplicate" },
+    { ref: "test/fallback-1", model: { provider: "test", id: "fallback-1" }, via: "fallback-pin" },
   ];
-  const resolved = resolveAuditorModel(
-    ctx,
-    "test/primary",
-    undefined,
-    true,
-    refs,
-  );
-  assert.ok(resolved.model, "a primary is selected");
-  assert.equal(resolved.model, primary, "primary is selected as the head of the chain");
-  // The dedup'd chain order after normalization: [primary, fallback-1,
-  // fallback-2]. The session-fallback tail is ALWAYS appended as the
-  // last-resort (preserves the existing v0.32.0+ semantics) so the
-  // walked chain has 4 entries: head + 2 fallbacks + session last resort.
-  const walked = [resolved.model, ...(resolved.fallbackModels ?? []).map((c: any) => c.model)];
-  assert.deepEqual(
-    walked,
-    [primary, fallback1, fallback2, ctx.model],
-    "chain order after dedup: primary, fallback-1, fallback-2, session last resort",
-  );
+  const calls: string[] = [];
+  const waits: number[] = [];
+  const selections: string[] = [];
+  const fallbacks: string[] = [];
+  const outcome = await runAuditorFallbackWithPolicy(candidates, async (candidate) => {
+    const ref = candidate.ref!;
+    calls.push(ref);
+    return ref === "test/primary"
+      ? result({ error: "503 upstream unavailable", model: ref })
+      : result({ approved: true, model: ref });
+  }, {
+    retryBaseMinutes: 1,
+    sleep: async (ms) => { waits.push(ms); },
+    shouldRetry: () => true,
+    onSelection: (event) => { if (event.toRef) selections.push(`${event.reason}:${event.toRef}`); },
+    onFallback: (from, to) => { fallbacks.push(`${from.ref}->${to.ref}`); },
+  });
+
+  assert.equal(outcome.result.approved, true);
+  assert.equal(outcome.retriedOnce, true);
+  assert.equal(outcome.fallbackUsed, true);
+  assert.deepEqual(calls, ["test/primary", "test/primary", "test/fallback-1"]);
+  assert.deepEqual(fallbacks, ["test/primary->test/fallback-1"]);
+  assert.deepEqual(waits, [5_000, 60_000]);
+  assert.ok(waits.every((delay) => delay >= 1_000 && delay <= MAIN_MODEL_MAX_RETRY_DELAY_MS));
+  assert.deepEqual(selections, ["ok:test/primary", "ok:test/fallback-1"]);
 });
 
-test("auditor plural chain is capped at MAX_MAIN_MODEL_FALLBACKS (10) entries — same primitive as main", () => {
-  const { ctx } = fakeContext();
-  // Build a chain with MAX+5 fake refs. Only one real model is resolvable
-  // (test/primary); the rest are unregistered, which the resolver warns
-  // loudly for and then skips — but the chain length is what we pin.
-  const overflow = Array.from({ length: MAX_MAIN_MODEL_FALLBACKS + 5 }, (_, i) => `test/nonexistent-${i}`);
-  const refs = ["test/primary", ...overflow];
-  const resolved = resolveAuditorModel(ctx, undefined, undefined, true, refs);
-  // The chain is normalized to MAX entries; the rest are dropped before the
-  // walker sees them.
-  const total = 1 + (resolved.fallbackModels?.length ?? 0);
-  assert.ok(total <= MAX_MAIN_MODEL_FALLBACKS + 1, `chain length (${total}) stays within the cap+1 (primary)`);
-  assert.ok(resolved.model, "primary resolved");
+test("auditor forbidden and duplicate refs are skipped before retry ordering", async () => {
+  const candidates: AuditorFallbackCandidate[] = [
+    { ref: "test/forbidden", model: { provider: "test", id: "forbidden" }, via: "forbidden" },
+    { ref: "test/primary", model: { provider: "test", id: "primary" }, via: "setting" },
+    { ref: "TEST/PRIMARY", model: { provider: "test", id: "primary" }, via: "duplicate" },
+    { ref: "test/fallback-2", model: { provider: "test", id: "fallback-2" }, via: "fallback-pin" },
+  ];
+  const calls: string[] = [];
+  const events: string[] = [];
+  const outcome = await runAuditorFallbackWithPolicy(candidates, async (candidate) => {
+    calls.push(candidate.ref!);
+    return candidate.ref === "test/primary"
+      ? result({ error: "503 transient", model: candidate.ref })
+      : result({ approved: true, model: candidate.ref });
+  }, {
+    forbiddenRefs: ["test/forbidden"],
+    sleep: async () => {},
+    shouldRetry: () => true,
+    onSelection: (event) => { if (event.toRef) events.push(`${event.reason}:${event.toRef}`); },
+  });
+  assert.equal(outcome.result.approved, true);
+  assert.deepEqual(calls, ["test/primary", "test/primary", "test/fallback-2"]);
+  assert.ok(events.includes("forbidden:test/forbidden"));
 });
 
-/* ------------------------------------------------------------------ */
-/* 2. Forbidden refs are silently skipped                              */
-/* ------------------------------------------------------------------ */
-
-test("auditor forbidden refs are silently skipped — no user-facing warning, ledger records reason:\"forbidden\"", () => {
-  const { ctx, primary, fallback1, fallback2, forbiddenRef } = fakeContext();
-  const beforeNotifyLen = ctx.__notifyMessages.length;
-  // The plural slot is the only forbidden entry; the legacy walker pins
-  // (the primary and the singular fallbackRef) are valid. The forbidden
-  // entry in the plural chain is silently dropped by the post-walker
-  // forbidden-gate pass.
-  const resolved = resolveAuditorModel(
-    ctx,
-    "test/primary",
-    "test/fallback-2",
-    true,
-    ["test/forbidden", "test/fallback-1"],
-  );
-  // The forbidden ref never appears in the walked chain.
-  const walked = [resolved.model, ...(resolved.fallbackModels ?? []).map((c: any) => c.model)];
-  assert.ok(!walked.includes(forbiddenRef), "forbidden ref never appears in the walked chain");
-  assert.ok(walked.includes(primary), "primary IS in the walked chain (valid head)");
-  assert.ok(walked.includes(fallback1), "fallback-1 IS in the walked chain (valid post-gate slot)");
-  assert.ok(walked.includes(fallback2), "fallback-2 IS in the walked chain (valid singular fallback)");
-  // Ledger emits the reason:"forbidden" event for forensic trail.
-  const ledger = readLedger(ctx.cwd);
-  const forbiddenEvents = ledger.filter((e) => e.type === "auditor_model_fallback" && e.value?.reason === "forbidden");
-  assert.ok(forbiddenEvents.length >= 1, `at least one auditor_model_fallback reason:forbidden event recorded (got ${forbiddenEvents.length})`);
-  // User-facing notify surface: the forbidden skip MUST NOT raise a warning
-  // (forbidden is user-intent, not an unavailable ref).
-  const afterNotify = ctx.__notifyMessages.slice(beforeNotifyLen);
-  const loudForbiddenWarnings = afterNotify.filter(
-    (m: any) => m.kind === "warning" && /is unavailable/i.test(m.text) && /forbidden/i.test(m.text),
-  );
-  assert.equal(loudForbiddenWarnings.length, 0, "no loud warning raised for the forbidden ref");
+test("non-recoverable auditor failures stop without retrying or advancing", async () => {
+  const waits: number[] = [];
+  let calls = 0;
+  const outcome = await runAuditorFallbackWithPolicy([
+    { ref: "test/primary", model: { provider: "test", id: "primary" }, via: "setting" },
+    { ref: "test/fallback-1", model: { provider: "test", id: "fallback-1" }, via: "fallback-pin" },
+  ], async () => {
+    calls++;
+    return result({ error: "context window exceeded" });
+  }, { sleep: async (ms) => { waits.push(ms); }, shouldRetry: () => true });
+  assert.equal(calls, 1);
+  assert.deepEqual(waits, []);
+  assert.equal(outcome.fallbackUsed, false);
 });
 
-/* ------------------------------------------------------------------ */
-/* 3. Deprecated auditorModelFallback (singular) alias still works    */
-/* ------------------------------------------------------------------ */
+test("auditor and drafter source paths name the shared policy primitives", () => {
+  const processSource = fs.readFileSync("extensions/goal-loop-auditor-process.ts", "utf8");
+  assert.match(processSource, /classifyMainModelFailure/);
+  assert.match(processSource, /nextUntriedModelRef/);
+  assert.match(processSource, /mainModelFailureDelayMs/);
+  assert.match(processSource, /new ModelSelector/);
 
-test("the deprecated auditorModelFallback (singular) alias is appended to the plural chain — legacy global.json entries keep working", () => {
-  const { ctx, primary, fallback1, fallback2 } = fakeContext();
-  // Legacy user config: only the singular slot. Should still flow into the
-  // chain the same way the plural does.
-  const legacy = resolveAuditorModel(ctx, "test/primary", "test/fallback-1", true);
-  assert.equal(legacy.model, primary);
-  const legacyRefs = [legacy.model, ...(legacy.fallbackModels ?? []).map((c: any) => c.model)];
-  assert.ok(legacyRefs.includes(fallback1), "singular fallback reaches fallback-1");
-  // New user config: only the plural. Same shape, same semantics.
-  const modern = resolveAuditorModel(ctx, "test/primary", undefined, true, ["test/fallback-1"]);
-  assert.equal(modern.model, primary);
-  const modernRefs = [modern.model, ...(modern.fallbackModels ?? []).map((c: any) => c.model)];
-  assert.ok(modernRefs.includes(fallback1), "plural fallback reaches fallback-1");
-  // Mixed config: both set — the singular is appended before the plural so
-  // a legacy setting still wins the first fallback slot.
-  const mixed = resolveAuditorModel(ctx, "test/primary", "test/fallback-1", true, ["test/fallback-2"]);
-  assert.equal(mixed.model, primary);
-  const mixedRefs = [mixed.model, ...(mixed.fallbackModels ?? []).map((c: any) => c.model)];
-  assert.ok(mixedRefs.includes(fallback1), "mixed config still includes the singular fallback-1");
-  assert.ok(mixedRefs.includes(fallback2), "mixed config also includes the plural fallback-2");
-});
+  const hooksSource = fs.readFileSync("extensions/loops/goal-auditor-hooks.ts", "utf8");
+  assert.match(hooksSource, /runAuditorFallbackWithPolicy/);
+  assert.doesNotMatch(hooksSource, /runWithInfraRetry\(/);
 
-/* ------------------------------------------------------------------ */
-/* 4. Same primitives as main — uniform envelope via ModelSelector    */
-/* ------------------------------------------------------------------ */
-
-test("auditor fallback path goes through the ModelSelector / forbidden-gate / dedup primitives shared with main and drafter", () => {
-  // Static check: the auditor resolver imports normalizeMainModelFallbackRefs
-  // (the canonical normalizer) and runs the plural chain through it. The
-  // drafter does the same at extensions/drafter-model.ts. This pins the
-  // dependency: pulling the import out would break the unification, and a
-  // test catches it.
-  const uiSource = fs.readFileSync("extensions/loops/goal-settings-ui.ts", "utf-8");
-  // The import block is multi-line. The dependency on the canonical
-  // normalizer is what unifies main, drafter, and auditor — pulling the
-  // import out would break the unification, and this test catches it.
-  assert.match(
-    uiSource,
-    /from "\.\.\/main-model-recovery\.js";[\s\S]*?normalizeMainModelFallbackRefs/,
-    "auditor resolver imports normalizeMainModelFallbackRefs from main-model-recovery.js (same primitive as main + drafter)",
-  );
-  assert.match(
-    uiSource,
-    /import \{[\s\S]*?normalizeMainModelFallbackRefs[\s\S]*?\} from "\.\.\/main-model-recovery\.js";/,
-    "auditor resolver assembles the chain through normalizeMainModelFallbackRefs (dedup + cap + order)",
-  );
-  // The drafter uses the same normalizer at the same call site — pinning the
-  // shared primitive.
-  const drafterSource = fs.readFileSync("extensions/drafter-model.ts", "utf-8");
-  assert.match(
-    drafterSource,
-    /normalizeMainModelFallbackRefs/,
-    "drafter resolver uses normalizeMainModelFallbackRefs (same primitive as main + auditor)",
-  );
+  const drafterSource = fs.readFileSync("extensions/drafter-model.ts", "utf8");
+  assert.match(drafterSource, /normalizeMainModelFallbackRefs/);
+  assert.match(drafterSource, /new ModelSelector/);
 });

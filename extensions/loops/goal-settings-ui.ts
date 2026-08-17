@@ -1127,43 +1127,6 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       if (pick.kind === "session") ctx.ui.notify("Auditor fallback cleared — a session on the pinned auditor model keeps that model.", "info");
       return;
     }
-    case "auditorModelFallbacks": {
-      // v0.35.5: plural chain picker. Shows the current list, lets the user
-      // append, replace, or clear. The chain is walked in order through the
-      // same ModelSelector / forbidden-gate / dedup / cap (≤10) the main
-      // and drafter chains use.
-      const cur = loadSettings(ctx.cwd).auditorModelFallbacks ?? [];
-      const action = await ctx.ui.select(`Auditor fallback chain (currently ${cur.length} ref${cur.length === 1 ? "" : "s"}) — choose how to edit`, [
-        "append — pick the next ref",
-        "replace — clear and pick a new chain",
-        "clear — remove every ref (session model is the last resort)",
-      ]);
-      if (!action) return;
-      if (action.startsWith("clear")) {
-        saveSettings("global", ctx.cwd, { auditorModelFallbacks: [] });
-        ctx.ui.notify("Auditor fallback chain cleared — session model is the last resort.", "info");
-        return;
-      }
-      if (action.startsWith("replace")) {
-        const next: string[] = [];
-        for (;;) {
-          const pick = await promptModelRef(ctx, "Auditor fallback ref (empty or cancel finishes)", "provider/model-id — empty or Esc finishes");
-          if (pick === undefined || (pick.kind === "session")) break;
-          next.push(pick.ref);
-          const more = await ctx.ui.select(`Chain so far: ${next.join(" → ")}`, ["add another", "finish"]);
-          if (!more || more.startsWith("finish")) break;
-        }
-        saveSettings("global", ctx.cwd, { auditorModelFallbacks: next });
-        ctx.ui.notify(`Auditor fallback chain replaced (${next.length} ref${next.length === 1 ? "" : "s"}).`, "info");
-        return;
-      }
-      // append
-      const pick = await promptModelRef(ctx, "Auditor fallback ref to append", "provider/model-id — empty or cancel cancels");
-      if (pick === undefined || pick.kind === "session") return;
-      saveSettings("global", ctx.cwd, { auditorModelFallbacks: [...cur, pick.ref] });
-      ctx.ui.notify(`Auditor fallback chain now ${[...cur, pick.ref].join(" → ")}.`, "info");
-      return;
-    }
     case "auditorSameSessionSwap": {
       const v = await ctx.ui.select("Same-model swap — when the pinned auditor IS the session model, walk the fallback pin (a same-family model shares the executor's blind spots)", [
         "on — the verifier differs from the executor (default)",
