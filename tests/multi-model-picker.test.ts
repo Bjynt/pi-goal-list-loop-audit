@@ -13,7 +13,7 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
 import { buildModelPickItems } from "../extensions/model-picker.ts";
-import { MultiModelPickerComponent } from "../extensions/multi-model-picker.ts";
+import { MultiModelPickerComponent, type MultiModelPickerResult } from "../extensions/multi-model-picker.ts";
 
 const THEME = {
   fg: (_c: string, t: string) => t,
@@ -39,7 +39,7 @@ const MODELS = [
   { provider: "openrouter", id: "anthropic/claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
 ];
 
-type PickerResult = string[] | undefined;
+type PickerResult = MultiModelPickerResult;
 
 function makePicker(
   items: ReturnType<typeof buildModelPickItems>,

@@ -95,7 +95,16 @@ export class MultiModelPickerComponent {
     done: (result: MultiModelPickerResult) => void,
   ) {
     this.title = deps.title;
-    this.items = deps.items;
+    this.includeInheritOption = deps.includeInheritOption === true || deps.items.some((item) => item.kind === "inherit");
+    const inheritItem: ModelPickItem = {
+      kind: "inherit",
+      label: "inherit from session — use the live session model",
+      searchText: "inherit from session live session model",
+      inheritFromSession: true,
+    };
+    this.items = this.includeInheritOption && !deps.items.some((item) => item.kind === "inherit")
+      ? [inheritItem, ...deps.items]
+      : deps.items;
     this.maxRows = deps.maxVisibleRows ?? 12;
     this.maxSelections = deps.maxSelections !== undefined && Number.isInteger(deps.maxSelections) && deps.maxSelections >= 0
       ? deps.maxSelections
@@ -122,6 +131,7 @@ export class MultiModelPickerComponent {
       initial.push(itemRef.get(key) ?? ref);
     }
     this.selection = this.maxSelections === undefined ? initial : initial.slice(0, this.maxSelections);
+    this.inheritFromSession = this.includeInheritOption && deps.initialInheritFromSession === true;
   }
 
   /** Current search query. Exposed for tests. */
@@ -137,6 +147,11 @@ export class MultiModelPickerComponent {
   /** Selected refs in selection order (toggle order). Exposed for tests. */
   getSelected(): string[] {
     return [...this.selection];
+  }
+
+  /** Whether the explicit inherit choice is enabled. Exposed for tests. */
+  getInheritFromSession(): boolean {
+    return this.inheritFromSession;
   }
 
   /** Filtered items for the current query. Exposed for tests. */
@@ -178,7 +193,15 @@ export class MultiModelPickerComponent {
 
   private toggle(): void {
     const it = this.selectedItem();
-    if (!it || it.kind !== "model" || !it.ref) return;
+    if (!it) return;
+    if (it.kind === "inherit") {
+      if (this.includeInheritOption) {
+        this.inheritFromSession = !this.inheritFromSession;
+        this.refresh();
+      }
+      return;
+    }
+    if (it.kind !== "model" || !it.ref) return;
     const idx = this.selectionIndex(it.ref);
     if (idx >= 0) {
       // Removing a stale/blocked ref is always allowed: the user is fixing
@@ -250,6 +273,16 @@ export class MultiModelPickerComponent {
     return idx >= 0 ? `[${idx + 1}]` : "[ ]";
   }
 
+  private itemMarker(item: ModelPickItem): string {
+    if (item.kind === "inherit") return this.inheritFromSession ? "[inherit]" : "[ ]";
+    return this.orderLabel(item.ref);
+  }
+
+  private result(): MultiModelPickerResult {
+    if (!this.includeInheritOption) return [...this.selection];
+    return { refs: [...this.selection], inheritFromSession: this.inheritFromSession };
+  }
+
   private itemForRef(ref: string): ModelPickItem | undefined {
     const key = ref.toLowerCase();
     return this.items.find((item) => item.kind === "model" && item.ref?.toLowerCase() === key);
@@ -264,6 +297,11 @@ export class MultiModelPickerComponent {
       lines.push(truncateToWidth(`  0 current  ${this.currentRef}`, w, "…"));
     } else {
       lines.push(this.theme.fg("muted", "configured try order (first eligible ref wins):"));
+    }
+    if (this.includeInheritOption) {
+      const inheritedRef = this.currentRef ?? "current session model";
+      const state = this.inheritFromSession ? "on" : "off";
+      lines.push(truncateToWidth(`  inherit session  ${inheritedRef} · ${state}`, w, "…"));
     }
     if (this.selection.length === 0) {
       lines.push(this.theme.fg("dim", this.currentRef
@@ -292,6 +330,9 @@ export class MultiModelPickerComponent {
       const count = `${this.selection.length}/${this.maxSelections}`;
       lines.push(this.theme.fg(this.selection.length >= this.maxSelections ? "warning" : "muted", `selected: ${count}`));
     }
+    if (this.includeInheritOption) {
+      lines.push(this.theme.fg("muted", `inherit from session: ${this.inheritFromSession ? "selected" : "not selected"}`));
+    }
     lines.push(this.theme.fg("dim", this.orderMode
       ? "↑/↓ moves the highlighted backup · tab returns to browsing"
       : "selected rows are tried top-to-bottom · tab = order mode"));
@@ -308,7 +349,7 @@ export class MultiModelPickerComponent {
       for (let i = 0; i < window.length; i++) {
         const idx = start + i;
         const it = window[i]!;
-        const marker = this.orderLabel(it.ref);
+        const marker = this.itemMarker(it);
         const disabledReason = this.effectiveDisabledReason(it);
         const disabled = disabledReason && !this.isSelected(it.ref) ? ` · ${disabledReason}` : "";
         const row = truncateToWidth(`${marker} ${it.label}${disabled}`, w - 2, "…");
@@ -362,7 +403,7 @@ export class MultiModelPickerComponent {
         return;
       }
       if (this.keybindings.matches(data, "tui.select.confirm")) {
-        this.done([...this.selection]);
+        this.done(this.result());
         return;
       }
       if (this.keybindings.matches(data, "tui.select.cancel") || data === "\x1b") {
@@ -372,7 +413,7 @@ export class MultiModelPickerComponent {
       return;
     }
     if (this.keybindings.matches(data, "tui.select.confirm")) {
-      this.done([...this.selection]);
+      this.done(this.result());
       return;
     }
     if (this.keybindings.matches(data, "tui.select.cancel") || data === "\x1b") {

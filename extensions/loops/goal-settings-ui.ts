@@ -775,8 +775,12 @@ async function promptModelRefs(
   // an invoked factory returning undefined is a genuine user cancel.
   if (pick === undefined && !factoryInvoked) return inputFallback();
   if (pick === undefined) return undefined;
-  const normalizedPick = normalizeSelection(pick);
-  const omitted = pick.filter((ref) => !normalizedPick.some((kept) => kept.toLowerCase() === ref.toLowerCase()));
+  // The picker keeps its legacy string[] result by default, but its optional
+  // inherit row returns a structured selection so inheritance is never
+  // mistaken for a provider/model ref at this boundary.
+  const pickedRefs = Array.isArray(pick) ? pick : pick.refs;
+  const normalizedPick = normalizeSelection(pickedRefs);
+  const omitted = pickedRefs.filter((ref) => !normalizedPick.some((kept) => kept.toLowerCase() === ref.toLowerCase()));
   const omittedCurrent: string[] = opts.currentRef
     ? omitted.filter((ref) => ref.toLowerCase() === opts.currentRef!.toLowerCase())
     : [];
