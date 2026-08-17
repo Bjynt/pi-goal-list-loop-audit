@@ -680,6 +680,7 @@ function registerAgentTools(pi: any): void {
         ({ result, retriedOnce, fallbackUsed } = await runDetachedCompletionWithFallback(auditorCandidates, runAudit, {
           shouldRetry: () => detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId) !== null,
           forbiddenRefs: settings.forbiddenModels,
+          retryBaseMinutes: settings.mainModelRetryMinutes,
           onRetry: (candidate: AuditorModelCandidate, err: string) => {
             const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
             if (!current) return;

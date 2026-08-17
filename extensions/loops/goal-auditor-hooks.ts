@@ -781,12 +781,14 @@ export async function runDetachedCompletionWithFallback(
     onRetry?: (candidate: AuditorModelCandidate, error: string) => void;
     onFallback?: (from: AuditorModelCandidate, to: AuditorModelCandidate, error: string) => void;
     forbiddenRefs?: readonly string[];
+    retryBaseMinutes?: number;
   } = {},
 ): Promise<{ result: DetachedAuditResult; retriedOnce: boolean; fallbackUsed: boolean; via: string }> {
   return runAuditorFallbackWithPolicy(candidates, run, {
     forbiddenRefs: opts.forbiddenRefs,
     shouldRetry: opts.shouldRetry,
     sleep: opts.sleep,
+    retryBaseMinutes: opts.retryBaseMinutes,
     onRetry: (candidate, error) => opts.onRetry?.(candidate, error),
     onFallback: (from, to, error) => opts.onFallback?.(from, to, error),
   });
@@ -881,6 +883,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       {
         shouldRetry: () => detachedAuditContext(generation, goalId, claim.attemptId!) !== null,
         forbiddenRefs: settings.forbiddenModels,
+        retryBaseMinutes: settings.mainModelRetryMinutes,
         onRetry: (candidate, err) => {
           const current = detachedAuditContext(generation, goalId, claim.attemptId!);
           if (current) {

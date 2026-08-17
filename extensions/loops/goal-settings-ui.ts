@@ -498,7 +498,7 @@ export function resolveAuditorModel(
     seenModels.add(key);
     candidates.push({ ref: candidateRef, model, via });
   };
-  const primaryRef = configuredRefs[0];
+  const primaryRef = ref?.trim() && ref.trim().toLowerCase() !== "unset" ? configuredRefs[0] : undefined;
   // Unlike main recovery, the auditor may deliberately use the session model
   // when same-model swapping is disabled. Seed that configured primary before
   // asking the selector to walk the remaining chain.
