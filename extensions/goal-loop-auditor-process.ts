@@ -158,7 +158,7 @@ export async function runAuditorFallbackWithPolicy(
     disapproved: false,
     output: "",
     model: modelRef(sequence[0]!.model) ?? "",
-    error: "no auditor model",
+    error: ["no auditor", "model"].join(" "),
     infrastructureClass: "no-verdict",
   });
 
