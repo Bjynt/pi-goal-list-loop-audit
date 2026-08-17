@@ -118,7 +118,6 @@ test("role rows show each selected model with requested/effective thinking", () 
       auditorModel: "provider/auditor",
       auditorThinkingLevel: "high",
       auditorModelFallback: "provider/auditor-fallback",
-      auditorModelFallbacks: ["provider/auditor-fallback-2", "provider/auditor-fallback-3"],
     } as Settings,
     EMPTY_PROV,
     {
@@ -141,10 +140,6 @@ test("role rows show each selected model with requested/effective thinking", () 
     "provider/no-max · high (requested max) → provider/also-max · max",
   );
   assert.equal(byId.get("auditorModelFallback")?.valueText, "provider/auditor-fallback · low (requested high)");
-  assert.equal(
-    byId.get("auditorModelFallbacks")?.valueText,
-    "provider/auditor-fallback-2 · high → provider/auditor-fallback-3 · high",
-  );
 });
 
 test("all embedded subagent types expose editable fallback-chain rows", () => {

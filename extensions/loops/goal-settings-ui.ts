@@ -541,7 +541,7 @@ export function resolveAuditorModel(
   const currentPinned = sameSessionSwap && currentRef
     ? configuredRefs.find((candidate) => candidate.toLowerCase() === currentRef.toLowerCase())
     : undefined;
-  if (currentPinned) {
+  if (currentPinned && currentRef) {
     const replacement = candidates.find((candidate) => candidate.via === "fallback-pin" && candidate.ref?.toLowerCase() !== currentRef.toLowerCase());
     appendLedger(ctx.cwd, "auditor_model_same_as_session", { model: currentRef, fallback: replacement?.ref ?? null });
     if (replacement?.ref) {

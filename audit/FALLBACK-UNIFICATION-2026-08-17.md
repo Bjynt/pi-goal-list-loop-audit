@@ -1,106 +1,63 @@
 # Fallback Unification — Audit
 
-**Goal context**: `20260817115450-ellsbm` — "Audit every model-fallback surface in the plugin, define ONE uniform fallback ordering/policy with file:line citations, then implement it so the thin paths (auditor 'fallback-pin', drafter list, probe) get the same failure-classify + untried-ref + backoff + forbidden-gate treatment main-model-recovery already has."
+**Goal context**: `20260817115450-ellsbm` — audit every model-fallback surface, define one ordering/policy, and make the thin auditor, drafter, and probe paths use the same recovery primitives without changing the settings schema, continuation directives, faulty-objective handling, or detached spawn shape.
 
-## Scope of audit
+## Scope and method
 
-The audit covers every place the plugin decides **which model to use next when the current one fails or is unavailable**. Quota-error diagnostics, fingerprinting, sanitization, and user-facing display live in `quota-retry.ts` but are deliberately *diagnostic* — the recovery policy itself delegates to the **uniform envelope** in `main-model-recovery.ts::mainModelFailureDelayMs` (which ignores the failure kind text). So the audit focuses on **model selection surfaces**, not diagnostics.
+The audit follows every place the plugin can choose a different model after a configured model is missing or a provider attempt fails. `quota-retry.ts` is included as a diagnostic surface because it fingerprints and presents provider errors, but its quota family is not allowed to choose the model chain. The `fallback` occurrences in heartbeat, loop, and continuation code were also checked; they are data/default fallbacks, not model selection.
 
-## Surfaces mapped
+## Surface and inconsistency table
 
-| Surface | File:line | Has chain? | Uses `normalizeMainModelFallbackRefs`? | Uses `ModelSelector` (forbidden gate)? | Uses `classifyMainModelFailure`? | Has backoff? |
-|---|---|---|---|---|---|---|
-| Main session | `extensions/main-model-recovery.ts` whole file (≈260 lines) | YES (plural, ≤10) | YES (own canonical normalizer at line 71) | indirectly (gate policy is `isForbiddenModel` from core) | YES (line 108) | YES (uniform envelope, `mainModelFailureDelayMs` line 209) |
-| Drafter (drafting model) | `extensions/drafter-model.ts` line 54 (`resolveDrafterModel`) | YES (plural, ≤10 via `MAX_DRAFTER_FALLBACKS = MAX_MAIN_MODEL_FALLBACKS`) | YES (line 55) | YES (ModelSelector, lines 64-66) | NO (drafting doesn't classify failures; selection only) | N/A (drafting is a single shot) |
-| Auditor (detached completion verifier) | `extensions/loops/goal-settings-ui.ts:452` (`resolveAuditorModel`) | YES (TWO slots: `auditorModel` + `auditorModelFallback`) | NO (manual `tryRef`, no normalization) | NO (forbidden gate not applied) | NO (selection only) | NO failure-time backoff (the caller walks the prepared `fallbackModels` list once) |
-| Probe / hourly retry | `extensions/main-model-recovery.ts:198` (`hourAlignedRetryDelayMs`) | n/a — uses the main chain | YES (inherits main chain) | inherits main | inherits main | hour-aligned :00:30 slot, not a model chain |
+| Surface | File:line | Ordered refs | Normalization / forbidden gate | Failure classification | Backoff |
+|---|---|---|---|---|---|
+| Main session recovery | `extensions/main-model-recovery.ts:71-84,108-129,168-176,209-215` | `mainModelFallbacks`, capped at `MAX_MAIN_MODEL_FALLBACKS` | canonical normalizer; runtime selector/gate in `extensions/model-selector.ts:112-153` and `goal-recovery.ts:899-1016` | `classifyMainModelFailure` | `mainModelFailureDelayMs` (5s first, bounded configured ladder thereafter) |
+| Drafter | `extensions/drafter-model.ts:44-82` | `drafterModel` then `drafterModelFallbacks`, session last resort | canonical normalizer at lines 43-50; `ModelSelector({ kind: "drafter" })` at lines 54-67; forbidden refs are skipped | selection-only; no provider retry loop in this resolver | N/A for one-shot selection; any caller retry must use the shared runtime envelope |
+| Auditor resolution | `extensions/loops/goal-settings-ui.ts:452-574` | existing `auditorModel`, singular `auditorModelFallback`, session last resort | now uses `normalizeMainModelFallbackRefs` and `ModelSelector({ kind: "auditor" })`; forbidden entries are ledgered and silently skipped | resolution does not classify an error; runtime does | runtime walker, not resolver |
+| Auditor detached retry/fallback | `extensions/goal-loop-auditor-process.ts:77-246`; called by `extensions/loops/goal-auditor-hooks.ts:726-752` and the complete-goal path in `extensions/loops/goal-tools.ts:680-704` | resolved candidates in configured order; attempted refs are not revisited | `runAuditorFallbackWithPolicy` uses the selector and receives `forbiddenRefs` from both callers | classifies every provider result; non-recoverable or non-retriable infrastructure errors stop | same-model retry uses `mainModelFailureDelayMs`; the next untried candidate uses the next bounded delay |
+| Main-model delayed/hourly probe | `extensions/goal-recovery.ts:878-1088`; helper cadence `extensions/main-model-recovery.ts:198-215` | primary + configured main fallback chain; durable `attempted` cursor | `sessionModelSelector` and `isForbiddenModel`; visited refs are persisted to recovery state | `classifyMainModelFailure` in the switch failure path at `goal-recovery.ts:1057-1078` | shared bounded recovery timer plus optional hour-aligned probe |
+| Quota diagnostics | `extensions/quota-retry.ts:1-260` | no model chain | `quotaSignal` is presentation/diagnostic metadata | intentionally separate from the recovery classifier | legacy diagnostic scheduling only; does not override main-model recovery cadence |
 
-The opportunistic `fallback` mentions in `goal-heartbeat.ts` (lines 347/477/635), `goal-loop.ts` (line 57/141/873), and `goal-continuation.ts` (lines 194/662/1137/1186) are **not model-fallback machinery** — they handle malformed records, completion-context fallbacks, and a `?? 0` numeric default guard. None decide "which model to use next".
+The opportunistic `fallback` references in `extensions/goal-heartbeat.ts`, `extensions/goal-loop.ts`, and `extensions/goal-continuation.ts` were inspected. They handle missing records, continuation payload defaults, or numeric defaults; none chooses a provider/model and therefore none belongs in the model-fallback walker.
 
-## The inconsistency (what the user noticed)
+## Policy
 
-The **main** path is a uniform policy. Five primitives, one chain:
+All model chains follow this order:
 
-1. `normalizeMainModelFallbackRefs(value)` — case-insensitive dedup, capped at `MAX_MAIN_MODEL_FALLBACKS = 10`, preserves original spelling for registry lookup and display (`formatMainModelFallbacks` line 88).
-2. `classifyMainModelFailure(error, opts)` — single classifier with a kind enum: `rate-limit | quota | billing | auth | transient | unknown | non-recoverable | context-overflow` (line 108). The classifier deliberately ignores provider wording to pick a chain step; only `non-recoverable` exits the chain.
-3. `nextUntriedModelRef(current, refs, attempted)` — walks the chain honoring the `attempted` set (line 168). This is the **single walker** every recovery site uses.
-4. `isForbiddenModel(ref, forbidden)` — gate from `goal-loop-core.ts`, applied via `ModelSelector` so a forbidden ref is silently skipped (drafter uses this at line 64-66).
-5. `mainModelFailureDelayMs(failure, attempt, baseMinutes, nowMs)` — **uniform envelope** at line 209. Every provider failure (rate-limit, quota, billing, transient) gets the same eager-first-retry + bounded ladder; the hourly probe adds an independent :00:30 slot via `hourAlignedRetryDelayMs` (line 198). Provider text and upstream `Retry-After` are not consulted to choose a cadence.
+1. **Normalize** at the settings boundary with `normalizeMainModelFallbackRefs`: trim, ignore unset values, deduplicate case-insensitively, preserve first-seen spelling, and cap the walk at `MAX_MAIN_MODEL_FALLBACKS`.
+2. **Select only an untried ref** with `nextUntriedModelRef`; `ModelSelector.selectNextValid` composes that cursor with registry resolution and the forbidden gate. A forbidden ref is skipped silently for the user but recorded for forensics.
+3. **Run the selected model.** The session model is a final last resort where the existing surface already promises one; it is not invented as a new configured pin.
+4. **Classify failures** with `classifyMainModelFailure`. A semantic verdict is returned immediately. A non-recoverable classification, missing-model error, or non-retriable infrastructure result stops the walk. Recoverable provider failures may retry the current ref once, then advance only to the next untried ref.
+5. **Back off uniformly** with `mainModelFailureDelayMs`. Error-family wording, quota presentation, and upstream `Retry-After` hints do not select a different cadence. The first retry is bounded at 5 seconds; later attempts use the configured exponential ladder, capped by `MAIN_MODEL_MAX_RETRY_DELAY_MS`. The main recovery's optional hourly probe remains an additional scheduled slot, not a second classifier.
 
-The **drafter** reuses main's helpers (lines 54-66 of `extensions/drafter-model.ts`): same `normalizeMainModelFallbackRefs`, same cap, same `ModelSelector` with the forbidden gate. No classifier or backoff needed because drafting is a single-shot selection, not a retry loop.
+The surface widths remain intentionally different and **the settings schema is unchanged**:
 
-The **auditor** is the odd one out:
+| Surface | Existing width | Existing setting |
+|---|---:|---|
+| Main | up to 10 | `mainModelFallbacks` |
+| Drafter | up to 10 | `drafterModelFallbacks` |
+| Auditor | primary + one fallback + session last resort | `auditorModelFallback` (singular) |
 
-- `extensions/loops/goal-settings-ui.ts:452-535` `resolveAuditorModel(ctx, ref, fallbackRef, sameSessionSwap)` accepts **two** slots only: `auditorModel` and `auditorModelFallback` (singular). Settings fields declared at `extensions/goal-settings.ts:60/64/323/324` — only two slots.
-- It does **not** use `normalizeMainModelFallbackRefs` — `tryRef(trimmed)` at line 462 is a hand-rolled split-and-lookup.
-- It does **not** use `ModelSelector` with the forbidden gate. The auditor caller in `extensions/loops/goal-auditor-hooks.ts:881` and `extensions/loops/goal-tools.ts:635` reads the resolved `fallbackModels` array but never re-validates it against `forbiddenModels` after `resolveAuditorModel` returns.
-- It does **not** classify failures. After the call returns a candidate list, the caller walks the list (the `auditorCandidates` at hooks.ts:887 and tools.ts:641) and re-runs the detached audit on the next ref, but there is no `classifyMainModelFailure` step in between — a transient 5xx and a non-recoverable auth-failure look identical to the walker.
-- It does **not** apply a backoff between retries. Each attempt re-runs immediately; only the worker's `DEFAULT_WALL_TIMEOUT_MS = 30m` and `DEFAULT_HEARTBEAT_NO_PROGRESS_MS = 10m` provide any pause (both inside `extensions/goal-loop-auditor-process.ts`).
+This goal does not rename or add auditor settings. The auditor's two configured slots are normalized and gated just like the larger main/drafter chains; the runtime policy is shared without widening the user-facing contract.
 
-The caller at `extensions/loops/goal-auditor-hooks.ts:881-887` and `extensions/loops/goal-tools.ts:635-641` does walk the chain:
+## Implementation decisions
 
-```ts
-const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(...);
-const auditorCandidates: AuditorModelCandidate[] = [{ model: auditorModel, via: via ?? "unset" }, ...(fallbackModels ?? [])];
-```
+- `extensions/model-selector.ts:31-177` remains the pure scope-aware chain walker and now accepts the `{ kind: "auditor" }` scope. It composes `nextUntriedModelRef`, the forbidden gate, registry resolution, and the shared retry-delay helper without owning runtime state.
+- `extensions/loops/goal-settings-ui.ts:452-574` now routes the existing auditor primary/fallback pins through that selector. It retains the same-session swap and session-last-resort behavior, and forbidden refs are skipped without an unavailable-model warning.
+- `extensions/goal-loop-auditor-process.ts:77-246` owns the shared detached-attempt policy. It keeps the worker request, attempt identity, timeouts, and process lifecycle unchanged; only the parent-side candidate cursor/retry timing is centralized. It calls `classifyMainModelFailure`, `nextUntriedModelRef`, `mainModelFailureDelayMs`, and `ModelSelector` directly.
+- `extensions/loops/goal-auditor-hooks.ts:726-752` keeps the compatibility wrapper exported through `goal.ts`; both detached dispatch sites pass `settings.forbiddenModels` into the policy helper. This preserves existing ledger and lifecycle callbacks.
+- `extensions/drafter-model.ts:44-82` already satisfies the selection half of the policy and needs no redesign.
+- `extensions/goal-recovery.ts:899-1078` already satisfies the probe half, including durable attempted/skipped refs and shared failure delay; it is documented here rather than duplicated.
+- `extensions/quota-retry.ts` remains diagnostic. Changing its provider-family presentation would not improve model selection and would reintroduce two competing retry policies.
 
-…then later iterates `auditorCandidates` per attempt. So a chain *exists* — it's just bounded to **two** slots (plus session), not ten, and it does not normalize/validate/forbidden-gate the refs the same way.
+## Regression coverage
 
-This is exactly the asymmetry the user described: "the main fallbacks are better handled, others not sure how would you clear or order". Main is the rigorous policy; drafter piggybacks on main's primitives; auditor has its own custom 2-slot resolver that does not share them.
+`tests/auditor-fallback-unification.test.ts` covers:
 
-## Recommended uniform ordering (the contract)
+- existing primary → singular fallback → session ordering and canonical case-insensitive normalization;
+- forbidden-ref skipping without a user-facing warning;
+- duplicate/untried cursor behavior and retry ordering;
+- the 5-second first retry and bounded later backoff before a fallback;
+- non-recoverable termination without a second worker; and
+- source-level wiring for the auditor process, hooks wrapper, and drafter selector.
 
-The plugin should treat all three surfaces as one policy with three different **fan-out widths** — but the SAME primitives for normalize / classify / forbidden-gate / backoff:
-
-1. **Normalize** the configured chain through `normalizeMainModelFallbackRefs` (case-insensitive dedup, cap at `MAX_MAIN_MODEL_FALLBACKS`, preserve original spelling).
-2. **Classify** each failure through `classifyMainModelFailure`; only `non-recoverable` exits the chain (everything else, including auth and transient, walks to the next ref).
-3. **Forbid** every ref against `forbiddenModels` via `ModelSelector` (skip silently, do not surface as an error). Drafter already does this; main's recovery walker already gates via `tryMainModelFallback`; auditor does not.
-4. **Walk** with `nextUntriedModelRef` honoring the `attempted` set; never retry a ref already attempted in this recovery episode.
-5. **Backoff** with `mainModelFailureDelayMs` (uniform envelope) — apply between attempts regardless of which surface produced the failure.
-
-The width by surface:
-
-| Surface | Width | Source setting | Reason |
-|---|---|---|---|
-| Main | ≤ 10 | `mainModelFallbacks` (plural) | main is the longest-running path; users may pin multiple providers to cross quota walls |
-| Drafter | ≤ 10 | `drafterModelFallbacks` (plural) | drafting may iterate during long goal-list runs; multiple providers hedge drafting quota |
-| Auditor | ≤ 10 (raised from 2) | **rename** `auditorModelFallback` (singular) to `auditorModelFallbacks` (plural) | the verifier is the most failure-sensitive path; a 2-slot chain is a known-bad shape (no hedging across providers) |
-
-The audit's **action** is to bring the auditor into the same shape:
-
-- Add `auditorModelFallbacks: string[]` to settings (plural).
-- Keep `auditorModelFallback` (singular) as a deprecated alias during a migration window — keep reading it, append to the chain, do not advertise in `/glla`.
-- Route `resolveAuditorModel` through `normalizeMainModelFallbackRefs` and `ModelSelector` (forbidden gate) the same way `drafter-model.ts:54-66` does.
-- Keep the existing **single-shot session-fallback tail** (the cascade to `ctx.model`) as the last resort — the user's own session model IS a useful verifier in a pinch.
-- Where the **failure-time walk** happens (hooks.ts:881 and tools.ts:635), keep the immediate-retry-once semantic (a transient blip deserves a second look on the same model) but route the subsequent walking through `nextUntriedModelRef` honoring `attempted` so the same ref isn't tried twice.
-- Hook `classifyMainModelFailure` into the walker: `non-recoverable` aborts the chain immediately (instead of silently retrying and eventually walking).
-
-The drafter and main paths need **no changes** — they already share the primitives. The audit unifies the primitives across the surface so the policy is one policy; the drafter and main continue to work as-is.
-
-## What about quota-retry?
-
-`extensions/quota-retry.ts` provides diagnostics: `providerErrorFingerprint`, `providerErrorPresentation`, `normalizeProviderErrorText`, `sanitizeProviderDisplayText`, `sanitizeProviderAuditReport`. It also provides `quotaSignal` (a parallel classifier: `rate-limit | plan-quota | billing`) and `providerRetryDelaySeconds` / `scheduleProviderRetry` — a bounded timer for legacy callers.
-
-The recovery policy itself does NOT use `quotaSignal` to choose a model. It uses `classifyMainModelFailure` (kind enum). The two classifiers are different on purpose:
-
-- `quotaSignal` is a **display projection** — it tells the user what kind of wall they hit (used by `providerErrorPresentation.action` for chat/notify copy).
-- `classifyMainModelFailure` is a **policy input** — it tells the recovery walker whether to advance the chain or not.
-
-The `quotaSignal` family is intentionally narrower (it requires `RATE_LIMIT | BILLING | PLAN_QUOTA | GENERIC_LIMIT_WALL` markers and deliberately rejects plain 403s and ambiguous "temporarily unavailable" strings to avoid turning every transient into a quota wall). The `classifyMainModelFailure` family is intentionally broader (it advances on transient 5xx and auth-failure-as-transient unless `non-recoverable` matches).
-
-The audit notes this distinction and leaves it alone. Bringing `quotaSignal` into the model-chain policy would re-create the very asymmetry the audit is collapsing (one chain, two classifiers, separate backoffs).
-
-## Out of scope
-
-Per the goal's own boundaries:
-
-- User-facing settings schema beyond the rename + alias (no new setting keys).
-- Re-touching the continuation-prompt directives or faulty-objective classifier fix.
-- Redesigning the auditor process spawn shape beyond the fallback path.
-
-## Summary
-
-- Main: full primitives; chain ≤ 10; uniform envelope. ✓
-- Drafter: shares primitives; chain ≤ 10; one-shot. ✓
-- Auditor: 2 slots, hand-rolled, no forbidden-gate, no classifier, no backoff between attempts. ✗ — needs unification.
-- Quota-retry: diagnostic + bounded timer; recovery policy deliberately delegates to main. ✓ (kept intact; role is documented)
+The test fixture restores `GLLA_GLOBAL_SETTINGS_PATH` and removes its temporary directory in `finally`, so resolver tests cannot leak settings state into the suite.
