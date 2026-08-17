@@ -56,6 +56,14 @@ auditor parked no verdict, investigate
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260817_064649.png 
 
+##
+
+if we are inheriting we should not show the agent but that we are inheriting and we should have an option in the model list to inhereit i htink
+
+right now it looks like we selected one specifically
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260817_124102.png 
+
 # Later
 
 ##
