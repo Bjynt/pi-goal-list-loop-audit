@@ -201,7 +201,7 @@ function budgetFor(width: number | undefined, prefixCols: number, floor: number)
 }
 
 function uniqueModelRefs(refs: readonly string[] | undefined): string[] {
-  const out: string[] = [];
+  const out: string[];
   const seen = new Set<string>();
   for (const value of refs ?? []) {
     if (typeof value !== "string") continue;
@@ -219,6 +219,14 @@ function uniqueModelRefs(refs: readonly string[] | undefined): string[] {
  * elapsed time: the primary source is explicit, forbidden refs stay visible
  * as skipped, and the handled refs are separate from the configured order.
  */
+function modelSourceLabel(source: string): string {
+  const key = source.trim().toLowerCase();
+  if (key === "setting" || key === "pinned" || key === "auditor-pin") return "pinned";
+  if (key === "session" || key === "session-fallback") return "inherited from session";
+  if (key.includes("fallback")) return "fallback";
+  return source.trim();
+}
+
 function modelProvenanceLines(provenance: ModelProvenanceDisplay | undefined, width?: number): string[] {
   if (!provenance) return [];
   const budget = budgetFor(width, 3, 60);
@@ -236,7 +244,8 @@ function modelProvenanceLines(provenance: ModelProvenanceDisplay | undefined, wi
   if (handledTurn) lines.push(`handled turn: ${truncate(handledTurn, budget)}`);
   const handledAudit = typeof provenance.handledAudit === "string" ? provenance.handledAudit.trim() : "";
   if (handledAudit) {
-    const via = provenance.handledAuditSource?.trim() ? ` · via ${truncate(provenance.handledAuditSource, 24)}` : "";
+    const source = provenance.handledAuditSource?.trim() ? modelSourceLabel(provenance.handledAuditSource) : "";
+    const via = source ? ` · via ${truncate(source, 24)}` : "";
     lines.push(`handled audit: ${truncate(handledAudit, Math.max(16, budget - via.length))}${via}`);
   }
   return lines;
