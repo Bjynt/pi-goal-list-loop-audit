@@ -252,7 +252,78 @@ test("stale-recovery debt still probes for same-process self-heal", async () => 
   }
 });
 
+test("a normal fresh session does not fabricate stale continuation debt", async () => {
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal({ policy: "goal", status: "active", objective: "normal startup has no stale debt" }) });
+  __testOnlyResetOwnerSession();
+  const ctx = makeMockCtx(cwd);
+  try {
+    await pi.fire("session_start", { reason: "startup" }, ctx);
+    await tick();
+    const ledger = readLedger(cwd);
+    assert.equal(ledger.filter((entry) => entry.type === "stale_continuation_rearm_armed").length, 0, "startup does not arm recovery without a stale boundary");
+    assert.equal(ledger.filter((entry) => entry.type === "stale_continuation_rearmed").length, 0, "startup does not consume nonexistent recovery debt");
+    assert.equal(invalidations(cwd).length, 0, "a healthy startup has no invalidation");
+  } finally {
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+    __testOnlyResetOwnerSession();
+  }
+});
+
 // ── (c) behavioral — a proper lifecycle shutdown precedes the death ─────
+
+test("an explicit reload boundary is durable and does not masquerade as host loss", async () => {
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal({ policy: "goal", status: "active", objective: "reload keeps the handoff truthful" }) });
+  __testOnlyResetOwnerSession();
+  const ctx = makeMockCtx(cwd);
+  try {
+    await pi.fire("session_start", { reason: "startup" }, ctx);
+    await tick();
+    await pi.fire("session_shutdown", { reason: "reload" }, ctx);
+    __testOnlySetSessionReplacementUntil(0); // exercise the post-boundary guard, not the grace timer
+    invalidateHostSession(pi, ctx);
+    __testOnlyHeartbeatTick();
+    const ledger = readLedger(cwd);
+    const shutdown = ledger.filter((entry) => entry.type === "session_shutdown");
+    assert.equal(shutdown.at(-1)?.value?.reason, "reload", "the lifecycle reason is preserved verbatim");
+    assert.equal(invalidations(cwd).length, 0, "a reload boundary is not a silent host loss");
+    assert.doesNotMatch(fs.readFileSync(`${cwd}/.pi-glla/active.jsonl`, "utf8"), /stale_continuation_rearm_armed/);
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    __testOnlySetSessionReplacementUntil(null);
+    __testOnlyResetOwnerSession();
+  }
+});
+
+test("a replacement window absorbs a handle swap before invalidation", async () => {
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal({ policy: "goal", status: "active", objective: "replacement arrives during the grace window" }) });
+  __testOnlyResetOwnerSession();
+  const ctx = makeMockCtx(cwd);
+  try {
+    await pi.fire("session_start", { reason: "startup" }, ctx);
+    await tick();
+    __testOnlySetSessionReplacementUntil(Date.now() + 60_000);
+    invalidateHostSession(pi, ctx);
+    __testOnlyHeartbeatTick();
+    const ledger = readLedger(cwd);
+    assert.ok(ledger.some((entry) => entry.type === "stale_awaiting_rebind"), "the announced replacement absorbs the stale probe");
+    assert.equal(invalidations(cwd).length, 0, "the pre-rebind swap does not emit host-loss invalidation");
+    assert.equal(readGoal(cwd) && (readGoal(cwd) as { interruptedAt?: string }).interruptedAt, undefined, "no interruption marker is invented while replacement is expected");
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    __testOnlySetSessionReplacementUntil(null);
+    __testOnlyResetOwnerSession();
+  }
+});
+
+// ── (d) behavioral — a proper lifecycle shutdown precedes the death ─────
 
 test("a lifecycle shutdown suppresses the terminal entirely — no loss event", async () => {
   // The discriminator: after a proper session_shutdown the loop has no

@@ -859,6 +859,24 @@ test("auditor progress phases are explicit and retain worker activity", () => {
   assert.match(blocked, /auditor blocked/);
 });
 
+test("worker-timeout display demotes stale progress to quiet without claiming LIVE", () => {
+  const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-timeout-display" } });
+  const stale = {
+    phase: "tool_executing" as const,
+    currentTool: "read",
+    elapsedMs: 10 * 60_000,
+    lastActivityAt: NOW - 4 * 60_000,
+  };
+  const status = buildStatusText({ goal: g, list: [] }, stale, NOW)!;
+  assert.match(status, /auditor quiet/);
+  assert.match(status, /worker activity 4m 00s ago · stale/);
+  assert.match(status, /next: worker event or \/goal cancel/);
+  assert.doesNotMatch(status, /AUDITOR · DETACHED · LIVE/);
+  const widget = buildWidgetLines({ goal: g, list: [] }, stale, NOW)!.join("\\n");
+  assert.match(widget, /auditor: quiet · detached worker/);
+  assert.doesNotMatch(widget, /LIVE/);
+});
+
 test("detached auditor status names phase, evidence, freshness, verdict wait, and next transition without pausing MAIN", () => {
   const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-contract" } });
   const liveAudit = {

@@ -135,6 +135,22 @@ test("auditor forbidden refs are skipped silently and recorded", async () => {
   });
 });
 
+test("a forbidden auditor primary is skipped before the configured fallback and remains silent", async () => {
+  await withFakeContext(({ ctx, fallback1, forbiddenRef }) => {
+    const before = ctx.__notifyMessages.length;
+    const resolved = resolveAuditorModel(ctx, "test/forbidden", "test/fallback-1", true);
+    const walked = [resolved.model, ...(resolved.fallbackModels ?? []).map((candidate: any) => candidate.model)];
+    assert.equal(resolved.model, fallback1, "the configured fallback becomes the first runnable candidate");
+    assert.ok(!walked.includes(forbiddenRef), "the forbidden primary never enters the worker candidate chain");
+    const events = readLedger(ctx.cwd).filter(
+      (entry) => entry.type === "auditor_model_fallback" && entry.value?.configured === "test/forbidden" && entry.value?.reason === "forbidden",
+    );
+    assert.equal(events.length, 1, "the forbidden primary leaves one forensic durable event");
+    const warnings = ctx.__notifyMessages.slice(before).filter((entry: any) => entry.kind === "warning" && /forbidden/i.test(entry.text));
+    assert.equal(warnings.length, 0, "explicit forbidden intent is skipped silently");
+  });
+});
+
 test("auditor retries the same ref, then walks the next untried ref with bounded shared backoff", async () => {
   const candidates: AuditorFallbackCandidate[] = [
     { ref: "test/primary", model: { provider: "test", id: "primary" }, via: "setting" },

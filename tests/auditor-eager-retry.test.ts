@@ -103,6 +103,32 @@ test("eager: detached auditor retries an account-shaped failure once before dura
   assert.deepEqual(waits, [5000], "the first retry uses the uniform eager delay");
 });
 
+test("eager: a second recoverable provider error remains infrastructure after the one retry", async () => {
+  const waits: number[] = [];
+  let calls = 0;
+  const outcome = await runDetachedCompletionWithFallback(
+    [{ model: "provider/model", via: "test" }],
+    async () => {
+      calls++;
+      return {
+        approved: false,
+        disapproved: false,
+        output: "",
+        model: "provider/model",
+        error: calls === 1 ? "503 upstream unavailable" : "429 transient provider failure",
+      };
+    },
+    { sleep: async (ms) => { waits.push(ms); }, shouldRetry: () => true },
+  );
+  assert.equal(calls, 2, "the same candidate gets exactly one eager retry");
+  assert.equal(outcome.retriedOnce, true);
+  assert.equal(outcome.fallbackUsed, false, "there is no next candidate to mislabel as a semantic verdict");
+  assert.equal(outcome.result.approved, false);
+  assert.equal(outcome.result.disapproved, false);
+  assert.equal(outcome.result.error, "429 transient provider failure", "the final provider failure is retained as infrastructure evidence");
+  assert.deepEqual(waits, [5000]);
+});
+
 test("eager: attempts remain bounded by the existing durable safety window", () => {
   const horizon = new Date(Date.now() + 2 * 60_000).toISOString();
   const plan = auditorRetryPlan(claim({ retryAttempts: 4, retryFirstAt: new Date().toISOString(), retryUntil: horizon }), providerFailure(0, false), 60);
