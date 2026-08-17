@@ -1829,6 +1829,24 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     scheduleContinuation(ctx, false, EAGER_CONTINUATION_SETTLE_MS);
   });
 
+  // Some pi hosts expose a settled turn boundary separately from agent_end.
+  // Treat it as the same fresh-contact point for a coalesced stale-host arm;
+  // with no pending arm this handler is intentionally inert.
+  pi.on("turn_end", async (_event: any, ctx: ExtensionContext) => {
+    if (tryAbsorbHostSuccessor(ctx, "turn_end")) return;
+    if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) {
+      rememberCtx(ctx);
+      return;
+    }
+    rememberCtx(ctx);
+    if (isForeignCtx(ctx)) return;
+    if (consumeStaleContinuationRearm(ctx, "turn_end")) {
+      if (state.goal?.status === "active" && !continuationTimerPending() && !pendingContinuationDispatchRef()) {
+        scheduleContinuation(ctx, true);
+      }
+    }
+  });
+
   // A model switch can happen on an agent_end before pi's core decides
   // whether its own retry budget will continue. If that budget is disabled
   // or already exhausted, settled is the safe point for exactly one fresh

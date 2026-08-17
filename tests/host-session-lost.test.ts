@@ -23,6 +23,7 @@
 import { test, afterEach, beforeEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
+import * as path from "node:path";
 
 import { classifySessionHandleInvalidation } from "../extensions/loops/goal.js";
 import {
@@ -104,6 +105,55 @@ test("host loss without any lifecycle shutdown classifies silent_handle_death", 
     pi.sessionNameError = null;
   }
 });
+
+test("fresh session_start consumes the stale arm and re-arms the goal continuation", async () => {
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal({ policy: "goal", status: "active", objective: "re-arm after host boundary" }) });
+  __testOnlyResetOwnerSession();
+  const ctx = makeMockCtx(cwd);
+  try {
+    await pi.fire("session_start", { reason: "startup" }, ctx);
+    await tick();
+    pi.sent.length = 0;
+
+    invalidateHostSession(pi, ctx);
+    __testOnlyHeartbeatTick();
+    assert.ok((readGoal(cwd) as { interruptedAt?: string }).interruptedAt, "the stale boundary keeps the durable marker until fresh contact");
+
+    // The rebind is fresh, but normal startup auto-resume is now OFF. The
+    // coalesced stale arm is the specific consent that should re-arm this
+    // already-running goal instead of converting it into a held park.
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    setGlobalAutoResume(false);
+    const successor = makeMockCtx(cwd, {
+      sessionManager: {
+        getSessionFile: () => path.join(cwd, "successor-session.jsonl"),
+        getSessionId: () => "host-successor-1",
+      },
+    });
+    await pi.fire("session_start", { reason: "reload" }, successor);
+    await tick();
+
+    const rebound = readGoal(cwd) as { status?: string; interruptedAt?: string };
+    assert.equal(rebound.status, "active");
+    assert.equal(rebound.interruptedAt, undefined, "fresh contact clears the stale park marker");
+    assert.ok(pi.sent.length >= 1, "fresh contact schedules a continuation");
+    const ledger = readLedger(cwd);
+    assert.ok(ledger.some((entry) => entry.type === "stale_continuation_rearm_armed"), "goStaleTerminal arms the coalesced recovery");
+    assert.ok(ledger.some((entry) => entry.type === "stale_continuation_rearmed" && entry.value?.via === "session_start"), "session_start consumes the arm");
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    __testOnlyResetOwnerSession();
+  }
+});
+
+function readGoal(cwd: string): unknown {
+  const state = readLedger(cwd).filter((entry) => entry.type === "state").at(-1)?.value;
+  return state?.goal;
+}
 
 async function assertIdleStateDoesNotProbe(seed: { goal?: unknown; loop?: unknown }, label: string): Promise<void> {
   setGlobalAutoResume(false);

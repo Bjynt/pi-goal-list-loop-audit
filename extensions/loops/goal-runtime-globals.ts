@@ -23,6 +23,7 @@ declare global {
   var readOwnerFile: any;
   var absorbStaleIfSuperseded: any;
   var goStaleTerminal: any;
+  var consumeStaleContinuationRearm: any;
   var SESSION_HANDOFF_FILE: any;
   var SESSION_HANDOFF_VERSION: any;
   var SESSION_HANDOFF_FRESH_MS: any;

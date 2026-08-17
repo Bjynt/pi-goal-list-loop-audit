@@ -600,7 +600,10 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   appendLedger(ctx.cwd, "session_handle_invalidated", {
     where,
     kind: isLoopActive() ? "loop" : "goal",
-    reason: invalidationReason,
+    reason: classifySessionHandleInvalidation({
+      sessionHandoffPending,
+      mainModelRecoveryActive: mainModelRecoveryActive(),
+    }),
   });
   // A silent death is the coalescing boundary: retain the durable interrupt
   // marker for an orphan with no successor, but let the first fresh host
@@ -1640,6 +1643,7 @@ defineGoalRuntimeGlobal("writeOwnerFile", { get: () => writeOwnerFile });
 defineGoalRuntimeGlobal("readOwnerFile", { get: () => readOwnerFile });
 defineGoalRuntimeGlobal("absorbStaleIfSuperseded", { get: () => absorbStaleIfSuperseded });
 defineGoalRuntimeGlobal("goStaleTerminal", { get: () => goStaleTerminal });
+defineGoalRuntimeGlobal("consumeStaleContinuationRearm", { get: () => consumeStaleContinuationRearm });
 defineGoalRuntimeGlobal("SESSION_HANDOFF_FILE", { get: () => SESSION_HANDOFF_FILE });
 defineGoalRuntimeGlobal("SESSION_HANDOFF_VERSION", { get: () => SESSION_HANDOFF_VERSION });
 defineGoalRuntimeGlobal("SESSION_HANDOFF_FRESH_MS", { get: () => SESSION_HANDOFF_FRESH_MS });
