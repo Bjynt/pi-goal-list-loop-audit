@@ -392,6 +392,11 @@ let extensionApiStale = false;
 // path must still ledger the stale handle, stop stale work, and preserve the
 // interrupt marker so a later fresh lifecycle can restore it.
 let staleTerminalDone = false;
+// v0.35.x: a silent host-handle death is a coalesced recovery boundary. Keep
+// the durable interrupt marker for an orphan with no successor, but remember
+// that the first genuinely fresh lifecycle/turn event may re-arm the goal
+// immediately instead of leaving it parked behind that marker.
+let staleContinuationRearmPending = false;
 // v0.34.19: delayed session-owned callbacks capture this generation. A
 // clearTimeout can race a callback already queued by Node; without a
 // generation check, an old compaction/refire callback can run after /reload
@@ -588,14 +593,29 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   // "invalidated without delivering a replacement" case the user keeps
   // hitting. The field distribution in the ledger now separates proper
   // session cycles from genuine host losses.
+  const invalidationReason = classifySessionHandleInvalidation({
+    sessionHandoffPending,
+    mainModelRecoveryActive: mainModelRecoveryActive(),
+  });
   appendLedger(ctx.cwd, "session_handle_invalidated", {
     where,
     kind: isLoopActive() ? "loop" : "goal",
-    reason: classifySessionHandleInvalidation({
-      sessionHandoffPending,
-      mainModelRecoveryActive: mainModelRecoveryActive(),
-    }),
+    reason: invalidationReason,
   });
+  // A silent death is the coalescing boundary: retain the durable interrupt
+  // marker for an orphan with no successor, but let the first fresh host
+  // lifecycle/turn event consume it and re-arm the continuation. Provider
+  // disconnects and announced shutdowns keep their existing recovery policy.
+  staleContinuationRearmPending = invalidationReason === "silent_handle_death"
+    && state.goal?.status === "active"
+    && state.goal.autoContinue !== false;
+  if (staleContinuationRearmPending) {
+    appendLedger(ctx.cwd, "stale_continuation_rearm_armed", {
+      goalId: state.goal?.id,
+      where,
+      reason: invalidationReason,
+    });
+  }
   const guidance = "pi invalidated this session's extension handle without delivering a replacement session. glla stopped stale sends and kept the work safe in .pi-glla/. Use /new to create a fresh context; its session_start will resume the work. If /new does not create one, restart pi normally and glla will restore the saved work.";
   // v0.35.x: an orphaned detached completion audit is not allowed to leave
   // the durable goal in AUDITING. Release the MAIN-side wait immediately and
@@ -626,6 +646,28 @@ function goStaleTerminal(ctx: ExtensionContext, where: string): void {
   try { refreshUI(ctx); } catch { /* stale UI handle is best effort */ }
   try { ctx.ui.notify(`glla: ${guidance}`, "warning"); } catch { /* stale UI handle is best effort */ }
   try { notifyExternal(ctx, `glla: extension api stale — waiting for a fresh session_start; restart pi normally only if no replacement arrives. (${where})`); } catch { /* stale notifier is best effort */ }
+}
+
+/** Consume the one-shot coalesced recovery armed by goStaleTerminal. The
+ * caller must already have a context that belongs to the fresh host and must
+ * schedule the appropriate continuation after this returns true. */
+function consumeStaleContinuationRearm(ctx: ExtensionContext, via: string): boolean {
+  if (!staleContinuationRearmPending) return false;
+  staleContinuationRearmPending = false;
+  const goal = state.goal;
+  if (!goal || goal.status !== "active" || goal.autoContinue === false) {
+    appendLedger(ctx.cwd, "stale_continuation_rearm_skipped", { via, reason: "goal-not-actionable" });
+    return false;
+  }
+  const wasInterrupted = Boolean(goal.interruptedAt);
+  if (wasInterrupted) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
+  appendLedger(ctx.cwd, "stale_continuation_rearmed", {
+    goalId: goal.id,
+    via,
+    clearedInterrupt: wasInterrupted,
+  });
+  postRestoreGraceTurns = 2;
+  return true;
 }
 
 /** v0.34.16: lifecycle handoff replaces terminal keystroke injection. A
@@ -948,6 +990,7 @@ function emitIdInvalidation(ctx: ExtensionContext, oldId: string | null, newId: 
  * between stale scenarios. Never called by production code. */
 export function __testOnlyResetStaleFlag(): void {
   extensionApiStale = false;
+  staleContinuationRearmPending = false;
 }
 
 /** TEST-ONLY hook (GitHub #4): the last draft dialog rendered through the
@@ -967,6 +1010,7 @@ export function __testOnlyLastConfirmDialog(): { title: string; body: string; op
  * when an earlier file latched them. Never called by production code. */
 export function __testOnlyResetTerminalFlags(): void {
   staleTerminalDone = false;
+  staleContinuationRearmPending = false;
   zombieStoodDown = false;
   sessionHandoffPending = false;
 }
@@ -1363,6 +1407,10 @@ function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   ctx.ui.notify("glla: pi replaced this session without delivering session_start — absorbed the live replacement as the goal-plane owner (in-memory subagent sessions stay refused).", "info");
   startHeartbeat();
   heartbeatStaleStreak = 0;
+  const staleRearmed = consumeStaleContinuationRearm(ctx, via);
+  if (staleRearmed) {
+    ctx.ui.notify(`glla: fresh host event re-armed ${state.goal?.policy === "list" ? "the list item" : "the goal"} continuation after the stale-handle boundary.`, "info");
+  }
   if (state.goal && state.goal.status === "active") {
     const wasInterrupted = Boolean(state.goal.interruptedAt);
     if (wasInterrupted) {
@@ -1425,13 +1473,20 @@ function selfHealStaleSameSession(ctx: ExtensionContext): boolean {
   appendLedger(ctx.cwd, "stale_self_healed", { was, via: "same-session command", generation: sessionGeneration });
   startHeartbeat();
   startUITicker();
+  const staleRearmed = consumeStaleContinuationRearm(ctx, "same-session command");
+  if (staleRearmed) {
+    ctx.ui.notify(`glla: the healthy handle re-armed ${state.goal?.policy === "list" ? "the list item" : "the goal"} continuation after the stale-handle boundary.`, "info");
+    if (state.goal?.status === "active" && !continuationTimerPending() && !pendingContinuationDispatchRef()) {
+      scheduleContinuation(ctx, true);
+    }
+  }
   const auditRetryStarted = state.goal?.status === "paused"
     && state.goal.pendingCompletion?.phase === "recovery-pending"
     && typeof maybeAutoRetryParkedCompletionAudit === "function"
     && maybeAutoRetryParkedCompletionAudit("host-rebind");
   if (auditRetryStarted) {
     ctx.ui.notify("glla: the stale handle recovered in place — retrying the stored no-verdict completion audit once.", "info");
-  } else if (state.goal && state.goal.status === "active" && state.goal.interruptedAt) {
+  } else if (!staleRearmed && state.goal && state.goal.status === "active" && state.goal.interruptedAt) {
     // Mirror the session-load restore gate: autoResume=on (unattended rigs)
     // resumes; the hold-everything default keeps the interrupt marker and
     // asks for an explicit resume.

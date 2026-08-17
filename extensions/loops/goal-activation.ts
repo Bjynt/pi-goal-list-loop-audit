@@ -924,6 +924,14 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       }
     }
     replaceState(readState(ctx.cwd));
+    // v0.35.x: a fresh session_start is the coalesced recovery boundary for
+    // a silent host death. Consume the one-shot arm after durable state is
+    // reloaded so the marker is cleared in the new context, and let the
+    // active-goal restore gate below schedule the continuation.
+    const staleRearmedOnSessionStart = consumeStaleContinuationRearm(ctx, "session_start");
+    if (staleRearmedOnSessionStart) {
+      appendLedger(ctx.cwd, "stale_continuation_rearm_contact", { via: "session_start" });
+    }
     // v0.34.68 (bug 1.7): heal a corrupted in-memory policy BEFORE the
     // restore gate below persists state — otherwise the hold/auto-resume
     // would rewrite the durable goal .md with the corrupted policy and
@@ -1245,12 +1253,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       // "load it but not auto start it"). Interrupted goals hold like
       // everything else; autoresume=on (unattended rigs) still auto-resumes
       // them, and the marker is cleared only on that promised auto-resume.
-      if (autoResume || recoveryResume || rebindResume || handoffResume) {
+      if (autoResume || recoveryResume || rebindResume || handoffResume || staleRearmedOnSessionStart) {
         // v0.28.1 (S2): clear the stale-handle interrupt marker — this IS
         // the auto-resume the marker promised.
         if (wasInterrupted) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
         ctx.ui.notify(
-          `Resuming ${state.goal.policy === "list" ? "list item" : "goal"}: ${displaySlice(state.goal.objective, 70)}${listQueue().length > 0 ? ` (+${listQueue().length} queued)` : ""}${wasInterrupted ? " — auto-resumed after the stale-handle interrupt" : ""}`,
+          `Resuming ${state.goal.policy === "list" ? "list item" : "goal"}: ${displaySlice(state.goal.objective, 70)}${listQueue().length > 0 ? ` (+${listQueue().length} queued)` : ""}${staleRearmedOnSessionStart ? " — re-armed after the stale-host boundary" : wasInterrupted ? " — auto-resumed after the stale-handle interrupt" : ""}`,
           "info",
         );
         // v0.28.4 (P3): skip nudge accounting for the first recovery turns.
