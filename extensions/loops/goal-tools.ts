@@ -59,8 +59,6 @@ import {
   computeListDepth,
   formatAuditLog,
   formatGoalAuditHistory,
-  runWithInfraRetry,
-  isRetriableInfraError,
   readAuditLog,
   bumpGoalRevision,
   stripThinkBlocks,
@@ -177,13 +175,10 @@ import {
   tickLengthContinue,
 } from "../length-continue.js";
 import {
-  classifyMainModelFailure,
   mainModelAutoRetryUntil,
-  mainModelFailureDelayMs,
   mainModelRetryDelayMs,
   MAIN_MODEL_AUTO_RETRY_HORIZON_MS,
   modelRef,
-  nextUntriedModelRef,
   normalizeModelRefs,
   sendStormEscalateMs,
   splitModelRef,
@@ -632,7 +627,7 @@ function registerAgentTools(pi: any): void {
       const auditGoalId = auditGoal.id;
       const auditAttemptId = completionClaim.attemptId!;
       const settings = loadSettings(ctx.cwd);
-      const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(ctx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false, settings.auditorModelFallbacks);
+      const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(ctx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
       if (modelError) {
         const modelFailureCopy = providerErrorPresentation(modelError, "completion");
         ctx.ui.notify(`Auditor model issue: ${modelFailureCopy.display}. ${modelFailureCopy.action}`, "warning");
@@ -684,6 +679,7 @@ function registerAgentTools(pi: any): void {
       try {
         ({ result, retriedOnce, fallbackUsed } = await runDetachedCompletionWithFallback(auditorCandidates, runAudit, {
           shouldRetry: () => detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId) !== null,
+          forbiddenRefs: settings.forbiddenModels,
           onRetry: (candidate: AuditorModelCandidate, err: string) => {
             const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
             if (!current) return;
