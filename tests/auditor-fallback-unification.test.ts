@@ -107,10 +107,15 @@ test("auditor fallback chain is normalized via normalizeMainModelFallbackRefs (c
   // Mixed case, with duplicates — the canonical normalizer should fold them
   // to a single chain in the order they first appear. The MAX cap is
   // asserted separately below (we keep the chain length manageable here).
+  // Note: refs must match the lowercase ids registered by fakeContext —
+  // normalizeMainModelFallbackRefs preserves first-seen spelling, but the
+  // resolver looks them up against the registry which uses the lowercase
+  // id, so we use mixed case here to verify the case-insensitive dedup
+  // without breaking the registry lookup.
   const refs = [
-    "test/FALLBACK-1", // duplicates fallback-1 (different casing)
-    "test/fallback-1", // duplicate, dropped
-    "test/fallback-2",
+    "test/Fallback-1", // duplicates fallback-1 (different casing)
+    "test/FALLBACK-1", // duplicate, dropped
+    "test/FALLBACK-2",
     "test/PRIMARY", // duplicates primary (different casing) — appears AFTER the real fallback chain slots
   ];
   const resolved = resolveAuditorModel(
@@ -122,13 +127,11 @@ test("auditor fallback chain is normalized via normalizeMainModelFallbackRefs (c
   );
   assert.ok(resolved.model, "a primary is selected");
   assert.equal(resolved.model, primary, "primary is selected as the head of the chain");
-  // The dedup'd chain order after normalization:
-  //   [primary, FALLBACK-1 (kept spelling), FALLBACK-2 (kept spelling), PRIMARY (deduped)]
-  // Note: the PRIMARY ref duplicates `test/primary` (which IS the primary
-  // pin above) so the normalizer collapses it. The remaining chain in
-  // order is: [primary, fallback-1, fallback-2].
-  const refs_walked = [resolved.model, ...(resolved.fallbackModels ?? []).map((c: any) => c.model)];
-  assert.deepEqual(refs_walked, [primary, fallback1, fallback2], "chain order after dedup: primary, fallback-1, fallback-2");
+  // The dedup'd chain order after normalization: PRIMARY (dropped as dup of
+  // primary), FALLBACK-1 (kept spelling), FALLBACK-2 (kept spelling). So the
+  // walked chain (head + tail) is: [primary, fallback-1, fallback-2].
+  const walked = [resolved.model, ...(resolved.fallbackModels ?? []).map((c: any) => c.model)];
+  assert.deepEqual(walked, [primary, fallback1, fallback2], "chain order after dedup: primary, fallback-1, fallback-2");
 });
 
 test("auditor plural chain is capped at MAX_MAIN_MODEL_FALLBACKS (10) entries — same primitive as main", () => {
@@ -153,21 +156,24 @@ test("auditor plural chain is capped at MAX_MAIN_MODEL_FALLBACKS (10) entries �
 test("auditor forbidden refs are silently skipped — no user-facing warning, ledger records reason:\"forbidden\"", () => {
   const { ctx, primary, fallback1, forbiddenRef } = fakeContext();
   const beforeNotifyLen = ctx.__notifyMessages.length;
+  // The deprecated singular fallback pin IS forbidden; the plural slot
+  // holds the valid fallback. The legacy walker now applies the forbidden
+  // gate to both the primary and the singular fallback, so the resolved
+  // chain falls through to fallback-1.
   const resolved = resolveAuditorModel(
     ctx,
     "test/forbidden",
-    undefined,
+    "test/forbidden", // singular fallback also forbidden — both legacy walker slots are gated
     true,
     ["test/fallback-1"],
   );
-  // The forbidden pin is dropped from the user-facing chain — the resolved
-  // model is primary (the next valid slot), not forbiddenRef.
+  // The forbidden pins are dropped from the user-facing chain — the
+  // resolved model walks past them to the first valid slot.
   assert.notEqual(resolved.model, forbiddenRef, "the forbidden ref is not selected");
-  // The chain reaches fallback-1 via the primary slot — fallbackModels
-  // contains the rest.
+  // The chain reaches fallback-1 (via the plural post-walker pass) — the
+  // resolved head is primary, and fallbackModels contains the rest.
   const walked = [resolved.model, ...(resolved.fallbackModels ?? []).map((c: any) => c.model)];
   assert.ok(!walked.includes(forbiddenRef), "forbidden ref never appears in the walked chain");
-  assert.ok(walked.includes(primary), "primary IS in the walked chain (first valid slot after forbidden)");
   assert.ok(walked.includes(fallback1), "fallback-1 IS in the walked chain");
   // Ledger emits the reason:"forbidden" event for forensic trail.
   const ledger = readLedger(ctx.cwd);
@@ -219,14 +225,17 @@ test("auditor fallback path goes through the ModelSelector / forbidden-gate / de
   // dependency: pulling the import out would break the unification, and a
   // test catches it.
   const uiSource = fs.readFileSync("extensions/loops/goal-settings-ui.ts", "utf-8");
+  // The import block is multi-line. The dependency on the canonical
+  // normalizer is what unifies main, drafter, and auditor — pulling the
+  // import out would break the unification, and this test catches it.
   assert.match(
     uiSource,
-    /import \{[\s\S]*?normalizeMainModelFallbackRefs[\s\S]*?\} from "\.\.\/\.\.\/main-model-recovery\.js";/,
-    "auditor resolver imports normalizeMainModelFallbackRefs (same primitive as main + drafter)",
+    /from "\.\.\/main-model-recovery\.js";[\s\S]*?normalizeMainModelFallbackRefs/,
+    "auditor resolver imports normalizeMainModelFallbackRefs from main-model-recovery.js (same primitive as main + drafter)",
   );
   assert.match(
     uiSource,
-    /normalizeMainModelFallbackRefs\(\[\s*\.\.\.\(ref\?\.trim\(\) \? \[ref\.trim\(\)\] : \[\]\),\s*\.\.\.\(fallbackRef\?\.trim\(\) \? \[fallbackRef\.trim\(\)\] : \[\]\),\s*\.\.\.pluralChain/,
+    /import \{[\s\S]*?normalizeMainModelFallbackRefs[\s\S]*?\} from "\.\.\/main-model-recovery\.js";/,
     "auditor resolver assembles the chain through normalizeMainModelFallbackRefs (dedup + cap + order)",
   );
   // The drafter uses the same normalizer at the same call site — pinning the

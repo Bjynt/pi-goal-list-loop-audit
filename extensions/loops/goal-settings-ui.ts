@@ -504,8 +504,24 @@ export function resolveAuditorModel(
   for (const refRaw of pluralChain) {
     if (chain.includes(refRaw) && !pins.some((p) => p.pin === refRaw)) pins.push({ pin: refRaw, src: "fallback-pin" });
   }
+  // v0.35.5: forbidden-gate applied in BOTH the legacy walker and the
+  // post-walker pass — the gate is user-intent and must drop the ref
+  // silently (no loud warning) regardless of whether it is the primary,
+  // the deprecated singular fallback, or a plural fallback. Matches
+  // main-model-recovery / drafter semantics.
+  const forbiddenSet = new Set<string>(
+    (loadSettings(ctx.cwd).forbiddenModels ?? []).map((s) => s.toLowerCase()),
+  );
+  const isForbidden = (ref: string) => forbiddenSet.has(ref.toLowerCase());
+  const pinnedSet = new Set<string>();
   for (let i = 0; i < pins.length; i++) {
     const { pin } = pins[i]!;
+    pinnedSet.add(pin.toLowerCase());
+    if (isForbidden(pin)) {
+      // Silent skip — forbidden is user-intent, not an unavailable ref.
+      appendLedger(ctx.cwd, "auditor_model_fallback", { configured: pin, reason: "forbidden" });
+      continue;
+    }
     const r = tryRef(pin);
     if (!r.model) {
       // Unavailable pin → cascade: next pin, then the session model (LOUD).
@@ -536,22 +552,16 @@ export function resolveAuditorModel(
     }
     addCandidate(r.model, pins[i]!.src);
   }
-  // v0.35.5: forbidden-gate pass — any pin in the normalized chain that
-  // was not added by the loud-warn walker above (e.g. a chain entry beyond
-  // the first two slots that the legacy walker never considered) is
-  // dropped silently if it is in the configured forbiddenModels list.
-  // This matches main-model-recovery / drafter semantics: the gate is
-  // user-intent and must NOT raise a warning. Already-added pins are
-  // skipped so we don't surface them twice.
+  // v0.35.5: forbidden-gate post-pass — any pin in the plural chain that
+  // the legacy walker above did not consider (e.g. duplicate or
+  // pre-normalized slot beyond the first two) is dropped silently if it
+  // is in the configured forbiddenModels list. The legacy walker already
+  // handled the first two slots above; this catches the rest.
   if (pluralChain.length > 0) {
-    const forbiddenSet = new Set<string>(
-      (loadSettings(ctx.cwd).forbiddenModels ?? []).map((s) => s.toLowerCase()),
-    );
-    const pinnedSet = new Set(pins.map((p) => p.pin.toLowerCase()));
     for (const refRaw of pluralChain) {
       const key = refRaw.toLowerCase();
       if (pinnedSet.has(key)) continue;
-      if (forbiddenSet.has(key)) {
+      if (isForbidden(refRaw)) {
         appendLedger(ctx.cwd, "auditor_model_fallback", { configured: refRaw, reason: "forbidden" });
         continue;
       }
