@@ -644,11 +644,22 @@ function registerAgentTools(pi: any): void {
       // every state/UI access below rebinds through the generation guard.
       completionAuditInFlight = true;
       completionAuditGeneration = auditGeneration;
-      latestAuditProgress = { label: "queued", lastEventAt: Date.now() };
+      latestAuditProgress = {
+        label: "queued",
+        model: modelRef(auditorModel),
+        via: via ?? "unset",
+        lastEventAt: Date.now(),
+      };
       refreshUI(ctx);
       void (async () => {
-      const runAudit = (candidate: AuditorModelCandidate) =>
-        runDetachedGoalCompletionAuditor({
+      const runAudit = (candidate: AuditorModelCandidate) => {
+        latestAuditProgress = {
+          ...(latestAuditProgress ?? {}),
+          model: modelRef(candidate.model),
+          via: candidate.via,
+        };
+        refreshUI(ctx);
+        return runDetachedGoalCompletionAuditor({
           cwd: ctx.cwd,
           goal: auditGoal,
           completionSummary: finalSummary,
@@ -668,6 +679,7 @@ function registerAgentTools(pi: any): void {
             appendLedger(current.cwd, "auditor_stalled", { goalId: auditGoalId, attemptId: auditAttemptId, ...info });
           },
         });
+      };
       // v0.25.4 (post-audit fix): a retriable infra failure (stream error,
       // auth blip — NOT user abort, NOT missing model) gets ONE automatic
       // retry with backoff before we report "auditor infrastructure error
@@ -685,7 +697,13 @@ function registerAgentTools(pi: any): void {
             const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
             if (!current) return;
             const failureCopy = providerErrorPresentation(err, "completion");
-            latestAuditProgress = { label: `${failureCopy.display} — retrying once`, lastEventAt: Date.now() };
+            latestAuditProgress = {
+              ...(latestAuditProgress ?? {}),
+              model: modelRef(candidate.model),
+              via: candidate.via,
+              label: `${failureCopy.display} — retrying once`,
+              lastEventAt: Date.now(),
+            };
             refreshUI(current);
             appendLedger(current.cwd, "audit_infra_retry", { goalId: auditGoalId, model: auditorCandidateLabel(candidate), error: failureCopy.diagnostic.slice(0, 200), diagnostic: failureCopy.diagnostic });
           },

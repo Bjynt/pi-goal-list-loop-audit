@@ -851,6 +851,8 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
   latestAuditProgress = {
     label: origin === "session-recovery" ? "recovery starting" : origin === "manual" ? "manual verify" : "provider retry",
     phase: "starting",
+    model: modelRef(auditorModel),
+    via: via ?? "unset",
     lastEventAt: Date.now(),
   };
   const auditStartMs = Date.now();
@@ -859,8 +861,17 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
   try {
     ({ result, fallbackUsed } = await runDetachedCompletionWithFallback(
       auditorCandidates,
-      (candidate) =>
-        runDetachedGoalCompletionAuditor({
+      (candidate) => {
+        // Progress records do not carry parent-side candidate metadata. Mark
+        // the selected ref before launching each attempt; publishDetached-
+        // AuditProgress preserves it across worker snapshots and fallback
+        // attempts.
+        latestAuditProgress = {
+          ...(latestAuditProgress ?? {}),
+          model: modelRef(candidate.model),
+          via: candidate.via,
+        };
+        return runDetachedGoalCompletionAuditor({
           cwd: liveCtx.cwd,
           goal: auditGoal,
           completionSummary: claim.completionSummary,
@@ -879,7 +890,8 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
             if (!current) return;
             appendLedger(current.cwd, "auditor_stalled", { goalId, attemptId: claim.attemptId, ...info });
           },
-        }),
+        });
+      },
       {
         shouldRetry: () => detachedAuditContext(generation, goalId, claim.attemptId!) !== null,
         forbiddenRefs: settings.forbiddenModels,

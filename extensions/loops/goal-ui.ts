@@ -224,7 +224,7 @@ import {
   textFingerprint,
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
-import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
+import { buildStatusText, buildWidgetLines, type AuditDisplayProgress, type ModelProvenanceDisplay } from "../goal-loop-display.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -502,6 +502,11 @@ function publishDetachedAuditProgress(
   const current = detachedAuditContext(generation, goalId, attemptId);
   if (!current) return false;
   latestAuditProgress = {
+    // Candidate identity is marked by the parent before the worker starts;
+    // preserve it across progress-file snapshots so the card never loses
+    // which model actually handled the audit.
+    model: latestAuditProgress?.model,
+    via: latestAuditProgress?.via,
     currentTool: progress.currentTool,
     currentToolArgs: progress.currentToolArgs,
     currentToolStartedAt: progress.currentToolStartedAt,
@@ -634,7 +639,36 @@ function refreshUI(ctx: ExtensionContext): void {
     const width = process.stdout.columns || 80;
     const activity = displayActivityFor(ctx);
     const settings = loadSettings(ctx.cwd);
-    const extras = { stalls: consecutiveStalls, recent: recentActions, ...activity, turnPending: pendingContinuationDispatchRef() !== null, auditorSilent: loadSettings(ctx.cwd).auditorSilent !== false, auditorProgressSignals: settings.auditorProgressSignals !== false, mainModelFallbacks: settings.mainModelFallbacks ?? [] };
+    const sessionRef = modelRef(ctx.model);
+    const recovery = state.mainModelRecovery;
+    const fallbackRefs = settings.mainModelFallbacks ?? [];
+    const skippedForbiddenRefs = [
+      ...fallbackRefs.filter((ref) => isForbiddenModel(ref, settings.forbiddenModels)),
+      ...(recovery?.skipped ?? []).filter((entry) => entry.reason === "forbidden").map((entry) => entry.ref),
+    ];
+    const modelProvenance: ModelProvenanceDisplay = {
+      // Main-model pins are session-owned today; an explicit goal pin will be
+      // able to set primarySource:"pinned" without changing the renderer.
+      primary: recovery?.primary ?? sessionRef,
+      primarySource: "inherited",
+      fallbackRefs,
+      skippedForbiddenRefs,
+      handledTurn: state.lastModelRef ?? recovery?.active ?? sessionRef,
+      ...(latestAuditProgress?.model ? {
+        handledAudit: latestAuditProgress.model,
+        handledAuditSource: latestAuditProgress.via,
+      } : {}),
+    };
+    const extras = {
+      stalls: consecutiveStalls,
+      recent: recentActions,
+      ...activity,
+      turnPending: pendingContinuationDispatchRef() !== null,
+      auditorSilent: loadSettings(ctx.cwd).auditorSilent !== false,
+      auditorProgressSignals: settings.auditorProgressSignals !== false,
+      mainModelFallbacks: fallbackRefs,
+      modelProvenance,
+    };
     // Settings are loaded once for the remaining projections; the explicit
     // auditorSilent expression preserves the source-level contract.
     ctx.ui.setStatus("pi-glla", buildStatusText(state, latestAuditProgress, Date.now(), theme, extras));
