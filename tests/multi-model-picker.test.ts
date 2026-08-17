@@ -45,11 +45,20 @@ function makePicker(
   items: ReturnType<typeof buildModelPickItems>,
   initialSelected?: string[],
   maxSelections?: number,
+  includeInheritOption = false,
+  initialInheritFromSession = false,
 ) {
   let rendered = 0;
   let result: PickerResult = "unset" as unknown as PickerResult;
   const comp = new MultiModelPickerComponent(
-    { title: "Main model backups", items, initialSelected, maxSelections },
+    {
+      title: "Main model backups",
+      items,
+      initialSelected,
+      maxSelections,
+      includeInheritOption,
+      initialInheritFromSession,
+    },
     () => { rendered++; },
     THEME,
     KB,
@@ -71,6 +80,28 @@ test("multi-model-picker: items-build integration — session/manual still rende
   assert.deepEqual(p.comp.getSelected(), []);
   assert.equal(p.comp.getSelectedIdx(), 0);
   assert.ok(p.renders === 0, "no render at construction");
+});
+
+test("multi-model-picker: explicit inherit choice is distinct from session/manual rows", () => {
+  const items = buildModelPickItems(MODELS, "minimax/MiniMax-M3");
+  const p = makePicker(items, [], undefined, true);
+  const filtered = p.comp.filteredItems();
+  assert.equal(filtered[0]!.kind, "inherit");
+  assert.equal(filtered[1]!.kind, "session");
+  assert.equal(filtered[filtered.length - 1]!.kind, "manual");
+  assert.match(filtered[0]!.label, /inherit from session/);
+
+  // Inheritance is a dynamic choice, not a provider/model ref or the legacy
+  // session-clear/manual no-op rows.
+  p.comp.handleInput(" ");
+  assert.equal(p.comp.getInheritFromSession(), true);
+  assert.deepEqual(p.comp.getSelected(), []);
+  p.comp.handleInput("\r");
+  assert.deepEqual(p.result, { refs: [], inheritFromSession: true });
+
+  const initiallyInherited = makePicker(items, ["anthropic/claude-opus-4-7"], undefined, true, true);
+  assert.equal(initiallyInherited.comp.getInheritFromSession(), true);
+  assert.ok(initiallyInherited.comp.render(100).some((line) => line.includes("[inherit]")));
 });
 
 test("multi-model-picker: typing fuzzy-filters the list; backspace widens", () => {
