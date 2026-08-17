@@ -196,6 +196,7 @@ import {
   settingsProvenance,
   type Settings,
 } from "../goal-settings.js";
+import { ModelSelector } from "../model-selector.js";
 import {
   curateAuditReviewSources,
   normalizeObjective,
@@ -372,7 +373,7 @@ import {
 } from "../goal-loop.js";
 import { defineGoalRuntimeGlobal } from "./goal-runtime-globals.js";
 
-type AuditorModelCandidate = any;
+type AuditorModelCandidate = { ref?: string; model: any; via: string };
 
 function auditorThinkingLevels(model: any): string[] {
   const ALL = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -454,127 +455,105 @@ export function resolveAuditorModel(
   ref?: string,
   fallbackRef?: string,
   sameSessionSwap = true,
-  fallbackRefs?: string[],
 ): { model: any; error?: string; via?: string; fallbackModels?: AuditorModelCandidate[] } {
   const sessionModel = ctx.model as any;
+  const currentRef = modelRef(sessionModel);
   const tryRef = (trimmed: string): { model?: any; reason?: string } => {
     const slash = trimmed.indexOf("/");
     if (slash > 0) {
       const provider = trimmed.slice(0, slash);
       const model = ctx.modelRegistry.find(provider, trimmed.slice(slash + 1));
       if (!model) return { reason: "model not found" };
-      // v0.29.17: an unkeyed provider counts as unavailable. This is a
-      // registry/auth distinction only; recovery itself remains generic.
+      // An unkeyed provider is unavailable to the detached worker even when
+      // the registry knows the model. Keep this check at the resolver edge;
+      // runtime failures are handled by the shared retry walker.
       if (!ctx.modelRegistry.hasConfiguredAuth(model)) return { reason: `no configured auth for ${provider}` };
       return { model };
     }
     const matches = ctx.modelRegistry.getAvailable().filter((m: any) => m.id === trimmed || m.name === trimmed);
-    return matches[0] ? { model: matches[0] } : { reason: "no available model matching" };
+    const model = matches.find((candidate: any) => ctx.modelRegistry.hasConfiguredAuth(candidate));
+    return model ? { model } : { reason: "no available model matching" };
   };
-  const isSession = (m: any) => sessionModel && m.provider === sessionModel.provider && m.id === sessionModel.id;
-  const modelKey = (m: any): string => {
-    if (!m || typeof m !== "object") return String(m ?? "(unset)");
-    return `${m.provider ?? ""}/${m.id ?? ""}`;
-  };
-  const candidates: AuditorModelCandidate[] = [];
-  const seen = new Set<string>();
-  const addCandidate = (model: any, via: string): void => {
-    const key = modelKey(model);
-    if (seen.has(key)) return;
-    seen.add(key);
-    candidates.push({ model, via });
-  };
-  // v0.35.5: chain assembly goes through the canonical main-model-recovery
-  // normalizer so case-insensitive dedup and the MAX_MAIN_MODEL_FALLBACKS
-  // cap apply uniformly across main, drafter, and auditor. The singular
-  // auditorModelFallback remains as a deprecated alias during the migration
-  // window — when set it is appended to the plural chain so a legacy
-  // global.json entry keeps working unchanged.
-  const pluralChain = normalizeMainModelFallbackRefs(fallbackRefs ?? []);
-  const chain = normalizeMainModelFallbackRefs([
+  const configuredRefs = normalizeMainModelFallbackRefs([
     ...(ref?.trim() ? [ref.trim()] : []),
     ...(fallbackRef?.trim() ? [fallbackRef.trim()] : []),
-    ...pluralChain,
   ]);
-  // v0.32.0: per-pin source labels — when the primary is unset, pins[0] IS
-  // the fallback and the old i===0→"setting" map mislabeled it.
-  const pins: Array<{ pin: string; src: "setting" | "fallback-pin" }> = [];
-  if (ref?.trim()) pins.push({ pin: ref.trim(), src: "setting" });
-  if (fallbackRef?.trim() && chain.includes(fallbackRef.trim())) pins.push({ pin: fallbackRef.trim(), src: "fallback-pin" });
-  for (const refRaw of pluralChain) {
-    if (chain.includes(refRaw) && !pins.some((p) => p.pin === refRaw)) pins.push({ pin: refRaw, src: "fallback-pin" });
-  }
-  // v0.35.5: forbidden-gate applied in BOTH the legacy walker and the
-  // post-walker pass — the gate is user-intent and must drop the ref
-  // silently (no loud warning) regardless of whether it is the primary,
-  // the deprecated singular fallback, or a plural fallback. Matches
-  // main-model-recovery / drafter semantics.
-  const forbiddenSet = new Set<string>(
-    (loadSettings(ctx.cwd).forbiddenModels ?? []).map((s) => s.toLowerCase()),
-  );
-  const isForbidden = (ref: string) => forbiddenSet.has(ref.toLowerCase());
-  const pinnedSet = new Set<string>();
-  for (let i = 0; i < pins.length; i++) {
-    const { pin } = pins[i]!;
-    pinnedSet.add(pin.toLowerCase());
-    if (isForbidden(pin)) {
-      // Silent skip — forbidden is user-intent, not an unavailable ref.
-      appendLedger(ctx.cwd, "auditor_model_fallback", { configured: pin, reason: "forbidden" });
-      continue;
-    }
-    const r = tryRef(pin);
-    if (!r.model) {
-      // Unavailable pin → cascade: next pin, then the session model (LOUD).
-      appendLedger(ctx.cwd, "auditor_model_fallback", { configured: pin, reason: r.reason });
-      // v0.32.0: the last pin no longer pre-announces the session fallback —
-      // the post-loop block does that (it notified twice before).
-      const modelFailureCopy = providerErrorPresentation(r.reason, "completion");
-      ctx.ui.notify(`Auditor model "${pin}" is unavailable (${modelFailureCopy.display})${i + 1 < pins.length ? " — trying the fallback pin" : ""}. Fix via /glla → Auditor model.`, "warning");
-      continue;
-    }
-    if (sameSessionSwap && isSession(r.model) && i + 1 < pins.length) {
-      // The pin IS the session model — the verifier would be the executor's
-      // own model; auto-swap down the chain (the user's move).
-      appendLedger(ctx.cwd, "auditor_model_same_as_session", { model: `${r.model.provider}/${r.model.id}`, fallback: pins[i + 1]!.pin });
-      ctx.ui.notify(`Session model IS the pinned auditor (${r.model.provider}/${r.model.id}) — auditor auto-swapped to ${pins[i + 1]!.pin} so the verifier differs.`, "info");
-      continue;
-    }
-    // v0.32.0: the nudge must fire when the LAST pin stands on the session
-    // model — the old `!fallbackRef` guard went SILENT when the fallback pin
-    // itself resolved to the session model (verifier == executor, and hop 0's
-    // notify had just claimed "auto-swapped so the verifier differs" — false).
-    if (sameSessionSwap && isSession(r.model) && i + 1 >= pins.length) {
-      // Last resort reached and it IS the session model, with no fallback
-      // ever pinned — the model stands (the session IS the last resort);
-      // one loud nudge so the user can wire the swap.
-      appendLedger(ctx.cwd, "auditor_model_same_as_session", { model: `${r.model.provider}/${r.model.id}`, fallback: null });
-      ctx.ui.notify(`The session model IS the pinned auditor (${r.model.provider}/${r.model.id}) — pin a different /glla → Auditor fallback agent so the verifier can differ.`, "warning");
-    }
-    addCandidate(r.model, pins[i]!.src);
-  }
-  // v0.35.5: forbidden-gate post-pass — any pin in the plural chain that
-  // the legacy walker above did not consider (e.g. duplicate or
-  // pre-normalized slot beyond the first two) is dropped silently if it
-  // is in the configured forbiddenModels list. The legacy walker already
-  // handled the first two slots above; this catches the rest.
-  if (pluralChain.length > 0) {
-    for (const refRaw of pluralChain) {
-      const key = refRaw.toLowerCase();
-      if (pinnedSet.has(key)) continue;
-      if (isForbidden(refRaw)) {
-        appendLedger(ctx.cwd, "auditor_model_fallback", { configured: refRaw, reason: "forbidden" });
-        continue;
+  const settings = loadSettings(ctx.cwd);
+  const forbidden = (candidate: string): boolean => isForbiddenModel(candidate, settings.forbiddenModels);
+  const selector = new ModelSelector({
+    getChain: () => configuredRefs,
+    resolve: (candidate) => tryRef(candidate).model,
+    isForbidden: forbidden,
+    record: (event) => {
+      if (event.reason === "forbidden" && event.toRef) {
+        // Forbidden is an explicit user gate, not an unavailable-model
+        // warning. Keep the forensic ledger entry but do not nudge the UI.
+        appendLedger(ctx.cwd, "auditor_model_fallback", { configured: event.toRef, reason: "forbidden" });
+        return;
       }
-      const r = tryRef(refRaw);
-      if (!r.model) continue; // already warned by the legacy walker; silent skip for extra slots
-      addCandidate(r.model, "fallback-pin");
+      if (event.reason !== "unregistered" || !event.toRef) return;
+      const reason = tryRef(event.toRef).reason ?? "model unavailable";
+      appendLedger(ctx.cwd, "auditor_model_fallback", { configured: event.toRef, reason });
+      const display = providerErrorPresentation(reason, "completion").display;
+      ctx.ui.notify(`Auditor model "${event.toRef}" is unavailable (${display}) — trying the next fallback pin. Fix via /glla → Auditor model.`, "warning");
+    },
+  });
+  const candidates: AuditorModelCandidate[] = [];
+  const attempted: string[] = [];
+  const seenModels = new Set<string>();
+  const addCandidate = (candidateRef: string, model: any, via: string): void => {
+    const key = modelRef(model)?.toLowerCase() ?? candidateRef.toLowerCase();
+    if (seenModels.has(key)) return;
+    seenModels.add(key);
+    candidates.push({ ref: candidateRef, model, via });
+  };
+  const primaryRef = configuredRefs[0];
+  // Unlike main recovery, the auditor may deliberately use the session model
+  // when same-model swapping is disabled. Seed that configured primary before
+  // asking the selector to walk the remaining chain.
+  if (
+    !sameSessionSwap
+    && primaryRef
+    && currentRef
+    && primaryRef.toLowerCase() === currentRef.toLowerCase()
+    && !forbidden(primaryRef)
+    && sessionModel
+  ) {
+    addCandidate(primaryRef, sessionModel, "setting");
+    attempted.push(primaryRef);
+  }
+  for (;;) {
+    const selected = selector.selectNextValid(
+      { kind: "auditor" },
+      sameSessionSwap ? currentRef : undefined,
+      attempted,
+    );
+    for (const visited of selector.lastVisitedRefs) {
+      if (!attempted.some((entry) => entry.toLowerCase() === visited.toLowerCase())) attempted.push(visited);
+    }
+    if (!("model" in selected) || typeof selected.ref !== "string") break;
+    const via = primaryRef && selected.ref.toLowerCase() === primaryRef.toLowerCase() ? "setting" : "fallback-pin";
+    addCandidate(selected.ref, selected.model, via);
+    if (!attempted.some((entry) => entry.toLowerCase() === selected.ref.toLowerCase())) attempted.push(selected.ref);
+  }
+  if (sessionModel && currentRef) addCandidate(currentRef, sessionModel, candidates.length > 0 ? "session-fallback" : "session");
+
+  const currentPinned = sameSessionSwap && currentRef
+    ? configuredRefs.find((candidate) => candidate.toLowerCase() === currentRef.toLowerCase())
+    : undefined;
+  if (currentPinned) {
+    const replacement = candidates.find((candidate) => candidate.via === "fallback-pin" && candidate.ref?.toLowerCase() !== currentRef.toLowerCase());
+    appendLedger(ctx.cwd, "auditor_model_same_as_session", { model: currentRef, fallback: replacement?.ref ?? null });
+    if (replacement?.ref) {
+      ctx.ui.notify(`Session model IS the pinned auditor (${currentRef}) — auditor auto-swapped to ${replacement.ref} so the verifier differs.`, "info");
+    } else {
+      ctx.ui.notify(`The session model IS the pinned auditor (${currentRef}) — pin a different /glla → Auditor fallback agent so the verifier can differ.`, "warning");
     }
   }
-  if (sessionModel) addCandidate(sessionModel, pins.length > 0 ? "session-fallback" : "session");
   if (candidates.length > 0) {
     const first = candidates[0]!;
     if (first.via === "session-fallback") {
-      appendLedger(ctx.cwd, "auditor_model_fallback", { configured: pins.map((p) => p.pin).join(" → ") || "(none)", reason: "all pins exhausted" });
+      appendLedger(ctx.cwd, "auditor_model_fallback", { configured: configuredRefs.join(" → ") || "(none)", reason: "all pins exhausted" });
       ctx.ui.notify("All pinned auditor models are unavailable — falling back to the session model. Fix via /glla → Auditor model.", "warning");
     }
     return { model: first.model, via: first.via, fallbackModels: candidates.slice(1) };
