@@ -73,6 +73,41 @@ test("imperative implementation requests mentioning audit, verification, or regr
   }
 });
 
+test("queue items that merely name the auditor role are not verification-fragments (2026-08-16 field regression)", () => {
+  // Both of these were falsely flagged as verification-fragment at list
+  // schedule time on 2026-08-16, spawning a synthetic repair goal
+  // (5bthvx) and a replan card. Root cause: REVIEWER_VOCABULARY matched a
+  // BARE "auditor" (modifier optional) and IMPERATIVE_START lacked the
+  // verbs "show"/"diagnose", so a legit imperative that merely names the
+  // roles (main/auditor/drafter, auditor workers) tripped the gate.
+  const items = [
+    "Show the selected models on the goal card and review the footer: display the goal's effective model(s) (main/auditor/drafter) on the goal card, and audit what we currently put on the goal card + footer vs what matters",
+    "Diagnose the goal-loop's heavy resource consumption: measure memory/CPU of the loop (goal-loop-forever, heartbeat, auditor workers) over a few hours of active goals, identify the top consumers, and report findings + concrete reduction candidates",
+    "Show the effective auditor, drafter, and main models on the goal card",
+    "Display the selected main/auditor/drafter model on the goal card footer",
+    "List the active auditor and drafter models in /goal status",
+    "Read the goal card and write footer review notes for the auditor model selection",
+  ];
+  for (const text of items) {
+    const result = assessSuspiciousObjective(text);
+    assert.equal(result.suspicious, false, text);
+    assert.deepEqual(result.reasons, [], text);
+  }
+});
+
+test("auditor/reviewer verdict-shaped text is still a verification-fragment", () => {
+  for (const text of [
+    "The auditor approved the fix; evidence: no regressions",
+    "Reviewer finding: the goal card shows the auditor model",
+    "Auditor report: two follow-ups remain",
+    "The reviewer feedback was: add the auditor model to the footer",
+  ]) {
+    const result = assessSuspiciousObjective(text);
+    assert.equal(result.suspicious, true, text);
+    assert.ok(result.reasons.includes("verification-fragment"), text);
+  }
+});
+
 test("explicit reviewer and evidence fragments are rejected", () => {
   for (const text of [
     "Reviewer: the implementation is complete; evidence: 16 tests pass",
