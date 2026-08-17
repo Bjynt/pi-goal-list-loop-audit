@@ -1386,10 +1386,6 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // account it, run length continuation, or schedule another send after a
     // stale terminal/handoff.
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) {
-      // A same-session agent_end can be the first fresh contact after a
-      // transiently invalidated handle. Let the healthy raw probe consume
-      // the one-shot stale arm before treating this as a late disposed event.
-      if (selfHealStaleSameSession(ctx)) return;
       // v0.34.25: pi's silent swap means the first live sign may be the
       // replacement session's own turn events. Absorb a file-backed host
       // successor — the absorb already scheduled the recovery continuation
@@ -1844,7 +1840,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   pi.on("turn_end", async (_event: any, ctx: ExtensionContext) => {
     if (tryAbsorbHostSuccessor(ctx, "turn_end")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) {
-      rememberCtx(ctx);
+      // Same-generation late turn boundaries are disposed-session callbacks;
+      // only a validated file-backed successor may consume the stale arm.
+      tryAbsorbHostSuccessor(ctx, "turn_end");
       return;
     }
     rememberCtx(ctx);
