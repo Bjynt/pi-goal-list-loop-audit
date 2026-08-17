@@ -928,7 +928,8 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // a silent host death. Consume the one-shot arm after durable state is
     // reloaded so the marker is cleared in the new context, and let the
     // active-goal restore gate below schedule the continuation.
-    const staleRearmedOnSessionStart = consumeStaleContinuationRearm(ctx, "session_start");
+    const staleRearmedOnSessionStart = !initialSessionLoadPending
+      && consumeStaleContinuationRearm(ctx, "session_start");
     if (staleRearmedOnSessionStart) {
       appendLedger(ctx.cwd, "stale_continuation_rearm_contact", { via: "session_start" });
     }
@@ -1385,6 +1386,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // account it, run length continuation, or schedule another send after a
     // stale terminal/handoff.
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) {
+      // A same-session agent_end can be the first fresh contact after a
+      // transiently invalidated handle. Let the healthy raw probe consume
+      // the one-shot stale arm before treating this as a late disposed event.
+      if (selfHealStaleSameSession(ctx)) return;
       // v0.34.25: pi's silent swap means the first live sign may be the
       // replacement session's own turn events. Absorb a file-backed host
       // successor — the absorb already scheduled the recovery continuation
