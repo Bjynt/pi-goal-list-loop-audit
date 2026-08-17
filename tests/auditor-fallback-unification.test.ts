@@ -164,7 +164,7 @@ test("auditor retries the same ref, then walks the next untried ref with bounded
   assert.equal(outcome.fallbackUsed, true);
   assert.deepEqual(calls, ["test/primary", "test/primary", "test/fallback-1"]);
   assert.deepEqual(fallbacks, ["test/primary->test/fallback-1"]);
-  assert.deepEqual(waits, [5_000, 60_000]);
+  assert.deepEqual(waits, [5_000, 120_000]);
   assert.ok(waits.every((delay) => delay >= 1_000 && delay <= MAIN_MODEL_MAX_RETRY_DELAY_MS));
   assert.deepEqual(selections, ["ok:test/primary", "ok:test/fallback-1"]);
 });

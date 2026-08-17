@@ -191,7 +191,7 @@ test("v0.29.17 wiring: model-valued settings use the fuzzy picker; unavailable a
   assert.match(pinBody, /promptModelRef\(ctx, `Model pin for \$\{agentType\} subagents`/);
   // Fallback: unavailable configured model → session model, notified + ledgered:
   assert.match(SRC, /auditor_model_fallback/);
-  assert.match(SRC, /addCandidate\(sessionModel, pins\.length > 0 \? "session-fallback" : "session"\)/);
+  assert.match(SRC, /if \(sessionModel && currentRef\) addCandidate\(currentRef, sessionModel, candidates\.length > 0 \? "session-fallback" : "session"\)/);
   assert.match(SRC, /falling back to the session model\. Fix via \/glla → Auditor model/);
   assert.match(SRC, /no configured auth for \$\{provider\}/, "unkeyed provider counts as unavailable");
 });
