@@ -201,7 +201,7 @@ function budgetFor(width: number | undefined, prefixCols: number, floor: number)
 }
 
 function uniqueModelRefs(refs: readonly string[] | undefined): string[] {
-  const out: string[];
+  const out: string[] = [];
   const seen = new Set<string>();
   for (const value of refs ?? []) {
     if (typeof value !== "string") continue;

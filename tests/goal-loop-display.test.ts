@@ -45,7 +45,7 @@ test("active goal card pins primary, ordered fallbacks, skipped forbidden refs, 
   assert.match(rendered, /fallbacks: openai\/gpt-5\.1 → anthropic\/claude-sonnet-4-5 → google\/gemini-2\.5-pro/);
   assert.match(rendered, /skipped forbidden: anthropic\/claude-sonnet-4-5/);
   assert.match(rendered, /handled turn: openai\/gpt-5\.1/);
-  assert.match(rendered, /handled audit: google\/gemini-2\.5-pro · via fallback-pin/);
+  assert.match(rendered, /handled audit: google\/gemini-2\.5-pro · via fallback/);
 
   const pinned = buildWidgetLines(
     state,
