@@ -21,6 +21,5 @@
 - `npm:@capyup/pi-goal` (installed, NOT configured) registers: goal
 - `npm:pi-goal-loop-audit` (installed, NOT configured) registers: goal, list, loop
 - `npm:pi-codex-goal` (installed, NOT configured) registers: goal
-- `npm:pi-goal-list-loop-audit` (installed, NOT configured) registers: goal, glla, list, loop
 - `npm:pi-goal-x` (installed, NOT configured) registers: goal
 - `npm:@misunders2d/pi-goal` (installed, NOT configured) registers: goal
