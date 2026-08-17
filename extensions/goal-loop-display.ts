@@ -96,6 +96,23 @@ export interface RecentActionDisplay {
 /** v0.33.0: widget extras — the refire streak plus the recent-action feed. */
 export type GoalDisplayActivity = "active" | "awaiting-first-turn" | "working" | "busy" | "queued" | "idle";
 
+export interface ModelProvenanceDisplay {
+  /** The primary model reference selected for the supervised work. */
+  primary?: string;
+  /** Whether the primary is an explicit pin or inherited from the session. */
+  primarySource?: "pinned" | "inherited";
+  /** Ordered backup references available to the main-model recovery policy. */
+  fallbackRefs?: string[];
+  /** References rejected by the explicit forbidden-model gate. */
+  skippedForbiddenRefs?: string[];
+  /** Model reference observed at the current main-host turn boundary. */
+  handledTurn?: string;
+  /** Model reference currently executing the detached audit, if any. */
+  handledAudit?: string;
+  /** Candidate provenance for the detached audit (setting/fallback/session). */
+  handledAuditSource?: string;
+}
+
 export interface WidgetExtras {
   stalls?: number;
   recent?: RecentActionDisplay[];
@@ -121,6 +138,8 @@ export interface WidgetExtras {
   auditorProgressSignals?: boolean;
   /** Effective global main-model backup order for truthful recovery HUDs. */
   mainModelFallbacks?: string[];
+  /** Truthful model-selection provenance for the active goal card/footer. */
+  modelProvenance?: ModelProvenanceDisplay;
 }
 
 /**
@@ -179,6 +198,48 @@ export const WORKER_TEXT_SPACER = "\u00A0";
 function budgetFor(width: number | undefined, prefixCols: number, floor: number): number {
   if (!width || width <= 0) return floor;
   return Math.max(floor, width - WIDGET_HORIZONTAL_MARGIN - prefixCols);
+}
+
+function uniqueModelRefs(refs: readonly string[] | undefined): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of refs ?? []) {
+    if (typeof value !== "string") continue;
+    const ref = value.trim();
+    if (!ref || seen.has(ref.toLowerCase())) continue;
+    seen.add(ref.toLowerCase());
+    out.push(ref);
+  }
+  return out;
+}
+
+/**
+ * Keep model selection provenance on the same always-visible card as the
+ * goal. These are projections of observed/configured refs, not a guess from
+ * elapsed time: the primary source is explicit, forbidden refs stay visible
+ * as skipped, and the handled refs are separate from the configured order.
+ */
+function modelProvenanceLines(provenance: ModelProvenanceDisplay | undefined, width?: number): string[] {
+  if (!provenance) return [];
+  const budget = budgetFor(width, 3, 60);
+  const lines: string[] = [];
+  const primary = typeof provenance.primary === "string" ? provenance.primary.trim() : "";
+  if (primary) {
+    const source = provenance.primarySource === "pinned" ? "pinned" : "inherited from session";
+    lines.push(`model: primary ${truncate(primary, budget)} · ${source}`);
+  }
+  const fallbacks = uniqueModelRefs(provenance.fallbackRefs);
+  if (fallbacks.length > 0) lines.push(`fallbacks: ${truncate(fallbacks.join(" → "), budget)}`);
+  const skipped = uniqueModelRefs(provenance.skippedForbiddenRefs);
+  if (skipped.length > 0) lines.push(`skipped forbidden: ${truncate(skipped.join(", "), budget)}`);
+  const handledTurn = typeof provenance.handledTurn === "string" ? provenance.handledTurn.trim() : "";
+  if (handledTurn) lines.push(`handled turn: ${truncate(handledTurn, budget)}`);
+  const handledAudit = typeof provenance.handledAudit === "string" ? provenance.handledAudit.trim() : "";
+  if (handledAudit) {
+    const via = provenance.handledAuditSource?.trim() ? ` · via ${truncate(provenance.handledAuditSource, 24)}` : "";
+    lines.push(`handled audit: ${truncate(handledAudit, Math.max(16, budget - via.length))}${via}`);
+  }
+  return lines;
 }
 
 // ---- semantic colors (optional; tests call without a theme → plain strings) ----
@@ -351,6 +412,10 @@ function auditRecoveryPending(g: Goal): boolean {
 // ---- status line (one-liner, always-on) ----
 
 export interface AuditDisplayProgress {
+  /** Model reference selected for the currently running detached attempt. */
+  model?: string;
+  /** Candidate provenance: pinned setting, fallback pin, or session fallback. */
+  via?: string;
   currentTool?: string;
   /** JSON-safe tool arguments from the detached worker; display only a safe target summary. */
   currentToolArgs?: string;
@@ -1114,6 +1179,14 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
       lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, "dim", line.replace(/^Main-model recovery: /, ""))}`);
     });
   }
+  // Model provenance is a card fact, not a notification: keep it visible
+  // across active, interrupted, auditing, and paused branches. In
+  // particular, never replace a configured forbidden ref with "none" — the
+  // skipped line explains why it did not handle the turn.
+  const provenance = modelProvenanceLines(extras?.modelProvenance, width);
+  provenance.forEach((line, i) => {
+    lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, "dim", line)}`);
+  });
   if (interrupted) {
     const resumeCmd = isList ? "/list resume" : "/goal resume";
     if (interruptedForNoStart(g)) {
