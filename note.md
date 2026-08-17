@@ -50,6 +50,12 @@ we want to work on our ui to show what matters,  but also better looking if poss
 
 seeming host sesion lost but we are working
 
+##
+
+auditor parked no verdict, investigate
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260817_064649.png 
+
 # Later
 
 ##
