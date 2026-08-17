@@ -88,7 +88,11 @@ timeout 60 npx tsc --noEmit
 ```
 
 `git diff --check` is also required before closeout. The focused suites are
-not a recursive invocation of the project test runner.
+not a recursive invocation of the project test runner. These commands were
+run in the canonical checkout with its existing installed dependencies; a
+fresh isolated worktree has no `node_modules` because that directory is
+ignored, so a rehearsal there can inspect the artifact but cannot rerun Bun
+or TypeScript until dependencies are provisioned.
 
 ## Read
 
