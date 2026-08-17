@@ -18,6 +18,7 @@ import {
   stripThinkBlocks,
   captureGoalRevision,
   isRetriableInfraError,
+  isForbiddenModel,
   type Goal,
   type GoalRevisionToken,
 } from "./goal-loop-core.js";
@@ -128,12 +129,11 @@ export async function runAuditorFallbackWithPolicy(
     const key = entry.ref.toLowerCase();
     if (!byRef.has(key)) byRef.set(key, entry.candidate);
   }
-  const forbidden = new Set((opts.forbiddenRefs ?? []).map((ref) => ref.toLowerCase()));
   const scope = { kind: "auditor" } as const;
   const selector = new ModelSelector({
     getChain: () => refs,
     resolve: (ref) => byRef.get(ref.toLowerCase())?.model,
-    isForbidden: (ref) => forbidden.has(ref.toLowerCase()),
+    isForbidden: (ref) => isForbiddenModel(ref, opts.forbiddenRefs ?? []),
     record: opts.onSelection,
   });
   const attempted: string[] = [];

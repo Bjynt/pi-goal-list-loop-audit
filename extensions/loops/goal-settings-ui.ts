@@ -173,19 +173,10 @@ import {
   tickLengthContinue,
 } from "../length-continue.js";
 import {
-  classifyMainModelFailure,
-  mainModelAutoRetryUntil,
-  mainModelFailureDelayMs,
-  mainModelRetryDelayMs,
-  MAIN_MODEL_AUTO_RETRY_HORIZON_MS,
   MAX_MAIN_MODEL_FALLBACKS,
   modelRef,
-  nextUntriedModelRef,
   normalizeModelRefs,
   normalizeMainModelFallbackRefs,
-  sendStormEscalateMs,
-  splitModelRef,
-  type MainModelFailure,
 } from "../main-model-recovery.js";
 import {
   globalSettingsPath,
