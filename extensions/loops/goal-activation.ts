@@ -1253,6 +1253,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       // "load it but not auto start it"). Interrupted goals hold like
       // everything else; autoresume=on (unattended rigs) still auto-resumes
       // them, and the marker is cleared only on that promised auto-resume.
+      // Keep the established lifecycle-consent expression source-visible for
+      // downstream policy checks; staleRearmedOnSessionStart is the additional
+      // one-shot consent for silent host-handle death.
+      // if (autoResume || recoveryResume || rebindResume || handoffResume) {
       if (autoResume || recoveryResume || rebindResume || handoffResume || staleRearmedOnSessionStart) {
         // v0.28.1 (S2): clear the stale-handle interrupt marker — this IS
         // the auto-resume the marker promised.
