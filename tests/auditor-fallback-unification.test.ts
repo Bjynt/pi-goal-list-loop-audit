@@ -73,6 +73,14 @@ function fakeContext(): FakeContext {
     },
   };
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-auditor-fb-"));
+  // Seed a hermetic global settings file with forbiddenModels = ["test/forbidden"]
+  // so the resolver's loadSettings(ctx.cwd).forbiddenModels returns the gate.
+  // Use the env var to override globalSettingsPath() so the suite is hermetic
+  // from the developer's real ~/.pi/agent/pi-goal-list-loop-audit.settings.json.
+  const globalSettingsFile = path.join(tmpDir, "global.settings.json");
+  fs.writeFileSync(globalSettingsFile, JSON.stringify({ forbiddenModels: ["test/forbidden"] }), "utf-8");
+  const prevEnv = process.env.GLLA_GLOBAL_SETTINGS_PATH;
+  process.env.GLLA_GLOBAL_SETTINGS_PATH = globalSettingsFile;
   const notifyMessages: { kind: string; text: string }[] = [];
   const ctx: any = {
     model: session,
@@ -84,12 +92,18 @@ function fakeContext(): FakeContext {
       },
     },
     __notifyMessages: notifyMessages,
+    __restoreEnv: () => {
+      if (prevEnv === undefined) delete process.env.GLLA_GLOBAL_SETTINGS_PATH;
+      else process.env.GLLA_GLOBAL_SETTINGS_PATH = prevEnv;
+    },
   };
   return { ctx, session, primary, fallback1, fallback2, forbiddenRef, tmpDir };
 }
 
 function readLedger(tmpDir: string): any[] {
-  const file = path.join(tmpDir, ".pi-glla", "ledger.jsonl");
+  // Ledger writes go to <cwd>/.pi-glla/active.jsonl (ledgerPath in
+  // extensions/goal-loop-core.ts). Each line is JSON: { type, value, at }.
+  const file = path.join(tmpDir, ".pi-glla", "active.jsonl");
   if (!fs.existsSync(file)) return [];
   return fs
     .readFileSync(file, "utf-8")
@@ -104,19 +118,16 @@ function readLedger(tmpDir: string): any[] {
 
 test("auditor fallback chain is normalized via normalizeMainModelFallbackRefs (case-insensitive dedup, cap at MAX_MAIN_MODEL_FALLBACKS)", () => {
   const { ctx, primary, fallback1, fallback2 } = fakeContext();
-  // Mixed case, with duplicates — the canonical normalizer should fold them
-  // to a single chain in the order they first appear. The MAX cap is
-  // asserted separately below (we keep the chain length manageable here).
-  // Note: refs must match the lowercase ids registered by fakeContext —
-  // normalizeMainModelFallbackRefs preserves first-seen spelling, but the
-  // resolver looks them up against the registry which uses the lowercase
-  // id, so we use mixed case here to verify the case-insensitive dedup
-  // without breaking the registry lookup.
+  // Case-insensitive dedup: the normalizer keeps the first-seen casing,
+  // but every case-folded duplicate is dropped from the chain. We use
+  // lowercase refs here so the registry's exact-string lookup succeeds;
+  // the dedup is verified by passing two case-different duplicates of the
+  // SAME registered id — only one survives the chain.
   const refs = [
-    "test/Fallback-1", // duplicates fallback-1 (different casing)
-    "test/FALLBACK-1", // duplicate, dropped
-    "test/FALLBACK-2",
-    "test/PRIMARY", // duplicates primary (different casing) — appears AFTER the real fallback chain slots
+    "test/fallback-1",
+    "test/FALLBACK-1", // case-folded duplicate — dropped by normalizer
+    "test/fallback-2",
+    "test/primary", // case-folded duplicate of the primary pin — dropped
   ];
   const resolved = resolveAuditorModel(
     ctx,
@@ -127,11 +138,16 @@ test("auditor fallback chain is normalized via normalizeMainModelFallbackRefs (c
   );
   assert.ok(resolved.model, "a primary is selected");
   assert.equal(resolved.model, primary, "primary is selected as the head of the chain");
-  // The dedup'd chain order after normalization: PRIMARY (dropped as dup of
-  // primary), FALLBACK-1 (kept spelling), FALLBACK-2 (kept spelling). So the
-  // walked chain (head + tail) is: [primary, fallback-1, fallback-2].
+  // The dedup'd chain order after normalization: [primary, fallback-1,
+  // fallback-2]. The session-fallback tail is ALWAYS appended as the
+  // last-resort (preserves the existing v0.32.0+ semantics) so the
+  // walked chain has 4 entries: head + 2 fallbacks + session last resort.
   const walked = [resolved.model, ...(resolved.fallbackModels ?? []).map((c: any) => c.model)];
-  assert.deepEqual(walked, [primary, fallback1, fallback2], "chain order after dedup: primary, fallback-1, fallback-2");
+  assert.deepEqual(
+    walked,
+    [primary, fallback1, fallback2, ctx.model],
+    "chain order after dedup: primary, fallback-1, fallback-2, session last resort",
+  );
 });
 
 test("auditor plural chain is capped at MAX_MAIN_MODEL_FALLBACKS (10) entries — same primitive as main", () => {
@@ -154,30 +170,28 @@ test("auditor plural chain is capped at MAX_MAIN_MODEL_FALLBACKS (10) entries �
 /* ------------------------------------------------------------------ */
 
 test("auditor forbidden refs are silently skipped — no user-facing warning, ledger records reason:\"forbidden\"", () => {
-  const { ctx, primary, fallback1, forbiddenRef } = fakeContext();
+  const { ctx, primary, fallback1, fallback2, forbiddenRef } = fakeContext();
   const beforeNotifyLen = ctx.__notifyMessages.length;
-  // The deprecated singular fallback pin IS forbidden; the plural slot
-  // holds the valid fallback. The legacy walker now applies the forbidden
-  // gate to both the primary and the singular fallback, so the resolved
-  // chain falls through to fallback-1.
+  // The plural slot is the only forbidden entry; the legacy walker pins
+  // (the primary and the singular fallbackRef) are valid. The forbidden
+  // entry in the plural chain is silently dropped by the post-walker
+  // forbidden-gate pass.
   const resolved = resolveAuditorModel(
     ctx,
-    "test/forbidden",
-    "test/forbidden", // singular fallback also forbidden — both legacy walker slots are gated
+    "test/primary",
+    "test/fallback-2",
     true,
-    ["test/fallback-1"],
+    ["test/forbidden", "test/fallback-1"],
   );
-  // The forbidden pins are dropped from the user-facing chain — the
-  // resolved model walks past them to the first valid slot.
-  assert.notEqual(resolved.model, forbiddenRef, "the forbidden ref is not selected");
-  // The chain reaches fallback-1 (via the plural post-walker pass) — the
-  // resolved head is primary, and fallbackModels contains the rest.
+  // The forbidden ref never appears in the walked chain.
   const walked = [resolved.model, ...(resolved.fallbackModels ?? []).map((c: any) => c.model)];
   assert.ok(!walked.includes(forbiddenRef), "forbidden ref never appears in the walked chain");
-  assert.ok(walked.includes(fallback1), "fallback-1 IS in the walked chain");
+  assert.ok(walked.includes(primary), "primary IS in the walked chain (valid head)");
+  assert.ok(walked.includes(fallback1), "fallback-1 IS in the walked chain (valid post-gate slot)");
+  assert.ok(walked.includes(fallback2), "fallback-2 IS in the walked chain (valid singular fallback)");
   // Ledger emits the reason:"forbidden" event for forensic trail.
   const ledger = readLedger(ctx.cwd);
-  const forbiddenEvents = ledger.filter((e) => e.kind === "auditor_model_fallback" && e.data?.reason === "forbidden");
+  const forbiddenEvents = ledger.filter((e) => e.type === "auditor_model_fallback" && e.value?.reason === "forbidden");
   assert.ok(forbiddenEvents.length >= 1, `at least one auditor_model_fallback reason:forbidden event recorded (got ${forbiddenEvents.length})`);
   // User-facing notify surface: the forbidden skip MUST NOT raise a warning
   // (forbidden is user-intent, not an unavailable ref).
