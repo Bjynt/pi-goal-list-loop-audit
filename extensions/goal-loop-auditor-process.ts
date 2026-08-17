@@ -14,7 +14,22 @@ import { createHash, randomUUID } from "node:crypto";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { stripThinkBlocks, captureGoalRevision, type Goal, type GoalRevisionToken } from "./goal-loop-core.js";
+import {
+  stripThinkBlocks,
+  captureGoalRevision,
+  isRetriableInfraError,
+  type Goal,
+  type GoalRevisionToken,
+} from "./goal-loop-core.js";
+import {
+  classifyMainModelFailure,
+  isMainModelFallbackFailure,
+  mainModelFailureDelayMs,
+  modelRef,
+  nextUntriedModelRef,
+  normalizeMainModelFallbackRefs,
+} from "./main-model-recovery.js";
+import { ModelSelector, type ModelFallbackEvent } from "./model-selector.js";
 import { buildGoalAuditorPrompt } from "./goal-loop-auditor.js";
 import { checkRegressionShield, parseAuditorVerdict } from "./goal-loop-shield.js";
 import { renameWithWindowsRetry } from "../scripts/goal-auditor-launch.mjs";
@@ -62,6 +77,152 @@ export interface AuditorProgress {
 }
 
 export type AuditorModel = string | { provider: string; id: string };
+
+/** A resolved auditor candidate. `ref` is optional for compatibility with
+ * older callers; the shared fallback walker derives it from `model` when it
+ * can and otherwise treats the candidate as a unique, last-resort slot. */
+export interface AuditorFallbackCandidate {
+  ref?: string;
+  model: any;
+  via: string;
+}
+
+export interface AuditorFallbackPolicyOptions {
+  /** The user-configured forbidden refs. The selector skips these silently. */
+  forbiddenRefs?: readonly string[];
+  /** Lifecycle fence checked before and after each delayed attempt. */
+  shouldRetry?: () => boolean;
+  sleep?: (ms: number) => Promise<void>;
+  retryBaseMinutes?: number;
+  onRetry?: (candidate: AuditorFallbackCandidate, error: string, delayMs: number) => void;
+  onFallback?: (from: AuditorFallbackCandidate, to: AuditorFallbackCandidate, error: string, delayMs: number) => void;
+  onSelection?: (event: ModelFallbackEvent) => void;
+}
+
+/**
+ * Run detached auditor candidates through the same policy as main-model
+ * recovery: normalize the ordered refs, gate forbidden/unregistered refs,
+ * select only an untried ref, classify provider failures, retry the current
+ * ref once, then use the bounded shared backoff before walking to the next
+ * ref. The worker transport remains unchanged; this function only owns the
+ * parent-side candidate cursor and timing.
+ */
+export async function runAuditorFallbackWithPolicy(
+  candidates: AuditorFallbackCandidate[],
+  run: (candidate: AuditorFallbackCandidate) => Promise<GoalAuditorResult>,
+  opts: AuditorFallbackPolicyOptions = {},
+): Promise<{ result: GoalAuditorResult; retriedOnce: boolean; fallbackUsed: boolean; via: string }> {
+  const sequence = candidates.length > 0 ? candidates : [{ model: undefined, via: "unset" }];
+  if (candidates.length === 0) {
+    const result = await run(sequence[0]!);
+    return { result, retriedOnce: false, fallbackUsed: false, via: "unset" };
+  }
+
+  const normalized = sequence.map((candidate, index) => ({
+    candidate,
+    ref: (candidate.ref?.trim() || modelRef(candidate.model) || `auditor/candidate-${index}`),
+  }));
+  const refs = normalizeMainModelFallbackRefs(normalized.map((entry) => entry.ref));
+  const byRef = new Map<string, AuditorFallbackCandidate>();
+  for (const entry of normalized) {
+    const key = entry.ref.toLowerCase();
+    if (!byRef.has(key)) byRef.set(key, entry.candidate);
+  }
+  const forbidden = new Set((opts.forbiddenRefs ?? []).map((ref) => ref.toLowerCase()));
+  const scope = { kind: "auditor" } as const;
+  const selector = new ModelSelector({
+    getChain: () => refs,
+    resolve: (ref) => byRef.get(ref.toLowerCase())?.model,
+    isForbidden: (ref) => forbidden.has(ref.toLowerCase()),
+    record: opts.onSelection,
+  });
+  const attempted: string[] = [];
+  const addAttempted = (ref: string): void => {
+    if (!attempted.some((entry) => entry.toLowerCase() === ref.toLowerCase())) attempted.push(ref);
+  };
+  const isLive = (): boolean => {
+    if (!opts.shouldRetry) return true;
+    try { return opts.shouldRetry(); } catch { return false; }
+  };
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  let currentRef: string | undefined;
+  let retriedOnce = false;
+  let fallbackUsed = false;
+  let failureAttempt = 0;
+  let fallbackFrom: AuditorFallbackCandidate | undefined;
+  let fallbackError: string | undefined;
+  let fallbackDelayMs = 0;
+  let pendingResult: GoalAuditorResult | undefined;
+
+  for (;;) {
+    // Keep the explicit pure cursor call here. ModelSelector.selectNextValid
+    // composes the same helper while adding the forbidden/unregistered walk.
+    if (nextUntriedModelRef(currentRef, refs, attempted) === undefined) {
+      const last = pendingResult ?? await run(sequence[0]!);
+      return { result: last, retriedOnce, fallbackUsed, via: fallbackFrom?.via ?? sequence[0]!.via };
+    }
+    const selected = selector.selectNextValid(scope, currentRef, attempted);
+    for (const visited of selector.lastVisitedRefs) addAttempted(visited);
+    if (!("model" in selected) || typeof selected.ref !== "string") {
+      const result = pendingResult ?? await run(sequence[0]!);
+      return { result, retriedOnce, fallbackUsed, via: fallbackFrom?.via ?? sequence[0]!.via };
+    }
+    const selectedRef = selected.ref;
+    const candidate = byRef.get(selectedRef.toLowerCase());
+    if (!candidate) {
+      addAttempted(selectedRef);
+      currentRef = selectedRef;
+      continue;
+    }
+    addAttempted(selectedRef);
+    if (fallbackFrom) {
+      fallbackUsed = true;
+      opts.onFallback?.(fallbackFrom, candidate, fallbackError ?? "auditor fallback", fallbackDelayMs);
+      fallbackFrom = undefined;
+      fallbackError = undefined;
+      fallbackDelayMs = 0;
+    }
+
+    pendingResult = undefined;
+    const first = await run(candidate);
+    if (first.approved || first.disapproved || first.impossible || !first.error) {
+      return { result: first, retriedOnce, fallbackUsed, via: candidate.via };
+    }
+    let failure = classifyMainModelFailure(first.error);
+    if (!isRetriableInfraError(first.error) || !isMainModelFallbackFailure(failure)) {
+      return { result: first, retriedOnce, fallbackUsed, via: candidate.via };
+    }
+    failureAttempt += 1;
+    if (!isLive()) return { result: first, retriedOnce, fallbackUsed, via: candidate.via };
+    const retryDelayMs = mainModelFailureDelayMs(failure, failureAttempt, opts.retryBaseMinutes ?? 15);
+    opts.onRetry?.(candidate, first.error, retryDelayMs);
+    await sleep(retryDelayMs);
+    if (!isLive()) return { result: first, retriedOnce, fallbackUsed, via: candidate.via };
+
+    const second = await run(candidate);
+    pendingResult = second;
+    retriedOnce = true;
+    if (second.approved || second.disapproved || second.impossible || !second.error) {
+      return { result: second, retriedOnce, fallbackUsed, via: candidate.via };
+    }
+    failure = classifyMainModelFailure(second.error);
+    if (!isRetriableInfraError(second.error) || !isMainModelFallbackFailure(failure)) {
+      return { result: second, retriedOnce, fallbackUsed, via: candidate.via };
+    }
+    currentRef = selectedRef;
+    const nextRef = nextUntriedModelRef(currentRef, refs, attempted);
+    if (nextRef === undefined) {
+      return { result: second, retriedOnce, fallbackUsed, via: candidate.via };
+    }
+    failureAttempt += 1;
+    fallbackDelayMs = mainModelFailureDelayMs(failure, failureAttempt, opts.retryBaseMinutes ?? 15);
+    if (!isLive()) return { result: second, retriedOnce, fallbackUsed, via: candidate.via };
+    await sleep(fallbackDelayMs);
+    if (!isLive()) return { result: second, retriedOnce, fallbackUsed, via: candidate.via };
+    fallbackFrom = candidate;
+    fallbackError = second.error;
+  }
+}
 
 // The detached auditor intentionally exposes the full inspection/tooling
 // surface, including bash, so it can run bounded tests and reproduce behavior.

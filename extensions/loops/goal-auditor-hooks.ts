@@ -58,8 +58,6 @@ import {
   computeListDepth,
   formatAuditLog,
   formatGoalAuditHistory,
-  runWithInfraRetry,
-  isRetriableInfraError,
   readAuditLog,
   bumpGoalRevision,
   stripThinkBlocks,
@@ -176,13 +174,10 @@ import {
 } from "../length-continue.js";
 import { capProviderRetrySeconds } from "../quota-retry.js";
 import {
-  classifyMainModelFailure,
   mainModelAutoRetryUntil,
-  mainModelFailureDelayMs,
   mainModelRetryDelayMs,
   MAIN_MODEL_AUTO_RETRY_HORIZON_MS,
   modelRef,
-  nextUntriedModelRef,
   normalizeModelRefs,
   sendStormEscalateMs,
   splitModelRef,
@@ -218,7 +213,9 @@ import {
 import {
   cancelDetachedGoalCompletionAuditor,
   newDetachedAuditJobAttemptId,
+  runAuditorFallbackWithPolicy,
   runDetachedGoalCompletionAuditor,
+  type AuditorFallbackCandidate,
   type AuditorProgress,
 } from "../goal-loop-auditor-process.js";
 import {
@@ -702,7 +699,7 @@ export function auditorRetryPlan(claim: PendingCompletion, _legacyQuota?: unknow
   return { attempt, retryAfterSec, firstAt, autoRetryUntil: new Date(untilMs).toISOString(), automatic, requestedSec };
 }
 
-export type AuditorModelCandidate = { model: any; via: string };
+export type AuditorModelCandidate = AuditorFallbackCandidate;
 type DetachedAuditResult = Awaited<ReturnType<typeof runDetachedGoalCompletionAuditor>>;
 
 export type AutomaticCompletionRecoveryTrigger = "session-start" | "host-rebind" | "main-model-recovery" | "auditor-recovery-timer";
@@ -783,54 +780,16 @@ export async function runDetachedCompletionWithFallback(
     sleep?: (ms: number) => Promise<void>;
     onRetry?: (candidate: AuditorModelCandidate, error: string) => void;
     onFallback?: (from: AuditorModelCandidate, to: AuditorModelCandidate, error: string) => void;
+    forbiddenRefs?: readonly string[];
   } = {},
 ): Promise<{ result: DetachedAuditResult; retriedOnce: boolean; fallbackUsed: boolean; via: string }> {
-  // Preserve the normal "no model" diagnostic when resolution found no
-  // candidate; that error is intentionally not retried or cascaded.
-  const sequence = candidates.length > 0 ? candidates : [{ model: undefined, via: "unset" }];
-  let retriedOnce = false;
-  let fallbackUsed = false;
-
-  for (let i = 0; i < sequence.length; i++) {
-    const candidate = sequence[i]!;
-    const outcome = await runWithInfraRetry(
-      () => run(candidate),
-      {
-        shouldRetry: opts.shouldRetry,
-        sleep: opts.sleep,
-        onRetry: (error) => opts.onRetry?.(candidate, error),
-      },
-    );
-    retriedOnce ||= outcome.retriedOnce;
-    const result = outcome.result;
-    const canAdvance = Boolean(
-      result.error
-      && !result.approved
-      && !result.disapproved
-      && !result.impossible
-      && isRetriableInfraError(result.error)
-      && i + 1 < sequence.length,
-    );
-    if (!canAdvance) return { result, retriedOnce, fallbackUsed, via: candidate.via };
-
-    // A replacement may have invalidated the parent between the retry and
-    // this boundary. Do not launch a fallback worker from that old generation.
-    if (opts.shouldRetry) {
-      try {
-        if (!opts.shouldRetry()) return { result, retriedOnce, fallbackUsed, via: candidate.via };
-      } catch {
-        return { result, retriedOnce, fallbackUsed, via: candidate.via };
-      }
-    }
-    const next = sequence[i + 1]!;
-    fallbackUsed = true;
-    opts.onFallback?.(candidate, next, result.error!);
-  }
-
-  // The loop always returns from the final candidate, but keep a defensive
-  // result for future edits that alter the sequence construction.
-  const last = sequence.at(-1)!;
-  return { result: await run(last), retriedOnce, fallbackUsed, via: last.via };
+  return runAuditorFallbackWithPolicy(candidates, run, {
+    forbiddenRefs: opts.forbiddenRefs,
+    shouldRetry: opts.shouldRetry,
+    sleep: opts.sleep,
+    onRetry: (candidate, error) => opts.onRetry?.(candidate, error),
+    onFallback: (from, to, error) => opts.onFallback?.(from, to, error),
+  });
 }
 
 /**
