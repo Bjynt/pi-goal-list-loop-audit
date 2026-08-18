@@ -38,3 +38,6 @@ working session wiht sesion lost
 /home/dracon/Pictures/Screenshots/Screenshot_20260818_173242.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260818_173824.png 
 
+## 
+
+we want the agent to have long term preference
