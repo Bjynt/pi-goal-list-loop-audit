@@ -651,6 +651,9 @@ export interface ListItem {
   parentId?: string;
   /** Durable link from a repair/replan queue item back to the malformed item. */
   repairTarget?: ObjectiveRepairTarget;
+  /** Monotonic queue position persisted with the sidecar. Legacy items omit it
+   * and fall back to addedAt/id ordering during recovery. */
+  queueOrder?: number;
   addedAt: string;
 }
 
@@ -964,16 +967,46 @@ export function queueItemPath(cwd: string, id: string): string {
   return path.join(piGlaDir(cwd), "goals", `${id}.queue.json`);
 }
 
-export function writeQueueItemFile(cwd: string, item: ListItem): { path: string; wrote: boolean } {
+export interface QueueItemWriteResult {
+  path: string;
+  wrote: boolean;
+  /** True when the persistence boundary rejected the write. A collision or
+   * symlink refusal is a normal wrote=false result, not a persistence error. */
+  failed?: boolean;
+}
+
+/** Write one queue sidecar atomically. The default is idempotent/no-overwrite;
+ * repair metadata updates may explicitly request an atomic replacement. All
+ * filesystem failures go through the persistence-degradation boundary and
+ * clean up the temporary file before returning to the caller. */
+export function writeQueueItemFile(cwd: string, item: ListItem, options: { replace?: boolean } = {}): QueueItemWriteResult {
   const file = queueItemPath(cwd, item.id);
-  if (fs.existsSync(file)) return { path: file, wrote: false }; // idempotent — never overwrite
-  try {
+  const replace = options.replace === true;
+  if (!replace && fs.existsSync(file)) return { path: file, wrote: false }; // idempotent — never overwrite
+  const result = runPersistStep("writeQueueItemFile", () => {
+    if (replace && fs.existsSync(file)) {
+      try {
+        if (fs.lstatSync(file).isSymbolicLink()) return { path: file, wrote: false };
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      }
+    }
     fs.mkdirSync(path.dirname(file), { recursive: true });
-  } catch { /* ensureDirs on the goals/ path handles this */ }
-  const tempPath = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`;
-  fs.writeFileSync(tempPath, JSON.stringify({ schema: 1, type: "queue-item", ...item }), "utf-8");
-  fs.renameSync(tempPath, file);
-  return { path: file, wrote: true };
+    const tempPath = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`;
+    try {
+      fs.writeFileSync(tempPath, JSON.stringify({ schema: 1, type: "queue-item", ...item }), "utf-8");
+      fs.renameSync(tempPath, file);
+      return { path: file, wrote: true };
+    } finally {
+      try {
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      } catch {
+        // The landing write already succeeded or the original error is more
+        // useful; a later cleanup pass can remove an orphaned temp file.
+      }
+    }
+  });
+  return result ?? { path: file, wrote: false, failed: true };
 }
 
 export function deleteQueueItemFile(cwd: string, id: string): boolean {
@@ -1035,6 +1068,20 @@ export function readQueueFromDisk(cwd: string, excludeIds: ReadonlySet<string> =
     if (!e || e.schema !== 1 || e.type !== "queue-item") continue;
     if (typeof e.id !== "string" || typeof e.objective !== "string") continue;
     if (excludeIds.has(e.id)) continue;
+    const repairTarget = e.repairTarget && typeof e.repairTarget === "object"
+      && typeof e.repairTarget.id === "string"
+      && typeof e.repairTarget.objective === "string"
+      && typeof e.repairTarget.source === "string"
+      && Array.isArray(e.repairTarget.reasons)
+      && e.repairTarget.reasons.every((reason: unknown) => typeof reason === "string")
+      ? {
+          id: e.repairTarget.id,
+          objective: e.repairTarget.objective,
+          ...(typeof e.repairTarget.verificationContract === "string" ? { verificationContract: e.repairTarget.verificationContract } : {}),
+          reasons: e.repairTarget.reasons,
+          source: e.repairTarget.source,
+        } satisfies ObjectiveRepairTarget
+      : undefined;
     out.push({
       id: e.id,
       objective: e.objective,
@@ -1044,10 +1091,12 @@ export function readQueueFromDisk(cwd: string, excludeIds: ReadonlySet<string> =
       // v0.34.81: subtask binding round-trips from the sidecar the same way
       // parallelSafe does — must be a string id matching another queue item.
       ...(typeof e.parentId === "string" && e.parentId ? { parentId: e.parentId } : {}),
+      ...(repairTarget ? { repairTarget } : {}),
+      ...(typeof e.queueOrder === "number" && Number.isFinite(e.queueOrder) && e.queueOrder >= 0 ? { queueOrder: e.queueOrder } : {}),
       addedAt: typeof e.addedAt === "string" ? e.addedAt : new Date().toISOString(),
     });
   }
-  return out;
+  return out.sort(compareQueueItems);
 }
 
 // =================================================================
@@ -1430,6 +1479,29 @@ export function compactDisplayText(value: string): string {
 
 export function nowIso(): string {
   return new Date().toISOString();
+}
+
+/** Stable queue ordering: new sidecars use queueOrder; legacy sidecars fall
+ * back to their durable timestamp and id instead of filesystem enumeration. */
+export function compareQueueItems(a: Pick<ListItem, "id" | "addedAt" | "queueOrder">, b: Pick<ListItem, "id" | "addedAt" | "queueOrder">): number {
+  const aOrder = typeof a.queueOrder === "number" && Number.isFinite(a.queueOrder) ? a.queueOrder : undefined;
+  const bOrder = typeof b.queueOrder === "number" && Number.isFinite(b.queueOrder) ? b.queueOrder : undefined;
+  if (aOrder !== undefined && bOrder !== undefined && aOrder !== bOrder) return aOrder - bOrder;
+  const added = a.addedAt.localeCompare(b.addedAt);
+  if (added !== 0) return added;
+  if (aOrder !== undefined && bOrder === undefined) return -1;
+  if (aOrder === undefined && bOrder !== undefined) return 1;
+  return a.id.localeCompare(b.id);
+}
+
+/** Assign durable positions to newly enqueued items. Existing positions are
+ * retained, so a reload/recovery cannot reorder a confirmed batch. */
+export function assignQueueOrder<T extends ListItem>(items: readonly T[], existing: readonly ListItem[] = []): T[] {
+  let next = existing.reduce((max, item) => {
+    const order = typeof item.queueOrder === "number" && Number.isFinite(item.queueOrder) ? item.queueOrder : -1;
+    return Math.max(max, order);
+  }, -1) + 1;
+  return items.map((item) => item.queueOrder === undefined ? { ...item, queueOrder: next++ } : item);
 }
 
 /**
