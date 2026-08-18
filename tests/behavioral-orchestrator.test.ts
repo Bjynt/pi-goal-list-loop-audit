@@ -2864,7 +2864,8 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
     ctx.ui.setWidget("pi-glla", ["stale pre-turn widget"]);
     await tick(100);
     const repaintedWidget = (ctx.ui.widgets["pi-glla"] as string[] | undefined) ?? [];
-    assert.ok(repaintedWidget.some((line) => line.includes("auditor: queued")), "the post-tool repaint restores auditing before worker progress");
+    assert.ok(repaintedWidget.some((line) => line.includes("· auditing ·")), "the post-tool repaint restores the durable auditing state");
+    assert.ok(repaintedWidget.some((line) => line.includes("detached worker")), "the post-tool repaint restores the detached-auditor surface");
     await waitUntil(() => (readState(cwd).goal as { status?: string } | null) === null);
     assert.ok(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes('"goal_archived"'), "approval archived and closed the goal");
     // v0.34.91: the detached-settle chat notify carries the recap (what

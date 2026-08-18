@@ -691,12 +691,10 @@ function refreshUI(ctx: ExtensionContext): void {
  * auditor or the main turn wait for UI work.
  */
 function scheduleUIRefresh(): void {
-  console.error("DEBUG scheduleUIRefresh", Date.now(), !!deferredUIRefresh, typeof freshCtx);
   if (deferredUIRefresh) return;
   deferredUIRefresh = setTimeout(() => {
     deferredUIRefresh = null;
     const ctx = freshCtx();
-    console.error("DEBUG deferredUIRefresh fired", Date.now(), !!ctx);
     if (ctx) refreshUI(ctx);
   }, UI_REFRESH_SETTLE_MS);
   deferredUIRefresh.unref?.();
