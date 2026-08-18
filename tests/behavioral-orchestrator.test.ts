@@ -2859,8 +2859,9 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
     const queuedWidget = (ctx.ui.widgets["pi-glla"] as string[] | undefined) ?? [];
     assert.ok(queuedWidget.some((line) => line.includes("auditor: queued")), "the queued auditor phase is visible before worker progress");
     // A host render can run after the tool callback and restore the previous
-    // widget. The persistence-side deferred repaint must win before the
-    // detached worker emits its first progress event.
+    // widget. The persistence-side deferred repaint must win after the
+    // current event yields, even if the worker has already moved past its
+    // initial queued phase.
     ctx.ui.setWidget("pi-glla", ["stale pre-turn widget"]);
     await tick(100);
     const repaintedWidget = (ctx.ui.widgets["pi-glla"] as string[] | undefined) ?? [];
