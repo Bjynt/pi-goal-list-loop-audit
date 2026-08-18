@@ -15,3 +15,7 @@ we are not inside the main session?? while inside the main session
 ##
 
 one thing we can use is very informative formatted summaries when objectives end as i noticed that is one area we lack
+
+## 
+
+we need a better way to handle objectives that are buggy or previous version
