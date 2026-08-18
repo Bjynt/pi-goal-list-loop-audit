@@ -14,7 +14,7 @@ import {
   DEFAULT_TOKEN_LIMIT, Goal, ListItem, Status, appendLedger, archiveDir, archivedGoalPath, bumpGoalRevision, sanitizeProviderDisplayText,
   computeListDepth, clearQueueItemFiles, deleteQueueItemFile, extractVerificationContract, formatAuditLog, formatGoalAuditHistory, formatMainModelRecoveryStatus, queueItemSidecarCount,
   formatListDepth, goalArgsNeedDrafting, ledgerPath, newGoalId, nowIso, parseListImport, parseListItemDeclaration,
-  readAuditLog, readQueueFromDisk, routeGoalArgs, routeListText, sanitizeDisplayText, sanitizeProviderAuditReport, statusLabel,
+  assignQueueOrder, compareQueueItems, readAuditLog, readQueueFromDisk, routeGoalArgs, routeListText, sanitizeDisplayText, sanitizeProviderAuditReport, statusLabel,
   writeQueueItemFile, type ModeCommand, type State, LIST_MUTATING_SUBCOMMANDS, SETTINGS_MUTATING_ACTIONS,
 } from "./goal-loop-core.js";
 import { clearDispatchRecord, dispatchRecordExists } from "./goal-loop-dispatch.js";
@@ -836,7 +836,23 @@ function recentlyCompletedObjectives(cwd: string): Set<string> {
   return done;
 }
 
+export function hydrateListQueueFromDisk(ctx: ExtensionContext): number {
+  const memory = listQueue();
+  const exclude = new Set<string>();
+  if (state.goal?.id) exclude.add(state.goal.id);
+  const disk = readQueueFromDisk(ctx.cwd, exclude);
+  const known = new Set(memory.map((item) => item.id));
+  const recovered = disk.filter((item) => !known.has(item.id));
+  if (recovered.length === 0) return 0;
+  const merged = [...memory, ...recovered].sort(compareQueueItems);
+  replaceState({ ...state, list: merged });
+  persistState(ctx);
+  appendLedger(ctx.cwd, "list_recovered_from_disk", { count: recovered.length, hydrated: true });
+  return recovered.length;
+}
+
 function enqueueItems(ctx: ExtensionContext, texts: string[], source: string, opts?: { autoActivate?: boolean }): number {
+  hydrateListQueueFromDisk(ctx);
   const recentlyDone = recentlyCompletedObjectives(ctx.cwd);
   const fresh = texts.filter((t) => !recentlyDone.has(normalizeObjective(parseListItemDeclaration(t).objective)));
   const skipped = texts.length - fresh.length;
@@ -899,13 +915,23 @@ function enqueueItems(ctx: ExtensionContext, texts: string[], source: string, op
     ctx.ui.notify(`Refused ${refused.length} subtask item(s): ${refused.join(" | ")}.`, "warning");
   }
   if (resolved.length === 0) return 0;
-  const itemsToWrite = resolved;
+  const itemsToWrite = assignQueueOrder(resolved, listQueue());
   // v0.34.60: disk-first write order. Each item lands on disk BEFORE any
   // in-memory state mutation, so /list survives a stale extension handle
   // (e.g. /reload, plugin re-init, RAM-only state loss). The
   // .queue.json sidecar is atomic (temp + rename) and idempotent (skips
-  // existing files rather than overwriting).
+  // existing files rather than overwriting). A failed member aborts the
+  // batch and removes only sidecars written by this attempt.
   const written = itemsToWrite.map((item) => writeQueueItemFile(ctx.cwd, item));
+  const failedWrite = written.find((result) => result.failed);
+  if (failedWrite) {
+    written.forEach((result, index) => {
+      if (result.wrote) deleteQueueItemFile(ctx.cwd, itemsToWrite[index]!.id);
+    });
+    appendLedger(ctx.cwd, "list_queue_disk_write_failed", { source, count: itemsToWrite.length, path: failedWrite.path });
+    ctx.ui.notify(`Could not persist the queued item(s) from ${source}; no in-memory queue mutation was applied. Fix disk access and retry.`, "warning");
+    return 0;
+  }
   replaceState({ ...state, list: [...listQueue(), ...itemsToWrite] });
   const diskFirst = written.filter((w) => w.wrote).length === itemsToWrite.length;
   appendLedger(ctx.cwd, "list_queue_disk_first", { source, count: itemsToWrite.length, diskFirst });
@@ -991,6 +1017,10 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
   // resume/tweak/cancel gates branch on state.goal.policy — the gate used
   // to silently refuse the whole surface until a restart.
   healGoalPolicy(ctx);
+  // v0.35.4 audit: sidecars are durable queue state, not a display-only
+  // fallback. Hydrate orphaned disk items before any list surface can count,
+  // remove, cancel, or activate them.
+  if (!staleEntry) hydrateListQueueFromDisk(ctx);
 
   if (sub === "audit") {
     // v0.31.0: /list audit [focus] — collect-then-drain (user design
@@ -1332,19 +1362,24 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
 
 /** Append one objective to the list; activate immediately when idle. */
 function addSingleItem(ctx: ExtensionContext, raw: string): void {
+  hydrateListQueueFromDisk(ctx);
   const extracted = parseListItemDeclaration(raw);
-  const item = {
+  const item = assignQueueOrder([{
     id: newGoalId(),
     objective: extracted.objective,
     ...(extracted.agentRole ? { agentRole: extracted.agentRole } : {}),
     verificationContract: extracted.verificationContract || undefined,
     ...(extracted.parallelSafe === undefined ? {} : { parallelSafe: extracted.parallelSafe }),
     addedAt: nowIso(),
-  };
+  }], listQueue())[0]!;
   // v0.34.61: disk-first — write the sidecar BEFORE mutating state so the
   // item survives an orchestrator-turn death between state mutation and
   // persistState (the original bug for /list add "<direct text>").
-  writeQueueItemFile(ctx.cwd, item);
+  const written = writeQueueItemFile(ctx.cwd, item);
+  if (written.failed) {
+    ctx.ui.notify("Could not persist the list item; no in-memory queue mutation was applied. Fix disk access and retry.", "warning");
+    return;
+  }
   replaceState({ ...state, list: [...listQueue(), item] });
   persistState(ctx);
   appendLedger(ctx.cwd, "list_added", { id: item.id, objective: item.objective });

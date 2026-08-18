@@ -39,6 +39,7 @@ import {
   workCommandRoot,
   appendLedger,
   claimRecoveryNotice,
+  assignQueueOrder,
   providerErrorPresentation,
   sanitizeProviderAuditReport,
   sanitizeProviderDisplayText,
@@ -334,6 +335,7 @@ import {
 import {
   addSingleItem,
   autoNotifyCmd,
+  hydrateListQueueFromDisk,
   cmdGoal,
   cmdList,
   cmdReview,
@@ -1618,20 +1620,24 @@ function registerAgentTools(pi: any): void {
             };
           }
         }
+        hydrateListQueueFromDisk(liveCtx);
         const extracted = parseListItemDeclaration(full);
-        const item = {
+        const item = assignQueueOrder([{
           id: newGoalId(),
           objective: extracted.objective,
           ...(extracted.agentRole ? { agentRole: extracted.agentRole } : {}),
           verificationContract: extracted.verificationContract || undefined,
           ...(extracted.parallelSafe === undefined ? {} : { parallelSafe: extracted.parallelSafe }),
           addedAt: nowIso(),
-        };
+        }], listQueue())[0]!;
         // v0.34.61: disk-first — same invariant as addSingleItem. The list
         // draft path was the second-missed place: previously the in-memory
         // state mutated without a sidecar, so a torn-rename or post-mutation
         // crash could drop the drafted item.
-        writeQueueItemFile(liveCtx.cwd, item);
+        const written = writeQueueItemFile(liveCtx.cwd, item);
+        if (written.failed) {
+          return { content: [{ type: "text", text: "The list draft could not be persisted; no in-memory queue mutation was applied. Fix disk access and retry." }], details: {} };
+        }
         replaceState({ ...state, list: [...listQueue(), item] });
         persistState(liveCtx);
         appendLedger(liveCtx.cwd, "list_added", { id: item.id, objective: item.objective, drafted: true });

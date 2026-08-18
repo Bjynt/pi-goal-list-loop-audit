@@ -104,6 +104,7 @@ import {
   writeGoalMd,
   writeQueueItemFile,
   readQueueFromDisk,
+  clearQueueItemFiles,
   deleteQueueItemFile,
   missingGllaTools,
   runPersistStep,
@@ -1229,10 +1230,17 @@ function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop" | "lis
   } else if (snap.pausedGoal) {
     waiting.push(`paused goal "${displaySlice(snap.pausedGoal, 60)}" (${workCommand(snap.pausedGoalPolicy, "resume")})`);
   }
-  if (snap.listCount > 0) {
+  if (snap.listCount > 0 || policy === "clear") {
     if (policy === "clear") {
+      // Carryover clear must remove the durable union, not only RAM. The
+      // stale-handle /list reader intentionally resurrects queue sidecars.
+      const clearedSidecars = clearQueueItemFiles(ctx.cwd);
       replaceState({ ...state, list: [] });
-      done.push(`dropped ${snap.listCount} waiting list item(s)`);
+      if (snap.listCount > 0) done.push(`dropped ${snap.listCount} waiting list item(s)`);
+      if (clearedSidecars.removed > 0) done.push(`removed ${clearedSidecars.removed} durable queue sidecar(s)`);
+      if (clearedSidecars.failed.length > 0) {
+        waiting.push(`${clearedSidecars.failed.length} queue sidecar(s) could not be removed — clear is incomplete`);
+      }
     } else {
       waiting.push(`${snap.listCount} waiting list item(s) (/list next)`);
     }

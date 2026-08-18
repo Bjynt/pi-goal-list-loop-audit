@@ -342,6 +342,7 @@ import {
   cmdSettings,
   createGoalCommands,
   enqueueItems,
+  hydrateListQueueFromDisk,
   maybeDecisionPopup,
   probeAutoNotify,
   recentlyCompletedObjectives,
@@ -609,8 +610,12 @@ function queueRepairAheadOfListItem(ctx: ExtensionContext, item: ListItem, asses
   if (existing) {
     if (!existing.repairTarget) {
       const repaired = { ...existing, repairTarget: target };
+      const written = writeQueueItemFile(ctx.cwd, repaired, { replace: true });
+      if (written.failed) {
+        ctx.ui.notify("Could not persist the repair target; the original queued item remains unchanged.", "warning");
+        return;
+      }
       replaceState({ ...state, list: listQueue().map((queued) => queued.id === existing.id ? repaired : queued) });
-      writeQueueItemFile(ctx.cwd, repaired);
       persistState(ctx);
       appendLedger(ctx.cwd, "faulty_objective_repair_target_recovered", { goalId: existing.id, targetId: item.id, source: "list-activation" });
     }
@@ -621,9 +626,13 @@ function queueRepairAheadOfListItem(ctx: ExtensionContext, item: ListItem, asses
   const added = listQueue().find((queued) => !before.has(queued.id) && queued.objective === repairObjective);
   if (!added) return;
   const repair = { ...added, repairTarget: target };
+  const repairWritten = writeQueueItemFile(ctx.cwd, repair, { replace: true });
+  if (repairWritten.failed) {
+    ctx.ui.notify("Could not persist the repair target; the queued repair remains without promotion metadata.", "warning");
+    return;
+  }
   const rest = listQueue().filter((queued) => queued.id !== added.id);
   replaceState({ ...state, list: [repair, ...rest] });
-  writeQueueItemFile(ctx.cwd, repair);
   persistState(ctx);
   appendLedger(ctx.cwd, "faulty_objective_repair_promoted", { goalId: repair.id, targetId: item.id, position: 1, source: "list-activation", reasons: assessment.reasons });
 }
@@ -642,9 +651,11 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
   // v0.28.14: carryover resolution runs BEFORE the item is taken — under
   // carryover=clear the stale queue is dropped first and there is nothing
   // to activate; under pause the ONE summary precedes the activation.
+  // Durable sidecars are actionable queue state. Recover them before
+  // carryover policy or explicit activation can inspect the head.
+  hydrateListQueueFromDisk(ctx);
   resolveCarryover(ctx, "list");
-  const queue = listQueue();
-  // v0.34.81 (LIGHT parent/child): a group (queue item with one or more
+  const queue = listQueue();  // v0.34.81 (LIGHT parent/child): a group (queue item with one or more
   // open children) is not a work item. The auto-advance SILENTLY SKIPS the
   // head group and lands on its first open child — children are queued
   // immediately after the parent, so the scan takes the natural next item

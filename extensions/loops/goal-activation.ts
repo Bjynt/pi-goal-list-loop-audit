@@ -382,8 +382,12 @@ export function enqueueFaultRepairTask(ctx: ExtensionContext, objective: string,
   if (existing) {
     if (target && !existing.repairTarget) {
       const repaired = { ...existing, repairTarget: target };
+      const written = writeQueueItemFile(ctx.cwd, repaired, { replace: true });
+      if (written.failed) {
+        ctx.ui.notify("Could not persist the repair target; the original queued item remains unchanged.", "warning");
+        return;
+      }
       replaceState({ ...state, list: (state.list ?? []).map((item) => item.id === existing.id ? repaired : item) });
-      writeQueueItemFile(ctx.cwd, repaired);
       persistState(ctx);
       appendLedger(ctx.cwd, "faulty_objective_repair_target_recovered", { goalId: existing.id, targetId: target.id, source: target.source });
     }
@@ -394,9 +398,15 @@ export function enqueueFaultRepairTask(ctx: ExtensionContext, objective: string,
   const added = (state.list ?? []).find((item) => !before.has(item.id) && item.objective === objective);
   if (!added) return;
   const repair = target ? { ...added, repairTarget: target } : added;
+  if (target) {
+    const repairWritten = writeQueueItemFile(ctx.cwd, repair, { replace: true });
+    if (repairWritten.failed) {
+      ctx.ui.notify("Could not persist the repair target; the queued repair remains without promotion metadata.", "warning");
+      return;
+    }
+  }
   const rest = (state.list ?? []).filter((item) => item.id !== added.id);
   replaceState({ ...state, list: [repair, ...rest] });
-  writeQueueItemFile(ctx.cwd, repair);
   persistState(ctx);
   appendLedger(ctx.cwd, "faulty_objective_repair_promoted", { goalId: repair.id, targetId: target?.id, position: 1, source: target?.source ?? "unknown" });
 }
