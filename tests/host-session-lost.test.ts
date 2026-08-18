@@ -252,6 +252,41 @@ test("stale-recovery debt still probes for same-process self-heal", async () => 
   }
 });
 
+test("parked completion-audit recovery debt does not become an unprobed idle plane", async () => {
+  setGlobalAutoResume(false);
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    goal: seedGoal({
+      status: "paused",
+      pauseKind: "blocked",
+      pauseReason: "completion audit blocked — no verdict: stale session",
+      pendingCompletion: {
+        completionSummary: "The stored completion claim must recover.",
+        verificationSummary: "A healthy host should be able to retry it.",
+        at: new Date().toISOString(),
+        phase: "recovery-pending",
+        attemptId: "parked-audit-attempt",
+      },
+    }),
+    list: [],
+  });
+  __testOnlyResetOwnerSession();
+  const ctx = makeMockCtx(cwd);
+  await pi.fire("session_start", { reason: "startup" }, ctx);
+  await tick();
+
+  invalidateHostSession(pi, ctx);
+  __testOnlyHeartbeatTick();
+  try {
+    const evs = invalidations(cwd);
+    assert.equal(evs.length, 1, "a parked completion claim keeps stale-host supervision armed");
+    assert.equal(evs[0]!.value.reason, "silent_handle_death");
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+  }
+});
+
 test("a normal fresh session does not fabricate stale continuation debt", async () => {
   setGlobalAutoResume(true);
   const cwd = tmpCwd();

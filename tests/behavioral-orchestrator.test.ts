@@ -25,7 +25,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
-import activate, { __testOnlyLastConfirmDialog, __testOnlyLoadState, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyResetTerminalFlags, __testOnlyRunFanOutListAuditFindings, __testOnlySetAuditorRecoveryRetryDelay, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
+import activate, { __testOnlyLastConfirmDialog, __testOnlyLoadState, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyResetTerminalFlags, __testOnlyRunFanOutListAuditFindings, __testOnlySetAuditorRecoveryRetryDelay, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, __testOnlySetSessionReplacementUntil, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
 import { __testOnlyHeartbeatTick, __testOnlySetZombieRunWindows, __testOnlyResetZombieRunWatchdog, __testOnlyClearSubagentHangProbes, upsertSubagentHangProbe, endSubagentHangProbe } from "../extensions/goal-heartbeat.js";
 import { mainModelRecoverySucceeded } from "../extensions/goal-recovery.js";
 
@@ -3548,6 +3548,64 @@ test("v0.35.x: stale host replacement session_start auto-recovers the parked aud
   } finally {
     pi.sendMessageError = null;
     pi.sessionNameError = null;
+    __testOnlyResetOwnerSession();
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
+test("v0.35.x: healthy same-session heartbeat recovers a parked completion audit without manual resume", { timeout: 15_000 }, async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  __testOnlySetSessionReplacementUntil(0);
+  const cwd = tmpCwd();
+  const fakePi = writeFakeAuditor(cwd, "disapproved", 350);
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = fakePi;
+  try {
+    const first = await freshSession(cwd, "startup");
+    await pi.command("goal", "same-session stale completion target — done when pinned", first);
+    await tick();
+    const audit = pi.runTool("complete_goal", {
+      completionSummary: "A stale heartbeat must not leave the completion claim idle.",
+      verificationSummary: "A healthy same-session heartbeat retries the stored claim once.",
+    }, first);
+    await waitUntil(() => (readState(cwd).goal as { status?: string } | null)?.status === "auditing");
+
+    invalidateHostSession(pi, first);
+    __testOnlyHeartbeatTick();
+    const parked = readState(cwd).goal as { status?: string; pendingCompletion?: { phase?: string } } | null;
+    assert.equal(parked?.status, "paused", "the stale boundary parks the claim durably");
+    assert.equal(parked?.pendingCompletion?.phase, "recovery-pending");
+
+    // Restore the same mock host without delivering session_start. Before the
+    // heartbeat gate fix, the parked status returned before probing this
+    // healthy handle, so the objective stayed idle forever.
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    first.isIdle = () => true;
+    first.hasPendingMessages = () => false;
+    await waitUntil(() => {
+      __testOnlyHeartbeatTick();
+      return readLedger(cwd).some((entry) => entry.type === "audit_recovery_started");
+    }, 4_000);
+
+    const retrying = readState(cwd).goal as { status?: string; pendingCompletion?: { phase?: string; automaticRecoveryAttempted?: boolean } } | null;
+    assert.equal(retrying?.status, "auditing", "healthy heartbeat starts the bounded recovery audit");
+    assert.equal(retrying?.pendingCompletion?.phase, "running");
+    assert.equal(retrying?.pendingCompletion?.automaticRecoveryAttempted, true);
+    assert.equal(readLedger(cwd).filter((entry) => entry.type === "audit_recovery_auto_retry_claimed").length, 1);
+
+    await waitUntil(() => {
+      const settled = readState(cwd).goal as { status?: string; pendingCompletion?: unknown; auditHistory?: unknown[] } | null;
+      return settled?.status === "active" && !settled.pendingCompletion && (settled.auditHistory?.length ?? 0) >= 1;
+    });
+    await pi.fire("session_shutdown", { reason: "quit" }, first);
+    await audit;
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+    __testOnlySetSessionReplacementUntil(null);
     __testOnlyResetOwnerSession();
     if (previous === undefined) delete process.env.GLLA_PI_BINARY;
     else process.env.GLLA_PI_BINARY = previous;
