@@ -2862,7 +2862,7 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
     // widget. The persistence-side deferred repaint must win before the
     // detached worker emits its first progress event.
     ctx.ui.setWidget("pi-glla", ["stale pre-turn widget"]);
-    await tick(50);
+    await tick(100);
     const repaintedWidget = (ctx.ui.widgets["pi-glla"] as string[] | undefined) ?? [];
     assert.ok(repaintedWidget.some((line) => line.includes("auditor: queued")), "the post-tool repaint restores auditing before worker progress");
     await waitUntil(() => (readState(cwd).goal as { status?: string } | null) === null);

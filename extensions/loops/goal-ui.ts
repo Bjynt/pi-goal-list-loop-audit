@@ -475,6 +475,7 @@ function isSupervising(): boolean {
 let latestAuditProgress: AuditDisplayProgress | null = null;
 let uiTicker: NodeJS.Timeout | null = null;
 let deferredUIRefresh: NodeJS.Timeout | null = null;
+const UI_REFRESH_SETTLE_MS = 50;
 const LIVE_STREAM_PROOF_MS = 15_000;
 
 /**
@@ -690,12 +691,14 @@ function refreshUI(ctx: ExtensionContext): void {
  * auditor or the main turn wait for UI work.
  */
 function scheduleUIRefresh(): void {
+  console.error("DEBUG scheduleUIRefresh", Date.now(), !!deferredUIRefresh, typeof freshCtx);
   if (deferredUIRefresh) return;
   deferredUIRefresh = setTimeout(() => {
     deferredUIRefresh = null;
     const ctx = freshCtx();
+    console.error("DEBUG deferredUIRefresh fired", Date.now(), !!ctx);
     if (ctx) refreshUI(ctx);
-  }, 0);
+  }, UI_REFRESH_SETTLE_MS);
   deferredUIRefresh.unref?.();
 }
 
