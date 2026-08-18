@@ -45,3 +45,5 @@ we want the agent to have long term preference
 ## idea
 
 option to no audit or audit only on completion or periodically
+
+like we can audit on goal completion or ever X tasks 
