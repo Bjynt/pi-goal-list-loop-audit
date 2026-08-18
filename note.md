@@ -1,12 +1,9 @@
+# Do
+
 ##
 
 we cant resume goal without session restart
 /home/dracon/Pictures/Screenshots/Screenshot_20260818_053538.png 
-
-
-
-
-# Do
 
 ##
 
