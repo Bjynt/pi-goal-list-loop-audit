@@ -46,4 +46,4 @@ we want the agent to have long term preference
 
 option to no audit or audit only on completion or periodically
 
-like we can audit on goal completion or ever X tasks 
+like we can audit on goal completion or every X tasks, or we can just do it at the end 
