@@ -474,6 +474,7 @@ function isSupervising(): boolean {
 
 let latestAuditProgress: AuditDisplayProgress | null = null;
 let uiTicker: NodeJS.Timeout | null = null;
+let deferredUIRefresh: NodeJS.Timeout | null = null;
 const LIVE_STREAM_PROOF_MS = 15_000;
 
 /**
@@ -678,6 +679,26 @@ function refreshUI(ctx: ExtensionContext): void {
   }
 }
 
+/**
+ * Repaint once more after the current event/tool turn yields back to pi.
+ *
+ * `refreshUI()` is called synchronously when state is persisted, but pi can
+ * repaint the transcript/editor after that callback and restore the previous
+ * extension widget. The regular ticker is intentionally best-effort and can
+ * also be between session contexts at that boundary. A debounced next-turn
+ * repaint makes the durable state transition win without making the detached
+ * auditor or the main turn wait for UI work.
+ */
+function scheduleUIRefresh(): void {
+  if (deferredUIRefresh) return;
+  deferredUIRefresh = setTimeout(() => {
+    deferredUIRefresh = null;
+    const ctx = freshCtx();
+    if (ctx) refreshUI(ctx);
+  }, 0);
+  deferredUIRefresh.unref?.();
+}
+
 function startUITicker(): void {
   if (uiTicker) return;
   uiTicker = setInterval(() => {
@@ -849,6 +870,7 @@ defineGoalRuntimeGlobal("noteToolCall", { get: () => noteToolCall });
 defineGoalRuntimeGlobal("noteToolResult", { get: () => noteToolResult });
 defineGoalRuntimeGlobal("displayActivityFor", { get: () => displayActivityFor });
 defineGoalRuntimeGlobal("refreshUI", { get: () => refreshUI });
+defineGoalRuntimeGlobal("scheduleUIRefresh", { get: () => scheduleUIRefresh });
 defineGoalRuntimeGlobal("startUITicker", { get: () => startUITicker });
 defineGoalRuntimeGlobal("loopRearmStreak", { get: () => loopRearmStreak, set: (v) => { loopRearmStreak = v as any; } });
 defineGoalRuntimeGlobal("compactionGraceUntil", { get: () => compactionGraceUntil, set: (v) => { compactionGraceUntil = v as any; } });

@@ -2858,6 +2858,13 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
     assert.equal(claimed.pendingCompletion?.phase, "running");
     const queuedWidget = (ctx.ui.widgets["pi-glla"] as string[] | undefined) ?? [];
     assert.ok(queuedWidget.some((line) => line.includes("auditor: queued")), "the queued auditor phase is visible before worker progress");
+    // A host render can run after the tool callback and restore the previous
+    // widget. The persistence-side deferred repaint must win before the
+    // detached worker emits its first progress event.
+    ctx.ui.setWidget("pi-glla", ["stale pre-turn widget"]);
+    await tick(50);
+    const repaintedWidget = (ctx.ui.widgets["pi-glla"] as string[] | undefined) ?? [];
+    assert.ok(repaintedWidget.some((line) => line.includes("auditor: queued")), "the post-tool repaint restores auditing before worker progress");
     await waitUntil(() => (readState(cwd).goal as { status?: string } | null) === null);
     assert.ok(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes('"goal_archived"'), "approval archived and closed the goal");
     // v0.34.91: the detached-settle chat notify carries the recap (what

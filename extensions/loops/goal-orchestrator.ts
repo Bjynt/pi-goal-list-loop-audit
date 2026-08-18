@@ -624,6 +624,11 @@ function persistState(ctx: ExtensionContext): void {
   persistStateLine(ctx.cwd, state);
   notifyPersistenceState(ctx); // v0.28.6 (E1): loud on the first failure, all-clear on recovery
   refreshUI(ctx); // every state transition flows through here → the TUI is always current
+  // The synchronous repaint can be overwritten by pi's transcript/editor
+  // render that completes after this persistence callback. Re-apply the
+  // durable projection after the current event yields so status transitions
+  // such as active → auditing cannot remain stale until worker progress.
+  scheduleUIRefresh();
 }
 
 // v0.28.6 (E1): persistence-degradation notify — once per failure streak,

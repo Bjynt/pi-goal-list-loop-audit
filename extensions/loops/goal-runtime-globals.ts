@@ -124,6 +124,7 @@ declare global {
   var noteToolResult: any;
   var displayActivityFor: any;
   var refreshUI: any;
+  var scheduleUIRefresh: any;
   var startUITicker: any;
   var loopRearmStreak: any;
   var compactionGraceUntil: any;
