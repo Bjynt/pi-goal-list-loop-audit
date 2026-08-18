@@ -26,6 +26,12 @@ test("inline one-liner: trailing period stripped from objective", () => {
   assert.equal(r.verificationContract, "curl returns 200");
 });
 
+test("ordinary verify imperative before Done when is not mistaken for a marker", () => {
+  const r = extractVerificationContract("Run the audit and verify the stale completion recovery fix. Done when: the retry is exact-once");
+  assert.equal(r.objective, "Run the audit and verify the stale completion recovery fix");
+  assert.equal(r.verificationContract, "the retry is exact-once");
+});
+
 test("no marker anywhere returns full text as objective", () => {
   const r = extractVerificationContract("Just do the thing please.");
   assert.equal(r.objective, "Just do the thing please.");

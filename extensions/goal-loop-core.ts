@@ -1794,9 +1794,13 @@ export function extractVerificationContract(raw: string): { objective: string; v
 
   // Inline fallback: users write one-liners like
   //   "Create x.txt. Done when: grep -q ok x.txt"
-  // where the marker is mid-line. Split at the first inline marker.
+  // where the marker is mid-line. Split at the first inline marker. Keep
+  // bare `verify` out of the broad marker alternative: it is also a normal
+  // imperative (`Run the audit and verify ... Done when: ...`) and must not
+  // truncate the objective before the actual Done when marker. `Verify:`
+  // remains supported as the explicit short marker form.
   if (!verificationContract) {
-    const m = raw.match(/^(.*?)(?:\.|;)??\s+(?:done when|verified when|verify|verification)\b[^:]*:\s*(.+)$/is);
+    const m = raw.match(/^(.*?)(?:\.|;)?\s+(?:(?:done when|verified when|verification)\b[^:]*:|verify\s*:)\s*(.+)$/is);
     if (m) {
       objective = (m[1] ?? "").trim().replace(/[.;]\s*$/, "");
       verificationContract = (m[2] ?? "").trim();
