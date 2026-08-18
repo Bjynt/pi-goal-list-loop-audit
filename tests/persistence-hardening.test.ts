@@ -116,4 +116,19 @@ test("T6: schema does not drift from the Goal interface", () => {
   for (const key of Object.keys(schema.properties)) {
     assert.ok(iface.includes(key), `schema property "${key}" missing from the Goal interface`);
   }
+  // The original check only caught schema additions. Also walk the persisted
+  // top-level interface fields and the nested audit verdict so a new runtime
+  // field cannot silently disappear from the published contract.
+  const goalFields = [...iface.matchAll(/^\s{2}([A-Za-z][A-Za-z0-9_]*)\??:/gm)].map((match) => match[1]!);
+  for (const key of goalFields) {
+    assert.ok(schema.properties[key], `Goal interface field "${key}" missing from the schema`);
+  }
+  const verdictStart = CORE.indexOf("export interface AuditVerdict");
+  const verdictEnd = CORE.indexOf("\n}", verdictStart);
+  const verdict = CORE.slice(verdictStart, verdictEnd);
+  const verdictSchema = schema.definitions.auditVerdict.properties;
+  const verdictFields = [...verdict.matchAll(/^\s{2}([A-Za-z][A-Za-z0-9_]*)\??:/gm)].map((match) => match[1]!);
+  for (const key of verdictFields) {
+    assert.ok(verdictSchema[key], `AuditVerdict field "${key}" missing from the schema`);
+  }
 });
