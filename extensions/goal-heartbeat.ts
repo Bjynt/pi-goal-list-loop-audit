@@ -378,16 +378,24 @@ function heartbeatTick(): void {
   // that disposed handle as a host loss only creates the repeated
   // "session invalidated" warning after the work is already safe on disk.
   // Keep the probe for active goals/loops, detached completion audits,
-  // recoverable stale debt, and LIVE tracked subagents, where a dead handle
-  // can strand live work. A normal user pause does not count as host-bound
-  // work; stale interruption debt does, because same-process self-heal still
-  // needs a heartbeat opportunity. Ended subagent probes remain in memory
-  // briefly for HUD/final-state reads, but they no longer own the host and
-  // must not keep this guard probing a disposed handle.
+  // recoverable stale debt, parked completion-audit recovery, and LIVE
+  // tracked subagents, where a dead handle can strand live work. A normal
+  // user pause does not count as host-bound work; stale interruption debt and
+  // parked completion claims do, because same-process self-heal still needs a
+  // heartbeat opportunity. Ended subagent probes remain in memory briefly for
+  // HUD/final-state reads, but they no longer own the host and must not keep
+  // this guard probing a disposed handle.
   const terminalGoal = state.goal?.status === "complete" || state.goal?.status === "aborted";
   const staleRecoveryDebt = (!terminalGoal && state.goal?.interruptedReason?.startsWith("extension api stale"))
     || state.loop?.stopReason?.startsWith("extension api stale");
-  if (state.goal?.status !== "active" && state.goal?.status !== "auditing" && !isLoopActive() && !staleRecoveryDebt && !hasLiveSubagentHangProbes()) return;
+  const parkedCompletionAuditRecovery = state.goal?.status === "paused"
+    && state.goal.pendingCompletion?.phase === "recovery-pending";
+  if (state.goal?.status !== "active"
+    && state.goal?.status !== "auditing"
+    && !isLoopActive()
+    && !staleRecoveryDebt
+    && !parkedCompletionAuditRecovery
+    && !hasLiveSubagentHangProbes()) return;
   // Probe the ExtensionAPI BEFORE probing the captured context. When pi
   // invalidates both handles and emits no replacement session_start,
   // freshCtx() deliberately returns null; probing it first used to make the
