@@ -41,7 +41,7 @@ function setGlobalSettings(value: Record<string, unknown>): void {
 }
 afterEach(() => setGlobalAutoResume(false));
 
-import { appendAuditLog, readState } from "../extensions/goal-loop-core.js";
+import { appendAuditLog, queueItemSidecarCount, readState, writeQueueItemFile } from "../extensions/goal-loop-core.js";
 import { MockPi, invalidateHostSession, makeMockCtx, tmpCwd, seedState, seedGoal, seedLoop, staleError, tick, type MockCtx } from "./harness/mock-pi.js";
 import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
@@ -2434,11 +2434,13 @@ test("carryover=clear: new goal drops the queue, dismisses the held loop, archiv
   const cwd = tmpCwd();
   fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
   fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ carryover: "clear" }));
+  const staleItem = seedListItem("stale list item");
   seedState(cwd, {
     goal: seedGoal({ status: "paused", objective: "stale paused goal" }),
-    list: [seedListItem("stale list item")],
+    list: [staleItem],
     loop: seedLoop({ active: false, stopReason: HELD, target: "stale held loop" }),
   });
+  assert.equal(writeQueueItemFile(cwd, staleItem).wrote, true, "the queued item has a durable sidecar");
   const ctx = await freshSession(cwd, "startup");
   await pi.command("goal", "start fresh work — done when pinned", ctx);
   await tick();
@@ -2446,7 +2448,21 @@ test("carryover=clear: new goal drops the queue, dismisses the held loop, archiv
   assert.equal((s.list as unknown[]).length, 0, "queue dropped");
   assert.equal((s.loop as { stopReason?: string })?.stopReason, "cleared: carryover", "held loop dismissed");
   assert.equal((s.goal as { status: string }).status, "active", "new goal active");
+  assert.equal(queueItemSidecarCount(cwd), 0, "carryover clear removes the durable sidecar too");
   assert.ok(ctx.ui.matching("Carryover cleared").length >= 1, "clear summary shown");
+});
+
+test("v0.35.4: a recovered sidecar is hydrated before list mutations", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const recovered = seedListItem("recovered queue item");
+  seedState(cwd, { list: [] });
+  assert.equal(writeQueueItemFile(cwd, recovered).wrote, true);
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("list", "remove 1", ctx);
+  await tick();
+  assert.equal((readState(cwd).list as unknown[]).length, 0, "remove acted on hydrated state");
+  assert.equal(queueItemSidecarCount(cwd), 0, "mutation removed the recovered sidecar");
 });
 
 test("/loop cancel: first-class alias stops the loop (stopReason recorded)", async () => {
