@@ -723,7 +723,8 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
     // The queue item was removed before activation so its sidecar could not
     // masquerade as waiting work. Restore both durable representations when
     // the prior live objective could not be archived safely.
-    writeQueueItemFile(ctx.cwd, next);
+    const restored = writeQueueItemFile(ctx.cwd, next);
+    if (restored.failed) ctx.ui.notify("Could not restore the list sidecar after activation failed; fix disk access before retrying.", "warning");
     replaceState({ ...state, list: queue });
     persistState(ctx);
     return false;

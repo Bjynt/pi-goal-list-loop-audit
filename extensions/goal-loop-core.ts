@@ -1055,8 +1055,8 @@ export function readQueueFromDisk(cwd: string, excludeIds: ReadonlySet<string> =
   const dir = path.join(piGlaDir(cwd), "goals");
   let names: string[];
   try { names = fs.readdirSync(dir); } catch { return []; }
-  // readdir order is filesystem-dependent; queue semantics and the public
-  // reader contract are id order, so normalize before parsing sidecars.
+  // readdir order is filesystem-dependent; parse every sidecar first and
+  // apply compareQueueItems below so durable queue order survives recovery.
   names.sort();
   const out: ListItem[] = [];
   for (const name of names) {
