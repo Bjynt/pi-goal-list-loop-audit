@@ -230,3 +230,50 @@ test("v0.34.61: crash-simulation — sidecar survives state death and reload fin
   assert.equal(deleteQueueItemFile(cwd, item.id), true);
   assert.deepEqual(readQueueFromDisk(cwd), [], "removed item is gone from disk — no resurrection");
 });
+
+test("v0.35.4: queue metadata round-trips and recovery uses durable order", () => {
+  const cwd = mkTmp();
+  const target = {
+    id: "20260806080000-target1",
+    objective: "Repair the malformed objective",
+    verificationContract: "Done when: the objective is valid",
+    reasons: ["empty stream"],
+    source: "auditor",
+  };
+  const items = [
+    { ...mkItem("20260806080000-order2"), queueOrder: 2, repairTarget: target },
+    { ...mkItem("20260806080000-order0"), queueOrder: 0 },
+    { ...mkItem("20260806080000-order1"), queueOrder: 1 },
+  ];
+  for (const item of items) assert.equal(writeQueueItemFile(cwd, item).wrote, true);
+  const recovered = readQueueFromDisk(cwd);
+  assert.deepEqual(recovered.map((item) => item.id), [
+    "20260806080000-order0",
+    "20260806080000-order1",
+    "20260806080000-order2",
+  ]);
+  assert.deepEqual(recovered[2]!.repairTarget, target);
+  assert.equal(recovered[2]!.queueOrder, 2);
+});
+
+test("v0.35.4: failed sidecar writes are reported without leaving temp files", () => {
+  const cwd = mkTmp();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  // Block the goals directory so the atomic write cannot reach its landing
+  // path. runPersistStep converts the filesystem error into failed=true.
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "goals"), "not a directory");
+  const result = writeQueueItemFile(cwd, mkItem("20260806080000-failed1"));
+  assert.equal(result.failed, true);
+  assert.equal(queueItemSidecarCount(cwd), 0);
+  assert.deepEqual(fs.readdirSync(path.join(cwd, ".pi-glla")), ["goals"]);
+});
+
+test("v0.35.4: queue recovery and carryover clear use durable sidecars", () => {
+  const commands = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
+  const session = fs.readFileSync("extensions/loops/goal-session.ts", "utf-8");
+  const queue = fs.readFileSync("extensions/loops/goal-list-queue.ts", "utf-8");
+  assert.match(commands, /export function hydrateListQueueFromDisk/);
+  assert.match(commands, /list_recovered_from_disk/);
+  assert.match(queue, /hydrateListQueueFromDisk\(ctx\);/);
+  assert.match(session, /clearQueueItemFiles\(ctx\.cwd\)/);
+});
