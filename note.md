@@ -30,3 +30,4 @@ New problem that the explores are saved as sessions
 working session wiht sesion lost
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260818_173242.png 
+/home/dracon/Pictures/Screenshots/Screenshot_20260818_173824.png 
