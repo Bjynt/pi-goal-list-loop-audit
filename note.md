@@ -8,6 +8,10 @@ we cant resume goal without session restart
 we are not inside the main session?? while inside the main session
 /home/dracon/Pictures/Screenshots/Screenshot_20260818_054102.png 
 
+
+
+# Do
+
 ##
 
 one thing we can use is very informative formatted summaries when objectives end as i noticed that is one area we lack
@@ -16,12 +20,17 @@ one thing we can use is very informative formatted summaries when objectives end
 
 we need a better way to handle objectives that are buggy or previous version
 
-# Do
+
+##
 
 New problem that the explores are saved as sessions
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260818_173403.png 
 
+##
+
+cont accepted but did nto start turn, but working
+/home/dracon/Pictures/Screenshots/Screenshot_20260818_175936.png 
 
 # Later
 
@@ -31,3 +40,4 @@ working session wiht sesion lost
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260818_173242.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260818_173824.png 
+
