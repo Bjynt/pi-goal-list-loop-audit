@@ -19,8 +19,9 @@
 //   Fix B — heartbeatTick parks a stuck auditing goal (stale-latch branch)
 //           BEFORE the extensionApiStale early return, using a fresh context
 //           when available or a context-free cwd bridge — the park is the
-//           explicit-resume gate; a heartbeat still never launches another
-//           worker.
+//           durable recovery gate; a healthy same-session heartbeat may
+//           consume it through the one-shot path, but the heartbeat itself
+//           never launches a worker directly.
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";

@@ -410,7 +410,9 @@ function heartbeatTick(): void {
   // recovery block below is unreachable while the latch holds — the queue sat
   // blocked ~30m+ while the worker's disapproval sat on disk. Park the stuck
   // claim via the kept last context. A heartbeat must still NEVER launch
-  // another worker; the park is the explicit-resume gate.
+  // another worker directly; the park is the durable recovery gate, and a
+  // later healthy same-session heartbeat may hand it to the one-shot recovery
+  // path. Explicit resume remains available when no healthy host returns.
   if (
     flags.extensionApiStale &&
     knownCtx &&
