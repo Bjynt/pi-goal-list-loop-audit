@@ -984,9 +984,9 @@ export function writeQueueItemFile(cwd: string, item: ListItem, options: { repla
   const replace = options.replace === true;
   if (!replace && fs.existsSync(file)) return { path: file, wrote: false }; // idempotent — never overwrite
   const result = runPersistStep("writeQueueItemFile", () => {
-    if (replace && fs.existsSync(file)) {
+    if (replace) {
       try {
-        if (fs.lstatSync(file).isSymbolicLink()) return { path: file, wrote: false };
+        if (fs.lstatSync(file).isSymbolicLink()) return { path: file, wrote: false, failed: true };
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
       }
