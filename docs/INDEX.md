@@ -5,8 +5,6 @@ Ordered by reading path, not alphabetically.
 ## Entry points
 - `../README.md` — what the plugin is, install, quickstart
 - `../INSTALL.md` — manual install / symlink setup
-- `../PLAN.md` — project plan
-- `../LIST-PHILOSOPHY.md` — list-queue design philosophy
 
 ## Architecture
 - `DESIGN.md` — plugin design (types, state, extension lifecycle)
@@ -21,11 +19,13 @@ Ordered by reading path, not alphabetically.
 - `../prompts/` — goal/loop drafting prompt templates
 - `../schemas/` — goal state JSON schema
 - `../examples/` — example objective files
-- `../audit/INDEX.md` — the audit trail (every shipped change, newest first)
 - `../CHANGELOG.md` — user-facing changelog (unreleased at top)
 
+## Repository-only material
+The audit history and competitor research live in `audit/` and `.research/`
+for contributors, but are intentionally not included in the npm tarball.
+
 ## Research material
-- `.research/` — competitor plugin sources pulled from npm tarballs for
-  study (gitignored, local only). Re-pull with:
-  `cd .research && npm pack <pkg> && tar xzf <tgz>` — see the
-  positioning doc's appendix for the package list.
+`.research/` — competitor plugin sources pulled from npm tarballs for study
+(gitignored, local only). Re-pull with `cd .research && npm pack <pkg> &&
+tar xzf <tgz>`; see the positioning doc's appendix for the package list.
