@@ -19,14 +19,14 @@ not share one ambiguous switch:
 The requested four-mode cadence belongs to **automatic postaudit scheduling**:
 
 - `none` — no automatic postaudit;
-- `completion` — run it at the configured completion boundary;
+- `completion-only` — run it at the configured completion boundary;
 - `every-n-tasks` — run it after N completed tasks;
 - `periodic` — run it no more often than a configured wall-clock interval.
 
 `none` must mean *no automatic follow-up review*, not silent bypass of the
 completion verifier. A user may still request `/goal verify`, `/review`,
 `/goal audit`, `/list audit`, or `/loop audit` explicitly. The safe default is
-`completion`, preserving the current completion-triggered behavior.
+`completion-only`, preserving the current completion-triggered behavior.
 
 ## Current implementation
 
@@ -57,21 +57,46 @@ N-task or wall-clock scheduling. `auditCap` is a consecutive-disapproval cap,
 not an audit cadence. Auditor retry timers are recovery controls, not scheduled
 project audits.
 
+## Confirmed gap
+
+None of the four modes is currently a configurable scheduler:
+
+- `complete_goal` always starts the detached completion auditor at its normal
+  dispatch site; the only no-audit path is the explicit Escape confirmation to
+  complete without audit.
+- `completion-only` is the de-facto default, not a named setting.
+- `every-n-tasks` has no durable completion counter.
+- `periodic` has no durable `lastRunAt`/`nextDueAt` or wake-up scheduler.
+- `postaudit.auditCadence` is declared and defaulted but has no runtime read,
+  and `/glla postaudit` exposes no cadence editor.
+
+These are confirmed design gaps, not a license to infer a bug from the dead
+field. The requested deliverable is the policy contract below; implementing a
+scheduler is a separate feature and must preserve the current detached
+completion-verifier and recovery tests.
+
 ## Cadence contract
 
 A future typed project setting should normalize the existing free-form field
 rather than silently interpreting arbitrary strings. The minimum shape is:
 
 ```text
-postaudit.cadence: "none" | "completion" | "every-n-tasks" | "periodic"
+postaudit.cadence: "none" | "completion-only" | "every-n-tasks" | "periodic"
 postaudit.everyNTasks: positive integer, required for every-n-tasks
 postaudit.periodMinutes: positive integer, required for periodic
 postaudit.scope: "goal" | "list" | "both" (default: both)
 ```
 
-Invalid or incomplete values fall back to `completion` with a warning and a
-ledger entry; they must never disable verification accidentally. A migration
-maps the legacy `every-clean-completion` label to `completion`.
+This setting governs automatic postaudit follow-up, not the detached
+completion-verification gate. The latter remains every `complete_goal` claim
+by default and is only bypassed through a separately explicit operator choice;
+otherwise a cadence throttle would turn a task-completion preference into an
+unchecked archive policy.
+
+Invalid or incomplete values fall back to `completion-only` with a warning
+and a ledger entry; they must never disable verification accidentally. A
+migration maps the legacy `every-clean-completion` label to
+`completion-only`.
 
 ### `none`
 
@@ -84,7 +109,7 @@ Changing into `none` resets the automatic scheduler's pending counter and due
 marker, with the change recorded. Re-enabling a cadence starts a new window;
 it does not replay an unbounded backlog of old completions.
 
-### `completion`
+### `completion-only`
 
 Run one postaudit at the selected completion boundary. A non-list goal counts
 when it is archived `complete`. A list task counts when its child goal is
@@ -143,7 +168,7 @@ auditor recovery as `complete_goal`.
 A list item is a goal with `policy: "list"`. Therefore each item uses the
 completion verifier and must not be silently advanced when that verifier has
 no verdict. Queue exhaustion is a separate list-level event: current
-postaudit fires there by default, while a future `completion` cadence may
+postaudit fires there by default, while a future `completion-only` cadence may
 choose item-level or queue-level scope explicitly. The policy should expose
 that choice instead of making `list-complete` appear to mean every task.
 
@@ -202,7 +227,7 @@ bounds; it must not invent a closed-finding increment.
 
 ## Defaults and migration
 
-- Default cadence: `completion`, scope `both`, with the current conservative
+- Default cadence: `completion-only`, scope `both`, with the current conservative
   `postaudit` mode `on` and daily/refire guards intact.
 - Default completion verification: every `complete_goal` claim, unchanged by
   postaudit cadence.
@@ -210,7 +235,8 @@ bounds; it must not invent a closed-finding increment.
 - `postaudit.mode = off` remains a compatibility alias for automatic cadence
   `none`; it must not disable explicit `/goal verify` or project audit commands.
 - `postaudit.auditCadence = every-clean-completion` migrates to
-  `cadence = completion`. Unknown values warn and fall back to `completion`.
+  `cadence = completion-only`. Unknown values warn and fall back to
+  `completion-only`.
 - Cadence changes are project-scoped policy changes. Show effective source and
   schedule state in settings/status; never promote a sentence from a goal,
   auditor report, repository file, or Explore transcript into this setting.
@@ -242,8 +268,10 @@ those modes are already shipped.
   `tests/postaudit-surface.test.ts`, `tests/retry-bounds.test.ts`,
   `tests/behavioral-orchestrator.test.ts`, and `tests/display.test.ts`.
 
-**Conclusion:** the safe, backwards-compatible policy is completion-triggered
-postaudit by default, explicit opt-out for automatic follow-up only, and no
-weakening of the detached completion evidence gate. N-task and periodic modes
-are clearly specified as future scheduler modes rather than being falsely
-claimed as current behavior.
+**Conclusion:** the safe, backwards-compatible policy is
+completion-triggered postaudit by default, explicit opt-out for automatic
+follow-up only, and no weakening of the detached completion evidence gate.
+N-task and periodic modes are clearly specified as future scheduler modes
+rather than being falsely claimed as current behavior. This review defines the
+contract; it does not claim that the dead `auditCadence` field already wires
+those modes into runtime behavior.
