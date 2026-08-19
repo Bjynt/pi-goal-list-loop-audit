@@ -23,6 +23,8 @@ Define a concise labeled recap for completed objectives (Outcome, Changed, Evide
 
 **Category:** settings/personalization
 
+but premium too
+
 Define how an agent preference is declared, scoped, persisted, surfaced in prompts, updated, and reset without allowing an old preference to override a newer explicit instruction.
 
 ## Not a focus
