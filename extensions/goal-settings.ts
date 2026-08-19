@@ -5,6 +5,13 @@
 // without importing the whole extension. Two-tier config (v0.7.0): GLOBAL
 // is the normal home, PROJECT the rare local override. Resolution:
 // project > global > defaults (per key).
+//
+// v0.35.6: this module owns the typed boundary for the long-term
+// preferences policy (audit/LONG-TERM-PREFERENCES-POLICY-2026-08-19.md).
+// The Settings interface is the ONLY schema accepted by saveSettings;
+// natural-language conversation / completion / auditor / Explore
+// transcripts are NEVER written here. A regression in
+// tests/long-term-preferences-boundary.test.ts pins this boundary.
 
 import * as fs from "node:fs";
 import * as os from "node:os";

@@ -101,18 +101,15 @@ test("Settings has no opaque free-form text field (typed boundary)", () => {
 });
 
 test("saveSettings is the only writer to the settings JSON files", () => {
-  // walkExtensions: every *.ts in extensions/ may not call
-  // writeFileSync/writeFile/fs.write* against the settings paths.
+  // Both helpers must route through os.homedir() and cwd respectively —
+  // a literal constant would let a writer bypass and still pass the
+  // path test. The global helper has an env-var override for tests;
+  // accept either branch.
   const globalPathFn = fs.readFileSync("extensions/goal-settings.ts", "utf-8").match(/globalSettingsPath\(\):\s*string\s*\{[\s\S]+?\n\}/m);
   const projectPathFn = fs.readFileSync("extensions/goal-settings.ts", "utf-8").match(/projectSettingsPath\([^)]*\):\s*string\s*\{[\s\S]+?\n\}/m);
   assert.ok(globalPathFn && projectPathFn, "global/project path helpers found");
-  const globalPath = globalPathFn[0]!.match(/return\s+([^;]+);/m)![1]!.trim();
-  const projectPath = projectPathFn[0]!.match(/return\s+([^;]+);/m)![1]!.trim();
-  // Both helpers must route through path.join(os.homedir(), ...) or
-  // path.join(cwd, ...) — a literal constant would let a writer
-  // bypass and still pass the path test.
-  assert.match(globalPath, /os\.homedir\(/, "global path routes through os.homedir");
-  assert.match(projectPath, /cwd/, "project path routes through cwd");
+  assert.match(globalPathFn[0]!, /os\.homedir\(/, "global path routes through os.homedir");
+  assert.match(projectPathFn[0]!, /cwd/, "project path routes through cwd");
 
   // Walk extensions/ for any direct writeFileSync against the settings
   // file names. Only goal-settings.ts may write them — the policy

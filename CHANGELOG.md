@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.35.6 — long-term preferences policy boundary (2026-08-19)
+
+### Typed-boundary regression pins
+  Implements the durable pin set called out in the long-term preferences
+  policy contract (audit/LONG-TERM-PREFERENCES-POLICY-2026-08-19.md):
+
+  - The continuation prompt template carries no auto-injected preference
+    or remembered section.
+  - No extension auto-prefers a remembered prose value
+    (function-name walk + XML-block walk over extensions/).
+  - The `Settings` interface has no opaque free-form text field
+    described as memory / preference / remember.
+  - `saveSettings` is the only writer to the settings JSON files; both
+    `globalSettingsPath()` and `projectSettingsPath()` route through
+    `os.homedir()` / `cwd` (env override accepted), and every other
+    extension is checked for direct `writeFile*` calls against the
+    settings basenames.
+  - `extensions/goal-settings.ts` cites the policy artifact in its
+    header so the safety contract is reachable from the typed boundary.
+
+  The pin set is structural and negative: it fails closed if a future
+  refactor adds any "auto-preference from prose" pathway, an untyped
+  setting key, or a non-settings writer to the typed storage API.
+
 ## 0.35.5 — six-label completionSummary shape (2026-08-19)
 
 ### Tool schema adopts the six-label recap
