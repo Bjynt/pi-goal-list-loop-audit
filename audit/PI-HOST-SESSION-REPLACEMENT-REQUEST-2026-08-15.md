@@ -96,3 +96,28 @@ The local type evidence was re-read on 2026-08-15. Existing lifecycle tests
 cover stale classification, bounded start proof, durable parking, and fresh
 session rebind. The remaining missing acceptance tests are host tests and
 belong upstream once the API exists.
+
+## Fresh boundary assessment — 2026-08-19
+
+The installed Pi package is still `0.84.2`. A fresh read of
+`dist/core/extensions/types.d.ts` confirms that `ExtensionContext` exposes a
+read-only `sessionManager`, while `newSession()`, `switchSession()`,
+`fork()`, and `withSession()` remain restricted to `ExtensionCommandContext`.
+The documented lifecycle still emits `session_shutdown` followed by
+`session_start` for user-controlled session replacement. No event-safe
+`replaceSession()` capability exists.
+
+This confirms that glla's current plugin-side approach is the correct safe
+containment strategy, not a mistaken attempt to own the host lifecycle: it
+persists and parks work, fences stale generations, absorbs only a validated
+file-backed host successor, self-heals only after a healthy same-session
+probe, and never casts an event context or injects private `/new` actions.
+It is not a complete automatic replacement solution. The remaining fix belongs
+upstream in Pi: either guarantee lifecycle events for every real host-session
+replacement or expose an idempotent, cancellation-aware, host-owned
+replacement API returning a fresh command-capable context.
+
+**Concrete next action:** open an upstream Pi issue/request with this document
+and the five acceptance tests above when the operator authorizes that external
+action. Until then, keep this item classified as an upstream/API boundary,
+retain the current fallback, and do not make a local unsafe replacement hack.
