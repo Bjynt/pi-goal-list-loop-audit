@@ -13,31 +13,19 @@ Evidence:
 - `/home/dracon/Pictures/Screenshots/Screenshot_20260818_173242.png`
 - `/home/dracon/Pictures/Screenshots/Screenshot_20260818_173824.png`
 
-## 2. Buggy and previous-version objectives
-
-**Category:** local robustness
-
-Design a safer objective-integrity path for malformed, stale, or version-drifted objectives: preserve the original text, make repair explicit and reviewable, and prefer defer/decision over silently changing the requested work.
-
-## 3. Explore-session retention
-
-**Category:** session/history UX
-
-Decide whether Explore workers should remain as ordinary saved sessions, be hidden from the main history, or be automatically archived with a compact report and retention policy.
-
-## 4. Completion summaries
+## 2. Completion summaries
 
 **Category:** completion UX
 
 Provide a concise structured summary when an objective ends: what changed, evidence collected, tests run, unresolved items, and the next useful focus. Keep it separate from the auditor's durable verdict.
 
-## 5. Long-term preferences
+## 3. Long-term preferences
 
 **Category:** settings/personalization
 
 Define how an agent preference is declared, scoped, persisted, surfaced in prompts, updated, and reset without allowing an old preference to override a newer explicit instruction.
 
-## 6. Audit policy controls
+## 4. Audit policy controls
 
 **Category:** settings/policy
 
