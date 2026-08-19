@@ -13,19 +13,13 @@ Evidence:
 - `/home/dracon/Pictures/Screenshots/Screenshot_20260818_173242.png`
 - `/home/dracon/Pictures/Screenshots/Screenshot_20260818_173824.png`
 
-## 2. Completion summaries
-
-**Category:** completion UX
-
-Provide a concise structured summary when an objective ends: what changed, evidence collected, tests run, unresolved items, and the next useful focus. Keep it separate from the auditor's durable verdict.
-
-## 3. Long-term preferences
+## 2. Long-term preferences
 
 **Category:** settings/personalization
 
 Define how an agent preference is declared, scoped, persisted, surfaced in prompts, updated, and reset without allowing an old preference to override a newer explicit instruction.
 
-## 4. Audit policy controls
+## 3. Audit policy controls
 
 **Category:** settings/policy
 
