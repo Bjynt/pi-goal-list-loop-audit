@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.35.5 — six-label completionSummary shape (2026-08-19)
+
+### Tool schema adopts the six-label recap
+  `complete_goal`'s schema description now recommends the Outcome / Changed /
+  Evidence / Tests / Unresolved / Next shape from
+  `audit/COMPLETION-SUMMARY-POLICY-2026-08-19.md` and points callers at the
+  policy doc. Free-form prose is still allowed but discouraged. The detached
+  auditor continues to receive `completionSummary` and `verificationSummary`
+  as independent fields; the policy-review decision (typed object vs labeled
+  string) is preserved.
+
+### Regressions
+  `tests/completion-recap-shape.test.ts` adds two pins:
+  - the detached auditor's prompt renders the two claims as separate
+    `<completion_summary>` / `<verification_summary>` blocks (the executor
+    claim is not the auditor's verdict);
+  - the `complete_goal` tool schema names every label and references the
+    policy artifact (so a future refactor cannot rewrite the description
+    back to "1-paragraph completion claim" without breaking this test).
+
 ## 0.35.4 — auditor reports in continuation prompts and repair-loop closure (2026-08-16)
 
 ### Continuation prompts carry the latest auditor verdict

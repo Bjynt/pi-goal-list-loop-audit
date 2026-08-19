@@ -53,3 +53,53 @@ test("structured completion recap survives archive rendering and the terminal wi
   assert.match(widget[0]!, /✓ done/);
   assert.match(widget[0]!, /took 20m/);
 });
+
+// The detached completion auditor must receive completionSummary and
+// verificationSummary as INDEPENDENT fields. The recap is an executor
+// claim; the verification summary is per-contract evidence; the auditor
+// cross-checks one against real artifacts. Pin the structural separation
+// so a future refactor of buildGoalAuditorPrompt cannot collapse them
+// into a single string without breaking this test.
+test("auditor receives completionSummary and verificationSummary independently", () => {
+  const fs = require("node:fs") as typeof import("node:fs");
+  const src = fs.readFileSync("extensions/goal-loop-auditor.ts", "utf-8");
+  const promptFn = src.match(/function buildGoalAuditorPrompt[\s\S]+?^}/m);
+  assert.ok(promptFn, "buildGoalAuditorPrompt function found");
+
+  const body = promptFn[0]!;
+  assert.match(body, /completionSummary/, "completionSummary parameter is referenced");
+  assert.match(body, /verificationSummary/, "verificationSummary parameter is referenced");
+  assert.match(body, /<completion_summary>/, "completionSummary is rendered inside its own XML block");
+  assert.match(body, /<verification_summary>/, "verificationSummary is rendered inside its own XML block");
+
+  // The two blocks must not be concatenated by the formatter: completion_summary
+  // closes BEFORE verification_summary opens, and each has its own label.
+  const closeCompletion = body.indexOf("</completion_summary>");
+  const openVerification = body.indexOf("<verification_summary>");
+  assert.ok(closeCompletion > 0, "completion_summary block closes");
+  assert.ok(openVerification > 0, "verification_summary block opens");
+  assert.ok(
+    openVerification > closeCompletion,
+    "verification_summary opens AFTER completion_summary closes — they are independent blocks",
+  );
+});
+
+// The complete_goal tool schema description must point callers at the
+// six-label shape and the policy artifact. Without this anchor a future
+// refactor can rewrite the description back to "1-paragraph completion
+// claim" without anyone noticing.
+test("complete_goal tool schema references the six-label policy", () => {
+  const fs = require("node:fs") as typeof import("node:fs");
+  const src = fs.readFileSync("extensions/loops/goal-tools.ts", "utf-8");
+  const toolBlock = src.match(/name:\s*"complete_goal"[\s\S]+?parameters:\s*Type\.Object\(\{[\s\S]+?\}\),/m);
+  assert.ok(toolBlock, "complete_goal tool block found");
+
+  const body = toolBlock[0]!;
+  assert.match(body, /Outcome:/, "Outcome label is named in the schema description");
+  assert.match(body, /Changed:/, "Changed label is named in the schema description");
+  assert.match(body, /Evidence:/, "Evidence label is named in the schema description");
+  assert.match(body, /Tests:/, "Tests label is named in the schema description");
+  assert.match(body, /Unresolved:/, "Unresolved label is named in the schema description");
+  assert.match(body, /Next:/, "Next label is named in the schema description");
+  assert.match(body, /COMPLETION-SUMMARY-POLICY-2026-08-19\.md/, "policy doc is referenced");
+});

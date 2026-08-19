@@ -411,8 +411,26 @@ function registerAgentTools(pi: any): void {
     label: "Complete goal",
     description: "Mark the active goal as complete. Queues a detached auditor worker to verify without holding the main pi turn. Use only when the objective is genuinely satisfied.",
     parameters: Type.Object({
-      completionSummary: Type.Optional(Type.String({ description: "1-paragraph completion claim" })),
-      verificationSummary: Type.Optional(Type.String({ description: "Per-item evidence for the verification contract" })),
+      // v0.34.136: completionSummary adopts the six-label recap from
+      // audit/COMPLETION-SUMMARY-POLICY-2026-08-19.md (Outcome / Changed
+      // / Evidence / Tests / Unresolved / Next). Every label is present
+      // even when its value is `none`; the durable archive preserves all
+      // six lines verbatim and the display/widget projection does NOT
+      // fabricate an auditor verdict.
+      completionSummary: Type.Optional(Type.String({
+        description:
+          "Six-label recap — one line per label, every label required (use `none` when empty): " +
+          "Outcome: <what was delivered> · Changed: <files/behavior/decision> · Evidence: <key commit/report/result> · " +
+          "Tests: <bounded commands + pass/fail, or `not run — <reason>`> · Unresolved: <remaining risk, or `none`> · " +
+          "Next: <one follow-up hint, or `none`>. " +
+          "See audit/COMPLETION-SUMMARY-POLICY-2026-08-19.md. Free-form prose is allowed but discouraged.",
+      })),
+      verificationSummary: Type.Optional(Type.String({
+        description:
+          "Per-item evidence for the verification contract. " +
+          "Stays independent of completionSummary: the detached auditor receives both fields separately " +
+          "and cross-checks the verification claim against real artifacts (see audit/COMPLETION-SUMMARY-POLICY-2026-08-19.md).",
+      })),
       newObjective: Type.Optional(Type.String({ description: "v0.25.0 (contract item 15): when the work has legitimately shifted, pass the new objective here — it atomically replaces the goal objective AND the audit proceeds against the NEW objective in this same call. Do not use to dodge a legitimate disapproval; the auditor sees the change." })),
     }),
     async execute(_id, params, signal, _onUpdate, execCtx) {
