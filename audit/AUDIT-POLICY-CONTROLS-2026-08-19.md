@@ -3,6 +3,14 @@
 **Status:** policy review and implementation boundary; no source change is
 supported by this review.
 
+**Note on the Designer subagent:** the Designer is an opt-in read-only
+subagent (`Agent(designer)`), not a default step. This review mentions a
+Designer review as one transient evidence sample; its considerations are
+advisory and are not load-bearing for the policy contract. When the Designer
+agent is not selected, its suggestions must be ignored — the contract stands
+on the typed configuration, the source-code references, and the focused
+regression tests, not on a Designer draft.
+
 ## Decision summary
 
 The word **audit** names three different operations in this project. They must

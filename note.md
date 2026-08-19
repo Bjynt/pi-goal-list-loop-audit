@@ -25,18 +25,6 @@ Define a concise labeled recap for completed objectives (Outcome, Changed, Evide
 
 Define how an agent preference is declared, scoped, persisted, surfaced in prompts, updated, and reset without allowing an old preference to override a newer explicit instruction.
 
-## 4. Audit policy controls
-
-**Category:** settings/policy
-
-Support an explicit audit cadence:
-- no audit;
-- audit only on completion;
-- audit every N tasks; or
-- audit periodically.
-
-Define defaults, list/goal/loop interactions, and what happens when an audit is unavailable.
-
 ## Not a focus
 
 The main-session versus subagent-session distinction is expected `SessionManager` behavior, not a confirmed defect. Queue persistence, packaging/schema parity, stale completion recovery, and verification parsing were completed and are intentionally omitted from this working note.
