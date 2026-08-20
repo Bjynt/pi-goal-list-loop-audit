@@ -484,19 +484,12 @@ function heartbeatTick(): void {
     if (tryAbsorbHostSuccessor(knownCtx, "heartbeat-self-heal")) return;
     rememberCtx(knownCtx);
     // Reuse the same-session recovery gate as ordinary commands. It clears
-    // the durable interrupted marker and can resume unattended work; the
-    // fallback below preserves the old probe-only behavior if ownership is
-    // still ambiguous.
-    if (!flags.staleTerminalDone && !flags.extensionApiStale) return;
-    flags.staleTerminalDone = false;
-    flags.extensionApiStale = false;
-    flags.zombieStoodDown = false;
-    flags.sessionHandoffPending = false;
-    try {
-      knownCtx.ui.notify("glla: pi recovered after a stale-handle terminal — self-healing in-memory state (no /reload needed).", "info");
-    } catch {
-      /* the ledger is the durable record; notify is best-effort */
-    }
+    // the durable interrupted marker and rebinds the owner only after BOTH
+    // the context and the captured ExtensionAPI are healthy. If that gate
+    // refuses the contact, stay parked: clearing these flags here used to
+    // announce a false recovery and immediately retry against the same stale
+    // API every heartbeat tick.
+    if (flags.staleTerminalDone || flags.extensionApiStale) return;
   }
   const ctx = freshCtx();
   if (!ctx) return;

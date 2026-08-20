@@ -1072,7 +1072,11 @@ function isCtxAlive(ctx: ExtensionContext | null | undefined): boolean {
  * (field: hegemon 2026-08-06 — one probe failure parked a live session for
  * 5 hours). */
 function probeExtensionApiStaleRaw(): boolean {
-  if (lastCtx && isCtxAlive(lastCtx)) return false;
+  // The ExtensionAPI and ExtensionContext can disagree briefly: a live
+  // context does NOT prove that the captured `pi` can still send. In
+  // particular, a stale send can latch the API while ctx.isIdle() continues
+  // to succeed. Always probe the API itself here or the heartbeat will
+  // repeatedly "recover" and immediately fail the next continuation send.
   if (!extensionApi) return false;
   try {
     extensionApi.getSessionName();
@@ -1083,13 +1087,10 @@ function probeExtensionApiStaleRaw(): boolean {
 }
 
 function probeExtensionApiStale(): boolean {
-  if (extensionApiStale) {
-    if (lastCtx && isCtxAlive(lastCtx)) {
-      extensionApiStale = false;
-      return false;
-    }
-    return true;
-  }
+  // A stale ExtensionAPI is terminal for this factory instance. A healthy
+  // context probe must not clear this latch: the next send would still use
+  // the same captured API and throw again.
+  if (extensionApiStale) return true;
   if (probeExtensionApiStaleRaw()) extensionApiStale = true;
   return extensionApiStale;
 }
@@ -1483,8 +1484,11 @@ function selfHealStaleSameSession(ctx: ExtensionContext): boolean {
   if (owner && owner.pid === process.pid && typeof owner.instanceId === "string" && owner.instanceId !== instanceId) {
     return false; // a successor module instance owns this cwd — never re-claim
   }
-  // The handle must actually be healthy NOW — the fresh probe on the live context.
-  if (!isCtxAlive(ctx)) return false;
+  // Both handles must actually be healthy NOW. A live ExtensionContext does
+  // not prove that the captured ExtensionAPI can send; Pi can leave ctx
+  // probes answering while the API has already latched stale. Reclaim only
+  // when the exact API used by continuation sends also passes its probe.
+  if (!isCtxAlive(ctx) || !extensionApi || probeExtensionApiStaleRaw()) return false;
   const was = extensionApiStale ? "extension_api_stale" : sessionHandoffPending ? "session_handoff_pending" : "stale_terminal_done";
   extensionApiStale = false;
   sessionHandoffPending = false;
