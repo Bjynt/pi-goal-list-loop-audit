@@ -19,7 +19,13 @@ import {
   formatMainModelFallbacks,
   splitModelRef,
 } from "../extensions/main-model-recovery.js";
-import { createGoalRecovery, probeMainModelRecovery, tryMainModelFallback } from "../extensions/goal-recovery.js";
+import {
+  clearMainModelRecoveryTimer,
+  createGoalRecovery,
+  mainModelRecoverySucceeded,
+  probeMainModelRecovery,
+  tryMainModelFallback,
+} from "../extensions/goal-recovery.js";
 import { replaceState, state } from "../extensions/goal-state.js";
 import { globalSettingsPath } from "../extensions/goal-settings.js";
 
@@ -170,6 +176,121 @@ test("runtime fallback walk uses one supervised model at a time and preserves le
     assert.equal(calls.includes("provider/removed"), false, "a removed pending backup is not resurrected by a delayed probe");
     assert.equal(state.mainModelRecovery?.pendingModelSwitch, undefined);
   } finally {
+    replaceState({ goal: null } as any);
+    if (original === undefined) {
+      try { fs.unlinkSync(settingsFile); } catch { /* absent */ }
+    } else {
+      fs.writeFileSync(settingsFile, original);
+    }
+  }
+});
+
+test("successful fallback turns keep the preferred primary and fail back after a supervised probe", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "glla-main-failback-runtime-"));
+  const settingsFile = globalSettingsPath();
+  const original = fs.existsSync(settingsFile) ? fs.readFileSync(settingsFile, "utf8") : undefined;
+  const calls: string[] = [];
+  const ctx: any = {
+    cwd,
+    model: { provider: "provider", id: "primary" },
+    modelRegistry: {
+      find: (provider: string, id: string) => ({ provider, id }),
+      hasConfiguredAuth: () => true,
+    },
+    ui: { notify: () => {} },
+    abort: () => {},
+  };
+  const flags: any = {
+    completionAuditRecoveryArmed: false,
+    mainModelRecoveryTimer: null,
+    mainModelSwitchInFlight: false,
+    mainModelAbortForRecovery: false,
+    lastMainModelFailure: null,
+    hourlyProbeTimer: null,
+    hourlyProbeFireAt: null,
+    sessionGeneration: 1,
+    extensionApi: { setModel: async (model: any) => { calls.push(`${model.provider}/${model.id}`); return true; } },
+    extensionApiStale: false,
+    continuationDispatchStoodDown: false,
+    lastMainModelRecoveryResumeAt: 0,
+  };
+  try {
+    fs.writeFileSync(settingsFile, JSON.stringify({
+      mainModelFallbacks: ["provider/backup"],
+      mainModelFailback: "auto",
+      mainModelPrimaryProbeMinutes: 1,
+      forbiddenModels: [],
+      hourlyRetryProbe: false,
+    }));
+    replaceState({ goal: null } as any);
+    createGoalRecovery(flags, {
+      activeGoalSurfaceCommand: (command: string) => `/${command}`,
+      clearDetachedAuditRuntime: () => {},
+      updateGoal: () => {},
+      clearContinuationTimer: () => {},
+      freshCtxForGeneration: (generation: number) => generation === flags.sessionGeneration ? ctx : null,
+      isSupervising: () => true,
+      notifyExternal: () => {},
+      persistState: () => {},
+      recoverySurfaceCommand: (_kind: "goal" | "loop", command: string) => `/${command}`,
+      scheduleContinuation: () => {},
+      scheduleSessionTimeout: (callback: () => void, delayMs: number) => setTimeout(callback, delayMs),
+    });
+
+    const failure = classifyMainModelFailure("503 temporarily unavailable");
+    assert.equal(await tryMainModelFallback(ctx, failure), true);
+    ctx.model = { provider: "provider", id: "backup" };
+    mainModelRecoverySucceeded(ctx);
+    assert.equal(calls[0], "provider/backup");
+    assert.equal(state.mainModelRecovery?.primary, "provider/primary");
+    assert.equal(state.mainModelRecovery?.active, "provider/backup");
+    assert.ok(state.mainModelRecovery?.primaryProbeAt, "a successful fallback keeps a durable primary probe");
+    assert.equal(state.mainModelRecovery?.primaryProbeInFlight, undefined);
+
+    await probeMainModelRecovery(ctx);
+    assert.equal(calls.at(-1), "provider/primary", "the failback probe selects the original primary");
+    assert.equal(state.mainModelRecovery?.primaryProbeInFlight, true, "setModel alone does not settle provider health");
+    ctx.model = { provider: "provider", id: "primary" };
+    mainModelRecoverySucceeded(ctx);
+    assert.equal(state.mainModelRecovery, undefined, "a successful supervised primary turn settles failback");
+    assert.deepEqual(calls, ["provider/backup", "provider/primary"]);
+  } finally {
+    clearMainModelRecoveryTimer();
+    replaceState({ goal: null } as any);
+    if (original === undefined) {
+      try { fs.unlinkSync(settingsFile); } catch { /* absent */ }
+    } else {
+      fs.writeFileSync(settingsFile, original);
+    }
+  }
+});
+
+test("sticky failback preserves the old fallback-settles behavior", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "glla-main-sticky-failback-"));
+  const settingsFile = globalSettingsPath();
+  const original = fs.existsSync(settingsFile) ? fs.readFileSync(settingsFile, "utf8") : undefined;
+  const ctx: any = {
+    cwd,
+    model: { provider: "provider", id: "backup" },
+    ui: { notify: () => {} },
+  };
+  try {
+    fs.writeFileSync(settingsFile, JSON.stringify({ mainModelFailback: "sticky", forbiddenModels: [] }));
+    replaceState({
+      goal: null,
+      mainModelRecovery: {
+        primary: "provider/primary",
+        active: "provider/backup",
+        attempted: ["provider/primary", "provider/backup"],
+        attempts: 1,
+        reason: "provider error",
+        kind: "goal",
+      },
+    } as any);
+    mainModelRecoverySucceeded(ctx);
+    assert.equal(state.mainModelRecovery, undefined);
+  } finally {
+    clearMainModelRecoveryTimer();
     replaceState({ goal: null } as any);
     if (original === undefined) {
       try { fs.unlinkSync(settingsFile); } catch { /* absent */ }
