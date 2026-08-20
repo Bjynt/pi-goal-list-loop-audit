@@ -10,7 +10,7 @@ This is a detached process, not a nested session in the main pi process. `comple
 
 On Windows, npm installs the `pi.cmd` shim rather than a directly executable `pi` binary. The auditor launches it through an explicitly quoted `cmd.exe` boundary; POSIX keeps direct shell-less execution. Protocol snapshots also tolerate transient Windows file-locks without deleting the last valid snapshot first.
 
-**Current package version:** `v0.35.6` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
+**Current package version:** `v0.35.7` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
 
 ## Why this exists
 
@@ -22,9 +22,12 @@ Most pi goal extensions — `pi-goal`, `pi-goal-x`, `pi-loop-mode`, `ralphi`, `t
 
 | Stage | Protection |
 |---|---|
-| Goal intake | Drafting + Confirm/Reject dialog; nothing activates unconfirmed |
-| Implementation | `agent_end`-driven continuation loop with 5-minute hard backoff cap |
-| Completion | Detached extension-less auditor process + **regression_shield**: raw command output required per verification-contract item, enforced orchestrator-side |
+| Goal intake | Deep upfront grilling + Confirm/Reject dialog; nothing activates unconfirmed |
+| Implementation | Zero-pause autonomous execution: `agent_end`-driven loop with autonomous pivoting & sensible defaults |
+| Milestone gates | Structured task milestones with mechanical test execution before completion |
+| Pre-Audit | **Deterministic Fast-Fail**: Mechanical shell checks (`npm test`, `tsc`, `cargo test`) run in ~200ms before spawning the auditor worker |
+| Final Verification | Detached extension-less auditor process + **regression_shield**: raw command output required per verification-contract item, enforced orchestrator-side |
+| Queue Hygiene | Anti-queue-drift: every single `/list` item receives an independent detached audit pass before queue advancement |
 
 ## Quick start
 

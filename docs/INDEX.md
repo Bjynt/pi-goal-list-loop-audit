@@ -12,8 +12,9 @@ For shipped docs, the relevant entry points are:
 
 - `../CHANGELOG.md` — user-facing changelog; the top of the file is the
   current package version. v0.35.5 adopted the six-label completion
-  recap; v0.35.6 added typed-boundary regression pins for the
-  long-term preferences policy.
+  recap; v0.35.6 added typed-boundary regression pins; v0.35.7 added
+  deterministic fast-fail pre-audits, zero-pause autonomous execution, and
+  task milestone gating.
 - `../README.md` — what the plugin is, install, quickstart, and the
   architectural guarantee (drafting + confirm + detached auditor).
 - `../INSTALL.md` — manual install / symlink setup; the recommended

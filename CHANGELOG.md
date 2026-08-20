@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.35.7 — fast-fail pre-audits, zero-pause execution, and milestone gating (2026-08-20)
+
+### Deterministic fast-fail mechanical pre-audits
+  `extractMechanicalCheckCommands` and `runMechanicalPreAuditChecks` in
+  `extensions/goal-loop-shield.ts` parse explicit shell command gates
+  (`npm test`, `bun test`, `tsc --noEmit`, `cargo test`, etc.) from the
+  verification contract. On `complete_goal`, the orchestrator runs mechanical
+  checks deterministically first. If any command fails, it synthesizes an
+  instant fast-fail disapproval in ~200ms with verbatim terminal output inside
+  `<evidence>`, returning immediate actionable feedback to the agent without
+  wasting tokens or 45 seconds on an LLM audit pass.
+
+### Two-phase decision architecture & non-interruption law
+  `LONG_RUNNING_JUDGMENT_POLICY` and the execution prompts enforce deep
+  upfront grilling during drafting followed by 100% unattended autonomous
+  execution. The agent is strictly forbidden from pausing for obvious choices,
+  cosmetic naming, or non-blocking secondary questions: it picks the sensible
+  architectural default, implements the root-cause fix, records its rationale,
+  and continues. Non-blocking notes are deferred to the final completion
+  summary.
+
+### Stale-handle watchdog self-healing
+  In `extensions/goal-heartbeat.ts`, when the 15-second heartbeat detects that
+  the initial factory `ExtensionAPI` handle threw a stale-API error after an
+  internal Pi session replacement, it attempts `tryAbsorbHostSuccessor` with
+  the live file-backed context before declaring terminal stale loss, eliminating
+  false-positive `host session lost` stalls.
+
+### Structured task milestone gating
+  `Task` and `TaskProposal` schemas now support per-task `verificationContract`
+  milestone gates. In `complete_task`, if a task defines a verification gate,
+  its mechanical checks are executed deterministically before the task can be
+  marked complete, preventing early errors from compounding over multi-hour runs.
+
 ## 0.35.6 — long-term preferences policy boundary (2026-08-19)
 
 ### Typed-boundary regression pins

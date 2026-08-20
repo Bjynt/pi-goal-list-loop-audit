@@ -28,7 +28,8 @@ What happens:
 2. **The loop drives** — after every agent turn, glla nudges the work forward;
    the widget (bottom-left) shows the goal, elapsed time, and last action.
 3. **Verified completion** — when the agent calls `complete_goal`, glla
-   persists the claim and queues a **detached auditor worker process** (a
+   runs deterministic mechanical pre-audit checks first (~200ms fast-fail on
+   compiler/test failures) before queueing the **detached auditor worker process** (a
    fresh pi RPC session with no extensions). It re-runs your checks and
    demands raw output per contract item without holding the main pi turn.
    Done sticks only when the auditor approves with evidence.
