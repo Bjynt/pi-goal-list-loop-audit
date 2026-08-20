@@ -208,6 +208,45 @@ test("v0.34.62 — a genuinely dead handle stays parked (no heal)", async () => 
   }
 });
 
+test("v0.35.12 — a healthy context cannot revive a stale ExtensionAPI", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetTerminalFlags();
+  try {
+    const cwd = tmpCwd();
+    const ctx = await freshSession(cwd, "startup");
+    await pi.command("goal", "do not loop on a stale API — done when pinned", ctx);
+    await tick();
+
+    // Reproduce the field sequence: pi's captured ExtensionAPI rejects the
+    // continuation, while the captured context's isIdle() still answers
+    // successfully. The API is the object future sends actually use.
+    const stale = staleError();
+    pi.sendMessageError = stale;
+    pi.sessionNameError = stale;
+    await pi.fire("agent_end", {
+      messages: [{ role: "assistant", content: [{ type: "text", text: "boundary" }], stopReason: "end_turn" }],
+    }, ctx);
+    await tick();
+
+    const invalidationsBefore = (ledger(cwd).match(/session_handle_invalidated/g) ?? []).length;
+    assert.equal(invalidationsBefore, 1, "the first stale send parks the host once");
+    assert.ok((readState(cwd).goal as { interruptedAt?: string }).interruptedAt, "the durable interruption marker is present");
+
+    // The context still looks healthy, but the captured API remains stale.
+    // Heartbeat recovery must stay parked instead of clearing the marker and
+    // immediately scheduling another send into the same dead API.
+    __testOnlyHeartbeatTickRaw();
+    await tick();
+    const after = ledger(cwd);
+    assert.equal((after.match(/session_handle_invalidated/g) ?? []).length, 1, "no repeated invalidation loop");
+    assert.doesNotMatch(after, /stale_self_healed/, "a healthy ctx probe is not enough to self-heal");
+    assert.ok((readState(cwd).goal as { interruptedAt?: string }).interruptedAt, "the goal remains honestly parked");
+  } finally {
+    pi.sendMessageError = null;
+    pi.sessionNameError = null;
+  }
+});
+
 test("v0.34.62 — a DIFFERENT session's command is not self-healed (successor absorption owns that path)", async () => {
   __testOnlyResetStaleFlag();
   __testOnlyResetTerminalFlags();
