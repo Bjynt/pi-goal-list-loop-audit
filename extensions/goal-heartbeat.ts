@@ -460,6 +460,7 @@ function heartbeatTick(): void {
       flags.heartbeatStaleStreak++;
       if (flags.heartbeatStaleStreak < heartbeatStaleDebounce) return;
     }
+    if (knownCtx && tryAbsorbHostSuccessor(knownCtx, "heartbeat-probe")) return;
     if (knownCtx && !absorbStaleIfSuperseded(knownCtx)) goStaleTerminal(knownCtx, "heartbeat probe");
     return;
   }

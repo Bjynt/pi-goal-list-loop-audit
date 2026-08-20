@@ -20,7 +20,10 @@ Prefer a durable, maintainable fix when it is inside scope. Use a quick
 workaround only when it is safe, reversible, testable, and its durable
 follow-up is recorded. Ask one focused question only for an actual scope,
 priority, irreversible-action, or missing-permission decision; do not interrupt
-for local reversible choices. If the user requests design help, mark the
+for local reversible choices. Always adopt a long-term, premium architectural
+mindset: avoid superficial patches, ensure comprehensive verification contracts
+(behavioral tests, clean types, edge cases), and preserve full system autonomy.
+If the user requests design help, mark the
 objective or item with `Agent: Designer` (or `Role: designer`) so the
 continuation routes a Designer checkpoint.
 
