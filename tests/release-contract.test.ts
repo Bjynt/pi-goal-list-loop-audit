@@ -11,12 +11,22 @@ function dryRunFiles(): Set<string> {
     timeout: 30_000,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  const report = JSON.parse(raw) as { files?: Array<{ path: string }> } | Array<{ files?: Array<{ path: string }> }>;
-  const entries = Array.isArray(report) ? report : [report];
-  // npm versions have emitted both a single report object and an array of
-  // reports, plus root-relative and `package/...` paths. Normalize those
-  // transport details before asserting the package contract.
-  return new Set(entries.flatMap((entry) => entry.files ?? []).map((file) => file.path.replace(/^package\//, "")));
+  const report = JSON.parse(raw) as unknown;
+  const entries = Array.isArray(report)
+    ? report
+    : report && typeof report === "object" && Array.isArray((report as { files?: unknown }).files)
+      ? [report]
+      : report && typeof report === "object"
+        ? Object.values(report)
+        : [];
+  // npm versions have emitted a keyed object, a single report object, and an
+  // array of reports, plus root-relative and `package/...` paths. Normalize
+  // those transport details before asserting the package contract.
+  return new Set(entries
+    .flatMap((entry) => (entry && typeof entry === "object" && Array.isArray((entry as { files?: unknown }).files)
+      ? (entry as { files: Array<{ path: string }> }).files
+      : []))
+    .map((file) => file.path.replace(/^package\//, "")));
 }
 
 test("release contract: published documentation links are covered by the npm tarball", () => {

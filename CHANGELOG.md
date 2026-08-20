@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.35.12 — npm 12 pack-report compatibility (2026-08-20)
+
+### Keyed npm 12 dry-run reports
+  The release contract now handles npm 12's keyed JSON dry-run shape in
+  addition to the array and single-object shapes used by earlier npm
+  versions, while retaining path normalization for package contents.
+
 ## 0.35.11 — npm pack report shape compatibility (2026-08-20)
 
 ### Single-object and array npm reports

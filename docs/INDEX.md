@@ -17,7 +17,7 @@ For shipped docs, the relevant entry points are:
   task milestone gating; v0.35.8 added main-model preferred-primary
   failback; v0.35.9 hardened cross-version npm tarball checks; v0.35.10
   handles multi-entry npm dry-run reports; v0.35.11 accepts both npm report
-  shapes.
+  shapes; v0.35.12 supports npm 12's keyed pack reports.
 - `../README.md` — what the plugin is, install, quickstart, and the
   architectural guarantee (drafting + confirm + detached auditor).
 - `../INSTALL.md` — manual install / symlink setup; the recommended
