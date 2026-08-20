@@ -1516,6 +1516,7 @@ test("T2b: stale before compaction → no late rebind, refire, or misleading act
   const after = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
   const g = readState(cwd).goal as { status: string; interruptedAt?: string };
   assert.equal(g.status, "active", "persisted goal remains recoverable");
+  if (!g.interruptedAt) console.error("DBG-T2B", { goal: g, ledger: after });
   assert.ok(g.interruptedAt, "stale marker survives the later compact");
   assert.equal((after.match(/"extension_api_stale"/g) ?? []).length, 1, "stale terminal fires once");
   assert.doesNotMatch(after, /"compaction_refire"/, "late compact cannot schedule a refire");
