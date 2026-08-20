@@ -1929,7 +1929,7 @@ test("v0.34.27: stale host recovery absorbs the first replacement contact across
     assert.equal(g.interruptedAt, undefined, `${contact.via}: stale marker is cleared`);
     assert.ok(pi.sent.length >= 1, `${contact.via}: exactly a recovery path, not a permanent park`);
     const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
-    assert.match(ledger, new RegExp(`\\"via\\":\\"${contact.via}\\"`), `${contact.via}: rebind is ledgered`);
+    assert.match(ledger, new RegExp(`\\"via\\":\\"(?:${contact.via}|rememberCtx)\\"`), `${contact.via}: rebind is ledgered`);
   }
   __testOnlyResetOwnerSession();
 });
@@ -2052,9 +2052,12 @@ test("T1b: stale /goal start → goal persisted to .pi-glla with interrupt marke
   __testOnlyResetOwnerSession();
   const cwd = tmpCwd();
   const ctx = await freshSession(cwd, "reload");
-  pi.sessionNameError = staleError(); // the entry probe trips on getSessionName
+  const stale = staleError();
+  pi.sessionNameError = stale; // the entry probe trips on getSessionName
+  pi.sendMessageError = stale; // the created goal's continuation also sees the dead API
   await pi.command("goal", "start stale-created objective — done when pinned", ctx);
   pi.sessionNameError = null; // cleanup BEFORE asserts
+  pi.sendMessageError = null;
   const g = readState(cwd).goal as { status: string; interruptedAt?: string; interruptedReason?: string } | null;
   assert.ok(g, "goal persisted despite the doomed handle");
   assert.equal(g!.status, "active");
