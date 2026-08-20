@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.35.11 — npm pack report shape compatibility (2026-08-20)
+
+### Single-object and array npm reports
+  The release contract accepts both JSON shapes emitted by npm's dry-run
+  command: a single report object and an array of report objects. It continues
+  to normalize root-relative and `package/`-prefixed file paths before checking
+  the published documentation set.
+
 ## 0.35.10 — npm pack report compatibility (2026-08-20)
 
 ### Multi-entry npm dry-run reports
