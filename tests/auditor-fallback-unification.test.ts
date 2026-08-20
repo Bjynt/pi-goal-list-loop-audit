@@ -237,6 +237,32 @@ test("non-recoverable auditor failures stop without retrying or advancing", asyn
   assert.equal(outcome.fallbackUsed, false);
 });
 
+test("auditor wall timeouts and watchdog stalls walk the fallback chain", async () => {
+  const candidates: AuditorFallbackCandidate[] = [
+    { ref: "test/primary", model: { provider: "test", id: "primary" }, via: "setting" },
+    { ref: "test/fallback-pin", model: { provider: "test", id: "fallback-pin" }, via: "fallback-pin" },
+  ];
+  const calls: string[] = [];
+  const fallbacks: string[] = [];
+  const outcome = await runAuditorFallbackWithPolicy(candidates, async (candidate) => {
+    calls.push(candidate.ref!);
+    return candidate.ref === "test/primary"
+      ? result({ error: "Auditor exceeded its 30m wall-clock bound and was aborted.", model: candidate.ref })
+      : result({ approved: true, model: candidate.ref });
+  }, {
+    retryBaseMinutes: 1,
+    sleep: async () => {},
+    shouldRetry: () => true,
+    onFallback: (from, to) => { fallbacks.push(`${from.ref}->${to.ref}`); },
+  });
+
+  assert.equal(outcome.result.approved, true);
+  assert.equal(outcome.retriedOnce, true);
+  assert.equal(outcome.fallbackUsed, true);
+  assert.deepEqual(calls, ["test/primary", "test/primary", "test/fallback-pin"]);
+  assert.deepEqual(fallbacks, ["test/primary->test/fallback-pin"]);
+});
+
 test("auditor and drafter source paths name the shared policy primitives", () => {
   const processSource = fs.readFileSync("extensions/goal-loop-auditor-process.ts", "utf8");
   assert.match(processSource, /classifyMainModelFailure/);
@@ -252,3 +278,4 @@ test("auditor and drafter source paths name the shared policy primitives", () =>
   assert.match(drafterSource, /normalizeMainModelFallbackRefs/);
   assert.match(drafterSource, /new ModelSelector/);
 });
+
