@@ -1280,7 +1280,15 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
     if (generation !== flags.sessionGeneration || !freshCtxForGeneration(generation)) return;
     if (state.mainModelRecovery?.pendingModelSwitch?.toLowerCase() !== target.toLowerCase()) return;
     if (!accepted) throw new Error(`no configured auth for ${target}`);
-    state.mainModelRecovery = { ...state.mainModelRecovery!, active: target, attempted, pendingModelSwitch: undefined, retryAt: undefined };
+    state.mainModelRecovery = {
+      ...state.mainModelRecovery!,
+      active: target,
+      attempted,
+      primaryProbeAt: undefined,
+      primaryProbeInFlight: undefined,
+      pendingModelSwitch: undefined,
+      retryAt: undefined,
+    };
     persistState(ctx);
     appendLedger(ctx.cwd, "main_model_probe", { from: current, to: target, tryLabel: targetTryLabel, attempts: recovery.attempts });
     flags.continuationDispatchStoodDown = false;

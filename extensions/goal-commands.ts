@@ -341,6 +341,13 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
     void probeMainModelRecovery(ctx);
     return;
   }
+  if (state.mainModelRecovery?.primaryProbeAt || state.mainModelRecovery?.primaryProbeInFlight) {
+    clearMainModelRecoveryTimer();
+    flags.continuationDispatchStoodDown = false;
+    ctx.ui.notify("Probing the preferred primary now — the current fallback remains available if the primary is still unhealthy.", "info");
+    void probeMainModelRecovery(ctx);
+    return;
+  }
   // v0.34.3: /goal resume on an ACTIVE-but-idle goal re-kicks its
   // continuation (was: silent return — the user got NOTHING while the
   // widget said "active"). One-active-thing still holds: an active loop
@@ -2161,6 +2168,8 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
     [
       `mainAgentFallbackModels: ${formatMainModelFallbacks(effectiveSettings.mainModelFallbacks)}  [${prov.mainModelFallbacks?.source ?? "default"}]`,
       fmt("mainModelRetryMinutes", "mainModelRetryMinutes (base minutes; doubles per attempt)"),
+      fmt("mainModelFailback", "mainModelFailback (auto/sticky)"),
+      fmt("mainModelPrimaryProbeMinutes", "mainModelPrimaryProbeMinutes"),
       fmt("drafterModel", "drafterAgent (drafting only)"),
       fmt("drafterThinkingLevel", "drafterThinking (drafting only)"),
       fmt("drafterModelFallbacks", "drafterFallbackAgents (drafting only)"),

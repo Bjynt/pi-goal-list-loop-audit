@@ -263,6 +263,22 @@ export function buildSettingsRows(
       sourceText: src("hourlyRetryProbe"),
       description: "adds a probe at :00:30 while any main-model recovery is parked; off disables only this extra ticker, not the configured retry ladder"
     },
+    {
+      id: "mainModelFailback",
+      section: "main-agent",
+      label: "Primary failback policy",
+      valueText: show("mainModelFailback", "auto"),
+      sourceText: src("mainModelFailback"),
+      description: "auto: a healthy fallback periodically tests the preferred primary · sticky: stay on the fallback until manually changed",
+    },
+    {
+      id: "mainModelPrimaryProbeMinutes",
+      section: "main-agent",
+      label: "Primary probe minutes",
+      valueText: show("mainModelPrimaryProbeMinutes", "15"),
+      sourceText: src("mainModelPrimaryProbeMinutes"),
+      description: "minutes between preferred-primary failback probes while the fallback is serving",
+    },
   );
 
   // ── Drafter ──

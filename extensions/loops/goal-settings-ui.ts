@@ -937,6 +937,36 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       }
       return;
     }
+    case "mainModelFailback": {
+      const v = await ctx.ui.select("Primary failback — what happens after a fallback turn succeeds", [
+        "auto — periodically probe the preferred primary and fail back when it works (default)",
+        "sticky — stay on the fallback until a manual model selection",
+      ]);
+      if (v) {
+        const sticky = v.startsWith("sticky");
+        saveSettings("global", ctx.cwd, { mainModelFailback: sticky ? "sticky" : undefined });
+        if (sticky && state.mainModelRecovery && (state.mainModelRecovery.primaryProbeAt || state.mainModelRecovery.primaryProbeInFlight)) {
+          clearMainModelRecoveryTimer();
+          state.mainModelRecovery = undefined;
+          persistState(ctx);
+        } else if (!sticky && state.mainModelRecovery?.primaryProbeAt) {
+          scheduleMainModelRecoveryTimer(ctx, Math.max(0, Date.parse(state.mainModelRecovery.primaryProbeAt) - Date.now()));
+        }
+        ctx.ui.notify(sticky ? "Primary failback STICKY — the current fallback stays selected until you switch manually." : "Primary failback AUTO — a healthy fallback will periodically test the preferred primary.", "info");
+      }
+      return;
+    }
+    case "mainModelPrimaryProbeMinutes": {
+      const v = await ctx.ui.input("Preferred-primary failback probe cadence", "positive integer minutes; empty = default 15");
+      if (v !== undefined) {
+        const raw = v.trim();
+        const n = Number.parseInt(raw, 10);
+        if (Number.isInteger(n) && n > 0) saveSettings("global", ctx.cwd, { mainModelPrimaryProbeMinutes: n });
+        else if (!raw) saveSettings("global", ctx.cwd, { mainModelPrimaryProbeMinutes: undefined });
+        else ctx.ui.notify(`primary probe minutes must be a positive integer, got: ${v}`, "warning");
+      }
+      return;
+    }
     case "drafterModel": {
       const pick = await promptModelRef(ctx, "Drafter agent — temporary agent for drafting only", "provider/model-id — empty keeps the current session model");
       if (pick === undefined) return;
