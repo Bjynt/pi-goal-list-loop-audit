@@ -1492,6 +1492,7 @@ test("T2: a stale send on agent_end continuation → goal ACTIVE + interrupt mar
 // ────────────────────────────────────────────────────────────────────
 test("T2b: stale before compaction → no late rebind, refire, or misleading active UI", async () => {
   __testOnlyResetStaleFlag();
+  __testOnlyResetTerminalFlags();
   const cwd = tmpCwd();
   const ctx = await freshSession(cwd, "startup");
   await pi.command("goal", "stale then compact — done when pinned", ctx);
@@ -1829,6 +1830,7 @@ test("v0.34.25: silent swap — in-memory (subagent) ctx is still refused and th
 
 test("v0.34.25: the field ordering — stale before compaction, then the successor's compact event absorbs in place", async () => {
   __testOnlyResetStaleFlag();
+  __testOnlyResetTerminalFlags();
   const cwd = tmpCwd();
   const ctx = await freshSession(cwd, "startup");
   await pi.command("goal", "compact swap — done when absorbed", ctx);
@@ -1903,6 +1905,7 @@ test("v0.34.27: stale host recovery absorbs the first replacement contact across
   ];
   for (const [index, contact] of contacts.entries()) {
     __testOnlyResetStaleFlag();
+    __testOnlyResetTerminalFlags();
     __testOnlyResetOwnerSession();
     const cwd = tmpCwd();
     const ctx = await freshSession(cwd, "startup");
@@ -2046,6 +2049,7 @@ test("T1a: stale Confirm in propose_goal_draft → NOT-a-rejection guidance, no 
 
 test("T1b: stale /goal start → goal persisted to .pi-glla with interrupt marker + honest notify", async () => {
   __testOnlyResetStaleFlag();
+  __testOnlyResetTerminalFlags();
   const cwd = tmpCwd();
   const ctx = await freshSession(cwd, "reload");
   pi.sessionNameError = staleError(); // the entry probe trips on getSessionName
