@@ -22,7 +22,22 @@ import { state } from "./goal-state.js";
 import { appendLedger, claimRecoveryNotice, nowIso, piGlaDir, isForbiddenModel, isStaleApiError, nextHourlyProbeMs, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderDisplayText, writeGoalMd, type Goal, type MainModelRecovery, type PendingCompletion } from "./goal-loop-core.js";
 import { persistStateLine } from "./goal-state.js";
 import { cancelDetachedGoalCompletionAuditor } from "./goal-loop-auditor-process.js";
-import { classifyMainModelFailure, isContextOverflowError, isMainModelFallbackFailure, mainModelAutoRetryUntil, mainModelFailureDelayMs, mainModelRetryDelayMs, MAIN_MODEL_AUTO_RETRY_HORIZON_MS, modelRef, normalizeMainModelFallbackRefs, requiresMainModelRecovery, splitModelRef, type MainModelFailure } from "./main-model-recovery.js";
+import {
+  classifyMainModelFailure,
+  isContextOverflowError,
+  isMainModelFailbackAuto,
+  isMainModelFallbackFailure,
+  mainModelAutoRetryUntil,
+  mainModelFailureDelayMs,
+  mainModelPrimaryProbeDelayMs,
+  mainModelRetryDelayMs,
+  MAIN_MODEL_AUTO_RETRY_HORIZON_MS,
+  modelRef,
+  normalizeMainModelFallbackRefs,
+  requiresMainModelRecovery,
+  splitModelRef,
+  type MainModelFailure,
+} from "./main-model-recovery.js";
 import { ModelSelector, type ModelScope } from "./model-selector.js";
 import { loadGlobalSettings, loadSettings } from "./goal-settings.js";
 import { clearLoopTimer, scheduleLoopTick } from "./goal-loop.js";
@@ -361,6 +376,27 @@ export function mainModelFallbackRefs(ctx: ExtensionContext): string[] {
   try { return normalizeMainModelFallbackRefs(loadGlobalSettings().mainModelFallbacks); } catch { return []; }
 }
 
+function mainModelFailbackEnabled(): boolean {
+  try { return isMainModelFailbackAuto(loadGlobalSettings().mainModelFailback); } catch { return true; }
+}
+
+function mainModelPrimaryProbeDelay(): number {
+  try { return mainModelPrimaryProbeDelayMs(loadGlobalSettings().mainModelPrimaryProbeMinutes); } catch { return mainModelPrimaryProbeDelayMs(); }
+}
+
+function sameModelRef(left: string | undefined, right: string | undefined): boolean {
+  return !!left && !!right && left.toLowerCase() === right.toLowerCase();
+}
+
+function scheduleSupervisedPrimaryProbe(ctx: ExtensionContext, recovery: MainModelRecovery): void {
+  flags.continuationDispatchStoodDown = false;
+  if (recovery.kind === "goal" && state.goal?.status === "active") {
+    scheduleContinuation(ctx, true, 1_000);
+  } else if (recovery.kind === "loop" && state.loop?.active) {
+    scheduleLoopTick(ctx);
+  }
+}
+
 export function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModelRecovery, why: string): void {
   const normalizedBase = withMainModelRecoveryWindow(recovery);
   const diagnostic = normalizedBase.providerErrorDiagnostic ?? normalizedBase.reason;
@@ -376,7 +412,13 @@ export function holdMainModelRecovery(ctx: ExtensionContext, recovery: MainModel
   clearContinuationTimer();
   clearLoopTimer();
   flags.continuationDispatchStoodDown = true;
-  state.mainModelRecovery = { ...normalized, retryAt: undefined, manualResumeRequired: true };
+  state.mainModelRecovery = {
+    ...normalized,
+    retryAt: undefined,
+    primaryProbeAt: undefined,
+    primaryProbeInFlight: undefined,
+    manualResumeRequired: true,
+  };
   const resumeCmd = recoverySurfaceCommand(normalized.kind, "resume");
   const pauseReason = `main model recovery — automatic probes stopped (${sanitizeProviderDisplayText(why)})`;
   const action = `No automatic provider probes remain. Switch /model if desired, then ${resumeCmd} to start a fresh recovery window; ${activeGoalSurfaceCommand("cancel")} stops it.`;
@@ -503,6 +545,11 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
   const failureCopy = providerErrorPresentation(failure.raw, "main");
   const recovery: MainModelRecovery = {
     ...baseRecovery,
+    // A provider failure while serving a fallback returns to the normal
+    // ordered recovery walk; the next successful fallback turn will arm a
+    // fresh preferred-primary probe.
+    primaryProbeAt: undefined,
+    primaryProbeInFlight: undefined,
     reason: mainModelRecoveryReason(failure),
     providerErrorDiagnostic: failureCopy.diagnostic,
     recoveryEpisodeKey: baseRecovery.recoveryEpisodeKey ?? `${baseRecovery.firstFailureAt ?? nowIso()}:${failureCopy.fingerprint}`,
@@ -543,6 +590,8 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
         active: current,
         reason: mainModelRecoveryReason(failure),
         providerErrorDiagnostic: failureCopy.diagnostic,
+        primaryProbeAt: undefined,
+        primaryProbeInFlight: undefined,
         skipped: recovery.skipped,
       };
       persistState(ctx);
@@ -640,6 +689,8 @@ export function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainM
   state.mainModelRecovery = {
     ...normalized,
     retryAt,
+    primaryProbeAt: undefined,
+    primaryProbeInFlight: undefined,
     manualResumeRequired: undefined,
     reason: sanitizeProviderDisplayText(normalized.reason),
   };
@@ -701,6 +752,43 @@ export function scheduleMainModelRecoveryTimer(ctx: ExtensionContext, delayMs: n
   // only the initial park path. This covers fallback failures and later
   // failed probes while preserving one timer per slot.
   scheduleHourlyProbe(ctx);
+}
+
+/** Keep the preferred-primary probe separate from the parked-recovery wait.
+ * `retryAt` means the goal/loop is paused; `primaryProbeAt` means the
+ * fallback is serving successfully and work may continue normally. */
+export function scheduleMainModelPrimaryProbe(ctx: ExtensionContext, delayMs?: number): void {
+  const recovery = state.mainModelRecovery;
+  if (!recovery || recovery.manualResumeRequired === true || !mainModelFailbackEnabled()) return;
+  if (recovery.primaryProbeInFlight) return;
+  const configuredAt = recovery.primaryProbeAt ? Date.parse(recovery.primaryProbeAt) : Number.NaN;
+  const requestedDelay = delayMs === undefined
+    ? Number.isFinite(configuredAt) ? Math.max(0, configuredAt - Date.now()) : mainModelPrimaryProbeDelay()
+    : Math.max(0, delayMs);
+  const probeAt = Number.isFinite(configuredAt) && delayMs === undefined
+    ? recovery.primaryProbeAt
+    : new Date(Date.now() + requestedDelay).toISOString();
+  const changed = recovery.primaryProbeAt !== probeAt
+    || recovery.retryAt !== undefined
+    || recovery.pendingModelSwitch !== undefined;
+  if (changed) {
+    state.mainModelRecovery = {
+      ...recovery,
+      primaryProbeAt: probeAt,
+      primaryProbeInFlight: undefined,
+      retryAt: undefined,
+      pendingModelSwitch: undefined,
+      resumeCurrent: undefined,
+    };
+    persistState(ctx);
+    appendLedger(ctx.cwd, "main_model_failback_scheduled", {
+      primary: recovery.primary,
+      active: recovery.active,
+      probeAt,
+      delayMs: requestedDelay,
+    });
+  }
+  scheduleMainModelRecoveryTimer(ctx, requestedDelay);
 }
 
 // =================================================================
