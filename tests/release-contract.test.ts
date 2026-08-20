@@ -12,10 +12,13 @@ function dryRunFiles(): Set<string> {
     stdio: ["ignore", "pipe", "pipe"],
   });
   const report = JSON.parse(raw) as Array<{ files: Array<{ path: string }> }>;
-  return new Set((report[0]?.files ?? []).map((file) => file.path));
+  // npm versions have emitted both root-relative paths and `package/...`
+  // paths for the same dry-run report. Normalize the transport detail before
+  // asserting the package contract.
+  return new Set((report[0]?.files ?? []).map((file) => file.path.replace(/^package\//, "")));
 }
 
-test("v0.35.4: published documentation links are covered by the npm tarball", () => {
+test("release contract: published documentation links are covered by the npm tarball", () => {
   const files = dryRunFiles();
   for (const required of ["README.md", "INSTALL.md", "CHANGELOG.md", "docs/INDEX.md", "examples/example-objective.md"]) {
     assert.ok(files.has(required), `${required} must be shipped`);
@@ -26,7 +29,7 @@ test("v0.35.4: published documentation links are covered by the npm tarball", ()
   }
 });
 
-test("v0.35.4: README version matches package metadata", () => {
+test("release contract: README version matches package metadata", () => {
   const readme = fs.readFileSync("README.md", "utf-8");
   assert.match(readme, new RegExp(`Current package version:\\*\\*.*v${packageJson.version.replaceAll(".", "\\.")}`));
 });
