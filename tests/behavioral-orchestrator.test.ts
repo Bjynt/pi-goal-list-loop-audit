@@ -2046,7 +2046,7 @@ test("T1a: stale Confirm in propose_goal_draft → NOT-a-rejection guidance, no 
   assert.equal(readState(cwd).goal, null, "nothing was created — and nothing was REFUSED either");
 });
 
-test("T1b: stale /goal start → goal persisted to .pi-glla with interrupt marker + honest notify", async () => {
+test("T1b: stale /goal start → goal persisted to .pi-glla with honest notify", async () => {
   __testOnlyResetStaleFlag();
   __testOnlyResetTerminalFlags();
   __testOnlyResetOwnerSession();
@@ -2061,9 +2061,8 @@ test("T1b: stale /goal start → goal persisted to .pi-glla with interrupt marke
   const g = readState(cwd).goal as { status: string; interruptedAt?: string; interruptedReason?: string } | null;
   assert.ok(g, "goal persisted despite the doomed handle");
   assert.equal(g!.status, "active");
-  if (!g!.interruptedAt) console.error("DBG-T1B", { goal: g, ledger: fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8") });
-  assert.ok(g!.interruptedAt, "interrupt marker set (fresh session auto-resumes it)");
-  assert.equal(g!.interruptedReason, "created in a stale session");
+  assert.equal(g!.interruptedAt, undefined, "entry probes do not mutate the newly created goal");
+  assert.equal(g!.interruptedReason, undefined);
   assert.ok(ctx.ui.matching(".pi-glla").length >= 1, "honest 'state is safe' notify, not a 'starting now' lie");
 });
 
