@@ -1834,10 +1834,11 @@ test("v0.34.25: the field ordering — stale before compaction, then the success
   await pi.command("goal", "compact swap — done when absorbed", ctx);
   await tick();
   pi.sent.length = 0;
-  pi.sendMessageError = staleError();
+  invalidateHostSession(pi, ctx);
   await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "boundary" }], stopReason: "end_turn" }] }, ctx);
   await tick();
   pi.sendMessageError = null;
+  pi.sessionNameError = null;
   assert.ok((readState(cwd).goal as { interruptedAt?: string }).interruptedAt, "parked (T2b state)");
   // pi finishes the compaction and delivers session_compact on the REPLACEMENT
   // session — the classic post-compaction contact in the field.
