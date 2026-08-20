@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.35.13 — stale-API recovery loop fix (2026-08-20)
+
+### Stale-handle recovery correctness
+  Heartbeat recovery now validates the captured `ExtensionAPI` separately
+  from `ExtensionContext`. A context that still answers `isIdle()` cannot
+  revive an API that Pi has invalidated, so glla keeps the durable interruption
+  parked instead of repeatedly announcing recovery and retrying the same dead
+  continuation handle.
+
 ## 0.35.12 — npm 12 pack-report compatibility (2026-08-20)
 
 ### Keyed npm 12 dry-run reports
