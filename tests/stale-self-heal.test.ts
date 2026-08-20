@@ -74,8 +74,10 @@ function ledger(cwd: string): string {
 /** Park the session via the DEBOUNCED production path (N raw ticks). */
 function parkViaHeartbeat(cwd: string, ctx: MockCtx): void {
   pi.sessionNameError = staleError();
+  ctx.isIdle = () => { throw staleError(); };
   for (let i = 0; i < 3; i++) __testOnlyHeartbeatTickRaw();
   pi.sessionNameError = null;
+  ctx.isIdle = () => true;
   assert.match(ledger(cwd), /extension_api_stale/, "debounce expiry must park");
 }
 
@@ -111,7 +113,7 @@ test("v0.34.62 — debounce + self-heal wiring (source guards)", () => {
   assert.match(SRC, /if \(zombieStoodDown\) return false;/);
   assert.match(SRC, /ctx\.sessionManager !== recordedOwner\) return false;/);
   assert.match(SRC, /Date\.now\(\) < sessionReplacementUntil\) return false;/);
-  assert.match(SRC, /if \(!extensionApi \|\| probeExtensionApiStaleRaw\(\)\) return false;/);
+  assert.match(SRC, /if \(!isCtxAlive\(ctx\)\) return false;/);
   assert.match(SRC, /"stale_self_healed"/);
 });
 
@@ -193,6 +195,7 @@ test("v0.34.62 — a genuinely dead handle stays parked (no heal)", async () => 
 
     // Park AND keep the probe failing — the handle never recovers.
     pi.sessionNameError = staleError();
+    ctx.isIdle = () => { throw staleError(); };
     for (let i = 0; i < 3; i++) __testOnlyHeartbeatTickRaw();
     await pi.command("goal", "status", ctx);
     const l = ledger(cwd);
