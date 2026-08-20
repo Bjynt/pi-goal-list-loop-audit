@@ -2061,8 +2061,8 @@ test("T1b: stale /goal start → goal persisted to .pi-glla with honest notify",
   const g = readState(cwd).goal as { status: string; interruptedAt?: string; interruptedReason?: string } | null;
   assert.ok(g, "goal persisted despite the doomed handle");
   assert.equal(g!.status, "active");
-  assert.equal(g!.interruptedAt, undefined, "entry probes do not mutate the newly created goal");
-  assert.equal(g!.interruptedReason, undefined);
+  assert.ok(g!.interruptedAt, "a stale entry marks the newly created goal for fresh-session recovery");
+  assert.equal(g!.interruptedReason, "created in a stale session");
   assert.ok(ctx.ui.matching("stale").length >= 1, "honest stale-state notify, not a 'starting now' lie");
 });
 
