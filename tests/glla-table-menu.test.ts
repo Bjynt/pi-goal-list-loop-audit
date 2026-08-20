@@ -139,7 +139,14 @@ test("main agent tab starts with the current agent and drills in", () => {
     KB,
     (id) => { selected = id; },
   );
-  assert.deepEqual(component.visibleRows().map((row) => row.id), ["mainAgent", "mainModelFallbacks", "mainModelRetryMinutes", "hourlyRetryProbe"]);
+  assert.deepEqual(component.visibleRows().map((row) => row.id), [
+    "mainAgent",
+    "mainModelFallbacks",
+    "mainModelRetryMinutes",
+    "hourlyRetryProbe",
+    "mainModelFailback",
+    "mainModelPrimaryProbeMinutes",
+  ]);
   component.handleInput("\r");
   assert.equal(selected, "mainAgent");
 });

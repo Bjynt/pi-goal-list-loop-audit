@@ -1120,7 +1120,16 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
     return;
   }
   if (recovery.resumeCurrent && current) {
-    state.mainModelRecovery = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: undefined, pendingModelSwitch: undefined };
+    state.mainModelRecovery = {
+      ...recovery,
+      active: current,
+      attempted: [current],
+      primaryProbeAt: undefined,
+      primaryProbeInFlight: undefined,
+      retryAt: undefined,
+      resumeCurrent: undefined,
+      pendingModelSwitch: undefined,
+    };
     flags.continuationDispatchStoodDown = false;
     if (recovery.kind === "goal" && state.goal?.status === "paused" && (state.goal.pauseReason ?? "").startsWith("main model recovery")) {
       updateGoal({ status: "active", pauseKind: undefined, pauseResumeAt: undefined, pauseReason: undefined, pauseSuggestedAction: undefined, providerErrorDiagnostic: undefined, recoveryEpisodeKey: undefined, recoveryNoticeKeys: undefined }, ctx);

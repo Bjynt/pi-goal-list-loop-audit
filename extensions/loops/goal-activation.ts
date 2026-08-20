@@ -1141,7 +1141,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         const recoveryResumeCmd = recoverySurfaceCommand(mainRecovery.kind, "resume");
         ctx.ui.notify(`Main-model recovery is waiting with the work safe — ${recoveryResumeCmd} retries the provider, or enable Auto-resume in /glla settings.`, "info");
       }
-    } else if (mainRecovery.primaryProbeAt || mainRecovery.primaryProbeInFlight) {
+    } else if (mainRecovery && (mainRecovery.primaryProbeAt || mainRecovery.primaryProbeInFlight)) {
       const recoveryConsent = autoResume || explicitRecovery;
       const recoveryResumeCmd = recoverySurfaceCommand(mainRecovery.kind, "resume");
       if (recoveryConsent) {
