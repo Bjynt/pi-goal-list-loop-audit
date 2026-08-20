@@ -253,9 +253,18 @@ test("successful fallback turns keep the preferred primary and fail back after a
     assert.equal(calls.at(-1), "provider/primary", "the failback probe selects the original primary");
     assert.equal(state.mainModelRecovery?.primaryProbeInFlight, true, "setModel alone does not settle provider health");
     ctx.model = { provider: "provider", id: "primary" };
+    assert.equal(await tryMainModelFallback(ctx, failure), true, "a failed primary probe returns to the serving fallback");
+    ctx.model = { provider: "provider", id: "backup" };
+    mainModelRecoverySucceeded(ctx);
+    assert.equal(state.mainModelRecovery?.primary, "provider/primary");
+    assert.equal(state.mainModelRecovery?.active, "provider/backup");
+    assert.ok(state.mainModelRecovery?.primaryProbeAt, "a failed primary probe schedules the next reverse probe");
+
+    await probeMainModelRecovery(ctx);
+    ctx.model = { provider: "provider", id: "primary" };
     mainModelRecoverySucceeded(ctx);
     assert.equal(state.mainModelRecovery, undefined, "a successful supervised primary turn settles failback");
-    assert.deepEqual(calls, ["provider/backup", "provider/primary"]);
+    assert.deepEqual(calls, ["provider/backup", "provider/primary", "provider/backup", "provider/primary"]);
   } finally {
     clearMainModelRecoveryTimer();
     replaceState({ goal: null } as any);
