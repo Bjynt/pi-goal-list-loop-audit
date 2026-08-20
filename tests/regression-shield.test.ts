@@ -308,3 +308,25 @@ test("shield passes a genuine approval that a preamble-only false positive used 
   assert.equal(r.passed, true);
   assert.deepEqual(r.missingItems, []);
 });
+
+test("extractMechanicalCheckCommands: extracts backticked and raw shell commands", async () => {
+  const { extractMechanicalCheckCommands, runMechanicalPreAuditChecks } = await import("../extensions/goal-loop-shield.ts");
+  const contract = [
+    "Done when:",
+    "1. Run `npm test` and ensure 0 failures",
+    "2. `tsc --noEmit` passes with zero errors",
+    "3. cargo test --lib passes cleanly",
+    "4. The UI displays the dark theme correctly",
+  ].join("\n");
+  const cmds = extractMechanicalCheckCommands(contract);
+  assert.deepEqual(cmds, ["npm test", "tsc --noEmit", "cargo test --lib"]);
+
+  const res = runMechanicalPreAuditChecks(process.cwd(), ["node -e 'process.exit(0)'"]);
+  assert.equal(res.passed, true);
+
+  const failRes = runMechanicalPreAuditChecks(process.cwd(), ["node -e 'console.error(\"boom\"); process.exit(2)'"]);
+  assert.equal(failRes.passed, false);
+  assert.equal(failRes.exitCode, 2);
+  assert.match(failRes.output!, /boom/);
+});
+

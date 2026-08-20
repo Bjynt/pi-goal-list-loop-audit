@@ -129,3 +129,55 @@ export function parseAuditorVerdict(output: string): { approved: boolean; disapp
     impossibleReason: impossibleMatch?.[1]?.trim().slice(0, 300) || undefined,
   };
 }
+
+/**
+ * v0.35.7: Extract mechanical shell command gates from a verification contract.
+ * Captures explicit commands (e.g. `npm test`, `tsc --noEmit`, `cargo test`)
+ * for deterministic fast-fail pre-auditing before spawning the heavy LLM worker.
+ */
+export function extractMechanicalCheckCommands(contract: string): string[] {
+  if (!contract) return [];
+  const items = contractItems(contract);
+  const commands: string[] = [];
+  for (const item of items) {
+    const backtickMatch = /`([^`]+)`/.exec(item);
+    const candidate = backtickMatch ? backtickMatch[1]!.trim() : item.trim();
+    if (/^(?:npm\s+(?:test|run\s+[\w:-]+)|bun\s+(?:test|run\s+[\w:-]+)|pnpm\s+(?:test|run\s+[\w:-]+)|yarn\s+(?:test|[\w:-]+)|tsc\b|cargo\s+(?:test|check|build)|pytest\b|python\s+-m\s+unittest|go\s+test|vitest\b|jest\b|make\s+test|git\s+diff|test\s+-[a-z])/i.test(candidate)) {
+      commands.push(candidate);
+    }
+  }
+  return commands;
+}
+
+export interface MechanicalCheckResult {
+  passed: boolean;
+  failedCommand?: string;
+  output?: string;
+  exitCode?: number;
+}
+
+/**
+ * v0.35.7: Execute mechanical pre-audit checks deterministically.
+ */
+export function runMechanicalPreAuditChecks(cwd: string, commands: string[], timeoutMs = 60000): MechanicalCheckResult {
+  if (!commands || commands.length === 0) return { passed: true };
+  const { execSync } = require("node:child_process");
+  for (const cmd of commands) {
+    try {
+      execSync(cmd, { cwd, timeout: timeoutMs, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" });
+    } catch (err: any) {
+      const exitCode = typeof err.status === "number" ? err.status : (typeof err.code === "number" ? err.code : 1);
+      const stdout = err.stdout ? String(err.stdout) : "";
+      const stderr = err.stderr ? String(err.stderr) : "";
+      const output = (stdout + "\n" + stderr).trim() || err.message || "Command failed";
+      return {
+        passed: false,
+        failedCommand: cmd,
+        output: output.slice(0, 4000),
+        exitCode,
+      };
+    }
+  }
+  return { passed: true };
+}
+
