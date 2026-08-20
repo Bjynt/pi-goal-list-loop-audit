@@ -16,7 +16,8 @@ For shipped docs, the relevant entry points are:
   deterministic fast-fail pre-audits, zero-pause autonomous execution, and
   task milestone gating; v0.35.8 added main-model preferred-primary
   failback; v0.35.9 hardened cross-version npm tarball checks; v0.35.10
-  handles multi-entry npm dry-run reports.
+  handles multi-entry npm dry-run reports; v0.35.11 accepts both npm report
+  shapes.
 - `../README.md` — what the plugin is, install, quickstart, and the
   architectural guarantee (drafting + confirm + detached auditor).
 - `../INSTALL.md` — manual install / symlink setup; the recommended
