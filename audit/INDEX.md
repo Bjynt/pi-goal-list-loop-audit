@@ -4,6 +4,42 @@ Every shipped change carries an audit doc here (named `<TOPIC>-<date>.md`,
 plus a `v0.34.x-<TOPIC>.md` symlink for versioned docs). Older docs
 (≤ 2026-08-06) live in `audit/archive/`.
 
+## Active focus (2026-08-17 → 2026-08-19)
+
+The seven follow-up categories from the most recent full audit are
+closed (host lifecycle, continuation dispatch, objective integrity,
+explore retention, completion summaries, long-term preferences,
+audit policy). The next pass owns the durable policy artifacts and
+the open notes (`note.md` host lifecycle / completion recap /
+long-term preferences).
+
+**Most recent (2026-08-19):**
+- `GLLA-MENU-PRESENTATION-2026-08-19.md` — `/glla` menu noise review: literal session-model ref on inherited rows, composite-chain overflow, two-tab proposal (Status / About)
+- `AUDIT-POLICY-CONTROLS-2026-08-19.md` — four-mode postaudit cadence contract: `none` / `completion-only` / `every-n-tasks` / `periodic` (default `completion-only`)
+- `COMPLETION-SUMMARY-POLICY-2026-08-19.md` — six-label recap shape (Outcome / Changed / Evidence / Tests / Unresolved / Next) shipped in v0.35.5
+- `LONG-TERM-PREFERENCES-POLICY-2026-08-19.md` — typed-boundary policy: current explicit intent > typed project setting > typed global setting > product default; landed as v0.35.6 regression pins
+- `EXPLORE-SESSION-RETENTION-2026-08-19.md` — Explore-session provenance + retention boundaries
+- `OBJECTIVE-INTEGRITY-2026-08-19.md` — small follow-up from the parallel integrity survey
+- `CONTINUATION-DISPATCH-RELIABILITY-2026-08-19.md` — accepted-but-no-turn-start investigation, bounded retry, fence against upstream Pi replacement
+
+**Validation / live evidence (2026-08-17):**
+- `AUDITOR-LIVE-VALIDATION-2026-08-17.md` — auditor subprocess read-only allowlist + independence contract
+- `FALLBACK-UNIFICATION-2026-08-17.md` — unified fallback chain walk across main / drafter / auditor / subagents
+- `HOST-SESSION-LOST-CAPTURE-2026-08-17.md` — accepted-but-no-turn-start capture
+- `LONG-RUNNING-PROFILE-2026-08-17.md` — long-running profile / live auditor clock (v0.35.3)
+
+## v0.35.x release trail
+
+| Version | Date | Audit doc | What landed |
+|---|---|---|---|
+| v0.35.6 | 2026-08-19 | `LONG-TERM-PREFERENCES-POLICY-2026-08-19.md` | typed-boundary regression pins; conversation / completion / auditor / Explore transcripts cannot land in settings storage |
+| v0.35.5 | 2026-08-19 | `COMPLETION-SUMMARY-POLICY-2026-08-19.md` | `complete_goal` schema adopts the six-label recap |
+| v0.35.4 | 2026-08-16 | `CONTINUATION-DISPATCH-RELIABILITY-2026-08-19.md` (follow-up) | auditor reports in continuation prompts; repair-loop closure |
+| v0.35.3 | 2026-08-15 | `LONG-RUNNING-PROFILE-2026-08-17.md` | live auditor clock and clearer recovery timing |
+| v0.35.2 | 2026-08-15 | — | role-specific agent settings and compact values |
+| v0.35.1 | 2026-08-15 | — | drafter agent controls and settings taxonomy |
+| v0.35.0 | 2026-08-15 | — | explicit designer routing and drafting recovery |
+
 ## Versioned docs (v0.34.x symlinks → canonical doc)
 
 | Version | Symlink | Canonical doc |
@@ -43,6 +79,21 @@ plus a `v0.34.x-<TOPIC>.md` symlink for versioned docs). Older docs
 | v0.34.121 | v0.34.121-OBJECTIVE-LIFECYCLE-FOLLOWUP.md | OBJECTIVE-LIFECYCLE-FOLLOWUP-2026-08-09.md |
 
 ## Topic index (canonical docs, newest first)
+
+**2026-08-19**
+- GLLA-MENU-PRESENTATION-2026-08-19.md — `/glla` menu noise review (literal session-model ref, composite-chain overflow) + Status / About tab proposal; no source change
+- AUDIT-POLICY-CONTROLS-2026-08-19.md — four-mode postaudit cadence contract (`none` / `completion-only` / `every-n-tasks` / `periodic`); `auditCadence` is descriptive today, implementation deferred to a bounded feature pass
+- COMPLETION-SUMMARY-POLICY-2026-08-19.md — six-label recap shape (Outcome / Changed / Evidence / Tests / Unresolved / Next); landed in v0.35.5
+- LONG-TERM-PREFERENCES-POLICY-2026-08-19.md — typed-boundary policy: current explicit intent wins; landed in v0.35.6 as regression pins
+- EXPLORE-SESSION-RETENTION-2026-08-19.md — Explore-session provenance + retention boundaries (Pi vs subagent vs glla own)
+- OBJECTIVE-INTEGRITY-2026-08-19.md — small follow-up from the parallel integrity survey (buggy / previous-version objectives)
+- CONTINUATION-DISPATCH-RELIABILITY-2026-08-19.md — accepted-but-no-turn-start investigation, bounded retry, fence against upstream Pi replacement
+
+**2026-08-17**
+- AUDITOR-LIVE-VALIDATION-2026-08-17.md — detached auditor subprocess read-only allowlist + independence contract
+- FALLBACK-UNIFICATION-2026-08-17.md — unified fallback chain walk across main / drafter / auditor / subagents
+- HOST-SESSION-LOST-CAPTURE-2026-08-17.md — accepted-but-no-turn-start capture and ledger wiring
+- LONG-RUNNING-PROFILE-2026-08-17.md — live auditor clock and clearer recovery timing (v0.35.3)
 
 **2026-08-15**
 - PI-HOST-SESSION-REPLACEMENT-REQUEST-2026-08-15.md — Pi SDK boundary, requested event-safe replacement contract, and host acceptance tests
