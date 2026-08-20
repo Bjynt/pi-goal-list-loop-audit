@@ -1114,6 +1114,11 @@ async function probeMainModelRecoveryImpl(ctx: ExtensionContext): Promise<void> 
     state.mainModelRecovery = { ...recovery, active: current, pendingModelSwitch: undefined, retryAt: undefined };
     persistState(ctx);
   }
+  const preferredPrimaryRecovery = state.mainModelRecovery;
+  if (preferredPrimaryRecovery?.primaryProbeAt || preferredPrimaryRecovery?.primaryProbeInFlight) {
+    await probePreferredPrimary(ctx, preferredPrimaryRecovery);
+    return;
+  }
   if (recovery.resumeCurrent && current) {
     state.mainModelRecovery = { ...recovery, active: current, attempted: [current], retryAt: undefined, resumeCurrent: undefined, pendingModelSwitch: undefined };
     flags.continuationDispatchStoodDown = false;
@@ -1384,6 +1389,57 @@ export async function recoverMainModelFromSendStorm(ctx: ExtensionContext, kind:
 export function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
   const recovery = state.mainModelRecovery;
   if (!recovery) return;
+  const current = modelRef(ctx.model);
+  const preferredPrimary = recovery.primary;
+  const servingFallback = !!current && !sameModelRef(current, preferredPrimary);
+
+  // A successful fallback turn proves only that the backup works. Keep the
+  // original primary durable and schedule a reverse probe instead of settling
+  // the episode permanently on the fallback.
+  if (servingFallback && mainModelFailbackEnabled()) {
+    const existingProbeAt = recovery.primaryProbeAt;
+    const existingProbeMs = existingProbeAt ? Date.parse(existingProbeAt) : Number.NaN;
+    const alreadyScheduled = Number.isFinite(existingProbeMs) && !recovery.primaryProbeInFlight;
+    clearMainModelRecoveryTimer();
+    cancelHourlyProbe();
+    flags.lastMainModelFailure = null;
+    flags.mainModelAbortForRecovery = false;
+    flags.continuationDispatchStoodDown = false;
+    flags.lastMainModelRecoveryResumeAt = Date.now();
+
+    const probeAt = alreadyScheduled
+      ? existingProbeAt!
+      : new Date(Date.now() + mainModelPrimaryProbeDelay()).toISOString();
+    const nextRecovery: MainModelRecovery = {
+      ...recovery,
+      active: current,
+      primaryProbeAt: probeAt,
+      primaryProbeInFlight: undefined,
+      retryAt: undefined,
+      pendingModelSwitch: undefined,
+      resumeCurrent: undefined,
+    };
+    state.mainModelRecovery = nextRecovery;
+    const auditRetryStarted = recovery.kind === "goal"
+      && state.goal?.status === "paused"
+      && !!state.goal.pendingCompletion
+      && typeof maybeAutoRetryParkedCompletionAudit === "function"
+      && maybeAutoRetryParkedCompletionAudit("main-model-recovery");
+    persistState(ctx);
+    if (!alreadyScheduled) {
+      appendLedger(ctx.cwd, "main_model_fallback_healthy", {
+        model: current,
+        primary: preferredPrimary,
+        primaryProbeAt: probeAt,
+        attempts: recovery.attempts,
+      });
+      ctx.ui.notify(`Main session fallback ${current} is healthy; the preferred primary ${preferredPrimary} will be probed automatically.`, "info");
+    }
+    if (auditRetryStarted) ctx.ui.notify("The stored completion audit is retrying after the healthy main-model fallback.", "info");
+    scheduleMainModelRecoveryTimer(ctx, Math.max(0, Date.parse(probeAt) - Date.now()));
+    return;
+  }
+
   clearMainModelRecoveryTimer();
   cancelHourlyProbe(); // recovery settled — ticker stops
   state.mainModelRecovery = undefined;
@@ -1406,7 +1462,7 @@ export function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
     : recovery.kind === "loop" && recoveryLoop
       ? "loop"
       : undefined;
-  appendLedger(ctx.cwd, "main_model_recovered", { model: modelRef(ctx.model), attempts: recovery.attempts, resumed });
+  appendLedger(ctx.cwd, "main_model_recovered", { model: current, attempts: recovery.attempts, resumed });
   // A successful bounded provider recovery is also a healthy recovery event
   // for a parked detached-auditor claim. The auditor hook owns the durable
   // one-shot marker and generation/context fence; this call never bypasses
@@ -1432,7 +1488,7 @@ export function mainModelRecoverySucceeded(ctx: ExtensionContext): void {
   } else {
     persistState(ctx);
   }
-  ctx.ui.notify(`Main session model recovered on ${modelRef(ctx.model) ?? "the active model"}; automatic recovery is cleared${resumed ? ` and the ${resumed} is resuming` : auditRetryStarted ? " and the stored completion audit is retrying" : ""}.`, "info");
+  ctx.ui.notify(`Main session model recovered on ${current ?? "the active model"}; automatic recovery is cleared${resumed ? ` and the ${resumed} is resuming` : auditRetryStarted ? " and the stored completion audit is retrying" : ""}.`, "info");
 }
 
 /** Handle a provider error before loop/goal bookkeeping can mistake it for

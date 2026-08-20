@@ -1141,6 +1141,22 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         const recoveryResumeCmd = recoverySurfaceCommand(mainRecovery.kind, "resume");
         ctx.ui.notify(`Main-model recovery is waiting with the work safe — ${recoveryResumeCmd} retries the provider, or enable Auto-resume in /glla settings.`, "info");
       }
+    } else if (mainRecovery.primaryProbeAt || mainRecovery.primaryProbeInFlight) {
+      const recoveryConsent = autoResume || explicitRecovery;
+      const recoveryResumeCmd = recoverySurfaceCommand(mainRecovery.kind, "resume");
+      if (recoveryConsent) {
+        if (mainRecovery.primaryProbeInFlight) {
+          ctx.ui.notify(`Restored preferred-primary failback — the primary is selected and needs one supervised probe.`, "info");
+          void probeMainModelRecovery(ctx);
+        } else {
+          const probeAtMs = mainRecovery.primaryProbeAt ? Date.parse(mainRecovery.primaryProbeAt) : Number.NaN;
+          const delay = Number.isFinite(probeAtMs) ? Math.max(0, probeAtMs - Date.now()) : 0;
+          ctx.ui.notify(`Restored preferred-primary failback — next probe ${delay > 0 ? `in ${Math.max(1, Math.ceil(delay / 60_000))}m` : "is due now"}.`, "info");
+          scheduleMainModelRecoveryTimer(ctx, delay);
+        }
+      } else {
+        ctx.ui.notify(`Preferred-primary failback is waiting with the fallback serving — ${recoveryResumeCmd} probes the primary, or enable Auto-resume in /glla settings.`, "info");
+      }
     }
     // Stored completion-auditor retry waits are also durable. The old timer
     // dies with the session, so a reload must restore only the same bounded
