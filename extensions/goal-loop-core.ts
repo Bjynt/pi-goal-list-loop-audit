@@ -2272,10 +2272,12 @@ export function formatAuditLog(entries: AuditLogEntry[]): string {
 // =================================================================
 
 /** Which auditor infra errors are worth an automatic retry? User aborts
- * and missing-model config are NOT — retrying can't help them. */
+ * and missing-model config are NOT — retrying can't help them. Timeouts and
+ * watchdog stalls are retriable infrastructure failures. */
 export function isRetriableInfraError(error?: string): boolean {
   if (!error) return false;
-  if (/aborted/i.test(error)) return false;
+  if (/^(?:Auditor (?:exceeded|stalled)|.*(?:timed?\s*out|timeout|inactivity))/i.test(error)) return true;
+  if (/^(?:Auditor aborted\.?$|user (?:interrupt|abort)|cancelled by user)/i.test(error.trim())) return false;
   if (/no (?:auditor )?model/i.test(error)) return false;
   return true;
 }

@@ -109,7 +109,11 @@ export function classifyMainModelFailure(error: string | undefined, opts?: { isC
   const raw = typeof error === "string" ? error.trim() : "";
   const text = raw.toLowerCase();
   if (!raw) return { kind: "unknown", raw };
-  if (/aborted|cancelled|canceled|user interrupt/.test(text)) {
+  // Auditor timeouts / watchdog stalls are transient infrastructure failures, not user aborts.
+  if (/^(?:auditor (?:exceeded|stalled)|.*(?:timed?\s*out|timeout|inactivity|no session activity))/i.test(raw)) {
+    return { kind: "transient", raw };
+  }
+  if (/^(?:auditor aborted\.?$|user (?:interrupt|abort)|cancelled by user)/i.test(raw) || /user interrupt/.test(text)) {
     return { kind: "non-recoverable", raw };
   }
   if (/context|output[ -]?token|max_?tokens|length limit|too many tokens|prompt too large|context window/.test(text)) {
