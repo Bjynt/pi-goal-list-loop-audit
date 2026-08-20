@@ -197,31 +197,28 @@ test("v0.32.0: audit-opportunistic fix batch — dispose, keys, caps, message", 
 // v0.34.94 — host-session-lost self-heal. Field evidence (darklord/hegemon
 // Screenshot_20260808_080109/080230/080248): pi invalidated the extension
 // handle WITHOUT delivering a replacement session (silent_handle_death);
-// the plugin sat with staleTerminalDone=true and extensionApiStale=true
-// forever, the user had to manually restart pi. The heartbeat probe is now
-// evidence of recovery: when raw probe returns false (pi is fresh) but
-// staleTerminalDone is still latched, the heartbeat self-heals the
-// in-memory state and absorbs the replacement via tryAbsorbHostSuccessor.
-// No sends are re-queued, so there is NO blind queue storm risk — the
-// path just unblocks future events from a fresh ctx.
-test("v0.34.94: heartbeat self-heals stale-terminal when raw probe says pi is fresh", () => {
-  // The new heartbeat path lives between the raw-probe and freshCtx() call
-  // in heartbeatTick. It checks staleTerminalDone and clears the stale
-  // flags so the next freshCtx() returns a non-null ctx.
+// the heartbeat must not leave the goal parked forever when BOTH the API and
+// context recover. The recovery gate is still allowed to rebind that case,
+// but a healthy context alone is insufficient because Pi can leave the
+// captured ExtensionAPI stale while ctx.isIdle() still answers.
+test("v0.34.94: heartbeat only self-heals when the API and context are fresh", () => {
+  // The heartbeat path lives between the raw-probe and freshCtx() call. It
+  // records the probe contact, then delegates ownership/recovery to
+  // rememberCtx; it never clears stale flags on an ambiguous contact.
   assert.match(
     HB,
     /if \(flags\.staleTerminalDone && knownCtx\) \{[\s\S]*appendLedger\(knownCtx\.cwd, "stale_terminal_recovered_via_probe"/,
     "heartbeat self-heal ledger event is recorded",
   );
-  assert.match(HB, /flags\.staleTerminalDone = false;\s*\n\s*flags\.extensionApiStale = false;/, "stale flags are cleared on probe-fresh-after-stale-terminal");
+  assert.doesNotMatch(HB, /flags\.staleTerminalDone = false;\s*\n\s*flags\.extensionApiStale = false;/, "heartbeat does not clear stale flags without a proven rebind");
   assert.match(HB, /tryAbsorbHostSuccessor\(knownCtx, "heartbeat-self-heal"\)/, "tryAbsorbHostSuccessor is called against the knownCtx");
   // The probe reuses the normal same-session recovery gate. It may resume
   // unattended interrupted work, but it never sends until that gate has
-  // proved the handle/context healthy.
+  // proved both handles healthy.
   const selfHealStart = HB.indexOf("stale_terminal_recovered_via_probe");
   const selfHealEnd = HB.indexOf("const ctx = freshCtx();", selfHealStart);
   assert.ok(selfHealStart > 0 && selfHealEnd > selfHealStart, "self-heal region is in scope");
   const heartbeatRegion = HB.slice(selfHealStart, selfHealEnd);
   assert.match(heartbeatRegion, /rememberCtx\(knownCtx\)/, "same-session recovery gate is reused");
-  assert.match(heartbeatRegion, /if \(!flags\.staleTerminalDone && !flags\.extensionApiStale\) return;/, "the fallback returns only after the recovery gate clears stale flags");
+  assert.match(heartbeatRegion, /if \(flags\.staleTerminalDone \|\| flags\.extensionApiStale\) return;/, "ambiguous recovery remains parked");
 });

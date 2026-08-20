@@ -113,7 +113,7 @@ test("v0.34.62 — debounce + self-heal wiring (source guards)", () => {
   assert.match(SRC, /if \(zombieStoodDown\) return false;/);
   assert.match(SRC, /ctx\.sessionManager !== recordedOwner\) return false;/);
   assert.match(SRC, /Date\.now\(\) < sessionReplacementUntil\) return false;/);
-  assert.match(SRC, /if \(!isCtxAlive\(ctx\)\) return false;/);
+  assert.match(SRC, /if \(!isCtxAlive\(ctx\) \|\| !extensionApi \|\| probeExtensionApiStaleRaw\(\)\) return false;/);
   assert.match(SRC, /"stale_self_healed"/);
 });
 
