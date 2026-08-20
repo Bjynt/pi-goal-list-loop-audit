@@ -1,0 +1,11 @@
+{
+  "single-trunk-quality-gate": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "bun test tests/faulty-objective-recovery.test.ts tests/glla-version.test.ts",
+        "timeout": 60
+      }
+    ]
+  }
+}
