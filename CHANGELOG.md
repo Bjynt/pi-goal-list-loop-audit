@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.35.8 — main-model preferred-primary failback (2026-08-20)
 
 ### Main-model preferred-primary failback
   Main-agent fallback recovery now defaults to `mainModelFailback=auto`: a
