@@ -99,10 +99,7 @@ request into a **confirmed goal contract**. Do NOT start substantive work yet.
      adds that header itself.
    - **boundaries** — what is explicitly out of scope (fold into the
      objective text).
-4. Keep grilling until the objective and success criteria are concrete
-   enough that a skeptical auditor could verify them from raw evidence.
-   "Make it better" is not a goal. "Reduce `npm test` failures from 14 to 0"
-   is.
+4. **Deep Upfront Grilling**: Probe for architectural boundaries, edge cases, error handling, and key trade-offs NOW during drafting so that execution can run completely unattended with ZERO mid-flight pauses. Ask about core invariants upfront rather than leaving them ambiguous. "Make it better" is not a goal. "Reduce `npm test` failures from 14 to 0 and ensure zero type errors" is.
 5. Scope thoroughness INTO the contract, never into iteration budgets. A
    goal has no iterations and no stop rules — it ends when the auditor
    approves. If the user wants exhaustiveness, write it as checkable
