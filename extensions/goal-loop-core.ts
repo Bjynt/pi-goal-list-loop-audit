@@ -745,6 +745,10 @@ export interface MainModelRecovery {
   attempted: string[];
   /** Next safe probe time; persisted so reloads do not forget the wait. */
   retryAt?: string;
+  /** Next preferred-primary health probe while a fallback is serving. */
+  primaryProbeAt?: string;
+  /** A preferred-primary switch was accepted and awaits one supervised turn. */
+  primaryProbeInFlight?: boolean;
   /** Number of completed recovery waits; drives the bounded exponential cadence. */
   attempts: number;
   /** Human-readable provider failure excerpt. */
@@ -794,6 +798,8 @@ export function formatMainModelRecoveryStatus(recovery: MainModelRecovery | unde
     `  Skipped: ${skipped}`,
   ];
   if (recovery.retryAt) lines.push(`  Retry at: ${recovery.retryAt}`);
+  if (recovery.primaryProbeAt) lines.push(`  Preferred-primary probe at: ${recovery.primaryProbeAt}`);
+  if (recovery.primaryProbeInFlight) lines.push("  Preferred-primary probe: supervised turn pending");
   if (recovery.manualResumeRequired) lines.push("  Automatic probes: stopped; explicit resume required");
   return lines;
 }
@@ -846,6 +852,8 @@ export function sanitizeMainModelRecovery(value: unknown): MainModelRecovery | u
     ...(bounded(raw.recoveryEpisodeKey, 300) ? { recoveryEpisodeKey: bounded(raw.recoveryEpisodeKey, 300) } : {}),
     ...(Array.isArray(raw.recoveryNoticeKeys) ? { recoveryNoticeKeys: raw.recoveryNoticeKeys.filter((key): key is string => typeof key === "string").slice(-16).map((key) => key.slice(0, 300)) } : {}),
     ...(date(raw.retryAt) ? { retryAt: date(raw.retryAt) } : {}),
+    ...(date(raw.primaryProbeAt) ? { primaryProbeAt: date(raw.primaryProbeAt) } : {}),
+    ...(raw.primaryProbeInFlight === true ? { primaryProbeInFlight: true } : {}),
     ...(date(raw.firstFailureAt) ? { firstFailureAt: date(raw.firstFailureAt) } : {}),
     ...(date(raw.autoRetryUntil) ? { autoRetryUntil: date(raw.autoRetryUntil) } : {}),
     ...(raw.manualResumeRequired === true ? { manualResumeRequired: true } : {}),

@@ -7,10 +7,29 @@
 
 export const MAIN_MODEL_MAX_RETRY_DELAY_MS = 5 * 60 * 60_000;
 export const MAIN_MODEL_AUTO_RETRY_HORIZON_MS = 24 * 60 * 60_000;
+export const DEFAULT_MAIN_MODEL_PRIMARY_PROBE_MINUTES = 15;
 /** Keep a fallback chain useful and bounded even when settings are edited
  * outside the UI. Ten alternatives is enough to cross providers/model pools
  * without turning one failure into an unbounded registry walk. */
 export const MAX_MAIN_MODEL_FALLBACKS = 10;
+
+export type MainModelFailbackPolicy = "auto" | "sticky";
+
+/** Failback is deliberately opt-out: a configured fallback is temporary cover
+ * unless the user explicitly keeps it sticky. Invalid/missing JSON values use
+ * the safe default rather than disabling recovery by accident. */
+export function isMainModelFailbackAuto(policy: unknown): boolean {
+  return policy !== "sticky";
+}
+
+/** Convert the preferred-primary probe cadence to a timer delay. The settings
+ * UI accepts positive minutes; the runtime still clamps hand-edited values to
+ * a useful bounded default. */
+export function mainModelPrimaryProbeDelayMs(minutes: unknown = DEFAULT_MAIN_MODEL_PRIMARY_PROBE_MINUTES): number {
+  const value = typeof minutes === "number" ? minutes : Number(minutes);
+  const safeMinutes = Number.isFinite(value) && value > 0 ? value : DEFAULT_MAIN_MODEL_PRIMARY_PROBE_MINUTES;
+  return Math.max(1_000, Math.round(safeMinutes * 60_000));
+}
 
 export type MainModelFailureKind = "rate-limit" | "quota" | "billing" | "auth" | "transient" | "unknown" | "non-recoverable" | "context-overflow";
 

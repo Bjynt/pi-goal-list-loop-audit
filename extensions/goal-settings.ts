@@ -24,7 +24,10 @@ import {
   piGlaDir,
 } from "./goal-loop-core.ts";
 import type { SubagentModelStrategy } from "./goal-loop-subagents.js";
-import { normalizeMainModelFallbackRefs } from "./main-model-recovery.js";
+import {
+  DEFAULT_MAIN_MODEL_PRIMARY_PROBE_MINUTES,
+  normalizeMainModelFallbackRefs,
+} from "./main-model-recovery.js";
 
 export interface Settings {
   /** v0.34.57: model refs/ids that must never be selected — the policy
@@ -63,6 +66,12 @@ export interface Settings {
   subagentFallbacks?: Record<string, string[]>;
   /** Global-only base minutes before main-session recovery; doubles per attempt, caps at 5h, and the automatic window ends at 24h. */
   mainModelRetryMinutes?: number;
+  /** Global-only: after a fallback succeeds, automatically test the preferred
+   * primary again, or keep the fallback for the rest of the session. */
+  mainModelFailback?: "auto" | "sticky";
+  /** Global-only minutes between preferred-primary health probes while a
+   * fallback is serving successfully. */
+  mainModelPrimaryProbeMinutes?: number;
   /** "provider/model-id" or bare "model-id". Unset → session model. */
   auditorModel?: string;
   /** v0.31.3/v0.34.25: next detached auditor candidate when the primary
@@ -188,6 +197,8 @@ export interface Settings {
 const GLOBAL_MAIN_RECOVERY_KEYS: ReadonlySet<keyof Settings> = new Set([
   "mainModelFallbacks",
   "mainModelRetryMinutes",
+  "mainModelFailback",
+  "mainModelPrimaryProbeMinutes",
   "hourlyRetryProbe",
   "drafterModel",
   "drafterThinkingLevel",
@@ -208,6 +219,8 @@ export const DEFAULT_SETTINGS: Settings = {
   // vision CLI job, never a reason to switch models (note.md 2026-08-07).
   visionAssist: true,
   mainModelRetryMinutes: 15,
+  mainModelFailback: "auto",
+  mainModelPrimaryProbeMinutes: DEFAULT_MAIN_MODEL_PRIMARY_PROBE_MINUTES,
   // Unset = inherit the session thinking level while the temporary drafter
   // agent is active; the original session level is restored afterward.
   drafterThinkingLevel: undefined,
@@ -267,6 +280,14 @@ function normalizeLoadedSettings(settings: Settings): Settings {
   // all see the same bounded value.
   settings.mainModelFallbacks = normalizeMainModelFallbackRefs(settings.mainModelFallbacks);
   settings.drafterModelFallbacks = normalizeMainModelFallbackRefs(settings.drafterModelFallbacks);
+  if (settings.mainModelFailback !== "auto" && settings.mainModelFailback !== "sticky") {
+    settings.mainModelFailback = "auto";
+  }
+  if (typeof settings.mainModelPrimaryProbeMinutes !== "number"
+      || !Number.isFinite(settings.mainModelPrimaryProbeMinutes)
+      || settings.mainModelPrimaryProbeMinutes <= 0) {
+    settings.mainModelPrimaryProbeMinutes = DEFAULT_MAIN_MODEL_PRIMARY_PROBE_MINUTES;
+  }
   // v0.34.142: these old policy knobs no longer control recovery. Drop
   // them from the effective object so stale files cannot resurrect the old
   // behavior or make the settings UI imply that quota inspection exists.
@@ -324,6 +345,8 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "drafterThinkingLevel",
   "drafterModelFallbacks",
   "mainModelRetryMinutes",
+  "mainModelFailback",
+  "mainModelPrimaryProbeMinutes",
   "forbiddenModels",
   "blockForbiddenModelSwitches",
   "visionAssist",
