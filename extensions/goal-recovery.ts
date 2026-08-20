@@ -903,6 +903,8 @@ export function manuallyResumeMainModelRecovery(ctx: ExtensionContext): boolean 
     firstFailureAt: new Date(now).toISOString(),
     autoRetryUntil: mainModelAutoRetryUntil(now, MAIN_MODEL_AUTO_RETRY_HORIZON_MS),
     retryAt: undefined,
+    primaryProbeAt: undefined,
+    primaryProbeInFlight: undefined,
     manualResumeRequired: undefined,
     resumeCurrent: undefined,
     providerErrorDiagnostic: undefined,
@@ -947,6 +949,153 @@ export async function probeMainModelRecovery(ctx: ExtensionContext): Promise<voi
     if (mainModelRecoveryProbeToken === probeToken) {
       mainModelRecoveryProbeInFlight = false;
       mainModelRecoveryProbeGeneration = null;
+    }
+  }
+}
+
+async function probePreferredPrimary(ctx: ExtensionContext, recovery: MainModelRecovery): Promise<void> {
+  if (!mainModelFailbackEnabled()) {
+    clearMainModelRecoveryTimer();
+    state.mainModelRecovery = undefined;
+    persistState(ctx);
+    appendLedger(ctx.cwd, "main_model_failback_cancelled", { reason: "sticky policy" });
+    return;
+  }
+  const generation = flags.sessionGeneration;
+  const primary = recovery.primary;
+  const current = modelRef(ctx.model);
+
+  // A host/session replacement may have committed the switch before the
+  // replacement process rehydrated its durable marker. Treat that as the
+  // same in-flight probe and wait for one real supervised turn before
+  // declaring the primary healthy.
+  if (recovery.primaryProbeInFlight && sameModelRef(current, primary)) {
+    const reconciled = {
+      ...recovery,
+      active: current,
+      attempted: [primary],
+      primaryProbeAt: undefined,
+      primaryProbeInFlight: true,
+      pendingModelSwitch: undefined,
+      retryAt: undefined,
+    };
+    state.mainModelRecovery = reconciled;
+    persistState(ctx);
+    appendLedger(ctx.cwd, "main_model_failback_reconciled", { primary, generation });
+    scheduleSupervisedPrimaryProbe(ctx, reconciled);
+    return;
+  }
+
+  // The timer can fire after the host has already selected the primary (for
+  // example, a restore event races the timer). Still require a supervised
+  // turn; setModel alone is not a provider health check.
+  if (!recovery.primaryProbeInFlight && sameModelRef(current, primary)) {
+    const inFlight = {
+      ...recovery,
+      active: current,
+      attempted: [primary],
+      primaryProbeAt: undefined,
+      primaryProbeInFlight: true,
+      pendingModelSwitch: undefined,
+      retryAt: undefined,
+    };
+    state.mainModelRecovery = inFlight;
+    persistState(ctx);
+    appendLedger(ctx.cwd, "main_model_failback_probe", { from: current, to: primary, mode: "already-selected" });
+    scheduleSupervisedPrimaryProbe(ctx, inFlight);
+    return;
+  }
+
+  if (isForbiddenModel(primary, loadGlobalSettings().forbiddenModels)) {
+    clearMainModelRecoveryTimer();
+    state.mainModelRecovery = undefined;
+    persistState(ctx);
+    appendLedger(ctx.cwd, "main_model_failback_cancelled", { primary, reason: "forbidden" });
+    ctx.ui.notify(`Main-model failback skipped ${primary} because forbiddenModels excludes it; the current fallback remains selected.`, "warning");
+    return;
+  }
+  const candidate = resolveMainModel(ctx, primary);
+  if (!candidate) {
+    const delay = mainModelPrimaryProbeDelay();
+    state.mainModelRecovery = {
+      ...recovery,
+      active: current ?? recovery.active,
+      primaryProbeAt: new Date(Date.now() + delay).toISOString(),
+      primaryProbeInFlight: undefined,
+      pendingModelSwitch: undefined,
+      retryAt: undefined,
+    };
+    persistState(ctx);
+    appendLedger(ctx.cwd, "main_model_failback_unavailable", { primary, reason: "primary not in registry" });
+    scheduleMainModelPrimaryProbe(ctx, delay);
+    return;
+  }
+
+  if (flags.mainModelSwitchInFlight && modelSwitchOperationGeneration !== generation) {
+    flags.mainModelSwitchInFlight = false;
+    activeModelSwitchToken = 0;
+    modelSwitchOperationGeneration = null;
+  }
+  if (flags.mainModelSwitchInFlight) return;
+  const operationToken = ++modelSwitchOperationToken;
+  activeModelSwitchToken = operationToken;
+  modelSwitchOperationGeneration = generation;
+  const pending = {
+    ...recovery,
+    active: current ?? recovery.active,
+    attempted: current ? [current] : recovery.attempted,
+    primaryProbeAt: undefined,
+    primaryProbeInFlight: true,
+    pendingModelSwitch: primary,
+    retryAt: new Date(Date.now() + 1_000).toISOString(),
+  };
+  state.mainModelRecovery = pending;
+  persistState(ctx);
+  flags.mainModelSwitchInFlight = true;
+  try {
+    if (generation !== flags.sessionGeneration || !freshCtxForGeneration(generation)) return;
+    const accepted = await flags.extensionApi?.setModel(candidate);
+    if (generation !== flags.sessionGeneration || !freshCtxForGeneration(generation)) return;
+    if (state.mainModelRecovery?.pendingModelSwitch?.toLowerCase() !== primary.toLowerCase()) return;
+    if (!accepted) throw new Error("no configured auth for preferred primary");
+    const switched = {
+      ...state.mainModelRecovery!,
+      active: primary,
+      attempted: [primary],
+      primaryProbeAt: undefined,
+      primaryProbeInFlight: true,
+      pendingModelSwitch: undefined,
+      retryAt: undefined,
+    };
+    state.mainModelRecovery = switched;
+    persistState(ctx);
+    appendLedger(ctx.cwd, "main_model_failback", { from: current, to: primary });
+    ctx.ui.notify(`Main session model failed back to ${primary} from ${current ?? "the fallback"}; the next supervised turn tests the primary.`, "info");
+    scheduleSupervisedPrimaryProbe(ctx, switched);
+  } catch (err) {
+    if (generation !== flags.sessionGeneration || state.mainModelRecovery?.pendingModelSwitch?.toLowerCase() !== primary.toLowerCase()) return;
+    const delay = mainModelPrimaryProbeDelay();
+    const next = {
+      ...state.mainModelRecovery!,
+      active: current ?? recovery.active,
+      primaryProbeAt: new Date(Date.now() + delay).toISOString(),
+      primaryProbeInFlight: undefined,
+      pendingModelSwitch: undefined,
+      retryAt: undefined,
+    };
+    state.mainModelRecovery = next;
+    persistState(ctx);
+    appendLedger(ctx.cwd, "main_model_failback_failed", {
+      primary,
+      error: err instanceof Error ? err.message : String(err),
+      nextProbeAt: next.primaryProbeAt,
+    });
+    scheduleMainModelPrimaryProbe(ctx, delay);
+  } finally {
+    if (activeModelSwitchToken === operationToken) {
+      activeModelSwitchToken = 0;
+      modelSwitchOperationGeneration = null;
+      flags.mainModelSwitchInFlight = false;
     }
   }
 }
