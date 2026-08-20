@@ -712,6 +712,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   pi.on("message_start", async (event: any, ctx: ExtensionContext) => {
     // v0.34.27: a replacement may first become visible on the user's next
     // message. Absorb it before the drafting-only handler can ignore it.
+    rememberCtx(ctx);
     if (tryAbsorbHostSuccessor(ctx, "message_start")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     // v0.14.0 drafting floor: count real user replies while drafting. Our
@@ -731,6 +732,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // v0.34.27: tool results are another valid first contact after a silent
     // host swap; absorb before stale/foreign filtering and never let a worker
     // session mutate the main loop's repetition/telemetry state.
+    rememberCtx(eventCtx);
     if (tryAbsorbHostSuccessor(eventCtx, "tool_result")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(eventCtx)) return;
     noteToolResult(event); // v0.33.0: slim widget "last action" feed
@@ -1392,6 +1394,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   });
 
   pi.on("agent_end", async (event: any, ctx: ExtensionContext) => {
+    rememberCtx(ctx);
     // A late agent_end from the disposed session is not a fresh turn. Do not
     // account it, run length continuation, or schedule another send after a
     // stale terminal/handoff.
@@ -1403,7 +1406,6 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       tryAbsorbHostSuccessor(ctx, "agent_end");
       return;
     }
-    rememberCtx(ctx);
     // v0.23.8: a subagent finishing must not drive the main session's
     // continuation loop.
     if (isForeignCtx(ctx)) return;
@@ -1848,6 +1850,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   // Treat it as the same fresh-contact point for a coalesced stale-host arm;
   // with no pending arm this handler is intentionally inert.
   pi.on("turn_end", async (_event: any, ctx: ExtensionContext) => {
+    rememberCtx(ctx);
     if (tryAbsorbHostSuccessor(ctx, "turn_end")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) {
       // Same-generation late turn boundaries are disposed-session callbacks;
@@ -1855,7 +1858,6 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       tryAbsorbHostSuccessor(ctx, "turn_end");
       return;
     }
-    rememberCtx(ctx);
     if (isForeignCtx(ctx)) return;
     if (consumeStaleContinuationRearm(ctx, "turn_end")) {
       if (state.goal?.status === "active" && !continuationTimerPending() && !pendingContinuationDispatchRef()) {
@@ -1883,6 +1885,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // v0.34.27: ordinary tool activity can be the first observable event
     // after pi replaces a host without session_start. A file-backed,
     // same-workspace successor is absorbed; an in-memory worker is refused.
+    rememberCtx(ctx);
     if (tryAbsorbHostSuccessor(ctx, "tool_call")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     toolCallsThisTurn++;
@@ -1904,6 +1907,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   pi.on("before_agent_start", (event: any, ctx: ExtensionContext) => {
     // v0.34.27: absorb before the stale/foreign gates. This is the strongest
     // replacement contact because pi exposes the prompt itself.
+    rememberCtx(ctx);
     if (tryAbsorbHostSuccessor(ctx, "before_agent_start")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     // v0.34.57: turn-boundary model drift (bug #1.14) — the session is about
@@ -1913,6 +1917,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     dispatchStartAcknowledged(ctx, "before_agent_start", event?.prompt);
   });
   pi.on("model_select", async (event: any, ctx: ExtensionContext) => {
+    rememberCtx(ctx);
     if (tryAbsorbHostSuccessor(ctx, "model_select")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     // v0.34.57: model-switch ledger + forbidden-model gate (bug #1.14) —
@@ -1953,6 +1958,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   });
 
   pi.on("message_update", (_event: any, ctx: ExtensionContext) => {
+    rememberCtx(ctx);
     if (tryAbsorbHostSuccessor(ctx, "message_update")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     lastStreamActivityAt = Date.now();
@@ -1960,6 +1966,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     dispatchStartAcknowledged(ctx, "message_update");
   });
   pi.on("agent_start", (_event: any, ctx: ExtensionContext) => {
+    rememberCtx(ctx);
     if (tryAbsorbHostSuccessor(ctx, "agent_start")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     lastStreamActivityAt = Date.now();
@@ -1970,6 +1977,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     dispatchStartAcknowledged(ctx, "agent_start");
   });
   pi.on("turn_start", (_event: any, ctx: ExtensionContext) => {
+    rememberCtx(ctx);
     if (tryAbsorbHostSuccessor(ctx, "turn_start")) return;
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
     lastStreamActivityAt = Date.now();
