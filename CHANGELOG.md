@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.35.9 — release packaging compatibility (2026-08-20)
+
+### Cross-version npm tarball contract
+  The release contract normalizes npm's root-relative and `package/`-prefixed
+  dry-run file paths, keeping documentation coverage checks stable across the
+  npm versions used by local development and trusted publishing.
+
 ## 0.35.8 — main-model preferred-primary failback (2026-08-20)
 
 ### Main-model preferred-primary failback
