@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.35.10 — npm pack report compatibility (2026-08-20)
+
+### Multi-entry npm dry-run reports
+  The release contract aggregates all entries returned by npm's JSON dry-run
+  report before checking the published documentation set. This supports npm
+  versions that return multiple package report entries in trusted publishing.
+
 ## 0.35.9 — release packaging compatibility (2026-08-20)
 
 ### Cross-version npm tarball contract

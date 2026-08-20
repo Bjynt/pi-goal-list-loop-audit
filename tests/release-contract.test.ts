@@ -15,7 +15,7 @@ function dryRunFiles(): Set<string> {
   // npm versions have emitted both root-relative paths and `package/...`
   // paths for the same dry-run report. Normalize the transport detail before
   // asserting the package contract.
-  return new Set((report[0]?.files ?? []).map((file) => file.path.replace(/^package\//, "")));
+  return new Set(report.flatMap((entry) => entry.files ?? []).map((file) => file.path.replace(/^package\//, "")));
 }
 
 test("release contract: published documentation links are covered by the npm tarball", () => {
