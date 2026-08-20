@@ -1495,6 +1495,9 @@ test("T2b: stale before compaction → no late rebind, refire, or misleading act
   __testOnlyResetTerminalFlags();
   __testOnlyResetOwnerSession();
   const cwd = tmpCwd();
+  resetContinuationDispatchState(cwd);
+  clearContinuationTimer();
+  resetLengthContinue();
   const ctx = await freshSession(cwd, "startup");
   await pi.command("goal", "stale then compact — done when pinned", ctx);
   await tick();
