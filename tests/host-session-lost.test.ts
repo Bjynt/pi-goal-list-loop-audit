@@ -405,3 +405,83 @@ test("source pin: the classifier and its enum are exported", () => {
   assert.match(src, /export function classifySessionHandleInvalidation\(/);
   assert.match(src, /"session_shutdown" \| "provider_disconnect" \| "silent_handle_death"/);
 });
+
+test("note.md screenshot repro — live update_task_status self-heals a stale park and clears host session lost banner", async () => {
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    goal: seedGoal({
+      policy: "goal",
+      status: "active",
+      objective: "live task status update after spurious park",
+      taskList: {
+        tasks: [
+          { id: "1", description: "First task", status: "pending" },
+          { id: "2", description: "Second task", status: "in_progress" },
+        ],
+      },
+    }),
+  });
+  __testOnlyResetOwnerSession();
+  const ctx = makeMockCtx(cwd);
+  await pi.fire("session_start", { reason: "startup" }, ctx);
+  await tick();
+
+  // Spurious park occurs
+  invalidateHostSession(pi, ctx);
+  __testOnlyHeartbeatTick();
+  assert.ok(readLedger(cwd).some((e) => e.type === "session_handle_invalidated"), "handle was parked");
+
+  // Host recovers (pi actively calls update_task_status in the same session)
+  pi.sendMessageError = null;
+  pi.sessionNameError = null;
+  ctx.isIdle = () => true;
+
+  const res = await pi.runTool("update_task_status", { id: "2", status: "complete" }, ctx);
+  assert.match(res.content[0]?.text ?? "", /Task 2 → complete/);
+
+  // Verification:
+  // 1. Stale park is healed in ledger
+  const l = readLedger(cwd);
+  assert.ok(l.some((e) => e.type === "stale_self_healed"), "update_task_status must trigger same-session self-heal");
+  // 2. interruptedAt is cleared from state so UI no longer shows 'host session lost'
+  const stateLines = readLedger(cwd).filter((e) => e.type === "state");
+  const latestState = stateLines[stateLines.length - 1]!;
+  assert.equal(latestState.value.goal.interruptedAt, undefined, "interruptedAt must be cleared on self-heal");
+  assert.equal(latestState.value.goal.taskList.tasks[1].status, "complete", "task status was updated");
+});
+
+test("live session_compact event self-heals a stale park in place", async () => {
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    goal: seedGoal({
+      policy: "goal",
+      status: "active",
+      objective: "live session compact after spurious park",
+    }),
+  });
+  __testOnlyResetOwnerSession();
+  const ctx = makeMockCtx(cwd);
+  await pi.fire("session_start", { reason: "startup" }, ctx);
+  await tick();
+
+  // Spurious park occurs
+  invalidateHostSession(pi, ctx);
+  __testOnlyHeartbeatTick();
+  assert.ok(readLedger(cwd).some((e) => e.type === "session_handle_invalidated"), "handle was parked");
+
+  // Host recovers and emits session_compact in the same session
+  pi.sendMessageError = null;
+  pi.sessionNameError = null;
+  ctx.isIdle = () => true;
+
+  await pi.fire("session_compact", {}, ctx);
+  await tick();
+
+  const l = readLedger(cwd);
+  assert.ok(l.some((e) => e.type === "stale_self_healed"), "session_compact must trigger same-session self-heal");
+  const stateLines = readLedger(cwd).filter((e) => e.type === "state");
+  const latestState = stateLines[stateLines.length - 1]!;
+  assert.equal(latestState.value.goal.interruptedAt, undefined, "interruptedAt must be cleared on self-heal");
+});
