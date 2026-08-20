@@ -74,10 +74,17 @@ While auditing every item requires rigorous verification, it prevents **queue dr
 - In a 50-item list, an unverified error in item #2 would otherwise silently corrupt the codebase, causing items #3 through #50 to fail or build on broken invariants.
 - Per-task auditing ensures each item represents a rock-solid, verified invariant before the next task begins.
 
-## Parallelization Opportunities
+## Single-Trunk Execution Law & Parallelization
 
-- **Subagent Research Fan-Out**: Spawn multiple `Explore` agents concurrently in a single message to map out different subsystems.
-- **Parallel Worktree Execution**: When tasks have disjoint file footprints, delegate to parallel `general-purpose` workers with `isolation: "worktree"`.
-- **Concurrent Queue Dispatch (Future Architecture)**: For large queues with independent list items, dispatching non-conflicting items to parallel isolated worktrees eliminates head-of-line blocking while maintaining per-item audit verification.
+### Why "Main-Only" Outperforms Branch Swarms in Autonomous Loops
+Speculative feature branching across autonomous subagents creates **stale context bubbles** and **merge collision debt**:
+1. Agent A on branch-1 and Agent B on branch-2 both read from snapshot $T_0$.
+2. Once Agent A lands a commit, Agent B is working on an obsolete codebase without knowing it.
+3. Merging parallel LLM branches frequently causes semantic regressions and broken invariants.
+
+### The Single-Trunk Operating Rule:
+* **Serial Queue on `main`**: All queue items drain sequentially on the single primary working tree. Item $N+1$ always executes with 100% truthful, up-to-date context left by item $N$.
+* **Transactional Green-or-Revert**: Every task either lands green (verified by tests and the detached auditor) and commits, or cleanly rolls back on `main` before the next backlog item is touched.
+* **Safe Subagent Parallelism**: Subagents are used for **read-only research fan-out** (e.g. concurrent `Explore` queries across subsystems in a single turn) or standalone verification, rather than speculative mutating branches.
 
 See `INSTALL.md` for the command surface.
