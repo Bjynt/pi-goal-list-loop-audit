@@ -2061,6 +2061,7 @@ test("T1b: stale /goal start → goal persisted to .pi-glla with interrupt marke
   const g = readState(cwd).goal as { status: string; interruptedAt?: string; interruptedReason?: string } | null;
   assert.ok(g, "goal persisted despite the doomed handle");
   assert.equal(g!.status, "active");
+  if (!g!.interruptedAt) console.error("DBG-T1B", { goal: g, ledger: fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8") });
   assert.ok(g!.interruptedAt, "interrupt marker set (fresh session auto-resumes it)");
   assert.equal(g!.interruptedReason, "created in a stale session");
   assert.ok(ctx.ui.matching(".pi-glla").length >= 1, "honest 'state is safe' notify, not a 'starting now' lie");
