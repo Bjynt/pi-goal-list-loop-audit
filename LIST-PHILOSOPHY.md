@@ -66,4 +66,18 @@ all three modes' terminal states: it converts completion findings into
 `/goal` (Confirm), fires a regression-scan audit on clean completions,
 and notifies + idles otherwise. See `INSTALL.md` "Reviewer".
 
+## Audit Cadence: Why Every `/list` Task is Audited
+
+Auditing occurs at the completion boundary of **every single `/list` task** (via the detached isolated auditor) before the next item in the queue can activate.
+
+While auditing every item requires rigorous verification, it prevents **queue drift**:
+- In a 50-item list, an unverified error in item #2 would otherwise silently corrupt the codebase, causing items #3 through #50 to fail or build on broken invariants.
+- Per-task auditing ensures each item represents a rock-solid, verified invariant before the next task begins.
+
+## Parallelization Opportunities
+
+- **Subagent Research Fan-Out**: Spawn multiple `Explore` agents concurrently in a single message to map out different subsystems.
+- **Parallel Worktree Execution**: When tasks have disjoint file footprints, delegate to parallel `general-purpose` workers with `isolation: "worktree"`.
+- **Concurrent Queue Dispatch (Future Architecture)**: For large queues with independent list items, dispatching non-conflicting items to parallel isolated worktrees eliminates head-of-line blocking while maintaining per-item audit verification.
+
 See `INSTALL.md` for the command surface.

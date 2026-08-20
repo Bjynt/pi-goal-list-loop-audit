@@ -539,9 +539,24 @@ This protects against model-generated summaries losing fidelity.
 | LOW | Telegram push | v0.3.0 |
 | LOW | Sub-task auto-close | v0.3.0 |
 
+## Addendum v0.35.6 (Unattended autonomy, audit cadence, and parallelization)
+
+- **Two-phase decision architecture (upfront grilling → zero pauses during execution)**:
+  - Drafting upfront is the sole interview boundary: the agent asks sharp questions about architecture, scope, error conditions, and test commands.
+  - Active execution is 100% unattended: the agent picks sensible architectural defaults, records rationale, and continues without interrupting the user for obvious choices or secondary questions. Non-blocking notes are deferred to the completion summary.
+  - Premium engineering standards: mandatory root-cause fixes, full TypeScript type safety, and comprehensive test coverage. If an approach fails verification after 2 attempts, the agent autonomously steps back and pivots to an alternative architecture.
+- **Audit cadence across modes**:
+  - `/goal`: Evaluated by the detached isolated auditor at goal completion (`complete_goal`).
+  - `/list`: Evaluated by the detached isolated auditor at the completion of **every individual list task** before unlocking and activating item $N+1$. This prevents list drift, ensuring that errors in early tasks do not cascade into downstream tasks.
+  - `/loop`: Shell metric command evaluated on every iteration; LLM auditor does not run on intermediate iterations.
+- **Parallelization architecture & opportunities**:
+  - *Current*: Parallel subagent exploration fan-out (spawning multiple `Explore` agents in one turn) and parallel disjoint-worktree implementation (`general-purpose` workers with `isolation: "worktree"`). Detached auditor runs concurrently in background OS process.
+  - *Opportunities*: Concurrent `/list` dispatch across non-conflicting tasks using isolated worktrees to eliminate head-of-line blocking for large queues, plus background contract rehearsals.
+
 ## Files
 
 - `docs/DESIGN.md` — **this file**
 - `README.md` — quickstart
 - `audit/pi-name-v3-registry-based.md` — naming rationale
 - `audit/pi-goal-loop-design.md` — earlier design (now superseded)
+
