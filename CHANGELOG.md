@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Main-model preferred-primary failback
+  Main-agent fallback recovery now defaults to `mainModelFailback=auto`: a
+  successful fallback turn keeps the original primary durable and schedules a
+  supervised health probe using `mainModelPrimaryProbeMinutes` (15 minutes by
+  default). A healthy primary is selected automatically; `sticky` preserves
+  the legacy stay-on-fallback behavior. Probe intent and pending switches
+  survive reloads, and the policy is exposed in the Main agent settings tab.
+
 ## 0.35.7 — fast-fail pre-audits, zero-pause execution, and milestone gating (2026-08-20)
 
 ### Deterministic fast-fail mechanical pre-audits

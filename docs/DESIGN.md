@@ -220,10 +220,13 @@ architectural decisions that changed the SHAPE of the system:
   provider hints win when in budget, while `hourlyQuotaProbe` is a separate
   optional :00:30 ticker. A paused goal/held loop remains resumable. A fresh
   startup obeys the existing `autoResume` consent gate.
-- **Successful-turn reset**: a real non-error agent end clears the recovery
-  cycle. Manual model selection cancels it; host restore selections do not, and
-  user aborts do not masquerade as success. Goal/list/loop cancellation clears
-  its timer and durable state.
+- **Successful-turn reset**: a real non-error agent end on the preferred
+  primary clears the recovery cycle. In the current failback policy, a
+  successful fallback turn instead arms the durable preferred-primary probe;
+  `mainModelFailback=sticky` retains the historical immediate reset. Manual
+  model selection cancels it; host restore selections do not, and user aborts
+  do not masquerade as success. Goal/list/loop cancellation clears its timer
+  and durable state.
 
 ## Addendum v0.34.48–v0.34.56 (lifecycle/recovery hardening — the stale-handle era)
 
@@ -337,6 +340,15 @@ replacement without delivering a successor `session_start`:
   after every hour starts. Main-model recovery and detached-auditor recovery
   use this same reason-agnostic rule, with existing context/user-abort and
   safety-horizon exceptions.
+- **Preferred-primary failback is durable and supervised**:
+  `mainModelFailback=auto` (the default) does not treat a successful fallback
+  turn as proof that the original primary is healthy. The recovery record keeps
+  `primary`, records `primaryProbeAt`, and uses
+  `mainModelPrimaryProbeMinutes` (15 by default) to select the primary for one
+  real supervised probe. A primary success clears the episode; a provider
+  failure walks back to the serving fallback and schedules the next reverse
+  probe. `sticky` preserves the legacy permanent fallback choice. The
+  `primaryProbeInFlight` marker and pending switch survive a session boundary.
 - **Legacy state is inert**: old `quota-waiting` phases, quota-named retry
   counters, and provider-hint fields are accepted only long enough to load
   and normalize old files. Canonical persisted state uses `retry-waiting`,

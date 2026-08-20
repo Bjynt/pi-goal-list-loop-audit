@@ -268,6 +268,8 @@ test("readState sanitizes a saved main-model recovery without dropping its retry
         attempts: -4,
         reason: "provider wall",
         retryAt: "not-a-date",
+        primaryProbeAt: new Date(Date.now() + 60_000).toISOString(),
+        primaryProbeInFlight: true,
         autoRetryUntil: new Date(Date.now() + 60_000).toISOString(),
       },
     });
@@ -277,6 +279,8 @@ test("readState sanitizes a saved main-model recovery without dropping its retry
     assert.ok(recovery.attempted.length <= 11, "restored attempted refs are bounded to primary plus ten backups");
     assert.equal(recovery.attempted[0], "provider/primary");
     assert.equal(recovery.retryAt, undefined);
+    assert.ok(recovery.primaryProbeAt);
+    assert.equal(recovery.primaryProbeInFlight, true);
     assert.ok(recovery.autoRetryUntil);
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });

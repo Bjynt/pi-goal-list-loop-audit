@@ -124,11 +124,15 @@ test("main recovery settings are global-only and project copies cannot create a 
     fs.writeFileSync(projectSettingsPath(cwd), JSON.stringify({
       mainModelFallbacks: ["project/backup"],
       mainModelRetryMinutes: 99,
+      mainModelFailback: "sticky",
+      mainModelPrimaryProbeMinutes: 9,
       hourlyRetryProbe: false,
     }));
     fs.writeFileSync(GLOBAL_FILE, JSON.stringify({
       mainModelFallbacks: ["global/backup"],
       mainModelRetryMinutes: 22,
+      mainModelFailback: "auto",
+      mainModelPrimaryProbeMinutes: 17,
       hourlyRetryProbe: true,
     }));
     const settings = loadSettings(cwd);
@@ -137,12 +141,18 @@ test("main recovery settings are global-only and project copies cannot create a 
     const projectAfterUnrelatedSave = JSON.parse(fs.readFileSync(projectSettingsPath(cwd), "utf8"));
     assert.equal(projectAfterUnrelatedSave.mainModelFallbacks, undefined);
     assert.equal(projectAfterUnrelatedSave.mainModelRetryMinutes, undefined);
+    assert.equal(projectAfterUnrelatedSave.mainModelFailback, undefined);
+    assert.equal(projectAfterUnrelatedSave.mainModelPrimaryProbeMinutes, undefined);
     assert.equal(projectAfterUnrelatedSave.hourlyRetryProbe, undefined);
     assert.equal(settings.mainModelRetryMinutes, 22);
+    assert.equal(settings.mainModelFailback, "auto");
+    assert.equal(settings.mainModelPrimaryProbeMinutes, 17);
     assert.equal(settings.hourlyRetryProbe, true);
     const prov = settingsProvenance(cwd);
     assert.equal(prov.mainModelFallbacks?.source, "global");
     assert.equal(prov.mainModelRetryMinutes?.source, "global");
+    assert.equal(prov.mainModelFailback?.source, "global");
+    assert.equal(prov.mainModelPrimaryProbeMinutes?.source, "global");
     assert.equal(prov.hourlyRetryProbe?.source, "global");
   } finally {
     restoreGlobal();
@@ -156,6 +166,21 @@ test("RPC custom stub falls back to typed main-backup editing instead of silentl
     ctx.ui.inputImpl = async () => "rpc/backup-a, rpc/backup-b";
     await handleSettingChoice("mainModelFallbacks", ctx as unknown as ExtensionContext);
     assert.deepEqual(readGlobal().mainModelFallbacks, ["rpc/backup-a", "rpc/backup-b"]);
+  } finally {
+    restoreGlobal();
+  }
+});
+
+test("main failback policy and primary-probe cadence are global settings", async () => {
+  try {
+    const ctx = makeMockCtx(tmpCwd());
+    ctx.ui.selectImpl = async () => "sticky — stay on the fallback until a manual model selection";
+    await handleSettingChoice("mainModelFailback", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().mainModelFailback, "sticky");
+
+    ctx.ui.inputImpl = async () => "7";
+    await handleSettingChoice("mainModelPrimaryProbeMinutes", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().mainModelPrimaryProbeMinutes, 7);
   } finally {
     restoreGlobal();
   }

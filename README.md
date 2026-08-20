@@ -317,9 +317,14 @@ leaving the list). Every recoverable provider failure uses the same ordered
 chain: glla calls `setModel` for the first eligible fallback, the next
 supervised turn tests it, and later failures advance left-to-right. Forbidden,
 unavailable, and unauthenticated references are skipped; a successful
-supervised turn clears the episode. The chain is global, durable, and its
-attempted cursor survives reload. After the chain is exhausted, bounded
-retries continue on the active model rather than silently abandoning work.
+supervised turn on a fallback proves only that fallback is healthy. By default
+(`mainModelFailback=auto`), the original primary remains durable and is probed
+again every `mainModelPrimaryProbeMinutes` (15 minutes by default); a successful
+supervised primary turn fails back and clears the episode. Set
+`mainModelFailback=sticky` to preserve the legacy stay-on-fallback behavior.
+The chain is global, durable, and its attempted cursor survives reload. After
+the chain is exhausted, bounded retries continue on the active model rather
+than silently abandoning work.
 The Main agent tab shows the `N/10` count and numbered chain. The Drafter and
 Auditor tabs likewise show each selected model together with its requested
 thinking level; fallback rows show the effective/requested thinking level when
@@ -439,7 +444,7 @@ Open `/glla` to edit these settings in the table (the rows show effective values
 - Auditor fallback agent
 - Notify command, token limit, and wedge-alert minutes
 - Auto-resume, auto-accept drafts, decision popup, and carryover policy
-- Main-agent current model/thinking, fallback models, and recovery cadence in the Main agent tab
+- Main-agent current model/thinking, fallback models, recovery cadence, and preferred-primary failback policy in the Main agent tab
 - Drafter agent/thinking/fallback agents in the Drafter tab
 - Auditor agent/thinking/fallback agent in the Auditor tab
 - Forbidden model patterns and switch policy
@@ -455,8 +460,8 @@ There is no top-level `/glla key=value` setting syntax.
 
 Resolution per key: **project > global > defaults** — EXCEPT `autoResume` and
 agent recovery settings (`mainModelFallbacks`, `mainModelRetryMinutes`,
-`drafterModel`, `drafterThinkingLevel`, `drafterModelFallbacks`,
-`hourlyRetryProbe`),
+`mainModelFailback`, `mainModelPrimaryProbeMinutes`, `drafterModel`,
+`drafterThinkingLevel`, `drafterModelFallbacks`, `hourlyRetryProbe`),
 which are **global-only**: per-project opt-ins from old versions
 silently overrode the global hold at launch (the junk-runner incident), so
 the launch-restore gate and the reviewer-enqueue gate read only the global
@@ -470,9 +475,14 @@ unavailable, and unauthenticated refs are skipped. When every candidate is
 down, glla stops the current send attempt and uses the configured
 `base → 2×base → 4×base → 8×base → 16×base → 5h` ladder (`base` defaults to
 15m). `hourlyRetryProbe=on` adds a blind :00:30 retry after each hour starts.
-No provider availability or quota check is made before any retry; all
-recoverable failures walk the ordered fallbacks and then continue on the active
-model through the bounded retry policy. Automatic recovery stops at 24h,
+With `mainModelFailback=auto` (the default), a successful fallback keeps the
+original primary as the preferred model and schedules a durable health probe at
+the `mainModelPrimaryProbeMinutes` cadence; the primary is selected only for a
+supervised probe, and a failure returns to the serving fallback. Set
+`mainModelFailback=sticky` to disable this reverse probe. No provider
+availability or quota check is made before any retry; all recoverable failures
+walk the ordered fallbacks and then continue on the active model through the
+bounded retry policy. Automatic recovery stops at 24h,
 preserves the saved work, and requires an explicit
 `/goal resume`, `/list resume`, or `/loop resume` to start a fresh window. A
 provider becoming available within that horizon therefore resumes saved work

@@ -8,8 +8,10 @@ import * as path from "node:path";
 import {
   classifyMainModelFailure,
   isMainModelFallbackFailure,
+  isMainModelFailbackAuto,
   mainModelAutoRetryUntil,
   mainModelFailureDelayMs,
+  mainModelPrimaryProbeDelayMs,
   mainModelRetryDelayMs,
   modelRef,
   nextUntriedModelRef,
@@ -326,6 +328,9 @@ test("main model errors stay opaque to the recovery policy", () => {
 test("main model recovery backs off without giving up", () => {
   assert.equal(mainModelRetryDelayMs(1, 15), 15 * 60_000);
   assert.equal(mainModelRetryDelayMs(2, 15), 30 * 60_000);
+  assert.equal(isMainModelFailbackAuto(undefined), true);
+  assert.equal(isMainModelFailbackAuto("sticky"), false);
+  assert.equal(mainModelPrimaryProbeDelayMs(15), 15 * 60_000);
   assert.equal(mainModelRetryDelayMs(3, 15), 60 * 60_000);
   assert.equal(mainModelRetryDelayMs(4, 15), 2 * 60 * 60_000);
   assert.equal(mainModelRetryDelayMs(5, 15), 4 * 60 * 60_000);

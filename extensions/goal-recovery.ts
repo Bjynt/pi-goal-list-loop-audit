@@ -642,7 +642,7 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
       state.mainModelRecovery = nextRecovery;
       persistState(ctx);
       appendLedger(ctx.cwd, "main_model_failover", { from: current, to: candidateRef, backupIndex, backupCount: refs.length, reason: failure.kind });
-      ctx.ui.notify(`Main session model failover: ${current} → backup ${backupIndex}/${refs.length} ${candidateRef}. The next supervised turn tests it; a successful turn clears recovery.`, "warning");
+      ctx.ui.notify(`Main session model failover: ${current} → backup ${backupIndex}/${refs.length} ${candidateRef}. The next supervised turn tests it; a healthy fallback schedules a preferred-primary failback probe.`, "warning");
       return true;
     } catch (err) {
       // A user cancellation or host replacement may have cleared/replaced the
