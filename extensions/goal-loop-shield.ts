@@ -141,7 +141,10 @@ export function extractMechanicalCheckCommands(contract: string): string[] {
   const commands: string[] = [];
   for (const item of items) {
     const backtickMatch = /`([^`]+)`/.exec(item);
-    const candidate = backtickMatch ? backtickMatch[1]!.trim() : item.trim();
+    let candidate = backtickMatch ? backtickMatch[1]!.trim() : item.trim();
+    if (!backtickMatch) {
+      candidate = candidate.replace(/\s+(?:passes(?:\s+cleanly|\s+with\s+zero\s+errors)?|exits\s+0|returns\s+0|cleanly).*$/i, "").trim();
+    }
     if (/^(?:npm\s+(?:test|run\s+[\w:-]+)|bun\s+(?:test|run\s+[\w:-]+)|pnpm\s+(?:test|run\s+[\w:-]+)|yarn\s+(?:test|[\w:-]+)|tsc\b|cargo\s+(?:test|check|build)|pytest\b|python\s+-m\s+unittest|go\s+test|vitest\b|jest\b|make\s+test|git\s+diff|test\s+-[a-z])/i.test(candidate)) {
       commands.push(candidate);
     }

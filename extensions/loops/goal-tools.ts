@@ -62,6 +62,7 @@ import {
   formatGoalAuditHistory,
   readAuditLog,
   bumpGoalRevision,
+  captureGoalRevision,
   stripThinkBlocks,
   type AuditLogEntry,
   ledgerPath,
@@ -217,6 +218,10 @@ import {
   runDetachedGoalCompletionAuditor,
   type AuditorProgress,
 } from "../goal-loop-auditor-process.js";
+import {
+  extractMechanicalCheckCommands,
+  runMechanicalPreAuditChecks,
+} from "../goal-loop-shield.js";
 import {
   REPETITION,
   isActuallyStuck,
@@ -708,37 +713,53 @@ function registerAgentTools(pi: any): void {
       let result: Awaited<ReturnType<typeof runAudit>>;
       let retriedOnce = false;
       let fallbackUsed = false;
-      try {
-        ({ result, retriedOnce, fallbackUsed } = await runDetachedCompletionWithFallback(auditorCandidates, runAudit, {
-          shouldRetry: () => detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId) !== null,
-          forbiddenRefs: settings.forbiddenModels,
-          retryBaseMinutes: settings.mainModelRetryMinutes,
-          onRetry: (candidate: AuditorModelCandidate, err: string) => {
-            const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
-            if (!current) return;
-            const failureCopy = providerErrorPresentation(err, "completion");
-            latestAuditProgress = {
-              ...(latestAuditProgress ?? {}),
-              model: modelRef(candidate.model),
-              via: candidate.via,
-              label: `${failureCopy.display} — retrying once`,
-              lastEventAt: Date.now(),
-            };
-            refreshUI(current);
-            appendLedger(current.cwd, "audit_infra_retry", { goalId: auditGoalId, model: auditorCandidateLabel(candidate), error: failureCopy.diagnostic.slice(0, 200), diagnostic: failureCopy.diagnostic });
-          },
-          onFallback: (from: AuditorModelCandidate, to: AuditorModelCandidate, err: string) => {
-            const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
-            if (!current) return;
-            appendLedger(current.cwd, "auditor_runtime_model_fallback", { goalId: auditGoalId, from: auditorCandidateLabel(from), to: auditorCandidateLabel(to), error: err.slice(0, 200) });
-            current.ui.notify(`Detached auditor failed on ${auditorCandidateLabel(from)} — retrying with ${auditorCandidateLabel(to)}. This is infrastructure, not a verdict.`, "warning");
-          },
-        }));
-      } finally {
-        if (ownsDetachedAudit(auditGeneration, auditGoalId, auditAttemptId)) {
-          clearDetachedAuditProgress(auditGeneration, auditGoalId, auditAttemptId);
-          completionAuditInFlight = false;
-          completionAuditGeneration = null;
+      // v0.35.7: Deterministic Fast-Fail Pre-Audit — if mechanical contract checks fail,
+      // fail in 200ms with raw output rather than burning 45s on an LLM audit pass.
+      const mechanicalCmds = extractMechanicalCheckCommands(auditGoal.verificationContract ?? "");
+      const mechanicalResult = runMechanicalPreAuditChecks(ctx.cwd, mechanicalCmds);
+      if (!mechanicalResult.passed) {
+        result = {
+          approved: false,
+          disapproved: true,
+          impossible: false,
+          output: `<disapproved/>\n\nDeterministic Pre-Audit Fast-Fail: Mechanical contract check failed: \`${mechanicalResult.failedCommand}\` (exit code ${mechanicalResult.exitCode})\n\n<evidence>\n${mechanicalResult.output}\n</evidence>`,
+          model: "deterministic-pre-audit",
+          regressionShieldPassed: true,
+          goalRevision: captureGoalRevision(auditGoal) ?? undefined,
+        };
+      } else {
+        try {
+          ({ result, retriedOnce, fallbackUsed } = await runDetachedCompletionWithFallback(auditorCandidates, runAudit, {
+            shouldRetry: () => detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId) !== null,
+            forbiddenRefs: settings.forbiddenModels,
+            retryBaseMinutes: settings.mainModelRetryMinutes,
+            onRetry: (candidate: AuditorModelCandidate, err: string) => {
+              const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
+              if (!current) return;
+              const failureCopy = providerErrorPresentation(err, "completion");
+              latestAuditProgress = {
+                ...(latestAuditProgress ?? {}),
+                model: modelRef(candidate.model),
+                via: candidate.via,
+                label: `${failureCopy.display} — retrying once`,
+                lastEventAt: Date.now(),
+              };
+              refreshUI(current);
+              appendLedger(current.cwd, "audit_infra_retry", { goalId: auditGoalId, model: auditorCandidateLabel(candidate), error: failureCopy.diagnostic.slice(0, 200), diagnostic: failureCopy.diagnostic });
+            },
+            onFallback: (from: AuditorModelCandidate, to: AuditorModelCandidate, err: string) => {
+              const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
+              if (!current) return;
+              appendLedger(current.cwd, "auditor_runtime_model_fallback", { goalId: auditGoalId, from: auditorCandidateLabel(from), to: auditorCandidateLabel(to), error: err.slice(0, 200) });
+              current.ui.notify(`Detached auditor failed on ${auditorCandidateLabel(from)} — retrying with ${auditorCandidateLabel(to)}. This is infrastructure, not a verdict.`, "warning");
+            },
+          }));
+        } finally {
+          if (ownsDetachedAudit(auditGeneration, auditGoalId, auditAttemptId)) {
+            clearDetachedAuditProgress(auditGeneration, auditGoalId, auditAttemptId);
+            completionAuditInFlight = false;
+            completionAuditGeneration = null;
+          }
         }
       }
       const auditContextAfterRun = freshCtxForGeneration(auditGeneration);
