@@ -1052,6 +1052,16 @@ export async function __testOnlyRunFanOutListAuditFindings(cwd: string): Promise
   await fanOutListAuditFindings(cwd, sessionGeneration);
 }
 
+function isCtxAlive(ctx: ExtensionContext | null | undefined): boolean {
+  if (!ctx) return false;
+  try {
+    ctx.isIdle();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** v0.28.1 (S3): side-effect-free staleness probe — getSessionName()
  * routes through pi's assertActive() and throws the stale signature iff
  * pi invalidated this factory handle (session replacement). A positive
@@ -1062,6 +1072,7 @@ export async function __testOnlyRunFanOutListAuditFindings(cwd: string): Promise
  * (field: hegemon 2026-08-06 — one probe failure parked a live session for
  * 5 hours). */
 function probeExtensionApiStaleRaw(): boolean {
+  if (lastCtx && isCtxAlive(lastCtx)) return false;
   if (!extensionApi) return false;
   try {
     extensionApi.getSessionName();
@@ -1072,7 +1083,13 @@ function probeExtensionApiStaleRaw(): boolean {
 }
 
 function probeExtensionApiStale(): boolean {
-  if (extensionApiStale) return true;
+  if (extensionApiStale) {
+    if (lastCtx && isCtxAlive(lastCtx)) {
+      extensionApiStale = false;
+      return false;
+    }
+    return true;
+  }
   if (probeExtensionApiStaleRaw()) extensionApiStale = true;
   return extensionApiStale;
 }
@@ -1466,9 +1483,8 @@ function selfHealStaleSameSession(ctx: ExtensionContext): boolean {
   if (owner && owner.pid === process.pid && typeof owner.instanceId === "string" && owner.instanceId !== instanceId) {
     return false; // a successor module instance owns this cwd — never re-claim
   }
-  // The handle must actually be healthy NOW — the fresh probe, not the
-  // latched cache. A null api means we cannot send anything anyway.
-  if (!extensionApi || probeExtensionApiStaleRaw()) return false;
+  // The handle must actually be healthy NOW — the fresh probe on the live context.
+  if (!isCtxAlive(ctx)) return false;
   const was = extensionApiStale ? "extension_api_stale" : sessionHandoffPending ? "session_handoff_pending" : "stale_terminal_done";
   extensionApiStale = false;
   sessionHandoffPending = false;
@@ -1497,24 +1513,17 @@ function selfHealStaleSameSession(ctx: ExtensionContext): boolean {
     && maybeAutoRetryParkedCompletionAudit("host-rebind");
   if (auditRetryStarted) {
     ctx.ui.notify("glla: the stale handle recovered in place — retrying the stored no-verdict completion audit once.", "info");
-  } else if (!staleRearmed && state.goal && state.goal.status === "active" && state.goal.interruptedAt) {
-    // Mirror the session-load restore gate: autoResume=on (unattended rigs)
-    // resumes; the hold-everything default keeps the interrupt marker and
-    // asks for an explicit resume.
-    const autoResumeSetting = resolveEffectiveAggressiveSettings(loadGlobalSettings()).autoResume;
-    if (autoResumeSetting) {
-      updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
-      ctx.ui.notify(
-        `Recovered from the stale-handle park — the handle is healthy again. Resuming ${state.goal.policy === "list" ? "list item" : "goal"}: ${displaySlice(state.goal.objective, 70)}`,
-        "info",
-      );
-      postRestoreGraceTurns = 2;
+  } else if (state.goal && state.goal.status === "active" && state.goal.interruptedAt) {
+    // A live context from the same session proves the session was not lost.
+    // Clear the spurious interrupt marker so the UI does not show 'host session lost'.
+    updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
+    ctx.ui.notify(
+      `Recovered from the stale-handle park — the handle is healthy again. Resuming ${state.goal.policy === "list" ? "list item" : "goal"}: ${displaySlice(state.goal.objective, 70)}`,
+      "info",
+    );
+    postRestoreGraceTurns = 2;
+    if (!staleRearmed && !continuationTimerPending() && !pendingContinuationDispatchRef() && state.goal.autoContinue !== false) {
       scheduleContinuation(ctx, true);
-    } else {
-      ctx.ui.notify(
-        `Recovered from the stale-handle park — the handle is healthy again. ${activeGoalSurfaceCommand("resume")} continues the interrupted ${state.goal.policy === "list" ? "list item" : "goal"}.`,
-        "info",
-      );
     }
   } else {
     ctx.ui.notify("glla: recovered from the stale-handle park — the handle is healthy again; the goal plane is live.", "info");

@@ -628,13 +628,13 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   // 60s heartbeat notices. Re-arm it as soon as pi settles post-compact.
   pi.on("session_compact", async (_event: any, ctx: ExtensionContext) => {
     // v0.34.25: a compact event from the live replacement session is the
-    // field's most common post-swap contact — absorb it BEFORE the gates
+    // field's most common post-swap contact — absorb/heal it BEFORE the gates
     // drop it (post-park the owner is nulled, so it is not even "foreign").
+    rememberCtx(ctx);
     if (!tryAbsorbHostSuccessor(ctx, "session_compact") && isForeignCtx(ctx)) return;
     // A late compact event can arrive after pi has already invalidated this
     // extension. It must not reclaim the old ctx or schedule settle refires.
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
-    rememberCtx(ctx);
     if (!isSupervising()) return;
     appendLedger(ctx.cwd, "session_compact", {});
     // v0.28.24: a compaction is LEGITIMATE busy time — reset the send-rearm

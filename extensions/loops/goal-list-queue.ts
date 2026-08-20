@@ -899,6 +899,7 @@ function currentToolContext(execCtx: unknown): ExtensionContext | null {
   if (candidate) {
     try {
       candidate.isIdle();
+      rememberCtx(candidate);
       return candidate;
     } catch {
       // The invocation itself may be a late event; try the current binding.
