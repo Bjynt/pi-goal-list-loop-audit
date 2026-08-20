@@ -1432,6 +1432,19 @@ function registerAgentTools(pi: any): void {
       while (queue.length > 0) {
         const t = queue.shift();
         if (t.id === p.id && t.status !== "complete") {
+          if (t.verificationContract) {
+            const checkCmds = extractMechanicalCheckCommands(t.verificationContract);
+            const checkRes = runMechanicalPreAuditChecks(ctx.cwd, checkCmds);
+            if (!checkRes.passed) {
+              return {
+                content: [{
+                  type: "text",
+                  text: `Task ${p.id} milestone verification FAILED for command \`${checkRes.failedCommand}\` (exit code ${checkRes.exitCode}):\n\n${checkRes.output}\n\nTask ${p.id} remains in_progress. Fix the failure before marking complete.`,
+                }],
+                details: {},
+              };
+            }
+          }
           t.status = "complete";
           updateGoal({ taskList: tl }, ctx);
           return { content: [{ type: "text", text: `Task ${p.id} marked complete.` }], details: {} };
@@ -2076,6 +2089,7 @@ function registerAgentTools(pi: any): void {
       tasks: Type.Array(Type.Object({
         title: Type.String(),
         agentRole: Type.Optional(Type.Literal("designer", { description: "Route this task through the read-only Designer subagent before implementation." })),
+        verificationContract: Type.Optional(Type.String({ description: "Optional verification gate command for this milestone before it can be marked complete." })),
         subtasks: Type.Optional(Type.Array(Type.String())),
       })),
     }),

@@ -46,12 +46,14 @@ test("explicit Designer declarations are consumed without changing ordinary desi
   assert.equal(parsed.verificationContract, "npm test");
 });
 
-test("task plans preserve Designer routing and expose it on the next pending task", () => {
+test("task plans preserve Designer routing and verification contracts and expose them on tasks", () => {
   const list = buildTaskList([
-    { title: "Design the change", agentRole: "designer", subtasks: ["Implement it"] },
-    { title: "Verify the result" },
+    { title: "Design the change", agentRole: "designer", verificationContract: "npm test", subtasks: ["Implement it"] },
+    { title: "Verify the result", verificationContract: "bun test tests/foo.test.ts" },
   ]);
   assert.equal(list.tasks[0]!.agentRole, "designer");
+  assert.equal(list.tasks[0]!.verificationContract, "npm test");
+  assert.equal(list.tasks[1]!.verificationContract, "bun test tests/foo.test.ts");
   const next = findNextPendingTask(list.tasks);
   assert.deepEqual(next, { id: "1", title: "Design the change", agentRole: "designer" });
 });

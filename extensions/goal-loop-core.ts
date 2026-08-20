@@ -95,6 +95,8 @@ export interface Task {
   status: "pending" | "in_progress" | "complete";
   /** Optional specialist hand-off for this task. */
   agentRole?: AgentRole;
+  /** Optional verification gate for milestone-checked tasks. */
+  verificationContract?: string;
   subtasks?: Task[];
 }
 
@@ -117,6 +119,7 @@ export const MAX_SUBTASKS_PER_TASK = 5;
 export interface TaskProposal {
   title: string;
   agentRole?: AgentRole;
+  verificationContract?: string;
   subtasks?: string[];
 }
 
@@ -145,6 +148,7 @@ export function buildTaskList(tasks: TaskProposal[]): TaskList {
       title: t.title.trim(),
       status: "pending" as const,
       ...(t.agentRole ? { agentRole: t.agentRole } : {}),
+      ...(t.verificationContract ? { verificationContract: t.verificationContract } : {}),
       subtasks: (t.subtasks ?? []).map((s, j) => ({
         id: `${i + 1}.${j + 1}`,
         title: s.trim(),
