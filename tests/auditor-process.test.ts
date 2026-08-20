@@ -357,10 +357,11 @@ setInterval(() => {}, 1_000);
       signal: controller.signal,
       runtime: { workerPath: worker, attemptId: () => "attempt-parent-abort", pollIntervalMs: 10, wallTimeoutMs: 5_000 },
     });
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 500; i++) {
       try { await readFile(pidMarker); break; }
       catch { await new Promise((resolve) => setTimeout(resolve, 10)); }
     }
+    assert.ok(existsSync(pidMarker), "the detached worker started before aborting it");
     controller.abort();
     const result = await pending;
     assert.equal(result.approved, false);

@@ -867,11 +867,23 @@ export async function runDetachedGoalCompletionAuditor(args: {
     await writeAtomicJson(lockPath, { protocolVersion: PROTOCOL_VERSION, attemptId, pid: child.pid, role: "worker", workerPath: workerPathIdentity });
     child.unref();
 
-    const abort = () => { if (child && childAlive(child)) void terminateWorker(child).catch(() => {}); };
+    let abortTermination: Promise<void> | null = null;
+    const abort = () => {
+      if (child && childAlive(child)) {
+        abortTermination ??= terminateWorker(child).catch(() => {});
+      }
+    };
     args.signal?.addEventListener("abort", abort, { once: true });
     try {
       while (true) {
-        if (args.signal?.aborted) return infra(model, thinkingLevel, "Auditor aborted.", "", capturedRevisionToken, "transport");
+        if (args.signal?.aborted) {
+          // Do not return the transport result until the detached worker's
+          // TERM→KILL teardown has settled. Returning first races the caller's
+          // cleanup with a TERM-ignoring worker and leaves its PID alive.
+          if (child && childAlive(child)) await terminateWorker(child).catch(() => {});
+          else if (abortTermination) await abortTermination;
+          return infra(model, thinkingLevel, "Auditor aborted.", "", capturedRevisionToken, "transport");
+        }
         if (childSpawnError) return infra(model, thinkingLevel, `auditor worker launch failed: ${childSpawnError}`, "", capturedRevisionToken, "transport");
         if (now() >= wallDeadlineAt) {
           if (childAlive(child)) await terminateWorker(child);

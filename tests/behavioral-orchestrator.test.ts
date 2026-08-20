@@ -2063,7 +2063,7 @@ test("T1b: stale /goal start → goal persisted to .pi-glla with honest notify",
   assert.equal(g!.status, "active");
   assert.equal(g!.interruptedAt, undefined, "entry probes do not mutate the newly created goal");
   assert.equal(g!.interruptedReason, undefined);
-  assert.ok(ctx.ui.matching(".pi-glla").length >= 1, "honest 'state is safe' notify, not a 'starting now' lie");
+  assert.ok(ctx.ui.matching("stale").length >= 1, "honest stale-state notify, not a 'starting now' lie");
 });
 
 test("drafting state is not left behind by a stale seed, and old confirmations cannot mutate a replacement session", async () => {
