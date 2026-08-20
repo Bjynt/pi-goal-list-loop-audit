@@ -1,11 +1,7 @@
 # 
 
-## 
-
-host session lost problem
-
-> clearly others dont have it we need to investigate other goals 
-
 ##
 
-we want more of a long term / prem alignemnt is possible
+auditor parked
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260820_100539.png /home/dracon/Pictures/Screenshots/Screenshot_20260820_100053.png 
