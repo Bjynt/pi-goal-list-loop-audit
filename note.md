@@ -17,3 +17,8 @@ but i wonder if it is the wrong message cause most of these are working
 
 restarting the objecitve starts a new session
 
+##
+
+this is not stuck but needs to be more visual
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260821_104747.png 
