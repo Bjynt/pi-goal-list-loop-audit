@@ -410,6 +410,12 @@ async function resolveDraftActivationConflict(ctx: ExtensionContext, incoming: O
   return "proceed";
 }
 
+function verifyTaskMilestone(ctx: ExtensionContext, verificationContract?: string): { failedCommand?: string; output?: string; exitCode?: number } | null {
+  if (!verificationContract?.trim()) return null;
+  const result = runMechanicalPreAuditChecks(ctx.cwd, extractMechanicalCheckCommands(verificationContract));
+  return result.passed ? null : result;
+}
+
 function registerAgentTools(pi: any): void {
   pi.registerTool(defineTool({
     name: "complete_goal",
@@ -754,12 +760,15 @@ function registerAgentTools(pi: any): void {
               current.ui.notify(`Detached auditor failed on ${auditorCandidateLabel(from)} — retrying with ${auditorCandidateLabel(to)}. This is infrastructure, not a verdict.`, "warning");
             },
           }));
-        } finally {
-          if (ownsDetachedAudit(auditGeneration, auditGoalId, auditAttemptId)) {
-            clearDetachedAuditProgress(auditGeneration, auditGoalId, auditAttemptId);
-            completionAuditInFlight = false;
-            completionAuditGeneration = null;
-          }
+        }
+      } finally {
+        // Deterministic pre-audit failures take the same cleanup path as a
+        // detached worker. Otherwise the in-flight latch survives forever
+        // and recovery/status surfaces claim an auditor is still running.
+        if (ownsDetachedAudit(auditGeneration, auditGoalId, auditAttemptId)) {
+          clearDetachedAuditProgress(auditGeneration, auditGoalId, auditAttemptId);
+          completionAuditInFlight = false;
+          completionAuditGeneration = null;
         }
       }
       const auditContextAfterRun = freshCtxForGeneration(auditGeneration);
@@ -1446,18 +1455,15 @@ function registerAgentTools(pi: any): void {
       while (queue.length > 0) {
         const t = queue.shift();
         if (t.id === p.id && t.status !== "complete") {
-          if (t.verificationContract) {
-            const checkCmds = extractMechanicalCheckCommands(t.verificationContract);
-            const checkRes = runMechanicalPreAuditChecks(ctx.cwd, checkCmds);
-            if (!checkRes.passed) {
-              return {
-                content: [{
-                  type: "text",
-                  text: `Task ${p.id} milestone verification FAILED for command \`${checkRes.failedCommand}\` (exit code ${checkRes.exitCode}):\n\n${checkRes.output}\n\nTask ${p.id} remains in_progress. Fix the failure before marking complete.`,
-                }],
-                details: {},
-              };
-            }
+          const checkRes = verifyTaskMilestone(ctx, t.verificationContract);
+          if (checkRes) {
+            return {
+              content: [{
+                type: "text",
+                text: `Task ${p.id} milestone verification FAILED for command \`${checkRes.failedCommand}\` (exit code ${checkRes.exitCode}):\n\n${checkRes.output}\n\nTask ${p.id} remains in_progress. Fix the failure before marking complete.`,
+              }],
+              details: {},
+            };
           }
           t.status = "complete";
           updateGoal({ taskList: tl }, ctx);
@@ -1491,6 +1497,18 @@ function registerAgentTools(pi: any): void {
       while (queue.length > 0) {
         const t = queue.shift();
         if (t.id === p.id) {
+          if (p.status === "complete") {
+            const checkRes = verifyTaskMilestone(ctx, t.verificationContract);
+            if (checkRes) {
+              return {
+                content: [{
+                  type: "text",
+                  text: `Task ${p.id} milestone verification FAILED for command \`${checkRes.failedCommand}\` (exit code ${checkRes.exitCode}):\n\n${checkRes.output}\n\nTask ${p.id} remains ${t.status}. Fix the failure before marking complete.`,
+                }],
+                details: {},
+              };
+            }
+          }
           t.status = p.status;
           updateGoal({ taskList: tl }, ctx);
           return { content: [{ type: "text", text: `Task ${p.id} → ${p.status}` }], details: {} };
