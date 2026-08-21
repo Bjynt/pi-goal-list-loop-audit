@@ -105,7 +105,10 @@ test("/glla completions stay concise: actions only; settings live in the table",
   // Settings are edited through the bare `/glla` table. The completion list
   // therefore contains operational verbs only; no setting aliases or section
   // navigation routes compete with the action namespace.
-  assert.ok((glla.match(/\["[^"]+",/g) ?? []).length <= 10, "glla autocomplete stays concise");
+  // v0.35.15: "pause" joined as the 11th operational verb — supervisor
+  // freeze is an action, not a setting, and hiding it from autocomplete
+  // would defeat its purpose in exactly the moments it is needed.
+  assert.ok((glla.match(/\["[^"]+",/g) ?? []).length <= 11, "glla autocomplete stays concise");
   assert.ok(!/\["[a-zA-Z]+=",/.test(glla), "no key=value setting aliases in autocomplete");
   assert.doesNotMatch(glla, /key=value|project key/);
   assert.doesNotMatch(SRC, /\^\(keep-going\|agents\|auditor\|stall-brakes\|subagents\|other\)\\b/);
