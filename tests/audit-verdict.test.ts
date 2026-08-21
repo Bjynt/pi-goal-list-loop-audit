@@ -50,6 +50,13 @@ test("parseAuditorVerdict: impossible reason clipped to 300 chars", () => {
   assert.equal(r.impossibleReason!.length, 300);
 });
 
+test("parseAuditorVerdict: contradictory terminal tags never approve", () => {
+  const r = parseAuditorVerdict("<approved/>\n<disapproved/>");
+  assert.equal(r.approved, false);
+  assert.equal(r.disapproved, true);
+  assert.equal(r.impossible, false);
+});
+
 // ---- countTrailingDisapprovals ----
 
 test("countTrailingDisapprovals: empty and all-clean histories", () => {

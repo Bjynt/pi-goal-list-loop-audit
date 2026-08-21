@@ -85,6 +85,19 @@ test("rejects: bamboozle-style empty evidence block", () => {
   assert.equal(r.passed, false);
 });
 
+test("rejects: contract prose outside evidence cannot satisfy the shield", () => {
+  const report = [
+    "The contract says curl returns 200 from /healthz and npm test exits 0.",
+    "<evidence>",
+    "Checked unrelated documentation only.",
+    "</evidence>",
+    "<approved/>",
+  ].join("\\n");
+  const r = checkRegressionShield(report, CONTRACT);
+  assert.equal(r.passed, false);
+  assert.deepEqual(r.missingItems, contractItems(CONTRACT));
+});
+
 test("distinctive-token matching: references the item by a filename", () => {
   // The auditor may not quote the item verbatim; referencing hello.txt counts.
   const report = [

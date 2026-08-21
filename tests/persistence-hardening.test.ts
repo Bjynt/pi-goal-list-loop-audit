@@ -24,6 +24,8 @@ import {
   appendLedger,
   writeGoalMd,
   readState,
+  goalMdPath,
+  isSafePersistedId,
   isPersistenceDegraded,
   lastPersistenceFailure,
 } from "../extensions/goal-loop-core.js";
@@ -55,6 +57,22 @@ test("readState: a truncated trailing active.jsonl line loads cleanly (mid-write
   const s = readState(cwd);
   assert.equal((s.goal as { id: string } | null)?.id, "g-good", "torn tail skipped, last good state wins");
   assert.deepEqual(s.list, []);
+});
+
+test("persisted ids are validated before state or filesystem use", () => {
+  const cwd = tmpdir();
+  assert.equal(isSafePersistedId("20260821075653-wvz7l4"), true);
+  assert.equal(isSafePersistedId("../../outside"), false);
+  const safeRoot = path.resolve(cwd, ".pi-glla", "goals");
+  const invalidPath = path.resolve(goalMdPath(cwd, "../../outside"));
+  assert.ok(invalidPath.startsWith(`${safeRoot}${path.sep}`), "invalid ids stay below .pi-glla/goals");
+
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), JSON.stringify({
+    type: "state",
+    value: { goal: { id: "../../outside", objective: "untrusted", status: "active", policy: "goal" }, list: [] },
+  }) + "\\n");
+  assert.equal(readState(cwd).goal, null, "invalid persisted goal ids are not hydrated");
 });
 
 test("E1: disk failure latches the degraded flag, never throws; a landing write self-heals", () => {
