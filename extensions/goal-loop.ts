@@ -296,6 +296,9 @@ function scheduleLoopTick(ctx: ExtensionContext): void {
 }
 
 function sendLoopTurn(): void {
+  // v0.35.15: same as sendContinuation — pre-pause loop timers must not
+  // dispatch turns while the supervisor is frozen.
+  if (supervisorPaused(state)) return;
   if (mainModelRecoveryActive()) return;
   if (flags.sessionHandoffPending || flags.initialSessionLoadPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown || flags.continuationDispatchStoodDown || flags.pendingContinuationDispatch) return;
   loopTimer = null;
