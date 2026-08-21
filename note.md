@@ -15,6 +15,10 @@ i think we need a pause and /home/dracon/Pictures/Screenshots/Screenshot_2026082
 
 https://github.com/DraconDev/pi-goal-list-loop-audit/issues
 
+##
+
+after accepting the questiong we often see op was aborted /home/dracon/Pictures/Screenshots/Screenshot_20260821_152311.png 
+
 # Later
 
 ##
