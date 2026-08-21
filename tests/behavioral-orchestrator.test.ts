@@ -26,6 +26,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
 import activate, { __testOnlyLastConfirmDialog, __testOnlyLoadState, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyResetTerminalFlags, __testOnlyRunFanOutListAuditFindings, __testOnlySetAuditorRecoveryRetryDelay, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, __testOnlySetSessionReplacementUntil, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
+import { __testOnlyResetZombieAutoRetry } from "../extensions/loops/goal-activation.js";
 import { __testOnlyHeartbeatTick, __testOnlySetZombieRunWindows, __testOnlyResetZombieRunWatchdog, __testOnlyClearSubagentHangProbes, upsertSubagentHangProbe, endSubagentHangProbe } from "../extensions/goal-heartbeat.js";
 import { mainModelRecoverySucceeded } from "../extensions/goal-recovery.js";
 
@@ -4026,10 +4027,13 @@ test("v0.35.x: zero-stream zombie auto-aborts and parks a list item without a re
     assert.match(parked?.pauseSuggestedAction ?? "", /\/list cancel/);
     const afterAbort = readLedger(cwd);
     assert.equal(afterAbort.filter((entry) => entry.type === "zombie_run_aborted").length, 1);
+    // v0.35.17: the first silence of a streak arms ONE bounded automatic
+    // retry — the park is a 90-second waystation, not a dead end.
+    assert.equal(afterAbort.filter((entry) => entry.type === "zombie_auto_retry_scheduled").length, 1);
 
     const sendsBefore = pi.sent.length;
     await tick(200);
-    assert.equal(pi.sent.length, sendsBefore, "cleanup does not blind-retry the wedged item");
+    assert.equal(pi.sent.length, sendsBefore, "cleanup does not blind-retry the wedged item (the retry waits out its delay)");
     assert.equal(readLedger(cwd).filter((entry) => entry.type === "zombie_run_aborted").length, 1, "heartbeat ticks do not repeat the abort");
 
     // Explicit list resume is the only re-entry path and may dispatch one
@@ -4041,6 +4045,7 @@ test("v0.35.x: zero-stream zombie auto-aborts and parks a list item without a re
     assert.equal(pi.sent.length, sendsBefore + 1, "resume creates exactly one fresh dispatch");
   } finally {
     __testOnlyResetZombieRunWatchdog();
+    __testOnlyResetZombieAutoRetry();
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   }
 });

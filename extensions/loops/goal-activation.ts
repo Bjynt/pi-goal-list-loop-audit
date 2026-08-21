@@ -464,7 +464,7 @@ function scheduleZombieAutoRetry(
   appendLedger(ctx.cwd, retry ? "zombie_auto_retry_scheduled" : "zombie_auto_retry_refused_streak", {
     goalId,
     streakCount: streak.count,
-    delayMs: ZOMBIE_RETRY_DELAY_MS,
+    delayMs: zombieRetryDelayOverride ?? ZOMBIE_RETRY_DELAY_MS,
   });
   if (!retry) return false;
   if (zombieRetryTimer) {
@@ -517,7 +517,7 @@ function scheduleZombieAutoRetry(
       fresh.ui.notify(`Automatic retry starting — the loop was stopped after a zero-stream abort. One bounded retry ticks now; if it hangs again it stays stopped for /loop resume.`, "info");
     } catch { /* best-effort */ }
     scheduleLoopTick(fresh);
-  }, ZOMBIE_RETRY_DELAY_MS);
+  }, zombieRetryDelayOverride ?? ZOMBIE_RETRY_DELAY_MS);
   return true;
 }
 
@@ -528,6 +528,14 @@ export function __testOnlyResetZombieAutoRetry(): void {
     zombieRetryTimer = null;
   }
   zombieRetryStreak = { key: "", count: 0, lastAbortStreamAt: 0 };
+}
+
+let zombieRetryDelayOverride: number | null = null;
+
+/** Test-only: shrink the automatic-retry delay (null restores the 90s
+ * production default). Never called by production code. */
+export function __testOnlySetZombieRetryDelay(ms: number | null): void {
+  zombieRetryDelayOverride = ms;
 }
 
 /** v0.35.x (amended v0.35.17): terminate one confirmed zero-stream host turn
