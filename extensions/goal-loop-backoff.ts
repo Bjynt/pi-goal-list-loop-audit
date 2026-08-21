@@ -241,3 +241,40 @@ export function accountTurnForNudgesRich(
 ): number {
   return isNudgeTurn(opts) ? currentNudges + 1 : 0;
 }
+
+// =================================================================
+// v0.35.17 — zero-stream abort auto-retry streak decision
+ // =================================================================
+// Field (note.md Next §1, screenshot 20260821_152311): turns dispatched by
+// ACCEPTING a Confirm dialog hang with zero provider stream activity often
+// enough that users repeatedly return to "action needed - this won't fix
+// itself" parks. The watchdog's abort is correct; the missing half is ONE
+// bounded automatic re-dispatch per silence streak. This pure decision is
+// the one-retry bound; the timer that consumes it lives in goal-activation.ts.
+
+export const ZOMBIE_RETRY_DELAY_MS = 90_000;
+
+export interface ZombieRetryStreak {
+  key: string;
+  count: number;
+  /** The stream-clock value observed at the streak's most recent abort. */
+  lastAbortStreamAt: number;
+}
+
+/** A new owner key OR stream activity newer than the recorded abort point
+ * starts a fresh streak; otherwise the streak deepens and the SECOND
+ * consecutive silence is refused (no retry storm). A retried turn that
+ * actually streams advances lastStreamActivityAt past the previous abort's
+ * observation point, so any LATER independent hang earns its own single
+ * retry. */
+export function zombieRetryDecision(
+  observedStreamAt: number,
+  key: string,
+  prev: ZombieRetryStreak,
+): { retry: boolean; streak: ZombieRetryStreak } {
+  const sameEpisode = key === prev.key && observedStreamAt <= prev.lastAbortStreamAt;
+  const streak: ZombieRetryStreak = sameEpisode
+    ? { key, count: Math.min(prev.count + 1, 2), lastAbortStreamAt: observedStreamAt }
+    : { key, count: 1, lastAbortStreamAt: observedStreamAt };
+  return { retry: streak.count === 1, streak };
+}

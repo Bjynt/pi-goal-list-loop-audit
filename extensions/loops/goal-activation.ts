@@ -341,6 +341,11 @@ import {
   shouldFirePendingLatchWatchdog,
   AUDITOR_WALL_TIMEOUT_MS,
 } from "../goal-loop-backoff.js";
+import {
+  ZOMBIE_RETRY_DELAY_MS,
+  zombieRetryDecision,
+  type ZombieRetryStreak,
+} from "../goal-loop-backoff.js";
 
 import {
   addSingleItem,
@@ -436,36 +441,13 @@ export function enqueueFaultRepairTask(ctx: ExtensionContext, objective: string,
  * inside the retry window the park stands and manual resume applies — an
  * honest degradation, not a phantom promise.
  */
-const ZOMBIE_RETRY_DELAY_MS = 90_000;
-/** Shared park/verify marker for the watchdog's pause reason — the auto-retry
- * timer only clears a pause that carries EXACTLY this reason (a newer manual
- * or recovery pause supersedes it and is never touched). */
 const ZOMBIE_PAUSE_REASON = "automatic zero-stream abort — no provider activity was observed";
 
-interface ZombieRetryStreak {
-  key: string;
-  count: number;
-  /** The stream-clock value observed at the streak's most recent abort. */
-  lastAbortStreamAt: number;
-}
+// Streak state is process-memory by design (see the block comment above
+// scheduleZombieAutoRetry): a session restart inside the retry window leaves
+// the park standing for manual resume — an honest degradation.
 let zombieRetryStreak: ZombieRetryStreak = { key: "", count: 0, lastAbortStreamAt: 0 };
 let zombieRetryTimer: NodeJS.Timeout | null = null;
-
-/** Pure streak decision so the one-retry bound is unit-testable without a
- * host harness. A new owner key OR stream activity newer than the recorded
- * abort point starts a fresh streak; otherwise the streak deepens and the
- * second consecutive silence is refused. */
-export function zombieRetryDecision(
-  observedStreamAt: number,
-  key: string,
-  prev: ZombieRetryStreak,
-): { retry: boolean; streak: ZombieRetryStreak } {
-  const sameEpisode = key === prev.key && observedStreamAt <= prev.lastAbortStreamAt;
-  const streak: ZombieRetryStreak = sameEpisode
-    ? { key, count: Math.min(prev.count + 1, 2), lastAbortStreamAt: observedStreamAt }
-    : { key, count: 1, lastAbortStreamAt: observedStreamAt };
-  return { retry: streak.count === 1, streak };
-}
 
 /** Arm the one-shot automatic re-dispatch after a successful zombie abort.
  * Returns true when a retry was scheduled (the caller adjusts its user-facing
