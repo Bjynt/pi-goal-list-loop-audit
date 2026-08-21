@@ -188,6 +188,9 @@ test("v0.34.57: the forbidden gate blocks a forbidden selection, emits forbidden
   fs.mkdirSync(`${cwd}/.pi-glla`, { recursive: true });
   fs.writeFileSync(`${cwd}/.pi-glla/settings.json`, JSON.stringify({ forbiddenModels: ["gpt-5.5", "sonnet", "opus"] }));
   const ctx = ownerCtx(cwd);
+  // The host API is claimed only after session admission; this test needs a
+  // real admitted session so the forbidden selection can be reverted.
+  await pi.fire("session_start", { reason: "startup" }, ctx);
   pi.modelSelections.length = 0;
   const previous = { provider: "anthropic", id: "claude-sonnet-4-5" };
   await pi.fire("model_select", { model: { provider: "openai", id: "gpt-5.5" }, previousModel: previous, source: "set" }, ctx);
