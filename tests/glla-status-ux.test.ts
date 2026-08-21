@@ -184,8 +184,8 @@ test("v0.35.15: quiet watcher stays silent while the supervisor is paused (it IS
 test("v0.35.15: every automatic dispatch point gates on supervisorPaused", () => {
   const gates: Array<[string, string, RegExp]> = [
     ["extensions/goal-continuation.ts", "scheduleContinuation", /export function scheduleContinuation[^}]*?supervisorPaused\(state\)/s],
-    ["extensions/goal-continuation.ts", "sendContinuation (armed-timer race)", /export function sendContinuation\(goalId: string\): void \{\n[^\n]*\n[^\n]*supervisorPaused\(state\) return;/],
-    ["extensions/goal-loop.ts", "scheduleLoopTick", /function scheduleLoopTick\(ctx: ExtensionContext\): void \{\n[^\n]*\n[^\n]*supervisorPaused\(state\) return;/],
+    ["extensions/goal-continuation.ts", "sendContinuation (armed-timer race)", /export function sendContinuation\(goalId: string\): void \{[\s\S]{0,400}?if \(supervisorPaused\(state\)\) return;/],
+    ["extensions/goal-loop.ts", "scheduleLoopTick", /function scheduleLoopTick\(ctx: ExtensionContext\): void \{[\s\S]{0,300}?if \(supervisorPaused\(state\)\) return;/],
     ["extensions/goal-loop.ts", "sendLoopTurn (armed-timer race)", /function sendLoopTurn\(\): void \{[\s\S]{0,200}?if \(supervisorPaused\(state\)\) return;/],
     ["extensions/goal-heartbeat.ts", "heartbeatTick (re-arms/probes/zombie cleanup)", /function heartbeatTick\(\): void \{[\s\S]{0,400}?if \(supervisorPaused\(state\)\) return;/],
     ["extensions/goal-recovery.ts", "main-model recovery probe timer", /[\s\S]{0,300}?flags.mainModelRecoveryTimer = null;[\s\S]{0,200}?if \(supervisorPaused\(state\)\) return;/],
@@ -200,7 +200,7 @@ test("v0.35.15: every automatic dispatch point gates on supervisorPaused", () =>
 function ownerCtx(cwd: string): MockCtx {
   return makeMockCtx(cwd, { sessionManager: MAIN_SM });
 }
-async function freshSessionImpl(cwd: string): Promise<MockCtx> {
+async function freshSession(cwd: string): Promise<MockCtx> {
   const ctx = ownerCtx(cwd);
   await pi.fire("session_start", { reason: "startup" }, ctx);
   await tick();
