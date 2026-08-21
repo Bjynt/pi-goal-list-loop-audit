@@ -29,6 +29,10 @@ maybe sometimes else or least update teh readme
 
 ##
 
+the auditor seleciton should be like the main agent selector
+
+##
+
 when we load a session we dont have to start it right away
 we should decide not auto start
 
