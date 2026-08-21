@@ -350,15 +350,37 @@ test("extractMechanicalCheckCommands: extracts backticked and raw shell commands
 
 test("v0.35.16: mechanical checks keep the TAIL of failed output and banner a timeout kill", async () => {
   const { runMechanicalPreAuditChecks } = await import("../extensions/goal-loop-shield.ts");
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
   // A failing command whose output exceeds the 4000-char evidence budget:
-  // the DIAGNOSTIC END (where node prints the error) must survive, not the
-  // startup head (field failure 2026-08-21: two auditor rounds saw only
+  // the DIAGNOSTIC END (where the runner prints failures) must survive, not
+  // the startup head (field failure 2026-08-21: two auditor rounds saw only
   // startup logs of a gate killed mid-run — no failure was ever visible).
-  const script = "console.log('x'.repeat(6000)); console.error('THE_ACTUAL_FAILURE_MARKER'); process.exit(3);";
-  const res = runMechanicalPreAuditChecks(process.cwd(), ["node", "-e", script]);
-  assert.equal(res.passed, false);
-  assert.equal(res.exitCode, 3);
-  assert.match(res.output!, /THE_ACTUAL_FAILURE_MARKER/, "the tail (where the failure lives) is kept");
-  assert.match(res.output!, /truncated head/, "truncation is honest about what was dropped");
+  // The script file path stays inside the safe-command character class so
+  // the shell-free boundary itself is exercised, not bypassed.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-mech-tail-"));
+  const scriptPath = path.join(dir, "fail-late.js");
+  fs.writeFileSync(scriptPath, [
+    "for (let i = 0; i < 300; i++) console.log('filler line ' + i + ' ' + 'x'.repeat(40));",
+    "console.error('THE_ACTUAL_FAILURE_MARKER');",
+    "process.exit(3);",
+  ].join("\n"));
+  try {
+    const res = runMechanicalPreAuditChecks(dir, ["node " + scriptPath]);
+    assert.equal(res.passed, false);
+    assert.equal(res.exitCode, 3);
+    assert.match(res.output!, /THE_ACTUAL_FAILURE_MARKER/, "the tail (where the failure lives) is kept");
+    assert.match(res.output!, /truncated head/, "truncation is honest about what was dropped");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  // The timeout-kill path banners honestly instead of masquerading as a
+  // test failure (the field failure looked like 'exit code 1' with no
+  // failing test anywhere).
+  const slow = runMechanicalPreAuditChecks(dir, ["sleep 5"], 1000);
+  assert.equal(slow.passed, false);
+  assert.match(slow.output!, /mechanical check killed after 1s/, "a timeout kill is named as such");
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
