@@ -676,6 +676,7 @@ function refreshUI(ctx: ExtensionContext): void {
       auditorProgressSignals: settings.auditorProgressSignals !== false,
       mainModelFallbacks: fallbackRefs,
       modelProvenance,
+      ...(lastAuditorQuietStretch ? { auditorQuietStretch: lastAuditorQuietStretch } : {}),
     };
     // Settings are loaded once for the remaining projections; the explicit
     // auditorSilent expression preserves the source-level contract.
@@ -706,6 +707,57 @@ function scheduleUIRefresh(): void {
   deferredUIRefresh.unref?.();
 }
 
+// v0.35.15: proactive auditor quiet reporting (runtime-only state).
+// The seed complaint (2026-08-21): an auditor sat silent for 8 minutes and
+// the user only learned about it afterwards from the status line — nothing
+// ever NOTIFIED. The phase chip recolors at ~3 min, but a chip is not a
+// report. The watcher below fires exactly ONE notify when a detached audit
+// crosses into the quiet phase, then records the ended stretch so the
+// footer can show "silent Xm then resumed" afterwards. `/glla pause`
+// suppresses the notify (it is automatic machinery), never the recording.
+let auditorQuietSince: number | null = null;
+let auditorQuietNotified = false;
+let lastAuditorQuietStretch: { ms: number; endedAt: number } | null = null;
+
+/** Drive the quiet watcher once per UI tick. Returns a warning message to
+ * deliver, or null. Split out for testability. */
+export function __auditorQuietWatchTick(now = Date.now()): string | null {
+  const g = state.goal;
+  if (!g || g.status !== "auditing") {
+    // No live audit — reset any open stretch so a stale silence cannot leak
+    // into a later goal's display.
+    if (auditorQuietSince !== null) {
+      const ms = now - auditorQuietSince;
+      if (ms >= AUDITOR_QUIET_MS) lastAuditorQuietStretch = { ms, endedAt: now };
+      auditorQuietSince = null;
+      auditorQuietNotified = false;
+    }
+    return null;
+  }
+  const phase = auditorDisplayPhase(g, latestAuditProgress, now);
+  if (phase === "quiet") {
+    // Entering quiet: anchor the stretch at the worker's last activity.
+    if (auditorQuietSince === null) {
+      auditorQuietSince = typeof latestAuditProgress?.lastActivityAt === "number"
+        ? latestAuditProgress.lastActivityAt
+        : now;
+    }
+    if (!auditorQuietNotified && !supervisorPaused(state)) {
+      auditorQuietNotified = true;
+      return `glla: the detached auditor shows NO worker activity for ${fmtElapsed(now - auditorQuietSince)} — it may be stuck (or doing one long read). The status footer keeps counting. /glla pause freezes all supervisor machinery; /goal cancel discards the claim.`;
+    }
+    return null;
+  }
+  // Left the quiet phase: record the ended stretch for the footer summary.
+  if (auditorQuietSince !== null) {
+    const ms = now - auditorQuietSince;
+    if (ms >= AUDITOR_QUIET_MS) lastAuditorQuietStretch = { ms, endedAt: now };
+    auditorQuietSince = null;
+  }
+  auditorQuietNotified = false;
+  return null;
+}
+
 function startUITicker(): void {
   if (uiTicker) return;
   uiTicker = setInterval(() => {
@@ -713,7 +765,17 @@ function startUITicker(): void {
     // v0.34.12: keep ticking during a timed wait-pause too — the status
     // line counts down to resumeAt live (pully field request 2026-08-01).
     const auditVisible = state.goal?.status === "auditing";
-    if (ctx && (isSupervising() || auditVisible || (state.goal?.status === "paused" && !!state.goal.pauseResumeAt))) refreshUI(ctx);
+    if (!ctx) return;
+    if (!(isSupervising() || auditVisible || (state.goal?.status === "paused" && !!state.goal.pauseResumeAt))) return;
+    // v0.35.15: proactive quiet-phase notification (once per stretch).
+    if (auditVisible) {
+      const warning = __auditorQuietWatchTick();
+      if (warning && !supervisorPaused(state)) {
+        try { ctx.ui.notify(warning, "warning"); } catch { /* stale handle — next tick retries the notify gate honestly */ }
+        scheduleUIRefresh();
+      }
+    }
+    refreshUI(ctx);
   }, 1_000);
   uiTicker.unref?.();
 }
