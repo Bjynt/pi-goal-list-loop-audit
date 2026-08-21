@@ -51,12 +51,18 @@ loop is idea to code
 
 cut respec as i thin it is a bad strategy 
 
+instead we can have 
+/goal plan
+/list plan 
+/loop plan
+
+that makes way more detailed and presumably longer "plan" than the regular draft that is already long, which we are not changing 
 
 # Idea
 
 ##
 
-maybe cut 
+maybe cut, this is just a brainstorm
 
 /list audit
 /goal audit 
