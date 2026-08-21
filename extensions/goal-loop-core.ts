@@ -535,6 +535,7 @@ export const SETTINGS_MUTATING_ACTIONS = new Set([
   "cancel",
   "fallbacks",
   "resume",
+  "pause",
   "reviewer",
   "postaudit",
   "tooloverride",

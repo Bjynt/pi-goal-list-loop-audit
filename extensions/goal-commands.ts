@@ -2067,6 +2067,11 @@ function cmdGllaVersion(ctx: ExtensionContext): void {
 // to the deep surfaces.
 function cmdGllaStatus(ctx: ExtensionContext): void {
   const lines: string[] = [];
+  // v0.35.15: name a frozen supervisor FIRST — it changes how every other
+  // line reads (nothing automatic will fire while this is set).
+  if (typeof state.supervisorPausedAt === "number") {
+    lines.push(`supervisor: ⏸ PAUSED since ${new Date(state.supervisorPausedAt).toISOString()} — re-arms/recovery/dispatch frozen — /glla resume`);
+  }
   const g = state.goal;
   if (g) {
     const tok = (g.usage?.tokensUsed ?? 0) > 0 ? ` · ${g.usage!.tokensUsed} tok` : "";
