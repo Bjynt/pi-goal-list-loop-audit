@@ -140,6 +140,10 @@ export interface WidgetExtras {
   mainModelFallbacks?: string[];
   /** Truthful model-selection provenance for the active goal card/footer. */
   modelProvenance?: ModelProvenanceDisplay;
+  /** v0.35.15: the most recent ended auditor quiet stretch (runtime only,
+   * never persisted). The footer shows "silent Xm then resumed" while it is
+   * fresh so a silence the user missed stays visible afterwards. */
+  auditorQuietStretch?: { ms: number; endedAt: number };
 }
 
 /**
@@ -457,6 +461,10 @@ type AuditorDisplayPhase = "queued" | "running" | "quiet" | "blocked" | "awaitin
  * the same threshold for the one-shot proactive notify so the notification
  * and the status chip can never disagree about when "quiet" begins. */
 export const AUDITOR_QUIET_MS = 3 * 60_000;
+/** v0.35.15: how long the "silent Xm then resumed" fact stays in the footer
+ * after a quiet stretch ends — long enough to be seen, short enough not to
+ * become permanent noise. */
+const QUIET_STRETCH_VISIBLE_MS = 10 * 60_000;
 const LIVE_ACTIVITY_MS = 15_000;
 
 /** Use worker activity for liveness. Fall back to the parent event timestamp
@@ -840,11 +848,14 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     const observed = signals && phase === "running"
       ? (auditorProgressPhaseLabel(audit) ?? auditorPhaseForDisplay(audit, phase, live))
       : auditorPhaseForDisplay(audit, phase, live);
-    const phaseText = `auditor ${observed}`;
+    // v0.35.15: leading phase glyph + draining activity meter — a glance
+    // answers "is the audit alive?" without reading the sentence.
+    const phaseText = `auditor ${auditorPhaseGlyph(phase)} ${observed}`;
     const color = phase === "blocked" || phase === "quiet" ? "warning" : live ? "success" : "accent";
+    const activityMeter = auditorActivityMeter(audit, phase, now);
     const label = live
-      ? `${paint(theme, "success", phaseText)} ${activityBadge("AUDITOR · DETACHED · LIVE", now, theme)}`
-      : paint(theme, color, phaseText);
+      ? `${paint(theme, "success", phaseText)} ${paint(theme, "accent", activityMeter)} ${activityBadge("AUDITOR · DETACHED · LIVE", now, theme)}`
+      : `${paint(theme, color, phaseText)} ${paint(theme, color === "warning" ? "warning" : "dim", activityMeter)}`;
     // A current tool is present-tense evidence only while its worker
     // heartbeat is fresh. Older snapshots stay useful as `last tool:` facts,
     // never as a claim that the detached process is still in that call.
@@ -859,8 +870,17 @@ export function buildStatusText(state: State, audit?: AuditDisplayProgress | nul
     const elapsed = auditorElapsedSuffix(audit, now);
     const workerActivity = auditorLastActivity(audit, now);
     const freshness = auditorFreshnessSuffix(audit, phase, now);
+    // v0.35.15: once a quiet stretch ends and activity resumes, keep the
+    // fact visible for 10 minutes so the user learns the silence happened
+    // even if they missed the proactive notify (the seed's exact complaint:
+    // "only 8 minutes of not reporting anything … would be best to know").
+    const stretch = extras?.auditorQuietStretch;
+    const stretchSuffix = stretch && Number.isFinite(stretch.ms) && stretch.ms >= AUDITOR_QUIET_MS
+      && now - stretch.endedAt <= QUIET_STRETCH_VISIBLE_MS
+      ? ` · ${paint(theme, "warning", `silent ${fmtElapsed(stretch.ms)} then resumed`)}`
+      : "";
     const next = ` · next: ${auditorNextTransition(phase)}`;
-    return `glla: ${host} · ${label}${tool}${evidence ? ` · evidence: ${evidence}` : ""}${elapsed}${workerActivity}${freshness}${next} · detached worker${heldSuffix}`;
+    return `glla: ${host} · ${label}${tool}${evidence ? ` · evidence: ${evidence}` : ""}${elapsed}${workerActivity}${freshness}${stretchSuffix}${next} · detached worker${heldSuffix}`;
   }
   if (g.status === "paused") {
     // v0.28.22: the status line names the ACTIONABILITY, not the reason —
