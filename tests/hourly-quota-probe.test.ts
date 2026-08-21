@@ -115,7 +115,9 @@ test("v0.34.92: parkMainModelAfterFailure schedules the hourly ticker alongside 
   const tail = RECOVERY_SRC.slice(parkIdx, parkIdx + 2_500);
   assert.match(tail, /scheduleMainModelRecoveryTimer\(ctx, delay\);/, "park schedules the recovery timer");
   const scheduleIdx = RECOVERY_SRC.indexOf("function scheduleMainModelRecoveryTimer");
-  const scheduleTail = RECOVERY_SRC.slice(scheduleIdx, scheduleIdx + 1_000);
+  // v0.35.15: the /glla pause freeze-gate lengthened this function; widen
+  // the source window accordingly.
+  const scheduleTail = RECOVERY_SRC.slice(scheduleIdx, scheduleIdx + 1_600);
   assert.match(scheduleTail, /scheduleHourlyProbe\(ctx\);/, "the recovery timer also arms the hourly ticker");
 });
 
