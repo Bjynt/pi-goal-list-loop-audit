@@ -896,6 +896,11 @@ export function guardGoalBeforeContinuation(
 }
 
 export function scheduleContinuation(ctx: ExtensionContext, force = false, delayMs?: number): void {
+  // v0.35.15: `/glla pause` freezes ALL automatic dispatch — even `force`
+  // re-arms. Explicit user intent outranks every internal retry policy;
+  // `/glla resume` is the only way back. Manual sends (user-typed prompts)
+  // are unaffected: they never pass through here.
+  if (supervisorPaused(state)) return;
   if (mainModelRecoveryActive()) return;
   if (flags.sessionHandoffPending || flags.initialSessionLoadPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown) return;
   if (pendingContinuationDispatch) return;

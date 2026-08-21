@@ -803,7 +803,19 @@ function pausedStatusSuffix(g: Goal, state: State, extras: WidgetExtras | undefi
  * One-line status for ctx.ui.setStatus("pi-glla", …).
  * Returns undefined when nothing is being supervised (clears the segment).
  */
+/** v0.35.15: the exported status line. When `/glla pause` has frozen the
+ * supervisor, EVERY state gets a leading ⏸ supervisor chip — the user must
+ * be able to see at a glance that automatic machinery is off, in every
+ * lifecycle branch (active/auditing/paused/loop/recovery). The chip is
+ * injected after the literal `glla:` prefix so no per-branch edit can
+ * forget it and a future branch inherits it for free. */
 export function buildStatusText(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras): string | undefined {
+  const base = buildStatusTextBase(state, audit, now, theme, extras);
+  if (!base || typeof state.supervisorPausedAt !== "number") return base;
+  return base.replace(/^glla:/, `glla: ${paint(theme, "warning", "⏸ supervisor")} ·`);
+}
+
+function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras): string | undefined {
   if (state.loop?.active) {
     const l = state.loop;
     // v0.26.1: surface the refire streak — a spinning supervisor is the
