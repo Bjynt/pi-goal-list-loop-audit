@@ -230,7 +230,7 @@ test("v0.35.17 behavioral: a SECOND consecutive zero-stream abort refuses the re
   assert.equal((readState(cwd).goal as { status?: string } | null)?.status, "paused");
 });
 
-test("v0.35.17 behavioral: /glla pause freezes the automatic retry — the park stands until resume", async () => {
+test("v0.35.17 behavioral: /glla pause during the waystation freezes the automatic retry", async () => {
   __testOnlySetZombieRunWindows(0, 0);
   __testOnlySetZombieRetryDelay(40);
   const cwd = tmpCwd();
@@ -241,18 +241,18 @@ test("v0.35.17 behavioral: /glla pause freezes the automatic retry — the park 
   ctx.abort = () => { aborts++; };
 
   await pi.runTool("list_add", { items: ["paused-supervisor item — done when pause keeps the park"] }, ctx);
-  // Freeze the supervisor BEFORE the watchdog fires. supervisorPausedAt is a
-  // TOP-LEVEL state field (not goal-level).
-  await pi.command("glla", "pause", ctx);
-  assert.equal(typeof (readState(cwd) as { supervisorPausedAt?: number }).supervisorPausedAt, "number");
 
   (globalThis as any).compactionGraceUntil = 0;
   (globalThis as any).postCompletionSettleUntil = 0;
   __testOnlyHeartbeatTick();
-  assert.equal(aborts, 1, "an in-flight zero-stream abort still lands (it stops token bleed)");
-  // The scheduler itself runs inside abortZombieRun — the PAUSE gate lives in
-  // the timer body, so the ledger records the schedule but the frozen timer
-  // must refuse to fire it.
+  assert.equal(aborts, 1, "the zero-stream abort lands (it stops token bleed)");
+  assert.equal((readState(cwd).goal as { status?: string } | null)?.status, "paused");
+  assert.equal(readLedger(cwd).filter((e) => e.type === "zombie_auto_retry_scheduled").length, 1);
+
+  // Freeze the supervisor DURING the waystation, before the retry timer fires.
+  await pi.command("glla", "pause", ctx);
+  assert.equal(typeof (readState(cwd) as { supervisorPausedAt?: number }).supervisorPausedAt, "number");
+
   const sendsBefore = pi.sent.length;
   ctx.isIdle = () => true;
   await tick(300);
