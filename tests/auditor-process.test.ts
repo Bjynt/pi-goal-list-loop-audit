@@ -419,7 +419,12 @@ process.stdin.on("data", async (chunk) => {
   out({ type: "tool_execution_end", toolCallId: "grep-2" });
   await sleep(75);
   out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "<evidence>\\nartifact exists; tests pass\\n</evidence>\\n<approved/>" } });
-  await sleep(75);
+  // v0.35.17: hold the producing_report phase for 400ms. The parent samples
+  // progress.json on a >=10ms poll loop, but one slow read (load avg 12-16
+  // observed on this machine) can skip a 75ms window entirely — field flake.
+  // Real reports stream for seconds; 400ms keeps the phase observably long
+  // without slowing the suite.
+  await sleep(400);
   out({ type: "agent_settled" });
 });
 `;
