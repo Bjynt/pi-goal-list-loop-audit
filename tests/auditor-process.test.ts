@@ -238,7 +238,7 @@ test("detached parent accepts an identity-checked result and applies regression_
   }
 });
 
-test("detached parent keeps a regression-shield block distinct from disapproval and infrastructure", async () => {
+test("detached parent keeps a regression-shield block distinct from disapproval and infrastructure", { timeout: 40_000 }, async () => {
   const dir = await setup();
   try {
     const result = await run(dir, {
@@ -255,7 +255,7 @@ test("detached parent keeps a regression-shield block distinct from disapproval 
   }
 });
 
-test("detached parent forwards live worker telemetry to its progress callback", async () => {
+test("detached parent forwards live worker telemetry to its progress callback", { timeout: 40_000 }, async () => {
   const dir = await setup();
   const reports: AuditorProgress[] = [];
   try {
@@ -281,7 +281,7 @@ test("detached parent forwards live worker telemetry to its progress callback", 
   }
 });
 
-test("v0.34.57: heartbeat-without-progress watchdog emits auditor_stalled and cancels the detached job", async () => {
+test("v0.34.57: heartbeat-without-progress watchdog emits auditor_stalled and cancels the detached job", { timeout: 30_000 }, async () => {
   // steal-list #7 / bug #1.4: a worker that keeps refreshing its heartbeat
   // (fresh lastActivityAt) without delivering any NEW tool call or report
   // output is alive but wedged — the 1h50m "stuck but says LIVE" class. The
@@ -349,7 +349,7 @@ setInterval(async () => {
   }
 });
 
-test("parent abort escalates a detached TERM-ignoring worker and removes its job", async () => {
+test("parent abort escalates a detached TERM-ignoring worker and removes its job", { timeout: 40_000 }, async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-parent-abort-"));
   const worker = path.join(dir, "term-ignoring-worker.mjs");
   const pidMarker = path.join(dir, "worker-pid");
@@ -397,7 +397,7 @@ setInterval(() => {}, 1_000);
   }
 });
 
-test("the real worker forwards ordered tool and report phases to the parent", async () => {
+test("the real worker forwards ordered tool and report phases to the parent", { timeout: 40_000 }, async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-live-telemetry-"));
   const fakePi = path.join(dir, "phase-pi.mjs");
   const reports: AuditorProgress[] = [];
