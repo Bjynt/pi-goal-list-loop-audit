@@ -900,6 +900,21 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       !!r?.startsWith("stalled:") ||
       !!r?.startsWith("stuck —");
     if (stored && !stored.active && RESUMABLE_STOP(stored.stopReason)) {
+      // Branch-mode stop returns HEAD to originalBranch. Refuse a resume from
+      // there rather than letting the next tick commit loop work to the
+      // user's branch; the user can explicitly check out the recorded
+      // scratch branch after preserving any intervening work.
+      if (stored.branchName) {
+        const currentBranch = await runGit(ctx, ["rev-parse", "--abbrev-ref", "HEAD"]);
+        if (!currentBranch.ok || currentBranch.stdout !== stored.branchName) {
+          appendLedger(ctx.cwd, "loop_resume_blocked_wrong_branch", {
+            expected: stored.branchName,
+            actual: currentBranch.ok ? currentBranch.stdout : "unknown",
+          });
+          ctx.ui.notify(`Loop resume refused: branch mode requires HEAD on ${stored.branchName}, but the current branch is ${currentBranch.ok ? currentBranch.stdout : "unknown"}. Check out the scratch branch explicitly, then run /loop resume.`, "warning");
+          return;
+        }
+      }
       // v0.28.14: one-active-thing — a held loop must not resume over an
       // active goal/list-item (this was the last unguarded stacking path).
       if (state.goal && state.goal.status === "active") {

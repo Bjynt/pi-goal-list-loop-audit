@@ -927,6 +927,23 @@ export const DEFAULT_STATE: State = {
 // Path helpers
 // =================================================================
 
+// Persisted IDs are path components. Runtime state can outlive the code that
+// created it, so the JSON schema is not enough protection at this boundary.
+// Keep legacy test/handwritten IDs such as `g1`, but reject separators and
+// traversal syntax before a record can reach filesystem helpers.
+const SAFE_PERSISTED_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+
+export function isSafePersistedId(value: unknown): value is string {
+  return typeof value === "string" && SAFE_PERSISTED_ID.test(value);
+}
+
+function persistedPathSegment(id: string): string {
+  if (isSafePersistedId(id)) return id;
+  let encoded = "id";
+  try { encoded = encodeURIComponent(id).slice(0, 96); } catch { /* invalid unicode */ }
+  return `invalid-${encoded}`;
+}
+
 export function piGlaDir(cwd: string): string {
   const dir = path.join(cwd, ".pi-glla");
   // v0.17.0: one-time migration of the pre-rename state dir (.pi-gla →
@@ -942,7 +959,7 @@ export function piGlaDir(cwd: string): string {
 }
 
 export function goalMdPath(cwd: string, id: string): string {
-  return path.join(piGlaDir(cwd), "goals", `${id}.md`);
+  return path.join(piGlaDir(cwd), "goals", `${persistedPathSegment(id)}.md`);
 }
 
 export function archiveDir(cwd: string): string {
@@ -950,7 +967,7 @@ export function archiveDir(cwd: string): string {
 }
 
 export function archivedGoalPath(cwd: string, id: string): string {
-  return path.join(archiveDir(cwd), `${id}.md`);
+  return path.join(archiveDir(cwd), `${persistedPathSegment(id)}.md`);
 }
 
 export function ledgerPath(cwd: string): string {
@@ -976,7 +993,7 @@ export function ledgerPath(cwd: string): string {
  * sidecar (collision = skip, not overwrite).
  */
 export function queueItemPath(cwd: string, id: string): string {
-  return path.join(piGlaDir(cwd), "goals", `${id}.queue.json`);
+  return path.join(piGlaDir(cwd), "goals", `${persistedPathSegment(id)}.queue.json`);
 }
 
 export interface QueueItemWriteResult {
@@ -993,6 +1010,9 @@ export interface QueueItemWriteResult {
  * clean up the temporary file before returning to the caller. */
 export function writeQueueItemFile(cwd: string, item: ListItem, options: { replace?: boolean } = {}): QueueItemWriteResult {
   const file = queueItemPath(cwd, item.id);
+  if (!isSafePersistedId(item.id)) {
+    return { path: file, wrote: false, failed: true };
+  }
   const replace = options.replace === true;
   if (!replace && fs.existsSync(file)) return { path: file, wrote: false }; // idempotent — never overwrite
   const result = runPersistStep("writeQueueItemFile", () => {
@@ -1022,6 +1042,7 @@ export function writeQueueItemFile(cwd: string, item: ListItem, options: { repla
 }
 
 export function deleteQueueItemFile(cwd: string, id: string): boolean {
+  if (!isSafePersistedId(id)) return false;
   const file = queueItemPath(cwd, id);
   if (!fs.existsSync(file)) return false;
   try { fs.unlinkSync(file); return true; } catch { return false; }
@@ -1079,6 +1100,7 @@ export function readQueueFromDisk(cwd: string, excludeIds: ReadonlySet<string> =
     try { e = JSON.parse(raw); } catch { continue; }
     if (!e || e.schema !== 1 || e.type !== "queue-item") continue;
     if (typeof e.id !== "string" || typeof e.objective !== "string") continue;
+    if (!isSafePersistedId(e.id)) continue;
     if (excludeIds.has(e.id)) continue;
     const repairTarget = e.repairTarget && typeof e.repairTarget === "object"
       && typeof e.repairTarget.id === "string"
@@ -1185,7 +1207,7 @@ export function readState(cwd: string): State {
       // must not lose the rest of the state
     }
   }
-  const goal = parsed.goal && typeof parsed.goal === "object"
+  const goal = parsed.goal && typeof parsed.goal === "object" && isSafePersistedId((parsed.goal as { id?: unknown }).id)
     ? {
       ...parsed.goal,
       ...(parsed.goal.pendingCompletion && typeof parsed.goal.pendingCompletion === "object"
@@ -1315,6 +1337,12 @@ export function isForbiddenModel(ref: string | undefined, forbiddenModels: reado
 
 export function writeGoalMd(cwd: string, goal: Goal): string {
   const file = goalMdPath(cwd, goal.id);
+  if (!isSafePersistedId(goal.id)) {
+    runPersistStep("writeGoalMd", () => {
+      throw new Error("refused unsafe persisted goal id");
+    });
+    return file;
+  }
   runPersistStep("writeGoalMd", () => {
     ensureDirs(cwd);
     fs.writeFileSync(file, renderGoalMarkdown(goal));
@@ -1325,6 +1353,7 @@ export function writeGoalMd(cwd: string, goal: Goal): string {
 }
 
 export function readGoalMd(cwd: string, id: string): string | null {
+  if (!isSafePersistedId(id)) return null;
   const file = goalMdPath(cwd, id);
   if (!fs.existsSync(file)) return null;
   return fs.readFileSync(file, "utf-8");

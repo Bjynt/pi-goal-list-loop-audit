@@ -109,6 +109,7 @@ import {
   deleteQueueItemFile,
   missingGllaTools,
   runPersistStep,
+  isSafePersistedId,
   isPersistenceDegraded,
   lastPersistenceFailure,
   modelSwitch,
@@ -893,6 +894,10 @@ function archiveCurrentGoal(
 ): boolean {
   if (!state.goal) return false;
   const goal = state.goal;
+  if (!isSafePersistedId(goal.id)) {
+    ctx.ui.notify("Could not archive the goal — its persisted id is invalid, so no filesystem path was used. Repair the state before retrying.", "warning");
+    return false;
+  }
   const pendingAttemptId = goal.pendingCompletion?.attemptId;
   const target = archivedGoalPath(ctx.cwd, goal.id);
   const terminalGoal: Goal = {
