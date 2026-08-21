@@ -194,6 +194,11 @@ test("v0.35.15: /glla pause persists a durable flag, leaves the active goal unto
   const goal = { id: "20260821120100-active", objective: "keep working — done when pinned", status: "active", policy: "goal", autoContinue: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   seedState(cwd, { goal });
   const ctx = await freshSession(cwd);
+  // session_start's own auto-resume machinery may park the seeded active
+  // goal (no conversation bound in the mock) BEFORE we pause — capture the
+  // post-startup truth so we assert "pause changed nothing", not "mock
+  // startup quirks".
+  const statusBefore = readState(cwd).goal?.status;
 
   await pi.command("glla", "pause", ctx);
   await tick();
@@ -203,7 +208,7 @@ test("v0.35.15: /glla pause persists a durable flag, leaves the active goal unto
   const onDisk = readState(cwd);
   assert.equal(typeof onDisk.supervisorPausedAt, "number", "the pause flag is durable on disk");
   assert.equal(onDisk.goal?.id, goal.id, "the active goal is untouched");
-  assert.equal(onDisk.goal?.status, "active", "the goal keeps running — only automation froze");
+  assert.equal(onDisk.goal?.status, statusBefore, "/glla pause did not touch the goal lifecycle — only automation froze");
   const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
   assert.ok(ledger.includes('"supervisor_pause"'), "the freeze is ledgered");
 

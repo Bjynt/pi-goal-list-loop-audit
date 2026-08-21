@@ -65,7 +65,8 @@ export function replaceState(next: State): void {
  * chip silently lost its reload survival (latent bug found while wiring
  * supervisorPausedAt through the same path). Both are plain epoch fields:
  * omitting them here means they can NEVER reach readState, no matter what
- * the callers put into replaceState. */
+ * the callers put into replaceState.
+ *
  * The UI side of a persist (notifyPersistenceState / refreshUI) is goal.ts's
  * wrapper — this is the disk write, not the HUD. */
 export function persistStateLine(cwd: string, s: State): void {
