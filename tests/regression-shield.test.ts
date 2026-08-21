@@ -378,7 +378,7 @@ test("v0.35.16: mechanical checks keep the TAIL of failed output and banner a ti
   // The timeout-kill path banners honestly instead of masquerading as a
   // test failure (the field failure looked like 'exit code 1' with no
   // failing test anywhere).
-  const slow = runMechanicalPreAuditChecks(dir, ["sleep 5"], 1000);
+  const slow = runMechanicalPreAuditChecks(process.cwd(), ["sleep 5"], 1000);
   assert.equal(slow.passed, false);
   assert.match(slow.output!, /mechanical check killed after 1s/, "a timeout kill is named as such");
   fs.rmSync(dir, { recursive: true, force: true });
