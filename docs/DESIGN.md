@@ -255,9 +255,9 @@ replacement without delivering a successor `session_start`:
   flattens extensions in load order and suffixes EVERY registration of a duplicated
   command name (`name:1`, `name:2`, …) — the bare name becomes owned by nobody and
   dispatch stops routing it while a collision exists. The model is read from the
-  installed pi core (hermetic, never modified) and auto-records the routing table to
-  `audit/command-registration-routing.md`, making collisions reproducible and
-  diagnosable without touching pi.
+  installed pi core (hermetic, never modified) and records a process-scoped
+  routing diagnostic, making collisions reproducible without rewriting tracked
+  repository files or touching pi.
 - **Unmatched telemetry stays unmatched** (v0.34.56): tool starts/ends without a
   counterpart are represented as explicitly unmatched facts, never falsely paired —
   the report surface stays truthful (the AuditProgress/AuditorProgress dual-interface

@@ -22,8 +22,8 @@
 //      .pi/extensions → agent dir extensions → project packages → global
 //      settings.json packages), scans every loaded extension's entry plus its
 //      local static-import graph for registerCommand("list"|"glla"|"goal"|"loop"), computes the
-//      routing table with the model's rule, and RECORDS it to
-//      audit/command-registration-routing.md. When the live scan runs but
+//      routing table with the model's rule, and RECORDS it to a
+//      process-scoped temporary diagnostic. When the live scan runs but
 //      nothing registers the goal family, the report records explicit
 //      zero-registrant rows for goal/list/glla/loop instead of failing on
 //      an empty table; never writes to pi core. If the agent dir is absent,
@@ -141,7 +141,7 @@ test("v0.34.55: model — within-extension re-registration is last-wins (Map.set
 const REGISTERED_RE = /registerCommand\(\s*["'](list|glla|goal|loop)["']/g;
 const LOCAL_IMPORT_RE = /^\s*(?:import|export)\s+(?:type\s+)?(?:[^"'();]*?\sfrom\s+)?["'](\.{1,2}\/[^"']+)["']/gm;
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs", ".cts", ".cjs"];
-const REPORT_PATH = path.join(process.cwd(), "audit", "command-registration-routing.md");
+const REPORT_PATH = path.join(os.tmpdir(), `glla-command-registration-routing-${process.pid}.md`);
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? path.join(os.homedir(), ".pi", "agent");
 
 /** pi loader rules: package.json "pi.extensions" manifest, else index.ts/js. */
@@ -392,7 +392,8 @@ test("v0.34.55: live rig — the routing table records duplicate-command routing
   }
   routing.sort((a, b) => a.command.localeCompare(b.command));
 
-  // RECORD the diagnostic — the reproducible artifact.
+  // RECORD the diagnostic in a process-scoped temp artifact; tests must not
+  // rewrite a tracked repository file from host-specific state.
   const lines = [
     "# Command registration routing (auto-recorded by tests/command-registration-collisions.test.ts)",
     "",
