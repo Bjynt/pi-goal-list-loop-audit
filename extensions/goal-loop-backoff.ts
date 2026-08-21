@@ -278,3 +278,45 @@ export function zombieRetryDecision(
     : { key, count: 1, lastAbortStreamAt: observedStreamAt };
   return { retry: streak.count === 1, streak };
 }
+
+// =================================================================
+// v0.35.18 — canonical runner resolution for mechanical checks
+// =================================================================
+// Field (2026-08-21 fourth audit round): a verification contract that names a
+// RAW RUNNER in prose ("passes under `bun test`") made the deterministic
+// pre-audit execute `bun test` BARE — ignoring the project's own required
+// configuration, which lives in its package.json scripts (here:
+// --parallel=1 --max-concurrency=1 --timeout; this suite shares module state
+// process-wide BY DESIGN and serializes deliberately). The bare invocation
+// failed 6 tests + 5 nested-test errors while the canonical gate was green
+// twice — a spurious fast-fail of finished work.
+//
+// Resolution rule (pure, unit-testable): if the contract command is exactly a
+// runner invocation that some package.json script WRAPS (script value starts
+// with the same program+subcommand), run the SCRIPT instead — the project's
+// declared way to invoke that runner with its required flags. Anything else
+// passes through untouched.
+export function resolveCanonicalRunnerCommand(
+  command: string,
+  scripts: Record<string, string>,
+): { program: string; args: string[] } {
+  const tokens = command.trim().split(/[ \t]+/);
+  const runner = `${tokens[0]} ${tokens[1] ?? ""}`.trim();
+  // Only raw runner invocations are candidates — never rewrite npm/npx/pnpm
+  // (already project-aware), and never a narrower deliberate run like
+  // `bun test tests/foo.test.ts` (extra positional args disqualify).
+  const isRawRunner = (runner === "bun test" || runner === "vitest" || runner === "jest")
+    && tokens.length <= 2;
+  if (!isRawRunner) {
+    const [program = "", ...args] = tokens;
+    return { program, args };
+  }
+  for (const [name, value] of Object.entries(scripts)) {
+    const scriptTokens = value.trim().split(/[ \t]+/);
+    if (scriptTokens[0] === tokens[0] && (scriptTokens[1] ?? "") === (tokens[1] ?? "")) {
+      return { program: "npm", args: ["run", name] };
+    }
+  }
+  const [fallbackProgram = "", ...fallbackArgs] = tokens;
+  return { program: fallbackProgram, args: fallbackArgs };
+}

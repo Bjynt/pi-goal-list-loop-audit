@@ -203,7 +203,18 @@ export function runMechanicalPreAuditChecks(cwd: string, commands: string[], tim
         exitCode: 126,
       };
     }
-    const [program, ...args] = cmd.split(/[ \t]+/);
+    const [rawProgram] = cmd.split(/[ \t]+/);
+    // v0.35.18: a contract that names a raw runner ("bun test") must run the
+    // project's CANONICAL invocation of it — package.json scripts encode the
+    // flags the suite requires (serialization/isolation/timeouts). Running
+    // the bare runner ignores that configuration and fails spuriously while
+    // the real gate is green (field: fourth audit round, 2026-08-21).
+    let scripts: Record<string, string> = {};
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(cwd, "package.json"), "utf8"));
+      if (pkg && typeof pkg.scripts === "object" && pkg.scripts) scripts = pkg.scripts;
+    } catch { /* no package.json — nothing to resolve */ }
+    const { program, args } = resolveCanonicalRunnerCommand(cmd, scripts);
     if (!program) {
       return { passed: false, failedCommand: rawCommand, output: "Empty mechanical command.", exitCode: 126 };
     }
