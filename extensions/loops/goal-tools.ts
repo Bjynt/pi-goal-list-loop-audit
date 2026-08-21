@@ -715,9 +715,10 @@ function registerAgentTools(pi: any): void {
       let fallbackUsed = false;
       // v0.35.7: Deterministic Fast-Fail Pre-Audit — if mechanical contract checks fail,
       // fail in 200ms with raw output rather than burning 45s on an LLM audit pass.
-      const mechanicalCmds = extractMechanicalCheckCommands(auditGoal.verificationContract ?? "");
-      const mechanicalResult = runMechanicalPreAuditChecks(ctx.cwd, mechanicalCmds);
-      if (!mechanicalResult.passed) {
+      try {
+        const mechanicalCmds = extractMechanicalCheckCommands(auditGoal.verificationContract ?? "");
+        const mechanicalResult = runMechanicalPreAuditChecks(ctx.cwd, mechanicalCmds);
+        if (!mechanicalResult.passed) {
         result = {
           approved: false,
           disapproved: true,
@@ -727,8 +728,7 @@ function registerAgentTools(pi: any): void {
           regressionShieldPassed: true,
           goalRevision: captureGoalRevision(auditGoal) ?? undefined,
         };
-      } else {
-        try {
+        } else {
           ({ result, retriedOnce, fallbackUsed } = await runDetachedCompletionWithFallback(auditorCandidates, runAudit, {
             shouldRetry: () => detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId) !== null,
             forbiddenRefs: settings.forbiddenModels,
@@ -883,7 +883,21 @@ function registerAgentTools(pi: any): void {
           ? state.goal.completionSummary.replace(/\s+/g, " ")
           : state.goal.objective;
         const recap = displaySlice(recapSrc, 110);
-        archiveCurrentGoal(ctx, "complete", `auditor ${result.model} approved`);
+        const archived = archiveCurrentGoal(ctx, "complete", `auditor ${result.model} approved`);
+        if (!archived) {
+          // The archive helper preserves the live objective and emits the
+          // persistence warning. Stop here: an approved verdict is not a
+          // terminal success until the archive and state transition land.
+          updateGoal({
+            status: "paused",
+            pendingCompletion: undefined,
+            pauseKind: "blocked",
+            pauseReason: "completion approved but terminal archive persistence failed",
+            pauseSuggestedAction: `Fix .pi-glla disk access or resolve the archive fence, then ${activeGoalSurfaceCommand("resume")} and call complete_goal again.`,
+          }, ctx);
+          appendLedger(ctx.cwd, "goal_archive_failed_after_approval", { goalId: state.goal?.id, origin: "manual-verify", model: result.model });
+          return { content: [{ type: "text", text: "The auditor approved, but the terminal archive could not be persisted. The goal is paused; fix persistence, resume, and retry complete_goal." }], details: {} };
+        }
         ctx.ui.notify(`✓ done: ${recap} — auditor ${result.model} approved.`, "info");
         notifyExternal(ctx, `Goal complete (auditor approved): ${displaySlice(recapSrc, 120)}`);
         return { content: [{ type: "text", text: `Goal approved by auditor ${result.model}.` }], details: {} };

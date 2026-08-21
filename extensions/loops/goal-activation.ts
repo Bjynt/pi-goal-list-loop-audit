@@ -889,6 +889,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       });
     }
     extensionApi = pi;
+    // Session-scoped resources are reset only after this context has passed
+    // the host-admission gate; child factories never touch host state.
+    resetLengthContinue();
     sessionHandoffPending = false;
     // Reset terminal ownership before rememberCtx: this is the only event
     // allowed to bind a context after a stale/shutdown handoff.

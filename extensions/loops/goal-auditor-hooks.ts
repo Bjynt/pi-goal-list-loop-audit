@@ -1030,7 +1030,21 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       : state.goal.objective;
     const recap = displaySlice(recapSrc, 110);
     const approvalVia = `${origin === "manual" ? " on /goal verify" : origin === "session-recovery" ? " after session recovery" : " on the provider retry"}${fallbackUsed ? " after an auditor-model fallback" : ""}`;
-    archiveCurrentGoal(liveCtx, "complete", `auditor ${result.model} approved (${origin})`);
+    const archived = archiveCurrentGoal(liveCtx, "complete", `auditor ${result.model} approved (${origin})`);
+    if (!archived) {
+      // archiveCurrentGoal already preserved the live record and warned the
+      // user. Keep the approved claim recoverable, but never emit a terminal
+      // success after the durable archive failed.
+      updateGoal({
+        status: "paused",
+        pendingCompletion: undefined,
+        pauseKind: "blocked",
+        pauseReason: "completion approved but terminal archive persistence failed",
+        pauseSuggestedAction: `Fix .pi-glla disk access or resolve the archive fence, then ${activeGoalSurfaceCommand("resume")} and call complete_goal again.`,
+      }, liveCtx);
+      appendLedger(liveCtx.cwd, "goal_archive_failed_after_approval", { goalId, attemptId: claim.attemptId, origin });
+      return;
+    }
     liveCtx.ui.notify(`✓ done: ${recap} — auditor ${result.model} approved${approvalVia}.`, "info");
     notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${displaySlice(recapSrc, 120)}`);
     return;
