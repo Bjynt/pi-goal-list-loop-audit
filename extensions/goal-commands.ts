@@ -1074,7 +1074,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     return;
   }
 
-  if (sub === "pause") {
+  if (sub === "pause" && !rest) {
     if (!state.goal || state.goal.policy !== "list") {
       ctx.ui.notify(
         state.goal ? "The active work is a standalone goal — /goal pause to pause it." : "No active list item to pause. /list show to see the list.",
@@ -1086,7 +1086,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     return;
   }
 
-  if (sub === "resume") {
+  if (sub === "resume" && !rest) {
     // Resume the list's head. The head activates AS the active goal, so this
     // is the same motion as /goal resume — named for the surface the user is
     // looking at (v0.22.7: "we would just unpause, and that is next").
@@ -1219,7 +1219,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     return;
   }
 
-  if (sub === "clear") {
+  if (sub === "clear" && !rest) {
     // v0.34.61: delete the sidecars of every removed item BEFORE clearing
     // state. The /list disk-recovery fallback scans .pi-glla/goals/*.queue.json
     // when memQueue is empty; without this, a /list clear followed by a
@@ -1237,7 +1237,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
   // v0.24.1: ONE verb for "stop this whole list" — aborts the active item
   // when it's list-sourced AND drops the waiting items. Before this the user
   // had to know to combine /goal cancel + /list clear.
-  if (sub === "cancel") {
+  if (sub === "cancel" && !rest) {
     const waiting = listQueue().length;
     const activeIsListItem = state.goal?.policy === "list" && (state.goal.status === "active" || state.goal.status === "paused" || state.goal.status === "auditing");
     if (waiting === 0 && !activeIsListItem) {

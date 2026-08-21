@@ -321,12 +321,17 @@ test("extractMechanicalCheckCommands: extracts backticked and raw shell commands
   const cmds = extractMechanicalCheckCommands(contract);
   assert.deepEqual(cmds, ["npm test", "tsc --noEmit", "cargo test --lib"]);
 
-  const res = runMechanicalPreAuditChecks(process.cwd(), ["node -e 'process.exit(0)'"]);
+  const res = runMechanicalPreAuditChecks(process.cwd(), ["node --version"]);
   assert.equal(res.passed, true);
 
-  const failRes = runMechanicalPreAuditChecks(process.cwd(), ["node -e 'console.error(\"boom\"); process.exit(2)'"]);
+  const failRes = runMechanicalPreAuditChecks(process.cwd(), ["node --definitely-not-a-real-option"]);
   assert.equal(failRes.passed, false);
-  assert.equal(failRes.exitCode, 2);
-  assert.match(failRes.output!, /boom/);
+  assert.notEqual(failRes.exitCode, 0);
+  assert.match(failRes.output!, /bad option|unknown option|invalid option/i);
+
+  const unsafeRes = runMechanicalPreAuditChecks(process.cwd(), ["node --version; printf boom"]);
+  assert.equal(unsafeRes.passed, false);
+  assert.equal(unsafeRes.exitCode, 126);
+  assert.doesNotMatch(unsafeRes.output!, /boom/);
 });
 

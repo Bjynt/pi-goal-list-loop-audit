@@ -171,8 +171,11 @@ test("send paths short-circuit once stale (no retry-into-the-void)", () => {
   assert.match(LOOP, /if \(!isLoopActive\(\) \|\| !flags\.extensionApi\) return;/, "sendLoopTurn guard (flag accessor re-spelling, decomposition step 2)");
 });
 
-test("a fresh factory run clears the stale flag (extension reload recovery)", () => {
-  assert.match(SRC, /export default function \(pi: ExtensionAPI\): void \{\n  extensionApi = pi;\n  extensionApiStale = false;/);
+test("only an admitted host session claims the API and resets session state", () => {
+  assert.match(SRC, /export default function \(pi: ExtensionAPI\): void \{\n  \/\/ Factory evaluation can also happen inside pi-subagents child sessions\./);
+  assert.match(SRC, /registerGoalRuntime\(pi\);\n\}/, "factory evaluation is registration-only");
+  const ACT = fs.readFileSync("extensions/loops/goal-activation.ts", "utf8");
+  assert.match(ACT, /extensionApi = pi;\n\s*\/\/ Session-scoped resources are reset only after this context has passed[\\s\\S]*?resetLengthContinue\(\);/);
 });
 
 test("v0.32.0: audit-opportunistic fix batch — dispose, keys, caps, message", () => {
