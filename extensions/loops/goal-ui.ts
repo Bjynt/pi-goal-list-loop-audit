@@ -114,6 +114,7 @@ import {
 isGoalRevisionCurrent,
   nextHourlyPromptMs,
   nextHourlyProbeMs,
+  supervisorPaused,
   type ModelSwitchRecord,
   type ListItem,
 } from "../goal-loop-core.js";
