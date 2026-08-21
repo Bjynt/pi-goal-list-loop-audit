@@ -2914,10 +2914,9 @@ test("v0.35.14: an approved audit never reports done when the terminal archive i
     const ctx = await freshSession(cwd, "startup");
     await pi.command("goal", "start archive-fence approval target", ctx);
     await tick();
-    const live = readState(cwd).goal as { id: string };
-    const archivePath = path.join(cwd, ".pi-glla", "archive", `${live.id}.md`);
-    fs.mkdirSync(path.dirname(archivePath), { recursive: true });
-    fs.writeFileSync(archivePath, "# existing terminal winner\\n");
+    const archiveDir = path.join(cwd, ".pi-glla", "archive");
+    fs.rmSync(archiveDir, { recursive: true, force: true });
+    fs.writeFileSync(archiveDir, "archive directory intentionally unavailable\\n");
 
     await pi.runTool("complete_goal", {
       completionSummary: "The archive-fence regression is covered.",
@@ -2929,7 +2928,7 @@ test("v0.35.14: an approved audit never reports done when the terminal archive i
     assert.match(after?.pauseReason ?? "", /archive persistence failed/);
     assert.equal(ctx.ui.matching("✓ done:").length, 0, "the failed archive never emits terminal success");
     assert.equal(readLedger(cwd).filter((entry) => entry.type === "goal_archived").length, 0);
-    assert.match(fs.readFileSync(archivePath, "utf8"), /existing terminal winner/);
+    assert.ok(fs.statSync(archiveDir).isFile(), "the failing archive directory remains untouched");
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   } finally {
     if (previous === undefined) delete process.env.GLLA_PI_BINARY;
