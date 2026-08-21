@@ -26,6 +26,7 @@ import {
   appendLedger,
   nowIso,
   resolveEffectiveAggressiveSettings,
+  supervisorPaused,
   type Goal,
 } from "./goal-loop-core.js";
 import { loadSettings } from "./goal-settings.js";
@@ -372,6 +373,11 @@ export function classifyHungSubagents(
 
 function heartbeatTick(): void {
   if (flags.zombieStoodDown || flags.initialSessionLoadPending) return; // blank startup waits for pi to bind a real session
+  // v0.35.15: `/glla pause` freezes the supervisor's automatic machinery —
+  // re-arms, stale probes, zombie cleanup, refires, everything this tick
+  // drives. The user explicitly asked for a hands-off window; no heartbeat
+  // side-effect may fire inside it. `/glla resume` restores the tick.
+  if (supervisorPaused(state)) return;
   // A completed/paused/held plane has no host-bound work to supervise. Do
   // not probe the retained ExtensionAPI in that idle state: pi may dispose a
   // session handle during an unrelated session transition, and reporting
