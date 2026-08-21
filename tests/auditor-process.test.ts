@@ -31,7 +31,7 @@ const dir = process.argv[process.argv.indexOf("--job-dir") + 1];
 // load, failing the run as "invalid auditor result" infrastructure
 // (observed 2026-08-21: release:check fast-fail, 1-in-N runs).
 async function atomicJson(file, value) {
-  const temp = `\${file}.\${process.pid}.\${randomUUID()}.tmp`;
+  const temp = file + "." + process.pid + "." + randomUUID() + ".tmp";
   await writeFile(temp, JSON.stringify(value));
   try { await rename(temp, file); }
   catch (e) { await rm(temp, { force: true }).catch(() => {}); throw e; }
