@@ -44,6 +44,7 @@ import {
   isFullAuditObjective,
   resolveEffectiveAggressiveSettings,
   isStaleApiError,
+  supervisorPaused,
   type Goal,
   type ObjectiveRepairTarget,
 } from "./goal-loop-core.js";

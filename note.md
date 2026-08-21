@@ -35,7 +35,10 @@ we should decide not auto start
 suspicious goal, repair task was qd but nothing started or can be started
 happened when tried to /goal start some kind of audit
 
-but seemingly all goals are suspricoius that are /goal start
+suspicious goal / objective
+/home/dracon/Pictures/Screenshots/Screenshot_20260821_134442.png 
+/home/dracon/Pictures/Screenshots/Screenshot_20260821_134645.png 
+
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_114210.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_114109.png 
 
@@ -44,10 +47,5 @@ but seemingly all goals are suspricoius that are /goal start
 i think we are cutting the spec based strategy cause we can jsut make a big megaplan do that then we have some truth based on the iterate on while the spec is always double truth and stale and crude, so the 
 loop is idea to code 
 
-## 
-
-suspicious objective
-/home/dracon/Pictures/Screenshots/Screenshot_20260821_134442.png 
-
 ##
-cut respect as i thin it is a bad strategy 
+cut respec as i thin it is a bad strategy 
