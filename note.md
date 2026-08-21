@@ -58,14 +58,19 @@ instead we can have
 
 that makes way more detailed and presumably longer "plan" than the regular draft that is already long, which we are not changing 
 
+
+
 # Idea
 
 ##
 
-maybe cut, this is just a brainstorm
-
 /list audit
 /goal audit 
+/loop audit
+
+these might wander outside the folder, not sure if good call
+
+##
 
 or do these have speical meaning, cause seemingly 
 /list start
