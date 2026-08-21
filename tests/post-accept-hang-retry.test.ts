@@ -37,10 +37,12 @@ import activate, {
 } from "../extensions/loops/goal.js";
 import { __testOnlyResetZombieRunWatchdog, __testOnlyHeartbeatTick, __testOnlySetZombieRunWindows } from "../extensions/goal-heartbeat.js";
 import { readState } from "../extensions/goal-loop-core.js";
-import { MockPi, makeMockCtx, seedGoal, seedState, tmpCwd, tick, type MockCtx } from "./harness/mock-pi.js";
+import { MockPi, makeMockCtx, tmpCwd, tick, type MockCtx } from "./harness/mock-pi.js";
 
 const pi = new MockPi();
 activate(pi.api);
+
+const MAIN_SM = { name: "main-session-manager" };
 
 // ---------------------------------------------------------------------------
 // 1. Pure streak decision
@@ -89,11 +91,12 @@ const ACTIVATION_SRC = fs.readFileSync(path.resolve("extensions/loops/goal-activ
 test("v0.35.17 source: the auto-retry is armed inside abortZombieRun behind the streak decision", () => {
   const callIdx = ACTIVATION_SRC.indexOf("scheduleZombieAutoRetry(current, generation, goal?.id, observedStreamAt, silentMinutes)");
   assert.ok(callIdx > 0, "abortZombieRun arms the bounded retry");
-  assert.match(
-    ACTIVATION_SRC.slice(Math.max(0, callIdx - 400), callIdx),
-    /abortError/,
-    "the retry is armed only on the successful abort path (after ctx.abort())",
-  );
+  // The call sits in the success tail of abortZombieRun: after ctx.abort(),
+  // after the durable zombie_run_aborted ledger write.
+  const fnStart = ACTIVATION_SRC.indexOf("export function abortZombieRun(");
+  const fnBody = ACTIVATION_SRC.slice(fnStart, callIdx);
+  assert.ok(fnBody.indexOf("current.abort()") !== -1, "the host turn is aborted before the retry arms");
+  assert.ok(fnBody.indexOf('"zombie_run_aborted"') !== -1, "the abort is ledgered before the retry arms");
   assert.match(ACTIVATION_SRC, /zombie_auto_retry_scheduled/, "arming is durable in the ledger");
   assert.match(ACTIVATION_SRC, /zombie_auto_retry_refused_streak/, "a refused streak names itself in the ledger");
 });
@@ -128,7 +131,7 @@ function readLedger(cwd: string): Array<{ type: string; value: Record<string, un
 }
 
 async function freshSession(cwd: string): Promise<MockCtx> {
-  const ctx = makeMockCtx(cwd);
+  const ctx = makeMockCtx(cwd, { sessionManager: MAIN_SM });
   await pi.fire("session_start", { reason: "reload" }, ctx);
   return ctx;
 }
@@ -157,9 +160,6 @@ test("v0.35.17 behavioral: a hung post-accept turn aborts, parks, then AUTO-resu
   __testOnlySetZombieRunWindows(0, 0);
   __testOnlySetZombieRetryDelay(50);
   const cwd = tmpCwd();
-  seedState(cwd, {
-    goal: seedGoal({ status: "active", objective: "post-accept hang item — done when the bounded auto-retry lands" }),
-  });
   const ctx = await freshSession(cwd);
   currentCtx = ctx;
   ctx.isIdle = () => false; // host BUSY, zero stream events — the field signature
@@ -196,9 +196,6 @@ test("v0.35.17 behavioral: a SECOND consecutive zero-stream abort refuses the re
   __testOnlySetZombieRunWindows(0, 0);
   __testOnlySetZombieRetryDelay(40);
   const cwd = tmpCwd();
-  seedState(cwd, {
-    goal: seedGoal({ status: "active", objective: "double-hang item — done when the second silence parks for good" }),
-  });
   const ctx = await freshSession(cwd);
   currentCtx = ctx;
   ctx.isIdle = () => false;
@@ -237,9 +234,6 @@ test("v0.35.17 behavioral: /glla pause freezes the automatic retry — the park 
   __testOnlySetZombieRunWindows(0, 0);
   __testOnlySetZombieRetryDelay(40);
   const cwd = tmpCwd();
-  seedState(cwd, {
-    goal: seedGoal({ status: "active", objective: "paused-supervisor item — done when pause keeps the park" }),
-  });
   const ctx = await freshSession(cwd);
   currentCtx = ctx;
   ctx.isIdle = () => false;
@@ -247,9 +241,10 @@ test("v0.35.17 behavioral: /glla pause freezes the automatic retry — the park 
   ctx.abort = () => { aborts++; };
 
   await pi.runTool("list_add", { items: ["paused-supervisor item — done when pause keeps the park"] }, ctx);
-  // Freeze the supervisor BEFORE the watchdog fires.
+  // Freeze the supervisor BEFORE the watchdog fires. supervisorPausedAt is a
+  // TOP-LEVEL state field (not goal-level).
   await pi.command("glla", "pause", ctx);
-  assert.equal((readState(cwd).goal as { supervisorPausedAt?: number } & Record<string, unknown> | null)?.supervisorPausedAt !== undefined, true);
+  assert.equal(typeof (readState(cwd) as { supervisorPausedAt?: number }).supervisorPausedAt, "number");
 
   (globalThis as any).compactionGraceUntil = 0;
   (globalThis as any).postCompletionSettleUntil = 0;
