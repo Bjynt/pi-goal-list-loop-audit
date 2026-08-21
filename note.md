@@ -43,6 +43,9 @@ list exec stopped and list because not visible til i restarted session
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_213238.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_214510.png 
 
+here too
+/home/dracon/Pictures/Screenshots/Screenshot_20260821_215228.png /home/dracon/Pictures/Screenshots/Screenshot_20260821_215209.png 
+
 ##
 
 i think we are cutting the spec based strategy cause we can jsut make a big megaplan do that then we have some truth based on the iterate on while the spec is always double truth and stale and crude, so the 

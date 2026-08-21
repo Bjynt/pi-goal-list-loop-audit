@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.35.17 — zero-stream abort gains ONE bounded automatic retry; tag backfill (2026-08-21)
+
+### Post-accept hang self-heal (note.md Next §1)
+  Turns dispatched by accepting a Confirm dialog hung with zero provider
+  stream activity often enough that users repeatedly returned to parked
+  "action needed" sessions (field screenshot 20260821_152311). The watchdog's
+  bounded abort was correct; what was missing is self-heal. The FIRST silence
+  of a zero-stream streak now arms exactly ONE automatic retry ~90s after the
+  park — the parked goal/list item/loop auto-resumes through the durable
+  continuation machinery and one fresh dispatch goes out. A SECOND consecutive
+  silence refuses further retries (`zombie_auto_retry_refused_streak`) and
+  parks permanently for manual resume; real stream activity between aborts
+  resets the streak so an independent later hang earns its own single retry.
+  `/glla pause` freezes the retry like every other automatic side-effect;
+  the timer only clears a pause carrying exactly the watchdog's own reason
+  (a newer manual/recovery pause supersedes it); the heartbeat's one-shot
+  abort latch is released on retry dispatch so a fully-silent retry can still
+  be re-aborted. Pure streak decision lives in goal-loop-backoff.ts
+  (`zombieRetryDecision`) with unit tests; behavioral coverage drives the
+  full hang→abort/park→auto-resume→re-dispatch arc plus the double-hang and
+  pause-during-waystation paths (tests/post-accept-hang-retry.test.ts).
+
+### Version tags backfilled
+  All 41 released versions missing their `v<version>` git tag (v0.34.20 …
+  v0.35.16) were tagged at the historical commit whose package.json carried
+  that exact version and pushed to all remotes. Additive-only — no history
+  rewrite.
+
+### README currency pass
+  Documents the v0.35.15 per-phase glyphs/activity meter/silent-stretch
+  footer, `/glla pause`, and the v0.35.17 zero-stream auto-retry.
+
 ## 0.35.16 — mechanical pre-audit gate no longer kills legitimate long checks (2026-08-21)
 
 ### Deterministic pre-audit timeout fix

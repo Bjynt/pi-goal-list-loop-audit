@@ -10,7 +10,7 @@ This is a detached process, not a nested session in the main pi process. `comple
 
 On Windows, npm installs the `pi.cmd` shim rather than a directly executable `pi` binary. The auditor launches it through an explicitly quoted `cmd.exe` boundary; POSIX keeps direct shell-less execution. Protocol snapshots also tolerate transient Windows file-locks without deleting the last valid snapshot first.
 
-**Current package version:** `v0.35.16` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
+**Current package version:** `v0.35.17` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
 
 ## Why this exists
 
@@ -286,6 +286,21 @@ tool call or hidden reasoning interval therefore remains visibly timed; after
 three minutes without worker activity the UI changes to `auditor quiet` and
 names the cancellation/recovery path instead of presenting a frozen live card.
 
+**Per-phase glyphs + activity meter (v0.35.15).** Every auditor phase carries a
+distinct glyph — `⋯` queued, `▶` running, `◌` quiet, `⛔` blocked, `✓`
+awaiting-verdict — beside a draining `▰▱` activity meter, with the dense text
+kept as secondary detail. When a quiet stretch ends, the footer summarizes it
+(`silent 8m then resumed`) so silence is reported, not just survived. A single
+proactive warning fires when the detached auditor crosses the quiet threshold;
+it never repeats per tick.
+
+**Supervisor freeze (v0.35.15).** `/glla pause` silences every automatic
+side-effect — heartbeat re-arms, recovery probes, auto-resume, auto-continuation
+dispatch, the proactive quiet notify, and (v0.35.17) the zero-stream auto-retry
+below — without touching active work or a running detached audit. The flag is
+persisted and survives restarts; `/glla resume` clears it. Bare `/glla` shows
+the frozen state.
+
 ## Provider failures: aggressive retry envelope, bounded (v0.35.0)
 
 Error text is **not trusted** to pick a retry policy. The runtime does not
@@ -369,6 +384,16 @@ send→pause→notify path rearms once per cycle and loud-stops after a 6-error
 brake streak, so a broken provider can't spin forever. A confirmed queued
 continuation with no turn is reported by the queue-stuck probe; it does not
 inject terminal input.
+
+**Zero-stream zombie abort + one bounded auto-retry (v0.35.17).** When pi stays
+BUSY with zero provider stream activity for 20 minutes, glla warns; after a
+10-minute grace it aborts the zombie turn and parks the work safely. Since
+v0.35.17 the FIRST such silence arms exactly ONE automatic retry ~90 seconds
+later (the park becomes a waystation, not a dead end — field: turns dispatched
+by accepting Confirm dialogs hung this way repeatedly). If the retry also hangs,
+the second consecutive silence parks permanently for manual `/goal resume` /
+`/list resume`. `/glla pause` freezes the retry like every other automatic
+side-effect.
 
 ## Session replacement and stale handles
 
