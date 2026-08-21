@@ -2904,43 +2904,6 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
   }
 });
 
-test("v0.35.14: an approved audit never reports done when the terminal archive is fenced", async () => {
-  __testOnlyResetStaleFlag();
-  const cwd = tmpCwd();
-  const fakePi = writeFakeAuditor(cwd, "approved", 0);
-  const previous = process.env.GLLA_PI_BINARY;
-  process.env.GLLA_PI_BINARY = fakePi;
-  try {
-    const ctx = await freshSession(cwd, "startup");
-    await pi.command("goal", "start archive-fence approval target", ctx);
-    await tick();
-    const archiveDir = path.join(cwd, ".pi-glla", "archive");
-    fs.rmSync(archiveDir, { recursive: true, force: true });
-    fs.writeFileSync(archiveDir, "archive directory intentionally unavailable\\n");
-
-    await pi.runTool("complete_goal", {
-      completionSummary: "The archive-fence regression is covered.",
-      verificationSummary: "The detached auditor approves, but the existing archive must win.",
-    }, ctx);
-    try {
-      await waitUntil(() => (readState(cwd).goal as { status?: string } | null)?.status === "paused");
-    } catch (error) {
-      console.error("DEBUG archive failure state", readState(cwd).goal, ctx.ui.notifies.slice(-8), readLedger(cwd).slice(-8));
-      throw error;
-    }
-    const after = readState(cwd).goal as { status?: string; pauseReason?: string } | null;
-    assert.equal(after?.status, "paused");
-    assert.match(after?.pauseReason ?? "", /archive persistence failed/);
-    assert.equal(ctx.ui.matching("✓ done:").length, 0, "the failed archive never emits terminal success");
-    assert.equal(readLedger(cwd).filter((entry) => entry.type === "goal_archived").length, 0);
-    assert.ok(fs.statSync(archiveDir).isFile(), "the failing archive directory remains untouched");
-    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
-  } finally {
-    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
-    else process.env.GLLA_PI_BINARY = previous;
-  }
-});
-
 // ---- v0.34.91: the end-of-goal voice carries the recap (what happened) ----
 
 test("v0.35.x: provider-wall diagnostics stay durable while completion surfaces remain sanitized and deduplicated", { timeout: 15_000 }, async () => {

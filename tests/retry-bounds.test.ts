@@ -223,7 +223,8 @@ test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUD
   assert.match(SRC, /completionSummary: claim\.completionSummary,/);
   assert.match(SRC, /verificationSummary: claim\.verificationSummary,/);
   // 4. approved → archive (cascade inside archiveCurrentGoal); claim cleared:
-  assert.match(SRC, /archiveCurrentGoal\(liveCtx, "complete", `auditor \$\{result\.model\} approved \(\$\{origin\}\)`\)/);
+  assert.match(SRC, /const archived = archiveCurrentGoal\(liveCtx, "complete", `auditor \$\{result\.model\} approved \(\$\{origin\}\)`\)/);
+  assert.match(SRC, /if \(!archived\) \{[\s\S]*?goal_archive_failed_after_approval/);
   assert.match(SRC, /updateGoal\(\{ auditHistory: history, pendingCompletion: undefined \}, liveCtx\)/);
   // 5. still-failing → re-pause with the claim PRESERVED + another scheduled retry:
   assert.match(SRC, /auditor retry: retry in \$\{plan\.retryAfterSec\}s \(uniform schedule\)/);
