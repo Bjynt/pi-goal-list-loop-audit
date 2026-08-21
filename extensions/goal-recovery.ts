@@ -744,6 +744,10 @@ export function scheduleMainModelRecoveryTimer(ctx: ExtensionContext, delayMs: n
   clearMainModelRecoveryTimer();
   flags.mainModelRecoveryTimer = scheduleSessionTimeout(() => {
     flags.mainModelRecoveryTimer = null;
+    // v0.35.15: `/glla pause` freezes automatic recovery probes — the
+    // parked recovery claim stays durable and a manual /glla resume probes
+    // immediately (manuallyResumeMainModelRecovery path).
+    if (supervisorPaused(state)) return;
     const fresh = freshCtxForGeneration(generation);
     if (!fresh || !state.mainModelRecovery) return;
     void probeMainModelRecovery(fresh).catch((err) => { if (isStaleApiError(err)) flags.extensionApiStale = true; });
