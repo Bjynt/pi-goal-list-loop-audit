@@ -13,6 +13,10 @@
  * Kept free of pi imports so unit tests can exercise it under plain node.
  */
 
+import { resolveCanonicalRunnerCommand } from "./goal-loop-backoff.js";
+import * as fs from "node:fs";
+import * as path from "node:path";
+
 /** Split a verification contract into its individual checkable items. */
 export function contractItems(contract: string): string[] {
   return contract

@@ -384,3 +384,23 @@ test("v0.35.16: mechanical checks keep the TAIL of failed output and banner a ti
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+
+test("v0.35.18: resolveCanonicalRunnerCommand maps raw runners to their canonical package script", async () => {
+  const { resolveCanonicalRunnerCommand } = await import("../extensions/goal-loop-backoff.ts");
+  const scripts = {
+    test: "bun test --parallel=1 --max-concurrency=1 --timeout=60000",
+    "test:all": "bun test --parallel=1 --max-concurrency=1 --timeout=60000 && tsc --noEmit",
+  };
+  // The field case: contract prose names `bun test` → run the project's
+  // declared invocation, not the bare runner (whose defaults ignore the
+  // required serialization/timeout flags and fail spuriously).
+  assert.deepEqual(resolveCanonicalRunnerCommand("bun test", scripts), { program: "npm", args: ["run", "test"] });
+  // A narrower deliberate run passes through untouched.
+  assert.deepEqual(resolveCanonicalRunnerCommand("bun test tests/foo.test.ts", scripts), { program: "bun", args: ["test", "tests/foo.test.ts"] });
+  // Already-project-aware runners are never rewritten.
+  assert.deepEqual(resolveCanonicalRunnerCommand("npm run test:all", scripts), { program: "npm", args: ["run", "test:all"] });
+  // No wrapping script → passthrough.
+  assert.deepEqual(resolveCanonicalRunnerCommand("vitest run", {}), { program: "vitest", args: ["run"] });
+  // Non-runner programs pass through.
+  assert.deepEqual(resolveCanonicalRunnerCommand("tsc --noEmit", scripts), { program: "tsc", args: ["--noEmit"] });
+});

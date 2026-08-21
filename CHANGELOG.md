@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.35.18 — mechanical checks resolve raw runners to their canonical scripts (2026-08-21)
+
+### Spurious fast-fail fix (fourth audit round)
+  A verification contract that names a RAW RUNNER in prose ("passes under
+  `bun test`") made the deterministic pre-audit execute `bun test` bare,
+  ignoring the project's own required configuration encoded in package.json
+  scripts (--parallel=1 --max-concurrency=1 --timeout; this suite shares
+  module state process-wide by design and serializes deliberately). The bare
+  invocation failed 6 tests + 5 nested-test errors while the canonical gate
+  was green twice — a spurious fast-fail of finished work. Mechanical check
+  commands that are exactly a raw runner invocation (bun test / vitest /
+  jest, no extra args) now resolve to the package script that wraps them;
+  narrower runs and non-runner programs pass through untouched. Pure resolver
+  (`resolveCanonicalRunnerCommand`) lives in goal-loop-backoff.ts with unit
+  tests; bunfig cannot express the required flags (verified empirically:
+  `[test] timeout` is not honored on bun 1.3.14).
+
 ## 0.35.17 — zero-stream abort gains ONE bounded automatic retry; tag backfill (2026-08-21)
 
 ### Post-accept hang self-heal (note.md Next §1)
