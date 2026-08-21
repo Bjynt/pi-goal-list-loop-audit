@@ -278,6 +278,9 @@ function loopPrompt(loop: LoopState, regressionNote: string, strategyNote: strin
 }
 
 function scheduleLoopTick(ctx: ExtensionContext): void {
+  // v0.35.15: `/glla pause` freezes loop re-arms too — the supervisor's
+  // automatic machinery includes the metric loop's turn dispatch.
+  if (supervisorPaused(state)) return;
   if (mainModelRecoveryActive()) return;
   if (flags.sessionHandoffPending || flags.initialSessionLoadPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown || flags.continuationDispatchStoodDown || flags.pendingContinuationDispatch || !isLoopActive()) return;
   rememberCtx(ctx);
