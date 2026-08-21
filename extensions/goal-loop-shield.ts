@@ -86,10 +86,14 @@ function normalizeForMatch(s: string): string {
  *      audits on hegemon were converted to disapprovals that way.
  */
 export function checkRegressionShield(report: string, contract: string): RegressionShieldResult {
-  const hasEvidenceBlock = /<evidence>[\t\n\r ]*[\s\S]*?<\/evidence>/i.test(report);
+  const evidenceMatch = /<evidence>[\t\n\r ]*([\s\S]*?)<\/evidence>/i.exec(report);
+  const hasEvidenceBlock = evidenceMatch !== null;
   const items = contractItems(contract);
   const missingItems: string[] = [];
-  const reportLower = report.toLowerCase();
+  // Contract references must live inside the evidence block. Searching the
+  // whole report let an auditor satisfy the shield by repeating the contract
+  // in prose while leaving the evidence block empty or unrelated.
+  const evidenceLower = (evidenceMatch?.[1] ?? "").toLowerCase();
   for (const item of items) {
     // v0.34.77 (GitHub #5): Unicode-aware token split — \p{L}\p{N} treats
     // CJK characters as letters, so a pure-Chinese contract line is ONE
@@ -101,8 +105,8 @@ export function checkRegressionShield(report: string, contract: string): Regress
       .sort((a, b) => b.length - a.length)
       .slice(0, 3);
     const addressed = candidates.length > 0
-      ? candidates.some((c) => tokenPresent(c, reportLower))
-      : reportLower.includes(normalizeForMatch(item));
+      ? candidates.some((c) => tokenPresent(c, evidenceLower))
+      : evidenceLower.includes(normalizeForMatch(item));
     if (!addressed) missingItems.push(item);
   }
   return {
