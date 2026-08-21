@@ -2904,6 +2904,39 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
   }
 });
 
+test("v0.35.14: an approved audit never reports done when the terminal archive is fenced", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const fakePi = writeFakeAuditor(cwd, "approved", 0);
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = fakePi;
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    await pi.command("goal", "start archive-fence approval target", ctx);
+    await tick();
+    const live = readState(cwd).goal as { id: string };
+    const archivePath = path.join(cwd, ".pi-glla", "archive", `${live.id}.md`);
+    fs.mkdirSync(path.dirname(archivePath), { recursive: true });
+    fs.writeFileSync(archivePath, "# existing terminal winner\\n");
+
+    await pi.runTool("complete_goal", {
+      completionSummary: "The archive-fence regression is covered.",
+      verificationSummary: "The detached auditor approves, but the existing archive must win.",
+    }, ctx);
+    await waitUntil(() => (readState(cwd).goal as { status?: string } | null)?.status === "paused");
+    const after = readState(cwd).goal as { status?: string; pauseReason?: string } | null;
+    assert.equal(after?.status, "paused");
+    assert.match(after?.pauseReason ?? "", /archive persistence failed/);
+    assert.equal(ctx.ui.matching("✓ done:").length, 0, "the failed archive never emits terminal success");
+    assert.equal(readLedger(cwd).filter((entry) => entry.type === "goal_archived").length, 0);
+    assert.match(fs.readFileSync(archivePath, "utf8"), /existing terminal winner/);
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  } finally {
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
 // ---- v0.34.91: the end-of-goal voice carries the recap (what happened) ----
 
 test("v0.35.x: provider-wall diagnostics stay durable while completion surfaces remain sanitized and deduplicated", { timeout: 15_000 }, async () => {

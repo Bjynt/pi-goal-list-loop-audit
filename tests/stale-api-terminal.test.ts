@@ -175,7 +175,7 @@ test("only an admitted host session claims the API and resets session state", ()
   assert.match(SRC, /export default function \(pi: ExtensionAPI\): void \{\n  \/\/ Factory evaluation can also happen inside pi-subagents child sessions\./);
   assert.match(SRC, /registerGoalRuntime\(pi\);\n\}/, "factory evaluation is registration-only");
   const ACT = fs.readFileSync("extensions/loops/goal-activation.ts", "utf8");
-  assert.match(ACT, /extensionApi = pi;\n\s*\/\/ Session-scoped resources are reset only after this context has passed[\\s\\S]*?resetLengthContinue\(\);/);
+  assert.match(ACT, /extensionApi = pi;\n\s*\/\/ Session-scoped resources are reset only after this context has passed[\s\S]*?resetLengthContinue\(\);/);
 });
 
 test("v0.32.0: audit-opportunistic fix batch — dispose, keys, caps, message", () => {
