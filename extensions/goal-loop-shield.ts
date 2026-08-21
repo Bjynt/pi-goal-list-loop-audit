@@ -123,7 +123,10 @@ export function checkRegressionShield(report: string, contract: string): Regress
  * is the only authoritative verdict location; prose tags are not verdicts.
  */
 export function parseAuditorVerdict(output: string): { approved: boolean; disapproved: boolean; impossible: boolean; impossibleReason?: string } {
-  const finalLine = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).at(-1) ?? "";
+  // A few RPC/test transports serialize newlines as literal `\\n` text;
+  // normalize that wire representation without relaxing the final-line gate.
+  const normalizedOutput = output.replaceAll("\\n", "\n").replaceAll("\\r", "\r");
+  const finalLine = normalizedOutput.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).at(-1) ?? "";
   const impossibleMatch = /^<impossible>([\s\S]*?)<\/impossible>$/i.exec(finalLine);
   // The final line is the only authoritative verdict location.
   return {
