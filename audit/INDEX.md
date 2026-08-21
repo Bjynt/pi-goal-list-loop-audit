@@ -13,7 +13,10 @@ audit policy). The next pass owns the durable policy artifacts and
 the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
-**Most recent (2026-08-19):**
+**Most recent (2026-08-21):**
+- `EXTENSION-AUDIT-2026-08-21.md` — full package/runtime, lifecycle, prompt/trust-boundary, test/release survey; v0.35.14 hardening and deferred architecture ledger
+
+**2026-08-19:**
 - `GLLA-MENU-PRESENTATION-2026-08-19.md` — `/glla` menu noise review: literal session-model ref on inherited rows, composite-chain overflow, two-tab proposal (Status / About)
 - `AUDIT-POLICY-CONTROLS-2026-08-19.md` — four-mode postaudit cadence contract: `none` / `completion-only` / `every-n-tasks` / `periodic` (default `completion-only`)
 - `COMPLETION-SUMMARY-POLICY-2026-08-19.md` — six-label recap shape (Outcome / Changed / Evidence / Tests / Unresolved / Next) shipped in v0.35.5
@@ -32,6 +35,7 @@ long-term preferences).
 
 | Version | Date | Audit doc | What landed |
 |---|---|---|---|
+| v0.35.14 | 2026-08-21 | `EXTENSION-AUDIT-2026-08-21.md` | full extension audit; shell-free verification, lifecycle fencing, evidence/verdict hardening, ID validation, branch guard, release CI |
 | v0.35.6 | 2026-08-19 | `LONG-TERM-PREFERENCES-POLICY-2026-08-19.md` | typed-boundary regression pins; conversation / completion / auditor / Explore transcripts cannot land in settings storage |
 | v0.35.5 | 2026-08-19 | `COMPLETION-SUMMARY-POLICY-2026-08-19.md` | `complete_goal` schema adopts the six-label recap |
 | v0.35.4 | 2026-08-16 | `CONTINUATION-DISPATCH-RELIABILITY-2026-08-19.md` (follow-up) | auditor reports in continuation prompts; repair-loop closure |
@@ -79,6 +83,9 @@ long-term preferences).
 | v0.34.121 | v0.34.121-OBJECTIVE-LIFECYCLE-FOLLOWUP.md | OBJECTIVE-LIFECYCLE-FOLLOWUP-2026-08-09.md |
 
 ## Topic index (canonical docs, newest first)
+
+**2026-08-21**
+- EXTENSION-AUDIT-2026-08-21.md — full extension survey, bounded hardening, and deferred architecture ledger
 
 **2026-08-19**
 - GLLA-MENU-PRESENTATION-2026-08-19.md — `/glla` menu noise review (literal session-model ref, composite-chain overflow) + Status / About tab proposal; no source change
