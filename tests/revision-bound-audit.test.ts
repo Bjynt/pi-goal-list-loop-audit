@@ -92,7 +92,7 @@ process.stdin.on("data", async (chunk) => {
   return script;
 }
 
-async function waitUntil(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
+async function waitUntil(predicate: () => boolean, timeoutMs = 30_000): Promise<void> {
   // hardened 2026-08-11: a load-58 spike stretched the detached-auditor
   // subprocess past the old 4s wall (revision-bound-audit timed out while
   // the rest of the suite was green; standalone run also failed at load 58).

@@ -48,8 +48,8 @@
   },
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "bun test --parallel=1 --max-concurrency=1 --timeout=15000",
-    "test:all": "bun test --parallel=1 --max-concurrency=1 --timeout=15000 && tsc --noEmit && node tests/repro-jiti-state-split.test.mjs",
+    "test": "bun test --parallel=1 --max-concurrency=1 --timeout=60000",
+    "test:all": "bun test --parallel=1 --max-concurrency=1 --timeout=60000 && tsc --noEmit && node tests/repro-jiti-state-split.test.mjs",
     "release:check": "npm run test:all && npm pack --dry-run",
     "test:jiti": "node tests/repro-jiti-state-split.test.mjs"
   },

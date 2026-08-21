@@ -63,7 +63,7 @@ async function freshSession(cwd: string, reason: string): Promise<MockCtx> {
   return ctx;
 }
 
-async function waitUntil(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
+async function waitUntil(predicate: () => boolean, timeoutMs = 30_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!predicate()) {
     if (Date.now() >= deadline) throw new Error("timed out waiting for detached-auditor state");
