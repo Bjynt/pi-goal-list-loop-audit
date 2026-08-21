@@ -1,4 +1,4 @@
-# 
+# Now
 
 ##
 
@@ -11,13 +11,19 @@ this is not stuck but needs to be more visual
 i think we need a pause and /home/dracon/Pictures/Screenshots/Screenshot_20260821_104551.png not sure if this is concern but ideally we should now, but it did pick up so only 8 minutes of
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_104628.png not reporting anything, not a big deal but would be best to know, and /glla pause is useful to
 
-# Prio
+# Next
 
 https://github.com/DraconDev/pi-goal-list-loop-audit/issues
 
 ##
 
 after accepting the questiong we often see op was aborted /home/dracon/Pictures/Screenshots/Screenshot_20260821_152311.png 
+
+##
+
+the git repo is misisng tags
+
+maybe sometimes else or least update teh readme
 
 # Later
 
