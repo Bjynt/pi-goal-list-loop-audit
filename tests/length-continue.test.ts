@@ -49,6 +49,7 @@ test("v0.34.19: tiny-output length at a nearly full context is context starvatio
 });
 
 const SRC = readGoalRuntimeSource();
+const ACT = fs.readFileSync("extensions/loops/goal-activation.ts", "utf-8");
 const CONT = fs.readFileSync("extensions/goal-continuation.ts", "utf-8"); // decomposition step 5 (v0.34.113)
 
 test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal gating", () => {
@@ -77,7 +78,7 @@ test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal g
   assert.match(early, /if \(lastA\?\.stopReason === "length"\) \{\s*\n\s*if \(lc\.fire && !ctx\.hasPendingMessages\(\)\) sendLengthContinue\(ctx, lc\.consecutive\);\s*\n\s*return;\s*\n\s*\}/);
 });
 
-test("sendLengthContinue: stale-api terminal guard + ledger + factory reset", () => {
+test("sendLengthContinue: stale-api terminal guard + admitted-session reset", () => {
   assert.match(CONT, /function sendLengthContinue\(ctx: ExtensionContext, consecutive: number\)/); // decomposition step 5: moved
   assert.match(CONT, /if \(flags\.sessionHandoffPending \|\| flags\.initialSessionLoadPending \|\| !flags\.extensionApi \|\| flags\.extensionApiStale \|\| continuationDispatchStoodDown \|\| pendingContinuationDispatch\) return;/, "lifecycle, blank-start, stale-runtime, and in-flight dispatch guards short-circuit the send (flags accessor re-spelling)");
   assert.match(CONT, /kind: "length",\s*\n\s*marker: LENGTH_CONTINUE_TEXT\.slice\(0, 80\)/, "length sends use the dispatch proof state machine");
@@ -85,7 +86,7 @@ test("sendLengthContinue: stale-api terminal guard + ledger + factory reset", ()
   assert.match(CONT, /appendLedger\(ctx\.cwd, "length_continue_sent", \{ consecutive, attemptId: attempt\.id \}\)/);
   assert.match(CONT, /if \(isStaleApiError\(err\)\)/); // v0.34.117: the stale guard now wraps an auto-recovery call + terminal fallback
   assert.match(CONT, /if \(!attemptFreshSessionRecovery\(ctx, "sendLengthContinue"\)\) goStaleTerminal\(ctx, "sendLengthContinue"\);/); // v0.34.117: auto-recover before terminal park
-  assert.match(SRC, /resetLengthContinue\(\); \/\/ v0\.27\.2: fresh runtime, fresh truncation streak/); // factory reset stays in goal.ts
+  assert.match(ACT, /extensionApi = pi;[\s\S]*?resetLengthContinue\(\);/); // reset follows host admission, not factory evaluation
   // give-up is surfaced once via notify + external push
   assert.match(SRC, /lc\.giveUpNow/);
 });
