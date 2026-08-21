@@ -34,5 +34,7 @@ we should decide not auto start
 
 suspicious goal, repair task was qd but nothing started or can be started
 happened when tried to /goal start some kind of audit
+
+but seemingly all goals are suspricoius that are /goal start
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_114210.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_114109.png 
