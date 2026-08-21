@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.35.19 — load-resilient budgets for the aggressive-recovery test (2026-08-21)
+
+### Flake hardening
+  At machine load ~50 (16 cores), the aggressive no-verdict recovery test's
+  wall-clock wait budgets (2x 25s inside a 60s per-test ceiling) expired
+  before two real subprocess-based auditor retry cycles completed — while
+  the canonical full-suite run stayed green in the same conditions. Raised:
+  per-test 60s→120s, retry waits 25s→45s, state-transition waits 8s→20s.
+  Budgets only; semantics untouched (same precedent as v0.35.15's 30s→60s).
+
 ## 0.35.18 — mechanical checks resolve raw runners to their canonical scripts (2026-08-21)
 
 ### Spurious fast-fail fix (fourth audit round)

@@ -3662,12 +3662,17 @@ test("v0.35.x: no-verdict auditor infrastructure failure schedules one durable a
   }
 });
 
-test("v0.34.140: aggressive mode keeps no-verdict auditor recovery alive inside its durable window", { timeout: 60_000 }, async () => {
+test("v0.34.140: aggressive mode keeps no-verdict auditor recovery alive inside its durable window", { timeout: 120_000 }, async () => {
   // v0.35.15: budget raised 30s→60s — this real-timer test observed 23s on
   // a busy machine (the auditor's own release:check ran concurrently with
   // an active session) and blew the per-test ceiling, fast-failing the
   // whole release check. The budget adds no wall time; it only stops load
   // spikes from killing the gate.
+  // v0.35.19: raised again 60s→120s with wait budgets 25s→45s / 8s→20s —
+  // at machine load ~50 (16 cores) each fake-auditor subprocess spawn
+  // cycle takes many seconds, and TWO retry cycles legitimately exceeded
+  // 25s while the canonical full-suite run stayed green (117/117 in the
+  // same conditions). Budgets only; semantics untouched.
   __testOnlyResetStaleFlag();
   __testOnlySetAuditorRecoveryRetryDelay(120);
   const cwd = tmpCwd();
@@ -3681,8 +3686,8 @@ test("v0.34.140: aggressive mode keeps no-verdict auditor recovery alive inside 
     await tick();
     await pi.runTool("complete_goal", { completionSummary: "Stored claim", verificationSummary: "Stored evidence" }, ctx);
 
-    await waitUntil(() => readLedger(cwd).filter((entry) => entry.type === "audit_recovery_retry_scheduled").length >= 2, 25_000);
-    await waitUntil(() => readLedger(cwd).filter((entry) => entry.type === "audit_recovery_auto_retry_claimed").length >= 2, 25_000);
+    await waitUntil(() => readLedger(cwd).filter((entry) => entry.type === "audit_recovery_retry_scheduled").length >= 2, 45_000);
+    await waitUntil(() => readLedger(cwd).filter((entry) => entry.type === "audit_recovery_auto_retry_claimed").length >= 2, 45_000);
 
     const persisted = readState(cwd).goal as {
       pendingCompletion?: {
@@ -3702,7 +3707,7 @@ test("v0.34.140: aggressive mode keeps no-verdict auditor recovery alive inside 
     await waitUntil(() => {
       const goal = readState(cwd).goal as { status?: string; pendingCompletion?: { recoveryRetryAt?: string } } | null;
       return goal?.status === "paused" && !!goal.pendingCompletion?.recoveryRetryAt;
-    }, 8_000);
+    }, 20_000);
     fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ aggressiveMode: false }));
     await waitUntil(() => {
       const goal = readState(cwd).goal as { status?: string; pauseKind?: string; pauseResumeAt?: string; pendingCompletion?: { recoveryRetryAt?: string } } | null;
@@ -3710,7 +3715,7 @@ test("v0.34.140: aggressive mode keeps no-verdict auditor recovery alive inside 
         && goal.pauseKind === "blocked"
         && !goal.pauseResumeAt
         && !goal.pendingCompletion?.recoveryRetryAt;
-    }, 8_000);
+    }, 20_000);
     assert.ok(readLedger(cwd).some((entry) => entry.type === "audit_recovery_retry_suppressed" && entry.value.reason === "aggressive-mode-disabled"));
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   } finally {
