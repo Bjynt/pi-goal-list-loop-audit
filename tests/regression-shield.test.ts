@@ -348,3 +348,17 @@ test("extractMechanicalCheckCommands: extracts backticked and raw shell commands
   assert.doesNotMatch(unsafeRes.output!, /boom/);
 });
 
+test("v0.35.16: mechanical checks keep the TAIL of failed output and banner a timeout kill", async () => {
+  const { runMechanicalPreAuditChecks } = await import("../extensions/goal-loop-shield.ts");
+  // A failing command whose output exceeds the 4000-char evidence budget:
+  // the DIAGNOSTIC END (where node prints the error) must survive, not the
+  // startup head (field failure 2026-08-21: two auditor rounds saw only
+  // startup logs of a gate killed mid-run — no failure was ever visible).
+  const script = "console.log('x'.repeat(6000)); console.error('THE_ACTUAL_FAILURE_MARKER'); process.exit(3);";
+  const res = runMechanicalPreAuditChecks(process.cwd(), ["node", "-e", script]);
+  assert.equal(res.passed, false);
+  assert.equal(res.exitCode, 3);
+  assert.match(res.output!, /THE_ACTUAL_FAILURE_MARKER/, "the tail (where the failure lives) is kept");
+  assert.match(res.output!, /truncated head/, "truncation is honest about what was dropped");
+});
+

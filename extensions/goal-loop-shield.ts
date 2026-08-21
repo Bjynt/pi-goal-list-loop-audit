@@ -177,8 +177,20 @@ export function isSafeMechanicalCommand(command: string): boolean {
   return SAFE_MECHANICAL_COMMAND.test(command.trim());
 }
 
-/** v0.35.7: Execute mechanical pre-audit checks deterministically. */
-export function runMechanicalPreAuditChecks(cwd: string, commands: string[], timeoutMs = 60000): MechanicalCheckResult {
+/** v0.35.7: Execute mechanical pre-audit checks deterministically.
+ *
+ * v0.35.16: default timeout 60s → 10min. The old 60s ceiling killed
+ * LEGITIMATE long gates mid-run: this repo's own contract command,
+ * `npm run release:check`, needs ~3 minutes (full suite + tsc + Jiti smoke
+ * + pack), so every deterministic pre-audit fast-failed with a truncated
+ * head-of-output report that showed startup logs instead of any failure —
+ * twice in the field (2026-08-21 14:17 and 16:01 disapprovals), burning two
+ * auditor rounds on a gate that could never pass inside its own bound. The
+ * timeout still bounds genuinely hung commands; it no longer bounds honest
+ * slow ones. Failed output now keeps the TAIL, not the head — the end of a
+ * killed/failed run shows what was actually happening at death.
+ */
+export function runMechanicalPreAuditChecks(cwd: string, commands: string[], timeoutMs = 600_000): MechanicalCheckResult {
   if (!commands || commands.length === 0) return { passed: true };
   const { execFileSync } = require("node:child_process");
   for (const rawCommand of commands) {
@@ -201,11 +213,16 @@ export function runMechanicalPreAuditChecks(cwd: string, commands: string[], tim
       const exitCode = typeof err.status === "number" ? err.status : (typeof err.code === "number" ? err.code : 1);
       const stdout = err.stdout ? String(err.stdout) : "";
       const stderr = err.stderr ? String(err.stderr) : "";
-      const output = (stdout + "\n" + stderr).trim() || err.message || "Command failed";
+      const combined = (stdout + "\n" + stderr).trim() || err.message || "Command failed";
+      const killed = err.killed === true || err.signal === "SIGTERM";
+      const banner = killed
+        ? `[mechanical check killed after ${Math.round(timeoutMs / 1000)}s — output tail below]`
+        : "";
+      const body = combined.length > 4000 ? "…[truncated head]\n" + combined.slice(-4000) : combined;
       return {
         passed: false,
         failedCommand: rawCommand,
-        output: output.slice(0, 4000),
+        output: (banner ? banner + "\n" : "") + body,
         exitCode,
       };
     }
