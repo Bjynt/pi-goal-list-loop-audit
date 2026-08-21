@@ -871,6 +871,30 @@ export function __testOnlyRegisterAgentTools(pi: any): void {
 export function __testOnlyRememberCtx(ctx: ExtensionContext): void {
   rememberCtx(ctx);
 }
+
+/** v0.35.15 test-only: drive the auditor quiet watcher with a controlled
+ * progress snapshot + clock. Pass null progress to simulate no audit.
+ * Returns the tick's notify message (null = silent) exactly like the
+ * production ticker consumes it. */
+export function __testOnlyAuditorQuietWatchTick(
+  progress: import("../goal-loop-display.js").AuditDisplayProgress | null,
+  now = Date.now(),
+): string | null {
+  latestAuditProgress = progress;
+  return __auditorQuietWatchTick(now);
+}
+
+/** v0.35.15 test-only: reset the quiet-watcher runtime state between tests. */
+export function __testOnlyResetAuditorQuietWatch(): void {
+  auditorQuietSince = null;
+  auditorQuietNotified = false;
+  lastAuditorQuietStretch = null;
+}
+
+/** v0.35.15 test-only: the last ended quiet stretch the footer extras carry. */
+export function __testOnlyLastAuditorQuietStretch(): { ms: number; endedAt: number } | null {
+  return lastAuditorQuietStretch;
+}
 // v0.32.1 (pi-goal-x's lesson — "recover from compacts smarter"): a compact
 // leaves a RESUME DEBT, not just two fixed-offset settle probes that can both
 // lose (field: hellhunter 4-min dangle 2026-07-31; polis stall same day).
