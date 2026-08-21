@@ -15,6 +15,7 @@ the git repo is misisng tags
 maybe sometimes else or least update teh readme
 
 # Next
+
 ##
 
 the auditor seleciton should be like the main agent selector
@@ -52,9 +53,17 @@ that makes way more detailed and presumably longer "plan" than the regular draft
 
 # Later
 
+##
 
+Is htis intended, like ai cant prune the list?
 
+ I don't have a programmatic remove — the queue is yours to prune. Run these two commands in order:
 
+ 1. /list remove 3 — filled sidebar redesign (shipped in the earlier UX pass)
+ 2. /list remove 4 — live-signal simplification (also shipped; after removing item 3 it will be at position 4 again since the counter item shifts up... actually safest: run /list status after the first removal
+    to confirm positions before the second)
+
+ What remains queued afterwards: the codex-reset.json refresh automation, the SSR aria fail-loud check, and the resets-this-month counter — all real pending work from your DECIDED verdicts.
 
 # Idea
 
