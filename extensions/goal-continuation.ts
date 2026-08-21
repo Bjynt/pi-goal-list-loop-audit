@@ -935,6 +935,10 @@ export function scheduleContinuation(ctx: ExtensionContext, force = false, delay
 }
 
 export function sendContinuation(goalId: string): void {
+  // v0.35.15: `/glla pause` — a continuation timer armed BEFORE the pause
+  // must not fire into the frozen window. scheduleContinuation already
+  // refuses new schedules; this closes the armed-timer race.
+  if (supervisorPaused(state)) return;
   if (mainModelRecoveryActive()) return;
   if (flags.sessionHandoffPending || flags.initialSessionLoadPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown || continuationDispatchStoodDown || pendingContinuationDispatch) return;
   continuationTimer = null;
