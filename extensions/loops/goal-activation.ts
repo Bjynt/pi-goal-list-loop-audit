@@ -520,14 +520,15 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   });
   const settingsHandler = (args: string, ctx: ExtensionContext) => { rememberCtx(ctx); return cmdSettings(args, ctx); };
   pi.registerCommand("glla", {
-    description: "Open the settings UI for goals, loops, lists, and the auditor. `/glla version` shows the installed package version; `/glla cancel` cancels the active objective; `/glla wipe` Confirm-gatedly clears all live state while preserving history.",
+    description: "Open the settings UI for goals, loops, lists, and the auditor. `/glla version` shows the installed package version; `/glla pause` freezes the supervisor's automatic machinery (re-arms/recovery/auto-resume/dispatch) without touching active work; `/glla cancel` cancels the active objective; `/glla wipe` Confirm-gatedly clears all live state while preserving history.",
     getArgumentCompletions: completions([
       // Operational verbs only. Settings and section navigation belong in
       // the bare `/glla` table, so they do not compete with action completion.
       ["version", "show the installed package version and registry check"],
       ["status", "show goal, list, loop, and pending decisions"],
       ["log", "show the recent event trail"],
-      ["resume", "resume the paused or held live thing"],
+      ["resume", "resume the paused or held live thing; also unfreezes a /glla pause"],
+      ["pause", "freeze ALL supervisor automation (re-arms/recovery/dispatch) — active work keeps running"],
       ["cancel", "cancel the active objective (list item + queue)"],
       ["wipe", "Confirm-gated idempotent reset of all live goal/list/loop state"],
       ["stats", "show per-project ledger rollups"],

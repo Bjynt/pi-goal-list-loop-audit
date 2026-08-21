@@ -19,6 +19,7 @@ import {
 } from "./goal-loop-core.js";
 import { clearDispatchRecord, dispatchRecordExists } from "./goal-loop-dispatch.js";
 import type { AuditDisplayProgress } from "./goal-loop-display.js";
+import { fmtElapsed } from "./goal-loop-display.js";
 import { AUDIT_FINDINGS_REL, HELD_ON_RESTORE, LOOP_AUDIT_MARKER, listAuditCollectTarget, projectAuditTarget } from "./goal-loop-forever.js";
 import { ProjectRollup, discoverGllaProjects, filterPremature, formatRollupJson, formatRollupTable, parseLedgerEntries, rollupProject } from "./goal-loop-stats.js";
 import { OVERRIDABLE_AGENT_TYPES, resolveEffectiveSubagentModel } from "./goal-loop-subagents.js";
@@ -2171,6 +2172,10 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   }
   if (/^resume(?:\s|$)/.test(trimmed)) {
     await cmdGllaResume(ctx);
+    return;
+  }
+  if (/^pause(?:\s|$)/.test(trimmed)) {
+    await cmdGllaPause(ctx);
     return;
   }
   if (/^cancel(?:\s|$)/.test(trimmed)) {
