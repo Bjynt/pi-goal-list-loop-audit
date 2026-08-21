@@ -1837,12 +1837,53 @@ async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise
  * today) → the v0.28.23 decision-picker pattern. Verbs whose semantics
  * genuinely differ per type (tweak/finish/next/decide/refine) stay typed.
  */
+/**
+ * v0.35.15: `/glla pause` — freeze the SUPERVISOR, not the work.
+ *
+ * Broad by design (user-confirmed 2026-08-21): every automatic side-effect
+ * stops — heartbeat re-arms/stale probes/zombie cleanup, recovery probes,
+ * auto-resume, auto-continuation dispatch, loop ticks, and the proactive
+ * auditor quiet-phase notification. The active goal/list item/loop state is
+ * untouched and any detached worker keeps running; only the automatic
+ * machinery around it freezes. Manual user commands still work. Persisted
+ * via `supervisorPausedAt`, so a session restart cannot silently re-arm
+ * machinery the user explicitly stopped. Pausing while a recovery claim is
+ * parked keeps the claim durable on disk — nothing is discarded.
+ */
+async function cmdGllaPause(ctx: ExtensionContext): Promise<void> {
+  if (warnIfStaleAtEntry(ctx, "/glla pause")) return;
+  releaseInitialSessionLoadBarrier();
+  const already = typeof state.supervisorPausedAt === "number";
+  const pausedAtMs = Date.now();
+  replaceState({ ...state, supervisorPausedAt: pausedAtMs });
+  persistState(ctx);
+  appendLedger(ctx.cwd, "supervisor_pause", already ? { repeat: true } : {});
+  // An armed continuation/recovery timer may already be scheduled; every
+  // dispatch point checks supervisorPaused() so stale timers become no-ops.
+  ctx.ui.notify(already
+    ? "Supervisor is already paused — all automatic machinery stays frozen (active work untouched). /glla resume to unfreeze."
+    : "Supervisor PAUSED — heartbeat re-arms, recovery probes, auto-resume, continuation dispatch, loop ticks, and auditor quiet notifies are frozen. The active goal/list item/loop and detached workers keep running. /glla resume to unfreeze.",
+    "warning");
+}
+
 async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
   // v0.29.12: a zombie instance (handle dead after session replacement)
   // used to answer "Nothing to resume" — the resume path must name the
   // real recovery (/reload rebuilds extensions in place), not mislead.
   if (warnIfStaleAtEntry(ctx, "/glla resume")) return;
   releaseInitialSessionLoadBarrier();
+  // v0.35.15: clearing a supervisor pause is resume's first job — the flag
+  // outlives sessions, so an explicit /glla resume must always unfreeze the
+  // machinery even when there is nothing else to resume afterwards.
+  let clearedSupervisorPause = false;
+  if (typeof state.supervisorPausedAt === "number") {
+    const frozenMs = Date.now() - state.supervisorPausedAt;
+    delete (state as { supervisorPausedAt?: number }).supervisorPausedAt;
+    persistState(ctx);
+    clearedSupervisorPause = true;
+    appendLedger(ctx.cwd, "supervisor_resume", { frozenMs });
+    ctx.ui.notify(`Supervisor RESUMED after ${fmtElapsed(frozenMs)} — heartbeat re-arms, recovery probes, auto-resume, continuation dispatch, and auditor quiet notifies are live again.`, "info");
+  }
   if (manuallyResumeMainModelRecovery(ctx)) return;
   if (state.mainModelRecovery?.retryAt || state.mainModelRecovery?.pendingModelSwitch) {
     clearMainModelRecoveryTimer();
@@ -1927,6 +1968,11 @@ async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
     if (flags.continuationDispatchStoodDown) releaseContinuationDispatchStandDown();
     ctx.ui.notify(`The loop is ACTIVE — re-firing its tick (iteration ${state.loop.iteration}). If it wedges again, /loop status for the diagnostics.`, "info");
     scheduleLoopTick(ctx);
+    return;
+  }
+  if (clearedSupervisorPause) {
+    // The pause was the only thing being resumed — do not follow it with a
+    // misleading "Nothing to resume".
     return;
   }
   ctx.ui.notify("Nothing to resume — no paused goal/list-item, no held loop. /goal, /list, or /loop to start something.", "info");
