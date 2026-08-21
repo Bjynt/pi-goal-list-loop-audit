@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.35.16 — mechanical pre-audit gate no longer kills legitimate long checks (2026-08-21)
+
+### Deterministic pre-audit timeout fix
+  `runMechanicalPreAuditChecks` executed every contract command under a
+  hard 60-second `execFileSync` ceiling — but this repo's own contract
+  command (`npm run release:check`) legitimately needs ~3 minutes. Every
+  deterministic pre-audit therefore fast-failed with a truncated
+  head-of-output report showing only startup logs (two field rounds:
+  2026-08-21 14:17 and 16:01), burning two auditor cycles on a gate that
+  could never pass inside its own bound. The default bound is now 10 minutes
+  — still a hang guard, no longer an honest-slow-work guard. Failed output
+  keeps the TAIL (where failures live) instead of the head, truncation is
+  labeled, and a timeout kill is bannered as such instead of masquerading as
+  an exit-code-1 test failure.
+
 ## 0.35.15 — glla status-surface UX: visual footer, /glla pause, proactive quiet notify (2026-08-21)
 
 ### Visual status footer
