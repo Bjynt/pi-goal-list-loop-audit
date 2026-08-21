@@ -77,7 +77,9 @@ an opportunity as closed by prose.
     package now includes the linked planning documents, the broken historical
     audit link was replaced with the shipped design overview, Node/npm versions
     are pinned, and the workflow runs `npm run release:check` on pushes and
-    pull requests. `package.json` declares Node `>=22.19.0`.
+    pull requests. `package.json` declares Node `>=22.19.0`. The live
+    command-routing diagnostic now uses a process-scoped temp artifact rather
+    than rewriting tracked `audit/` state.
 
 ### Confirmed, deferred architectural work
 
@@ -111,8 +113,8 @@ These are real findings, but larger than the bounded v0.35.14 hardening pass:
   with absent/changed-registry tests.
 - **Release/test opportunities:** add a tarball extraction/import smoke test,
   crawl relative Markdown links in the actual npm package, run the smoke
-  harness in controlled CI, isolate generated routing diagnostics from the
-  tracked tree, and add multi-process/concurrency coverage. The current
+  harness in controlled CI, and add multi-process/concurrency coverage. The
+  live routing diagnostic is already isolated from the tracked tree. The current
   serial suite is deliberate for shared mock state, but it does not test the
   cross-process ownership risk above.
 
@@ -122,6 +124,7 @@ These are real findings, but larger than the bounded v0.35.14 hardening pass:
 - `timeout 120 bun test tests/regression-shield.test.ts tests/audit-verdict.test.ts tests/persistence-hardening.test.ts tests/stale-api-terminal.test.ts` — **59 pass, 0 fail**.
 - `timeout 120 bun test tests/release-contract.test.ts tests/loop-finish.test.ts tests/retry-bounds.test.ts` — **21 pass, 0 fail**.
 - `timeout 240 bun test tests/behavioral-orchestrator.test.ts` — **117 pass, 0 fail**.
+- `timeout 360 npm test` — **1413 pass, 1 intentional environment skip, 0 fail** across 118 files.
 - `npm pack --dry-run` is exercised by `tests/release-contract.test.ts`; the
   release-contract test passed with `PLAN.md` and `LIST-PHILOSOPHY.md` present.
 
