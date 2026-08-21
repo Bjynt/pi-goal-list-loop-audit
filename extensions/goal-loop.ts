@@ -20,6 +20,7 @@ import {
   nowIso,
   resolveEffectiveAggressiveSettings,
   sumNewAssistantTokens,
+  supervisorPaused,
 } from "./goal-loop-core.js";
 import { BACKOFF_IDLE_RETRY_MS, MEASURE_TIMEOUT_MS } from "./goal-loop-backoff.js";
 import {
