@@ -41,6 +41,7 @@ suspicious goal / objective
 
 list exec stopped and list because not visible til i restarted session
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_213238.png 
+/home/dracon/Pictures/Screenshots/Screenshot_20260821_214510.png 
 
 ##
 
