@@ -33,3 +33,8 @@ test("/loop finish is routed in cmdLoop and registered in completions (item 7)",
   assert.match(loopSrc, /state\.loop = \{ \.\.\.state\.loop, active: false, stopReason: reason \}/);
   assert.match(goalSrc, /\["finish", "end the loop cleanly/);
 });
+
+test("branch-mode resume refuses to commit from the original branch", () => {
+  assert.match(loopSrc, /loop_resume_blocked_wrong_branch/);
+  assert.match(loopSrc, /branch mode requires HEAD on \$\{stored\.branchName\}/);
+});
