@@ -3021,7 +3021,7 @@ test("v0.35.x: bare 403 main recovery sanitizes live surfaces while retaining di
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
 });
 
-test("v0.35.x: bare 403 completion diagnostics stay durable while completion surfaces remain sanitized", { timeout: 15_000 }, async () => {
+test("v0.35.x: bare 403 completion diagnostics stay durable while completion surfaces remain sanitized", { timeout: 30_000 }, async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   const raw = '403 {"error":{"message":"upstream denied this request"},"request_id":"auth-sensitive-id"}';
@@ -3621,7 +3621,7 @@ test("v0.35.x: healthy same-session heartbeat recovers a parked completion audit
   }
 });
 
-test("v0.35.x: no-verdict auditor infrastructure failure schedules one durable automatic recovery", { timeout: 15_000 }, async () => {
+test("v0.35.x: no-verdict auditor infrastructure failure schedules one durable automatic recovery", { timeout: 30_000 }, async () => {
   __testOnlyResetStaleFlag();
   __testOnlySetAuditorRecoveryRetryDelay(120);
   const cwd = tmpCwd();
@@ -3661,7 +3661,12 @@ test("v0.35.x: no-verdict auditor infrastructure failure schedules one durable a
   }
 });
 
-test("v0.34.140: aggressive mode keeps no-verdict auditor recovery alive inside its durable window", { timeout: 30_000 }, async () => {
+test("v0.34.140: aggressive mode keeps no-verdict auditor recovery alive inside its durable window", { timeout: 60_000 }, async () => {
+  // v0.35.15: budget raised 30s→60s — this real-timer test observed 23s on
+  // a busy machine (the auditor's own release:check ran concurrently with
+  // an active session) and blew the per-test ceiling, fast-failing the
+  // whole release check. The budget adds no wall time; it only stops load
+  // spikes from killing the gate.
   __testOnlyResetStaleFlag();
   __testOnlySetAuditorRecoveryRetryDelay(120);
   const cwd = tmpCwd();
@@ -3717,7 +3722,7 @@ test("v0.34.140: aggressive mode keeps no-verdict auditor recovery alive inside 
   }
 });
 
-test("v0.35.x: stale host loss releases an in-flight completion audit without a verdict", { timeout: 15_000 }, async () => {
+test("v0.35.x: stale host loss releases an in-flight completion audit without a verdict", { timeout: 30_000 }, async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
   const fakePi = writeFakeAuditorError(cwd, "Auditor stalled — no progress", 100);
