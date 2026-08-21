@@ -38,3 +38,8 @@ happened when tried to /goal start some kind of audit
 but seemingly all goals are suspricoius that are /goal start
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_114210.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_114109.png 
+
+##
+
+i think we are cutting the spec based strategy cause we can jsut make a big megaplan do that then we have some truth based on the iterate on while the spec is always double truth and stale and crude, so the 
+loop is idea to code 
