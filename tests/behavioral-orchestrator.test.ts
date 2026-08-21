@@ -2922,7 +2922,12 @@ test("v0.35.14: an approved audit never reports done when the terminal archive i
       completionSummary: "The archive-fence regression is covered.",
       verificationSummary: "The detached auditor approves, but the existing archive must win.",
     }, ctx);
-    await waitUntil(() => (readState(cwd).goal as { status?: string } | null)?.status === "paused");
+    try {
+      await waitUntil(() => (readState(cwd).goal as { status?: string } | null)?.status === "paused");
+    } catch (error) {
+      console.error("DEBUG archive failure state", readState(cwd).goal, ctx.ui.notifies.slice(-8), readLedger(cwd).slice(-8));
+      throw error;
+    }
     const after = readState(cwd).goal as { status?: string; pauseReason?: string } | null;
     assert.equal(after?.status, "paused");
     assert.match(after?.pauseReason ?? "", /archive persistence failed/);
