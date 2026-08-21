@@ -453,7 +453,10 @@ export interface AuditDisplayProgress {
 }
 
 type AuditorDisplayPhase = "queued" | "running" | "quiet" | "blocked" | "awaiting-verdict";
-const AUDITOR_QUIET_MS = 3 * 60_000;
+/** v0.35.15: exported — the parent-side quiet watcher (goal-ui ticker) uses
+ * the same threshold for the one-shot proactive notify so the notification
+ * and the status chip can never disagree about when "quiet" begins. */
+export const AUDITOR_QUIET_MS = 3 * 60_000;
 const LIVE_ACTIVITY_MS = 15_000;
 
 /** Use worker activity for liveness. Fall back to the parent event timestamp
@@ -538,8 +541,11 @@ function auditorEvidenceSummary(audit: AuditDisplayProgress | null | undefined, 
 
 /** Project the detached worker's raw progress into the five user-facing
  * phases. A durable running claim without an observed progress event is not
- * green proof of work: it is explicitly waiting for a verdict. */
-function auditorDisplayPhase(g: Goal, audit: AuditDisplayProgress | null | undefined, now: number): AuditorDisplayPhase {
+ * green proof of work: it is explicitly waiting for a verdict.
+ * v0.35.15: exported for the parent-side quiet watcher — one phase
+ * projection, shared by the renderer and the notifier, so both surfaces
+ * always agree on the current phase. */
+export function auditorDisplayPhase(g: Goal, audit: AuditDisplayProgress | null | undefined, now: number): AuditorDisplayPhase {
   const label = audit?.label?.toLowerCase() ?? "";
   if (label === "queued") return "queued";
   if (/infra|error|failed|blocked|no verdict/.test(label)) return "blocked";
@@ -580,6 +586,31 @@ function auditorPhaseLabel(phase: AuditorDisplayPhase): string {
     case "blocked": return "blocked";
     case "awaiting-verdict": return "awaiting verdict";
   }
+}
+
+/** v0.35.15: at-a-glance glyph per auditor phase — the status footer is
+ * dense text, and a distinct leading glyph lets a glance answer "is the
+ * audit alive?" without reading the sentence. Kept in one map so the
+ * renderer and tests share the exact vocabulary. */
+export function auditorPhaseGlyph(phase: AuditorDisplayPhase): string {
+  switch (phase) {
+    case "queued": return "⋯";      // waiting to start
+    case "running": return "▶";     // worker alive
+    case "quiet": return "◌";       // silent — possibly stuck
+    case "blocked": return "⛔";    // infra failure / needs intervention
+    case "awaiting-verdict": return "✓"; // worker done, verdict pending
+  }
+}
+
+/** v0.35.15: compact activity meter for the auditing footer — recency of
+ * the last worker event as ▰▱ cells. Full = fresh evidence, draining as
+ * the silence grows, empty at/after AUDITOR_QUIET_MS. Gives the same
+ * "bar is draining" readability the loop's stall meter already has. */
+function auditorActivityMeter(audit: AuditDisplayProgress | null | undefined, phase: AuditorDisplayPhase, now: number): string {
+  const age = auditorActivityAge(audit, now);
+  if (age === undefined) return meter(0);
+  if (phase === "awaiting-verdict") return meter(1); // finished — full, not draining
+  return meter(Math.max(0, Math.min(1, 1 - age / AUDITOR_QUIET_MS)));
 }
 
 /** Keep the broad liveness phase for compatibility, but expose the worker's

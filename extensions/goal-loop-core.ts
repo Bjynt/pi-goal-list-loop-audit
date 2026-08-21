@@ -890,6 +890,14 @@ export interface State {
    * reload — without it, the chip vanishes on reload and the user thinks
    * the compaction didn't happen (Screenshot_20260808_003007/003024). */
   lastCompactionAt?: number;
+  /** v0.35.15: `/glla pause` epoch (ms). Presence = the supervisor's
+   * automatic machinery (heartbeat re-arms, recovery probes, auto-resume,
+   * continuation dispatch, proactive auditor quiet notifies) is FROZEN by
+   * explicit user request. The active goal/list item/loop and any detached
+   * worker keep running untouched; `/glla resume` clears it. Persisted so
+   * the pause survives session restarts — a restart must not silently
+   * re-arm machinery the user explicitly stopped. */
+  supervisorPausedAt?: number;
 }
 
 /** v0.24.2: count TRAILING consecutive disapprovals (the disapproval-cap
@@ -1222,7 +1230,15 @@ export function readState(cwd: string): State {
     mainModelRecovery: sanitizeMainModelRecovery(parsed.mainModelRecovery),
     lastModelRef: typeof parsed.lastModelRef === "string" ? parsed.lastModelRef : undefined,
     lastCompactionAt: typeof parsed.lastCompactionAt === "number" && Number.isFinite(parsed.lastCompactionAt) ? parsed.lastCompactionAt : undefined,
+    supervisorPausedAt: typeof parsed.supervisorPausedAt === "number" && Number.isFinite(parsed.supervisorPausedAt) && parsed.supervisorPausedAt > 0 ? parsed.supervisorPausedAt : undefined,
   };
+}
+
+/** True while `/glla pause` has frozen the supervisor's automatic side-
+ * effects. A single source of truth for every dispatch-point gate so a
+ * future automatic path cannot forget the check. */
+export function supervisorPaused(state: State): boolean {
+  return typeof state?.supervisorPausedAt === "number";
 }
 
 /** Migrate the old quota-named completion retry fields at the state boundary.
