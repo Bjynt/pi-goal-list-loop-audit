@@ -2,17 +2,6 @@
 
 ##
 
-this is not stuck but needs to be more visual
-
-/home/dracon/Pictures/Screenshots/Screenshot_20260821_104747.png 
-
-##
-
-i think we need a pause and /home/dracon/Pictures/Screenshots/Screenshot_20260821_104551.png not sure if this is concern but ideally we should now, but it did pick up so only 8 minutes of
-/home/dracon/Pictures/Screenshots/Screenshot_20260821_104628.png not reporting anything, not a big deal but would be best to know, and /glla pause is useful to
-
-# Next
-
 https://github.com/DraconDev/pi-goal-list-loop-audit/issues
 
 ##
@@ -25,8 +14,7 @@ the git repo is misisng tags
 
 maybe sometimes else or least update teh readme
 
-# Later
-
+# Next
 ##
 
 the auditor seleciton should be like the main agent selector
@@ -61,6 +49,10 @@ instead we can have
 /loop plan
 
 that makes way more detailed and presumably longer "plan" than the regular draft that is already long, which we are not changing 
+
+# Later
+
+
 
 
 
