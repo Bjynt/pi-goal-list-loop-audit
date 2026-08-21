@@ -130,6 +130,12 @@ import {
   type ContinuationDispatch,
 } from "../goal-loop-dispatch.js";
 import {
+  AUDITOR_QUIET_MS,
+  auditorDisplayPhase,
+  fmtElapsed,
+  supervisorPaused,
+} from "../goal-loop-display.js";
+import {
   createGoalContinuation,
   scheduleContinuation,
   sendContinuation,
