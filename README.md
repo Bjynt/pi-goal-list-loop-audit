@@ -53,7 +53,7 @@ Five top-level commands — `/goal`, `/list`, `/loop`, `/glla`, `/review`:
 /goal verify                       # queue a detached auditor for the current goal — no agent turn (v0.28.27, renamed from /goal audit in v0.29.8)
 /goal tweak "<new objective>"      # edit in place (Confirm dialog)
 /goal archive                      # archived goals, newest first
-/glla                               # settings UI table · actions include /glla version · /glla status · /glla stats · /glla audits [N|full] · /glla cancel (cancel the active objective) · /glla postaudit · /glla wipe (idempotent all-live-state reset, Confirm-gated)
+/glla                               # settings UI table · actions include /glla version · /glla status · /glla stats · /glla audits [N|full] · /glla pause (freeze ALL supervisor automation — active work keeps running) · /glla cancel (cancel the active objective) · /glla postaudit · /glla wipe (idempotent all-live-state reset, Confirm-gated)
 /list fix the login bug, add dark mode, write docs   # dump it — the agent shapes it into items, one Confirm
 /list plan.md                      # file detected → bulk import, one Confirm (sisyphus/Ralph style)
 /list <paste a checklist>          # multi-line paste → same batch flow
@@ -452,11 +452,14 @@ Open `/glla` to edit these settings in the table (the rows show effective values
   stall brakes
 
 The argument namespace is reserved for actions such as `/glla status`, `/glla
-resume`, `/glla cancel`, `/glla stats`, `/glla audits`, `/glla tooloverride`,
-`/glla fallbacks clear`, and `/glla wipe`. `fallbacks clear` atomically removes
-the global main-agent fallback chain and cancels any pending fallback switch. Cancel stops the
-active objective; wipe clears all live state while preserving history.
-There is no top-level `/glla key=value` setting syntax.
+pause`, `/glla resume`, `/glla cancel`, `/glla stats`, `/glla audits`,
+`/glla tooloverride`, `/glla fallbacks clear`, and `/glla wipe`. `fallbacks clear`
+atomically removes the global main-agent fallback chain and cancels any pending
+fallback switch. Pause freezes every automatic supervisor side-effect (heartbeat
+re-arms, recovery probes, auto-resume, continuation dispatch, loop ticks, quiet
+notifications) without touching active work, and survives session restarts;
+resume unfreezes. Cancel stops the active objective; wipe clears all live state
+while preserving history. There is no top-level `/glla key=value` setting syntax.
 
 Resolution per key: **project > global > defaults** — EXCEPT `autoResume` and
 agent recovery settings (`mainModelFallbacks`, `mainModelRetryMinutes`,

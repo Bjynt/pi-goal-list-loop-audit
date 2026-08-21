@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.35.15 — glla status-surface UX: visual footer, /glla pause, proactive quiet notify (2026-08-21)
+
+### Visual status footer
+  The auditing footer now leads each auditor phase with a distinct glyph
+  (queued ⋯ · running ▶ · quiet ◌ · blocked ⛔ · awaiting-verdict ✓) and a
+  compact draining activity meter (▰▱) that empties as worker silence grows
+  toward the quiet threshold. A glance answers "is the audit alive?" without
+  reading the sentence.
+
+### /glla pause | resume — broad supervisor freeze
+  `/glla pause` freezes ALL automatic machinery — heartbeat re-arms, stale
+  probes, zombie cleanup, main-model recovery probes, automatic completion-
+  audit recovery, continuation dispatch, loop ticks, and the proactive quiet
+  notification — while leaving the active goal/list item/loop and any
+  detached worker untouched. The flag persists via `supervisorPausedAt`, so a
+  session restart cannot silently re-arm machinery the user explicitly
+  stopped. `/glla resume` clears it first, then resumes whatever else is
+  resumable, and never follows with a misleading "Nothing to resume". Manual
+  user commands always still work.
+
+### Proactive auditor quiet reporting
+  Entering the quiet phase (~3 min of zero worker activity) now fires exactly
+  ONE warning notify instead of only recoloring the status chip — the field
+  complaint was an 8-minute silent stretch the user only discovered after the
+  fact. Once activity resumes, the footer shows "silent Xm then resumed" for
+  10 minutes so a missed silence stays visible.
+
+### Persistence fix (latent bug)
+  `persistStateLine` never serialized `lastCompactionAt` despite v0.34.97's
+  comment claiming it did — the ⏳ compacting… chip silently lost its reload
+  survival. Both epoch fields now ride the state line with explicit nulls so
+  ledger merges clear them correctly.
+
 ## 0.35.14 — full extension audit hardening (2026-08-21)
 
 ### Verification and lifecycle integrity
