@@ -573,5 +573,5 @@ This protects against model-generated summaries losing fidelity.
 - `README.md` — user-facing installation and operating guidance
 
 Historical audit notes are repository-only and are intentionally not part of
- the published package.
+the published package.
 

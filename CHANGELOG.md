@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.35.14 — full extension audit hardening (2026-08-21)
+
+### Verification and lifecycle integrity
+  Mechanical contract checks now run through a shell-free literal-argument
+  boundary, auditor verdicts require one final terminal marker, and regression
+  shield references must appear inside `<evidence>`. Invalid persisted IDs are
+  rejected at state hydration and filesystem boundaries. Child extension
+  factories no longer claim the host API or start timers before an admitted
+  `session_start`; completion approval cannot report success when terminal
+  archiving fails, and branch-mode loop resumes refuse the wrong branch.
+
+### Release contract
+  Published documentation includes the linked planning files, the workflow
+  runs the release contract on pushes and pull requests, and release tooling
+  uses pinned Node/npm versions.
+
 ## 0.35.13 — stale-API recovery loop fix (2026-08-20)
 
 ### Stale-handle recovery correctness

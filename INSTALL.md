@@ -52,7 +52,7 @@ Then the other two modes:
 
 ## Install from source (developers)
 
-Prerequisites: Node 22+ and bun (the test runner — `bun test`), pi-coding-agent, TypeScript 5.9+ (for `tsc --noEmit`).
+Prerequisites: Node 22.19.0+ and bun (the test runner — `bun test`), pi-coding-agent, TypeScript 5.9+ (for `tsc --noEmit`).
 
 ```bash
 git clone https://github.com/DraconDev/pi-goal-list-loop-audit.git   # or use the local dir
