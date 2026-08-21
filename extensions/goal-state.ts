@@ -59,6 +59,14 @@ export function replaceState(next: State): void {
  * can restore it (readState) and the turn-boundary check can catch a
  * changed default model across sessions (bug #1.14).
  *
+ * v0.35.15: lastCompactionAt and supervisorPausedAt join the line.
+ * lastCompactionAt was ADDED to State in v0.34.97 with a comment claiming
+ * it persisted, but this writer never serialized it — the ⏳ compacting…
+ * chip silently lost its reload survival (latent bug found while wiring
+ * supervisorPausedAt through the same path). Both are plain epoch fields:
+ * omitting them here means they can NEVER reach readState, no matter what
+ * the callers put into replaceState. */
+ *
  * The UI side of a persist (notifyPersistenceState / refreshUI) is goal.ts's
  * wrapper — this is the disk write, not the HUD. */
 export function persistStateLine(cwd: string, s: State): void {
@@ -68,5 +76,7 @@ export function persistStateLine(cwd: string, s: State): void {
     loop: s.loop ?? null,
     mainModelRecovery: s.mainModelRecovery ?? null,
     lastModelRef: s.lastModelRef,
+    ...(typeof s.lastCompactionAt === "number" ? { lastCompactionAt: s.lastCompactionAt } : { lastCompactionAt: null }),
+    ...(typeof s.supervisorPausedAt === "number" ? { supervisorPausedAt: s.supervisorPausedAt } : { supervisorPausedAt: null }),
   });
 }
