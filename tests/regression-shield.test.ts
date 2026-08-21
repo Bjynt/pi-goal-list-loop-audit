@@ -421,7 +421,7 @@ n=$((n+1)); echo $n > ${counter1}
 [ $n -ge 2 ] && exit 0 || exit 3
 `);
   fs.chmodSync(path.join(cwd1, "flaky.sh"), 0o755);
-  const r1 = runMechanicalPreAuditChecks(cwd1, [path.join(cwd1, "flaky.sh")]);
+  const r1 = runMechanicalPreAuditChecks(cwd1, ["bash " + path.join(cwd1, "flaky.sh")]);
   assert.equal(r1.passed, true, "a transient first-attempt failure is retried and passes");
   assert.match(r1.recoveredRetryNote ?? "", /first attempt failed \(exit 3\); automatic retry passed/);
   assert.equal(fs.readFileSync(counter1, "utf8").trim(), "2", "exactly ONE retry ran");
@@ -430,7 +430,7 @@ n=$((n+1)); echo $n > ${counter1}
   const cwd2 = fs.mkdtempSync(path.join(os.tmpdir(), "mech-retry-2-"));
   fs.writeFileSync(path.join(cwd2, "red.sh"), "#!/bin/bash\necho deterministic-red\nexit 7\n");
   fs.chmodSync(path.join(cwd2, "red.sh"), 0o755);
-  const r2 = runMechanicalPreAuditChecks(cwd2, [path.join(cwd2, "red.sh")]);
+  const r2 = runMechanicalPreAuditChecks(cwd2, ["bash " + path.join(cwd2, "red.sh")]);
   assert.equal(r2.passed, false, "a genuinely red command stays red after the retry");
   assert.equal(r2.exitCode, 7);
   assert.match(r2.output ?? "", /retried once after a failed first attempt \(exit 7\); second attempt also failed/);

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.35.20 — one bounded automatic retry for transient mechanical-check deaths (2026-08-21)
+
+### Gate resilience
+  Field (sixth audit round): the pre-audit gate died MID-RUN under machine
+  load ~30 — output ends inside a passing file, no runner summary, exit 1 —
+  while the identical tree passed green twice in isolation. Resource
+  contention, not a red suite. Mechanical check commands now get exactly ONE
+  bounded automatic retry on failure: a deterministic red command stays red
+  on both attempts (final output names the retry and preserves the second
+  attempt's diagnostics); a first-attempt transient death followed by a
+  passing retry passes with an honest `recoveredRetryNote` in the result.
+  Mirrors the v0.35.17 zero-stream auto-retry philosophy at the gate level.
+
 ## 0.35.19 — load-resilient budgets for the aggressive-recovery test (2026-08-21)
 
 ### Flake hardening
