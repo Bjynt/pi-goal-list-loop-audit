@@ -40,3 +40,8 @@ or do these have speical meaning, cause seemingly
 /list start
 /goal start 
 with saying audit would make more sense and audit might go too wide too cuase it start immedateli y without knowing what i meant
+
+##
+
+when we load a session we dont have to start it right away
+we should decide not auto start
