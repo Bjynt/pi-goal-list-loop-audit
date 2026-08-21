@@ -411,6 +411,132 @@ export function enqueueFaultRepairTask(ctx: ExtensionContext, objective: string,
   appendLedger(ctx.cwd, "faulty_objective_repair_promoted", { goalId: repair.id, targetId: target?.id, position: 1, source: target?.source ?? "unknown" });
 }
 
+/**
+ * v0.35.17 — bounded automatic retry after a confirmed zero-stream abort.
+ *
+ * Field evidence (note.md Next §1, screenshot 20260821_152311): turns
+ * dispatched by ACCEPTING a Confirm dialog hang with zero provider stream
+ * activity often enough that users repeatedly return to "Goal paused after
+ * 30m ... action needed - this won't fix itself" sessions. The watchdog's
+ * abort is correct (it stops the token bleed); what was missing is the
+ * self-heal half. This adds ONE bounded automatic re-dispatch per silent
+ * streak, mirroring main-model recovery's timer pattern:
+ *
+ *   - exactly ONE automatic retry per zero-stream STREAK: a retried turn
+ *     that actually streams advances lastStreamActivityAt past the previous
+ *     abort's observation point, so any LATER independent hang starts a
+ *     fresh streak and earns its own single retry;
+ *   - a SECOND consecutive silence (retry hung too, or the original turn
+ *     never streamed again) parks permanently — no retry storm;
+ *   - `/glla pause` freezes the retry like every other automatic
+ *     side-effect: the parked claim stays durable for manual resume;
+ *   - manual /goal resume · /loop resume remain available at all times.
+ *
+ * The streak counter is process-memory by design: if the session restarts
+ * inside the retry window the park stands and manual resume applies — an
+ * honest degradation, not a phantom promise.
+ */
+const ZOMBIE_RETRY_DELAY_MS = 90_000;
+
+interface ZombieRetryStreak {
+  key: string;
+  count: number;
+  /** The stream-clock value observed at the streak's most recent abort. */
+  lastAbortStreamAt: number;
+}
+let zombieRetryStreak: ZombieRetryStreak = { key: "", count: 0, lastAbortStreamAt: 0 };
+let zombieRetryTimer: NodeJS.Timeout | null = null;
+
+/** Pure streak decision so the one-retry bound is unit-testable without a
+ * host harness. A new owner key OR stream activity newer than the recorded
+ * abort point starts a fresh streak; otherwise the streak deepens and the
+ * second consecutive silence is refused. */
+export function zombieRetryDecision(
+  observedStreamAt: number,
+  key: string,
+  prev: ZombieRetryStreak,
+): { retry: boolean; streak: ZombieRetryStreak } {
+  const sameEpisode = key === prev.key && observedStreamAt <= prev.lastAbortStreamAt;
+  const streak: ZombieRetryStreak = sameEpisode
+    ? { key, count: Math.min(prev.count + 1, 2), lastAbortStreamAt: observedStreamAt }
+    : { key, count: 1, lastAbortStreamAt: observedStreamAt };
+  return { retry: streak.count === 1, streak };
+}
+
+/** Arm the one-shot automatic re-dispatch after a successful zombie abort.
+ * Returns true when a retry was scheduled (the caller adjusts its user-facing
+ * copy accordingly). */
+function scheduleZombieAutoRetry(ctx: ExtensionContext, generation: number, goalId: string | undefined, observedStreamAt: number): boolean {
+  const key = goalId ?? "loop";
+  const { retry, streak } = zombieRetryDecision(observedStreamAt, key, zombieRetryStreak);
+  zombieRetryStreak = streak;
+  appendLedger(ctx.cwd, retry ? "zombie_auto_retry_scheduled" : "zombie_auto_retry_refused_streak", {
+    goalId,
+    streakCount: streak.count,
+    delayMs: ZOMBIE_RETRY_DELAY_MS,
+  });
+  if (!retry) return false;
+  if (zombieRetryTimer) {
+    clearTimeout(zombieRetryTimer);
+    zombieRetryTimer = null;
+  }
+  // scheduleSessionTimeout carries the generation/stale/zombie fences — an
+  // old session's callback can never re-arm work after stale/shutdown/reload.
+  zombieRetryTimer = scheduleSessionTimeout(() => {
+    zombieRetryTimer = null;
+    // v0.35.15 semantics: a frozen supervisor keeps everything automatic off.
+    // The parked claim stays durable; /glla resume then /goal resume apply.
+    if (supervisorPaused(state)) return;
+    const fresh = freshCtxForGeneration(generation);
+    if (!fresh) return;
+    const goal = state.goal;
+    if (goalId !== undefined || goal) {
+      if (!goal || goal.status !== "paused" || goal.id !== goalId) return;
+      if (goal.pauseReason !== ZOMBIE_PAUSE_REASON) return; // superseded pause — not ours to clear
+      const freshLimit = loadSettings(fresh.cwd).tokenLimit ?? DEFAULT_TOKEN_LIMIT;
+      const usage = goal.usage ? { tokensUsed: goal.usage.tokensUsed, tokensLimit: freshLimit } : undefined;
+      abortedStandDown = false;
+      setContinuationDispatchStoodDownRef(false);
+      updateGoal({
+        status: "active",
+        pauseKind: undefined,
+        pauseReason: undefined,
+        pauseSuggestedAction: undefined,
+        ...(usage ? { usage } : {}),
+      }, fresh);
+      appendLedger(fresh.cwd, "zombie_auto_retry_dispatched", { goalId: goal.id, policy: goal.policy });
+      try {
+        fresh.ui.notify(`Automatic retry starting — the earlier ${goal.policy === "list" ? "list item" : "goal"} turn was aborted after ${Math.round(ZOMBIE_RETRY_DELAY_MS > 0 ? 30 : 30)}m of zero stream activity and no provider output ever arrived. One bounded retry is dispatched now; if it hangs again the ${goal.policy === "list" ? "item" : "goal"} stays paused for ${activeGoalSurfaceCommand("resume")}.`, "info");
+      } catch { /* best-effort */ }
+      scheduleContinuation(fresh, true);
+      return;
+    }
+    // Loop owner: revive the preserved iteration and tick once.
+    const loop = state.loop;
+    if (!loop || !loop.stopReason?.includes("zero-stream abort")) return;
+    abortedStandDown = false;
+    setContinuationDispatchStoodDownRef(false);
+    loop.active = true;
+    loop.stopReason = undefined;
+    persistState(fresh);
+    appendLedger(fresh.cwd, "zombie_auto_retry_dispatched", { kind: "loop", iteration: loop.iteration });
+    try {
+      fresh.ui.notify(`Automatic retry starting — the loop was stopped after a zero-stream abort. One bounded retry ticks now; if it hangs again it stays stopped for /loop resume.`, "info");
+    } catch { /* best-effort */ }
+    scheduleLoopTick(fresh);
+  }, ZOMBIE_RETRY_DELAY_MS);
+  return true;
+}
+
+/** Test-only: reset the module-global retry streak/timer state. */
+export function __testOnlyResetZombieAutoRetry(): void {
+  if (zombieRetryTimer) {
+    clearTimeout(zombieRetryTimer);
+    zombieRetryTimer = null;
+  }
+  zombieRetryStreak = { key: "", count: 0, lastAbortStreamAt: 0 };
+}
+
 /** v0.35.x: terminate one confirmed zero-stream host turn and park the
  * owning goal/list item before asking pi to abort. This is deliberately an
  * activation-owned operation: it can clear the durable continuation sidecar,
