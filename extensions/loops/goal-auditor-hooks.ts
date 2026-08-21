@@ -811,6 +811,11 @@ export async function runDetachedCompletionWithFallback(
  * semantic verdicts remain durable in auditHistory.
  */
 async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provider-retry"): Promise<void> {
+  // v0.35.15: `/glla pause` freezes automatic audit recovery — provider
+  // retries and session-recovery re-starts stay parked while the supervisor
+  // is paused. Explicit manual requests (`/goal resume`, `/goal verify`)
+  // still run: the user typed them, so they are not "automatic machinery".
+  if (origin !== "manual" && supervisorPaused(state)) return;
   const goal = state.goal;
   if (!goal?.pendingCompletion) return;
   const goalId = goal.id;
