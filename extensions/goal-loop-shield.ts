@@ -168,6 +168,9 @@ export interface MechanicalCheckResult {
   failedCommand?: string;
   output?: string;
   exitCode?: number;
+  /** v0.35.20: set when the first attempt failed transiently and the single
+   * bounded retry passed — honest evidence of the wobble, not a silent mask. */
+  recoveredRetryNote?: string;
 }
 
 /**
@@ -222,24 +225,49 @@ export function runMechanicalPreAuditChecks(cwd: string, commands: string[], tim
     if (!program) {
       return { passed: false, failedCommand: rawCommand, output: "Empty mechanical command.", exitCode: 126 };
     }
-    try {
-      execFileSync(program, args, { cwd, timeout: timeoutMs, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" });
-    } catch (err: any) {
-      const exitCode = typeof err.status === "number" ? err.status : (typeof err.code === "number" ? err.code : 1);
-      const stdout = err.stdout ? String(err.stdout) : "";
-      const stderr = err.stderr ? String(err.stderr) : "";
-      const combined = (stdout + "\n" + stderr).trim() || err.message || "Command failed";
-      const killed = err.killed === true || err.signal === "SIGTERM";
-      const banner = killed
-        ? `[mechanical check killed after ${Math.round(timeoutMs / 1000)}s — output tail below]`
-        : "";
-      const body = combined.length > 4000 ? "…[truncated head]\n" + combined.slice(-4000) : combined;
-      return {
-        passed: false,
-        failedCommand: rawCommand,
-        output: (banner ? banner + "\n" : "") + body,
-        exitCode,
-      };
+    // v0.35.20: ONE bounded automatic retry per failed mechanical command.
+    // Field (sixth audit round, 2026-08-21): the gate died MID-RUN under
+    // machine load ~30 (output ends inside a passing file, no runner
+    // summary, exit 1) while the identical tree passed green twice in
+    // isolation — resource contention, not a red suite. A deterministic
+    // contract command that genuinely fails stays red on both attempts;
+    // only transient deaths get a second chance. The retry is bannered in
+    // the returned evidence so the auditor sees it happened.
+    let firstFailure: { output: string; exitCode: number } | null = null;
+    let passed = false;
+    for (let attempt = 1; attempt <= 2 && !passed; attempt++) {
+      try {
+        execFileSync(program, args, { cwd, timeout: timeoutMs, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" });
+        passed = true;
+      } catch (err: any) {
+        const exitCode = typeof err.status === "number" ? err.status : (typeof err.code === "number" ? err.code : 1);
+        const stdout = err.stdout ? String(err.stdout) : "";
+        const stderr = err.stderr ? String(err.stderr) : "";
+        const combined = (stdout + "\n" + stderr).trim() || err.message || "Command failed";
+        const killed = err.killed === true || err.signal === "SIGTERM";
+        const banner = killed
+          ? `[mechanical check killed after ${Math.round(timeoutMs / 1000)}s — output tail below]`
+          : "";
+        const body = combined.length > 4000 ? "…[truncated head]\n" + combined.slice(-4000) : combined;
+        const failureOutput = (banner ? banner + "\n" : "") + body;
+        if (attempt === 1) {
+          firstFailure = { output: failureOutput, exitCode };
+        } else {
+          return {
+            passed: false,
+            failedCommand: rawCommand,
+            output: firstFailure
+              ? `[mechanical check retried once after a failed first attempt (exit ${firstFailure.exitCode}); second attempt also failed — output tail below]\n` + failureOutput
+              : failureOutput,
+            exitCode,
+          };
+        }
+      }
+    }
+    if (passed && firstFailure) {
+      // First attempt failed, second PASSED — recoverable transience; pass,
+      // but leave an honest trace of the wobble in the result.
+      return { passed: true, recoveredRetryNote: `[mechanical check: first attempt failed (exit ${firstFailure.exitCode}); automatic retry passed]` };
     }
   }
   return { passed: true };

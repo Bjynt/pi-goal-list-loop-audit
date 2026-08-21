@@ -404,3 +404,35 @@ test("v0.35.18: resolveCanonicalRunnerCommand maps raw runners to their canonica
   // Non-runner programs pass through.
   assert.deepEqual(resolveCanonicalRunnerCommand("tsc --noEmit", scripts), { program: "tsc", args: ["--noEmit"] });
 });
+
+test("v0.35.20: runMechanicalPreAuditChecks retries a transiently failing check exactly once, honestly bannered", async () => {
+  const { runMechanicalPreAuditChecks } = await import("../extensions/goal-loop-shield.ts");
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+
+  // Case 1: first attempt fails (exit 3), second passes → overall pass with
+  // an honest recoveredRetryNote.
+  const cwd1 = fs.mkdtempSync(path.join(os.tmpdir(), "mech-retry-1-"));
+  const counter1 = path.join(cwd1, "attempts");
+  fs.writeFileSync(path.join(cwd1, "flaky.sh"), `#!/bin/bash
+n=$(cat ${counter1} 2>/dev/null || echo 0)
+n=$((n+1)); echo $n > ${counter1}
+[ $n -ge 2 ] && exit 0 || exit 3
+`);
+  fs.chmodSync(path.join(cwd1, "flaky.sh"), 0o755);
+  const r1 = runMechanicalPreAuditChecks(cwd1, [path.join(cwd1, "flaky.sh")]);
+  assert.equal(r1.passed, true, "a transient first-attempt failure is retried and passes");
+  assert.match(r1.recoveredRetryNote ?? "", /first attempt failed \(exit 3\); automatic retry passed/);
+  assert.equal(fs.readFileSync(counter1, "utf8").trim(), "2", "exactly ONE retry ran");
+
+  // Case 2: both attempts fail → honest fail whose output names the retry.
+  const cwd2 = fs.mkdtempSync(path.join(os.tmpdir(), "mech-retry-2-"));
+  fs.writeFileSync(path.join(cwd2, "red.sh"), "#!/bin/bash\necho deterministic-red\nexit 7\n");
+  fs.chmodSync(path.join(cwd2, "red.sh"), 0o755);
+  const r2 = runMechanicalPreAuditChecks(cwd2, [path.join(cwd2, "red.sh")]);
+  assert.equal(r2.passed, false, "a genuinely red command stays red after the retry");
+  assert.equal(r2.exitCode, 7);
+  assert.match(r2.output ?? "", /retried once after a failed first attempt \(exit 7\); second attempt also failed/);
+  assert.match(r2.output ?? "", /deterministic-red/, "second attempt's diagnostics are preserved");
+});
