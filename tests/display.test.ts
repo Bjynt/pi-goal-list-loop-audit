@@ -657,7 +657,7 @@ test("paused decision without activity says no turn was observed and names the m
 test("auditing shows the auditor's current tool", () => {
   const g = goalOf({ status: "auditing" });
   const s = buildStatusText({ goal: g, list: [] }, { currentTool: "read" }, NOW)!;
-  assert.match(s, /auditor running/);
+  assert.match(s, /auditor ▶ running/);
   assert.match(s, /read/);
 });
 
@@ -805,7 +805,7 @@ test("widget: auditing shows auditor progress", () => {
   assert.ok(lines.some((l) => l.includes("verifying contract")));
   assert.ok(lines.some((l) => l.includes("grep")));
   assert.ok(lines.some((l) => l.includes("42s")));
-  assert.match(buildStatusText({ goal: g, list: [] }, { currentTool: "grep" }, NOW)!, /auditor running · grep/);
+  assert.match(buildStatusText({ goal: g, list: [] }, { currentTool: "grep" }, NOW)!, /auditor ▶ running(?: \S+)? · grep/);
 });
 
 test("widget: interrupted completion claims render recovery-pending, not auditor-running", () => {
@@ -827,7 +827,7 @@ test("widget: a durable running claim without observed progress says awaiting ve
   const lines = buildWidgetLines(state, null, NOW)!;
   assert.ok(lines.some((l) => l.includes("auditor: awaiting verdict")));
   assert.ok(lines.some((l) => l.includes("waiting for detached verdict")));
-  assert.match(buildStatusText(state, null, NOW)!, /auditor awaiting verdict/);
+  assert.match(buildStatusText(state, null, NOW)!, /auditor ✓ awaiting verdict/);
   assert.ok(!lines.some((l) => l.includes("recovery pending")));
 });
 
@@ -856,7 +856,7 @@ test("auditor progress phases are explicit and retain worker activity", () => {
   assert.ok(quiet.some((l) => l.includes("auditor quiet 7m") && l.includes("worker activity 7m")));
 
   const blocked = buildStatusText({ goal: g, list: [] }, { label: "infra error — retrying once" }, NOW)!;
-  assert.match(blocked, /auditor blocked/);
+  assert.match(blocked, /auditor ⛔ blocked/);
 });
 
 test("worker-timeout display demotes stale progress to quiet without claiming LIVE", () => {
@@ -868,7 +868,7 @@ test("worker-timeout display demotes stale progress to quiet without claiming LI
     lastActivityAt: NOW - 4 * 60_000,
   };
   const status = buildStatusText({ goal: g, list: [] }, stale, NOW)!;
-  assert.match(status, /auditor quiet/);
+  assert.match(status, /auditor ◌ quiet/);
   assert.match(status, /worker activity 4m 00s ago · stale/);
   assert.match(status, /next: worker event or \/goal cancel/);
   assert.doesNotMatch(status, /AUDITOR · DETACHED · LIVE/);
@@ -890,7 +890,7 @@ test("detached auditor status names phase, evidence, freshness, verdict wait, an
   };
   const liveStatus = buildStatusText({ goal: g, list: [] }, liveAudit, NOW)!;
   assert.match(liveStatus, /MAIN HOST · SUPERVISING/);
-  assert.match(liveStatus, /auditor tool executing/);
+  assert.match(liveStatus, /auditor ▶ tool executing/);
   assert.match(liveStatus, / · read/);
   assert.match(liveStatus, /evidence: report stream observed · 2\.0 KB report · 1 audit call/);
   assert.match(liveStatus, /elapsed 42s/);
@@ -911,7 +911,7 @@ test("detached auditor status names phase, evidence, freshness, verdict wait, an
     elapsedMs: 45_000,
   };
   const verdictStatus = buildStatusText({ goal: g, list: [] }, completeAudit, NOW)!;
-  assert.match(verdictStatus, /auditor awaiting verdict/);
+  assert.match(verdictStatus, /auditor ✓ awaiting verdict/);
   assert.match(verdictStatus, /last tool: grep/);
   assert.match(verdictStatus, /evidence: final report · 1 audit call/);
   assert.match(verdictStatus, /elapsed 45s/);
@@ -987,7 +987,7 @@ test("v0.34.86: silent audits show a fine phase label (reading source… / writi
   assert.ok(widget.some((l) => l.includes("auditor: writing report…")), "the fine label replaces the coarse one");
 
   const status = buildStatusText({ goal: g, list: [] }, { ...audit, phase: "thinking" }, NOW)!;
-  assert.match(status, /auditor reading source…/, "status line carries the fine phase");
+  assert.match(status, /auditor ▶ reading source…/, "status line carries the fine phase");
 });
 
 test("v0.34.86: silent audits show a report byte-counter instead of a dead timer", () => {
@@ -1135,7 +1135,7 @@ test("auditor widget shows concrete worker observations without exposing think b
     lastActivityAt: NOW - 1_000,
   }, NOW)!;
   assert.match(liveAuditStatus, /MAIN HOST · SUPERVISING/);
-  assert.match(liveAuditStatus, /auditor tool executing \[[▁▂▄▆█]{6} AUDITOR · DETACHED · LIVE\] · read/);
+  assert.match(liveAuditStatus, /auditor ▶ tool executing \S+ \[[▁▂▄▆█]{6} AUDITOR · DETACHED · LIVE\] · read/);
 
   const streamedThink = buildWidgetLines({ goal: g, list: [] }, {
     phase: "thinking",
