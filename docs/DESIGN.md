@@ -569,6 +569,9 @@ This protects against model-generated summaries losing fidelity.
 
 - `docs/DESIGN.md` — **this file**
 - `README.md` — quickstart
-- `audit/pi-name-v3-registry-based.md` — naming rationale
-- `audit/pi-goal-loop-design.md` — earlier design (now superseded)
+- `docs/INDEX.md` — shipped documentation and architecture entry points
+- `README.md` — user-facing installation and operating guidance
+
+Historical audit notes are repository-only and are intentionally not part of
+ the published package.
 

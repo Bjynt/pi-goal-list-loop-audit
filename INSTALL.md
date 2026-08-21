@@ -111,8 +111,8 @@ a file or committed — narration alone is the narrate-but-don't-ship loop)
 Why it changed: the v0.24.0 single-signal detector (same tool + same
 result hash 3×) killed two real user loops that were shipping work with
 stable verification output — stable verification is the GOAL state of a
-metricless loop, not the stuck state. Design doc:
-`audit/STUCK-DETECTION-REWORK-2026-07-24.md`. `/loop start toolsamerepeat=0`
+metricless loop, not the stuck state. See `docs/DESIGN.md` for the shipped
+design overview. `/loop start toolsamerepeat=0`
 disables the legacy check entirely; `/loop finish [reason]` ends a loop
 cleanly with stopReason `completed: <reason>` (distinct from
 stuck/plateau/stopped-by-user).
