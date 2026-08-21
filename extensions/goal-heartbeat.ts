@@ -201,6 +201,15 @@ export function __testOnlyResetZombieRunWatchdog(): void {
   lastZombieAbortKey = "";
 }
 
+/** v0.35.17: release the one-shot abort latch when the bounded automatic
+ * retry dispatches a fresh attempt. Without this, a retry whose send never
+ * even starts (no agent_start to advance the stream clock) would reproduce
+ * the exact abort key of its parent episode and the heartbeat could warn but
+ * NEVER re-abort — a permanently BUSY-silent session. */
+export function releaseZombieAbortKey(): void {
+  lastZombieAbortKey = "";
+}
+
 let lastUnansweredAlertAt = 0;
 
 // v0.35.4: one-shot-per-episode latch for the context-starved warning. The

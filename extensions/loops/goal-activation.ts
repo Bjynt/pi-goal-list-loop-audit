@@ -259,6 +259,7 @@ import {
 import { consumeRecoveryResume } from "../goal-recovery.js"; // decomposition step 3 (v0.34.111)
 import {
   createGoalHeartbeat,
+  releaseZombieAbortKey,
   endSubagentHangProbe,
   markSubagentHangProgress,
   startHeartbeat,
@@ -495,6 +496,7 @@ function scheduleZombieAutoRetry(
         ...(usage ? { usage } : {}),
       }, fresh);
       appendLedger(fresh.cwd, "zombie_auto_retry_dispatched", { goalId: goal.id, policy: goal.policy });
+      releaseZombieAbortKey();
       try {
         fresh.ui.notify(`Automatic retry starting — the earlier ${goal.policy === "list" ? "list item" : "goal"} turn was aborted after ${silentMinutes}m of zero stream activity. One bounded retry is dispatched now; if it hangs again the ${goal.policy === "list" ? "item" : "goal"} stays paused for ${activeGoalSurfaceCommand("resume")}.`, "info");
       } catch { /* best-effort */ }
@@ -510,6 +512,7 @@ function scheduleZombieAutoRetry(
     loop.stopReason = undefined;
     persistState(fresh);
     appendLedger(fresh.cwd, "zombie_auto_retry_dispatched", { kind: "loop", iteration: loop.iteration });
+    releaseZombieAbortKey();
     try {
       fresh.ui.notify(`Automatic retry starting — the loop was stopped after a zero-stream abort. One bounded retry ticks now; if it hangs again it stays stopped for /loop resume.`, "info");
     } catch { /* best-effort */ }
@@ -527,12 +530,15 @@ export function __testOnlyResetZombieAutoRetry(): void {
   zombieRetryStreak = { key: "", count: 0, lastAbortStreamAt: 0 };
 }
 
-/** v0.35.x: terminate one confirmed zero-stream host turn and park the
- * owning goal/list item before asking pi to abort. This is deliberately an
- * activation-owned operation: it can clear the durable continuation sidecar,
- * stand down re-arms, and validate the current generation before touching the
- * host. A later /goal or /list resume explicitly clears the stand-down and
- * starts a new attempt; no callback here schedules a blind retry. */
+/** v0.35.x (amended v0.35.17): terminate one confirmed zero-stream host turn
+ * and park the owning goal/list item before asking pi to abort. This is
+ * deliberately an activation-owned operation: it can clear the durable
+ * continuation sidecar, stand down re-arms, and validate the current
+ * generation before touching the host. A later /goal or /list resume
+ * explicitly clears the stand-down and starts a new attempt — and since
+ * v0.35.17, the FIRST silence of a streak additionally arms ONE bounded
+ * automatic retry (scheduleZombieAutoRetry below); only a second consecutive
+ * zero-stream abort leaves the park purely manual. */
 export function abortZombieRun(
   ctx: ExtensionContext,
   generation: number,
