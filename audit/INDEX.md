@@ -4,7 +4,7 @@ Every shipped change carries an audit doc here (named `<TOPIC>-<date>.md`,
 plus a `v0.34.x-<TOPIC>.md` symlink for versioned docs). Older docs
 (≤ 2026-08-06) live in `audit/archive/`.
 
-## Active focus (2026-08-17 → 2026-08-19)
+## Active focus (2026-08-17 → 2026-08-21)
 
 The seven follow-up categories from the most recent full audit are
 closed (host lifecycle, continuation dispatch, objective integrity,
