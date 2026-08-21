@@ -47,7 +47,6 @@ import {
 } from "../goal-continuation.js";
 export { __testOnlySetContinuationStartTimeout, __testOnlySetContinuationRetryBackoff } from "../goal-continuation.js";
 
-import { resetLengthContinue } from "../length-continue.js";
 import {
   clearMainModelRecoveryTimer,
   createGoalRecovery,
@@ -60,7 +59,7 @@ import {
   type RecoveryDeps,
   type RecoveryFlags,
 } from "../goal-recovery.js";
-import { createGoalHeartbeat, startHeartbeat, type HeartbeatDeps, type HeartbeatFlags } from "../goal-heartbeat.js";
+import { createGoalHeartbeat, type HeartbeatDeps, type HeartbeatFlags } from "../goal-heartbeat.js";
 import { createGoalCommands, type CommandDeps, type CommandFlags } from "../goal-commands.js";
 import { clearLoopTimer, createGoalLoop, type LoopDeps, type LoopFlags } from "../goal-loop.js";
 
@@ -404,10 +403,8 @@ createGoalHeartbeat(heartbeatFlags, heartbeatDeps);
 
 
 export default function (pi: ExtensionAPI): void {
-  extensionApi = pi;
-  extensionApiStale = false; // a fresh factory run means a fresh runtime (reload path)
-  resetLengthContinue(); // v0.27.2: fresh runtime, fresh truncation streak
-  startHeartbeat();
-  startUITicker();
+  // Factory evaluation can also happen inside pi-subagents child sessions.
+  // Registration must not claim the shared host API or start session timers;
+  // the admitted host session_start below owns both lifecycle resources.
   registerGoalRuntime(pi);
 }

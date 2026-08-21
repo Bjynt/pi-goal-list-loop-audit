@@ -119,16 +119,16 @@ export function checkRegressionShield(report: string, contract: string): Regress
 /**
  * v0.24.2: pure auditor-verdict parser (approved / disapproved / impossible).
  * Lives here (not goal-loop-auditor.ts) so tests can import it without
- * dragging in the auditor's relative .js imports. The verdict is read from
- * the last output block that mentions any verdict tag.
+ * dragging in the auditor's relative .js imports. The final nonblank line
+ * is the only authoritative verdict location; prose tags are not verdicts.
  */
 export function parseAuditorVerdict(output: string): { approved: boolean; disapproved: boolean; impossible: boolean; impossibleReason?: string } {
-  const parts = output.split("\n\n");
-  const lastAssistant = [...parts].reverse().find((t) => /<\/?(approved|disapproved|impossible)[ />]/i.test(t)) ?? output;
-  const impossibleMatch = /<impossible>([\s\S]*?)<\/impossible>/i.exec(lastAssistant);
+  const finalLine = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).at(-1) ?? "";
+  const impossibleMatch = /^<impossible>([\s\S]*?)<\/impossible>$/i.exec(finalLine);
+  // The final line is the only authoritative verdict location.
   return {
-    approved: /<approved\/>/i.test(lastAssistant),
-    disapproved: /<disapproved\/>/i.test(lastAssistant),
+    approved: /^<approved\/>$/i.test(finalLine),
+    disapproved: /^<disapproved\/>$/i.test(finalLine),
     impossible: impossibleMatch !== null,
     impossibleReason: impossibleMatch?.[1]?.trim().slice(0, 300) || undefined,
   };
@@ -164,14 +164,36 @@ export interface MechanicalCheckResult {
 }
 
 /**
- * v0.35.7: Execute mechanical pre-audit checks deterministically.
+ * Mechanical checks are intentionally a small, shell-free command language.
+ * Contract text is not trusted input: accepting `npm test; ...` and passing it
+ * to a shell would turn the verification gate into arbitrary code execution.
  */
+const SAFE_MECHANICAL_COMMAND = /^[A-Za-z0-9_./:@=+,-]+(?:[ \t]+[A-Za-z0-9_./:@=+,-]+)*$/;
+
+export function isSafeMechanicalCommand(command: string): boolean {
+  return SAFE_MECHANICAL_COMMAND.test(command.trim());
+}
+
+/** v0.35.7: Execute mechanical pre-audit checks deterministically. */
 export function runMechanicalPreAuditChecks(cwd: string, commands: string[], timeoutMs = 60000): MechanicalCheckResult {
   if (!commands || commands.length === 0) return { passed: true };
-  const { execSync } = require("node:child_process");
-  for (const cmd of commands) {
+  const { execFileSync } = require("node:child_process");
+  for (const rawCommand of commands) {
+    const cmd = rawCommand.trim();
+    if (!isSafeMechanicalCommand(cmd)) {
+      return {
+        passed: false,
+        failedCommand: rawCommand,
+        output: "Rejected unsafe mechanical command syntax; only a single executable followed by literal arguments is allowed.",
+        exitCode: 126,
+      };
+    }
+    const [program, ...args] = cmd.split(/[ \t]+/);
+    if (!program) {
+      return { passed: false, failedCommand: rawCommand, output: "Empty mechanical command.", exitCode: 126 };
+    }
     try {
-      execSync(cmd, { cwd, timeout: timeoutMs, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" });
+      execFileSync(program, args, { cwd, timeout: timeoutMs, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" });
     } catch (err: any) {
       const exitCode = typeof err.status === "number" ? err.status : (typeof err.code === "number" ? err.code : 1);
       const stdout = err.stdout ? String(err.stdout) : "";
@@ -179,7 +201,7 @@ export function runMechanicalPreAuditChecks(cwd: string, commands: string[], tim
       const output = (stdout + "\n" + stderr).trim() || err.message || "Command failed";
       return {
         passed: false,
-        failedCommand: cmd,
+        failedCommand: rawCommand,
         output: output.slice(0, 4000),
         exitCode,
       };
