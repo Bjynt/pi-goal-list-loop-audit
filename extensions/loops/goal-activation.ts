@@ -54,6 +54,7 @@ import {
   extractPendingTasks,
   isFullAuditObjective,
   resolveEffectiveAggressiveSettings,
+  supervisorPaused,
   appendAuditLog,
   computeListDepth,
   formatAuditLog,
@@ -411,8 +412,7 @@ export function enqueueFaultRepairTask(ctx: ExtensionContext, objective: string,
   appendLedger(ctx.cwd, "faulty_objective_repair_promoted", { goalId: repair.id, targetId: target?.id, position: 1, source: target?.source ?? "unknown" });
 }
 
-/**
- * v0.35.17 — bounded automatic retry after a confirmed zero-stream abort.
+/** v0.35.17 — bounded automatic retry after a confirmed zero-stream abort.
  *
  * Field evidence (note.md Next §1, screenshot 20260821_152311): turns
  * dispatched by ACCEPTING a Confirm dialog hang with zero provider stream
@@ -437,6 +437,10 @@ export function enqueueFaultRepairTask(ctx: ExtensionContext, objective: string,
  * honest degradation, not a phantom promise.
  */
 const ZOMBIE_RETRY_DELAY_MS = 90_000;
+/** Shared park/verify marker for the watchdog's pause reason — the auto-retry
+ * timer only clears a pause that carries EXACTLY this reason (a newer manual
+ * or recovery pause supersedes it and is never touched). */
+const ZOMBIE_PAUSE_REASON = "automatic zero-stream abort — no provider activity was observed";
 
 interface ZombieRetryStreak {
   key: string;
@@ -466,7 +470,13 @@ export function zombieRetryDecision(
 /** Arm the one-shot automatic re-dispatch after a successful zombie abort.
  * Returns true when a retry was scheduled (the caller adjusts its user-facing
  * copy accordingly). */
-function scheduleZombieAutoRetry(ctx: ExtensionContext, generation: number, goalId: string | undefined, observedStreamAt: number): boolean {
+function scheduleZombieAutoRetry(
+  ctx: ExtensionContext,
+  generation: number,
+  goalId: string | undefined,
+  observedStreamAt: number,
+  silentMinutes: number,
+): boolean {
   const key = goalId ?? "loop";
   const { retry, streak } = zombieRetryDecision(observedStreamAt, key, zombieRetryStreak);
   zombieRetryStreak = streak;
@@ -506,7 +516,7 @@ function scheduleZombieAutoRetry(ctx: ExtensionContext, generation: number, goal
       }, fresh);
       appendLedger(fresh.cwd, "zombie_auto_retry_dispatched", { goalId: goal.id, policy: goal.policy });
       try {
-        fresh.ui.notify(`Automatic retry starting — the earlier ${goal.policy === "list" ? "list item" : "goal"} turn was aborted after ${Math.round(ZOMBIE_RETRY_DELAY_MS > 0 ? 30 : 30)}m of zero stream activity and no provider output ever arrived. One bounded retry is dispatched now; if it hangs again the ${goal.policy === "list" ? "item" : "goal"} stays paused for ${activeGoalSurfaceCommand("resume")}.`, "info");
+        fresh.ui.notify(`Automatic retry starting — the earlier ${goal.policy === "list" ? "list item" : "goal"} turn was aborted after ${silentMinutes}m of zero stream activity. One bounded retry is dispatched now; if it hangs again the ${goal.policy === "list" ? "item" : "goal"} stays paused for ${activeGoalSurfaceCommand("resume")}.`, "info");
       } catch { /* best-effort */ }
       scheduleContinuation(fresh, true);
       return;
@@ -567,7 +577,7 @@ export function abortZombieRun(
   setContinuationDispatchStoodDownRef(true);
   abortedStandDown = true;
   const silentMinutes = Math.max(1, Math.round((Date.now() - observedStreamAt) / 60_000));
-  const reason = "automatic zero-stream abort — no provider activity was observed";
+  const reason = ZOMBIE_PAUSE_REASON;
   if (goal) {
     const noun = goal.policy === "list" ? "list item" : "goal";
     updateGoal({
@@ -599,7 +609,15 @@ export function abortZombieRun(
   });
   const resume = goal ? activeGoalSurfaceCommand("resume") : "/loop resume";
   const cancel = goal ? activeGoalSurfaceCommand("cancel") : "/loop stop";
-  const message = `${goal ? goal.policy === "list" ? "List item" : "Goal" : "Loop"} paused after ${silentMinutes}m with zero stream activity; the zombie turn was aborted and queued retries were stopped. Work is saved. ${resume} retries it, or ${cancel} discards/stops it.`;
+  // v0.35.17: ONE bounded automatic retry per zero-stream streak — the park
+  // becomes a 90-second waystation instead of a dead end for the first
+  // silence. A refused streak (second consecutive hang) keeps the manual copy.
+  const retryScheduled = scheduleZombieAutoRetry(current, generation, goal?.id, observedStreamAt, silentMinutes);
+  const message = `${goal ? goal.policy === "list" ? "List item" : "Goal" : "Loop"} paused after ${silentMinutes}m with zero stream activity; the zombie turn was aborted and queued retries were stopped. Work is saved. ${
+    retryScheduled
+      ? `An automatic retry starts in ~90s; ${resume} retries immediately instead.`
+      : `${resume} retries it, or ${cancel} discards/stops it.`
+  }`;
   current.ui.notify(message, abortError ? "warning" : "info");
   notifyExternal(current, message);
   return true;
