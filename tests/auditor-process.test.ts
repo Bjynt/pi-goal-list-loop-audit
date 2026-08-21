@@ -23,8 +23,19 @@ function workerPathFor(dir: string): string {
 }
 
 const workerSource = `
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 const dir = process.argv[process.argv.indexOf("--job-dir") + 1];
+// v0.35.15: publish via temp+rename like the REAL worker's atomicJson — a
+// plain writeFile let the parent's 10ms poll read a TORN json file under
+// load, failing the run as "invalid auditor result" infrastructure
+// (observed 2026-08-21: release:check fast-fail, 1-in-N runs).
+async function atomicJson(file, value) {
+  const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(temp, JSON.stringify(value));
+  try { await rename(temp, file); }
+  catch (e) { await rm(temp, { force: true }).catch(() => {}); throw e; }
+}
 const request = JSON.parse(await readFile(dir + "/request.json", "utf8"));
 const progress = {
   protocolVersion: 1, attemptId: request.attemptId, requestHash: request.requestHash,
@@ -38,8 +49,8 @@ const progress = {
     toolCalls: [{ name: "grep", argsPrefix: "{}", finishedAt: Date.now() - 30 }],
   } : { recentOutput: [], toolCalls: [] }),
 };
-await writeFile(dir + "/progress.json", JSON.stringify(progress));
-await writeFile(dir + "/result.json", JSON.stringify({ protocolVersion: 1, attemptId: request.attemptId, requestHash: request.requestHash, ok: true, output: process.env.FAKE_AUDIT_OUTPUT || "<disapproved/>", model: request.model, thinkingLevel: request.thinkingLevel, toolCalls: process.env.FAKE_TOOL === "yes" ? [{ name: "read", argsPrefix: "{}", finishedAt: Date.now() }] : [] }));
+await atomicJson(dir + "/progress.json", progress);
+await atomicJson(dir + "/result.json", { protocolVersion: 1, attemptId: request.attemptId, requestHash: request.requestHash, ok: true, output: process.env.FAKE_AUDIT_OUTPUT || "<disapproved/>", model: request.model, thinkingLevel: request.thinkingLevel, toolCalls: process.env.FAKE_TOOL === "yes" ? [{ name: "read", argsPrefix: "{}", finishedAt: Date.now() }] : [] });
 `;
 
 const goal = {
