@@ -133,7 +133,6 @@ import {
   AUDITOR_QUIET_MS,
   auditorDisplayPhase,
   fmtElapsed,
-  supervisorPaused,
 } from "../goal-loop-display.js";
 import {
   createGoalContinuation,
