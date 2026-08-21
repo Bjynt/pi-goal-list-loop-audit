@@ -45,3 +45,9 @@ with saying audit would make more sense and audit might go too wide too cuase it
 
 when we load a session we dont have to start it right away
 we should decide not auto start
+
+##
+
+suspicious goal, repair task was qd but nothing started or can be started
+/home/dracon/Pictures/Screenshots/Screenshot_20260821_114210.png 
+/home/dracon/Pictures/Screenshots/Screenshot_20260821_114109.png 
