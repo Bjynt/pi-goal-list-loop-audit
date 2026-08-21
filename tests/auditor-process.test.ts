@@ -265,7 +265,10 @@ test("detached parent forwards live worker telemetry to its progress callback", 
       model: "test/provider-model",
       thinkingLevel: "high",
       onProgress: (progress) => reports.push(progress),
-      runtime: { workerPath: workerPathFor(dir), env: { FAKE_TELEMETRY: "yes" }, attemptId: () => "attempt-telemetry", pollIntervalMs: 10, wallTimeoutMs: 10_000 },
+      runtime: { workerPath: workerPathFor(dir), env: { FAKE_TELEMETRY: "yes" }, attemptId: () => "attempt-telemetry", pollIntervalMs: 10, // v0.35.17: 30s wall — the test spawns a REAL node worker; under heavy
+        // machine load (load avg 12-16 observed) startup alone can eat >10s.
+        // The test asserts eventual telemetry CONTENT, not latency.
+        wallTimeoutMs: 30_000 },
     });
     const live = reports.find((progress) => progress.currentTool === "read");
     assert.ok(live, "the detached progress file reaches the parent");
@@ -319,7 +322,9 @@ setInterval(async () => {
         workerPath: heartbeatWorker,
         attemptId: () => "attempt-heartbeat-stall",
         pollIntervalMs: 10,
-        wallTimeoutMs: 5_000,
+        // v0.35.17: 20s wall — the stall thresholds are what the test times
+        // against; the wall bound only needs to exceed them with load headroom.
+        wallTimeoutMs: 20_000,
         heartbeatNoProgressMs: 120,
         heartbeatFreshMs: 500,
       },
@@ -366,7 +371,12 @@ setInterval(() => {}, 1_000);
       model: "test/provider-model",
       thinkingLevel: "high",
       signal: controller.signal,
-      runtime: { workerPath: worker, attemptId: () => "attempt-parent-abort", pollIntervalMs: 10, wallTimeoutMs: 5_000 },
+      runtime: { workerPath: worker, attemptId: () => "attempt-parent-abort", pollIntervalMs: 10,
+        // v0.35.17: 30s wall — abort is triggered by the test via the pid
+        // marker, but the whole escalation (TERM → grace → KILL) must fit
+        // inside the wall bound; under load the worker start alone can take
+        // seconds, so give it real headroom.
+        wallTimeoutMs: 30_000 },
     });
     for (let i = 0; i < 500; i++) {
       try { await readFile(pidMarker); break; }
@@ -427,7 +437,9 @@ process.stdin.on("data", async (chunk) => {
         env: { GLLA_PI_BINARY: fakePi },
         attemptId: () => "attempt-real-telemetry",
         pollIntervalMs: 5,
-        wallTimeoutMs: 10_000,
+        // v0.35.17: 30s wall — spawns the REAL worker + a fake pi binary;
+        // under load the ordered phases can easily exceed 10s of startup.
+        wallTimeoutMs: 30_000,
       },
     });
     assert.equal(result.approved, true);

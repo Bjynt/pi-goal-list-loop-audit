@@ -3773,7 +3773,7 @@ test("v0.35.x: stale host loss releases an in-flight completion audit without a 
     });
     const res = await pi.runTool("list_add", { items: ["after no-verdict recovery"] }, successor);
     assert.doesNotMatch(res.content[0]!.text, /only the MAIN session owns/);
-    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "audit_recovery_started"));
+    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "audit_recovery_started"), 30_000);
     const afterSuccessor = readState(cwd).goal as { status: string; pendingCompletion?: { phase?: string; automaticRecoveryAttempted?: boolean } };
     assert.equal(afterSuccessor.status, "auditing", "successor starts the bounded no-verdict recovery audit");
     assert.equal(afterSuccessor.pendingCompletion?.phase, "running");
@@ -3782,12 +3782,15 @@ test("v0.35.x: stale host loss releases an in-flight completion audit without a 
     assert.equal((afterLedger.match(/"audit_recovery_started"/g) ?? []).length, 1, "successor launches one recovery retry");
     assert.equal((afterLedger.match(/"audit_recovery_auto_retry_claimed"/g) ?? []).length, 1, "successor claims the durable retry once");
 
+    // v0.35.17: 30s deadline — the chain spans a real detached worker
+    // process plus the recovery retry; under heavy machine load (observed
+    // load avg 12-16) the old 8s bound expired before the worker started.
     await waitUntil(() => {
       const settled = readState(cwd).goal as { status?: string; pendingCompletion?: { phase?: string; automaticRecoveryAttempted?: boolean } } | null;
       return settled?.status === "paused"
         && settled.pendingCompletion?.phase === "recovery-pending"
         && settled.pendingCompletion?.automaticRecoveryAttempted === true;
-    }, 8_000);
+    }, 30_000);
     const exhausted = readLedger(cwd);
     assert.equal(exhausted.filter((entry) => entry.type === "audit_recovery_auto_retry_claimed").length, 1, "the failed automatic retry is not repeated");
     assert.equal(exhausted.filter((entry) => entry.type === "audit_recovery_retry_scheduled").length, 0, "the failed one-shot retry does not re-arm itself");
