@@ -13,7 +13,7 @@
 //
 // Fix under test:
 //   1. the loop block is LOUD (warning names the queued item + way out);
-//   2. loop end (any route) retries list activation — the repair starts.
+//   2. loop end (/loop stop) retries list activation — the item starts.
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
@@ -22,7 +22,7 @@ import * as path from "node:path";
 
 import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
 import { readState } from "../extensions/goal-loop-core.js";
-import { replaceState } from "../extensions/goal-state.js";
+import { replaceState, state } from "../extensions/goal-state.js";
 import { MockPi, makeMockCtx, seedGoal, seedState, tmpCwd, tick } from "./harness/mock-pi.js";
 
 function ledger(cwd: string): string {
@@ -41,27 +41,43 @@ async function boot(pi: MockPi, cwd: string) {
   return ctx;
 }
 
-const SUSPICIOUS = "passes sequentially, including validated recovery (archive)";
+/** The session-restore gate holds seeded loops inactive on load (v0.34.15);
+ * the field state under test is a LIVE loop owning the surface, so flip it
+ * back active after boot — exactly what /loop resume produces. */
+function wakeLoop(): void {
+  assert.ok(state.loop, "a loop was seeded");
+  replaceState({ ...state, loop: { ...state.loop!, active: true, stopReason: undefined } });
+}
 
-test("v0.35.22: /list next under an active loop refuses LOUDLY — warning names the queued item and the way out", async () => {
+const PLAIN_ITEM = "clean up the README examples — done when pinned";
+
+function seedLoopAndItem() {
   const cwd = tmpCwd();
-  const item = { id: String(seedGoal({ policy: "list" }).id), objective: SUSPICIOUS, addedAt: new Date().toISOString() };
+  const item = { id: String(seedGoal({ policy: "list" }).id), objective: PLAIN_ITEM, addedAt: new Date().toISOString() };
+  // LoopState needs the fields the runtime touches; seedState persists it raw.
   seedState(cwd, {
     goal: null,
-    // A live loop owns the surface — the exact field state (Chrome Bridge indefinite).
-    loop: { target: "keep chrome bridge alive", active: true, iteration: 1 },
+    loop: { target: "keep chrome bridge alive", measureCmd: "echo 1", direction: "max", active: true, iteration: 1, maxIterations: 0, plateauWindow: 5 },
     list: [item],
   });
+  return { cwd, itemId: item.id };
+}
+
+test("v0.35.22: /list next under a LIVE loop refuses LOUDLY — warning names the queued item and the way out", async () => {
+  const { cwd } = seedLoopAndItem();
   const pi = new MockPi();
   activate(pi.api);
   const ctx = await boot(pi, cwd);
+  wakeLoop();
 
   await pi.command("list", "next", ctx);
   await tick(80);
 
   // Still blocked — one-active-thing holds…
   assert.equal(readState(cwd).goal, null, "the queued item is NOT activated over a live loop");
-  assert.match(ledger(cwd), /"list_activation_blocked_loop"/);
+  const blocked = ledger(cwd).match(/"type":"list_activation_blocked_loop"[^}]*}/g) ?? [];
+  assert.ok(blocked.length >= 1, "the refusal is ledgered");
+  assert.match(blocked[blocked.length - 1]!, /"queueItemId"/, "the ledger names WHAT stayed queued");
   // …but now LOUDLY, with the item and the way out.
   const warned = ctx.ui.matching("cannot start while a loop owns the surface");
   assert.equal(warned.length, 1, "the refusal notifies with the queued item + how to proceed");
@@ -69,44 +85,26 @@ test("v0.35.22: /list next under an active loop refuses LOUDLY — warning names
   assert.match(warned[0]!.message, /\/loop stop/);
 });
 
-test("v0.35.22: when the loop ends, the blocked repair becomes startable — /loop stop advances the queue", async () => {
-  const cwd = tmpCwd();
-  const item = { id: String(seedGoal({ policy: "list" }).id), objective: SUSPICIOUS, addedAt: new Date().toISOString() };
-  seedState(cwd, {
-    goal: null,
-    loop: { target: "keep chrome bridge alive", active: true, iteration: 1 },
-    list: [item],
-  });
+test("v0.35.22: when the loop ends, the blocked item becomes startable — /loop stop advances the queue", async () => {
+  const { cwd } = seedLoopAndItem();
   const pi = new MockPi();
   activate(pi.api);
   const ctx = await boot(pi, cwd);
+  wakeLoop();
 
   await pi.command("list", "next", ctx);
   await tick(80);
   assert.equal(readState(cwd).goal, null, "precondition: still blocked while the loop lives");
 
   await pi.command("loop", "stop", ctx);
-  await tick(80);
+  await tick(120);
 
-  // The surface is free again — the head (repair assessment will gate it on
-  // explicit retry; here the auto-advance must at least have TRIED loudly).
-  const afterStop = readState(cwd);
-  const loopGone = !afterStop.loop?.active;
-  assert.ok(loopGone, "the loop stopped");
-  if (!afterStop.goal) {
-    // If auto-advance was gated (e.g. the suspicious assessment queued a
-    // repair ahead), the refusal must be visible — never silent.
-    assert.ok(
-      ledger(cwd).includes("faulty_objective_list_activation_blocked") || ctx.ui.matching("cannot start").length > 0 || ctx.ui.matching("queued list item").length > 0,
-      "a non-advancing stop surfaces WHY",
-    );
-  }
-  // The decisive assertion: with the loop gone, ONE more /list next starts
-  // the repair task (the field escape hatch now actually works).
-  await pi.command("list", "next", ctx);
-  await tick(80);
-  const final = readState(cwd);
-  assert.ok(final.goal, "the queued entry started once the loop no longer owns the surface");
-  assert.equal(final.goal!.policy, "list");
+  const after = readState(cwd);
+  assert.ok(!after.loop?.active, "the loop stopped");
+  assert.ok(after.goal, "the previously-blocked queued item STARTED once the loop ended");
+  assert.equal(after.goal!.policy, "list");
+  assert.match(after.goal!.objective, /clean up the README examples/);
   assert.match(ledger(cwd), /"goal_created"/);
+  const startedNote = ctx.ui.matching("the next queued list item started");
+  assert.equal(startedNote.length, 1, "the self-heal says what it did");
 });
