@@ -26,6 +26,7 @@ import {
   appendLedger,
   nowIso,
   resolveEffectiveAggressiveSettings,
+  supervisorPaused,
   type Goal,
 } from "./goal-loop-core.js";
 import { loadSettings } from "./goal-settings.js";
@@ -39,7 +40,7 @@ import {
   shouldWedgeAlert,
 } from "./goal-loop-backoff.js";
 import { isLoopActive, loopTimerPending, scheduleLoopTick } from "./goal-loop.js";
-import { mainModelRecoveryActive, markCompletionAuditRecoveryPending } from "./goal-recovery.js";
+import { mainModelRecoveryActive, markCompletionAuditRecoveryPending, probeMainModelRecovery } from "./goal-recovery.js";
 import type { ContinuationDispatch } from "./goal-loop-dispatch.js";
 
 /** goal.ts-owned module lets the heartbeat reads/writes through this accessor.
@@ -194,6 +195,73 @@ const SUBAGENT_WAIT_TOOL_NAMES: ReadonlySet<string> = new Set([
 ]);
 const isSubagentWaitCall = (t: { name?: string }): boolean =>
   typeof t.name === "string" && SUBAGENT_WAIT_TOOL_NAMES.has(t.name);
+
+// ============================================================================
+// v0.35.28 (issue #16): due-wait backstop — the durable invariant that a
+// pauseKind "wait" actually resumes when its pauseResumeAt lapses.
+//
+// Field report: a goal sat paused for 30+ minutes past its scheduled
+// auto-resume while the agent narrated "the system should have auto-resumed
+// by now". Investigation found auto-resume relied SOLELY on in-memory
+// timers: agent-authored waits (pause_goal kind="wait") armed NO timer at
+// all while their own copy promised automatic continuation; error-brake
+// cooldowns were not re-armed on session_start; and every scheduled resume
+// died with the session that created it. The heartbeat now compares wall
+// time against pauseResumeAt on every tick and re-fires the route.
+const WAIT_OVERDUE_GRACE_MS = 90 * 1_000;
+/** One backstop attempt per (goalId:resumeAt) pair — the underlying route
+ * rewrites pauseResumeAt when it re-parks, which re-arms the key. */
+let lastOverdueWaitKey = "";
+
+function overdueWaitDue(): boolean {
+  const goal = state.goal;
+  if (!goal || goal.status !== "paused" || goal.pauseKind !== "wait") return false;
+  if (typeof goal.pauseResumeAt !== "string") return false;
+  const dueMs = Date.now() - Date.parse(goal.pauseResumeAt);
+  if (!Number.isFinite(dueMs) || dueMs < WAIT_OVERDUE_GRACE_MS) return false;
+  // Manual /glla pause and the v0.35.23 load hold freeze ALL automatic
+  // dispatch — an overdue wait under them stays frozen until an explicit
+  // resume releases the hold (same consent boundary as session_start).
+  if (supervisorPaused(state)) return false;
+  return `${goal.id}:${goal.pauseResumeAt}` !== lastOverdueWaitKey;
+}
+
+function overdueWaitBackstop(ctx: ExtensionContext): void {
+  if (!overdueWaitDue()) return;
+  const goal = state.goal!;
+  const reason = goal.pauseReason ?? "";
+  lastOverdueWaitKey = `${goal.id}:${goal.pauseResumeAt}`;
+  appendLedger(ctx.cwd, "wait_pause_overdue_resume", {
+    goalId: goal.id,
+    pauseResumeAt: goal.pauseResumeAt,
+    overdueMs: Date.now() - Date.parse(goal.pauseResumeAt!),
+    reason: reason.slice(0, 160),
+    route: reason.startsWith("main model recovery") ? "main-model-probe" : "continuation",
+  });
+  if (reason.startsWith("main model recovery")) {
+    void probeMainModelRecovery(ctx).catch(() => { /* re-parks with a fresh resumeAt on failure */ });
+    return;
+  }
+  // Agent-authored waits and error-brake cooldowns alike: the stated wait
+  // condition's deadline has passed — clear the park and re-dispatch, with
+  // a recovery stamp so the continuation prompt tells the agent it was
+  // ITSELF that was recovered (issue #16 part 2).
+  updateGoal({
+    status: "active",
+    pauseKind: undefined,
+    pauseResumeAt: undefined,
+    pauseReason: undefined,
+    pauseSuggestedAction: undefined,
+    autoResumedAt: new Date().toISOString(),
+    autoResumedEvent: `overdue wait resumed (${reason.slice(0, 80) || "time-gated wait"})`,
+  }, ctx);
+  scheduleContinuation(ctx, true);
+}
+
+/** Test-only: reset the due-wait backstop latch between isolated rigs. */
+export function __testOnlyResetOverdueWaitBackstop(): void {
+  lastOverdueWaitKey = "";
+}
 
 function zombieRunSilentMs(): number {
   return zombieRunSilentMsOverride ?? ZOMBIE_RUN_SILENT_MS;
