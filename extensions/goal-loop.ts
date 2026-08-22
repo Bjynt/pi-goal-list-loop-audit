@@ -130,7 +130,7 @@ export interface LoopDeps {
   sendContinuation: (goalId: string) => void;
   sendRearmDelayMs: (streak: number) => number;
   sessionManagerId: (ctx: ExtensionContext) => string;
-  startDrafting: (ctx: ExtensionContext, target: "goal" | "list" | "loop", seed?: string) => Promise<boolean>;
+  startDrafting: (ctx: ExtensionContext, target: "goal" | "list" | "loop", seed?: string, depth?: "normal" | "plan") => Promise<boolean>;
   activeGoalSurfaceCommand: (command: string) => string;
   archiveCurrentGoal: (ctx: ExtensionContext, status: "aborted", stopReason?: string) => boolean;
 }
