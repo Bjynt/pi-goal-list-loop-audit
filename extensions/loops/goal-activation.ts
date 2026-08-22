@@ -1583,8 +1583,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // by any explicit work command, never by timers. State stays fully
     // restored and DISPLAYED — only automation waits for the user.
     if (!autoResume && !explicitRecovery && !staleRearmedOnSessionStart) {
+      const somethingLive = (!!state.goal && ["active", "auditing"].includes(state.goal.status)) || isLoopActive();
       const pendingDurableState = !!state.goal || (state.list?.length ?? 0) > 0 || !!state.loop;
-      if (pendingDurableState && typeof state.loadHoldAt !== "number") {
+      // v0.35.23: restore itself may have consented to live work (journal
+      // replay activating a deferred item, stale rearm) — a hold must never
+      // freeze what restore deliberately started.
+      if (pendingDurableState && !somethingLive && typeof state.loadHoldAt !== "number") {
         replaceState({ ...state, loadHoldAt: Date.now() });
         persistState(ctx);
         appendLedger(ctx.cwd, "load_hold_engaged", { reason: startReason ?? "startup" });
