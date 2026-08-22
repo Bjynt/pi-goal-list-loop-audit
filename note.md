@@ -4,28 +4,33 @@
 
 https://github.com/DraconDev/pi-goal-list-loop-audit/issues
 
-##
+## DONE v0.35.17 (auditor-approved 2026-08-21)
 
 after accepting the questiong we often see op was aborted /home/dracon/Pictures/Screenshots/Screenshot_20260821_152311.png 
+→ root-caused; zero-stream watchdog abort now schedules ONE bounded automatic retry (~90s); second consecutive abort still parks; /glla pause freezes it; manual /goal resume intact.
 
-##
+## DONE — tags backfilled 2026-08-21 (v0.35.17)
 
 the git repo is misisng tags
+→ all 41 missing v-tags created at historical commits, pushed to origin/github/gitlab.
+
+## DONE v0.35.17
 
 maybe sometimes else or least update teh readme
+→ README currency pass: footer glyphs/meter, /glla pause+resume, quiet-notify, auto-retry, version current.
 
 # Next
 
-##
+## QUEUED → list item 4
 
 the auditor seleciton should be like the main agent selector
 
-##
+## QUEUED → list item 3
 
 when we load a session we dont have to start it right away
 we should decide not auto start
 
-##
+## QUEUED → list item 2
 
 suspicious goal, repair task was qd but nothing started or can be started
 happened when tried to /goal start some kind of audit
@@ -37,7 +42,7 @@ suspicious goal / objective
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_114210.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_114109.png 
 
-##
+## QUEUED → list item 1 (active)
 
 list exec stopped and list because not visible til i restarted session
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_213238.png 
