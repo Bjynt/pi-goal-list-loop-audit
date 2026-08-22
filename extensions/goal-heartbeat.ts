@@ -382,11 +382,16 @@ export function classifyHungSubagents(
 
 function heartbeatTick(): void {
   if (flags.zombieStoodDown || flags.initialSessionLoadPending) return; // blank startup waits for pi to bind a real session
-  // v0.35.15: `/glla pause` freezes the supervisor's automatic machinery —
-  // re-arms, stale probes, zombie cleanup, refires, everything this tick
-  // drives. The user explicitly asked for a hands-off window; no heartbeat
-  // side-effect may fire inside it. `/glla resume` restores the tick.
-  if (supervisorPaused(state)) return;
+  // v0.35.15: a MANUAL `/glla pause` freezes the supervisor's automatic
+  // machinery — re-arms, stale probes, zombie cleanup, refires, everything
+  // this tick drives. The user explicitly asked for a hands-off window; no
+  // heartbeat side-effect may fire inside it. `/glla resume` restores it.
+  // v0.35.23 (note.md Next #2): the automatic LOAD HOLD is different — the
+  // tick stays ALIVE under it because host-loss supervision is safety
+  // machinery, not automation (a held plane must not become an unprobed
+  // idle plane). Everything this tick could DISPATCH downstream checks the
+  // same hold via supervisorPaused() and refuses; only probes/ledger run.
+  if (typeof state.supervisorPausedAt === "number") return;
   // A completed/paused/held plane has no host-bound work to supervise. Do
   // not probe the retained ExtensionAPI in that idle state: pi may dispose a
   // session handle during an unrelated session transition, and reporting
