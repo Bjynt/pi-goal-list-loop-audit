@@ -117,6 +117,7 @@ import {
 isGoalRevisionCurrent,
   nextHourlyPromptMs,
   nextHourlyProbeMs,
+  clearLoadHold,
   type ModelSwitchRecord,
   type ListItem,
 } from "../goal-loop-core.js";
@@ -587,6 +588,14 @@ async function handleMainModelAgentEnd(ctx: ExtensionContext, rawLastA: any, las
 
 function createGoal(objective: string, ctx: ExtensionContext, policy: "goal" | "list" = "goal"): Goal {
   ensureDirs(ctx.cwd);
+  // v0.35.23 (note.md Next #2): creating a goal — via /goal start, a list
+  // item activation, or an accepted draft — IS the explicit decision a
+  // load hold waits for. Release before the new work's first continuation
+  // would otherwise be frozen.
+  if (clearLoadHold(state)) {
+    persistState(ctx);
+    appendLedger(ctx.cwd, "load_hold_released", { via: `goal-created:${policy}` });
+  }
   // Extract verification contract if present in objective.
   const { objective: roleCleaned, agentRole } = extractAgentRole(objective);
   const { objective: cleanObj, verificationContract } = extractVerificationContract(roleCleaned);
