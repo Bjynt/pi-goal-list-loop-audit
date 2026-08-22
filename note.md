@@ -8,7 +8,7 @@ https://github.com/DraconDev/pi-goal-list-loop-audit/issues
 
 ##
 
-goal gets closed before final audit 
+goal gets closed before final audit, so auditor never approves
 /home/dracon/Pictures/Screenshots/Screenshot_20260822_151220.png 
 
 ##
