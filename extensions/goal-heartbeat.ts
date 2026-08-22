@@ -429,7 +429,11 @@ function heartbeatTick(): void {
     || state.loop?.stopReason?.startsWith("extension api stale");
   const parkedCompletionAuditRecovery = state.goal?.status === "paused"
     && state.goal.pendingCompletion?.phase === "recovery-pending";
-  if (state.goal?.status !== "active"
+  // v0.35.28 (issue #16): a lapsed wait-pause is host-bound work too — the
+  // heartbeat owns its durable due-time backstop (see overdueWaitBackstop).
+  if (overdueWaitDue()) {
+    // fall through: the backstop below needs a heartbeat opportunity
+  } else if (state.goal?.status !== "active"
     && state.goal?.status !== "auditing"
     && !isLoopActive()
     && !staleRecoveryDebt
@@ -574,7 +578,11 @@ function heartbeatTick(): void {
       notifyExternal(ctx, msg);
     }
   }
-  if (mainModelRecoveryActive()) return;
+  if (mainModelRecoveryActive()) {
+    overdueWaitBackstop(ctx);
+    return;
+  }
+  overdueWaitBackstop(ctx);
   let idle = false;
   let pending = false;
   try {
