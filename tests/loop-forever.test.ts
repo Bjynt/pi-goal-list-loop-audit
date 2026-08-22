@@ -225,6 +225,38 @@ test("applyMeasurement: plateau stops the loop", () => {
   assert.match(loop.stopReason!, /plateau/);
 });
 
+// v0.35.31 (field: doomtap 2026-08-22, Screenshot_20260822_094423): a
+// min-direction loop whose metric reads 0 before work exists (open findings
+// at survey start) locked best at 0; the productive readings that followed
+// (12 → 7 findings being worked down) all scored "flat" and burned five
+// plateau slots → false stop while iterations were visibly fixing work.
+test("v0.35.31 — a never-moved zero baseline does not false-plateau a working min loop", () => {
+  const loop = freshLoop({ bestValue: 0, iteration: 0, stallCount: 0, plateauWindow: 5 });
+  for (const [i, v] of [0, 0, 0, 12, 7, 7].entries()) {
+    const out = applyMeasurement(loop, v, `t${i + 1}`);
+    assert.equal(out.kind, "continue", `iteration ${i + 1} must not stop — baseline still forming`);
+  }
+  assert.equal(loop.stallCount, 0, "no honest plateau is possible while the metric never moved");
+});
+
+test("v0.35.31 — the never-moved grace is bounded by a loud distinct stop", () => {
+  const loop = freshLoop({ bestValue: 0, iteration: 0, stallCount: 0, plateauWindow: 3 });
+  let out: ReturnType<typeof applyMeasurement> = { kind: "continue", improved: false, value: 0 };
+  for (let i = 0; i < 6 && out.kind === "continue"; i++) out = applyMeasurement(loop, 0, `t${i}`);
+  assert.equal(out.kind, "stop");
+  assert.match(out.reason, /metric never moved/);
+  assert.doesNotMatch(out.reason, /plateau —/, "the old misleading reason is gone for this class");
+});
+
+test("v0.35.31 — a resumed run whose best differs from its first reading still plateaus honestly", () => {
+  // History restarted but bestValue was carried from real prior movement:
+  // flat readings count again (regression protection preserved).
+  const loop = freshLoop({ bestValue: 5, iteration: 0, stallCount: 2, plateauWindow: 3 });
+  const out = applyMeasurement(loop, 9, "t1"); // 9 > best 5 under min → flat, counts
+  assert.equal(out.kind, "stop");
+  assert.match(out.reason, /plateau/);
+});
+
 test("applyMeasurement: max iterations stops the loop", () => {
   const loop = freshLoop({ iteration: 9, maxIterations: 10, bestValue: 3, stallCount: 0 });
   const out = applyMeasurement(loop, 2, "t1"); // improving, but cap hit
