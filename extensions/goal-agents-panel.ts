@@ -24,6 +24,7 @@ export interface AgentsPanelRow {
   silentMs: number;
   evidence: "record-frozen" | "event-only" | "live";
   endedOk?: boolean;
+  endedAt?: number;
 }
 
 /** Human label: agentType + short summary. */
@@ -63,7 +64,7 @@ export function renderAgentsPanel(rows: AgentsPanelRow[], now: number, managerAv
       ? `ENDED ${row.endedOk === false ? "✗" : "ok"} ${fmtDuration((row.endedAt ?? now) - row.spawnedAt)}`
       : `${row.status === "hung" ? "HUNG?" : "RUNNING"} ${fmtDuration(now - row.spawnedAt)}`;
     lines.push(`${glyph} ${rowLabel(row)}  ${stateWord}`);
-    lines.push(`  tools ${row.toolUses} · out ${row.outputTokens >= 1000 ? `${(row.outputTokens / 1000).toFixed(1)}k` : row.outputTokens} · silent ${fmtDuration(row.silentMs)}${row.status !== "live" && row.evidence !== "live" ? ` (${row.evidence})` : ""}`);
+    lines.push(`  tools ${row.toolUses} · out ${row.outputTokens >= 1000 ? `${(row.outputTokens / 1000).toFixed(1)}k` : row.outputTokens} · silent ${fmtDuration(row.silentMs)}${row.evidence !== "live" ? ` (${row.evidence})` : ""}`);
     if (row.status === "hung") {
       lines.push("  └ check the Agents panel: a child whose counters stopped moving is hung, not thinking");
     }
