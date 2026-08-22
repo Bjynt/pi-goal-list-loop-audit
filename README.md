@@ -10,7 +10,7 @@ This is a detached process, not a nested session in the main pi process. `comple
 
 On Windows, npm installs the `pi.cmd` shim rather than a directly executable `pi` binary. The auditor launches it through an explicitly quoted `cmd.exe` boundary; POSIX keeps direct shell-less execution. Protocol snapshots also tolerate transient Windows file-locks without deleting the last valid snapshot first.
 
-**Current package version:** `v0.35.24` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
+**Current package version:** `v0.35.25` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
 
 ## Why this exists
 
@@ -314,6 +314,9 @@ adds a blind `:00:30` retry after each hour starts, so work can be picked up
 quickly after a possible provider-side change. The automatic window is 24h;
 explicit `/goal resume`, `/list resume`, or `/loop resume` starts a fresh
 window. With global `autoResume=on`, pending retries survive a session reload.
+A loop parked by the zero-stream abort (v0.35.25, issue #14) is explicitly
+resumable: `/loop resume` re-arms it with the preserved iteration count,
+best value, and history — exactly as the abort message promises.
 
 Only failures identified by positive evidence as futile avoid automatic retry:
 context/output-token limits and user aborts (`non-recoverable`). Auditor

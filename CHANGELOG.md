@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.35.25 — /loop resume honors the zero-stream abort park (2026-08-22, GitHub issue #14)
+
+### Gap
+  abortZombieRun parks a loop with stopReason "stopped: automatic zero-stream
+  abort — ... (iteration N preserved; /loop resume to retry)" and its message
+  promises /loop resume — but the RESUMABLE_STOP predicate in the resume
+  handler never matched that prefix. The explicit resume answered "No held
+  loop to resume"; iteration count, best value, and preserved history were
+  unreachable without re-drafting from scratch (field report: a metricless
+  24h loop parked at iteration 210 with 200 history entries).
+### Fix
+  RESUMABLE_STOP gains the "stopped: automatic zero-stream abort" prefix.
+  The explicit resume now re-arms the loop exactly as promised: fresh stall
+  window, re-armed counters, load hold released, one new dispatch — with
+  iteration/best/history intact. Control test pins that non-resumable stops
+  (e.g. bounds) stay stopped.
+
 ## 0.35.24 — auditor model picker at full selector parity: forbidden-models filtering (2026-08-22, note.md Next #1)
 
 ### Gap
