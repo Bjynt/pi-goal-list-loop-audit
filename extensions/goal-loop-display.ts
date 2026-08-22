@@ -116,6 +116,9 @@ export interface ModelProvenanceDisplay {
 export interface WidgetExtras {
   stalls?: number;
   recent?: RecentActionDisplay[];
+  /** v0.35.29 (issue #15): ambient tracked-subagent segment — count + the
+   * longest-silent child. Hidden at zero tracked children. */
+  agents?: { line: string };
   /** Ephemeral host-session projection; never persisted as goal state. */
   activity?: GoalDisplayActivity;
   /** Last real host stream activity, excluding timer/UI ticks. */
@@ -1092,6 +1095,10 @@ function countTotal(g: Goal): number {
  */
 export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, width?: number, extras?: WidgetExtras): string[] | undefined {
   const inner = buildWidgetLinesInner(state, audit, now, theme, width, extras);
+  // v0.35.29 (issue #15): the agents segment rides every card shape —
+  // appended before the persistence-degradation banner so that warning
+  // keeps its first-line contract.
+  if (inner && extras?.agents) inner.push(extras.agents.line);
   // v0.28.6 (E1): a persistence failure outranks everything — first line,
   // on every render, until a write lands again.
   let lines: string[] | undefined = inner;
