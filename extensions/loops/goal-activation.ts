@@ -1221,11 +1221,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     const rebindResume = ownerClaim.rebind;
     if (rebindResume) appendLedger(ctx.cwd, "rebind_resume", { pid: process.pid });
     const explicitRecovery = handoffResume || recoveryResume || rebindResume;
-    // A successor after a non-quit shutdown is lifecycle consent for a held
-    // loop even when the old inactive loop did not qualify for a handoff
-    // marker. Keep this loop-specific; standalone goals retain their normal
-    // cold-start hold policy.
-    const loopSuccessorResume = explicitRecovery || nonQuitShutdownResume;
+    // v0.35.23 (note.md Next #2): a non-quit shutdown successor no longer
+    // consents to loop auto-resume — a crash restart IS a cold load, and
+    // cold loads hold for an explicit decision. The variable survives only
+    // as heldLoopSuccessorResume below: it still bypasses the BLANK-start
+    // barrier so a crash successor reaches the restore gates and gets a
+    // truthful hold + notification instead of waiting unpainted.
     const heldLoopSuccessorResume = !!state.loop
       && !state.loop.active
       && isLifecycleHeldLoopReason(state.loop.stopReason)
