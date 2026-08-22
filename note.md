@@ -65,6 +65,9 @@ loop ended ? not sure it should have, albeit this may not be our fault but hte s
 else i need a solution elsewhere
 /home/dracon/Pictures/Screenshots/Screenshot_20260822_094423.png 
 
+albeit other loop did not end
+/home/dracon/Pictures/Screenshots/Screenshot_20260822_095058.png 
+
 ##
 
 i think we are cutting the spec based strategy cause we can jsut make a big megaplan do that then we have some truth based on the iterate on while the spec is always double truth and stale and crude, so the 
