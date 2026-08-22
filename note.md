@@ -21,19 +21,28 @@ maybe sometimes else or least update teh readme
 
 # Next
 
-## QUEUED → list item 4
+All four queued and closed. Every fix auditor-approved; full release gate green at each version.
+
+## DONE v0.35.24 (auditor-approved 2026-08-22)
 
 the auditor seleciton should be like the main agent selector
+→ the /glla Auditor model row already used the /model-style fuzzy picker and persisted to the exact key resolveAuditorModel reads; the real gap was policy — forbidden-models now filter the picker list AND typed matches are refused with a named warning (same for the fallback-agent row), so a saved pin is one the resolver honors.
 
-## QUEUED → list item 3
+## DONE v0.35.23 (auditor-approved 2026-08-22)
 
 when we load a session we dont have to start it right away
 we should decide not auto start
+→ root cause: load consent read the aggressive-mode-coerced setting, so stock installs auto-resumed despite the documented hold-by-default. Now a consent-less cold load restores + displays everything but holds all automation (loadHoldAt through the /glla-pause freeze gates); released by /goal resume, /list resume, /list next, /loop resume|start, or starting new work. Opt-in: Auto-resume=on in /glla settings restores old behavior. Crash successors no longer auto-resume either; same-process /reload keeps continuity.
 
-## QUEUED → list item 2
+## DONE v0.35.22 (auditor-approved 2026-08-22)
 
 suspicious goal, repair task was qd but nothing started or can be started
 happened when tried to /goal start some kind of audit
+→ activateNextListItem's loop guard refused LEDGER-ONLY while a loop owned the surface: unstartable AND invisibly so. Now the refusal is loud (names the queued item + "/loop stop … /list next") and ledgered with queueItemId; all three loop-end routes announce the unblocked queue. Also fixed the cross-file test pollution found by that audit round.
+
+## DONE v0.35.21
+
+list exec stopped and list because not visible til i restarted session
 
 suspicious goal / objective
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_134442.png 
@@ -47,6 +56,7 @@ suspicious goal / objective
 list exec stopped and list because not visible til i restarted session
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_213238.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_214510.png 
+→ sidebar rendered state.list from memory only while the durable queue is the union of state + disk sidecars; a plugin re-init reset RAM to blank until restart. session_start now hydrates the queue from disk (hydrateListQueueFromDisk) and notifies "restored N queued list item(s)".
 
 here too
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_215228.png /home/dracon/Pictures/Screenshots/Screenshot_20260821_215209.png 
