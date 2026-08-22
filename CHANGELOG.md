@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.35.33 — plan mode: the extended draft (2026-08-22)
+
+### Add
+  /goal plan | /list plan | /loop plan — the EXTENDED DRAFT for
+  greenfield/megaplan work where the standard 5–7-question interview is too
+  shallow (user design 2026-08-22). Research BEFORE questions (Explore
+  subagents, file reads), multi-round interviewing (architecture → scope →
+  failure conditions → verification), and a structured expanded objective:
+  current-state analysis, decisions with rationale, milestone breakdown,
+  per-milestone verification contract. Deliberately NOT a separate artifact —
+  the objective itself is the single truth (the respec lesson: a second
+  document always goes stale). Trust machinery unchanged: propose_*_draft +
+  the Confirm card still gate activation; regular drafts stay the fast path.
+  New prompts prompts/goal-loop-plan.md + goal-loop-plan-loop.md; depth flag
+  on the drafting session (runtime-global, reset by clearDraftingState);
+  completions on all three commands; /list plan gated as a mutating verb on
+  stale handles. respec stays untouched (kept by user decision).
+
 ## 0.35.32 — hermetic settings round-trip test (2026-08-22)
 
 ### Fix

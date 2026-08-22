@@ -10,7 +10,7 @@ This is a detached process, not a nested session in the main pi process. `comple
 
 On Windows, npm installs the `pi.cmd` shim rather than a directly executable `pi` binary. The auditor launches it through an explicit `cmd.exe` boundary; arguments are quoted only when tokenization requires it (v0.35.27 — quoting a bare executable name breaks `.CMD` shim resolution on pnpm installs), and every argument passes the unsafe-character gate (`%`, CR, LF) before that decision. POSIX keeps direct shell-less execution. Protocol snapshots also tolerate transient Windows file-locks without deleting the last valid snapshot first.
 
-**Current package version:** `v0.35.32` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
+**Current package version:** `v0.35.33` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
 
 ## Why this exists
 
@@ -44,6 +44,7 @@ Five top-level commands — `/goal`, `/list`, `/loop`, `/glla`, `/review`:
 /goal "audit the repo"             # no contract clause → agent grills you first (propose is gated on it)
 /goal "Step 1. Step 2. Done when: tests pass."   # has contract → starts now
 /goal start "fix the flaky login test"          # explicit skip-draft: starts now, no interview (auditor infers the contract)
+/goal plan "build a greenfield crawler"         # extended draft for greenfield/megaplan work: research-first, multi-round interview, structured expanded objective — still Confirm-gated (v0.35.33)
 /goal status                       # show state
 /goal pause                        # pause
 /goal resume                       # resume
@@ -74,7 +75,9 @@ matches `/list show`.
 /list remove <n>                   # drop item n from the list
 /list clear                        # empty the list
 /list cancel                       # stop the whole list: abort the active item + drop all waiting
+/list plan "a greenfield blog engine"   # extended draft: deep research + multi-round interview, then ONE Confirm proposes the whole items[] batch (v0.35.33)
 /loop                              # draft the loop (agent grills; measure is test-run before you confirm)
+/loop plan                         # extended loop draft: deep research + multi-round metric design (v0.35.33)
 /loop start "keep polishing the UI"                          # infinite metricless loop (v0.23.6): no plateau, no cap — ends at time=/tokens= or /loop stop
 /loop respec                                                  # infinite metricless loop reconciling the codebase against the root SPEC.md / spec.md (v0.24.3) — 2 specs = you pick, 0 specs = drafting, 1 spec = auto-start (v0.24.4)
 /loop audit                                                    # project-audit loop (v0.29.0): each iteration audits fresh, appends findings to .pi-glla/audit-loop/findings.md, fixes the top ones — the orchestrator counts open findings and the plateau stop ends it when the well is dry (one-shot version: /goal audit)
