@@ -13,6 +13,9 @@
 // undefined default is HOLD. The fix reads the RAW setting for load consent
 // and engages a dedicated load hold (loadHoldAt) through the same freeze
 // gates as /glla pause.
+//
+// One plane per seed: stacked live goal+loop states are deliberately
+// arbitrated at load (v0.29.6), so tests never seed both active.
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
@@ -43,21 +46,21 @@ async function coldBoot(pi: MockPi, cwd: string) {
   return ctx;
 }
 
-function seedPendingState(cwd: string): void {
-  seedState(cwd, {
-    goal: seedGoal({ policy: "goal", status: "active", objective: "persisted active goal — done when pinned" }),
-    loop: seedLoop({ active: true, target: "persisted metric loop" }),
-    list: [{ id: "waiting-1", objective: "waiting queued item", addedAt: new Date().toISOString() }],
-  });
-}
-
-test("v0.35.23: a DEFAULT cold load restores + displays pending state but sends NOTHING and arms NO automation", async () => {
-  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({})); // stock install: no autoResume anywhere
-  const cwd = tmpCwd();
-  seedPendingState(cwd);
+function newPi(): MockPi {
   const pi = new MockPi();
   activate(pi.api);
-  const ctx = await coldBoot(pi, cwd);
+  return pi;
+}
+
+test("v0.35.23: DEFAULT cold load restores + displays a pending goal but sends NOTHING and arms NO automation", async () => {
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({})); // stock install: no autoResume anywhere
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    goal: seedGoal({ policy: "goal", status: "active", objective: "persisted active goal — done when pinned" }),
+    list: [{ id: "waiting-1", objective: "waiting queued item", addedAt: new Date().toISOString() }],
+  });
+  const pi = newPi();
+  await coldBoot(pi, cwd);
 
   // ZERO sends on the restored-but-held load.
   assert.equal(pi.sent.length, 0, "no agent sends fire from a held session_start");
@@ -65,9 +68,8 @@ test("v0.35.23: a DEFAULT cold load restores + displays pending state but sends 
 
   // State is restored TRUTHFULLY — visible, intact, but held.
   const after = readState(cwd);
-  assert.equal(after.loop?.active, false, "the persisted loop is HELD, not running");
-  assert.match(String(after.loop?.stopReason), /HELD_ON_RESTORE|held/);
   assert.equal(after.goal?.status, "paused", "the persisted goal is held for explicit resume");
+  assert.match(String(after.goal?.pauseReason ?? ""), /restored|held/i);
   assert.equal(after.list?.length, 1, "the waiting queue stays fully visible");
 
   // The load hold is engaged durably through the supervisor-freeze gate.
@@ -80,18 +82,37 @@ test("v0.35.23: a DEFAULT cold load restores + displays pending state but sends 
   assert.equal(pi.sent.length, 0, "no continuation timer fires after the hold");
 });
 
+test("v0.35.23: DEFAULT cold load HELDS a persisted live loop instead of resuming its ticks", async () => {
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({}));
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    loop: seedLoop({ active: true, target: "persisted metric loop" }),
+    list: [{ id: "waiting-1", objective: "waiting queued item", addedAt: new Date().toISOString() }],
+  });
+  const pi = newPi();
+  await coldBoot(pi, cwd);
+
+  const after = readState(cwd);
+  assert.equal(after.loop?.active, false, "the persisted loop is HELD, not running");
+  assert.match(String(after.loop?.stopReason ?? ""), /held/i, "the loop carries a truthful held marker");
+  assert.equal(typeof after.loadHoldAt, "number", "the hold engages for loop-only pending state too");
+  await tick(200);
+  assert.equal(pi.sent.length, 0, "no loop turn dispatches while held");
+});
+
 test("v0.35.23: explicit autoResume:true restores load-time automation (opt-in = today's behavior)", async () => {
   fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({ autoResume: true }));
   const cwd = tmpCwd();
-  seedPendingState(cwd);
-  const pi = new MockPi();
-  activate(pi.api);
-  const ctx = await coldBoot(pi, cwd);
+  seedState(cwd, {
+    goal: seedGoal({ policy: "goal", status: "active", objective: "persisted active goal — done when pinned" }),
+    list: [{ id: "waiting-1", objective: "waiting queued item", addedAt: new Date().toISOString() }],
+  });
+  const pi = newPi();
+  await coldBoot(pi, cwd);
 
   const after = readState(cwd);
   assert.equal(after.loadHoldAt, undefined, "no load hold when the user opted in");
   assert.equal(after.goal?.status, "active", "the goal resumes under explicit consent");
-  assert.equal(after.loop?.active, true, "the loop resumes under explicit consent");
   await tick(150);
   assert.ok(pi.sent.length >= 1 || pi.userMessages.length >= 1, "automation actually dispatches after an opted-in load");
 });
@@ -99,9 +120,10 @@ test("v0.35.23: explicit autoResume:true restores load-time automation (opt-in =
 test("v0.35.23: /goal resume releases the load hold and re-arms automation", async () => {
   fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({}));
   const cwd = tmpCwd();
-  seedPendingState(cwd);
-  const pi = new MockPi();
-  activate(pi.api);
+  seedState(cwd, {
+    goal: seedGoal({ policy: "goal", status: "active", objective: "persisted active goal — done when pinned" }),
+  });
+  const pi = newPi();
   const ctx = await coldBoot(pi, cwd);
   assert.equal(typeof readState(cwd).loadHoldAt, "number", "precondition: held");
 
@@ -119,12 +141,10 @@ test("v0.35.23: /goal resume releases the load hold and re-arms automation", asy
 test("v0.35.23: /list next also releases the hold and starts the queued head", async () => {
   fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({}));
   const cwd = tmpCwd();
-  // No goal: only the queue waits — the exact "decide what runs next" shape.
   seedState(cwd, {
     list: [{ id: "head-1", objective: "queued head — done when pinned", addedAt: new Date().toISOString() }],
   });
-  const pi = new MockPi();
-  activate(pi.api);
+  const pi = newPi();
   const ctx = await coldBoot(pi, cwd);
   assert.equal(typeof readState(cwd).loadHoldAt, "number", "precondition: held with a waiting queue");
   assert.equal(pi.sent.length, 0);
