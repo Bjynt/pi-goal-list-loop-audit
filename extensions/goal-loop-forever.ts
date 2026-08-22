@@ -251,8 +251,12 @@ export function applyMeasurement(loop: LoopState, value: number | null, at: stri
     // bestValue that differs from the first measured value — the latter
     // covers resumed runs whose history restarted). Bounded below by the
     // never-moved cap so a dead metric still ends loudly.
-    const numericHistory = loop.history.filter((h) => h.value !== null);
-    const metricHasMoved = loop.history.some((h) => h.improved)
+    // Audit loops (kind === "audit") are EXEMPT from both halves of this
+    // fix: they carry purpose-built deferred-baseline + reprieve plateau
+    // semantics (v0.29.10/v0.29.19) and must keep their stall accounting
+    // verbatim.
+    const numericHistory = loop.kind === "audit" ? [] : loop.history.filter((h) => h.value !== null);
+    const metricHasMoved = loop.kind === "audit" || loop.history.some((h) => h.improved)
       || (numericHistory.length === 0
         ? // No numeric readings yet this run: indistinguishable from a
           // resumed run with real prior movement — keep the conservative
@@ -300,6 +304,7 @@ export function applyMeasurement(loop: LoopState, value: number | null, at: stri
   // that NEVER moves would otherwise dodge plateau forever. Twice the window
   // in measured iterations without one improvement is a loud, distinct stop
   // naming the actual suspect (direction/measureCmd), not a fake plateau.
+  if (loop.kind !== "audit") {
   const numericHistory = loop.history.filter((h) => h.value !== null);
   const measured = numericHistory.length;
   const metricNeverMoved = !loop.history.some((h) => h.improved)
@@ -309,6 +314,7 @@ export function applyMeasurement(loop: LoopState, value: number | null, at: stri
     loop.active = false;
     loop.stopReason = `metric never moved — ${measured} measurements without one improvement against the initial reading (best: ${loop.bestValue ?? "n/a"}, dir ${loop.direction ?? "?"}). Check measureCmd/direction; /loop resume retries or /loop stop.`;
     return { kind: "stop", reason: loop.stopReason };
+  }
   }
   if (loop.maxIterations > 0 && loop.iteration >= loop.maxIterations) {
     loop.active = false;
