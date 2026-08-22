@@ -66,7 +66,9 @@ test("replaceState is used at the moved wholesale sites", () => {
   }
   // Decomposition step 2: the list-clear and wipe sites moved to
   // goal-commands.ts — the primitive requirement travels with them.
-  for (const needle of ["replaceState({ ...state, list: [] });", "replaceState({ ...state, goal: null });"]) {
+  // v0.35.30: the wipe site also clears lastOutcome (clean slate means
+  // the terminal-outcome retention line goes too).
+  for (const needle of ["replaceState({ ...state, list: [] });", "replaceState({ ...state, goal: null, lastOutcome: undefined });"]) {
     assert.ok(CMDS_SRC.includes(needle), `expected in goal-commands.ts: ${needle}`);
   }
 });
