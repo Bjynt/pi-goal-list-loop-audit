@@ -13,7 +13,7 @@
 //   2. forbidden-models filtering applies — list-level (buildModelPickItems)
 //      and typed-entry level (the editor refuses a policy match).
 
-import { test } from "node:test";
+import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -23,6 +23,19 @@ import { buildModelPickItems } from "../extensions/model-picker.js";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
+
+// The suite shares ONE global settings file across co-resident test files
+// (module-level process env). Tests here write policy entries — restore a
+// clean slate after each so sibling suites never see our fixtures.
+const GLOBAL_SNAPSHOT_PATH = GLOBAL_SETTINGS_PATH + ".auditor-parity-backup";
+beforeEachSnapshot();
+function beforeEachSnapshot(): void {
+  try { fs.copyFileSync(GLOBAL_SETTINGS_PATH, GLOBAL_SNAPSHOT_PATH); } catch { /* absent */ }
+}
+afterEach(() => {
+  try { fs.copyFileSync(GLOBAL_SNAPSHOT_PATH, GLOBAL_SETTINGS_PATH); } catch { fs.rmSync(GLOBAL_SETTINGS_PATH, { force: true }); }
+  fs.rmSync(GLOBAL_SNAPSHOT_PATH, { force: true });
+});
 
 function readGlobal(): Record<string, unknown> {
   try {
