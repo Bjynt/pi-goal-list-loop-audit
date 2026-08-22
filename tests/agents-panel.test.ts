@@ -99,7 +99,7 @@ test("v0.35.29 #15: --tail matches by needle, takes newest mtime, formats entrie
     readFile: (f) => Buffer.from(contents[path.basename(f)] ?? ""),
   });
   assert.equal(result.ok, true);
-  assert.deepEqual(result.lines, ["[tool] read x.ts", "[raw] not-json-garbage", "[assistant] final report text"]);
+  assert.deepEqual(result.lines, ["[tool] read x.ts", "[raw] not-json-garbage", "[?] final report text"]);
 
 });
 
