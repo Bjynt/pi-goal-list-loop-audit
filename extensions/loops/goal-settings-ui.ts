@@ -248,6 +248,10 @@ import {
 } from "../multi-model-picker.js";
 import { consumeRecoveryResume } from "../goal-recovery.js"; // decomposition step 3 (v0.34.111)
 import {
+  discoverAuditorExtensions,
+  normalizeAuditorAllowedExtensions,
+} from "../auditor-extensions.js";
+import {
   createGoalHeartbeat,
   endSubagentHangProbe,
   markSubagentHangProgress,
@@ -1168,6 +1172,75 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       if (pick === undefined) return;
       saveSettings("global", ctx.cwd, { auditorModelFallback: pick.kind === "session" ? undefined : pick.ref });
       if (pick.kind === "session") ctx.ui.notify("Auditor fallback cleared — a session on the pinned auditor model keeps that model.", "info");
+      return;
+    }
+    case "auditorAllowedExtensions": {
+      // v0.36.0 (GitHub issue: extension-based model providers in the
+      // detached auditor). The picker lists every extension a normal pi
+      // session would load, RESOLVED to concrete install paths (raw npm:/git:
+      // specs are not directly loadable by the detached worker — see
+      // extensions/auditor-extensions.ts); selected paths ride the auditor
+      // request and the worker passes them as `pi --extension <path>` under
+      // the still intact --no-extensions discovery off switch.
+      const currentExts = normalizeAuditorAllowedExtensions(loadGlobalSettings().auditorAllowedExtensions);
+      const discovered = discoverAuditorExtensions(os.homedir(), ctx.cwd);
+      const discoveredSpecs = new Set(discovered.map((entry) => entry.spec));
+      const extItems: ModelPickItem[] = [
+        ...discovered.map((entry) => ({
+          kind: "model" as const,
+          ref: entry.spec,
+          label: `${entry.label} · ${entry.source}`,
+          searchText: `${entry.spec} ${entry.label} ${entry.source}`,
+        })),
+        // Saved specs that discovery can no longer see (removed package,
+        // another machine's home) still render so the user can deselect
+        // them instead of a silently immortal settings entry.
+        ...currentExts.filter((spec) => !discoveredSpecs.has(spec)).map((spec) => ({
+          kind: "model" as const,
+          ref: spec,
+          label: `${spec} · saved, not discovered here`,
+          searchText: spec,
+        })),
+      ];
+      const extInputFallback = async (): Promise<string[] | undefined> => {
+        const v = await ctx.ui.input(
+          "Auditor allowed extensions — comma-separated pi extension specs",
+          currentExts.length ? currentExts.join(",") : "npm:package-name or /path/to/extension",
+        );
+        if (v === undefined) return undefined;
+        return normalizeAuditorAllowedExtensions(v.split(","));
+      };
+      let extFactoryInvoked = false;
+      const extPick = extItems.length
+        ? await ctx.ui.custom<MultiModelPickerResult>((tui, theme, keybindings, done) => {
+          extFactoryInvoked = true;
+          return new MultiModelPickerComponent(
+            {
+              title: "Auditor allowed extensions — space toggles, enter confirms; empty = fully isolated auditor (default)",
+              items: extItems,
+              initialSelected: currentExts,
+              unorderedSet: true,
+            },
+            () => tui.requestRender(),
+            theme,
+            keybindings,
+            done,
+          );
+        })
+        : undefined;
+      let pickedExts: string[] | undefined;
+      if (extPick === undefined && !extFactoryInvoked) pickedExts = await extInputFallback();
+      else if (extPick === undefined) pickedExts = undefined;
+      else pickedExts = Array.isArray(extPick) ? extPick : extPick.refs;
+      if (pickedExts === undefined) return;
+      const normalizedExts = normalizeAuditorAllowedExtensions(pickedExts);
+      saveSettings("global", ctx.cwd, { auditorAllowedExtensions: normalizedExts.length ? normalizedExts : undefined });
+      ctx.ui.notify(
+        normalizedExts.length
+          ? `Auditor allowed extensions saved: ${normalizedExts.join(", ")}.`
+          : "Auditor allowed extensions cleared — the detached auditor runs extension-less again (default).",
+        "info",
+      );
       return;
     }
     case "auditorSameSessionSwap": {

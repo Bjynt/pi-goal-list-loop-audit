@@ -357,6 +357,16 @@ export function buildSettingsRows(
       description: "walked when the primary agent is unavailable OR IS the session model (the verifier should differ) — unset = the session model is the last resort",
     },
     {
+      id: "auditorAllowedExtensions",
+      section: "auditor",
+      label: "Allowed extensions",
+      valueText: settings.auditorAllowedExtensions?.length
+        ? settings.auditorAllowedExtensions.join(", ")
+        : "none (fully isolated, default)",
+      sourceText: src("auditorAllowedExtensions"),
+      description: "pi extension specs the DETACHED auditor may load (e.g. npm:pi-webaio) so extension-provided model providers can run — tools stay restricted to read/grep/find/ls/bash; empty = the default extension-less auditor",
+    },
+    {
       id: "auditorSameSessionSwap",
       section: "auditor",
       label: "Same-model swap",

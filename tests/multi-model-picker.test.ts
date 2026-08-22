@@ -460,3 +460,97 @@ test("multi-model-picker: render — selected row keeps its rank even when not h
   // The first model row (highlighted) still shows the [ ] marker.
   assert.match(text, /<selected>→ \[ \] anthropic\/claude-opus-4-7/);
 });
+
+// ---------------------------------------------------------------------------
+// unorderedSet mode (auditor allowed extensions): plain checkbox set picker
+// ---------------------------------------------------------------------------
+
+function makeSetPicker(items: ReturnType<typeof buildModelPickItems>, initialSelected?: string[]) {
+  let result: PickerResult = "unset" as unknown as PickerResult;
+  const comp = new MultiModelPickerComponent(
+    {
+      title: "Auditor allowed extensions",
+      items,
+      initialSelected,
+      unorderedSet: true,
+    },
+    () => undefined,
+    THEME,
+    KB,
+    (r) => { result = r; },
+  );
+  return { comp, get result() { return result; } };
+}
+
+test("multi-model-picker set mode: rows render as [X]/[ ] with no positional digits", () => {
+  const items = buildModelPickItems(MODELS, "none/none");
+  const p = makeSetPicker(items, ["anthropic/claude-opus-4-7"]);
+  p.comp.handleInput("\x1b[B"); // highlight the first model row (the selected one)
+  const text = p.comp.render(80).join("\n");
+  assert.match(text, /\[X\] .*anthropic\/claude-opus-4-7/);
+  assert.doesNotMatch(text, /\[[0-9]+\]/);
+  // The summary pane says "selected", not "backup", and has no order footer.
+  assert.match(text, /1 selected  anthropic\/claude-opus-4-7/);
+  assert.doesNotMatch(text, /tab = order mode|tab order/);
+});
+
+test("multi-model-picker set mode: selection order is invariant under toggle sequence", () => {
+  const items = buildModelPickItems(MODELS, "none/none");
+  // Toggle order A: sonnet first, then opus.
+  // Drive toggles through a helper that highlights the row with the given
+  // ref, so the test does not depend on fuzzy-filter ranking.
+  const toggleRef = (p: ReturnType<typeof makeSetPicker>, ref: string) => {
+    // Clear any query, then walk the list top-to-bottom.
+    while (p.comp.getQuery().length > 0) p.comp.handleInput("\x7f");
+    const filtered = p.comp.filteredItems();
+    const target = filtered.findIndex((it) => it.ref === ref);
+    if (target < 0) throw new Error(`ref not found: ${ref}`);
+    const cur = p.comp.getSelectedIdx();
+    const n = filtered.length;
+    const down = ((target - cur) % n + n) % n;
+    for (let i = 0; i < down; i++) p.comp.handleInput("\x1b[B");
+    p.comp.handleInput(" ");
+  };
+  const a = makeSetPicker(items);
+  toggleRef(a, "openrouter/anthropic/claude-sonnet-4.5");
+  toggleRef(a, "anthropic/claude-opus-4-7");
+  // Toggle order B: opus first, then sonnet.
+  const b = makeSetPicker(items);
+  toggleRef(b, "anthropic/claude-opus-4-7");
+  toggleRef(b, "openrouter/anthropic/claude-sonnet-4.5");
+  // Both produce the same canonical (item-list) order.
+  assert.deepEqual(a.comp.getSelected(), ["anthropic/claude-opus-4-7", "openrouter/anthropic/claude-sonnet-4.5"]);
+  assert.deepEqual(b.comp.getSelected(), a.comp.getSelected());
+  a.comp.handleInput("\r");
+  assert.deepEqual(a.result, a.comp.getSelected());
+});
+
+test("multi-model-picker set mode: tab is a no-op and never enters order mode", () => {
+  const items = buildModelPickItems(MODELS, "none/none");
+  const p = makeSetPicker(items, ["anthropic/claude-opus-4-7"]);
+  p.comp.handleInput("\t");
+  assert.equal(p.comp.isOrderMode(), false);
+  // Even double-tab (which in ordered mode would toggle off) stays off, and
+  // arrows keep browsing rather than reordering.
+  p.comp.handleInput("\t");
+  assert.equal(p.comp.isOrderMode(), false);
+  const before = p.comp.getSelected();
+  p.comp.handleInput("\x1b[A");
+  p.comp.handleInput("\x1b[B");
+  assert.deepEqual(p.comp.getSelected(), before);
+});
+
+test("multi-model-picker set mode: brackets are a no-op (no reordering)", () => {
+  const items = buildModelPickItems(MODELS, "none/none");
+  const p = makeSetPicker(items, ["anthropic/claude-opus-4-7", "openrouter/anthropic/claude-sonnet-4.5"]);
+  const before = p.comp.getSelected();
+  p.comp.handleInput("[");
+  p.comp.handleInput("]");
+  assert.deepEqual(p.comp.getSelected(), before);
+});
+
+test("multi-model-picker set mode: initial selection is canonicalized to item order", () => {
+  const items = buildModelPickItems(MODELS, "none/none");
+  const p = makeSetPicker(items, ["openrouter/anthropic/claude-sonnet-4.5", "anthropic/claude-opus-4-7"]);
+  assert.deepEqual(p.comp.getSelected(), ["anthropic/claude-opus-4-7", "openrouter/anthropic/claude-sonnet-4.5"]);
+});

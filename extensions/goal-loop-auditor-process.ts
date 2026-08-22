@@ -12,6 +12,7 @@ import { constants as fsConstants, readFileSync, readlinkSync, readdirSync, real
 import { spawn as nodeSpawn, spawnSync as nodeSpawnSync, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import * as path from "node:path";
+import * as os from "node:os";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -34,6 +35,7 @@ import { ModelSelector, type ModelFallbackEvent } from "./model-selector.js";
 import { buildGoalAuditorPrompt } from "./goal-loop-auditor.js";
 import { checkRegressionShield, parseAuditorVerdict } from "./goal-loop-shield.js";
 import { renameWithWindowsRetry } from "../scripts/goal-auditor-launch.mjs";
+import { resolveAuditorAllowedExtensions } from "./auditor-extensions.js";
 
 export interface GoalAuditorResult {
   approved: boolean;
@@ -504,6 +506,11 @@ interface AuditorRequest {
   thinkingLevel: string;
   createdAt: string;
   wallDeadlineAt: number;
+  /** v0.36.0: pi extension specs the detached auditor may load via
+   * `pi --extension <spec>` (under the still-on `--no-extensions` discovery
+   * switch). Absent/empty = the default extension-less auditor. Part of the
+   * request hash like every other field. */
+  allowedExtensions?: string[];
   /** v0.34.59: focus revision token captured at dispatch. Echoed in
    * result.json; the parent re-validates against current disk state
    * before applying the verdict. Mismatch → stale-refusal, not a silent
@@ -584,6 +591,10 @@ export interface AuditorProcessRuntime {
   toolTimeoutMs?: number;
   /** Environment is inherited by default; useful for a fake pi binary in tests. */
   env?: NodeJS.ProcessEnv;
+  /** v0.36.0: override the home dir used to resolve allowlisted extension
+   * specs to install paths (hermetic tests; os.homedir() ignores HOME env
+   * changes mid-process on some platforms). */
+  homeDir?: string;
   /** Logical completion claim id shared by unique retry attempt directories.
    * Used to reap a worker whose owning pi host died before cleanup. */
   logicalAttemptId?: string;
@@ -751,6 +762,12 @@ export async function runDetachedGoalCompletionAuditor(args: {
   verificationSummary?: string | null;
   model?: AuditorModel;
   thinkingLevel?: string;
+  /** v0.36.0: extension specs allow-listed for the detached auditor
+   * (settings key auditorAllowedExtensions). Raw specs (npm:/git:/relative)
+   * are resolved to concrete install paths HERE, inside the process layer,
+   * so no call site can bypass resolution — the detached worker only ever
+   * sees directly loadable absolute paths. */
+  allowedExtensions?: string[];
   signal?: AbortSignal;
   onProgress?: AuditorProgressCallback;
   /** v0.34.57: fired once when the heartbeat-without-progress watchdog
@@ -817,6 +834,12 @@ export async function runDetachedGoalCompletionAuditor(args: {
     await acquireLock(lockPath, attemptId);
     lockHeld = true;
 
+    // v0.36.0: resolve allowlist entries to concrete install paths before
+    // hashing — raw npm:/git:/relative specs are NOT directly loadable by
+    // the detached worker (fresh temp npm install online, 0 models
+    // offline, wrong base dir for relative paths). Doing this in the
+    // process layer means every dispatch path is covered.
+    const allowedExtensions = resolveAuditorAllowedExtensions(args.allowedExtensions, runtime.homeDir ?? os.homedir(), args.cwd);
     const requestWithoutHash: Omit<AuditorRequest, "requestHash"> = {
       protocolVersion: PROTOCOL_VERSION,
       attemptId,
@@ -831,6 +854,9 @@ export async function runDetachedGoalCompletionAuditor(args: {
       // applying the verdict. A stale-handle ghost can no longer silently
       // overwrite a goal that moved on.
       goalRevision: capturedRevisionToken,
+      // v0.36.0: only present when non-empty so historical requests hash
+      // byte-identically to pre-feature workers.
+      ...(allowedExtensions.length ? { allowedExtensions } : {}),
     };
     const request: AuditorRequest = { ...requestWithoutHash, requestHash: requestHash(requestWithoutHash) };
     await writeAtomicJson(requestPath, request);
