@@ -672,11 +672,25 @@ async function promptModelRef(
   ctx: ExtensionContext,
   title: string,
   emptyLabel: string,
+  // v0.35.24 (note.md Next #1): auditor-slot parity with the main agent
+  // selector — forbidden-models policy filters BOTH the picker list and the
+  // typed escape hatch. Without it the user could pin a model the resolver
+  // would silently skip at audit time (auditor_model_fallback reason:
+  // "forbidden"), a dead-end selection the main selector never offers.
+  opts: { excludeRefs?: readonly string[] } = {},
 ): Promise<{ kind: "session" } | { kind: "ref"; ref: string } | undefined> {
+  const exclude = opts.excludeRefs ?? [];
+  const validateTypedRef = (ref: string): { kind: "session" } | { kind: "ref"; ref: string } | undefined => {
+    if (exclude.length > 0 && isForbiddenModel(ref, exclude)) {
+      ctx.ui.notify(`"${ref}" matches your forbidden-models policy — the picker refuses it. Adjust /glla → Forbidden models first.`, "warning");
+      return undefined;
+    }
+    return { kind: "ref", ref };
+  };
   const inputFallback = async (): Promise<{ kind: "session" } | { kind: "ref"; ref: string } | undefined> => {
     const v = await ctx.ui.input(title, "provider/model-id — empty keeps the default");
     if (v === undefined) return undefined;
-    return v.trim() ? { kind: "ref", ref: v.trim() } : { kind: "session" };
+    return v.trim() ? validateTypedRef(v.trim()) : { kind: "session" };
   };
   if (typeof (ctx.ui as { custom?: unknown }).custom !== "function" || !ctx.modelRegistry) {
     return inputFallback();
@@ -686,7 +700,7 @@ async function promptModelRef(
   const models = ctx.modelRegistry
     .getAvailable()
     .filter((m: any) => ctx.modelRegistry.hasConfiguredAuth(m));
-  const items = buildModelPickItems(models, sessionLabel);
+  const items = buildModelPickItems(models, sessionLabel, { excludeRefs: exclude });
   let factoryInvoked = false;
   const pick = await ctx.ui.custom<ModelPickItem | undefined>((tui, theme, keybindings, done) => {
     factoryInvoked = true;
@@ -701,7 +715,7 @@ async function promptModelRef(
   // manual escape hatch — typed provider/model, validated like before
   const v = await ctx.ui.input(title, emptyLabel);
   if (v === undefined) return undefined;
-  return v.trim() ? { kind: "ref", ref: v.trim() } : { kind: "session" };
+  return v.trim() ? validateTypedRef(v.trim()) : { kind: "session" };
 }
 
 /** Multi-select counterpart to promptModelRef: returns an ordered string[] of
@@ -1089,7 +1103,11 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "auditorModel": {
-      const pick = await promptModelRef(ctx, "Auditor model override", "provider/model-id — empty keeps the pi session model");
+      // v0.35.24 (note.md Next #1): parity with the main agent selector —
+      // the auditor picker filters forbidden models out of the list AND
+      // refuses typed policy matches, so a pin saved here is one the
+      // resolver will actually honor.
+      const pick = await promptModelRef(ctx, "Auditor model override", "provider/model-id — empty keeps the pi session model", { excludeRefs: loadSettings(ctx.cwd).forbiddenModels });
       if (pick === undefined) return;
       saveSettings("global", ctx.cwd, { auditorModel: pick.kind === "session" ? undefined : pick.ref });
       // v0.31.4: thinking is chosen WITH the model (user: "we are setting
@@ -1146,7 +1164,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "auditorModelFallback": {
-      const pick = await promptModelRef(ctx, "Auditor fallback agent (runtime failure or same-session swap)", "provider/model-id — empty clears the fallback");
+      const pick = await promptModelRef(ctx, "Auditor fallback agent (runtime failure or same-session swap)", "provider/model-id — empty clears the fallback", { excludeRefs: loadSettings(ctx.cwd).forbiddenModels });
       if (pick === undefined) return;
       saveSettings("global", ctx.cwd, { auditorModelFallback: pick.kind === "session" ? undefined : pick.ref });
       if (pick.kind === "session") ctx.ui.notify("Auditor fallback cleared — a session on the pinned auditor model keeps that model.", "info");
