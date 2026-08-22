@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.35.26 — zombie watchdog recognizes pi-subagents tool names (2026-08-22, GitHub issue #13)
+
+### Gap
+  The v0.35.4 subagent-wait carve-out matched only the legacy built-in names
+  (Agent / get_subagent_result / steer_subagent). The pi-subagents extension
+  registers its foreground dispatch tool as "subagent" and a blocking wait as
+  "subagent_wait", so a parent legitimately BUSY on a healthy foreground child
+  tripped the bounded abort: field report shows a child writing Postgres
+  records productively for 30 minutes while the parent was stream-silent on
+  `subagent` — zombie_run_suspected at 20m, loop_stopped + zombie_run_aborted
+  at 30m, productive work killed mid-write.
+### Fix
+  One shared SUBAGENT_WAIT_TOOL_NAMES set + isSubagentWaitCall predicate in
+  goal-heartbeat.ts, consumed by BOTH sites (zombie stand-down and wedge-alert
+  hint) so the lists cannot drift apart again. New names: "subagent",
+  "subagent_wait". Behavioral tests drive the real heartbeat tick with a real
+  tool_call event: stand-down while in flight, clean abort once it settles,
+  no blanket amnesty.
+
 ## 0.35.25 — /loop resume honors the zero-stream abort park (2026-08-22, GitHub issue #14)
 
 ### Gap
