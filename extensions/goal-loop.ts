@@ -15,6 +15,7 @@ import type { ExtensionContext, ExtensionAPI } from "@earendil-works/pi-coding-a
 import { state, replaceState } from "./goal-state.js";
 import {
   appendLedger,
+  clearLoadHold,
   formatMainModelRecoveryStatus,
   isStaleApiError,
   nowIso,
@@ -778,6 +779,12 @@ interface LoopConfig {
 /** Shared loop-start path: /loop start AND propose_loop_draft (after Confirm). */
 async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Promise<boolean> {
   releaseInitialSessionLoadBarrier();
+  // v0.35.23 (note.md Next #2): explicitly starting a loop is the decision
+  // a load hold waits for — release it or the first tick would be frozen.
+  if (clearLoadHold(state)) {
+    persistState(ctx);
+    appendLedger(ctx.cwd, "load_hold_released", { via: "loop-start" });
+  }
   if (!(await resolveLoopStartConflict(ctx, cfg.target))) return false;
   const conflictIdsAtStart = liveObjectives(state).map((item) => item.id).sort().join(",");
   // branch=1 mode: scratch branch ONLY. Refuse on non-git or dirty tree —
@@ -953,6 +960,13 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       // saying "push again" wins over the ladder's memory (v0.29.19).
       state.loop = { ...stored, active: true, stopReason: undefined, consecutiveErrors: 0, consecutiveStuck: 0, lastStuckReason: undefined, stallCount: 0, auditPlateauReprieves: 0 };
       persistState(ctx);
+      // v0.35.23 (note.md Next #2): an explicit resume is exactly the
+      // decision a load hold waits for — release it or the tick below
+      // would be frozen.
+      if (clearLoadHold(state)) {
+        persistState(ctx);
+        appendLedger(ctx.cwd, "load_hold_released", { via: "loop-resume" });
+      }
       releaseContinuationDispatchStandDown();
       scheduleLoopTick(ctx);
       ctx.ui.notify(

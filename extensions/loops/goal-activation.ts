@@ -1573,6 +1573,24 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // state that doesn't mutate on load) rendered nothing — "can't tell if
     // it's on" is a bug. Painting unconditionally also clears/refreshes any
     // stale widget carried over from a previous in-process session.
+    // v0.35.23 (note.md Next #2): a consent-less cold load with pending
+    // durable state engages the LOAD HOLD — same freeze gates as /glla
+    // pause (continuation dispatch, loop ticks, heartbeat probes, recovery
+    // timers all check supervisorPaused()), but DISTINCT from it: released
+    // by any explicit work command, never by timers. State stays fully
+    // restored and DISPLAYED — only automation waits for the user.
+    if (!autoResume && !explicitRecovery && !staleRearmedOnSessionStart) {
+      const pendingDurableState = !!state.goal || (state.list?.length ?? 0) > 0 || !!state.loop;
+      if (pendingDurableState && typeof state.loadHoldAt !== "number") {
+        replaceState({ ...state, loadHoldAt: Date.now() });
+        persistState(ctx);
+        appendLedger(ctx.cwd, "load_hold_engaged", { reason: startReason ?? "startup" });
+        ctx.ui.notify(
+          "Loaded without starting: your goal/list/loop state is restored and shown below, but automation is HELD for your decision. /goal resume, /list resume, or /list next starts work; enable Auto-resume in /glla settings to restore load-time automation.",
+          "warning",
+        );
+      }
+    }
     refreshUI(ctx);
   });
 

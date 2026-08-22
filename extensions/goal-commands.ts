@@ -16,6 +16,7 @@ import {
   formatListDepth, goalArgsNeedDrafting, ledgerPath, newGoalId, nowIso, parseListImport, parseListItemDeclaration,
   assignQueueOrder, compareQueueItems, readAuditLog, readQueueFromDisk, routeGoalArgs, routeListText, sanitizeDisplayText, sanitizeProviderAuditReport, statusLabel,
   writeQueueItemFile, type ModeCommand, type State, LIST_MUTATING_SUBCOMMANDS, SETTINGS_MUTATING_ACTIONS,
+  clearLoadHold,
 } from "./goal-loop-core.js";
 import { clearDispatchRecord, dispatchRecordExists } from "./goal-loop-dispatch.js";
 import type { AuditDisplayProgress } from "./goal-loop-display.js";
@@ -332,6 +333,14 @@ async function cmdPause(ctx: ExtensionContext): Promise<void> {
 
 async function cmdResume(ctx: ExtensionContext): Promise<void> {
   releaseInitialSessionLoadBarrier();
+  // v0.35.23 (note.md Next #2): an explicit resume is exactly the decision
+  // the load hold waits for — release it before re-arming automation, or
+  // the scheduleContinuation below would be a frozen no-op.
+  if (clearLoadHold(state)) {
+    persistState(ctx);
+    appendLedger(ctx.cwd, "load_hold_released", { via: "goal-resume" });
+    ctx.ui.notify("Load hold released — automation is live again.", "info");
+  }
   const resumeCommand = activeGoalCommand("resume");
   if (manuallyResumeMainModelRecovery(ctx)) return;
   if (state.mainModelRecovery?.retryAt || state.mainModelRecovery?.pendingModelSwitch) {
