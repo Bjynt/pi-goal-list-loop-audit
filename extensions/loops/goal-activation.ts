@@ -1222,11 +1222,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     if (rebindResume) appendLedger(ctx.cwd, "rebind_resume", { pid: process.pid });
     const explicitRecovery = handoffResume || recoveryResume || rebindResume;
     // v0.35.23 (note.md Next #2): a non-quit shutdown successor no longer
-    // consents to loop auto-resume — a crash restart IS a cold load, and
-    // cold loads hold for an explicit decision. The variable survives only
-    // as heldLoopSuccessorResume below: it still bypasses the BLANK-start
-    // barrier so a crash successor reaches the restore gates and gets a
-    // truthful hold + notification instead of waiting unpainted.
+    // consents to loop auto-resume by itself — a crash restart IS a cold
+    // load, and cold loads hold for an explicit decision. The SAME-PROCESS
+    // successor case stays consented: pi replaced its session without dying
+    // (the /reload family), so the held work is mid-flight continuity, not
+    // a cold start. Different-pid successors hold like any cold load.
+    const sameProcessSuccessorResume = nonQuitShutdownResume && ownerClaim.previousPid === process.pid;
     const heldLoopSuccessorResume = !!state.loop
       && !state.loop.active
       && isLifecycleHeldLoopReason(state.loop.stopReason)
@@ -1382,7 +1383,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // stuck, and zero-stream abort reasons are intentionally excluded by the
     // shared predicate and remain explicitly resumable only.
     if (state.loop && !state.loop.active && isLifecycleHeldLoopReason(state.loop.stopReason)
-        && (autoResume || explicitRecovery)) {
+        && (autoResume || explicitRecovery || sameProcessSuccessorResume)) {
       const held = state.loop;
       state.loop = { ...held, active: true, stopReason: undefined };
       persistState(ctx);
@@ -1425,11 +1426,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // rebind marker were consumed before the startup barrier above.
     if (isLoopActive()) {
       const l = state.loop!;
-      // v0.35.23: a non-quit shutdown successor no longer consents by itself
-      // — a crash restart IS a cold load, and cold loads hold for an
-      // explicit decision (note.md Next #2). Validated handoffs/rebinds and
-      // the Auto-resume setting keep today's continuity.
-      if (autoResume || explicitRecovery) {
+      // v0.35.23: a different-pid crash successor no longer consents by
+      // itself — a crash restart IS a cold load, and cold loads hold for an
+      // explicit decision (note.md Next #2). Validated handoffs/rebinds,
+      // SAME-PROCESS successors, and the Auto-resume setting keep today's
+      // continuity.
+      if (autoResume || explicitRecovery || sameProcessSuccessorResume) {
         ctx.ui.notify(
           `Resuming loop (iteration ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"}, best ${l.bestValue ?? "n/a"}, stall ${l.stallCount}/${l.plateauWindow}): ${displaySlice(l.target, 60)}`,
           "info",
