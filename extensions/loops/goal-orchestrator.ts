@@ -998,7 +998,20 @@ function archiveCurrentGoal(
   // had a chance to choose a successor.
   const closeArchivedSlot = () => {
     if (state.goal?.id !== goal.id) return;
-    replaceState({ ...state, goal: null });
+    // v0.35.30: the archive nulled the slot, which blanked the widget — the
+    // verdict (approval or abort) survived only as one transient toast. Keep
+    // a durable last-outcome record so the widget can answer "did the final
+    // audit actually run?" hours later, after the agent's turn has ended.
+    replaceState({
+      ...state,
+      goal: null,
+      lastOutcome: {
+        at: nowIso(),
+        ok: status === "complete",
+        title: stopReason ?? status,
+        recap: (goal.completionSummary?.trim() || goal.objective).replace(/\s+/g, " ").slice(0, 300),
+      },
+    });
     persistState(ctx);
   };
   // Loop 2: a list-sourced goal COMPLETED → auto-activate the next item.

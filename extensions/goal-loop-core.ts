@@ -916,6 +916,15 @@ export interface State {
    * /list resume, /list next, /loop resume|start, starting a new goal).
    * Persisted so the hold survives restarts until the user decides. */
   loadHoldAt?: number;
+  /** v0.35.30: durable record of the most recent terminal outcome (an
+   * archived goal). The widget renders it while no goal/list/loop occupies
+   * the slot, so a finished audit stays visible after the agent's turn has
+   * ended — previously the archive nulled the slot, the widget went blank,
+   * and the only trace of the verdict was one transient toast (field:
+   * 2026-08-22 "goal gets closed before final audit, so auditor never
+   * approves" — the verdict HAD approved; nothing on screen said so).
+   * Overwritten by every slot close; cleared by /glla wipe. */
+  lastOutcome?: { at: string; ok: boolean; title: string; recap?: string };
 }
 
 /** v0.24.2: count TRAILING consecutive disapprovals (the disapproval-cap
