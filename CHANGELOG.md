@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.35.24 — auditor model picker at full selector parity: forbidden-models filtering (2026-08-22, note.md Next #1)
+
+### Gap
+  The /glla -> Auditor model row already hosted the /model-style fuzzy
+  picker and persisted to the exact key resolveAuditorModel reads — but
+  unlike every main-agent flow it did NOT apply forbidden-models policy:
+  blocked models appeared in the list and the typed escape hatch accepted
+  them, yielding pins the resolver silently skips at audit time.
+### Fix
+  promptModelRef gains an excludeRefs opt threading into buildModelPickItems
+  (list-level filter) AND validating typed entries against isForbiddenModel
+  (a policy match is refused with a warning naming the ref — never saved).
+  Both auditor slots use it: Auditor model and Auditor fallback agent.
+  A pin saved by the picker is one the resolver honors; runtime skips
+  (auditor_model_fallback reason:"forbidden") remain as belt-and-suspenders.
+
 ## 0.35.23 — load without autostart: cold sessions hold automation for an explicit decision (2026-08-22, note.md Next #2)
 
 ### Root cause

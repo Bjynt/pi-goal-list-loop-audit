@@ -10,7 +10,7 @@ This is a detached process, not a nested session in the main pi process. `comple
 
 On Windows, npm installs the `pi.cmd` shim rather than a directly executable `pi` binary. The auditor launches it through an explicitly quoted `cmd.exe` boundary; POSIX keeps direct shell-less execution. Protocol snapshots also tolerate transient Windows file-locks without deleting the last valid snapshot first.
 
-**Current package version:** `v0.35.23` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
+**Current package version:** `v0.35.24` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
 
 ## Why this exists
 
@@ -485,6 +485,17 @@ Open `/glla` to edit these settings in the table (the rows show effective values
 
 - Auditor model and thinking level
 - Auditor fallback agent
+
+**Auditor selection (v0.35.24):** the **Auditor model** row opens the same
+`/model`-style fuzzy picker the main agent flows use — configured-auth models
+only, with a session-model row and a typed escape hatch. It is at full parity
+with the main selector on policy too: your forbidden-models patterns filter
+the picker list AND a typed match is refused with a named warning, so a pin
+saved here is one `resolveAuditorModel` will actually honor. The pick lands
+in global `auditorModel` and is followed immediately by the auditor thinking
+dialog for that model. The **Auditor fallback agent** row applies the same
+filtering to the failure-over pin.
+
 - Notify command, token limit, and wedge-alert minutes
 - Auto-resume, auto-accept drafts, decision popup, and carryover policy
 - Main-agent current model/thinking, fallback models, recovery cadence, and preferred-primary failback policy in the Main agent tab
