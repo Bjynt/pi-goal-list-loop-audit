@@ -429,14 +429,19 @@ v0.1.0 ships the same auditor behaviour as pi-goal-x. The author of pi-goal-x do
 
 We accept this caveat for v0.1.0. v0.2.0 will add **regression_shield**: an explicit requirement that the auditor's report must include raw output (a `cat`, a `grep -A 5 <file>`, a `bash <user-script>`) for every item in `verificationContract`. Without that evidence, the auditor's `<approved/>` is rejected by the orchestrator.
 
-### Decision 3: Hard 5-minute backoff cap
+### Decision 3: Hard 5-minute backoff cap (SUPERSEDED v0.35.4)
 
 The #1 complaint about pi-goal-x in our audit (user-stated) was "1-hour waits". The cause is exponential backoff with no ceiling.
 
-v0.1.0 ships a hard 5-minute cap. After 5 minutes of consecutive backoff:
+v0.1.0 shipped a hard 5-minute cap. After 5 minutes of consecutive backoff:
 1. TUI badge turns red with "Last activity: 5m+".
 2. User can press `r` to force-continue or `s` to skip to next pending task.
 3. Optional: configure Telegram/web push notification.
+
+> **Superseded (v0.35.4):** the cap had zero production call sites and was
+> removed (`extensions/goal-loop-backoff.ts` header). The live envelope is
+> the eager 5s first retry + hourly-aligned ladder with stall-ladder/heartbeat
+> coverage — see README's retry section.
 
 ### Decision 4: No drafting phase in v0.1.0 (deferred to v0.2.0)
 
@@ -567,6 +572,46 @@ This protects against model-generated summaries losing fidelity.
 - **Parallelization architecture & opportunities**:
   - *Current*: Parallel subagent exploration fan-out (spawning multiple `Explore` agents in one turn) and parallel disjoint-worktree implementation (`general-purpose` workers with `isolation: "worktree"`). Detached auditor runs concurrently in background OS process.
   - *Opportunities*: Concurrent `/list` dispatch across non-conflicting tasks using isolated worktrees to eliminate head-of-line blocking for large queues, plus background contract rehearsals.
+
+## Addendum v0.35.7–v0.35.31 (consolidated behavior addenda)
+
+Per the doc convention, these releases appended the following architectural
+shapes (details in CHANGELOG.md; each is pinned by tests):
+
+- **Supervisor freeze — `/glla pause` (v0.35.15/17)**: freezes ALL automatic
+  machinery (re-arms, recovery probes, auto-resume, continuation dispatch,
+  proactive notifies) without touching active work or a running detached
+  auditor. Distinct from goal pause; only `/glla resume` clears it.
+- **Load hold (v0.35.23)**: a cold session load that restores pending state
+  WITHOUT explicit consent holds automation (`loadHoldAt`) until an explicit
+  work command releases it. Refines the restore-gate consent story above.
+- **Auditor picker parity (v0.35.24)**: `promptModelRef` accepts
+  `excludeRefs`; forbiddenModels policy refs are filtered from lists AND
+  refused on typed input (`forbidden_model_switch`).
+- **Zero-stream zombie park + RESUMABLE_STOP (v0.35.25/26)**: a run with no
+  provider activity parks as `stopped: automatic zero-stream abort…` and
+  `/loop resume` retries it; the zombie watchdog stands down while tracked
+  subagent waits are in flight via ONE shared `SUBAGENT_WAIT_TOOL_NAMES`
+  predicate (no per-site name lists).
+- **Windows auditor launch, gate-before-quote (v0.35.27)**: unsafe-arg
+  rejection runs on EVERY argument before the quoting decision; bare tokens
+  reach cmd.exe untouched so pnpm .CMD shims resolve.
+- **Heartbeat due-wait backstop + recovery notice (v0.35.28)**: wall-clock
+  comparison against persisted `pauseResumeAt` in the tick resumes lapsed
+  wait/error-brake parks after a 90s grace (consent-gated); successful
+  recoveries stamp `autoResumedAt`/`autoResumedEvent` and the continuation
+  prompt renders a RECOVERY NOTICE instead of waiting on a fired signal.
+- **Tracked-subagent visibility (v0.35.29)**: `getSubagentAgentsSnapshot()`
+  (read-only probe views with hung classification) feeds `/glla agents`,
+  `/glla agents --tail <id>` (read-only child transcript tail), and a widget
+  segment — pure rendering in `extensions/goal-agents-panel.ts`.
+- **Durable last-outcome retention (v0.35.30)**: archiving writes
+  `state.lastOutcome`; the widget keeps one dim ✓/▪ line for 24h after the
+  slot empties so a finished audit stays visible after the turn ends.
+- **Loop plateau vs never-moved baselines (v0.35.31)**: flat metric readings
+  count toward plateau only once the metric has demonstrably moved; a metric
+  that NEVER moves gets its own loud bounded stop. Audit loops keep their
+  purpose-built deferred-baseline + reprieve semantics verbatim.
 
 ## Files
 
