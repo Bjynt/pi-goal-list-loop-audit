@@ -95,6 +95,7 @@ export interface CommandDeps {
 }
 
 let deps: CommandDeps;
+let agentsSnapshot: CommandDeps["agentsSnapshot"];
 let flags: CommandFlags;
 let listQueue: CommandDeps["listQueue"], notifyExternal: CommandDeps["notifyExternal"], persistState: CommandDeps["persistState"], updateGoal: CommandDeps["updateGoal"], setGoal: CommandDeps["setGoal"],
     archiveCurrentGoal: CommandDeps["archiveCurrentGoal"], healGoalPolicy: CommandDeps["healGoalPolicy"], startDrafting: CommandDeps["startDrafting"], warnIfStaleAtEntry: CommandDeps["warnIfStaleAtEntry"], queuePendingListOperation: CommandDeps["queuePendingListOperation"], freshCtx: CommandDeps["freshCtx"],
@@ -113,6 +114,7 @@ export function createGoalCommands(d: CommandDeps): void {
   releaseInitialSessionLoadBarrier = d.releaseInitialSessionLoadBarrier; resolveCarryover = d.resolveCarryover; safeSteerUser = d.safeSteerUser; scheduleContinuation = d.scheduleContinuation; scheduleSessionTimeout = d.scheduleSessionTimeout;
   createGoal = d.createGoal; fireReviewer = d.fireReviewer; openSettingsUI = d.openSettingsUI; manuallyResumeMainModelRecovery = d.manuallyResumeMainModelRecovery; activeGoalCommand = d.activeGoalCommand;
   activeGoalStatusCommand = d.activeGoalStatusCommand; activeGoalSurfaceCommand = d.activeGoalSurfaceCommand; goalNoun = d.goalNoun; displaySlice = d.displaySlice; shortObj = d.shortObj;
+  agentsSnapshot = d.agentsSnapshot;
 }
 
 /* Moved bodies (bands b1 + b3 from goal.ts).                          */
