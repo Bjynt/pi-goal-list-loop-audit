@@ -8,6 +8,14 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { renderAgentsPanel, tailChildTranscript } from "./goal-agents-panel.js";
+
+/** Child pi sessions live under the shared session store, munged by cwd
+ * (verified layout: ~/.pi/agent/sessions/--home-user-proj--/*.jsonl). */
+function childSessionsDir(cwd: string): string {
+  const munged = "--" + cwd.replaceAll("/", "-") + "--";
+  return path.join(os.homedir(), ".pi", "agent", "sessions", munged);
+}
 import type { ExtensionContext, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { state, replaceState } from "./goal-state.js";
 import {
