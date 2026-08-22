@@ -717,6 +717,12 @@ export type AutomaticCompletionRecoveryTrigger = "session-start" | "host-rebind"
  * is not eligible for another automatic event-triggered attempt.
  */
 export function maybeAutoRetryParkedCompletionAudit(trigger: AutomaticCompletionRecoveryTrigger): boolean {
+  // v0.35.23 (note.md Next #2): a plain LOAD HOLD stops every automatic
+  // recovery trigger — pending claims wait for an explicit decision. The
+  // single exempt is "main-model-recovery": the claim was parked BY the
+  // provider failure, and the recovery ladder healing IS the pinned
+  // one-shot consent. Manual /glla pause freezes all triggers regardless.
+  if (loadHoldActive(state) && trigger !== "main-model-recovery") return false;
   const goal = state.goal;
   const claim = goal?.pendingCompletion;
   if (!goal || goal.status !== "paused" || !claim) return false;
@@ -751,7 +757,7 @@ export function maybeAutoRetryParkedCompletionAudit(trigger: AutomaticCompletion
   // beginCompletionAudit runs before retryStoredCompletionAudit reaches its
   // first await, atomically replacing the parked claim with a running claim
   // and consuming the durable one-shot marker.
-  void retryStoredCompletionAudit("session-recovery");
+  void retryStoredCompletionAudit("session-recovery", trigger === "main-model-recovery");
   return true;
 }
 
@@ -812,17 +818,17 @@ export async function runDetachedCompletionWithFallback(
  * impossible, semantic infra) → preserve the claim and pause for explicit `/goal resume`, while
  * semantic verdicts remain durable in auditHistory.
  */
-async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provider-retry"): Promise<void> {
+async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provider-retry", exemptLoadHold = false): Promise<void> {
   // v0.35.15: `/glla pause` freezes automatic audit recovery — provider
   // retries and session-recovery re-starts stay parked while the supervisor
   // is paused. Explicit manual requests (`/goal resume`, `/goal verify`)
   // still run: the user typed them, so they are not "automatic machinery".
-  // v0.35.23: the automatic LOAD HOLD exempts exactly ONE narrow path — a
-  // "main-model-recovery" origin. The claim was parked by provider
-  // infrastructure failure; the recovery ladder healing the provider IS the
-  // durable consent for its single retry (pinned v0.35.x). A manual
-  // /glla pause still freezes it completely.
-  if (origin !== "manual" && supervisorPaused(state) && !(origin === "main-model-recovery" && loadHoldActive(state))) return;
+  // v0.35.23: exemptLoadHold carves out ONE narrow path from the automatic
+  // LOAD HOLD (never from a manual /glla pause): a main-model-recovery
+  // triggered retry. The claim was parked by provider infrastructure
+  // failure; the recovery ladder healing the provider IS the durable
+  // consent for its single retry (pinned v0.35.x).
+  if (origin !== "manual" && supervisorPaused(state) && !exemptLoadHold) return;
   const goal = state.goal;
   if (!goal?.pendingCompletion) return;
   const goalId = goal.id;
