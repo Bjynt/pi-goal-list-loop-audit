@@ -33,7 +33,7 @@ test("v0.35.30: a fresh approved outcome renders as a ✓ done line with reason 
       title: "auditor minimax/MiniMax-M3 approved (complete-goal)",
       recap: "Expanded the curated pair set to full C(11,2) coverage — 55 pages prerendered.",
     },
-  }), undefined, NOW)!;
+  }), undefined, NOW, undefined, 220)!;
   assert.equal(lines.length, 1, "history, not a second surface");
   assert.match(lines[0]!, /✓ done/);
   assert.match(lines[0]!, /auditor minimax\/MiniMax-M3 approved/);
@@ -80,7 +80,7 @@ test("v0.35.30: a live goal outranks the retention line even if lastOutcome ling
 
 test("v0.35.30: source pins — slot close writes lastOutcome; wipe clears it", () => {
   const orch = require("node:fs").readFileSync("extensions/loops/goal-orchestrator.ts", "utf-8");
-  assert.match(orch, /closeArchivedSlot[\s\S]{0,400}lastOutcome: \{\s*\n\s*at: nowIso\(\)/, "closeArchivedSlot records the terminal outcome");
+  assert.match(orch, /closeArchivedSlot[\\s\\S]{0,800}lastOutcome: \{\s*\n\s*at: nowIso\(\)/, "closeArchivedSlot records the terminal outcome");
   assert.match(orch, /ok: status === "complete"/, "approved vs aborted is recorded");
   const cmds = require("node:fs").readFileSync("extensions/goal-commands.ts", "utf-8");
   assert.match(cmds, /lastOutcome: undefined/, "/glla wipe clears the retention record");
