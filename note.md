@@ -40,10 +40,6 @@ suspicious goal, repair task was qd but nothing started or can be started
 happened when tried to /goal start some kind of audit
 → activateNextListItem's loop guard refused LEDGER-ONLY while a loop owned the surface: unstartable AND invisibly so. Now the refusal is loud (names the queued item + "/loop stop … /list next") and ledgered with queueItemId; all three loop-end routes announce the unblocked queue. Also fixed the cross-file test pollution found by that audit round.
 
-## DONE v0.35.21
-
-list exec stopped and list because not visible til i restarted session
-
 suspicious goal / objective
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_134442.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_134645.png 
@@ -51,16 +47,15 @@ suspicious goal / objective
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_114210.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_114109.png 
 
-## QUEUED → list item 1 (active)
+## DONE v0.35.21
 
 list exec stopped and list because not visible til i restarted session
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_213238.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_214510.png 
-→ sidebar rendered state.list from memory only while the durable queue is the union of state + disk sidecars; a plugin re-init reset RAM to blank until restart. session_start now hydrates the queue from disk (hydrateListQueueFromDisk) and notifies "restored N queued list item(s)".
 
 here too
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_215228.png /home/dracon/Pictures/Screenshots/Screenshot_20260821_215209.png 
-
+→ sidebar rendered state.list from memory only while the durable queue is the union of state + disk sidecars; a plugin re-init reset RAM to blank until restart. session_start now hydrates the queue from disk (hydrateListQueueFromDisk) and notifies "restored N queued list item(s)".
 
 # Later
 
