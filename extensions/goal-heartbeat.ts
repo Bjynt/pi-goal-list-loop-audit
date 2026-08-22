@@ -175,6 +175,26 @@ const ZOMBIE_RUN_SILENT_MS = 20 * 60_000;
 const ZOMBIE_RUN_ABORT_GRACE_MS = 10 * 60_000;
 const ZOMBIE_RUN_ALERT_THROTTLE_MS = 10 * 60_000;
 
+// v0.35.26 (issue #13): ONE shared name set for "the parent is legitimately
+// stream-silent because it is blocked on a subagent call" — consumed by both
+// the zombie stand-down and the wedge-alert hint so the two sites cannot
+// drift apart again (that drift is exactly the bug). The legacy built-in
+// names (Agent / get_subagent_result / steer_subagent) are joined by the
+// pi-subagents extension's registrations: its foreground dispatch tool is
+// named "subagent" and its blocking background wait is "subagent_wait"
+// (field 2026-08-21: a healthy foreground child wrote Postgres records for
+// 30 productive minutes while the parent was stream-silent on `subagent` —
+// the watchdog aborted it at the grace boundary anyway).
+const SUBAGENT_WAIT_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "Agent",
+  "get_subagent_result",
+  "steer_subagent",
+  "subagent",
+  "subagent_wait",
+]);
+const isSubagentWaitCall = (t: { name?: string }): boolean =>
+  typeof t.name === "string" && SUBAGENT_WAIT_TOOL_NAMES.has(t.name);
+
 function zombieRunSilentMs(): number {
   return zombieRunSilentMsOverride ?? ZOMBIE_RUN_SILENT_MS;
 }
@@ -622,7 +642,7 @@ function heartbeatTick(): void {
     // subagent tool call is recorded — the abort must not own that case.
     const subagentWaitInFlight =
       hasLiveSubagentHangProbes() ||
-      [...flags.inFlightToolCalls.values()].some((t) => t.name === "Agent" || t.name === "get_subagent_result" || t.name === "steer_subagent");
+      [...flags.inFlightToolCalls.values()].some(isSubagentWaitCall);
     if (subagentWaitInFlight) {
       if (streamSilentMs >= zombieAbortMs && !flags.abortedStandDown) {
         appendLedger(ctx.cwd, "zombie_run_stood_down_subagent_wait", { streamSilentMs });
@@ -764,7 +784,7 @@ function heartbeatTick(): void {
     // whose tool-use counter stops moving is hung, not thinking.
     const subWaits = new Set(
       [...flags.inFlightToolCalls.values()]
-        .filter((t) => t.name === "get_subagent_result" || t.name === "Agent")
+        .filter(isSubagentWaitCall)
         .map((t) => t.name),
     );
     const subHint = subWaits.size > 0
