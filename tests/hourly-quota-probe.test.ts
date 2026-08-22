@@ -161,10 +161,10 @@ test("v0.34.132: executable runtime regression covers failure re-arm, opt-out, a
 test("v0.34.92: session_start re-arms the hourly ticker when recovery is parked", () => {
   const handlerIdx = GOAL_SRC.indexOf('pi.on("session_start"');
   assert.ok(handlerIdx > 0, "session_start handler exists");
-  // session_start handler is ~15k chars (from `pi.on("session_start"` to the
-  // end of the recovery restore + the new hourly schedule call); slice
-  // enough to cover the schedule call at the bottom of the recovery block.
-  const tail = GOAL_SRC.slice(handlerIdx, handlerIdx + 20_000);
+  // session_start handler grew past 20k chars in v0.35.21 (the restore
+  // gained the disk-sidecar queue convergence block); slice enough to
+  // still cover the schedule call at the bottom of the recovery block.
+  const tail = GOAL_SRC.slice(handlerIdx, handlerIdx + 26_000);
   assert.match(tail, /scheduleMainModelRecoveryTimer\(ctx, delay\);/, "session_start re-schedules recovery");
   assert.match(tail, /scheduleHourlyProbe\(ctx\);/, "session_start also re-arms the hourly ticker");
 });
