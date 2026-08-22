@@ -1410,7 +1410,7 @@ function registerAgentTools(pi: any): void {
         try {
           const hours = Math.round((resumeAtMs - Date.now()) / (60 * 60 * 1000));
           ctx.ui.notify(
-            `Pause scheduled for ~${hours}h. If the objective no longer matches your intent, run ${activeGoalSurfaceCommand("tweak")} to replace it now; otherwise ${activeGoalSurfaceCommand("resume")} continues automatically when the wait ends.`,
+            `Pause scheduled for ~${hours}h. If the objective no longer matches your intent, run ${activeGoalSurfaceCommand("tweak")} to replace it now; otherwise the wait auto-continues shortly after its resume time (heartbeat backstop), and ${activeGoalSurfaceCommand("resume")} resumes immediately.`,
             "info",
           );
           appendLedger(ctx.cwd, "pause_long_wait_offer_tweak", {
