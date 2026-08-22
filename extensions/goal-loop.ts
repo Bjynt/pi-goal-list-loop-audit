@@ -701,9 +701,29 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
     ctx.ui.notify(`Loop stopped: ${outcome.reason}. ${loop.history.length} iterations recorded.`, "info");
     appendLedger(ctx.cwd, "loop_stopped", { reason: outcome.reason, iterations: loop.iteration, best: loop.bestValue });
     notifyExternal(ctx, `Loop stopped: ${outcome.reason}`);
+    resumeQueuedListAfterLoopEnd(ctx);
     return;
   }
   scheduleLoopTick(ctx);
+}
+
+/** v0.35.22 (note.md Next #3, field 2026-08-21): when a loop ends by ANY
+ * route, a queued item that was blocked while the loop owned the surface
+ * (field: the repair card behind a paused suspicious goal — the user was
+ * told "/list next starts it" but it silently no-oped) must become
+ * startable again. If no goal owns the surface and items are waiting,
+ * advance now and say what happened — never leave a dead queued entry. */
+function resumeQueuedListAfterLoopEnd(ctx: ExtensionContext): void {
+  if (state.goal && state.goal.status === "active") return;
+  const waiting = state.list?.length ?? 0;
+  if (waiting === 0) return;
+  const advanced = activateNextListItem(ctx);
+  ctx.ui.notify(
+    advanced
+      ? "The loop ended — the next queued list item started."
+      : `The loop ended but the queued item could not start (${waiting} waiting) — /list next retries.`,
+    advanced ? "info" : "warning",
+  );
 }
 
 /** On loop stop (any reason): return to the original branch, tell the user
@@ -1046,6 +1066,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       "info",
     );
     notifyExternal(ctx, `Loop stopped by user after ${state.loop.iteration} iterations (best: ${state.loop.bestValue ?? "n/a"})`);
+    resumeQueuedListAfterLoopEnd(ctx);
     return;
   }
 
@@ -1077,6 +1098,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       "info",
     );
     notifyExternal(ctx, `Loop finished: ${reason}`);
+    resumeQueuedListAfterLoopEnd(ctx);
     return;
   }
 
