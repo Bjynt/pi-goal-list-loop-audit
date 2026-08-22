@@ -650,8 +650,8 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
     // was unstartable AND invisibly so (screenshots 134442/134645: the user
     // is told to run /list next, it silently no-ops while a loop holds the
     // surface). One-active-thing still refuses, but LOUDLY and with the way
-    // out; the loop-end cascade (resumeQueuedListAfterLoopEnd) now retries
-    // activation so the repair also self-heals when the loop ends.
+    // out; the loop-end cascade (announceQueuedListAfterLoopEnd) surfaces
+    // that the item is startable again once the loop ends.
     const head = listQueue()[0];
     appendLedger(ctx.cwd, "list_activation_blocked_loop", {
       ...(head ? { queueItemId: head.id, objective: head.objective.slice(0, 200) } : {}),
