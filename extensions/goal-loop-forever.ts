@@ -241,10 +241,23 @@ export function applyMeasurement(loop: LoopState, value: number | null, at: stri
     loop.consecutiveNullMeasures = (loop.consecutiveNullMeasures ?? 0) + 1;
   } else {
     loop.consecutiveNullMeasures = 0;
+    // v0.35.31 (field: doomtap 2026-08-22): before the metric has EVER
+    // demonstrated movement, a flat reading means the baseline is still
+    // forming — under min with a pre-work zero (or max with an early
+    // ceiling), every later productive reading scores "flat" and burned
+    // plateau slots toward a false "plateau — best: 0" stop while the loop
+    // was visibly fixing real work. Flat readings only count toward the
+    // plateau once the metric has moved (an improvement on record, or a
+    // bestValue that differs from the first measured value — the latter
+    // covers resumed runs whose history restarted). Bounded below by the
+    // never-moved cap so a dead metric still ends loudly.
+    const firstMeasured = loop.history.find((h) => h.value !== null)?.value;
+    const metricHasMoved = loop.history.some((h) => h.improved)
+      || (loop.bestValue !== null && firstMeasured !== null && loop.bestValue !== firstMeasured);
     if (improved) {
       loop.bestValue = value;
       loop.stallCount = 0;
-    } else {
+    } else if (metricHasMoved) {
       loop.stallCount++;
     }
   }
@@ -276,6 +289,19 @@ export function applyMeasurement(loop: LoopState, value: number | null, at: stri
   if (loop.stallCount >= loop.plateauWindow) {
     loop.active = false;
     loop.stopReason = `plateau — no improvement in ${loop.plateauWindow} consecutive iterations (best: ${loop.bestValue ?? "n/a"})`;
+    return { kind: "stop", reason: loop.stopReason };
+  }
+  // v0.35.31: the never-moved grace above needs its own bound — a metric
+  // that NEVER moves would otherwise dodge plateau forever. Twice the window
+  // in measured iterations without one improvement is a loud, distinct stop
+  // naming the actual suspect (direction/measureCmd), not a fake plateau.
+  const measured = loop.history.filter((h) => h.value !== null).length;
+  const firstMeasuredFinal = loop.history.find((h) => h.value !== null)?.value;
+  const metricNeverMoved = !loop.history.some((h) => h.improved)
+    && (loop.bestValue === null || firstMeasuredFinal === null || loop.bestValue === firstMeasuredFinal);
+  if (metricNeverMoved && measured >= loop.plateauWindow * 2) {
+    loop.active = false;
+    loop.stopReason = `metric never moved — ${measured} measurements without one improvement against the initial reading (best: ${loop.bestValue ?? "n/a"}, dir ${loop.direction ?? "?"}). Check measureCmd/direction; /loop resume retries or /loop stop.`;
     return { kind: "stop", reason: loop.stopReason };
   }
   if (loop.maxIterations > 0 && loop.iteration >= loop.maxIterations) {
