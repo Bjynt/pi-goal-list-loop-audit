@@ -518,9 +518,10 @@ test("v0.34.14: /reload rebind resumes mid-work — the 'list is not continuing'
   assert.match(g, /rebind: previous\.pid === process\.pid && !hadShutdown,/, "proper shutdown requires matching handoff consent");
   assert.match(g, /const ownerClaim = claimSessionOwnerAndDetectRebind\(ctx\.cwd, sessionGeneration, sessionManagerId\(ctx\)\);/, "restore claims the generation-bound owner");
   assert.match(g, /appendLedger\(ctx\.cwd, "rebind_resume", \{ pid: process\.pid \}\);/, "rebind resumes are ledger-visible");
-  // Cold boots (new pid) still honor autoresume=off; lifecycle handoff and
-  // same-pid rebind are explicit same-process continuations.
-  assert.ok(g.includes("if (autoResume || loopSuccessorResume) {"), "loop branch includes validated successor consent");
+  // Cold boots (new pid) still honor autoresume=off; validated handoffs,
+  // rebinds, and SAME-PID successors are explicit same-process continuations
+  // (v0.35.23: different-pid crash successors hold like any cold load).
+  assert.ok(g.includes("(autoResume || explicitRecovery || sameProcessSuccessorResume)"), "loop branch includes validated successor consent");
   assert.ok((g.match(/if \(autoResume \|\| recoveryResume \|\| rebindResume \|\| handoffResume\) \{/g) ?? []).length >= 1, "goal branch keeps its existing lifecycle consent");
 });
 

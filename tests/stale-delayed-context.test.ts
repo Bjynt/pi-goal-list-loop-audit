@@ -66,7 +66,7 @@ test("v0.34.22: detached completion audits persist lifecycle claims and stop app
   assert.match(complete, /detachedAuditContext\(auditGeneration, auditGoalId, auditAttemptId\)/);
   assert.match(complete, /if \(!auditContextAfterRun \|\| !state\.goal \|\| state\.goal\.id !== auditGoalId\)/);
   assert.match(GOAL, /shouldRetry: \(\) => detachedAuditContext\(generation, goalId, claim\.attemptId!\) !== null/);
-  assert.match(GOAL, /async function retryStoredCompletionAudit\(origin: CompletionAuditOrigin = "provider-retry"\)/);
+  assert.match(GOAL, /async function retryStoredCompletionAudit\(origin: CompletionAuditOrigin = "provider-retry"(, exemptLoadHold = false)?\)/);
   assert.doesNotMatch(GOAL, /retryStoredCompletionAudit\(ctx,/);
 });
 
