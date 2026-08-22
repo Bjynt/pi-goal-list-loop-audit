@@ -645,7 +645,23 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
   // completion cascade, /list next, list_activate, list-draft auto-activate)
   // may activate a list item over a live loop, present or future.
   if (isLoopActive()) {
-    appendLedger(ctx.cwd, "list_activation_blocked_loop", {});
+    // v0.35.22 (note.md Next #3, field 2026-08-21): this refusal used to be
+    // LEDGER-ONLY — a queued repair card behind a paused suspicious goal
+    // was unstartable AND invisibly so (screenshots 134442/134645: the user
+    // is told to run /list next, it silently no-ops while a loop holds the
+    // surface). One-active-thing still refuses, but LOUDLY and with the way
+    // out; the loop-end cascade (resumeQueuedListAfterLoopEnd) now retries
+    // activation so the repair also self-heals when the loop ends.
+    const head = listQueue()[0];
+    appendLedger(ctx.cwd, "list_activation_blocked_loop", {
+      ...(head ? { queueItemId: head.id, objective: head.objective.slice(0, 200) } : {}),
+    });
+    ctx.ui.notify(
+      head
+        ? `The queued item cannot start while a loop owns the surface — "${head.objective.slice(0, 80)}" stays queued. /loop stop the loop (or let its bounds end it), then /list next starts the item.`
+        : "A loop is active — one active thing at a time. /loop stop it first, then /list next.",
+      "warning",
+    );
     return false;
   }
   // v0.28.14: carryover resolution runs BEFORE the item is taken — under
