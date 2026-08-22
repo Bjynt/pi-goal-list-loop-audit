@@ -851,6 +851,25 @@ export function guardGoalBeforeContinuation(
 
   const assessment = assessSuspiciousObjective(goal.objective, goal.verificationContract);
   if (!assessment.suspicious) return true;
+  // v0.35.31 (field: Screenshot_20260822_193744): an EXPLICIT `/goal start
+  // <text>` is user intent. The fragment heuristics (dangling-fragment,
+  // lowercase-fragment, …) exist to stop AGENT-authored report garbage from
+  // dispatching — casual user prose like "…because we are logged in" trips
+  // DANGLING_END's trailing-preposition match and got parked with a repair
+  // task the user never asked for. When the objective is verbatim a user
+  // seed on a user-created goal, dispatch it and record that the heuristic
+  // was skipped; /goal tweak remains available if it really is malformed.
+  const userSeeded = goal.createdVia === "user"
+    && !!goal.objectiveProvenance?.userSeeds?.some((seed) => seed.trim() === goal.objective.trim());
+  if (userSeeded) {
+    appendLedger(ctx.cwd, "faulty_objective_user_seed_trusted", {
+      goalId: goal.id,
+      where,
+      reasons: [...assessment.reasons],
+      note: "explicit /goal start — user prose dispatched verbatim; suspicious-objective pause skipped",
+    });
+    return true;
+  }
 
   const proposal = deriveObjectiveRepair(goal, assessment);
   if (proposal) {

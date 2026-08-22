@@ -469,6 +469,49 @@ test("an active goal with an interrupted terminal stopReason is not dispatched",
   assert.match(ledger(cwd), /"faulty_objective_terminal_fence"/);
 });
 
+// v0.35.31 (field: Screenshot_20260822_193744): an explicit /goal start with
+// casual user prose ("…because we are logged in") tripped DANGLING_END and
+// parked the goal behind a repair task the user never asked for. User-seeded
+// objectives on user-created goals dispatch verbatim.
+test("an explicit /goal start objective is dispatched even when the heuristic flags it", async () => {
+  const cwd = tmpCwd();
+  const objective = "play around with the buttons because discover and projects lead to the same place and we are logged in";
+  const g = seedGoal({
+    status: "active",
+    policy: "goal",
+    objective,
+    createdVia: "user",
+    objectiveProvenance: { originalObjective: objective, userSeeds: [objective] },
+  });
+  seedState(cwd, { goal: g, list: [] });
+  __testOnlyLoadState(cwd);
+  const pi = new MockPi();
+  activate(pi.api);
+  const ctx = await boot(pi, cwd);
+  // Sanity: the heuristic DOES flag this prose in isolation.
+  assert.equal(assessSuspiciousObjective(objective).suspicious, true);
+  assert.equal(guardGoalBeforeContinuation(ctx as any, "user-seed-test", String(g.id)), true);
+  assert.equal(readState(cwd).goal?.status, "active", "no suspicious pause for user intent");
+  assert.match(ledger(cwd), /"faulty_objective_user_seed_trusted"/);
+});
+
+test("agent-authored suspicious objectives still pause — the trust is user-seed only", async () => {
+  const cwd = tmpCwd();
+  setGlobalAutoResume(true);
+  const g = seedGoal({
+    status: "active",
+    policy: "goal",
+    objective: "play around with the buttons because discover and projects lead to the same place and we are logged in",
+    createdVia: "reviewer",
+  });
+  seedState(cwd, { goal: g, list: [] });
+  const pi = new MockPi();
+  activate(pi.api);
+  await boot(pi, cwd);
+  assert.equal(readState(cwd).goal?.status, "paused");
+  assert.doesNotMatch(ledger(cwd), /"faulty_objective_user_seed_trusted"/);
+});
+
 test("replan confirmation consumes the source queue fragment and its sidecar", async () => {
   const cwd = tmpCwd();
   const fragment = "Item: every DECIDE finding has been raised to the user and recorded as DECIDED/DEFERRED (or the report states plainly that none were found)";
