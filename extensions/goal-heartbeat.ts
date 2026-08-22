@@ -960,6 +960,62 @@ export function __testOnlySetHeartbeatStaleDebounce(n: number | null): void {
   heartbeatStaleDebounce = n ?? HEARTBEAT_STALE_DEBOUNCE;
 }
 
+/** v0.35.29 (issue #15): production snapshot of the tracked-subagent table
+ * for /glla agents and the widget segment. Read-only copies — never mutates
+ * probe counters (unlike classifyHungSubagents, which advances them).
+ * Hung classification mirrors the heartbeat scan's semantics without its
+ * mutation: no new progress for >= SUBAGENT_HANG_NO_PROGRESS_MS with the
+ * manager record still pollable = record-frozen; without = event-only. */
+export interface SubagentAgentView {
+  recordId: string;
+  agentType?: string;
+  summary?: string;
+  status: "running" | "hung" | "ended";
+  spawnedAt: number;
+  lastProgressAt: number;
+  toolUses: number;
+  outputTokens: number;
+  /** ms since the last NEW progress (tool use / output tokens). */
+  silentMs: number;
+  evidence: "record-frozen" | "event-only" | "live";
+  hangAlertedAt?: number;
+  endedAt?: number;
+}
+
+export function getSubagentAgentsSnapshot(now = Date.now()): { agents: SubagentAgentView[]; managerAvailable: boolean } {
+  const poll = subagentManagerPoller();
+  const managerAvailable = typeof poll.getRecord === "function";
+  const agents: SubagentAgentView[] = [];
+  for (const probe of subagentHangProbes.values()) {
+    const ended = probe.endedAt !== undefined;
+    let status: SubagentAgentView["status"] = "running";
+    let evidence: SubagentAgentView["evidence"] = "live";
+    if (!ended) {
+      const stillTracked = managerAvailable && poll.getRecord?.(probe.recordId) !== undefined;
+      const silentMs = now - probe.lastProgressAt;
+      if (silentMs >= SUBAGENT_HANG_NO_PROGRESS_MS) {
+        status = "hung";
+        evidence = stillTracked ? "record-frozen" : "event-only";
+      }
+    }
+    agents.push({
+      recordId: probe.recordId,
+      ...(probe.agentType ? { agentType: probe.agentType } : {}),
+      ...(probe.summary ? { summary: probe.summary } : {}),
+      status,
+      spawnedAt: probe.spawnedAt,
+      lastProgressAt: probe.lastProgressAt,
+      toolUses: probe.lastToolUses,
+      outputTokens: probe.lastOutputTokens,
+      silentMs: Math.max(0, now - probe.lastProgressAt),
+      evidence,
+      ...(probe.hangAlertedAt !== undefined ? { hangAlertedAt: probe.hangAlertedAt } : {}),
+      ...(probe.endedAt !== undefined ? { endedAt: probe.endedAt } : {}),
+    });
+  }
+  return { agents, managerAvailable };
+}
+
 /** Test-only: snapshot of the live subagent-hang probe registry. Returns
  * the LIVE probe objects (tests backdate lastProgressAt / read hangAlertedAt)
  * — read-only misuse is on the test author. Never called by production
