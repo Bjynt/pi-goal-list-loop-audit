@@ -10,7 +10,7 @@ This is a detached process, not a nested session in the main pi process. `comple
 
 On Windows, npm installs the `pi.cmd` shim rather than a directly executable `pi` binary. The auditor launches it through an explicitly quoted `cmd.exe` boundary; POSIX keeps direct shell-less execution. Protocol snapshots also tolerate transient Windows file-locks without deleting the last valid snapshot first.
 
-**Current package version:** `v0.35.22` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
+**Current package version:** `v0.35.23` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
 
 ## Why this exists
 
@@ -447,6 +447,24 @@ a live loop AND a live goal, the most recent artifact keeps the slot and the
 loser is archived (recoverable under `.pi-glla/archive/`), never silently
 wiped. Legacy `complete`/`aborted` terminal slots are also cleared once their
 archive exists, while the final summary remains available in history.
+
+### Load without autostart (v0.35.23)
+
+On startup glla RESTORES and DISPLAYS all durable state — active/paused
+goal, waiting queue, loop — but holds every automatic dispatch until you
+decide. The load hold freezes the same machinery as `/glla pause`
+(continuation dispatch, loop ticks, heartbeat refires, recovery timers)
+through one shared gate; unlike a manual pause it keeps host-loss
+supervision probing, and it is released by any explicit work command:
+`/goal resume`, `/list resume`, `/list next`, `/loop resume`, `/loop start`,
+or starting a new goal. Every release is ledgered (`load_hold_engaged` /
+`load_hold_released`). Set global **Auto-resume = on** to restore
+load-time automation for unattended rigs — the consent is the raw setting,
+not the aggressive-mode default. Narrow continuity exceptions keep working
+without consent: validated handoffs/rebinds, same-process session
+successors, re-arming of work already in flight when a host silently died,
+and the single retry a parked completion claim earns when main-model
+recovery heals the provider that parked it.
 
 ## Completion and destructive commands
 

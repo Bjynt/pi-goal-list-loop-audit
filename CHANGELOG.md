@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.35.23 — load without autostart: cold sessions hold automation for an explicit decision (2026-08-22, note.md Next #2)
+
+### Root cause
+  shouldAutoResumeOnSessionStart already demanded explicit `autoResume ===
+  true` (v0.28.21 tri-state, undefined default = HOLD) — but its only
+  consumer fed it the AGGRESSIVE-MODE COERCED value (unset -> true because
+  aggressiveMode defaults on), so stock installs auto-resumed everything on
+  every session load despite the documented default. Three further paths
+  bypassed the consent entirely.
+### Fixes
+  - Load consent now reads the RAW global autoResume setting; aggressive
+    mode keeps owning its caps only. Default (unset/false) = restore and
+    DISPLAY state, hold automation.
+  - New durable loadHoldAt state engages through the SAME freeze gates as
+    /glla pause (continuation dispatch, loop ticks, heartbeat refires,
+    recovery timers); released by any explicit work command (/goal resume,
+    /list resume, /list next, /loop resume|start, new goal creation),
+    each release ledgered load_hold_released. Heartbeat host-loss
+    supervision stays armed under the hold — a held plane is never an
+    unprobed idle plane.
+  - Closed consent bypasses: different-pid crash successors no longer
+    auto-resume held loops or replay journals as automation (same-process
+    /reload successors keep continuity); parked completion-audit claims no
+    longer auto-retry on a bare cold start (the main-model-recovery one-
+    shot retry keeps its pinned consent).
+
 ## 0.35.22 — a queued item blocked by a live loop is loud and self-heals at loop end (2026-08-22)
 
 ### suspicious-unstartable-repair-card fix (note.md Next #3)

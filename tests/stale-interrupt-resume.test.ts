@@ -85,7 +85,10 @@ test("S2 (v0.28.21): the 0.28.3 interrupt exemption is SUPERSEDED — only autor
   // other; the marker is cleared only inside the autoresume=on path.
   assert.match(SRC, /if \(autoResume\) \{/);
   assert.doesNotMatch(SRC, /autoResume \|\| \(wasInterrupted && autoResumeSetting !== false\)/);
-  assert.match(SRC, /const autoResumeSetting = resolveEffectiveAggressiveSettings\(loadGlobalSettings\(\)\)\.autoResume;/); // v0.29.5: global-only
+  // v0.29.5: global-only. v0.35.23: consent reads the RAW global setting —
+  // the aggressive-mode coercion used to flip the documented hold-by-
+  // default into stock auto-resume on every load.
+  assert.match(SRC, /const autoResumeSetting = loadGlobalSettings\(\)\.autoResume;/);
 });
 
 test("S1/S2: widget surfaces the interrupt on ACTIVE goals", () => {
