@@ -1212,6 +1212,19 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     return;
   }
 
+  // v0.35.33: /loop plan [target] — the extended draft for a loop config:
+  // deep research + multi-round metric design, same propose_loop_draft Confirm.
+  // Explicit sub BEFORE the natural-language fallthrough (otherwise "plan"
+  // would become a loop TARGET).
+  if (sub === "plan") {
+    if (isLoopActive()) {
+      ctx.ui.notify("A loop is already active — /loop status to inspect, /loop stop to end it.", "info");
+      return;
+    }
+    await startDrafting(ctx, "loop", rest || undefined, "plan");
+    return;
+  }
+
   // Anything else is a natural-language target (v0.22.4): draft it — the
   // metric is the whole game for a loop, and /loop start with full params
   // is the skip-drafting path. Previously this fell through to a usage

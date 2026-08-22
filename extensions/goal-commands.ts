@@ -203,6 +203,18 @@ async function cmdGoal(args: string, ctx: ExtensionContext): Promise<void> {
       }
       return cmdSet(route.rest, ctx, true);
     }
+    // v0.35.33: /goal plan [seed] — the EXTENDED DRAFT. Same trust machinery
+    // as a regular draft (Confirm card gates activation), deeper process:
+    // research-first, multi-round interview, structured expanded objective.
+    // For greenfield/megaplan work where the standard 5–7-question interview
+    // is too shallow. Regular /goal stays the fast path.
+    if (route.name === "plan") {
+      // Same entry gate as cmdSet: a stale MAIN cannot deliver the seed; do
+      // not leave an orphaned drafting gate behind a doomed process.
+      if (warnIfStaleAtEntry(ctx, "/goal")) return;
+      await startDrafting(ctx, "goal", route.rest || undefined, "plan");
+      return;
+    }
   }
   return cmdSet(route.kind === "set" ? route.text : "", ctx);
 }
@@ -1239,6 +1251,17 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
       return;
     }
     await startDrafting(ctx, "list", aliased.seed);
+    return;
+  }
+
+  // v0.35.33: /list plan [seed] — the extended draft for LIST items: deep
+  // research + multi-round interview, then the agent proposes items[] through
+  // the SAME one-Confirm batch path (never per-item activation). Intended for
+  // greenfield/megaplan decomposition where the standard interview is too
+  // shallow. Plain /list add keeps its fast behavior unchanged.
+  if (sub === "plan") {
+    if (staleEntry && queuePendingListOperation(ctx, args)) return;
+    await startDrafting(ctx, "list", rest || undefined, "plan");
     return;
   }
 
