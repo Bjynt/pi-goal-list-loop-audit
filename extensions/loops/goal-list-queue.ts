@@ -70,6 +70,7 @@ import {
   parseListImport,
 
   routeGoalArgs,
+  draftingTemplateFile,
   routeListText,
   listMutationBlocked,
   LIST_DRAFTING_BLOCK_MESSAGE,
@@ -757,7 +758,7 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
 // Drafting: /goal with no args → clarify → Confirm dialog → activate
 // =================================================================
 
-async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "loop", seed?: string): Promise<boolean> {
+async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "loop", seed?: string, depth: "normal" | "plan" = "normal"): Promise<boolean> {
   // A stale/handoff-bound MAIN cannot deliver the seed. Do not leave the
   // module in drafting mode: that orphaned gate makes later list_add and
   // propose_goal_draft calls look like user disapprovals until restart.
@@ -766,12 +767,17 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
     return false;
   }
   draftingTarget = target;
-  const prompts: Record<string, [string, string, string]> = {
-    goal: ["goal-loop-draft.md", "Goal drafting", "propose_goal_draft"],
-    list: ["goal-loop-draft.md", "Goal drafting (for the list)", "propose_goal_draft"],
-    loop: ["goal-loop-forever-draft.md", "Loop drafting", "propose_loop_draft"],
+  draftingDepth = depth;
+  const labels: Record<string, [string, string]> = {
+    goal: ["Goal drafting", "propose_goal_draft"],
+    list: ["Goal drafting (for the list)", "propose_goal_draft"],
+    loop: ["Loop drafting", "propose_loop_draft"],
   };
-  const [file, label, tool] = prompts[target]!;
+  const [baseLabel, tool] = labels[target]!;
+  // v0.35.33: plan depth swaps in the extended-draft prompt (research-first,
+  // multi-round interview, structured expanded objective).
+  const file = draftingTemplateFile(target, depth);
+  const label = depth === "plan" ? `${baseLabel} — deep planning` : baseLabel;
   const seededHint =
     target === "list"
       ? `${label}: free-text is valid without a "Done when:" clause — the agent will turn it into short list items and grill for concrete per-item contracts (nothing activates until you confirm). To skip drafting, include a per-item "Done when:" clause.`

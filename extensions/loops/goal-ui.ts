@@ -376,6 +376,7 @@ function clearDraftingState(): void {
   const restore = (globalThis as any).restoreDrafterModel as (() => Promise<void>) | undefined;
   if (restore) void restore();
   draftingTarget = null;
+  draftingDepth = "normal";
   draftingUserReplies = 0;
   draftingBlockedProposals = 0;
   draftingSeedInFlight = false;

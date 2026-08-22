@@ -79,6 +79,7 @@ declare global {
   var hourlyProbeFireAt: any;
   var lastMainModelFailure: any;
   var draftingTarget: any;
+  var draftingDepth: any;
   var draftingUserReplies: any;
   var draftingBlockedProposals: any;
   var draftingSeedInFlight: any;

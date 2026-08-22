@@ -445,14 +445,14 @@ export interface Goal {
 export type GoalRoute =
   | { kind: "draft" }
   | { kind: "set"; text: string }
-  | { kind: "sub"; name: "status" | "pause" | "resume" | "cancel" | "decide" | "verify" | "audit" | "tweak" | "archive" | "start"; rest: string };
+  | { kind: "sub"; name: "status" | "pause" | "resume" | "cancel" | "decide" | "verify" | "audit" | "tweak" | "archive" | "start" | "plan"; rest: string };
 
 // v0.29.8: "audit" moved to ARG subs ("/goal audit [focus]" is the one-shot
 // project audit — user: "/goal audit IS the audit goal"); the v0.28.27
 // manual current-goal verification moved to "verify" (it happens
 // automatically at completion anyway — verify is the on-demand handle).
 const GOAL_EXACT_SUBS = new Set(["status", "pause", "resume", "cancel", "decide", "verify"]);
-const GOAL_ARG_SUBS = new Set(["audit", "tweak", "archive", "start"]);
+const GOAL_ARG_SUBS = new Set(["audit", "tweak", "archive", "start", "plan"]);
 
 export function routeGoalArgs(raw: string): GoalRoute {
   const trimmed = raw.trim();
@@ -464,9 +464,22 @@ export function routeGoalArgs(raw: string): GoalRoute {
     return { kind: "sub", name: first as "status" | "pause" | "resume" | "cancel" | "decide" | "verify", rest: "" };
   }
   if (GOAL_ARG_SUBS.has(first)) {
-    return { kind: "sub", name: first as "audit" | "tweak" | "archive" | "start", rest };
+    return { kind: "sub", name: first as "audit" | "tweak" | "archive" | "start" | "plan", rest };
   }
   return { kind: "set", text: trimmed };
+}
+
+/** v0.35.33: drafting depth. "plan" is the EXTENDED DRAFT — research-first
+ * (read the code before asking), multi-round interviewing, and a structured
+ * expanded objective. It changes the PROMPT, never the trust machinery: the
+ * Confirm card still gates activation and the regular draft stays the fast
+ * path. No separate artifact — the objective itself is the single truth
+ * (the respec lesson: a second document always goes stale). */
+export type DraftingDepth = "normal" | "plan";
+
+export function draftingTemplateFile(target: "goal" | "list" | "loop", depth: DraftingDepth): string {
+  if (depth === "plan") return target === "loop" ? "goal-loop-plan-loop.md" : "goal-loop-plan.md";
+  return target === "loop" ? "goal-loop-forever-draft.md" : "goal-loop-draft.md";
 }
 
 /**
