@@ -66,8 +66,8 @@ Edit: `/glla` → **Keep-going** → **Vision assist**, then choose **off**.
 | Command builder | `visionDescribeCommand(imagePath, question?)` |
 | Routing rule (pure) | `routeVisionCheck(request)` — mmx by default; forbidden target → mmx + `blockedSwitch`; preapproved target → `model-switch` allowed |
 | Ledger payload builder | `visionAssistLedger(route, request)` |
-| Continuation injection | `extensions/loops/goal.ts` `continuationPrompt()` (gated on `visionAssist !== false`) |
-| Forbidden-switch hook | `observeModelChange()` forbidden branch → `vision_assist` entry |
+| Continuation injection | `extensions/goal-continuation.ts` pushes `VISION_ASSIST_GUIDANCE` into the continuation directives (gated on `visionAssist !== false`) |
+| Forbidden-switch hook | forbidden-model gate in the settings editors/model pickers (`extensions/loops/goal-settings-ui.ts`, `extensions/loops/goal-activation.ts`) → `forbidden_model_switch` + `vision_assist` ledger entries |
 | Setting | `extensions/goal-settings.ts` (default true), menu row in `extensions/settings-menu.ts`, editor + `/glla` row in `extensions/loops/goal.ts` |
 | Tests | `tests/vision-assist.test.ts` |
 

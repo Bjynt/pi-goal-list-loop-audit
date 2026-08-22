@@ -240,7 +240,7 @@ Each loop is a different policy class on the same status machine.
 | Flaw in pi-goal-x | Fix in pi-goal-list-loop-audit |
 |---|---|
 | `detailedSummary` is hand-concat strings | Structured JSON state + native markdown renderer |
-| Stuck-counter has no ceiling — 1-hour waits happen | Hard 5-minute backoff cap, fall through to user notification |
+| Stuck-counter has no ceiling — 1-hour waits happen | Bounded retry envelope: eager 5s first retry, then the hourly-aligned ladder (v0.35.0); stall ladder + heartbeat nudges cap silent waits |
 | Auditor can rubber-stamp after `bash true` | **regression_shield** (shipped v0.2.0): auditor must quote raw tool output per verification-contract item; orchestrator rejects evidence-free approvals |
 | `pause_goal` is fire-and-forget | Clear `pauseReason` surfaced in status + agent feedback |
 | Vague objective + weak auditor = rubber-stamp | Drafting phase with Confirm dialog + isolated auditor + shield |
@@ -679,23 +679,37 @@ customizes.
 
 ## Files
 
+Post-decomposition layout (the v0.34.x monolith is gone — `loops/goal.ts` is
+a thin activation/wiring installer):
+
 ```
 extensions/
-  loops/goal.ts                # /goal + /list commands, agent tools, loop driver
+  goal-commands.ts             # /goal + /list command surface, drafting, wipe/stats
+  loops/goal.ts                # public activation/wiring installer (thin)
+  loops/goal-tools.ts          # agent tools (complete_goal, pause_goal, list_*, loop drafts)
+  loops/goal-orchestrator.ts   # goal lifecycle: create/archive/advance, reviewer
+  loops/goal-auditor-hooks.ts  # completion-audit claim/recovery machinery
+  loops/goal-activation.ts     # event wiring, command registration, session lifecycle
+  loops/goal-settings-ui.ts    # settings editors + model pickers
   goal-loop-core.ts            # types, JSONL state, pure helpers
   goal-loop-auditor.ts         # auditor prompt + legacy in-process helper
   goal-loop-auditor-process.ts # detached worker protocol + shield revalidation
   goal-loop-shield.ts          # regression_shield (pure, dependency-free)
-  goal-loop-display.ts         # status line + /goal status rendering
+  goal-loop-display.ts         # widget/status rendering (incl. last-outcome retention)
+  goal-heartbeat.ts            # heartbeat self-watchdog, subagent probes, due-wait backstop
+  goal-continuation.ts         # continuation scheduling/dispatch + prompts
+  goal-recovery.ts             # main-model recovery + completion-audit recovery
+  goal-loop.ts                 # Loop 3 machinery: /loop tick engine, git finish
   goal-loop-forever.ts         # /loop measure/parse/plateau helpers
-  goal-loop-backoff.ts         # 5-min hard cap
+  goal-loop-backoff.ts         # scheduling constants + stall/wedge/pending-latch decisions
 prompts/
-  goal-loop-continuation.md    # loop driver prompt
+  goal-loop-continuation.md    # continuation prompt
   goal-loop-draft.md           # drafting prompt
   goal-loop-forever.md         # /loop driver prompt
   goal-loop-forever-draft.md   # /loop drafting prompt
 scripts/
   goal-auditor-worker.mjs      # extension-less RPC auditor child process
+  goal-auditor-launch.mjs      # Windows-safe spawn spec builder (gate-before-quote)
   smoke.sh                     # live integration harness (tmux + real models)
 tests/                         # current test count is reported by `bun test`; no live pi required for the suite
 docs/DESIGN.md                 # architectural decisions

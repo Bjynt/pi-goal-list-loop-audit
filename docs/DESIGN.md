@@ -494,8 +494,11 @@ This is a **clean break** by decision of the user. We do not interop with `pi-go
 ### Decision 8: Status machine
 
 ```ts
+// Historical sketch from v0.2.0 planning. The SHIPPED Status union is
+// "active" | "auditing" | "complete" | "paused" | "aborted" (drafting is a
+// UI phase, not a persisted status).
 type Status =
-  | "drafting"        // v0.2.0
+  | "drafting"        // v0.2.0 (planned; not a persisted Status value)
   | "active"
   | "auditing"
   | "complete"

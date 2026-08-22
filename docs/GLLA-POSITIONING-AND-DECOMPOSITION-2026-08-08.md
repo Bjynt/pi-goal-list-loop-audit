@@ -78,7 +78,12 @@ detached-auditor loop, but it is also a deliberate trade:
 
 ## 4. The refactor: decompose goal.ts (the plan skeleton)
 
-Current state: `extensions/loops/goal.ts` ≈ 10.5K lines, 189 top-level
+> **STATUS (2026-08-22): IMPLEMENTED.** This plan shipped in decomposition
+> steps 1–6 (v0.34.109–v0.34.114). `extensions/loops/goal.ts` is now a thin
+> activation/wiring installer (~413 lines); every module below exists under
+> `extensions/` and `extensions/loops/`. Kept for rationale/history.
+
+Current state at planning time: `extensions/loops/goal.ts` ≈ 10.5K lines, 189 top-level
 functions, covering at least these domains (grep counts):
 
 ```
