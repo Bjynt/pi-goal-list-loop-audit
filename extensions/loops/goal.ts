@@ -153,6 +153,9 @@ const commandDeps: CommandDeps = {
   persistState,
   updateGoal,
   setGoal,
+  // v0.35.29 (issue #15): /glla agents reads the heartbeat's tracked-subagent
+  // snapshot via injection (goal-commands must not import goal-heartbeat).
+  agentsSnapshot: () => getSubagentAgentsSnapshot(),
   archiveCurrentGoal,
   healGoalPolicy,
   startDrafting,
