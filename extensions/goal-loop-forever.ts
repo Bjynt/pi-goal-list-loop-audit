@@ -251,9 +251,14 @@ export function applyMeasurement(loop: LoopState, value: number | null, at: stri
     // bestValue that differs from the first measured value — the latter
     // covers resumed runs whose history restarted). Bounded below by the
     // never-moved cap so a dead metric still ends loudly.
-    const firstMeasured = loop.history.find((h) => h.value !== null)?.value;
+    const numericHistory = loop.history.filter((h) => h.value !== null);
     const metricHasMoved = loop.history.some((h) => h.improved)
-      || (loop.bestValue !== null && firstMeasured !== null && loop.bestValue !== firstMeasured);
+      || (numericHistory.length === 0
+        ? // No numeric readings yet this run: indistinguishable from a
+          // resumed run with real prior movement — keep the conservative
+          // legacy behavior (flat counts).
+          true
+        : typeof loop.bestValue === "number" && loop.bestValue !== numericHistory[0]!.value);
     if (improved) {
       loop.bestValue = value;
       loop.stallCount = 0;
@@ -295,10 +300,11 @@ export function applyMeasurement(loop: LoopState, value: number | null, at: stri
   // that NEVER moves would otherwise dodge plateau forever. Twice the window
   // in measured iterations without one improvement is a loud, distinct stop
   // naming the actual suspect (direction/measureCmd), not a fake plateau.
-  const measured = loop.history.filter((h) => h.value !== null).length;
-  const firstMeasuredFinal = loop.history.find((h) => h.value !== null)?.value;
+  const numericHistory = loop.history.filter((h) => h.value !== null);
+  const measured = numericHistory.length;
   const metricNeverMoved = !loop.history.some((h) => h.improved)
-    && (loop.bestValue === null || firstMeasuredFinal === null || loop.bestValue === firstMeasuredFinal);
+    && measured > 0
+    && (typeof loop.bestValue !== "number" || loop.bestValue === numericHistory[0]!.value);
   if (metricNeverMoved && measured >= loop.plateauWindow * 2) {
     loop.active = false;
     loop.stopReason = `metric never moved — ${measured} measurements without one improvement against the initial reading (best: ${loop.bestValue ?? "n/a"}, dir ${loop.direction ?? "?"}). Check measureCmd/direction; /loop resume retries or /loop stop.`;
