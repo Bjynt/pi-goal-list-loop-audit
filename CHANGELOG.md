@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.35.27 — Windows auditor launch: quote only when needed, gate always first (2026-08-22, PR #17)
+
+### Field report (PR #17, reproduced on Windows 11 + pnpm global shim)
+  The detached auditor died ~0.5s after launch and retried forever: quoting
+  EVERY argument wraps a bare executable name in quotes, which changes how
+  cmd.exe resolves it and how npm/pnpm .CMD shims compute their own
+  directory -> MODULE_NOT_FOUND -> "pi exited without an agent_settled RPC
+  event" in a 60s retry loop of flashing terminal windows.
+### Fix
+  buildAuditorPiSpawnSpec now runs the WINDOWS_UNSAFE_ARG rejection on EVERY
+  argument BEFORE the quoting decision, then quotes only when tokenization
+  requires it (whitespace / cmd metacharacters / empty). Clean bare tokens
+  reach cmd.exe untouched (shims resolve; full RPC sessions work); the
+  upstream PR's variant was not mergeable as-is because its needs-quoting
+  regex also gated the unsafe-arg check, letting %/CR/LF through bare.
+  Regression tests pin all three classes through the spec builder.
+
 ## 0.35.26 — zombie watchdog recognizes pi-subagents tool names (2026-08-22, GitHub issue #13)
 
 ### Gap
