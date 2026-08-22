@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.35.21 — list queue stays visible across lifecycle boundaries (2026-08-22)
+
+### list-invisible-until-restart fix (note.md Next #4)
+  Field: a stopped/interrupted /list exec left the queue surface blank —
+  active item only, no "N waiting · up next" line — until a session
+  restart. Root cause: the sidebar renders state.list from MEMORY while the
+  durable queue is the UNION of the state ledger and the per-item
+  .queue.json sidecars (v0.34.60 disk-first writes); a plugin re-init /
+  stale-handle window reset RAM to defaults and only some later path
+  re-ran the disk merge. session_start's restore now converges memory to
+  that union immediately (hydrateListQueueFromDisk after readState), so
+  the next lifecycle boundary heals the surface without a restart; the
+  hydration notifies with a truthful count ("restored N queued list
+  item(s)"). Regression tests: sidecar-only item is hydrated AND rendered;
+  convergence is idempotent (no duplicate for items in both stores).
+
 ## 0.35.20 — one bounded automatic retry for transient mechanical-check deaths (2026-08-21)
 
 ### Gate resilience

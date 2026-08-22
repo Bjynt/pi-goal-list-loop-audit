@@ -68,7 +68,7 @@ test("v0.35.21: session_start converges a disk-sidecar queue the state ledger lo
   // …and the widget renders the queue truthfully instead of "queue empty"
   // (the restored-on-load card holds in its paused branch, which surfaces
   // the queue count + the waiting hint).
-  const lines = buildWidgetLines(state).join("\n");
+  const lines = buildWidgetLines(state)?.join("\n") ?? "";
   assert.match(lines, /1 queued/);
   assert.doesNotMatch(lines, /queue empty/);
   assert.match(lines, /\+1 waiting in the list/);
