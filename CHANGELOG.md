@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.35.30 — durable last-outcome retention: the final verdict stays visible (2026-08-22)
+
+### Gap
+  Field report with screenshots (email-api-compare, 2026-08-22): "goal gets
+  closed before final audit, so auditor never approves." Forensics showed the
+  lifecycle was CORRECT — every archived goal had an approving verdict — but
+  closeArchivedSlot nulled the widget slot the moment the goal archived, so
+  after the agent's turn ended the surface went completely blank and the only
+  trace of the approval was one transient toast. Returning later, "Auditor
+  verdict pending" was the last visible text: indistinguishable from closed-
+  without-audit.
+### Ship
+  - State.lastOutcome {at, ok, title, recap}: written by closeArchivedSlot on
+    every terminal slot close (approved AND aborted), overwritten per outcome.
+  - Widget: while no goal/list/loop occupies the slot, one dim retention line
+    renders for 24h — "✓ done · auditor … approved · <recap>" or "▪ ended ·
+    <reason>" — then goes silent. A live goal always outranks it.
+  - /glla wipe clears the record (clean slate means clean).
+  - Tests: tests/last-outcome-retention.test.ts (5) — render shapes, expiry +
+    garbage-timestamp safety, live-goal precedence, source pins for both
+    write and wipe-clear sites.
+
 ## 0.35.29 — /glla agents: tracked-subagent panel, transcript tail, widget segment (2026-08-22, GitHub issue #15)
 
 ### Gap
