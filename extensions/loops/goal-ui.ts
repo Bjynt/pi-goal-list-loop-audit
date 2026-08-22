@@ -263,6 +263,8 @@ import {
   type HeartbeatDeps,
   type HeartbeatFlags,
 } from "../goal-heartbeat.js"; // decomposition step 4 (v0.34.112)
+import { getSubagentAgentsSnapshot } from "../goal-heartbeat.js";
+import { renderAgentsWidgetLine, type AgentsPanelRow } from "../goal-agents-panel.js";
 import {
   clearMainModelRecoveryTimer,
   createGoalRecovery,
@@ -670,6 +672,16 @@ function refreshUI(ctx: ExtensionContext): void {
     const extras = {
       stalls: consecutiveStalls,
       recent: recentActions,
+      // v0.35.29 (issue #15): ambient tracked-subagent segment — hidden at
+      // zero tracked children (renderAgentsWidgetLine returns undefined).
+      ...(() => {
+        try {
+          const { agents } = getSubagentAgentsSnapshot();
+          const line = renderAgentsWidgetLine(agents as AgentsPanelRow[]);
+          return line ? { agents: { line } } : {};
+        } catch { return {}; }
+      })(),
+      ...activity,
       ...activity,
       turnPending: pendingContinuationDispatchRef() !== null,
       auditorSilent: loadSettings(ctx.cwd).auditorSilent !== false,
