@@ -26,7 +26,6 @@ import {
   appendLedger,
   nowIso,
   resolveEffectiveAggressiveSettings,
-  supervisorPaused,
   type Goal,
 } from "./goal-loop-core.js";
 import { loadSettings } from "./goal-settings.js";

@@ -146,6 +146,9 @@ test("widget resume hints are mode-aware ternaries (display.ts)", () => {
 test("goal-policy pause notifies with /goal resume", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
+  // v0.35.23: opt into load-time automation so the boot emits no load-hold
+  // card — this test pins PAUSE guidance, not load behavior.
+  fs.writeFileSync(process.env.GLLA_GLOBAL_SETTINGS_PATH!, JSON.stringify({ autoResume: true }));
   seedState(cwd, { goal: seedGoal({ policy: "goal", status: "active" }) });
   const ctx = await freshSession(cwd, "reload");
   await tick();
@@ -157,6 +160,7 @@ test("goal-policy pause notifies with /goal resume", async () => {
 test("list-policy pause notifies with /list resume", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
+  fs.writeFileSync(process.env.GLLA_GLOBAL_SETTINGS_PATH!, JSON.stringify({ autoResume: true }));
   seedState(cwd, {
     goal: seedGoal({ policy: "list", status: "active", objective: "list item one — done when pinned" }),
     list: [{ id: "w1", objective: "waiting item", addedAt: new Date().toISOString() }],

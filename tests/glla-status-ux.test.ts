@@ -187,7 +187,7 @@ test("v0.35.15: every automatic dispatch point gates on supervisorPaused", () =>
     ["extensions/goal-continuation.ts", "sendContinuation (armed-timer race)", /export function sendContinuation\(goalId: string\): void \{[\s\S]{0,400}?if \(supervisorPaused\(state\)\) return;/],
     ["extensions/goal-loop.ts", "scheduleLoopTick", /function scheduleLoopTick\(ctx: ExtensionContext\): void \{[\s\S]{0,300}?if \(supervisorPaused\(state\)\) return;/],
     ["extensions/goal-loop.ts", "sendLoopTurn (armed-timer race)", /function sendLoopTurn\(\): void \{[\s\S]{0,200}?if \(supervisorPaused\(state\)\) return;/],
-    ["extensions/goal-heartbeat.ts", "heartbeatTick (re-arms/probes/zombie cleanup)", /function heartbeatTick\(\): void \{[\s\S]{0,600}?if \(supervisorPaused\(state\)\) return;/],
+    ["extensions/goal-heartbeat.ts", "heartbeatTick (re-arms/probes/zombie cleanup)", /function heartbeatTick\(\): void \{[\s\S]{0,700}\? typeof state\.supervisorPausedAt === "number"\) return;/],
     ["extensions/goal-recovery.ts", "main-model recovery probe timer", /export function scheduleMainModelRecoveryTimer[\s\S]{0,500}?if \(supervisorPaused\(state\)\) return;/],
     ["extensions/loops/goal-auditor-hooks.ts", "automatic audit recovery (non-manual)", /async function retryStoredCompletionAudit[\s\S]{0,500}?origin !== "manual" && supervisorPaused\(state\)/],
     ["extensions/loops/goal-ui.ts", "proactive quiet notify", /__auditorQuietWatchTick[\s\S]{0,600}?supervisorPaused\(state\)/],

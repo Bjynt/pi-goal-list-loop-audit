@@ -380,7 +380,10 @@ test("v0.29.5: the stand-down survives the heartbeat + autoResume is GLOBAL-only
   //    cascade. junk-runner had a stale project-local opt-in that kept
   //    auto-firing its list at every bare pi launch.
   assert.match(settings, /export function loadGlobalSettings\(\): Settings \{/);
-  assert.match(src, /resolveEffectiveAggressiveSettings\(loadGlobalSettings\(\)\)\.autoResume/);
+  // v0.35.23: consent reads the RAW global autoResume — the aggressive
+  // coercion used to flip the documented hold-by-default into stock
+  // auto-resume on every load. Still global-only, never project cascade.
+  assert.match(src, /const autoResumeSetting = loadGlobalSettings\(\)\.autoResume;/);
   assert.match(src, /autoActivate: loadGlobalSettings\(\)\.autoResume === true/);
   assert.ok(!src.includes("resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).autoResume"), "no project-cascade autoResume read remains");
 });
