@@ -1125,7 +1125,16 @@ function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null
   const held = heldLoop(state);
   if (!g) {
     // v0.28.17: no visible goal — the held loop gets its own card.
-    return held ? heldLoopLines(held, now, theme, width) : undefined;
+    if (held) return heldLoopLines(held, now, theme, width);
+    // v0.35.30: durable last-outcome retention. After an archive the slot is
+    // empty; without this the widget goes blank and a finished audit reads
+    // as "closed with no verdict" (field: 2026-08-22 screenshots). One dim
+    // line for the retention window, then silent.
+    const o = state.lastOutcome;
+    if (o && Number.isFinite(Date.parse(o.at)) && now - Date.parse(o.at) < LAST_OUTCOME_RETENTION_MS) {
+      return [lastOutcomeLine(o, theme, width)];
+    }
+    return undefined;
   }
   if (g.status === "complete" || g.status === "aborted") {
     // v0.34.65: terminal goals render instead of vanishing (a finished batch
