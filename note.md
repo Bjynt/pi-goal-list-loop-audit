@@ -15,6 +15,9 @@ updating the readme and docs would be nice
 
 # Next
 
+https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
+lets look into 
+
 ##
 
 /goal start for one could do suspicious goal that can be launched and doesnt auto start
@@ -62,6 +65,7 @@ Is htis intended, like ai cant prune the list?
 
 we coudl use better visuals cause this is what wesee now and it is worth htinking what and how we show
 /home/dracon/Pictures/Screenshots/Screenshot_20260822_132806.png 
+/home/dracon/Pictures/Screenshots/Screenshot_20260822_200250.png 
 
 # Idea
 
