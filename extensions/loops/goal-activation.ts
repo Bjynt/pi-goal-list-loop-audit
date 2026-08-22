@@ -356,6 +356,7 @@ import {
   cmdSettings,
   createGoalCommands,
   enqueueItems,
+  hydrateListQueueFromDisk,
   maybeDecisionPopup,
   probeAutoNotify,
   recentlyCompletedObjectives,
@@ -1078,6 +1079,18 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       }
     }
     replaceState(readState(ctx.cwd));
+    // v0.35.21 (list-invisible-until-restart): the durable queue is the
+    // UNION of the persisted state and the per-item .queue.json sidecars
+    // (v0.34.60 disk-first writes). readState replays only the state
+    // ledger, so a plugin re-init / stale-handle window that reset RAM to
+    // defaults used to leave the sidebar queue blank — active item only,
+    // no "N waiting · up next" line — until a full restart re-ran the
+    // disk merge on some other path. Converge memory to the union at EVERY
+    // lifecycle restore so the rendered surface is truthful immediately.
+    const hydratedFromDisk = hydrateListQueueFromDisk(ctx);
+    if (hydratedFromDisk > 0) {
+      ctx.ui.notify(`glla: restored ${hydratedFromDisk} queued list item(s) from durable sidecars.`, "info");
+    }
     // v0.35.x: a fresh session_start is the coalesced recovery boundary for
     // a silent host death. Consume the one-shot arm after durable state is
     // reloaded so the marker is cleared in the new context, and let the
