@@ -334,6 +334,16 @@ test("extractMechanicalCheckCommands: extracts backticked and raw shell commands
   const cmds = extractMechanicalCheckCommands(contract);
   assert.deepEqual(cmds, ["npm test", "tsc --noEmit", "cargo test --lib"]);
 
+  // v0.35.24: trailing "completes successfully" / "succeeds" must be stripped
+  // like "passes cleanly" — field incident 2026-08-22: "bun run build completes
+  // successfully" was run verbatim and vite parsed "completes" as its root dir.
+  const proseContract = [
+    "bun test passes with 0 failures",
+    "bun run build completes successfully",
+    "vite build succeeds cleanly",
+  ].join("\n");
+  assert.deepEqual(extractMechanicalCheckCommands(proseContract), ["bun test", "bun run build", "vite build"]);
+
   const res = runMechanicalPreAuditChecks(process.cwd(), ["node --version"]);
   assert.equal(res.passed, true);
 

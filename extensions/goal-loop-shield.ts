@@ -154,7 +154,13 @@ export function extractMechanicalCheckCommands(contract: string): string[] {
     const backtickMatch = /`([^`]+)`/.exec(item);
     let candidate = backtickMatch ? backtickMatch[1]!.trim() : item.trim();
     if (!backtickMatch) {
-      candidate = candidate.replace(/\s+(?:passes(?:\s+cleanly|\s+with\s+zero\s+errors)?|exits\s+0|returns\s+0|cleanly).*$/i, "").trim();
+      // v0.35.24: "completes successfully" / "succeeds" joined the strip list
+      // after a field incident (2026-08-22): the contract line
+      // "bun run build completes successfully" survived stripping, was run
+      // verbatim, and vite parsed "completes" as its root directory —
+      // `Could not resolve entry module "completes/index.html"` — fast-failing
+      // an audit whose real gate (bun run build) was green.
+      candidate = candidate.replace(/\s+(?:passes(?:\s+cleanly|\s+with\s+zero\s+errors)?|exits\s+0|returns\s+0|cleanly|completes(?:\s+successfully)?|succeeds(?:\s+cleanly)?|successfully).*$/i, "").trim();
     }
     if (/^(?:npm\s+(?:test|run\s+[\w:-]+)|bun\s+(?:test|run\s+[\w:-]+)|pnpm\s+(?:test|run\s+[\w:-]+)|yarn\s+(?:test|[\w:-]+)|tsc\b|cargo\s+(?:test|check|build)|pytest\b|python\s+-m\s+unittest|go\s+test|vitest\b|jest\b|make\s+test|git\s+diff|test\s+-[a-z])/i.test(candidate)) {
       commands.push(candidate);
