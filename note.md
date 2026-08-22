@@ -2,21 +2,6 @@
 
 ##
 
-goal gets closed before final audit, so auditor never approves
-/home/dracon/Pictures/Screenshots/Screenshot_20260822_151220.png 
-
-##
-
-we are stil missing topics on github make sure we have them 
-
-##
-
-updating the readme and docs would be nice
-
-# Next
-
-##
-
 https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
 lets look into 
 
@@ -36,9 +21,13 @@ albeit other loop did not end
 
 ##
 
+updating the readme and docs would be nice
+
+##
+
 we also need to tag adn release so we get reports about the newer version and people can enjoy our fixes
 
-# Next2
+# Next
 
 ##
 
