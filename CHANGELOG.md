@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.35.28 — due-wait backstop: lapsed wait pauses actually resume; "you were recovered" notice (2026-08-22, GitHub issue #16)
+
+### Root cause (field: goal paused 30min past its scheduled auto-resume while the agent narrated "the system should have auto-resumed by now")
+  Auto-resume for pauseKind "wait" relied SOLELY on in-memory timers. An
+  exhaustive map of every wait-pause site found: agent-authored waits
+  (pause_goal kind="wait") armed NO timer at all while their own copy
+  promised automatic continuation; error-brake cooldown waits were not
+  re-armed on session_start; single-slot provider-retry timers could be
+  silently clobbered by a later schedule; and no code path anywhere compared
+  wall time against pauseResumeAt outside display rendering.
+### Fix
+  The heartbeat owns the durable invariant now: every tick, a wait whose
+  pauseResumeAt lapsed >90s is re-fired — main-model recovery waits route to
+  a provider probe, everything else clears the park and dispatches one fresh
+  continuation. supervisorPaused() still freezes it under /glla pause and
+  the load hold, one attempt per (goalId:resumeAt) key prevents storms (the
+  route re-parks with a fresh resumeAt on failure), and every fire is
+  ledgered wait_pause_overdue_resume. A stale hold persisted by a previous
+  process is released when a consenting reload arrives. Issue part 2:
+  resumed goals carry an autoResumed stamp rendered as a RECOVERY NOTICE in
+  the continuation prompt — "welcome back, YOU were recovered" — so agents
+  stop waiting for an external recovery signal that already happened.
+
 ## 0.35.27 — Windows auditor launch: quote only when needed, gate always first (2026-08-22, PR #17)
 
 ### Field report (PR #17, reproduced on Windows 11 + pnpm global shim)
