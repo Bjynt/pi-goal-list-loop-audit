@@ -101,7 +101,7 @@ test("v0.35.29 #15: --tail matches by needle, takes newest mtime, formats entrie
   assert.equal(result.ok, true);
   assert.match(result.detail, /last 3 of 4/);
   assert.deepEqual(result.lines, ["[tool] read x.ts", "[raw] not-json-garbage", "[assistant] final report text"]);
-  assert.match(result.detail, /last 3 of 5/);
+
 });
 
 test("v0.35.29 #15: --tail is LOUD when nothing matches or the dir is unreadable", () => {
@@ -153,7 +153,7 @@ test("v0.35.29 #15: end-to-end — /glla agents renders real probe data; widget 
     assert.match(notified, /HUNG\?/);
 
     // Unknown --tail id answers loudly.
-    await pi.command("glla", "agents", "--tail does-not-exist", ctx);
+    await pi.command("glla", "agents --tail does-not-exist", ctx);
     assert.match(ctx.ui.notifies.at(-1)!.message, /No tracked subagent matches "does-not-exist"/);
 
     // Widget: two tracked children → segment present on the goal card.

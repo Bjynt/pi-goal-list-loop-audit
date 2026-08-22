@@ -159,7 +159,7 @@ export function formatTranscriptEntry(line: string): string | undefined {
       message?: { role?: string; content?: unknown };
       content?: unknown;
     };
-    if (!entry || typeof entry !== "object") return `[raw] ${truncate(trimmed, 120)}`;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return `[raw] ${truncate(trimmed, 120)}`;
     const role = entry.message?.role ?? entry.role ?? entry.type ?? "?";
     const content = entry.message?.content ?? entry.content;
     const text = extractText(content);
