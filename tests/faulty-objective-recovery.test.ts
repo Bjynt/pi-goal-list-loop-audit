@@ -487,7 +487,7 @@ test("an explicit /goal start objective is dispatched even when the heuristic fl
   __testOnlyLoadState(cwd);
   const pi = new MockPi();
   activate(pi.api);
-  const ctx = await boot(pi, cwd);
+  const ctx = makeMockCtx(cwd);
   // Sanity: the heuristic DOES flag this prose in isolation.
   assert.equal(assessSuspiciousObjective(objective).suspicious, true);
   assert.equal(guardGoalBeforeContinuation(ctx as any, "user-seed-test", String(g.id)), true);
