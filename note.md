@@ -15,6 +15,8 @@ updating the readme and docs would be nice
 
 # Next
 
+##
+
 https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
 lets look into 
 
@@ -31,6 +33,12 @@ else i need a solution elsewhere
 
 albeit other loop did not end
 /home/dracon/Pictures/Screenshots/Screenshot_20260822_095058.png 
+
+##
+
+we also need to tag adn release so we get reports about the newer version and people can enjoy our fixes
+
+# Next2
 
 ##
 
