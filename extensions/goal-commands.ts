@@ -89,6 +89,9 @@ export interface CommandDeps {
   goalNoun: () => string;
   displaySlice: (s: string, max: number) => string;
   shortObj: (s: string) => string;
+  /** v0.35.29 (issue #15): read-only tracked-subagent snapshot for /glla agents.
+   * Injected because goal-heartbeat must not be imported from here (cycle). */
+  agentsSnapshot: () => { agents: import("./goal-agents-panel.js").AgentsPanelRow[]; managerAvailable: boolean };
 }
 
 let deps: CommandDeps;
