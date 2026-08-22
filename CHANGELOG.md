@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.35.32 — hermetic settings round-trip test (2026-08-22)
+
+### Fix
+  tests/auditor-extensions.test.ts depended on the developer machine having
+  ~/.pi/agent extensions to discover: on a bare CI home the discovered list
+  was empty, the handler fell back to the input prompt, and the TUI-picker
+  branch under test never ran (publish workflow failure). The test now seeds
+  a project-scope `.pi/extensions/hermetic-ext.js` so discovery is non-empty
+  on every machine; verified green under both an empty HOME and a populated one.
+
 ## 0.35.31 — user-seed trust for /goal start; loop plateau no longer false-stops on a never-moved baseline (2026-08-22)
 
 ### Fix 1: explicit /goal start paused by the suspicious-objective heuristic

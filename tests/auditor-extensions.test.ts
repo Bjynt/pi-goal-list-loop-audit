@@ -204,14 +204,23 @@ test("live (opt-in GLLA_LIVE_PI=1): resolved-path extension registers providers 
 });
 
 test("settings round-trip: menu pick persists, load normalizes, clear removes", async () => {
+  let cwd = "";
   try {
     process.env.GLLA_GLOBAL_SETTINGS_PATH = path.join(os.tmpdir(), `glla-ext-settings-${process.pid}.json`);
-    const ctx = makeMockCtx(tmpCwd());
+    cwd = tmpCwd();
+    // HERMETIC fixture (field: CI 2026-08-22): on a machine with no
+    // ~/.pi/agent extensions the discovered list is empty and the handler
+    // falls back to the input prompt — the TUI picker branch never runs.
+    // Seed ONE project-scope extension so discovery is non-empty everywhere.
+    fs.mkdirSync(path.join(cwd, ".pi", "extensions"), { recursive: true });
+    const hermeticExt = path.join(cwd, ".pi", "extensions", "hermetic-ext.js");
+    fs.writeFileSync(hermeticExt, "export default {};\n");
+    const ctx = makeMockCtx(cwd);
     // TUI path: the mock invokes the custom factory and resolves the picker
     // result through customImpl.
-    ctx.ui.customImpl = async () => ["npm:pi-webaio", "/opt/extra.ts"];
+    ctx.ui.customImpl = async () => [hermeticExt, "/opt/extra.ts"];
     await handleSettingChoice("auditorAllowedExtensions", ctx as unknown as ExtensionContext);
-    assert.deepEqual(loadSettings(ctx.cwd).auditorAllowedExtensions, ["npm:pi-webaio", "/opt/extra.ts"]);
+    assert.deepEqual(loadSettings(ctx.cwd).auditorAllowedExtensions, [hermeticExt, "/opt/extra.ts"]);
     assert.ok(ctx.ui.matching("Auditor allowed extensions saved").length > 0);
 
     // Headless path: custom is a stub that never invokes the factory —
