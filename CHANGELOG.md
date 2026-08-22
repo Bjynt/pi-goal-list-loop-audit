@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.35.29 — /glla agents: tracked-subagent panel, transcript tail, widget segment (2026-08-22, GitHub issue #15)
+
+### Gap
+  During long fan-outs the only child visibility was the widget's 3-slot
+  recent-action ring. A child that "almost completed its final report, went
+  back to check some more, then crashed" was invisible: no live status, no
+  counters, and no post-mortem trail anyone could find (issue #15).
+  Scope agreed with the user: panel + transcript tail + widget line; a live
+  activity stream was explicitly rejected as too noisy.
+### Ship
+  - getSubagentAgentsSnapshot() (goal-heartbeat.ts): read-only view of the
+    tracked-subagent probes with hung classification mirroring the watchdog
+    scan WITHOUT its counter mutation; record-frozen vs event-only evidence
+    named; degrades gracefully when the pi-subagents manager registry is
+    absent (as on currently installed versions).
+  - /glla agents: ranked table (hung > running > ended), per-child
+    tools/output/silent clocks, liveness hint on hung rows, 20-row cap with
+    an explicit trim notice. Read-only, stale-safe.
+  - /glla agents --tail <id> [--lines N]: locates the child's session file
+    in the cwd-munged session store by needle + newest mtime and prints the
+    last N entries tolerantly ([role] text, raw fallback). LOUD when nothing
+    matches — searched dir, transcript count, needles. Never resumes or
+    attaches to a child session.
+  - Widget segment: "● N agents · <busiest> silent Xm ⚠" appended to every
+    card shape via buildWidgetLines; hidden at zero tracked children.
+  - New pure module extensions/goal-agents-panel.ts; snapshot reaches
+    goal-commands via CommandDeps injection (no heartbeat import cycle).
+
 ## 0.35.28 — due-wait backstop: lapsed wait pauses actually resume; "you were recovered" notice (2026-08-22, GitHub issue #16)
 
 ### Root cause (field: goal paused 30min past its scheduled auto-resume while the agent narrated "the system should have auto-resumed by now")
