@@ -2074,6 +2074,34 @@ function cmdGllaVersion(ctx: ExtensionContext): void {
   ctx.ui.notify(formatGllaVersion(), "info");
 }
 
+// v0.35.29 (issue #15): tracked-subagent visibility — snapshot panel plus a
+// read-only child transcript tail (design: docs/DESIGN-subagent-visibility.md).
+function cmdAgents(args: string, ctx: ExtensionContext): void {
+  const { agents, managerAvailable } = agentsSnapshot();
+  const tailMatch = args.match(/--tail\s+(\S+)/);
+  if (tailMatch) {
+    const id = tailMatch[1]!;
+    const row = agents.find((a) => a.recordId === id || a.recordId.startsWith(id));
+    if (!row) {
+      ctx.ui.notify(`No tracked subagent matches "${id}". /glla agents lists the current ids.`, "warning");
+      return;
+    }
+    const linesMatch = args.match(/--lines\s+(\d+)/);
+    const result = tailChildTranscript(childSessionsDir(ctx.cwd), row, {
+      lines: linesMatch ? Number(linesMatch[1]) : undefined,
+      readFile: (file) => fs.readFileSync(file),
+      listDir: (dir) => fs.readdirSync(dir),
+      statMtime: (file) => { try { return fs.statSync(file).mtimeMs; } catch { return 0; } },
+    });
+    const header = result.ok
+      ? `transcript tail — ${row.agentType ?? row.recordId} (${result.detail})`
+      : `no transcript tail for ${row.agentType ?? row.recordId}`;
+    ctx.ui.notify([header, ...result.lines, ...(result.ok ? [] : [result.detail])].join("\n"), result.ok ? "info" : "warning");
+    return;
+  }
+  ctx.ui.notify(`glla agents${managerAvailable ? "" : " (pi-subagents manager registry not present — event evidence only)"}\n${renderAgentsPanel(agents, Date.now(), managerAvailable).join("\n")}`, "info");
+}
+
 // v0.29.8: /glla status — the unified "what's running" surface (user: "we
 // need to type goal status [to check], so that command at least is missing
 // for checking on whatever active process we have"). Read-only aggregate of
@@ -2142,6 +2170,11 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   }
   if (/^audits(?:\s|$)/.test(trimmed)) {
     cmdAudits(trimmed.slice("audits".length).trim(), ctx);
+    return;
+  }
+  // v0.35.29 (issue #15): tracked-subagent panel — read-only, stale-safe.
+  if (/^agents(?:\s|$)/.test(trimmed)) {
+    cmdAgents(trimmed.slice("agents".length).trim(), ctx);
     return;
   }
   if (/^status(?:\s|$)/.test(trimmed)) {
