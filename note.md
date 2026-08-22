@@ -2,35 +2,6 @@
 
 ##
 
-https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
-lets look into 
-
-##
-
-/goal start for one could do suspicious goal that can be launched and doesnt auto start
-/home/dracon/Pictures/Screenshots/Screenshot_20260822_193744.png 
-
-##
-
-loop ended ? not sure it should have, albeit this may not be our fault but hte system went to sleep unless we can make sure that pi doesnt do that 
-else i need a solution elsewhere
-/home/dracon/Pictures/Screenshots/Screenshot_20260822_094423.png 
-
-albeit other loop did not end
-/home/dracon/Pictures/Screenshots/Screenshot_20260822_095058.png 
-
-##
-
-updating the readme and docs would be nice
-
-##
-
-we also need to tag adn release so we get reports about the newer version and people can enjoy our fixes
-
-# Next
-
-##
-
 i think we are cutting the spec based strategy cause we can jsut make a big megaplan do that then we have some truth based on the iterate on while the spec is always double truth and stale and crude, so the 
 loop is idea to code 
 
@@ -56,6 +27,8 @@ Is htis intended, like ai cant prune the list?
 
  What remains queued afterwards: the codex-reset.json refresh automation, the SSR aria fail-loud check, and the resets-this-month counter — all real pending work from your DECIDED verdicts.
 
+# Next
+
 # Later
 
 ##
@@ -72,7 +45,7 @@ we coudl use better visuals cause this is what wesee now and it is worth htinkin
 /goal audit 
 /loop audit
 
-these might wander outside the folder, not sure if good call
+i wonder what is the difference between list audit and list start and say audit ?
 
 ##
 
