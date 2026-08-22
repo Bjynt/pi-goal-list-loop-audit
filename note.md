@@ -1,12 +1,6 @@
 # Now
 
 ##
-investigate the github issues
-https://github.com/DraconDev/pi-goal-list-loop-audit/issues
-
-# Next
-
-##
 
 goal gets closed before final audit, so auditor never approves
 /home/dracon/Pictures/Screenshots/Screenshot_20260822_151220.png 
@@ -19,7 +13,9 @@ we are stil missing topics on github make sure we have them
 
 updating the readme and docs would be nice
 
-# Later
+# Next
+
+
 
 ##
 
@@ -56,6 +52,8 @@ Is htis intended, like ai cant prune the list?
     to confirm positions before the second)
 
  What remains queued afterwards: the codex-reset.json refresh automation, the SSR aria fail-loud check, and the resets-this-month counter — all real pending work from your DECIDED verdicts.
+
+# Later
 
 ##
 
