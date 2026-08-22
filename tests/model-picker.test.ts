@@ -176,7 +176,9 @@ test("model-picker: active model row uses the available width for selection", ()
 test("v0.29.17 wiring: model-valued settings use the fuzzy picker; unavailable auditor models fall back LOUDLY to the session model", () => {
   const SRC = readGoalRuntimeSource();
   // The picker hosts via ctx.ui.custom over buildModelPickItems:
-  assert.match(SRC, /buildModelPickItems\(models, sessionLabel\)/);
+  // v0.35.24: the auditor slot threads opts.excludeRefs (forbidden-models
+  // parity); the bare two-arg call remains for other model-valued rows.
+  assert.match(SRC, /buildModelPickItems\(models, sessionLabel, \{ excludeRefs: exclude \}\)/);
   assert.match(SRC, /new ModelPickerComponent\(\{ title, items \}/);
   // Configured-auth filter — a pick from the list can never be a dead provider:
   assert.match(SRC, /hasConfiguredAuth\(m\)/);
