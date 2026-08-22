@@ -46,6 +46,9 @@ list exec stopped and list because not visible til i restarted session
 here too
 /home/dracon/Pictures/Screenshots/Screenshot_20260821_215228.png /home/dracon/Pictures/Screenshots/Screenshot_20260821_215209.png 
 
+
+# Later
+
 ##
 
 i think we are cutting the spec based strategy cause we can jsut make a big megaplan do that then we have some truth based on the iterate on while the spec is always double truth and stale and crude, so the 
@@ -60,7 +63,6 @@ instead we can have
 
 that makes way more detailed and presumably longer "plan" than the regular draft that is already long, which we are not changing 
 
-# Later
 
 ##
 
