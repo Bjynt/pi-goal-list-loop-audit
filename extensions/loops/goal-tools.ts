@@ -1225,7 +1225,7 @@ function registerAgentTools(pi: any): void {
   pi.registerTool(defineTool({
     name: "pause_goal",
     label: "Pause goal",
-    description: "Pause the active goal with a reason and suggested action. Use when blocked on user input or unable to make progress. When the user must CHOOSE between options, pass kind=\"decision\" with the options list (recommended = 1-based index of the best one) — decision pauses render as a prominent DECISION NEEDED card. Time-gated waits (retry at a specific time) use kind=\"wait\" with resumeAt (ISO). Operational failures use kind=\"error\". VOCABULARY (v0.28.24): decision options and reasons must reference REAL commands only — /goal resume, /goal cancel, /goal tweak \"<new text>\", /list remove N, /list next, /list resume, /loop stop, /loop resume. These all act on the ACTIVE goal/item: there is NO /goal drop and NO command takes a goal id. Never show goal ids to the user — name the thing ('the active goal', 'list item \"<short name>\"'); ids are internal plumbing the user cannot act on.",
+    description: "Pause the active goal with a reason and suggested action. Use when blocked on user input or unable to make progress. Pausing ABORTS the current turn immediately — after this call, stop; never keep working. When the user must CHOOSE between options, pass kind=\"decision\" with the options list (recommended = 1-based index of the best one) — decision pauses render as a prominent DECISION NEEDED card and pop a picker for the user. Time-gated waits (retry at a specific time) use kind=\"wait\" with resumeAt (ISO). Operational failures use kind=\"error\". VOCABULARY (v0.28.24): decision options and reasons must reference REAL commands only — /goal resume, /goal cancel, /goal tweak \"<new text>\", /list remove N, /list next, /list resume, /loop stop, /loop resume. These all act on the ACTIVE goal/item: there is NO /goal drop and NO command takes a goal id. Never show goal ids to the user — name the thing ('the active goal', 'list item \"<short name>\"'); ids are internal plumbing the user cannot act on.",
     parameters: Type.Object({
       reason: Type.String({ description: "Why the work is paused" }),
       suggestedAction: Type.Optional(Type.String({ description: "What the user should do next" })),
@@ -1240,6 +1240,10 @@ function registerAgentTools(pi: any): void {
       const ctx = currentToolContext(execCtx);
       if (!ctx) return staleToolResult();
       const p = params as { reason: string; suggestedAction?: string; kind?: "decision" | "error" | "wait" | "blocked"; options?: string[]; recommended?: number; resumeAt?: string };
+      // v0.35.15: a model that passes options but forgets kind="decision"
+      // still gets the decision card — a non-empty options array IS the
+      // decision intent; silently dropping it left the user with no picker.
+      if (!p.kind && p.options && p.options.length > 0) p.kind = "decision";
       if (!state.goal) return { content: [{ type: "text", text: "No active goal." }], details: {} };
       // A late model/tool call from the previous turn must not overwrite a
       // paused or auditing lifecycle. That race made a genuine stop look
@@ -1344,12 +1348,29 @@ function registerAgentTools(pi: any): void {
           /* best-effort */
         }
       }
+      // v0.35.15: a pause ENDS the turn. Before this fix the tool result was
+      // just text — pi kept the same turn running, the model kept working
+      // past its own pause ("the agent moves on"), and the deferred decision
+      // picker lost the race: the user was never shown the options. Abort
+      // (the same mechanism /goal cancel and the zero-stream watchdog use)
+      // so the session actually stops on an idle surface where the decision
+      // picker can own the screen. The impossible-drop advance is the one
+      // exception: the queue already moved to the next item and its
+      // continuation owns this turn — aborting would kill the hand-off.
+      if (!droppedImpossible) {
+        try {
+          ctx.abort();
+          appendLedger(ctx.cwd, "pause_goal_aborted_turn", { goalId: state.goal?.id, kind: p.kind ?? "blocked" });
+        } catch (abortError) {
+          appendLedger(ctx.cwd, "pause_goal_abort_failed", { goalId: state.goal?.id, error: abortError instanceof Error ? abortError.message : String(abortError) });
+        }
+      }
       return {
         content: [{
           type: "text",
           text: droppedImpossible
             ? "The list item was auto-dropped as impossible (blocked with no resume path) — the list moved on instead of stopping."
-            : `Goal paused. ${activeGoalSurfaceCommand("resume")} to continue.`,
+            : `Goal paused. The turn ends here — do NOT continue working. ${activeGoalSurfaceCommand("resume")} to continue.`,
         }],
         details: {},
       };
