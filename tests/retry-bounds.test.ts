@@ -219,7 +219,9 @@ test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUD
   const legacyIdx = SRC.indexOf('appendLedger(fresh.cwd, "goal_resumed", { via: "provider-retry" });');
   assert.ok(legacyIdx > directIdx, "agent-resume is the FALLBACK (no stored claim), not the default");
   // 3. the retry function re-runs the auditor with the stored claim:
-  assert.match(SRC, /async function retryStoredCompletionAudit\(origin: CompletionAuditOrigin = "provider-retry"\): Promise<void> \{/);
+  //    v0.35.23: optional exemptLoadHold param — only the main-model-
+  //    recovery trigger passes it (pinned provider-heal consent).
+  assert.match(SRC, /async function retryStoredCompletionAudit\(origin: CompletionAuditOrigin = "provider-retry", exemptLoadHold = false\): Promise<void> \{/);
   assert.match(SRC, /completionSummary: claim\.completionSummary,/);
   assert.match(SRC, /verificationSummary: claim\.verificationSummary,/);
   // 4. approved → archive (cascade inside archiveCurrentGoal); claim cleared:
