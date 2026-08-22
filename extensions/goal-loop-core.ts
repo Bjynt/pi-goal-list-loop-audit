@@ -899,6 +899,16 @@ export interface State {
    * the pause survives session restarts — a restart must not silently
    * re-arm machinery the user explicitly stopped. */
   supervisorPausedAt?: number;
+  /** v0.35.23 (note.md Next #2): set automatically by session_start when a
+   * cold load restores pending durable state WITHOUT consent (no explicit
+   * Auto-resume setting, no handoff/rebind/recovery). Same freeze semantics
+   * as supervisorPausedAt — every dispatch point that checks
+   * supervisorPaused() also holds for this — but DISTINCT from it: a manual
+   * `/glla pause` is user intent and only `/glla resume` clears it, while
+   * the load hold is released by ANY explicit work command (/goal resume,
+   * /list resume, /list next, /loop resume|start, starting a new goal).
+   * Persisted so the hold survives restarts until the user decides. */
+  loadHoldAt?: number;
 }
 
 /** v0.24.2: count TRAILING consecutive disapprovals (the disapproval-cap
@@ -1232,14 +1242,35 @@ export function readState(cwd: string): State {
     lastModelRef: typeof parsed.lastModelRef === "string" ? parsed.lastModelRef : undefined,
     lastCompactionAt: typeof parsed.lastCompactionAt === "number" && Number.isFinite(parsed.lastCompactionAt) ? parsed.lastCompactionAt : undefined,
     supervisorPausedAt: typeof parsed.supervisorPausedAt === "number" && Number.isFinite(parsed.supervisorPausedAt) && parsed.supervisorPausedAt > 0 ? parsed.supervisorPausedAt : undefined,
+    loadHoldAt: typeof parsed.loadHoldAt === "number" && Number.isFinite(parsed.loadHoldAt) && parsed.loadHoldAt > 0 ? parsed.loadHoldAt : undefined,
   };
+}
+
+/** v0.35.23 (note.md Next #2): true while a cold session load is holding
+ * automation for an explicit decision. Part of the SAME single choke point
+ * as supervisorPaused — every dispatch gate that consults one consults
+ * both — but cleared by explicit work commands, never by timers. */
+export function loadHoldActive(state: State): boolean {
+  return typeof state?.loadHoldAt === "number";
+}
+
+/** Release the load hold in-place; returns true when a hold was actually
+ * cleared (callers ledger + persist only on true). Manual `/glla pause`
+ * freezes are deliberately NOT touched — only `/glla resume` clears those. */
+export function clearLoadHold(state: State): boolean {
+  if (typeof state?.loadHoldAt !== "number") return false;
+  delete (state as { loadHoldAt?: number }).loadHoldAt;
+  return true;
 }
 
 /** True while `/glla pause` has frozen the supervisor's automatic side-
  * effects. A single source of truth for every dispatch-point gate so a
- * future automatic path cannot forget the check. */
+ * future automatic path cannot forget the check.
+ * v0.35.23: the automatic LOAD HOLD (set by session_start on a consent-less
+ * cold load with pending durable state) freezes through the same gates —
+ * see loadHoldActive/clearLoadHold. */
 export function supervisorPaused(state: State): boolean {
-  return typeof state?.supervisorPausedAt === "number";
+  return typeof state?.supervisorPausedAt === "number" || typeof state?.loadHoldAt === "number";
 }
 
 /** Migrate the old quota-named completion retry fields at the state boundary.

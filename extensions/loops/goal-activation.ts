@@ -1275,7 +1275,15 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // autoResume keys are ignored. Once running, the chain auto-continues
     // forever unless a super-stuck brake (stall escalation / stale-api /
     // latch) stops it loudly.
-    const autoResumeSetting = resolveEffectiveAggressiveSettings(loadGlobalSettings()).autoResume;
+    // v0.35.23 (note.md Next #2): auto-resume consent is now the RAW global
+    // setting, not the aggressive-mode coercion. resolveEffectiveAggressive
+    // Settings coerced unset→true (aggressiveMode defaults on), which made
+    // stock installs AUTO-RESUME everything on every load — defeating the
+    // documented v0.28.21 tri-state whose undefined default is HOLD, and
+    // the pinned settings-menu copy ("default: hold on EVERY load"). The
+    // aggressive dial still owns its caps; only explicit `autoResume: true`
+    // consents to load-time automation now.
+    const autoResumeSetting = loadGlobalSettings().autoResume;
     const autoResume = shouldAutoResumeOnSessionStart(event?.reason, autoResumeSetting);
     const mainRecovery = state.mainModelRecovery;
     if (mainRecovery?.manualResumeRequired) {
@@ -1373,13 +1381,13 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // stuck, and zero-stream abort reasons are intentionally excluded by the
     // shared predicate and remain explicitly resumable only.
     if (state.loop && !state.loop.active && isLifecycleHeldLoopReason(state.loop.stopReason)
-        && (autoResume || loopSuccessorResume)) {
+        && (autoResume || explicitRecovery)) {
       const held = state.loop;
       state.loop = { ...held, active: true, stopReason: undefined };
       persistState(ctx);
       releaseContinuationDispatchStandDown();
       appendLedger(ctx.cwd, "loop_auto_resumed_on_restore", {
-        via: loopSuccessorResume ? "successor" : "auto-resume",
+        via: recoveryResume ? "recovery" : rebindResume ? "rebind" : handoffResume ? "handoff" : "auto-resume",
         iteration: held.iteration,
         best: held.bestValue,
       });
@@ -1416,7 +1424,11 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // rebind marker were consumed before the startup barrier above.
     if (isLoopActive()) {
       const l = state.loop!;
-      if (autoResume || loopSuccessorResume) {
+      // v0.35.23: a non-quit shutdown successor no longer consents by itself
+      // — a crash restart IS a cold load, and cold loads hold for an
+      // explicit decision (note.md Next #2). Validated handoffs/rebinds and
+      // the Auto-resume setting keep today's continuity.
+      if (autoResume || explicitRecovery) {
         ctx.ui.notify(
           `Resuming loop (iteration ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"}, best ${l.bestValue ?? "n/a"}, stall ${l.stallCount}/${l.plateauWindow}): ${displaySlice(l.target, 60)}`,
           "info",
@@ -1514,12 +1526,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         markCompletionAuditRecoveryPending(ctx, `session_start:${startReason}`);
       }
       const recoveredClaim = state.goal?.pendingCompletion;
-      // A timeout/no-verdict claim may already own one durable recovery slot.
-      // A validated host lifecycle can consume that slot even when global
-      // Auto-resume is off; ordinary cold startup still holds legacy/manual
-      // parked claims for explicit consent.
-      const scheduledRecovery = !!recoveredClaim?.recoveryRetryAt;
-      const canRecoverNow = explicitRecovery || autoResume || (hostLifecycleStart && scheduledRecovery);
+      // v0.35.23 (note.md Next #2): the old third disjunct — a validated
+      // host lifecycle consuming the durable retry slot even without
+      // Auto-resume — dispatched automation on a cold load. Removed: parked
+      // claims hold for explicit consent like every other pending state;
+      // the else branch below defers them with a truthful ledger event.
+      const canRecoverNow = explicitRecovery || autoResume;
       if (canRecoverNow && recoveredClaim && (recoveredClaim.phase ?? "recovery-pending") === "recovery-pending") {
         completionAuditRecoveryArmed = true;
         const started = maybeAutoRetryParkedCompletionAudit(hostLifecycleStart || explicitRecovery ? "host-rebind" : "session-start");

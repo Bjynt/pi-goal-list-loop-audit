@@ -78,5 +78,6 @@ export function persistStateLine(cwd: string, s: State): void {
     lastModelRef: s.lastModelRef,
     ...(typeof s.lastCompactionAt === "number" ? { lastCompactionAt: s.lastCompactionAt } : { lastCompactionAt: null }),
     ...(typeof s.supervisorPausedAt === "number" ? { supervisorPausedAt: s.supervisorPausedAt } : { supervisorPausedAt: null }),
+    ...(typeof s.loadHoldAt === "number" ? { loadHoldAt: s.loadHoldAt } : { loadHoldAt: null }),
   });
 }
