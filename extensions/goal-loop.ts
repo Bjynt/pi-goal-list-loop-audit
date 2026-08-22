@@ -701,7 +701,7 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
     ctx.ui.notify(`Loop stopped: ${outcome.reason}. ${loop.history.length} iterations recorded.`, "info");
     appendLedger(ctx.cwd, "loop_stopped", { reason: outcome.reason, iterations: loop.iteration, best: loop.bestValue });
     notifyExternal(ctx, `Loop stopped: ${outcome.reason}`);
-    resumeQueuedListAfterLoopEnd(ctx);
+    announceQueuedListAfterLoopEnd(ctx);
     return;
   }
   scheduleLoopTick(ctx);
@@ -710,19 +710,19 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
 /** v0.35.22 (note.md Next #3, field 2026-08-21): when a loop ends by ANY
  * route, a queued item that was blocked while the loop owned the surface
  * (field: the repair card behind a paused suspicious goal — the user was
- * told "/list next starts it" but it silently no-oped) must become
- * startable again. If no goal owns the surface and items are waiting,
- * advance now and say what happened — never leave a dead queued entry. */
-function resumeQueuedListAfterLoopEnd(ctx: ExtensionContext): void {
+ * told "/list next starts it" but it silently no-oped) is startable again.
+ * We ANNOUNCE that loudly instead of auto-dispatching: /loop stop and
+ * /glla cancel are stop gestures (v0.34.121: cancel must not touch an
+ * unrelated waiting queue), so the surface frees up and says so — the user
+ * (or the normal cascade) decides what runs. Never a dead SILENT entry. */
+function announceQueuedListAfterLoopEnd(ctx: ExtensionContext): void {
   if (state.goal && state.goal.status === "active") return;
   const waiting = state.list?.length ?? 0;
   if (waiting === 0) return;
-  const advanced = activateNextListItem(ctx);
+  const head = state.list![0]!.objective.slice(0, 80);
   ctx.ui.notify(
-    advanced
-      ? "The loop ended — the next queued list item started."
-      : `The loop ended but the queued item could not start (${waiting} waiting) — /list next retries.`,
-    advanced ? "info" : "warning",
+    `The loop ended — ${waiting} queued list item${waiting === 1 ? "" : "s"} can start again (up next: "${head}"). /list next starts it.`,
+    "info",
   );
 }
 
@@ -1066,7 +1066,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       "info",
     );
     notifyExternal(ctx, `Loop stopped by user after ${state.loop.iteration} iterations (best: ${state.loop.bestValue ?? "n/a"})`);
-    resumeQueuedListAfterLoopEnd(ctx);
+    announceQueuedListAfterLoopEnd(ctx);
     return;
   }
 
@@ -1098,7 +1098,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       "info",
     );
     notifyExternal(ctx, `Loop finished: ${reason}`);
-    resumeQueuedListAfterLoopEnd(ctx);
+    announceQueuedListAfterLoopEnd(ctx);
     return;
   }
 

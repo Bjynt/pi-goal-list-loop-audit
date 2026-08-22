@@ -106,10 +106,20 @@ test("v0.35.22: when the loop ends, the blocked item becomes startable — /loop
 
   const after = readState(cwd);
   assert.ok(!after.loop?.active, "the loop stopped");
-  assert.ok(after.goal, "the previously-blocked queued item STARTED once the loop ended");
-  assert.equal(after.goal!.policy, "list");
-  assert.match(after.goal!.objective, /clean up the README examples/);
+  // v0.35.22: loop end ANNOUNCES the unblocked queue (it must not auto-start
+  // — /loop stop is a stop gesture, and /glla cancel pins non-interference
+  // with an unrelated waiting queue) but the item is now genuinely startable.
+  const unblocked = ctx.ui.matching("can start again");
+  assert.equal(unblocked.length, 1, "loop end surfaces that the queued item is startable");
+  assert.match(unblocked[0]!.message, /clean up the README examples/);
+  assert.match(unblocked[0]!.message, /\/list next starts it/);
+
+  // The decisive assertion: the field escape hatch now actually works.
+  await pi.command("list", "next", ctx);
+  await tick(80);
+  const final = readState(cwd);
+  assert.ok(final.goal, "the previously-blocked queued item STARTED once the loop ended");
+  assert.equal(final.goal!.policy, "list");
+  assert.match(final.goal!.objective, /clean up the README examples/);
   assert.match(ledger(cwd), /"goal_created"/);
-  const startedNote = ctx.ui.matching("the next queued list item started");
-  assert.equal(startedNote.length, 1, "the self-heal says what it did");
 });
