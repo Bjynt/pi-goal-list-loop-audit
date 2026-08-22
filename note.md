@@ -13,6 +13,10 @@ goal gets closed before final audit
 
 ##
 
+we are stil missing topics on github make sure we have them 
+
+##
+
 updating the readme and docs would be nice
 
 # Later
