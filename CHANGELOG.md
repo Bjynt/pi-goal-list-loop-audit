@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.35.22 — a queued item blocked by a live loop is loud and self-heals at loop end (2026-08-22)
+
+### suspicious-unstartable-repair-card fix (note.md Next #3)
+  Field (screenshots 20260821_114109/114210/134442/134645): /goal start of a
+  lowercase-fragment objective paused the goal and queued a repair task; the
+  card said "/list next starts the preserved repair/replan task" — but with
+  the Chrome-Bridge loop owning the surface, activateNextListItem's
+  one-active-thing guard refused activation LEDGER-ONLY: unstartable AND
+  invisibly blocked. Two fixes:
+  - the refusal now notifies with the queued objective and the way out
+    ("/loop stop … then /list next"), and the ledger names what stayed queued;
+  - when a loop ends by ANY route (/loop stop, /loop finish, plateau/bounds
+    stop), resumeQueuedListAfterLoopEnd retries list activation when no goal
+    owns the surface — the blocked entry starts instead of staying dead.
+  Also: tests/list-invisible-restart.test.ts no longer depends on co-resident
+  module state (unique owner session + explicit reset), fixing the cross-file
+  ordering failure surfaced by audit round eight.
+
 ## 0.35.21 — list queue stays visible across lifecycle boundaries (2026-08-22)
 
 ### list-invisible-until-restart fix (note.md Next #4)

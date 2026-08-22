@@ -63,18 +63,23 @@ function seedLoopAndItem() {
   return { cwd, itemId: item.id };
 }
 
-test("v0.35.22: /list next under a LIVE loop refuses LOUDLY — warning names the queued item and the way out", async () => {
+test("v0.35.22: activating a queued item under a LIVE loop refuses LOUDLY — warning names the queued item and the way out", async () => {
   const { cwd } = seedLoopAndItem();
   const pi = new MockPi();
   activate(pi.api);
   const ctx = await boot(pi, cwd);
   wakeLoop();
 
-  await pi.command("list", "next", ctx);
+  // Drive the production activation entry point directly: /list next would
+  // first route an objective-conflict picker over the live loop, but the
+  // field bug lives in the shared activation choke point (it is what every
+  // caller — command, cascade, tool — funnels into).
+  const advanced = (globalThis as unknown as { activateNextListItem: (c: unknown) => boolean }).activateNextListItem(ctx);
   await tick(80);
 
   // Still blocked — one-active-thing holds…
-  assert.equal(readState(cwd).goal, null, "the queued item is NOT activated over a live loop");
+  assert.equal(advanced, false, "the queued item is NOT activated over a live loop");
+  assert.equal(readState(cwd).goal, null);
   const blocked = ledger(cwd).match(/"type":"list_activation_blocked_loop"[^}]*}/g) ?? [];
   assert.ok(blocked.length >= 1, "the refusal is ledgered");
   assert.match(blocked[blocked.length - 1]!, /"queueItemId"/, "the ledger names WHAT stayed queued");

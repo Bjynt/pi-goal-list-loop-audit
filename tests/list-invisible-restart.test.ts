@@ -19,7 +19,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import activate from "../extensions/loops/goal.js";
+import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
 import { buildWidgetLines } from "../extensions/goal-loop-display.ts";
 import { readState, writeQueueItemFile } from "../extensions/goal-loop-core.js";
 import { state } from "../extensions/goal-state.js";
@@ -28,7 +28,10 @@ import { MockPi, makeMockCtx, tmpCwd, seedState, tick } from "./harness/mock-pi.
 const MAIN_SM = { name: "main-session-manager" };
 
 function ownerCtx(cwd: string) {
-  return makeMockCtx(cwd, { sessionManager: MAIN_SM });
+  // Unique owner name per call: co-resident test files share module state,
+  // and a stale owner binding from a previous file made session_start
+  // behave differently here (field: auditor run ordering, v0.35.22).
+  return makeMockCtx(cwd, { sessionManager: { name: `list-invisible-${Date.now()}-${Math.random()}` } });
 }
 
 test("v0.35.21: session_start converges a disk-sidecar queue the state ledger lost, and the widget renders it", async () => {
@@ -58,6 +61,7 @@ test("v0.35.21: session_start converges a disk-sidecar queue the state ledger lo
 
   const pi = new MockPi();
   activate(pi.api);
+  __testOnlyResetOwnerSession();
   const ctx = ownerCtx(cwd);
   await pi.fire("session_start", { reason: "startup" }, ctx);
   await tick();
@@ -97,6 +101,7 @@ test("v0.35.21: convergence is idempotent — an item present in BOTH state and 
 
   const pi = new MockPi();
   activate(pi.api);
+  __testOnlyResetOwnerSession();
   const ctx = ownerCtx(cwd);
   await pi.fire("session_start", { reason: "startup" }, ctx);
   await tick();
