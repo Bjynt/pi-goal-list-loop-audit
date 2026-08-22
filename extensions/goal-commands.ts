@@ -65,7 +65,7 @@ export interface CommandDeps {
   setGoal: (goal: Goal, ctx: ExtensionContext, via?: string) => boolean;
   archiveCurrentGoal: (ctx: ExtensionContext, status: Status, stopReason?: string) => boolean;
   healGoalPolicy: (ctx: ExtensionContext) => boolean;
-  startDrafting: (ctx: ExtensionContext, target: "goal" | "list" | "loop", seed?: string) => Promise<boolean>;
+  startDrafting: (ctx: ExtensionContext, target: "goal" | "list" | "loop", seed?: string, depth?: "normal" | "plan") => Promise<boolean>;
   warnIfStaleAtEntry: (ctx: ExtensionContext, what: string) => boolean;
   queuePendingListOperation: (ctx: ExtensionContext, args: string) => boolean;
   freshCtx: () => ExtensionContext | null;

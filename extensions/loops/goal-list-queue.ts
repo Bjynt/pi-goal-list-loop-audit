@@ -778,12 +778,17 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
   // multi-round interview, structured expanded objective).
   const file = draftingTemplateFile(target, depth);
   const label = depth === "plan" ? `${baseLabel} — deep planning` : baseLabel;
-  const seededHint =
+  // v0.35.33: plan depth tells the user (and the seeded agent) what makes it
+  // different: research before questions, rounds, structured expanded objective.
+  const planNote = depth === "plan"
+    ? " DEEP PLANNING MODE: research the code FIRST, then interview in ROUNDS (architecture → scope → failure conditions → verification); the proposal will be a structured expanded contract, far more detailed than a regular draft."
+    : "";
+  const seededHint = planNote + (
     target === "list"
       ? `${label}: free-text is valid without a "Done when:" clause — the agent will turn it into short list items and grill for concrete per-item contracts (nothing activates until you confirm). To skip drafting, include a per-item "Done when:" clause.`
       : target === "loop"
         ? `${label}: a loop target needs a metric and a direction — the agent will help you design them first (nothing activates until you confirm). Skip the interview entirely: /loop start "<target>" (bare = infinite metricless) or /loop start "<target>" measure="<cmd>" direction=min|max [window=5] [max=50] [time=h] [tokens=n] [branch=1].`
-        : `${label}: the objective has no "Done when:" clause — the agent will grill you about it first (nothing activates until you confirm). Skip the interview entirely: /goal start <objective>.`;
+        : `${label}: the objective has no "Done when:" clause — the agent will grill you about it first (nothing activates until you confirm). Skip the interview entirely: /goal start <objective>.`);
   const tmplPath = path.resolve(__dirname, "..", "..", "prompts", file);
   let tmpl: string;
   try {
