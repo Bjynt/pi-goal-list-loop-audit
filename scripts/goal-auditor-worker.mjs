@@ -260,6 +260,16 @@ function identity(request, attemptId) {
   if (typeof request.model !== "string" || !request.model) throw new Error("auditor request model is empty");
   if (typeof request.thinkingLevel !== "string" || !request.thinkingLevel) throw new Error("auditor request thinking level is empty");
   if (!Number.isFinite(request.wallDeadlineAt)) throw new Error("auditor request deadline is invalid");
+  // v0.36.0: optional extension allowlist. Specs are passed verbatim to
+  // `pi --extension <spec>`; the strict shape check keeps a corrupted job
+  // dir from smuggling arbitrary extra CLI surface into the spawn.
+  if (request.allowedExtensions !== undefined) {
+    if (!Array.isArray(request.allowedExtensions)) throw new Error("auditor request allowedExtensions must be an array");
+    if (request.allowedExtensions.length > 32) throw new Error("auditor request allowedExtensions is too large");
+    for (const spec of request.allowedExtensions) {
+      if (typeof spec !== "string" || !spec.trim()) throw new Error("auditor request allowedExtensions contains an invalid spec");
+    }
+  }
 }
 
 const MAX_TOOL_ARGS_CHARS = 120;
@@ -526,6 +536,11 @@ async function main() {
       "--model", request.model,
       "--thinking", request.thinkingLevel,
     ];
+    // v0.36.0: explicitly allow-listed extension specs still load under
+    // --no-extensions (pi honors explicit -e paths). Extension tools stay
+    // disabled: --tools above remains the auditor's only tool surface, so
+    // allow-listed extensions effectively contribute model providers.
+    for (const spec of request.allowedExtensions ?? []) piArgs.push("--extension", spec);
     const launch = buildAuditorPiSpawnSpec(piBinary, piArgs);
     pi = spawn(launch.file, launch.args, {
       cwd: request.cwd,

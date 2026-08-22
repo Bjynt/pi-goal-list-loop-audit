@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -1047,6 +1048,179 @@ process.stdin.on("data", (chunk) => {
     const result = JSON.parse(await readFile(resultPath, "utf8"));
     assert.equal(result.ok, true);
     assert.match(result.output, /<disapproved\/>/);
+  } finally {
+    await stopTestProcess(child);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("v0.36.0: allow-listed extensions load via --extension while isolation flags stay intact", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-worker-ext-"));
+  const piLog = path.join(dir, "pi-log.json");
+  const fakePi = path.join(dir, "fake-pi.mjs");
+  const worker = path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs");
+  const piSource = `
+import { writeFile } from "node:fs/promises";
+let input = "";
+let handled = false;
+process.stdin.on("data", async (chunk) => {
+  input += chunk;
+  if (handled || !input.includes("\\n")) return;
+  handled = true;
+  await writeFile(process.env.PI_LOG, JSON.stringify({ args: process.argv.slice(2), input }));
+  const out = (x) => process.stdout.write(JSON.stringify(x) + "\\n");
+  out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "<evidence>\\nartifact exists\\n</evidence>\\n" } });
+  out({ type: "tool_execution_start", toolCallId: "1", toolName: "read", args: { path: "artifact" } });
+  out({ type: "tool_execution_end", toolCallId: "1" });
+  out({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "<approved/>" } });
+  out({ type: "agent_end" });
+  out({ type: "agent_settled" });
+});
+process.stdin.on("end", () => { process.exitCode = 41; });
+`;
+  await writeFile(fakePi, `#!/usr/bin/env node\n${piSource}`);
+  await chmod(fakePi, 0o700);
+  const attemptId = "worker-ext-test";
+  const jobDir = path.join(dir, ".pi-glla", "audit-jobs", attemptId);
+  await mkdir(jobDir, { recursive: true });
+  await writeFile(path.join(jobDir, "lock"), "lock\n");
+  const withoutHash = {
+    protocolVersion: 1, attemptId, cwd: dir, prompt: "Inspect artifact.", model: "test/provider-model",
+    thinkingLevel: "medium", createdAt: new Date().toISOString(), wallDeadlineAt: Date.now() + 5_000,
+    allowedExtensions: [
+      "/home/u/.pi/agent/npm/node_modules/pi-webaio", // resolved npm: install path
+      "/opt/local-ext.ts",
+    ],
+  };
+  const request = { ...withoutHash, requestHash: requestHash(withoutHash) };
+  await writeFile(path.join(jobDir, "request.json"), JSON.stringify(request));
+  let child: ChildProcess | undefined;
+  try {
+    child = spawn(process.execPath, [worker, "--job-dir", jobDir], {
+      env: { ...process.env, GLLA_PI_BINARY: fakePi, PI_LOG: piLog },
+      stdio: "ignore",
+      detached: true,
+    });
+    const resultPath = path.join(jobDir, "result.json");
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("worker test timed out")), 2_000);
+      const poll = async () => {
+        try { await readFile(resultPath); clearTimeout(timer); resolve(); }
+        catch { setTimeout(poll, 10); }
+      };
+      void poll();
+    });
+    await new Promise<void>((resolve) => {
+      if (child!.exitCode !== null) { resolve(); return; }
+      child!.once("exit", () => resolve());
+    });
+    const result = JSON.parse(await readFile(resultPath, "utf8"));
+    const log = JSON.parse(await readFile(piLog, "utf8"));
+    assert.equal(result.ok, true);
+    assert.match(result.output, /<approved\/>$/);
+    // The full isolation contract is unchanged; the allowlist is appended
+    // AFTER --thinking as repeated --extension specs.
+    assert.deepEqual(log.args, [
+      "--mode", "rpc", "--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates",
+      "--no-themes", "--no-context-files", "--no-approve", "--tools", "read,grep,find,ls,bash",
+      "--model", "test/provider-model", "--thinking", "medium",
+      "--extension", "/home/u/.pi/agent/npm/node_modules/pi-webaio", "--extension", "/opt/local-ext.ts",
+    ]);
+  } finally {
+    await stopTestProcess(child);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("v0.36.0: the process layer resolves raw specs to install paths before the worker sees them", { timeout: 20_000 }, async () => {
+  // Regression pin for the 2026-08-22 audit finding: the primary
+  // complete_goal dispatch passed raw settings specs (npm:/relative) into
+  // AuditorRequest.allowedExtensions, so the worker spawned `pi -e npm:pkg`
+  // (fresh temp npm install online, 0 models offline). Resolution now lives
+  // in runDetachedGoalCompletionAuditor itself: ANY call site is covered.
+  // runtime.homeDir pins resolution to a fixture; a stub WORKER (not pi)
+  // copies the hashed request.json out to a marker before the parent's wall
+  // timeout reaps the job.
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-worker-resolve-"));
+  const home = await mkdtemp(path.join(tmpdir(), "glla-worker-home-"));
+  const fakeHomeAgent = path.join(home, ".pi", "agent");
+  await mkdir(path.join(fakeHomeAgent, "npm", "node_modules", "pi-webaio"), { recursive: true });
+  await writeFile(path.join(fakeHomeAgent, "relext.ts"), "export default () => {};\n");
+  const requestCopy = path.join(dir, "request-copy.json");
+  const stubWorker = path.join(dir, "stub-worker.mjs");
+  await writeFile(stubWorker, `import { copyFileSync } from 'node:fs';
+const dir = process.argv[process.argv.indexOf('--job-dir') + 1];
+copyFileSync(dir + '/request.json', process.env.PI_REQUEST_COPY);
+// Stay alive until the parent's wall timeout reaps us.
+setInterval(() => {}, 1000);
+`);
+  try {
+    const result = await runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "medium",
+      // RAW specs on purpose: exactly what the settings layer stores.
+      allowedExtensions: ["npm:pi-webaio@^2", "./relext.ts", "npm:not-installed", "/definitely/missing.ts"],
+      runtime: {
+        workerPath: stubWorker,
+        env: { PI_REQUEST_COPY: requestCopy },
+        homeDir: home,
+        attemptId: () => "worker-resolve-test",
+        pollIntervalMs: 10,
+        wallTimeoutMs: 1_000,
+      },
+    });
+    assert.ok(result.error, "stub worker never produces a verdict");
+    const request = JSON.parse(await readFile(requestCopy, "utf8"));
+    // The hashed request carries RESOLVED install paths; unresolvable
+    // entries (not-installed package, missing path) are dropped fail-closed.
+    assert.deepEqual(request.allowedExtensions, [
+      path.join(fakeHomeAgent, "npm", "node_modules", "pi-webaio"),
+      path.join(fakeHomeAgent, "relext.ts"),
+    ]);
+    const verified = { ...request };
+    delete (verified as Record<string, unknown>).requestHash;
+    assert.equal(request.requestHash, requestHash(verified as Parameters<typeof requestHash>[0]), "the hashed payload includes the resolved paths");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("v0.36.0: a malformed allowedExtensions request fails closed as an identity error", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-worker-ext-bad-"));
+  const fakePi = path.join(dir, "fake-pi.mjs");
+  const worker = path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs");
+  await writeFile(fakePi, `#!/usr/bin/env node\nprocess.exit(0);\n`);
+  await chmod(fakePi, 0o700);
+  const attemptId = "worker-ext-bad";
+  const jobDir = path.join(dir, ".pi-glla", "audit-jobs", attemptId);
+  await mkdir(jobDir, { recursive: true });
+  await writeFile(path.join(jobDir, "lock"), "lock\n");
+  const withoutHash = {
+    protocolVersion: 1, attemptId, cwd: dir, prompt: "Inspect artifact.", model: "test/provider-model",
+    thinkingLevel: "medium", createdAt: new Date().toISOString(), wallDeadlineAt: Date.now() + 5_000,
+    allowedExtensions: "npm:not-an-array",
+  };
+  const request = { ...withoutHash, requestHash: requestHash(withoutHash as unknown as Parameters<typeof requestHash>[0]) };
+  await writeFile(path.join(jobDir, "request.json"), JSON.stringify(request));
+  let child: ChildProcess | undefined;
+  try {
+    child = spawn(process.execPath, [worker, "--job-dir", jobDir], {
+      env: { ...process.env, GLLA_PI_BINARY: fakePi },
+      stdio: "ignore",
+      detached: true,
+    });
+    // Identity failures are deliberately result-less: the worker exits 1
+    // and writes a stderr diagnostic instead of fabricating a verdict.
+    await new Promise<void>((resolve, reject) => {
+      if (child!.exitCode !== null) { resolve(); return; }
+      const timer = setTimeout(() => reject(new Error("worker test timed out")), 2_000);
+      child!.once("exit", () => { clearTimeout(timer); resolve(); });
+    });
+    assert.equal(child.exitCode, 1);
+    await assert.rejects(readFile(path.join(jobDir, "result.json")));
   } finally {
     await stopTestProcess(child);
     await rm(dir, { recursive: true, force: true });

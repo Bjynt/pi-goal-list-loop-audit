@@ -52,6 +52,11 @@ export interface MultiModelPickerDeps {
   includeInheritOption?: boolean;
   /** Initial state for the explicit inherit choice. */
   initialInheritFromSession?: boolean;
+  /** Unordered-set mode: rows render as `[X]`/`[ ]` checkboxes, the
+   * selection is always kept in item-list (discovery) order regardless
+   * of toggle sequence, and Tab order-mode / bracket reordering are
+   * disabled. For allowlists where order is meaningless. */
+  unorderedSet?: boolean;
 }
 
 export interface MultiModelPickerSelection {
@@ -71,6 +76,7 @@ export class MultiModelPickerComponent {
   private readonly maxRows: number;
   private readonly maxSelections: number | undefined;
   private readonly currentRef: string | undefined;
+  private readonly unorderedSet: boolean;
   private readonly requestRender: () => void;
   private readonly theme: SettingsMenuTheme;
   private readonly keybindings: KeybindingsManagerLike;
@@ -110,6 +116,7 @@ export class MultiModelPickerComponent {
       ? deps.maxSelections
       : undefined;
     this.currentRef = typeof deps.currentRef === "string" && deps.currentRef.trim() ? deps.currentRef.trim() : undefined;
+    this.unorderedSet = deps.unorderedSet === true;
     this.requestRender = requestRender;
     this.theme = theme;
     this.keybindings = keybindings;
@@ -131,7 +138,28 @@ export class MultiModelPickerComponent {
       initial.push(itemRef.get(key) ?? ref);
     }
     this.selection = this.maxSelections === undefined ? initial : initial.slice(0, this.maxSelections);
+    if (this.unorderedSet) this.canonicalizeSelection();
     this.inheritFromSession = this.includeInheritOption && deps.initialInheritFromSession === true;
+  }
+
+  /** Reorder the selection into item-list order (discovery order); refs
+   * not present in the list (stale saved entries) keep their relative
+   * order at the end. In set mode this runs after every mutation so the
+   * persisted array is invariant under toggle sequence. */
+  private canonicalizeSelection(): void {
+    const rank = new Map<string, number>();
+    this.items.forEach((item, i) => {
+      if (item.kind === "model" && item.ref) rank.set(item.ref.toLowerCase(), i);
+    });
+    const known: string[] = [];
+    const stale: string[] = [];
+    for (const ref of this.selection) {
+      if (rank.has(ref.toLowerCase())) known.push(ref);
+      else stale.push(ref);
+    }
+    known.sort((a, b) => rank.get(a.toLowerCase())! - rank.get(b.toLowerCase())!);
+    this.selection.length = 0;
+    this.selection.push(...known, ...stale);
   }
 
   /** Current search query. Exposed for tests. */
@@ -215,6 +243,7 @@ export class MultiModelPickerComponent {
       }
       this.selection.push(it.ref);
     }
+    if (this.unorderedSet) this.canonicalizeSelection();
     this.refresh();
   }
 
@@ -248,6 +277,7 @@ export class MultiModelPickerComponent {
   }
 
   private setOrderMode(on: boolean): void {
+    if (this.unorderedSet) return; // set mode: ordering is meaningless
     if (this.orderMode === on) return;
     this.orderMode = on;
     this.orderIdx = 0;
@@ -275,6 +305,7 @@ export class MultiModelPickerComponent {
 
   private itemMarker(item: ModelPickItem): string {
     if (item.kind === "inherit") return this.inheritFromSession ? "[inherit]" : "[ ]";
+    if (this.unorderedSet) return this.isSelected(item.ref) ? "[X]" : "[ ]";
     return this.orderLabel(item.ref);
   }
 
@@ -292,7 +323,9 @@ export class MultiModelPickerComponent {
     const w = Math.max(20, width - 2);
     const lines: string[] = [];
     lines.push(this.theme.fg("accent", this.theme.bold(this.title)));
-    if (this.currentRef) {
+    if (this.unorderedSet) {
+      lines.push(this.theme.fg("muted", "selected extensions are loaded by the auditor; order does not matter:"));
+    } else if (this.currentRef) {
       lines.push(this.theme.fg("muted", "try order on a provider failure (one supervised model at a time):"));
       lines.push(truncateToWidth(`  0 current  ${this.currentRef}`, w, "…"));
     } else {
@@ -306,13 +339,13 @@ export class MultiModelPickerComponent {
     if (this.selection.length === 0) {
       lines.push(this.theme.fg("dim", this.currentRef
         ? "  — no backups; keep probing the current model"
-        : "  — no fallback refs configured"));
+        : this.unorderedSet ? "  — no extensions allowed (fully isolated auditor)" : "  — no fallback refs configured"));
     } else {
       for (let i = 0; i < this.selection.length; i++) {
         const ref = this.selection[i]!;
         const item = this.itemForRef(ref);
         const status = this.effectiveDisabledReason(item) ? ` · ${this.effectiveDisabledReason(item)}` : "";
-        const row = truncateToWidth(`  ${i + 1} backup  ${ref}${status}`, w, "…");
+        const row = truncateToWidth(`  ${i + 1} ${this.unorderedSet ? "selected" : "backup"}  ${ref}${status}`, w, "…");
         if (this.orderMode && i === this.orderIdx) {
           // In order mode the active chain row is the cursor: ↑/↓ moves it.
           const selectedRow = this.theme.bold(`→ ${row}`);
@@ -333,7 +366,9 @@ export class MultiModelPickerComponent {
     if (this.includeInheritOption) {
       lines.push(this.theme.fg("muted", `inherit from session: ${this.inheritFromSession ? "selected" : "not selected"}`));
     }
-    lines.push(this.theme.fg("dim", this.orderMode
+    lines.push(this.theme.fg("dim", this.unorderedSet
+      ? "space select/deselect · enter save · esc cancel"
+      : this.orderMode
       ? "↑/↓ moves the highlighted backup · tab returns to browsing"
       : "selected rows are tried top-to-bottom · tab = order mode"));
     lines.push("");
@@ -370,7 +405,9 @@ export class MultiModelPickerComponent {
       if (remaining > 0) lines.push(this.theme.fg("dim", `  ↓ ${remaining} more`));
     }
     lines.push("");
-    lines.push(this.theme.fg("dim", this.orderMode
+    lines.push(this.theme.fg("dim", this.unorderedSet
+      ? "space select/deselect · enter save · esc cancel"
+      : this.orderMode
       ? "↑/↓ reorder · tab browse · enter save · esc cancel"
       : this.maxSelections !== undefined && this.selection.length >= this.maxSelections
         ? "space add/remove · tab order · enter save · esc cancel · maximum reached"
@@ -436,11 +473,12 @@ export class MultiModelPickerComponent {
     }
     // Brackets still reorder the highlighted selected model in browse mode
     // (same semantics as the order-mode arrows, but without leaving browse).
-    if (data === "[") {
+    // In set mode there is no order — a no-op.
+    if (data === "[" && !this.unorderedSet) {
       this.moveSelectedOrder(-1);
       return;
     }
-    if (data === "]") {
+    if (data === "]" && !this.unorderedSet) {
       this.moveSelectedOrder(+1);
       return;
     }

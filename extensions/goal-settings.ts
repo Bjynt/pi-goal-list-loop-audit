@@ -17,6 +17,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { normalizeAuditorAllowedExtensions } from "./auditor-extensions.ts";
+
 import {
   DEFAULT_AUDIT_FEEDBACK_CHARS,
   DEFAULT_FORBIDDEN_MODELS,
@@ -98,6 +100,17 @@ export interface Settings {
    * the next :00:30 every hour. This is a blind retry slot; the plugin does
    * not query or infer provider quota state. Default ON. */
   hourlyRetryProbe?: boolean;
+  /** v0.36.0: pi extension specs ("npm:pi-webaio", "git:…", or a local
+   * path) the DETACHED auditor may load via `pi --extension <spec>` while
+   * keeping `--no-extensions` discovery off. Default [] = the fully
+   * isolated, extension-less auditor (unchanged behavior). The worker still
+   * restricts tools to read,grep,find,ls,bash, so allow-listed extensions
+   * register model providers without contributing tools. Entries may be
+   * raw specs (npm:<pkg>, git:<url>, relative paths) or already-resolved
+   * absolute install paths; dispatch resolves them to existing install
+   * paths and drops unloadable entries fail-closed before the worker
+   * spawns (extensions/auditor-extensions.ts). */
+  auditorAllowedExtensions?: string[];
   auditorThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   /** Shell command run on goal complete / goal pause / loop stop; message passed as $1. */
   notifyCmd?: string;
@@ -224,6 +237,11 @@ export const DEFAULT_SETTINGS: Settings = {
   // Unset = inherit the session thinking level while the temporary drafter
   // agent is active; the original session level is restored afterward.
   drafterThinkingLevel: undefined,
+  // v0.36.0: the default is the fully isolated auditor — no extension is
+  // loaded unless the user explicitly allow-lists it (GitHub issue:
+  // extension-based model providers otherwise cannot run in the detached
+  // auditor).
+  auditorAllowedExtensions: [],
   // Unset = "high" at the call site (v0.31.2). The auditor is the
   // verification gate: its depth must NOT ride the session's coding-speed
   // thinking dial (user 2026-07-31: "we should also select its thinking
@@ -280,6 +298,10 @@ function normalizeLoadedSettings(settings: Settings): Settings {
   // all see the same bounded value.
   settings.mainModelFallbacks = normalizeMainModelFallbackRefs(settings.mainModelFallbacks);
   settings.drafterModelFallbacks = normalizeMainModelFallbackRefs(settings.drafterModelFallbacks);
+  // v0.36.0: the auditor extension allowlist is a plain string[] of pi
+  // extension specs. Hand-edited files may carry junk; keep it bounded and
+  // deterministic so the request hash is stable.
+  settings.auditorAllowedExtensions = normalizeAuditorAllowedExtensions(settings.auditorAllowedExtensions);
   if (settings.mainModelFailback !== "auto" && settings.mainModelFailback !== "sticky") {
     settings.mainModelFailback = "auto";
   }
@@ -352,6 +374,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "visionAssist",
   "auditorModel",
   "auditorModelFallback",
+  "auditorAllowedExtensions",
   "auditorSameSessionSwap",
   "auditorThinkingLevel",
   "notifyCmd",
