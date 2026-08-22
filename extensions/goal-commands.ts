@@ -1807,8 +1807,11 @@ async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise
     // Do not abort here: wipe still has to clear queue sidecars and loop
     // state. The old early abort made a second /glla wipe appear necessary.
     if (!archiveCurrentGoal(ctx, "aborted", "user wipe (/glla wipe)")) return;
+    // v0.35.30: the archive's closeArchivedSlot just recorded lastOutcome;
+    // a wipe means CLEAN SLATE — the ✓/▪ line must not survive it.
+    replaceState({ ...state, lastOutcome: undefined });
   } else if (g) {
-    replaceState({ ...state, goal: null });
+    replaceState({ ...state, goal: null, lastOutcome: undefined });
   }
   // Clear provider-recovery and continuation artifacts only after a live-goal
   // archive succeeds. An archive failure must leave all resumable work intact.
