@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.35.31 — user-seed trust for /goal start; loop plateau no longer false-stops on a never-moved baseline (2026-08-22)
+
+### Fix 1: explicit /goal start paused by the suspicious-objective heuristic
+  Field: Screenshot_20260822_193744 — `/goal start "…because we are logged in"`
+  was parked as "Suspicious objective detected (dangling-fragment)" with a
+  repair task queued instead of dispatching. The fragment heuristics exist
+  for AGENT-authored report garbage; an explicit `/goal start` whose
+  objective is verbatim a user seed now dispatches and ledgers
+  `faulty_objective_user_seed_trusted` (/goal tweak remains available).
+### Fix 2: loop plateau vs a degenerate zero baseline
+  Field: doomtap loop stopped "plateau — best: 0" while iterations visibly
+  fixed real findings: a min-direction metric reading 0 before work starts
+  pins best at 0, so every later productive reading scores flat and burns
+  plateau slots. Flat readings now count toward plateau only once the metric
+  has demonstrably moved (an improvement on record, or best ≠ first measured
+  reading of the run); a metric that NEVER moves gets its own loud bounded
+  stop ("metric never moved …") after 2× window, not a fake plateau.
+
 ## 0.35.30 — durable last-outcome retention: the final verdict stays visible (2026-08-22)
 
 ### Gap
