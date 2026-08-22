@@ -1,4 +1,7 @@
-// v0.35.21 — list-invisible-until-restart regression (note.md Next #4).
+// pi-goal-list-loop-audit — v0.35.21
+// tests/list-invisible-restart.test.ts
+//
+// v0.35.21 list-invisible-until-restart regression (note.md Next #4).
 //
 // Field: a stopped/interrupted /list exec left the queue surface blank —
 // active item only, no "N waiting · up next" line — until a full session
@@ -10,14 +13,17 @@
 // Fix: session_start's restore converges memory to the union immediately
 // (hydrateListQueueFromDisk), so the very next lifecycle boundary heals
 // the surface without a restart.
-import { test, expect } from "bun:test";
-import fs from "node:fs";
-import path from "node:path";
 
-const { MockPi, makeMockCtx, tmpCwd, seedState, tick } = await import("./harness/mock-pi.ts");
-type MockCtx = Awaited<ReturnType<typeof makeMockCtx>>;
-const { writeQueueItemFile } = await import("../extensions/goal-loop-core.ts");
-const { buildWidgetLines } = await import("../extensions/goal-loop-display.ts");
+import { test } from "node:test";
+import * as assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as path from "node:path";
+
+import activate from "../extensions/loops/goal.js";
+import { buildWidgetLines } from "../extensions/goal-loop-display.ts";
+import { readState, writeQueueItemFile } from "../extensions/goal-loop-core.js";
+import { state } from "../extensions/goal-state.js";
+import { MockPi, makeMockCtx, tmpCwd, seedState, tick } from "./harness/mock-pi.js";
 
 const MAIN_SM = { name: "main-session-manager" };
 
@@ -31,8 +37,8 @@ test("v0.35.21: session_start converges a disk-sidecar queue the state ledger lo
   const activeItem = {
     id: "20260821213000-active",
     objective: "active list item — done when pinned",
-    status: "active" as const,
-    policy: "goal" as const,
+    status: "active",
+    policy: "goal",
     autoContinue: true,
     createdAt: now,
     updatedAt: now,
@@ -48,30 +54,38 @@ test("v0.35.21: session_start converges a disk-sidecar queue the state ledger lo
     queueOrder: 1,
   };
   const wrote = writeQueueItemFile(cwd, waitingItem as never);
-  expect(wrote.wrote).toBe(true);
+  assert.equal(wrote.wrote, true);
 
   const pi = new MockPi();
+  activate(pi.api);
   const ctx = ownerCtx(cwd);
   await pi.fire("session_start", { reason: "startup" }, ctx);
   await tick();
 
   // Memory converged to the union at the lifecycle boundary…
-  const restored = (await import("../extensions/goal-state.ts")).state;
-  expect((restored.list ?? []).some((i: { id: string }) => i.id === waitingItem.id)).toBe(true);
+  assert.ok((state.list ?? []).some((i) => i.id === waitingItem.id), "the sidecar-only item was hydrated into memory");
 
-  // …and the widget renders the waiting line instead of a blank queue.
-  const lines = buildWidgetLines((await import("../extensions/goal-state.ts")).state).join("\n");
-  expect(lines).toMatch(/1 waiting · up next: waiting list item that must stay visible/);
+  // …and the widget renders the queue truthfully instead of "queue empty"
+  // (the restored-on-load card holds in its paused branch, which surfaces
+  // the queue count + the waiting hint).
+  const lines = buildWidgetLines(state).join("\n");
+  assert.match(lines, /1 queued/);
+  assert.doesNotMatch(lines, /queue empty/);
+  assert.match(lines, /\+1 waiting in the list/);
+
+  // The convergence is announced honestly.
+  const restoredNote = ctx.ui.matching("restored 1 queued list item");
+  assert.equal(restoredNote.length, 1, "the hydration notifies with a truthful count");
 });
 
-test("v0.35.21: convergence is idempotent — no duplicate restore when memory already matches disk", async () => {
+test("v0.35.21: convergence is idempotent — an item present in BOTH state and sidecar is not duplicated", async () => {
   const cwd = tmpCwd();
   const now = new Date().toISOString();
   const goal = {
     id: "20260821214000-g",
     objective: "plain goal with a synced queue — done when pinned",
-    status: "active" as const,
-    policy: "goal" as const,
+    status: "active",
+    policy: "goal",
     autoContinue: true,
     createdAt: now,
     updatedAt: now,
@@ -79,14 +93,14 @@ test("v0.35.21: convergence is idempotent — no duplicate restore when memory a
   const item = { id: "20260821214100-both", objective: "present in BOTH state and sidecar", addedAt: now, queueOrder: 1 };
   seedState(cwd, { goal, list: [item] });
   const wrote = writeQueueItemFile(cwd, item as never);
-  expect(wrote.wrote).toBe(true); // idempotent writer skips existing? No — file absent, writes.
+  assert.equal(wrote.wrote, true);
 
   const pi = new MockPi();
+  activate(pi.api);
   const ctx = ownerCtx(cwd);
   await pi.fire("session_start", { reason: "startup" }, ctx);
   await tick();
 
-  const { readState } = await import("../extensions/goal-loop-core.ts");
   const list = readState(cwd).list ?? [];
-  expect(list.filter((i) => i.id === item.id)).toHaveLength(1); // no twin
+  assert.equal(list.filter((i) => i.id === item.id).length, 1, "no twin after hydration");
 });
