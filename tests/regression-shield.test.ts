@@ -340,9 +340,9 @@ test("extractMechanicalCheckCommands: extracts backticked and raw shell commands
   const proseContract = [
     "bun test passes with 0 failures",
     "bun run build completes successfully",
-    "vite build succeeds cleanly",
+    "cargo build succeeds cleanly",
   ].join("\n");
-  assert.deepEqual(extractMechanicalCheckCommands(proseContract), ["bun test", "bun run build", "vite build"]);
+  assert.deepEqual(extractMechanicalCheckCommands(proseContract), ["bun test", "bun run build", "cargo build"]);
 
   const res = runMechanicalPreAuditChecks(process.cwd(), ["node --version"]);
   assert.equal(res.passed, true);
