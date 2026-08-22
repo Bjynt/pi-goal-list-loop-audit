@@ -1260,7 +1260,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
   // greenfield/megaplan decomposition where the standard interview is too
   // shallow. Plain /list add keeps its fast behavior unchanged.
   if (sub === "plan") {
-    if (staleEntry && queuePendingListOperation(ctx, args)) return;
+    // staleEntry was already gated by LIST_MUTATING_SUBCOMMANDS above.
     await startDrafting(ctx, "list", rest || undefined, "plan");
     return;
   }

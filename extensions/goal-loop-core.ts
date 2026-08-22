@@ -529,6 +529,7 @@ export const LIST_DRAFTING_BLOCK_MESSAGE =
  */
 export const LIST_MUTATING_SUBCOMMANDS = new Set([
   "audit",
+  "plan", // v0.35.33: extended draft — sends a seed, same mutation class as add
   "tweak",
   "pause",
   "resume",

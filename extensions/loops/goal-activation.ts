@@ -645,6 +645,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     description: "Set/draft a goal, or /goal status|pause|resume|cancel|tweak <text>|archive|start <objective>. Objectives without a 'Done when:' clause are grilled into a contract first; include the clause or use /goal start to skip the interview and activate instantly.",
     getArgumentCompletions: completions([
       ["start", "skip drafting — /goal start <objective> activates immediately"],
+      ["plan", "extended draft for greenfield/megaplan work: research-first, multi-round interview, structured expanded objective (still Confirm-gated)"],
       ["audit", "one-shot project audit goal: /goal audit [focus] — fix the non-decisions, present the decisions (v0.29.8)"],
       ["verify", "run the isolated auditor on the current goal NOW (v0.28.27, renamed from /goal audit)"],
       ["status", "show the active goal and its task list"],
@@ -688,6 +689,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       ["show", "display the waiting items"],
       ["settings", "settings live under /glla — bare /glla opens the settings table"],
       ["audit", "collect-then-drain: audit the project, queue every finding as its own item"],
+      ["plan", "extended draft: deep research + multi-round interview, then ONE Confirm proposes the whole items[] batch"],
       ["resume", "resume the paused list item (the list's head)"],
       ["tweak", "change the paused list item: /list tweak <text>"],
       ["next", "activate the next item (or /list next <n> for position n)"],
@@ -703,6 +705,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     getArgumentCompletions: completions([
       ["start", "skip drafting: /loop start \"<target>\" measure=\"<cmd>\" direction=min|max [window=5] [max=50]"],
       ["respec", "infinite metricless loop reconciling the codebase against the root SPEC.md"],
+      ["plan", "extended loop draft: deep research + multi-round metric design, same Confirm as a regular draft"],
       ["audit", "project-audit loop: each iteration audits fresh, appends findings, fixes the top ones — plateau stops when the well is dry (v0.29.0)"],
       ["status", "show metric, iteration, best/last values, stall count"],
       ["stop", "end the loop (keeps the best state)"],
