@@ -301,6 +301,14 @@ below — without touching active work or a running detached audit. The flag is
 persisted and survives restarts; `/glla resume` clears it. Bare `/glla` shows
 the frozen state.
 
+**Zombie watchdog vs subagent waits (v0.35.26, issue #13).** A parent
+blocked on a foreground subagent call is stream-silent by design, so the
+zero-stream watchdog stands down while one is in flight. The recognized
+names cover both the built-ins (`Agent`, `get_subagent_result`,
+`steer_subagent`) and the pi-subagents extension's registrations
+(`subagent`, `subagent_wait`), shared by the watchdog and the wedge-alert
+hint so they cannot drift apart again.
+
 ## Provider failures: aggressive retry envelope, bounded (v0.35.0)
 
 Error text is **not trusted** to pick a retry policy. The runtime does not
