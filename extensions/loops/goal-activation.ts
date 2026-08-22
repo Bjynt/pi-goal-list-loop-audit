@@ -1389,7 +1389,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       persistState(ctx);
       releaseContinuationDispatchStandDown();
       appendLedger(ctx.cwd, "loop_auto_resumed_on_restore", {
-        via: recoveryResume ? "recovery" : rebindResume ? "rebind" : handoffResume ? "handoff" : "auto-resume",
+        via: recoveryResume ? "recovery" : rebindResume ? "rebind" : handoffResume ? "handoff" : sameProcessSuccessorResume ? "same-process-successor" : "auto-resume",
         iteration: held.iteration,
         best: held.bestValue,
       });

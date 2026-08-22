@@ -115,6 +115,7 @@ import {
 isGoalRevisionCurrent,
   nextHourlyProbeMs,
   supervisorPaused,
+  loadHoldActive,
   type ModelSwitchRecord,
   type ListItem,
 } from "../goal-loop-core.js";
@@ -816,7 +817,12 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
   // retries and session-recovery re-starts stay parked while the supervisor
   // is paused. Explicit manual requests (`/goal resume`, `/goal verify`)
   // still run: the user typed them, so they are not "automatic machinery".
-  if (origin !== "manual" && supervisorPaused(state)) return;
+  // v0.35.23: the automatic LOAD HOLD exempts exactly ONE narrow path — a
+  // "main-model-recovery" origin. The claim was parked by provider
+  // infrastructure failure; the recovery ladder healing the provider IS the
+  // durable consent for its single retry (pinned v0.35.x). A manual
+  // /glla pause still freezes it completely.
+  if (origin !== "manual" && supervisorPaused(state) && !(origin === "main-model-recovery" && loadHoldActive(state))) return;
   const goal = state.goal;
   if (!goal?.pendingCompletion) return;
   const goalId = goal.id;
