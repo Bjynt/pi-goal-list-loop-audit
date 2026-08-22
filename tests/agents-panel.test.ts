@@ -84,6 +84,7 @@ test("v0.35.29 #15: --tail matches by needle, takes newest mtime, formats entrie
   const files = ["b.jsonl", "a.jsonl"];
   const contents: Record<string, string> = {
     "a.jsonl": [
+      JSON.stringify({ message: { role: "assistant", content: [{ type: "text", text: "starting: map model picker" }] } }),
       JSON.stringify({ message: { role: "assistant", content: [{ type: "text", text: "working on it" }] } }),
       JSON.stringify({ type: "tool_call", role: "tool", content: "read x.ts" }),
       "not-json-garbage",
@@ -100,6 +101,7 @@ test("v0.35.29 #15: --tail matches by needle, takes newest mtime, formats entrie
   assert.equal(result.ok, true);
   assert.match(result.detail, /last 3 of 4/);
   assert.deepEqual(result.lines, ["[tool] read x.ts", "[raw] not-json-garbage", "[assistant] final report text"]);
+  assert.match(result.detail, /last 3 of 5/);
 });
 
 test("v0.35.29 #15: --tail is LOUD when nothing matches or the dir is unreadable", () => {
@@ -136,6 +138,11 @@ test("v0.35.29 #15: end-to-end — /glla agents renders real probe data; widget 
   upsertSubagentHangProbe("probe-live-1", "Explore", "map model picker");
   markSubagentHangProgress("probe-live-1");
   upsertSubagentHangProbe("probe-hung-1", "Plan", "audit contract draft");
+  // Backdate the hung child's progress past the 5m hang threshold.
+  const probes = (await import("../extensions/goal-heartbeat.js")).__testOnlySubagentHangProbes();
+  const hung = probes.find((p) => p.recordId === "probe-hung-1");
+  assert.ok(hung);
+  hung.lastProgressAt = Date.now() - 26 * 60_000;
   try {
     await pi.command("glla", "agents", ctx);
     const notified = ctx.ui.notifies.map((n) => n.message).join("\n");
