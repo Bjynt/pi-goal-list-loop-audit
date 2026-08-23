@@ -84,6 +84,9 @@ export function persistStateLine(cwd: string, s: State): void {
     // died with the process and any restart blanked the widget retention
     // line within its 24h window (the exact failure v0.35.30 fixed). Same
     // latent class as the lastCompactionAt trap documented above.
-    ...(s.lastOutcome ? { lastOutcome: s.lastOutcome } : {}),
+    // ALWAYS serialized (null when absent): readState spreads successive
+    // state events, so an omitted key would resurrect the previous value
+    // and /glla wipe could never clear the record from disk.
+    ...(s.lastOutcome ? { lastOutcome: s.lastOutcome } : { lastOutcome: null }),
   });
 }

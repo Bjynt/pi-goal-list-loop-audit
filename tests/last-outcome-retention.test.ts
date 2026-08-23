@@ -126,6 +126,7 @@ test("v0.35.34: corrupt lastOutcome lines degrade to absent, never throw", () =>
   const path = require("node:path");
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "glla-outcome-corrupt-"));
   try {
+    fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
     const bad = [
       null,
       "garbage",
