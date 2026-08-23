@@ -15,11 +15,23 @@ in this case its not slow response but we were workign with a model that kept ah
 
 > /home/dracon/Pictures/Screenshots/Screenshot_20260823_153139.png so we can see the mdoel struggless but we still need ot keep retrying it 
 
+
+##
+another problem is that on session start, we odnt auto start the main thread we do auto start the auditor if it was their turn
+
+##
+
+another problem is htat failed requests add to the context, while clearly adding nothing of value
+/home/dracon/Pictures/Screenshots/Screenshot_20260823_154439.png 
+
+# Next2
+
 ##
 
 the goal was gettick stuck so i started a new goal but then it was not visible or usable before i restarted
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_091841.png 
+
 
 ##
 
