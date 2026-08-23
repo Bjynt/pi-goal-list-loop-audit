@@ -1,10 +1,4 @@
 # Now
-##
-
-https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
-investigate
-
-# Next
 
 ##
 
@@ -39,7 +33,7 @@ then
 objective needs repair issue, but before reload it looked fine
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_155633.png 
 
-# Next2
+# Next
 
 ##
 
