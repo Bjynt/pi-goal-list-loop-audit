@@ -352,11 +352,11 @@ setInterval(async () => {
         pollIntervalMs: 10,
         // v0.35.17: 20s wall — the stall thresholds are what the test times
         // against; the wall bound only needs to exceed them with load headroom.
-        // v0.35.49: the window also needs worker cold-start headroom — the new
-        // parent-side first-event watchdog (same window, armed from boot) must
-        // NOT win the race against the worker's first heartbeat write.
+        // v0.35.49: the first-event watchdog is disarmed so worker cold-start
+        // cannot cross-arm it — this test isolates the fresh-heartbeat axis.
         wallTimeoutMs: 20_000,
-        heartbeatNoProgressMs: 400,
+        heartbeatNoProgressMs: 120,
+        firstEventTimeoutMs: 20_000,
         heartbeatFreshMs: 500,
       },
     });
@@ -367,7 +367,7 @@ setInterval(async () => {
     assert.equal(stalled.length, 1, "the watchdog emits auditor_stalled exactly once");
     const stall = stalled[0];
     assert.ok(stall, "stall info present");
-    assert.ok(stall.noProgressMs >= 400, `no-progress streak reached the window: ${stall.noProgressMs}ms`);
+    assert.ok(stall.noProgressMs >= 120, `no-progress streak reached the window: ${stall.noProgressMs}ms`);
     assert.ok(stall.heartbeatAgeMs <= 500, `heartbeat was fresh at detection: ${stall.heartbeatAgeMs}ms`);
     assert.equal(stall.phase, "running");
     const lastReport = reports[reports.length - 1];
