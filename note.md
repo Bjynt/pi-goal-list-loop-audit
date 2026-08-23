@@ -27,6 +27,11 @@ we coudl use better visuals cause this is what wesee now and it is worth htinkin
 list seems corruped not only doesnt show but we cant start it 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_120853.png 
 
+##
+
+another concern is that do we have these explores, clearly not desired, is this our bug 
+/home/dracon/Pictures/Screenshots/Screenshot_20260823_120936.png 
+
 # Idea
 
 ##
