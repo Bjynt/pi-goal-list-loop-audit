@@ -1053,41 +1053,66 @@ export async function runDetachedGoalCompletionAuditor(args: {
         // the same window with the same running-tool exemption; mirror it
         // parent-side so a wedged or silently-dead worker is failed fast into
         // the (already eager first-retry) fallback ladder instead of the wall.
-        const staleSilenceMs = lastProgress?.lastActivityAt === undefined
-          ? now() - startedAt
-          : now() - lastProgress.lastActivityAt;
-        const silenceOwnedByTool = lastProgress?.currentToolStartedAt !== undefined;
-        if (!silenceOwnedByTool && staleSilenceMs >= heartbeatNoProgressMs) {
-          const firstEvent = lastProgress?.lastActivityAt === undefined;
-          const stallLabel = heartbeatNoProgressMs >= 60_000
-            ? `${Math.max(1, Math.round(heartbeatNoProgressMs / 60_000))}m`
-            : `${Math.max(1, Math.round(heartbeatNoProgressMs / 1_000))}s`;
-          args.onProgress?.({
-            phase: "running",
-            elapsedMs: now() - startedAt,
-            recentOutput: lastProgress?.recentOutput ?? [],
-            toolCalls: lastProgress?.toolCalls ?? [],
-            unmatchedToolStarts: lastProgress?.unmatchedToolStarts ?? [],
-            unmatchedToolEnds: lastProgress?.unmatchedToolEnds ?? [],
-          });
-          args.onStalled?.({
-            at: now(),
-            reason: firstEvent ? "first-event-timeout" : "heartbeat-stale",
-            heartbeatAgeMs: staleSilenceMs,
-            noProgressMs: staleSilenceMs,
-            phase: lastProgress?.phase ?? "starting",
-          });
-          if (child && childAlive(child)) await terminateWorker(child);
-          return infra(
-            model,
-            thinkingLevel,
-            firstEvent
-              ? `Auditor stalled — no session activity since boot for ${stallLabel}; the detached job was auto-cancelled.`
-              : `Auditor stalled — no session activity for ${stallLabel}; the detached job was auto-cancelled.`,
-            "",
-            capturedRevisionToken,
-            "timeout",
-          );
+        // Two separate axes with separate budgets: a worker that HAS emitted
+        // an event and gone silent gets heartbeatNoProgressMs; a worker that
+        // never emitted anything gets firstEventTimeoutMs (default: the same
+        // window — production boot is seconds, the window is minutes — but
+        // overridable so watchdog tests can arm one axis without the other
+        // racing worker cold-start). A running tool exempts both: the
+        // independent per-tool timeout owns that axis.
+        if (lastProgress?.currentToolStartedAt === undefined) {
+          if (lastProgress?.lastActivityAt !== undefined) {
+            const staleMs = Math.max(0, now() - lastProgress.lastActivityAt);
+            if (staleMs >= heartbeatNoProgressMs) {
+              const stallLabel = heartbeatNoProgressMs >= 60_000
+                ? `${Math.max(1, Math.round(heartbeatNoProgressMs / 60_000))}m`
+                : `${Math.max(1, Math.round(heartbeatNoProgressMs / 1_000))}s`;
+              args.onProgress?.({
+                phase: "running",
+                elapsedMs: now() - startedAt,
+                recentOutput: lastProgress.recentOutput,
+                toolCalls: lastProgress.toolCalls,
+                unmatchedToolStarts: lastProgress.unmatchedToolStarts ?? [],
+                unmatchedToolEnds: lastProgress.unmatchedToolEnds ?? [],
+              });
+              args.onStalled?.({
+                at: now(),
+                reason: "heartbeat-stale",
+                heartbeatAgeMs: staleMs,
+                noProgressMs: staleMs,
+                phase: lastProgress.phase,
+              });
+              if (child && childAlive(child)) await terminateWorker(child);
+              return infra(
+                model,
+                thinkingLevel,
+                `Auditor stalled — no session activity for ${stallLabel}; the detached job was auto-cancelled.`,
+                "",
+                capturedRevisionToken,
+                "timeout",
+              );
+            }
+          } else if (now() - startedAt >= firstEventTimeoutMs) {
+            const stallLabel = firstEventTimeoutMs >= 60_000
+              ? `${Math.max(1, Math.round(firstEventTimeoutMs / 60_000))}m`
+              : `${Math.max(1, Math.round(firstEventTimeoutMs / 1_000))}s`;
+            args.onStalled?.({
+              at: now(),
+              reason: "first-event-timeout",
+              heartbeatAgeMs: now() - startedAt,
+              noProgressMs: now() - startedAt,
+              phase: lastProgress?.phase ?? "starting",
+            });
+            if (child && childAlive(child)) await terminateWorker(child);
+            return infra(
+              model,
+              thinkingLevel,
+              `Auditor stalled — no session activity since boot for ${stallLabel}; the detached job was auto-cancelled.`,
+              "",
+              capturedRevisionToken,
+              "timeout",
+            );
+          }
         }
         if (child && !childAlive(child)) return infra(model, thinkingLevel, "auditor worker exited without an atomic result", "", capturedRevisionToken, "no-verdict");
         await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
