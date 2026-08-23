@@ -135,13 +135,14 @@ test("v0.35.41: the stuck-ladder stop also announces queued-list resumption", as
   activate(pi.api);
   const ctx = await boot(pi, cwd);
   // Pre-charge the stuck ladder to one intervention below the default cap
-  // (5; aggressiveMode raises it, stock settings don't), and seed the fired
-  // turn's text as previousText so the repetition detector classifies it as
-  // an exact duplicate — a clean turn would RESET consecutiveStuck.
-  const stuckText = "nudge the widget again";
-  replaceState({ ...state, loop: { ...state.loop!, active: true, stopReason: undefined, consecutiveStuck: 4, lastStuckReason: "same response three times", history: [], previousText: stuckText } });
+  // (5; aggressiveMode raises it, stock settings don't) — a CLEAN turn
+  // would RESET consecutiveStuck, so the fired turn must itself classify as
+  // stuck: a degenerate word-run (16+ identical consecutive words) hits the
+  // repetition detector's degenerate branch deterministically.
+  replaceState({ ...state, loop: { ...state.loop!, active: true, stopReason: undefined, consecutiveStuck: 4, lastStuckReason: "same response three times", history: [] } });
+  const degenerate = `reviewing the loop target state once more. ${"stall ".repeat(20)}That is the whole update.`;
 
-  await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: stuckText }], stopReason: "end_turn" }] }, ctx);
+  await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: degenerate }], stopReason: "end_turn" }] }, ctx);
   await tick(120);
 
   const after = readState(cwd);

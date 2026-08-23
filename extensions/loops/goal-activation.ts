@@ -1853,10 +1853,8 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           ctx.ui.notify(`Loop stopped: ${loop.stopReason}`, "warning");
           appendLedger(ctx.cwd, "loop_stopped", { reason: loop.stopReason, iterations: loop.iteration, best: loop.bestValue });
           notifyExternal(ctx, `Loop stopped: ${sr === "aborted" ? "user aborts" : "provider errors"} (${loop.consecutiveErrors}×)`);
-          // v0.35.41 (audit finding): this route frees the surface like any
-          // other loop stop — announce the waiting queue instead of leaving
-          // it a dead silent entry.
-          announceQueuedListAfterLoopEnd(ctx);
+          // v0.35.41 NEUTERED for red proof
+          void 0;
           return;
         }
         scheduleLoopTick(ctx);
