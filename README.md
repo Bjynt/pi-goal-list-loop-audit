@@ -90,6 +90,22 @@ matches `/list show`.
 /review <goal-id> [off|on|auto|aggressive]   # re-review an archived goal (bypasses the trigger gates)
 ```
 
+### What the verbs mean
+
+The same verb can mean different things on each surface — and `audit` is
+deliberately three different machines:
+
+| | **draft** (bare / text arg) | **start** | **plan** | **audit** |
+|---|---|---|---|
+| `/goal` | agent interviews you, one Confirm | skip the interview, start now | **extended draft**: research-first, multi-round interview, structured expanded objective — still ONE Confirm (v0.35.33) | **one-shot project audit**: a single collect-then-fix pass as an ordinary audited goal; findings are fixed in that pass, DECIDE findings come to you untouched |
+| `/list` | batch-drafts your items into ONE confirmed queue | *(use drafting or direct adds)* | **extended draft for greenfield queues**: deep research + interview proposes the whole items[] batch (v0.35.33). Prose only — a file path stays bulk import (`/list plan.md` imports as-is); inside `/list plan`, files you mention become research input, never auto-imported | **collect, then drain**: queues an item that CHANGES NO CODE — it only appends findings to `.pi-glla/audit-loop/findings.md`; on completion each open finding becomes its own list item, drained fix-by-fix with its own audit (v0.31.0) |
+| `/loop` | drafts the loop; your measure is test-run before Confirm | start a loop directly from args | **extended loop draft**: deep research + multi-round metric design before anything runs (v0.35.33) | **forever audit cadence** (v0.29.0): each iteration audits fresh and fixes the top findings; the plateau stop ends it when the well is dry |
+
+Related but distinct: **`/goal verify`** audits the CURRENT goal's work right
+now (detached auditor, no agent turn) — it does not survey the project.
+One audit initiative per session: starting a second kind warns about
+superseding the first.
+
 **Metricless loops** (`measure=none`): for genuinely endless work — an
 ever-improving spec, continuous hardening — where no number means "better".
 There is **no plateau stop** (nothing to stall on): the loop ends only at
@@ -120,7 +136,11 @@ grilled by the agent (proposing is mechanically blocked until you have
 replied at least once — typed chat or an answered `ask_user_question` dialog
 both count), args-with-a-clause start instantly, `/goal start` skips the
 interview by explicit command, a file path is
-bulk direct.** A
+bulk direct.** The `plan`
+verb is the fourth depth on every surface: same Confirm gate, but the agent
+researches BEFORE asking and interviews across multiple rounds — for
+greenfield or megaplan work where the normal 5–7-question draft would be
+too shallow. A
 sisyphus-style plan file (checklists, bullets, numbered, plain lines) imports
 as-is — headings become nothing, items become goals. And the drafter itself
 batches: asking for "these 50 tasks" in a `/list` drafting session produces
@@ -205,6 +225,9 @@ product). The other three are optional; glla works without them:
   glla pause/verdict pings twice.
 
 ## Which loop? (the decision rule)
+
+(Verb semantics — what `start`, `plan`, and `audit` mean on each surface —
+are tabulated above, "What the verbs mean".)
 
 **`/goal`** — one thing, judged *semantically*. Research, features, docs,
 anything where "done" needs a reader. The isolated auditor verifies against
