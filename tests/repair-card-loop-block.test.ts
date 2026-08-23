@@ -137,7 +137,7 @@ test("v0.35.41: the stuck-ladder stop also announces queued-list resumption", as
   // Pre-charge the stuck ladder to one intervention below the default cap
   // (5; aggressiveMode raises it, stock settings don't) so the next live
   // turn trips the top of the ladder.
-  replaceState({ ...state, loop: { ...state.loop!, active: true, stopReason: undefined, consecutiveStuck: 4, lastStuckReason: "same response three times" } });
+  replaceState({ ...state, loop: { ...state.loop!, active: true, stopReason: undefined, consecutiveStuck: 4, lastStuckReason: "same response three times", history: [] } });
 
   await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "nudge the widget again" }], stopReason: "end_turn" }] }, ctx);
   await tick(120);
