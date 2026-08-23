@@ -492,7 +492,17 @@ function registerAgentTools(pi: any): void {
           objectiveProvenance: {
             originalObjective: priorProvenance?.originalObjective ?? oldObjective,
             ...(priorProvenance?.originalContract ? { originalContract: priorProvenance.originalContract } : {}),
-            userSeeds: [...(priorProvenance?.userSeeds ?? []), rawNewObjective].slice(-10),
+            // v0.35.36 (audit finding): rawNewObjective is AGENT-authored —
+            // the agent wrote this text inside complete_goal. Appending it
+            // to userSeeds let the v0.35.31 seed trust treat report garbage
+            // as explicit user prose (createdVia stays "user" from
+            // creation), laundering agent objectives past the
+            // suspicious-objective fence. userSeeds stays strictly
+            // human-confirmed text: the creation arg, /goal tweak (Confirm
+            // dialog), repair-redraft (task-list confirm). The pivot itself
+            // remains auditable via the goal_tweaked ledger entry AND the
+            // isolated auditor reviewing the NEW contract in this same call.
+            ...(priorProvenance?.userSeeds?.length ? { userSeeds: priorProvenance.userSeeds } : {}),
           },
         }, ctx);
         appendLedger(ctx.cwd, "goal_tweaked", { via: "complete_goal.newObjective", from: oldObjective.slice(0, 200), to: cleanObj.slice(0, 200) });
