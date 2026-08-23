@@ -1,20 +1,18 @@
 # Now
-
-##
-
-the goal was gettick stuck so i started a new goal but then it was not visible or usable before i restarted
-
-/home/dracon/Pictures/Screenshots/Screenshot_20260823_091841.png 
-
-# Next
-
 ##
 
 https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
 addres
 
 
-# Later
+# Next
+
+
+##
+
+the goal was gettick stuck so i started a new goal but then it was not visible or usable before i restarted
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260823_091841.png 
 
 ##
 
@@ -31,6 +29,8 @@ list seems corruped not only doesnt show but we cant start it
 
 another concern is that do we have these explores, clearly not desired, is this our bug 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_120936.png 
+
+# Later
 
 # Idea
 
