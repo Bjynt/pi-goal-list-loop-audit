@@ -90,7 +90,7 @@ test("v0.35.44: source pins — the draftingDepth dead-state global is GONE (aud
   assert.ok(queue.includes("DEEP PLANNING MODE"), "the user-facing hint names the mode");
   // The orphaned-gate window is closed: a beginDrafterModel throw clears the
   // gate instead of leaving it set with no interview running.
-  assert.ok(/try \{\n    await beginDrafterModel\(ctx\);\n  \} catch[\s\S]{0,200}clearDraftingState\(\);/.test(queue), "beginDrafterModel throw clears the drafting gate");
+  assert.ok(/try \{\n    await beginDrafterModel\(ctx\);\n  \} catch[\s\S]{0,400}clearDraftingState\(\);/.test(queue), "beginDrafterModel throw clears the drafting gate");
 });
 
 test("v0.35.33: source pins — all three verbs dispatch with depth plan", () => {

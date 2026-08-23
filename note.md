@@ -18,7 +18,7 @@ list seems corruped not only doesnt show but we cant start it
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_120853.png 
 here too we can't even start a new list 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_122304.png 
->> after reload it recovered very odd, now technically this is what i want just to list to stay visible and keep going 
+> after reload it recovered very odd, now technically this is what i want just to list to stay visible and keep going 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_130243.png 
 
 ##
