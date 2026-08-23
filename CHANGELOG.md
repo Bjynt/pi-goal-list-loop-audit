@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.35.41 — the last two loop-stop routes announce queue resumption (2026-08-23)
+
+### Fix
+  Audit-pass finding: v0.35.22's "ends by ANY route ... ANNOUNCE loudly"
+  contract was only wired into some stop routes. The stuck-ladder stop and
+  the provider-error/abort-cap stop notified the loop line but never
+  announced that waiting list items can start again - a dead silent entry.
+  Both routes now call announceQueuedListAfterLoopEnd (exported from
+  goal-loop.ts for the goal-activation site). Two twin behavioral tests
+  drive each production route against a seeded waiting queue; both proven
+  red with their call neutered, green restored.
+
 ## 0.35.40 — regression pins for the audit-kind measurement exemption (2026-08-23)
 
 ### Tests
