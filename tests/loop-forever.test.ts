@@ -136,16 +136,19 @@ test("v0.29.10 — applyMeasurement: null best (deferred audit baseline) seeds o
 // v0.35.39 (audit finding on commit 28131527): the audit-kind exemption in
 // applyMeasurement — flats count from iteration 1, and the never-moved stop
 // never fires for kind:"audit" — previously shipped with ZERO regression
-// pin. These twin-loop tests fail if either guard is deleted.
-test("v0.35.31 exemption pin — audit flats count toward plateau from the first iteration; non-audit pre-movement flats stay free", () => {
+// pin. These twin-loop tests fail if either guard is deleted. Both twins
+// carry one prior flat history entry so the non-audit baseline-grace
+// comparison (bestValue vs first numeric reading) is in play.
+test("v0.35.31 exemption pin — audit flats count toward plateau from the start; non-audit pre-movement flats stay free", () => {
+  const seed = [{ iteration: 1, value: 5, improved: false, at: "t0" }];
   // Non-audit twin: a flat reading before the metric ever moved is NOT a
   // stall (the baseline-forming grace).
-  const plain = freshLoop({ direction: "max", bestValue: 5, lastValue: 5, maxIterations: 0 });
+  const plain = freshLoop({ direction: "max", bestValue: 5, lastValue: 5, maxIterations: 0, history: [...seed] });
   let out = applyMeasurement(plain, 5, "t1");
   assert.equal(out.kind, "continue");
   assert.equal(plain.stallCount, 0, "non-audit: flat before any movement burns no plateau slots");
   // Audit twin, identical shape: legacy accounting — EVERY flat counts.
-  const audit = freshLoop({ kind: "audit", direction: "max", bestValue: 5, lastValue: 5, maxIterations: 0 });
+  const audit = freshLoop({ kind: "audit", direction: "max", bestValue: 5, lastValue: 5, maxIterations: 0, history: [...seed] });
   out = applyMeasurement(audit, 5, "t1");
   assert.equal(out.kind, "continue");
   assert.equal(audit.stallCount, 1, "audit: the same flat IS a stall (verbatim legacy behavior)");
@@ -156,18 +159,18 @@ test("v0.35.31 exemption pin — audit flats count toward plateau from the first
 });
 
 test("v0.35.31 exemption pin — an audit loop never gets the 'metric never moved' stop", () => {
-  // Non-audit twin: a never-moving metric gets the loud dedicated stop at
-  // window*2 measured iterations.
-  const plain = freshLoop({ direction: "max", bestValue: 5, lastValue: 5, maxIterations: 0 });
-  let out = applyMeasurement(plain, 5, "t0")!;
-  for (let i = 1; i <= 6; i++) out = applyMeasurement(plain, 5, `t${i}`)!;
+  const seed = [{ iteration: 1, value: 5, improved: false, at: "t0" }];
+  // Non-audit twin: a never-moving metric gets the loud dedicated stop.
+  const plain = freshLoop({ direction: "max", bestValue: 5, lastValue: 5, maxIterations: 0, history: [...seed] });
+  let out = applyMeasurement(plain, 5, "t1")!;
+  for (let i = 2; i <= 8 && out.kind !== "stop"; i++) out = applyMeasurement(plain, 5, `t${i}`)!;
   assert.equal(out.kind, "stop");
   if (out.kind === "stop") assert.match(out.reason, /metric never moved/);
   // Audit twin, same dead metric: the never-moved stop must NEVER fire —
   // its deferred-baseline + reprieve plateau semantics own the ending.
-  const audit = freshLoop({ kind: "audit", direction: "max", bestValue: 5, lastValue: 5, maxIterations: 0 });
+  const audit = freshLoop({ kind: "audit", direction: "max", bestValue: 5, lastValue: 5, maxIterations: 0, history: [...seed] });
   let firstStop: string | null = null;
-  for (let i = 1; i <= 6; i++) {
+  for (let i = 1; i <= 8; i++) {
     const r = applyMeasurement(audit, 5, `t${i}`);
     if (r.kind === "stop" && firstStop === null) firstStop = r.reason;
   }
