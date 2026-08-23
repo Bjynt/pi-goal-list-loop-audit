@@ -31,7 +31,7 @@ test("loopFinishStopReason: cmdLoop('finish audit clean') → 'completed: audit 
 test("/loop finish is routed in cmdLoop and registered in completions (item 7)", () => {
   assert.match(loopSrc, /if \(sub === "finish"\) \{/);
   assert.match(loopSrc, /state\.loop = \{ \.\.\.state\.loop, active: false, stopReason: reason \}/);
-  assert.match(goalSrc, /\["finish", "end the loop cleanly/);
+  assert.match(goalSrc, /\[\s*"finish",\s*"end\s+the\s+loop\s+cleanly/);
 });
 
 test("branch-mode resume refuses to commit from the original branch", () => {

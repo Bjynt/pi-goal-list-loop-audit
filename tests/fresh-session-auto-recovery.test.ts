@@ -73,7 +73,7 @@ test("every stale-ctx send site routes through attemptFreshSessionRecovery befor
   for (const { where, in: src } of sites) {
     assert.match(
       src,
-      new RegExp(`if \\(!attemptFreshSessionRecovery\\(ctx, "${where}"\\)\\) goStaleTerminal\\(ctx, "${where}"\\);`),
+      new RegExp(`if \\(!attemptFreshSessionRecovery\\(ctx, "${where}"\\)\\)\\s*\\n?\\s*goStaleTerminal\\(ctx, "${where}"\\);`),
       `${where} must try auto-recovery before the terminal park`,
     );
   }

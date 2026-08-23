@@ -123,7 +123,11 @@ test("v0.28.27: stale handle silences ALL stall machinery — refiring into a de
   // — single transient failures must not park a live session; consecutive
   // failures still reach the terminal before any stall machinery.
   const probe = HEARTBEAT_SRC.indexOf("const rawApiStale = probeExtensionApiStaleRaw();", knownCtx);
-  const stale = HEARTBEAT_SRC.indexOf('if (knownCtx && !absorbStaleIfSuperseded(knownCtx)) goStaleTerminal(knownCtx, "heartbeat probe");', probe); // v0.34.48: probe the API before freshCtx() can discard the orphan context.
+  const staleCandidates = [
+      HEARTBEAT_SRC.indexOf('if (knownCtx && !absorbStaleIfSuperseded(knownCtx))\n      goStaleTerminal(knownCtx, "heartbeat probe");', probe),
+      HEARTBEAT_SRC.indexOf('if (knownCtx && !absorbStaleIfSuperseded(knownCtx)) goStaleTerminal(knownCtx, "heartbeat probe");', probe),
+    ].filter((i) => i >= 0);
+  const stale = staleCandidates.length > 0 ? Math.min(...staleCandidates) : -1; // v0.34.48: probe the API before freshCtx() can discard the orphan context.
   const grace = HEARTBEAT_SRC.indexOf("if (Date.now() < flags.compactionGraceUntil) return;", stale);
   const watchdog = HEARTBEAT_SRC.indexOf("pending-latch watchdog");
   assert.ok(tick > 0 && knownCtx > tick && probe > knownCtx && stale > probe && grace > stale, "stale bail inside heartbeatTick precedes the grace gate");
@@ -135,7 +139,7 @@ test("v0.28.27/0.29.8: /goal verify (renamed from /goal audit) — manual audito
   // Route: "verify" is an exact sub; "audit" moved to ARG subs (v0.29.8 —
   // /goal audit [focus] is now the one-shot project audit).
   const CORE = fs.readFileSync("extensions/goal-loop-core.ts", "utf-8");
-  assert.match(CORE, /"decide", "verify"\]/);
+  assert.match(CORE, /"decide",\s+"verify",?\s*\]/);
   assert.ok(CORE.includes('"audit", "tweak", "archive", "start"'));
   // Dispatch: guards (no goal, audit in flight), seeds the synthesized
   // claim, ledgered, delegates to the shared engine with origin "manual".

@@ -292,6 +292,6 @@ test("v0.35.48: the backstop's dispatch-surface gates sit before the one-shot la
   const fnStart = hb.indexOf("function overdueWaitBackstop(");
   const latch = hb.indexOf("lastOverdueWaitKey = ", fnStart);
   const body = hb.slice(fnStart, latch);
-  assert.match(body, /flags\.sessionHandoffPending \|\| flags\.staleTerminalDone \|\| flags\.extensionApiStale/, "handoff/stale gates present before the latch");
-  assert.match(body, /mainModelRecoveryActive\(\) && !\(state\.goal\?\.pauseReason \?\? ""\)\.startsWith\("main model recovery"\)/, "recovery-active gate releases only recovery-routed waits before the latch");
+  assert.match(body, /flags\.sessionHandoffPending \|\|\s*flags\.staleTerminalDone \|\|\s*flags\.extensionApiStale/, "handoff/stale gates present before the latch");
+  assert.match(body, /mainModelRecoveryActive\(\) &&\s*!\(state\.goal\?\.pauseReason \?\? ""\)\.startsWith\("main model recovery"\)/, "recovery-active gate releases only recovery-routed waits before the latch");
 });

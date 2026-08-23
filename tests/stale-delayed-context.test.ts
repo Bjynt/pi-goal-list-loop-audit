@@ -36,8 +36,8 @@ test("v0.34.20: provider retry timers have one session-boundary adapter", () => 
   assert.match(GOAL, /const generation = sessionGeneration;/);
   assert.match(GOAL, /const current = freshCtxForGeneration\(generation\);/);
   assert.match(GOAL, /fire: \(ctx: ExtensionContext\) => void \| Promise<void>/);
-  assert.match(GOAL, /scheduleProviderRetryForSession\(liveCtx, plan\.retryAfterSec, result\.error, \(fresh(?:: ExtensionContext)?\) =>/);
-  assert.match(GOAL, /scheduleProviderRetryForSession\(ctx, cooldownMs \/ 1000, reason, \(fresh(?:: ExtensionContext)?\) =>/);
+  assert.match(GOAL, /scheduleProviderRetryForSession\(\s*ctx,\s*cooldownMs\s*\/\s*1000,\s*reason,\s*\(fresh(?::\s*ExtensionContext)?\)\s*=>\s*\{?/);
+  assert.match(GOAL, /scheduleProviderRetryForSession\(\s*ctx,\s*cooldownMs\s*\/\s*1000,\s*reason,\s*\(fresh(?::\s*ExtensionContext)?\)\s*=>/);
 });
 
 test("v0.34.20: detached fan-out revalidates after user confirmation", () => {

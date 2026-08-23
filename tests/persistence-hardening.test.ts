@@ -97,7 +97,7 @@ test("E1: all four persistence entry points run through runPersistStep", () => {
   assert.match(CORE, /export function runPersistStep<T>\(what: string, fn: \(\) => T\): T \| undefined/);
   assert.match(CORE, /runPersistStep\("appendLedger", \(\) => \{/);
   assert.match(CORE, /runPersistStep\("writeGoalMd", \(\) => \{/);
-  assert.match(CORE, /runPersistStep\("readState", \(\) => /);
+  assert.match(CORE, /runPersistStep\("readState",\s+\(\)\s+=>\s+/);
   assert.match(GOAL, /runPersistStep\("archiveCurrentGoal", \(\) => \{/);
 });
 
@@ -137,7 +137,23 @@ test("T6: schema does not drift from the Goal interface", () => {
   // The original check only caught schema additions. Also walk the persisted
   // top-level interface fields and the nested audit verdict so a new runtime
   // field cannot silently disappear from the published contract.
-  const goalFields = [...iface.matchAll(/^\s{2}([A-Za-z][A-Za-z0-9_]*)\??:/gm)].map((match) => match[1]!);
+  // v0.36.0 formatting: nested object-type bodies may sit at the same visual
+  // indent as top-level fields, so walk with a brace-depth guard and only
+  // accept depth-0 property keys.
+  const goalFields: string[] = [];
+  {
+    let depth = 0;
+    for (const line of iface.split("\n")) {
+      const opens = (line.match(/\{/g) ?? []).length;
+      const closes = (line.match(/\}/g) ?? []).length;
+      if (depth === 0) {
+        const m = /^\s{2}([A-Za-z][A-Za-z0-9_]*)\??:/.exec(line);
+        if (m) goalFields.push(m[1]!);
+      }
+      depth += opens - closes;
+      if (depth < 0) break;
+    }
+  }
   for (const key of goalFields) {
     assert.ok(schema.properties[key], `Goal interface field "${key}" missing from the schema`);
   }

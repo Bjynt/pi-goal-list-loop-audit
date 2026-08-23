@@ -123,9 +123,9 @@ test("v0.35.33: completions advertise the plan verb on all three commands", () =
   const goalBlock = activation.slice(activation.indexOf('registerCommand("goal"'), activation.indexOf('registerCommand("glla"'));
   const listBlock = activation.slice(activation.indexOf('registerCommand("list"'), activation.indexOf('registerCommand("loop"'));
   const loopBlock = activation.slice(activation.indexOf('registerCommand("loop"'));
-  assert.ok(/\["plan",/.test(goalBlock), "/goal completions");
-  assert.ok(/\["plan",/.test(listBlock), "/list completions");
-  assert.ok(/\["plan",/.test(loopBlock), "/loop completions");
+  assert.ok(/\[\s*"plan",/.test(goalBlock), "/goal completions");
+  assert.ok(/\[\s*"plan",/.test(listBlock), "/list completions");
+  assert.ok(/\[\s*"plan",/.test(loopBlock), "/loop completions");
 });
 
 // v0.35.45 (audit finding): planNote ended "…than a regular draft." and was

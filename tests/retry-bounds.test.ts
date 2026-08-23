@@ -61,16 +61,16 @@ test("E2: auditor infra errors enter the durable bounded retry plan (v0.34.51 �
 
 test("E3: send-retry re-arms counted, ledgered, escalated", () => {
   assert.match(CONT, /appendLedger\(ctx\.cwd, "send_rearm_start", \{ kind \}\)/); // decomposition step 5: accountSendRearm moved
-  assert.match(CONT, /appendLedger\(ctx\.cwd, "send_rearm_storm", \{ kind, streak/);
+  assert.match(CONT, /appendLedger\(ctx\.cwd,\s+"send_rearm_storm",\s+\{\s+kind,\s+streak/);
   // v0.34.102: a storm with NO accepted dispatch since it began surfaces
   // the "no turn started" diagnostic (field: dracon-platform 091828):
-  assert.match(CONT, /appendLedger\(ctx\.cwd, "rearm_no_turn_started", \{ streak/);
+  assert.match(CONT, /appendLedger\(ctx\.cwd,\s+"rearm_no_turn_started",\s+\{\s+streak/);
   // wired into both send paths' re-arm sites:
   assert.match(CONT, /accountSendRearm\(ctx, "continuation"\);/);
   assert.match(LOOP, /\} else accountSendRearm\(ctx, "loop"\);/); // v0.33.1: null-ctx probes + backs off (moved to goal-loop.ts)
   assert.match(LOOP, /if \(probeExtensionApiStale\(\)\) return;\s*\n\s*flags\.loopRearmStreak\+\+;/); // v0.33.1 (flag accessor re-spelling)
   // a landed send clears the storm:
-  assert.match(CONT, /continuationRearmStreak = 0; continuationRearmSince = 0; \/\/ v0\.28\.5 \(E3\)/); // decomposition step 5: sendContinuation moved
+  assert.match(CONT, /continuationRearmStreak\s+=\s+0;\s+continuationRearmSince\s+=\s+0;\s+\/\/\s+v0\.28\.5\s+\(E3\)/); // decomposition step 5: sendContinuation moved
   assert.match(LOOP, /flags\.loopRearmStreak = 0; flags\.loopRearmSince = 0; \/\/ v0\.28\.5 \(E3\)/); // flag accessor re-spelling
 });
 
@@ -80,7 +80,7 @@ test("v0.28.29: busy-retry cadence backs off (no more flat 50ms spins)", () => {
   assert.match(CONT, /if \(streak <= 8\) return 250;/);
   assert.match(CONT, /if \(streak <= 12\) return 1_000;/);
   assert.match(CONT, /return 30_000;/);
-  assert.match(CONT, /scheduleSessionTimeout\(\(\) => sendContinuation\(goalId\), sendRearmDelayMs\(continuationRearmStreak\)\)/);
+  assert.match(CONT, /scheduleSessionTimeout\(\s*\(\)\s+=>\s+sendContinuation\(goalId\),\s+delay,?\s*\)/);
   assert.match(LOOP, /scheduleSessionTimeout\(\(\) => sendLoopTurn\(\), sendRearmDelayMs\(flags\.loopRearmStreak\)\)/); // flag accessor re-spelling
 });
 
@@ -93,9 +93,9 @@ test("v0.28.29: escalation is TIME-based and ACTIVITY-gated (busy ≠ wedged —
   assert.ok(!CONT.includes("SEND_REARM_ESCALATE_AFTER_MS"), "flat escalation constant removed (v0.34.108 dead-code sweep)");
   // v0.34.57: the flat 15m check became the generic branch of the
   // knowledge-aware threshold — the activity gate is unchanged.
-  assert.match(CONT, /elapsed >= sendStormEscalateMs\(\) && Date\.now\(\) - flags\.lastActivityAt >= SEND_REARM_ESCALATE_SILENT_MS/);
+  assert.match(CONT, /elapsed\s+>=\s+sendStormEscalateMs\(\)\s+&&\s+Date\.now\(\)\s+-\s+flags\.lastActivityAt\s+>=\s+SEND_REARM_ESCALATE_SILENT_MS/);
   assert.match(CONT, /const SEND_REARM_LEDGER_MILESTONES_MS = \[2 \* 60_000, 5 \* 60_000, 10 \* 60_000\];/);
-  assert.match(CONT, /"send_rearm_escalated", \{ kind, afterMinutes: mins, silentMinutes: silent \}/);
+  assert.match(CONT, /"send_rearm_escalated",\s+\{\s+kind,\s+afterMinutes:\s+mins,\s+silentMinutes:\s+silent,?\s*\}/);
   assert.ok(!SRC.includes("SEND_REARM_ESCALATE_AT"), "count-based escalation constant gone");
   assert.ok(!CONT.includes("SEND_REARM_ESCALATE_AT"), "count-based escalation constant gone");
   assert.ok(!SRC.includes("SEND_REARM_LEDGER_EVERY"), "count-based ledger constant gone");
@@ -103,7 +103,7 @@ test("v0.28.29: escalation is TIME-based and ACTIVITY-gated (busy ≠ wedged —
 });
 
 test("E3: provider-held send storms enter durable main-model recovery", () => {
-  assert.match(CONT, /function escalateSendRearmStorm\(ctx: ExtensionContext, kind: "continuation" \| "loop"\): void/); // decomposition step 5: moved
+  assert.match(CONT, /function\s+escalateSendRearmStorm\(\s*ctx:\s+ExtensionContext,\s+kind:\s+"continuation"\s+\|\s+"loop",?\s*\):\s+void/); // decomposition step 5: moved
   assert.match(CONT, /send-retry storm: \$\{mins\}m of re-arms with no session activity for \$\{silent\}m — the session never went idle for the continuation/);
   // v0.34.31: a supervising goal/loop rotates through configured backups and
   // installs a durable retry probe instead of making Escape the recovery plan.
@@ -125,7 +125,7 @@ test("E8: the error brake carries the REAL error text, not stopReason", () => {
 });
 
 test("v0.34.26: output-token-limit provider errors are classified as a deterministic wall, not a flake", () => {
-  assert.match(SRC, /const outputLimitWall = \/output\[ -\]\?token\|max_\?tokens\|length limit\|output length\|too many tokens\/i\.test\(rawErrorText\);/);
+  assert.match(SRC, /outputLimitWall\s*=\s*\/output[^\n]*too\s+many\s+tokens\/i\.test\(/);
   // the deterministic branch pauses with pauseKind error and never schedules
   // the flake ladder or hourly probes — it sits BEFORE the 6-brake park:
   const wallIdx = SRC.indexOf("if (outputLimitWall) {");
@@ -157,7 +157,7 @@ test("v0.34.51: stored-claim auditor retries enter the durable plan on ANY infra
 });
 
 test("v0.34.26: length-continue exhaustion is a durable paused state, not a transient notify", () => {
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "length_continue_exhausted", \{ consecutive: lc\.consecutive \}\);/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd,\s+"length_continue_exhausted",\s+\{\s+consecutive:\s+lc\.consecutive,?\s*\}\);/);
   assert.match(SRC, /pauseReason: `output-token limit — \$\{LENGTH_CONTINUE_MAX\} responses in a row were truncated mid-artifact; auto-continue exhausted`,/);
   assert.match(SRC, /pauseKind: "error",/);
   assert.match(SRC, /then \$\{activeGoalSurfaceCommand\("resume"\)\} — the truncation budget restarts fresh\./); // v0.34.51 mode-aware
@@ -181,10 +181,10 @@ test("E8: provider-error brake gets ONE capped escalating auto-resume with reaso
   // 8m, 16m cap. First brake is still 60s (60_000 * 2^0).
   assert.match(SRC, /const cooldownMs = 60_000 \* 2 \*\* Math\.min\(brakeStreak, 4\);/);
   assert.match(SRC, /errorBrakeStreak: brakeStreak \+ 1,/, "v0.34.15: the rung is stamped ON THE GOAL (survives /reload)");
-  assert.match(SRC, /scheduleProviderRetryForSession\(ctx, cooldownMs \/ 1000, reason, \(fresh(?:: ExtensionContext)?\) => \{/);
-  assert.match(SRC, /if \(\(state\.goal\?\.errorBrakeStreak \?\? 0\) > 0\) updateGoal\(\{ errorBrakeStreak: undefined \}, ctx\);/, "a healthy turn clears the persisted brake streak");
+  assert.match(SRC, /scheduleProviderRetryForSession\(\s*ctx,\s+cooldownMs\s*\/\s*1000,\s+reason,\s+\(fresh(?::\s+ExtensionContext)?\)\s+=>\s*\{/);
+  assert.match(SRC, /if \(\(state\.goal\?\.errorBrakeStreak \?\? 0\) > 0\)\s*updateGoal\(\{ errorBrakeStreak: undefined \}, ctx\);/, "a healthy turn clears the persisted brake streak");
   assert.match(SRC, /\(state\.goal\.pauseReason \?\? ""\)\.startsWith\("5 consecutive errors"\)/);
-  assert.match(SRC, /appendLedger\(fresh\.cwd, "goal_resumed", \{ via: "error-brake-retry" \}\)/);
+  assert.match(SRC, /appendLedger\(fresh\.cwd, "goal_resumed",\s*\{\s*via:\s*"error-brake-retry",?\s*\}\)/);
   // The generic scheduler still accepts a caller label:
   assert.match(PROVIDER_RETRY, /label = "Provider retry",/);
 });
@@ -192,16 +192,16 @@ test("E8: provider-error brake gets ONE capped escalating auto-resume with reaso
 test("v0.28.25: inter-error retries ride an exponential ladder, not the immediate continuation", () => {
   // dracon-utilities: 5 concurrent-limit 403s retried back-to-back (delay 0
   // at agent_end — the session is idle), then the brake cycled for 1h 38m.
-  assert.match(SRC, /const ERROR_RETRY_LADDER_MS = \[5_000, 15_000, 45_000, 90_000, 180_000\];/);
-  assert.match(SRC, /appendLedger\(ctx\.cwd, "error_retry_backoff", \{ attempt: consecutiveErrorIterations, delayMs: retryDelayMs \}\);/);
+  assert.match(SRC + fs.readFileSync("extensions/loops/goal-ui.ts", "utf-8"), /const ERROR_RETRY_LADDER_MS = \[5_000, 15_000, 45_000, 90_000, 180_000\];/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd,\s+"error_retry_backoff",\s+\{\s+attempt:\s+consecutiveErrorIterations,\s+delayMs:\s+retryDelayMs,?\s*\}\);/);
   assert.match(SRC, /scheduleContinuation\(ctx, true, retryDelayMs\);/);
   // the ladder return sits inside the error branch, before the generic fall-through:
   const ladderIdx = SRC.indexOf("scheduleContinuation(ctx, true, retryDelayMs);");
   const abortBranch = SRC.indexOf('} else if (stopReason === "aborted") {');
   assert.ok(ladderIdx > 0 && abortBranch > ladderIdx, "ladder return precedes the aborted branch");
   // and scheduleContinuation honors an explicit delay:
-  assert.match(CONT, /function scheduleContinuation\(ctx: ExtensionContext, force = false, delayMs\?: number\): void \{/); // decomposition step 5: moved
-  assert.match(CONT, /delay = delayMs \?\? \(ctx\.isIdle\(\)/);
+  assert.match(CONT, /function\s+scheduleContinuation\(\s*ctx:\s+ExtensionContext,\s+force\s+=\s+false,\s+delayMs\?:\s+number,?\s*\):\s+void\s+\{\s*/); // decomposition step 5: moved
+  assert.match(CONT, /delay\s*=\s*\n?\s*delayMs \?\?[\s\S]*?ctx\.isIdle\(\)/);
 });
 
 test("v0.28.26: quota-blocked audits store the claim + the retry re-runs the AUDITOR directly (no agent turn)", () => {

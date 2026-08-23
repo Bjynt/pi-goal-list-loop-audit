@@ -81,8 +81,8 @@ test("v0.34.116: tryMainModelFallback opens context-overflow (it is the only rot
 test("v0.34.116: agent_end context-starved branch detects recent compaction and walks the chain", () => {
   // The chokepoint is the `if (contextStarvedLength)` block in extensions/loops/goal-activation.ts.
   const block = SRC.slice(SRC.indexOf("if (contextStarvedLength) {"), SRC.indexOf("if (contextStarvedLength) {") + 2400);
-  assert.match(block, /const sinceLastCompactMs = state\.lastCompactionAt \? Date\.now\(\) - state\.lastCompactionAt : Number\.POSITIVE_INFINITY;/);
-  assert.match(block, /if \(sinceLastCompactMs < COMPACTION_GRACE_MS && mainModelFallbackRefs\(ctx\)\.length > 0\)/);
+  assert.match(block, /const\s+sinceLastCompactMs\s+=\s+state\.lastCompactionAt\s+\?\s+Date\.now\(\)\s+-\s+state\.lastCompactionAt\s+:\s+Number\.POSITIVE_INFINITY;/);
+  assert.match(block, /sinceLastCompactMs\s*<\s*COMPACTION_GRACE_MS\s*&&\s*mainModelFallbackRefs\(ctx\)\.length\s*>\s*0/);
   assert.match(block, /const switched = await recoverFromContextOverflow\(ctx, overflowMessage\);/);
   assert.match(block, /if \(switched\) \{/);
 });

@@ -10,7 +10,7 @@ This is a detached process, not a nested session in the main pi process. `comple
 
 On Windows, npm installs the `pi.cmd` shim rather than a directly executable `pi` binary. The auditor launches it through an explicit `cmd.exe` boundary; arguments are quoted only when tokenization requires it (v0.35.27 — quoting a bare executable name breaks `.CMD` shim resolution on pnpm installs), and every argument passes the unsafe-character gate (`%`, CR, LF) before that decision. POSIX keeps direct shell-less execution. Protocol snapshots also tolerate transient Windows file-locks without deleting the last valid snapshot first.
 
-**Current package version:** `v0.35.63` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
+**Current package version:** `v0.37.0` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
 
 ## Why this exists
 
@@ -32,6 +32,7 @@ Most pi goal extensions — `pi-goal`, `pi-goal-x`, `pi-loop-mode`, `ralphi`, `t
 ## Quick start
 
 Install:
+
 ```bash
 pi install npm:pi-goal-list-loop-audit
 pi install npm:@juicesharp/rpiv-ask-user-question   # effectively required — see Recommended companions
@@ -682,6 +683,24 @@ an auditor tool is running. A long-running verification tool is allowed to
 finish, but each tool has an independent five-minute ceiling and the worker
 has a 30m wall-clock safety cap. Both paths are infrastructure errors, never
 verdicts; interrupted claims remain stored for a direct retry after `/goal resume`.
+
+## Commissar watchdog (adherence, opt-in)
+
+A goal can run for hours; nothing watched whether the executor stays HONEST
+about it — the completion auditor only sees the end claim. The commissar is
+an independent detached worker (the same hardened transport as the
+completion auditor) that periodically judges ADHERENCE and PROGRESS, not
+completion: it reads the glla ledger, git history, and repository evidence,
+then returns `<adherent/>` or `<wanting>reason</wanting>`.
+
+Off by default. Turn it on in `/glla settings → Commissar`: enable flag,
+interval minutes (default 20), and the wanting threshold (default 2). At
+two consecutive WANTING verdicts the commissar TERMINATES the main run and
+restarts a fresh one on the SAME objective — the next continuation carries
+a COMMISSAR RESTART directive quoting the finding as untrusted evidence.
+One WANTING never terminates anything; infrastructure failures (model down,
+worker wedged, no verdict marker, no tool evidence) are ledgered as noise
+and never count toward termination.
 
 ## Compatibility (what goes well, what conflicts)
 

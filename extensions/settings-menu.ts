@@ -55,6 +55,7 @@ export type SettingsSectionId =
   | "auditor"
   | "subagents"
   | "stall-brakes"
+  | "commissar"
   | "other";
 
 export const SETTINGS_SECTIONS: readonly { id: SettingsSectionId; label: string }[] = [
@@ -64,6 +65,7 @@ export const SETTINGS_SECTIONS: readonly { id: SettingsSectionId; label: string 
   { id: "auditor", label: "Auditor" },
   { id: "subagents", label: "Subagents" },
   { id: "stall-brakes", label: "Stall brakes" },
+  { id: "commissar", label: "Commissar" },
   { id: "other", label: "Other" },
 ];
 
@@ -262,6 +264,30 @@ export function buildSettingsRows(
       valueText: show("hourlyRetryProbe", "on"),
       sourceText: src("hourlyRetryProbe"),
       description: "adds a probe at :00:30 while any main-model recovery is parked; off disables only this extra ticker, not the configured retry ladder"
+    },
+    {
+      id: "commissarEnabled",
+      section: "commissar",
+      label: "Commissar watchdog",
+      valueText: show("commissarEnabled", "off"),
+      sourceText: src("commissarEnabled"),
+      description: "detached adherence checks on the active goal; consecutive WANTING verdicts terminate and restart the main run on the same objective"
+    },
+    {
+      id: "commissarIntervalMinutes",
+      section: "commissar",
+      label: "Commissar interval minutes",
+      valueText: show("commissarIntervalMinutes", "20"),
+      sourceText: src("commissarIntervalMinutes"),
+      description: "minutes between detached adherence checks while a goal is active; clamped to [1, 720]"
+    },
+    {
+      id: "commissarWantingThreshold",
+      section: "commissar",
+      label: "Commissar wanting threshold",
+      valueText: show("commissarWantingThreshold", "2"),
+      sourceText: src("commissarWantingThreshold"),
+      description: "consecutive WANTING verdicts before the main run is terminated and restarted; clamped to [1, 5]; infrastructure failures never count"
     },
     {
       id: "mainModelFailback",

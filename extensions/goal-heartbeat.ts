@@ -30,6 +30,7 @@ import {
   type Goal,
 } from "./goal-loop-core.js";
 import { loadSettings } from "./goal-settings.js";
+import { maybeFireCommissarCheck } from "./goal-commissar-hooks.js";
 import {
   HEARTBEAT_INTERVAL_MS,
   HEARTBEAT_STALL_MS,
@@ -39,8 +40,16 @@ import {
   shouldHeartbeatRefire,
   shouldWedgeAlert,
 } from "./goal-loop-backoff.js";
-import { isLoopActive, loopTimerPending, scheduleLoopTick } from "./goal-loop.js";
-import { mainModelRecoveryActive, markCompletionAuditRecoveryPending, probeMainModelRecovery } from "./goal-recovery.js";
+import {
+  isLoopActive,
+  loopTimerPending,
+  scheduleLoopTick,
+} from "./goal-loop.js";
+import {
+  mainModelRecoveryActive,
+  markCompletionAuditRecoveryPending,
+  probeMainModelRecovery,
+} from "./goal-recovery.js";
 import type { ContinuationDispatch } from "./goal-loop-dispatch.js";
 
 /** goal.ts-owned module lets the heartbeat reads/writes through this accessor.
@@ -77,7 +86,10 @@ export interface HeartbeatFlags {
   get consecutiveStalls(): number;
   set consecutiveStalls(v: number);
   get heartbeatNudges(): number;
-  get inFlightToolCalls(): ReadonlyMap<string, { name: string; arg?: string; at: number }>;
+  get inFlightToolCalls(): ReadonlyMap<
+    string,
+    { name: string; arg?: string; at: number }
+  >;
   get contextStarvedStreak(): number;
   get lastContextStarvedAt(): number;
   get heartbeatTimer(): NodeJS.Timeout | null;
@@ -101,7 +113,11 @@ export interface HeartbeatDeps {
   parkCompletionAuditRecovery(cwd: string, reason: string): boolean;
   isSupervising(): boolean;
   isActionableGoal(): boolean;
-  scheduleContinuation(ctx: ExtensionContext, force?: boolean, delayMs?: number): void;
+  scheduleContinuation(
+    ctx: ExtensionContext,
+    force?: boolean,
+    delayMs?: number,
+  ): void;
   noteActivity(real?: boolean): void;
   escalateStallNow(ctx: ExtensionContext, threshold: number): boolean;
   isContextStarvedRefused(): boolean;
@@ -109,7 +125,12 @@ export interface HeartbeatDeps {
   continuationUnansweredMs: number;
   continuationUnansweredThrottleMs: number;
   /** Abort and durably park the owner of a confirmed zero-stream turn. */
-  abortZombieRun(ctx: ExtensionContext, generation: number, goalId: string | undefined, lastStreamActivityAt: number): boolean;
+  abortZombieRun(
+    ctx: ExtensionContext,
+    generation: number,
+    goalId: string | undefined,
+    lastStreamActivityAt: number,
+  ): boolean;
 }
 
 let flags: HeartbeatFlags;
@@ -134,7 +155,10 @@ let continuationUnansweredMs: HeartbeatDeps["continuationUnansweredMs"];
 let continuationUnansweredThrottleMs: HeartbeatDeps["continuationUnansweredThrottleMs"];
 let abortZombieRun: HeartbeatDeps["abortZombieRun"];
 
-export function createGoalHeartbeat(flagsArg: HeartbeatFlags, d: HeartbeatDeps): void {
+export function createGoalHeartbeat(
+  flagsArg: HeartbeatFlags,
+  d: HeartbeatDeps,
+): void {
   flags = flagsArg;
   absorbStaleIfSuperseded = d.absorbStaleIfSuperseded;
   goStaleTerminal = d.goStaleTerminal;
@@ -215,7 +239,8 @@ let lastOverdueWaitKey = "";
 
 function overdueWaitDue(): boolean {
   const goal = state.goal;
-  if (!goal || goal.status !== "paused" || goal.pauseKind !== "wait") return false;
+  if (!goal || goal.status !== "paused" || goal.pauseKind !== "wait")
+    return false;
   if (typeof goal.pauseResumeAt !== "string") return false;
   const dueMs = Date.now() - Date.parse(goal.pauseResumeAt);
   if (!Number.isFinite(dueMs) || dueMs < WAIT_OVERDUE_GRACE_MS) return false;
@@ -240,8 +265,17 @@ function overdueWaitBackstop(ctx: ExtensionContext): void {
   //     model, so it stays parked until recovery resolves.
   // These gates sit BEFORE the lastOverdueWaitKey latch: a skipped window
   // must stay retriable on later ticks, never latched as "already done".
-  if (flags.sessionHandoffPending || flags.staleTerminalDone || flags.extensionApiStale) return;
-  if (mainModelRecoveryActive() && !(state.goal?.pauseReason ?? "").startsWith("main model recovery")) return;
+  if (
+    flags.sessionHandoffPending ||
+    flags.staleTerminalDone ||
+    flags.extensionApiStale
+  )
+    return;
+  if (
+    mainModelRecoveryActive() &&
+    !(state.goal?.pauseReason ?? "").startsWith("main model recovery")
+  )
+    return;
   if (!overdueWaitDue()) return;
   const goal = state.goal!;
   const reason = goal.pauseReason ?? "";
@@ -251,25 +285,32 @@ function overdueWaitBackstop(ctx: ExtensionContext): void {
     pauseResumeAt: goal.pauseResumeAt,
     overdueMs: Date.now() - Date.parse(goal.pauseResumeAt!),
     reason: reason.slice(0, 160),
-    route: reason.startsWith("main model recovery") ? "main-model-probe" : "continuation",
+    route: reason.startsWith("main model recovery")
+      ? "main-model-probe"
+      : "continuation",
   });
   if (reason.startsWith("main model recovery")) {
-    void probeMainModelRecovery(ctx).catch(() => { /* re-parks with a fresh resumeAt on failure */ });
+    void probeMainModelRecovery(ctx).catch(() => {
+      /* re-parks with a fresh resumeAt on failure */
+    });
     return;
   }
   // Agent-authored waits and error-brake cooldowns alike: the stated wait
   // condition's deadline has passed — clear the park and re-dispatch, with
   // a recovery stamp so the continuation prompt tells the agent it was
   // ITSELF that was recovered (issue #16 part 2).
-  updateGoal({
-    status: "active",
-    pauseKind: undefined,
-    pauseResumeAt: undefined,
-    pauseReason: undefined,
-    pauseSuggestedAction: undefined,
-    autoResumedAt: new Date().toISOString(),
-    autoResumedEvent: `overdue wait resumed (${reason.slice(0, 80) || "time-gated wait"})`,
-  }, ctx);
+  updateGoal(
+    {
+      status: "active",
+      pauseKind: undefined,
+      pauseResumeAt: undefined,
+      pauseReason: undefined,
+      pauseSuggestedAction: undefined,
+      autoResumedAt: new Date().toISOString(),
+      autoResumedEvent: `overdue wait resumed (${reason.slice(0, 80) || "time-gated wait"})`,
+    },
+    ctx,
+  );
   scheduleContinuation(ctx, true);
 }
 
@@ -288,7 +329,10 @@ function zombieRunAbortGraceMs(): number {
 
 /** Test-only: shrink the zero-stream windows without changing production
  * defaults. Passing null restores the 20m warning + 10m abort grace. */
-export function __testOnlySetZombieRunWindows(silentMs: number | null, abortGraceMs: number | null = null): void {
+export function __testOnlySetZombieRunWindows(
+  silentMs: number | null,
+  abortGraceMs: number | null = null,
+): void {
   zombieRunSilentMsOverride = silentMs;
   zombieRunAbortGraceMsOverride = abortGraceMs;
   lastZombieAlertAt = 0;
@@ -358,7 +402,10 @@ const SUBAGENT_HANG_PRUNE_MS = 60 * 60_000;
 
 function pruneEndedSubagentHangProbes(now = Date.now()): void {
   for (const [id, probe] of subagentHangProbes) {
-    if (probe.endedAt !== undefined && now - probe.endedAt >= SUBAGENT_HANG_PRUNE_MS) {
+    if (
+      probe.endedAt !== undefined &&
+      now - probe.endedAt >= SUBAGENT_HANG_PRUNE_MS
+    ) {
       subagentHangProbes.delete(id);
     }
   }
@@ -397,17 +444,29 @@ const subagentHangProbes = new Map<string, SubagentHangProbe>();
  * cross-extension stream event. Defensive: absent when pi-subagents isn't
  * loaded or the record shape changes (falls back to event-only evidence). */
 const SUBAGENT_MANAGER_KEY = Symbol.for("pi-subagents:manager");
-type SubagentRecordPoll = { toolUses?: number; lifetimeUsage?: { output?: number }; status?: string };
-type SubagentManagerPoll = { getRecord?: (id: string) => SubagentRecordPoll | undefined };
+type SubagentRecordPoll = {
+  toolUses?: number;
+  lifetimeUsage?: { output?: number };
+  status?: string;
+};
+type SubagentManagerPoll = {
+  getRecord?: (id: string) => SubagentRecordPoll | undefined;
+};
 function subagentManagerPoller(): SubagentManagerPoll {
   try {
-    return ((globalThis as any)[SUBAGENT_MANAGER_KEY] ?? {}) as SubagentManagerPoll;
+    return ((globalThis as any)[SUBAGENT_MANAGER_KEY] ??
+      {}) as SubagentManagerPoll;
   } catch {
     return {};
   }
 }
 
-export function upsertSubagentHangProbe(recordId: string, agentType: string | undefined, summary: string | undefined, now = Date.now()): void {
+export function upsertSubagentHangProbe(
+  recordId: string,
+  agentType: string | undefined,
+  summary: string | undefined,
+  now = Date.now(),
+): void {
   const existing = subagentHangProbes.get(recordId);
   if (existing) {
     // Re-observation (resume / re-run): fresh evidence + refreshed metadata.
@@ -418,12 +477,20 @@ export function upsertSubagentHangProbe(recordId: string, agentType: string | un
     return;
   }
   subagentHangProbes.set(recordId, {
-    recordId, agentType, summary,
-    spawnedAt: now, lastProgressAt: now, lastToolUses: 0, lastOutputTokens: 0,
+    recordId,
+    agentType,
+    summary,
+    spawnedAt: now,
+    lastProgressAt: now,
+    lastToolUses: 0,
+    lastOutputTokens: 0,
   });
 }
 
-export function markSubagentHangProgress(recordId: string, now = Date.now()): void {
+export function markSubagentHangProgress(
+  recordId: string,
+  now = Date.now(),
+): void {
   const p = subagentHangProbes.get(recordId);
   if (p) p.lastProgressAt = now;
 }
@@ -464,10 +531,16 @@ export function classifyHungSubagents(
       // vanishing. A record that ended normally sets endedAt above and never
       // reaches here.
       const silentMs = now - p.lastProgressAt;
-      if (silentMs >= SUBAGENT_HANG_EVENT_ONLY_MS) hung.push({ recordId: p.recordId, silentMs });
+      if (silentMs >= SUBAGENT_HANG_EVENT_ONLY_MS)
+        hung.push({ recordId: p.recordId, silentMs });
       continue;
     }
-    if (rec.status !== "running" && rec.status !== "steered" && rec.status !== "queued") continue;
+    if (
+      rec.status !== "running" &&
+      rec.status !== "steered" &&
+      rec.status !== "queued"
+    )
+      continue;
     const toolUses = rec.toolUses ?? 0;
     const output = rec.lifetimeUsage?.output ?? 0;
     if (toolUses > p.lastToolUses || output > p.lastOutputTokens) {
@@ -477,7 +550,8 @@ export function classifyHungSubagents(
       continue;
     }
     const silentMs = now - p.lastProgressAt;
-    if (silentMs >= SUBAGENT_HANG_NO_PROGRESS_MS) hung.push({ recordId: p.recordId, silentMs });
+    if (silentMs >= SUBAGENT_HANG_NO_PROGRESS_MS)
+      hung.push({ recordId: p.recordId, silentMs });
   }
   return hung;
 }
@@ -494,6 +568,17 @@ function heartbeatTick(): void {
   // idle plane). Everything this tick could DISPATCH downstream checks the
   // same hold via supervisorPaused() and refuses; only probes/ledger run.
   if (typeof state.supervisorPausedAt === "number") return;
+  // v0.36.x commissar watchdog: the 15s cadence owns the opt-in adherence
+  // checks too. The hook re-checks every gate internally (enabled, ACTIVE
+  // goal, single-flight, interval, provider-recovery); a manual pause is
+  // already excluded by the guard above.
+  try {
+    maybeFireCommissarCheck(flags.lastCtx, {
+      completionAuditInFlight: flags.completionAuditInFlight,
+    });
+  } catch {
+    /* the watchdog must never break the heartbeat tick */
+  }
   // A completed/paused/held plane has no host-bound work to supervise. Do
   // not probe the retained ExtensionAPI in that idle state: pi may dispose a
   // session handle during an unrelated session transition, and reporting
@@ -507,21 +592,28 @@ function heartbeatTick(): void {
   // heartbeat opportunity. Ended subagent probes remain in memory briefly for
   // HUD/final-state reads, but they no longer own the host and must not keep
   // this guard probing a disposed handle.
-  const terminalGoal = state.goal?.status === "complete" || state.goal?.status === "aborted";
-  const staleRecoveryDebt = (!terminalGoal && state.goal?.interruptedReason?.startsWith("extension api stale"))
-    || state.loop?.stopReason?.startsWith("extension api stale");
-  const parkedCompletionAuditRecovery = state.goal?.status === "paused"
-    && state.goal.pendingCompletion?.phase === "recovery-pending";
+  const terminalGoal =
+    state.goal?.status === "complete" || state.goal?.status === "aborted";
+  const staleRecoveryDebt =
+    (!terminalGoal &&
+      state.goal?.interruptedReason?.startsWith("extension api stale")) ||
+    state.loop?.stopReason?.startsWith("extension api stale");
+  const parkedCompletionAuditRecovery =
+    state.goal?.status === "paused" &&
+    state.goal.pendingCompletion?.phase === "recovery-pending";
   // v0.35.28 (issue #16): a lapsed wait-pause is host-bound work too — the
   // heartbeat owns its durable due-time backstop (see overdueWaitBackstop).
   if (overdueWaitDue()) {
     // fall through: the backstop below needs a heartbeat opportunity
-  } else if (state.goal?.status !== "active"
-    && state.goal?.status !== "auditing"
-    && !isLoopActive()
-    && !staleRecoveryDebt
-    && !parkedCompletionAuditRecovery
-    && !hasLiveSubagentHangProbes()) return;
+  } else if (
+    state.goal?.status !== "active" &&
+    state.goal?.status !== "auditing" &&
+    !isLoopActive() &&
+    !staleRecoveryDebt &&
+    !parkedCompletionAuditRecovery &&
+    !hasLiveSubagentHangProbes()
+  )
+    return;
   // Probe the ExtensionAPI BEFORE probing the captured context. When pi
   // invalidates both handles and emits no replacement session_start,
   // freshCtx() deliberately returns null; probing it first used to make the
@@ -551,10 +643,16 @@ function heartbeatTick(): void {
     // for state/UI mutation: a stale ctx can throw halfway through the park.
     const current = freshCtx();
     if (current) {
-      appendLedger(current.cwd, "stranded_audit_recovered", { goalId: state.goal.id, via: "stale-latch" });
+      appendLedger(current.cwd, "stranded_audit_recovered", {
+        goalId: state.goal.id,
+        via: "stale-latch",
+      });
       markCompletionAuditRecoveryPending(current, "stale-latch-recovery");
       try {
-        current.ui.notify(`Completion audit blocked — no verdict (stale session). The stored claim is safe; ${activeGoalSurfaceCommand("resume")} starts exactly one fresh auditor.`, "warning");
+        current.ui.notify(
+          `Completion audit blocked — no verdict (stale session). The stored claim is safe; ${activeGoalSurfaceCommand("resume")} starts exactly one fresh auditor.`,
+          "warning",
+        );
       } catch {
         /* the ledger + park are durable; notification is best-effort */
       }
@@ -564,17 +662,25 @@ function heartbeatTick(): void {
     // durable claim through a context-free cwd bridge instead of passing the
     // retained stale ExtensionContext into updateGoal/persistState/UI.
     let cwd: string | null = null;
-    try { cwd = knownCtx.cwd; } catch { /* no durable path available */ }
+    try {
+      cwd = knownCtx.cwd;
+    } catch {
+      /* no durable path available */
+    }
     if (!cwd) return;
-    appendLedger(cwd, "stranded_audit_recovered", { goalId: state.goal.id, via: "stale-latch" });
+    appendLedger(cwd, "stranded_audit_recovered", {
+      goalId: state.goal.id,
+      via: "stale-latch",
+    });
     parkCompletionAuditRecovery(cwd, "stale-latch-recovery");
     return;
   }
   const rawApiStale = probeExtensionApiStaleRaw();
-  const staleTerminalRecovered = flags.staleTerminalDone
-    && !!knownCtx
-    && flags.extensionApi !== null
-    && !rawApiStale;
+  const staleTerminalRecovered =
+    flags.staleTerminalDone &&
+    !!knownCtx &&
+    flags.extensionApi !== null &&
+    !rawApiStale;
   if ((flags.extensionApiStale && !staleTerminalRecovered) || rawApiStale) {
     if (!flags.extensionApiStale) {
       // v0.34.62: debounce — ONE transient probe failure (pi mid-settle,
@@ -587,7 +693,8 @@ function heartbeatTick(): void {
       if (flags.heartbeatStaleStreak < heartbeatStaleDebounce) return;
     }
     if (knownCtx && tryAbsorbHostSuccessor(knownCtx, "heartbeat-probe")) return;
-    if (knownCtx && !absorbStaleIfSuperseded(knownCtx)) goStaleTerminal(knownCtx, "heartbeat probe");
+    if (knownCtx && !absorbStaleIfSuperseded(knownCtx))
+      goStaleTerminal(knownCtx, "heartbeat probe");
     return;
   }
   flags.heartbeatStaleStreak = 0;
@@ -603,7 +710,9 @@ function heartbeatTick(): void {
   // proceed with the normal heartbeat — no sends are re-queued, so there
   // is no blind queue storm risk.
   if (flags.staleTerminalDone && knownCtx) {
-    appendLedger(knownCtx.cwd, "stale_terminal_recovered_via_probe", { via: "heartbeat-self-heal" });
+    appendLedger(knownCtx.cwd, "stale_terminal_recovered_via_probe", {
+      via: "heartbeat-self-heal",
+    });
     // Try the real successor and same-session recovery gates while the stale
     // flags are still set. Clearing them first bypasses selfHealStaleSameSession
     // and leaves the durable interrupted marker behind.
@@ -630,11 +739,20 @@ function heartbeatTick(): void {
   if (subagentHangProbes.size > 0) {
     const nowMs = Date.now();
     const poll = subagentManagerPoller();
-    const hung = classifyHungSubagents([...subagentHangProbes.values()], (id) => poll.getRecord?.(id), nowMs);
+    const hung = classifyHungSubagents(
+      [...subagentHangProbes.values()],
+      (id) => poll.getRecord?.(id),
+      nowMs,
+    );
     pruneEndedSubagentHangProbes(nowMs);
     for (const h of hung) {
       const p = subagentHangProbes.get(h.recordId);
-      if (!p || (p.hangAlertedAt !== undefined && nowMs - p.hangAlertedAt < SUBAGENT_HANG_ALERT_THROTTLE_MS)) continue;
+      if (
+        !p ||
+        (p.hangAlertedAt !== undefined &&
+          nowMs - p.hangAlertedAt < SUBAGENT_HANG_ALERT_THROTTLE_MS)
+      )
+        continue;
       p.hangAlertedAt = nowMs;
       const label = [p.agentType, p.summary].filter(Boolean).join(" ");
       const mins = Math.max(1, Math.round(h.silentMs / 60_000));
@@ -654,9 +772,11 @@ function heartbeatTick(): void {
         evidence: stillTracked ? "record-frozen" : "event-only",
         at: nowIso(),
       });
-      const msg = `glla: subagent${label ? ` (${label})` : ""} shows no progress for ${mins}m — ${stillTracked
-        ? "still running with no new tool calls or output"
-        : "its manager record is unreachable and it produced no events (spawn/compaction/steer)"}. It may be hung; the main session can decide to abort it.`;
+      const msg = `glla: subagent${label ? ` (${label})` : ""} shows no progress for ${mins}m — ${
+        stillTracked
+          ? "still running with no new tool calls or output"
+          : "its manager record is unreachable and it produced no events (spawn/compaction/steer)"
+      }. It may be hung; the main session can decide to abort it.`;
       ctx.ui.notify(msg, "warning");
       notifyExternal(ctx, msg);
     }
@@ -683,32 +803,51 @@ function heartbeatTick(): void {
   // until its bounded timeout. Do not let the generic heartbeat create a
   // second blind send underneath it; explicit resume or a fresh session
   // releases the stand-down latch.
-  if (flags.continuationDispatchStoodDown || flags.pendingContinuationDispatch) return;
+  if (flags.continuationDispatchStoodDown || flags.pendingContinuationDispatch)
+    return;
   // v0.33.1: nothing supervised → the compact debt/resync belong to a dead
   // goal/loop. Discharge here so a later goal can't inherit a bogus RESYNC
   // block or a spurious forced refire (the old in-guard `else` was
   // unreachable — isSupervising() ≡ isLoopActive() || isActionableGoal()).
-  if (!isSupervising() && (flags.postCompactResumeOwed || flags.postCompactResyncPending)) {
+  if (
+    !isSupervising() &&
+    (flags.postCompactResumeOwed || flags.postCompactResyncPending)
+  ) {
     flags.postCompactResumeOwed = false;
     flags.postCompactResyncPending = false;
   }
   // v0.32.1: post-compaction resume debt — retry on every heartbeat tick
   // past grace until a turn actually starts. Fixed-offset settles alone
   // can both lose (pi busy at 2s AND at grace+2s = a dangling chain).
-  if (flags.postCompactResumeOwed && isSupervising() && !flags.abortedStandDown) {
+  if (
+    flags.postCompactResumeOwed &&
+    isSupervising() &&
+    !flags.abortedStandDown
+  ) {
     try {
-      if (ctx.isIdle() && !ctx.hasPendingMessages() && flags.continuationTimer === null && !loopTimerPending()) {
+      if (
+        ctx.isIdle() &&
+        !ctx.hasPendingMessages() &&
+        flags.continuationTimer === null &&
+        !loopTimerPending()
+      ) {
         if (isLoopActive()) {
-          appendLedger(ctx.cwd, "compaction_resume_owed_refire", { kind: "loop" });
+          appendLedger(ctx.cwd, "compaction_resume_owed_refire", {
+            kind: "loop",
+          });
           scheduleLoopTick(ctx);
         } else if (isActionableGoal()) {
-          appendLedger(ctx.cwd, "compaction_resume_owed_refire", { kind: "goal" });
+          appendLedger(ctx.cwd, "compaction_resume_owed_refire", {
+            kind: "goal",
+          });
           scheduleContinuation(ctx, true);
         } else {
           flags.postCompactResumeOwed = false; // nothing to resume — discharge
         }
       }
-    } catch { /* next tick */ }
+    } catch {
+      /* next tick */
+    }
   }
   // v0.29.16/v0.35.x: zombie-run watchdog. pi reports BUSY (a run is
   // "active") but zero stream events for the warning window — the provider
@@ -736,30 +875,59 @@ function heartbeatTick(): void {
       [...flags.inFlightToolCalls.values()].some(isSubagentWaitCall);
     if (subagentWaitInFlight) {
       if (streamSilentMs >= zombieAbortMs && !flags.abortedStandDown) {
-        appendLedger(ctx.cwd, "zombie_run_stood_down_subagent_wait", { streamSilentMs });
+        appendLedger(ctx.cwd, "zombie_run_stood_down_subagent_wait", {
+          streamSilentMs,
+        });
       }
       return;
     }
     const abortKey = `${flags.sessionGeneration}:${state.goal?.id ?? "loop"}:${flags.lastStreamActivityAt}`;
-    if (streamSilentMs >= zombieAbortMs && !flags.abortedStandDown && abortKey !== lastZombieAbortKey) {
+    if (
+      streamSilentMs >= zombieAbortMs &&
+      !flags.abortedStandDown &&
+      abortKey !== lastZombieAbortKey
+    ) {
       // Claim the key only after the activation-owned abort succeeds. A
       // generation/stream/goal guard can legitimately reject this attempt
       // while the heartbeat is still observing the same silent run; latching
       // first strands that run in warning-only state forever.
-      if (abortZombieRun(ctx, flags.sessionGeneration, state.goal?.id, flags.lastStreamActivityAt)) {
+      if (
+        abortZombieRun(
+          ctx,
+          flags.sessionGeneration,
+          state.goal?.id,
+          flags.lastStreamActivityAt,
+        )
+      ) {
         lastZombieAbortKey = abortKey;
         return;
       }
     }
     if (nowMs - lastZombieAlertAt >= ZOMBIE_RUN_ALERT_THROTTLE_MS) {
       lastZombieAlertAt = nowMs;
-      appendLedger(ctx.cwd, "zombie_run_suspected", { streamSilentMs, pending, abortDue: streamSilentMs >= zombieAbortMs });
+      appendLedger(ctx.cwd, "zombie_run_suspected", {
+        streamSilentMs,
+        pending,
+        abortDue: streamSilentMs >= zombieAbortMs,
+      });
       if (streamSilentMs >= zombieAbortMs) {
-        ctx.ui.notify(`glla: the BUSY turn had zero stream activity for ${Math.round(streamSilentMs / 60000)} min and automatic cleanup was unable to claim it. Use ${activeGoalSurfaceCommand("resume")} or ${activeGoalSurfaceCommand("cancel")} after a fresh session rebind.`, "warning");
-        notifyExternal(ctx, `glla: zombie cleanup needs a fresh session (${Math.round(streamSilentMs / 60000)}m busy-silent).`);
+        ctx.ui.notify(
+          `glla: the BUSY turn had zero stream activity for ${Math.round(streamSilentMs / 60000)} min and automatic cleanup was unable to claim it. Use ${activeGoalSurfaceCommand("resume")} or ${activeGoalSurfaceCommand("cancel")} after a fresh session rebind.`,
+          "warning",
+        );
+        notifyExternal(
+          ctx,
+          `glla: zombie cleanup needs a fresh session (${Math.round(streamSilentMs / 60000)}m busy-silent).`,
+        );
       } else {
-        ctx.ui.notify(`glla: the session has been BUSY with zero stream activity for ${Math.round(streamSilentMs / 60000)} min — the provider stream is likely hung. Automatic cleanup will abort it after the bounded grace window.`, "warning");
-        notifyExternal(ctx, `glla: zombie run suspected (${Math.round(streamSilentMs / 60000)} min busy-silent) — bounded cleanup is armed.`);
+        ctx.ui.notify(
+          `glla: the session has been BUSY with zero stream activity for ${Math.round(streamSilentMs / 60000)} min — the provider stream is likely hung. Automatic cleanup will abort it after the bounded grace window.`,
+          "warning",
+        );
+        notifyExternal(
+          ctx,
+          `glla: zombie run suspected (${Math.round(streamSilentMs / 60000)} min busy-silent) — bounded cleanup is armed.`,
+        );
       }
     }
     return;
@@ -776,8 +944,12 @@ function heartbeatTick(): void {
     Date.now() - lastUnansweredAlertAt >= continuationUnansweredThrottleMs
   ) {
     lastUnansweredAlertAt = Date.now();
-    appendLedger(ctx.cwd, "continuation_unanswered", { silentMs: Date.now() - flags.lastContinuationSentAt });
-    const mins = Math.round((Date.now() - flags.lastContinuationSentAt) / 60_000);
+    appendLedger(ctx.cwd, "continuation_unanswered", {
+      silentMs: Date.now() - flags.lastContinuationSentAt,
+    });
+    const mins = Math.round(
+      (Date.now() - flags.lastContinuationSentAt) / 60_000,
+    );
     const msg = `glla: pi accepted the continuation ${mins}m ago but NO turn has started — no tool calls, no tokens, transcript frozen (the turn trigger is wedged). Re-sends do not unstick it. A fresh session_start will rebind the ${isLoopActive() ? "loop" : "goal/list item"}; if no replacement arrives, restart pi normally and restore the saved work.`;
     ctx.ui.notify(msg, "warning");
     notifyExternal(ctx, msg);
@@ -798,18 +970,30 @@ function heartbeatTick(): void {
     (!state.goal.pendingCompletion || flags.completionAuditRecoveryArmed) &&
     Date.now() - flags.lastActivityAt >= 90_000
   ) {
-    appendLedger(ctx.cwd, "stranded_audit_recovered", { goalId: state.goal.id, via: state.goal.pendingCompletion ? "stored-claim" : "resume-active" });
+    appendLedger(ctx.cwd, "stranded_audit_recovered", {
+      goalId: state.goal.id,
+      via: state.goal.pendingCompletion ? "stored-claim" : "resume-active",
+    });
     if (state.goal.pendingCompletion) {
       markCompletionAuditRecoveryPending(ctx, "heartbeat-recovery");
-      ctx.ui.notify(`Completion audit blocked — no verdict. The stored claim is safe; ${activeGoalSurfaceCommand("resume")} starts exactly one fresh auditor.`, "warning");
+      ctx.ui.notify(
+        `Completion audit blocked — no verdict. The stored claim is safe; ${activeGoalSurfaceCommand("resume")} starts exactly one fresh auditor.`,
+        "warning",
+      );
     } else {
-      updateGoal({
-        status: "paused",
-        pauseKind: "blocked",
-        pauseReason: "completion audit interrupted — no verdict",
-        pauseSuggestedAction: `The completion attempt was not evaluated. ${activeGoalSurfaceCommand("resume")} returns to the work so it can call complete_goal again.`,
-      }, ctx);
-      ctx.ui.notify(`Completion audit interrupted — no verdict. MAIN released; ${activeGoalSurfaceCommand("resume")} to continue.`, "warning");
+      updateGoal(
+        {
+          status: "paused",
+          pauseKind: "blocked",
+          pauseReason: "completion audit interrupted — no verdict",
+          pauseSuggestedAction: `The completion attempt was not evaluated. ${activeGoalSurfaceCommand("resume")} returns to the work so it can call complete_goal again.`,
+        },
+        ctx,
+      );
+      ctx.ui.notify(
+        `Completion audit interrupted — no verdict. MAIN released; ${activeGoalSurfaceCommand("resume")} to continue.`,
+        "warning",
+      );
     }
     return;
   }
@@ -833,9 +1017,14 @@ function heartbeatTick(): void {
     })
   ) {
     flags.consecutiveStalls++;
-    appendLedger(ctx.cwd, "pending_latch_stuck", { consecutiveStalls: flags.consecutiveStalls, silentMs: latchSilentMs });
+    appendLedger(ctx.cwd, "pending_latch_stuck", {
+      consecutiveStalls: flags.consecutiveStalls,
+      silentMs: latchSilentMs,
+    });
     noteActivity(); // re-arm the 3-minute cadence; never resets the stall streak
-    const stallEscalation = loadSettings(ctx.cwd).stallEscalationRefires ?? DEFAULT_STALL_ESCALATION_REFIRES;
+    const stallEscalation =
+      loadSettings(ctx.cwd).stallEscalationRefires ??
+      DEFAULT_STALL_ESCALATION_REFIRES;
     if (escalateStallNow(ctx, stallEscalation)) return;
     const msg = `Heartbeat: a queued continuation never started its turn for ${Math.round(latchSilentMs / 60_000)}m — pi's pending-message latch appears stuck (known post-compaction failure; stall ${flags.consecutiveStalls}/${stallEscalation > 0 ? stallEscalation : "∞"}). If this repeats, restart pi.`;
     ctx.ui.notify(msg, "warning");
@@ -845,7 +1034,11 @@ function heartbeatTick(): void {
   const fire = shouldHeartbeatRefire({
     supervising: isSupervising(),
     sessionIdle,
-    timerPending: flags.continuationTimer !== null || loopTimerPending() || flags.continuationStartTimer !== null || flags.pendingContinuationDispatch !== null,
+    timerPending:
+      flags.continuationTimer !== null ||
+      loopTimerPending() ||
+      flags.continuationStartTimer !== null ||
+      flags.pendingContinuationDispatch !== null,
     msSinceActivity: Date.now() - flags.lastActivityAt,
     stallMs: HEARTBEAT_STALL_MS,
     consecutiveStalls: flags.consecutiveStalls,
@@ -855,7 +1048,9 @@ function heartbeatTick(): void {
   // the entire goal hostage; field-observed at 5,056s and 6,800s on the
   // same wedged tool call). Independent of the refire path, which only
   // watches idle sessions.
-  const wedgeMinutes = resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).wedgeAlertMinutes ?? WEDGE_ALERT_DEFAULT_MINUTES;
+  const wedgeMinutes =
+    resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd))
+      .wedgeAlertMinutes ?? WEDGE_ALERT_DEFAULT_MINUTES;
   if (
     shouldWedgeAlert({
       supervising: isSupervising(),
@@ -878,11 +1073,15 @@ function heartbeatTick(): void {
         .filter(isSubagentWaitCall)
         .map((t) => t.name),
     );
-    const subHint = subWaits.size > 0
-      ? ` The in-flight call is a SUBAGENT WAIT (${[...subWaits].join("/")}) — check the Agents panel: a child whose tool-use/token counters have stopped moving between checks is hung, not thinking (hard failures surface as ✗ failed + the wait returns; a HANG is silent). Esc interrupts the wait — then collect the survivors with get_subagent_result and absorb the dead scope inline.`
-      : "";
+    const subHint =
+      subWaits.size > 0
+        ? ` The in-flight call is a SUBAGENT WAIT (${[...subWaits].join("/")}) — check the Agents panel: a child whose tool-use/token counters have stopped moving between checks is hung, not thinking (hard failures surface as ✗ failed + the wait returns; a HANG is silent). Esc interrupts the wait — then collect the survivors with get_subagent_result and absorb the dead scope inline.`
+        : "";
     const msg = `${goalNoun()} appears wedged: no activity for ${Math.round((Date.now() - flags.lastActivityAt) / 60_000)}m while the session is busy — likely a hung command (test/build/dev server without a timeout).${subHint} Check the session; Esc kills a stuck tool call.`;
-    appendLedger(ctx.cwd, "wedge_alert", { silentMs: Date.now() - flags.lastActivityAt, subagentWait: subWaits.size > 0 });
+    appendLedger(ctx.cwd, "wedge_alert", {
+      silentMs: Date.now() - flags.lastActivityAt,
+      subagentWait: subWaits.size > 0,
+    });
     ctx.ui.notify(msg, "warning");
     notifyExternal(ctx, msg);
   }
@@ -904,7 +1103,10 @@ function heartbeatTick(): void {
   if (isContextStarvedRefused()) {
     if (!starvedRefusedNotified) {
       starvedRefusedNotified = true;
-      appendLedger(ctx.cwd, "continuation_refused_context_starved", { streak: flags.contextStarvedStreak, sinceMs: Date.now() - flags.lastContextStarvedAt });
+      appendLedger(ctx.cwd, "continuation_refused_context_starved", {
+        streak: flags.contextStarvedStreak,
+        sinceMs: Date.now() - flags.lastContextStarvedAt,
+      });
       ctx.ui.notify(
         "glla: auto-compaction appears to be off (or not running) — context is starving and the next turn would just truncate again. Run `/compact` once, or set `compaction.enabled:true` in ~/.pi/agent/settings.json to let pi handle this automatically.",
         "warning",
@@ -927,14 +1129,22 @@ function heartbeatTick(): void {
   if (flags.completionAuditInFlight) return;
   noteActivity();
   flags.consecutiveStalls++;
-  appendLedger(ctx.cwd, "heartbeat_refire", { nudgesSoFar: flags.heartbeatNudges, consecutiveStalls: flags.consecutiveStalls });
+  appendLedger(ctx.cwd, "heartbeat_refire", {
+    nudgesSoFar: flags.heartbeatNudges,
+    consecutiveStalls: flags.consecutiveStalls,
+  });
   // v0.26.1: a refire streak means the continuation is NOT landing (wedged
   // message queue, stale API handle, dead turn trigger). Nudges can't catch
   // this — they count turns, and a zombie runs none. Escalate to a loud,
   // actionable stop instead of spinning silently forever.
-  const stallEscalation = loadSettings(ctx.cwd).stallEscalationRefires ?? DEFAULT_STALL_ESCALATION_REFIRES;
+  const stallEscalation =
+    loadSettings(ctx.cwd).stallEscalationRefires ??
+    DEFAULT_STALL_ESCALATION_REFIRES;
   if (escalateStallNow(ctx, stallEscalation)) return;
-  ctx.ui.notify(`Heartbeat: supervisor active but session stalled — re-firing continuation (stall ${flags.consecutiveStalls}/${stallEscalation > 0 ? stallEscalation : "∞"}).`, "info");
+  ctx.ui.notify(
+    `Heartbeat: supervisor active but session stalled — re-firing continuation (stall ${flags.consecutiveStalls}/${stallEscalation > 0 ? stallEscalation : "∞"}).`,
+    "info",
+  );
   if (isLoopActive()) {
     scheduleLoopTick(ctx);
   } else {
@@ -997,7 +1207,10 @@ export interface SubagentAgentView {
   endedAt?: number;
 }
 
-export function getSubagentAgentsSnapshot(now = Date.now()): { agents: SubagentAgentView[]; managerAvailable: boolean } {
+export function getSubagentAgentsSnapshot(now = Date.now()): {
+  agents: SubagentAgentView[];
+  managerAvailable: boolean;
+} {
   const poll = subagentManagerPoller();
   const managerAvailable = typeof poll.getRecord === "function";
   const agents: SubagentAgentView[] = [];
@@ -1006,7 +1219,8 @@ export function getSubagentAgentsSnapshot(now = Date.now()): { agents: SubagentA
     let status: SubagentAgentView["status"] = "running";
     let evidence: SubagentAgentView["evidence"] = "live";
     if (!ended) {
-      const stillTracked = managerAvailable && poll.getRecord?.(probe.recordId) !== undefined;
+      const stillTracked =
+        managerAvailable && poll.getRecord?.(probe.recordId) !== undefined;
       const silentMs = now - probe.lastProgressAt;
       if (silentMs >= SUBAGENT_HANG_NO_PROGRESS_MS) {
         status = "hung";
@@ -1024,7 +1238,9 @@ export function getSubagentAgentsSnapshot(now = Date.now()): { agents: SubagentA
       outputTokens: probe.lastOutputTokens,
       silentMs: Math.max(0, now - probe.lastProgressAt),
       evidence,
-      ...(probe.hangAlertedAt !== undefined ? { hangAlertedAt: probe.hangAlertedAt } : {}),
+      ...(probe.hangAlertedAt !== undefined
+        ? { hangAlertedAt: probe.hangAlertedAt }
+        : {}),
       ...(probe.endedAt !== undefined ? { endedAt: probe.endedAt } : {}),
     });
   }

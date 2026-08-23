@@ -211,7 +211,7 @@ test("v0.29.10 — audit loop source pins: deferred baseline, true-regression no
   // v0.29.14: live loops on the open-count/min metric migrate to
   // closed-count/max on session load (supersedes the baseline-0 reseed).
   assert.ok(goalSrc.includes("audit_loop_metric_migrated"), "migration ledgers the metric flip");
-  assert.ok(goalSrc.includes('from: "open-count/min", to: "closed-count/max"'), "migration names both metrics");
+  assert.ok(/from:\s*"open-count\/min",\s*to:\s*"closed-count\/max"/.test(goalSrc), "migration names both metrics");
   assert.ok(!goalSrc.includes("audit_loop_baseline_reseeded"), "v0.29.10 reseed superseded");
 });
 
@@ -691,7 +691,7 @@ test("v0.29.0: /loop audit — metric loop over open findings; plateau = the wel
   assert.ok(!t.includes("Every iteration: (1) run a FRESH audit pass"), "old template superseded");
   // live-loop migration pins (goal.ts — session-load path stays there):
   assert.match(GOAL, /audit_loop_target_migrated/);
-  assert.match(GOAL, /state\.loop\?\.kind === "audit" && state\.loop\.target\?\.includes\("Every iteration: \(1\) run a FRESH audit pass"\)/);
+  assert.match(GOAL, /state\.loop\?\.kind\s+===\s+"audit"\s+&&\s+state\.loop\.target\?\.includes\("Every\s+iteration:\s+\(1\)\s+run\s+a\s+FRESH\s+audit\s+pass"\)/);
   // reviewer: fire-audit-on-clean is OPT-IN, not default (the auditor already
   // verified the work — a reflexive re-scan pays for verification twice):
   const R = readFileSync("extensions/reviewer.ts", "utf-8");

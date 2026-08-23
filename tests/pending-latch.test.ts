@@ -53,7 +53,7 @@ test("threshold is 3 minutes (post-compaction settle is 2s; legit queue latency 
 test("heartbeat wiring: idle/pending split, watchdog branch, ledger event, wedge uses !idle, shared escalation", () => {
   assert.match(HB, /idle = ctx\.isIdle\(\);\s*\n\s*pending = ctx\.hasPendingMessages\(\);/);
   assert.match(HB, /shouldFirePendingLatchWatchdog\(\{/);
-  assert.match(HB, /appendLedger\(ctx\.cwd, "pending_latch_stuck", \{ consecutiveStalls: flags\.consecutiveStalls, silentMs: latchSilentMs \}\)/);
+  assert.match(HB, /appendLedger\(ctx\.cwd,\s+"pending_latch_stuck",\s+\{\s+consecutiveStalls:\s+flags\.consecutiveStalls,\s+silentMs:\s+latchSilentMs,?\s*\}\)/);
   assert.match(HB, /sessionBusy: !idle,/, "wedge alert must not fire on latch-pending (it is not a hung command)");
   assert.match(SRC_GOAL, /function escalateStallNow\(ctx: ExtensionContext, threshold: number\): boolean/);
   // Both stall paths share the escalation helper:

@@ -335,6 +335,13 @@ export interface Goal {
   agentRole?: AgentRole;
   verificationContract?: string;
   autoContinue: boolean;
+ /** v0.37.0 commissar watchdog: set when the commissar terminated the main
+  * run for sustained dereliction (consecutive WANTING verdicts). Drives the
+  * COMMISSAR RESTART directive in the next continuation prompt and tells
+  * the agent_end "aborted" handler this termination was INTENTIONAL — not
+  * a user Esc — so the chain restarts instead of standing down. Cleared by
+  * the accepted continuation dispatch (mirrors autoResumedAt). */
+ commissarRestart?: { at: string; reason: string };
   /** v0.34.81 (LIGHT parent/child): set ONLY when this goal was activated
    * from a queue item that declared `Subtask of: <parent objective>`. The
    * parent is identified by its queue item id so the cascade on completion
