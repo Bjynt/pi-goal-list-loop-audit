@@ -505,6 +505,27 @@ export function parseListImport(content: string): string[] {
   return items;
 }
 
+/** v0.35.35 (audit finding 2026-08-23): the v0.35.31 user-seed trust compared
+ * the CLEANED goal.objective against RAW stored seeds with exact equality —
+ * but createGoal strips "Done when:" clauses and @agent roles out of the
+ * objective while keeping the raw arg as the seed, so any seeded goal WITH a
+ * clause/role silently no-op'd the trust and still parked behind the
+ * suspicious-objective heuristic. Fix: normalize BOTH sides through the SAME
+ * extraction pipeline the creation path applies (role first, then contract,
+ * mirroring createGoal). This widens nothing about WHO authored the text —
+ * agent-authored seeds stay untrusted (createdVia gate unchanged). */
+export function objectiveIsUserSeeded(goal: Pick<Goal, "objective" | "createdVia" | "objectiveProvenance">): boolean {
+  if (goal.createdVia !== "user") return false;
+  const target = goal.objective.trim();
+  if (!target) return false;
+  return !!(goal.objectiveProvenance?.userSeeds ?? []).some((seed) => {
+    const raw = seed.trim();
+    if (raw === target) return true;
+    const cleaned = extractVerificationContract(extractAgentRole(raw).objective).objective.trim();
+    return cleaned === target;
+  });
+}
+
 /**
  * During a LIST drafting session the agent must not add items one by one
  * with list_add/list_activate — that bypasses the user's Confirm gate

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.35.35 — mechanical pre-audit: maxBuffer ceiling killed verbose green suites (2026-08-23)
+
+### Fix
+  runMechanicalPreAuditChecks passed no maxBuffer to execFileSync, so
+  Node's default 1 MB cap applied: any contract gate whose output exceeds
+  1 MB gets its child SIGTERMed by Node and the call throws ENOBUFS —
+  which the banner logic (signal==="SIGTERM") then misreported as "killed
+  after 600s". Field incident (2026-08-23, five consecutive auditor
+  rounds on hellhunter's `bun test src/lib/game`): the gate emits ~1.17 MB
+  of ALL-PASSING output and was unpassable by construction — every attempt
+  died at ~1 MB (~15s in) while the identical tree passed green from an
+  interactive shell 19/19 times, including piped-output and single-core
+  pinned runs. Now passes maxBuffer: 64 MB, and ENOBUFS deaths no longer
+  print the misleading 600s timeout banner.
+
 ## 0.35.34 — lastOutcome actually durable (2026-08-23)
 
 ### Fix

@@ -50,6 +50,7 @@ import {
 } from "./goal-loop-core.js";
 import {
   createContinuationDispatch,
+  objectiveIsUserSeeded,
   transitionDispatch,
   dispatchMatchesOwner,
   dispatchPromptMatches,
@@ -859,9 +860,11 @@ export function guardGoalBeforeContinuation(
   // task the user never asked for. When the objective is verbatim a user
   // seed on a user-created goal, dispatch it and record that the heuristic
   // was skipped; /goal tweak remains available if it really is malformed.
-  const userSeeded = goal.createdVia === "user"
-    && !!goal.objectiveProvenance?.userSeeds?.some((seed) => seed.trim() === goal.objective.trim());
-  if (userSeeded) {
+  // v0.35.35: normalization lives in objectiveIsUserSeeded — the raw seed
+  // and the cleaned objective go through the SAME extraction pipeline, so a
+  // seed carrying "Done when:" or @role still matches (v0.35.31 silently
+  // no-op'd on exactly those goals).
+  if (objectiveIsUserSeeded(goal)) {
     appendLedger(ctx.cwd, "faulty_objective_user_seed_trusted", {
       goalId: goal.id,
       where,
