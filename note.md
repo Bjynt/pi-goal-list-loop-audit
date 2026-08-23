@@ -12,9 +12,7 @@ auditor can go awol for long, we need some way to handle it
 in this case its not slow response but we were workign with a model that kept ahving errors but it was fine when we retried but seemingly we dont least as eagerly for auditor
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_152629.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152617.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152536.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152321.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152319.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152316.png 
 
-
 > /home/dracon/Pictures/Screenshots/Screenshot_20260823_153139.png so we can see the mdoel struggless but we still need ot keep retrying it 
-
 
 ##
 another problem is that on session start, we odnt auto start the main thread we do auto start the auditor if it was their turn
@@ -31,6 +29,11 @@ another problem is htat failed requests add to the context, while clearly adding
 ok seemingly we keep sending the images as context to the model , so the context fits but the requst is too big 
 
 > /home/dracon/Pictures/Screenshots/Screenshot_20260823_155311.png starting without history works
+
+##
+
+objective needs repair issue, but before reload it looked fine
+/home/dracon/Pictures/Screenshots/Screenshot_20260823_155633.png 
 
 # Next2
 
