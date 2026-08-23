@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.35.45 — plan-mode seeded hint separator (2026-08-23)
+
+### Fix
+  Audit-pass finding: planNote ended "...than a regular draft." and was
+  concatenated directly with the label hint, producing
+  "...regular draft.Goal drafting - deep planning: ..." in the notified
+  seeded hint. The join is now explicit (planNote ? `${planNote} ` : "").
+  Behavioral test drives the real /goal plan command with a seed and
+  asserts the notified hint reads "regular draft. Goal drafting - deep
+  planning:"; proven red with the glued concatenation restored.
+
 ## 0.35.44 — draftingDepth dead state removed; orphaned-gate windows closed (2026-08-23)
 
 ### Fix
