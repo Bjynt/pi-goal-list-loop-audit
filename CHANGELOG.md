@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.35.47 — completions/handler parity for /list and /loop verbs (2026-08-23)
+
+### Fix
+  Audit-pass finding: verbs handled by the dispatchers but absent from the
+  subcommand completions - /list add|import|rm (and pause, caught while
+  pinning), and /loop resume|refine|polish. All seven now appear in their
+  getArgumentCompletions tables with accurate descriptions. A generic
+  parity pin in tests/command-registration-collisions.test.ts scans every
+  `sub === "x"` dispatch literal inside cmdList/cmdLoop and fails when a
+  handled verb has no completion entry - future verbs cannot ship
+  half-registered.
+
 ## 0.35.46 — /glla agents --tail sanitization + bounded scan reads (2026-08-23)
 
 ### Fix
