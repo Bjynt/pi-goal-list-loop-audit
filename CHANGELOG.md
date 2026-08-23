@@ -1,4 +1,16 @@
-# Changelog
+# 0.35.38 — README verb-semantics documentation (2026-08-23)
+
+### Docs
+  User-requested audit finding: what /goal|/list|/loop audit MEAN vs start
+  vs the plan verbs lived only in code comments. New "What the verbs mean"
+  table right after the quick-start block (audit is deliberately three
+  machines: one-shot fix-in-pass goal, collect-then-drain list item,
+  forever cadence loop; plan = extended draft on all surfaces; verify
+  audits the CURRENT goal, not the project), the drafting-rules paragraph
+  now names plan as the fourth depth, and "Which loop?" cross-links it.
+  Includes the DECIDED semantics: /list plan takes prose only — a file
+  path stays bulk import; files mentioned inside /list plan are research
+  input, never auto-imported.
 
 ## 0.35.37 — recovery welcome-back notice now fires exactly once (2026-08-23)
 

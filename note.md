@@ -10,6 +10,8 @@ the goal was gettick stuck so i started a new goal but then it was not visible o
 
 ##
 
+https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
+address pr 
 
 
 # Later
@@ -19,11 +21,6 @@ the goal was gettick stuck so i started a new goal but then it was not visible o
 we coudl use better visuals cause this is what wesee now and it is worth htinking what and how we show
 /home/dracon/Pictures/Screenshots/Screenshot_20260822_132806.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260822_200250.png 
-
-##
-
-operation aborted in some cases not sure if use but the model seems to be working in other project
-/home/dracon/Pictures/Screenshots/Screenshot_20260823_022804.png 
 
 # Idea
 
