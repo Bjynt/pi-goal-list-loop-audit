@@ -284,7 +284,7 @@ test("source pins: constants, watchdog wiring, and ledger key", () => {
   assert.match(src, /subagents:steered/);
   assert.match(src, /subagents:completed/);
   assert.match(src, /subagents:failed/);
-  assert.match(src, /upsertSubagentHangProbe\(sessionId/);
+  assert.match(src, /upsertSubagentHangProbe\(\s*\n?\s*sessionId,/);
 });
 
 // v0.34.105 (field: 2026-08-08 16:18 — quota wall froze subagent

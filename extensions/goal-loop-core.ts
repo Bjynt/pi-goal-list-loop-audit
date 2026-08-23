@@ -10,9 +10,22 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
-import { normalizeProviderErrorText, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText, type QuotaSignal } from "./quota-retry.js";
+import {
+ normalizeProviderErrorText,
+ providerErrorFingerprint,
+ providerErrorPresentation,
+ sanitizeProviderAuditReport,
+ sanitizeProviderDisplayText,
+ type QuotaSignal,
+} from "./quota-retry.js";
 import { MAX_MAIN_MODEL_FALLBACKS } from "./main-model-recovery.js";
-export { normalizeProviderErrorText, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText } from "./quota-retry.js";
+export {
+ normalizeProviderErrorText,
+ providerErrorFingerprint,
+ providerErrorPresentation,
+ sanitizeProviderAuditReport,
+ sanitizeProviderDisplayText,
+} from "./quota-retry.js";
 
 /** v0.26.1: consecutive heartbeat refires without a real agent turn
  * before the supervisor gives up (pauses the goal / stops the loop).
@@ -21,8 +34,11 @@ export const DEFAULT_STALL_ESCALATION_REFIRES = 5;
 
 /** v0.26.1: pure gate — has the refire streak hit the escalation
  * threshold? threshold 0 disables escalation entirely. */
-export function shouldEscalateStall(consecutiveStalls: number, threshold: number): boolean {
-  return threshold > 0 && consecutiveStalls >= threshold;
+export function shouldEscalateStall(
+ consecutiveStalls: number,
+ threshold: number,
+): boolean {
+ return threshold > 0 && consecutiveStalls >= threshold;
 }
 
 /** The next top-of-hour (:00:00.000) strictly after now — the hourly
@@ -33,9 +49,9 @@ export function shouldEscalateStall(consecutiveStalls: number, threshold: number
  * extensions, the LEGACY hourlyPromptMs that may be referenced elsewhere)
  * still compiles. */
 export function nextHourlyPromptMs(now = Date.now()): number {
-  const d = new Date(now);
-  d.setHours(d.getHours() + 1, 0, 0, 0);
-  return d.getTime();
+ const d = new Date(now);
+ d.setHours(d.getHours() + 1, 0, 0, 0);
+ return d.getTime();
 }
 
 /** v0.34.92: the next :00:30 strictly after now — the hourly retry ticker
@@ -43,26 +59,21 @@ export function nextHourlyPromptMs(now = Date.now()): number {
  * the extra attempt. The slot is per-hour: at 14:00:01 the next slot is
  * 14:00:30 (29s away); at 14:00:31 the next slot is 15:00:30. */
 export function nextHourlyProbeMs(now = Date.now()): number {
-  const d = new Date(now);
-  // Start with this hour's :00:30
-  d.setMinutes(0, 30, 0);
-  if (d.getTime() <= now) {
-    // Already past this hour's :00:30 — jump to next hour
-    d.setHours(d.getHours() + 1);
-  }
-  return d.getTime();
+ const d = new Date(now);
+ // Start with this hour's :00:30
+ d.setMinutes(0, 30, 0);
+ if (d.getTime() <= now) {
+  // Already past this hour's :00:30 — jump to next hour
+  d.setHours(d.getHours() + 1);
+ }
+ return d.getTime();
 }
 
 // =================================================================
 // Types
 // =================================================================
 
-export type Status =
-  | "active"
-  | "auditing"
-  | "complete"
-  | "paused"
-  | "aborted";
+export type Status = "active" | "auditing" | "complete" | "paused" | "aborted";
 
 export type Policy = "goal" | "list"; // v0.3.0: "loop".
 
@@ -73,36 +84,44 @@ export type AgentRole = "designer";
 export type ModeCommand = "pause" | "tweak" | "resume";
 
 /** Return the command root for a supervised work surface. */
-export function workCommandRoot(mode: Policy | "loop" | undefined): "/goal" | "/list" | "/loop" {
-  if (mode === "list") return "/list";
-  if (mode === "loop") return "/loop";
-  return "/goal";
+export function workCommandRoot(
+ mode: Policy | "loop" | undefined,
+): "/goal" | "/list" | "/loop" {
+ if (mode === "list") return "/list";
+ if (mode === "loop") return "/loop";
+ return "/goal";
 }
 
 /** Build a mode-correct pause/tweak/resume command for a goal or list item. */
-export function modeCommand(mode: Policy | undefined, command: ModeCommand): string {
-  return `${workCommandRoot(mode)} ${command}`;
+export function modeCommand(
+ mode: Policy | undefined,
+ command: ModeCommand,
+): string {
+ return `${workCommandRoot(mode)} ${command}`;
 }
 
 /** Build a command for a goal, list item, or metric loop. */
-export function workCommand(mode: Policy | "loop" | undefined, command: string): string {
-  return `${workCommandRoot(mode)} ${command}`;
+export function workCommand(
+ mode: Policy | "loop" | undefined,
+ command: string,
+): string {
+ return `${workCommandRoot(mode)} ${command}`;
 }
 
 export interface Task {
-  id: string;
-  title: string;
-  status: "pending" | "in_progress" | "complete";
-  /** Optional specialist hand-off for this task. */
-  agentRole?: AgentRole;
-  /** Optional verification gate for milestone-checked tasks. */
-  verificationContract?: string;
-  subtasks?: Task[];
+ id: string;
+ title: string;
+ status: "pending" | "in_progress" | "complete";
+ /** Optional specialist hand-off for this task. */
+ agentRole?: AgentRole;
+ /** Optional verification gate for milestone-checked tasks. */
+ verificationContract?: string;
+ subtasks?: Task[];
 }
 
 export interface TaskList {
-  version: 1;
-  tasks: Task[];
+ version: 1;
+ tasks: Task[];
 }
 
 // =================================================================
@@ -117,90 +136,97 @@ export const MAX_TOP_LEVEL_TASKS = 20;
 export const MAX_SUBTASKS_PER_TASK = 5;
 
 export interface TaskProposal {
-  title: string;
-  agentRole?: AgentRole;
-  verificationContract?: string;
-  subtasks?: string[];
+ title: string;
+ agentRole?: AgentRole;
+ verificationContract?: string;
+ subtasks?: string[];
 }
 
 /** Validate a proposed breakdown. Returns an error string or null. */
 export function validateTaskProposal(tasks: TaskProposal[]): string | null {
-  if (!Array.isArray(tasks) || tasks.length === 0) return "Empty task list.";
-  if (tasks.length > MAX_TOP_LEVEL_TASKS) {
-    return `Too many top-level tasks (${tasks.length}); max ${MAX_TOP_LEVEL_TASKS}. Coarser granularity, please.`;
+ if (!Array.isArray(tasks) || tasks.length === 0) return "Empty task list.";
+ if (tasks.length > MAX_TOP_LEVEL_TASKS) {
+  return `Too many top-level tasks (${tasks.length}); max ${MAX_TOP_LEVEL_TASKS}. Coarser granularity, please.`;
+ }
+ for (const t of tasks) {
+  if (!t.title || !t.title.trim()) return "Every task needs a non-empty title.";
+  const n = t.subtasks?.length ?? 0;
+  if (n > MAX_SUBTASKS_PER_TASK) {
+   return `Task "${t.title}" has ${n} subtasks; max ${MAX_SUBTASKS_PER_TASK}. Merge or split into coarser tasks.`;
   }
-  for (const t of tasks) {
-    if (!t.title || !t.title.trim()) return "Every task needs a non-empty title.";
-    const n = t.subtasks?.length ?? 0;
-    if (n > MAX_SUBTASKS_PER_TASK) {
-      return `Task "${t.title}" has ${n} subtasks; max ${MAX_SUBTASKS_PER_TASK}. Merge or split into coarser tasks.`;
-    }
-  }
-  return null;
+ }
+ return null;
 }
 
 /** Assign hierarchical ids ("1", "1.1", …) and pending statuses to a proposal. */
 export function buildTaskList(tasks: TaskProposal[]): TaskList {
-  return {
-    version: 1,
-    tasks: tasks.map((t, i) => ({
-      id: String(i + 1),
-      title: t.title.trim(),
-      status: "pending" as const,
-      ...(t.agentRole ? { agentRole: t.agentRole } : {}),
-      ...(t.verificationContract ? { verificationContract: t.verificationContract } : {}),
-      subtasks: (t.subtasks ?? []).map((s, j) => ({
-        id: `${i + 1}.${j + 1}`,
-        title: s.trim(),
-        status: "pending" as const,
-      })),
-    })),
-  };
+ return {
+  version: 1,
+  tasks: tasks.map((t, i) => ({
+   id: String(i + 1),
+   title: t.title.trim(),
+   status: "pending" as const,
+   ...(t.agentRole ? { agentRole: t.agentRole } : {}),
+   ...(t.verificationContract
+    ? { verificationContract: t.verificationContract }
+    : {}),
+   subtasks: (t.subtasks ?? []).map((s, j) => ({
+    id: `${i + 1}.${j + 1}`,
+    title: s.trim(),
+    status: "pending" as const,
+   })),
+  })),
+ };
 }
 
 export interface AuditVerdict {
-  at: string;
-  approved: boolean;
-  disapproved: boolean;
-  /** v0.24.2: the auditor's third verdict — the goal can NEVER be satisfied as stated. */
-  impossible?: boolean;
-  impossibleReason?: string;
-  model: string;
-  thinkingLevel?: string;
-  report?: string;
-  /** Infrastructure failure detail (abort, auth, no model). Verdicts only — an entry with error and no report is not a real audit. */
-  error?: string;
-  /** regression_shield outcome when the goal had a verification contract. */
-  regressionShieldPassed?: boolean;
-  /** Contract items the shield found unreferenced (fed into the next audit's prompt, v0.22.6). */
-  regressionShieldMissing?: string[];
-  /** v0.34.60 (steal #3): the goal revision this audit ran against. An
-   * approval recorded here is only valid for that contract revision —
-   * complete_goal gates on the latest audited revision matching the
-   * goal's current revision so an old approval can never be cited
-   * against a tweaked contract. Legacy entries lack the field and pass
-   * the gate unchanged. */
-  revision?: number;
+ at: string;
+ approved: boolean;
+ disapproved: boolean;
+ /** v0.24.2: the auditor's third verdict — the goal can NEVER be satisfied as stated. */
+ impossible?: boolean;
+ impossibleReason?: string;
+ model: string;
+ thinkingLevel?: string;
+ report?: string;
+ /** Infrastructure failure detail (abort, auth, no model). Verdicts only — an entry with error and no report is not a real audit. */
+ error?: string;
+ /** regression_shield outcome when the goal had a verification contract. */
+ regressionShieldPassed?: boolean;
+ /** Contract items the shield found unreferenced (fed into the next audit's prompt, v0.22.6). */
+ regressionShieldMissing?: string[];
+ /** v0.34.60 (steal #3): the goal revision this audit ran against. An
+  * approval recorded here is only valid for that contract revision —
+  * complete_goal gates on the latest audited revision matching the
+  * goal's current revision so an old approval can never be cited
+  * against a tweaked contract. Legacy entries lack the field and pass
+  * the gate unchanged. */
+ revision?: number;
 }
 
 /** The display classification for one stored auditor result. Keep semantic
  * verdicts separate from operational failures: a shield-blocked approval is
  * not a disapproval, and an infrastructure error is not a verdict at all. */
 export type AuditVerdictLabel =
-  | "approved"
-  | "disapproved"
-  | "impossible"
-  | "shield-blocked"
-  | "infrastructure failure"
-  | "no verdict";
+ | "approved"
+ | "disapproved"
+ | "impossible"
+ | "shield-blocked"
+ | "infrastructure failure"
+ | "no verdict";
 
-export function auditVerdictLabel(v: Pick<AuditVerdict, "approved" | "disapproved" | "impossible" | "error" | "regressionShieldPassed">): AuditVerdictLabel {
-  if (v.approved && v.regressionShieldPassed === false) return "shield-blocked";
-  if (v.approved) return "approved";
-  if (v.impossible) return "impossible";
-  if (v.disapproved) return "disapproved";
-  if (v.error) return "infrastructure failure";
-  return "no verdict";
+export function auditVerdictLabel(
+ v: Pick<
+  AuditVerdict,
+  "approved" | "disapproved" | "impossible" | "error" | "regressionShieldPassed"
+ >,
+): AuditVerdictLabel {
+ if (v.approved && v.regressionShieldPassed === false) return "shield-blocked";
+ if (v.approved) return "approved";
+ if (v.impossible) return "impossible";
+ if (v.disapproved) return "disapproved";
+ if (v.error) return "infrastructure failure";
+ return "no verdict";
 }
 
 /**
@@ -212,228 +238,245 @@ export function auditVerdictLabel(v: Pick<AuditVerdict, "approved" | "disapprove
  * the split; totalTokens includes cache reads, which inflate 10-50× on long
  * sessions (a day-long goal "used" 216M while real spend was a fraction).
  */
-export function sumNewAssistantTokens(messages: unknown[], seen: Set<string>): number {
-  let total = 0;
-  for (const m of messages) {
-    const msg = m as {
-      role?: string;
-      timestamp?: unknown;
-      usage?: { input?: unknown; output?: unknown; totalTokens?: unknown };
-    };
-    if (msg?.role !== "assistant") continue;
-    const u = msg.usage;
-    const split = (typeof u?.input === "number" ? u.input : 0) + (typeof u?.output === "number" ? u.output : 0);
-    const tokens = split > 0 ? split : (typeof u?.totalTokens === "number" ? u.totalTokens : 0);
-    if (tokens <= 0) continue;
-    const key = `${String(msg.timestamp ?? "?")}:${tokens}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    total += tokens;
-  }
-  return total;
+export function sumNewAssistantTokens(
+ messages: unknown[],
+ seen: Set<string>,
+): number {
+ let total = 0;
+ for (const m of messages) {
+  const msg = m as {
+   role?: string;
+   timestamp?: unknown;
+   usage?: { input?: unknown; output?: unknown; totalTokens?: unknown };
+  };
+  if (msg?.role !== "assistant") continue;
+  const u = msg.usage;
+  const split =
+   (typeof u?.input === "number" ? u.input : 0) +
+   (typeof u?.output === "number" ? u.output : 0);
+  const tokens =
+   split > 0 ? split : typeof u?.totalTokens === "number" ? u.totalTokens : 0;
+  if (tokens <= 0) continue;
+  const key = `${String(msg.timestamp ?? "?")}:${tokens}`;
+  if (seen.has(key)) continue;
+  seen.add(key);
+  total += tokens;
+ }
+ return total;
 }
 
-export type CompletionAuditPhase = "running" | "recovery-pending" | "retry-waiting" | "quota-waiting";
+export type CompletionAuditPhase =
+ | "running"
+ | "recovery-pending"
+ | "retry-waiting"
+ | "quota-waiting";
 
 /** Durable completion claim metadata. The claim itself is the user's exact
  * completion assertion; the lifecycle fields make an interrupted isolated
  * audit distinguishable from one that is actively running. Fields beyond
  * `at` are optional so v0.34.20 and older claims remain recoverable. */
 export interface PendingCompletion {
-  completionSummary?: string;
-  verificationSummary?: string;
-  /** When the completion claim was first persisted. */
-  at: string;
-  /** Current audit lifecycle. Missing = legacy claim, treated as recovery-pending. */
-  phase?: CompletionAuditPhase;
-  /** Identifies the isolated-auditor attempt, not the goal. */
-  attemptId?: string;
-  /** Start/deadline for the current isolated-auditor attempt. */
-  startedAt?: string;
-  wallDeadlineAt?: string;
-  /** Why the claim is waiting for a fresh attempt. */
-  recoveryAt?: string;
-  recoveryReason?: string;
-  /** Durable due time for the one bounded no-verdict recovery retry. */
-  recoveryRetryAt?: string;
-  /** Bounded raw provider/auditor diagnostic retained for forensics only. */
-  providerErrorDiagnostic?: string;
-  /** Stable identity for one detached-auditor provider recovery episode. */
-  recoveryEpisodeKey?: string;
-  /** Durable per-episode notice fence; display projections must consult it. */
-  recoveryNoticeKeys?: string[];
-  /**
-   * Durable one-shot recovery fence. A parked claim may receive one
-   * automatic retry after a validated healthy lifecycle/recovery event;
-   * manual /goal resume remains available after that attempt. Missing on
-   * legacy claims means "not yet consumed".
-   */
-  automaticRecoveryAttempted?: boolean;
-  automaticRecoveryAt?: string;
-  automaticRecoveryGeneration?: number;
-  /** When aggressiveMode is enabled, the no-verdict recovery path keeps
-   * retrying inside this durable window instead of stopping after one retry. */
-  automaticRecoveryAttempts?: number;
-  automaticRecoveryFirstAt?: string;
-  automaticRecoveryUntil?: string;
-  /** Durable generic retry accounting; survives reloads and worker restarts. */
-  retryAttempts?: number;
-  retryFirstAt?: string;
-  retryUntil?: string;
-  /** @deprecated v0.34.142: migrated to the generic retry fields on load. */
-  quotaAttempts?: number;
-  quotaFirstAt?: string;
-  quotaAutoRetryUntil?: string;
-  /** @deprecated v0.34.142: retained only when reading older state. */
-  quotaSignal?: QuotaSignal;
-  /** @deprecated v0.34.142: upstream hints never control scheduling. */
-  retryAfterSec?: number;
-  retryFromUpstream?: boolean;
-  resetAt?: string;
+ completionSummary?: string;
+ verificationSummary?: string;
+ /** When the completion claim was first persisted. */
+ at: string;
+ /** Current audit lifecycle. Missing = legacy claim, treated as recovery-pending. */
+ phase?: CompletionAuditPhase;
+ /** Identifies the isolated-auditor attempt, not the goal. */
+ attemptId?: string;
+ /** Start/deadline for the current isolated-auditor attempt. */
+ startedAt?: string;
+ wallDeadlineAt?: string;
+ /** Why the claim is waiting for a fresh attempt. */
+ recoveryAt?: string;
+ recoveryReason?: string;
+ /** Durable due time for the one bounded no-verdict recovery retry. */
+ recoveryRetryAt?: string;
+ /** Bounded raw provider/auditor diagnostic retained for forensics only. */
+ providerErrorDiagnostic?: string;
+ /** Stable identity for one detached-auditor provider recovery episode. */
+ recoveryEpisodeKey?: string;
+ /** Durable per-episode notice fence; display projections must consult it. */
+ recoveryNoticeKeys?: string[];
+ /**
+  * Durable one-shot recovery fence. A parked claim may receive one
+  * automatic retry after a validated healthy lifecycle/recovery event;
+  * manual /goal resume remains available after that attempt. Missing on
+  * legacy claims means "not yet consumed".
+  */
+ automaticRecoveryAttempted?: boolean;
+ automaticRecoveryAt?: string;
+ automaticRecoveryGeneration?: number;
+ /** When aggressiveMode is enabled, the no-verdict recovery path keeps
+  * retrying inside this durable window instead of stopping after one retry. */
+ automaticRecoveryAttempts?: number;
+ automaticRecoveryFirstAt?: string;
+ automaticRecoveryUntil?: string;
+ /** Durable generic retry accounting; survives reloads and worker restarts. */
+ retryAttempts?: number;
+ retryFirstAt?: string;
+ retryUntil?: string;
+ /** @deprecated v0.34.142: migrated to the generic retry fields on load. */
+ quotaAttempts?: number;
+ quotaFirstAt?: string;
+ quotaAutoRetryUntil?: string;
+ /** @deprecated v0.34.142: retained only when reading older state. */
+ quotaSignal?: QuotaSignal;
+ /** @deprecated v0.34.142: upstream hints never control scheduling. */
+ retryAfterSec?: number;
+ retryFromUpstream?: boolean;
+ resetAt?: string;
 }
 
 export interface ObjectiveRepairTarget {
-  /** Queue/goal identity of the malformed intent that needs a replan. */
-  id: string;
-  objective: string;
-  verificationContract?: string;
-  reasons: string[];
-  source: string;
+ /** Queue/goal identity of the malformed intent that needs a replan. */
+ id: string;
+ objective: string;
+ verificationContract?: string;
+ reasons: string[];
+ source: string;
 }
 
 export interface ObjectiveRepairRecord {
-  at: string;
-  action: "auto-applied" | "queued";
-  originalObjective: string;
-  replacementObjective?: string;
-  originalContract?: string;
-  replacementContract?: string;
-  source: string;
-  reason: string;
-  evidence: string;
-  confidence: "best-effort" | "fallback";
-  revisionBefore: number;
-  revisionAfter: number;
+ at: string;
+ action: "auto-applied" | "queued";
+ originalObjective: string;
+ replacementObjective?: string;
+ originalContract?: string;
+ replacementContract?: string;
+ source: string;
+ reason: string;
+ evidence: string;
+ confidence: "best-effort" | "fallback";
+ revisionBefore: number;
+ revisionAfter: number;
 }
 
 /** Durable intent captured before an objective can be overwritten by a
  * reviewer fragment, transcript replay, or malformed queue restore. */
 export interface ObjectiveProvenance {
-  originalObjective: string;
-  originalContract?: string;
-  userSeeds?: string[];
+ originalObjective: string;
+ originalContract?: string;
+ userSeeds?: string[];
 }
 
 export interface Goal {
-  id: string;
-  objective: string;
-  status: Status;
-  policy: Policy;
-  /** Explicit specialist routing requested for this goal/list item. */
-  agentRole?: AgentRole;
-  verificationContract?: string;
-  autoContinue: boolean;
-  /** v0.34.81 (LIGHT parent/child): set ONLY when this goal was activated
-   * from a queue item that declared `Subtask of: <parent objective>`. The
-   * parent is identified by its queue item id so the cascade on completion
-   * can locate it without resolving objectives at archive time. Persists in
-   * state.json (the durable goal .md is a render projection and intentionally
-   * does not carry this — a crash-restart that drops it leaves the parent
-   * visible as a plain queue item rather than mis-handling the cascade). */
-  parentId?: string;
-  /** v0.35.1: a control goal created to re-plan suspicious saved intent.
-   * It is cleared only after a confirmed task-list re-draft, so the generic
-   * repair card cannot complete repeatedly while the original target remains
-   * opaque in the queue. */
-  repairTarget?: ObjectiveRepairTarget;
-  taskList?: TaskList;
-  auditHistory?: AuditVerdict[];
-  stopReason?: string;
-  /** v0.34.91: the agent's own 1-paragraph completion recap (from
-   * complete_goal's completionSummary), captured when the claim is made and
-   * persisted with the goal. The terminal summary line shows THIS instead
-   * of echoing the objective — the end-of-goal recap should say what
-   * happened, not restate the contract. Absent on legacy/aborted goals
-   * (the render falls back to the objective/reason). */
-  completionSummary?: string;
-  pauseReason?: string;
-  pauseSuggestedAction?: string;
-  /** v0.28.22: pause classification — drives the widget/status rendering
-   * (a decision pause, an operational failure, a time-gated wait, and a
-   * generic block must not look alike). Undefined = legacy flat card. */
-  pauseKind?: "decision" | "error" | "wait" | "blocked";
-  /** v0.28.22: decision pauses — the options the user picks between. */
-  pauseOptions?: string[];
-  /** v0.28.22: 1-based index into pauseOptions the agent recommends. */
-  pauseRecommended?: number;
-  /** v0.28.22: ISO time a wait-pause becomes resumable (countdown shown). */
-  pauseResumeAt?: string;
-  /** v0.35.28 (issue #16): set when glla AUTO-resumed a lapsed wait — the
-   * continuation prompt renders a recovery notice from it so the agent
-   * understands IT was the session that was disconnected and recovered
-   * (issue #16 part 2: agents waited "for themselves to be recovered").
-   * Cleared by an explicit manual /goal resume. */
-  autoResumedAt?: string;
-  autoResumedEvent?: string;
-  /** v0.28.1 (S1/S2): stale-handle interrupt marker. Set INSTEAD of pausing
-   * when pi invalidates the extension handle mid-goal — the goal stays
-   * active so a fresh session auto-resumes it via the restore gate. Cleared
-   * on that auto-resume. */
-  interruptedAt?: string;
-  interruptedReason?: string;
-  /** v0.28.5 (E2): trailing auditor INFRA-structure errors (not verdicts).
-   * At 3 the goal pauses loudly — a broken auditor model must not spin a
-   * silent retry-forever loop. Cleared on any real auditor run. */
-  auditInfraStreak?: number;
-  /** v0.34.15: persisted error-brake rung — survives /reload so the 6-brake park can engage. */
-  errorBrakeStreak?: number;
-  /** v0.28.26: the completion claim captured when an audit attempt stops
-   * before a verdict. The stored-claim retry re-runs the AUDITOR directly
-   * instead of re-engaging the agent — re-engaging produced a
-   * hallucinated-closure repetition loop in the field (π-games 2026-07-29:
-   * the agent concluded the goal was closed, stopped calling complete_goal,
-   * and repeated the same essay until the stall brake fired). Cleared when
-   * the retry resolves. Only consumed while paused in the auditor-retry
-   * lifecycle, so a stale value is unreachable by construction. */
-  pendingCompletion?: PendingCompletion;
-  /** v0.28.28: provenance — who created this goal ("user", "list-cascade",
-   * "draft-confirmed", "draft-autoaccepted"). Ledgered on goal_created so
-   * "where did this come from" is answerable after the fact. */
-  createdVia?: string;
-  /** v0.25.0 (contract item 22): auditor objections extracted as TODOs when
-   * aggressiveMode keeps the goal active past the disapproval cap. Rendered
-   * into every continuation prompt until the next audit clears them. */
-  pendingTasks?: string[];
-  activePath?: string;
-  archivedPath?: string;
-  usage: {
-    tokensUsed: number;
-    tokensLimit: number;
-  };
-  createdAt: string;
-  updatedAt: string;
-  /** Bounded raw provider diagnostic retained for the active/archive record;
-   * user-facing projections use the sanitized pause/recovery copy instead. */
-  providerErrorDiagnostic?: string;
-  /** Stable provider recovery episode identity for goal-level error brakes. */
-  recoveryEpisodeKey?: string;
-  /** Durable per-episode notice fence for goal-level recovery messages. */
-  recoveryNoticeKeys?: string[];
-  /** v0.25.2: per-goal telemetry for /glla stats premature-success
-   * detection. Bumped live: turns on agent_end, fileWrites/bashCalls on
-   * tool_result while the goal is active. */
-  telemetry?: { turns: number; fileWrites: number; bashCalls: number };
-  /** v0.34.59: focus token / revision counter on every goal mutation.
-   * Persisted alongside the goal; bumped on every persistState. Detached
-   * workers capture (goalId, revision) at dispatch and refuse to apply
-   * their result if the captured revision no longer matches — a stale
-   * handle cannot silently overwrite a goal that moved on. */
-  revision?: number;
-  /** v0.35.x: durable record of suspicious-objective recovery decisions. */
-  objectiveRepairHistory?: ObjectiveRepairRecord[];
-  /** v0.35.x: original/user-supplied intent retained for repair after a
-   * reviewer fragment or stale state overwrites the live objective. */
-  objectiveProvenance?: ObjectiveProvenance;
+ id: string;
+ objective: string;
+ status: Status;
+ policy: Policy;
+ /** Explicit specialist routing requested for this goal/list item. */
+ agentRole?: AgentRole;
+ verificationContract?: string;
+ autoContinue: boolean;
+ /** v0.36.x commissar watchdog: set when the commissar terminated the main
+  * run for sustained dereliction (consecutive WANTING verdicts). Drives the
+  * COMMISSAR RESTART directive in the next continuation prompt and tells
+  * the agent_end "aborted" handler this termination was INTENTIONAL — not
+  * a user Esc — so the chain restarts instead of standing down. Cleared by
+  * the accepted continuation dispatch (mirrors autoResumedAt). */
+ commissarRestart?: { at: string; reason: string };
+ /** v0.34.81 (LIGHT parent/child): set ONLY when this goal was activated
+  * from a queue item that declared `Subtask of: <parent objective>`. The
+  * parent is identified by its queue item id so the cascade on completion
+  * can locate it without resolving objectives at archive time. Persists in
+  * state.json (the durable goal .md is a render projection and intentionally
+  * does not carry this — a crash-restart that drops it leaves the parent
+  * visible as a plain queue item rather than mis-handling the cascade). */
+ parentId?: string;
+ /** v0.35.1: a control goal created to re-plan suspicious saved intent.
+  * It is cleared only after a confirmed task-list re-draft, so the generic
+  * repair card cannot complete repeatedly while the original target remains
+  * opaque in the queue. */
+ repairTarget?: ObjectiveRepairTarget;
+ taskList?: TaskList;
+ auditHistory?: AuditVerdict[];
+ stopReason?: string;
+ /** v0.34.91: the agent's own 1-paragraph completion recap (from
+  * complete_goal's completionSummary), captured when the claim is made and
+  * persisted with the goal. The terminal summary line shows THIS instead
+  * of echoing the objective — the end-of-goal recap should say what
+  * happened, not restate the contract. Absent on legacy/aborted goals
+  * (the render falls back to the objective/reason). */
+ completionSummary?: string;
+ pauseReason?: string;
+ pauseSuggestedAction?: string;
+ /** v0.28.22: pause classification — drives the widget/status rendering
+  * (a decision pause, an operational failure, a time-gated wait, and a
+  * generic block must not look alike). Undefined = legacy flat card. */
+ pauseKind?: "decision" | "error" | "wait" | "blocked";
+ /** v0.28.22: decision pauses — the options the user picks between. */
+ pauseOptions?: string[];
+ /** v0.28.22: 1-based index into pauseOptions the agent recommends. */
+ pauseRecommended?: number;
+ /** v0.28.22: ISO time a wait-pause becomes resumable (countdown shown). */
+ pauseResumeAt?: string;
+ /** v0.35.28 (issue #16): set when glla AUTO-resumed a lapsed wait — the
+  * continuation prompt renders a recovery notice from it so the agent
+  * understands IT was the session that was disconnected and recovered
+  * (issue #16 part 2: agents waited "for themselves to be recovered").
+  * Cleared by an explicit manual /goal resume. */
+ autoResumedAt?: string;
+ autoResumedEvent?: string;
+ /** v0.28.1 (S1/S2): stale-handle interrupt marker. Set INSTEAD of pausing
+  * when pi invalidates the extension handle mid-goal — the goal stays
+  * active so a fresh session auto-resumes it via the restore gate. Cleared
+  * on that auto-resume. */
+ interruptedAt?: string;
+ interruptedReason?: string;
+ /** v0.28.5 (E2): trailing auditor INFRA-structure errors (not verdicts).
+  * At 3 the goal pauses loudly — a broken auditor model must not spin a
+  * silent retry-forever loop. Cleared on any real auditor run. */
+ auditInfraStreak?: number;
+ /** v0.34.15: persisted error-brake rung — survives /reload so the 6-brake park can engage. */
+ errorBrakeStreak?: number;
+ /** v0.28.26: the completion claim captured when an audit attempt stops
+  * before a verdict. The stored-claim retry re-runs the AUDITOR directly
+  * instead of re-engaging the agent — re-engaging produced a
+  * hallucinated-closure repetition loop in the field (π-games 2026-07-29:
+  * the agent concluded the goal was closed, stopped calling complete_goal,
+  * and repeated the same essay until the stall brake fired). Cleared when
+  * the retry resolves. Only consumed while paused in the auditor-retry
+  * lifecycle, so a stale value is unreachable by construction. */
+ pendingCompletion?: PendingCompletion;
+ /** v0.28.28: provenance — who created this goal ("user", "list-cascade",
+  * "draft-confirmed", "draft-autoaccepted"). Ledgered on goal_created so
+  * "where did this come from" is answerable after the fact. */
+ createdVia?: string;
+ /** v0.25.0 (contract item 22): auditor objections extracted as TODOs when
+  * aggressiveMode keeps the goal active past the disapproval cap. Rendered
+  * into every continuation prompt until the next audit clears them. */
+ pendingTasks?: string[];
+ activePath?: string;
+ archivedPath?: string;
+ usage: {
+  tokensUsed: number;
+  tokensLimit: number;
+ };
+ createdAt: string;
+ updatedAt: string;
+ /** Bounded raw provider diagnostic retained for the active/archive record;
+  * user-facing projections use the sanitized pause/recovery copy instead. */
+ providerErrorDiagnostic?: string;
+ /** Stable provider recovery episode identity for goal-level error brakes. */
+ recoveryEpisodeKey?: string;
+ /** Durable per-episode notice fence for goal-level recovery messages. */
+ recoveryNoticeKeys?: string[];
+ /** v0.25.2: per-goal telemetry for /glla stats premature-success
+  * detection. Bumped live: turns on agent_end, fileWrites/bashCalls on
+  * tool_result while the goal is active. */
+ telemetry?: { turns: number; fileWrites: number; bashCalls: number };
+ /** v0.34.59: focus token / revision counter on every goal mutation.
+  * Persisted alongside the goal; bumped on every persistState. Detached
+  * workers capture (goalId, revision) at dispatch and refuse to apply
+  * their result if the captured revision no longer matches — a stale
+  * handle cannot silently overwrite a goal that moved on. */
+ revision?: number;
+ /** v0.35.x: durable record of suspicious-objective recovery decisions. */
+ objectiveRepairHistory?: ObjectiveRepairRecord[];
+ /** v0.35.x: original/user-supplied intent retained for repair after a
+  * reviewer fragment or stale state overwrites the live objective. */
+ objectiveProvenance?: ObjectiveProvenance;
 }
 
 /**
@@ -443,30 +486,66 @@ export interface Goal {
  * goal, not pause one.
  */
 export type GoalRoute =
-  | { kind: "draft" }
-  | { kind: "set"; text: string }
-  | { kind: "sub"; name: "status" | "pause" | "resume" | "cancel" | "decide" | "verify" | "audit" | "tweak" | "archive" | "start" | "plan"; rest: string };
+ | { kind: "draft" }
+ | { kind: "set"; text: string }
+ | {
+    kind: "sub";
+    name:
+     | "status"
+     | "pause"
+     | "resume"
+     | "cancel"
+     | "decide"
+     | "verify"
+     | "audit"
+     | "tweak"
+     | "archive"
+     | "start"
+     | "plan";
+    rest: string;
+   };
 
 // v0.29.8: "audit" moved to ARG subs ("/goal audit [focus]" is the one-shot
 // project audit — user: "/goal audit IS the audit goal"); the v0.28.27
 // manual current-goal verification moved to "verify" (it happens
 // automatically at completion anyway — verify is the on-demand handle).
-const GOAL_EXACT_SUBS = new Set(["status", "pause", "resume", "cancel", "decide", "verify"]);
+const GOAL_EXACT_SUBS = new Set([
+ "status",
+ "pause",
+ "resume",
+ "cancel",
+ "decide",
+ "verify",
+]);
 const GOAL_ARG_SUBS = new Set(["audit", "tweak", "archive", "start", "plan"]);
 
 export function routeGoalArgs(raw: string): GoalRoute {
-  const trimmed = raw.trim();
-  if (!trimmed) return { kind: "draft" };
-  const space = trimmed.indexOf(" ");
-  const first = (space === -1 ? trimmed : trimmed.slice(0, space)).toLowerCase();
-  const rest = space === -1 ? "" : trimmed.slice(space + 1).trim();
-  if (GOAL_EXACT_SUBS.has(first) && rest === "") {
-    return { kind: "sub", name: first as "status" | "pause" | "resume" | "cancel" | "decide" | "verify", rest: "" };
-  }
-  if (GOAL_ARG_SUBS.has(first)) {
-    return { kind: "sub", name: first as "audit" | "tweak" | "archive" | "start" | "plan", rest };
-  }
-  return { kind: "set", text: trimmed };
+ const trimmed = raw.trim();
+ if (!trimmed) return { kind: "draft" };
+ const space = trimmed.indexOf(" ");
+ const first = (space === -1 ? trimmed : trimmed.slice(0, space)).toLowerCase();
+ const rest = space === -1 ? "" : trimmed.slice(space + 1).trim();
+ if (GOAL_EXACT_SUBS.has(first) && rest === "") {
+  return {
+   kind: "sub",
+   name: first as
+    | "status"
+    | "pause"
+    | "resume"
+    | "cancel"
+    | "decide"
+    | "verify",
+   rest: "",
+  };
+ }
+ if (GOAL_ARG_SUBS.has(first)) {
+  return {
+   kind: "sub",
+   name: first as "audit" | "tweak" | "archive" | "start" | "plan",
+   rest,
+  };
+ }
+ return { kind: "set", text: trimmed };
 }
 
 /** v0.35.33: drafting depth. "plan" is the EXTENDED DRAFT — research-first
@@ -477,9 +556,13 @@ export function routeGoalArgs(raw: string): GoalRoute {
  * (the respec lesson: a second document always goes stale). */
 export type DraftingDepth = "normal" | "plan";
 
-export function draftingTemplateFile(target: "goal" | "list" | "loop", depth: DraftingDepth): string {
-  if (depth === "plan") return target === "loop" ? "goal-loop-plan-loop.md" : "goal-loop-plan.md";
-  return target === "loop" ? "goal-loop-forever-draft.md" : "goal-loop-draft.md";
+export function draftingTemplateFile(
+ target: "goal" | "list" | "loop",
+ depth: DraftingDepth,
+): string {
+ if (depth === "plan")
+  return target === "loop" ? "goal-loop-plan-loop.md" : "goal-loop-plan.md";
+ return target === "loop" ? "goal-loop-forever-draft.md" : "goal-loop-draft.md";
 }
 
 /**
@@ -489,20 +572,20 @@ export function draftingTemplateFile(target: "goal" | "list" | "loop", depth: Dr
  * comments are skipped. A sisyphus-style plan file should import clean.
  */
 export function parseListImport(content: string): string[] {
-  const items: string[] = [];
-  for (const line of content.split("\n")) {
-    let t = line.trim();
-    if (!t) continue;
-    if (t.startsWith("#")) continue;                    // headings
-    if (t.startsWith("<!--")) continue;                 // html comments
-    if (/^[-=_*]{3,}$/.test(t)) continue;               // hr rules
-    t = t.replace(/^-\s*\[[ xX]\]\s*/, "");              // - [ ] / - [x]
-    t = t.replace(/^[-*•]\s+/, "");                      // bullets
-    t = t.replace(/^\d+[.)]\s+/, "");                    // 1. / 2)
-    t = t.trim();
-    if (t) items.push(t);
-  }
-  return items;
+ const items: string[] = [];
+ for (const line of content.split("\n")) {
+  let t = line.trim();
+  if (!t) continue;
+  if (t.startsWith("#")) continue; // headings
+  if (t.startsWith("<!--")) continue; // html comments
+  if (/^[-=_*]{3,}$/.test(t)) continue; // hr rules
+  t = t.replace(/^-\s*\[[ xX]\]\s*/, ""); // - [ ] / - [x]
+  t = t.replace(/^[-*•]\s+/, ""); // bullets
+  t = t.replace(/^\d+[.)]\s+/, ""); // 1. / 2)
+  t = t.trim();
+  if (t) items.push(t);
+ }
+ return items;
 }
 
 /** v0.35.35 (audit finding 2026-08-23): the v0.35.31 user-seed trust compared
@@ -514,16 +597,20 @@ export function parseListImport(content: string): string[] {
  * extraction pipeline the creation path applies (role first, then contract,
  * mirroring createGoal). This widens nothing about WHO authored the text —
  * agent-authored seeds stay untrusted (createdVia gate unchanged). */
-export function objectiveIsUserSeeded(goal: Pick<Goal, "objective" | "createdVia" | "objectiveProvenance">): boolean {
-  if (goal.createdVia !== "user") return false;
-  const target = goal.objective.trim();
-  if (!target) return false;
-  return !!(goal.objectiveProvenance?.userSeeds ?? []).some((seed) => {
-    const raw = seed.trim();
-    if (raw === target) return true;
-    const cleaned = extractVerificationContract(extractAgentRole(raw).objective).objective.trim();
-    return cleaned === target;
-  });
+export function objectiveIsUserSeeded(
+ goal: Pick<Goal, "objective" | "createdVia" | "objectiveProvenance">,
+): boolean {
+ if (goal.createdVia !== "user") return false;
+ const target = goal.objective.trim();
+ if (!target) return false;
+ return !!(goal.objectiveProvenance?.userSeeds ?? []).some((seed) => {
+  const raw = seed.trim();
+  if (raw === target) return true;
+  const cleaned = extractVerificationContract(
+   extractAgentRole(raw).objective,
+  ).objective.trim();
+  return cleaned === target;
+ });
 }
 
 /**
@@ -535,11 +622,11 @@ export function objectiveIsUserSeeded(goal: Pick<Goal, "objective" | "createdVia
  * unaffected — only the agent tools are gated.
  */
 export function listMutationBlocked(draftingTarget: string | null): boolean {
-  return draftingTarget === "list";
+ return draftingTarget === "list";
 }
 
 export const LIST_DRAFTING_BLOCK_MESSAGE =
-  "LIST DRAFTING IN PROGRESS — do not add items one by one. Decompose the request into an items[] array and call propose_goal_draft ONCE: the user confirms the whole batch in a single dialog. list_add / list_activate work again after the drafting session ends.";
+ "LIST DRAFTING IN PROGRESS — do not add items one by one. Decompose the request into an items[] array and call propose_goal_draft ONCE: the user confirms the whole batch in a single dialog. list_add / list_activate work again after the drafting session ends.";
 
 /**
  * v0.34.51: /list subcommands that persist or activate work — refused on a
@@ -549,18 +636,18 @@ export const LIST_DRAFTING_BLOCK_MESSAGE =
  * fallthrough is always mutating and is gated separately at the call site.
  */
 export const LIST_MUTATING_SUBCOMMANDS = new Set([
-  "audit",
-  "plan", // v0.35.33: extended draft — sends a seed, same mutation class as add
-  "tweak",
-  "pause",
-  "resume",
-  "add",
-  "import",
-  "clear",
-  "cancel",
-  "next",
-  "remove",
-  "rm",
+ "audit",
+ "plan", // v0.35.33: extended draft — sends a seed, same mutation class as add
+ "tweak",
+ "pause",
+ "resume",
+ "add",
+ "import",
+ "clear",
+ "cancel",
+ "next",
+ "remove",
+ "rm",
 ]);
 
 /**
@@ -572,15 +659,15 @@ export const LIST_MUTATING_SUBCOMMANDS = new Set([
  * audits) and the unknown-action notice stay available for inspection.
  */
 export const SETTINGS_MUTATING_ACTIONS = new Set([
-  "wipe",
-  "reset",
-  "cancel",
-  "fallbacks",
-  "resume",
-  "pause",
-  "reviewer",
-  "postaudit",
-  "tooloverride",
+ "wipe",
+ "reset",
+ "cancel",
+ "fallbacks",
+ "resume",
+ "pause",
+ "reviewer",
+ "postaudit",
+ "tooloverride",
 ]);
 
 /**
@@ -596,20 +683,20 @@ export const SETTINGS_MUTATING_ACTIONS = new Set([
  * with `/goal start`): it skips the draft branch.
  */
 export type ListTextRoute =
-  | { kind: "file"; path: string }
-  | { kind: "batch"; items: string[] }
-  | { kind: "direct"; text: string }
-  | { kind: "draft"; seed: string };
+ | { kind: "file"; path: string }
+ | { kind: "batch"; items: string[] }
+ | { kind: "direct"; text: string }
+ | { kind: "draft"; seed: string };
 
 export function routeListText(cwd: string, raw: string): ListTextRoute {
-  const importFile = resolveImportFile(cwd, raw);
-  if (importFile) return { kind: "file", path: importFile };
-  if (raw.includes("\n")) {
-    const pasted = parseListImport(raw);
-    if (pasted.length > 1) return { kind: "batch", items: pasted };
-  }
-  if (!goalArgsNeedDrafting(raw)) return { kind: "direct", text: raw };
-  return { kind: "draft", seed: raw };
+ const importFile = resolveImportFile(cwd, raw);
+ if (importFile) return { kind: "file", path: importFile };
+ if (raw.includes("\n")) {
+  const pasted = parseListImport(raw);
+  if (pasted.length > 1) return { kind: "batch", items: pasted };
+ }
+ if (!goalArgsNeedDrafting(raw)) return { kind: "direct", text: raw };
+ return { kind: "draft", seed: raw };
 }
 
 /**
@@ -619,18 +706,19 @@ export function routeListText(cwd: string, raw: string): ListTextRoute {
  * path or null. Directories return null.
  */
 export function resolveImportFile(cwd: string, arg: string): string | null {
-  const trimmed = arg.trim();
-  if (!trimmed || trimmed.includes("\n")) return null;
-  // Cheap short-circuit: objectives rarely look like paths; require a path
-  // separator or a file-extension-ish suffix before hitting the filesystem.
-  if (!/[\\/]/.test(trimmed) && !/\.[A-Za-z0-9]{1,8}$/.test(trimmed)) return null;
-  try {
-    const abs = path.resolve(cwd, trimmed);
-    const stat = fs.statSync(abs);
-    return stat.isFile() ? abs : null;
-  } catch {
-    return null;
-  }
+ const trimmed = arg.trim();
+ if (!trimmed || trimmed.includes("\n")) return null;
+ // Cheap short-circuit: objectives rarely look like paths; require a path
+ // separator or a file-extension-ish suffix before hitting the filesystem.
+ if (!/[\\/]/.test(trimmed) && !/\.[A-Za-z0-9]{1,8}$/.test(trimmed))
+  return null;
+ try {
+  const abs = path.resolve(cwd, trimmed);
+  const stat = fs.statSync(abs);
+  return stat.isFile() ? abs : null;
+ } catch {
+  return null;
+ }
 }
 
 /**
@@ -638,15 +726,18 @@ export function resolveImportFile(cwd: string, arg: string): string | null {
  * actually define — an `undefined` value in a layer means "not set here",
  * never "set to undefined". Used for defaults → global → project resolution.
  */
-export function mergeSettings<T extends Record<string, unknown>>(base: T, ...layers: Array<Partial<T> | null | undefined>): T {
-  const out: Record<string, unknown> = { ...base };
-  for (const layer of layers) {
-    if (!layer) continue;
-    for (const [k, v] of Object.entries(layer)) {
-      if (v !== undefined) out[k] = v;
-    }
+export function mergeSettings<T extends Record<string, unknown>>(
+ base: T,
+ ...layers: Array<Partial<T> | null | undefined>
+): T {
+ const out: Record<string, unknown> = { ...base };
+ for (const layer of layers) {
+  if (!layer) continue;
+  for (const [k, v] of Object.entries(layer)) {
+   if (v !== undefined) out[k] = v;
   }
-  return out as T;
+ }
+ return out as T;
 }
 
 /**
@@ -667,41 +758,41 @@ export const DEFAULT_AUDIT_FEEDBACK_CHARS = 0;
  * ends disapprovals with the actionable `## Required fixes` section —
  * head-slicing would cut exactly what the executor needs. */
 export function auditFeedbackExcerpt(output: string, maxChars: number): string {
-  const safeOutput = sanitizeProviderAuditReport(output);
-  if (maxChars === 0 || safeOutput.length <= maxChars) return safeOutput;
-  return `[head truncated — full report via /goal status]
+ const safeOutput = sanitizeProviderAuditReport(output);
+ if (maxChars === 0 || safeOutput.length <= maxChars) return safeOutput;
+ return `[head truncated — full report via /goal status]
 …${safeOutput.slice(-maxChars)}`;
 }
 
 export interface ListItem {
-  id: string;
-  objective: string;
-  /** Explicit specialist routing requested for this queued item. */
-  agentRole?: AgentRole;
-  verificationContract?: string;
-  /** v0.34.76 (OPEN-ISSUES 1.11): parallel-execution metadata DECLARATION.
-   * Parsed from a `Parallel: yes|no` clause on the item text; surfaced in
-   * /list show and list_status. A DECLARATION ONLY — the queue still runs
-   * serially; parallel dispatch of parallelSafe items is a later milestone
-   * (see audit/DESIGN-LIST-PARALLEL-2026-08-07.md). */
-  parallelSafe?: boolean;
-  /** v0.34.81 (LIGHT parent/child): one-level subtask binding. Set when a
-   * declaration opened with `Subtask of: <parent objective> — <child…>`;
-   * points at the QUEUE item whose objective matched. A parent with at least
-   * one child (queued or currently active) is a GROUP, not a work item —
-   * the auto-advance skips it (its first open child runs next, in order) and
-   * `/list show` renders it as `[group: N open]`. When the last child closes,
-   * the cascade in archiveCurrentGoal removes the group from the queue and
-   * ledger-records `list_group_closed`. One level only — a parent that is
-   * itself a child is refused at enqueue time (nesting is a later milestone
-   * parked behind focus/unfocus in the runtime). */
-  parentId?: string;
-  /** Durable link from a repair/replan queue item back to the malformed item. */
-  repairTarget?: ObjectiveRepairTarget;
-  /** Monotonic queue position persisted with the sidecar. Legacy items omit it
-   * and fall back to addedAt/id ordering during recovery. */
-  queueOrder?: number;
-  addedAt: string;
+ id: string;
+ objective: string;
+ /** Explicit specialist routing requested for this queued item. */
+ agentRole?: AgentRole;
+ verificationContract?: string;
+ /** v0.34.76 (OPEN-ISSUES 1.11): parallel-execution metadata DECLARATION.
+  * Parsed from a `Parallel: yes|no` clause on the item text; surfaced in
+  * /list show and list_status. A DECLARATION ONLY — the queue still runs
+  * serially; parallel dispatch of parallelSafe items is a later milestone
+  * (see audit/DESIGN-LIST-PARALLEL-2026-08-07.md). */
+ parallelSafe?: boolean;
+ /** v0.34.81 (LIGHT parent/child): one-level subtask binding. Set when a
+  * declaration opened with `Subtask of: <parent objective> — <child…>`;
+  * points at the QUEUE item whose objective matched. A parent with at least
+  * one child (queued or currently active) is a GROUP, not a work item —
+  * the auto-advance skips it (its first open child runs next, in order) and
+  * `/list show` renders it as `[group: N open]`. When the last child closes,
+  * the cascade in archiveCurrentGoal removes the group from the queue and
+  * ledger-records `list_group_closed`. One level only — a parent that is
+  * itself a child is refused at enqueue time (nesting is a later milestone
+  * parked behind focus/unfocus in the runtime). */
+ parentId?: string;
+ /** Durable link from a repair/replan queue item back to the malformed item. */
+ repairTarget?: ObjectiveRepairTarget;
+ /** Monotonic queue position persisted with the sidecar. Legacy items omit it
+  * and fall back to addedAt/id ordering during recovery. */
+ queueOrder?: number;
+ addedAt: string;
 }
 
 /**
@@ -711,12 +802,12 @@ export interface ListItem {
  * than a 5-minute draft). An explicit contract clause activates instantly.
  */
 export function goalArgsNeedDrafting(args: string): boolean {
-  const t = args.trim();
-  if (!t) return false; // no-args is already the drafting path
-  // v0.23.7: any "done when" phrase counts — requiring the colon to
-  // immediately follow made "Done when ALL of the following are true:"
-  // route to the interview even though the user wrote a contract.
-  return !/\bdone\s+when\b/i.test(t);
+ const t = args.trim();
+ if (!t) return false; // no-args is already the drafting path
+ // v0.23.7: any "done when" phrase counts — requiring the colon to
+ // immediately follow made "Done when ALL of the following are true:"
+ // route to the interview even though the user wrote a contract.
+ return !/\bdone\s+when\b/i.test(t);
 }
 
 /**
@@ -726,8 +817,12 @@ export function goalArgsNeedDrafting(args: string): boolean {
  * does the interviewing (its strength); the plugin only enforces the floor
  * via draftProposalBlock: propose is blocked until the user has replied.
  */
-export function buildSeedGrillMessage(tmpl: string, seed: string, tool: string): string {
-  return `${tmpl}\n\n${LONG_RUNNING_JUDGMENT_POLICY}\n\nThe user's initial objective (verbatim): ${seed}\n\nGRILL THEM ABOUT THIS SEED BEFORE PROPOSING. ${tool} is BLOCKED until the user has replied to at least one of your questions — proposing without interviewing returns an error.\n\nHow to grill:\n- Ask ONE sharp, seed-specific question at a time — about THIS objective, not generic filler. If an ask_user_question tool is available in this session, prefer it (structured options render better); plain conversation is fine for free-form answers.\n- Every question ships with a recommended default the user can accept with "yes".\n- Probe what matters: what "done" concretely looks like (checkable evidence — files, commands, behaviors), scope boundaries (what is explicitly OUT), constraints (what must not change), and priorities when the seed bundles several wishes.\n- A non-answer ("not sure", "none", "whatever") is a trigger to offer 2-3 concrete options to pick from — never silently proceed on a non-answer.\n- Do targeted read-only research first when it makes your questions sharper (repo layout, existing docs).\n- Do NOT activate the raw seed. Do NOT implement anything. When the contract is concrete, call ${tool}.`;
+export function buildSeedGrillMessage(
+ tmpl: string,
+ seed: string,
+ tool: string,
+): string {
+ return `${tmpl}\n\n${LONG_RUNNING_JUDGMENT_POLICY}\n\nThe user's initial objective (verbatim): ${seed}\n\nGRILL THEM ABOUT THIS SEED BEFORE PROPOSING. ${tool} is BLOCKED until the user has replied to at least one of your questions — proposing without interviewing returns an error.\n\nHow to grill:\n- Ask ONE sharp, seed-specific question at a time — about THIS objective, not generic filler. If an ask_user_question tool is available in this session, prefer it (structured options render better); plain conversation is fine for free-form answers.\n- Every question ships with a recommended default the user can accept with "yes".\n- Probe what matters: what "done" concretely looks like (checkable evidence — files, commands, behaviors), scope boundaries (what is explicitly OUT), constraints (what must not change), and priorities when the seed bundles several wishes.\n- A non-answer ("not sure", "none", "whatever") is a trigger to offer 2-3 concrete options to pick from — never silently proceed on a non-answer.\n- Do targeted read-only research first when it makes your questions sharper (repo layout, existing docs).\n- Do NOT activate the raw seed. Do NOT implement anything. When the contract is concrete, call ${tool}.`;
 }
 
 /**
@@ -737,17 +832,24 @@ export function buildSeedGrillMessage(tmpl: string, seed: string, tool: string):
  * mechanism guarantees an interview HAPPENED; question quality is the
  * model's job (shaped by buildSeedGrillMessage).
  */
-export function draftProposalBlock(userReplies: number, blockedAttempts = 0): string | null {
-  if (userReplies > 0) return null;
-  const base = "INTERVIEW FIRST — you have not received a single user reply since drafting started. Ask the user ONE sharp question about their objective (seed-specific, with a recommended default; challenge non-answers by offering concrete options), wait for the answer, and only then call the propose tool again. The Confirm dialog stays closed until the user has actually been heard.";
-  // v0.15.1 escape hatch: typed chat replies AND answered ask_user_question
-  // dialogs both count. If we have blocked 3+ proposals, the replies are
-  // arriving through a path this plugin cannot see — hand the user a manual
-  // unlock instead of manufacturing yet another interview round.
-  if (blockedAttempts >= 3) {
-    return base + " NOTE: proposals have been blocked repeatedly despite interviewing — the reply counter may not see your channel. Tell the user plainly: 'type any chat message (e.g. \"go on\") to unlock the Confirm dialog', wait for it, then propose again. Do NOT ask another interview question first.";
-  }
-  return base;
+export function draftProposalBlock(
+ userReplies: number,
+ blockedAttempts = 0,
+): string | null {
+ if (userReplies > 0) return null;
+ const base =
+  "INTERVIEW FIRST — you have not received a single user reply since drafting started. Ask the user ONE sharp question about their objective (seed-specific, with a recommended default; challenge non-answers by offering concrete options), wait for the answer, and only then call the propose tool again. The Confirm dialog stays closed until the user has actually been heard.";
+ // v0.15.1 escape hatch: typed chat replies AND answered ask_user_question
+ // dialogs both count. If we have blocked 3+ proposals, the replies are
+ // arriving through a path this plugin cannot see — hand the user a manual
+ // unlock instead of manufacturing yet another interview round.
+ if (blockedAttempts >= 3) {
+  return (
+   base +
+   " NOTE: proposals have been blocked repeatedly despite interviewing — the reply counter may not see your channel. Tell the user plainly: 'type any chat message (e.g. \"go on\") to unlock the Confirm dialog', wait for it, then propose again. Do NOT ask another interview question first."
+  );
+ }
+ return base;
 }
 
 /**
@@ -755,11 +857,16 @@ export function draftProposalBlock(userReplies: number, blockedAttempts = 0): st
  * drafting — dialog answers arrive as tool results, not chat messages.
  * Answered = not cancelled (Esc) with at least one answer recorded.
  */
-export function askUserQuestionAnswered(toolName: string, details: unknown): boolean {
-  if (toolName !== "ask_user_question") return false;
-  if (!details || typeof details !== "object") return false;
-  const d = details as { answers?: unknown; cancelled?: unknown };
-  return d.cancelled === false && Array.isArray(d.answers) && d.answers.length > 0;
+export function askUserQuestionAnswered(
+ toolName: string,
+ details: unknown,
+): boolean {
+ if (toolName !== "ask_user_question") return false;
+ if (!details || typeof details !== "object") return false;
+ const d = details as { answers?: unknown; cancelled?: unknown };
+ return (
+  d.cancelled === false && Array.isArray(d.answers) && d.answers.length > 0
+ );
 }
 
 /**
@@ -768,198 +875,256 @@ export function askUserQuestionAnswered(toolName: string, details: unknown): boo
  * null when n is out of range.
  */
 export function takeAt<T>(items: T[], n: number): [T, T[]] | null {
-  if (!Number.isInteger(n) || n < 1 || n > items.length) return null;
-  const taken = items[n - 1]!;
-  return [taken, items.filter((_, i) => i !== n - 1)];
+ if (!Number.isInteger(n) || n < 1 || n > items.length) return null;
+ const taken = items[n - 1]!;
+ return [taken, items.filter((_, i) => i !== n - 1)];
 }
 
 export interface MainModelRecovery {
-  /** The model selected when this recovery episode was first observed. */
-  primary: string;
-  /** Bounded raw provider diagnostic retained for ledger/archive forensics. */
-  providerErrorDiagnostic?: string;
-  /** Stable identity for one main-model provider recovery episode. */
-  recoveryEpisodeKey?: string;
-  /** Durable per-episode notice fence for recovery notifications. */
-  recoveryNoticeKeys?: string[];
-  /** The model currently selected after one or more failovers. */
-  active?: string;
-  /** Candidates already tried in this recovery cycle. */
-  attempted: string[];
-  /** Next safe probe time; persisted so reloads do not forget the wait. */
-  retryAt?: string;
-  /** Next preferred-primary health probe while a fallback is serving. */
-  primaryProbeAt?: string;
-  /** A preferred-primary switch was accepted and awaits one supervised turn. */
-  primaryProbeInFlight?: boolean;
-  /** Number of completed recovery waits; drives the bounded exponential cadence. */
-  attempts: number;
-  /** Human-readable provider failure excerpt. */
-  reason: string;
-  /** First failure in this automatic recovery window. */
-  firstFailureAt?: string;
-  /** Automatic probes stop at this durable deadline; manual resume starts a new window. */
-  autoRetryUntil?: string;
-  /** The bounded automatic horizon requires explicit resume once exhausted. */
-  manualResumeRequired?: boolean;
-  /** Legacy provider hint retained only when reading old state. */
-  resetAt?: string;
-  /** Legacy provider family retained only when reading old state. */
-  quotaSignal?: QuotaSignal;
-  /** Legacy retry metadata; canonical scheduling uses retryAt/attempts. */
-  retryAfterSec?: number;
-  retryFromUpstream?: boolean;
-  /** Storm failover can resume the selected backup before probing primary. */
-  resumeCurrent?: boolean;
-  /** Candidate currently crossing the async setModel boundary. A short-lived
-   * parked deadline keeps a crash during switching recoverable on reload. */
-  pendingModelSwitch?: string;
-  /** Refs rejected while walking the ordered chain, retained for status and
-   * reload diagnostics rather than silently disappearing. */
-  skipped?: Array<{ ref: string; reason: "forbidden" | "unregistered" }>;
-  /** Whether the suspended supervisor is a goal/list item or a loop. */
-  kind: "goal" | "loop";
+ /** The model selected when this recovery episode was first observed. */
+ primary: string;
+ /** Bounded raw provider diagnostic retained for ledger/archive forensics. */
+ providerErrorDiagnostic?: string;
+ /** Stable identity for one main-model provider recovery episode. */
+ recoveryEpisodeKey?: string;
+ /** Durable per-episode notice fence for recovery notifications. */
+ recoveryNoticeKeys?: string[];
+ /** The model currently selected after one or more failovers. */
+ active?: string;
+ /** Candidates already tried in this recovery cycle. */
+ attempted: string[];
+ /** Next safe probe time; persisted so reloads do not forget the wait. */
+ retryAt?: string;
+ /** Next preferred-primary health probe while a fallback is serving. */
+ primaryProbeAt?: string;
+ /** A preferred-primary switch was accepted and awaits one supervised turn. */
+ primaryProbeInFlight?: boolean;
+ /** Number of completed recovery waits; drives the bounded exponential cadence. */
+ attempts: number;
+ /** Human-readable provider failure excerpt. */
+ reason: string;
+ /** First failure in this automatic recovery window. */
+ firstFailureAt?: string;
+ /** Automatic probes stop at this durable deadline; manual resume starts a new window. */
+ autoRetryUntil?: string;
+ /** The bounded automatic horizon requires explicit resume once exhausted. */
+ manualResumeRequired?: boolean;
+ /** Legacy provider hint retained only when reading old state. */
+ resetAt?: string;
+ /** Legacy provider family retained only when reading old state. */
+ quotaSignal?: QuotaSignal;
+ /** Legacy retry metadata; canonical scheduling uses retryAt/attempts. */
+ retryAfterSec?: number;
+ retryFromUpstream?: boolean;
+ /** Storm failover can resume the selected backup before probing primary. */
+ resumeCurrent?: boolean;
+ /** Candidate currently crossing the async setModel boundary. A short-lived
+  * parked deadline keeps a crash during switching recoverable on reload. */
+ pendingModelSwitch?: string;
+ /** Refs rejected while walking the ordered chain, retained for status and
+  * reload diagnostics rather than silently disappearing. */
+ skipped?: Array<{ ref: string; reason: "forbidden" | "unregistered" }>;
+ /** Whether the suspended supervisor is a goal/list item or a loop. */
+ kind: "goal" | "loop";
 }
 
 /** Compact, truthful status shared by /goal status and /list show. */
-export function formatMainModelRecoveryStatus(recovery: MainModelRecovery | undefined, configuredBackups: string[] = []): string[] {
-  if (!recovery) return [];
-  const safeBackups = configuredBackups.filter((ref) => typeof ref === "string" && ref.trim()).slice(0, MAX_MAIN_MODEL_FALLBACKS);
-  const chain = [recovery.primary, ...safeBackups];
-  const current = recovery.active ?? recovery.primary;
-  const currentIndex = chain.findIndex((ref) => ref.toLowerCase() === current.toLowerCase());
-  const attempted = recovery.attempted.length ? recovery.attempted.join(", ") : "none";
-  const skipped = recovery.skipped?.length
-    ? recovery.skipped.map((entry) => `${entry.ref} (${entry.reason})`).join(", ")
-    : "none";
-  const lines = [
-    `Main-model recovery: ${currentIndex >= 0 ? `${currentIndex === 0 ? "primary" : `backup ${currentIndex}/${safeBackups.length}`} selected` : "active model selected"}`,
-    `  Order: ${chain.join(" → ")}`,
-    `  Current: ${current}`,
-    ...(recovery.pendingModelSwitch ? [`  Pending switch: ${recovery.pendingModelSwitch}`] : []),
-    `  Attempted: ${attempted}`,
-    `  Skipped: ${skipped}`,
-  ];
-  if (recovery.retryAt) lines.push(`  Retry at: ${recovery.retryAt}`);
-  if (recovery.primaryProbeAt) lines.push(`  Preferred-primary probe at: ${recovery.primaryProbeAt}`);
-  if (recovery.primaryProbeInFlight) lines.push("  Preferred-primary probe: supervised turn pending");
-  if (recovery.manualResumeRequired) lines.push("  Automatic probes: stopped; explicit resume required");
-  return lines;
+export function formatMainModelRecoveryStatus(
+ recovery: MainModelRecovery | undefined,
+ configuredBackups: string[] = [],
+): string[] {
+ if (!recovery) return [];
+ const safeBackups = configuredBackups
+  .filter((ref) => typeof ref === "string" && ref.trim())
+  .slice(0, MAX_MAIN_MODEL_FALLBACKS);
+ const chain = [recovery.primary, ...safeBackups];
+ const current = recovery.active ?? recovery.primary;
+ const currentIndex = chain.findIndex(
+  (ref) => ref.toLowerCase() === current.toLowerCase(),
+ );
+ const attempted = recovery.attempted.length
+  ? recovery.attempted.join(", ")
+  : "none";
+ const skipped = recovery.skipped?.length
+  ? recovery.skipped.map((entry) => `${entry.ref} (${entry.reason})`).join(", ")
+  : "none";
+ const lines = [
+  `Main-model recovery: ${currentIndex >= 0 ? `${currentIndex === 0 ? "primary" : `backup ${currentIndex}/${safeBackups.length}`} selected` : "active model selected"}`,
+  `  Order: ${chain.join(" → ")}`,
+  `  Current: ${current}`,
+  ...(recovery.pendingModelSwitch
+   ? [`  Pending switch: ${recovery.pendingModelSwitch}`]
+   : []),
+  `  Attempted: ${attempted}`,
+  `  Skipped: ${skipped}`,
+ ];
+ if (recovery.retryAt) lines.push(`  Retry at: ${recovery.retryAt}`);
+ if (recovery.primaryProbeAt)
+  lines.push(`  Preferred-primary probe at: ${recovery.primaryProbeAt}`);
+ if (recovery.primaryProbeInFlight)
+  lines.push("  Preferred-primary probe: supervised turn pending");
+ if (recovery.manualResumeRequired)
+  lines.push("  Automatic probes: stopped; explicit resume required");
+ return lines;
 }
 
 /** Sanitize the durable main-model recovery projection before it reaches
  * timers or model-selection code. A truncated/hand-edited JSONL line must
  * never manufacture an unbounded retry list, invalid Date, or arbitrary
  * object that delayed lifecycle code later trusts. */
-export function sanitizeMainModelRecovery(value: unknown): MainModelRecovery | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const raw = value as Record<string, unknown>;
-  const primary = typeof raw.primary === "string" ? raw.primary.trim().slice(0, 300) : "";
-  // Pre-kind recovery records were goal-owned; default them to goal rather
-  // than silently discarding a saved recovery episode during an upgrade.
-  const kind = raw.kind === "loop" ? "loop" : "goal";
-  if (!primary) return undefined;
-  const refs: string[] = [];
-  const seen = new Set<string>();
-  const addRef = (candidate: unknown): void => {
-    if (typeof candidate !== "string") return;
-    const ref = candidate.trim().slice(0, 300);
-    const key = ref.toLowerCase();
-    // The configured chain is capped at ten backups, but attempted also
-    // includes the primary and stale/unavailable entries from a prior cycle.
-    // Keep only a bounded projection; this is durable history, not a new
-    // selection source.
-    if (!ref || seen.has(key) || refs.length >= MAX_MAIN_MODEL_FALLBACKS + 1) return;
-    seen.add(key);
-    refs.push(ref);
-  };
-  addRef(primary);
-  if (Array.isArray(raw.attempted)) for (const candidate of raw.attempted) addRef(candidate);
-  const date = (candidate: unknown): string | undefined => {
-    if (typeof candidate !== "string" || Number.isNaN(Date.parse(candidate))) return undefined;
-    return candidate;
-  };
-  const bounded = (candidate: unknown, max: number): string | undefined =>
-    typeof candidate === "string" && candidate.trim() ? candidate.slice(0, max) : undefined;
-  const attempts = typeof raw.attempts === "number" && Number.isSafeInteger(raw.attempts) && raw.attempts >= 0
-    ? raw.attempts
-    : 0;
-  return {
-    primary,
-    ...(typeof raw.active === "string" && raw.active.trim() ? { active: raw.active.trim().slice(0, 300) } : {}),
-    attempted: refs,
-    attempts,
-    reason: bounded(raw.reason, 600) ?? "main model recovery",
-    kind,
-    ...(bounded(raw.providerErrorDiagnostic, 2_000) ? { providerErrorDiagnostic: bounded(raw.providerErrorDiagnostic, 2_000) } : {}),
-    ...(bounded(raw.recoveryEpisodeKey, 300) ? { recoveryEpisodeKey: bounded(raw.recoveryEpisodeKey, 300) } : {}),
-    ...(Array.isArray(raw.recoveryNoticeKeys) ? { recoveryNoticeKeys: raw.recoveryNoticeKeys.filter((key): key is string => typeof key === "string").slice(-16).map((key) => key.slice(0, 300)) } : {}),
-    ...(date(raw.retryAt) ? { retryAt: date(raw.retryAt) } : {}),
-    ...(date(raw.primaryProbeAt) ? { primaryProbeAt: date(raw.primaryProbeAt) } : {}),
-    ...(raw.primaryProbeInFlight === true ? { primaryProbeInFlight: true } : {}),
-    ...(date(raw.firstFailureAt) ? { firstFailureAt: date(raw.firstFailureAt) } : {}),
-    ...(date(raw.autoRetryUntil) ? { autoRetryUntil: date(raw.autoRetryUntil) } : {}),
-    ...(raw.manualResumeRequired === true ? { manualResumeRequired: true } : {}),
-    ...(raw.resumeCurrent === true ? { resumeCurrent: true } : {}),
-    ...(typeof raw.pendingModelSwitch === "string" && raw.pendingModelSwitch.trim() ? { pendingModelSwitch: raw.pendingModelSwitch.trim().slice(0, 300) } : {}),
-    ...(Array.isArray(raw.skipped) ? {
+export function sanitizeMainModelRecovery(
+ value: unknown,
+): MainModelRecovery | undefined {
+ if (!value || typeof value !== "object") return undefined;
+ const raw = value as Record<string, unknown>;
+ const primary =
+  typeof raw.primary === "string" ? raw.primary.trim().slice(0, 300) : "";
+ // Pre-kind recovery records were goal-owned; default them to goal rather
+ // than silently discarding a saved recovery episode during an upgrade.
+ const kind = raw.kind === "loop" ? "loop" : "goal";
+ if (!primary) return undefined;
+ const refs: string[] = [];
+ const seen = new Set<string>();
+ const addRef = (candidate: unknown): void => {
+  if (typeof candidate !== "string") return;
+  const ref = candidate.trim().slice(0, 300);
+  const key = ref.toLowerCase();
+  // The configured chain is capped at ten backups, but attempted also
+  // includes the primary and stale/unavailable entries from a prior cycle.
+  // Keep only a bounded projection; this is durable history, not a new
+  // selection source.
+  if (!ref || seen.has(key) || refs.length >= MAX_MAIN_MODEL_FALLBACKS + 1)
+   return;
+  seen.add(key);
+  refs.push(ref);
+ };
+ addRef(primary);
+ if (Array.isArray(raw.attempted))
+  for (const candidate of raw.attempted) addRef(candidate);
+ const date = (candidate: unknown): string | undefined => {
+  if (typeof candidate !== "string" || Number.isNaN(Date.parse(candidate)))
+   return undefined;
+  return candidate;
+ };
+ const bounded = (candidate: unknown, max: number): string | undefined =>
+  typeof candidate === "string" && candidate.trim()
+   ? candidate.slice(0, max)
+   : undefined;
+ const attempts =
+  typeof raw.attempts === "number" &&
+  Number.isSafeInteger(raw.attempts) &&
+  raw.attempts >= 0
+   ? raw.attempts
+   : 0;
+ return {
+  primary,
+  ...(typeof raw.active === "string" && raw.active.trim()
+   ? { active: raw.active.trim().slice(0, 300) }
+   : {}),
+  attempted: refs,
+  attempts,
+  reason: bounded(raw.reason, 600) ?? "main model recovery",
+  kind,
+  ...(bounded(raw.providerErrorDiagnostic, 2_000)
+   ? { providerErrorDiagnostic: bounded(raw.providerErrorDiagnostic, 2_000) }
+   : {}),
+  ...(bounded(raw.recoveryEpisodeKey, 300)
+   ? { recoveryEpisodeKey: bounded(raw.recoveryEpisodeKey, 300) }
+   : {}),
+  ...(Array.isArray(raw.recoveryNoticeKeys)
+   ? {
+      recoveryNoticeKeys: raw.recoveryNoticeKeys
+       .filter((key): key is string => typeof key === "string")
+       .slice(-16)
+       .map((key) => key.slice(0, 300)),
+     }
+   : {}),
+  ...(date(raw.retryAt) ? { retryAt: date(raw.retryAt) } : {}),
+  ...(date(raw.primaryProbeAt)
+   ? { primaryProbeAt: date(raw.primaryProbeAt) }
+   : {}),
+  ...(raw.primaryProbeInFlight === true ? { primaryProbeInFlight: true } : {}),
+  ...(date(raw.firstFailureAt)
+   ? { firstFailureAt: date(raw.firstFailureAt) }
+   : {}),
+  ...(date(raw.autoRetryUntil)
+   ? { autoRetryUntil: date(raw.autoRetryUntil) }
+   : {}),
+  ...(raw.manualResumeRequired === true ? { manualResumeRequired: true } : {}),
+  ...(raw.resumeCurrent === true ? { resumeCurrent: true } : {}),
+  ...(typeof raw.pendingModelSwitch === "string" &&
+  raw.pendingModelSwitch.trim()
+   ? { pendingModelSwitch: raw.pendingModelSwitch.trim().slice(0, 300) }
+   : {}),
+  ...(Array.isArray(raw.skipped)
+   ? {
       skipped: raw.skipped
-        .filter((entry): entry is { ref: string; reason: "forbidden" | "unregistered" } =>
-          !!entry && typeof entry === "object"
-          && typeof (entry as Record<string, unknown>).ref === "string"
-          && ((entry as Record<string, unknown>).reason === "forbidden" || (entry as Record<string, unknown>).reason === "unregistered"))
-        .slice(-16)
-        .map((entry) => ({ ref: entry.ref.trim().slice(0, 300), reason: entry.reason }))
-        .filter((entry) => entry.ref.length > 0),
-    } : {}),
-  };
+       .filter(
+        (
+         entry,
+        ): entry is { ref: string; reason: "forbidden" | "unregistered" } =>
+         !!entry &&
+         typeof entry === "object" &&
+         typeof (entry as Record<string, unknown>).ref === "string" &&
+         ((entry as Record<string, unknown>).reason === "forbidden" ||
+          (entry as Record<string, unknown>).reason === "unregistered"),
+       )
+       .slice(-16)
+       .map((entry) => ({
+        ref: entry.ref.trim().slice(0, 300),
+        reason: entry.reason,
+       }))
+       .filter((entry) => entry.ref.length > 0),
+     }
+   : {}),
+ };
 }
 
 export interface State {
-  goal: Goal | null;
-  /** Loop 2: list of pending goal items. Activated one at a time. */
-  list?: ListItem[];
-  /** Loop 3: metric-driven forever loop. */
-  loop?: import("./goal-loop-forever.js").LoopState;
-  /** Main-session provider recovery; independent of detached auditor state. */
-  mainModelRecovery?: MainModelRecovery;
-  /** v0.34.57: last provider/model ref the main session was observed on.
-   * Persisted so the turn-boundary check can detect drift across sessions
-   * (a fresh pi launch with a changed default model fires no model_select). */
-  lastModelRef?: string;
-  /** v0.34.97: epoch (ms) of the most recent session_compact event. The
-   * status line paints a ⏳ compacting… chip while this is within the last
-   * 3 minutes (COMPACTION_GRACE_MS). Persisted so the chip survives a
-   * reload — without it, the chip vanishes on reload and the user thinks
-   * the compaction didn't happen (Screenshot_20260808_003007/003024). */
-  lastCompactionAt?: number;
-  /** v0.35.15: `/glla pause` epoch (ms). Presence = the supervisor's
-   * automatic machinery (heartbeat re-arms, recovery probes, auto-resume,
-   * continuation dispatch, proactive auditor quiet notifies) is FROZEN by
-   * explicit user request. The active goal/list item/loop and any detached
-   * worker keep running untouched; `/glla resume` clears it. Persisted so
-   * the pause survives session restarts — a restart must not silently
-   * re-arm machinery the user explicitly stopped. */
-  supervisorPausedAt?: number;
-  /** v0.35.23 (note.md Next #2): set automatically by session_start when a
-   * cold load restores pending durable state WITHOUT consent (no explicit
-   * Auto-resume setting, no handoff/rebind/recovery). Same freeze semantics
-   * as supervisorPausedAt — every dispatch point that checks
-   * supervisorPaused() also holds for this — but DISTINCT from it: a manual
-   * `/glla pause` is user intent and only `/glla resume` clears it, while
-   * the load hold is released by ANY explicit work command (/goal resume,
-   * /list resume, /list next, /loop resume|start, starting a new goal).
-   * Persisted so the hold survives restarts until the user decides. */
-  loadHoldAt?: number;
-  /** v0.35.30: durable record of the most recent terminal outcome (an
-   * archived goal). The widget renders it while no goal/list/loop occupies
-   * the slot, so a finished audit stays visible after the agent's turn has
-   * ended — previously the archive nulled the slot, the widget went blank,
-   * and the only trace of the verdict was one transient toast (field:
-   * 2026-08-22 "goal gets closed before final audit, so auditor never
-   * approves" — the verdict HAD approved; nothing on screen said so).
-   * Overwritten by every slot close; cleared by /glla wipe. */
-  lastOutcome?: { at: string; ok: boolean; title: string; recap?: string };
+ goal: Goal | null;
+ /** Loop 2: list of pending goal items. Activated one at a time. */
+ list?: ListItem[];
+ /** Loop 3: metric-driven forever loop. */
+ loop?: import("./goal-loop-forever.js").LoopState;
+ /** Main-session provider recovery; independent of detached auditor state. */
+ mainModelRecovery?: MainModelRecovery;
+ /** v0.34.57: last provider/model ref the main session was observed on.
+  * Persisted so the turn-boundary check can detect drift across sessions
+  * (a fresh pi launch with a changed default model fires no model_select). */
+ lastModelRef?: string;
+ /** v0.34.97: epoch (ms) of the most recent session_compact event. The
+  * status line paints a ⏳ compacting… chip while this is within the last
+  * 3 minutes (COMPACTION_GRACE_MS). Persisted so the chip survives a
+  * reload — without it, the chip vanishes on reload and the user thinks
+  * the compaction didn't happen (Screenshot_20260808_003007/003024). */
+ lastCompactionAt?: number;
+ /** v0.35.15: `/glla pause` epoch (ms). Presence = the supervisor's
+  * automatic machinery (heartbeat re-arms, recovery probes, auto-resume,
+  * continuation dispatch, proactive auditor quiet notifies) is FROZEN by
+  * explicit user request. The active goal/list item/loop and any detached
+  * worker keep running untouched; `/glla resume` clears it. Persisted so
+  * the pause survives session restarts — a restart must not silently
+  * re-arm machinery the user explicitly stopped. */
+ supervisorPausedAt?: number;
+ /** v0.35.23 (note.md Next #2): set automatically by session_start when a
+  * cold load restores pending durable state WITHOUT consent (no explicit
+  * Auto-resume setting, no handoff/rebind/recovery). Same freeze semantics
+  * as supervisorPausedAt — every dispatch point that checks
+  * supervisorPaused() also holds for this — but DISTINCT from it: a manual
+  * `/glla pause` is user intent and only `/glla resume` clears it, while
+  * the load hold is released by ANY explicit work command (/goal resume,
+  * /list resume, /list next, /loop resume|start, starting a new goal).
+  * Persisted so the hold survives restarts until the user decides. */
+ loadHoldAt?: number;
+ /** v0.35.30: durable record of the most recent terminal outcome (an
+  * archived goal). The widget renders it while no goal/list/loop occupies
+  * the slot, so a finished audit stays visible after the agent's turn has
+  * ended — previously the archive nulled the slot, the widget went blank,
+  * and the only trace of the verdict was one transient toast (field:
+  * 2026-08-22 "goal gets closed before final audit, so auditor never
+  * approves" — the verdict HAD approved; nothing on screen said so).
+  * Overwritten by every slot close; cleared by /glla wipe. */
+ lastOutcome?: { at: string; ok: boolean; title: string; recap?: string };
 }
 
 /** v0.24.2: count TRAILING consecutive disapprovals (the disapproval-cap
@@ -973,14 +1138,15 @@ export interface State {
  *  hegemon-style infra errors would reset the cap and re-open infinite
  *  re-continuation). */
 export function countTrailingDisapprovals(history: AuditVerdict[]): number {
-  let n = 0;
-  for (let i = history.length - 1; i >= 0; i--) {
-    const v = history[i]!;
-    if (v.disapproved) n++;
-    else if (v.error && !v.approved) continue; // infra: not a verdict
-    else break;
-  }
-  return n;
+ let n = 0;
+ for (let i = history.length - 1; i >= 0; i--) {
+  const v = history[i]!;
+  if (v.disapproved) n++;
+  else if (v.error && !v.approved)
+   continue; // infra: not a verdict
+  else break;
+ }
+ return n;
 }
 
 /** Default per-goal token budget (v0.9.7): a runaway threshold, not a
@@ -989,8 +1155,8 @@ export function countTrailingDisapprovals(history: AuditVerdict[]): number {
 export const DEFAULT_TOKEN_LIMIT = 0; // 0 = opt-in guard, off by default (v0.12.0)
 
 export const DEFAULT_STATE: State = {
-  goal: null,
-  list: [],
+ goal: null,
+ list: [],
 };
 
 // =================================================================
@@ -1004,44 +1170,48 @@ export const DEFAULT_STATE: State = {
 const SAFE_PERSISTED_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 export function isSafePersistedId(value: unknown): value is string {
-  return typeof value === "string" && SAFE_PERSISTED_ID.test(value);
+ return typeof value === "string" && SAFE_PERSISTED_ID.test(value);
 }
 
 function persistedPathSegment(id: string): string {
-  if (isSafePersistedId(id)) return id;
-  let encoded = "id";
-  try { encoded = encodeURIComponent(id).slice(0, 96); } catch { /* invalid unicode */ }
-  return `invalid-${encoded}`;
+ if (isSafePersistedId(id)) return id;
+ let encoded = "id";
+ try {
+  encoded = encodeURIComponent(id).slice(0, 96);
+ } catch {
+  /* invalid unicode */
+ }
+ return `invalid-${encoded}`;
 }
 
 export function piGlaDir(cwd: string): string {
-  const dir = path.join(cwd, ".pi-glla");
-  // v0.17.0: one-time migration of the pre-rename state dir (.pi-gla →
-  // .pi-glla). Active goals, ledgers, and project settings move with the
-  // name — no relics, no lost state.
-  const legacy = path.join(cwd, ".pi-gla");
-  try {
-    if (!fs.existsSync(dir) && fs.existsSync(legacy)) fs.renameSync(legacy, dir);
-  } catch {
-    // read-only fs or partial state — fall through and use the new dir
-  }
-  return dir;
+ const dir = path.join(cwd, ".pi-glla");
+ // v0.17.0: one-time migration of the pre-rename state dir (.pi-gla →
+ // .pi-glla). Active goals, ledgers, and project settings move with the
+ // name — no relics, no lost state.
+ const legacy = path.join(cwd, ".pi-gla");
+ try {
+  if (!fs.existsSync(dir) && fs.existsSync(legacy)) fs.renameSync(legacy, dir);
+ } catch {
+  // read-only fs or partial state — fall through and use the new dir
+ }
+ return dir;
 }
 
 export function goalMdPath(cwd: string, id: string): string {
-  return path.join(piGlaDir(cwd), "goals", `${persistedPathSegment(id)}.md`);
+ return path.join(piGlaDir(cwd), "goals", `${persistedPathSegment(id)}.md`);
 }
 
 export function archiveDir(cwd: string): string {
-  return path.join(piGlaDir(cwd), "archive");
+ return path.join(piGlaDir(cwd), "archive");
 }
 
 export function archivedGoalPath(cwd: string, id: string): string {
-  return path.join(archiveDir(cwd), `${persistedPathSegment(id)}.md`);
+ return path.join(archiveDir(cwd), `${persistedPathSegment(id)}.md`);
 }
 
 export function ledgerPath(cwd: string): string {
-  return path.join(piGlaDir(cwd), "active.jsonl");
+ return path.join(piGlaDir(cwd), "active.jsonl");
 }
 
 /**
@@ -1063,84 +1233,114 @@ export function ledgerPath(cwd: string): string {
  * sidecar (collision = skip, not overwrite).
  */
 export function queueItemPath(cwd: string, id: string): string {
-  return path.join(piGlaDir(cwd), "goals", `${persistedPathSegment(id)}.queue.json`);
+ return path.join(
+  piGlaDir(cwd),
+  "goals",
+  `${persistedPathSegment(id)}.queue.json`,
+ );
 }
 
 export interface QueueItemWriteResult {
-  path: string;
-  wrote: boolean;
-  /** True when the persistence boundary rejected the write. A collision or
-   * symlink refusal is a normal wrote=false result, not a persistence error. */
-  failed?: boolean;
+ path: string;
+ wrote: boolean;
+ /** True when the persistence boundary rejected the write. A collision or
+  * symlink refusal is a normal wrote=false result, not a persistence error. */
+ failed?: boolean;
 }
 
 /** Write one queue sidecar atomically. The default is idempotent/no-overwrite;
  * repair metadata updates may explicitly request an atomic replacement. All
  * filesystem failures go through the persistence-degradation boundary and
  * clean up the temporary file before returning to the caller. */
-export function writeQueueItemFile(cwd: string, item: ListItem, options: { replace?: boolean } = {}): QueueItemWriteResult {
-  const file = queueItemPath(cwd, item.id);
-  if (!isSafePersistedId(item.id)) {
-    return { path: file, wrote: false, failed: true };
+export function writeQueueItemFile(
+ cwd: string,
+ item: ListItem,
+ options: { replace?: boolean } = {},
+): QueueItemWriteResult {
+ const file = queueItemPath(cwd, item.id);
+ if (!isSafePersistedId(item.id)) {
+  return { path: file, wrote: false, failed: true };
+ }
+ const replace = options.replace === true;
+ if (!replace && fs.existsSync(file)) return { path: file, wrote: false }; // idempotent — never overwrite
+ const result = runPersistStep("writeQueueItemFile", () => {
+  if (replace) {
+   try {
+    if (fs.lstatSync(file).isSymbolicLink())
+     return { path: file, wrote: false, failed: true };
+   } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+   }
   }
-  const replace = options.replace === true;
-  if (!replace && fs.existsSync(file)) return { path: file, wrote: false }; // idempotent — never overwrite
-  const result = runPersistStep("writeQueueItemFile", () => {
-    if (replace) {
-      try {
-        if (fs.lstatSync(file).isSymbolicLink()) return { path: file, wrote: false, failed: true };
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-      }
-    }
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    const tempPath = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`;
-    try {
-      fs.writeFileSync(tempPath, JSON.stringify({ schema: 1, type: "queue-item", ...item }), "utf-8");
-      fs.renameSync(tempPath, file);
-      return { path: file, wrote: true };
-    } finally {
-      try {
-        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-      } catch {
-        // The landing write already succeeded or the original error is more
-        // useful; a later cleanup pass can remove an orphaned temp file.
-      }
-    }
-  });
-  return result ?? { path: file, wrote: false, failed: true };
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tempPath = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`;
+  try {
+   fs.writeFileSync(
+    tempPath,
+    JSON.stringify({ schema: 1, type: "queue-item", ...item }),
+    "utf-8",
+   );
+   fs.renameSync(tempPath, file);
+   return { path: file, wrote: true };
+  } finally {
+   try {
+    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+   } catch {
+    // The landing write already succeeded or the original error is more
+    // useful; a later cleanup pass can remove an orphaned temp file.
+   }
+  }
+ });
+ return result ?? { path: file, wrote: false, failed: true };
 }
 
 export function deleteQueueItemFile(cwd: string, id: string): boolean {
-  if (!isSafePersistedId(id)) return false;
-  const file = queueItemPath(cwd, id);
-  if (!fs.existsSync(file)) return false;
-  try { fs.unlinkSync(file); return true; } catch { return false; }
+ if (!isSafePersistedId(id)) return false;
+ const file = queueItemPath(cwd, id);
+ if (!fs.existsSync(file)) return false;
+ try {
+  fs.unlinkSync(file);
+  return true;
+ } catch {
+  return false;
+ }
 }
 
 /** v0.35.0: clear every queue sidecar, including orphaned files that are
  * absent from the in-memory queue after a stale handle or torn reload. */
 export function queueItemSidecarCount(cwd: string): number {
-  const dir = path.join(piGlaDir(cwd), "goals");
-  try { return fs.readdirSync(dir).filter((name) => name.endsWith(".queue.json")).length; } catch { return 0; }
+ const dir = path.join(piGlaDir(cwd), "goals");
+ try {
+  return fs.readdirSync(dir).filter((name) => name.endsWith(".queue.json"))
+   .length;
+ } catch {
+  return 0;
+ }
 }
 
-export function clearQueueItemFiles(cwd: string): { removed: number; failed: string[] } {
-  const dir = path.join(piGlaDir(cwd), "goals");
-  let names: string[];
-  try { names = fs.readdirSync(dir); } catch { return { removed: 0, failed: [] }; }
-  let removed = 0;
-  const failed: string[] = [];
-  for (const name of names) {
-    if (!name.endsWith(".queue.json")) continue;
-    try {
-      fs.unlinkSync(path.join(dir, name));
-      removed++;
-    } catch {
-      failed.push(name);
-    }
+export function clearQueueItemFiles(cwd: string): {
+ removed: number;
+ failed: string[];
+} {
+ const dir = path.join(piGlaDir(cwd), "goals");
+ let names: string[];
+ try {
+  names = fs.readdirSync(dir);
+ } catch {
+  return { removed: 0, failed: [] };
+ }
+ let removed = 0;
+ const failed: string[] = [];
+ for (const name of names) {
+  if (!name.endsWith(".queue.json")) continue;
+  try {
+   fs.unlinkSync(path.join(dir, name));
+   removed++;
+  } catch {
+   failed.push(name);
   }
-  return { removed, failed };
+ }
+ return { removed, failed };
 }
 
 /**
@@ -1154,53 +1354,83 @@ export function clearQueueItemFiles(cwd: string): { removed: number; failed: str
  * known-active or known-archived goalId are excluded so activated items
  * don't reappear in the queue after archive.
  */
-export function readQueueFromDisk(cwd: string, excludeIds: ReadonlySet<string> = new Set()): ListItem[] {
-  const dir = path.join(piGlaDir(cwd), "goals");
-  let names: string[];
-  try { names = fs.readdirSync(dir); } catch { return []; }
-  // readdir order is filesystem-dependent; parse every sidecar first and
-  // apply compareQueueItems below so durable queue order survives recovery.
-  names.sort();
-  const out: ListItem[] = [];
-  for (const name of names) {
-    if (!name.endsWith(".queue.json")) continue;
-    let raw: string;
-    try { raw = fs.readFileSync(path.join(dir, name), "utf-8"); } catch { continue; }
-    let e: any;
-    try { e = JSON.parse(raw); } catch { continue; }
-    if (!e || e.schema !== 1 || e.type !== "queue-item") continue;
-    if (typeof e.id !== "string" || typeof e.objective !== "string") continue;
-    if (!isSafePersistedId(e.id)) continue;
-    if (excludeIds.has(e.id)) continue;
-    const repairTarget = e.repairTarget && typeof e.repairTarget === "object"
-      && typeof e.repairTarget.id === "string"
-      && typeof e.repairTarget.objective === "string"
-      && typeof e.repairTarget.source === "string"
-      && Array.isArray(e.repairTarget.reasons)
-      && e.repairTarget.reasons.every((reason: unknown) => typeof reason === "string")
-      ? {
-          id: e.repairTarget.id,
-          objective: e.repairTarget.objective,
-          ...(typeof e.repairTarget.verificationContract === "string" ? { verificationContract: e.repairTarget.verificationContract } : {}),
-          reasons: e.repairTarget.reasons,
-          source: e.repairTarget.source,
-        } satisfies ObjectiveRepairTarget
-      : undefined;
-    out.push({
-      id: e.id,
-      objective: e.objective,
-      ...(e.agentRole === "designer" ? { agentRole: "designer" as const } : {}),
-      ...(typeof e.verificationContract === "string" && e.verificationContract ? { verificationContract: e.verificationContract } : {}),
-      ...(typeof e.parallelSafe === "boolean" ? { parallelSafe: e.parallelSafe } : {}),
-      // v0.34.81: subtask binding round-trips from the sidecar the same way
-      // parallelSafe does — must be a string id matching another queue item.
-      ...(typeof e.parentId === "string" && e.parentId ? { parentId: e.parentId } : {}),
-      ...(repairTarget ? { repairTarget } : {}),
-      ...(typeof e.queueOrder === "number" && Number.isFinite(e.queueOrder) && e.queueOrder >= 0 ? { queueOrder: e.queueOrder } : {}),
-      addedAt: typeof e.addedAt === "string" ? e.addedAt : new Date().toISOString(),
-    });
+export function readQueueFromDisk(
+ cwd: string,
+ excludeIds: ReadonlySet<string> = new Set(),
+): ListItem[] {
+ const dir = path.join(piGlaDir(cwd), "goals");
+ let names: string[];
+ try {
+  names = fs.readdirSync(dir);
+ } catch {
+  return [];
+ }
+ // readdir order is filesystem-dependent; parse every sidecar first and
+ // apply compareQueueItems below so durable queue order survives recovery.
+ names.sort();
+ const out: ListItem[] = [];
+ for (const name of names) {
+  if (!name.endsWith(".queue.json")) continue;
+  let raw: string;
+  try {
+   raw = fs.readFileSync(path.join(dir, name), "utf-8");
+  } catch {
+   continue;
   }
-  return out.sort(compareQueueItems);
+  let e: any;
+  try {
+   e = JSON.parse(raw);
+  } catch {
+   continue;
+  }
+  if (!e || e.schema !== 1 || e.type !== "queue-item") continue;
+  if (typeof e.id !== "string" || typeof e.objective !== "string") continue;
+  if (!isSafePersistedId(e.id)) continue;
+  if (excludeIds.has(e.id)) continue;
+  const repairTarget =
+   e.repairTarget &&
+   typeof e.repairTarget === "object" &&
+   typeof e.repairTarget.id === "string" &&
+   typeof e.repairTarget.objective === "string" &&
+   typeof e.repairTarget.source === "string" &&
+   Array.isArray(e.repairTarget.reasons) &&
+   e.repairTarget.reasons.every((reason: unknown) => typeof reason === "string")
+    ? ({
+       id: e.repairTarget.id,
+       objective: e.repairTarget.objective,
+       ...(typeof e.repairTarget.verificationContract === "string"
+        ? { verificationContract: e.repairTarget.verificationContract }
+        : {}),
+       reasons: e.repairTarget.reasons,
+       source: e.repairTarget.source,
+      } satisfies ObjectiveRepairTarget)
+    : undefined;
+  out.push({
+   id: e.id,
+   objective: e.objective,
+   ...(e.agentRole === "designer" ? { agentRole: "designer" as const } : {}),
+   ...(typeof e.verificationContract === "string" && e.verificationContract
+    ? { verificationContract: e.verificationContract }
+    : {}),
+   ...(typeof e.parallelSafe === "boolean"
+    ? { parallelSafe: e.parallelSafe }
+    : {}),
+   // v0.34.81: subtask binding round-trips from the sidecar the same way
+   // parallelSafe does — must be a string id matching another queue item.
+   ...(typeof e.parentId === "string" && e.parentId
+    ? { parentId: e.parentId }
+    : {}),
+   ...(repairTarget ? { repairTarget } : {}),
+   ...(typeof e.queueOrder === "number" &&
+   Number.isFinite(e.queueOrder) &&
+   e.queueOrder >= 0
+    ? { queueOrder: e.queueOrder }
+    : {}),
+   addedAt:
+    typeof e.addedAt === "string" ? e.addedAt : new Date().toISOString(),
+  });
+ }
+ return out.sort(compareQueueItems);
 }
 
 // =================================================================
@@ -1208,8 +1438,8 @@ export function readQueueFromDisk(cwd: string, excludeIds: ReadonlySet<string> =
 // =================================================================
 
 export function ensureDirs(cwd: string): void {
-  fs.mkdirSync(path.join(piGlaDir(cwd), "goals"), { recursive: true });
-  fs.mkdirSync(archiveDir(cwd), { recursive: true });
+ fs.mkdirSync(path.join(piGlaDir(cwd), "goals"), { recursive: true });
+ fs.mkdirSync(archiveDir(cwd), { recursive: true });
 }
 
 // =================================================================
@@ -1225,94 +1455,127 @@ export function ensureDirs(cwd: string): void {
 // cannot otherwise provide).
 
 export interface PersistenceFailure {
-  what: string;
-  error: string;
-  at: string;
+ what: string;
+ error: string;
+ at: string;
 }
 
 let persistenceDegraded = false;
 let lastFailure: PersistenceFailure | null = null;
 
 export function isPersistenceDegraded(): boolean {
-  return persistenceDegraded;
+ return persistenceDegraded;
 }
 
 export function lastPersistenceFailure(): PersistenceFailure | null {
-  return lastFailure;
+ return lastFailure;
 }
 
 /** Run one persistence step. On failure: latch the degraded flag, remember
  * the error, return undefined (NEVER throw into an orchestrator handler).
  * On success: clear the flag — a landing write means the disk is back. */
 export function runPersistStep<T>(what: string, fn: () => T): T | undefined {
-  try {
-    const out = fn();
-    if (persistenceDegraded) {
-      persistenceDegraded = false;
-      lastFailure = null;
-    }
-    return out;
-  } catch (err) {
-    persistenceDegraded = true;
-    lastFailure = { what, error: err instanceof Error ? err.message : String(err), at: new Date().toISOString() };
-    return undefined;
+ try {
+  const out = fn();
+  if (persistenceDegraded) {
+   persistenceDegraded = false;
+   lastFailure = null;
   }
+  return out;
+ } catch (err) {
+  persistenceDegraded = true;
+  lastFailure = {
+   what,
+   error: err instanceof Error ? err.message : String(err),
+   at: new Date().toISOString(),
+  };
+  return undefined;
+ }
 }
 
 export function readState(cwd: string): State {
-  const file = ledgerPath(cwd);
-  // v0.28.6 (E1): an unreadable ledger (EACCES, EIO) degrades loudly
-  // instead of throwing out of session_start.
-  const raw = runPersistStep("readState", () => (fs.existsSync(file) ? fs.readFileSync(file, "utf-8") : ""));
-  if (raw === undefined || raw === "") return { ...DEFAULT_STATE };
-  const lines = raw.split("\n").filter(Boolean);
-  if (lines.length === 0) return { ...DEFAULT_STATE };
-  let parsed: Partial<State> = {};
-  for (const line of lines) {
-    try {
-      const evt = JSON.parse(line);
-      if (evt.type === "state") parsed = { ...parsed, ...evt.value };
-    } catch {
-      // skip malformed lines — a truncated trailing line (mid-write kill)
-      // must not lose the rest of the state
-    }
+ const file = ledgerPath(cwd);
+ // v0.28.6 (E1): an unreadable ledger (EACCES, EIO) degrades loudly
+ // instead of throwing out of session_start.
+ const raw = runPersistStep("readState", () =>
+  fs.existsSync(file) ? fs.readFileSync(file, "utf-8") : "",
+ );
+ if (raw === undefined || raw === "") return { ...DEFAULT_STATE };
+ const lines = raw.split("\n").filter(Boolean);
+ if (lines.length === 0) return { ...DEFAULT_STATE };
+ let parsed: Partial<State> = {};
+ for (const line of lines) {
+  try {
+   const evt = JSON.parse(line);
+   if (evt.type === "state") parsed = { ...parsed, ...evt.value };
+  } catch {
+   // skip malformed lines — a truncated trailing line (mid-write kill)
+   // must not lose the rest of the state
   }
-  const goal = parsed.goal && typeof parsed.goal === "object" && isSafePersistedId((parsed.goal as { id?: unknown }).id)
-    ? {
+ }
+ const goal =
+  parsed.goal &&
+  typeof parsed.goal === "object" &&
+  isSafePersistedId((parsed.goal as { id?: unknown }).id)
+   ? {
       ...parsed.goal,
-      ...(parsed.goal.pendingCompletion && typeof parsed.goal.pendingCompletion === "object"
-        ? { pendingCompletion: normalizePendingCompletion(parsed.goal.pendingCompletion) }
-        : {}),
-    }
-    : null;
-  return {
-    goal: goal as State["goal"],
-    list: Array.isArray(parsed.list) ? parsed.list : [],
-    loop: parsed.loop && typeof parsed.loop === "object" ? parsed.loop as State["loop"] : undefined,
-    mainModelRecovery: sanitizeMainModelRecovery(parsed.mainModelRecovery),
-    lastModelRef: typeof parsed.lastModelRef === "string" ? parsed.lastModelRef : undefined,
-    lastCompactionAt: typeof parsed.lastCompactionAt === "number" && Number.isFinite(parsed.lastCompactionAt) ? parsed.lastCompactionAt : undefined,
-    supervisorPausedAt: typeof parsed.supervisorPausedAt === "number" && Number.isFinite(parsed.supervisorPausedAt) && parsed.supervisorPausedAt > 0 ? parsed.supervisorPausedAt : undefined,
-    loadHoldAt: typeof parsed.loadHoldAt === "number" && Number.isFinite(parsed.loadHoldAt) && parsed.loadHoldAt > 0 ? parsed.loadHoldAt : undefined,
-    lastOutcome: sanitizeLastOutcome(parsed.lastOutcome),
-  };
+      ...(parsed.goal.pendingCompletion &&
+      typeof parsed.goal.pendingCompletion === "object"
+       ? {
+          pendingCompletion: normalizePendingCompletion(
+           parsed.goal.pendingCompletion,
+          ),
+         }
+       : {}),
+     }
+   : null;
+ return {
+  goal: goal as State["goal"],
+  list: Array.isArray(parsed.list) ? parsed.list : [],
+  loop:
+   parsed.loop && typeof parsed.loop === "object"
+    ? (parsed.loop as State["loop"])
+    : undefined,
+  mainModelRecovery: sanitizeMainModelRecovery(parsed.mainModelRecovery),
+  lastModelRef:
+   typeof parsed.lastModelRef === "string" ? parsed.lastModelRef : undefined,
+  lastCompactionAt:
+   typeof parsed.lastCompactionAt === "number" &&
+   Number.isFinite(parsed.lastCompactionAt)
+    ? parsed.lastCompactionAt
+    : undefined,
+  supervisorPausedAt:
+   typeof parsed.supervisorPausedAt === "number" &&
+   Number.isFinite(parsed.supervisorPausedAt) &&
+   parsed.supervisorPausedAt > 0
+    ? parsed.supervisorPausedAt
+    : undefined,
+  loadHoldAt:
+   typeof parsed.loadHoldAt === "number" &&
+   Number.isFinite(parsed.loadHoldAt) &&
+   parsed.loadHoldAt > 0
+    ? parsed.loadHoldAt
+    : undefined,
+  lastOutcome: sanitizeLastOutcome(parsed.lastOutcome),
+ };
 }
 
 /** v0.35.34: strict shape validation for the restored last-outcome record —
  * a corrupt/garbage line degrades to absent (the renderer already treats a
  * missing or stale-by-timestamp record as silent). */
 function sanitizeLastOutcome(value: unknown): State["lastOutcome"] {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const v = value as Record<string, unknown>;
-  if (typeof v.at !== "string" || !v.at) return undefined;
-  if (typeof v.ok !== "boolean") return undefined;
-  if (typeof v.title !== "string" || !v.title) return undefined;
-  return {
-    at: v.at,
-    ok: v.ok,
-    title: v.title,
-    ...(typeof v.recap === "string" && v.recap ? { recap: v.recap } : {}),
-  };
+ if (!value || typeof value !== "object" || Array.isArray(value))
+  return undefined;
+ const v = value as Record<string, unknown>;
+ if (typeof v.at !== "string" || !v.at) return undefined;
+ if (typeof v.ok !== "boolean") return undefined;
+ if (typeof v.title !== "string" || !v.title) return undefined;
+ return {
+  at: v.at,
+  ok: v.ok,
+  title: v.title,
+  ...(typeof v.recap === "string" && v.recap ? { recap: v.recap } : {}),
+ };
 }
 
 /** v0.35.23 (note.md Next #2): true while a cold session load is holding
@@ -1320,16 +1583,16 @@ function sanitizeLastOutcome(value: unknown): State["lastOutcome"] {
  * as supervisorPaused — every dispatch gate that consults one consults
  * both — but cleared by explicit work commands, never by timers. */
 export function loadHoldActive(state: State): boolean {
-  return typeof state?.loadHoldAt === "number";
+ return typeof state?.loadHoldAt === "number";
 }
 
 /** Release the load hold in-place; returns true when a hold was actually
  * cleared (callers ledger + persist only on true). Manual `/glla pause`
  * freezes are deliberately NOT touched — only `/glla resume` clears those. */
 export function clearLoadHold(state: State): boolean {
-  if (typeof state?.loadHoldAt !== "number") return false;
-  delete (state as { loadHoldAt?: number }).loadHoldAt;
-  return true;
+ if (typeof state?.loadHoldAt !== "number") return false;
+ delete (state as { loadHoldAt?: number }).loadHoldAt;
+ return true;
 }
 
 /** True while `/glla pause` has frozen the supervisor's automatic side-
@@ -1339,59 +1602,77 @@ export function clearLoadHold(state: State): boolean {
  * cold load with pending durable state) freezes through the same gates —
  * see loadHoldActive/clearLoadHold. */
 export function supervisorPaused(state: State): boolean {
-  return typeof state?.supervisorPausedAt === "number" || typeof state?.loadHoldAt === "number";
+ return (
+  typeof state?.supervisorPausedAt === "number" ||
+  typeof state?.loadHoldAt === "number"
+ );
 }
 
 /** Migrate the old quota-named completion retry fields at the state boundary.
  * Runtime policy only sees the generic names; old records remain readable. */
 function normalizePendingCompletion(value: unknown): PendingCompletion {
-  const raw = value as Record<string, unknown>;
-  const {
-    quotaAttempts: _quotaAttempts,
-    quotaFirstAt: _quotaFirstAt,
-    quotaAutoRetryUntil: _quotaAutoRetryUntil,
-    quotaSignal: _quotaSignal,
-    retryAfterSec: _retryAfterSec,
-    retryFromUpstream: _retryFromUpstream,
-    resetAt: _resetAt,
-    ...canonicalOrUnknown
-  } = raw;
-  const phase = raw.phase === "quota-waiting" ? "retry-waiting" : raw.phase;
-  return {
-    ...canonicalOrUnknown,
-    ...(phase === "running" || phase === "recovery-pending" || phase === "retry-waiting" ? { phase } : {}),
-    ...(typeof raw.retryAttempts === "number"
-      ? { retryAttempts: raw.retryAttempts }
-      : typeof raw.quotaAttempts === "number" ? { retryAttempts: raw.quotaAttempts } : {}),
-    ...(typeof raw.retryFirstAt === "string"
-      ? { retryFirstAt: raw.retryFirstAt }
-      : typeof raw.quotaFirstAt === "string" ? { retryFirstAt: raw.quotaFirstAt } : {}),
-    ...(typeof raw.retryUntil === "string"
-      ? { retryUntil: raw.retryUntil }
-      : typeof raw.quotaAutoRetryUntil === "string" ? { retryUntil: raw.quotaAutoRetryUntil } : {}),
-    quotaAttempts: undefined,
-    quotaFirstAt: undefined,
-    quotaAutoRetryUntil: undefined,
-  } as PendingCompletion;
+ const raw = value as Record<string, unknown>;
+ const {
+  quotaAttempts: _quotaAttempts,
+  quotaFirstAt: _quotaFirstAt,
+  quotaAutoRetryUntil: _quotaAutoRetryUntil,
+  quotaSignal: _quotaSignal,
+  retryAfterSec: _retryAfterSec,
+  retryFromUpstream: _retryFromUpstream,
+  resetAt: _resetAt,
+  ...canonicalOrUnknown
+ } = raw;
+ const phase = raw.phase === "quota-waiting" ? "retry-waiting" : raw.phase;
+ return {
+  ...canonicalOrUnknown,
+  ...(phase === "running" ||
+  phase === "recovery-pending" ||
+  phase === "retry-waiting"
+   ? { phase }
+   : {}),
+  ...(typeof raw.retryAttempts === "number"
+   ? { retryAttempts: raw.retryAttempts }
+   : typeof raw.quotaAttempts === "number"
+     ? { retryAttempts: raw.quotaAttempts }
+     : {}),
+  ...(typeof raw.retryFirstAt === "string"
+   ? { retryFirstAt: raw.retryFirstAt }
+   : typeof raw.quotaFirstAt === "string"
+     ? { retryFirstAt: raw.quotaFirstAt }
+     : {}),
+  ...(typeof raw.retryUntil === "string"
+   ? { retryUntil: raw.retryUntil }
+   : typeof raw.quotaAutoRetryUntil === "string"
+     ? { retryUntil: raw.quotaAutoRetryUntil }
+     : {}),
+  quotaAttempts: undefined,
+  quotaFirstAt: undefined,
+  quotaAutoRetryUntil: undefined,
+ } as PendingCompletion;
 }
 
 /** Claim one display/action notice in a durable recovery episode. The caller
  * must persist the containing record after this returns true. */
-export function claimRecoveryNotice(record: { recoveryNoticeKeys?: string[] }, key: string): boolean {
-  const prior = Array.isArray(record.recoveryNoticeKeys) ? record.recoveryNoticeKeys : [];
-  if (prior.includes(key)) return false;
-  record.recoveryNoticeKeys = [...prior.slice(-15), key];
-  return true;
+export function claimRecoveryNotice(
+ record: { recoveryNoticeKeys?: string[] },
+ key: string,
+): boolean {
+ const prior = Array.isArray(record.recoveryNoticeKeys)
+  ? record.recoveryNoticeKeys
+  : [];
+ if (prior.includes(key)) return false;
+ record.recoveryNoticeKeys = [...prior.slice(-15), key];
+ return true;
 }
 
 export function appendLedger(cwd: string, type: string, value: unknown): void {
-  // v0.28.6 (E1): guarded — a disk failure degrades loudly, never throws
-  // into an orchestrator handler.
-  runPersistStep("appendLedger", () => {
-    ensureDirs(cwd);
-    const line = JSON.stringify({ type, value, at: new Date().toISOString() });
-    fs.appendFileSync(ledgerPath(cwd), line + "\n");
-  });
+ // v0.28.6 (E1): guarded — a disk failure degrades loudly, never throws
+ // into an orchestrator handler.
+ runPersistStep("appendLedger", () => {
+  ensureDirs(cwd);
+  const line = JSON.stringify({ type, value, at: new Date().toISOString() });
+  fs.appendFileSync(ledgerPath(cwd), line + "\n");
+ });
 }
 
 // =================================================================
@@ -1403,23 +1684,28 @@ export function appendLedger(cwd: string, type: string, value: unknown): void {
  * `reason`: one of "manual" | "cycle" | "restore" | "turn-boundary" |
  * "recovery" — how the change reached the session. */
 export interface ModelSwitchRecord {
-  from?: string;
-  to?: string;
-  reason: string;
-  /** ISO timestamp. */
-  at: string;
+ from?: string;
+ to?: string;
+ reason: string;
+ /** ISO timestamp. */
+ at: string;
 }
 
 /** Build the canonical `model_switch` ledger payload (v0.34.57). Pure —
  * the turn-boundary hook (extensions/loops/goal.ts) writes the entry via
  * appendLedger after applying the forbidden-model gate. */
-export function modelSwitch(from: string | undefined, to: string | undefined, reason: string, at: number = Date.now()): ModelSwitchRecord {
-  return {
-    ...(from ? { from } : {}),
-    ...(to ? { to } : {}),
-    reason,
-    at: new Date(at).toISOString(),
-  };
+export function modelSwitch(
+ from: string | undefined,
+ to: string | undefined,
+ reason: string,
+ at: number = Date.now(),
+): ModelSwitchRecord {
+ return {
+  ...(from ? { from } : {}),
+  ...(to ? { to } : {}),
+  reason,
+  at: new Date(at).toISOString(),
+ };
 }
 
 /** v0.34.57: model refs/ids that must never be selected — the policy guard.
@@ -1446,45 +1732,56 @@ export const DEFAULT_HOURLY_RETRY_PROBE = true;
 
 /** v0.34.57: forbidden-model matcher. Empty/unknown refs are never
  * forbidden; an empty forbidden list forbids nothing. */
-export function isForbiddenModel(ref: string | undefined, forbiddenModels: readonly string[] = DEFAULT_FORBIDDEN_MODELS): boolean {
-  if (!ref) return false;
-  const needle = ref.toLowerCase();
-  return forbiddenModels.some((f) => typeof f === "string" && f.trim() !== "" && needle.includes(f.trim().toLowerCase()));
+export function isForbiddenModel(
+ ref: string | undefined,
+ forbiddenModels: readonly string[] = DEFAULT_FORBIDDEN_MODELS,
+): boolean {
+ if (!ref) return false;
+ const needle = ref.toLowerCase();
+ return forbiddenModels.some(
+  (f) =>
+   typeof f === "string" &&
+   f.trim() !== "" &&
+   needle.includes(f.trim().toLowerCase()),
+ );
 }
 
 export function writeGoalMd(cwd: string, goal: Goal): string {
-  const file = goalMdPath(cwd, goal.id);
-  if (!isSafePersistedId(goal.id)) {
-    runPersistStep("writeGoalMd", () => {
-      throw new Error("refused unsafe persisted goal id");
-    });
-    return file;
-  }
+ const file = goalMdPath(cwd, goal.id);
+ if (!isSafePersistedId(goal.id)) {
   runPersistStep("writeGoalMd", () => {
-    ensureDirs(cwd);
-    fs.writeFileSync(file, renderGoalMarkdown(goal));
+   throw new Error("refused unsafe persisted goal id");
   });
-  // Return the intended path even on failure so activePath stays sane —
-  // the degraded flag carries the truth that the write did not land.
   return file;
+ }
+ runPersistStep("writeGoalMd", () => {
+  ensureDirs(cwd);
+  fs.writeFileSync(file, renderGoalMarkdown(goal));
+ });
+ // Return the intended path even on failure so activePath stays sane —
+ // the degraded flag carries the truth that the write did not land.
+ return file;
 }
 
 export function readGoalMd(cwd: string, id: string): string | null {
-  if (!isSafePersistedId(id)) return null;
-  const file = goalMdPath(cwd, id);
-  if (!fs.existsSync(file)) return null;
-  return fs.readFileSync(file, "utf-8");
+ if (!isSafePersistedId(id)) return null;
+ const file = goalMdPath(cwd, id);
+ if (!fs.existsSync(file)) return null;
+ return fs.readFileSync(file, "utf-8");
 }
 
 /** v0.34.68 (bug 1.7 — "list/goal drafting disallows until we restart",
  * Screenshot_20260804_212233): parse the durable Policy marker from a
  * renderGoalMarkdown-formatted active-goal .md. Returns undefined when
  * the file is absent or the marker is missing/unrecognized. */
-export function parseGoalPolicyFromMd(cwd: string, goalId: string): Policy | undefined {
-  const md = readGoalMd(cwd, goalId);
-  if (!md) return undefined;
-  const m = md.match(/\*\*Policy\*\*:\s*(goal|list)/);
-  return m ? (m[1] as Policy) : undefined;
+export function parseGoalPolicyFromMd(
+ cwd: string,
+ goalId: string,
+): Policy | undefined {
+ const md = readGoalMd(cwd, goalId);
+ if (!md) return undefined;
+ const m = md.match(/\*\*Policy\*\*:\s*(goal|list)/);
+ return m ? (m[1] as Policy) : undefined;
 }
 
 /** v0.34.68 (bug 1.7): self-heal a corrupted in-memory state.goal.policy.
@@ -1497,19 +1794,25 @@ export function parseGoalPolicyFromMd(cwd: string, goalId: string): Policy | und
  * object is shared by reference). Returns the healed policy when
  * repaired; undefined when there is nothing to heal or no durable source
  * exists (a heal_failed ledger entry records the unfixable case). */
-export function healCorruptedGoalPolicy(state: State, cwd: string): Policy | undefined {
-  const g = state.goal;
-  if (!g) return undefined;
-  if (g.policy === "goal" || g.policy === "list") return undefined;
-  const healed = parseGoalPolicyFromMd(cwd, g.id);
-  if (!healed) {
-    appendLedger(cwd, "goal_policy_heal_failed", { goalId: g.id, policy: g.policy });
-    return undefined;
-  }
-  const from = g.policy;
-  g.policy = healed;
-  appendLedger(cwd, "goal_policy_healed", { goalId: g.id, from, to: healed });
-  return healed;
+export function healCorruptedGoalPolicy(
+ state: State,
+ cwd: string,
+): Policy | undefined {
+ const g = state.goal;
+ if (!g) return undefined;
+ if (g.policy === "goal" || g.policy === "list") return undefined;
+ const healed = parseGoalPolicyFromMd(cwd, g.id);
+ if (!healed) {
+  appendLedger(cwd, "goal_policy_heal_failed", {
+   goalId: g.id,
+   policy: g.policy,
+  });
+  return undefined;
+ }
+ const from = g.policy;
+ g.policy = healed;
+ appendLedger(cwd, "goal_policy_healed", { goalId: g.id, from, to: healed });
+ return healed;
 }
 
 // =================================================================
@@ -1517,86 +1820,116 @@ export function healCorruptedGoalPolicy(state: State, cwd: string): Policy | und
 // =================================================================
 
 export function renderGoalMarkdown(goal: Goal): string {
-  const lines: string[] = [];
-  lines.push(`# Goal`);
+ const lines: string[] = [];
+ lines.push(`# Goal`);
+ lines.push("");
+ lines.push(`**Status**: ${statusLabel(goal.status)}`);
+ lines.push(`**Policy**: ${goal.policy}`);
+ if (goal.agentRole) lines.push(`**Agent role**: ${goal.agentRole}`);
+ lines.push(`**Auto-continue**: ${goal.autoContinue ? "on" : "off"}`);
+ if (goal.activePath)
+  lines.push(
+   `**File**: \`${path.relative(path.dirname(goal.activePath), goal.activePath) || goal.activePath}\``,
+  );
+ if (goal.archivedPath)
+  lines.push(
+   `**Archive**: \`${path.relative(path.dirname(goal.archivedPath), goal.archivedPath) || goal.archivedPath}\``,
+  );
+ if (goal.stopReason)
+  lines.push(
+   `**Stop reason**: ${sanitizeProviderDisplayText(goal.stopReason)}`,
+  );
+ if (goal.pauseReason)
+  lines.push(
+   `**Pause reason**: ${sanitizeProviderDisplayText(goal.pauseReason)}`,
+  );
+ if (goal.pauseSuggestedAction)
+  lines.push(
+   `**Agent suggests**: ${sanitizeProviderDisplayText(goal.pauseSuggestedAction)}`,
+  );
+ if (goal.providerErrorDiagnostic) {
+  lines.push("## Provider diagnostic (forensics)");
   lines.push("");
-  lines.push(`**Status**: ${statusLabel(goal.status)}`);
-  lines.push(`**Policy**: ${goal.policy}`);
-  if (goal.agentRole) lines.push(`**Agent role**: ${goal.agentRole}`);
-  lines.push(`**Auto-continue**: ${goal.autoContinue ? "on" : "off"}`);
-  if (goal.activePath) lines.push(`**File**: \`${path.relative(path.dirname(goal.activePath), goal.activePath) || goal.activePath}\``);
-  if (goal.archivedPath) lines.push(`**Archive**: \`${path.relative(path.dirname(goal.archivedPath), goal.archivedPath) || goal.archivedPath}\``);
-  if (goal.stopReason) lines.push(`**Stop reason**: ${sanitizeProviderDisplayText(goal.stopReason)}`);
-  if (goal.pauseReason) lines.push(`**Pause reason**: ${sanitizeProviderDisplayText(goal.pauseReason)}`);
-  if (goal.pauseSuggestedAction) lines.push(`**Agent suggests**: ${sanitizeProviderDisplayText(goal.pauseSuggestedAction)}`);
-  if (goal.providerErrorDiagnostic) {
-    lines.push("## Provider diagnostic (forensics)");
-    lines.push("");
-    lines.push("```text");
-    lines.push(goal.providerErrorDiagnostic.replace(/```/g, "'''"));
-    lines.push("```");
-    lines.push("");
-  }
-  if (goal.pendingCompletion) {
-    const phase = goal.pendingCompletion.phase ?? "recovery-pending";
-    lines.push(`**Completion audit**: ${phase}`);
-    if (goal.pendingCompletion.attemptId) lines.push(`**Completion audit attempt**: \`${goal.pendingCompletion.attemptId}\``);
+  lines.push("```text");
+  lines.push(goal.providerErrorDiagnostic.replace(/```/g, "'''"));
+  lines.push("```");
+  lines.push("");
+ }
+ if (goal.pendingCompletion) {
+  const phase = goal.pendingCompletion.phase ?? "recovery-pending";
+  lines.push(`**Completion audit**: ${phase}`);
+  if (goal.pendingCompletion.attemptId)
+   lines.push(
+    `**Completion audit attempt**: \`${goal.pendingCompletion.attemptId}\``,
+   );
+ }
+ lines.push("");
+ lines.push("## Objective");
+ lines.push("");
+ lines.push("> " + goal.objective);
+ lines.push("");
+ if (goal.repairTarget) {
+  lines.push("## Replan target (preserved)");
+  lines.push("");
+  lines.push(`- Source item: \`${goal.repairTarget.id}\``);
+  lines.push(`- Original objective: ${goal.repairTarget.objective}`);
+  if (goal.repairTarget.verificationContract)
+   lines.push(`- Original contract: ${goal.repairTarget.verificationContract}`);
+  lines.push(`- Detected reasons: ${goal.repairTarget.reasons.join(", ")}`);
+  lines.push("");
+ }
+ if (goal.completionSummary) {
+  // v0.34.91: the agent's completion recap lands in the durable record
+  // (active goal .md → archive), so the one-line widget recap has a
+  // full-length home after the goal leaves the surface.
+  lines.push("## Completion summary");
+  lines.push("");
+  lines.push(goal.completionSummary);
+  lines.push("");
+ }
+ if (goal.verificationContract) {
+  lines.push("## Verification contract");
+  lines.push("");
+  lines.push(goal.verificationContract);
+  lines.push("");
+ }
+ if (goal.taskList && goal.taskList.tasks.length > 0) {
+  lines.push("## Tasks");
+  lines.push("");
+  renderTaskTreeMarkdown(goal.taskList.tasks, lines, 0);
+  lines.push("");
+ }
+ if (goal.auditHistory && goal.auditHistory.length > 0) {
+  lines.push("## Audit history");
+  lines.push("");
+  for (const v of goal.auditHistory) {
+   lines.push(`- ${v.at} — ${auditVerdictLabel(v)} — \`${v.model}\``);
   }
   lines.push("");
-  lines.push("## Objective");
-  lines.push("");
-  lines.push("> " + goal.objective);
-  lines.push("");
-  if (goal.repairTarget) {
-    lines.push("## Replan target (preserved)");
-    lines.push("");
-    lines.push(`- Source item: \`${goal.repairTarget.id}\``);
-    lines.push(`- Original objective: ${goal.repairTarget.objective}`);
-    if (goal.repairTarget.verificationContract) lines.push(`- Original contract: ${goal.repairTarget.verificationContract}`);
-    lines.push(`- Detected reasons: ${goal.repairTarget.reasons.join(", ")}`);
-    lines.push("");
-  }
-  if (goal.completionSummary) {
-    // v0.34.91: the agent's completion recap lands in the durable record
-    // (active goal .md → archive), so the one-line widget recap has a
-    // full-length home after the goal leaves the surface.
-    lines.push("## Completion summary");
-    lines.push("");
-    lines.push(goal.completionSummary);
-    lines.push("");
-  }
-  if (goal.verificationContract) {
-    lines.push("## Verification contract");
-    lines.push("");
-    lines.push(goal.verificationContract);
-    lines.push("");
-  }
-  if (goal.taskList && goal.taskList.tasks.length > 0) {
-    lines.push("## Tasks");
-    lines.push("");
-    renderTaskTreeMarkdown(goal.taskList.tasks, lines, 0);
-    lines.push("");
-  }
-  if (goal.auditHistory && goal.auditHistory.length > 0) {
-    lines.push("## Audit history");
-    lines.push("");
-    for (const v of goal.auditHistory) {
-      lines.push(`- ${v.at} — ${auditVerdictLabel(v)} — \`${v.model}\``);
-    }
-    lines.push("");
-  }
-  return lines.join("\n");
+ }
+ return lines.join("\n");
 }
 
-function renderTaskTreeMarkdown(tasks: Task[], out: string[], depth: number): void {
-  for (const t of tasks) {
-    const indent = "  ".repeat(depth);
-    const bullet = t.status === "complete" ? "- [x]" : t.status === "in_progress" ? "- [~]" : "- [ ]";
-    out.push(`${indent}${bullet} ${t.title}${t.agentRole ? ` [${t.agentRole}]` : ""} \`${t.id}\``);
-    if (t.subtasks && t.subtasks.length > 0) {
-      renderTaskTreeMarkdown(t.subtasks, out, depth + 1);
-    }
+function renderTaskTreeMarkdown(
+ tasks: Task[],
+ out: string[],
+ depth: number,
+): void {
+ for (const t of tasks) {
+  const indent = "  ".repeat(depth);
+  const bullet =
+   t.status === "complete"
+    ? "- [x]"
+    : t.status === "in_progress"
+      ? "- [~]"
+      : "- [ ]";
+  out.push(
+   `${indent}${bullet} ${t.title}${t.agentRole ? ` [${t.agentRole}]` : ""} \`${t.id}\``,
+  );
+  if (t.subtasks && t.subtasks.length > 0) {
+   renderTaskTreeMarkdown(t.subtasks, out, depth + 1);
   }
+ }
 }
 
 // =================================================================
@@ -1604,14 +1937,20 @@ function renderTaskTreeMarkdown(tasks: Task[], out: string[], depth: number): vo
 // =================================================================
 
 export function statusLabel(status: Status | null | undefined): string {
-  switch (status) {
-    case "active": return "active";
-    case "auditing": return "auditing";
-    case "complete": return "complete";
-    case "paused": return "paused";
-    case "aborted": return "aborted";
-    default: return "no goal";
-  }
+ switch (status) {
+  case "active":
+   return "active";
+  case "auditing":
+   return "auditing";
+  case "complete":
+   return "complete";
+  case "paused":
+   return "paused";
+  case "aborted":
+   return "aborted";
+  default:
+   return "no goal";
+ }
 }
 
 // =================================================================
@@ -1624,42 +1963,65 @@ export function statusLabel(status: Status | null | undefined): string {
  * objectives, verification contracts, prompts, and audit inputs retain the
  * user's exact text.
  */
-const TERMINAL_ESCAPE_SEQUENCES = /\u001B(?:\][^\u0007]*(?:\u0007|\u001B\\)|\[[0-?]*[ -/]*[@-~])|\u009B[0-?]*[ -/]*[@-~]/g;
-const DISPLAY_CONTROL_CHARS = /[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
+const TERMINAL_ESCAPE_SEQUENCES =
+ /\u001B(?:\][^\u0007]*(?:\u0007|\u001B\\)|\[[0-?]*[ -/]*[@-~])|\u009B[0-?]*[ -/]*[@-~]/g;
+const DISPLAY_CONTROL_CHARS =
+ /[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
 export function sanitizeDisplayText(value: string): string {
-  return value.replace(TERMINAL_ESCAPE_SEQUENCES, "").replace(DISPLAY_CONTROL_CHARS, " ");
+ return value
+  .replace(TERMINAL_ESCAPE_SEQUENCES, "")
+  .replace(DISPLAY_CONTROL_CHARS, " ");
 }
 
 /** Inline display projection used by notifications and one-line status text. */
 export function compactDisplayText(value: string): string {
-  return sanitizeDisplayText(value).replace(/\s+/g, " ").trim();
+ return sanitizeDisplayText(value).replace(/\s+/g, " ").trim();
 }
 
 export function nowIso(): string {
-  return new Date().toISOString();
+ return new Date().toISOString();
 }
 
 /** Stable queue ordering: new sidecars use queueOrder; legacy sidecars fall
  * back to their durable timestamp and id instead of filesystem enumeration. */
-export function compareQueueItems(a: Pick<ListItem, "id" | "addedAt" | "queueOrder">, b: Pick<ListItem, "id" | "addedAt" | "queueOrder">): number {
-  const aOrder = typeof a.queueOrder === "number" && Number.isFinite(a.queueOrder) ? a.queueOrder : undefined;
-  const bOrder = typeof b.queueOrder === "number" && Number.isFinite(b.queueOrder) ? b.queueOrder : undefined;
-  if (aOrder !== undefined && bOrder !== undefined && aOrder !== bOrder) return aOrder - bOrder;
-  const added = a.addedAt.localeCompare(b.addedAt);
-  if (added !== 0) return added;
-  if (aOrder !== undefined && bOrder === undefined) return -1;
-  if (aOrder === undefined && bOrder !== undefined) return 1;
-  return a.id.localeCompare(b.id);
+export function compareQueueItems(
+ a: Pick<ListItem, "id" | "addedAt" | "queueOrder">,
+ b: Pick<ListItem, "id" | "addedAt" | "queueOrder">,
+): number {
+ const aOrder =
+  typeof a.queueOrder === "number" && Number.isFinite(a.queueOrder)
+   ? a.queueOrder
+   : undefined;
+ const bOrder =
+  typeof b.queueOrder === "number" && Number.isFinite(b.queueOrder)
+   ? b.queueOrder
+   : undefined;
+ if (aOrder !== undefined && bOrder !== undefined && aOrder !== bOrder)
+  return aOrder - bOrder;
+ const added = a.addedAt.localeCompare(b.addedAt);
+ if (added !== 0) return added;
+ if (aOrder !== undefined && bOrder === undefined) return -1;
+ if (aOrder === undefined && bOrder !== undefined) return 1;
+ return a.id.localeCompare(b.id);
 }
 
 /** Assign durable positions to newly enqueued items. Existing positions are
  * retained, so a reload/recovery cannot reorder a confirmed batch. */
-export function assignQueueOrder<T extends ListItem>(items: readonly T[], existing: readonly ListItem[] = []): T[] {
-  let next = existing.reduce((max, item) => {
-    const order = typeof item.queueOrder === "number" && Number.isFinite(item.queueOrder) ? item.queueOrder : -1;
-    return Math.max(max, order);
+export function assignQueueOrder<T extends ListItem>(
+ items: readonly T[],
+ existing: readonly ListItem[] = [],
+): T[] {
+ let next =
+  existing.reduce((max, item) => {
+   const order =
+    typeof item.queueOrder === "number" && Number.isFinite(item.queueOrder)
+     ? item.queueOrder
+     : -1;
+   return Math.max(max, order);
   }, -1) + 1;
-  return items.map((item) => item.queueOrder === undefined ? { ...item, queueOrder: next++ } : item);
+ return items.map((item) =>
+  item.queueOrder === undefined ? { ...item, queueOrder: next++ } : item,
+ );
 }
 
 /**
@@ -1671,20 +2033,25 @@ export function assignQueueOrder<T extends ListItem>(items: readonly T[], existi
  * silently overwriting a goal that moved on.
  */
 export interface GoalRevisionToken {
-  goalId: string;
-  revision: number;
+ goalId: string;
+ revision: number;
 }
 
-export function captureGoalRevision(goal: Goal | null | undefined): GoalRevisionToken | null {
-  if (!goal || !goal.id) return null;
-  return { goalId: goal.id, revision: goal.revision ?? 0 };
+export function captureGoalRevision(
+ goal: Goal | null | undefined,
+): GoalRevisionToken | null {
+ if (!goal || !goal.id) return null;
+ return { goalId: goal.id, revision: goal.revision ?? 0 };
 }
 
-export function isGoalRevisionCurrent(captured: GoalRevisionToken | null, current: Goal | null | undefined): boolean {
-  if (!captured) return true; // v0.34.59: pre-revision goals pass through unchanged
-  const cur = current?.revision ?? 0;
-  if (!current || current.id !== captured.goalId) return false;
-  return cur === captured.revision;
+export function isGoalRevisionCurrent(
+ captured: GoalRevisionToken | null,
+ current: Goal | null | undefined,
+): boolean {
+ if (!captured) return true; // v0.34.59: pre-revision goals pass through unchanged
+ const cur = current?.revision ?? 0;
+ if (!current || current.id !== captured.goalId) return false;
+ return cur === captured.revision;
 }
 
 /**
@@ -1694,43 +2061,53 @@ export function isGoalRevisionCurrent(captured: GoalRevisionToken | null, curren
  * surrounding spread propagates the new revision.
  */
 export function bumpGoalRevision(goal: Goal): Goal {
-  return { ...goal, revision: (goal.revision ?? 0) + 1 };
+ return { ...goal, revision: (goal.revision ?? 0) + 1 };
 }
 
 export function newGoalId(): string {
-  const ts = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 14);
-  const rand = Math.random().toString(36).slice(2, 8);
-  return `${ts}-${rand}`;
+ const ts = new Date()
+  .toISOString()
+  .replace(/[-:T.Z]/g, "")
+  .slice(0, 14);
+ const rand = Math.random().toString(36).slice(2, 8);
+ return `${ts}-${rand}`;
 }
 
 // =================================================================
 // Task helpers
 // =================================================================
 
-export function findNextPendingTask(tasks: Task[]): { id: string; title: string; agentRole?: AgentRole } | undefined {
-  const queue = [...tasks];
-  while (queue.length > 0) {
-    const t = queue.shift()!;
-    if (t.status === "pending") return { id: t.id, title: t.title, ...(t.agentRole ? { agentRole: t.agentRole } : {}) };
-    // Push subtasks regardless of parent status; we want BFS to find
-    // the first pending task anywhere in the tree. A parent's status
-    // does not preclude one of its subtasks being pending.
-    if (t.subtasks && t.subtasks.length > 0) queue.push(...t.subtasks);
-  }
-  return undefined;
+export function findNextPendingTask(
+ tasks: Task[],
+): { id: string; title: string; agentRole?: AgentRole } | undefined {
+ const queue = [...tasks];
+ while (queue.length > 0) {
+  const t = queue.shift()!;
+  if (t.status === "pending")
+   return {
+    id: t.id,
+    title: t.title,
+    ...(t.agentRole ? { agentRole: t.agentRole } : {}),
+   };
+  // Push subtasks regardless of parent status; we want BFS to find
+  // the first pending task anywhere in the tree. A parent's status
+  // does not preclude one of its subtasks being pending.
+  if (t.subtasks && t.subtasks.length > 0) queue.push(...t.subtasks);
+ }
+ return undefined;
 }
 
 export function buildTaskSummary(tasks: Task[]): string {
-  let total = 0;
-  let complete = 0;
-  const queue = [...tasks];
-  while (queue.length > 0) {
-    const t = queue.shift()!;
-    total++;
-    if (t.status === "complete") complete++;
-    if (t.subtasks) queue.push(...t.subtasks);
-  }
-  return `${complete}/${total} done`;
+ let total = 0;
+ let complete = 0;
+ const queue = [...tasks];
+ while (queue.length > 0) {
+  const t = queue.shift()!;
+  total++;
+  if (t.status === "complete") complete++;
+  if (t.subtasks) queue.push(...t.subtasks);
+ }
+ return `${complete}/${total} done`;
 }
 
 // =================================================================
@@ -1738,7 +2115,7 @@ export function buildTaskSummary(tasks: Task[]): string {
 // =================================================================
 
 export function cloneGoal(goal: Goal): Goal {
-  return JSON.parse(JSON.stringify(goal));
+ return JSON.parse(JSON.stringify(goal));
 }
 
 /**
@@ -1749,23 +2126,26 @@ export function cloneGoal(goal: Goal): Goal {
  * HOLDS until an explicit /goal resume (or Auto-resume = on in the /glla
  * settings table, for unattended restarts). One mechanical predicate; no heuristics.
  */
-export function shouldAutoResumeOnSessionStart(reason: string | undefined, autoResume: boolean | undefined): boolean {
-  // v0.28.21: the DEFAULT flipped to hold-everything (user directive:
-  // "load it on session load but not auto start it"). Tri-state:
-  //   true      → auto-resume on EVERY session start (unattended rigs;
-  //               /glla settings → Auto-resume = on — this is the ONLY
-  //               auto-resume path).
-  //   false     → never auto-resume; always hold for an explicit resume.
-  //   undefined → DEFAULT: never auto-resume either — whatever the reason
-  //               ("startup"/"new"/"resume"/"reload"/"fork"/none), the
-  //               item is LOADED (visible, state intact) but HELD until an
-  //               explicit /goal resume, /list resume, or /loop.
-  // Mid-session continuation (agent_end chains, heartbeat refires,
-  // post-compaction, list/loop transitions) is not gated here at all — it
-  // auto-continues forever unless a super-stuck brake (stall escalation,
-  // stale-api terminal, pending-latch watchdog) stops it loudly.
-  void reason; // retained for the signature; no reason auto-resumes by default anymore
-  return autoResume === true;
+export function shouldAutoResumeOnSessionStart(
+ reason: string | undefined,
+ autoResume: boolean | undefined,
+): boolean {
+ // v0.28.21: the DEFAULT flipped to hold-everything (user directive:
+ // "load it on session load but not auto start it"). Tri-state:
+ //   true      → auto-resume on EVERY session start (unattended rigs;
+ //               /glla settings → Auto-resume = on — this is the ONLY
+ //               auto-resume path).
+ //   false     → never auto-resume; always hold for an explicit resume.
+ //   undefined → DEFAULT: never auto-resume either — whatever the reason
+ //               ("startup"/"new"/"resume"/"reload"/"fork"/none), the
+ //               item is LOADED (visible, state intact) but HELD until an
+ //               explicit /goal resume, /list resume, or /loop.
+ // Mid-session continuation (agent_end chains, heartbeat refires,
+ // post-compaction, list/loop transitions) is not gated here at all — it
+ // auto-continues forever unless a super-stuck brake (stall escalation,
+ // stale-api terminal, pending-latch watchdog) stops it loudly.
+ void reason; // retained for the signature; no reason auto-resumes by default anymore
+ return autoResume === true;
 }
 
 /**
@@ -1796,25 +2176,28 @@ export const LONG_RUNNING_JUDGMENT_POLICY = `LONG-RUNNING JUDGMENT POLICY:
  *     numbers. Non-bullet prose lines pass through untouched.
  */
 export function normalizeDraftContract(raw: string): string {
-  const lines = raw
-    .trim()
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => !/^(?:done when|verified when|verify|verification)\b[^:]*:\s*$/i.test(l))
-    .map((l) => l.replace(/^(?:done when|verified when)\s*:\s+/i, ""))
-    .filter((l) => l.length > 0);
-  let n = 0;
-  return lines
-    .map((l) => {
-      const m = l.match(/^(?:[-*•]\s+|\d+[.)]\s+)(.+)$/);
-      return m ? `${++n}. ${m[1]}` : l;
-    })
-    .join("\n");
+ const lines = raw
+  .trim()
+  .split("\n")
+  .map((l) => l.trim())
+  .filter(
+   (l) =>
+    !/^(?:done when|verified when|verify|verification)\b[^:]*:\s*$/i.test(l),
+  )
+  .map((l) => l.replace(/^(?:done when|verified when)\s*:\s+/i, ""))
+  .filter((l) => l.length > 0);
+ let n = 0;
+ return lines
+  .map((l) => {
+   const m = l.match(/^(?:[-*•]\s+|\d+[.)]\s+)(.+)$/);
+   return m ? `${++n}. ${m[1]}` : l;
+  })
+  .join("\n");
 }
 
 /** Count the numbered checklist items in a normalized contract. */
 export function draftContractItemCount(normalized: string): number {
-  return normalized.split("\n").filter((l) => /^\d+\.\s/.test(l)).length;
+ return normalized.split("\n").filter((l) => /^\d+\.\s/.test(l)).length;
 }
 
 /**
@@ -1837,7 +2220,8 @@ export function draftContractItemCount(normalized: string): number {
  * from the text — it is a property of the item, not part of the objective or
  * the verification contract.
  */
-export const PARALLEL_MARKER = /[ \t]*\bparallel\b\s*:\s*(yes|true|1|safe|parallel|no|false|0|none|off)\b[.,;]?[ \t]*/i;
+export const PARALLEL_MARKER =
+ /[ \t]*\bparallel\b\s*:\s*(yes|true|1|safe|parallel|no|false|0|none|off)\b[.,;]?[ \t]*/i;
 
 /**
  * v0.34.81 (LIGHT parent/child): the `Subtask of: <parent objective>` marker.
@@ -1854,19 +2238,22 @@ export const PARALLEL_MARKER = /[ \t]*\bparallel\b\s*:\s*(yes|true|1|safe|parall
  */
 export const SUBTASK_MARKER = /^[ \t]*subtask of[ \t]*:[ \t]*(.*)$/i;
 
-export function extractSubtaskParent(raw: string): { objective: string; parentObjective: string | undefined } {
-  const lines = raw.split("\n");
-  const first = lines[0] ?? "";
-  const m = first.match(SUBTASK_MARKER);
-  if (!m) return { objective: raw.trim(), parentObjective: undefined };
-  const rest = m[1] ?? "";
-  // First spaced em/en/hyphen separator — require whitespace around it so a
-  // hyphen inside a parent objective ("Fix A-B") does not split.
-  const sep = rest.match(/^(.+?)[ \t]+[—–-][ \t]+(.*)$/);
-  const parentObjective = ((sep ? sep[1] : rest) ?? "").trim() || undefined;
-  const head = sep ? (sep[2] ?? "") : "";
-  const objective = ([head, ...lines.slice(1)].join("\n")).trim();
-  return { objective, parentObjective };
+export function extractSubtaskParent(raw: string): {
+ objective: string;
+ parentObjective: string | undefined;
+} {
+ const lines = raw.split("\n");
+ const first = lines[0] ?? "";
+ const m = first.match(SUBTASK_MARKER);
+ if (!m) return { objective: raw.trim(), parentObjective: undefined };
+ const rest = m[1] ?? "";
+ // First spaced em/en/hyphen separator — require whitespace around it so a
+ // hyphen inside a parent objective ("Fix A-B") does not split.
+ const sep = rest.match(/^(.+?)[ \t]+[—–-][ \t]+(.*)$/);
+ const parentObjective = ((sep ? sep[1] : rest) ?? "").trim() || undefined;
+ const head = sep ? (sep[2] ?? "") : "";
+ const objective = [head, ...lines.slice(1)].join("\n").trim();
+ return { objective, parentObjective };
 }
 
 /**
@@ -1875,33 +2262,52 @@ export function extractSubtaskParent(raw: string): { objective: string; parentOb
  * role is selected only by a declaration such as `Agent: Designer` or
  * `Role: designer` (the `Designer: yes` shorthand is also accepted).
  */
-export const AGENT_ROLE_MARKER = /[ \t]*(?:\b(?:agent|role)\s*:\s*designer\b|\bdesigner\s*:\s*(?:yes|true|on)\b)[.,;]?[ \t]*/i;
+export const AGENT_ROLE_MARKER =
+ /[ \t]*(?:\b(?:agent|role)\s*:\s*designer\b|\bdesigner\s*:\s*(?:yes|true|on)\b)[.,;]?[ \t]*/i;
 
-export function extractAgentRole(raw: string): { objective: string; agentRole: AgentRole | undefined } {
-  const m = raw.match(AGENT_ROLE_MARKER);
-  if (!m) return { objective: raw.trim(), agentRole: undefined };
-  const objective = (raw.slice(0, m.index ?? 0) + " " + raw.slice((m.index ?? 0) + m[0].length))
-    .replace(/[ \t]{2,}/g, " ")
-    .split("\n").map((line) => line.trimEnd()).join("\n")
-    .trim();
-  return { objective, agentRole: "designer" };
+export function extractAgentRole(raw: string): {
+ objective: string;
+ agentRole: AgentRole | undefined;
+} {
+ const m = raw.match(AGENT_ROLE_MARKER);
+ if (!m) return { objective: raw.trim(), agentRole: undefined };
+ const objective = (
+  raw.slice(0, m.index ?? 0) +
+  " " +
+  raw.slice((m.index ?? 0) + m[0].length)
+ )
+  .replace(/[ \t]{2,}/g, " ")
+  .split("\n")
+  .map((line) => line.trimEnd())
+  .join("\n")
+  .trim();
+ return { objective, agentRole: "designer" };
 }
 
-export function extractParallelFlag(raw: string): { objective: string; parallelSafe: boolean | undefined } {
-  const m = raw.match(PARALLEL_MARKER);
-  if (!m) return { objective: raw.trim(), parallelSafe: undefined };
-  const value = m[1]!.toLowerCase();
-  const parallelSafe = !["no", "false", "0", "none", "off"].includes(value);
-  // Reconstruct the objective around the cut: join with a single space, then
-  // collapse doubles, re-space a comma/semicolon that lost its follower
-  // ("first,then" → "first, then"), and trim each line so a line-final marker
-  // never leaves trailing whitespace.
-  const objective = (raw.slice(0, m.index ?? 0) + " " + raw.slice((m.index ?? 0) + m[0].length))
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/([,;])([A-Za-z])/g, "$1 $2")
-    .split("\n").map((l) => l.trimEnd()).join("\n")
-    .trim();
-  return { objective, parallelSafe };
+export function extractParallelFlag(raw: string): {
+ objective: string;
+ parallelSafe: boolean | undefined;
+} {
+ const m = raw.match(PARALLEL_MARKER);
+ if (!m) return { objective: raw.trim(), parallelSafe: undefined };
+ const value = m[1]!.toLowerCase();
+ const parallelSafe = !["no", "false", "0", "none", "off"].includes(value);
+ // Reconstruct the objective around the cut: join with a single space, then
+ // collapse doubles, re-space a comma/semicolon that lost its follower
+ // ("first,then" → "first, then"), and trim each line so a line-final marker
+ // never leaves trailing whitespace.
+ const objective = (
+  raw.slice(0, m.index ?? 0) +
+  " " +
+  raw.slice((m.index ?? 0) + m[0].length)
+ )
+  .replace(/[ \t]{2,}/g, " ")
+  .replace(/([,;])([A-Za-z])/g, "$1 $2")
+  .split("\n")
+  .map((l) => l.trimEnd())
+  .join("\n")
+  .trim();
+ return { objective, parallelSafe };
 }
 
 /**
@@ -1917,64 +2323,85 @@ export function extractParallelFlag(raw: string): { objective: string; parallelS
  * match; the binding itself (queue-item id lookup) lives in goal.ts where
  * the queue context exists.
  */
-export function parseListItemDeclaration(raw: string): { objective: string; agentRole: AgentRole | undefined; parallelSafe: boolean | undefined; verificationContract: string; parentObjective: string | undefined } {
-  const { objective, parentObjective } = extractSubtaskParent(raw);
-  const { objective: obj1, agentRole } = extractAgentRole(objective);
-  const { objective: obj2, parallelSafe } = extractParallelFlag(obj1);
-  const ext = extractVerificationContract(obj2);
-  return { objective: ext.objective, agentRole, parallelSafe, verificationContract: ext.verificationContract, parentObjective };
+export function parseListItemDeclaration(raw: string): {
+ objective: string;
+ agentRole: AgentRole | undefined;
+ parallelSafe: boolean | undefined;
+ verificationContract: string;
+ parentObjective: string | undefined;
+} {
+ const { objective, parentObjective } = extractSubtaskParent(raw);
+ const { objective: obj1, agentRole } = extractAgentRole(objective);
+ const { objective: obj2, parallelSafe } = extractParallelFlag(obj1);
+ const ext = extractVerificationContract(obj2);
+ return {
+  objective: ext.objective,
+  agentRole,
+  parallelSafe,
+  verificationContract: ext.verificationContract,
+  parentObjective,
+ };
 }
 
-export function extractVerificationContract(raw: string): { objective: string; verificationContract: string; explicitClear: boolean } {
-  // Line-based first: a marker at line start begins the contract block.
-  const lines = raw.split("\n");
-  let mode: "obj" | "verify" = "obj";
-  const objParts: string[] = [];
-  const verifyParts: string[] = [];
-  // v0.34.51: a BARE contract marker ("Done when:" with nothing after it) is
-  // an explicit CLEAR signal — the caller wipes the stored contract instead
-  // of preserving or replacing it. The bare marker line is consumed, never
-  // kept as contract text; later lines after a bare marker still belong to
-  // the contract block.
-  let explicitClear = false;
-  const MARKER_START = /^\s*(?:done when|verified when|verify|verification|done)\b[^:]*:/i;
-  for (const line of lines) {
-    const m = line.match(MARKER_START);
-    if (m) {
-      mode = "verify";
-      if (!line.slice(m[0].length).trim()) {
-        explicitClear = true;
-        continue;
-      }
-    }
-    if (mode === "obj") objParts.push(line);
-    else verifyParts.push(line);
+export function extractVerificationContract(raw: string): {
+ objective: string;
+ verificationContract: string;
+ explicitClear: boolean;
+} {
+ // Line-based first: a marker at line start begins the contract block.
+ const lines = raw.split("\n");
+ let mode: "obj" | "verify" = "obj";
+ const objParts: string[] = [];
+ const verifyParts: string[] = [];
+ // v0.34.51: a BARE contract marker ("Done when:" with nothing after it) is
+ // an explicit CLEAR signal — the caller wipes the stored contract instead
+ // of preserving or replacing it. The bare marker line is consumed, never
+ // kept as contract text; later lines after a bare marker still belong to
+ // the contract block.
+ let explicitClear = false;
+ const MARKER_START =
+  /^\s*(?:done when|verified when|verify|verification|done)\b[^:]*:/i;
+ for (const line of lines) {
+  const m = line.match(MARKER_START);
+  if (m) {
+   mode = "verify";
+   if (!line.slice(m[0].length).trim()) {
+    explicitClear = true;
+    continue;
+   }
   }
-  let objective = objParts.join("\n").trim();
-  let verificationContract = verifyParts.join("\n").trim();
+  if (mode === "obj") objParts.push(line);
+  else verifyParts.push(line);
+ }
+ let objective = objParts.join("\n").trim();
+ let verificationContract = verifyParts.join("\n").trim();
 
-  // Inline fallback: users write one-liners like
-  //   "Create x.txt. Done when: grep -q ok x.txt"
-  // where the marker is mid-line. Split at the first inline marker. Keep
-  // bare `verify` out of the broad marker alternative: it is also a normal
-  // imperative (`Run the audit and verify ... Done when: ...`) and must not
-  // truncate the objective before the actual Done when marker. `Verify:`
-  // remains supported as the explicit short marker form.
-  if (!verificationContract) {
-    const m = raw.match(/^(.*?)(?:\.|;)?\s+(?:(?:done when|verified when|verification)\b[^:]*:|verify\s*:)\s*(.+)$/is);
-    if (m) {
-      objective = (m[1] ?? "").trim().replace(/[.;]\s*$/, "");
-      verificationContract = (m[2] ?? "").trim();
-    } else if (!explicitClear) {
-      // Trailing bare marker mid-line: "Do x. Done when:" — explicit clear.
-      const empty = raw.match(/^(.*?)\s+(?:done when|verified when|verify|verification)\b[^:]*:\s*$/is);
-      if (empty) {
-        objective = (empty[1] ?? "").trim().replace(/[.;]\s*$/, "");
-        explicitClear = true;
-      }
-    }
+ // Inline fallback: users write one-liners like
+ //   "Create x.txt. Done when: grep -q ok x.txt"
+ // where the marker is mid-line. Split at the first inline marker. Keep
+ // bare `verify` out of the broad marker alternative: it is also a normal
+ // imperative (`Run the audit and verify ... Done when: ...`) and must not
+ // truncate the objective before the actual Done when marker. `Verify:`
+ // remains supported as the explicit short marker form.
+ if (!verificationContract) {
+  const m = raw.match(
+   /^(.*?)(?:\.|;)?\s+(?:(?:done when|verified when|verification)\b[^:]*:|verify\s*:)\s*(.+)$/is,
+  );
+  if (m) {
+   objective = (m[1] ?? "").trim().replace(/[.;]\s*$/, "");
+   verificationContract = (m[2] ?? "").trim();
+  } else if (!explicitClear) {
+   // Trailing bare marker mid-line: "Do x. Done when:" — explicit clear.
+   const empty = raw.match(
+    /^(.*?)\s+(?:done when|verified when|verify|verification)\b[^:]*:\s*$/is,
+   );
+   if (empty) {
+    objective = (empty[1] ?? "").trim().replace(/[.;]\s*$/, "");
+    explicitClear = true;
+   }
   }
-  return { objective, verificationContract, explicitClear };
+ }
+ return { objective, verificationContract, explicitClear };
 }
 
 /**
@@ -1990,9 +2417,13 @@ export function extractVerificationContract(raw: string): { objective: string; v
  * discriminator (each subagent gets its own SessionManager).
  */
 export type OwnerClaim = "claim" | "refresh" | "foreign";
-export function classifySessionCtx(ownerSession: unknown, ownerLive: boolean, sessionManager: unknown): OwnerClaim {
-  if (!ownerSession || !ownerLive) return "claim";
-  return sessionManager === ownerSession ? "refresh" : "foreign";
+export function classifySessionCtx(
+ ownerSession: unknown,
+ ownerLive: boolean,
+ sessionManager: unknown,
+): OwnerClaim {
+ if (!ownerSession || !ownerLive) return "claim";
+ return sessionManager === ownerSession ? "refresh" : "foreign";
 }
 
 // =================================================================
@@ -2016,24 +2447,26 @@ export function classifySessionCtx(ownerSession: unknown, ownerLive: boolean, se
 // so they can fix their profile once and silence it.
 
 export const GLLA_TOOL_NAMES = [
-  "complete_goal",
-  "pause_goal",
-  "complete_task",
-  "update_task_status",
-  "propose_goal_draft",
-  "propose_loop_draft",
-  "propose_loop_refine",
-  "list_add",
-  "list_activate",
-  "list_status",
-  "propose_task_list",
+ "complete_goal",
+ "pause_goal",
+ "complete_task",
+ "update_task_status",
+ "propose_goal_draft",
+ "propose_loop_draft",
+ "propose_loop_refine",
+ "list_add",
+ "list_activate",
+ "list_status",
+ "propose_task_list",
 ] as const;
 
 export type GllaToolName = (typeof GLLA_TOOL_NAMES)[number];
 
-export function missingGllaTools(activeNames: readonly string[]): readonly GllaToolName[] {
-  const active = new Set(activeNames);
-  return GLLA_TOOL_NAMES.filter((n) => !active.has(n));
+export function missingGllaTools(
+ activeNames: readonly string[],
+): readonly GllaToolName[] {
+ const active = new Set(activeNames);
+ return GLLA_TOOL_NAMES.filter((n) => !active.has(n));
 }
 
 // -----------------------------------------------------------------
@@ -2050,17 +2483,17 @@ export const AGGRESSIVE_AUDIT_CAP = 10;
 export const AGGRESSIVE_STUCK_MAX_INTERVENTIONS = 10;
 
 export interface EffectiveAggressiveSettings {
-  auditCap: number;
-  stuckMaxInterventions: number;
-  /** 0 = wedge alerts off. */
-  wedgeAlertMinutes: number;
-  /** Tri-state: true = always auto-resume; false = never; undefined =
-   * DEFAULT (hold on human session loads, resume on reload/fork).
-   * v0.28.7: must stay tri-state here — coercing unset→false broke the
-   * restore gate's default branch (the 0.28.3 regression the behavioral
-   * harness caught). */
-  autoResume: boolean | undefined;
-  aggressiveMode: boolean;
+ auditCap: number;
+ stuckMaxInterventions: number;
+ /** 0 = wedge alerts off. */
+ wedgeAlertMinutes: number;
+ /** Tri-state: true = always auto-resume; false = never; undefined =
+  * DEFAULT (hold on human session loads, resume on reload/fork).
+  * v0.28.7: must stay tri-state here — coercing unset→false broke the
+  * restore gate's default branch (the 0.28.3 regression the behavioral
+  * harness caught). */
+ autoResume: boolean | undefined;
+ aggressiveMode: boolean;
 }
 
 /** Layered resolution: explicit per-key value > aggressiveMode default >
@@ -2068,21 +2501,25 @@ export interface EffectiveAggressiveSettings {
  * the explicit conservative opt-out. Pure so tests can assert the matrix
  * without a settings file. */
 export function resolveEffectiveAggressiveSettings(s: {
-  aggressiveMode?: boolean;
-  auditCap?: number;
-  stuckMaxInterventions?: number;
-  wedgeAlertMinutes?: number;
-  autoResume?: boolean;
+ aggressiveMode?: boolean;
+ auditCap?: number;
+ stuckMaxInterventions?: number;
+ wedgeAlertMinutes?: number;
+ autoResume?: boolean;
 }): EffectiveAggressiveSettings {
-  const aggressiveMode = s.aggressiveMode !== false;
-  return {
-    aggressiveMode,
-    auditCap: s.auditCap ?? (aggressiveMode ? AGGRESSIVE_AUDIT_CAP : BASE_AUDIT_CAP),
-    stuckMaxInterventions:
-      s.stuckMaxInterventions ?? (aggressiveMode ? AGGRESSIVE_STUCK_MAX_INTERVENTIONS : BASE_STUCK_MAX_INTERVENTIONS),
-    wedgeAlertMinutes: s.wedgeAlertMinutes ?? (aggressiveMode ? 0 : 30),
-    autoResume: s.autoResume ?? (aggressiveMode ? true : undefined),
-  };
+ const aggressiveMode = s.aggressiveMode !== false;
+ return {
+  aggressiveMode,
+  auditCap:
+   s.auditCap ?? (aggressiveMode ? AGGRESSIVE_AUDIT_CAP : BASE_AUDIT_CAP),
+  stuckMaxInterventions:
+   s.stuckMaxInterventions ??
+   (aggressiveMode
+    ? AGGRESSIVE_STUCK_MAX_INTERVENTIONS
+    : BASE_STUCK_MAX_INTERVENTIONS),
+  wedgeAlertMinutes: s.wedgeAlertMinutes ?? (aggressiveMode ? 0 : 30),
+  autoResume: s.autoResume ?? (aggressiveMode ? true : undefined),
+ };
 }
 
 /** Extract up to `cap` actionable objection lines from an auditor report
@@ -2090,35 +2527,46 @@ export function resolveEffectiveAggressiveSettings(s: {
  * wins, longest tails trimmed. Pure — the audit-cap branch and its test
  * share this. */
 export function extractPendingTasks(report: string, cap = 5): string[] {
-  const out: string[] = [];
-  for (const raw of report.split("\n")) {
-    const line = raw.trim();
-    const m = line.match(/^(?:[-*•]|\d+[.)])\s+(.{8,200})$/);
-    if (!m) continue;
-    const text = m[1]!.trim();
-    // Skip pure-evidence bullets ("file X exists", "tests pass") — we want
-    // OBJECTIONS: missing/failing/not-done language.
-    if (!/miss|fail|not |no |lack|absent|doesn|didn|won|can'?t|remain|todo|fix|requir|incomplete|unverified/i.test(text)) continue;
-    if (!out.includes(text)) out.push(text);
-    if (out.length >= cap) break;
-  }
-  return out;
+ const out: string[] = [];
+ for (const raw of report.split("\n")) {
+  const line = raw.trim();
+  const m = line.match(/^(?:[-*•]|\d+[.)])\s+(.{8,200})$/);
+  if (!m) continue;
+  const text = m[1]!.trim();
+  // Skip pure-evidence bullets ("file X exists", "tests pass") — we want
+  // OBJECTIONS: missing/failing/not-done language.
+  if (
+   !/miss|fail|not |no |lack|absent|doesn|didn|won|can'?t|remain|todo|fix|requir|incomplete|unverified/i.test(
+    text,
+   )
+  )
+   continue;
+  if (!out.includes(text)) out.push(text);
+  if (out.length >= cap) break;
+ }
+ return out;
 }
 
 /** Contract item 23: is the auditor's IMPOSSIBLE reason about the WHOLE
  * goal or only part of it? Default "full" (safe — keeps the pause);
  * partial only on explicit subset language. */
 export function classifyImpossibleReason(reason: string): "partial" | "full" {
-  if (/\b(partial|some items|subset|remaining items|narrow|only .{0,30}(item|part|section)|the rest|rest of)\b/i.test(reason)) {
-    return "partial";
-  }
-  return "full";
+ if (
+  /\b(partial|some items|subset|remaining items|narrow|only .{0,30}(item|part|section)|the rest|rest of)\b/i.test(
+   reason,
+  )
+ ) {
+  return "partial";
+ }
+ return "full";
 }
 
 /** Contract items 25/28: does this objective read as a full-audit /
  * survey pivot? */
 export function isFullAuditObjective(objective: string): boolean {
-  return /full audit|survey|find all|task ?list|enumerate|audit the (whole |entire )?project/i.test(objective);
+ return /full audit|survey|find all|task ?list|enumerate|audit the (whole |entire )?project/i.test(
+  objective,
+ );
 }
 
 // --- Auto-committer daemon sentinel (contract item 31) ---
@@ -2130,30 +2578,30 @@ export function isFullAuditObjective(objective: string): boolean {
 export const PAUSE_AUTO_COMMIT_SENTINEL = ".pause-auto-commit";
 
 export function pauseAutoCommit(cwd: string, reason: string): string {
-  const dir = path.join(cwd, ".pi-glla");
-  fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, PAUSE_AUTO_COMMIT_SENTINEL);
-  fs.writeFileSync(file, `pausedAt: ${nowIso()}\nreason: ${reason}\n`, "utf-8");
-  return file;
+ const dir = path.join(cwd, ".pi-glla");
+ fs.mkdirSync(dir, { recursive: true });
+ const file = path.join(dir, PAUSE_AUTO_COMMIT_SENTINEL);
+ fs.writeFileSync(file, `pausedAt: ${nowIso()}\nreason: ${reason}\n`, "utf-8");
+ return file;
 }
 
 export function resumeAutoCommit(cwd: string): boolean {
-  const file = path.join(cwd, ".pi-glla", PAUSE_AUTO_COMMIT_SENTINEL);
-  try {
-    fs.unlinkSync(file);
-    return true;
-  } catch {
-    return false;
-  }
+ const file = path.join(cwd, ".pi-glla", PAUSE_AUTO_COMMIT_SENTINEL);
+ try {
+  fs.unlinkSync(file);
+  return true;
+ } catch {
+  return false;
+ }
 }
 
 export function isAutoCommitPaused(cwd: string): boolean {
-  try {
-    fs.accessSync(path.join(cwd, ".pi-glla", PAUSE_AUTO_COMMIT_SENTINEL));
-    return true;
-  } catch {
-    return false;
-  }
+ try {
+  fs.accessSync(path.join(cwd, ".pi-glla", PAUSE_AUTO_COMMIT_SENTINEL));
+  return true;
+ } catch {
+  return false;
+ }
 }
 
 // --- Heartbeat ship-suppression (contract item 27) ---
@@ -2164,13 +2612,13 @@ export function isAutoCommitPaused(cwd: string): boolean {
 /** @deprecated v0.26.6: no longer called by the heartbeat (self-sustaining
  * under ledger writes / auto-commit daemons). Kept for API compatibility. */
 export function shouldSuppressHeartbeatForRecentShip(args: {
-  nowMs: number;
-  lastShippedAtMs: number | null;
-  windowMs?: number;
+ nowMs: number;
+ lastShippedAtMs: number | null;
+ windowMs?: number;
 }): boolean {
-  const windowMs = args.windowMs ?? 5 * 60_000;
-  if (args.lastShippedAtMs === null) return false;
-  return args.nowMs - args.lastShippedAtMs < windowMs;
+ const windowMs = args.windowMs ?? 5 * 60_000;
+ if (args.lastShippedAtMs === null) return false;
+ return args.nowMs - args.lastShippedAtMs < windowMs;
 }
 
 /** Best-effort "when did work last ship" for a repo: newest of the HEAD
@@ -2186,25 +2634,31 @@ export function shouldSuppressHeartbeatForRecentShip(args: {
  * answering — a replacement that disposed but never re-ran factories (or
  * a same-file switchSession); the disposing path is unidentified pi-side. */
 export function isStaleApiError(err: unknown): boolean {
-  return err instanceof Error && err.message.includes("stale after session replacement");
+ return (
+  err instanceof Error &&
+  err.message.includes("stale after session replacement")
+ );
 }
 
 export function lastShippedAtMs(cwd: string): number | null {
-  // v0.26.6: the .pi-glla/active.jsonl MTIME term was REMOVED — the
-  // heartbeat's own ledger writes refreshed it every 15s, which made the
-  // 0.25.0 ship-suppression self-sustaining (darklord: 9.1h / 2,184
-  // suppressed ticks). Only a real git commit counts as a ship now.
-  let best: number | null = null;
-  try {
-    const out = execSync("git log -1 --format=%ct", { cwd, stdio: ["ignore", "pipe", "ignore"] })
-      .toString()
-      .trim();
-    const sec = Number(out);
-    if (Number.isFinite(sec) && sec > 0) best = sec * 1000;
-  } catch {
-    /* not a git repo or no commits */
-  }
-  return best;
+ // v0.26.6: the .pi-glla/active.jsonl MTIME term was REMOVED — the
+ // heartbeat's own ledger writes refreshed it every 15s, which made the
+ // 0.25.0 ship-suppression self-sustaining (darklord: 9.1h / 2,184
+ // suppressed ticks). Only a real git commit counts as a ship now.
+ let best: number | null = null;
+ try {
+  const out = execSync("git log -1 --format=%ct", {
+   cwd,
+   stdio: ["ignore", "pipe", "ignore"],
+  })
+   .toString()
+   .trim();
+  const sec = Number(out);
+  if (Number.isFinite(sec) && sec > 0) best = sec * 1000;
+ } catch {
+  /* not a git repo or no commits */
+ }
+ return best;
 }
 
 // =================================================================
@@ -2222,111 +2676,141 @@ export function lastShippedAtMs(cwd: string): number | null {
  * with an aggregate "≥ 76 commits" contract → auto-committer squash →
  * literal count fails → auditor correctly disapproves finished work.
  */
-export function crossRecommendMode(seed: string, mode: "goal" | "list"): string | undefined {
-  const s = seed.trim();
-  if (!s) return undefined;
-  // Aggregate seed: "N items/findings/weak points/screens/todos/fixes"
-  // (+ "each" / "one commit" flavor) — the wrapper-goal anti-pattern.
-  const aggregate = s.match(/(\d+)\s*(?:items?|findings?|weak[\s-]points?|screens?|todos?|fix(?:es)?|tasks?|issues?)/i);
-  const n = aggregate ? Number(aggregate[1]) : 0;
-  if (n >= 5) {
-    return (
-      `[MODE CHECK — this seed names ${n} discrete items${/each|one commit|as a tasklist/i.test(s) ? ' ("each"/"tasklist" phrasing)' : ""}. ` +
-      `Do NOT fold them into ONE wrapper ${mode === "list" ? "list item" : "goal"} with an aggregate contract ("≥ ${n} commits") — ` +
-      `the auto-committer squashes commits and the literal count fails even when the work is done (the 2026-07-24 76-weak-points incident). ` +
-      `Propose ${n} SHORT /list items via propose_goal_draft items[] — each item closes exactly ONE finding with its own per-item contract. ` +
-      `Any aggregate re-audit becomes the FINAL /goal, not the first.]`
-    );
+export function crossRecommendMode(
+ seed: string,
+ mode: "goal" | "list",
+): string | undefined {
+ const s = seed.trim();
+ if (!s) return undefined;
+ // Aggregate seed: "N items/findings/weak points/screens/todos/fixes"
+ // (+ "each" / "one commit" flavor) — the wrapper-goal anti-pattern.
+ const aggregate = s.match(
+  /(\d+)\s*(?:items?|findings?|weak[\s-]points?|screens?|todos?|fix(?:es)?|tasks?|issues?)/i,
+ );
+ const n = aggregate ? Number(aggregate[1]) : 0;
+ if (n >= 5) {
+  return (
+   `[MODE CHECK — this seed names ${n} discrete items${/each|one commit|as a tasklist/i.test(s) ? ' ("each"/"tasklist" phrasing)' : ""}. ` +
+   `Do NOT fold them into ONE wrapper ${mode === "list" ? "list item" : "goal"} with an aggregate contract ("≥ ${n} commits") — ` +
+   `the auto-committer squashes commits and the literal count fails even when the work is done (the 2026-07-24 76-weak-points incident). ` +
+   `Propose ${n} SHORT /list items via propose_goal_draft items[] — each item closes exactly ONE finding with its own per-item contract. ` +
+   `Any aggregate re-audit becomes the FINAL /goal, not the first.]`
+  );
+ }
+ if (mode === "list") {
+  if (
+   /\b(?:take|takes|taking)\s+(?:a\s+)?(?:few|several|\d+)\s+hours?\b/i.test(
+    s,
+   ) ||
+   /\b(?:multi-hour|deep (?:audit|research|dive)|all day|over the weekend)\b/i.test(
+    s,
+   )
+  ) {
+   return (
+    `[MODE CHECK — this seed sounds like multi-hour work. /list items are SHORT (minutes, one focused change). ` +
+    `Either break it into ≤ 30-minute items via items[], or tell the user this fits /goal better — one big task, ` +
+    `ends on auditor approval. If the user overrides ("as a list item anyway"), comply.]`
+   );
   }
-  if (mode === "list") {
-    if (/\b(?:take|takes|taking)\s+(?:a\s+)?(?:few|several|\d+)\s+hours?\b/i.test(s) || /\b(?:multi-hour|deep (?:audit|research|dive)|all day|over the weekend)\b/i.test(s)) {
-      return (
-        `[MODE CHECK — this seed sounds like multi-hour work. /list items are SHORT (minutes, one focused change). ` +
-        `Either break it into ≤ 30-minute items via items[], or tell the user this fits /goal better — one big task, ` +
-        `ends on auditor approval. If the user overrides ("as a list item anyway"), comply.]`
-      );
-    }
-  } else {
-    if (/^(?:fix|typo|rename|bump|remove|delete|clean ?up|tweak)\b/i.test(s) && s.length < 80 && !/\bhours?\b|\ball\b|\bevery\b|\beach\b/i.test(s)) {
-      return (
-        `[MODE CHECK — this seed sounds like a five-minute cleanup. A full audited /goal may be overkill; ` +
-        `suggest /list (queue of short items) or the tasklist plugin. If the user wants the audit anyway, comply.]`
-      );
-    }
-  }
-  return undefined;
+ } else if (
+  /^(?:fix|typo|rename|bump|remove|delete|clean ?up|tweak)\b/i.test(s) &&
+  s.length < 80 &&
+  !/\bhours?\b|\ball\b|\bevery\b|\beach\b/i.test(s)
+ ) {
+  return (
+   `[MODE CHECK — this seed sounds like a five-minute cleanup. A full audited /goal may be overkill; ` +
+   `suggest /list (queue of short items) or the tasklist plugin. If the user wants the audit anyway, comply.]`
+  );
+ }
+ return undefined;
 }
 
 /** /list depth rollup: how deep is the queue, how stale is the head,
  * how long do items actually take (from archived list-policy goals). */
 export interface ListDepthStats {
-  queueDepth: number;
-  oldestItemId?: string;
-  oldestAgeMs?: number;
-  avgDurationMs?: number;
-  durationSamples: number;
+ queueDepth: number;
+ oldestItemId?: string;
+ oldestAgeMs?: number;
+ avgDurationMs?: number;
+ durationSamples: number;
 }
 
 export function computeListDepth(
-  queue: Array<{ id: string; addedAt: string }>,
-  ledgerEntries: Array<{ type: string; value?: any }>,
-  nowMs: number,
+ queue: Array<{ id: string; addedAt: string }>,
+ ledgerEntries: Array<{ type: string; value?: any }>,
+ nowMs: number,
 ): ListDepthStats {
-  let oldestItemId: string | undefined;
-  let oldestAgeMs: number | undefined;
-  for (const item of queue) {
-    const added = Date.parse(item.addedAt);
-    if (Number.isNaN(added)) continue;
-    const age = nowMs - added;
-    if (oldestAgeMs === undefined || age > oldestAgeMs) {
-      oldestAgeMs = age;
-      oldestItemId = item.id;
-    }
+ let oldestItemId: string | undefined;
+ let oldestAgeMs: number | undefined;
+ for (const item of queue) {
+  const added = Date.parse(item.addedAt);
+  if (Number.isNaN(added)) continue;
+  const age = nowMs - added;
+  if (oldestAgeMs === undefined || age > oldestAgeMs) {
+   oldestAgeMs = age;
+   oldestItemId = item.id;
   }
-  // Average item duration from the ledger's list-policy goals (most
-  // recent 10 with both timestamps).
-  const finals = new Map<string, { createdAt?: string; updatedAt?: string; policy?: string; status?: string }>();
-  for (const e of ledgerEntries) {
-    if (e.type === "state" && e.value?.goal?.id) {
-      finals.set(String(e.value.goal.id), e.value.goal);
-    }
+ }
+ // Average item duration from the ledger's list-policy goals (most
+ // recent 10 with both timestamps).
+ const finals = new Map<
+  string,
+  { createdAt?: string; updatedAt?: string; policy?: string; status?: string }
+ >();
+ for (const e of ledgerEntries) {
+  if (e.type === "state" && e.value?.goal?.id) {
+   finals.set(String(e.value.goal.id), e.value.goal);
   }
-  const durations: number[] = [];
-  for (const g of finals.values()) {
-    if (g.policy !== "list") continue;
-    if (g.status !== "complete" && g.status !== "archived") continue;
-    const c = Date.parse(g.createdAt ?? "");
-    const u = Date.parse(g.updatedAt ?? "");
-    if (Number.isNaN(c) || Number.isNaN(u) || u < c) continue;
-    durations.push(u - c);
-  }
-  const recent = durations.slice(-10);
-  const avgDurationMs = recent.length > 0 ? Math.round(recent.reduce((a, b) => a + b, 0) / recent.length) : undefined;
-  return {
-    queueDepth: queue.length,
-    oldestItemId,
-    oldestAgeMs,
-    avgDurationMs,
-    durationSamples: recent.length,
-  };
+ }
+ const durations: number[] = [];
+ for (const g of finals.values()) {
+  if (g.policy !== "list") continue;
+  if (g.status !== "complete" && g.status !== "archived") continue;
+  const c = Date.parse(g.createdAt ?? "");
+  const u = Date.parse(g.updatedAt ?? "");
+  if (Number.isNaN(c) || Number.isNaN(u) || u < c) continue;
+  durations.push(u - c);
+ }
+ const recent = durations.slice(-10);
+ const avgDurationMs =
+  recent.length > 0
+   ? Math.round(recent.reduce((a, b) => a + b, 0) / recent.length)
+   : undefined;
+ return {
+  queueDepth: queue.length,
+  oldestItemId,
+  oldestAgeMs,
+  avgDurationMs,
+  durationSamples: recent.length,
+ };
 }
 
 function fmtAge(ms: number): string {
-  const mins = Math.round(ms / 60000);
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d ${Math.round(hours % 24)}h`;
+ const mins = Math.round(ms / 60000);
+ if (mins < 60) return `${mins}m`;
+ const hours = Math.round(mins / 60);
+ if (hours < 24) return `${hours}h`;
+ return `${Math.floor(hours / 24)}d ${Math.round(hours % 24)}h`;
 }
 
 /** Contract item 7's exact headline format, then detail lines. */
 export function formatListDepth(stats: ListDepthStats): string {
-  const oldest = stats.oldestAgeMs !== undefined ? fmtAge(stats.oldestAgeMs) : "—";
-  const avg = stats.avgDurationMs !== undefined ? fmtAge(stats.avgDurationMs) : "—";
-  const lines = [`queue depth: ${stats.queueDepth} · oldest: ${oldest} · avg duration: ${avg}`];
-  if (stats.oldestItemId) lines.push(`oldest item: ${fmtAge(stats.oldestAgeMs!)} (id ${stats.oldestItemId})`);
-  if (stats.durationSamples > 0) lines.push(`avg item duration: ${fmtAge(stats.avgDurationMs!)} (from last ${stats.durationSamples} archived)`);
-  return lines.join("\n");
+ const oldest =
+  stats.oldestAgeMs === undefined ? "—" : fmtAge(stats.oldestAgeMs);
+ const avg =
+  stats.avgDurationMs === undefined ? "—" : fmtAge(stats.avgDurationMs);
+ const lines = [
+  `queue depth: ${stats.queueDepth} · oldest: ${oldest} · avg duration: ${avg}`,
+ ];
+ if (stats.oldestItemId)
+  lines.push(
+   `oldest item: ${fmtAge(stats.oldestAgeMs!)} (id ${stats.oldestItemId})`,
+  );
+ if (stats.durationSamples > 0)
+  lines.push(
+   `avg item duration: ${fmtAge(stats.avgDurationMs!)} (from last ${stats.durationSamples} archived)`,
+  );
+ return lines.join("\n");
 }
 
 // =================================================================
@@ -2340,85 +2824,97 @@ export function formatListDepth(stats: ListDepthStats): string {
  * reasoning spillover — the executor's feedback should be the verdict,
  * not the auditor's private monologue. */
 export function stripThinkBlocks(text: string): string {
-  return text
-    .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, "")
-    .replace(/<\/?think>/gi, "")
-    .replace(/<200b>/g, "") // stray partial-tag artifact seen in the wild
-    .replace(/^\s+/, "");
+ return text
+  .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, "")
+  .replace(/<\/?think>/gi, "")
+  .replace(/<200b>/g, "") // stray partial-tag artifact seen in the wild
+  .replace(/^\s+/, "");
 }
 
 /** One durable audit-log entry — survives state-snapshot rotation, so
  * /glla audits can answer "where are we weak" across the whole project. */
 export interface AuditLogEntry {
-  at: string;
-  goalId: string;
-  objective: string;
-  verdict: "approved" | "disapproved" | "impossible" | "shield_blocked" | "error";
-  model: string;
-  thinkingLevel: string;
-  report: string;
-  impossibleReason?: string;
-  error?: string;
-  /** v0.25.4 post-audit: how long the audit took, and whether the infra
-   * retry fired. */
-  durationMs?: number;
-  retriedOnce?: boolean;
+ at: string;
+ goalId: string;
+ objective: string;
+ verdict:
+  | "approved"
+  | "disapproved"
+  | "impossible"
+  | "shield_blocked"
+  | "error";
+ model: string;
+ thinkingLevel: string;
+ report: string;
+ impossibleReason?: string;
+ error?: string;
+ /** v0.25.4 post-audit: how long the audit took, and whether the infra
+  * retry fired. */
+ durationMs?: number;
+ retriedOnce?: boolean;
 }
 
 export function auditLogPath(cwd: string): string {
-  return path.join(cwd, ".pi-glla", "audits.jsonl");
+ return path.join(cwd, ".pi-glla", "audits.jsonl");
 }
 
 export function appendAuditLog(cwd: string, entry: AuditLogEntry): void {
-  try {
-    ensureDirs(cwd);
-    fs.appendFileSync(auditLogPath(cwd), JSON.stringify(entry) + "\n");
-  } catch {
-    /* log best-effort — never block the verdict path */
-  }
+ try {
+  ensureDirs(cwd);
+  fs.appendFileSync(auditLogPath(cwd), JSON.stringify(entry) + "\n");
+ } catch {
+  /* log best-effort — never block the verdict path */
+ }
 }
 
 export function readAuditLog(cwd: string, limit?: number): AuditLogEntry[] {
-  let raw: string;
+ let raw: string;
+ try {
+  raw = fs.readFileSync(auditLogPath(cwd), "utf-8");
+ } catch {
+  return [];
+ }
+ const out: AuditLogEntry[] = [];
+ for (const line of raw.split("\n")) {
+  const t = line.trim();
+  if (!t) continue;
   try {
-    raw = fs.readFileSync(auditLogPath(cwd), "utf-8");
+   const e = JSON.parse(t);
+   if (e && typeof e.goalId === "string" && typeof e.verdict === "string")
+    out.push(e as AuditLogEntry);
   } catch {
-    return [];
+   /* skip malformed */
   }
-  const out: AuditLogEntry[] = [];
-  for (const line of raw.split("\n")) {
-    const t = line.trim();
-    if (!t) continue;
-    try {
-      const e = JSON.parse(t);
-      if (e && typeof e.goalId === "string" && typeof e.verdict === "string") out.push(e as AuditLogEntry);
-    } catch {
-      /* skip malformed */
-    }
-  }
-  return limit !== undefined ? out.slice(-limit) : out;
+ }
+ return limit === undefined ? out : out.slice(-limit);
 }
 
 const VERDICT_GLYPH: Record<AuditLogEntry["verdict"], string> = {
-  approved: "✔",
-  disapproved: "✖",
-  impossible: "⛔",
-  shield_blocked: "🛡",
-  error: "⚠",
+ approved: "✔",
+ disapproved: "✖",
+ impossible: "⛔",
+ shield_blocked: "🛡",
+ error: "⚠",
 };
 
 /** /glla audits list view: one line per verdict, newest last. */
 export function formatAuditLog(entries: AuditLogEntry[]): string {
-  if (entries.length === 0) return "(no audits logged yet — the log starts with the next verdict)";
-  return entries
-    .map((e) => {
-      const day = e.at.slice(5, 16).replace("T", " ");
-      const firstLine = e.verdict === "error"
-        ? sanitizeProviderDisplayText(providerErrorPresentation(e.error, "completion").display)
-        : sanitizeProviderDisplayText((e.report.split("\n").find((l) => l.trim()) ?? "").trim().slice(0, 90));
-      return `${VERDICT_GLYPH[e.verdict]} ${day} [${e.goalId.slice(-6)}] ${e.model} — ${firstLine}`;
-    })
-    .join("\n");
+ if (entries.length === 0)
+  return "(no audits logged yet — the log starts with the next verdict)";
+ return entries
+  .map((e) => {
+   const day = e.at.slice(5, 16).replace("T", " ");
+   const firstLine =
+    e.verdict === "error"
+     ? sanitizeProviderDisplayText(
+        providerErrorPresentation(e.error, "completion").display,
+       )
+     : sanitizeProviderDisplayText(
+        (e.report.split("\n").find((l) => l.trim()) ?? "").trim().slice(0, 90),
+       );
+   return `${VERDICT_GLYPH[e.verdict]} ${day} [${e.goalId.slice(-6)}] ${e.model} — ${firstLine}`;
+  })
+  .join("\n");
 }
 
 // =================================================================
@@ -2429,83 +2925,127 @@ export function formatAuditLog(entries: AuditLogEntry[]): string {
  * and missing-model config are NOT — retrying can't help them. Timeouts and
  * watchdog stalls are retriable infrastructure failures. */
 export function isRetriableInfraError(error?: string): boolean {
-  if (!error) return false;
-  if (/^(?:Auditor (?:exceeded|stalled)|.*(?:timed?\s*out|timeout|inactivity))/i.test(error)) return true;
-  if (/^(?:Auditor aborted\.?$|user (?:interrupt|abort)|cancelled by user)/i.test(error.trim())) return false;
-  if (/no (?:auditor )?model/i.test(error)) return false;
+ if (!error) return false;
+ if (
+  /^(?:Auditor (?:exceeded|stalled)|.*(?:timed?\s*out|timeout|inactivity))/i.test(
+   error,
+  )
+ )
   return true;
+ if (
+  /^(?:Auditor aborted\.?$|user (?:interrupt|abort)|cancelled by user)/i.test(
+   error.trim(),
+  )
+ )
+  return false;
+ if (/no (?:auditor )?model/i.test(error)) return false;
+ return true;
 }
 
 export interface InfraRetryOutcome<T> {
-  result: T;
-  retriedOnce: boolean;
+ result: T;
+ retriedOnce: boolean;
 }
 
 /** Run the auditor; on any retriable infrastructure failure, wait
  * `backoffMs` and retry EXACTLY once before reporting "auditor
  * infrastructure error (retried once)". The failed pair is never a verdict
  * on the work; provider wording is not consulted to suppress this retry. */
-export async function runWithInfraRetry<T extends { error?: string; approved: boolean; disapproved: boolean }>(
-  run: () => Promise<T>,
-  opts: {
-    backoffMs?: number;
-    sleep?: (ms: number) => Promise<void>;
-    onRetry?: (error: string) => void;
-    /**
-     * v0.34.20: delayed retry callers can fail closed across a session
-     * replacement. The first attempt may finish after its ExtensionContext
-     * was invalidated; never launch the second attempt unless the caller can
-     * prove that its session/generation is still live.
-     */
-    shouldRetry?: () => boolean;
-  } = {},
+export async function runWithInfraRetry<
+ T extends { error?: string; approved: boolean; disapproved: boolean },
+>(
+ run: () => Promise<T>,
+ opts: {
+  backoffMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+  onRetry?: (error: string) => void;
+  /**
+   * v0.34.20: delayed retry callers can fail closed across a session
+   * replacement. The first attempt may finish after its ExtensionContext
+   * was invalidated; never launch the second attempt unless the caller can
+   * prove that its session/generation is still live.
+   */
+  shouldRetry?: () => boolean;
+ } = {},
 ): Promise<InfraRetryOutcome<T>> {
-  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  const first = await run();
-  if (first.approved || first.disapproved || !isRetriableInfraError(first.error)) {
-    return { result: first, retriedOnce: false };
+ const sleep =
+  opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+ const first = await run();
+ if (
+  first.approved ||
+  first.disapproved ||
+  !isRetriableInfraError(first.error)
+ ) {
+  return { result: first, retriedOnce: false };
+ }
+ if (opts.shouldRetry) {
+  try {
+   if (!opts.shouldRetry()) return { result: first, retriedOnce: false };
+  } catch {
+   // A lifecycle probe that cannot establish liveness is a hard stop, not
+   // permission to retry an old session.
+   return { result: first, retriedOnce: false };
   }
-  if (opts.shouldRetry) {
-    try {
-      if (!opts.shouldRetry()) return { result: first, retriedOnce: false };
-    } catch {
-      // A lifecycle probe that cannot establish liveness is a hard stop, not
-      // permission to retry an old session.
-      return { result: first, retriedOnce: false };
-    }
+ }
+ opts.onRetry?.(first.error!);
+ // v0.34.141: do not inspect provider families to decide whether the eager
+ // retry is allowed. Provider text is retained by the caller for
+ // sanitized diagnostics; this scheduler simply retries every retriable
+ // infrastructure failure once, then the durable hourly plan takes over.
+ await sleep(opts.backoffMs ?? 5000);
+ if (opts.shouldRetry) {
+  try {
+   if (!opts.shouldRetry()) return { result: first, retriedOnce: false };
+  } catch {
+   return { result: first, retriedOnce: false };
   }
-  opts.onRetry?.(first.error!);
-  // v0.34.141: do not inspect provider families to decide whether the eager
-  // retry is allowed. Provider text is retained by the caller for
-  // sanitized diagnostics; this scheduler simply retries every retriable
-  // infrastructure failure once, then the durable hourly plan takes over.
-  await sleep(opts.backoffMs ?? 5000);
-  if (opts.shouldRetry) {
-    try {
-      if (!opts.shouldRetry()) return { result: first, retriedOnce: false };
-    } catch {
-      return { result: first, retriedOnce: false };
-    }
-  }
-  const second = await run();
-  return { result: second, retriedOnce: true };
+ }
+ const second = await run();
+ return { result: second, retriedOnce: true };
 }
 
 /** /glla audits default view: the ACTIVE goal's own audit history (the
  * surface the goal spec asked for), one line per verdict. */
-export function formatGoalAuditHistory(goal: { id: string; auditHistory?: Array<any> }): string {
-  const history = goal.auditHistory ?? [];
-  if (history.length === 0) return "(no audits on this goal yet)";
-  return history
-    .map((v) => {
-      const verdict = auditVerdictLabel(v);
-      const glyph = verdict === "approved" ? "✔" : verdict === "shield-blocked" ? "🛡" : verdict === "impossible" ? "⛔" : verdict === "disapproved" ? "✖" : "⚠";
-      const day = String(v.at ?? "").slice(5, 16).replace("T", " ");
-      const elapsed = v.durationMs ? ` · ${Math.round(v.durationMs / 60000)}m` : "";
-      const firstLine = auditVerdictLabel(v) === "infrastructure failure"
-        ? sanitizeProviderDisplayText(providerErrorPresentation(v.error, "completion").display)
-        : sanitizeProviderDisplayText((String(v.report ?? "").split("\n").find((l: string) => l.trim()) ?? "").trim().slice(0, 80));
-      return `${glyph} ${day} ${v.model ?? "?"}${elapsed} — ${firstLine}`;
-    })
-    .join("\n");
+export function formatGoalAuditHistory(goal: {
+ id: string;
+ auditHistory?: Array<any>;
+}): string {
+ const history = goal.auditHistory ?? [];
+ if (history.length === 0) return "(no audits on this goal yet)";
+ return history
+  .map((v) => {
+   const verdict = auditVerdictLabel(v);
+   const glyph =
+    verdict === "approved"
+     ? "✔"
+     : verdict === "shield-blocked"
+       ? "🛡"
+       : verdict === "impossible"
+         ? "⛔"
+         : verdict === "disapproved"
+           ? "✖"
+           : "⚠";
+   const day = String(v.at ?? "")
+    .slice(5, 16)
+    .replace("T", " ");
+   const elapsed = v.durationMs
+    ? ` · ${Math.round(v.durationMs / 60000)}m`
+    : "";
+   const firstLine =
+    auditVerdictLabel(v) === "infrastructure failure"
+     ? sanitizeProviderDisplayText(
+        providerErrorPresentation(v.error, "completion").display,
+       )
+     : sanitizeProviderDisplayText(
+        (
+         String(v.report ?? "")
+          .split("\n")
+          .find((l: string) => l.trim()) ?? ""
+        )
+         .trim()
+         .slice(0, 80),
+       );
+   return `${glyph} ${day} ${v.model ?? "?"}${elapsed} — ${firstLine}`;
+  })
+  .join("\n");
 }

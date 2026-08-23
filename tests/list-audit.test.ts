@@ -132,7 +132,7 @@ test("fan-out: canonical dedupe, cap accounting, optional auto-accept, and decli
 
 test("help surface: /list audit appears in the command description + completions", () => {
   assert.match(SRC, /\/list audit \[focus\] \(collect findings, then drain them as items\)/);
-  assert.match(SRC, /\["audit", "collect-then-drain: audit the project, queue every finding as its own item"\]/);
+  assert.match(SRC, /\[\s*"audit",\s*"collect-then-drain:\s+audit\s+the\s+project,\s+queue\s+every\s+finding\s+as\s+its\s+own\s+item",?\s*\]/);
 });
 
 // ---------- v0.31.1: audit-initiative stacking guards ----------

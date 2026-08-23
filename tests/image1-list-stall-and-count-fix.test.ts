@@ -54,7 +54,7 @@ test("v0.34.104 [Image-#1] Problem 1: archiveCurrentGoal arms the settle window 
 test("v0.34.104 [Image-#1] Problem 1: scheduleContinuation honours the settle window", () => {
   const sched = CONT.slice(CONT.indexOf("function scheduleContinuation"), CONT.indexOf("function sendContinuation")); // decomposition step 5
   assert.match(sched, /const settleRemaining = flags\.postCompletionSettleUntil - Date\.now\(\);/); // flag accessor re-spelling (decomposition step 5)
-  assert.match(sched, /if \(settleRemaining > 0\) \{\s*\n\s*delay = Math\.max\(delay, settleRemaining\);/);
+  assert.match(sched, /if \(settleRemaining > 0\) \{\s*\n?\s*delay = Math\.max\(delay, settleRemaining\);/);
   assert.match(sched, /"list_completion_settle_pending"/);
 });
 
@@ -70,7 +70,7 @@ test("v0.34.104 [Image-#1] Problem 1: agent activity during settle cancels the d
 test("v0.34.104 [Image-#1] Problem 1: sendContinuation honors an early settle callback", () => {
   const send = CONT.slice(CONT.indexOf("function sendContinuation"), CONT.indexOf("function sendStallEscalation")); // decomposition step 5
   assert.match(send, /const settleRemaining = flags\.postCompletionSettleUntil - Date\.now\(\);/);
-  assert.match(send, /if \(settleRemaining > 0\)[\s\S]*scheduleSessionTimeout\(\(\) => sendContinuation\(goalId\), settleRemaining\)/);
+  assert.match(send, /settleRemaining\s+>\s+0[\s\S]{0,800}scheduleSessionTimeout\(\s*\(\)\s*=>\s*sendContinuation\(goalId\),\s*settleRemaining,?\s*\)/);
   assert.match(send, /postCompletionSettleUntil = 0;/);
 });
 

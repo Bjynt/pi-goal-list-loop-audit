@@ -57,8 +57,8 @@ test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal g
   // distance — prior 5000-char window broke when P1/P3 (0.28.4) added ~1100
   // chars between the length path and the goal gate; v0.34.25/26 added ~2000
   // more (silent-swap absorb branch + durable exhaustion pause).
-  const handler = SRC.slice(SRC.indexOf('pi.on("agent_end"'), SRC.indexOf('pi.on("agent_end"') + 16000);
-  const lengthIdx = handler.indexOf('tickLengthContinue(lastA?.stopReason === "length" && !contextStarvedLength)');
+  const handler = SRC.slice(SRC.indexOf('pi.on("agent_end"'), SRC.indexOf('pi.on("agent_end"') + 48000);
+  const lengthIdx = handler.indexOf("const lc = tickLengthContinue(");
   assert.ok(lengthIdx > 0, "length tick present");
   assert.ok(handler.indexOf("isContextStarvedLengthStop(rawLastA, contextUsage)") < lengthIdx, "context-starvation classification runs before the tracker");
   assert.ok(handler.indexOf('length_continue_deferred_context_full') > lengthIdx, "context-starvation ledger is emitted by the defer path");
@@ -75,17 +75,17 @@ test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal g
   // (the inner `if (lastA?.stopReason === "length" && ...)` block exists)
   // is unchanged.
   const early = handler.slice(lengthIdx, lengthIdx + 5000);
-  assert.match(early, /if \(lastA\?\.stopReason === "length"\) \{\s*\n\s*if \(lc\.fire && !ctx\.hasPendingMessages\(\)\) sendLengthContinue\(ctx, lc\.consecutive\);\s*\n\s*return;\s*\n\s*\}/);
+  assert.match(early, /if \(lastA\?\.stopReason === "length"\) \{\s*\n?\s*if \(lc\.fire && !ctx\.hasPendingMessages\(\)\)\s*\n?\s*sendLengthContinue\(ctx, lc\.consecutive\);\s*\n?\s*return;\s*\n?\s*\}/);
 });
 
 test("sendLengthContinue: stale-api terminal guard + admitted-session reset", () => {
-  assert.match(CONT, /function sendLengthContinue\(ctx: ExtensionContext, consecutive: number\)/); // decomposition step 5: moved
-  assert.match(CONT, /if \(flags\.sessionHandoffPending \|\| flags\.initialSessionLoadPending \|\| !flags\.extensionApi \|\| flags\.extensionApiStale \|\| continuationDispatchStoodDown \|\| pendingContinuationDispatch\) return;/, "lifecycle, blank-start, stale-runtime, and in-flight dispatch guards short-circuit the send (flags accessor re-spelling)");
+  assert.match(CONT, /function\s+sendLengthContinue\(\s*ctx:\s+ExtensionContext,\s+consecutive:\s+number,?\s*\)/); // decomposition step 5: moved
+  assert.match(CONT, /flags\.sessionHandoffPending \|\|[\s\S]*?initialSessionLoadPending \|\|[\s\S]*?!flags\.extensionApi \|\|[\s\S]*?flags\.extensionApiStale \|\|[\s\S]*?continuationDispatchStoodDown \|\|[\s\S]*?pendingContinuationDispatch\s*\)\s*\n?\s*return;/, "lifecycle, blank-start, stale-runtime, and in-flight dispatch guards short-circuit the send (flags accessor re-spelling)");
   assert.match(CONT, /kind: "length",\s*\n\s*marker: LENGTH_CONTINUE_TEXT\.slice\(0, 80\)/, "length sends use the dispatch proof state machine");
-  assert.match(CONT, /flags\.extensionApi\.sendMessage\(\{\s*\n\s*customType: GOAL_EVENT_ENTRY,\s*\n\s*content: LENGTH_CONTINUE_TEXT/);
-  assert.match(CONT, /appendLedger\(ctx\.cwd, "length_continue_sent", \{ consecutive, attemptId: attempt\.id \}\)/);
+  assert.match(CONT, /flags\.extensionApi\.sendMessage\(\s*\{?\s*\n?\s*customType: GOAL_EVENT_ENTRY,\s*\n?\s*content: LENGTH_CONTINUE_TEXT/);
+  assert.match(CONT, /appendLedger\(ctx\.cwd, "length_continue_sent",\s*\{\s*consecutive,\s*attemptId:\s*attempt\.id,?\s*\}\)/);
   assert.match(CONT, /if \(isStaleApiError\(err\)\)/); // v0.34.117: the stale guard now wraps an auto-recovery call + terminal fallback
-  assert.match(CONT, /if \(!attemptFreshSessionRecovery\(ctx, "sendLengthContinue"\)\) goStaleTerminal\(ctx, "sendLengthContinue"\);/); // v0.34.117: auto-recover before terminal park
+  assert.match(CONT, /if \(!attemptFreshSessionRecovery\(ctx, "sendLengthContinue"\)\)\s*\n?\s*goStaleTerminal\(ctx, "sendLengthContinue"\);/); // v0.34.117: auto-recover before terminal park
   assert.match(ACT, /extensionApi = pi;[\s\S]*?resetLengthContinue\(\);/); // reset follows host admission, not factory evaluation
   // give-up is surfaced once via notify + external push
   assert.match(SRC, /lc\.giveUpNow/);

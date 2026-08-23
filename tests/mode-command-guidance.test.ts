@@ -71,7 +71,7 @@ function goalOf(overrides: Partial<Goal> = {}): Goal {
 // ---- level 1: source pins ----
 
 test("mode-aware helpers exist and route by policy", () => {
-  assert.match(CORE_SRC, /export function workCommandRoot\(mode: Policy \| "loop" \| undefined\)/);
+  assert.match(CORE_SRC, /export\s+function\s+workCommandRoot\(\s*mode:\s+Policy\s+\|\s+"loop"\s+\|\s+undefined,?\s*\)/);
   assert.match(CORE_SRC, /export function workCommand\(/);
   assert.match(GOAL_SRC, /const activeGoalSurfaceCommand = \(command: string\): string => workCommand\(state\.goal\?\.policy, command\);/);
   assert.match(GOAL_SRC, /const activeGoalStatusCommand = \(\): string => state\.goal\?\.policy === "list" \? `\$\{activeGoalRoot\(\)\} show` : `\$\{activeGoalRoot\(\)\} status`;/);

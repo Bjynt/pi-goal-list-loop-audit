@@ -483,7 +483,8 @@ function handledSubs(source: string, fnName: string): Set<string> {
   // Body ≈ up to the next top-level "\n}\n" after the signature.
   const end = source.indexOf("\n}\n", start);
   const body = source.slice(start, end > start ? end : undefined);
-  return new Set([...body.matchAll(/sub === "([a-z]+)"/g)].map((m) => m[1]!));
+  // v0.36.0 formatting may wrap between `sub`, `===`, and the literal.
+  return new Set([...body.matchAll(/sub\s*===\s*"([a-z]+)"/g)].map((m) => m[1]!));
 }
 
 /** First-column values from a registerCommand block's getArgumentCompletions table. */
@@ -493,7 +494,8 @@ function completionValues(source: string, command: string): Set<string> {
   const cStart = source.indexOf("getArgumentCompletions: completions([", regStart);
   const cEnd = source.indexOf("]),", cStart);
   const block = source.slice(cStart, cEnd);
-  return new Set([...block.matchAll(/\["([a-z=]+)",/g)].map((m) => m[1]!));
+  // v0.36.0 formatting puts each entry's bracket and verb on separate lines.
+  return new Set([...block.matchAll(/\[\s*"([a-z=]+)",/g)].map((m) => m[1]!));
 }
 
 test("v0.35.47: every handled /list and /loop subcommand has a completion entry", () => {

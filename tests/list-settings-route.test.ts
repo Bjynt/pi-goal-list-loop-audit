@@ -140,7 +140,7 @@ test("v0.34.53: source — /list help documents /glla as the settings command an
   // supported settings command (description stays in goal.ts):
   assert.match(GOAL, /Loop 2: the list of audited goals[\s\S]*?Settings are under \/glla, not \/list — bare \/glla opens the settings table\./, "description points at /glla");
   // The completion entry:
-  assert.match(GOAL, /\["settings", "settings live under \/glla — bare \/glla opens the settings table"\]/, "completion documents the redirect");
+  assert.match(GOAL, /\[\s*"settings",\s*"settings live under \/glla — bare \/glla opens the settings table",?\s*\]/, "completion documents the redirect");
   // The explicit branch sits before the natural-language dump fallthrough:
   const settingsIdx = SRC.indexOf('if (sub === "settings") {');
   const dumpIdx = SRC.indexOf("// v0.18.0: an unknown first word isn't an error");

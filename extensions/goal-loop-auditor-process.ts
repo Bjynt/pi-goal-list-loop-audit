@@ -34,6 +34,7 @@ import {
 import { ModelSelector, type ModelFallbackEvent } from "./model-selector.js";
 import { buildGoalAuditorPrompt } from "./goal-loop-auditor.js";
 import { checkRegressionShield, parseAuditorVerdict } from "./goal-loop-shield.js";
+import { parseCommissarVerdict } from "./goal-commissar.js";
 import { renameWithWindowsRetry } from "../scripts/goal-auditor-launch.mjs";
 import { resolveAuditorAllowedExtensions } from "./auditor-extensions.js";
 
@@ -49,6 +50,10 @@ export interface GoalAuditorResult {
   infrastructureClass?: AuditorInfrastructureClass;
   regressionShieldPassed?: boolean;
   regressionShieldMissing?: string[];
+  /** v0.36.x commissar role: the parsed adherence verdict. Present only
+   * when the run was dispatched with role "commissar"; completion audits
+   * never populate it. */
+  commissar?: { adherent: boolean; wanting: boolean; reason?: string };
   /** v0.34.59: focus revision token echoed from request.json. The parent
    * compares this against the current state.goal.revision after the audit
    * finishes; mismatch → the verdict is treated as stale-refused, not a
@@ -760,6 +765,17 @@ export async function runDetachedGoalCompletionAuditor(args: {
   goal: Goal;
   completionSummary?: string | null;
   verificationSummary?: string | null;
+  /** v0.36.x commissar role: "commissar" runs the adherence-watchdog
+   * contract instead of the completion-audit contract. The transport,
+   * hardening, and protocol are shared; only the prompt and the verdict
+   * parsing differ. Default (absent) is the completion audit. */
+  role?: "completion-audit" | "commissar";
+  /** v0.36.x commissar role: pre-built prompt override. Required when
+   * role is "commissar"; ignored for completion audits (they always build
+   * from the goal + summaries). Kept OUT of the AuditorRequest schema -
+   * the worker only ever sees the final prompt string, so request hashes
+   * and wire compatibility are unchanged. */
+  prompt?: string;
   model?: AuditorModel;
   thinkingLevel?: string;
   /** v0.36.0: extension specs allow-listed for the detached auditor
@@ -844,7 +860,11 @@ export async function runDetachedGoalCompletionAuditor(args: {
       protocolVersion: PROTOCOL_VERSION,
       attemptId,
       cwd: args.cwd,
-      prompt: buildPrompt(args.goal, args.completionSummary, args.verificationSummary),
+      // v0.36.x commissar role: dispatch supplies its own prompt; the
+      // completion-audit path builds from the goal + summaries as before.
+      prompt: args.role === "commissar" && args.prompt?.trim()
+        ? args.prompt
+        : buildPrompt(args.goal, args.completionSummary, args.verificationSummary),
       model,
       thinkingLevel,
       createdAt: new Date(startedAt).toISOString(),
@@ -940,6 +960,19 @@ export async function runDetachedGoalCompletionAuditor(args: {
             return infra(model, thinkingLevel, error, output, capturedRevisionToken, failedResultClass(error));
           }
           if (!output.trim()) return infra(model, thinkingLevel, "auditor produced no output", output, capturedRevisionToken, "no-verdict");
+          // v0.36.x commissar role: different verdict vocabulary, same
+          // evidence floor. An evidence-free verdict (no tool calls at all)
+          // is infrastructure noise, never a termination signal.
+          if (args.role === "commissar") {
+            const verdict = parseCommissarVerdict(output);
+            if (!verdict.adherent && !verdict.wanting) return infra(model, thinkingLevel, "commissar produced no verdict marker", output, capturedRevisionToken, "no-verdict");
+            const disallowedTool = result.toolCalls.find((call) => !(AUDITOR_TOOLS as readonly string[]).includes(call.name));
+            if (disallowedTool) return infra(model, thinkingLevel, `Commissar reported unsupported tool: ${disallowedTool.name}`, output, capturedRevisionToken, "no-verdict");
+            const usedAnyTool = result.toolCalls.some((call) => (AUDITOR_TOOLS as readonly string[]).includes(call.name));
+            if (!usedAnyTool) return infra(model, thinkingLevel, "Commissar issued a verdict without calling any evidence tool; treated as no-verdict.", output, capturedRevisionToken, "no-verdict");
+            args.onProgress?.({ phase: "complete", elapsedMs: now() - startedAt, recentOutput: output.split("\n").filter(Boolean).slice(-8), toolCalls: result.toolCalls, unmatchedToolStarts: [], unmatchedToolEnds: [] });
+            return stampToken({ approved: verdict.adherent, disapproved: verdict.wanting, output, model, thinkingLevel, commissar: { adherent: verdict.adherent, wanting: verdict.wanting, reason: verdict.reason } }, capturedRevisionToken);
+          }
           const parsed = parseAuditorVerdict(output);
           if (!parsed.approved && !parsed.disapproved && !parsed.impossible) return infra(model, thinkingLevel, "auditor produced no verdict marker", output, capturedRevisionToken, "no-verdict");
           const disallowedTool = result.toolCalls.find((call) => !(AUDITOR_TOOLS as readonly string[]).includes(call.name));

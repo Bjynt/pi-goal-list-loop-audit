@@ -1,8 +1,39 @@
 # Changelog
 
+## 0.36.0 — commissar adherence watchdog (2026-08-23)
+
+### Added
+
+  Opt-in detached watchdog for the ACTIVE goal. When
+  `commissarEnabled` is on, the heartbeat cadence fires an adherence check
+  every `commissarIntervalMinutes` (default 20): a detached pi RPC worker —
+  the SAME hardened transport as the completion auditor (request-hash,
+  TERM→KILL teardown, wedged-worker watchdogs), a NEW verdict vocabulary —
+  inspects the ledger, git history, and repository evidence and returns
+  `<adherent/>` or `<wanting>reason</wanting>`.
+
+  ADHERENT resets the streak; WANTING increments it. At
+  `commissarWantingThreshold` consecutive WANTING verdicts (default 2) the
+  commissar TERMINATES the main run: the goal gets a durable
+  `commissarRestart` marker, the run is aborted, and the agent_end "aborted"
+  handler recognizes the intentional termination and restarts the chain on
+  the SAME objective instead of standing down. The next continuation carries
+  a COMMISSAR RESTART directive quoting the finding as untrusted evidence;
+  cleared after exactly one accepted dispatch (autoResumedAt pattern).
+
+  Safety invariants: opt-in OFF by default (an agent-terminating watchdog
+  must not surprise existing rigs); single-flight (never two concurrent
+  checks); infrastructure failures NEVER count toward the streak and NEVER
+  terminate (a broken auditor model must not kill runs); verdicts without
+  tool evidence are discarded fail-closed; interval/threshold clamps bound
+  hand-edited values ([1,720] minutes, [1,5] verdicts). Shares the auditor
+  model pin (`auditorModel`) with a 5-minute wall clock. Settings live in a
+  dedicated /glla Commissar section (3 provenance-tracked rows).
+
 ## 0.35.48 — overdue-wait backstop respects the dispatch-surface gates (2026-08-23)
 
 ### Fix
+
   Audit-pass finding: overdueWaitBackstop mutated durable state (parked to
   active, pauseResumeAt cleared) without checking the
   extensionApiStale/sessionHandoffPending/stale-terminal or
@@ -18,6 +49,7 @@
 ## 0.35.47 — completions/handler parity for /list and /loop verbs (2026-08-23)
 
 ### Fix
+
   Audit-pass finding: verbs handled by the dispatchers but absent from the
   subcommand completions - /list add|import|rm (and pause, caught while
   pinning), and /loop resume|refine|polish. All seven now appear in their
@@ -30,6 +62,7 @@
 ## 0.35.46 — /glla agents --tail sanitization + bounded scan reads (2026-08-23)
 
 ### Fix
+
   Audit-pass finding, two parts: (1) child-transcript tail lines were
   rendered through ctx.ui.notify WITHOUT ANSI/control-character
   sanitization - unlike every other external-text projection - so a
@@ -46,10 +79,11 @@
 ## 0.35.45 — plan-mode seeded hint separator (2026-08-23)
 
 ### Fix
+
   Audit-pass finding: planNote ended "...than a regular draft." and was
   concatenated directly with the label hint, producing
   "...regular draft.Goal drafting - deep planning: ..." in the notified
-  seeded hint. The join is now explicit (planNote ? `${planNote} ` : "").
+  seeded hint. The join is now explicit (planNote ? `${planNote}` : "").
   Behavioral test drives the real /goal plan command with a seed and
   asserts the notified hint reads "regular draft. Goal drafting - deep
   planning:"; proven red with the glued concatenation restored.
@@ -57,6 +91,7 @@
 ## 0.35.44 — draftingDepth dead state removed; orphaned-gate windows closed (2026-08-23)
 
 ### Fix
+
   Audit-pass finding, three parts: (1) the draftingDepth runtime global was
   write-only dead state - set in startDrafting, reset in clearDraftingState,
   zero readers (template selection uses the depth parameter) - removed
@@ -71,6 +106,7 @@
 ## 0.35.43 — refine re-baselines specChecked with the spec write (2026-08-23)
 
 ### Fix
+
   Audit-pass finding: refine's orchestrator-side spec write updated
   specHash but not loop.specChecked, so the next tick saw checked >
   specChecked against the OLD file's count and ledged spec_item_progress
@@ -82,6 +118,7 @@
 ## 0.35.42 — measure-era scoping for loop movement accounting (2026-08-23)
 
 ### Fix
+
   Audit-pass finding: applyRefinement re-baselines best/last/stall on a
   measure-changing refine but keeps history, so OLD-era improved entries
   made both movement checks permanently true for the NEW metric era - the
@@ -96,6 +133,7 @@
 ## 0.35.41 — the last two loop-stop routes announce queue resumption (2026-08-23)
 
 ### Fix
+
   Audit-pass finding: v0.35.22's "ends by ANY route ... ANNOUNCE loudly"
   contract was only wired into some stop routes. The stuck-ladder stop and
   the provider-error/abort-cap stop notified the loop line but never
@@ -108,6 +146,7 @@
 ## 0.35.40 — regression pins for the audit-kind measurement exemption (2026-08-23)
 
 ### Tests
+
   Audit-pass finding: commit 28131527's audit-kind exemption in
   applyMeasurement shipped with zero regression pin. Two twin-loop tests in
   tests/loop-forever.test.ts now pin it: (1) identical flat-metric shapes
@@ -122,6 +161,7 @@
 ## 0.35.39 — README Files map is actually complete (2026-08-23)
 
 ### Docs
+
   Audit-pass finding: the Files map showed 4 of 7 prompts (missing both
   plan-draft prompts shipped in v0.35.33 and goal-loop-forever-metricless)
   and ~19 of 44 extensions files while reading as complete. The map now
@@ -132,6 +172,7 @@
 # 0.35.38 — README verb-semantics documentation (2026-08-23)
 
 ### Docs
+
   User-requested audit finding: what /goal|/list|/loop audit MEAN vs start
   vs the plan verbs lived only in code comments. New "What the verbs mean"
   table right after the quick-start block (audit is deliberately three
@@ -146,6 +187,7 @@
 ## 0.35.37 — recovery welcome-back notice now fires exactly once (2026-08-23)
 
 ### Fix
+
   Audit-pass finding: autoResumedAt/autoResumedEvent were set by three
   auto-recovery sites (heartbeat overdue-wait backstop, main-model provider
   recovery, auditor provider retry) but the ONLY clearing site was MANUAL
@@ -160,6 +202,7 @@
 ## 0.35.36 — complete_goal newObjective no longer launders agent text into userSeeds (2026-08-23)
 
 ### Fix
+
   Audit-pass finding: the newObjective branch appended the AGENT-authored
   objective to objectiveProvenance.userSeeds; since createdVia stays "user"
   from creation, the v0.35.31 seed trust then treated that agent-written
@@ -176,6 +219,7 @@
 ## 0.35.35 — user-seed trust works with contract clauses and role markers (2026-08-23)
 
 ### Fix
+
   Audit-pass finding: v0.35.31's seed trust compared the CLEANED
   goal.objective against RAW stored seeds by exact equality — but createGoal
   strips "Done when:" clauses and Agent:/Role: declarations out of the
@@ -190,6 +234,7 @@
 ## 0.35.35 — mechanical pre-audit: maxBuffer ceiling killed verbose green suites (2026-08-23)
 
 ### Fix
+
   runMechanicalPreAuditChecks passed no maxBuffer to execFileSync, so
   Node's default 1 MB cap applied: any contract gate whose output exceeds
   1 MB gets its child SIGTERMed by Node and the call throws ENOBUFS —
@@ -205,6 +250,7 @@
 ## 0.35.34 — lastOutcome actually durable (2026-08-23)
 
 ### Fix
+
   Audit-pass finding: v0.35.30's "durable" last-outcome record was never
   serialized — persistStateLine omitted the field and readState never
   restored it, so any restart/reload blanked the widget retention line
@@ -218,6 +264,7 @@
 ## 0.35.33 — plan mode: the extended draft (2026-08-22)
 
 ### Add
+
   /goal plan | /list plan | /loop plan — the EXTENDED DRAFT for
   greenfield/megaplan work where the standard 5–7-question interview is too
   shallow (user design 2026-08-22). Research BEFORE questions (Explore
@@ -236,6 +283,7 @@
 ## 0.35.32 — hermetic settings round-trip test (2026-08-22)
 
 ### Fix
+
   tests/auditor-extensions.test.ts depended on the developer machine having
   ~/.pi/agent extensions to discover: on a bare CI home the discovered list
   was empty, the handler fell back to the input prompt, and the TUI-picker
@@ -246,13 +294,16 @@
 ## 0.35.31 — user-seed trust for /goal start; loop plateau no longer false-stops on a never-moved baseline (2026-08-22)
 
 ### Fix 1: explicit /goal start paused by the suspicious-objective heuristic
+
   Field: Screenshot_20260822_193744 — `/goal start "…because we are logged in"`
   was parked as "Suspicious objective detected (dangling-fragment)" with a
   repair task queued instead of dispatching. The fragment heuristics exist
   for AGENT-authored report garbage; an explicit `/goal start` whose
   objective is verbatim a user seed now dispatches and ledgers
   `faulty_objective_user_seed_trusted` (/goal tweak remains available).
+
 ### Fix 2: loop plateau vs a degenerate zero baseline
+
   Field: doomtap loop stopped "plateau — best: 0" while iterations visibly
   fixed real findings: a min-direction metric reading 0 before work starts
   pins best at 0, so every later productive reading scores flat and burns
@@ -264,6 +315,7 @@
 ## 0.35.30 — durable last-outcome retention: the final verdict stays visible (2026-08-22)
 
 ### Gap
+
   Field report with screenshots (email-api-compare, 2026-08-22): "goal gets
   closed before final audit, so auditor never approves." Forensics showed the
   lifecycle was CORRECT — every archived goal had an approving verdict — but
@@ -272,48 +324,54 @@
   trace of the approval was one transient toast. Returning later, "Auditor
   verdict pending" was the last visible text: indistinguishable from closed-
   without-audit.
+
 ### Ship
-  - State.lastOutcome {at, ok, title, recap}: written by closeArchivedSlot on
+
+- State.lastOutcome {at, ok, title, recap}: written by closeArchivedSlot on
     every terminal slot close (approved AND aborted), overwritten per outcome.
-  - Widget: while no goal/list/loop occupies the slot, one dim retention line
+- Widget: while no goal/list/loop occupies the slot, one dim retention line
     renders for 24h — "✓ done · auditor … approved · <recap>" or "▪ ended ·
     <reason>" — then goes silent. A live goal always outranks it.
-  - /glla wipe clears the record (clean slate means clean).
-  - Tests: tests/last-outcome-retention.test.ts (5) — render shapes, expiry +
+- /glla wipe clears the record (clean slate means clean).
+- Tests: tests/last-outcome-retention.test.ts (5) — render shapes, expiry +
     garbage-timestamp safety, live-goal precedence, source pins for both
     write and wipe-clear sites.
 
 ## 0.35.29 — /glla agents: tracked-subagent panel, transcript tail, widget segment (2026-08-22, GitHub issue #15)
 
 ### Gap
+
   During long fan-outs the only child visibility was the widget's 3-slot
   recent-action ring. A child that "almost completed its final report, went
   back to check some more, then crashed" was invisible: no live status, no
   counters, and no post-mortem trail anyone could find (issue #15).
   Scope agreed with the user: panel + transcript tail + widget line; a live
   activity stream was explicitly rejected as too noisy.
+
 ### Ship
-  - getSubagentAgentsSnapshot() (goal-heartbeat.ts): read-only view of the
+
+- getSubagentAgentsSnapshot() (goal-heartbeat.ts): read-only view of the
     tracked-subagent probes with hung classification mirroring the watchdog
     scan WITHOUT its counter mutation; record-frozen vs event-only evidence
     named; degrades gracefully when the pi-subagents manager registry is
     absent (as on currently installed versions).
-  - /glla agents: ranked table (hung > running > ended), per-child
+- /glla agents: ranked table (hung > running > ended), per-child
     tools/output/silent clocks, liveness hint on hung rows, 20-row cap with
     an explicit trim notice. Read-only, stale-safe.
-  - /glla agents --tail <id> [--lines N]: locates the child's session file
+- /glla agents --tail <id> [--lines N]: locates the child's session file
     in the cwd-munged session store by needle + newest mtime and prints the
     last N entries tolerantly ([role] text, raw fallback). LOUD when nothing
     matches — searched dir, transcript count, needles. Never resumes or
     attaches to a child session.
-  - Widget segment: "● N agents · <busiest> silent Xm ⚠" appended to every
+- Widget segment: "● N agents · <busiest> silent Xm ⚠" appended to every
     card shape via buildWidgetLines; hidden at zero tracked children.
-  - New pure module extensions/goal-agents-panel.ts; snapshot reaches
+- New pure module extensions/goal-agents-panel.ts; snapshot reaches
     goal-commands via CommandDeps injection (no heartbeat import cycle).
 
 ## 0.35.28 — due-wait backstop: lapsed wait pauses actually resume; "you were recovered" notice (2026-08-22, GitHub issue #16)
 
 ### Root cause (field: goal paused 30min past its scheduled auto-resume while the agent narrated "the system should have auto-resumed by now")
+
   Auto-resume for pauseKind "wait" relied SOLELY on in-memory timers. An
   exhaustive map of every wait-pause site found: agent-authored waits
   (pause_goal kind="wait") armed NO timer at all while their own copy
@@ -321,7 +379,9 @@
   re-armed on session_start; single-slot provider-retry timers could be
   silently clobbered by a later schedule; and no code path anywhere compared
   wall time against pauseResumeAt outside display rendering.
+
 ### Fix
+
   The heartbeat owns the durable invariant now: every tick, a wait whose
   pauseResumeAt lapsed >90s is re-fired — main-model recovery waits route to
   a provider probe, everything else clears the park and dispatches one fresh
@@ -337,12 +397,15 @@
 ## 0.35.27 — Windows auditor launch: quote only when needed, gate always first (2026-08-22, PR #17)
 
 ### Field report (PR #17, reproduced on Windows 11 + pnpm global shim)
+
   The detached auditor died ~0.5s after launch and retried forever: quoting
   EVERY argument wraps a bare executable name in quotes, which changes how
   cmd.exe resolves it and how npm/pnpm .CMD shims compute their own
   directory -> MODULE_NOT_FOUND -> "pi exited without an agent_settled RPC
   event" in a 60s retry loop of flashing terminal windows.
+
 ### Fix
+
   buildAuditorPiSpawnSpec now runs the WINDOWS_UNSAFE_ARG rejection on EVERY
   argument BEFORE the quoting decision, then quotes only when tokenization
   requires it (whitespace / cmd metacharacters / empty). Clean bare tokens
@@ -354,6 +417,7 @@
 ## 0.35.26 — zombie watchdog recognizes pi-subagents tool names (2026-08-22, GitHub issue #13)
 
 ### Gap
+
   The v0.35.4 subagent-wait carve-out matched only the legacy built-in names
   (Agent / get_subagent_result / steer_subagent). The pi-subagents extension
   registers its foreground dispatch tool as "subagent" and a blocking wait as
@@ -362,7 +426,9 @@
   records productively for 30 minutes while the parent was stream-silent on
   `subagent` — zombie_run_suspected at 20m, loop_stopped + zombie_run_aborted
   at 30m, productive work killed mid-write.
+
 ### Fix
+
   One shared SUBAGENT_WAIT_TOOL_NAMES set + isSubagentWaitCall predicate in
   goal-heartbeat.ts, consumed by BOTH sites (zombie stand-down and wedge-alert
   hint) so the lists cannot drift apart again. New names: "subagent",
@@ -373,6 +439,7 @@
 ## 0.35.25 — /loop resume honors the zero-stream abort park (2026-08-22, GitHub issue #14)
 
 ### Gap
+
   abortZombieRun parks a loop with stopReason "stopped: automatic zero-stream
   abort — ... (iteration N preserved; /loop resume to retry)" and its message
   promises /loop resume — but the RESUMABLE_STOP predicate in the resume
@@ -380,7 +447,9 @@
   loop to resume"; iteration count, best value, and preserved history were
   unreachable without re-drafting from scratch (field report: a metricless
   24h loop parked at iteration 210 with 200 history entries).
+
 ### Fix
+
   RESUMABLE_STOP gains the "stopped: automatic zero-stream abort" prefix.
   The explicit resume now re-arms the loop exactly as promised: fresh stall
   window, re-armed counters, load hold released, one new dispatch — with
@@ -390,12 +459,15 @@
 ## 0.35.24 — auditor model picker at full selector parity: forbidden-models filtering (2026-08-22, note.md Next #1)
 
 ### Gap
+
   The /glla -> Auditor model row already hosted the /model-style fuzzy
   picker and persisted to the exact key resolveAuditorModel reads — but
   unlike every main-agent flow it did NOT apply forbidden-models policy:
   blocked models appeared in the list and the typed escape hatch accepted
   them, yielding pins the resolver silently skips at audit time.
+
 ### Fix
+
   promptModelRef gains an excludeRefs opt threading into buildModelPickItems
   (list-level filter) AND validating typed entries against isForbiddenModel
   (a policy match is refused with a warning naming the ref — never saved).
@@ -406,24 +478,27 @@
 ## 0.35.23 — load without autostart: cold sessions hold automation for an explicit decision (2026-08-22, note.md Next #2)
 
 ### Root cause
+
   shouldAutoResumeOnSessionStart already demanded explicit `autoResume ===
   true` (v0.28.21 tri-state, undefined default = HOLD) — but its only
   consumer fed it the AGGRESSIVE-MODE COERCED value (unset -> true because
   aggressiveMode defaults on), so stock installs auto-resumed everything on
   every session load despite the documented default. Three further paths
   bypassed the consent entirely.
+
 ### Fixes
-  - Load consent now reads the RAW global autoResume setting; aggressive
+
+- Load consent now reads the RAW global autoResume setting; aggressive
     mode keeps owning its caps only. Default (unset/false) = restore and
     DISPLAY state, hold automation.
-  - New durable loadHoldAt state engages through the SAME freeze gates as
+- New durable loadHoldAt state engages through the SAME freeze gates as
     /glla pause (continuation dispatch, loop ticks, heartbeat refires,
     recovery timers); released by any explicit work command (/goal resume,
     /list resume, /list next, /loop resume|start, new goal creation),
     each release ledgered load_hold_released. Heartbeat host-loss
     supervision stays armed under the hold — a held plane is never an
     unprobed idle plane.
-  - Closed consent bypasses: different-pid crash successors no longer
+- Closed consent bypasses: different-pid crash successors no longer
     auto-resume held loops or replay journals as automation (same-process
     /reload successors keep continuity); parked completion-audit claims no
     longer auto-retry on a bare cold start (the main-model-recovery one-
@@ -432,15 +507,17 @@
 ## 0.35.22 — a queued item blocked by a live loop is loud and self-heals at loop end (2026-08-22)
 
 ### suspicious-unstartable-repair-card fix (note.md Next #3)
+
   Field (screenshots 20260821_114109/114210/134442/134645): /goal start of a
   lowercase-fragment objective paused the goal and queued a repair task; the
   card said "/list next starts the preserved repair/replan task" — but with
   the Chrome-Bridge loop owning the surface, activateNextListItem's
   one-active-thing guard refused activation LEDGER-ONLY: unstartable AND
   invisibly blocked. Two fixes:
-  - the refusal now notifies with the queued objective and the way out
+
+- the refusal now notifies with the queued objective and the way out
     ("/loop stop … then /list next"), and the ledger names what stayed queued;
-  - when a loop ends by ANY route (/loop stop, /loop finish, plateau/bounds
+- when a loop ends by ANY route (/loop stop, /loop finish, plateau/bounds
     stop), resumeQueuedListAfterLoopEnd retries list activation when no goal
     owns the surface — the blocked entry starts instead of staying dead.
   Also: tests/list-invisible-restart.test.ts no longer depends on co-resident
@@ -450,6 +527,7 @@
 ## 0.35.21 — list queue stays visible across lifecycle boundaries (2026-08-22)
 
 ### list-invisible-until-restart fix (note.md Next #4)
+
   Field: a stopped/interrupted /list exec left the queue surface blank —
   active item only, no "N waiting · up next" line — until a session
   restart. Root cause: the sidebar renders state.list from MEMORY while the
@@ -466,6 +544,7 @@
 ## 0.35.20 — one bounded automatic retry for transient mechanical-check deaths (2026-08-21)
 
 ### Gate resilience
+
   Field (sixth audit round): the pre-audit gate died MID-RUN under machine
   load ~30 — output ends inside a passing file, no runner summary, exit 1 —
   while the identical tree passed green twice in isolation. Resource
@@ -479,6 +558,7 @@
 ## 0.35.19 — load-resilient budgets for the aggressive-recovery test (2026-08-21)
 
 ### Flake hardening
+
   At machine load ~50 (16 cores), the aggressive no-verdict recovery test's
   wall-clock wait budgets (2x 25s inside a 60s per-test ceiling) expired
   before two real subprocess-based auditor retry cycles completed — while
@@ -489,6 +569,7 @@
 ## 0.35.18 — mechanical checks resolve raw runners to their canonical scripts (2026-08-21)
 
 ### Spurious fast-fail fix (fourth audit round)
+
   A verification contract that names a RAW RUNNER in prose ("passes under
   `bun test`") made the deterministic pre-audit execute `bun test` bare,
   ignoring the project's own required configuration encoded in package.json
@@ -506,6 +587,7 @@
 ## 0.35.17 — zero-stream abort gains ONE bounded automatic retry; tag backfill (2026-08-21)
 
 ### Post-accept hang self-heal (note.md Next §1)
+
   Turns dispatched by accepting a Confirm dialog hung with zero provider
   stream activity often enough that users repeatedly returned to parked
   "action needed" sessions (field screenshot 20260821_152311). The watchdog's
@@ -526,18 +608,21 @@
   pause-during-waystation paths (tests/post-accept-hang-retry.test.ts).
 
 ### Version tags backfilled
+
   All 41 released versions missing their `v<version>` git tag (v0.34.20 …
   v0.35.16) were tagged at the historical commit whose package.json carried
   that exact version and pushed to all remotes. Additive-only — no history
   rewrite.
 
 ### README currency pass
+
   Documents the v0.35.15 per-phase glyphs/activity meter/silent-stretch
   footer, `/glla pause`, and the v0.35.17 zero-stream auto-retry.
 
 ## 0.35.16 — mechanical pre-audit gate no longer kills legitimate long checks (2026-08-21)
 
 ### Deterministic pre-audit timeout fix
+
   `runMechanicalPreAuditChecks` executed every contract command under a
   hard 60-second `execFileSync` ceiling — but this repo's own contract
   command (`npm run release:check`) legitimately needs ~3 minutes. Every
@@ -553,6 +638,7 @@
 ## 0.35.15 — glla status-surface UX: visual footer, /glla pause, proactive quiet notify (2026-08-21)
 
 ### Visual status footer
+
   The auditing footer now leads each auditor phase with a distinct glyph
   (queued ⋯ · running ▶ · quiet ◌ · blocked ⛔ · awaiting-verdict ✓) and a
   compact draining activity meter (▰▱) that empties as worker silence grows
@@ -560,6 +646,7 @@
   reading the sentence.
 
 ### /glla pause | resume — broad supervisor freeze
+
   `/glla pause` freezes ALL automatic machinery — heartbeat re-arms, stale
   probes, zombie cleanup, main-model recovery probes, automatic completion-
   audit recovery, continuation dispatch, loop ticks, and the proactive quiet
@@ -571,6 +658,7 @@
   user commands always still work.
 
 ### Proactive auditor quiet reporting
+
   Entering the quiet phase (~3 min of zero worker activity) now fires exactly
   ONE warning notify instead of only recoloring the status chip — the field
   complaint was an 8-minute silent stretch the user only discovered after the
@@ -578,6 +666,7 @@
   10 minutes so a missed silence stays visible.
 
 ### Persistence fix (latent bug)
+
   `persistStateLine` never serialized `lastCompactionAt` despite v0.34.97's
   comment claiming it did — the ⏳ compacting… chip silently lost its reload
   survival. Both epoch fields now ride the state line with explicit nulls so
@@ -586,6 +675,7 @@
 ## 0.35.14 — full extension audit hardening (2026-08-21)
 
 ### Verification and lifecycle integrity
+
   Mechanical contract checks now run through a shell-free literal-argument
   boundary, auditor verdicts require one final terminal marker, and regression
   shield references must appear inside `<evidence>`. Invalid persisted IDs are
@@ -595,6 +685,7 @@
   archiving fails, and branch-mode loop resumes refuse the wrong branch.
 
 ### Release contract
+
   Published documentation includes the linked planning files, the workflow
   runs the release contract on pushes and pull requests, and release tooling
   uses pinned Node/npm versions.
@@ -602,6 +693,7 @@
 ## 0.35.13 — stale-API recovery loop fix (2026-08-20)
 
 ### Stale-handle recovery correctness
+
   Heartbeat recovery now validates the captured `ExtensionAPI` separately
   from `ExtensionContext`. A context that still answers `isIdle()` cannot
   revive an API that Pi has invalidated, so glla keeps the durable interruption
@@ -611,6 +703,7 @@
 ## 0.35.12 — npm 12 pack-report compatibility (2026-08-20)
 
 ### Keyed npm 12 dry-run reports
+
   The release contract now handles npm 12's keyed JSON dry-run shape in
   addition to the array and single-object shapes used by earlier npm
   versions, while retaining path normalization for package contents.
@@ -618,6 +711,7 @@
 ## 0.35.11 — npm pack report shape compatibility (2026-08-20)
 
 ### Single-object and array npm reports
+
   The release contract accepts both JSON shapes emitted by npm's dry-run
   command: a single report object and an array of report objects. It continues
   to normalize root-relative and `package/`-prefixed file paths before checking
@@ -626,6 +720,7 @@
 ## 0.35.10 — npm pack report compatibility (2026-08-20)
 
 ### Multi-entry npm dry-run reports
+
   The release contract aggregates all entries returned by npm's JSON dry-run
   report before checking the published documentation set. This supports npm
   versions that return multiple package report entries in trusted publishing.
@@ -633,6 +728,7 @@
 ## 0.35.9 — release packaging compatibility (2026-08-20)
 
 ### Cross-version npm tarball contract
+
   The release contract normalizes npm's root-relative and `package/`-prefixed
   dry-run file paths, keeping documentation coverage checks stable across the
   npm versions used by local development and trusted publishing.
@@ -640,6 +736,7 @@
 ## 0.35.8 — main-model preferred-primary failback (2026-08-20)
 
 ### Main-model preferred-primary failback
+
   Main-agent fallback recovery now defaults to `mainModelFailback=auto`: a
   successful fallback turn keeps the original primary durable and schedules a
   supervised health probe using `mainModelPrimaryProbeMinutes` (15 minutes by
@@ -650,6 +747,7 @@
 ## 0.35.7 — fast-fail pre-audits, zero-pause execution, and milestone gating (2026-08-20)
 
 ### Deterministic fast-fail mechanical pre-audits
+
   `extractMechanicalCheckCommands` and `runMechanicalPreAuditChecks` in
   `extensions/goal-loop-shield.ts` parse explicit shell command gates
   (`npm test`, `bun test`, `tsc --noEmit`, `cargo test`, etc.) from the
@@ -660,6 +758,7 @@
   wasting tokens or 45 seconds on an LLM audit pass.
 
 ### Two-phase decision architecture & non-interruption law
+
   `LONG_RUNNING_JUDGMENT_POLICY` and the execution prompts enforce deep
   upfront grilling during drafting followed by 100% unattended autonomous
   execution. The agent is strictly forbidden from pausing for obvious choices,
@@ -669,6 +768,7 @@
   summary.
 
 ### Stale-handle watchdog self-healing
+
   In `extensions/goal-heartbeat.ts`, when the 15-second heartbeat detects that
   the initial factory `ExtensionAPI` handle threw a stale-API error after an
   internal Pi session replacement, it attempts `tryAbsorbHostSuccessor` with
@@ -676,6 +776,7 @@
   false-positive `host session lost` stalls.
 
 ### Structured task milestone gating
+
   `Task` and `TaskProposal` schemas now support per-task `verificationContract`
   milestone gates. In `complete_task`, if a task defines a verification gate,
   its mechanical checks are executed deterministically before the task can be
@@ -684,21 +785,22 @@
 ## 0.35.6 — long-term preferences policy boundary (2026-08-19)
 
 ### Typed-boundary regression pins
+
   Implements the durable pin set called out in the long-term preferences
   policy contract (audit/LONG-TERM-PREFERENCES-POLICY-2026-08-19.md):
 
-  - The continuation prompt template carries no auto-injected preference
+- The continuation prompt template carries no auto-injected preference
     or remembered section.
-  - No extension auto-prefers a remembered prose value
+- No extension auto-prefers a remembered prose value
     (function-name walk + XML-block walk over extensions/).
-  - The `Settings` interface has no opaque free-form text field
+- The `Settings` interface has no opaque free-form text field
     described as memory / preference / remember.
-  - `saveSettings` is the only writer to the settings JSON files; both
+- `saveSettings` is the only writer to the settings JSON files; both
     `globalSettingsPath()` and `projectSettingsPath()` route through
     `os.homedir()` / `cwd` (env override accepted), and every other
     extension is checked for direct `writeFile*` calls against the
     settings basenames.
-  - `extensions/goal-settings.ts` cites the policy artifact in its
+- `extensions/goal-settings.ts` cites the policy artifact in its
     header so the safety contract is reachable from the typed boundary.
 
   The pin set is structural and negative: it fails closed if a future
@@ -708,6 +810,7 @@
 ## 0.35.5 — six-label completionSummary shape (2026-08-19)
 
 ### Tool schema adopts the six-label recap
+
   `complete_goal`'s schema description now recommends the Outcome / Changed /
   Evidence / Tests / Unresolved / Next shape from
   `audit/COMPLETION-SUMMARY-POLICY-2026-08-19.md` and points callers at the
@@ -717,17 +820,20 @@
   string) is preserved.
 
 ### Regressions
+
   `tests/completion-recap-shape.test.ts` adds two pins:
-  - the detached auditor's prompt renders the two claims as separate
+
+- the detached auditor's prompt renders the two claims as separate
     `<completion_summary>` / `<verification_summary>` blocks (the executor
     claim is not the auditor's verdict);
-  - the `complete_goal` tool schema names every label and references the
+- the `complete_goal` tool schema names every label and references the
     policy artifact (so a future refactor cannot rewrite the description
     back to "1-paragraph completion claim" without breaking this test).
 
 ## 0.35.4 — auditor reports in continuation prompts and repair-loop closure (2026-08-16)
 
 ### Continuation prompts carry the latest auditor verdict
+
   After a disapproval the continuation now includes the full auditor report
   verbatim (LATEST AUDITOR DISAPPROVAL / IMPOSSIBLE / REGRESSION SHIELD
   BLOCKED sections), so the agent sees the actual objections instead of
@@ -739,6 +845,7 @@
   `newObjective` — never a bare retry, which the gate rejects.
 
 ### Replan confirmation consumes the source queue fragment
+
   Confirming a replan card for a faulty queued fragment now removes that
   source item from the durable queue and its sidecar (matched by the repair
   target id and an unchanged fragment objective; user edits to the item win).
@@ -746,11 +853,13 @@
   third repair card after the repair goal archived.
 
 ### DECIDE findings default to a decision
+
   DECIDE findings are raised to the user once and resolved as decided unless
   genuinely blocked; the policy-flip keeps the loop moving instead of
   re-asking the same question.
 
 ### Settings honesty and audit-loop cleanups
+
   The settings menu shows the EFFECTIVE aggressive defaults for unset rows
   (unset no longer reads as off); the auditor prompt no longer claims an
   auto-continue the detached auditor does not perform; recovery surfaces
@@ -762,12 +871,14 @@
 ## 0.35.3 — live auditor clock and clearer recovery timing (2026-08-15)
 
 ### Detached auditor status keeps moving between worker events
+
   The UI ticker now refreshes auditing states, and the auditor elapsed clock
   advances from its attempt start between progress-file updates. Long bash or
   thinking intervals no longer look frozen; stale workers still become quiet
   and hit the existing watchdogs.
 
 ### Total time and recovery activity are labeled honestly
+
   Goal cards and the active status HUD now label wall-clock lifetime as
   `total`, while recovery surfaces say `last host activity` so retry/error
   events are not confused with useful goal progress.
@@ -775,12 +886,14 @@
 ## 0.35.2 — role-specific agent settings and compact values (2026-08-15)
 
 ### Agent settings are separated by role
+
   Main agent, Drafter, Auditor, and Subagents now have separate settings tabs.
   Each role keeps its model, thinking, and fallback controls together; the
   current main agent is shown as a runtime value rather than being confused
   with its fallback chain.
 
 ### Model values remain visible
+
   The settings table defaults to a compact view that gives the VALUE column the
   available width. Press `d` to toggle the long descriptions. Drafter and
   auditor fallback values show the effective/requested thinking level when the
@@ -789,12 +902,14 @@
 ## 0.35.1 — drafter agent controls and settings taxonomy (2026-08-15)
 
 ### Drafter thinking follows the selected agent
+
   The drafter picker now offers the thinking levels supported by the selected
   model, persists an explicit `drafterThinkingLevel`, reapplies it across the
   drafter fallback chain, and restores the user's original session thinking
   level after the temporary drafting lease ends.
 
 ### Settings name agents and fallbacks honestly
+
   The former **Backups** tab is now **Agents**. Main, drafter, and subagent
   entries are presented as agents with optional fallback agents/models; the
   persisted setting keys and operational fallback commands remain compatible.
@@ -802,12 +917,14 @@
 ## 0.35.0 — explicit designer routing and drafting recovery (2026-08-15)
 
 ### Long-running judgment is a prompt contract
+
   Drafting and continuation now preserve the objective and verification
   contract, prefer durable root-cause fixes, permit safe reversible workarounds
   when useful, and reserve questions for genuine decision boundaries. The
   unattended fallback is explicit and never guesses a provider reset.
 
 ### Designer is a real managed role
+
   `Agent: Designer`, `Role: designer`, and `Designer: yes` route an explicit
   goal, list item, or task-plan checkpoint to a managed read-only Designer
   subagent. The role persists through queue/goal/task state, appears in status
@@ -815,6 +932,7 @@
   when the role or provider is unavailable.
 
 ### Drafting has its own temporary model chain
+
   `/goal`, `/list`, and `/loop` drafting can use a dedicated primary plus
   ordered fallbacks. Provider failures retry the existing interview on the
   next eligible drafter candidate, including one bounded same-session retry as
@@ -822,6 +940,7 @@
   or interruption, and never consumes the main-model or auditor chains.
 
 ### Host and continuation audit
+
   The Pi session-replacement limitation is documented with a concrete
   event-safe API request and acceptance tests. Codex, Claude Code, and DeepSeek
   Harness continuation approaches were compared; the result is a durable
@@ -830,6 +949,7 @@
 ## 0.34.142 — fully reason-agnostic provider recovery (2026-08-15)
 
 ### No quota policy or availability inference
+
   Main-model and detached-auditor recovery no longer classify provider text,
   status codes, billing/rate-limit wording, or `Retry-After` hints to choose a
   fallback or delay. All recoverable provider failures use the same eager
@@ -838,6 +958,7 @@
   compatibility metadata only.
 
 ### Current recovery surface is generic
+
   User-facing cards, notifications, and pause actions use generic provider
   recovery copy. Diagnostics remain bounded and sanitized for the ledger and
   audit history. Obsolete `mainModelFallbackOnRateLimit`, `hourlyQuotaProbe`,
@@ -845,13 +966,16 @@
   effective policy.
 
 ## 0.34.141 — aggressive default and quota-agnostic hourly recovery (2026-08-15)
+
 ### Aggressive mode is now the default
+
   `aggressiveMode` resolves to ON when unset, enabling keep-going defaults for
   auto-resume, audit/stall limits, wedge alerts, and infrastructure recovery.
   Set it explicitly to `false` for the conservative pause-first policy;
   explicit per-key settings still win.
 
 ### Recovery retries without quota checks
+
   Detached-auditor infrastructure failures no longer suppress the eager retry
   based on account, billing, rate-limit, or upstream Retry-After wording. The
   shared plan retries once after 5 seconds, then schedules stored-claim probes
@@ -860,20 +984,25 @@
   envelope remains in place.
 
 ## 0.34.140 — resilient completion auditing and zombie recovery (2026-08-15)
+
 ### No-verdict completion audits keep a safe recovery path
+
   Completion-auditor timeouts and infrastructure failures remain explicitly
   non-verdict outcomes. Normal mode keeps one durable retry; `aggressiveMode`
   re-arms the isolated auditor inside a durable 24-hour recovery window,
   persisting the retry count and horizon across lifecycle changes.
 
 ### Zombie cleanup remains retryable after a rejected claim
+
   The zero-stream watchdog records its abort latch only after the activation
   guard accepts and completes cleanup, so a transient stale-generation or
   session guard rejection can be retried by a later heartbeat. Regression tests
   cover both the durable auditor retry and the cleanup ordering.
 
 ## 0.34.139 — bounded main-model fallbacks and process cleanup (2026-08-15)
+
 ### Main sessions keep an ordered fallback chain
+
   Main-model backup settings are normalized case-insensitively, capped at ten
   alternatives, and the ordered chain leads the Backups tab with a visible
   count. The multi-select picker shows `current → backup 1 → backup 2`, numbers
@@ -891,6 +1020,7 @@
   timers or model switches use it.
 
 ### Detached workers are reaped as process trees
+
   Parent cancellation and watchdog paths now wait for worker exit and escalate
   when a detached worker ignores SIGTERM. Worker-owned lock metadata lets a
   replacement host reap stale workers from a previous pi process. The smoke
@@ -898,6 +1028,7 @@
   interruption or assertion failure.
 
 ### Release-test isolation is order-independent
+
   bun test runs every file through the same worker process under
   `--max-concurrency=1`, so the pid-scoped test settings file was shared
   across all files: a test writing `autoResume:true` poisoned later files
@@ -907,30 +1038,39 @@
   activation regression pins its no-autoResume precondition explicitly.
 
 ## 0.34.138 — CI-safe auditor timing and release validation (2026-08-13)
+
 ### CI auditor timing has headroom
+
   Process-backed auditor regressions use a CI-safe wall-clock allowance, and
   lifecycle polling tolerates slower hosted runners without changing production
   watchdog behavior.
 
 ### Restore-gate release test is hermetic
+
   The first default-settings restore-gate regression explicitly disables global
   auto-resume before seeding its fixture, preventing a reused CI preload settings
   file from changing the expected held-on-start result.
 
 ## 0.34.136 — isolated release validation and stable queue ordering (2026-08-13)
+
 ### Release validation isolates test files and normalizes queue order
+
   Release tests now run each file in an isolated global context, while disk queue
   readers sort sidecar names before parsing. This removes shared-runtime state
   leakage and filesystem-dependent ordering from CI and package validation.
 
 ## 0.34.135 — deterministic release validation (2026-08-13)
+
 ### Release checks are deterministic under CI
+
   The package test scripts now run Bun tests with bounded serial concurrency and
   an explicit per-test timeout, preventing shared temporary-fixture races in
   the release workflow.
 
 ## 0.34.134 — Windows detached auditor launch and package release (2026-08-13)
+
 ### Windows detached auditor launch and atomic protocol retries
+
   Windows npm installations expose `pi.cmd` rather than a directly executable
   `pi` binary. The detached auditor now uses an explicit, quoted `cmd.exe`
   shim boundary without Node's unsafe shell-argument concatenation. Worker and
@@ -940,16 +1080,19 @@
   launch and retry contracts.
 
 ### License switched to AGPL-3.0-only
+
   The package metadata, lockfile, README, and bundled `LICENSE` now identify the
   project as GNU Affero General Public License v3.0-only.
 
 ### `/glla version` identifies the installed package
+
   The new read-only `/glla version` action reads the adjacent package manifest,
   reports the version loaded by the running extension, and includes the
   registry comparison command so stale installations are visible without
   mutating live goal state. Completion and documentation cover the command.
 
 ### Provider-wall recovery copy is sanitized and episode-deduplicated
+
   Quota, provider-wall, and detached-auditor diagnostics now have separate
   durable and user-facing projections. Chat/tool/recovery copy uses stable
   classifications instead of raw Token Plan/429 payloads, while bounded raw
@@ -959,6 +1102,7 @@
   changing retry hints/request ids, and one-notice-per-episode behavior.
 
 ### Hourly provider-wall probe survives failed recovery probes
+
   The optional `:00:30` recovery ticker now re-arms after its asynchronous
   probe settles, even when the failed probe clears the normal recovery timer.
   Generation and fresh-host checks prevent stale sessions from creating a
@@ -966,12 +1110,14 @@
   failure-safe re-arm path.
 
 ### Valid imperative recovery objectives keep their saved intent
+
   Faulty-objective recovery no longer treats every imperative mentioning
   auditor or verification machinery as reviewer metadata. Explicit reviewer
   markers and non-actionable fragments remain fenced, while saved list work
   such as the detached-auditor recovery item can activate normally.
 
 ### Parked completion audits get one durable healthy-recovery retry
+
   A `recovery-pending` detached-auditor claim now records and consumes one
   automatic retry only after a validated lifecycle/recovery event. The retry
   is generation/context fenced and repeated lifecycle events cannot create a
@@ -980,6 +1126,7 @@
   one-shot marker, repeated events, and manual recovery.
 
 ### Host-loss and no-verdict auditor recovery no longer parks indefinitely
+
   A stale terminal now keeps only a generation-fenced heartbeat/UI probe alive,
   allowing a same-process handle to self-heal without requiring a reload while
   all sends remain stopped. A validated file-backed successor also consumes the
@@ -994,6 +1141,7 @@
   closed without mutating through a retained handle.
 
 ### Power-mode auditor: bash restored with bounded tool execution
+
   The detached auditor intentionally restores `bash` alongside read/grep/find/ls
   so it can run bounded tests, inspect git state, and reproduce behavior. This
   is an explicit power-over-safety decision, not a read-only contract. The
@@ -1003,6 +1151,7 @@
   objective requires it.
 
 ### Detached auditor hardening: no shell/trust privilege and bounded tools
+
   Completion auditors now run with only `read`, `grep`, `find`, and `ls`; the
   worker uses `--no-approve` and rejects any unexpected tool event, closing the
   prompt-injection path that paired repository-controlled content with an
@@ -1014,6 +1163,7 @@
   argv, disallowed bash events, parent and worker tool timeouts.
 
 ### Truthful list-audit fan-out dedupe and cap accounting
+
   The list-audit collector previously joined every queued objective into one
   string and searched for each finding's first 60 characters. A distinct
   finding whose prefix appeared inside another objective was silently dropped.
@@ -1025,6 +1175,7 @@
   coverage exercises both the substring collision and 51-item cap cases.
 
 ### Already-shipped guard: version-less claims route to the normal audit
+
   Field evidence 2026-08-11 (dracon-platform): a session restart restored the
   OLD conversation; the continuation carried a NEW goal whose fix was genuinely
   already shipped, and the v0.34.96 guard aborted it correctly. But the
@@ -1042,6 +1193,7 @@
   now carries routedToAudit (true = normal audit, false = aborted).
 
 ### Standalone Auditor thinking row + headless /glla list sync
+
   The v0.31.4 comment claimed "/glla thinking= remains the direct path"
   for changing the auditor's thinking level — no such action ever
   existed, so the ONLY way to change it was re-picking the auditor model.
@@ -1054,6 +1206,7 @@
   subagentModelOverrides, subagentFallbacks and toolOverrides — synced.
 
 ### /glla settings table completeness (hourlyQuotaProbe + toolOverrides rows, provenance fix)
+
   Settings-menu audit (2026-08-10): the hourly-quota-probe toggle had a
   dispatcher handler but NO row in the table — the setting the user asked
   to keep was only reachable by hand-editing the JSON. Added the row to
@@ -1066,6 +1219,7 @@
   (WEDGE_ALERT_DEFAULT_MINUTES) — corrected.
 
 ### Quota-reset time claims removed from UI; temporary quota messages honored at their own short window
+
   (`note.md` 2026-08-10, Screenshot_20260810_224142/224136/224132/224119/224114).
   Field sessions parked on provider walls showed `next: quota reset at
   23:00` / `no turns until quota reset at 23:00` / `waiting for quota
@@ -1087,17 +1241,19 @@
   setting-only (hourlyQuotaProbe toggle) with no UI surface.
 
 ### Stale goal card actions + unexplained QUEUED status + false watchdog interrupt after recovery
+
   (`note.md` 2026-08-10, Screenshot_20260810_221249 + 221345). Three UI/UX
   findings from the field:
-  - **Stale action on the goal card**: the `recentActions` ring was not
+
+- **Stale action on the goal card**: the `recentActions` ring was not
     goal-scoped — the previous goal's `✓ complete_goal` leaked onto the new
     goal's card. Tool results now stamp `at`, and the card only shows actions
     newer than the goal's creation (`>= createdAt − 5s`; unstamped legacy
     entries stay visible).
-  - **QUEUED status with no explanation**: the queued line now reports
+- **QUEUED status with no explanation**: the queued line now reports
     `turn pending` (a continuation is dispatched but not yet acknowledged)
     plus host last-activity freshness, so a waiting card says WHY it waits.
-  - **False "did not start turn" interrupt**: the continuation watchdog fired
+- **False "did not start turn" interrupt**: the continuation watchdog fired
     90s after a main-model-recovery resume while the model chain was still
     warming up (goal `20260810205826-npnmfa`, watchdog at 21:13:15Z, turn
     started 21:14:36Z). `mainModelRecoverySucceeded` now stamps
@@ -1105,17 +1261,18 @@
     recovery grace (`continuation_start_paused_for_recovery`, capped at 10
     re-arms) instead of interrupting.
   Test-suite hardening found while verifying:
-  - the new module-level recovery-resume stamp leaked across files in bun's
+- the new module-level recovery-resume stamp leaked across files in bun's
     shared-process node:test runner (blocked-pause-autoclear set it via
     `mainModelRecoverySucceeded`; its resetModuleState now clears it) — this
     re-armed 7 continuation-watchdog tests in sibling files;
-  - auditor-process fragment test: 25ms emit gaps let a stretched parent poll
+- auditor-process fragment test: 25ms emit gaps let a stretched parent poll
     miss intermediate byte counts (sampling race) — gaps widened to 120ms,
     wall timeout 2s→5s;
-  - behavioral watchdog tests: real-time wait budgets widened (1.5s→4s) so
+- behavioral watchdog tests: real-time wait budgets widened (1.5s→4s) so
     heavy-CI load does not stretch 300ms test timers past the deadline.
 
 ### Widget spacer renders as a stray dot in π-web; agents-panel separator padding
+
   (`note.md` 2026-08-10, Screenshot_20260810_220759 + 220051). The auditing
   card's paragraph spacer `WORKER_TEXT_SPACER` was a dim `│ ·` hairline;
   renderers that drop box-drawing glyphs (π-web) showed a lone `·` on its own
@@ -1123,9 +1280,10 @@
   truly empty widget lines) but invisible in every renderer. Separately, the
   user flagged cramped text in the pi-subagents Agents panel rows
   (`description · stats`); pi-subagents' dist + src now join with two spaces
-  around `·` (`  ·  `) in agent-widget.ts/index.ts row builders and stat lines.
+  around `·` (`·`) in agent-widget.ts/index.ts row builders and stat lines.
 
 ### Jiti `export let state` binding split froze persistence and broke activation
+
   (`audit/JITI-STATE-BINDING-SPLIT-2026-08-10.md`). pi's extension loader (jiti
   2.7.0, moduleCache:false) compiles `export let state` with a captured-value
   export binding: after `replaceState(next)` every importer of `state` kept the
@@ -1137,6 +1295,7 @@
   under node (`npm run test:jiti`) and fails on the pre-fix code.
 
 ### Faulty-objective recovery gate
+
   (`audit/FAULTY-OBJECTIVE-RECOVERY-2026-08-10.md`). Suspicious objectives are
   now checked before manual/startup resume, pre-activation list selection,
   stored completion-audit retry, continuation retry, stall, length, and final
@@ -1150,6 +1309,7 @@
   archive` remain untouched. Pi core/host boundaries remain unchanged.
 
 ### Prevent reviewer metadata from becoming malformed queue goals
+
   (`audit/REVIEWER-ARCHIVE-METADATA-GUARD-2026-08-10.md`). Automatic postaudit
   now mines only curated disapproved/error auditor reports; archived Objective
   and verification-contract metadata is excluded because it can contain
@@ -1158,6 +1318,7 @@
   the automatic/manual source split.
 
 ### Validated session-start recovery for parked detached audits
+
   (`audit/SESSION-START-AUDIT-RECOVERY-2026-08-10.md`). A durable completion
   claim already parked as `recovery-pending` now follows the existing
   `session_start` recovery policy: a matching host handoff/rebind or explicit
@@ -1168,6 +1329,7 @@
   no-blind-resend/manual-hold paths.
 
 ## 0.34.121 — close auditor lifecycle gaps in cancel, wipe, and blank startup
+
   (v0.34.121, audit/OBJECTIVE-LIFECYCLE-FOLLOWUP-2026-08-09.md). `/glla
   cancel` now stops an active loop before considering unrelated waiting list
   work. `/glla wipe` treats provider recovery and continuation-dispatch state
@@ -1178,6 +1340,7 @@
   regressions cover all three auditor objections.
 
 ## 0.34.120 — objective lifecycle closure, conflict confirmation, and one-pass wipe
+
   (v0.34.120, audit/OBJECTIVE-LIFECYCLE-2026-08-09.md). Approved objectives
   now persist their final recap in the archive, show exactly one final `✓ done`
   summary, and clear the live slot automatically; legacy terminal slots close
@@ -1195,6 +1358,7 @@
   scope.
 
 ## 0.34.119 — note.md triage: objective cancel, summary canonicalization, truthful stale-ctx recovery
+
   (v0.34.119, audit/NOTE-REMAINING-TRIAGE-2026-08-09.md). Re-audited
   every item in `/home/dracon/chat/pi/note.md` and added regression coverage.
   `complete_goal` now validates impossible pass-count summaries BEFORE
@@ -1203,7 +1367,8 @@
   active objective: an active list item plus its waiting queue; standalone
   goals and loops keep their own paths. Approved list completion now has an
   integration test proving durable archive + `goal_archived(status=complete)`
-  + exactly-one next-item activation. Corrected stale-ctx UX: pi's public
+
+- exactly-one next-item activation. Corrected stale-ctx UX: pi's public
   event `ExtensionContext` does not expose `newSession`, and `ExtensionAPI`
   never did; v0.34.117's cast could not auto-recover on the real SDK. The
   helper now checks the actual context capability, never claims automatic
@@ -1213,6 +1378,7 @@
   issue, and current auditor/stacked-thread evidence.
 
 ## 0.34.118 — dedicated Backups segment + forbidden-aware ordered picker
+
   (v0.34.118, audit/BACKUPS-PICKER-2026-08-09.md). `/glla settings`
   now has a dedicated `Backups` segment rather than burying main-model
   recovery beside Keep-going controls. Main model backups, retry cadence,
@@ -1224,6 +1390,7 @@
   picker filtering, six-tab grouping, and both editor paths.
 
 ## 0.34.117 — fresh-session auto-recovery on stale ctx (historical claim; superseded by v0.34.119)
+
   (v0.34.117, audit/STALE-CTX-AUTO-RECOVERY-2026-08-09.md). Pi's compact
   subsystem holds a cached ctx; once it goes stale ("This extension ctx
   is stale after session replacement or reload") EVERY sendMessage
@@ -1257,6 +1424,7 @@
   `extensions/loops/goal.ts` ≤ 700 lines (387).
 
 ## 0.34.116 — context-overflow fallback + /reload copy + stale-ctx one-liner
+
   (v0.34.116, audit/SESSION-COMPACT-FALLBACK-2026-08-09.md). When pi's
   `session_compact` cannot release the prompt (the model is smaller than
   the prompt needs), glla now walks the fallback chain to a larger-context
@@ -1283,7 +1451,9 @@
   (up from 1181). `extensions/loops/goal.ts` ≤ 700 lines (387).
 
 ## 0.34.115 — multi-select model picker + unified model-selector
+
 ### 0.34.115 — multi-select model picker + unified model-selector
+
   (v0.34.115, audit/MODEL-PICKER-MULTI-SELECT-2026-08-09.md). New
   `extensions/multi-model-picker.ts` (multi-select variant of the existing
   picker, space to toggle, enter/tab to confirm, ordered selection).
@@ -1310,6 +1480,7 @@
   is rewritten to three clean commits with no .pi-glla noise.
 
 ### 0.34.114 — decomposition step 6: goal.ts real thin installer
+
   (v0.34.114, audit/GOAL-INSTALLER-THINNING-2026-08-09.md). The public
   `extensions/loops/goal.ts` entrypoint is now a 387-line real activation /
   wiring surface (≤700-line contract satisfied), and the remaining runtime
@@ -1328,6 +1499,7 @@
   clean.
 
 ### 0.34.113 — decomposition step 5: extensions/goal-continuation.ts extracted
+
   (v0.34.113, audit/GOAL-CONTINUATION-EXTRACTION-2026-08-09.md). The
   continuation cluster — `scheduleContinuation`/`sendContinuation`,
   `sendStallEscalation`/`sendLengthContinue`, the dispatch sidecar lifecycle
@@ -1351,6 +1523,7 @@
   never weakened. Suite: 1146 pass / 1 skip / 0 fail, tsc clean.
 
 ### 0.34.112 — decomposition step 4: extensions/goal-heartbeat.ts extracted
+
   (v0.34.112, audit/GOAL-HEARTBEAT-EXTRACTION-2026-08-09.md). The heartbeat
   watchdog cluster — `heartbeatTick`, `startHeartbeat`, the subagent-hang
   machinery (`upsertSubagentHangProbe` / `markSubagentHangProgress` /
@@ -1393,7 +1566,7 @@ zero behavior change.
   recentlyCompletedObjectives, probeAutoNotify, stale-entry gates,
   subtask validation refusals, `Unknown /glla action`.
 - New `extensions/goal-loop.ts` (1,071 lines): `createGoalLoop(deps)` factory
-  + mirrors — sendLoopTurn, runLoopTick, finishLoopGit, cmdLoop (incl.
+  - mirrors — sendLoopTurn, runLoopTick, finishLoopGit, cmdLoop (incl.
   `/loop finish`), startLoopFromConfig, spec_item_progress accounting,
   divergence walk, loop rearm/backoff, `loopTimerPending()` helper.
 - goal.ts: 11,415 → 8,643 lines; one-way imports only; moved bodies
@@ -1461,12 +1634,13 @@ recovery/pause guidance, and dead code left by three refactors.
    8 unused goal.ts imports; display.ts dead helpers `sinceIso`/`stateBadge`/
    `shortClock` and the unused `auditorPhase` computation. Affected source
    pins were re-anchored to the production path (goal-loop-auditor-process.ts
-   + scripts/goal-auditor-worker.mjs) — the invariants they guarded (infra
+   - scripts/goal-auditor-worker.mjs) — the invariants they guarded (infra
    failures never disapproved, abort listeners removed, worker children
    killed on teardown, no inline pairing outside the pure function) all
    still hold in the detached path.
 
 ### 0.34.107 — audit/ organization (INDEX.md + pre-0.34.80 docs archived)
+
 ### 0.34.105 — field: subagent hang watchdog blinded by main-model quota recovery
 
 Live field case (2026-08-08 ~16:18): an audit subagent hit the MiniMax
@@ -1485,6 +1659,7 @@ safe to run during main-model recovery. Two regression tests: a
 behavioral one that parks the main model via 3× 429 turns and asserts
 the frozen subagent still surfaces `subagent_hang_detected`, and a
 source pin asserting the scan precedes the recovery gate.
+
 ### 0.34.104 — [Image-#1] list-stall settle window + completionSummary self-check
 
 Field report (dracon-platform 2026-08-08 10:29 — the user's
@@ -1530,6 +1705,7 @@ scheduledAt, replacedBy). Plain replaces without a resume intent stay quiet.
 **Defect B — `/goal resume` on an archived goal silently no-opped.** The
 bare `if (!state.goal || status !== "paused") return;` swallowed the verb
 with zero feedback. Now cmdResume answers every dead end:
+
 - terminal (complete/aborted → archived): names the state and the recovery
   path (`/goal <objective>` fresh start + `/goal archive`, or `/list add`
   re-queue + `/list show` for list items);
@@ -1587,6 +1763,7 @@ in a later goal. The deliverable is
 `audit/AUDITOR-AS-SUBAGENT-DESIGN.md`.
 
 The doc covers:
+
 - Current shape (detached worker, JSONL protocol, side-files)
 - Proposed shape (sub-agent via `Agent` tool, sub-agent pane)
 - Trade-offs (visual, cost, isolation, hung detection,
@@ -2055,12 +2232,11 @@ Fix: (1) first window 150s → 30s (`CONTINUATION_START_TIMEOUT_MS`, env overrid
 
 Files: `extensions/loops/goal.ts`, `extensions/goal-loop-dispatch.ts` (optional `retryCount`/`retrySentAt`). Tests: `tests/behavioral-orchestrator.test.ts` (3 watchdog tests updated for the retry + 3 new: self-heal verbatim, genuine-stall fallback, paused-never-retried), `tests/loops/goal.test.ts` (v0.34.57 tests take the backoff override; order-independence via `__testOnlyResetOwnerSession`), `tests/stall-handling.test.ts` (source pins). `audit/NO-TURN-START-RETRY-2026-08-07.md`. Suite: 1090 pass / 1 skip / 0 fail across 100 files (was 1087/1/0). tsc clean.
 
-
 ### 0.34.87 — Status-surface separation: paused list item vs active session (closes note.md Screenshots 161659/161718)
 
 Field: `∴ Working…` (session-level) shown alongside `list item · paused · 1h 31m` and `⏵ auditor: blocked — no verdict`; the status line claimed `glla: MAIN HOST · SUPERVISING · auditor blocked — no verdict` while the card read paused; `complete_goal` answered "No active goal." while the widget clearly held a paused item. The status bar mixed session-level activity with goal-level state — two contradictory surfaces. (pi's own Working… indicator is session-generation and stays; glla's surfaces must never claim goal activity while the item is parked.)
 
-Fix — three surfaces: (1) status line for a paused audit-no-verdict item: `glla: MAIN HOST · SUPERVISING · auditor blocked — no verdict` → `glla: ⏸ paused · auditor parked — no verdict · /list resume` (+ ` · N queued`); a parked item is deliberately NOT host-bearing (the v0.34.57 MAIN_HOST_LABEL guard still covers auditing). (2) Widget card: `auditor: blocked — no verdict` → `auditor: parked — no verdict`; "MAIN host remains attached" → "the stored completion claim was not evaluated — the audit waits while the item is paused" — "parked" names the goal state; "blocked" read as live failure next to ⏸. (3) `complete_goal` on a paused goal: the flat "No active goal." → "No active goal — the goal is paused; /goal resume reactivates it" (list policy names /list resume).
+Fix — three surfaces: (1) status line for a paused audit-no-verdict item: `glla: MAIN HOST · SUPERVISING · auditor blocked — no verdict` → `glla: ⏸ paused · auditor parked — no verdict · /list resume` (+ `· N queued`); a parked item is deliberately NOT host-bearing (the v0.34.57 MAIN_HOST_LABEL guard still covers auditing). (2) Widget card: `auditor: blocked — no verdict` → `auditor: parked — no verdict`; "MAIN host remains attached" → "the stored completion claim was not evaluated — the audit waits while the item is paused" — "parked" names the goal state; "blocked" read as live failure next to ⏸. (3) `complete_goal` on a paused goal: the flat "No active goal." → "No active goal — the goal is paused; /goal resume reactivates it" (list policy names /list resume).
 
 Files: `extensions/goal-loop-display.ts` (status + card parked rendering), `extensions/loops/goal.ts` (complete_goal paused response). Tests: `tests/display.test.ts` (no-verdict test rewritten to parked semantics + list/queue variant; MAIN_HOST_LABEL guard test updated — paused is not host-bearing), `tests/mode-command-guidance.test.ts` (fallback wording), `tests/behavioral-orchestrator.test.ts` (cold-start hold pins the parked card; +1 MockPi complete_goal-on-paused test). `audit/STATUS-SURFACE-SEPARATION-2026-08-07.md`. Suite: 1087 pass / 1 skip / 0 fail across 100 files (was 1085/1/0). tsc clean.
 
@@ -2107,6 +2283,7 @@ Separately: flipped the user-level `~/.pi/agent/settings.json` `compaction.enabl
 Files: `extensions/loops/goal.ts` (v0.34.82 helpers + heartbeat gate + yield-path ledger update), `tests/stall-handling.test.ts` (+1 regression). Suite: 1062 pass / 1 skip / 0 fail across 99 files. Audit: `audit/CONTEXT-STARVATION-REFUSE-2026-08-07.md`.
 
 **Audit-followup (closes GitHub #4 audit 2026-08-07T15:39:15):** the auto-audit (audit-msizvzvc) flagged two narrow issues, both fixed:
+
 - `tests/list-subtasks.test.ts:29` imported `bun:test` without type declarations → `npx tsc --noEmit` exited 2. Changed to `node:test` to match the project convention (every other test file uses it). `tsc --noEmit` now exits 0.
 - The custom-path test only asserted `__testOnlyLastConfirmDialog` (assigned *before* the factory runs); the mock invoked the factory but discarded the returned component, so swapping the component or throwing from its constructor would still pass. New test (`tests/confirm-draft.test.ts` "v0.34.82: the custom-path factory is INVOKED and returns a ConfirmDraftComponent") captures the factory's RETURNED object and asserts `instanceof ConfirmDraftComponent` plus the rendered output contains the Markdown body and all three choices.
 
@@ -2128,7 +2305,7 @@ detached auditor's DISAPPROVED verdict sat complete on disk.
   `freshCtxForGeneration` nulls out on a latched-stale session (transient
   heartbeat-probe failures tripping goStaleTerminal — the session was
   alive), the verdict is deferred durably: `audit_verdict_deferred` ledger
-  + `markCompletionAuditRecoveryPending(lastCtx, "verdict-apply-gate")` so
+  - `markCompletionAuditRecoveryPending(lastCtx, "verdict-apply-gate")` so
   a fresh session's recovery path surfaces it for /goal resume. The
   legit-supersede case (newer attempt owns the claim) stays silent.
 - **Fix B — heartbeatTick parks a stuck auditing goal BEFORE the stale
@@ -2575,7 +2752,7 @@ how long it took.
   was archived without one.
 - **Status line names the outcome.** `glla: ✓ complete · took X` (or
   `✗ aborted · took X`) replaces the empty segment; a held loop still
-  rides as the ` · loop⏸held` suffix and keeps its own card when no goal
+  rides as the `· loop⏸held` suffix and keeps its own card when no goal
   exists.
 - Tests: `tests/display.test.ts` — duration + verdict card, abort reason
   card, no-verdict honesty, status-line outcome (2 updated, 3 new pins).
@@ -3719,6 +3896,7 @@ suggested a refine even when holding the evidence) plus two honesty bugs
 and a termination leak for metricless loops. All closed:
 
 **Proactiveness**
+
 - **The plateau reprieve names the finding**: was "N findings open, pick
   the smallest" — now splices the top OPEN line from findings.md into
   the note (`countOpenAuditFindings` already parsed the file).
@@ -3737,6 +3915,7 @@ and a termination leak for metricless loops. All closed:
   any genuinely different iteration resets it).
 
 **Respec / spec evolution**
+
 - **`/loop refine <text>`** is a real command (and `/loop polish` works
   as an alias — the widget footer advertised it before it existed). The
   operator's suggestion rides the next iteration's prompt; the agent
@@ -4140,7 +4319,7 @@ verbs now have an honest split:
 - Tolerates the /loop audit findings format (open boxes without the FIX:
   prefix are actionable).
 - No spurious "List complete" while the fan-out is still Confirm-gated;
-  ledgers list_audit_fanout / _declined / _empty.
+  ledgers list_audit_fanout / _declined /_empty.
 
 654 tests (the /loop audit pin now anchors inside cmdLoop — /list audit's
 route shadows the first `sub === "audit"` occurrence).
@@ -5296,6 +5475,7 @@ error auto-resume → `wait` + `pauseResumeAt`; restore-hold and user-
 abort pauses → `blocked`. Resume clears the new fields.
 
 **Rendering** (goal-loop-display):
+
 - `decision` — accent `decision needed — your call unblocks this`
   banner, reason capped at 2 lines, options as numbered lines
   (`1. … 2. …`), recommended option accented + `◂ recommended`.
@@ -5403,7 +5583,7 @@ User report (screenshots, 2026-07-29): "we want to look more like a
 table". Three grid bugs fixed + the table look the user picked
 (│ separators + header rule; every tab bracketed):
 
-- **Prefix counted in KEY width** — rows render `▶ `/`  ` + label but
+- **Prefix counted in KEY width** — rows render `▶`/`  ` + label but
   keyW was computed from labels alone, so every row's VALUE column sat
   2 chars right of the header's VALUE.
 - **VALUE truncated to its column** — a long value (Subagents'
@@ -6137,12 +6317,12 @@ test files; churn risk would outweigh the rename benefit).
 ### Fixed — slash-command argument completions now add a trailing space
 
 Pi's autocomplete `applyCompletion` adds a trailing space for the TOP-LEVEL
-command (`/goal `), but NOT for argument completions (`/goal start`,
+command (`/goal`), but NOT for argument completions (`/goal start`,
 `/glla model=`). glla's `completions()` factory now embeds a trailing space
 in the suggestion `value` (label stays clean) — except for `key=value`
 items (`model=`, `tokenlimit=`, `notify=`, …) where the user types the value
 right after the `=` and a trailing space would break parsing. Now typing
-`/goal sta` → pick `start` → the line becomes `/goal start ` and you can
+`/goal sta` → pick `start` → the line becomes `/goal start` and you can
 type the objective immediately. No more `/goal startasdahlasf`.
 
 5 new tests (428 → 433).
@@ -6199,7 +6379,6 @@ now lives here (works in every session, goal or no goal):
 
 ## [0.27.1] — 2026-07-27
 
-
 ### Fixed — pauses now tell you what happened, what survived, and what to decide
 
 "We are pretty uninformative when the execution pauses." A decision-pause
@@ -6223,7 +6402,6 @@ unreadable without /goal status.
 
 ## [0.27.0] — 2026-07-26
 
-
 ### Changed — /glla settings menu: every option, organized, self-documenting
 
 Typing `/glla` now shows EVERY option on one screen, grouped into
@@ -6244,7 +6422,6 @@ even when I type /glla… give some info about them on the right").
 4 new tests (413 → 417).
 
 ## [0.26.9] — 2026-07-26
-
 
 ### Fixed — restore gate is now a tri-state: never auto-start on session LOAD
 
@@ -6269,7 +6446,6 @@ load; continue forever DURING the session unless big stuck.**
 3 gate tests rewritten + 3 source tests retargeted (412 → 413).
 
 ## [0.26.8] — 2026-07-26
-
 
 ### Changed — autoresume defaults ON: keep pushing forward unless super stuck
 
@@ -6299,7 +6475,6 @@ bug spun refires for 8h, the user's restart *paused* the goal with
 
 ## [0.26.7] — 2026-07-26
 
-
 ### Fixed — stale extension api is now terminal-and-loud, not retried forever
 
 pi 0.82.x invalidates the extension runtime on session replacement
@@ -6323,7 +6498,6 @@ into the suppression void (0.26.6 fixed the void; this fixes the retry).
 5 new tests (405 → 410).
 
 ## [0.26.6] — 2026-07-26
-
 
 ### Fixed — heartbeat ship-suppression was self-sustaining (darklord 9.1h stall)
 
@@ -6349,7 +6523,6 @@ self-sustains identically.)
 6 new tests + 1 updated (400 → 405).
 
 ## [0.26.5] — 2026-07-26
-
 
 ### Fixed — pending-latch stall (post-compaction silence, field-observed)
 
@@ -6381,7 +6554,6 @@ nudge.
 
 ## [0.26.4] — 2026-07-26
 
-
 ### Fixed — reviewer source curation (stop mining meta-text)
 
 The 0.26.3 completion produced ANOTHER junk review (4 false
@@ -6406,7 +6578,6 @@ misfire.
 
 ## [0.26.3] — 2026-07-26
 
-
 ### Fixed — reviewer extraction false positives (observed live)
 
 The reviewer fired on the 0.26.2 completion and matched 3 junk
@@ -6429,7 +6600,6 @@ motivated this release).
 7 new tests (382 → 389) pinning the exact 3 live false-positive lines.
 
 ## [0.26.2] — 2026-07-26
-
 
 ### Added — reviewer modes + the auto-loop cascade
 
@@ -6459,7 +6629,6 @@ improvements found if we run it."
 
 ## [0.26.1] — 2026-07-26
 
-
 ### Fixed — the zombie spin (stall handling)
 
 Incident: a hegemon spec loop produced zero turns while the heartbeat
@@ -6476,7 +6645,7 @@ turns (zombies run none), and nothing hooked compaction.
   heartbeat refire and resets only on real activity (`agent_end` /
   `tool_call`). At `stallEscalationRefires` (default 5, 0 = never) the
   loop stops / the goal pauses with `stalled: continuation not landing`
-  + `stall_escalated` ledger + TUI warning + external notify.
+  - `stall_escalated` ledger + TUI warning + external notify.
 - **`session_compact` hook** — re-arms the continuation chain ~2s after
   compaction when idle with nothing scheduled (`session_compact` /
   `compaction_refire` ledger events).
@@ -6487,7 +6656,6 @@ turns (zombies run none), and nothing hooked compaction.
 8 new tests (365 → 373).
 
 ## [0.26.0] — 2026-07-25
-
 
 ### Added — the Reviewer: post-completion follow-up enqueuer
 
@@ -6522,7 +6690,6 @@ analytical, every side effect injectable.
 
 ## [0.25.6] — 2026-07-25
 
-
 ### Added — subagent polish
 
 - **Per-type pins for Plan + general-purpose** — embedded upstream
@@ -6551,7 +6718,6 @@ analytical, every side effect injectable.
 
 ## [0.25.5] — 2026-07-25
 
-
 ### Added — completes the 0.25.4 auditor-polish contract (post-audit fix)
 
 The isolated auditor disapproved 0.25.4's completion claim: the
@@ -6574,7 +6740,6 @@ history. Both gaps closed here — the auditor was right.
 3 new tests (345 → 348).
 
 ## [0.25.4] — 2026-07-25
-
 
 ### Added — auditor polish: durable audit log, report hygiene, honest streaks
 
@@ -6610,7 +6775,6 @@ blocks and there was no durable verdict trail.
 
 ## [0.25.3] — 2026-07-25
 
-
 ### Changed — list-philosophy rework: the three modes long-run differently
 
 The user's mental model, made load-bearing: `/goal` long-runs by **scope**
@@ -6641,7 +6805,6 @@ multi-hour items — two wrongs that look like one right.
 
 ## [0.25.2] — 2026-07-25
 
-
 ### Added — `/glla stats`: per-project ledger rollups
 
 One command, every project's glla telemetry — the empirical-evidence layer
@@ -6669,7 +6832,6 @@ the spec-driven verifier hardening will consume.
 (321 → 328).
 
 ## [0.25.1] — 2026-07-25
-
 
 ### Fixed — stuck-detection rework: the multi-signal "progress signals" gate
 
@@ -6703,7 +6865,6 @@ old detector WOULD have flagged them — and the same texts without the
 shipped work still classify stuck.
 
 ## [0.25.0] — 2026-07-25
-
 
 ### Added — eager-continuation contract (Sections A–H + J; Section I shipped in 0.24.6)
 
@@ -6762,7 +6923,6 @@ auditor are appended to the contract goal file.
 
 ## [0.24.9] — 2026-07-25
 
-
 ### Changed — auditor feedback defaults to the FULL report
 
 `auditFeedbackChars` default flipped 800 → 0 (no cap). A truncated
@@ -6773,7 +6933,6 @@ remains for users who want a cap (`/glla auditfeedbackchars=N`); explicit
 values already saved are respected.
 
 ## [0.24.8] — 2026-07-25
-
 
 ### Added — configurable auditor feedback length (community PR #1, thanks @Gan-Personal)
 
@@ -6884,7 +7043,6 @@ genuinely absent.
 - 5 tests in `goal-loop-core.test.ts` (modlist-snapshot example,
   empty/full active sets, single-tool missing, base-tool non-interference).
 - 244/244 tests pass (was 239); tsc clean.
-
 
 ### Changed — `/loop respec` ambiguity policy: friction scales with ambiguity
 
@@ -7302,8 +7460,8 @@ walls, ceremony defaults, stale text). Five real findings, all fixed:
 
 ### Added
 
-- **Subcommand autocomplete for all four commands.** `/goal `, `/list `,
-  `/loop `, `/glla ` now offer arrow-selectable subcommands/keys with
+- **Subcommand autocomplete for all four commands.** `/goal`, `/list`,
+  `/loop`, `/glla` now offer arrow-selectable subcommands/keys with
   one-line descriptions in the /-menu (pi's getArgumentCompletions).
 
 ### Fixed

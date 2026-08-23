@@ -187,6 +187,10 @@ import {
   settingsProvenance,
   type Settings,
 } from "../goal-settings.js";
+import {
+  normalizeCommissarIntervalMinutes,
+  normalizeCommissarWantingThreshold,
+} from "../goal-commissar.js";
 import { ModelSelector } from "../model-selector.js";
 import {
   curateAuditReviewSources,
@@ -952,6 +956,45 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
         if (off) cancelHourlyProbe();
         else if (state.mainModelRecovery && !state.mainModelRecovery.manualResumeRequired) scheduleHourlyProbe(ctx);
         ctx.ui.notify(off ? "Hourly main recovery probe OFF — only the configured retry ladder will run." : "Hourly main recovery probe ON — extra :00:30 probe while parked.", "info");
+      }
+      return;
+    }
+    case "commissarEnabled": {
+      const v = await ctx.ui.select("Commissar watchdog - a detached adherence check runs on the active goal; consecutive WANTING verdicts terminate and restart the main run on the same objective", [
+        "on - watchdog enabled (checks every commissarIntervalMinutes while a goal is active)",
+        "off - no adherence checks (default)",
+      ]);
+      if (v) {
+        const off = v.startsWith("off");
+        saveSettings("global", ctx.cwd, { commissarEnabled: off ? false : undefined });
+        ctx.ui.notify(off ? "Commissar watchdog OFF - no adherence checks will run." : "Commissar watchdog ON - detached adherence checks enabled for active goals.", "info");
+      }
+      return;
+    }
+    case "commissarIntervalMinutes": {
+      const v = await ctx.ui.select("Commissar interval - minutes between detached adherence checks while a goal is active (clamped to [1, 720])", [
+        "10 minutes",
+        "20 minutes (default)",
+        "30 minutes",
+        "60 minutes",
+      ]);
+      if (v) {
+        const minutes = Number.parseInt(v, 10);
+        saveSettings("global", ctx.cwd, { commissarIntervalMinutes: Number.isFinite(minutes) ? normalizeCommissarIntervalMinutes(minutes) : undefined });
+        ctx.ui.notify(`Commissar interval set to ${normalizeCommissarIntervalMinutes(minutes)} minutes.`, "info");
+      }
+      return;
+    }
+    case "commissarWantingThreshold": {
+      const v = await ctx.ui.select("Commissar wanting threshold - consecutive WANTING verdicts before the main run is terminated and restarted (clamped to [1, 5])", [
+        "1 - terminate on the first WANTING verdict",
+        "2 - require two consecutive WANTING verdicts (default)",
+        "3 - require three consecutive WANTING verdicts",
+      ]);
+      if (v) {
+        const n = Number.parseInt(v, 10);
+        saveSettings("global", ctx.cwd, { commissarWantingThreshold: Number.isFinite(n) ? normalizeCommissarWantingThreshold(n) : undefined });
+        ctx.ui.notify(`Commissar wanting threshold set to ${normalizeCommissarWantingThreshold(n)} consecutive verdict(s).`, "info");
       }
       return;
     }

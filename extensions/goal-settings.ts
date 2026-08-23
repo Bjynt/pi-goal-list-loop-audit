@@ -27,6 +27,10 @@ import {
 } from "./goal-loop-core.ts";
 import type { SubagentModelStrategy } from "./goal-loop-subagents.js";
 import {
+  DEFAULT_COMMISSAR_INTERVAL_MINUTES,
+  DEFAULT_COMMISSAR_WANTING_THRESHOLD,
+} from "./goal-commissar.js";
+import {
   DEFAULT_MAIN_MODEL_PRIMARY_PROBE_MINUTES,
   normalizeMainModelFallbackRefs,
 } from "./main-model-recovery.js";
@@ -100,6 +104,18 @@ export interface Settings {
    * the next :00:30 every hour. This is a blind retry slot; the plugin does
    * not query or infer provider quota state. Default ON. */
   hourlyRetryProbe?: boolean;
+  /** v0.36.x commissar watchdog: when ON, a detached adherence check runs
+   * every commissarIntervalMinutes while a goal is ACTIVE; consecutive
+   * WANTING verdicts at/above commissarWantingThreshold terminate the main
+   * run and restart it on the same objective with a fresh-start directive.
+   * Default OFF - an agent-terminating watchdog must be opted into. */
+  commissarEnabled?: boolean;
+  /** v0.36.x: minutes between detached commissar checks (clamped to [1, 720]).
+   * Default 20. */
+  commissarIntervalMinutes?: number;
+  /** v0.36.x: consecutive WANTING verdicts required before termination
+   * (clamped to [1, 5]). Default 2 - one finding never terminates alone. */
+  commissarWantingThreshold?: number;
   /** v0.36.0: pi extension specs ("npm:pi-webaio", "git:…", or a local
    * path) the DETACHED auditor may load via `pi --extension <spec>` while
    * keeping `--no-extensions` discovery off. Default [] = the fully
@@ -259,6 +275,11 @@ export const DEFAULT_SETTINGS: Settings = {
   // It never checks provider state; it simply gives parked recovery another
   // opportunity to make progress.
   hourlyRetryProbe: true,
+  // v0.36.x: the commissar watchdog is opt-in - it can terminate the main
+  // agent run, so defaulting it on would surprise every existing rig.
+  commissarEnabled: false,
+  commissarIntervalMinutes: DEFAULT_COMMISSAR_INTERVAL_MINUTES,
+  commissarWantingThreshold: DEFAULT_COMMISSAR_WANTING_THRESHOLD,
   // v0.24.6: subagents inherit the session model by default, avoiding a
   // surprise provider/model pin from the upstream default agent.
   subagentModelStrategy: "inherit-parent",
@@ -389,6 +410,9 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "auditorSilent",
   "auditorProgressSignals",
   "hourlyRetryProbe",
+  "commissarEnabled",
+  "commissarIntervalMinutes",
+  "commissarWantingThreshold",
   "subagentModelStrategy",
   "subagentModelOverrides",
   "subagentFallbacks",

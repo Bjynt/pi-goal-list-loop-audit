@@ -89,7 +89,12 @@ test("v0.35.17 production delay default is 90s and stays bounded", () => {
 const ACTIVATION_SRC = fs.readFileSync(path.resolve("extensions/loops/goal-activation.ts"), "utf-8");
 
 test("v0.35.17 source: the auto-retry is armed inside abortZombieRun behind the streak decision", () => {
-  const callIdx = ACTIVATION_SRC.indexOf("scheduleZombieAutoRetry(current, generation, goal?.id, observedStreamAt, silentMinutes)");
+  const callIdx = Math.min(
+    ...[
+      ACTIVATION_SRC.indexOf("scheduleZombieAutoRetry(current, generation, goal?.id, observedStreamAt, silentMinutes)"),
+      ACTIVATION_SRC.indexOf("scheduleZombieAutoRetry(\n      current,\n      generation,"),
+    ].filter((i) => i >= 0),
+  );
   assert.ok(callIdx > 0, "abortZombieRun arms the bounded retry");
   // The call sits in the success tail of abortZombieRun: after ctx.abort(),
   // after the durable zombie_run_aborted ledger write.

@@ -49,7 +49,7 @@ test("both autonomous send paths detect staleness and auto-recover before termin
   assert.ok(loop > 0, "sendLoopTurn auto-recovers via attemptFreshSessionRecovery");
   // The terminal fall-back MUST still be reachable so the legacy path runs
   // when the extension api lacks the newSession entrypoint.
-  assert.match(CONT, /if \(!attemptFreshSessionRecovery\(ctx, "sendContinuation"\)\) goStaleTerminal\(ctx, "sendContinuation"\);/);
+  assert.match(CONT, /if\s+\(!attemptFreshSessionRecovery\(ctx,\s+"sendContinuation"\)\)\s+goStaleTerminal\(ctx,\s+"sendContinuation"\);/);
   assert.match(LOOP, /if \(!attemptFreshSessionRecovery\(ctx, "sendLoopTurn"\)\) goStaleTerminal\(ctx, "sendLoopTurn"\);/);
 });
 
@@ -85,7 +85,7 @@ test("v0.29.11 — heartbeat PROBES staleness before burning stall refires", () 
   // (HEARTBEAT_STALE_DEBOUNCE) — a single transient probe failure must not
   // park a live session (hegemon 2026-08-06); consecutive failures still
   // go terminal before any stall refire can burn.
-  assert.match(HB, /const knownCtx = flags\.lastCtx;[\s\S]*const rawApiStale = probeExtensionApiStaleRaw\(\);[\s\S]*if \(\(flags\.extensionApiStale && !staleTerminalRecovered\) \|\| rawApiStale\) \{[\s\S]*if \(knownCtx && !absorbStaleIfSuperseded\(knownCtx\)\) goStaleTerminal\(knownCtx, "heartbeat probe"\);/);
+  assert.match(HB, /const\s+knownCtx\s+=\s+flags\.lastCtx;[\s\S]*const\s+rawApiStale\s+=\s+probeExtensionApiStaleRaw\(\);[\s\S]*if\s+\(\(flags\.extensionApiStale\s+&&\s+!staleTerminalRecovered\)\s+\|\|\s+rawApiStale\)\s+\{[\s\S]*if\s+\(knownCtx\s+&&\s+!absorbStaleIfSuperseded\(knownCtx\)\)\s+goStaleTerminal\(knownCtx,\s+"heartbeat\s+probe"\);/);
 });
 
 test("v0.30.0 — rebind-first survival: session_shutdown attribution, session_start rebind, zombie stand-down", () => {
@@ -101,7 +101,7 @@ test("v0.30.0 — rebind-first survival: session_shutdown attribution, session_s
   assert.match(SRC, /data\.reason\?\.trim\(\)\.toLowerCase\(\) !== "quit"/, "legacy quit debt cannot bypass consent");
   assert.match(SRC, /data\.generation === expectedGeneration/, "handoff must match the predecessor generation");
   assert.match(SRC, /data\.ownerSessionId === expectedOwnerSessionId/, "handoff must match the predecessor owner");
-  assert.ok(SRC.includes('appendLedger(ctx.cwd, "session_handoff_resumed", { pid: process.pid, reason: startReason });'), "handoff consumption is ledgered");
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "session_handoff_resumed",\s*\{\s*pid: process\.pid,\s*reason: startReason,?\s*\}\);/, "handoff consumption is ledgered");
   assert.ok(SRC.includes("sessionHandoffPending = false;"), "fresh session reopens the runtime");
   assert.ok(SRC.includes("startHeartbeat();") && SRC.includes("startUITicker();"), "fresh session restarts timers");
   assert.match(SRC, /const auditVisible = state\.goal\?\.status === "auditing";/, "the UI ticker must keep detached-auditor clocks live between worker events");
