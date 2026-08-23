@@ -169,14 +169,17 @@ test("v0.35.31 exemption pin — an audit loop never gets the 'metric never move
   // Audit twin, same dead metric: the never-moved stop must NEVER fire —
   // its deferred-baseline + reprieve plateau semantics own the ending.
   const audit = freshLoop({ kind: "audit", direction: "max", bestValue: 5, lastValue: 5, maxIterations: 0, history: [...seed] });
-  let firstStop: string | null = null;
+  let lastStop: string | null = null;
   for (let i = 1; i <= 8; i++) {
     const r = applyMeasurement(audit, 5, `t${i}`);
-    if (r.kind === "stop" && firstStop === null) firstStop = r.reason;
+    if (r.kind === "stop") lastStop = r.reason;
   }
-  assert.ok(firstStop !== null, "the audit loop still ends (plateau, not forever)");
-  assert.doesNotMatch(firstStop ?? "", /metric never moved/, "the dedicated never-moved stop stays audit-exempt");
-  assert.match(firstStop ?? "", /plateau/);
+  assert.ok(lastStop !== null, "the audit loop still ends (plateau, not forever)");
+  // The LAST stop matters: applyMeasurement keeps re-evaluating after a
+  // stop, so deleting the kind guard would let a later 'metric never
+  // moved' evaluation OVERWRITE the honest plateau verdict.
+  assert.doesNotMatch(lastStop ?? "", /metric never moved/, "the dedicated never-moved stop stays audit-exempt (final verdict included)");
+  assert.match(lastStop ?? "", /plateau/);
 });
 
 test("v0.29.10 — audit loop source pins: deferred baseline, true-regression note, live-loop reseed migration", () => {
