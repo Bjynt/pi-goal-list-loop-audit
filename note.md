@@ -8,6 +8,11 @@ investigate
 
 ##
 
+auditor can go awol for long, we need some way to handle it 
+/home/dracon/Pictures/Screenshots/Screenshot_20260823_152629.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152617.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152536.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152321.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152319.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152316.png 
+
+##
+
 the goal was gettick stuck so i started a new goal but then it was not visible or usable before i restarted
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_091841.png 
