@@ -233,6 +233,16 @@ export type LoopTickOutcome =
  */
 export function applyMeasurement(loop: LoopState, value: number | null, at: string): LoopTickOutcome {
   loop.iteration++;
+  // v0.35.42 (audit finding): a measure-CHANGING refinement starts a NEW
+  // metric era. applyRefinement re-baselines best/last/stall but keeps
+  // history — so OLD-era `improved` entries made both movement checks read
+  // permanently true for the new era: the v0.35.31 flat-reading grace
+  // could never apply after a measure-changing refine, and a dead NEW
+  // metric could never earn its never-moved stop. Both checks are scoped
+  // to the CURRENT era: everything after the last measure-changing
+  // refinement's iteration (the next measured tick is +1).
+  const lastMeasureChange = (loop.refinements ?? []).filter((r) => r.newMeasureCmd !== r.oldMeasureCmd).pop();
+  const measureEraStart = lastMeasureChange ? lastMeasureChange.iteration : 0;
   // improved is judged BEFORE bestValue moves (post-mutation it would read false).
   const improved = value !== null && loop.direction !== undefined && isImprovement(loop.direction, value, loop.bestValue);
   if (value === null) {
@@ -255,8 +265,8 @@ export function applyMeasurement(loop: LoopState, value: number | null, at: stri
     // fix: they carry purpose-built deferred-baseline + reprieve plateau
     // semantics (v0.29.10/v0.29.19) and must keep their stall accounting
     // verbatim.
-    const numericHistory = loop.kind === "audit" ? [] : loop.history.filter((h) => h.value !== null);
-    const metricHasMoved = loop.kind === "audit" || loop.history.some((h) => h.improved)
+    const numericHistory = loop.kind === "audit" ? [] : loop.history.filter((h) => h.value !== null && h.iteration > measureEraStart);
+    const metricHasMoved = loop.kind === "audit" || loop.history.some((h) => h.improved && h.iteration > measureEraStart)
       || (numericHistory.length === 0
         ? // No numeric readings yet this run: indistinguishable from a
           // resumed run with real prior movement — keep the conservative
@@ -305,9 +315,9 @@ export function applyMeasurement(loop: LoopState, value: number | null, at: stri
   // in measured iterations without one improvement is a loud, distinct stop
   // naming the actual suspect (direction/measureCmd), not a fake plateau.
   if (loop.kind !== "audit") {
-  const numericHistory = loop.history.filter((h) => h.value !== null);
+  const numericHistory = loop.history.filter((h) => h.value !== null && h.iteration > measureEraStart);
   const measured = numericHistory.length;
-  const metricNeverMoved = !loop.history.some((h) => h.improved)
+  const metricNeverMoved = !loop.history.some((h) => h.improved && h.iteration > measureEraStart)
     && measured > 0
     && (typeof loop.bestValue !== "number" || loop.bestValue === numericHistory[0]!.value);
   if (metricNeverMoved && measured >= loop.plateauWindow * 2) {

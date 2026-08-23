@@ -769,3 +769,47 @@ test("v0.35.4: parseLoopStartArgs keeps =-bearing text inside quotes and restore
 function runIn(cwd: string, cmd: string): string {
   return execSync(cmd, { cwd, encoding: "utf8" }).trim();
 }
+
+// v0.35.42 (audit finding): a measure-changing refinement starts a NEW
+// metric era — applyRefinement re-baselines but keeps history, so OLD-era
+// improvements made metricHasMoved permanently true for the new era and
+// the v0.35.31 flat-reading grace could never apply after a refine.
+test("v0.35.42 — the flat-reading grace applies in a NEW measure era despite old-era improvements", () => {
+  const loop = freshLoop({ direction: "min", bestValue: null, lastValue: null, maxIterations: 0 });
+  // Old era: real improvements on record (metric m1).
+  applyMeasurement(loop, 9, "t1");
+  applyMeasurement(loop, 5, "t2");
+  assert.ok(loop.history.some((h) => h.improved), "precondition: old era has an improvement");
+  // Measure-changing refinement at iteration 2 → next measured tick is 3.
+  applyRefinement(loop, {
+    at: "t2", iteration: loop.iteration,
+    oldTarget: "t", newTarget: "t",
+    oldMeasureCmd: "m1", newMeasureCmd: "m2",
+  }, 42);
+  assert.equal(loop.bestValue, 42);
+  // New era: every reading flat against the fresh baseline.
+  let out = applyMeasurement(loop, 42, "t3"); // era's first reading — indistinguishable from resumed
+  assert.equal(out.kind, "continue");
+  assert.equal(loop.stallCount, 1);
+  out = applyMeasurement(loop, 42, "t4");
+  assert.equal(out.kind, "continue");
+  assert.equal(loop.stallCount, 1, "the grace applies in the new era: old improvements don't count as movement");
+  out = applyMeasurement(loop, 42, "t5");
+  assert.equal(out.kind, "continue", "no false plateau from old-era movement");
+});
+
+test("v0.35.42 — a dead NEW metric still earns its never-moved stop after a refine", () => {
+  const loop = freshLoop({ direction: "min", bestValue: null, lastValue: null, maxIterations: 0 });
+  applyMeasurement(loop, 9, "t1"); // old-era improvement
+  applyRefinement(loop, {
+    at: "t1", iteration: loop.iteration,
+    oldTarget: "t", newTarget: "t",
+    oldMeasureCmd: "m1", newMeasureCmd: "m2",
+  }, 42);
+  let out = applyMeasurement(loop, 42, "t2")!;
+  for (let i = 3; i <= 14 && out.kind !== "stop"; i++) out = applyMeasurement(loop, 42, `t${i}`)!;
+  assert.equal(out.kind, "stop");
+  if (out.kind === "stop") {
+    assert.match(out.reason, /metric never moved/, "the never-moved bound is era-scoped too: old improvements don't shield a dead metric forever");
+  }
+});
