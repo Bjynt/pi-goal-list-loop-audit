@@ -22,6 +22,8 @@ we coudl use better visuals cause this is what wesee now and it is worth htinkin
 
 list seems corruped not only doesnt show but we cant start it 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_120853.png 
+here too we can't even start a new list 
+/home/dracon/Pictures/Screenshots/Screenshot_20260823_122304.png 
 
 ##
 
