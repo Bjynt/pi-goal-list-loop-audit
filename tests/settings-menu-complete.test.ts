@@ -255,7 +255,7 @@ test("auditorAllowedExtensions valueText is a count — never joined absolute pa
   ];
   const rows = buildSettingsRows(
     { auditorAllowedExtensions: longPaths } as Settings,
-    { auditorAllowedExtensions: "global" },
+    { auditorAllowedExtensions: { value: longPaths, source: "global" } },
   );
   const row = rows.find((r) => r.id === "auditorAllowedExtensions")!;
   assert.equal(row.valueText, "3 enabled");
