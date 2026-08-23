@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.35.42 — measure-era scoping for loop movement accounting (2026-08-23)
+
+### Fix
+  Audit-pass finding: applyRefinement re-baselines best/last/stall on a
+  measure-changing refine but keeps history, so OLD-era improved entries
+  made both movement checks permanently true for the NEW metric era - the
+  v0.35.31 flat-reading grace could never apply after a measure-changing
+  refine, and a dead new metric could never earn its never-moved stop.
+  applyMeasurement now scopes metricHasMoved and metricNeverMoved to the
+  current measure era (history after the last measure-changing
+  refinement's iteration; the boundary was already recorded on every
+  LoopRefinement). Two twin tests proven red without the scoping, green
+  with it.
+
 ## 0.35.41 — the last two loop-stop routes announce queue resumption (2026-08-23)
 
 ### Fix
