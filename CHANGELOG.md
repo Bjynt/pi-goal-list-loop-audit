@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.36.1 — zombie watchdog stands down on human-input waits (2026-08-23)
+
+### Fix
+  Field case: resuming goal/work after a long pause waiting for a DECISION
+  got killed by the zero-stream zombie watchdog. A turn blocked INSIDE a
+  tool handler that waits on HUMAN input - pause_goal decision popups,
+  propose_* drafting confirms, list_add interviews, ask_user_question -
+  is legitimately BUSY with zero provider stream activity for as long as
+  the user is away. The watchdog read that as a hung stream: warned at
+  20m ("Automatic cleanup will abort it"), aborted the dialog mid-answer
+  at the grace boundary ("Operation aborted"), parked the goal, and the
+  one bounded auto-retry re-opened the SAME dialog - so the second silence
+  parked permanently. The zombie branch now stands down while an in-flight
+  tool call is a known human-input wait (USER_INPUT_WAIT_TOOL_NAMES,
+  mirroring the v0.35.4 subagent-wait carve-out), ledgered as
+  zombie_run_stood_down_user_input. A genuinely hung stream with no tools
+  in flight still reaches abortZombieRun after the grace window.
+
 ## 0.36.0 — commissar adherence watchdog (2026-08-23)
 
 ### Added
