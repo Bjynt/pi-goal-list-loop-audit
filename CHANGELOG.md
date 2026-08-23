@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.35.34 — lastOutcome actually durable (2026-08-23)
+
+### Fix
+  Audit-pass finding: v0.35.30's "durable" last-outcome record was never
+  serialized — persistStateLine omitted the field and readState never
+  restored it, so any restart/reload blanked the widget retention line
+  within its 24h window (the exact failure v0.35.30 fixed). Now always
+  written (null when absent — readState spreads successive state events, so
+  an omitted key would resurrect stale values and /glla wipe could never
+  clear the record) and restored through a strict shape sanitizer (corrupt
+  lines degrade to absent, never throw). Round-trip + corruption regression
+  tests added.
+
 ## 0.35.33 — plan mode: the extended draft (2026-08-22)
 
 ### Add
