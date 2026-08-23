@@ -1,0 +1,73 @@
+// pi-goal-list-loop-audit — v0.35.43
+// tests/refine-spec-rebaseline.test.ts
+//
+// v0.35.43 audit-pass fix: refine's orchestrator-side spec write updated
+// specText/specHash but NOT loop.specChecked — so the next tick saw
+// checked > specChecked against the OLD file's count and ledged
+// spec_item_progress attributed to the agent's iteration: unearned
+// progress feeding the multi-signal stuck gate (the agent may have done
+// nothing; the USER confirmed the respec).
+//
+// Fix under test: the refine handler re-baselines specChecked together
+// with specHash after writing the new spec.
+
+import { test } from "node:test";
+import * as assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+
+import activate, {
+  __testOnlyRegisterAgentTools,
+  __testOnlyRememberCtx,
+  __testOnlyResetOwnerSession,
+} from "../extensions/loops/goal.js";
+import { readState } from "../extensions/goal-loop-core.js";
+import { seedGoal, seedState, tmpCwd, makeMockCtx, MockPi } from "./harness/mock-pi.js";
+
+function ownerCtx(cwd: string) {
+  return makeMockCtx(cwd, { sessionManager: { name: "main-session-manager" } });
+}
+
+function rememberCtxFor(cwd: string): void {
+  __testOnlyRememberCtx(ownerCtx(cwd) as unknown as ExtensionContext);
+}
+
+const SPEC_OLD = "# Spec\n\n- [x] done item one\n- [x] done item two\n- [ ] open item three\n";
+const SPEC_NEW = `${SPEC_OLD}\n- [x] pre-checked by the respec itself\n- [x] also pre-checked\n`;
+
+test("v0.35.43: a confirmed respec with newly checked boxes re-baselines specChecked — no unearned progress", async () => {
+  const cwd = tmpCwd();
+  const specFile = path.join(cwd, ".pi-glla", "spec.md");
+  fs.mkdirSync(path.dirname(specFile), { recursive: true });
+  fs.writeFileSync(specFile, SPEC_OLD);
+  // Project settings: auto-accept drafts so the confirm dialog is skipped.
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ autoAcceptDrafts: true }));
+  const loopSeed = {
+    target: "ship the widget", measureCmd: "echo 1", direction: "max" as const,
+    active: true, iteration: 3, maxIterations: 0, plateauWindow: 5,
+    specFile, specHash: "old-hash", specChecked: 2,
+  };
+  seedState(cwd, { goal: null, loop: loopSeed });
+  const pi = new MockPi();
+  activate(pi.api);
+  __testOnlyResetOwnerSession();
+  await pi.fire("session_start", { reason: "startup" }, ownerCtx(cwd));
+  __testOnlyRegisterAgentTools(pi.api);
+  rememberCtxFor(cwd);
+
+  // The respec REPLACES the spec with a file that has FOUR checked boxes:
+  // two the agent checked before, two that arrive pre-checked via the
+  // user-confirmed rewrite. Only the orchestrator wrote here.
+  const res = await pi.runTool(
+    "propose_loop_refine",
+    { target: "ship the widget faster", specText: SPEC_NEW, rationale: "sharpened after review" },
+    ownerCtx(cwd),
+  );
+  assert.match(res.content[0]!.text, /applied|refin/i, `refine applied: ${res.content[0]!.text}`);
+  assert.equal(fs.readFileSync(specFile, "utf8"), SPEC_NEW, "the orchestrator owns the spec write");
+
+  const st = readState(cwd);
+  assert.equal(st.loop!.specHash && st.loop!.specHash !== "old-hash", true, "specHash re-baselined (pre-existing behavior)");
+  assert.equal(st.loop!.specChecked, 4, "v0.35.43: specChecked re-baselined with the hash — the next tick must not credit the agent with the respec's own checkboxes");
+});
