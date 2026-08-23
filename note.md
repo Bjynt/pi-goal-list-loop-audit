@@ -37,6 +37,12 @@ objective needs repair issue, but before reload it looked fine
 
 ##
 
+sometimes we were working on an objective and, the exact case that happened now that wez crashed and some objectives were no longer live
+
+i had to make new ones, i wonder if jsut version swtich or what, but we shoudl not guess but investigate 
+
+##
+
 the goal was gettick stuck so i started a new goal but then it was not visible or usable before i restarted
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_091841.png 
