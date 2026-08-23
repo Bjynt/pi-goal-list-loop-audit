@@ -12,6 +12,9 @@ auditor can go awol for long, we need some way to handle it
 in this case its not slow response but we were workign with a model that kept ahving errors but it was fine when we retried but seemingly we dont least as eagerly for auditor
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_152629.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152617.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152536.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152321.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152319.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152316.png 
 
+
+> /home/dracon/Pictures/Screenshots/Screenshot_20260823_153139.png so we can see the mdoel struggless but we still need ot keep retrying it 
+
 ##
 
 the goal was gettick stuck so i started a new goal but then it was not visible or usable before i restarted
