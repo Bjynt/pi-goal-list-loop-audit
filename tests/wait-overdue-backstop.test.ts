@@ -24,7 +24,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag } from "../extensions/loops/goal.js";
-import { __testOnlyHeartbeatTick, __testOnlyResetZombieRunWatchdog, __testOnlyResetOverdueWaitBackstop } from "../extensions/goal-heartbeat.js";
+import { __testOnlyHeartbeatTick, __testOnlyHeartbeatTickRaw, __testOnlyResetZombieRunWatchdog, __testOnlyResetOverdueWaitBackstop } from "../extensions/goal-heartbeat.js";
 import { readState } from "../extensions/goal-loop-core.js";
 import { mainModelRecoveryActive } from "../extensions/goal-recovery.js";
 import { replaceState } from "../extensions/goal-state.js";
@@ -261,13 +261,11 @@ test("v0.35.48: an agent-authored wait stays parked while main-model recovery is
   __testOnlyResetOverdueWaitBackstop();
   fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({ autoResume: true }));
   const cwd = tmpCwd();
-  seedState(cwd, {
-    goal: overdueWaitGoal("waiting for the quota window to reset"),
-    // An ACTIVE main-model recovery park: retryAt in the future.
-    mainModelRecovery: { attempt: 1, retryAt: Date.now() + 5 * 60_000 },
-  } as Record<string, unknown>);
+  seedState(cwd, { goal: overdueWaitGoal("waiting for the quota window to reset") });
   pi.sent.length = 0;
   const ctx = await boot(cwd);
+  // Set the recovery park AFTER boot — session_start settles its own state.
+  replaceState({ ...readState(cwd), mainModelRecovery: { attempt: 1, retryAt: Date.now() + 5 * 60_000 } } as never);
   try {
     assert.equal(mainModelRecoveryActive(), true, "precondition: recovery park is live");
     __testOnlyHeartbeatTick();
