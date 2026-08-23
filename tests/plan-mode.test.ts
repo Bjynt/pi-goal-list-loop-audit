@@ -19,6 +19,19 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { draftingTemplateFile, routeGoalArgs, LIST_MUTATING_SUBCOMMANDS } from "../extensions/goal-loop-core.js";
+import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
+import { MockPi, makeMockCtx, seedGoal, seedState, tmpCwd, tick } from "./harness/mock-pi.js";
+
+function seedLoopAndItem() {
+  const cwd = tmpCwd();
+  const item = { id: String(seedGoal({ policy: "list" }).id), objective: "clean up the README examples — done when pinned", addedAt: new Date().toISOString() };
+  seedState(cwd, {
+    goal: null,
+    loop: { target: "keep chrome bridge alive", measureCmd: "echo 1", direction: "max", active: true, iteration: 1, maxIterations: 0, plateauWindow: 5 },
+    list: [item],
+  });
+  return { cwd, itemId: item.id };
+}
 
 const ROOT = path.resolve(__dirname, "..");
 const read = (p: string): string => fs.readFileSync(path.join(ROOT, p), "utf-8");
@@ -130,7 +143,7 @@ test("v0.35.45: the plan-mode seeded hint separates the plan note from the label
 
   await pi.command("goal", "plan tidy up the widget pipeline — done when pinned", ctx);
   await tick(80);
-  const notes = ctx.ui.notifications.map((n: any) => String(n.message ?? n.text ?? n));
+  const notes = (ctx.ui as any).notifies.map((n: any) => String(n.message ?? n.text ?? n));
   const hint = notes.find((m: string) => m.includes("DEEP PLANNING MODE"));
   assert.ok(hint, `a plan-mode hint was notified (got: ${JSON.stringify(notes).slice(0, 300)})`);
   assert.ok(!/draft\.\w/.test(hint!), `no glued sentence boundary (got: ${hint})`);
