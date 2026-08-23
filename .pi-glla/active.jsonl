@@ -7441,3 +7441,18 @@
 {"type":"session_shutdown","value":{"reason":"resume"},"at":"2026-08-25T14:02:54.822Z"}
 {"type":"session_rebound","value":{"reason":"resume"},"at":"2026-08-25T14:02:55.699Z"}
 {"type":"id_invalidation","value":{"oldId":"01a03939-5afc-7094-9bce-a0ee11eb95a9","newId":"01a02353-0a9c-742d-8d99-e222dda417c9","reason":"session_shutdown","shutdownReason":"resume","at":"2026-08-25T14:02:55.845Z"},"at":"2026-08-25T14:02:55.845Z"}
+{"type":"commissar_check_start","value":{"goalId":"g-comm-wiring","model":"test/comm-model"},"at":"2026-08-25T14:19:01.108Z"}
+{"type":"commissar_verdict","value":{"goalId":"g-comm-wiring","verdict":"adherent"},"at":"2026-08-25T14:19:01.196Z"}
+{"type":"commissar_infra","value":{"goalId":"g-comm-wiring","class":"no-verdict","error":"no verdict marker"},"at":"2026-08-25T14:19:01.212Z"}
+{"type":"commissar_verdict","value":{"goalId":"g-comm-wiring","verdict":"wanting","reason":"stalled","streak":1},"at":"2026-08-25T14:19:01.213Z"}
+{"type":"commissar_threshold_pending","value":{"goalId":"g-comm-wiring","streak":1,"threshold":2},"at":"2026-08-25T14:19:01.213Z"}
+{"type":"commissar_verdict","value":{"goalId":"g-comm-wiring","verdict":"adherent"},"at":"2026-08-25T14:19:01.213Z"}
+{"type":"commissar_verdict","value":{"goalId":"g-comm-wiring","verdict":"wanting","reason":"nine idle turns","streak":1},"at":"2026-08-25T14:19:01.214Z"}
+{"type":"commissar_threshold_pending","value":{"goalId":"g-comm-wiring","streak":1,"threshold":2},"at":"2026-08-25T14:19:01.214Z"}
+{"type":"commissar_verdict","value":{"goalId":"g-comm-wiring","verdict":"wanting","reason":"still idle","streak":2},"at":"2026-08-25T14:19:01.214Z"}
+{"type":"commissar_terminate","value":{"goalId":"g-comm-wiring","reason":"still idle"},"at":"2026-08-25T14:19:01.214Z"}
+{"type":"commissar_verdict","value":{"goalId":"g-comm-wiring","verdict":"wanting","reason":"x","streak":1},"at":"2026-08-25T14:19:01.215Z"}
+{"type":"commissar_threshold_pending","value":{"goalId":"g-comm-wiring","streak":1,"threshold":2},"at":"2026-08-25T14:19:01.215Z"}
+{"type":"commissar_verdict","value":{"goalId":"g-comm-wiring","verdict":"wanting","reason":"y","streak":2},"at":"2026-08-25T14:19:01.215Z"}
+{"type":"commissar_terminate_refused","value":{"goalId":"g-comm-wiring","reason":"updateGoal bridge unavailable"},"at":"2026-08-25T14:19:01.215Z"}
+{"type":"commissar_verdict_stale_refused","value":{"goalId":"some-other-goal"},"at":"2026-08-25T14:19:01.216Z"}
