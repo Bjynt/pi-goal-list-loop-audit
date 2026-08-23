@@ -30,6 +30,10 @@ ok seemingly we keep sending the images as context to the model , so the context
 
 > /home/dracon/Pictures/Screenshots/Screenshot_20260823_155311.png starting without history works
 
+then
+
+> /home/dracon/Pictures/Screenshots/Screenshot_20260823_160928.png we make more iamges and doesnt work again
+
 ##
 
 objective needs repair issue, but before reload it looked fine
