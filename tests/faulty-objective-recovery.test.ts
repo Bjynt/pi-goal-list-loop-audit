@@ -505,7 +505,7 @@ test("v0.35.35: seed trust survives a Done when: clause and @role in the raw see
   // ITSELF trip the heuristic after cleaning (like the field report), so
   // this exercises the trust path rather than an already-innocent objective.
   const prose = "play around with the buttons because discover and projects lead to the same place and we are logged in";
-  const rawSeed = `${prose} @designer\nDone when: bun test tests/login.test.ts passes`;
+  const rawSeed = `${prose}\nAgent: Designer\nDone when: bun test tests/login.test.ts passes`;
   const g = seedGoal({
     status: "active",
     policy: "goal",
