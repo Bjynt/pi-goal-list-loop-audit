@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.35.49 — parent-side silence watchdogs close the auditor-AWOL gap (2026-08-23)
+
+### Fix
+  Field evidence across five projects (football-forever, doomtap,
+  junk-runner, email-api-compare, vps-compare): a detached auditor worker
+  whose provider hangs emits ONE boot RPC event (or none) and then total
+  silence. The v0.34.57 no-progress watchdog only arms while heartbeats
+  stay FRESH, so a stale heartbeat disarmed it, the worker's own stall
+  brake was the only other bound, and every doomed attempt burned its full
+  30m wall while the goal sat "auditing" and the queue looked dead. The
+  poll loop now owns two complementary silence axes with the same
+  running-tool exemption: heartbeat-stale (had an event, went silent for
+  the window) and first-event-timeout (never emitted anything within
+  firstEventTimeoutMs, a new runtime knob defaulting to the same window).
+  Both demote the HUD to quiet, emit auditor_stalled, terminate the
+  worker, and return retryable "timeout" infra - which the existing
+  fallback ladder re-drives with its eager 5s first retry instead of the
+  wall.
+
+### Tests
+  tests/auditor-stall-watchdog.test.ts: three workers (silent since boot,
+  one-boot-heartbeat-then-silence, tool-open-silent) prove both axes fail
+  fast BEFORE the wall, classify as retryable infra, SIGTERM the worker,
+  and remove the job scratch; the third pins the running-tool exemption.
+  Red-proven against pre-change code: both stall runs burned the full
+  wall and never stalled. tests/auditor-process.test.ts heartbeat test
+  disarms the new axis (firstEventTimeoutMs) to isolate its own.
 ## 0.35.48 — overdue-wait backstop respects the dispatch-surface gates (2026-08-23)
 
 ### Fix
