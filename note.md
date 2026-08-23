@@ -66,6 +66,13 @@ another concern is that do we have these explores, clearly not desired, is this 
 
 ##
 
+not sure we want manual 
+
+/list add
+i never use it jsut accidentally type it instead of audit 
+
+##
+
 replan requried, been a while since i saw this 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_181617.png 
 
