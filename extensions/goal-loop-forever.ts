@@ -304,7 +304,7 @@ export function applyMeasurement(loop: LoopState, value: number | null, at: stri
   // that NEVER moves would otherwise dodge plateau forever. Twice the window
   // in measured iterations without one improvement is a loud, distinct stop
   // naming the actual suspect (direction/measureCmd), not a fake plateau.
-  if (true) {
+  if (loop.kind !== "audit") {
   const numericHistory = loop.history.filter((h) => h.value !== null);
   const measured = numericHistory.length;
   const metricNeverMoved = !loop.history.some((h) => h.improved)

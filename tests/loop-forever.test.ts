@@ -168,18 +168,20 @@ test("v0.35.31 exemption pin — an audit loop never gets the 'metric never move
   if (out.kind === "stop") assert.match(out.reason, /metric never moved/);
   // Audit twin, same dead metric: the never-moved stop must NEVER fire —
   // its deferred-baseline + reprieve plateau semantics own the ending.
-  const audit = freshLoop({ kind: "audit", direction: "max", bestValue: 5, lastValue: 5, maxIterations: 0, history: [...seed] });
-  let lastStop: string | null = null;
-  for (let i = 1; i <= 8; i++) {
-    const r = applyMeasurement(audit, 5, `t${i}`);
-    if (r.kind === "stop") lastStop = r.reason;
-  }
   assert.ok(lastStop !== null, "the audit loop still ends (plateau, not forever)");
   // The LAST stop matters: applyMeasurement keeps re-evaluating after a
   // stop, so deleting the kind guard would let a later 'metric never
   // moved' evaluation OVERWRITE the honest plateau verdict.
   assert.doesNotMatch(lastStop ?? "", /metric never moved/, "the dedicated never-moved stop stays audit-exempt (final verdict included)");
   assert.match(lastStop ?? "", /plateau/);
+  // The never-moved guard itself is unreachable-by-construction for audits
+  // (their stalls accrue from iteration 1, so plateau at `window` always
+  // returns before the 2×window never-moved check is reached) — no purely
+  // behavioral test can distinguish its deletion. Pin the guard in source,
+  // matching DESIGN.md's promise that audit stall accounting stays verbatim.
+  const foreverSrc = readFileSync(new URL("../extensions/goal-loop-forever.ts", import.meta.url), "utf-8");
+  assert.match(foreverSrc, /if \(loop\.kind !== "audit"\) \{\s*\n\s*const numericHistory[\s\S]*?metric never moved/,
+    "the never-moved stop stays wrapped in the kind !== audit guard");
 });
 
 test("v0.29.10 — audit loop source pins: deferred baseline, true-regression note, live-loop reseed migration", () => {
