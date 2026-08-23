@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.35.43 — refine re-baselines specChecked with the spec write (2026-08-23)
+
+### Fix
+  Audit-pass finding: refine's orchestrator-side spec write updated
+  specHash but not loop.specChecked, so the next tick saw checked >
+  specChecked against the OLD file's count and ledged spec_item_progress
+  attributed to the agent's iteration - unearned progress feeding the
+  multi-signal stuck gate (the user confirmed the respec; the agent may
+  have done nothing). The refine handler now re-baselines specChecked
+  together with specHash after writing the new spec.
+
 ## 0.35.42 — measure-era scoping for loop movement accounting (2026-08-23)
 
 ### Fix
