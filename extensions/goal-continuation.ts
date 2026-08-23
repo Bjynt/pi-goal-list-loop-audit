@@ -1036,7 +1036,7 @@ export function sendContinuation(goalId: string): void {
     // used to be MANUAL resume — a goal that kept running for days after
     // one heartbeat/provider/auditor-retry recovery got the stale "YOU WERE
     // RECOVERED" directive injected into every single continuation.
-    const noticeAutoResumedAt = state.goal?.autoResumedAt;
+    const noticeAutoResumedAt: string | undefined = undefined; // NEUTERED for red/green proof
     if (noticeAutoResumedAt) {
       updateGoal({ autoResumedAt: undefined, autoResumedEvent: undefined }, ctx);
       appendLedger(ctx.cwd, "recovery_notice_delivered", { goalId, autoResumedAt: noticeAutoResumedAt });

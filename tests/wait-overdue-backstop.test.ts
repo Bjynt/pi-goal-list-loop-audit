@@ -88,10 +88,9 @@ test("v0.35.28 #16: a wait 30min past its pauseResumeAt is resumed by the heartb
     __testOnlyHeartbeatTick();
     await tick();
 
-    const goal = readState(cwd).goal as { status?: string; pauseKind?: string; autoResumedEvent?: string };
+    const goal = readState(cwd).goal as { status?: string; pauseKind?: string; autoResumedAt?: string; autoResumedEvent?: string };
     assert.equal(goal.status, "active", "the lapsed wait actually resumes");
     assert.equal(goal.pauseKind, undefined);
-    assert.match(goal.autoResumedEvent ?? "", /overdue wait/, "the resume is stamped for the prompt notice");
 
     const events = readLedger(cwd).filter((e) => e.type === "wait_pause_overdue_resume");
     assert.equal(events.length, 1, "exactly one backstop fire, ledgered");
@@ -101,6 +100,19 @@ test("v0.35.28 #16: a wait 30min past its pauseResumeAt is resumed by the heartb
     const sent = String((pi.sent[pi.sent.length - 1]!.message as { content?: unknown }).content ?? "");
     assert.ok(sent.includes("YOU WERE RECOVERED"), "the agent is told it was itself that was recovered");
     assert.ok(sent.includes("no external recovery signal to wait for"), "the waiting-for-recovery confusion is named");
+
+    // v0.35.37: the notice fires EXACTLY ONCE — the accepted dispatch marks
+    // it delivered (ledger + stamp cleared), so a goal that keeps running
+    // for days stops getting the stale directive injected on every turn.
+    const delivered = readLedger(cwd).filter((e) => e.type === "recovery_notice_delivered");
+    assert.equal(delivered.length, 1, "the delivery is ledgered once");
+    assert.equal(goal.autoResumedAt, undefined, "the stamp clears once the notice has been dispatched");
+    assert.equal(goal.autoResumedEvent, undefined);
+    assert.doesNotMatch(
+      continuationPrompt(readState(cwd).goal as Parameters<typeof continuationPrompt>[0]),
+      /YOU WERE RECOVERED/,
+      "subsequent continuations no longer inject the stale recovery directive",
+    );
 
     await pi.command("goal", "cancel", ctx);
   } finally {
