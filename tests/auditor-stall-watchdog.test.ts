@@ -70,7 +70,8 @@ setInterval(() => {}, 1_000);
       // Wall deliberately exceeds the silence window: the STALL must fire
       // first — that is the entire point of the watchdog.
       wallTimeoutMs: 10_000,
-      heartbeatNoProgressMs: 1_200,
+      firstEventTimeoutMs: 1_200,
+      heartbeatNoProgressMs: 20_000,
       heartbeatFreshMs: 500,
     },
   });
@@ -130,6 +131,7 @@ setInterval(() => {}, 1_000);
       pollIntervalMs: 10,
       wallTimeoutMs: 10_000,
       heartbeatNoProgressMs: 1_200,
+      firstEventTimeoutMs: 20_000,
       heartbeatFreshMs: 500,
     },
   });
@@ -189,6 +191,7 @@ setInterval(() => {}, 1_000);
       wallTimeoutMs: 2_500,
       toolTimeoutMs: 5_000,
       heartbeatNoProgressMs: 1_200,
+      firstEventTimeoutMs: 20_000,
       heartbeatFreshMs: 500,
     },
   }).then((result) => {

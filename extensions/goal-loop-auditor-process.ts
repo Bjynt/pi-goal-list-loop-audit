@@ -583,6 +583,11 @@ export interface AuditorProcessRuntime {
    * heartbeat stays fresh but no new tool call or report output arrives for
    * this long (default 10m). Tests shrink this. */
   heartbeatNoProgressMs?: number;
+  /** v0.35.49: budget for the worker's FIRST RPC event, armed from spawn
+   * (default: heartbeatNoProgressMs — production boot is seconds, the window
+   * is minutes). Separate knob so watchdog tests can arm one silence axis
+   * without worker cold-start racing the other. */
+  firstEventTimeoutMs?: number;
   /** v0.34.57: freshness horizon for `lastActivityAt` — only heartbeats
    * younger than this count as "activity" for the watchdog (default 60s). */
   heartbeatFreshMs?: number;
@@ -786,6 +791,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
   const pollIntervalMs = Math.max(10, runtime.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS);
   const heartbeatFreshMs = Math.max(10, runtime.heartbeatFreshMs ?? DEFAULT_HEARTBEAT_FRESH_MS);
   const heartbeatNoProgressMs = Math.max(50, runtime.heartbeatNoProgressMs ?? DEFAULT_HEARTBEAT_NO_PROGRESS_MS);
+  const firstEventTimeoutMs = Math.max(50, runtime.firstEventTimeoutMs ?? heartbeatNoProgressMs);
   const configuredToolTimeoutMs = runtime.toolTimeoutMs;
   const toolTimeoutMs = configuredToolTimeoutMs === undefined || !Number.isFinite(configuredToolTimeoutMs)
     ? DEFAULT_TOOL_TIMEOUT_MS
