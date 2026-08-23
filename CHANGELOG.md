@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.35.36 — complete_goal newObjective no longer launders agent text into userSeeds (2026-08-23)
+
+### Fix
+  Audit-pass finding: the newObjective branch appended the AGENT-authored
+  objective to objectiveProvenance.userSeeds; since createdVia stays "user"
+  from creation, the v0.35.31 seed trust then treated that agent-written
+  text as explicit user prose and dispatched it verbatim past the
+  suspicious-objective fence. userSeeds is now strictly human-confirmed
+  text (creation arg, /goal tweak Confirm dialog, repair-redraft task-list
+  confirm); a newObjective pivot is recorded via its goal_tweaked ledger
+  entry and reviewed by the isolated auditor against the NEW contract in
+  the same call. Regression test proves red-on-laundering /
+  green-on-fix; behavioral consequence observed: heuristic-tripping pivots
+  on user goals now flow through the normal fence (auto-restore from the
+  durable original) instead of being waved through.
+
 ## 0.35.35 — user-seed trust works with contract clauses and role markers (2026-08-23)
 
 ### Fix
