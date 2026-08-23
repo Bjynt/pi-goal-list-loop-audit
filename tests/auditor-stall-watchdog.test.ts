@@ -11,31 +11,35 @@
  * went stale. Both must fail fast into the eager retry ladder instead of the
  * wall.
  */
-import { assert } from "node:assert";
+import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, test } from "bun:test";
+import { test } from "node:test";
 import {
   runDetachedGoalCompletionAuditor,
   type AuditorProgress,
   type AuditorStalledInfo,
-  type GoalAuditorInput,
-} from "../extensions/goal-loop-auditor-process.js";
+} from "../extensions/goal-loop-auditor-process.ts";
 
-const goal: GoalAuditorInput["goal"] = {
+const goal = {
   id: "test-stall-watchdog",
   objective: "prove the silence watchdogs fire",
-  policy: "goal",
-  status: "auditing",
-  revision: 0,
-} as GoalAuditorInput["goal"];
+  status: "active" as const,
+  policy: "goal" as const,
+  verificationContract: "Done when:\n- the verdict lands",
+  autoContinue: false,
+  usage: { tokensUsed: 0, tokensLimit: 0 },
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+};
 
 const dirs: string[] = [];
-afterEach(async () => {
+
+async function cleanup(): Promise<void> {
   while (dirs.length) await rm(dirs.pop()!, { recursive: true, force: true });
-});
+}
 
 test("stall: worker that never emits a first event is failed fast, not left for the wall", { timeout: 20_000 }, async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-first-event-stall-"));
