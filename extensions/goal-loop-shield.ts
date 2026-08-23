@@ -243,14 +243,25 @@ export function runMechanicalPreAuditChecks(cwd: string, commands: string[], tim
     let passed = false;
     for (let attempt = 1; attempt <= 2 && !passed; attempt++) {
       try {
-        execFileSync(program, args, { cwd, timeout: timeoutMs, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" });
+        // v0.35.25: pass an explicit maxBuffer. The default is 1 MB, and when
+        // a child's output exceeds it Node kills the child with SIGTERM and
+        // throws ENOBUFS — which this function then mislabels via the
+        // signal==="SIGTERM" banner as "killed after 600s" even though the
+        // child died in seconds. Field incident (2026-08-23, five auditor
+        // rounds on hellhunter): the gate `bun test src/lib/game` emits
+        // ~1.17 MB of (all-passing!) output and was unpassable by
+        // construction — both attempts died at ~1 MB with exit 1 while the
+        // identical tree passed green from an interactive shell 19/19
+        // times. 64 MB covers any realistic suite tail without enabling
+        // runaway memory.
+        execFileSync(program, args, { cwd, timeout: timeoutMs, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 });
         passed = true;
       } catch (err: any) {
         const exitCode = typeof err.status === "number" ? err.status : (typeof err.code === "number" ? err.code : 1);
         const stdout = err.stdout ? String(err.stdout) : "";
         const stderr = err.stderr ? String(err.stderr) : "";
         const combined = (stdout + "\n" + stderr).trim() || err.message || "Command failed";
-        const killed = err.killed === true || err.signal === "SIGTERM";
+        const killed = err.killed === true || err.signal === "SIGTERM" && err.code !== "ENOBUFS";
         const banner = killed
           ? `[mechanical check killed after ${Math.round(timeoutMs / 1000)}s — output tail below]`
           : "";
