@@ -664,6 +664,9 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
     ctx.ui.notify(`Loop stopped: ${loop.stopReason}. ${loop.history.length} iterations recorded.`, "warning");
     appendLedger(ctx.cwd, "loop_stopped", { reason: loop.stopReason, iterations: loop.iteration, best: loop.bestValue });
     notifyExternal(ctx, `Loop stopped: ${loop.stopReason}`);
+    // v0.35.41: same contract as every other stop route below — a stuck
+    // ladder stop frees the surface, so the waiting queue is announced.
+    announceQueuedListAfterLoopEnd(ctx);
     return;
   }
   if (outcome.kind === "stop") {
@@ -716,7 +719,7 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
  * /glla cancel are stop gestures (v0.34.121: cancel must not touch an
  * unrelated waiting queue), so the surface frees up and says so — the user
  * (or the normal cascade) decides what runs. Never a dead SILENT entry. */
-function announceQueuedListAfterLoopEnd(ctx: ExtensionContext): void {
+export function announceQueuedListAfterLoopEnd(ctx: ExtensionContext): void {
   if (state.goal && state.goal.status === "active") return;
   const waiting = state.list?.length ?? 0;
   if (waiting === 0) return;
