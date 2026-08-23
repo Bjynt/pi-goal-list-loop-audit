@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.35.44 — draftingDepth dead state removed; orphaned-gate windows closed (2026-08-23)
+
+### Fix
+  Audit-pass finding, three parts: (1) the draftingDepth runtime global was
+  write-only dead state - set in startDrafting, reset in clearDraftingState,
+  zero readers (template selection uses the depth parameter) - removed
+  outright; "no target => normal depth" now holds by construction, so no
+  consumer can observe stale depth across proposal-completion paths.
+  (2) The two bare `draftingTarget = null` completion paths that skipped the
+  drafter-model restore (batch-activation conflict refusal, zombie-twin
+  rejection) now restore like every other exit. (3) beginDrafterModel moved
+  inside a try that clears the drafting gate on throw - a throw used to
+  leave the orphaned gate startDrafting's own header warns about.
+
 ## 0.35.43 — refine re-baselines specChecked with the spec write (2026-08-23)
 
 ### Fix
