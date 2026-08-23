@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.35.37 — recovery welcome-back notice now fires exactly once (2026-08-23)
+
+### Fix
+  Audit-pass finding: autoResumedAt/autoResumedEvent were set by three
+  auto-recovery sites (heartbeat overdue-wait backstop, main-model provider
+  recovery, auditor provider retry) but the ONLY clearing site was MANUAL
+  resume — so the continuation prompt injected the "WELCOME BACK, YOU WERE
+  RECOVERED" directive into EVERY dispatch of a goal that kept running days
+  after one recovery. The accepted-dispatch site in sendContinuation now
+  marks the notice delivered: the stamp clears and a
+  recovery_notice_delivered ledger entry records it, so the directive is
+  injected exactly once per auto-resume. Manual /goal resume keeps its own
+  clearing (user-driven, no notice needed).
+
 ## 0.35.36 — complete_goal newObjective no longer launders agent text into userSeeds (2026-08-23)
 
 ### Fix
