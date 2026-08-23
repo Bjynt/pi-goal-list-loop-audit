@@ -1,3 +1,15 @@
+# Changelog
+
+## 0.35.39 — README Files map is actually complete (2026-08-23)
+
+### Docs
+  Audit-pass finding: the Files map showed 4 of 7 prompts (missing both
+  plan-draft prompts shipped in v0.35.33 and goal-loop-forever-metricless)
+  and ~19 of 44 extensions files while reading as complete. The map now
+  enumerates every file - 34 extensions/ + 10 loops/ + 7 prompts/ + all
+  scripts/ - grouped by concern, with one-line descriptions verified
+  against each module's exports.
+
 # 0.35.38 — README verb-semantics documentation (2026-08-23)
 
 ### Docs
