@@ -360,8 +360,11 @@ export function buildSettingsRows(
       id: "auditorAllowedExtensions",
       section: "auditor",
       label: "Allowed extensions",
+      // Count only — resolved install paths are long absolute strings; joining
+      // them into VALUE expands compact-mode valueW past the terminal width and
+      // crashes pi's TUI. Open the row to pick concrete specs in the picker.
       valueText: settings.auditorAllowedExtensions?.length
-        ? settings.auditorAllowedExtensions.join(", ")
+        ? `${settings.auditorAllowedExtensions.length} enabled`
         : "none (fully isolated, default)",
       sourceText: src("auditorAllowedExtensions"),
       description: "pi extension specs the DETACHED auditor may load (e.g. npm:pi-webaio) so extension-provided model providers can run — tools stay restricted to read/grep/find/ls/bash; empty = the default extension-less auditor",
@@ -688,11 +691,13 @@ export class SettingsMenuComponent implements Component {
     keyW = Math.min(keyW, MAX_KEY_W);
     sourceW = Math.min(sourceW, MAX_SOURCE_W);
     if (!this.showDescriptions) {
-      // With details hidden, give the saved model/thinking value the space
-      // formerly consumed by the hint column. This is the compact/default
-      // view users need to compare a primary with its fallback chain.
+      // With details hidden, give VALUE the space formerly consumed by the
+      // hint column — but NEVER grow past the terminal. Content-driven
+      // valueW (e.g. joined absolute extension paths) used to expand the
+      // grid past width and crash pi (pi-crash.log: terminal 150, line 164).
       const sepW = visibleWidth(COL_SEP);
-      valueW = Math.max(valueW, width - keyW - sourceW - 2 * sepW);
+      const available = Math.max(0, width - keyW - sourceW - 2 * sepW);
+      valueW = available;
       return { keyW, valueW, sourceW, descW: 0 };
     }
     valueW = Math.min(valueW, MAX_VALUE_W);

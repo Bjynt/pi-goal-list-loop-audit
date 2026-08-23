@@ -1237,7 +1237,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       saveSettings("global", ctx.cwd, { auditorAllowedExtensions: normalizedExts.length ? normalizedExts : undefined });
       ctx.ui.notify(
         normalizedExts.length
-          ? `Auditor allowed extensions saved: ${normalizedExts.join(", ")}.`
+          ? `Auditor allowed extensions saved: ${normalizedExts.length} enabled.`
           : "Auditor allowed extensions cleared — the detached auditor runs extension-less again (default).",
         "info",
       );
