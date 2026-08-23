@@ -1273,6 +1273,24 @@ export function readState(cwd: string): State {
     lastCompactionAt: typeof parsed.lastCompactionAt === "number" && Number.isFinite(parsed.lastCompactionAt) ? parsed.lastCompactionAt : undefined,
     supervisorPausedAt: typeof parsed.supervisorPausedAt === "number" && Number.isFinite(parsed.supervisorPausedAt) && parsed.supervisorPausedAt > 0 ? parsed.supervisorPausedAt : undefined,
     loadHoldAt: typeof parsed.loadHoldAt === "number" && Number.isFinite(parsed.loadHoldAt) && parsed.loadHoldAt > 0 ? parsed.loadHoldAt : undefined,
+    lastOutcome: sanitizeLastOutcome(parsed.lastOutcome),
+  };
+}
+
+/** v0.35.34: strict shape validation for the restored last-outcome record —
+ * a corrupt/garbage line degrades to absent (the renderer already treats a
+ * missing or stale-by-timestamp record as silent). */
+function sanitizeLastOutcome(value: unknown): State["lastOutcome"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const v = value as Record<string, unknown>;
+  if (typeof v.at !== "string" || !v.at) return undefined;
+  if (typeof v.ok !== "boolean") return undefined;
+  if (typeof v.title !== "string" || !v.title) return undefined;
+  return {
+    at: v.at,
+    ok: v.ok,
+    title: v.title,
+    ...(typeof v.recap === "string" && v.recap ? { recap: v.recap } : {}),
   };
 }
 
