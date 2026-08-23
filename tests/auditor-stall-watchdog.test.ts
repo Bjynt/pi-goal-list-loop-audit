@@ -92,6 +92,7 @@ setInterval(() => {}, 1_000);
     false,
     "cancelled auditor job scratch is removed",
   );
+  await cleanup();
 });
 
 test("stall: worker whose single boot heartbeat goes stale is failed fast, not left for the wall", { timeout: 20_000 }, async () => {
@@ -144,6 +145,7 @@ setInterval(() => {}, 1_000);
     "the stall fired well before the 10s wall — the doomed attempt must not burn its full wall",
   );
   assert.ok(existsSync(sigtermMarker), "the wedged worker was SIGTERMed — the detached job was cancelled");
+  await cleanup();
 });
 
 test("stall: a running auditor tool is exempt — the per-tool timeout owns that axis", { timeout: 20_000 }, async () => {
@@ -196,4 +198,5 @@ setInterval(() => {}, 1_000);
   await pending;
   assert.equal(stalled.length, 0, "the silence watchdogs must not fire while a tool is open");
   assert.ok(timedOut, "the run ended on the wall bound, proving it stayed alive past the silence window");
+  await cleanup();
 });
