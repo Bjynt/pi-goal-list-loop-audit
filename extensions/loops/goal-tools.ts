@@ -2008,6 +2008,11 @@ function registerAgentTools(pi: any): void {
           if (p.specText?.trim()) fs.writeFileSync(loop.specFile, p.specText.trim() + "\n");
           if (p.specAppend?.trim()) fs.appendFileSync(loop.specFile, (p.specText?.trim() ? "" : "\n") + p.specAppend.trim() + "\n");
           loop.specHash = specFileHash(loop.specFile) ?? undefined;
+          // v0.35.43 (audit finding): re-baseline checkbox progress too —
+          // otherwise the next tick sees checked > specChecked against the
+          // OLD file's count and ledgers spec_item_progress attributed to
+          // the agent's iteration: unearned progress feeding the stuck gate.
+          loop.specChecked = countCheckedSpecItems(loop.specFile) ?? undefined;
           appendLedger(liveCtx.cwd, "spec_updated", { via: "refine", iteration: loop.iteration, replaced: Boolean(p.specText?.trim()), appended: Boolean(p.specAppend?.trim()) });
         } catch (e) {
           return { content: [{ type: "text", text: `Spec file write failed: ${String(e).slice(0, 200)}. The target/measure refinement was applied; re-propose the spec change.` }], details: {} };
