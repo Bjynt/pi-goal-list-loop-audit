@@ -227,6 +227,21 @@ function overdueWaitDue(): boolean {
 }
 
 function overdueWaitBackstop(ctx: ExtensionContext): void {
+  // v0.35.48 (audit finding): this backstop MUTATES DURABLE STATE — parked →
+  // active, pauseResumeAt cleared — and then dispatches. It may only fire
+  // when the dispatch surface can actually carry the resume; otherwise it
+  // manufactures an ACTIVE goal with nothing scheduled until a fresh
+  // session_start (the paused-is-safe invariant, broken).
+  //   - mid-handoff or stale-latched windows: stay parked; when a healthy
+  //     session rebinds, subsequent ticks re-arm the backstop naturally.
+  //   - active main-model recovery: ONLY recovery-routed waits may fire
+  //     (the probe route re-parks with a FRESH resumeAt on failure); an
+  //     unrelated agent-authored wait would dispatch into the same broken
+  //     model, so it stays parked until recovery resolves.
+  // These gates sit BEFORE the lastOverdueWaitKey latch: a skipped window
+  // must stay retriable on later ticks, never latched as "already done".
+  if (flags.sessionHandoffPending || flags.staleTerminalDone || flags.extensionApiStale) return;
+  if (mainModelRecoveryActive() && !(state.goal?.pauseReason ?? "").startsWith("main model recovery")) return;
   if (!overdueWaitDue()) return;
   const goal = state.goal!;
   const reason = goal.pauseReason ?? "";

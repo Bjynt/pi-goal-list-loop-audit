@@ -26,6 +26,8 @@ import * as path from "node:path";
 import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag } from "../extensions/loops/goal.js";
 import { __testOnlyHeartbeatTick, __testOnlyResetZombieRunWatchdog, __testOnlyResetOverdueWaitBackstop } from "../extensions/goal-heartbeat.js";
 import { readState } from "../extensions/goal-loop-core.js";
+import { mainModelRecoveryActive } from "../extensions/goal-recovery.js";
+import { replaceState } from "../extensions/goal-state.js";
 import { continuationPrompt } from "../extensions/goal-continuation.js";
 import { MockPi, makeMockCtx, tmpCwd, seedState, seedGoal, tick, type MockCtx } from "./harness/mock-pi.js";
 
@@ -219,6 +221,66 @@ test("v0.35.28 #16: once consent exists on reload, the overdue wait resumes thro
     assert.ok(readLedger(cwd).some((e) => e.type === "wait_pause_overdue_resume"));
   } finally {
     __testOnlyResetOverdueWaitBackstop();
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  }
+});
+
+// v0.35.48 (audit finding): overdueWaitBackstop mutates DURABLE state
+// (parked → active, pauseResumeAt cleared) — it must only fire when the
+// dispatch surface can carry the resume. Mid-handoff or stale-latched
+// windows stay parked; an active main-model recovery only releases
+// recovery-routed waits (the probe route), never unrelated agent-authored
+// waits that would dispatch into the same broken model.
+test("v0.35.48: the backstop stays parked during a session handoff window", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  __testOnlyResetOverdueWaitBackstop();
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({ autoResume: true }));
+  const cwd = tmpCwd();
+  const ctx = await boot(cwd);
+  seedState(cwd, { goal: overdueWaitGoal("waiting for the upstream provider to recover") });
+  try {
+    // A real session_shutdown latches sessionHandoffPending (the handoff
+    // window) WITHOUT rebinding a new session.
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+    __testOnlyHeartbeatTickRaw();
+    await tick();
+
+    const goal = readState(cwd).goal as { status?: string };
+    assert.equal(goal.status, "paused", "mid-handoff: the overdue wait STAYS parked — no active-with-no-dispatch state");
+    assert.equal(readLedger(cwd).filter((e) => e.type === "wait_pause_overdue_resume").length, 0, "no backstop fire is ledgered");
+  } finally {
+    __testOnlyResetOverdueWaitBackstop();
+    __testOnlyResetZombieRunWatchdog();
+  }
+});
+
+test("v0.35.48: an agent-authored wait stays parked while main-model recovery is active", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  __testOnlyResetOverdueWaitBackstop();
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({ autoResume: true }));
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    goal: overdueWaitGoal("waiting for the quota window to reset"),
+    // An ACTIVE main-model recovery park: retryAt in the future.
+    mainModelRecovery: { attempt: 1, retryAt: Date.now() + 5 * 60_000 },
+  } as Record<string, unknown>);
+  pi.sent.length = 0;
+  const ctx = await boot(cwd);
+  try {
+    assert.equal(mainModelRecoveryActive(), true, "precondition: recovery park is live");
+    __testOnlyHeartbeatTick();
+    await tick();
+
+    const goal = readState(cwd).goal as { status?: string };
+    assert.equal(goal.status, "paused", "recovery-active: an unrelated wait STAYS parked instead of dispatching into the broken model");
+    assert.equal(readLedger(cwd).filter((e) => e.type === "wait_pause_overdue_resume").length, 0, "no backstop fire is ledgered");
+    assert.equal(pi.sent.length, 0, "nothing was dispatched");
+  } finally {
+    replaceState({ ...(readState(cwd)), mainModelRecovery: null } as never);
+    __testOnlyResetOverdueWaitBackstop();
+    __testOnlyResetZombieRunWatchdog();
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   }
 });
