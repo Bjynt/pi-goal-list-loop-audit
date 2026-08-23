@@ -66,6 +66,11 @@ another concern is that do we have these explores, clearly not desired, is this 
 
 ##
 
+replan requried, been a while since i saw this 
+/home/dracon/Pictures/Screenshots/Screenshot_20260823_181617.png 
+
+##
+
 we coudl use better visuals cause this is what wesee now and it is worth htinking what and how we show
 /home/dracon/Pictures/Screenshots/Screenshot_20260822_132806.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260822_200250.png 
