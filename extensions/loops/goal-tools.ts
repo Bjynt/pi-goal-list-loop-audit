@@ -1645,6 +1645,9 @@ function registerAgentTools(pi: any): void {
           const conflict = await resolveDraftActivationConflict(liveCtx, "list", p.items.join("; "));
           if (conflict !== "proceed") {
             draftingTarget = null;
+            // v0.35.44: restore the session model like every other exit — a
+            // bare null used to strand the drafter model after the refusal.
+            await ((globalThis as any).restoreDrafterModel?.() ?? Promise.resolve());
             return {
               content: [{ type: "text", text: conflict === "updated" ? "Whole list objective updated; the batch was not activated." : "List activation was not started; the current objective was preserved." }],
               details: {},
@@ -1710,6 +1713,9 @@ function registerAgentTools(pi: any): void {
       // just-approved INFRA-NEW-18 close re-drafted itself 3 minutes later.
       if (recentlyCompletedObjectives(liveCtx.cwd).has(normalizeObjective(p.objective.trim()))) {
         draftingTarget = null;
+        // v0.35.44: restore the session model like every other exit — a
+        // bare null used to strand the drafter model after the rejection.
+        await ((globalThis as any).restoreDrafterModel?.() ?? Promise.resolve());
         appendLedger(liveCtx.cwd, "draft_duplicate_skipped", { kind: isListDraft ? "list" : "goal", objective: p.objective.trim().slice(0, 200) });
         liveCtx.ui.notify(`Draft REJECTED (zombie-twin guard): this objective matches a goal completed in the last 24h. Tell the user the work is already done.`, "warning");
         return {

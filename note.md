@@ -34,6 +34,10 @@ we coudl use better visuals cause this is what wesee now and it is worth htinkin
 /home/dracon/Pictures/Screenshots/Screenshot_20260822_132806.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260822_200250.png 
 
+##
+
+update the readme and the docs its been a while and readme especially start with new visitors in mind
+
 # Idea
 
 ##

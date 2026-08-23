@@ -73,20 +73,24 @@ test("v0.35.33: both plan prompt files exist, carry the drafting markers, and ma
   assert.ok(fs.existsSync(path.join(ROOT, "prompts/goal-loop-forever-draft.md")));
 });
 
-test("v0.35.33: source pins — depth flag plumbing end to end", () => {
-  const queue = read("extensions/loops/goal-list-queue.ts");
-  // startDrafting takes depth and records it on the session global.
-  assert.ok(queue.includes('depth: "normal" | "plan" = "normal"'), "startDrafting signature");
-  assert.ok(queue.includes("draftingDepth = depth;"), "depth lands on the session global");
-  assert.ok(queue.includes("draftingTemplateFile(target, depth)"), "template selection goes through the pure helper");
-  assert.ok(queue.includes("DEEP PLANNING MODE"), "the user-facing hint names the mode");
+test("v0.35.44: source pins — the draftingDepth dead-state global is GONE (audit fix)", () => {
+  // v0.35.44 (audit finding): the runtime-global draftingDepth was write-only
+  // dead state — set in startDrafting, reset in clearDraftingState, ZERO
+  // readers (template selection uses the depth parameter). Removed outright:
+  // "no target ⇒ normal depth" now holds by construction, so no consumer can
+  // ever observe stale depth across proposal-completion paths.
+  for (const f of ["extensions/loops/goal-list-queue.ts", "extensions/loops/goal-session.ts", "extensions/loops/goal-ui.ts", "extensions/loops/goal-runtime-globals.ts", "extensions/loops/goal-tools.ts"]) {
+    const src = read(f).replace(/v0\.35\.44[^\n]*/g, "");
+    assert.ok(!src.includes("draftingDepth"), `draftingDepth fully removed from ${f}`);
+  }
 
-  const session = read("extensions/loops/goal-session.ts");
-  assert.ok(session.includes('defineGoalRuntimeGlobal("draftingDepth"'), "runtime-global registration");
-  const globals = read("extensions/loops/goal-runtime-globals.ts");
-  assert.ok(globals.includes("var draftingDepth: any;"), "ambient declaration");
-  const ui = read("extensions/loops/goal-ui.ts");
-  assert.ok(/clearDraftingState[\s\S]*?draftingDepth = "normal";/.test(ui), "clearDraftingState resets depth — no stale plan mode across sessions");
+  const queue = read("extensions/loops/goal-list-queue.ts");
+  assert.ok(queue.includes('depth: "normal" | "plan" = "normal"'), "startDrafting signature keeps the depth PARAMETER (the live plumbing)");
+  assert.ok(queue.includes("draftingTemplateFile(target, depth)"), "template selection still goes through the pure helper");
+  assert.ok(queue.includes("DEEP PLANNING MODE"), "the user-facing hint names the mode");
+  // The orphaned-gate window is closed: a beginDrafterModel throw clears the
+  // gate instead of leaving it set with no interview running.
+  assert.ok(/try \{\n    await beginDrafterModel\(ctx\);\n  \} catch[\s\S]{0,200}clearDraftingState\(\);/.test(queue), "beginDrafterModel throw clears the drafting gate");
 });
 
 test("v0.35.33: source pins — all three verbs dispatch with depth plan", () => {
