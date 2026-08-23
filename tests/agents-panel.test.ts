@@ -15,7 +15,7 @@ import * as path from "node:path";
 
 import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag } from "../extensions/loops/goal.js";
 import { upsertSubagentHangProbe, markSubagentHangProgress, endSubagentHangProbe } from "../extensions/goal-heartbeat.js";
-import { renderAgentsPanel, renderAgentsWidgetLine, tailChildTranscript, formatTranscriptEntry, truncate, type AgentsPanelRow } from "../extensions/goal-agents-panel.js";
+import { renderAgentsPanel, renderAgentsWidgetLine, tailChildTranscript, formatTranscriptEntry, truncate, TRANSCRIPT_SCAN_MAX_BYTES, type AgentsPanelRow } from "../extensions/goal-agents-panel.js";
 import { buildWidgetLines } from "../extensions/goal-loop-display.js";
 import { MockPi, makeMockCtx, tmpCwd, seedState, seedGoal, tick, type MockCtx } from "./harness/mock-pi.js";
 
@@ -182,4 +182,34 @@ test("v0.35.29 #15: buildWidgetLines appends the agents segment and hides it whe
   const withAgents = buildWidgetLines(state, undefined, Date.now(), undefined, 120, { agents: { line: "● 2 agents · plan silent 26m ⚠" } })!;
   assert.ok(!base.some((l) => l.includes("agents")), "hidden at zero tracked children");
   assert.ok(withAgents.at(-1)!.includes("● 2 agents"), "segment appended last");
+});
+
+// v0.35.45 (audit finding): /glla agents --tail rendered child-transcript
+// lines through ctx.ui.notify WITHOUT ANSI/control-char sanitization — a
+// hostile child transcript could emit terminal escape sequences.
+test("v0.35.45: formatTranscriptEntry strips ANSI escapes and control chars on ALL paths", () => {
+  const hostile = '{"role":"assistant","content":"\\u001b[2J\\u001b[Hreset\\u0007 the screen"}';
+  assert.match(formatTranscriptEntry(hostile)!, /\[assistant\] reset the screen/);
+  assert.doesNotMatch(formatTranscriptEntry(hostile)!, /\u001B|\u0007/);
+  // The verbatim [raw] path is sanitized too — unparseable lines can carry
+  // raw escape bytes straight from a hostile transcript.
+  const raw = 'garbage \u001b]0;pwned\u0007 title with \u001b[31mcolor';
+  const out = formatTranscriptEntry(raw)!;
+  assert.ok(out.startsWith("[raw] "), `raw fallback: ${out}`);
+  assert.doesNotMatch(out, /\u001B|\u0007/);
+});
+
+test("v0.35.45: the candidate scan reads a bounded tail per file, not full transcripts", () => {
+  // Injected reader records maxBytes; production passes a tail-aware reader.
+  let sawMaxBytes: Array<number | undefined> = [];
+  const dir = fs.mkdtempSync(path.join("/tmp", "glla-scan-"));
+  fs.writeFileSync(path.join(dir, "a.jsonl"), JSON.stringify({ role: "user", content: "map model picker needle here" }));
+  const res = tailChildTranscript(dir, row({ summary: "map model picker" }), {
+    readFile: (file, maxBytes) => { sawMaxBytes.push(maxBytes); return fs.readFileSync(file); },
+    listDir: (d) => fs.readdirSync(d),
+    statMtime: (f) => { try { return fs.statSync(f).mtimeMs; } catch { return 0; } },
+  });
+  assert.ok(res.ok, `scan matched: ${res.detail}`);
+  assert.equal(sawMaxBytes.length >= 1, true, "the scan went through the reader");
+  assert.equal(sawMaxBytes[0], TRANSCRIPT_SCAN_MAX_BYTES, "the scan requested the bounded-tail window");
 });
