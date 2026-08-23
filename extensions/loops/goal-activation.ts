@@ -134,7 +134,6 @@ import {
   type ContinuationDispatch,
 } from "../goal-loop-dispatch.js";
 import {
-  announceQueuedListAfterLoopEnd,
   createGoalContinuation,
   scheduleContinuation,
   sendContinuation,
@@ -370,6 +369,7 @@ import {
   STALE_TOOL_CONTEXT_MESSAGE,
   clearLoopTimer,
   cmdLoop,
+  announceQueuedListAfterLoopEnd,
   createGoalLoop,
   isLoopActive,
   loopTimerPending,

@@ -123,3 +123,53 @@ test("v0.35.22: when the loop ends, the blocked item becomes startable — /loop
   assert.match(final.goal!.objective, /clean up the README examples/);
   assert.match(ledger(cwd), /"goal_created"/);
 });
+
+// v0.35.41 (audit finding): v0.35.22's "ends by ANY route … ANNOUNCE loudly"
+// contract was only wired into SOME stop routes — the stuck-ladder stop and
+// the provider-error/abort-cap stop notified the loop line but never
+// announced queue resumption. Both tests drive the production stop routes.
+
+test("v0.35.41: the stuck-ladder stop also announces queued-list resumption", async () => {
+  const { cwd } = seedLoopAndItem();
+  const pi = new MockPi();
+  activate(pi.api);
+  const ctx = await boot(pi, cwd);
+  // Pre-charge the stuck ladder to one intervention below the default cap
+  // (5; aggressiveMode raises it, stock settings don't) so the next live
+  // turn trips the top of the ladder.
+  replaceState({ ...state, loop: { ...state.loop!, active: true, stopReason: undefined, consecutiveStuck: 4, lastStuckReason: "same response three times" } });
+
+  await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "nudge the widget again" }], stopReason: "end_turn" }] }, ctx);
+  await tick(120);
+
+  const after = readState(cwd);
+  assert.ok(!after.loop?.active, "the stuck ladder stopped the loop");
+  assert.match(after.loop?.stopReason ?? "", /stuck —/);
+  const unblocked = ctx.ui.matching("can start again");
+  assert.equal(unblocked.length, 1, "the stuck-stop route announces the unblocked queue");
+  assert.match(unblocked[0]!.message, /clean up the README examples/);
+});
+
+test("v0.35.41: the provider-error cap stop also announces queued-list resumption", async () => {
+  const { cwd } = seedLoopAndItem();
+  const pi = new MockPi();
+  activate(pi.api);
+  const ctx = await boot(pi, cwd);
+  wakeLoop();
+
+  // Non-recoverable classification ("user interrupt") — the durable
+  // main-model recovery envelope must NOT own this failure, so the error
+  // cap (6) stop route fires.
+  const deadTurn = { messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: "user interrupt" }] };
+  for (let i = 0; i < 6; i++) {
+    await pi.fire("agent_end", deadTurn, ctx);
+    await tick();
+  }
+
+  const after = readState(cwd);
+  assert.ok(!after.loop?.active, "the error-cap stop ended the loop");
+  assert.match(after.loop?.stopReason ?? "", /provider errors/);
+  const unblocked = ctx.ui.matching("can start again");
+  assert.equal(unblocked.length, 1, "the error-cap stop route announces the unblocked queue");
+  assert.match(unblocked[0]!.message, /clean up the README examples/);
+});
