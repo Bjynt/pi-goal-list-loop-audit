@@ -69,6 +69,18 @@ another concern is that do we have these explores, clearly not desired, is this 
 we were doing a list then got interrupted and seemingly the problem is hta thte agent called complete goal in the middle of the list 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_183854.png 
 
+/list show 
+even shows the list alive
+```
+  Active: (none)
+  List (28):
+    1.
+    2. Deep audit + fix: settings page (sliders, toggles, preview stats, save/reset actions). Ded
+    3. Deep audit + fix: factions page (faction picker, mood-board, hero figure). Dedupe first; f
+    4. Deep audit + fix: intro page (typewriter terminal, skip-all, stinger). Dedupe first; fix o
+    5. Deep audit + fix: briefing page. Dedupe first; fix only NEW findings
+```
+
 ##
 
 not sure we want manual 
