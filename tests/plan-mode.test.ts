@@ -114,3 +114,25 @@ test("v0.35.33: completions advertise the plan verb on all three commands", () =
   assert.ok(/\["plan",/.test(listBlock), "/list completions");
   assert.ok(/\["plan",/.test(loopBlock), "/loop completions");
 });
+
+// v0.35.45 (audit finding): planNote ended "…than a regular draft." and was
+// concatenated DIRECTLY with the label hint, producing
+// "…regular draft.Goal drafting — deep planning: …". Drive the real /goal
+// plan command with a seed and assert the notified hint has the separator.
+test("v0.35.45: the plan-mode seeded hint separates the plan note from the label", async () => {
+  const { cwd } = seedLoopAndItem();
+  const pi = new MockPi();
+  activate(pi.api);
+  __testOnlyResetOwnerSession();
+  const ctx = makeMockCtx(cwd, { sessionManager: { name: `plan-hint-${Date.now()}` } });
+  await pi.fire("session_start", { reason: "startup" }, ctx);
+  await tick(80);
+
+  await pi.command("goal", "plan tidy up the widget pipeline — done when pinned", ctx);
+  await tick(80);
+  const notes = ctx.ui.notifications.map((n: any) => String(n.message ?? n.text ?? n));
+  const hint = notes.find((m: string) => m.includes("DEEP PLANNING MODE"));
+  assert.ok(hint, `a plan-mode hint was notified (got: ${JSON.stringify(notes).slice(0, 300)})`);
+  assert.ok(!/draft\.\w/.test(hint!), `no glued sentence boundary (got: ${hint})`);
+  assert.match(hint!, /regular draft\. Goal drafting — deep planning:/);
+});

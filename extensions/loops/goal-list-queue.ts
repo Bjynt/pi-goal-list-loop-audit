@@ -784,7 +784,9 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
   const planNote = depth === "plan"
     ? " DEEP PLANNING MODE: research the code FIRST, then interview in ROUNDS (architecture → scope → failure conditions → verification); the proposal will be a structured expanded contract, far more detailed than a regular draft."
     : "";
-  const seededHint = planNote + (
+  // v0.35.45 (audit finding): join with an explicit separator — direct
+  // concatenation produced "…regular draft.Goal drafting — deep planning: …".
+  const seededHint = (planNote ? `${planNote} ` : "") + (
     target === "list"
       ? `${label}: free-text is valid without a "Done when:" clause — the agent will turn it into short list items and grill for concrete per-item contracts (nothing activates until you confirm). To skip drafting, include a per-item "Done when:" clause.`
       : target === "loop"
