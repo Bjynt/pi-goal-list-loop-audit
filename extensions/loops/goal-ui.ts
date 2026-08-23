@@ -376,7 +376,7 @@ function clearDraftingState(): void {
   const restore = (globalThis as any).restoreDrafterModel as (() => Promise<void>) | undefined;
   if (restore) void restore();
   draftingTarget = null;
-  draftingDepth = "normal";
+  // v0.35.44: no draftingDepth to reset — the write-only global was removed.
   draftingUserReplies = 0;
   draftingBlockedProposals = 0;
   draftingSeedInFlight = false;

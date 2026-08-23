@@ -79,7 +79,10 @@ declare global {
   var hourlyProbeFireAt: any;
   var lastMainModelFailure: any;
   var draftingTarget: any;
-  var draftingDepth: any;
+  // v0.35.44: the draftingDepth ambient declaration was REMOVED — the
+  // global was write-only dead state (zero readers; template selection uses
+  // startDrafting's depth parameter). With no depth global, "no target ⇒
+  // normal depth" holds by construction.
   var draftingUserReplies: any;
   var draftingBlockedProposals: any;
   var draftingSeedInFlight: any;

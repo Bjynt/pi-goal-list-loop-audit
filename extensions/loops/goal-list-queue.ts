@@ -767,7 +767,8 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
     return false;
   }
   draftingTarget = target;
-  draftingDepth = depth;
+  // v0.35.44: no draftingDepth write — the write-only global was removed;
+  // template selection goes through draftingTemplateFile(target, depth).
   const labels: Record<string, [string, string]> = {
     goal: ["Goal drafting", "propose_goal_draft"],
     list: ["Goal drafting (for the list)", "propose_goal_draft"],
@@ -822,7 +823,16 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
       if (xr) tmpl += `\n\n${xr}`;
     }
   }
-  await beginDrafterModel(ctx);
+  try {
+    await beginDrafterModel(ctx);
+  } catch (err) {
+    // v0.35.44 (audit finding): beginDrafterModel sat OUTSIDE the try below,
+    // so a throw left the orphaned drafting gate this function's own header
+    // warns about — target set, no interview running, later proposals look
+    // like disapprovals until restart. Clear the gate and rethrow.
+    clearDraftingState();
+    throw err;
+  }
   try {
     const wasStale = extensionApiStale;
     const sent = safeSteerUser(ctx, tmpl);

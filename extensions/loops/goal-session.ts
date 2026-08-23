@@ -1632,9 +1632,6 @@ let lastMainModelFailure: MainModelFailure | null = null;
 // must call propose_goal_draft / propose_loop_draft, which opens the user's
 // Confirm dialog. The target decides where the confirmed contract lands.
 let draftingTarget: "goal" | "list" | "loop" | null = null;
-// v0.35.33: extended-draft flag — set by /goal plan | /list plan | /loop plan,
-// reset by clearDraftingState. Prompt-level only (see DraftingDepth).
-let draftingDepth: "normal" | "plan" = "normal";
 // v0.14.0 drafting floor: user replies counted while drafting; the injected
 // seed prompt itself arrives as a user message — skip exactly that one.
 let draftingUserReplies = 0;
@@ -1723,7 +1720,6 @@ defineGoalRuntimeGlobal("hourlyProbeTimer", { get: () => hourlyProbeTimer, set: 
 defineGoalRuntimeGlobal("hourlyProbeFireAt", { get: () => hourlyProbeFireAt, set: (v) => { hourlyProbeFireAt = v as any; } });
 defineGoalRuntimeGlobal("lastMainModelFailure", { get: () => lastMainModelFailure, set: (v) => { lastMainModelFailure = v as any; } });
 defineGoalRuntimeGlobal("draftingTarget", { get: () => draftingTarget, set: (v) => { draftingTarget = v as any; } });
-defineGoalRuntimeGlobal("draftingDepth", { get: () => draftingDepth, set: (v) => { draftingDepth = v as any; } });
 defineGoalRuntimeGlobal("draftingUserReplies", { get: () => draftingUserReplies, set: (v) => { draftingUserReplies = v as any; } });
 defineGoalRuntimeGlobal("draftingBlockedProposals", { get: () => draftingBlockedProposals, set: (v) => { draftingBlockedProposals = v as any; } });
 defineGoalRuntimeGlobal("draftingSeedInFlight", { get: () => draftingSeedInFlight, set: (v) => { draftingSeedInFlight = v as any; } });

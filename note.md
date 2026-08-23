@@ -14,16 +14,12 @@ the goal was gettick stuck so i started a new goal but then it was not visible o
 
 ##
 
-we coudl use better visuals cause this is what wesee now and it is worth htinking what and how we show
-/home/dracon/Pictures/Screenshots/Screenshot_20260822_132806.png 
-/home/dracon/Pictures/Screenshots/Screenshot_20260822_200250.png 
-
-##
-
 list seems corruped not only doesnt show but we cant start it 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_120853.png 
 here too we can't even start a new list 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_122304.png 
+>> after reload it recovered very odd, now technically this is what i want just to list to stay visible and keep going 
+/home/dracon/Pictures/Screenshots/Screenshot_20260823_130243.png 
 
 ##
 
@@ -31,6 +27,12 @@ another concern is that do we have these explores, clearly not desired, is this 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_120936.png 
 
 # Later
+
+##
+
+we coudl use better visuals cause this is what wesee now and it is worth htinking what and how we show
+/home/dracon/Pictures/Screenshots/Screenshot_20260822_132806.png 
+/home/dracon/Pictures/Screenshots/Screenshot_20260822_200250.png 
 
 # Idea
 
