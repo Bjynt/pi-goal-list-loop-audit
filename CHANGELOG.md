@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.35.40 — regression pins for the audit-kind measurement exemption (2026-08-23)
+
+### Tests
+  Audit-pass finding: commit 28131527's audit-kind exemption in
+  applyMeasurement shipped with zero regression pin. Two twin-loop tests in
+  tests/loop-forever.test.ts now pin it: (1) identical flat-metric shapes
+  diverge by kind - the audit loop counts every flat toward plateau from
+  iteration 1 while the non-audit loop's pre-movement flats stay free;
+  (2) a dead metric gets the dedicated "metric never moved" stop on plain
+  loops but never on audit loops, whose final verdict stays plateau.
+  Red/green proven: deleting both halves of guard one fails both twins;
+  the never-moved kind-guard proved unreachable-by-construction for audits
+  (plateau always returns first) and is pinned in source instead.
+
 ## 0.35.39 — README Files map is actually complete (2026-08-23)
 
 ### Docs
