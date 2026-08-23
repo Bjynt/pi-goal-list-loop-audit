@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.35.46 — /glla agents --tail sanitization + bounded scan reads (2026-08-23)
+
+### Fix
+  Audit-pass finding, two parts: (1) child-transcript tail lines were
+  rendered through ctx.ui.notify WITHOUT ANSI/control-character
+  sanitization - unlike every other external-text projection - so a
+  hostile child transcript could emit terminal escape sequences;
+  formatTranscriptEntry now runs all output paths (both [raw] fallbacks
+  and the [role] text path) through sanitizeDisplayText. (2) The candidate
+  scan synchronously read up to 25 FULL transcript files on the main
+  thread; the reader contract now takes an optional maxBytes and the
+  production command passes a real partial tail read (256 KiB window,
+  TRANSCRIPT_SCAN_MAX_BYTES), so the scan touches at most the last 256 KiB
+  of each candidate. The single matched file still gets a full read so the
+  "last N of M" detail stays honest.
+
 ## 0.35.45 — plan-mode seeded hint separator (2026-08-23)
 
 ### Fix
