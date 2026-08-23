@@ -1,5 +1,10 @@
 # Now
 
+##
+
+the goal was gettick stuck so i started a new goal but then it was not visible or usable before i restarted
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260823_091841.png 
 
 # Next
 

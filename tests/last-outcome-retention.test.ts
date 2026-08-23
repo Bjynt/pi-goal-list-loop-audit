@@ -17,6 +17,8 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
 import { buildWidgetLines, LAST_OUTCOME_RETENTION_MS } from "../extensions/goal-loop-display.js";
+import { persistStateLine } from "../extensions/goal-state.js";
+import { readState, ledgerPath } from "../extensions/goal-loop-core.js";
 import type { State } from "../extensions/goal-loop-core.js";
 
 const NOW = 1_800_000_000_000;
@@ -89,4 +91,65 @@ test("v0.35.30: source pins — slot close writes lastOutcome; wipe clears it", 
   assert.ok(closeBody.includes("goal: null"), "the slot still closes");
   const cmds = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   assert.ok(cmds.includes("lastOutcome: undefined"), "/glla wipe clears the retention record");
+});
+
+// ---- v0.35.34: durability — the field must survive a process restart ----
+
+const OUTCOME: NonNullable<State["lastOutcome"]> = {
+  at: "2026-08-23T01:40:00.000Z",
+  ok: true,
+  title: "auditor approved (complete-goal)",
+  recap: "Plan mode shipped: three verbs, two prompts, full gate green.",
+};
+
+test("v0.35.34: lastOutcome round-trips through persistStateLine → readState (durable across restarts)", () => {
+  const os = require("node:os");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "glla-outcome-dur-"));
+  try {
+    persistStateLine(cwd, { goal: null, lastOutcome: OUTCOME } as State);
+    const restored = readState(cwd);
+    assert.deepEqual(restored.lastOutcome, OUTCOME);
+    // A later state event without the field must NOT resurrect it, but an
+    // earlier event's value persists until overwritten (spread semantics).
+    persistStateLine(cwd, { goal: null } as State);
+    assert.equal(readState(cwd).lastOutcome, undefined);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("v0.35.34: corrupt lastOutcome lines degrade to absent, never throw", () => {
+  const os = require("node:os");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "glla-outcome-corrupt-"));
+  try {
+    const bad = [
+      null,
+      "garbage",
+      123,
+      [1, 2],
+      { ok: true },                       // missing at + title
+      { at: "", ok: true, title: "x" },   // empty at
+      { at: "2026-08-23T00:00:00Z" },     // missing ok/title
+      { at: "2026-08-23T00:00:00Z", ok: "yes", title: "x" }, // ok not boolean
+    ];
+    for (const value of bad) {
+      fs.writeFileSync(ledgerPath(cwd), JSON.stringify({ type: "state", at: new Date().toISOString(), value: { lastOutcome: value } }) + "\n");
+      assert.equal(readState(cwd).lastOutcome, undefined, JSON.stringify(value));
+    }
+    // A raw malformed envelope line is skipped by the existing try/catch path.
+    fs.writeFileSync(ledgerPath(cwd), "{broken json\n");
+    assert.equal(readState(cwd).lastOutcome, undefined);
+    // recap is optional but must be a non-empty string when present.
+    const partial = { type: "state", at: new Date().toISOString(), value: { lastOutcome: { ...OUTCOME, recap: 42 } } };
+    fs.writeFileSync(ledgerPath(cwd), JSON.stringify(partial) + "\n");
+    const restored = readState(cwd).lastOutcome;
+    assert.ok(restored && restored.title === OUTCOME.title);
+    assert.equal(restored!.recap, undefined);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
 });
