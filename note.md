@@ -66,6 +66,11 @@ another concern is that do we have these explores, clearly not desired, is this 
 
 ##
 
+we were doing a list then got interrupted and seemingly the problem is hta thte agent called complete goal in the middle of the list 
+/home/dracon/Pictures/Screenshots/Screenshot_20260823_183854.png 
+
+##
+
 not sure we want manual 
 
 /list add

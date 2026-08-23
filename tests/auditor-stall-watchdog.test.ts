@@ -70,7 +70,7 @@ setInterval(() => {}, 1_000);
       // Wall deliberately exceeds the silence window: the STALL must fire
       // first — that is the entire point of the watchdog.
       wallTimeoutMs: 10_000,
-      heartbeatNoProgressMs: 150,
+      heartbeatNoProgressMs: 400,
       heartbeatFreshMs: 500,
     },
   });
@@ -81,7 +81,7 @@ setInterval(() => {}, 1_000);
   assert.equal(result.infrastructureClass, "timeout", "the stall classifies as retryable infra, feeding the eager ladder");
   assert.equal(stalled.length, 1, "the watchdog emits auditor_stalled exactly once");
   assert.equal(stalled[0]!.reason, "first-event-timeout");
-  assert.ok(stalled[0]!.noProgressMs >= 150, `silence reached the window: ${stalled[0]!.noProgressMs}ms`);
+  assert.ok(stalled[0]!.noProgressMs >= 400, `silence reached the window: ${stalled[0]!.noProgressMs}ms`);
   assert.ok(
     Date.now() - started < 9_000,
     "the stall fired well before the 10s wall — the doomed attempt must not burn its full wall",
@@ -129,7 +129,7 @@ setInterval(() => {}, 1_000);
       attemptId: () => "attempt-stale-heartbeat-stall",
       pollIntervalMs: 10,
       wallTimeoutMs: 10_000,
-      heartbeatNoProgressMs: 150,
+      heartbeatNoProgressMs: 400,
       heartbeatFreshMs: 500,
     },
   });
@@ -139,7 +139,7 @@ setInterval(() => {}, 1_000);
   assert.equal(result.infrastructureClass, "timeout", "the stall classifies as retryable infra, feeding the eager ladder");
   assert.equal(stalled.length, 1, "the watchdog emits auditor_stalled exactly once");
   assert.equal(stalled[0]!.reason, "heartbeat-stale");
-  assert.ok(stalled[0]!.heartbeatAgeMs >= 150, `heartbeat was stale at detection: ${stalled[0]!.heartbeatAgeMs}ms`);
+  assert.ok(stalled[0]!.heartbeatAgeMs >= 400, `heartbeat was stale at detection: ${stalled[0]!.heartbeatAgeMs}ms`);
   assert.ok(
     Date.now() - started < 9_000,
     "the stall fired well before the 10s wall — the doomed attempt must not burn its full wall",
@@ -186,9 +186,9 @@ setInterval(() => {}, 1_000);
       pollIntervalMs: 10,
       // Wall is the only bound left; the point is that the SILENCE
       // watchdogs stay quiet while the tool-open timeout owns the axis.
-      wallTimeoutMs: 400,
+      wallTimeoutMs: 1_500,
       toolTimeoutMs: 5_000,
-      heartbeatNoProgressMs: 150,
+      heartbeatNoProgressMs: 400,
       heartbeatFreshMs: 500,
     },
   }).then((result) => {
