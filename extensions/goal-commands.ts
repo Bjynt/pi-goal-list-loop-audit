@@ -2121,9 +2121,30 @@ function cmdAgents(args: string, ctx: ExtensionContext): void {
       return;
     }
     const linesMatch = args.match(/--lines\s+(\d+)/);
+    // v0.35.45 (audit finding): the candidate scan reads a bounded TAIL of
+    // each transcript instead of up to 25 FULL files synchronously on the
+    // main thread. The single matched file still gets a full read so the
+    // "last N of M" detail stays honest.
+    const readTailAware = (file: string, maxBytes?: number): Buffer => {
+      if (maxBytes === undefined) return fs.readFileSync(file);
+      try {
+        const size = fs.statSync(file).size;
+        if (size <= maxBytes) return fs.readFileSync(file);
+        const fd = fs.openSync(file, "r");
+        try {
+          const buf = Buffer.alloc(maxBytes);
+          const bytesRead = fs.readSync(fd, buf, 0, maxBytes, size - maxBytes);
+          return buf.subarray(0, bytesRead);
+        } finally {
+          fs.closeSync(fd);
+        }
+      } catch {
+        return fs.readFileSync(file);
+      }
+    };
     const result = tailChildTranscript(childSessionsDir(ctx.cwd), row, {
       lines: linesMatch ? Number(linesMatch[1]) : undefined,
-      readFile: (file) => fs.readFileSync(file),
+      readFile: readTailAware,
       listDir: (dir) => fs.readdirSync(dir),
       statMtime: (file) => { try { return fs.statSync(file).mtimeMs; } catch { return 0; } },
     });

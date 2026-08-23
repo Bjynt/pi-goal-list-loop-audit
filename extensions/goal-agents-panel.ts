@@ -11,6 +11,14 @@
 // in tailChildTranscript through an injected reader so tests stay hermetic.
 
 import * as path from "node:path";
+import { sanitizeDisplayText } from "./goal-loop-core.js";
+
+/** v0.35.45 (audit finding): the candidate scan reads a bounded TAIL of each
+ * transcript, not the whole file — up to 25 files were previously read in
+ * full, synchronously, on the main thread. 256 KiB is far more than any
+ * needle window needs (summary prefix / agentType / recordId recur
+ * throughout recent entries). */
+export const TRANSCRIPT_SCAN_MAX_BYTES = 256 * 1024;
 
 export interface AgentsPanelRow {
   recordId: string;
@@ -100,7 +108,7 @@ export function tailChildTranscript(
   row: { recordId: string; agentType?: string; summary?: string },
   opts: {
     lines?: number;
-    readFile?: (file: string) => Buffer;
+    readFile?: (file: string, maxBytes?: number) => Buffer;
     listDir?: (dir: string) => string[];
     statMtime?: (file: string) => number;
     now?: number;
@@ -108,6 +116,9 @@ export function tailChildTranscript(
 ): TranscriptTailResult {
   const wantLines = Math.max(1, Math.min(200, opts.lines ?? 20));
   const readFile = opts.readFile ?? (() => { throw new Error("no reader"); });
+  // v0.35.45: readers may honor maxBytes (production does — partial tail
+  // read); injected test readers ignore it and return the whole buffer.
+  const scanRead = (file: string): Buffer => readFile(file, TRANSCRIPT_SCAN_MAX_BYTES);
   const listDir = opts.listDir ?? (() => []);
   const statMtime = opts.statMtime ?? (() => 0);
   let entries: string[];
@@ -127,7 +138,7 @@ export function tailChildTranscript(
   let matched: string | undefined;
   for (const candidate of candidates.slice(0, 25)) {
     try {
-      const content = readFile(candidate.f).toString("utf8").toLowerCase();
+      const content = scanRead(candidate.f).toString("utf8").toLowerCase();
       if (needles.some((needle) => content.includes(needle))) { matched = candidate.f; break; }
     } catch { /* unreadable file — skip */ }
   }
@@ -148,7 +159,9 @@ export function tailChildTranscript(
 }
 
 /** Tolerant pi-session JSONL → `[role] text` line. Unparseable lines are
- * truncated raw so forensic value survives shape drift. */
+ * truncated raw so forensic value survives shape drift. v0.35.45: output is
+ * ANSI/control-char sanitized — a hostile child transcript must not be able
+ * to emit terminal escape sequences through ctx.ui.notify. */
 export function formatTranscriptEntry(line: string): string | undefined {
   const trimmed = line.trim();
   if (!trimmed) return undefined;
@@ -159,14 +172,14 @@ export function formatTranscriptEntry(line: string): string | undefined {
       message?: { role?: string; content?: unknown };
       content?: unknown;
     };
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return `[raw] ${truncate(trimmed, 120)}`;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return `[raw] ${truncate(sanitizeDisplayText(trimmed), 120)}`;
     const role = entry.message?.role ?? entry.role ?? entry.type ?? "?";
     const content = entry.message?.content ?? entry.content;
     const text = extractText(content);
     if (!text) return undefined;
-    return `[${role}] ${truncate(text.replace(/\s+/g, " ").trim(), 160)}`;
+    return `[${role}] ${truncate(sanitizeDisplayText(text).replace(/\s+/g, " ").trim(), 160)}`;
   } catch {
-    return `[raw] ${truncate(trimmed, 120)}`;
+    return `[raw] ${truncate(sanitizeDisplayText(trimmed), 120)}`;
   }
 }
 
