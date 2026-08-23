@@ -243,6 +243,30 @@ test("main fallback row shows the persisted numbered try order and truthful runt
   assert.doesNotMatch(row.description, /account\/plan\/billing\/auth|request-rate/);
 });
 
+test("auditorAllowedExtensions valueText is a count — never joined absolute paths (screen-size crash)", () => {
+  // Absolute install paths from discovery are long enough that joining them
+  // into VALUE expands compact-mode valueW past the terminal width and
+  // crashes pi's TUI. The row must show a short count; the picker still
+  // lists the concrete specs when the user opens the editor.
+  const longPaths = [
+    "/home/user/.pi/agent/extensions/npm/node_modules/pi-webaio/index.ts",
+    "/home/user/.pi/agent/extensions/git/some-org/very-long-repo-name/extension.ts",
+    "/opt/shared/pi-extensions/another-provider/dist/index.js",
+  ];
+  const rows = buildSettingsRows(
+    { auditorAllowedExtensions: longPaths } as Settings,
+    { auditorAllowedExtensions: "global" },
+  );
+  const row = rows.find((r) => r.id === "auditorAllowedExtensions")!;
+  assert.equal(row.valueText, "3 enabled");
+  for (const p of longPaths) {
+    assert.doesNotMatch(row.valueText, new RegExp(p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  const empty = buildSettingsRows({} as Settings, EMPTY_PROV)
+    .find((r) => r.id === "auditorAllowedExtensions")!;
+  assert.equal(empty.valueText, "none (fully isolated, default)");
+});
+
 test("valueText derives from settings (effective values surface for each row)", () => {
   const rows = buildSettingsRows(SAMPLE_SETTINGS, provFromSettings(SAMPLE_SETTINGS));
   const byId = new Map<string, SettingsRow>(rows.map((r) => [r.id, r]));

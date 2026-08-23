@@ -196,6 +196,37 @@ test("render: compact header row has KEY, VALUE, SOURCE columns", () => {
   assert.doesNotMatch(header, /DESCRIPTION/);
 });
 
+test("render: compact mode never exceeds terminal width even with a long VALUE in another section", () => {
+  // Repro from ~/.pi/agent/pi-crash.log (2026-08-23): terminal 150, settings
+  // header visible width 164. Compact mode sized VALUE from the longest
+  // valueText across ALL sections (joined absolute extension paths), so even
+  // the Keep-going tab overflowed and crashed pi. Include a production-length
+  // KEY so keyW hits MAX_KEY_W (32) — short labels alone leave enough leftover
+  // columns for a ~114-char path to fit without overflowing.
+  const longPath =
+    "/home/samed.guest/.pi/agent/npm/node_modules/pi-cursor-sdk, /home/samed.guest/.pi/agent/npm/node_modules/pi-webaio";
+  assert.ok(longPath.length > 100, "fixture must be long enough to overflow a 150-col terminal");
+  const rows: SettingsRow[] = [
+    { id: "autoResume", section: "keep-going", label: "Auto-resume on load", valueText: "default", sourceText: "default", description: "short" },
+    { id: "subagentFallbacks:general-purpose", section: "subagents", label: "general-purpose fallback agents", valueText: "none", sourceText: "default", description: "short" },
+    {
+      id: "auditorAllowedExtensions",
+      section: "auditor",
+      label: "Allowed extensions",
+      valueText: longPath,
+      sourceText: "global",
+      description: "long absolute paths",
+    },
+  ];
+  const { component } = makeComponent(rows, 150);
+  const width = 150;
+  const lines = component.render(width);
+  for (let i = 0; i < lines.length; i++) {
+    const w = visibleWidthFromTui(lines[i]!);
+    assert.ok(w <= width, `line ${i} visible width ${w} exceeds terminal ${width}: ${lines[i]}`);
+  }
+});
+
 test("render: footer pin includes the optional details toggle", () => {
   const { component } = makeComponent(SAMPLE_ROWS, 120);
   const lines = component.render(120);
