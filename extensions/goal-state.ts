@@ -79,5 +79,11 @@ export function persistStateLine(cwd: string, s: State): void {
     ...(typeof s.lastCompactionAt === "number" ? { lastCompactionAt: s.lastCompactionAt } : { lastCompactionAt: null }),
     ...(typeof s.supervisorPausedAt === "number" ? { supervisorPausedAt: s.supervisorPausedAt } : { supervisorPausedAt: null }),
     ...(typeof s.loadHoldAt === "number" ? { loadHoldAt: s.loadHoldAt } : { loadHoldAt: null }),
+    // v0.35.34 (audit finding 2026-08-23): v0.35.30 claimed a DURABLE
+    // last-outcome record but this writer never serialized it — the field
+    // died with the process and any restart blanked the widget retention
+    // line within its 24h window (the exact failure v0.35.30 fixed). Same
+    // latent class as the lastCompactionAt trap documented above.
+    ...(s.lastOutcome ? { lastOutcome: s.lastOutcome } : {}),
   });
 }
