@@ -24,6 +24,12 @@ another problem is that on session start, we odnt auto start the main thread we 
 another problem is htat failed requests add to the context, while clearly adding nothing of value
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_154439.png 
 
+##
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260823_155115.png 
+
+ok seemingly we keep sending the images as context to the model 
+
 # Next2
 
 ##
