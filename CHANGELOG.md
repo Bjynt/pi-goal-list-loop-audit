@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.35.48 — overdue-wait backstop respects the dispatch-surface gates (2026-08-23)
+
+### Fix
+  Audit-pass finding: overdueWaitBackstop mutated durable state (parked to
+  active, pauseResumeAt cleared) without checking the
+  extensionApiStale/sessionHandoffPending/stale-terminal or
+  mainModelRecoveryActive gates - during a latched-stale heartbeat a
+  durably parked wait could become an ACTIVE goal with no dispatch until a
+  fresh session_start, breaking the paused-is-safe invariant. The backstop
+  now refuses mid-handoff and stale-latched windows, and under an active
+  main-model recovery releases ONLY recovery-routed waits (the probe route
+  re-parks with a fresh resumeAt on failure) - unrelated agent-authored
+  waits stay parked until recovery resolves. The gates sit BEFORE the
+  lastOverdueWaitKey one-shot latch so skipped windows stay retriable.
+
 ## 0.35.47 — completions/handler parity for /list and /loop verbs (2026-08-23)
 
 ### Fix
