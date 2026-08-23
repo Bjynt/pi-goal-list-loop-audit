@@ -23,6 +23,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { readState } from "../extensions/goal-loop-core.js";
+import { guardGoalBeforeContinuation } from "../extensions/goal-continuation.js";
 import activate, {
   __testOnlyLoadState,
   __testOnlyRegisterAgentTools,
@@ -154,6 +155,57 @@ test("v0.34.60: complete_goal with newObjective bumps the revision and audits th
     assert.equal(st.goal?.completionSummary, "Claim", "v0.34.91: the completion recap is captured on the goal at claim time (the terminal summary shows what happened)");
     assert.equal(st.goal?.revision, 2, "newObjective bumps the revision exactly once (seed 1 → 2); settle writes do not bump");
     await waitUntil(() => readState(cwd).goal === null);
+  } finally {
+    delete process.env.GLLA_PI_BINARY;
+  }
+});
+
+test("v0.35.36: complete_goal newObjective does NOT launder the agent-authored objective into userSeeds", async () => {
+  const cwd = tmpCwd();
+  // Auditor that never settles so the pivoted goal stays inspectable while
+  // the assertions run; self-kills so no orphan outlives the suite.
+  const script = path.join(cwd, "hanging-auditor-pi.mjs");
+  fs.writeFileSync(script, "setTimeout(() => process.exit(0), 8000);\n");
+  fs.chmodSync(script, 0o700);
+  process.env.GLLA_PI_BINARY = script;
+  try {
+    // Report garbage of exactly the class the suspicious-objective heuristic
+    // exists to stop — pre-fix, appending this to userSeeds let the v0.35.31
+    // seed trust dispatch it verbatim past the fence.
+    const agentText = "because the thing and stuff we are logged in\nDone when: nothing";
+    seedState(cwd, {
+      goal: seedGoal({
+        status: "active",
+        createdVia: "user",
+        objective: "ship the export button",
+        objectiveProvenance: { originalObjective: "ship the export button", userSeeds: ["ship the export button"] },
+      }),
+      list: [],
+    });
+    __testOnlyLoadState(cwd);
+    const pi = new MockPi();
+    activate(pi.api);
+    __testOnlyRegisterAgentTools(pi.api);
+    rememberCtxFor(cwd);
+    await pi.runTool(
+      "complete_goal",
+      { completionSummary: "Claim", verificationSummary: "Evidence", newObjective: agentText },
+      ownerCtx(cwd),
+    );
+    const st = readState(cwd);
+    assert.equal(st.goal?.objective, "because the thing and stuff we are logged in", "the pivot itself still applies (contract stripped)");
+    assert.deepEqual(
+      st.goal?.objectiveProvenance?.userSeeds,
+      ["ship the export button"],
+      "the agent-authored pivot text must NOT become a user seed",
+    );
+    // The fence still applies to the pivoted objective: whatever the guard
+    // decides (repair/park), it must not be the user-seed trust path.
+    guardGoalBeforeContinuation(ownerCtx(cwd) as any, "laundering-test", String(st.goal?.id));
+    assert.doesNotMatch(
+      fs.readFileSync(`${cwd}/.pi-glla/active.jsonl`, "utf-8"),
+      /faulty_objective_user_seed_trusted/,
+    );
   } finally {
     delete process.env.GLLA_PI_BINARY;
   }
