@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.35.50 — same-process session successors auto-resume the main thread (2026-08-23)
+
+### Fix
+  note.md Now #2: session-start auto-resume asymmetry. The v0.35.23 loop
+  branch treats a SAME-PROCESS session successor (shutdown recorded in the
+  owner sidecar with a non-quit reason, previous pid === current pid) as
+  mid-flight continuity and resumes held loops - but a plain ACTIVE goal
+  held ("restored on session load - held for explicit resume") and a parked
+  completion-audit claim stayed parked in that exact corner: from the
+  user's seat, the list kept going after the session replacement while the
+  goal sat "awaiting first turn". The goal restore gate and the auditor
+  claim's canRecoverNow now accept the same consent, refined per the
+  v0.34.49 one-shot identity law: a PRESENT handoff marker is authoritative
+  even when mismatched (rejection holds); only an ABSENT marker with a
+  same-pid non-quit shutdown is continuity - the same distinction
+  listOperationLifecycleResume already draws. Different-pid crash
+  successors and cold loads still hold for an explicit decision;
+  Auto-resume stays the only load-time automation for them.
+
+### Tests
+  tests/same-process-successor-resume.test.ts: same-process successor
+  resumes a held ACTIVE goal (continuation dispatched, no stale interrupt
+  marker); same-process successor auto-retries a parked completion claim
+  (audit_recovery_auto_retry_claimed fence in the ledger); different-pid
+  crash successor still HOLDS (cold-load law). Red-proven by neutering
+  both consent sites; the v0.34.49 mismatched-marker identity test stays
+  green against the refined consent.
 ## 0.35.49 — parent-side silence watchdogs close the auditor-AWOL gap (2026-08-23)
 
 ### Fix

@@ -1240,6 +1240,17 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // (the /reload family), so the held work is mid-flight continuity, not
     // a cold start. Different-pid successors hold like any cold load.
     const sameProcessSuccessorResume = nonQuitShutdownResume && ownerClaim.previousPid === process.pid;
+    // v0.35.50 (note.md Now #2): MAIN-thread consent for the same-process
+    // successor corner — shutdown recorded + same pid AND no contradicting
+    // handoff evidence. A PRESENT handoff marker is authoritative even when
+    // mismatched (v0.34.49 one-shot identity law: rejection holds); only an
+    // ABSENT marker with a same-pid non-quit shutdown is mid-flight
+    // continuity — the same distinction listOperationLifecycleResume already
+    // draws. This closes the asymmetry where the loop branch (v0.35.23)
+    // resumed on sameProcessSuccessorResume while a plain goal held
+    // ("list keeps going, goal awaits first turn"). Different-pid crash
+    // successors and cold loads still hold for an explicit decision.
+    const sameProcessContinuityResume = sameProcessSuccessorResume && !handoffMarkerPresent;
     const heldLoopSuccessorResume = !!state.loop
       && !state.loop.active
       && isLifecycleHeldLoopReason(state.loop.stopReason)
@@ -1468,7 +1479,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       // downstream policy checks; staleRearmedOnSessionStart is the additional
       // one-shot consent for silent host-handle death.
       // if (autoResume || recoveryResume || rebindResume || handoffResume) {
-      if (autoResume || recoveryResume || rebindResume || handoffResume || staleRearmedOnSessionStart) {
+    // Different-pid crash successors still hold like any cold load;
+    // Auto-resume stays the only load-time automation for them.
+    if (autoResume || recoveryResume || rebindResume || handoffResume || staleRearmedOnSessionStart || sameProcessContinuityResume) {
         // v0.28.1 (S2): clear the stale-handle interrupt marker — this IS
         // the auto-resume the marker promised.
         if (wasInterrupted) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx);
@@ -1546,7 +1559,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       // Auto-resume — dispatched automation on a cold load. Removed: parked
       // claims hold for explicit consent like every other pending state;
       // the else branch below defers them with a truthful ledger event.
-      const canRecoverNow = explicitRecovery || autoResume;
+      // v0.35.50: same-process continuity consent — parity with the goal
+      // branch above; a same-pid session replacement without contradicting
+      // handoff evidence is mid-flight continuity for the stored claim too.
+      const canRecoverNow = explicitRecovery || autoResume || sameProcessContinuityResume;
       if (canRecoverNow && recoveredClaim && (recoveredClaim.phase ?? "recovery-pending") === "recovery-pending") {
         completionAuditRecoveryArmed = true;
         const started = maybeAutoRetryParkedCompletionAudit(hostLifecycleStart || explicitRecovery ? "host-rebind" : "session-start");

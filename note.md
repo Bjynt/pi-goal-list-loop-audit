@@ -16,7 +16,7 @@ another problem is that on session start, we odnt auto start the main thread we 
 another problem is htat failed requests add to the context, while clearly adding nothing of value
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_154439.png 
 
-##
+## req body too large due to images in context
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_155115.png 
 
@@ -27,6 +27,8 @@ ok seemingly we keep sending the images as context to the model , so the context
 then
 
 > /home/dracon/Pictures/Screenshots/Screenshot_20260823_160928.png we make more iamges and doesnt work again
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260823_203511.png 
 
 ##
 
@@ -66,6 +68,10 @@ another concern is that do we have these explores, clearly not desired, is this 
 
 ##
 
+anything that goes on for too long is suspcious so look into this
+
+##
+
 we were doing a list then got interrupted and seemingly the problem is hta thte agent called complete goal in the middle of the list 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_183854.png 
 
@@ -81,12 +87,19 @@ even shows the list alive
     5. Deep audit + fix: briefing page. Dedupe first; fix only NEW findings
 ```
 
+/home/dracon/Pictures/Screenshots/Screenshot_20260823_203354.png 
+same we got list items but they are not showing
+
+list resume doesnt work 
+
 ##
 
 not sure we want manual 
 
 /list add
 i never use it jsut accidentally type it instead of audit 
+
+
 
 ##
 
