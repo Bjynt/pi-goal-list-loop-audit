@@ -193,15 +193,25 @@ test("v0.35.36: complete_goal newObjective does NOT launder the agent-authored o
       ownerCtx(cwd),
     );
     const st = readState(cwd);
-    assert.equal(st.goal?.objective, "because the thing and stuff we are logged in", "the pivot itself still applies (contract stripped)");
+    // The pivot is recorded honestly in the ledger — but NOT as user intent.
+    assert.ok(
+      readLedger(cwd).some((l) => l.type === "goal_tweaked" && l.value?.via === "complete_goal.newObjective"),
+      "the pivot itself is still applied and ledgered",
+    );
+    // Post-fix the fence treats the pivoted garbage as what it is (agent
+    // text): the completion-audit-dispatch guard runs inside the call and
+    // the recovery machinery may restore the durable original before the
+    // auditor sees it — either way the agent-authored text must never have
+    // entered userSeeds.
     assert.deepEqual(
-      st.goal?.objectiveProvenance?.userSeeds,
+      st.goal?.objectiveProvenance?.userSeeds ?? readState(cwd).goal?.objectiveProvenance?.userSeeds,
       ["ship the export button"],
       "the agent-authored pivot text must NOT become a user seed",
     );
-    // The fence still applies to the pivoted objective: whatever the guard
-    // decides (repair/park), it must not be the user-seed trust path.
-    guardGoalBeforeContinuation(ownerCtx(cwd) as any, "laundering-test", String(st.goal?.id));
+    // And the guard must never take the user-seed trust path for it.
+    if (readState(cwd).goal) {
+      guardGoalBeforeContinuation(ownerCtx(cwd) as any, "laundering-test", String(readState(cwd).goal!.id));
+    }
     assert.doesNotMatch(
       fs.readFileSync(`${cwd}/.pi-glla/active.jsonl`, "utf-8"),
       /faulty_objective_user_seed_trusted/,
