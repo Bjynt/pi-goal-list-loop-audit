@@ -608,7 +608,7 @@ export interface AuditorStalledInfo {
   /** When the watchdog fired. */
   at: number;
   /** Which independent watchdog fired. */
-  reason: "heartbeat-no-progress" | "tool-timeout";
+  reason: "heartbeat-no-progress" | "tool-timeout" | "first-event-timeout" | "heartbeat-stale";
   /** Age of the last worker heartbeat at detection (`now - lastActivityAt`).
    * For heartbeat-no-progress this is fresh (≤ heartbeatFreshMs); a
    * tool-timeout may deliberately have a stale heartbeat. */
@@ -1041,6 +1041,53 @@ export async function runDetachedGoalCompletionAuditor(args: {
             if (child && childAlive(child)) await terminateWorker(child);
             return infra(model, thinkingLevel, `Auditor stalled — heartbeats without progress for ${stallLabel} (no new tool call or output); the detached job was auto-cancelled.`, "", capturedRevisionToken, "timeout");
           }
+        }
+        // v0.35.49: the two complementary silence axes. The fresh-heartbeat
+        // branch above only arms while RPC events keep flowing; the field
+        // (2026-08-23, football-forever/doomtap/junk-runner/vps-compare) showed
+        // workers whose provider hangs emit ONE boot event (or none) and then
+        // total silence — the heartbeat goes STALE, that gate disarms, and the
+        // only remaining bound is the 30m wall, so every doomed attempt burned
+        // its full wall while the goal sat "auditing" and the queue looked
+        // dead. The worker's own inactivity brake (GLLA_AUDITOR_STALL_MS) is
+        // the same window with the same running-tool exemption; mirror it
+        // parent-side so a wedged or silently-dead worker is failed fast into
+        // the (already eager first-retry) fallback ladder instead of the wall.
+        const staleSilenceMs = lastProgress?.lastActivityAt === undefined
+          ? now() - startedAt
+          : now() - lastProgress.lastActivityAt;
+        const silenceOwnedByTool = lastProgress?.currentToolStartedAt !== undefined;
+        if (!silenceOwnedByTool && staleSilenceMs >= heartbeatNoProgressMs) {
+          const firstEvent = lastProgress?.lastActivityAt === undefined;
+          const stallLabel = heartbeatNoProgressMs >= 60_000
+            ? `${Math.max(1, Math.round(heartbeatNoProgressMs / 60_000))}m`
+            : `${Math.max(1, Math.round(heartbeatNoProgressMs / 1_000))}s`;
+          args.onProgress?.({
+            phase: "running",
+            elapsedMs: now() - startedAt,
+            recentOutput: lastProgress?.recentOutput ?? [],
+            toolCalls: lastProgress?.toolCalls ?? [],
+            unmatchedToolStarts: lastProgress?.unmatchedToolStarts ?? [],
+            unmatchedToolEnds: lastProgress?.unmatchedToolEnds ?? [],
+          });
+          args.onStalled?.({
+            at: now(),
+            reason: firstEvent ? "first-event-timeout" : "heartbeat-stale",
+            heartbeatAgeMs: staleSilenceMs,
+            noProgressMs: staleSilenceMs,
+            phase: lastProgress?.phase ?? "starting",
+          });
+          if (child && childAlive(child)) await terminateWorker(child);
+          return infra(
+            model,
+            thinkingLevel,
+            firstEvent
+              ? `Auditor stalled — no session activity since boot for ${stallLabel}; the detached job was auto-cancelled.`
+              : `Auditor stalled — no session activity for ${stallLabel}; the detached job was auto-cancelled.`,
+            "",
+            capturedRevisionToken,
+            "timeout",
+          );
         }
         if (child && !childAlive(child)) return infra(model, thinkingLevel, "auditor worker exited without an atomic result", "", capturedRevisionToken, "no-verdict");
         await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
