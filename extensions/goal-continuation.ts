@@ -1029,6 +1029,18 @@ export function sendContinuation(goalId: string): void {
     if (!dispatchAccepted(ctx, attempt)) return;
     continuationRearmStreak = 0; continuationRearmSince = 0; // v0.28.5 (E3): an accepted dispatch clears the storm
     appendLedger(ctx.cwd, "goal_continuation_sent", { goalId, attemptId: attempt.id, generation: attempt.generation });
+    // v0.35.37 (audit finding): the welcome-back recovery notice must fire
+    // EXACTLY ONCE per auto-resume. The payload above was built with the
+    // notice in it; once the dispatch is ACCEPTED the message has landed in
+    // the session stream, so the stamp's job is done. The only clearing site
+    // used to be MANUAL resume — a goal that kept running for days after
+    // one heartbeat/provider/auditor-retry recovery got the stale "YOU WERE
+    // RECOVERED" directive injected into every single continuation.
+    const noticeAutoResumedAt = state.goal?.autoResumedAt;
+    if (noticeAutoResumedAt) {
+      updateGoal({ autoResumedAt: undefined, autoResumedEvent: undefined }, ctx);
+      appendLedger(ctx.cwd, "recovery_notice_delivered", { goalId, autoResumedAt: noticeAutoResumedAt });
+    }
     if (pendingContinuationDispatch === null) return; // before_agent_start acked synchronously
     lastContinuationSentAt = attempt.sentAt;
     armQueueStuckProbe(lastContinuationSentAt);
