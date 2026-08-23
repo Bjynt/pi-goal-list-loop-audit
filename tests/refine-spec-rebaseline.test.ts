@@ -23,6 +23,7 @@ import activate, {
   __testOnlyResetOwnerSession,
 } from "../extensions/loops/goal.js";
 import { readState } from "../extensions/goal-loop-core.js";
+import { replaceState, state } from "../extensions/goal-state.js";
 import { seedGoal, seedState, tmpCwd, makeMockCtx, MockPi } from "./harness/mock-pi.js";
 
 function ownerCtx(cwd: string) {
@@ -52,9 +53,16 @@ test("v0.35.43: a confirmed respec with newly checked boxes re-baselines specChe
   const pi = new MockPi();
   activate(pi.api);
   __testOnlyResetOwnerSession();
-  await pi.fire("session_start", { reason: "startup" }, ownerCtx(cwd));
+  // The foreign-tool guard compares sessionManager IDENTITY — bind and use
+  // ONE ctx object for the whole test.
+  const ownCtx = ownerCtx(cwd);
+  await pi.fire("session_start", { reason: "startup" }, ownCtx);
+  // The session-restore gate holds SEEDED loops inactive on load (v0.34.15);
+  // /loop resume is what flips it back — do that to the in-memory state.
+  assert.ok(state.loop, "the loop was loaded");
+  replaceState({ ...state, loop: { ...state.loop!, active: true, stopReason: undefined } });
   __testOnlyRegisterAgentTools(pi.api);
-  rememberCtxFor(cwd);
+  __testOnlyRememberCtx(ownCtx as unknown as ExtensionContext);
 
   // The respec REPLACES the spec with a file that has FOUR checked boxes:
   // two the agent checked before, two that arrive pre-checked via the
@@ -62,8 +70,9 @@ test("v0.35.43: a confirmed respec with newly checked boxes re-baselines specChe
   const res = await pi.runTool(
     "propose_loop_refine",
     { target: "ship the widget faster", specText: SPEC_NEW, rationale: "sharpened after review" },
-    ownerCtx(cwd),
+    ownCtx,
   );
+  console.log("REFINE RESULT:", res.content[0]!.text.slice(0, 300));
   assert.match(res.content[0]!.text, /applied|refin/i, `refine applied: ${res.content[0]!.text}`);
   assert.equal(fs.readFileSync(specFile, "utf8"), SPEC_NEW, "the orchestrator owns the spec write");
 
