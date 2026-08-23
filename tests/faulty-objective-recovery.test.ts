@@ -495,6 +495,60 @@ test("an explicit /goal start objective is dispatched even when the heuristic fl
   assert.match(ledger(cwd), /"faulty_objective_user_seed_trusted"/);
 });
 
+test("v0.35.35: seed trust survives a Done when: clause and @role in the raw seed (createGoal stores raw vs cleaned)", async () => {
+  const cwd = tmpCwd();
+  setGlobalAutoResume(true);
+  // EXACTLY the createGoal shape: userSeeds holds the RAW arg while the
+  // objective is the CLEANED text (role + contract stripped). v0.35.31's
+  // exact-equality check never matched this shape — the trust silently
+  // no-op'd and the goal still parked behind the heuristic.
+  const rawSeed = "fix the flaky login test @designer\nDone when: bun test tests/login.test.ts passes";
+  const cleanedObjective = "fix the flaky login test"; // what createGoal would store
+  const g = seedGoal({
+    status: "active",
+    policy: "goal",
+    objective: cleanedObjective,
+    createdVia: "user",
+    agentRole: "designer",
+    verificationContract: "bun test tests/login.test.ts passes",
+    objectiveProvenance: { originalObjective: cleanedObjective, userSeeds: [rawSeed] },
+  });
+  seedState(cwd, { goal: g, list: [] });
+  __testOnlyLoadState(cwd);
+  const pi = new MockPi();
+  activate(pi.api);
+  const ctx = makeMockCtx(cwd);
+  assert.equal(guardGoalBeforeContinuation(ctx as any, "user-seed-cleaned-test", String(g.id)), true);
+  assert.equal(readState(cwd).goal?.status, "active", "clause-bearing user seeds still dispatch verbatim");
+  assert.match(ledger(cwd), /"faulty_objective_user_seed_trusted"/);
+});
+
+test("v0.35.35: normalization does not widen trust to agent-authored seeds", async () => {
+  const cwd = tmpCwd();
+  setGlobalAutoResume(true);
+  // A reviewer-created goal whose provenance happens to contain a seed that
+  // CLEANS to the objective must still pause — createdVia gates the trust,
+  // normalization only fixes the comparison.
+  const g = seedGoal({
+    status: "active",
+    policy: "goal",
+    objective: "play around with the buttons because discover and projects lead to the same place and we are logged in",
+    createdVia: "reviewer",
+    objectiveProvenance: {
+      originalObjective: "same prose",
+      userSeeds: ["play around with the buttons because discover and projects lead to the same place and we are logged in\nDone when: nothing"],
+    },
+  });
+  seedState(cwd, { goal: g, list: [] });
+  __testOnlyLoadState(cwd);
+  const pi = new MockPi();
+  activate(pi.api);
+  const ctx = makeMockCtx(cwd);
+  assert.equal(guardGoalBeforeContinuation(ctx as any, "agent-seed-test", String(g.id)), false);
+  assert.equal(readState(cwd).goal?.status, "paused", "non-user goals still park");
+  assert.doesNotMatch(ledger(cwd), /"faulty_objective_user_seed_trusted"/);
+});
+
 test("agent-authored suspicious objectives still pause — the trust is user-seed only", async () => {
   const cwd = tmpCwd();
   setGlobalAutoResume(true);

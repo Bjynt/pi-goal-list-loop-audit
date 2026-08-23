@@ -45,12 +45,12 @@ import {
   resolveEffectiveAggressiveSettings,
   isStaleApiError,
   supervisorPaused,
+  objectiveIsUserSeeded,
   type Goal,
   type ObjectiveRepairTarget,
 } from "./goal-loop-core.js";
 import {
   createContinuationDispatch,
-  objectiveIsUserSeeded,
   transitionDispatch,
   dispatchMatchesOwner,
   dispatchPromptMatches,
