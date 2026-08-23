@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.35.35 — user-seed trust works with contract clauses and role markers (2026-08-23)
+
+### Fix
+  Audit-pass finding: v0.35.31's seed trust compared the CLEANED
+  goal.objective against RAW stored seeds by exact equality — but createGoal
+  strips "Done when:" clauses and Agent:/Role: declarations out of the
+  objective while keeping the raw arg as the seed, so any seeded goal WITH a
+  clause/role silently no-op'd the trust and still parked behind the
+  suspicious-objective heuristic. New pure helper objectiveIsUserSeeded()
+  normalizes BOTH sides through the same extraction pipeline the creation
+  path applies; createdVia still gates WHO is trusted (agent-authored seeds
+  gain nothing). Regression tests: clause+role user seeds dispatch verbatim;
+  reviewer-created goals with matching-cleaned seeds never get the trust.
+
 ## 0.35.35 — mechanical pre-audit: maxBuffer ceiling killed verbose green suites (2026-08-23)
 
 ### Fix
