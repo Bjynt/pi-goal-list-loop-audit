@@ -462,3 +462,59 @@ test("v0.34.55: live rig — the routing table records duplicate-command routing
     }
   }
 });
+
+// ────────────────────────────────────────────────────────────────────
+// v0.35.47 (audit finding): completions/handler PARITY pin.
+// /list add|import|rm (and pause) were handled but absent from /list
+// completions; /loop resume|refine|polish likewise. This pin scans the
+// ACTUAL dispatch literals (`sub === "x"`) inside cmdList/cmdLoop and the
+// ACTUAL getArgumentCompletions tables in registerGoalRuntime, and fails
+// when a handled verb has no completion entry — so the next verb can't
+// ship half-registered.
+// ────────────────────────────────────────────────────────────────────
+
+const REPO = path.resolve(__dirname, "..");
+const src = (p: string): string => fs.readFileSync(path.join(REPO, p), "utf-8");
+
+/** All `sub === "literal"` verbs dispatched by a function body. */
+function handledSubs(source: string, fnName: string): Set<string> {
+  const start = source.indexOf(`async function ${fnName}`);
+  assert.ok(start >= 0, `${fnName} found in source`);
+  // Body ≈ up to the next top-level "\n}\n" after the signature.
+  const end = source.indexOf("\n}\n", start);
+  const body = source.slice(start, end > start ? end : undefined);
+  return new Set([...body.matchAll(/sub === "([a-z]+)"/g)].map((m) => m[1]!));
+}
+
+/** First-column values from a registerCommand block's getArgumentCompletions table. */
+function completionValues(source: string, command: string): Set<string> {
+  const regStart = source.indexOf(`pi.registerCommand("${command}"`);
+  assert.ok(regStart >= 0, `registerCommand("${command}") found`);
+  const cStart = source.indexOf("getArgumentCompletions: completions([", regStart);
+  const cEnd = source.indexOf("]),", cStart);
+  const block = source.slice(cStart, cEnd);
+  return new Set([...block.matchAll(/\["([a-z=]+)",/g)].map((m) => m[1]!));
+}
+
+test("v0.35.47: every handled /list and /loop subcommand has a completion entry", () => {
+  const activation = src("extensions/loops/goal-activation.ts");
+  const listCompletions = completionValues(activation, "list");
+  const loopCompletions = completionValues(activation, "loop");
+
+  const listHandled = handledSubs(src("extensions/goal-commands.ts"), "cmdList");
+  const loopHandled = handledSubs(src("extensions/goal-loop.ts"), "cmdLoop");
+
+  const missingList = [...listHandled].filter((v) => !listCompletions.has(v));
+  assert.deepEqual(missingList, [], `/list verbs handled but NOT completed: ${missingList.join(", ")}`);
+  const missingLoop = [...loopHandled].filter((v) => !loopCompletions.has(v));
+  assert.deepEqual(missingLoop, [], `/loop verbs handled but NOT completed: ${missingLoop.join(", ")}`);
+
+  // The originally-reported gaps stay pinned explicitly (the scan above is
+  // generic; these assertions document THIS finding).
+  for (const v of ["add", "import", "rm"]) {
+    assert.ok(listCompletions.has(v), `/list completion for ${v}`);
+  }
+  for (const v of ["resume", "refine", "polish"]) {
+    assert.ok(loopCompletions.has(v), `/loop completion for ${v}`);
+  }
+});
