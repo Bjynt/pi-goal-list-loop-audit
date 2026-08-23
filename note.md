@@ -11,7 +11,7 @@ the goal was gettick stuck so i started a new goal but then it was not visible o
 ##
 
 https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
-address pr 
+addres
 
 
 # Later
@@ -21,6 +21,11 @@ address pr
 we coudl use better visuals cause this is what wesee now and it is worth htinking what and how we show
 /home/dracon/Pictures/Screenshots/Screenshot_20260822_132806.png 
 /home/dracon/Pictures/Screenshots/Screenshot_20260822_200250.png 
+
+##
+
+list seems corruped not only doesnt show but we cant start it 
+/home/dracon/Pictures/Screenshots/Screenshot_20260823_120853.png 
 
 # Idea
 
