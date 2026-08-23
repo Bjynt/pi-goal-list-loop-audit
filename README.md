@@ -709,33 +709,70 @@ Post-decomposition layout (the v0.34.x monolith is gone — `loops/goal.ts` is
 a thin activation/wiring installer):
 
 ```
-extensions/
+extensions/  (34 files — all of them, grouped by concern)
+  # command + UI surface
   goal-commands.ts             # /goal + /list command surface, drafting, wipe/stats
-  loops/goal.ts                # public activation/wiring installer (thin)
-  loops/goal-tools.ts          # agent tools (complete_goal, pause_goal, list_*, loop drafts)
-  loops/goal-orchestrator.ts   # goal lifecycle: create/archive/advance, reviewer
-  loops/goal-auditor-hooks.ts  # completion-audit claim/recovery machinery
-  loops/goal-activation.ts     # event wiring, command registration, session lifecycle
-  loops/goal-settings-ui.ts    # settings editors + model pickers
-  goal-loop-core.ts            # types, JSONL state, pure helpers
-  goal-loop-auditor.ts         # auditor prompt + legacy in-process helper
-  goal-loop-auditor-process.ts # detached worker protocol + shield revalidation
+  settings-menu.ts             # /glla settings menu sections + rows
+  goal-agents-panel.ts         # tracked-subagent panel (/glla agents) + widget line
+  confirm-draft.ts             # Confirm-card markdown builder
+  vision-assist.ts             # mmx vision routing + model-switch gate
+  glla-version.ts              # version info for /glla version (source + npm)
+  # state, types, pure helpers
+  goal-loop-core.ts            # types, JSONL state reader, pure helpers
+  goal-state.ts                # disk writer (persistStateLine serialization)
+  goal-settings.ts             # settings load/save + global/project paths
+  faulty-objective-recovery.ts # suspicious-objective classification + repair derivation
+  goal-objective-conflict.ts   # live-objective conflict resolution on start/tweak
   goal-loop-shield.ts          # regression_shield (pure, dependency-free)
   goal-loop-display.ts         # widget/status rendering (incl. last-outcome retention)
+  # continuation + recovery
+  goal-continuation.ts         # continuation scheduling/dispatch + prompt templates
+  goal-loop-dispatch.ts        # generation-bound dispatch records
+  length-continue.ts           # stop_reason=length auto-continue policy
   goal-heartbeat.ts            # heartbeat self-watchdog, subagent probes, due-wait backstop
-  goal-continuation.ts         # continuation scheduling/dispatch + prompts
   goal-recovery.ts             # main-model recovery + completion-audit recovery
-  goal-loop.ts                 # Loop 3 machinery: /loop tick engine, git finish
+  main-model-recovery.ts       # pure model-fallback/probe scheduling helpers
+  quota-retry.ts               # provider diagnostics + bounded retry windows
+  # loop machinery (Loop 3)
+  goal-loop.ts                 # /loop tick engine, git finish
   goal-loop-forever.ts         # /loop measure/parse/plateau helpers
   goal-loop-backoff.ts         # scheduling constants + stall/wedge/pending-latch decisions
-prompts/
-  goal-loop-continuation.md    # continuation prompt
-  goal-loop-draft.md           # drafting prompt
+  goal-loop-repetition.ts      # anti-repetition detectors (stuck ladder, v0.24.0)
+  goal-loop-stats.ts           # ledger rollups + premature-success detection
+  goal-loop-subagents.ts       # subagent markers + pinned-agent knowledge
+  reviewer.ts                  # archived-goal re-review config + classification
+  # auditor machinery
+  goal-loop-auditor.ts         # auditor prompt + legacy in-process helper
+  goal-loop-auditor-process.ts # detached worker protocol + shield revalidation
+  auditor-extensions.ts        # auditor-session extension discovery + allowlist
+  # model pickers
+  drafter-model.ts             # drafting-only model resolution + fallbacks
+  model-picker.ts              # single-model picker items
+  multi-model-picker.ts        # multi-model picker UI
+  model-selector.ts            # scope-aware fallback selector composition
+loops/
+  goal.ts                      # public activation/wiring installer (thin)
+  goal-activation.ts           # event wiring, command registration, session lifecycle
+  goal-tools.ts                # agent tools (complete_goal, pause_goal, list_*, loop drafts)
+  goal-orchestrator.ts         # goal lifecycle: create/archive/advance, reviewer
+  goal-list-queue.ts           # /list queue: enqueue/advance/drain, list drafting
+  goal-auditor-hooks.ts        # completion-audit claim/recovery machinery
+  goal-session.ts              # session-scoped runtime globals + lifecycle state
+  goal-runtime-globals.ts      # ambient declarations for those globals
+  goal-settings-ui.ts          # settings editors + model pickers
+  goal-ui.ts                   # shared UI helpers (drafting state reset, notify wrappers)
+prompts/  (7 — one per prompt surface; edited as .md, read at runtime)
+  goal-loop-continuation.md    # continuation prompt template
+  goal-loop-draft.md           # /goal + /list drafting interview
+  goal-loop-plan.md            # extended plan draft — goal/list (v0.35.33)
+  goal-loop-plan-loop.md       # extended plan draft — loop (v0.35.33)
   goal-loop-forever.md         # /loop driver prompt
-  goal-loop-forever-draft.md   # /loop drafting prompt
+  goal-loop-forever-draft.md   # /loop drafting interview
+  goal-loop-forever-metricless.md  # metricless-/loop drafting variant
 scripts/
   goal-auditor-worker.mjs      # extension-less RPC auditor child process
   goal-auditor-launch.mjs      # Windows-safe spawn spec builder (gate-before-quote)
+  verify-auditor-extensions-offline.mjs  # gate: auditor session loads zero extensions
   smoke.sh                     # live integration harness (tmux + real models)
 tests/                         # current test count is reported by `bun test`; no live pi required for the suite
 docs/DESIGN.md                 # architectural decisions
