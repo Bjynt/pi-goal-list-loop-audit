@@ -240,7 +240,8 @@ function overdueWaitBackstop(ctx: ExtensionContext): void {
   //     model, so it stays parked until recovery resolves.
   // These gates sit BEFORE the lastOverdueWaitKey latch: a skipped window
   // must stay retriable on later ticks, never latched as "already done".
-  // v0.35.48 NEUTERED for red proof
+  if (flags.sessionHandoffPending || flags.staleTerminalDone || flags.extensionApiStale) return;
+  if (mainModelRecoveryActive() && !(state.goal?.pauseReason ?? "").startsWith("main model recovery")) return;
   if (!overdueWaitDue()) return;
   const goal = state.goal!;
   const reason = goal.pauseReason ?? "";

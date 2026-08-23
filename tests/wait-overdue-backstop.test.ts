@@ -282,3 +282,16 @@ test("v0.35.48: an agent-authored wait stays parked while main-model recovery is
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   }
 });
+
+// v0.35.48: source pin — the durable-mutation gates live INSIDE
+// overdueWaitBackstop BEFORE the lastOverdueWaitKey latch, so a skipped
+// window stays retriable and no future refactor of the tick flow can
+// reorder the mutation ahead of the checks.
+test("v0.35.48: the backstop's dispatch-surface gates sit before the one-shot latch", () => {
+  const hb = fs.readFileSync(path.join(__dirname, "..", "extensions", "goal-heartbeat.ts"), "utf-8");
+  const fnStart = hb.indexOf("function overdueWaitBackstop(");
+  const latch = hb.indexOf("lastOverdueWaitKey = ", fnStart);
+  const body = hb.slice(fnStart, latch);
+  assert.match(body, /flags\.sessionHandoffPending \|\| flags\.staleTerminalDone \|\| flags\.extensionApiStale/, "handoff/stale gates present before the latch");
+  assert.match(body, /mainModelRecoveryActive\(\) && !\(state\.goal\?\.pauseReason \?\? ""\)\.startsWith\("main model recovery"\)/, "recovery-active gate releases only recovery-routed waits before the latch");
+});
