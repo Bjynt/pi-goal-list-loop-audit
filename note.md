@@ -35,6 +35,10 @@ another concern is that do we have these explores, clearly not desired, is this 
 
 # Next
 
+## objective cant complete
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260824_183359.png 
+
 ##
 
 auditor selectorshould be like the main model selector
