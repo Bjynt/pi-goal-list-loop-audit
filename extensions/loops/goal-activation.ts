@@ -17,7 +17,6 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { execFileSync } from "node:child_process";
 
 import { defineTool, type ContextEvent, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -628,10 +627,16 @@ export function abortZombieRun(
   return true;
 }
 
-/** Current git HEAD sha for the working tree, or null when unavailable. */
-function currentHeadSha(cwd: string): string | null {
+/** Current git HEAD sha via the extension exec API (async, never throws;
+ * null when the exec API is absent or cwd is not a git work tree). Mirrors
+ * the loop-mode runGit pattern instead of spawning a blocking sync process. */
+async function currentHeadSha(ctx: ExtensionContext): Promise<string | null> {
   try {
-    return execFileSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf-8" }).trim() || null;
+    const result = await extensionApi?.exec("git", ["rev-parse", "HEAD"], { cwd: ctx.cwd });
+    const r = result as { code?: number; exitCode?: number; stdout?: string } | undefined;
+    const code = typeof r?.code === "number" ? r.code : (r?.exitCode ?? 1);
+    if (code !== 0) return null;
+    return String(r?.stdout ?? "").trim() || null;
   } catch {
     return null;
   }
@@ -652,17 +657,18 @@ function countCompletedTasks(goal: Goal): number {
  * a say (not provider-error/abort turns) — same exemption philosophy as the
  * stall-nudge accounting. Best-effort: never throws into the agent_end path.
  */
-export function noteGoalStagnationTurn(ctx: ExtensionContext, opts: { assistantText?: string }): void {
+export async function noteGoalStagnationTurn(ctx: ExtensionContext, opts: { assistantText?: string }): Promise<void> {
   const goal = state.goal;
   if (!goal || goal.status !== "active") return;
 
   const totals = goal.telemetry ?? { turns: 0, fileWrites: 0, bashCalls: 0 };
+  const baselineHead = await currentHeadSha(ctx);
   const stag: GoalStagnation = goal.stagnation ?? {
     window: [],
     recentTexts: [],
     exhaustedStreak: 0,
     completedTasks: countCompletedTasks(goal),
-    lastHead: currentHeadSha(ctx.cwd) ?? undefined,
+    ...(baselineHead !== null ? { lastHead: baselineHead } : {}),
   };
 
   // First observation for this goal: set the baseline only. Deltas against
@@ -670,13 +676,14 @@ export function noteGoalStagnationTurn(ctx: ExtensionContext, opts: { assistantT
   // progress (legacy goals carry pre-existing telemetry).
   if (!stag.lastTotals) {
     stag.lastTotals = { turns: totals.turns, fileWrites: totals.fileWrites, bashCalls: totals.bashCalls };
+    if (stag.lastHead === undefined && baselineHead !== null) stag.lastHead = baselineHead;
     goal.stagnation = stag;
     persistState(ctx);
     return;
   }
   const last = stag.lastTotals;
 
-  const head = currentHeadSha(ctx.cwd);
+  const head = await currentHeadSha(ctx);
   const gitCommits = head !== null && stag.lastHead !== undefined && head !== stag.lastHead ? 1 : 0;
   const completedNow = countCompletedTasks(goal);
   const taskCompletions = Math.max(0, completedNow - (stag.completedTasks ?? completedNow));
@@ -1996,7 +2003,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // supervision is additive observability and must never break the loop.
     if (stopReason !== "error" && stopReason !== "aborted") {
       try {
-        noteGoalStagnationTurn(ctx, { assistantText: text });
+        await noteGoalStagnationTurn(ctx, { assistantText: text });
       } catch {
         // Swallow — telemetry never breaks the loop.
       }
