@@ -59,7 +59,10 @@ independent of the in-process module instance.
 The report is closed with a durable lifecycle fix plus bounded evidence:
 there is no evidence that a crash alone deletes an objective, the fresh-process
 restart boundary passes, and cwd switch loss is explained and covered by the
-state-root port. Users who need cross-cwd continuity must explicitly select
+state-root port. Follow-up v0.35.59 also makes `/glla cancel`, `/glla wipe`,
+`/list cancel`, `/list clear`, and shared archive paths fail closed while
+sessionDir resolution is pending, so a breaking root change cannot falsely
+clear RAM or mutate an ambiguous cwd tree. Users who need cross-cwd continuity must explicitly select
 `sessionDir`; silently changing the default would be a destructive
 compatibility change. A crash in the middle of a filesystem write and a
 specific version migration remain outside this reproduction. The subsequent

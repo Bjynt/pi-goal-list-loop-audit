@@ -1,4 +1,4 @@
-// pi-goal-list-loop-audit — v0.35.58
+// pi-goal-list-loop-audit — v0.35.59
 // tests/objective-loss-lifecycle.test.ts
 //
 // Regression coverage for the auditor's two objective-loss objections:
@@ -75,7 +75,7 @@ function runCoreChild(action: "write" | "read", cwd: string, env: NodeJS.Process
 }
 
 afterEach(() => {
-  replaceState({ goal: null, list: [], loop: null });
+  replaceState({ goal: null, list: [], loop: undefined });
   setRuntimeSessionDir(undefined);
   __testOnlyResetOwnerSession();
   __testOnlyResetStaleFlag();
@@ -155,7 +155,7 @@ test("cancel and wipe defer safely while sessionDir is unresolved", async () => 
   delete process.env.PI_SESSION_FILE;
   fs.writeFileSync(globalFile, JSON.stringify({ stateRoot: "sessionDir" }), "utf8");
   setRuntimeSessionDir(undefined);
-  replaceState({ goal: goalState("pending objective").goal as any, list: [], loop: null });
+  replaceState({ goal: goalState("pending objective").goal as any, list: [], loop: undefined });
   const ctx = makeMockCtx(cwd);
   try {
     await pi.command("glla", "cancel", ctx);
@@ -186,12 +186,12 @@ test("cancel and wipe archive live state under the registered session root", asy
   const wipeId = "wipe-root-goal";
   try {
     await pi.fire("session_start", { reason: "startup" }, ctx);
-    replaceState({ goal: { ...(goalState("cancel root objective").goal as any), id: cancelId }, list: [], loop: null });
+    replaceState({ goal: { ...(goalState("cancel root objective").goal as any), id: cancelId }, list: [], loop: undefined });
     await pi.command("glla", "cancel", ctx);
     assert.ok(fs.existsSync(path.join(sessionDir, "pi-glla", "archive", `${cancelId}.md`)));
     assert.equal(fs.existsSync(path.join(cwd, ".pi-glla")), false);
 
-    replaceState({ goal: { ...(goalState("wipe root objective").goal as any), id: wipeId }, list: [{ id: "waiting", objective: "waiting item", addedAt: new Date().toISOString() }], loop: null });
+    replaceState({ goal: { ...(goalState("wipe root objective").goal as any), id: wipeId }, list: [{ id: "waiting", objective: "waiting item", addedAt: new Date().toISOString() }], loop: undefined });
     await pi.command("glla", "wipe", ctx);
     assert.ok(fs.existsSync(path.join(sessionDir, "pi-glla", "archive", `${wipeId}.md`)));
     assert.equal(state.goal, null);

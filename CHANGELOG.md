@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.35.59 — safe cancel/wipe across unresolved session roots (2026-08-25)
+
+### Fix
+  `/glla cancel`, `/glla wipe`, `/list cancel`, `/list clear`, and the shared
+  goal archive path now fail closed while opt-in `sessionDir` resolution is
+  pending. They leave the in-memory objective/list untouched and do not
+  recreate or mutate an ambiguous cwd state tree; after host lifecycle
+  admission registers the session root, cancel and wipe archive/clear under
+  the selected session root as before.
+
+### Tests
+  `tests/objective-loss-lifecycle.test.ts` covers both deferred destructive
+  commands and successful `/glla cancel` + `/glla wipe` cleanup under a
+  registered session root. Version metadata is synchronized to 0.35.59.
+
 ## 0.35.58 — objective-loss lifecycle repair (2026-08-24)
 
 ### Fix
