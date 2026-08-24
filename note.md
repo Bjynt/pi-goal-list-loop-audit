@@ -84,6 +84,9 @@ anything that goes on for too long is suspcious so look into this
 super sus
 /home/dracon/Pictures/Screenshots/Screenshot_20260824_091051.png 
 
+/home/dracon/Pictures/Screenshots/Screenshot_20260824_124530.png 
+we even warn but not act
+
 ## nothing to resume with clear obvious goal to resume
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260824_091334.png
