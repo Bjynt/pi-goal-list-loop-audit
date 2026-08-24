@@ -89,13 +89,15 @@ test("production session_start registers the host session root before restore", 
   const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-lifecycle-session-"));
   const globalDir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-lifecycle-global-"));
   const globalFile = path.join(globalDir, "settings.json");
-  const sessionFile = path.join(sessionDir, "host-session.jsonl");
+  const fileParent = fs.mkdtempSync(path.join(os.tmpdir(), "glla-lifecycle-file-parent-"));
+  const sessionFile = path.join(fileParent, "host-session.jsonl");
   process.env.GLLA_GLOBAL_SETTINGS_PATH = globalFile;
   delete process.env.PI_SESSION_FILE;
   fs.writeFileSync(globalFile, JSON.stringify({ stateRoot: "sessionDir" }), "utf8");
   setRuntimeSessionDir(undefined);
 
   const sessionManager = {
+    getSessionDir: () => sessionDir,
     getSessionFile: () => sessionFile,
     buildSessionContext: () => ({ messages: [{ role: "user", content: "restored" }] }),
   };
@@ -104,11 +106,14 @@ test("production session_start registers the host session root before restore", 
     await pi.fire("session_start", { reason: "startup" }, ctx);
     assert.equal(resolveRuntimeSessionDir(), sessionDir);
     assert.equal(piGlaDir(cwdA), path.join(sessionDir, "pi-glla"));
+    assert.equal(fs.existsSync(path.join(cwdA, ".pi-glla")), false);
+    assert.equal(fs.existsSync(path.join(fileParent, "pi-glla")), false, "getSessionDir wins over imported session-file parent");
     appendLedger(cwdA, "state", goalState("lifecycle root is durable"));
     assert.equal(readState(cwdA).goal?.objective, "lifecycle root is durable");
   } finally {
     fs.rmSync(cwdA, { recursive: true, force: true });
     fs.rmSync(sessionDir, { recursive: true, force: true });
+    fs.rmSync(fileParent, { recursive: true, force: true });
     fs.rmSync(globalDir, { recursive: true, force: true });
   }
 });
