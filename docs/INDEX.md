@@ -41,6 +41,9 @@ For shipped docs, the relevant entry points are:
   positioning, competitor review, and the goal.ts decomposition plan
   (the current strategic doc — read this before touching
   `extensions/loops/goal.ts`)
+- `DESIGN-stagnation-supervisor.md` — AVO-inspired goal stagnation
+  supervision (v0.36.0): progress lineage, exhaustion/cycling detectors,
+  supervisor directives
 - `VISION-ASSIST.md` — vision-assist plugin notes
 - `RELEASING.md` — how to publish to npm
 
