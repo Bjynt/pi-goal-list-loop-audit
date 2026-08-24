@@ -1,10 +1,3 @@
-# Every
-
-## If any exists we investigate
-
-https://github.com/DraconDev/pi-goal-list-loop-audit/issues
-https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
-
 # Now
 
 ##
@@ -42,7 +35,11 @@ another concern is that do we have these explores, clearly not desired, is this 
 
 # Next
 
+https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
 
+investiate
+
+# Next 2
 
 ## objective cant complete
 
@@ -99,8 +96,6 @@ not sure we want manual
 
 /list add
 i never use it jsut accidentally type it instead of audit 
-
-
 
 ##
 
