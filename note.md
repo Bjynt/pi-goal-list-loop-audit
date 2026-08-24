@@ -112,6 +112,13 @@ we coudl use better visuals cause this is what wesee now and it is worth htinkin
 
 update the readme and the docs its been a while and readme especially start with new visitors in mind
 
+##
+
+sometimes we get stuck on compacts cause the model cant compact that large
+
+would it makes sense to have a dedicated compact to switch into a free model that can compact perhaps for even free but i guess intelligence still matters here so 
+this is more of dont get stuck for long goals than price hack
+
 # Idea
 
 ##
