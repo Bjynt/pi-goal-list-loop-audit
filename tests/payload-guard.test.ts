@@ -84,9 +84,9 @@ test("payload guard: projection is idempotent and never touches non-image conten
   const second = evictStaleImages(first.messages, { imageBudgetBytes: 1024 * 1024, keepRecentImages: 0 });
   assert.equal(second.evicted.length, 0, "placeholders are not re-evicted");
   assert.equal(second.messages, first.messages, "second pass is a no-op");
-  assert.equal((first.messages[0] as { content: Array<{ text?: string }> }).content[1], messages[0].content[1], "sibling text block untouched");
+  assert.equal((first.messages[0] as { content: Array<{ text?: string }> }).content[1], messages[0]!.content[1], "sibling text block untouched");
   assert.equal(first.messages[1], messages[1], "string-content message untouched");
-  assert.ok(isInlineImageBlock(messages[0].content[0]));
+  assert.ok(isInlineImageBlock(messages[0]!.content[0]));
 });
 
 // ── (2) behavioral wiring: the context-event handler ─────────────────────
