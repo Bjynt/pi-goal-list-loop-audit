@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.35.56 — state-root consumer/lifecycle hardening (2026-08-24)
+
+### Fix
+  Hardened every remaining state-root consumer and lifecycle boundary missed
+  by the core/settings slice. Raw `<cwd>/.pi-glla` joins in auditor jobs,
+  dispatch, goal-loop ledger reads, reviewer, stats rollup/discovery, and
+  session owner/handoff/pending-list paths now route through `piGlaDir` and
+  respect the selected root. Pending `sessionDir` resolution (no session dir
+  yet) is a strict deferral: dispatch, reviewer, session owner, handoff, and
+  pending-list writes return a deferred/false result without creating a
+  fallback `<cwd>/.pi-glla` tree, and legacy `.pi-gla` trees are still never
+  migrated. Audit-loop open-count helpers now resolve via the selected root
+  as well. Host/subagent ownership stays per-process via `PI_SESSION_FILE`
+  fallback and the explicit `setRuntimeSessionDir` hook — no global overwrite.
+
+### Tests
+  New `tests/state-root-consumers.test.ts` pins resolved-root routing for
+  dispatch/stats/audit helpers, pending deferral for dispatch/reviewer, the
+  `PI_SESSION_FILE` fallback, and source-level absence of raw hardcodings plus
+  pending guards. Existing `tests/state-root.test.ts` continues to cover core
+  core/settings behavior. Red/green: breaking the `piGlaDir` routing makes the
+  consumer pins fail; restoring passes 9/9 focused plus 56 prior. tsc and full
+  release gate green for this tree.
 ## 0.35.55 — opt-in session-root state core/settings slice (2026-08-24)
 
 ### Fix
