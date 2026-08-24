@@ -1,3 +1,10 @@
+# Every
+
+## If any exists we investigate
+
+https://github.com/DraconDev/pi-goal-list-loop-audit/issues
+https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
+
 # Now
 
 ##
@@ -34,6 +41,8 @@ another concern is that do we have these explores, clearly not desired, is this 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_120936.png 
 
 # Next
+
+
 
 ## objective cant complete
 
