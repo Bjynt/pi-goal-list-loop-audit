@@ -1025,6 +1025,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       && (ownerCwd == null || ctx.cwd === ownerCwd)
       && sameSessionIdentity(ctx.sessionManager, recordedOwner);
     if (foreignRecordedSession && !hostLifecycleStart && !resumeCompletesLoad) return;
+    // v0.35.58: register the admitted host root before any lifecycle,
+    // ownership, or restore ledger write. In-memory worker managers have no
+    // directory and therefore remain pending rather than falling back to cwd.
+    setRuntimeSessionDirFromSessionManager(ctx.sessionManager);
     // v0.34.73 (OPEN-ISSUES 1.12): capture the pre-rebind invalidation flags
     // BEFORE the block below clears them — the id_invalidation reason needs
     // to know which mechanism invalidated the old handle.
@@ -1072,10 +1076,6 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     const startReason = typeof event?.reason === "string" ? event.reason : "unknown";
     initialSessionLoadPending = isBlankInitialStartup(ctx, startReason);
     rememberCtx(ctx);
-    // v0.35.58: bind the selected sessionDir to the admitted host's real
-    // file-backed session before any restore or lifecycle ledger write. A
-    // missing getter remains pending; it must never recreate a cwd tree.
-    setRuntimeSessionDirFromSessionManager(ctx.sessionManager);
     startHeartbeat();
     startUITicker();
     // v0.30.0: rebind bookkeeping — claim ownership, close any replacement
