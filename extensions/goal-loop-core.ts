@@ -13,7 +13,9 @@ import { execSync } from "node:child_process";
 import { normalizeProviderErrorText, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText, type QuotaSignal } from "./quota-retry.js";
 import { MAX_MAIN_MODEL_FALLBACKS } from "./main-model-recovery.js";
 import type { GoalStagnation } from "./goal-stagnation.js";
+import { resolveGllaStateDir, stateRootPending } from "./glla-state-root.js";
 export { normalizeProviderErrorText, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText } from "./quota-retry.js";
+export { globalSettingsPath, resolveRuntimeSessionDir, setRuntimeSessionDir, stateRootPending, type GllaStateRoot } from "./glla-state-root.js";
 
 /** v0.26.1: consecutive heartbeat refires without a real agent turn
  * before the supervisor gives up (pauses the goal / stops the loop).
@@ -1020,10 +1022,12 @@ function persistedPathSegment(id: string): string {
 }
 
 export function piGlaDir(cwd: string): string {
-  const dir = path.join(cwd, ".pi-glla");
+  const dir = resolveGllaStateDir(cwd);
   // v0.17.0: one-time migration of the pre-rename state dir (.pi-gla →
-  // .pi-glla). Active goals, ledgers, and project settings move with the
-  // name — no relics, no lost state.
+  // .pi-glla) applies only to the historical cwd root. Session-root mode
+  // intentionally leaves every old project tree untouched. Pending
+  // sessionDir resolution is also a no-migration read boundary.
+  if (dir !== path.join(cwd, ".pi-glla") || stateRootPending()) return dir;
   const legacy = path.join(cwd, ".pi-gla");
   try {
     if (!fs.existsSync(dir) && fs.existsSync(legacy)) fs.renameSync(legacy, dir);
@@ -1085,6 +1089,7 @@ export interface QueueItemWriteResult {
  * clean up the temporary file before returning to the caller. */
 export function writeQueueItemFile(cwd: string, item: ListItem, options: { replace?: boolean } = {}): QueueItemWriteResult {
   const file = queueItemPath(cwd, item.id);
+  if (stateRootPending()) return { path: file, wrote: false, failed: true };
   if (!isSafePersistedId(item.id)) {
     return { path: file, wrote: false, failed: true };
   }
@@ -1117,6 +1122,7 @@ export function writeQueueItemFile(cwd: string, item: ListItem, options: { repla
 }
 
 export function deleteQueueItemFile(cwd: string, id: string): boolean {
+  if (stateRootPending()) return false;
   if (!isSafePersistedId(id)) return false;
   const file = queueItemPath(cwd, id);
   if (!fs.existsSync(file)) return false;
@@ -1131,6 +1137,7 @@ export function queueItemSidecarCount(cwd: string): number {
 }
 
 export function clearQueueItemFiles(cwd: string): { removed: number; failed: string[] } {
+  if (stateRootPending()) return { removed: 0, failed: [] };
   const dir = path.join(piGlaDir(cwd), "goals");
   let names: string[];
   try { names = fs.readdirSync(dir); } catch { return { removed: 0, failed: [] }; }
@@ -1213,6 +1220,10 @@ export function readQueueFromDisk(cwd: string, excludeIds: ReadonlySet<string> =
 // =================================================================
 
 export function ensureDirs(cwd: string): void {
+  // In sessionDir mode the lifecycle must register the session root before
+  // any write can choose a durable location. Reads may safely fall back to
+  // cwd; writes must not recreate an ambiguous cwd state tree.
+  if (stateRootPending()) return;
   fs.mkdirSync(path.join(piGlaDir(cwd), "goals"), { recursive: true });
   fs.mkdirSync(archiveDir(cwd), { recursive: true });
 }
@@ -1393,6 +1404,7 @@ export function appendLedger(cwd: string, type: string, value: unknown): void {
   // v0.28.6 (E1): guarded — a disk failure degrades loudly, never throws
   // into an orchestrator handler.
   runPersistStep("appendLedger", () => {
+    if (stateRootPending()) return;
     ensureDirs(cwd);
     const line = JSON.stringify({ type, value, at: new Date().toISOString() });
     fs.appendFileSync(ledgerPath(cwd), line + "\n");
@@ -1459,6 +1471,11 @@ export function isForbiddenModel(ref: string | undefined, forbiddenModels: reado
 
 export function writeGoalMd(cwd: string, goal: Goal): string {
   const file = goalMdPath(cwd, goal.id);
+  // A pending sessionDir has no durable destination yet. Returning the
+  // intended path mirrors the existing persistence-degradation contract, but
+  // unlike ensureDirs this guard must happen before writeFileSync: an old cwd
+  // goals directory may already exist and would otherwise accept the fallback.
+  if (stateRootPending()) return file;
   if (!isSafePersistedId(goal.id)) {
     runPersistStep("writeGoalMd", () => {
       throw new Error("refused unsafe persisted goal id");
@@ -2146,7 +2163,8 @@ export function isFullAuditObjective(objective: string): boolean {
 export const PAUSE_AUTO_COMMIT_SENTINEL = ".pause-auto-commit";
 
 export function pauseAutoCommit(cwd: string, reason: string): string {
-  const dir = path.join(cwd, ".pi-glla");
+  const dir = piGlaDir(cwd);
+  if (stateRootPending()) return path.join(dir, PAUSE_AUTO_COMMIT_SENTINEL);
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, PAUSE_AUTO_COMMIT_SENTINEL);
   fs.writeFileSync(file, `pausedAt: ${nowIso()}\nreason: ${reason}\n`, "utf-8");
@@ -2154,7 +2172,8 @@ export function pauseAutoCommit(cwd: string, reason: string): string {
 }
 
 export function resumeAutoCommit(cwd: string): boolean {
-  const file = path.join(cwd, ".pi-glla", PAUSE_AUTO_COMMIT_SENTINEL);
+  if (stateRootPending()) return false;
+  const file = path.join(piGlaDir(cwd), PAUSE_AUTO_COMMIT_SENTINEL);
   try {
     fs.unlinkSync(file);
     return true;
@@ -2165,7 +2184,7 @@ export function resumeAutoCommit(cwd: string): boolean {
 
 export function isAutoCommitPaused(cwd: string): boolean {
   try {
-    fs.accessSync(path.join(cwd, ".pi-glla", PAUSE_AUTO_COMMIT_SENTINEL));
+    fs.accessSync(path.join(piGlaDir(cwd), PAUSE_AUTO_COMMIT_SENTINEL));
     return true;
   } catch {
     return false;
@@ -2382,11 +2401,12 @@ export interface AuditLogEntry {
 }
 
 export function auditLogPath(cwd: string): string {
-  return path.join(cwd, ".pi-glla", "audits.jsonl");
+  return path.join(piGlaDir(cwd), "audits.jsonl");
 }
 
 export function appendAuditLog(cwd: string, entry: AuditLogEntry): void {
   try {
+    if (stateRootPending()) return;
     ensureDirs(cwd);
     fs.appendFileSync(auditLogPath(cwd), JSON.stringify(entry) + "\n");
   } catch {

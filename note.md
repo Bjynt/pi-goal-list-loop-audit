@@ -2,43 +2,6 @@
 
 ##
 
-auditor can go awol for long, we need some way to handle it
-in this case its not slow response but we were workign with a model that kept ahving errors but it was fine when we retried but seemingly we dont least as eagerly for auditor
-/home/dracon/Pictures/Screenshots/Screenshot_20260823_152629.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152617.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152536.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152321.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152319.png /home/dracon/Pictures/Screenshots/Screenshot_20260823_152316.png 
-
-> /home/dracon/Pictures/Screenshots/Screenshot_20260823_153139.png so we can see the mdoel struggless but we still need ot keep retrying it 
-
-##
-another problem is that on session start, we odnt auto start the main thread we do auto start the auditor if it was their turn
-
-##
-
-another problem is htat failed requests add to the context, while clearly adding nothing of value
-/home/dracon/Pictures/Screenshots/Screenshot_20260823_154439.png 
-
-## req body too large due to images in context
-
-/home/dracon/Pictures/Screenshots/Screenshot_20260823_155115.png 
-
-ok seemingly we keep sending the images as context to the model , so the context fits but the requst is too big 
-
-> /home/dracon/Pictures/Screenshots/Screenshot_20260823_155311.png starting without history works
-
-then
-
-> /home/dracon/Pictures/Screenshots/Screenshot_20260823_160928.png we make more iamges and doesnt work again
-
-/home/dracon/Pictures/Screenshots/Screenshot_20260823_203511.png 
-
-##
-
-objective needs repair issue, but before reload it looked fine
-/home/dracon/Pictures/Screenshots/Screenshot_20260823_155633.png 
-
-# Next
-
-##
-
 https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
 
 investiate
@@ -70,7 +33,11 @@ here too we can't even start a new list
 another concern is that do we have these explores, clearly not desired, is this our bug 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_120936.png 
 
-# Later
+# Next
+
+## objective cant complete
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260824_183359.png 
 
 ##
 
@@ -114,6 +81,8 @@ even shows the list alive
 same we got list items but they are not showing
 
 list resume doesnt work 
+
+# Later
 
 ##
 
@@ -159,3 +128,12 @@ we can save questions after, mainly pop questions when the decision is truly a r
 if not my intention can be inferrred as prefrence for quality long term solution and the objective so far
 also we cna do more drafting up front, so fo we dont have to ask questions in the middle
 
+
+
+## goal audit loop
+
+/goal audit loop 
+
+so the idea here is that we launch and audit if any findings we fix then due to loop we launch another audit, then if nothing found the goal ends
+
+or it can be jsut /loop audit that is not hooked up yet 

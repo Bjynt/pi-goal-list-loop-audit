@@ -24,6 +24,56 @@
   This complements, not replaces, the existing stall watchdog: that owns
   SILENCE (no tool calls); this owns productive-LOOKING stagnation.
 
+
+## 0.35.56 — state-root consumer/lifecycle hardening (2026-08-24)
+
+### Fix
+  Hardened every remaining state-root consumer and lifecycle boundary missed
+  by the core/settings slice. Raw `<cwd>/.pi-glla` joins in auditor jobs,
+  dispatch, goal-loop ledger reads, reviewer, stats rollup/discovery, and
+  session owner/handoff/pending-list paths now route through `piGlaDir` and
+  respect the selected root. Pending `sessionDir` resolution (no session dir
+  yet) is a strict deferral: dispatch, reviewer, session owner, handoff, and
+  pending-list writes return a deferred/false result without creating a
+  fallback `<cwd>/.pi-glla` tree, and legacy `.pi-gla` trees are still never
+  migrated. Audit-loop open-count helpers now resolve via the selected root
+  as well. Host/subagent ownership stays per-process via `PI_SESSION_FILE`
+  fallback and the explicit `setRuntimeSessionDir` hook — no global overwrite.
+
+### Tests
+  New `tests/state-root-consumers.test.ts` pins resolved-root routing for
+  dispatch/stats/audit helpers, pending deferral for dispatch/reviewer, the
+  `PI_SESSION_FILE` fallback, and source-level absence of raw hardcodings plus
+  pending guards. Existing `tests/state-root.test.ts` continues to cover core
+  core/settings behavior. Red/green: breaking the `piGlaDir` routing makes the
+  consumer pins fail; restoring passes 9/9 focused plus 56 prior. tsc and full
+  release gate green for this tree.
+## 0.35.55 — opt-in session-root state core/settings slice (2026-08-24)
+
+### Fix
+  Ported the valid state-root portion of PR #21 onto current main without
+  merging the stale PR verbatim. New dependency-free
+  extensions/glla-state-root.ts owns the typed global root selector and
+  session-directory resolution so goal-loop-core can select a root without a
+  settings import cycle. The historical <cwd>/.pi-glla workingDir remains
+  the default; sessionDir is explicit opt-in and resolves to the top-level Pi
+  session directory (or PI_SESSION_FILE's parent for worker processes).
+  Session-root mode is global-only because project settings.json lives inside
+  the selected root. Pending sessionDir resolution is a write boundary:
+  core directory/ledger/queue/sentinel/audit-log writes defer rather than
+  recreate an ambiguous cwd tree, and old .pi-gla/.pi-glla trees are never
+  migrated or deleted by the new mode. The settings menu exposes the two
+  choices and project attempts to override stateRoot are stripped.
+
+### Tests
+  tests/state-root.test.ts covers default cwd persistence, opt-in session-root
+  persistence, pending-write/no-migration behavior, PI_SESSION_FILE fallback,
+  and global-only settings round-trip. settings-editors and
+  settings-menu-complete pin the UI/provenance surface; the long-term
+  preferences boundary now checks the dependency-free global path owner.
+  Red/green proved the session-root branch is required (2 of 5 focused tests
+  fail when neutered; restored 5/5). tsc and focused tests pass before the
+  full release gate.
 ## 0.35.54 — RESUMABLE_STOP honors the v0.35.31 "metric never moved" stop (2026-08-24)
 
 ### Fix
