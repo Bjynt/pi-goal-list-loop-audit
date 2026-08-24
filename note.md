@@ -39,6 +39,12 @@ objective needs repair issue, but before reload it looked fine
 
 ##
 
+https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
+
+investiate
+
+##
+
 sometimes we were working on an objective and, the exact case that happened now that wez crashed and some objectives were no longer live
 
 i had to make new ones, i wonder if jsut version swtich or what, but we shoudl not guess but investigate 
@@ -69,6 +75,15 @@ another concern is that do we have these explores, clearly not desired, is this 
 ##
 
 anything that goes on for too long is suspcious so look into this
+
+super sus
+/home/dracon/Pictures/Screenshots/Screenshot_20260824_091051.png 
+
+## nothing to resume with clear obvious goal to resume
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260824_091334.png
+it was a list iwth many items
+/home/dracon/Pictures/Screenshots/Screenshot_20260824_091423.png 
 
 ##
 
@@ -130,3 +145,9 @@ or do these have speical meaning, cause seemingly
 /list start
 /goal start 
 with saying audit would make more sense and audit might go too wide too cuase it start immedateli y without knowing what i meant
+
+## quesiton are good but esp mid of list / goal / loop i i am not sure they norammly should happen
+we can save questions after, mainly pop questions when the decision is truly a real change
+if not my intention can be inferrred as prefrence for quality long term solution and the objective so far
+also we cna do more drafting up front, so fo we dont have to ask questions in the middle
+

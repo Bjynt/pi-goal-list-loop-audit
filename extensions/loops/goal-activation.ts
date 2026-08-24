@@ -257,6 +257,7 @@ import {
   type ModelPickItem,
 } from "../model-picker.js";
 import { consumeRecoveryResume } from "../goal-recovery.js"; // decomposition step 3 (v0.34.111)
+import { payloadGuardProjection } from "../payload-guard.js"; // v0.35.51 image-413 guard
 import {
   createGoalHeartbeat,
   releaseZombieAbortKey,
@@ -2291,5 +2292,33 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     const e = (data ?? {}) as { id?: unknown };
     const recordId = typeof e.id === "string" && e.id.length > 0 ? e.id : undefined;
     if (recordId) endSubagentHangProbe(recordId);
+  });
+
+  // v0.35.51 (note.md Now): payload guard — bound inline base64 image bytes
+  // on EVERY outgoing LLM call. Generated images accumulate in history until
+  // the provider rejects the request with 413 ("Downloaded image content
+  // cannot exceed 30MB"), and every main-model-recovery probe re-sent the
+  // same bloated history so recovery could never classify or heal the
+  // failure. The `context` event fires before each provider call with the
+  // outgoing message list; projecting it here protects ordinary turns AND
+  // recovery probes at one chokepoint. The session transcript on disk is
+  // NOT touched — this is a per-send projection. Always-on (not gated on a
+  // live goal): the wedge hits any image-heavy session this extension runs.
+  pi.on("context", (event: { messages?: readonly unknown[] }, ctx: ExtensionContext): { messages?: readonly unknown[] } => {
+    const messages = event.messages;
+    if (!Array.isArray(messages)) return {};
+    const projection = payloadGuardProjection(messages);
+    if (projection.evicted.length === 0) return {};
+    try {
+      appendLedger(ctx.cwd, "payload_guard_eviction", {
+        evicted: projection.evicted.length,
+        bytesFreed: projection.totalImageBytes - projection.remainingImageBytes,
+        remainingImageBytes: projection.remainingImageBytes,
+        generation: flags.sessionGeneration,
+      });
+    } catch {
+      // The projection itself must never fail a send over ledger bookkeeping.
+    }
+    return { messages: projection.messages };
   });
 }
