@@ -7176,3 +7176,11 @@
 {"type":"zombie_stood_down","value":{"owner":"707946:1787612740573"},"at":"2026-08-24T23:05:57.365Z"}
 {"type":"stale_self_healed","value":{"was":"session_handoff_pending","via":"same-session command","generation":244},"at":"2026-08-24T23:06:04.859Z"}
 {"type":"zombie_stood_down","value":{"owner":"707946:1787612740573"},"at":"2026-08-24T23:06:24.171Z"}
+{"type":"stale_self_healed","value":{"was":"session_handoff_pending","via":"same-session command","generation":246},"at":"2026-08-24T23:06:25.009Z"}
+{"type":"zombie_stood_down","value":{"owner":"707946:1787612740573"},"at":"2026-08-24T23:06:42.362Z"}
+{"type":"stale_self_healed","value":{"was":"session_handoff_pending","via":"same-session command","generation":248},"at":"2026-08-24T23:06:45.031Z"}
+{"type":"session_shutdown","value":{"reason":"reload"},"at":"2026-08-24T23:07:06.214Z"}
+{"type":"session_rebound","value":{"reason":"reload"},"at":"2026-08-24T23:07:07.897Z"}
+{"type":"session_shutdown","value":{"reason":"reload"},"at":"2026-08-24T23:07:22.945Z"}
+{"type":"session_rebound","value":{"reason":"reload"},"at":"2026-08-24T23:07:24.375Z"}
+{"type":"zombie_stood_down","value":{"owner":"707946:1787612843585"},"at":"2026-08-24T23:07:42.364Z"}
