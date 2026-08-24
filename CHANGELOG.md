@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.35.57 — objective-loss validation (2026-08-24)
+
+### Evidence
+  Validated the Now report that objectives disappeared after a Wez crash or
+  version/cwd switch. `tests/objective-loss-state-root.test.ts` proves that a
+  same-cwd restart path retains durable state, that the historical workingDir
+  default intentionally makes a cwd switch select a different on-disk root,
+  and that explicit sessionDir keeps the objective visible across cwd changes.
+  It also proves pending session-root resolution does not migrate or delete
+  the old cwd tree. The bounded result is evidence-based closure, not a forced
+  production change: crash-only loss was not reproduced, while cwd coupling is
+  already addressed by the opt-in state-root port. The subsequent gettick,
+  list-reload, and subagent-visibility reports remain separate items.
+  Full evidence: audit/OBJECTIVE-LOSS-VALIDATION-2026-08-24.md.
+
+### Tests
+  Focused objective/state-root tests and clean tsc pass; the full release gate
+  is run for this version before closure.
 ## 0.35.56 — state-root consumer/lifecycle hardening (2026-08-24)
 
 ### Fix
