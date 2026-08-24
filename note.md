@@ -159,3 +159,10 @@ we can save questions after, mainly pop questions when the decision is truly a r
 if not my intention can be inferrred as prefrence for quality long term solution and the objective so far
 also we cna do more drafting up front, so fo we dont have to ask questions in the middle
 
+
+
+## goal audit loop
+
+/goal audit loop 
+
+so the idea here is that we launch and audit if any findings we fix then due to loop we launch another audit, then if nothing found the goal ends
