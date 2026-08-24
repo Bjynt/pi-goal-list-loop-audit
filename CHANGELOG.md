@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.35.54 — RESUMABLE_STOP honors the v0.35.31 "metric never moved" stop (2026-08-24)
+
+### Fix
+  Collect-pass HIGH finding: the v0.35.31 "metric never moved" stop reason
+  promises "/loop resume retries or /loop stop" in its own message, but the
+  RESUMABLE_STOP predicate in /loop resume never matched that prefix - the
+  promised command answered "No held loop to resume", and with
+  propose_loop_refine gated on an ACTIVE loop, the only recovery was
+  /loop stop + a fresh start discarding iteration history. Same class as
+  the v0.35.25 issue-#14 zombie prefix bug (fixed there for zero-stream,
+  missed for this brand-new prefix). The prefix is now resumable: resuming
+  re-arms the error/stuck/stall counters while preserving iteration, best,
+  and history; if the metric is still dead it re-stops loudly after its
+  window, and a measure-changing propose_loop_refine (usable again once
+  resumed) re-scopes the measure era so the never-moved grace re-arms.
+
+### Tests
+  tests/metric-never-moved-resumable.test.ts: behavioral - a loop parked by
+  the exact production reason string resumes via /loop resume with
+  iteration/best/history preserved and all three streak counters re-armed;
+  negative pin - a bounded stop ("max iterations reached") stays
+  non-resumable. Red-proven by removing the predicate clause (behavioral
+  fails, negative pin stays green).
 ## 0.35.53 — false repair card after abort+reload: parser marker fix + contract-derived objective heal (2026-08-24)
 
 ### Fix
