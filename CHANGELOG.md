@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.35.52 — context hygiene: era-scope failed error-only turns out of the effective context (2026-08-24)
+
+### Fix
+  note.md Now: "failed requests add to the context, while clearly adding
+  nothing of value". When retries are exhausted, the failed assistant turn
+  (stopReason "error", errorMessage set, content empty/partial) STAYS in
+  agent state and the session - pi strips it from live state only for
+  mid-flight retries. Every later LLM call receives it and compaction
+  summarizes it; nothing downstream filters these. Field evidence (polis,
+  2026-08-23): a run of 503/network_error/retry-cancelled turns drove the
+  estimated context to 122.7% of the 200k window, and auto-compaction then
+  aborted on its own bloated summarization input. New
+  extensions/context-hygiene.ts: a durable bounded rule drops error-only
+  assistant turns (stopReason "error", NO tool-call blocks) from the
+  effective context EXCEPT the most recent one, which stays so the model
+  sees why the previous attempt failed on the retry send. Applied at two
+  points: the `context` event projection (per-send, transcript untouched -
+  alongside the v0.35.51 payload guard) and `session_before_compact`
+  (prunes the shared preparation object the compaction runner summarizes,
+  shrinking the summarizer request and keeping failures out of the summary).
+  Tool-call-carrying error turns own paired toolResults and stay intact;
+  "aborted" turns are user-intent boundaries and are never touched. Drops
+  are ledgered (context_hygiene_dropped / context_hygiene_compaction_input).
+
+### Tests
+  tests/context-hygiene.test.ts: predicate (tool-carrying/aborted/healthy
+  never droppable); bounded drop rule (newest kept, older dropped, identity
+  preserved at/under the window, configurable window); seeded bloat (60
+  failures collapse, normal turns survive verbatim); in-place compaction
+  preparation pruning; behavioral wiring through MockPi for both hooks with
+  ledger assertions and clean-history no-op. Red-proven by neutering both
+  production call sites.
 ## 0.35.51 — payload guard: bound inline image bytes on every outgoing LLM call (2026-08-24)
 
 ### Fix

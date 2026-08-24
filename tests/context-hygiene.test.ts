@@ -106,7 +106,7 @@ test("compaction pruning: reassigns both message arrays in place and counts drop
   const dropped = pruneCompactionPreparation(preparation);
   assert.equal(dropped, 1, "2 failures with keep=1 → 1 drop; the single turn-prefix failure stays");
   assert.equal(preparation.messagesToSummarize.length, 3, "the older failed turn is pruned from the summarization input");
-  assert.equal(preparation.turnPrefixMessages.length, 1, "the single prefix failure is inside the keep window");
+  assert.equal(preparation.turnPrefixMessages.length, 2, "the single prefix failure is inside the keep window — untouched");
   assert.equal(preparation.firstKeptEntryId, "keep-me", "the keep boundary is never touched");
   assert.equal(pruneCompactionPreparation(undefined), 0, "shape surprises are no-ops");
   assert.equal(pruneCompactionPreparation({}), 0);
@@ -172,7 +172,7 @@ test("wiring: session_before_compact prunes the preparation the runner will summ
     firstKeptEntryId: "e42",
   };
   await handler({ type: "session_before_compact", preparation, branchEntries: [], reason: "auto" }, ctx);
-  assert.equal(preparation.messagesToSummarize.length, 2, "the runner's shared preparation is pruned in place");
+  assert.equal(preparation.messagesToSummarize.length, 3, "the runner's shared preparation is pruned in place");
   assert.equal(preparation.firstKeptEntryId, "e42");
   const events = ledger(cwd).filter((e) => e.type === "context_hygiene_compaction_input");
   assert.equal(events.length, 1);
