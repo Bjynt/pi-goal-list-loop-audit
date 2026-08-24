@@ -258,6 +258,7 @@ import {
 } from "../model-picker.js";
 import { consumeRecoveryResume } from "../goal-recovery.js"; // decomposition step 3 (v0.34.111)
 import { payloadGuardProjection } from "../payload-guard.js"; // v0.35.51 image-413 guard
+import { dropFailedErrorOnlyTurns, pruneCompactionPreparation } from "../context-hygiene.js"; // v0.35.52 error-turn hygiene
 import {
   createGoalHeartbeat,
   releaseZombieAbortKey,
@@ -2311,17 +2312,50 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     const messages = event?.messages;
     if (!Array.isArray(messages)) return {};
     const projection = payloadGuardProjection(messages);
-    if (projection.evicted.length === 0) return {};
+    // v0.35.52: error-turn hygiene — failed error-only assistant turns
+    // (stopReason "error", no tool calls) are dropped from the effective
+    // context except the most recent one (retry continuity). Failed turns
+    // accumulate forever otherwise: polis hit 122.7% of a 200k window on
+    // error entries alone, and compaction then aborted on its own bloat.
+    const hygiene = dropFailedErrorOnlyTurns(projection.messages);
+    if (projection.evicted.length === 0 && hygiene.dropped.length === 0) return {};
     try {
-      appendLedger(ctx.cwd, "payload_guard_eviction", {
-        evicted: projection.evicted.length,
-        bytesFreed: projection.totalImageBytes - projection.remainingImageBytes,
-        remainingImageBytes: projection.remainingImageBytes,
-        generation: sessionGeneration,
-      });
+      if (hygiene.dropped.length > 0) {
+        appendLedger(ctx.cwd, "context_hygiene_dropped", {
+          dropped: hygiene.dropped.length,
+          kept: hygiene.kept,
+          lastError: hygiene.dropped[hygiene.dropped.length - 1]?.errorMessage?.slice(0, 160),
+          generation: sessionGeneration,
+        });
+      }
+      if (projection.evicted.length > 0) {
+        appendLedger(ctx.cwd, "payload_guard_eviction", {
+          evicted: projection.evicted.length,
+          bytesFreed: projection.totalImageBytes - projection.remainingImageBytes,
+          remainingImageBytes: projection.remainingImageBytes,
+          generation: sessionGeneration,
+        });
+      }
     } catch {
       // The projection itself must never fail a send over ledger bookkeeping.
     }
-    return { messages: projection.messages as unknown as ContextEvent["messages"] };
+    return { messages: hygiene.messages as unknown as ContextEvent["messages"] };
+  });
+
+  // v0.35.52: the same bounded rule prunes the compaction summarization
+  // input — the preparation object is shared by reference with the compaction
+  // runner, so reassigning the message arrays here shrinks the summarizer
+  // request and keeps failed turns out of the summary. Never cancels and
+  // never supplies its own compaction; firstKeptEntryId and friends untouched.
+  pi.on("session_before_compact", (event: { preparation?: unknown }, ctx: ExtensionContext) => {
+    const dropped = pruneCompactionPreparation(event?.preparation);
+    if (dropped > 0) {
+      try {
+        appendLedger(ctx.cwd, "context_hygiene_compaction_input", { dropped, generation: sessionGeneration });
+      } catch {
+        // bookkeeping must never break compaction
+      }
+    }
+    return {};
   });
 }
