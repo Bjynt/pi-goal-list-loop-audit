@@ -12,6 +12,7 @@ import * as path from "node:path";
 import { execSync } from "node:child_process";
 import { normalizeProviderErrorText, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText, type QuotaSignal } from "./quota-retry.js";
 import { MAX_MAIN_MODEL_FALLBACKS } from "./main-model-recovery.js";
+import type { GoalStagnation } from "./goal-stagnation.js";
 export { normalizeProviderErrorText, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText } from "./quota-retry.js";
 
 /** v0.26.1: consecutive heartbeat refires without a real agent turn
@@ -423,6 +424,10 @@ export interface Goal {
    * detection. Bumped live: turns on agent_end, fileWrites/bashCalls on
    * tool_result while the goal is active. */
   telemetry?: { turns: number; fileWrites: number; bashCalls: number };
+  /** v0.37.0 AVO-inspired stagnation supervision: bounded rolling window of
+   * per-turn ProgressVectors, reply texts, exhaustion streak, and any pending
+   * SupervisorDirective. Pure state — detectors live in goal-stagnation.ts. */
+  stagnation?: GoalStagnation;
   /** v0.34.59: focus token / revision counter on every goal mutation.
    * Persisted alongside the goal; bumped on every persistState. Detached
    * workers capture (goalId, revision) at dispatch and refuse to apply

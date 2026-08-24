@@ -62,6 +62,7 @@ import {
 import { BACKOFF_IDLE_RETRY_MS, HEARTBEAT_MAX_NUDGES } from "./goal-loop-backoff.js";
 import { LENGTH_CONTINUE_MAX, LENGTH_CONTINUE_TEXT } from "./length-continue.js";
 import { VISION_ASSIST_GUIDANCE } from "./vision-assist.js";
+import { supervisorDirectiveBlock } from "./goal-stagnation.js"; // v0.37.0 AVO stagnation supervision
 import { loadSettings } from "./goal-settings.js";
 import { clearLoopTimer, isLoopActive } from "./goal-loop.js";
 import { attemptFreshSessionRecovery, mainModelRecoveryActive, recoverMainModelFromSendStorm } from "./goal-recovery.js";
@@ -1259,6 +1260,13 @@ export function continuationPrompt(goal: Goal): string {
     directives.push(
       `## RECOVERY NOTICE — WELCOME BACK, YOU WERE RECOVERED\n\nThis goal was paused and glla auto-resumed it at ${goal.autoResumedAt} (event: ${goal.autoResumedEvent ?? "recovery"}). You are the SAME session that was disconnected — nobody else took over, and there is no external recovery signal to wait for. The wait condition you were told about has elapsed; continue your own work toward the objective now.`,
     );
+  }
+  // v0.37.0 AVO-inspired stagnation supervisor: when the supervisor holds a
+  // pending directive (exhaustion/cycling detected over the goal's progress
+  // lineage), render it as non-prescriptive strategic framing. It clears on
+  // the next turn with real committed progress (recordTurnObservation).
+  if (goal.status === "active" && goal.stagnation?.directive) {
+    directives.push(supervisorDirectiveBlock(goal.stagnation.directive));
   }
   const dynamicDirectives = directives.length > 0 ? directives.join("\n\n") : "(no active directives)";
   // Use replacement callbacks: String.replace interprets `$&`, `$1`, `$'`,

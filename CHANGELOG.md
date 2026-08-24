@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.36.0 — AVO-inspired goal stagnation supervisor (2026-08-24)
+
+### Added
+  Goal mode gains the long-horizon supervision pattern from NVIDIA's Agentic
+  Variation Operators architecture (arXiv:2603.24517): a per-goal progress
+  lineage and a stagnation supervisor watching it for the two failure modes
+  AVO's supervisor detects — EXHAUSTION (consecutive active turns with tool
+  activity but zero committed progress: git commits, completed tasks, or file
+  writes) and CYCLING (consecutive near-duplicate replies, word-trigram
+  Jaccard ≥ 0.8, firing even when files changed — the cosmetic-churn guard).
+
+  Every active goal turn appends one ProgressVector to a bounded rolling
+  window persisted on the goal (`Goal.stagnation`) and ledgered as
+  `goal_progress_vector` in `.pi-glla/active.jsonl`, so the trajectory stays
+  answerable after restarts. When either signature fires, the next
+  continuation prompt carries a NON-prescriptive SUPERVISOR DIRECTIVE —
+  trajectory review plus fresh strategic framing, never a mandated change,
+  mirroring AVO §3.3. Any committed progress clears the directive; after
+  `maxConsecutiveInjections` further stalled turns the supervisor stands down
+  (bounded nagging). Provider-error and abort turns are exempt — the model
+  never got a say on those (same philosophy as the stall-nudge exemptions).
+  This complements, not replaces, the existing stall watchdog: that owns
+  SILENCE (no tool calls); this owns productive-LOOKING stagnation.
+
 ## 0.35.54 — RESUMABLE_STOP honors the v0.35.31 "metric never moved" stop (2026-08-24)
 
 ### Fix

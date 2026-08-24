@@ -17,6 +17,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { execFileSync } from "node:child_process";
 
 import { defineTool, type ContextEvent, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -26,6 +27,12 @@ import { Type } from "typebox";
 // (positioning doc invariant #2). Property reads on the imported binding are
 // fine; wholesale replacement goes through replaceState().
 import { state, replaceState, persistStateLine } from "../goal-state.js";
+import {
+  recordTurnObservation,
+  vectorHasProgress,
+  type GoalStagnation,
+  type ProgressVector,
+} from "../goal-stagnation.js"; // v0.37.0 AVO-inspired stagnation supervision
 
 import {
   type Goal,
@@ -619,6 +626,88 @@ export function abortZombieRun(
   current.ui.notify(message, abortError ? "warning" : "info");
   notifyExternal(current, message);
   return true;
+}
+
+/** Current git HEAD sha for the working tree, or null when unavailable. */
+function currentHeadSha(cwd: string): string | null {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf-8" }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function countCompletedTasks(goal: Goal): number {
+  return (goal.taskList?.tasks ?? []).filter((t) => t.status === "complete").length;
+}
+
+/**
+ * v0.37.0 AVO-inspired stagnation supervision: fold one finished goal turn
+ * into the goal's progress lineage and evaluate the exhaustion/cycling
+ * detectors (goal-stagnation.ts). The vector is diffed against bookkeeping
+ * stored on goal.stagnation; a ledger event (`goal_progress_vector`) records
+ * every observation so the trajectory stays answerable after restarts.
+ *
+ * Caller contract: only called for ACTIVE goals on turns where the model got
+ * a say (not provider-error/abort turns) — same exemption philosophy as the
+ * stall-nudge accounting. Best-effort: never throws into the agent_end path.
+ */
+export function noteGoalStagnationTurn(ctx: ExtensionContext, opts: { assistantText?: string }): void {
+  const goal = state.goal;
+  if (!goal || goal.status !== "active") return;
+
+  const totals = goal.telemetry ?? { turns: 0, fileWrites: 0, bashCalls: 0 };
+  const stag: GoalStagnation = goal.stagnation ?? {
+    window: [],
+    recentTexts: [],
+    exhaustedStreak: 0,
+    completedTasks: countCompletedTasks(goal),
+    lastHead: currentHeadSha(ctx.cwd) ?? undefined,
+  };
+
+  // First observation for this goal: set the baseline only. Deltas against
+  // unknown previous totals would misread lifetime counters as this-turn
+  // progress (legacy goals carry pre-existing telemetry).
+  if (!stag.lastTotals) {
+    stag.lastTotals = { turns: totals.turns, fileWrites: totals.fileWrites, bashCalls: totals.bashCalls };
+    goal.stagnation = stag;
+    persistState(ctx);
+    return;
+  }
+  const last = stag.lastTotals;
+
+  const head = currentHeadSha(ctx.cwd);
+  const gitCommits = head !== null && stag.lastHead !== undefined && head !== stag.lastHead ? 1 : 0;
+  const completedNow = countCompletedTasks(goal);
+  const taskCompletions = Math.max(0, completedNow - (stag.completedTasks ?? completedNow));
+
+  const vector: ProgressVector = {
+    at: new Date().toISOString(),
+    // Lifetime telemetry tracks turns/fileWrites/bashCalls only; the
+    // observable tool-call delta is writes + shell calls (enough for the
+    // activity-vs-progress distinction exhaustion needs).
+    toolCalls:
+      Math.max(0, totals.fileWrites - last.fileWrites) + Math.max(0, totals.bashCalls - last.bashCalls),
+    fileWrites: Math.max(0, totals.fileWrites - last.fileWrites),
+    bashCalls: Math.max(0, totals.bashCalls - last.bashCalls),
+    gitCommits,
+    taskCompletions,
+  };
+
+  const { next, fired } = recordTurnObservation(stag, { vector, assistantText: opts.assistantText });
+  next.lastTotals = { turns: totals.turns, fileWrites: totals.fileWrites, bashCalls: totals.bashCalls };
+  if (head !== null) next.lastHead = head;
+  next.completedTasks = completedNow;
+
+  goal.stagnation = next;
+
+  appendLedger(ctx.cwd, "goal_progress_vector", {
+    goalId: goal.id,
+    ...vector,
+    ...(fired ? { directiveFired: fired.kind, reason: fired.reason } : {}),
+  });
+  // Persist through the standard path so the TUI and state.json stay in sync.
+  persistState(ctx);
 }
 
 export function registerGoalRuntime(pi: ExtensionAPI): void {
@@ -1899,6 +1988,19 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     const text = last && Array.isArray(last.content) ? last.content.filter((p: any) => p.type === "text").map((p: any) => p.text).join("\n") : "";
     const stopReason = last?.stopReason;
     iterationCounter++;
+
+    // v0.36.0 AVO-inspired stagnation supervision: fold this turn into the
+    // goal's progress lineage and evaluate exhaustion/cycling. Error and
+    // abort turns are exempt — the model never got a say on those (same
+    // philosophy as the stall-nudge exemptions). Best-effort by contract:
+    // supervision is additive observability and must never break the loop.
+    if (stopReason !== "error" && stopReason !== "aborted") {
+      try {
+        noteGoalStagnationTurn(ctx, { assistantText: text });
+      } catch {
+        // Swallow — telemetry never breaks the loop.
+      }
+    }
 
     // Token accounting + cost guard: accumulate this turn's assistant tokens
     // (deduped — agent_end may replay seen messages). Crossing the goal's
