@@ -830,6 +830,14 @@ function parseToolOverrideValueLocal(s: string): unknown {
 
 export async function handleSettingChoice(id: string, ctx: ExtensionContext): Promise<void> {
   switch (id) {
+    case "stateRoot": {
+      const v = await ctx.ui.select("State root — where durable glla state lives", [
+        "workingDir — <cwd>/.pi-glla (default)",
+        "sessionDir — top-level Pi session directory (opt-in)",
+      ]);
+      if (v) saveSettings("global", ctx.cwd, { stateRoot: v.startsWith("sessionDir") ? "sessionDir" : "workingDir" });
+      return;
+    }
     case "autoResume": {
       const v = await ctx.ui.select("Auto-resume on session start — a LOADED session waits for an explicit resume; on reload/fork the machinery still rebinds so work never strands", [
         "default — hold on load, rebind on reload/fork",

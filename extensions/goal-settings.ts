@@ -14,10 +14,10 @@
 // tests/long-term-preferences-boundary.test.ts pins this boundary.
 
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 
 import { normalizeAuditorAllowedExtensions } from "./auditor-extensions.ts";
+import { globalSettingsPath, stateRootPending } from "./glla-state-root.js";
 
 import {
   DEFAULT_AUDIT_FEEDBACK_CHARS,
@@ -32,6 +32,10 @@ import {
 } from "./main-model-recovery.js";
 
 export interface Settings {
+  /** Where glla's durable state directory lives. This is global-only because
+   * project settings.json lives inside the selected state root. The historical
+   * cwd root remains the safe default; sessionDir is an explicit opt-in. */
+  stateRoot?: "workingDir" | "sessionDir";
   /** v0.34.57: model refs/ids that must never be selected — the policy
    * guard (bug #1.14). The v0.34.115 default is [] (no opinionated ban
    * list); users can explicitly configure refs such as gpt-5.5 / sonnet /
@@ -207,7 +211,8 @@ export interface Settings {
  * project artifact. The recovery runtime intentionally reads the global file
  * for them; ignoring project copies keeps the settings table and behavior
  * honest instead of showing a project value that the retry path cannot use. */
-const GLOBAL_MAIN_RECOVERY_KEYS: ReadonlySet<keyof Settings> = new Set([
+const GLOBAL_ONLY_KEYS: ReadonlySet<keyof Settings> = new Set([
+  "stateRoot",
   "mainModelFallbacks",
   "mainModelRetryMinutes",
   "mainModelFailback",
@@ -219,6 +224,8 @@ const GLOBAL_MAIN_RECOVERY_KEYS: ReadonlySet<keyof Settings> = new Set([
 ]);
 
 export const DEFAULT_SETTINGS: Settings = {
+  // cwd/.pi-glla preserves historical behavior; sessionDir is explicit opt-in.
+  stateRoot: "workingDir",
   // Main-agent fallback models are opt-in: an empty list preserves pi's normal
   // session model behavior, while the recovery cadence still protects an
   // active supervised goal from provider failures.
@@ -269,14 +276,9 @@ export const DEFAULT_SETTINGS: Settings = {
   aggressiveMode: true,
 };
 
-export function globalSettingsPath(): string {
-  // v0.28.18: test/embedding override — the suite must be hermetic from
-  // the developer's real global settings file (a user setting autoAccept
-  // globally once made draft-Confirm tests auto-accept and fail).
-  const override = process.env.GLLA_GLOBAL_SETTINGS_PATH;
-  if (override) return override;
-  return path.join(os.homedir(), ".pi", "agent", "pi-goal-list-loop-audit.settings.json");
-}
+// Re-exported for compatibility; the dependency-free state-root module owns
+// this path so goal-loop-core can resolve piGlaDir without a settings cycle.
+export { globalSettingsPath } from "./glla-state-root.js";
 
 export function projectSettingsPath(cwd: string): string {
   return path.join(piGlaDir(cwd), "settings.json");
@@ -302,6 +304,9 @@ function normalizeLoadedSettings(settings: Settings): Settings {
   // extension specs. Hand-edited files may carry junk; keep it bounded and
   // deterministic so the request hash is stable.
   settings.auditorAllowedExtensions = normalizeAuditorAllowedExtensions(settings.auditorAllowedExtensions);
+  if (settings.stateRoot !== "sessionDir" && settings.stateRoot !== "workingDir") {
+    settings.stateRoot = "workingDir";
+  }
   if (settings.mainModelFailback !== "auto" && settings.mainModelFailback !== "sticky") {
     settings.mainModelFailback = "auto";
   }
@@ -337,7 +342,7 @@ function migrateLegacySettings(value: Partial<Settings>): Record<string, unknown
 export function loadSettings(cwd: string): Settings {
   const project = migrateLegacySettings(readSettingsFile(projectSettingsPath(cwd)));
   const global = migrateLegacySettings(readSettingsFile(globalSettingsPath()));
-  for (const key of GLOBAL_MAIN_RECOVERY_KEYS) delete project[key];
+  for (const key of GLOBAL_ONLY_KEYS) delete project[key];
   return normalizeLoadedSettings(mergeSettings(
     DEFAULT_SETTINGS as unknown as Record<string, unknown>,
     global,
@@ -362,6 +367,7 @@ export function loadGlobalSettings(): Settings {
 
 /** Every provenance-tracked key (the /glla headless display + UI). */
 export const SETTINGS_KEYS: Array<keyof Settings> = [
+  "stateRoot",
   "mainModelFallbacks",
   "drafterModel",
   "drafterThinkingLevel",
@@ -409,7 +415,7 @@ export function settingsProvenance(cwd: string): Record<keyof Settings, { value:
   const effective = loadSettings(cwd);
   const out: Record<string, { value: unknown; source: "project" | "global" | "default" }> = {};
   for (const k of SETTINGS_KEYS) {
-    const projectValue = GLOBAL_MAIN_RECOVERY_KEYS.has(k) ? undefined : (proj as Record<string, unknown>)[k];
+    const projectValue = GLOBAL_ONLY_KEYS.has(k) ? undefined : (proj as Record<string, unknown>)[k];
     if (projectValue !== undefined) out[k] = { value: projectValue, source: "project" };
     else if ((glob as Record<string, unknown>)[k] !== undefined) out[k] = { value: (glob as any)[k], source: "global" };
     else out[k] = { value: (effective as any)[k], source: "default" };
@@ -482,19 +488,22 @@ function withSettingsFileLock<T>(file: string, fn: () => T): T {
 }
 
 export function saveSettings(scope: "global" | "project", cwd: string, patch: Partial<Settings>): void {
+  if (scope === "project" && stateRootPending()) {
+    throw new Error("state root pending (sessionDir mode, no session dir yet) — project settings save deferred");
+  }
   const file = scope === "global" ? globalSettingsPath() : projectSettingsPath(cwd);
   withSettingsFileLock(file, () => {
     const current = migrateLegacySettings(readSettingsFile(file));
     const next: Record<string, unknown> = { ...current };
     if (scope === "project") {
-      for (const key of GLOBAL_MAIN_RECOVERY_KEYS) delete next[key];
+      for (const key of GLOBAL_ONLY_KEYS) delete next[key];
     }
     const migratedPatch = migrateLegacySettings(patch);
     for (const [k, v] of Object.entries(migratedPatch)) {
       // Main recovery settings are global-only. If an old project file still
       // carries one, remove it rather than leaving a setting that appears saved
       // but can never affect the runtime.
-      if (scope === "project" && GLOBAL_MAIN_RECOVERY_KEYS.has(k as keyof Settings)) {
+      if (scope === "project" && GLOBAL_ONLY_KEYS.has(k as keyof Settings)) {
         delete next[k];
         continue;
       }
