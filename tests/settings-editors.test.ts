@@ -42,6 +42,21 @@ function readGlobal(): Record<string, unknown> {
   return fs.existsSync(GLOBAL_FILE) ? (JSON.parse(fs.readFileSync(GLOBAL_FILE, "utf-8")) as Record<string, unknown>) : {};
 }
 
+test("T4: select editor — stateRoot writes the global workingDir/sessionDir choice", async () => {
+  try {
+    const ctx = makeMockCtx(tmpCwd());
+    ctx.ui.selectImpl = async () => "sessionDir — top-level Pi session directory (opt-in)";
+    await handleSettingChoice("stateRoot", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().stateRoot, "sessionDir");
+
+    ctx.ui.selectImpl = async () => "workingDir — <cwd>/.pi-glla (default)";
+    await handleSettingChoice("stateRoot", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().stateRoot, "workingDir");
+  } finally {
+    restoreGlobal();
+  }
+});
+
 test("T4: select editor — autoResume writes on/off/default with the right key", async () => {
   try {
     const ctx = makeMockCtx(tmpCwd());
