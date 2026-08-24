@@ -18,7 +18,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { defineTool, type ContextEvent, type ContextEventResult, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { defineTool, type ContextEvent, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 // v0.34.109 (decomposition step 1): the state singleton and the persistence
@@ -2307,7 +2307,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   // The cast at the boundary is sound: the projection only replaces image
   // blocks with text placeholders inside existing message objects, never
   // re-shapes messages.
-  pi.on("context", (event: ContextEvent, ctx: ExtensionContext): ContextEventResult => {
+  pi.on("context", (event: ContextEvent, ctx: ExtensionContext) => {
     const messages = event?.messages;
     if (!Array.isArray(messages)) return {};
     const projection = payloadGuardProjection(messages);
