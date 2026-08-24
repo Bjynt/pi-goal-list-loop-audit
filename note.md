@@ -74,6 +74,11 @@ another concern is that do we have these explores, clearly not desired, is this 
 
 ##
 
+auditor selectorshould be like the main model selector
+also no thinking select seperately we just select along with picking the model like model selector
+
+##
+
 anything that goes on for too long is suspcious so look into this
 
 super sus

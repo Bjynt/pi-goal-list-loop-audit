@@ -1937,7 +1937,18 @@ export function extractVerificationContract(raw: string): { objective: string; v
   // kept as contract text; later lines after a bare marker still belong to
   // the contract block.
   let explicitClear = false;
-  const MARKER_START = /^\s*(?:done when|verified when|verify|verification|done)\b[^:]*:/i;
+  // v0.35.53 (note.md Now): "verify"/"verification" are also ordinary
+  // imperative verbs — the marker form requires the colon IMMEDIATELY after
+  // (optionally "verify when:"). The old unbounded `verify\b[^:]*:` swallowed
+  // a whole imperative sentence as a marker ("Verify the shipped X pass (...):
+  // confirm ..."), leaving the objective EMPTY and the entire intent inside
+  // the verification contract — the field item then tripped the activation
+  // gate's "empty" reason into an endless repair-card loop (neonbreak:
+  // faulty_objective_list_activation_blocked ×42 over 22h). "done"/"done
+  // when"/"verified when" keep a bounded decorated-marker gap (they are not
+  // imperative openers), now capped at 60 chars so prose tails cannot
+  // masquerade as markers either.
+  const MARKER_START = /^\s*(?:(?:done|verified)\s+when\b[^:]{0,60}:|done\b[^:]{0,60}:|verify(?:\s+when)?\s*:|verification\s*:)/i;
   for (const line of lines) {
     const m = line.match(MARKER_START);
     if (m) {

@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.35.53 — false repair card after abort+reload: parser marker fix + contract-derived objective heal (2026-08-24)
+
+### Fix
+  note.md Now: "objective needs repair issue, but before reload it looked
+  fine". Field forensics (neonbreak, item 20260823082852-in3rc7): the list
+  draft batch wrote an item with objective "" and the ENTIRE intent inside
+  the verification contract - extractVerificationContract's line marker
+  regex `verify\b[^:]*:` misread the imperative sentence "Verify the
+  shipped PREMIUM-UIUX pass (...): confirm ..." as a contract marker
+  ("verify" is both a marker word and an ordinary imperative verb), leaving
+  the objective empty. The activation gate then correctly flagged "empty"
+  and jammed a repair card ahead of the item - 42
+  faulty_objective_list_activation_blocked events over 22 hours, an endless
+  repair-card loop that wedged the session. Two-layer durable fix:
+  (1) WRITER - the line marker for the ambiguous verbs now requires the
+  colon immediately ("Verify:" / "Verify when:" / "Verification:");
+  "done"/"done when"/"verified when" keep a bounded 60-char decorated-marker
+  gap so prose tails cannot masquerade as markers either. The field text
+  now parses with the real objective and only the grep tail as contract.
+  (2) READER - legacy items already persisted with an empty objective plus
+  a clean, actionable contract derive their objective deterministically
+  from the contract's leading imperative sentence at activation
+  (list_objective_derived_from_contract) instead of demanding a repair
+  card. Empty objective + absent or suspicious contract still takes the
+  true broken-objective repair path, unchanged.
+
+### Tests
+  tests/false-repair-card.test.ts: the exact field text parses with its
+  intent in the objective; short-marker and decorated-marker forms still
+  parse; derivation unit rules (first sentence, suspicious/non-imperative
+  contracts rejected); behavioral - a legacy stuck item activates with the
+  derived objective (no repair demand, contract preserved), a truly broken
+  item still triggers the repair card, and a fresh /list add of the field
+  text activates directly end-to-end. Red-proven by neutering both layers
+  (4 of 6 fail; the true-broken-path tests stay green).
 ## 0.35.52 — context hygiene: era-scope failed error-only turns out of the effective context (2026-08-24)
 
 ### Fix
