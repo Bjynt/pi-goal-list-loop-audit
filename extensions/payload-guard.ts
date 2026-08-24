@@ -155,7 +155,7 @@ export function evictStaleImages(
     const evictIndexes = new Set(evictions.map((e) => e.blockIndex));
     const newContent = content.map((block, blockIndex) => {
       if (!evictIndexes.has(blockIndex)) return block;
-      return isInlineImageBlock(block) ? evictionPlaceholder(block.bytes) : block;
+      return isInlineImageBlock(block) ? evictionPlaceholder(block.data.length) : block;
     });
     return { ...(message as object), content: newContent };
   });

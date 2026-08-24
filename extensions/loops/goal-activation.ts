@@ -2304,8 +2304,8 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   // recovery probes at one chokepoint. The session transcript on disk is
   // NOT touched — this is a per-send projection. Always-on (not gated on a
   // live goal): the wedge hits any image-heavy session this extension runs.
-  pi.on("context", (event: { messages?: readonly unknown[] }, ctx: ExtensionContext): { messages?: readonly unknown[] } => {
-    const messages = event.messages;
+  pi.on("context", (event: any, ctx: ExtensionContext): { messages?: readonly unknown[] } => {
+    const messages = event?.messages;
     if (!Array.isArray(messages)) return {};
     const projection = payloadGuardProjection(messages);
     if (projection.evicted.length === 0) return {};
@@ -2314,7 +2314,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         evicted: projection.evicted.length,
         bytesFreed: projection.totalImageBytes - projection.remainingImageBytes,
         remainingImageBytes: projection.remainingImageBytes,
-        generation: flags.sessionGeneration,
+        generation: sessionGeneration,
       });
     } catch {
       // The projection itself must never fail a send over ledger bookkeeping.
