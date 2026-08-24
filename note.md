@@ -1,7 +1,5 @@
 # Now
 
-
-
 ##
 
 https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
@@ -36,9 +34,6 @@ another concern is that do we have these explores, clearly not desired, is this 
 /home/dracon/Pictures/Screenshots/Screenshot_20260823_120936.png 
 
 # Next
-
-
-# Later
 
 ##
 
@@ -82,6 +77,8 @@ even shows the list alive
 same we got list items but they are not showing
 
 list resume doesnt work 
+
+# Later
 
 ##
 
@@ -134,3 +131,5 @@ also we cna do more drafting up front, so fo we dont have to ask questions in th
 /goal audit loop 
 
 so the idea here is that we launch and audit if any findings we fix then due to loop we launch another audit, then if nothing found the goal ends
+
+or it can be jsut /loop audit that is not hooked up yet 
