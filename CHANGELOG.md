@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.35.51 — payload guard: bound inline image bytes on every outgoing LLM call (2026-08-24)
+
+### Fix
+  note.md Now: "req body too large due to images in context". Generated
+  images accumulate in conversation history as inline base64 blocks until
+  the provider rejects the request with 413 ("Downloaded image content
+  cannot exceed 30MB" / "Request Entity Too Large") - and every
+  main-model-recovery probe re-sent the same bloated history, so recovery
+  could never classify or heal the failure; the session was wedged until a
+  manual restart WITHOUT history. Two-layer durable fix: (1) a new
+  extensions/payload-guard.ts projects the outgoing message list at the pi
+  `context` event (fired before EVERY LLM call), bounding cumulative
+  inline-image bytes to 16MB - evicting the OLDEST images first, always
+  keeping the newest two, replacing each evicted block with a short text
+  placeholder. Disk history is untouched (per-send projection), and the
+  chokepoint protects ordinary turns AND recovery probes alike. Evictions
+  are ledgered as payload_guard_eviction. (2) classifyMainModelFailure now
+  maps 413/payload-size texts to "transient" - retryable in place, because
+  the payload guard (not a fallback-model switch) heals the size; the old
+  "unknown" classification burned the whole chain on useless rotations.
+
+### Tests
+  tests/payload-guard.test.ts: under-budget pass-through (same identity);
+  oldest-first eviction with newest-two floor; floor holds when the budget
+  cannot be met; idempotent projection, non-image content untouched;
+  behavioral wiring (context handler projects + ledgeres; under-budget
+  passes unprojected); 413 texts classify transient (not unknown, not
+  context-overflow). Red-proven by neutering both production sites.
 ## 0.35.50 — same-process session successors auto-resume the main thread (2026-08-23)
 
 ### Fix
