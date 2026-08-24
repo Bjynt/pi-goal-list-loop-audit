@@ -18,7 +18,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { defineTool, type ContextEvent, type ContextEventResult, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 // v0.34.109 (decomposition step 1): the state singleton and the persistence
@@ -2304,7 +2304,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   // recovery probes at one chokepoint. The session transcript on disk is
   // NOT touched — this is a per-send projection. Always-on (not gated on a
   // live goal): the wedge hits any image-heavy session this extension runs.
-  pi.on("context", (event: any, ctx: ExtensionContext): { messages?: readonly unknown[] } => {
+  // The cast at the boundary is sound: the projection only replaces image
+  // blocks with text placeholders inside existing message objects, never
+  // re-shapes messages.
+  pi.on("context", (event: ContextEvent, ctx: ExtensionContext): ContextEventResult => {
     const messages = event?.messages;
     if (!Array.isArray(messages)) return {};
     const projection = payloadGuardProjection(messages);
@@ -2319,6 +2322,6 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     } catch {
       // The projection itself must never fail a send over ledger bookkeeping.
     }
-    return { messages: projection.messages };
+    return { messages: projection.messages as unknown as ContextEvent["messages"] };
   });
 }
