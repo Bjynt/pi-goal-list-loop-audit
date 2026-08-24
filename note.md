@@ -128,3 +128,4 @@ we can save questions after, mainly pop questions when the decision is truly a r
 if not my intention can be inferrred as prefrence for quality long term solution and the objective so far
 also we cna do more drafting up front, so fo we dont have to ask questions in the middle
 
+yea we keep pausing a fair bit mid exec
