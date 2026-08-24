@@ -1117,6 +1117,7 @@ export function writeQueueItemFile(cwd: string, item: ListItem, options: { repla
 }
 
 export function deleteQueueItemFile(cwd: string, id: string): boolean {
+  if (stateRootPending()) return false;
   if (!isSafePersistedId(id)) return false;
   const file = queueItemPath(cwd, id);
   if (!fs.existsSync(file)) return false;
@@ -1131,6 +1132,7 @@ export function queueItemSidecarCount(cwd: string): number {
 }
 
 export function clearQueueItemFiles(cwd: string): { removed: number; failed: string[] } {
+  if (stateRootPending()) return { removed: 0, failed: [] };
   const dir = path.join(piGlaDir(cwd), "goals");
   let names: string[];
   try { names = fs.readdirSync(dir); } catch { return { removed: 0, failed: [] }; }
@@ -1464,6 +1466,11 @@ export function isForbiddenModel(ref: string | undefined, forbiddenModels: reado
 
 export function writeGoalMd(cwd: string, goal: Goal): string {
   const file = goalMdPath(cwd, goal.id);
+  // A pending sessionDir has no durable destination yet. Returning the
+  // intended path mirrors the existing persistence-degradation contract, but
+  // unlike ensureDirs this guard must happen before writeFileSync: an old cwd
+  // goals directory may already exist and would otherwise accept the fallback.
+  if (stateRootPending()) return file;
   if (!isSafePersistedId(goal.id)) {
     runPersistStep("writeGoalMd", () => {
       throw new Error("refused unsafe persisted goal id");
@@ -2160,6 +2167,7 @@ export function pauseAutoCommit(cwd: string, reason: string): string {
 }
 
 export function resumeAutoCommit(cwd: string): boolean {
+  if (stateRootPending()) return false;
   const file = path.join(piGlaDir(cwd), PAUSE_AUTO_COMMIT_SENTINEL);
   try {
     fs.unlinkSync(file);

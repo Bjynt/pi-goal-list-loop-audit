@@ -15,12 +15,16 @@ import * as path from "node:path";
 
 import {
   appendLedger,
+  clearQueueItemFiles,
+  deleteQueueItemFile,
   ensureDirs,
   piGlaDir,
   readState,
   resolveRuntimeSessionDir,
+  resumeAutoCommit,
   setRuntimeSessionDir,
   stateRootPending,
+  writeGoalMd,
   writeQueueItemFile,
 } from "../extensions/goal-loop-core.js";
 import { loadSettings, projectSettingsPath, saveSettings, settingsProvenance } from "../extensions/goal-settings.js";
@@ -106,13 +110,37 @@ test("pending sessionDir defers every core write and does not migrate the old cw
     assert.equal(stateRootPending(), true);
     ensureDirs(fx.cwd);
     appendLedger(fx.cwd, "should_not_write", { ok: true });
+    // Existing fallback directories must not make a deferred goal projection
+    // look writable: writeGoalMd needs its own pre-write guard.
+    fs.mkdirSync(path.join(fx.cwd, ".pi-glla", "goals"), { recursive: true });
+    writeGoalMd(fx.cwd, {
+      id: "pending-goal",
+      objective: "must wait",
+      status: "active",
+      policy: "list",
+      autoContinue: true,
+      usage: { tokensUsed: 0, tokensLimit: 1000 },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    assert.equal(fs.existsSync(path.join(fx.cwd, ".pi-glla", "goals", "pending-goal.md")), false);
     const queueWrite = writeQueueItemFile(fx.cwd, {
       id: "queued-pending",
       objective: "must wait",
       addedAt: new Date().toISOString(),
     });
     assert.equal(queueWrite.failed, true, "queue sidecar reports the deferred write");
-    assert.equal(fs.existsSync(path.join(fx.cwd, ".pi-glla")), false);
+    assert.equal(fs.existsSync(path.join(fx.cwd, ".pi-glla", "active.jsonl")), false);
+    assert.equal(fs.existsSync(path.join(fx.cwd, ".pi-glla", "goals", "queued-pending.queue.json")), false);
+    const oldQueue = path.join(fx.cwd, ".pi-glla", "goals", "old.queue.json");
+    fs.writeFileSync(oldQueue, "old", "utf8");
+    assert.equal(deleteQueueItemFile(fx.cwd, "old"), false);
+    assert.deepEqual(clearQueueItemFiles(fx.cwd), { removed: 0, failed: [] });
+    assert.ok(fs.existsSync(oldQueue), "pending mode does not delete fallback queue state");
+    const sentinel = path.join(fx.cwd, ".pi-glla", ".pause-auto-commit");
+    fs.writeFileSync(sentinel, "old", "utf8");
+    assert.equal(resumeAutoCommit(fx.cwd), false);
+    assert.ok(fs.existsSync(sentinel), "pending mode does not delete fallback sentinel");
     assert.ok(fs.existsSync(path.join(fx.cwd, ".pi-gla", "legacy-marker")), "legacy root is untouched");
     assert.equal(fs.existsSync(path.join(fx.sessionDir, "pi-glla")), false);
   } finally {
