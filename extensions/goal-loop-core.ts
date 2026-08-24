@@ -2153,6 +2153,7 @@ export const PAUSE_AUTO_COMMIT_SENTINEL = ".pause-auto-commit";
 export function pauseAutoCommit(cwd: string, reason: string): string {
   const dir = piGlaDir(cwd);
   if (stateRootPending()) return path.join(dir, PAUSE_AUTO_COMMIT_SENTINEL);
+  fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, PAUSE_AUTO_COMMIT_SENTINEL);
   fs.writeFileSync(file, `pausedAt: ${nowIso()}\nreason: ${reason}\n`, "utf-8");
   return file;
