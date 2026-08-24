@@ -7197,3 +7197,11 @@
 {"type":"stale_self_healed","value":{"was":"session_handoff_pending","via":"same-session command","generation":256},"at":"2026-08-24T23:09:40.433Z"}
 {"type":"zombie_stood_down","value":{"owner":"707946:1787612843585"},"at":"2026-08-24T23:09:57.365Z"}
 {"type":"stale_self_healed","value":{"was":"session_handoff_pending","via":"same-session command","generation":258},"at":"2026-08-24T23:09:58.773Z"}
+{"type":"zombie_stood_down","value":{"owner":"707946:1787612843585"},"at":"2026-08-24T23:10:24.177Z"}
+{"type":"stale_self_healed","value":{"was":"session_handoff_pending","via":"same-session command","generation":260},"at":"2026-08-24T23:10:24.282Z"}
+{"type":"zombie_stood_down","value":{"owner":"707946:1787612843585"},"at":"2026-08-24T23:10:42.367Z"}
+{"type":"stale_self_healed","value":{"was":"session_handoff_pending","via":"same-session command","generation":262},"at":"2026-08-24T23:10:43.069Z"}
+{"type":"zombie_stood_down","value":{"owner":"707946:1787612843585"},"at":"2026-08-24T23:11:09.182Z"}
+{"type":"stale_self_healed","value":{"was":"session_handoff_pending","via":"same-session command","generation":264},"at":"2026-08-24T23:11:10.254Z"}
+{"type":"zombie_stood_down","value":{"owner":"707946:1787612843585"},"at":"2026-08-24T23:11:27.372Z"}
+{"type":"stale_self_healed","value":{"was":"session_handoff_pending","via":"same-session command","generation":266},"at":"2026-08-24T23:11:27.377Z"}
