@@ -96,6 +96,7 @@ import {
   compactDisplayText,
   sanitizeDisplayText,
   piGlaDir,
+  setRuntimeSessionDirFromSessionManager,
   normalizeDraftContract,
   draftContractItemCount,
   extractVerificationContract,
@@ -1071,6 +1072,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     const startReason = typeof event?.reason === "string" ? event.reason : "unknown";
     initialSessionLoadPending = isBlankInitialStartup(ctx, startReason);
     rememberCtx(ctx);
+    // v0.35.58: bind the selected sessionDir to the admitted host's real
+    // file-backed session before any restore or lifecycle ledger write. A
+    // missing getter remains pending; it must never recreate a cwd tree.
+    setRuntimeSessionDirFromSessionManager(ctx.sessionManager);
     startHeartbeat();
     startUITicker();
     // v0.30.0: rebind bookkeeping — claim ownership, close any replacement

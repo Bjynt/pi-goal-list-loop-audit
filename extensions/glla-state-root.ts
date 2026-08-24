@@ -34,6 +34,31 @@ export function setRuntimeSessionDir(dir: string | undefined): void {
   runtimeSessionDir = typeof dir === "string" && dir.trim() ? path.resolve(dir) : undefined;
 }
 
+/** Register the host session root from pi's file-backed SessionManager. The
+ * lifecycle owns this admission point; keeping the derivation here makes the
+ * state-root boundary identical for normal starts and successor rebinds. */
+export function setRuntimeSessionDirFromSessionManager(sessionManager: unknown): string | undefined {
+  let sessionFile: unknown;
+  try {
+    const getter = (sessionManager as { getSessionFile?: unknown } | null | undefined)?.getSessionFile;
+    if (typeof getter !== "function") {
+      setRuntimeSessionDir(undefined);
+      return undefined;
+    }
+    sessionFile = (getter as () => unknown).call(sessionManager);
+  } catch {
+    setRuntimeSessionDir(undefined);
+    return undefined;
+  }
+  if (typeof sessionFile !== "string" || !sessionFile.trim()) {
+    setRuntimeSessionDir(undefined);
+    return undefined;
+  }
+  const dir = path.dirname(path.resolve(sessionFile));
+  setRuntimeSessionDir(dir);
+  return dir;
+}
+
 export function resolveRuntimeSessionDir(): string | undefined {
   if (runtimeSessionDir) return runtimeSessionDir;
   const sessionFile = process.env.PI_SESSION_FILE;

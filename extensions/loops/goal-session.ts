@@ -93,6 +93,7 @@ import {
   sanitizeDisplayText,
   piGlaDir,
   stateRootPending,
+  setRuntimeSessionDirFromSessionManager,
   normalizeDraftContract,
   draftContractItemCount,
   extractVerificationContract,
@@ -1412,6 +1413,9 @@ function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   emitIdInvalidation(ctx, absorbedOldId, sessionIdOf(ctx.sessionManager), "successor_absorption");
   ownerSession = ctx.sessionManager;
   ownerCwd = ctx.cwd;
+  // v0.35.58: silent host-successor admission is also a lifecycle boundary;
+  // bind sessionDir before its first ledger write.
+  setRuntimeSessionDirFromSessionManager(ctx.sessionManager);
   deadOwnerSession = null;
   deadOwnerCwd = null;
   lastCtx = ctx;
