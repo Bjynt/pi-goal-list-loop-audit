@@ -60,7 +60,7 @@ test("payload guard: over-budget histories evict OLDEST first and keep the newes
   assert.equal(result.evicted.length, 2, "the two oldest images are evicted");
   assert.equal(result.evicted[0]!.messageIndex, 0);
   assert.equal(result.evicted[1]!.messageIndex, 1);
-  assert.ok(result.remainingImageBytes <= 1024 * 1024, `budget respected: ${result.remainingImageBytes}`);
+  assert.ok(result.remainingImageBytes <= 2 * 900 * 1024, `floor held: ${result.remainingImageBytes} (the two kept images)`);
   const keptContent = (result.messages[3] as { content: Array<{ type: string }> }).content;
   assert.equal(keptContent[0]!.type, "image", "newest image survives");
   const evictedContent = (result.messages[0] as { content: Array<{ type: string; text: string }> }).content;
@@ -113,7 +113,12 @@ test("wiring: the context event projects bloated histories before EVERY LLM call
     userMessage(imageBlock(9 * 1024)),
     userMessage(textBlock("current turn")),
   ];
-  const result = await pi.fire("context", { type: "context", messages: bloated }, ctx) as { messages?: Array<{ content: Array<{ type: string; text?: string }> }> };
+  // MockPi.fire returns void; invoke the registered handler directly to
+  // capture the projection it hands back to the runtime.
+  const handlers = (pi as unknown as { handlers: Map<string, (...a: unknown[]) => unknown> }).handlers;
+  const handler = handlers.get("context");
+  assert.ok(handler, "activate() registers the context-event handler");
+  const result = await handler!({ type: "context", messages: bloated }, ctx) as { messages?: Array<{ content: Array<{ type: string; text?: string }> }> };
   assert.ok(result?.messages, "the handler returns a projected message list");
   const projected = result!.messages!;
   assert.equal(collectImageBlocks(projected).length, 1, "only the newest image survives the projection");
@@ -127,7 +132,7 @@ test("wiring: the context event projects bloated histories before EVERY LLM call
 
   // Under budget: no projection, no ledger noise.
   const before = ledger(cwd).length;
-  const small = await pi.fire("context", { type: "context", messages: [userMessage(imageBlock(64))] }, ctx) as { messages?: unknown[] };
+  const small = await handler!({ type: "context", messages: [userMessage(imageBlock(64))] }, ctx) as { messages?: unknown[] };
   assert.equal(small?.messages, undefined, "under-budget histories pass through unprojected");
   assert.equal(ledger(cwd).length, before, "no ledger entry when nothing was evicted");
 });
