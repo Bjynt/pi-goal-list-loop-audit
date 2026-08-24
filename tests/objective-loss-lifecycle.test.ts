@@ -20,6 +20,7 @@ import activate, {
   __testOnlyResetTerminalFlags,
 } from "../extensions/loops/goal.js";
 import { appendLedger, piGlaDir, readState, resolveRuntimeSessionDir, setRuntimeSessionDir } from "../extensions/goal-loop-core.js";
+import { replaceState, state } from "../extensions/goal-state.js";
 import { MockPi, makeMockCtx, tmpCwd } from "./harness/mock-pi.js";
 
 const pi = new MockPi();
@@ -74,6 +75,7 @@ function runCoreChild(action: "write" | "read", cwd: string, env: NodeJS.Process
 }
 
 afterEach(() => {
+  replaceState({ goal: null, list: [], loop: null });
   setRuntimeSessionDir(undefined);
   __testOnlyResetOwnerSession();
   __testOnlyResetStaleFlag();
@@ -140,6 +142,63 @@ test("fresh processes reload session-root state across a cwd switch", () => {
   } finally {
     fs.rmSync(cwdA, { recursive: true, force: true });
     fs.rmSync(cwdB, { recursive: true, force: true });
+    fs.rmSync(sessionDir, { recursive: true, force: true });
+    fs.rmSync(globalDir, { recursive: true, force: true });
+  }
+});
+
+test("cancel and wipe defer safely while sessionDir is unresolved", async () => {
+  const cwd = tmpCwd();
+  const globalDir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-pending-global-"));
+  const globalFile = path.join(globalDir, "settings.json");
+  process.env.GLLA_GLOBAL_SETTINGS_PATH = globalFile;
+  delete process.env.PI_SESSION_FILE;
+  fs.writeFileSync(globalFile, JSON.stringify({ stateRoot: "sessionDir" }), "utf8");
+  setRuntimeSessionDir(undefined);
+  replaceState({ goal: goalState("pending objective").goal as any, list: [], loop: null });
+  const ctx = makeMockCtx(cwd);
+  try {
+    await pi.command("glla", "cancel", ctx);
+    await pi.command("glla", "wipe", ctx);
+    assert.ok(state.goal, "pending destructive commands preserve the in-memory objective");
+    assert.equal(fs.existsSync(path.join(cwd, ".pi-glla")), false, "pending commands do not recreate a cwd root");
+    assert.equal(ctx.ui.matching("deferred").length, 2);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+    fs.rmSync(globalDir, { recursive: true, force: true });
+  }
+});
+
+test("cancel and wipe archive live state under the registered session root", async () => {
+  const cwd = tmpCwd();
+  const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-command-session-"));
+  const globalDir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-command-global-"));
+  const globalFile = path.join(globalDir, "settings.json");
+  process.env.GLLA_GLOBAL_SETTINGS_PATH = globalFile;
+  delete process.env.PI_SESSION_FILE;
+  fs.writeFileSync(globalFile, JSON.stringify({ stateRoot: "sessionDir" }), "utf8");
+  const sessionManager = {
+    getSessionDir: () => sessionDir,
+    buildSessionContext: () => ({ messages: [{ role: "user", content: "restored" }] }),
+  };
+  const ctx = makeMockCtx(cwd, { sessionManager });
+  const cancelId = "cancel-root-goal";
+  const wipeId = "wipe-root-goal";
+  try {
+    await pi.fire("session_start", { reason: "startup" }, ctx);
+    replaceState({ goal: { ...(goalState("cancel root objective").goal as any), id: cancelId }, list: [], loop: null });
+    await pi.command("glla", "cancel", ctx);
+    assert.ok(fs.existsSync(path.join(sessionDir, "pi-glla", "archive", `${cancelId}.md`)));
+    assert.equal(fs.existsSync(path.join(cwd, ".pi-glla")), false);
+
+    replaceState({ goal: { ...(goalState("wipe root objective").goal as any), id: wipeId }, list: [{ id: "waiting", objective: "waiting item", addedAt: new Date().toISOString() }], loop: null });
+    await pi.command("glla", "wipe", ctx);
+    assert.ok(fs.existsSync(path.join(sessionDir, "pi-glla", "archive", `${wipeId}.md`)));
+    assert.equal(state.goal, null);
+    assert.deepEqual(state.list, []);
+    assert.equal(fs.existsSync(path.join(cwd, ".pi-glla")), false);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
     fs.rmSync(sessionDir, { recursive: true, force: true });
     fs.rmSync(globalDir, { recursive: true, force: true });
   }
