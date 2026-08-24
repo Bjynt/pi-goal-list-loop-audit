@@ -73,10 +73,11 @@ test("drop rule: keeps the most recent failed turn, drops older ones, preserves 
 });
 
 test("drop rule: identity preserved when at or under the keep window; window is configurable", () => {
+  const single = [failedTurn("e1")];
+  const atWindow = dropFailedErrorOnlyTurns(single, { keepRecentErrorTurns: DEFAULT_KEEP_RECENT_ERROR_TURNS });
+  assert.equal(atWindow.dropped.length, 0, "one failure == the keep window: nothing to drop");
+  assert.equal(atWindow.messages, single, "no-op must not copy");
   const messages = [failedTurn("e1"), failedTurn("e2")];
-  const atWindow = dropFailedErrorOnlyTurns(messages, { keepRecentErrorTurns: DEFAULT_KEEP_RECENT_ERROR_TURNS });
-  assert.equal(atWindow.dropped.length, 0);
-  assert.equal(atWindow.messages, messages, "no-op must not copy");
   const zero = dropFailedErrorOnlyTurns(messages, { keepRecentErrorTurns: 0 });
   assert.equal(zero.dropped.length, 2, "keepRecent 0 drops every failed turn");
   assert.equal(zero.messages.length, 0);
@@ -90,7 +91,7 @@ test("drop rule: SEADED BLOAT — 60 failed turns collapse to the keep window; n
   const result = dropFailedErrorOnlyTurns(messages);
   assert.equal(result.dropped.length, 59);
   assert.equal(result.kept, 1);
-  assert.equal(result.messages.length, 3, "user + newest failure + healthy + trailing user");
+  assert.equal(result.messages.length, 4, "user + newest failure + healthy + trailing user");
   assert.ok(result.messages.includes(healthy));
 });
 
@@ -103,9 +104,9 @@ test("compaction pruning: reassigns both message arrays in place and counts drop
     firstKeptEntryId: "keep-me",
   };
   const dropped = pruneCompactionPreparation(preparation);
-  assert.equal(dropped, 3, "2 from messagesToSummarize + 1 from turnPrefixMessages");
-  assert.equal(preparation.messagesToSummarize.length, 2, "failed turns pruned from the summarization input");
-  assert.equal(preparation.turnPrefixMessages.length, 1, "newest failure stays in the turn prefix");
+  assert.equal(dropped, 1, "2 failures with keep=1 → 1 drop; the single turn-prefix failure stays");
+  assert.equal(preparation.messagesToSummarize.length, 3, "the older failed turn is pruned from the summarization input");
+  assert.equal(preparation.turnPrefixMessages.length, 1, "the single prefix failure is inside the keep window");
   assert.equal(preparation.firstKeptEntryId, "keep-me", "the keep boundary is never touched");
   assert.equal(pruneCompactionPreparation(undefined), 0, "shape surprises are no-ops");
   assert.equal(pruneCompactionPreparation({}), 0);
@@ -139,7 +140,7 @@ test("wiring: the context event drops accumulated error turns and ledgeres the h
 
   const result = await handler({ type: "context", messages: bloated }, ctx) as { messages?: unknown[] };
   assert.ok(result?.messages, "projected list returned");
-  assert.equal(result!.messages!.length, 3, "12 failures collapse to the newest one");
+  assert.equal(result!.messages!.length, 4, "12 failures collapse to the newest one");
   assert.ok(result!.messages!.includes(healthy), "healthy content survives");
   assert.ok(result!.messages!.some((m) => isFailedErrorOnlyTurn(m)), "the newest failure stays visible");
 
@@ -175,7 +176,7 @@ test("wiring: session_before_compact prunes the preparation the runner will summ
   assert.equal(preparation.firstKeptEntryId, "e42");
   const events = ledger(cwd).filter((e) => e.type === "context_hygiene_compaction_input");
   assert.equal(events.length, 1);
-  assert.equal(events[0]!.value!.dropped, 2);
+  assert.equal(events[0]!.value!.dropped, 1);
 
   // Idempotent second pass: no further drops, no ledger spam.
   const before = ledger(cwd).length;
