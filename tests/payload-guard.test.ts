@@ -78,7 +78,7 @@ test("payload guard: the keep-recent floor holds even when the budget cannot be 
 
 test("payload guard: projection is idempotent and never touches non-image content", () => {
   const messages = [userMessage(imageBlock(900), textBlock("keep me")), { role: "assistant", content: "plain string" }];
-  const first = evictStaleImages(messages, { imageBudgetBytes: 1024 * 1024, keepRecentImages: 0 });
+  const first = evictStaleImages(messages, { imageBudgetBytes: 512 * 1024, keepRecentImages: 0 });
   assert.equal(first.evicted.length, 1);
   const text = ((first.messages[0] as { content: Array<{ text?: string }> }).content[0] as { text?: string }).text;
   const second = evictStaleImages(first.messages, { imageBudgetBytes: 1024 * 1024, keepRecentImages: 0 });
@@ -107,8 +107,10 @@ test("wiring: the context event projects bloated histories before EVERY LLM call
   __testOnlyResetOwnerSession();
   const ctx = makeMockCtx(cwd, { sessionManager: { name: `guard-${Date.now()}` } });
 
-  // A bloated history: ~17MB of base64 crosses the default 16MB budget.
+  // A bloated history: three ~9MB images (27MB) cross the default 16MB
+  // budget; the oldest is evicted, the newest two are floor-kept.
   const bloated = [
+    userMessage(imageBlock(9 * 1024)),
     userMessage(imageBlock(9 * 1024)),
     userMessage(imageBlock(9 * 1024)),
     userMessage(textBlock("current turn")),
@@ -121,9 +123,9 @@ test("wiring: the context event projects bloated histories before EVERY LLM call
   const result = await handler!({ type: "context", messages: bloated }, ctx) as { messages?: Array<{ content: Array<{ type: string; text?: string }> }> };
   assert.ok(result?.messages, "the handler returns a projected message list");
   const projected = result!.messages!;
-  assert.equal(collectImageBlocks(projected).length, 1, "only the newest image survives the projection");
+  assert.equal(collectImageBlocks(projected).length, 2, "the newest two images survive the projection");
   assert.match((projected[0]!.content[0] as { text: string }).text, /image evicted by glla payload guard/);
-  assert.equal(projected[2]!.content[0]!.type, "text", "the current turn's text is intact");
+  assert.equal(projected[3]!.content[0]!.type, "text", "the current turn's text is intact");
 
   const evictions = ledger(cwd).filter((e) => e.type === "payload_guard_eviction");
   assert.equal(evictions.length, 1, "one durable eviction entry for forensics");
