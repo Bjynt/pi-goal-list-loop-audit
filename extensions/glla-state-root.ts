@@ -1,4 +1,4 @@
-// pi-goal-list-loop-audit — v0.35.55
+// pi-goal-list-loop-audit — v0.35.58
 // extensions/glla-state-root.ts
 //
 // The state-root boundary is deliberately dependency-free: goal-loop-core and
