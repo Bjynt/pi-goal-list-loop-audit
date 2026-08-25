@@ -60,7 +60,7 @@ No telemetry event listener or `/glla agents` rendering path was removed.
 - Existing lifecycle, orchestration, recovery, panel, ledger, and hang suite:
   **161 pass / 0 fail** across 7 files.
 - `npx tsc --noEmit`: **passed**.
-- Fresh `npm run release:check` (`/tmp/rc-subagent-final2.log`): **1579 pass /
-  0 fail / 2 skipped**, 1581 tests across 145 files in 211.55s; Jiti smoke
+- Fresh `npm run release:check` (`/tmp/rc-subagent-final3.log`): **1579 pass /
+  0 fail / 2 skipped**, 1581 tests across 145 files in 203.68s; Jiti smoke
   passed and `npm pack --dry-run` produced
   `pi-goal-list-loop-audit-0.35.62.tgz`.
