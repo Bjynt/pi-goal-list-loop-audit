@@ -522,9 +522,11 @@ function requestSubagentStopViaRpc(recordId: string, generation: number): Promis
         if (reply?.success === true) finish({ kind: "requested" });
         else finish({ kind: "failed", error: typeof reply?.error === "string" ? reply.error : "the RPC service rejected the request" });
       });
-      binding.events.emit("subagents:rpc:stop", { requestId, agentId: recordId });
+      // Arm the timeout before emitting: a compatible host/test bus may reply
+      // synchronously, and finish() must then be able to clear the timer.
       timeout = setTimeout(() => finish({ kind: "unavailable", reason: "the subagents stop RPC timed out" }), SUBAGENT_RPC_STOP_TIMEOUT_MS);
       timeout.unref?.();
+      binding.events.emit("subagents:rpc:stop", { requestId, agentId: recordId });
     } catch (error) {
       finish({ kind: "unavailable", reason: error instanceof Error ? error.message : String(error) });
     }
