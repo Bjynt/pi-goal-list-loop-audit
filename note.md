@@ -50,6 +50,13 @@ logs, while keeping the capture artifact separate from durable goal state.
 
 # Idea
 
+## We are bad at guesing how long tasks take can we record the time it took once then guess basd on that 
+
+the problem is that lately we were defaulting to some safe long waits but that is pretty bad velocity
+so i think we need a better solution
+we should investigate how oters do it like antigravity most of all is quite snappy but codex kind of too
+/home/dracon/Pictures/Screenshots/Screenshot_20260826_000412.png 
+
 ## Audit command naming
 
 `/list audit`, `/goal audit`, and `/loop audit` may need clearer distinctions
