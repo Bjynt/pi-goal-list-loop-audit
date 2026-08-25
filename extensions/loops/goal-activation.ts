@@ -622,6 +622,16 @@ export function abortZombieRun(
   return true;
 }
 
+// Slash commands are an independent mutation surface from registered agent
+// tools. Keep this guard outside the completion-factory source block so the
+// command registration remains a pure shared factory (and source pin).
+function refuseForeignCommand(ctx: ExtensionContext): boolean {
+  const refusal = foreignToolGuard(ctx);
+  if (!refusal) return false;
+  try { ctx.ui.notify(refusal, "warning"); } catch { /* child UI may be headless */ }
+  return true;
+}
+
 export function registerGoalRuntime(pi: ExtensionAPI): void {
   // Four top-level commands, that's all (v0.8.0 consolidation):
   //   /goal  — set/draft + status|pause|resume|cancel|tweak|archive subcommands
@@ -644,17 +654,6 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         label: value,
         description,
       }));
-
-  // Slash commands are an independent mutation surface from registered
-  // agent tools. A foreign child may still have the command registry even
-  // when its glla tools were excluded, so gate commands at the same boundary.
-  // Telemetry remains event-driven through the MAIN host and is unaffected.
-  const refuseForeignCommand = (ctx: ExtensionContext): boolean => {
-    const refusal = foreignToolGuard(ctx);
-    if (!refusal) return false;
-    try { ctx.ui.notify(refusal, "warning"); } catch { /* child UI may be headless */ }
-    return true;
-  };
 
   pi.registerCommand("goal", {
     description: "Set/draft a goal, or /goal status|pause|resume|cancel|tweak <text>|archive|start <objective>. Objectives without a 'Done when:' clause are grilled into a contract first; include the clause or use /goal start to skip the interview and activate instantly.",
