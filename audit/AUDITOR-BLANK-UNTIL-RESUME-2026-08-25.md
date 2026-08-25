@@ -56,10 +56,10 @@ but independent user-facing behaviors.
 - `tests/stale-interrupt-resume.test.ts` and
   `tests/load-without-autostart.test.ts`: passed in the focused regression
   run; existing stale-resume persistence behavior remains covered.
-- `npx tsc --noEmit`: **passed** (`/tmp/tsc-auditor-blank-repair2.log`).
-- Fresh repaired `npm run release:check`
-  (`/tmp/rc-auditor-blank-repair2.log`): **1584 pass / 0 fail / 2 skipped**,
-  1586 tests across 146 files in 250.06s; Jiti smoke passed and
+- `npx tsc --noEmit`: **passed** (`/tmp/tsc-auditor-blank-repair3.log`).
+- Fresh final `npm run release:check`
+  (`/tmp/rc-auditor-blank-repair3.log`): **1584 pass / 0 fail / 2 skipped**,
+  1586 tests across 146 files in 236.26s; Jiti smoke passed and
   `npm pack --dry-run` produced `pi-goal-list-loop-audit-0.35.63.tgz`.
 
 ## Post-audit repairs
@@ -77,5 +77,7 @@ main-model recovery early-return branches. The second repair probes the
 stale/foreign boundary before recovery handling and releases on all admitted
 manual-hold, retry/pending-switch, and primary-probe branches. The new
 behavioral recovery test proves the old auditor report returns only after an
-admitted explicit resume. The fresh repaired release gate above supersedes
-all earlier pre-repair evidence.
+admitted explicit resume; the stale regression also exercises the recovery
+marker while that boundary is active. The third claim's final verification
+re-ran the complete gate from the current main state. This final release gate
+supersedes all earlier pre-repair evidence.
