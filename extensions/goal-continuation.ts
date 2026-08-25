@@ -488,8 +488,9 @@ export function dispatchPrepare(
     return null;
   }
   pendingContinuationDispatch = record;
-  const repairTarget = record.kind === "goal" && state.goal?.id === record.goalId
-    ? state.goal.repairTarget
+  const repairGoal = state.goal;
+  const repairTarget = record.kind === "goal" && repairGoal && repairGoal.id === record.goalId
+    ? repairGoal.repairTarget
     : undefined;
   if (repairTarget && !repairTarget.replanPromptedAt) {
     const promptedAt = nowIso();
