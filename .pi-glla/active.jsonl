@@ -7441,3 +7441,4 @@
 {"type":"session_shutdown","value":{"reason":"resume"},"at":"2026-08-25T14:02:54.822Z"}
 {"type":"session_rebound","value":{"reason":"resume"},"at":"2026-08-25T14:02:55.699Z"}
 {"type":"id_invalidation","value":{"oldId":"01a03939-5afc-7094-9bce-a0ee11eb95a9","newId":"01a02353-0a9c-742d-8d99-e222dda417c9","reason":"session_shutdown","shutdownReason":"resume","at":"2026-08-25T14:02:55.845Z"},"at":"2026-08-25T14:02:55.845Z"}
+{"type":"subagent_session","value":{"sessionId":"1aa859ec-11ed-429","agentType":"Plan","summary":"Plan subagent stall escalation","at":"2026-08-25T14:12:08.575Z"},"at":"2026-08-25T14:12:08.575Z"}
