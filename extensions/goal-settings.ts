@@ -325,7 +325,7 @@ function normalizeLoadedSettings(settings: Settings): Settings {
   // v0.35.64: a positive child-action threshold must leave the short
   // detection windows meaningful; zero is the explicit warning-only opt-out.
   if (typeof settings.subagentHangEscalationMinutes !== "number"
-      || !Number.isFinite(settings.subagentHangEscalationMinutes)
+      || !Number.isInteger(settings.subagentHangEscalationMinutes)
       || (settings.subagentHangEscalationMinutes !== 0 && settings.subagentHangEscalationMinutes < 5)) {
     settings.subagentHangEscalationMinutes = 30;
   }

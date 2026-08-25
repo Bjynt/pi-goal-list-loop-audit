@@ -10,7 +10,7 @@ This is a detached process, not a nested session in the main pi process. `comple
 
 On Windows, npm installs the `pi.cmd` shim rather than a directly executable `pi` binary. The auditor launches it through an explicit `cmd.exe` boundary; arguments are quoted only when tokenization requires it (v0.35.27 — quoting a bare executable name breaks `.CMD` shim resolution on pnpm installs), and every argument passes the unsafe-character gate (`%`, CR, LF) before that decision. POSIX keeps direct shell-less execution. Protocol snapshots also tolerate transient Windows file-locks without deleting the last valid snapshot first.
 
-**Current package version:** `v0.35.63` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
+**Current package version:** `v0.35.64` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
 
 ## Why this exists
 
@@ -646,8 +646,12 @@ are workers** (v0.23.8):
   registration, restore, owner claims, or command/tool mutation; this also
   covers persistent children, not only the usual in-memory workers.
 - Subagent tool activity counts as activity for the wedge clock — a long
-  subagent run is work, not a hang. The main host still records the child's
-  lifecycle and counters for `/glla agents` through the event bus.
+  productive child run is work, not a hang. If a tracked top-level child stops
+  changing its tool-use/output counters, glla warns at the short detection
+  threshold and can request one child-specific abort after
+  `subagentHangEscalationMinutes` (default 30; `0` = warning-only). The main
+  host still records lifecycle, action state, and partial output for
+  `/glla agents` through the event bus.
 - With `@tintinweb/pi-subagents` specifically (the one we test against):
   read-only agents (Explore, Plan) get no glla tools; general-purpose
   agents see them but state-mutating calls (`complete_goal`, `propose_*`,
