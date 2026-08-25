@@ -1,5 +1,13 @@
 # Now
 
+## Documentation refresh
+
+README and first-use guidance are being brought current for the released
+v0.35.64 behavior: direct contract starts, state-root selection, repair/replan
+recovery, release verification, and the maintained source map.
+
+# Next
+
 ## Maintainer issue and PR review
 
 The live inventory is recorded in
@@ -8,19 +16,11 @@ The live inventory is recorded in
 (#22, #36) need explicit follow-up decisions; upstream/out-of-scope requests
 remain catalogued without local action.
 
-# Next
-
 ## Compaction fallback for long goals
 
 Sometimes a large goal gets stuck because the current model cannot compact its
 context. Evaluate a dedicated compact/recovery fallback model path, including
 whether a free model is acceptable, without treating this as a price hack.
-
-## Documentation refresh
-
-Update the README and docs for new visitors after the current behavior settles;
-start with the installation and first-use path rather than an exhaustive
-changelog narrative.
 
 # Later
 

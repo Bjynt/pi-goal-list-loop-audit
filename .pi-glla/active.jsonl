@@ -7693,3 +7693,4 @@
 {"type":"rearm_no_turn_started","value":{"streak":25,"minutes":5},"at":"2026-08-25T21:54:52.728Z"}
 {"type":"send_rearm_storm","value":{"kind":"continuation","streak":35,"minutes":10},"at":"2026-08-25T21:59:52.752Z"}
 {"type":"rearm_no_turn_started","value":{"streak":35,"minutes":10},"at":"2026-08-25T21:59:52.780Z"}
+{"type":"subagent_session","value":{"sessionId":"a634bbb4-9ab3-491","agentType":"general-purpose","summary":"Rehearse README release gate","goalId":"20260825213646-yti25p","at":"2026-08-25T22:08:21.356Z"},"at":"2026-08-25T22:08:21.356Z"}
