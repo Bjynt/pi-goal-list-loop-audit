@@ -25,7 +25,7 @@ changelog narrative.
 
 # Later
 
-## Better status visuals
+## Better status visuals, not just better but arguably broken
 
 The status/widget surfaces deserve a visual pass: decide what a user needs to
 see for active work, queues, auditor state, stalls, and recovery without
@@ -34,6 +34,7 @@ turning the TUI into a wall of text.
 Evidence:
 - /home/dracon/Pictures/Screenshots/Screenshot_20260822_132806.png
 - /home/dracon/Pictures/Screenshots/Screenshot_20260822_200250.png
+- /home/dracon/Pictures/Screenshots/Screenshot_20260825_223048.png 
 
 ## `/list add` accidental command
 
