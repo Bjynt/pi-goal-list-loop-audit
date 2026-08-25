@@ -98,6 +98,7 @@ in the initial draft.
 
 # Superseded / resolved
 
+- **Repair/replan card blocked its own first turn:** fixed after Screenshot_20260825_173552.png. A repair card now gets one durable, generation-safe bootstrap continuation containing `propose_task_list` and the preserved target; repeated heartbeat attempts stop at the latch, while `/list resume` explicitly re-arms one retry. The card also shows the concrete recovery step and queue position.
 - **Long-running subagent stalls:** fixed in v0.35.64. Children still warn at
   the short detection thresholds, then a frozen top-level tracked child gets
   one generation-fenced child-specific abort request after the configurable

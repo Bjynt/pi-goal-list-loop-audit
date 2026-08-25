@@ -814,9 +814,10 @@ export function armQueueStuckProbe(sentAt: number): void {
  * v0.35.x: a stale or reviewer-derived objective must never reach pi's
  * follow-up queue. This is the final shared choke point for manual resume,
  * session-start auto-resume, list activation, and delayed continuation sends.
- * Repair is intentionally provenance-only: event handlers do not create a
- * model turn or invent a task. A missing repair becomes a paused goal plus a
- * short queued repair item.
+ * Repair is provenance-only: event handlers do not invent a replacement
+ * objective. A missing repair becomes a short queued repair item; once that
+ * explicit repair card is active, exactly one bootstrap turn may ask the
+ * model to propose a confirmed task-list redraft.
  */
 export function guardGoalBeforeContinuation(
   ctx: ExtensionContext,
