@@ -20,7 +20,10 @@
   `/goal resume` now releases the auditor surface only after its existing
   stale/foreign admission probe. Active-idle resumes receive the same probe;
   stale paused resumes preserve the existing active/interrupted recovery
-  marker without exposing old auditor context.
+  marker without exposing old auditor context. Main-model recovery resumes
+  now use the same stale/foreign admission probe and release the surface on
+  manual-hold, retry, and primary-probe recovery paths; a recovery regression
+  test pins the consent behavior.
 
 ## 0.35.62 — subagent host-state boundary (2026-08-25)
 
