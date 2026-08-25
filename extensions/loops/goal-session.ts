@@ -345,6 +345,7 @@ import {
   cmdSettings,
   createGoalCommands,
   enqueueItems,
+  hydrateListQueueFromDisk,
   maybeDecisionPopup,
   probeAutoNotify,
   recentlyCompletedObjectives,
@@ -1405,6 +1406,15 @@ function tryAbsorbHostSuccessor(ctx: ExtensionContext, via: string): boolean {
   // v0.35.58: bind the successor's canonical session directory before the
   // id-invalidation event below can write to the state root.
   setRuntimeSessionDirFromSessionManager(ctx.sessionManager);
+  // v0.35.61: a silent successor is the same durable restore boundary as a
+  // delivered session_start. Re-read the selected root and hydrate sidecars
+  // before repainting; otherwise a replacement can keep the old in-memory
+  // empty queue until a later full reload, even though the queue is durable.
+  replaceState(readState(ctx.cwd));
+  const restoredQueue = hydrateListQueueFromDisk(ctx);
+  if (restoredQueue > 0) {
+    ctx.ui.notify(`glla: restored ${restoredQueue} queued list item(s) after the host session replacement.`, "info");
+  }
   const completionAuditNeedsRecovery = !!state.goal?.pendingCompletion && (
     state.goal.status === "auditing"
     || (state.goal.status === "paused" && (state.goal.pendingCompletion.phase ?? "recovery-pending") === "recovery-pending")
@@ -1520,6 +1530,10 @@ function selfHealStaleSameSession(ctx: ExtensionContext): boolean {
   sessionGeneration++; // a parked generation's delayed callbacks must not fire into the reclaimed plane
   heartbeatStaleStreak = 0;
   clearDraftingState();
+  const restoredQueue = hydrateListQueueFromDisk(ctx);
+  if (restoredQueue > 0) {
+    ctx.ui.notify(`glla: restored ${restoredQueue} queued list item(s) after the stale-handle recovery.`, "info");
+  }
   appendLedger(ctx.cwd, "stale_self_healed", { was, via: "same-session command", generation: sessionGeneration });
   startHeartbeat();
   startUITicker();

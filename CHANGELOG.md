@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.35.61 — list queue visibility across host replacement (2026-08-25)
+
+### Fix
+  Waiting-only list state now has an actionable status/widget projection even
+  when no list item is active. Silent host-successor and same-session stale
+  recovery boundaries also re-read the selected durable root and hydrate queue
+  sidecars before repainting. A recovered queue now stays visible and can be
+  started with `/list next` without requiring a full reload.
+
+### Tests
+  `tests/list-invisible-restart.test.ts` covers waiting-only visibility and
+  activation plus sidecar-only silent-successor rehydration. Version metadata
+  is synchronized to 0.35.61.
+
 ## 0.35.60 — pre-turn glla tool visibility (2026-08-25)
 
 ### Fix
