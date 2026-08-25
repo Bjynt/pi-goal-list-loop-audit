@@ -37,7 +37,10 @@ to continue.
 - `extensions/goal-loop-display.ts` gates only stale auditor feedback; the
   objective/status card remains visible.
 - Explicit goal/list/glla/loop continuation commands release the gate after
-  passing their existing foreign/stale guards.
+  passing their existing foreign/stale guards. In particular, `/goal resume`
+  now probes active-idle and paused paths before releasing; a stale paused
+  resume still persists the existing `active + interrupted` recovery marker,
+  but cannot expose the old auditor context.
 
 This is intentionally separate from the state-root work derived from PR #21:
 state persistence and auditor-context consent are related lifecycle concerns,
@@ -45,11 +48,23 @@ but independent user-facing behaviors.
 
 ## Verification
 
-- `tests/auditor-blank-until-resume.test.ts`: **3 pass / 0 fail**.
-- `tests/load-without-autostart.test.ts`, display, prompt, and behavioral
-  lifecycle coverage: passed in the focused regression run.
-- `npx tsc --noEmit`: **passed**.
-- Fresh `npm run release:check` (`/tmp/rc-auditor-blank-final2.log`): **1582
-  pass / 0 fail / 2 skipped**, 1584 tests across 146 files in 216.58s; Jiti
-  smoke passed and `npm pack --dry-run` produced
-  `pi-goal-list-loop-audit-0.35.63.tgz`.
+- `tests/auditor-blank-until-resume.test.ts`: **4 pass / 0 fail**, including
+  rejected stale `/goal resume` admission.
+- `tests/stale-interrupt-resume.test.ts` and
+  `tests/load-without-autostart.test.ts`: passed in the focused regression
+  run; existing stale-resume persistence behavior remains covered.
+- `npx tsc --noEmit`: **passed** (`/tmp/tsc-auditor-blank-repair.log`).
+- Fresh repaired `npm run release:check`
+  (`/tmp/rc-auditor-blank-repair.log`): **1583 pass / 0 fail / 2 skipped**,
+  1585 tests across 146 files in 258.01s; Jiti smoke passed and
+  `npm pack --dry-run` produced `pi-goal-list-loop-audit-0.35.63.tgz`.
+
+## Post-audit repair
+
+The first completion claim was correctly disapproved because `/goal resume`
+released the surface before its stale/foreign admission guard. The fix moved
+`releaseAuditorSurface()` after the admitted branches, added an entry probe for
+active-idle resumes, and added the behavioral stale-resume regression above.
+A rejected stale resume now leaves the gate suppressed, sends no continuation,
+and preserves the durable stale-session recovery marker. The fresh repaired
+release gate above supersedes the earlier pre-repair evidence.

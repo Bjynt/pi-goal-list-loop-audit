@@ -12,8 +12,15 @@
 
 ### Tests
   `tests/auditor-blank-until-resume.test.ts` proves objective visibility,
-  pre-consent report suppression, explicit resume release, and auto-resume
-  release. Version metadata is synchronized to 0.35.63.
+  pre-consent report/TODO suppression, explicit resume release, auto-resume
+  release, and rejected stale-resume suppression. Version metadata is
+  synchronized to 0.35.63.
+
+### Follow-up hardening
+  `/goal resume` now releases the auditor surface only after its existing
+  stale/foreign admission probe. Active-idle resumes receive the same probe;
+  stale paused resumes preserve the existing active/interrupted recovery
+  marker without exposing old auditor context.
 
 ## 0.35.62 — subagent host-state boundary (2026-08-25)
 
