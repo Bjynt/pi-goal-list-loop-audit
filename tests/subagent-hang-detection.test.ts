@@ -27,6 +27,7 @@ import activate, {
 import {
   classifyHungSubagents,
   __testOnlyClearSubagentHangProbes,
+  __testOnlySetSubagentHangEscalationMs,
   __testOnlyHeartbeatTick,
   __testOnlySubagentHangProbes,
 } from "../extensions/goal-heartbeat.js";
@@ -72,16 +73,17 @@ const pi = new MockPi();
 activate(pi.api);
 
 /** A fake running subagent record, mirroring pi-subagents' AgentRecord poll shape. */
-function runningRecord(overrides: { toolUses?: number; output?: number; status?: string } = {}): any {
+function runningRecord(overrides: { toolUses?: number; output?: number; status?: string; parentAgentId?: string } = {}): any {
   return {
     toolUses: overrides.toolUses ?? 0,
     lifetimeUsage: { output: overrides.output ?? 0 },
     status: overrides.status ?? "running",
+    parentAgentId: overrides.parentAgentId,
   };
 }
 const MANAGER_KEY = Symbol.for("pi-subagents:manager");
-function installManager(getRecord: (id: string) => any | undefined): void {
-  (globalThis as any)[MANAGER_KEY] = { getRecord };
+function installManager(getRecord: (id: string) => any | undefined, abort?: (id: string) => boolean): void {
+  (globalThis as any)[MANAGER_KEY] = { getRecord, ...(abort ? { abort } : {}) };
 }
 function uninstallManager(): void {
   delete (globalThis as any)[MANAGER_KEY];
@@ -199,6 +201,81 @@ test("hang warning is throttled — one alert per 5m streak window, not per tick
   await tick();
 
   assert.equal(ledgerHangs(cwd).length, 1, "the second tick does not re-alert inside the throttle");
+});
+
+test("long frozen tracked child requests one bounded child-specific abort after the warning window", async () => {
+  __testOnlySetSubagentHangEscalationMs(30 * 60_000);
+  const { cwd, ctx } = await spawnFixture();
+  let aborts = 0;
+  installManager(() => runningRecord(), (id) => {
+    assert.equal(id, "sub-escalate-1");
+    aborts++;
+    return true;
+  });
+  pi.emitBus("subagents:started", { id: "sub-escalate-1", type: "Explore", description: "frozen child" });
+  await tick();
+  const probe = __testOnlySubagentHangProbes()[0]!;
+  probe.lastProgressAt = Date.now() - 31 * 60_000;
+
+  __testOnlyHeartbeatTick();
+  await tick();
+  assert.equal(aborts, 1, "the manager receives one child-specific abort request");
+  assert.equal(readLedger(cwd).filter((entry) => entry.type === "subagent_hang_action_requested").length, 1);
+  assert.equal(ctx.ui.notifies.filter((n) => n.message.includes("requested a bounded abort")).length, 1);
+
+  __testOnlyHeartbeatTick();
+  await tick();
+  assert.equal(aborts, 1, "the same frozen episode is not aborted repeatedly");
+});
+
+test("progress arriving before escalation cancels the action and starts a fresh episode", async () => {
+  __testOnlySetSubagentHangEscalationMs(30 * 60_000);
+  const { cwd } = await spawnFixture();
+  let record = runningRecord();
+  let aborts = 0;
+  installManager(() => record, () => { aborts++; return true; });
+  pi.emitBus("subagents:started", { id: "sub-progress-before-action", type: "Plan", description: "healthy long tool" });
+  await tick();
+  const probe = __testOnlySubagentHangProbes()[0]!;
+  probe.lastProgressAt = Date.now() - 31 * 60_000;
+  record = runningRecord({ toolUses: 1 });
+
+  __testOnlyHeartbeatTick();
+  await tick();
+  assert.equal(aborts, 0, "fresh tool-use progress cancels the stale action candidate");
+  assert.equal(readLedger(cwd).filter((entry) => entry.type === "subagent_hang_action_requested").length, 0);
+});
+
+test("event-only child reaches an honest unavailable-action record, never a guessed abort", async () => {
+  __testOnlySetSubagentHangEscalationMs(30 * 60_000);
+  const { cwd } = await spawnFixture();
+  let aborts = 0;
+  installManager(() => undefined, () => { aborts++; return true; });
+  pi.emitBus("subagents:started", { id: "sub-event-only-action", type: "Explore", description: "unreachable child" });
+  await tick();
+  const probe = __testOnlySubagentHangProbes()[0]!;
+  probe.lastProgressAt = Date.now() - 31 * 60_000;
+
+  __testOnlyHeartbeatTick();
+  await tick();
+  assert.equal(aborts, 0, "an absent manager record is never guessed into an abort");
+  assert.equal(readLedger(cwd).filter((entry) => entry.type === "subagent_hang_action_unavailable").length, 1);
+});
+
+test("nested child is not eligible for top-level automatic abort", async () => {
+  __testOnlySetSubagentHangEscalationMs(30 * 60_000);
+  const { cwd } = await spawnFixture();
+  let aborts = 0;
+  installManager(() => runningRecord({ parentAgentId: "parent-1" }), () => { aborts++; return true; });
+  pi.emitBus("subagents:started", { id: "sub-nested-action", type: "Explore", description: "nested child" });
+  await tick();
+  const probe = __testOnlySubagentHangProbes()[0]!;
+  probe.lastProgressAt = Date.now() - 31 * 60_000;
+
+  __testOnlyHeartbeatTick();
+  await tick();
+  assert.equal(aborts, 0, "nested ownership is left to its parent");
+  assert.equal(readLedger(cwd).filter((entry) => entry.type === "subagent_hang_action_unavailable").length, 1);
 });
 
 test("v0.34.102: event-only hang surfaces `subagent_hang_detected` with evidence=event-only when no manager record exists", async () => {

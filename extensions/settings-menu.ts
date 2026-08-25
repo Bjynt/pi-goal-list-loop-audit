@@ -152,6 +152,10 @@ export function buildSettingsRows(
   const rows: SettingsRow[] = [];
   const sessionRef = subagent.sessionModel ?? "session model";
   const sessionThinking = subagent.sessionThinkingLevel ?? "session thinking";
+  const configuredSubagentHangMinutes = provFor("subagentHangEscalationMinutes").value;
+  const subagentHangMinutes = typeof configuredSubagentHangMinutes === "number"
+    ? configuredSubagentHangMinutes
+    : settings.subagentHangEscalationMinutes ?? 30;
   const drafterRef = settings.drafterModel ?? sessionRef;
   const drafterThinking = settings.drafterThinkingLevel ?? sessionThinking;
   const auditorRef = settings.auditorModel ?? sessionRef;
@@ -428,7 +432,7 @@ export function buildSettingsRows(
       id: "subagentHangEscalationMinutes",
       section: "stall-brakes",
       label: "Subagent hang action",
-      valueText: show("subagentHangEscalationMinutes", effective.subagentHangEscalationMinutes === 0 ? "warning only" : `${effective.subagentHangEscalationMinutes}m`),
+      valueText: subagentHangMinutes === 0 ? "warning only" : `${subagentHangMinutes}m`,
       sourceText: src("subagentHangEscalationMinutes"),
       description: "request one child-specific abort after confirmed no progress (0 = warning only)",
     },
