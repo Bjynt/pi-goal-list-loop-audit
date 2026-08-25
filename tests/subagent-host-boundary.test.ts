@@ -15,6 +15,7 @@ import activate, {
   __testOnlyResetOwnerSession,
   __testOnlyResetStaleFlag,
   __testOnlyResetTerminalFlags,
+  __testOnlyRegisterAgentTools,
 } from "../extensions/loops/goal.js";
 import { readState } from "../extensions/goal-loop-core.js";
 import { MockPi, invalidateHostSession, makeMockCtx, seedState, tick, tmpCwd, type MockCtx } from "./harness/mock-pi.js";
@@ -66,6 +67,11 @@ test("v0.35.62: a worker cannot be the first claimant, while host telemetry stil
   const host = hostCtx(cwd);
   try {
     await pi.fire("session_start", { reason: "startup" }, host);
+    // Co-resident Bun test files can share the module singleton's lazy tool
+    // flag while each owns a fresh MockPi registry. Pin the host-side
+    // registration explicitly; the boundary under test is admission, not
+    // the unrelated per-fixture registry cache.
+    __testOnlyRegisterAgentTools(pi.api);
     const added = await pi.runTool("list_add", { items: ["host-owned item — done when pinned"] }, host);
     assert.doesNotMatch(added.content[0]!.text, /only the MAIN session owns/);
     assert.equal(readState(cwd).goal?.objective.includes("host-owned item"), true);
@@ -86,6 +92,7 @@ test("v0.35.62: foreign slash commands cannot mutate the host list", async () =>
   seedState(cwd, { goal: null, list: [] });
   const host = hostCtx(cwd);
   await pi.fire("session_start", { reason: "startup" }, host);
+  __testOnlyRegisterAgentTools(pi.api);
   const worker = workerCtx(cwd, { name: "Explore" });
 
   try {
@@ -107,6 +114,7 @@ test("v0.35.62: persistent workers cannot masquerade as silent host successors",
   seedState(cwd, { goal: null, list: [] });
   const host = hostCtx(cwd, "original-host");
   await pi.fire("session_start", { reason: "startup" }, host);
+  __testOnlyRegisterAgentTools(pi.api);
   invalidateHostSession(pi, host);
   const persistentWorker = workerCtx(cwd, {
     name: "persistent-Explore",
