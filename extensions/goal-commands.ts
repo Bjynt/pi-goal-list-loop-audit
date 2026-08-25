@@ -368,8 +368,19 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
     ctx.ui.notify("Load hold released — automation is live again.", "info");
   }
   const resumeCommand = activeGoalCommand("resume");
-  if (manuallyResumeMainModelRecovery(ctx)) return;
-  if (state.mainModelRecovery?.retryAt || state.mainModelRecovery?.pendingModelSwitch) {
+  // Main-model recovery returns before the normal paused-goal admission path.
+  // Probe the same stale/foreign boundary first so an admitted recovery resume
+  // can release the auditor surface, while a rejected one falls through to the
+  // existing stale-resume recovery marker without exposing old context.
+  const recoveryStaleEntry = state.mainModelRecovery
+    ? warnIfStaleAtEntry(ctx, resumeCommand)
+    : false;
+  if (!recoveryStaleEntry && manuallyResumeMainModelRecovery(ctx)) {
+    releaseAuditorSurface();
+    return;
+  }
+  if (!recoveryStaleEntry && (state.mainModelRecovery?.retryAt || state.mainModelRecovery?.pendingModelSwitch)) {
+    releaseAuditorSurface();
     clearMainModelRecoveryTimer();
     flags.continuationDispatchStoodDown = false;
     // v0.34.92: the chat-prompt re-arm was removed; recovery is timer-driven.
@@ -377,7 +388,8 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
     void probeMainModelRecovery(ctx);
     return;
   }
-  if (state.mainModelRecovery?.primaryProbeAt || state.mainModelRecovery?.primaryProbeInFlight) {
+  if (!recoveryStaleEntry && (state.mainModelRecovery?.primaryProbeAt || state.mainModelRecovery?.primaryProbeInFlight)) {
+    releaseAuditorSurface();
     clearMainModelRecoveryTimer();
     flags.continuationDispatchStoodDown = false;
     ctx.ui.notify("Probing the preferred primary now — the current fallback remains available if the primary is still unhealthy.", "info");

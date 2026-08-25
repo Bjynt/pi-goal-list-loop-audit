@@ -140,6 +140,42 @@ test("rejected stale /goal resume leaves the auditor surface suppressed", async 
   }
 });
 
+test("explicit /goal resume releases the auditor surface for admitted main-model recovery", async () => {
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({}));
+  const cwd = tmpCwd();
+  try {
+    seedState(cwd, {
+      goal: goalWithAudit({
+        status: "paused",
+        pauseKind: "wait",
+        pauseReason: "provider recovery waiting for an explicit resume",
+        pauseSuggestedAction: "/goal resume to retry the main model",
+      }),
+      mainModelRecovery: {
+        primary: "anthropic/mock-model",
+        active: "anthropic/mock-model",
+        attempted: ["anthropic/mock-model"],
+        attempts: 1,
+        reason: "provider recovery",
+        manualResumeRequired: true,
+        resumeCurrent: true,
+        kind: "goal",
+      },
+    } as unknown as Parameters<typeof seedState>[1]);
+    const pi = new MockPi();
+    activate(pi.api);
+    const ctx = await boot(pi, cwd);
+
+    await pi.command("goal", "resume", ctx);
+    await tick(40);
+
+    assert.equal(auditorSurfaceSuppressed(), false, "admitted main-model recovery resume grants auditor-context consent");
+    assert.match(continuationPrompt(readState(cwd).goal as Goal), /LATEST AUDITOR/, "recovery resume restores the old report context");
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("configured auto-resume is continuation consent and restores auditor context", async () => {
   fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({ autoResume: true }));
   const cwd = tmpCwd();
