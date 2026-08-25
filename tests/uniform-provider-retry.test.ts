@@ -55,5 +55,6 @@ test("display surfaces identify generic recovery, not a guessed quota state", ()
   assert.doesNotMatch(DISPLAY, /quotaSignal|parked on provider wall|waiting for quota reset/);
   assert.match(DISPLAY, /main-model recovery — retrying automatically/);
   assert.match(README, /Error text is \*\*not trusted\*\* to pick a retry policy/);
-  assert.match(README, /hourlyRetryProbe=on/);
+  assert.match(README, /automatic retries are bounded and visible/);
+  assert.doesNotMatch(README, /waiting for quota reset|quota state/);
 });

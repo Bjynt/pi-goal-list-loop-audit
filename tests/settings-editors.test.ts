@@ -415,12 +415,12 @@ const CMDS = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   assert.match(CMDS, /Pushes fire only where there is something to DO/); // decomposition step 2
   const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
   assert.match(MENU, /unset = auto-detect notify-send\/osascript · 'off' = silent/);
-  // README decoupling (user: "too married to our own eco"):
+  // README companion policy stays capability-first and keeps one supervisor
+  // responsible for continuation scheduling.
   const README = fs.readFileSync("README.md", "utf-8");
-  assert.match(README, /^## Subagents$/m);
-  assert.doesNotMatch(README, /## Subagents \(`@tintinweb\/pi-subagents`\)/);
-  assert.match(README, /any Agent-tool\s+provider gets them/);
-  assert.match(README, /Overlaps — pick one/);
-  assert.match(README, /We ran both\s+and removed pi-tasks\./);
-  assert.match(README, /auto-detects `notify-send`\/`osascript`; `notify=off` silences/);
+  assert.match(README, /^## Recommended pi extensions$/m);
+  assert.match(README, /main pi session remains the owner of the goal\/list\/loop/);
+  assert.match(README, /Do \*\*not\*\* run a second extension that also drives agent turns/);
+  assert.match(README, /second task\/queue extension/);
+  assert.match(README, /auto-detects `notify-send`\/`osascript`;\s+`notify=off` silences/);
 });

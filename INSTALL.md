@@ -103,6 +103,12 @@ Use `/goal` for one outcome, `/list` for several independently auditable
 outcomes, and `/loop` for an improvement process without one final item. See
 the README for the full command semantics.
 
+## Modes
+
+The three surfaces are intentionally different policies on one durable state
+machine. Read [`LIST-PHILOSOPHY.md`](LIST-PHILOSOPHY.md) for the short decision
+table and guidance on choosing a goal, list, or loop.
+
 ## State and recovery
 
 Default state is stored in the project:

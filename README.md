@@ -269,7 +269,9 @@ different quota pool.
 - **`@juicesharp/rpiv-advisor`** — an on-demand second opinion for the executor.
   It is advisory; it does not replace GLLA's detached completion auditor.
 - **`@pi-unipi/notify`** — Telegram, Gotify, or ntfy delivery when you need
-  alerts away from the desktop. GLLA's local notifications work without it.
+  alerts away from the desktop. GLLA's local notifications work without it;
+  when no command is configured, it auto-detects `notify-send`/`osascript`;
+  `notify=off` silences notifications.
 - **`pi-chrome`** — logged-in browser research and interaction when a goal needs
   a real web session. It is not required for repository-only work.
 
@@ -317,7 +319,9 @@ ships the user-facing docs, not local audit history.
 Long-running work encounters provider outages, context compaction, process
 replacement, slow tools, and workers that stop making progress. GLLA records
 these as state transitions and uses bounded recovery rather than pretending
-that silence means success:
+that silence means success. Error text is **not trusted** to pick a retry policy;
+failure wording is retained as bounded diagnostics, not interpreted as
+proof of a quota or billing state.
 
 - automatic retries are bounded and visible;
 - `/goal resume`, `/list resume`, and `/loop resume` are explicit recovery
