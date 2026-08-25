@@ -784,7 +784,8 @@ prompts/  (7 — one per prompt surface; edited as .md, read at runtime)
 scripts/
   goal-auditor-worker.mjs      # extension-less RPC auditor child process
   goal-auditor-launch.mjs      # Windows-safe spawn spec builder (gate-before-quote)
-  verify-auditor-extensions-offline.mjs  # gate: auditor session loads zero extensions
+  auditor-extension-fixture.mjs       # hermetic provider fixture for the auditor gate
+  verify-auditor-extensions-offline.mjs  # mandatory gate: resolved allowlist loads offline
   smoke.sh                     # live integration harness (tmux + real models)
 tests/                         # current test count is reported by `bun test`; no live pi required for the suite
 docs/DESIGN.md                 # architectural decisions

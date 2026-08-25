@@ -528,9 +528,9 @@
   gain nothing). Regression tests: clause+role user seeds dispatch verbatim;
   reviewer-created goals with matching-cleaned seeds never get the trust.
 
-## 0.35.35 — mechanical pre-audit: maxBuffer ceiling killed verbose green suites (2026-08-23)
+### Mechanical pre-audit: maxBuffer ceiling killed verbose green suites (2026-08-23)
 
-### Fix
+#### Fix
   runMechanicalPreAuditChecks passed no maxBuffer to execFileSync, so
   Node's default 1 MB cap applied: any contract gate whose output exceeds
   1 MB gets its child SIGTERMed by Node and the call throws ENOBUFS —
