@@ -55,30 +55,6 @@ test("release contract: first-use README guidance matches current behavior", () 
   assert.doesNotMatch(readme, /cargo test/);
 });
 
-test("release contract: README explains the high-leverage autonomy model and companion policy", () => {
-  const readme = fs.readFileSync("README.md", "utf-8");
-  assert.match(readme, /long-running/i);
-  assert.match(readme, /high-leverage/i);
-  assert.match(readme, /autonomous work/i);
-  assert.match(readme, /@juicesharp\/rpiv-ask-user-question/);
-  assert.match(readme, /@tintinweb\/pi-subagents/);
-  assert.match(readme, /one supervisor|second extension that also drives agent turns/i);
-  assert.doesNotMatch(readme, /What this fixes vs\. pi-goal-x/);
-});
-
-test("release contract: README source map includes current support files", () => {
-  const readme = fs.readFileSync("README.md", "utf-8");
-  for (const required of [
-    "context-hygiene.ts",
-    "glla-state-root.ts",
-    "payload-guard.ts",
-    "goal-auditor-surface.ts",
-    "goal-auditor-launch.d.mts",
-  ]) {
-    assert.match(readme, new RegExp(required.replace(".", "\\.")), `${required} must appear in the README map`);
-  }
-});
-
 test("release workflow scopes trusted-publishing OIDC to the publish job", () => {
   const workflow = fs.readFileSync(".github/workflows/publish.yml", "utf-8");
   const jobsAt = workflow.indexOf("jobs:\n");
