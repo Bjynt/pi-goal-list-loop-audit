@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.35.62 — subagent host-state boundary (2026-08-25)
+
+### Fix
+  Headless child sessions are now rejected before state-root registration,
+  restore, owner claims, and tool repair. The same fail-closed boundary covers
+  persistent children, foreign slash commands, and missing tool invocation
+  contexts. File-backed host successors remain eligible for legitimate reload
+  and silent-rebind recovery. Main-host subagent telemetry continues through
+  the event bus and `/glla agents` path.
+
+### Tests
+  `tests/subagent-host-boundary.test.ts` proves first-claim prevention,
+  foreign slash-command refusal, persistent-worker refusal, legitimate host
+  successor admission, and durable Explore telemetry. Version metadata is
+  synchronized to 0.35.62.
+
 ## 0.35.61 — list queue visibility across host replacement (2026-08-25)
 
 ### Fix
