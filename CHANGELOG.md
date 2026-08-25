@@ -18,6 +18,25 @@
   safety, and `tests/agents-panel.test.ts` pins the action surface. Settings
   menu/editor and INSTALL documentation expose the new threshold.
 
+### Follow-up hardening
+  Frozen-child escalation now uses pi-subagents' existing root-session
+  `subagents:rpc:stop` bridge, with readiness, ownership, generation, and
+  timeout-race fencing. The real AgentManager/RPC path is covered by a
+  deterministic pending-provider integration test without modifying the
+  upstream package.
+
+  Malformed saved goal/list objectives now produce a bounded repair/replan
+  card instead of a self-blocking first turn. One durable bootstrap turn
+  carries the complete preserved target and `propose_task_list` confirmation;
+  automatic repeats are fenced, while explicit `/list resume` re-arms one
+  retry. The card keeps its concrete recovery action and queue position
+  visible.
+
+### Tests
+  Focused repair/replan, display, stale-probe, and RPC regressions are
+  included in the release contract. The complete gate remains the source of
+  truth for the published artifact.
+
 ## 0.35.63 — auditor context held until resume (2026-08-25)
 
 ### Fix
