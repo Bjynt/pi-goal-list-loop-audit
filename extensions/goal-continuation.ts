@@ -1189,7 +1189,9 @@ export function continuationPrompt(goal: Goal): string {
     );
   }
   const effSettings = resolveEffectiveAggressiveSettings(loadSettings(freshCtx()?.cwd ?? process.cwd()));
-  if (goal.pendingTasks && goal.pendingTasks.length > 0) {
+  // Auditor-derived TODOs are part of the same stale report surface. Keep
+  // them durable, but do not inject them before continuation consent.
+  if (!auditorSurfaceSuppressed() && goal.pendingTasks && goal.pendingTasks.length > 0) {
     directives.push(
       `## AUDITOR TODO LIST (from ${goal.pauseReason?.includes("cap") ? "the disapproval cap" : "the last audit"})\n\nAddress these objections, in order, before re-calling complete_goal:\n${goal.pendingTasks.map((t, i) => `${i + 1}. ${t}`).join("\n")}`,
     );
@@ -1236,6 +1238,7 @@ export function continuationPrompt(goal: Goal): string {
   // or a newObjective-carrying claim — a bare complete_goal retry is REJECTED,
   // so advising one would stall the loop (reject -> retry -> reject forever).
   if (
+    !auditorSurfaceSuppressed() &&
     goal.status === "active" &&
     !goal.pendingCompletion &&
     lastAudit?.approved &&

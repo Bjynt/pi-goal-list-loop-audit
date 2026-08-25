@@ -30,6 +30,7 @@ function goalWithAudit(overrides: Record<string, unknown> = {}): Record<string, 
     objective: "visible unfinished objective — done when pinned",
     status: "active",
     autoContinue: true,
+    pendingTasks: ["stale auditor task that must wait for resume"],
     auditHistory: [{
       at: new Date(Date.now() - 60_000).toISOString(),
       approved: false,
@@ -71,11 +72,13 @@ test("cold auditor gate hides only the report, not the durable objective UI", ()
   assert.match(hiddenWidget, /visible unfinished objective/, "objective remains visible");
   assert.doesNotMatch(hiddenWidget, /Required fixes/, "old report is not painted");
   assert.doesNotMatch(hiddenPrompt, /LATEST AUDITOR/, "old auditor block is not injected");
+  assert.doesNotMatch(hiddenPrompt, /AUDITOR TODO LIST/, "old auditor TODOs are not injected");
   assert.doesNotMatch(hiddenPrompt, /resume it silently/, "old report text is not injected");
 
   releaseAuditorSurface();
   assert.match(widgetText(state), /Required fixes/, "report returns after consent");
   assert.match(continuationPrompt(goal), /LATEST AUDITOR/, "continuation sees the report after consent");
+  assert.match(continuationPrompt(goal), /AUDITOR TODO LIST/, "continuation sees durable auditor TODOs after consent");
 });
 
 test("cold restore shows the objective and sends nothing until explicit resume", async () => {
