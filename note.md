@@ -78,6 +78,9 @@ command wording/completion only after `/list audit` semantics are settled.
 Consider a `/glla bug` command that records observed failure context and useful
 logs, while keeping the capture artifact separate from durable goal state.
 
+## audit other goal plugins
+
+
 # Idea
 
 ## Audit command naming
