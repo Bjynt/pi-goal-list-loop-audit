@@ -123,7 +123,17 @@ test("rejected stale /goal resume leaves the auditor surface suppressed", async 
         pauseReason: "auditor disapproved — fix the gap",
         pauseSuggestedAction: "/goal resume after fixing the gap",
       }),
-    });
+      mainModelRecovery: {
+        primary: "anthropic/mock-model",
+        active: "anthropic/mock-model",
+        attempted: ["anthropic/mock-model"],
+        attempts: 1,
+        reason: "provider recovery",
+        manualResumeRequired: true,
+        resumeCurrent: true,
+        kind: "goal",
+      },
+    } as unknown as Parameters<typeof seedState>[1]);
     const pi = new MockPi();
     activate(pi.api);
     const ctx = await boot(pi, cwd);
