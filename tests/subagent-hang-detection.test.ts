@@ -75,6 +75,17 @@ async function spawnFixture(): Promise<{ cwd: string; ctx: MockCtx }> {
 
 const pi = new MockPi();
 activate(pi.api);
+// The fixture's event bus stands in for the root pi-subagents RPC handler.
+// It deliberately uses the production request/reply channel and the manager
+// registry's child-specific capability; there is no parent abort fallback.
+pi.api.events.on("subagents:rpc:stop", (raw: unknown) => {
+  const request = raw as { requestId?: string; agentId?: string };
+  const manager = (globalThis as any)[MANAGER_KEY] as { abort?: (id: string) => boolean } | undefined;
+  const accepted = typeof request.agentId === "string" && manager?.abort?.(request.agentId) === true;
+  pi.emitBus(`subagents:rpc:stop:reply:${request.requestId}`, accepted
+    ? { success: true }
+    : { success: false, error: "Agent not found" });
+});
 
 /** A fake running subagent record, mirroring pi-subagents' AgentRecord poll shape. */
 function runningRecord(overrides: { toolUses?: number; output?: number; status?: string; parentAgentId?: string } = {}): any {
@@ -223,8 +234,10 @@ test("long frozen tracked child requests one bounded child-specific abort after 
 
   __testOnlyHeartbeatTick();
   await tick();
-  assert.equal(aborts, 1, "the manager receives one child-specific abort request");
-  assert.equal(readLedger(cwd).filter((entry) => entry.type === "subagent_hang_action_requested").length, 1);
+  assert.equal(aborts, 1, "the root RPC handler receives one child-specific abort request");
+  const requested = readLedger(cwd).filter((entry) => entry.type === "subagent_hang_action_requested");
+  assert.equal(requested.length, 1);
+  assert.equal(requested[0]!.value.via, "subagents:rpc:stop");
   assert.equal(ctx.ui.notifies.filter((n) => n.message.includes("requested a bounded abort")).length, 1);
 
   __testOnlyHeartbeatTick();
@@ -263,7 +276,15 @@ test("event-only child reaches an honest unavailable-action record, never a gues
   __testOnlyHeartbeatTick();
   await tick();
   assert.equal(aborts, 0, "an absent manager record is never guessed into an abort");
-  assert.equal(readLedger(cwd).filter((entry) => entry.type === "subagent_hang_action_unavailable").length, 1);
+  const unavailable = readLedger(cwd).filter((entry) => entry.type === "subagent_hang_action_unavailable");
+  assert.equal(unavailable.length, 1);
+  assert.equal(unavailable[0]!.value.recordId, "sub-event-only-action");
+  assert.equal(typeof unavailable[0]!.value.generation, "number");
+  assert.equal(typeof unavailable[0]!.value.ownerGeneration, "number");
+  assert.match(unavailable[0]!.value.reason, /manager record is unavailable/);
+  __testOnlyHeartbeatTick();
+  await tick();
+  assert.equal(readLedger(cwd).filter((entry) => entry.type === "subagent_hang_action_unavailable").length, 1, "unavailable escalation is durable and one-shot");
 });
 
 test("nested child is not eligible for top-level automatic abort", async () => {
@@ -280,6 +301,29 @@ test("nested child is not eligible for top-level automatic abort", async () => {
   await tick();
   assert.equal(aborts, 0, "nested ownership is left to its parent");
   assert.equal(readLedger(cwd).filter((entry) => entry.type === "subagent_hang_action_unavailable").length, 1);
+});
+
+test("v0.35.65: an old-generation child cannot receive a stop RPC after host rebind", async () => {
+  __testOnlySetSubagentHangEscalationMs(30 * 60_000);
+  const { cwd, ctx: oldCtx } = await spawnFixture();
+  let aborts = 0;
+  installManager(() => runningRecord(), () => { aborts++; return true; });
+  pi.emitBus("subagents:started", { id: "sub-old-generation", type: "Explore", description: "old host child" });
+  await tick();
+  const probe = __testOnlySubagentHangProbes()[0]!;
+  probe.lastProgressAt = Date.now() - 31 * 60_000;
+
+  await pi.fire("session_shutdown", { reason: "reload" }, oldCtx);
+  await freshSession(cwd, "reload");
+  __testOnlyHeartbeatTick();
+  await tick();
+
+  assert.equal(aborts, 0, "the replacement host never stops the old-generation child");
+  const unavailable = readLedger(cwd).filter((entry) => entry.type === "subagent_hang_action_unavailable");
+  assert.equal(unavailable.length, 1, "the old-generation escalation is durable and one-shot");
+  assert.equal(unavailable[0]!.value.recordId, "sub-old-generation");
+  assert.match(unavailable[0]!.value.reason, /older host generation/);
+  assert.equal(unavailable[0]!.value.ownerGeneration + 1, unavailable[0]!.value.generation);
 });
 
 test("v0.34.102: event-only hang surfaces `subagent_hang_detected` with evidence=event-only when no manager record exists", async () => {
@@ -360,6 +404,8 @@ test("source pins: constants, watchdog wiring, and ledger key", () => {
   assert.match(hb, /subagentHangEscalationMinutes/);
   assert.match(hb, /subagent_hang_action_requested/);
   assert.match(hb, /poll\.abort/);
+  assert.match(hb, /subagents:rpc:stop/);
+  assert.match(hb, /subagents:ready/);
   assert.match(hb, /Symbol\.for\("pi-subagents:manager"\)/);
   assert.match(hb, /subagent_hang_detected/);
   assert.match(hb, /evidence: stillTracked \? "record-frozen" : "event-only"/);
