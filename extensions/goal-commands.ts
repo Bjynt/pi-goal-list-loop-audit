@@ -359,9 +359,6 @@ async function cmdPause(ctx: ExtensionContext): Promise<void> {
 
 async function cmdResume(ctx: ExtensionContext): Promise<void> {
   releaseInitialSessionLoadBarrier();
-  // Explicit resume is the consent boundary: make the durable auditor report
-  // available again before the continuation prompt is assembled.
-  releaseAuditorSurface();
   // v0.35.23 (note.md Next #2): an explicit resume is exactly the decision
   // the load hold waits for — release it before re-arming automation, or
   // the scheduleContinuation below would be a frozen no-op.
@@ -396,6 +393,12 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
       ctx.ui.notify("A loop is active — one active thing at a time. /loop stop it first, then resume the goal.", "warning");
       return;
     }
+    // An ACTIVE-but-idle goal still needs the entry admission probe: a stale
+    // command must not release the auditor surface before its schedule is
+    // rejected by the stale/foreign session boundary.
+    const staleEntry = warnIfStaleAtEntry(ctx, resumeCommand);
+    if (staleEntry) return;
+    releaseAuditorSurface();
     appendLedger(ctx.cwd, "resume_rekick", { goalId: state.goal.id, policy: state.goal.policy, via: resumeCommand });
     if (state.goal.interruptedAt) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx); // v0.34.7: same marker law here
     ctx.ui.notify(
@@ -420,6 +423,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
     }
     const staleEntry = warnIfStaleAtEntry(ctx, resumeCommand);
     if (staleEntry) return;
+    releaseAuditorSurface();
     markCompletionAuditRecoveryPending(ctx, "manual-resume");
     flags.completionAuditRecoveryArmed = true;
     ctx.ui.notify("Resuming the stored completion claim — starting a detached auditor (no agent turn needed).", "info");
@@ -478,6 +482,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
   const storedCompletion = state.goal.pendingCompletion;
   updateGoal({ status: "active", pauseReason: undefined, pauseSuggestedAction: undefined, pauseKind: undefined, pauseOptions: undefined, pauseRecommended: undefined, pauseResumeAt: undefined, interruptedAt: undefined, interruptedReason: undefined, autoResumedAt: undefined, autoResumedEvent: undefined, ...(staleEntry ? { interruptedAt: nowIso(), interruptedReason: "resumed in a stale session" } : {}), ...(usage ? { usage } : {}) }, ctx);
   if (staleEntry) return;
+  releaseAuditorSurface();
   // A stored completion claim is a direct-audit resume, not an agent turn.
   // Keeping the claim while merely scheduling a continuation left manual
   // pause/resume with an ACTIVE goal that no timer would ever consume.
