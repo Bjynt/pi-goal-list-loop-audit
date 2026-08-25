@@ -64,12 +64,14 @@ test("real AgentManager child is stopped through the root subagents RPC", async 
   assert.ok(model, "the deterministic faux model is registered");
 
   const parentPi = new MockPi();
+  let parentAborts = 0;
   const parentContext = {
     cwd,
     hasUI: false,
     model,
     modelRegistry,
     getSystemPrompt: () => "integration parent prompt",
+    abort: () => { parentAborts++; },
   };
   const events = createEventBus();
   const manager = new AgentManager();
@@ -113,6 +115,7 @@ test("real AgentManager child is stopped through the root subagents RPC", async 
     assert.deepEqual(await reply, { success: true });
     assert.equal(manager.getRecord(id)?.status, "stopped", "the actual manager marks the child stopped");
     assert.ok(manager.getRecord(id)?.completedAt, "the actual manager records the stop time");
+    assert.equal(parentAborts, 0, "stopping the child never calls the parent context abort");
   } finally {
     rpc.unsubStop();
     rpc.unsubSpawn();

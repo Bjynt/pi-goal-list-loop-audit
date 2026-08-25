@@ -99,7 +99,10 @@ in the initial draft.
   the short detection thresholds, then a frozen top-level tracked child gets
   one generation-fenced child-specific abort request after the configurable
   long threshold (default 30m); nested/unreachable children stay warning-only,
-  and stale child probes no longer shield unrelated parent cleanup.
+  and stale child probes no longer shield unrelated parent cleanup. Production
+  control uses pi-subagents' existing root-session `subagents:rpc:stop` bridge;
+  no upstream package patch is required, and the real AgentManager/RPC path is
+  covered by `tests/subagent-stop-rpc.integration.test.mjs`.
 - **Objective cannot complete / subagent called `complete_goal`:** the child
   session now fails closed at the host boundary; only MAIN may mutate goal,
   loop, or list state. Fixed and covered by the v0.35.62 host-boundary work.
