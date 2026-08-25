@@ -14,13 +14,14 @@ import activate, {
 } from "../extensions/loops/goal.js";
 import {
   __testOnlyResetAuditorSurface,
+  auditorSurfaceSuppressed,
   releaseAuditorSurface,
   suppressAuditorSurfaceAfterColdRestore,
 } from "../extensions/loops/goal-auditor-surface.js";
 import { continuationPrompt } from "../extensions/goal-continuation.js";
 import { buildWidgetLines } from "../extensions/goal-loop-display.js";
 import { readState, type Goal, type State } from "../extensions/goal-loop-core.js";
-import { makeMockCtx, MockPi, seedGoal, seedState, tick, tmpCwd, type MockCtx } from "./harness/mock-pi.js";
+import { invalidateHostSession, makeMockCtx, MockPi, seedGoal, seedState, tick, tmpCwd, type MockCtx } from "./harness/mock-pi.js";
 
 const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
 const AUDIT_REPORT = "Required fixes: keep the objective visible, but do not resume it silently.";
@@ -106,6 +107,34 @@ test("cold restore shows the objective and sends nothing until explicit resume",
     await tick(150);
     assert.match(continuationPrompt(readState(cwd).goal as Goal), /LATEST AUDITOR/, "explicit resume restores report context");
     assert.ok(pi.sent.length >= 1 || pi.userMessages.length >= 1, "explicit resume can dispatch");
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("rejected stale /goal resume leaves the auditor surface suppressed", async () => {
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({}));
+  const cwd = tmpCwd();
+  try {
+    seedState(cwd, {
+      goal: goalWithAudit({
+        status: "paused",
+        pauseKind: "blocked",
+        pauseReason: "auditor disapproved — fix the gap",
+        pauseSuggestedAction: "/goal resume after fixing the gap",
+      }),
+    });
+    const pi = new MockPi();
+    activate(pi.api);
+    const ctx = await boot(pi, cwd);
+    invalidateHostSession(pi, ctx);
+
+    await pi.command("goal", "resume", ctx);
+
+    assert.equal(auditorSurfaceSuppressed(), true, "stale resume cannot grant auditor-context consent");
+    assert.doesNotMatch(continuationPrompt(readState(cwd).goal as Goal), /LATEST AUDITOR/, "stale resume does not expose the old report");
+    assert.equal(pi.sent.length, 0, "stale resume sends no continuation");
+    assert.match(readState(cwd).goal?.interruptedReason ?? "", /resumed in a stale session/, "durable stale-resume recovery marker remains");
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }
