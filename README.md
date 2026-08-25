@@ -503,6 +503,16 @@ successors, re-arming of work already in flight when a host silently died,
 and the single retry a parked completion claim earns when main-model
 recovery heals the provider that parked it.
 
+### Auditor context without autostart (v0.35.63)
+
+A restored objective remains visible in the status/widget UI even when the
+load hold is active, but GLLA does not add a new continuation or re-inject the
+previous auditor report until continuation consent exists. `/goal resume`,
+`/list resume`, `/list next`, `/glla resume`, admitted loop resumes, validated
+session continuity, and global **Auto-resume = on** are consent paths. The
+previous Pi transcript is historical and remains untouched; this gate controls
+only newly projected auditor feedback and model context.
+
 **Due-wait backstop (v0.35.28, issue #16).** A time-gated wait pause
 (`pauseKind: "wait"` with a `pauseResumeAt`) is no longer trusted to
 in-memory timers alone — agent-authored waits armed none, error-brake
@@ -632,15 +642,17 @@ are workers** (v0.23.8):
 - A subagent session never clobbers the loop's session handle, never runs
   the restore gate, and never drives continuation — so the heartbeat,
   wedge alert, and auto-resume machinery always act on the main session.
-  (pi hands a fresh ctx wrapper per event; `ctx.sessionManager` identity
-  is the discriminator.)
+  Headless `print`/`json` child contexts are rejected before root
+  registration, restore, owner claims, or command/tool mutation; this also
+  covers persistent children, not only the usual in-memory workers.
 - Subagent tool activity counts as activity for the wedge clock — a long
-  subagent run is work, not a hang.
+  subagent run is work, not a hang. The main host still records the child's
+  lifecycle and counters for `/glla agents` through the event bus.
 - With `@tintinweb/pi-subagents` specifically (the one we test against):
   read-only agents (Explore, Plan) get no glla tools; general-purpose
   agents see them but state-mutating calls (`complete_goal`, `propose_*`,
-  `list_add`, `pause_goal`, …) are refused with "report back to the main
-  agent".
+  `list_add`, `pause_goal`, …) and foreign slash commands are refused with
+  "report back to the main agent".
 
 ## Token guard
 

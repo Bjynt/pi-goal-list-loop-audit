@@ -15,6 +15,7 @@ import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth 
 import type { Goal, MainModelRecovery, State } from "./goal-loop-core.js";
 import { compactDisplayText, formatMainModelRecoveryStatus, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
 import { HELD_ON_RESTORE, type LoopState } from "./goal-loop-forever.js";
+import { auditorSurfaceSuppressed } from "./loops/goal-auditor-surface.js";
 
 /** v0.34.57 (OPEN-ISSUES bug #1.8 / tasklist item #2): the MAIN host is
  * NEVER detached — it is always SUPERVISING, regardless of any handle state.
@@ -359,6 +360,7 @@ interface LatestAuditFeedback {
 }
 
 function latestAuditFeedback(g: Goal): LatestAuditFeedback | undefined {
+  if (auditorSurfaceSuppressed()) return undefined;
   const verdict = [...(g.auditHistory ?? [])].reverse().find((entry) =>
     (entry.disapproved || (entry.approved && entry.regressionShieldPassed === false))
     && typeof entry.report === "string"
@@ -847,6 +849,7 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
       return `glla: ${paint(theme, "warning", "⏳ main-model recovery")}${summary.map((line) => ` · ${line.replace(/^Main-model recovery: /, "")}`).join("")}`;
     }
     if (held) return `glla: loop ${paint(theme, "warning", "⏸ held")} · iter ${held.iteration} — /loop to resume`;
+    if ((state.list?.length ?? 0) > 0) return waitingListStatus(state, now, theme);
     return undefined;
   }
   if (g.status === "auditing") {
@@ -1117,6 +1120,29 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
   return lines;
 }
 
+function waitingListStatus(state: State, _now: number, theme?: DisplayTheme): string {
+  const queue = state.list ?? [];
+  const head = queue[0];
+  const objective = head?.objective?.trim() ? sanitizeDisplayText(head.objective) : "unnamed queued item";
+  const hold = typeof state.loadHoldAt === "number" ? " · held on restore" : "";
+  return `glla: ${paint(theme, "accent", "LIST QUEUED")} · ${queue.length} waiting · next: ${truncate(objective, 72)} · /list next${hold}`;
+}
+
+function waitingListLines(state: State, theme?: DisplayTheme, width?: number): string[] {
+  const queue = state.list ?? [];
+  const head = queue[0];
+  const objective = head?.objective?.trim() ? sanitizeDisplayText(head.objective) : "unnamed queued item";
+  const objectiveBudget = budgetFor(width, visibleLen("├─ up next: "), 56);
+  const action = typeof state.loadHoldAt === "number"
+    ? "held on restore · /list next starts the queue"
+    : "/list next starts the queue · /list show to inspect";
+  return [
+    `${paint(theme, "accent", "↻")} ${paint(theme, "accent", "list queued")} · ${queue.length} waiting`,
+    `├─ up next: ${truncate(objective, objectiveBudget)}`,
+    `└─ ${paint(theme, "warning", action)}`,
+  ];
+}
+
 function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, width?: number, extras?: WidgetExtras): string[] | undefined {
   if (state.loop?.active) return loopLines(state.loop, now, theme, width, extras);
   if (state.loop && !state.loop.active && state.mainModelRecovery?.kind === "loop") return parkedLoopRecoveryLines(state.loop, state.mainModelRecovery, now, theme, width, extras?.mainModelFallbacks);
@@ -1126,6 +1152,10 @@ function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null
   if (!g) {
     // v0.28.17: no visible goal — the held loop gets its own card.
     if (held) return heldLoopLines(held, now, theme, width);
+    // v0.35.61: a waiting-only list is live durable work even without an
+    // active list goal. Paint an actionable queue card instead of returning
+    // undefined; otherwise carryover/sidecar work disappears until reload.
+    if ((state.list?.length ?? 0) > 0) return waitingListLines(state, theme, width);
     // v0.35.30: durable last-outcome retention. After an archive the slot is
     // empty; without this the widget goes blank and a finished audit reads
     // as "closed with no verdict" (field: 2026-08-22 screenshots). One dim

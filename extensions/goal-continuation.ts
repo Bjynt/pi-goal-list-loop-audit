@@ -49,6 +49,7 @@ import {
   type Goal,
   type ObjectiveRepairTarget,
 } from "./goal-loop-core.js";
+import { auditorSurfaceSuppressed } from "./loops/goal-auditor-surface.js";
 import {
   createContinuationDispatch,
   transitionDispatch,
@@ -1147,7 +1148,7 @@ export function buildPostCompactResync(): string {
     const next = findNextPendingTask(state.goal.taskList?.tasks ?? []);
     if (next) lines.push(`Next pending task: \`${next.id}\` — ${next.title}`);
     const lastAudit = state.goal.auditHistory?.[state.goal.auditHistory.length - 1];
-    if (lastAudit) lines.push(`Last audit: ${auditVerdictLabel(lastAudit).toUpperCase()} (${lastAudit.at})`);
+    if (lastAudit && !auditorSurfaceSuppressed()) lines.push(`Last audit: ${auditVerdictLabel(lastAudit).toUpperCase()} (${lastAudit.at})`);
   } else if (state.loop?.active) {
     lines.push(`Loop: ${state.loop.target.slice(0, 160)} — iteration ${state.loop.iteration}`);
   }
@@ -1189,7 +1190,9 @@ export function continuationPrompt(goal: Goal): string {
     );
   }
   const effSettings = resolveEffectiveAggressiveSettings(loadSettings(freshCtx()?.cwd ?? process.cwd()));
-  if (goal.pendingTasks && goal.pendingTasks.length > 0) {
+  // Auditor-derived TODOs are part of the same stale report surface. Keep
+  // them durable, but do not inject them before continuation consent.
+  if (!auditorSurfaceSuppressed() && goal.pendingTasks && goal.pendingTasks.length > 0) {
     directives.push(
       `## AUDITOR TODO LIST (from ${goal.pauseReason?.includes("cap") ? "the disapproval cap" : "the last audit"})\n\nAddress these objections, in order, before re-calling complete_goal:\n${goal.pendingTasks.map((t, i) => `${i + 1}. ${t}`).join("\n")}`,
     );
@@ -1210,7 +1213,7 @@ export function continuationPrompt(goal: Goal): string {
   // (field-observed 2026-08-16: after a disapproval the continuation carried
   // no report text and the agent had to dig through .pi-glla/audits.jsonl).
   const lastAudit = goal.auditHistory?.[goal.auditHistory.length - 1];
-  if (lastAudit && lastAudit.report) {
+  if (lastAudit && lastAudit.report && !auditorSurfaceSuppressed()) {
     // Auditor output is untrusted repository-derived data. Keep it visibly
     // delimited and neutralize a forged closing tag before reinjecting it
     // into the main-agent prompt; the report is evidence, never instructions.
@@ -1236,6 +1239,7 @@ export function continuationPrompt(goal: Goal): string {
   // or a newObjective-carrying claim — a bare complete_goal retry is REJECTED,
   // so advising one would stall the loop (reject -> retry -> reject forever).
   if (
+    !auditorSurfaceSuppressed() &&
     goal.status === "active" &&
     !goal.pendingCompletion &&
     lastAudit?.approved &&

@@ -25,6 +25,117 @@
   SILENCE (no tool calls); this owns productive-LOOKING stagnation.
 
 
+
+## 0.35.63 — auditor context held until resume (2026-08-25)
+
+### Fix
+  Cold session restores now keep unfinished goal/list objectives and their
+  status visible without automatically injecting the previous auditor report
+  or dispatching a new continuation. Explicit `/goal resume`, list/glla/loop
+  continuation commands, validated lifecycle continuity, and global
+  `autoResume: true` release the auditor-context gate. The prior Pi transcript
+  and durable audit history remain untouched.
+
+### Tests
+  `tests/auditor-blank-until-resume.test.ts` proves objective visibility,
+  pre-consent report suppression, explicit resume release, and auto-resume
+  release. Version metadata is synchronized to 0.35.63.
+
+## 0.35.62 — subagent host-state boundary (2026-08-25)
+
+### Fix
+  Headless child sessions are now rejected before state-root registration,
+  restore, owner claims, and tool repair. The same fail-closed boundary covers
+  persistent children, foreign slash commands, and missing tool invocation
+  contexts. File-backed host successors remain eligible for legitimate reload
+  and silent-rebind recovery. Main-host subagent telemetry continues through
+  the event bus and `/glla agents` path.
+
+### Tests
+  `tests/subagent-host-boundary.test.ts` proves first-claim prevention,
+  foreign slash-command refusal, persistent-worker refusal, legitimate host
+  successor admission, and durable Explore telemetry. Version metadata is
+  synchronized to 0.35.62.
+
+## 0.35.61 — list queue visibility across host replacement (2026-08-25)
+
+### Fix
+  Waiting-only list state now has an actionable status/widget projection even
+  when no list item is active. Silent host-successor and same-session stale
+  recovery boundaries also re-read the selected durable root and hydrate queue
+  sidecars before repainting. A recovered queue now stays visible and can be
+  started with `/list next` without requiring a full reload.
+
+### Tests
+  `tests/list-invisible-restart.test.ts` covers waiting-only visibility and
+  activation plus sidecar-only silent-successor rehydration. Version metadata
+  is synchronized to 0.35.61.
+
+## 0.35.60 — pre-turn glla tool visibility (2026-08-25)
+
+### Fix
+  GLLA agent tools are now registered and reactivated immediately before
+  agent turns, with `agent_start`/`turn_start` compatibility fallbacks. This
+  closes the interval where an external tool allowlist or modlist could remove
+  `pause_goal` after session restore and Pi would answer a valid model call
+  with `Tool pause_goal not found`, leaving a parked objective looking stuck
+  until reload.
+
+### Tests
+  `tests/gettick-tool-visibility.test.ts` simulates a post-restore active-tool
+  replacement and verifies the pre-turn boundary restores `pause_goal` and
+  keeps it callable. Version metadata is synchronized to 0.35.60.
+
+## 0.35.59 — safe cancel/wipe across unresolved session roots (2026-08-25)
+
+### Fix
+  `/glla cancel`, `/glla wipe`, `/list cancel`, `/list clear`, and the shared
+  goal archive path now fail closed while opt-in `sessionDir` resolution is
+  pending. They leave the in-memory objective/list untouched and do not
+  recreate or mutate an ambiguous cwd state tree; after host lifecycle
+  admission registers the session root, cancel and wipe archive/clear under
+  the selected session root as before.
+
+### Tests
+  `tests/objective-loss-lifecycle.test.ts` covers both deferred destructive
+  commands and successful `/glla cancel` + `/glla wipe` cleanup under a
+  registered session root. Version metadata is synchronized to 0.35.59.
+
+## 0.35.58 — objective-loss lifecycle repair (2026-08-24)
+
+### Fix
+  Wired the opt-in `sessionDir` root into the admitted production lifecycle.
+  `session_start` and silent host-successor admission now register Pi's
+  canonical `SessionManager.getSessionDir()` before owner, invalidation, or
+  restore writes; in-memory worker sessions remain pending instead of creating
+  an ambiguous cwd tree. The configured session directory wins over an
+  imported session-file parent, while `PI_SESSION_FILE` remains the explicit
+  child-process fallback.
+
+### Evidence
+  Added `tests/objective-loss-lifecycle.test.ts`: a real registered
+  `session_start` handler proves production root registration, and separate
+  fresh Bun writer/reader processes recover an objective across a cwd switch.
+  The report intentionally does not claim to simulate a crash mid-write or a
+  specific version migration. Full evidence:
+  audit/OBJECTIVE-LOSS-VALIDATION-2026-08-24.md.
+
+### Tests
+  Focused lifecycle/state-root tests and clean tsc pass; the full release gate
+  is run for this version before closure.
+
+## 0.35.57 — objective-loss validation (2026-08-24)
+
+### Evidence
+  Validated the Now report that objectives disappeared after a Wez crash or
+  version/cwd switch. The historical workingDir default intentionally makes a
+  cwd switch select a different on-disk root, while explicit sessionDir keeps
+  the objective visible across cwd changes. Pending session-root resolution
+  does not migrate or delete the old cwd tree. The bounded result was
+  evidence-based closure pending production lifecycle wiring; crash-only loss
+  was not reproduced. The subsequent gettick, list-reload, and
+  subagent-visibility reports remain separate items.
+  Full evidence: audit/OBJECTIVE-LOSS-VALIDATION-2026-08-24.md.
 ## 0.35.56 — state-root consumer/lifecycle hardening (2026-08-24)
 
 ### Fix

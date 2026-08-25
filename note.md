@@ -1,39 +1,14 @@
 # Now
 
-##
+https://github.com/DraconDev/pi-goal-list-loop-audit/pulls/21
+
+# Next
 
 https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
 
 investiate
 
-##
-
-sometimes we were working on an objective and, the exact case that happened now that wez crashed and some objectives were no longer live
-
-i had to make new ones, i wonder if jsut version swtich or what, but we shoudl not guess but investigate 
-
-##
-
-the goal was gettick stuck so i started a new goal but then it was not visible or usable before i restarted
-
-/home/dracon/Pictures/Screenshots/Screenshot_20260823_091841.png 
-
-
-##
-
-list seems corruped not only doesnt show but we cant start it 
-/home/dracon/Pictures/Screenshots/Screenshot_20260823_120853.png 
-here too we can't even start a new list 
-/home/dracon/Pictures/Screenshots/Screenshot_20260823_122304.png 
-> after reload it recovered very odd, now technically this is what i want just to list to stay visible and keep going 
-/home/dracon/Pictures/Screenshots/Screenshot_20260823_130243.png 
-
-##
-
-another concern is that do we have these explores, clearly not desired, is this our bug 
-/home/dracon/Pictures/Screenshots/Screenshot_20260823_120936.png 
-
-# Next
+# Next 2
 
 ## objective cant complete
 
@@ -91,8 +66,6 @@ not sure we want manual
 /list add
 i never use it jsut accidentally type it instead of audit 
 
-
-
 ##
 
 replan requried, been a while since i saw this 
@@ -107,6 +80,13 @@ we coudl use better visuals cause this is what wesee now and it is worth htinkin
 ##
 
 update the readme and the docs its been a while and readme especially start with new visitors in mind
+
+##
+
+sometimes we get stuck on compacts cause the model cant compact that large
+
+would it makes sense to have a dedicated compact to switch into a free model that can compact perhaps for even free but i guess intelligence still matters here so 
+this is more of dont get stuck for long goals than price hack
 
 # Idea
 
@@ -128,12 +108,4 @@ we can save questions after, mainly pop questions when the decision is truly a r
 if not my intention can be inferrred as prefrence for quality long term solution and the objective so far
 also we cna do more drafting up front, so fo we dont have to ask questions in the middle
 
-
-
-## goal audit loop
-
-/goal audit loop 
-
-so the idea here is that we launch and audit if any findings we fix then due to loop we launch another audit, then if nothing found the goal ends
-
-or it can be jsut /loop audit that is not hooked up yet 
+yea we keep pausing a fair bit mid exec
