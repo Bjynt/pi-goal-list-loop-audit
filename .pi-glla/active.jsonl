@@ -7226,3 +7226,16 @@
 {"type":"zombie_stood_down","value":{"owner":"707946:1787612843585"},"at":"2026-08-24T23:18:57.470Z"}
 {"type":"stale_self_healed","value":{"was":"session_handoff_pending","via":"same-session command","generation":286},"at":"2026-08-24T23:21:05.326Z"}
 {"type":"zombie_stood_down","value":{"owner":"707946:1787612843585"},"at":"2026-08-24T23:21:24.425Z"}
+{"type":"stale_self_healed","value":{"was":"session_handoff_pending","via":"same-session command","generation":288},"at":"2026-08-25T00:04:01.106Z"}
+{"type":"session_shutdown","value":{"reason":"reload"},"at":"2026-08-25T00:04:06.559Z"}
+{"type":"session_rebound","value":{"reason":"reload"},"at":"2026-08-25T00:04:08.588Z"}
+{"type":"session_shutdown","value":{"reason":"new"},"at":"2026-08-25T00:04:20.560Z"}
+{"type":"session_rebound","value":{"reason":"new"},"at":"2026-08-25T00:04:21.190Z"}
+{"type":"id_invalidation","value":{"oldId":"01a02353-0a9c-742d-8d99-e222dda417c9","newId":"01a0363b-71bb-7937-a6cb-7287179230e1","reason":"session_shutdown","shutdownReason":"new","at":"2026-08-25T00:04:21.352Z"},"at":"2026-08-25T00:04:21.352Z"}
+{"type":"session_shutdown","value":{"reason":"quit"},"at":"2026-08-25T00:04:27.875Z"}
+{"type":"session_rebound","value":{"reason":"startup"},"at":"2026-08-25T00:04:31.464Z"}
+{"type":"id_invalidation","value":{"oldId":"01a0363b-71bb-7937-a6cb-7287179230e1","newId":"01a0363b-9413-7e30-a6e3-0a508f3b4d58","reason":"session_shutdown","shutdownReason":"quit","at":"2026-08-25T00:04:31.800Z"},"at":"2026-08-25T00:04:31.801Z"}
+{"type":"session_waiting_for_load","value":{"reason":"startup"},"at":"2026-08-25T00:04:31.801Z"}
+{"type":"session_shutdown","value":{"reason":"resume"},"at":"2026-08-25T00:04:35.956Z"}
+{"type":"session_rebound","value":{"reason":"resume"},"at":"2026-08-25T00:04:36.514Z"}
+{"type":"id_invalidation","value":{"oldId":"01a0363b-9413-7e30-a6e3-0a508f3b4d58","newId":"01a02353-0a9c-742d-8d99-e222dda417c9","reason":"session_shutdown","shutdownReason":"resume","at":"2026-08-25T00:04:36.607Z"},"at":"2026-08-25T00:04:36.607Z"}
