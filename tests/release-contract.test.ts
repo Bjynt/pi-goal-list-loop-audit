@@ -55,6 +55,15 @@ test("release contract: first-use README guidance matches current behavior", () 
   assert.doesNotMatch(readme, /cargo test/);
 });
 
+test("release contract: README explains the high-leverage autonomy model and companion policy", () => {
+  const readme = fs.readFileSync("README.md", "utf-8");
+  assert.match(readme, /long-running[\\s\\S]*high-leverage autonomous work/i);
+  assert.match(readme, /@juicesharp\\/rpiv-ask-user-question/);
+  assert.match(readme, /@tintinweb\\/pi-subagents/);
+  assert.match(readme, /one supervisor|second extension that also drives agent turns/i);
+  assert.doesNotMatch(readme, /What this fixes vs\\. pi-goal-x/);
+});
+
 test("release contract: README source map includes current support files", () => {
   const readme = fs.readFileSync("README.md", "utf-8");
   for (const required of [
