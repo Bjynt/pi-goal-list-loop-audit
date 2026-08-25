@@ -22,8 +22,6 @@ Update the README and docs for new visitors after the current behavior settles;
 start with the installation and first-use path rather than an exhaustive
 changelog narrative.
 
-
-
 # Later
 
 ## Better status visuals, not just better but arguably broken
@@ -37,12 +35,10 @@ Evidence:
 - /home/dracon/Pictures/Screenshots/Screenshot_20260822_200250.png
 - /home/dracon/Pictures/Screenshots/Screenshot_20260825_223048.png 
 
-## After better visuals we also plan on uploading a thumnail for the start of the readme that is also the thumbnail on the pi store
+> Most of the time we dont have that many subagents showing what they are and what they do would be useful
+/home/dracon/Pictures/Screenshots/Screenshot_20260825_225550.png 
 
-## `/list add` accidental command
-
-I rarely use `/list add` and sometimes type it instead of an audit. Revisit
-command wording/completion only after `/list audit` semantics are settled.
+> After better visuals we also plan on uploading a thumnail for the start of the readme that is also the thumbnail on the pi store
 
 ## `/glla bug` capture flow
 
