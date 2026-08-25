@@ -338,9 +338,11 @@ let heartbeatStaleDebounce = HEARTBEAT_STALE_DEBOUNCE;
 // (tool uses or assistant output tokens) for SUBAGENT_HANG_NO_PROGRESS_MS
 // (5m default — SHORTER than the auditor's 10m, because a hung subagent
 // costs parent tokens on every turn) is surfaced to the user and ledgered
-// `subagent_hang_detected`. Detection + guidance only: the main session
-// decides whether to abort — never an auto-kill.
+// `subagent_hang_detected`. A much longer second threshold can request one
+// child-specific abort; zero disables that action while retaining detection.
 const SUBAGENT_HANG_NO_PROGRESS_MS = 5 * 60_000;
+const SUBAGENT_HANG_ESCALATION_DEFAULT_MINUTES = 30;
+const SUBAGENT_HANG_ESCALATION_MIN_MS = 5 * 60_000;
 // v0.34.102 (field: pully W161 rehearsal agent aac4ab1e, 2026-08-08T08:15
 // → 10:13 — a 118-minute wedge where `subagent_hang_detected` NEVER fired
 // because the manager record was unreachable and classifyHungSubagents
@@ -377,6 +379,8 @@ interface SubagentHangProbe {
   agentType?: string;
   summary?: string;
   spawnedAt: number;
+  /** Host generation that observed this child spawn. */
+  ownerGeneration: number;
   /** Last time the subagent delivered NEW progress (tool use / output tokens). */
   lastProgressAt: number;
   /** Last polled record.toolUses — progress when it increases. */
@@ -385,6 +389,9 @@ interface SubagentHangProbe {
   lastOutputTokens: number;
   /** Throttle: last user-facing hang warning for this subagent. */
   hangAlertedAt?: number;
+  /** One-shot action state for the current no-progress episode. */
+  hangAction?: "abort-requested" | "unavailable" | "failed";
+  hangActionAt?: number;
   endedAt?: number;
 }
 
@@ -397,8 +404,18 @@ const subagentHangProbes = new Map<string, SubagentHangProbe>();
  * cross-extension stream event. Defensive: absent when pi-subagents isn't
  * loaded or the record shape changes (falls back to event-only evidence). */
 const SUBAGENT_MANAGER_KEY = Symbol.for("pi-subagents:manager");
-type SubagentRecordPoll = { toolUses?: number; lifetimeUsage?: { output?: number }; status?: string };
-type SubagentManagerPoll = { getRecord?: (id: string) => SubagentRecordPoll | undefined };
+type SubagentRecordPoll = {
+  toolUses?: number;
+  lifetimeUsage?: { output?: number };
+  status?: string;
+  /** Present on pi-subagents records; required before automatic control. */
+  parentAgentId?: string;
+};
+type SubagentManagerPoll = {
+  getRecord?: (id: string) => SubagentRecordPoll | undefined;
+  /** Capability-owned child control; never fall back to a parent abort. */
+  abort?: (id: string) => boolean;
+};
 function subagentManagerPoller(): SubagentManagerPoll {
   try {
     return ((globalThis as any)[SUBAGENT_MANAGER_KEY] ?? {}) as SubagentManagerPoll;
@@ -407,25 +424,50 @@ function subagentManagerPoller(): SubagentManagerPoll {
   }
 }
 
+let subagentHangEscalationMsOverride: number | null = null;
+function subagentHangEscalationMs(cwd: string): number {
+  if (subagentHangEscalationMsOverride !== null) return Math.max(0, subagentHangEscalationMsOverride);
+  const minutes = loadSettings(cwd).subagentHangEscalationMinutes;
+  if (minutes === 0) return 0;
+  if (typeof minutes !== "number" || !Number.isFinite(minutes) || minutes < 5) {
+    return SUBAGENT_HANG_ESCALATION_DEFAULT_MINUTES * 60_000;
+  }
+  return minutes * 60_000;
+}
+
+function ownerGeneration(): number {
+  try { return flags?.sessionGeneration ?? 0; } catch { return 0; }
+}
+
 export function upsertSubagentHangProbe(recordId: string, agentType: string | undefined, summary: string | undefined, now = Date.now()): void {
   const existing = subagentHangProbes.get(recordId);
   if (existing) {
     // Re-observation (resume / re-run): fresh evidence + refreshed metadata.
     existing.lastProgressAt = now;
+    existing.ownerGeneration = ownerGeneration();
     existing.endedAt = undefined;
+    existing.hangAlertedAt = undefined;
+    existing.hangAction = undefined;
+    existing.hangActionAt = undefined;
     if (agentType) existing.agentType = agentType;
     if (summary) existing.summary = summary;
     return;
   }
   subagentHangProbes.set(recordId, {
     recordId, agentType, summary,
+    ownerGeneration: ownerGeneration(),
     spawnedAt: now, lastProgressAt: now, lastToolUses: 0, lastOutputTokens: 0,
   });
 }
 
 export function markSubagentHangProgress(recordId: string, now = Date.now()): void {
   const p = subagentHangProbes.get(recordId);
-  if (p) p.lastProgressAt = now;
+  if (p) {
+    p.lastProgressAt = now;
+    p.hangAlertedAt = undefined;
+    p.hangAction = undefined;
+    p.hangActionAt = undefined;
+  }
 }
 
 export function endSubagentHangProbe(recordId: string, now = Date.now()): void {
@@ -446,6 +488,9 @@ export function classifyHungSubagents(
     lastProgressAt: number;
     lastToolUses: number;
     lastOutputTokens: number;
+    hangAlertedAt?: number;
+    hangAction?: "abort-requested" | "unavailable" | "failed";
+    hangActionAt?: number;
     endedAt?: number;
   }>,
   getRecord: (id: string) => SubagentRecordPoll | undefined,
@@ -474,6 +519,9 @@ export function classifyHungSubagents(
       p.lastToolUses = toolUses;
       p.lastOutputTokens = output;
       p.lastProgressAt = now;
+      p.hangAlertedAt = undefined;
+      p.hangAction = undefined;
+      p.hangActionAt = undefined;
       continue;
     }
     const silentMs = now - p.lastProgressAt;

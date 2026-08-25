@@ -2404,6 +2404,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
       fmt("aggressiveMode", "aggressiveMode"),
       fmt("stuckMaxInterventions", "stuckMaxInterventions"),
       fmt("stallEscalationRefires", "stallEscalation"),
+      fmt("subagentHangEscalationMinutes", "subagentHangActionMinutes"),
       fmt("wedgeAlertMinutes", "wedgeAlert"),
       fmt("stallShortWords", "stallShortWords"),
       fmt("stallSimilarityThreshold", "stallSimilarityThreshold"),

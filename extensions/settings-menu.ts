@@ -425,6 +425,14 @@ export function buildSettingsRows(
       description: "hung-command alert while the session is busy (0 = off)",
     },
     {
+      id: "subagentHangEscalationMinutes",
+      section: "stall-brakes",
+      label: "Subagent hang action",
+      valueText: show("subagentHangEscalationMinutes", effective.subagentHangEscalationMinutes === 0 ? "warning only" : `${effective.subagentHangEscalationMinutes}m`),
+      sourceText: src("subagentHangEscalationMinutes"),
+      description: "request one child-specific abort after confirmed no progress (0 = warning only)",
+    },
+    {
       id: "stuckMaxInterventions",
       section: "stall-brakes",
       label: "Stuck max interventions",
