@@ -647,8 +647,12 @@ are workers** (v0.23.8):
   registration, restore, owner claims, or command/tool mutation; this also
   covers persistent children, not only the usual in-memory workers.
 - Subagent tool activity counts as activity for the wedge clock — a long
-  subagent run is work, not a hang. The main host still records the child's
-  lifecycle and counters for `/glla agents` through the event bus.
+  productive child run is work, not a hang. If a tracked top-level child stops
+  changing its tool-use/output counters, glla warns at the short detection
+  threshold and can request one child-specific abort after
+  `subagentHangEscalationMinutes` (default 30; `0` = warning-only). The main
+  host still records lifecycle, action state, and partial output for
+  `/glla agents` through the event bus.
 - With `@tintinweb/pi-subagents` specifically (the one we test against):
   read-only agents (Explore, Plan) get no glla tools; general-purpose
   agents see them but state-mutating calls (`complete_goal`, `propose_*`,

@@ -1286,6 +1286,10 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   const lines = [head];
   if (g.repairTarget) {
     lines.push(`├─ ${paint(theme, "warning", `REPLAN REQUIRED · original target: ${truncate(g.repairTarget.objective.replace(/\s+/g, " "), Math.max(30, (width ?? 80) - 28))}`)}`);
+    const repairStep = g.repairTarget.replanPromptedAt
+      ? "/list resume retries one bounded replan turn"
+      : "one bounded replan turn calls propose_task_list; confirm it to resume";
+    lines.push(`├─ ${paint(theme, "dim", `Recovery: ${repairStep}`)}`);
   }
   // A model switch crosses an asynchronous boundary while the goal remains
   // active. Keep the complete durable recovery projection on the widget too;

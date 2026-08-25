@@ -46,6 +46,24 @@
   model pin (`auditorModel`) with a 5-minute wall clock. Settings live in a
   dedicated /glla Commissar section (3 provenance-tracked rows).
 
+## 0.35.64 — bounded recovery for frozen subagents (2026-08-25)
+
+### Fix
+  A tracked top-level subagent that produces no tool-use or output-token
+  progress now receives the existing short warning first, then one
+  generation-fenced child-specific abort request after the configurable
+  `subagentHangEscalationMinutes` threshold (default 30; 0 keeps
+  warning/telemetry-only behavior). Nested, unreachable, or ownership-
+  ambiguous children remain warning-only. A stale child no longer shields an
+  unrelated parent zombie watchdog, and `/glla agents` shows ABORTING,
+  unavailable, or failed action state while preserving partial output.
+
+### Tests
+  `tests/subagent-hang-detection.test.ts` covers one-shot escalation,
+  progress-before-action cancellation, manager-unavailable and nested-child
+  safety, and `tests/agents-panel.test.ts` pins the action surface. Settings
+  menu/editor and INSTALL documentation expose the new threshold.
+
 ## 0.35.63 — auditor context held until resume (2026-08-25)
 
 ### Fix
