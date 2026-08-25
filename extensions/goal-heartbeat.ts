@@ -734,8 +734,44 @@ function requestSubagentHangAction(
     probe.lastProgressAt = now;
     return;
   }
+  const recordRequestedAbort = (): void => {
+    probe.hangAction = "abort-requested";
+    appendLedger(ctx.cwd, "subagent_hang_action_requested", { ...common, action: "abort", via: "subagents:rpc:stop" });
+    const msg = `glla: requested a bounded abort for frozen ${label} after ${Math.max(1, Math.round(silentMs / 60_000))}m with no progress. The parent was not aborted; partial child output remains available for inspection. /goal resume or /list resume retries the owning work after it settles.`;
+    ctx.ui.notify(msg, "warning");
+    notifyExternal(ctx, msg);
+  };
+  const applyRpcResult = (result: SubagentStopRpcResult): void => {
+    // A reply from a disposed host must not mutate the successor's ledger/UI.
+    if (result.kind === "stale"
+      || flags.sessionGeneration !== probe.ownerGeneration
+      || flags.sessionGeneration !== common.generation) return;
+    if (result.kind === "requested") {
+      recordRequestedAbort();
+      return;
+    }
+    if (result.kind === "unavailable") {
+      unavailable(result.reason);
+      return;
+    }
+    appendLedger(ctx.cwd, "subagent_hang_action_failed", { ...common, action: "abort", error: result.error, via: "subagents:rpc:stop" });
+    probe.hangAction = "failed";
+    ctx.ui.notify(`glla: the child-stop RPC failed for ${label}; the parent was not aborted. Inspect the Agents panel and use an explicit interrupt if needed.`, "warning");
+    notifyExternal(ctx, `glla: the child-stop RPC failed for ${label}; the parent was not aborted. Inspect the Agents panel and use an explicit interrupt if needed.`);
+  };
+
+  // v0.35.65: the pinned pi-subagents registry intentionally exposes only
+  // polling; production child control is the admitted root-session RPC.
+  const rpcRequest = requestSubagentStopViaRpc(probe.recordId, common.generation);
+  if (rpcRequest) {
+    void rpcRequest.then(applyRpcResult);
+    return;
+  }
+
+  // Keep compatibility with a future registry capability and with the focused
+  // unit seam, but never infer a parent abort from a missing child capability.
   if (typeof poll.abort !== "function") {
-    unavailable("the manager exposes no child-specific abort method");
+    unavailable("the manager exposes no child-specific abort method or stop RPC");
     return;
   }
   let accepted = false;
@@ -757,11 +793,7 @@ function requestSubagentHangAction(
     ctx.ui.notify(`glla: the manager rejected the child-specific abort for ${label}; the parent was not aborted. Inspect the Agents panel and use an explicit interrupt if needed.`, "warning");
     return;
   }
-  probe.hangAction = "abort-requested";
-  appendLedger(ctx.cwd, "subagent_hang_action_requested", { ...common, action: "abort" });
-  const msg = `glla: requested a bounded abort for frozen ${label} after ${Math.max(1, Math.round(silentMs / 60_000))}m with no progress. The parent was not aborted; partial child output remains available for inspection. /goal resume or /list resume retries the owning work after it settles.`;
-  ctx.ui.notify(msg, "warning");
-  notifyExternal(ctx, msg);
+  recordRequestedAbort();
 }
 
 function heartbeatTick(): void {

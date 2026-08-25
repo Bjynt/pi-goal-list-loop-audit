@@ -263,6 +263,9 @@ import { payloadGuardProjection } from "../payload-guard.js"; // v0.35.51 image-
 import { dropFailedErrorOnlyTurns, pruneCompactionPreparation } from "../context-hygiene.js"; // v0.35.52 error-turn hygiene
 import {
   createGoalHeartbeat,
+  bindSubagentRpcHost,
+  observeSubagentRpcReadiness,
+  releaseSubagentRpcHost,
   releaseZombieAbortKey,
   endSubagentHangProbe,
   markSubagentHangProgress,
@@ -634,6 +637,10 @@ function refuseForeignCommand(ctx: ExtensionContext): boolean {
 }
 
 export function registerGoalRuntime(pi: ExtensionAPI): void {
+  // Factories run before lifecycle events, so observe readiness now; the
+  // admitted session_start below decides which bus/generation may control a
+  // child. Worker factories can never claim this binding.
+  observeSubagentRpcReadiness(pi.events);
   // Four top-level commands, that's all (v0.8.0 consolidation):
   //   /goal  — set/draft + status|pause|resume|cancel|tweak|archive subcommands
   //   /list — the list (add|show|tweak|next|remove|clear)
@@ -989,6 +996,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
 
   pi.on("session_shutdown", async (event: any, ctx: ExtensionContext) => {
     if (isForeignCtx(ctx)) return;
+    releaseSubagentRpcHost(pi.events);
     // v0.30.0: attribution + rebind window. pi announces WHY the session
     // is being replaced (reload/resume/new/fork/quit) — the ledger can
     // now answer "what killed the handle?" without guesswork (hegemon's
@@ -1110,6 +1118,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     deadOwnerSession = null; // v0.34.25: a real session_start supersedes the silent-swap record
     deadOwnerCwd = null;
     sessionGeneration++;
+    bindSubagentRpcHost(pi.events, sessionGeneration);
     clearDraftingState();
     // An auditor belonging to the disposed generation cannot block the fresh
     // session's recovery gate; its finally block is generation-guarded too.

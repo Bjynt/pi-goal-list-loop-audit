@@ -65,6 +65,10 @@ async function spawnFixture(): Promise<{ cwd: string; ctx: MockCtx }> {
   setGlobalAutoResume(false);
   const cwd = tmpCwd();
   const ctx = await freshSession(cwd, "startup");
+  // The real pi-subagents extension emits this after its root session binds
+  // RPC handlers. Unit fixtures opt into that capability explicitly so the
+  // production bridge, rather than the legacy manager abort seam, is tested.
+  pi.emitBus("subagents:ready", {});
   await tick();
   return { cwd, ctx };
 }
