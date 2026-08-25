@@ -673,13 +673,13 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     ]),
     handler: (args: string, ctx: ExtensionContext) => {
       rememberCtx(ctx);
-      if (refuseForeignCommand(ctx)) return;
+      if (refuseForeignCommand(ctx)) return Promise.resolve();
       return cmdGoal(args, ctx);
     },
   });
   const settingsHandler = (args: string, ctx: ExtensionContext) => {
     rememberCtx(ctx);
-    if (refuseForeignCommand(ctx)) return;
+    if (refuseForeignCommand(ctx)) return Promise.resolve();
     return cmdSettings(args, ctx);
   };
   pi.registerCommand("glla", {
@@ -706,7 +706,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     description: "Manually run the postaudit on an archived goal: /review <goal-id> [off|on|auto|aggressive] — extracts findings, writes a report to .pi-glla/reviews/, cascades per the mode (auto/aggressive = no Confirms). Bypasses the trigger gates (explicit user request).",
     handler: (args: string, ctx: ExtensionContext) => {
       rememberCtx(ctx);
-      if (refuseForeignCommand(ctx)) return;
+      if (refuseForeignCommand(ctx)) return Promise.resolve();
       return cmdReview(args, ctx);
     },
   });
@@ -731,7 +731,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     ]),
     handler: (args: string, ctx: ExtensionContext) => {
       rememberCtx(ctx);
-      if (refuseForeignCommand(ctx)) return;
+      if (refuseForeignCommand(ctx)) return Promise.resolve();
       return cmdList(args, ctx);
     },
   });
@@ -752,7 +752,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     ]),
     handler: (args: string, ctx: ExtensionContext) => {
       rememberCtx(ctx);
-      if (refuseForeignCommand(ctx)) return;
+      if (refuseForeignCommand(ctx)) return Promise.resolve();
       return cmdLoop(args, ctx);
     },
   });
