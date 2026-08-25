@@ -26,9 +26,9 @@ finished without evidence**:
 The aim is not “run forever.” The aim is **more useful work per unit of
 attention, with better evidence at the end**.
 
-**Current published package:** `v0.35.64` — use `/glla version` to inspect the
-installed version and compare it with the registry. This checkout may contain
-unreleased changes; npm is authoritative for published versions.
+Use `/glla version` to inspect the installed version and compare it with the
+registry. This checkout may contain unreleased changes; npm is authoritative
+for published versions.
 
 ## Is GLLA the right tool?
 
@@ -266,8 +266,6 @@ different quota pool.
 
 ### Useful, but optional
 
-- **`@juicesharp/rpiv-advisor`** — an on-demand second opinion for the executor.
-  It is advisory; it does not replace GLLA's detached completion auditor.
 - **`@pi-unipi/notify`** — Telegram, Gotify, or ntfy delivery when you need
   alerts away from the desktop. GLLA's local notifications work without it;
   when no command is configured, it auto-detects `notify-send`/`osascript`;

@@ -6,7 +6,14 @@ README and first-use guidance are being brought current for the released
 v0.35.64 behavior: direct contract starts, state-root selection, repair/replan
 recovery, release verification, and the maintained source map.
 
-## AI wrote tests for th readme, investigate what others shoudlnt have tests
+## Test boundaries: docs versus behavior
+
+README prose and positioning should not be asserted by runtime tests. Keep only
+stable release/package checks: shipped files, valid links, version metadata,
+and critical command or recovery references. Review wording and recommendations
+manually. The first cleanup removed README assertions from settings, retry, and
+positioning tests; inspect the remaining documentation checks before the next
+release.
 
 # Next
 

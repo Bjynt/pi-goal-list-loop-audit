@@ -44,9 +44,10 @@ For parallel repository research and focused worker tasks, add:
 pi install npm:@tintinweb/pi-subagents
 ```
 
-Other companions are optional: `@juicesharp/rpiv-advisor` provides an
-on-demand second opinion, `@pi-unipi/notify` sends remote notifications, and
-`pi-chrome` enables logged-in browser research. None is required for a basic
+Other companions are optional: `@pi-unipi/notify` sends remote
+notifications, and `pi-chrome` enables logged-in browser research. For a deeper
+completion check, choose a stronger auditor model in `/glla`; a separate advisor
+extension is not required. None of these companions is required for a basic
 GLLA goal.
 
 Do not run another extension that drives agent turns at the same time as GLLA.

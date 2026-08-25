@@ -3,8 +3,6 @@ import * as assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 
-const packageJson = JSON.parse(fs.readFileSync("package.json", "utf-8")) as { version: string };
-
 function dryRunFiles(): Set<string> {
   const raw = execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
     encoding: "utf-8",
@@ -38,11 +36,6 @@ test("release contract: published documentation links are covered by the npm tar
   for (const omitted of ["../PLAN.md", "../LIST-PHILOSOPHY.md", "../audit/INDEX.md"]) {
     assert.doesNotMatch(index, new RegExp(omitted.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")), `${omitted} must not be a broken package link`);
   }
-});
-
-test("release contract: README version matches package metadata", () => {
-  const readme = fs.readFileSync("README.md", "utf-8");
-  assert.match(readme, new RegExp(`Current (?:published )?package:?\\*\\*.*v${packageJson.version.replaceAll(".", "\\.")}`));
 });
 
 test("release contract: first-use README guidance matches current behavior", () => {
