@@ -56,6 +56,31 @@ changed here.
 - `npx tsc --noEmit`: must exit 0.
 - `npm run release:check`: must report zero failures.
 
+## Release-gate stabilization after audit disapproval
+
+The first completion audit correctly rejected the stale `/tmp/rc61.log`
+evidence: a fresh gate exposed load-sensitive detached-process tests. The
+release gate itself was not weakened. The test harness was made deterministic
+under the busy release rig:
+
+- `tests/auditor-process.test.ts` gives the request-copy stub enough startup
+  budget to test resolved request contents, and spaces streamed progress
+  snapshots so the parent poller can observe each atomic fragment without
+  weakening monotonic-byte assertions.
+- `tests/behavioral-orchestrator.test.ts` uses bounded load-tolerant waits for
+  detached recovery cycles and always shuts down its fake auditor in `finally`,
+  preventing a timed-out test from poisoning the next singleton recovery test.
+- `tests/auditor-stall-watchdog.test.ts` gives the silent child enough startup
+  budget to install its SIGTERM handler before the first-event watchdog
+  cancels it; the stall remains well inside the wall timeout.
+
+Fresh evidence from `/tmp/rc-current4.log`:
+
+- `npm run release:check`: **1576 pass / 0 fail / 2 skipped**, 1578 tests across
+  144 files, completed in 236.16s.
+- `npx tsc --noEmit`: included by `test:all` and passed.
+- `npm pack --dry-run`: completed for `pi-goal-list-loop-audit@0.35.61`.
+
 ## Boundary
 
 This fixes the durable projection and no-active queue visibility/startability
