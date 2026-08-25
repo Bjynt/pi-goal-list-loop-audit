@@ -17,7 +17,21 @@ release.
 
 # Next
 
+## Better status visuals, not just better but arguably broken
 
+The status/widget surfaces deserve a visual pass: decide what a user needs to
+see for active work, queues, auditor state, stalls, and recovery without
+turning the TUI into a wall of text.
+
+Evidence:
+- /home/dracon/Pictures/Screenshots/Screenshot_20260822_132806.png
+- /home/dracon/Pictures/Screenshots/Screenshot_20260822_200250.png
+- /home/dracon/Pictures/Screenshots/Screenshot_20260825_223048.png 
+
+> Most of the time we dont have that many subagents showing what they are and what they do would be useful
+/home/dracon/Pictures/Screenshots/Screenshot_20260825_225550.png 
+
+> After better visuals we also plan on uploading a thumnail for the start of the readme that is also the thumbnail on the pi store
 
 ## Maintainer issue and PR review
 
@@ -34,22 +48,6 @@ context. Evaluate a dedicated compact/recovery fallback model path, including
 whether a free model is acceptable, without treating this as a price hack.
 
 # Later
-
-## Better status visuals, not just better but arguably broken
-
-The status/widget surfaces deserve a visual pass: decide what a user needs to
-see for active work, queues, auditor state, stalls, and recovery without
-turning the TUI into a wall of text.
-
-Evidence:
-- /home/dracon/Pictures/Screenshots/Screenshot_20260822_132806.png
-- /home/dracon/Pictures/Screenshots/Screenshot_20260822_200250.png
-- /home/dracon/Pictures/Screenshots/Screenshot_20260825_223048.png 
-
-> Most of the time we dont have that many subagents showing what they are and what they do would be useful
-/home/dracon/Pictures/Screenshots/Screenshot_20260825_225550.png 
-
-> After better visuals we also plan on uploading a thumnail for the start of the readme that is also the thumbnail on the pi store
 
 ## `/glla bug` capture flow
 
