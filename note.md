@@ -8,6 +8,8 @@ recovery, release verification, and the maintained source map.
 
 # Next
 
+## AI wrote tests for th readme, investigate what others shoudlnt have tests
+
 ## Maintainer issue and PR review
 
 The live inventory is recorded in
