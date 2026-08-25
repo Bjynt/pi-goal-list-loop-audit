@@ -1,38 +1,5 @@
 # Now
 
-## Replan/repair UX audit
-
-Recheck the repair-card path from the saved-intent screenshot and make sure a
-malformed list item cannot keep re-firing forever, the original target remains
-recoverable, and `/list next`/`/list resume` are always the truthful actions.
-Include the replan-required surface: its original target, concrete recovery
-step, and queue position must stay visible without the repair card becoming a
-new source of indefinite churn.
-
-Evidence:
-- /home/dracon/Pictures/Screenshots/Screenshot_20260823_181617.png
-
-# Next
-
-## PR #21 — review only, no wholesale merge
-
-Recheck the repair-card path from the saved-intent screenshot and make sure a
-malformed list item cannot keep re-firing forever, the original target remains
-recoverable, and `/list next`/`/list resume` are always the truthful actions.
-
-Evidence:
-- /home/dracon/Pictures/Screenshots/Screenshot_20260823_181617.png
-
-## PR #21 — review only, no wholesale merge
-
-https://github.com/DraconDev/pi-goal-list-loop-audit/pulls/21
-
-The state-root portion has already been ported and hardened on `main`; the
-blank-until-resume auditor-surface work was developed separately and is now
-hardened on `main`. Do not merge or close this PR without explicit
-confirmation. Revisit only to extract any still-unported, independently
-useful change.
-
 ## Release
 
 Its been a while
@@ -42,7 +9,7 @@ Its been a while
 https://github.com/DraconDev/pi-goal-list-loop-audit/issues
 https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
 
-# Next 2
+# Next
 
 ## Compaction fallback for long goals
 
@@ -99,26 +66,3 @@ routine implementation choices is costly. Save non-blocking questions for the
 end, ask only when the choice changes the result, and gather more constraints
 in the initial draft.
 
-# Superseded / resolved
-
-- **Repair/replan card blocked its own first turn:** fixed after Screenshot_20260825_173552.png. A repair card now gets one durable, generation-safe bootstrap continuation containing `propose_task_list` and the preserved target; repeated heartbeat attempts stop at the latch, while `/list resume` explicitly re-arms one retry. The card also shows the concrete recovery step and queue position.
-- **Long-running subagent stalls:** fixed in v0.35.64. Children still warn at
-  the short detection thresholds, then a frozen top-level tracked child gets
-  one generation-fenced child-specific abort request after the configurable
-  long threshold (default 30m); nested/unreachable children stay warning-only,
-  and stale child probes no longer shield unrelated parent cleanup. Production
-  control uses pi-subagents' existing root-session `subagents:rpc:stop` bridge;
-  no upstream package patch is required, and the real AgentManager/RPC path is
-  covered by `tests/subagent-stop-rpc.integration.test.mjs`.
-- **Objective cannot complete / subagent called `complete_goal`:** the child
-  session now fails closed at the host boundary; only MAIN may mutate goal,
-  loop, or list state. Fixed and covered by the v0.35.62 host-boundary work.
-- **List vanished after reload / `/list resume` had nothing visible:** queue
-  hydration and queue-only visibility were repaired and released in v0.35.61.
-- **Agent completed a goal in the middle of a list:** child ownership and exit
-  handling were hardened in v0.35.62; retain the screenshot only as historical
-  evidence unless a fresh reproduction appears.
-- **Auditor selector parity:** auditor model selection now uses the model picker
-  and chooses thinking immediately with the selected model; parity tests cover
-  persistence and forbidden-model filtering. The standalone thinking row is a
-  convenience path, not the primary selection flow.
