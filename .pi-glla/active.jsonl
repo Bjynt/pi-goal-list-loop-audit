@@ -7250,3 +7250,5 @@
 {"type":"rearm_no_turn_started","value":{"streak":19,"minutes":2},"at":"2026-08-25T00:07:34.630Z"}
 {"type":"send_rearm_storm","value":{"kind":"continuation","streak":25,"minutes":5},"at":"2026-08-25T00:10:34.647Z"}
 {"type":"rearm_no_turn_started","value":{"streak":25,"minutes":5},"at":"2026-08-25T00:10:34.648Z"}
+{"type":"send_rearm_storm","value":{"kind":"continuation","streak":35,"minutes":10},"at":"2026-08-25T00:15:34.708Z"}
+{"type":"rearm_no_turn_started","value":{"streak":35,"minutes":10},"at":"2026-08-25T00:15:34.711Z"}
