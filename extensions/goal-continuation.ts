@@ -488,6 +488,16 @@ export function dispatchPrepare(
     return null;
   }
   pendingContinuationDispatch = record;
+  if (record.kind === "goal" && state.goal?.id === record.goalId && state.goal.repairTarget && !state.goal.repairTarget.replanPromptedAt) {
+    const promptedAt = nowIso();
+    updateGoal({ repairTarget: { ...state.goal.repairTarget, replanPromptedAt: promptedAt } }, ctx);
+    appendLedger(ctx.cwd, "faulty_objective_replan_turn_armed", {
+      goalId: record.goalId,
+      targetId: state.goal.repairTarget.id,
+      promptedAt,
+      attemptId: record.id,
+    });
+  }
   appendLedger(ctx.cwd, "continuation_dispatch_prepared", dispatchLedgerValue(record, {
     acknowledgement: "pending",
     startProofSource: null,
@@ -495,6 +505,18 @@ export function dispatchPrepare(
     resync: record.resync,
   }));
   return record;
+}
+
+function resetRepairReplanBootstrap(ctx: ExtensionContext, via: string): void {
+  const goal = state.goal;
+  const target = goal?.repairTarget;
+  if (!goal || !target?.replanPromptedAt) return;
+  updateGoal({ repairTarget: { ...target, replanPromptedAt: undefined } }, ctx);
+  appendLedger(ctx.cwd, "faulty_objective_replan_turn_reset", {
+    goalId: goal.id,
+    targetId: target.id,
+    via,
+  });
 }
 
 export function dispatchFailed(ctx: ExtensionContext, record: ContinuationDispatch, reason: string): void {
@@ -506,6 +528,7 @@ export function dispatchFailed(ctx: ExtensionContext, record: ContinuationDispat
   };
   pendingContinuationDispatch = failed;
   persistDispatchRecord(ctx.cwd, failed);
+  resetRepairReplanBootstrap(ctx, "dispatch-failed");
   appendLedger(ctx.cwd, "continuation_dispatch_failed", dispatchLedgerValue(failed, {
     acknowledgement: "rejected",
     startProofSource: null,
@@ -595,6 +618,7 @@ function dispatchStartUnacknowledged(ctx: ExtensionContext, record: Continuation
   if (state.goal && state.goal.status === "active" && (record.kind === "goal" || record.kind === "stall")) {
     updateGoal({ interruptedAt: nowIso(), interruptedReason: reason }, ctx);
   }
+  resetRepairReplanBootstrap(ctx, "start-unacknowledged");
   const msg = `glla: pi accepted the ${dispatchLabel(record)} continuation, but no observable turn-start event arrived within ${Math.round((Date.now() - record.sentAt) / 1000)}s despite one automatic retry. Automatic re-sends are stopped to avoid a blind queue storm. The work is safe in .pi-glla; start a fresh session or use /goal resume, /list resume, or /loop resume to retry explicitly.`;
   ctx.ui.notify(msg, "warning");
   notifyExternal(ctx, sanitizeDisplayText(msg));
@@ -835,20 +859,27 @@ export function guardGoalBeforeContinuation(
     return false;
   }
 
-  // A repair/replan card is intentionally not auto-repaired again. Its
-  // original target is durable in repairTarget; only a confirmed task-list
-  // redraft may clear that latch. This prevents the generic repair objective
-  // from becoming an endlessly self-repeating successor.
+  // A repair/replan card gets exactly one bootstrap turn so the model can
+  // call propose_task_list with the preserved target and obtain the user's
+  // confirmation. The old guard blocked that first turn too, leaving an
+  // ACTIVE card with a REPLAN REQUIRED banner but no way to reach the tool.
+  // Once the bootstrap is sent, only the confirmed redraft or an explicit
+  // resume may clear the durable one-shot latch; automatic heartbeats cannot
+  // create a repair-card storm.
   if (goal.repairTarget) {
-    appendLedger(ctx.cwd, "faulty_objective_replan_required", {
-      goalId: goal.id,
-      where,
-      targetId: goal.repairTarget.id,
-      originalObjective: goal.repairTarget.objective,
-      reasons: goal.repairTarget.reasons,
-    });
-    ctx.ui.notify(`Replan required before continuing: ${goal.repairTarget.objective.slice(0, 140)}`, "warning");
-    return false;
+    const bootstrapPending = !goal.repairTarget.replanPromptedAt
+      && (where === "schedule" || where === "dispatch" || where === "dispatch-prepare");
+    if (!bootstrapPending) {
+      appendLedger(ctx.cwd, "faulty_objective_replan_required", {
+        goalId: goal.id,
+        where,
+        targetId: goal.repairTarget.id,
+        originalObjective: goal.repairTarget.objective,
+        reasons: goal.repairTarget.reasons,
+      });
+      ctx.ui.notify(`Replan required before continuing: ${goal.repairTarget.objective.slice(0, 140)}. The one replan turn must call propose_task_list and receive confirmation.`, "warning");
+      return false;
+    }
   }
 
   const assessment = assessSuspiciousObjective(goal.objective, goal.verificationContract);
