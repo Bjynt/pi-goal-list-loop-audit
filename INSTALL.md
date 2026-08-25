@@ -38,13 +38,15 @@ and confirmation UX:
 pi install npm:@juicesharp/rpiv-ask-user-question
 ```
 
-For parallel repository research and focused worker tasks, add:
+When a goal has independent repository research or focused worker tasks,
+add the optional parallel-worker companion:
 
 ```bash
 pi install npm:@tintinweb/pi-subagents
 ```
 
-Other companions are optional: `@pi-unipi/notify` sends remote
+GLLA's main continuation, queue, recovery, and detached auditor work without
+it. Other companions are optional: `@pi-unipi/notify` sends remote
 notifications, and `pi-chrome` enables logged-in browser research. For a deeper
 completion check, choose a stronger auditor model in `/glla`; a separate advisor
 extension is not required. None of these companions is required for a basic

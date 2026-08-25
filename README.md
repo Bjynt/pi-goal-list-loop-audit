@@ -246,14 +246,19 @@ GLLA is the supervisor. These companions add capabilities around it:
   previews, and Confirm dialogs for drafting and decisions. GLLA has a prose
   fallback, but this is the intended UX.
 
-### Recommended for serious long-running work
+### Optional parallel workers
 
-- **`@tintinweb/pi-subagents`** — gives the main agent Explore, Plan, and
-  general-purpose workers for parallel research and focused implementation.
+- **`@tintinweb/pi-subagents`** — recommended when a goal has independent work
+  that can genuinely run in parallel. It gives the main agent Explore, Plan,
+  and general-purpose workers for research and focused implementation. It is
+  not required for GLLA's main continuation, queue, recovery, or detached
+  auditor; a short or mostly sequential goal is often better without the
+  extra worker overhead.
+
   The main pi session remains the owner of the goal/list/loop; subagents are
   workers and cannot silently replace the parent's objective.
 
-Install it when you want parallel leverage:
+Install it when parallelism will pay for its coordination and model usage:
 
 ```bash
 pi install npm:@tintinweb/pi-subagents
