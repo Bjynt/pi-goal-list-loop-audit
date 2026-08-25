@@ -530,6 +530,122 @@ export function classifyHungSubagents(
   return hung;
 }
 
+function isLiveSubagentRecord(rec: SubagentRecordPoll | undefined): boolean {
+  return !!rec && (rec.status === "running" || rec.status === "steered" || rec.status === "queued");
+}
+
+/** Only a child with fresh evidence keeps the generic parent zombie watchdog
+ * stood down. A classified stale child must not shield an unrelated parent
+ * turn forever; an event-only child gets the longer event-evidence window. */
+function hasHealthySubagentHangProbe(now = Date.now()): boolean {
+  const poll = subagentManagerPoller();
+  for (const probe of subagentHangProbes.values()) {
+    if (probe.endedAt !== undefined || probe.hangActionAt !== undefined) continue;
+    const rec = poll.getRecord?.(probe.recordId);
+    if (rec && isLiveSubagentRecord(rec)) {
+      const toolUses = rec.toolUses ?? 0;
+      const output = rec.lifetimeUsage?.output ?? 0;
+      if (toolUses > probe.lastToolUses || output > probe.lastOutputTokens
+          || now - probe.lastProgressAt < SUBAGENT_HANG_NO_PROGRESS_MS) return true;
+    } else if (!rec && now - probe.lastProgressAt < SUBAGENT_HANG_EVENT_ONLY_MS) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function requestSubagentHangAction(
+  ctx: ExtensionContext,
+  probe: SubagentHangProbe,
+  silentMs: number,
+  poll: SubagentManagerPoll,
+  now: number,
+  escalationMs: number,
+): void {
+  if (escalationMs <= 0 || silentMs < escalationMs || probe.hangActionAt !== undefined) return;
+  // Claim the episode before any capability call. A rejected/throwing manager
+  // must not produce a ledger/notify storm on every 15s heartbeat tick.
+  probe.hangActionAt = now;
+  const label = [probe.agentType, probe.summary].filter(Boolean).join(" ") || "subagent";
+  const common = {
+    recordId: probe.recordId,
+    agentType: probe.agentType,
+    summary: probe.summary,
+    silentMs,
+    generation: flags.sessionGeneration,
+    ownerGeneration: probe.ownerGeneration,
+    at: nowIso(),
+  };
+  const unavailable = (reason: string): void => {
+    probe.hangAction = "unavailable";
+    appendLedger(ctx.cwd, "subagent_hang_action_unavailable", { ...common, reason });
+    const msg = `glla: ${label} stayed frozen for ${Math.max(1, Math.round(silentMs / 60_000))}m, but no safe child-abort capability is available (${reason}). The warning and partial evidence are preserved; inspect the Agents panel and decide whether to interrupt the parent.`;
+    ctx.ui.notify(msg, "warning");
+    notifyExternal(ctx, msg);
+  };
+
+  if (probe.ownerGeneration !== flags.sessionGeneration) {
+    unavailable("the child belongs to an older host generation");
+    return;
+  }
+  const rec = poll.getRecord?.(probe.recordId);
+  if (!rec) {
+    unavailable("the manager record is unavailable");
+    return;
+  }
+  if (!isLiveSubagentRecord(rec)) {
+    unavailable(`the child is no longer running (status=${rec.status ?? "unknown"})`);
+    return;
+  }
+  // Automatic control is limited to top-level records. The capability is
+  // deliberately required to expose the ownership field; guessing about a
+  // nested child could kill work owned by another subagent.
+  if (!("parentAgentId" in rec) || rec.parentAgentId !== undefined) {
+    unavailable("the child is nested or its ownership is unknown");
+    return;
+  }
+  const toolUses = rec.toolUses ?? 0;
+  const output = rec.lifetimeUsage?.output ?? 0;
+  if (toolUses > probe.lastToolUses || output > probe.lastOutputTokens) {
+    // Progress arrived between classification and the capability call. Drop
+    // the latch so a later genuine no-progress episode can be evaluated.
+    probe.hangActionAt = undefined;
+    probe.hangAction = undefined;
+    probe.lastToolUses = toolUses;
+    probe.lastOutputTokens = output;
+    probe.lastProgressAt = now;
+    return;
+  }
+  if (typeof poll.abort !== "function") {
+    unavailable("the manager exposes no child-specific abort method");
+    return;
+  }
+  let accepted = false;
+  try {
+    accepted = poll.abort(probe.recordId);
+  } catch (error) {
+    appendLedger(ctx.cwd, "subagent_hang_action_failed", {
+      ...common,
+      action: "abort",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    probe.hangAction = "failed";
+    ctx.ui.notify(`glla: could not request a child-specific abort for ${label}; the parent was not aborted. Inspect the Agents panel and use an explicit interrupt if needed.`, "warning");
+    return;
+  }
+  if (!accepted) {
+    appendLedger(ctx.cwd, "subagent_hang_action_failed", { ...common, action: "abort", error: "manager rejected the running child" });
+    probe.hangAction = "failed";
+    ctx.ui.notify(`glla: the manager rejected the child-specific abort for ${label}; the parent was not aborted. Inspect the Agents panel and use an explicit interrupt if needed.`, "warning");
+    return;
+  }
+  probe.hangAction = "abort-requested";
+  appendLedger(ctx.cwd, "subagent_hang_action_requested", { ...common, action: "abort" });
+  const msg = `glla: requested a bounded abort for frozen ${label} after ${Math.max(1, Math.round(silentMs / 60_000))}m with no progress. The parent was not aborted; partial child output remains available for inspection. /goal resume or /list resume retries the owning work after it settles.`;
+  ctx.ui.notify(msg, "warning");
+  notifyExternal(ctx, msg);
+}
+
 function heartbeatTick(): void {
   if (flags.zombieStoodDown || flags.initialSessionLoadPending) return; // blank startup waits for pi to bind a real session
   // v0.35.15: a MANUAL `/glla pause` freezes the supervisor's automatic
@@ -671,19 +787,19 @@ function heartbeatTick(): void {
   // 74305f7e while the MAIN model was also in recovery; heartbeatTick
   // returned at the `mainModelRecoveryActive()` gate BELOW, so the
   // subagent hang scan never ran and the 12m+ wedge produced ZERO
-  // `subagent_hang_detected`). The scan is detection + notify only
-  // (never an auto-kill, never a send) — it MUST run even while the
-  // main model is parked, because a shared provider failure can freeze
-  // subagents and the main model at the same time.
+  // `subagent_hang_detected`). The scan still runs before that gate.
+  // Detection remains warning/telemetry-first; only a much longer, confirmed
+  // frozen top-level record may request the manager's child-specific abort.
   if (subagentHangProbes.size > 0) {
     const nowMs = Date.now();
     const poll = subagentManagerPoller();
+    const escalationMs = subagentHangEscalationMs(ctx.cwd);
     const hung = classifyHungSubagents([...subagentHangProbes.values()], (id) => poll.getRecord?.(id), nowMs);
     pruneEndedSubagentHangProbes(nowMs);
     for (const h of hung) {
       const p = subagentHangProbes.get(h.recordId);
-      if (!p || (p.hangAlertedAt !== undefined && nowMs - p.hangAlertedAt < SUBAGENT_HANG_ALERT_THROTTLE_MS)) continue;
-      p.hangAlertedAt = nowMs;
+      if (!p) continue;
+      const shouldAlert = p.hangAlertedAt === undefined || nowMs - p.hangAlertedAt >= SUBAGENT_HANG_ALERT_THROTTLE_MS;
       const label = [p.agentType, p.summary].filter(Boolean).join(" ");
       const mins = Math.max(1, Math.round(h.silentMs / 60_000));
       // v0.34.102: classifyHungSubagents cannot tell us the evidence class
@@ -693,20 +809,24 @@ function heartbeatTick(): void {
       // only its event trail (spawn/compacted/steered) remains. Name it so
       // the user knows whether the Agents panel can still show a live child.
       const stillTracked = poll.getRecord?.(p.recordId) !== undefined;
-      appendLedger(ctx.cwd, "subagent_hang_detected", {
-        recordId: p.recordId,
-        agentType: p.agentType,
-        summary: p.summary,
-        silentMs: h.silentMs,
-        spawnedAt: new Date(p.spawnedAt).toISOString(),
-        evidence: stillTracked ? "record-frozen" : "event-only",
-        at: nowIso(),
-      });
-      const msg = `glla: subagent${label ? ` (${label})` : ""} shows no progress for ${mins}m — ${stillTracked
-        ? "still running with no new tool calls or output"
-        : "its manager record is unreachable and it produced no events (spawn/compaction/steer)"}. It may be hung; the main session can decide to abort it.`;
-      ctx.ui.notify(msg, "warning");
-      notifyExternal(ctx, msg);
+      if (shouldAlert) {
+        p.hangAlertedAt = nowMs;
+        appendLedger(ctx.cwd, "subagent_hang_detected", {
+          recordId: p.recordId,
+          agentType: p.agentType,
+          summary: p.summary,
+          silentMs: h.silentMs,
+          spawnedAt: new Date(p.spawnedAt).toISOString(),
+          evidence: stillTracked ? "record-frozen" : "event-only",
+          at: nowIso(),
+        });
+        const msg = `glla: subagent${label ? ` (${label})` : ""} shows no progress for ${mins}m — ${stillTracked
+          ? "still running with no new tool calls or output"
+          : "its manager record is unreachable and it produced no events (spawn/compaction/steer)"}. It may be hung; a longer frozen interval will request a bounded child abort when safe.`;
+        ctx.ui.notify(msg, "warning");
+        notifyExternal(ctx, msg);
+      }
+      requestSubagentHangAction(ctx, p, h.silentMs, poll, nowMs, escalationMs);
     }
   }
   if (mainModelRecoveryActive()) {
@@ -780,8 +900,8 @@ function heartbeatTick(): void {
     // wait. Stand down the whole branch while a live probe or an in-flight
     // subagent tool call is recorded — the abort must not own that case.
     const subagentWaitInFlight =
-      hasLiveSubagentHangProbes() ||
-      [...flags.inFlightToolCalls.values()].some(isSubagentWaitCall);
+      hasHealthySubagentHangProbe() ||
+      [...flags.inFlightToolCalls.values()].some(isSubagentWaitCall) && hasHealthySubagentHangProbe();
     if (subagentWaitInFlight) {
       if (streamSilentMs >= zombieAbortMs && !flags.abortedStandDown) {
         appendLedger(ctx.cwd, "zombie_run_stood_down_subagent_wait", { streamSilentMs });
