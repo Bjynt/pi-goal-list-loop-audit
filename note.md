@@ -6,9 +6,11 @@ README and first-use guidance are being brought current for the released
 v0.35.64 behavior: direct contract starts, state-root selection, repair/replan
 recovery, release verification, and the maintained source map.
 
+## AI wrote tests for th readme, investigate what others shoudlnt have tests
+
 # Next
 
-## AI wrote tests for th readme, investigate what others shoudlnt have tests
+
 
 ## Maintainer issue and PR review
 
