@@ -31,11 +31,13 @@ screenshot identifies which external extension changed the active set.
 ## Fix
 
 v0.35.60 adds `ensureAgentToolsReady()` in
-`extensions/loops/goal-activation.ts`. It registers missing definitions and
+`extensions/loops/goal-activation.ts`. It re-registers the definitions and
 runs the existing allow/hide policy repair immediately at `before_agent_start`,
-plus `agent_start` and `turn_start` compatibility boundaries. Foreign-session
-and stale-session gates remain before the repair, so child sessions do not
-claim or expose the host's state plane.
+plus `agent_start` and `turn_start` compatibility boundaries. Re-registration
+is intentional because a replacement session can reset Pi's registry without
+resetting GLLA's local `toolsRegistered` flag. Foreign-session and
+stale-session gates remain before the repair, so child sessions do not claim or
+expose the host's state plane.
 
 The existing per-project `toolOverrides.hide` policy still wins after the
 standard missing-tool self-heal; this fix does not override an explicit user
@@ -44,8 +46,9 @@ hide policy.
 ## Verification contract
 
 - `tests/gettick-tool-visibility.test.ts`: after lifecycle restore, simulate an
-  external active-tool replacement and verify `before_agent_start` restores
-  `pause_goal` and the registered tool remains callable.
+  external active-tool replacement that resets both the active set and the
+  registry, then verify `before_agent_start` restores and re-registers
+  `pause_goal` and the tool remains callable.
 - `npx tsc --noEmit`: must exit 0.
 - `npm run release:check`: full suite must pass with zero failures.
 

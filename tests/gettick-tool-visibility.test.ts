@@ -26,7 +26,9 @@ test("v0.35.60: glla tools are reactivated at the pre-turn boundary", async () =
     // Simulate a modlist/allowlist extension replacing the active tool set
     // after lifecycle restore but before the next model turn.
     api.setActiveTools(["read", "write"]);
+    pi.tools.clear();
     assert.ok(!api.getActiveTools().includes("pause_goal"));
+    assert.equal(pi.tools.has("pause_goal"), false, "the simulated replacement also reset Pi's tool registry");
 
     await pi.fire("before_agent_start", {
       type: "before_agent_start",
@@ -36,6 +38,7 @@ test("v0.35.60: glla tools are reactivated at the pre-turn boundary", async () =
     }, ctx);
 
     assert.ok(api.getActiveTools().includes("pause_goal"), "pre-turn self-heal restores pause_goal before the model runs");
+    assert.ok(pi.tools.has("pause_goal"), "pre-turn self-heal re-registers definitions after a replacement registry reset");
     const result = await pi.runTool("pause_goal", { reason: "visibility probe", kind: "blocked" }, ctx);
     assert.equal(result.content[0]?.text, "No active goal.", "the restored tool is callable rather than missing");
   } finally {

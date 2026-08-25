@@ -783,9 +783,11 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   // tool set between those events; if that happens, the model can emit a
   // valid glla call that pi answers with "Tool <name> not found". Register
   // definitions and heal the model-facing active set immediately before a
-  // turn (and on older hosts' agent_start fallback).
-  function ensureAgentToolsReady(ctx: ExtensionContext): void {
-    if (!toolsRegistered) {
+  // turn (and on older hosts' agent_start fallback). Re-registration is
+  // intentional: a replacement session can reset Pi's registry without
+  // resetting this extension's toolsRegistered flag.
+  function ensureAgentToolsReady(ctx: ExtensionContext, forceRegister = false): void {
+    if (forceRegister || !toolsRegistered) {
       registerAgentTools(pi);
       toolsRegistered = true;
     }
@@ -2170,11 +2172,11 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // replacement contact because pi exposes the prompt itself.
     rememberCtx(ctx);
     if (tryAbsorbHostSuccessor(ctx, "before_agent_start")) {
-      ensureAgentToolsReady(ctx);
+      ensureAgentToolsReady(ctx, true);
       return;
     }
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
-    ensureAgentToolsReady(ctx);
+    ensureAgentToolsReady(ctx, true);
     // v0.34.57: turn-boundary model drift (bug #1.14) — the session is about
     // to run a turn on a model different from the last observed one. Ledger
     // only: the turn already started, there is nothing to block.
@@ -2233,11 +2235,11 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   pi.on("agent_start", (_event: any, ctx: ExtensionContext) => {
     rememberCtx(ctx);
     if (tryAbsorbHostSuccessor(ctx, "agent_start")) {
-      ensureAgentToolsReady(ctx);
+      ensureAgentToolsReady(ctx, true);
       return;
     }
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
-    ensureAgentToolsReady(ctx);
+    ensureAgentToolsReady(ctx, true);
     lastStreamActivityAt = Date.now();
     streamActivityObserved = true;
     // v0.32.1: a real turn started — the post-compaction resume debt is
@@ -2248,11 +2250,11 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   pi.on("turn_start", (_event: any, ctx: ExtensionContext) => {
     rememberCtx(ctx);
     if (tryAbsorbHostSuccessor(ctx, "turn_start")) {
-      ensureAgentToolsReady(ctx);
+      ensureAgentToolsReady(ctx, true);
       return;
     }
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
-    ensureAgentToolsReady(ctx);
+    ensureAgentToolsReady(ctx, true);
     lastStreamActivityAt = Date.now();
     streamActivityObserved = true;
     dispatchStartAcknowledged(ctx, "turn_start");
