@@ -219,6 +219,7 @@ import {
   rollupProject,
   type ProjectRollup,
 } from "../goal-loop-stats.js";
+import { releaseAuditorSurface, suppressAuditorSurfaceAfterColdRestore } from "./goal-auditor-surface.js";
 import {
   cancelDetachedGoalCompletionAuditor,
   newDetachedAuditJobAttemptId,
@@ -1319,6 +1320,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       appendLedger(ctx.cwd, "terminal_goal_slot_closed", { goalId: terminal.id, status: terminal.status, via: "session-start" });
     }
     if (initialSessionLoadPending && !explicitRecovery && !heldLoopSuccessorResume) {
+      // The objective/status projection remains visible below, but the
+      // previous auditor report must not become fresh model/UI context before
+      // this session has granted continuation consent.
+      suppressAuditorSurfaceAfterColdRestore();
       // Even a blank startup must not leave a stored completion claim in the
       // old AUDITING state: there is no worker verdict to wait for after a
       // session boundary. Release it before the transcript-load barrier;
@@ -1363,6 +1368,16 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // consents to load-time automation now.
     const autoResumeSetting = loadGlobalSettings().autoResume;
     const autoResume = shouldAutoResumeOnSessionStart(event?.reason, autoResumeSetting);
+    // Consent is established by the same lifecycle paths that are allowed to
+    // resume work. Do not release merely because a scheduler was asked to
+    // run; rejected/held schedules must leave the old report suppressed.
+    const continuationConsent = autoResume
+      || explicitRecovery
+      || staleRearmedOnSessionStart
+      || sameProcessSuccessorResume
+      || heldLoopSuccessorResume;
+    if (continuationConsent) releaseAuditorSurface();
+    else suppressAuditorSurfaceAfterColdRestore();
     const mainRecovery = state.mainModelRecovery;
     if (mainRecovery?.manualResumeRequired) {
       const recoveryResumeCmd = recoverySurfaceCommand(mainRecovery.kind, "resume");

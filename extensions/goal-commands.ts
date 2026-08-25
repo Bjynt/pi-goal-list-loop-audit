@@ -40,6 +40,7 @@ import { cmdLoop, clearLoopTimer, finishLoopGit, isLoopActive, scheduleLoopTick 
 import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-conflict.js";
 import { formatGllaVersion } from "./glla-version.js";
 import { cancelDetachedGoalCompletionAuditor } from "./goal-loop-auditor-process.js";
+import { releaseAuditorSurface } from "./loops/goal-auditor-surface.js";
 
 export interface CommandFlags {
   get draftingTarget(): "goal" | "list" | "loop" | null; set draftingTarget(v: "goal" | "list" | "loop" | null);
@@ -358,6 +359,9 @@ async function cmdPause(ctx: ExtensionContext): Promise<void> {
 
 async function cmdResume(ctx: ExtensionContext): Promise<void> {
   releaseInitialSessionLoadBarrier();
+  // Explicit resume is the consent boundary: make the durable auditor report
+  // available again before the continuation prompt is assembled.
+  releaseAuditorSurface();
   // v0.35.23 (note.md Next #2): an explicit resume is exactly the decision
   // the load hold waits for — release it before re-arming automation, or
   // the scheduleContinuation below would be a frozen no-op.
@@ -1355,6 +1359,10 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     }
     if (!activateNextListItem(ctx, n, { explicit: true })) {
       ctx.ui.notify(listQueue().length === 0 ? "List is empty — nothing to activate." : `No item #${n} (list has ${listQueue().length}).`, "info");
+    } else {
+      // Explicit list activation is also continuation consent, even when the
+      // activated item is a fresh queue head rather than the parked goal.
+      releaseAuditorSurface();
     }
     return;
   }
@@ -1932,6 +1940,9 @@ async function cmdGllaPause(ctx: ExtensionContext): Promise<void> {
 }
 
 async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
+  // /glla resume is the broad resume surface and therefore carries the same
+  // consent semantics as /goal resume or /list resume.
+  releaseAuditorSurface();
   // v0.29.12: a zombie instance (handle dead after session replacement)
   // used to answer "Nothing to resume" — the resume path must name the
   // real recovery (/reload rebuilds extensions in place), not mislead.
