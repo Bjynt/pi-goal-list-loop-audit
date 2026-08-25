@@ -17,6 +17,12 @@ Sometimes a large goal gets stuck because the current model cannot compact its
 context. Evaluate a dedicated compact/recovery fallback model path, including
 whether a free model is acceptable, without treating this as a price hack.
 
+## Documentation refresh
+
+Update the README and docs for new visitors after the current behavior settles;
+start with the installation and first-use path rather than an exhaustive
+changelog narrative.
+
 # Later
 
 ## Better status visuals
@@ -28,12 +34,6 @@ turning the TUI into a wall of text.
 Evidence:
 - /home/dracon/Pictures/Screenshots/Screenshot_20260822_132806.png
 - /home/dracon/Pictures/Screenshots/Screenshot_20260822_200250.png
-
-## Documentation refresh
-
-Update the README and docs for new visitors after the current behavior settles;
-start with the installation and first-use path rather than an exhaustive
-changelog narrative.
 
 ## `/list add` accidental command
 
