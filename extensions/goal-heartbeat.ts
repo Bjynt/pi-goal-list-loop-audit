@@ -19,6 +19,7 @@
 //     stranded_audit_recovered, subagent_hang_detected, ...).
 // ============================================================================
 
+import { randomUUID } from "node:crypto";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { state } from "./goal-state.js";
 import {
@@ -413,7 +414,7 @@ type SubagentRecordPoll = {
 };
 type SubagentManagerPoll = {
   getRecord?: (id: string) => SubagentRecordPoll | undefined;
-  /** Capability-owned child control; never fall back to a parent abort. */
+  /** Optional future registry capability; never fall back to a parent abort. */
   abort?: (id: string) => boolean;
 };
 function subagentManagerPoller(): SubagentManagerPoll {
@@ -422,6 +423,112 @@ function subagentManagerPoller(): SubagentManagerPoll {
   } catch {
     return {};
   }
+}
+
+/** Minimal pi.events surface used by the pinned pi-subagents RPC bridge. */
+export interface SubagentRpcEventBus {
+  on(event: string, handler: (data: unknown) => void): () => void;
+  emit(event: string, data: unknown): void;
+}
+
+type SubagentStopRpcResult =
+  | { kind: "requested" }
+  | { kind: "unavailable"; reason: string }
+  | { kind: "failed"; error: string }
+  | { kind: "stale" };
+
+type SubagentRpcBinding = {
+  events: SubagentRpcEventBus;
+  generation: number;
+  ready: boolean;
+};
+
+const SUBAGENT_RPC_STOP_TIMEOUT_MS = 2_000;
+let subagentRpcBinding: SubagentRpcBinding | null = null;
+const observedSubagentRpcBuses = new Set<SubagentRpcEventBus>();
+const readySubagentRpcBuses = new Set<SubagentRpcEventBus>();
+
+/**
+ * Observe readiness at factory time. Extension factories run before lifecycle
+ * events, so this catches `subagents:ready` even when pi-subagents' handler is
+ * registered before GLLA's `session_start` handler. The event bus is only
+ * usable for control after bindSubagentRpcHost admits the current host.
+ */
+export function observeSubagentRpcReadiness(events: SubagentRpcEventBus): void {
+  if (observedSubagentRpcBuses.has(events)) return;
+  observedSubagentRpcBuses.add(events);
+  try {
+    events.on("subagents:ready", () => {
+      readySubagentRpcBuses.add(events);
+      if (subagentRpcBinding?.events === events) subagentRpcBinding.ready = true;
+    });
+  } catch {
+    // A factory-time event bus can be unavailable on older hosts; control will
+    // remain fail-closed and produce the durable unavailable escalation.
+  }
+}
+
+/** Bind the RPC stop capability to an admitted MAIN host generation. */
+export function bindSubagentRpcHost(events: SubagentRpcEventBus, generation: number): void {
+  observeSubagentRpcReadiness(events);
+  const retainedReady = subagentRpcBinding?.events === events && subagentRpcBinding.ready;
+  subagentRpcBinding = {
+    events,
+    generation,
+    ready: retainedReady || readySubagentRpcBuses.has(events),
+  };
+}
+
+/** Clear a host-bound RPC capability before its event bus becomes stale. */
+export function releaseSubagentRpcHost(events?: SubagentRpcEventBus): void {
+  if (events && subagentRpcBinding?.events !== events) return;
+  const boundEvents = subagentRpcBinding?.events ?? events;
+  subagentRpcBinding = null;
+  if (boundEvents) readySubagentRpcBuses.delete(boundEvents);
+}
+
+function requestSubagentStopViaRpc(recordId: string, generation: number): Promise<SubagentStopRpcResult> | undefined {
+  const binding = subagentRpcBinding;
+  if (!binding) return undefined;
+  if (!binding.ready) {
+    return Promise.resolve({ kind: "unavailable", reason: "the subagents RPC service is not ready" });
+  }
+  if (binding.generation !== generation || flags.sessionGeneration !== generation) {
+    return Promise.resolve({ kind: "stale" });
+  }
+
+  const requestId = randomUUID();
+  const replyChannel = `subagents:rpc:stop:reply:${requestId}`;
+  return new Promise<SubagentStopRpcResult>((resolve) => {
+    let settled = false;
+    let unsubscribe = () => {};
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const finish = (result: SubagentStopRpcResult): void => {
+      if (settled) return;
+      settled = true;
+      unsubscribe();
+      if (timeout) clearTimeout(timeout);
+      resolve(result);
+    };
+    try {
+      unsubscribe = binding.events.on(replyChannel, (raw) => {
+        if (subagentRpcBinding?.events !== binding.events
+          || subagentRpcBinding.generation !== generation
+          || flags.sessionGeneration !== generation) {
+          finish({ kind: "stale" });
+          return;
+        }
+        const reply = raw as { success?: boolean; error?: unknown } | null;
+        if (reply?.success === true) finish({ kind: "requested" });
+        else finish({ kind: "failed", error: typeof reply?.error === "string" ? reply.error : "the RPC service rejected the request" });
+      });
+      binding.events.emit("subagents:rpc:stop", { requestId, agentId: recordId });
+      timeout = setTimeout(() => finish({ kind: "unavailable", reason: "the subagents stop RPC timed out" }), SUBAGENT_RPC_STOP_TIMEOUT_MS);
+      timeout.unref?.();
+    } catch (error) {
+      finish({ kind: "unavailable", reason: error instanceof Error ? error.message : String(error) });
+    }
+  });
 }
 
 let subagentHangEscalationMsOverride: number | null = null;
