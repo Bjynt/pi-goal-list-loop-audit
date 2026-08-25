@@ -778,6 +778,20 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     }
   }
 
+  // v0.35.60: tool visibility is a pre-turn invariant, not merely a
+  // session-start/agent-end repair. Another extension may replace the active
+  // tool set between those events; if that happens, the model can emit a
+  // valid glla call that pi answers with "Tool <name> not found". Register
+  // definitions and heal the model-facing active set immediately before a
+  // turn (and on older hosts' agent_start fallback).
+  function ensureAgentToolsReady(ctx: ExtensionContext): void {
+    if (!toolsRegistered) {
+      registerAgentTools(pi);
+      toolsRegistered = true;
+    }
+    ensureAgentToolsActive(pi, ctx);
+  }
+
   // v0.26.1: compaction ends WITHOUT an agent_end (the compaction turn is
   // not an agent turn), so the continuation chain can dangle until the
   // 60s heartbeat notices. Re-arm it as soon as pi settles post-compact.
@@ -1152,11 +1166,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       heldLoop: state.loop && (state.loop.active || state.loop.stopReason === HELD_ON_RESTORE) ? state.loop.target.slice(0, 60) : undefined,
     };
     carryoverResolved = !(carryoverSnapshot.pausedGoal || carryoverSnapshot.listCount > 0 || carryoverSnapshot.heldLoop);
-    if (!toolsRegistered) {
-      registerAgentTools(pi);
-      toolsRegistered = true;
-    }
-    ensureAgentToolsActive(pi, ctx);
+    ensureAgentToolsReady(ctx);
     warnOnCommandCollision(ctx);
     warnIfAuditorProviderRisky(ctx);
     // v0.24.6: sync the pi-subagents model override (managed Explore.md) with
@@ -1772,11 +1782,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       t.turns++;
       state.goal.telemetry = t;
     }
-    if (!toolsRegistered) {
-      registerAgentTools(pi);
-      toolsRegistered = true;
-    }
-    ensureAgentToolsActive(pi, ctx);
+    ensureAgentToolsReady(ctx);
     // v0.27.3: nudge accounting — substantive analytical turns (long, novel
     // text) reset the counter even with no tool calls. Polis-session
     // incident showed the tool-only check fired on real investigation work.
@@ -2163,8 +2169,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // v0.34.27: absorb before the stale/foreign gates. This is the strongest
     // replacement contact because pi exposes the prompt itself.
     rememberCtx(ctx);
-    if (tryAbsorbHostSuccessor(ctx, "before_agent_start")) return;
+    if (tryAbsorbHostSuccessor(ctx, "before_agent_start")) {
+      ensureAgentToolsReady(ctx);
+      return;
+    }
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
+    ensureAgentToolsReady(ctx);
     // v0.34.57: turn-boundary model drift (bug #1.14) — the session is about
     // to run a turn on a model different from the last observed one. Ledger
     // only: the turn already started, there is nothing to block.
@@ -2222,8 +2232,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   });
   pi.on("agent_start", (_event: any, ctx: ExtensionContext) => {
     rememberCtx(ctx);
-    if (tryAbsorbHostSuccessor(ctx, "agent_start")) return;
+    if (tryAbsorbHostSuccessor(ctx, "agent_start")) {
+      ensureAgentToolsReady(ctx);
+      return;
+    }
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
+    ensureAgentToolsReady(ctx);
     lastStreamActivityAt = Date.now();
     streamActivityObserved = true;
     // v0.32.1: a real turn started — the post-compaction resume debt is
@@ -2233,8 +2247,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   });
   pi.on("turn_start", (_event: any, ctx: ExtensionContext) => {
     rememberCtx(ctx);
-    if (tryAbsorbHostSuccessor(ctx, "turn_start")) return;
+    if (tryAbsorbHostSuccessor(ctx, "turn_start")) {
+      ensureAgentToolsReady(ctx);
+      return;
+    }
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown || isForeignCtx(ctx)) return;
+    ensureAgentToolsReady(ctx);
     lastStreamActivityAt = Date.now();
     streamActivityObserved = true;
     dispatchStartAcknowledged(ctx, "turn_start");

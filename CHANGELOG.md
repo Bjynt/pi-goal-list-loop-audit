@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.35.60 — pre-turn glla tool visibility (2026-08-25)
+
+### Fix
+  GLLA agent tools are now registered and reactivated immediately before
+  agent turns, with `agent_start`/`turn_start` compatibility fallbacks. This
+  closes the interval where an external tool allowlist or modlist could remove
+  `pause_goal` after session restore and Pi would answer a valid model call
+  with `Tool pause_goal not found`, leaving a parked objective looking stuck
+  until reload.
+
+### Tests
+  `tests/gettick-tool-visibility.test.ts` simulates a post-restore active-tool
+  replacement and verifies the pre-turn boundary restores `pause_goal` and
+  keeps it callable. Version metadata is synchronized to 0.35.60.
+
 ## 0.35.59 — safe cancel/wipe across unresolved session roots (2026-08-25)
 
 ### Fix
