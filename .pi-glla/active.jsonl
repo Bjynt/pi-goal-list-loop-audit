@@ -7573,3 +7573,5 @@
 {"type":"continuation_start_acknowledged","value":{"id":"123864:1787679081468:262:20260825173130-reyt79","kind":"goal","goalId":"20260825163529-rocd6r","generation":262,"ownerSessionId":"01a02353-0a9c-742d-8d99-e222dda417c9","marker":"[GOAL CHECKPOINT goalId=20260825163529-rocd6r]","sentAt":1787679090924,"phase":"started","timeoutMs":30000,"acknowledgement":"accepted","startProofSource":"agent_start","settlement":"started","startedAt":1787679090986,"settledAt":1787679090986},"at":"2026-08-25T17:31:31.208Z"}
 {"type":"resume_rekick","value":{"goalId":"20260825163529-rocd6r","policy":"list"},"at":"2026-08-25T17:31:33.593Z"}
 {"type":"send_rearm_start","value":{"kind":"continuation"},"at":"2026-08-25T17:31:33.654Z"}
+{"type":"send_rearm_storm","value":{"kind":"continuation","streak":19,"minutes":2},"at":"2026-08-25T17:33:58.910Z"}
+{"type":"rearm_no_turn_started","value":{"streak":19,"minutes":2},"at":"2026-08-25T17:33:58.911Z"}
