@@ -88,6 +88,17 @@ sometimes we get stuck on compacts cause the model cant compact that large
 would it makes sense to have a dedicated compact to switch into a free model that can compact perhaps for even free but i guess intelligence still matters here so 
 this is more of dont get stuck for long goals than price hack
 
+## we need something for the longer running stall
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260825_141357.png 
+
+## for bug fixing we coudl use a /glla bug
+
+so we can record the information when we witness a bug, 
+also we shouldbe logging info that could be useful for this
+
+
+
 # Idea
 
 ##
