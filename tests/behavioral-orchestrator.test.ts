@@ -27,7 +27,7 @@ import * as path from "node:path";
 import { execSync } from "node:child_process";
 import activate, { __testOnlyLastConfirmDialog, __testOnlyLoadState, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyResetTerminalFlags, __testOnlyRunFanOutListAuditFindings, __testOnlySetAuditorRecoveryRetryDelay, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, __testOnlySetSessionReplacementUntil, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
 import { __testOnlyResetZombieAutoRetry } from "../extensions/loops/goal-activation.js";
-import { __testOnlyHeartbeatTick, __testOnlySetZombieRunWindows, __testOnlyResetZombieRunWatchdog, __testOnlyClearSubagentHangProbes, upsertSubagentHangProbe, endSubagentHangProbe } from "../extensions/goal-heartbeat.js";
+import { __testOnlyHeartbeatTick, __testOnlySetZombieRunWindows, __testOnlyResetZombieRunWatchdog, __testOnlyClearSubagentHangProbes, __testOnlySubagentHangProbes, upsertSubagentHangProbe, endSubagentHangProbe } from "../extensions/goal-heartbeat.js";
 import { mainModelRecoverySucceeded } from "../extensions/goal-recovery.js";
 
 // v0.29.5: autoResume is GLOBAL-only now — tests opt in by writing the
@@ -4098,6 +4098,42 @@ test("v0.35.4: zombie watchdog stands down while a subagent wait is in flight", 
     assert.equal(aborts, 1, "abort proceeds once the wait is gone");
     assert.equal((readState(cwd).goal as { status?: string } | null)?.status, "paused");
   } finally {
+    __testOnlyClearSubagentHangProbes();
+    __testOnlyResetZombieRunWatchdog();
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  }
+});
+
+test("v0.35.64: a stale subagent probe no longer shields unrelated parent cleanup", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  __testOnlyClearSubagentHangProbes();
+  __testOnlySetZombieRunWindows(0, 0);
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "reload");
+  ctx.isIdle = () => false;
+  let aborts = 0;
+  ctx.abort = () => { aborts++; };
+  const managerKey = Symbol.for("pi-subagents:manager");
+  const previousManager = (globalThis as any)[managerKey];
+  (globalThis as any)[managerKey] = { getRecord: () => undefined };
+  try {
+    const added = await pi.runTool("list_add", {
+      items: ["stale child must not shield parent cleanup — done when the watchdog remains independent"],
+    }, ctx);
+    assert.match(added.content[0]?.text ?? "", /active/i);
+    (globalThis as any).compactionGraceUntil = 0;
+    (globalThis as any).postCompletionSettleUntil = 0;
+    upsertSubagentHangProbe("stale-shield-child", "Explore", "stale child");
+    const probe = __testOnlySubagentHangProbes().find((candidate) => candidate.recordId === "stale-shield-child")!;
+    probe.lastProgressAt = Date.now() - 21 * 60_000;
+
+    __testOnlyHeartbeatTick();
+    assert.equal(aborts, 1, "the stale child does not suppress the unrelated parent zombie abort");
+    assert.equal(readLedger(cwd).filter((entry) => entry.type === "zombie_run_aborted").length, 1);
+  } finally {
+    if (previousManager === undefined) delete (globalThis as any)[managerKey];
+    else (globalThis as any)[managerKey] = previousManager;
     __testOnlyClearSubagentHangProbes();
     __testOnlyResetZombieRunWatchdog();
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
