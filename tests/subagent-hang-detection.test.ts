@@ -353,6 +353,9 @@ test("source pins: constants, watchdog wiring, and ledger key", () => {
   const hb = fs.readFileSync("extensions/goal-heartbeat.ts", "utf-8"); // decomposition step 4 (v0.34.112)
   assert.match(hb, /const SUBAGENT_HANG_NO_PROGRESS_MS = 5 \* 60_000;/);
   assert.match(hb, /const SUBAGENT_HANG_EVENT_ONLY_MS = 20 \* 60_000;/);
+  assert.match(hb, /subagentHangEscalationMinutes/);
+  assert.match(hb, /subagent_hang_action_requested/);
+  assert.match(hb, /poll\.abort/);
   assert.match(hb, /Symbol\.for\("pi-subagents:manager"\)/);
   assert.match(hb, /subagent_hang_detected/);
   assert.match(hb, /evidence: stillTracked \? "record-frozen" : "event-only"/);
