@@ -418,7 +418,7 @@ when tracing behavior:
 | State and roots | `extensions/goal-state.ts`, `extensions/glla-state-root.ts` |
 | Continuation and recovery | `extensions/goal-continuation.ts`, `extensions/goal-heartbeat.ts`, `extensions/goal-recovery.ts` |
 | Queue and lifecycle | `extensions/loops/goal-list-queue.ts`, `extensions/loops/goal-orchestrator.ts` |
-| Completion audit | `extensions/goal-loop-auditor-process.ts`, `extensions/loops/goal-auditor-hooks.ts` |
+| Completion audit | `extensions/goal-loop-auditor-process.ts`, `extensions/loops/goal-auditor-hooks.ts`, `extensions/loops/goal-auditor-surface.ts` |
 | Auditor launcher | `scripts/goal-auditor-worker.mjs`, `scripts/goal-auditor-launch.d.mts` |
 | Safety boundaries | `extensions/payload-guard.ts`, `extensions/context-hygiene.ts` |
 | Tests and design | `tests/`, `docs/DESIGN.md`, `PLAN.md` |

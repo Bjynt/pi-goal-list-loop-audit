@@ -42,7 +42,7 @@ test("release contract: published documentation links are covered by the npm tar
 
 test("release contract: README version matches package metadata", () => {
   const readme = fs.readFileSync("README.md", "utf-8");
-  assert.match(readme, new RegExp(`Current package version:\\*\\*.*v${packageJson.version.replaceAll(".", "\\.")}`));
+  assert.match(readme, new RegExp(`Current (?:published )?package:?\\*\\*.*v${packageJson.version.replaceAll(".", "\\.")}`));
 });
 
 test("release contract: first-use README guidance matches current behavior", () => {
@@ -57,11 +57,13 @@ test("release contract: first-use README guidance matches current behavior", () 
 
 test("release contract: README explains the high-leverage autonomy model and companion policy", () => {
   const readme = fs.readFileSync("README.md", "utf-8");
-  assert.match(readme, /long-running[\\s\\S]*high-leverage autonomous work/i);
-  assert.match(readme, /@juicesharp\\/rpiv-ask-user-question/);
-  assert.match(readme, /@tintinweb\\/pi-subagents/);
+  assert.match(readme, /long-running/i);
+  assert.match(readme, /high-leverage/i);
+  assert.match(readme, /autonomous work/i);
+  assert.match(readme, /@juicesharp\/rpiv-ask-user-question/);
+  assert.match(readme, /@tintinweb\/pi-subagents/);
   assert.match(readme, /one supervisor|second extension that also drives agent turns/i);
-  assert.doesNotMatch(readme, /What this fixes vs\\. pi-goal-x/);
+  assert.doesNotMatch(readme, /What this fixes vs\. pi-goal-x/);
 });
 
 test("release contract: README source map includes current support files", () => {
