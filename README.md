@@ -10,7 +10,7 @@ This is a detached process, not a nested session in the main pi process. `comple
 
 On Windows, npm installs the `pi.cmd` shim rather than a directly executable `pi` binary. The auditor launches it through an explicit `cmd.exe` boundary; arguments are quoted only when tokenization requires it (v0.35.27 — quoting a bare executable name breaks `.CMD` shim resolution on pnpm installs), and every argument passes the unsafe-character gate (`%`, CR, LF) before that decision. POSIX keeps direct shell-less execution. Protocol snapshots also tolerate transient Windows file-locks without deleting the last valid snapshot first.
 
-**Current package version:** `v0.35.62` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
+**Current package version:** `v0.35.63` — use `/glla version` to see the installed version and the command for comparing it with the registry latest. This checkout may contain unreleased changes; the npm registry is authoritative for published versions.
 
 ## Why this exists
 
@@ -502,6 +502,16 @@ without consent: validated handoffs/rebinds, same-process session
 successors, re-arming of work already in flight when a host silently died,
 and the single retry a parked completion claim earns when main-model
 recovery heals the provider that parked it.
+
+### Auditor context without autostart (v0.35.63)
+
+A restored objective remains visible in the status/widget UI even when the
+load hold is active, but GLLA does not add a new continuation or re-inject the
+previous auditor report until continuation consent exists. `/goal resume`,
+`/list resume`, `/list next`, `/glla resume`, admitted loop resumes, validated
+session continuity, and global **Auto-resume = on** are consent paths. The
+previous Pi transcript is historical and remains untouched; this gate controls
+only newly projected auditor feedback and model context.
 
 **Due-wait backstop (v0.35.28, issue #16).** A time-gated wait pause
 (`pauseKind: "wait"` with a `pauseResumeAt`) is no longer trusted to

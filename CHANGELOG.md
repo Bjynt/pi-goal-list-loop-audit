@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.35.63 — auditor context held until resume (2026-08-25)
+
+### Fix
+  Cold session restores now keep unfinished goal/list objectives and their
+  status visible without automatically injecting the previous auditor report
+  or dispatching a new continuation. Explicit `/goal resume`, list/glla/loop
+  continuation commands, validated lifecycle continuity, and global
+  `autoResume: true` release the auditor-context gate. The prior Pi transcript
+  and durable audit history remain untouched.
+
+### Tests
+  `tests/auditor-blank-until-resume.test.ts` proves objective visibility,
+  pre-consent report suppression, explicit resume release, and auto-resume
+  release. Version metadata is synchronized to 0.35.63.
+
 ## 0.35.62 — subagent host-state boundary (2026-08-25)
 
 ### Fix
