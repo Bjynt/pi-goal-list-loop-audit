@@ -343,7 +343,18 @@ test("list activation blocks a suspicious queued objective and leaves its repair
   assert.equal(repaired.goal?.objective, "Repair the blocked list item from saved intent");
   assert.equal(repaired.goal?.repairTarget?.id, item.id);
   assert.equal(repaired.goal?.repairTarget?.objective, item.objective);
-  assert.doesNotMatch(ledger(cwd), /"goal_continuation_sent"/);
+  assert.equal(typeof repaired.goal?.repairTarget?.replanPromptedAt, "string", "the one bounded replan turn is durable");
+  assert.equal(pi.sent.length, 1, "the repair card gets one bootstrap turn so the model can propose the confirmed redraft");
+  const firstPrompt = pi.sent[0]?.message.content ?? "";
+  assert.match(firstPrompt, /REPLAN REQUIRED/);
+  assert.match(firstPrompt, /propose_task_list/);
+  assert.ok(firstPrompt.includes(item.objective), "the original target is included in the bootstrap prompt");
+  await tick(80);
+  assert.equal(pi.sent.length, 1, "repeated heartbeat/settle ticks do not re-fire the repair card");
+  await pi.fire("before_agent_start", { prompt: firstPrompt }, ctx);
+  await sendContinuation(String(repaired.goal?.id));
+  await tick(40);
+  assert.equal(pi.sent.length, 1, "after the bootstrap turn, only a confirmed task-list redraft can clear the latch");
   assert.match(ledger(cwd), /"faulty_objective_replan_required"/);
 });
 

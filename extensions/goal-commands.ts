@@ -411,6 +411,15 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
     const staleEntry = warnIfStaleAtEntry(ctx, resumeCommand);
     if (staleEntry) return;
     releaseAuditorSurface();
+    if (state.goal.repairTarget?.replanPromptedAt) {
+      const target = state.goal.repairTarget;
+      updateGoal({ repairTarget: { ...target, replanPromptedAt: undefined } }, ctx);
+      appendLedger(ctx.cwd, "faulty_objective_replan_turn_reset", {
+        goalId: state.goal.id,
+        targetId: target.id,
+        via: "manual-resume",
+      });
+    }
     appendLedger(ctx.cwd, "resume_rekick", { goalId: state.goal.id, policy: state.goal.policy, via: resumeCommand });
     if (state.goal.interruptedAt) updateGoal({ interruptedAt: undefined, interruptedReason: undefined }, ctx); // v0.34.7: same marker law here
     ctx.ui.notify(

@@ -488,12 +488,15 @@ export function dispatchPrepare(
     return null;
   }
   pendingContinuationDispatch = record;
-  if (record.kind === "goal" && state.goal?.id === record.goalId && state.goal.repairTarget && !state.goal.repairTarget.replanPromptedAt) {
+  const repairTarget = record.kind === "goal" && state.goal?.id === record.goalId
+    ? state.goal.repairTarget
+    : undefined;
+  if (repairTarget && !repairTarget.replanPromptedAt) {
     const promptedAt = nowIso();
-    updateGoal({ repairTarget: { ...state.goal.repairTarget, replanPromptedAt: promptedAt } }, ctx);
+    updateGoal({ repairTarget: { ...repairTarget, replanPromptedAt: promptedAt } }, ctx);
     appendLedger(ctx.cwd, "faulty_objective_replan_turn_armed", {
       goalId: record.goalId,
-      targetId: state.goal.repairTarget.id,
+      targetId: repairTarget.id,
       promptedAt,
       attemptId: record.id,
     });
