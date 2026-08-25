@@ -374,6 +374,11 @@ test("headless `/glla` fallback keeps stall brakes and the v0.34.127 sync list",
     /fmt\("wedgeAlertMinutes", "wedgeAlert"\)/,
     "headless fallback must still include wedgeAlertMinutes",
   );
+  assert.match(
+    fallback,
+    /fmt\("subagentHangEscalationMinutes", "subagentHangActionMinutes"\)/,
+    "headless fallback must include the subagent hang action setting",
+  );
 
   // v0.34.127: every key copied into the interactive settings list must also
   // be visible in the headless /glla listing. Keep this list explicit so a
