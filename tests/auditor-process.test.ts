@@ -1171,7 +1171,11 @@ setInterval(() => {}, 1000);
         homeDir: home,
         attemptId: () => "worker-resolve-test",
         pollIntervalMs: 10,
-        wallTimeoutMs: 1_000,
+        // The stub deliberately stays alive so the parent must reap it. Keep
+        // enough startup budget for a busy release gate: the assertion is
+        // about resolved request contents, not a one-second process-launch
+        // deadline (field: v0.36.0 request-copy failure under load).
+        wallTimeoutMs: 5_000,
       },
     });
     assert.ok(result.error, "stub worker never produces a verdict");

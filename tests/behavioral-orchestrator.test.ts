@@ -3622,18 +3622,22 @@ test("v0.35.x: healthy same-session heartbeat recovers a parked completion audit
   }
 });
 
-test("v0.35.x: no-verdict auditor infrastructure failure schedules one durable automatic recovery", { timeout: 30_000 }, async () => {
+test("v0.35.x: no-verdict auditor infrastructure failure schedules one durable automatic recovery", { timeout: 60_000 }, async () => {
   __testOnlyResetStaleFlag();
   __testOnlySetAuditorRecoveryRetryDelay(120);
   const cwd = tmpCwd();
   const previous = process.env.GLLA_PI_BINARY;
   process.env.GLLA_PI_BINARY = writeFakeAuditorError(cwd, "Auditor stalled — no progress");
+  let ctx: MockCtx | undefined;
   try {
-    const ctx = await freshSession(cwd, "startup");
+    // Detached process startup can exceed a few seconds on the busy release
+    // rig; wait for the durable event rather than making a one-shot 12s
+    // launch assumption.
+    ctx = await freshSession(cwd, "startup");
     await pi.command("goal", "recover a no-verdict auditor failure — done when pinned", ctx);
     await tick();
     await pi.runTool("complete_goal", { completionSummary: "Stored claim", verificationSummary: "Stored evidence" }, ctx);
-    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "audit_recovery_retry_scheduled"), 12_000);
+    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "audit_recovery_retry_scheduled"), 30_000);
 
     const parked = readState(cwd).goal as { status?: string; pauseKind?: string; pauseResumeAt?: string; pendingCompletion?: { phase?: string; recoveryRetryAt?: string; automaticRecoveryAttempted?: boolean } } | null;
     assert.equal(parked?.status, "paused");
@@ -3651,8 +3655,10 @@ test("v0.35.x: no-verdict auditor infrastructure failure schedules one durable a
     const ledger = readLedger(cwd);
     assert.equal(ledger.filter((entry) => entry.type === "audit_recovery_auto_retry_claimed").length, 1);
     assert.equal(ledger.filter((entry) => entry.type === "audit_recovery_retry_scheduled").length, 1, "the one-shot recovery is not re-armed by its own retry");
-    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   } finally {
+    // Clean up even when an assertion/timeout fails; otherwise a detached
+    // fake auditor can poison the next recovery test in this shared process.
+    if (ctx) await pi.fire("session_shutdown", { reason: "quit" }, ctx).catch(() => {});
     pi.sendMessageError = null;
     pi.sessionNameError = null;
     __testOnlySetAuditorRecoveryRetryDelay(null);
@@ -3662,17 +3668,17 @@ test("v0.35.x: no-verdict auditor infrastructure failure schedules one durable a
   }
 });
 
-test("v0.34.140: aggressive mode keeps no-verdict auditor recovery alive inside its durable window", { timeout: 120_000 }, async () => {
+test("v0.34.140: aggressive mode keeps no-verdict auditor recovery alive inside its durable window", { timeout: 240_000 }, async () => {
   // v0.35.15: budget raised 30s→60s — this real-timer test observed 23s on
   // a busy machine (the auditor's own release:check ran concurrently with
   // an active session) and blew the per-test ceiling, fast-failing the
   // whole release check. The budget adds no wall time; it only stops load
   // spikes from killing the gate.
-  // v0.35.19: raised again 60s→120s with wait budgets 25s→45s / 8s→20s —
-  // at machine load ~50 (16 cores) each fake-auditor subprocess spawn
-  // cycle takes many seconds, and TWO retry cycles legitimately exceeded
-  // 25s while the canonical full-suite run stayed green (117/117 in the
-  // same conditions). Budgets only; semantics untouched.
+  // v0.35.19/v0.35.61: raised the test budget again with wait budgets
+  // 25s→45s→90s / 8s→20s→30s — at machine load ~50 (16 cores) each
+  // fake-auditor subprocess spawn cycle can take many seconds, and TWO retry
+  // cycles legitimately exceed the old budget. Budgets only; semantics
+  // untouched.
   __testOnlyResetStaleFlag();
   __testOnlySetAuditorRecoveryRetryDelay(120);
   const cwd = tmpCwd();
@@ -3680,13 +3686,14 @@ test("v0.34.140: aggressive mode keeps no-verdict auditor recovery alive inside 
   fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ aggressiveMode: true }));
   const previous = process.env.GLLA_PI_BINARY;
   process.env.GLLA_PI_BINARY = writeFakeAuditorError(cwd, "Auditor stalled — no progress");
+  let ctx: MockCtx | undefined;
   try {
-    const ctx = await freshSession(cwd, "startup");
+    ctx = await freshSession(cwd, "startup");
     await pi.command("goal", "aggressive no-verdict recovery — done when the stored claim is audited", ctx);
     await tick();
     await pi.runTool("complete_goal", { completionSummary: "Stored claim", verificationSummary: "Stored evidence" }, ctx);
 
-    await waitUntil(() => readLedger(cwd).filter((entry) => entry.type === "audit_recovery_retry_scheduled").length >= 2, 45_000);
+    await waitUntil(() => readLedger(cwd).filter((entry) => entry.type === "audit_recovery_retry_scheduled").length >= 2, 90_000);
     await waitUntil(() => readLedger(cwd).filter((entry) => entry.type === "audit_recovery_auto_retry_claimed").length >= 2, 45_000);
 
     const persisted = readState(cwd).goal as {
@@ -3715,10 +3722,10 @@ test("v0.34.140: aggressive mode keeps no-verdict auditor recovery alive inside 
         && goal.pauseKind === "blocked"
         && !goal.pauseResumeAt
         && !goal.pendingCompletion?.recoveryRetryAt;
-    }, 20_000);
+    }, 30_000);
     assert.ok(readLedger(cwd).some((entry) => entry.type === "audit_recovery_retry_suppressed" && entry.value.reason === "aggressive-mode-disabled"));
-    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   } finally {
+    if (ctx) await pi.fire("session_shutdown", { reason: "quit" }, ctx).catch(() => {});
     pi.sendMessageError = null;
     pi.sessionNameError = null;
     __testOnlySetAuditorRecoveryRetryDelay(null);
