@@ -22,6 +22,8 @@ Update the README and docs for new visitors after the current behavior settles;
 start with the installation and first-use path rather than an exhaustive
 changelog narrative.
 
+
+
 # Later
 
 ## Better status visuals, not just better but arguably broken
@@ -34,6 +36,8 @@ Evidence:
 - /home/dracon/Pictures/Screenshots/Screenshot_20260822_132806.png
 - /home/dracon/Pictures/Screenshots/Screenshot_20260822_200250.png
 - /home/dracon/Pictures/Screenshots/Screenshot_20260825_223048.png 
+
+## After better visuals we also plan on uploading a thumnail for the start of the readme that is also the thumbnail on the pi store
 
 ## `/list add` accidental command
 

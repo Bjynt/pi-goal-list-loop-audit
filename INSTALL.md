@@ -23,16 +23,16 @@ In any pi session, in the project you want worked on:
 
 What happens:
 
-1. **Draft + Confirm** — glla shows the goal contract (objective + Done-when);
-   nothing activates unconfirmed.
+1. A complete `Done when:` clause starts directly; bare `/goal` or an objective
+   without a contract opens the drafting interview and Confirm dialog. Use
+   `/goal start` when skipping the interview is intentional.
 2. **The loop drives** — after every agent turn, glla nudges the work forward;
    the widget (bottom-left) shows the goal, elapsed time, and last action.
-3. **Verified completion** — when the agent calls `complete_goal`, glla
-   runs deterministic mechanical pre-audit checks first (~200ms fast-fail on
-   compiler/test failures) before queueing the **detached auditor worker process** (a
-   fresh pi RPC session with no extensions). It re-runs your checks and
-   demands raw output per contract item without holding the main pi turn.
-   Done sticks only when the auditor approves with evidence.
+3. **Verified completion** — when the agent calls `complete_goal`, glla runs
+   the contract's mechanical checks before queueing the **detached auditor
+   worker process** (a fresh pi RPC session with no extensions). It re-runs
+   your checks and demands raw output per contract item without holding the
+   main pi turn. Done sticks only when the auditor approves with evidence.
 
 Then the other two modes:
 
@@ -45,8 +45,11 @@ Then the other two modes:
 
 - **Commands**: `/goal`, `/list`, `/loop`, `/glla` (settings), `/review`.
 - **Widget**: live goal/loop status — objective, elapsed time, last tool action.
-- **State on disk**: `.pi-glla/` in your project — ledger `active.jsonl`,
-  goal markdown in `goals/`, finished goals in `archive/`.
+- **State on disk**: `.pi-glla/` in your project by default — ledger
+  `active.jsonl`, goal markdown in `goals/`, finished goals in `archive/`.
+  `/glla` settings also offers opt-in `sessionDir`, which uses Pi's canonical
+  session directory and fails closed until that root is known; it does not
+  migrate or delete the old working-directory tree.
 - **Tools for the agent** (only while a goal is active): `complete_goal`,
   `pause_goal`, `complete_task`, `update_task_status`.
 
@@ -178,20 +181,14 @@ Control it via `/glla` → Settings:
 Changes apply to NEW pi sessions (pi-subagents registers agents at its own
 session start).
 
-Release-workflow note: installing into the local extension tree
-(`~/.pi/agent/npm`) requires `--legacy-peer-deps` — a pre-existing
-`@pi-unipi/notify` peer pin on `@earendil-works/pi-coding-agent@^0.78.0`
-conflicts with the current pi release.
-
 ## Run the tests
 
 ```bash
 npm test
 ```
 
-Expected output at v0.35.3: 1363 passing tests across 113 files (1 env-gated skip).
-Counts change as bounded regressions are added; use the command output
-as the source of truth ("N pass / 0 fail").
+The test count intentionally changes as bounded regressions are added; use
+the command output as the source of truth and require `0 fail`.
 
 ## Run the type-check
 
@@ -218,7 +215,9 @@ After installing:
 2. The orchestrator creates `.pi-glla/goals/<id>.md`, schedules continuation, and the agent starts.
 3. The agent reads the goal, makes the change, runs the verification, and calls `complete_goal`.
 4. The orchestrator queues a detached auditor worker and returns control to the main turn.
-5. The worker inspects files, runs `curl`, reads `git log`, and writes an identity-checked result.
+5. The worker inspects files and may run bounded verification commands such
+   as `curl` or `git log` through its explicit inspection/tooling allowlist;
+   it writes an identity-checked result for the parent.
 6. Either `<approved/>` → goal archived; or `<disapproved/>` → loop continues.
 
 ## Reading the state

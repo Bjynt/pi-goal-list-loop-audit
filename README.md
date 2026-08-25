@@ -2,7 +2,7 @@
 
 > **Mission control for autonomous pi.**
 
-Interview-drafted goals, an audited task queue, and forever-loops (metric, spec, project-audit) that run for hours. Every goal starts as a **drafted contract you confirm** — nothing activates sight-unseen. The plugin then writes a durable goal to disk, drives the agent through an `agent_end`-driven loop, and on each `complete_goal` queues a **detached auditor worker process** to verify the work without holding the main pi turn open. Stall recovery, structured decision pauses, and consent gates keep you in charge while it works.
+Interview-drafted goals, an audited task queue, and forever-loops (metric, spec, project-audit) that run for hours. The default goal/list/loop paths shape a **contract you confirm** before activation; explicit `/goal start`, a complete `Done when:` clause, and configured auto-accept are deliberate shortcuts. The plugin then writes durable state to disk, drives the agent through an `agent_end`-driven loop, and on each `complete_goal` queues a **detached auditor worker process** to verify the work without holding the main pi turn open. Stall recovery, structured decision pauses, and consent gates keep you in charge while it works.
 
 The auditor runs in a fresh extension-less pi RPC process with no extensions, skills, prompts, themes, or context files. It has `read` / `grep` / `find` / `ls` / `bash` in intentional power mode. It cannot see the implementing conversation and receives no glla extension APIs or parent state handles, but bash is not an OS sandbox: a prompt-injected command or verifier can write repository/glla files or plant evidence. Its durable result is attempt-identity-checked and revalidated by the parent (including the regression shield) before it can archive a goal.
 
@@ -25,7 +25,7 @@ Most pi goal extensions — `pi-goal`, `pi-goal-x`, `pi-loop-mode`, `ralphi`, `t
 | Goal intake | Deep upfront grilling + Confirm/Reject dialog; nothing activates unconfirmed |
 | Implementation | Zero-pause autonomous execution: `agent_end`-driven loop with autonomous pivoting & sensible defaults |
 | Milestone gates | Structured task milestones with mechanical test execution before completion |
-| Pre-Audit | **Deterministic Fast-Fail**: Mechanical shell checks (`npm test`, `tsc`, `cargo test`) run in ~200ms before spawning the auditor worker |
+| Pre-Audit | **Deterministic Fast-Fail**: the completion contract's mechanical checks run before the detached auditor; the release gate is `npm run release:check` (Bun suite, TypeScript, jiti, offline auditor fixture, and npm pack) |
 | Final Verification | Detached extension-less auditor process + **regression_shield**: raw command output required per verification-contract item, enforced orchestrator-side |
 | Queue Hygiene | Anti-queue-drift: every single `/list` item receives an independent detached audit pass before queue advancement |
 
@@ -63,6 +63,36 @@ Five top-level commands — `/goal`, `/list`, `/loop`, `/glla`, `/review`:
 ```
 
 (Or just say it: "queue these 10 things…" — the agent manages the list too.)
+
+## First session: the safe path
+
+1. Install the package and start pi in the project directory you want glla to
+   work on.
+2. Run `/goal "Fix the login timeout bug. Done when: npm test passes"` for a
+   contract-complete direct start, or run bare `/goal` when you want the
+   interview and Confirm dialog first. `/goal start "..."` is the explicit
+   no-interview path.
+3. Watch the `glla:` status segment. It distinguishes active, queued, paused,
+   recovering, auditing, and waiting states; it does not claim progress from
+   silence alone.
+4. When the agent calls `complete_goal`, the detached auditor must approve the
+   saved contract before the goal archives. `/goal status` shows the claim,
+   audit phase, and any recovery action.
+
+**Where state lives:** the default root is `<working-directory>/.pi-glla/`.
+The global `/glla` settings table has an opt-in **State root** choice for
+`sessionDir`, which uses Pi's canonical top-level session directory instead.
+The session root must be admitted by the host lifecycle first; unresolved
+`sessionDir` writes fail closed rather than recreating ambiguous state under
+whatever cwd happens to be active. Changing the root does not silently migrate
+or delete the old working-directory tree.
+
+**If a saved list item needs repair:** the repair card preserves the complete
+original target, shows the concrete recovery step and queue position, and
+allows one bounded bootstrap turn containing `propose_task_list`. Confirm the
+redraft; repeated automatic refires are fenced. Use `/list resume` only for an
+explicit retry, and `/list next` when you intentionally want to start another
+queued item.
 
 **Order is the default, not the law**: auto-advance takes the head (FIFO), but
 `/list next <n>` or the agent's `list_activate` tool picks any item — with
@@ -557,6 +587,7 @@ dialog for that model. The **Auditor fallback agent** row applies the same
 filtering to the failure-over pin.
 
 - Notify command, token limit, and wedge-alert minutes
+- State root (`workingDir` by default, opt-in `sessionDir`)
 - Auto-resume, auto-accept drafts, decision popup, and carryover policy
 - Main-agent current model/thinking, fallback models, recovery cadence, and preferred-primary failback policy in the Main agent tab
 - Drafter agent/thinking/fallback agents in the Drafter tab
@@ -725,7 +756,7 @@ Post-decomposition layout (the v0.34.x monolith is gone — `loops/goal.ts` is
 a thin activation/wiring installer):
 
 ```
-extensions/  (34 files — all of them, grouped by concern)
+extensions/  (37 files — all of them, grouped by concern)
   # command + UI surface
   goal-commands.ts             # /goal + /list command surface, drafting, wipe/stats
   settings-menu.ts             # /glla settings menu sections + rows
@@ -734,6 +765,8 @@ extensions/  (34 files — all of them, grouped by concern)
   vision-assist.ts             # mmx vision routing + model-switch gate
   glla-version.ts              # version info for /glla version (source + npm)
   # state, types, pure helpers
+  context-hygiene.ts           # failed-turn context pruning before compaction
+  glla-state-root.ts           # workingDir/sessionDir state-root resolution
   goal-loop-core.ts            # types, JSONL state reader, pure helpers
   goal-state.ts                # disk writer (persistStateLine serialization)
   goal-settings.ts             # settings load/save + global/project paths
@@ -756,6 +789,7 @@ extensions/  (34 files — all of them, grouped by concern)
   goal-loop-repetition.ts      # anti-repetition detectors (stuck ladder, v0.24.0)
   goal-loop-stats.ts           # ledger rollups + premature-success detection
   goal-loop-subagents.ts       # subagent markers + pinned-agent knowledge
+  payload-guard.ts             # bounded external/provider payload projection
   reviewer.ts                  # archived-goal re-review config + classification
   # auditor machinery
   goal-loop-auditor.ts         # auditor prompt + legacy in-process helper
@@ -766,13 +800,14 @@ extensions/  (34 files — all of them, grouped by concern)
   model-picker.ts              # single-model picker items
   multi-model-picker.ts        # multi-model picker UI
   model-selector.ts            # scope-aware fallback selector composition
-loops/
+loops/ (11 files)
   goal.ts                      # public activation/wiring installer (thin)
   goal-activation.ts           # event wiring, command registration, session lifecycle
   goal-tools.ts                # agent tools (complete_goal, pause_goal, list_*, loop drafts)
   goal-orchestrator.ts         # goal lifecycle: create/archive/advance, reviewer
   goal-list-queue.ts           # /list queue: enqueue/advance/drain, list drafting
   goal-auditor-hooks.ts        # completion-audit claim/recovery machinery
+  goal-auditor-surface.ts       # blank-until-resume auditor context gate
   goal-session.ts              # session-scoped runtime globals + lifecycle state
   goal-runtime-globals.ts      # ambient declarations for those globals
   goal-settings-ui.ts          # settings editors + model pickers
@@ -785,7 +820,8 @@ prompts/  (7 — one per prompt surface; edited as .md, read at runtime)
   goal-loop-forever.md         # /loop driver prompt
   goal-loop-forever-draft.md   # /loop drafting interview
   goal-loop-forever-metricless.md  # metricless-/loop drafting variant
-scripts/
+scripts/ (6 files)
+  goal-auditor-launch.d.mts    # launcher helper declaration surface
   goal-auditor-worker.mjs      # extension-less RPC auditor child process
   goal-auditor-launch.mjs      # Windows-safe spawn spec builder (gate-before-quote)
   auditor-extension-fixture.mjs       # hermetic provider fixture for the auditor gate

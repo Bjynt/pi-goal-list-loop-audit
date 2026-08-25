@@ -45,6 +45,29 @@ test("release contract: README version matches package metadata", () => {
   assert.match(readme, new RegExp(`Current package version:\\*\\*.*v${packageJson.version.replaceAll(".", "\\.")}`));
 });
 
+test("release contract: first-use README guidance matches current behavior", () => {
+  const readme = fs.readFileSync("README.md", "utf-8");
+  assert.match(readme, /State root.*workingDir.*sessionDir/s);
+  assert.match(readme, /propose_task_list/);
+  assert.match(readme, /`\/list resume`/);
+  assert.match(readme, /npm run release:check/);
+  assert.doesNotMatch(readme, /Expected output at v0\.35\.3/);
+  assert.doesNotMatch(readme, /cargo test/);
+});
+
+test("release contract: README source map includes current support files", () => {
+  const readme = fs.readFileSync("README.md", "utf-8");
+  for (const required of [
+    "context-hygiene.ts",
+    "glla-state-root.ts",
+    "payload-guard.ts",
+    "goal-auditor-surface.ts",
+    "goal-auditor-launch.d.mts",
+  ]) {
+    assert.match(readme, new RegExp(required.replace(".", "\\.")), `${required} must appear in the README map`);
+  }
+});
+
 test("release workflow scopes trusted-publishing OIDC to the publish job", () => {
   const workflow = fs.readFileSync(".github/workflows/publish.yml", "utf-8");
   const jobsAt = workflow.indexOf("jobs:\n");
