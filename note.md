@@ -1,28 +1,20 @@
 # Now
 
-## Investigate and fix long-running subagent stalls
+## Replan/repair UX audit
 
-The watchdog currently detects and warns about a child that stops producing
-progress, but it does not take a bounded recovery action. The field behavior
-is especially bad when an Explore/general-purpose child remains visibly
-running for 70–120 minutes while the main session only repeats a warning.
-Preserve legitimate telemetry and healthy long reasoning; act only after a
-second, longer no-progress threshold and leave an honest resume/cancel path.
+Recheck the repair-card path from the saved-intent screenshot and make sure a
+malformed list item cannot keep re-firing forever, the original target remains
+recoverable, and `/list next`/`/list resume` are always the truthful actions.
+Include the replan-required surface: its original target, concrete recovery
+step, and queue position must stay visible without the repair card becoming a
+new source of indefinite churn.
 
 Evidence:
-- /home/dracon/Pictures/Screenshots/Screenshot_20260824_091051.png
-- /home/dracon/Pictures/Screenshots/Screenshot_20260824_124530.png
-- /home/dracon/Pictures/Screenshots/Screenshot_20260825_141357.png
-
-## Why this is first
-
-This is the only item with fresh evidence of an active, unbounded failure
-mode. The current code has a 5-minute tracked-record warning and a 20-minute
-event-only warning, but `subagent_hang_detected` is notification-only.
+- /home/dracon/Pictures/Screenshots/Screenshot_20260823_181617.png
 
 # Next
 
-## Replan/repair UX audit
+## PR #21 — review only, no wholesale merge
 
 Recheck the repair-card path from the saved-intent screenshot and make sure a
 malformed list item cannot keep re-firing forever, the original target remains
@@ -55,13 +47,6 @@ implementation details from the objective.
 Sometimes a large goal gets stuck because the current model cannot compact its
 context. Evaluate a dedicated compact/recovery fallback model path, including
 whether a free model is acceptable, without treating this as a price hack.
-
-## Replan-required visibility
-
-Keep the replan state obvious and actionable when a saved objective cannot be
-completed as written. This is related to the repair-card item above, but stays
-as a user-facing follow-up if the first investigation finds the persistence
-path sound.
 
 # Later
 
@@ -108,6 +93,11 @@ in the initial draft.
 
 # Superseded / resolved
 
+- **Long-running subagent stalls:** fixed in v0.35.64. Children still warn at
+  the short detection thresholds, then a frozen top-level tracked child gets
+  one generation-fenced child-specific abort request after the configurable
+  long threshold (default 30m); nested/unreachable children stay warning-only,
+  and stale child probes no longer shield unrelated parent cleanup.
 - **Objective cannot complete / subagent called `complete_goal`:** the child
   session now fails closed at the host boundary; only MAIN may mutate goal,
   loop, or list state. Fixed and covered by the v0.35.62 host-boundary work.
