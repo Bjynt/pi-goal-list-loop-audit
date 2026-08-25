@@ -1940,13 +1940,13 @@ async function cmdGllaPause(ctx: ExtensionContext): Promise<void> {
 }
 
 async function cmdGllaResume(ctx: ExtensionContext): Promise<void> {
-  // /glla resume is the broad resume surface and therefore carries the same
-  // consent semantics as /goal resume or /list resume.
-  releaseAuditorSurface();
   // v0.29.12: a zombie instance (handle dead after session replacement)
   // used to answer "Nothing to resume" — the resume path must name the
   // real recovery (/reload rebuilds extensions in place), not mislead.
   if (warnIfStaleAtEntry(ctx, "/glla resume")) return;
+  // /glla resume is the broad resume surface and therefore carries the same
+  // consent semantics as /goal resume or /list resume.
+  releaseAuditorSurface();
   releaseInitialSessionLoadBarrier();
   // v0.35.15: clearing a supervisor pause is resume's first job — the flag
   // outlives sessions, so an explicit /glla resume must always unfreeze the
