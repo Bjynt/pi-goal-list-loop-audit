@@ -368,8 +368,9 @@ test("repair cards require a concrete replan objective and clear the latch only 
   const pi = new MockPi();
   activate(pi.api);
   const ctx = await boot(pi, cwd);
-  // Restore the active phase only for the tool contract test; the session
-  // restore guard intentionally parks repair cards before dispatch.
+  // Restore the active phase for the direct tool contract test. Production
+  // activation now permits one bounded bootstrap turn, but this case focuses
+  // the confirmed task-list mutation itself.
   state.goal!.status = "active";
   ctx.ui.confirmImpl = async () => true;
   ctx.ui.selectImpl = async () => "Yes";
