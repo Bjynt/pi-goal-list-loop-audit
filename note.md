@@ -1,13 +1,12 @@
 # Now
 
-## Release
+## Maintainer issue and PR review
 
-Its been a while
-
-## Investigate 
-
-https://github.com/DraconDev/pi-goal-list-loop-audit/issues
-https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
+The live inventory is recorded in
+`audit/GITHUB-MAINTAINER-INVENTORY-2026-08-25.md`. Four plugin-owned issues
+(#23, #30, #32, #34), the related launcher PR #24, and two blocked feature PRs
+(#22, #36) need explicit follow-up decisions; upstream/out-of-scope requests
+remain catalogued without local action.
 
 # Next
 
