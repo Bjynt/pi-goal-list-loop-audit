@@ -48,8 +48,8 @@ but independent user-facing behaviors.
 - `tests/auditor-blank-until-resume.test.ts`: **3 pass / 0 fail**.
 - `tests/load-without-autostart.test.ts`, display, prompt, and behavioral
   lifecycle coverage: passed in the focused regression run.
-- `npx tsc --noEmit`: **passed** (`/tmp/tsc-auditor-blank-final.log`).
-- Fresh `npm run release:check` (`/tmp/rc-auditor-blank-final.log`): **1582
-  pass / 0 fail / 2 skipped**, 1584 tests across 146 files in 234.09s; Jiti
+- `npx tsc --noEmit`: **passed**.
+- Fresh `npm run release:check` (`/tmp/rc-auditor-blank-final2.log`): **1582
+  pass / 0 fail / 2 skipped**, 1584 tests across 146 files in 216.58s; Jiti
   smoke passed and `npm pack --dry-run` produced
   `pi-goal-list-loop-audit-0.35.63.tgz`.

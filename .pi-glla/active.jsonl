@@ -7377,3 +7377,4 @@
 {"type":"rearm_no_turn_started","value":{"streak":25,"minutes":5},"at":"2026-08-25T11:50:08.155Z"}
 {"type":"send_rearm_storm","value":{"kind":"continuation","streak":35,"minutes":10},"at":"2026-08-25T11:55:08.167Z"}
 {"type":"rearm_no_turn_started","value":{"streak":35,"minutes":10},"at":"2026-08-25T11:55:08.172Z"}
+{"type":"subagent_session","value":{"sessionId":"f204993f-9e13-4cd","agentType":"general-purpose","summary":"Rehearse auditor consent behavior","goalId":"20260825114442-tfn4ln","at":"2026-08-25T12:11:42.634Z"},"at":"2026-08-25T12:11:42.635Z"}
