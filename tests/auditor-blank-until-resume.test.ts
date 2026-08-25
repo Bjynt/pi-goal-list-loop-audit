@@ -44,7 +44,7 @@ function goalWithAudit(overrides: Record<string, unknown> = {}): Record<string, 
 }
 
 function widgetText(state: State): string {
-  return buildWidgetLines(state).join("\n");
+  return (buildWidgetLines(state) ?? []).join("\n");
 }
 
 async function boot(pi: MockPi, cwd: string): Promise<MockCtx> {
@@ -62,7 +62,7 @@ afterEach(() => {
 });
 
 test("cold auditor gate hides only the report, not the durable objective UI", () => {
-  const goal = goalWithAudit({ status: "active", interruptedAt: new Date().toISOString(), pauseReason: "auditor disapproved — fix the gap" }) as Goal;
+  const goal = goalWithAudit({ status: "active", interruptedAt: new Date().toISOString(), pauseReason: "auditor disapproved — fix the gap" }) as unknown as Goal;
   const state = { goal, list: [], loop: null } as unknown as State;
 
   suppressAuditorSurfaceAfterColdRestore();
