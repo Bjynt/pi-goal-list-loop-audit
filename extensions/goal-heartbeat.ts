@@ -554,6 +554,17 @@ function hasHealthySubagentHangProbe(now = Date.now()): boolean {
   return false;
 }
 
+function hasStaleSubagentHangProbe(now = Date.now()): boolean {
+  const poll = subagentManagerPoller();
+  for (const probe of subagentHangProbes.values()) {
+    if (probe.endedAt !== undefined || probe.hangActionAt !== undefined) continue;
+    const rec = poll.getRecord?.(probe.recordId);
+    if (rec && isLiveSubagentRecord(rec) && now - probe.lastProgressAt >= SUBAGENT_HANG_NO_PROGRESS_MS) return true;
+    if (!rec && now - probe.lastProgressAt >= SUBAGENT_HANG_EVENT_ONLY_MS) return true;
+  }
+  return false;
+}
+
 function requestSubagentHangAction(
   ctx: ExtensionContext,
   probe: SubagentHangProbe,
@@ -900,8 +911,14 @@ function heartbeatTick(): void {
     // wait. Stand down only while a probe still has fresh evidence. Once a
     // child is classified stale or an action was requested, it must not shield
     // an unrelated parent turn from its own bounded cleanup.
+    const inFlightSubagentTool = [...flags.inFlightToolCalls.values()].some(isSubagentWaitCall);
     const healthySubagentWait = hasHealthySubagentHangProbe();
-    if (healthySubagentWait) {
+    const staleSubagent = hasStaleSubagentHangProbe();
+    // Keep the legacy tool-name path for a foreground wait whose lifecycle
+    // event has not reached the probe registry yet. Once a probe is already
+    // stale, however, the same ambiguous tool name must not shield cleanup.
+    const subagentWaitInFlight = healthySubagentWait || (inFlightSubagentTool && !staleSubagent);
+    if (subagentWaitInFlight) {
       if (streamSilentMs >= zombieAbortMs && !flags.abortedStandDown) {
         appendLedger(ctx.cwd, "zombie_run_stood_down_subagent_wait", { streamSilentMs });
       }
