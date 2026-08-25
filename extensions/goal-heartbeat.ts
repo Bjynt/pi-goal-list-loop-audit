@@ -896,13 +896,12 @@ function heartbeatTick(): void {
     // abort and parked a run whose child was legitimately working). A parent
     // BUSY-waiting on Agent / steer_subagent / get_subagent_result is
     // EXPECTED to be stream-silent; child liveness is the subagent-hang
-    // watchdog's detection+notify territory and the wedge alert names the
-    // wait. Stand down the whole branch while a live probe or an in-flight
-    // subagent tool call is recorded — the abort must not own that case.
-    const subagentWaitInFlight =
-      hasHealthySubagentHangProbe() ||
-      [...flags.inFlightToolCalls.values()].some(isSubagentWaitCall) && hasHealthySubagentHangProbe();
-    if (subagentWaitInFlight) {
+    // watchdog's detection/action territory and the wedge alert names the
+    // wait. Stand down only while a probe still has fresh evidence. Once a
+    // child is classified stale or an action was requested, it must not shield
+    // an unrelated parent turn from its own bounded cleanup.
+    const healthySubagentWait = hasHealthySubagentHangProbe();
+    if (healthySubagentWait) {
       if (streamSilentMs >= zombieAbortMs && !flags.abortedStandDown) {
         appendLedger(ctx.cwd, "zombie_run_stood_down_subagent_wait", { streamSilentMs });
       }
@@ -1148,7 +1147,8 @@ export function __testOnlySetHeartbeatStaleDebounce(n: number | null): void {
  * probe counters (unlike classifyHungSubagents, which advances them).
  * Hung classification mirrors the heartbeat scan's semantics without its
  * mutation: no new progress for >= SUBAGENT_HANG_NO_PROGRESS_MS with the
- * manager record still pollable = record-frozen; without = event-only. */
+ * manager record still pollable = record-frozen; without a record, the longer
+ * SUBAGENT_HANG_EVENT_ONLY_MS window applies = event-only. */
 export interface SubagentAgentView {
   recordId: string;
   agentType?: string;
@@ -1162,6 +1162,7 @@ export interface SubagentAgentView {
   silentMs: number;
   evidence: "record-frozen" | "event-only" | "live";
   hangAlertedAt?: number;
+  action?: "abort-requested" | "unavailable" | "failed";
   endedAt?: number;
 }
 
@@ -1173,10 +1174,14 @@ export function getSubagentAgentsSnapshot(now = Date.now()): { agents: SubagentA
     const ended = probe.endedAt !== undefined;
     let status: SubagentAgentView["status"] = "running";
     let evidence: SubagentAgentView["evidence"] = "live";
+    let record: SubagentRecordPoll | undefined;
     if (!ended) {
-      const stillTracked = managerAvailable && poll.getRecord?.(probe.recordId) !== undefined;
+      record = poll.getRecord?.(probe.recordId);
+      const stillTracked = record !== undefined;
       const silentMs = now - probe.lastProgressAt;
-      if (silentMs >= SUBAGENT_HANG_NO_PROGRESS_MS) {
+      if (record && !isLiveSubagentRecord(record)) {
+        status = "ended";
+      } else if (silentMs >= (stillTracked ? SUBAGENT_HANG_NO_PROGRESS_MS : SUBAGENT_HANG_EVENT_ONLY_MS)) {
         status = "hung";
         evidence = stillTracked ? "record-frozen" : "event-only";
       }
@@ -1193,6 +1198,7 @@ export function getSubagentAgentsSnapshot(now = Date.now()): { agents: SubagentA
       silentMs: Math.max(0, now - probe.lastProgressAt),
       evidence,
       ...(probe.hangAlertedAt !== undefined ? { hangAlertedAt: probe.hangAlertedAt } : {}),
+      ...(probe.hangAction !== undefined ? { action: probe.hangAction } : {}),
       ...(probe.endedAt !== undefined ? { endedAt: probe.endedAt } : {}),
     });
   }
@@ -1207,8 +1213,15 @@ export function __testOnlySubagentHangProbes(): SubagentHangProbe[] {
   return [...subagentHangProbes.values()];
 }
 
+/** Test-only: override the long frozen-child action threshold. `0` keeps
+ * detection warning-only; null restores the settings-backed default. */
+export function __testOnlySetSubagentHangEscalationMs(ms: number | null): void {
+  subagentHangEscalationMsOverride = ms;
+}
+
 /** Test-only: clear the subagent-hang probe registry (between tests). Never
  * called by production code. */
 export function __testOnlyClearSubagentHangProbes(): void {
   subagentHangProbes.clear();
+  subagentHangEscalationMsOverride = null;
 }
