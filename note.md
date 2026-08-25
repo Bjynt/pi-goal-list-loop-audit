@@ -1,122 +1,122 @@
 # Now
 
-https://github.com/DraconDev/pi-goal-list-loop-audit/pulls/21
+## Investigate and fix long-running subagent stalls
+
+The watchdog currently detects and warns about a child that stops producing
+progress, but it does not take a bounded recovery action. The field behavior
+is especially bad when an Explore/general-purpose child remains visibly
+running for 70–120 minutes while the main session only repeats a warning.
+Preserve legitimate telemetry and healthy long reasoning; act only after a
+second, longer no-progress threshold and leave an honest resume/cancel path.
+
+Evidence:
+- /home/dracon/Pictures/Screenshots/Screenshot_20260824_091051.png
+- /home/dracon/Pictures/Screenshots/Screenshot_20260824_124530.png
+- /home/dracon/Pictures/Screenshots/Screenshot_20260825_141357.png
+
+## Why this is first
+
+This is the only item with fresh evidence of an active, unbounded failure
+mode. The current code has a 5-minute tracked-record warning and a 20-minute
+event-only warning, but `subagent_hang_detected` is notification-only.
 
 # Next
 
-https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
+## Replan/repair UX audit
 
-investiate
+Recheck the repair-card path from the saved-intent screenshot and make sure a
+malformed list item cannot keep re-firing forever, the original target remains
+recoverable, and `/list next`/`/list resume` are always the truthful actions.
+
+Evidence:
+- /home/dracon/Pictures/Screenshots/Screenshot_20260823_181617.png
+
+## PR #21 — review only, no wholesale merge
+
+https://github.com/DraconDev/pi-goal-list-loop-audit/pulls/21
+
+The state-root portion has already been ported and hardened on `main`; the
+blank-until-resume auditor-surface work was developed separately and is now
+hardened on `main`. Do not merge or close this PR without explicit
+confirmation. Revisit only to extract any still-unported, independently
+useful change.
+
+## Command semantics and question timing
+
+Review `/list audit` versus `/list start`, `/goal start`, and free-form
+objectives so audit intent is explicit. Keep mid-execution questions for real
+trade-offs; prefer more drafting up front and infer quality-preserving
+implementation details from the objective.
 
 # Next 2
 
-## objective cant complete
+## Compaction fallback for long goals
 
-/home/dracon/Pictures/Screenshots/Screenshot_20260824_183359.png 
+Sometimes a large goal gets stuck because the current model cannot compact its
+context. Evaluate a dedicated compact/recovery fallback model path, including
+whether a free model is acceptable, without treating this as a price hack.
 
-##
+## Replan-required visibility
 
-auditor selectorshould be like the main model selector
-also no thinking select seperately we just select along with picking the model like model selector
-
-##
-
-anything that goes on for too long is suspcious so look into this
-
-super sus
-/home/dracon/Pictures/Screenshots/Screenshot_20260824_091051.png 
-
-/home/dracon/Pictures/Screenshots/Screenshot_20260824_124530.png 
-we even warn but not act
-
-## nothing to resume with clear obvious goal to resume
-
-/home/dracon/Pictures/Screenshots/Screenshot_20260824_091334.png
-it was a list iwth many items
-/home/dracon/Pictures/Screenshots/Screenshot_20260824_091423.png 
-
-##
-
-we were doing a list then got interrupted and seemingly the problem is hta thte agent called complete goal in the middle of the list 
-/home/dracon/Pictures/Screenshots/Screenshot_20260823_183854.png 
-
-/list show 
-even shows the list alive
-```
-  Active: (none)
-  List (28):
-    1.
-    2. Deep audit + fix: settings page (sliders, toggles, preview stats, save/reset actions). Ded
-    3. Deep audit + fix: factions page (faction picker, mood-board, hero figure). Dedupe first; f
-    4. Deep audit + fix: intro page (typewriter terminal, skip-all, stinger). Dedupe first; fix o
-    5. Deep audit + fix: briefing page. Dedupe first; fix only NEW findings
-```
-
-/home/dracon/Pictures/Screenshots/Screenshot_20260823_203354.png 
-same we got list items but they are not showing
-
-list resume doesnt work 
+Keep the replan state obvious and actionable when a saved objective cannot be
+completed as written. This is related to the repair-card item above, but stays
+as a user-facing follow-up if the first investigation finds the persistence
+path sound.
 
 # Later
 
-##
+## Better status visuals
 
-not sure we want manual 
+The status/widget surfaces deserve a visual pass: decide what a user needs to
+see for active work, queues, auditor state, stalls, and recovery without
+turning the TUI into a wall of text.
 
-/list add
-i never use it jsut accidentally type it instead of audit 
+Evidence:
+- /home/dracon/Pictures/Screenshots/Screenshot_20260822_132806.png
+- /home/dracon/Pictures/Screenshots/Screenshot_20260822_200250.png
 
-##
+## Documentation refresh
 
-replan requried, been a while since i saw this 
-/home/dracon/Pictures/Screenshots/Screenshot_20260823_181617.png 
+Update the README and docs for new visitors after the current behavior settles;
+start with the installation and first-use path rather than an exhaustive
+changelog narrative.
 
-##
+## `/list add` accidental command
 
-we coudl use better visuals cause this is what wesee now and it is worth htinking what and how we show
-/home/dracon/Pictures/Screenshots/Screenshot_20260822_132806.png 
-/home/dracon/Pictures/Screenshots/Screenshot_20260822_200250.png 
+I rarely use `/list add` and sometimes type it instead of an audit. Revisit
+command wording/completion only after `/list audit` semantics are settled.
 
-##
+## `/glla bug` capture flow
 
-update the readme and the docs its been a while and readme especially start with new visitors in mind
-
-##
-
-sometimes we get stuck on compacts cause the model cant compact that large
-
-would it makes sense to have a dedicated compact to switch into a free model that can compact perhaps for even free but i guess intelligence still matters here so 
-this is more of dont get stuck for long goals than price hack
-
-## we need something for the longer running stall
-
-/home/dracon/Pictures/Screenshots/Screenshot_20260825_141357.png 
-
-## for bug fixing we coudl use a /glla bug
-
-so we can record the information when we witness a bug, 
-also we shouldbe logging info that could be useful for this
-
-
+Consider a `/glla bug` command that records observed failure context and useful
+logs, while keeping the capture artifact separate from durable goal state.
 
 # Idea
 
-##
+## Audit command naming
 
-/list audit
-/goal audit 
-/loop audit
+`/list audit`, `/goal audit`, and `/loop audit` may need clearer distinctions
+from `/list start`, `/goal start`, and `/loop start`. Avoid launching a broad
+audit immediately when the user has not specified what they mean.
 
-i wonder what is the difference between list audit and list start and say audit ?
+## Fewer mid-execution questions
 
-or do these have speical meaning, cause seemingly 
-/list start
-/goal start 
-with saying audit would make more sense and audit might go too wide too cuase it start immedateli y without knowing what i meant
+Questions are useful for real decisions, but interrupting a list/goal/loop for
+routine implementation choices is costly. Save non-blocking questions for the
+end, ask only when the choice changes the result, and gather more constraints
+in the initial draft.
 
-## quesiton are good but esp mid of list / goal / loop i i am not sure they norammly should happen
-we can save questions after, mainly pop questions when the decision is truly a real change
-if not my intention can be inferrred as prefrence for quality long term solution and the objective so far
-also we cna do more drafting up front, so fo we dont have to ask questions in the middle
+# Superseded / resolved
 
-yea we keep pausing a fair bit mid exec
+- **Objective cannot complete / subagent called `complete_goal`:** the child
+  session now fails closed at the host boundary; only MAIN may mutate goal,
+  loop, or list state. Fixed and covered by the v0.35.62 host-boundary work.
+- **List vanished after reload / `/list resume` had nothing visible:** queue
+  hydration and queue-only visibility were repaired and released in v0.35.61.
+- **Agent completed a goal in the middle of a list:** child ownership and exit
+  handling were hardened in v0.35.62; retain the screenshot only as historical
+  evidence unless a fresh reproduction appears.
+- **Auditor selector parity:** auditor model selection now uses the model picker
+  and chooses thinking immediately with the selected model; parity tests cover
+  persistence and forbidden-model filtering. The standalone thinking row is a
+  convenience path, not the primary selection flow.
