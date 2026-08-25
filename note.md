@@ -33,12 +33,14 @@ hardened on `main`. Do not merge or close this PR without explicit
 confirmation. Revisit only to extract any still-unported, independently
 useful change.
 
-## Command semantics and question timing
+## Release
 
-Review `/list audit` versus `/list start`, `/goal start`, and free-form
-objectives so audit intent is explicit. Keep mid-execution questions for real
-trade-offs; prefer more drafting up front and infer quality-preserving
-implementation details from the objective.
+Its been a while
+
+## Investigate 
+
+https://github.com/DraconDev/pi-goal-list-loop-audit/issues
+https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
 
 # Next 2
 
