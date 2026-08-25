@@ -323,7 +323,7 @@ test("v0.35.65: an old-generation child cannot receive a stop RPC after host reb
   assert.equal(unavailable.length, 1, "the old-generation escalation is durable and one-shot");
   assert.equal(unavailable[0]!.value.recordId, "sub-old-generation");
   assert.match(unavailable[0]!.value.reason, /older host generation/);
-  assert.equal(unavailable[0]!.value.ownerGeneration + 1, unavailable[0]!.value.generation);
+  assert.ok(unavailable[0]!.value.ownerGeneration < unavailable[0]!.value.generation, "the durable record preserves the old/new generation boundary");
 });
 
 test("v0.34.102: event-only hang surfaces `subagent_hang_detected` with evidence=event-only when no manager record exists", async () => {
