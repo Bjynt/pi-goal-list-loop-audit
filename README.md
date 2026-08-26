@@ -329,7 +329,9 @@ that silence means success. Error text is **not trusted** to pick a retry policy
 failure wording is retained as bounded diagnostics, not interpreted as
 proof of a quota or billing state.
 
-- automatic retries are bounded and visible;
+- automatic retries are bounded and visible; a BUSY/no-stream turn is parked
+  and re-dispatched within the configurable **Zero-stream retries** budget
+  (default 3, range 0–10), then requires explicit resume;
 - `/goal resume`, `/list resume`, and `/loop resume` are explicit recovery
   paths;
 - a user abort means stop, not “try again behind my back”;
@@ -358,6 +360,8 @@ Open `/glla` for the settings table. The most important choices are:
   choices win;
 - **Subagent hang escalation:** warning-only at `0`, or one child-specific
   action after a confirmed frozen interval;
+- **Zero-stream retries:** automatic GLLA recovery attempts after a busy,
+  stream-silent Pi turn; `0` keeps recovery manual and `1–10` bounds repeats;
 - **Audit cap and retry cadence:** bounds for repeated objections and
   infrastructure recovery.
 

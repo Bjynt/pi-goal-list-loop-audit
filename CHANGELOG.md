@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.35.71 — bounded Pi-core retry containment (2026-08-26)
+
+### Changed
+  GLLA now exposes a configurable zero-stream retry budget (default 3,
+  allowed range 0–10). When Pi remains BUSY without stream activity, GLLA
+  still aborts and durably parks the owner, then re-dispatches repeatedly
+  within that finite budget before requiring explicit resume. A real stream
+  starts a fresh budget; supervisor pause, generation fences, and durable
+  recovery semantics remain intact. This contains the Pi-core retry-sleeper
+  failure at GLLA's public boundary without modifying Pi or any other plugin.
+
+### Tests
+  Added repeated-silence exhaustion, budget persistence/validation, settings
+  menu/editor coverage, and existing lifecycle/park/no-storm regressions.
+
 ## 0.35.70 — optional-provider boundary and recovery alignment (2026-08-26)
 
 ### Changed

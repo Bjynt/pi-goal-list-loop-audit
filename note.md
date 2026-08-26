@@ -8,12 +8,17 @@ active work is the maintainer issue/PR review documented below.
 ## Maintainer issue and PR review
 
 The live inventory is recorded in
-`audit/GITHUB-MAINTAINER-INVENTORY-2026-08-25.md`. Compiled-host auditor issue
-#23 and in-band provider-result issue #30 are fixed locally and released in
-v0.35.66, v0.35.67, v0.35.68, and v0.35.69 without merging PR #24.
-Remaining plugin-owned issues are resolved locally; the two blocked feature PRs
-(#22, #36), and upstream/out-of-scope requests still need explicit follow-up
-decisions.
+`audit/GITHUB-MAINTAINER-INVENTORY-2026-08-25.md`. Issues #23, #30, #32, and
+#34 are fixed and closed; PR #24 is superseded and closed. The remaining eight
+reports were investigated against v0.35.70 and are outside GLLA's code boundary
+except for the Pi-core-facing containment question in #31. GLLA now uses a
+finite, configurable zero-stream retry budget (default 3, range 0–10),
+repeatedly parks/aborts/re-dispatches within that budget, and then requires an
+explicit resume. It does not modify Pi, the OS, or other plugins.
+
+The non-AVO reports will receive evidence comments and be closed after the
+verification gate. PRs #22 and #36 remain open and untouched for the later AVO
+and supervision review.
 
 ## Blocked feature PR decisions
 

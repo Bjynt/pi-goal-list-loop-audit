@@ -147,7 +147,10 @@ Useful controls:
 ```
 
 `/glla pause` freezes supervisor automation without killing active work.
-`/glla resume` releases it. A user abort means stop; recovery is not silently
+`/glla resume` releases it. A BUSY/no-stream Pi turn is aborted and parked by
+GLLA, then automatically re-dispatched within the **Zero-stream retries**
+budget (default 3, configurable from 0–10); exhaustion requires an explicit
+mode-correct resume. A user abort means stop; recovery is not silently
 re-fired behind your back.
 
 ## Auditor model requirement

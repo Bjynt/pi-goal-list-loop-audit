@@ -354,6 +354,23 @@ replacement without delivering a successor `session_start`:
   and normalize old files. Canonical persisted state uses `retry-waiting`,
   `retryAttempts`, `retryFirstAt`, and `retryUntil`.
 
+## Addendum v0.35.71 (GLLA-only external-failure containment)
+
+GLLA is a workflow supervisor, not a maintenance fork of its host ecosystem.
+The repository changes only GLLA-owned code. Pi-core, OS, provider, and
+third-party-plugin failures may be observed through public hooks and contained
+by durable GLLA state (for example, a BUSY/no-stream turn can be aborted,
+parked, and retried within a finite configured budget), but GLLA never edits
+those external implementations or claims to repair them. Reports whose only
+code lives outside GLLA are explicitly documented and disposed of as
+out-of-scope.
+
+The zero-stream budget defaults to three automatic re-dispatches and accepts
+0–10. Each uninterrupted silent attempt consumes one slot; a real stream
+starts a fresh episode. Exhaustion leaves the goal/list item/loop parked for
+explicit resume. Generation, supervisor-pause, persistence, and dispatch
+ownership fences remain authoritative throughout.
+
 ## Addendum v0.35.0 (long-running judgment, Designer, and drafting chain)
 
 - **Judgment is a prompt-level contract**: drafting and continuation preserve
