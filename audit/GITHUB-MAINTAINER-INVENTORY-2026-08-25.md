@@ -165,3 +165,29 @@ The remaining live backlog is **8 open issues** (#25–#29, #31, #33, #35) and
 proposals: #22 is the direct AVO-inspired stagnation supervisor, while #36 is
 the adjacent commissar/zombie-watchdog proposal. No AVO research or feature
 porting has been started.
+
+## Remaining-issue investigation — 2026-08-26
+
+A second read-only investigation inspected the complete bodies and current
+upstream references for the eight remaining issues. None is implemented by
+GLLA itself; the cited components are upstream or optional-provider code.
+
+| Issue | Verified ownership/finding | Recommended disposition |
+| --- | --- | --- |
+| #25 | `nicobailon/pi-subagents` async tracker/reconciler; upstream #1486 improves bounded stale-run repair but does not add a global sweep | High-priority upstream follow-up; do not patch GLLA |
+| #26 | `nicobailon/pi-subagents` model-fallback classifier; upstream #1514 adds some connection errors but gaps remain for 500/529/reset/timeout/rate-limit forms | Narrow upstream classifier patch with tests |
+| #27 | `nicobailon/pi-subagents` worktree/session lifecycle; upstream #1180/#1524 improve adjacent CWD/diagnostics behavior | Reference-aware cleanup/resume follow-up upstream |
+| #28 | `jayzeng/pi-memory` read-modify-write writer, not `pi-subagents` | Re-file to the memory owner; use locking/serialization, not only atomic rename |
+| #29 | `nicobailon/pi-subagents` model verification; upstream #1422/#1382 address the reported variant-tag behavior | Verify dependency version, then close if no current regression |
+| #31 | Pi core `agent-session` retry delay; current inner exponential sleep is not capped by the plugin’s outer retry envelope | Pi-core follow-up; reduce `retry.maxRetries` as an interim workaround |
+| #33 | `nicobailon/pi-subagents` inherited-model verification; #1260/#1382 address the reported classes | Do not add the proposed exemption; close after current-version verification |
+| #35 | `nicobailon/pi-subagents` refinement evidence reads async-session artifacts but not mission-store review/output artifacts | Medium-priority upstream feature/fix with bounded, provenance-rich mission artifacts |
+
+The practical groups are runtime reliability (#25/#26/#31), durable lifecycle
+state (#27/#28), model identity (#29/#33), and refinement evidence (#35). The
+recommended order is to verify/upgrade the resolved model-verification fixes,
+then pursue #31/#26/#25 upstream, followed by #27/#28 and #35. No local GLLA
+implementation is currently justified by these eight reports.
+
+The investigation performed no repository or GitHub mutations, and AVO research
+remains intentionally deferred.
