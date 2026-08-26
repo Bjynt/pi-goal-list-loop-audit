@@ -449,6 +449,19 @@ One WANTING never terminates anything; infrastructure failures (model down,
 worker wedged, no verdict marker, no tool evidence) are ledgered as noise
 and never count toward termination.
 
+Termination prefers forcing a NEW main session (`ctx.newSession()` when the
+host exposes it): dereliction often correlates with poisoned conversation
+context, and the fresh session rehydrates the durable state and resumes
+immediately — the marker itself is the restart consent. When no session
+capability exists, it falls back to aborting and restarting in-session.
+
+Loops are covered too (v0.37.0): an active loop gets its own commissar
+prompt with loop-specific WANTING criteria — fabricated or ignored measure
+output, editing the measure/bounds/ledger to fake progress, repeating the
+same failed change without diagnosis. A terminated loop restarts on the same
+target (never counting toward the 5-abort stop), and the first iteration
+afterwards carries the finding.
+
 ## Compatibility (what goes well, what conflicts)
 
 **The Two-Driver Rule**: any plugin that drives agent turns on `agent_end`
