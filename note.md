@@ -10,9 +10,10 @@ active work is the maintainer issue/PR review documented below.
 The live inventory is recorded in
 `audit/GITHUB-MAINTAINER-INVENTORY-2026-08-25.md`. Compiled-host auditor issue
 #23 and in-band provider-result issue #30 are fixed locally and released in
-v0.35.66 and v0.35.67 without merging PR #24. Remaining plugin-owned issue
-#32, metricless-cadence issue #34, the two blocked feature PRs (#22, #36), and
-upstream/out-of-scope requests still need explicit follow-up decisions.
+v0.35.66, v0.35.67, and v0.35.68 without merging PR #24. Remaining
+plugin-owned metricless-cadence issue #34, the two blocked feature PRs (#22,
+#36), and upstream/out-of-scope requests still need explicit follow-up
+decisions.
 
 ## Compaction fallback for long goals
 
@@ -103,6 +104,15 @@ fingerprint repeats. The turn is converted into the existing provider recovery
 envelope before loop measurement or stuck accounting; one-off status text in a
 searched document remains ordinary output. Coverage includes classifier,
 repetition, recovery, and loop behavior. Released as v0.35.67.
+
+## Bound-stop recovery (#32)
+
+Time- and token-bound loops can now be explicitly resumed as fresh supervised
+windows while preserving iteration, history, and best-value state. A stopped
+loop with a recoverable bound or failure can also accept a confirmed
+`propose_loop_refine` change without silently restarting; clean max-iteration
+and finished loops still require a fresh `/loop start`. Auto-resume does not
+silently reset an explicit budget. Released as v0.35.68.
 
 ## Documentation and test-boundary cleanup
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.35.68 — bound-stop recovery (2026-08-26)
+
+### Fixed
+  Explicit `/loop resume` now recovers time- and token-bound stops as fresh
+  supervised windows without discarding iteration, history, or best-value
+  state. Recoverable stopped loops can accept a confirmed
+  `propose_loop_refine` change while remaining stopped until explicitly
+  resumed. Clean max-iteration and finished loops remain terminal; automatic
+  startup does not silently reset an explicit budget.
+
+### Tests
+  Coverage verifies fresh time windows, token-budget resets, preserved loop
+  history, stopped-loop refinement, and the unchanged max-iteration guard.
+
 ## 0.35.67 — in-band provider-result recovery (2026-08-26)
 
 ### Fixed
