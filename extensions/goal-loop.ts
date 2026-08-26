@@ -281,7 +281,18 @@ function loopPrompt(loop: LoopState, regressionNote: string, strategyNote: strin
     .replace(/\$\{REFINE_HINT\}/g, refineHintNote);
 }
 
-function scheduleLoopTick(ctx: ExtensionContext, urgent = false): void {
+function scheduleLoopTick(ctx: ExtensionContext): void {
+  // v0.35.15: `/glla pause` freezes loop re-arms too — the supervisor's
+  if (supervisorPaused(state)) return;
+  scheduleLoopTickWithUrgency(ctx, false);
+}
+
+function scheduleLoopTickUrgent(ctx: ExtensionContext): void {
+  if (supervisorPaused(state)) return;
+  scheduleLoopTickWithUrgency(ctx, true);
+}
+
+function scheduleLoopTickWithUrgency(ctx: ExtensionContext, urgent: boolean): void {
   // v0.35.15: `/glla pause` freezes loop re-arms too — the supervisor's
   // automatic machinery includes the metric loop's turn dispatch.
   if (supervisorPaused(state)) return;
@@ -912,7 +923,7 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
         (branchName ? `\nbranch mode: committing improvements to ${branchName}` : ""),
     "info",
   );
-  scheduleLoopTick(ctx, true);
+  scheduleLoopTickUrgent(ctx);
   return true;
 }
 
@@ -941,7 +952,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       if (flags.continuationDispatchStoodDown) {
         releaseContinuationDispatchStandDown();
         releaseAuditorSurface();
-        scheduleLoopTick(ctx, true);
+        scheduleLoopTickUrgent(ctx);
         ctx.ui.notify("Loop dispatch stand-down cleared — retrying one continuation explicitly.", "info");
       } else {
         ctx.ui.notify("A loop is already active — /loop status to inspect, /loop stop to end it.", "info");
@@ -1042,7 +1053,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       }
       releaseContinuationDispatchStandDown();
       releaseAuditorSurface();
-      scheduleLoopTick(ctx, true);
+      scheduleLoopTickUrgent(ctx);
       const boundResetNote = resetTimeWindow
         ? " · fresh time window"
         : resetTokenBudget
