@@ -871,7 +871,8 @@ test("widget: a durable running claim without observed progress says awaiting ve
 test("auditor progress phases are explicit and retain worker activity", () => {
   const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-3" } });
   const queued = buildWidgetLines({ goal: g, list: [] }, { label: "queued" }, NOW)!;
-  assert.ok(queued.some((l) => l.includes("MAIN HOST · SUPERVISING · auditor: queued")));
+  assert.ok(queued.some((l) => l.includes("auditor: queued · detached worker")));
+  assert.doesNotMatch(queued.join("\\n"), /MAIN HOST/);
   assert.ok(queued.some((l) => l.includes("completion claim is durable")));
 
   const running = buildWidgetLines({ goal: g, list: [] }, {
@@ -881,6 +882,7 @@ test("auditor progress phases are explicit and retain worker activity", () => {
     lastActivityAt: NOW - 30_000,
   }, NOW)!;
   assert.ok(running.some((l) => l.includes("auditor: last observed tool")));
+  assert.doesNotMatch(running.join("\\n"), /MAIN HOST/);
   assert.ok(running.some((l) => l.includes("tool: grep")));
   assert.ok(running.some((l) => l.includes("worker activity 30s ago")));
 
@@ -1539,7 +1541,8 @@ test("v0.34.57: MAIN host label is pinned to SUPERVISING by the MAIN_HOST_LABEL 
   const auditingStatus = buildStatusText(auditingState as never)!;
   assert.match(auditingStatus, /MAIN HOST · SUPERVISING/);
   const auditingWidget = buildWidgetLines(auditingState as never)!;
-  assert.ok(auditingWidget.some((l) => l.includes("MAIN HOST · SUPERVISING")), "widget uses the guard label");
+  assert.ok(auditingWidget.some((l) => l.includes("auditor:")), "widget keeps the detailed auditor surface");
+  assert.doesNotMatch(auditingWidget.join("\\n"), /MAIN HOST/, "the widget does not duplicate the global host label");
 
   // 2. No-verdict state: NOT host-bearing anymore (v0.34.87 surface
   // separation — a parked item's status line names the pause and the resume
@@ -1559,10 +1562,8 @@ test("v0.34.57: MAIN host label is pinned to SUPERVISING by the MAIN_HOST_LABEL 
 
   // 3. Invariant: wherever "MAIN HOST" appears in any host-bearing rendering,
   // it is followed by " · SUPERVISING" — never " · DETACHED".
-  for (const text of [auditingStatus, auditingWidget.join("\n")]) {
-    assert.match(text, /MAIN HOST · SUPERVISING/, `MAIN HOST must render as SUPERVISING: ${text}`);
-    assert.doesNotMatch(text, /MAIN HOST · DETACHED/, `MAIN HOST must never render as DETACHED: ${text}`);
-  }
+  assert.match(auditingStatus, /MAIN HOST · SUPERVISING/, `MAIN HOST must render as SUPERVISING: ${auditingStatus}`);
+  assert.doesNotMatch(auditingStatus, /MAIN HOST · DETACHED/, `MAIN HOST must never render as DETACHED: ${auditingStatus}`);
 });
 
 test("active auditor verdicts never masquerade as infrastructure no-verdict", () => {

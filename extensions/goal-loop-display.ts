@@ -868,7 +868,8 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     const quietAge = phase === "quiet" ? auditorActivityAge(audit, now) : undefined;
     const quietSuffix = quietAge !== undefined ? ` · silent ${fmtElapsed(quietAge)}` : "";
     const next = ` · next: ${auditorNextTransition(phase)}`;
-    return `glla: ${host} · ${label}${quietSuffix}${next} · detached worker${heldSuffix}`;
+    const detachedSuffix = live ? "" : " · detached worker";
+    return `glla: ${host} · ${label}${quietSuffix}${next}${detachedSuffix}${heldSuffix}`;
   }
   if (g.status === "paused") {
     // v0.28.22: the status line names the ACTIONABILITY, not the reason —
@@ -1321,9 +1322,8 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // goal and its durable recent action, avoiding the duplicated live badge
   // that made the above-editor panel look noisy.
   if (g.status === "auditing") {
-    const host = paint(theme, "accent", MAIN_HOST_LABEL);
     if (auditRecoveryPending(g)) {
-      lines.push(`├─ ${host} · auditor: ${paint(theme, "warning", "recovery pending — previous audit was interrupted")}`);
+      lines.push(`├─ auditor: ${paint(theme, "warning", "recovery pending — previous audit was interrupted")}`);
       lines.push(`└─ ${paint(theme, "dim", "stored completion claim is safe; a fresh session will retry it")}`);
       return lines;
     }
@@ -1341,7 +1341,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     // The status bar is the single activity HUD. Keep the widget's audit line
     // factual and compact; the ⟡ head icon plus this phase identify the
     // detached verifier without repeating the animated status badge.
-    lines.push(`├─ ${host} · auditor: ${phaseLabel}${detail} · detached worker`);
+    lines.push(`├─ auditor: ${phaseLabel}${detail} · detached worker`);
 
     // Show observed worker facts, not a made-up percentage or semantic claim.
     // This is the difference between “the timer moved” and “I can see what
