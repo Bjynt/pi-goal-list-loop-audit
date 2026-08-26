@@ -101,3 +101,25 @@ and a fresh release-gate run if the maintainers choose to pursue them.
    the v0.37.0 version ordering before any merge.
 
 The survey itself performed no external mutations.
+
+## Follow-up review — 2026-08-26
+
+Local read-only maintenance work resolved the four plugin-owned issues without
+changing GitHub issue/PR state:
+
+- #23 compiled-host auditor launch: fixed and released in v0.35.66; PR #24
+  remains open and unmerged.
+- #30 in-band 503/429/network tool panes: fixed and released in v0.35.67.
+- #32 bound-stop recovery: fixed and released in v0.35.68.
+- #34 opt-in metricless cadence: fixed and released in v0.35.69.
+
+The current authenticated review of PR #22 and PR #36 remains read-only. Both
+are open, dirty/conflicting, and based on branches that overlap current
+lifecycle/recovery files. PR #22 proposes the AVO-inspired goal stagnation
+supervisor and claims v0.36.0; PR #36 proposes the commissar watchdog and
+claims v0.37.0 while depending on the #22 version decision. Neither should be
+merged wholesale. Selective porting would be a new feature decision and must
+preserve current state-root, host-boundary, recovery, and release behavior.
+
+No external issue or PR was merged, closed, commented on, labeled, or otherwise
+modified during the follow-up.
