@@ -390,6 +390,9 @@ function sendLoopTurn(): void {
   } else if (bounds.length) {
     boundsNote = `\n- Arbitrary bounds: the loop also stops after ${bounds.join(" or ")}`;
   }
+  if (loop.minimumIterationIntervalMs !== undefined) {
+    boundsNote += `\n- Minimum cadence: wait at least ${Math.ceil(loop.minimumIterationIntervalMs / 1_000)}s after each completed iteration before the next automatic wake; explicit starts/resumes are urgent.`;
+  }
   // v0.24.0: a stuck intervention REPLACES the pep talk — the rotating
   // directive names why the loop is stuck and what rung of the ladder it's on.
   // v0.29.19: a plateau reprieve's one-shot shove takes priority over the
@@ -595,7 +598,9 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
     loop.consecutiveStuck = 0;
     loop.lastStuckReason = undefined;
   }
-  let outcome: LoopTickOutcome = metricless ? applyMetriclessTick(loop, nowIso()) : applyMeasurement(loop, value, nowIso());
+  const completedAt = nowIso();
+  let outcome: LoopTickOutcome = metricless ? applyMetriclessTick(loop, completedAt) : applyMeasurement(loop, value, completedAt);
+  loop.lastIterationCompletedAt = completedAt;
   // v0.33.2: close the hypothesis feedback loop — the prediction went into
   // the ledger; now the VERDICT rides the next iteration's prompt.
   if (loop.lastHypothesis) {
