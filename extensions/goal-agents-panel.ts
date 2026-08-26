@@ -145,11 +145,16 @@ export function renderAgentsPanel(rows: AgentsPanelRow[], now: number, managerAv
 export function renderAgentsWidgetLines(rows: AgentsPanelRow[], now = Date.now(), maxRows = WIDGET_AGENT_ROW_CAP): string[] {
   const active = orderedRows(rows.filter((r) => r.status !== "ended"));
   const shown = active.slice(0, Math.max(1, maxRows));
-  const lines = shown.map((row) => {
+  const lines: string[] = [];
+  for (const row of shown) {
+    // Keep identity/purpose and liveness fields on separate short lines so a
+    // narrow terminal does not truncate the silence age—the field that tells
+    // the user whether a worker is actually making progress.
+    lines.push(`${rowLabel(row)} · id ${cleanField(row.recordId, 10)}`);
     const evidence = row.evidence !== "live" ? ` · ${row.evidence}` : "";
     const action = row.action === "abort-requested" ? " · aborting" : row.action === "unavailable" ? " · abort unavailable" : row.action === "failed" ? " · abort failed" : "";
-    return `${rowLabel(row)} · id ${cleanField(row.recordId, 10)} · ${rowStateWord(row, now)} · silent ${fmtDuration(row.silentMs)}${evidence}${action}`;
-  });
+    lines.push(`  ${rowStateWord(row, now)} · silent ${fmtDuration(row.silentMs)}${evidence}${action}`);
+  }
   if (active.length > shown.length) lines.push(`… ${active.length - shown.length} more agents · /glla agents`);
   return lines;
 }

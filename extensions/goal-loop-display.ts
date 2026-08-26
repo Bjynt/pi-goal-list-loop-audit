@@ -804,8 +804,13 @@ function pausedStatusSuffix(g: Goal, state: State, extras: WidgetExtras | undefi
  * forget it and a future branch inherits it for free. */
 export function buildStatusText(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras): string | undefined {
   const base = buildStatusTextBase(state, audit, now, theme, extras);
-  if (!base || typeof state.supervisorPausedAt !== "number") return base;
-  return base.replace(/^glla:/, `glla: ${paint(theme, "warning", "⏸ supervisor")} ·`);
+  // The footer gets only the compact worst-child summary. Detailed rows live
+  // in the widget; the detached auditor remains a separate verification HUD.
+  const withAgentSummary = base && extras?.agents?.line && state.goal?.status !== "auditing"
+    ? `${base} · ${extras.agents.line.replace(/^●\s*/, "")}`
+    : base;
+  if (!withAgentSummary || typeof state.supervisorPausedAt !== "number") return withAgentSummary;
+  return withAgentSummary.replace(/^glla:/, `glla: ${paint(theme, "warning", "⏸ supervisor")} ·`);
 }
 
 function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras): string | undefined {
@@ -1072,7 +1077,11 @@ export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | nu
   const detailedAgents = extras?.agents?.lines ?? (extras?.agents?.line ? [extras.agents.line] : []);
   let withAgents: string[] | undefined = inner;
   if (detailedAgents.length > 0) {
-    const agentLines = detailedAgents.map((line, index) => `${index === 0 ? "├─" : "│ "} agent: ${line}`);
+    const agentLines = detailedAgents.map((line, index) => {
+      const continuation = line.startsWith("  ");
+      const text = continuation ? line.trimStart() : `agent: ${line}`;
+      return `${index === 0 ? "├─" : "│ "} ${text}`;
+    });
     if (inner) {
       // Keep the card footer last while making worker rows part of the same
       // detailed widget rather than appending a disconnected second footer.
