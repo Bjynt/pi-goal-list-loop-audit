@@ -777,6 +777,8 @@ interface LoopConfig {
   force?: boolean;
   timeLimitHours?: number;
   tokenBudget?: number;
+  /** v0.35.x: optional metricless minimum cadence in milliseconds. */
+  minimumIterationIntervalMs?: number;
   /** v0.25.1: /loop start toolsamerepeat=N (0 = disable legacy check). */
   toolSameRepeat?: number;
   /** v0.29.10: don't seed bestValue from the pre-work baseline measure —
@@ -882,6 +884,7 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
       startedAt: nowIso(),
       timeLimitHours: cfg.timeLimitHours,
       tokenBudget: cfg.tokenBudget,
+      minimumIterationIntervalMs: cfg.minimumIterationIntervalMs,
       tokensUsed: 0,
       branchName,
       originalBranch,
@@ -893,16 +896,18 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
     },
   });
   persistState(ctx);
-  appendLedger(ctx.cwd, "loop_started", { target: cfg.target, measureCmd: cfg.measureCmd || "none", direction: cfg.direction ?? "none", baseline, branch: branchName, timeLimitHours: cfg.timeLimitHours, tokenBudget: cfg.tokenBudget });
+  appendLedger(ctx.cwd, "loop_started", { target: cfg.target, measureCmd: cfg.measureCmd || "none", direction: cfg.direction ?? "none", baseline, branch: branchName, timeLimitHours: cfg.timeLimitHours, tokenBudget: cfg.tokenBudget, minimumIterationIntervalMs: cfg.minimumIterationIntervalMs });
   ctx.ui.notify(
     metricless
       ? `Loop started (metricless spec loop — NO plateau stop): ${displaySlice(cfg.target, 60)}\nEnds only at ${cfg.maxIterations > 0 ? `max ${cfg.maxIterations} iterations` : "no iteration cap"}${cfg.timeLimitHours ? ` · ${cfg.timeLimitHours}h` : ""}${cfg.tokenBudget ? ` · ${cfg.tokenBudget.toLocaleString()} tokens` : ""} · /loop stop. Every iteration must make ONE real, inspectable change — cosmetic churn is the doorknob failure.` +
+        (cfg.minimumIterationIntervalMs ? ` · cadence ≥ ${Math.ceil(cfg.minimumIterationIntervalMs / 1_000)}s` : "") +
         (branchName ? `\nbranch mode: committing each iteration to ${branchName}` : "")
       : `Loop started: ${displaySlice(cfg.target, 60)}\nBaseline: ${cfg.deferBaseline ? "deferred — the first real measurement seeds it" : (baseline ?? "(forced without a number — first turn must produce one)")} · direction ${cfg.direction} · window ${cfg.plateauWindow} · ${cfg.maxIterations > 0 ? `max ${cfg.maxIterations}` : "no iteration cap"}` +
+        (cfg.minimumIterationIntervalMs ? ` · cadence ≥ ${Math.ceil(cfg.minimumIterationIntervalMs / 1_000)}s` : "") +
         (branchName ? `\nbranch mode: committing improvements to ${branchName}` : ""),
     "info",
   );
-  scheduleLoopTick(ctx);
+  scheduleLoopTick(ctx, true);
   return true;
 }
 
@@ -931,7 +936,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       if (flags.continuationDispatchStoodDown) {
         releaseContinuationDispatchStandDown();
         releaseAuditorSurface();
-        scheduleLoopTick(ctx);
+        scheduleLoopTick(ctx, true);
         ctx.ui.notify("Loop dispatch stand-down cleared — retrying one continuation explicitly.", "info");
       } else {
         ctx.ui.notify("A loop is already active — /loop status to inspect, /loop stop to end it.", "info");
@@ -1032,7 +1037,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       }
       releaseContinuationDispatchStandDown();
       releaseAuditorSurface();
-      scheduleLoopTick(ctx);
+      scheduleLoopTick(ctx, true);
       const boundResetNote = resetTimeWindow
         ? " · fresh time window"
         : resetTokenBudget
@@ -1071,6 +1076,11 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     if (loop.timeLimitHours !== undefined) bounds.push(`time ≤ ${loop.timeLimitHours}h`);
     if (loop.tokenBudget !== undefined) bounds.push(`tokens ${(loop.tokensUsed ?? 0).toLocaleString()}/${loop.tokenBudget.toLocaleString()}`);
     if (bounds.length) lines.push(`Bounds: ${bounds.join(" · ")}`);
+    if (loop.minimumIterationIntervalMs !== undefined) {
+      const lastCompleted = loop.lastIterationCompletedAt ? Date.parse(loop.lastIterationCompletedAt) : Number.NaN;
+      const nextDelay = Number.isFinite(lastCompleted) ? Math.max(0, lastCompleted + loop.minimumIterationIntervalMs - Date.now()) : 0;
+      lines.push(`Cadence: ≥ ${Math.ceil(loop.minimumIterationIntervalMs / 1_000)}s between iterations${nextDelay > 0 ? ` · next in ${Math.ceil(nextDelay / 1_000)}s` : " · ready"}`);
+    }
     if (loop.refinements?.length) lines.push(`Spec refined ${loop.refinements.length}× (latest: iteration ${loop.refinements[loop.refinements.length - 1]!.iteration})`);
     if (loop.stopReason) lines.push(`Stopped: ${loop.stopReason}`);
     if (state.mainModelRecovery?.kind === "loop") lines.push(...formatLoopRecoveryStatusLines(ctx));
