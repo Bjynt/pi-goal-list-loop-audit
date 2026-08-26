@@ -140,6 +140,28 @@ test("v0.35.x: time and token bound stops resume as fresh windows without discar
   assert.ok(fs.readFileSync(path.join(tokenCwd, ".pi-glla", "active.jsonl"), "utf8").includes('"loop_bound_window_reset"'));
 });
 
+test("v0.35.x: metricless cadence delays automatic re-wakes but explicit start is urgent", async () => {
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: null, list: [], loop: null });
+  const ctx = await freshCtx(cwd);
+  pi.sent.length = 0;
+  await pi.command("loop", 'start "mature the spec" cadence=0.25', ctx);
+  await tick(80);
+  assert.ok(pi.sent.length >= 1, "explicit loop start wakes immediately");
+  const beforeTurn = pi.sent.length;
+  await pi.fire("agent_end", {
+    messages: [{ role: "assistant", content: [{ type: "text", text: "recorded one real spec improvement" }], stopReason: "end_turn" }],
+  }, ctx);
+  const afterTurn = pi.sent.length;
+  await tick(80);
+  assert.equal(pi.sent.length, afterTurn, "automatic wake waits for the cadence");
+  await tick(230);
+  assert.ok(pi.sent.length > afterTurn, "automatic wake lands after the cadence");
+  assert.ok(readState(cwd).loop?.lastIterationCompletedAt, "successful iteration arms the cadence timestamp");
+  assert.ok(beforeTurn < afterTurn, "the completed turn was observed");
+  await pi.command("loop", "stop", ctx);
+});
+
 test("negative pin: a bounded stop ('max iterations reached') is still not resumable", async () => {
   const cwd = tmpCwd();
   seedState(cwd, {

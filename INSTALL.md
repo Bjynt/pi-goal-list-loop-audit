@@ -98,13 +98,15 @@ waiting for a decision.
 
 /loop
 /loop start "reduce flaky tests" measure="..." direction=min
-/loop start "keep improving the spec" measure=none max=20
+/loop start "keep improving the spec" measure=none max=20 cadence=900
 /loop audit
 ```
 
 Use `/goal` for one outcome, `/list` for several independently auditable
-outcomes, and `/loop` for an improvement process without one final item. See
-the README for the full command semantics.
+outcomes, and `/loop` for an improvement process without one final item. For
+metricless loops that intentionally mature between checks, add optional
+`cadence=<seconds>`; the interval is visible in `/loop status`, while explicit
+starts/resumes remain urgent. See the README for the full command semantics.
 
 ## Modes
 

@@ -170,7 +170,7 @@ automatic repeats are fenced. Use `/list resume` for an intentional retry and
 /loop                                     # interview + Confirm
 /loop plan                                # research-first loop design
 /loop start "reduce flaky tests" measure="..." direction=min
-/loop start "keep improving the spec" measure=none max=20
+/loop start "keep improving the spec" measure=none max=20 cadence=900
 /loop audit                               # recurring project-audit cadence
 /loop status
 /loop stop
@@ -183,7 +183,10 @@ There are three loop styles:
   before you confirm it and stops on plateau or a configured bound.
 - **Metricless specification:** no honest number exists, so the loop advances
   a specification or checklist. It ends at its time/token/iteration bound or
-  `/loop stop`; it has no fake plateau metric.
+  `/loop stop`; it has no fake plateau metric. Add optional
+  `cadence=<seconds>` to put a minimum gap between successful automatic
+  iterations; explicit starts/resumes remain urgent and `/loop status` shows
+  the armed cadence.
 - **Project audit:** each iteration looks for the next important finding,
   appends evidence to the audit ledger, and works through the findings.
 
