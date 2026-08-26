@@ -15,20 +15,14 @@ Remaining plugin-owned issues are resolved locally; the two blocked feature PRs
 (#22, #36), and upstream/out-of-scope requests still need explicit follow-up
 decisions.
 
-## Compaction fallback for long goals
+## Blocked feature PR decisions
 
-Sometimes a large goal gets stuck because the current model cannot compact its
-context. Evaluate a dedicated compact/recovery fallback model path, including
-whether a free model is acceptable, without treating this as a price hack.
-
-## Optional subagent provider boundary
-
-`@tintinweb/pi-subagents` is an optional runtime companion: GLLA's core runs
-inline without it, while the full development suite uses it for integration
-coverage. Before relying on the optional path more heavily, add a genuine
-no-provider smoke check and decide whether `defaultAgentDir()` should honor
-custom `PI_CODING_AGENT_DIR` instead of assuming `~/.pi/agent`. Keep this
-runtime boundary separate from README wording tests.
+PR #22 (stagnation supervisor) and PR #36 (commissar watchdog) were reviewed
+read-only against current main. Both are dirty/conflicting and overlap the
+hardened lifecycle, recovery, and heartbeat paths; neither should be merged
+wholesale. Selective porting remains deferred until the desired feature and
+version ordering are explicitly chosen. Upstream/out-of-scope issues remain
+catalogued without local action.
 
 # Later
 
@@ -121,6 +115,23 @@ successful automatic iterations. Explicit starts/resumes remain urgent, the
 armed cadence appears in `/loop status` and the loop prompt, and the default
 behavior is unchanged. Time/token bound windows and stopped-loop refinement
 remain explicit and durable. Released as v0.35.69.
+
+## Compaction fallback evaluation
+
+The existing context-overflow path is already the dedicated recovery route:
+recent failed compaction is detected, then the configured main-model fallback
+chain is walked through the normal recovery envelope. No separate hardcoded
+free model was added; model choice remains an explicit provider/settings
+policy, not a price heuristic.
+
+## Optional subagent provider boundary
+
+`@tintinweb/pi-subagents` remains optional: GLLA core loads without it, while
+integration coverage uses it when installed. A genuine no-provider smoke test
+now loads the extension while forbidding the provider import, and
+`defaultAgentDir()` delegates to pi's host resolver so custom
+`PI_CODING_AGENT_DIR` is honored. This boundary remains separate from README
+wording tests. Released as v0.35.70.
 
 ## Documentation and test-boundary cleanup
 

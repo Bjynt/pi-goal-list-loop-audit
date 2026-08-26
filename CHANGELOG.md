@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.35.70 — optional-provider boundary and recovery alignment (2026-08-26)
+
+### Changed
+  GLLA now delegates the managed subagent agent-directory lookup to pi's
+  host resolver, honoring custom `PI_CODING_AGENT_DIR` values instead of
+  assuming `~/.pi/agent`. The core extension remains independent of the
+  optional `@tintinweb/pi-subagents` provider.
+
+### Tests
+  Added a genuine no-provider load smoke test that forbids the optional
+  provider import while loading the extension, plus custom-agent-directory
+  coverage. The existing context-overflow recovery path remains the single
+  configured fallback route; no hardcoded free model was introduced.
+
 ## 0.35.69 — metricless-loop cadence (2026-08-26)
 
 ### Added
