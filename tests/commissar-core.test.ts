@@ -122,3 +122,61 @@ test("commissar prompt mandates read-only inspection and ledger sources", () => 
   );
   assert.match(prompt, /\.pi-glla\/active\.jsonl/);
 });
+
+// ---- v0.37.0 loop-mode prompt ----
+
+import { buildCommissarLoopPrompt } from "../extensions/goal-commissar.ts";
+
+test("loop commissar prompt frames the watchdog around honest iteration", () => {
+  const p = buildCommissarLoopPrompt({
+    target: "cut benchmark p99",
+    measureCmd: "bun bench",
+    direction: "min",
+    iteration: 7,
+    maxIterations: 50,
+    stallCount: 2,
+    plateauWindow: 5,
+    bestValue: 120,
+    lastValue: 131,
+    history: [
+      { iteration: 6, value: 128, improved: true },
+      { iteration: 7, value: 131, improved: false },
+    ],
+  });
+  assert.match(p, /adherence commissar/);
+  assert.match(p, /NOT judging whether the target is fully achieved/);
+  assert.match(p, /fabricate\/ignore its output/, "measure fabrication is WANTING");
+  assert.match(p, /Editing the measure, bounds, or ledger/, "gaming the metric is WANTING");
+  assert.match(p, /<adherent\/>/);
+  assert.match(p, /<wanting>one-line reason<\/wanting>/);
+});
+
+test("loop commissar prompt embeds loop state and measured trajectory", () => {
+  const p = buildCommissarLoopPrompt({
+    target: "cut benchmark p99",
+    measureCmd: "bun bench",
+    direction: "min",
+    iteration: 7,
+    maxIterations: 50,
+    stallCount: 2,
+    plateauWindow: 5,
+    bestValue: 120,
+    lastValue: 131,
+    history: [
+      { iteration: 6, value: 128, improved: true },
+      { iteration: 7, value: 131, improved: false },
+    ],
+  }, "recent ledger digest line");
+  assert.match(p, /"target": "cut benchmark p99"/);
+  assert.match(p, /"measureCmd": "bun bench"/);
+  assert.match(p, /iter 6: value=128 improved=true/);
+  assert.match(p, /iter 7: value=131 improved=false/);
+  assert.match(p, /<evidence>\nrecent ledger digest line\n<\/evidence>/);
+  assert.match(p, /cross-check it against the raw ledger/);
+});
+
+test("loop commissar prompt tolerates an unmeasured fresh loop", () => {
+  const p = buildCommissarLoopPrompt({ target: "brand-new loop" });
+  assert.match(p, /\(no measured iterations yet\)/);
+  assert.match(p, /"bestValue": null/);
+});
