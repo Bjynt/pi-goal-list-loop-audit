@@ -6,6 +6,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
+  classifyInBandProviderFailure,
   classifyMainModelFailure,
   isMainModelFallbackFailure,
   isMainModelFailbackAuto,
@@ -309,6 +310,13 @@ test("sticky failback preserves the old fallback-settles behavior", async () => 
       fs.writeFileSync(settingsFile, original);
     }
   }
+});
+
+test("in-band provider output is recognized only for strong repeated-pane markers", () => {
+  assert.equal(classifyInBandProviderFailure("ordinary command output with no provider signal"), undefined);
+  assert.equal(classifyInBandProviderFailure("HTTP 503 upstream unavailable")?.kind, "transient");
+  assert.ok(classifyInBandProviderFailure("HTTP 429 Too Many Requests"), "429 remains recoverable even when the generic classifier stays opaque");
+  assert.equal(classifyInBandProviderFailure("network_error: fetch failed")?.kind, "transient");
 });
 
 test("main model errors stay opaque to the recovery policy", () => {

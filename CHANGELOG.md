@@ -46,6 +46,94 @@
   model pin (`auditorModel`) with a 5-minute wall clock. Settings live in a
   dedicated /glla Commissar section (3 provenance-tracked rows).
 
+## 0.35.70 — optional-provider boundary and recovery alignment (2026-08-26)
+
+### Changed
+  GLLA now delegates the managed subagent agent-directory lookup to pi's
+  host resolver, honoring custom `PI_CODING_AGENT_DIR` values instead of
+  assuming `~/.pi/agent`. The core extension remains independent of the
+  optional `@tintinweb/pi-subagents` provider.
+
+### Tests
+  Added a genuine no-provider load smoke test that forbids the optional
+  provider import while loading the extension, plus custom-agent-directory
+  coverage. The existing context-overflow recovery path remains the single
+  configured fallback route; no hardcoded free model was introduced.
+
+## 0.35.69 — metricless-loop cadence (2026-08-26)
+
+### Added
+  Metricless and measured loops accept an opt-in `cadence=<seconds>` minimum
+  interval between successful automatic iterations. The cadence is persisted,
+  shown in `/loop status` and loop prompts, and explicit starts/resumes bypass
+  it for an urgent wake. The default remains unchanged.
+
+### Tests
+  Coverage verifies cadence parsing, delayed automatic re-wakes, urgent
+  explicit starts, and the existing unbounded metricless behavior.
+
+## 0.35.68 — bound-stop recovery (2026-08-26)
+
+### Fixed
+  Explicit `/loop resume` now recovers time- and token-bound stops as fresh
+  supervised windows without discarding iteration, history, or best-value
+  state. Recoverable stopped loops can accept a confirmed
+  `propose_loop_refine` change while remaining stopped until explicitly
+  resumed. Clean max-iteration and finished loops remain terminal; automatic
+  startup does not silently reset an explicit budget.
+
+### Tests
+  Coverage verifies fresh time windows, token-budget resets, preserved loop
+  history, stopped-loop refinement, and the unchanged max-iteration guard.
+
+## 0.35.67 — in-band provider-result recovery (2026-08-26)
+
+### Fixed
+  Repeated successful tool transports that carry a strong 503/429/network
+  provider pane no longer enter loop stuck or plateau accounting as ordinary
+  work. After the same tool/result fingerprint repeats, the turn is routed
+  through the existing provider-recovery envelope; one-off status text in a
+  searched document remains ordinary output.
+
+### Tests
+  Coverage spans provider-marker classification, repeated-pane detection,
+  loop-turn exemption, durable recovery parking, and the unchanged real-error
+  and repetition paths. The full release gate remains green.
+
+## 0.35.66 — compiled-host auditor launcher (2026-08-26)
+
+### Fixed
+  Detached completion audits no longer launch the worker with a compiled Pi
+  executable. The process layer preserves explicit runtime overrides, keeps
+  Node/Node.js/Bun/Deno `process.execPath` values, and falls back to `node` for
+  compiled hosts that would otherwise parse worker flags such as `--job-dir`.
+
+### Tests
+  Runtime-resolution coverage includes Unix, Windows, Node.js aliases, Bun,
+  Deno, compiled Pi paths, and bare executable names. The existing explicit
+  runtime-override transport regression remains covered.
+
+## 0.35.65 — status surfaces and worker liveness (2026-08-26)
+
+### Added
+  The persistent footer now stays compact and global, while the detailed
+  widget and `/glla agents` share one evidence-backed worker projection. Active
+  non-auditor workers expose sanitized identity/purpose, queued/running/hung/
+  ended status, coarse phase, elapsed time, silence age, and ownership-aware
+  lifecycle evidence. Narrow widgets retain essential liveness fields and
+  point explicitly to `/glla agents` when rows overflow.
+
+### Changed
+  Detached completion-auditor evidence remains a separate verification HUD;
+  it is not mixed into the worker roster or duplicated in the global footer.
+  Existing command names, lifecycle, persistence, recovery, and auditor
+  semantics are unchanged.
+
+### Tests
+  Focused status and worker-lifecycle coverage, fresh active/queue/recovery/
+  auditor fixtures, the full release gate, TypeScript checking, offline auditor
+  validation, and npm packaging were completed for this release.
+
 ## 0.35.64 — bounded recovery for frozen subagents (2026-08-25)
 
 ### Fix
@@ -63,6 +151,25 @@
   progress-before-action cancellation, manager-unavailable and nested-child
   safety, and `tests/agents-panel.test.ts` pins the action surface. Settings
   menu/editor and INSTALL documentation expose the new threshold.
+
+### Follow-up hardening
+  Frozen-child escalation now uses pi-subagents' existing root-session
+  `subagents:rpc:stop` bridge, with readiness, ownership, generation, and
+  timeout-race fencing. The real AgentManager/RPC path is covered by a
+  deterministic pending-provider integration test without modifying the
+  upstream package.
+
+  Malformed saved goal/list objectives now produce a bounded repair/replan
+  card instead of a self-blocking first turn. One durable bootstrap turn
+  carries the complete preserved target and `propose_task_list` confirmation;
+  automatic repeats are fenced, while explicit `/list resume` re-arms one
+  retry. The card keeps its concrete recovery action and queue position
+  visible.
+
+### Tests
+  Focused repair/replan, display, stale-probe, and RPC regressions are
+  included in the release contract. The complete gate remains the source of
+  truth for the published artifact.
 
 ## 0.35.63 — auditor context held until resume (2026-08-25)
 

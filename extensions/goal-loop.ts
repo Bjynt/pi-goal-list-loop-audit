@@ -283,6 +283,17 @@ function loopPrompt(loop: LoopState, regressionNote: string, strategyNote: strin
 
 function scheduleLoopTick(ctx: ExtensionContext): void {
   // v0.35.15: `/glla pause` freezes loop re-arms too — the supervisor's
+  if (supervisorPaused(state)) return;
+  scheduleLoopTickWithUrgency(ctx, false);
+}
+
+function scheduleLoopTickUrgent(ctx: ExtensionContext): void {
+  if (supervisorPaused(state)) return;
+  scheduleLoopTickWithUrgency(ctx, true);
+}
+
+function scheduleLoopTickWithUrgency(ctx: ExtensionContext, urgent: boolean): void {
+  // v0.35.15: `/glla pause` freezes loop re-arms too — the supervisor's
   // automatic machinery includes the metric loop's turn dispatch.
   if (supervisorPaused(state)) return;
   if (mainModelRecoveryActive()) return;
@@ -295,7 +306,18 @@ function scheduleLoopTick(ctx: ExtensionContext): void {
   } catch {
     return;
   }
-  loopTimer = scheduleSessionTimeout(() => sendLoopTurn(), delay);
+  // A cadence is an intentional maturity gap between successful iterations,
+  // not a replacement for the busy-send backoff. Explicit starts/resumes are
+  // urgent wakes and bypass the gap once; automatic re-arms honor it.
+  if (!urgent) {
+    const loop = state.loop;
+    const intervalMs = loop?.minimumIterationIntervalMs;
+    const completedAt = loop?.lastIterationCompletedAt ? Date.parse(loop.lastIterationCompletedAt) : Number.NaN;
+    if (intervalMs !== undefined && Number.isFinite(completedAt)) {
+      delay = Math.max(delay, completedAt + intervalMs - Date.now());
+    }
+  }
+  loopTimer = scheduleSessionTimeout(() => sendLoopTurn(), Math.max(0, delay));
 }
 
 function sendLoopTurn(): void {
@@ -378,6 +400,9 @@ function sendLoopTurn(): void {
       : `\n- NO bounds armed — this loop ends only at /loop stop. Spend each iteration like it costs money; it does.`;
   } else if (bounds.length) {
     boundsNote = `\n- Arbitrary bounds: the loop also stops after ${bounds.join(" or ")}`;
+  }
+  if (loop.minimumIterationIntervalMs !== undefined) {
+    boundsNote += `\n- Minimum cadence: wait at least ${Math.ceil(loop.minimumIterationIntervalMs / 1_000)}s after each completed iteration before the next automatic wake; explicit starts/resumes are urgent.`;
   }
   // v0.24.0: a stuck intervention REPLACES the pep talk — the rotating
   // directive names why the loop is stuck and what rung of the ladder it's on.
@@ -593,7 +618,9 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
     loop.consecutiveStuck = 0;
     loop.lastStuckReason = undefined;
   }
-  let outcome: LoopTickOutcome = metricless ? applyMetriclessTick(loop, nowIso()) : applyMeasurement(loop, value, nowIso());
+  const completedAt = nowIso();
+  let outcome: LoopTickOutcome = metricless ? applyMetriclessTick(loop, completedAt) : applyMeasurement(loop, value, completedAt);
+  loop.lastIterationCompletedAt = completedAt;
   // v0.33.2: close the hypothesis feedback loop — the prediction went into
   // the ledger; now the VERDICT rides the next iteration's prompt.
   if (loop.lastHypothesis) {
@@ -775,6 +802,8 @@ interface LoopConfig {
   force?: boolean;
   timeLimitHours?: number;
   tokenBudget?: number;
+  /** v0.35.x: optional metricless minimum cadence in milliseconds. */
+  minimumIterationIntervalMs?: number;
   /** v0.25.1: /loop start toolsamerepeat=N (0 = disable legacy check). */
   toolSameRepeat?: number;
   /** v0.29.10: don't seed bestValue from the pre-work baseline measure —
@@ -880,6 +909,7 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
       startedAt: nowIso(),
       timeLimitHours: cfg.timeLimitHours,
       tokenBudget: cfg.tokenBudget,
+      minimumIterationIntervalMs: cfg.minimumIterationIntervalMs,
       tokensUsed: 0,
       branchName,
       originalBranch,
@@ -891,16 +921,18 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
     },
   });
   persistState(ctx);
-  appendLedger(ctx.cwd, "loop_started", { target: cfg.target, measureCmd: cfg.measureCmd || "none", direction: cfg.direction ?? "none", baseline, branch: branchName, timeLimitHours: cfg.timeLimitHours, tokenBudget: cfg.tokenBudget });
+  appendLedger(ctx.cwd, "loop_started", { target: cfg.target, measureCmd: cfg.measureCmd || "none", direction: cfg.direction ?? "none", baseline, branch: branchName, timeLimitHours: cfg.timeLimitHours, tokenBudget: cfg.tokenBudget, minimumIterationIntervalMs: cfg.minimumIterationIntervalMs });
   ctx.ui.notify(
     metricless
       ? `Loop started (metricless spec loop — NO plateau stop): ${displaySlice(cfg.target, 60)}\nEnds only at ${cfg.maxIterations > 0 ? `max ${cfg.maxIterations} iterations` : "no iteration cap"}${cfg.timeLimitHours ? ` · ${cfg.timeLimitHours}h` : ""}${cfg.tokenBudget ? ` · ${cfg.tokenBudget.toLocaleString()} tokens` : ""} · /loop stop. Every iteration must make ONE real, inspectable change — cosmetic churn is the doorknob failure.` +
+        (cfg.minimumIterationIntervalMs ? ` · cadence ≥ ${Math.ceil(cfg.minimumIterationIntervalMs / 1_000)}s` : "") +
         (branchName ? `\nbranch mode: committing each iteration to ${branchName}` : "")
       : `Loop started: ${displaySlice(cfg.target, 60)}\nBaseline: ${cfg.deferBaseline ? "deferred — the first real measurement seeds it" : (baseline ?? "(forced without a number — first turn must produce one)")} · direction ${cfg.direction} · window ${cfg.plateauWindow} · ${cfg.maxIterations > 0 ? `max ${cfg.maxIterations}` : "no iteration cap"}` +
+        (cfg.minimumIterationIntervalMs ? ` · cadence ≥ ${Math.ceil(cfg.minimumIterationIntervalMs / 1_000)}s` : "") +
         (branchName ? `\nbranch mode: committing improvements to ${branchName}` : ""),
     "info",
   );
-  scheduleLoopTick(ctx);
+  scheduleLoopTickUrgent(ctx);
   return true;
 }
 
@@ -929,7 +961,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       if (flags.continuationDispatchStoodDown) {
         releaseContinuationDispatchStandDown();
         releaseAuditorSurface();
-        scheduleLoopTick(ctx);
+        scheduleLoopTickUrgent(ctx);
         ctx.ui.notify("Loop dispatch stand-down cleared — retrying one continuation explicitly.", "info");
       } else {
         ctx.ui.notify("A loop is already active — /loop status to inspect, /loop stop to end it.", "info");
@@ -948,6 +980,8 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       !!r?.startsWith("plateau —") ||
       !!r?.startsWith("stalled:") ||
       !!r?.startsWith("stuck —") ||
+      !!r?.startsWith("time bound reached") ||
+      !!r?.startsWith("token budget exhausted") ||
       // v0.35.54 (collect-pass HIGH finding): the v0.35.31 "metric never
       // moved" stop message promises "/loop resume retries or /loop stop",
       // but this predicate never matched that prefix — the promised command
@@ -992,8 +1026,33 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       // An explicit resume re-arms the counters: fresh stall window,
       // cleared dead-turn/stuck streaks, reprieves restored — the user
       // saying "push again" wins over the ladder's memory (v0.29.19).
-      state.loop = { ...stored, active: true, stopReason: undefined, consecutiveErrors: 0, consecutiveStuck: 0, lastStuckReason: undefined, stallCount: 0, auditPlateauReprieves: 0 };
+      // Time and token bounds are per supervised run window: resuming a
+      // bound-stopped loop preserves its iteration/history/best but starts a
+      // fresh elapsed-time window or token budget instead of stopping again
+      // on the same bound.
+      const resetTimeWindow = stored.stopReason?.startsWith("time bound reached") ?? false;
+      const resetTokenBudget = stored.stopReason?.startsWith("token budget exhausted") ?? false;
+      const resumedAt = nowIso();
+      state.loop = {
+        ...stored,
+        active: true,
+        stopReason: undefined,
+        consecutiveErrors: 0,
+        consecutiveStuck: 0,
+        lastStuckReason: undefined,
+        stallCount: 0,
+        auditPlateauReprieves: 0,
+        ...(resetTimeWindow ? { startedAt: resumedAt } : {}),
+        ...(resetTokenBudget ? { tokensUsed: 0 } : {}),
+      };
       persistState(ctx);
+      if (resetTimeWindow || resetTokenBudget) {
+        appendLedger(ctx.cwd, "loop_bound_window_reset", {
+          timeWindow: resetTimeWindow,
+          tokenBudget: resetTokenBudget,
+          iteration: stored.iteration,
+        });
+      }
       // v0.35.23 (note.md Next #2): an explicit resume is exactly the
       // decision a load hold waits for — release it or the tick below
       // would be frozen.
@@ -1003,9 +1062,14 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       }
       releaseContinuationDispatchStandDown();
       releaseAuditorSurface();
-      scheduleLoopTick(ctx);
+      scheduleLoopTickUrgent(ctx);
+      const boundResetNote = resetTimeWindow
+        ? " · fresh time window"
+        : resetTokenBudget
+          ? " · fresh token budget"
+          : "";
       ctx.ui.notify(
-        `Loop resumed: iteration ${stored.iteration}/${stored.maxIterations > 0 ? stored.maxIterations : "∞"} · best ${stored.bestValue ?? "n/a"} — ${displaySlice(stored.target, 60)}`, 
+        `Loop resumed: iteration ${stored.iteration}/${stored.maxIterations > 0 ? stored.maxIterations : "∞"} · best ${stored.bestValue ?? "n/a"}${boundResetNote} — ${displaySlice(stored.target, 60)}`,
         "info",
       );
       return;
@@ -1025,7 +1089,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
         ctx.ui.notify(formatLoopRecoveryStatus(ctx), "info");
         return;
       }
-      ctx.ui.notify("No loop. /loop to draft one, /loop start \"<target>\" for an infinite metricless loop, or add measure=\"<cmd>\" direction=min|max for a metric loop [window=5] [max=50] [time=<hours>] [tokens=<budget>]", "info");
+      ctx.ui.notify("No loop. /loop to draft one, /loop start \"<target>\" for an infinite metricless loop, or add measure=\"<cmd>\" direction=min|max for a metric loop [window=5] [max=50] [time=<hours>] [tokens=<budget>] [cadence=<seconds>]", "info");
       return;
     }
     const lines = [
@@ -1037,6 +1101,11 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     if (loop.timeLimitHours !== undefined) bounds.push(`time ≤ ${loop.timeLimitHours}h`);
     if (loop.tokenBudget !== undefined) bounds.push(`tokens ${(loop.tokensUsed ?? 0).toLocaleString()}/${loop.tokenBudget.toLocaleString()}`);
     if (bounds.length) lines.push(`Bounds: ${bounds.join(" · ")}`);
+    if (loop.minimumIterationIntervalMs !== undefined) {
+      const lastCompleted = loop.lastIterationCompletedAt ? Date.parse(loop.lastIterationCompletedAt) : Number.NaN;
+      const nextDelay = Number.isFinite(lastCompleted) ? Math.max(0, lastCompleted + loop.minimumIterationIntervalMs - Date.now()) : 0;
+      lines.push(`Cadence: ≥ ${Math.ceil(loop.minimumIterationIntervalMs / 1_000)}s between iterations${nextDelay > 0 ? ` · next in ${Math.ceil(nextDelay / 1_000)}s` : " · ready"}`);
+    }
     if (loop.refinements?.length) lines.push(`Spec refined ${loop.refinements.length}× (latest: iteration ${loop.refinements[loop.refinements.length - 1]!.iteration})`);
     if (loop.stopReason) lines.push(`Stopped: ${loop.stopReason}`);
     if (state.mainModelRecovery?.kind === "loop") lines.push(...formatLoopRecoveryStatusLines(ctx));

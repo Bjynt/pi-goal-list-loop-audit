@@ -54,6 +54,23 @@ export function isLifecycleHeldLoopReason(reason?: string): boolean {
     || !!reason?.startsWith("send-retry storm:");
 }
 
+/** A stopped loop can be respecified without discarding its history when the
+ * stop is a recoverable work failure or an explicit time/token window. Max
+ * iterations and clean/user stops remain terminal until a fresh `/loop start`.
+ */
+export function isRefinableStoppedLoopReason(reason?: string): boolean {
+  return !!reason && (
+    reason.startsWith("time bound reached")
+    || reason.startsWith("token budget exhausted")
+    || reason.startsWith("stuck —")
+    || reason.startsWith("plateau —")
+    || reason.startsWith("metric never moved —")
+    || reason.startsWith("measure command broken —")
+    || reason.startsWith("provider errors —")
+    || reason.startsWith("stalled:")
+  );
+}
+
 export interface LoopState {
   target: string;
   /** v0.23.0: optional — a metricless "spec loop" (measure=none) has no
@@ -108,6 +125,12 @@ export interface LoopState {
   tokenBudget?: number;
   /** v0.15.0: accumulated loop tokens (input+output), orchestrator-counted. */
   tokensUsed?: number;
+  /** v0.35.x: optional minimum gap between successful metricless-loop
+   * iterations. Units are milliseconds internally; absent means unchanged
+   * immediate cadence. */
+  minimumIterationIntervalMs?: number;
+  /** v0.35.x: completion timestamp used to arm the next cadence window. */
+  lastIterationCompletedAt?: string;
   /** v0.15.0: living spec — user-confirmed target/measure refinements. */
   refinements?: LoopRefinement[];
   /** branch=1 mode: scratch branch holding the loop's commits. */
@@ -118,8 +141,9 @@ export interface LoopState {
   recentPrints?: string[];
   /** v0.24.0: last few iteration texts (near-duplicate check + banned openings). */
   recentTexts?: string[];
-  /** v0.24.0: rolling tool-result fingerprints {tool, hash, isError}. */
-  recentToolResults?: { tool: string; hash: string; isError: boolean }[];
+  /** v0.24.0: rolling tool-result fingerprints {tool, hash, isError};
+   * providerFailure marks a repeated in-band provider/network pane. */
+  recentToolResults?: { tool: string; hash: string; isError: boolean; providerFailure?: boolean }[];
   /** v0.24.0: tool calls seen since the last completed iteration. */
   toolsThisTurn?: number;
   /** v0.24.0: consecutive iterations with zero tool calls. */
@@ -386,6 +410,8 @@ export function parseLoopStartArgs(raw: string): {
   timeLimitHours?: number;
   tokenBudget?: number;
   toolSameRepeat?: number;
+  /** v0.35.x: optional metricless minimum cadence, supplied in seconds. */
+  minimumIterationIntervalMs?: number;
 } {
   // Key=value pairs first (measure= and direction= may hold quoted values),
   // the remaining text is the target. v0.35.4: quoted spans are TARGET
@@ -396,7 +422,7 @@ export function parseLoopStartArgs(raw: string): {
   let rest = raw.trim();
   const kv = new Map<string, string>();
   const kvRe = /(\w+)=(?:"([^"]*)"|'([^']*)'|(\S+))/g;
-  const KNOWN_KEYS = new Set(["measure", "direction", "window", "max", "branch", "force", "done", "time", "tokens", "toolsamerepeat"]);
+  const KNOWN_KEYS = new Set(["measure", "direction", "window", "max", "branch", "force", "done", "time", "tokens", "toolsamerepeat", "cadence"]);
   const quoteSpans: Array<[number, number]> = [];
   const quoteRe = /"([^"]*)"|'([^']*)'/g;
   let qm: RegExpExecArray | null;
@@ -451,6 +477,10 @@ export function parseLoopStartArgs(raw: string): {
   }
   const timeRaw = Number.parseFloat(kv.get("time") ?? "");
   const tokensRaw = Number.parseInt(kv.get("tokens") ?? "", 10);
+  const cadenceRaw = Number.parseFloat(kv.get("cadence") ?? "");
+  const cadenceMs = Number.isFinite(cadenceRaw) && cadenceRaw > 0
+    ? Math.min(Math.round(cadenceRaw * 1_000), 24 * 60 * 60_000)
+    : undefined;
   return {
     target,
     measureCmd: metricless ? "" : measureRaw,
@@ -471,6 +501,7 @@ export function parseLoopStartArgs(raw: string): {
       const n = Number.parseInt(raw, 10);
       return Number.isInteger(n) && n >= 0 ? n : undefined;
     })(),
+    ...(cadenceMs !== undefined ? { minimumIterationIntervalMs: cadenceMs } : {}),
   };
 }
 

@@ -687,11 +687,13 @@ test("paused decision without activity says no turn was observed and names the m
   assert.match(joined, /1\. staging/);
 });
 
-test("auditing shows the auditor's current tool", () => {
+test("auditing keeps the footer compact while the widget shows the auditor's current tool", () => {
   const g = goalOf({ status: "auditing" });
   const s = buildStatusText({ goal: g, list: [] }, { currentTool: "read" }, NOW)!;
   assert.match(s, /auditor ▶ running/);
-  assert.match(s, /read/);
+  assert.doesNotMatch(s, /read|evidence:|elapsed|worker activity/);
+  const widget = buildWidgetLines({ goal: g, list: [] }, { currentTool: "read" }, NOW)!.join("\\n");
+  assert.match(widget, /last tool: read/);
 });
 
 test("v0.34.89: completed goal shows a dim one-line summary instead of a loud status claim", () => {
@@ -838,7 +840,9 @@ test("widget: auditing shows auditor progress", () => {
   assert.ok(lines.some((l) => l.includes("verifying contract")));
   assert.ok(lines.some((l) => l.includes("grep")));
   assert.ok(lines.some((l) => l.includes("42s")));
-  assert.match(buildStatusText({ goal: g, list: [] }, { currentTool: "grep" }, NOW)!, /auditor ▶ running(?: \S+)? · grep/);
+  const status = buildStatusText({ goal: g, list: [] }, { currentTool: "grep" }, NOW)!;
+  assert.match(status, /auditor ▶ running/);
+  assert.doesNotMatch(status, /grep|evidence:|elapsed|worker activity/);
 });
 
 test("widget: interrupted completion claims render recovery-pending, not auditor-running", () => {
@@ -867,7 +871,8 @@ test("widget: a durable running claim without observed progress says awaiting ve
 test("auditor progress phases are explicit and retain worker activity", () => {
   const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-3" } });
   const queued = buildWidgetLines({ goal: g, list: [] }, { label: "queued" }, NOW)!;
-  assert.ok(queued.some((l) => l.includes("MAIN HOST · SUPERVISING · auditor: queued")));
+  assert.ok(queued.some((l) => l.includes("auditor: queued · detached worker")));
+  assert.doesNotMatch(queued.join("\\n"), /MAIN HOST/);
   assert.ok(queued.some((l) => l.includes("completion claim is durable")));
 
   const running = buildWidgetLines({ goal: g, list: [] }, {
@@ -877,6 +882,7 @@ test("auditor progress phases are explicit and retain worker activity", () => {
     lastActivityAt: NOW - 30_000,
   }, NOW)!;
   assert.ok(running.some((l) => l.includes("auditor: last observed tool")));
+  assert.doesNotMatch(running.join("\\n"), /MAIN HOST/);
   assert.ok(running.some((l) => l.includes("tool: grep")));
   assert.ok(running.some((l) => l.includes("worker activity 30s ago")));
 
@@ -902,7 +908,8 @@ test("worker-timeout display demotes stale progress to quiet without claiming LI
   };
   const status = buildStatusText({ goal: g, list: [] }, stale, NOW)!;
   assert.match(status, /auditor ◌ quiet/);
-  assert.match(status, /worker activity 4m 00s ago · stale/);
+  assert.match(status, /silent 4m 00s/);
+  assert.doesNotMatch(status, /stale|worker activity|last tool|evidence:/);
   assert.match(status, /next: worker event or \/goal cancel/);
   assert.doesNotMatch(status, /AUDITOR · DETACHED · LIVE/);
   const widget = buildWidgetLines({ goal: g, list: [] }, stale, NOW)!.join("\\n");
@@ -910,7 +917,7 @@ test("worker-timeout display demotes stale progress to quiet without claiming LI
   assert.doesNotMatch(widget, /LIVE/);
 });
 
-test("detached auditor status names phase, evidence, freshness, verdict wait, and next transition without pausing MAIN", () => {
+test("detached auditor keeps compact footer liveness and detailed widget evidence without pausing MAIN", () => {
   const g = goalOf({ status: "auditing", pendingCompletion: { at: "2026-07-21T11:59:00Z", phase: "running", attemptId: "audit-contract" } });
   const liveAudit = {
     phase: "tool_executing" as const,
@@ -924,12 +931,9 @@ test("detached auditor status names phase, evidence, freshness, verdict wait, an
   const liveStatus = buildStatusText({ goal: g, list: [] }, liveAudit, NOW)!;
   assert.match(liveStatus, /MAIN HOST · SUPERVISING/);
   assert.match(liveStatus, /auditor ▶ tool executing/);
-  assert.match(liveStatus, / · read/);
-  assert.match(liveStatus, /evidence: report stream observed · 2\.0 KB report · 1 audit call/);
-  assert.match(liveStatus, /elapsed 42s/);
-  assert.match(liveStatus, /worker activity 5s ago · fresh/);
+  assert.match(liveStatus, /AUDITOR · DETACHED · LIVE/);
   assert.match(liveStatus, /next: worker completion → verdict/);
-  assert.match(liveStatus, /detached worker/);
+  assert.doesNotMatch(liveStatus, / · read|evidence:|elapsed|worker activity/);
   assert.doesNotMatch(liveStatus, /paused/);
   const liveWidget = buildWidgetLines({ goal: g, list: [] }, liveAudit, NOW)!.join("\\n");
   assert.match(liveWidget, /auditor: tool executing · detached worker/);
@@ -945,12 +949,9 @@ test("detached auditor status names phase, evidence, freshness, verdict wait, an
   };
   const verdictStatus = buildStatusText({ goal: g, list: [] }, completeAudit, NOW)!;
   assert.match(verdictStatus, /auditor ✓ awaiting verdict/);
-  assert.match(verdictStatus, /last tool: grep/);
-  assert.match(verdictStatus, /evidence: final report · 1 audit call/);
-  assert.match(verdictStatus, /elapsed 45s/);
-  assert.match(verdictStatus, /worker finished/);
   assert.match(verdictStatus, /next: apply detached verdict/);
   assert.match(verdictStatus, /detached worker/);
+  assert.doesNotMatch(verdictStatus, /last tool:|evidence:|elapsed|worker finished/);
   assert.doesNotMatch(verdictStatus, /paused/);
   const verdictWidget = buildWidgetLines({ goal: g, list: [] }, completeAudit, NOW)!.join("\\n");
   assert.match(verdictWidget, /auditor: awaiting verdict · detached worker/);
@@ -967,7 +968,8 @@ test("detached auditor elapsed time keeps ticking between worker progress events
     lastActivityAt: NOW - 20_000,
   };
   const status = buildStatusText({ goal: g, list: [] }, audit, NOW)!;
-  assert.match(status, /elapsed 2m 00s/);
+  assert.match(status, /auditor ▶ (?:thinking|reading source…)/);
+  assert.doesNotMatch(status, /elapsed 2m 00s|worker activity|evidence:/);
   const lines = buildWidgetLines({ goal: g, list: [] }, audit, NOW)!;
   assert.ok(lines.some((line) => line.includes("2m 00s in detached worker")), lines.join("\\n"));
 });
@@ -1108,7 +1110,7 @@ test("H-code: HUD liveness gate rejects clock-skewed lastActivityAt (future time
     lastActivityAt: NOW,
   }, NOW)!;
   assert.match(currentStatus, /AUDITOR · DETACHED · LIVE/);
-  assert.match(currentStatus, /worker activity 0s ago/);
+  assert.doesNotMatch(currentStatus, /worker activity 0s ago|elapsed|evidence:/);
 
   // Sanity: a genuinely stale timestamp (> LIVE_ACTIVITY_MS old) is NOT live.
   const staleStatus = buildStatusText({ goal: g, list: [] }, {
@@ -1168,7 +1170,8 @@ test("auditor widget shows concrete worker observations without exposing think b
     lastActivityAt: NOW - 1_000,
   }, NOW)!;
   assert.match(liveAuditStatus, /MAIN HOST · SUPERVISING/);
-  assert.match(liveAuditStatus, /auditor ▶ tool executing \S+ \[[▁▂▄▆█]{6} AUDITOR · DETACHED · LIVE\] · read/);
+  assert.match(liveAuditStatus, /auditor ▶ tool executing \S+ \[[▁▂▄▆█]{6} AUDITOR · DETACHED · LIVE\]/);
+  assert.doesNotMatch(liveAuditStatus, / · read|evidence:|elapsed|worker activity/);
 
   const streamedThink = buildWidgetLines({ goal: g, list: [] }, {
     phase: "thinking",
@@ -1538,7 +1541,8 @@ test("v0.34.57: MAIN host label is pinned to SUPERVISING by the MAIN_HOST_LABEL 
   const auditingStatus = buildStatusText(auditingState as never)!;
   assert.match(auditingStatus, /MAIN HOST · SUPERVISING/);
   const auditingWidget = buildWidgetLines(auditingState as never)!;
-  assert.ok(auditingWidget.some((l) => l.includes("MAIN HOST · SUPERVISING")), "widget uses the guard label");
+  assert.ok(auditingWidget.some((l) => l.includes("auditor:")), "widget keeps the detailed auditor surface");
+  assert.doesNotMatch(auditingWidget.join("\\n"), /MAIN HOST/, "the widget does not duplicate the global host label");
 
   // 2. No-verdict state: NOT host-bearing anymore (v0.34.87 surface
   // separation — a parked item's status line names the pause and the resume
@@ -1558,10 +1562,8 @@ test("v0.34.57: MAIN host label is pinned to SUPERVISING by the MAIN_HOST_LABEL 
 
   // 3. Invariant: wherever "MAIN HOST" appears in any host-bearing rendering,
   // it is followed by " · SUPERVISING" — never " · DETACHED".
-  for (const text of [auditingStatus, auditingWidget.join("\n")]) {
-    assert.match(text, /MAIN HOST · SUPERVISING/, `MAIN HOST must render as SUPERVISING: ${text}`);
-    assert.doesNotMatch(text, /MAIN HOST · DETACHED/, `MAIN HOST must never render as DETACHED: ${text}`);
-  }
+  assert.match(auditingStatus, /MAIN HOST · SUPERVISING/, `MAIN HOST must render as SUPERVISING: ${auditingStatus}`);
+  assert.doesNotMatch(auditingStatus, /MAIN HOST · DETACHED/, `MAIN HOST must never render as DETACHED: ${auditingStatus}`);
 });
 
 test("active auditor verdicts never masquerade as infrastructure no-verdict", () => {

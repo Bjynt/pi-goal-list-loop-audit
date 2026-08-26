@@ -18,6 +18,7 @@
 import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
+import * as path from "node:path";
 
 import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
 import { readState } from "../extensions/goal-loop-core.js";
@@ -81,6 +82,82 @@ test("behavioral: a loop parked by 'metric never moved' resumes via /loop resume
   assert.equal(after?.consecutiveErrors ?? 0, 0, "error streak re-armed");
   assert.equal(after?.consecutiveStuck ?? 0, 0, "stuck streak re-armed");
   assert.equal(after?.stallCount, 0, "stall window re-armed");
+});
+
+test("v0.35.x: time and token bound stops resume as fresh windows without discarding history", async () => {
+  const timeCwd = tmpCwd();
+  const oldStartedAt = new Date(Date.now() - 2 * 3_600_000).toISOString();
+  seedState(timeCwd, {
+    goal: null,
+    list: [],
+    loop: seedLoop({
+      measureCmd: "echo 74",
+      direction: "max",
+      active: false,
+      stopReason: "time bound reached (1h); best: 74",
+      timeLimitHours: 1,
+      startedAt: oldStartedAt,
+      iteration: 4,
+      bestValue: 74,
+      history: [{ iteration: 4, value: 74, improved: false, at: oldStartedAt }],
+    }),
+  });
+  const timeCtx = await freshCtx(timeCwd);
+  const timeBefore = readState(timeCwd).loop!;
+  await pi.command("loop", "resume", timeCtx);
+  await tick(80);
+  const timeAfter = readState(timeCwd).loop!;
+  assert.equal(timeAfter.active, true);
+  assert.equal(timeAfter.iteration, timeBefore.iteration);
+  assert.equal(timeAfter.history.length, timeBefore.history.length);
+  assert.ok(Date.parse(timeAfter.startedAt) > Date.parse(timeBefore.startedAt), "time resume starts a fresh window");
+
+  const tokenCwd = tmpCwd();
+  seedState(tokenCwd, {
+    goal: null,
+    list: [],
+    loop: seedLoop({
+      measureCmd: "echo 74",
+      direction: "max",
+      active: false,
+      stopReason: "token budget exhausted (100 >= 100); best: 74",
+      tokenBudget: 100,
+      tokensUsed: 100,
+      iteration: 5,
+      bestValue: 74,
+      history: [{ iteration: 5, value: 74, improved: false, at: new Date().toISOString() }],
+    }),
+  });
+  const tokenCtx = await freshCtx(tokenCwd);
+  const tokenBefore = readState(tokenCwd).loop!;
+  await pi.command("loop", "resume", tokenCtx);
+  await tick(80);
+  const tokenAfter = readState(tokenCwd).loop!;
+  assert.equal(tokenAfter.active, true);
+  assert.equal(tokenAfter.iteration, tokenBefore.iteration);
+  assert.equal(tokenAfter.history.length, tokenBefore.history.length);
+  assert.equal(tokenAfter.tokensUsed, 0, "token resume starts a fresh budget");
+  assert.ok(fs.readFileSync(path.join(tokenCwd, ".pi-glla", "active.jsonl"), "utf8").includes('"loop_bound_window_reset"'));
+});
+
+test("v0.35.x: metricless cadence delays automatic re-wakes but explicit start is urgent", async () => {
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: null, list: [], loop: null });
+  const ctx = await freshCtx(cwd);
+  pi.sent.length = 0;
+  await pi.command("loop", 'start "mature the spec" cadence=0.25', ctx);
+  await tick(80);
+  assert.ok(pi.sent.length >= 1, "explicit loop start wakes immediately");
+  await pi.fire("agent_end", {
+    messages: [{ role: "assistant", content: [{ type: "text", text: "recorded one real spec improvement" }], stopReason: "end_turn" }],
+  }, ctx);
+  const afterTurn = pi.sent.length;
+  await tick(80);
+  assert.equal(pi.sent.length, afterTurn, "automatic wake waits for the cadence");
+  await tick(230);
+  assert.ok(pi.sent.length > afterTurn, "automatic wake lands after the cadence");
+  assert.ok(readState(cwd).loop?.lastIterationCompletedAt, "successful iteration arms the cadence timestamp");
+  await pi.command("loop", "stop", ctx);
 });
 
 test("negative pin: a bounded stop ('max iterations reached') is still not resumable", async () => {

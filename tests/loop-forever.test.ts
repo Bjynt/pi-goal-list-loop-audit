@@ -432,10 +432,15 @@ test("parseLoopStartArgs: done= throws a teaching error (v0.15.0)", () => {
   );
 });
 
-test("parseLoopStartArgs: time= and tokens= parse as arbitrary bounds", () => {
-  const cfg = parseLoopStartArgs('t measure="cat x" direction=min time=2.5 tokens=500000');
+test("parseLoopStartArgs: time=, tokens=, and cadence= parse as bounded controls", () => {
+  const cfg = parseLoopStartArgs('t measure="cat x" direction=min time=2.5 tokens=500000 cadence=90');
   assert.equal(cfg.timeLimitHours, 2.5);
   assert.equal(cfg.tokenBudget, 500000);
+  assert.equal(cfg.minimumIterationIntervalMs, 90_000);
+  const capped = parseLoopStartArgs('t cadence=999999');
+  assert.equal(capped.minimumIterationIntervalMs, 24 * 60 * 60_000);
+  const badCadence = parseLoopStartArgs('t cadence=0');
+  assert.equal(badCadence.minimumIterationIntervalMs, undefined);
   const bare = parseLoopStartArgs('t measure="cat x" direction=min');
   assert.equal(bare.timeLimitHours, undefined);
   assert.equal(bare.tokenBudget, undefined);

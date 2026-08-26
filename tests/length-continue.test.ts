@@ -57,7 +57,10 @@ test("agent_end: length path runs BEFORE nudge accounting, telemetry, and goal g
   // distance — prior 5000-char window broke when P1/P3 (0.28.4) added ~1100
   // chars between the length path and the goal gate; v0.34.25/26 added ~2000
   // more (silent-swap absorb branch + durable exhaustion pause).
-  const handler = SRC.slice(SRC.indexOf('pi.on("agent_end"'), SRC.indexOf('pi.on("agent_end"') + 48000);
+  // Keep the source window above the lifecycle handler's pre-gate recovery
+  // block; provider-pane recovery adds a bounded branch before the gate.
+  const handler = SRC.slice(SRC.indexOf('pi.on("agent_end"'), SRC.indexOf('pi.on("agent_end"') + 20000);
+  // v0.37.0: the tick call may be formatted multi-line — match the call site, not one spelling.
   const lengthIdx = handler.indexOf("const lc = tickLengthContinue(");
   assert.ok(lengthIdx > 0, "length tick present");
   assert.ok(handler.indexOf("isContextStarvedLengthStop(rawLastA, contextUsage)") < lengthIdx, "context-starvation classification runs before the tracker");

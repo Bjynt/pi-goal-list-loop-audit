@@ -65,7 +65,9 @@ stops it.
    furnace.
 5. When concrete, call `propose_loop_draft` with `target`, `measureCmd` (or
    omit/`"none"` for metricless), `direction` (measured only), and optional
-   `window`/`max`/`time`/`tokens`.
+   `window`/`max`/`time`/`tokens`/`cadence`. `cadence` is seconds between
+   successful automatic iterations; it is opt-in, shown in `/loop status`, and
+   explicit starts/resumes remain urgent.
 6. **The orchestrator will run your proposed measure command ONCE** and show
    the user the real output and parsed number in the Confirm dialog. If your
    command produces no number, the proposal is rejected automatically — fix

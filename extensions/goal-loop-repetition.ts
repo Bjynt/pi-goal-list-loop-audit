@@ -129,6 +129,18 @@ export interface ToolResultPrint {
   tool: string;
   hash: string;
   isError: boolean;
+  /** Successful tool transport can still contain a repeated provider failure. */
+  providerFailure?: boolean;
+}
+
+/** The repeated in-band provider pane is an outage signal, not loop work. */
+export function repeatedInBandProviderFailure(results: ToolResultPrint[], repeat = REPETITION.toolResultRepeat): boolean {
+  if (repeat <= 0) return false;
+  const recent = results.slice(-repeat);
+  if (recent.length !== repeat || !recent[0]?.providerFailure) return false;
+  return recent.every((result) => result.providerFailure === true
+    && result.tool === recent[0]!.tool
+    && result.hash === recent[0]!.hash);
 }
 
 export interface LoopStuckInput {

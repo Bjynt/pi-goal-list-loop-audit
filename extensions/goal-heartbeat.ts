@@ -52,6 +52,7 @@ import {
   probeMainModelRecovery,
 } from "./goal-recovery.js";
 import type { ContinuationDispatch } from "./goal-loop-dispatch.js";
+import type { AgentPhase, AgentStatus } from "./goal-agents-panel.js";
 
 /** goal.ts-owned module lets the heartbeat reads/writes through this accessor.
  * Getters/setters are wired by goal.ts at factory time (mirror-lets pattern). */
@@ -482,6 +483,8 @@ type SubagentRecordPoll = {
   toolUses?: number;
   lifetimeUsage?: { output?: number };
   status?: string;
+  /** Manager execution start; queued records initially expose spawn time. */
+  startedAt?: number;
   /** Present on pi-subagents records; required before automatic control. */
   parentAgentId?: string;
 };
@@ -1534,8 +1537,12 @@ export interface SubagentAgentView {
   recordId: string;
   agentType?: string;
   summary?: string;
-  status: "running" | "hung" | "ended";
+  status: AgentStatus;
+  /** Coarse phase derived only from observed lifecycle/progress evidence. */
+  phase: AgentPhase;
   spawnedAt: number;
+  /** Actual execution start when the manager exposes it. */
+  startedAt: number;
   lastProgressAt: number;
   toolUses: number;
   outputTokens: number;
@@ -1547,40 +1554,82 @@ export interface SubagentAgentView {
   endedAt?: number;
 }
 
-export function getSubagentAgentsSnapshot(now = Date.now()): {
-  agents: SubagentAgentView[];
-  managerAvailable: boolean;
-} {
+function finiteNonNegative(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+export function getSubagentAgentsSnapshot(now = Date.now()): { agents: SubagentAgentView[]; managerAvailable: boolean } {
   const poll = subagentManagerPoller();
   const managerAvailable = typeof poll.getRecord === "function";
   const agents: SubagentAgentView[] = [];
   for (const probe of subagentHangProbes.values()) {
     const ended = probe.endedAt !== undefined;
-    let status: SubagentAgentView["status"] = "running";
-    let evidence: SubagentAgentView["evidence"] = "live";
+    let status: AgentStatus = "running";
+    let phase: AgentPhase = "active";
+    let evidence: SubagentAgentView["evidence"] = "event-only";
     let record: SubagentRecordPoll | undefined;
+    let lastProgressAt = probe.lastProgressAt;
     if (!ended) {
       record = poll.getRecord?.(probe.recordId);
       const stillTracked = record !== undefined;
-      const silentMs = now - probe.lastProgressAt;
+      const toolUses = finiteNonNegative(record?.toolUses) ?? probe.lastToolUses;
+      const outputTokens = finiteNonNegative(record?.lifetimeUsage?.output) ?? probe.lastOutputTokens;
+      // Snapshotting must not mutate watchdog state, but a freshly observed
+      // manager counter is still direct evidence for the display. Do not show
+      // a stale silence age while the manager already reports new progress.
+      const managerProgress = toolUses > probe.lastToolUses || outputTokens > probe.lastOutputTokens;
+      if (managerProgress) lastProgressAt = now;
+      const silentMs = Math.max(0, now - lastProgressAt);
+      evidence = record ? "live" : "event-only";
       if (record && !isLiveSubagentRecord(record)) {
         status = "ended";
+        phase = "ended";
       } else if (silentMs >= (stillTracked ? SUBAGENT_HANG_NO_PROGRESS_MS : SUBAGENT_HANG_EVENT_ONLY_MS)) {
         status = "hung";
+        phase = "hung";
         evidence = stillTracked ? "record-frozen" : "event-only";
+      } else if (record?.status === "queued") {
+        status = "queued";
+        phase = "queued";
+      } else {
+        status = "running";
+        // A manager record proves a live child but not a finer thinking/tool
+        // phase. Event-only evidence is honest about the coarser unknown.
+        phase = record ? "active" : "unknown";
       }
+      const startedAt = finiteNonNegative(record?.startedAt) ?? probe.spawnedAt;
+      agents.push({
+        recordId: probe.recordId,
+        ...(probe.agentType ? { agentType: probe.agentType } : {}),
+        ...(probe.summary ? { summary: probe.summary } : {}),
+        status,
+        phase,
+        spawnedAt: probe.spawnedAt,
+        startedAt,
+        lastProgressAt,
+        toolUses,
+        outputTokens,
+        silentMs,
+        evidence,
+        ...(probe.hangAlertedAt !== undefined ? { hangAlertedAt: probe.hangAlertedAt } : {}),
+        ...(probe.hangAction !== undefined ? { action: probe.hangAction } : {}),
+        ...(probe.endedAt !== undefined ? { endedAt: probe.endedAt } : {}),
+      });
+      continue;
     }
     agents.push({
       recordId: probe.recordId,
       ...(probe.agentType ? { agentType: probe.agentType } : {}),
       ...(probe.summary ? { summary: probe.summary } : {}),
-      status,
+      status: "ended",
+      phase: "ended",
       spawnedAt: probe.spawnedAt,
-      lastProgressAt: probe.lastProgressAt,
+      startedAt: probe.spawnedAt,
+      lastProgressAt,
       toolUses: probe.lastToolUses,
       outputTokens: probe.lastOutputTokens,
-      silentMs: Math.max(0, now - probe.lastProgressAt),
-      evidence,
+      silentMs: Math.max(0, now - lastProgressAt),
+      evidence: "event-only",
       ...(probe.hangAlertedAt !== undefined ? { hangAlertedAt: probe.hangAlertedAt } : {}),
       ...(probe.hangAction !== undefined ? { action: probe.hangAction } : {}),
       ...(probe.endedAt !== undefined ? { endedAt: probe.endedAt } : {}),

@@ -4262,7 +4262,7 @@ test("v0.37.0 commissar: an aborted loop turn WITH the marker restarts the same 
 
   // Simulate the heartbeat-side termination: the commissar marks the loop
   // durably MID-RUN (realistic ordering — boot dispatch already settled).
-  const live = readState(cwd).loop as Record<string, unknown>;
+  const live = readState(cwd).loop as unknown as Record<string, unknown>;
   seedState(cwd, {
     loop: {
       ...live,

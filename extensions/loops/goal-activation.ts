@@ -181,6 +181,7 @@ import {
 } from "../length-continue.js";
 import { isSubagentProviderFailure } from "../quota-retry.js";
 import {
+  classifyInBandProviderFailure,
   classifyMainModelFailure,
   isMainModelFallbackFailure,
   requiresMainModelRecovery,
@@ -231,6 +232,7 @@ import {
 import {
   REPETITION,
   isActuallyStuck,
+  repeatedInBandProviderFailure,
   loopInterventionDirective,
   continueVariant,
   textFingerprint,
@@ -499,6 +501,13 @@ let zombieRetryStreak: ZombieRetryStreak = {
   lastAbortStreamAt: 0,
 };
 let zombieRetryTimer: NodeJS.Timeout | null = null;
+// An in-band provider pane is observed during tool_result and consumed at the
+// matching agent_end. Keep the raw text only in memory; the durable ledger
+// records the bounded classification, never the provider payload.
+let inBandProviderFailureRaw: string | null = null;
+function clearInBandProviderFailure(): void {
+  inBandProviderFailureRaw = null;
+}
 
 /** Arm the one-shot automatic re-dispatch after a successful zombie abort.
  * Returns true when a retry was scheduled (the caller adjusts its user-facing
@@ -885,34 +894,15 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     },
   });
   pi.registerCommand("loop", {
-    description:
-      'Loop 3: metric-driven process — it never completes. /loop <target> drafts the metric with you · /loop start "<target>" = infinite metricless loop (no plateau, no cap; ends at time=/tokens= or /loop stop) · /loop respec = infinite metricless reconcile against the root SPEC.md · add measure="<cmd>" direction=min|max [window=5] [max=50] [branch=1] for a metric loop · /loop status · /loop stop (alias /loop cancel). \'Improve until X\' is a /goal, not a loop.',
+    description: "Loop 3: metric-driven process — it never completes. /loop <target> drafts the metric with you · /loop start \"<target>\" = infinite metricless loop (no plateau, no cap; ends at time=/tokens= or /loop stop) · /loop respec = infinite metricless reconcile against the root SPEC.md · add measure=\"<cmd>\" direction=min|max [window=5] [max=50] [cadence=<seconds>] [branch=1] for a loop · cadence is opt-in and limits automatic wakes between successful iterations · /loop status · /loop stop (alias /loop cancel). 'Improve until X' is a /goal, not a loop.",
     getArgumentCompletions: completions([
-      [
-        "start",
-        'skip drafting: /loop start "<target>" measure="<cmd>" direction=min|max [window=5] [max=50]',
-      ],
-      [
-        "respec",
-        "infinite metricless loop reconciling the codebase against the root SPEC.md",
-      ],
-      [
-        "plan",
-        "extended loop draft: deep research + multi-round metric design, same Confirm as a regular draft",
-      ],
-      [
-        "audit",
-        "project-audit loop: each iteration audits fresh, appends findings, fixes the top ones — plateau stops when the well is dry (v0.29.0)",
-      ],
-      ["status", "show metric, iteration, best/last values, stall count"],
-      [
-        "resume",
-        "resume a held loop (session-restore gate / manual main-model recovery)",
-      ],
-      [
-        "refine",
-        "queue an operator respec suggestion into the next iteration's prompt: /loop refine <text>",
-      ],
+      ["start", "skip drafting: /loop start \"<target>\" measure=\"<cmd>\" direction=min|max [window=5] [max=50] [cadence=<seconds>]"],
+      ["respec", "infinite metricless loop reconciling the codebase against the root SPEC.md"],
+      ["plan", "extended loop draft: deep research + multi-round metric design, same Confirm as a regular draft"],
+      ["audit", "project-audit loop: each iteration audits fresh, appends findings, fixes the top ones — plateau stops when the well is dry (v0.29.0)"],
+      ["status", "show metric, iteration, best/last values, stall count, and cadence"],
+      ["resume", "resume a held loop (session-restore gate / manual main-model recovery)"],
+      ["refine", "queue an operator respec suggestion into the next iteration's prompt: /loop refine <text>"],
       ["polish", "alias of /loop refine"],
       ["stop", "end the loop (keeps the best state)"],
       ["cancel", "alias of /loop stop — end the loop"],
@@ -1157,16 +1147,30 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     if (isLoopActive()) {
       const loop = state.loop!;
       const out = event?.output ?? event?.result ?? event?.details ?? "";
-      const text = typeof out === "string" ? out : (JSON.stringify(out) ?? "");
+      const text = typeof out === "string" ? out : JSON.stringify(out) ?? "";
+      const tool = String(event?.toolName ?? "?");
+      const inBandFailure = classifyInBandProviderFailure(text);
       loop.recentToolResults = pushRepetitionCapped(
         loop.recentToolResults ?? [],
         {
-          tool: String(event?.toolName ?? "?"),
+          tool,
           hash: textFingerprint(text),
-          isError: Boolean(event?.isError ?? event?.error),
+          isError: Boolean(event?.isError ?? event?.error) || !!inBandFailure,
+          ...(inBandFailure ? { providerFailure: true } : {}),
         },
         REPETITION.toolWindow,
       );
+      // Successful transport is not proof of successful work: only a stable
+      // repeated provider pane becomes a loop-level recovery signal. One-off
+      // 503/429 text in a searched document remains ordinary tool output.
+      if (inBandFailure && repeatedInBandProviderFailure(loop.recentToolResults)) {
+        inBandProviderFailureRaw = text.slice(0, 800);
+        appendLedger(eventCtx.cwd, "loop_in_band_provider_failure", {
+          tool,
+          kind: inBandFailure.kind,
+          repeats: REPETITION.toolResultRepeat,
+        });
+      }
       // v0.25.1: file-write progress signal for the multi-signal stuck
       // gate — a loop that is WRITING files is shipping, not stuck.
       if (isLoopWriteTool(String(event?.toolName ?? ""))) {
@@ -1281,6 +1285,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       });
     }
     appendLedger(ctx.cwd, "session_shutdown", { reason: shutdownReason });
+    clearInBandProviderFailure();
     markSessionOwnerShutdown(ctx.cwd, shutdownReason);
     writeSessionHandoff(ctx, shutdownReason);
     sessionReplacementUntil = Date.now() + SESSION_REBIND_GRACE_MS;
@@ -1396,6 +1401,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       typeof event?.reason === "string" ? event.reason : "unknown";
     initialSessionLoadPending = isBlankInitialStartup(ctx, startReason);
     rememberCtx(ctx);
+    clearInBandProviderFailure();
     startHeartbeat();
     startUITicker();
     // v0.30.0: rebind bookkeeping — claim ownership, close any replacement
@@ -2323,28 +2329,11 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // Works with no goal active (plain sessions truncate too).
     // v0.27.3: enrich lastA with text + priorText for the smarter nudge
     // accounting below.
-    const assistants = (event.messages as any[]).filter(
-      (m: any) => m.role === "assistant",
-    );
-    const rawLastA = assistants.length
-      ? assistants[assistants.length - 1]
-      : null;
-    const rawPriorA =
-      assistants.length >= 2 ? assistants[assistants.length - 2] : null;
-    const extractText = (m: any): string =>
-      m && Array.isArray(m.content)
-        ? m.content
-            .filter((p: any) => p.type === "text")
-            .map((p: any) => p.text)
-            .join("\n")
-        : "";
-    const lastA = rawLastA
-      ? {
-          stopReason: rawLastA.stopReason,
-          text: extractText(rawLastA),
-          priorText: extractText(rawPriorA),
-        }
-      : null;
+    const assistants = (event.messages as any[]).filter((m: any) => m.role === "assistant");
+    let rawLastA = assistants.length ? assistants[assistants.length - 1] : null;
+    const rawPriorA = assistants.length >= 2 ? assistants[assistants.length - 2] : null;
+    const extractText = (m: any): string => (m && Array.isArray(m.content)) ? m.content.filter((p: any) => p.type === "text").map((p: any) => p.text).join("\n") : "";
+    let lastA = rawLastA ? { stopReason: rawLastA.stopReason, text: extractText(rawLastA), priorText: extractText(rawPriorA) } : null;
     // v0.34.19: pi-ai clamps max_tokens to the remaining context before the
     // provider call. At ~99% context that clamp can be 1 token, which the
     // provider reports as stopReason "length" — but this is NOT an overlong
@@ -2477,6 +2466,23 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       // this error. Leave the interview open for an explicit user retry and
       // never pass the same failure into main-goal recovery.
       return;
+    }
+    // A repeated provider pane arrived through a successful tool transport,
+    // so pi reports an ordinary end_turn. Convert it into the same bounded
+    // recovery envelope as a provider error before loop measurement/stuck
+    // accounting can consume the dead turn.
+    if (inBandProviderFailureRaw && isLoopActive()) {
+      const raw = inBandProviderFailureRaw;
+      clearInBandProviderFailure();
+      const loop = state.loop!;
+      // The normal loop error branch owns the consecutive-error counter and
+      // its bounded recovery cap. Clearing the fingerprints here prevents the
+      // same pane from being reclassified before that branch runs.
+      loop.recentToolResults = [];
+      rawLastA = { ...(rawLastA ?? {}), stopReason: "error", errorMessage: raw, content: [] };
+      lastA = { stopReason: "error", text: raw, priorText: lastA?.priorText ?? "" };
+    } else if (inBandProviderFailureRaw) {
+      clearInBandProviderFailure();
     }
     if (await handleMainModelAgentEnd(ctx, rawLastA, lastA)) return;
     // v0.25.2: per-goal turn telemetry (/glla stats).
@@ -3282,6 +3288,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   });
   pi.on("agent_start", (_event: any, ctx: ExtensionContext) => {
     rememberCtx(ctx);
+    clearInBandProviderFailure();
     if (tryAbsorbHostSuccessor(ctx, "agent_start")) {
       ensureAgentToolsReady(ctx, true);
       return;

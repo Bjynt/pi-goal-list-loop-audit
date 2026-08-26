@@ -3,8 +3,6 @@ import * as assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 
-const packageJson = JSON.parse(fs.readFileSync("package.json", "utf-8")) as { version: string };
-
 function dryRunFiles(): Set<string> {
   const raw = execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
     encoding: "utf-8",
@@ -40,9 +38,14 @@ test("release contract: published documentation links are covered by the npm tar
   }
 });
 
-test("release contract: README version matches package metadata", () => {
+test("release contract: first-use README guidance matches current behavior", () => {
   const readme = fs.readFileSync("README.md", "utf-8");
-  assert.match(readme, new RegExp(`Current package version:\\*\\*.*v${packageJson.version.replaceAll(".", "\\.")}`));
+  assert.match(readme, /State root.*workingDir.*sessionDir/s);
+  assert.match(readme, /propose_task_list/);
+  assert.match(readme, /`\/list resume`/);
+  assert.match(readme, /npm run release:check/);
+  assert.doesNotMatch(readme, /Expected output at v0\.35\.3/);
+  assert.doesNotMatch(readme, /cargo test/);
 });
 
 test("release workflow scopes trusted-publishing OIDC to the publish job", () => {

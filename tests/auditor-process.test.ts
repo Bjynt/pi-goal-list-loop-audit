@@ -11,6 +11,7 @@ import {
   newDetachedAuditJobAttemptId,
   AUDITOR_TOOLS,
   requestHash,
+  resolveWorkerCommand,
   runDetachedGoalCompletionAuditor,
   stableJson,
   type AuditorModel,
@@ -130,7 +131,18 @@ async function run(dir: string, env: NodeJS.ProcessEnv = {}) {
   return runWithAttempt(dir, "attempt-test", env);
 }
 
-test("Windows auditor launch uses an explicit cmd shim boundary without shell arg concatenation", () => {
+test("compiled Pi hosts fall back to a JavaScript runtime while explicit commands remain available", () => {
+  assert.equal(resolveWorkerCommand("/usr/local/bin/node"), "/usr/local/bin/node");
+  assert.equal(resolveWorkerCommand("/home/user/.nvm/versions/node/v22.19.0/bin/node"), "/home/user/.nvm/versions/node/v22.19.0/bin/node");
+  assert.equal(resolveWorkerCommand("/usr/local/bin/nodejs"), "/usr/local/bin/nodejs");
+  assert.equal(resolveWorkerCommand("/usr/local/bin/bun"), "/usr/local/bin/bun");
+  assert.equal(resolveWorkerCommand("/usr/local/bin/deno"), "/usr/local/bin/deno");
+  assert.equal(resolveWorkerCommand("C:\\nodejs\\node.exe"), "C:\\nodejs\\node.exe");
+  assert.equal(resolveWorkerCommand("/usr/local/bin/pi"), "node");
+  assert.equal(resolveWorkerCommand("/Users/user/.local/share/pi/pi"), "node");
+  assert.equal(resolveWorkerCommand("C:\\Program Files\\Pi\\pi.exe"), "node");
+  assert.equal(resolveWorkerCommand("pi"), "node");
+
   const posix = buildAuditorPiSpawnSpec("pi", ["--mode", "rpc"], "linux");
   assert.deepEqual(posix, { file: "pi", args: ["--mode", "rpc"], options: {} });
 

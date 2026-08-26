@@ -117,9 +117,10 @@ export interface ModelProvenanceDisplay {
 export interface WidgetExtras {
   stalls?: number;
   recent?: RecentActionDisplay[];
-  /** v0.35.29 (issue #15): ambient tracked-subagent segment — count + the
-   * longest-silent child. Hidden at zero tracked children. */
-  agents?: { line: string };
+  /** v0.35.29 (issue #15): one tracked-subagent snapshot projected into a
+   * compact summary plus detailed widget rows. The detached auditor stays
+   * on its own verification surface. */
+  agents?: { line?: string; lines?: string[] };
   /** Ephemeral host-session projection; never persisted as goal state. */
   activity?: GoalDisplayActivity;
   /** Last real host stream activity, excluding timer/UI ticks. */
@@ -466,9 +467,9 @@ type AuditorDisplayPhase = "queued" | "running" | "quiet" | "blocked" | "awaitin
  * the same threshold for the one-shot proactive notify so the notification
  * and the status chip can never disagree about when "quiet" begins. */
 export const AUDITOR_QUIET_MS = 3 * 60_000;
-/** v0.35.15: how long the "silent Xm then resumed" fact stays in the footer
- * after a quiet stretch ends — long enough to be seen, short enough not to
- * become permanent noise. */
+/** v0.35.15: how long the "silent Xm then resumed" fact stays in the
+ * detailed auditor card after a quiet stretch ends — long enough to be seen,
+ * short enough not to become permanent noise. */
 const QUIET_STRETCH_VISIBLE_MS = 10 * 60_000;
 const LIVE_ACTIVITY_MS = 15_000;
 
@@ -509,19 +510,6 @@ function auditorElapsedMs(audit: AuditDisplayProgress | null | undefined, now: n
     return Math.max(elapsed, now - startedAt);
   }
   return elapsed;
-}
-
-function auditorElapsedSuffix(audit: AuditDisplayProgress | null | undefined, now: number): string {
-  const elapsed = auditorElapsedMs(audit, now);
-  return elapsed === undefined ? "" : ` · elapsed ${fmtElapsed(elapsed)}`;
-}
-
-function auditorFreshnessSuffix(audit: AuditDisplayProgress | null | undefined, phase: AuditorDisplayPhase, now: number): string {
-  const at = audit?.lastActivityAt;
-  if (phase === "awaiting-verdict" && (at === undefined || !Number.isFinite(at))) return " · worker finished";
-  if (at === undefined || !Number.isFinite(at)) return " · freshness pending";
-  if (at > now) return " · freshness unknown";
-  return now - at <= LIVE_ACTIVITY_MS ? " · fresh" : " · stale";
 }
 
 function auditorNextTransition(phase: AuditorDisplayPhase): string {
@@ -816,8 +804,13 @@ function pausedStatusSuffix(g: Goal, state: State, extras: WidgetExtras | undefi
  * forget it and a future branch inherits it for free. */
 export function buildStatusText(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras): string | undefined {
   const base = buildStatusTextBase(state, audit, now, theme, extras);
-  if (!base || typeof state.supervisorPausedAt !== "number") return base;
-  return base.replace(/^glla:/, `glla: ${paint(theme, "warning", "⏸ supervisor")} ·`);
+  // The footer gets only the compact worst-child summary. Detailed rows live
+  // in the widget; the detached auditor remains a separate verification HUD.
+  const withAgentSummary = base && extras?.agents?.line && state.goal?.status !== "auditing"
+    ? `${base} · ${extras.agents.line.replace(/^●\s*/, "")}`
+    : base;
+  if (!withAgentSummary || typeof state.supervisorPausedAt !== "number") return withAgentSummary;
+  return withAgentSummary.replace(/^glla:/, `glla: ${paint(theme, "warning", "⏸ supervisor")} ·`);
 }
 
 function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, extras?: WidgetExtras): string | undefined {
@@ -874,31 +867,14 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     const label = live
       ? `${paint(theme, "success", phaseText)} ${paint(theme, "accent", activityMeter)} ${activityBadge("AUDITOR · DETACHED · LIVE", now, theme)}`
       : `${paint(theme, color, phaseText)} ${paint(theme, color === "warning" ? "warning" : "dim", activityMeter)}`;
-    // A current tool is present-tense evidence only while its worker
-    // heartbeat is fresh. Older snapshots stay useful as `last tool:` facts,
-    // never as a claim that the detached process is still in that call.
-    const staleSnapshot = !live && (phase !== "running" || audit?.lastActivityAt !== undefined);
-    const toolName = audit?.currentTool
-      ? truncate(audit.currentTool, 30)
-      : lastAuditorTool(audit);
-    const tool = toolName
-      ? staleSnapshot ? ` · last tool: ${toolName}` : ` · ${toolName}`
-      : "";
-    const evidence = auditorEvidenceSummary(audit, phase);
-    const elapsed = auditorElapsedSuffix(audit, now);
-    const workerActivity = auditorLastActivity(audit, now);
-    const freshness = auditorFreshnessSuffix(audit, phase, now);
-    // v0.35.15: once a quiet stretch ends and activity resumes, keep the
-    // fact visible for 10 minutes so the user learns the silence happened
-    // even if they missed the proactive notify (the seed's exact complaint:
-    // "only 8 minutes of not reporting anything … would be best to know").
-    const stretch = extras?.auditorQuietStretch;
-    const stretchSuffix = stretch && Number.isFinite(stretch.ms) && stretch.ms >= AUDITOR_QUIET_MS
-      && now - stretch.endedAt <= QUIET_STRETCH_VISIBLE_MS
-      ? ` · ${paint(theme, "warning", `silent ${fmtElapsed(stretch.ms)} then resumed`)}`
-      : "";
+    // The persistent footer is the global liveness surface. Detailed worker
+    // observations (tool, evidence, elapsed, and freshness) belong in the
+    // above-editor auditor card so the two surfaces do not repeat one another.
+    const quietAge = phase === "quiet" ? auditorActivityAge(audit, now) : undefined;
+    const quietSuffix = quietAge !== undefined ? ` · silent ${fmtElapsed(quietAge)}` : "";
     const next = ` · next: ${auditorNextTransition(phase)}`;
-    return `glla: ${host} · ${label}${tool}${evidence ? ` · evidence: ${evidence}` : ""}${elapsed}${workerActivity}${freshness}${stretchSuffix}${next} · detached worker${heldSuffix}`;
+    const detachedSuffix = live ? "" : " · detached worker";
+    return `glla: ${host} · ${label}${quietSuffix}${next}${detachedSuffix}${heldSuffix}`;
   }
   if (g.status === "paused") {
     // v0.28.22: the status line names the ACTIONABILITY, not the reason —
@@ -1098,16 +1074,33 @@ function countTotal(g: Goal): number {
  */
 export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, width?: number, extras?: WidgetExtras): string[] | undefined {
   const inner = buildWidgetLinesInner(state, audit, now, theme, width, extras);
-  // v0.35.29 (issue #15): the agents segment rides every card shape —
-  // appended before the persistence-degradation banner so that warning
-  // keeps its first-line contract.
-  if (inner && extras?.agents) inner.push(extras.agents.line);
+  const detailedAgents = extras?.agents?.lines ?? (extras?.agents?.line ? [extras.agents.line] : []);
+  let withAgents: string[] | undefined = inner;
+  if (detailedAgents.length > 0) {
+    const agentLines = detailedAgents.map((line, index) => {
+      const continuation = line.startsWith("  ");
+      const text = continuation ? line.trimStart() : `agent: ${line}`;
+      return `${index === 0 ? "├─" : "│ "} ${text}`;
+    });
+    if (inner) {
+      // Keep the card footer last while making worker rows part of the same
+      // detailed widget rather than appending a disconnected second footer.
+      const footerFromEnd = [...inner].reverse().findIndex((line) => line.startsWith("└─"));
+      const insertAt = footerFromEnd >= 0 ? inner.length - 1 - footerFromEnd : inner.length;
+      withAgents = [...inner.slice(0, insertAt), ...agentLines, ...inner.slice(insertAt)];
+    } else {
+      // A worker can remain tracked while the parent card is temporarily
+      // absent. Keep that activity visible instead of hiding it with the
+      // rest of the empty state.
+      withAgents = ["● active workers", ...agentLines, "└─ /glla agents for full worker detail"];
+    }
+  }
   // v0.28.6 (E1): a persistence failure outranks everything — first line,
   // on every render, until a write lands again.
-  let lines: string[] | undefined = inner;
-  if (inner && isPersistenceDegraded()) {
+  let lines: string[] | undefined = withAgents;
+  if (withAgents && isPersistenceDegraded()) {
     const err = lastPersistenceFailure();
-    lines = [paint(theme, "error", `⚠ persistence degraded — .pi-glla writes failing (${truncate(err?.error ?? "disk error", 40)}); state in RAM`), ...inner];
+    lines = [paint(theme, "error", `⚠ persistence degraded — .pi-glla writes failing (${truncate(err?.error ?? "disk error", 40)}); state in RAM`), ...withAgents];
   }
   // String-array widgets are wrapped by pi-tui's Text component, whose
   // paddingX=1 consumes one cell on each side. Keep every emitted line inside
@@ -1338,9 +1331,8 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   // goal and its durable recent action, avoiding the duplicated live badge
   // that made the above-editor panel look noisy.
   if (g.status === "auditing") {
-    const host = paint(theme, "accent", MAIN_HOST_LABEL);
     if (auditRecoveryPending(g)) {
-      lines.push(`├─ ${host} · auditor: ${paint(theme, "warning", "recovery pending — previous audit was interrupted")}`);
+      lines.push(`├─ auditor: ${paint(theme, "warning", "recovery pending — previous audit was interrupted")}`);
       lines.push(`└─ ${paint(theme, "dim", "stored completion claim is safe; a fresh session will retry it")}`);
       return lines;
     }
@@ -1358,12 +1350,17 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     // The status bar is the single activity HUD. Keep the widget's audit line
     // factual and compact; the ⟡ head icon plus this phase identify the
     // detached verifier without repeating the animated status badge.
-    lines.push(`├─ ${host} · auditor: ${phaseLabel}${detail} · detached worker`);
+    lines.push(`├─ auditor: ${phaseLabel}${detail} · detached worker`);
 
     // Show observed worker facts, not a made-up percentage or semantic claim.
     // This is the difference between “the timer moved” and “I can see what
     // the detached worker last did.”
     const observations: string[] = [];
+    const stretch = extras?.auditorQuietStretch;
+    if (stretch && Number.isFinite(stretch.ms) && stretch.ms >= AUDITOR_QUIET_MS
+        && now - stretch.endedAt <= QUIET_STRETCH_VISIBLE_MS) {
+      observations.push(`silent ${fmtElapsed(stretch.ms)} then resumed`);
+    }
     // A stale progress snapshot must not keep presenting its old tool as
     // currently executing. Only fresh worker telemetry earns the present
     // tense; otherwise show it as the last observed tool and omit duration.

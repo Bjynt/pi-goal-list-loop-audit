@@ -13,6 +13,7 @@ import {
   trigramSimilarity,
   findDegenerateRepeat,
   detectLoopStuck,
+  repeatedInBandProviderFailure,
   loopInterventionDirective,
   continueVariant,
   pushCapped,
@@ -112,6 +113,17 @@ test("detectLoopStuck: A-B-A-B window repetition", () => {
   const fp = textFingerprint(a);
   const r = detectLoopStuck({ ...baseInput, assistantText: a, recentPrints: [fp, "x", fp, "y", fp] });
   assert.ok(r?.includes("recent iterations"));
+});
+
+test("repeated in-band provider pane is distinct from ordinary repeated tool output", () => {
+  const provider = [
+    { tool: "bash", hash: "provider", isError: true, providerFailure: true },
+    { tool: "bash", hash: "provider", isError: true, providerFailure: true },
+    { tool: "bash", hash: "provider", isError: true, providerFailure: true },
+  ];
+  assert.equal(repeatedInBandProviderFailure(provider), true);
+  assert.equal(repeatedInBandProviderFailure(provider.map((entry, index) => ({ ...entry, providerFailure: index < 2 }))), false);
+  assert.equal(repeatedInBandProviderFailure(provider.map((entry, index) => ({ ...entry, hash: `different-${index}` }))), false);
 });
 
 test("detectLoopStuck: same tool error three times", () => {

@@ -80,3 +80,48 @@ test("v0.35.43: a confirmed respec with newly checked boxes re-baselines specChe
   assert.equal(st.loop!.specHash && st.loop!.specHash !== "old-hash", true, "specHash re-baselined (pre-existing behavior)");
   assert.equal(st.loop!.specChecked, 4, "v0.35.43: specChecked re-baselined with the hash — the next tick must not credit the agent with the respec's own checkboxes");
 });
+
+test("v0.35.x: recoverable bound-stopped loops accept a confirmed refinement without auto-starting", async () => {
+  const cwd = tmpCwd();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ autoAcceptDrafts: true }));
+  seedState(cwd, {
+    goal: null,
+    list: [],
+    loop: {
+      target: "ship the widget",
+      measureCmd: "echo 1",
+      direction: "max" as const,
+      active: false,
+      stopReason: "token budget exhausted (100 >= 100); best: 1",
+      iteration: 3,
+      maxIterations: 50,
+      plateauWindow: 5,
+      stallCount: 0,
+      bestValue: 1,
+      lastValue: 1,
+      tokenBudget: 100,
+      tokensUsed: 100,
+      history: [],
+      startedAt: new Date(Date.now() - 60_000).toISOString(),
+    },
+  });
+  const pi = new MockPi();
+  activate(pi.api);
+  __testOnlyResetOwnerSession();
+  const ownCtx = ownerCtx(cwd);
+  await pi.fire("session_start", { reason: "startup" }, ownCtx);
+  __testOnlyRegisterAgentTools(pi.api);
+  __testOnlyRememberCtx(ownCtx as unknown as ExtensionContext);
+
+  const res = await pi.runTool(
+    "propose_loop_refine",
+    { target: "ship the widget with verified interaction coverage", rationale: "the bound-stop evidence requires a narrower target" },
+    ownCtx,
+  );
+  assert.match(res.content[0]!.text, /applied to the stopped loop/i);
+  const after = readState(cwd).loop!;
+  assert.equal(after.active, false, "refinement does not silently restart a stopped loop");
+  assert.equal(after.stopReason, "token budget exhausted (100 >= 100); best: 1");
+  assert.equal(after.target, "ship the widget with verified interaction coverage");
+});

@@ -26,6 +26,8 @@ import activate, {
 } from "../extensions/loops/goal.js";
 import {
   classifyHungSubagents,
+  getSubagentAgentsSnapshot,
+  upsertSubagentHangProbe,
   __testOnlyClearSubagentHangProbes,
   __testOnlySetSubagentHangEscalationMs,
   __testOnlyHeartbeatTick,
@@ -88,11 +90,12 @@ pi.api.events.on("subagents:rpc:stop", (raw: unknown) => {
 });
 
 /** A fake running subagent record, mirroring pi-subagents' AgentRecord poll shape. */
-function runningRecord(overrides: { toolUses?: number; output?: number; status?: string; parentAgentId?: string } = {}): any {
+function runningRecord(overrides: { toolUses?: number; output?: number; status?: string; parentAgentId?: string; startedAt?: number } = {}): any {
   return {
     toolUses: overrides.toolUses ?? 0,
     lifetimeUsage: { output: overrides.output ?? 0 },
     status: overrides.status ?? "running",
+    startedAt: overrides.startedAt,
     parentAgentId: overrides.parentAgentId,
   };
 }
@@ -111,6 +114,40 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------- pure unit
+
+test("v0.35.65: snapshots use live manager counters and expose honest phase/elapsed data", () => {
+  const now = Date.now();
+  const spawnedAt = now - 5 * 60_000;
+  const startedAt = now - 3 * 60_000;
+  upsertSubagentHangProbe("snapshot-live", "Explore", "inspect auth", spawnedAt);
+  installManager(() => runningRecord({ toolUses: 4, output: 1200, startedAt }));
+
+  const snapshot = getSubagentAgentsSnapshot(now);
+  assert.equal(snapshot.managerAvailable, true);
+  assert.deepEqual(snapshot.agents[0], {
+    recordId: "snapshot-live",
+    agentType: "Explore",
+    summary: "inspect auth",
+    status: "running",
+    phase: "active",
+    spawnedAt,
+    startedAt,
+    lastProgressAt: now,
+    toolUses: 4,
+    outputTokens: 1200,
+    silentMs: 0,
+    evidence: "live",
+  });
+});
+
+test("v0.35.65: queued manager records stay queued and do not masquerade as active work", () => {
+  const now = Date.now();
+  upsertSubagentHangProbe("snapshot-queued", "Plan", "wait for slot", now - 10_000);
+  installManager(() => runningRecord({ status: "queued", startedAt: now - 10_000 }));
+  const snapshot = getSubagentAgentsSnapshot(now);
+  assert.equal(snapshot.agents[0]!.status, "queued");
+  assert.equal(snapshot.agents[0]!.phase, "queued");
+});
 
 test("classify: a running subagent with no new progress for 5m is hung", () => {
   const probes = [

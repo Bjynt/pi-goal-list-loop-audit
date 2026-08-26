@@ -2,8 +2,8 @@
 // tests/agents-panel.test.ts
 //
 // GitHub issue #15 implementation: /glla agents panel + child transcript
-// tail + widget segment, per docs/DESIGN-subagent-visibility.md (scope
-// agreed 2026-08-22: panel + tail + widget line; live stream rejected).
+// tail + detailed widget rows, per docs/DESIGN-subagent-visibility.md (scope
+// agreed 2026-08-22: panel + tail + widget projection; live stream rejected).
 //
 // Rendering is pure and fixture-tested here; the command dispatch and the
 // widget append are exercised through the real MockPi surfaces.
@@ -15,8 +15,8 @@ import * as path from "node:path";
 
 import activate, { __testOnlyResetOwnerSession, __testOnlyResetStaleFlag } from "../extensions/loops/goal.js";
 import { upsertSubagentHangProbe, markSubagentHangProgress, endSubagentHangProbe } from "../extensions/goal-heartbeat.js";
-import { renderAgentsPanel, renderAgentsWidgetLine, tailChildTranscript, formatTranscriptEntry, truncate, TRANSCRIPT_SCAN_MAX_BYTES, type AgentsPanelRow } from "../extensions/goal-agents-panel.js";
-import { buildWidgetLines } from "../extensions/goal-loop-display.js";
+import { renderAgentsPanel, renderAgentsWidgetLine, renderAgentsWidgetLines, tailChildTranscript, formatTranscriptEntry, truncate, TRANSCRIPT_SCAN_MAX_BYTES, type AgentsPanelRow } from "../extensions/goal-agents-panel.js";
+import { buildStatusText, buildWidgetLines } from "../extensions/goal-loop-display.js";
 import { MockPi, makeMockCtx, tmpCwd, seedState, seedGoal, tick, type MockCtx } from "./harness/mock-pi.js";
 
 const NOW = 1_800_000_000_000;
@@ -28,7 +28,9 @@ function row(overrides: Partial<AgentsPanelRow> = {}): AgentsPanelRow {
     agentType: "explore",
     summary: "map model picker",
     status: "running",
+    phase: "active",
     spawnedAt: NOW - 4 * MIN,
+    startedAt: NOW - 4 * MIN,
     lastProgressAt: NOW - 10_000,
     toolUses: 18,
     outputTokens: 2100,
@@ -77,15 +79,34 @@ test("v0.35.64: the panel makes a child-specific abort request visible", () => {
   assert.doesNotMatch(lines, /parent was aborted/);
 });
 
-test("v0.35.29 #15: the widget line hides at zero active children and warns when the busiest is hung", () => {
-  assert.equal(renderAgentsWidgetLine([row({ status: "ended", endedOk: true })]), undefined, "all-ended → hidden");
+test("v0.35.29 #15: the compact worker summary hides at zero and warns on the least-live child", () => {
+  assert.equal(renderAgentsWidgetLine([row({ status: "ended", phase: "ended", endedOk: true })]), undefined, "all-ended → hidden");
   const line = renderAgentsWidgetLine([
     row({ recordId: "a", silentMs: MIN }),
-    row({ recordId: "b", agentType: "plan", status: "hung", silentMs: 26 * MIN }),
+    row({ recordId: "b", agentType: "plan", status: "hung", phase: "hung", silentMs: 26 * MIN }),
   ]);
   assert.ok(line!.includes("2 agents"));
   assert.ok(line!.includes("plan silent 26m"));
   assert.ok(line!.endsWith("⚠"), "hung busiest child raises the warning glyph");
+});
+
+test("v0.35.65: detailed widget rows expose identity, purpose, evidence-backed phase, elapsed, silence, and overflow", () => {
+  const active = row({ recordId: "active-1", agentType: "Explore", summary: "inspect auth flow", phase: "active", startedAt: NOW - 3 * MIN, silentMs: 5_000 });
+  const detail = renderAgentsWidgetLines([active], NOW, 1);
+  assert.match(detail[0]!, /Explore · inspect auth flow · id active-1/);
+  assert.match(detail[1]!, /RUNNING · ACTIVE · 3m00s · silent 5s/);
+
+  const lines = renderAgentsWidgetLines([
+    active,
+    row({ recordId: "hung-2", agentType: "Plan", summary: "audit recovery", status: "hung", phase: "hung", silentMs: 26 * MIN }),
+    row({ recordId: "queued-3", agentType: "Plan", summary: "wait for slot", status: "queued", phase: "queued", silentMs: 2_000 }),
+  ], NOW, 2);
+  assert.equal(lines.length, 5, "two two-line rows plus an explicit overflow affordance");
+  assert.match(lines[0]!, /Plan · audit recovery · id hung-2/);
+  assert.match(lines[1]!, /HUNG\? · HUNG/);
+  assert.match(lines[2]!, /Explore · inspect auth flow · id active-1/);
+  assert.match(lines[3]!, /RUNNING · ACTIVE/);
+  assert.match(lines[4]!, /1 more agents · \/glla agents/);
 });
 
 test("v0.35.29 #15: --tail matches by needle, takes newest mtime, formats entries tolerantly", () => {
@@ -159,6 +180,17 @@ test("v0.35.29 #15: end-to-end — /glla agents renders real probe data; widget 
     assert.match(notified, /RUNNING/);
     assert.match(notified, /Plan · audit contract draft/);
     assert.match(notified, /HUNG\?/);
+    assert.match(notified, /id probe-live-1/);
+    assert.match(notified, /ACTIVE|UNKNOWN/);
+    assert.match(notified, /silent/);
+
+    // The aggregate status command keeps its semantics and does not duplicate
+    // the detailed worker roster; /glla agents is the deep inspection path.
+    await pi.command("glla", "status", ctx);
+    const aggregate = ctx.ui.notifies.at(-1)!.message;
+    assert.match(aggregate, /glla status/);
+    assert.match(aggregate, /goal \[goal\] (?:active|paused)/);
+    assert.doesNotMatch(aggregate, /map model picker|audit contract draft|HUNG\?/);
 
     // Unknown --tail id answers loudly.
     await pi.command("glla", "agents --tail does-not-exist", ctx);
@@ -176,7 +208,7 @@ test("v0.35.29 #15: end-to-end — /glla agents renders real probe data; widget 
   }
 });
 
-test("v0.35.29 #15: buildWidgetLines appends the agents segment and hides it when absent", () => {
+test("v0.35.65: buildWidgetLines places detailed worker rows before the card footer and supports an agent-only card", () => {
   const state = {
     loop: undefined,
     mainModelRecovery: undefined,
@@ -188,9 +220,20 @@ test("v0.35.29 #15: buildWidgetLines appends the agents segment and hides it whe
     list: [],
   } as never;
   const base = buildWidgetLines(state, undefined, Date.now(), undefined, 120, {})!;
-  const withAgents = buildWidgetLines(state, undefined, Date.now(), undefined, 120, { agents: { line: "● 2 agents · plan silent 26m ⚠" } })!;
-  assert.ok(!base.some((l) => l.includes("agents")), "hidden at zero tracked children");
-  assert.ok(withAgents.at(-1)!.includes("● 2 agents"), "segment appended last");
+  const withAgents = buildWidgetLines(state, undefined, NOW, undefined, 120, { agents: { line: "● 2 agents · Explore silent 26m", lines: ["Explore · inspect auth · id active-1 · RUNNING · ACTIVE · 3m00s · silent 5s"] } })!;
+  assert.ok(!base.some((l) => l.includes("agent:")), "hidden at zero tracked children");
+  const compactStatus = buildStatusText(state, undefined, NOW, undefined, { agents: { line: "● 2 agents · Explore silent 26m", lines: [] } })!;
+  assert.match(compactStatus, /2 agents · Explore silent 26m/);
+  const stateRecord = state as unknown as { goal: Record<string, unknown>; [key: string]: unknown };
+  const auditStatus = buildStatusText({ ...stateRecord, goal: { ...stateRecord.goal, status: "auditing" } } as never, undefined, NOW, undefined, { agents: { line: "● 2 agents · Explore silent 26m", lines: [] } })!;
+  assert.doesNotMatch(auditStatus, /2 agents/);
+  const agentAt = withAgents.findIndex((l) => l.includes("agent: Explore · inspect auth"));
+  const footerAt = withAgents.findIndex((l) => l.startsWith("└─"));
+  assert.ok(agentAt >= 0 && agentAt < footerAt, "worker detail stays inside the card before its footer");
+
+  const agentOnly = buildWidgetLines({ loop: undefined, mainModelRecovery: undefined, goal: undefined, list: [] } as never, undefined, NOW, undefined, 120, { agents: { lines: ["Explore · inspect auth · id active-1 · RUNNING · ACTIVE · 3m00s · silent 5s"] } })!;
+  assert.match(agentOnly[0]!, /active workers/);
+  assert.match(agentOnly.at(-1)!, /\/glla agents/);
 });
 
 // v0.35.45 (audit finding): /glla agents --tail rendered child-transcript
