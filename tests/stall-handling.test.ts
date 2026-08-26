@@ -742,7 +742,7 @@ test("v0.32.1: post-compaction resume debt + deterministic resync (pi-goal-x's l
   assert.match(HEARTBEAT_SRC, /compaction_resume_owed_refire/); // heartbeat retries the debt every post-grace tick
   assert.match(CONT, /\[POST-COMPACTION RESYNC\]/); // deterministic re-anchor block (decomposition step 5: buildPostCompactResync moved)
   assert.match(CONT, /content: resync \+ continuationPrompt/); // goal path prepends (decomposition step 5: sendContinuation moved)
-  assert.match(LOOP, /content: loopResync \+ loopPrompt/); // loop path prepends (moved to goal-loop.ts, decomposition step 2)
+  assert.match(LOOP, /content: loopResync \+ commissarRestartNote \+ loopPrompt/); // loop path prepends (decomposition step 2); v0.37.0: the commissar restart note rides the same assembly
   assert.match(
     CONT,
     /resync: Boolean\(resync\)/,
