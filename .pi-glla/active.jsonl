@@ -7838,19 +7838,4 @@
 {"type":"session_rebound","value":{"reason":"resume"},"at":"2026-08-26T08:02:13.524Z"}
 {"type":"id_invalidation","value":{"oldId":"01a03d17-37df-719e-8752-262d16c487f9","newId":"01a02353-0a9c-742d-8d99-e222dda417c9","reason":"session_shutdown","shutdownReason":"resume","at":"2026-08-26T08:02:13.624Z"},"at":"2026-08-26T08:02:13.624Z"}
 {"type":"subagent_session","value":{"sessionId":"28c971ae-fa2c-4e1","agentType":"general-purpose","summary":"Analyze feature PRs","at":"2026-08-26T12:35:15.147Z"},"at":"2026-08-26T12:35:15.147Z"}
-{"type":"commissar_check_start","value":{"goalId":"g-comm-wiring","model":"test/comm-model"},"at":"2026-08-26T12:53:32.741Z"}
-{"type":"commissar_verdict","value":{"goalId":"g-comm-wiring","verdict":"adherent"},"at":"2026-08-26T12:53:32.820Z"}
-{"type":"commissar_infra","value":{"goalId":"g-comm-wiring","class":"no-verdict","error":"no verdict marker"},"at":"2026-08-26T12:53:32.835Z"}
-{"type":"commissar_verdict","value":{"goalId":"g-comm-wiring","verdict":"wanting","reason":"stalled","streak":1},"at":"2026-08-26T12:53:32.835Z"}
-{"type":"commissar_threshold_pending","value":{"goalId":"g-comm-wiring","streak":1,"threshold":2},"at":"2026-08-26T12:53:32.835Z"}
-{"type":"commissar_verdict","value":{"goalId":"g-comm-wiring","verdict":"adherent"},"at":"2026-08-26T12:53:32.836Z"}
-{"type":"commissar_verdict","value":{"goalId":"g-comm-wiring","verdict":"wanting","reason":"nine idle turns","streak":1},"at":"2026-08-26T12:53:32.836Z"}
-{"type":"commissar_threshold_pending","value":{"goalId":"g-comm-wiring","streak":1,"threshold":2},"at":"2026-08-26T12:53:32.836Z"}
-{"type":"commissar_verdict","value":{"goalId":"g-comm-wiring","verdict":"wanting","reason":"still idle","streak":2},"at":"2026-08-26T12:53:32.836Z"}
-{"type":"commissar_terminate","value":{"goalId":"g-comm-wiring","reason":"still idle"},"at":"2026-08-26T12:53:32.836Z"}
-{"type":"fresh_session_recovery_skipped","value":{"from":"commissar-terminate","reason":"event context has no newSession; pi exposes it only on ExtensionCommandContext"},"at":"2026-08-26T12:53:32.836Z"}
-{"type":"commissar_verdict","value":{"goalId":"g-comm-wiring","verdict":"wanting","reason":"x","streak":1},"at":"2026-08-26T12:53:32.837Z"}
-{"type":"commissar_threshold_pending","value":{"goalId":"g-comm-wiring","streak":1,"threshold":2},"at":"2026-08-26T12:53:32.837Z"}
-{"type":"commissar_verdict","value":{"goalId":"g-comm-wiring","verdict":"wanting","reason":"y","streak":2},"at":"2026-08-26T12:53:32.837Z"}
-{"type":"commissar_terminate_refused","value":{"goalId":"g-comm-wiring","reason":"updateGoal bridge unavailable"},"at":"2026-08-26T12:53:32.837Z"}
-{"type":"commissar_verdict_stale_refused","value":{"goalId":"some-other-goal"},"at":"2026-08-26T12:53:32.837Z"}
+{"type":"subagent_session","value":{"sessionId":"f7cc51f0-81c7-4ac","agentType":"general-purpose","summary":"Triage open GitHub backlog","at":"2026-08-26T13:06:10.149Z"},"at":"2026-08-26T13:06:10.149Z"}
