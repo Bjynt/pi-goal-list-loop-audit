@@ -123,3 +123,33 @@ preserve current state-root, host-boundary, recovery, and release behavior.
 
 No external issue or PR was merged, closed, commented on, labeled, or otherwise
 modified during the follow-up.
+
+## Full backlog triage — 2026-08-26
+
+A fresh read-only inventory confirmed **12 open issues** (#23, #25–#35) and
+**3 open PRs** (#22, #24, #36) against v0.35.70.
+
+| Item | Disposition after review | Recommended external action |
+| --- | --- | --- |
+| #23 | Fixed in v0.35.66 | Close as fixed/superseded by current main |
+| #25 | Valid, but upstream/out of scope | Re-file with the Pi runtime owner |
+| #26 | Valid, but upstream/out of scope | Re-file with the subagent runtime owner |
+| #27 | Valid, but upstream/out of scope | Re-file with the worktree/session owner |
+| #28 | Valid, but upstream/out of scope | Re-file with the memory/provider owner |
+| #29 | Valid, but upstream/out of scope | Re-file with the Pi model-verification owner |
+| #30 | Fixed in v0.35.67 | Close as fixed |
+| #31 | Valid, but upstream/out of scope | Re-file with the Pi retry owner |
+| #32 | Fixed in v0.35.68 | Close as fixed |
+| #33 | Valid, but upstream/out of scope | Re-file with the Pi child-model owner |
+| #34 | Fixed in v0.35.69 | Close as fixed |
+| #35 | Valid, but upstream/out of scope | Re-file with the refinement/mission owner |
+| #22 | AVO-inspired stagnation feature; conflicting | Hold for explicit feature decision; selective port only |
+| #24 | Superseded by v0.35.66 | Close as superseded by current main |
+| #36 | Separate commissar/zombie-watchdog feature; conflicting | Hold; do not merge wholesale |
+
+The AVO relationship is therefore: **#22 is the direct AVO-inspired PR; #36 is
+adjacent supervision work, not the same AVO implementation; #24 is unrelated
+and is the compiled-host launcher fix.** No item in this triage was merged,
+closed, commented on, labeled, or otherwise modified. The eight upstream items
+and the two feature PRs remain deliberately held for owner/feature decisions;
+they are not being silently forgotten.
