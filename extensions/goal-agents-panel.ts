@@ -20,12 +20,18 @@ import { sanitizeDisplayText } from "./goal-loop-core.js";
  * throughout recent entries). */
 export const TRANSCRIPT_SCAN_MAX_BYTES = 256 * 1024;
 
+export type AgentStatus = "queued" | "running" | "hung" | "ended";
+export type AgentPhase = "queued" | "active" | "hung" | "ended" | "unknown";
+
 export interface AgentsPanelRow {
   recordId: string;
   agentType?: string;
   summary?: string;
-  status: "running" | "hung" | "ended";
+  status: AgentStatus;
+  phase: AgentPhase;
   spawnedAt: number;
+  /** Actual execution start when the manager exposes it; falls back to spawn. */
+  startedAt?: number;
   lastProgressAt: number;
   toolUses: number;
   outputTokens: number;
@@ -36,10 +42,44 @@ export interface AgentsPanelRow {
   endedAt?: number;
 }
 
+/** Keep untrusted worker metadata safe and useful in terminal output. */
+function cleanField(value: string, max: number): string {
+  return truncate(sanitizeDisplayText(value).replace(/\s+/g, " ").trim(), max);
+}
+
 /** Human label: agentType + short summary. */
 function rowLabel(row: AgentsPanelRow): string {
-  const summary = (row.summary ?? "").replace(/\s+/g, " ").trim();
-  return [row.agentType ?? "subagent", summary ? truncate(summary, 28) : ""].filter(Boolean).join(" · ");
+  const type = cleanField(row.agentType ?? "subagent", 18);
+  const summary = row.summary ? cleanField(row.summary, 28) : "";
+  return [type, summary].filter(Boolean).join(" · ");
+}
+
+function rowPhase(row: AgentsPanelRow): AgentPhase {
+  if (row.phase) return row.phase;
+  if (row.status === "queued") return "queued";
+  if (row.status === "hung") return "hung";
+  if (row.status === "ended") return "ended";
+  return "unknown";
+}
+
+function rowElapsedMs(row: AgentsPanelRow, now: number): number {
+  const startedAt = row.startedAt ?? row.spawnedAt;
+  const endAt = row.status === "ended" ? (row.endedAt ?? now) : now;
+  return Math.max(0, endAt - startedAt);
+}
+
+function rowStateWord(row: AgentsPanelRow, now: number): string {
+  const state = row.status === "ended"
+    ? `ENDED ${row.endedOk === false ? "✗" : "ok"}`
+    : row.action === "abort-requested"
+      ? "ABORTING"
+      : row.status === "hung"
+        ? "HUNG?"
+        : row.status === "queued"
+          ? "QUEUED"
+          : "RUNNING";
+  const phase = rowPhase(row).toUpperCase();
+  return `${state} · ${phase} · ${fmtDuration(rowElapsedMs(row, now))}`;
 }
 
 export function truncate(text: string, max: number): string {
@@ -56,26 +96,32 @@ function fmtDuration(ms: number): string {
 }
 
 const PANEL_ROW_CAP = 20;
+export const WIDGET_AGENT_ROW_CAP = 8;
 
-/** Render the /glla agents table. Running/hung first (hung topmost), then
- * ended; capped at PANEL_ROW_CAP rows with an explicit truncation notice. */
+function rowRank(row: AgentsPanelRow): number {
+  if (row.status === "hung") return 0;
+  if (row.status === "running") return 1;
+  if (row.status === "queued") return 2;
+  return 3;
+}
+
+function orderedRows(rows: AgentsPanelRow[]): AgentsPanelRow[] {
+  return [...rows].sort((a, b) => rowRank(a) - rowRank(b) || b.silentMs - a.silentMs);
+}
+
+/** Render the /glla agents table. Hung/running/queued first, then ended;
+ * capped at PANEL_ROW_CAP rows with an explicit truncation notice. */
 export function renderAgentsPanel(rows: AgentsPanelRow[], now: number, managerAvailable: boolean): string[] {
   if (rows.length === 0) {
     return ["No subagents tracked yet — spawn one via the Agent tool and it appears here.", "(evidence: glla's event probes" + (managerAvailable ? " + pi-subagents manager records" : "") + ")"];
   }
-  const rank = (r: AgentsPanelRow): number => (r.status === "hung" ? 0 : r.status === "running" ? 1 : 2);
-  const ordered = [...rows].sort((a, b) => rank(a) - rank(b) || a.silentMs - b.silentMs);
+  const ordered = orderedRows(rows);
   const shown = ordered.slice(0, PANEL_ROW_CAP);
   const lines: string[] = [];
   for (const row of shown) {
     const glyph = row.status === "ended" ? "✓" : row.status === "hung" ? "⚠" : "●";
-    const stateWord = row.status === "ended"
-      ? `ENDED ${row.endedOk === false ? "✗" : "ok"} ${fmtDuration((row.endedAt ?? now) - row.spawnedAt)}`
-      : row.action === "abort-requested"
-        ? `ABORTING ${fmtDuration(now - row.spawnedAt)}`
-        : `${row.status === "hung" ? "HUNG?" : "RUNNING"} ${fmtDuration(now - row.spawnedAt)}`;
-    lines.push(`${glyph} ${rowLabel(row)}  ${stateWord}`);
-    lines.push(`  tools ${row.toolUses} · out ${row.outputTokens >= 1000 ? `${(row.outputTokens / 1000).toFixed(1)}k` : row.outputTokens} · silent ${fmtDuration(row.silentMs)}${row.evidence !== "live" ? ` (${row.evidence})` : ""}`);
+    lines.push(`${glyph} ${rowLabel(row)}  ${rowStateWord(row, now)}`);
+    lines.push(`  id ${cleanField(row.recordId, 18)} · silent ${fmtDuration(row.silentMs)} · tools ${row.toolUses} · out ${row.outputTokens >= 1000 ? `${(row.outputTokens / 1000).toFixed(1)}k` : row.outputTokens}${row.evidence !== "live" ? ` · ${row.evidence}` : ""}`);
     if (row.action === "abort-requested") {
       lines.push("  └ child-specific abort requested; partial output remains available while it settles");
     } else if (row.action === "unavailable") {
@@ -92,7 +138,22 @@ export function renderAgentsPanel(rows: AgentsPanelRow[], now: number, managerAv
   return lines;
 }
 
-/** The ambient widget segment: hidden at zero tracked children by the caller. */
+/** Detailed worker rows for the above-editor widget. The widget receives every
+ * active row up to a bounded display cap; the remainder has an explicit
+ * /glla agents escape hatch rather than disappearing silently. */
+export function renderAgentsWidgetLines(rows: AgentsPanelRow[], now = Date.now(), maxRows = WIDGET_AGENT_ROW_CAP): string[] {
+  const active = orderedRows(rows.filter((r) => r.status !== "ended"));
+  const shown = active.slice(0, Math.max(1, maxRows));
+  const lines = shown.map((row) => {
+    const evidence = row.evidence !== "live" ? ` · ${row.evidence}` : "";
+    const action = row.action === "abort-requested" ? " · aborting" : row.action === "unavailable" ? " · abort unavailable" : row.action === "failed" ? " · abort failed" : "";
+    return `${rowLabel(row)} · id ${cleanField(row.recordId, 10)} · ${rowStateWord(row, now)} · silent ${fmtDuration(row.silentMs)}${evidence}${action}`;
+  });
+  if (active.length > shown.length) lines.push(`… ${active.length - shown.length} more agents · /glla agents`);
+  return lines;
+}
+
+/** The compact footer summary: count + the least-live child. */
 export function renderAgentsWidgetLine(rows: AgentsPanelRow[]): string | undefined {
   const active = rows.filter((r) => r.status !== "ended");
   if (active.length === 0) return undefined;
@@ -102,7 +163,7 @@ export function renderAgentsWidgetLine(rows: AgentsPanelRow[]): string | undefin
     : busiest.status === "hung"
       ? " ⚠"
       : "";
-  return `● ${active.length} agent${active.length === 1 ? "" : "s"} · ${(busiest.agentType ?? "subagent")} silent ${fmtDuration(busiest.silentMs)}${hung}`;
+  return `● ${active.length} agent${active.length === 1 ? "" : "s"} · ${cleanField(busiest.agentType ?? "subagent", 18)} silent ${fmtDuration(busiest.silentMs)}${hung}`;
 }
 
 export interface TranscriptTailResult {

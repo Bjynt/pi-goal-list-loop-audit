@@ -43,6 +43,7 @@ import {
 import { isLoopActive, loopTimerPending, scheduleLoopTick } from "./goal-loop.js";
 import { mainModelRecoveryActive, markCompletionAuditRecoveryPending, probeMainModelRecovery } from "./goal-recovery.js";
 import type { ContinuationDispatch } from "./goal-loop-dispatch.js";
+import type { AgentPhase, AgentStatus } from "./goal-agents-panel.js";
 
 /** goal.ts-owned module lets the heartbeat reads/writes through this accessor.
  * Getters/setters are wired by goal.ts at factory time (mirror-lets pattern). */
@@ -409,6 +410,8 @@ type SubagentRecordPoll = {
   toolUses?: number;
   lifetimeUsage?: { output?: number };
   status?: string;
+  /** Manager execution start; queued records initially expose spawn time. */
+  startedAt?: number;
   /** Present on pi-subagents records; required before automatic control. */
   parentAgentId?: string;
 };
