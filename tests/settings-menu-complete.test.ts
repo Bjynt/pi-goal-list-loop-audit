@@ -38,6 +38,7 @@ const SAMPLE_SETTINGS: Settings = {
   subagentHangEscalationMinutes: 30,
   stuckMaxInterventions: 5,
   stallEscalationRefires: 5,
+  zombieRetryMaxAttempts: 3,
   stallShortWords: 15,
   stallSimilarityThreshold: 0.6,
   notifyCmd: "notify-send $1",
@@ -183,6 +184,7 @@ test("key rows from v0.27.0 settings menu are all present (menu coverage contrac
     "subagentHangEscalationMinutes",
     "stuckMaxInterventions",
     "stallEscalationRefires",
+    "zombieRetryMaxAttempts",
     "stallShortWords",
     "stallSimilarityThreshold",
     "subagentModelStrategy",
@@ -276,6 +278,7 @@ test("valueText derives from settings (effective values surface for each row)", 
   assert.equal(byId.get("auditorModel")!.valueText, "anthropic/claude-sonnet-4 · high");
   assert.equal(byId.get("wedgeAlertMinutes")!.valueText, "0");
   assert.equal(byId.get("subagentHangEscalationMinutes")!.valueText, "30m");
+  assert.equal(byId.get("zombieRetryMaxAttempts")!.valueText, "3");
   assert.equal(
     byId.get("subagentModelOverrides.Explore")!.valueText,
     "minimax/MiniMax-M3",
@@ -301,6 +304,7 @@ test("default fallbacks surface when settings + provenance both missing", () => 
   assert.equal(byId.get("stuckMaxInterventions")!.valueText, "10");
   assert.equal(byId.get("wedgeAlertMinutes")!.valueText, "0");
   assert.equal(byId.get("subagentHangEscalationMinutes")!.valueText, "30m");
+  assert.equal(byId.get("zombieRetryMaxAttempts")!.valueText, "3");
   assert.match(byId.get("subagentModelStrategy")!.valueText, /inherit-parent/);
 });
 

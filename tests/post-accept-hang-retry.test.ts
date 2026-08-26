@@ -4,20 +4,20 @@
 // Field (note.md Next §1, screenshot 20260821_152311): turns dispatched by
 // ACCEPTING a Confirm dialog hang with zero provider stream activity often
 // enough that users repeatedly return to "action needed - this won't fix
-// itself" parked sessions. v0.35.17 amends the zero-stream watchdog: the
-// FIRST silence of a streak arms ONE bounded automatic retry; a SECOND
-// consecutive silence parks permanently.
+// itself" parked sessions. The zero-stream watchdog now supports a finite
+// configurable retry budget: repeated silent attempts get recovery chances,
+// then exhaustion parks permanently.
 //
 // Layers under test:
-//   1. zombieRetryDecision (pure, goal-loop-backoff.ts) — the one-retry bound:
-//      first silence retries, second consecutive silence refuses, and real
-//      stream activity between aborts starts a fresh streak.
+//   1. zombieRetryDecision (pure, goal-loop-backoff.ts) — the finite retry
+//      budget: repeated consecutive silences retry until the limit, while
+//      real stream activity between aborts starts a fresh streak.
 //   2. Source pins — the scheduler is wired into abortZombieRun with the
 //      supervisor-pause gate, the exact pauseReason supersede guard, and the
 //      abort-key release that lets the watchdog re-abort a fully-silent retry.
-//   3. Behavioral (MockPi harness) — end-to-end: busy+silent turn is aborted
-//      and parked once, the delayed timer auto-resumes and re-dispatches
-//      exactly one turn; a second consecutive silence refuses the retry.
+//   3. Behavioral (MockPi harness) — end-to-end: busy+silent turns are
+//      aborted and parked, delayed timers auto-resume/re-dispatch within the
+//      budget, and the exhausted streak refuses another retry.
 
 import { test, beforeEach, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
@@ -25,11 +25,17 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import {
+  DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS,
+  MAX_ZOMBIE_RETRY_ATTEMPTS,
   ZOMBIE_RETRY_DELAY_MS,
   zombieRetryDecision,
   type ZombieRetryStreak,
 } from "../extensions/goal-loop-backoff.js";
-import { __testOnlyResetZombieAutoRetry, __testOnlySetZombieRetryDelay } from "../extensions/loops/goal-activation.js";
+import {
+  __testOnlyResetZombieAutoRetry,
+  __testOnlySetZombieRetryDelay,
+  __testOnlySetZombieRetryMaxAttempts,
+} from "../extensions/loops/goal-activation.js";
 import activate, {
   __testOnlyLoadState,
   __testOnlyResetOwnerSession,
@@ -48,7 +54,7 @@ const MAIN_SM = { name: "main-session-manager" };
 // 1. Pure streak decision
 // ---------------------------------------------------------------------------
 
-test("v0.35.17 zombieRetryDecision: the FIRST silence of an episode arms exactly one retry", () => {
+test("v0.35.x zombieRetryDecision: repeated silence consumes the configured retry budget", () => {
   const first = zombieRetryDecision(1000, "goal-1", { key: "", count: 0, lastAbortStreamAt: 0 });
   assert.equal(first.retry, true);
   assert.equal(first.streak.count, 1);
@@ -60,26 +66,31 @@ test("v0.35.17 zombieRetryDecision: the FIRST silence of an episode arms exactly
   assert.equal(later.streak.count, 1);
 });
 
-test("v0.35.17 zombieRetryDecision: the SECOND consecutive silence refuses (no storm)", () => {
+test("v0.35.x zombieRetryDecision: exhaustion refuses without a retry storm", () => {
   const t = 42_000;
   const fresh: ZombieRetryStreak = { key: "", count: 0, lastAbortStreamAt: 0 };
-  const first = zombieRetryDecision(t, "goal-1", fresh);
-  assert.equal(first.retry, true);
-  // Retry hung too: same owner, stream clock never advanced past t.
-  const second = zombieRetryDecision(t, "goal-1", first.streak);
-  assert.equal(second.retry, false, "a hung retry must not arm another retry");
-  assert.equal(second.streak.count, 2);
-  const third = zombieRetryDecision(t, "goal-1", second.streak);
-  assert.equal(third.retry, false, "the refusal holds for further silences");
+  let current = fresh;
+  for (let attempt = 1; attempt <= DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS; attempt++) {
+    const next = zombieRetryDecision(t, "goal-1", current);
+    assert.equal(next.retry, true, `attempt ${attempt} stays inside the budget`);
+    assert.equal(next.streak.count, attempt);
+    current = next.streak;
+  }
+  const exhausted = zombieRetryDecision(t, "goal-1", current);
+  assert.equal(exhausted.retry, false, "a silent streak cannot retry forever");
+  assert.equal(exhausted.streak.count, DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS + 1);
 });
 
-test("v0.35.17 zombieRetryDecision: a different owner key always gets its own first retry", () => {
+test("v0.35.x zombieRetryDecision: a different owner key always gets its own budget", () => {
   const first = zombieRetryDecision(100, "goal-A", { key: "goal-B", count: 2, lastAbortStreamAt: 100 });
   assert.equal(first.retry, true);
 });
 
-test("v0.35.17 production delay default is 90s and stays bounded", () => {
+test("v0.35.x production retry defaults stay finite and bounded", () => {
   assert.ok(ZOMBIE_RETRY_DELAY_MS >= 30_000 && ZOMBIE_RETRY_DELAY_MS <= 5 * 60_000);
+  assert.equal(DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS, 3);
+  assert.ok(MAX_ZOMBIE_RETRY_ATTEMPTS >= DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS);
+  assert.equal(zombieRetryDecision(1, "goal", { key: "", count: 0, lastAbortStreamAt: 0 }, 0).retry, false);
 });
 
 // ---------------------------------------------------------------------------
@@ -112,12 +123,13 @@ test("v0.35.17 source: the retry timer respects /glla pause and only clears ITS 
   assert.match(body, /releaseZombieAbortKey\(\)/, "the heartbeat abort latch is released so a fully-silent retry can still be re-aborted");
 });
 
-test("v0.35.17 source: the user-facing copy announces the automatic retry when armed", () => {
+test("v0.35.x source: the user-facing copy announces the bounded retry budget", () => {
   assert.match(
     ACTIVATION_SRC,
-    /An automatic retry starts in ~90s;/,
-    "armed parks say so instead of demanding manual action",
+    /Automatic retry \$\{retryPlan\.attempt\}\/\$\{retryPlan\.maxAttempts\} starts in ~90s;/,
+    "armed parks identify the retry attempt and budget",
   );
+  assert.match(ACTIVATION_SRC, /zombieRetryMaxAttempts/, "the budget comes from GLLA settings");
 });
 
 // ---------------------------------------------------------------------------
@@ -143,11 +155,13 @@ beforeEach(() => {
   __testOnlyResetOwnerSession();
   __testOnlyResetZombieRunWatchdog();
   __testOnlyResetZombieAutoRetry();
+  __testOnlySetZombieRetryMaxAttempts(DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS);
 });
 
 afterEach(async () => {
   __testOnlySetZombieRunWindows(null);
   __testOnlySetZombieRetryDelay(null);
+  __testOnlySetZombieRetryMaxAttempts(null);
   __testOnlyResetZombieRunWatchdog();
   __testOnlyResetZombieAutoRetry();
   if (currentCtx) {
@@ -156,7 +170,7 @@ afterEach(async () => {
   }
 });
 
-test("v0.35.17 behavioral: a hung post-accept turn aborts, parks, then AUTO-resumes with exactly one re-dispatch", async () => {
+test("v0.35.x behavioral: a hung post-accept turn aborts, parks, then AUTO-resumes within the budget", async () => {
   __testOnlySetZombieRunWindows(0, 0);
   __testOnlySetZombieRetryDelay(50);
   const cwd = tmpCwd();
@@ -189,10 +203,10 @@ test("v0.35.17 behavioral: a hung post-accept turn aborts, parks, then AUTO-resu
 
   assert.equal((readState(cwd).goal as { status?: string } | null)?.status, "active", "the automatic retry un-parks the goal");
   assert.equal(readLedger(cwd).filter((e) => e.type === "zombie_auto_retry_dispatched").length, 1);
-  assert.equal(pi.sent.length, sendsBeforeAbort + 1, "exactly one fresh dispatch — no storm");
+  assert.equal(pi.sent.length, sendsBeforeAbort + 1, "the first bounded retry dispatches once");
 });
 
-test("v0.35.17 behavioral: a SECOND consecutive zero-stream abort refuses the retry and stays parked", async () => {
+test("v0.35.x behavioral: repeated zero-stream aborts retry until exhaustion, then stay parked", async () => {
   __testOnlySetZombieRunWindows(0, 0);
   __testOnlySetZombieRetryDelay(40);
   const cwd = tmpCwd();
@@ -202,31 +216,35 @@ test("v0.35.17 behavioral: a SECOND consecutive zero-stream abort refuses the re
   let aborts = 0;
   ctx.abort = () => { aborts++; };
 
-  await pi.runTool("list_add", { items: ["double-hang item — done when the second silence parks for good"] }, ctx);
+  await pi.runTool("list_add", { items: ["repeated-hang item — done when the bounded retry budget is exhausted"] }, ctx);
   (globalThis as any).compactionGraceUntil = 0;
   (globalThis as any).postCompletionSettleUntil = 0;
 
-  // First silence → abort + scheduled retry.
-  __testOnlyHeartbeatTick();
-  assert.equal(aborts, 1);
-  assert.equal(readLedger(cwd).filter((e) => e.type === "zombie_auto_retry_scheduled").length, 1);
+  // Each timer fires while the host is STILL busy-silent. The goal
+  // re-activates and one fresh dispatch goes out until the default budget is
+  // exhausted.
+  for (let attempt = 1; attempt <= DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS; attempt++) {
+    __testOnlyHeartbeatTick();
+    assert.equal(aborts, attempt, `silent attempt ${attempt} is aborted`);
+    const scheduled = readLedger(cwd).filter((e) => e.type === "zombie_auto_retry_scheduled");
+    assert.equal(scheduled.length, attempt, `silent attempt ${attempt} is scheduled within the budget`);
+    if (attempt < DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS) {
+      await tick(200);
+      assert.equal((readState(cwd).goal as { status?: string } | null)?.status, "active");
+    }
+  }
 
-  // The timer fires while the host is STILL busy-silent (retry hangs too):
-  // the goal re-activates and one fresh dispatch goes out.
-  await tick(200);
-  assert.equal((readState(cwd).goal as { status?: string } | null)?.status, "active");
-  const sendsAfterFirstRetry = pi.sent.length;
-
-  // Second consecutive silence → abort again, but NO new retry is armed.
+  // The next consecutive silence is aborted and durably refused.
+  const sendsAfterBudget = pi.sent.length;
   __testOnlyHeartbeatTick();
-  assert.equal(aborts, 2, "the hung retry is aborted too");
-  assert.equal((readState(cwd).goal as { status?: string } | null)?.status, "paused", "the second silence parks permanently");
+  assert.equal(aborts, DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS + 1, "the exhausted retry is still safely aborted");
+  assert.equal((readState(cwd).goal as { status?: string } | null)?.status, "paused", "the exhausted streak parks permanently");
   const ledger = readLedger(cwd);
-  assert.equal(ledger.filter((e) => e.type === "zombie_auto_retry_scheduled").length, 1, "no second retry is ever scheduled");
+  assert.equal(ledger.filter((e) => e.type === "zombie_auto_retry_scheduled").length, DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS, "no retry is scheduled beyond the budget");
   assert.equal(ledger.filter((e) => e.type === "zombie_auto_retry_refused_streak").length, 1);
 
   await tick(300);
-  assert.equal(pi.sent.length, sendsAfterFirstRetry, "the refused park does not self-resume");
+  assert.equal(pi.sent.length, sendsAfterBudget, "the exhausted park does not self-resume");
   assert.equal((readState(cwd).goal as { status?: string } | null)?.status, "paused");
 });
 

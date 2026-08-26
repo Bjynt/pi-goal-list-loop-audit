@@ -369,6 +369,27 @@ test("v0.35.64: subagent hang action accepts warning-only/long thresholds and re
   }
 });
 
+test("v0.35.x: zero-stream retry budget persists and rejects values outside 0..10", async () => {
+  try {
+    const ctx = makeMockCtx(tmpCwd());
+    ctx.ui.inputImpl = async () => "4";
+    await handleSettingChoice("zombieRetryMaxAttempts", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().zombieRetryMaxAttempts, 4);
+
+    ctx.ui.inputImpl = async () => "11";
+    await handleSettingChoice("zombieRetryMaxAttempts", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().zombieRetryMaxAttempts, 4, "values above the safety cap are rejected");
+    assert.ok(ctx.ui.matching("must be an integer from 0 to 10").length >= 1);
+
+    ctx.ui.inputImpl = async () => "";
+    await handleSettingChoice("zombieRetryMaxAttempts", ctx as unknown as ExtensionContext);
+    assert.ok(!("zombieRetryMaxAttempts" in readGlobal()), "empty input restores the default");
+    assert.equal(loadSettings(tmpCwd()).zombieRetryMaxAttempts, 3);
+  } finally {
+    restoreGlobal();
+  }
+});
+
 test("T4: a dismissed editor (Esc → undefined) writes NOTHING", async () => {
   try {
     restoreGlobal(); // known-clean baseline
