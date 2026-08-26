@@ -50,6 +50,7 @@ import {
   loopFinishStopReason,
   parseLoopStartArgs,
   parseMetric,
+  isRefinableStoppedLoopReason,
   resolveSpecFiles,
   respecTarget,
   specFileHash,
@@ -939,6 +940,8 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       !!r?.startsWith("plateau —") ||
       !!r?.startsWith("stalled:") ||
       !!r?.startsWith("stuck —") ||
+      !!r?.startsWith("time bound reached") ||
+      !!r?.startsWith("token budget exhausted") ||
       // v0.35.54 (collect-pass HIGH finding): the v0.35.31 "metric never
       // moved" stop message promises "/loop resume retries or /loop stop",
       // but this predicate never matched that prefix — the promised command
@@ -983,8 +986,33 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       // An explicit resume re-arms the counters: fresh stall window,
       // cleared dead-turn/stuck streaks, reprieves restored — the user
       // saying "push again" wins over the ladder's memory (v0.29.19).
-      state.loop = { ...stored, active: true, stopReason: undefined, consecutiveErrors: 0, consecutiveStuck: 0, lastStuckReason: undefined, stallCount: 0, auditPlateauReprieves: 0 };
+      // Time and token bounds are per supervised run window: resuming a
+      // bound-stopped loop preserves its iteration/history/best but starts a
+      // fresh elapsed-time window or token budget instead of stopping again
+      // on the same bound.
+      const resetTimeWindow = stored.stopReason?.startsWith("time bound reached") ?? false;
+      const resetTokenBudget = stored.stopReason?.startsWith("token budget exhausted") ?? false;
+      const resumedAt = nowIso();
+      state.loop = {
+        ...stored,
+        active: true,
+        stopReason: undefined,
+        consecutiveErrors: 0,
+        consecutiveStuck: 0,
+        lastStuckReason: undefined,
+        stallCount: 0,
+        auditPlateauReprieves: 0,
+        ...(resetTimeWindow ? { startedAt: resumedAt } : {}),
+        ...(resetTokenBudget ? { tokensUsed: 0 } : {}),
+      };
       persistState(ctx);
+      if (resetTimeWindow || resetTokenBudget) {
+        appendLedger(ctx.cwd, "loop_bound_window_reset", {
+          timeWindow: resetTimeWindow,
+          tokenBudget: resetTokenBudget,
+          iteration: stored.iteration,
+        });
+      }
       // v0.35.23 (note.md Next #2): an explicit resume is exactly the
       // decision a load hold waits for — release it or the tick below
       // would be frozen.
@@ -995,8 +1023,13 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
       releaseContinuationDispatchStandDown();
       releaseAuditorSurface();
       scheduleLoopTick(ctx);
+      const boundResetNote = resetTimeWindow
+        ? " · fresh time window"
+        : resetTokenBudget
+          ? " · fresh token budget"
+          : "";
       ctx.ui.notify(
-        `Loop resumed: iteration ${stored.iteration}/${stored.maxIterations > 0 ? stored.maxIterations : "∞"} · best ${stored.bestValue ?? "n/a"} — ${displaySlice(stored.target, 60)}`, 
+        `Loop resumed: iteration ${stored.iteration}/${stored.maxIterations > 0 ? stored.maxIterations : "∞"} · best ${stored.bestValue ?? "n/a"}${boundResetNote} — ${displaySlice(stored.target, 60)}`,
         "info",
       );
       return;
