@@ -1,33 +1,17 @@
 # Now
 
-The status-surface redesign is complete and recorded under `# Done`. The next
-active work is the maintainer issue/PR review documented below.
+The status-surface redesign is complete and recorded under `# Done`. The
+current eight-report GLLA reconciliation is recorded in
+`audit/GITHUB-MAINTAINER-INVENTORY-2026-08-25.md`: external reports received
+boundary evidence and were closed as not planned, while the public no-stream
+containment shipped in v0.35.71.
 
 # Next
 
-## Maintainer issue and PR review
-
-The live inventory is recorded in
-`audit/GITHUB-MAINTAINER-INVENTORY-2026-08-25.md`. Issues #23, #30, #32, and
-#34 are fixed and closed; PR #24 is superseded and closed. The remaining eight
-reports were investigated against v0.35.70 and are outside GLLA's code boundary
-except for the Pi-core-facing containment question in #31. GLLA now uses a
-finite, configurable zero-stream retry budget (default 3, range 0–10),
-repeatedly parks/aborts/re-dispatches within that budget, and then requires an
-explicit resume. It does not modify Pi, the OS, or other plugins.
-
-The eight non-AVO reports were reviewed, received evidence comments, and were
-closed as not planned after the verification gate. PRs #22 and #36 remain open
-and untouched for the later AVO and supervision review.
-
-## Blocked feature PR decisions
-
-PR #22 (stagnation supervisor) and PR #36 (commissar watchdog) were reviewed
-read-only against current main. Both are dirty/conflicting and overlap the
-hardened lifecycle, recovery, and heartbeat paths; neither should be merged
-wholesale. Selective porting remains deferred until the desired feature and
-version ordering are explicitly chosen. Upstream/out-of-scope issues remain
-catalogued without local action.
+No follow-up from this reconciliation is active. GLLA continues to own only
+its lifecycle, durable state, public recovery boundaries, and evidence
+surfaces; Pi, the OS, providers, and other plugins remain outside its fix
+boundary.
 
 # Later
 
