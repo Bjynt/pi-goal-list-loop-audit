@@ -123,7 +123,7 @@ test("repeated in-band provider pane is distinct from ordinary repeated tool out
   ];
   assert.equal(repeatedInBandProviderFailure(provider), true);
   assert.equal(repeatedInBandProviderFailure(provider.map((entry, index) => ({ ...entry, providerFailure: index < 2 }))), false);
-  assert.equal(repeatedInBandProviderFailure(provider.map((entry) => ({ ...entry, hash: "different" }))), false);
+  assert.equal(repeatedInBandProviderFailure(provider.map((entry, index) => ({ ...entry, hash: `different-${index}` }))), false);
 });
 
 test("detectLoopStuck: same tool error three times", () => {

@@ -99,6 +99,31 @@ test("v0.29.19: provider-error turns are NOT iterations — no measure, no stall
   assert.ok(!lg.includes('"loop_stuck"'), "no stuck accounting on dead turns (hellhunter class)");
 });
 
+test("v0.35.x: repeated in-band provider tool output parks recovery without loop stuck accounting", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const ctx = await sessionWithLoop(cwd, { measureCmd: "echo 74", direction: "max", bestValue: 74, lastValue: 74 });
+  const providerPane = {
+    toolName: "bash",
+    output: "HTTP 503 upstream unavailable",
+    isError: false,
+  };
+  for (let i = 0; i < 3; i++) await pi.fire("tool_result", providerPane, ctx);
+  assert.ok(ledger(cwd).includes('"loop_in_band_provider_failure"'), "the repeated pane is detected before agent_end");
+  await pi.fire("agent_end", workTurn(), ctx);
+  await tick();
+  const l = loop(cwd);
+  assert.equal(l.active, false, "the provider recovery envelope parks the loop");
+  assert.match(l.stopReason ?? "", /^main model recovery — retrying in /);
+  assert.equal(l.iteration, 1, "the in-band provider turn is not an iteration");
+  assert.equal(l.stallCount, 0, "the in-band provider turn does not move plateau state");
+  assert.ok(readState(cwd).mainModelRecovery, "main-model recovery is durable");
+  const lg = ledger(cwd);
+  assert.ok(lg.includes('"loop_in_band_provider_failure"'), "the repeated pane is ledgered");
+  assert.ok(lg.includes('"loop_turn_exempt_error"'), "the turn uses the existing error exemption");
+  assert.ok(!lg.includes('"loop_stuck"'), "the repeated provider pane never reaches stuck accounting");
+});
+
 test("v0.29.19: a real turn after errors clears the streak and measures normally", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
