@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.35.67 — in-band provider-result recovery (2026-08-26)
+
+### Fixed
+  Repeated successful tool transports that carry a strong 503/429/network
+  provider pane no longer enter loop stuck or plateau accounting as ordinary
+  work. After the same tool/result fingerprint repeats, the turn is routed
+  through the existing provider-recovery envelope; one-off status text in a
+  searched document remains ordinary output.
+
+### Tests
+  Coverage spans provider-marker classification, repeated-pane detection,
+  loop-turn exemption, durable recovery parking, and the unchanged real-error
+  and repetition paths. The full release gate remains green.
+
 ## 0.35.66 — compiled-host auditor launcher (2026-08-26)
 
 ### Fixed

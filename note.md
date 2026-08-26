@@ -8,11 +8,11 @@ active work is the maintainer issue/PR review documented below.
 ## Maintainer issue and PR review
 
 The live inventory is recorded in
-`audit/GITHUB-MAINTAINER-INVENTORY-2026-08-25.md`. The compiled-host auditor
-launcher issue #23 is fixed locally and released in v0.35.66 without merging
-PR #24. Remaining plugin-owned issues (#30, #32, #34), the two blocked feature
-PRs (#22, #36), and upstream/out-of-scope requests still need explicit
-follow-up decisions.
+`audit/GITHUB-MAINTAINER-INVENTORY-2026-08-25.md`. Compiled-host auditor issue
+#23 and in-band provider-result issue #30 are fixed locally and released in
+v0.35.66 and v0.35.67 without merging PR #24. Remaining plugin-owned issue
+#32, metricless-cadence issue #34, the two blocked feature PRs (#22, #36), and
+upstream/out-of-scope requests still need explicit follow-up decisions.
 
 ## Compaction fallback for long goals
 
@@ -94,6 +94,15 @@ JavaScript runtime (`node`, `nodejs`, `bun`, or `deno`); compiled Pi hosts fall
 back to `node`, while explicit runtime overrides remain authoritative. The
 fix was selectively ported from PR #24, covered by `tests/auditor-process.test.ts`,
 and released as v0.35.66. PR #24 itself remains unmerged.
+
+## In-band provider-result recovery (#30)
+
+Repeated successful tool transports that carry a strong 503/429/network-error
+pane are now recognized as provider failure only after the same tool/result
+fingerprint repeats. The turn is converted into the existing provider recovery
+envelope before loop measurement or stuck accounting; one-off status text in a
+searched document remains ordinary output. Coverage includes classifier,
+repetition, recovery, and loop behavior. Released as v0.35.67.
 
 ## Documentation and test-boundary cleanup
 
