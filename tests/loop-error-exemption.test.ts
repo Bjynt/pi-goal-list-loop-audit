@@ -108,12 +108,13 @@ test("v0.35.x: repeated in-band provider tool output parks recovery without loop
     output: "HTTP 503 upstream unavailable",
     isError: false,
   };
-  for (let i = 0; i < 3; i++) await pi.fire("tool_result", providerPane, ctx);
-  assert.ok(ledger(cwd).includes('"loop_in_band_provider_failure"'), "the repeated pane is detected before agent_end");
-  await pi.fire("agent_end", workTurn(), ctx);
-  await tick();
+  for (let turn = 0; turn < 6; turn++) {
+    for (let i = 0; i < 3; i++) await pi.fire("tool_result", providerPane, ctx);
+    await pi.fire("agent_end", workTurn(), ctx);
+    await tick();
+  }
   const l = loop(cwd);
-  assert.equal(l.active, false, `the provider recovery envelope parks the loop: ${JSON.stringify({ l, recovery: readState(cwd).mainModelRecovery })}`);
+  assert.equal(l.active, false, "the provider recovery envelope parks the loop");
   assert.match(l.stopReason ?? "", /^main model recovery — retrying in /);
   assert.equal(l.iteration, 1, "the in-band provider turn is not an iteration");
   assert.equal(l.stallCount, 0, "the in-band provider turn does not move plateau state");

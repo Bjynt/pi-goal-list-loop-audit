@@ -462,10 +462,8 @@ let zombieRetryTimer: NodeJS.Timeout | null = null;
 // matching agent_end. Keep the raw text only in memory; the durable ledger
 // records the bounded classification, never the provider payload.
 let inBandProviderFailureRaw: string | null = null;
-let inBandProviderFailureTool: string | null = null;
 function clearInBandProviderFailure(): void {
   inBandProviderFailureRaw = null;
-  inBandProviderFailureTool = null;
 }
 
 /** Arm the one-shot automatic re-dispatch after a successful zombie abort.
@@ -979,7 +977,6 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       // 503/429 text in a searched document remains ordinary tool output.
       if (inBandFailure && repeatedInBandProviderFailure(loop.recentToolResults)) {
         inBandProviderFailureRaw = text.slice(0, 800);
-        inBandProviderFailureTool = tool;
         appendLedger(eventCtx.cwd, "loop_in_band_provider_failure", {
           tool,
           kind: inBandFailure.kind,
