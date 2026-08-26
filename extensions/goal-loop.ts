@@ -281,7 +281,7 @@ function loopPrompt(loop: LoopState, regressionNote: string, strategyNote: strin
     .replace(/\$\{REFINE_HINT\}/g, refineHintNote);
 }
 
-function scheduleLoopTick(ctx: ExtensionContext): void {
+function scheduleLoopTick(ctx: ExtensionContext, urgent = false): void {
   // v0.35.15: `/glla pause` freezes loop re-arms too — the supervisor's
   // automatic machinery includes the metric loop's turn dispatch.
   if (supervisorPaused(state)) return;
@@ -295,7 +295,18 @@ function scheduleLoopTick(ctx: ExtensionContext): void {
   } catch {
     return;
   }
-  loopTimer = scheduleSessionTimeout(() => sendLoopTurn(), delay);
+  // A cadence is an intentional maturity gap between successful iterations,
+  // not a replacement for the busy-send backoff. Explicit starts/resumes are
+  // urgent wakes and bypass the gap once; automatic re-arms honor it.
+  if (!urgent) {
+    const loop = state.loop;
+    const intervalMs = loop?.minimumIterationIntervalMs;
+    const completedAt = loop?.lastIterationCompletedAt ? Date.parse(loop.lastIterationCompletedAt) : Number.NaN;
+    if (intervalMs !== undefined && Number.isFinite(completedAt)) {
+      delay = Math.max(delay, completedAt + intervalMs - Date.now());
+    }
+  }
+  loopTimer = scheduleSessionTimeout(() => sendLoopTurn(), Math.max(0, delay));
 }
 
 function sendLoopTurn(): void {
