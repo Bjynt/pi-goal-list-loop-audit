@@ -26,7 +26,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
 import activate, { __testOnlyLastConfirmDialog, __testOnlyLoadState, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyResetTerminalFlags, __testOnlyRunFanOutListAuditFindings, __testOnlySetAuditorRecoveryRetryDelay, __testOnlySetContinuationRetryBackoff, __testOnlySetContinuationStartTimeout, __testOnlySetSessionReplacementUntil, runDetachedCompletionWithFallback } from "../extensions/loops/goal.js";
-import { __testOnlyResetZombieAutoRetry } from "../extensions/loops/goal-activation.js";
+import { __testOnlyResetZombieAutoRetry, __testOnlySetZombieRetryMaxAttempts } from "../extensions/loops/goal-activation.js";
 import { __testOnlyHeartbeatTick, __testOnlySetZombieRunWindows, __testOnlyResetZombieRunWatchdog, __testOnlyClearSubagentHangProbes, __testOnlySubagentHangProbes, upsertSubagentHangProbe, endSubagentHangProbe } from "../extensions/goal-heartbeat.js";
 import { mainModelRecoverySucceeded } from "../extensions/goal-recovery.js";
 
@@ -4006,6 +4006,7 @@ test("v0.35.x: zero-stream zombie auto-aborts and parks a list item without a re
   __testOnlyResetStaleFlag();
   __testOnlyResetOwnerSession();
   __testOnlySetZombieRunWindows(0, 0);
+  __testOnlySetZombieRetryMaxAttempts(1);
   const cwd = tmpCwd();
   const ctx = await freshSession(cwd, "reload");
   ctx.isIdle = () => false;
@@ -4042,8 +4043,8 @@ test("v0.35.x: zero-stream zombie auto-aborts and parks a list item without a re
     assert.match(parked?.pauseSuggestedAction ?? "", /\/list cancel/);
     const afterAbort = readLedger(cwd);
     assert.equal(afterAbort.filter((entry) => entry.type === "zombie_run_aborted").length, 1);
-    // v0.35.17: the first silence of a streak arms ONE bounded automatic
-    // retry — the park is a 90-second waystation, not a dead end.
+    // Pin this legacy-focused test to one retry; the dedicated retry test
+    // covers the production default of repeated bounded recovery.
     assert.equal(afterAbort.filter((entry) => entry.type === "zombie_auto_retry_scheduled").length, 1);
 
     const sendsBefore = pi.sent.length;
@@ -4060,6 +4061,7 @@ test("v0.35.x: zero-stream zombie auto-aborts and parks a list item without a re
     assert.equal(pi.sent.length, sendsBefore + 1, "resume creates exactly one fresh dispatch");
   } finally {
     __testOnlyResetZombieRunWatchdog();
+    __testOnlySetZombieRetryMaxAttempts(null);
     __testOnlyResetZombieAutoRetry();
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   }
