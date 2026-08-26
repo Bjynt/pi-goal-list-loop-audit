@@ -177,6 +177,17 @@ test("v0.35.29 #15: end-to-end — /glla agents renders real probe data; widget 
     assert.match(notified, /RUNNING/);
     assert.match(notified, /Plan · audit contract draft/);
     assert.match(notified, /HUNG\?/);
+    assert.match(notified, /id probe-live-1/);
+    assert.match(notified, /ACTIVE|UNKNOWN/);
+    assert.match(notified, /silent/);
+
+    // The aggregate status command keeps its semantics and does not duplicate
+    // the detailed worker roster; /glla agents is the deep inspection path.
+    await pi.command("glla", "status", ctx);
+    const aggregate = ctx.ui.notifies.at(-1)!.message;
+    assert.match(aggregate, /glla status/);
+    assert.match(aggregate, /goal \[goal\] (?:active|paused)/);
+    assert.doesNotMatch(aggregate, /map model picker|audit contract draft|HUNG\?/);
 
     // Unknown --tail id answers loudly.
     await pi.command("glla", "agents --tail does-not-exist", ctx);
