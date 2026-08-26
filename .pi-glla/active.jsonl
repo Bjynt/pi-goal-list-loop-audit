@@ -7841,3 +7841,10 @@
 {"type":"subagent_session","value":{"sessionId":"f7cc51f0-81c7-4ac","agentType":"general-purpose","summary":"Triage open GitHub backlog","at":"2026-08-26T13:06:10.149Z"},"at":"2026-08-26T13:06:10.149Z"}
 {"type":"subagent_session","value":{"sessionId":"1c53872d-8ef7-452","agentType":"general-purpose","summary":"Investigate remaining issues","at":"2026-08-26T15:04:09.488Z"},"at":"2026-08-26T15:04:09.488Z"}
 {"type":"subagent_session","value":{"sessionId":"2710fe3f-7638-43f","agentType":"Plan","summary":"Plan GLLA-local mitigations","at":"2026-08-26T16:19:12.196Z"},"at":"2026-08-26T16:19:12.196Z"}
+{"type":"session_shutdown","value":{"reason":"quit"},"at":"2026-08-26T16:40:08.767Z"}
+{"type":"session_rebound","value":{"reason":"startup"},"at":"2026-08-26T16:40:16.131Z"}
+{"type":"id_invalidation","value":{"oldId":"01a02353-0a9c-742d-8d99-e222dda417c9","newId":"01a03ef1-877a-770e-9c2f-ac39e8a5d1d5","reason":"session_shutdown","shutdownReason":"quit","at":"2026-08-26T16:40:16.588Z"},"at":"2026-08-26T16:40:16.588Z"}
+{"type":"session_waiting_for_load","value":{"reason":"startup"},"at":"2026-08-26T16:40:16.589Z"}
+{"type":"session_shutdown","value":{"reason":"resume"},"at":"2026-08-26T16:40:21.785Z"}
+{"type":"session_rebound","value":{"reason":"resume"},"at":"2026-08-26T16:40:22.152Z"}
+{"type":"id_invalidation","value":{"oldId":"01a03ef1-877a-770e-9c2f-ac39e8a5d1d5","newId":"01a02353-0a9c-742d-8d99-e222dda417c9","reason":"session_shutdown","shutdownReason":"resume","at":"2026-08-26T16:40:22.478Z"},"at":"2026-08-26T16:40:22.478Z"}
