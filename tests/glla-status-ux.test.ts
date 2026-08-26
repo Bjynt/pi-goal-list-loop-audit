@@ -7,7 +7,7 @@
 //   2. /glla pause|resume — broad supervisor freeze, persisted across
 //      reloads, active work untouched;
 //   3. proactive quiet-phase notification (exactly once) + silent-stretch
-//      footer summary.
+//      detailed auditor-card summary.
 //
 // Behavioral tests drive the real command dispatcher through MockPi; the
 // quiet watcher is exercised through the exported test hook with a
@@ -21,7 +21,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import activate from "../extensions/loops/goal.js";
-import { buildStatusText, type AuditDisplayProgress } from "../extensions/goal-loop-display.ts";
+import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../extensions/goal-loop-display.ts";
 import { readState } from "../extensions/goal-loop-core.js";
 import {
   __testOnlyAuditorQuietWatchTick,

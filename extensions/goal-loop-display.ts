@@ -467,9 +467,9 @@ type AuditorDisplayPhase = "queued" | "running" | "quiet" | "blocked" | "awaitin
  * the same threshold for the one-shot proactive notify so the notification
  * and the status chip can never disagree about when "quiet" begins. */
 export const AUDITOR_QUIET_MS = 3 * 60_000;
-/** v0.35.15: how long the "silent Xm then resumed" fact stays in the footer
- * after a quiet stretch ends — long enough to be seen, short enough not to
- * become permanent noise. */
+/** v0.35.15: how long the "silent Xm then resumed" fact stays in the
+ * detailed auditor card after a quiet stretch ends — long enough to be seen,
+ * short enough not to become permanent noise. */
 const QUIET_STRETCH_VISIBLE_MS = 10 * 60_000;
 const LIVE_ACTIVITY_MS = 15_000;
 
@@ -510,19 +510,6 @@ function auditorElapsedMs(audit: AuditDisplayProgress | null | undefined, now: n
     return Math.max(elapsed, now - startedAt);
   }
   return elapsed;
-}
-
-function auditorElapsedSuffix(audit: AuditDisplayProgress | null | undefined, now: number): string {
-  const elapsed = auditorElapsedMs(audit, now);
-  return elapsed === undefined ? "" : ` · elapsed ${fmtElapsed(elapsed)}`;
-}
-
-function auditorFreshnessSuffix(audit: AuditDisplayProgress | null | undefined, phase: AuditorDisplayPhase, now: number): string {
-  const at = audit?.lastActivityAt;
-  if (phase === "awaiting-verdict" && (at === undefined || !Number.isFinite(at))) return " · worker finished";
-  if (at === undefined || !Number.isFinite(at)) return " · freshness pending";
-  if (at > now) return " · freshness unknown";
-  return now - at <= LIVE_ACTIVITY_MS ? " · fresh" : " · stale";
 }
 
 function auditorNextTransition(phase: AuditorDisplayPhase): string {

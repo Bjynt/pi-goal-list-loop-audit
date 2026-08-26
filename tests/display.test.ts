@@ -966,7 +966,7 @@ test("detached auditor elapsed time keeps ticking between worker progress events
     lastActivityAt: NOW - 20_000,
   };
   const status = buildStatusText({ goal: g, list: [] }, audit, NOW)!;
-  assert.match(status, /auditor ▶ thinking/);
+  assert.match(status, /auditor ▶ (?:thinking|reading source…)/);
   assert.doesNotMatch(status, /elapsed 2m 00s|worker activity|evidence:/);
   const lines = buildWidgetLines({ goal: g, list: [] }, audit, NOW)!;
   assert.ok(lines.some((line) => line.includes("2m 00s in detached worker")), lines.join("\\n"));
