@@ -4188,3 +4188,99 @@ test("v0.35.4: context-starved warning is one-shot per refusal episode", async (
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   }
 });
+
+// ────────────────────────────────────────────────────────────────────
+// v0.37.0 commissar restart continuity — the forced-fresh-session flow.
+// terminateMainRunForDereliction sets the durable marker and (when the host
+// exposes newSession) swaps the session; the successor's restore gate must
+// resume the objective instead of holding it.
+// ────────────────────────────────────────────────────────────────────
+
+test("v0.37.0 commissar: an active goal carrying commissarRestart resumes on restore without Auto-resume", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  setGlobalAutoResume(false); // continuity must NOT depend on the setting
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    goal: seedGoal({
+      status: "active",
+      commissarRestart: { at: new Date().toISOString(), reason: "sustained dereliction: looping on the same failed edit" },
+    }),
+  });
+  pi.sent.length = 0;
+  const ctx = await freshSession(cwd, "startup");
+  await tick();
+  const g = readState(cwd).goal as { status: string; commissarRestart?: unknown; pauseReason?: string };
+  assert.equal(g.status, "active", "the commissar-restarted goal resumes immediately");
+  assert.ok(!g.pauseReason, "no held-on-restore pause for a commissar restart");
+  assert.ok(pi.sent.length >= 1, "a continuation dispatch follows the resume");
+  const content = String(pi.sent[pi.sent.length - 1]!.message.content ?? "");
+  assert.match(content, /COMMISSAR RESTART — YOU ARE THE FRESH RUN/, "the finding rides the continuation prompt");
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
+
+test("v0.37.0 commissar: an active loop carrying commissarRestart resumes on restore", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  setGlobalAutoResume(false);
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    loop: seedLoop({
+      active: true,
+      iteration: 7,
+      bestValue: 42,
+      commissarRestart: { at: new Date().toISOString(), reason: "iterations fabricated measure output" },
+    }),
+  });
+  pi.sent.length = 0;
+  const ctx = await freshSession(cwd, "startup");
+  await tick();
+  const l = readState(cwd).loop as { active: boolean; stopReason?: string };
+  assert.equal(l.active, true, "the commissar-restarted loop resumes immediately");
+  assert.equal(l.stopReason, undefined, "no lifecycle hold");
+  assert.ok(pi.sent.length >= 1, "a loop tick continuation dispatches");
+  const content = String(pi.sent[pi.sent.length - 1]!.message.content ?? "");
+  assert.match(content, /COMMISSAR RESTART/, "the finding rides the loop iteration prompt");
+  await pi.command("loop", "stop", ctx);
+});
+
+test("v0.37.0 commissar: an aborted loop turn WITH the marker restarts the same loop instead of counting toward the abort stop", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    loop: seedLoop({
+      active: true,
+      iteration: 3,
+      consecutiveErrors: 4, // one more abort would hit LOOP_MAX_CONSECUTIVE_ABORTS
+    }),
+  });
+  const ctx = await freshSession(cwd, "reload");
+  await tick(); // the boot dispatch runs; no marker yet
+  pi.sent.length = 0;
+
+  // Simulate the heartbeat-side termination: the commissar marks the loop
+  // durably MID-RUN (realistic ordering — boot dispatch already settled).
+  const live = readState(cwd).loop as Record<string, unknown>;
+  seedState(cwd, {
+    loop: {
+      ...live,
+      commissarRestart: { at: new Date().toISOString(), reason: "iterations fabricated measure output" },
+    },
+  });
+  __testOnlyLoadState(cwd);
+
+  await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "terminated mid-answer" }], stopReason: "aborted" }] }, ctx);
+  await tick(100);
+  const l = readState(cwd).loop as { active: boolean; consecutiveErrors?: number; stopReason?: string };
+  assert.equal(l.active, true, "the watchdog termination never stops the loop");
+  assert.equal((l.consecutiveErrors ?? 0) < 5, true, "the abort was not counted toward the abort stop");
+  assert.equal(readLedger(cwd).some((e) => e.type === "commissar_abort_settled"), true, "settled as a commissar restart");
+  assert.equal(readLedger(cwd).filter((e) => e.type === "loop_stopped").length, 0, "no loop_stopped from the intentional termination");
+  // The restart iteration carries the finding.
+  const content = String(pi.sent[pi.sent.length - 1]!.message.content ?? "");
+  assert.match(content, /COMMISSAR RESTART/, "the fresh iteration carries the finding");
+  assert.equal(readState(cwd).loop?.commissarRestart ?? undefined, undefined, "the marker clears once its directive dispatched");
+  await pi.command("loop", "stop", ctx);
+});
