@@ -159,6 +159,20 @@ export function classifyMainModelFailure(error: string | undefined, opts?: { isC
   return { kind: "unknown", raw };
 }
 
+/** A successful tool invocation can still carry a provider/network failure
+ * in its output. Only strong pane-shaped markers are eligible here; the loop
+ * caller additionally requires the same tool/result fingerprint to repeat
+ * before turning this into model recovery, so a one-off `503` in a searched
+ * document is not enough to park a loop. */
+const IN_BAND_PROVIDER_FAILURE_PATTERN = /\b(?:http\s*)?(?:429|5\d\d)\b|rate[_ -]?limit|too many requests|network[_ -]?error|upstream(?:\s+(?:error|failure|unavailable))?|service unavailable|fetch failed|econn(?:reset|refused)|gateway(?:\s+(?:error|timeout))?/i;
+
+export function classifyInBandProviderFailure(output: string | undefined): MainModelFailure | undefined {
+  const raw = typeof output === "string" ? output.trim() : "";
+  if (!raw || !IN_BAND_PROVIDER_FAILURE_PATTERN.test(raw)) return undefined;
+  const failure = classifyMainModelFailure(raw);
+  return failure.kind === "non-recoverable" ? undefined : failure;
+}
+
 /** v0.34.116: detect when a length-context failure happened AFTER the
  * session_compact already failed. The classifier maps this to
  * `context-overflow` (rollback path: rotate to a larger-context ref). The

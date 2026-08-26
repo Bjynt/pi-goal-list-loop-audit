@@ -113,8 +113,9 @@ export interface LoopState {
   recentPrints?: string[];
   /** v0.24.0: last few iteration texts (near-duplicate check + banned openings). */
   recentTexts?: string[];
-  /** v0.24.0: rolling tool-result fingerprints {tool, hash, isError}. */
-  recentToolResults?: { tool: string; hash: string; isError: boolean }[];
+  /** v0.24.0: rolling tool-result fingerprints {tool, hash, isError};
+   * providerFailure marks a repeated in-band provider/network pane. */
+  recentToolResults?: { tool: string; hash: string; isError: boolean; providerFailure?: boolean }[];
   /** v0.24.0: tool calls seen since the last completed iteration. */
   toolsThisTurn?: number;
   /** v0.24.0: consecutive iterations with zero tool calls. */
