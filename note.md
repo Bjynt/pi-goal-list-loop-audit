@@ -16,9 +16,9 @@ finite, configurable zero-stream retry budget (default 3, range 0–10),
 repeatedly parks/aborts/re-dispatches within that budget, and then requires an
 explicit resume. It does not modify Pi, the OS, or other plugins.
 
-The non-AVO reports will receive evidence comments and be closed after the
-verification gate. PRs #22 and #36 remain open and untouched for the later AVO
-and supervision review.
+The eight non-AVO reports were reviewed, received evidence comments, and were
+closed as not planned after the verification gate. PRs #22 and #36 remain open
+and untouched for the later AVO and supervision review.
 
 ## Blocked feature PR decisions
 

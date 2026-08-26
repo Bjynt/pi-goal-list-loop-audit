@@ -160,11 +160,12 @@ At the user's direction, the four completed plugin-owned issues were closed as
 completed: #23, #30, #32, and #34. PR #24 was closed as superseded by the
 compiled-host fix already released in v0.35.66.
 
-The remaining live backlog is **8 open issues** (#25–#29, #31, #33, #35) and
-**2 open PRs** (#22 and #36). The two open PRs remain separate feature
-proposals: #22 is the direct AVO-inspired stagnation supervisor, while #36 is
-the adjacent commissar/zombie-watchdog proposal. No AVO research or feature
-porting has been started.
+The remaining live backlog is now **0 open issues from this inventory** and
+**2 open PRs** (#22 and #36). Issues #25–#29, #31, #33, and #35 were closed as
+not planned after the GLLA-only review, each with an evidence comment. The two
+open PRs remain separate feature proposals: #22 is the direct AVO-inspired
+stagnation supervisor, while #36 is the adjacent commissar/zombie-watchdog
+proposal. No AVO research or feature porting has been started.
 
 ## Remaining-issue investigation — 2026-08-26
 
@@ -200,13 +201,12 @@ now recorded in `AGENTS.md`: external behavior may be observed and contained
 through GLLA's public hooks, but external implementation defects are not local
 fix targets.
 
-The only remaining report with a useful GLLA-side containment question is #31.
-GLLA cannot cap Pi's private retry sleeper, but it can detect a BUSY/no-stream
-window, abort through the public context, durably park the work, and make a
+The only report with a useful GLLA-side containment question was #31. GLLA
+cannot cap Pi's private retry sleeper, but it now detects a BUSY/no-stream
+window, aborts through the public context, durably parks the work, and makes a
 finite number of automatic re-dispatches before requiring explicit resume. The
-zero-stream budget is now configurable (default 3, allowed range 0–10), and
+zero-stream budget is configurable (default 3, allowed range 0–10), and
 regressions cover repeated recovery, durable parking, supervisor pause, and
-budget exhaustion. Issues #25–#29, #33, and #35 remain external-only and will
-be closed with evidence comments after the local verification pass; #31 will
-be closed with a clear boundary note after its GLLA containment is verified.
+budget exhaustion. Issues #25–#29, #33, and #35 were closed as external-only;
+#31 was closed with the boundary note after its GLLA containment was verified.
 PRs #22 and #36 remain open and untouched for the later AVO/supervision review.
