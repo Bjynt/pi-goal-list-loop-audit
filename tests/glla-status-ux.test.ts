@@ -119,19 +119,23 @@ test("v0.35.15: ⏸ supervisor chip leads the footer in every lifecycle branch w
 });
 
 // ────────────────────────────────────────────────────────────────────
-// 3. Silent-stretch summary in the footer
+// 3. Silent-stretch summary in the detailed auditor card
 // ────────────────────────────────────────────────────────────────────
 
-test("v0.35.15: a recently ended quiet stretch shows 'silent Xm then resumed' in the footer; stale stretches stay hidden", () => {
+test("v0.35.15: a recently ended quiet stretch shows 'silent Xm then resumed' in the widget; stale stretches stay hidden", () => {
   const base = { goal: auditingGoal() as never, list: [] };
   const progress = auditProgress({ lastActivityAt: NOW }); // resumed now
-  const shown = buildStatusText(base as never, progress, NOW, undefined, {
+  const shownStatus = buildStatusText(base as never, progress, NOW, undefined, {
     auditorQuietStretch: { ms: 8 * 60_000, endedAt: NOW - 1000 },
   })!;
-  assert.ok(shown.includes("silent 8m 00s then resumed"), "the ended stretch is summarized");
-  const expired = buildStatusText(base as never, progress, NOW, undefined, {
+  assert.ok(!shownStatus.includes("then resumed"), "the compact footer does not duplicate detailed history");
+  const shownWidget = buildWidgetLines(base as never, progress, NOW, undefined, undefined, {
+    auditorQuietStretch: { ms: 8 * 60_000, endedAt: NOW - 1000 },
+  })!.join("\\n");
+  assert.ok(shownWidget.includes("silent 8m 00s then resumed"), "the detailed card summarizes the ended stretch");
+  const expired = buildWidgetLines(base as never, progress, NOW, undefined, undefined, {
     auditorQuietStretch: { ms: 8 * 60_000, endedAt: NOW - 11 * 60_000 },
-  })!;
+  })!.join("\\n");
   assert.ok(!expired.includes("then resumed"), "a stretch older than the visibility window disappears");
 });
 
