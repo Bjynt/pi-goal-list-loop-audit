@@ -573,7 +573,7 @@ interface AuditorProgressFile {
 export type AuditorInfrastructureClass = "no-verdict" | "timeout" | "transport" | "provider";
 
 export interface AuditorProcessRuntime {
-  /** Override the worker launcher command (normally process.execPath). */
+  /** Override the worker launcher command (normally resolved from process.execPath, with a JS-runtime fallback for compiled hosts). */
   command?: string;
   /** Override the worker module (normally scripts/goal-auditor-worker.mjs). */
   workerPath?: string;
@@ -761,6 +761,17 @@ function stampToken<T extends GoalAuditorResult>(result: T, capturedToken: GoalR
   return { ...result, goalRevision: capturedToken };
 }
 
+const JAVASCRIPT_RUNTIME_BASENAMES = new Set(["node", "nodejs", "bun", "deno"]);
+
+/** Resolve the runtime that can execute the extension-less worker module.
+ * In a normal Node/Bun/Deno host, process.execPath is already a JavaScript
+ * runtime. In a compiled Pi host it is the Pi executable, which would parse
+ * worker flags such as --job-dir itself and exit before the worker starts. */
+export function resolveWorkerCommand(execPath: string): string {
+  const base = path.basename(execPath.replace(/\\/g, "/")).replace(/\.exe$/i, "").toLowerCase();
+  return JAVASCRIPT_RUNTIME_BASENAMES.has(base) ? execPath : "node";
+}
+
 /**
  * Run one completion audit in a detached, extension-less child process.
  * Infrastructure failures never become semantic disapprovals and never fall
@@ -881,7 +892,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
     args.onProgress?.(asProgress(initialProgress, startedAt));
 
     const workerPath = runtime.workerPath ?? defaultWorkerPath();
-    const command = runtime.command ?? process.execPath;
+    const command = runtime.command ?? resolveWorkerCommand(process.execPath);
     const spawn = runtime.spawn ?? nodeSpawn;
     const env = { ...process.env, ...(runtime.env ?? {}) };
     if (runtime.piBinary) env.GLLA_PI_BINARY = runtime.piBinary;
