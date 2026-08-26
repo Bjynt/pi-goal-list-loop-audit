@@ -390,6 +390,15 @@ test("v0.35.x: zero-stream retry budget persists and rejects values outside 0..1
   }
 });
 
+test("v0.35.x: hand-edited zero-stream retry budgets normalize to the safe default", () => {
+  const cwd = tmpCwd();
+  fs.mkdirSync(path.dirname(projectSettingsPath(cwd)), { recursive: true });
+  fs.writeFileSync(projectSettingsPath(cwd), JSON.stringify({ zombieRetryMaxAttempts: 99 }));
+  assert.equal(loadSettings(cwd).zombieRetryMaxAttempts, 3);
+  fs.writeFileSync(projectSettingsPath(cwd), JSON.stringify({ zombieRetryMaxAttempts: -1 }));
+  assert.equal(loadSettings(cwd).zombieRetryMaxAttempts, 3);
+});
+
 test("T4: a dismissed editor (Esc → undefined) writes NOTHING", async () => {
   try {
     restoreGlobal(); // known-clean baseline

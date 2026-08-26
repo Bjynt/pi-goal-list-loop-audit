@@ -386,7 +386,7 @@ test("headless `/glla` fallback keeps stall brakes and the v0.34.127 sync list",
 
   // v0.34.127: every key copied into the interactive settings list must also
   // be visible in the headless /glla listing. Keep this list explicit so a
-  // future edit cannot silently drop one of the eleven synced settings.
+  // future edit cannot silently drop a synced setting.
   for (const key of [
     "decisionPopup",
     "carryover",
@@ -401,6 +401,7 @@ test("headless `/glla` fallback keeps stall brakes and the v0.34.127 sync list",
     "subagentModelOverrides",
     "subagentFallbacks",
     "toolOverrides",
+    "zombieRetryMaxAttempts",
   ]) {
     assert.match(fallback, new RegExp(`fmt\\(\\"${key}\\"`), `headless fallback missing synced key: ${key}`);
   }

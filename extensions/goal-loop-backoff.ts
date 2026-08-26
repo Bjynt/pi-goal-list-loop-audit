@@ -248,10 +248,9 @@ export function accountTurnForNudgesRich(
 // Field (note.md Next §1, screenshot 20260821_152311): turns dispatched by
 // ACCEPTING a Confirm dialog hang with zero provider stream activity often
 // enough that users repeatedly return to "action needed - this won't fix
-// itself" parks. The watchdog's abort is correct; the missing half is ONE
-// bounded automatic re-dispatch per silence streak. This pure decision is
-// the finite retry-budget decision; the timer that consumes it lives in
-// goal-activation.ts.
+// itself" parks. The watchdog's abort is correct; the missing half is a
+// finite repeated re-dispatch budget per silence streak. This pure decision
+// is consumed by the timer in goal-activation.ts.
 
 export const ZOMBIE_RETRY_DELAY_MS = 90_000;
 /** Maximum automatic re-dispatches after one uninterrupted zero-stream
@@ -269,11 +268,10 @@ export interface ZombieRetryStreak {
 }
 
 /** A new owner key OR stream activity newer than the recorded abort point
- * starts a fresh streak; otherwise the streak deepens and the SECOND
- * consecutive silence is refused (no retry storm). A retried turn that
- * actually streams advances lastStreamActivityAt past the previous abort's
- * observation point, so any LATER independent hang earns its own single
- * retry. */
+ * starts a fresh streak; otherwise the streak deepens until the caller's
+ * finite retry budget is exhausted. A retried turn that actually streams
+ * advances lastStreamActivityAt past the previous abort's observation point,
+ * so any later independent hang earns a fresh budget. */
 export function zombieRetryDecision(
   observedStreamAt: number,
   key: string,
