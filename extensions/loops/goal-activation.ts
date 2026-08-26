@@ -469,7 +469,9 @@ function scheduleZombieAutoRetry(
   silentMinutes: number,
 ): { scheduled: boolean; attempt: number; maxAttempts: number } {
   const key = goalId ?? "loop";
-  const maxAttempts = loadSettings(ctx.cwd).zombieRetryMaxAttempts ?? DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS;
+  const maxAttempts = zombieRetryMaxAttemptsOverride
+    ?? loadSettings(ctx.cwd).zombieRetryMaxAttempts
+    ?? DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS;
   const { retry, streak } = zombieRetryDecision(observedStreamAt, key, zombieRetryStreak, maxAttempts);
   zombieRetryStreak = streak;
   const plan = { scheduled: retry, attempt: streak.count, maxAttempts };
@@ -553,14 +555,22 @@ export function __testOnlyResetZombieAutoRetry(): void {
     zombieRetryTimer = null;
   }
   zombieRetryStreak = { key: "", count: 0, lastAbortStreamAt: 0 };
+  zombieRetryMaxAttemptsOverride = null;
 }
 
 let zombieRetryDelayOverride: number | null = null;
+let zombieRetryMaxAttemptsOverride: number | null = null;
 
 /** Test-only: shrink the automatic-retry delay (null restores the 90s
  * production default). Never called by production code. */
 export function __testOnlySetZombieRetryDelay(ms: number | null): void {
   zombieRetryDelayOverride = ms;
+}
+
+/** Test-only: pin the retry budget without depending on the caller's global
+ * settings file. Null restores the loaded setting/default. */
+export function __testOnlySetZombieRetryMaxAttempts(attempts: number | null): void {
+  zombieRetryMaxAttemptsOverride = attempts;
 }
 
 /** v0.35.x: terminate one confirmed zero-stream host turn and park the
