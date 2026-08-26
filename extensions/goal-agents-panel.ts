@@ -55,11 +55,12 @@ function rowLabel(row: AgentsPanelRow): string {
 }
 
 function rowPhase(row: AgentsPanelRow): AgentPhase {
-  if (row.phase) return row.phase;
+  // Terminal/liveness status is stronger than a stale phase field from a
+  // caller's previous snapshot; never render ENDED · ACTIVE or HUNG · ACTIVE.
   if (row.status === "queued") return "queued";
   if (row.status === "hung") return "hung";
   if (row.status === "ended") return "ended";
-  return "unknown";
+  return row.phase ?? "unknown";
 }
 
 function rowElapsedMs(row: AgentsPanelRow, now: number): number {
