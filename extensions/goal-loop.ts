@@ -50,7 +50,6 @@ import {
   loopFinishStopReason,
   parseLoopStartArgs,
   parseMetric,
-  isRefinableStoppedLoopReason,
   resolveSpecFiles,
   respecTarget,
   specFileHash,

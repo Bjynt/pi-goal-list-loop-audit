@@ -318,6 +318,7 @@ import {
   listAuditFanoutItemText,
   type LoopTickOutcome,
   HELD_ON_RESTORE,
+  isRefinableStoppedLoopReason,
   type LoopState,
 } from "../goal-loop-forever.js";
 import {
@@ -1928,7 +1929,7 @@ function registerAgentTools(pi: any): void {
   pi.registerTool(defineTool({
     name: "propose_loop_refine",
     label: "Propose loop spec refinement",
-    description: "While a loop is ACTIVE, propose refining the loop's spec — sharpen the target and/or change the measure command — when the current spec no longer captures 'better'. The user confirms; on a measure change the orchestrator test-runs the new command and re-baselines. Never edit the measure command or its inputs directly — that is gaming the metric.",
+    description: "While a loop is active or safely stopped by a recoverable bound/failure, propose refining its spec — sharpen the target and/or change the measure command — when the current spec no longer captures 'better'. The user confirms; on a measure change the orchestrator test-runs the new command and re-baselines. Never edit the measure command or its inputs directly — that is gaming the metric.",
     parameters: Type.Object({
       target: Type.Optional(Type.String({ description: "The sharpened target text (omit to keep the current target)" })),
       measureCmd: Type.Optional(Type.String({ description: "The new measure command printing ONE number (omit to keep the current metric)" })),
@@ -1943,9 +1944,11 @@ function registerAgentTools(pi: any): void {
       const liveCtx = currentToolContext(execCtx);
       if (!liveCtx) return staleToolResult();
       const loop = state.loop;
-      if (!loop?.active) {
-        return { content: [{ type: "text", text: "No active loop to refine. propose_loop_refine is only valid while a loop is running." }], details: {} };
+      const stoppedRefinable = !!loop && !loop.active && isRefinableStoppedLoopReason(loop.stopReason);
+      if (!loop || (!loop.active && !stoppedRefinable)) {
+        return { content: [{ type: "text", text: "No refinable loop is available. propose_loop_refine applies while a loop is running or after a recoverable bound/failure stop; clean max-iteration and user-finished loops require /loop start." }], details: {} };
       }
+      const wasActive = loop.active;
       const newTarget = p.target?.trim() || loop.target;
       const newMeasure = p.measureCmd?.trim() || loop.measureCmd || "";
       // v0.23.0: a metricless loop can't be refined into a measured one
@@ -1989,7 +1992,7 @@ function registerAgentTools(pi: any): void {
           confirmed = (await confirmDraft(
             liveCtx,
             "Confirm loop spec refinement",
-          `Rationale: ${sanitizeDisplayText(p.rationale)}\n\nTarget:\n  old: ${displaySlice(loop.target, 120)}\n  new: ${displaySlice(newTarget, 120)}\n\nMeasure:\n  old: ${sanitizeDisplayText(loop.measureCmd ?? "none")}\n  new: ${sanitizeDisplayText(newMeasure)}${newMeasure !== loop.measureCmd ? `\n  test-run: ${sanitizeDisplayText(testOutput).slice(0, 120)} → ${newBaseline}` : ""}${specChange ? `\n\nSpec file (${sanitizeDisplayText(loop.specFile ?? "")}:\n  ${p.specText?.trim() ? `REPLACE with ${p.specText!.trim().length} chars` : ""}${p.specText?.trim() && p.specAppend?.trim() ? " + " : ""}${p.specAppend?.trim() ? `APPEND: ${sanitizeDisplayText(p.specAppend!.trim()).slice(0, 120)}` : ""}` : ""}\n\nThe loop keeps running against the refined spec (iteration ${loop.iteration} so far). Apply?`,
+          `Rationale: ${sanitizeDisplayText(p.rationale)}\n\nTarget:\n  old: ${displaySlice(loop.target, 120)}\n  new: ${displaySlice(newTarget, 120)}\n\nMeasure:\n  old: ${sanitizeDisplayText(loop.measureCmd ?? "none")}\n  new: ${sanitizeDisplayText(newMeasure)}${newMeasure !== loop.measureCmd ? `\n  test-run: ${sanitizeDisplayText(testOutput).slice(0, 120)} → ${newBaseline}` : ""}${specChange ? `\n\nSpec file (${sanitizeDisplayText(loop.specFile ?? "")}:\n  ${p.specText?.trim() ? `REPLACE with ${p.specText!.trim().length} chars` : ""}${p.specText?.trim() && p.specAppend?.trim() ? " + " : ""}${p.specAppend?.trim() ? `APPEND: ${sanitizeDisplayText(p.specAppend!.trim()).slice(0, 120)}` : ""}` : ""}\n\nThe loop ${wasActive ? "keeps running" : "stays stopped until /loop resume"} against the refined spec (iteration ${loop.iteration} so far). Apply?`,
           )) === "yes";
         } catch {
           confirmed = false;
@@ -2026,8 +2029,10 @@ function registerAgentTools(pi: any): void {
       }
       persistState(liveCtx);
       appendLedger(liveCtx.cwd, "loop_refined", { iteration: loop.iteration, newTarget, newMeasureCmd: newMeasure, newBaseline, specChanged: specChange || undefined });
-      liveCtx.ui.notify(`Loop spec refined at iteration ${loop.iteration}.${newBaseline !== null ? ` New baseline: ${newBaseline}.` : ""}${specChange ? " Spec file updated." : ""}`, "info");
-      return { content: [{ type: "text", text: "Refinement confirmed and applied. Continue improving against the NEW spec — one small change per turn." }], details: {} };
+      liveCtx.ui.notify(`Loop spec refined at iteration ${loop.iteration}.${newBaseline !== null ? ` New baseline: ${newBaseline}.` : ""}${specChange ? " Spec file updated." : ""}${wasActive ? "" : " Run /loop resume to continue with the preserved history."}`, "info");
+      return { content: [{ type: "text", text: wasActive
+        ? "Refinement confirmed and applied. Continue improving against the NEW spec — one small change per turn."
+        : "Refinement confirmed and applied to the stopped loop. Run /loop resume to continue with the preserved history." }], details: {} };
     },
   }));
 
