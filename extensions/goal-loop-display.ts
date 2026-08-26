@@ -875,31 +875,13 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     const label = live
       ? `${paint(theme, "success", phaseText)} ${paint(theme, "accent", activityMeter)} ${activityBadge("AUDITOR · DETACHED · LIVE", now, theme)}`
       : `${paint(theme, color, phaseText)} ${paint(theme, color === "warning" ? "warning" : "dim", activityMeter)}`;
-    // A current tool is present-tense evidence only while its worker
-    // heartbeat is fresh. Older snapshots stay useful as `last tool:` facts,
-    // never as a claim that the detached process is still in that call.
-    const staleSnapshot = !live && (phase !== "running" || audit?.lastActivityAt !== undefined);
-    const toolName = audit?.currentTool
-      ? truncate(audit.currentTool, 30)
-      : lastAuditorTool(audit);
-    const tool = toolName
-      ? staleSnapshot ? ` · last tool: ${toolName}` : ` · ${toolName}`
-      : "";
-    const evidence = auditorEvidenceSummary(audit, phase);
-    const elapsed = auditorElapsedSuffix(audit, now);
-    const workerActivity = auditorLastActivity(audit, now);
-    const freshness = auditorFreshnessSuffix(audit, phase, now);
-    // v0.35.15: once a quiet stretch ends and activity resumes, keep the
-    // fact visible for 10 minutes so the user learns the silence happened
-    // even if they missed the proactive notify (the seed's exact complaint:
-    // "only 8 minutes of not reporting anything … would be best to know").
-    const stretch = extras?.auditorQuietStretch;
-    const stretchSuffix = stretch && Number.isFinite(stretch.ms) && stretch.ms >= AUDITOR_QUIET_MS
-      && now - stretch.endedAt <= QUIET_STRETCH_VISIBLE_MS
-      ? ` · ${paint(theme, "warning", `silent ${fmtElapsed(stretch.ms)} then resumed`)}`
-      : "";
+    // The persistent footer is the global liveness surface. Detailed worker
+    // observations (tool, evidence, elapsed, and freshness) belong in the
+    // above-editor auditor card so the two surfaces do not repeat one another.
+    const quietAge = phase === "quiet" ? auditorActivityAge(audit, now) : undefined;
+    const quietSuffix = quietAge !== undefined ? ` · silent ${fmtElapsed(quietAge)}` : "";
     const next = ` · next: ${auditorNextTransition(phase)}`;
-    return `glla: ${host} · ${label}${tool}${evidence ? ` · evidence: ${evidence}` : ""}${elapsed}${workerActivity}${freshness}${stretchSuffix}${next} · detached worker${heldSuffix}`;
+    return `glla: ${host} · ${label}${quietSuffix}${next} · detached worker${heldSuffix}`;
   }
   if (g.status === "paused") {
     // v0.28.22: the status line names the ACTIONABILITY, not the reason —
@@ -1378,6 +1360,11 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
     // This is the difference between “the timer moved” and “I can see what
     // the detached worker last did.”
     const observations: string[] = [];
+    const stretch = extras?.auditorQuietStretch;
+    if (stretch && Number.isFinite(stretch.ms) && stretch.ms >= AUDITOR_QUIET_MS
+        && now - stretch.endedAt <= QUIET_STRETCH_VISIBLE_MS) {
+      observations.push(`silent ${fmtElapsed(stretch.ms)} then resumed`);
+    }
     // A stale progress snapshot must not keep presenting its old tool as
     // currently executing. Only fresh worker telemetry earns the present
     // tense; otherwise show it as the last observed tool and omit duration.
