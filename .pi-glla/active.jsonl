@@ -7837,3 +7837,4 @@
 {"type":"session_shutdown","value":{"reason":"resume"},"at":"2026-08-26T08:02:12.944Z"}
 {"type":"session_rebound","value":{"reason":"resume"},"at":"2026-08-26T08:02:13.524Z"}
 {"type":"id_invalidation","value":{"oldId":"01a03d17-37df-719e-8752-262d16c487f9","newId":"01a02353-0a9c-742d-8d99-e222dda417c9","reason":"session_shutdown","shutdownReason":"resume","at":"2026-08-26T08:02:13.624Z"},"at":"2026-08-26T08:02:13.624Z"}
+{"type":"subagent_session","value":{"sessionId":"28c971ae-fa2c-4e1","agentType":"general-purpose","summary":"Analyze feature PRs","at":"2026-08-26T12:35:15.147Z"},"at":"2026-08-26T12:35:15.147Z"}
