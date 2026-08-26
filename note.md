@@ -10,9 +10,9 @@ active work is the maintainer issue/PR review documented below.
 The live inventory is recorded in
 `audit/GITHUB-MAINTAINER-INVENTORY-2026-08-25.md`. Compiled-host auditor issue
 #23 and in-band provider-result issue #30 are fixed locally and released in
-v0.35.66, v0.35.67, and v0.35.68 without merging PR #24. Remaining
-plugin-owned metricless-cadence issue #34, the two blocked feature PRs (#22,
-#36), and upstream/out-of-scope requests still need explicit follow-up
+v0.35.66, v0.35.67, v0.35.68, and v0.35.69 without merging PR #24.
+Remaining plugin-owned issues are resolved locally; the two blocked feature PRs
+(#22, #36), and upstream/out-of-scope requests still need explicit follow-up
 decisions.
 
 ## Compaction fallback for long goals
@@ -113,6 +113,14 @@ loop with a recoverable bound or failure can also accept a confirmed
 `propose_loop_refine` change without silently restarting; clean max-iteration
 and finished loops still require a fresh `/loop start`. Auto-resume does not
 silently reset an explicit budget. Released as v0.35.68.
+
+## Metricless-loop cadence (#34)
+
+Metricless loops support an opt-in `cadence=<seconds>` minimum gap between
+successful automatic iterations. Explicit starts/resumes remain urgent, the
+armed cadence appears in `/loop status` and the loop prompt, and the default
+behavior is unchanged. Time/token bound windows and stopped-loop refinement
+remain explicit and durable. Released as v0.35.69.
 
 ## Documentation and test-boundary cleanup
 

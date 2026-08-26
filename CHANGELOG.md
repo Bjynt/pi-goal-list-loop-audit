@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.35.69 — metricless-loop cadence (2026-08-26)
+
+### Added
+  Metricless and measured loops accept an opt-in `cadence=<seconds>` minimum
+  interval between successful automatic iterations. The cadence is persisted,
+  shown in `/loop status` and loop prompts, and explicit starts/resumes bypass
+  it for an urgent wake. The default remains unchanged.
+
+### Tests
+  Coverage verifies cadence parsing, delayed automatic re-wakes, urgent
+  explicit starts, and the existing unbounded metricless behavior.
+
 ## 0.35.68 — bound-stop recovery (2026-08-26)
 
 ### Fixed

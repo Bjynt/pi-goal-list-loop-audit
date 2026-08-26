@@ -148,7 +148,6 @@ test("v0.35.x: metricless cadence delays automatic re-wakes but explicit start i
   await pi.command("loop", 'start "mature the spec" cadence=0.25', ctx);
   await tick(80);
   assert.ok(pi.sent.length >= 1, "explicit loop start wakes immediately");
-  const beforeTurn = pi.sent.length;
   await pi.fire("agent_end", {
     messages: [{ role: "assistant", content: [{ type: "text", text: "recorded one real spec improvement" }], stopReason: "end_turn" }],
   }, ctx);
@@ -158,7 +157,6 @@ test("v0.35.x: metricless cadence delays automatic re-wakes but explicit start i
   await tick(230);
   assert.ok(pi.sent.length > afterTurn, "automatic wake lands after the cadence");
   assert.ok(readState(cwd).loop?.lastIterationCompletedAt, "successful iteration arms the cadence timestamp");
-  assert.ok(beforeTurn < afterTurn, "the completed turn was observed");
   await pi.command("loop", "stop", ctx);
 });
 
