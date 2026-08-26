@@ -191,3 +191,22 @@ implementation is currently justified by these eight reports.
 
 The investigation performed no repository or GitHub mutations, and AVO research
 remains intentionally deferred.
+
+## GLLA-only implementation boundary — 2026-08-26
+
+The maintainer decision is to build GLLA for this workflow, not to maintain the
+OS, Pi core, or optional/third-party plugins. The durable repository rule is
+now recorded in `AGENTS.md`: external behavior may be observed and contained
+through GLLA's public hooks, but external implementation defects are not local
+fix targets.
+
+The only remaining report with a useful GLLA-side containment question is #31.
+GLLA cannot cap Pi's private retry sleeper, but it can detect a BUSY/no-stream
+window, abort through the public context, durably park the work, and make a
+finite number of automatic re-dispatches before requiring explicit resume. The
+zero-stream budget is now configurable (default 3, allowed range 0–10), and
+regressions cover repeated recovery, durable parking, supervisor pause, and
+budget exhaustion. Issues #25–#29, #33, and #35 remain external-only and will
+be closed with evidence comments after the local verification pass; #31 will
+be closed with a clear boundary note after its GLLA containment is verified.
+PRs #22 and #36 remain open and untouched for the later AVO/supervision review.

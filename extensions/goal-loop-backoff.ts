@@ -250,7 +250,8 @@ export function accountTurnForNudgesRich(
 // enough that users repeatedly return to "action needed - this won't fix
 // itself" parks. The watchdog's abort is correct; the missing half is ONE
 // bounded automatic re-dispatch per silence streak. This pure decision is
-// the one-retry bound; the timer that consumes it lives in goal-activation.ts.
+// the finite retry-budget decision; the timer that consumes it lives in
+// goal-activation.ts.
 
 export const ZOMBIE_RETRY_DELAY_MS = 90_000;
 /** Maximum automatic re-dispatches after one uninterrupted zero-stream

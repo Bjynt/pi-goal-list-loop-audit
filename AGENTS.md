@@ -3,6 +3,16 @@
 > **Audience**: the pi-goal-loop agent loop and any agent working in this
 > repo. Durable rules; read before operating.
 
+## Scope boundary
+
+This repository builds **GLLA only**. Do not modify or attempt to repair the
+operating system, Pi core, `pi-subagents`, `pi-memory`, providers, or arbitrary
+other plugins. External behavior may be observed and safely contained through
+GLLA's public hooks, but an upstream defect is not a GLLA implementation target.
+Before changing code for an issue, verify that the behavior is owned by GLLA;
+record and dispose of external-only reports explicitly instead of silently
+expanding the repository boundary.
+
 ## dracon-sync daemon: git-history rules for agent loops
 
 This repo is watched by the **dracon-sync daemon**, which auto-commits
