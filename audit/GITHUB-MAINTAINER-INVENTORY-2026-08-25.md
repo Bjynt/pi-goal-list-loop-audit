@@ -153,3 +153,15 @@ and is the compiled-host launcher fix.** No item in this triage was merged,
 closed, commented on, labeled, or otherwise modified. The eight upstream items
 and the two feature PRs remain deliberately held for owner/feature decisions;
 they are not being silently forgotten.
+
+## External disposition — 2026-08-26
+
+At the user's direction, the four completed plugin-owned issues were closed as
+completed: #23, #30, #32, and #34. PR #24 was closed as superseded by the
+compiled-host fix already released in v0.35.66.
+
+The remaining live backlog is **8 open issues** (#25–#29, #31, #33, #35) and
+**2 open PRs** (#22 and #36). The two open PRs remain separate feature
+proposals: #22 is the direct AVO-inspired stagnation supervisor, while #36 is
+the adjacent commissar/zombie-watchdog proposal. No AVO research or feature
+porting has been started.
