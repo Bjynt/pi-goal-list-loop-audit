@@ -68,6 +68,15 @@ applyCommissarResult()
 | Completion auditor | Verifies FINISHED claims |
 | **Commissar** | **Productive-looking DERELICTION mid-run** |
 
+Sibling mechanism (separate PR): the AVO-inspired **stagnation supervisor**
+(`DESIGN-stagnation-supervisor.md`) detects exhaustion/cycling heuristically
+over a per-goal progress lineage and injects non-prescriptive framing — no
+model call, no termination. Layering guidance: stagnation fires first and
+cheap; the commissar is the heavier LLM-judged backstop when heuristic
+framing fails to turn the run around. If both are enabled, keep the
+commissar interval comfortably above the stagnation exhaustion threshold
+(defaults already do: 4 turns vs a per-interval cadence).
+
 ## Files
 
 Core: `extensions/goal-commissar.ts` (prompt/verdict machinery),
