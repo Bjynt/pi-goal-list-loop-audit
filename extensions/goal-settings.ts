@@ -30,6 +30,10 @@ import {
   DEFAULT_MAIN_MODEL_PRIMARY_PROBE_MINUTES,
   normalizeMainModelFallbackRefs,
 } from "./main-model-recovery.js";
+import {
+  DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS,
+  MAX_ZOMBIE_RETRY_ATTEMPTS,
+} from "./goal-loop-backoff.js";
 
 export interface Settings {
   /** Where glla's durable state directory lives. This is global-only because
@@ -169,6 +173,9 @@ export interface Settings {
   /** v0.27.3: a turn with no tool calls AND fewer words than this is a
    * nudge. Default 15 words. Higher = stricter (more pauses). */
   stallShortWords?: number;
+  /** Maximum automatic re-dispatches after one uninterrupted busy/no-stream
+   * episode (default 3; 0 = manual resume only; max 10). */
+  zombieRetryMaxAttempts?: number;
   /** v0.27.3: a turn with no tool calls whose text trigram-similarity to
    * the prior assistant turn exceeds this is a nudge. Default 0.6. Higher
    * = stricter (more pauses). */
@@ -281,6 +288,9 @@ export const DEFAULT_SETTINGS: Settings = {
   // v0.35.64: warn at the short detection thresholds, then take one
   // child-specific action after a much longer confirmed frozen interval.
   subagentHangEscalationMinutes: 30,
+  // v0.35.x: repeated Pi-core busy/no-stream recovery is useful for a
+  // transient retry sleeper, but must remain finite and user-configurable.
+  zombieRetryMaxAttempts: DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS,
 };
 
 // Re-exported for compatibility; the dependency-free state-root module owns
@@ -328,6 +338,12 @@ function normalizeLoadedSettings(settings: Settings): Settings {
       || !Number.isInteger(settings.subagentHangEscalationMinutes)
       || (settings.subagentHangEscalationMinutes !== 0 && settings.subagentHangEscalationMinutes < 5)) {
     settings.subagentHangEscalationMinutes = 30;
+  }
+  if (typeof settings.zombieRetryMaxAttempts !== "number"
+      || !Number.isInteger(settings.zombieRetryMaxAttempts)
+      || settings.zombieRetryMaxAttempts < 0
+      || settings.zombieRetryMaxAttempts > MAX_ZOMBIE_RETRY_ATTEMPTS) {
+    settings.zombieRetryMaxAttempts = DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS;
   }
   // v0.34.142: these old policy knobs no longer control recovery. Drop
   // them from the effective object so stale files cannot resurrect the old
@@ -416,6 +432,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "stuckMaxInterventions",
   "subagentHangEscalationMinutes",
   "stallEscalationRefires",
+  "zombieRetryMaxAttempts",
   "stallShortWords",
   "stallSimilarityThreshold",
   "postaudit",

@@ -333,6 +333,7 @@ import {
   PENDING_LATCH_STUCK_MS,
   shouldFirePendingLatchWatchdog,
   AUDITOR_WALL_TIMEOUT_MS,
+  MAX_ZOMBIE_RETRY_ATTEMPTS,
 } from "../goal-loop-backoff.js";
 
 import {
@@ -1319,6 +1320,21 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
         if (Number.isFinite(n) && n >= 0) saveSettings("global", ctx.cwd, { stallEscalationRefires: n });
         else if (!v.trim()) saveSettings("global", ctx.cwd, { stallEscalationRefires: undefined });
         else ctx.ui.notify(`Not a non-negative integer: ${v}`, "warning");
+      }
+      return;
+    }
+    case "zombieRetryMaxAttempts": {
+      const v = await ctx.ui.input("Automatic retries after a busy zero-stream abort", "integer from 0 to 10; 0 = manual resume only; empty = default 3");
+      if (v !== undefined) {
+        const raw = v.trim();
+        const n = Number.parseInt(raw, 10);
+        if (/^\d+$/.test(raw) && Number.isInteger(n) && n >= 0 && n <= MAX_ZOMBIE_RETRY_ATTEMPTS) {
+          saveSettings("global", ctx.cwd, { zombieRetryMaxAttempts: n });
+        } else if (!raw) {
+          saveSettings("global", ctx.cwd, { zombieRetryMaxAttempts: undefined });
+        } else {
+          ctx.ui.notify(`Automatic retry count must be an integer from 0 to ${MAX_ZOMBIE_RETRY_ATTEMPTS}: ${v}`, "warning");
+        }
       }
       return;
     }

@@ -350,6 +350,7 @@ import {
   PENDING_LATCH_STUCK_MS,
   shouldFirePendingLatchWatchdog,
   AUDITOR_WALL_TIMEOUT_MS,
+  DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS,
   ZOMBIE_RETRY_DELAY_MS,
   zombieRetryDecision,
   type ZombieRetryStreak,
@@ -427,29 +428,20 @@ export function enqueueFaultRepairTask(ctx: ExtensionContext, objective: string,
   appendLedger(ctx.cwd, "faulty_objective_repair_promoted", { goalId: repair.id, targetId: target?.id, position: 1, source: target?.source ?? "unknown" });
 }
 
-/** v0.35.17 — bounded automatic retry after a confirmed zero-stream abort.
+/** v0.35.x — bounded repeated automatic recovery after a confirmed
+ * zero-stream abort.
  *
- * Field evidence (note.md Next §1, screenshot 20260821_152311): turns
- * dispatched by ACCEPTING a Confirm dialog hang with zero provider stream
- * activity often enough that users repeatedly return to "Goal paused after
- * 30m ... action needed - this won't fix itself" sessions. The watchdog's
- * abort is correct (it stops the token bleed); what was missing is the
- * self-heal half. This adds ONE bounded automatic re-dispatch per silent
- * streak, mirroring main-model recovery's timer pattern:
+ * A Pi-core retry sleeper can keep the host BUSY long after the useful stream
+ * has stopped. GLLA owns the safe boundary: abort the stale host turn, park
+ * durable work, and re-dispatch while the configured zero-stream retry budget
+ * remains. A real stream resets the episode; uninterrupted silence eventually
+ * reaches the budget and stays parked instead of producing an infinite retry
+ * storm.
  *
- *   - exactly ONE automatic retry per zero-stream STREAK: a retried turn
- *     that actually streams advances lastStreamActivityAt past the previous
- *     abort's observation point, so any LATER independent hang starts a
- *     fresh streak and earns its own single retry;
- *   - a SECOND consecutive silence (retry hung too, or the original turn
- *     never streamed again) parks permanently — no retry storm;
- *   - `/glla pause` freezes the retry like every other automatic
- *     side-effect: the parked claim stays durable for manual resume;
- *   - manual /goal resume · /loop resume remain available at all times.
- *
- * The streak counter is process-memory by design: if the session restarts
- * inside the retry window the park stands and manual resume applies — an
- * honest degradation, not a phantom promise.
+ * `/glla pause` freezes the retry like every other automatic side-effect, and
+ * manual /goal resume · /loop resume remain available at all times. The streak
+ * counter is process-memory by design: a session restart inside the retry
+ * window leaves the park standing for manual resume.
  */
 const ZOMBIE_PAUSE_REASON = "automatic zero-stream abort — no provider activity was observed";
 
@@ -466,25 +458,28 @@ function clearInBandProviderFailure(): void {
   inBandProviderFailureRaw = null;
 }
 
-/** Arm the one-shot automatic re-dispatch after a successful zombie abort.
- * Returns true when a retry was scheduled (the caller adjusts its user-facing
- * copy accordingly). */
+/** Arm the next automatic re-dispatch after a successful zombie abort.
+ * The configured retry budget keeps repeated recovery finite; the caller gets
+ * the attempt number so user-facing copy and ledger evidence stay truthful. */
 function scheduleZombieAutoRetry(
   ctx: ExtensionContext,
   generation: number,
   goalId: string | undefined,
   observedStreamAt: number,
   silentMinutes: number,
-): boolean {
+): { scheduled: boolean; attempt: number; maxAttempts: number } {
   const key = goalId ?? "loop";
-  const { retry, streak } = zombieRetryDecision(observedStreamAt, key, zombieRetryStreak);
+  const maxAttempts = loadSettings(ctx.cwd).zombieRetryMaxAttempts ?? DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS;
+  const { retry, streak } = zombieRetryDecision(observedStreamAt, key, zombieRetryStreak, maxAttempts);
   zombieRetryStreak = streak;
+  const plan = { scheduled: retry, attempt: streak.count, maxAttempts };
   appendLedger(ctx.cwd, retry ? "zombie_auto_retry_scheduled" : "zombie_auto_retry_refused_streak", {
     goalId,
     streakCount: streak.count,
+    maxAttempts,
     delayMs: zombieRetryDelayOverride ?? ZOMBIE_RETRY_DELAY_MS,
   });
-  if (!retry) return false;
+  if (!retry) return plan;
   if (zombieRetryTimer) {
     clearTimeout(zombieRetryTimer);
     zombieRetryTimer = null;
@@ -513,10 +508,15 @@ function scheduleZombieAutoRetry(
         pauseSuggestedAction: undefined,
         ...(usage ? { usage } : {}),
       }, fresh);
-      appendLedger(fresh.cwd, "zombie_auto_retry_dispatched", { goalId: goal.id, policy: goal.policy });
+      appendLedger(fresh.cwd, "zombie_auto_retry_dispatched", {
+        goalId: goal.id,
+        policy: goal.policy,
+        attempt: retryAttempt,
+        maxAttempts: retryMaxAttempts,
+      });
       releaseZombieAbortKey();
       try {
-        fresh.ui.notify(`Automatic retry starting — the earlier ${goal.policy === "list" ? "list item" : "goal"} turn was aborted after ${silentMinutes}m of zero stream activity. One bounded retry is dispatched now; if it hangs again the ${goal.policy === "list" ? "item" : "goal"} stays paused for ${activeGoalSurfaceCommand("resume")}.`, "info");
+        fresh.ui.notify(`Automatic retry ${retryAttempt}/${retryMaxAttempts} starting — the earlier ${goal.policy === "list" ? "list item" : "goal"} turn was aborted after ${silentMinutes}m of zero stream activity. If it hangs again, GLLA keeps retrying within this budget before requiring ${activeGoalSurfaceCommand("resume")}.`, "info");
       } catch { /* best-effort */ }
       scheduleContinuation(fresh, true);
       return;
@@ -529,14 +529,19 @@ function scheduleZombieAutoRetry(
     loop.active = true;
     loop.stopReason = undefined;
     persistState(fresh);
-    appendLedger(fresh.cwd, "zombie_auto_retry_dispatched", { kind: "loop", iteration: loop.iteration });
+    appendLedger(fresh.cwd, "zombie_auto_retry_dispatched", {
+      kind: "loop",
+      iteration: loop.iteration,
+      attempt: retryAttempt,
+      maxAttempts: retryMaxAttempts,
+    });
     releaseZombieAbortKey();
     try {
-      fresh.ui.notify(`Automatic retry starting — the loop was stopped after a zero-stream abort. One bounded retry ticks now; if it hangs again it stays stopped for /loop resume.`, "info");
+      fresh.ui.notify(`Automatic retry ${retryAttempt}/${retryMaxAttempts} starting — the loop was stopped after a zero-stream abort. GLLA keeps retrying within this budget; if it hangs again after the budget, it stays stopped for /loop resume.`, "info");
     } catch { /* best-effort */ }
     scheduleLoopTick(fresh);
   }, zombieRetryDelayOverride ?? ZOMBIE_RETRY_DELAY_MS);
-  return true;
+  return plan;
 }
 
 /** Test-only: reset the module-global retry streak/timer state. */

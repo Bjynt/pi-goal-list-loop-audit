@@ -37,6 +37,7 @@ import {
 import {
   DEFAULT_STALL_SIM_THRESHOLD,
   DEFAULT_STALL_SHORT_WORDS,
+  DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS,
 } from "./goal-loop-backoff.ts";
 import type { Settings } from "./goal-settings.ts";
 import { MAX_MAIN_MODEL_FALLBACKS } from "./main-model-recovery.ts";
@@ -452,6 +453,14 @@ export function buildSettingsRows(
       sourceText: src("stallEscalationRefires"),
       description:
         "heartbeat refires with no turn before the goal pauses / loop stops (0 = never)",
+    },
+    {
+      id: "zombieRetryMaxAttempts",
+      section: "stall-brakes",
+      label: "Zero-stream retries",
+      valueText: show("zombieRetryMaxAttempts", `${DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS}`),
+      sourceText: src("zombieRetryMaxAttempts"),
+      description: "automatic retries after a busy zero-stream abort (0 = manual only; max 10)",
     },
     {
       id: "stallShortWords",

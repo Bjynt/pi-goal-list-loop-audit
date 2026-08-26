@@ -253,6 +253,12 @@ export function accountTurnForNudgesRich(
 // the one-retry bound; the timer that consumes it lives in goal-activation.ts.
 
 export const ZOMBIE_RETRY_DELAY_MS = 90_000;
+/** Maximum automatic re-dispatches after one uninterrupted zero-stream
+ * episode. Three attempts give a transient Pi-core retry sleeper several
+ * chances to recover without turning the watchdog into an infinite loop. */
+export const DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS = 3;
+/** Hand-edited settings are bounded to keep recovery finite and reviewable. */
+export const MAX_ZOMBIE_RETRY_ATTEMPTS = 10;
 
 export interface ZombieRetryStreak {
   key: string;
@@ -271,12 +277,18 @@ export function zombieRetryDecision(
   observedStreamAt: number,
   key: string,
   prev: ZombieRetryStreak,
+  maxAttempts = DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS,
 ): { retry: boolean; streak: ZombieRetryStreak } {
+  const limit = Number.isInteger(maxAttempts) && maxAttempts >= 0
+    ? Math.min(maxAttempts, MAX_ZOMBIE_RETRY_ATTEMPTS)
+    : DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS;
   const sameEpisode = key === prev.key && observedStreamAt <= prev.lastAbortStreamAt;
+  // Keep one terminal refusal count beyond the retry budget so repeated
+  // heartbeat observations remain cheap and deterministic.
   const streak: ZombieRetryStreak = sameEpisode
-    ? { key, count: Math.min(prev.count + 1, 2), lastAbortStreamAt: observedStreamAt }
+    ? { key, count: Math.min(prev.count + 1, MAX_ZOMBIE_RETRY_ATTEMPTS + 1), lastAbortStreamAt: observedStreamAt }
     : { key, count: 1, lastAbortStreamAt: observedStreamAt };
-  return { retry: streak.count === 1, streak };
+  return { retry: streak.count <= limit, streak };
 }
 
 // =================================================================
