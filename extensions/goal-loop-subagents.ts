@@ -25,8 +25,8 @@
 // to add embedded copies here.
 
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 /** Frontmatter marker identifying files this module wrote. Files without it
  * are user-owned: never modified, never deleted. */
@@ -178,9 +178,11 @@ const EMBEDDED_DEFAULTS: Record<string, EmbeddedAgentDefault> = {
 export const OVERRIDABLE_AGENT_TYPES = Object.keys(EMBEDDED_DEFAULTS);
 
 /** Default global agent dir (pi-subagents reads $PI_CODING_AGENT_DIR/agents,
- * default ~/.pi/agent/agents). Parameterized in sync for tests. */
+ * default ~/.pi/agent/agents). Delegate to pi's runtime resolver so custom
+ * `PI_CODING_AGENT_DIR` and future app-specific config-dir names stay aligned
+ * with the host rather than being silently ignored by glla. */
 export function defaultAgentDir(): string {
-  return path.join(os.homedir(), ".pi", "agent");
+  return getAgentDir();
 }
 
 /** Build the override .md file content. With `model`, the pin is written;

@@ -148,8 +148,26 @@ test("sync: override for a non-embedded agent type → skipped with note", () =>
   assert.equal(readOverride(dir, "Custom"), undefined);
 });
 
-test("defaultAgentDir points at ~/.pi/agent", () => {
-  assert.equal(defaultAgentDir(), path.join(os.homedir(), ".pi", "agent"));
+test("defaultAgentDir follows PI_CODING_AGENT_DIR when the host overrides it", () => {
+  const prior = process.env.PI_CODING_AGENT_DIR;
+  const custom = path.join(os.tmpdir(), "glla-custom-agent-dir");
+  process.env.PI_CODING_AGENT_DIR = custom;
+  try {
+    assert.equal(defaultAgentDir(), custom);
+  } finally {
+    if (prior === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = prior;
+  }
+});
+
+test("defaultAgentDir points at ~/.pi/agent by default", () => {
+  const prior = process.env.PI_CODING_AGENT_DIR;
+  delete process.env.PI_CODING_AGENT_DIR;
+  try {
+    assert.equal(defaultAgentDir(), path.join(os.homedir(), ".pi", "agent"));
+  } finally {
+    if (prior !== undefined) process.env.PI_CODING_AGENT_DIR = prior;
+  }
 });
 
 // ---- Drift guard: embedded copies vs the installed pi-subagents ----
