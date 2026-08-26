@@ -122,7 +122,7 @@ test("E1: loud first-failure notify + recovery notify at the persistState choke 
 
 test("E1: TUI persistence-degraded flag (first widget line, until a write lands)", () => {
   assert.match(DISPLAY, /import \{ [^}]*isPersistenceDegraded, lastPersistenceFailure[^}]* \} from "\.\/goal-loop-core\.js";/);
-  assert.match(DISPLAY, /if \(inner && isPersistenceDegraded\(\)\) \{/);
+  assert.match(DISPLAY, /if \((?:withAgents|inner) && isPersistenceDegraded\(\)\) \{/);
   assert.match(DISPLAY, /⚠ persistence degraded — \.pi-glla writes failing/);
 });
 
