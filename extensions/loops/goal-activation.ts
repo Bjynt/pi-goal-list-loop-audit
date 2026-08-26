@@ -480,6 +480,8 @@ function scheduleZombieAutoRetry(
     delayMs: zombieRetryDelayOverride ?? ZOMBIE_RETRY_DELAY_MS,
   });
   if (!retry) return plan;
+  const retryAttempt = plan.attempt;
+  const retryMaxAttempts = plan.maxAttempts;
   if (zombieRetryTimer) {
     clearTimeout(zombieRetryTimer);
     zombieRetryTimer = null;
@@ -561,15 +563,13 @@ export function __testOnlySetZombieRetryDelay(ms: number | null): void {
   zombieRetryDelayOverride = ms;
 }
 
-/** v0.35.x (amended v0.35.17): terminate one confirmed zero-stream host turn
- * and park the owning goal/list item before asking pi to abort. This is
- * deliberately an activation-owned operation: it can clear the durable
- * continuation sidecar, stand down re-arms, and validate the current
- * generation before touching the host. A later /goal or /list resume
- * explicitly clears the stand-down and starts a new attempt — and since
- * v0.35.17, the FIRST silence of a streak additionally arms ONE bounded
- * automatic retry (scheduleZombieAutoRetry below); only a second consecutive
- * zero-stream abort leaves the park purely manual. */
+/** v0.35.x: terminate one confirmed zero-stream host turn and park the
+ * owning goal/list item before asking pi to abort. This is deliberately an
+ * activation-owned operation: it can clear the durable continuation sidecar,
+ * stand down re-arms, and validate the current generation before touching the
+ * host. A later /goal or /list resume explicitly clears the stand-down and
+ * starts a new attempt; each uninterrupted silence can also consume the
+ * configured bounded retry budget through scheduleZombieAutoRetry below. */
 export function abortZombieRun(
   ctx: ExtensionContext,
   generation: number,
@@ -601,7 +601,7 @@ export function abortZombieRun(
       status: "paused",
       pauseKind: "error",
       pauseReason: reason,
-      pauseSuggestedAction: `The stalled ${noun} turn was aborted safely and the work is saved. ${activeGoalSurfaceCommand("resume")} retries it once; ${activeGoalSurfaceCommand("cancel")} discards it.`,
+      pauseSuggestedAction: `The stalled ${noun} turn was aborted safely and the work is saved. Automatic retries use the configured zero-stream budget; ${activeGoalSurfaceCommand("resume")} retries immediately and ${activeGoalSurfaceCommand("cancel")} discards it.`,
     }, current);
   } else if (loop) {
     clearLoopTimer();
@@ -626,14 +626,14 @@ export function abortZombieRun(
   });
   const resume = goal ? activeGoalSurfaceCommand("resume") : "/loop resume";
   const cancel = goal ? activeGoalSurfaceCommand("cancel") : "/loop stop";
-  // v0.35.17: ONE bounded automatic retry per zero-stream streak — the park
-  // becomes a 90-second waystation instead of a dead end for the first
-  // silence. A refused streak (second consecutive hang) keeps the manual copy.
-  const retryScheduled = scheduleZombieAutoRetry(current, generation, goal?.id, observedStreamAt, silentMinutes);
+  // v0.35.x: keep the park as a bounded waystation for repeated
+  // zero-stream attempts. Once the configured budget is exhausted the
+  // refusal remains manual and durable.
+  const retryPlan = scheduleZombieAutoRetry(current, generation, goal?.id, observedStreamAt, silentMinutes);
   const message = `${goal ? goal.policy === "list" ? "List item" : "Goal" : "Loop"} paused after ${silentMinutes}m with zero stream activity; the zombie turn was aborted and queued retries were stopped. Work is saved. ${
-    retryScheduled
-      ? `An automatic retry starts in ~90s; ${resume} retries immediately instead.`
-      : `${resume} retries it, or ${cancel} discards/stops it.`
+    retryPlan.scheduled
+      ? `Automatic retry ${retryPlan.attempt}/${retryPlan.maxAttempts} starts in ~90s; ${resume} retries immediately instead.`
+      : `${resume} retries it, or ${cancel} discards/stops it; the automatic retry budget is exhausted.`
   }`;
   current.ui.notify(message, abortError ? "warning" : "info");
   notifyExternal(current, message);

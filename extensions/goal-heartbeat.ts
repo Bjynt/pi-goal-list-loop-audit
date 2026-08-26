@@ -1036,7 +1036,7 @@ function heartbeatTick(): void {
   // v0.29.16/v0.35.x: zombie-run watchdog. pi reports BUSY (a run is
   // "active") but zero stream events for the warning window — the provider
   // stream has likely hung silently, and queued continuations cannot land.
-  // Keep the first warning human-readable, then apply one bounded automatic
+  // Keep the first warning human-readable, then apply bounded automatic
   // abort/cleanup after the grace window. A notification-only Esc instruction
   // left list items ACTIVE for 85–96 minutes in the field; the bounded abort
   // now parks the item and leaves /list resume + /list cancel as explicit,
