@@ -91,14 +91,19 @@ test("v0.35.29 #15: the compact worker summary hides at zero and warns on the le
 });
 
 test("v0.35.65: detailed widget rows expose identity, purpose, evidence-backed phase, elapsed, silence, and overflow", () => {
+  const active = row({ recordId: "active-1", agentType: "Explore", summary: "inspect auth flow", phase: "active", startedAt: NOW - 3 * MIN, silentMs: 5_000 });
+  const detail = renderAgentsWidgetLines([active], NOW, 1);
+  assert.match(detail[0]!, /Explore · inspect auth flow · id active-1 · RUNNING · ACTIVE · 3m00s · silent 5s/);
+
   const lines = renderAgentsWidgetLines([
-    row({ recordId: "active-1", agentType: "Explore", summary: "inspect auth flow", phase: "active", startedAt: NOW - 3 * MIN, silentMs: 5_000 }),
+    active,
     row({ recordId: "hung-2", agentType: "Plan", summary: "audit recovery", status: "hung", phase: "hung", silentMs: 26 * MIN }),
-    row({ recordId: "ended-3", status: "ended", phase: "ended", endedAt: NOW - MIN }),
-  ], NOW, 1);
-  assert.equal(lines.length, 2, "one row plus an explicit overflow affordance");
-  assert.match(lines[0]!, /Explore · inspect auth flow · id active-1 · RUNNING · ACTIVE · 3m00s · silent 5s/);
-  assert.match(lines[1]!, /1 more agents · \/glla agents/);
+    row({ recordId: "queued-3", agentType: "Plan", summary: "wait for slot", status: "queued", phase: "queued", silentMs: 2_000 }),
+  ], NOW, 2);
+  assert.equal(lines.length, 3, "two rows plus an explicit overflow affordance");
+  assert.match(lines[0]!, /Plan · audit recovery · id hung-2 · HUNG\? · HUNG/);
+  assert.match(lines[1]!, /Explore · inspect auth flow · id active-1/);
+  assert.match(lines[2]!, /1 more agents · \/glla agents/);
 });
 
 test("v0.35.29 #15: --tail matches by needle, takes newest mtime, formats entries tolerantly", () => {
