@@ -5,7 +5,7 @@
 // Pure rendering + data assembly for:
 //   1. /glla agents            — tracked-subagent snapshot table
 //   2. /glla agents --tail <id> — read-only child transcript tail
-//   3. the widget agents segment (line built here, appended by the widget)
+//   3. the widget worker rows (shared labels/state formatting with the panel)
 //
 // Everything here is deterministic given its inputs; fs access happens only
 // in tailChildTranscript through an injected reader so tests stay hermetic.

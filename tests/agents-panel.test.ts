@@ -2,8 +2,8 @@
 // tests/agents-panel.test.ts
 //
 // GitHub issue #15 implementation: /glla agents panel + child transcript
-// tail + widget segment, per docs/DESIGN-subagent-visibility.md (scope
-// agreed 2026-08-22: panel + tail + widget line; live stream rejected).
+// tail + detailed widget rows, per docs/DESIGN-subagent-visibility.md (scope
+// agreed 2026-08-22: panel + tail + widget projection; live stream rejected).
 //
 // Rendering is pure and fixture-tested here; the command dispatch and the
 // widget append are exercised through the real MockPi surfaces.
@@ -224,7 +224,8 @@ test("v0.35.65: buildWidgetLines places detailed worker rows before the card foo
   assert.ok(!base.some((l) => l.includes("agent:")), "hidden at zero tracked children");
   const compactStatus = buildStatusText(state, undefined, NOW, undefined, { agents: { line: "● 2 agents · Explore silent 26m", lines: [] } })!;
   assert.match(compactStatus, /2 agents · Explore silent 26m/);
-  const auditStatus = buildStatusText({ ...state, goal: { ...(state as any).goal, status: "auditing" } } as never, undefined, NOW, undefined, { agents: { line: "● 2 agents · Explore silent 26m", lines: [] } })!;
+  const stateRecord = state as unknown as { goal: Record<string, unknown>; [key: string]: unknown };
+  const auditStatus = buildStatusText({ ...stateRecord, goal: { ...stateRecord.goal, status: "auditing" } } as never, undefined, NOW, undefined, { agents: { line: "● 2 agents · Explore silent 26m", lines: [] } })!;
   assert.doesNotMatch(auditStatus, /2 agents/);
   const agentAt = withAgents.findIndex((l) => l.includes("agent: Explore · inspect auth"));
   const footerAt = withAgents.findIndex((l) => l.startsWith("└─"));
