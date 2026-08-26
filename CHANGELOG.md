@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.35.66 — compiled-host auditor launcher (2026-08-26)
+
+### Fixed
+  Detached completion audits no longer launch the worker with a compiled Pi
+  executable. The process layer preserves explicit runtime overrides, keeps
+  Node/Node.js/Bun/Deno `process.execPath` values, and falls back to `node` for
+  compiled hosts that would otherwise parse worker flags such as `--job-dir`.
+
+### Tests
+  Runtime-resolution coverage includes Unix, Windows, Node.js aliases, Bun,
+  Deno, compiled Pi paths, and bare executable names. The existing explicit
+  runtime-override transport regression remains covered.
+
 ## 0.35.65 — status surfaces and worker liveness (2026-08-26)
 
 ### Added

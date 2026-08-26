@@ -8,10 +8,11 @@ active work is the maintainer issue/PR review documented below.
 ## Maintainer issue and PR review
 
 The live inventory is recorded in
-`audit/GITHUB-MAINTAINER-INVENTORY-2026-08-25.md`. Four plugin-owned issues
-(#23, #30, #32, #34), the related launcher PR #24, and two blocked feature PRs
-(#22, #36) need explicit follow-up decisions; upstream/out-of-scope requests
-remain catalogued without local action.
+`audit/GITHUB-MAINTAINER-INVENTORY-2026-08-25.md`. The compiled-host auditor
+launcher issue #23 is fixed locally and released in v0.35.66 without merging
+PR #24. Remaining plugin-owned issues (#30, #32, #34), the two blocked feature
+PRs (#22, #36), and upstream/out-of-scope requests still need explicit
+follow-up decisions.
 
 ## Compaction fallback for long goals
 
@@ -85,6 +86,14 @@ status/worker tests, and the release fixture review from 2026-08-26.
 Validation: 124 focused status tests, 30 worker lifecycle tests, the full
 release gate (1601 pass, 1 skip, 0 fail), clean TypeScript, offline auditor
 validation, and the expected 76-file npm package.
+
+## Compiled-host auditor launcher (#23)
+
+The detached auditor now resolves `process.execPath` only when it names a
+JavaScript runtime (`node`, `nodejs`, `bun`, or `deno`); compiled Pi hosts fall
+back to `node`, while explicit runtime overrides remain authoritative. The
+fix was selectively ported from PR #24, covered by `tests/auditor-process.test.ts`,
+and released as v0.35.66. PR #24 itself remains unmerged.
 
 ## Documentation and test-boundary cleanup
 
