@@ -120,6 +120,12 @@ export interface LoopState {
   tokenBudget?: number;
   /** v0.15.0: accumulated loop tokens (input+output), orchestrator-counted. */
   tokensUsed?: number;
+  /** v0.35.x: optional minimum gap between successful metricless-loop
+   * iterations. Units are milliseconds internally; absent means unchanged
+   * immediate cadence. */
+  minimumIterationIntervalMs?: number;
+  /** v0.35.x: completion timestamp used to arm the next cadence window. */
+  lastIterationCompletedAt?: string;
   /** v0.15.0: living spec — user-confirmed target/measure refinements. */
   refinements?: LoopRefinement[];
   /** branch=1 mode: scratch branch holding the loop's commits. */
@@ -399,6 +405,8 @@ export function parseLoopStartArgs(raw: string): {
   timeLimitHours?: number;
   tokenBudget?: number;
   toolSameRepeat?: number;
+  /** v0.35.x: optional metricless minimum cadence, supplied in seconds. */
+  minimumIterationIntervalMs?: number;
 } {
   // Key=value pairs first (measure= and direction= may hold quoted values),
   // the remaining text is the target. v0.35.4: quoted spans are TARGET
@@ -409,7 +417,7 @@ export function parseLoopStartArgs(raw: string): {
   let rest = raw.trim();
   const kv = new Map<string, string>();
   const kvRe = /(\w+)=(?:"([^"]*)"|'([^']*)'|(\S+))/g;
-  const KNOWN_KEYS = new Set(["measure", "direction", "window", "max", "branch", "force", "done", "time", "tokens", "toolsamerepeat"]);
+  const KNOWN_KEYS = new Set(["measure", "direction", "window", "max", "branch", "force", "done", "time", "tokens", "toolsamerepeat", "cadence"]);
   const quoteSpans: Array<[number, number]> = [];
   const quoteRe = /"([^"]*)"|'([^']*)'/g;
   let qm: RegExpExecArray | null;
@@ -464,6 +472,10 @@ export function parseLoopStartArgs(raw: string): {
   }
   const timeRaw = Number.parseFloat(kv.get("time") ?? "");
   const tokensRaw = Number.parseInt(kv.get("tokens") ?? "", 10);
+  const cadenceRaw = Number.parseFloat(kv.get("cadence") ?? "");
+  const cadenceMs = Number.isFinite(cadenceRaw) && cadenceRaw > 0
+    ? Math.min(Math.round(cadenceRaw * 1_000), 24 * 60 * 60_000)
+    : undefined;
   return {
     target,
     measureCmd: metricless ? "" : measureRaw,
@@ -484,6 +496,7 @@ export function parseLoopStartArgs(raw: string): {
       const n = Number.parseInt(raw, 10);
       return Number.isInteger(n) && n >= 0 ? n : undefined;
     })(),
+    ...(cadenceMs !== undefined ? { minimumIterationIntervalMs: cadenceMs } : {}),
   };
 }
 
