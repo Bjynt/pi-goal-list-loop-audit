@@ -752,13 +752,13 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     },
   });
   pi.registerCommand("loop", {
-    description: "Loop 3: metric-driven process — it never completes. /loop <target> drafts the metric with you · /loop start \"<target>\" = infinite metricless loop (no plateau, no cap; ends at time=/tokens= or /loop stop) · /loop respec = infinite metricless reconcile against the root SPEC.md · add measure=\"<cmd>\" direction=min|max [window=5] [max=50] [branch=1] for a metric loop · /loop status · /loop stop (alias /loop cancel). 'Improve until X' is a /goal, not a loop.",
+    description: "Loop 3: metric-driven process — it never completes. /loop <target> drafts the metric with you · /loop start \"<target>\" = infinite metricless loop (no plateau, no cap; ends at time=/tokens= or /loop stop) · /loop respec = infinite metricless reconcile against the root SPEC.md · add measure=\"<cmd>\" direction=min|max [window=5] [max=50] [cadence=<seconds>] [branch=1] for a loop · cadence is opt-in and limits automatic wakes between successful iterations · /loop status · /loop stop (alias /loop cancel). 'Improve until X' is a /goal, not a loop.",
     getArgumentCompletions: completions([
-      ["start", "skip drafting: /loop start \"<target>\" measure=\"<cmd>\" direction=min|max [window=5] [max=50]"],
+      ["start", "skip drafting: /loop start \"<target>\" measure=\"<cmd>\" direction=min|max [window=5] [max=50] [cadence=<seconds>]"],
       ["respec", "infinite metricless loop reconciling the codebase against the root SPEC.md"],
       ["plan", "extended loop draft: deep research + multi-round metric design, same Confirm as a regular draft"],
       ["audit", "project-audit loop: each iteration audits fresh, appends findings, fixes the top ones — plateau stops when the well is dry (v0.29.0)"],
-      ["status", "show metric, iteration, best/last values, stall count"],
+      ["status", "show metric, iteration, best/last values, stall count, and cadence"],
       ["resume", "resume a held loop (session-restore gate / manual main-model recovery)"],
       ["refine", "queue an operator respec suggestion into the next iteration's prompt: /loop refine <text>"],
       ["polish", "alias of /loop refine"],

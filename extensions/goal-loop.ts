@@ -1069,7 +1069,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
         ctx.ui.notify(formatLoopRecoveryStatus(ctx), "info");
         return;
       }
-      ctx.ui.notify("No loop. /loop to draft one, /loop start \"<target>\" for an infinite metricless loop, or add measure=\"<cmd>\" direction=min|max for a metric loop [window=5] [max=50] [time=<hours>] [tokens=<budget>]", "info");
+      ctx.ui.notify("No loop. /loop to draft one, /loop start \"<target>\" for an infinite metricless loop, or add measure=\"<cmd>\" direction=min|max for a metric loop [window=5] [max=50] [time=<hours>] [tokens=<budget>] [cadence=<seconds>]", "info");
       return;
     }
     const lines = [
