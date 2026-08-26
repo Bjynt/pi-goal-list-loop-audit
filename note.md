@@ -1,22 +1,7 @@
 # Now
 
-## Better status visuals, not just better but arguably broken
-
-The status/widget surfaces deserve a visual pass: decide what a user needs to
-see for active work, queues, auditor state, stalls, recovery, and optional
-subagents without turning the TUI into a wall of text. The existing
-`/glla agents` panel tracks workers, but most sessions have few; each visible
-worker should still make its purpose and current activity understandable.
-
-Evidence:
-- /home/dracon/Pictures/Screenshots/Screenshot_20260822_132806.png
-- /home/dracon/Pictures/Screenshots/Screenshot_20260822_200250.png
-- /home/dracon/Pictures/Screenshots/Screenshot_20260825_223048.png
-
-> Most of the time we dont have that many subagents showing what they are and what they do would be useful
-/home/dracon/Pictures/Screenshots/Screenshot_20260825_225550.png
-
-> After better visuals we also plan on uploading a thumnail for the start of the readme that is also the thumbnail on the pi store
+The status-surface redesign is complete and recorded under `# Done`. The next
+active work is the maintainer issue/PR review documented below.
 
 # Next
 
@@ -44,6 +29,11 @@ custom `PI_CODING_AGENT_DIR` instead of assuming `~/.pi/agent`. Keep this
 runtime boundary separate from README wording tests.
 
 # Later
+
+## README/Pi Store thumbnail
+
+After the status-surface work, upload a thumbnail for the README opening and Pi
+Store listing. Keep this separate from runtime UI and release behavior.
 
 ## `/glla bug` capture flow
 
@@ -78,6 +68,23 @@ end, ask only when the choice changes the result, and gather more constraints
 in the initial draft.
 
 # Done
+
+## Status-surface redesign
+
+Implemented the shared evidence-backed status projection: the persistent footer
+is compact global liveness and command discovery; the widget shows detailed
+current work, queues, stalls, recovery, and worker rows; and `/glla agents`
+provides expanded inspection. Worker rows now expose sanitized identity/purpose,
+coarse phase/status, elapsed time, silence age, ownership-safe lifecycle state,
+and explicit overflow. Detached completion-auditor evidence remains separate.
+
+Evidence: `extensions/goal-agents-panel.ts`, `extensions/goal-heartbeat.ts`,
+`extensions/goal-loop-display.ts`, `extensions/loops/goal-ui.ts`, the focused
+status/worker tests, and the release fixture review from 2026-08-26.
+
+Validation: 124 focused status tests, 30 worker lifecycle tests, the full
+release gate (1601 pass, 1 skip, 0 fail), clean TypeScript, offline auditor
+validation, and the expected 76-file npm package.
 
 ## Documentation and test-boundary cleanup
 

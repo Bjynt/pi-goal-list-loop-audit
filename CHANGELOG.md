@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.35.65 — status surfaces and worker liveness (2026-08-26)
+
+### Added
+  The persistent footer now stays compact and global, while the detailed
+  widget and `/glla agents` share one evidence-backed worker projection. Active
+  non-auditor workers expose sanitized identity/purpose, queued/running/hung/
+  ended status, coarse phase, elapsed time, silence age, and ownership-aware
+  lifecycle evidence. Narrow widgets retain essential liveness fields and
+  point explicitly to `/glla agents` when rows overflow.
+
+### Changed
+  Detached completion-auditor evidence remains a separate verification HUD;
+  it is not mixed into the worker roster or duplicated in the global footer.
+  Existing command names, lifecycle, persistence, recovery, and auditor
+  semantics are unchanged.
+
+### Tests
+  Focused status and worker-lifecycle coverage, fresh active/queue/recovery/
+  auditor fixtures, the full release gate, TypeScript checking, offline auditor
+  validation, and npm packaging were completed for this release.
+
 ## 0.35.64 — bounded recovery for frozen subagents (2026-08-25)
 
 ### Fix
