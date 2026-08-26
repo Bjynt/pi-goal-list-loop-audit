@@ -54,6 +54,23 @@ export function isLifecycleHeldLoopReason(reason?: string): boolean {
     || !!reason?.startsWith("send-retry storm:");
 }
 
+/** A stopped loop can be respecified without discarding its history when the
+ * stop is a recoverable work failure or an explicit time/token window. Max
+ * iterations and clean/user stops remain terminal until a fresh `/loop start`.
+ */
+export function isRefinableStoppedLoopReason(reason?: string): boolean {
+  return !!reason && (
+    reason.startsWith("time bound reached")
+    || reason.startsWith("token budget exhausted")
+    || reason.startsWith("stuck —")
+    || reason.startsWith("plateau —")
+    || reason.startsWith("metric never moved —")
+    || reason.startsWith("measure command broken —")
+    || reason.startsWith("provider errors —")
+    || reason.startsWith("stalled:")
+  );
+}
+
 export interface LoopState {
   target: string;
   /** v0.23.0: optional — a metricless "spec loop" (measure=none) has no
