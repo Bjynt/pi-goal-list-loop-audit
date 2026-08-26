@@ -113,7 +113,7 @@ test("v0.35.x: repeated in-band provider tool output parks recovery without loop
   await pi.fire("agent_end", workTurn(), ctx);
   await tick();
   const l = loop(cwd);
-  assert.equal(l.active, false, "the provider recovery envelope parks the loop");
+  assert.equal(l.active, false, `the provider recovery envelope parks the loop: ${JSON.stringify({ l, recovery: readState(cwd).mainModelRecovery })}`);
   assert.match(l.stopReason ?? "", /^main model recovery — retrying in /);
   assert.equal(l.iteration, 1, "the in-band provider turn is not an iteration");
   assert.equal(l.stallCount, 0, "the in-band provider turn does not move plateau state");

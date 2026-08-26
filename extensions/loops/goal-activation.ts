@@ -1873,18 +1873,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // accounting can consume the dead turn.
     if (inBandProviderFailureRaw && isLoopActive()) {
       const raw = inBandProviderFailureRaw;
-      const tool = inBandProviderFailureTool ?? "?";
       clearInBandProviderFailure();
       const loop = state.loop!;
+      // The normal loop error branch owns the consecutive-error counter and
+      // its bounded recovery cap. Clearing the fingerprints here prevents the
+      // same pane from being reclassified before that branch runs.
       loop.recentToolResults = [];
-      loop.consecutiveErrors = (loop.consecutiveErrors ?? 0) + 1;
-      persistState(ctx);
-      appendLedger(ctx.cwd, "loop_turn_exempt_error", {
-        stopReason: "in-band-provider",
-        tool,
-        consecutive: loop.consecutiveErrors,
-        iteration: loop.iteration,
-      });
       rawLastA = { ...(rawLastA ?? {}), stopReason: "error", errorMessage: raw, content: [] };
       lastA = { stopReason: "error", text: raw, priorText: lastA?.priorText ?? "" };
     } else if (inBandProviderFailureRaw) {
