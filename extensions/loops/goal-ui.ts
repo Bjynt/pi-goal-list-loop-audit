@@ -264,7 +264,7 @@ import {
   type HeartbeatFlags,
 } from "../goal-heartbeat.js"; // decomposition step 4 (v0.34.112)
 import { getSubagentAgentsSnapshot } from "../goal-heartbeat.js";
-import { renderAgentsWidgetLine, type AgentsPanelRow } from "../goal-agents-panel.js";
+import { renderAgentsWidgetLine, renderAgentsWidgetLines, type AgentsPanelRow } from "../goal-agents-panel.js";
 import {
   clearMainModelRecoveryTimer,
   createGoalRecovery,
@@ -673,16 +673,18 @@ function refreshUI(ctx: ExtensionContext): void {
     const extras = {
       stalls: consecutiveStalls,
       recent: recentActions,
-      // v0.35.29 (issue #15): ambient tracked-subagent segment — hidden at
-      // zero tracked children (renderAgentsWidgetLine returns undefined).
+      // v0.35.29 (issue #15): tracked-subagent display is one snapshot with
+      // two projections — a compact footer summary and detailed widget rows.
+      // The detached auditor is intentionally not part of this roster.
       ...(() => {
         try {
           const { agents } = getSubagentAgentsSnapshot();
-          const line = renderAgentsWidgetLine(agents as AgentsPanelRow[]);
-          return line ? { agents: { line } } : {};
+          const rows = agents as AgentsPanelRow[];
+          const line = renderAgentsWidgetLine(rows);
+          const lines = renderAgentsWidgetLines(rows, Date.now());
+          return line || lines.length > 0 ? { agents: { line, lines } } : {};
         } catch { return {}; }
       })(),
-      ...activity,
       ...activity,
       turnPending: pendingContinuationDispatchRef() !== null,
       auditorSilent: loadSettings(ctx.cwd).auditorSilent !== false,

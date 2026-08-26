@@ -117,9 +117,10 @@ export interface ModelProvenanceDisplay {
 export interface WidgetExtras {
   stalls?: number;
   recent?: RecentActionDisplay[];
-  /** v0.35.29 (issue #15): ambient tracked-subagent segment — count + the
-   * longest-silent child. Hidden at zero tracked children. */
-  agents?: { line: string };
+  /** v0.35.29 (issue #15): one tracked-subagent snapshot projected into a
+   * compact summary plus detailed widget rows. The detached auditor stays
+   * on its own verification surface. */
+  agents?: { line?: string; lines?: string[] };
   /** Ephemeral host-session projection; never persisted as goal state. */
   activity?: GoalDisplayActivity;
   /** Last real host stream activity, excluding timer/UI ticks. */
@@ -1098,16 +1099,29 @@ function countTotal(g: Goal): number {
  */
 export function buildWidgetLines(state: State, audit?: AuditDisplayProgress | null, now = Date.now(), theme?: DisplayTheme, width?: number, extras?: WidgetExtras): string[] | undefined {
   const inner = buildWidgetLinesInner(state, audit, now, theme, width, extras);
-  // v0.35.29 (issue #15): the agents segment rides every card shape —
-  // appended before the persistence-degradation banner so that warning
-  // keeps its first-line contract.
-  if (inner && extras?.agents) inner.push(extras.agents.line);
+  const detailedAgents = extras?.agents?.lines ?? (extras?.agents?.line ? [extras.agents.line] : []);
+  let withAgents: string[] | undefined = inner;
+  if (detailedAgents.length > 0) {
+    const agentLines = detailedAgents.map((line, index) => `${index === 0 ? "├─" : "│ "} agent: ${line}`);
+    if (inner) {
+      // Keep the card footer last while making worker rows part of the same
+      // detailed widget rather than appending a disconnected second footer.
+      const footerFromEnd = [...inner].reverse().findIndex((line) => line.startsWith("└─"));
+      const insertAt = footerFromEnd >= 0 ? inner.length - 1 - footerFromEnd : inner.length;
+      withAgents = [...inner.slice(0, insertAt), ...agentLines, ...inner.slice(insertAt)];
+    } else {
+      // A worker can remain tracked while the parent card is temporarily
+      // absent. Keep that activity visible instead of hiding it with the
+      // rest of the empty state.
+      withAgents = ["● active workers", ...agentLines, "└─ /glla agents for full worker detail"];
+    }
+  }
   // v0.28.6 (E1): a persistence failure outranks everything — first line,
   // on every render, until a write lands again.
-  let lines: string[] | undefined = inner;
-  if (inner && isPersistenceDegraded()) {
+  let lines: string[] | undefined = withAgents;
+  if (withAgents && isPersistenceDegraded()) {
     const err = lastPersistenceFailure();
-    lines = [paint(theme, "error", `⚠ persistence degraded — .pi-glla writes failing (${truncate(err?.error ?? "disk error", 40)}); state in RAM`), ...inner];
+    lines = [paint(theme, "error", `⚠ persistence degraded — .pi-glla writes failing (${truncate(err?.error ?? "disk error", 40)}); state in RAM`), ...withAgents];
   }
   // String-array widgets are wrapped by pi-tui's Text component, whose
   // paddingX=1 consumes one cell on each side. Keep every emitted line inside
