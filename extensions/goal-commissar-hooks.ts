@@ -34,6 +34,7 @@ import type { Goal } from "./goal-loop-core.js";
 import { modelRef } from "./main-model-recovery.js";
 import { loadSettings } from "./goal-settings.js";
 import {
+  buildCommissarLoopPrompt,
   buildCommissarPrompt,
   normalizeCommissarIntervalMinutes,
   normalizeCommissarWantingThreshold,
@@ -42,7 +43,7 @@ import {
   runDetachedGoalCompletionAuditor,
   type AuditorModel,
 } from "./goal-loop-auditor-process.js";
-import { mainModelRecoveryActive } from "./goal-recovery.js";
+import { attemptFreshSessionRecovery, mainModelRecoveryActive } from "./goal-recovery.js";
 
 /** Wall-clock bound for ONE adherence check. A commissar that hangs is worse
  * than no commissar; the transport's own wedged-worker watchdogs still apply
@@ -60,12 +61,15 @@ interface CommissarRuntimeState {
   /** Consecutive WANTING verdicts across checks (infra failures reset nothing
    * but add nothing; ADHERENT resets to 0). */
   wantingStreak: number;
+  /** v0.37.0: the last termination forced a new main session (successor owns resumption). */
+  newSessionArmed: boolean;
 }
 
 const runtime: CommissarRuntimeState = {
   inFlight: false,
   lastCheckAt: 0,
   wantingStreak: 0,
+  newSessionArmed: false,
 };
 
 /** Test seam + session-reset hook: forget all cadence/streak memory. */
@@ -147,10 +151,12 @@ export function maybeFireCommissarCheck(
   if (settings.commissarEnabled !== true) return false;
   // Manual pause freezes every automatic side-effect (v0.35.15 semantics).
   if (supervisorPaused(state)) return false;
-  // Only an actively-executing goal has adherence to check. Auditing/paused/
-  // complete goals are other machinery's business.
-  const goal: Goal | null = state.goal;
-  if (!goal || goal.status !== "active") return false;
+  // An actively-executing goal OR loop has adherence to check (v0.37.0:
+  // loops included). Auditing/paused/complete states are other machinery's
+  // business.
+  const goal: Goal | null = state.goal?.status === "active" ? state.goal : null;
+  const loop = !goal && state.loop?.active ? state.loop : null;
+  if (!goal && !loop) return false;
   if (runtime.inFlight || opts.completionAuditInFlight) return false;
   // Provider-recovery owns the plane — do not pile a watchdog on top.
   if (mainModelRecoveryActive()) return false;
@@ -169,27 +175,43 @@ export function maybeFireCommissarCheck(
 
   runtime.inFlight = true;
   runtime.lastCheckAt = now;
+  const targetId = goal ? goal.id : "loop";
   appendLedger(ctx.cwd, "commissar_check_start", {
-    goalId: goal.id,
+    goalId: targetId,
     model: typeof model === "string" ? model : modelRef(model),
   });
 
   const dispatch = opts.dispatch ?? runDetachedGoalCompletionAuditor;
+  // Loop mode rides the same detached transport through a minimal
+  // Goal-shaped shim: the worker only renders `prompt` and keys ids off
+  // `goal.id`; the loop-specific inspection text lives in the prompt.
+  const activeGoal = goal;
+  const activeLoop = loop;
+  const dispatchGoal: Goal = goal ?? {
+    id: "loop",
+    objective: activeLoop?.target ?? "",
+    status: "active",
+    policy: "goal",
+    autoContinue: true,
+    usage: { tokensUsed: 0, tokensLimit: 0 },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
   void dispatch({
     cwd: ctx.cwd,
-    goal,
+    goal: dispatchGoal,
     role: "commissar",
-    prompt: buildCommissarPrompt(
-      goal,
-      buildCommissarEvidenceDigest(ctx.cwd, goal.id),
-    ),
+    prompt: goal
+      ? buildCommissarPrompt(goal, buildCommissarEvidenceDigest(ctx.cwd, goal.id))
+      : buildCommissarLoopPrompt(activeLoop!, buildCommissarEvidenceDigest(ctx.cwd, targetId)),
     model,
     thinkingLevel: settings.auditorThinkingLevel ?? "medium",
     runtime: { wallTimeoutMs: COMMISSAR_WALL_TIMEOUT_MS },
   })
     .catch((err: unknown) => {
       appendLedger(ctx.cwd, "commissar_infra", {
-        goalId: goal.id,
+        goalId: (activeGoal ?? dispatchGoal).id,
         error: err instanceof Error ? err.message : String(err),
       });
       return undefined;
@@ -197,7 +219,7 @@ export function maybeFireCommissarCheck(
     .then((result) => {
       runtime.inFlight = false;
       if (!result) return;
-      applyCommissarResult(ctx, goal.id, result);
+      applyCommissarResult(ctx, targetId, result);
     });
   return true;
 }
@@ -216,9 +238,14 @@ export function applyCommissarResult(
     commissar?: { adherent: boolean; wanting: boolean; reason?: string };
   },
 ): void {
-  // Stale-goal guard: the verdict belongs to whatever goal is active NOW.
-  const goal: Goal | null = state.goal;
-  if (!goal || goal.id !== goalId || goal.status !== "active") {
+  // Stale-target guard: the verdict belongs to whatever is active NOW —
+  // the active goal (goalId = its id) or the active loop (goalId = "loop").
+  const isLoopVerdict = goalId === "loop";
+  const goal: Goal | null =
+    !isLoopVerdict && state.goal?.id === goalId && state.goal.status === "active"
+      ? state.goal
+      : null;
+  if (!goal && !(isLoopVerdict && state.loop?.active)) {
     appendLedger(ctx.cwd, "commissar_verdict_stale_refused", { goalId });
     return;
   }
@@ -259,12 +286,24 @@ export function applyCommissarResult(
     return;
   }
 
-  terminateMainRunForDereliction(ctx, goal, reason);
+  if (isLoopVerdict) terminateLoopForDereliction(ctx, reason);
+  else if (goal) terminateMainRunForDereliction(ctx, goal, reason);
 }
 
 /** The termination path: mark the goal durably, abort the main run, and let
  * the agent_end "aborted" handler recognize the intentional termination via
  * goal.commissarRestart and restart the chain instead of standing down. */
+/** v0.37.0: true when the last termination forced a new main session — the
+ * OLD session's aborted handler must not also dispatch a same-session
+ * continuation (the successor's restore gate owns resumption). */
+export function commissarNewSessionPending(): boolean {
+  return runtime.newSessionArmed === true;
+}
+
+export function clearCommissarNewSessionPending(): void {
+  runtime.newSessionArmed = false;
+}
+
 export function terminateMainRunForDereliction(
   ctx: ExtensionContext,
   goal: Goal,
@@ -294,11 +333,62 @@ export function terminateMainRunForDereliction(
   } catch {
     /* notification is best-effort; the ledger + marker carry the decision */
   }
+  runtime.newSessionArmed = true;
+  // v0.37.0: prefer forcing a NEW main session — dereliction often
+  // correlates with poisoned conversation context, and a fresh session
+  // rehydrates the durable goal (commissarRestart included) and resumes it
+  // via the restore-gate continuity branch. Falls back to the legacy
+  // abort + same-session restart when the host does not expose a
+  // command-capable newSession on this context.
+  if (attemptFreshSessionRecovery(ctx, "commissar-terminate")) return;
+  runtime.newSessionArmed = false;
   try {
     ctx.abort();
   } catch (err) {
     appendLedger(ctx.cwd, "commissar_abort_failed", {
       goalId: goal.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/** v0.37.0 loop-mode termination: mark the loop durably, then force a new
+ * main session when possible; otherwise abort and let the aborted handler
+ * restart the SAME loop from its next iteration with the directive loaded.
+ * The marker keeps state.loop.active — this is a replacement, not a stop. */
+export function terminateLoopForDereliction(ctx: ExtensionContext, reason: string): void {
+  runtime.wantingStreak = 0;
+  const at = nowIso();
+  const loop = state.loop;
+  if (!loop || !loop.active) return;
+  state.loop = { ...loop, commissarRestart: { at, reason } };
+  const persistState = (globalThis as any).persistState as
+    | ((ctx: ExtensionContext) => void)
+    | undefined;
+  if (typeof persistState !== "function") {
+    appendLedger(ctx.cwd, "commissar_terminate_refused", {
+      goalId: "loop",
+      reason: "persistState bridge unavailable",
+    });
+    return;
+  }
+  persistState(ctx);
+  appendLedger(ctx.cwd, "commissar_terminate", { goalId: "loop", reason });
+  try {
+    ctx.ui.notify(
+      `glla commissar: terminating the loop run — ${reason}. A fresh run continues the same target.`,
+      "warning",
+    );
+  } catch {
+    /* notification is best-effort */
+  }
+  if (attemptFreshSessionRecovery(ctx, "commissar-terminate-loop")) return;
+  runtime.newSessionArmed = false;
+  try {
+    ctx.abort();
+  } catch (err) {
+    appendLedger(ctx.cwd, "commissar_abort_failed", {
+      goalId: "loop",
       error: err instanceof Error ? err.message : String(err),
     });
   }

@@ -95,6 +95,11 @@ export interface LoopState {
   kind?: "audit";
   active: boolean;
   stopReason?: string;
+  /** v0.37.0 commissar watchdog (loop mode): set when the commissar
+   * terminated a derelict loop run. The successor session / aborted-turn
+   * handler resumes the SAME loop with the COMMISSAR RESTART finding
+   * loaded into its next iteration prompt; cleared on that dispatch. */
+  commissarRestart?: { at: string; reason: string };
   history: LoopMeasure[];
   startedAt: string;
   /** v0.15.0: arbitrary bounds (never "completion") — stop after this many hours. */

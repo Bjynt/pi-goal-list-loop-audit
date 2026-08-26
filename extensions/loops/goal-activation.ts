@@ -265,6 +265,10 @@ import {
   type ModelPickItem,
 } from "../model-picker.js";
 import { consumeRecoveryResume } from "../goal-recovery.js"; // decomposition step 3 (v0.34.111)
+import {
+  clearCommissarNewSessionPending,
+  commissarNewSessionPending,
+} from "../goal-commissar-hooks.js"; // v0.37.0 commissar new-session termination
 import { payloadGuardProjection } from "../payload-guard.js"; // v0.35.51 image-413 guard
 import { dropFailedErrorOnlyTurns, pruneCompactionPreparation } from "../context-hygiene.js"; // v0.35.52 error-turn hygiene
 import {
@@ -2004,9 +2008,17 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       // explicit decision (note.md Next #2). Validated handoffs/rebinds,
       // SAME-PROCESS successors, and the Auto-resume setting keep today's
       // continuity.
-      if (autoResume || explicitRecovery || sameProcessSuccessorResume) {
+      if (autoResume || explicitRecovery || sameProcessSuccessorResume || l.commissarRestart) {
+        // v0.37.0: a commissarRestart marker IS the restart consent — the
+        // fresh session the commissar forced must resume the loop now.
+        if (l.commissarRestart)
+          appendLedger(ctx.cwd, "commissar_restart_resumed_on_restore", {
+            goalId: "loop",
+            at: l.commissarRestart.at,
+          });
+          clearCommissarNewSessionPending();
         ctx.ui.notify(
-          `Resuming loop (iteration ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"}, best ${l.bestValue ?? "n/a"}, stall ${l.stallCount}/${l.plateauWindow}): ${displaySlice(l.target, 60)}`,
+          `Resuming loop (iteration ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"}, best ${l.bestValue ?? "n/a"}, stall ${l.stallCount}/${l.plateauWindow})${l.commissarRestart ? " — commissar-restarted run" : ""}: ${displaySlice(l.target, 60)}`,
           "info",
         );
         scheduleLoopTick(ctx);
@@ -2018,6 +2030,27 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           "info",
         );
       }
+    } else if (
+      state.goal &&
+      state.goal.status === "active" &&
+      !!state.goal.commissarRestart
+    ) {
+      // v0.37.0: active goal carrying a commissar termination marker inside
+      // a FRESH session — the commissar forced this session, so its marker
+      // is the restart consent: resume + dispatch now (holding would defeat
+      // the termination). The directive rides the continuation prompt.
+      const marker = state.goal.commissarRestart;
+      appendLedger(ctx.cwd, "commissar_restart_resumed_on_restore", {
+        goalId: state.goal.id,
+        at: marker.at,
+      });
+      clearCommissarNewSessionPending();
+      ctx.ui.notify(
+        `Resuming ${state.goal.policy === "list" ? "list item" : "goal"} after commissar termination: ${displaySlice(state.goal.objective, 70)}`,
+        "warning",
+      );
+      postRestoreGraceTurns = 2;
+      scheduleContinuation(ctx, true);
     } else if (
       state.goal &&
       state.goal.status === "active" &&
@@ -2575,6 +2608,27 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       const sr = lastA?.stopReason;
       if (sr === "error" || sr === "aborted") {
         const loop = state.loop!;
+        // v0.37.0 commissar: an abort carrying the durable loop marker is an
+        // INTENTIONAL watchdog termination, not a user Esc — restart the SAME
+        // loop now (fresh iteration carries the COMMISSAR RESTART directive)
+        // instead of counting the termination toward the 5-abort stop. When
+        // a new main session was forced, skip here: the successor's restore
+        // gate owns resumption via its own commissarRestart branch.
+        if (loop.commissarRestart) {
+          if (!commissarNewSessionPending()) {
+            appendLedger(ctx.cwd, "commissar_abort_settled", {
+              goalId: "loop",
+              at: loop.commissarRestart.at,
+              reason: loop.commissarRestart.reason,
+            });
+            ctx.ui.notify(
+              "glla commissar: loop run terminated for dereliction — a fresh iteration continues the same target now.",
+              "warning",
+            );
+            scheduleLoopTick(ctx);
+          }
+          return;
+        }
         loop.consecutiveErrors = (loop.consecutiveErrors ?? 0) + 1;
         persistState(ctx);
         appendLedger(ctx.cwd, "loop_turn_exempt_error", {
@@ -2970,6 +3024,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           at: commissarRestart.at,
           reason: commissarRestart.reason,
         });
+        // v0.37.0: when the termination forced a NEW main session, the
+        // successor's restore gate owns resumption (commissarRestart
+        // continuity branch) — dispatching here too would double-fire.
+        if (commissarNewSessionPending()) return;
         ctx.ui.notify(
           "glla commissar: run terminated for dereliction — a fresh run continues the same objective now.",
           "warning",
