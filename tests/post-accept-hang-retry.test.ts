@@ -228,10 +228,8 @@ test("v0.35.x behavioral: repeated zero-stream aborts retry until exhaustion, th
     assert.equal(aborts, attempt, `silent attempt ${attempt} is aborted`);
     const scheduled = readLedger(cwd).filter((e) => e.type === "zombie_auto_retry_scheduled");
     assert.equal(scheduled.length, attempt, `silent attempt ${attempt} is scheduled within the budget`);
-    if (attempt < DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS) {
-      await tick(200);
-      assert.equal((readState(cwd).goal as { status?: string } | null)?.status, "active");
-    }
+    await tick(200);
+    assert.equal((readState(cwd).goal as { status?: string } | null)?.status, "active");
   }
 
   // The next consecutive silence is aborted and durably refused.
