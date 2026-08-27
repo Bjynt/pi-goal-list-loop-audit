@@ -332,6 +332,7 @@ async function cmdStatus(ctx: ExtensionContext): Promise<void> {
 }
 
 async function cmdPause(ctx: ExtensionContext): Promise<void> {
+  if (warnIfStaleAtEntry(ctx, "/goal pause")) return;
   if (!state.goal) return;
   if (state.mainModelRecovery?.kind === "goal") {
     clearMainModelRecoveryTimer();
@@ -527,6 +528,7 @@ async function cmdResume(ctx: ExtensionContext): Promise<void> {
 }
 
 async function cmdCancel(ctx: ExtensionContext): Promise<void> {
+  if (warnIfStaleAtEntry(ctx, "/goal cancel")) return;
   if (stateRootPending()) {
     ctx.ui.notify("Cancel deferred — the selected sessionDir is not resolved yet, so no live state was changed. Reload the host session and retry.", "warning");
     return;
@@ -661,6 +663,7 @@ export async function cmdTweak(
   mode: "goal" | "list" = "goal",
   options: ConflictTweakOptions = {},
 ): Promise<boolean> {
+  if (warnIfStaleAtEntry(ctx, mode === "list" ? "/list tweak" : "/goal tweak")) return false;
   const current = state.goal;
   const liveListConflict = mode === "list"
     && options.allowLiveList === true

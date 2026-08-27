@@ -932,6 +932,10 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
   const parts = args.trim().split(/\s+/);
   const sub = (parts[0] ?? "").toLowerCase();
   const rest = args.trim().slice(sub.length).trim();
+  // Status is inspection-only and remains available on a stale handle. Every
+  // other route can mutate or dispatch work, so reject it before any state,
+  // recovery, or drafting side effect.
+  if (sub !== "status" && warnIfStaleAtEntry(ctx, `/loop${sub ? ` ${sub}` : ""}`)) return;
 
   if (!sub || sub === "resume") {
     releaseInitialSessionLoadBarrier();

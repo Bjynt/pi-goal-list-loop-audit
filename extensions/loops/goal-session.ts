@@ -948,6 +948,7 @@ function discardPendingListOperations(cwd: string, reason: string): void {
  * atomic-ish and the ledger is append-only. */
 const SESSION_OWNER_FILE = "session-owner.json";
 interface SessionOwnerRecord {
+  instanceId?: string;
   pid?: number;
   at?: string;
   generation?: number;
