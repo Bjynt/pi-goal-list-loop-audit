@@ -436,11 +436,37 @@ function validateCompletionSummary(text: string, ctx: ExtensionContext): string 
       flags.push(`Counts appear inconsistent: ${passed} passed vs ${total} total tests reported.`);
     }
   }
+  // Six-label recap per audit/COMPLETION-SUMMARY-POLICY-2026-08-19.md —
+  // every label must appear even when its value is "none". This is the
+  // usefulness gate: a generic "done" sentence has no evidence, file, or
+  // test pointers and the archive hand-off is poor.
+  const requiredLabels = ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"] as const;
+  const missing = requiredLabels.filter((label) => !text.toLowerCase().includes(label.toLowerCase()));
+  if (missing.length > 0) {
+    flags.push(`completionSummary missing required labels ${missing.join(", ")} — expected Outcome/Changed/Evidence/Tests/Unresolved/Next per audit/COMPLETION-SUMMARY-POLICY-2026-08-19.md.`);
+  } else if (/^\s*(done|complete|shipped|fixed|finished|all done)\s*\.?\s*$/i.test(text.trim())) {
+    flags.push(`completionSummary is generic single-word prose with no evidence — expected six labeled lines per policy.`);
+  }
   if (flags.length === 0) return text;
-  appendLedger(ctx.cwd, "completion_summary_impossible_count", {
-    flags,
-    excerpt: text.slice(0, 240),
-  });
+  const ledgerType = missing.length > 0 ? "completion_summary_missing_labels" : "completion_summary_impossible_count";
+  // Preserve the narrow impossible-count ledger name for the original case
+  // so existing log queries keep working; the missing-labels case uses its
+  // own type but still appends an honest NOTE so the auditor sees it.
+  if (missing.length > 0 && flags.some((f) => f.startsWith("Counts appear"))) {
+    appendLedger(ctx.cwd, "completion_summary_impossible_count", {
+      flags: flags.filter((f) => f.startsWith("Counts appear")),
+      excerpt: text.slice(0, 240),
+    });
+    appendLedger(ctx.cwd, ledgerType, {
+      flags: flags.filter((f) => !f.startsWith("Counts appear")),
+      excerpt: text.slice(0, 240),
+    });
+  } else {
+    appendLedger(ctx.cwd, ledgerType, {
+      flags,
+      excerpt: text.slice(0, 240),
+    });
+  }
   return `${text.trimEnd()} — NOTE: ${flags.join(" ")}`;
 }
 
