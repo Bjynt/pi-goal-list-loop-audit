@@ -88,6 +88,7 @@ import {
   ensureDirs,
   findNextPendingTask,
   goalMdPath,
+  queueItemPath,
   newGoalId,
   nowIso,
   compactDisplayText,
@@ -732,11 +733,17 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
     appendLedger(ctx.cwd, "list_objective_derived_from_contract", { queueItemId: rawNext.id, objective: derivedObjective.slice(0, 200) });
   }
   const next = { ...rawNext, ...(derivedObjective ? { objective: derivedObjective } : {}) };
+  // v0.35.72: the sidecar must be gone before the queue item leaves RAM.
+  // Otherwise a failed unlink makes the just-activated item reappear after
+  // reload as pending work. Missing sidecars are fine; failed deletion is a
+  // durable-cleanup refusal and leaves the queue untouched.
+  const sidecarPresent = !stateRootPending() && fs.existsSync(queueItemPath(ctx.cwd, next.id));
+  if (sidecarPresent && !deleteQueueItemFile(ctx.cwd, next.id)) {
+    appendLedger(ctx.cwd, "list_activation_sidecar_delete_failed", { queueItemId: next.id });
+    ctx.ui.notify("List activation paused — its durable queue sidecar could not be removed, so the item remains queued. Fix disk access and retry.", "warning");
+    return false;
+  }
   replaceState({ ...state, list: rest });
-  // v0.34.60: remove the disk sidecar. The active goal .md takes its
-  // place via setGoal → writeGoalMd; the sidecar would re-show the item
-  // as queued if a stale-handle /list read happened later.
-  deleteQueueItemFile(ctx.cwd, next.id);
   const goal = createGoal(next.objective, ctx, "list");
   if (next.agentRole) goal.agentRole = next.agentRole;
   if (next.verificationContract) {

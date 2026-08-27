@@ -209,7 +209,8 @@ export function buildAgentOverrideMd(name: string, model?: string): string {
 }
 
 function hasManagedMarker(content: string): boolean {
-  return content.includes(`x-managed-by: ${SUBAGENT_MANAGED_MARKER}`);
+  const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1];
+  return !!frontmatter?.split(/\r?\n/).some((line) => line.trim() === `x-managed-by: ${SUBAGENT_MANAGED_MARKER}`);
 }
 
 export interface SubagentSyncResult {

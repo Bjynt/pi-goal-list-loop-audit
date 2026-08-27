@@ -1312,9 +1312,12 @@ function fireReviewer(
       enqueueListItems: (objectives) => enqueueItems(ctx, objectives, "reviewer", { autoActivate: loadGlobalSettings().autoResume === true }),
       proposeGoal: (objective, reason) => {
         try {
-          safeSteerUser(ctx, 
+          const delivered = safeSteerUser(ctx,
             `[REVIEWER FOLLOW-UP — ${reason}. Propose this as a /goal via propose_goal_draft (the user Confirms or rejects): ${objective}]`);
-          return true;
+          if (!delivered) {
+            ctx.ui.notify("Postaudit /goal proposal NOT delivered — the current session is stale or handing off; the follow-up was not counted as proposed.", "warning");
+          }
+          return delivered;
         } catch (err) {
           // v0.28.8 (E4): the phantom-reviewer hole — a swallowed throw used
           // to still count as "proposed" in the report + notify. Now the
