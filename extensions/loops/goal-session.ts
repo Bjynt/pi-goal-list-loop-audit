@@ -1118,6 +1118,7 @@ export function __testOnlyResetOwnerSession(): void {
   ownerCwd = null;
   deadOwnerSession = null;
   deadOwnerCwd = null;
+  processOwnerDeniedCwd = null;
 }
 
 /** Lifecycle regression hook: drive the detached list-audit fan-out from the behavioral
@@ -1199,6 +1200,10 @@ function safeSteerUser(ctx: ExtensionContext, text: string): boolean {
  * true when the handle is stale — callers must skip send-dependent paths
  * and must NOT claim work started (S3's "created — starting now" lie). */
 function warnIfStaleAtEntry(ctx: ExtensionContext, what: string): boolean {
+  if (processOwnerDeniedCwd === ctx.cwd) {
+    ctx.ui.notify(`glla: another live pi process owns this working-directory state root — ${what} is refused here to prevent competing writes. Close the other host or select sessionDir, then start a fresh session.`, "warning");
+    return true;
+  }
   if (!probeExtensionApiStale()) return false;
   if (sessionHandoffPending) {
     ctx.ui.notify(`glla: this session is handing off to a fresh pi context — ${what} will be handled after session_start.`, "info");
@@ -1678,7 +1683,7 @@ function rememberCtx(ctx: ExtensionContext): void {
 
 /** True when ctx belongs to a subagent/foreign session, not the loop owner. */
 function isForeignCtx(ctx: ExtensionContext): boolean {
-  return isWorkerSessionCtx(ctx) || (ownerSession !== null && ctx.sessionManager !== ownerSession);
+  return processOwnerDeniedCwd === ctx.cwd || isWorkerSessionCtx(ctx) || (ownerSession !== null && ctx.sessionManager !== ownerSession);
 }
 
 /**
@@ -1780,6 +1785,8 @@ defineGoalRuntimeGlobal("zombieStoodDown", { get: () => zombieStoodDown, set: (v
 defineGoalRuntimeGlobal("ownerFilePath", { get: () => ownerFilePath });
 defineGoalRuntimeGlobal("writeOwnerFile", { get: () => writeOwnerFile });
 defineGoalRuntimeGlobal("readOwnerFile", { get: () => readOwnerFile });
+defineGoalRuntimeGlobal("claimProcessOwner", { get: () => claimProcessOwner });
+defineGoalRuntimeGlobal("processOwnerDeniedCwd", { get: () => processOwnerDeniedCwd, set: (v) => { processOwnerDeniedCwd = v as any; } });
 defineGoalRuntimeGlobal("absorbStaleIfSuperseded", { get: () => absorbStaleIfSuperseded });
 defineGoalRuntimeGlobal("goStaleTerminal", { get: () => goStaleTerminal });
 defineGoalRuntimeGlobal("consumeStaleContinuationRearm", { get: () => consumeStaleContinuationRearm });

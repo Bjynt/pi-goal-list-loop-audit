@@ -21,6 +21,8 @@ declare global {
   var ownerFilePath: any;
   var writeOwnerFile: any;
   var readOwnerFile: any;
+  var claimProcessOwner: any;
+  var processOwnerDeniedCwd: any;
   var absorbStaleIfSuperseded: any;
   var goStaleTerminal: any;
   var consumeStaleContinuationRearm: any;
