@@ -1,52 +1,25 @@
 # Now
 
-The status-surface redesign is complete and recorded under `# Done`. The
-current eight-report GLLA reconciliation is recorded in
-`audit/GITHUB-MAINTAINER-INVENTORY-2026-08-25.md`: external reports received
-boundary evidence and were closed as not planned, while the public no-stream
-containment shipped in v0.35.71.
+Active list drained — `goal:null list:0`. Last two items both auditor-approved:
+- `20260827200116-bvgqsu` /glla bug capture — `bugs/<ts>-<id>.md` via `resolveGllaStateDir`, no durable mutation.
+- `20260827203924-m13p3a` wait/duration — `estimateDurationFromHistory`/`nextPollMs` + `smoke.sh` `250→1000ms` adaptive, `audit/WAIT-ESTIMATION-2026-08-27.md`.
 
-# Next
+No active follow-up; awaiting next list.
 
-No follow-up from this reconciliation is active. GLLA continues to own only
-its lifecycle, durable state, public recovery boundaries, and evidence
-surfaces; Pi, the OS, providers, and other plugins remain outside its fix
-boundary.
+# Done
+
+- **Useful summary when objective completes** — six-label `Outcome:/Changed:/Evidence:/Tests:/Unresolved:/Next:` enforced in `goal-auditor-hooks.ts:validateCompletionSummary`, `audit/COMPLETION-SUMMARY-AUDIT-2026-08-27.md`, `tests/completion-summary-quality.test.ts` — `20260827193226-7ih651` approved.
+- **README/Pi Store thumbnail** — `media/glla2.png` (bust cache), `README.md:4` + `package.json:files` → `npm pack` includes `media`, commits `032f1761`/`ad5bd85d`.
+- **Fewer mid-execution questions** — `goal-continuation.ts` safe `freshCtx?.()?.cwd`, single `ACTIVE_EXECUTION_QUESTION_GUIDANCE` via `goal-loop-continuation.md`, `designer-drafter-policy.test.ts` — `20260827153038-hr4q8b` approved.
+- **Status-aware waiting** — `scripts/durable-wait.mjs` + `scripts/smoke.sh` durable poller, `tests/durable-wait.test.mjs`, `audit/WAIT-POLL-2026-08-27.md` — `61490f2e`/`d6e4b41`.
+- **/glla bug capture** — see Now above.
+- **Wait/duration estimation** — see Now above.
+- **Status-surface / 8-report reconciliation** — `audit/GITHUB-MAINTAINER-INVENTORY-2026-08-25.md`, v0.35.71 public no-stream containment.
 
 # Later
 
-## we always want a useful summarywhen objective completes
-
-## README/Pi Store thumbnail
-
-After the status-surface work, upload a thumbnail for the README opening and Pi
-Store listing. Keep this separate from runtime UI and release behavior.
-
-## `/glla bug` capture flow
-
-Consider a `/glla bug` command that records observed failure context and useful
-logs, while keeping the capture artifact separate from durable goal state.
-
-## audit other goal plugins
-
-pi-goal-x main one to look at as they closed their gap
+- **audit other goal plugins** — `pi-goal-x` as reference for gap closure (deferred per your call; queued after active list).
 
 # Idea
 
-## We are bad at guesing how long tasks take can we record the time it took once then guess basd on that
-
-the problem is that lately we were defaulting to some safe long waits but that is pretty bad velocity
-so i think we need a better solution
-we should investigate how oters do it like antigravity most of all is quite snappy but codex kind of too
-/home/dracon/Pictures/Screenshots/Screenshot_20260826_000412.png
-
-antigravity doesnt wait it just keep checking if done maybe we shoulddo the same cause it leads to lno guess and faster work
-
-## Fewer mid-execution questions
-
-Questions are useful for real decisions, but interrupting a list/goal/loop for
-routine implementation choices is costly. Save non-blocking questions for the
-end, ask only when the choice changes the result, and gather more constraints
-in the initial draft.
-
-
+_(none — prior ideas promoted to Done)_
