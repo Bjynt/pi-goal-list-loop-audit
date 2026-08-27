@@ -33,6 +33,9 @@ import {
 } from "../extensions/goal-loop-forever.ts";
 import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
+const LOOP_RUNTIME = readFileSync("extensions/goal-loop.ts", "utf8");
+const TOOLS_RUNTIME = readFileSync("extensions/loops/goal-tools.ts", "utf8");
+
 function freshLoop(overrides: Partial<LoopState> = {}): LoopState {
   return {
     target: "reduce failures",
@@ -578,6 +581,18 @@ test("applyMetriclessTick: time and token bounds still stop the loop", () => {
   const tk = applyMetriclessTick(byTokens, "2026-07-20T00:30:00Z");
   assert.equal(tk.kind, "stop");
   assert.match(tk.kind === "stop" ? tk.reason : "", /token budget/);
+});
+
+test("v0.35.72: all loop measure entry points are bounded and reject failed numeric output", () => {
+  const runMeasure = LOOP_RUNTIME.slice(LOOP_RUNTIME.indexOf("async function runMeasure"), LOOP_RUNTIME.indexOf("function loopPrompt"));
+  assert.match(runMeasure, /const code = typeof r\?\.code === "number" \? r\.code : \(typeof r\?\.exitCode === "number" \? r\.exitCode : 0\)/);
+  assert.match(runMeasure, /if \(code !== 0\) return null/);
+  assert.match(runMeasure, /timeout: MEASURE_TIMEOUT_MS/);
+
+  const draft = TOOLS_RUNTIME.slice(TOOLS_RUNTIME.indexOf('name: "propose_loop_draft"'), TOOLS_RUNTIME.indexOf('name: "propose_loop_refine"'));
+  const refine = TOOLS_RUNTIME.slice(TOOLS_RUNTIME.indexOf('name: "propose_loop_refine"'), TOOLS_RUNTIME.indexOf('name: "list_add"'));
+  assert.match(draft, /extensionApi\.exec\("bash", \["-c", p\.measureCmd!\], \{ cwd: liveCtx\.cwd, timeout: MEASURE_TIMEOUT_MS \}\)/);
+  assert.match(refine, /extensionApi\.exec\("bash", \["-c", newMeasure\], \{ cwd: liveCtx\.cwd, timeout: MEASURE_TIMEOUT_MS \}\)/);
 });
 
 test("applyMeasurement: max=0 = no iteration cap for measured loops either", () => {
