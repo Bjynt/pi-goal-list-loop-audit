@@ -61,6 +61,12 @@ test("fireReviewer only mines disapproved/error audit reports, never approved on
   assert.match(SRC_GOAL, /automatic postaudit must not mine the archive's Objective/);
 });
 
+test("v0.35.72: postaudit proposal counts only when safeSteerUser delivers", () => {
+  const callback = SRC_GOAL.slice(SRC_GOAL.indexOf("proposeGoal: (objective, reason)"), SRC_GOAL.indexOf("notify: (message, level)", SRC_GOAL.indexOf("proposeGoal: (objective, reason)")));
+  assert.match(callback, /const delivered = safeSteerUser/);
+  assert.match(callback, /return delivered;/);
+});
+
 test("automatic postaudit excludes archived objective/contract metadata; manual review retains it", () => {
   const archive = [
     "## Objective",
