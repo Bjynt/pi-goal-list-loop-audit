@@ -18,7 +18,7 @@ import {
   AGGRESSIVE_AUDIT_CAP,
   AGGRESSIVE_STUCK_MAX_INTERVENTIONS,
 } from "../extensions/goal-loop-core.ts";
-import { DEFAULT_SETTINGS, saveSettings, loadSettings } from "../extensions/goal-settings.ts";
+import { DEFAULT_SETTINGS, saveSettings, loadSettings, settingsProvenance } from "../extensions/goal-settings.ts";
 
 test("aggressiveMode persists through the settings file (item 8)", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-aggr-"));
@@ -71,6 +71,23 @@ test("explicit per-key settings WIN over aggressiveMode (advisor semantics)", ()
   assert.equal(eff.autoResume, false);
   // ...but untouched keys still flip:
   assert.equal(eff.stuckMaxInterventions, AGGRESSIVE_STUCK_MAX_INTERVENTIONS);
+});
+
+test("autoResume is global-only in the effective settings and provenance", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-autoresume-scope-"));
+  const globalPath = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
+  const hadGlobal = fs.existsSync(globalPath);
+  const priorGlobal = hadGlobal ? fs.readFileSync(globalPath, "utf8") : undefined;
+  try {
+    fs.mkdirSync(path.dirname(globalPath), { recursive: true });
+    fs.writeFileSync(globalPath, JSON.stringify({ aggressiveMode: false }));
+    saveSettings("project", dir, { autoResume: true });
+    assert.equal(loadSettings(dir).autoResume, undefined, "a project autoResume key is ignored");
+    assert.equal(settingsProvenance(dir).autoResume.source, "default");
+  } finally {
+    if (priorGlobal === undefined) fs.rmSync(globalPath, { force: true });
+    else fs.writeFileSync(globalPath, priorGlobal);
+  }
 });
 
 test("obsolete quota policy files cannot change the generic retry settings", () => {
