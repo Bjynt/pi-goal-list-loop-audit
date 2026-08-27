@@ -61,6 +61,15 @@ test("release contract: first-use README guidance matches current behavior", () 
   assert.doesNotMatch(readme, /cargo test/);
 });
 
+test("release contract: smoke waits use durable or literal transition markers", () => {
+  const smoke = fs.readFileSync("scripts/smoke.sh", "utf-8");
+  assert.match(smoke, /wait_for\(\) \{ # wait_for <literal marker>/);
+  assert.match(smoke, /grep -Fq -- "\$pat"/);
+  assert.match(smoke, /ledger_has '\"approved\":true'/);
+  assert.doesNotMatch(smoke, /wait_for "\?"/);
+  assert.doesNotMatch(smoke, /wait_for "Yes"/);
+});
+
 test("release workflow scopes trusted-publishing OIDC to the publish job", () => {
   const workflow = fs.readFileSync(".github/workflows/publish.yml", "utf-8");
   const jobsAt = workflow.indexOf("jobs:\n");
