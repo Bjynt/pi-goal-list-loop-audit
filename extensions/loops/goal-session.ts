@@ -562,6 +562,7 @@ function isProcessAlive(pid: number): boolean {
 function claimProcessOwner(cwd: string): boolean {
   if (stateRootPending()) return true;
   const file = ownerFilePath(cwd);
+  try { fs.mkdirSync(path.dirname(file), { recursive: true }); } catch { return false; }
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const fd = fs.openSync(file, "wx");
@@ -971,13 +972,20 @@ interface SessionOwnerClaim {
   previousShutdownReason: string | null;
 }
 function markSessionOwnerShutdown(cwd: string, reason: string): void {
+  const shutdownAt = new Date().toISOString();
   try {
     const p = path.join(piGlaDir(cwd), SESSION_OWNER_FILE);
     const owner = JSON.parse(fs.readFileSync(p, "utf-8")) as SessionOwnerRecord;
     if (owner.pid === process.pid) {
-      fs.writeFileSync(p, JSON.stringify({ ...owner, shutdownReason: reason, shutdownAt: new Date().toISOString() }));
+      fs.writeFileSync(p, JSON.stringify({ ...owner, shutdownReason: reason, shutdownAt }));
     }
   } catch { /* advisory sidecar — lifecycle cleanup must not throw */ }
+  try {
+    const owner = readOwnerFile(cwd);
+    if (owner?.pid === process.pid) {
+      fs.writeFileSync(ownerFilePath(cwd), JSON.stringify({ ...owner, shutdownReason: reason, shutdownAt }));
+    }
+  } catch { /* advisory lock marker — lifecycle cleanup must not throw */ }
 }
 function claimSessionOwnerAndDetectRebind(
   cwd: string,

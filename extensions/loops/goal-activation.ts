@@ -1131,6 +1131,12 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // ownership, or restore ledger write. In-memory worker managers have no
     // directory and therefore remain pending rather than falling back to cwd.
     setRuntimeSessionDirFromSessionManager(ctx.sessionManager);
+    if (!claimProcessOwner(ctx.cwd)) {
+      processOwnerDeniedCwd = ctx.cwd;
+      ctx.ui.notify("glla: another live pi process owns this working-directory state root — this session is read-only to prevent competing goal/loop writes. Close the other host or select sessionDir, then start a fresh session.", "warning");
+      return;
+    }
+    processOwnerDeniedCwd = null;
     // v0.34.73 (OPEN-ISSUES 1.12): capture the pre-rebind invalidation flags
     // BEFORE the block below clears them — the id_invalidation reason needs
     // to know which mechanism invalidated the old handle.
