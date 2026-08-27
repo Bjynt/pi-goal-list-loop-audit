@@ -11,6 +11,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { buildAuditorPiSpawnSpec } from "./goal-auditor-launch.mjs";
 
 const PI = process.env.PI_BIN ?? "pi";
 const repoRoot = path.resolve(import.meta.dirname, "..");
@@ -28,18 +29,17 @@ const provider = externalPackage
 const hermeticAgentDir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-auditor-extension-check-"));
 
 function listModels(extArg) {
-  return execFileSync(
-    "timeout",
-    ["60", PI, "--no-extensions", "-e", extArg, "--list-models"],
-    {
-      env: {
-        ...process.env,
-        PI_CODING_AGENT_DIR: hermeticAgentDir,
-        PI_OFFLINE: "1",
-      },
-      encoding: "utf8",
+  const launch = buildAuditorPiSpawnSpec(PI, ["--no-extensions", "-e", extArg, "--list-models"]);
+  return execFileSync(launch.file, launch.args, {
+    ...launch.options,
+    timeout: 60_000,
+    env: {
+      ...process.env,
+      PI_CODING_AGENT_DIR: hermeticAgentDir,
+      PI_OFFLINE: "1",
     },
-  );
+    encoding: "utf8",
+  });
 }
 
 try {

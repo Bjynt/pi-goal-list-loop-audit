@@ -160,6 +160,20 @@ test("resolveAuditorAllowedExtensions drops unresolvable entries fail-closed", (
   }
 });
 
+test("v0.35.72: project-relative auditor extensions resolve from the project settings base", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "glla-ext-project-home-"));
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "glla-ext-project-cwd-"));
+  try {
+    const projectExt = path.join(cwd, ".pi", "relext.ts");
+    fs.mkdirSync(path.dirname(projectExt), { recursive: true });
+    fs.writeFileSync(projectExt, "export default {};\n");
+    assert.deepEqual(resolveAuditorAllowedExtensions(["./relext.ts"], home, cwd), [projectExt]);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("request allowedExtensions rides the hashed payload with resolved paths", () => {
   const base = {
     protocolVersion: 1,
