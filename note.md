@@ -36,6 +36,8 @@ so i think we need a better solution
 we should investigate how oters do it like antigravity most of all is quite snappy but codex kind of too
 /home/dracon/Pictures/Screenshots/Screenshot_20260826_000412.png
 
+antigravity doesnt wait it just keep checking if done maybe we shoulddo the same cause it leads to lno guess and faster work
+
 ## Audit command naming
 
 `/list audit`, `/goal audit`, and `/loop audit` may need clearer distinctions
@@ -52,6 +54,3 @@ routine implementation choices is costly. Save non-blocking questions for the
 end, ask only when the choice changes the result, and gather more constraints
 in the initial draft.
 
-##
-
-antigravity doesnt wait it just keep checking if done maybe we shoulddo the same cause it leads to lno guess and faster work
