@@ -202,6 +202,12 @@ test("auditorExtensionArgs only emits args for a non-empty allowlist", () => {
   ]);
 });
 
+test("v0.35.72: offline auditor validation uses Node timeout support, not POSIX timeout", () => {
+  const source = fs.readFileSync(path.join(repoRoot, "scripts", "verify-auditor-extensions-offline.mjs"), "utf8");
+  assert.doesNotMatch(source, /execFileSync\(\s*"timeout"/);
+  assert.match(source, /timeout: 60_000/);
+});
+
 test("mandatory hermetic auditor-extension validation loads the resolved allowlist path", () => {
   // The release gate invokes the REAL pi with an isolated
   // PI_CODING_AGENT_DIR and PI_OFFLINE=1. The repository fixture registers a
