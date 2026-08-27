@@ -38,15 +38,6 @@ we should investigate how oters do it like antigravity most of all is quite snap
 
 antigravity doesnt wait it just keep checking if done maybe we shoulddo the same cause it leads to lno guess and faster work
 
-## Audit command naming
-
-`/list audit`, `/goal audit`, and `/loop audit` may need clearer distinctions
-from `/list start`, `/goal start`, and `/loop start`. Avoid launching a broad
-audit immediately when the user has not specified what they mean.
-
-one problem is htat hte audit often goes outside the folder so i launch audit on a page
-then next i see everything is getting audited
-
 ## Fewer mid-execution questions
 
 Questions are useful for real decisions, but interrupting a list/goal/loop for
