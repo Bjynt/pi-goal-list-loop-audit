@@ -117,7 +117,8 @@ test("v0.30.0 — rebind-first survival: session_shutdown attribution, session_s
 
 test("v0.35.72: pause and low-level activity cannot settle unrelated automatic dispatches", () => {
   const stall = CONT.slice(CONT.indexOf("export function sendStallEscalation"), CONT.indexOf("export function sendLengthContinue"));
-  const length = CONT.slice(CONT.indexOf("export function sendLengthContinue"), CONT.indexOf("/* ------------------------------------------------------------------ */"));
+  const lengthStart = CONT.indexOf("export function sendLengthContinue");
+  const length = CONT.slice(lengthStart, CONT.indexOf("/* ------------------------------------------------------------------ */", lengthStart));
   const ack = CONT.slice(CONT.indexOf("export function dispatchStartAcknowledged"), CONT.indexOf("function dispatchStartUnacknowledged"));
   assert.match(stall, /if \(supervisorPaused\(state\)\) return;/);
   assert.match(length, /if \(supervisorPaused\(state\)\) return;/);
