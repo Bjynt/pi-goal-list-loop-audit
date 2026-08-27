@@ -221,6 +221,7 @@ const loopDeps: LoopDeps = {
   sendContinuation,
   sendRearmDelayMs,
   sessionManagerId,
+  warnIfStaleAtEntry,
   startDrafting,
   activeGoalSurfaceCommand,
 };

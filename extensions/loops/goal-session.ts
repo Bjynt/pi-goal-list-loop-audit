@@ -528,6 +528,8 @@ function ownerFilePath(cwd: string): string {
 function writeOwnerFile(cwd: string): void {
   try {
     if (stateRootPending()) return;
+    const current = readOwnerFile(cwd);
+    if (current?.pid !== undefined && current.pid !== process.pid && isProcessAlive(current.pid) && !current.shutdownAt) return;
     fs.mkdirSync(piGlaDir(cwd), { recursive: true });
     fs.writeFileSync(ownerFilePath(cwd), JSON.stringify({ instanceId, pid: process.pid, at: Date.now() }));
   } catch {
@@ -535,12 +537,57 @@ function writeOwnerFile(cwd: string): void {
   }
 }
 
-function readOwnerFile(cwd: string): { instanceId?: string; pid?: number; at?: number } | null {
+function readOwnerFile(cwd: string): SessionOwnerRecord | null {
   try {
-    return JSON.parse(fs.readFileSync(ownerFilePath(cwd), "utf8")) as { instanceId?: string; pid?: number; at?: number };
+    return JSON.parse(fs.readFileSync(ownerFilePath(cwd), "utf8")) as SessionOwnerRecord;
   } catch {
     return null;
   }
+}
+
+function isProcessAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/** Atomically claim the working-directory owner file. A live foreign PID or
+ * a malformed-but-recent record blocks this process; a dead/shutdown owner
+ * may be replaced, with open(wx) deciding the final winner if two successors
+ * race to recover the same root. */
+function claimProcessOwner(cwd: string): boolean {
+  if (stateRootPending()) return true;
+  const file = ownerFilePath(cwd);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const fd = fs.openSync(file, "wx");
+      try {
+        fs.writeSync(fd, JSON.stringify({ instanceId, pid: process.pid, at: Date.now() }));
+      } finally {
+        fs.closeSync(fd);
+      }
+      return true;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST") return false;
+      const owner = readOwnerFile(cwd);
+      if (owner?.pid === process.pid) {
+        writeOwnerFile(cwd);
+        return true;
+      }
+      const released = !!owner?.shutdownAt || owner?.shutdownReason !== undefined;
+      if (released || !owner || typeof owner.pid !== "number" || !isProcessAlive(owner.pid)) {
+        try { fs.unlinkSync(file); } catch { return false; }
+        continue;
+      }
+      return false;
+    }
+  }
+  return false;
 }
 
 /** A stale probe is terminal only for ORPHANS. Returns true when the
@@ -907,6 +954,10 @@ interface SessionOwnerRecord {
   shutdownReason?: string;
   shutdownAt?: string;
 }
+
+/** A live process owns the workingDir root. A denied fresh host stays
+ * read-only until its own session_start can prove that ownership changed. */
+let processOwnerDeniedCwd: string | null = null;
 interface SessionOwnerClaim {
   rebind: boolean;
   generation: number;
