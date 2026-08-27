@@ -102,6 +102,18 @@ test("sync: user-owned file (no marker) → refused, untouched, noted", () => {
   assert.equal(fs.readFileSync(file, "utf-8"), userContent, "user file must be untouched");
 });
 
+test("sync: marker text inside a user prompt does not grant ownership", () => {
+  const dir = tmpAgentDir();
+  fs.mkdirSync(path.join(dir, "agents"), { recursive: true });
+  const file = path.join(dir, "agents", "Explore.md");
+  const userContent = `---\ndescription: my own explore\n---\n\nPrompt quotes x-managed-by: ${SUBAGENT_MANAGED_MARKER} as documentation.\n`;
+  fs.writeFileSync(file, userContent);
+  const result = syncSubagentModelOverrides({ agentDir: dir, strategy: "agent-default" });
+  assert.equal(result.removed.includes("Explore"), false);
+  assert.ok(result.skipped.some((entry) => entry.name === "Explore"));
+  assert.equal(fs.readFileSync(file, "utf-8"), userContent);
+});
+
 test("sync: strategy agent-default → managed file deleted, user file kept", () => {
   const dir = tmpAgentDir();
   // managed file present

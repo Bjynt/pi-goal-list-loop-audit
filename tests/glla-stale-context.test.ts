@@ -34,6 +34,7 @@ activate(pi.api);
 
 const MAIN_SM = { name: "main-session-manager" };
 const GLOBAL_SETTINGS_PATH = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
+const SETTINGS_UI = fs.readFileSync("extensions/loops/goal-settings-ui.ts", "utf-8");
 function setGlobalAutoResume(v: boolean): void {
   fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify(v ? { autoResume: true, aggressiveMode: false } : { aggressiveMode: false }));
 }
@@ -221,6 +222,12 @@ test("v0.34.52: the standard recovery — a fresh session reopens the settings U
 // ────────────────────────────────────────────────────────────────────
 // Source pins — the gate itself
 // ────────────────────────────────────────────────────────────────────
+
+test("v0.35.72: source — settings rechecks admission after the menu and before saves", () => {
+  assert.match(SETTINGS_UI, /if \(typeof probe === "function" && probe\(ctx, "settings edit"\)\) return;/);
+  assert.match(SETTINGS_UI, /settingsEditContext = ctx;/);
+  assert.match(SETTINGS_UI, /probe\(settingsEditContext, "settings save"\)/);
+});
 
 test("v0.34.52: source — cmdSettings captures the entry probe and gates the settings entry + mutating actions", () => {
   const SRC = fs.readFileSync("extensions/goal-commands.ts", "utf-8"); // decomposition step 2: cmdSettings moved
