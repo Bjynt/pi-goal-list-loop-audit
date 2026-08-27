@@ -74,7 +74,7 @@ export interface CommandDeps {
   freshCtxForGeneration: (generation: number) => ExtensionContext | null;
   goStaleTerminal: (ctx: ExtensionContext, where: string) => void;
   groupOpenChildren: (groupId: string) => number;
-  activateNextListItem: (ctx: ExtensionContext, n?: number, opts?: { explicit?: boolean }) => boolean;
+  activateNextListItem: (ctx: ExtensionContext, n?: number, opts?: { explicit?: boolean; displayLabel?: string }) => boolean;
   clearMainModelRecoveryTimer: () => void;
   mainModelRecoveryTimerActive: () => boolean;
   continuationDispatchPending: () => boolean;

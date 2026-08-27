@@ -35,12 +35,31 @@ import os from "node:os";
 import {
   extractSubtaskParent,
   parseListItemDeclaration,
+  visibleListPosition,
+  visibleListPositions,
   type ListItem,
 } from "../extensions/goal-loop-core.js";
 
 // =====================================================================
 // PURE TIER — parser / data model
 // =====================================================================
+
+test("v0.35.72: visible hierarchical positions map to flat queue indexes", () => {
+  const queue: ListItem[] = [
+    { id: "parent", objective: "parent", addedAt: "2026-08-27T00:00:00Z" },
+    { id: "child-a", objective: "child a", parentId: "parent", addedAt: "2026-08-27T00:01:00Z" },
+    { id: "child-b", objective: "child b", parentId: "parent", addedAt: "2026-08-27T00:02:00Z" },
+    { id: "next", objective: "next top-level", addedAt: "2026-08-27T00:03:00Z" },
+  ];
+  assert.deepEqual(visibleListPositions(queue).map((entry) => [entry.label, entry.item.id, entry.flatIndex]), [
+    ["1", "parent", 0],
+    ["1.1", "child-a", 1],
+    ["1.2", "child-b", 2],
+    ["2", "next", 3],
+  ]);
+  assert.equal(visibleListPosition(queue, "2")?.item.id, "next");
+  assert.equal(visibleListPosition(queue, "1.1")?.item.id, "child-a");
+});
 
 test("v0.34.81: SUBTASK_MARKER is line-start + case-insensitive", () => {
   assert.match("Subtask of: Parent — Child", /^[ \t]*subtask of[ \t]*:/i);

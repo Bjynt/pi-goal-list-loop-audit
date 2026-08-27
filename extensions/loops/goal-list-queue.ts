@@ -94,6 +94,7 @@ import {
   compactDisplayText,
   sanitizeDisplayText,
   piGlaDir,
+  stateRootPending,
   normalizeDraftContract,
   draftContractItemCount,
   extractVerificationContract,

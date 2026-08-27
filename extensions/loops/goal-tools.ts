@@ -41,6 +41,7 @@ import {
   claimRecoveryNotice,
   assignQueueOrder,
   visibleListPosition,
+  visibleListPositions,
   providerErrorPresentation,
   sanitizeProviderAuditReport,
   sanitizeProviderDisplayText,
