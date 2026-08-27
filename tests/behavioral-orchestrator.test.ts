@@ -2828,7 +2828,7 @@ test("goal-start notify has no (id: …) suffix (v0.28.24 source pin)", () => {
     await Promise.resolve();
     const claimed = readState(cwd).goal as { status: string; pendingCompletion?: { completionSummary?: string; phase?: string; attemptId?: string } };
     assert.equal(claimed.status, "auditing", "the claim is persisted before the auditor starts");
-    assert.equal(claimed.pendingCompletion?.completionSummary, "The lifecycle regression is covered.");
+    assert.ok(claimed.pendingCompletion?.completionSummary?.startsWith("The lifecycle regression is covered."), "the claim is persisted before the auditor starts (may carry NOTE for missing labels)");
     assert.equal(claimed.pendingCompletion?.phase, "running", "the durable claim records an active audit attempt");
     assert.ok(claimed.pendingCompletion?.attemptId, "the attempt has a durable id");
 
@@ -2839,7 +2839,7 @@ test("goal-start notify has no (id: …) suffix (v0.28.24 source pin)", () => {
 
     const after = readState(cwd).goal as { status: string; pendingCompletion?: { completionSummary?: string; phase?: string } };
     assert.ok(["auditing", "paused"].includes(after.status), "the replacement keeps the audit lifecycle recoverable");
-    assert.equal(after.pendingCompletion?.completionSummary, "The lifecycle regression is covered.", "the durable claim survived");
+    assert.ok(after.pendingCompletion?.completionSummary?.startsWith("The lifecycle regression is covered."), "the durable claim survived (may carry NOTE for missing labels)");
     assert.ok(["running", "recovery-pending"].includes(after.pendingCompletion?.phase ?? ""), "the fresh lifecycle uses an explicit phase");
     const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
     assert.match(ledger, /"audit_recovery_pending"/, "replacement marks the old attempt as recovery-pending");
@@ -3786,7 +3786,7 @@ test("v0.35.x: stale host loss releases an in-flight completion audit without a 
     assert.equal(released.pauseKind, "blocked");
     assert.match(released.pauseReason ?? "", /completion audit blocked — no verdict/);
     assert.equal(released.pendingCompletion?.phase, "recovery-pending");
-    assert.equal(released.pendingCompletion?.completionSummary, "The claim must survive a dead auditor host.");
+    assert.ok(released.pendingCompletion?.completionSummary?.startsWith("The claim must survive a dead auditor host."));
     const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
     assert.match(ledger, /"audit_recovery_pending"/);
     assert.match(ledger, /"mainReleased":true/);
