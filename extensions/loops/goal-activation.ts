@@ -730,6 +730,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       ["agents", "show tracked subagents; --tail <id> reads a child transcript"],
       ["switchlog", "show the model-switch trail (model_switch / forbidden_model_switch)"],
       ["tooloverride", "configure agent-tool visibility"],
+      ["bug", "capture failure context/logs to a separate artifact without touching durable goal state"],
     ]),
     handler: settingsHandler,
   });

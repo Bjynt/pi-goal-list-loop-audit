@@ -34,6 +34,7 @@ import { AUDIT_FINDINGS_REL, HELD_ON_RESTORE, LOOP_AUDIT_MARKER, listAuditCollec
 import { ProjectRollup, discoverGllaProjects, filterPremature, formatRollupJson, formatRollupTable, parseLedgerEntries, rollupProject } from "./goal-loop-stats.js";
 import { OVERRIDABLE_AGENT_TYPES, resolveEffectiveSubagentModel } from "./goal-loop-subagents.js";
 import { Settings, globalSettingsPath, loadSettings, projectSettingsPath, saveSettings, settingsProvenance } from "./goal-settings.js";
+import { resolveGllaStateDir } from "./glla-state-root.js";
 import { formatMainModelFallbacks, normalizeMainModelFallbackRefs } from "./main-model-recovery.js";
 import { ReviewerConfig, normalizeObjective, resolveReviewerConfig, reviewerMenuOptions } from "./reviewer.js";
 import type { SettingsSectionId } from "./settings-menu.js";
@@ -2183,6 +2184,70 @@ function cmdGllaVersion(ctx: ExtensionContext): void {
   ctx.ui.notify(formatGllaVersion(), "info");
 }
 
+// v0.35.72: /glla bug — lightweight failure capture that never touches
+// durable goal state (active.jsonl / goal md). Writes a separate artifact
+// under <stateDir>/bugs/ so the queue and active goal stay exactly as
+// they were. Stale-safe and pending-safe: read-only w.r.t. goal state.
+export function cmdGllaBug(message: string, ctx: ExtensionContext): string {
+  const gllaDir = resolveGllaStateDir(ctx.cwd);
+  const bugsDir = path.join(gllaDir, "bugs");
+  try {
+    fs.mkdirSync(bugsDir, { recursive: true });
+  } catch {}
+  const now = new Date();
+  const ts = now.toISOString().replace(/[:.]/g, "-");
+  const goalId = state.goal?.id ?? "no-goal";
+  const safeId = goalId.slice(-6);
+  const file = path.join(bugsDir, `${ts}-${safeId}.md`);
+  const lines: string[] = [];
+  lines.push(`# Bug report ${now.toISOString()}`);
+  lines.push("");
+  lines.push(`- **Cwd**: ${ctx.cwd}`);
+  lines.push(`- **Goal**: ${state.goal ? `${state.goal.id} — ${state.goal.objective.slice(0, 200)}` : "(none)"}`);
+  lines.push(`- **Goal status**: ${state.goal?.status ?? "(none)"}`);
+  if (state.goal?.verificationContract) lines.push(`- **Verification**: ${state.goal.verificationContract.slice(0, 400).replace(/\n/g, " | ")}`);
+  lines.push(`- **Policy**: ${state.goal?.policy ?? "(none)"}`);
+  lines.push(`- **List queue**: ${state.list.length} waiting`);
+  if (state.list.length) {
+    for (const item of state.list.slice(0, 10)) {
+      lines.push(`  - ${item.id}: ${item.objective.slice(0, 120)}`);
+    }
+    if (state.list.length > 10) lines.push(`  - …and ${state.list.length - 10} more`);
+  }
+  lines.push(`- **Loop**: ${state.loop ? JSON.stringify(state.loop).slice(0, 300) : "(none)"}`);
+  lines.push("");
+  lines.push(`## User message`);
+  lines.push(message ? message : "(no message — invoked as /glla bug)");
+  lines.push("");
+  lines.push(`## Snapshot`);
+  lines.push(`Captured at ${now.toISOString()} without mutating active.jsonl or goal md.`);
+  lines.push("");
+  try {
+    const ledgerPath = path.join(gllaDir, "active.jsonl");
+    const raw = fs.readFileSync(ledgerPath, "utf8").split("\n").filter(Boolean);
+    const tail = raw.slice(-20).join("\n").slice(0, 6000);
+    lines.push("### Recent active.jsonl tail (last 20 lines, read-only snapshot)");
+    lines.push("```jsonl");
+    lines.push(tail || "(empty)");
+    lines.push("```");
+  } catch {
+    lines.push("(no active.jsonl snapshot available)");
+  }
+  lines.push("");
+  lines.push(`## Notes`);
+  lines.push(`- Artifact: \`bugs/${path.basename(file)}\` under ${gllaDir}`);
+  lines.push(`- Durable goal state untouched: no persistState / appendLedger / goal md write was performed.`);
+  try {
+    fs.writeFileSync(file, lines.join("\n"));
+  } catch (e) {
+    ctx.ui.notify(`Bug capture failed to write ${file}: ${e instanceof Error ? e.message : String(e)}`, "warning");
+    return file;
+  }
+  const rel = path.relative(ctx.cwd, file) || file;
+  ctx.ui.notify(`Bug captured to ${rel} (${message ? "with message" : "no message"}). Durable goal state untouched.`, "info");
+  return file;
+}
+
 // v0.35.29 (issue #15): tracked-subagent visibility — snapshot panel plus a
 // read-only child transcript tail (design: docs/DESIGN-subagent-visibility.md).
 function cmdAgents(args: string, ctx: ExtensionContext): void {
@@ -2374,6 +2439,11 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   }
   if (/^tooloverride(?:\s|$)/.test(trimmed)) {
     await cmdToolOverride(trimmed.slice("tooloverride".length).trim(), ctx);
+    return;
+  }
+  if (/^bug(?:\s|$)/.test(trimmed)) {
+    const msg = trimmed.slice("bug".length).trim();
+    cmdGllaBug(msg, ctx);
     return;
   }
   if (trimmed) {
