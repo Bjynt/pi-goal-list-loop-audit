@@ -685,6 +685,14 @@ function notifyPersistenceState(ctx: ExtensionContext): void {
   }
 }
 
+function goalMarkdownLanded(cwd: string, goal: Goal): boolean {
+  try {
+    return !stateRootPending() && fs.readFileSync(goalMdPath(cwd, goal.id), "utf-8") === renderGoalMarkdown(goal);
+  } catch {
+    return false;
+  }
+}
+
 function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): boolean {
   // v0.28.14: never silently orphan a live goal — a paused/active goal
   // being replaced is archived honestly first (the old behavior left it in
@@ -729,34 +737,41 @@ function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): boolean {
   countedTokenMessages.clear();
   recentActions.length = 0;
   goal.createdVia = via; // v0.28.28: provenance — answerable from the ledger + /glla log
-  // v0.34.60: disk-first write order. The active-goal .md lands BEFORE
-  // the in-memory state commit, so a stale extension handle (post
-  // /reload, torn jsonl, process restart) can recover from disk. The
-  // active goal .md path is also where any state.goal.id lookup in a
-  // fresh process lands, so writing it first closes the
-  // "in-memory knows about a goal the disk does not" gap.
-  const file = writeGoalMd(ctx.cwd, goal);
-  replaceState({ ...state, goal }); // preserve list AND loop (v0.28.14: the bare reconstruction used to nuke a held/active loop whenever a goal was set)
-  state.goal!.activePath = path.relative(ctx.cwd, file) || file;
-  persistState(ctx);
+  // v0.35.72: journal the complete next state before either projection is
+  // changed. If the process dies between the markdown and JSONL writes,
+  // readState can recover this snapshot instead of resurrecting an older
+  // status/objective from the last state line.
+  const file = goalMdPath(ctx.cwd, goal.id);
+  const nextGoal: Goal = { ...goal, activePath: path.relative(ctx.cwd, file) || file };
+  if (!writeGoalStateTransaction(ctx.cwd, { ...state, goal: nextGoal })) {
+    ctx.ui.notify("New objective not started — the durable goal transaction could not be written. Fix .pi-glla storage and retry.", "warning");
+    return false;
+  }
+  writeGoalMd(ctx.cwd, nextGoal);
+  replaceState({ ...state, goal: nextGoal }); // preserve list AND loop (v0.28.14: the bare reconstruction used to nuke a held/active loop whenever a goal was set)
+  const stateLanded = persistState(ctx);
+  if (stateLanded && goalMarkdownLanded(ctx.cwd, nextGoal)) clearGoalStateTransaction(ctx.cwd);
   appendLedger(ctx.cwd, "goal_created", { goalId: goal.id, objective: goal.objective, policy: goal.policy, via });
   return true;
 }
 
-function updateGoal(patch: Partial<Goal>, ctx: ExtensionContext): void {
-  if (!state.goal) return;
-  // v0.34.60: write the active-goal .md BEFORE the in-memory commit and
-  // BEFORE persistState (which appends to active.jsonl). If the
-  // orchestrator turn dies between the in-memory commit and the disk
-  // write, the file is already on disk; if it dies between the disk
-  // write and active.jsonl, the file is still there. The only failure
-  // mode that loses the write is the disk write itself — exactly the
-  // path runPersistStep already guards.
+function updateGoal(patch: Partial<Goal>, ctx: ExtensionContext): boolean {
+  if (!state.goal) return false;
   const next: Goal = { ...state.goal, ...patch, updatedAt: nowIso() };
-  const file = writeGoalMd(ctx.cwd, next);
-  state.goal = next;
-  state.goal.activePath = path.relative(ctx.cwd, file) || file;
-  persistState(ctx);
+  const file = goalMdPath(ctx.cwd, next.id);
+  const nextGoal: Goal = { ...next, activePath: path.relative(ctx.cwd, file) || file };
+  // v0.35.72: the transaction snapshot closes the crash window between the
+  // markdown projection and the append-only state ledger. A later restart
+  // adopts it only when it is newer than the last committed state line.
+  if (!writeGoalStateTransaction(ctx.cwd, { ...state, goal: nextGoal })) {
+    ctx.ui.notify("Goal update was not persisted — the durable goal transaction could not be written. Fix .pi-glla storage and retry.", "warning");
+    return false;
+  }
+  writeGoalMd(ctx.cwd, nextGoal);
+  state.goal = nextGoal;
+  const stateLanded = persistState(ctx);
+  if (stateLanded && goalMarkdownLanded(ctx.cwd, nextGoal)) clearGoalStateTransaction(ctx.cwd);
+  return true;
 }
 
 // v0.29.6: stacked-state auto-arbitration (user directive: "auto archive /

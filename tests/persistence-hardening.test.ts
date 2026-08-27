@@ -28,6 +28,8 @@ import {
   isSafePersistedId,
   isPersistenceDegraded,
   lastPersistenceFailure,
+  goalStateTransactionPath,
+  writeGoalStateTransaction,
 } from "../extensions/goal-loop-core.js";
 import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
@@ -57,6 +59,40 @@ test("readState: a truncated trailing active.jsonl line loads cleanly (mid-write
   const s = readState(cwd);
   assert.equal((s.goal as { id: string } | null)?.id, "g-good", "torn tail skipped, last good state wins");
   assert.deepEqual(s.list, []);
+});
+
+test("goal transaction snapshot repairs a markdown-before-ledger crash", () => {
+  const cwd = tmpdir();
+  const oldAt = "2026-07-28T10:00:00.000Z";
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), JSON.stringify({
+    type: "state",
+    value: { goal: { id: "g-old", objective: "old", status: "active", policy: "goal" }, list: [] },
+    at: oldAt,
+  }) + "\n");
+  const next = {
+    goal: { id: "g-new", objective: "new", status: "paused", policy: "goal", autoContinue: true },
+    list: [],
+  } as never;
+  assert.equal(writeGoalStateTransaction(cwd, next), true);
+  assert.equal(fs.existsSync(goalStateTransactionPath(cwd)), true);
+  assert.equal(readState(cwd).goal?.id, "g-new", "newer transaction wins when the state append was interrupted");
+});
+
+test("a committed state line wins over an orphaned older transaction", () => {
+  const cwd = tmpdir();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "goal-state.transaction.json"), JSON.stringify({
+    schema: 1,
+    at: "2026-07-28T10:00:00.000Z",
+    state: { goal: { id: "g-old", objective: "old", status: "active", policy: "goal" }, list: [] },
+  }));
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), JSON.stringify({
+    type: "state",
+    value: { goal: { id: "g-new", objective: "new", status: "active", policy: "goal" }, list: [] },
+    at: "2026-07-28T10:01:00.000Z",
+  }) + "\n");
+  assert.equal(readState(cwd).goal?.id, "g-new", "a later state line is already committed");
 });
 
 test("persisted ids are validated before state or filesystem use", () => {
