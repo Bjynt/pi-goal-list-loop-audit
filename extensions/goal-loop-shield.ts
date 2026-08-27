@@ -206,6 +206,7 @@ export function isSafeMechanicalCommand(command: string): boolean {
 export function runMechanicalPreAuditChecks(cwd: string, commands: string[], timeoutMs = 600_000): MechanicalCheckResult {
   if (!commands || commands.length === 0) return { passed: true };
   const { execFileSync } = require("node:child_process");
+  const recoveredRetries: string[] = [];
   for (const rawCommand of commands) {
     const cmd = rawCommand.trim();
     if (!isSafeMechanicalCommand(cmd)) {
@@ -282,11 +283,12 @@ export function runMechanicalPreAuditChecks(cwd: string, commands: string[], tim
       }
     }
     if (passed && firstFailure) {
-      // First attempt failed, second PASSED — recoverable transience; pass,
-      // but leave an honest trace of the wobble in the result.
-      return { passed: true, recoveredRetryNote: `[mechanical check: first attempt failed (exit ${firstFailure.exitCode}); automatic retry passed]` };
+      // First attempt failed, second PASSED — recoverable transience; keep
+      // checking later contract commands instead of treating this one as the
+      // whole contract.
+      recoveredRetries.push(`[mechanical check ${rawProgram}: first attempt failed (exit ${firstFailure.exitCode}); automatic retry passed]`);
     }
   }
-  return { passed: true };
+  return { passed: true, ...(recoveredRetries.length ? { recoveredRetryNote: recoveredRetries.join(" ") } : {}) };
 }
 
