@@ -1,11 +1,10 @@
 # Now
 
-No GLLA goal is active. The latest objective, “Fewer mid-execution questions —
-defer non-blocking implementation choices to the end; ask only when a choice
-changes the outcome,” is complete and auditor-approved. The implementation
-keeps constraint gathering in drafting, makes active execution default to
-sensible autonomous choices, and removes duplicate continuation-policy
-injection.
+Active list (3 items) — working on the first:
+
+1. **Useful summary when objective completes** — ensure every archived goal has a concise evidence-backed recap.
+2. `/glla bug` capture flow — record failure context/logs separate from durable goal state.
+3. Improve wait/duration estimation — record actual durations and poll adaptively (Antigravity-style) instead of fixed long waits.
 
 GLLA continues to own only its lifecycle, durable state, public recovery
 boundaries, and evidence surfaces; Pi, the OS, providers, and other plugins
@@ -13,7 +12,7 @@ remain outside its fix boundary.
 
 # Next
 
-No immediate follow-up is active.
+Finish the active list in order; `audit other goal plugins` remains deferred in #Later for a follow-up pass.
 
 # Done
 
@@ -37,29 +36,17 @@ containment shipped in v0.35.71.
 
 # Later
 
-## we always want a useful summarywhen objective completes
+## audit other goal plugins
+
+Deferred by request — survey other goal plugins (pi-goal, pi-until-done, etc.) after the active list completes.
 
 ## Pi Store listing thumbnail
 
 Upload the repository banner to the Pi Store listing when that external/manual
 step is ready; keep it separate from runtime UI and release behavior.
 
-## `/glla bug` capture flow
-
-Consider a `/glla bug` command that records observed failure context and useful
-logs, while keeping the capture artifact separate from durable goal state.
-
-## audit other goal plugins
-
 # Idea
 
-## We are bad at guesing how long tasks take can we record the time it took once then guess basd on that
-
-the problem is that lately we were defaulting to some safe long waits but that is pretty bad velocity
-so i think we need a better solution
-we should investigate how oters do it like antigravity most of all is quite snappy but codex kind of too
-/home/dracon/Pictures/Screenshots/Screenshot_20260826_000412.png
-
-antigravity doesnt wait it just keep checking if done maybe we shoulddo the same cause it leads to lno guess and faster work
+(backlog cleared into active list; add new ideas here)
 
 
