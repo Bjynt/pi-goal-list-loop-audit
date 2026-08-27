@@ -132,6 +132,7 @@ export interface LoopDeps {
   sendContinuation: (goalId: string) => void;
   sendRearmDelayMs: (streak: number) => number;
   sessionManagerId: (ctx: ExtensionContext) => string;
+  warnIfStaleAtEntry: (ctx: ExtensionContext, what: string) => boolean;
   startDrafting: (ctx: ExtensionContext, target: "goal" | "list" | "loop", seed?: string, depth?: "normal" | "plan") => Promise<boolean>;
   activeGoalSurfaceCommand: (command: string) => string;
   archiveCurrentGoal: (ctx: ExtensionContext, status: "aborted", stopReason?: string) => boolean;
@@ -161,7 +162,7 @@ let accountSendRearm: LoopDeps["accountSendRearm"], armQueueStuckProbe: LoopDeps
     dispatchFailed: LoopDeps["dispatchFailed"], dispatchPrepare: LoopDeps["dispatchPrepare"], displaySlice: LoopDeps["displaySlice"], freshCtx: LoopDeps["freshCtx"], freshCtxForGeneration: LoopDeps["freshCtxForGeneration"],
     goStaleTerminal: LoopDeps["goStaleTerminal"], mainModelRecoveryActive: LoopDeps["mainModelRecoveryActive"], manuallyResumeMainModelRecovery: LoopDeps["manuallyResumeMainModelRecovery"], notifyExternal: LoopDeps["notifyExternal"], persistState: LoopDeps["persistState"],
     probeExtensionApiStale: LoopDeps["probeExtensionApiStale"], probeMainModelRecovery: LoopDeps["probeMainModelRecovery"], releaseContinuationDispatchStandDown: LoopDeps["releaseContinuationDispatchStandDown"], releaseInitialSessionLoadBarrier: LoopDeps["releaseInitialSessionLoadBarrier"], rememberCtx: LoopDeps["rememberCtx"],
-    resolveCarryover: LoopDeps["resolveCarryover"], scheduleSessionTimeout: LoopDeps["scheduleSessionTimeout"], sendContinuation: LoopDeps["sendContinuation"], sendRearmDelayMs: LoopDeps["sendRearmDelayMs"], sessionManagerId: LoopDeps["sessionManagerId"],
+    resolveCarryover: LoopDeps["resolveCarryover"], scheduleSessionTimeout: LoopDeps["scheduleSessionTimeout"], sendContinuation: LoopDeps["sendContinuation"], sendRearmDelayMs: LoopDeps["sendRearmDelayMs"], sessionManagerId: LoopDeps["sessionManagerId"], warnIfStaleAtEntry: LoopDeps["warnIfStaleAtEntry"],
     startDrafting: LoopDeps["startDrafting"], activeGoalSurfaceCommand: LoopDeps["activeGoalSurfaceCommand"], archiveCurrentGoal: LoopDeps["archiveCurrentGoal"];
 
 export function createGoalLoop(d: LoopDeps): void {
@@ -170,7 +171,7 @@ export function createGoalLoop(d: LoopDeps): void {
   dispatchFailed = d.dispatchFailed; dispatchPrepare = d.dispatchPrepare; displaySlice = d.displaySlice; freshCtx = d.freshCtx; freshCtxForGeneration = d.freshCtxForGeneration;
   goStaleTerminal = d.goStaleTerminal; mainModelRecoveryActive = d.mainModelRecoveryActive; manuallyResumeMainModelRecovery = d.manuallyResumeMainModelRecovery; notifyExternal = d.notifyExternal; persistState = d.persistState;
   probeExtensionApiStale = d.probeExtensionApiStale; probeMainModelRecovery = d.probeMainModelRecovery; releaseContinuationDispatchStandDown = d.releaseContinuationDispatchStandDown; releaseInitialSessionLoadBarrier = d.releaseInitialSessionLoadBarrier; rememberCtx = d.rememberCtx;
-  resolveCarryover = d.resolveCarryover; scheduleSessionTimeout = d.scheduleSessionTimeout; sendContinuation = d.sendContinuation; sendRearmDelayMs = d.sendRearmDelayMs; sessionManagerId = d.sessionManagerId;
+  resolveCarryover = d.resolveCarryover; scheduleSessionTimeout = d.scheduleSessionTimeout; sendContinuation = d.sendContinuation; sendRearmDelayMs = d.sendRearmDelayMs; sessionManagerId = d.sessionManagerId; warnIfStaleAtEntry = d.warnIfStaleAtEntry;
   startDrafting = d.startDrafting; activeGoalSurfaceCommand = d.activeGoalSurfaceCommand; archiveCurrentGoal = d.archiveCurrentGoal;
 }
 
