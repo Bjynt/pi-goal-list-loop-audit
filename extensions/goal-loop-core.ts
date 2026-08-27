@@ -1400,15 +1400,17 @@ export function claimRecoveryNotice(record: { recoveryNoticeKeys?: string[] }, k
   return true;
 }
 
-export function appendLedger(cwd: string, type: string, value: unknown): void {
+export function appendLedger(cwd: string, type: string, value: unknown): boolean {
   // v0.28.6 (E1): guarded — a disk failure degrades loudly, never throws
   // into an orchestrator handler.
-  runPersistStep("appendLedger", () => {
-    if (stateRootPending()) return;
+  const landed = runPersistStep("appendLedger", () => {
+    if (stateRootPending()) return false;
     ensureDirs(cwd);
     const line = JSON.stringify({ type, value, at: new Date().toISOString() });
     fs.appendFileSync(ledgerPath(cwd), line + "\n");
+    return true;
   });
+  return landed === true;
 }
 
 // =================================================================
@@ -1489,6 +1491,60 @@ export function writeGoalMd(cwd: string, goal: Goal): string {
   // Return the intended path even on failure so activePath stays sane —
   // the degraded flag carries the truth that the write did not land.
   return file;
+}
+
+/** Crash-recovery journal for the two-file goal projection. `setGoal` and
+ * `updateGoal` write this complete state snapshot before updating the goal
+ * markdown and JSONL ledger. On restart, readState adopts it only when its
+ * timestamp is newer than the last state line; a later unrelated state write
+ * therefore cannot be rolled back by an orphaned journal. */
+const GOAL_STATE_TRANSACTION_FILE = "goal-state.transaction.json";
+
+export interface GoalStateTransaction {
+  at: string;
+  state: State;
+}
+
+export function goalStateTransactionPath(cwd: string): string {
+  return path.join(piGlaDir(cwd), GOAL_STATE_TRANSACTION_FILE);
+}
+
+export function writeGoalStateTransaction(cwd: string, snapshot: State): boolean {
+  if (stateRootPending()) return false;
+  const file = goalStateTransactionPath(cwd);
+  const temp = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`;
+  const landed = runPersistStep("writeGoalStateTransaction", () => {
+    ensureDirs(cwd);
+    try {
+      fs.writeFileSync(temp, JSON.stringify({ schema: 1, at: new Date().toISOString(), state: snapshot }), { encoding: "utf-8", flag: "wx" });
+      fs.renameSync(temp, file);
+      return true;
+    } finally {
+      try { if (fs.existsSync(temp)) fs.unlinkSync(temp); } catch { /* best-effort temp cleanup */ }
+    }
+  });
+  return landed === true;
+}
+
+export function readGoalStateTransaction(cwd: string): GoalStateTransaction | null {
+  if (stateRootPending()) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(goalStateTransactionPath(cwd), "utf-8")) as Record<string, unknown>;
+    if (raw.schema !== 1 || typeof raw.at !== "string" || Number.isNaN(Date.parse(raw.at))) return null;
+    if (!raw.state || typeof raw.state !== "object" || Array.isArray(raw.state)) return null;
+    const snapshot = raw.state as Partial<State>;
+    if (snapshot.goal !== null && (typeof snapshot.goal !== "object" || !isSafePersistedId((snapshot.goal as { id?: unknown }).id))) return null;
+    return { at: raw.at, state: { goal: snapshot.goal ?? null, ...snapshot } as State };
+  } catch {
+    return null;
+  }
+}
+
+export function clearGoalStateTransaction(cwd: string): boolean {
+  if (stateRootPending()) return false;
+  const file = goalStateTransactionPath(cwd);
+  if (!fs.existsSync(file)) return true;
+  try { fs.unlinkSync(file); return true; } catch { return false; }
 }
 
 export function readGoalMd(cwd: string, id: string): string | null {
