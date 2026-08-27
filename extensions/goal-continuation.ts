@@ -544,12 +544,6 @@ export function dispatchFailed(ctx: ExtensionContext, record: ContinuationDispat
 }
 
 export function dispatchStartAcknowledged(ctx: ExtensionContext, source: string, prompt?: unknown): boolean {
-  // A dispatch has one accepted window and one start proof. Once a start was
-  // recorded, later low-level events must not re-settle it; before that,
-  // events without the exact prompt marker are unrelated manual activity.
-  const pending = pendingContinuationDispatch;
-  if (!pending || pending.phase !== "accepted") return false;
-  if (source !== "before_agent_start" && !pending.startProofSource) return false;
   // v0.34.104 ([Image-#1]): any real agent activity during the
   // post-list-completion settle window means pi woke up on its own — the
   // deferred continuation must be cancelled so we don't double-dispatch.
@@ -562,15 +556,23 @@ export function dispatchStartAcknowledged(ctx: ExtensionContext, source: string,
     }
     flags.postCompletionSettleUntil = 0;
   }
+  // A dispatch has one accepted window and one start proof. Once a start was
+  // recorded, later low-level events must not re-settle it; before that,
+  // events without the exact before_agent_start marker are unrelated manual
+  // activity and cannot clear the watchdog.
+  const pending = pendingContinuationDispatch;
+  if (!pending || pending.phase !== "accepted") return false;
+  if (source !== "before_agent_start" && !pending.startProofSource) return false;
   const record = pendingContinuationDispatch;
   if (!record || flags.sessionHandoffPending || flags.extensionApiStale || flags.staleTerminalDone || flags.zombieStoodDown) return false;
   if (record.generation !== flags.sessionGeneration || isForeignCtx(ctx)) return false;
   if (!dispatchMatchesOwner(record, flags.sessionGeneration, sessionManagerId(ctx))) return false;
   if ((record.kind === "goal" || record.kind === "stall") && (!state.goal || state.goal.id !== record.goalId || state.goal.status !== "active")) return false;
-  // before_agent_start is the strongest proof: it must carry this exact
-  // dispatch marker. Later low-level events are accepted as compatibility
-  // proofs because older pi builds may not expose the prompt there.
-  if (source === "before_agent_start" && !dispatchPromptMatches(record, prompt)) return false;
+  // before_agent_start is the required proof: it must carry this exact
+  // dispatch marker. Older low-level events without a prompt are liveness
+  // signals only; accepting them would let an unrelated manual turn settle
+  // this dispatch and suppress its recovery watchdog.
+  if (source !== "before_agent_start" || !dispatchPromptMatches(record, prompt)) return false;
   const settledAt = Date.now();
   const started: ContinuationDispatch = {
     ...transitionDispatch(record, "started"),
@@ -1103,6 +1105,7 @@ export function sendContinuation(goalId: string): void {
 // what closes the turn: complete_goal if done, pause_goal if blocked, a tool
 // call otherwise. display: true — the user should see the warning too.
 export function sendStallEscalation(ctx: ExtensionContext, nudges: number): void {
+  if (supervisorPaused(state)) return;
   if (flags.sessionHandoffPending || flags.initialSessionLoadPending || !flags.extensionApi || flags.extensionApiStale || continuationDispatchStoodDown || pendingContinuationDispatch) return;
   if (!state.goal || !guardGoalBeforeContinuation(ctx, "stall-escalation")) return;
   const remaining = HEARTBEAT_MAX_NUDGES - nudges;
@@ -1144,6 +1147,7 @@ export function sendStallEscalation(ctx: ExtensionContext, nudges: number): void
 // sendContinuation (stale api = terminal), independent of goal state —
 // plain sessions truncate too.
 export function sendLengthContinue(ctx: ExtensionContext, consecutive: number): void {
+  if (supervisorPaused(state)) return;
   if (flags.sessionHandoffPending || flags.initialSessionLoadPending || !flags.extensionApi || flags.extensionApiStale || continuationDispatchStoodDown || pendingContinuationDispatch) return;
   if (state.goal && !guardGoalBeforeContinuation(ctx, "length-continuation")) return;
   const attempt = dispatchPrepare(ctx, {
