@@ -8,12 +8,19 @@ containment shipped in v0.35.71.
 
 # Next
 
-1. **Status-aware waiting (from Idea)** — replace guessed long sleeps with bounded poll/rechecks that test the durable done-event; record elapsed + terminal reason. Smallest velocity win vs Antigravity/Codex.
-2. **Fewer mid-execution questions** — defer non-blocking choices to end; ask only when choice changes outcome.
-
-No other follow-up active. GLLA continues to own only its lifecycle, durable state, public recovery boundaries, and evidence surfaces; Pi, the OS, providers, and other plugins remain outside its fix boundary.
+No follow-up from this reconciliation is active. GLLA continues to own only
+its lifecycle, durable state, public recovery boundaries, and evidence
+surfaces; Pi, the OS, providers, and other plugins remain outside its fix
+boundary.
 
 # Later
+
+## auditor calls done that stops objective
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260827_155745.png 
+
+## we always want a useful summarywhen objective completes
+
 
 ## README/Pi Store thumbnail
 
