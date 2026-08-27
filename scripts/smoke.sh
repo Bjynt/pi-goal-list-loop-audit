@@ -140,6 +140,16 @@ wait_for_durable() { # wait_for_durable <timeout-s> <needle>...
   # is handled by the caller like any other failed assertion.
   node "$EXT_DIR/scripts/durable-wait.mjs" "${args[@]}"
 }
+wait_for_archive_count() { # wait_for_archive_count <timeout-s> <minimum>
+  local t="$1" minimum="$2"
+  # Archive creation is a durable completion event too; do not use a second
+  # open-coded N×1s loop for the list scenario.
+  node "$EXT_DIR/scripts/durable-wait.mjs" \
+    --directory "$WORK/.pi-glla/archive" \
+    --min-files "$minimum" \
+    --timeout-ms "$((t * 1000))" \
+    --poll-ms 1000
+}
 wait_for() { # wait_for <literal marker> <timeout-s>
   local pat="$1" t="$2" i before current
   # Durable verdicts are the source of truth; a model can quote any UI
@@ -216,14 +226,15 @@ case "$SCENARIO" in
     send '/list add "Create b.txt containing beta. Done when: grep -q beta b.txt"'
     say "waiting for BOTH list items to complete (up to 240s)"
     if wait_for "✓ done:" 120; then pass "item 1 approved"; else fail "item 1 not approved"; fi
-    # wait for second archive file
-    for i in $(seq 1 120); do
-      n=$(ls "$WORK/.pi-glla/archive/"*.md 2>/dev/null | wc -l)
-      [ "$n" -ge 2 ] && break
-      sleep 1
-    done
-    n=$(ls "$WORK/.pi-glla/archive/"*.md 2>/dev/null | wc -l)
-    if [ "$n" -ge 2 ]; then pass "both items archived ($n)"; else fail "only $n archived"; fi
+    # wait for second archive file through the same durable absolute-deadline
+    # poller used for verdicts.
+    if wait_for_archive_count 120 2; then
+      n=$(find "$WORK/.pi-glla/archive" -maxdepth 1 -type f -name '*.md' | wc -l)
+      pass "both items archived ($n)"
+    else
+      n=$(find "$WORK/.pi-glla/archive" -maxdepth 1 -type f -name '*.md' | wc -l)
+      fail "only $n archived"
+    fi
     if [ -f "$WORK/a.txt" ] && [ -f "$WORK/b.txt" ]; then pass "both files created"; else fail "files missing"; fi
     if ledger_has '"list":[]'; then pass "list drained"; else fail "list not empty"; fi
     ;;

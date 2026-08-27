@@ -11,7 +11,7 @@
  * elapsed duration, number of reads, and the reason it stopped.
  */
 
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -67,6 +67,10 @@ export async function waitForDurableEvent(read, options = {}) {
       return result("error", startedAt, now, checks, undefined, error instanceof Error ? error.message : String(error));
     }
     checks += 1;
+    // A slow reader may resolve after the deadline. Treat that observation as
+    // a timeout even if it contains a done marker; a bounded waiter must not
+    // turn late visibility into success.
+    if (now() > deadline) return result("timeout", startedAt, now, checks);
 
     if (!observation || typeof observation !== "object" || typeof observation.status !== "string") {
       return result("error", startedAt, now, checks, undefined, "reader returned an invalid observation");
@@ -122,12 +126,29 @@ export async function readDurableFile(filePath, options = {}) {
   return { status: "pending" };
 }
 
+/** Observe an archive directory as a durable count, for list smoke waits. */
+export async function readDurableDirectoryCount(directoryPath, options = {}) {
+  let entries;
+  try {
+    entries = await readdir(directoryPath, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === "ENOENT") return { status: "pending", value: { count: 0 } };
+    throw error;
+  }
+  const suffix = options.suffix ?? ".md";
+  const count = entries.filter((entry) => entry.isFile() && entry.name.endsWith(suffix)).length;
+  const minimum = finiteNumber(options.minimum ?? 1, 1, 1, "minimum");
+  return count >= minimum ? { status: "done", value: { count } } : { status: "pending", value: { count } };
+}
+
 function parseArgs(argv) {
-  const args = { file: undefined, doneNeedles: [], terminalNeedles: [], timeoutMs: 30_000, pollIntervalMs: 250 };
+  const args = { file: undefined, directory: undefined, minFiles: undefined, doneNeedles: [], terminalNeedles: [], timeoutMs: 30_000, pollIntervalMs: 250 };
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
     const value = argv[i + 1];
     if (flag === "--file") args.file = value;
+    else if (flag === "--directory") args.directory = value;
+    else if (flag === "--min-files") args.minFiles = finiteNumber(value, undefined, 1, "minFiles");
     else if (flag === "--needle") args.doneNeedles.push(value);
     else if (flag === "--terminal") {
       const separator = value?.indexOf("=") ?? -1;
@@ -138,8 +159,12 @@ function parseArgs(argv) {
     else throw new Error(`unknown argument: ${flag}`);
     i += 1;
   }
-  if (!args.file) throw new Error("--file is required");
-  if (args.doneNeedles.length === 0) throw new Error("at least one --needle is required");
+  if ((args.file && args.directory) || (!args.file && !args.directory)) {
+    throw new Error("exactly one of --file or --directory is required");
+  }
+  if (args.directory && args.doneNeedles.length > 0) throw new Error("--needle is only valid with --file");
+  if (args.directory && args.minFiles === undefined) throw new Error("--min-files is required with --directory");
+  if (args.file && args.doneNeedles.length === 0) throw new Error("at least one --needle is required");
   if (args.terminalNeedles.some((entry) => !TERMINAL_REASONS.has(entry.reason))) {
     throw new Error("--terminal reason must be provider-failure, restart, aborted, or error");
   }
@@ -157,13 +182,16 @@ function exitCodeFor(reason) {
 
 async function main(argv) {
   const args = parseArgs(argv);
-  const filePath = path.resolve(args.file);
+  const targetPath = path.resolve(args.file ?? args.directory);
   // A smoke run owns a fresh scratch root. Reading from the beginning makes a
   // marker that landed between the send and this process start observable.
   // Callers needing cross-attempt disambiguation should put an attempt id in
   // the durable needle rather than relying on wall-clock freshness.
+  const reader = args.directory
+    ? () => readDurableDirectoryCount(targetPath, { minimum: args.minFiles })
+    : () => readDurableFile(targetPath, args);
   const waited = await waitForDurableEvent(
-    () => readDurableFile(filePath, args),
+    reader,
     { timeoutMs: args.timeoutMs, pollIntervalMs: args.pollIntervalMs },
   );
   process.stdout.write(`${JSON.stringify(waited)}\n`);

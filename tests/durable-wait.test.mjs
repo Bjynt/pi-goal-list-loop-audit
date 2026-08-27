@@ -2,9 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { waitForDurableEvent, readDurableFile } from "../scripts/durable-wait.mjs";
-
-const pause = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+import {
+  waitForDurableEvent,
+  readDurableDirectoryCount,
+  readDurableFile,
+} from "../scripts/durable-wait.mjs";
 
 async function scratchFile() {
   const directory = await mkdtemp("/tmp/glla-durable-wait-");
@@ -48,6 +50,37 @@ test("durable wait returns a real timeout instead of treating elapsed time as su
     assert.ok(result.elapsedMs < 300, `timeout exceeded its bound at ${result.elapsedMs}ms`);
   } finally {
     await cleanup(directory, []);
+  }
+});
+
+test("a late done observation after the deadline is a timeout, not success", async () => {
+  let clock = 0;
+  const result = await waitForDurableEvent(
+    () => {
+      clock = 11;
+      return { status: "done" };
+    },
+    { timeoutMs: 10, pollIntervalMs: 1, now: () => clock, sleep: async () => {} },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.terminalReason, "timeout");
+  assert.equal(result.elapsedMs, 11);
+});
+
+test("archive-count waits use the same durable deadline and return the observed count", async () => {
+  const { directory } = await scratchFile();
+  const timers = [setTimeout(() => writeFile(path.join(directory, "two.md"), ""), 10)];
+  try {
+    await writeFile(path.join(directory, "one.md"), "");
+    const result = await waitForDurableEvent(
+      () => readDurableDirectoryCount(directory, { minimum: 2 }),
+      { timeoutMs: 250, pollIntervalMs: 5 },
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.terminalReason, "done");
+    assert.equal(result.value.count, 2);
+  } finally {
+    await cleanup(directory, timers);
   }
 });
 
@@ -100,8 +133,6 @@ test("smoke harness uses the durable wait CLI for durable outcomes", async () =>
   const smoke = await readFile(new URL("../scripts/smoke.sh", import.meta.url), "utf8");
   assert.match(smoke, /scripts\/durable-wait\.mjs/);
   assert.match(smoke, /wait_for_durable/);
+  assert.match(smoke, /wait_for_archive_count/);
 });
 
-// Keep this test file from leaving a dangling event-loop delay if a future
-// implementation changes cleanup behavior during a failed assertion.
-await pause(0);
