@@ -2108,7 +2108,7 @@ function registerAgentTools(pi: any): void {
           };
         }
       }
-      if (!activateNextListItem(liveCtx, rawIndex, { explicit: true })) {
+      if (!activateNextListItem(liveCtx, rawIndex, { explicit: true, displayLabel: position.label })) {
         return { content: [{ type: "text", text: listQueue().length === 0 ? "List is empty." : `No visible item #${position.label} (list has ${visibleListPositions(listQueue()).length} visible items).` }], details: {} };
       }
       return { content: [{ type: "text", text: `Item #${position.label} activated. Work it normally; call complete_goal when done.` }], details: {} };

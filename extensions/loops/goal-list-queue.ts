@@ -639,7 +639,7 @@ function queueRepairAheadOfListItem(ctx: ExtensionContext, item: ListItem, asses
   appendLedger(ctx.cwd, "faulty_objective_repair_promoted", { goalId: repair.id, targetId: item.id, position: 1, source: "list-activation", reasons: assessment.reasons });
 }
 
-function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: boolean }): boolean {
+function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: boolean; displayLabel?: string }): boolean {
   // An explicit list activation is user consent even when pi initially
   // reported a blank startup context; automatic restore never reaches here.
   releaseInitialSessionLoadBarrier();
@@ -691,7 +691,7 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
     const open = groupOpenChildren(target.id);
     appendLedger(ctx.cwd, "list_group_activation_refused", { goalId: target.id, open });
     ctx.ui.notify(
-      `List item #${n} is a group with ${open} open subtask${open === 1 ? "" : "s"} — complete its subtasks first (they run in queue order, then the group closes itself).`,
+      `List item #${opts?.displayLabel ?? n} is a group with ${open} open subtask${open === 1 ? "" : "s"} — complete its subtasks first (they run in queue order, then the group closes itself).`,
       "warning",
     );
     return false;
