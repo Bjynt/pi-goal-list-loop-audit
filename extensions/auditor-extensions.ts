@@ -158,14 +158,29 @@ export function resolveAuditorAllowedExtensions(
   specs: string[] | undefined,
   home: string,
   cwd?: string,
+  settingsBase?: string,
 ): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
+  const userBase = path.join(home, ".pi", "agent");
+  const projectBase = cwd ? path.join(cwd, ".pi") : undefined;
   for (const spec of normalizeAuditorAllowedExtensions(specs)) {
-    const resolved = resolveAuditorExtensionSpec(spec, { home, cwd, base: path.join(home, ".pi", "agent") });
-    if (!resolved || seen.has(resolved)) continue; // not installed here — skip, don't emit a dead spec
-    seen.add(resolved);
-    out.push(resolved);
+    const trimmed = spec.trim();
+    const isLocal = !trimmed.startsWith("npm:") && !parseGitSpec(trimmed) && !trimmed.startsWith("~") && !path.isAbsolute(trimmed) && !/^[a-z]+:/i.test(trimmed);
+    const bases = settingsBase
+      ? [settingsBase]
+      : isLocal && projectBase
+        ? [projectBase, userBase]
+        : [userBase];
+    const candidates = bases
+      .map((base) => resolveAuditorExtensionSpec(trimmed, { home, cwd, base }))
+      .filter((resolved): resolved is string => !!resolved);
+    const unique = [...new Set(candidates)];
+    // A relative entry found in both scopes is ambiguous: silently choosing
+    // one could load a different extension than the settings author named.
+    if (unique.length !== 1 || seen.has(unique[0]!)) continue;
+    seen.add(unique[0]!);
+    out.push(unique[0]!);
   }
   return out;
 }
