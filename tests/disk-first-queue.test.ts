@@ -62,6 +62,8 @@ test("writeQueueItemFile: idempotent on retry (no overwrite)", () => {
   // Second call returns wrote=false; existing file untouched.
   const second = writeQueueItemFile(cwd, { ...item, objective: "ENEMY OVERWRITE" });
   assert.equal(second.wrote, false);
+  assert.equal(second.failed, true, "an id collision must stop callers from committing a conflicting RAM item");
+  assert.equal(second.collision, true);
   const raw = JSON.parse(fs.readFileSync(second.path, "utf-8"));
   assert.equal(raw.objective, item.objective, "the first write won — second was refused");
 });

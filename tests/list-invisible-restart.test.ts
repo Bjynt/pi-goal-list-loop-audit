@@ -21,7 +21,7 @@ import * as path from "node:path";
 
 import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
 import { buildWidgetLines } from "../extensions/goal-loop-display.ts";
-import { readState, writeQueueItemFile } from "../extensions/goal-loop-core.js";
+import { queueItemPath, readState, writeQueueItemFile } from "../extensions/goal-loop-core.js";
 import { replaceState, state } from "../extensions/goal-state.js";
 import { MockPi, invalidateHostSession, makeMockCtx, tmpCwd, seedState, tick } from "./harness/mock-pi.js";
 
@@ -154,6 +154,52 @@ test("v0.35.61: silent host replacement rehydrates a sidecar-only waiting queue 
   assert.match(successor.ui.statuses["pi-glla"] ?? "", /LIST QUEUED/);
   assert.match(buildWidgetLines(state)?.join("\\n") ?? "", /silent successor queue item/);
   await pi.fire("session_shutdown", { reason: "quit" }, successor);
+});
+
+test("v0.35.72: a newer known sidecar reconciles the in-memory queue item", async () => {
+  const cwd = tmpCwd();
+  const now = new Date().toISOString();
+  const goal = {
+    id: "20260821213900-reconcile-goal",
+    objective: "reconcile host goal — done when pinned",
+    status: "active",
+    policy: "goal",
+    autoContinue: true,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const id = "20260821213901-reconcile-item";
+  const old = { id, objective: "old queue objective", addedAt: now, queueOrder: 1 };
+  const durable = {
+    schema: 1,
+    type: "queue-item",
+    id,
+    objective: "new queue objective",
+    verificationContract: "new contract",
+    repairTarget: {
+      id: "20260821213902-target",
+      objective: "original malformed objective",
+      reasons: ["reviewer-fragment"],
+      source: "audit",
+    },
+    addedAt: now,
+    queueOrder: 1,
+  };
+  seedState(cwd, { goal, list: [old] });
+  fs.mkdirSync(path.dirname(queueItemPath(cwd, id)), { recursive: true });
+  fs.writeFileSync(queueItemPath(cwd, id), JSON.stringify(durable));
+
+  const pi = new MockPi();
+  activate(pi.api);
+  __testOnlyResetOwnerSession();
+  const ctx = ownerCtx(cwd);
+  await pi.fire("session_start", { reason: "startup" }, ctx);
+  await tick();
+
+  const item = (state.list ?? []).find((candidate) => candidate.id === id);
+  assert.equal(item?.objective, durable.objective);
+  assert.equal(item?.verificationContract, durable.verificationContract);
+  assert.equal(item?.repairTarget?.objective, durable.repairTarget.objective);
 });
 
 test("v0.35.21: convergence is idempotent — an item present in BOTH state and sidecar is not duplicated", async () => {
