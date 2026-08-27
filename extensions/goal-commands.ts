@@ -1365,13 +1365,17 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
   if (sub === "next") {
     // Skip the current active goal (abort it) and activate a queued item.
     // Bare = the head (FIFO default); /list next <n> = item n (shopping-list
-    // semantics: order is the default, not the law).
-    const n = rest ? Number.parseInt(rest, 10) : 1;
-    if (!Number.isInteger(n) || n < 1) {
-      ctx.ui.notify(`Usage: /list next [1-${listQueue().length || 1}]`, "info");
+    // semantics: order is the default, not the law). Hierarchical positions
+    // mirror /list show: `1.1` addresses a child, while `2` skips over the
+    // children of top-level item 1.
+    const position = rest ? visibleListPosition(listQueue(), rest) : undefined;
+    if (rest && !position) {
+      ctx.ui.notify(`Usage: /list next [visible position such as 1, 2, or 1.1]`, "info");
       return;
     }
-    const targetItem = listQueue()[n - 1];
+    const n = position ? position.flatIndex + 1 : 1;
+    const label = position?.label ?? "1";
+    const targetItem = position?.item ?? listQueue()[0];
     if (targetItem) {
       const current = liveObjectives(state);
       if (current.length > 0) {
@@ -1391,13 +1395,13 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
         for (const item of current) {
           if (item.kind === "loop" && isLoopActive()) await cmdLoop("stop", ctx);
           else if (item.kind !== "loop" && state.goal && ["active", "auditing"].includes(state.goal.status)) {
-            if (!archiveCurrentGoal(ctx, "aborted", `skipped via /list next ${n > 1 ? n : ""}`.trim())) return;
+            if (!archiveCurrentGoal(ctx, "aborted", `skipped via /list next ${label !== "1" ? label : ""}`.trim())) return;
           }
         }
       }
     }
-    if (!activateNextListItem(ctx, n, { explicit: true })) {
-      ctx.ui.notify(listQueue().length === 0 ? "List is empty — nothing to activate." : `No item #${n} (list has ${listQueue().length}).`, "info");
+    if (!activateNextListItem(ctx, n, { explicit: true, displayLabel: label })) {
+      ctx.ui.notify(listQueue().length === 0 ? "List is empty — nothing to activate." : `No visible item #${label} (list has ${visibleListPositions(listQueue()).length}).`, "info");
     } else {
       // Explicit list activation is also continuation consent, even when the
       // activated item is a fresh queue head rather than the parked goal.
@@ -1407,19 +1411,20 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
   }
 
   if (sub === "remove" || sub === "rm") {
-    const n = Number.parseInt(rest, 10);
     const queue = listQueue();
-    if (!Number.isFinite(n) || n < 1 || n > queue.length) {
-      ctx.ui.notify(`Usage: /list remove <1-${queue.length}>`, "info");
+    const position = visibleListPosition(queue, rest);
+    if (!position) {
+      ctx.ui.notify("Usage: /list remove <visible position such as 1, 2, or 1.1>", "info");
       return;
     }
-    const removed = queue[n - 1]!;
+    const n = position.flatIndex;
+    const removed = position.item;
     // v0.34.61: delete the sidecar so the /list disk-recovery fallback
     // cannot resurrect the removed item. Without this, the new fallback
     // (cmdList → readQueueFromDisk) would show the removed item after
     // a stale-handle /list, contradicting the user's explicit remove.
     deleteQueueItemFile(ctx.cwd, removed.id);
-    replaceState({ ...state, list: queue.filter((_, i) => i !== n - 1) });
+    replaceState({ ...state, list: queue.filter((_, i) => i !== n) });
     persistState(ctx);
     appendLedger(ctx.cwd, "list_removed", { id: removed.id, objective: removed.objective });
     ctx.ui.notify(`Removed: ${displaySlice(removed.objective, 80)}`, "info");

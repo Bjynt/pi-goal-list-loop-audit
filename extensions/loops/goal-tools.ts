@@ -2092,11 +2092,12 @@ function registerAgentTools(pi: any): void {
       if (listMutationBlocked(draftingTarget)) {
         return { content: [{ type: "text", text: LIST_DRAFTING_BLOCK_MESSAGE }], details: {} };
       }
-      const n = Math.floor(p.n);
-      if (!Number.isInteger(n) || n < 1) {
-        return { content: [{ type: "text", text: "n must be a positive integer (1-based position)." }], details: {} };
+      const position = visibleListPosition(listQueue(), p.n);
+      if (!position) {
+        return { content: [{ type: "text", text: "n must be a visible list position such as 1, 2, or 1.1 for a child item." }], details: {} };
       }
-      const targetItem = listQueue()[n - 1];
+      const targetItem = position.item;
+      const rawIndex = position.flatIndex + 1;
       if (targetItem) {
         const incomingWholeList = targetItem.objective + (targetItem.verificationContract ? `\nDone when:\n${targetItem.verificationContract}` : "");
         const conflict = await resolveDraftActivationConflict(liveCtx, "list", incomingWholeList);
@@ -2107,10 +2108,10 @@ function registerAgentTools(pi: any): void {
           };
         }
       }
-      if (!activateNextListItem(liveCtx, n, { explicit: true })) {
-        return { content: [{ type: "text", text: listQueue().length === 0 ? "List is empty." : `No item #${n} (list has ${listQueue().length} items).` }], details: {} };
+      if (!activateNextListItem(liveCtx, rawIndex, { explicit: true })) {
+        return { content: [{ type: "text", text: listQueue().length === 0 ? "List is empty." : `No visible item #${position.label} (list has ${visibleListPositions(listQueue()).length} visible items).` }], details: {} };
       }
-      return { content: [{ type: "text", text: `Item #${n} activated. Work it normally; call complete_goal when done.` }], details: {} };
+      return { content: [{ type: "text", text: `Item #${position.label} activated. Work it normally; call complete_goal when done.` }], details: {} };
     },
   }));
 
