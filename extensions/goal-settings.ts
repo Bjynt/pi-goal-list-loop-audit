@@ -229,6 +229,7 @@ const GLOBAL_ONLY_KEYS: ReadonlySet<keyof Settings> = new Set([
   "mainModelFailback",
   "mainModelPrimaryProbeMinutes",
   "hourlyRetryProbe",
+  "autoResume",
   "drafterModel",
   "drafterThinkingLevel",
   "drafterModelFallbacks",

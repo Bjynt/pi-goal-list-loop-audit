@@ -183,11 +183,22 @@ import {
   loadGlobalSettings,
   loadSettings,
   projectSettingsPath,
-  saveSettings,
+  saveSettings as persistSettings,
   settingsProvenance,
   type Settings,
 } from "../goal-settings.js";
 import { ModelSelector } from "../model-selector.js";
+
+let settingsEditContext: ExtensionContext | null = null;
+
+/** Recheck session admission immediately before every settings write. The
+ * editor itself awaits user input, so a replacement can happen after the
+ * menu-entry probe but before the selected value is saved. */
+function saveSettings(scope: "global" | "project", cwd: string, patch: Partial<Settings>): void {
+  const probe = (globalThis as any).warnIfStaleAtEntry as ((ctx: ExtensionContext, what: string) => boolean) | undefined;
+  if (settingsEditContext && typeof probe === "function" && probe(settingsEditContext, "settings save")) return;
+  persistSettings(scope, cwd, patch);
+}
 import {
   curateAuditReviewSources,
   normalizeObjective,
@@ -599,6 +610,8 @@ async function openSettingsUI(ctx: ExtensionContext, initialSection?: SettingsSe
     // table owns navigation and keeps all grouped settings available.
     initialSection = undefined;
     if (!id) return;
+    const probe = (globalThis as any).warnIfStaleAtEntry as ((ctx: ExtensionContext, what: string) => boolean) | undefined;
+    if (typeof probe === "function" && probe(ctx, "settings edit")) return;
     try {
       await handleSettingChoice(id, ctx);
     } catch (err) {
@@ -830,6 +843,7 @@ function parseToolOverrideValueLocal(s: string): unknown {
 }
 
 export async function handleSettingChoice(id: string, ctx: ExtensionContext): Promise<void> {
+  settingsEditContext = ctx;
   switch (id) {
     case "stateRoot": {
       const v = await ctx.ui.select("State root — where durable glla state lives", [

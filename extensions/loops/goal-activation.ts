@@ -1425,7 +1425,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // the pinned settings-menu copy ("default: hold on EVERY load"). The
     // aggressive dial still owns its caps; only explicit `autoResume: true`
     // consents to load-time automation now.
-    const autoResumeSetting = loadGlobalSettings().autoResume;
+    // Resolve the global effective policy here too: aggressiveMode's
+    // documented default includes auto-resume, while an explicit autoResume
+    // or aggressiveMode:false still wins.
+    const autoResumeSetting = resolveEffectiveAggressiveSettings(loadGlobalSettings()).autoResume;
     const autoResume = shouldAutoResumeOnSessionStart(event?.reason, autoResumeSetting);
     // Consent is established by the same lifecycle paths that are allowed to
     // resume work. Do not release merely because a scheduler was asked to
