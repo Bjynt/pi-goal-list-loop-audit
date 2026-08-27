@@ -202,6 +202,27 @@ test("v0.35.72: a newer known sidecar reconciles the in-memory queue item", asyn
   assert.equal(item?.repairTarget?.objective, durable.repairTarget.objective);
 });
 
+test("v0.35.72: activation refuses when the durable sidecar cannot be removed", async () => {
+  const cwd = tmpCwd();
+  const now = new Date().toISOString();
+  const item = { id: "20260821214200-delete-failure", objective: "sidecar cleanup failure", addedAt: now, queueOrder: 1 };
+  seedState(cwd, { goal: null, list: [item] });
+  fs.mkdirSync(queueItemPath(cwd, item.id), { recursive: true });
+
+  const pi = new MockPi();
+  activate(pi.api);
+  __testOnlyResetOwnerSession();
+  const ctx = ownerCtx(cwd);
+  await pi.fire("session_start", { reason: "startup" }, ctx);
+  await tick();
+
+  const activateNext = (globalThis as any).activateNextListItem as ((context: unknown, n: number, options: { explicit: boolean }) => boolean);
+  assert.equal(activateNext(ctx, 1, { explicit: true }), false);
+  assert.equal(readState(cwd).goal, null, "activation does not create a goal while cleanup is unresolved");
+  assert.equal(readState(cwd).list?.[0]?.id, item.id, "the queue item remains recoverable");
+  assert.match(ctx.ui.notifies.at(-1)?.message ?? "", /sidecar could not be removed/);
+});
+
 test("v0.35.21: convergence is idempotent — an item present in BOTH state and sidecar is not duplicated", async () => {
   const cwd = tmpCwd();
   const now = new Date().toISOString();
