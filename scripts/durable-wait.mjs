@@ -141,6 +141,31 @@ export async function readDurableDirectoryCount(directoryPath, options = {}) {
   return count >= minimum ? { status: "done", value: { count } } : { status: "pending", value: { count } };
 }
 
+/**
+ * Estimate a wait from recent observed durations (Antigravity-style:
+ * check-if-done beats guessing, but a guess still bounds the deadline).
+ * Reuses existing telemetry (e.g. computeListDepth avgDurationMs) when
+ * available; falls back to caller-supplied default.
+ */
+export function estimateDurationFromHistory(durations, fallbackMs) {
+  const fallback = finiteNumber(fallbackMs ?? 30_000, 30_000, 0, "fallbackMs");
+  if (!Array.isArray(durations) || durations.length === 0) return fallback;
+  const nums = durations.map((v) => Number(v)).filter((n) => Number.isFinite(n) && n >= 0);
+  if (nums.length === 0) return fallback;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+  // Slight headroom over median, bounded below by fallback * 0.5 and above by fallback * 4.
+  return Math.max(Math.round(fallback * 0.5), Math.min(Math.round(fallback * 4), Math.max(median, Math.round(median * 1.2))));
+}
+
+export function nextPollMs(attempt, baseMs = 250, capMs = 1000) {
+  const base = finiteNumber(baseMs, 250, 1, "baseMs");
+  const cap = finiteNumber(capMs, 1000, 1, "capMs");
+  const exp = base * Math.pow(2, Math.max(0, attempt));
+  return Math.min(cap, Math.max(base, Math.round(exp)));
+}
+
 function parseArgs(argv) {
   const args = { file: undefined, directory: undefined, minFiles: undefined, doneNeedles: [], terminalNeedles: [], timeoutMs: 30_000, pollIntervalMs: 250 };
   for (let i = 0; i < argv.length; i += 1) {

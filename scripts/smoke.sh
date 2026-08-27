@@ -166,11 +166,22 @@ wait_for() { # wait_for <literal marker> <timeout-s>
   # already present when this wait began. This avoids regex metacharacters
   # (`?`) and stale pane prose satisfying a later transition.
   before=$(tmux capture-pane -t "$SESS" -p)
-  for i in $(seq 1 "$t"); do
+  # Antigravity-style adaptive polling: check-if-done beats guessing.
+  # Start tight (250ms) for fast transitions, back off to 1s for long waits.
+  # Deadline is absolute so late visibility never becomes success.
+  local poll_ms=250 deadline=$(( $(date +%s) + t ))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
     current=$(tmux capture-pane -t "$SESS" -p)
     if [ "$current" != "$before" ] && printf '%s\n' "$current" | grep -Fq -- "$pat"; then return 0; fi
-    sleep 1
+    local ms=$poll_ms
+    if [ "$ms" -gt 1000 ]; then ms=1000; fi
+    sleep "$(awk "BEGIN{printf \"%.3f\", $ms/1000}")"
+    poll_ms=$(( poll_ms * 2 ))
+    if [ "$poll_ms" -gt 1000 ]; then poll_ms=1000; fi
   done
+  # One final check at deadline without extra sleep.
+  current=$(tmux capture-pane -t "$SESS" -p)
+  if [ "$current" != "$before" ] && printf '%s\n' "$current" | grep -Fq -- "$pat"; then return 0; fi
   return 1
 }
 ledger_has() { # ledger_has <jq-ish python expr substring>
