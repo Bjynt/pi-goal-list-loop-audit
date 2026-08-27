@@ -23,6 +23,11 @@ Completed and approved on 2026-08-27. Verification: 1637 tests passed, 1
 skipped, 0 failed; TypeScript and offline auditor checks passed. Archive:
 `.pi-glla/archive/20260827153038-hr4q8b.md`.
 
+## README thumbnail
+
+The chosen banner is copied to `media/glla.png`, embedded at the README
+opening, and included in the package allowlist.
+
 ## Status-surface redesign and reconciliation
 
 The current eight-report GLLA reconciliation is recorded in
@@ -34,11 +39,10 @@ containment shipped in v0.35.71.
 
 ## we always want a useful summarywhen objective completes
 
-## README/Pi Store thumbnail
+## Pi Store listing thumbnail
 
-The chosen banner is copied to `media/glla.png`, embedded at the README
-opening, and included in the package allowlist. Pi Store listing upload remains
-an external/manual step.
+Upload the repository banner to the Pi Store listing when that external/manual
+step is ready; keep it separate from runtime UI and release behavior.
 
 ## `/glla bug` capture flow
 
