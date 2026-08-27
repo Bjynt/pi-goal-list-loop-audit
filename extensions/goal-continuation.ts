@@ -1236,7 +1236,11 @@ export function continuationPrompt(goal: Goal): string {
       `## REPLAN REQUIRED — DO NOT COMPLETE THIS REPAIR CARD\n\nThe saved objective below was reviewer/verification text and is preserved as the real target. Redraft a task list for the original target now. Call \`propose_task_list\` with a concise, concrete \`objective\` describing that target and the tasks needed to verify it. The user must confirm the new plan before work resumes. Do not call \`complete_goal\` until the task list is accepted.\n\nOriginal target: ${target.objective}\nOriginal contract: ${target.verificationContract || "(none recorded)"}\nDetected reasons: ${target.reasons.join(", ")}`,
     );
   }
-  const effSettings = resolveEffectiveAggressiveSettings(loadSettings(freshCtx()?.cwd ?? process.cwd()));
+  // Prompt rendering is also used by offline/status tests before the runtime
+  // factory has wired the context accessor. Treat that as an ordinary
+  // process-cwd render rather than calling an uninitialized hook.
+  const settingsCwd = freshCtx?.()?.cwd ?? process.cwd();
+  const effSettings = resolveEffectiveAggressiveSettings(loadSettings(settingsCwd));
   // Auditor-derived TODOs are part of the same stale report surface. Keep
   // them durable, but do not inject them before continuation consent.
   if (!auditorSurfaceSuppressed() && goal.pendingTasks && goal.pendingTasks.length > 0) {
@@ -1247,7 +1251,7 @@ export function continuationPrompt(goal: Goal): string {
   // v0.34.72 (note.md 2026-08-07): the vision-assist directive — seeing is
   // an mmx vision CLI job, never a reason to switch models (preapproval
   // gate: forbiddenModels). Injected whenever the setting is not disabled.
-  if (loadSettings(freshCtx()?.cwd ?? process.cwd()).visionAssist !== false) {
+  if (loadSettings(settingsCwd).visionAssist !== false) {
     directives.push(VISION_ASSIST_GUIDANCE);
   }
   if (effSettings.aggressiveMode && isFullAuditObjective(goal.objective)) {
