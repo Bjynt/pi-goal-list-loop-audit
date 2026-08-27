@@ -15,13 +15,6 @@ boundary.
 
 # Later
 
-## auditor calls done that stops objective
-
-/home/dracon/Pictures/Screenshots/Screenshot_20260827_155745.png 
-
-> /home/dracon/Pictures/Screenshots/Screenshot_20260827_162139.png 
-keepign around done prob related
-
 ## we always want a useful summarywhen objective completes
 
 ## README/Pi Store thumbnail
