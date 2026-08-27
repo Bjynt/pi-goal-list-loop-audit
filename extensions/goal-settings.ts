@@ -147,11 +147,12 @@ export interface Settings {
    * disapproval (0 = full report). Default 0 (full report). */
   auditFeedbackChars?: number;
   /** v0.25.0: flip the continuation defaults toward keep-going
-   * (contract item 5): autoResume on, auditCap 10, stuckMax 10, wedge off,
-   * provider errors auto-retry silently. v0.34.140: no-verdict auditor
-   * recovery also keeps retrying inside its bounded 24-hour window. Default
-   * ON since v0.34.141; set false for the conservative pause-first policy.
-   * Explicit per-key settings still win. */
+   * (contract item 5): auditCap 10, stuckMax 10, wedge off, and provider
+   * errors auto-retry silently. autoResume remains a separate explicit
+   * global consent because cold restore must hold by default. v0.34.140:
+   * no-verdict auditor recovery also keeps retrying inside its bounded
+   * 24-hour window. Default ON since v0.34.141; set false for the
+   * conservative pause-first policy. Explicit per-key settings still win. */
   aggressiveMode?: boolean;
   /** Consecutive stuck interventions before a loop stops (default 5,
    * 10 under aggressiveMode). */

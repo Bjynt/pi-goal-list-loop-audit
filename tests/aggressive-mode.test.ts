@@ -34,7 +34,8 @@ test("effective settings: aggressiveMode ON flips the defaults (items 5+7)", () 
   assert.equal(eff.auditCap, AGGRESSIVE_AUDIT_CAP);
   assert.equal(eff.stuckMaxInterventions, AGGRESSIVE_STUCK_MAX_INTERVENTIONS);
   assert.equal(eff.wedgeAlertMinutes, 0);
-  assert.equal(eff.autoResume, true);
+  // autoResume is explicit consent, not an aggressive-mode fallback.
+  assert.equal(eff.autoResume, undefined);
 });
 
 test("effective settings: missing aggressiveMode uses the production keep-going default", () => {
@@ -43,7 +44,8 @@ test("effective settings: missing aggressiveMode uses the production keep-going 
   assert.equal(eff.auditCap, AGGRESSIVE_AUDIT_CAP);
   assert.equal(eff.stuckMaxInterventions, AGGRESSIVE_STUCK_MAX_INTERVENTIONS);
   assert.equal(eff.wedgeAlertMinutes, 0);
-  assert.equal(eff.autoResume, true);
+  // Cold restore remains held until autoResume:true or an explicit resume.
+  assert.equal(eff.autoResume, undefined);
   assert.equal(DEFAULT_SETTINGS.aggressiveMode, true);
 });
 

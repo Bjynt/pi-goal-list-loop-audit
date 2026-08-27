@@ -2208,9 +2208,10 @@ export interface EffectiveAggressiveSettings {
 }
 
 /** Layered resolution: explicit per-key value > aggressiveMode default >
- * base default (contract items 5+7). Missing aggressiveMode is ON; false is
- * the explicit conservative opt-out. Pure so tests can assert the matrix
- * without a settings file. */
+ * base default for keep-going limits. autoResume is intentionally excluded
+ * from that coercion: it is an explicit global consent for cold restore.
+ * Missing aggressiveMode is ON; false is the explicit conservative opt-out.
+ * Pure so tests can assert the matrix without a settings file. */
 export function resolveEffectiveAggressiveSettings(s: {
   aggressiveMode?: boolean;
   auditCap?: number;

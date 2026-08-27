@@ -206,7 +206,7 @@ export function buildSettingsRows(
       valueText: show("aggressiveMode", "on"),
       sourceText: src("aggressiveMode"),
       description:
-        "ON by default: keep-going defaults (autoResume, cap 10, stuck 10, wedge off, provider + no-verdict auditor retries, cap→TODOs); set off for conservative pauses; explicit per-key settings still win",
+        "ON by default: keep-going defaults (cap 10, stuck 10, wedge off, provider + no-verdict auditor retries, cap→TODOs); autoResume remains explicit global consent; set off for conservative pauses; explicit per-key settings still win",
     },
     {
       id: "visionAssist",
