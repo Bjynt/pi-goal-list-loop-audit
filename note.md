@@ -8,13 +8,12 @@ No active follow-up; awaiting next list.
 
 # Done
 
+Keep only the three most recent completions here; older history lives in
+`audit/DONE-ARCHIVE.md`.
+
+- **Wait/duration estimation** — `scripts/durable-wait.mjs:estimateDurationFromHistory`/`nextPollMs` + `scripts/smoke.sh` `250→1000ms` adaptive polling, `audit/WAIT-ESTIMATION-2026-08-27.md` — `20260827203924-m13p3a` approved.
+- **/glla bug capture** — `extensions/goal-commands.ts:cmdGllaBug` writes `bugs/<ts>-<id>.md` via `resolveGllaStateDir` without mutating durable state — `20260827200116-bvgqsu` approved.
 - **Useful summary when objective completes** — six-label `Outcome:/Changed:/Evidence:/Tests:/Unresolved:/Next:` enforced in `goal-auditor-hooks.ts:validateCompletionSummary`, `audit/COMPLETION-SUMMARY-AUDIT-2026-08-27.md`, `tests/completion-summary-quality.test.ts` — `20260827193226-7ih651` approved.
-- **README/Pi Store thumbnail** — `media/glla2.png` (bust cache), `README.md:4` + `package.json:files` → `npm pack` includes `media`, commits `032f1761`/`ad5bd85d`.
-- **Fewer mid-execution questions** — `goal-continuation.ts` safe `freshCtx?.()?.cwd`, single `ACTIVE_EXECUTION_QUESTION_GUIDANCE` via `goal-loop-continuation.md`, `designer-drafter-policy.test.ts` — `20260827153038-hr4q8b` approved.
-- **Status-aware waiting** — `scripts/durable-wait.mjs` + `scripts/smoke.sh` durable poller, `tests/durable-wait.test.mjs`, `audit/WAIT-POLL-2026-08-27.md` — `61490f2e`/`d6e4b41`.
-- **/glla bug capture** — see Now above.
-- **Wait/duration estimation** — see Now above.
-- **Status-surface / 8-report reconciliation** — `audit/GITHUB-MAINTAINER-INVENTORY-2026-08-25.md`, v0.35.71 public no-stream containment.
 
 # Later
 
