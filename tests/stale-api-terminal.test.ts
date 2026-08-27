@@ -109,10 +109,20 @@ test("v0.30.0 — rebind-first survival: session_shutdown attribution, session_s
   assert.ok(SRC.includes('appendLedger(ctx.cwd, "zombie_stood_down", { owner: owner.instanceId });'), "successor stand-down ledgered");
   assert.ok(SRC.includes('appendLedger(ctx.cwd, "stale_awaiting_rebind", {});'), "rebind window absorbs stale probes");
   assert.ok(SRC.includes("owner.instanceId !== instanceId"), "stand-down only when a DIFFERENT instance owns the cwd");
-  assert.ok(SRC.includes("owner.pid === process.pid"), "stand-down is same-process only (cross-process twins untouched)");
+  assert.ok(SRC.includes("owner.pid === process.pid"), "same-process rebind remains supported");
   assert.match(SRC, /function goStaleTerminal\(ctx: ExtensionContext, where: string\): void/);
   assert.ok(!SRC.includes("function attemptAutoReload"), "terminal transport was removed");
   assert.ok(!SRC.includes("auto_reload_injected"), "no terminal keystroke ledger remains");
+});
+
+test("v0.35.72: pause and low-level activity cannot settle unrelated automatic dispatches", () => {
+  const stall = CONT.slice(CONT.indexOf("export function sendStallEscalation"), CONT.indexOf("export function sendLengthContinue"));
+  const length = CONT.slice(CONT.indexOf("export function sendLengthContinue"), CONT.indexOf("/* ------------------------------------------------------------------ */"));
+  const ack = CONT.slice(CONT.indexOf("export function dispatchStartAcknowledged"), CONT.indexOf("function dispatchStartUnacknowledged"));
+  assert.match(stall, /if \(supervisorPaused\(state\)\) return;/);
+  assert.match(length, /if \(supervisorPaused\(state\)\) return;/);
+  assert.match(ack, /pending\.phase !== "accepted"/);
+  assert.match(ack, /source !== "before_agent_start" \|\| !dispatchPromptMatches\(record, prompt\)/);
 });
 
 test("v0.29.11 — stale/stall-stopped loops HOLD on next load (resume, not restart-from-scratch)", () => {
