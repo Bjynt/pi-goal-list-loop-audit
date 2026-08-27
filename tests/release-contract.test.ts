@@ -44,6 +44,13 @@ test("release contract: docs index tracks the package version", () => {
   assert.ok(index.includes(`v0.35.14–v${version}`), "the active-focus trail must reach the current package version");
 });
 
+test("release contract: README package contents claim matches the files allowlist", () => {
+  const readme = fs.readFileSync("README.md", "utf-8");
+  assert.match(readme, /full test suite remains\s+repository material/);
+  assert.doesNotMatch(readme, /and the full test suite\. `audit/);
+  assert.equal([...dryRunFiles()].some((file) => file === "tests" || file.startsWith("tests/")), false, "tests remain repository-only material");
+});
+
 test("release contract: first-use README guidance matches current behavior", () => {
   const readme = fs.readFileSync("README.md", "utf-8");
   assert.match(readme, /State root.*workingDir.*sessionDir/s);
