@@ -1998,6 +1998,7 @@ test("v0.34.26: repeated output-token truncation pauses the goal durably with re
   for (let i = 0; i < 3; i++) {
     await pi.fire("agent_end", lengthEnd, ctx);
     await tick();
+    await acknowledgeLastContinuation(ctx);
   }
   assert.equal(pi.sent.length, 3, "three auto-continues fire before the cap");
   await pi.fire("agent_end", lengthEnd, ctx);
@@ -2015,6 +2016,7 @@ test("v0.34.26: repeated output-token truncation pauses the goal durably with re
   await pi.command("goal", "resume", ctx);
   await tick();
   const afterResume = pi.sent.length;
+  await acknowledgeLastContinuation(ctx);
   await pi.fire("agent_end", lengthEnd, ctx);
   await tick();
   assert.ok(pi.sent.length > afterResume, "a truncation after resume fires an auto-continue again");
