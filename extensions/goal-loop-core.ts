@@ -1077,9 +1077,11 @@ export function queueItemPath(cwd: string, id: string): string {
 export interface QueueItemWriteResult {
   path: string;
   wrote: boolean;
-  /** True when the persistence boundary rejected the write. A collision or
-   * symlink refusal is a normal wrote=false result, not a persistence error. */
+  /** True when the persistence boundary rejected the write. Collisions and
+   * symlink refusals are failures because callers must not commit RAM state
+   * while an older sidecar still owns the id. */
   failed?: boolean;
+  collision?: boolean;
 }
 
 /** Write one queue sidecar atomically. The default is idempotent/no-overwrite;
@@ -1093,7 +1095,7 @@ export function writeQueueItemFile(cwd: string, item: ListItem, options: { repla
     return { path: file, wrote: false, failed: true };
   }
   const replace = options.replace === true;
-  if (!replace && fs.existsSync(file)) return { path: file, wrote: false }; // idempotent — never overwrite
+  if (!replace && fs.existsSync(file)) return { path: file, wrote: false, failed: true, collision: true }; // never overwrite an existing id
   const result = runPersistStep("writeQueueItemFile", () => {
     if (replace) {
       try {

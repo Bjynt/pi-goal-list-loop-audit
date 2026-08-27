@@ -920,13 +920,22 @@ export function hydrateListQueueFromDisk(ctx: ExtensionContext): number {
   const exclude = new Set<string>();
   if (state.goal?.id) exclude.add(state.goal.id);
   const disk = readQueueFromDisk(ctx.cwd, exclude);
+  const diskById = new Map(disk.map((item) => [item.id, item] as const));
+  let reconciled = 0;
+  const merged = memory.map((item) => {
+    const durable = diskById.get(item.id);
+    if (!durable) return item;
+    const next = { ...item, ...durable };
+    if (JSON.stringify(next) !== JSON.stringify(item)) reconciled++;
+    return next;
+  });
   const known = new Set(memory.map((item) => item.id));
   const recovered = disk.filter((item) => !known.has(item.id));
-  if (recovered.length === 0) return 0;
-  const merged = [...memory, ...recovered].sort(compareQueueItems);
-  replaceState({ ...state, list: merged });
+  if (recovered.length === 0 && reconciled === 0) return 0;
+  const combined = [...merged, ...recovered].sort(compareQueueItems);
+  replaceState({ ...state, list: combined });
   persistState(ctx);
-  appendLedger(ctx.cwd, "list_recovered_from_disk", { count: recovered.length, hydrated: true });
+  appendLedger(ctx.cwd, "list_recovered_from_disk", { count: recovered.length, reconciled, hydrated: recovered.length > 0, sidecarSourceOfTruth: reconciled > 0 });
   return recovered.length;
 }
 
