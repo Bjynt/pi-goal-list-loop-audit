@@ -104,6 +104,8 @@ import {
   shouldAutoResumeOnSessionStart,
   statusLabel,
   writeGoalMd,
+  writeGoalStateTransaction,
+  clearGoalStateTransaction,
   writeQueueItemFile,
   readQueueFromDisk,
   deleteQueueItemFile,
@@ -621,7 +623,7 @@ function createGoal(objective: string, ctx: ExtensionContext, policy: "goal" | "
   return goal;
 }
 
-function persistState(ctx: ExtensionContext): void {
+function persistState(ctx: ExtensionContext): boolean {
   // v0.34.61 (steal #3, auditor round 2): the revision counter is
   // CONTRACT-scoped. v0.34.59 bumped on EVERY commit — audit settles
   // bumped too, so a settled verdict always left the goal one revision
@@ -632,7 +634,7 @@ function persistState(ctx: ExtensionContext): void {
   // audit leaves lastAudited.revision === state.goal.revision.
   // The durable write itself lives in goal-state.ts (persistStateLine);
   // this wrapper adds the UI side effects on top.
-  persistStateLine(ctx.cwd, state);
+  const landed = persistStateLine(ctx.cwd, state);
   notifyPersistenceState(ctx); // v0.28.6 (E1): loud on the first failure, all-clear on recovery
   refreshUI(ctx); // every state transition flows through here → the TUI is always current
   // The synchronous repaint can be overwritten by pi's transcript/editor
@@ -640,6 +642,7 @@ function persistState(ctx: ExtensionContext): void {
   // durable projection after the current event yields so status transitions
   // such as active → auditing cannot remain stale until worker progress.
   scheduleUIRefresh();
+  return landed;
 }
 
 // v0.28.6 (E1): persistence-degradation notify — once per failure streak,

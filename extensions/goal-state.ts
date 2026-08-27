@@ -69,8 +69,8 @@ export function replaceState(next: State): void {
  *
  * The UI side of a persist (notifyPersistenceState / refreshUI) is goal.ts's
  * wrapper — this is the disk write, not the HUD. */
-export function persistStateLine(cwd: string, s: State): void {
-  appendLedger(cwd, "state", {
+export function persistStateLine(cwd: string, s: State): boolean {
+  return appendLedger(cwd, "state", {
     goal: s.goal,
     list: s.list ?? [],
     loop: s.loop ?? null,

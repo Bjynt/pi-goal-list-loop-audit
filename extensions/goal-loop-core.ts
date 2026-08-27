@@ -1284,14 +1284,28 @@ export function readState(cwd: string): State {
   const lines = raw.split("\n").filter(Boolean);
   if (lines.length === 0) return { ...DEFAULT_STATE };
   let parsed: Partial<State> = {};
+  let lastStateAt: string | undefined;
   for (const line of lines) {
     try {
       const evt = JSON.parse(line);
-      if (evt.type === "state") parsed = { ...parsed, ...evt.value };
+      if (evt.type === "state") {
+        parsed = { ...parsed, ...evt.value };
+        if (typeof evt.at === "string") lastStateAt = evt.at;
+      }
     } catch {
       // skip malformed lines — a truncated trailing line (mid-write kill)
       // must not lose the rest of the state
     }
+  }
+  // A goal projection can land between the markdown and ledger writes when
+  // the process dies. Prefer the complete transaction snapshot only when it
+  // is newer than the last durable state line; otherwise an old orphan is
+  // already committed and must not roll back later unrelated state changes.
+  const transaction = readGoalStateTransaction(cwd);
+  const transactionAt = transaction ? Date.parse(transaction.at) : Number.NaN;
+  const stateAt = lastStateAt ? Date.parse(lastStateAt) : Number.NaN;
+  if (transaction && (!lastStateAt || Number.isNaN(stateAt) || transactionAt > stateAt)) {
+    parsed = { ...parsed, ...transaction.state };
   }
   const goal = parsed.goal && typeof parsed.goal === "object" && isSafePersistedId((parsed.goal as { id?: unknown }).id)
     ? {
