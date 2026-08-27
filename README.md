@@ -1,5 +1,9 @@
 # pi-goal-list-loop-audit
 
+<p align="center">
+  <img src="media/glla.png" alt="GLLA mission control" width="960">
+</p>
+
 > **Long-running, high-leverage autonomy for pi.**
 >
 > Give pi a meaningful outcome. GLLA helps it research, plan, execute,

@@ -36,8 +36,9 @@ containment shipped in v0.35.71.
 
 ## README/Pi Store thumbnail
 
-After the status-surface work, upload a thumbnail for the README opening and Pi
-Store listing. Keep this separate from runtime UI and release behavior.
+The chosen banner is copied to `media/glla.png`, embedded at the README
+opening, and included in the package allowlist. Pi Store listing upload remains
+an external/manual step.
 
 ## `/glla bug` capture flow
 
