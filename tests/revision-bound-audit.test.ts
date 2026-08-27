@@ -144,15 +144,16 @@ test("v0.34.60: complete_goal with newObjective bumps the revision and audits th
     activate(pi.api);
     __testOnlyRegisterAgentTools(pi.api);
     rememberCtxFor(cwd);
+    const validRecap = "Outcome: Test claim. Changed: none. Evidence: harness. Tests: not run — harness. Unresolved: none. Next: none.";
     const res = await pi.runTool(
       "complete_goal",
-      { completionSummary: "Claim", verificationSummary: "Evidence", newObjective: "shifted objective — different work now" },
+      { completionSummary: validRecap, verificationSummary: "Evidence", newObjective: "shifted objective — different work now" },
       ownerCtx(cwd),
     );
     assert.match(res.content[0]!.text, /auditor queued|detached/i, "the claim proceeds (no gate rejection)");
     const st = readState(cwd);
     assert.equal(st.goal?.objective, "shifted objective — different work now", "newObjective replaced the objective");
-    assert.equal(st.goal?.completionSummary, "Claim", "v0.34.91: the completion recap is captured on the goal at claim time (the terminal summary shows what happened)");
+    assert.equal(st.goal?.completionSummary, validRecap, "v0.34.91: the completion recap is captured on the goal at claim time (the terminal summary shows what happened)");
     assert.equal(st.goal?.revision, 2, "newObjective bumps the revision exactly once (seed 1 → 2); settle writes do not bump");
     await waitUntil(() => readState(cwd).goal === null);
   } finally {
