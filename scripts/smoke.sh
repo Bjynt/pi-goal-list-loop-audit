@@ -129,23 +129,28 @@ pass() { printf '  \033[32mPASS\033[0m %s\n' "$*"; }
 fail() { printf '  \033[31mFAIL\033[0m %s\n' "$*"; FAILURES=$((FAILURES+1)); }
 
 send() { tmux send-keys -t "$SESS" "$1" Enter; }
+wait_for_durable() { # wait_for_durable <timeout-s> <needle>...
+  local t="$1"
+  shift
+  local args=(--file "$WORK/.pi-glla/active.jsonl" --timeout-ms "$((t * 1000))" --poll-ms 1000)
+  local needle
+  for needle in "$@"; do args+=(--needle "$needle"); done
+  # The helper prints JSON with elapsedMs/checks/terminalReason. Its exit
+  # status is success only for the durable done event; timeout is bounded and
+  # is handled by the caller like any other failed assertion.
+  node "$EXT_DIR/scripts/durable-wait.mjs" "${args[@]}"
+}
 wait_for() { # wait_for <literal marker> <timeout-s>
   local pat="$1" t="$2" i before current
   # Durable verdicts are the source of truth; a model can quote any UI
   # phrase in prose, but it cannot create the corresponding ledger event.
   if [ "$pat" = "✓ done:" ]; then
-    for i in $(seq 1 "$t"); do
-      if ledger_has '"approved":true'; then return 0; fi
-      sleep 1
-    done
-    return 1
+    wait_for_durable "$t" '"approved":true'
+    return $?
   fi
   if [ "$pat" = "Loop stopped: plateau" ]; then
-    for i in $(seq 1 "$t"); do
-      if ledger_has '"loop_stopped"' && ledger_has '"plateau'; then return 0; fi
-      sleep 1
-    done
-    return 1
+    wait_for_durable "$t" '"loop_stopped"' '"plateau'
+    return $?
   fi
   # UI-only waits use literal matching and only accept a marker that was not
   # already present when this wait began. This avoids regex metacharacters
