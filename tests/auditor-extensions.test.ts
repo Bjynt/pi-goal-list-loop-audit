@@ -212,9 +212,9 @@ test("mandatory hermetic auditor-extension validation loads the resolved allowli
   delete env.GLLA_LIVE_PI;
   delete env.GLLA_LIVE_EXT_PKG;
   const r = execFileSync(
-    "timeout",
-    ["120", process.execPath, path.join(repoRoot, "scripts", "verify-auditor-extensions-offline.mjs")],
-    { env, encoding: "utf8" },
+    process.execPath,
+    [path.join(repoRoot, "scripts", "verify-auditor-extensions-offline.mjs")],
+    { env, encoding: "utf8", timeout: 120_000 },
   );
   assert.match(r, /glla-auditor-fixture/);
   assert.match(r, /VERIFIED offline auditor extension loading/);

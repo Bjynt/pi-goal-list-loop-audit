@@ -18,7 +18,7 @@ import {
   AGGRESSIVE_AUDIT_CAP,
   AGGRESSIVE_STUCK_MAX_INTERVENTIONS,
 } from "../extensions/goal-loop-core.ts";
-import { DEFAULT_SETTINGS, saveSettings, loadSettings, settingsProvenance } from "../extensions/goal-settings.ts";
+import { DEFAULT_SETTINGS, globalSettingsPath, saveSettings, loadSettings, settingsProvenance } from "../extensions/goal-settings.ts";
 
 test("aggressiveMode persists through the settings file (item 8)", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-aggr-"));
@@ -75,7 +75,7 @@ test("explicit per-key settings WIN over aggressiveMode (advisor semantics)", ()
 
 test("autoResume is global-only in the effective settings and provenance", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-autoresume-scope-"));
-  const globalPath = process.env.GLLA_GLOBAL_SETTINGS_PATH!;
+  const globalPath = globalSettingsPath();
   const hadGlobal = fs.existsSync(globalPath);
   const priorGlobal = hadGlobal ? fs.readFileSync(globalPath, "utf8") : undefined;
   try {
