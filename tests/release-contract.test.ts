@@ -41,7 +41,7 @@ test("release contract: published documentation links are covered by the npm tar
 test("release contract: docs index tracks the package version", () => {
   const version = (JSON.parse(fs.readFileSync("package.json", "utf-8")) as { version: string }).version;
   const index = fs.readFileSync("docs/INDEX.md", "utf-8");
-  assert.match(index, new RegExp(`v0\\.35\\.14–v${version.replaceAll(".", "\\\\.")}\\b`), "the active-focus trail must reach the current package version");
+  assert.ok(index.includes(`v0.35.14–v${version}`), "the active-focus trail must reach the current package version");
 });
 
 test("release contract: first-use README guidance matches current behavior", () => {
@@ -70,7 +70,6 @@ test("release workflow scopes trusted-publishing OIDC to the publish job", () =>
 test("release contract: changelog has one heading for the current package version", () => {
   const version = (JSON.parse(fs.readFileSync("package.json", "utf-8")) as { version: string }).version;
   const changelog = fs.readFileSync("CHANGELOG.md", "utf-8");
-  const escaped = version.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
-  const headings = changelog.match(new RegExp(`^## ${escaped}\\\\b`, "gm")) ?? [];
+  const headings = changelog.split(/\r?\n/).filter((line) => line.startsWith(`## ${version} `));
   assert.equal(headings.length, 1, `${version} release notes must have one unambiguous heading`);
 });

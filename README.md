@@ -439,8 +439,10 @@ when tracing behavior:
 
 The package contains the extension entry point
 `extensions/loops/goal.ts`, prompt templates, schemas, scripts, docs, examples,
-and the full test suite. `audit/` and `.research/` are repository material, not
-first-use package content.
+and the user-facing README/install/changelog files. The full test suite remains
+repository material for maintainers and is exercised by `npm run test:all`; it is
+not included in the published tarball. `audit/` and `.research/` are also
+repository material, not first-use package content.
 
 ## License
 
