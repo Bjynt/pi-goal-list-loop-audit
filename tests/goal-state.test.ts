@@ -44,7 +44,7 @@ test("wholesale state replacement goes through replaceState() only", () => {
 });
 
 test("the persistence core lives in goal-state.ts (persistStateLine)", () => {
-  assert.match(STATE_SRC, /export function persistStateLine\(cwd: string, s: State\): void \{/);
+  assert.match(STATE_SRC, /export function persistStateLine\(cwd: string, s: State\): boolean \{/);
   // The ledger "state" line write moved out of goal.ts.
   assert.ok(!GOAL_SRC.includes('appendLedger(ctx.cwd, "state", { goal: state.goal'), "goal.ts no longer writes the state ledger line inline");
   // goal.ts's persistState wraps the core with the UI side effects.
@@ -58,7 +58,8 @@ test("replaceState is used at the moved wholesale sites", () => {
   // semantically critical ones (goal swap, archive, list ops) all route
   // through the primitive.
   for (const needle of [
-    "replaceState({ ...state, goal });",
+    "writeGoalStateTransaction(ctx.cwd, { ...state, goal: nextGoal })",
+    "replaceState({ ...state, goal: nextGoal });",
     "replaceState(readState(cwd));",
     "replaceState({ ...state, lastCompactionAt });",
   ]) {

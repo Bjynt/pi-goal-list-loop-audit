@@ -63,6 +63,14 @@ async function freshSession(cwd: string, reason: string): Promise<MockCtx> {
   return ctx;
 }
 
+// Real pi emits before_agent_start for an accepted follow-up before agent_end.
+// Keep the harness explicit about that proof so the continuation watchdog does
+// not confuse a test fixture's agent_end with the dispatch it is meant to settle.
+async function acknowledgeLastContinuation(ctx: MockCtx): Promise<void> {
+  const prompt = pi.sent.at(-1)?.message.content;
+  if (prompt) await pi.fire("before_agent_start", { prompt }, ctx);
+}
+
 async function waitUntil(predicate: () => boolean, timeoutMs = 30_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!predicate()) {
@@ -1470,6 +1478,7 @@ test("T2: a stale send on agent_end continuation → goal ACTIVE + interrupt mar
   await pi.command("goal", "start behavioral stale target — done when pinned", ctx);
   await tick();
   assert.equal((readState(cwd).goal as { status: string }).status, "active", "goal created and active");
+  await acknowledgeLastContinuation(ctx);
   pi.sendMessageError = staleError();
   pi.sent.length = 0;
   await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "still working" }], stopReason: "end_turn" }] }, ctx);
@@ -1502,6 +1511,7 @@ test("T2b: stale before compaction → no late rebind, refire, or misleading act
   const ctx = await freshSession(cwd, "startup");
   await pi.command("goal", "stale then compact — done when pinned", ctx);
   await tick();
+  await acknowledgeLastContinuation(ctx);
   pi.sent.length = 0;
   pi.sendMessageError = staleError();
   const before = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
@@ -1544,6 +1554,7 @@ test("v0.35.x: stale terminal keeps a recovery probe and self-heals without relo
   try {
     await pi.command("goal", "same-process stale recovery — done when pinned", ctx);
     await tick();
+    await acknowledgeLastContinuation(ctx);
     pi.sent.length = 0;
     const stale = staleError();
     pi.sendMessageError = stale;
@@ -1776,6 +1787,7 @@ test("v0.34.25: silent swap — live file-backed successor is absorbed via a too
   const ctx = await freshSession(cwd, "startup");
   await pi.command("goal", "swap survival — done when absorbed", ctx);
   await tick();
+  await acknowledgeLastContinuation(ctx);
   pi.sent.length = 0;
   pi.sendMessageError = staleError();
   await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "boundary" }], stopReason: "end_turn" }] }, ctx);
@@ -1812,6 +1824,7 @@ test("v0.34.25: silent swap — in-memory (subagent) ctx is still refused and th
   const ctx = await freshSession(cwd, "startup");
   await pi.command("goal", "swap refusal — done when refused", ctx);
   await tick();
+  await acknowledgeLastContinuation(ctx);
   pi.sendMessageError = staleError();
   await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "boundary" }], stopReason: "end_turn" }] }, ctx);
   await tick();
@@ -1836,6 +1849,7 @@ test("v0.34.25: the field ordering — stale before compaction, then the success
   const ctx = await freshSession(cwd, "startup");
   await pi.command("goal", "compact swap — done when absorbed", ctx);
   await tick();
+  await acknowledgeLastContinuation(ctx);
   pi.sent.length = 0;
   pi.sendMessageError = staleError();
   await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "boundary" }], stopReason: "end_turn" }] }, ctx);
@@ -1911,6 +1925,7 @@ test("v0.34.27: stale host recovery absorbs the first replacement contact across
     const ctx = await freshSession(cwd, "startup");
     await pi.command("goal", `successor contact ${index} — done when absorbed`, ctx);
     await tick();
+    await acknowledgeLastContinuation(ctx);
     pi.sent.length = 0;
     pi.sendMessageError = staleError();
     await pi.fire("agent_end", { messages: [{ role: "assistant", content: [{ type: "text", text: "boundary" }], stopReason: "end_turn" }] }, ctx);
@@ -1977,6 +1992,7 @@ test("v0.34.26: repeated output-token truncation pauses the goal durably with re
   const ctx = await freshSession(cwd, "startup");
   await pi.command("goal", "chunked work — done when durable", ctx);
   await tick();
+  await acknowledgeLastContinuation(ctx);
   pi.sent.length = 0;
   const lengthEnd = { messages: [{ role: "assistant", content: [{ type: "text", text: "partial artifact…" }], stopReason: "length" }] };
   for (let i = 0; i < 3; i++) {
