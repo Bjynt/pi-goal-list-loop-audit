@@ -2225,7 +2225,10 @@ export function resolveEffectiveAggressiveSettings(s: {
     stuckMaxInterventions:
       s.stuckMaxInterventions ?? (aggressiveMode ? AGGRESSIVE_STUCK_MAX_INTERVENTIONS : BASE_STUCK_MAX_INTERVENTIONS),
     wedgeAlertMinutes: s.wedgeAlertMinutes ?? (aggressiveMode ? 0 : 30),
-    autoResume: s.autoResume ?? (aggressiveMode ? true : undefined),
+    // autoResume is a separate explicit global consent. Aggressive mode may
+    // widen retry/stall defaults, but must not turn a cold restore into an
+    // unattended launch without the user's autoResume:true setting.
+    autoResume: s.autoResume,
   };
 }
 
