@@ -544,6 +544,12 @@ export function dispatchFailed(ctx: ExtensionContext, record: ContinuationDispat
 }
 
 export function dispatchStartAcknowledged(ctx: ExtensionContext, source: string, prompt?: unknown): boolean {
+  // A dispatch has one accepted window and one start proof. Once a start was
+  // recorded, later low-level events must not re-settle it; before that,
+  // events without the exact prompt marker are unrelated manual activity.
+  const pending = pendingContinuationDispatch;
+  if (!pending || pending.phase !== "accepted") return false;
+  if (source !== "before_agent_start" && !pending.startProofSource) return false;
   // v0.34.104 ([Image-#1]): any real agent activity during the
   // post-list-completion settle window means pi woke up on its own — the
   // deferred continuation must be cancelled so we don't double-dispatch.
