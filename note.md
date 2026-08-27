@@ -13,6 +13,38 @@ its lifecycle, durable state, public recovery boundaries, and evidence
 surfaces; Pi, the OS, providers, and other plugins remain outside its fix
 boundary.
 
+## AVO idea triage — 2026-08-27
+
+PR #22 is an unmerged, conflicting fork branch, not shipped product behavior.
+The current `main` (v0.35.71) has no AVO/stagnation implementation. The PR's
+claim is accurate only in the narrow sense of an **AVO-inspired stagnation
+prototype**: it tracks bounded per-turn activity, detects four active turns
+without local progress or three near-duplicate replies, and injects a
+non-prescriptive trajectory-review prompt. It does **not** implement AVO's
+variation-operator search, persistent task memory, objective score/evaluator,
+or independent supervisor agent. PR #36 is separate Commissar work, not the
+AVO implementation.
+
+Do not merge either PR wholesale. Before taking another AVO-sized bite,
+prioritize these smaller foundations:
+
+1. Define a durable, objective-specific progress/evaluation signal. Commits,
+   file writes, and reply similarity are useful telemetry but are not proof
+   that an objective improved.
+2. Replace guessed long waits with bounded, status-aware rechecks and record
+   observed durations. The agent should keep checking whether a condition is
+   done rather than choosing a large sleep from a guess.
+3. Exercise completion and recovery under provider failure, restart, and
+   no-stream conditions so a long-running goal can close without a manual
+   rescue.
+4. If those foundations hold, revisit AVO as one opt-in, narrowly scoped
+   trajectory-review experiment with a real evaluation signal—not a wholesale
+   architecture port.
+
+This is a prioritization note, not an active implementation request. Keep
+AVO research separate from the main release line until the smaller work is
+scoped and verified.
+
 # Later
 
 ## README/Pi Store thumbnail
