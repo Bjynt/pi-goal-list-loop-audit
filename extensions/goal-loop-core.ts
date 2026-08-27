@@ -1756,6 +1756,45 @@ export function assignQueueOrder<T extends ListItem>(items: readonly T[], existi
   return items.map((item) => item.queueOrder === undefined ? { ...item, queueOrder: next++ } : item);
 }
 
+/** Visible queue positions used by /list show/list_status and their actions.
+ * Top-level items are numbered `1`, `2`, … and children are addressable as
+ * `1.1`, `1.2`, …; the returned flat index is the storage index consumed by
+ * the existing activation/removal machinery. */
+export interface VisibleListPosition {
+  label: string;
+  item: ListItem;
+  flatIndex: number;
+}
+
+export function visibleListPositions(queue: readonly ListItem[]): VisibleListPosition[] {
+  const out: VisibleListPosition[] = [];
+  let top = 0;
+  for (let flatIndex = 0; flatIndex < queue.length; flatIndex++) {
+    const item = queue[flatIndex]!;
+    if (item.parentId) continue;
+    top++;
+    out.push({ label: String(top), item, flatIndex });
+    let child = 0;
+    for (let childIndex = 0; childIndex < queue.length; childIndex++) {
+      const candidate = queue[childIndex]!;
+      if (candidate.parentId !== item.id) continue;
+      child++;
+      out.push({ label: `${top}.${child}`, item: candidate, flatIndex: childIndex });
+    }
+  }
+  return out;
+}
+
+export function parseVisibleListPosition(value: string | number): string | null {
+  const raw = String(value).trim();
+  return /^\d+(?:\.\d+)?$/.test(raw) && !raw.startsWith("0") && !raw.endsWith(".0") ? raw : null;
+}
+
+export function visibleListPosition(queue: readonly ListItem[], value: string | number): VisibleListPosition | undefined {
+  const label = parseVisibleListPosition(value);
+  return label ? visibleListPositions(queue).find((entry) => entry.label === label) : undefined;
+}
+
 /**
  * v0.34.59: revision token — return {goalId, revision} for use as a
  * (focus-token, sandbox-check) at async boundaries. The orchestrator

@@ -40,6 +40,7 @@ import {
   appendLedger,
   claimRecoveryNotice,
   assignQueueOrder,
+  visibleListPosition,
   providerErrorPresentation,
   sanitizeProviderAuditReport,
   sanitizeProviderDisplayText,

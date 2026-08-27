@@ -23,6 +23,7 @@ import {
   computeListDepth, clearQueueItemFiles, deleteQueueItemFile, extractVerificationContract, formatAuditLog, formatGoalAuditHistory, formatMainModelRecoveryStatus, queueItemSidecarCount,
   formatListDepth, goalArgsNeedDrafting, ledgerPath, newGoalId, nowIso, parseListImport, parseListItemDeclaration,
   assignQueueOrder, compareQueueItems, readAuditLog, readQueueFromDisk, routeGoalArgs, routeListText, sanitizeDisplayText, sanitizeProviderAuditReport, statusLabel,
+  visibleListPosition, visibleListPositions,
   writeQueueItemFile, type ModeCommand, type State, LIST_MUTATING_SUBCOMMANDS, SETTINGS_MUTATING_ACTIONS,
   clearLoadHold, stateRootPending,
 } from "./goal-loop-core.js";
