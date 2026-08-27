@@ -25,7 +25,7 @@ skipped, 0 failed; TypeScript and offline auditor checks passed. Archive:
 
 ## README thumbnail
 
-The chosen banner is copied to `media/glla.png`, embedded at the README
+The chosen banner is copied to `media/glla2.png`, embedded at the README
 opening, and included in the package allowlist.
 
 ## Status-surface redesign and reconciliation

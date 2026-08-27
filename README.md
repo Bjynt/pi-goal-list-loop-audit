@@ -1,7 +1,7 @@
 # pi-goal-list-loop-audit
 
 <p align="center">
-  <img src="media/glla.png" alt="GLLA mission control" width="960">
+  <img src="media/glla2.png" alt="GLLA mission control" width="960">
 </p>
 
 > **Long-running, high-leverage autonomy for pi.**
