@@ -53,6 +53,7 @@ For shipped docs, the relevant entry points are:
 - `../schemas/` — goal state JSON schema
 - `../examples/` — example objective files
 - `../CHANGELOG.md` — user-facing changelog (unreleased at top)
+- `/glla bug` — `extensions/goal-commands.ts:cmdGllaBug` captures failure context to `<stateDir>/bugs/<ts>-<id>.md` without touching `active.jsonl`/`goals/*.md` (see `tests/glla-bug-capture.test.ts`)
 
 ## Repository-only material
 The audit history and competitor research live in `audit/` and `.research/`

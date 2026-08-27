@@ -347,7 +347,7 @@ proof of a quota or billing state.
 - interrupted completion claims remain available for retry and inspection.
 
 Use `/glla pause` to freeze supervisor automation without killing active work,
-`/glla resume` to release it, and `/glla status` or `/goal status` to inspect
+`/glla resume` to release it, `/glla bug [message]` to capture failure context to `bugs/` without touching durable goal state, and `/glla status` or `/goal status` to inspect
 what happened.
 
 ### Settings worth knowing

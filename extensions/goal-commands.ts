@@ -2207,12 +2207,13 @@ export function cmdGllaBug(message: string, ctx: ExtensionContext): string {
   lines.push(`- **Goal status**: ${state.goal?.status ?? "(none)"}`);
   if (state.goal?.verificationContract) lines.push(`- **Verification**: ${state.goal.verificationContract.slice(0, 400).replace(/\n/g, " | ")}`);
   lines.push(`- **Policy**: ${state.goal?.policy ?? "(none)"}`);
-  lines.push(`- **List queue**: ${state.list.length} waiting`);
-  if (state.list.length) {
-    for (const item of state.list.slice(0, 10)) {
+  const queue = state.list ?? [];
+  lines.push(`- **List queue**: ${queue.length} waiting`);
+  if (queue.length) {
+    for (const item of queue.slice(0, 10)) {
       lines.push(`  - ${item.id}: ${item.objective.slice(0, 120)}`);
     }
-    if (state.list.length > 10) lines.push(`  - …and ${state.list.length - 10} more`);
+    if (queue.length > 10) lines.push(`  - …and ${queue.length - 10} more`);
   }
   lines.push(`- **Loop**: ${state.loop ? JSON.stringify(state.loop).slice(0, 300) : "(none)"}`);
   lines.push("");
