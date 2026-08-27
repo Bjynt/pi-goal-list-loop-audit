@@ -129,10 +129,31 @@ pass() { printf '  \033[32mPASS\033[0m %s\n' "$*"; }
 fail() { printf '  \033[31mFAIL\033[0m %s\n' "$*"; FAILURES=$((FAILURES+1)); }
 
 send() { tmux send-keys -t "$SESS" "$1" Enter; }
-wait_for() { # wait_for <pattern> <timeout-s>
-  local pat="$1" t="$2" i
+wait_for() { # wait_for <literal marker> <timeout-s>
+  local pat="$1" t="$2" i before current
+  # Durable verdicts are the source of truth; a model can quote any UI
+  # phrase in prose, but it cannot create the corresponding ledger event.
+  if [ "$pat" = "✓ done:" ]; then
+    for i in $(seq 1 "$t"); do
+      if ledger_has '"approved":true'; then return 0; fi
+      sleep 1
+    done
+    return 1
+  fi
+  if [ "$pat" = "Loop stopped: plateau" ]; then
+    for i in $(seq 1 "$t"); do
+      if ledger_has '"loop_stopped"' && ledger_has '"plateau'; then return 0; fi
+      sleep 1
+    done
+    return 1
+  fi
+  # UI-only waits use literal matching and only accept a marker that was not
+  # already present when this wait began. This avoids regex metacharacters
+  # (`?`) and stale pane prose satisfying a later transition.
+  before=$(tmux capture-pane -t "$SESS" -p)
   for i in $(seq 1 "$t"); do
-    if tmux capture-pane -t "$SESS" -p | grep -q "$pat"; then return 0; fi
+    current=$(tmux capture-pane -t "$SESS" -p)
+    if [ "$current" != "$before" ] && printf '%s\n' "$current" | grep -Fq -- "$pat"; then return 0; fi
     sleep 1
   done
   return 1
@@ -205,10 +226,10 @@ case "$SCENARIO" in
   draft)
     send '/goal'
     say "waiting for the agent to grill (up to 60s)"
-    if wait_for "?" 60; then pass "agent is clarifying"; else fail "no clarification turn"; fi
+    if wait_for "Goal drafting" 60; then pass "agent is clarifying"; else fail "no clarification turn"; fi
     send 'create drafted.txt containing confirmed, done when grep -q confirmed drafted.txt passes'
     say "waiting for the Confirm dialog (up to 60s)"
-    if wait_for "Yes" 60; then pass "confirm dialog shown"; else fail "no confirm dialog"; fi
+    if wait_for "Confirm goal" 60; then pass "confirm dialog shown"; else fail "no confirm dialog"; fi
     send ""   # Enter = accept
     say "waiting for audit + approval (up to 120s)"
     if wait_for "✓ done:" 120; then pass "drafted goal approved"; else fail "no approval"; fi
@@ -241,19 +262,19 @@ case "$SCENARIO" in
   draft-reject)
     send '/goal'
     say "waiting for the agent to grill (up to 60s)"
-    if wait_for "?" 60; then pass "agent is clarifying"; else fail "no clarification turn"; fi
+    if wait_for "Goal drafting" 60; then pass "agent is clarifying"; else fail "no clarification turn"; fi
     send 'create rejected.txt containing no, done when grep -q no rejected.txt passes'
     say "waiting for the first Confirm dialog (up to 60s)"
-    if wait_for "Yes" 60; then pass "first confirm dialog shown"; else fail "no first dialog"; fi
+    if wait_for "Confirm goal" 60; then pass "first confirm dialog shown"; else fail "no first dialog"; fi
     # navigate to No and reject
     tmux send-keys -t "$SESS" Down
     sleep 1
     tmux send-keys -t "$SESS" Enter
     say "waiting for refinement (agent should re-ask or re-propose, up to 60s)"
-    if wait_for "change" 60 || wait_for "refine" 10 || wait_for "What" 10; then pass "agent refining after rejection"; else fail "no refinement after rejection"; fi
+    if wait_for "refine" 60 || wait_for "What should" 10; then pass "agent refining after rejection"; else fail "no refinement after rejection"; fi
     send 'same thing but create accepted.txt containing yes, done when grep -q yes accepted.txt passes'
     say "waiting for the second Confirm dialog (up to 60s)"
-    if wait_for "Yes" 60; then pass "second confirm dialog shown"; else fail "no second dialog"; fi
+    if wait_for "Confirm goal" 60; then pass "second confirm dialog shown"; else fail "no second dialog"; fi
     send ""   # Enter = accept this time
     say "waiting for audit + approval (up to 120s)"
     if wait_for "✓ done:" 120; then pass "refined goal approved"; else fail "no approval after refinement"; fi
