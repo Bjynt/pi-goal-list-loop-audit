@@ -38,6 +38,12 @@ test("release contract: published documentation links are covered by the npm tar
   }
 });
 
+test("release contract: docs index tracks the package version", () => {
+  const version = (JSON.parse(fs.readFileSync("package.json", "utf-8")) as { version: string }).version;
+  const index = fs.readFileSync("docs/INDEX.md", "utf-8");
+  assert.match(index, new RegExp(`v0\\.35\\.14–v${version.replaceAll(".", "\\\\.")}\\b`), "the active-focus trail must reach the current package version");
+});
+
 test("release contract: first-use README guidance matches current behavior", () => {
   const readme = fs.readFileSync("README.md", "utf-8");
   assert.match(readme, /State root.*workingDir.*sessionDir/s);
@@ -61,8 +67,10 @@ test("release workflow scopes trusted-publishing OIDC to the publish job", () =>
   assert.match(workflow.slice(publishAt), /permissions:\n\s+contents: read\n\s+id-token: write/, "publish retains trusted publishing OIDC");
 });
 
-test("release contract: changelog has one heading for each release version", () => {
+test("release contract: changelog has one heading for the current package version", () => {
+  const version = (JSON.parse(fs.readFileSync("package.json", "utf-8")) as { version: string }).version;
   const changelog = fs.readFileSync("CHANGELOG.md", "utf-8");
-  const headings = changelog.match(/^## 0\.35\.35\b/gm) ?? [];
-  assert.equal(headings.length, 1, "0.35.35 release notes must have one unambiguous heading");
+  const escaped = version.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
+  const headings = changelog.match(new RegExp(`^## ${escaped}\\\\b`, "gm")) ?? [];
+  assert.equal(headings.length, 1, `${version} release notes must have one unambiguous heading`);
 });

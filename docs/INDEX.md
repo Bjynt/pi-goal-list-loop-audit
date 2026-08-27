@@ -18,11 +18,13 @@ For shipped docs, the relevant entry points are:
   failback; v0.35.9 hardened cross-version npm tarball checks; v0.35.10
   handles multi-entry npm dry-run reports; v0.35.11 accepts both npm report
   shapes; v0.35.12 supports npm 12's keyed pack reports; v0.35.13 fixes stale-API recovery loops.
-  v0.35.14–v0.35.64 continue through the supervisor freeze (`/glla pause`),
+  v0.35.14–v0.35.71 continue through the supervisor freeze (`/glla pause`),
   load hold, auditor picker parity, Windows launch fix, zombie-watchdog
   subagent carve-out, due-wait backstop, the `/glla agents` visibility panel,
   durable state-root selection, blank-until-resume auditor context, frozen
-  subagent recovery, and bounded repair/replan recovery — see CHANGELOG.md for
+  subagent recovery, bounded repair/replan recovery, production RPC child
+  stopping, mandatory hermetic auditor-extension validation, optional provider
+  extensions, and bounded zero-stream retry containment — see CHANGELOG.md for
   the full trail.
 - `../README.md` — what the plugin is, install, quickstart, and the
   architectural guarantee (drafting + confirm + detached auditor).
