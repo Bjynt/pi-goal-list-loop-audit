@@ -1917,6 +1917,19 @@ export const LONG_RUNNING_JUDGMENT_POLICY = `LONG-RUNNING JUDGMENT POLICY:
 - In unattended mode, choose the safest contract-preserving path and continue. If no safe choice exists, raise a concrete DECIDE question with a recommended default; never ask a vague progress question or wait on a guessed provider/quota reset.`;
 
 /**
+ * Guidance specific to an already-confirmed goal. Drafting is the place to
+ * resolve scope and acceptance questions; active execution should not reopen
+ * reversible local choices or turn them into user-facing pauses.
+ */
+export const ACTIVE_EXECUTION_QUESTION_GUIDANCE = `ACTIVE-EXECUTION QUESTION DISCIPLINE:
+- Drafting is the default place to gather scope, acceptance criteria, constraints, and trade-offs. Once active, treat the confirmed objective and verification contract as sufficient context.
+- During active execution, do not ask about reversible implementation choices, naming, formatting, test shape, or whether to continue. Choose the maintainable contract-preserving option, record the rationale, and proceed.
+- Defer non-blocking preferences and alternatives to the completion summary (or a durable note); do not turn them into a pause or question.
+- Ask one focused user question only when proceeding would cross an irreversible or destructive external boundary, requires a missing permission or credential, or two genuinely comparable options would materially change the result or acceptance.
+- For a necessary question, state the exact impact, include a recommended default, and pause only the dependent action; continue independent work when possible.
+- Never ask a vague progress or "what next?" question, and never wait on a guessed provider or quota reset; use bounded recovery or choose the safe default.`;
+
+/**
  * v0.23.5: normalize a drafter-supplied verification contract for the
  * Confirm dialog AND for storage. Three cleanups, all mechanical:
  *  1. Drop bare introducer lines ("Done when:", "Done when ALL of the

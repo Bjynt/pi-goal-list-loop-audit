@@ -39,6 +39,7 @@ import {
   sanitizeDisplayText,
   findNextPendingTask,
   buildTaskSummary,
+  ACTIVE_EXECUTION_QUESTION_GUIDANCE,
   LONG_RUNNING_JUDGMENT_POLICY,
   auditVerdictLabel,
   isFullAuditObjective,
@@ -1219,9 +1220,10 @@ export function continuationPrompt(goal: Goal): string {
   }
   // v0.25.0 (contract items 22/28): conditional directives — aggressiveMode
   // TODOs from the audit cap, and the full-audit fan-out directive when the
-  // objective reads as a survey pivot.
+  // objective reads as a survey pivot. The canonical judgment policy and
+  // active-execution question discipline are stable template sections; do
+  // not inject either here or every continuation duplicates them.
   const directives: string[] = [];
-  directives.push(`## ${LONG_RUNNING_JUDGMENT_POLICY}`);
   const requestedDesigner = goal.agentRole === "designer" || next?.agentRole === "designer";
   if (requestedDesigner) {
     directives.push(
@@ -1321,6 +1323,7 @@ export function continuationPrompt(goal: Goal): string {
     .replace(/\$\{TASK_LIST\}/g, () => taskSummary)
     .replace(/\$\{NEXT_PENDING_TASK_BLOCK\}/g, () => nextBlock)
     .replace(/\$\{LONG_RUNNING_JUDGMENT_POLICY\}/g, () => LONG_RUNNING_JUDGMENT_POLICY)
+    .replace(/\$\{ACTIVE_EXECUTION_QUESTION_GUIDANCE\}/g, () => ACTIVE_EXECUTION_QUESTION_GUIDANCE)
     .replace(/\$\{DYNAMIC_DIRECTIVES\}/g, () => dynamicDirectives);
 }
 

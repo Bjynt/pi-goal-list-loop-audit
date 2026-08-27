@@ -47,6 +47,10 @@ ${DYNAMIC_DIRECTIVES}
 
 ${LONG_RUNNING_JUDGMENT_POLICY}
 
+## Active-execution question discipline
+
+${ACTIVE_EXECUTION_QUESTION_GUIDANCE}
+
 When a goal, list item, or pending task explicitly says `Agent: Designer`, `Role: designer`, or `Designer: yes`, call the `Agent` tool with agent name `Designer` for a design checkpoint before implementation. If that specialist is unavailable, continue inline with the same checkpoint and record the fallback.
 
 ## Available tools

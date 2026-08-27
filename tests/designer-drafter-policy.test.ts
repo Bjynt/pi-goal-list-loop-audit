@@ -5,6 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import {
+  ACTIVE_EXECUTION_QUESTION_GUIDANCE,
   buildSeedGrillMessage,
   buildTaskList,
   extractAgentRole,
@@ -17,6 +18,7 @@ import {
   syncSubagentModelOverrides,
 } from "../extensions/goal-loop-subagents.ts";
 import { resolveDrafterModel } from "../extensions/drafter-model.ts";
+import { continuationPrompt } from "../extensions/goal-continuation.ts";
 import { buildSettingsRows } from "../extensions/settings-menu.ts";
 import type { Settings } from "../extensions/goal-settings.ts";
 
@@ -32,6 +34,34 @@ test("long-running judgment policy is default-decide and bans band-aid-vs-proper
   const seeded = buildSeedGrillMessage("[DRAFT]", "ship the plugin", "propose_goal_draft");
   assert.match(seeded, /LONG-RUNNING JUDGMENT POLICY/);
   assert.match(seeded, /irreversible\/destructive external action/);
+});
+
+test("drafting gathers constraints upfront and active execution defers local choices", () => {
+  const seeded = buildSeedGrillMessage("[DRAFT]", "ship the plugin", "propose_goal_draft");
+  assert.match(seeded, /what "done" concretely looks like/);
+  assert.match(seeded, /scope boundaries/);
+  assert.match(seeded, /constraints/);
+  assert.match(seeded, /priorities/);
+
+  assert.match(ACTIVE_EXECUTION_QUESTION_GUIDANCE, /Drafting is the default place/);
+  assert.match(ACTIVE_EXECUTION_QUESTION_GUIDANCE, /reversible implementation choices/);
+  assert.match(ACTIVE_EXECUTION_QUESTION_GUIDANCE, /irreversible or destructive external boundary/);
+  assert.match(ACTIVE_EXECUTION_QUESTION_GUIDANCE, /recommended default/);
+
+  const active = continuationPrompt({
+    id: "question-discipline",
+    objective: "ship the plugin",
+    status: "active",
+    policy: "list",
+    autoContinue: true,
+    usage: { tokensUsed: 0, tokensLimit: 0 },
+    createdAt: "2026-08-27T00:00:00Z",
+    updatedAt: "2026-08-27T00:00:00Z",
+  });
+  assert.equal((active.match(/LONG-RUNNING JUDGMENT POLICY/g) ?? []).length, 1, "stable policy is not duplicated per continuation");
+  assert.equal((active.match(/ACTIVE-EXECUTION QUESTION DISCIPLINE/g) ?? []).length, 1, "active question guidance appears once");
+  assert.match(active, /do not ask about reversible implementation choices/);
+  assert.match(active, /Never ask a vague progress or "what next\?" question/);
 });
 
 test("explicit Designer declarations are consumed without changing ordinary design prose", () => {
