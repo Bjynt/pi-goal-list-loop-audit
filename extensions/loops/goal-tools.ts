@@ -1857,7 +1857,7 @@ function registerAgentTools(pi: any): void {
       let parsed: number | null = null;
       if (!metricless && extensionApi) {
         try {
-          const result = await extensionApi.exec("bash", ["-c", p.measureCmd!], { cwd: liveCtx.cwd });
+          const result = await extensionApi.exec("bash", ["-c", p.measureCmd!], { cwd: liveCtx.cwd, timeout: MEASURE_TIMEOUT_MS });
           rawOutput = String((result as any)?.stdout ?? "").trim();
           parsed = parseMetric(rawOutput);
         } catch (err) {
@@ -1974,7 +1974,7 @@ function registerAgentTools(pi: any): void {
       if (newMeasure !== loop.measureCmd) {
         if (!extensionApi) return { content: [{ type: "text", text: "No extension API available." }], details: {} };
         try {
-          const result = await extensionApi.exec("bash", ["-c", newMeasure], { cwd: liveCtx.cwd });
+          const result = await extensionApi.exec("bash", ["-c", newMeasure], { cwd: liveCtx.cwd, timeout: MEASURE_TIMEOUT_MS });
           testOutput = String((result as any)?.stdout ?? "");
         } catch (e) {
           return { content: [{ type: "text", text: `New measure command failed to run: ${String(e).slice(0, 200)}` }], details: {} };

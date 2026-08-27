@@ -230,7 +230,10 @@ async function runMeasure(ctx: ExtensionContext, cmd: string): Promise<number | 
   if (!flags.extensionApi || flags.extensionApiStale) return null;
   try {
     const result = await flags.extensionApi.exec("bash", ["-c", cmd], { cwd: ctx.cwd, timeout: MEASURE_TIMEOUT_MS });
-    const stdout = (result as any)?.stdout ?? "";
+    const r = result as any;
+    const code = typeof r?.code === "number" ? r.code : (typeof r?.exitCode === "number" ? r.exitCode : 0);
+    if (code !== 0) return null;
+    const stdout = r?.stdout ?? "";
     return parseMetric(String(stdout));
   } catch {
     return null;

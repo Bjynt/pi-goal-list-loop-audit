@@ -445,4 +445,26 @@ n=$((n+1)); echo $n > ${counter1}
   assert.equal(r2.exitCode, 7);
   assert.match(r2.output ?? "", /retried once after a failed first attempt \(exit 7\); second attempt also failed/);
   assert.match(r2.output ?? "", /deterministic-red/, "second attempt's diagnostics are preserved");
+
+  // Case 3: a recovered first command must not short-circuit the remaining
+  // contract commands. The second script leaves a marker only if invoked.
+  const cwd3 = fs.mkdtempSync(path.join(os.tmpdir(), "mech-retry-3-"));
+  const counter3 = path.join(cwd3, "attempts");
+  const marker3 = path.join(cwd3, "second-ran");
+  fs.writeFileSync(path.join(cwd3, "flaky.sh"), `n=$(cat ${counter3} 2>/dev/null || echo 0)
+n=$((n+1)); echo $n > ${counter3}
+[ $n -ge 2 ] && exit 0 || exit 3
+`);
+  fs.writeFileSync(path.join(cwd3, "second.sh"), `echo ran > ${marker3}
+`);
+  fs.chmodSync(path.join(cwd3, "flaky.sh"), 0o755);
+  fs.chmodSync(path.join(cwd3, "second.sh"), 0o755);
+  const r3 = runMechanicalPreAuditChecks(cwd3, ["bash " + path.join(cwd3, "flaky.sh"), "bash " + path.join(cwd3, "second.sh")]);
+  assert.equal(r3.passed, true);
+  assert.equal(fs.readFileSync(counter3, "utf8").trim(), "2");
+  assert.equal(fs.readFileSync(marker3, "utf8").trim(), "ran", "later checks still execute after a recovered retry");
+  assert.match(r3.recoveredRetryNote ?? "", /automatic retry passed/);
+  fs.rmSync(cwd1, { recursive: true, force: true });
+  fs.rmSync(cwd2, { recursive: true, force: true });
+  fs.rmSync(cwd3, { recursive: true, force: true });
 });
