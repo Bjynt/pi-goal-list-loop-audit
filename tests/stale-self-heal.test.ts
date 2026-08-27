@@ -59,6 +59,11 @@ async function freshSession(cwd: string, reason: string): Promise<MockCtx> {
   return ctx;
 }
 
+async function acknowledgeLastContinuation(ctx: MockCtx): Promise<void> {
+  const prompt = pi.sent.at(-1)?.message.content;
+  if (prompt) await pi.fire("before_agent_start", { prompt }, ctx);
+}
+
 async function waitUntil(predicate: () => boolean, timeoutMs = 20_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!predicate()) {
@@ -216,6 +221,7 @@ test("v0.35.12 — a healthy context cannot revive a stale ExtensionAPI", async 
     const ctx = await freshSession(cwd, "startup");
     await pi.command("goal", "do not loop on a stale API — done when pinned", ctx);
     await tick();
+    await acknowledgeLastContinuation(ctx);
 
     // Reproduce the field sequence: pi's captured ExtensionAPI rejects the
     // continuation, while the captured context's isIdle() still answers

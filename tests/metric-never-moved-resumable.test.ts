@@ -148,6 +148,8 @@ test("v0.35.x: metricless cadence delays automatic re-wakes but explicit start i
   await pi.command("loop", 'start "mature the spec" cadence=0.25', ctx);
   await tick(80);
   assert.ok(pi.sent.length >= 1, "explicit loop start wakes immediately");
+  const initialPrompt = pi.sent.at(-1)?.message.content;
+  if (initialPrompt) await pi.fire("before_agent_start", { prompt: initialPrompt }, ctx);
   await pi.fire("agent_end", {
     messages: [{ role: "assistant", content: [{ type: "text", text: "recorded one real spec improvement" }], stopReason: "end_turn" }],
   }, ctx);
