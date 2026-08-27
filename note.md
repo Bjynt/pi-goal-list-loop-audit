@@ -28,12 +28,14 @@ AVO implementation.
 Do not merge either PR wholesale. Before taking another AVO-sized bite,
 prioritize these smaller foundations:
 
-1. Define a durable, objective-specific progress/evaluation signal. Commits,
-   file writes, and reply similarity are useful telemetry but are not proof
-   that an objective improved.
-2. Replace guessed long waits with bounded, status-aware rechecks and record
+1. Replace guessed long waits with bounded, status-aware rechecks and record
    observed durations. The agent should keep checking whether a condition is
-   done rather than choosing a large sleep from a guess.
+   done rather than choosing a large sleep from a guess; this is the smallest
+   direct velocity win and addresses the current Antigravity/Codex comparison.
+2. Define a durable, objective-specific progress/evaluation signal. Commits,
+   file writes, and reply similarity are useful telemetry but are not proof
+   that an objective improved; this is the prerequisite for an honest AVO-like
+   supervisor.
 3. Exercise completion and recovery under provider failure, restart, and
    no-stream conditions so a long-running goal can close without a manual
    rescue.
