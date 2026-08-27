@@ -47,6 +47,18 @@ This is a prioritization note, not an active implementation request. Keep
 AVO research separate from the main release line until the smaller work is
 scoped and verified.
 
+### Candidate brief — status-aware waiting
+
+The first likely follow-up is a small wait/recheck investigation, not an AVO
+port. Inventory every long wait in continuation, auditor, recovery, and smoke
+paths; identify what durable event proves the condition is satisfied; then
+prefer a bounded poll/backoff that checks that event over one guessed sleep.
+Record elapsed time and the terminal reason so later defaults can be learned
+from observations. Preserve explicit user waits, provider hints, cancellation,
+ownership fences, and the existing no-storm bounds. A good first deliverable
+would be a focused design note plus regressions for success-before-deadline,
+real timeout, restart, and provider failure—not a broad timer rewrite.
+
 # Later
 
 ## README/Pi Store thumbnail
