@@ -3231,14 +3231,26 @@ test("v0.34.91: detached approval notify carries the agent's completion recap, n
     const ctx = await freshSession(cwd, "startup");
     await pi.command("goal", "start recap-notify target — done when pinned", ctx);
     await tick();
+    const longValidRecap = [
+      "Outcome: Pinned the R-key/HUD retire parity in 5 tests across 5 layers.",
+      "Changed: extensions/goal-loop-display.ts and tests/behavioral-orchestrator.test.ts.",
+      "Evidence: ledger close at findings.md:727; " + "durable-proof-marker ".repeat(20),
+      "Tests: 5338/5338 tests / 24166 expect() / 598 files pass. tsc clean.",
+      "Unresolved: none.",
+      "Next: none.",
+    ].join("\n");
     await pi.runTool("complete_goal", {
-      completionSummary: "Pinned the R-key/HUD retire parity in 5 tests across 5 layers; ledger close at findings.md:727.",
+      completionSummary: longValidRecap,
       verificationSummary: "5338/5338 tests / 24166 expect() / 598 files pass. tsc clean.",
     }, ctx);
     await waitUntil(() => (readState(cwd).goal as { status?: string } | null) === null);
     const recapNotifs = ctx.ui.matching("Pinned the R-key/HUD retire parity");
     assert.ok(recapNotifs.length > 0, "the settle notify carries the recap (what happened), not 'auditor approved' alone");
     assert.equal(ctx.ui.matching("✓ done").length, 1, "the recap line is the single decisive end-of-goal voice");
+    assertCompactRecap(recapNotifs[0]!.message, "approved terminal notification");
+    assert.match(recapNotifs[0]!.message, / · /, "approved notification is the six-label compact projection");
+    assert.match(recapNotifs[0]!.message, /…/, "long approved recap values are bounded");
+    assert.doesNotMatch(recapNotifs[0]!.message, /durable-proof-marker durable-proof-marker durable-proof-marker durable-proof-marker durable-proof-marker durable-proof-marker durable-proof-marker durable-proof-marker/, "approved notification does not flatten the full long recap");
     assert.doesNotMatch(recapNotifs.join("\n"), /^Goal complete — auditor /, "the old process-only line is gone");
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   } finally {

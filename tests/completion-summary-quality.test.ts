@@ -51,13 +51,13 @@ test("completion summary quality: generic prose and missing labels ledger and NO
     const missing = ledger.find((e) => e.type === "completion_summary_missing_labels");
     assert.ok(missing, "missing labels ledgered");
     assert.match(String(missing.value.flags.join(" ")), /missing required labels/);
-    // Pending completion should carry the NOTE
-    const stateLine = ledger.filter((e) => e.type === "audit_started").length ? ledger : readLedger(cwd);
-    // Check via active.jsonl goal state
+    // Pending completion may carry a validation NOTE, but the annotation is
+    // metadata only and must not make the incomplete claim archive-valid.
     const { readState } = await import("../extensions/goal-loop-core.js");
     const state = readState(cwd);
     assert.ok(state.goal?.completionSummary?.includes("NOTE:"), "stored summary amended with NOTE");
-    assert.ok(state.goal?.completionSummary?.includes("Outcome"), "NOTE mentions missing labels");
+    assert.doesNotMatch(state.goal?.completionSummary ?? "", /NOTE:.*Outcome:/, "validation NOTE does not contain field labels");
+    assert.equal(isUsefulCompletionSummary(state.goal?.completionSummary), false, "annotated incomplete claim remains invalid");
   } finally { delete process.env.GLLA_PI_BINARY; __testOnlyResetStaleFlag(); __testOnlyResetTerminalFlags(); __testOnlyResetOwnerSession(); }
 });
 
@@ -111,6 +111,16 @@ test("v0.36.0: every terminal outcome gets a six-label recorded-facts fallback",
     }
     assert.match(resolved.summary, /not recorded|recorded/);
   }
+});
+
+test("v0.36.0: validation annotations cannot satisfy recap-label validation", () => {
+  const annotated = "done — NOTE: completionSummary missing required labels Outcome:, Changed:, Evidence:, Tests:, Unresolved:, Next: — expected six labeled fields.";
+  const goal = seedGoal({ objective: "reject validation-label spoofing" }) as any;
+  const resolved = resolveCompletionSummary({ goal, status: "complete", stopReason: "auditor approved" }, annotated);
+  assert.equal(isUsefulCompletionSummary(annotated), false);
+  assert.equal(resolved.usedFallback, true);
+  assert.doesNotMatch(resolved.summary, /done — NOTE:/);
+  for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) assert.match(resolved.summary, new RegExp(`^${label}`, "m"));
 });
 
 test("v0.36.0: valid recap is preserved while generic prose is replaced", () => {
@@ -168,6 +178,42 @@ test("v0.36.0: fallback never invents changed files or test results", () => {
   assert.match(summary, /Tests: not recorded/);
   assert.match(summary, /no auditor verdict was recorded/);
   assert.doesNotMatch(summary, /commit [a-f0-9]{7,}/i);
+});
+
+test("v0.36.0: archive boundary replaces a validator annotation with recorded facts", async () => {
+  __testOnlyResetStaleFlag(); __testOnlyResetTerminalFlags(); __testOnlyResetOwnerSession();
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: seedGoal({ status: "active", objective: "archive annotated incomplete claims" }) });
+  __testOnlyLoadState(cwd);
+  const pi = new MockPi();
+  activate(pi.api);
+  __testOnlyRegisterAgentTools(pi.api);
+  rememberCtxFor(cwd);
+  const script = path.join(cwd, "hanging-annotation-auditor.mjs");
+  fs.writeFileSync(script, "setTimeout(()=>process.exit(0),8000)");
+  fs.chmodSync(script, 0o700);
+  process.env.GLLA_PI_BINARY = script;
+  try {
+    await pi.runTool("complete_goal", {
+      completionSummary: "done",
+      verificationSummary: "Evidence was not captured.",
+    }, ownerCtx(cwd));
+    const { readState } = await import("../extensions/goal-loop-core.js");
+    const pending = readState(cwd).goal?.completionSummary ?? "";
+    assert.match(pending, /NOTE:/);
+    assert.equal(isUsefulCompletionSummary(pending), false, "the pending annotation remains incomplete");
+    const archive = (globalThis as any).archiveCurrentGoal as ((ctx: unknown, status: string, reason: string) => boolean) | undefined;
+    assert.equal(archive?.(ownerCtx(cwd), "aborted", "test archive annotation fallback"), true);
+    const files = fs.readdirSync(path.join(cwd, ".pi-glla", "archive"));
+    assert.equal(files.length, 1);
+    const markdown = fs.readFileSync(path.join(cwd, ".pi-glla", "archive", files[0]!), "utf8");
+    assert.match(markdown, /^Outcome: Objective/m, "archive contains the recorded-facts Outcome");
+    assert.doesNotMatch(markdown, /done — NOTE:/, "archive does not preserve the annotation as the recap");
+    assert.match(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8"), /completion_summary_fallback/);
+  } finally {
+    delete process.env.GLLA_PI_BINARY;
+    __testOnlyResetStaleFlag(); __testOnlyResetTerminalFlags(); __testOnlyResetOwnerSession();
+  }
 });
 
 test("v0.36.0: archiveCurrentGoal writes a recap for complete and abort-derived terminal paths", () => {
