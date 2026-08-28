@@ -271,6 +271,7 @@ import {
   releaseZombieAbortKey,
   endSubagentHangProbe,
   markSubagentHangProgress,
+  signalSupervisionEvent,
   startHeartbeat,
   upsertSubagentHangProbe,
   type HeartbeatDeps,
@@ -861,6 +862,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   // not an agent turn), so the continuation chain can dangle until the
   // 60s heartbeat notices. Re-arm it as soon as pi settles post-compact.
   pi.on("session_compact", async (_event: any, ctx: ExtensionContext) => {
+    signalSupervisionEvent({ plane: "auditor", kind: "recover", source: "session_compact" });
     // v0.34.25: a compact event from the live replacement session is the
     // field's most common post-swap contact — absorb/heal it BEFORE the gates
     // drop it (post-park the owner is nulled, so it is not even "foreign").
@@ -1770,6 +1772,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
 
   pi.on("agent_end", async (event: any, ctx: ExtensionContext) => {
     rememberCtx(ctx);
+    signalSupervisionEvent({ plane: state.mainModelRecovery ? "provider-recovery" : state.loop?.active ? "loop" : state.goal?.policy === "list" ? "list" : state.goal ? "goal" : "queue", kind: "progress", source: "agent_end" });
     // A late agent_end from the disposed session is not a fresh turn. Do not
     // account it, run length continuation, or schedule another send after a
     // stale terminal/handoff.
@@ -2363,6 +2366,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
   });
   pi.on("agent_start", (_event: any, ctx: ExtensionContext) => {
     rememberCtx(ctx);
+    signalSupervisionEvent({ plane: state.mainModelRecovery ? "provider-recovery" : state.loop?.active ? "loop" : state.goal?.policy === "list" ? "list" : state.goal ? "goal" : "queue", kind: "start", source: "agent_start" });
     clearInBandProviderFailure();
     if (tryAbsorbHostSuccessor(ctx, "agent_start")) {
       ensureAgentToolsReady(ctx, true);
@@ -2403,6 +2407,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     if (sessionHandoffPending || extensionApiStale || staleTerminalDone || zombieStoodDown) return;
     const ctx = freshCtx();
     if (!ctx) return;
+    signalSupervisionEvent({ plane: "subagent", kind: "start", source: "subagents:started" });
     const e = (data ?? {}) as { id?: unknown; type?: unknown; description?: unknown };
     const sessionId = typeof e.id === "string" && e.id.length > 0 ? e.id : undefined;
     if (!sessionId) return;
@@ -2426,6 +2431,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     if (!freshCtx()) return;
     const e = (data ?? {}) as { id?: unknown };
     const recordId = typeof e.id === "string" && e.id.length > 0 ? e.id : undefined;
+    signalSupervisionEvent({ plane: "subagent", kind: "progress", source: "subagents:compacted" });
     if (recordId) markSubagentHangProgress(recordId);
   });
   pi.events.on("subagents:steered", (data: unknown) => {
@@ -2433,6 +2439,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     if (!freshCtx()) return;
     const e = (data ?? {}) as { id?: unknown };
     const recordId = typeof e.id === "string" && e.id.length > 0 ? e.id : undefined;
+    signalSupervisionEvent({ plane: "subagent", kind: "progress", source: "subagents:steered" });
     if (recordId) markSubagentHangProgress(recordId);
   });
   pi.events.on("subagents:completed", (data: unknown) => {
@@ -2440,6 +2447,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     if (!freshCtx()) return;
     const e = (data ?? {}) as { id?: unknown };
     const recordId = typeof e.id === "string" && e.id.length > 0 ? e.id : undefined;
+    signalSupervisionEvent({ plane: "subagent", kind: "complete", source: "subagents:completed" });
     if (recordId) endSubagentHangProbe(recordId);
   });
   pi.events.on("subagents:failed", (data: unknown) => {
@@ -2447,6 +2455,7 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     if (!freshCtx()) return;
     const e = (data ?? {}) as { id?: unknown };
     const recordId = typeof e.id === "string" && e.id.length > 0 ? e.id : undefined;
+    signalSupervisionEvent({ plane: "subagent", kind: "block", source: "subagents:failed" });
     if (recordId) endSubagentHangProbe(recordId);
   });
 

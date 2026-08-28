@@ -268,6 +268,7 @@ import {
   endSubagentHangProbe,
   markSubagentHangProgress,
   startHeartbeat,
+  signalSupervisionEvent,
   upsertSubagentHangProbe,
   type HeartbeatDeps,
   type HeartbeatFlags,
@@ -661,6 +662,7 @@ function persistState(ctx: ExtensionContext): boolean {
   // The durable write itself lives in goal-state.ts (persistStateLine);
   // this wrapper adds the UI side effects on top.
   const landed = persistStateLine(ctx.cwd, state);
+  signalSupervisionEvent({ plane: state.loop?.active ? "loop" : state.goal?.policy === "list" ? "list" : state.goal ? "goal" : "queue", kind: "progress", source: "durable-state" });
   if (landed && loopSummaryGenerated && state.loop) {
     appendLedger(ctx.cwd, "loop_completion_summary", {
       iteration: state.loop.iteration,
