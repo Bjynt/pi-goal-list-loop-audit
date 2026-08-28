@@ -837,6 +837,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
   let lockHeld = false;
   let jobDirCreated = false;
   let child: ChildProcess | undefined;
+  let workerSpawnedAt: number | undefined;
   let childSpawnError: string | undefined;
   let childExitObservedAt: number | undefined;
   let lastProgressSerialized = "";
@@ -902,6 +903,13 @@ export async function runDetachedGoalCompletionAuditor(args: {
       stdio: "ignore",
       env,
     } satisfies SpawnOptions);
+    // The first-event watchdog is a worker-silence budget, not a dispatch
+    // setup budget. Anchor it to Node's successful spawn event so filesystem
+    // setup, extension resolution, and scheduler delay cannot consume the
+    // child's startup window before the worker can install its handlers.
+    child.once("spawn", () => {
+      workerSpawnedAt = now();
+    });
     // `spawn()` reports ENOENT/EACCES asynchronously instead of throwing.
     // Attach the listener immediately so a launcher failure becomes a bounded
     // transport result rather than an unhandled error followed by a wall
@@ -1116,15 +1124,16 @@ export async function runDetachedGoalCompletionAuditor(args: {
                 "timeout",
               );
             }
-          } else if (now() - startedAt >= firstEventTimeoutMs) {
+          } else if (workerSpawnedAt !== undefined && now() - workerSpawnedAt >= firstEventTimeoutMs) {
+            const silenceMs = Math.max(0, now() - workerSpawnedAt);
             const stallLabel = firstEventTimeoutMs >= 60_000
               ? `${Math.max(1, Math.round(firstEventTimeoutMs / 60_000))}m`
               : `${Math.max(1, Math.round(firstEventTimeoutMs / 1_000))}s`;
             args.onStalled?.({
               at: now(),
               reason: "first-event-timeout",
-              heartbeatAgeMs: now() - startedAt,
-              noProgressMs: now() - startedAt,
+              heartbeatAgeMs: silenceMs,
+              noProgressMs: silenceMs,
               phase: lastProgress?.phase ?? "starting",
             });
             if (child && childAlive(child)) await terminateWorker(child);
