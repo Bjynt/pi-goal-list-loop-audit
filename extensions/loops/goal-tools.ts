@@ -1192,7 +1192,7 @@ function registerAgentTools(pi: any): void {
             providerErrorDiagnostic: failureCopy.diagnostic,
             recoveryEpisodeKey,
             recoveryNoticeKeys: durableCompletionClaim.recoveryNoticeKeys ?? [],
-            auditorFailureClass: result.infrastructureClass ?? auditorResultFailureClass(result),
+            auditorFailureClass: auditorResultFailureClass(result),
             auditorFallbackExhausted: result.fallbackExhausted ? true : undefined,
             auditorFailureAt: new Date().toISOString(),
           };
@@ -1214,7 +1214,7 @@ function registerAgentTools(pi: any): void {
           appendLedger(ctx.cwd, cursorPersistenceFailed ? "auditor_recovery_cursor_persistence_failed" : "auditor_fallback_exhausted", {
             goalId: auditGoalId,
             attemptId: durableCompletionClaim.attemptId,
-            failureClass: result.infrastructureClass ?? auditorResultFailureClass(result),
+            failureClass: auditorResultFailureClass(result),
             diagnostic: failureCopy.diagnostic,
             display: failureCopy.display,
             recoveryEpisodeKey,

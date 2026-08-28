@@ -1326,7 +1326,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       providerErrorDiagnostic: failureCopy.diagnostic,
       recoveryEpisodeKey,
       recoveryNoticeKeys: durableClaim.recoveryNoticeKeys ?? [],
-      auditorFailureClass: result.infrastructureClass ?? auditorResultFailureClass(result),
+      auditorFailureClass: auditorResultFailureClass(result),
       auditorFallbackExhausted: result.fallbackExhausted ? true : undefined,
       auditorFailureAt: new Date().toISOString(),
     };
@@ -1348,7 +1348,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
     appendLedger(liveCtx.cwd, cursorPersistenceFailed ? "auditor_recovery_cursor_persistence_failed" : "auditor_fallback_exhausted", {
       goalId,
       attemptId: durableClaim.attemptId,
-      failureClass: result.infrastructureClass ?? auditorResultFailureClass(result),
+      failureClass: auditorResultFailureClass(result),
       diagnostic: failureCopy.diagnostic,
       display: failureCopy.display,
       recoveryEpisodeKey,

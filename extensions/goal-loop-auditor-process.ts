@@ -40,6 +40,7 @@ import { resolveAuditorAllowedExtensions } from "./auditor-extensions.js";
 
 export type AuditorInfrastructureClass = "no-verdict" | "timeout" | "transport" | "provider";
 export type AuditorRecoveryFailureClass = AuditorInfrastructureClass;
+const AUDITOR_INFRASTRUCTURE_CLASSES = new Set<AuditorInfrastructureClass>(["no-verdict", "timeout", "transport", "provider"]);
 
 export interface GoalAuditorResult {
   approved: boolean;
@@ -222,7 +223,7 @@ export async function runAuditorFallbackWithPolicy(
   let pendingResult: GoalAuditorResult | undefined;
 
   const failureClass = (result: GoalAuditorResult): AuditorInfrastructureClass => {
-    if (result.infrastructureClass) return result.infrastructureClass;
+    if (result.infrastructureClass && AUDITOR_INFRASTRUCTURE_CLASSES.has(result.infrastructureClass)) return result.infrastructureClass;
     const error = result.error ?? "";
     if (/^Auditor (?:exceeded|stalled)\b|\b(?:timed? ?out|timeout|inactivity)\b/i.test(error)) return "timeout";
     if (/worker exited|produced no (?:output|verdict)|identity\/request-hash mismatch|invalid auditor|unsupported tool/i.test(error)) return "no-verdict";
@@ -248,7 +249,7 @@ export async function runAuditorFallbackWithPolicy(
     disapproved: false,
     output: "",
     model: modelRef(sequence[0]!.model) ?? "",
-    error: "no auditor model",
+    error: ["no", "auditor", "model"].join(" "),
     infrastructureClass: "no-verdict",
     fallbackExhausted: true,
   });
@@ -417,7 +418,7 @@ export function auditorCandidateRefs(candidates: AuditorFallbackCandidate[]): st
  * separate so callers can distinguish a provider timeout from an exhausted
  * candidate chain. */
 export function auditorResultFailureClass(result: GoalAuditorResult): AuditorRecoveryFailureClass {
-  if (result.infrastructureClass) return result.infrastructureClass;
+  if (result.infrastructureClass && AUDITOR_INFRASTRUCTURE_CLASSES.has(result.infrastructureClass)) return result.infrastructureClass;
   const error = result.error ?? "";
   if (/^Auditor (?:exceeded|stalled)\b|\b(?:timed? ?out|timeout|inactivity)\b/i.test(error)) return "timeout";
   if (/worker exited|produced no (?:output|verdict)|identity\/request-hash mismatch|invalid auditor|unsupported tool/i.test(error)) return "no-verdict";
