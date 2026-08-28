@@ -13,7 +13,10 @@ audit policy). The next pass owns the durable policy artifacts and
 the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
-**Most recent (2026-08-25):**
+**Most recent (2026-08-28):**
+- `PI-GOAL-X-COMPARISON-2026-08-27.md` — fresh-clone full-repository comparison, transferable lessons, cautions, and non-adoption follow-up candidates
+
+**Previous (2026-08-25):**
 - `AUDITOR-BLANK-UNTIL-RESUME-2026-08-25.md` — objective/status remains visible while stale auditor context waits for continuation consent; v0.35.63
 - `SUBAGENT-HOST-BOUNDARY-2026-08-25.md` — fail-closed child-session ownership and preserved host telemetry; v0.35.62
 - `LIST-QUEUE-VISIBILITY-2026-08-25.md` — durable queue hydration and queue-only status/widget convergence across silent host replacement; v0.35.61
@@ -93,6 +96,9 @@ long-term preferences).
 | v0.34.121 | v0.34.121-OBJECTIVE-LIFECYCLE-FOLLOWUP.md | OBJECTIVE-LIFECYCLE-FOLLOWUP-2026-08-09.md |
 
 ## Topic index (canonical docs, newest first)
+
+**2026-08-28**
+- PI-GOAL-X-COMPARISON-2026-08-27.md — fresh-clone comparative learning audit; no runtime adoption
 
 **2026-08-21**
 - EXTENSION-AUDIT-2026-08-21.md — full extension survey, bounded hardening, and deferred architecture ledger

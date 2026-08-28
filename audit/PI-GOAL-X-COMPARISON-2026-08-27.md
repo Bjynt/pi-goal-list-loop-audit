@@ -213,3 +213,72 @@ mark stages passed from heuristic percentages
 (`extensions/widgets/auditor-dashboard-model.ts:31-120`). Its E2E runner
 skips when `pi` is absent (`tests/e2e/network-recovery-rpc.test.ts:255-270`),
 so “E2E” is conditional evidence, not automatically a release guarantee.
+
+## Documentation, testing, and packaging
+
+### Already covered: broader GLLA product and release surface
+
+pi-goal-x has a simpler regular/Sisyphus product shape and per-goal `.pi/goals`
+files (`README.md:32-46`). GLLA deliberately owns `/goal`, `/list`, and
+`/loop` with stronger consent and recovery policy (`README.md:121-192`). Its
+independent auditor remains more isolated and its release path includes tagged
+GitHub Release, version/tag checks, npm provenance, and registry verification
+(`docs/RELEASING.md:18-62`; `.github/workflows/publish.yml:41-91`). MIT versus
+AGPL is a licensing choice, not a defect to reconcile
+(`package.json:2-47`; GLLA `package.json:2-55`).
+
+### Transferable: manifest and quality-gate discipline
+
+The fresh repository has categorized Node test discovery, a committed manifest
+self-check, lint, npm audit, and benchmark gates (`scripts/run-unit-tests.mjs:15-99`;
+`.github/workflows/ci.yml:11-42`). GLLA has broader behavioral coverage and a
+live tmux harness, but its package scripts do not have the same manifest-drift,
+lint, and audit separation (`tests/README.md:1-78`; `package.json:50-56`).
+
+**Learning:** a manifest self-check is a low-risk quality improvement. Lint and
+npm audit should remain separate policy decisions because they may add release
+noise or dependency-policy constraints.
+
+### Caution/avoid: stale or aspirational documentation
+
+The fresh README's “curated twelve” command comment is stale relative to its
+sixteen registered commands (`extensions/goal-commands.ts:733-828`). Its
+agentic-runtime PRD is explicitly historical and partly superseded
+(`docs/agentic-runtime-prd.md:1-12`). Treat docs and changelog claims as
+artifacts to validate against code and tests, not as proof by themselves.
+
+## Prioritized GLLA follow-up list (research only)
+
+These are learning candidates, not approved implementation work:
+
+1. **High — measure session growth, then assess bounded checkpoint markers.**
+   Confirm whether repeated continuation prompts materially grow GLLA session
+   files before changing the protocol. If the defect is real, preserve
+   authoritative state injection, generation/owner fences, and cold-resume
+   consent.
+2. **High — add a local-provider event-shape fixture.** Reuse exact 503/429 and
+   provider-abort/settle-order cases from `tests/e2e/network-recovery-rpc.test.ts`,
+   while retaining GLLA's bounded recovery and structured diagnostics.
+3. **Medium — harden GLLA auditor payload boundaries.** Consider delimiter
+   escaping and strict final non-empty-line verdict parsing; retain tool-use
+   floors, raw evidence, regression shielding, `<impossible>`, and detached
+   infrastructure handling.
+4. **Medium — consider a shared dashboard view-model/current-task field.** Add
+   only if a concrete consistency defect is measured; do not simplify GLLA's
+   richer worker/recovery status model.
+5. **Medium — evaluate a storage-health report/repair surface.** Adapt
+   pi-goal-x's malformed-file, malformed-ledger, stale-lock, and orphan checks
+   to `.pi-glla`, `audit-jobs`, queue sidecars, and ownership fences; require
+   confirmation and backups for repair.
+6. **Low — consider a test-manifest self-check.** Keep live/model tests
+   explicitly conditional and avoid weakening the existing release gates.
+7. **Low — review wildcard peer dependencies and stale plan pointers.** This is
+   compatibility/release hygiene, not evidence that pi-goal-x's license or
+   architecture should be adopted.
+
+## Explicit non-adoption boundary
+
+This report does not modify GLLA runtime, tests, scripts, package metadata, or
+pi-goal-x. It does not adopt pi-goal-x's storage format, startup continuation,
+unbounded retry, in-process auditor, heuristic dashboard, or licensing model.
+Any follow-up above requires a separate scoped goal with its own contract.
