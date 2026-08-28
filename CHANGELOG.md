@@ -20,6 +20,11 @@
   progress stop on a state-based decision boundary. Conservative mode retains
   its bounded recovery horizon.
 
+  Full auditor `IMPOSSIBLE` results and list auto-drops now pass through the
+  terminal archive fence with durable recaps; partial impossible results keep
+  their explicit narrowing behavior. Every loop-stop notification includes a
+  compact projection of the generated six-label recap.
+
   See `docs/DESIGN-long-running-supervision.md` for the durable policy and
   future decision checklist.
 

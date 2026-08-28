@@ -66,9 +66,12 @@ Unresolved: ...
 Next: ...
 ```
 
-This applies to complete, aborted/cancelled, auto-dropped, and
-already-shipped archive paths. A valid executor recap is preserved. A missing,
-generic, or incomplete recap is replaced at the central archive boundary by a
+This applies to complete, aborted/cancelled, auto-dropped, full-auditor-IMPOSSIBLE,
+and already-shipped archive paths. A valid executor recap is preserved. A
+partial IMPOSSIBLE verdict remains a decision pause in conservative mode (or
+continues narrowing in aggressive mode); only a full impossible objective is
+terminalized. A missing, generic, or incomplete recap is replaced at the
+central archive boundary by a
 fallback assembled only from recorded GLLA facts: the objective, terminal
 status/reason, durable telemetry, captured audit verdicts, and known archive
 path. It says `not recorded` when a changed-file manifest or test result is not
@@ -80,8 +83,9 @@ auditor verdict stay separate: an approval is not manufactured from the
 presence of a summary.
 
 Metric-loop stops use the same six-label contract in their durable loop state
-and `/loop status`; lifecycle/recovery holds are not falsely presented as
-terminal completion.
+and `/loop status`, and every terminal loop notification carries a compact
+projection of that recap. Lifecycle/recovery holds are not falsely presented
+as terminal completion.
 
 ## Future decision checklist
 
