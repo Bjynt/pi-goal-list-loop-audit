@@ -207,6 +207,64 @@ setInterval(() => {}, 1_000);
   await cleanup();
 });
 
+test("progress: a live auditor outlives the legacy wall metadata and settles on its result", { timeout: 20_000 }, async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-live-progress-") );
+  dirs.push(dir);
+  const worker = path.join(dir, "progress-worker.mjs");
+  await writeFile(worker, `
+import { readFile, writeFile } from "node:fs/promises";
+const dir = process.argv[process.argv.indexOf("--job-dir") + 1];
+const request = JSON.parse(await readFile(dir + "/request.json", "utf8"));
+const progressPath = dir + "/progress.json";
+const resultPath = dir + "/result.json";
+let tick = 0;
+const publish = async () => {
+  tick++;
+  await writeFile(progressPath, JSON.stringify({
+    protocolVersion: 1, attemptId: request.attemptId, requestHash: request.requestHash,
+    phase: "running", elapsedMs: tick * 20, lastActivityAt: Date.now(),
+    recentOutput: ["live-progress-" + tick], toolCalls: [],
+  }));
+  if (tick >= 12) {
+    clearInterval(timer);
+    await writeFile(resultPath, JSON.stringify({
+      protocolVersion: 1, attemptId: request.attemptId, requestHash: request.requestHash,
+      ok: true, output: "<evidence>live progress</evidence>\\n<approved/>",
+      model: request.model, thinkingLevel: request.thinkingLevel,
+      toolCalls: [{ name: "read", argsPrefix: "{}", finishedAt: Date.now() }],
+    }));
+  }
+};
+const timer = setInterval(() => { void publish(); }, 20);
+process.on("SIGTERM", () => { clearInterval(timer); process.exit(0); });
+`);
+  const reports: AuditorProgress[] = [];
+  const started = Date.now();
+  const result = await runDetachedGoalCompletionAuditor({
+    cwd: dir,
+    goal: { ...goal, verificationContract: undefined },
+    model: "test/provider-model",
+    thinkingLevel: "high",
+    onProgress: (progress) => reports.push(progress),
+    runtime: {
+      workerPath: worker,
+      attemptId: () => "attempt-live-progress",
+      pollIntervalMs: 10,
+      // This deliberately expires before the worker's first result. It is
+      // legacy metadata only; real progress and the result must win.
+      wallTimeoutMs: 100,
+      firstEventTimeoutMs: 1_000,
+      heartbeatNoProgressMs: 500,
+      heartbeatFreshMs: 250,
+    },
+  });
+  assert.equal(result.approved, true, result.error ?? "live worker did not settle");
+  assert.equal(result.error, undefined);
+  assert.ok(Date.now() - started >= 180, "the worker remained alive beyond the ignored legacy wall metadata");
+  assert.ok(reports.some((progress) => (progress.recentOutput.at(-1) ?? "").startsWith("live-progress-")), "real child progress reached the parent");
+  await cleanup();
+});
+
 test("stall: a running auditor tool is exempt — the per-tool timeout owns that axis", { timeout: 20_000 }, async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-tool-exempt-"));
   dirs.push(dir);
@@ -232,7 +290,7 @@ process.on("SIGTERM", () => process.exit(0));
 setInterval(() => {}, 1_000);
 `);
   const stalled: AuditorStalledInfo[] = [];
-  let timedOut = false;
+  let toolTimedOut = false;
   const pending = runDetachedGoalCompletionAuditor({
     cwd: dir,
     goal,
@@ -243,20 +301,21 @@ setInterval(() => {}, 1_000);
       workerPath: worker,
       attemptId: () => "attempt-tool-exempt",
       pollIntervalMs: 10,
-      // Wall is the only bound left; the point is that the SILENCE
-      // watchdogs stay quiet while the tool-open timeout owns the axis.
-      wallTimeoutMs: 2_500,
-      toolTimeoutMs: 5_000,
+      // A legacy wall shorter than the open tool must be ignored; the
+      // independent per-tool watchdog owns this axis.
+      wallTimeoutMs: 250,
+      toolTimeoutMs: 800,
       heartbeatNoProgressMs: 1_200,
       firstEventTimeoutMs: 20_000,
       heartbeatFreshMs: 500,
     },
   }).then((result) => {
-    timedOut = /wall-clock bound/.test(result.error ?? "");
+    toolTimedOut = /tool bash exceeded its 1s timeout/.test(result.error ?? "");
     return result;
   });
-  await pending;
+  const result = await pending;
   assert.equal(stalled.length, 0, "the silence watchdogs must not fire while a tool is open");
-  assert.ok(timedOut, "the run ended on the wall bound, proving it stayed alive past the silence window");
+  assert.ok(toolTimedOut, "the run ended on the per-tool safety bound, not the legacy wall");
+  assert.equal(result.infrastructureClass, "timeout");
   await cleanup();
 });

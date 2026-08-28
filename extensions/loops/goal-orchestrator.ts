@@ -238,6 +238,7 @@ import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "..
 import {
   buildLoopCompletionSummary,
   compactLoopCompletionSummary,
+  compactTerminalCompletionSummary,
   isTerminalLoopStopReason,
   resolveCompletionSummary,
 } from "../completion-summary.js";
