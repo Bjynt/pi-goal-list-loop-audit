@@ -71,5 +71,6 @@ test("v0.36.0: production heartbeat is event-first with adaptive timeout fallbac
   assert.match(activation, /source: "agent_end"/);
   assert.match(activation, /source: "subagents:completed"/);
   assert.match(orchestrator, /isTerminalLoopStopReason\(loop\.stopReason\)/);
-  assert.match(orchestrator, /loop\.completionSummary = buildLoopCompletionSummary\(/);
+  assert.match(orchestrator, /const nextSummary = buildLoopCompletionSummary\(/);
+  assert.match(orchestrator, /loop\.completionSummary = nextSummary/);
 });
