@@ -1264,11 +1264,24 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
   // Any other outcome — disapproved or impossible — belongs to the agent:
   // resume and let the continuation drive the next step. The verdict is
   // durable in auditHistory + /goal status.
+  const aggressive = aggressiveAuditorRecoveryEnabled(liveCtx.cwd);
+  const durableObjections = result.disapproved && aggressive
+    ? extractPendingTasks(sanitizeProviderAuditReport(result.output), 5)
+    : [];
+  if (result.disapproved && aggressive) {
+    appendLedger(liveCtx.cwd, "audit_objections_todo", {
+      goalId,
+      attemptId: claim.attemptId,
+      pendingTasks: durableObjections,
+      source: "auditor-disapproval-retry",
+    });
+  }
   const residualFailureCopy = providerErrorPresentation(result.error, "completion");
   updateGoal({
     status: "active",
     auditHistory: history,
     pendingCompletion: undefined,
+    pendingTasks: aggressive ? durableObjections : undefined,
     pauseReason: result.disapproved
       ? `auditor disapproved on provider retry — see ${activeGoalStatusCommand()}`
       : result.impossible

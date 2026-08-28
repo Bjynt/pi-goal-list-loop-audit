@@ -1199,6 +1199,21 @@ function registerAgentTools(pi: any): void {
       const auditFeedbackTruncationHint = auditFeedbackIsFull
         ? ""
         : `\n\nReport truncated at the configured limit. ${activeGoalStatusCommand()} shows the full report; change Audit feedback chars in /glla settings (0 = full report).`; 
+      const durableObjections = result.disapproved && effectiveCap.aggressiveMode
+        ? extractPendingTasks(safeAuditOutput, 5)
+        : [];
+      if (result.disapproved && effectiveCap.aggressiveMode) {
+        // v0.36.0: every ordinary disapproval becomes the current durable
+        // TODO projection, not only the post-cap case. Replacing (rather than
+        // appending) the bounded list makes repeated identical reports
+        // idempotent while the full report remains in auditHistory.
+        appendLedger(ctx.cwd, "audit_objections_todo", {
+          goalId: auditGoalId,
+          attemptId: auditAttemptId,
+          pendingTasks: durableObjections,
+          source: "auditor-disapproval",
+        });
+      }
       const trailingDisapprovals = countTrailingDisapprovals(history);
       if (auditCap > 0 && trailingDisapprovals >= auditCap) {
         // v0.25.0 (contract item 22): aggressiveMode turns the cap into a
@@ -1206,7 +1221,7 @@ function registerAgentTools(pi: any): void {
         // rendered into every continuation until addressed. OFF preserves
         // the pause (contract item 24 test 2).
         if (effectiveCap.aggressiveMode) {
-          const pendingTasks = extractPendingTasks(safeAuditOutput, 5);
+          const pendingTasks = durableObjections;
           updateGoal({
             status: "active",
             auditHistory: history,
@@ -1254,6 +1269,7 @@ function registerAgentTools(pi: any): void {
         status: "active",
         auditHistory: history,
         pendingCompletion: undefined,
+        pendingTasks: effectiveCap.aggressiveMode ? durableObjections : undefined,
         pauseReason: "auditor disapproved",
         pauseSuggestedAction: "Inspect auditor feedback and fix the actual gap before calling complete_goal again",
       }, ctx);

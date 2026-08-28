@@ -129,11 +129,24 @@ test("eager: a second recoverable provider error remains infrastructure after th
   assert.deepEqual(waits, [5000]);
 });
 
-test("eager: attempts remain bounded by the existing durable safety window", () => {
+test("eager: conservative attempts remain bounded by the existing durable safety window", () => {
   const horizon = new Date(Date.now() + 2 * 60_000).toISOString();
   const plan = auditorRetryPlan(claim({ retryAttempts: 4, retryFirstAt: new Date().toISOString(), retryUntil: horizon }), providerFailure(0, false), 60);
   assert.equal(plan.attempt, 5);
   assert.ok(plan.retryAfterSec >= 1);
+  assert.equal(plan.unbounded, false);
+});
+
+test("v0.36.0: aggressive auditor recovery ignores the legacy horizon and attempt cap", () => {
+  const plan = auditorRetryPlan(
+    claim({ retryAttempts: 50, retryFirstAt: new Date(0).toISOString(), retryUntil: new Date(1).toISOString() }),
+    providerFailure(0, false),
+    60,
+    true,
+  );
+  assert.equal(plan.attempt, 51);
+  assert.equal(plan.automatic, true);
+  assert.equal(plan.unbounded, true);
 });
 
 test("source pins: uniform eager retry and hourly probe wording are present at both dispatch sites", () => {
