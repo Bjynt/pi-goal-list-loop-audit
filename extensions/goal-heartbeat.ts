@@ -964,7 +964,6 @@ function heartbeatTick(): void {
   // proceed with the normal heartbeat — no sends are re-queued, so there
   // is no blind queue storm risk.
   if (flags.staleTerminalDone && knownCtx) {
-    appendLedger(knownCtx.cwd, "stale_terminal_recovered_via_probe", { via: "heartbeat-self-heal" });
     // Try the real successor and same-session recovery gates while the stale
     // flags are still set. Clearing them first bypasses selfHealStaleSameSession
     // and leaves the durable interrupted marker behind.
@@ -977,6 +976,10 @@ function heartbeatTick(): void {
     // announce a false recovery and immediately retry against the same stale
     // API every heartbeat tick.
     if (flags.staleTerminalDone || flags.extensionApiStale) return;
+    // Record recovery only after the context/API gate actually clears the
+    // stale latch. A merely healthy raw API probe is not a recovery event and
+    // must not append one ledger line on every adaptive fallback poll.
+    appendLedger(knownCtx.cwd, "stale_terminal_recovered_via_probe", { via: "heartbeat-self-heal" });
   }
   const ctx = freshCtx();
   if (!ctx) return;
