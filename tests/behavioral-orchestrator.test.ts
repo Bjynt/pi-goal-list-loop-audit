@@ -3037,7 +3037,7 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
     assert.ok(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8").includes('"goal_archived"'), "approval archived and closed the goal");
     // v0.34.91: the detached-settle chat notify carries the recap (what
     // happened), not "auditor approved" boilerplate.
-    assert.equal(ctx.ui.matching("✓ done: The detached completion path is covered").length, 1, "exactly one final notification surfaces the recap");
+    assert.equal(ctx.ui.matching("✓ done: Outcome: The detached completion path is covered").length, 1, "exactly one final notification surfaces the recap projection");
     await pi.fire("session_shutdown", { reason: "quit" }, ctx);
   } finally {
     if (previous === undefined) delete process.env.GLLA_PI_BINARY;
