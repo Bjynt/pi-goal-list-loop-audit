@@ -642,15 +642,22 @@ function persistState(ctx: ExtensionContext): boolean {
     // still hold the same object while resolving a plateau/hold decision in
     // the current turn.
     loop.completionSummary = undefined;
-  } else if (loop && !loop.active && isTerminalLoopStopReason(loop.stopReason) && !loop.completionSummary) {
-    loop.completionSummary = buildLoopCompletionSummary({
+  } else if (loop && !loop.active && isTerminalLoopStopReason(loop.stopReason)) {
+    // Rebuild when the final stop reason changes after an intermediate
+    // measurement (the audit-loop reprieve path does exactly that). A stale
+    // recap would make the terminal notification describe the provisional
+    // plateau rather than the honest final stop.
+    const nextSummary = buildLoopCompletionSummary({
       target: loop.target,
       stopReason: loop.stopReason!,
       iteration: loop.iteration,
       bestValue: loop.bestValue,
       historyLength: loop.history?.length ?? 0,
     });
-    loopSummaryGenerated = true;
+    if (loop.completionSummary !== nextSummary) {
+      loop.completionSummary = nextSummary;
+      loopSummaryGenerated = true;
+    }
   }
   // v0.34.61 (steal #3, auditor round 2): the revision counter is
   // CONTRACT-scoped. v0.34.59 bumped on EVERY commit — audit settles
