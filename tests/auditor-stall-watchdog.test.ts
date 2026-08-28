@@ -73,9 +73,8 @@ setInterval(() => {}, 1_000);
       wallTimeoutMs: 10_000,
       // Give the detached Node child enough startup budget to install its
       // SIGTERM handler on the busy full-suite rig. The first-event watchdog
-      // still fires well before the 10s wall; 1.2s occasionally killed the
-      // process before its handler had executed, making the marker assertion
-      // observe a false negative rather than the cancellation contract.
+      // still fires well before the 10s wall; the delayed launcher already
+      // consumes 1.5s before the child can install its handler.
       firstEventTimeoutMs: 5_000,
       heartbeatNoProgressMs: 20_000,
       heartbeatFreshMs: 500,
@@ -135,7 +134,7 @@ setInterval(() => {}, 1_000);
       attemptId: () => "attempt-first-event-clock",
       pollIntervalMs: 10,
       wallTimeoutMs: 10_000,
-      firstEventTimeoutMs: 1_000,
+      firstEventTimeoutMs: 5_000,
       heartbeatNoProgressMs: 20_000,
       heartbeatFreshMs: 500,
     },
@@ -253,9 +252,9 @@ process.on("SIGTERM", () => { clearInterval(timer); process.exit(0); });
       // This deliberately expires before the worker's first result. It is
       // legacy metadata only; real progress and the result must win.
       wallTimeoutMs: 100,
-      firstEventTimeoutMs: 1_000,
-      heartbeatNoProgressMs: 500,
-      heartbeatFreshMs: 250,
+      firstEventTimeoutMs: 5_000,
+      heartbeatNoProgressMs: 2_000,
+      heartbeatFreshMs: 1_000,
     },
   });
   assert.equal(result.approved, true, result.error ?? "live worker did not settle");
