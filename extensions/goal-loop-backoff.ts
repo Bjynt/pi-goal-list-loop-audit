@@ -53,28 +53,25 @@ export const MEASURE_TIMEOUT_MS = 10 * 60_000;
  * no events for this long is wedged — abort and report an error, never
  * disapprove, never hang the completion gate forever. */
 export const AUDITOR_STALL_MS = 10 * 60_000;
-/** v0.34.21: inactivity is not enough when a single auditor tool is
- * legitimately running. Keep a hard wall bound and per-tool bound so a
- * provider/tool pair can never hold completion forever, while the normal 10m
- * inactivity guard still catches a dead stream much sooner. */
+/** v0.36.0: the old fixed auditor wall was removed. Keep this exported
+ * value for older settings/imports, but it is compatibility metadata only and
+ * must never be used as a process lifetime or completion bound. */
 export const AUDITOR_WALL_TIMEOUT_MS = 30 * 60_000;
 
-export type AuditorWatchdogAction = "none" | "inactivity" | "wall";
+export type AuditorWatchdogAction = "none" | "inactivity";
 
 /** Pure watchdog decision used by the isolated auditor and its regressions.
- * A running auditor tool suppresses only the inactivity branch; the per-tool
- * and wall deadlines always win. */
+ * A running auditor tool suppresses the confirmed-silence branch. A live
+ * worker has no elapsed-time stop; the per-tool watchdog is owned by the
+ * process transport and lifecycle cancellation remains explicit. */
 export function auditorWatchdogAction(input: {
   nowMs: number;
   startedAtMs: number;
   lastEventAtMs: number;
   toolActive: boolean;
   inactivityMs?: number;
-  wallTimeoutMs?: number;
 }): AuditorWatchdogAction {
   const inactivity = input.inactivityMs ?? AUDITOR_STALL_MS;
-  const wall = input.wallTimeoutMs ?? AUDITOR_WALL_TIMEOUT_MS;
-  if (input.nowMs - input.startedAtMs >= wall) return "wall";
   if (!input.toolActive && input.nowMs - input.lastEventAtMs > inactivity) return "inactivity";
   return "none";
 }
