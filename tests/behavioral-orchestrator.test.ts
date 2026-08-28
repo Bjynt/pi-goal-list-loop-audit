@@ -2725,6 +2725,7 @@ test("carryover via /list next (pause): summary fires BEFORE the stale item acti
   assert.equal((s.list as unknown[]).length, 1, "one item consumed");
   assert.equal((s.loop as { stopReason?: string })?.stopReason, HELD, "held loop kept under pause");
   assert.equal(ctx.ui.matching("Carryover from before this session").length, 1, "ONE summary on the list path too");
+  assert.ok(ctx.ui.notifies.some((notice) => notice.message.includes("Archived goal recap: Outcome:")), "carryover replacement notification includes the archived goal recap");
   const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf-8");
   assert.ok(ledger.includes("replaced by new list (carryover)"), "paused goal archived on the list path");
 });
