@@ -355,6 +355,58 @@ test("v0.36.0: /goal cancel archives a standalone goal with a compact six-label 
   assertCompactRecap(cancelNotice, "/goal cancel notification");
 });
 
+test("v0.36.0: /list next archives the skipped active item with a compact recap", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const skippedId = "list-next-skipped";
+  seedState(cwd, {
+    goal: seedGoal({ id: skippedId, policy: "list", objective: "skipped active item — done when pinned" }),
+    list: [{ id: "list-next-target", objective: "selected next item — done when pinned", addedAt: new Date().toISOString() }],
+  });
+  setGlobalAutoResume(true);
+  const ctx = await freshSession(cwd, "reload");
+  ctx.ui.selectImpl = async (_title, options) => options.find((option) => option === "Replace current objective") ?? options[0];
+  await pi.command("list", "next", ctx);
+  await tick();
+  const after = readState(cwd);
+  assert.match((after.goal as { objective: string }).objective, /selected next item/);
+  const archive = fs.readFileSync(path.join(cwd, ".pi-glla", "archive", `${skippedId}.md`), "utf8");
+  assert.match(archive, /\*\*Status\*\*: aborted/);
+  assert.match(archive, /\*\*Stop reason\*\*: skipped via \/list next/);
+  const notice = ctx.ui.notifies.find((entry) => entry.message.includes("Previous list item skipped"))?.message ?? "";
+  assertCompactRecap(notice, "/list next skip notification");
+});
+
+test("v0.36.0: aborted detached audit can complete without audit only after archive success", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  const fakePi = writeFakeAuditor(cwd, "approved", 5_000);
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = fakePi;
+  const ctx = await freshSession(cwd, "startup");
+  const controller = new AbortController();
+  try {
+    await pi.command("goal", "complete without audit target — done when pinned", ctx);
+    await tick();
+    const queued = pi.runTool("complete_goal", {
+      completionSummary: "The without-audit escape path is covered.",
+      verificationSummary: "The worker is deliberately aborted before a verdict.",
+    }, ctx, controller.signal);
+    await waitUntil(() => (readState(cwd).goal as { status?: string } | null)?.status === "auditing");
+    controller.abort();
+    await queued;
+    await waitUntil(() => readState(cwd).goal === null);
+    const notices = ctx.ui.notifies.map((entry) => entry.message).join("\n");
+    const notice = ctx.ui.notifies.find((entry) => entry.message.includes("done without audit"))?.message ?? "";
+    assert.match(notices, /Audit aborted/);
+    assertCompactRecap(notice, "complete-without-audit notification");
+    assert.ok(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length > 0, "archive landed before success was reported");
+  } finally {
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+  }
+});
+
 test("v0.34.119: /glla cancel archives the active list item and drops the waiting objective queue", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();

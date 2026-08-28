@@ -731,6 +731,10 @@ function registerAgentTools(pi: any): void {
           model: candidate.model,
           thinkingLevel: (settings.auditorThinkingLevel ?? "high") as any, // may be "max" — pi ≥0.83 understands it; the dev-types predate it
           allowedExtensions: settings.auditorAllowedExtensions,
+          // The host tool's AbortSignal is the explicit user-stop boundary
+          // for the detached audit. It lets the Esc escape hatch settle the
+          // worker before offering the user the without-audit choice.
+          signal,
           runtime: { attemptId: () => newDetachedAuditJobAttemptId(completionClaim.attemptId!), logicalAttemptId: completionClaim.attemptId!, wallTimeoutMs: AUDITOR_WALL_TIMEOUT_MS },
           onProgress: (progress) => {
             publishDetachedAuditProgress(auditGeneration, auditGoalId, auditAttemptId, progress);
