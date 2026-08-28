@@ -28,6 +28,90 @@ test("v0.36.0: activeSupervisionPlanes covers every GLLA work plane without inve
   assert.deepEqual(activeSupervisionPlanes({ ...empty(), goal: goal("goal", "aborted"), list: [] }), []);
 });
 
+test("v0.36.0: checker reacts to durable transitions across every work plane", () => {
+  const state: State = {
+    goal: {
+      ...goal("list", "auditing"),
+      revision: 4,
+      pendingCompletion: { phase: "running", attemptId: "audit-1", at: "2026-08-28T00:00:00.000Z" },
+    } as any,
+    list: [{ id: "queue-1", objective: "queued work", addedAt: "2026-08-28T00:00:00.000Z" }] as any,
+    loop: { active: true, target: "measure progress", iteration: 2, bestValue: 1, history: [] } as any,
+    mainModelRecovery: { primary: "provider/primary", attempted: [], attempts: 1, reason: "retry" } as any,
+  };
+  const supervisor = new ContinuousSupervisor();
+  const first = supervisor.check(state, 2);
+  assert.equal(first.cause, "durable-state");
+  assert.equal(first.pollMs, 0, "the first durable observation is inspected immediately");
+  assert.deepEqual(first.planes, ["list", "auditor", "loop", "queue", "provider-recovery", "subagent"]);
+  assert.deepEqual(first.signals.map((signal) => signal.plane), first.planes);
+
+  const fallback = supervisor.check(state, 2);
+  assert.equal(fallback.cause, "fallback");
+  assert.equal(fallback.pollMs, SUPERVISION_MIN_POLL_MS);
+
+  const changed = {
+    ...state,
+    goal: { ...state.goal!, revision: 5 },
+    list: [{ ...state.list![0]!, objective: "queue progress recorded", addedAt: "2026-08-28T00:00:00.000Z" }],
+    loop: { ...state.loop!, iteration: 3 },
+    mainModelRecovery: { ...state.mainModelRecovery!, attempts: 2 },
+  } as State;
+  const durable = supervisor.check(changed, 2);
+  assert.equal(durable.cause, "durable-state");
+  assert.equal(durable.pollMs, 0);
+  assert.deepEqual(new Set(durable.signals.map((signal) => signal.plane)), new Set(first.planes));
+});
+
+test("v0.36.0: lifecycle signals route immediately for every declared plane", () => {
+  const state: State = {
+    goal: { ...goal("list", "auditing"), pendingCompletion: { phase: "running", attemptId: "audit-2", at: "2026-08-28T00:00:00.000Z" } } as any,
+    list: [{ id: "queue-2", objective: "queued", addedAt: "2026-08-28T00:00:00.000Z" }] as any,
+    loop: { active: true, target: "loop", iteration: 1, history: [] } as any,
+    mainModelRecovery: { primary: "provider/primary", attempted: [], attempts: 0, reason: "recover" } as any,
+  };
+  const supervisor = new ContinuousSupervisor();
+  supervisor.check(state, 1); // consume the initial durable observation
+  const kinds: Record<string, "start" | "progress" | "complete" | "recover" | "block"> = {
+    goal: "progress",
+    list: "start",
+    loop: "complete",
+    auditor: "complete",
+    subagent: "progress",
+    "provider-recovery": "recover",
+    queue: "block",
+  };
+  for (const plane of ["goal", "list", "loop", "auditor", "subagent", "provider-recovery", "queue"] as const) {
+    supervisor.signal({ plane, kind: kinds[plane]!, source: `e2e:${plane}` });
+    const cycle = supervisor.check(state, 1);
+    assert.equal(cycle.cause, "event", `${plane} signal is event-driven`);
+    assert.equal(cycle.pollMs, 0, `${plane} signal does not wait for a fallback slot`);
+    assert.deepEqual(cycle.signals, [{ plane, kind: kinds[plane]!, source: `e2e:${plane}` }]);
+  }
+  const snapshot = supervisor.snapshot();
+  assert.equal(snapshot.lastSignals["provider-recovery"]?.kind, "recover");
+  assert.equal(snapshot.lastSignals.auditor?.kind, "complete");
+  assert.equal(snapshot.lastSignals.queue?.kind, "block");
+});
+
+test("v0.36.0: a child and recovery transition are durable signals, not guessed waits", () => {
+  const supervisor = new ContinuousSupervisor();
+  const before: State = { ...empty(), list: [{ id: "queued", objective: "pending", addedAt: "2026-08-28T00:00:00.000Z" }] as any };
+  supervisor.check(before, 1);
+  const after: State = { ...empty(), list: [{ id: "queued", objective: "pending", addedAt: "2026-08-28T00:00:00.000Z" }] as any, mainModelRecovery: { primary: "p", attempted: ["p"], attempts: 1, retryAt: "2026-08-28T00:01:00.000Z", reason: "provider retry" } as any };
+  const recovery = supervisor.check(after, 1);
+  assert.equal(recovery.cause, "durable-state");
+  assert.equal(recovery.pollMs, 0);
+  assert.ok(recovery.signals.some((signal) => signal.plane === "provider-recovery"));
+  const childDone = supervisor.check(after, 0);
+  assert.equal(childDone.cause, "durable-state");
+  assert.equal(childDone.pollMs, 0);
+  assert.ok(childDone.signals.some((signal) => signal.plane === "subagent"));
+  const idle = supervisor.check(empty(), 0);
+  assert.equal(idle.planes.length, 0);
+  assert.equal(idle.pollMs, SUPERVISION_MAX_POLL_MS);
+});
+
 test("v0.36.0: fallback polling adapts from 250ms to the 15s safety cadence", () => {
   const supervisor = new ContinuousSupervisor();
   supervisor.observeState({ ...empty(), goal: goal("goal") });
