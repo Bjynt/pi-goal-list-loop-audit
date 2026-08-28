@@ -343,7 +343,6 @@ import {
   shouldWedgeAlert,
   PENDING_LATCH_STUCK_MS,
   shouldFirePendingLatchWatchdog,
-  AUDITOR_WALL_TIMEOUT_MS,
   MAX_ZOMBIE_RETRY_ATTEMPTS,
 } from "../goal-loop-backoff.js";
 

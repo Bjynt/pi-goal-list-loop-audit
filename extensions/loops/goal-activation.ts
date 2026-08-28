@@ -351,7 +351,6 @@ import {
   shouldWedgeAlert,
   PENDING_LATCH_STUCK_MS,
   shouldFirePendingLatchWatchdog,
-  AUDITOR_WALL_TIMEOUT_MS,
   DEFAULT_ZOMBIE_RETRY_MAX_ATTEMPTS,
   ZOMBIE_RETRY_DELAY_MS,
   zombieRetryDecision,

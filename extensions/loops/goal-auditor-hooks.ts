@@ -336,7 +336,6 @@ import {
   shouldWedgeAlert,
   PENDING_LATCH_STUCK_MS,
   shouldFirePendingLatchWatchdog,
-  AUDITOR_WALL_TIMEOUT_MS,
 } from "../goal-loop-backoff.js";
 
 import {
@@ -941,7 +940,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
           // entries to install paths before hashing (see
           // goal-loop-auditor-process.ts).
           allowedExtensions: settings.auditorAllowedExtensions,
-          runtime: { attemptId: () => newDetachedAuditJobAttemptId(claim.attemptId!), logicalAttemptId: claim.attemptId!, wallTimeoutMs: AUDITOR_WALL_TIMEOUT_MS },
+          runtime: { attemptId: () => newDetachedAuditJobAttemptId(claim.attemptId!), logicalAttemptId: claim.attemptId! },
           onProgress: (progress) => {
             publishDetachedAuditProgress(generation, goalId, claim.attemptId!, progress);
           },

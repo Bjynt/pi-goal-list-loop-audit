@@ -336,7 +336,6 @@ import {
   shouldWedgeAlert,
   PENDING_LATCH_STUCK_MS,
   shouldFirePendingLatchWatchdog,
-  AUDITOR_WALL_TIMEOUT_MS,
 } from "../goal-loop-backoff.js";
 
 import {

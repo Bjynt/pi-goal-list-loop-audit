@@ -340,7 +340,6 @@ import {
   shouldWedgeAlert,
   PENDING_LATCH_STUCK_MS,
   shouldFirePendingLatchWatchdog,
-  AUDITOR_WALL_TIMEOUT_MS,
 } from "../goal-loop-backoff.js";
 
 import {
@@ -735,7 +734,7 @@ function registerAgentTools(pi: any): void {
           // for the detached audit. It lets the Esc escape hatch settle the
           // worker before offering the user the without-audit choice.
           signal,
-          runtime: { attemptId: () => newDetachedAuditJobAttemptId(completionClaim.attemptId!), logicalAttemptId: completionClaim.attemptId!, wallTimeoutMs: AUDITOR_WALL_TIMEOUT_MS },
+          runtime: { attemptId: () => newDetachedAuditJobAttemptId(completionClaim.attemptId!), logicalAttemptId: completionClaim.attemptId! },
           onProgress: (progress) => {
             publishDetachedAuditProgress(auditGeneration, auditGoalId, auditAttemptId, progress);
           },
