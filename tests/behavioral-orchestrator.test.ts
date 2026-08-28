@@ -3006,7 +3006,14 @@ test("v0.34.22: complete_goal returns while a detached auditor finishes and arch
     await tick();
     const started = Date.now();
     const result = await pi.runTool("complete_goal", {
-      completionSummary: "The detached completion path is covered.",
+      completionSummary: [
+        "Outcome: The detached completion path is covered.",
+        "Changed: tests/behavioral-orchestrator.test.ts.",
+        "Evidence: The fake auditor inspected the pinned artifact.",
+        "Tests: The detached approval test passed.",
+        "Unresolved: none.",
+        "Next: none.",
+      ].join("\n"),
       verificationSummary: "The fake auditor will inspect the pinned artifact.",
     }, ctx);
     const elapsed = Date.now() - started;

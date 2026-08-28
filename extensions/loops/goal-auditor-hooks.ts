@@ -476,7 +476,10 @@ function validateCompletionSummary(text: string, ctx: ExtensionContext): string 
     });
   }
   const annotation = missing.length > 0
-    ? "supplied completion summary was incomplete; terminalization will use a recorded-facts-only fallback"
+    ? [
+      ...flags.filter((flag) => !flag.startsWith("completionSummary missing required labels")),
+      "supplied completion summary was incomplete; terminalization will use a recorded-facts-only fallback",
+    ].filter(Boolean).join(" ")
     : flags.join(" ");
   return `${text.trimEnd()} — NOTE: ${annotation}`;
 }
