@@ -39,6 +39,12 @@
   projection as other terminal paths. Continuous-supervision tests now drive
   durable state transitions and lifecycle signals across every declared plane.
 
+  Validation warnings are metadata rather than recap fields: an incomplete
+  claim whose NOTE mentions label names is still replaced by the recorded-
+  facts-only archive fallback. Approved terminal notifications use the same
+  six-label compact projection, including for long valid recaps, instead of a
+  raw flattened slice.
+
   See `docs/DESIGN-long-running-supervision.md` for the durable policy and
   future decision checklist.
 
