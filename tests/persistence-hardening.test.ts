@@ -61,6 +61,53 @@ test("readState: a truncated trailing active.jsonl line loads cleanly (mid-write
   assert.deepEqual(s.list, []);
 });
 
+test("readState normalizes and bounds the detached-auditor recovery cursor", () => {
+  const cwd = tmpdir();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  const longRef = "x".repeat(500);
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), JSON.stringify({
+    type: "state",
+    value: {
+      goal: {
+        id: "g-cursor",
+        objective: "cursor recovery",
+        status: "paused",
+        policy: "goal",
+        pendingCompletion: {
+          phase: "quota-waiting",
+          at: "2026-07-28T10:00:00.000Z",
+          completionSummary: "claim",
+          quotaAttempts: 7,
+          auditorCandidateRefs: ["test/primary", "TEST/PRIMARY", ...Array.from({ length: 20 }, (_, i) => `test/fallback-${i}`)],
+          auditorCandidateRef: longRef,
+          auditorRetryCandidateRef: "test/primary",
+          auditorAttemptedRefs: ["test/primary", "TEST/PRIMARY", "test/fallback-1"],
+          auditorFailureCount: 99,
+          auditorFailureClass: "not-a-class",
+          auditorFallbackExhausted: true,
+          auditorFailureAt: "not-a-date",
+        },
+      },
+      list: [],
+    },
+    at: "2026-07-28T10:01:00.000Z",
+  }) + "\n");
+
+  const pending = readState(cwd).goal?.pendingCompletion;
+  assert.equal(pending?.phase, "retry-waiting", "legacy quota-waiting is canonicalized");
+  assert.equal(pending?.retryAttempts, 7, "legacy quota attempts remain readable under the generic name");
+  assert.deepEqual(pending?.auditorCandidateRefs?.slice(0, 2), ["test/primary", "test/fallback-0"], "candidate refs are deduplicated case-insensitively");
+  assert.equal(pending?.auditorCandidateRefs?.length, 10, "candidate refs are bounded");
+  assert.equal(pending?.auditorCandidateRef?.length, 200, "candidate ref diagnostics are bounded");
+  assert.equal(pending?.auditorRetryCandidateRef, "test/primary");
+  assert.deepEqual(pending?.auditorAttemptedRefs, ["test/primary", "test/fallback-1"]);
+  assert.equal(pending?.auditorFailureCount, 2, "failure cursor is clamped");
+  assert.equal(pending?.auditorFailureClass, undefined, "unknown failure classes fail closed");
+  assert.equal(pending?.auditorFallbackExhausted, true);
+  assert.equal(pending?.auditorFailureAt, undefined, "invalid diagnostic timestamps are discarded");
+  assert.equal((pending as any)?.quotaAttempts, undefined, "legacy quota key is not exposed to runtime policy");
+});
+
 test("goal transaction snapshot repairs a markdown-before-ledger crash", () => {
   const cwd = tmpdir();
   const oldAt = "2026-07-28T10:00:00.000Z";
