@@ -9,9 +9,7 @@ research-only; no adoption or runtime change was made.
 
 # Next
 
-## auditor parker no verdict, very recent
 
-/home/dracon/Pictures/Screenshots/Screenshot_20260828_165509.png /home/dracon/Pictures/Screenshots/Screenshot_20260828_165506.png /home/dracon/Pictures/Screenshots/Screenshot_20260828_165455.png 
 
 ## context bloat problem in seemingly long running tasts, going over designated but not over the limit of the model
 
@@ -20,6 +18,10 @@ research-only; no adoption or runtime change was made.
 ## chekc pr 
 
 https://github.com/DraconDev/pi-goal-list-loop-audit/pull/37
+
+## auditor parker no verdict, very recent, albeit seemingly was model releated as i kept switching to a more stable one it was fixd but we need a beter way to handle still
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260828_165509.png /home/dracon/Pictures/Screenshots/Screenshot_20260828_165506.png /home/dracon/Pictures/Screenshots/Screenshot_20260828_165455.png 
 
 ## list execution is stalling, list queued
 
