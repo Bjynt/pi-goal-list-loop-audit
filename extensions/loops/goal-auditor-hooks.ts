@@ -94,6 +94,7 @@ import {
   nowIso,
   compactDisplayText,
   sanitizeDisplayText,
+  sanitizeProviderAuditReport,
   piGlaDir,
   normalizeDraftContract,
   draftContractItemCount,

@@ -39,6 +39,8 @@ import {
   writeGoalMd,
   missingGllaTools,
   GLLA_TOOL_NAMES,
+  countTrailingRepeatedDisapprovals,
+  MAX_REPEATED_AUDIT_NO_PROGRESS,
 } from "../extensions/goal-loop-core.ts";
 
 // ---- helpers ----
@@ -57,6 +59,20 @@ test("piGlaDir returns the canonical path", () => {
 test("newGoalId format", () => {
   const id = newGoalId();
   assert.match(id, /^\d{14}-[a-z0-9]{6}$/);
+});
+
+test("v0.36.0: repeated identical auditor objections are a state-based no-progress signal", () => {
+  const same = Array.from({ length: MAX_REPEATED_AUDIT_NO_PROGRESS }, (_, i) => ({
+    at: `2026-08-28T00:0${i}:00Z`,
+    model: "auditor/test",
+    report: `<disapproved/>\n- Missing checked artifact: report.md`,
+    approved: false,
+    disapproved: true,
+    revision: 1,
+  }));
+  assert.equal(countTrailingRepeatedDisapprovals(same), MAX_REPEATED_AUDIT_NO_PROGRESS);
+  assert.equal(countTrailingRepeatedDisapprovals([...same, { ...same[0]!, report: "<disapproved/>\\n- Different objection" }]), 1);
+  assert.equal(countTrailingRepeatedDisapprovals([...same, { ...same[0]!, error: "transport", disapproved: false }]), MAX_REPEATED_AUDIT_NO_PROGRESS, "infrastructure noise is transparent; it did not change the repeated semantic objection");
 });
 
 test("statusLabel covers all states", () => {
