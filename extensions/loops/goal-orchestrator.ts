@@ -451,7 +451,7 @@ function clearSessionOwnedTimers(preserveStaleRecovery = false): void {
   // A stale terminal keeps a minimal probe alive so a same-process handle
   // that becomes healthy again can self-heal without waiting for /reload.
   // Normal shutdown/rebind still clears both tickers completely.
-  if (!preserveStaleRecovery && heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  if (!preserveStaleRecovery && heartbeatTimer) { clearTimeout(heartbeatTimer); heartbeatTimer = null; }
   if (!preserveStaleRecovery && uiTicker) { clearInterval(uiTicker); uiTicker = null; }
   clearMainModelRecoveryTimer();
   mainModelAbortForRecovery = false;

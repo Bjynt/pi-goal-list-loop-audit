@@ -4,7 +4,7 @@
 // The heartbeat/watchdog cluster extracted from extensions/loops/goal.ts:
 //   - subagent-hang watchdog machinery (v0.34.85 + v0.34.102 + v0.34.105)
 //   - heartbeatTick() — the orphan/stale/latch/refire/wedge watchdog
-//   - startHeartbeat() — the production 15s cadence driver
+//   - startHeartbeat() — the production event-first/adaptive fallback driver
 //   - the 5 test-only heartbeat hooks
 //
 // Positioning invariants (docs/GLLA-POSITIONING-AND-DECOMPOSITION-2026-08-08.md):
@@ -32,7 +32,6 @@ import {
 } from "./goal-loop-core.js";
 import { loadSettings } from "./goal-settings.js";
 import {
-  HEARTBEAT_INTERVAL_MS,
   HEARTBEAT_STALL_MS,
   PENDING_LATCH_STUCK_MS,
   WEDGE_ALERT_DEFAULT_MINUTES,
@@ -44,6 +43,7 @@ import { isLoopActive, loopTimerPending, scheduleLoopTick } from "./goal-loop.js
 import { mainModelRecoveryActive, markCompletionAuditRecoveryPending, probeMainModelRecovery } from "./goal-recovery.js";
 import type { ContinuationDispatch } from "./goal-loop-dispatch.js";
 import type { AgentPhase, AgentStatus } from "./goal-agents-panel.js";
+import { ContinuousSupervisor, type SupervisionSignal } from "./continuous-supervision.js";
 
 /** goal.ts-owned module lets the heartbeat reads/writes through this accessor.
  * Getters/setters are wired by goal.ts at factory time (mirror-lets pattern). */
@@ -115,6 +115,8 @@ export interface HeartbeatDeps {
 }
 
 let flags: HeartbeatFlags;
+const continuousSupervisor = new ContinuousSupervisor();
+let heartbeatExecuting = false;
 let absorbStaleIfSuperseded: HeartbeatDeps["absorbStaleIfSuperseded"];
 let goStaleTerminal: HeartbeatDeps["goStaleTerminal"];
 let probeExtensionApiStaleRaw: HeartbeatDeps["probeExtensionApiStaleRaw"];
@@ -801,7 +803,43 @@ function requestSubagentHangAction(
   recordRequestedAbort();
 }
 
+function scheduleHeartbeatPoll(generation: number, delayMs?: number): void {
+  if (flags.heartbeatTimer) return;
+  const active = continuousSupervisor.observeState(state, subagentHangProbes.size).length > 0;
+  const delay = delayMs ?? continuousSupervisor.nextPollMs(active);
+  const timer = setTimeout(() => {
+    if (generation !== flags.sessionGeneration || flags.heartbeatTimer !== timer) return;
+    flags.heartbeatTimer = null;
+    heartbeatExecuting = true;
+    try {
+      heartbeatTick();
+    } finally {
+      heartbeatExecuting = false;
+      if (generation === flags.sessionGeneration && !flags.heartbeatTimer) {
+        scheduleHeartbeatPoll(generation);
+      }
+    }
+  }, Math.max(0, delayMs ?? delay));
+  flags.heartbeatTimer = timer;
+  timer.unref?.();
+}
+
+/** Reset the adaptive fallback after a real lifecycle/durable signal. The
+ * signal itself is handled by the owning event path; this only makes the
+ * shared checker inspect state immediately instead of waiting for its prior
+ * backoff slot. */
+export function signalSupervisionEvent(signal: SupervisionSignal = { plane: "queue", kind: "progress", source: "event" }): void {
+  if (!flags) return;
+  continuousSupervisor.signal(signal);
+  if (heartbeatExecuting) return;
+  const timer = flags.heartbeatTimer;
+  if (timer) clearTimeout(timer);
+  flags.heartbeatTimer = null;
+  scheduleHeartbeatPoll(flags.sessionGeneration, 0);
+}
+
 function heartbeatTick(): void {
+  continuousSupervisor.observeState(state, subagentHangProbes.size);
   if (flags.zombieStoodDown || flags.initialSessionLoadPending) return; // blank startup waits for pi to bind a real session
   // v0.35.15: a MANUAL `/glla pause` freezes the supervisor's automatic
   // machinery — re-arms, stale probes, zombie cleanup, refires, everything
@@ -1272,8 +1310,8 @@ function heartbeatTick(): void {
 
 export function startHeartbeat(): void {
   if (flags.heartbeatTimer) return;
-  flags.heartbeatTimer = setInterval(heartbeatTick, HEARTBEAT_INTERVAL_MS);
-  flags.heartbeatTimer.unref?.();
+  continuousSupervisor.observeState(state, subagentHangProbes.size);
+  scheduleHeartbeatPoll(flags.sessionGeneration);
 }
 // ----------------------------------------------------------------------------
 // Test-only heartbeat hooks (moved from goal.ts)
