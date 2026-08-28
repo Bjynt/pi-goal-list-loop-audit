@@ -128,7 +128,7 @@ requirements when borrowing them.
 ### Already covered: independent audit isolation and durable recovery
 
 pi-goal-x runs an in-process auditor with transient abort state
-(`extensions/goal-completion.ts:235-322,405-412`; `goal-record.ts:1-57`). GLLA
+(`extensions/goal-completion.ts:235-322,405-412`; `extensions/goal-record.ts:1-57`). GLLA
 uses a detached, extension-less worker with atomic protocol files, identity and
 revision checks, process-group termination, wall/tool/stall bounds, and
 infrastructure-versus-semantic verdict classification
@@ -138,18 +138,21 @@ not an upgrade to GLLA's audit safety model.
 
 ### Unresolved: prompt payload escaping
 
-The fresh clone escapes interpolated auditor payloads; GLLA's auditor prompt
-still interpolates `<goal>`, `<completion_summary>`, and
-`<verification_contract>` in `extensions/goal-loop-auditor.ts` without the same
-delimiter escaping. This is the clearest auditor-specific hardening candidate,
-subject to preserving exact verdict and evidence tests.
+The fresh clone escapes interpolated auditor payloads in
+`extensions/goal-auditor.ts:104-109,170-203` (including objective, executor
+claim, verification contract, and warm context); GLLA's auditor prompt still
+interpolates `<goal>`, `<completion_summary>`, and `<verification_contract>` in
+`extensions/goal-loop-auditor.ts` without the same delimiter escaping. This is
+the clearest auditor-specific hardening candidate, subject to preserving exact
+verdict and evidence tests.
 
 ### Already covered, with a useful test lesson: provider recovery
 
 Recent pi-goal-x commits `51f8810`, `70c27cd`, and `926a46c` add exact 429/503
 fixtures, provider-side `stopReason:"aborted"` versus user Esc handling, settle
 ordering, quota exclusions, and a local HTTP provider E2E
-(`tests/goal-network-recovery.test.ts`; `tests/e2e/network-recovery-rpc.test.ts`).
+(`tests/goal-network-recovery.test.ts:165-240,247-375,390-497`;
+`tests/e2e/network-recovery-rpc.test.ts:52-81,93-130,196-238,255-270`).
 GLLA already has broader structured error normalization, durable recovery,
 forbidden/unregistered-model filtering, a finite zero-stream budget, and
 provider-pane/recovery tests (`scripts/goal-auditor-worker.mjs`;
@@ -173,7 +176,7 @@ boundaries.
 ### Transferable: shared dashboard view-model and durable current task
 
 pi-goal-x derives compact/expanded widgets, `/goal-status`, task focus, and
-ledger activity from one dashboard model (`extensions/widgets/goal-dashboard-model.ts:1-8,220-279,462-530`).
+ledger activity from one dashboard model (`extensions/widgets/goal-dashboard-model.ts:1-8,220-279,462-518`).
 It persists and validates `currentTaskId` for consistent current-task display.
 GLLA has strong pure status/widget builders and an operational worker roster,
 but generally derives the next pending task and recent action ring directly
@@ -246,6 +249,135 @@ sixteen registered commands (`extensions/goal-commands.ts:733-828`). Its
 agentic-runtime PRD is explicitly historical and partly superseded
 (`docs/agentic-runtime-prd.md:1-12`). Treat docs and changelog claims as
 artifacts to validate against code and tests, not as proof by themselves.
+
+## Experiments, specifications, assets, and release completeness
+
+The initial report covered executable code and the main docs, but the fresh clone
+also contains substantial tracked research and release material. The inventory
+below closes that coverage gap without treating every historical artifact as
+current product behavior.
+
+| Surface | Fresh-clone inventory | What it contributes |
+|---|---:|---|
+| `experiments/` | 128 tracked files | benchmarks, supported-case matrix, context measurement, harnesses, observations, scroll reproductions |
+| `specs/` | 104 tracked files in 33 spec directories plus `SPECS.yaml` | product/technical contracts, milestones, release and reliability records |
+| `assets/` | 2 tracked files (`badge-dark.svg`, `badge-light.svg`) | README presentation assets |
+| `extensions/` | 47 tracked TypeScript files | packaged runtime implementation |
+| `scripts/` | 4 tracked files | recovery CLI, test runner, adapter hooks, provenance check |
+| `.github/` | CI workflow plus Dependabot config | automated validation and dependency maintenance |
+| root/miscellaneous | 12 tracked regular files, including 2 PNGs, metadata, lockfile, license, and configs | package/repository presentation and release inputs |
+
+### Transferable: executable experiment matrix and context gates
+
+The experiment policy makes C20–C26 the current release evaluation set, excludes
+real-model runs from `npm test`, and distinguishes historical observations from
+current authority (`experiments/README.md:6-21`; `experiments/PLAN.md:5-15`;
+`experiments/observations/INDEX.md:3-23`). The supported-case matrix enforces
+membership and explicitly excludes `_smoke`/`npm_test`
+(`experiments/SUPPORTED_CASES.json:2-3,31-36`). Representative cases make
+specific tool and budget claims checkable (`experiments/cases/C20-core-tool-selection/INPUT.md:3-13`;
+`experiments/cases/C25-task-tool-consolidation/INPUT.md:3-13`;
+`experiments/cases/C26-budget-limit/INPUT.md:3-13`).
+
+The benchmark layer is agent-free instrumentation for I/O, ledger scale,
+prompts, startup, handlers, and UI (`experiments/bench/README.md:2-4,24-36`),
+with a claim-specific no-regression gate (`experiments/bench/b6-gate.mjs:3-13`).
+The context measurement captures complete provider requests, active schemas,
+transformed messages, and semantic occurrence counts
+(`experiments/context/README.md:3-17,25-27`; `experiments/context/run-gate.mjs:1-9,64-80`).
+
+**Learning:** GLLA could borrow the distinction between current supported cases,
+historical observations, deterministic context baselines, and claim-specific
+benchmark gates. This is an evaluation-process idea only; GLLA's existing Bun,
+jiti, offline-auditor, and smoke gates remain authoritative.
+
+### Transferable: specifications as explicit contracts, with authority labels
+
+The strongest fresh contracts state thin confirmation intent, user-owned
+lifecycle, service-owned mutation, persistent state, and independent audit
+(`specs/2026-05-13-drafting-runtime-simplification/TECH.md:9-15`;
+`specs/2026-08-03-codex-inspired-goal-interface/TECH.md:19-20`). The hardening
+spec defines status-authoritative reads, fixed tool profiles, disk-fresh task
+transactions, typed budget validation, and observable ledger diagnostics
+(`specs/2026-08-04-goal-simplification-hardening/PRODUCT.md:123-130`;
+`specs/2026-08-04-goal-simplification-hardening/TECH.md:185-200,234-252`).
+Latest specs cover checkpoint growth, composed-request accounting, layered
+settings, and read-only Oracle isolation
+(`specs/2026-08-23-checkpoint-context-growth/PRODUCT.md:3-24`;
+`specs/2026-08-23-model-context-accounting/PRODUCT.md:3-20`;
+`specs/2026-08-23-blocker-oracle/TECH.md:1-22`).
+
+**Learning:** keep explicit authority labels on product specs, milestones,
+experiments, and historical observations. GLLA's `docs/` and `audit/` already
+serve a similar role; this report does not recommend importing pi-goal-x's
+spec format.
+
+### Caution/avoid: incomplete spec registry and contradictory status
+
+`specs/SPECS.yaml` declares eight states but indexes only five specs
+(`specs/SPECS.yaml:3-18,19-53`) despite 33 tracked spec directories. The
+runtime-follow-up product still says `Implementing`
+(`specs/2026-08-04-goal-runtime-follow-up/PRODUCT.md:3-6`) while its milestones
+record substantial work as completed (`.../MILESTONES.md:41-60,100-123`).
+The extension-review plan explicitly parks unimplemented candidates
+(`specs/2026-08-04-extension-review-plan/PLAN.md:1-7`;
+`.../PARKED.md:3-7`). Treat the registry and status fields as potentially
+stale until cross-checked against code, tests, and release notes.
+
+### Caution/avoid: historical or contaminated artifacts as instructions
+
+The fresh repository itself records that observations and baselines are
+historical evidence, not current instructions (`experiments/observations/INDEX.md:3-23`;
+`experiments/README.md:20-21`). Two tracked spec artifacts require the same
+caution: the layered-settings milestones contain an embedded heredoc, `cat`,
+git commands, and an unrelated `/Users/tom/...` path
+(`specs/2026-08-23-layered-global-settings/MILESTONES.md:43-81`), while the
+prompt-normalization technical document begins a duplicated plan with a raw
+DSML token (`specs/2026-05-17-drafting-prompt-normalization/TECH.md:313`).
+These are provenance/cleanup findings, not instructions to execute.
+
+### Transferable: explicit package allowlist and guarded recovery CLI
+
+The fresh package has 47 extension files, one packaged recovery binary, six
+explicitly packaged docs, an external gallery image, 18 scripts, and bounded
+peer ranges (`package.json:8-10,29-65,67-99`). The recovery CLI defaults to
+dry-run, requires an explicit closed-Pi confirmation for writes, creates a
+backup, atomically replaces the file, and validates the result
+(`scripts/recover-session-checkpoints.mjs:146-237,242-288`).
+
+**Learning:** package-content allowlists and dry-run/backup/atomic-repair
+patterns are useful release hygiene. Any GLLA adoption would need to account
+for its `media/` asset allowlist and state-root policy rather than copy paths.
+
+### Transferable: assets and dependency-maintenance visibility
+
+The two tracked SVG assets are referenced by the README
+(`assets/badge-dark.svg`, `assets/badge-light.svg`; `README.md:8-9`). The
+repository also tracks root `pi-goal-x.png` and `screenshot.png`, while its
+package allowlist includes the external image URL in the Pi metadata
+(`package.json:29-46`). Dependabot updates Actions and npm dependencies weekly
+(`.github/dependabot.yml:4-17`).
+
+**Learning:** package-content assertions should verify that every user-facing
+static dependency is intentionally shipped or intentionally external; the
+source repository and npm tarball are separate surfaces.
+
+### Unresolved: release metadata and publication coverage
+
+The fresh package is version `0.30.5` (`package.json:2-3`), but its lockfile
+still declares `0.27.3` (`package-lock.json:2-9`). CI validates typecheck, lint,
+tests, self-check, pack, audit, and benchmark (`.github/workflows/ci.yml:22-42`),
+but no publish/tag workflow or npm publish script is present; CI stops at the
+pack dry run (`package.json:47-65`). This is a release-hygiene observation,
+not a reason to change GLLA's tagged-release workflow.
+
+### Already covered: GLLA's release boundary is stronger in a different way
+
+GLLA's release documentation and workflow cover tagged GitHub releases, version
+and tag verification, npm OIDC provenance, and registry verification
+(`docs/RELEASING.md:18-62`; `.github/workflows/publish.yml:41-91`). The useful
+fresh lesson is therefore package-content and manifest testing, not replacing
+GLLA's publication model.
 
 ## Prioritized GLLA follow-up list (research only)
 
