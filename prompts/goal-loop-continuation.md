@@ -167,7 +167,6 @@ The six labels are the user-facing hand-off contract. GLLA preserves a valid
 recap and synthesizes a recorded-facts-only fallback at terminalization when a
 legacy or incomplete caller omits it; never invent a commit, changed file, or
 passing test to make the recap sound complete.
-```
 
 Then call `complete_goal`. The orchestrator will spawn an **isolated auditor** in a fresh session to verify, and either accept (mark goal complete) or reject (continue work).
 

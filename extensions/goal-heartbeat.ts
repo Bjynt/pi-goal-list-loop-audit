@@ -1318,7 +1318,7 @@ export function startHeartbeat(): void {
 // ----------------------------------------------------------------------------
 
 /** Test-only lifecycle driver: exercise the orphan watchdog without waiting
- * for the production 15-second heartbeat interval. This never ships as a
+ * for the production adaptive heartbeat fallback. This never ships as a
  * runtime command; it only lets the mock host reproduce an invalidated
  * context with no successor session_start. */
 export function __testOnlyHeartbeatTick(): void {

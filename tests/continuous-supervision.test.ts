@@ -63,10 +63,13 @@ test("v0.36.0: loop terminal outcomes receive a durable user-facing recap", () =
 test("v0.36.0: production heartbeat is event-first with adaptive timeout fallback", () => {
   const heartbeat = fs.readFileSync(path.resolve("extensions/goal-heartbeat.ts"), "utf8");
   const activation = fs.readFileSync(path.resolve("extensions/loops/goal-activation.ts"), "utf8");
+  const orchestrator = fs.readFileSync(path.resolve("extensions/loops/goal-orchestrator.ts"), "utf8");
   assert.match(heartbeat, /ContinuousSupervisor/);
   assert.match(heartbeat, /setTimeout\(/);
   assert.doesNotMatch(heartbeat, /setInterval\(heartbeatTick/);
   assert.match(heartbeat, /signalSupervisionEvent/);
   assert.match(activation, /source: "agent_end"/);
   assert.match(activation, /source: "subagents:completed"/);
+  assert.match(orchestrator, /isTerminalLoopStopReason\(loop\.stopReason\)/);
+  assert.match(orchestrator, /completionSummary: buildLoopCompletionSummary\(/);
 });
