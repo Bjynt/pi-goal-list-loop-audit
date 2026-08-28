@@ -34,9 +34,19 @@ function labelIndex(text: string, label: CompletionSummaryLabel): number {
   return text.toLowerCase().indexOf(label.toLowerCase());
 }
 
+/**
+ * Validation/version annotations are metadata, not recap fields. Keep them
+ * out of the parser so a generated NOTE containing examples such as
+ * `Outcome:` cannot turn an incomplete claim into a useful recap.
+ */
+function completionSummaryBody(text: string): string {
+  const annotation = /\s(?:—|–|-)\s*NOTE\s*:/i.exec(text);
+  return annotation?.index === undefined ? text : text.slice(0, annotation.index);
+}
+
 /** Return labels that are absent or have no value after the label. */
 export function missingCompletionSummaryLabels(text: string): CompletionSummaryLabel[] {
-  const normalized = text.trim();
+  const normalized = completionSummaryBody(text).trim();
   return COMPLETION_SUMMARY_LABELS.filter((label) => {
     const start = labelIndex(normalized, label);
     if (start < 0) return true;
@@ -51,7 +61,7 @@ export function missingCompletionSummaryLabels(text: string): CompletionSummaryL
 }
 
 export function isGenericCompletionSummary(text: string): boolean {
-  return /^\s*(?:done|complete|completed|shipped|fixed|finished|all\s+done)\s*[.!]?\s*$/i.test(text.trim());
+  return /^\s*(?:done|complete|completed|shipped|fixed|finished|all\s+done)\s*[.!]?\s*$/i.test(completionSummaryBody(text).trim());
 }
 
 /** A recap is useful only when every label has a non-empty value. */
@@ -68,7 +78,7 @@ export function isUsefulCompletionSummary(text: string | undefined): boolean {
  * cannot accidentally imply evidence that the durable recap did not contain.
  */
 export function compactCompletionSummary(text: string | undefined, maxValueLength = 72): string {
-  const source = text?.replace(/\s+/g, " ").trim();
+  const source = completionSummaryBody(text ?? "").replace(/\s+/g, " ").trim();
   if (!source) return "not recorded";
   const lower = source.toLowerCase();
   const limit = Number.isFinite(maxValueLength) ? Math.max(8, Math.floor(maxValueLength)) : 72;

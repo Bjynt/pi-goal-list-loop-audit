@@ -947,9 +947,12 @@ function registerAgentTools(pi: any): void {
         // saying "auditor approved" — pure process, no information
         // (Screenshot_20260808_012905/013220/013515).
         const terminalReason = `auditor ${result.model} approved`;
-        const recapResolution = resolveCompletionSummary({ goal: state.goal, status: "complete", stopReason: terminalReason }, state.goal.completionSummary);
-        const recapSrc = recapResolution.summary.replace(/\s+/g, " ");
-        const recap = displaySlice(recapSrc, 110);
+        const recap = compactTerminalCompletionSummary({
+          goal: state.goal,
+          status: "complete",
+          stopReason: terminalReason,
+          archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, state.goal.id)) || archivedGoalPath(ctx.cwd, state.goal.id),
+        }, state.goal.completionSummary);
         const archived = archiveCurrentGoal(ctx, "complete", terminalReason);
         if (!archived) {
           // The archive helper preserves the live objective and emits the
@@ -966,7 +969,7 @@ function registerAgentTools(pi: any): void {
           return { content: [{ type: "text", text: "The auditor approved, but the terminal archive could not be persisted. The goal is paused; fix persistence, resume, and retry complete_goal." }], details: {} };
         }
         ctx.ui.notify(`✓ done: ${recap} — auditor ${result.model} approved.`, "info");
-        notifyExternal(ctx, `Goal complete (auditor approved): ${displaySlice(recapSrc, 120)}`);
+        notifyExternal(ctx, `Goal complete (auditor approved): ${recap}`);
         return { content: [{ type: "text", text: `Goal approved by auditor ${result.model}.` }], details: {} };
       }
 

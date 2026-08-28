@@ -232,7 +232,7 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
-import { compactCompletionSummary, resolveCompletionSummary } from "../completion-summary.js";
+import { compactCompletionSummary, compactTerminalCompletionSummary, isGenericCompletionSummary, missingCompletionSummaryLabels } from "../completion-summary.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -444,17 +444,22 @@ function validateCompletionSummary(text: string, ctx: ExtensionContext): string 
   // usefulness gate: a generic "done" sentence has no evidence, file, or
   // test pointers and the archive hand-off is poor.
   const requiredLabels = ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"] as const;
-  const missing = requiredLabels.filter((label) => !text.toLowerCase().includes(label.toLowerCase()));
+  // Use the same parser as terminal archive validation. In particular, a
+  // generated NOTE is metadata and must not make its example label names
+  // count as supplied recap fields.
+  const missingFromBody = missingCompletionSummaryLabels(text);
+  const missing = requiredLabels.filter((label) => missingFromBody.includes(label));
   if (missing.length > 0) {
     flags.push(`completionSummary missing required labels ${missing.join(", ")} — expected Outcome/Changed/Evidence/Tests/Unresolved/Next per audit/COMPLETION-SUMMARY-POLICY-2026-08-19.md.`);
-  } else if (/^\s*(done|complete|shipped|fixed|finished|all done)\s*\.?\s*$/i.test(text.trim())) {
+  } else if (isGenericCompletionSummary(text)) {
     flags.push(`completionSummary is generic single-word prose with no evidence — expected six labeled lines per policy.`);
   }
   if (flags.length === 0) return text;
   const ledgerType = missing.length > 0 ? "completion_summary_missing_labels" : "completion_summary_impossible_count";
   // Preserve the narrow impossible-count ledger name for the original case
-  // so existing log queries keep working; the missing-labels case uses its
-  // own type but still appends an honest NOTE so the auditor sees it.
+  // so existing log queries keep working. Missing-label annotations are
+  // deliberately label-free: terminal archive validation must still replace
+  // the incomplete claim with a recorded-facts-only fallback.
   if (missing.length > 0 && flags.some((f) => f.startsWith("Counts appear"))) {
     appendLedger(ctx.cwd, "completion_summary_impossible_count", {
       flags: flags.filter((f) => f.startsWith("Counts appear")),
@@ -470,7 +475,10 @@ function validateCompletionSummary(text: string, ctx: ExtensionContext): string 
       excerpt: text.slice(0, 240),
     });
   }
-  return `${text.trimEnd()} — NOTE: ${flags.join(" ")}`;
+  const annotation = missing.length > 0
+    ? "supplied completion summary was incomplete; terminalization will use a recorded-facts-only fallback"
+    : flags.join(" ");
+  return `${text.trimEnd()} — NOTE: ${annotation}`;
 }
 
 const AUDITOR_RECOVERY_RETRY_DELAY_MS = Number(process.env.GLLA_AUDITOR_RECOVERY_RETRY_DELAY_MS ?? 60_000);
@@ -1088,9 +1096,12 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
     // is the agent's completionSummary when captured; the objective is the
     // fallback for legacy/aborted goals.
     const terminalReason = `auditor ${result.model} approved (${origin})`;
-    const recapResolution = resolveCompletionSummary({ goal: state.goal, status: "complete", stopReason: terminalReason }, state.goal.completionSummary);
-    const recapSrc = recapResolution.summary.replace(/\s+/g, " ");
-    const recap = displaySlice(recapSrc, 110);
+    const recap = compactTerminalCompletionSummary({
+      goal: state.goal,
+      status: "complete",
+      stopReason: terminalReason,
+      archivePath: path.relative(liveCtx.cwd, archivedGoalPath(liveCtx.cwd, state.goal.id)) || archivedGoalPath(liveCtx.cwd, state.goal.id),
+    }, state.goal.completionSummary);
     const approvalVia = `${origin === "manual" ? " on /goal verify" : origin === "session-recovery" ? " after session recovery" : " on the provider retry"}${fallbackUsed ? " after an auditor-model fallback" : ""}`;
     const archived = archiveCurrentGoal(liveCtx, "complete", `auditor ${result.model} approved (${origin})`);
     if (!archived) {
@@ -1108,7 +1119,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       return;
     }
     liveCtx.ui.notify(`✓ done: ${recap} — auditor ${result.model} approved${approvalVia}.`, "info");
-    notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${displaySlice(recapSrc, 120)}`);
+    notifyExternal(liveCtx, `Goal complete (auditor approved, ${origin}): ${recap}`);
     return;
   }
 
