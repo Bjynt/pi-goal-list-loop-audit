@@ -389,8 +389,9 @@ These are learning candidates, not approved implementation work:
    authoritative state injection, generation/owner fences, and cold-resume
    consent.
 2. **High — add a local-provider event-shape fixture.** Reuse exact 503/429 and
-   provider-abort/settle-order cases from `tests/e2e/network-recovery-rpc.test.ts`,
-   while retaining GLLA's bounded recovery and structured diagnostics.
+   provider-abort/settle-order cases from
+   `tests/e2e/network-recovery-rpc.test.ts:52-81,93-130,196-238,255-270`, while
+   retaining GLLA's bounded recovery and structured diagnostics.
 3. **Medium — harden GLLA auditor payload boundaries.** Consider delimiter
    escaping and strict final non-empty-line verdict parsing; retain tool-use
    floors, raw evidence, regression shielding, `<impossible>`, and detached
