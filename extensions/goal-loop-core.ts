@@ -983,6 +983,45 @@ export function countTrailingDisapprovals(history: AuditVerdict[]): number {
   return n;
 }
 
+/** Consecutive identical semantic objections are a state-based no-progress
+ * signal. Infrastructure entries are transparent, but a changed contract
+ * revision breaks the comparison because the auditor may now be judging new
+ * work. */
+export const MAX_REPEATED_AUDIT_NO_PROGRESS = 3;
+
+export function auditDisapprovalFingerprint(report: string | undefined): string {
+  const text = typeof report === "string" ? report : "";
+  return text
+    .replace(/\b\d{4}-\d{2}-\d{2}T[^\s]+/g, "<timestamp>")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .slice(0, 2_000);
+}
+
+export function countTrailingRepeatedDisapprovals(history: AuditVerdict[]): number {
+  let n = 0;
+  let fingerprint: string | undefined;
+  let revision: number | undefined;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const verdict = history[i]!;
+    if (verdict.error && !verdict.approved && !verdict.disapproved) continue;
+    if (!verdict.disapproved) break;
+    const currentFingerprint = auditDisapprovalFingerprint(verdict.report);
+    if (!currentFingerprint) break;
+    if (fingerprint === undefined) {
+      fingerprint = currentFingerprint;
+      revision = verdict.revision;
+      n = 1;
+      continue;
+    }
+    if (currentFingerprint !== fingerprint) break;
+    if (typeof revision === "number" && typeof verdict.revision === "number" && verdict.revision !== revision) break;
+    n++;
+  }
+  return n;
+}
+
 /** Default per-goal token budget (v0.9.7): a runaway threshold, not a
  * "big goal" threshold — real research/feature goals legitimately burn 2-4M.
  * Loop 3 doesn't rely on this cap (it has max-iterations + plateau brakes). */

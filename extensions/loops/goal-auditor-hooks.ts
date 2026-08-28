@@ -79,6 +79,8 @@ import {
   sumNewAssistantTokens,
   takeAt,
   countTrailingDisapprovals,
+  countTrailingRepeatedDisapprovals,
+  MAX_REPEATED_AUDIT_NO_PROGRESS,
   goalArgsNeedDrafting,
   buildSeedGrillMessage,
   askUserQuestionAnswered,
@@ -1275,6 +1277,31 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       pendingTasks: durableObjections,
       source: "auditor-disapproval-retry",
     });
+  }
+  const repeatedNoProgress = countTrailingRepeatedDisapprovals(history);
+  if (result.disapproved && aggressive && repeatedNoProgress >= MAX_REPEATED_AUDIT_NO_PROGRESS) {
+    const stopReason = `repeated identical auditor objection ${repeatedNoProgress}× with no new progress`;
+    updateGoal({
+      status: "paused",
+      auditHistory: history,
+      pendingCompletion: undefined,
+      pendingTasks: durableObjections,
+      pauseKind: "decision",
+      pauseOptions: [`Investigate the repeated objection, then ${activeGoalSurfaceCommand("resume")}`, `Tweak the objective — ${activeGoalSurfaceCommand("tweak")} <new text>`, `Cancel the goal (${activeGoalSurfaceCommand("cancel")})`],
+      pauseRecommended: 1,
+      pauseReason: stopReason,
+      pauseSuggestedAction: `Automatic auditor retries stopped on a state-based no-progress signal. Inspect the repeated report and evidence, then ${activeGoalSurfaceCommand("resume")} after changing the work or contract.`,
+    }, liveCtx);
+    appendLedger(liveCtx.cwd, "audit_no_progress_stop", {
+      goalId,
+      attemptId: claim.attemptId,
+      repeated: repeatedNoProgress,
+      pendingTasks: durableObjections,
+      reason: stopReason,
+    });
+    liveCtx.ui.notify(`Auditor automation paused: ${stopReason}. The objection is preserved as TODOs; inspect it before ${activeGoalSurfaceCommand("resume")}.`, "warning");
+    maybeDecisionPopup(liveCtx);
+    return;
   }
   const residualFailureCopy = providerErrorPresentation(result.error, "completion");
   updateGoal({

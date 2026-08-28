@@ -84,6 +84,8 @@ import {
   sumNewAssistantTokens,
   takeAt,
   countTrailingDisapprovals,
+  countTrailingRepeatedDisapprovals,
+  MAX_REPEATED_AUDIT_NO_PROGRESS,
   goalArgsNeedDrafting,
   buildSeedGrillMessage,
   askUserQuestionAnswered,
@@ -1215,6 +1217,34 @@ function registerAgentTools(pi: any): void {
         });
       }
       const trailingDisapprovals = countTrailingDisapprovals(history);
+      const repeatedNoProgress = countTrailingRepeatedDisapprovals(history);
+      if (result.disapproved && effectiveCap.aggressiveMode && repeatedNoProgress >= MAX_REPEATED_AUDIT_NO_PROGRESS) {
+        const stopReason = `repeated identical auditor objection ${repeatedNoProgress}× with no new progress`;
+        updateGoal({
+          status: "paused",
+          auditHistory: history,
+          pendingCompletion: undefined,
+          pendingTasks: durableObjections,
+          pauseKind: "decision",
+          pauseOptions: [`Investigate the repeated objection, then ${activeGoalSurfaceCommand("resume")}`, `Tweak the objective — ${activeGoalSurfaceCommand("tweak")} <new text>`, `Cancel the goal (${activeGoalSurfaceCommand("cancel")})`],
+          pauseRecommended: 1,
+          pauseReason: stopReason,
+          pauseSuggestedAction: `Automatic auditor retries stopped on a state-based no-progress signal. Inspect the repeated report and evidence, then ${activeGoalSurfaceCommand("resume")} after changing the work or contract.`,
+        }, ctx);
+        appendLedger(ctx.cwd, "audit_no_progress_stop", {
+          goalId: auditGoalId,
+          attemptId: auditAttemptId,
+          repeated: repeatedNoProgress,
+          pendingTasks: durableObjections,
+          reason: stopReason,
+        });
+        ctx.ui.notify(`Auditor automation paused: ${stopReason}. The objection is preserved as TODOs; inspect it before ${activeGoalSurfaceCommand("resume")}.`, "warning");
+        maybeDecisionPopup(ctx);
+        return {
+          content: [{ type: "text", text: `Automatic auditor work paused on a state-based no-progress signal: ${stopReason}. The latest objections are durable TODOs. Investigate the report, then ${activeGoalSurfaceCommand("resume")} or ${activeGoalSurfaceCommand("tweak")} the objective.` }],
+          details: {},
+        };
+      }
       if (auditCap > 0 && trailingDisapprovals >= auditCap) {
         // v0.25.0 (contract item 22): aggressiveMode turns the cap into a
         // TODO list and keeps going — the objections become pendingTasks
