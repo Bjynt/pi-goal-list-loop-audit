@@ -227,6 +227,20 @@ export function isSafeMechanicalCommand(command: string): boolean {
   return SAFE_MECHANICAL_COMMAND.test(command.trim());
 }
 
+/**
+ * Accept one deliberately narrow assertion form used by verification
+ * contracts that need both a file existence/size check and a literal marker
+ * check. It is expanded into two shell-free invocations; arbitrary `&&`, `||`,
+ * pipes, substitutions, redirects, and additional programs remain rejected.
+ */
+function safeFileMarkerCompound(command: string): string[] | null {
+  const match = /^test\\s+-([sf])\\s+([A-Za-z0-9_./:@=+,-]+)\\s+&&\\s+grep\\s+-q\\s+(['"]?)([A-Za-z0-9_./:@=+,-]+)\\3\\s+([A-Za-z0-9_./:@=+,-]+)$/i.exec(command.trim());
+  if (!match) return null;
+  const [, flag, testPath, , marker, grepPath] = match;
+  if (!testPath || !marker || !grepPath) return null;
+  return [`test -${flag} ${testPath}`, `grep -q ${marker} ${grepPath}`];
+}
+
 /** v0.35.7: Execute mechanical pre-audit checks deterministically.
  *
  * v0.35.16: default timeout 60s → 10min. The old 60s ceiling killed
@@ -246,6 +260,17 @@ export function runMechanicalPreAuditChecks(cwd: string, commands: string[], tim
   const recoveredRetries: string[] = [];
   for (const rawCommand of commands) {
     const cmd = rawCommand.trim();
+    const compound = safeFileMarkerCompound(cmd);
+    if (compound) {
+      // Run each allowlisted assertion independently so no shell ever parses
+      // the conjunction. Keep the original compound text in a failure result
+      // so the auditor sees which contract item failed.
+      for (const step of compound) {
+        const stepResult = runMechanicalPreAuditChecks(cwd, [step], timeoutMs);
+        if (!stepResult.passed) return { ...stepResult, failedCommand: rawCommand };
+      }
+      continue;
+    }
     if (!isSafeMechanicalCommand(cmd)) {
       return {
         passed: false,

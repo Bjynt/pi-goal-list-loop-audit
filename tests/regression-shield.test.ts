@@ -356,6 +356,16 @@ test("extractMechanicalCheckCommands: extracts backticked and raw shell commands
   assert.equal(unsafeRes.passed, false);
   assert.equal(unsafeRes.exitCode, 126);
   assert.doesNotMatch(unsafeRes.output!, /boom/);
+
+  // v0.36.0: one narrow file-marker assertion is expanded into two
+  // shell-free commands, so the release contract can verify both existence
+  // and text without allowing arbitrary compound shell syntax.
+  const markerRes = runMechanicalPreAuditChecks(process.cwd(), ["test -s docs/DESIGN-long-running-supervision.md && grep -q 'event-driven' docs/DESIGN-long-running-supervision.md"]);
+  assert.equal(markerRes.passed, true);
+  const unsafeCompound = runMechanicalPreAuditChecks(process.cwd(), ["test -s package.json && printf boom"]);
+  assert.equal(unsafeCompound.passed, false);
+  assert.equal(unsafeCompound.exitCode, 126);
+  assert.doesNotMatch(unsafeCompound.output!, /boom/);
 });
 
 test("v0.35.16: mechanical checks keep the TAIL of failed output and banner a timeout kill", async () => {
