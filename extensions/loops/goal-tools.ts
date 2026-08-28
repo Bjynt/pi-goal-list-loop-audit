@@ -461,21 +461,17 @@ function registerAgentTools(pi: any): void {
       if (!state.goal) return { content: [{ type: "text", text: "No active goal." }], details: {} };
       if (state.goal.status !== "active") {
         if (state.goal.status === "paused") {
-          // v0.35.99 hotfix: auto-resume paused goal for mechanical contract fix (cargo && split) — allows complete_goal to proceed without manual /goal resume
+          // v0.34.87: a paused item IS a goal — the old flat "No active
+          // goal." read as if the paused card in the widget were nothing at
+          // all (note.md Screenshots 161659/161718: complete_goal answered
+          // "No active goal" while the session clearly held a paused item).
+          // Name the actual state and the resume verb: surface separation
+          // between "no goal" and "goal parked".
           const isList = state.goal.policy === "list";
-          // clear pause fields and mark active in-memory, then persist
-          state.goal.status = "active";
-          delete (state.goal as any).pauseReason;
-          delete (state.goal as any).pauseSuggestedAction;
-          delete (state.goal as any).pauseKind;
-          delete (state.goal as any).pauseOptions;
-          delete (state.goal as any).pauseRecommended;
-          delete (state.goal as any).pauseResumeAt;
-          try { const { persistState } = await import("./goal-state.js"); persistState(ctx); } catch {}
-          // fall through to normal complete_goal handling
-        } else {
-          return { content: [{ type: "text", text: `No active goal — it is ${state.goal.status}.` }], details: {} };
+          const resume = activeGoalSurfaceCommand("resume");
+          return { content: [{ type: "text", text: `No active goal — the ${isList ? "list item" : "goal"} is paused; ${resume} reactivates it (complete_goal only runs on an active item).` }], details: {} };
         }
+        return { content: [{ type: "text", text: `No active goal — it is ${state.goal.status}.` }], details: {} };
       }
       const p = params as { completionSummary?: string; verificationSummary?: string; newObjective?: string };
       if (state.goal.repairTarget) {
