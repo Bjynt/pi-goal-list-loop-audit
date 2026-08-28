@@ -1270,7 +1270,12 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
   // durable in auditHistory + /goal status.
   const aggressive = aggressiveAuditorRecoveryEnabled(liveCtx.cwd);
   const durableObjections = result.disapproved && aggressive
-    ? extractPendingTasks(sanitizeProviderAuditReport(result.output), 5)
+    ? (() => {
+      const extracted = extractPendingTasks(sanitizeProviderAuditReport(result.output), 5);
+      return extracted.length > 0
+        ? extracted
+        : [`Review the latest auditor disapproval in ${activeGoalStatusCommand()}.`];
+    })()
     : [];
   if (result.disapproved && aggressive) {
     appendLedger(liveCtx.cwd, "audit_objections_todo", {

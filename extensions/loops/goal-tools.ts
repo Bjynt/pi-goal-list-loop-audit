@@ -1203,7 +1203,12 @@ function registerAgentTools(pi: any): void {
         ? ""
         : `\n\nReport truncated at the configured limit. ${activeGoalStatusCommand()} shows the full report; change Audit feedback chars in /glla settings (0 = full report).`; 
       const durableObjections = result.disapproved && effectiveCap.aggressiveMode
-        ? extractPendingTasks(safeAuditOutput, 5)
+        ? (() => {
+          const extracted = extractPendingTasks(safeAuditOutput, 5);
+          return extracted.length > 0
+            ? extracted
+            : [`Review the latest auditor disapproval in ${activeGoalStatusCommand()}.`];
+        })()
         : [];
       if (result.disapproved && effectiveCap.aggressiveMode) {
         // v0.36.0: every ordinary disapproval becomes the current durable

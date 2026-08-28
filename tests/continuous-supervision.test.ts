@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { activeSupervisionPlanes, ContinuousSupervisor, SUPERVISION_MAX_POLL_MS, SUPERVISION_MIN_POLL_MS } from "../extensions/continuous-supervision.js";
+import { buildLoopCompletionSummary, isTerminalLoopStopReason } from "../extensions/completion-summary.js";
 import type { State } from "../extensions/goal-loop-core.js";
 
 const empty = (): State => ({ goal: null, list: [] });
@@ -48,6 +49,15 @@ test("v0.36.0: a real event resets fallback backoff instead of waiting for the o
   assert.equal(supervisor.nextPollMs(true), SUPERVISION_MIN_POLL_MS);
   const snapshot = supervisor.snapshot();
   assert.equal(snapshot.lastSignals.goal?.source, "agent_end");
+});
+
+test("v0.36.0: loop terminal outcomes receive a durable user-facing recap", () => {
+  assert.equal(isTerminalLoopStopReason("plateau — no improvement"), true);
+  assert.equal(isTerminalLoopStopReason("held: restored in a fresh session"), false);
+  assert.equal(isTerminalLoopStopReason("main model recovery — retrying"), false);
+  const summary = buildLoopCompletionSummary({ target: "polish the metric", stopReason: "plateau — no improvement", iteration: 4, bestValue: 2, historyLength: 4 });
+  for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) assert.match(summary, new RegExp(`^${label}`, "m"));
+  assert.match(summary, /best=2/);
 });
 
 test("v0.36.0: production heartbeat is event-first with adaptive timeout fallback", () => {

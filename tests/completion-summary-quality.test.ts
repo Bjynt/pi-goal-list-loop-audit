@@ -132,9 +132,24 @@ test("v0.36.0: fallback never invents changed files or test results", () => {
   assert.doesNotMatch(summary, /commit [a-f0-9]{7,}/i);
 });
 
-test("v0.36.0: archiveCurrentGoal owns terminal recap finalization", () => {
+test("v0.36.0: archiveCurrentGoal writes a recap for complete and abort-derived terminal paths", () => {
   assert.match(SRC, /resolveCompletionSummary\(\{[\s\S]*source: "durable-terminal-state"/);
   assert.match(SRC, /completionSummary: summaryResolution\.summary/);
+  const archive = (globalThis as any).archiveCurrentGoal as ((ctx: unknown, status: string, reason: string) => boolean) | undefined;
+  assert.equal(typeof archive, "function", "the central archive boundary is available to the behavioral harness");
+  for (const [status, reason] of [["complete", "auditor approved"], ["aborted", "auto-dropped after impossible recovery"]] as const) {
+    const cwd = tmpCwd();
+    seedState(cwd, { goal: seedGoal({ objective: `terminal ${status}`, status: "active" }) });
+    __testOnlyLoadState(cwd);
+    rememberCtxFor(cwd);
+    assert.equal(archive!(ownerCtx(cwd), status, reason), true, `${status} archive lands`);
+    const files = fs.readdirSync(path.join(cwd, ".pi-glla", "archive"));
+    assert.equal(files.length, 1);
+    const markdown = fs.readFileSync(path.join(cwd, ".pi-glla", "archive", files[0]!), "utf8");
+    for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) assert.match(markdown, new RegExp(`^${label}`, "m"), `${status} archive has ${label}`);
+    assert.match(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8"), /completion_summary_fallback/);
+    __testOnlyResetStaleFlag(); __testOnlyResetTerminalFlags(); __testOnlyResetOwnerSession();
+  }
 });
 
 test("completion summary audit doc exists and inventories archives", () => {
