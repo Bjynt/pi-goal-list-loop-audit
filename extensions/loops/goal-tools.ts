@@ -235,7 +235,7 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
-import { resolveCompletionSummary } from "../completion-summary.js";
+import { compactCompletionSummary, resolveCompletionSummary } from "../completion-summary.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -933,7 +933,9 @@ function registerAgentTools(pi: any): void {
       // IMPOSSIBLE (v0.24.2, Claude-Code lesson): the auditor's escape hatch
       // for goals that can NEVER be satisfied as stated. Not a disapproval —
       // continuing would burn tokens on a provably unwinnable objective.
-      // Bounded and surfaced: the goal pauses and the user decides.
+      // Full impossible verdicts are terminal facts: archive them as aborted
+      // through the same fence as every other terminal outcome. Only a
+      // PARTIAL verdict in aggressive mode remains active for narrowing.
       if (result.impossible) {
         const reason = result.impossibleReason || "(no reason given)";
         // v0.25.0 (contract item 23): under aggressiveMode, a PARTIAL
@@ -960,24 +962,38 @@ function registerAgentTools(pi: any): void {
             details: {},
           };
         }
-        updateGoal({
-          status: "paused",
-          auditHistory: history,
-          pendingCompletion: undefined,
-          pauseKind: "decision",
-          pauseOptions: [`Tweak the objective — ${activeGoalSurfaceCommand("tweak")} <new text>`, `Cancel the goal (${activeGoalSurfaceCommand("cancel")})`],
-          pauseRecommended: 1,
-          pauseReason: `auditor verdict: IMPOSSIBLE — ${reason}`,
-          pauseSuggestedAction: `The auditor says this goal can never be satisfied as stated. ${activeGoalSurfaceCommand("tweak")} the objective (or ${activeGoalSurfaceCommand("cancel")}), then ${activeGoalSurfaceCommand("resume")}.`,
-        }, ctx);
-        ctx.ui.notify(`Auditor: goal IMPOSSIBLE — ${reason}. Goal paused; ${activeGoalSurfaceCommand("tweak")} or ${activeGoalSurfaceCommand("cancel")}, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
-        maybeDecisionPopup(ctx);
-        appendLedger(ctx.cwd, "goal_paused", { reason: `auditor impossible: ${reason}` });
-        notifyExternal(ctx, `Goal paused (auditor: impossible): ${reason.slice(0, 120)}`);
+        const terminalReason = `auditor impossible: ${reason}`;
+        const terminal = terminalizeImpossibleGoal(ctx, terminalReason, history);
+        if (!terminal.archived) {
+          // A persistence/archive failure is the only reason a full
+          // impossible verdict remains parked. Keep the verdict durable and
+          // make the recovery action explicit; never claim terminalization.
+          updateGoal({
+            status: "paused",
+            auditHistory: history,
+            pendingCompletion: undefined,
+            pauseKind: "blocked",
+            pauseReason: `auditor verdict: IMPOSSIBLE, but terminal archive failed — ${reason}`,
+            pauseSuggestedAction: `Fix .pi-glla storage, then ${activeGoalSurfaceCommand("resume")} and retry the terminal archive.`,
+          }, ctx);
+          appendLedger(ctx.cwd, "goal_archive_failed_after_impossible", { reason: reason.slice(0, 240) });
+          return {
+            content: [{
+              type: "text",
+              text: `The auditor's verdict is IMPOSSIBLE, but GLLA could not persist the terminal archive. The verdict is preserved and the goal is paused; fix storage, then ${activeGoalSurfaceCommand("resume")} to retry.`,
+            }],
+            details: {},
+          };
+        }
+        const recapSource = terminal.summary.replace(/\\s+/g, " ");
+        const recap = compactCompletionSummary(terminal.summary);
+        ctx.ui.notify(`Goal archived as aborted — auditor marked it IMPOSSIBLE: ${reason.slice(0, 180)}.\nRecap: ${recap}`, "warning");
+        appendLedger(ctx.cwd, "goal_impossible_terminalized", { reason: reason.slice(0, 240), recap: recapSource.slice(0, 600) });
+        notifyExternal(ctx, `Goal archived as aborted (auditor impossible): ${recap}`);
         return {
           content: [{
             type: "text",
-            text: `The auditor's verdict is IMPOSSIBLE: ${reason}\n\nThis is not a disapproval — the auditor says the objective can never be satisfied as stated. The goal is now PAUSED. Do not call complete_goal again. Report the verdict to the user and suggest ${activeGoalSurfaceCommand("tweak")} (narrow or correct the objective) or ${activeGoalSurfaceCommand("cancel")}.`,
+            text: `The auditor's verdict is IMPOSSIBLE: ${reason}\n\nThe objective was terminalized as aborted with a durable six-label recap:\n${terminal.summary}`,
           }],
           details: {},
         };
@@ -1434,34 +1450,44 @@ function registerAgentTools(pi: any): void {
         && p.kind === "blocked"
         && !(p.suggestedAction && p.suggestedAction.trim())
       ) {
-        droppedImpossible = true;
         const impossible = state.goal;
         appendLedger(ctx.cwd, "list_item_impossible", {
           itemId: impossible.id,
           reason: p.reason,
           objective: impossible.objective,
         });
-        // The item was already taken out of the queue at activation — the
-        // drop records the decision; the queue advances past it below.
-        appendLedger(ctx.cwd, "list_item_auto_dropped", {
-          itemId: impossible.id,
-          objective: impossible.objective,
-          reason: "blocked with no resume path",
-        });
-        const droppedLabel = displaySlice(impossible.objective, 60);
-        const remaining = listQueue().length;
-        if (remaining > 0 && !isLoopActive()) {
-          const advanced = activateNextListItem(ctx);
-          ctx.ui.notify(
-            advanced
+        // The item was already taken out of the queue at activation. First
+        // pass it through the central archive fence so the drop cannot leave
+        // a resumable paused goal without a durable six-label recap.
+        const terminal = terminalizeImpossibleGoal(ctx, "auto-dropped: blocked with no resume path");
+        if (terminal.archived) {
+          droppedImpossible = true;
+          appendLedger(ctx.cwd, "list_item_auto_dropped", {
+            itemId: impossible.id,
+            objective: impossible.objective,
+            reason: "blocked with no resume path",
+          });
+          const droppedLabel = displaySlice(impossible.objective, 60);
+          const recap = compactCompletionSummary(terminal.summary);
+          const remaining = listQueue().length;
+          let message: string;
+          if (remaining > 0 && !isLoopActive()) {
+            const advanced = activateNextListItem(ctx);
+            message = advanced
               ? `List item auto-dropped as impossible (blocked with no resume path): ${droppedLabel} — advancing to the next item (${remaining} remaining).`
-              : `List item auto-dropped as impossible (blocked with no resume path): ${droppedLabel} — could not auto-advance (${remaining} remaining).`,
-            "warning",
-          );
-        } else if (remaining === 0) {
-          ctx.ui.notify(`List item auto-dropped as impossible (blocked with no resume path): ${droppedLabel} — the list is now empty; add more with /list add.`, "warning");
+              : `List item auto-dropped as impossible (blocked with no resume path): ${droppedLabel} — could not auto-advance (${remaining} remaining).`;
+          } else if (remaining === 0) {
+            message = `List item auto-dropped as impossible (blocked with no resume path): ${droppedLabel} — the list is now empty; add more with /list add.`;
+          } else {
+            message = `List item auto-dropped as impossible (blocked with no resume path): ${droppedLabel} — a running loop holds the surface; the item stays dropped.`;
+          }
+          ctx.ui.notify(`${message}\nRecap: ${recap}`, "warning");
+          notifyExternal(ctx, `List item auto-dropped as impossible: ${recap}`);
         } else {
-          ctx.ui.notify(`List item auto-dropped as impossible (blocked with no resume path): ${droppedLabel} — a running loop holds the surface; the item stays dropped.`, "warning");
+          appendLedger(ctx.cwd, "list_item_auto_drop_failed", {
+            itemId: impossible.id,
+            reason: "terminal archive failed",
+          });
         }
       }
       // v0.34.98: paused-without-draft / decision surface. When the
