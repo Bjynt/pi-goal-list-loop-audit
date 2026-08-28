@@ -936,6 +936,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
   if (origin !== "manual" && supervisorPaused(state) && !exemptLoadHold) return;
   const goal = state.goal;
   if (!goal?.pendingCompletion) return;
+  if (origin !== "manual" && goal.pendingCompletion.auditorFallbackExhausted) return;
   const goalId = goal.id;
   if (completionAuditInFlight) return;
   const generation = sessionGeneration;

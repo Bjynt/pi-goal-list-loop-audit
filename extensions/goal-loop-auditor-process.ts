@@ -259,7 +259,7 @@ export async function runAuditorFallbackWithPolicy(
     // composes the same helper while adding the forbidden/unregistered walk.
     if (nextUntriedModelRef(currentRef, refs, attempted) === undefined) {
       const last = pendingResult ?? noCandidateResult();
-      return { result: markExhausted(last), retriedOnce, fallbackUsed, via: fallbackFrom?.via ?? sequence[0]!.via };
+      return { result: markExhausted(last, last.error ? failureClass(last) : undefined), retriedOnce, fallbackUsed, via: fallbackFrom?.via ?? sequence[0]!.via };
     }
 
     // Prefer the persisted candidate once. If it was removed, forbidden, or
@@ -271,7 +271,7 @@ export async function runAuditorFallbackWithPolicy(
     for (const visited of selector.lastVisitedRefs) addAttempted(visited);
     if (!("model" in selected) || typeof selected.ref !== "string") {
       const result = pendingResult ?? noCandidateResult();
-      return { result: markExhausted(result), retriedOnce, fallbackUsed, via: fallbackFrom?.via ?? sequence[0]!.via };
+      return { result: markExhausted(result, result.error ? failureClass(result) : undefined), retriedOnce, fallbackUsed, via: fallbackFrom?.via ?? sequence[0]!.via };
     }
     const selectedRef = selected.ref;
     const candidate = byRef.get(selectedRef.toLowerCase());
