@@ -399,9 +399,11 @@ not a reason to change GLLA's tagged-release workflow.
 
 GLLA's release documentation and workflow cover tagged GitHub releases, version
 and tag verification, npm OIDC provenance, and registry verification
-(`docs/RELEASING.md:18-62`; `.github/workflows/publish.yml:41-91`). The useful
-fresh lesson is therefore package-content and manifest testing, not replacing
-GLLA's publication model.
+(`docs/RELEASING.md:18-62`; `.github/workflows/publish.yml:41-91`). The fresh
+package's corresponding shipped-content and validation boundaries are
+`package.json:29-40`, `.npmignore:1-8`, and `.github/workflows/ci.yml:29-42`.
+The useful fresh lesson is therefore package-content and manifest testing, not
+replacing GLLA's publication model.
 
 ## Prioritized GLLA follow-up list (research only)
 
@@ -411,7 +413,8 @@ These are learning candidates, not approved implementation work:
    Confirm whether repeated continuation prompts materially grow GLLA session
    files before changing the protocol. If the defect is real, preserve
    authoritative state injection, generation/owner fences, and cold-resume
-   consent.
+   consent. Compare against pi-goal-x's marker/injection design
+   (`extensions/goal-events.ts:37-101,347-386`; `extensions/prompts/goal-prompts.ts:10-38`).
 2. **High — add a local-provider event-shape fixture.** Reuse exact 503/429 and
    provider-abort/settle-order cases from
    `tests/e2e/network-recovery-rpc.test.ts:52-81,93-130,196-238,255-270`, while
@@ -419,19 +422,29 @@ These are learning candidates, not approved implementation work:
 3. **Medium — harden GLLA auditor payload boundaries.** Consider delimiter
    escaping and strict final non-empty-line verdict parsing; retain tool-use
    floors, raw evidence, regression shielding, `<impossible>`, and detached
-   infrastructure handling.
+   infrastructure handling. Compare against the fresh auditor's parser and
+   escaping boundaries (`extensions/goal-auditor.ts:50-70,104-109,170-203`).
 4. **Medium — consider a shared dashboard view-model/current-task field.** Add
    only if a concrete consistency defect is measured; do not simplify GLLA's
-   richer worker/recovery status model.
+   richer worker/recovery status model. The comparison source is
+   `extensions/widgets/goal-dashboard-model.ts:1-8,220-279,462-518`.
 5. **Medium — evaluate a storage-health report/repair surface.** Adapt
    pi-goal-x's malformed-file, malformed-ledger, stale-lock, and orphan checks
    to `.pi-glla`, `audit-jobs`, queue sidecars, and ownership fences; require
-   confirmation and backups for repair.
+   confirmation and backups for repair. The source report/repair contract and
+   regression coverage are `extensions/goal-recovery.ts:1-16,161-227` and
+   `tests/goal-recovery.test.ts:57-146`.
 6. **Low — consider a test-manifest self-check.** Keep live/model tests
-   explicitly conditional and avoid weakening the existing release gates.
-7. **Low — review wildcard peer dependencies and stale plan pointers.** This is
+   explicitly conditional and avoid weakening the existing release gates. The
+   fresh runner's manifest and self-check are in
+   `scripts/run-unit-tests.mjs:15-75`, with CI invoking the self-check and
+   separate quality gates (`.github/workflows/ci.yml:29-42`).
+7. **Low — review peer-range compatibility and stale plan pointers.** This is
    compatibility/release hygiene, not evidence that pi-goal-x's license or
-   architecture should be adopted.
+   architecture should be adopted. The fresh peer ranges are
+   `package.json:67-71`; the status/plan pointers to cross-check are
+   `specs/SPECS.yaml:3-53` and
+   `specs/2026-08-04-goal-runtime-follow-up/PRODUCT.md:3-8`.
 
 ## Explicit non-adoption boundary
 
