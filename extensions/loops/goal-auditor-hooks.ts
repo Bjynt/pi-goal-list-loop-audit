@@ -542,6 +542,7 @@ export function __testOnlySetAuditorRecoveryRetryDelay(delayMs: number | null): 
  * separate from the provider retry ladder: no-verdict recovery never guesses
  * a provider reason for a dead worker. */
 export function scheduleParkedCompletionAuditRecovery(ctx: ExtensionContext, pending: PendingCompletion, reason: string): PendingCompletion {
+  if (pending.auditorFallbackExhausted) return { ...pending, recoveryRetryAt: undefined };
   const now = Date.now();
   const aggressive = aggressiveAuditorRecoveryEnabled(ctx.cwd);
   if (pending.automaticRecoveryAttempted === true && !aggressive) return pending;
@@ -584,7 +585,7 @@ export function scheduleParkedCompletionAuditRecovery(ctx: ExtensionContext, pen
     if (!fresh) return;
     const goal = state.goal;
     const claim = goal?.pendingCompletion;
-    if (!goal || goal.status !== "paused" || !claim || (claim.phase ?? "recovery-pending") !== "recovery-pending" || claim.recoveryRetryAt !== retryAt) return;
+    if (!goal || goal.status !== "paused" || !claim || claim.auditorFallbackExhausted || (claim.phase ?? "recovery-pending") !== "recovery-pending" || claim.recoveryRetryAt !== retryAt) return;
     const aggressiveNow = aggressiveAuditorRecoveryEnabled(fresh.cwd);
     if (claim.automaticRecoveryAttempted === true && !aggressiveNow) {
       updateGoal({
@@ -637,8 +638,24 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
     && (claim.phase ?? "recovery-pending") === "recovery-pending"
     && (claim.automaticRecoveryAttempted !== true || aggressive)
     && (!aggressive || startedMs < recoveryWindow.untilMs);
+  const freshAuditorCycle = origin === "manual" && claim.auditorFallbackExhausted === true;
   const claimForAttempt = origin === "manual"
-    ? { ...claim, retryAttempts: undefined, retryFirstAt: undefined, retryUntil: undefined }
+    ? {
+      ...claim,
+      retryAttempts: undefined,
+      retryFirstAt: undefined,
+      retryUntil: undefined,
+      ...(freshAuditorCycle ? {
+        auditorCandidateRefs: undefined,
+        auditorCandidateRef: undefined,
+        auditorRetryCandidateRef: undefined,
+        auditorAttemptedRefs: undefined,
+        auditorFailureCount: undefined,
+        auditorFailureClass: undefined,
+        auditorFallbackExhausted: undefined,
+        auditorFailureAt: undefined,
+      } : {}),
+    }
     : claim;
   const pending: PendingCompletion = {
     ...claimForAttempt,
@@ -777,7 +794,7 @@ export function maybeAutoRetryParkedCompletionAudit(trigger: AutomaticCompletion
   if (loadHoldActive(state) && trigger !== "main-model-recovery") return false;
   const goal = state.goal;
   const claim = goal?.pendingCompletion;
-  if (!goal || goal.status !== "paused" || !claim) return false;
+  if (!goal || goal.status !== "paused" || !claim || claim.auditorFallbackExhausted) return false;
   if ((claim.phase ?? "recovery-pending") !== "recovery-pending") return false;
   if (completionAuditInFlight) return false;
 
@@ -952,6 +969,18 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
     appendLedger(liveCtx.cwd, "auditor_model_issue", { error: modelFailureCopy.diagnostic, display: modelFailureCopy.display });
   }
   const auditorCandidates: AuditorModelCandidate[] = [{ model: auditorModel, via: via ?? "unset" }, ...(fallbackModels ?? [])];
+  const configuredAuditorRefs = auditorCandidateRefs(auditorCandidates);
+  const persistedAuditorAttemptedRefs = (claim.auditorAttemptedRefs ?? [])
+    .filter((ref) => configuredAuditorRefs.some((candidateRef) => candidateRef.toLowerCase() === ref.toLowerCase()))
+    .slice(0, 10);
+  const persistedAuditorCandidateRef = claim.auditorCandidateRef
+    && configuredAuditorRefs.some((ref) => ref.toLowerCase() === claim.auditorCandidateRef!.toLowerCase())
+    ? claim.auditorCandidateRef
+    : undefined;
+  const persistedAuditorRetryCandidateRef = claim.auditorRetryCandidateRef
+    && configuredAuditorRefs.some((ref) => ref.toLowerCase() === claim.auditorRetryCandidateRef!.toLowerCase())
+    ? claim.auditorRetryCandidateRef
+    : undefined;
   completionAuditInFlight = true;
   completionAuditGeneration = generation;
   latestAuditProgress = {
@@ -1006,9 +1035,9 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
         shouldRetry: () => detachedAuditContext(generation, goalId, claim.attemptId!) !== null,
         forbiddenRefs: settings.forbiddenModels,
         retryBaseMinutes: settings.mainModelRetryMinutes,
-        resumeCandidateRef: claim.auditorCandidateRef,
-        attemptedRefs: claim.auditorAttemptedRefs,
-        retryCandidateRef: claim.auditorRetryCandidateRef,
+        resumeCandidateRef: persistedAuditorCandidateRef,
+        attemptedRefs: persistedAuditorAttemptedRefs,
+        retryCandidateRef: persistedAuditorRetryCandidateRef,
         onAttempt: (candidate, info) => persistDetachedAuditorCursor(
           generation,
           goalId,
@@ -1071,6 +1100,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
                 auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
                 auditorFailureCount: 0,
                 auditorFailureClass: undefined,
+                auditorFallbackExhausted: undefined,
                 auditorFailureAt: undefined,
               }
               : {
@@ -1078,7 +1108,8 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
                 auditorRetryCandidateRef: undefined,
                 auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
                 auditorFailureCount: 2,
-                auditorFailureClass: "exhausted",
+                auditorFailureClass: info.failureClass,
+                auditorFallbackExhausted: true,
                 auditorFailureAt: new Date().toISOString(),
               },
           );
@@ -1145,6 +1176,10 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
   }
   if (state.goal.pendingCompletion?.attemptId !== claim.attemptId) return; // a newer attempt owns the durable claim
   liveCtx = currentAfterAudit;
+  // Cursor callbacks may have advanced this same claim while the worker was
+  // running. Never rebuild a recovery record from the stale pre-dispatch
+  // snapshot: that would erase the candidate position on the first failure.
+  const durableClaim = state.goal.pendingCompletion ?? claim;
 
   // v0.34.61: focus revision guard — contract-scoped. The detached
   // worker captured (goalId, revision) at dispatch; only a CONTRACT
@@ -1273,15 +1308,71 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
     return;
   }
 
+  const cursorPersistenceFailed = result.error === "auditor recovery cursor persistence failed";
+  if (result.error && (result.fallbackExhausted || cursorPersistenceFailed)) {
+    // A candidate chain is a bounded recovery policy, not a new automatic
+    // retry horizon. Once every allowed candidate has used its one retry, or
+    // the parent could not persist the cursor, park the claim with no timer.
+    // This is deliberately before the generic infrastructure branches so a
+    // restart cannot walk the same exhausted chain again.
+    const failureCopy = providerErrorPresentation(result.error, "completion");
+    const recoveryEpisodeKey = durableClaim.recoveryEpisodeKey ?? `${durableClaim.at}:${failureCopy.fingerprint}`;
+    const pending: PendingCompletion = {
+      ...durableClaim,
+      phase: "recovery-pending",
+      recoveryAt: nowIso(),
+      recoveryRetryAt: undefined,
+      recoveryReason: cursorPersistenceFailed ? "auditor-cursor-persistence-failed" : "auditor-fallback-exhausted",
+      providerErrorDiagnostic: failureCopy.diagnostic,
+      recoveryEpisodeKey,
+      recoveryNoticeKeys: durableClaim.recoveryNoticeKeys ?? [],
+      auditorFailureClass: result.infrastructureClass ?? auditorResultFailureClass(result),
+      auditorFallbackExhausted: result.fallbackExhausted ? true : undefined,
+      auditorFailureAt: new Date().toISOString(),
+    };
+    const notifyParked = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:fallback-exhausted`);
+    updateGoal({
+      status: "paused",
+      auditHistory: history,
+      pendingCompletion: pending,
+      providerErrorDiagnostic: failureCopy.diagnostic,
+      recoveryEpisodeKey,
+      recoveryNoticeKeys: pending.recoveryNoticeKeys,
+      pauseKind: "error",
+      pauseResumeAt: undefined,
+      pauseReason: cursorPersistenceFailed
+        ? "completion auditor recovery cursor could not be persisted — automatic recovery stopped"
+        : "completion auditor candidate fallback chain exhausted — no verifier verdict was produced",
+      pauseSuggestedAction: `The stored completion claim is safe but automatic recovery is stopped. Inspect the auditor/provider setup, then ${activeGoalSurfaceCommand("resume")} to start a new bounded attempt.`,
+    }, liveCtx);
+    appendLedger(liveCtx.cwd, cursorPersistenceFailed ? "auditor_recovery_cursor_persistence_failed" : "auditor_fallback_exhausted", {
+      goalId,
+      attemptId: durableClaim.attemptId,
+      failureClass: result.infrastructureClass ?? auditorResultFailureClass(result),
+      diagnostic: failureCopy.diagnostic,
+      display: failureCopy.display,
+      recoveryEpisodeKey,
+    });
+    if (notifyParked) {
+      liveCtx.ui.notify(
+        cursorPersistenceFailed
+          ? `Auditor recovery stopped because its durable cursor could not be saved. The completion claim remains stored; ${activeGoalSurfaceCommand("resume")} retries it explicitly.`
+          : `Auditor fallback candidates are exhausted. The completion claim remains stored with no verifier verdict; inspect the provider setup, then ${activeGoalSurfaceCommand("resume")}.`,
+        "warning",
+      );
+    }
+    return;
+  }
+
   if (result.error && !result.disapproved && isAuditorNoVerdictInfrastructureError(result.error, result.infrastructureClass)) {
     // Watchdog timeouts stay ahead of the provider retry branch: a hanging
     // verification command is a local infrastructure failure. Normal
     // mode gets one fresh stored-claim retry; aggressiveMode keeps this
     // independent recovery loop alive inside its durable window.
     const failureCopy = providerErrorPresentation(result.error, "completion");
-    const recoveryEpisodeKey = claim.recoveryEpisodeKey ?? `${claim.at}:${failureCopy.fingerprint}`;
+    const recoveryEpisodeKey = durableClaim.recoveryEpisodeKey ?? `${durableClaim.at}:${failureCopy.fingerprint}`;
     let pending: PendingCompletion = {
-      ...claim,
+      ...durableClaim,
       phase: "recovery-pending",
       recoveryAt: nowIso(),
       recoveryReason: result.error.startsWith("Auditor exceeded")
@@ -1291,8 +1382,8 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
           : "auditor-no-verdict",
       providerErrorDiagnostic: failureCopy.diagnostic,
       recoveryEpisodeKey,
-      recoveryNoticeKeys: claim.recoveryNoticeKeys ?? [],
-      automaticRecoveryAttempted: claim.automaticRecoveryAttempted ?? false,
+      recoveryNoticeKeys: durableClaim.recoveryNoticeKeys ?? [],
+      automaticRecoveryAttempted: durableClaim.automaticRecoveryAttempted ?? false,
     };
     if (typeof scheduleParkedCompletionAuditRecovery === "function") {
       pending = scheduleParkedCompletionAuditRecovery(liveCtx, pending, pending.recoveryReason ?? "auditor-timeout");
@@ -1340,18 +1431,18 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
   if (result.error && !result.disapproved) {
     // Preserve the claim, but use a durable bounded plan.
     const failureCopy = providerErrorPresentation(result.error, "completion");
-    const recoveryEpisodeKey = claim.recoveryEpisodeKey ?? `${claim.at}:${failureCopy.fingerprint}`;
+    const recoveryEpisodeKey = durableClaim.recoveryEpisodeKey ?? `${durableClaim.at}:${failureCopy.fingerprint}`;
     const aggressive = aggressiveAuditorRecoveryEnabled(liveCtx.cwd);
-    const plan = auditorRetryPlan(claim, undefined, undefined, aggressive);
+    const plan = auditorRetryPlan(durableClaim, undefined, undefined, aggressive);
     const pending = {
-      ...claim,
+      ...durableClaim,
       phase: "retry-waiting" as const,
       recoveryAt: undefined,
       recoveryReason: undefined,
       recoveryRetryAt: undefined,
       providerErrorDiagnostic: failureCopy.diagnostic,
       recoveryEpisodeKey,
-      recoveryNoticeKeys: claim.recoveryNoticeKeys ?? [],
+      recoveryNoticeKeys: durableClaim.recoveryNoticeKeys ?? [],
       retryAttempts: plan.attempt,
       retryFirstAt: plan.firstAt,
       ...(aggressive ? { retryUntil: undefined } : { retryUntil: plan.autoRetryUntil }),

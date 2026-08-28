@@ -413,7 +413,6 @@ export function auditorCandidateRefs(candidates: AuditorFallbackCandidate[]): st
  * separate so callers can distinguish a provider timeout from an exhausted
  * candidate chain. */
 export function auditorResultFailureClass(result: GoalAuditorResult): AuditorRecoveryFailureClass {
-  if (result.fallbackExhausted) return "exhausted";
   if (result.infrastructureClass) return result.infrastructureClass;
   const error = result.error ?? "";
   if (/^Auditor (?:exceeded|stalled)\b|\b(?:timed? ?out|timeout|inactivity)\b/i.test(error)) return "timeout";

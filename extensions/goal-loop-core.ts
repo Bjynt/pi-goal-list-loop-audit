@@ -236,7 +236,7 @@ export function sumNewAssistantTokens(messages: unknown[], seen: Set<string>): n
 }
 
 export type CompletionAuditPhase = "running" | "recovery-pending" | "retry-waiting" | "quota-waiting";
-export type AuditorRecoveryFailureClass = "transport" | "timeout" | "no-verdict" | "provider" | "exhausted";
+export type AuditorRecoveryFailureClass = "transport" | "timeout" | "no-verdict" | "provider";
 
 /** Durable completion claim metadata. The claim itself is the user's exact
  * completion assertion; the lifecycle fields make an interrupted isolated
@@ -293,6 +293,7 @@ export interface PendingCompletion {
    * terminal second failure. State loading clamps this to [0, 2]. */
   auditorFailureCount?: number;
   auditorFailureClass?: AuditorRecoveryFailureClass;
+  auditorFallbackExhausted?: boolean;
   auditorFailureAt?: string;
   /** Durable generic retry accounting; survives reloads and worker restarts. */
   retryAttempts?: number;
@@ -1453,6 +1454,7 @@ function normalizePendingCompletion(value: unknown): PendingCompletion {
     auditorAttemptedRefs: _auditorAttemptedRefs,
     auditorFailureCount: _auditorFailureCount,
     auditorFailureClass: _auditorFailureClass,
+    auditorFallbackExhausted: _auditorFallbackExhausted,
     auditorFailureAt: _auditorFailureAt,
     ...canonicalOrUnknown
   } = raw;
@@ -1471,10 +1473,11 @@ function normalizePendingCompletion(value: unknown): PendingCompletion {
   const auditorFailureCount = typeof _auditorFailureCount === "number" && Number.isFinite(_auditorFailureCount)
     ? Math.min(2, Math.max(0, Math.trunc(_auditorFailureCount)))
     : undefined;
-  const auditorFailureClasses: AuditorRecoveryFailureClass[] = ["transport", "timeout", "no-verdict", "provider", "exhausted"];
+  const auditorFailureClasses: AuditorRecoveryFailureClass[] = ["transport", "timeout", "no-verdict", "provider"];
   const auditorFailureClass = typeof _auditorFailureClass === "string" && auditorFailureClasses.includes(_auditorFailureClass as AuditorRecoveryFailureClass)
     ? _auditorFailureClass as AuditorRecoveryFailureClass
     : undefined;
+  const auditorFallbackExhausted = _auditorFallbackExhausted === true;
   const auditorFailureAt = typeof _auditorFailureAt === "string" && _auditorFailureAt.trim()
     ? _auditorFailureAt
     : undefined;
@@ -1486,6 +1489,7 @@ function normalizePendingCompletion(value: unknown): PendingCompletion {
     ...(auditorAttemptedRefs !== undefined ? { auditorAttemptedRefs } : {}),
     ...(auditorFailureCount !== undefined ? { auditorFailureCount } : {}),
     ...(auditorFailureClass ? { auditorFailureClass } : {}),
+    ...(auditorFallbackExhausted ? { auditorFallbackExhausted: true } : {}),
     ...(auditorFailureAt ? { auditorFailureAt } : {}),
     ...(phase === "running" || phase === "recovery-pending" || phase === "retry-waiting" ? { phase } : {}),
     ...(typeof raw.retryAttempts === "number"

@@ -217,9 +217,13 @@ import {
   type ProjectRollup,
 } from "../goal-loop-stats.js";
 import {
+  auditorCandidateRefs,
+  auditorResultFailureClass,
   cancelDetachedGoalCompletionAuditor,
   newDetachedAuditJobAttemptId,
   runDetachedGoalCompletionAuditor,
+  type AuditorFallbackAttemptInfo,
+  type AuditorFallbackExhaustionInfo,
   type AuditorProgress,
 } from "../goal-loop-auditor-process.js";
 import {
@@ -697,6 +701,18 @@ function registerAgentTools(pi: any): void {
         appendLedger(ctx.cwd, "auditor_model_issue", { error: modelFailureCopy.diagnostic, display: modelFailureCopy.display });
       }
       const auditorCandidates: AuditorModelCandidate[] = [{ model: auditorModel, via: via ?? "unset" }, ...(fallbackModels ?? [])];
+      const configuredAuditorRefs = auditorCandidateRefs(auditorCandidates);
+      const persistedAuditorAttemptedRefs = (completionClaim.auditorAttemptedRefs ?? [])
+        .filter((ref) => configuredAuditorRefs.some((candidateRef) => candidateRef.toLowerCase() === ref.toLowerCase()))
+        .slice(0, 10);
+      const persistedAuditorCandidateRef = completionClaim.auditorCandidateRef
+        && configuredAuditorRefs.some((ref) => ref.toLowerCase() === completionClaim.auditorCandidateRef!.toLowerCase())
+        ? completionClaim.auditorCandidateRef
+        : undefined;
+      const persistedAuditorRetryCandidateRef = completionClaim.auditorRetryCandidateRef
+        && configuredAuditorRefs.some((ref) => ref.toLowerCase() === completionClaim.auditorRetryCandidateRef!.toLowerCase())
+        ? completionClaim.auditorRetryCandidateRef
+        : undefined;
       // v0.34.90: no redundant chat notify here — pi's own complete_goal
       // response already says the claim persisted and the detached auditor
       // is queued; a second "Auditor queued" message is chat spam (never
