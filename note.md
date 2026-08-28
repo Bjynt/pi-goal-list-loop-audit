@@ -14,15 +14,6 @@ research-only; no adoption or runtime change was made.
 is it our bug or tin tin subagents 
 /home/dracon/Pictures/Screenshots/Screenshot_20260828_063011.png 
 
-# Done
-
-Keep only the three most recent completions here; older history lives in
-`audit/DONE-ARCHIVE.md`.
-
-- **pi-goal-x comparative learning audit** — fresh `main` clone at `59826ec`, full-repository comparison, transferable lessons/cautions, prioritized non-adoption follow-up list in `audit/PI-GOAL-X-COMPARISON-2026-08-27.md`.
-- **Wait/duration estimation** — `scripts/durable-wait.mjs:estimateDurationFromHistory`/`nextPollMs` + `scripts/smoke.sh` `250→1000ms` adaptive polling, `audit/WAIT-ESTIMATION-2026-08-27.md` — `20260827203924-m13p3a` approved.
-- **/glla bug capture** — `extensions/goal-commands.ts:cmdGllaBug` writes `bugs/<ts>-<id>.md` via `resolveGllaStateDir` without mutating durable state — `20260827200116-bvgqsu` approved.
-
 # Later
 
 ##
