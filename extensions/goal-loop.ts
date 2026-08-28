@@ -62,6 +62,7 @@ import { createContinuationDispatch, type ContinuationDispatch } from "./goal-lo
 import { attemptFreshSessionRecovery } from "./goal-recovery.js";
 import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-conflict.js";
 import { releaseAuditorSurface } from "./loops/goal-auditor-surface.js";
+import { compactLoopCompletionSummary } from "./completion-summary.js";
 
 type DispatchInput = Omit<Parameters<typeof createContinuationDispatch>[0], "id" | "sentAt">;
 
@@ -694,9 +695,10 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
     await commitPendingTerminalWork();
     await finishLoopGit(ctx, loop);
     if (!rebindLoop()) return;
-    ctx.ui.notify(`Loop stopped: ${loop.stopReason}. ${loop.history.length} iterations recorded.`, "warning");
-    appendLedger(ctx.cwd, "loop_stopped", { reason: loop.stopReason, iterations: loop.iteration, best: loop.bestValue });
-    notifyExternal(ctx, `Loop stopped: ${loop.stopReason}`);
+    const recap = compactLoopCompletionSummary({ ...loop, historyLength: loop.history.length });
+    ctx.ui.notify(`Loop stopped: ${loop.stopReason}. ${loop.history.length} iterations recorded.\nRecap: ${recap}`, "warning");
+    appendLedger(ctx.cwd, "loop_stopped", { reason: loop.stopReason, iterations: loop.iteration, best: loop.bestValue, recap });
+    notifyExternal(ctx, `Loop stopped: ${loop.stopReason}. Recap: ${recap}`);
     // v0.35.41: same contract as every other stop route below — a stuck
     // ladder stop frees the surface, so the waiting queue is announced.
     announceQueuedListAfterLoopEnd(ctx);
@@ -735,9 +737,10 @@ async function runLoopTick(initialCtx: ExtensionContext, event?: any): Promise<v
     await commitPendingTerminalWork();
     await finishLoopGit(ctx, loop);
     if (!rebindLoop()) return;
-    ctx.ui.notify(`Loop stopped: ${outcome.reason}. ${loop.history.length} iterations recorded.`, "info");
-    appendLedger(ctx.cwd, "loop_stopped", { reason: outcome.reason, iterations: loop.iteration, best: loop.bestValue });
-    notifyExternal(ctx, `Loop stopped: ${outcome.reason}`);
+    const recap = compactLoopCompletionSummary({ ...loop, historyLength: loop.history.length });
+    ctx.ui.notify(`Loop stopped: ${outcome.reason}. ${loop.history.length} iterations recorded.\nRecap: ${recap}`, "info");
+    appendLedger(ctx.cwd, "loop_stopped", { reason: outcome.reason, iterations: loop.iteration, best: loop.bestValue, recap });
+    notifyExternal(ctx, `Loop stopped: ${outcome.reason}. Recap: ${recap}`);
     announceQueuedListAfterLoopEnd(ctx);
     return;
   }
@@ -779,8 +782,9 @@ async function finishLoopGit(ctx: ExtensionContext, loop: LoopState): Promise<vo
     if (!afterCheckout) return;
     ctx = afterCheckout;
   }
+  const recap = compactLoopCompletionSummary({ ...loop, historyLength: loop.history.length });
   ctx.ui.notify(
-    `Loop work is on branch ${loop.branchName} (${loop.iteration} iterations, best ${loop.bestValue ?? "n/a"}).\nMerge with: git merge ${loop.branchName} — or delete with: git branch -D ${loop.branchName}`,
+    `Loop work is on branch ${loop.branchName} (${loop.iteration} iterations, best ${loop.bestValue ?? "n/a"}).\nRecap: ${recap}\nMerge with: git merge ${loop.branchName} — or delete with: git branch -D ${loop.branchName}`,
     "info",
   );
   appendLedger(ctx.cwd, "loop_git", { action: "finish", branch: loop.branchName, returnedTo: loop.originalBranch });
@@ -1180,11 +1184,12 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     if (!afterFinish) return;
     ctx = afterFinish;
     appendLedger(ctx.cwd, "loop_stopped", { reason: "user", iterations: state.loop.iteration, best: state.loop.bestValue });
+    const recap = compactLoopCompletionSummary({ ...state.loop, historyLength: state.loop.history.length });
     ctx.ui.notify(
-      `Loop stopped after ${state.loop.iteration} iterations. Best: ${state.loop.bestValue ?? "n/a"}.`,
+      `Loop stopped after ${state.loop.iteration} iterations. Best: ${state.loop.bestValue ?? "n/a"}.\nRecap: ${recap}`,
       "info",
     );
-    notifyExternal(ctx, `Loop stopped by user after ${state.loop.iteration} iterations (best: ${state.loop.bestValue ?? "n/a"})`);
+    notifyExternal(ctx, `Loop stopped by user after ${state.loop.iteration} iterations (best: ${state.loop.bestValue ?? "n/a"}). Recap: ${recap}`);
     announceQueuedListAfterLoopEnd(ctx);
     return;
   }
@@ -1212,11 +1217,12 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     if (!afterFinish) return;
     ctx = afterFinish;
     appendLedger(ctx.cwd, "loop_stopped", { reason, iterations: state.loop.iteration, best: state.loop.bestValue });
+    const recap = compactLoopCompletionSummary({ ...state.loop, historyLength: state.loop.history.length });
     ctx.ui.notify(
-      `Loop finished (${reason}) after ${state.loop.iteration} iterations. Best: ${state.loop.bestValue ?? "n/a"}.`,
+      `Loop finished (${reason}) after ${state.loop.iteration} iterations. Best: ${state.loop.bestValue ?? "n/a"}.\nRecap: ${recap}`,
       "info",
     );
-    notifyExternal(ctx, `Loop finished: ${reason}`);
+    notifyExternal(ctx, `Loop finished: ${reason}. Recap: ${recap}`);
     announceQueuedListAfterLoopEnd(ctx);
     return;
   }

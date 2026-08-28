@@ -212,3 +212,24 @@ export function buildLoopCompletionSummary(facts: {
     "Next: review the loop history and resume or start a new loop when the stop reason is understood.",
   ].join("\n");
 }
+
+/** Build or reuse the loop's durable recap for a terminal notification. */
+export function compactLoopCompletionSummary(loop: {
+  target: string;
+  stopReason?: string;
+  iteration: number;
+  bestValue: number | null;
+  historyLength?: number;
+  completionSummary?: string;
+}): string {
+  const summary = loop.completionSummary ?? (loop.stopReason
+    ? buildLoopCompletionSummary({
+      target: loop.target,
+      stopReason: loop.stopReason,
+      iteration: loop.iteration,
+      bestValue: loop.bestValue,
+      historyLength: loop.historyLength ?? 0,
+    })
+    : undefined);
+  return compactCompletionSummary(summary);
+}
