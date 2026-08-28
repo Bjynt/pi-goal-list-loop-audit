@@ -148,6 +148,21 @@ export function resolveCompletionSummary(
  * state is converted to the smaller Goal-shaped fact set by the caller, so
  * this module remains independent of the loop runtime.
  */
+/** Lifecycle/recovery holds are not terminal outcomes even though the loop
+ * is temporarily inactive. All other explicit stop reasons receive a recap. */
+export function isTerminalLoopStopReason(stopReason: string | undefined): boolean {
+  if (!stopReason?.trim()) return false;
+  const transient = [
+    "held: restored in a fresh session",
+    "extension api stale",
+    "stalled: continuation refires landed no turn",
+    "stalled: continuation start acknowledgement timed out",
+    "send-retry storm:",
+    "main model recovery",
+  ];
+  return !transient.some((prefix) => stopReason === prefix || stopReason.startsWith(prefix));
+}
+
 export function buildLoopCompletionSummary(facts: {
   target: string;
   stopReason: string;

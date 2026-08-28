@@ -112,6 +112,8 @@ export interface LoopState {
   kind?: "audit";
   active: boolean;
   stopReason?: string;
+  /** v0.36.0: durable user-facing recap for terminal loop outcomes. */
+  completionSummary?: string;
   history: LoopMeasure[];
   startedAt: string;
   /** v0.15.0: arbitrary bounds (never "completion") — stop after this many hours. */

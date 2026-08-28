@@ -1036,6 +1036,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
         ...stored,
         active: true,
         stopReason: undefined,
+        completionSummary: undefined,
         consecutiveErrors: 0,
         consecutiveStuck: 0,
         lastStuckReason: undefined,

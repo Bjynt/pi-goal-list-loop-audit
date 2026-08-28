@@ -235,7 +235,11 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
-import { resolveCompletionSummary } from "../completion-summary.js";
+import {
+  buildLoopCompletionSummary,
+  isTerminalLoopStopReason,
+  resolveCompletionSummary,
+} from "../completion-summary.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -625,6 +629,27 @@ function createGoal(objective: string, ctx: ExtensionContext, policy: "goal" | "
 }
 
 function persistState(ctx: ExtensionContext): boolean {
+  // v0.36.0: loop stops are a second terminal surface (they do not pass
+  // through archiveCurrentGoal). Materialize the same six-label recap here
+  // after a real terminal stop, while leaving lifecycle/recovery holds alone.
+  // A resumed loop clears the old recap at its explicit resume boundary.
+  let loopSummaryGenerated = false;
+  const loop = state.loop;
+  if (loop?.active && loop.completionSummary) {
+    state.loop = { ...loop, completionSummary: undefined };
+  } else if (loop && !loop.active && isTerminalLoopStopReason(loop.stopReason) && !loop.completionSummary) {
+    state.loop = {
+      ...loop,
+      completionSummary: buildLoopCompletionSummary({
+        target: loop.target,
+        stopReason: loop.stopReason!,
+        iteration: loop.iteration,
+        bestValue: loop.bestValue,
+        historyLength: loop.history.length,
+      }),
+    };
+    loopSummaryGenerated = true;
+  }
   // v0.34.61 (steal #3, auditor round 2): the revision counter is
   // CONTRACT-scoped. v0.34.59 bumped on EVERY commit — audit settles
   // bumped too, so a settled verdict always left the goal one revision
@@ -636,6 +661,14 @@ function persistState(ctx: ExtensionContext): boolean {
   // The durable write itself lives in goal-state.ts (persistStateLine);
   // this wrapper adds the UI side effects on top.
   const landed = persistStateLine(ctx.cwd, state);
+  if (landed && loopSummaryGenerated && state.loop) {
+    appendLedger(ctx.cwd, "loop_completion_summary", {
+      iteration: state.loop.iteration,
+      best: state.loop.bestValue,
+      reason: state.loop.stopReason,
+      source: "durable-loop-terminal-state",
+    });
+  }
   notifyPersistenceState(ctx); // v0.28.6 (E1): loud on the first failure, all-clear on recovery
   refreshUI(ctx); // every state transition flows through here → the TUI is always current
   // The synchronous repaint can be overwritten by pi's transcript/editor
