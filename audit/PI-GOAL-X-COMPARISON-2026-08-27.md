@@ -15,8 +15,10 @@ not a replacement architecture for GLLA. The highest-value lessons are bounded
 checkpoint markers with authoritative state injected once, strict terminal-line
 verdict parsing with payload escaping, and a real local-provider E2E fixture.
 GLLA is already stronger in detached auditor isolation, durable recovery,
-ownership fencing, and operational status evidence. Its simpler storage-health
-repair surface is also worth studying, but requires adaptation to `.pi-glla`.
+ownership fencing, and operational status evidence. pi-goal-x's simpler
+storage-health report and guarded-repair surface is also worth studying
+(`extensions/goal-recovery.ts:1-16,161-182,184-227`; `extensions/goal-commands.ts:199-225,785-789`),
+but requires adaptation to `.pi-glla`.
 
 ## Fresh-source provenance
 
@@ -41,7 +43,7 @@ repair surface is also worth studying, but requires adaptation to `.pi-glla`.
 | Commands/UX | `extensions/goal-commands.ts`, `extensions/widgets/*` | `extensions/loops/goal-activation.ts`, `goal-loop-display.ts`, `goal-agents-panel.ts` |
 | Tests | `tests/goal-network-recovery.test.ts`, dashboard/golden tests, `tests/e2e/*` | `tests/auditor-process.test.ts`, status/recovery/provider tests, `scripts/smoke.sh` |
 | Documentation | `README.md`, `docs/architecture.md`, `docs/agentic-runtime-prd.md`, `CHANGELOG.md` | `README.md`, `docs/DESIGN.md`, `audit/`, `CHANGELOG.md` |
-| Packaging/release | `package.json`, `scripts/run-unit-tests.mjs`, `.github/workflows/ci.yml` | `package.json`, `docs/RELEASING.md`, `.github/workflows/publish.yml` |
+| Packaging/release | `package.json`, `.npmignore`, `package-lock.json`, `scripts/run-unit-tests.mjs`, `.github/workflows/ci.yml`, `.github/dependabot.yml` | `package.json`, `docs/RELEASING.md`, `.github/workflows/publish.yml` |
 
 ## Runtime, state, persistence, lifecycle
 
@@ -318,10 +320,11 @@ spec format.
 (`specs/SPECS.yaml:3-18,19-53`) despite 33 tracked spec directories. The
 runtime-follow-up product still says `Implementing`
 (`specs/2026-08-04-goal-runtime-follow-up/PRODUCT.md:3-6`) while its milestones
-record substantial work as completed (`.../MILESTONES.md:41-60,100-123`).
+record substantial work as completed
+(`specs/2026-08-04-goal-runtime-follow-up/MILESTONES.md:41-60,100-123`).
 The extension-review plan explicitly parks unimplemented candidates
 (`specs/2026-08-04-extension-review-plan/PLAN.md:1-7`;
-`.../PARKED.md:3-7`). Treat the registry and status fields as potentially
+`specs/2026-08-04-extension-review-plan/PARKED.md:3-7`). Treat the registry and status fields as potentially
 stale until cross-checked against code, tests, and release notes.
 
 ### Caution/avoid: historical or contaminated artifacts as instructions
@@ -336,13 +339,34 @@ prompt-normalization technical document begins a duplicated plan with a raw
 DSML token (`specs/2026-05-17-drafting-prompt-normalization/TECH.md:313`).
 These are provenance/cleanup findings, not instructions to execute.
 
+### Transferable: read-only storage-health report with guarded repair
+
+pi-goal-x exposes a recovery report for malformed goal files, malformed ledger
+lines, stale locks, and orphaned pool-snapshot entries; reporting is read-only
+by default (`extensions/goal-recovery.ts:1-16,161-175`). Its separate repair path
+requires confirmation, creates a timestamped backup, removes only stale locks,
+and refreshes the snapshot from a cold read
+(`extensions/goal-recovery.ts:177-227`). The command surface keeps report and
+repair modes distinct and states the backup requirement
+(`extensions/goal-commands.ts:199-225,785-789`). Tests cover detection,
+confirmation rejection, backup/removal/refresh, and non-mutation
+(`tests/goal-recovery.test.ts:57-146,148-164`).
+
+**Learning:** a read-only health report plus explicitly confirmed, backed-up
+repair is a useful operational pattern for GLLA's state root, audit jobs, queue
+sidecars, and ownership fences. It is a research candidate only; it must not
+weaken GLLA's existing recovery semantics or silently rewrite user-owned data.
+
 ### Transferable: explicit package allowlist and guarded recovery CLI
 
 The fresh package has 47 extension files, one packaged recovery binary, six
 explicitly packaged docs, an external gallery image, 18 scripts, and bounded
-peer ranges (`package.json:8-10,29-65,67-99`). The recovery CLI defaults to
-dry-run, requires an explicit closed-Pi confirmation for writes, creates a
-backup, atomically replaces the file, and validates the result
+peer ranges (`package.json:8-10,29-65,67-99`). The tracked `.npmignore` also
+excludes local dependencies/state, tarballs, experiments, specs, the lockfile,
+and TypeScript config (`.npmignore:1-8`); the explicit `files` list is therefore
+the important shipped-content boundary (`package.json:29-40`). The recovery
+CLI defaults to dry-run, requires an explicit closed-Pi confirmation for writes,
+creates a backup, atomically replaces the file, and validates the result
 (`scripts/recover-session-checkpoints.mjs:146-237,242-288`).
 
 **Learning:** package-content allowlists and dry-run/backup/atomic-repair
