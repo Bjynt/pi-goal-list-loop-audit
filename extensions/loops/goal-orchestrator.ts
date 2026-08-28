@@ -637,18 +637,18 @@ function persistState(ctx: ExtensionContext): boolean {
   let loopSummaryGenerated = false;
   const loop = state.loop;
   if (loop?.active && loop.completionSummary) {
-    state.loop = { ...loop, completionSummary: undefined };
+    // Mutate the existing loop object rather than replacing it: callers may
+    // still hold the same object while resolving a plateau/hold decision in
+    // the current turn.
+    loop.completionSummary = undefined;
   } else if (loop && !loop.active && isTerminalLoopStopReason(loop.stopReason) && !loop.completionSummary) {
-    state.loop = {
-      ...loop,
-      completionSummary: buildLoopCompletionSummary({
-        target: loop.target,
-        stopReason: loop.stopReason!,
-        iteration: loop.iteration,
-        bestValue: loop.bestValue,
-        historyLength: loop.history?.length ?? 0,
-      }),
-    };
+    loop.completionSummary = buildLoopCompletionSummary({
+      target: loop.target,
+      stopReason: loop.stopReason!,
+      iteration: loop.iteration,
+      bestValue: loop.bestValue,
+      historyLength: loop.history?.length ?? 0,
+    });
     loopSummaryGenerated = true;
   }
   // v0.34.61 (steal #3, auditor round 2): the revision counter is

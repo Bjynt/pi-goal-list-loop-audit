@@ -1353,10 +1353,20 @@ export function readState(cwd: string): State {
         : {}),
     }
     : null;
+  const loop = parsed.loop && typeof parsed.loop === "object"
+    ? {
+      ...parsed.loop,
+      // Legacy/manual loop snapshots sometimes omitted history. The loop
+      // supervisor reads and appends it on every measured turn, so normalize
+      // the durable boundary instead of allowing one malformed snapshot to
+      // crash the continuous checker mid-turn.
+      history: Array.isArray((parsed.loop as { history?: unknown }).history) ? (parsed.loop as { history: unknown[] }).history : [],
+    } as State["loop"]
+    : undefined;
   return {
     goal: goal as State["goal"],
     list: Array.isArray(parsed.list) ? parsed.list : [],
-    loop: parsed.loop && typeof parsed.loop === "object" ? parsed.loop as State["loop"] : undefined,
+    loop,
     mainModelRecovery: sanitizeMainModelRecovery(parsed.mainModelRecovery),
     lastModelRef: typeof parsed.lastModelRef === "string" ? parsed.lastModelRef : undefined,
     lastCompactionAt: typeof parsed.lastCompactionAt === "number" && Number.isFinite(parsed.lastCompactionAt) ? parsed.lastCompactionAt : undefined,

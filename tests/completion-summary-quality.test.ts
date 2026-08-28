@@ -87,8 +87,14 @@ test("completion summary quality: valid six-label recap passes without missing-l
 });
 
 test("v0.36.0: every terminal outcome gets a six-label recorded-facts fallback", () => {
-  const statuses = ["complete", "aborted", "paused"] as const;
-  for (const status of statuses) {
+  const outcomes = [
+    ["complete", "auditor approved"],
+    ["aborted", "user cancelled"],
+    ["aborted", "auto-dropped after impossible recovery"],
+    ["aborted", "already_shipped:v0.35.72"],
+    ["aborted", "auditor impossible: provider cannot satisfy this contract"],
+  ] as const;
+  for (const [status, stopReason] of outcomes) {
     const resolved = resolveCompletionSummary({
       goal: seedGoal({
         status,
@@ -96,7 +102,7 @@ test("v0.36.0: every terminal outcome gets a six-label recorded-facts fallback",
         telemetry: { turns: 2, fileWrites: 1, bashCalls: 3 },
       }) as any,
       status,
-      stopReason: status === "complete" ? "auditor approved" : "user cancelled",
+      stopReason,
       archivePath: `.pi-glla/archive/${status}.md`,
     });
     assert.equal(resolved.usedFallback, true, `${status} uses the fallback when no recap was supplied`);
