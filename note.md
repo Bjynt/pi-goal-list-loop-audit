@@ -9,17 +9,22 @@ research-only; no adoption or runtime change was made.
 
 # Next
 
-## chekc pr 
-
-https://github.com/DraconDev/pi-goal-list-loop-audit/pull/37
-
 ## auditor parker no verdict, very recent
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260828_165509.png /home/dracon/Pictures/Screenshots/Screenshot_20260828_165506.png /home/dracon/Pictures/Screenshots/Screenshot_20260828_165455.png 
 
+## context bloat problem in seemingly long running tasts, going over designated but not over the limit of the model
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260828_180734.png 
+
+## chekc pr 
+
+https://github.com/DraconDev/pi-goal-list-loop-audit/pull/37
+
 ## list execution is stalling, list queued
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260828_124432.png 
+
 
 ## explore subagent shown as valid session to load 
 
