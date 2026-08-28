@@ -59,6 +59,13 @@ hand-off see the gap. The narrow arithmetic check
 Tool description at `extensions/loops/goal-tools.ts:complete_goal`
 already names every label and the policy path; tests pin it.
 
+v0.36.0 adds the hard terminal boundary: `extensions/loops/goal-orchestrator.ts:archiveCurrentGoal`
+now resolves every archived outcome through `extensions/completion-summary.ts`.
+A valid six-label claim is preserved; missing, generic, incomplete, aborted,
+auto-dropped, and already-shipped paths receive a recorded-facts-only fallback
+and a `completion_summary_fallback` ledger event. Metric-loop terminal stops
+receive the same six-label recap in durable loop state and `/loop status`.
+
 ## Template
 
 ```

@@ -160,8 +160,13 @@ Before deciding that the goal is achieved, perform a completion audit against th
 When ALL items are satisfied:
 
 ```
-completionSummary: "1-paragraph claim that the goal is genuinely complete."
+completionSummary: "Outcome: <what was delivered>. Changed: <files/behavior>. Evidence: <key proof>. Tests: <bounded command + result>. Unresolved: <risk or none>. Next: <follow-up or none>."
 verificationSummary: "Concrete evidence per item (file path, test result, command output)."
+```
+The six labels are the user-facing hand-off contract. GLLA preserves a valid
+recap and synthesizes a recorded-facts-only fallback at terminalization when a
+legacy or incomplete caller omits it; never invent a commit, changed file, or
+passing test to make the recap sound complete.
 ```
 
 Then call `complete_goal`. The orchestrator will spawn an **isolated auditor** in a fresh session to verify, and either accept (mark goal complete) or reject (continue work).

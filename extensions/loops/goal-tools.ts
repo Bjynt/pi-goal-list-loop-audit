@@ -431,16 +431,17 @@ function registerAgentTools(pi: any): void {
       // v0.34.136: completionSummary adopts the six-label recap from
       // audit/COMPLETION-SUMMARY-POLICY-2026-08-19.md (Outcome / Changed
       // / Evidence / Tests / Unresolved / Next). Every label is present
-      // even when its value is `none`; the durable archive preserves all
-      // six lines verbatim and the display/widget projection does NOT
-      // fabricate an auditor verdict.
+      // even when its value is `none`; the durable archive preserves all six
+      // lines verbatim. Incomplete input gets a recorded-facts-only fallback
+      // at terminalization; the display/widget projection does NOT fabricate
+      // an auditor verdict.
       completionSummary: Type.Optional(Type.String({
         description:
           "Six-label recap — one line per label, every label required (use `none` when empty): " +
           "Outcome: <what was delivered> · Changed: <files/behavior/decision> · Evidence: <key commit/report/result> · " +
           "Tests: <bounded commands + pass/fail, or `not run — <reason>`> · Unresolved: <remaining risk, or `none`> · " +
           "Next: <one follow-up hint, or `none`>. " +
-          "See audit/COMPLETION-SUMMARY-POLICY-2026-08-19.md. Free-form prose is allowed but discouraged.",
+          "See audit/COMPLETION-SUMMARY-POLICY-2026-08-19.md and docs/DESIGN-long-running-supervision.md. Free-form prose is allowed but discouraged; incomplete input receives a recorded-facts-only fallback at terminalization.",
       })),
       verificationSummary: Type.Optional(Type.String({
         description:
