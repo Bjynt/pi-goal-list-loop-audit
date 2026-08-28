@@ -237,6 +237,7 @@ import {
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
 import {
   buildLoopCompletionSummary,
+  compactLoopCompletionSummary,
   isTerminalLoopStopReason,
   resolveCompletionSummary,
 } from "../completion-summary.js";
@@ -841,8 +842,11 @@ function autoArbitrateStackedState(ctx: ExtensionContext): void {
   } else {
     archiveCurrentGoal(ctx, "aborted", "auto-arbitrated on session load: the loop was more recent (one active thing)");
   }
+  const loopRecap = keepGoal && state.loop
+    ? compactLoopCompletionSummary({ ...state.loop, historyLength: state.loop.history.length })
+    : undefined;
   ctx.ui.notify(
-    `Stacked state auto-arbitrated (one active thing): kept the ${keepGoal ? "goal" : "loop"} — more recent activity — and archived the ${keepGoal ? `loop (iter ${loop.iteration}, best ${loop.bestValue ?? "n/a"})` : `goal (${goal.id})`}. Recoverable: /loop status · .pi-glla/archive/ · /glla wipe for a clean slate.`,
+    `Stacked state auto-arbitrated (one active thing): kept the ${keepGoal ? "goal" : "loop"} — more recent activity — and archived the ${keepGoal ? `loop (iter ${loop.iteration}, best ${loop.bestValue ?? "n/a"})` : `goal (${goal.id})`}.${loopRecap ? `\nLoop recap: ${loopRecap}` : ""} Recoverable: /loop status · .pi-glla/archive/ · /glla wipe for a clean slate.`,
     "info",
   );
 }

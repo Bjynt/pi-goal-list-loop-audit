@@ -12,7 +12,7 @@ import activate, {
   __testOnlyResetTerminalFlags,
 } from "../extensions/loops/goal.js";
 import { makeMockCtx, MockPi, seedGoal, seedState, tmpCwd } from "./harness/mock-pi.js";
-import { buildRecordedFactsCompletionSummary, isUsefulCompletionSummary, resolveCompletionSummary } from "../extensions/completion-summary.js";
+import { buildRecordedFactsCompletionSummary, compactCompletionSummary, isUsefulCompletionSummary, resolveCompletionSummary } from "../extensions/completion-summary.js";
 
 const SRC = readGoalRuntimeSource();
 const MAIN_SM = { name: "main-session-manager" };
@@ -124,6 +124,20 @@ test("v0.36.0: valid recap is preserved while generic prose is replaced", () => 
   assert.equal(generic.usedFallback, true);
   assert.match(generic.summary, /Outcome:/);
   assert.doesNotMatch(generic.summary, /Outcome: done/);
+});
+
+test("v0.36.0: compact recap projection keeps all six labels and bounds each value", () => {
+  const compact = compactCompletionSummary([
+    "Outcome: shipped the durable terminal path",
+    "Changed: extensions/loops/goal-tools.ts and tests/impossible-list-drop.test.ts",
+    "Evidence: an intentionally long evidence detail that should be shortened for notification readability",
+    "Tests: bun test — pass",
+    "Unresolved: none",
+    "Next: none",
+  ].join("\\n"), 24);
+  for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) assert.match(compact, new RegExp(label));
+  assert.ok(compact.includes(" · "), "projection is one scannable line");
+  assert.ok(compact.includes("…"), "long values are bounded");
 });
 
 test("v0.36.0: fallback never invents changed files or test results", () => {
