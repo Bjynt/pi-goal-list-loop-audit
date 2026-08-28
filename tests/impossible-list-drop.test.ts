@@ -21,7 +21,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 
 import { readState } from "../extensions/goal-loop-core.js";
-import activate, { __testOnlyLoadState, __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
+import activate, { __testOnlyLoadState, __testOnlyResetOwnerSession, __testOnlyResetStaleFlag, __testOnlyResetTerminalFlags } from "../extensions/loops/goal.js";
 import {
   MockPi, makeMockCtx, tmpCwd, seedState, seedGoal, seedLoop, tick,
   type MockCtx,
@@ -58,6 +58,35 @@ function readLedger(cwd: string): Array<{ type: string; value?: any }> {
 
 function runPauseTool(ctx: MockCtx, params: Record<string, unknown>): Promise<{ content: Array<{ type: string; text: string }> }> {
   return pi.runTool("pause_goal", params, ctx) as Promise<{ content: Array<{ type: string; text: string }> }>;
+}
+
+function writeImpossibleAuditor(cwd: string, reason: string): string {
+  const script = `${cwd}/fake-impossible-auditor.mjs`;
+  fs.writeFileSync(script, `#!/usr/bin/env node
+let input = "";
+let handled = false;
+const report = ${JSON.stringify(`<impossible>${reason}</impossible>`)};
+const emit = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+process.stdin.on("data", (chunk) => {
+  input += chunk;
+  if (handled || !input.includes("\\n")) return;
+  handled = true;
+  emit({ type: "tool_execution_start", toolCallId: "fake-read", toolName: "read", args: { path: "README.md" } });
+  emit({ type: "tool_execution_end", toolCallId: "fake-read" });
+  emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: report } });
+  emit({ type: "agent_settled" });
+});
+`);
+  fs.chmodSync(script, 0o700);
+  return script;
+}
+
+async function waitUntil(predicate: () => boolean, timeoutMs = 12_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("timed out waiting for terminal impossible archive");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
 }
 
 /** Active /list item + a queued follow-up — the auto-advance target. */
@@ -102,9 +131,14 @@ test("rule: blocked + no resume path on a /list item → auto-dropped (ledgered)
   const dropped = readLedger(cwd).filter((l) => l.type === "list_item_auto_dropped");
   assert.equal(dropped.length, 1);
   assert.equal((dropped[0]!.value as { itemId: string }).itemId, before.id);
-  // The queue advanced to the next item — the list did NOT stop.
+  // The dropped item is terminalized before the queue advances; the next
+  // item, not the dropped one, owns the live slot.
   const after = readState(cwd).goal as { objective: string; status: string; policy: string };
   assert.equal(after.objective, "second list item", "advanced to the queued follow-up");
+  assert.ok(fs.existsSync(`${cwd}/.pi-glla/archive/${before.id}.md`), "dropped item has a durable archive");
+  const archived = fs.readFileSync(`${cwd}/.pi-glla/archive/${before.id}.md`, "utf8");
+  for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) assert.match(archived, new RegExp(`^${label}`, "m"));
+  assert.ok(ctx.ui.matching("Recap:").length >= 1, "drop notification includes compact recap");
   assert.equal(after.status, "active");
   assert.equal(after.policy, "list");
   assert.equal(readState(cwd).list?.length, 0, "queue drained");
@@ -158,11 +192,50 @@ test("last item: drop still ledgered, list goes empty, no advance possible", asy
   await tick();
 
   assert.equal(readLedger(cwd).filter((l) => l.type === "list_item_auto_dropped").length, 1, "drop ledgered even for the last item");
-  const after = readState(cwd).goal as { id: string; status: string };
-  assert.equal(after.id, before.id, "no advance when the queue is empty");
-  assert.equal(after.status, "paused");
+  const after = readState(cwd).goal;
+  assert.equal(after, null, "the impossible item is terminalized even when the queue is empty");
+  assert.ok(fs.existsSync(`${cwd}/.pi-glla/archive/${before.id}.md`), "last dropped item has a durable archive");
   assert.equal(readState(cwd).list?.length, 0);
   assert.ok(ctx.ui.matching("the list is now empty").length >= 1, "empty-list notify");
+  assert.ok(ctx.ui.matching("Recap:").length >= 1, "empty-list drop notification includes compact recap");
+});
+
+test("full auditor IMPOSSIBLE result is terminalized with a durable recap and notification", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetTerminalFlags();
+  __testOnlyResetOwnerSession();
+  const cwd = tmpCwd();
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = writeImpossibleAuditor(cwd, "the required upstream capability no longer exists");
+  try {
+    const ctx = await freshSession(cwd, "startup");
+    await pi.command("goal", "start impossible audit target — done when pinned", ctx);
+    await tick();
+    const result = await pi.runTool("complete_goal", {
+      completionSummary: "Outcome: completion claim submitted. Changed: none. Evidence: auditor verdict is captured. Tests: not run — semantic impossibility fixture. Unresolved: impossible upstream dependency. Next: review the archived verdict.",
+      verificationSummary: "The fake auditor returns a full IMPOSSIBLE verdict.",
+    }, ctx);
+    assert.match(result.content[0]!.text, /detached auditor queued/i);
+    await waitUntil(() => readState(cwd).goal === null);
+
+    const archivedPath = `${cwd}/.pi-glla/archive`;
+    const archivedFiles = fs.readdirSync(archivedPath);
+    assert.equal(archivedFiles.length, 1, "the impossible objective has one archive");
+    const archived = fs.readFileSync(`${archivedPath}/${archivedFiles[0]!}`, "utf8");
+    assert.match(archived, /Status.*aborted/);
+    for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) assert.match(archived, new RegExp(`^${label}`, "m"));
+    const ledger = fs.readFileSync(`${cwd}/.pi-glla/active.jsonl`, "utf8");
+    assert.match(ledger, /goal_impossible_terminalized/);
+    assert.match(ledger, /goal_archived/);
+    assert.ok(ctx.ui.matching("Goal archived as aborted").length >= 1, "terminal impossible notification");
+    assert.ok(ctx.ui.matching("Recap:").length >= 1, "terminal notification includes compact recap");
+  } finally {
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+    __testOnlyResetStaleFlag();
+    __testOnlyResetTerminalFlags();
+    __testOnlyResetOwnerSession();
+  }
 });
 
 test("loop hold: drop ledgered but NO advance while a loop owns the surface", async () => {
@@ -186,11 +259,12 @@ test("loop hold: drop ledgered but NO advance while a loop owns the surface", as
     await tick();
 
     assert.equal(readLedger(cwd).filter((l) => l.type === "list_item_auto_dropped").length, 1, "drop ledgered");
-    const after = readState(cwd).goal as { id: string; status: string };
-    assert.equal(after.id, before.id, "one-active-thing choke point: no advance over a live loop");
-    assert.equal(after.status, "paused");
+    const after = readState(cwd).goal;
+    assert.equal(after, null, "the impossible item is terminalized while the loop remains owner");
+    assert.ok(fs.existsSync(`${cwd}/.pi-glla/archive/${before.id}.md`), "loop-held dropped item has a durable archive");
     assert.equal(readState(cwd).list?.length, 1, "follow-up stays queued behind the live loop");
     assert.ok(ctx.ui.matching("a running loop holds the surface").length >= 1, "loop-hold notify");
+    assert.ok(ctx.ui.matching("Recap:").length >= 1, "loop-held drop notification includes compact recap");
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }
