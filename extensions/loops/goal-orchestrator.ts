@@ -749,7 +749,14 @@ function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): boolean {
   if (state.goal && state.goal.id !== goal.id && ["active", "paused", "auditing"].includes(state.goal.status)) {
     const replaced = state.goal;
     const hadScheduledResume = !!replaced.pauseResumeAt;
-    if (!archiveCurrentGoal(ctx, "aborted", `replaced by goal ${goal.id}`)) {
+    const replacementReason = `replaced by goal ${goal.id}`;
+    const replacementRecap = compactTerminalCompletionSummary({
+      goal: replaced,
+      status: "aborted",
+      stopReason: replacementReason,
+      archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, replaced.id)) || archivedGoalPath(ctx.cwd, replaced.id),
+    });
+    if (!archiveCurrentGoal(ctx, "aborted", replacementReason)) {
       ctx.ui.notify(`New objective not started — the current ${replaced.policy === "list" ? "list item" : "goal"} could not be archived safely.`, "warning");
       return false;
     }
@@ -762,10 +769,13 @@ function setGoal(goal: Goal, ctx: ExtensionContext, via = "user"): boolean {
       });
       const verb = replaced.policy === "list" ? "/list add" : "/goal";
       ctx.ui.notify(
-        `Goal [${replaced.id}]: ${displaySlice(replaced.objective, 60)} was superseded and archived — its scheduled auto-resume (${new Date(Date.parse(replaced.pauseResumeAt!)).toLocaleTimeString()}) was cancelled. ${verb} <objective> to recreate it.`,
+        `Goal [${replaced.id}]: ${displaySlice(replaced.objective, 60)} was superseded and archived — its scheduled auto-resume (${new Date(Date.parse(replaced.pauseResumeAt!)).toLocaleTimeString()}) was cancelled. ${verb} <objective> to recreate it.\nRecap: ${replacementRecap}`,
         "warning",
       );
-      notifyExternal(ctx, `pi-goal-list-loop-audit: a paused goal with a scheduled auto-resume was replaced; the resume was cancelled.`);
+      notifyExternal(ctx, `pi-goal-list-loop-audit: a paused goal with a scheduled auto-resume was replaced; the resume was cancelled. ${replacementRecap}`);
+    } else {
+      ctx.ui.notify(`Previous ${replaced.policy === "list" ? "list item" : "goal"} was superseded by the new objective.\nRecap: ${replacementRecap}`, "info");
+      notifyExternal(ctx, `${replaced.policy === "list" ? "List item" : "Goal"} superseded by a new objective: ${replacementRecap}`);
     }
   }
   // v0.33.1: reset per-goal runtime state only after any superseded goal
@@ -847,13 +857,31 @@ function autoArbitrateStackedState(ctx: ExtensionContext): void {
     replaceState({ ...state, loop: { ...loop, active: false, stopReason: "auto-arbitrated on session load: the goal was more recent (one active thing)" } });
     persistState(ctx);
   } else {
-    archiveCurrentGoal(ctx, "aborted", "auto-arbitrated on session load: the loop was more recent (one active thing)");
+    const stopReason = "auto-arbitrated on session load: the loop was more recent (one active thing)";
+    const goalRecap = compactTerminalCompletionSummary({
+      goal,
+      status: "aborted",
+      stopReason,
+      archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, goal.id)) || archivedGoalPath(ctx.cwd, goal.id),
+    });
+    if (!archiveCurrentGoal(ctx, "aborted", stopReason)) {
+      ctx.ui.notify("Stacked state could not be auto-arbitrated safely because the older goal archive failed; both live records were preserved.", "warning");
+      return;
+    }
+    const loopRecap = keepGoal && state.loop
+      ? compactLoopCompletionSummary({ ...state.loop, historyLength: state.loop.history.length })
+      : undefined;
+    ctx.ui.notify(
+      `Stacked state auto-arbitrated (one active thing): kept the loop — more recent activity — and archived the goal (${goal.id}).\nGoal recap: ${goalRecap}${loopRecap ? `\nLoop recap: ${loopRecap}` : ""} Recoverable: /loop status · .pi-glla/archive/ · /glla wipe for a clean slate.`,
+      "info",
+    );
+    return;
   }
   const loopRecap = keepGoal && state.loop
     ? compactLoopCompletionSummary({ ...state.loop, historyLength: state.loop.history.length })
     : undefined;
   ctx.ui.notify(
-    `Stacked state auto-arbitrated (one active thing): kept the ${keepGoal ? "goal" : "loop"} — more recent activity — and archived the ${keepGoal ? `loop (iter ${loop.iteration}, best ${loop.bestValue ?? "n/a"})` : `goal (${goal.id})`}.${loopRecap ? `\nLoop recap: ${loopRecap}` : ""} Recoverable: /loop status · .pi-glla/archive/ · /glla wipe for a clean slate.`,
+    `Stacked state auto-arbitrated (one active thing): kept the goal — more recent activity — and archived the loop (iter ${loop.iteration}, best ${loop.bestValue ?? "n/a"}).${loopRecap ? `\nLoop recap: ${loopRecap}` : ""} Recoverable: /loop status · .pi-glla/archive/ · /glla wipe for a clean slate.`,
     "info",
   );
 }
