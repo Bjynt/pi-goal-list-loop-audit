@@ -410,7 +410,17 @@ async function resolveDraftActivationConflict(ctx: ExtensionContext, incoming: O
   for (const item of current) {
     if (item.kind === "loop" && isLoopActive()) await cmdLoop("stop", ctx);
     else if (item.kind !== "loop" && state.goal && ["active", "paused", "auditing"].includes(state.goal.status)) {
-      archiveCurrentGoal(ctx, "aborted", `replaced by new ${incoming} objective`);
+      const replacedGoal = state.goal;
+      const stopReason = `replaced by new ${incoming} objective`;
+      const recap = compactTerminalCompletionSummary({
+        goal: replacedGoal,
+        status: "aborted",
+        stopReason,
+        archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, replacedGoal.id)) || archivedGoalPath(ctx.cwd, replacedGoal.id),
+      });
+      if (!archiveCurrentGoal(ctx, "aborted", stopReason)) return "cancelled";
+      ctx.ui.notify(`Previous ${replacedGoal.policy === "list" ? "list item" : "goal"} was replaced by the new ${incoming} objective.\nRecap: ${recap}`, "info");
+      notifyExternal(ctx, `${replacedGoal.policy === "list" ? "List item" : "Goal"} replaced by new ${incoming} objective: ${recap}`);
     }
   }
   return "proceed";
@@ -1868,7 +1878,12 @@ function registerAgentTools(pi: any): void {
       // The user has just confirmed this activation; release the blank-start
       // barrier before the direct goal path schedules its first continuation.
       releaseInitialSessionLoadBarrier();
-      resolveCarryover(liveCtx, "goal"); // v0.28.14: surface/clear stale leftovers
+      if (!resolveCarryover(liveCtx, "goal")) {
+        return {
+          content: [{ type: "text", text: "The previous carryover goal could not be archived safely; no new objective was started. Fix persistence and retry." }],
+          details: {},
+        };
+      } // v0.28.14: surface/clear stale leftovers
       // List drafting: the confirmed contract goes into the QUEUE, not active.
       if (confirmedTarget === "list") {
         if (willActivate) {

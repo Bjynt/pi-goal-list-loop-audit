@@ -674,7 +674,7 @@ function activateNextListItem(ctx: ExtensionContext, n = 1, opts?: { explicit?: 
   // Durable sidecars are actionable queue state. Recover them before
   // carryover policy or explicit activation can inspect the head.
   hydrateListQueueFromDisk(ctx);
-  resolveCarryover(ctx, "list");
+  if (!resolveCarryover(ctx, "list")) return false;
   const queue = listQueue();  // v0.34.81 (LIGHT parent/child): a group (queue item with one or more
   // open children) is not a work item. The auto-advance SILENTLY SKIPS the
   // head group and lands on its first open child — children are queued

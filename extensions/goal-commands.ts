@@ -87,7 +87,7 @@ export interface CommandDeps {
   probeMainModelRecovery: (ctx: ExtensionContext) => Promise<void>;
   releaseContinuationDispatchStandDown: () => void;
   releaseInitialSessionLoadBarrier: () => void;
-  resolveCarryover: (ctx: ExtensionContext, trigger: "goal" | "loop" | "list") => void;
+  resolveCarryover: (ctx: ExtensionContext, trigger: "goal" | "loop" | "list") => boolean;
   safeSteerUser: (ctx: ExtensionContext, text: string) => boolean;
   scheduleContinuation: (ctx: ExtensionContext, force?: boolean, delayMs?: number) => void;
   scheduleSessionTimeout: (callback: () => void, delayMs: number) => NodeJS.Timeout;
@@ -285,7 +285,7 @@ async function cmdSet(args: string, ctx: ExtensionContext, skipDraft = false): P
   if (!(await resolveGoalStartConflict(ctx, raw))) return;
   flags.draftingTarget = null; // explicit objective cancels any drafting session
   await ((globalThis as any).restoreDrafterModel?.() ?? Promise.resolve());
-  resolveCarryover(ctx, "goal"); // v0.28.14: surface/clear stale leftovers
+  if (!resolveCarryover(ctx, "goal")) return; // v0.28.14: surface/clear stale leftovers
   const goal = createGoal(raw, ctx);
   if (!setGoal(goal, ctx)) return;
   // Reset counters

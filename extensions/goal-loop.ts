@@ -15,6 +15,7 @@ import type { ExtensionContext, ExtensionAPI } from "@earendil-works/pi-coding-a
 import { state, replaceState } from "./goal-state.js";
 import {
   appendLedger,
+  archivedGoalPath,
   clearLoadHold,
   formatMainModelRecoveryStatus,
   isStaleApiError,
@@ -62,7 +63,7 @@ import { createContinuationDispatch, type ContinuationDispatch } from "./goal-lo
 import { attemptFreshSessionRecovery } from "./goal-recovery.js";
 import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-conflict.js";
 import { releaseAuditorSurface } from "./loops/goal-auditor-surface.js";
-import { compactLoopCompletionSummary } from "./completion-summary.js";
+import { compactLoopCompletionSummary, compactTerminalCompletionSummary } from "./completion-summary.js";
 
 type DispatchInput = Omit<Parameters<typeof createContinuationDispatch>[0], "id" | "sentAt">;
 
@@ -128,7 +129,7 @@ export interface LoopDeps {
   releaseContinuationDispatchStandDown: () => void;
   releaseInitialSessionLoadBarrier: () => void;
   rememberCtx: (ctx: ExtensionContext) => void;
-  resolveCarryover: (ctx: ExtensionContext, trigger: "goal" | "loop" | "list") => void;
+  resolveCarryover: (ctx: ExtensionContext, trigger: "goal" | "loop" | "list") => boolean;
   scheduleSessionTimeout: (callback: () => void, delayMs: number) => NodeJS.Timeout;
   sendContinuation: (goalId: string) => void;
   sendRearmDelayMs: (streak: number) => number;
@@ -220,7 +221,17 @@ async function resolveLoopStartConflict(ctx: ExtensionContext, target: string): 
     if (item.kind === "loop" && isLoopActive()) {
       await cmdLoop("stop", ctx);
     } else if (item.kind !== "loop" && state.goal && ["active", "paused", "auditing"].includes(state.goal.status)) {
-      if (!archiveCurrentGoal(ctx, "aborted", `replaced by new loop objective`)) return false;
+      const replacedGoal = state.goal;
+      const stopReason = "replaced by new loop objective";
+      const recap = compactTerminalCompletionSummary({
+        goal: replacedGoal,
+        status: "aborted",
+        stopReason,
+        archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, replacedGoal.id)) || archivedGoalPath(ctx.cwd, replacedGoal.id),
+      });
+      if (!archiveCurrentGoal(ctx, "aborted", stopReason)) return false;
+      ctx.ui.notify(`Previous ${replacedGoal.policy === "list" ? "list item" : "goal"} was replaced by the new loop objective.\nRecap: ${recap}`, "info");
+      notifyExternal(ctx, `${replacedGoal.policy === "list" ? "List item" : "Goal"} replaced by new loop objective: ${recap}`);
     }
   }
   return true;
@@ -888,7 +899,10 @@ async function startLoopFromConfig(ctx: ExtensionContext, cfg: LoopConfig): Prom
     await restoreOriginalBranch();
     return false;
   }
-  resolveCarryover(ctx, "loop"); // v0.28.14: surface/clear stale leftovers
+  if (!resolveCarryover(ctx, "loop")) {
+    await restoreOriginalBranch();
+    return false;
+  } // v0.28.14: surface/clear stale leftovers
   releaseContinuationDispatchStandDown();
   replaceState({
     ...state,

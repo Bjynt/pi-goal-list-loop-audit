@@ -1323,7 +1323,6 @@ function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop" | "lis
     carryoverSnapshot = null;
     return true;
   }
-  if (policy === "resume") return; // legacy silent stacking
   const done: string[] = [];
   const waiting: string[] = [];
   const archivedRecaps: string[] = [];
@@ -1370,19 +1369,26 @@ function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop" | "lis
       waiting.push(`held loop "${displaySlice(snap.heldLoop, 60)}" (/loop to resume)`);
     }
   }
+  // Do not consume the snapshot until every terminal archive above has
+  // succeeded. A failed archive leaves the paused objective and this
+  // carryover decision retryable on the next activation attempt.
+  carryoverResolved = true;
+  carryoverSnapshot = null;
   persistState(ctx);
   appendLedger(ctx.cwd, "carryover_resolved", { policy, trigger, cleared: done.length, waiting: waiting.length });
   const summary = [...done.map((d) => `✂ ${d}`), ...waiting.map((w) => `⏸ ${w}`)].join(" · ");
-  if (!summary) return;
+  if (!summary) return true;
   const clearedLoop = policy === "clear" && state.loop?.stopReason === "cleared: carryover"
     ? compactLoopCompletionSummary({ ...state.loop, historyLength: state.loop.history?.length ?? 0 })
     : undefined;
+  const archivedRecap = archivedRecaps.length > 0 ? `\nArchived goal recap: ${archivedRecaps.join("\n")}` : "";
   ctx.ui.notify(
     policy === "clear"
-      ? `Carryover cleared (${trigger}): ${summary}${clearedLoop ? `\nLoop recap: ${clearedLoop}` : ""}`
-      : `Carryover from before this session: ${summary}${waiting.length > 0 ? " — set Carryover = clear in /glla settings to drop these automatically." : ""}`,
+      ? `Carryover cleared (${trigger}): ${summary}${clearedLoop ? `\nLoop recap: ${clearedLoop}` : ""}${archivedRecap}`
+      : `Carryover from before this session: ${summary}${waiting.length > 0 ? " — set Carryover = clear in /glla settings to drop these automatically." : ""}${archivedRecap}`,
     "info",
   );
+  return true;
 }
 
 // The most recent ExtensionContext seen from any event or command handler.
