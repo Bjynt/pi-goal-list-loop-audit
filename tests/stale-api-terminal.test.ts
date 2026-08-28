@@ -62,7 +62,7 @@ test("terminal path: ledger event, single-fire, goal ACTIVE+marker / loop stop w
   assert.match(SRC, /let staleTerminalDone = false;/);
   assert.match(SRC, /if \(staleTerminalDone\) return; \/\/ already terminal/);
   assert.match(CONT, /if \(probeExtensionApiStale\(\)\) return;/); // no-ctx send path must not spin a 50ms re-arm (decomposition step 5: sendContinuation moved)
-  assert.match(SRC, /clearInterval\(heartbeatTimer\)/); // zombie stand-down clears the immortal tickers
+  assert.match(SRC, /clearTimeout\(heartbeatTimer\)/); // adaptive heartbeat owns a timeout, not an immortal interval
   assert.match(SRC, /clearInterval\(uiTicker\)/);
   assert.match(SRC, /appendLedger\(ctx\.cwd, "extension_api_stale", \{ where, kind:/);
   // v0.28.1 (S1/S2): the stale goal branch keeps status ACTIVE and sets the
