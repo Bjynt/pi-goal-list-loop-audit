@@ -1322,7 +1322,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       goalId,
       attemptId: claim.attemptId,
       reason: reason.slice(0, 240),
-      recap: terminal.summary.replace(/\\s+/g, " ").slice(0, 600),
+      recap: terminal.summary.replace(/\s+/g, " ").slice(0, 600),
       origin,
     });
     return;

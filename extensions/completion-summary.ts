@@ -68,7 +68,7 @@ export function isUsefulCompletionSummary(text: string | undefined): boolean {
  * cannot accidentally imply evidence that the durable recap did not contain.
  */
 export function compactCompletionSummary(text: string | undefined, maxValueLength = 72): string {
-  const source = text?.replace(/\\s+/g, " ").trim();
+  const source = text?.replace(/\s+/g, " ").trim();
   if (!source) return "not recorded";
   const lower = source.toLowerCase();
   const limit = Math.max(8, Math.floor(maxValueLength));

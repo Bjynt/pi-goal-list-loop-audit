@@ -1011,7 +1011,7 @@ function registerAgentTools(pi: any): void {
             details: {},
           };
         }
-        const recapSource = terminal.summary.replace(/\\s+/g, " ");
+        const recapSource = terminal.summary.replace(/\s+/g, " ");
         const recap = compactCompletionSummary(terminal.summary);
         ctx.ui.notify(`Goal archived as aborted — auditor marked it IMPOSSIBLE: ${reason.slice(0, 180)}.\nRecap: ${recap}`, "warning");
         appendLedger(ctx.cwd, "goal_impossible_terminalized", { reason: reason.slice(0, 240), recap: recapSource.slice(0, 600) });

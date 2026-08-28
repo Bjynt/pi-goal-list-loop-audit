@@ -237,6 +237,7 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
+import { compactLoopCompletionSummary } from "../completion-summary.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -641,11 +642,14 @@ export function abortZombieRun(
   // zero-stream attempts. Once the configured budget is exhausted the
   // refusal remains manual and durable.
   const retryPlan = scheduleZombieAutoRetry(current, generation, goal?.id, observedStreamAt, silentMinutes);
+  const loopRecap = loop
+    ? compactLoopCompletionSummary({ ...loop, historyLength: loop.history.length })
+    : undefined;
   const message = `${goal ? goal.policy === "list" ? "List item" : "Goal" : "Loop"} paused after ${silentMinutes}m with zero stream activity; the zombie turn was aborted and queued retries were stopped. Work is saved. ${
     retryPlan.scheduled
       ? `Automatic retry ${retryPlan.attempt}/${retryPlan.maxAttempts} starts in ~90s; ${resume} retries immediately instead.`
       : `${resume} retries it, or ${cancel} discards/stops it; the automatic retry budget is exhausted.`
-  }`;
+  }${loopRecap ? `\nRecap: ${loopRecap}` : ""}`;
   current.ui.notify(message, abortError ? "warning" : "info");
   notifyExternal(current, message);
   return true;
@@ -1867,11 +1871,13 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
         // make the resumed turn silently dead on the first truncation).
         resetLengthContinue();
       } else if (state.loop?.active) {
-        notifyExternal(ctx, `Response truncated ${LENGTH_CONTINUE_MAX}× in a row — loop stopped; /loop resume after re-scoping.`);
         state.loop.active = false;
         state.loop.stopReason = `output-token limit — ${LENGTH_CONTINUE_MAX} consecutive truncated responses (iteration ${state.loop.iteration} preserved; /loop resume after re-scoping the work into smaller pieces)`;
         persistState(ctx);
-        appendLedger(ctx.cwd, "loop_stopped", { reason: state.loop.stopReason, iterations: state.loop.iteration, best: state.loop.bestValue });
+        const recap = compactLoopCompletionSummary({ ...state.loop, historyLength: state.loop.history.length });
+        ctx.ui.notify(`glla: response hit the output-token cap ${LENGTH_CONTINUE_MAX}× in a row — the loop stopped. Ask the model to split the work into smaller pieces.\nRecap: ${recap}`, "warning");
+        notifyExternal(ctx, `Response truncated ${LENGTH_CONTINUE_MAX}× in a row — loop stopped; /loop resume after re-scoping. Recap: ${recap}`);
+        appendLedger(ctx.cwd, "loop_stopped", { reason: state.loop.stopReason, iterations: state.loop.iteration, best: state.loop.bestValue, recap });
         resetLengthContinue();
       } else {
         notifyExternal(ctx, "Response truncated 3× in a row — giving up auto-continue.");
@@ -1955,8 +1961,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           clearLoopTimer();
           state.loop = { ...state.loop!, active: false, stopReason: `stalled: ${HEARTBEAT_MAX_NUDGES} consecutive unproductive turns (no tools, short or repetitive)` };
           persistState(ctx);
-          ctx.ui.notify(`Loop stopped: stalled (${HEARTBEAT_MAX_NUDGES} unproductive turns). /loop start to begin a new one.`, "warning");
-          notifyExternal(ctx, "Loop stopped: stalled (no tool calls).");
+          const recap = compactLoopCompletionSummary({ ...state.loop, historyLength: state.loop.history.length });
+          ctx.ui.notify(`Loop stopped: stalled (${HEARTBEAT_MAX_NUDGES} unproductive turns). /loop start to begin a new one.\nRecap: ${recap}`, "warning");
+          notifyExternal(ctx, `Loop stopped: stalled (no tool calls). Recap: ${recap}`);
           return;
         }
         if (state.goal) {
@@ -2020,9 +2027,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
             ? `stopped by user — ${loop.consecutiveErrors} consecutive aborts (iteration ${loop.iteration} preserved; /loop resume to continue)`
             : `provider errors — ${loop.consecutiveErrors} consecutive error turns (iteration ${loop.iteration} preserved; /loop resume when the provider recovers)`;
           persistState(ctx);
-          ctx.ui.notify(`Loop stopped: ${loop.stopReason}`, "warning");
-          appendLedger(ctx.cwd, "loop_stopped", { reason: loop.stopReason, iterations: loop.iteration, best: loop.bestValue });
-          notifyExternal(ctx, `Loop stopped: ${sr === "aborted" ? "user aborts" : "provider errors"} (${loop.consecutiveErrors}×)`);
+          const recap = compactLoopCompletionSummary({ ...loop, historyLength: loop.history.length });
+          ctx.ui.notify(`Loop stopped: ${loop.stopReason}\nRecap: ${recap}`, "warning");
+          appendLedger(ctx.cwd, "loop_stopped", { reason: loop.stopReason, iterations: loop.iteration, best: loop.bestValue, recap });
+          notifyExternal(ctx, `Loop stopped: ${sr === "aborted" ? "user aborts" : "provider errors"} (${loop.consecutiveErrors}×). Recap: ${recap}`);
           // v0.35.41 (audit finding): this route frees the surface like any
           // other loop stop — announce the waiting queue instead of leaving
           // it a dead silent entry.
