@@ -9,6 +9,10 @@ research-only; no adoption or runtime change was made.
 
 # Next
 
+## chekc pr 
+
+https://github.com/DraconDev/pi-goal-list-loop-audit/pull/37
+
 ## list execution is stalling, list queued
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260828_124432.png 
@@ -18,9 +22,12 @@ research-only; no adoption or runtime change was made.
 is it our bug or tin tin subagents 
 /home/dracon/Pictures/Screenshots/Screenshot_20260828_063011.png 
 
-## chekc pr 
+## /goal start , /list start, /loop start can while start without draft the objective really should be inferred from context and prompt and displayed as such 
 
-https://github.com/DraconDev/pi-goal-list-loop-audit/pull/37
+/home/dracon/Pictures/Screenshots/Screenshot_20260828_125113.png 
+
+## make sure model selectors as as good as the main model selector with fallbacks
+
 
 # Later
 
