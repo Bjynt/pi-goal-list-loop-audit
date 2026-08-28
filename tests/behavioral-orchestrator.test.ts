@@ -2505,6 +2505,8 @@ test("/loop cancel: first-class alias stops the loop (stopReason recorded)", asy
   assert.equal(loop.active, false, "loop stopped");
   assert.equal(loop.stopReason, "stopped by user (/loop cancel)", "cancel verb recorded");
   assert.ok(ctx.ui.matching("Loop stopped").length >= 1, "stop summary shown");
+  const recap = ctx.ui.notifies.find((notice) => notice.message.includes("Recap: Outcome:"));
+  assert.ok(recap, "loop cancel notification includes the compact six-label recap");
 });
 
 test("one-active-thing tool guards: list_activate + propose_loop_draft + propose_goal_draft refuse over the wrong active kind", async () => {

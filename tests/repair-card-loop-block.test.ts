@@ -106,6 +106,8 @@ test("v0.35.22: when the loop ends, the blocked item becomes startable — /loop
 
   const after = readState(cwd);
   assert.ok(!after.loop?.active, "the loop stopped");
+  const stopRecap = ctx.ui.notifies.find((notice) => notice.message.includes("Recap: Outcome:"));
+  assert.ok(stopRecap, "explicit loop stop includes the compact six-label recap");
   // v0.35.22: loop end ANNOUNCES the unblocked queue (it must not auto-start
   // — /loop stop is a stop gesture, and /glla cancel pins non-interference
   // with an unrelated waiting queue) but the item is now genuinely startable.
@@ -148,6 +150,7 @@ test("v0.35.41: the stuck-ladder stop also announces queued-list resumption", as
   const after = readState(cwd);
   assert.ok(!after.loop?.active, "the stuck ladder stopped the loop");
   assert.match(after.loop?.stopReason ?? "", /stuck —/);
+  assert.ok(ctx.ui.notifies.some((notice) => notice.message.includes("Recap: Outcome:")), "stuck stop includes the compact six-label recap");
   const unblocked = ctx.ui.matching("can start again");
   assert.equal(unblocked.length, 1, "the stuck-stop route announces the unblocked queue");
   assert.match(unblocked[0]!.message, /clean up the README examples/);
@@ -172,6 +175,7 @@ test("v0.35.41: the provider-error cap stop also announces queued-list resumptio
   const after = readState(cwd);
   assert.ok(!after.loop?.active, "the error-cap stop ended the loop");
   assert.match(after.loop?.stopReason ?? "", /provider errors/);
+  assert.ok(ctx.ui.notifies.some((notice) => notice.message.includes("Recap: Outcome:")), "provider-error stop includes the compact six-label recap");
   const unblocked = ctx.ui.matching("can start again");
   assert.equal(unblocked.length, 1, "the error-cap stop route announces the unblocked queue");
   assert.match(unblocked[0]!.message, /clean up the README examples/);

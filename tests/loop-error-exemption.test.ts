@@ -73,6 +73,14 @@ type LoopSnap = {
 function loop(cwd: string): LoopSnap {
   return readState(cwd).loop as LoopSnap;
 }
+
+function assertCompactLoopRecap(ctx: MockCtx): void {
+  const recap = ctx.ui.notifies.find((notice) => notice.message.includes("Recap: Outcome:"));
+  assert.ok(recap, `terminal loop notification includes a recap: ${ctx.ui.notifies.map((notice) => notice.message).join(" | ")}`);
+  for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) {
+    assert.ok(recap!.message.includes(label), `terminal loop recap includes ${label}`);
+  }
+}
 /** Seed an ACTIVE loop that survives the session-restore gate. */
 async function sessionWithLoop(cwd: string, overrides: Record<string, unknown>): Promise<MockCtx> {
   seedState(cwd, { loop: seedLoop(overrides) });
@@ -177,6 +185,7 @@ test("v0.29.19: 3 consecutive user aborts stop the loop — user aborts mean STO
   const l = loop(cwd);
   assert.equal(l.active, false, "third abort stops the loop");
   assert.match(l.stopReason ?? "", /^stopped by user — 3 consecutive aborts/, "honest abort reason");
+  assertCompactLoopRecap(ctx);
 });
 
 test("v0.29.19: audit plateau with OPEN findings stands down (reprieve), then stops honestly when reprieves run out", async () => {
@@ -234,6 +243,7 @@ test("v0.29.20: a plain plateau stop is resumable (pre-gate false plateaus recov
   const l = loop(cwd);
   assert.equal(l.active, false);
   assert.match(l.stopReason ?? "", /^plateau — no improvement/);
+  assertCompactLoopRecap(ctx);
   await pi.command("loop", "resume", ctx);
   await tick();
   const r = loop(cwd);
@@ -261,4 +271,5 @@ test("v0.29.19: audit plateau with ZERO open findings stops normally — the wel
   assert.equal(l.active, false, "dry well: plateau stop stands");
   assert.match(l.stopReason ?? "", /^plateau — no improvement in 5 consecutive iterations/, "standard plateau reason");
   assert.equal(l.auditPlateauReprieves ?? 0, 0, "no reprieve spent");
+  assertCompactLoopRecap(ctx);
 });
