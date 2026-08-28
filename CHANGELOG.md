@@ -29,7 +29,15 @@
 
   Detached-auditor first-event watchdogs start at worker spawn rather than
   charging dispatch setup time, with a runtime-compatible return-time fallback;
-  cancellation waits for worker teardown before classifying the attempt.
+  cancellation waits for worker teardown before classifying the attempt. The
+  former unconditional auditor wall is compatibility metadata only; active
+  output, tool, durable, and child progress can continue until a result,
+  confirmed-silence watchdog, per-tool timeout, or explicit lifecycle stop.
+
+  Carryover replacement, `/list next` skips, and complete-without-audit now
+  check the archive fence before reporting success and include the same recap
+  projection as other terminal paths. Continuous-supervision tests now drive
+  durable state transitions and lifecycle signals across every declared plane.
 
   See `docs/DESIGN-long-running-supervision.md` for the durable policy and
   future decision checklist.

@@ -117,19 +117,19 @@ architectural decisions that changed the SHAPE of the system:
 - **The durable claim owns recovery state**: `pendingCompletion.phase` is
   `running`, `recovery-pending`, or `quota-waiting`. Missing phase is legacy
   state and is treated as recovery-pending after a fresh lifecycle event.
-  The isolated attempt id and wall deadline prevent an old generation from
-  finalizing a newer attempt.
+  The isolated attempt id prevents an old generation from finalizing a newer
+  attempt; legacy wall-deadline metadata is not a lifetime bound.
 - **Rebind recovery is immediate but consent-aware**: a replacement
   `session_start` converts an old running claim to recovery-pending and
   retries it immediately when the lifecycle handoff or global `autoResume`
   supplies consent. A cold startup with autoResume off paints the pending
   claim and waits for `/goal resume`.
-- **Auditor bounds have two layers**: no-event inactivity aborts after 10m
-  only when no auditor tool is active; a live verification tool may finish,
-  but the complete isolated run has a 30m wall-clock cap. Each auditor tool
-  also has an independent five-minute ceiling. Both outcomes are
-  infrastructure failures, never verdicts, and the stored claim remains
-  retryable.
+- **Auditor liveness has event-derived layers**: no-event inactivity aborts
+  after 10m only when no auditor tool is active; a live verification tool may
+  finish, and the complete isolated run has no unconditional wall-clock cap.
+  Each auditor tool also has an independent five-minute ceiling. These
+  watchdog outcomes are infrastructure failures, never verdicts, and the
+  stored claim remains retryable.
 
 ## Addendum v0.34.22 (detached completion auditor)
 
@@ -140,9 +140,10 @@ architectural decisions that changed the SHAPE of the system:
   never loads glla extensions or project context files. In current power mode,
   bash is not an OS sandbox: it can write repository or goal-state files, so
   the worker's isolation is process/API isolation rather than immutability. The
-  worker has independent per-tool and wall-clock bounds. This removes the
-  previous nested `AgentSession` from the main pi process and prevents a
-  provider stall in the auditor from occupying the executor's turn.
+  worker has independent per-tool and confirmed-silence bounds, with no
+  unconditional wall-clock expiry. This removes the previous nested
+  `AgentSession` from the main pi process and prevents a provider stall in the
+  auditor from occupying the executor's turn.
 - **Durable job protocol**: request, progress, lock, and result files live
   under `.pi-glla/audit-jobs/<attemptId>/`. Requests and results are hashed and
   atomically written. The parent validates attempt/request identity, verdict
@@ -160,10 +161,12 @@ architectural decisions that changed the SHAPE of the system:
   `audit recovery pending` are distinct. The main session can continue
   rendering and accepting input while the worker audits; completion/archive or
   disapproval/continuation happens only after durable result consumption.
-- **Bounded worker liveness**: no session event for 10 minutes while no
-  auditor tool is active aborts the worker; a five-minute per-tool ceiling and
-  30-minute wall-clock bound always win. Both are infrastructure failures,
-  never verdicts, and the claim remains retryable.
+- **Event-derived worker liveness**: no session event for 10 minutes while
+  no auditor tool is active aborts the worker; a five-minute per-tool ceiling
+  remains armed while a tool is open. There is no unconditional wall-clock
+  bound, so active output/tool progress may continue indefinitely. Watchdog
+  outcomes are infrastructure failures, never verdicts, and the claim remains
+  retryable.
 
 ## Addendum v0.34.24 (dispatch proof and display projection safety)
 
