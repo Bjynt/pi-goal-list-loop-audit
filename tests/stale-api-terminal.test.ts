@@ -229,7 +229,7 @@ test("v0.34.94: heartbeat only self-heals when the API and context are fresh", (
   // The probe reuses the normal same-session recovery gate. It may resume
   // unattended interrupted work, but it never sends until that gate has
   // proved both handles healthy.
-  const selfHealStart = HB.indexOf("stale_terminal_recovered_via_probe");
+  const selfHealStart = HB.indexOf("if (flags.staleTerminalDone && knownCtx)");
   const selfHealEnd = HB.indexOf("const ctx = freshCtx();", selfHealStart);
   assert.ok(selfHealStart > 0 && selfHealEnd > selfHealStart, "self-heal region is in scope");
   const heartbeatRegion = HB.slice(selfHealStart, selfHealEnd);
