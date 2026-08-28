@@ -57,7 +57,8 @@ test("infra-flavored returns (no model / aborted) are not disapprovals", () => {
 test("auditor watchdog exits are infrastructure failures, never verdicts", () => {
   // Confirmed-silence and per-tool watchdogs remain infrastructure outcomes;
   // elapsed time alone must not terminate an auditor with real progress.
-  assert.match(SRC, /event-derived watchdogs and lifecycle cancellation/);
+  assert.match(SRC, /event-derived/);
+  assert.match(SRC, /lifecycle cancellation/);
   assert.doesNotMatch(SRC, /return infra\([^\n]+wall-clock bound/);
   assert.match(SRC, /GLLA_AUDITOR_STALL_MS/, "worker stall brake env var honored");
   const worker = readFileSync(

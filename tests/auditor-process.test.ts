@@ -1159,8 +1159,8 @@ test("v0.36.0: the process layer resolves raw specs to install paths before the 
   // (fresh temp npm install online, 0 models offline). Resolution now lives
   // in runDetachedGoalCompletionAuditor itself: ANY call site is covered.
   // runtime.homeDir pins resolution to a fixture; a stub WORKER (not pi)
-  // copies the hashed request.json out to a marker before the parent's wall
-  // timeout reaps the job.
+  // copies the hashed request.json out to a marker and then exits without a
+  // result, exercising the parent's result-less-worker classification.
   const dir = await mkdtemp(path.join(tmpdir(), "glla-worker-resolve-"));
   const home = await mkdtemp(path.join(tmpdir(), "glla-worker-home-"));
   const fakeHomeAgent = path.join(home, ".pi", "agent");
@@ -1171,8 +1171,9 @@ test("v0.36.0: the process layer resolves raw specs to install paths before the 
   await writeFile(stubWorker, `import { copyFileSync } from 'node:fs';
 const dir = process.argv[process.argv.indexOf('--job-dir') + 1];
 copyFileSync(dir + '/request.json', process.env.PI_REQUEST_COPY);
-// Stay alive until the parent's wall timeout reaps us.
-setInterval(() => {}, 1000);
+// Exit after the request copy; no result exercises the bounded child-exit
+// grace path without relying on a removed wall timeout.
+process.exit(0);
 `);
   try {
     const result = await runDetachedGoalCompletionAuditor({
@@ -1188,11 +1189,8 @@ setInterval(() => {}, 1000);
         homeDir: home,
         attemptId: () => "worker-resolve-test",
         pollIntervalMs: 10,
-        // The stub deliberately stays alive so the parent must reap it. Keep
-        // enough startup budget for a busy release gate: the assertion is
-        // about resolved request contents, not a one-second process-launch
-        // deadline (field: v0.36.0 request-copy failure under load).
-        wallTimeoutMs: 5_000,
+        // The assertion is about resolved request contents; the stub exits
+        // without a result and the parent classifies that transport outcome.
       },
     });
     assert.ok(result.error, "stub worker never produces a verdict");

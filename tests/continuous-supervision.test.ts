@@ -107,8 +107,11 @@ test("v0.36.0: a child and recovery transition are durable signals, not guessed 
   assert.equal(childDone.cause, "durable-state");
   assert.equal(childDone.pollMs, 0);
   assert.ok(childDone.signals.some((signal) => signal.plane === "subagent"));
+  const completion = supervisor.check(empty(), 0);
+  assert.equal(completion.cause, "durable-state", "the disappearance of active work is observed immediately");
+  assert.equal(completion.planes.length, 0);
   const idle = supervisor.check(empty(), 0);
-  assert.equal(idle.planes.length, 0);
+  assert.equal(idle.cause, "fallback");
   assert.equal(idle.pollMs, SUPERVISION_MAX_POLL_MS);
 });
 
