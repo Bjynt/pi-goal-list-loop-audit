@@ -957,14 +957,10 @@ export interface State {
    * /list resume, /list next, /loop resume|start, starting a new goal).
    * Persisted so the hold survives restarts until the user decides. */
   loadHoldAt?: number;
-  /** v0.35.30: durable record of the most recent terminal outcome (an
-   * archived goal). The widget renders it while no goal/list/loop occupies
-   * the slot, so a finished audit stays visible after the agent's turn has
-   * ended — previously the archive nulled the slot, the widget went blank,
-   * and the only trace of the verdict was one transient toast (field:
-   * 2026-08-22 "goal gets closed before final audit, so auditor never
-   * approves" — the verdict HAD approved; nothing on screen said so).
-   * Overwritten by every slot close; cleared by /glla wipe. */
+  /** v0.35.30 legacy terminal-outcome field. Older state files may still
+   * contain it, so the reader keeps validating the shape for compatibility;
+   * v0.35.72 no longer writes or paints it. Completion history remains in the
+   * archived goal record and ledger, and /glla wipe still clears legacy data. */
   lastOutcome?: { at: string; ok: boolean; title: string; recap?: string };
 }
 
@@ -1330,9 +1326,9 @@ export function readState(cwd: string): State {
   };
 }
 
-/** v0.35.34: strict shape validation for the restored last-outcome record —
- * a corrupt/garbage line degrades to absent (the renderer already treats a
- * missing or stale-by-timestamp record as silent). */
+/** v0.35.34: strict shape validation for the legacy last-outcome record —
+ * a corrupt/garbage line degrades to absent; older state remains readable even
+ * though the v0.35.72 renderer no longer paints this field. */
 function sanitizeLastOutcome(value: unknown): State["lastOutcome"] {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const v = value as Record<string, unknown>;

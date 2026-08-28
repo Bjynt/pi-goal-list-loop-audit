@@ -1149,14 +1149,10 @@ function buildWidgetLinesInner(state: State, audit?: AuditDisplayProgress | null
     // active list goal. Paint an actionable queue card instead of returning
     // undefined; otherwise carryover/sidecar work disappears until reload.
     if ((state.list?.length ?? 0) > 0) return waitingListLines(state, theme, width);
-    // v0.35.30: durable last-outcome retention. After an archive the slot is
-    // empty; without this the widget goes blank and a finished audit reads
-    // as "closed with no verdict" (field: 2026-08-22 screenshots). One dim
-    // line for the retention window, then silent.
-    const o = state.lastOutcome;
-    if (o && Number.isFinite(Date.parse(o.at)) && now - Date.parse(o.at) < LAST_OUTCOME_RETENTION_MS) {
-      return [lastOutcomeLine(o, theme, width)];
-    }
+    // v0.35.72: terminal outcomes are already represented by the immutable
+    // completion notification and the archive. Do not repaint a second
+    // "done" row after the live goal slot is cleared; a legacy lastOutcome
+    // from an older version is intentionally ignored.
     return undefined;
   }
   if (g.status === "complete" || g.status === "aborted") {
@@ -1629,27 +1625,10 @@ function goalDurationMs(g: Goal, now: number): number {
  * verdict sub-line) that read like an ACTIVE item sitting on the surface
  * forever (Screenshot_20260807_231205/231236). Now: ONE compact dim summary
  * line — `─ done · <objective> · took X` — history, not a second surface.
- * The verdict/reason stays in the archive and /goal status.
+ * The verdict/reason stays in the archive and /goal status. v0.35.72 clears
+ * the slot after the completion notification instead of retaining a second
+ * live outcome row; the archive remains the durable history.
  */
-/** v0.35.30: retention window for the last-outcome widget line. Long enough
- * to answer "did the audit ever finish?" when the user returns to a session
- * whose agent turn ended at claim time; short enough to go silent rather
- * than haunt the surface for days. */
-export const LAST_OUTCOME_RETENTION_MS = 24 * 60 * 60_000;
-
-/** One dim line: `✓ done · <stopReason> · <recap>` (approved) or
- * `▪ ended · <stopReason> · <recap>` (aborted/cancelled). History, not a
- * second surface — mirrors completedGoalLines' v0.34.89 compactness rule. */
-function lastOutcomeLine(o: NonNullable<import("./goal-loop-core.js").State["lastOutcome"]>, theme?: DisplayTheme, width?: number): string {
-  const glyph = o.ok ? "✓ done" : "▪ ended";
-  const color = o.ok ? "success" : "dim";
-  const segs = `${glyph} · ${truncate(sanitizeDisplayText(o.title).replace(/\s+/g, " "), 40)}`;
-  const recapBudget = width && width > 0
-    ? Math.max(16, width - WIDGET_HORIZONTAL_MARGIN - 4 - visibleLen(segs))
-    : 44;
-  const recap = o.recap ? ` · ${truncate(sanitizeDisplayText(o.recap).replace(/\s+/g, " "), recapBudget)}` : "";
-  return paint(theme, color, `${segs}${recap}`);
-}
 
 function completedGoalLines(g: Goal, now: number, theme?: DisplayTheme, width?: number): string[] {
   const done = g.status === "complete";

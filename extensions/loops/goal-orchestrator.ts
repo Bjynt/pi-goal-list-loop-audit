@@ -1021,19 +1021,14 @@ function archiveCurrentGoal(
   // had a chance to choose a successor.
   const closeArchivedSlot = () => {
     if (state.goal?.id !== goal.id) return;
-    // v0.35.30: the archive nulled the slot, which blanked the widget — the
-    // verdict (approval or abort) survived only as one transient toast. Keep
-    // a durable last-outcome record so the widget can answer "did the final
-    // audit actually run?" hours later, after the agent's turn has ended.
+    // v0.35.72: the completion notification is the single live-session
+    // outcome surface. Clear the legacy lastOutcome field so an upgrade or a
+    // stale state line cannot repaint a second "done" row after archival;
+    // the archive and ledger retain the full durable history.
     replaceState({
       ...state,
       goal: null,
-      lastOutcome: {
-        at: nowIso(),
-        ok: status === "complete",
-        title: stopReason ?? status,
-        recap: (goal.completionSummary?.trim() || goal.objective).replace(/\s+/g, " ").slice(0, 300),
-      },
+      lastOutcome: undefined,
     });
     persistState(ctx);
   };
