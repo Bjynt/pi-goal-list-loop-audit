@@ -631,6 +631,7 @@ test("v0.34.121: one confirmed /glla wipe clears recovery and dispatch artifacts
   seedState(cwd, {
     goal: seedGoal({ objective: "wipe-once objective — done when pinned" }),
     list: [{ id: "wipe-waiting", objective: "orphan waiting item", addedAt: new Date().toISOString() }],
+    loop: seedLoop({ active: false, stopReason: HELD, target: "held loop before wipe" }),
     mainModelRecovery: {
       kind: "goal",
       primary: "provider/model",
@@ -658,6 +659,9 @@ test("v0.34.121: one confirmed /glla wipe clears recovery and dispatch artifacts
   assert.equal(readState(cwd).mainModelRecovery, undefined, "provider recovery state is cleared");
   assert.equal(fs.existsSync(path.join(cwd, ".pi-glla", "continuation-dispatch.json")), false, "dispatch sidecar is gone");
   assert.equal(fs.existsSync(path.join(cwd, ".pi-glla", "continuation-dispatch.json.tmp-test")), false, "dispatch temp sidecar is gone");
+  const wipeLedger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
+  assert.match(wipeLedger, /loop_completion_summary/, "wiping a loop leaves a durable recap ledger event");
+  assert.ok(ctx.ui.notifies.some((notice) => notice.message.includes("Loop recap: Outcome:")), "wipe notification includes the loop recap projection");
   await pi.command("glla", "wipe", ctx);
   assert.equal(confirms, 1, "a clean second invocation is an idempotent no-op, not a second destructive flow");
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
@@ -2478,6 +2482,7 @@ test("carryover=clear: new goal drops the queue, dismisses the held loop, archiv
   assert.equal((s.goal as { status: string }).status, "active", "new goal active");
   assert.equal(queueItemSidecarCount(cwd), 0, "carryover clear removes the durable sidecar too");
   assert.ok(ctx.ui.matching("Carryover cleared").length >= 1, "clear summary shown");
+  assert.ok(ctx.ui.notifies.some((notice) => notice.message.includes("Loop recap: Outcome:")), "carryover clear includes the dismissed loop recap");
 });
 
 test("v0.35.4: a recovered sidecar is hydrated before list mutations", async () => {
@@ -2616,6 +2621,7 @@ test("v0.29.6: stacked state at load is AUTO-ARBITRATED — most recent activity
   assert.match((s2.loop as { stopReason?: string }).stopReason ?? "", /auto-arbitrated/, "honest stop reason");
   assert.ok(s2.goal && (s2.goal as { status: string }).status !== "aborted", "the newer goal survives");
   assert.ok(ctx2.ui.matching("Stacked state auto-arbitrated").length >= 1, "arbitration notify");
+  assert.ok(ctx2.ui.notifies.some((notice) => notice.message.includes("Loop recap: Outcome:")), "arbitration notification includes the loop recap");
 });
 
 test("carryover via /list next (pause): summary fires BEFORE the stale item activates; paused goal archived, held loop kept", async () => {
