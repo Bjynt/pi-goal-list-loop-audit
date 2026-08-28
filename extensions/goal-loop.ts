@@ -1108,6 +1108,7 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
     }
     if (loop.refinements?.length) lines.push(`Spec refined ${loop.refinements.length}× (latest: iteration ${loop.refinements[loop.refinements.length - 1]!.iteration})`);
     if (loop.stopReason) lines.push(`Stopped: ${loop.stopReason}`);
+    if (!loop.active && loop.completionSummary) lines.push(`Summary:\n${loop.completionSummary}`);
     if (state.mainModelRecovery?.kind === "loop") lines.push(...formatLoopRecoveryStatusLines(ctx));
     const tail = loop.history.slice(-5);
     if (tail.length > 0) {

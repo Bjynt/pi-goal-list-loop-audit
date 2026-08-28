@@ -355,12 +355,10 @@ export interface Goal {
   taskList?: TaskList;
   auditHistory?: AuditVerdict[];
   stopReason?: string;
-  /** v0.34.91: the agent's own 1-paragraph completion recap (from
-   * complete_goal's completionSummary), captured when the claim is made and
-   * persisted with the goal. The terminal summary line shows THIS instead
-   * of echoing the objective — the end-of-goal recap should say what
-   * happened, not restate the contract. Absent on legacy/aborted goals
-   * (the render falls back to the objective/reason). */
+  /** v0.34.91/v0.36.0: the six-label user-facing completion recap. Valid
+   * executor claims are preserved; terminal archive finalization supplies a
+   * recorded-facts-only fallback for missing, generic, incomplete, aborted,
+   * or legacy claims. */
   completionSummary?: string;
   pauseReason?: string;
   pauseSuggestedAction?: string;
