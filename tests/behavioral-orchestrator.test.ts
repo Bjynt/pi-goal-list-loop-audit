@@ -385,6 +385,11 @@ test("v0.36.0: aborted detached audit can complete without audit only after arch
   process.env.GLLA_PI_BINARY = fakePi;
   const ctx = await freshSession(cwd, "startup");
   const controller = new AbortController();
+  let confirmationTitle = "";
+  ctx.ui.confirmImpl = async (title) => {
+    confirmationTitle = title;
+    return true;
+  };
   try {
     await pi.command("goal", "complete without audit target — done when pinned", ctx);
     await tick();
@@ -398,7 +403,7 @@ test("v0.36.0: aborted detached audit can complete without audit only after arch
     await waitUntil(() => readState(cwd).goal === null);
     const notices = ctx.ui.notifies.map((entry) => entry.message).join("\n");
     const notice = ctx.ui.notifies.find((entry) => entry.message.includes("done without audit"))?.message ?? "";
-    assert.match(notices, /Audit aborted/);
+    assert.equal(confirmationTitle, "Audit aborted", "the explicit audit-abort choice was presented");
     assertCompactRecap(notice, "complete-without-audit notification");
     assert.ok(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length > 0, "archive landed before success was reported");
   } finally {

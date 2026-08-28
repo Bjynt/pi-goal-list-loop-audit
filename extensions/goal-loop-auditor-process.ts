@@ -253,8 +253,8 @@ const DEFAULT_HEARTBEAT_FRESH_MS = 60_000;
  * loop, empty stream, hung tool). Demote to quiet, emit `auditor_stalled`,
  * and auto-cancel the detached job. Mirrors the worker's 10m default brake
  * on the complementary axis: silence→worker cancels, activity-without-
- * progress→parent cancels. Both are far inside the 30m wall bound and the
- * observed 1h50m stuck case. */
+ * progress→parent cancels. Both are event-derived safety mechanisms; neither
+ * is a wall-clock horizon for a worker that continues making real progress. */
 const DEFAULT_HEARTBEAT_NO_PROGRESS_MS = 10 * 60_000;
 const ATTEMPT_ID_RE = /^[A-Za-z0-9._-]{1,100}$/;
 const WORKER_SHUTDOWN_GRACE_MS = 1_000;
