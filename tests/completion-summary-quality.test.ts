@@ -12,6 +12,7 @@ import activate, {
   __testOnlyResetTerminalFlags,
 } from "../extensions/loops/goal.js";
 import { makeMockCtx, MockPi, seedGoal, seedState, tmpCwd } from "./harness/mock-pi.js";
+import { buildRecordedFactsCompletionSummary, isUsefulCompletionSummary, resolveCompletionSummary } from "../extensions/completion-summary.js";
 
 const SRC = readGoalRuntimeSource();
 const MAIN_SM = { name: "main-session-manager" };
@@ -83,6 +84,57 @@ test("completion summary quality: valid six-label recap passes without missing-l
     const state = readState(cwd);
     assert.equal(state.goal?.completionSummary, valid, "valid recap stored verbatim without NOTE");
   } finally { delete process.env.GLLA_PI_BINARY; __testOnlyResetStaleFlag(); __testOnlyResetTerminalFlags(); __testOnlyResetOwnerSession(); }
+});
+
+test("v0.36.0: every terminal outcome gets a six-label recorded-facts fallback", () => {
+  const statuses = ["complete", "aborted", "paused"] as const;
+  for (const status of statuses) {
+    const resolved = resolveCompletionSummary({
+      goal: seedGoal({
+        status,
+        objective: "inspect the durable terminal record",
+        telemetry: { turns: 2, fileWrites: 1, bashCalls: 3 },
+      }) as any,
+      status,
+      stopReason: status === "complete" ? "auditor approved" : "user cancelled",
+      archivePath: `.pi-glla/archive/${status}.md`,
+    });
+    assert.equal(resolved.usedFallback, true, `${status} uses the fallback when no recap was supplied`);
+    for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) {
+      assert.equal(resolved.summary.match(new RegExp(`^${label}`, "gm"))?.length, 1, `${status} has one ${label} line`);
+    }
+    assert.match(resolved.summary, /not recorded|recorded/);
+  }
+});
+
+test("v0.36.0: valid recap is preserved while generic prose is replaced", () => {
+  const valid = "Outcome: Shipped the fix.\nChanged: extensions/example.ts.\nEvidence: commit abc123.\nTests: bun test tests/example.test.ts — pass.\nUnresolved: none.\nNext: none.";
+  assert.equal(isUsefulCompletionSummary(valid), true);
+  const goal = seedGoal({ objective: "ship a useful recap" }) as any;
+  const kept = resolveCompletionSummary({ goal, status: "complete", stopReason: "auditor approved" }, valid);
+  assert.equal(kept.usedFallback, false);
+  assert.equal(kept.summary, valid);
+  const generic = resolveCompletionSummary({ goal, status: "complete", stopReason: "auditor approved" }, "done");
+  assert.equal(generic.usedFallback, true);
+  assert.match(generic.summary, /Outcome:/);
+  assert.doesNotMatch(generic.summary, /Outcome: done/);
+});
+
+test("v0.36.0: fallback never invents changed files or test results", () => {
+  const summary = buildRecordedFactsCompletionSummary({
+    goal: seedGoal({ objective: "research a question", telemetry: undefined }) as any,
+    status: "aborted",
+    stopReason: "provider unavailable",
+  });
+  assert.match(summary, /Changed: not recorded/);
+  assert.match(summary, /Tests: not recorded/);
+  assert.match(summary, /no auditor verdict was recorded/);
+  assert.doesNotMatch(summary, /commit [a-f0-9]{7,}/i);
+});
+
+test("v0.36.0: archiveCurrentGoal owns terminal recap finalization", () => {
+  assert.match(SRC, /resolveCompletionSummary\(\{[\s\S]*source: "durable-terminal-state"/);
+  assert.match(SRC, /completionSummary: summaryResolution\.summary/);
 });
 
 test("completion summary audit doc exists and inventories archives", () => {
