@@ -38,6 +38,9 @@ import { checkRegressionShield, parseAuditorVerdict } from "./goal-loop-shield.j
 import { renameWithWindowsRetry } from "../scripts/goal-auditor-launch.mjs";
 import { resolveAuditorAllowedExtensions } from "./auditor-extensions.js";
 
+export type AuditorInfrastructureClass = "no-verdict" | "timeout" | "transport" | "provider";
+export type AuditorRecoveryFailureClass = AuditorInfrastructureClass | "exhausted";
+
 export interface GoalAuditorResult {
   approved: boolean;
   disapproved: boolean;
@@ -48,6 +51,11 @@ export interface GoalAuditorResult {
   thinkingLevel?: string;
   error?: string;
   infrastructureClass?: AuditorInfrastructureClass;
+  /** True when the ordered candidate chain was exhausted after the last
+   * candidate's allowed retry. This is orthogonal to infrastructureClass:
+   * the final failure still retains its concrete transport/provider/timeout
+   * class while the parent can record that no candidate remained. */
+  fallbackExhausted?: boolean;
   regressionShieldPassed?: boolean;
   regressionShieldMissing?: string[];
   /** v0.34.59: focus revision token echoed from request.json. The parent
@@ -91,6 +99,30 @@ export interface AuditorFallbackCandidate {
   via: string;
 }
 
+export interface AuditorFallbackAttemptInfo {
+  /** The normalized ref selected for this attempt. */
+  candidateRef: string;
+  /** The bounded ordered chain visible to this fallback run. */
+  candidateRefs: string[];
+  /** Candidates fully exhausted before candidateRef. */
+  attemptedRefs: string[];
+  /** 1 for the first attempt, 2 for the one allowed same-ref retry. */
+  attempt: 1 | 2;
+  /** Failures already observed for candidateRef before this run call. */
+  failureCount: 0 | 1;
+  failureClass?: AuditorInfrastructureClass;
+}
+
+export interface AuditorFallbackExhaustionInfo {
+  candidateRef: string;
+  candidateRefs: string[];
+  /** Includes candidateRef when the current candidate is being advanced. */
+  attemptedRefs: string[];
+  nextCandidateRef?: string;
+  failureClass: AuditorInfrastructureClass;
+  delayMs: number;
+}
+
 export interface AuditorFallbackPolicyOptions {
   /** The user-configured forbidden refs. The selector skips these silently. */
   forbiddenRefs?: readonly string[];
@@ -98,7 +130,20 @@ export interface AuditorFallbackPolicyOptions {
   shouldRetry?: () => boolean;
   sleep?: (ms: number) => Promise<void>;
   retryBaseMinutes?: number;
-  onRetry?: (candidate: AuditorFallbackCandidate, error: string, delayMs: number) => void;
+  /** Resume an in-flight candidate after a host restart. */
+  resumeCandidateRef?: string;
+  /** Candidates exhausted before resumeCandidateRef. */
+  attemptedRefs?: readonly string[];
+  /** When set with resumeCandidateRef, the first post-restart call is the
+   * candidate's already-authorized second attempt, not a third call. */
+  retryCandidateRef?: string;
+  /** Called before every detached worker launch. Returning false stops before
+   * launch when the durable cursor could not be persisted. */
+  onAttempt?: (candidate: AuditorFallbackCandidate, info: AuditorFallbackAttemptInfo) => boolean | void;
+  onRetry?: (candidate: AuditorFallbackCandidate, error: string, delayMs: number, info: AuditorFallbackAttemptInfo) => boolean | void;
+  /** Called before the fallback delay, so a crash during that delay resumes
+   * from the next candidate rather than repeating an exhausted one. */
+  onCandidateExhausted?: (candidate: AuditorFallbackCandidate, error: string, info: AuditorFallbackExhaustionInfo) => boolean | void;
   onFallback?: (from: AuditorFallbackCandidate, to: AuditorFallbackCandidate, error: string, delayMs: number) => void;
   onSelection?: (event: ModelFallbackEvent) => void;
 }
@@ -571,8 +616,6 @@ interface AuditorProgressFile {
   unmatchedToolStarts?: AuditorProgress["unmatchedToolStarts"];
   unmatchedToolEnds?: AuditorProgress["unmatchedToolEnds"];
 }
-
-export type AuditorInfrastructureClass = "no-verdict" | "timeout" | "transport" | "provider";
 
 export interface AuditorProcessRuntime {
   /** Override the worker launcher command (normally resolved from process.execPath, with a JS-runtime fallback for compiled hosts). */
