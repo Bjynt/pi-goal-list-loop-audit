@@ -11,6 +11,7 @@ import * as assert from "node:assert/strict";
 import {
   checkRegressionShield,
   contractItems,
+  isSafeMechanicalCommand,
 } from "../extensions/goal-loop-shield.ts";
 
 // ---- contractItems ----
@@ -343,6 +344,17 @@ test("extractMechanicalCheckCommands: extracts backticked and raw shell commands
     "cargo build succeeds cleanly",
   ].join("\n");
   assert.deepEqual(extractMechanicalCheckCommands(proseContract), ["bun test", "bun run build", "cargo build"]);
+
+  // v0.36.1: a contract may name two independent safe commands with `&&`.
+  // Extract each executable separately so the shell operator never reaches
+  // execFileSync, while both gates remain mechanically enforced.
+  const chainedContract = "`cargo test -p billing-api --test account_delete && cargo test -p music-api --test account_delete`";
+  assert.deepEqual(extractMechanicalCheckCommands(chainedContract), [
+    "cargo test -p billing-api --test account_delete",
+    "cargo test -p music-api --test account_delete",
+  ]);
+  assert.equal(isSafeMechanicalCommand(extractMechanicalCheckCommands(chainedContract)[0]!), true);
+  assert.equal(isSafeMechanicalCommand(extractMechanicalCheckCommands(chainedContract)[1]!), true);
 
   const res = runMechanicalPreAuditChecks(process.cwd(), ["node --version"]);
   assert.equal(res.passed, true);
