@@ -18,6 +18,7 @@ import {
 import {
   runAuditorFallbackWithPolicy,
   type AuditorFallbackCandidate,
+  type AuditorFallbackExhaustionInfo,
   type GoalAuditorResult,
 } from "../extensions/goal-loop-auditor-process.ts";
 import { resolveAuditorModel } from "../extensions/loops/goal-settings-ui.ts";
@@ -261,6 +262,75 @@ test("auditor wall timeouts and watchdog stalls walk the fallback chain", async 
   assert.equal(outcome.fallbackUsed, true);
   assert.deepEqual(calls, ["test/primary", "test/primary", "test/fallback-pin"]);
   assert.deepEqual(fallbacks, ["test/primary->test/fallback-pin"]);
+});
+
+test("a restarted retry cursor spends the second call once, then advances", async () => {
+  const candidates: AuditorFallbackCandidate[] = [
+    { ref: "test/primary", model: { provider: "test", id: "primary" }, via: "setting" },
+    { ref: "test/fallback-1", model: { provider: "test", id: "fallback-1" }, via: "fallback-pin" },
+  ];
+  const calls: string[] = [];
+  const attempts: string[] = [];
+  const outcome = await runAuditorFallbackWithPolicy(candidates, async (candidate) => {
+    calls.push(candidate.ref!);
+    return candidate.ref === "test/primary"
+      ? result({ error: "503 service unavailable", model: candidate.ref })
+      : result({ approved: true, model: candidate.ref });
+  }, {
+    resumeCandidateRef: "test/primary",
+    retryCandidateRef: "test/primary",
+    attemptedRefs: [],
+    sleep: async () => {},
+    shouldRetry: () => true,
+    onAttempt: (_candidate, info) => { attempts.push(`${info.candidateRef}:${info.attempt}`); },
+  });
+
+  assert.deepEqual(calls, ["test/primary", "test/fallback-1"], "restart recovery must not issue a third primary call");
+  assert.deepEqual(attempts, ["test/primary:2", "test/fallback-1:1"]);
+  assert.equal(outcome.result.approved, true);
+  assert.equal(outcome.retriedOnce, true);
+  assert.equal(outcome.fallbackUsed, true);
+});
+
+test("candidate exhaustion preserves the final concrete failure class", async () => {
+  const exhausted: AuditorFallbackExhaustionInfo[] = [];
+  const outcome = await runAuditorFallbackWithPolicy([
+    { ref: "test/primary", model: { provider: "test", id: "primary" }, via: "setting" },
+    { ref: "test/fallback-1", model: { provider: "test", id: "fallback-1" }, via: "fallback-pin" },
+  ], async (candidate) => result({ error: "503 provider unavailable", model: candidate.ref }), {
+    sleep: async () => {},
+    shouldRetry: () => true,
+    onCandidateExhausted: (_candidate, _error, info) => { exhausted.push(info); },
+  });
+
+  assert.equal(outcome.result.fallbackExhausted, true);
+  assert.equal(outcome.result.infrastructureClass, "provider");
+  assert.equal(exhausted.length, 2);
+  assert.equal(exhausted[0]?.nextCandidateRef, "test/fallback-1");
+  assert.equal(exhausted[1]?.nextCandidateRef, undefined);
+  assert.deepEqual(exhausted[1]?.attemptedRefs, ["test/primary", "test/fallback-1"]);
+});
+
+test("cursor persistence failure fails closed before a retry or fallback", async () => {
+  const calls: string[] = [];
+  const waits: number[] = [];
+  const outcome = await runAuditorFallbackWithPolicy([
+    { ref: "test/primary", model: { provider: "test", id: "primary" }, via: "setting" },
+    { ref: "test/fallback-1", model: { provider: "test", id: "fallback-1" }, via: "fallback-pin" },
+  ], async (candidate) => {
+    calls.push(candidate.ref!);
+    return result({ error: "503 provider unavailable", model: candidate.ref });
+  }, {
+    sleep: async (ms) => { waits.push(ms); },
+    shouldRetry: () => true,
+    onRetry: () => false,
+  });
+
+  assert.deepEqual(calls, ["test/primary"]);
+  assert.deepEqual(waits, []);
+  assert.equal(outcome.result.error, "auditor recovery cursor persistence failed");
+  assert.equal(outcome.result.fallbackExhausted, undefined);
+  assert.equal(outcome.result.infrastructureClass, "transport");
 });
 
 test("auditor and drafter source paths name the shared policy primitives", () => {

@@ -200,7 +200,7 @@ export async function runAuditorFallbackWithPolicy(
   const sameRef = (left: string | undefined, right: string | undefined): boolean =>
     !!left && !!right && left.toLowerCase() === right.toLowerCase();
   const candidateRefs = refs.slice();
-  const resumeRef = opts.resumeCandidateRef?.trim() || opts.retryCandidateRef?.trim();
+  const resumeRef = opts.retryCandidateRef?.trim() || opts.resumeCandidateRef?.trim();
   const resumeRetry = !!opts.retryCandidateRef
     && !!resumeRef
     && refs.some((ref) => sameRef(ref, opts.retryCandidateRef));
@@ -229,7 +229,11 @@ export async function runAuditorFallbackWithPolicy(
     if (/spawn|launch failed|transport|aborted/i.test(error)) return "transport";
     return "provider";
   };
-  const markExhausted = (result: GoalAuditorResult): GoalAuditorResult => ({ ...result, fallbackExhausted: true });
+  const markExhausted = (result: GoalAuditorResult, inferredClass?: AuditorInfrastructureClass): GoalAuditorResult => ({
+    ...result,
+    ...(result.infrastructureClass || !inferredClass ? {} : { infrastructureClass: inferredClass }),
+    fallbackExhausted: true,
+  });
   const cursorPersistenceFailure = (candidate: AuditorFallbackCandidate): GoalAuditorResult => ({
     approved: false,
     disapproved: false,
@@ -361,7 +365,7 @@ export async function runAuditorFallbackWithPolicy(
         return { result: cursorPersistenceFailure(candidate), retriedOnce, fallbackUsed, via: candidate.via };
       }
       if (nextRef === undefined) {
-        return { result: markExhausted(second), retriedOnce, fallbackUsed, via: candidate.via };
+        return { result: markExhausted(second, failureClass(second)), retriedOnce, fallbackUsed, via: candidate.via };
       }
       if (!isLive()) return { result: second, retriedOnce, fallbackUsed, via: candidate.via };
       await sleep(fallbackDelayMs);
@@ -388,7 +392,7 @@ export async function runAuditorFallbackWithPolicy(
       return { result: cursorPersistenceFailure(candidate), retriedOnce, fallbackUsed, via: candidate.via };
     }
     if (nextRef === undefined) {
-      return { result: markExhausted(first), retriedOnce, fallbackUsed, via: candidate.via };
+      return { result: markExhausted(first, failureClass(first)), retriedOnce, fallbackUsed, via: candidate.via };
     }
     if (!isLive()) return { result: first, retriedOnce, fallbackUsed, via: candidate.via };
     fallbackDelayMs = exhaustedInfo.delayMs;

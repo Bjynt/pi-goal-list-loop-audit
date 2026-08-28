@@ -1459,9 +1459,20 @@ function normalizePendingCompletion(value: unknown): PendingCompletion {
     ...canonicalOrUnknown
   } = raw;
   const phase = raw.phase === "quota-waiting" ? "retry-waiting" : raw.phase;
-  const boundedRefs = (value: unknown): string[] | undefined => Array.isArray(value)
-    ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0).map((entry) => entry.trim()).slice(0, 10)
-    : undefined;
+  const boundedRefs = (value: unknown): string[] | undefined => {
+    if (!Array.isArray(value)) return undefined;
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const entry of value) {
+      if (typeof entry !== "string") continue;
+      const ref = entry.trim().slice(0, 200);
+      if (!ref || seen.has(ref.toLowerCase())) continue;
+      seen.add(ref.toLowerCase());
+      out.push(ref);
+      if (out.length >= 10) break;
+    }
+    return out;
+  };
   const auditorCandidateRefs = boundedRefs(_auditorCandidateRefs);
   const auditorAttemptedRefs = boundedRefs(_auditorAttemptedRefs);
   const auditorCandidateRef = typeof _auditorCandidateRef === "string" && _auditorCandidateRef.trim()
@@ -1478,8 +1489,8 @@ function normalizePendingCompletion(value: unknown): PendingCompletion {
     ? _auditorFailureClass as AuditorRecoveryFailureClass
     : undefined;
   const auditorFallbackExhausted = _auditorFallbackExhausted === true;
-  const auditorFailureAt = typeof _auditorFailureAt === "string" && _auditorFailureAt.trim()
-    ? _auditorFailureAt
+  const auditorFailureAt = typeof _auditorFailureAt === "string" && Number.isFinite(Date.parse(_auditorFailureAt))
+    ? new Date(Date.parse(_auditorFailureAt)).toISOString()
     : undefined;
   return {
     ...canonicalOrUnknown,
