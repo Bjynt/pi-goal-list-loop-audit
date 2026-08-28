@@ -954,7 +954,7 @@ function archiveCurrentGoal(
   ctx: ExtensionContext,
   status: Status,
   stopReason?: string,
-  patch: Partial<Pick<Goal, "completionSummary" | "pendingTasks">> = {},
+  patch: Partial<Pick<Goal, "auditHistory" | "completionSummary" | "pendingTasks">> = {},
 ): boolean {
   if (!state.goal) return false;
   if (stateRootPending()) {
@@ -1179,6 +1179,32 @@ function archiveCurrentGoal(
   return true;
 }
 
+/**
+ * Route an auditor IMPOSSIBLE verdict or a list auto-drop through the one
+ * terminal archive fence. Callers capture the returned recap for their final
+ * notification, while the archive itself keeps the complete multi-line text
+ * and the independent auditor history.
+ */
+function terminalizeImpossibleGoal(
+  ctx: ExtensionContext,
+  stopReason: string,
+  auditHistory?: Goal["auditHistory"],
+): { archived: boolean; summary: string } {
+  const goal = state.goal;
+  if (!goal) return { archived: false, summary: "not recorded" };
+  const factsGoal = auditHistory ? { ...goal, auditHistory } : goal;
+  const archiveTarget = archivedGoalPath(ctx.cwd, goal.id);
+  const archivePath = path.relative(ctx.cwd, archiveTarget) || archiveTarget;
+  const summary = resolveCompletionSummary({
+    goal: { ...factsGoal, status: "aborted", stopReason },
+    status: "aborted",
+    stopReason,
+    archivePath,
+  }, factsGoal.completionSummary).summary;
+  const archived = archiveCurrentGoal(ctx, "aborted", stopReason, auditHistory ? { auditHistory } : {});
+  return { archived, summary };
+}
+
 /** v0.34.21: durable completion-audit lifecycle helpers. A claim without
  * an explicit phase is legacy state and is treated as recovery-pending after
  * a fresh lifecycle event; it is never silently presented as an active run. */
@@ -1216,3 +1242,4 @@ defineGoalRuntimeGlobal("updateGoal", { get: () => updateGoal });
 defineGoalRuntimeGlobal("autoArbitrateStackedState", { get: () => autoArbitrateStackedState });
 defineGoalRuntimeGlobal("fanOutListAuditFindings", { get: () => fanOutListAuditFindings });
 defineGoalRuntimeGlobal("archiveCurrentGoal", { get: () => archiveCurrentGoal });
+defineGoalRuntimeGlobal("terminalizeImpossibleGoal", { get: () => terminalizeImpossibleGoal });

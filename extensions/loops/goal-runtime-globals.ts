@@ -186,6 +186,7 @@ declare global {
   var autoArbitrateStackedState: any;
   var fanOutListAuditFindings: any;
   var archiveCurrentGoal: any;
+  var terminalizeImpossibleGoal: any;
   var clearDetachedAuditRuntime: any;
   var newCompletionAuditAttemptId: any;
   var validateCompletionSummary: any;

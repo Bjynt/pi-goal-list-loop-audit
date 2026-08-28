@@ -60,6 +60,37 @@ export function isUsefulCompletionSummary(text: string | undefined): boolean {
   return missingCompletionSummaryLabels(text).length === 0;
 }
 
+/**
+ * Project a durable six-label recap into one bounded notification line.
+ * Terminal state keeps the complete multi-line text; this projection is only
+ * for chat/UI/external surfaces where six short facts must remain scannable.
+ * Missing labels are retained as `not recorded` so a compact notification
+ * cannot accidentally imply evidence that the durable recap did not contain.
+ */
+export function compactCompletionSummary(text: string | undefined, maxValueLength = 72): string {
+  const source = text?.replace(/\\s+/g, " ").trim();
+  if (!source) return "not recorded";
+  const lower = source.toLowerCase();
+  const limit = Math.max(8, Math.floor(maxValueLength));
+  const positions = COMPLETION_SUMMARY_LABELS
+    .map((label) => ({ label, start: lower.indexOf(label.toLowerCase()) }))
+    .filter((entry) => entry.start >= 0);
+  const parts = COMPLETION_SUMMARY_LABELS.map((label) => {
+    const current = positions.find((entry) => entry.label === label);
+    const name = label.slice(0, -1);
+    if (!current) return `${name}: not recorded`;
+    const valueStart = current.start + label.length;
+    const nextStart = positions
+      .filter((entry) => entry.start > current.start)
+      .map((entry) => entry.start)
+      .sort((a, b) => a - b)[0] ?? source.length;
+    const rawValue = source.slice(valueStart, nextStart).trim();
+    const value = rawValue || "not recorded";
+    return `${name}: ${value.length > limit ? `${value.slice(0, limit - 1)}…` : value}`;
+  });
+  return parts.join(" · ");
+}
+
 function safeFact(value: unknown, fallback = "not recorded"): string {
   const text = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
   return text || fallback;
