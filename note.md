@@ -29,6 +29,8 @@ is it our bug or tin tin subagents
 ## make sure model selectors as as good as the main model selector with fallbacks
 
 
+## audits should focus on the project at hand they can explore outside but we dont want it to turn into a fix the world
+
 # Later
 
 ##

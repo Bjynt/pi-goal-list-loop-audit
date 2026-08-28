@@ -43,7 +43,7 @@ import { isLoopActive, loopTimerPending, scheduleLoopTick } from "./goal-loop.js
 import { mainModelRecoveryActive, markCompletionAuditRecoveryPending, probeMainModelRecovery } from "./goal-recovery.js";
 import type { ContinuationDispatch } from "./goal-loop-dispatch.js";
 import type { AgentPhase, AgentStatus } from "./goal-agents-panel.js";
-import { ContinuousSupervisor, type SupervisionSignal } from "./continuous-supervision.js";
+import { ContinuousSupervisor, SUPERVISION_MAX_POLL_MS, type SupervisionSignal } from "./continuous-supervision.js";
 
 /** goal.ts-owned module lets the heartbeat reads/writes through this accessor.
  * Getters/setters are wired by goal.ts at factory time (mirror-lets pattern). */
@@ -829,9 +829,13 @@ function scheduleHeartbeatPoll(generation: number, delayMs?: number): void {
  * shared checker inspect state immediately instead of waiting for its prior
  * backoff slot. */
 export function signalSupervisionEvent(signal: SupervisionSignal = { plane: "queue", kind: "progress", source: "event" }): void {
-  if (!flags) return;
+  if (!flags || heartbeatExecuting) return;
   continuousSupervisor.signal(signal);
-  if (heartbeatExecuting) return;
+  // Progress/start notifications reset the next fallback backoff but do not
+  // synchronously run the watchdog against a just-started turn. The owning
+  // event path already handles that transition; an immediate generic zombie
+  // check would mistake the pre-stream interval for confirmed silence.
+  if (heartbeatExecuting || signal.kind === "progress" || signal.kind === "start") return;
   const timer = flags.heartbeatTimer;
   if (timer) clearTimeout(timer);
   flags.heartbeatTimer = null;
@@ -1311,7 +1315,11 @@ function heartbeatTick(): void {
 export function startHeartbeat(): void {
   if (flags.heartbeatTimer) return;
   continuousSupervisor.observeState(state, subagentHangProbes.size);
-  scheduleHeartbeatPoll(flags.sessionGeneration);
+  // A fresh session has no missing event to compensate for yet. Start at the
+  // normal safety cadence; real lifecycle/durable signals can interrupt the
+  // timer immediately, while an actually signal-less active run adapts on the
+  // subsequent fallback polls.
+  scheduleHeartbeatPoll(flags.sessionGeneration, SUPERVISION_MAX_POLL_MS);
 }
 // ----------------------------------------------------------------------------
 // Test-only heartbeat hooks (moved from goal.ts)

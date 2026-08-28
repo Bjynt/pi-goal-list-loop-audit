@@ -646,7 +646,7 @@ function persistState(ctx: ExtensionContext): boolean {
         stopReason: loop.stopReason!,
         iteration: loop.iteration,
         bestValue: loop.bestValue,
-        historyLength: loop.history.length,
+        historyLength: loop.history?.length ?? 0,
       }),
     };
     loopSummaryGenerated = true;

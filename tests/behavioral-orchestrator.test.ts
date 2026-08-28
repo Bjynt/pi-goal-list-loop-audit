@@ -3686,7 +3686,7 @@ test("v0.35.x: no-verdict auditor infrastructure failure schedules one durable a
   }
 });
 
-test("v0.34.140: aggressive mode keeps no-verdict auditor recovery alive inside its durable window", { timeout: 240_000 }, async () => {
+test("v0.36.0: aggressive mode keeps no-verdict auditor recovery alive without a wall-clock horizon", { timeout: 240_000 }, async () => {
   // v0.35.15: budget raised 30s→60s — this real-timer test observed 23s on
   // a busy machine (the auditor's own release:check ran concurrently with
   // an active session) and blew the per-test ceiling, fast-failing the
@@ -3725,7 +3725,7 @@ test("v0.34.140: aggressive mode keeps no-verdict auditor recovery alive inside 
     assert.equal(persisted?.pendingCompletion?.automaticRecoveryAttempted, true);
     assert.ok((persisted?.pendingCompletion?.automaticRecoveryAttempts ?? 0) >= 2, "retries are counted durably");
     assert.ok(persisted?.pendingCompletion?.automaticRecoveryFirstAt, "the aggressive recovery start is durable");
-    assert.ok(persisted?.pendingCompletion?.automaticRecoveryUntil, "the aggressive recovery horizon is durable");
+    assert.equal(persisted?.pendingCompletion?.automaticRecoveryUntil, undefined, "aggressive recovery does not persist a wall-clock horizon");
 
     // Turning aggressive mode off while a retry is waiting must leave a
     // truthful blocked card, not an expired wait deadline with no timer.
