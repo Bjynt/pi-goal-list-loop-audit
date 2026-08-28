@@ -26,4 +26,3 @@ https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
 
 # Idea
 
-_(none — prior ideas promoted to Done)_
