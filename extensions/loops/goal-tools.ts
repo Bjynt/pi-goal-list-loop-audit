@@ -235,7 +235,7 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
-import { compactCompletionSummary, resolveCompletionSummary } from "../completion-summary.js";
+import { compactCompletionSummary, compactTerminalCompletionSummary, resolveCompletionSummary } from "../completion-summary.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -596,6 +596,12 @@ function registerAgentTools(pi: any): void {
           // Archive the terminal snapshot directly. Do not first persist a
           // terminal stopReason on an active goal: a crash in that gap leaves
           // a live slot that looks resumable but is already claimed closed.
+          const recap = compactTerminalCompletionSummary({
+            goal: state.goal,
+            status: "aborted",
+            stopReason,
+            archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, alreadyShippedGoalId)) || archivedGoalPath(ctx.cwd, alreadyShippedGoalId),
+          }, p.completionSummary?.trim());
           const archived = archiveCurrentGoal(ctx, "aborted", stopReason, {
             completionSummary: p.completionSummary?.trim(),
             pendingTasks: undefined,
@@ -617,7 +623,7 @@ function registerAgentTools(pi: any): void {
             routedToAudit: false,
             recap: p.completionSummary?.slice(0, 300),
           });
-          ctx.ui.notify(`Goal archived as aborted — completionSummary indicated the work was ${matchedPhrase}; no new work shipped in this turn.`, "info");
+          ctx.ui.notify(`Goal archived as aborted — completionSummary indicated the work was ${matchedPhrase}; no new work shipped in this turn.\nRecap: ${recap}`, "info");
           return {
             content: [{
               type: "text",

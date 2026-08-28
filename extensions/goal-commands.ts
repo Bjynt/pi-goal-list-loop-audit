@@ -31,7 +31,7 @@ import { clearDispatchRecord, dispatchRecordExists } from "./goal-loop-dispatch.
 import type { AuditDisplayProgress } from "./goal-loop-display.js";
 import { fmtElapsed } from "./goal-loop-display.js";
 import { AUDIT_FINDINGS_REL, HELD_ON_RESTORE, LOOP_AUDIT_MARKER, listAuditCollectTarget, projectAuditTarget } from "./goal-loop-forever.js";
-import { buildLoopCompletionSummary, compactCompletionSummary } from "./completion-summary.js";
+import { buildLoopCompletionSummary, compactCompletionSummary, compactTerminalCompletionSummary } from "./completion-summary.js";
 import { ProjectRollup, discoverGllaProjects, filterPremature, formatRollupJson, formatRollupTable, parseLedgerEntries, rollupProject } from "./goal-loop-stats.js";
 import { OVERRIDABLE_AGENT_TYPES, resolveEffectiveSubagentModel } from "./goal-loop-subagents.js";
 import { Settings, globalSettingsPath, loadSettings, projectSettingsPath, saveSettings, settingsProvenance } from "./goal-settings.js";
@@ -545,11 +545,20 @@ async function cmdCancel(ctx: ExtensionContext): Promise<void> {
     return;
   }
   const noun = goalNoun();
-  if (!archiveCurrentGoal(ctx, "aborted", "user cancelled")) return;
+  const cancelledGoal = state.goal;
+  const cancelStopReason = "user cancelled";
+  const cancelArchiveTarget = archivedGoalPath(ctx.cwd, cancelledGoal.id);
+  const cancelRecap = compactTerminalCompletionSummary({
+    goal: cancelledGoal,
+    status: "aborted",
+    stopReason: cancelStopReason,
+    archivePath: path.relative(ctx.cwd, cancelArchiveTarget) || cancelArchiveTarget,
+  });
+  if (!archiveCurrentGoal(ctx, "aborted", cancelStopReason)) return;
   // Abort only after the durable archive + user-facing confirmation have
   // landed. Aborting immediately used to cut off the rest of compound
   // cancel/wipe cleanup and made the user repeat the command.
-  ctx.ui.notify(`${noun} aborted.${isLoopActive() ? " A loop is still active — /loop stop ends it." : ""}`, "info");
+  ctx.ui.notify(`${noun} aborted.${isLoopActive() ? " A loop is still active — /loop stop ends it." : ""}\nRecap: ${cancelRecap}`, "info");
   ctx.abort();
 }
 
@@ -1348,7 +1357,17 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
       return;
     }
     const dropped = waiting;
-    if (activeIsListItem && !archiveCurrentGoal(ctx, "aborted", "list cancelled")) return;
+    const listCancelStopReason = "list cancelled";
+    const listCancelledGoal = activeIsListItem ? state.goal : undefined;
+    const listCancelRecap = listCancelledGoal
+      ? compactTerminalCompletionSummary({
+        goal: listCancelledGoal,
+        status: "aborted",
+        stopReason: listCancelStopReason,
+        archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, listCancelledGoal.id)) || archivedGoalPath(ctx.cwd, listCancelledGoal.id),
+      })
+      : undefined;
+    if (activeIsListItem && !archiveCurrentGoal(ctx, "aborted", listCancelStopReason)) return;
     // v0.35.0: clear the union of RAM and disk queue state. Orphaned
     // sidecars otherwise resurrected after a stale reload.
     const clearedSidecars = clearQueueItemFiles(ctx.cwd);
@@ -1356,7 +1375,7 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     persistState(ctx);
     appendLedger(ctx.cwd, "list_cancelled", { abortedActive: activeIsListItem, dropped, sidecars: clearedSidecars.removed });
     ctx.ui.notify(
-      `List cancelled: ${activeIsListItem ? "active item aborted + " : ""}${dropped} waiting item(s) dropped.${!activeIsListItem && state.goal && state.goal.status === "active" ? ` Active goal is not a list item — untouched (${activeGoalSurfaceCommand("cancel")} for that).` : ""}`,
+      `List cancelled: ${activeIsListItem ? "active item aborted + " : ""}${dropped} waiting item(s) dropped.${!activeIsListItem && state.goal && state.goal.status === "active" ? ` Active goal is not a list item — untouched (${activeGoalSurfaceCommand("cancel")} for that).` : ""}${listCancelRecap ? `\nRecap: ${listCancelRecap}` : ""}`,
       "info",
     );
     if (clearedSidecars.failed.length > 0) ctx.ui.notify(`List cancel could not remove ${clearedSidecars.failed.length} queue sidecar(s); retry after fixing disk access.`, "warning");
@@ -1906,6 +1925,14 @@ async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise
     })
     : undefined;
   const loopWipeRecap = loopWipeSummary ? compactCompletionSummary(loopWipeSummary) : undefined;
+  const goalWipeRecap = live
+    ? compactTerminalCompletionSummary({
+      goal: g!,
+      status: "aborted",
+      stopReason: "user wipe (/glla wipe)",
+      archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, g!.id)) || archivedGoalPath(ctx.cwd, g!.id),
+    })
+    : undefined;
   if (live) {
     // Do not abort here: wipe still has to clear queue sidecars and loop
     // state. The old early abort made a second /glla wipe appear necessary.
@@ -1962,10 +1989,10 @@ async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise
     const failedLabels = [...failedSidecars.map(() => "queue sidecar"), ...failedCleanup].join(", ");
     ctx.ui.notify(`Wipe could not remove ${failedCleanupCount} live artifact(s) (${failedLabels}); the clean slate is incomplete.`, "warning");
   }
-  ctx.ui.notify(`glla wipe done: ${parts.join(" · ")}.${loopWipeRecap ? `\nLoop recap: ${loopWipeRecap}` : ""} ${failedCleanupCount > 0 ? "Partial clean slate — fix disk access and retry." : "Clean slate."}`, "info");
+  ctx.ui.notify(`glla wipe done: ${parts.join(" · ")}.${goalWipeRecap ? `\nGoal recap: ${goalWipeRecap}` : ""}${loopWipeRecap ? `\nLoop recap: ${loopWipeRecap}` : ""} ${failedCleanupCount > 0 ? "Partial clean slate — fix disk access and retry." : "Clean slate."}`, "info");
   notifyExternal(ctx, failedCleanupCount > 0
-    ? `glla wipe incomplete — live cleanup needs attention.${loopWipeRecap ? ` Loop recap: ${loopWipeRecap}` : ""}`
-    : `glla state wiped by user — clean slate.${loopWipeRecap ? ` Loop recap: ${loopWipeRecap}` : ""}`);
+    ? `glla wipe incomplete — live cleanup needs attention.${goalWipeRecap ? ` Goal recap: ${goalWipeRecap}` : ""}${loopWipeRecap ? ` Loop recap: ${loopWipeRecap}` : ""}`
+    : `glla state wiped by user — clean slate.${goalWipeRecap ? ` Goal recap: ${goalWipeRecap}` : ""}${loopWipeRecap ? ` Loop recap: ${loopWipeRecap}` : ""}`);
   if (abortAfterWipe) ctx.abort();
 }
 

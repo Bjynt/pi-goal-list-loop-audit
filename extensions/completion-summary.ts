@@ -175,6 +175,19 @@ export function resolveCompletionSummary(
 }
 
 /**
+ * Resolve and compact a goal recap before the archive fence runs. Terminal
+ * callers use this for notifications because archiveCurrentGoal returns only
+ * success/failure so it can preserve its existing persistence contract.
+ */
+export function compactTerminalCompletionSummary(
+  facts: CompletionSummaryFacts,
+  candidate = facts.goal.completionSummary,
+  maxValueLength = 72,
+): string {
+  return compactCompletionSummary(resolveCompletionSummary(facts, candidate).summary, maxValueLength);
+}
+
+/**
  * Loop terminal states use the same six-label user-facing contract. Loop
  * state is converted to the smaller Goal-shaped fact set by the caller, so
  * this module remains independent of the loop runtime.
