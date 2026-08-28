@@ -1,6 +1,24 @@
 # Completion-summary policy — 2026-08-19
 
-## Current behavior
+> **Status as of v0.36.0 (2026-08-28):** the original free-form-input gap
+> described below is now closed at the central terminal archive boundary.
+> `docs/DESIGN-long-running-supervision.md` is the current long-running policy;
+> this file preserves the original rationale and trade-offs.
+
+## Current v0.36.0 behavior
+
+Every archived terminal goal is resolved through the six-label recap contract.
+Valid supplied recaps are preserved. Missing, generic, or incomplete claims
+receive a recorded-facts-only fallback, and `completion_summary_fallback` is
+ledgered. Metric-loop terminal stops use the same recap in durable loop state
+and `/loop status`. The fallback writes `not recorded` when state does not
+contain a changed-file manifest or test result; it never infers evidence.
+
+The caller fields remain strings so the executor claim and independent auditor
+report do not become one verdict object. The full recap is durable in the
+archive/history surfaces; terminal notifications use a compact projection.
+
+## Original baseline behavior
 
 `complete_goal` currently accepts two independent free-form strings:
 
@@ -92,9 +110,13 @@ field-level queries or automation.
 - **The queue/list state machine owns follow-up work:** the `Next` line is not a
   queue mutation, and the terminal recap must not be used to auto-create work.
 
-No source fix is supported by this review. The existing storage and separate
-verdict surfaces are correct, and the focused suites cover the important
-behavior: `timeout 180 bun test tests/goal-loop-core.test.ts tests/display.test.ts tests/revision-bound-audit.test.ts` passed **152 tests with 0 failures**. A future implementation can add the labeled template to tool guidance and examples without changing the persisted type. Introducing a typed object or mandatory parser requires a concrete downstream consumer and migration plan first; arbitrary prose must not be parsed heuristically into false structured facts.
+The v0.36.0 implementation keeps the string boundary but adds the durable
+terminal resolver in `extensions/completion-summary.ts`, central archive
+finalization in `extensions/loops/goal-orchestrator.ts`, loop-stop summaries,
+and event-driven recovery policy in `extensions/goal-heartbeat.ts` and
+`extensions/goal-recovery.ts`. The existing independent auditor and persistence
+fences remain authoritative. Arbitrary prose is not parsed into evidence;
+missing facts remain explicitly `not recorded`.
 
 ## Evidence reviewed
 
