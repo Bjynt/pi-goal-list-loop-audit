@@ -1094,7 +1094,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
     const recapSrc = recapResolution.summary.replace(/\s+/g, " ");
     const recap = displaySlice(recapSrc, 110);
     const approvalVia = `${origin === "manual" ? " on /goal verify" : origin === "session-recovery" ? " after session recovery" : " on the provider retry"}${fallbackUsed ? " after an auditor-model fallback" : ""}`;
-    const archived = archiveCurrentGoal(liveCtx, "complete", terminalReason);
+    const archived = archiveCurrentGoal(liveCtx, "complete", `auditor ${result.model} approved (${origin})`);
     if (!archived) {
       // archiveCurrentGoal already preserved the live record and warned the
       // user. Keep the approved claim recoverable, but never emit a terminal

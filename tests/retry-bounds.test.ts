@@ -59,6 +59,15 @@ test("E2: auditor infra errors enter the durable bounded retry plan (v0.34.51 â€
   assert.match(SRC, /auditInfraStreak: undefined, \/\/ durable retry owns the wait â€” infra streak broken/);
 });
 
+test("v0.36.0: aggressive recovery has no wall-clock episode horizon", () => {
+  assert.match(RECOVERY, /const normalizedRecovery = aggressive \? \{ \.\.\.normalizedBase, autoRetryUntil: undefined \} : normalizedBase;/);
+  assert.match(RECOVERY, /!aggressive && Number\.isFinite\(deadlineMs\)/);
+  assert.match(RECOVERY, /autoRetryUntil: aggressive \? undefined : mainModelAutoRetryUntil/);
+  assert.match(RECOVERY, /adaptive backoff for as long as it remains recoverable/);
+  assert.match(SRC, /auditorRetryPlan\(claim, undefined, undefined, aggressive\)/);
+  assert.match(SRC.replace(/\s+/g, " "), /aggressive \|\| \(attempt < MAX_AUDITOR_AUTO_RETRY_ATTEMPTS/);
+});
+
 test("E3: send-retry re-arms counted, ledgered, escalated", () => {
   assert.match(CONT, /appendLedger\(ctx\.cwd, "send_rearm_start", \{ kind \}\)/); // decomposition step 5: accountSendRearm moved
   assert.match(CONT, /appendLedger\(ctx\.cwd, "send_rearm_storm", \{ kind, streak/);
