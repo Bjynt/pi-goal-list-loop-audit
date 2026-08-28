@@ -70,6 +70,7 @@ type LoopSnap = {
   active: boolean; iteration: number; stallCount: number; bestValue: number | null;
   stopReason?: string; consecutiveErrors?: number; consecutiveStuck?: number;
   auditPlateauReprieves?: number; auditReprieveNote?: string; kind?: string;
+  completionSummary?: string;
 };
 function loop(cwd: string): LoopSnap {
   return readState(cwd).loop as LoopSnap;
@@ -246,6 +247,8 @@ test("v0.29.19: audit plateau with OPEN findings stands down (reprieve), then st
   l = loop(cwd);
   assert.equal(l.active, false, "third plateau stops the loop");
   assert.match(l.stopReason ?? "", /no closure in 5×3 iterations despite 2 open findings/, "honest blocked-named stop");
+  assert.match(l.completionSummary ?? "", /no closure in 5×3 iterations despite 2 open findings/, "recap reflects the final honest reason, not the provisional plateau");
+  assertCompactLoopRecap(ctx);
   // and the honest stop is resumable:
   await pi.command("loop", "resume", ctx);
   await tick();
