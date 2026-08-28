@@ -71,7 +71,7 @@ export function compactCompletionSummary(text: string | undefined, maxValueLengt
   const source = text?.replace(/\s+/g, " ").trim();
   if (!source) return "not recorded";
   const lower = source.toLowerCase();
-  const limit = Math.max(8, Math.floor(maxValueLength));
+  const limit = Number.isFinite(maxValueLength) ? Math.max(8, Math.floor(maxValueLength)) : 72;
   const positions = COMPLETION_SUMMARY_LABELS
     .map((label) => ({ label, start: lower.indexOf(label.toLowerCase()) }))
     .filter((entry) => entry.start >= 0);

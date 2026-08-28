@@ -31,7 +31,7 @@ import { clearDispatchRecord, dispatchRecordExists } from "./goal-loop-dispatch.
 import type { AuditDisplayProgress } from "./goal-loop-display.js";
 import { fmtElapsed } from "./goal-loop-display.js";
 import { AUDIT_FINDINGS_REL, HELD_ON_RESTORE, LOOP_AUDIT_MARKER, listAuditCollectTarget, projectAuditTarget } from "./goal-loop-forever.js";
-import { compactLoopCompletionSummary } from "./completion-summary.js";
+import { buildLoopCompletionSummary, compactCompletionSummary } from "./completion-summary.js";
 import { ProjectRollup, discoverGllaProjects, filterPremature, formatRollupJson, formatRollupTable, parseLedgerEntries, rollupProject } from "./goal-loop-stats.js";
 import { OVERRIDABLE_AGENT_TYPES, resolveEffectiveSubagentModel } from "./goal-loop-subagents.js";
 import { Settings, globalSettingsPath, loadSettings, projectSettingsPath, saveSettings, settingsProvenance } from "./goal-settings.js";
@@ -1896,9 +1896,16 @@ async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise
     dispatchSidecar: dispatchSidecarPresent,
   });
   const abortAfterWipe = !!live;
-  const loopWipeRecap = loop
-    ? compactLoopCompletionSummary({ ...loop, stopReason: "user wipe (/glla wipe)", completionSummary: undefined, historyLength: loop.history?.length ?? 0 })
+  const loopWipeSummary = loop
+    ? buildLoopCompletionSummary({
+      target: loop.target,
+      stopReason: "user wipe (/glla wipe)",
+      iteration: loop.iteration,
+      bestValue: loop.bestValue,
+      historyLength: loop.history?.length ?? 0,
+    })
     : undefined;
+  const loopWipeRecap = loopWipeSummary ? compactCompletionSummary(loopWipeSummary) : undefined;
   if (live) {
     // Do not abort here: wipe still has to clear queue sidecars and loop
     // state. The old early abort made a second /glla wipe appear necessary.
@@ -1942,6 +1949,7 @@ async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise
         iteration: loop.iteration,
         best: loop.bestValue,
         reason: "user wipe (/glla wipe)",
+        summary: loopWipeSummary,
         recap: loopWipeRecap,
         source: "durable-loop-wipe",
       });
