@@ -216,11 +216,15 @@ import {
   type ProjectRollup,
 } from "../goal-loop-stats.js";
 import {
+  auditorCandidateRefs,
+  auditorResultFailureClass,
   cancelDetachedGoalCompletionAuditor,
   newDetachedAuditJobAttemptId,
   runAuditorFallbackWithPolicy,
   runDetachedGoalCompletionAuditor,
+  type AuditorFallbackAttemptInfo,
   type AuditorFallbackCandidate,
+  type AuditorFallbackExhaustionInfo,
   type AuditorProgress,
 } from "../goal-loop-auditor-process.js";
 import {
@@ -820,6 +824,29 @@ function auditorCandidateLabel(candidate: AuditorModelCandidate): string {
       ? `${model.provider}/${model.id}`
       : "(unset)";
   return `${modelName} (${candidate.via})`;
+}
+
+/** Persist a candidate/failure cursor only while the detached audit still
+ * owns the current generation and logical claim. Returning false is a hard
+ * stop for the fallback walker: launching or advancing without a durable
+ * cursor would make a host restart repeat a provider call unpredictably. */
+function persistDetachedAuditorCursor(
+  generation: number,
+  goalId: string,
+  attemptId: string,
+  info: AuditorFallbackAttemptInfo | AuditorFallbackExhaustionInfo,
+  patch: Partial<PendingCompletion>,
+): boolean {
+  const current = detachedAuditContext(generation, goalId, attemptId);
+  const claim = state.goal?.pendingCompletion;
+  if (!current || !claim || claim.attemptId !== attemptId) return false;
+  return updateGoal({
+    pendingCompletion: {
+      ...claim,
+      auditorCandidateRefs: info.candidateRefs.slice(0, 10),
+      ...patch,
+    },
+  }, current);
 }
 
 /**
