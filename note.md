@@ -1,19 +1,10 @@
 # Now
 
-Active list drained — `goal:null list:0`. Last two items both auditor-approved:
-- `20260827200116-bvgqsu` /glla bug capture — `bugs/<ts>-<id>.md` via `resolveGllaStateDir`, no durable mutation.
-- `20260827203924-m13p3a` wait/duration — `estimateDurationFromHistory`/`nextPollMs` + `smoke.sh` `250→1000ms` adaptive, `audit/WAIT-ESTIMATION-2026-08-27.md`.
-
-No active follow-up; awaiting next list. The pi-goal-x comparison was
-research-only; no adoption or runtime change was made.
-
-# Next
-
-
-
 ## context bloat problem in seemingly long running tasts, going over designated but not over the limit of the model
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260828_180734.png 
+
+it did compact when it hit the limit but clealry that is not ideal
 
 ## chekc pr 
 
@@ -27,7 +18,6 @@ https://github.com/DraconDev/pi-goal-list-loop-audit/pull/37
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260828_124432.png 
 
-
 ## explore subagent shown as valid session to load 
 
 is it our bug or tin tin subagents 
@@ -37,14 +27,21 @@ is it our bug or tin tin subagents
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260828_125113.png 
 
+# Next
+
 ## make sure model selectors as as good as the main model selector with fallbacks
 
 ## audits should focus on the project at hand they can explore outside but we dont want it to turn into a fix the world
 
+## proactive evidence gathering for draft
+
+currently draft fires first if we use like /goal and even if provided claism and evidence the ai didnt look at it, like pictures and asks me quesitons, 
+while it owuld be in some cases would be useful to run a miniaudit 
+
 # Later
 
-##
-_(none — follow-up candidates from the pi-goal-x report are explicitly research-only until separately scoped.)
+## check out out other harnesses and goal extensions 
+nottably pi goal x, deepseek harness, codex, cladue, antirgravity, grok harness
 
 ## nvidia AVO careful consideration 
 
