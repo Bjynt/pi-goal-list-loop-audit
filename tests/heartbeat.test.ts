@@ -124,23 +124,24 @@ test("shouldWedgeAlert: threshold 0 disables", () => {
 
 // ---- v0.23.3: timing defaults stay tight (regression guards) ----
 
-test("timing defaults: wedge 30m, measure 10m, auditor inactivity 10m, auditor wall 30m", () => {
+test("timing defaults: wedge 30m, measure 10m, auditor inactivity 10m, no process wall", () => {
   assert.equal(WEDGE_ALERT_DEFAULT_MINUTES, 30);
   assert.equal(MEASURE_TIMEOUT_MS, 10 * 60_000);
   assert.equal(AUDITOR_STALL_MS, 10 * 60_000);
+  // The family invariant applies to actual safety timers. A legacy auditor
+  // wall value remains exported for deserialization compatibility, but is not
+  // a live process bound.
   assert.equal(AUDITOR_WALL_TIMEOUT_MS, 30 * 60_000);
-  // The family invariant: every wait has a bound, every bound is minutes
-  // not hours, and no bound is infinite.
-  for (const ms of [HEARTBEAT_INTERVAL_MS, HEARTBEAT_STALL_MS, MEASURE_TIMEOUT_MS, AUDITOR_STALL_MS, AUDITOR_WALL_TIMEOUT_MS]) {
+  for (const ms of [HEARTBEAT_INTERVAL_MS, HEARTBEAT_STALL_MS, MEASURE_TIMEOUT_MS, AUDITOR_STALL_MS]) {
     assert.ok(ms > 0 && ms <= 30 * 60_000, `bound out of range: ${ms}`);
   }
 });
 
-test("auditor watchdog: inactivity aborts only without a tool; wall bound always wins", () => {
+test("auditor watchdog: confirmed inactivity aborts only without a tool", () => {
   const base = { startedAtMs: 0, lastEventAtMs: 0 };
   assert.equal(auditorWatchdogAction({ ...base, nowMs: AUDITOR_STALL_MS + 1, toolActive: false }), "inactivity");
   assert.equal(auditorWatchdogAction({ ...base, nowMs: AUDITOR_STALL_MS + 1, toolActive: true }), "none", "a long auditor tool may run past inactivity");
-  assert.equal(auditorWatchdogAction({ ...base, nowMs: AUDITOR_WALL_TIMEOUT_MS, lastEventAtMs: AUDITOR_WALL_TIMEOUT_MS - 1, toolActive: true }), "wall", "the hard wall still bounds a live tool");
+  assert.equal(auditorWatchdogAction({ ...base, nowMs: AUDITOR_WALL_TIMEOUT_MS, lastEventAtMs: AUDITOR_WALL_TIMEOUT_MS - 1, toolActive: true }), "none", "elapsed time does not bound a live tool");
   assert.equal(auditorWatchdogAction({ ...base, nowMs: 5 * 60_000, lastEventAtMs: 5 * 60_000, toolActive: false }), "none");
 });
 

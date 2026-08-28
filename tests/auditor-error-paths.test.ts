@@ -55,18 +55,16 @@ test("infra-flavored returns (no model / aborted) are not disapprovals", () => {
 });
 
 test("auditor watchdog exits are infrastructure failures, never verdicts", () => {
-  // The worker's stall watchdog (GLLA_AUDITOR_STALL_MS brake) exits with an
-  // infra-flavored result; the parent's wall-timeout watchdog returns
-  // infra() with a wall-clock message — never a verdict.
-  assert.match(SRC, /wall-clock bound/, "parent wall-timeout branch exists");
+  // Confirmed-silence and per-tool watchdogs remain infrastructure outcomes;
+  // elapsed time alone must not terminate an auditor with real progress.
+  assert.match(SRC, /event-derived watchdogs and lifecycle cancellation/);
+  assert.doesNotMatch(SRC, /return infra\([^\n]+wall-clock bound/);
   assert.match(SRC, /GLLA_AUDITOR_STALL_MS/, "worker stall brake env var honored");
-  const wallIdx = SRC.indexOf("wall-clock bound");
-  const wallWindow = SRC.slice(Math.max(0, wallIdx - 200), wallIdx + 60);
-  assert.match(wallWindow, /return infra\(/, "wall timeout returns infra, not a verdict");
   const worker = readFileSync(
     path.resolve(__dirname, "../scripts/goal-auditor-worker.mjs"),
     "utf-8",
   );
+  assert.match(worker, /no wall-clock lifetime timer/);
   const stallIdx = worker.indexOf("Auditor stalled");
   assert.ok(stallIdx >= 0, "worker stall watchdog branch exists");
   assert.match(worker.slice(stallIdx, stallIdx + 300), /aborted|no session activity/i);

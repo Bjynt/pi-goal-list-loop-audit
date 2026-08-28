@@ -58,7 +58,8 @@ test("v0.34.22: detached completion audits persist lifecycle claims and stop app
   assert.ok(claim >= 0 && auditor > claim, "the completion claim is durable before the auditor starts");
   assert.match(GOAL, /function beginCompletionAudit\(ctx: ExtensionContext/);
   assert.match(GOAL, /phase: "running"/);
-  assert.match(GOAL, /wallDeadlineAt/);
+  assert.match(GOAL, /startedAt: new Date\(startedMs\)\.toISOString\(\)/);
+  assert.doesNotMatch(GOAL, /wallDeadlineAt: new Date\(startedMs/);
   assert.match(complete, /shouldRetry: \(\) => detachedAuditContext\(auditGeneration, auditGoalId, auditAttemptId\) !== null/);
   assert.match(complete, /completionAuditGeneration = auditGeneration/);
   assert.match(complete, /const auditContextAfterRun = freshCtxForGeneration\(auditGeneration\)/);

@@ -247,7 +247,7 @@ test("auditor wall timeouts and watchdog stalls walk the fallback chain", async 
   const outcome = await runAuditorFallbackWithPolicy(candidates, async (candidate) => {
     calls.push(candidate.ref!);
     return candidate.ref === "test/primary"
-      ? result({ error: "Auditor exceeded its 30m wall-clock bound and was aborted.", model: candidate.ref })
+      ? result({ error: "Auditor stalled — no session activity since boot for 10m; the detached job was auto-cancelled.", model: candidate.ref })
       : result({ approved: true, model: candidate.ref });
   }, {
     retryBaseMinutes: 1,
