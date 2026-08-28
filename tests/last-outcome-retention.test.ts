@@ -1,22 +1,19 @@
 // pi-goal-list-loop-audit — v0.35.30
 // tests/last-outcome-retention.test.ts
 //
-// Field report (2026-08-22, screenshots Screenshot_20260822_151220/162044):
-// "goal gets closed before final audit, so auditor never approves." The
-// lifecycle was actually correct — the verdict approved and archived — but
-// closeArchivedSlot nulled the widget slot immediately, so after the agent's
-// turn ended the surface went blank and the only trace of the approval was
-// one transient toast. To a user returning later this is indistinguishable
-// from "closed without an audit".
+// Field report (2026-08-28, Screenshot_20260828_062720): an approved
+// completion appeared twice — once as the final notification and once as a
+// retained `lastOutcome` widget line. The duplicate made the completed goal
+// look like a live item that had not been removed.
 //
-// Fix under test: a durable state.lastOutcome record written at slot close,
-// rendered as ONE dim widget line while no goal/list/loop occupies the slot,
-// retained 24h, cleared by /glla wipe.
+// Fix under test: the approved notification remains the single live-session
+// completion signal; archive/ledger history stays durable, while the live
+// slot and legacy lastOutcome widget row are cleared/hidden.
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
-import { buildWidgetLines, LAST_OUTCOME_RETENTION_MS } from "../extensions/goal-loop-display.js";
+import { buildWidgetLines } from "../extensions/goal-loop-display.js";
 import { persistStateLine } from "../extensions/goal-state.js";
 import { readState, ledgerPath } from "../extensions/goal-loop-core.js";
 import type { State } from "../extensions/goal-loop-core.js";
@@ -27,7 +24,7 @@ function emptyState(overrides: Partial<State> = {}): State {
   return { goal: null, ...overrides } as State;
 }
 
-test("v0.35.30: a fresh approved outcome renders as a ✓ done line with reason and recap", () => {
+test("v0.35.72: a legacy approved lastOutcome never repaints a completed row", () => {
   const lines = buildWidgetLines(emptyState({
     lastOutcome: {
       at: new Date(NOW - 5 * 60_000).toISOString(),
@@ -35,65 +32,45 @@ test("v0.35.30: a fresh approved outcome renders as a ✓ done line with reason 
       title: "auditor minimax/MiniMax-M3 approved (complete-goal)",
       recap: "Expanded the curated pair set to full C(11,2) coverage — 55 pages prerendered.",
     },
-  }), undefined, NOW, undefined, 220)!;
-  assert.equal(lines.length, 1, "history, not a second surface");
-  assert.match(lines[0]!, /✓ done/);
-  assert.match(lines[0]!, /auditor minimax\/MiniMax-M3 approved/);
-  assert.match(lines[0]!, /55 pages prerendered/);
+  }), undefined, NOW, undefined, 220);
+  assert.equal(lines, undefined, "the archive/notification is the only completion surface");
 });
 
-test("v0.35.30: an aborted outcome renders the ▪ ended shape", () => {
+test("v0.35.72: a legacy aborted lastOutcome also stays hidden", () => {
   const lines = buildWidgetLines(emptyState({
     lastOutcome: {
-      at: new Date(NOW - MIN()).toISOString(),
+      at: new Date(NOW - 60_000).toISOString(),
       ok: false,
       title: "user cancelled",
     },
-  }), undefined, NOW)!;
-  assert.match(lines[0]!, /▪ ended/);
-  assert.match(lines[0]!, /user cancelled/);
-  assert.doesNotMatch(lines[0]!, /✓ done/, "no success glyph on an abort");
+  }), undefined, NOW);
+  assert.equal(lines, undefined, "terminal history must not leave a live widget row");
 });
 
-function MIN(): number { return 60_000; }
-
-test("v0.35.30: the retention line expires silently after 24h", () => {
-  const fresh = buildWidgetLines(emptyState({
-    lastOutcome: { at: new Date(NOW - (LAST_OUTCOME_RETENTION_MS - 60_000)).toISOString(), ok: true, title: "x" },
-  }), undefined, NOW);
-  const stale = buildWidgetLines(emptyState({
-    lastOutcome: { at: new Date(NOW - (LAST_OUTCOME_RETENTION_MS + 60_000)).toISOString(), ok: true, title: "x" },
-  }), undefined, NOW);
-  assert.ok(fresh, "inside the window → visible");
-  assert.equal(stale, undefined, "outside the window → gone");
-  // A garbage timestamp must never crash the render — treated as expired.
-  assert.equal(buildWidgetLines(emptyState({ lastOutcome: { at: "not-a-date", ok: true, title: "x" } }), undefined, NOW), undefined);
-});
-
-test("v0.35.30: a live goal outranks the retention line even if lastOutcome lingers", () => {
+test("v0.35.72: a live goal remains the only rendered surface", () => {
   const goal = {
     id: "20260822160000-ret", objective: "current work", verificationContract: "", status: "active",
     policy: "goal", autoContinue: true, usage: { tokensUsed: 0, tokensLimit: 0 },
     createdAt: "", updatedAt: "", revision: 0, turns: 0, fileWrites: 0, bashCalls: 0,
   } as never;
   const lines = buildWidgetLines({ goal, lastOutcome: { at: new Date(NOW).toISOString(), ok: true, title: "old" } } as State, undefined, NOW)!;
-  assert.ok(!lines.some((l) => l.includes("✓ done · old")), "retention line never shadows live work");
+  assert.ok(!lines.some((l) => l.includes("✓ done · old")), "legacy history never shadows live work");
 });
 
-test("v0.35.30: source pins — slot close writes lastOutcome; wipe clears it", () => {
+test("v0.35.72: source pins — slot close clears lastOutcome; wipe remains a clean slate", () => {
   const fs = require("node:fs");
   const orch = fs.readFileSync("extensions/loops/goal-orchestrator.ts", "utf-8");
   const closeIdx = orch.indexOf("const closeArchivedSlot = () => {");
   assert.ok(closeIdx > 0, "closeArchivedSlot exists");
   const closeBody = orch.slice(closeIdx, closeIdx + 900);
-  assert.ok(closeBody.includes("lastOutcome: {"), "slot close records the terminal outcome");
-  assert.ok(closeBody.includes('ok: status === "complete"'), "approved vs aborted is recorded");
+  assert.ok(closeBody.includes("lastOutcome: undefined"), "slot close clears the legacy terminal outcome");
+  assert.ok(!closeBody.includes("lastOutcome: {"), "slot close does not create a second live outcome surface");
   assert.ok(closeBody.includes("goal: null"), "the slot still closes");
   const cmds = fs.readFileSync("extensions/goal-commands.ts", "utf-8");
   assert.ok(cmds.includes("lastOutcome: undefined"), "/glla wipe clears the retention record");
 });
 
-// ---- v0.35.34: durability — the field must survive a process restart ----
+// ---- v0.35.34: compatibility — legacy state remains safely readable ----
 
 const OUTCOME: NonNullable<State["lastOutcome"]> = {
   at: "2026-08-23T01:40:00.000Z",
