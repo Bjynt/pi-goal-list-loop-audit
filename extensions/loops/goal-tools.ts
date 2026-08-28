@@ -962,6 +962,32 @@ function registerAgentTools(pi: any): void {
             details: {},
           };
         }
+        // Conservative mode preserves the historical decision pause for a
+        // PARTIAL impossible verdict: the user must choose how to narrow it.
+        // Only a full impossible objective is terminalized automatically.
+        if (classifyImpossibleReason(reason) === "partial") {
+          updateGoal({
+            status: "paused",
+            auditHistory: history,
+            pendingCompletion: undefined,
+            pauseKind: "decision",
+            pauseOptions: [`Tweak the objective — ${activeGoalSurfaceCommand("tweak")} <new text>`, `Cancel the goal (${activeGoalSurfaceCommand("cancel")})`],
+            pauseRecommended: 1,
+            pauseReason: `auditor verdict: IMPOSSIBLE (partial) — ${reason}`,
+            pauseSuggestedAction: `The auditor says part of this goal can never be satisfied. ${activeGoalSurfaceCommand("tweak")} the objective to remove it, then ${activeGoalSurfaceCommand("resume")}.`,
+          }, ctx);
+          ctx.ui.notify(`Auditor: part of the goal is IMPOSSIBLE — ${reason.slice(0, 140)}. Goal paused for an explicit narrowing decision.`, "warning");
+          maybeDecisionPopup(ctx);
+          appendLedger(ctx.cwd, "impossible_partial_paused", { reason: reason.slice(0, 240) });
+          notifyExternal(ctx, `Goal paused (auditor: partial impossible): ${reason.slice(0, 120)}`);
+          return {
+            content: [{
+              type: "text",
+              text: `The auditor says PART of this goal can never be satisfied: ${reason}\n\nThe goal is PAUSED for an explicit narrowing decision. Use ${activeGoalSurfaceCommand("tweak")} to remove the impossible part (or ${activeGoalSurfaceCommand("cancel")}), then ${activeGoalSurfaceCommand("resume")}.`,
+            }],
+            details: {},
+          };
+        }
         const terminalReason = `auditor impossible: ${reason}`;
         const terminal = terminalizeImpossibleGoal(ctx, terminalReason, history);
         if (!terminal.archived) {

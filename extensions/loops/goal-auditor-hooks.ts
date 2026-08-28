@@ -232,7 +232,7 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
-import { resolveCompletionSummary } from "../completion-summary.js";
+import { compactCompletionSummary, resolveCompletionSummary } from "../completion-summary.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -1265,9 +1265,72 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
 
 
 
-  // Any other outcome — disapproved or impossible — belongs to the agent:
-  // resume and let the continuation drive the next step. The verdict is
-  // durable in auditHistory + /goal status.
+  // A full IMPOSSIBLE verdict is terminal even when it arrives through a
+  // stored-claim retry. Partial verdicts retain the historical policy:
+  // aggressive mode narrows and continues; conservative mode pauses for an
+  // explicit user decision. The auditor history remains independent evidence.
+  if (result.impossible) {
+    const reason = result.impossibleReason || "(no reason given)";
+    const aggressive = aggressiveAuditorRecoveryEnabled(liveCtx.cwd);
+    if (aggressive && classifyImpossibleReason(reason) === "partial") {
+      updateGoal({
+        status: "active",
+        auditHistory: history,
+        pendingCompletion: undefined,
+        pauseReason: `auditor verdict: IMPOSSIBLE (partial) — ${reason}`,
+        pauseSuggestedAction: `Narrow the objective past the impossible part (complete_goal newObjective or ${activeGoalSurfaceCommand("tweak")}) and continue`,
+      }, liveCtx);
+      liveCtx.ui.notify(`Auditor (${origin}): part of the goal is IMPOSSIBLE — ${reason.slice(0, 140)}. aggressiveMode: narrowing and continuing.`, "warning");
+      appendLedger(liveCtx.cwd, "impossible_partial_continue", { reason: reason.slice(0, 240), origin });
+      scheduleContinuation(liveCtx, true);
+      return;
+    }
+    if (classifyImpossibleReason(reason) === "partial") {
+      updateGoal({
+        status: "paused",
+        auditHistory: history,
+        pendingCompletion: undefined,
+        pauseKind: "decision",
+        pauseOptions: [`Tweak the objective — ${activeGoalSurfaceCommand("tweak")} <new text>`, `Cancel the goal (${activeGoalSurfaceCommand("cancel")})`],
+        pauseRecommended: 1,
+        pauseReason: `auditor verdict: IMPOSSIBLE (partial) — ${reason}`,
+        pauseSuggestedAction: `The auditor says part of this goal can never be satisfied. ${activeGoalSurfaceCommand("tweak")} the objective to remove it, then ${activeGoalSurfaceCommand("resume")}.`,
+      }, liveCtx);
+      liveCtx.ui.notify(`Auditor (${origin}): part of the goal is IMPOSSIBLE — ${reason.slice(0, 140)}. Goal paused for an explicit narrowing decision.`, "warning");
+      maybeDecisionPopup(liveCtx);
+      appendLedger(liveCtx.cwd, "impossible_partial_paused", { reason: reason.slice(0, 240), origin });
+      return;
+    }
+    const terminalReason = `auditor impossible: ${reason}`;
+    const terminal = terminalizeImpossibleGoal(liveCtx, terminalReason, history);
+    if (!terminal.archived) {
+      updateGoal({
+        status: "paused",
+        auditHistory: history,
+        pendingCompletion: undefined,
+        pauseKind: "blocked",
+        pauseReason: `auditor verdict: IMPOSSIBLE, but terminal archive failed — ${reason}`,
+        pauseSuggestedAction: `Fix .pi-glla storage, then ${activeGoalSurfaceCommand("resume")} and retry the terminal archive.`,
+      }, liveCtx);
+      appendLedger(liveCtx.cwd, "goal_archive_failed_after_impossible", { reason: reason.slice(0, 240), origin });
+      return;
+    }
+    const recap = compactCompletionSummary(terminal.summary);
+    liveCtx.ui.notify(`Goal archived as aborted — auditor (${origin}) marked it IMPOSSIBLE: ${reason.slice(0, 180)}.\nRecap: ${recap}`, "warning");
+    notifyExternal(liveCtx, `Goal archived as aborted (auditor impossible, ${origin}): ${recap}`);
+    appendLedger(liveCtx.cwd, "provider_retry_impossible_terminalized", {
+      goalId,
+      attemptId: claim.attemptId,
+      reason: reason.slice(0, 240),
+      recap: terminal.summary.replace(/\\s+/g, " ").slice(0, 600),
+      origin,
+    });
+    return;
+  }
+
+  // Any other outcome — disapproved — belongs to the agent: resume and let
+  // the continuation drive the next step. The verdict is durable in
+  // auditHistory + /goal status.
   const aggressive = aggressiveAuditorRecoveryEnabled(liveCtx.cwd);
   const durableObjections = result.disapproved && aggressive
     ? (() => {
