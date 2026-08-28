@@ -39,7 +39,7 @@ import { renameWithWindowsRetry } from "../scripts/goal-auditor-launch.mjs";
 import { resolveAuditorAllowedExtensions } from "./auditor-extensions.js";
 
 export type AuditorInfrastructureClass = "no-verdict" | "timeout" | "transport" | "provider";
-export type AuditorRecoveryFailureClass = AuditorInfrastructureClass | "exhausted";
+export type AuditorRecoveryFailureClass = AuditorInfrastructureClass;
 
 export interface GoalAuditorResult {
   approved: boolean;

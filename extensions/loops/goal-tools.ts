@@ -703,7 +703,7 @@ function registerAgentTools(pi: any): void {
       const auditorCandidates: AuditorModelCandidate[] = [{ model: auditorModel, via: via ?? "unset" }, ...(fallbackModels ?? [])];
       const configuredAuditorRefs = auditorCandidateRefs(auditorCandidates);
       const persistedAuditorAttemptedRefs = (completionClaim.auditorAttemptedRefs ?? [])
-        .filter((ref) => configuredAuditorRefs.some((candidateRef) => candidateRef.toLowerCase() === ref.toLowerCase()))
+        .filter((ref: string) => configuredAuditorRefs.some((candidateRef) => candidateRef.toLowerCase() === ref.toLowerCase()))
         .slice(0, 10);
       const persistedAuditorCandidateRef = completionClaim.auditorCandidateRef
         && configuredAuditorRefs.some((ref) => ref.toLowerCase() === completionClaim.auditorCandidateRef!.toLowerCase())
@@ -792,10 +792,45 @@ function registerAgentTools(pi: any): void {
             shouldRetry: () => detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId) !== null,
             forbiddenRefs: settings.forbiddenModels,
             retryBaseMinutes: settings.mainModelRetryMinutes,
-            onRetry: (candidate: AuditorModelCandidate, err: string) => {
+            resumeCandidateRef: persistedAuditorCandidateRef,
+            attemptedRefs: persistedAuditorAttemptedRefs,
+            retryCandidateRef: persistedAuditorRetryCandidateRef,
+            onAttempt: (candidate: AuditorModelCandidate, info: AuditorFallbackAttemptInfo) => {
               const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
-              if (!current) return;
+              if (!current) return false;
+              const persisted = updateGoal({
+                pendingCompletion: {
+                  ...(state.goal?.pendingCompletion ?? completionClaim),
+                  auditorCandidateRefs: info.candidateRefs.slice(0, 10),
+                  auditorCandidateRef: info.candidateRef,
+                  auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
+                  auditorFailureCount: info.failureCount,
+                  ...(info.failureCount === 0 ? {
+                    auditorRetryCandidateRef: undefined,
+                    auditorFailureClass: undefined,
+                    auditorFailureAt: undefined,
+                  } : {}),
+                },
+              }, current);
+              return persisted;
+            },
+            onRetry: (candidate: AuditorModelCandidate, err: string, info?: AuditorFallbackAttemptInfo) => {
+              const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
+              if (!current || !info) return false;
               const failureCopy = providerErrorPresentation(err, "completion");
+              const persisted = updateGoal({
+                pendingCompletion: {
+                  ...(state.goal?.pendingCompletion ?? completionClaim),
+                  auditorCandidateRefs: info.candidateRefs.slice(0, 10),
+                  auditorCandidateRef: info.candidateRef,
+                  auditorRetryCandidateRef: info.candidateRef,
+                  auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
+                  auditorFailureCount: 1,
+                  auditorFailureClass: info.failureClass ?? "provider",
+                  auditorFailureAt: new Date().toISOString(),
+                },
+              }, current);
+              if (!persisted) return false;
               latestAuditProgress = {
                 ...(latestAuditProgress ?? {}),
                 model: modelRef(candidate.model),
@@ -804,7 +839,50 @@ function registerAgentTools(pi: any): void {
                 lastEventAt: Date.now(),
               };
               refreshUI(current);
-              appendLedger(current.cwd, "audit_infra_retry", { goalId: auditGoalId, model: auditorCandidateLabel(candidate), error: failureCopy.diagnostic.slice(0, 200), diagnostic: failureCopy.diagnostic });
+              appendLedger(current.cwd, "audit_infra_retry", {
+                goalId: auditGoalId,
+                model: auditorCandidateLabel(candidate),
+                error: failureCopy.diagnostic.slice(0, 200),
+                diagnostic: failureCopy.diagnostic,
+                display: failureCopy.display,
+                candidateRef: info.candidateRef,
+                failureClass: info.failureClass ?? "provider",
+              });
+              return true;
+            },
+            onCandidateExhausted: (candidate: AuditorModelCandidate, err: string, info: AuditorFallbackExhaustionInfo) => {
+              const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
+              if (!current) return false;
+              const next = info.nextCandidateRef;
+              const persisted = updateGoal({
+                pendingCompletion: {
+                  ...(state.goal?.pendingCompletion ?? completionClaim),
+                  auditorCandidateRefs: info.candidateRefs.slice(0, 10),
+                  auditorCandidateRef: next,
+                  auditorRetryCandidateRef: undefined,
+                  auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
+                  auditorFailureCount: next ? 0 : 2,
+                  auditorFailureClass: info.failureClass,
+                  auditorFallbackExhausted: next ? undefined : true,
+                  auditorFailureAt: new Date().toISOString(),
+                },
+              }, current);
+              if (!persisted) return false;
+              const failureCopy = providerErrorPresentation(err, "completion");
+              appendLedger(current.cwd, "auditor_candidate_exhausted", {
+                goalId: auditGoalId,
+                model: auditorCandidateLabel(candidate),
+                candidateRef: info.candidateRef,
+                nextCandidateRef: next,
+                candidateRefs: info.candidateRefs.slice(0, 10),
+                attemptedRefs: info.attemptedRefs.slice(0, 10),
+                failureClass: info.failureClass,
+                error: failureCopy.diagnostic.slice(0, 200),
+                diagnostic: failureCopy.diagnostic,
+                display: failureCopy.display,
+                fallbackExhausted: !next,
+              });
+              return true;
             },
             onFallback: (from: AuditorModelCandidate, to: AuditorModelCandidate, err: string) => {
               const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
@@ -833,6 +911,10 @@ function registerAgentTools(pi: any): void {
         return staleToolResult();
       }
       ctx = auditContextAfterRun;
+      // Candidate cursor callbacks update the same durable claim while the
+      // worker is running. Use the refreshed record below so recovery cannot
+      // overwrite the cursor with the pre-launch snapshot.
+      const durableCompletionClaim = state.goal.pendingCompletion ?? completionClaim;
       const auditDurationMs = Date.now() - auditStartMs;
       latestAuditProgress = null;
       // Audit history: record REAL verdicts only — a non-empty report is the
@@ -1093,11 +1175,73 @@ function registerAgentTools(pi: any): void {
         // completion claim so /goal resume can retry the isolated auditor
         // directly. A timeout is not a verdict and must not be fed back into
         // the normal agent continuation path.
+        const cursorPersistenceFailed = result.error === "auditor recovery cursor persistence failed";
+        if (result.fallbackExhausted || cursorPersistenceFailed) {
+          // The configured candidate chain is finite. Exhaustion and cursor
+          // persistence failures are hard parked states, not invitations to
+          // schedule another automatic cycle that would repeat a provider
+          // call after restart.
+          const failureCopy = providerErrorPresentation(result.error, "completion");
+          const recoveryEpisodeKey = durableCompletionClaim.recoveryEpisodeKey ?? `${durableCompletionClaim.at}:${failureCopy.fingerprint}`;
+          const pending: PendingCompletion = {
+            ...durableCompletionClaim,
+            phase: "recovery-pending",
+            recoveryAt: nowIso(),
+            recoveryRetryAt: undefined,
+            recoveryReason: cursorPersistenceFailed ? "auditor-cursor-persistence-failed" : "auditor-fallback-exhausted",
+            providerErrorDiagnostic: failureCopy.diagnostic,
+            recoveryEpisodeKey,
+            recoveryNoticeKeys: durableCompletionClaim.recoveryNoticeKeys ?? [],
+            auditorFailureClass: result.infrastructureClass ?? auditorResultFailureClass(result),
+            auditorFallbackExhausted: result.fallbackExhausted ? true : undefined,
+            auditorFailureAt: new Date().toISOString(),
+          };
+          const notifyParked = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:fallback-exhausted`);
+          updateGoal({
+            status: "paused",
+            auditHistory: history,
+            pendingCompletion: pending,
+            providerErrorDiagnostic: failureCopy.diagnostic,
+            recoveryEpisodeKey,
+            recoveryNoticeKeys: pending.recoveryNoticeKeys,
+            pauseKind: "error",
+            pauseResumeAt: undefined,
+            pauseReason: cursorPersistenceFailed
+              ? "completion auditor recovery cursor could not be persisted — automatic recovery stopped"
+              : "completion auditor candidate fallback chain exhausted — no verifier verdict was produced",
+            pauseSuggestedAction: `The stored completion claim is safe but automatic recovery is stopped. Inspect the auditor/provider setup, then ${activeGoalSurfaceCommand("resume")} to start a new bounded attempt.`,
+          }, ctx);
+          appendLedger(ctx.cwd, cursorPersistenceFailed ? "auditor_recovery_cursor_persistence_failed" : "auditor_fallback_exhausted", {
+            goalId: auditGoalId,
+            attemptId: durableCompletionClaim.attemptId,
+            failureClass: result.infrastructureClass ?? auditorResultFailureClass(result),
+            diagnostic: failureCopy.diagnostic,
+            display: failureCopy.display,
+            recoveryEpisodeKey,
+          });
+          if (notifyParked) {
+            ctx.ui.notify(
+              cursorPersistenceFailed
+                ? `Auditor recovery stopped because its durable cursor could not be saved. The completion claim remains stored; ${activeGoalSurfaceCommand("resume")} retries it explicitly.`
+                : `Auditor fallback candidates are exhausted. The completion claim remains stored with no verifier verdict; inspect the provider setup, then ${activeGoalSurfaceCommand("resume")}.`,
+              "warning",
+            );
+          }
+          return {
+            content: [{
+              type: "text",
+              text: cursorPersistenceFailed
+                ? `Auditor recovery stopped because its durable cursor could not be saved. The completion claim remains stored; ${activeGoalSurfaceCommand("resume")} retries it explicitly.`
+                : `Auditor fallback candidates are exhausted. The completion claim remains stored with no verifier verdict; inspect the provider setup, then ${activeGoalSurfaceCommand("resume")}.`,
+            }],
+            details: {},
+          };
+        }
         if (isAuditorNoVerdictInfrastructureError(result.error, result.infrastructureClass)) {
           const failureCopy = providerErrorPresentation(result.error, "completion");
-          const recoveryEpisodeKey = completionClaim.recoveryEpisodeKey ?? `${completionClaim.at}:${failureCopy.fingerprint}`;
+          const recoveryEpisodeKey = durableCompletionClaim.recoveryEpisodeKey ?? `${durableCompletionClaim.at}:${failureCopy.fingerprint}`;
           let pending: PendingCompletion = {
-            ...completionClaim,
+            ...durableCompletionClaim,
             phase: "recovery-pending",
             recoveryAt: nowIso(),
             recoveryReason: result.error.startsWith("Auditor exceeded")
@@ -1107,8 +1251,8 @@ function registerAgentTools(pi: any): void {
                 : "auditor-no-verdict",
             providerErrorDiagnostic: failureCopy.diagnostic,
             recoveryEpisodeKey,
-            recoveryNoticeKeys: completionClaim.recoveryNoticeKeys ?? [],
-            automaticRecoveryAttempted: completionClaim.automaticRecoveryAttempted ?? false,
+            recoveryNoticeKeys: durableCompletionClaim.recoveryNoticeKeys ?? [],
+            automaticRecoveryAttempted: durableCompletionClaim.automaticRecoveryAttempted ?? false,
           };
           if (typeof scheduleParkedCompletionAuditRecovery === "function") {
             pending = scheduleParkedCompletionAuditRecovery(ctx, pending, pending.recoveryReason ?? "auditor-timeout");
@@ -1160,18 +1304,18 @@ function registerAgentTools(pi: any): void {
         // same per-attempt schedule without a wall-clock episode expiry.
         if (result.error && !result.disapproved) {
           const failureCopy = providerErrorPresentation(result.error, "completion");
-          const recoveryEpisodeKey = completionClaim.recoveryEpisodeKey ?? `${completionClaim.at}:${failureCopy.fingerprint}`;
+          const recoveryEpisodeKey = durableCompletionClaim.recoveryEpisodeKey ?? `${durableCompletionClaim.at}:${failureCopy.fingerprint}`;
           const aggressive = resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).aggressiveMode;
-          const plan = auditorRetryPlan(completionClaim, undefined, undefined, aggressive);
+          const plan = auditorRetryPlan(durableCompletionClaim, undefined, undefined, aggressive);
           const pending = {
-            ...completionClaim,
+            ...durableCompletionClaim,
             phase: "retry-waiting" as const,
             recoveryAt: undefined,
             recoveryReason: undefined,
             recoveryRetryAt: undefined,
             providerErrorDiagnostic: failureCopy.diagnostic,
             recoveryEpisodeKey,
-            recoveryNoticeKeys: completionClaim.recoveryNoticeKeys ?? [],
+            recoveryNoticeKeys: durableCompletionClaim.recoveryNoticeKeys ?? [],
             retryAttempts: plan.attempt,
             retryFirstAt: plan.firstAt,
             ...(aggressive ? { retryUntil: undefined } : { retryUntil: plan.autoRetryUntil }),
@@ -1434,16 +1578,17 @@ function registerAgentTools(pi: any): void {
         const current = freshCtxForGeneration(auditGeneration);
         if (!current || !state.goal || state.goal.id !== auditGoalId || state.goal.pendingCompletion?.attemptId !== auditAttemptId) return;
         const failureCopy = providerErrorPresentation(error instanceof Error ? error.message : String(error), "completion");
-        const recoveryEpisodeKey = completionClaim.recoveryEpisodeKey ?? `${completionClaim.at}:${failureCopy.fingerprint}`;
+        const durableCompletionClaim = state.goal.pendingCompletion ?? completionClaim;
+        const recoveryEpisodeKey = durableCompletionClaim.recoveryEpisodeKey ?? `${durableCompletionClaim.at}:${failureCopy.fingerprint}`;
         let pending: PendingCompletion = {
-          ...completionClaim,
+          ...durableCompletionClaim,
           phase: "recovery-pending",
           recoveryAt: nowIso(),
           recoveryReason: "auditor-infrastructure",
           providerErrorDiagnostic: failureCopy.diagnostic,
           recoveryEpisodeKey,
-          recoveryNoticeKeys: completionClaim.recoveryNoticeKeys ?? [],
-          automaticRecoveryAttempted: completionClaim.automaticRecoveryAttempted ?? false,
+          recoveryNoticeKeys: durableCompletionClaim.recoveryNoticeKeys ?? [],
+          automaticRecoveryAttempted: durableCompletionClaim.automaticRecoveryAttempted ?? false,
         };
         if (typeof scheduleParkedCompletionAuditRecovery === "function") {
           pending = scheduleParkedCompletionAuditRecovery(current, pending, "auditor-infrastructure");
