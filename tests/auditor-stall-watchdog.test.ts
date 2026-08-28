@@ -14,6 +14,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { spawn as realSpawn, type SpawnOptions } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -98,6 +99,56 @@ setInterval(() => {}, 1_000);
     false,
     "cancelled auditor job scratch is removed",
   );
+  await cleanup();
+});
+
+test("stall: first-event budget starts after successful spawn, not pre-spawn setup", { timeout: 20_000 }, async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-first-event-clock-"));
+  dirs.push(dir);
+  const sigtermMarker = path.join(dir, "sigterm-marker");
+  const worker = path.join(dir, "silent-worker.mjs");
+  await writeFile(worker, `
+import { writeFileSync } from "node:fs";
+process.on("SIGTERM", () => { writeFileSync(${JSON.stringify(sigtermMarker)}, "killed"); process.exit(0); });
+setInterval(() => {}, 1_000);
+`);
+  let spawnReturnedAt = 0;
+  const delayedSpawn = ((command: string, args: string[], options: SpawnOptions) => {
+    // Simulate a busy parent completing dispatch setup immediately before
+    // spawn. The watchdog must not charge this delay to worker startup.
+    const blocker = new Int32Array(new SharedArrayBuffer(4));
+    Atomics.wait(blocker, 0, 0, 1_500);
+    const spawned = realSpawn(command, args, options);
+    spawnReturnedAt = Date.now();
+    return spawned;
+  }) as typeof realSpawn;
+  const stalled: AuditorStalledInfo[] = [];
+  const result = await runDetachedGoalCompletionAuditor({
+    cwd: dir,
+    goal,
+    model: "test/provider-model",
+    thinkingLevel: "high",
+    onStalled: (info) => stalled.push(info),
+    runtime: {
+      spawn: delayedSpawn,
+      attemptId: () => "attempt-first-event-clock",
+      pollIntervalMs: 10,
+      wallTimeoutMs: 10_000,
+      firstEventTimeoutMs: 1_000,
+      heartbeatNoProgressMs: 20_000,
+      heartbeatFreshMs: 500,
+    },
+  });
+  assert.equal(result.infrastructureClass, "timeout", result.error ?? "no error");
+  assert.equal(stalled.length, 1);
+  assert.equal(stalled[0]!.reason, "first-event-timeout");
+  assert.ok(spawnReturnedAt > 0, "the injected launcher returned a child");
+  assert.ok(
+    stalled[0]!.at - spawnReturnedAt >= 700,
+    `first-event budget was measured after spawn: ${stalled[0]!.at - spawnReturnedAt}ms`,
+  );
+  assert.ok(stalled[0]!.at - spawnReturnedAt < 9_000, "the watchdog still beats the wall bound");
+  assert.ok(existsSync(sigtermMarker), "the delayed-start worker was SIGTERMed");
   await cleanup();
 });
 
