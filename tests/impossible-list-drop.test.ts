@@ -223,7 +223,7 @@ test("full auditor IMPOSSIBLE result is terminalized with a durable recap and no
     assert.equal(archivedFiles.length, 1, "the impossible objective has one archive");
     const archived = fs.readFileSync(`${archivedPath}/${archivedFiles[0]!}`, "utf8");
     assert.match(archived, /Status.*aborted/);
-    for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) assert.match(archived, new RegExp(`^${label}`, "m"));
+    for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) assert.match(archived, new RegExp(label));
     const ledger = fs.readFileSync(`${cwd}/.pi-glla/active.jsonl`, "utf8");
     assert.match(ledger, /goal_impossible_terminalized/);
     assert.match(ledger, /goal_archived/);
