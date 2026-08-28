@@ -4104,6 +4104,37 @@ test("v0.35.x: zero-stream zombie auto-aborts and parks a list item without a re
   }
 });
 
+test("v0.35.x: zero-stream loop termination preserves and notifies its recap", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetOwnerSession();
+  __testOnlySetZombieRunWindows(0, 0);
+  __testOnlySetZombieRetryMaxAttempts(1);
+  setGlobalAutoResume(true);
+  const cwd = tmpCwd();
+  seedState(cwd, { loop: seedLoop({ active: true, iteration: 6, bestValue: 4, lastValue: 4 }) });
+  const ctx = await freshSession(cwd, "reload");
+  ctx.isIdle = () => false;
+  let aborts = 0;
+  ctx.abort = () => { aborts++; };
+  try {
+    (globalThis as any).compactionGraceUntil = 0;
+    (globalThis as any).postCompletionSettleUntil = 0;
+    __testOnlyHeartbeatTick();
+    const loop = readState(cwd).loop as { active: boolean; stopReason?: string; completionSummary?: string };
+    assert.equal(aborts, 1, "the loop zero-stream turn is aborted once");
+    assert.equal(loop.active, false);
+    assert.match(loop.stopReason ?? "", /zero-stream abort/);
+    for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) assert.match(loop.completionSummary ?? "", new RegExp(label));
+    const recap = ctx.ui.notifies.find((notice) => notice.message.includes("Recap: Outcome:"));
+    assert.ok(recap, "zero-stream loop notification includes the compact six-label recap");
+  } finally {
+    __testOnlyResetZombieRunWatchdog();
+    __testOnlySetZombieRetryMaxAttempts(null);
+    __testOnlyResetZombieAutoRetry();
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  }
+});
+
 test("v0.35.4: zombie watchdog stands down while a subagent wait is in flight", async () => {
   __testOnlyResetStaleFlag();
   __testOnlyResetOwnerSession();
