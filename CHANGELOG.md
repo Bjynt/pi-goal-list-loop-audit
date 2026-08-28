@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.36.0 — event-driven long-running supervision (2026-08-28)
+
+### Added
+  GLLA now records a six-label user-facing recap for every archived terminal
+  objective and loop stop. Valid recaps are preserved; missing or incomplete
+  claims receive a recorded-facts-only fallback with explicit `not recorded`
+  values instead of invented evidence.
+
+  The shared heartbeat is now an event-first continuous supervisor across
+  goals, list items, loops, auditors, subagents, provider recovery, and queue
+  state. It reacts to lifecycle/durable signals immediately and uses adaptive
+  fallback polling rather than guessed task-duration waits.
+
+### Changed
+  Aggressive recovery retries recoverable provider/host/auditor failures across
+  arbitrary durations with bounded per-attempt backoff. Ordinary auditor
+  objections become durable TODOs; repeated identical objections with no new
+  progress stop on a state-based decision boundary. Conservative mode retains
+  its bounded recovery horizon.
+
+  See `docs/DESIGN-long-running-supervision.md` for the durable policy and
+  future decision checklist.
+
 ## 0.35.72 — remove duplicate terminal outcome widget (2026-08-28)
 
 ### Fixed

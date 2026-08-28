@@ -26,6 +26,9 @@ export const BACKOFF_IDLE_RETRY_MS = 50;     // when adding another iter to queu
 // for too long → re-fire the continuation ourselves.
 // =================================================================
 
+/** Maximum fallback cadence for the event-first continuous supervisor. The
+ * runtime starts at 250ms after a signal and backs off to this value when no
+ * new event/progress signal arrives. */
 export const HEARTBEAT_INTERVAL_MS = 15_000;
 export const HEARTBEAT_STALL_MS = 60_000;
 export const HEARTBEAT_MAX_NUDGES = 3;
