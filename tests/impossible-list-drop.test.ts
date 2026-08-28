@@ -238,6 +238,47 @@ test("full auditor IMPOSSIBLE result is terminalized with a durable recap and no
   }
 });
 
+test("stored-claim full IMPOSSIBLE retry also terminalizes with its recap", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetTerminalFlags();
+  __testOnlyResetOwnerSession();
+  const cwd = tmpCwd();
+  const previous = process.env.GLLA_PI_BINARY;
+  process.env.GLLA_PI_BINARY = writeImpossibleAuditor(cwd, "the claimed objective is impossible in this environment");
+  try {
+    seedState(cwd, {
+      goal: seedGoal({
+        status: "paused",
+        pendingCompletion: {
+          completionSummary: "saved completion claim",
+          verificationSummary: "saved verification claim",
+          at: new Date().toISOString(),
+          phase: "recovery-pending",
+          attemptId: "stored-impossible-attempt",
+        },
+      }),
+    });
+    const ctx = await freshSession(cwd, "startup");
+    const retry = (globalThis as any).retryStoredCompletionAudit as ((origin: string) => Promise<void>);
+    assert.equal(typeof retry, "function", "stored audit retry is wired");
+    await retry("manual");
+    await waitUntil(() => readState(cwd).goal === null);
+    const archivedFiles = fs.readdirSync(`${cwd}/.pi-glla/archive`);
+    assert.equal(archivedFiles.length, 1);
+    const archived = fs.readFileSync(`${cwd}/.pi-glla/archive/${archivedFiles[0]!}`, "utf8");
+    assert.match(archived, /Status.*aborted/);
+    for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) assert.match(archived, new RegExp(label));
+    assert.match(fs.readFileSync(`${cwd}/.pi-glla/active.jsonl`, "utf8"), /provider_retry_impossible_terminalized/);
+    assert.ok(ctx.ui.matching("Recap:").length >= 1, "stored retry terminal notification includes compact recap");
+  } finally {
+    if (previous === undefined) delete process.env.GLLA_PI_BINARY;
+    else process.env.GLLA_PI_BINARY = previous;
+    __testOnlyResetStaleFlag();
+    __testOnlyResetTerminalFlags();
+    __testOnlyResetOwnerSession();
+  }
+});
+
 test("loop hold: drop ledgered but NO advance while a loop owns the surface", async () => {
   setGlobalAutoResume(true);
   const cwd = tmpCwd();

@@ -940,8 +940,9 @@ function registerAgentTools(pi: any): void {
         const reason = result.impossibleReason || "(no reason given)";
         // v0.25.0 (contract item 23): under aggressiveMode, a PARTIAL
         // impossible (some items can't ship) keeps the loop going — the
-        // agent narrows to the remainder. A FULL impossible still pauses:
-        // auto-resuming a provably unwinnable objective just burns tokens.
+        // agent narrows to the remainder. A FULL impossible is
+        // terminalized as aborted; auto-resuming a provably unwinnable
+        // objective would only burn tokens.
         const effectiveImp = resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd));
         if (effectiveImp.aggressiveMode && classifyImpossibleReason(reason) === "partial") {
           updateGoal({
