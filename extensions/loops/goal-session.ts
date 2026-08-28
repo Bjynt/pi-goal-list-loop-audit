@@ -228,7 +228,7 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
-import { compactLoopCompletionSummary } from "../completion-summary.js";
+import { compactLoopCompletionSummary, compactTerminalCompletionSummary } from "../completion-summary.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -1314,20 +1314,36 @@ async function confirmDraft(ctx: ExtensionContext, title: string, body: string):
 // paused goal — honestly, with a ledger trail. resume: legacy silent
 // behavior. A new GOAL replacing a paused one archives it in every policy
 // (one-active-thing: state.goal holds exactly one goal).
-function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop" | "list"): void {
-  if (carryoverResolved || !carryoverSnapshot) return;
-  carryoverResolved = true;
+function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop" | "list"): boolean {
+  if (carryoverResolved || !carryoverSnapshot) return true;
   const snap = carryoverSnapshot;
-  carryoverSnapshot = null;
   const policy = loadSettings(ctx.cwd).carryover ?? "pause";
+  if (policy === "resume") {
+    carryoverResolved = true;
+    carryoverSnapshot = null;
+    return true;
+  }
   if (policy === "resume") return; // legacy silent stacking
   const done: string[] = [];
   const waiting: string[] = [];
+  const archivedRecaps: string[] = [];
   const pausedGoal = state.goal && state.goal.status === "paused" ? state.goal : null;
   // A new goal OR list item replaces the goal slot; a loop leaves it paused.
   if (pausedGoal && (trigger === "goal" || trigger === "list" || policy === "clear")) {
-    archiveCurrentGoal(ctx, "aborted", trigger === "loop" ? "carryover cleared" : `replaced by new ${trigger} (carryover)`);
+    const stopReason = trigger === "loop" ? "carryover cleared" : `replaced by new ${trigger} (carryover)`;
+    const recap = compactTerminalCompletionSummary({
+      goal: pausedGoal,
+      status: "aborted",
+      stopReason,
+      archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, pausedGoal.id)) || archivedGoalPath(ctx.cwd, pausedGoal.id),
+    });
+    if (!archiveCurrentGoal(ctx, "aborted", stopReason)) {
+      appendLedger(ctx.cwd, "carryover_archive_failed", { goalId: pausedGoal.id, trigger, stopReason });
+      ctx.ui.notify(`Carryover ${trigger} is blocked — the paused ${pausedGoal.policy === "list" ? "list item" : "goal"} could not be archived safely. Fix persistence and retry; no replacement was started.`, "warning");
+      return false;
+    }
     done.push(`archived paused goal "${displaySlice(snap.pausedGoal ?? pausedGoal.objective, 60)}"`);
+    archivedRecaps.push(recap);
   } else if (snap.pausedGoal) {
     waiting.push(`paused goal "${displaySlice(snap.pausedGoal, 60)}" (${workCommand(snap.pausedGoalPolicy, "resume")})`);
   }

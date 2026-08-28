@@ -892,9 +892,30 @@ function registerAgentTools(pi: any): void {
         if (!afterAbortConfirmCtx) return staleToolResult();
         ctx = afterAbortConfirmCtx;
         if (completeAnyway) {
-          updateGoal({ auditHistory: history, pendingCompletion: undefined }, ctx);
-          archiveCurrentGoal(ctx, "complete", "completed without audit (user choice after Esc)");
-          return { content: [{ type: "text", text: "Goal marked complete without audit (user choice)." }], details: {} };
+          if (!updateGoal({ auditHistory: history, pendingCompletion: undefined }, ctx)) {
+            return {
+              content: [{ type: "text", text: "The audit was aborted, but the completion claim could not be updated safely. The goal remains active; fix persistence and retry." }],
+              details: {},
+            };
+          }
+          const terminalGoal = state.goal;
+          if (!terminalGoal) return staleToolResult();
+          const terminalReason = "completed without audit (user choice after Esc)";
+          const recap = compactTerminalCompletionSummary({
+            goal: terminalGoal,
+            status: "complete",
+            stopReason: terminalReason,
+            archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, terminalGoal.id)) || archivedGoalPath(ctx.cwd, terminalGoal.id),
+          });
+          if (!archiveCurrentGoal(ctx, "complete", terminalReason)) {
+            return {
+              content: [{ type: "text", text: "The audit was aborted, but the terminal archive could not be persisted. The goal remains active; fix persistence and retry." }],
+              details: {},
+            };
+          }
+          ctx.ui.notify(`✓ done without audit (user choice): ${recap}`, "info");
+          notifyExternal(ctx, `Goal complete without audit (user choice): ${recap}`);
+          return { content: [{ type: "text", text: `Goal marked complete without audit (user choice).\n\n${recap}` }], details: {} };
         }
         scheduleContinuation(ctx, true);
         return {

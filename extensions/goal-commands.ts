@@ -1416,7 +1416,17 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
         for (const item of current) {
           if (item.kind === "loop" && isLoopActive()) await cmdLoop("stop", ctx);
           else if (item.kind !== "loop" && state.goal && ["active", "auditing"].includes(state.goal.status)) {
-            if (!archiveCurrentGoal(ctx, "aborted", `skipped via /list next ${label !== "1" ? label : ""}`.trim())) return;
+            const skippedGoal = state.goal;
+            const skipReason = `skipped via /list next ${label !== "1" ? label : ""}`.trim();
+            const skipRecap = compactTerminalCompletionSummary({
+              goal: skippedGoal,
+              status: "aborted",
+              stopReason: skipReason,
+              archivePath: path.relative(ctx.cwd, archivedGoalPath(ctx.cwd, skippedGoal.id)) || archivedGoalPath(ctx.cwd, skippedGoal.id),
+            });
+            if (!archiveCurrentGoal(ctx, "aborted", skipReason)) return;
+            ctx.ui.notify(`Previous ${skippedGoal.policy === "list" ? "list item" : "goal"} skipped; the selected list item will be activated.\nRecap: ${skipRecap}`, "info");
+            notifyExternal(ctx, `${skippedGoal.policy === "list" ? "List item" : "Goal"} skipped via /list next: ${skipRecap}`);
           }
         }
       }
