@@ -476,11 +476,10 @@ let scheduledAuditorRecoveryAt: string | null = null;
 let scheduledAuditorRecoveryGeneration: number | null = null;
 let scheduledAuditorRecoveryTimer: NodeJS.Timeout | null = null;
 
-/** Aggressive no-verdict recovery uses the same durable 24-hour envelope as
- * the main-model recovery. It is deliberately opt-in: the default keeps the
- * one-shot retry/explicit-resume contract that prevents a permanently dead
- * verifier from creating an unattended worker loop. */
-const AGGRESSIVE_AUDITOR_RECOVERY_HORIZON_MS = MAIN_MODEL_AUTO_RETRY_HORIZON_MS;
+/** Conservative no-verdict recovery retains the historical 24-hour envelope.
+ * Aggressive mode ignores this legacy horizon and continues from durable
+ * lifecycle/progress signals until an explicit state-based stop applies. */
+const CONSERVATIVE_AUDITOR_RECOVERY_HORIZON_MS = MAIN_MODEL_AUTO_RETRY_HORIZON_MS;
 
 function aggressiveAuditorRecoveryEnabled(cwd: string): boolean {
   try { return resolveEffectiveAggressiveSettings(loadSettings(cwd)).aggressiveMode; } catch { return false; }
@@ -500,7 +499,7 @@ function automaticRecoveryWindow(pending: PendingCompletion, now = Date.now(), u
     ? Number.POSITIVE_INFINITY
     : Number.isFinite(existingUntil) && existingUntil > firstMs
       ? existingUntil
-      : firstMs + AGGRESSIVE_AUDITOR_RECOVERY_HORIZON_MS;
+      : firstMs + CONSERVATIVE_AUDITOR_RECOVERY_HORIZON_MS;
   return {
     firstAt: new Date(firstMs).toISOString(),
     ...(Number.isFinite(untilMs) ? { until: new Date(untilMs).toISOString() } : {}),
@@ -521,9 +520,9 @@ export function __testOnlySetAuditorRecoveryRetryDelay(delayMs: number | null): 
 
 /** Arm a durable, generation-fenced retry for a parked infrastructure/no-
  * verdict claim. Normal mode gets one fresh attempt; aggressiveMode keeps
- * re-arming the claim inside its 24-hour window. This remains separate from
- * the provider retry ladder: no-verdict recovery never guesses a provider
- * reason for a dead worker. */
+ * re-arming the claim while state-based stop rules permit it. This remains
+ * separate from the provider retry ladder: no-verdict recovery never guesses
+ * a provider reason for a dead worker. */
 export function scheduleParkedCompletionAuditRecovery(ctx: ExtensionContext, pending: PendingCompletion, reason: string): PendingCompletion {
   const now = Date.now();
   const aggressive = aggressiveAuditorRecoveryEnabled(ctx.cwd);
@@ -584,7 +583,9 @@ export function scheduleParkedCompletionAuditRecovery(ctx: ExtensionContext, pen
       });
       return;
     }
-    if (aggressiveNow && Number.isFinite(automaticRecoveryWindow(claim, Date.now(), true).untilMs) && Date.now() >= automaticRecoveryWindow(claim, Date.now(), true).untilMs) {
+    const checkNow = Date.now();
+    const currentWindow = automaticRecoveryWindow(claim, checkNow, aggressiveNow);
+    if (aggressiveNow && Number.isFinite(currentWindow.untilMs) && checkNow >= currentWindow.untilMs) {
       updateGoal({
         pendingCompletion: { ...claim, recoveryRetryAt: undefined },
         pauseKind: "blocked",
@@ -768,7 +769,10 @@ export function maybeAutoRetryParkedCompletionAudit(trigger: AutomaticCompletion
   if (!ctx) return false;
   const aggressive = aggressiveAuditorRecoveryEnabled(ctx.cwd);
   if (claim.automaticRecoveryAttempted === true && !aggressive) return false;
-  if (aggressive && Number.isFinite(automaticRecoveryWindow(claim, Date.now(), true).untilMs) && Date.now() >= automaticRecoveryWindow(claim, Date.now(), true).untilMs) return false;
+  if (aggressive) {
+    const window = automaticRecoveryWindow(claim, Date.now(), true);
+    if (Number.isFinite(window.untilMs) && Date.now() >= window.untilMs) return false;
+  }
   if (!guardGoalBeforeContinuation(ctx, "stored-completion-audit", goal.id, { allowAuditing: true })) return false;
 
   const current = state.goal;

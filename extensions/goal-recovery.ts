@@ -675,16 +675,16 @@ export function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainM
   const diagnostic = normalizedRecovery.providerErrorDiagnostic ?? normalizedRecovery.reason;
   const presentation = providerErrorPresentation(diagnostic, "main");
   const normalized: MainModelRecovery = {
-    ...normalizedBase,
-    reason: sanitizeProviderDisplayText(normalizedBase.reason),
+    ...normalizedRecovery,
+    reason: sanitizeProviderDisplayText(normalizedRecovery.reason),
     providerErrorDiagnostic: diagnostic,
-    recoveryEpisodeKey: normalizedBase.recoveryEpisodeKey ?? `${normalizedBase.firstFailureAt ?? nowIso()}:${presentation.fingerprint}`,
-    recoveryNoticeKeys: normalizedBase.recoveryNoticeKeys ?? [],
+    recoveryEpisodeKey: normalizedRecovery.recoveryEpisodeKey ?? `${normalizedRecovery.firstFailureAt ?? nowIso()}:${presentation.fingerprint}`,
+    recoveryNoticeKeys: normalizedRecovery.recoveryNoticeKeys ?? [],
   };
   const now = Date.now();
   const deadlineMs = normalized.autoRetryUntil ? Date.parse(normalized.autoRetryUntil) : Number.NaN;
   const requestedDelayMs = Math.max(1_000, delayMs);
-  if (normalized.manualResumeRequired || (Number.isFinite(deadlineMs) && (now >= deadlineMs || now + requestedDelayMs > deadlineMs))) {
+  if (normalized.manualResumeRequired || (!aggressive && Number.isFinite(deadlineMs) && (now >= deadlineMs || now + requestedDelayMs > deadlineMs))) {
     holdMainModelRecovery(ctx, normalized, Number.isFinite(deadlineMs) && now >= deadlineMs
       ? "the 24h automatic recovery horizon was reached"
       : "the automatic recovery horizon would be exceeded");
@@ -705,7 +705,9 @@ export function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainM
   clearLoopTimer();
   flags.continuationDispatchStoodDown = true;
   const resumeCmd = recoverySurfaceCommand(normalized.kind, "resume");
-  const recoveryAction = `The provider failure is being retried automatically with bounded backoff and an extra :00:30 probe after each hour starts; configured fallback models are tried in order. ${resumeCmd} retries immediately; ${activeGoalSurfaceCommand("cancel")} stops it.`;
+  const recoveryAction = `${aggressive
+    ? "The provider failure is being retried automatically with adaptive backoff for as long as it remains recoverable"
+    : "The provider failure is being retried automatically within the bounded recovery window"}; configured fallback models are tried in order. ${resumeCmd} retries immediately; ${activeGoalSurfaceCommand("cancel")} stops it.`;
   if (normalized.kind === "goal" && state.goal) {
     updateGoal({
       status: "paused",
@@ -905,13 +907,16 @@ export function manuallyResumeMainModelRecovery(ctx: ExtensionContext): boolean 
   if (!recovery?.manualResumeRequired) return false;
   const current = modelRef(ctx.model);
   const now = Date.now();
+  const aggressive = (() => {
+    try { return resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).aggressiveMode; } catch { return false; }
+  })();
   state.mainModelRecovery = {
     ...recovery,
     active: current ?? recovery.active,
     attempted: current ? [current] : [],
     attempts: 0,
     firstFailureAt: new Date(now).toISOString(),
-    autoRetryUntil: mainModelAutoRetryUntil(now, MAIN_MODEL_AUTO_RETRY_HORIZON_MS),
+    autoRetryUntil: aggressive ? undefined : mainModelAutoRetryUntil(now, MAIN_MODEL_AUTO_RETRY_HORIZON_MS),
     retryAt: undefined,
     primaryProbeAt: undefined,
     primaryProbeInFlight: undefined,
@@ -924,7 +929,9 @@ export function manuallyResumeMainModelRecovery(ctx: ExtensionContext): boolean 
   clearMainModelRecoveryTimer();
   flags.continuationDispatchStoodDown = false;
   persistState(ctx);
-  ctx.ui.notify("Manual resume starts a fresh bounded main-model recovery window — one provider probe, then configured fallback models if needed.", "info");
+  ctx.ui.notify(aggressive
+    ? "Manual resume reopens event-driven main-model recovery — one provider probe, then configured fallback models as long as the failure remains recoverable."
+    : "Manual resume starts a fresh bounded main-model recovery window — one provider probe, then configured fallback models if needed.", "info");
   void probeMainModelRecovery(ctx);
   return true;
 }

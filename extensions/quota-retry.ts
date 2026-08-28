@@ -152,8 +152,8 @@ export function providerErrorPresentation(error: string | undefined, surface: Pr
   const action = surface === "completion"
     ? "The stored completion claim is safe; fix the provider/model, then resume to retry the auditor."
     : surface === "main"
-      ? "Automatic recovery remains bounded; wait for a later retry or switch to a configured backup model."
-      : "Automatic recovery remains bounded; wait for a later retry or switch models if needed.";
+      ? "Automatic recovery uses bounded per-attempt backoff; wait for a later retry or switch to a configured backup model."
+      : "Automatic recovery uses bounded per-attempt backoff; wait for a later retry or switch models if needed.";
   return {
     diagnostic,
     display,
