@@ -234,10 +234,14 @@ export function isSafeMechanicalCommand(command: string): boolean {
  * pipes, substitutions, redirects, and additional programs remain rejected.
  */
 function safeFileMarkerCompound(command: string): string[] | null {
-  const match = /^test\\s+-([sf])\\s+([A-Za-z0-9_./:@=+,-]+)\\s+&&\\s+grep\\s+-q\\s+(['"]?)([A-Za-z0-9_./:@=+,-]+)\\3\\s+([A-Za-z0-9_./:@=+,-]+)$/i.exec(command.trim());
+  const match = /^test\s+-([sf])\s+([A-Za-z0-9_./:@=+,-]+)\s+&&\s+grep\s+-q\s+(['"]?)([A-Za-z0-9_./:@=+,-]+)\3\s+([A-Za-z0-9_./:@=+,-]+)$/i.exec(command.trim());
   if (!match) return null;
   const [, flag, testPath, , marker, grepPath] = match;
   if (!testPath || !marker || !grepPath) return null;
+  // Do not let a literal become a second grep option or a test flag. The
+  // allowlisted assertion is for file paths and marker text, not option
+  // forwarding.
+  if ([testPath, marker, grepPath].some((value) => value.startsWith("-"))) return null;
   return [`test -${flag} ${testPath}`, `grep -q ${marker} ${grepPath}`];
 }
 
