@@ -14,6 +14,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import activate, { __testOnlyResetStaleFlag, __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
 import { requiresMainModelRecovery } from "../extensions/main-model-recovery.js";
+import { resetLengthContinue } from "../extensions/length-continue.js";
 import { readState } from "../extensions/goal-loop-core.js";
 import { auditMeasureCmd, AUDIT_FINDINGS_REL } from "../extensions/goal-loop-forever.js";
 import { MockPi, makeMockCtx, tmpCwd, seedState, seedLoop, tick, type MockCtx } from "./harness/mock-pi.js";
@@ -172,6 +173,26 @@ test("v0.34.31: extended quota errors enter durable main-model recovery", async 
   const r = loop(cwd);
   assert.equal(r.active, true, "manual resume starts one recovery probe");
   assert.equal(r.iteration, 41, "iteration preserved across resume");
+});
+
+test("v0.34.26: loop output-token exhaustion persists and notifies the compact recap", async () => {
+  __testOnlyResetStaleFlag();
+  resetLengthContinue();
+  const cwd = tmpCwd();
+  try {
+    const ctx = await sessionWithLoop(cwd, { measureCmd: "echo 1", direction: "max", bestValue: 1, lastValue: 1 });
+    const lengthEnd = { messages: [{ role: "assistant", content: [{ type: "text", text: "partial loop artifact…" }], stopReason: "length" }] };
+    for (let i = 0; i < 4; i++) {
+      await pi.fire("agent_end", lengthEnd, ctx);
+      await tick();
+    }
+    const l = loop(cwd);
+    assert.equal(l.active, false, "the loop stops after repeated truncation");
+    assert.match(l.stopReason ?? "", /output-token limit/);
+    assertCompactLoopRecap(ctx);
+  } finally {
+    resetLengthContinue();
+  }
 });
 
 test("v0.29.19: 3 consecutive user aborts stop the loop — user aborts mean STOP", async () => {

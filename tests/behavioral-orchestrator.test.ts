@@ -2509,6 +2509,23 @@ test("/loop cancel: first-class alias stops the loop (stopReason recorded)", asy
   assert.ok(recap, "loop cancel notification includes the compact six-label recap");
 });
 
+test("/loop finish persists and notifies the complete six-label recap", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, { loop: seedLoop({ active: true, iteration: 4, bestValue: 3, lastValue: 3 }) });
+  setGlobalAutoResume(true);
+  const ctx = await freshSession(cwd, "reload");
+  await pi.command("loop", "finish audit pass", ctx);
+  await tick();
+  const loop = readState(cwd).loop as { active: boolean; stopReason?: string; completionSummary?: string };
+  assert.equal(loop.active, false);
+  assert.equal(loop.stopReason, "completed: audit pass");
+  for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) assert.match(loop.completionSummary ?? "", new RegExp(label));
+  const recap = ctx.ui.notifies.find((notice) => notice.message.includes("Recap: Outcome:"));
+  assert.ok(recap, "finish notification includes the compact six-label recap");
+  assert.match(fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8"), /loop_completion_summary/);
+});
+
 test("one-active-thing tool guards: list_activate + propose_loop_draft + propose_goal_draft refuse over the wrong active kind", async () => {
   __testOnlyResetStaleFlag();
   // Active loop blocks list_activate and propose_goal_draft.
