@@ -31,6 +31,7 @@ import { clearDispatchRecord, dispatchRecordExists } from "./goal-loop-dispatch.
 import type { AuditDisplayProgress } from "./goal-loop-display.js";
 import { fmtElapsed } from "./goal-loop-display.js";
 import { AUDIT_FINDINGS_REL, HELD_ON_RESTORE, LOOP_AUDIT_MARKER, listAuditCollectTarget, projectAuditTarget } from "./goal-loop-forever.js";
+import { compactLoopCompletionSummary } from "./completion-summary.js";
 import { ProjectRollup, discoverGllaProjects, filterPremature, formatRollupJson, formatRollupTable, parseLedgerEntries, rollupProject } from "./goal-loop-stats.js";
 import { OVERRIDABLE_AGENT_TYPES, resolveEffectiveSubagentModel } from "./goal-loop-subagents.js";
 import { Settings, globalSettingsPath, loadSettings, projectSettingsPath, saveSettings, settingsProvenance } from "./goal-settings.js";
@@ -1895,6 +1896,9 @@ async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise
     dispatchSidecar: dispatchSidecarPresent,
   });
   const abortAfterWipe = !!live;
+  const loopWipeRecap = loop
+    ? compactLoopCompletionSummary({ ...loop, stopReason: "user wipe (/glla wipe)", completionSummary: undefined, historyLength: loop.history?.length ?? 0 })
+    : undefined;
   if (live) {
     // Do not abort here: wipe still has to clear queue sidecars and loop
     // state. The old early abort made a second /glla wipe appear necessary.
@@ -1933,7 +1937,16 @@ async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise
     const afterFinish = freshCtxForGeneration(wipeGeneration);
     if (!afterFinish) return;
     ctx = afterFinish;
-    appendLedger(ctx.cwd, "loop_stopped", { reason: "user wipe (/glla wipe)", iterations: loop.iteration, best: loop.bestValue });
+    if (loopWipeRecap) {
+      appendLedger(ctx.cwd, "loop_completion_summary", {
+        iteration: loop.iteration,
+        best: loop.bestValue,
+        reason: "user wipe (/glla wipe)",
+        recap: loopWipeRecap,
+        source: "durable-loop-wipe",
+      });
+    }
+    appendLedger(ctx.cwd, "loop_stopped", { reason: "user wipe (/glla wipe)", iterations: loop.iteration, best: loop.bestValue, recap: loopWipeRecap });
   }
   persistState(ctx);
   const failedCleanupCount = failedSidecars.length + failedCleanup.length;
@@ -1941,8 +1954,10 @@ async function cmdGllaWipe(ctx: ExtensionContext, entryChecked = false): Promise
     const failedLabels = [...failedSidecars.map(() => "queue sidecar"), ...failedCleanup].join(", ");
     ctx.ui.notify(`Wipe could not remove ${failedCleanupCount} live artifact(s) (${failedLabels}); the clean slate is incomplete.`, "warning");
   }
-  ctx.ui.notify(`glla wipe done: ${parts.join(" · ")}. ${failedCleanupCount > 0 ? "Partial clean slate — fix disk access and retry." : "Clean slate."}`, "info");
-  notifyExternal(ctx, failedCleanupCount > 0 ? "glla wipe incomplete — live cleanup needs attention." : "glla state wiped by user — clean slate.");
+  ctx.ui.notify(`glla wipe done: ${parts.join(" · ")}.${loopWipeRecap ? `\nLoop recap: ${loopWipeRecap}` : ""} ${failedCleanupCount > 0 ? "Partial clean slate — fix disk access and retry." : "Clean slate."}`, "info");
+  notifyExternal(ctx, failedCleanupCount > 0
+    ? `glla wipe incomplete — live cleanup needs attention.${loopWipeRecap ? ` Loop recap: ${loopWipeRecap}` : ""}`
+    : `glla state wiped by user — clean slate.${loopWipeRecap ? ` Loop recap: ${loopWipeRecap}` : ""}`);
   if (abortAfterWipe) ctx.abort();
 }
 

@@ -228,6 +228,7 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
+import { compactLoopCompletionSummary } from "../completion-summary.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -1357,9 +1358,12 @@ function resolveCarryover(ctx: ExtensionContext, trigger: "goal" | "loop" | "lis
   appendLedger(ctx.cwd, "carryover_resolved", { policy, trigger, cleared: done.length, waiting: waiting.length });
   const summary = [...done.map((d) => `✂ ${d}`), ...waiting.map((w) => `⏸ ${w}`)].join(" · ");
   if (!summary) return;
+  const clearedLoop = policy === "clear" && state.loop?.stopReason === "cleared: carryover"
+    ? compactLoopCompletionSummary({ ...state.loop, historyLength: state.loop.history?.length ?? 0 })
+    : undefined;
   ctx.ui.notify(
     policy === "clear"
-      ? `Carryover cleared (${trigger}): ${summary}`
+      ? `Carryover cleared (${trigger}): ${summary}${clearedLoop ? `\nLoop recap: ${clearedLoop}` : ""}`
       : `Carryover from before this session: ${summary}${waiting.length > 0 ? " — set Carryover = clear in /glla settings to drop these automatically." : ""}`,
     "info",
   );
