@@ -399,6 +399,7 @@ test("v0.34.96: complete_goal routes to aborted when completionSummary says 'alr
   const pi = new MockPi();
   activate(pi.api);
   __testOnlyRegisterAgentTools(pi.api);
+  const ctx = ownerCtx(cwd);
   rememberCtxFor(cwd);
   const res = await pi.runTool(
     "complete_goal",
@@ -406,7 +407,7 @@ test("v0.34.96: complete_goal routes to aborted when completionSummary says 'alr
       completionSummary: "Verified v0.34.74 already covers this — no new work shipped in this turn.",
       verificationSummary: "Evidence points to v0.34.74 commit history.",
     },
-    ownerCtx(cwd),
+    ctx,
   );
   assert.match(res.content[0]!.text, /routed to status=aborted/i);
   assert.match(res.content[0]!.text, /v0\.34\.74/, "the matched version is named in the response");
