@@ -837,7 +837,12 @@ export async function runDetachedCompletionWithFallback(
   opts: {
     shouldRetry?: () => boolean;
     sleep?: (ms: number) => Promise<void>;
-    onRetry?: (candidate: AuditorModelCandidate, error: string) => void;
+    resumeCandidateRef?: string;
+    attemptedRefs?: readonly string[];
+    retryCandidateRef?: string;
+    onAttempt?: (candidate: AuditorModelCandidate, info: import("../goal-loop-auditor-process.js").AuditorFallbackAttemptInfo) => boolean | void;
+    onRetry?: (candidate: AuditorModelCandidate, error: string, info?: import("../goal-loop-auditor-process.js").AuditorFallbackAttemptInfo) => boolean | void;
+    onCandidateExhausted?: (candidate: AuditorModelCandidate, error: string, info: import("../goal-loop-auditor-process.js").AuditorFallbackExhaustionInfo) => boolean | void;
     onFallback?: (from: AuditorModelCandidate, to: AuditorModelCandidate, error: string) => void;
     forbiddenRefs?: readonly string[];
     retryBaseMinutes?: number;
@@ -848,7 +853,12 @@ export async function runDetachedCompletionWithFallback(
     shouldRetry: opts.shouldRetry,
     sleep: opts.sleep,
     retryBaseMinutes: opts.retryBaseMinutes,
-    onRetry: (candidate, error) => opts.onRetry?.(candidate, error),
+    resumeCandidateRef: opts.resumeCandidateRef,
+    attemptedRefs: opts.attemptedRefs,
+    retryCandidateRef: opts.retryCandidateRef,
+    onAttempt: (candidate, info) => opts.onAttempt?.(candidate, info),
+    onRetry: (candidate, error, delayMs, info) => opts.onRetry?.(candidate, error, info),
+    onCandidateExhausted: (candidate, error, info) => opts.onCandidateExhausted?.(candidate, error, info),
     onFallback: (from, to, error) => opts.onFallback?.(from, to, error),
   });
 }

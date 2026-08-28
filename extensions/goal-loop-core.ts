@@ -236,6 +236,7 @@ export function sumNewAssistantTokens(messages: unknown[], seen: Set<string>): n
 }
 
 export type CompletionAuditPhase = "running" | "recovery-pending" | "retry-waiting" | "quota-waiting";
+export type AuditorRecoveryFailureClass = "transport" | "timeout" | "no-verdict" | "provider" | "exhausted";
 
 /** Durable completion claim metadata. The claim itself is the user's exact
  * completion assertion; the lifecycle fields make an interrupted isolated
@@ -278,6 +279,18 @@ export interface PendingCompletion {
   automaticRecoveryAttempts?: number;
   automaticRecoveryFirstAt?: string;
   automaticRecoveryUntil?: string;
+  /** v0.36.1: bounded detached-auditor candidate cursor. Refs are model
+   * identifiers only — never model objects or credentials. The current ref
+   * is retried at most once; attemptedRefs contains only candidates already
+   * exhausted before it. */
+  auditorCandidateRefs?: string[];
+  auditorCandidateRef?: string;
+  auditorAttemptedRefs?: string[];
+  /** 0 = first call in flight, 1 = first failure/retry in flight, 2 = a
+   * terminal second failure. State loading clamps this to [0, 2]. */
+  auditorFailureCount?: number;
+  auditorFailureClass?: AuditorRecoveryFailureClass;
+  auditorFailureAt?: string;
   /** Durable generic retry accounting; survives reloads and worker restarts. */
   retryAttempts?: number;
   retryFirstAt?: string;
@@ -1431,11 +1444,41 @@ function normalizePendingCompletion(value: unknown): PendingCompletion {
     retryAfterSec: _retryAfterSec,
     retryFromUpstream: _retryFromUpstream,
     resetAt: _resetAt,
+    auditorCandidateRefs: _auditorCandidateRefs,
+    auditorCandidateRef: _auditorCandidateRef,
+    auditorAttemptedRefs: _auditorAttemptedRefs,
+    auditorFailureCount: _auditorFailureCount,
+    auditorFailureClass: _auditorFailureClass,
+    auditorFailureAt: _auditorFailureAt,
     ...canonicalOrUnknown
   } = raw;
   const phase = raw.phase === "quota-waiting" ? "retry-waiting" : raw.phase;
+  const boundedRefs = (value: unknown): string[] | undefined => Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0).map((entry) => entry.trim()).slice(0, 10)
+    : undefined;
+  const auditorCandidateRefs = boundedRefs(_auditorCandidateRefs);
+  const auditorAttemptedRefs = boundedRefs(_auditorAttemptedRefs);
+  const auditorCandidateRef = typeof _auditorCandidateRef === "string" && _auditorCandidateRef.trim()
+    ? _auditorCandidateRef.trim().slice(0, 200)
+    : undefined;
+  const auditorFailureCount = typeof _auditorFailureCount === "number" && Number.isFinite(_auditorFailureCount)
+    ? Math.min(2, Math.max(0, Math.trunc(_auditorFailureCount)))
+    : undefined;
+  const auditorFailureClasses: AuditorRecoveryFailureClass[] = ["transport", "timeout", "no-verdict", "provider", "exhausted"];
+  const auditorFailureClass = typeof _auditorFailureClass === "string" && auditorFailureClasses.includes(_auditorFailureClass as AuditorRecoveryFailureClass)
+    ? _auditorFailureClass as AuditorRecoveryFailureClass
+    : undefined;
+  const auditorFailureAt = typeof _auditorFailureAt === "string" && _auditorFailureAt.trim()
+    ? _auditorFailureAt
+    : undefined;
   return {
     ...canonicalOrUnknown,
+    ...(auditorCandidateRefs !== undefined ? { auditorCandidateRefs } : {}),
+    ...(auditorCandidateRef ? { auditorCandidateRef } : {}),
+    ...(auditorAttemptedRefs !== undefined ? { auditorAttemptedRefs } : {}),
+    ...(auditorFailureCount !== undefined ? { auditorFailureCount } : {}),
+    ...(auditorFailureClass ? { auditorFailureClass } : {}),
+    ...(auditorFailureAt ? { auditorFailureAt } : {}),
     ...(phase === "running" || phase === "recovery-pending" || phase === "retry-waiting" ? { phase } : {}),
     ...(typeof raw.retryAttempts === "number"
       ? { retryAttempts: raw.retryAttempts }

@@ -178,8 +178,12 @@ export async function runAuditorFallbackWithPolicy(
     if (!byRef.has(key)) byRef.set(key, entry.candidate);
   }
   const scope = { kind: "auditor" } as const;
+  // The selector reads this indirection so a persisted in-flight candidate
+  // can be placed first without changing the configured ordering for normal
+  // runs. This is the only special case needed for restart recovery.
+  let selectionChain = refs;
   const selector = new ModelSelector({
-    getChain: () => refs,
+    getChain: () => selectionChain,
     resolve: (ref) => byRef.get(ref.toLowerCase())?.model,
     isForbidden: (ref) => isForbiddenModel(ref, opts.forbiddenRefs ?? []),
     record: opts.onSelection,
@@ -193,21 +197,56 @@ export async function runAuditorFallbackWithPolicy(
     try { return opts.shouldRetry(); } catch { return false; }
   };
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const sameRef = (left: string | undefined, right: string | undefined): boolean =>
+    !!left && !!right && left.toLowerCase() === right.toLowerCase();
+  const candidateRefs = refs.slice();
+  const resumeRef = opts.resumeCandidateRef?.trim() || opts.retryCandidateRef?.trim();
+  const resumeRetry = !!opts.retryCandidateRef
+    && !!resumeRef
+    && refs.some((ref) => sameRef(ref, opts.retryCandidateRef));
+  // A persisted cursor is deliberately bounded at the state boundary. Keep
+  // only refs that still belong to the current chain and let resumeRef win if
+  // a defensive caller supplied it in both lists.
+  for (const ref of opts.attemptedRefs ?? []) {
+    if (typeof ref !== "string" || !refs.some((candidateRef) => sameRef(candidateRef, ref))) continue;
+    if (!sameRef(ref, resumeRef)) addAttempted(ref);
+  }
+  let resumePending = !!resumeRef && refs.some((ref) => sameRef(ref, resumeRef));
   let currentRef: string | undefined;
   let retriedOnce = false;
   let fallbackUsed = false;
-  let failureAttempt = 0;
+  let failureAttempt = resumeRetry ? 1 : 0;
   let fallbackFrom: AuditorFallbackCandidate | undefined;
   let fallbackError: string | undefined;
   let fallbackDelayMs = 0;
   let pendingResult: GoalAuditorResult | undefined;
+
+  const failureClass = (result: GoalAuditorResult): AuditorInfrastructureClass => {
+    if (result.infrastructureClass) return result.infrastructureClass;
+    const error = result.error ?? "";
+    if (/^Auditor (?:exceeded|stalled)\b|\b(?:timed? ?out|timeout|inactivity)\b/i.test(error)) return "timeout";
+    if (/worker exited|produced no (?:output|verdict)|identity\/request-hash mismatch|invalid auditor|unsupported tool/i.test(error)) return "no-verdict";
+    if (/spawn|launch failed|transport|aborted/i.test(error)) return "transport";
+    return "provider";
+  };
+  const markExhausted = (result: GoalAuditorResult): GoalAuditorResult => ({ ...result, fallbackExhausted: true });
+  const cursorPersistenceFailure = (candidate: AuditorFallbackCandidate): GoalAuditorResult => ({
+    approved: false,
+    disapproved: false,
+    output: "",
+    model: modelRef(candidate.model) ?? "",
+    error: "auditor recovery cursor persistence failed",
+    infrastructureClass: "transport",
+  });
+  const callbackAccepted = (accepted: boolean | void): boolean => accepted !== false;
   const noCandidateResult = (): GoalAuditorResult => ({
     approved: false,
     disapproved: false,
     output: "",
     model: modelRef(sequence[0]!.model) ?? "",
-    error: ["no auditor", "model"].join(" "),
+    error: "no auditor model",
     infrastructureClass: "no-verdict",
+    fallbackExhausted: true,
   });
 
   for (;;) {
@@ -215,13 +254,19 @@ export async function runAuditorFallbackWithPolicy(
     // composes the same helper while adding the forbidden/unregistered walk.
     if (nextUntriedModelRef(currentRef, refs, attempted) === undefined) {
       const last = pendingResult ?? noCandidateResult();
-      return { result: last, retriedOnce, fallbackUsed, via: fallbackFrom?.via ?? sequence[0]!.via };
+      return { result: markExhausted(last), retriedOnce, fallbackUsed, via: fallbackFrom?.via ?? sequence[0]!.via };
     }
+
+    // Prefer the persisted candidate once. If it was removed, forbidden, or
+    // unregistered, the selector records that fact and resumes normal order.
+    selectionChain = resumePending ? [resumeRef!, ...refs.filter((ref) => !sameRef(ref, resumeRef))] : refs;
     const selected = selector.selectNextValid(scope, currentRef, attempted);
+    selectionChain = refs;
+    resumePending = false;
     for (const visited of selector.lastVisitedRefs) addAttempted(visited);
     if (!("model" in selected) || typeof selected.ref !== "string") {
       const result = pendingResult ?? noCandidateResult();
-      return { result, retriedOnce, fallbackUsed, via: fallbackFrom?.via ?? sequence[0]!.via };
+      return { result: markExhausted(result), retriedOnce, fallbackUsed, via: fallbackFrom?.via ?? sequence[0]!.via };
     }
     const selectedRef = selected.ref;
     const candidate = byRef.get(selectedRef.toLowerCase());
@@ -230,6 +275,8 @@ export async function runAuditorFallbackWithPolicy(
       currentRef = selectedRef;
       continue;
     }
+    const isRetryAttempt = resumeRetry && sameRef(selectedRef, opts.retryCandidateRef);
+    const attemptedBefore = attempted.filter((ref) => !sameRef(ref, selectedRef));
     addAttempted(selectedRef);
     if (fallbackFrom) {
       fallbackUsed = true;
@@ -239,7 +286,22 @@ export async function runAuditorFallbackWithPolicy(
       fallbackDelayMs = 0;
     }
 
+    const firstInfo: AuditorFallbackAttemptInfo = {
+      candidateRef: selectedRef,
+      candidateRefs: candidateRefs.slice(),
+      attemptedRefs: attemptedBefore.slice(),
+      attempt: isRetryAttempt ? 2 : 1,
+      failureCount: isRetryAttempt ? 1 : 0,
+    };
+    if (!callbackAccepted(opts.onAttempt?.(candidate, firstInfo))) {
+      return { result: cursorPersistenceFailure(candidate), retriedOnce, fallbackUsed, via: candidate.via };
+    }
+    if (isRetryAttempt && !isLive()) {
+      return { result: cursorPersistenceFailure(candidate), retriedOnce, fallbackUsed, via: candidate.via };
+    }
+
     pendingResult = undefined;
+    if (isRetryAttempt) retriedOnce = true;
     const first = await run(candidate);
     if (first.approved || first.disapproved || first.impossible || !first.error) {
       return { result: first, retriedOnce, fallbackUsed, via: candidate.via };
@@ -248,36 +310,116 @@ export async function runAuditorFallbackWithPolicy(
     if (!isRetriableInfraError(first.error) || !isMainModelFallbackFailure(failure)) {
       return { result: first, retriedOnce, fallbackUsed, via: candidate.via };
     }
-    failureAttempt += 1;
-    if (!isLive()) return { result: first, retriedOnce, fallbackUsed, via: candidate.via };
-    const retryDelayMs = mainModelFailureDelayMs(failure, failureAttempt, opts.retryBaseMinutes ?? 15);
-    opts.onRetry?.(candidate, first.error, retryDelayMs);
-    await sleep(retryDelayMs);
-    if (!isLive()) return { result: first, retriedOnce, fallbackUsed, via: candidate.via };
 
-    const second = await run(candidate);
-    pendingResult = second;
-    retriedOnce = true;
-    if (second.approved || second.disapproved || second.impossible || !second.error) {
-      return { result: second, retriedOnce, fallbackUsed, via: candidate.via };
+    if (!isRetryAttempt) {
+      failureAttempt += 1;
+      if (!isLive()) return { result: first, retriedOnce, fallbackUsed, via: candidate.via };
+      const retryDelayMs = mainModelFailureDelayMs(failure, failureAttempt, opts.retryBaseMinutes ?? 15);
+      const retryInfo: AuditorFallbackAttemptInfo = {
+        ...firstInfo,
+        failureCount: 1,
+        failureClass: failureClass(first),
+      };
+      if (!callbackAccepted(opts.onRetry?.(candidate, first.error, retryDelayMs, retryInfo))) {
+        return { result: cursorPersistenceFailure(candidate), retriedOnce, fallbackUsed, via: candidate.via };
+      }
+      await sleep(retryDelayMs);
+      if (!isLive()) return { result: first, retriedOnce, fallbackUsed, via: candidate.via };
+
+      const secondInfo: AuditorFallbackAttemptInfo = {
+        ...firstInfo,
+        attempt: 2,
+        failureCount: 1,
+        failureClass: failureClass(first),
+      };
+      if (!callbackAccepted(opts.onAttempt?.(candidate, secondInfo))) {
+        return { result: cursorPersistenceFailure(candidate), retriedOnce, fallbackUsed, via: candidate.via };
+      }
+      const second = await run(candidate);
+      pendingResult = second;
+      retriedOnce = true;
+      if (second.approved || second.disapproved || second.impossible || !second.error) {
+        return { result: second, retriedOnce, fallbackUsed, via: candidate.via };
+      }
+      failure = classifyMainModelFailure(second.error);
+      if (!isRetriableInfraError(second.error) || !isMainModelFallbackFailure(failure)) {
+        return { result: second, retriedOnce, fallbackUsed, via: candidate.via };
+      }
+      currentRef = selectedRef;
+      const nextRef = nextUntriedModelRef(currentRef, refs, attempted);
+      failureAttempt += 1;
+      fallbackDelayMs = mainModelFailureDelayMs(failure, failureAttempt, opts.retryBaseMinutes ?? 15);
+      const exhaustedInfo: AuditorFallbackExhaustionInfo = {
+        candidateRef: selectedRef,
+        candidateRefs: candidateRefs.slice(),
+        attemptedRefs: attempted.slice(),
+        ...(nextRef ? { nextCandidateRef: nextRef } : {}),
+        failureClass: failureClass(second),
+        delayMs: nextRef ? fallbackDelayMs : 0,
+      };
+      if (!callbackAccepted(opts.onCandidateExhausted?.(candidate, second.error, exhaustedInfo))) {
+        return { result: cursorPersistenceFailure(candidate), retriedOnce, fallbackUsed, via: candidate.via };
+      }
+      if (nextRef === undefined) {
+        return { result: markExhausted(second), retriedOnce, fallbackUsed, via: candidate.via };
+      }
+      if (!isLive()) return { result: second, retriedOnce, fallbackUsed, via: candidate.via };
+      await sleep(fallbackDelayMs);
+      if (!isLive()) return { result: second, retriedOnce, fallbackUsed, via: candidate.via };
+      fallbackFrom = candidate;
+      fallbackError = second.error;
+      continue;
     }
-    failure = classifyMainModelFailure(second.error);
-    if (!isRetriableInfraError(second.error) || !isMainModelFallbackFailure(failure)) {
-      return { result: second, retriedOnce, fallbackUsed, via: candidate.via };
-    }
+
+    // A restart resumed the already-authorized second attempt. Do not grant a
+    // third call to the same candidate: advance through the chain now.
     currentRef = selectedRef;
     const nextRef = nextUntriedModelRef(currentRef, refs, attempted);
-    if (nextRef === undefined) {
-      return { result: second, retriedOnce, fallbackUsed, via: candidate.via };
-    }
     failureAttempt += 1;
-    fallbackDelayMs = mainModelFailureDelayMs(failure, failureAttempt, opts.retryBaseMinutes ?? 15);
-    if (!isLive()) return { result: second, retriedOnce, fallbackUsed, via: candidate.via };
+    const exhaustedInfo: AuditorFallbackExhaustionInfo = {
+      candidateRef: selectedRef,
+      candidateRefs: candidateRefs.slice(),
+      attemptedRefs: attempted.slice(),
+      ...(nextRef ? { nextCandidateRef: nextRef } : {}),
+      failureClass: failureClass(first),
+      delayMs: nextRef ? mainModelFailureDelayMs(failure, failureAttempt, opts.retryBaseMinutes ?? 15) : 0,
+    };
+    if (!callbackAccepted(opts.onCandidateExhausted?.(candidate, first.error, exhaustedInfo))) {
+      return { result: cursorPersistenceFailure(candidate), retriedOnce, fallbackUsed, via: candidate.via };
+    }
+    if (nextRef === undefined) {
+      return { result: markExhausted(first), retriedOnce, fallbackUsed, via: candidate.via };
+    }
+    if (!isLive()) return { result: first, retriedOnce, fallbackUsed, via: candidate.via };
+    fallbackDelayMs = exhaustedInfo.delayMs;
     await sleep(fallbackDelayMs);
-    if (!isLive()) return { result: second, retriedOnce, fallbackUsed, via: candidate.via };
+    if (!isLive()) return { result: first, retriedOnce, fallbackUsed, via: candidate.via };
     fallbackFrom = candidate;
-    fallbackError = second.error;
+    fallbackError = first.error;
   }
+}
+
+/** Return the same bounded, de-duplicated refs that the runtime fallback
+ * walker will use. Persisting refs rather than model objects keeps recovery
+ * portable across host restarts and avoids serializing provider credentials. */
+export function auditorCandidateRefs(candidates: AuditorFallbackCandidate[]): string[] {
+  return normalizeMainModelFallbackRefs(candidates.map((candidate, index) =>
+    candidate.ref?.trim() || modelRef(candidate.model) || `auditor/candidate-${index}`,
+  ));
+}
+
+/** Classify the final failure without trusting provider prose when the worker
+ * already supplied a concrete transport class. `fallbackExhausted` is kept
+ * separate so callers can distinguish a provider timeout from an exhausted
+ * candidate chain. */
+export function auditorResultFailureClass(result: GoalAuditorResult): AuditorRecoveryFailureClass {
+  if (result.fallbackExhausted) return "exhausted";
+  if (result.infrastructureClass) return result.infrastructureClass;
+  const error = result.error ?? "";
+  if (/^Auditor (?:exceeded|stalled)\b|\b(?:timed? ?out|timeout|inactivity)\b/i.test(error)) return "timeout";
+  if (/worker exited|produced no (?:output|verdict)|identity\/request-hash mismatch|invalid auditor|unsupported tool/i.test(error)) return "no-verdict";
+  if (/spawn|launch failed|transport|aborted/i.test(error)) return "transport";
+  return "provider";
 }
 
 // The detached auditor intentionally exposes the full inspection/tooling
