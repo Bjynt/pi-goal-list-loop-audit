@@ -867,9 +867,9 @@ export async function runDetachedCompletionWithFallback(
     resumeCandidateRef?: string;
     attemptedRefs?: readonly string[];
     retryCandidateRef?: string;
-    onAttempt?: (candidate: AuditorModelCandidate, info: import("../goal-loop-auditor-process.js").AuditorFallbackAttemptInfo) => boolean | void;
-    onRetry?: (candidate: AuditorModelCandidate, error: string, info?: import("../goal-loop-auditor-process.js").AuditorFallbackAttemptInfo) => boolean | void;
-    onCandidateExhausted?: (candidate: AuditorModelCandidate, error: string, info: import("../goal-loop-auditor-process.js").AuditorFallbackExhaustionInfo) => boolean | void;
+    onAttempt?: (candidate: AuditorModelCandidate, info: AuditorFallbackAttemptInfo) => boolean | void;
+    onRetry?: (candidate: AuditorModelCandidate, error: string, info?: AuditorFallbackAttemptInfo) => boolean | void;
+    onCandidateExhausted?: (candidate: AuditorModelCandidate, error: string, info: AuditorFallbackExhaustionInfo) => boolean | void;
     onFallback?: (from: AuditorModelCandidate, to: AuditorModelCandidate, error: string) => void;
     forbiddenRefs?: readonly string[];
     retryBaseMinutes?: number;
@@ -1006,12 +1006,101 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
         shouldRetry: () => detachedAuditContext(generation, goalId, claim.attemptId!) !== null,
         forbiddenRefs: settings.forbiddenModels,
         retryBaseMinutes: settings.mainModelRetryMinutes,
-        onRetry: (candidate, err) => {
+        resumeCandidateRef: claim.auditorCandidateRef,
+        attemptedRefs: claim.auditorAttemptedRefs,
+        retryCandidateRef: claim.auditorRetryCandidateRef,
+        onAttempt: (candidate, info) => persistDetachedAuditorCursor(
+          generation,
+          goalId,
+          claim.attemptId!,
+          info,
+          {
+            auditorCandidateRef: info.candidateRef,
+            auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
+            ...(info.failureCount === 0 ? {
+              auditorRetryCandidateRef: undefined,
+              auditorFailureClass: undefined,
+              auditorFailureAt: undefined,
+            } : {}),
+            auditorFailureCount: Math.min(2, Math.max(0, info.failureCount)),
+          },
+        ),
+        onRetry: (candidate, err, info) => {
+          if (!info) return false;
+          const persisted = persistDetachedAuditorCursor(
+            generation,
+            goalId,
+            claim.attemptId!,
+            info,
+            {
+              auditorCandidateRef: info.candidateRef,
+              auditorRetryCandidateRef: info.candidateRef,
+              auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
+              auditorFailureCount: 1,
+              auditorFailureClass: info.failureClass ?? "provider",
+              auditorFailureAt: new Date().toISOString(),
+            },
+          );
+          if (!persisted) return false;
           const current = detachedAuditContext(generation, goalId, claim.attemptId!);
           if (current) {
             const failureCopy = providerErrorPresentation(err, "completion");
-            appendLedger(current.cwd, "audit_infra_retry", { goalId, model: auditorCandidateLabel(candidate), error: failureCopy.diagnostic.slice(0, 200), diagnostic: failureCopy.diagnostic, display: failureCopy.display });
+            appendLedger(current.cwd, "audit_infra_retry", {
+              goalId,
+              model: auditorCandidateLabel(candidate),
+              error: failureCopy.diagnostic.slice(0, 200),
+              diagnostic: failureCopy.diagnostic,
+              display: failureCopy.display,
+              candidateRef: info.candidateRef,
+              failureClass: info.failureClass ?? "provider",
+            });
           }
+          return true;
+        },
+        onCandidateExhausted: (candidate, err, info) => {
+          const next = info.nextCandidateRef;
+          const persisted = persistDetachedAuditorCursor(
+            generation,
+            goalId,
+            claim.attemptId!,
+            info,
+            next
+              ? {
+                auditorCandidateRef: next,
+                auditorRetryCandidateRef: undefined,
+                auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
+                auditorFailureCount: 0,
+                auditorFailureClass: undefined,
+                auditorFailureAt: undefined,
+              }
+              : {
+                auditorCandidateRef: undefined,
+                auditorRetryCandidateRef: undefined,
+                auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
+                auditorFailureCount: 2,
+                auditorFailureClass: "exhausted",
+                auditorFailureAt: new Date().toISOString(),
+              },
+          );
+          if (!persisted) return false;
+          const current = detachedAuditContext(generation, goalId, claim.attemptId!);
+          if (current) {
+            const failureCopy = providerErrorPresentation(err, "completion");
+            appendLedger(current.cwd, "auditor_candidate_exhausted", {
+              goalId,
+              model: auditorCandidateLabel(candidate),
+              candidateRef: info.candidateRef,
+              nextCandidateRef: next,
+              attemptedRefs: info.attemptedRefs.slice(0, 10),
+              candidateRefs: info.candidateRefs.slice(0, 10),
+              failureClass: info.failureClass,
+              error: failureCopy.diagnostic.slice(0, 200),
+              diagnostic: failureCopy.diagnostic,
+              display: failureCopy.display,
+              fallbackExhausted: !next,
+            });
+          }
+          return true;
         },
         onFallback: (from, to, err) => {
           const current = detachedAuditContext(generation, goalId, claim.attemptId!);
