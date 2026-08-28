@@ -3062,12 +3062,17 @@ test("v0.35.x: provider-wall diagnostics stay durable while completion surfaces 
       verificationSummary: "The detached auditor returns a synthetic provider wall.",
     }, ctx);
     assert.doesNotMatch(result.content.map((part) => part.text).join("\\n"), /429|Token Plan|abc123/, "the immediate completion-tool result never dumps the provider payload");
-    await waitUntil(() => (readState(cwd).goal as { status?: string; pendingCompletion?: { phase?: string } } | null)?.pendingCompletion?.phase === "retry-waiting", 12_000);
-    const parked = readState(cwd).goal as { pauseReason?: string; providerErrorDiagnostic?: string; pendingCompletion?: { providerErrorDiagnostic?: string; recoveryNoticeKeys?: string[] } };
+    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "auditor_fallback_exhausted"), 30_000);
+    const parked = readState(cwd).goal as { status?: string; pauseKind?: string; pauseResumeAt?: string; pauseReason?: string; providerErrorDiagnostic?: string; pendingCompletion?: { phase?: string; providerErrorDiagnostic?: string; recoveryNoticeKeys?: string[]; auditorFallbackExhausted?: boolean; recoveryRetryAt?: string } };
+    assert.equal(parked.status, "paused");
+    assert.equal(parked.pauseKind, "error");
+    assert.equal(parked.pendingCompletion?.phase, "recovery-pending");
+    assert.equal(parked.pendingCompletion?.auditorFallbackExhausted, true, "the bounded candidate chain parks after its authorized retry");
+    assert.equal(parked.pendingCompletion?.recoveryRetryAt, undefined, "an exhausted chain has no automatic timer");
+    assert.equal(parked.pauseResumeAt, undefined, "an exhausted chain has no pause deadline");
     assert.doesNotMatch(`${parked.pauseReason ?? ""} ${ctx.ui.notifies.map((notice) => notice.message).join("\\n")}`, /429|Token Plan|abc123/, "recovery notifications and pause copy are sanitized");
     assert.match(parked.providerErrorDiagnostic ?? "", /Token Plan/);
     assert.match(parked.pendingCompletion?.providerErrorDiagnostic ?? "", /429/);
-    assert.equal(parked.pendingCompletion?.recoveryNoticeKeys?.filter((key) => key.endsWith(":retry-wait")).length, 1, "the retry notice is durably claimed once for the episode");
     const ledger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
     assert.match(ledger, /Token Plan/);
     assert.match(ledger, /429/);
@@ -3177,8 +3182,14 @@ test("v0.35.x: bare 403 completion diagnostics stay durable while completion sur
       verificationSummary: "The detached auditor returns a synthetic HTTP error.",
     }, ctx);
     assert.doesNotMatch(result.content.map((part) => part.text).join("\\n"), /403|upstream denied|auth-sensitive-id/, "completion-tool output is sanitized");
-    await waitUntil(() => (readState(cwd).goal as { pendingCompletion?: { phase?: string } } | null)?.pendingCompletion?.phase === "retry-waiting", 12_000);
-    const parked = readState(cwd).goal as { pauseReason?: string; pauseSuggestedAction?: string; providerErrorDiagnostic?: string; pendingCompletion?: { providerErrorDiagnostic?: string } };
+    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "auditor_fallback_exhausted"), 30_000);
+    const parked = readState(cwd).goal as { status?: string; pauseKind?: string; pauseResumeAt?: string; pauseReason?: string; pauseSuggestedAction?: string; providerErrorDiagnostic?: string; pendingCompletion?: { phase?: string; providerErrorDiagnostic?: string; auditorFallbackExhausted?: boolean; recoveryRetryAt?: string } };
+    assert.equal(parked.status, "paused");
+    assert.equal(parked.pauseKind, "error");
+    assert.equal(parked.pendingCompletion?.phase, "recovery-pending");
+    assert.equal(parked.pendingCompletion?.auditorFallbackExhausted, true);
+    assert.equal(parked.pendingCompletion?.recoveryRetryAt, undefined, "exhaustion does not re-arm generic recovery");
+    assert.equal(parked.pauseResumeAt, undefined);
     const liveCopy = [parked.pauseReason, parked.pauseSuggestedAction, ...ctx.ui.notifies.map((notice) => notice.message)].filter(Boolean).join("\\n");
     assert.doesNotMatch(liveCopy, /403|upstream denied|auth-sensitive-id/, "completion recovery copy is sanitized");
     assert.match(parked.providerErrorDiagnostic ?? "", /403|auth-sensitive-id/, "completion goal diagnostic remains durable");
@@ -3789,24 +3800,21 @@ test("v0.35.x: no-verdict auditor infrastructure failure schedules one durable a
     await pi.command("goal", "recover a no-verdict auditor failure — done when pinned", ctx);
     await tick();
     await pi.runTool("complete_goal", { completionSummary: "Stored claim", verificationSummary: "Stored evidence" }, ctx);
-    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "audit_recovery_retry_scheduled"), 30_000);
+    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "auditor_fallback_exhausted"), 30_000);
 
-    const parked = readState(cwd).goal as { status?: string; pauseKind?: string; pauseResumeAt?: string; pendingCompletion?: { phase?: string; recoveryRetryAt?: string; automaticRecoveryAttempted?: boolean } } | null;
+    const parked = readState(cwd).goal as { status?: string; pauseKind?: string; pauseResumeAt?: string; pendingCompletion?: { phase?: string; recoveryRetryAt?: string; automaticRecoveryAttempted?: boolean; auditorFallbackExhausted?: boolean; auditorFailureClass?: string } } | null;
     assert.equal(parked?.status, "paused");
     assert.equal(parked?.pendingCompletion?.phase, "recovery-pending");
-    assert.equal(parked?.pauseKind, "wait", "the no-verdict hold has a bounded recovery timer, not an indefinite manual block");
-    assert.ok(parked?.pauseResumeAt);
-    assert.equal(parked?.pendingCompletion?.recoveryRetryAt, parked?.pauseResumeAt);
+    assert.equal(parked?.pauseKind, "error", "an exhausted no-verdict chain requires explicit resume");
+    assert.equal(parked?.pauseResumeAt, undefined);
+    assert.equal(parked?.pendingCompletion?.recoveryRetryAt, undefined);
     assert.equal(parked?.pendingCompletion?.automaticRecoveryAttempted, false);
+    assert.equal(parked?.pendingCompletion?.auditorFallbackExhausted, true);
+    assert.ok(parked?.pendingCompletion?.auditorFailureClass, "the concrete infrastructure class remains durable");
 
-    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "audit_recovery_started"));
-    const retrying = readState(cwd).goal as { status?: string; pendingCompletion?: { phase?: string; automaticRecoveryAttempted?: boolean } } | null;
-    assert.equal(retrying?.status, "auditing");
-    assert.equal(retrying?.pendingCompletion?.phase, "running");
-    assert.equal(retrying?.pendingCompletion?.automaticRecoveryAttempted, true);
     const ledger = readLedger(cwd);
-    assert.equal(ledger.filter((entry) => entry.type === "audit_recovery_auto_retry_claimed").length, 1);
-    assert.equal(ledger.filter((entry) => entry.type === "audit_recovery_retry_scheduled").length, 1, "the one-shot recovery is not re-armed by its own retry");
+    assert.equal(ledger.filter((entry) => entry.type === "audit_recovery_auto_retry_claimed").length, 0, "exhaustion does not arm a generic automatic recovery");
+    assert.equal(ledger.filter((entry) => entry.type === "audit_recovery_retry_scheduled").length, 0, "the exhausted chain has no automatic retry timer");
   } finally {
     // Clean up even when an assertion/timeout fails; otherwise a detached
     // fake auditor can poison the next recovery test in this shared process.
@@ -3820,7 +3828,7 @@ test("v0.35.x: no-verdict auditor infrastructure failure schedules one durable a
   }
 });
 
-test("v0.36.0: aggressive mode keeps no-verdict auditor recovery alive without a wall-clock horizon", { timeout: 240_000 }, async () => {
+test("v0.36.0: aggressive mode parks an exhausted no-verdict auditor chain", { timeout: 60_000 }, async () => {
   // v0.35.15: budget raised 30s→60s — this real-timer test observed 23s on
   // a busy machine (the auditor's own release:check ran concurrently with
   // an active session) and blew the per-test ceiling, fast-failing the
@@ -3845,37 +3853,31 @@ test("v0.36.0: aggressive mode keeps no-verdict auditor recovery alive without a
     await tick();
     await pi.runTool("complete_goal", { completionSummary: "Stored claim", verificationSummary: "Stored evidence" }, ctx);
 
-    await waitUntil(() => readLedger(cwd).filter((entry) => entry.type === "audit_recovery_retry_scheduled").length >= 2, 90_000);
-    await waitUntil(() => readLedger(cwd).filter((entry) => entry.type === "audit_recovery_auto_retry_claimed").length >= 2, 45_000);
+    await waitUntil(() => readLedger(cwd).some((entry) => entry.type === "auditor_fallback_exhausted"), 30_000);
 
     const persisted = readState(cwd).goal as {
+      status?: string;
+      pauseKind?: string;
+      pauseResumeAt?: string;
       pendingCompletion?: {
-        automaticRecoveryAttempted?: boolean;
+        phase?: string;
+        auditorFallbackExhausted?: boolean;
+        auditorFailureClass?: string;
+        recoveryRetryAt?: string;
         automaticRecoveryAttempts?: number;
-        automaticRecoveryFirstAt?: string;
         automaticRecoveryUntil?: string;
       };
     } | null;
-    assert.equal(persisted?.pendingCompletion?.automaticRecoveryAttempted, true);
-    assert.ok((persisted?.pendingCompletion?.automaticRecoveryAttempts ?? 0) >= 2, "retries are counted durably");
-    assert.ok(persisted?.pendingCompletion?.automaticRecoveryFirstAt, "the aggressive recovery start is durable");
-    assert.equal(persisted?.pendingCompletion?.automaticRecoveryUntil, undefined, "aggressive recovery does not persist a wall-clock horizon");
-
-    // Turning aggressive mode off while a retry is waiting must leave a
-    // truthful blocked card, not an expired wait deadline with no timer.
-    await waitUntil(() => {
-      const goal = readState(cwd).goal as { status?: string; pendingCompletion?: { recoveryRetryAt?: string } } | null;
-      return goal?.status === "paused" && !!goal.pendingCompletion?.recoveryRetryAt;
-    }, 20_000);
-    fs.writeFileSync(path.join(cwd, ".pi-glla", "settings.json"), JSON.stringify({ aggressiveMode: false }));
-    await waitUntil(() => {
-      const goal = readState(cwd).goal as { status?: string; pauseKind?: string; pauseResumeAt?: string; pendingCompletion?: { recoveryRetryAt?: string } } | null;
-      return goal?.status === "paused"
-        && goal.pauseKind === "blocked"
-        && !goal.pauseResumeAt
-        && !goal.pendingCompletion?.recoveryRetryAt;
-    }, 30_000);
-    assert.ok(readLedger(cwd).some((entry) => entry.type === "audit_recovery_retry_suppressed" && entry.value.reason === "aggressive-mode-disabled"));
+    assert.equal(persisted?.status, "paused");
+    assert.equal(persisted?.pauseKind, "error");
+    assert.equal(persisted?.pauseResumeAt, undefined);
+    assert.equal(persisted?.pendingCompletion?.phase, "recovery-pending");
+    assert.equal(persisted?.pendingCompletion?.auditorFallbackExhausted, true);
+    assert.equal(persisted?.pendingCompletion?.recoveryRetryAt, undefined);
+    assert.ok(persisted?.pendingCompletion?.auditorFailureClass, "aggressive mode preserves the concrete failure class");
+    assert.equal(persisted?.pendingCompletion?.automaticRecoveryAttempts, undefined, "candidate fallback is not a second generic recovery horizon");
+    assert.equal(persisted?.pendingCompletion?.automaticRecoveryUntil, undefined);
+    assert.equal(readLedger(cwd).filter((entry) => entry.type === "audit_recovery_retry_scheduled").length, 0, "aggressive mode does not retry an exhausted candidate chain");
   } finally {
     if (ctx) await pi.fire("session_shutdown", { reason: "quit" }, ctx).catch(() => {});
     pi.sendMessageError = null;

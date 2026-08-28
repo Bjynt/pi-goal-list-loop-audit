@@ -65,7 +65,7 @@ test("v0.36.0: aggressive recovery has no wall-clock episode horizon", () => {
   assert.match(RECOVERY, /!aggressive && Number\.isFinite\(deadlineMs\)/);
   assert.match(RECOVERY, /autoRetryUntil: aggressive \? undefined : mainModelAutoRetryUntil/);
   assert.match(RECOVERY, /adaptive backoff for as long as it remains recoverable/);
-  assert.match(SRC, /auditorRetryPlan\(claim, undefined, undefined, aggressive\)/);
+  assert.match(SRC, /auditorRetryPlan\(durableClaim, undefined, undefined, aggressive\)/);
   assert.match(SRC.replace(/\s+/g, " "), /aggressive \|\| \(attempt < MAX_AUDITOR_AUTO_RETRY_ATTEMPTS/);
 });
 
