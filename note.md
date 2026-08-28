@@ -9,6 +9,10 @@ research-only; no adoption or runtime change was made.
 
 # Next
 
+## list execution is stalling, list queued
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260828_124432.png 
+
 ## explore subagent shown as valid session to load 
 
 is it our bug or tin tin subagents 
