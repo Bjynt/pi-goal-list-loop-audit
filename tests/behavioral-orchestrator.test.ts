@@ -3808,7 +3808,7 @@ test("v0.35.x: no-verdict auditor infrastructure failure schedules one durable a
     assert.equal(parked?.pauseKind, "error", "an exhausted no-verdict chain requires explicit resume");
     assert.equal(parked?.pauseResumeAt, undefined);
     assert.equal(parked?.pendingCompletion?.recoveryRetryAt, undefined);
-    assert.equal(parked?.pendingCompletion?.automaticRecoveryAttempted, false);
+    assert.equal(parked?.pendingCompletion?.automaticRecoveryAttempted, undefined);
     assert.equal(parked?.pendingCompletion?.auditorFallbackExhausted, true);
     assert.ok(parked?.pendingCompletion?.auditorFailureClass, "the concrete infrastructure class remains durable");
 
