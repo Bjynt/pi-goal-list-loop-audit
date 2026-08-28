@@ -7,7 +7,12 @@ Active list drained — `goal:null list:0`. Last two items both auditor-approved
 No active follow-up; awaiting next list. The pi-goal-x comparison was
 research-only; no adoption or runtime change was made.
 
+# Next
 
+## explore subagent shown as valid session to load 
+
+is it our bug or tin tin subagents 
+/home/dracon/Pictures/Screenshots/Screenshot_20260828_063011.png 
 
 # Done
 
@@ -20,13 +25,13 @@ Keep only the three most recent completions here; older history lives in
 
 # Later
 
-## explore subagent shown as valid session to load 
-
-is it our bug or tin tin subagents 
-/home/dracon/Pictures/Screenshots/Screenshot_20260828_063011.png 
-
 ##
 _(none — follow-up candidates from the pi-goal-x report are explicitly research-only until separately scoped.)
+
+## nvidia AVO careful consideration 
+
+we have prs too it too but apparently incomplete
+https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
 
 # Idea
 
