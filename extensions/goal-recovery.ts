@@ -19,7 +19,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { state } from "./goal-state.js";
-import { appendLedger, claimRecoveryNotice, nowIso, piGlaDir, isForbiddenModel, isStaleApiError, nextHourlyProbeMs, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderDisplayText, supervisorPaused, writeGoalMd, type Goal, type MainModelRecovery, type PendingCompletion } from "./goal-loop-core.js";
+import { appendLedger, claimRecoveryNotice, nowIso, piGlaDir, isForbiddenModel, isStaleApiError, nextHourlyProbeMs, providerErrorFingerprint, providerErrorPresentation, resolveEffectiveAggressiveSettings, sanitizeProviderDisplayText, supervisorPaused, writeGoalMd, type Goal, type MainModelRecovery, type PendingCompletion } from "./goal-loop-core.js";
 import { persistStateLine } from "./goal-state.js";
 import { cancelDetachedGoalCompletionAuditor } from "./goal-loop-auditor-process.js";
 import {
@@ -665,8 +665,14 @@ export async function tryMainModelFallback(ctx: ExtensionContext, failure: MainM
 }
 
 export function setMainModelRecoveryPause(ctx: ExtensionContext, recovery: MainModelRecovery, delayMs: number): boolean {
+  const aggressive = (() => {
+    try { return resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).aggressiveMode; } catch { return false; }
+  })();
   const normalizedBase = withMainModelRecoveryWindow(recovery);
-  const diagnostic = normalizedBase.providerErrorDiagnostic ?? normalizedBase.reason;
+  // Aggressive automation has no wall-clock episode expiry. The per-attempt
+  // delay remains bounded, and explicit/non-recoverable stops still win.
+  const normalizedRecovery = aggressive ? { ...normalizedBase, autoRetryUntil: undefined } : normalizedBase;
+  const diagnostic = normalizedRecovery.providerErrorDiagnostic ?? normalizedRecovery.reason;
   const presentation = providerErrorPresentation(diagnostic, "main");
   const normalized: MainModelRecovery = {
     ...normalizedBase,

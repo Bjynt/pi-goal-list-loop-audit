@@ -1055,7 +1055,8 @@ function registerAgentTools(pi: any): void {
         if (result.error && !result.disapproved) {
           const failureCopy = providerErrorPresentation(result.error, "completion");
           const recoveryEpisodeKey = completionClaim.recoveryEpisodeKey ?? `${completionClaim.at}:${failureCopy.fingerprint}`;
-          const plan = auditorRetryPlan(completionClaim);
+          const aggressive = resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).aggressiveMode;
+          const plan = auditorRetryPlan(completionClaim, undefined, undefined, aggressive);
           const pending = {
             ...completionClaim,
             phase: "retry-waiting" as const,
@@ -1067,7 +1068,7 @@ function registerAgentTools(pi: any): void {
             recoveryNoticeKeys: completionClaim.recoveryNoticeKeys ?? [],
             retryAttempts: plan.attempt,
             retryFirstAt: plan.firstAt,
-            retryUntil: plan.autoRetryUntil,
+            ...(aggressive ? { retryUntil: undefined } : { retryUntil: plan.autoRetryUntil }),
           };
           if (!plan.automatic) {
             const notifyCapped = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:retry-capped`);

@@ -486,18 +486,24 @@ function aggressiveAuditorRecoveryEnabled(cwd: string): boolean {
   try { return resolveEffectiveAggressiveSettings(loadSettings(cwd)).aggressiveMode; } catch { return false; }
 }
 
-function automaticRecoveryWindow(pending: PendingCompletion, now = Date.now()): { firstAt: string; until: string; untilMs: number } {
+function automaticRecoveryWindow(pending: PendingCompletion, now = Date.now(), unbounded = false): { firstAt: string; until?: string; untilMs: number } {
   const firstCandidate = [pending.automaticRecoveryFirstAt, pending.automaticRecoveryAt, pending.recoveryAt]
     .map((value) => typeof value === "string" ? Date.parse(value) : Number.NaN)
     .find((value) => Number.isFinite(value));
   const firstMs = Number.isFinite(firstCandidate) ? firstCandidate! : now;
-  const existingUntil = typeof pending.automaticRecoveryUntil === "string" ? Date.parse(pending.automaticRecoveryUntil) : Number.NaN;
-  const untilMs = Number.isFinite(existingUntil) && existingUntil > firstMs
-    ? existingUntil
-    : firstMs + AGGRESSIVE_AUDITOR_RECOVERY_HORIZON_MS;
+  // Aggressive automation is event-driven across arbitrary durations. Keep
+  // the old horizon readable for conservative/legacy claims, but do not
+  // resurrect it when the current policy explicitly opted into aggressive
+  // recovery.
+  const existingUntil = unbounded ? Number.NaN : typeof pending.automaticRecoveryUntil === "string" ? Date.parse(pending.automaticRecoveryUntil) : Number.NaN;
+  const untilMs = unbounded
+    ? Number.POSITIVE_INFINITY
+    : Number.isFinite(existingUntil) && existingUntil > firstMs
+      ? existingUntil
+      : firstMs + AGGRESSIVE_AUDITOR_RECOVERY_HORIZON_MS;
   return {
     firstAt: new Date(firstMs).toISOString(),
-    until: new Date(untilMs).toISOString(),
+    ...(Number.isFinite(untilMs) ? { until: new Date(untilMs).toISOString() } : {}),
     untilMs,
   };
 }
@@ -522,8 +528,8 @@ export function scheduleParkedCompletionAuditRecovery(ctx: ExtensionContext, pen
   const now = Date.now();
   const aggressive = aggressiveAuditorRecoveryEnabled(ctx.cwd);
   if (pending.automaticRecoveryAttempted === true && !aggressive) return pending;
-  const window = automaticRecoveryWindow(pending, now);
-  if (aggressive && now >= window.untilMs) {
+  const window = automaticRecoveryWindow(pending, now, aggressive);
+  if (aggressive && Number.isFinite(window.untilMs) && now >= window.untilMs) {
     return { ...pending, recoveryRetryAt: undefined, automaticRecoveryFirstAt: window.firstAt, automaticRecoveryUntil: window.until };
   }
   const storedRetryMs = pending.recoveryRetryAt ? Date.parse(pending.recoveryRetryAt) : Number.NaN;
@@ -533,7 +539,7 @@ export function scheduleParkedCompletionAuditRecovery(ctx: ExtensionContext, pen
   const next = {
     ...pending,
     recoveryRetryAt: retryAt,
-    ...(aggressive ? { automaticRecoveryFirstAt: window.firstAt, automaticRecoveryUntil: window.until } : {}),
+    ...(aggressive ? { automaticRecoveryFirstAt: window.firstAt, ...(window.until ? { automaticRecoveryUntil: window.until } : { automaticRecoveryUntil: undefined }) } : {}),
   };
   const generation = sessionGeneration;
   if (scheduledAuditorRecoveryAt === retryAt && scheduledAuditorRecoveryGeneration === generation && scheduledAuditorRecoveryTimer) return next;
@@ -578,7 +584,7 @@ export function scheduleParkedCompletionAuditRecovery(ctx: ExtensionContext, pen
       });
       return;
     }
-    if (aggressiveNow && Date.now() >= automaticRecoveryWindow(claim).untilMs) {
+    if (aggressiveNow && Number.isFinite(automaticRecoveryWindow(claim, Date.now(), true).untilMs) && Date.now() >= automaticRecoveryWindow(claim, Date.now(), true).untilMs) {
       updateGoal({
         pendingCompletion: { ...claim, recoveryRetryAt: undefined },
         pauseKind: "blocked",
@@ -607,7 +613,7 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
   completionAuditRecoveryArmed = true;
   const startedMs = Date.now();
   const aggressive = aggressiveAuditorRecoveryEnabled(ctx.cwd);
-  const recoveryWindow = automaticRecoveryWindow(claim, startedMs);
+  const recoveryWindow = automaticRecoveryWindow(claim, startedMs, aggressive);
   const automaticRecoveryRetry = origin === "session-recovery"
     && (claim.phase ?? "recovery-pending") === "recovery-pending"
     && (claim.automaticRecoveryAttempted !== true || aggressive)
@@ -635,7 +641,7 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
         automaticRecoveryAttempts: (claim.automaticRecoveryAttempts ?? 0) + 1,
         ...(aggressive ? {
           automaticRecoveryFirstAt: recoveryWindow.firstAt,
-          automaticRecoveryUntil: recoveryWindow.until,
+          ...(recoveryWindow.until ? { automaticRecoveryUntil: recoveryWindow.until } : { automaticRecoveryUntil: undefined }),
         } : {}),
       }
       : {}),
@@ -696,13 +702,15 @@ function fmtRetryDelay(seconds: number): string {
 }
 
 // v0.34.79: exported for tests — the eager-first-retry schedule is pure.
-export function auditorRetryPlan(claim: PendingCompletion, _legacyQuota?: unknown, _legacyBaseMinutes?: number): {
+export function auditorRetryPlan(claim: PendingCompletion, _legacyQuota?: unknown, _legacyBaseMinutes?: number, aggressive = false): {
   attempt: number;
   retryAfterSec: number;
   firstAt: string;
+  /** Legacy horizon metadata; aggressive callers must not persist/use it as a stop. */
   autoRetryUntil: string;
   automatic: boolean;
   requestedSec: number;
+  unbounded: boolean;
 } {
   // The optional legacy parameters are accepted so older embedded callers do
   // not break, but retry scheduling is deliberately reason-agnostic.
@@ -723,8 +731,8 @@ export function auditorRetryPlan(claim: PendingCompletion, _legacyQuota?: unknow
     ? EAGER_AUDITOR_RETRY_SEC
     : Math.max(60, Math.round((nextHourlyProbeMs(now) - now) / 1000));
   const retryAfterSec = capProviderRetrySeconds(requestedSec);
-  const automatic = attempt < MAX_AUDITOR_AUTO_RETRY_ATTEMPTS && now + retryAfterSec * 1_000 <= untilMs;
-  return { attempt, retryAfterSec, firstAt, autoRetryUntil: new Date(untilMs).toISOString(), automatic, requestedSec };
+  const automatic = aggressive || (attempt < MAX_AUDITOR_AUTO_RETRY_ATTEMPTS && now + retryAfterSec * 1_000 <= untilMs);
+  return { attempt, retryAfterSec, firstAt, autoRetryUntil: new Date(untilMs).toISOString(), automatic, requestedSec, unbounded: aggressive };
 }
 
 export type AuditorModelCandidate = AuditorFallbackCandidate;
@@ -760,7 +768,7 @@ export function maybeAutoRetryParkedCompletionAudit(trigger: AutomaticCompletion
   if (!ctx) return false;
   const aggressive = aggressiveAuditorRecoveryEnabled(ctx.cwd);
   if (claim.automaticRecoveryAttempted === true && !aggressive) return false;
-  if (aggressive && Date.now() >= automaticRecoveryWindow(claim).untilMs) return false;
+  if (aggressive && Number.isFinite(automaticRecoveryWindow(claim, Date.now(), true).untilMs) && Date.now() >= automaticRecoveryWindow(claim, Date.now(), true).untilMs) return false;
   if (!guardGoalBeforeContinuation(ctx, "stored-completion-audit", goal.id, { allowAuditing: true })) return false;
 
   const current = state.goal;
@@ -1187,7 +1195,8 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
     // Preserve the claim, but use a durable bounded plan.
     const failureCopy = providerErrorPresentation(result.error, "completion");
     const recoveryEpisodeKey = claim.recoveryEpisodeKey ?? `${claim.at}:${failureCopy.fingerprint}`;
-    const plan = auditorRetryPlan(claim);
+    const aggressive = aggressiveAuditorRecoveryEnabled(liveCtx.cwd);
+    const plan = auditorRetryPlan(claim, undefined, undefined, aggressive);
     const pending = {
       ...claim,
       phase: "retry-waiting" as const,
@@ -1199,7 +1208,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       recoveryNoticeKeys: claim.recoveryNoticeKeys ?? [],
       retryAttempts: plan.attempt,
       retryFirstAt: plan.firstAt,
-      retryUntil: plan.autoRetryUntil,
+      ...(aggressive ? { retryUntil: undefined } : { retryUntil: plan.autoRetryUntil }),
     };
     if (!plan.automatic) {
       const notifyCapped = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:retry-capped`);
