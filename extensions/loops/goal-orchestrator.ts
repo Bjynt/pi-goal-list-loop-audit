@@ -235,6 +235,7 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
+import { resolveCompletionSummary } from "../completion-summary.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -932,14 +933,30 @@ function archiveCurrentGoal(
   }
   const pendingAttemptId = goal.pendingCompletion?.attemptId;
   const target = archivedGoalPath(ctx.cwd, goal.id);
-  const terminalGoal: Goal = {
+  const archivePath = path.relative(ctx.cwd, target) || target;
+  const terminalBase: Goal = {
     ...goal,
     ...patch,
     status,
-    archivedPath: path.relative(ctx.cwd, target) || target,
+    archivedPath: archivePath,
     stopReason,
     // A cancelled/archived goal cannot accept a late detached worker result.
     pendingCompletion: undefined,
+  };
+  // v0.36.0: every terminal archive gets a useful six-label recap. Valid
+  // caller-authored recaps remain verbatim; missing/generic/incomplete claims
+  // are replaced with facts already captured in durable GLLA state. This is
+  // deliberately centralized here because complete, abort, cancel, impossible,
+  // auto-drop, and already-shipped paths all pass through the archive fence.
+  const summaryResolution = resolveCompletionSummary({
+    goal: terminalBase,
+    status,
+    stopReason,
+    archivePath,
+  }, terminalBase.completionSummary);
+  const terminalGoal: Goal = {
+    ...terminalBase,
+    completionSummary: summaryResolution.summary,
   };
   const md = renderGoalMarkdown(terminalGoal);
   // v0.28.6 (E1): guarded — and the active md is only removed when the
@@ -1011,6 +1028,15 @@ function archiveCurrentGoal(
     clearMainModelRecoveryTimer();
     state.mainModelRecovery = undefined;
     mainModelAbortForRecovery = false;
+  }
+  if (summaryResolution.usedFallback) {
+    appendLedger(ctx.cwd, "completion_summary_fallback", {
+      goalId: goal.id,
+      status,
+      reason: summaryResolution.reason,
+      rawExcerpt: summaryResolution.raw?.slice(0, 500),
+      source: "durable-terminal-state",
+    });
   }
   appendLedger(ctx.cwd, "goal_archived", { goalId: goal.id, status, stopReason, objective: goal.objective.slice(0, 300) });
   persistState(ctx);
