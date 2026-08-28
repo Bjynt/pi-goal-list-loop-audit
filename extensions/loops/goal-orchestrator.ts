@@ -977,6 +977,10 @@ function archiveCurrentGoal(
     stopReason,
     // A cancelled/archived goal cannot accept a late detached worker result.
     pendingCompletion: undefined,
+    // A successful terminal approval resolves any prior aggressive TODOs;
+    // retaining them in the archive would make a closed objective look
+    // unfinished. Aborted records may retain their last TODO projection.
+    pendingTasks: status === "complete" ? undefined : (patch.pendingTasks ?? goal.pendingTasks),
   };
   // v0.36.0: every terminal archive gets a useful six-label recap. Valid
   // caller-authored recaps remain verbatim; missing/generic/incomplete claims
