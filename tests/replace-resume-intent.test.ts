@@ -28,7 +28,7 @@ test("v0.34.103 (issue #6 Defect A): replacing a wait goal with a scheduled resu
   // The replace archive branch captures the superseded goal BEFORE archiving:
   assert.match(setGoal, /const replaced = state\.goal;/);
   assert.match(setGoal, /const hadScheduledResume = !!replaced\.pauseResumeAt;/);
-  assert.match(setGoal, /archiveCurrentGoal\(ctx, "aborted", `replaced by goal/);
+  assert.match(setGoal, /archiveCurrentGoal\(ctx, "aborted", replacementReason\)/);
   // The warning only fires when a scheduled resume was actually pending:
   assert.match(setGoal, /if \(hadScheduledResume\)/);
   assert.match(setGoal, /"replaced_resume_cancelled"/);
@@ -36,15 +36,12 @@ test("v0.34.103 (issue #6 Defect A): replacing a wait goal with a scheduled resu
   assert.match(setGoal, /notifyExternal/);
 });
 
-test("v0.34.103 (issue #6 Defect A): plain replace without a scheduled resume stays quiet", () => {
+test("v0.36.0: every plain replacement includes the archived recap", () => {
   const setGoal = SRC.slice(SRC.indexOf("function setGoal("), SRC.indexOf("function updateGoal("));
-  // The archive branch still runs for every replaced paused/active goal…
   assert.match(setGoal, /\["active", "paused", "auditing"\]\.includes\(state\.goal\.status\)/);
-  // …but the notification is gated on the resume intent, not on the replace:
-  assert.match(setGoal, /if \(hadScheduledResume\) \{\s*\n\s*appendLedger/);
-  // No unconditional replacement-warning was added; the only new warning is
-  // the transactional archive-failure safety message, which is intentionally
-  // allowed outside the scheduled-resume gate.
+  assert.match(setGoal, /const replacementRecap = compactTerminalCompletionSummary/);
+  assert.match(setGoal, /Previous .* was superseded by the new objective/);
+  assert.match(setGoal, /Recap: \$\{replacementRecap\}/);
 });
 
 // ---------------------------------------------------------------- Defect B
