@@ -899,9 +899,10 @@ export function cancelHourlyProbe(): void {
 // hourly-retry-probe.test.ts is source-pin only and never called them.
 // Removed with the v0.34.108 dead-code sweep.
 
-/** An explicit resume is consent to start a fresh automatic window after the
- * five-hour/24-hour safety hold. It does not silently reset the window during
- * reload or heartbeat recovery. */
+/** An explicit resume is consent to start a fresh automatic episode after a
+ * conservative safety hold. Aggressive mode has no wall-clock episode
+ * horizon, but manual resume still remains the explicit escape from a
+ * state-based hold. */
 export function manuallyResumeMainModelRecovery(ctx: ExtensionContext): boolean {
   const recovery = state.mainModelRecovery;
   if (!recovery?.manualResumeRequired) return false;

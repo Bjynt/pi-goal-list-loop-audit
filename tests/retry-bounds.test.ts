@@ -47,7 +47,8 @@ test("E2: auditor infra errors enter the durable bounded retry plan (v0.34.51 �
   // 3-strike stop):
   assert.match(RECOVERY, /The completion claim is stored and was not judged\. Fix the auditor\/session issue/); // decomposition step 3 (v0.34.111)
   // The durable plan owns the wait: retry-waiting phase, wait-kind pause,
-  // horizon-capped blocked stop, and a re-checked auto-resume callback.
+  // conservative horizon stop, aggressive unbounded retry, and a re-checked
+  // auto-resume callback.
   assert.match(SRC, /phase: "retry-waiting" as const/);
   assert.match(SRC, /auditor retry: automatic retry horizon reached \(\$\{plan\.attempt\} attempts\)/);
   assert.match(SRC, /startsWith\("auditor retry:"\)/);
@@ -159,7 +160,7 @@ test("v0.34.51: stored-claim auditor retries enter the durable plan on ANY infra
   // timeout branch first (a hanging command keeps its loud pause)…
   assert.match(retry, /isAuditorNoVerdictInfrastructureError\(result\.error, result\.infrastructureClass\)\) \{[\s\S]{0,220}?Watchdog timeouts stay ahead/);
   // …then the widened durable branch — no kind gate, neutral wording:
-  assert.match(retry, /ANY infrastructure failure enters the durable bounded\s+retry plan/);
+  assert.match(retry, /ANY infrastructure failure enters the durable retry plan/);
   assert.match(retry, /phase: "retry-waiting" as const/);
   assert.match(retry, /startsWith\("auditor retry:"\)/);
   assert.ok(!retry.includes("audit_infra_waiting\", { goalId, attemptId: claim.attemptId, error: result.error.slice(0, 240), infraStreak }"), "3-strike ledger payload gone from stored-claim retries");

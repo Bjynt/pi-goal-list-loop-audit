@@ -273,8 +273,9 @@ export interface PendingCompletion {
   automaticRecoveryAttempted?: boolean;
   automaticRecoveryAt?: string;
   automaticRecoveryGeneration?: number;
-  /** When aggressiveMode is enabled, the no-verdict recovery path keeps
-   * retrying inside this durable window instead of stopping after one retry. */
+  /** Legacy horizon field. Conservative mode uses it; aggressive mode leaves
+   * it absent and continues from lifecycle/progress signals until a state-based
+   * stop applies. */
   automaticRecoveryAttempts?: number;
   automaticRecoveryFirstAt?: string;
   automaticRecoveryUntil?: string;
@@ -796,15 +797,17 @@ export interface MainModelRecovery {
   primaryProbeAt?: string;
   /** A preferred-primary switch was accepted and awaits one supervised turn. */
   primaryProbeInFlight?: boolean;
-  /** Number of completed recovery waits; drives the bounded exponential cadence. */
+  /** Number of completed recovery waits; drives the bounded per-attempt exponential cadence. */
   attempts: number;
   /** Human-readable provider failure excerpt. */
   reason: string;
-  /** First failure in this automatic recovery window. */
+  /** First failure in this automatic recovery episode (legacy horizon anchor). */
   firstFailureAt?: string;
-  /** Automatic probes stop at this durable deadline; manual resume starts a new window. */
+  /** Conservative-mode deadline; aggressive mode omits this legacy field and
+   * uses state-based stop rules instead. */
   autoRetryUntil?: string;
-  /** The bounded automatic horizon requires explicit resume once exhausted. */
+  /** Set only when conservative recovery reaches its horizon or an explicit
+   * state-based hold requires user action. */
   manualResumeRequired?: boolean;
   /** Legacy provider hint retained only when reading old state. */
   resetAt?: string;

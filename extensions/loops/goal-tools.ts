@@ -1052,10 +1052,10 @@ function registerAgentTools(pi: any): void {
             details: {},
           };
         }
-        // v0.34.51: ANY infrastructure failure enters the durable bounded
-        // retry plan — error text is not trusted to pick one failure family,
-        // so
-        // "still failing" pauses with the same uniform retry schedule.
+        // v0.34.51/v0.36.0: ANY infrastructure failure enters the durable
+        // retry plan — error text is not trusted to pick one failure family.
+        // Conservative mode keeps its horizon; aggressive mode keeps the
+        // same per-attempt schedule without a wall-clock episode expiry.
         if (result.error && !result.disapproved) {
           const failureCopy = providerErrorPresentation(result.error, "completion");
           const recoveryEpisodeKey = completionClaim.recoveryEpisodeKey ?? `${completionClaim.at}:${failureCopy.fingerprint}`;
@@ -1144,10 +1144,11 @@ function registerAgentTools(pi: any): void {
             details: {},
           };
         }
-        // v0.34.51: the durable bounded retry plan above owns ALL infra
+        // v0.34.51/v0.36.0: the durable retry plan above owns ALL infra
         // failures now (timeouts keep their own branch). The old 3-strike
-        // "auditor model is likely broken" stop is gone: "keep retrying"
-        // until the plan's horizon, then the blocked pause asks the user.
+        // "auditor model is likely broken" stop is gone; aggressive mode
+        // continues until a state-based stop, while conservative mode keeps
+        // its bounded horizon.
       }
 
       // Shield-blocked approval (v0.22.6): the auditor APPROVED but the
