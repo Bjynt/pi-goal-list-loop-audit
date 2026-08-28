@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.35.72 — remove duplicate terminal outcome widget (2026-08-28)
+
+### Fixed
+  Approved or aborted goals now clear the live outcome slot after the single
+  completion notification. The archived goal record and ledger remain the
+  durable history, while legacy `lastOutcome` state is read safely but no
+  longer paints a second `✓ done` row after archival.
+
+### Tests
+  Updated terminal-outcome regressions to verify that completed/aborted goals
+  leave no retained widget row, while live goals still outrank legacy state.
+
 ## 0.35.71 — bounded Pi-core retry containment (2026-08-26)
 
 ### Changed
