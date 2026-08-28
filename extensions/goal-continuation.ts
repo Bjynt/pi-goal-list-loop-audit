@@ -327,7 +327,9 @@ export function accountSendRearm(ctx: ExtensionContext, kind: "continuation" | "
       if (noDispatchAccepted && lastNoTurnStartedNotifiedAt + SEND_REARM_LEDGER_MILESTONES_MS[0]! <= Date.now()) {
         lastNoTurnStartedNotifiedAt = Date.now();
         appendLedger(ctx.cwd, "rearm_no_turn_started", { streak, minutes: Math.round(elapsed / 60000) });
-        const msg = `glla: pi accepted no continuation for ${Math.round(elapsed / 60000)}m (${streak} re-arms, no turn started) — the send queue may be stuck. The generic recovery probe is retrying automatically; no action needed unless it reaches the automatic horizon.`;
+        const aggressive = resolveEffectiveAggressiveSettings(loadSettings(ctx.cwd)).aggressiveMode;
+        const recoveryStop = aggressive ? "a state-based stop" : "the automatic horizon";
+        const msg = `glla: pi accepted no continuation for ${Math.round(elapsed / 60000)}m (${streak} re-arms, no turn started) — the send queue may be stuck. The generic recovery probe is retrying automatically; no action needed unless it reaches ${recoveryStop}.`;
         ctx.ui.notify(msg, "warning");
         notifyExternal(ctx, msg);
       }

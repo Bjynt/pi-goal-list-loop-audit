@@ -22,13 +22,18 @@ finished without evidence**:
 
 - You state the outcome and what “done” means.
 - The agent researches, decomposes, and executes across many turns.
-- GLLA keeps durable state, supervises progress, and recovers bounded failures.
+- GLLA keeps durable state, checks lifecycle/progress signals continuously, and
+  recovers failures with bounded per-attempt backoff plus policy-driven stop rules.
+- Every terminal objective leaves a useful six-label recap; missing evidence is
+  shown as `not recorded`, never guessed.
 - Optional subagents can do parallel research and focused implementation work.
 - A separate detached auditor checks the saved completion claim before GLLA
   accepts it.
 
 The aim is not “run forever.” The aim is **more useful work per unit of
-attention, with better evidence at the end**.
+attention, with event-driven progress instead of guessed-duration waiting, and
+better evidence at the end**. See `docs/DESIGN-long-running-supervision.md` for
+the long-running policy.
 
 Use `/glla version` to inspect the installed version and compare it with the
 registry. This checkout may contain unreleased changes; npm is authoritative

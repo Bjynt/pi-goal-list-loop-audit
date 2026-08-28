@@ -69,6 +69,15 @@ test("v0.36.0: aggressive recovery has no wall-clock episode horizon", () => {
   assert.match(SRC.replace(/\s+/g, " "), /aggressive \|\| \(attempt < MAX_AUDITOR_AUTO_RETRY_ATTEMPTS/);
 });
 
+test("v0.36.0: aggressive auditor disapprovals become durable TODOs and stop on repeated no-progress", () => {
+  assert.match(SRC, /const durableObjections = result\.disapproved && effectiveCap\.aggressiveMode/);
+  assert.match(SRC, /appendLedger\(ctx\.cwd, "audit_objections_todo"/);
+  assert.match(SRC, /countTrailingRepeatedDisapprovals\(history\)/);
+  assert.match(SRC, /audit_no_progress_stop/);
+  assert.match(SRC, /pendingTasks: effectiveCap\.aggressiveMode \? durableObjections : undefined/);
+  assert.match(SRC, /ordinary disapproval becomes the current durable/);
+});
+
 test("E3: send-retry re-arms counted, ledgered, escalated", () => {
   assert.match(CONT, /appendLedger\(ctx\.cwd, "send_rearm_start", \{ kind \}\)/); // decomposition step 5: accountSendRearm moved
   assert.match(CONT, /appendLedger\(ctx\.cwd, "send_rearm_storm", \{ kind, streak/);
