@@ -250,9 +250,8 @@ export interface PendingCompletion {
   phase?: CompletionAuditPhase;
   /** Identifies the isolated-auditor attempt, not the goal. */
   attemptId?: string;
-  /** Start/deadline for the current isolated-auditor attempt. */
+  /** Start time for the current isolated-auditor attempt. */
   startedAt?: string;
-  wallDeadlineAt?: string;
   /** Why the claim is waiting for a fresh attempt. */
   recoveryAt?: string;
   recoveryReason?: string;

@@ -631,7 +631,6 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
     phase: "running",
     attemptId: newCompletionAuditAttemptId(),
     startedAt: new Date(startedMs).toISOString(),
-    wallDeadlineAt: new Date(startedMs + AUDITOR_WALL_TIMEOUT_MS).toISOString(),
     recoveryAt: undefined,
     recoveryReason: undefined,
     recoveryRetryAt: undefined,
@@ -668,7 +667,7 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
     recoveryEpisodeKey: undefined,
     recoveryNoticeKeys: undefined,
   }, ctx);
-  appendLedger(ctx.cwd, "audit_started", { goalId: state.goal?.id, attemptId: pending.attemptId, origin, wallDeadlineAt: pending.wallDeadlineAt });
+  appendLedger(ctx.cwd, "audit_started", { goalId: state.goal?.id, attemptId: pending.attemptId, origin });
   return pending;
 }
 

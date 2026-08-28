@@ -241,7 +241,6 @@ export async function runAuditorFallbackWithPolicy(
 // still get the independent per-tool timeout below.
 export const AUDITOR_TOOLS = ["read", "grep", "find", "ls", "bash"] as const;
 const PROTOCOL_VERSION = 1;
-const DEFAULT_WALL_TIMEOUT_MS = 30 * 60_000;
 const DEFAULT_TOOL_TIMEOUT_MS = 5 * 60_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
 /** v0.34.57 (steal-list #7 / bug #1.4): heartbeat-without-progress watchdog.
@@ -511,7 +510,10 @@ interface AuditorRequest {
   model: string;
   thinkingLevel: string;
   createdAt: string;
-  wallDeadlineAt: number;
+  /** Legacy request metadata accepted by older workers; current workers do
+   * not use it as a lifetime bound. Liveness is owned by event-derived
+   * watchdogs and lifecycle cancellation. */
+  wallDeadlineAt?: number;
   /** v0.36.0: pi extension specs the detached auditor may load via
    * `pi --extension <spec>` (under the still-on `--no-extensions` discovery
    * switch). Absent/empty = the default extension-less auditor. Part of the
@@ -582,6 +584,11 @@ export interface AuditorProcessRuntime {
   /** Override process spawning in bounded tests. */
   spawn?: typeof nodeSpawn;
   pollIntervalMs?: number;
+  /**
+   * @deprecated Accepted for compatibility with older callers, but never
+   * used as a lifetime bound. Confirmed-silence, per-tool, and lifecycle
+   * cancellation are the only termination paths for an otherwise live audit.
+   */
   wallTimeoutMs?: number;
   now?: () => number;
   attemptId?: () => string;
@@ -804,7 +811,10 @@ export async function runDetachedGoalCompletionAuditor(args: {
   if (!args.model || !model.trim() || model === "(unset)") return infra(model, thinkingLevel, "no auditor model", "", undefined, "provider");
 
   const now = runtime.now ?? Date.now;
-  const wallTimeoutMs = runtime.wallTimeoutMs ?? DEFAULT_WALL_TIMEOUT_MS;
+  // `wallTimeoutMs` remains accepted on AuditorProcessRuntime for older
+  // embedded callers, but a guessed duration must never terminate a live
+  // auditor. Confirmed-silence, per-tool, result, and lifecycle cancellation
+  // are the bounded termination paths.
   const pollIntervalMs = Math.max(10, runtime.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS);
   const heartbeatFreshMs = Math.max(10, runtime.heartbeatFreshMs ?? DEFAULT_HEARTBEAT_FRESH_MS);
   const heartbeatNoProgressMs = Math.max(50, runtime.heartbeatNoProgressMs ?? DEFAULT_HEARTBEAT_NO_PROGRESS_MS);
@@ -833,7 +843,6 @@ export async function runDetachedGoalCompletionAuditor(args: {
   const progressPath = path.join(jobDir, "progress.json");
   const lockPath = path.join(jobDir, "lock");
   const startedAt = now();
-  const wallDeadlineAt = startedAt + wallTimeoutMs;
   let lockHeld = false;
   let jobDirCreated = false;
   let child: ChildProcess | undefined;
@@ -873,7 +882,6 @@ export async function runDetachedGoalCompletionAuditor(args: {
       model,
       thinkingLevel,
       createdAt: new Date(startedAt).toISOString(),
-      wallDeadlineAt,
       // v0.34.59: capture the focus revision token at dispatch. The
       // worker echoes it in result.json; the parent re-validates before
       // applying the verdict. A stale-handle ghost can no longer silently
@@ -948,10 +956,6 @@ export async function runDetachedGoalCompletionAuditor(args: {
           return infra(model, thinkingLevel, "Auditor aborted.", "", capturedRevisionToken, "transport");
         }
         if (childSpawnError) return infra(model, thinkingLevel, `auditor worker launch failed: ${childSpawnError}`, "", capturedRevisionToken, "transport");
-        if (now() >= wallDeadlineAt) {
-          if (childAlive(child)) await terminateWorker(child);
-          return infra(model, thinkingLevel, `Auditor exceeded its ${Math.round(wallTimeoutMs / 60_000)}m wall-clock bound and was aborted.`, "", capturedRevisionToken, "timeout");
-        }
         try {
           const progress = await readJson<AuditorProgressFile>(progressPath);
           if (progress.protocolVersion !== PROTOCOL_VERSION || progress.attemptId !== attemptId || progress.requestHash !== request.requestHash) {
@@ -1011,7 +1015,7 @@ export async function runDetachedGoalCompletionAuditor(args: {
         // freshness and the worker's inactivity brake. A stuck read/grep/find/
         // ls call emits no further RPC event, so neither heartbeat axis can
         // safely own its termination. Keep the detached job bounded well
-        // inside the 30m wall.
+        // independently of the event-driven lifetime policy.
         if (lastProgress?.currentToolStartedAt !== undefined) {
           const toolAgeMs = Math.max(0, now() - lastProgress.currentToolStartedAt);
           if (toolAgeMs >= toolTimeoutMs) {
@@ -1084,9 +1088,10 @@ export async function runDetachedGoalCompletionAuditor(args: {
         // (2026-08-23, football-forever/doomtap/junk-runner/vps-compare) showed
         // workers whose provider hangs emit ONE boot event (or none) and then
         // total silence — the heartbeat goes STALE, that gate disarms, and the
-        // only remaining bound is the 30m wall, so every doomed attempt burned
-        // its full wall while the goal sat "auditing" and the queue looked
-        // dead. The worker's own inactivity brake (GLLA_AUDITOR_STALL_MS) is
+        // remaining safety mechanisms are event-derived, so a worker with
+        // real progress is never cut off merely because elapsed time crossed
+        // a guessed task duration. The worker's own inactivity brake
+        // (GLLA_AUDITOR_STALL_MS) is
         // the same window with the same running-tool exemption; mirror it
         // parent-side so a wedged or silently-dead worker is failed fast into
         // the (already eager first-retry) fallback ladder instead of the wall.

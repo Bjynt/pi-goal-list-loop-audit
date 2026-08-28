@@ -259,7 +259,9 @@ function identity(request, attemptId) {
   if (typeof request.prompt !== "string" || !request.prompt) throw new Error("auditor request prompt is empty");
   if (typeof request.model !== "string" || !request.model) throw new Error("auditor request model is empty");
   if (typeof request.thinkingLevel !== "string" || !request.thinkingLevel) throw new Error("auditor request thinking level is empty");
-  if (!Number.isFinite(request.wallDeadlineAt)) throw new Error("auditor request deadline is invalid");
+  // Older request files may carry wallDeadlineAt. It is intentionally not
+  // validated or enforced: a guessed duration must not terminate a worker
+  // that continues to emit real progress. Current requests omit the field.
   // v0.36.0: optional extension allowlist. Specs are passed verbatim to
   // `pi --extension <spec>`; the strict shape check keeps a corrupted job
   // dir from smuggling arbitrary extra CLI surface into the spawn.
@@ -403,7 +405,6 @@ async function main() {
   let finalized = false;
   let streamError;
   let pi;
-  let deadlineTimer;
   let inactivityTimer;
   // `lastActivityAt` is user-visible and must remain unset until a real RPC
   // event arrives. The separate probe clock keeps the inactivity brake armed
@@ -458,7 +459,6 @@ async function main() {
     // Preserve a final unterminated report line in the last progress snapshot
     // without changing the exact result output used for verdict parsing.
     appendRecentOutput(recentOutput, recentReportLine, "", true);
-    if (deadlineTimer) clearTimeout(deadlineTimer);
     if (inactivityTimer) clearInterval(inactivityTimer);
     for (const timer of toolTimers.values()) clearTimeout(timer);
     toolTimers.clear();
@@ -516,10 +516,9 @@ async function main() {
   });
 
   try {
-    if (Date.now() >= request.wallDeadlineAt) {
-      await finish(false, "Auditor exceeded its wall-clock bound and was aborted before launch.");
-      return;
-    }
+    // There is deliberately no wall-clock lifetime timer here. The worker
+    // remains eligible while it emits real RPC/tool/report progress; the
+    // confirmed-silence and per-tool watchdogs below are the safety bounds.
     await progress("starting");
 
     const piBinary = process.env.GLLA_PI_BINARY || "pi";
@@ -549,12 +548,6 @@ async function main() {
       ...launch.options,
     });
 
-    const remaining = Math.max(1, request.wallDeadlineAt - Date.now());
-    const wallMinutes = Math.max(1, Math.round((request.wallDeadlineAt - startedAt) / 60_000));
-    deadlineTimer = setTimeout(() => {
-      void finish(false, `Auditor exceeded its ${wallMinutes}m wall-clock bound and was aborted.`).catch(() => {});
-    }, remaining);
-    deadlineTimer.unref?.();
     const stallLabel = AUDITOR_STALL_MS >= 60_000
       ? `${Math.max(1, Math.round(AUDITOR_STALL_MS / 60_000))}m`
       : `${Math.max(1, Math.round(AUDITOR_STALL_MS / 1_000))}s`;
