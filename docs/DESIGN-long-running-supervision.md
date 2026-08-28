@@ -8,7 +8,7 @@ change to Pi core, `pi-subagents`, or `pi-memory`.
 
 ## Decision
 
-GLLA automation is **event- and progress-driven**, not duration-guessed.
+GLLA automation is **event-driven and progress-aware**, not duration-guessed.
 
 - A lifecycle event, durable state transition, child-progress signal, or
   process completion marker is the primary reason to inspect or advance work.

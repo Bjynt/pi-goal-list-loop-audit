@@ -151,29 +151,33 @@ export function extractMechanicalCheckCommands(contract: string): string[] {
   const items = contractItems(contract);
   const commands: string[] = [];
   for (const item of items) {
-    const backtickMatch = /`([^`]+)`/.exec(item);
-    let candidate = backtickMatch ? backtickMatch[1]!.trim() : item.trim();
-    if (!backtickMatch) {
-      // v0.35.24: "completes successfully" / "succeeds" joined the strip list
-      // after a field incident (2026-08-22): the contract line
-      // "bun run build completes successfully" survived stripping, was run
-      // verbatim, and vite parsed "completes" as its root directory —
-      // `Could not resolve entry module "completes/index.html"` — fast-failing
-      // an audit whose real gate (bun run build) was green.
-      candidate = candidate.replace(/\s+(?:passes(?:\s+cleanly|\s+with\s+zero\s+errors)?|exits\s+0|returns\s+0|cleanly|completes(?:\s+successfully)?|succeeds(?:\s+cleanly)?|successfully).*$/i, "").trim();
+    const backtickMatches = [...item.matchAll(/`([^`]+)`/g)];
+    if (backtickMatches.length > 0) {
+      for (const m of backtickMatches) {
+        const inner = m[1]!.trim();
+        const parts = inner.split(/\s*&&\s*|\s*;\s*/);
+        for (let part of parts) {
+          part = part.trim();
+          if (!part) continue;
+          if (/^(?:npm\s+(?:test|run\s+[\w:-]+)|bun\s+(?:test|run\s+[\w:-]+)|pnpm\s+(?:test|run\s+[\w:-]+)|yarn\s+(?:test|[\w:-]+)|tsc\b|cargo\s+(?:test|check|build)|pytest\b|python\s+-m\s+unittest|go\s+test|vitest\b|jest\b|make\s+test|git\s+diff|test\s+-[a-z])/i.test(part)) {
+            commands.push(part);
+          }
+        }
+      }
+      continue;
     }
+    let candidate = item.trim();
+    candidate = candidate.replace(/\s+(?:passes(?:\s+cleanly|\s+with\s+zero\s+errors)?|exits\s+0|returns\s+0|cleanly|completes(?:\s+successfully)?|succeeds(?:\s+cleanly)?|successfully).*$/i, "").trim();
     if (/^(?:npm\s+(?:test|run\s+[\w:-]+)|bun\s+(?:test|run\s+[\w:-]+)|pnpm\s+(?:test|run\s+[\w:-]+)|yarn\s+(?:test|[\w:-]+)|tsc\b|cargo\s+(?:test|check|build)|pytest\b|python\s+-m\s+unittest|go\s+test|vitest\b|jest\b|make\s+test|git\s+diff|test\s+-[a-z])/i.test(candidate)) {
-      // v0.35.71: without backticks, "bun test shows new recap-quality tests passing"
-      // is prose, not a command — the old prefix-only check treated it as
-      // `bun test shows ...` and then `runMechanicalPreAuditChecks` tried to
-      // execute `bun test shows ...` inside the suite, triggering Bun's
-      // "test() inside another test() is not yet implemented" fork-bomb path
-      // (field 2026-08-27: task VC "bun test shows new recap-quality tests
-      // passing" fast-failed every `complete_task` inside a test harness).
-      // Backticked candidates are explicitly authored commands and bypass this
-      // heuristic; bare prose must have plausible args (flags or file-like).
-      if (!backtickMatch && !isPlausibleBareMechanicalCandidate(candidate)) continue;
-      commands.push(candidate);
+      if (!isPlausibleBareMechanicalCandidate(candidate)) continue;
+      const parts = candidate.split(/\s*&&\s*|\s*;\s*/);
+      for (let part of parts) {
+        part = part.trim();
+        if (!part) continue;
+        if (/^(?:npm\s+(?:test|run\s+[\w:-]+)|bun\s+(?:test|run\s+[\w:-]+)|pnpm\s+(?:test|run\s+[\w:-]+)|yarn\s+(?:test|[\w:-]+)|tsc\b|cargo\s+(?:test|check|build)|pytest\b|python\s+-m\s+unittest|go\s+test|vitest\b|jest\b|make\s+test|git\s+diff|test\s+-[a-z])/i.test(part)) {
+          commands.push(part);
+        }
+      }
     }
   }
   return commands;
