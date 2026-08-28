@@ -3785,7 +3785,7 @@ test("v0.35.x: healthy same-session heartbeat recovers a parked completion audit
   }
 });
 
-test("v0.35.x: no-verdict auditor infrastructure failure schedules one durable automatic recovery", { timeout: 60_000 }, async () => {
+test("v0.36.0: exhausted no-verdict auditor chain parks without an automatic recovery timer", { timeout: 60_000 }, async () => {
   __testOnlyResetStaleFlag();
   __testOnlySetAuditorRecoveryRetryDelay(120);
   const cwd = tmpCwd();
