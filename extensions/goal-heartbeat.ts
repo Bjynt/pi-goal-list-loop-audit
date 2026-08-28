@@ -805,8 +805,8 @@ function requestSubagentHangAction(
 
 function scheduleHeartbeatPoll(generation: number, delayMs?: number): void {
   if (flags.heartbeatTimer) return;
-  const active = continuousSupervisor.observeState(state, subagentHangProbes.size).length > 0;
-  const delay = delayMs ?? continuousSupervisor.nextPollMs(active);
+  const cycle = continuousSupervisor.check(state, subagentHangProbes.size);
+  const delay = delayMs ?? cycle.pollMs;
   const timer = setTimeout(() => {
     if (generation !== flags.sessionGeneration || flags.heartbeatTimer !== timer) return;
     flags.heartbeatTimer = null;
@@ -843,7 +843,11 @@ export function signalSupervisionEvent(signal: SupervisionSignal = { plane: "que
 }
 
 function heartbeatTick(): void {
-  continuousSupervisor.observeState(state, subagentHangProbes.size);
+  // The checker consumes lifecycle/durable signals before the existing
+  // plane-specific safety/recovery handlers run. It never turns a live
+  // progress signal into a timeout; it only selects event/immediate versus
+  // adaptive fallback scheduling.
+  continuousSupervisor.check(state, subagentHangProbes.size);
   if (flags.zombieStoodDown || flags.initialSessionLoadPending) return; // blank startup waits for pi to bind a real session
   // v0.35.15: a MANUAL `/glla pause` freezes the supervisor's automatic
   // machinery — re-arms, stale probes, zombie cleanup, refires, everything
@@ -1317,7 +1321,7 @@ function heartbeatTick(): void {
 
 export function startHeartbeat(): void {
   if (flags.heartbeatTimer) return;
-  continuousSupervisor.observeState(state, subagentHangProbes.size);
+  continuousSupervisor.check(state, subagentHangProbes.size);
   // A fresh session has no missing event to compensate for yet. Start at the
   // normal safety cadence; real lifecycle/durable signals can interrupt the
   // timer immediately, while an actually signal-less active run adapts on the
