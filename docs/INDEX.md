@@ -41,6 +41,7 @@ For shipped docs, the relevant entry points are:
 
 ## Architecture
 - `DESIGN.md` — plugin design (types, state, extension lifecycle)
+- `DESIGN-long-running-supervision.md` — v0.36.0 event/progress-driven supervision, aggressive recovery, terminal recaps, and future decision checklist
 - `GLLA-POSITIONING-AND-DECOMPOSITION-2026-08-08.md` — ecosystem
   positioning, competitor review, and the goal.ts decomposition plan
   (the current strategic doc — read this before touching
