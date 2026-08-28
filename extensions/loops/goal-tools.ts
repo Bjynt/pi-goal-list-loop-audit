@@ -1253,6 +1253,8 @@ function registerAgentTools(pi: any): void {
             recoveryEpisodeKey,
             recoveryNoticeKeys: durableCompletionClaim.recoveryNoticeKeys ?? [],
             automaticRecoveryAttempted: durableCompletionClaim.automaticRecoveryAttempted ?? false,
+            auditorFailureClass: auditorResultFailureClass(result),
+            auditorFailureAt: new Date().toISOString(),
           };
           if (typeof scheduleParkedCompletionAuditRecovery === "function") {
             pending = scheduleParkedCompletionAuditRecovery(ctx, pending, pending.recoveryReason ?? "auditor-timeout");
@@ -1316,6 +1318,8 @@ function registerAgentTools(pi: any): void {
             providerErrorDiagnostic: failureCopy.diagnostic,
             recoveryEpisodeKey,
             recoveryNoticeKeys: durableCompletionClaim.recoveryNoticeKeys ?? [],
+            auditorFailureClass: auditorResultFailureClass(result),
+            auditorFailureAt: new Date().toISOString(),
             retryAttempts: plan.attempt,
             retryFirstAt: plan.firstAt,
             ...(aggressive ? { retryUntil: undefined } : { retryUntil: plan.autoRetryUntil }),
@@ -1589,6 +1593,14 @@ function registerAgentTools(pi: any): void {
           recoveryEpisodeKey,
           recoveryNoticeKeys: durableCompletionClaim.recoveryNoticeKeys ?? [],
           automaticRecoveryAttempted: durableCompletionClaim.automaticRecoveryAttempted ?? false,
+          auditorFailureClass: auditorResultFailureClass({
+            approved: false,
+            disapproved: false,
+            output: "",
+            model: "",
+            error: failureCopy.diagnostic,
+          }),
+          auditorFailureAt: new Date().toISOString(),
         };
         if (typeof scheduleParkedCompletionAuditRecovery === "function") {
           pending = scheduleParkedCompletionAuditRecovery(current, pending, "auditor-infrastructure");

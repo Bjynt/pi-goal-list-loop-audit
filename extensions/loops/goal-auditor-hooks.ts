@@ -1384,6 +1384,8 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       recoveryEpisodeKey,
       recoveryNoticeKeys: durableClaim.recoveryNoticeKeys ?? [],
       automaticRecoveryAttempted: durableClaim.automaticRecoveryAttempted ?? false,
+      auditorFailureClass: auditorResultFailureClass(result),
+      auditorFailureAt: new Date().toISOString(),
     };
     if (typeof scheduleParkedCompletionAuditRecovery === "function") {
       pending = scheduleParkedCompletionAuditRecovery(liveCtx, pending, pending.recoveryReason ?? "auditor-timeout");
@@ -1443,6 +1445,8 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       providerErrorDiagnostic: failureCopy.diagnostic,
       recoveryEpisodeKey,
       recoveryNoticeKeys: durableClaim.recoveryNoticeKeys ?? [],
+      auditorFailureClass: auditorResultFailureClass(result),
+      auditorFailureAt: new Date().toISOString(),
       retryAttempts: plan.attempt,
       retryFirstAt: plan.firstAt,
       ...(aggressive ? { retryUntil: undefined } : { retryUntil: plan.autoRetryUntil }),
