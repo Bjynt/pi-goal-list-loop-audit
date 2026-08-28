@@ -23,7 +23,13 @@
   Full auditor `IMPOSSIBLE` results and list auto-drops now pass through the
   terminal archive fence with durable recaps; partial impossible results keep
   their explicit narrowing behavior. Every loop-stop notification includes a
-  compact projection of the generated six-label recap.
+  compact projection of the generated six-label recap. Version-bearing
+  already-shipped claims, explicit goal/list cancellation, and `/glla wipe`
+  now include the same compact projection in their terminal notifications.
+
+  Detached-auditor first-event watchdogs start at worker spawn rather than
+  charging dispatch setup time, with a runtime-compatible return-time fallback;
+  cancellation waits for worker teardown before classifying the attempt.
 
   See `docs/DESIGN-long-running-supervision.md` for the durable policy and
   future decision checklist.

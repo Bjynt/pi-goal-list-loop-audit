@@ -21,7 +21,11 @@ GLLA automation is **event-driven and progress-aware**, not duration-guessed.
   may be classified as wedged only by the existing bounded safety watchdog.
 - Timers remain useful for per-attempt backoff, watchdogs, and host safety. A
   timer is never evidence that work completed and is not the definition of a
-  long-running process's lifetime.
+  long-running process's lifetime. Detached-auditor first-event silence starts
+  at the successful worker spawn boundary (with a return-time fallback for
+  runtimes that deliver the spawn event too early), so dispatch setup cannot
+  consume the worker's startup budget. Cancellation awaits the worker's
+  TERM-to-KILL settlement before the attempt is classified or cleaned up.
 
 The shared checker covers all GLLA-owned work planes: ordinary goals, list
 items and their queue, metric/spec/audit loops, detached completion auditors,
@@ -77,7 +81,10 @@ status/reason, durable telemetry, captured audit verdicts, and known archive
 path. It says `not recorded` when a changed-file manifest or test result is not
 available. It never infers a passing test or invents a commit.
 
-The full recap lives in the archive and status/history surfaces. The terminal
+The full recap lives in the archive and status/history surfaces. Every
+terminal goal notification—including version-bearing already-shipped claims,
+explicit goal/list cancellation, and `/glla wipe`—includes a compact
+projection of all six labels; loop notifications do the same. The terminal
 notification may use a compact excerpt. The executor recap and independent
 auditor verdict stay separate: an approval is not manufactured from the
 presence of a summary.
