@@ -235,6 +235,7 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
+import { resolveCompletionSummary } from "../completion-summary.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -904,11 +905,11 @@ function registerAgentTools(pi: any): void {
         // already use the recap; the chat notify was the lone surface still
         // saying "auditor approved" — pure process, no information
         // (Screenshot_20260808_012905/013220/013515).
-        const recapSrc = state.goal.completionSummary?.trim()
-          ? state.goal.completionSummary.replace(/\s+/g, " ")
-          : state.goal.objective;
+        const terminalReason = `auditor ${result.model} approved`;
+        const recapResolution = resolveCompletionSummary({ goal: state.goal, status: "complete", stopReason: terminalReason }, state.goal.completionSummary);
+        const recapSrc = recapResolution.summary.replace(/\s+/g, " ");
         const recap = displaySlice(recapSrc, 110);
-        const archived = archiveCurrentGoal(ctx, "complete", `auditor ${result.model} approved`);
+        const archived = archiveCurrentGoal(ctx, "complete", terminalReason);
         if (!archived) {
           // The archive helper preserves the live objective and emits the
           // persistence warning. Stop here: an approved verdict is not a

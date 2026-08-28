@@ -232,6 +232,7 @@ import {
   pushCapped as pushRepetitionCapped,
 } from "../goal-loop-repetition.js";
 import { buildStatusText, buildWidgetLines, type AuditDisplayProgress } from "../goal-loop-display.js";
+import { resolveCompletionSummary } from "../completion-summary.js";
 import {
   defaultAgentDir,
   resolveEffectiveSubagentModel,
@@ -1088,12 +1089,12 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
     // — auditor X approved" card read as useless summary spam). The recap
     // is the agent's completionSummary when captured; the objective is the
     // fallback for legacy/aborted goals.
-    const recapSrc = state.goal.completionSummary?.trim()
-      ? state.goal.completionSummary.replace(/\s+/g, " ")
-      : state.goal.objective;
+    const terminalReason = `auditor ${result.model} approved (${origin})`;
+    const recapResolution = resolveCompletionSummary({ goal: state.goal, status: "complete", stopReason: terminalReason }, state.goal.completionSummary);
+    const recapSrc = recapResolution.summary.replace(/\s+/g, " ");
     const recap = displaySlice(recapSrc, 110);
     const approvalVia = `${origin === "manual" ? " on /goal verify" : origin === "session-recovery" ? " after session recovery" : " on the provider retry"}${fallbackUsed ? " after an auditor-model fallback" : ""}`;
-    const archived = archiveCurrentGoal(liveCtx, "complete", `auditor ${result.model} approved (${origin})`);
+    const archived = archiveCurrentGoal(liveCtx, "complete", terminalReason);
     if (!archived) {
       // archiveCurrentGoal already preserved the live record and warned the
       // user. Keep the approved claim recoverable, but never emit a terminal

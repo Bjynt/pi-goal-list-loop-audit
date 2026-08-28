@@ -1637,12 +1637,10 @@ function completedGoalLines(g: Goal, now: number, theme?: DisplayTheme, width?: 
   const objBudget = width && width > 0
     ? Math.max(16, width - WIDGET_HORIZONTAL_MARGIN - 4 - visibleLen(segs))
     : 44;
-  // v0.34.91: the end-of-goal summary says WHAT HAPPENED — the agent's own
-  // completion recap when one was captured at complete_goal, the objective
-  // only as a fallback (legacy goals, or aborts where the reason already
-  // carries the story). The objective echo alone read like a ticket title,
-  // not a recap (Screenshot_20260808_012905).
-  const recap = done && g.completionSummary?.trim()
+  // v0.34.91/v0.36.0: every newly archived terminal path carries a useful
+  // recap — including abort/cancel/impossible-derived archives — while the
+  // objective remains the compatibility fallback for legacy records.
+  const recap = g.completionSummary?.trim()
     ? g.completionSummary.replace(/\s+/g, " ").trim()
     : g.objective.replace(/\s+/g, " ");
   return [`${paint(theme, "dim", "─")} ${paint(theme, "dim", `${done ? "✓ done" : "✗ aborted"} · ${truncate(recap, objBudget)} · ${segs}`)}`];
