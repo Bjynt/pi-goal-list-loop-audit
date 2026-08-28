@@ -56,6 +56,12 @@ function readLedger(cwd: string): Array<{ type: string; value?: any }> {
   return raw.split("\n").filter(Boolean).map((l) => JSON.parse(l));
 }
 
+function assertCompactRecap(message: string, context: string): void {
+  for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) {
+    assert.match(message, new RegExp(label), `${context} includes ${label}`);
+  }
+}
+
 function runPauseTool(ctx: MockCtx, params: Record<string, unknown>): Promise<{ content: Array<{ type: string; text: string }> }> {
   return pi.runTool("pause_goal", params, ctx) as Promise<{ content: Array<{ type: string; text: string }> }>;
 }
@@ -138,7 +144,8 @@ test("rule: blocked + no resume path on a /list item → auto-dropped (ledgered)
   assert.ok(fs.existsSync(`${cwd}/.pi-glla/archive/${before.id}.md`), "dropped item has a durable archive");
   const archived = fs.readFileSync(`${cwd}/.pi-glla/archive/${before.id}.md`, "utf8");
   for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) assert.match(archived, new RegExp(`^${label}`, "m"));
-  assert.ok(ctx.ui.matching("Recap:").length >= 1, "drop notification includes compact recap");
+  const dropNotice = ctx.ui.notifies.find((notice) => notice.message.includes("auto-dropped as impossible"))?.message ?? "";
+  assertCompactRecap(dropNotice, "auto-drop notification");
   assert.equal(after.status, "active");
   assert.equal(after.policy, "list");
   assert.equal(readState(cwd).list?.length, 0, "queue drained");
@@ -197,7 +204,8 @@ test("last item: drop still ledgered, list goes empty, no advance possible", asy
   assert.ok(fs.existsSync(`${cwd}/.pi-glla/archive/${before.id}.md`), "last dropped item has a durable archive");
   assert.equal(readState(cwd).list?.length, 0);
   assert.ok(ctx.ui.matching("the list is now empty").length >= 1, "empty-list notify");
-  assert.ok(ctx.ui.matching("Recap:").length >= 1, "empty-list drop notification includes compact recap");
+  const emptyDropNotice = ctx.ui.notifies.find((notice) => notice.message.includes("the list is now empty"))?.message ?? "";
+  assertCompactRecap(emptyDropNotice, "empty-list auto-drop notification");
 });
 
 test("full auditor IMPOSSIBLE result is terminalized with a durable recap and notification", async () => {
@@ -228,8 +236,8 @@ test("full auditor IMPOSSIBLE result is terminalized with a durable recap and no
     const ledger = fs.readFileSync(`${cwd}/.pi-glla/active.jsonl`, "utf8");
     assert.match(ledger, /goal_impossible_terminalized/);
     assert.match(ledger, /goal_archived/);
-    assert.ok(ctx.ui.matching("Goal archived as aborted").length >= 1, "terminal impossible notification");
-    assert.ok(ctx.ui.matching("Recap:").length >= 1, "terminal notification includes compact recap");
+    const impossibleNotice = ctx.ui.notifies.find((notice) => notice.message.includes("Goal archived as aborted"))?.message ?? "";
+    assertCompactRecap(impossibleNotice, "full impossible notification");
   } finally {
     if (previous === undefined) delete process.env.GLLA_PI_BINARY;
     else process.env.GLLA_PI_BINARY = previous;
@@ -270,7 +278,8 @@ test("stored-claim full IMPOSSIBLE retry also terminalizes with its recap", asyn
     assert.match(archived, /Status.*aborted/);
     for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) assert.match(archived, new RegExp(label));
     assert.match(fs.readFileSync(`${cwd}/.pi-glla/active.jsonl`, "utf8"), /provider_retry_impossible_terminalized/);
-    assert.ok(ctx.ui.matching("Recap:").length >= 1, "stored retry terminal notification includes compact recap");
+    const storedImpossibleNotice = ctx.ui.notifies.find((notice) => notice.message.includes("Goal archived as aborted"))?.message ?? "";
+    assertCompactRecap(storedImpossibleNotice, "stored impossible notification");
   } finally {
     if (previous === undefined) delete process.env.GLLA_PI_BINARY;
     else process.env.GLLA_PI_BINARY = previous;
@@ -306,7 +315,8 @@ test("loop hold: drop ledgered but NO advance while a loop owns the surface", as
     assert.ok(fs.existsSync(`${cwd}/.pi-glla/archive/${before.id}.md`), "loop-held dropped item has a durable archive");
     assert.equal(readState(cwd).list?.length, 1, "follow-up stays queued behind the live loop");
     assert.ok(ctx.ui.matching("a running loop holds the surface").length >= 1, "loop-hold notify");
-    assert.ok(ctx.ui.matching("Recap:").length >= 1, "loop-held drop notification includes compact recap");
+    const loopHeldNotice = ctx.ui.notifies.find((notice) => notice.message.includes("a running loop holds the surface"))?.message ?? "";
+    assertCompactRecap(loopHeldNotice, "loop-held auto-drop notification");
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }

@@ -12,7 +12,7 @@ import activate, {
   __testOnlyResetTerminalFlags,
 } from "../extensions/loops/goal.js";
 import { makeMockCtx, MockPi, seedGoal, seedState, tmpCwd } from "./harness/mock-pi.js";
-import { buildRecordedFactsCompletionSummary, compactCompletionSummary, isUsefulCompletionSummary, resolveCompletionSummary } from "../extensions/completion-summary.js";
+import { buildRecordedFactsCompletionSummary, compactCompletionSummary, compactTerminalCompletionSummary, isUsefulCompletionSummary, resolveCompletionSummary } from "../extensions/completion-summary.js";
 
 const SRC = readGoalRuntimeSource();
 const MAIN_SM = { name: "main-session-manager" };
@@ -138,6 +138,24 @@ test("v0.36.0: compact recap projection keeps all six labels and bounds each val
   for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) assert.match(compact, new RegExp(label));
   assert.ok(compact.includes(" · "), "projection is one scannable line");
   assert.ok(compact.includes("…"), "long values are bounded");
+});
+
+test("v0.36.0: terminal notification projection resolves generic claims from durable facts", () => {
+  const compact = compactTerminalCompletionSummary({
+    goal: seedGoal({
+      status: "active",
+      objective: "terminal notification projection",
+      completionSummary: "done",
+      telemetry: { turns: 3, fileWrites: 2, bashCalls: 1 },
+    }) as any,
+    status: "aborted",
+    stopReason: "user cancelled",
+    archivePath: ".pi-glla/archive/terminal-notification.md",
+  });
+  for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) assert.match(compact, new RegExp(label));
+  assert.match(compact, /user cancelled/);
+  assert.match(compact, /not recorded/);
+  assert.doesNotMatch(compact, /done/);
 });
 
 test("v0.36.0: fallback never invents changed files or test results", () => {

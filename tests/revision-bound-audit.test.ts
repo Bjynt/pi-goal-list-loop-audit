@@ -415,6 +415,9 @@ test("v0.34.96: complete_goal routes to aborted when completionSummary says 'alr
   const archive = fs.readdirSync(path.join(cwd, ".pi-glla", "archive"));
   assert.equal(archive.length, 1);
   assert.match(fs.readFileSync(path.join(cwd, ".pi-glla", "archive", archive[0]!), "utf8"), /already_shipped:v0\.34\.74/, "the archive preserves the version reason");
+  const terminalNotice = ctx.ui.notifies.find((notice) => notice.message.includes("no new work shipped"))?.message ?? "";
+  assert.ok(terminalNotice, "already-shipped terminal notification is visible");
+  for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) assert.match(terminalNotice, new RegExp(label));
   const ledger = readLedger(cwd);
   assert.equal(ledger.filter((l) => l.type === "complete_goal_already_shipped").length, 1);
   assert.equal(ledger.filter((l) => l.type === "audit_started").length, 0, "no auditor was started");

@@ -94,6 +94,12 @@ function ledgerEvent(cwd: string, type: string): { type: string; value: Record<s
   return event!;
 }
 
+function assertCompactRecap(message: string, context: string): void {
+  for (const label of ["Outcome:", "Changed:", "Evidence:", "Tests:", "Unresolved:", "Next:"]) {
+    assert.match(message, new RegExp(label), `${context} includes ${label}`);
+  }
+}
+
 function writeFakeAuditorError(cwd: string, error: string, delayMs = 0): string {
   const script = path.join(cwd, "fake-auditor-error-pi.mjs");
   fs.writeFileSync(script, `#!/usr/bin/env node
@@ -310,6 +316,8 @@ test("v0.35.x: list cancel archives the active item, does not relabel it as acti
   assert.match(archive, /\*\*Policy\*\*: list/);
   assert.match(archive, /\*\*Stop reason\*\*: list cancelled/);
   assert.match(archive, /disapproved — `fixture-auditor`/, "the archive keeps the prior verdict classification");
+  const listCancelNotice = ctx.ui.notifies.find((notice) => notice.message.includes("List cancelled"))?.message ?? "";
+  assertCompactRecap(listCancelNotice, "/list cancel notification");
 
   const archived = ledgerEvent(cwd, "goal_archived");
   assert.equal(archived.value.status, "aborted");
@@ -345,7 +353,8 @@ test("v0.34.119: /glla cancel archives the active list item and drops the waitin
   assert.equal(after.goal, null, "glla cancel closes the objective after archiving it");
   assert.deepEqual(after.list, [], "glla cancel cancels the objective rather than leaving waiting list work behind");
   assert.equal(ledgerEvent(cwd, "list_cancelled").value.dropped, 1);
-  assert.ok(ctx.ui.matching("List cancelled").length >= 1);
+  const listCancelNotice = ctx.ui.notifies.find((notice) => notice.message.includes("List cancelled"))?.message ?? "";
+  assertCompactRecap(listCancelNotice, "/glla cancel notification");
 });
 
 test("v0.34.121: /glla cancel stops an active loop before touching an unrelated waiting queue", async () => {
@@ -661,7 +670,12 @@ test("v0.34.121: one confirmed /glla wipe clears recovery and dispatch artifacts
   assert.equal(fs.existsSync(path.join(cwd, ".pi-glla", "continuation-dispatch.json.tmp-test")), false, "dispatch temp sidecar is gone");
   const wipeLedger = fs.readFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), "utf8");
   assert.match(wipeLedger, /loop_completion_summary/, "wiping a loop leaves a durable recap ledger event");
-  assert.ok(ctx.ui.notifies.some((notice) => notice.message.includes("Loop recap: Outcome:")), "wipe notification includes the loop recap projection");
+  const wipeNotice = ctx.ui.notifies.find((notice) => notice.message.includes("glla wipe done"))?.message ?? "";
+  const goalRecapStart = wipeNotice.indexOf("Goal recap: ");
+  assert.ok(goalRecapStart >= 0, "wipe notification includes the goal recap projection");
+  const goalRecapEnd = wipeNotice.indexOf("\nLoop recap:", goalRecapStart);
+  assertCompactRecap(wipeNotice.slice(goalRecapStart, goalRecapEnd >= 0 ? goalRecapEnd : undefined), "wipe goal recap");
+  assert.ok(wipeNotice.includes("Loop recap: Outcome:"), "wipe notification includes the loop recap projection");
   await pi.command("glla", "wipe", ctx);
   assert.equal(confirms, 1, "a clean second invocation is an idempotent no-op, not a second destructive flow");
   await pi.fire("session_shutdown", { reason: "quit" }, ctx);
