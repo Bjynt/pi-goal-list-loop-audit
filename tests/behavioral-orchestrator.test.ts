@@ -337,6 +337,24 @@ test("v0.35.x: list cancel archives the active item, does not relabel it as acti
   assert.match(ctx.ui.notifies.at(-1)?.message ?? "", /Active: \(none\)/, "/list show is truthful after cancellation");
 });
 
+test("v0.36.0: /goal cancel archives a standalone goal with a compact six-label recap", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, {
+    goal: seedGoal({ policy: "goal", objective: "standalone cancel objective — done when pinned" }),
+  });
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("goal", "cancel", ctx);
+  const after = readState(cwd);
+  assert.equal(after.goal, null, "goal cancel closes the archived objective");
+  const archivedPath = fs.readdirSync(path.join(cwd, ".pi-glla", "archive"))[0]!;
+  const archive = fs.readFileSync(path.join(cwd, ".pi-glla", "archive", archivedPath), "utf8");
+  assert.match(archive, /\*\*Status\*\*: aborted/);
+  assert.match(archive, /\*\*Stop reason\*\*: user cancelled/);
+  const cancelNotice = ctx.ui.notifies.find((notice) => notice.message.includes("aborted"))?.message ?? "";
+  assertCompactRecap(cancelNotice, "/goal cancel notification");
+});
+
 test("v0.34.119: /glla cancel archives the active list item and drops the waiting objective queue", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
