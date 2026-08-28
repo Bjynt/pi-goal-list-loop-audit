@@ -66,9 +66,12 @@ test("audit-cap branch: aggressiveMode keeps ACTIVE + pendingTasks; OFF pauses (
   assert.match(goalSrc, /status: "paused",\n\s+auditHistory: history,\n\s+pendingCompletion: undefined,\n\s+pauseKind: "decision",[\s\S]{0,500}?pauseReason: `auditor disapproved \$\{trailingDisapprovals\}× consecutively \(cap \$\{auditCap\}\)`,/);
 });
 
-test("IMPOSSIBLE branch: aggressive partial stays active, full still pauses (item 24 tests 3-4)", () => {
+test("IMPOSSIBLE branch: aggressive partial continues, full terminalizes (item 24 tests 3-4)", () => {
   assert.match(goalSrc, /effectiveImp\.aggressiveMode && classifyImpossibleReason\(reason\) === "partial"/);
   assert.match(goalSrc, /impossible_partial_continue/);
+  assert.match(goalSrc, /const terminalReason = `auditor impossible: \$\{reason\}`;/);
+  assert.match(goalSrc, /terminalizeImpossibleGoal\(ctx, terminalReason, history\)/);
+  assert.match(goalSrc, /goal_impossible_terminalized/);
 });
 
 // ---- item 27: heartbeat ship-suppression ----

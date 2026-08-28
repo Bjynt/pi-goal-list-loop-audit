@@ -85,7 +85,7 @@ test("pause_goal tool: structured kind/options/recommended/resumeAt persist to t
   const pairs: Array<[string, string]> = [
     ["pauseReason: `send-retry storm", "error"],
     ["pauseReason: `stalled: ${threshold} continuation refires", "error"],
-    ["pauseReason: `auditor verdict: IMPOSSIBLE —", "decision"],
+    ["pauseReason: `auditor verdict: IMPOSSIBLE (partial) —", "decision"],
     ["pauseReason: `auditor retry:", "wait"],
     ["pauseReason: `auditor disapproved ${trailingDisapprovals}× consecutively", "decision"],
     ["pauseReason: `token limit exceeded", "error"],
