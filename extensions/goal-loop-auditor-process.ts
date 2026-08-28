@@ -907,8 +907,13 @@ export async function runDetachedGoalCompletionAuditor(args: {
     // setup budget. Anchor it to Node's successful spawn event so filesystem
     // setup, extension resolution, and scheduler delay cannot consume the
     // child's startup window before the worker can install its handlers.
+    // Set the lower bound at return as well as on the event: Bun's
+    // child_process shim may deliver the spawn event before a listener added
+    // after spawn() can observe it. A launch error still wins via
+    // childSpawnError on the next loop iteration.
+    workerSpawnedAt = now();
     child.once("spawn", () => {
-      workerSpawnedAt = now();
+      workerSpawnedAt ??= now();
     });
     // `spawn()` reports ENOENT/EACCES asynchronously instead of throwing.
     // Attach the listener immediately so a launcher failure becomes a bounded

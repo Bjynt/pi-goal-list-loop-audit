@@ -130,6 +130,7 @@ setInterval(() => {}, 1_000);
     thinkingLevel: "high",
     onStalled: (info) => stalled.push(info),
     runtime: {
+      workerPath: worker,
       spawn: delayedSpawn,
       attemptId: () => "attempt-first-event-clock",
       pollIntervalMs: 10,
