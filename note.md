@@ -29,6 +29,10 @@ is it our bug or tin tin subagents
 
 # Next
 
+## maybe turn limit too harsh ? in bigger projects we hit it despite seeming correct use
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260828_232807.png 
+
 ## make sure model selectors as as good as the main model selector with fallbacks
 
 ## audits should focus on the project at hand they can explore outside but we dont want it to turn into a fix the world
