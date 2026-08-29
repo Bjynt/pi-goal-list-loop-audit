@@ -116,7 +116,7 @@ contains objective, verification contract, audit evidence, task state,
 pending-audit lifecycle, owner/session-generation, and revision data; removes
 old payloads without mutating the source list; retains the newest dispatch;
 and records the integrated context-hook ledger event. The focused measurement
-and checkpoint regressions passed **9/9 tests** and `npx tsc --noEmit` passed.
+and checkpoint regressions passed **10/10 tests** and `npx tsc --noEmit` passed.
 
 ## Interpretation and ownership
 

@@ -2,8 +2,11 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
 import type { Goal } from "../extensions/goal-loop-core.ts";
+import { continuationPrompt } from "../extensions/goal-continuation.ts";
+import { measureContextGrowth } from "../extensions/context-growth.ts";
 import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.ts";
 import { state, replaceState } from "../extensions/goal-state.ts";
+import * as fs from "node:fs";
 import { makeMockCtx, MockPi, tmpCwd } from "./harness/mock-pi.js";
 import {
   AUTHORITATIVE_CHECKPOINT_CUSTOM_TYPE,
@@ -82,6 +85,46 @@ test("authoritative checkpoint carries state, audit evidence, and lifecycle fenc
   assert.match(checkpoint, /Add lifecycle regression coverage/);
 });
 
+test("real continuation payload growth is bounded after checkpoint projection", () => {
+  const payload = continuationPrompt(goalFixture());
+  const checkpoint = buildAuthoritativeContextCheckpoint({
+    goal: goalFixture(),
+    sessionGeneration: 12,
+    ownerSessionId: "session-owner-12",
+  });
+  const baseline = [
+    { role: "user", content: "start" },
+    { role: "assistant", content: "working", stopReason: "stop" },
+  ];
+  const bounded = [5, 12, 25].map((count) => {
+    const messages = [
+      ...baseline,
+      ...Array.from({ length: count }, () => ({
+        role: "user",
+        customType: "goal-event",
+        content: payload,
+        display: false,
+      })),
+    ];
+    const projection = projectBoundedGllaContext(messages, checkpoint);
+    const measurement = measureContextGrowth(projection.messages);
+    return {
+      count,
+      messageCount: measurement.messageCount,
+      serializedBytes: measurement.serializedBytes,
+      gllaMessageCount: measurement.gllaMessageCount,
+      repeatedPayloads: measurement.repeatedGllaPayloadCount,
+      removedPayloads: projection.removedPayloads,
+    };
+  });
+
+  assert.deepEqual(bounded, [
+    { count: 5, messageCount: 4, serializedBytes: 24063, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 4 },
+    { count: 12, messageCount: 4, serializedBytes: 24063, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 11 },
+    { count: 25, messageCount: 4, serializedBytes: 24063, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 24 },
+  ]);
+});
+
 test("projection removes old goal events, inserts one checkpoint, and keeps newest payload", () => {
   const original = [
     { role: "user", content: "ordinary user context" },
@@ -154,7 +197,7 @@ test("context hook uses current durable state and records the projection", async
     assert.equal((result.messages![1] as { content?: unknown }).content, "continuation-3");
 
     const ledgerPath = `${cwd}/.pi-glla/active.jsonl`;
-    const ledger = (await import("node:fs")).readFileSync(ledgerPath, "utf8")
+    const ledger = fs.readFileSync(ledgerPath, "utf8")
       .split("\\n").filter(Boolean).map((line) => JSON.parse(line) as { type: string; value?: Record<string, unknown> });
     const event = ledger.find((entry) => entry.type === "context_checkpoint_projection");
     assert.ok(event);
