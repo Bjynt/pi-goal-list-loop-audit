@@ -109,11 +109,12 @@ test("v0.35.65: detailed widget rows expose identity, purpose, evidence-backed p
   assert.match(lines[4]!, /1 more agents · \/glla agents/);
 });
 
-test("v0.35.29 #15: --tail matches by needle, takes newest mtime, formats entries tolerantly", () => {
+test("v0.35.66: --tail matches the exact child identity and formats entries tolerantly", () => {
   const dir = "/tmp/fake-sessions";
   const files = ["b.jsonl", "a.jsonl"];
   const contents: Record<string, string> = {
     "a.jsonl": [
+      JSON.stringify({ type: "session_info", name: "explore#rec-1234" }),
       JSON.stringify({ message: { role: "assistant", content: [{ type: "text", text: "starting: map model picker" }] } }),
       JSON.stringify({ message: { role: "assistant", content: [{ type: "text", text: "working on it" }] } }),
       JSON.stringify({ type: "tool_call", role: "tool", content: "read x.ts" }),
@@ -122,7 +123,7 @@ test("v0.35.29 #15: --tail matches by needle, takes newest mtime, formats entrie
     ].join("\n"),
     "b.jsonl": JSON.stringify({ message: { role: "user", content: "unrelated" } }),
   };
-  const result = tailChildTranscript(dir, row({ summary: "map model picker" }), {
+  const result = tailChildTranscript(dir, row({ recordId: "rec-123456", summary: "map model picker" }), {
     lines: 3,
     listDir: () => files,
     statMtime: (f) => (f.endsWith("a.jsonl") ? 200 : 100), // a newer AND matching
@@ -144,12 +145,12 @@ test("v0.35.66: --tail selects the exact persisted child identity among same-typ
       JSON.stringify({ type: "session", id: "other-session" }),
       JSON.stringify({ type: "session_info", name: "Explore#87654321" }),
       JSON.stringify({ role: "assistant", content: "same summary — unrelated child" }),
-    ].join("\\n"),
+    ].join("\n"),
     "target.jsonl": [
       JSON.stringify({ type: "session", id: "target-session" }),
       JSON.stringify({ type: "session_info", name: "Explore#12345678" }),
       JSON.stringify({ role: "assistant", content: "target child transcript" }),
-    ].join("\\n"),
+    ].join("\n"),
   };
   const readTail = (file: string, maxBytes?: number): Buffer => {
     const raw = Buffer.from(contents[path.basename(file)] ?? "");
@@ -171,8 +172,8 @@ test("v0.35.66: --tail selects the exact persisted child identity among same-typ
   });
   assert.equal(result.ok, true);
   assert.match(result.detail, /target\.jsonl/);
-  assert.match(result.lines.join("\\n"), /target child transcript/);
-  assert.doesNotMatch(result.lines.join("\\n"), /unrelated child/);
+  assert.match(result.lines.join("\n"), /target child transcript/);
+  assert.doesNotMatch(result.lines.join("\n"), /unrelated child/);
 });
 
 test("v0.35.66: --tail refuses a same-type transcript without exact child identity", () => {
@@ -186,7 +187,7 @@ test("v0.35.66: --tail refuses a same-type transcript without exact child identi
     readFile: () => Buffer.from([
       JSON.stringify({ type: "session_info", name: "Explore#87654321" }),
       JSON.stringify({ role: "assistant", content: "shared summary" }),
-    ].join("\\n")),
+    ].join("\n")),
   });
   assert.equal(result.ok, false);
   assert.match(result.detail, /exact identity/);
@@ -315,7 +316,10 @@ test("v0.35.45: the candidate scan reads a bounded tail per file, not full trans
   // Injected reader records maxBytes; production passes a tail-aware reader.
   let sawMaxBytes: Array<number | undefined> = [];
   const dir = fs.mkdtempSync(path.join("/tmp", "glla-scan-"));
-  fs.writeFileSync(path.join(dir, "a.jsonl"), JSON.stringify({ role: "user", content: "map model picker needle here" }));
+  fs.writeFileSync(path.join(dir, "a.jsonl"), [
+    JSON.stringify({ type: "session_info", name: "explore#rec-1" }),
+    JSON.stringify({ role: "user", content: "map model picker needle here" }),
+  ].join("\n"));
   const res = tailChildTranscript(dir, row({ summary: "map model picker" }), {
     readFile: (file, maxBytes) => { sawMaxBytes.push(maxBytes); return fs.readFileSync(file); },
     listDir: (d) => fs.readdirSync(d),
