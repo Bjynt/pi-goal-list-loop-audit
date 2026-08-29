@@ -57,6 +57,11 @@
   six-label compact projection, including for long valid recaps, instead of a
   raw flattened slice.
 
+  Durable-vs-defer decisions now have an explicit `record_goal_judgment` tool:
+  inline and deferred choices are persisted as bounded ledger events, with a
+  required durable follow-up for intentional deferrals. The policy keeps the
+  durable action ahead of defer and pins the plaque-ordering regression.
+
   See `docs/DESIGN-long-running-supervision.md` for the durable policy and
   future decision checklist.
 

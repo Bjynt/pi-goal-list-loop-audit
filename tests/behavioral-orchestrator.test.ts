@@ -1595,7 +1595,7 @@ test("T5: mutating tools refuse a foreign (subagent) session ctx", async () => {
   const cwd = tmpCwd();
   await freshSession(cwd, "startup"); // owner = MAIN_SM (claimed in test 1)
   const foreign = makeMockCtx(cwd, { sessionManager: { name: "SUBAGENT-session-manager" } });
-  for (const tool of ["complete_goal", "pause_goal", "list_add", "propose_loop_draft", "complete_task"]) {
+  for (const tool of ["complete_goal", "pause_goal", "record_goal_judgment", "list_add", "propose_loop_draft", "complete_task"]) {
     const res = await pi.runTool(tool, tool === "list_add" ? { items: ["x"] } : { id: "t-1" }, foreign);
     assert.match(res.content[0]!.text, /only the MAIN session owns/, `${tool} refuses foreign ctx`);
   }
@@ -1605,7 +1605,7 @@ test("T5: guard coverage pin — every mutating tool routes through foreignToolG
   // Per-tool block scan: a NEW or renamed mutating tool that forgets the
   // guard fails this pin (the audit's T5 regression shape). list_status is
   // read-only and explicitly exempt.
-  const MUTATING = ["complete_goal", "pause_goal", "complete_task", "update_task_status", "propose_goal_draft", "propose_loop_draft", "propose_loop_refine", "list_add", "list_activate", "propose_task_list"];
+  const MUTATING = ["complete_goal", "pause_goal", "record_goal_judgment", "complete_task", "update_task_status", "propose_goal_draft", "propose_loop_draft", "propose_loop_refine", "list_add", "list_activate", "propose_task_list"];
   const blocks = GOAL_SRC.split("pi.registerTool(defineTool({").slice(1);
   const byName = new Map<string, string>();
   for (const block of blocks) {
