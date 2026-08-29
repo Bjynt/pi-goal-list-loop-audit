@@ -14,7 +14,7 @@ the OCR-visible strings recorded above.
 
 ## Durable source/transition map
 
-- `extensions/loops/goal-loop-display.ts:1109-1122` renders a waiting-only
+- `extensions/goal-loop-display.ts:1109-1122` renders a waiting-only
   queue as `list queued · N waiting`, names the head, and explicitly points to
   `/list next`.
 - `extensions/goal-commands.ts:1400-1450` implements `/list next` as the
