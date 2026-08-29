@@ -1174,26 +1174,15 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
     const exceptionReason = `auditor run exception: ${reason}`;
     const recoveryCtx = freshCtxForGeneration(generation);
     const current = state.goal;
-    const currentClaim = current?.pendingCompletion;
-    const durableExceptionClaim: PendingCompletion = currentClaim && currentClaim.attemptId === claim?.attemptId
-      ? currentClaim
-      : claim!;
-    // onAttempt persists the selected ref before the worker launch. If an
-    // unexpected exception escapes the policy after that point, consume the
-    // first call and authorize only its one remaining retry. Otherwise a
-    // fresh session would see just auditorCandidateRef and replay an unknown
-    // provider call as a new first attempt.
-    const exceptionCursor = durableExceptionClaim.auditorCandidateRef
-      && !durableExceptionClaim.auditorRetryCandidateRef
-      && !durableExceptionClaim.auditorRetryAttemptStartedAt
-      && !durableExceptionClaim.auditorFallbackExhausted
-      ? {
-        auditorRetryCandidateRef: durableExceptionClaim.auditorCandidateRef,
-        auditorFailureCount: Math.max(1, Math.min(2, durableExceptionClaim.auditorFailureCount ?? 0)),
-        auditorFailureClass: "transport" as const,
-        auditorFailureAt: new Date().toISOString(),
-      }
-      : undefined;
+    // An unexpected exception is not safely attributable to a completed
+    // candidate call. Stop automatic recovery at this state boundary rather
+    // than allowing a restart to replay an unknown provider request; explicit
+    // manual recovery clears this exhausted cursor for a fresh bounded run.
+    const exceptionCursor = {
+      auditorFallbackExhausted: true,
+      auditorFailureClass: "transport" as const,
+      auditorFailureAt: new Date().toISOString(),
+    };
     if (recoveryCtx && current?.id === goalId && current.pendingCompletion?.attemptId === claim.attemptId) {
       markCompletionAuditRecoveryPending(recoveryCtx, exceptionReason, exceptionCursor);
       recoveryCtx.ui.notify("Stored completion audit failed before producing a result; the claim is parked for a bounded recovery attempt.", "warning");

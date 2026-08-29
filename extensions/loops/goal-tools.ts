@@ -918,7 +918,11 @@ function registerAgentTools(pi: any): void {
           // Park through the durable cwd-only path so an exception cannot
           // strand a running claim merely because the normal apply context
           // is unavailable.
-          parkCompletionAuditRecovery(ctx.cwd, `auditor run exception: ${failureCopy.diagnostic}`);
+          parkCompletionAuditRecovery(ctx.cwd, `auditor run exception: ${failureCopy.diagnostic}`, {
+            auditorFallbackExhausted: true,
+            auditorFailureClass: "transport",
+            auditorFailureAt: new Date().toISOString(),
+          });
           return staleToolResult();
         }
         const currentClaim = current.pendingCompletion ?? completionClaim;
