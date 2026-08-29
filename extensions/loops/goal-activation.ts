@@ -265,6 +265,7 @@ import {
 import { consumeRecoveryResume } from "../goal-recovery.js"; // decomposition step 3 (v0.34.111)
 import { payloadGuardProjection } from "../payload-guard.js"; // v0.35.51 image-413 guard
 import { dropFailedErrorOnlyTurns, pruneCompactionPreparation } from "../context-hygiene.js"; // v0.35.52 error-turn hygiene
+import { buildAuthoritativeContextCheckpoint, projectBoundedGllaContext } from "../context-checkpoint.js"; // v0.36.2 bounded continuation context
 import {
   createGoalHeartbeat,
   bindSubagentRpcHost,
@@ -2519,7 +2520,30 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // accumulate forever otherwise: polis hit 122.7% of a 200k window on
     // error entries alone, and compaction then aborted on its own bloat.
     const hygiene = dropFailedErrorOnlyTurns(projection.messages);
-    if (projection.evicted.length === 0 && hygiene.dropped.length === 0) return {};
+    // v0.36.2: continuation payloads are control-plane state, not durable
+    // conversation. Once more than one has accumulated, retain only the
+    // newest dispatch payload and insert one bounded checkpoint built from
+    // the current durable goal. This is a per-send projection: the transcript
+    // and lifecycle state remain untouched, while compaction/recovery turns
+    // still receive the objective, contract, audit evidence, and fences.
+    const checkpointProjection = state.goal
+      ? projectBoundedGllaContext(
+        hygiene.messages,
+        buildAuthoritativeContextCheckpoint({
+          goal: state.goal,
+          sessionGeneration,
+          ownerSessionId: sessionManagerId(ctx),
+        }),
+      )
+      : {
+        messages: hygiene.messages,
+        removedPayloads: 0,
+        insertedCheckpoint: false,
+        retainedPayloads: 0,
+        originalPayloads: 0,
+        checkpointChars: 0,
+      };
+    if (projection.evicted.length === 0 && hygiene.dropped.length === 0 && checkpointProjection.removedPayloads === 0) return {};
     try {
       if (hygiene.dropped.length > 0) {
         appendLedger(ctx.cwd, "context_hygiene_dropped", {
@@ -2537,10 +2561,19 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
           generation: sessionGeneration,
         });
       }
+      if (checkpointProjection.removedPayloads > 0) {
+        appendLedger(ctx.cwd, "context_checkpoint_projection", {
+          goalId: state.goal?.id,
+          removedPayloads: checkpointProjection.removedPayloads,
+          retainedPayloads: checkpointProjection.retainedPayloads,
+          checkpointChars: checkpointProjection.checkpointChars,
+          generation: sessionGeneration,
+        });
+      }
     } catch {
       // The projection itself must never fail a send over ledger bookkeeping.
     }
-    return { messages: hygiene.messages as unknown as ContextEvent["messages"] };
+    return { messages: checkpointProjection.messages as unknown as ContextEvent["messages"] };
   });
 
   // v0.35.52: the same bounded rule prunes the compaction summarization
