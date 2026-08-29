@@ -288,6 +288,9 @@ export interface PendingCompletion {
   /** Set only after the first transient failure; a restart uses this marker
    * to spend the already-authorized second call, never a third call. */
   auditorRetryCandidateRef?: string;
+  /** Set immediately before launching that second call. If the host restarts
+   * after this point, the unknown call is consumed rather than replayed. */
+  auditorRetryAttemptStartedAt?: string;
   auditorAttemptedRefs?: string[];
   /** 0 = first call in flight, 1 = first failure/retry in flight, 2 = a
    * terminal second failure. State loading clamps this to [0, 2]. */
@@ -1451,6 +1454,7 @@ function normalizePendingCompletion(value: unknown): PendingCompletion {
     auditorCandidateRefs: _auditorCandidateRefs,
     auditorCandidateRef: _auditorCandidateRef,
     auditorRetryCandidateRef: _auditorRetryCandidateRef,
+    auditorRetryAttemptStartedAt: _auditorRetryAttemptStartedAt,
     auditorAttemptedRefs: _auditorAttemptedRefs,
     auditorFailureCount: _auditorFailureCount,
     auditorFailureClass: _auditorFailureClass,
@@ -1481,6 +1485,11 @@ function normalizePendingCompletion(value: unknown): PendingCompletion {
   const auditorRetryCandidateRef = typeof _auditorRetryCandidateRef === "string" && _auditorRetryCandidateRef.trim()
     ? _auditorRetryCandidateRef.trim().slice(0, 200)
     : undefined;
+  const auditorRetryAttemptStartedAt = auditorRetryCandidateRef
+    && typeof _auditorRetryAttemptStartedAt === "string"
+    && Number.isFinite(Date.parse(_auditorRetryAttemptStartedAt))
+    ? new Date(Date.parse(_auditorRetryAttemptStartedAt)).toISOString()
+    : undefined;
   const auditorFailureCount = typeof _auditorFailureCount === "number" && Number.isFinite(_auditorFailureCount)
     ? Math.min(2, Math.max(0, Math.trunc(_auditorFailureCount)))
     : undefined;
@@ -1497,6 +1506,7 @@ function normalizePendingCompletion(value: unknown): PendingCompletion {
     ...(auditorCandidateRefs !== undefined ? { auditorCandidateRefs } : {}),
     ...(auditorCandidateRef ? { auditorCandidateRef } : {}),
     ...(auditorRetryCandidateRef ? { auditorRetryCandidateRef } : {}),
+    ...(auditorRetryAttemptStartedAt ? { auditorRetryAttemptStartedAt } : {}),
     ...(auditorAttemptedRefs !== undefined ? { auditorAttemptedRefs } : {}),
     ...(auditorFailureCount !== undefined ? { auditorFailureCount } : {}),
     ...(auditorFailureClass ? { auditorFailureClass } : {}),
