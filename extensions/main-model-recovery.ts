@@ -186,7 +186,12 @@ const IN_BAND_PROVIDER_FAILURE_PATTERN = /\b(?:http\s*)?(?:429|5\d\d)\b|rate[_ -
 
 export function classifyInBandProviderFailure(output: string | undefined): MainModelFailure | undefined {
   const raw = typeof output === "string" ? output.trim() : "";
-  if (!raw || !IN_BAND_PROVIDER_FAILURE_PATTERN.test(raw)) return undefined;
+  if (!raw) return undefined;
+  // A structured provider policy event is eligible immediately; unlike the
+  // generic status/network pane below it is not a repeated-fingerprint
+  // heuristic.
+  if (isPromptPolicyRejection(raw)) return classifyMainModelFailure(raw);
+  if (!IN_BAND_PROVIDER_FAILURE_PATTERN.test(raw)) return undefined;
   const failure = classifyMainModelFailure(raw);
   // Unlike generic non-recoverable classes, the explicit policy event is
   // useful to the orchestration layer even when it arrived as a successful
