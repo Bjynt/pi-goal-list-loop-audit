@@ -12,9 +12,10 @@ The structural probe uses the exact `continuationPrompt()` output that
 `extensions/goal-loop.ts` sends in a `customType: "goal-event"` follow-up. It
 retains those messages in a synthetic effective history and measures ordinary
 history separately from GLLA payloads. The after rows pass that history through
-`projectBoundedGllaContext()` with a checkpoint built from the durable goal
-shape. No provider request, session write, or transcript mutation is performed
-by the offline probe.
+`projectBoundedGllaContext()` with a checkpoint built from durable goal state.
+The runtime path also supplies the active loop state, including for loop-only
+sessions and paused-goal-plus-loop sessions. No provider request, session write,
+or transcript mutation is performed by the offline probe.
 
 ## Exact provider-token capture
 
@@ -115,8 +116,11 @@ are retained.
 contains objective, verification contract, audit evidence, task state,
 pending-audit lifecycle, owner/session-generation, and revision data; removes
 old payloads without mutating the source list; retains the newest dispatch;
-and records the integrated context-hook ledger event. The focused measurement
-and checkpoint regressions passed **10/10 tests** and `npx tsc --noEmit` passed.
+and records the integrated context-hook ledger event. The follow-up regressions
+also cover an active loop with no goal and an active loop alongside a paused
+goal: both retain the loop target in the authoritative checkpoint and bound
+old `goal-event` payloads. The focused measurement and checkpoint regressions
+passed **13/13 tests** and `npx tsc --noEmit` passed.
 
 ## Interpretation and ownership
 
@@ -130,12 +134,17 @@ continuation messages.
 The result supports the implemented bounded authoritative checkpoint/resync.
 `extensions/context-checkpoint.ts` retains one newest dispatch payload and,
 when older `goal-event` payloads exist, inserts a bounded checkpoint derived
-from the current durable goal. It carries the objective, verification
-contract, task state, latest audit metadata/evidence excerpt, pending audit
-lifecycle, owner/session-generation, revision, and stop/pause state. The
-projection runs at the existing `context` chokepoint, so ordinary calls and
-recovery/compaction-adjacent calls receive the same fence; stale-session and
-dispatch ownership checks remain in the continuation path unchanged.
+from current durable goal and/or active loop state. It carries the goal
+objective, verification contract, task state, latest audit metadata/evidence
+excerpt, pending audit lifecycle, owner/session-generation, revision, and
+stop/pause state when a goal is present; an active loop additionally carries
+its target, measure, iteration/progress, bounds, recent measurements, and loop
+lifecycle. The runtime context hook now projects whenever a goal OR an active
+loop exists, so a loop-only session cannot bypass the bound and a paused goal
+cannot hide the active loop target. The projection runs at the existing
+`context` chokepoint, so ordinary calls and recovery/compaction-adjacent calls
+receive the same fence; stale-session and dispatch ownership checks remain in
+the continuation path unchanged.
 
 ## Limits
 
