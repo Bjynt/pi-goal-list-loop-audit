@@ -17,6 +17,7 @@ import {
 } from "../extensions/main-model-recovery.ts";
 import {
   runAuditorFallbackWithPolicy,
+  normalizeAuditorInfrastructureResult,
   type AuditorFallbackCandidate,
   type AuditorFallbackExhaustionInfo,
   type GoalAuditorResult,
@@ -290,6 +291,52 @@ test("a restarted retry cursor spends the second call once, then advances", asyn
   assert.equal(outcome.result.approved, true);
   assert.equal(outcome.retriedOnce, true);
   assert.equal(outcome.fallbackUsed, true);
+});
+
+test("a crash after launching the retry consumes that retry and advances without a third call", async () => {
+  const calls: string[] = [];
+  const exhausted: AuditorFallbackExhaustionInfo[] = [];
+  const outcome = await runAuditorFallbackWithPolicy([
+    { ref: "test/primary", model: { provider: "test", id: "primary" }, via: "setting" },
+    { ref: "test/fallback-1", model: { provider: "test", id: "fallback-1" }, via: "fallback-pin" },
+  ], async (candidate) => {
+    calls.push(candidate.ref!);
+    assert.notEqual(candidate.ref, "test/primary", "the already-started retry must not be replayed after restart");
+    return result({ approved: true, model: candidate.ref });
+  }, {
+    resumeCandidateRef: "test/primary",
+    retryCandidateRef: "test/primary",
+    retryAttemptStarted: true,
+    retryFailureClass: "provider",
+    attemptedRefs: [],
+    sleep: async () => {},
+    shouldRetry: () => true,
+    onCandidateExhausted: (_candidate, _error, info) => { exhausted.push(info); },
+  });
+
+  assert.deepEqual(calls, ["test/fallback-1"]);
+  assert.equal(exhausted[0]?.candidateRef, "test/primary");
+  assert.equal(exhausted[0]?.nextCandidateRef, "test/fallback-1");
+  assert.equal(outcome.result.approved, true);
+  assert.equal(outcome.retriedOnce, true);
+  assert.equal(outcome.fallbackUsed, true);
+});
+
+test("infrastructure errors cannot survive as semantic auditor verdicts", async () => {
+  const normalized = normalizeAuditorInfrastructureResult(result({
+    approved: true,
+    disapproved: true,
+    impossible: true,
+    impossibleReason: "mixed payload",
+    regressionShieldPassed: false,
+    regressionShieldMissing: ["contract item"],
+    error: "503 provider unavailable",
+  }));
+  assert.equal(normalized.approved, false);
+  assert.equal(normalized.disapproved, false);
+  assert.equal(normalized.impossible, false);
+  assert.equal(normalized.regressionShieldPassed, undefined);
+  assert.deepEqual(normalized.regressionShieldMissing, undefined);
 });
 
 test("candidate exhaustion preserves the final concrete failure class", async () => {
