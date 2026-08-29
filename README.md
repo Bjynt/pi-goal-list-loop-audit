@@ -136,6 +136,7 @@ forcing every problem into a loop.
 /goal                                      # interview + Confirm
 /goal "... Done when: ..."                 # direct contract start
 /goal start "..."                          # explicit no-interview start
+/goal start                                  # use one clear recent request, or draft safely
 /goal plan "..."                           # research-first extended plan
 /goal status                               # inspect the current goal
 /goal pause                                # pause automatic continuation
@@ -155,6 +156,7 @@ quietly inventing an unbounded backlog.
 /list "fix the cache. Done when: tests pass"
 /list plan.md                              # import a checklist or plan file
 /list                                     # show active and waiting items
+/list start                                # activate the queued head, or draft one clear recent request
 /list next                                 # intentionally activate the next item
 /list next <n>                             # choose a specific item
 /list resume                               # explicitly retry/resume the list
@@ -171,15 +173,25 @@ If a saved item is malformed or needs a repair, the repair card preserves the
 full original target, explains the concrete recovery action, and permits one
 bounded bootstrap turn containing `propose_task_list`. Confirm the redraft;
 automatic repeats are fenced. Use `/list resume` for an intentional retry and
-`/list next` when you intentionally want another queued item.
+`/list next` when you intentionally want another queued item. `/list start` is
+also explicit: it activates the queued head, or—when the queue is empty—uses
+one clear recent user request as a seed for the normal Confirm-gated list
+drafting flow. Ambiguous context is never queued automatically.
 
 ### `/loop` — an improvement process
 
 ```text
 /loop                                     # interview + Confirm
+/loop start                                # use one clear recent target as an explicit metricless start
 /loop plan                                # research-first loop design
 /loop start "reduce flaky tests" measure="..." direction=min
 /loop start "keep improving the spec" measure=none max=20 cadence=900
+
+Bare `/loop start` infers only one clear recent target. It does not invent a
+measure, direction, bound, cadence, or branch setting; the command uses the
+existing explicit metricless-start path. If the context is ambiguous, GLLA
+returns to loop drafting so the target and any numeric metric/consent gates
+remain visible.
 /loop audit                               # recurring project-audit cadence
 /loop status
 /loop stop

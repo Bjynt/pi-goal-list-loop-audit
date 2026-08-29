@@ -227,9 +227,10 @@ export function inferStartObjective(
   const candidates: Candidate[] = [];
   let hadAmbiguousText = false;
 
-  const current = normalizeWhitespace(currentPrompt);
+  const currentSource = currentPrompt.replace(/\r\n?/g, "\n").trim();
+  const current = normalizeWhitespace(currentSource);
   if (current) {
-    const currentKind = classifyCandidate(current, options.currentPromptTruncated);
+    const currentKind = classifyCandidate(currentSource, options.currentPromptTruncated);
     if (currentKind === "clear") {
       candidates.push({ text: current, source: "current-prompt" });
     } else if (currentKind === "ambiguous") {

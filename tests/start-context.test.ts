@@ -79,6 +79,12 @@ test("bare-start inference marks a multi-task request ambiguous", () => {
   if (result.kind === "ambiguous") assert.equal(result.reason, "unclear-objective");
 });
 
+test("bare-start inference preserves multiline task boundaries", () => {
+  const result = inferStartObjective("- Fix the login test\n- Update the deployment docs", []);
+  assert.equal(result.kind, "ambiguous");
+  if (result.kind === "ambiguous") assert.equal(result.reason, "unclear-objective");
+});
+
 test("session reader uses only a bounded active-branch tail", () => {
   const entries = Array.from({ length: START_CONTEXT_MAX_ENTRIES + 4 }, (_, index) =>
     message("user", index === 0 ? "Implement the old task" : `say ${index}`),
