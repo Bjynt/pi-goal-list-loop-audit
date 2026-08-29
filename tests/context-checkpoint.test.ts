@@ -2,6 +2,9 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
 import type { Goal } from "../extensions/goal-loop-core.ts";
+import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.ts";
+import { state, replaceState } from "../extensions/goal-state.ts";
+import { makeMockCtx, MockPi, tmpCwd } from "./harness/mock-pi.js";
 import {
   AUTHORITATIVE_CHECKPOINT_CUSTOM_TYPE,
   MAX_AUTHORITATIVE_CHECKPOINT_CHARS,
@@ -125,4 +128,39 @@ test("zero-retention mode resynchronizes from the checkpoint without retaining p
   assert.equal(result.messages.length, 1);
   assert.equal((result.messages[0] as { customType?: unknown }).customType, AUTHORITATIVE_CHECKPOINT_CUSTOM_TYPE);
   assert.equal((result.messages[0] as { content?: unknown }).content, "authoritative");
+});
+
+test("context hook uses current durable state and records the projection", async () => {
+  const cwd = tmpCwd();
+  const previousGoal = state.goal;
+  replaceState({ goal: goalFixture() });
+  try {
+    const pi = new MockPi();
+    activate(pi.api);
+    __testOnlyResetOwnerSession();
+    const ctx = makeMockCtx(cwd, { sessionManager: { name: "checkpoint-wiring" } });
+    const handlers = (pi as unknown as { handlers: Map<string, (...args: unknown[]) => unknown> }).handlers;
+    const handler = handlers.get("context");
+    assert.ok(handler);
+
+    const result = await handler({
+      type: "context",
+      messages: [gllaPayload(1), gllaPayload(2), gllaPayload(3)],
+    }, ctx) as { messages?: unknown[] };
+    assert.ok(result.messages);
+    assert.equal(result.messages!.length, 2, "checkpoint plus newest payload");
+    assert.equal((result.messages![0] as { customType?: unknown }).customType, AUTHORITATIVE_CHECKPOINT_CUSTOM_TYPE);
+    assert.match(String((result.messages![0] as { content?: unknown }).content), /revision=7/);
+    assert.equal((result.messages![1] as { content?: unknown }).content, "continuation-3");
+
+    const ledgerPath = `${cwd}/.pi-glla/active.jsonl`;
+    const ledger = (await import("node:fs")).readFileSync(ledgerPath, "utf8")
+      .split("\\n").filter(Boolean).map((line) => JSON.parse(line) as { type: string; value?: Record<string, unknown> });
+    const event = ledger.find((entry) => entry.type === "context_checkpoint_projection");
+    assert.ok(event);
+    assert.equal(event!.value!.removedPayloads, 2);
+    assert.equal(event!.value!.retainedPayloads, 1);
+  } finally {
+    replaceState({ goal: previousGoal });
+  }
 });
