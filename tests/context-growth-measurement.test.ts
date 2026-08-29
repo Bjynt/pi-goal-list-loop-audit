@@ -10,7 +10,11 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
 import { continuationPrompt } from "../extensions/goal-continuation.ts";
-import { diffContextGrowth, measureContextGrowth } from "../extensions/context-growth.ts";
+import {
+  captureProviderTokenUsage,
+  diffContextGrowth,
+  measureContextGrowth,
+} from "../extensions/context-growth.ts";
 
 function goalForMeasurement(): any {
   return {
@@ -37,6 +41,31 @@ function gllaMessage(content: string): Record<string, unknown> {
   return { role: "user", customType: "goal-event", content, display: false };
 }
 
+// A provider-shaped raw usage trace exercises the exact pi-ai fields without
+// pretending that the offline fixture contacted a provider. Production
+// agent_end samples are captured through the same fields.
+function providerMessage(index: number): Record<string, unknown> {
+  const input = 8_000 + index * 2_000;
+  const output = 100 + index;
+  const cacheRead = index * 10;
+  const cacheWrite = index % 3;
+  return {
+    role: "assistant",
+    stopReason: "stop",
+    usage: {
+      input,
+      output,
+      cacheRead,
+      cacheWrite,
+      totalTokens: input + output + cacheRead + cacheWrite,
+    },
+  };
+}
+
+function providerMessages(count: number): Record<string, unknown>[] {
+  return Array.from({ length: count }, (_, index) => providerMessage(index));
+}
+
 test("fixture: repeated real continuation payloads grow context linearly and are isolated", () => {
   const payload = continuationPrompt(goalForMeasurement());
   assert.match(payload, /\[GOAL CHECKPOINT goalId=context-growth-measurement\]/);
@@ -45,12 +74,47 @@ test("fixture: repeated real continuation payloads grow context linearly and are
     userMessage("start the long-running task"),
     assistantMessage("I am working on the task."),
   ];
-  const one = measureContextGrowth([...baselineMessages, gllaMessage(payload)]);
-  const twelve = measureContextGrowth([
-    ...baselineMessages,
-    ...Array.from({ length: 12 }, () => gllaMessage(payload)),
-  ]);
+  const one = measureContextGrowth(
+    [...baselineMessages, gllaMessage(payload)],
+    { providerMessages: providerMessages(1) },
+  );
+  const twelve = measureContextGrowth(
+    [
+      ...baselineMessages,
+      ...Array.from({ length: 12 }, () => gllaMessage(payload)),
+    ],
+    { providerMessages: providerMessages(12) },
+  );
 
+  assert.equal(payload.length, 21_246);
+  assert.equal(new TextEncoder().encode(payload).byteLength, 21_350);
+  assert.deepEqual(one, {
+    messageCount: 3,
+    serializedBytes: 21_911,
+    textChars: 21_298,
+    estimatedTokens: 5_325,
+    gllaMessageCount: 1,
+    gllaSerializedBytes: 21_728,
+    gllaTextChars: 21_246,
+    gllaEstimatedTokens: 5_312,
+    uniqueGllaPayloadCount: 1,
+    repeatedGllaPayloadCount: 0,
+    repeatedGllaSerializedBytes: 0,
+    failedErrorOnlyCount: 0,
+    unserializableMessageCount: 0,
+    provider: {
+      sampleCount: 1,
+      inputTokens: 8_000,
+      outputTokens: 100,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalTokens: 8_100,
+      firstInputTokens: 8_000,
+      latestInputTokens: 8_000,
+      inputTokenDelta: 0,
+      incompleteSampleCount: 0,
+    },
+  });
   assert.equal(one.messageCount, 3);
   assert.equal(one.gllaMessageCount, 1);
   assert.equal(one.uniqueGllaPayloadCount, 1);
