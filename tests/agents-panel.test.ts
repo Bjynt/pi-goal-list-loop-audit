@@ -133,6 +133,66 @@ test("v0.35.29 #15: --tail matches by needle, takes newest mtime, formats entrie
 
 });
 
+test("v0.35.66: --tail selects the exact persisted child identity among same-type transcripts", () => {
+  const dir = "/tmp/fake-sessions";
+  const targetId = "12345678-target";
+  const files = ["newer.jsonl", "target.jsonl"];
+  const contents: Record<string, string> = {
+    // This newer Explore transcript deliberately shares the target summary.
+    // A generic agentType/summary scan would return this wrong file.
+    "newer.jsonl": [
+      JSON.stringify({ type: "session", id: "other-session" }),
+      JSON.stringify({ type: "session_info", name: "Explore#87654321" }),
+      JSON.stringify({ role: "assistant", content: "same summary — unrelated child" }),
+    ].join("\\n"),
+    "target.jsonl": [
+      JSON.stringify({ type: "session", id: "target-session" }),
+      JSON.stringify({ type: "session_info", name: "Explore#12345678" }),
+      JSON.stringify({ role: "assistant", content: "target child transcript" }),
+    ].join("\\n"),
+  };
+  const readTail = (file: string, maxBytes?: number): Buffer => {
+    const raw = Buffer.from(contents[path.basename(file)] ?? "");
+    return maxBytes === undefined ? raw : raw.subarray(Math.max(0, raw.length - maxBytes));
+  };
+  const readHead = (file: string, maxBytes?: number): Buffer => {
+    const raw = Buffer.from(contents[path.basename(file)] ?? "");
+    return maxBytes === undefined ? raw : raw.subarray(0, maxBytes);
+  };
+  const result = tailChildTranscript(dir, {
+    recordId: targetId,
+    agentType: "Explore",
+    summary: "same summary",
+  }, {
+    listDir: () => files,
+    statMtime: (f) => (f.endsWith("newer.jsonl") ? 200 : 100),
+    readFile: readTail,
+    readHeader: readHead,
+  });
+  assert.equal(result.ok, true);
+  assert.match(result.detail, /target\.jsonl/);
+  assert.match(result.lines.join("\\n"), /target child transcript/);
+  assert.doesNotMatch(result.lines.join("\\n"), /unrelated child/);
+});
+
+test("v0.35.66: --tail refuses a same-type transcript without exact child identity", () => {
+  const result = tailChildTranscript("/tmp/fake-sessions", {
+    recordId: "12345678-target",
+    agentType: "Explore",
+    summary: "shared summary",
+  }, {
+    listDir: () => ["unrelated.jsonl"],
+    statMtime: () => 1,
+    readFile: () => Buffer.from([
+      JSON.stringify({ type: "session_info", name: "Explore#87654321" }),
+      JSON.stringify({ role: "assistant", content: "shared summary" }),
+    ].join("\\n")),
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.detail, /exact identity/);
+  assert.match(result.detail, /searched 1 transcripts/);
+});
+
 test("v0.35.29 #15: --tail is LOUD when nothing matches or the dir is unreadable", () => {
   const miss = tailChildTranscript("/tmp/fake-sessions", row(), {
     listDir: () => ["x.jsonl"],

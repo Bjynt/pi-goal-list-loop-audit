@@ -19,6 +19,10 @@ import { sanitizeDisplayText } from "./goal-loop-core.js";
  * needle window needs (summary prefix / agentType / recordId recur
  * throughout recent entries). */
 export const TRANSCRIPT_SCAN_MAX_BYTES = 256 * 1024;
+/** The pi session identity is stored in the JSONL header. Read only a small
+ * bounded prefix so identity matching stays correct without scanning a full
+ * transcript. */
+export const TRANSCRIPT_HEADER_SCAN_MAX_BYTES = 16 * 1024;
 
 export type AgentStatus = "queued" | "running" | "hung" | "ended";
 export type AgentPhase = "queued" | "active" | "hung" | "ended" | "unknown";
@@ -179,16 +183,19 @@ export interface TranscriptTailResult {
   detail: string;
 }
 
-/** Read-only tail of a child's session transcript. Candidate selection: all
- * .jsonl files in sessionsDir whose content mentions the child's summary or
- * agent type; most recently modified wins. NEVER resumes or attaches.
- * readFile is injected for tests; production passes fs.readFileSync-wrapped. */
+/** Read-only tail of a child's session transcript. Candidate selection uses
+ * the persisted pi session identity (`<agentType>#<recordId prefix>`), not a
+ * generic agent type or summary. A generic Explore needle can otherwise pick
+ * a newer, unrelated Explore transcript. NEVER resumes or attaches.
+ * readFile/readHeader are injected for tests; production passes bounded
+ * tail/head readers. */
 export function tailChildTranscript(
   sessionsDir: string,
   row: { recordId: string; agentType?: string; summary?: string },
   opts: {
     lines?: number;
     readFile?: (file: string, maxBytes?: number) => Buffer;
+    readHeader?: (file: string, maxBytes?: number) => Buffer;
     listDir?: (dir: string) => string[];
     statMtime?: (file: string) => number;
     now?: number;
@@ -196,9 +203,11 @@ export function tailChildTranscript(
 ): TranscriptTailResult {
   const wantLines = Math.max(1, Math.min(200, opts.lines ?? 20));
   const readFile = opts.readFile ?? (() => { throw new Error("no reader"); });
+  const readHeader = opts.readHeader ?? readFile;
   // v0.35.45: readers may honor maxBytes (production does — partial tail
   // read); injected test readers ignore it and return the whole buffer.
   const scanRead = (file: string): Buffer => readFile(file, TRANSCRIPT_SCAN_MAX_BYTES);
+  const headerRead = (file: string): Buffer => readHeader(file, TRANSCRIPT_HEADER_SCAN_MAX_BYTES);
   const listDir = opts.listDir ?? (() => []);
   const statMtime = opts.statMtime ?? (() => 0);
   let entries: string[];
@@ -207,9 +216,16 @@ export function tailChildTranscript(
   } catch (error) {
     return { ok: false, lines: [], detail: `cannot list ${sessionsDir}: ${error instanceof Error ? error.message.slice(0, 120) : String(error)}` };
   }
-  const needles = [row.summary?.slice(0, 48), row.agentType, row.recordId]
-    .filter((n): n is string => typeof n === "string" && n.trim().length >= 6)
-    .map((n) => n.toLowerCase());
+  const recordId = row.recordId.trim().toLowerCase();
+  const agentType = row.agentType?.trim().toLowerCase();
+  const recordPrefix = recordId.slice(0, 8);
+  // pi-subagents sets the child session name from this exact prefix. Keep the
+  // full manager id as a secondary exact marker for runtimes that write it
+  // into the transcript, but never fall back to a weak summary/type match.
+  const exactNeedles = [
+    agentType && recordPrefix.length >= 6 ? `${agentType}#${recordPrefix}` : undefined,
+    recordId.length >= 6 ? recordId : undefined,
+  ].filter((n): n is string => Boolean(n));
   const candidates = entries
     .filter((f) => f.endsWith(".jsonl"))
     .map((f) => path.join(sessionsDir, f))
@@ -218,15 +234,23 @@ export function tailChildTranscript(
   let matched: string | undefined;
   for (const candidate of candidates.slice(0, 25)) {
     try {
-      const content = scanRead(candidate.f).toString("utf8").toLowerCase();
-      if (needles.some((needle) => content.includes(needle))) { matched = candidate.f; break; }
+      // Check the bounded tail first so the existing scan remains the first
+      // and largest read; the session_info identity is normally in the head.
+      const tail = scanRead(candidate.f).toString("utf8").toLowerCase();
+      const header = exactNeedles.some((needle) => tail.includes(needle))
+        ? ""
+        : headerRead(candidate.f).toString("utf8").toLowerCase();
+      if (exactNeedles.some((needle) => tail.includes(needle) || header.includes(needle))) {
+        matched = candidate.f;
+        break;
+      }
     } catch { /* unreadable file — skip */ }
   }
   if (!matched) {
     return {
       ok: false,
       lines: [],
-      detail: `no session file in ${sessionsDir} matches this child (searched ${candidates.length} transcripts for: ${needles.map((n) => `"${truncate(n, 24)}"`).join(", ") || "any needle"}) — the child may not persist a session, or it lives under another working directory`,
+      detail: `no session file in ${sessionsDir} matches this child (searched ${candidates.length} transcripts for exact identity: ${exactNeedles.map((n) => `"${truncate(n, 24)}"`).join(", ") || "none"}) — the child may not persist a session, or it lives under another working directory`,
     };
   }
   try {

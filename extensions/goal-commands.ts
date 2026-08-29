@@ -8,13 +8,35 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { renderAgentsPanel, tailChildTranscript } from "./goal-agents-panel.js";
+import { renderAgentsPanel, tailChildTranscript, TRANSCRIPT_HEADER_SCAN_MAX_BYTES } from "./goal-agents-panel.js";
 
 /** Child pi sessions live under the shared session store, munged by cwd
  * (verified layout: ~/.pi/agent/sessions/--home-user-proj--/*.jsonl). */
 function childSessionsDir(cwd: string): string {
   const munged = "--" + cwd.replaceAll("/", "-") + "--";
   return path.join(os.homedir(), ".pi", "agent", "sessions", munged);
+}
+
+/** Read the bounded JSONL header where pi stores session_info.name. The tail
+ * reader below remains separate so transcript scans do not regress to full
+ * synchronous reads. */
+function readSessionHeader(file: string, maxBytes?: number): Buffer {
+  if (maxBytes === undefined) return fs.readFileSync(file);
+  try {
+    const size = fs.statSync(file).size;
+    const limit = Math.max(1, Math.min(maxBytes, TRANSCRIPT_HEADER_SCAN_MAX_BYTES));
+    if (size <= limit) return fs.readFileSync(file);
+    const fd = fs.openSync(file, "r");
+    try {
+      const buf = Buffer.alloc(limit);
+      const bytesRead = fs.readSync(fd, buf, 0, limit, 0);
+      return buf.subarray(0, bytesRead);
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return fs.readFileSync(file);
+  }
 }
 import type { ExtensionContext, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { state, replaceState } from "./goal-state.js";
@@ -2346,6 +2368,7 @@ function cmdAgents(args: string, ctx: ExtensionContext): void {
     const result = tailChildTranscript(childSessionsDir(ctx.cwd), row, {
       lines: linesMatch ? Number(linesMatch[1]) : undefined,
       readFile: readTailAware,
+      readHeader: readSessionHeader,
       listDir: (dir) => fs.readdirSync(dir),
       statMtime: (file) => { try { return fs.statSync(file).mtimeMs; } catch { return 0; } },
     });
