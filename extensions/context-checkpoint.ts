@@ -61,7 +61,7 @@ function safeInline(value: unknown, maxChars: number): string {
 
 function safeBlock(value: unknown, maxChars: number): string {
   return boundedText(value, maxChars)
-    .replace(/<\/g, "‹/");
+    .replace(/<\//g, "‹/");
 }
 
 function goalStatus(goal: Goal): string {
