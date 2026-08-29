@@ -49,6 +49,8 @@ https://github.com/DraconDev/pi-goal-list-loop-audit/pull/38
 currently draft fires first if we use like /goal and even if provided claism and evidence the ai didnt look at it, like pictures and asks me quesitons, 
 while it owuld be in some cases would be useful to run a miniaudit 
 
+## we should prefer long term focused action, i just got recommended 3 defers 
+
 ## auditor 
 
 not sure but for visual tasks do we take new picutres? so for anything visual the auditor should take a picture look at it and critique it and feed it back int othe main 
