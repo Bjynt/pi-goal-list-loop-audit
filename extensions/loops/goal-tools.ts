@@ -124,6 +124,8 @@ isGoalRevisionCurrent,
   nextHourlyProbeMs,
   type ModelSwitchRecord,
   type ListItem,
+  type DurableChoice,
+  buildDurableChoiceRecord,
 } from "../goal-loop-core.js";
 import {
   createContinuationDispatch,
@@ -1711,6 +1713,43 @@ function registerAgentTools(pi: any): void {
       });
       return {
         content: [{ type: "text", text: `Completion claim persisted; detached auditor queued (model: ${via ?? "setting"}). The verdict will be applied asynchronously.` }],
+        details: {},
+      };
+    },
+  }));
+
+  pi.registerTool(defineTool({
+    name: "record_goal_judgment",
+    label: "Record judgment",
+    description: "Record the explicit durable-vs-defer implementation choice in the ledger without pausing the goal. Use choice=inline when implementing the maintainable root-cause fix now. Use choice=deferred only when that fix is genuinely unsafe, impossible, or currently blocked; include the reason and, when applicable, the durable follow-up. Do not use this to defer an obvious durable fix.",
+    parameters: Type.Object({
+      choice: Type.Union([Type.Literal("inline"), Type.Literal("deferred")], { description: "Whether the durable fix is being implemented now or intentionally deferred" }),
+      reason: Type.String({ maxLength: 500, description: "Concise reason for the durable-vs-defer choice" }),
+      followUp: Type.Optional(Type.String({ maxLength: 500, description: "For a deferred choice, the bounded durable follow-up" })),
+    }),
+    async execute(_id, params, _signal, _onUpdate, execCtx) {
+      const foreignJudgment = foreignToolGuard(execCtx);
+      if (foreignJudgment) return { content: [{ type: "text", text: foreignJudgment }], details: {} };
+      const ctx = currentToolContext(execCtx);
+      if (!ctx) return staleToolResult();
+      if (!state.goal) return { content: [{ type: "text", text: "No active goal." }], details: {} };
+      if (state.goal.status !== "active") {
+        return { content: [{ type: "text", text: `Goal is already ${state.goal.status}; judgment was not recorded.` }], details: {} };
+      }
+      const p = params as { choice: DurableChoice; reason: string; followUp?: string };
+      const record = buildDurableChoiceRecord(p.choice, p.reason, p.followUp);
+      if (!record.reason) {
+        return { content: [{ type: "text", text: "A non-empty reason is required to record a durable-vs-defer judgment." }], details: {} };
+      }
+      const landed = appendLedger(ctx.cwd, "durable_defer_choice", {
+        goalId: state.goal.id,
+        ...record,
+      });
+      if (!landed) {
+        return { content: [{ type: "text", text: "The durable-vs-defer judgment could not be persisted; no choice was recorded." }], details: {} };
+      }
+      return {
+        content: [{ type: "text", text: `Recorded durable-vs-defer judgment: ${record.choice}.` }],
         details: {},
       };
     },

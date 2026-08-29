@@ -2087,6 +2087,32 @@ export function shouldAutoResumeOnSessionStart(reason: string | undefined, autoR
   return autoResume === true;
 }
 
+export type DurableChoice = "deferred" | "inline";
+
+export interface DurableChoiceRecord {
+  choice: DurableChoice;
+  reason: string;
+  followUp?: string;
+}
+
+/** Build the bounded payload used by the explicit durable-vs-defer ledger
+ * tool. Keep model-authored rationale single-line and small: ledger entries
+ * are durable diagnostics, not a second transcript. */
+export function buildDurableChoiceRecord(
+  choice: DurableChoice,
+  reason: string,
+  followUp?: string,
+): DurableChoiceRecord {
+  const compact = (value: string): string => value.replace(/\s+/g, " ").trim().slice(0, 500);
+  const cleanReason = compact(reason);
+  const cleanFollowUp = followUp ? compact(followUp) : "";
+  return {
+    choice,
+    reason: cleanReason,
+    ...(cleanFollowUp ? { followUp: cleanFollowUp } : {}),
+  };
+}
+
 /**
  * Canonical judgment policy for unattended and multi-turn work. This is a
  * product rule, not a user preference toggle: changing it between sessions
@@ -2095,7 +2121,7 @@ export function shouldAutoResumeOnSessionStart(reason: string | undefined, autoR
 export const LONG_RUNNING_JUDGMENT_POLICY = `LONG-RUNNING JUDGMENT POLICY:
 - Preserve the objective and verification contract as the source of truth. The default answer is the durable, maintainable root-cause fix — decide it and proceed; do not stop at a cosmetic workaround merely because it is faster.
 - "Band-aid now vs do it proper" is NEVER a question: when the durable fix is the clearly best call, do it — no ask_user_question, no pause_goal, no "which do you prefer" framing. Record the choice and the reasoning in the turn.
-- Defer vs durable — long-term focused action outranks defer: when three defers recommend the durable design, the inline choice is still the durable fix, not a defer; the ledger distinguishes deferred vs inline and ordering pins durable before defer (regression: plaque collision N=31 i%2 wrap between the-ember-throne and the-frost-beneath — durable ordering must not wrap).
+- Defer vs durable — long-term focused action outranks defer: when three defers recommend the durable design, the inline choice is still the durable fix, not a defer; call `record_goal_judgment` with `choice: "inline"` for that durable action or `choice: "deferred"` only for a genuinely unsafe, impossible, or currently blocked fix, and include the reason (plus a follow-up for a defer). This explicit ledger record distinguishes deferred vs inline, and ordering pins durable before defer (regression: plaque collision N=31 i%2 wrap between the-ember-throne and the-frost-beneath — durable ordering must not wrap).
 - Use an opportunistic workaround only when the durable fix is genuinely unsafe, impossible, or blocked right now; the workaround must be reversible and testable, and its durable follow-up is recorded (ledger or comment) instead of silently treated as final.
 - Premium engineering standards are mandatory: code must be cleanly typed, tested, architecturally sound, and resilient across lifecycle boundaries. Never lower test standards, fake assertions, or bypass types.
 - Autonomous pivot strategy: if an implementation approach fails verification after 2 attempts, do not loop on the same failing line. Autonomously step back, diagnose the root invariant, and pivot to a clean alternative architecture.
