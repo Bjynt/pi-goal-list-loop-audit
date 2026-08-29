@@ -13,7 +13,10 @@ audit policy). The next pass owns the durable policy artifacts and
 the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
-**Most recent (2026-08-28):**
+**Most recent (2026-08-29):**
+- `PR-37-PROMPT-POLICY-ADAPTATION-2026-08-29.md` — read-only PR #37 review; current-main adaptation of explicit prompt-policy terminal handling
+
+**Previous (2026-08-28):**
 - `PI-GOAL-X-COMPARISON-2026-08-27.md` — fresh-clone full-repository comparison, transferable lessons, cautions, and non-adoption follow-up candidates
 
 **Previous (2026-08-25):**
@@ -96,6 +99,9 @@ long-term preferences).
 | v0.34.121 | v0.34.121-OBJECTIVE-LIFECYCLE-FOLLOWUP.md | OBJECTIVE-LIFECYCLE-FOLLOWUP-2026-08-09.md |
 
 ## Topic index (canonical docs, newest first)
+
+**2026-08-29**
+- PR-37-PROMPT-POLICY-ADAPTATION-2026-08-29.md — read-only PR #37 review and current-main adaptation; no blind cherry-pick
 
 **2026-08-28**
 - PI-GOAL-X-COMPARISON-2026-08-27.md — fresh-clone comparative learning audit; no runtime adoption
