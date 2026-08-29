@@ -2114,6 +2114,93 @@ export function buildDurableChoiceRecord(
 }
 
 /**
+ * The semantic order for the durable-vs-defer decision surface. This is a
+ * domain invariant, not a string-search convention: every prompt/UI
+ * projection must render the durable action before the fallback.
+ */
+export const DURABLE_DEFER_PLAQUE_ORDER = ["durable", "defer"] as const;
+export type DurableDeferPlaqueKind = typeof DURABLE_DEFER_PLAQUE_ORDER[number];
+
+export interface DurableDeferRecommendationInput {
+  /** The maintainable action the confirmed contract calls for. */
+  durableFix: string;
+  /** Earlier workaround/defer recommendations, retained as bounded evidence. */
+  deferRecommendations: readonly string[];
+  /** True only when the durable action is unsafe, impossible, or blocked now. */
+  durableBlocked?: boolean;
+}
+
+export interface DurableDeferPlaque {
+  kind: DurableDeferPlaqueKind;
+  title: string;
+  body: string;
+  recommended: boolean;
+}
+
+export interface DurableDeferRecommendation {
+  choice: DurableChoice;
+  deferCount: number;
+  plaques: DurableDeferPlaque[];
+}
+
+function compactDurableDeferText(value: string): string {
+  return value.replace(/\s+/g, " ").trim().slice(0, 500);
+}
+
+/**
+ * Resolve the long-running recommendation from its actual decision facts.
+ * Previous defer recommendations do not demote a safe durable fix; only an
+ * explicit unsafe/impossible/blocked fact permits the reversible fallback.
+ */
+export function recommendDurableDeferChoice(input: DurableDeferRecommendationInput): DurableChoice {
+  return input.durableBlocked === true ? "deferred" : "inline";
+}
+
+/**
+ * Build the ordered recommendation plaques consumed by prompt and UI
+ * projections. The returned order is driven by DURABLE_DEFER_PLAQUE_ORDER so
+ * a future wording change cannot make a first-occurrence test look semantic.
+ */
+export function buildDurableDeferRecommendation(input: DurableDeferRecommendationInput): DurableDeferRecommendation {
+  const durableFix = compactDurableDeferText(input.durableFix) || "the durable root-cause fix";
+  const deferCount = input.deferRecommendations.filter((recommendation) => compactDurableDeferText(recommendation).length > 0).length;
+  const choice = recommendDurableDeferChoice(input);
+  const plaques: Record<DurableDeferPlaqueKind, DurableDeferPlaque> = {
+    durable: {
+      kind: "durable",
+      title: "Durable fix",
+      body: choice === "inline"
+        ? `Implement ${durableFix} now; prior defer recommendations do not move it behind the fallback.`
+        : `Keep ${durableFix} as the follow-up; it is blocked for this turn, so use only a reversible workaround.`,
+      recommended: choice === "inline",
+    },
+    defer: {
+      kind: "defer",
+      title: "Defer / workaround",
+      body: "Use only when the durable action is unsafe, impossible, or blocked, and record its bounded follow-up.",
+      recommended: choice === "deferred",
+    },
+  };
+  return {
+    choice,
+    deferCount,
+    plaques: DURABLE_DEFER_PLAQUE_ORDER.map((kind) => plaques[kind]),
+  };
+}
+
+/** Stable policy projection generated from the same recommendation path used
+ * by the inspectable decision surface. The example deliberately contains
+ * three defer recommendations, matching the field-reported regression. */
+export function formatDurableDeferPolicyLine(): string {
+  const example = buildDurableDeferRecommendation({
+    durableFix: "the durable design",
+    deferRecommendations: ["defer one", "defer two", "defer three"],
+  });
+  const order = example.plaques.map((plaque) => plaque.kind).join(" → ");
+  return `- Defer vs durable — long-term focused action outranks defer: after ${example.deferCount} defer recommendations, the inline choice is still the durable fix, not a defer; call 'record_goal_judgment' with choice='inline' for that durable action or choice='deferred' only for a genuinely unsafe, impossible, or currently blocked fix, and include the reason (plus a follow-up for a defer). The ledger distinguishes deferred vs inline. Recommendation plaques render in semantic order ${order}; the plaque collision regression (N=31 i%2 wrap between the-ember-throne and the-frost-beneath) must never wrap durable ordering.`;
+}
+
+/**
  * Canonical judgment policy for unattended and multi-turn work. This is a
  * product rule, not a user preference toggle: changing it between sessions
  * would make the same verification contract produce different decisions.
@@ -2121,7 +2208,7 @@ export function buildDurableChoiceRecord(
 export const LONG_RUNNING_JUDGMENT_POLICY = `LONG-RUNNING JUDGMENT POLICY:
 - Preserve the objective and verification contract as the source of truth. The default answer is the durable, maintainable root-cause fix — decide it and proceed; do not stop at a cosmetic workaround merely because it is faster.
 - "Band-aid now vs do it proper" is NEVER a question: when the durable fix is the clearly best call, do it — no ask_user_question, no pause_goal, no "which do you prefer" framing. Record the choice and the reasoning in the turn.
-- Defer vs durable — long-term focused action outranks defer: when three defers recommend the durable design, the inline choice is still the durable fix, not a defer; call 'record_goal_judgment' with choice='inline' for that durable action or choice='deferred' only for a genuinely unsafe, impossible, or currently blocked fix, and include the reason (plus a follow-up for a defer). The ledger distinguishes deferred vs inline, and ordering pins durable before defer (regression: plaque collision N=31 i%2 wrap between the-ember-throne and the-frost-beneath — durable ordering must not wrap).
+${formatDurableDeferPolicyLine()}
 - Use an opportunistic workaround only when the durable fix is genuinely unsafe, impossible, or blocked right now; the workaround must be reversible and testable, and its durable follow-up is recorded (ledger or comment) instead of silently treated as final.
 - Premium engineering standards are mandatory: code must be cleanly typed, tested, architecturally sound, and resilient across lifecycle boundaries. Never lower test standards, fake assertions, or bypass types.
 - Autonomous pivot strategy: if an implementation approach fails verification after 2 attempts, do not loop on the same failing line. Autonomously step back, diagnose the root invariant, and pivot to a clean alternative architecture.
