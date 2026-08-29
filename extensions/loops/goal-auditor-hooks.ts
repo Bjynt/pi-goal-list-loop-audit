@@ -1636,6 +1636,9 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
   // the continuation drive the next step. The verdict is durable in
   // auditHistory + /goal status.
   const aggressive = aggressiveAuditorRecoveryEnabled(liveCtx.cwd);
+  const effectiveCap = resolveEffectiveAggressiveSettings(loadSettings(liveCtx.cwd));
+  const auditCap = effectiveCap.auditCap;
+  const trailingDisapprovals = countTrailingDisapprovals(history);
   const durableObjections = result.disapproved && aggressive
     ? (() => {
       const extracted = extractPendingTasks(sanitizeProviderAuditReport(result.output), 5);
@@ -1674,6 +1677,35 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       reason: stopReason,
     });
     liveCtx.ui.notify(`Auditor automation paused: ${stopReason}. The objection is preserved as TODOs; inspect it before ${activeGoalSurfaceCommand("resume")}.`, "warning");
+    maybeDecisionPopup(liveCtx);
+    return;
+  }
+  if (result.disapproved && auditCap > 0 && trailingDisapprovals >= auditCap) {
+    if (aggressive) {
+      updateGoal({
+        status: "active",
+        auditHistory: history,
+        pendingCompletion: undefined,
+        pendingTasks: durableObjections,
+        pauseReason: `auditor disapproved ${trailingDisapprovals}× consecutively (cap ${auditCap}) — aggressiveMode: continuing with TODOs`,
+      }, liveCtx);
+      appendLedger(liveCtx.cwd, "audit_cap_keep_going", { trailingDisapprovals, auditCap, pendingTasks: durableObjections, origin });
+      liveCtx.ui.notify(`Auditor disapproved ${trailingDisapprovals}× (cap); aggressive mode keeps the goal active with durable TODOs.`, "warning");
+      scheduleContinuation(liveCtx, true);
+      return;
+    }
+    updateGoal({
+      status: "paused",
+      auditHistory: history,
+      pendingCompletion: undefined,
+      pauseKind: "decision",
+      pauseOptions: [`Fix the disapproval gap, then continue (${activeGoalSurfaceCommand("resume")})`, `Tweak the objective — ${activeGoalSurfaceCommand("tweak")} <new text>`, `Cancel the goal (${activeGoalSurfaceCommand("cancel")})`],
+      pauseRecommended: 1,
+      pauseReason: `auditor disapproved ${trailingDisapprovals}× consecutively (cap ${auditCap})`,
+      pauseSuggestedAction: `Read the audit history (${activeGoalStatusCommand()}), fix the actual gap or ${activeGoalSurfaceCommand("tweak")} the objective, then ${activeGoalSurfaceCommand("resume")}.`,
+    }, liveCtx);
+    appendLedger(liveCtx.cwd, "audit_cap_pause", { trailingDisapprovals, auditCap, origin });
+    liveCtx.ui.notify(`Auditor disapproved ${trailingDisapprovals}× (cap ${auditCap}); the goal is paused for an explicit decision.`, "warning");
     maybeDecisionPopup(liveCtx);
     return;
   }
