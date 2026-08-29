@@ -17,6 +17,7 @@ https://github.com/DraconDev/pi-goal-list-loop-audit/pull/37
 ## list execution is stalling, list queued
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260828_124432.png 
+/home/dracon/Pictures/Screenshots/Screenshot_20260829_001635.png new
 
 ## explore subagent shown as valid session to load 
 
@@ -28,6 +29,10 @@ is it our bug or tin tin subagents
 /home/dracon/Pictures/Screenshots/Screenshot_20260828_125113.png 
 
 # Next
+
+## investigate
+
+https://github.com/DraconDev/pi-goal-list-loop-audit/pull/38
 
 ## maybe turn limit too harsh ? in bigger projects we hit it despite seeming correct use
 
