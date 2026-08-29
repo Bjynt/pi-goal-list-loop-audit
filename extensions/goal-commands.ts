@@ -11,13 +11,6 @@ import * as path from "node:path";
 import type { ExtensionContext, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { renderAgentsPanel, tailChildTranscript, TRANSCRIPT_HEADER_SCAN_MAX_BYTES } from "./goal-agents-panel.js";
 
-/** Child pi sessions live under the shared session store, munged by cwd
- * (verified layout: ~/.pi/agent/sessions/--home-user-proj--/*.jsonl). */
-function childSessionsDir(cwd: string): string {
-  const munged = "--" + cwd.replaceAll("/", "-") + "--";
-  return path.join(os.homedir(), ".pi", "agent", "sessions", munged);
-}
-
 import { state, replaceState } from "./goal-state.js";
 import {
   DEFAULT_TOKEN_LIMIT, Goal, ListItem, Status, appendLedger, archiveDir, archivedGoalPath, bumpGoalRevision, sanitizeProviderDisplayText,
@@ -45,6 +38,13 @@ import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-confli
 import { formatGllaVersion } from "./glla-version.js";
 import { cancelDetachedGoalCompletionAuditor } from "./goal-loop-auditor-process.js";
 import { releaseAuditorSurface } from "./loops/goal-auditor-surface.js";
+
+/** Child pi sessions live under the shared session store, munged by cwd
+ * (verified layout: ~/.pi/agent/sessions/--home-user-proj--/*.jsonl). */
+function childSessionsDir(cwd: string): string {
+  const munged = "--" + cwd.replaceAll("/", "-") + "--";
+  return path.join(os.homedir(), ".pi", "agent", "sessions", munged);
+}
 
 /** Read the bounded JSONL header where pi stores session_info.name. The tail
  * reader below remains separate so transcript scans do not regress to full
