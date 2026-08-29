@@ -51,6 +51,9 @@ while it owuld be in some cases would be useful to run a miniaudit
 
 ## auditor 
 
+not sure but for visual tasks do we take new picutres? so for anything visual the auditor should take a picture look at it and critique it and feed it back int othe main 
+currenlty visual problems seem to pass throug way more 
+
 # Later
 
 ## check out out other harnesses and goal extensions 
