@@ -19,6 +19,12 @@
   state. It reacts to lifecycle/durable signals immediately and uses adaptive
   fallback polling rather than guessed task-duration waits.
 
+### Fixed
+  Detached completion-auditor failures now coordinate RPC stdout EOF with the
+  child process close, preserving bounded exit code, signal, stderr, and
+  malformed-stream diagnostics while remaining fail-closed until
+  `agent_settled`.
+
 ### Changed
   Aggressive recovery retries recoverable provider/host/auditor failures across
   arbitrary durations with bounded per-attempt backoff. Ordinary auditor

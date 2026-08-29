@@ -744,12 +744,25 @@ test("request hashing is stable and excludes no runtime secret or API key field"
   assert.equal("apiKey" in request, false);
 });
 
-test("an early RPC child exit still publishes an atomic infrastructure result", async () => {
+test("EOF before exit preserves process and stream diagnostics without accepting a partial verdict", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-early-rpc-exit-"));
   const fakePi = path.join(dir, "early-exit-pi.mjs");
+  const attemptLog = path.join(dir, "pi-attempts.log");
+  const pidMarker = path.join(dir, "pi-pid");
   await writeFile(fakePi, `#!/usr/bin/env node
-process.stdin.destroy();
-setTimeout(() => process.exit(17), 25);
+import { appendFileSync, writeFileSync } from "node:fs";
+appendFileSync(process.env.PI_ATTEMPT_LOG, String(process.pid) + "\\n");
+writeFileSync(process.env.PI_PID_MARKER, String(process.pid));
+let handled = false;
+process.stdin.on("data", (chunk) => {
+  if (handled || !String(chunk).includes("\\n")) return;
+  handled = true;
+  process.stdout.write(JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "<disapproved/>" } }) + "\\n");
+  process.stderr.write("EOF_EXIT_17_UNIQUE_STDERR\\n");
+  process.stdout.write('{"type":"message_update"');
+  process.stdout.end();
+  setTimeout(() => process.exit(17), 25);
+});
 `);
   await chmod(fakePi, 0o700);
   try {
@@ -760,7 +773,7 @@ setTimeout(() => process.exit(17), 25);
       thinkingLevel: "high",
       runtime: {
         workerPath: path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs"),
-        env: { GLLA_PI_BINARY: fakePi },
+        env: { GLLA_PI_BINARY: fakePi, PI_ATTEMPT_LOG: attemptLog, PI_PID_MARKER: pidMarker },
         attemptId: () => "attempt-early-rpc-exit",
         pollIntervalMs: 10,
         wallTimeoutMs: 10_000,
@@ -768,9 +781,71 @@ setTimeout(() => process.exit(17), 25);
     });
     assert.equal(result.approved, false);
     assert.equal(result.disapproved, false);
-    assert.match(result.error ?? "", /RPC stdin stream failed|pi exited before audit completion|pi exited without an agent_settled|RPC stream ended/);
+    assert.equal(result.output, "<disapproved/>", "partial semantic text remains diagnostic-only output");
+    assert.match(result.error ?? "", /pi exited before agent_settled \(code=17, signal=none\)/);
+    assert.match(result.error ?? "", /RPC stream ended with an unterminated LF record/);
+    assert.match(result.error ?? "", /EOF_EXIT_17_UNIQUE_STDERR/);
+    assert.doesNotMatch(result.error ?? "", /^pi exited without an agent_settled RPC event$/);
     assert.doesNotMatch(result.error ?? "", /worker exited without an atomic result/);
     assert.equal(result.infrastructureClass, "no-verdict", "a worker that exits before a verdict is no-verdict infrastructure");
+    const attempts = (await readFile(attemptLog, "utf8")).trim().split("\n").filter(Boolean);
+    assert.equal(attempts.length, 1, "one detached attempt produces one infrastructure result");
+    const piPid = Number(await readFile(pidMarker, "utf8"));
+    assert.throws(() => process.kill(piPid, 0), /ESRCH|不存在|not found/i, "the exited RPC child is reaped before return");
+    assert.deepEqual(await readdir(path.join(dir, ".pi-glla", "audit-jobs")), [], "the single attempt's scratch and result are removed");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("EOF from a live RPC child gets a bounded close grace then TERM-to-KILL cleanup", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-live-after-eof-"));
+  const fakePi = path.join(dir, "live-after-eof-pi.mjs");
+  const pidMarker = path.join(dir, "pi-pid");
+  const sigtermMarker = path.join(dir, "pi-sigterm");
+  await writeFile(fakePi, `#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+writeFileSync(process.env.PI_PID_MARKER, String(process.pid));
+process.on("SIGTERM", () => { writeFileSync(process.env.PI_SIGTERM_MARKER, "received"); });
+let handled = false;
+process.stdin.on("data", (chunk) => {
+  if (handled || !String(chunk).includes("\\n")) return;
+  handled = true;
+  process.stderr.write("EOF_LIVE_UNIQUE_STDERR\\n");
+  process.stdout.end();
+});
+setInterval(() => {}, 1_000);
+`);
+  await chmod(fakePi, 0o700);
+  try {
+    const result = await runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "high",
+      runtime: {
+        workerPath: path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs"),
+        env: {
+          GLLA_PI_BINARY: fakePi,
+          GLLA_AUDITOR_EOF_EXIT_GRACE_MS: "80",
+          GLLA_AUDITOR_CHILD_SHUTDOWN_MS: "80",
+          PI_PID_MARKER: pidMarker,
+          PI_SIGTERM_MARKER: sigtermMarker,
+        },
+        attemptId: () => "attempt-live-after-eof",
+        pollIntervalMs: 10,
+        wallTimeoutMs: 10_000,
+      },
+    });
+    assert.equal(result.approved, false);
+    assert.equal(result.disapproved, false);
+    assert.equal(result.infrastructureClass, "no-verdict");
+    assert.match(result.error ?? "", /RPC stdout ended before agent_settled and the child did not close within 80ms/);
+    assert.match(result.error ?? "", /EOF_LIVE_UNIQUE_STDERR/);
+    assert.ok(existsSync(sigtermMarker), "the existing cooperative TERM cleanup runs after the EOF grace");
+    const piPid = Number(await readFile(pidMarker, "utf8"));
+    assert.throws(() => process.kill(piPid, 0), /ESRCH|不存在|not found/i, "the TERM-ignoring child is force-killed before return");
+    assert.deepEqual(await readdir(path.join(dir, ".pi-glla", "audit-jobs")), [], "the grace failure leaves no job scratch");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -780,7 +855,10 @@ test("detached worker treats silent provider time as infrastructure, not a verdi
   const dir = await mkdtemp(path.join(tmpdir(), "glla-stall-"));
   const fakePi = path.join(dir, "silent-pi.mjs");
   const reports: AuditorProgress[] = [];
-  await writeFile(fakePi, "#!/usr/bin/env node\\nprocess.stdin.resume(); setInterval(() => {}, 1000);\\n");
+  await writeFile(fakePi, `#!/usr/bin/env node
+process.stdin.resume();
+setInterval(() => {}, 1_000);
+`);
   await chmod(fakePi, 0o700);
   try {
     const result = await runDetachedGoalCompletionAuditor({

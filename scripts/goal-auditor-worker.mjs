@@ -26,6 +26,11 @@ const DEFAULT_TOOL_TIMEOUT_MS = 5 * 60_000;
 // kill and destroy the pipes so this worker can finish and exit too.
 const DEFAULT_CHILD_SHUTDOWN_GRACE_MS = 1_000;
 const FORCE_KILL_SETTLE_MS = 250;
+// stdout EOF normally precedes ChildProcess `close`. Give the child a short
+// window to report its real exit code/signal and drain stderr before publishing
+// a no-verdict result. A child that closes stdout but remains alive is still
+// bounded: the same worker-owned TERM→KILL cleanup runs when this grace ends.
+const DEFAULT_RPC_CLOSE_GRACE_MS = 250;
 
 function configuredDuration(name, fallback) {
   const value = Number(process.env[name] ?? fallback);
@@ -406,6 +411,7 @@ async function main() {
   let streamError;
   let pi;
   let inactivityTimer;
+  let rpcCloseGraceTimer;
   // `lastActivityAt` is user-visible and must remain unset until a real RPC
   // event arrives. The separate probe clock keeps the inactivity brake armed
   // while the provider is silent during startup/thinking.
@@ -460,6 +466,7 @@ async function main() {
     // without changing the exact result output used for verdict parsing.
     appendRecentOutput(recentOutput, recentReportLine, "", true);
     if (inactivityTimer) clearInterval(inactivityTimer);
+    if (rpcCloseGraceTimer) clearTimeout(rpcCloseGraceTimer);
     for (const timer of toolTimers.values()) clearTimeout(timer);
     toolTimers.clear();
     // Wait for the nested RPC child to settle before publishing the terminal
@@ -567,6 +574,40 @@ async function main() {
     // retry/compact/follow up after it. agent_settled is the completion event.
     let stdoutBuffer = "";
     let settledSeen = false;
+    const RPC_CLOSE_GRACE_MS = configuredDuration("GLLA_AUDITOR_EOF_EXIT_GRACE_MS", DEFAULT_RPC_CLOSE_GRACE_MS);
+    let stdoutEnded = false;
+    let piExited = false;
+    let piClosed = false;
+    let piExitCode;
+    let piExitSignal;
+    let rpcStreamDiagnostic;
+
+    const missingSettledError = (closeGraceExpired = false) => {
+      const processFacts = `pi exited before agent_settled (code=${piExitCode ?? "?"}, signal=${piExitSignal ?? "none"})`;
+      const closeGraceDetail = closeGraceExpired && !piClosed
+        ? `; RPC streams did not close within ${RPC_CLOSE_GRACE_MS}ms`
+        : "";
+      const headline = closeGraceExpired && stdoutEnded && !piExited
+        ? `RPC stdout ended before agent_settled and the child did not close within ${RPC_CLOSE_GRACE_MS}ms`
+        : `${processFacts}${closeGraceDetail}`;
+      return [...new Set([headline, rpcStreamDiagnostic, streamError].filter(Boolean))].join(": ");
+    };
+
+    const coordinatePiEnd = () => {
+      if (finalized || settledSeen) return;
+      if (piClosed) {
+        void finish(false, missingSettledError()).catch(() => {});
+        return;
+      }
+      if ((!stdoutEnded && !piExited) || rpcCloseGraceTimer) return;
+      rpcCloseGraceTimer = setTimeout(() => {
+        rpcCloseGraceTimer = undefined;
+        if (finalized || settledSeen || piClosed) return;
+        void finish(false, missingSettledError(true)).catch(() => {});
+      }, RPC_CLOSE_GRACE_MS);
+      rpcCloseGraceTimer.unref?.();
+    };
+
     const handleRpcLine = (line) => {
       if (finalized || !line) return;
       // The RPC contract is LF-delimited but permits a trailing CR for
@@ -688,11 +729,11 @@ async function main() {
     });
     pi.stdout.on("end", () => {
       if (finalized) return;
+      stdoutEnded = true;
       if (stdoutBuffer.length > 0) {
-        void finish(false, "RPC stream ended with an unterminated LF record").catch(() => {});
-      } else if (!settledSeen) {
-        void finish(false, "pi exited without an agent_settled RPC event").catch(() => {});
+        rpcStreamDiagnostic = "RPC stream ended with an unterminated LF record";
       }
+      coordinatePiEnd();
     });
 
     pi.stderr.on("data", (chunk) => {
@@ -714,10 +755,17 @@ async function main() {
     pi.stderr.on("error", (error) => handlePiStreamError("stderr", error));
     pi.on("error", (error) => { void finish(false, `pi launch failed: ${error.message}`).catch(() => {}); });
     pi.on("exit", (code, signal) => {
-      if (!finalized) {
-        const detail = streamError ? `: ${streamError}` : "";
-        void finish(false, `pi exited before audit completion (code=${code ?? "?"}, signal=${signal ?? "?"})${detail}`).catch(() => {});
-      }
+      piExited = true;
+      piExitCode = code;
+      piExitSignal = signal;
+      coordinatePiEnd();
+    });
+    pi.on("close", (code, signal) => {
+      piClosed = true;
+      piExited = true;
+      piExitCode = code;
+      piExitSignal = signal;
+      coordinatePiEnd();
     });
 
     // Exactly one LF-terminated JSONL prompt. JSON.stringify escapes embedded
