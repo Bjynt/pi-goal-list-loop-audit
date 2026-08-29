@@ -2,6 +2,7 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
 import type { Goal } from "../extensions/goal-loop-core.ts";
+import type { LoopState } from "../extensions/goal-loop-forever.ts";
 import { continuationPrompt } from "../extensions/goal-continuation.ts";
 import { measureContextGrowth } from "../extensions/context-growth.ts";
 import activate, { __testOnlyResetOwnerSession } from "../extensions/loops/goal.ts";
@@ -52,6 +53,27 @@ function goalFixture(): Goal {
     usage: { tokensUsed: 10, tokensLimit: 1000 },
     createdAt: "2026-08-29T09:00:00.000Z",
     updatedAt: "2026-08-29T10:01:00.000Z",
+  };
+}
+
+function loopFixture(): LoopState {
+  return {
+    target: "Bound loop-only continuation context without losing the active loop objective.",
+    measureCmd: "printf 17",
+    direction: "min",
+    iteration: 4,
+    maxIterations: 50,
+    plateauWindow: 5,
+    stallCount: 1,
+    bestValue: 17,
+    lastValue: 19,
+    active: true,
+    history: [
+      { iteration: 3, value: 19, improved: false, at: "2026-08-29T10:03:00.000Z" },
+    ],
+    startedAt: "2026-08-29T10:00:00.000Z",
+    tokenBudget: 20_000,
+    tokensUsed: 2_000,
   };
 }
 
@@ -171,6 +193,115 @@ test("zero-retention mode resynchronizes from the checkpoint without retaining p
   assert.equal(result.messages.length, 1);
   assert.equal((result.messages[0] as { customType?: unknown }).customType, AUTHORITATIVE_CHECKPOINT_CUSTOM_TYPE);
   assert.equal((result.messages[0] as { content?: unknown }).content, "authoritative");
+});
+
+test("loop-only projection bounds repeated payloads and carries loop authority", () => {
+  const loop = loopFixture();
+  const checkpoint = buildAuthoritativeContextCheckpoint({
+    goal: null,
+    loop,
+    sessionGeneration: 13,
+    ownerSessionId: "loop-owner-13",
+  });
+  assert.match(checkpoint, /goalId=\(none\)/);
+  assert.match(checkpoint, /loopTarget=Bound loop-only continuation context/);
+  assert.match(checkpoint, /Loop target: Bound loop-only continuation context/);
+  assert.match(checkpoint, /Loop measure: command=printf 17/);
+  assert.match(checkpoint, /iteration=4/);
+
+  const messages = [
+    { role: "user", content: "ordinary context" },
+    ...Array.from({ length: 25 }, (_, index) => ({
+      role: "user",
+      customType: "goal-event",
+      content: `loop-iteration-${index}-${"x".repeat(500)}`,
+      display: false,
+    })),
+  ];
+  const before = measureContextGrowth(messages);
+  const projection = projectBoundedGllaContext(messages, checkpoint);
+  const after = measureContextGrowth(projection.messages);
+
+  assert.equal(projection.removedPayloads, 24);
+  assert.equal(projection.retainedPayloads, 1);
+  assert.equal(projection.insertedCheckpoint, true);
+  assert.equal(after.messageCount, 3);
+  assert.equal(after.gllaMessageCount, 2);
+  assert.ok(after.serializedBytes < before.serializedBytes);
+});
+
+test("context hook projects loop-only state and records loop authority", async () => {
+  const cwd = tmpCwd();
+  const previousState = { ...state };
+  replaceState({ ...previousState, goal: null, loop: loopFixture() });
+  try {
+    const pi = new MockPi();
+    activate(pi.api);
+    __testOnlyResetOwnerSession();
+    const ctx = makeMockCtx(cwd, { sessionManager: { name: "loop-only-checkpoint" } });
+    const handlers = (pi as unknown as { handlers: Map<string, (...args: unknown[]) => unknown> }).handlers;
+    const handler = handlers.get("context");
+    assert.ok(handler);
+
+    const result = await handler({
+      type: "context",
+      messages: [gllaPayload(1), gllaPayload(2), gllaPayload(3)],
+    }, ctx) as { messages?: unknown[] };
+    assert.ok(result.messages);
+    assert.equal(result.messages!.length, 2);
+    const checkpoint = result.messages![0] as { customType?: unknown; content?: unknown };
+    assert.equal(checkpoint.customType, AUTHORITATIVE_CHECKPOINT_CUSTOM_TYPE);
+    assert.match(String(checkpoint.content), /Loop target: Bound loop-only continuation context/);
+    assert.match(String(checkpoint.content), /policy=loop/);
+
+    const ledger = fs.readFileSync(`${cwd}/.pi-glla/active.jsonl`, "utf8")
+      .split("\\n").filter(Boolean).map((line) => JSON.parse(line) as { type: string; value?: Record<string, unknown> });
+    const event = ledger.find((entry) => entry.type === "context_checkpoint_projection");
+    assert.ok(event);
+    assert.equal(event!.value!.goalId, undefined);
+    assert.equal(event!.value!.loopTarget, loopFixture().target);
+    assert.equal(event!.value!.loopIteration, 4);
+  } finally {
+    replaceState(previousState);
+  }
+});
+
+test("paused goal plus active loop preserves both authorities in the checkpoint", async () => {
+  const cwd = tmpCwd();
+  const previousState = { ...state };
+  const pausedGoal: Goal = { ...goalFixture(), status: "paused" };
+  const loop = loopFixture();
+  replaceState({ ...previousState, goal: pausedGoal, loop });
+  try {
+    const pi = new MockPi();
+    activate(pi.api);
+    __testOnlyResetOwnerSession();
+    const ctx = makeMockCtx(cwd, { sessionManager: { name: "paused-goal-loop-checkpoint" } });
+    const handlers = (pi as unknown as { handlers: Map<string, (...args: unknown[]) => unknown> }).handlers;
+    const handler = handlers.get("context");
+    assert.ok(handler);
+
+    const result = await handler({
+      type: "context",
+      messages: [gllaPayload(1), gllaPayload(2), gllaPayload(3), gllaPayload(4)],
+    }, ctx) as { messages?: unknown[] };
+    assert.ok(result.messages);
+    assert.equal(result.messages!.length, 2);
+    const content = String((result.messages![0] as { content?: unknown }).content);
+    assert.match(content, /status=paused/);
+    assert.match(content, /Objective: Preserve the authoritative objective/);
+    assert.match(content, /Loop target: Bound loop-only continuation context/);
+    assert.match(content, /loopTarget=Bound loop-only continuation context/);
+
+    const ledger = fs.readFileSync(`${cwd}/.pi-glla/active.jsonl`, "utf8")
+      .split("\\n").filter(Boolean).map((line) => JSON.parse(line) as { type: string; value?: Record<string, unknown> });
+    const event = ledger.find((entry) => entry.type === "context_checkpoint_projection");
+    assert.ok(event);
+    assert.equal(event!.value!.goalId, pausedGoal.id);
+    assert.equal(event!.value!.loopTarget, loop.target);
+  } finally {
+    replaceState(previousState);
+  }
 });
 
 test("context hook uses current durable state and records the projection", async () => {

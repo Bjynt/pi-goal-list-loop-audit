@@ -2526,11 +2526,18 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // the current durable goal. This is a per-send projection: the transcript
     // and lifecycle state remain untouched, while compaction/recovery turns
     // still receive the objective, contract, audit evidence, and fences.
-    const checkpointProjection = state.goal
+    // v0.36.3: metric/spec loops are a separate authoritative work surface
+    // from Goal. A loop may legitimately run with no goal, and a paused goal
+    // may coexist with an active loop. Project whenever either surface is
+    // active, while passing both states so a paused goal is not mistaken for
+    // the loop's current objective.
+    const activeLoop = state.loop?.active === true ? state.loop : null;
+    const checkpointProjection = state.goal || activeLoop
       ? projectBoundedGllaContext(
         hygiene.messages,
         buildAuthoritativeContextCheckpoint({
           goal: state.goal,
+          loop: activeLoop,
           sessionGeneration,
           ownerSessionId: sessionManagerId(ctx),
         }),
@@ -2564,6 +2571,8 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       if (checkpointProjection.removedPayloads > 0) {
         appendLedger(ctx.cwd, "context_checkpoint_projection", {
           goalId: state.goal?.id,
+          loopTarget: activeLoop?.target?.slice(0, 300),
+          loopIteration: activeLoop?.iteration,
           removedPayloads: checkpointProjection.removedPayloads,
           retainedPayloads: checkpointProjection.retainedPayloads,
           checkpointChars: checkpointProjection.checkpointChars,
