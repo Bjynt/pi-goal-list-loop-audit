@@ -151,7 +151,7 @@ export function markCompletionAuditRecoveryPending(ctx: ExtensionContext, reason
     pauseOptions: undefined,
     pauseRecommended: undefined,
   }, ctx);
-  if (!persisted) return false;
+  if (persisted === false) return false;
   appendLedger(ctx.cwd, "audit_recovery_pending", {
     goalId: goal.id,
     attemptId: claim.attemptId,
@@ -262,7 +262,7 @@ export interface RecoveryDeps {
   // cluster C
   activeGoalSurfaceCommand: (command: string) => string;
   clearDetachedAuditRuntime: () => void;
-  updateGoal: (patch: Partial<Goal>, ctx: ExtensionContext) => void;
+  updateGoal: (patch: Partial<Goal>, ctx: ExtensionContext) => boolean | void;
   // cluster B — goal.ts-owned functions (continuation/loop machinery still
   // lives in goal.ts until decomposition step 5 moves it)
   clearContinuationTimer: () => void;

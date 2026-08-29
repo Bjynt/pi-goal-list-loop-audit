@@ -1174,8 +1174,9 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
     const exceptionReason = `auditor run exception: ${reason}`;
     const recoveryCtx = freshCtxForGeneration(generation);
     const current = state.goal;
-    const durableExceptionClaim = current?.pendingCompletion?.attemptId === claim.attemptId
-      ? current.pendingCompletion
+    const currentClaim = current?.pendingCompletion;
+    const durableExceptionClaim = currentClaim?.attemptId === claim.attemptId
+      ? currentClaim
       : claim;
     // onAttempt persists the selected ref before the worker launch. If an
     // unexpected exception escapes the policy after that point, consume the
