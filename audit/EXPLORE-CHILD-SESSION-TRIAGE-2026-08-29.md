@@ -113,3 +113,35 @@ A future claim about the screenshot itself still requires a controlled run that
 links a newly created Explore record to a saved session file and captures the
 corresponding UI/ledger sequence. The confirmed fix is limited to GLLA's
 transcript-correlation path.
+
+## Isolated-auditor follow-up — 2026-08-29
+
+The first completion claim was disapproved because the initial correlation
+implementation searched arbitrary bounded transcript bytes for the expected
+identity. A message such as `The target is Explore#12345678-target` could
+therefore make an unrelated transcript appear to match. That was a valid,
+narrow GLLA-owned objection; the prior report's phrase "exact persisted child
+identity" was too strong for the implementation that was then shipped.
+
+The follow-up fix in `extensions/goal-agents-panel.ts` parses JSONL entries and
+accepts a candidate only when its authoritative `type: "session_info"` entry
+has a `name` equal to the normalized expected `<agentType>#<recordId prefix>`
+identity. It no longer treats a full record id or any message content as an
+identity marker. The bounded tail remains the first scan, with the bounded
+header reader used when the header is outside that tail; full transcript reads
+still happen only after a candidate has passed identity selection.
+
+A new regression in `tests/agents-panel.test.ts` constructs an unrelated
+transcript whose `session_info.name` belongs to another Explore child while an
+assistant message quotes the target identity. The result must fail closed.
+The focused panel run now passes **15 tests, 0 failures**, including the
+existing same-type collision and bounded-read regressions:
+
+```text
+bun test --parallel=1 --max-concurrency=1 --timeout=60000 tests/agents-panel.test.ts
+```
+
+This correction does not change the ownership disposition: Pi and
+pi-subagents still own normal session discovery/retention, and no source under
+either external package was changed. The screenshot still does not establish
+that it exercised this GLLA projection path.
