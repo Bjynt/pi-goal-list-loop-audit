@@ -60,10 +60,12 @@ test("bare-start inference fails closed for two distinct requests", () => {
 });
 
 test("bare-start inference falls back for vague or command-only context", () => {
-  assert.deepEqual(inferStartObjective("fix it", []), {
-    kind: "none",
-    reason: "no-actionable-objective",
-  });
+  for (const prompt of ["fix it", "Could you fix it?", "Implement the thing", "Please investigate"]) {
+    assert.deepEqual(inferStartObjective(prompt, []), {
+      kind: "none",
+      reason: "no-actionable-objective",
+    }, prompt);
+  }
   assert.deepEqual(inferStartObjective("/goal start", [
     { role: "user", text: "/loop status" },
     { role: "assistant", text: "Build the assistant's unrelated plan" },

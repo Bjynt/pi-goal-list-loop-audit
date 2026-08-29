@@ -76,8 +76,11 @@ const REQUIREMENT_RE = /\b(?:should|needs?\s+to|must|acceptance\s+(?:criterion|c
 const GENERIC_REPLY_RE = /^(?:ok(?:ay)?|yes|no|sure|thanks?|thank\s+you|go\s+ahead|do\s+it|continue|resume|start|run\s+it|looks?\s+good|sounds?\s+good|not\s+sure|none|whatever|what\s+next|status)\s*[.!?]*$/i;
 const QUESTION_ONLY_RE = /^(?:what|why|how|when|where|which|who|is|are|do|does|did|tell\s+me|explain)\b/i;
 const EXPLANATION_REQUEST_RE = /^(?:can|could|would)\s+you\s+(?:please\s+)?(?:explain|tell|describe|show|clarify)\b/i;
-const PRONOUN_ONLY_RE = /^(?:it|this|that|the\s+(?:issue|bug|thing)|everything|stuff|things|as\s+discussed)\s*[.!?]*$/i;
-const VAGUE_ACTION_RE = /^(?:(?:please\s+|kindly\s+)?(?:fix|repair|resolve|investigate|improve|update|change)\s+(?:it|this|that)|(?:please\s+|kindly\s+)?(?:fix|repair|resolve|investigate|improve|update|change)\s+the\s+(?:issue|bug|thing)\s*[.!?]*$)/i;
+const PRONOUN_ONLY_RE = /^(?:it|this|that|the\s+(?:issue|bug|thing|problem)|everything|stuff|things|as\s+discussed)\s*[.!?]*$/i;
+const VAGUE_ACTION_RE = new RegExp(
+  `^(?:(?:please|kindly)\\s+)?(?:${ACTION_WORDS.join("|")})(?:\\s+(?:it|this|that|the\\s+(?:issue|bug|thing|problem)))?\\s*[.!?]*$`,
+  "i",
+);
 
 function textFromContent(content: unknown): string {
   if (typeof content === "string") return content;
@@ -127,12 +130,18 @@ function classifyCandidate(raw: string, truncated = false): "clear" | "ambiguous
   if (truncated || text.length > START_CONTEXT_MAX_CANDIDATE_CHARS) return "ambiguous";
   if (QUESTION_ONLY_RE.test(text) && !ACTION_AT_START_RE.test(text) && !REQUEST_PREFIX_RE.test(text)) return "none";
   if (EXPLANATION_REQUEST_RE.test(text)) return "none";
-  if (PRONOUN_ONLY_RE.test(text) || VAGUE_ACTION_RE.test(text)) return "none";
+  if (isVagueCandidate(text)) return "none";
   if (hasMultipleTasks(source)) return "ambiguous";
 
   const hasAction = ACTION_AT_START_RE.test(text) || REQUEST_PREFIX_RE.test(text) || REQUIREMENT_RE.test(text);
   if (!hasAction || text.length < 6) return "none";
   return "clear";
+}
+
+function isVagueCandidate(text: string): boolean {
+  if (PRONOUN_ONLY_RE.test(text) || VAGUE_ACTION_RE.test(text)) return true;
+  const stripped = text.replace(REQUEST_PREFIX_RE, "").trim();
+  return stripped !== text && VAGUE_ACTION_RE.test(stripped);
 }
 
 function candidateFrom(text: string, source: Candidate["source"], truncated = false): Candidate | null {
