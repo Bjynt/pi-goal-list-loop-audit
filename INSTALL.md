@@ -72,7 +72,9 @@ Done when:
 A complete `Done when:` clause starts directly. For a new or ambiguous
 objective, use bare `/goal` instead: GLLA interviews you, helps shape the
 contract, and waits for Confirm. `/goal start "..."` skips that interview only
-when you explicitly want it skipped.
+when you explicitly want it skipped. Bare `/goal start` uses one clear recent
+user request when possible and otherwise returns to the normal drafting flow;
+it never guesses across ambiguous requests.
 
 The first run proceeds like this:
 
@@ -93,17 +95,22 @@ waiting for a decision.
 /list "refactor the cache. Done when: tests pass"
 /list plan.md
 /list
+/list start
 /list next
 /list resume
 
 /loop
+/loop start                                  # one clear recent target, metricless
 /loop start "reduce flaky tests" measure="..." direction=min
 /loop start "keep improving the spec" measure=none max=20 cadence=900
 /loop audit
 ```
 
 Use `/goal` for one outcome, `/list` for several independently auditable
-outcomes, and `/loop` for an improvement process without one final item. For
+outcomes, and `/loop` for an improvement process without one final item. Bare
+`/list start` activates the queued head, or seeds the normal Confirm-gated list
+draft when the queue is empty. Bare `/loop start` infers only the target; it
+does not invent metric, direction, bounds, cadence, or branch settings. For
 metricless loops that intentionally mature between checks, add optional
 `cadence=<seconds>`; the interval is visible in `/loop status`, while explicit
 starts/resumes remain urgent. See the README for the full command semantics.
