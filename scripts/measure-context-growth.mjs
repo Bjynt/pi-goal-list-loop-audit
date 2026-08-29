@@ -25,6 +25,28 @@ const baselineMessages = [
   { role: "user", content: [{ type: "text", text: "start the long-running task" }] },
   { role: "assistant", content: [{ type: "text", text: "I am working on the task." }], stopReason: "stop" },
 ];
+function providerMessage(index) {
+  const input = 8_000 + index * 2_000;
+  const output = 100 + index;
+  const cacheRead = index * 10;
+  const cacheWrite = index % 3;
+  return {
+    role: "assistant",
+    stopReason: "stop",
+    usage: {
+      input,
+      output,
+      cacheRead,
+      cacheWrite,
+      totalTokens: input + output + cacheRead + cacheWrite,
+    },
+  };
+}
+
+function providerMessages(count) {
+  return Array.from({ length: count }, (_, index) => providerMessage(index));
+}
+
 const baseline = measureContextGrowth(baselineMessages);
 const rows = [0, 1, 5, 12, 25].map((continuations) => {
   const messages = [
@@ -36,7 +58,12 @@ const rows = [0, 1, 5, 12, 25].map((continuations) => {
       display: false,
     })),
   ];
-  const measurement = measureContextGrowth(messages);
+  const measurement = measureContextGrowth(messages, {
+    // This deterministic raw pi-ai Usage-shaped trace verifies the exact
+    // provider-token capture path. A live agent_end supplies real values to
+    // the same fields; this offline probe never claims to contact a provider.
+    providerMessages: providerMessages(continuations),
+  });
   return {
     continuations,
     measurement,
@@ -48,5 +75,6 @@ console.log(JSON.stringify({
   fixture: "real continuationPrompt repeated as goal-event history",
   payloadChars: payload.length,
   payloadBytes: new TextEncoder().encode(payload).byteLength,
+  providerCapture: "deterministic pi-ai AssistantMessage.usage-shaped fixture; production agent_end captures exact provider values",
   rows,
 }, null, 2));

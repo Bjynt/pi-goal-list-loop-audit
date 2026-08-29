@@ -128,6 +128,33 @@ test("fixture: repeated real continuation payloads grow context linearly and are
   assert.ok(twelve.gllaTextChars >= one.gllaTextChars * 12, "each continuation remains in the effective context");
   assert.ok(twelve.repeatedGllaSerializedBytes >= one.gllaSerializedBytes * 10, "repeated GLLA bytes dominate the marginal growth");
   assert.equal(twelve.failedErrorOnlyCount, 0);
+  assert.deepEqual(twelve, {
+    messageCount: 14,
+    serializedBytes: 260_919,
+    textChars: 255_004,
+    estimatedTokens: 63_751,
+    gllaMessageCount: 12,
+    gllaSerializedBytes: 260_736,
+    gllaTextChars: 254_952,
+    gllaEstimatedTokens: 63_738,
+    uniqueGllaPayloadCount: 1,
+    repeatedGllaPayloadCount: 11,
+    repeatedGllaSerializedBytes: 239_008,
+    failedErrorOnlyCount: 0,
+    unserializableMessageCount: 0,
+    provider: {
+      sampleCount: 12,
+      inputTokens: 228_000,
+      outputTokens: 1_266,
+      cacheReadTokens: 660,
+      cacheWriteTokens: 12,
+      totalTokens: 229_938,
+      firstInputTokens: 8_000,
+      latestInputTokens: 30_000,
+      inputTokenDelta: 22_000,
+      incompleteSampleCount: 0,
+    },
+  });
 
   const delta = diffContextGrowth(one, twelve);
   assert.equal(delta.messageCount, 11);
@@ -135,6 +162,30 @@ test("fixture: repeated real continuation payloads grow context linearly and are
   assert.equal(delta.uniqueGllaPayloadCount, 0, "the additional entries are repeats, not new payload shapes");
   assert.equal(delta.repeatedGllaPayloadCount, 11);
   assert.ok(delta.serializedBytes > 150_000, `expected visible cumulative growth: ${delta.serializedBytes}`);
+  assert.deepEqual(delta.provider, {
+    sampleCount: 11,
+    inputTokens: 220_000,
+    outputTokens: 1_166,
+    cacheReadTokens: 660,
+    cacheWriteTokens: 12,
+    totalTokens: 221_838,
+    firstInputTokens: 8_000,
+    latestInputTokens: 30_000,
+    inputTokenDelta: 22_000,
+    incompleteSampleCount: 0,
+  });
+});
+
+test("provider capture preserves exact pi-ai usage and rejects partial data", () => {
+  assert.deepEqual(captureProviderTokenUsage(providerMessage(3)), {
+    inputTokens: 14_000,
+    outputTokens: 103,
+    cacheReadTokens: 30,
+    cacheWriteTokens: 0,
+    totalTokens: 14_133,
+  });
+  assert.equal(captureProviderTokenUsage({ role: "assistant", usage: { input: 14_000 } }), null);
+  assert.equal(captureProviderTokenUsage({ role: "assistant", usage: { input: -1, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 } }), null);
 });
 
 test("measurement: failed turns and ordinary conversation remain separate from GLLA payload bytes", () => {
@@ -151,4 +202,16 @@ test("measurement: failed turns and ordinary conversation remain separate from G
   assert.ok(measured.serializedBytes > measured.gllaSerializedBytes);
   assert.ok(measured.textChars > measured.gllaTextChars);
   assert.equal(measured.unserializableMessageCount, 0);
+  assert.deepEqual(measured.provider, {
+    sampleCount: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    totalTokens: 0,
+    firstInputTokens: null,
+    latestInputTokens: null,
+    inputTokenDelta: null,
+    incompleteSampleCount: 0,
+  });
 });
