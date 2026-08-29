@@ -20,6 +20,7 @@ import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { createHash } from "node:crypto";
 import {
   appendLedger,
   writeGoalMd,
@@ -81,6 +82,7 @@ test("readState normalizes and bounds the detached-auditor recovery cursor", () 
           auditorCandidateRefs: ["test/primary", "TEST/PRIMARY", ...Array.from({ length: 20 }, (_, i) => `test/fallback-${i}`)],
           auditorCandidateRef: longRef,
           auditorRetryCandidateRef: "test/primary",
+          auditorRetryAttemptStartedAt: "2026-07-28T10:00:30.000Z",
           auditorAttemptedRefs: ["test/primary", "TEST/PRIMARY", "test/fallback-1"],
           auditorFailureCount: 99,
           auditorFailureClass: "not-a-class",
@@ -100,6 +102,7 @@ test("readState normalizes and bounds the detached-auditor recovery cursor", () 
   assert.equal(pending?.auditorCandidateRefs?.length, 10, "candidate refs are bounded");
   assert.equal(pending?.auditorCandidateRef?.length, 200, "candidate ref diagnostics are bounded");
   assert.equal(pending?.auditorRetryCandidateRef, "test/primary");
+  assert.equal(pending?.auditorRetryAttemptStartedAt, "2026-07-28T10:00:30.000Z");
   assert.deepEqual(pending?.auditorAttemptedRefs, ["test/primary", "test/fallback-1"]);
   assert.equal(pending?.auditorFailureCount, 2, "failure cursor is clamped");
   assert.equal(pending?.auditorFailureClass, undefined, "unknown failure classes fail closed");
@@ -140,6 +143,52 @@ test("a committed state line wins over an orphaned older transaction", () => {
     at: "2026-07-28T10:01:00.000Z",
   }) + "\n");
   assert.equal(readState(cwd).goal?.id, "g-new", "a later state line is already committed");
+});
+
+test("same-millisecond transaction recovery uses the base-state fingerprint", () => {
+  const cwd = tmpdir();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  const at = "2026-07-28T10:02:00.000Z";
+  const base = JSON.stringify({
+    type: "state",
+    value: { goal: { id: "g-base", objective: "base", status: "active", policy: "goal" }, list: [] },
+    at,
+  });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), `${base}\n`);
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "goal-state.transaction.json"), JSON.stringify({
+    schema: 1,
+    at,
+    baseStateLineHash: createHash("sha256").update(base, "utf8").digest("hex"),
+    state: { goal: { id: "g-transaction", objective: "transaction", status: "paused", policy: "goal" }, list: [] },
+  }));
+  assert.equal(readState(cwd).goal?.id, "g-transaction", "an interrupted transaction wins even when timestamps tie");
+
+  const unrelated = JSON.stringify({
+    type: "state",
+    value: { goal: { id: "g-unrelated", objective: "unrelated", status: "active", policy: "goal" }, list: [] },
+    at,
+  });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), `${unrelated}\n`);
+  assert.equal(readState(cwd).goal?.id, "g-unrelated", "a same-time unrelated state write is not rolled back by the orphan");
+});
+
+test("invalid pending-audit phases are dropped to legacy recovery semantics", () => {
+  const cwd = tmpdir();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), JSON.stringify({
+    type: "state",
+    value: {
+      goal: {
+        id: "g-phase",
+        status: "paused",
+        policy: "goal",
+        pendingCompletion: { at: "2026-07-28T10:00:00.000Z", phase: "garbage-phase" },
+      },
+      list: [],
+    },
+    at: "2026-07-28T10:01:00.000Z",
+  }) + "\n");
+  assert.equal(readState(cwd).goal?.pendingCompletion?.phase, undefined);
 });
 
 test("persisted ids are validated before state or filesystem use", () => {
