@@ -64,6 +64,7 @@ import { attemptFreshSessionRecovery } from "./goal-recovery.js";
 import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-conflict.js";
 import { releaseAuditorSurface } from "./loops/goal-auditor-surface.js";
 import { compactLoopCompletionSummary, compactTerminalCompletionSummary } from "./completion-summary.js";
+import { inferStartFromSession, type StartContextInference } from "./start-context.js";
 
 type DispatchInput = Omit<Parameters<typeof createContinuationDispatch>[0], "id" | "sentAt">;
 
@@ -175,6 +176,21 @@ export function createGoalLoop(d: LoopDeps): void {
   probeExtensionApiStale = d.probeExtensionApiStale; probeMainModelRecovery = d.probeMainModelRecovery; releaseContinuationDispatchStandDown = d.releaseContinuationDispatchStandDown; releaseInitialSessionLoadBarrier = d.releaseInitialSessionLoadBarrier; rememberCtx = d.rememberCtx;
   resolveCarryover = d.resolveCarryover; scheduleSessionTimeout = d.scheduleSessionTimeout; sendContinuation = d.sendContinuation; sendRearmDelayMs = d.sendRearmDelayMs; sessionManagerId = d.sessionManagerId; warnIfStaleAtEntry = d.warnIfStaleAtEntry;
   startDrafting = d.startDrafting; activeGoalSurfaceCommand = d.activeGoalSurfaceCommand; archiveCurrentGoal = d.archiveCurrentGoal;
+}
+
+function loopStartInferenceSeed(inference: StartContextInference): string | undefined {
+  return inference.kind === "ambiguous" ? inference.seed : undefined;
+}
+
+function loopStartInferenceDescription(inference: StartContextInference): string {
+  if (inference.kind === "clear") {
+    const source = inference.source === "current-prompt" ? "the current prompt" : "the bounded recent conversation";
+    return `Inferred from ${source}: "${displaySlice(inference.objective, 180)}".`;
+  }
+  if (inference.kind === "ambiguous") return "The bounded recent conversation contains more than one or an underspecified objective.";
+  return inference.reason === "no-context"
+    ? "There is no usable recent conversation to inherit."
+    : "The bounded recent conversation has no single actionable objective.";
 }
 
 /* ------------------------------------------------------------------ */
@@ -1138,14 +1154,42 @@ async function cmdLoop(args: string, ctx: ExtensionContext): Promise<void> {
 
   if (sub === "start") {
     let cfg;
-    try {
-      cfg = parseLoopStartArgs(rest);
-    } catch (err) {
+    if (!rest) {
+      const inference = inferStartFromSession(ctx.sessionManager);
+      if (inference.kind !== "clear") {
+        ctx.ui.notify(
+          `/${sub} could not safely choose a loop target: ${loopStartInferenceDescription(inference)} Falling back to the normal loop drafting flow; metric design and its Confirm gate remain required.`,
+          "warning",
+        );
+        await startDrafting(ctx, "loop", loopStartInferenceSeed(inference));
+        return;
+      }
+      // Bare-start inference carries only the target. Metric commands,
+      // direction, bounds, and branch mode remain explicit command arguments;
+      // this keeps a stale conversation from silently changing loop policy.
       ctx.ui.notify(
-        `/loop start: ${err instanceof Error ? err.message : String(err)}\n(Non-numeric goal — research, docs, features? Use /goal: the auditor verifies semantically. /loop only believes a number. Or /loop with no args to draft.)`,
-        "warning",
+        `${loopStartInferenceDescription(inference)} /loop start is explicit consent; starting the inferred target in the existing metricless form. Add measure=\"<cmd>\" direction=min|max when a numeric metric is intended.`,
+        "info",
       );
-      return;
+      cfg = {
+        target: inference.objective,
+        measureCmd: "",
+        direction: undefined,
+        plateauWindow: LOOP_DEFAULTS.plateauWindow,
+        maxIterations: 0,
+        branch: false,
+        force: false,
+      } satisfies LoopConfig;
+    } else {
+      try {
+        cfg = parseLoopStartArgs(rest);
+      } catch (err) {
+        ctx.ui.notify(
+          `/loop start: ${err instanceof Error ? err.message : String(err)}\n(Non-numeric goal — research, docs, features? Use /goal: the auditor verifies semantically. /loop only believes a number. Or /loop with no args to draft.)`,
+          "warning",
+        );
+        return;
+      }
     }
     await startLoopFromConfig(ctx, cfg);
     return;

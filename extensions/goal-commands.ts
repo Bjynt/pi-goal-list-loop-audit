@@ -248,9 +248,18 @@ async function cmdGoal(args: string, ctx: ExtensionContext): Promise<void> {
     // v0.16.0: /goal start <objective> — explicit skip-draft. Activates
     // immediately, no interview, no "Done when:" heuristic. Symmetric
     // with /loop start. The auditor infers the contract from the objective.
+    // A bare start is a bounded convenience only: it may inherit one clear
+    // user request from the active conversation, but ambiguity returns to
+    // the ordinary Confirm-gated drafting flow.
     if (route.name === "start") {
       if (!route.rest) {
-        ctx.ui.notify("Usage: /goal start <objective> — activates immediately, skipping the drafting interview. (Without start, an objective needs a 'Done when:' clause or it gets drafted first.)", "warning");
+        const inference = inferStartFromSession(ctx.sessionManager);
+        if (inference.kind === "clear") {
+          ctx.ui.notify(`${explainStartInference(inference)} /goal start is explicit consent, so the drafting interview is skipped.`, "info");
+          return cmdSet(inference.objective, ctx, true);
+        }
+        notifyStartInferenceFallback(ctx, "goal", inference);
+        await startDrafting(ctx, "goal", startInferenceSeed(inference));
         return;
       }
       return cmdSet(route.rest, ctx, true);
@@ -1159,6 +1168,29 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
   if (staleEntry && LIST_MUTATING_SUBCOMMANDS.has(sub)) {
     if (queuePendingListOperation(ctx, args)) return;
     appendLedger(ctx.cwd, "list_mutation_refused_stale", { sub });
+    return;
+  }
+  // v0.36.1: `/list start` is an explicit-consent alias for the existing
+  // queue-head activation path. With no queued item it uses only one bounded,
+  // clear user objective and keeps the list's normal Confirm gate; it never
+  // turns context into an unconfirmed queue entry.
+  if (sub === "start") {
+    if (rest) {
+      ctx.ui.notify("Usage: /list start — activates the queued head, or starts the normal list drafting flow from one clear recent objective.", "info");
+      return;
+    }
+    if (listQueue().length > 0) {
+      await cmdList("next", ctx);
+      return;
+    }
+    const inference = inferStartFromSession(ctx.sessionManager);
+    if (inference.kind === "clear") {
+      ctx.ui.notify(`${explainStartInference(inference)} /list start keeps the list's Confirm gate; the inferred text will be drafted into queue items before anything is activated.`, "info");
+      await startDrafting(ctx, "list", inference.objective);
+      return;
+    }
+    notifyStartInferenceFallback(ctx, "list", inference);
+    await startDrafting(ctx, "list", startInferenceSeed(inference));
     return;
   }
   // v0.34.68 (bug 1.7): heal a corrupted mode flag BEFORE the pause/

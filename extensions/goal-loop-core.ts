@@ -584,6 +584,7 @@ export const LIST_MUTATING_SUBCOMMANDS = new Set([
   "clear",
   "cancel",
   "next",
+  "start", // explicit queue-head activation or bounded context fallback
   "remove",
   "rm",
 ]);
