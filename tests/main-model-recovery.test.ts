@@ -345,7 +345,7 @@ test("the explicit Codex prompt-policy event is terminal, while lookalike text r
     "HTTP 403 forbidden",
     "HTTP 500 upstream",
     "project policy: follow AGENTS.md",
-    "The docs mention Codex error event: invalid prompt as an example",
+    "The docs mention Codex invalid-prompt events as examples",
   ]) {
     assert.equal(isPromptPolicyRejection(raw), false, raw);
     const failure = classifyMainModelFailure(raw);
