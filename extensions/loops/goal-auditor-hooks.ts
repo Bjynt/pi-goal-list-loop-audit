@@ -222,7 +222,6 @@ import {
   newDetachedAuditJobAttemptId,
   runAuditorFallbackWithPolicy,
   isAuditorCursorPersistenceFailure,
-  AUDITOR_CURSOR_PERSISTENCE_FAILURE,
   normalizeAuditorInfrastructureResult,
   runDetachedGoalCompletionAuditor,
   type AuditorFallbackAttemptInfo,
@@ -1270,6 +1269,30 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       durationMs: Date.now() - auditStartMs,
     } as any);
     if (history.length > 20) history.splice(0, history.length - 20);
+    const verdict: AuditLogEntry["verdict"] =
+      result.error && !result.approved && !result.disapproved
+        ? "error"
+        : result.approved && result.regressionShieldPassed === false
+          ? "shield_blocked"
+          : result.approved
+            ? "approved"
+            : result.impossible
+              ? "impossible"
+              : "disapproved";
+    appendAuditLog(liveCtx.cwd, {
+      at: nowIso(),
+      goalId: state.goal.id,
+      objective: state.goal.objective.slice(0, 200),
+      verdict,
+      model: result.model,
+      thinkingLevel: result.thinkingLevel ?? "(default)",
+      report: result.output,
+      impossibleReason: result.impossibleReason,
+      error: result.error,
+      durationMs: Date.now() - auditStartMs,
+      retriedOnce,
+      fallbackUsed,
+    } as AuditLogEntry);
   }
 
   if (result.approved && result.regressionShieldPassed !== false) {
@@ -1331,7 +1354,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
     return;
   }
 
-  const cursorPersistenceFailed = result.error === "auditor recovery cursor persistence failed";
+  const cursorPersistenceFailed = isAuditorCursorPersistenceFailure(result.error);
   if (result.error && (result.fallbackExhausted || cursorPersistenceFailed)) {
     // A candidate chain is a bounded recovery policy, not a new automatic
     // retry horizon. Once every allowed candidate has used its one retry, or
@@ -1350,7 +1373,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       recoveryEpisodeKey,
       recoveryNoticeKeys: durableClaim.recoveryNoticeKeys ?? [],
       auditorFailureClass: auditorResultFailureClass(result),
-      auditorFallbackExhausted: result.fallbackExhausted ? true : undefined,
+      auditorFallbackExhausted: result.fallbackExhausted || cursorPersistenceFailed ? true : undefined,
       auditorFailureAt: new Date().toISOString(),
     };
     const notifyParked = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:fallback-exhausted`);

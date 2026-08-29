@@ -220,7 +220,6 @@ import {
   auditorCandidateRefs,
   auditorResultFailureClass,
   isAuditorCursorPersistenceFailure,
-  AUDITOR_CURSOR_PERSISTENCE_FAILURE,
   normalizeAuditorInfrastructureResult,
   cancelDetachedGoalCompletionAuditor,
   newDetachedAuditJobAttemptId,
