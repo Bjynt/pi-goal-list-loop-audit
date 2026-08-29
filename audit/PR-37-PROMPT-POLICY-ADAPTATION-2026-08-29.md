@@ -46,6 +46,6 @@ At the time of this record:
 - `npx tsc --noEmit` — passed.
 - `bun test --parallel=1 --max-concurrency=1 --timeout=60000 tests/main-model-recovery.test.ts` — 11 passed, 0 failed.
 - `bun test --parallel=1 --max-concurrency=1 --timeout=60000 tests/loop-error-exemption.test.ts tests/main-model-recovery.test.ts` — 22 passed, 0 failed.
-- The broader behavioral orchestrator run including the new goal terminal regression passed; a fresh release-gate run remains required after the final source/test checkpoint.
+- `npm run release:check` — 1,707 passed, 1 skipped, 0 failed (including the broader behavioral orchestrator run and the new terminal regressions).
 
 This review does not claim that the separate zero-stream queued-list stall is fixed; that incident still requires reproduction and durable ledger evidence.
