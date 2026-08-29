@@ -223,6 +223,7 @@ import {
   runAuditorFallbackWithPolicy,
   isAuditorCursorPersistenceFailure,
   AUDITOR_CURSOR_PERSISTENCE_FAILURE,
+  normalizeAuditorInfrastructureResult,
   runDetachedGoalCompletionAuditor,
   type AuditorFallbackAttemptInfo,
   type AuditorFallbackCandidate,
@@ -1201,6 +1202,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
   // running. Never rebuild a recovery record from the stale pre-dispatch
   // snapshot: that would erase the candidate position on the first failure.
   const durableClaim = state.goal.pendingCompletion ?? claim;
+  result = normalizeAuditorInfrastructureResult(result);
 
   // v0.34.61: focus revision guard — contract-scoped. The detached
   // worker captured (goalId, revision) at dispatch; only a CONTRACT

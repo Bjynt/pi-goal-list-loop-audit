@@ -72,6 +72,25 @@ export interface GoalAuditorResult {
   goalRevision?: GoalRevisionToken;
 }
 
+/** Infrastructure errors are never semantic verdicts, even if a parser or
+ * partial worker payload also set verdict-like flags. Normalize at the parent
+ * boundary before history, shield, archive, or continuation policy sees the
+ * result. */
+export function normalizeAuditorInfrastructureResult(result: GoalAuditorResult): GoalAuditorResult {
+  if (!result.error || (!result.approved && !result.disapproved && !result.impossible && result.regressionShieldPassed !== false)) {
+    return result;
+  }
+  return {
+    ...result,
+    approved: false,
+    disapproved: false,
+    impossible: false,
+    impossibleReason: undefined,
+    regressionShieldPassed: undefined,
+    regressionShieldMissing: undefined,
+  };
+}
+
 export interface AuditorProgress {
   recentOutput: string[];
   phase: "starting" | "running" | "thinking" | "tool_executing" | "producing_report" | "complete";

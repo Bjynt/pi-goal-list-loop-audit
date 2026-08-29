@@ -221,6 +221,7 @@ import {
   auditorResultFailureClass,
   isAuditorCursorPersistenceFailure,
   AUDITOR_CURSOR_PERSISTENCE_FAILURE,
+  normalizeAuditorInfrastructureResult,
   cancelDetachedGoalCompletionAuditor,
   newDetachedAuditJobAttemptId,
   runDetachedGoalCompletionAuditor,
@@ -920,6 +921,7 @@ function registerAgentTools(pi: any): void {
         clearDetachedAuditProgress(auditGeneration, auditGoalId, auditAttemptId);
         return staleToolResult();
       }
+      result = normalizeAuditorInfrastructureResult(result);
       if (state.goal.pendingCompletion?.attemptId !== auditAttemptId) {
         return staleToolResult();
       }
@@ -928,6 +930,27 @@ function registerAgentTools(pi: any): void {
       // worker is running. Use the refreshed record below so recovery cannot
       // overwrite the cursor with the pre-launch snapshot.
       const durableCompletionClaim = state.goal.pendingCompletion ?? completionClaim;
+      if (result.goalRevision && !isGoalRevisionCurrent(result.goalRevision, state.goal)) {
+        appendLedger(ctx.cwd, "stale_revision_refused", {
+          goalId: auditGoalId,
+          captured: result.goalRevision,
+          current: { goalId: state.goal.id, revision: state.goal.revision ?? 0 },
+          attemptId: auditAttemptId,
+          approvedClaimed: result.approved,
+          disapprovedClaimed: result.disapproved,
+          error: result.error?.slice?.(0, 200),
+        });
+        ctx.ui.notify(
+          `Stale auditor verdict REFUSED: goal ${auditGoalId} revision is ${state.goal.revision ?? 0} but the auditor captured ${result.goalRevision.revision}. The goal moved on during the audit — its verdict was not applied. Run /goal verify again to audit the current state.`,
+          "warning",
+        );
+        updateGoal({ status: "active", pendingCompletion: undefined }, ctx);
+        scheduleContinuation(ctx, true);
+        return {
+          content: [{ type: "text", text: "The auditor result was refused because the goal contract changed while the audit was running. The stale claim was discarded; run /goal verify again for the current contract." }],
+          details: {},
+        };
+      }
       const auditDurationMs = Date.now() - auditStartMs;
       latestAuditProgress = null;
       // Audit history: record REAL verdicts only — a non-empty report is the
@@ -1188,7 +1211,7 @@ function registerAgentTools(pi: any): void {
         // completion claim so /goal resume can retry the isolated auditor
         // directly. A timeout is not a verdict and must not be fed back into
         // the normal agent continuation path.
-        const cursorPersistenceFailed = result.error === "auditor recovery cursor persistence failed";
+        const cursorPersistenceFailed = isAuditorCursorPersistenceFailure(result.error);
         if (result.fallbackExhausted || cursorPersistenceFailed) {
           // The configured candidate chain is finite. Exhaustion and cursor
           // persistence failures are hard parked states, not invitations to
@@ -1206,7 +1229,7 @@ function registerAgentTools(pi: any): void {
             recoveryEpisodeKey,
             recoveryNoticeKeys: durableCompletionClaim.recoveryNoticeKeys ?? [],
             auditorFailureClass: auditorResultFailureClass(result),
-            auditorFallbackExhausted: result.fallbackExhausted ? true : undefined,
+            auditorFallbackExhausted: result.fallbackExhausted || cursorPersistenceFailed ? true : undefined,
             auditorFailureAt: new Date().toISOString(),
           };
           const notifyParked = claimRecoveryNotice(pending, `${recoveryEpisodeKey}:fallback-exhausted`);
