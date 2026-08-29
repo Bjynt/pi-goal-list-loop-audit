@@ -12,7 +12,7 @@ import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import activate, { __testOnlyResetStaleFlag, __testOnlyResetOwnerSession } from "../extensions/loops/goal.js";
+import activate, { __testOnlyResetStaleFlag, __testOnlyResetOwnerSession, __testOnlyResetTerminalFlags } from "../extensions/loops/goal.js";
 import { requiresMainModelRecovery } from "../extensions/main-model-recovery.js";
 import { resetLengthContinue } from "../extensions/length-continue.js";
 import { readState } from "../extensions/goal-loop-core.js";
@@ -133,6 +133,40 @@ test("v0.35.x: repeated in-band provider tool output parks recovery without loop
   assert.ok(lg.includes('"loop_in_band_provider_failure"'), "the repeated pane is ledgered");
   assert.ok(lg.includes('"loop_turn_exempt_error"'), "the turn uses the existing error exemption");
   assert.ok(!lg.includes('"loop_stuck"'), "the repeated provider pane never reaches stuck accounting");
+});
+
+test("explicit in-band prompt-policy refusal stops a loop on its first pane", async () => {
+  __testOnlyResetStaleFlag();
+  __testOnlyResetTerminalFlags();
+  const cwd = tmpCwd();
+  const ctx = await sessionWithLoop(cwd, { measureCmd: "echo 74", direction: "max", bestValue: 74, lastValue: 74 });
+  let aborts = 0;
+  ctx.abort = () => { aborts++; };
+  const sentBefore = pi.sent.length;
+  try {
+    await pi.fire("tool_result", {
+      toolName: "bash",
+      output: "HTTP 500 — Codex error event: invalid prompt",
+      isError: false,
+    }, ctx);
+    await pi.fire("agent_end", {
+      messages: [{ role: "assistant", content: [], stopReason: "end_turn" }],
+    }, ctx);
+    await tick(250);
+    const l = loop(cwd);
+    assert.equal(l.active, false, "the explicit policy pane stops the loop immediately");
+    assert.match(l.stopReason ?? "", /policy violation/);
+    assert.equal(l.iteration, 1, "policy refusal is not an iteration");
+    assert.equal(readState(cwd).mainModelRecovery, undefined);
+    assert.equal(aborts, 1, "the owning host turn is aborted once");
+    assert.equal(pi.sent.length, sentBefore, "no automatic retry continuation is sent");
+    const lg = ledger(cwd);
+    assert.match(lg, /main_model_prompt_policy_terminal/);
+    assert.doesNotMatch(lg, /main_model_recovery_wait/);
+    assertCompactLoopRecap(ctx);
+  } finally {
+    __testOnlyResetTerminalFlags();
+  }
 });
 
 test("v0.29.19: a real turn after errors clears the streak and measures normally", async () => {
