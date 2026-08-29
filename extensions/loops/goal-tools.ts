@@ -219,6 +219,8 @@ import {
 import {
   auditorCandidateRefs,
   auditorResultFailureClass,
+  isAuditorCursorPersistenceFailure,
+  AUDITOR_CURSOR_PERSISTENCE_FAILURE,
   cancelDetachedGoalCompletionAuditor,
   newDetachedAuditJobAttemptId,
   runDetachedGoalCompletionAuditor,
@@ -688,6 +690,12 @@ function registerAgentTools(pi: any): void {
         verificationSummary: p.verificationSummary,
         at: nowIso(),
       }, "complete-goal");
+      if (!completionClaim) {
+        return {
+          content: [{ type: "text", text: "Completion claim was not persisted; no auditor was launched. Fix .pi-glla storage and retry complete_goal." }],
+          details: {},
+        };
+      }
       updateGoal({ pendingTasks: undefined, ...(finalSummary ? { completionSummary: finalSummary } : {}) }, ctx);
       const auditGoal = state.goal;
       if (!auditGoal) return staleToolResult();

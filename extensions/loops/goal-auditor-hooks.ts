@@ -221,6 +221,8 @@ import {
   cancelDetachedGoalCompletionAuditor,
   newDetachedAuditJobAttemptId,
   runAuditorFallbackWithPolicy,
+  isAuditorCursorPersistenceFailure,
+  AUDITOR_CURSOR_PERSISTENCE_FAILURE,
   runDetachedGoalCompletionAuditor,
   type AuditorFallbackAttemptInfo,
   type AuditorFallbackCandidate,
@@ -628,7 +630,7 @@ export function scheduleParkedCompletionAuditRecovery(ctx: ExtensionContext, pen
   return next;
 }
 
-function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, origin: CompletionAuditOrigin): PendingCompletion {
+function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, origin: CompletionAuditOrigin): PendingCompletion | undefined {
   clearScheduledAuditorRecoveryTimer();
   completionAuditRecoveryArmed = true;
   const startedMs = Date.now();
@@ -649,6 +651,7 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
         auditorCandidateRefs: undefined,
         auditorCandidateRef: undefined,
         auditorRetryCandidateRef: undefined,
+        auditorRetryAttemptStartedAt: undefined,
         auditorAttemptedRefs: undefined,
         auditorFailureCount: undefined,
         auditorFailureClass: undefined,
@@ -685,7 +688,7 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
   // Clear that old operational note before rebuilding the immutable auditor
   // prompt; otherwise the detached auditor sees stale EEXIST/model-error
   // text and the UI/request snapshot describes the previous attempt.
-  updateGoal({
+  const persisted = updateGoal({
     status: "auditing",
     pendingCompletion: pending,
     pauseReason: undefined,
@@ -698,6 +701,12 @@ function beginCompletionAudit(ctx: ExtensionContext, claim: PendingCompletion, o
     recoveryEpisodeKey: undefined,
     recoveryNoticeKeys: undefined,
   }, ctx);
+  if (!persisted) {
+    // Do not let a failed claim transition leave the process recovery latch
+    // armed: no detached worker was authorized without a durable cursor.
+    completionAuditRecoveryArmed = false;
+    return undefined;
+  }
   appendLedger(ctx.cwd, "audit_started", { goalId: state.goal?.id, attemptId: pending.attemptId, origin });
   return pending;
 }
@@ -950,6 +959,11 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
   completionAuditRecoveryArmed = true;
   let liveCtx: ExtensionContext = initialCtx;
   const claim = beginCompletionAudit(liveCtx, guardedGoal.pendingCompletion, origin);
+  if (!claim) {
+    liveCtx.ui.notify("Stored completion claim was not persisted for auditor recovery; no auditor was launched. Fix .pi-glla storage and retry explicitly.", "warning");
+    appendLedger(liveCtx.cwd, "audit_dispatch_persistence_failed", { goalId, origin });
+    return;
+  }
   const auditGoal = state.goal;
   if (!auditGoal || auditGoal.id !== goalId) return;
   if (origin === "session-recovery") {
