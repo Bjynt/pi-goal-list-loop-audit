@@ -14,6 +14,7 @@ the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
 **Most recent (2026-08-29):**
+- `AUDITOR-PARKED-NO-VERDICT-DISPOSITION-2026-08-29.md` — durable parked/no-verdict recovery validation and explicit provider-boundary disposition
 - `PR-37-PROMPT-POLICY-ADAPTATION-2026-08-29.md` — read-only PR #37 review; current-main adaptation of explicit prompt-policy terminal handling
 
 **Previous (2026-08-28):**
