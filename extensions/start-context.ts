@@ -276,7 +276,7 @@ export function inferStartObjective(
     };
   }
   return {
-    kind: current || recent.length > 0 ? "none" : "none",
+    kind: "none",
     reason: current || recent.length > 0 ? "no-actionable-objective" : "no-context",
   };
 }
