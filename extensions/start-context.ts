@@ -121,13 +121,14 @@ function hasMultipleTasks(text: string): boolean {
 }
 
 function classifyCandidate(raw: string, truncated = false): "clear" | "ambiguous" | "none" {
-  const text = normalizeWhitespace(raw);
+  const source = raw.replace(/\r\n?/g, "\n").trim();
+  const text = normalizeWhitespace(source);
   if (!text || isSlashCommand(text) || GENERIC_REPLY_RE.test(text)) return "none";
   if (truncated || text.length > START_CONTEXT_MAX_CANDIDATE_CHARS) return "ambiguous";
   if (QUESTION_ONLY_RE.test(text) && !ACTION_AT_START_RE.test(text) && !REQUEST_PREFIX_RE.test(text)) return "none";
   if (EXPLANATION_REQUEST_RE.test(text)) return "none";
   if (PRONOUN_ONLY_RE.test(text) || VAGUE_ACTION_RE.test(text)) return "none";
-  if (hasMultipleTasks(text)) return "ambiguous";
+  if (hasMultipleTasks(source)) return "ambiguous";
 
   const hasAction = ACTION_AT_START_RE.test(text) || REQUEST_PREFIX_RE.test(text) || REQUIREMENT_RE.test(text);
   if (!hasAction || text.length < 6) return "none";
