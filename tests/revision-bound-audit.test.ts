@@ -292,7 +292,7 @@ test("direct complete_goal refuses an approval when the contract revision change
     const current = readState(cwd);
     assert.equal(current.goal?.status, "active");
     assert.equal(current.goal?.revision, 2, "the concurrent contract revision is preserved");
-    assert.equal(current.goal?.auditHistory?.length ?? 0, 0, "the stale approval is not recorded as a verdict");
+    assert.equal(current.goal?.auditHistory?.length ?? 0, 1, "the stale approval is not appended as a verdict");
     assert.ok(readLedger(cwd).some((entry) => entry.type === "stale_revision_refused"), "the stale direct result is durably refused");
     assert.equal(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length, 0, "a stale approval cannot archive the changed contract");
   } finally {
