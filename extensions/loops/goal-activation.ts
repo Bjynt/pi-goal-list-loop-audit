@@ -694,9 +694,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       }));
 
   pi.registerCommand("goal", {
-    description: "Set/draft a goal, or /goal status|pause|resume|cancel|tweak <text>|archive|start <objective>. Objectives without a 'Done when:' clause are grilled into a contract first; include the clause or use /goal start to skip the interview and activate instantly.",
+    description: "Set/draft a goal, or /goal status|pause|resume|cancel|tweak <text>|archive|start <objective>. Objectives without a 'Done when:' clause are grilled into a contract first; include the clause or use /goal start to skip the interview and activate instantly. Bare /goal start inherits one clear recent objective or falls back to drafting.",
     getArgumentCompletions: completions([
-      ["start", "skip drafting — /goal start <objective> activates immediately"],
+      ["start", "skip drafting — /goal start <objective> activates immediately; bare start uses one clear recent objective"],
       ["plan", "extended draft for greenfield/megaplan work: research-first, multi-round interview, structured expanded objective (still Confirm-gated)"],
       ["audit", "one-shot project audit goal: /goal audit [focus] — fix the non-decisions, present the decisions (v0.29.8)"],
       ["verify", "run the isolated auditor on the current goal NOW (v0.28.27, renamed from /goal audit)"],
@@ -749,9 +749,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     },
   });
   pi.registerCommand("list", {
-    description: "Loop 2: the list of audited goals — order is the default, not the law. /list <describe tasks or name a plan file> (dumps get shaped into items, files import, 'Done when:' adds directly) | /list audit [focus] (collect findings, then drain them as items) | /list show | /list resume | /list tweak <text> | /list next [n] | /list remove <n> | /list clear | /list cancel. Settings are under /glla, not /list — bare /glla opens the settings table.",
+    description: "Loop 2: the list of audited goals — order is the default, not the law. /list <describe tasks or name a plan file> (dumps get shaped into items, files import, 'Done when:' adds directly) | /list audit [focus] (collect findings, then drain them as items) | /list show | /list start | /list resume | /list tweak <text> | /list next [n] | /list remove <n> | /list clear | /list cancel. /list start explicitly activates the queued head or drafts one clear recent objective with the normal Confirm gate. Settings are under /glla, not /list — bare /glla opens the settings table.",
     getArgumentCompletions: completions([
       ["show", "display the waiting items"],
+      ["start", "explicitly activate the queued head; with no queue, draft one clear recent objective"],
       ["add", "alias — same as bare /list <text>: detection routes everything"],
       ["import", "alias — /list import <file-or-text> shapes the dump into items (v0.19.0 no-op verb)"],
       ["settings", "settings live under /glla — bare /glla opens the settings table"],
@@ -774,9 +775,9 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     },
   });
   pi.registerCommand("loop", {
-    description: "Loop 3: metric-driven process — it never completes. /loop <target> drafts the metric with you · /loop start \"<target>\" = infinite metricless loop (no plateau, no cap; ends at time=/tokens= or /loop stop) · /loop respec = infinite metricless reconcile against the root SPEC.md · add measure=\"<cmd>\" direction=min|max [window=5] [max=50] [cadence=<seconds>] [branch=1] for a loop · cadence is opt-in and limits automatic wakes between successful iterations · /loop status · /loop stop (alias /loop cancel). 'Improve until X' is a /goal, not a loop.",
+    description: "Loop 3: metric-driven process — it never completes. /loop <target> drafts the metric with you · /loop start \"<target>\" = infinite metricless loop (no plateau, no cap; ends at time=/tokens= or /loop stop) · bare /loop start inherits one clear recent target but does not infer metric, bounds, or branch options · /loop respec = infinite metricless reconcile against the root SPEC.md · add measure=\"<cmd>\" direction=min|max [window=5] [max=50] [cadence=<seconds>] [branch=1] for a loop · cadence is opt-in and limits automatic wakes between successful iterations · /loop status · /loop stop (alias /loop cancel). 'Improve until X' is a /goal, not a loop.",
     getArgumentCompletions: completions([
-      ["start", "skip drafting: /loop start \"<target>\" measure=\"<cmd>\" direction=min|max [window=5] [max=50] [cadence=<seconds>]"],
+      ["start", "skip drafting: /loop start \"<target>\" measure=\"<cmd>\" direction=min|max [window=5] [max=50] [cadence=<seconds>]; bare start uses one clear recent target"],
       ["respec", "infinite metricless loop reconciling the codebase against the root SPEC.md"],
       ["plan", "extended loop draft: deep research + multi-round metric design, same Confirm as a regular draft"],
       ["audit", "project-audit loop: each iteration audits fresh, appends findings, fixes the top ones — plateau stops when the well is dry (v0.29.0)"],

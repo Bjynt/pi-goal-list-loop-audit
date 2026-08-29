@@ -196,7 +196,13 @@ export function readBoundedStartContext(sessionManager: unknown): StartContextWi
   }
   selected.reverse();
 
-  const currentIndex = selected.findLastIndex((turn) => turn.role === "user");
+  let currentIndex = -1;
+  for (let i = selected.length - 1; i >= 0; i -= 1) {
+    if (selected[i]!.role === "user") {
+      currentIndex = i;
+      break;
+    }
+  }
   if (currentIndex < 0) return { currentPrompt: "", recent: selected };
   const current = selected[currentIndex]!;
   return {
