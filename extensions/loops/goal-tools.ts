@@ -1741,6 +1741,9 @@ function registerAgentTools(pi: any): void {
       if (!record.reason) {
         return { content: [{ type: "text", text: "A non-empty reason is required to record a durable-vs-defer judgment." }], details: {} };
       }
+      if (record.choice === "deferred" && !record.followUp) {
+        return { content: [{ type: "text", text: "A deferred judgment also requires a durable follow-up." }], details: {} };
+      }
       const landed = appendLedger(ctx.cwd, "durable_defer_choice", {
         goalId: state.goal.id,
         ...record,

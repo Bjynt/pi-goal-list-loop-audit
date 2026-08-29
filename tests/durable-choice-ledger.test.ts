@@ -31,6 +31,12 @@ test("durable-vs-defer judgment is an explicit bounded ledger choice", async () 
   }, ctx);
   assert.match(inline.content[0]?.text ?? "", /Recorded durable-vs-defer judgment: inline/);
 
+  const rejected = await pi.runTool("record_goal_judgment", {
+    choice: "deferred",
+    reason: "The durable migration is blocked by a missing external permission.",
+  }, ctx);
+  assert.match(rejected.content[0]?.text ?? "", /requires a durable follow-up/);
+
   const deferred = await pi.runTool("record_goal_judgment", {
     choice: "deferred",
     reason: "The durable migration is blocked by a missing external permission.",
