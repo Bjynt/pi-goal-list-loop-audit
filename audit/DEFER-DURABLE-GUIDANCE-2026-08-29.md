@@ -10,9 +10,9 @@ Harden long-term vs defer guidance — 3 defers recommending the durable design 
 
 ## Fix
 
-* Hardened `LONG_RUNNING_JUDGMENT_POLICY` with explicit `Defer vs durable — long-term focused action outranks defer` bullet: when three defers recommend the durable design, the inline choice is still the durable fix, not a defer; the ledger distinguishes `deferred` vs `inline` and ordering pins durable before defer (regression: plaque collision N=31 i%2 wrap between the-ember-throne and the-frost-beneath — durable ordering must not wrap).
+* Hardened `LONG_RUNNING_JUDGMENT_POLICY` with explicit `Defer vs durable — long-term focused action outranks defer` guidance: when three defers recommend the durable design, the inline choice is still the durable fix, not a defer. The new `record_goal_judgment` tool writes bounded `durable_defer_choice` ledger entries with `choice: "inline"` or `choice: "deferred"`, a reason, and an optional follow-up; ordering pins durable before defer (regression: plaque collision N=31 i%2 wrap between the-ember-throne and the-frost-beneath — durable ordering must not wrap).
 
 ## Verification
 
 * `npx tsc --noEmit` 0.
-* `bun test tests/defer-durable-ordering.test.ts` 2/2 pins policy contains Defer vs durable, long-term focused action outranks defer, durable fix not a defer, ledger distinguishes deferred vs inline, durable index < defer index, and N=31 i%2 wrap + both plaque names.
+* `bun test tests/defer-durable-ordering.test.ts tests/durable-choice-ledger.test.ts` 4/4: policy ordering pins Defer vs durable and the plaque collision; the runtime tool records both `inline` and `deferred` choices in the durable ledger; rationale/follow-up payloads are bounded and compacted.
