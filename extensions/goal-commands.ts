@@ -38,6 +38,7 @@ import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-confli
 import { formatGllaVersion } from "./glla-version.js";
 import { cancelDetachedGoalCompletionAuditor } from "./goal-loop-auditor-process.js";
 import { releaseAuditorSurface } from "./loops/goal-auditor-surface.js";
+import { inferStartFromSession, type StartContextInference } from "./start-context.js";
 
 /** Child pi sessions live under the shared session store, munged by cwd
  * (verified layout: ~/.pi/agent/sessions/--home-user-proj--/*.jsonl). */
@@ -150,6 +151,30 @@ export function createGoalCommands(d: CommandDeps): void {
   createGoal = d.createGoal; fireReviewer = d.fireReviewer; openSettingsUI = d.openSettingsUI; manuallyResumeMainModelRecovery = d.manuallyResumeMainModelRecovery; activeGoalCommand = d.activeGoalCommand;
   activeGoalStatusCommand = d.activeGoalStatusCommand; activeGoalSurfaceCommand = d.activeGoalSurfaceCommand; goalNoun = d.goalNoun; displaySlice = d.displaySlice; shortObj = d.shortObj;
   agentsSnapshot = d.agentsSnapshot;
+}
+
+function startInferenceSeed(inference: StartContextInference): string | undefined {
+  return inference.kind === "ambiguous" ? inference.seed : undefined;
+}
+
+function explainStartInference(inference: StartContextInference): string {
+  if (inference.kind === "clear") {
+    const source = inference.source === "current-prompt" ? "the current prompt" : "the bounded recent conversation";
+    return `Inferred from ${source}: "${sanitizeDisplayText(displaySlice(inference.objective, 180))}".`;
+  }
+  if (inference.kind === "ambiguous") {
+    return "The bounded recent conversation contains more than one or an underspecified objective.";
+  }
+  return inference.reason === "no-context"
+    ? "There is no usable recent conversation to inherit."
+    : "The bounded recent conversation has no single actionable objective.";
+}
+
+function notifyStartInferenceFallback(ctx: ExtensionContext, surface: "goal" | "loop" | "list", inference: StartContextInference): void {
+  ctx.ui.notify(
+    `/${surface} start could not safely choose an objective: ${explainStartInference(inference)} Falling back to the normal ${surface} drafting flow; nothing is activated before its existing gates.`,
+    "warning",
+  );
 }
 
 /* Moved bodies (bands b1 + b3 from goal.ts).                          */

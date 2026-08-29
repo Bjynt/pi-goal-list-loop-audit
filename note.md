@@ -51,6 +51,11 @@ while it owuld be in some cases would be useful to run a miniaudit
 
 ## we should prefer long term focused action, i just got recommended 3 defers 
 
+/home/dracon/Pictures/Screenshots/Screenshot_20260829_185215.png 
+this had the best solution last 
+
+audit can fix more in line if makes snse
+
 ## auditor 
 
 not sure but for visual tasks do we take new picutres? so for anything visual the auditor should take a picture look at it and critique it and feed it back int othe main 
