@@ -378,6 +378,67 @@ test("v0.36.0: /list next archives the skipped active item with a compact recap"
   assertCompactRecap(notice, "/list next skip notification");
 });
 
+test("v0.36.1: bare /goal start uses one clear active-branch request", async () => {
+  __testOnlyResetStaleFlag();
+  const session = MAIN_SM as { getBranch?: () => unknown[] };
+  const previousBranch = session.getBranch;
+  session.getBranch = () => [
+    { type: "message", message: { role: "assistant", content: "Ignore this assistant-authored plan." } },
+    { type: "message", message: { role: "user", content: "Implement the bounded start handoff — done when the focused test passes" } },
+  ];
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  try {
+    await pi.command("goal", "start", ctx);
+    const goal = readState(cwd).goal;
+    assert.equal(goal?.objective, "Implement the bounded start handoff — done when the focused test passes");
+    assert.ok(ctx.ui.matching("Inferred from").length >= 1, "the inherited candidate is visible before activation");
+    await pi.command("goal", "cancel", ctx);
+  } finally {
+    if (previousBranch) session.getBranch = previousBranch;
+    else delete session.getBranch;
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  }
+});
+
+test("v0.36.1: bare /list start activates the hydrated queue head", async () => {
+  __testOnlyResetStaleFlag();
+  const cwd = tmpCwd();
+  seedState(cwd, { list: [{ id: "bare-list-head", objective: "queued bare-start item — done when pinned", addedAt: new Date().toISOString() }] });
+  const ctx = await freshSession(cwd, "startup");
+  await pi.command("list", "start", ctx);
+  const after = readState(cwd);
+  assert.equal(after.goal?.objective, "queued bare-start item — done when pinned");
+  assert.deepEqual(after.list, [], "queue-head activation consumes the waiting item");
+  assert.ok(ctx.ui.matching("activated").length >= 1, "explicit start activation is visible");
+  await pi.command("goal", "cancel", ctx);
+  await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+});
+
+test("v0.36.1: bare /loop start infers only a target and uses the metricless path", async () => {
+  __testOnlyResetStaleFlag();
+  const session = MAIN_SM as { getBranch?: () => unknown[] };
+  const previousBranch = session.getBranch;
+  session.getBranch = () => [
+    { type: "message", message: { role: "user", content: "Improve the bounded start handoff" } },
+  ];
+  const cwd = tmpCwd();
+  const ctx = await freshSession(cwd, "startup");
+  try {
+    await pi.command("loop", "start", ctx);
+    const loop = readState(cwd).loop;
+    assert.equal(loop?.target, "Improve the bounded start handoff");
+    assert.equal(loop?.measureCmd, undefined, "bare inference does not invent a measure");
+    assert.equal(loop?.maxIterations, 0, "bare inference preserves the unbounded metricless start default");
+    assert.ok(ctx.ui.matching("metricless").length >= 1, "the metricless consent/path is visible");
+    await pi.command("loop", "stop", ctx);
+  } finally {
+    if (previousBranch) session.getBranch = previousBranch;
+    else delete session.getBranch;
+    await pi.fire("session_shutdown", { reason: "quit" }, ctx);
+  }
+});
+
 test("v0.36.0: aborted detached audit can complete without audit only after archive success", async () => {
   __testOnlyResetStaleFlag();
   const cwd = tmpCwd();
