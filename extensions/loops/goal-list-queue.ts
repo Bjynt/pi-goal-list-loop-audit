@@ -246,6 +246,7 @@ import {
   routeVisionCheck,
   visionAssistLedger,
 } from "../vision-assist.js";
+import { gatherProactivePreRead } from "../proactive-pre-read.js";
 import {
   buildModelPickItems,
   ModelPickerComponent,
@@ -852,6 +853,13 @@ async function startDrafting(ctx: ExtensionContext, target: "goal" | "list" | "l
       const xr = crossRecommendMode(seed, target);
       if (xr) tmpl += `\n\n${xr}`;
     }
+  }
+  // v0.36.x: proactive pre-read — ingest bounded file/image evidence from
+  // the seed before the first question, so the interview does not repeat
+  // claims the user already provided. No model switch; purely bounded reads.
+  if (seed) {
+    const pre = gatherProactivePreRead(seed, ctx.cwd);
+    if (pre) tmpl += `\n\n${pre}`;
   }
   try {
     await beginDrafterModel(ctx);
