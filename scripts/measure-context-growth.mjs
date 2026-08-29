@@ -7,6 +7,7 @@
 // effective-history cost of retaining repeated goal-event messages.
 
 import { continuationPrompt } from "../extensions/goal-continuation.ts";
+import { buildAuthoritativeContextCheckpoint, projectBoundedGllaContext } from "../extensions/context-checkpoint.ts";
 import { diffContextGrowth, measureContextGrowth } from "../extensions/context-growth.ts";
 
 const goal = {
@@ -21,6 +22,11 @@ const goal = {
 };
 
 const payload = continuationPrompt(goal);
+const checkpoint = buildAuthoritativeContextCheckpoint({
+  goal,
+  sessionGeneration: 1,
+  ownerSessionId: "offline-measurement-owner",
+});
 const baselineMessages = [
   { role: "user", content: [{ type: "text", text: "start the long-running task" }] },
   { role: "assistant", content: [{ type: "text", text: "I am working on the task." }], stopReason: "stop" },
@@ -64,10 +70,22 @@ const rows = [0, 1, 5, 12, 25].map((continuations) => {
     // the same fields; this offline probe never claims to contact a provider.
     providerMessages: providerMessages(continuations),
   });
+  const projection = projectBoundedGllaContext(messages, checkpoint);
+  const boundedMeasurement = measureContextGrowth(projection.messages, {
+    providerMessages: providerMessages(continuations),
+  });
   return {
     continuations,
     measurement,
     deltaFromBaseline: diffContextGrowth(baseline, measurement),
+    boundedProjection: {
+      removedPayloads: projection.removedPayloads,
+      retainedPayloads: projection.retainedPayloads,
+      insertedCheckpoint: projection.insertedCheckpoint,
+      checkpointChars: projection.checkpointChars,
+      measurement: boundedMeasurement,
+      deltaFromBaseline: diffContextGrowth(baseline, boundedMeasurement),
+    },
   };
 });
 

@@ -201,7 +201,7 @@ function gllaKind(message: unknown): GllaPayloadKind | null {
   if (typeof message !== "object" || message === null) return null;
   const record = message as { customType?: unknown };
   const text = messageText(message);
-  const isGoalEvent = record.customType === "goal-event";
+  const isGoalEvent = record.customType === "goal-event" || record.customType === "glla-authoritative-checkpoint";
   if (!isGoalEvent && !text.includes("[GOAL CHECKPOINT")) return null;
   if (text.includes("[POST-COMPACTION RESYNC]")) return "post-compaction-resync";
   if (text.includes("[STALL WARNING")) return "stall-warning";
