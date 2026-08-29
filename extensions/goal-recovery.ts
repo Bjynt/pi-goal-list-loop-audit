@@ -527,7 +527,7 @@ function sessionModelSelector(ctx: ExtensionContext, sessionChain?: string[]): M
   return new ModelSelector({
     getChain: (scope) => {
       if (scope.kind === "session") return sessionChain ?? mainModelFallbackRefs(ctx);
-      if (scope.kind === "subagent") return settings.subagentFallbacks?.[scope.agentName] ?? [];
+      if (scope.kind === "subagent") return normalizeMainModelFallbackRefs(settings.subagentFallbacks?.[scope.agentName] ?? []);
       return [];
     },
     resolve: (ref) => resolveMainModel(ctx, ref),

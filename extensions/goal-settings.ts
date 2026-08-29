@@ -319,6 +319,17 @@ function normalizeLoadedSettings(settings: Settings): Settings {
   // all see the same bounded value.
   settings.mainModelFallbacks = normalizeMainModelFallbackRefs(settings.mainModelFallbacks);
   settings.drafterModelFallbacks = normalizeMainModelFallbackRefs(settings.drafterModelFallbacks);
+  // v0.35.115 parity: subagent fallback chains use the same bounded,
+  // case-insensitive dedup as the main chain so ordering/fallback
+  // strategy stays coherent across scopes.
+  if (settings.subagentFallbacks && typeof settings.subagentFallbacks === "object") {
+    for (const [key, chain] of Object.entries(settings.subagentFallbacks)) {
+      const normalized = normalizeMainModelFallbackRefs(chain);
+      if (normalized.length) settings.subagentFallbacks[key] = normalized;
+      else delete (settings.subagentFallbacks as Record<string, string[]>)[key];
+    }
+    if (Object.keys(settings.subagentFallbacks).length === 0) delete (settings as any).subagentFallbacks;
+  }
   // v0.36.0: the auditor extension allowlist is a plain string[] of pi
   // extension specs. Hand-edited files may carry junk; keep it bounded and
   // deterministic so the request hash is stable.
@@ -542,7 +553,15 @@ export function saveSettings(scope: "global" | "project", cwd: string, patch: Pa
         continue;
       }
       if (v === undefined) delete next[k]; // key=unset removes the key
-      else next[k] = k === "mainModelFallbacks" ? normalizeMainModelFallbackRefs(v) : v;
+      else if (k === "mainModelFallbacks" || k === "drafterModelFallbacks") next[k] = normalizeMainModelFallbackRefs(v);
+      else if (k === "subagentFallbacks" && v && typeof v === "object") {
+        const normalized: Record<string, string[]> = {};
+        for (const [agent, chain] of Object.entries(v as Record<string, unknown>)) {
+          const refs = normalizeMainModelFallbackRefs(chain);
+          if (refs.length) normalized[agent] = refs;
+        }
+        if (Object.keys(normalized).length) next[k] = normalized; else delete next[k];
+      } else next[k] = v;
     }
     writeSettingsAtomically(file, next);
   });
