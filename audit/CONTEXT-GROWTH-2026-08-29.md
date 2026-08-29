@@ -2,15 +2,19 @@
 
 ## Scope
 
-This is the measurement pass for the `note.md` **Now — context bloat** item.
-It does not claim to fix context growth yet. The next list item owns the
-bounded checkpoint/resync implementation.
+This is the measurement and bounded-fix validation pass for the `note.md`
+**Now — context bloat** item. The before rows reproduce the measured linear
+GLLA growth; the bounded rows replay the same raw message shapes through the
+new per-send checkpoint projection. The projection is intentionally
+non-destructive: it does not rewrite the session transcript.
 
 The structural probe uses the exact `continuationPrompt()` output that
 `extensions/goal-loop.ts` sends in a `customType: "goal-event"` follow-up. It
 retains those messages in a synthetic effective history and measures ordinary
-history separately from GLLA payloads. No provider request, session write, or
-transcript mutation is performed by the offline probe.
+history separately from GLLA payloads. The after rows pass that history through
+`projectBoundedGllaContext()` with a checkpoint built from the durable goal
+shape. No provider request, session write, or transcript mutation is performed
+by the offline probe.
 
 ## Exact provider-token capture
 
@@ -41,22 +45,29 @@ Commands:
 
 ```text
 bun scripts/measure-context-growth.mjs
-bun test tests/context-growth-measurement.test.ts
+bun test tests/context-growth-measurement.test.ts tests/context-checkpoint.test.ts
 npx tsc --noEmit
+git diff --check
 ```
 
-The deterministic fixture produced the following structural and raw-field
-shape:
+The deterministic fixture produced the following before/after structural and
+raw-field shape. `After messages/bytes` is the same input after
+`projectBoundedGllaContext()`. The after projection retains one newest
+`goal-event` and inserts one authoritative checkpoint when old payloads are
+removed. The checkpoint was 1,112 characters for this fixture and the hard
+builder bound is 8,192 characters.
 
-| Repeated continuations | Context messages | GLLA text chars | chars/4 estimate* | Repeated payloads | Serialized context | Raw provider samples | Raw provider input sum | First → latest raw input |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 0 | 2 | 0 | 13 total | 0 | 183 B | 0 | 0 | — |
-| 1 | 3 | 21,246 | 5,325 total | 0 | 21,911 B | 1 | 8,000 | 8,000 → 8,000 |
-| 5 | 7 | 106,230 | 26,571 total | 4 | 108,823 B | 5 | 60,000 | 8,000 → 16,000 |
-| 12 | 14 | 254,952 | 63,751 total | 11 | 260,919 B | 12 | 228,000 | 8,000 → 30,000 |
-| 25 | 27 | 531,150 | 132,801 total | 24 | 543,383 B | 25 | 800,000 | 8,000 → 56,000 |
+| Repeated continuations | Before messages | Before serialized | Before GLLA chars | After messages | After serialized | After GLLA control messages | Removed old payloads | Retained payloads | After repeated payloads | Raw provider samples | Raw provider input sum | First → latest raw input |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 2 | 183 B | 0 | 2 | 183 B | 0 | 0 | 0 | 0 | 0 | 0 | — |
+| 1 | 3 | 21,911 B | 21,246 | 3 | 21,911 B | 1 | 0 | 1 | 0 | 1 | 8,000 | 8,000 → 8,000 |
+| 5 | 7 | 108,823 B | 106,230 | 4 | 23,128 B | 2 | 4 | 1 | 0 | 5 | 60,000 | 8,000 → 16,000 |
+| 12 | 14 | 260,919 B | 254,952 | 4 | 23,128 B | 2 | 11 | 1 | 0 | 12 | 228,000 | 8,000 → 30,000 |
+| 25 | 27 | 543,383 B | 531,150 | 4 | 23,128 B | 2 | 24 | 1 | 0 | 25 | 800,000 | 8,000 → 56,000 |
 
-The complete raw provider fixture fields are pinned in
+The after projection is bounded at four messages for this two-message
+ordinary-history fixture, and its structural size is identical for 5, 12,
+and 25 continuations. The complete raw provider fixture fields are pinned in
 `tests/context-growth-measurement.test.ts` and emitted under each row's
 `measurement.provider` object. For example, the 12-sample row is:
 
@@ -88,19 +99,24 @@ are retained.
 
 ## Regression coverage
 
-`tests/context-growth-measurement.test.ts` now:
+`tests/context-growth-measurement.test.ts` continues to:
 
-- pins the exact continuation payload size (21,246 UTF-16 characters and
+- pin the exact continuation payload size (21,246 UTF-16 characters and
   21,350 UTF-8 bytes);
-- pins the complete 0/1/5/12/25 checkpoint shape, including message counts,
-  serialized bytes, text counts, estimated counts, repeated-payload counts,
-  and provider sample/input/output/cache/total values;
-- verifies exact provider usage extraction and rejection of partial/invalid
+- pin the complete 0/1/5/12/25 before-measurement shape, including message
+  counts, serialized bytes, text counts, estimated counts, repeated-payload
+  counts, and provider sample/input/output/cache/total values;
+- verify exact provider usage extraction and rejection of partial/invalid
   usage; and
-- keeps failed error-only turns and ordinary conversation separate from GLLA
+- keep failed error-only turns and ordinary conversation separate from GLLA
   payload metrics.
 
-The focused regression passed **4/4 tests** and `npx tsc --noEmit` passed.
+`tests/context-checkpoint.test.ts` additionally proves that the checkpoint
+contains objective, verification contract, audit evidence, task state,
+pending-audit lifecycle, owner/session-generation, and revision data; removes
+old payloads without mutating the source list; retains the newest dispatch;
+and records the integrated context-hook ledger event. The focused measurement
+and checkpoint regressions passed **9/9 tests** and `npx tsc --noEmit` passed.
 
 ## Interpretation and ownership
 
@@ -111,10 +127,15 @@ but addresses different contributors: it removes old error-only assistant
 turns and bounds inline image payloads. It does not remove repeated
 continuation messages.
 
-The result supports implementing a bounded authoritative checkpoint/resync in
-the follow-up item, while retaining enough current objective/contract/task
-state for safe continuation and preserving lifecycle, owner, revision, and
-audit fences.
+The result supports the implemented bounded authoritative checkpoint/resync.
+`extensions/context-checkpoint.ts` retains one newest dispatch payload and,
+when older `goal-event` payloads exist, inserts a bounded checkpoint derived
+from the current durable goal. It carries the objective, verification
+contract, task state, latest audit metadata/evidence excerpt, pending audit
+lifecycle, owner/session-generation, revision, and stop/pause state. The
+projection runs at the existing `context` chokepoint, so ordinary calls and
+recovery/compaction-adjacent calls receive the same fence; stale-session and
+dispatch ownership checks remain in the continuation path unchanged.
 
 ## Limits
 
@@ -126,5 +147,10 @@ structural fixture proves marginal cost and ownership of the GLLA continuation
 payload; it is not a claim that every provider or session has the same system
 prompt, tokenizer, cache behavior, or turn shape.
 
-No runtime context projection or checkpoint/resync reduction was changed in
-this measurement pass.
+The runtime projection is deliberately bounded but non-destructive. It does
+not claim that provider token usage is identical across providers: the offline
+raw provider columns remain deterministic fixtures. A live `agent_end` ledger
+sample is still required for exact provider evidence. The projection bounds
+repeated GLLA control-payload growth in the effective per-send context; the
+session transcript and durable state remain the authorities for full history,
+reports, and recovery.
