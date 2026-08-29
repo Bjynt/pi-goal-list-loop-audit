@@ -69,7 +69,49 @@ export function consumeRecoveryResume(cwd: string): boolean {
 /* Cluster C — completion-audit recovery (durable claim rehydration)  */
 /* ------------------------------------------------------------------ */
 
-export function markCompletionAuditRecoveryPending(ctx: ExtensionContext, reason: string): boolean {
+type CompletionAuditCursorPatch = Partial<Pick<PendingCompletion,
+  | "auditorCandidateRefs"
+  | "auditorCandidateRef"
+  | "auditorRetryCandidateRef"
+  | "auditorRetryAttemptStartedAt"
+  | "auditorAttemptedRefs"
+  | "auditorFailureCount"
+  | "auditorFailureClass"
+  | "auditorFallbackExhausted"
+  | "auditorFailureAt"
+>>;
+
+const AUDITOR_FAILURE_CLASSES = new Set<PendingCompletion["auditorFailureClass"]>([
+  "transport",
+  "timeout",
+  "no-verdict",
+  "provider",
+]);
+
+function sanitizeCompletionAuditCursorPatch(patch: CompletionAuditCursorPatch | undefined): CompletionAuditCursorPatch {
+  if (!patch) return {};
+  const cleanRef = (ref: unknown): string | undefined => normalizeMainModelFallbackRefs([ref])[0];
+  const cleanRefs = (refs: unknown): string[] | undefined => Array.isArray(refs)
+    ? normalizeMainModelFallbackRefs(refs).slice(0, 10)
+    : undefined;
+  const cleanFailureClass = typeof patch.auditorFailureClass === "string"
+    && AUDITOR_FAILURE_CLASSES.has(patch.auditorFailureClass as PendingCompletion["auditorFailureClass"])
+    ? patch.auditorFailureClass
+    : undefined;
+  return {
+    ...(cleanRefs(patch.auditorCandidateRefs) ? { auditorCandidateRefs: cleanRefs(patch.auditorCandidateRefs) } : {}),
+    ...(cleanRef(patch.auditorCandidateRef) ? { auditorCandidateRef: cleanRef(patch.auditorCandidateRef) } : {}),
+    ...(cleanRef(patch.auditorRetryCandidateRef) ? { auditorRetryCandidateRef: cleanRef(patch.auditorRetryCandidateRef) } : {}),
+    ...(typeof patch.auditorRetryAttemptStartedAt === "string" ? { auditorRetryAttemptStartedAt: patch.auditorRetryAttemptStartedAt } : {}),
+    ...(cleanRefs(patch.auditorAttemptedRefs) ? { auditorAttemptedRefs: cleanRefs(patch.auditorAttemptedRefs) } : {}),
+    ...(typeof patch.auditorFailureCount === "number" ? { auditorFailureCount: Math.max(0, Math.min(2, Math.trunc(patch.auditorFailureCount))) } : {}),
+    ...(cleanFailureClass ? { auditorFailureClass: cleanFailureClass } : {}),
+    ...(typeof patch.auditorFallbackExhausted === "boolean" ? { auditorFallbackExhausted: patch.auditorFallbackExhausted } : {}),
+    ...(typeof patch.auditorFailureAt === "string" ? { auditorFailureAt: patch.auditorFailureAt } : {}),
+  };
+}
+
+export function markCompletionAuditRecoveryPending(ctx: ExtensionContext, reason: string, cursorPatch?: CompletionAuditCursorPatch): boolean {
   const goal = state.goal;
   const claim = goal?.pendingCompletion;
   if (!goal || goal.status !== "auditing" || !claim) {
@@ -82,6 +124,7 @@ export function markCompletionAuditRecoveryPending(ctx: ExtensionContext, reason
   const recoveryEpisodeKey = claim.recoveryEpisodeKey ?? `${claim.at}:${failureCopy.fingerprint}`;
   const pending: PendingCompletion = {
     ...claim,
+    ...sanitizeCompletionAuditCursorPatch(cursorPatch),
     phase: "recovery-pending",
     recoveryAt: nowIso(),
     recoveryReason: reason,
