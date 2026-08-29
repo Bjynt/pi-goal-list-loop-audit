@@ -9,6 +9,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { createHash } from "node:crypto";
 import { execSync } from "node:child_process";
 import { normalizeProviderErrorText, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText, type QuotaSignal } from "./quota-retry.js";
 import { MAX_MAIN_MODEL_FALLBACKS } from "./main-model-recovery.js";
@@ -1342,12 +1343,16 @@ export function readState(cwd: string): State {
   if (lines.length === 0) return { ...DEFAULT_STATE };
   let parsed: Partial<State> = {};
   let lastStateAt: string | undefined;
+  let lastStateLine: string | undefined;
   for (const line of lines) {
     try {
       const evt = JSON.parse(line);
       if (evt.type === "state") {
         parsed = { ...parsed, ...evt.value };
-        if (typeof evt.at === "string") lastStateAt = evt.at;
+        if (typeof evt.at === "string") {
+          lastStateAt = evt.at;
+          lastStateLine = line;
+        }
       }
     } catch {
       // skip malformed lines — a truncated trailing line (mid-write kill)
@@ -1361,7 +1366,18 @@ export function readState(cwd: string): State {
   const transaction = readGoalStateTransaction(cwd);
   const transactionAt = transaction ? Date.parse(transaction.at) : Number.NaN;
   const stateAt = lastStateAt ? Date.parse(lastStateAt) : Number.NaN;
-  if (transaction && (!lastStateAt || Number.isNaN(stateAt) || transactionAt > stateAt)) {
+  const transactionIsNewer = transaction && (
+    !lastStateAt
+    || Number.isNaN(stateAt)
+    || transactionAt > stateAt
+    || (
+      transactionAt === stateAt
+      && !!transaction.baseStateLineHash
+      && !!lastStateLine
+      && transaction.baseStateLineHash === stateLineFingerprint(lastStateLine)
+    )
+  );
+  if (transactionIsNewer) {
     parsed = { ...parsed, ...transaction.state };
   }
   const goal = parsed.goal && typeof parsed.goal === "object" && isSafePersistedId((parsed.goal as { id?: unknown }).id)
@@ -1641,6 +1657,33 @@ const GOAL_STATE_TRANSACTION_FILE = "goal-state.transaction.json";
 export interface GoalStateTransaction {
   at: string;
   state: State;
+  /** Hash of the last committed state line when this transaction was made.
+   * It disambiguates same-millisecond writes from an unrelated later state
+   * update, while older transactions without the field remain readable. */
+  baseStateLineHash?: string;
+}
+
+function stateLineFingerprint(line: string): string {
+  return createHash("sha256").update(line, "utf-8").digest("hex");
+}
+
+function lastDurableStateLine(cwd: string): string | undefined {
+  if (stateRootPending()) return undefined;
+  try {
+    const raw = fs.readFileSync(ledgerPath(cwd), "utf-8");
+    const lines = raw.split("\n").filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      try {
+        const evt = JSON.parse(lines[i]!);
+        if (evt.type === "state" && typeof evt.at === "string") return lines[i];
+      } catch {
+        // Ignore malformed/truncated ledger lines when locating the base.
+      }
+    }
+  } catch {
+    // An absent/unreadable base ledger is represented by no hash.
+  }
+  return undefined;
 }
 
 export function goalStateTransactionPath(cwd: string): string {
@@ -1651,10 +1694,16 @@ export function writeGoalStateTransaction(cwd: string, snapshot: State): boolean
   if (stateRootPending()) return false;
   const file = goalStateTransactionPath(cwd);
   const temp = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`;
+  const baseStateLine = lastDurableStateLine(cwd);
   const landed = runPersistStep("writeGoalStateTransaction", () => {
     ensureDirs(cwd);
     try {
-      fs.writeFileSync(temp, JSON.stringify({ schema: 1, at: new Date().toISOString(), state: snapshot }), { encoding: "utf-8", flag: "wx" });
+      fs.writeFileSync(temp, JSON.stringify({
+        schema: 1,
+        at: new Date().toISOString(),
+        state: snapshot,
+        ...(baseStateLine ? { baseStateLineHash: stateLineFingerprint(baseStateLine) } : {}),
+      }), { encoding: "utf-8", flag: "wx" });
       fs.renameSync(temp, file);
       return true;
     } finally {
@@ -1669,10 +1718,15 @@ export function readGoalStateTransaction(cwd: string): GoalStateTransaction | nu
   try {
     const raw = JSON.parse(fs.readFileSync(goalStateTransactionPath(cwd), "utf-8")) as Record<string, unknown>;
     if (raw.schema !== 1 || typeof raw.at !== "string" || Number.isNaN(Date.parse(raw.at))) return null;
+    if (raw.baseStateLineHash !== undefined && typeof raw.baseStateLineHash !== "string") return null;
     if (!raw.state || typeof raw.state !== "object" || Array.isArray(raw.state)) return null;
     const snapshot = raw.state as Partial<State>;
     if (snapshot.goal !== null && (typeof snapshot.goal !== "object" || !isSafePersistedId((snapshot.goal as { id?: unknown }).id))) return null;
-    return { at: raw.at, state: { goal: snapshot.goal ?? null, ...snapshot } as State };
+    return {
+      at: raw.at,
+      state: { goal: snapshot.goal ?? null, ...snapshot } as State,
+      ...(typeof raw.baseStateLineHash === "string" ? { baseStateLineHash: raw.baseStateLineHash } : {}),
+    };
   } catch {
     return null;
   }

@@ -894,6 +894,8 @@ export async function runDetachedCompletionWithFallback(
     resumeCandidateRef?: string;
     attemptedRefs?: readonly string[];
     retryCandidateRef?: string;
+    retryAttemptStarted?: boolean;
+    retryFailureClass?: "no-verdict" | "timeout" | "transport" | "provider";
     onAttempt?: (candidate: AuditorModelCandidate, info: AuditorFallbackAttemptInfo) => boolean | void;
     onRetry?: (candidate: AuditorModelCandidate, error: string, info?: AuditorFallbackAttemptInfo) => boolean | void;
     onCandidateExhausted?: (candidate: AuditorModelCandidate, error: string, info: AuditorFallbackExhaustionInfo) => boolean | void;
@@ -910,6 +912,8 @@ export async function runDetachedCompletionWithFallback(
     resumeCandidateRef: opts.resumeCandidateRef,
     attemptedRefs: opts.attemptedRefs,
     retryCandidateRef: opts.retryCandidateRef,
+    retryAttemptStarted: opts.retryAttemptStarted,
+    retryFailureClass: opts.retryFailureClass,
     onAttempt: (candidate, info) => opts.onAttempt?.(candidate, info),
     onRetry: (candidate, error, delayMs, info) => opts.onRetry?.(candidate, error, info),
     onCandidateExhausted: (candidate, error, info) => opts.onCandidateExhausted?.(candidate, error, info),
@@ -1008,9 +1012,10 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
   };
   const auditStartMs = Date.now();
   let result: Awaited<ReturnType<typeof runDetachedGoalCompletionAuditor>>;
+  let retriedOnce = false;
   let fallbackUsed = false;
   try {
-    ({ result, fallbackUsed } = await runDetachedCompletionWithFallback(
+    ({ result, retriedOnce, fallbackUsed } = await runDetachedCompletionWithFallback(
       auditorCandidates,
       (candidate) => {
         // Progress records do not carry parent-side candidate metadata. Mark
