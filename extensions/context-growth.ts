@@ -201,4 +201,3 @@ export function diffContextGrowth(
     unserializableMessageCount: after.unserializableMessageCount - before.unserializableMessageCount,
   };
 }
-EOF
