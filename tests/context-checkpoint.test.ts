@@ -304,6 +304,62 @@ test("paused goal plus active loop preserves both authorities in the checkpoint"
   }
 });
 
+test("oversized paused goal plus active loop reserves required checkpoint fields", () => {
+  const baseGoal = goalFixture();
+  const oversizedGoal: Goal = {
+    ...baseGoal,
+    status: "paused",
+    objective: "O".repeat(2_000),
+    verificationContract: "C".repeat(2_000),
+    auditHistory: [{
+      at: "2026-08-29T10:00:00.000Z",
+      approved: false,
+      disapproved: true,
+      model: "fixture-auditor",
+      revision: 7,
+      report: "A".repeat(2_000),
+      regressionShieldPassed: true,
+    }],
+    taskList: {
+      version: 1,
+      tasks: Array.from({ length: 20 }, (_, index) => ({
+        id: String(index + 1),
+        title: `T${index}-` + "x".repeat(200),
+        status: "complete" as const,
+      })),
+    },
+  };
+  const oversizedLoop: LoopState = {
+    ...loopFixture(),
+    target: "L".repeat(2_000),
+    measureCmd: "M".repeat(1_200),
+    history: Array.from({ length: 8 }, (_, index) => ({
+      iteration: index + 1,
+      value: index,
+      improved: index > 0,
+      at: `2026-08-29T10:0${index}:00.000Z`,
+    })),
+  };
+
+  const checkpoint = buildAuthoritativeContextCheckpoint({
+    goal: oversizedGoal,
+    loop: oversizedLoop,
+    sessionGeneration: 14,
+    ownerSessionId: "oversized-owner-14",
+  });
+
+  assert.ok(checkpoint.length <= MAX_AUTHORITATIVE_CHECKPOINT_CHARS);
+  assert.match(checkpoint, /Objective: O{100}/);
+  assert.match(checkpoint, /Verification contract: C{100}/);
+  assert.match(checkpoint, /Latest audit .*label=disapproved/s);
+  assert.match(checkpoint, /Active loop authority/);
+  assert.match(checkpoint, /Loop target: L{100}/);
+  assert.match(checkpoint, /status=paused/);
+  assert.match(checkpoint, /sessionGeneration=14/);
+  assert.match(checkpoint, /ownerSession=oversized-owner-14/);
+  assert.match(checkpoint, /Lifecycle fence:/);
+});
+
 test("context hook uses current durable state and records the projection", async () => {
   const cwd = tmpCwd();
   const previousGoal = state.goal;
