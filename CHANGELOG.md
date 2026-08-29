@@ -3,6 +3,12 @@
 ## 0.36.0 — event-driven long-running supervision (2026-08-28)
 
 ### Added
+  Bare `/goal start`, `/loop start`, and `/list start` now use a bounded active
+  branch context window only when it contains one clear actionable user
+  request. Ambiguous, generic, truncated, or multi-task context returns to the
+  existing drafting/confirmation flow; list queue activation and loop metric
+  settings remain explicit.
+
   GLLA now records a six-label user-facing recap for every archived terminal
   objective and loop stop. Valid recaps are preserved; missing or incomplete
   claims receive a recorded-facts-only fallback with explicit `not recorded`

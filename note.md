@@ -24,9 +24,13 @@ https://github.com/DraconDev/pi-goal-list-loop-audit/pull/37
 is it our bug or tin tin subagents 
 /home/dracon/Pictures/Screenshots/Screenshot_20260828_063011.png 
 
-## /goal start , /list start, /loop start can while start without draft the objective really should be inferred from context and prompt and displayed as such 
+## resolved: bare start commands now infer bounded context safely
 
-/home/dracon/Pictures/Screenshots/Screenshot_20260828_125113.png 
+`/goal start`, `/loop start`, and `/list start` now inspect only a bounded
+active-branch window. A single clear actionable user request is shown before
+starting; ambiguous, generic, truncated, or multi-task context falls back to
+the existing drafting/confirmation flow. Queue activation, loop metric
+settings, and explicit consent remain visible.
 
 # Next
 

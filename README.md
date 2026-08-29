@@ -186,16 +186,16 @@ drafting flow. Ambiguous context is never queued automatically.
 /loop plan                                # research-first loop design
 /loop start "reduce flaky tests" measure="..." direction=min
 /loop start "keep improving the spec" measure=none max=20 cadence=900
+/loop audit                               # recurring project-audit cadence
+/loop status
+/loop stop
+```
 
 Bare `/loop start` infers only one clear recent target. It does not invent a
 measure, direction, bound, cadence, or branch setting; the command uses the
 existing explicit metricless-start path. If the context is ambiguous, GLLA
 returns to loop drafting so the target and any numeric metric/consent gates
 remain visible.
-/loop audit                               # recurring project-audit cadence
-/loop status
-/loop stop
-```
 
 There are three loop styles:
 

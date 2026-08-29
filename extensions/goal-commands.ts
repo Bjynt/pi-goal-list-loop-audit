@@ -1170,10 +1170,20 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     appendLedger(ctx.cwd, "list_mutation_refused_stale", { sub });
     return;
   }
+  // v0.34.68 (bug 1.7): heal a corrupted mode flag BEFORE the pause/
+  // resume/tweak/cancel gates branch on state.goal.policy — the gate used
+  // to silently refuse the whole surface until a restart.
+  healGoalPolicy(ctx);
+  // v0.35.4 audit: sidecars are durable queue state, not a display-only
+  // fallback. Hydrate orphaned disk items before any list surface can count,
+  // remove, cancel, or activate them.
+  if (!staleEntry) hydrateListQueueFromDisk(ctx);
+
   // v0.36.1: `/list start` is an explicit-consent alias for the existing
   // queue-head activation path. With no queued item it uses only one bounded,
   // clear user objective and keeps the list's normal Confirm gate; it never
-  // turns context into an unconfirmed queue entry.
+  // turns context into an unconfirmed queue entry. Keep this after hydration
+  // so a sidecar-only queue is activated instead of mistaken for an empty one.
   if (sub === "start") {
     if (rest) {
       ctx.ui.notify("Usage: /list start — activates the queued head, or starts the normal list drafting flow from one clear recent objective.", "info");
@@ -1193,14 +1203,6 @@ async function cmdList(args: string, ctx: ExtensionContext): Promise<void> {
     await startDrafting(ctx, "list", startInferenceSeed(inference));
     return;
   }
-  // v0.34.68 (bug 1.7): heal a corrupted mode flag BEFORE the pause/
-  // resume/tweak/cancel gates branch on state.goal.policy — the gate used
-  // to silently refuse the whole surface until a restart.
-  healGoalPolicy(ctx);
-  // v0.35.4 audit: sidecars are durable queue state, not a display-only
-  // fallback. Hydrate orphaned disk items before any list surface can count,
-  // remove, cancel, or activate them.
-  if (!staleEntry) hydrateListQueueFromDisk(ctx);
 
   if (sub === "audit") {
     // v0.31.0: /list audit [focus] — collect-then-drain (user design
