@@ -1362,8 +1362,8 @@ export function readState(cwd: string): State {
     }
   }
   // A goal projection can land between the markdown and ledger writes when
-  // the process dies. Prefer the complete transaction snapshot only when it
-  // is newer than the last durable state line; otherwise an old orphan is
+  // the process dies. Prefer the complete transaction snapshot when it is
+  // still fenced to the last durable state line; otherwise an old orphan is
   // already committed and must not roll back later unrelated state changes.
   const transaction = readGoalStateTransaction(cwd);
   const transactionAt = transaction ? Date.parse(transaction.at) : Number.NaN;
