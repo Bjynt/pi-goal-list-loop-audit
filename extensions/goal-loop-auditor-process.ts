@@ -77,9 +77,7 @@ export interface GoalAuditorResult {
  * boundary before history, shield, archive, or continuation policy sees the
  * result. */
 export function normalizeAuditorInfrastructureResult(result: GoalAuditorResult): GoalAuditorResult {
-  if (!result.error || (!result.approved && !result.disapproved && !result.impossible && result.regressionShieldPassed !== false)) {
-    return result;
-  }
+  if (!result.error) return result;
   return {
     ...result,
     approved: false,

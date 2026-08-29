@@ -285,6 +285,7 @@ import {
   mainModelFallbackRefs,
   manuallyResumeMainModelRecovery,
   markCompletionAuditRecoveryPending,
+  parkCompletionAuditRecovery,
   parkMainModelAfterFailure,
   probeMainModelRecovery,
   recoverMainModelFromSendStorm,
@@ -907,10 +908,19 @@ function registerAgentTools(pi: any): void {
         }
       } catch (err) {
         const recoveryCtx = freshCtxForGeneration(auditGeneration);
-        if (!recoveryCtx || !state.goal || state.goal.id !== auditGoalId || state.goal.pendingCompletion?.attemptId !== auditAttemptId) {
+        const current = state.goal;
+        if (!current || current.id !== auditGoalId || current.pendingCompletion?.attemptId !== auditAttemptId) {
           return staleToolResult();
         }
         const failureCopy = providerErrorPresentation(err instanceof Error ? err.message : String(err), "completion");
+        if (!recoveryCtx) {
+          // The retained tool context is stale after a generation handoff.
+          // Park through the durable cwd-only path so an exception cannot
+          // strand a running claim merely because the normal apply context
+          // is unavailable.
+          parkCompletionAuditRecovery(ctx.cwd, `auditor run exception: ${failureCopy.diagnostic}`);
+          return staleToolResult();
+        }
         const currentClaim = state.goal.pendingCompletion ?? completionClaim;
         const pending: PendingCompletion = {
           ...currentClaim,

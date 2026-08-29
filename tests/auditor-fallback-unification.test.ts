@@ -337,6 +337,10 @@ test("infrastructure errors cannot survive as semantic auditor verdicts", async 
   assert.equal(normalized.impossible, false);
   assert.equal(normalized.regressionShieldPassed, undefined);
   assert.deepEqual(normalized.regressionShieldMissing, undefined);
+  assert.equal(normalizeAuditorInfrastructureResult(result({
+    error: "transport failed",
+    regressionShieldPassed: true,
+  })).regressionShieldPassed, undefined);
 });
 
 test("candidate exhaustion preserves the final concrete failure class", async () => {
