@@ -41,6 +41,11 @@ import { resolveAuditorAllowedExtensions } from "./auditor-extensions.js";
 export type AuditorInfrastructureClass = "no-verdict" | "timeout" | "transport" | "provider";
 export type AuditorRecoveryFailureClass = AuditorInfrastructureClass;
 const AUDITOR_INFRASTRUCTURE_CLASSES = new Set<AuditorInfrastructureClass>(["no-verdict", "timeout", "transport", "provider"]);
+export const AUDITOR_CURSOR_PERSISTENCE_FAILURE = "auditor recovery cursor persistence failed";
+
+export function isAuditorCursorPersistenceFailure(error: unknown): boolean {
+  return typeof error === "string" && error.trim() === AUDITOR_CURSOR_PERSISTENCE_FAILURE;
+}
 
 export interface GoalAuditorResult {
   approved: boolean;
@@ -138,6 +143,13 @@ export interface AuditorFallbackPolicyOptions {
   /** When set with resumeCandidateRef, the first post-restart call is the
    * candidate's already-authorized second attempt, not a third call. */
   retryCandidateRef?: string;
+  /** Durable marker that the authorized second attempt was already launched
+   * before a host restart. Such a candidate is advanced without a third
+   * worker call because its result is no longer safely observable. */
+  retryAttemptStarted?: boolean;
+  /** Failure class retained for a retry that was launched before a restart
+   * but never produced an adoptable result. */
+  retryFailureClass?: AuditorInfrastructureClass;
   /** Called before every detached worker launch. Returning false stops before
    * launch when the durable cursor could not be persisted. */
   onAttempt?: (candidate: AuditorFallbackCandidate, info: AuditorFallbackAttemptInfo) => boolean | void;
@@ -205,6 +217,7 @@ export async function runAuditorFallbackWithPolicy(
   const resumeRetry = !!opts.retryCandidateRef
     && !!resumeRef
     && refs.some((ref) => sameRef(ref, opts.retryCandidateRef));
+  const retryAttemptStarted = resumeRetry && opts.retryAttemptStarted === true;
   // A persisted cursor is deliberately bounded at the state boundary. Keep
   // only refs that still belong to the current chain and let resumeRef win if
   // a defensive caller supplied it in both lists.
@@ -240,7 +253,7 @@ export async function runAuditorFallbackWithPolicy(
     disapproved: false,
     output: "",
     model: modelRef(candidate.model) ?? "",
-    error: "auditor recovery cursor persistence failed",
+    error: AUDITOR_CURSOR_PERSISTENCE_FAILURE,
     infrastructureClass: "transport",
   });
   const callbackAccepted = (accepted: boolean | void): boolean => accepted !== false;
@@ -283,6 +296,46 @@ export async function runAuditorFallbackWithPolicy(
     const isRetryAttempt = resumeRetry && sameRef(selectedRef, opts.retryCandidateRef);
     const attemptedBefore = attempted.filter((ref) => !sameRef(ref, selectedRef));
     addAttempted(selectedRef);
+    if (retryAttemptStarted && isRetryAttempt) {
+      // The parent persisted this marker immediately before launching the
+      // second call, but the host restarted before a result could be adopted.
+      // Treat the unknown outcome as exhausted and move on; re-launching this
+      // ref would be a third provider call in disguise.
+      const failureClass = opts.retryFailureClass ?? "transport";
+      retriedOnce = true;
+      const syntheticError = "auditor retry attempt was already started before host restart";
+      const nextRef = nextUntriedModelRef(selectedRef, refs, attempted);
+      const retryInfo: AuditorFallbackExhaustionInfo = {
+        candidateRef: selectedRef,
+        candidateRefs: candidateRefs.slice(),
+        attemptedRefs: attempted.slice(),
+        ...(nextRef ? { nextCandidateRef: nextRef } : {}),
+        failureClass,
+        delayMs: nextRef ? mainModelFailureDelayMs({ kind: "transient", raw: syntheticError }, ++failureAttempt, opts.retryBaseMinutes ?? 15) : 0,
+      };
+      if (!callbackAccepted(opts.onCandidateExhausted?.(candidate, syntheticError, retryInfo))) {
+        return { result: cursorPersistenceFailure(candidate), retriedOnce, fallbackUsed, via: candidate.via };
+      }
+      const unknownResult: GoalAuditorResult = {
+        approved: false,
+        disapproved: false,
+        output: "",
+        model: modelRef(candidate.model) ?? "",
+        error: syntheticError,
+        infrastructureClass: failureClass,
+      };
+      if (nextRef === undefined) {
+        return { result: markExhausted(unknownResult, failureClass), retriedOnce, fallbackUsed, via: candidate.via };
+      }
+      if (!isLive()) return { result: unknownResult, retriedOnce, fallbackUsed, via: candidate.via };
+      fallbackDelayMs = retryInfo.delayMs;
+      await sleep(fallbackDelayMs);
+      if (!isLive()) return { result: unknownResult, retriedOnce, fallbackUsed, via: candidate.via };
+      fallbackFrom = candidate;
+      fallbackError = syntheticError;
+      pendingResult = unknownResult;
+      continue;
+    }
     if (fallbackFrom) {
       fallbackUsed = true;
       opts.onFallback?.(fallbackFrom, candidate, fallbackError ?? "auditor fallback", fallbackDelayMs);
