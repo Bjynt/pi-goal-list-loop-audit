@@ -96,6 +96,14 @@ const SKIP_LINE = /^\s*(test|it|describe|assert|expect)\s*\(|^\s*(const|let|var|
 // GitHub issue number is a citation, not a finding.
 const REVIEWER_VOCAB = /architectural-class|bug-class|refactor-class|strategic-class|reviewer found|cascade step|\*\*Mode\*\*|problems\s*\/\s*\(?(improvements|architectural)|\bgithub\s+issue\b|\bgh-\d+|\bissue\s+(tracker|board|queue)\b/i;
 
+/** v0.36.x: outside-scope cap — findings outside the project at hand are
+ * recorded in the report but never auto-queued. The auditor may explore
+ * outside for context, but "fix the world" is not the cascade. */
+export const OUTSIDE_SCOPE_RE = /\boutside\s+scope\b|\bfix the world\b/i;
+export function isOutsideScopeFinding(text: string): boolean {
+  return OUTSIDE_SCOPE_RE.test(text);
+}
+
 export function classifyFindingText(line: string): FindingClass | undefined {
   // Strip list markers here too (extractFindings already does, but direct
   // callers/tests pass raw report lines like "- ℹ todo 0").
@@ -380,9 +388,13 @@ export function runReviewer(
   }
 
   const findings = extractFindings(deps.sources, config.maxFindingsPerReview, source.objective);
-  const bugs = findings.filter((f) => f.class === "bug" || f.class === "refactor");
-  const architectural = findings.filter((f) => f.class === "architectural");
-  const strategic = findings.filter((f) => f.class === "strategic");
+  // v0.36.x outside-scope cap: recorded in report but never auto-queued.
+  const inScope = findings.filter((f) => !isOutsideScopeFinding(f.text));
+  const outsideScope = findings.filter((f) => isOutsideScopeFinding(f.text));
+  if (outsideScope.length > 0) deps.ledger("reviewer_outside_scope", { goalId: source.goalId, count: outsideScope.length, examples: outsideScope.slice(0, 2).map((f) => f.text.slice(0, 80)) });
+  const bugs = inScope.filter((f) => f.class === "bug" || f.class === "refactor");
+  const architectural = inScope.filter((f) => f.class === "architectural");
+  const strategic = inScope.filter((f) => f.class === "strategic");
 
   let enqueued = 0;
   let proposed = 0;
