@@ -266,7 +266,7 @@ export function tailChildTranscript(
     return {
       ok: false,
       lines: [],
-      detail: `no session file in ${sessionsDir} matches this child (searched ${candidatesToScan.length}${candidates.length > candidatesToScan.length ? ` of ${candidates.length}` : ""} transcripts for exact session_info.name: ${expectedSessionName ? `"${truncate(expectedSessionName, 32)}"` : "none"}) — the child may not persist a session, or it lives under another working directory`,
+      detail: `no session file in ${sessionsDir} matches this child (searched ${candidatesToScan.length}${candidates.length > candidatesToScan.length ? ` of ${candidates.length}` : ""} transcripts for exact identity in session_info.name: ${expectedSessionName ? `"${truncate(expectedSessionName, 32)}"` : "none"}) — the child may not persist a session, or it lives under another working directory`,
     };
   }
   try {

@@ -194,6 +194,24 @@ test("v0.35.66: --tail refuses a same-type transcript without exact child identi
   assert.match(result.detail, /searched 1 transcripts/);
 });
 
+test("v0.36.0: --tail rejects a message that merely mentions the target identity", () => {
+  const targetId = "12345678-target";
+  const result = tailChildTranscript("/tmp/fake-sessions", {
+    recordId: targetId,
+    agentType: "Explore",
+    summary: "shared summary",
+  }, {
+    listDir: () => ["unrelated.jsonl"],
+    statMtime: () => 1,
+    readFile: () => Buffer.from([
+      JSON.stringify({ type: "session_info", name: "Explore#87654321" }),
+      JSON.stringify({ role: "assistant", content: `The target is Explore#${targetId.slice(0, 8)}, but this is unrelated.` }),
+    ].join("\n")),
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.detail, /exact identity in session_info\.name/);
+});
+
 test("v0.35.29 #15: --tail is LOUD when nothing matches or the dir is unreadable", () => {
   const miss = tailChildTranscript("/tmp/fake-sessions", row(), {
     listDir: () => ["x.jsonl"],
