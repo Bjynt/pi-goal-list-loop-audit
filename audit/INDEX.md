@@ -14,7 +14,7 @@ the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
 **Most recent (2026-08-29):**
-- `EXPLORE-CHILD-SESSION-TRIAGE-2026-08-29.md` — MMX-corroborated loadable Explore-session triage; no new GLLA fix, Pi/pi-subagents ownership remains unconfirmed
+- `EXPLORE-CHILD-SESSION-TRIAGE-2026-08-29.md` — MMX-corroborated loadable Explore-session triage; fixed GLLA's exact child-transcript correlation while leaving Pi/pi-subagents session-picker ownership unchanged
 - `LIST-STALL-REPRODUCTION-2026-08-29.md` — MockPi reproduction of the screenshot-shaped waiting queue and list-completion cascade; no confirmed GLLA-owned stall
 - `AUDITOR-PARKED-NO-VERDICT-DISPOSITION-2026-08-29.md` — durable parked/no-verdict recovery validation and explicit provider-boundary disposition
 - `PR-37-PROMPT-POLICY-ADAPTATION-2026-08-29.md` — read-only PR #37 review; current-main adaptation of explicit prompt-policy terminal handling
@@ -104,7 +104,7 @@ long-term preferences).
 ## Topic index (canonical docs, newest first)
 
 **2026-08-29**
-- EXPLORE-CHILD-SESSION-TRIAGE-2026-08-29.md — loadable Explore-session evidence, host-boundary verification, and external/unknown ownership disposition
+- EXPLORE-CHILD-SESSION-TRIAGE-2026-08-29.md — loadable Explore-session evidence, exact GLLA transcript correlation fix, and bounded screenshot attribution
 - LIST-STALL-REPRODUCTION-2026-08-29.md — screenshot-shaped queue reproduction and explicit unresolved diagnostic gap
 - PR-37-PROMPT-POLICY-ADAPTATION-2026-08-29.md — read-only PR #37 review and current-main adaptation; no blind cherry-pick
 
