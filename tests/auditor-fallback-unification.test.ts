@@ -341,6 +341,34 @@ test("infrastructure errors cannot survive as semantic auditor verdicts", async 
     error: "transport failed",
     regressionShieldPassed: true,
   })).regressionShieldPassed, undefined);
+  const classOnly = normalizeAuditorInfrastructureResult(result({
+    approved: true,
+    infrastructureClass: "timeout",
+  }));
+  assert.equal(classOnly.approved, false);
+  assert.equal(classOnly.error, "Auditor timed out");
+});
+
+test("partial semantic flags cannot bypass fallback recovery", async () => {
+  const calls: string[] = [];
+  let attempt = 0;
+  const outcome = await runAuditorFallbackWithPolicy([
+    { ref: "test/primary", model: { provider: "test", id: "primary" }, via: "setting" },
+  ], async (candidate) => {
+    calls.push(candidate.ref!);
+    attempt += 1;
+    return attempt === 1
+      ? result({ approved: true, error: "503 provider unavailable", model: candidate.ref })
+      : result({ approved: true, model: candidate.ref });
+  }, {
+    sleep: async () => {},
+    shouldRetry: () => true,
+  });
+
+  assert.deepEqual(calls, ["test/primary", "test/primary"]);
+  assert.equal(outcome.retriedOnce, true);
+  assert.equal(outcome.result.approved, true);
+  assert.equal(outcome.result.error, undefined);
 });
 
 test("candidate exhaustion preserves the final concrete failure class", async () => {

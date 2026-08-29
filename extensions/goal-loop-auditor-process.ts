@@ -77,9 +77,20 @@ export interface GoalAuditorResult {
  * boundary before history, shield, archive, or continuation policy sees the
  * result. */
 export function normalizeAuditorInfrastructureResult(result: GoalAuditorResult): GoalAuditorResult {
-  if (!result.error) return result;
+  const infrastructureClass = result.infrastructureClass && AUDITOR_INFRASTRUCTURE_CLASSES.has(result.infrastructureClass)
+    ? result.infrastructureClass
+    : undefined;
+  if (!result.error && !infrastructureClass) return result;
+  const error = result.error ?? (infrastructureClass === "timeout"
+    ? "Auditor timed out"
+    : infrastructureClass === "no-verdict"
+      ? "worker produced no verdict"
+      : infrastructureClass === "transport"
+        ? "auditor transport failed"
+        : "auditor provider failed");
   return {
     ...result,
+    error,
     approved: false,
     disapproved: false,
     impossible: false,
@@ -193,7 +204,7 @@ export async function runAuditorFallbackWithPolicy(
 ): Promise<{ result: GoalAuditorResult; retriedOnce: boolean; fallbackUsed: boolean; via: string }> {
   const sequence = candidates.length > 0 ? candidates : [{ model: undefined, via: "unset" }];
   if (candidates.length === 0) {
-    const result = await run(sequence[0]!);
+    const result = normalizeAuditorInfrastructureResult(await run(sequence[0]!));
     return { result, retriedOnce: false, fallbackUsed: false, via: "unset" };
   }
 
@@ -377,7 +388,7 @@ export async function runAuditorFallbackWithPolicy(
 
     pendingResult = undefined;
     if (isRetryAttempt) retriedOnce = true;
-    const first = await run(candidate);
+    const first = normalizeAuditorInfrastructureResult(await run(candidate));
     if (first.approved || first.disapproved || first.impossible || !first.error) {
       return { result: first, retriedOnce, fallbackUsed, via: candidate.via };
     }
@@ -410,7 +421,7 @@ export async function runAuditorFallbackWithPolicy(
       if (!callbackAccepted(opts.onAttempt?.(candidate, secondInfo))) {
         return { result: cursorPersistenceFailure(candidate), retriedOnce, fallbackUsed, via: candidate.via };
       }
-      const second = await run(candidate);
+      const second = normalizeAuditorInfrastructureResult(await run(candidate));
       pendingResult = second;
       retriedOnce = true;
       if (second.approved || second.disapproved || second.impossible || !second.error) {
