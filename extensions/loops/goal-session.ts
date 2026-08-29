@@ -1094,6 +1094,13 @@ export function __testOnlyResetTerminalFlags(): void {
   staleContinuationRearmPending = false;
   zombieStoodDown = false;
   sessionHandoffPending = false;
+  // Keep co-resident behavioral files isolated after deliberately exercising
+  // a provider-owned abort boundary. Production lifecycle clears these on
+  // successor handoff; this hook must clear them without requiring a fake
+  // host session to be delivered.
+  mainModelAbortForRecovery = false;
+  lastMainModelFailure = null;
+  abortedStandDown = false;
 }
 
 /** TEST-ONLY hook (tests/harness): set/clear the persisted lastModelRef

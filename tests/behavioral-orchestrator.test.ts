@@ -2532,6 +2532,8 @@ test("explicit prompt-policy rejection pauses the owning goal without retrying",
     await pi.fire("agent_end", {
       messages: [{ role: "assistant", content: [], stopReason: "error", errorMessage: "HTTP 500 — Codex error event: invalid prompt" }],
     }, ctx);
+    await tick();
+    await pi.fire("agent_settled", {}, ctx);
     await tick(250);
 
     const snapshot = readState(cwd) as {

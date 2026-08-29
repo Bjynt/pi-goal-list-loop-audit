@@ -619,7 +619,7 @@ function settlePromptPolicyRejection(ctx: ExtensionContext, failure: MainModelFa
     ...(abortError ? { abortError: abortError.slice(0, 240) } : {}),
   });
   const loopRecap = activeLoop
-    ? compactLoopCompletionSummary({ ...activeLoop, historyLength: activeLoop.history.length })
+    ? compactLoopCompletionSummary({ ...activeLoop, historyLength: activeLoop.history?.length ?? 0 })
     : undefined;
   const message = `${activeLoop ? "Loop stopped" : activeGoal?.policy === "list" ? "List item paused" : "Goal paused"}: ${reason}. ${action}${loopRecap ? `\nRecap: ${loopRecap}` : ""}`;
   ctx.ui.notify(message, "warning");
