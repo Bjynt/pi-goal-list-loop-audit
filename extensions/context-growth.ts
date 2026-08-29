@@ -42,6 +42,15 @@ export interface ProviderTokenMeasurement {
   incompleteSampleCount: number;
 }
 
+export interface ContextGrowthMeasurementOptions {
+  /**
+   * Assistant messages emitted after each measured snapshot. In production
+   * these are the raw pi-ai messages from `agent_end`; keeping them separate
+   * prevents provider usage metadata from changing the context-size counts.
+   */
+  providerMessages?: readonly unknown[];
+}
+
 export interface ContextGrowthMeasurement {
   messageCount: number;
   serializedBytes: number;
@@ -217,7 +226,10 @@ function payloadFingerprint(text: string): string {
  * exact text so repeated continuation cost is visible separately from the
  * total context. All counters are bounded by the supplied message array.
  */
-export function measureContextGrowth(messages: readonly unknown[]): ContextGrowthMeasurement {
+export function measureContextGrowth(
+  messages: readonly unknown[],
+  options: ContextGrowthMeasurementOptions = {},
+): ContextGrowthMeasurement {
   let totalSerializedBytes = 0;
   let totalTextChars = 0;
   let gllaMessageCount = 0;
@@ -226,7 +238,7 @@ export function measureContextGrowth(messages: readonly unknown[]): ContextGrowt
   let failedErrorOnlyCount = 0;
   let unserializableMessageCount = 0;
   const payloads = new Map<string, { count: number; serializedBytes: number }>();
-  const provider = measureProviderTokens(messages);
+  const provider = measureProviderTokens(options.providerMessages ?? messages);
 
   for (const message of messages) {
     const bytes = serializedBytes(message);
