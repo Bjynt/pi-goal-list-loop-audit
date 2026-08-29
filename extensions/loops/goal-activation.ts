@@ -998,7 +998,10 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
       // Successful transport is not proof of successful work: only a stable
       // repeated provider pane becomes a loop-level recovery signal. One-off
       // 503/429 text in a searched document remains ordinary tool output.
-      if (inBandFailure && repeatedInBandProviderFailure(loop.recentToolResults)) {
+      // The explicit provider prompt-policy event is different: it is a
+      // terminal signal on its first occurrence and must not be discarded as
+      // an ordinary non-recoverable tool result.
+      if (inBandFailure && (inBandFailure.nonRecoverableReason === "prompt-policy" || repeatedInBandProviderFailure(loop.recentToolResults))) {
         inBandProviderFailureRaw = text.slice(0, 800);
         appendLedger(eventCtx.cwd, "loop_in_band_provider_failure", {
           tool,
@@ -1932,18 +1935,25 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     // so pi reports an ordinary end_turn. Convert it into the same bounded
     // recovery envelope as a provider error before loop measurement/stuck
     // accounting can consume the dead turn.
-    if (inBandProviderFailureRaw && isLoopActive()) {
+    if (inBandProviderFailureRaw) {
       const raw = inBandProviderFailureRaw;
       clearInBandProviderFailure();
-      const loop = state.loop!;
-      // The normal loop error branch owns the consecutive-error counter and
-      // its bounded recovery cap. Clearing the fingerprints here prevents the
-      // same pane from being reclassified before that branch runs.
-      loop.recentToolResults = [];
-      rawLastA = { ...(rawLastA ?? {}), stopReason: "error", errorMessage: raw, content: [] };
-      lastA = { stopReason: "error", text: raw, priorText: lastA?.priorText ?? "" };
-    } else if (inBandProviderFailureRaw) {
-      clearInBandProviderFailure();
+      if (isLoopActive()) {
+        const loop = state.loop!;
+        // The normal loop error branch owns the consecutive-error counter and
+        // its bounded recovery cap. Clearing the fingerprints here prevents
+        // the same pane from being reclassified before that branch runs.
+        loop.recentToolResults = [];
+        rawLastA = { ...(rawLastA ?? {}), stopReason: "error", errorMessage: raw, content: [] };
+        lastA = { stopReason: "error", text: raw, priorText: lastA?.priorText ?? "" };
+      } else if (state.goal?.status === "active") {
+        // An explicit policy refusal can arrive through a successful tool
+        // transport while a one-shot goal is active. Promote that exact
+        // marker to the same main-model settlement path instead of clearing
+        // it as loop-only bookkeeping.
+        rawLastA = { ...(rawLastA ?? {}), stopReason: "error", errorMessage: raw, content: [] };
+        lastA = { stopReason: "error", text: raw, priorText: lastA?.priorText ?? "" };
+      }
     }
     if (await handleMainModelAgentEnd(ctx, rawLastA, lastA)) return;
     // v0.25.2: per-goal turn telemetry (/glla stats).

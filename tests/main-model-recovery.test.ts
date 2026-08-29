@@ -10,6 +10,8 @@ import {
   classifyMainModelFailure,
   isMainModelFallbackFailure,
   isMainModelFailbackAuto,
+  isPromptPolicyRejection,
+  requiresMainModelRecovery,
   mainModelAutoRetryUntil,
   mainModelFailureDelayMs,
   mainModelPrimaryProbeDelayMs,
@@ -317,6 +319,40 @@ test("in-band provider output is recognized only for strong repeated-pane marker
   assert.equal(classifyInBandProviderFailure("HTTP 503 upstream unavailable")?.kind, "transient");
   assert.ok(classifyInBandProviderFailure("HTTP 429 Too Many Requests"), "429 remains recoverable even when the generic classifier stays opaque");
   assert.equal(classifyInBandProviderFailure("network_error: fetch failed")?.kind, "transient");
+});
+
+test("the explicit Codex prompt-policy event is terminal, while lookalike text remains generic", () => {
+  const terminal = [
+    "Codex error event: invalid prompt",
+    "HTTP 500 — Codex error event: invalid prompt",
+    '{"errorMessage":"Codex error event: invalid prompt"}',
+  ];
+  for (const raw of terminal) {
+    assert.equal(isPromptPolicyRejection(raw), true, raw);
+    const failure = classifyMainModelFailure(raw);
+    assert.equal(failure.kind, "non-recoverable", raw);
+    assert.equal(failure.nonRecoverableReason, "prompt-policy", raw);
+    assert.equal(requiresMainModelRecovery(failure), false, raw);
+    assert.equal(isMainModelFallbackFailure(failure), false, raw);
+    assert.equal(classifyInBandProviderFailure(raw)?.nonRecoverableReason, "prompt-policy", raw);
+  }
+  for (const raw of [
+    "invalid prompt",
+    "invalid_prompt",
+    "content_filter",
+    "prompt blocked",
+    "usage policy violation",
+    "HTTP 403 forbidden",
+    "HTTP 500 upstream",
+    "project policy: follow AGENTS.md",
+    "The docs mention Codex error event: invalid prompt as an example",
+  ]) {
+    assert.equal(isPromptPolicyRejection(raw), false, raw);
+    const failure = classifyMainModelFailure(raw);
+    assert.notEqual(failure.nonRecoverableReason, "prompt-policy", raw);
+    assert.equal(requiresMainModelRecovery(failure), true, raw);
+    assert.equal(isMainModelFallbackFailure(failure), true, raw);
+  }
 });
 
 test("main model errors stay opaque to the recovery policy", () => {
