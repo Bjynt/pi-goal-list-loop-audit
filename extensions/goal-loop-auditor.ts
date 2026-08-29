@@ -17,6 +17,14 @@
 import type { Goal } from "./goal-loop-core.js";
 import { renderGoalMarkdown } from "./goal-loop-core.js";
 
+// v0.36.x: visual goals need fresh evidence, not reused screenshots.
+const VISUAL_GOAL_RE = /(visual|screenshot|picture|image|chrome|\bui\b|page|render)/i;
+
+export function isVisualGoal(goal: Goal): boolean {
+  const hay = `${goal.objective ?? ""}\n${goal.verificationContract ?? ""}`;
+  return VISUAL_GOAL_RE.test(hay);
+}
+
 // =================================================================
 // Result type
 // =================================================================
@@ -186,6 +194,15 @@ export function buildGoalAuditorPrompt(goal: Goal, completionSummary: string | n
       "because the report never referenced these contract items in its evidence:",
       ...shieldGaps.map((i) => `- ${i}`),
       "This time, address each of them explicitly: name the item and paste the raw output that proves it.",
+    ] : []),
+    ...(isVisualGoal(goal) ? [
+      "",
+      "VISUAL AUDIT — FRESH EVIDENCE REQUIRED:",
+      "This goal touches UI/screenshots. Before deciding, capture a FRESH screenshot via",
+      "`mmx vision describe --image <path> --quiet --non-interactive` (or a fresh chrome screenshot) for the current UI state,",
+      "critique what is shown versus the objective, and include that critique VERBATIM inside your <evidence> for the visual contract item.",
+      "Do NOT reuse stale image descriptions from the completion summary — the fresh capture is mandatory evidence.",
+      "Example: `mmx vision describe --image /home/dracon/Pictures/Screenshots/latest.png --prompt \"Does the UI match the objective?\" --quiet --non-interactive`",
     ] : []),
     "",
     "Audit checklist:",
