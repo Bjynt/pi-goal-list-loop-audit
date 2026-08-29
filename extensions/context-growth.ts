@@ -12,6 +12,36 @@ export type GllaPayloadKind =
   | "length-continuation"
   | "unknown";
 
+export interface ProviderTokenUsage {
+  /** Exact provider-reported prompt/input token count. */
+  inputTokens: number;
+  /** Exact provider-reported completion/output token count. */
+  outputTokens: number;
+  /** Exact provider-reported cache-read token count. */
+  cacheReadTokens: number;
+  /** Exact provider-reported cache-write token count. */
+  cacheWriteTokens: number;
+  /** Exact provider-reported total token count. */
+  totalTokens: number;
+}
+
+export interface ProviderTokenMeasurement {
+  /** Number of complete assistant usage samples captured from the provider. */
+  sampleCount: number;
+  /** Cumulative raw values across the captured provider samples. */
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+  firstInputTokens: number | null;
+  latestInputTokens: number | null;
+  /** latestInputTokens - firstInputTokens, when both are present. */
+  inputTokenDelta: number | null;
+  /** Assistant messages carrying a missing/non-finite usage field. */
+  incompleteSampleCount: number;
+}
+
 export interface ContextGrowthMeasurement {
   messageCount: number;
   serializedBytes: number;
@@ -28,6 +58,8 @@ export interface ContextGrowthMeasurement {
   repeatedGllaSerializedBytes: number;
   failedErrorOnlyCount: number;
   unserializableMessageCount: number;
+  /** Exact provider usage captured from assistant messages, when present. */
+  provider: ProviderTokenMeasurement;
 }
 
 export interface ContextGrowthDelta {
@@ -44,6 +76,7 @@ export interface ContextGrowthDelta {
   repeatedGllaSerializedBytes: number;
   failedErrorOnlyCount: number;
   unserializableMessageCount: number;
+  provider: ProviderTokenMeasurement;
 }
 
 const TOKEN_ESTIMATE_CHARS = 4;
@@ -56,6 +89,82 @@ function serializedBytes(value: unknown): number | null {
   } catch {
     return null;
   }
+}
+
+function exactTokenCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+/**
+ * Read the exact usage object emitted by pi-ai on an AssistantMessage. This
+ * intentionally rejects partial data instead of filling missing fields with
+ * zero: a zero would look like a provider measurement when it is only a
+ * compatibility/error fixture. The returned values are not chars/4 estimates.
+ */
+export function captureProviderTokenUsage(message: unknown): ProviderTokenUsage | null {
+  if (typeof message !== "object" || message === null) return null;
+  const usage = (message as { usage?: unknown }).usage;
+  if (typeof usage !== "object" || usage === null) return null;
+  const record = usage as {
+    input?: unknown;
+    output?: unknown;
+    cacheRead?: unknown;
+    cacheWrite?: unknown;
+    totalTokens?: unknown;
+  };
+  const inputTokens = exactTokenCount(record.input);
+  const outputTokens = exactTokenCount(record.output);
+  const cacheReadTokens = exactTokenCount(record.cacheRead);
+  const cacheWriteTokens = exactTokenCount(record.cacheWrite);
+  const totalTokens = exactTokenCount(record.totalTokens);
+  if (inputTokens === null || outputTokens === null || cacheReadTokens === null || cacheWriteTokens === null || totalTokens === null) {
+    return null;
+  }
+  return { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, totalTokens };
+}
+
+function measureProviderTokens(messages: readonly unknown[]): ProviderTokenMeasurement {
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheReadTokens = 0;
+  let cacheWriteTokens = 0;
+  let totalTokens = 0;
+  let firstInputTokens: number | null = null;
+  let latestInputTokens: number | null = null;
+  let sampleCount = 0;
+  let incompleteSampleCount = 0;
+
+  for (const message of messages) {
+    if (typeof message !== "object" || message === null) continue;
+    const record = message as { role?: unknown; usage?: unknown };
+    if (record.role !== "assistant" || record.usage === undefined) continue;
+    const usage = captureProviderTokenUsage(message);
+    if (!usage) {
+      incompleteSampleCount++;
+      continue;
+    }
+    sampleCount++;
+    inputTokens += usage.inputTokens;
+    outputTokens += usage.outputTokens;
+    cacheReadTokens += usage.cacheReadTokens;
+    cacheWriteTokens += usage.cacheWriteTokens;
+    totalTokens += usage.totalTokens;
+    if (firstInputTokens === null) firstInputTokens = usage.inputTokens;
+    latestInputTokens = usage.inputTokens;
+  }
+
+  return {
+    sampleCount,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    totalTokens,
+    firstInputTokens,
+    latestInputTokens,
+    inputTokenDelta: firstInputTokens !== null && latestInputTokens !== null ? latestInputTokens - firstInputTokens : null,
+    incompleteSampleCount,
+  };
 }
 
 function textFromContent(content: unknown): string {
@@ -117,6 +226,7 @@ export function measureContextGrowth(messages: readonly unknown[]): ContextGrowt
   let failedErrorOnlyCount = 0;
   let unserializableMessageCount = 0;
   const payloads = new Map<string, { count: number; serializedBytes: number }>();
+  const provider = measureProviderTokens(messages);
 
   for (const message of messages) {
     const bytes = serializedBytes(message);
@@ -176,6 +286,7 @@ export function measureContextGrowth(messages: readonly unknown[]): ContextGrowt
     repeatedGllaSerializedBytes: Math.round(repeatedGllaSerializedBytes),
     failedErrorOnlyCount,
     unserializableMessageCount,
+    provider,
   };
 }
 
@@ -199,5 +310,19 @@ export function diffContextGrowth(
     repeatedGllaSerializedBytes: after.repeatedGllaSerializedBytes - before.repeatedGllaSerializedBytes,
     failedErrorOnlyCount: after.failedErrorOnlyCount - before.failedErrorOnlyCount,
     unserializableMessageCount: after.unserializableMessageCount - before.unserializableMessageCount,
+    provider: {
+      sampleCount: after.provider.sampleCount - before.provider.sampleCount,
+      inputTokens: after.provider.inputTokens - before.provider.inputTokens,
+      outputTokens: after.provider.outputTokens - before.provider.outputTokens,
+      cacheReadTokens: after.provider.cacheReadTokens - before.provider.cacheReadTokens,
+      cacheWriteTokens: after.provider.cacheWriteTokens - before.provider.cacheWriteTokens,
+      totalTokens: after.provider.totalTokens - before.provider.totalTokens,
+      firstInputTokens: after.provider.firstInputTokens,
+      latestInputTokens: after.provider.latestInputTokens,
+      inputTokenDelta: after.provider.latestInputTokens !== null && before.provider.latestInputTokens !== null
+        ? after.provider.latestInputTokens - before.provider.latestInputTokens
+        : after.provider.latestInputTokens,
+      incompleteSampleCount: after.provider.incompleteSampleCount - before.provider.incompleteSampleCount,
+    },
   };
 }

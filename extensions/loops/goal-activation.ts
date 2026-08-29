@@ -178,6 +178,7 @@ import {
   tickLengthContinue,
 } from "../length-continue.js";
 import { isSubagentProviderFailure } from "../quota-retry.js";
+import { captureProviderTokenUsage } from "../context-growth.js";
 import {
   classifyInBandProviderFailure,
   classifyMainModelFailure,
@@ -1820,6 +1821,35 @@ export function registerGoalRuntime(pi: ExtensionAPI): void {
     const contextUsage = (() => {
       try { return typeof ctx.getContextUsage === "function" ? ctx.getContextUsage() : undefined; } catch { return undefined; }
     })();
+    // v0.36.1: retain exact provider input/output usage alongside the host's
+    // context estimate. The prompt text is intentionally not persisted; this
+    // bounded sample is enough to compare repeated continuation turns with
+    // the provider's real input-token count. Error-only assistant fixtures
+    // carry EMPTY_USAGE and are not provider observations.
+    const providerUsage = rawLastA && !rawLastA.errorMessage && rawLastA.stopReason !== "error"
+      ? captureProviderTokenUsage(rawLastA)
+      : null;
+    if (providerUsage || contextUsage) {
+      appendLedger(ctx.cwd, "context_usage_sample", {
+        goalId: state.goal?.id ?? null,
+        provider: rawLastA?.provider ?? ctx.model?.provider ?? null,
+        model: rawLastA?.model ?? ctx.model?.id ?? null,
+        providerUsage: providerUsage ? {
+          inputTokens: providerUsage.inputTokens,
+          outputTokens: providerUsage.outputTokens,
+          cacheReadTokens: providerUsage.cacheReadTokens,
+          cacheWriteTokens: providerUsage.cacheWriteTokens,
+          totalTokens: providerUsage.totalTokens,
+        } : null,
+        contextUsage: contextUsage ? {
+          // pi documents this value as an estimate; keep it separate from
+          // providerUsage so a host estimate is never called raw usage.
+          tokens: contextUsage.tokens,
+          contextWindow: contextUsage.contextWindow,
+          percent: contextUsage.percent,
+        } : null,
+      });
+    }
     const contextStarvedLength = isContextStarvedLengthStop(rawLastA, contextUsage);
     const lc = tickLengthContinue(lastA?.stopReason === "length" && !contextStarvedLength);
     if (contextStarvedLength) {
