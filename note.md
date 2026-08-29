@@ -30,6 +30,8 @@ is it our bug or tin tin subagents
 
 # Next
 
+## No confoirmed glla ownedtransition was found
+
 ## investigate
 
 https://github.com/DraconDev/pi-goal-list-loop-audit/pull/38
@@ -46,6 +48,8 @@ https://github.com/DraconDev/pi-goal-list-loop-audit/pull/38
 
 currently draft fires first if we use like /goal and even if provided claism and evidence the ai didnt look at it, like pictures and asks me quesitons, 
 while it owuld be in some cases would be useful to run a miniaudit 
+
+## auditor 
 
 # Later
 
