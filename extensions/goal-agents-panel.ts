@@ -183,10 +183,25 @@ export interface TranscriptTailResult {
   detail: string;
 }
 
+/** Parse the authoritative session_info.name from a bounded JSONL window.
+ * Arbitrary assistant/user text is deliberately ignored: a child id quoted in
+ * a message is not proof that the file belongs to that child. */
+function parsedSessionInfoName(content: Buffer): string | undefined {
+  for (const line of content.toString("utf8").split(/\r?\n/)) {
+    try {
+      const entry = JSON.parse(line) as { type?: unknown; name?: unknown };
+      if (entry?.type === "session_info" && typeof entry.name === "string" && entry.name.trim()) {
+        return entry.name.trim();
+      }
+    } catch { /* partial tail or non-JSON line — keep scanning */ }
+  }
+  return undefined;
+}
+
 /** Read-only tail of a child's session transcript. Candidate selection uses
- * the persisted pi session identity (`<agentType>#<recordId prefix>`), not a
- * generic agent type or summary. A generic Explore needle can otherwise pick
- * a newer, unrelated Explore transcript. NEVER resumes or attaches.
+ * exact equality against the parsed persisted pi session identity
+ * (`<agentType>#<recordId prefix>`), not a generic agent type, summary, or
+ * substring found in transcript messages. NEVER resumes or attaches.
  * readFile/readHeader are injected for tests; production passes bounded
  * tail/head readers. */
 export function tailChildTranscript(
@@ -219,28 +234,29 @@ export function tailChildTranscript(
   const recordId = row.recordId.trim().toLowerCase();
   const agentType = row.agentType?.trim().toLowerCase();
   const recordPrefix = recordId.slice(0, 8);
-  // pi-subagents sets the child session name from this exact prefix. Keep the
-  // full manager id as a secondary exact marker for runtimes that write it
-  // into the transcript, but never fall back to a weak summary/type match.
-  const exactNeedles = [
-    agentType && recordPrefix.length >= 6 ? `${agentType}#${recordPrefix}` : undefined,
-    recordId.length >= 6 ? recordId : undefined,
-  ].filter((n): n is string => Boolean(n));
+  // pi-subagents sets the child session name from this exact prefix. Compare
+  // the parsed field as one normalized value; never search arbitrary bytes for
+  // the id because a message can quote an unrelated child's identity.
+  const expectedSessionName = agentType && recordPrefix.length >= 6
+    ? `${agentType}#${recordPrefix}`
+    : undefined;
   const candidates = entries
     .filter((f) => f.endsWith(".jsonl"))
     .map((f) => path.join(sessionsDir, f))
     .map((f) => ({ f, mtime: statMtime(f) }))
     .sort((a, b) => b.mtime - a.mtime);
   let matched: string | undefined;
-  for (const candidate of candidates.slice(0, 25)) {
+  const candidatesToScan = candidates.slice(0, 25);
+  if (expectedSessionName) for (const candidate of candidatesToScan) {
     try {
       // Check the bounded tail first so the existing scan remains the first
-      // and largest read; the session_info identity is normally in the head.
-      const tail = scanRead(candidate.f).toString("utf8").toLowerCase();
-      const header = exactNeedles.some((needle) => tail.includes(needle))
-        ? ""
-        : headerRead(candidate.f).toString("utf8").toLowerCase();
-      if (exactNeedles.some((needle) => tail.includes(needle) || header.includes(needle))) {
+      // and largest read; session_info.name is normally in the head.
+      const tailName = parsedSessionInfoName(scanRead(candidate.f));
+      const headerName = tailName === undefined
+        ? parsedSessionInfoName(headerRead(candidate.f))
+        : undefined;
+      const actualName = (tailName ?? headerName)?.toLowerCase();
+      if (actualName === expectedSessionName) {
         matched = candidate.f;
         break;
       }
@@ -250,7 +266,7 @@ export function tailChildTranscript(
     return {
       ok: false,
       lines: [],
-      detail: `no session file in ${sessionsDir} matches this child (searched ${candidates.length} transcripts for exact identity: ${exactNeedles.map((n) => `"${truncate(n, 24)}"`).join(", ") || "none"}) — the child may not persist a session, or it lives under another working directory`,
+      detail: `no session file in ${sessionsDir} matches this child (searched ${candidatesToScan.length}${candidates.length > candidatesToScan.length ? ` of ${candidates.length}` : ""} transcripts for exact session_info.name: ${expectedSessionName ? `"${truncate(expectedSessionName, 32)}"` : "none"}) — the child may not persist a session, or it lives under another working directory`,
     };
   }
   try {
