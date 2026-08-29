@@ -111,6 +111,17 @@ test("readState normalizes and bounds the detached-auditor recovery cursor", () 
   assert.equal((pending as any)?.quotaAttempts, undefined, "legacy quota key is not exposed to runtime policy");
 });
 
+test("readState recovers a transaction when the first state ledger line was never written", () => {
+  const cwd = tmpdir();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "goal-state.transaction.json"), JSON.stringify({
+    schema: 1,
+    at: "2026-07-28T09:59:00.000Z",
+    state: { goal: { id: "g-first", objective: "first projection", status: "active", policy: "goal" }, list: [] },
+  }));
+  assert.equal(readState(cwd).goal?.id, "g-first", "the transaction is the only durable first projection");
+});
+
 test("goal transaction snapshot repairs a markdown-before-ledger crash", () => {
   const cwd = tmpdir();
   const oldAt = "2026-07-28T10:00:00.000Z";
@@ -170,6 +181,24 @@ test("same-millisecond transaction recovery uses the base-state fingerprint", ()
   });
   fs.writeFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), `${unrelated}\n`);
   assert.equal(readState(cwd).goal?.id, "g-unrelated", "a same-time unrelated state write is not rolled back by the orphan");
+});
+
+test("a newer transaction with a stale base fingerprint cannot roll back a later state line", () => {
+  const cwd = tmpdir();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  const later = JSON.stringify({
+    type: "state",
+    value: { goal: { id: "g-later", objective: "later", status: "active", policy: "goal" }, list: [] },
+    at: "2026-07-28T10:01:00.000Z",
+  });
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), `${later}\n`);
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "goal-state.transaction.json"), JSON.stringify({
+    schema: 1,
+    at: "2026-07-28T10:02:00.000Z",
+    baseStateLineHash: createHash("sha256").update("an unrelated prior line", "utf8").digest("hex"),
+    state: { goal: { id: "g-stale", objective: "stale", status: "paused", policy: "goal" }, list: [] },
+  }));
+  assert.equal(readState(cwd).goal?.id, "g-later", "a stale hashed transaction cannot resurrect an older snapshot");
 });
 
 test("invalid pending-audit phases are dropped to legacy recovery semantics", () => {

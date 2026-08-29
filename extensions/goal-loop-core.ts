@@ -1338,9 +1338,11 @@ export function readState(cwd: string): State {
   // v0.28.6 (E1): an unreadable ledger (EACCES, EIO) degrades loudly
   // instead of throwing out of session_start.
   const raw = runPersistStep("readState", () => (fs.existsSync(file) ? fs.readFileSync(file, "utf-8") : ""));
-  if (raw === undefined || raw === "") return { ...DEFAULT_STATE };
-  const lines = raw.split("\n").filter(Boolean);
-  if (lines.length === 0) return { ...DEFAULT_STATE };
+  // Do not return early for an empty/missing ledger: a process can die after
+  // writing the first complete transaction snapshot but before the first
+  // active.jsonl state line. The transaction reader below is the recovery
+  // source for that initial projection.
+  const lines = typeof raw === "string" ? raw.split("\n").filter(Boolean) : [];
   let parsed: Partial<State> = {};
   let lastStateAt: string | undefined;
   let lastStateLine: string | undefined;
@@ -1366,15 +1368,22 @@ export function readState(cwd: string): State {
   const transaction = readGoalStateTransaction(cwd);
   const transactionAt = transaction ? Date.parse(transaction.at) : Number.NaN;
   const stateAt = lastStateAt ? Date.parse(lastStateAt) : Number.NaN;
+  const transactionBaseMatches = !!transaction?.baseStateLineHash
+    && !!lastStateLine
+    && transaction.baseStateLineHash === stateLineFingerprint(lastStateLine);
   const transactionIsNewer = transaction && (
-    !lastStateAt
-    || Number.isNaN(stateAt)
-    || transactionAt > stateAt
+    !lastStateLine
+    // A hashed transaction was created from this exact state line. It is
+    // still the interrupted successor even when a wall-clock adjustment
+    // makes its timestamp appear older; a different line must never be
+    // rolled back by an orphaned transaction, even if its timestamp is newer.
+    || transactionBaseMatches
+    // Legacy transactions predate baseStateLineHash. Keep their historical
+    // timestamp rule for backward compatibility, but never apply them over
+    // an invalid/unrelated hashed state boundary.
     || (
-      transactionAt === stateAt
-      && !!transaction.baseStateLineHash
-      && !!lastStateLine
-      && transaction.baseStateLineHash === stateLineFingerprint(lastStateLine)
+      !transaction.baseStateLineHash
+      && (!lastStateAt || Number.isNaN(stateAt) || transactionAt > stateAt)
     )
   );
   if (transactionIsNewer) {
