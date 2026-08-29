@@ -146,3 +146,37 @@ test("v0.35.62: persistent workers cannot masquerade as silent host successors",
     await pi.fire("session_shutdown", { reason: "quit" }, host).catch(() => {});
   }
 });
+
+test("v0.35.72: state-root read-only denial hints at sessionDir via the MAIN-owner refusal", async () => {
+  const cwd = tmpCwd();
+  seedState(cwd, { goal: null, list: [] });
+  const host = hostCtx(cwd, "studio-host");
+  await pi.fire("session_start", { reason: "startup" }, host);
+  __testOnlyRegisterAgentTools(pi.api);
+  // Simulate the workingDir owner contention seen in
+  // Screenshot_20260829_223257.png — another live pi owns the cwd root.
+  // The denied host stays read-only; every mutating tool is foreign.
+  (globalThis as any).processOwnerDeniedCwd = cwd;
+  try {
+    const refused = await pi.runTool("list_add", { items: ["studio denied mutation — done when blocked"] }, host);
+    assert.match(refused.content[0]!.text, /only the MAIN session owns/);
+    assert.match(refused.content[0]!.text, /sessionDir/);
+    assert.match(refused.content[0]!.text, /state-root read-only/);
+    assert.equal(
+      Boolean(readState(cwd).goal?.objective.includes("studio denied mutation"))
+        || Boolean(readState(cwd).list?.some((item) => item.objective.includes("studio denied mutation"))),
+      false,
+      "a read-only denied host cannot mutate even its own owner session",
+    );
+    // A plain worker without the state-root denial keeps the original
+    // message without the correlated hint — substring contract preserved.
+    (globalThis as any).processOwnerDeniedCwd = null;
+    const worker = workerCtx(cwd, { name: "Explore", getSessionFile: () => undefined });
+    const plain = await pi.runTool("list_add", { items: ["plain worker mutation — done when blocked"] }, worker);
+    assert.match(plain.content[0]!.text, /only the MAIN session owns/);
+    assert.doesNotMatch(plain.content[0]!.text, /sessionDir/);
+  } finally {
+    (globalThis as any).processOwnerDeniedCwd = null;
+    await pi.fire("session_shutdown", { reason: "quit" }, host).catch(() => {});
+  }
+});

@@ -1740,6 +1740,8 @@ function isHostLifecycleSessionStart(event: unknown): boolean {
 
 const FOREIGN_SESSION_TOOL_MESSAGE =
   "This tool changes goal/loop/list state, which only the MAIN session owns — you are running in a subagent session. Report back to the main agent; it owns the goal and can call this tool.";
+const FOREIGN_SESSION_TOOL_MESSAGE_WITH_STATE_ROOT_HINT =
+  `${FOREIGN_SESSION_TOOL_MESSAGE} If you also see the state-root read-only warning, close the other host or switch to sessionDir via /glla settings → State root, then start a fresh session.`;
 
 /** Refusal message when a state-mutating tool is called from a subagent session, else null. */
 function foreignToolGuard(execCtx: unknown): string | null {
@@ -1753,7 +1755,13 @@ function foreignToolGuard(execCtx: unknown): string | null {
   // terminal the recorded owner is nulled (the successor is not even
   // "foreign"). A file-backed host successor rebinds here, never refuses.
   if (tryAbsorbHostSuccessor(c, "tool-call")) return null;
-  if (isForeignCtx(c)) return FOREIGN_SESSION_TOOL_MESSAGE;
+  if (isForeignCtx(c)) {
+    // v0.35.72: when the cwd is also denied by the workingDir state-root
+    // owner, the two warnings co-occur. Correlate them so "MAIN became
+    // subagent and cannot be cured" has an actionable cure.
+    if (c && processOwnerDeniedCwd === c.cwd) return FOREIGN_SESSION_TOOL_MESSAGE_WITH_STATE_ROOT_HINT;
+    return FOREIGN_SESSION_TOOL_MESSAGE;
+  }
   // Post-park the owner is nulled; the dead-owner record means only the
   // file-backed successor may act — ephemeral workers stay refused instead of
   // slipping through the null-owner gap (pre-v0.34.25 hole).
