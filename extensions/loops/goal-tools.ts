@@ -905,6 +905,44 @@ function registerAgentTools(pi: any): void {
             },
           }));
         }
+      } catch (err) {
+        const recoveryCtx = freshCtxForGeneration(auditGeneration);
+        if (!recoveryCtx || !state.goal || state.goal.id !== auditGoalId || state.goal.pendingCompletion?.attemptId !== auditAttemptId) {
+          return staleToolResult();
+        }
+        const failureCopy = providerErrorPresentation(err instanceof Error ? err.message : String(err), "completion");
+        const currentClaim = state.goal.pendingCompletion ?? completionClaim;
+        const pending: PendingCompletion = {
+          ...currentClaim,
+          phase: "recovery-pending",
+          recoveryAt: nowIso(),
+          recoveryRetryAt: undefined,
+          recoveryReason: "auditor-run-exception",
+          providerErrorDiagnostic: failureCopy.diagnostic,
+          auditorFallbackExhausted: true,
+          auditorFailureAt: new Date().toISOString(),
+        };
+        updateGoal({
+          status: "paused",
+          pendingCompletion: pending,
+          providerErrorDiagnostic: failureCopy.diagnostic,
+          pauseKind: "error",
+          pauseResumeAt: undefined,
+          pauseReason: `completion auditor crashed before a result — ${failureCopy.display}`,
+          pauseSuggestedAction: `The completion claim is stored; fix the auditor/session issue, then ${activeGoalSurfaceCommand("resume")} to start a fresh bounded attempt.`,
+        }, recoveryCtx);
+        appendLedger(recoveryCtx.cwd, "audit_recovery_exception", {
+          goalId: auditGoalId,
+          attemptId: auditAttemptId,
+          diagnostic: failureCopy.diagnostic,
+          display: failureCopy.display,
+          recoveryReason: "auditor-run-exception",
+        });
+        recoveryCtx.ui.notify(`Completion auditor failed before producing a result (infrastructure, not a verdict). The claim remains stored; fix the issue, then ${activeGoalSurfaceCommand("resume")}.`, "warning");
+        return {
+          content: [{ type: "text", text: `The completion auditor failed before producing a result (infrastructure, not a verdict). The claim remains stored; fix the issue, then ${activeGoalSurfaceCommand("resume")} to retry it.` }],
+          details: {},
+        };
       } finally {
         // Deterministic pre-audit failures take the same cleanup path as a
         // detached worker. Otherwise the in-flight latch survives forever

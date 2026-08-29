@@ -282,6 +282,7 @@ import {
   mainModelFallbackRefs,
   manuallyResumeMainModelRecovery,
   markCompletionAuditRecoveryPending,
+  parkCompletionAuditRecovery,
   parkMainModelAfterFailure,
   probeMainModelRecovery,
   recoverMainModelFromSendStorm,
@@ -1163,6 +1164,25 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
         },
       },
     ));
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    const recoveryCtx = freshCtxForGeneration(generation);
+    const current = state.goal;
+    if (recoveryCtx && current?.id === goalId && current.pendingCompletion?.attemptId === claim.attemptId) {
+      markCompletionAuditRecoveryPending(recoveryCtx, `auditor run exception: ${reason}`);
+      recoveryCtx.ui.notify("Stored completion audit failed before producing a result; the claim is parked for a bounded recovery attempt.", "warning");
+      appendLedger(recoveryCtx.cwd, "audit_recovery_exception", {
+        goalId,
+        attemptId: claim.attemptId,
+        diagnostic: providerErrorPresentation(reason, "completion").diagnostic,
+      });
+    } else {
+      // The retained context is probe-only after a generation handoff. The
+      // context-free parking helper persists through the durable cwd without
+      // writing through a stale ExtensionContext.
+      parkCompletionAuditRecovery(liveCtx.cwd, `auditor run exception: ${reason}`);
+    }
+    return;
   } finally {
     if (ownsDetachedAudit(generation, goalId, claim.attemptId!)) {
       clearDetachedAuditProgress(generation, goalId, claim.attemptId!);

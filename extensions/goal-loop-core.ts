@@ -1451,6 +1451,7 @@ function normalizePendingCompletion(value: unknown): PendingCompletion {
     retryAfterSec: _retryAfterSec,
     retryFromUpstream: _retryFromUpstream,
     resetAt: _resetAt,
+    phase: _phase,
     auditorCandidateRefs: _auditorCandidateRefs,
     auditorCandidateRef: _auditorCandidateRef,
     auditorRetryCandidateRef: _auditorRetryCandidateRef,
@@ -1462,7 +1463,7 @@ function normalizePendingCompletion(value: unknown): PendingCompletion {
     auditorFailureAt: _auditorFailureAt,
     ...canonicalOrUnknown
   } = raw;
-  const phase = raw.phase === "quota-waiting" ? "retry-waiting" : raw.phase;
+  const phase = _phase === "quota-waiting" ? "retry-waiting" : _phase;
   const boundedRefs = (value: unknown): string[] | undefined => {
     if (!Array.isArray(value)) return undefined;
     const out: string[] = [];
