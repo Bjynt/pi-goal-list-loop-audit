@@ -18,27 +18,6 @@ function childSessionsDir(cwd: string): string {
   return path.join(os.homedir(), ".pi", "agent", "sessions", munged);
 }
 
-/** Read the bounded JSONL header where pi stores session_info.name. The tail
- * reader below remains separate so transcript scans do not regress to full
- * synchronous reads. */
-function readSessionHeader(file: string, maxBytes?: number): Buffer {
-  if (maxBytes === undefined) return fs.readFileSync(file);
-  try {
-    const size = fs.statSync(file).size;
-    const limit = Math.max(1, Math.min(maxBytes, TRANSCRIPT_HEADER_SCAN_MAX_BYTES));
-    if (size <= limit) return fs.readFileSync(file);
-    const fd = fs.openSync(file, "r");
-    try {
-      const buf = Buffer.alloc(limit);
-      const bytesRead = fs.readSync(fd, buf, 0, limit, 0);
-      return buf.subarray(0, bytesRead);
-    } finally {
-      fs.closeSync(fd);
-    }
-  } catch {
-    return fs.readFileSync(file);
-  }
-}
 import { state, replaceState } from "./goal-state.js";
 import {
   DEFAULT_TOKEN_LIMIT, Goal, ListItem, Status, appendLedger, archiveDir, archivedGoalPath, bumpGoalRevision, sanitizeProviderDisplayText,
@@ -66,6 +45,28 @@ import { chooseObjectiveConflict, liveObjectives } from "./goal-objective-confli
 import { formatGllaVersion } from "./glla-version.js";
 import { cancelDetachedGoalCompletionAuditor } from "./goal-loop-auditor-process.js";
 import { releaseAuditorSurface } from "./loops/goal-auditor-surface.js";
+
+/** Read the bounded JSONL header where pi stores session_info.name. The tail
+ * reader below remains separate so transcript scans do not regress to full
+ * synchronous reads. */
+function readSessionHeader(file: string, maxBytes?: number): Buffer {
+  if (maxBytes === undefined) return fs.readFileSync(file);
+  try {
+    const size = fs.statSync(file).size;
+    const limit = Math.max(1, Math.min(maxBytes, TRANSCRIPT_HEADER_SCAN_MAX_BYTES));
+    if (size <= limit) return fs.readFileSync(file);
+    const fd = fs.openSync(file, "r");
+    try {
+      const buf = Buffer.alloc(limit);
+      const bytesRead = fs.readSync(fd, buf, 0, limit, 0);
+      return buf.subarray(0, bytesRead);
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return fs.readFileSync(file);
+  }
+}
 
 export interface CommandFlags {
   get draftingTarget(): "goal" | "list" | "loop" | null; set draftingTarget(v: "goal" | "list" | "loop" | null);
