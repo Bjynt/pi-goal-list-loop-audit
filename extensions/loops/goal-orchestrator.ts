@@ -92,6 +92,7 @@ import {
   nowIso,
   compactDisplayText,
   normalizeProviderErrorText,
+  providerErrorPresentation,
   sanitizeDisplayText,
   piGlaDir,
   normalizeDraftContract,
@@ -554,17 +555,94 @@ function scheduleProviderRetryForSession(
 // wiring lives at createGoalRecovery(...) below.
 // ============================================================================
 
+/** Settle an explicit provider prompt-policy refusal before loop/goal
+ * bookkeeping can mistake it for an ordinary unproductive turn. The
+ * provider marker is intentionally narrow; the lifecycle side effects below
+ * are shared with the existing zero-stream safety boundary but keep the
+ * objective and loop history durable for an explicit, changed-prompt retry. */
+function settlePromptPolicyRejection(ctx: ExtensionContext, failure: MainModelFailure): boolean {
+  const activeLoop = state.loop?.active === true ? state.loop : null;
+  const activeGoal = state.goal?.status === "active" && state.goal.autoContinue !== false ? state.goal : null;
+  // Plain pi sessions and already-paused/auditing state are not owned by this
+  // recovery path. Leave their provider error to pi/core rather than aborting
+  // an unrelated user turn.
+  if (!activeLoop && !activeGoal) return false;
+
+  const diagnostic = providerErrorPresentation(failure.raw, "main").diagnostic;
+  const reason = "provider rejected the prompt as a policy violation — automatic retry cannot succeed";
+  const resume = activeLoop ? recoverySurfaceCommand("loop", "resume") : activeGoalSurfaceCommand("resume");
+  const cancel = activeLoop ? recoverySurfaceCommand("loop", "stop") : activeGoalSurfaceCommand("cancel");
+  const action = `The work is saved. Change the ${activeLoop ? "loop target or prompt" : "objective or prompt"}, then ${resume}; ${cancel} discards it.`;
+
+  clearMainModelRecoveryTimer();
+  state.mainModelRecovery = undefined;
+  // Retain the classified failure until the matching abort event so the
+  // existing main-model abort settlement can distinguish this deliberate
+  // park from a normal provider-recovery abort.
+  lastMainModelFailure = failure;
+  cancelProviderRetry();
+  const dispatchReset = resetContinuationDispatchState(ctx.cwd);
+  setContinuationDispatchStoodDownRef(true);
+  abortedStandDown = true;
+  clearLoopTimer();
+
+  if (activeLoop) {
+    activeLoop.active = false;
+    activeLoop.stopReason = reason;
+  }
+  let persisted = true;
+  if (activeGoal) {
+    persisted = updateGoal({
+      status: "paused",
+      pauseKind: "error",
+      pauseResumeAt: undefined,
+      pauseReason: reason,
+      pauseSuggestedAction: action,
+      providerErrorDiagnostic: diagnostic,
+    }, ctx) !== false;
+  } else if (activeLoop) {
+    persisted = persistState(ctx);
+  }
+
+  let abortError: string | undefined;
+  if (!mainModelAbortForRecovery) {
+    mainModelAbortForRecovery = true;
+    try { ctx.abort(); } catch (err) { abortError = err instanceof Error ? err.message : String(err); }
+  }
+  appendLedger(ctx.cwd, "main_model_prompt_policy_terminal", {
+    model: modelRef(ctx.model),
+    goalId: activeGoal?.id,
+    loop: Boolean(activeLoop),
+    dispatchReset,
+    persisted,
+    ...(abortError ? { abortError: abortError.slice(0, 240) } : {}),
+  });
+  const loopRecap = activeLoop
+    ? compactLoopCompletionSummary({ ...activeLoop, historyLength: activeLoop.history.length })
+    : undefined;
+  const message = `${activeLoop ? "Loop stopped" : activeGoal?.policy === "list" ? "List item paused" : "Goal paused"}: ${reason}. ${action}${loopRecap ? `\nRecap: ${loopRecap}` : ""}`;
+  ctx.ui.notify(message, "warning");
+  notifyExternal(ctx, message);
+  if (!persisted || !dispatchReset) {
+    ctx.ui.notify("glla: prompt-policy settlement could not fully persist its stop boundary. Automatic work is held in this process; fix .pi-glla storage and verify the durable state before resuming.", "warning");
+  }
+  return true;
+}
+
 /** Handle a provider error before loop/goal bookkeeping can mistake it for
  * an unproductive turn. Returns true when recovery owns this agent_end. */
 async function handleMainModelAgentEnd(ctx: ExtensionContext, rawLastA: any, lastA: any): Promise<boolean> {
   if (lastA?.stopReason === "aborted" && mainModelAbortForRecovery) {
+    const promptPolicy = lastMainModelFailure?.nonRecoverableReason === "prompt-policy";
     mainModelAbortForRecovery = false;
-    appendLedger(ctx.cwd, "main_model_recovery_abort_settled", { model: modelRef(ctx.model) });
+    lastMainModelFailure = null;
+    appendLedger(ctx.cwd, promptPolicy ? "main_model_prompt_policy_abort_settled" : "main_model_recovery_abort_settled", { model: modelRef(ctx.model) });
     return true;
   }
   if (lastA?.stopReason === "error") {
     const rawError = normalizeProviderErrorText(rawLastA, lastA.text);
     const failure = classifyMainModelFailure(rawError);
+    if (failure.nonRecoverableReason === "prompt-policy" && settlePromptPolicyRejection(ctx, failure)) return true;
     lastMainModelFailure = failure;
     if (failure.kind !== "non-recoverable") {
       const switched = await tryMainModelFallback(ctx, failure);

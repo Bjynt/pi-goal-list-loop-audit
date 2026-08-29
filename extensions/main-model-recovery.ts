@@ -36,6 +36,8 @@ export type MainModelFailureKind = "rate-limit" | "quota" | "billing" | "auth" |
 export interface MainModelFailure {
   kind: MainModelFailureKind;
   raw: string;
+  /** Set only for the provider's explicit prompt-policy refusal event. */
+  nonRecoverableReason?: "prompt-policy";
   /** Legacy provider-hint fields are accepted by old callers only; the
    * classifier and retry policy never populate or consult them. */
   retryAfterSec?: number;
@@ -110,6 +112,19 @@ export function formatMainModelFallbacks(value: unknown): string {
 }
 
 /**
+ * Recognize only the explicit provider event observed in the main-model
+ * failure stream. Keep this marker narrow: generic "invalid prompt",
+ * content/filter words, policy prose, and HTTP status codes also occur in
+ * ordinary diagnostics and must remain recoverable under the generic policy.
+ * The marker may be wrapped by normalizeProviderErrorText with a status
+ * prefix, so it is intentionally not anchored to the beginning of the text.
+ */
+export function isPromptPolicyRejection(error: string | undefined): boolean {
+  const raw = typeof error === "string" ? error.trim() : "";
+  return /\bcodex error event:\s*invalid prompt\b/i.test(raw);
+}
+
+/**
  * Classify only provider failures. Context/output-token failures are
  * deterministic prompt-shape problems and must not trigger model rotation.
  *
@@ -134,6 +149,9 @@ export function classifyMainModelFailure(error: string | undefined, opts?: { isC
   }
   if (/^(?:auditor aborted\.?$|user (?:interrupt|abort)|cancelled by user)/i.test(raw) || /user interrupt/.test(text)) {
     return { kind: "non-recoverable", raw };
+  }
+  if (isPromptPolicyRejection(raw)) {
+    return { kind: "non-recoverable", raw, nonRecoverableReason: "prompt-policy" };
   }
   if (/context|output[ -]?token|max_?tokens|length limit|too many tokens|prompt too large|context window/.test(text)) {
     return opts?.isContextOverflow
@@ -170,7 +188,13 @@ export function classifyInBandProviderFailure(output: string | undefined): MainM
   const raw = typeof output === "string" ? output.trim() : "";
   if (!raw || !IN_BAND_PROVIDER_FAILURE_PATTERN.test(raw)) return undefined;
   const failure = classifyMainModelFailure(raw);
-  return failure.kind === "non-recoverable" ? undefined : failure;
+  // Unlike generic non-recoverable classes, the explicit policy event is
+  // useful to the orchestration layer even when it arrived as a successful
+  // tool_result/in-band provider pane. All other non-recoverable text is
+  // intentionally ignored here to avoid promoting arbitrary tool output.
+  return failure.nonRecoverableReason === "prompt-policy"
+    ? failure
+    : failure.kind === "non-recoverable" ? undefined : failure;
 }
 
 /** v0.34.116: detect when a length-context failure happened AFTER the
