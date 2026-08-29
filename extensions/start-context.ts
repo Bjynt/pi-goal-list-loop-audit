@@ -77,6 +77,7 @@ const GENERIC_REPLY_RE = /^(?:ok(?:ay)?|yes|no|sure|thanks?|thank\s+you|go\s+ahe
 const QUESTION_ONLY_RE = /^(?:what|why|how|when|where|which|who|is|are|do|does|did|tell\s+me|explain)\b/i;
 const EXPLANATION_REQUEST_RE = /^(?:can|could|would)\s+you\s+(?:please\s+)?(?:explain|tell|describe|show|clarify)\b/i;
 const PRONOUN_ONLY_RE = /^(?:it|this|that|the\s+(?:issue|bug|thing)|everything|stuff|things|as\s+discussed)\s*[.!?]*$/i;
+const VAGUE_ACTION_RE = /^(?:(?:please\s+|kindly\s+)?(?:fix|repair|resolve|investigate|improve|update|change)\s+(?:it|this|that)|(?:please\s+|kindly\s+)?(?:fix|repair|resolve|investigate|improve|update|change)\s+the\s+(?:issue|bug|thing)\s*[.!?]*$)/i;
 
 function textFromContent(content: unknown): string {
   if (typeof content === "string") return content;
@@ -125,7 +126,7 @@ function classifyCandidate(raw: string, truncated = false): "clear" | "ambiguous
   if (truncated || text.length > START_CONTEXT_MAX_CANDIDATE_CHARS) return "ambiguous";
   if (QUESTION_ONLY_RE.test(text) && !ACTION_AT_START_RE.test(text) && !REQUEST_PREFIX_RE.test(text)) return "none";
   if (EXPLANATION_REQUEST_RE.test(text)) return "none";
-  if (PRONOUN_ONLY_RE.test(text)) return "none";
+  if (PRONOUN_ONLY_RE.test(text) || VAGUE_ACTION_RE.test(text)) return "none";
   if (hasMultipleTasks(text)) return "ambiguous";
 
   const hasAction = ACTION_AT_START_RE.test(text) || REQUEST_PREFIX_RE.test(text) || REQUIREMENT_RE.test(text);
