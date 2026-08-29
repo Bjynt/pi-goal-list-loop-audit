@@ -22,7 +22,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { readState } from "../extensions/goal-loop-core.js";
+import { bumpGoalRevision, readState } from "../extensions/goal-loop-core.js";
+import { persistStateLine, state } from "../extensions/goal-state.js";
 import { guardGoalBeforeContinuation } from "../extensions/goal-continuation.js";
 import activate, {
   __testOnlyLoadState,
@@ -87,6 +88,30 @@ process.stdin.on("data", async (chunk) => {
   emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: report } });
   emit({ type: "agent_settled" });
   process.exit(0);
+});
+`);
+  fs.chmodSync(script, 0o700);
+  return script;
+}
+
+function writeDelayedApprovedAuditor(cwd: string): string {
+  const script = path.join(cwd, "delayed-approved-auditor-pi.mjs");
+  fs.writeFileSync(script, `#!/usr/bin/env node
+let input = "";
+let handled = false;
+process.stdin.on("data", (chunk) => {
+  input += chunk;
+  if (handled || !input.includes("\\n")) return;
+  handled = true;
+  setTimeout(() => {
+    const emit = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+    const report = "<evidence>\\npinned\\n</evidence>\\n<approved/>";
+    emit({ type: "tool_execution_start", toolCallId: "fake-read", toolName: "read", args: { path: "README.md" } });
+    emit({ type: "tool_execution_end", toolCallId: "fake-read" });
+    emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: report } });
+    emit({ type: "agent_settled" });
+    process.exit(0);
+  }, 300);
 });
 `);
   fs.chmodSync(script, 0o700);
@@ -242,6 +267,37 @@ test("v0.34.60: complete_goal REJECTS when the contract revision moved past the 
   const ledger = readLedger(cwd);
   assert.equal(ledger.filter((l) => l.type === "complete_goal_revision_rejected").length, 1, "clear ledger entry for the rejection");
   assert.equal(ledger.filter((l) => l.type === "audit_started").length, 0, "no audit was started");
+});
+
+test("direct complete_goal refuses an approval when the contract revision changes during the detached audit", async () => {
+  const cwd = tmpCwd();
+  seedRevisionedGoal(cwd, 1, undefined, false);
+  const fakePi = writeDelayedApprovedAuditor(cwd);
+  process.env.GLLA_PI_BINARY = fakePi;
+  try {
+    const pi = new MockPi();
+    activate(pi.api);
+    __testOnlyRegisterAgentTools(pi.api);
+    rememberCtxFor(cwd);
+    const res = await pi.runTool("complete_goal", { completionSummary: "Claim", verificationSummary: "Evidence" }, ownerCtx(cwd));
+    assert.match(res.content[0]!.text, /auditor queued|detached/i);
+    await waitUntil(() => readState(cwd).goal?.pendingCompletion?.auditorCandidateRef !== undefined, 10_000);
+    assert.ok(state.goal, "the in-memory goal is available for the concurrent contract mutation");
+    state.goal = bumpGoalRevision(state.goal!);
+    persistStateLine(cwd, state);
+    await waitUntil(() => {
+      const current = readState(cwd).goal;
+      return current?.status === "active" && !current.pendingCompletion;
+    }, 10_000);
+    const current = readState(cwd);
+    assert.equal(current.goal?.status, "active");
+    assert.equal(current.goal?.revision, 2, "the concurrent contract revision is preserved");
+    assert.equal(current.goal?.auditHistory?.length ?? 0, 0, "the stale approval is not recorded as a verdict");
+    assert.ok(readLedger(cwd).some((entry) => entry.type === "stale_revision_refused"), "the stale direct result is durably refused");
+    assert.equal(fs.readdirSync(path.join(cwd, ".pi-glla", "archive")).length, 0, "a stale approval cannot archive the changed contract");
+  } finally {
+    delete process.env.GLLA_PI_BINARY;
+  }
 });
 
 test("v0.34.60: complete_goal passes when the last audit matches the current revision", async () => {
