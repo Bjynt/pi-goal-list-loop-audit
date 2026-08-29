@@ -215,6 +215,7 @@ export function buildGoalAuditorPrompt(goal: Goal, completionSummary: string | n
       ? ["4. Verify that the executor has satisfied every item in the <verification_contract>. If any item is missing or weakly addressed, disapprove."]
       : []),
     "5. Explain missing or weak evidence, especially scaffold-vs-final quality gaps.",
+    "SCOPE GUARD — PROJECT AT HAND ONLY: stay within the project at hand (the repository under review). You may explore outside it for context, but outside findings are informational only: list them under '## Outside Scope' and do NOT list them under Required fixes and do NOT propose them as auto-queued follow-up work. The boundary is pinned by the outside-cap test — outside-scope findings are recorded but not auto-queued.",
     "6. When you disapprove, end the report body with a '## Required fixes' section: one line per blocking gap, each an actionable instruction the executor can complete (most critical first). This tail is what the executor sees first — make it self-sufficient.",
     "7. Write the report in English, and never emit <think> blocks or fragments — your reasoning stays private; the report is the verdict plus evidence.",
     "8. End with exactly <approved/> only if the objective is truly complete; <impossible>reason</impossible> if it can never be satisfied as stated; otherwise end with exactly <disapproved/>.",
