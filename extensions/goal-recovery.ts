@@ -138,7 +138,7 @@ export function markCompletionAuditRecoveryPending(ctx: ExtensionContext, reason
   // it must not keep the user-facing state looking like an active audit.
   if (claim.attemptId) cancelDetachedGoalCompletionAuditor(ctx.cwd, claim.attemptId);
   clearDetachedAuditRuntime();
-  updateGoal({
+  const persisted = updateGoal({
     status: "paused",
     pendingCompletion: pending,
     providerErrorDiagnostic: pending.providerErrorDiagnostic,
@@ -151,6 +151,7 @@ export function markCompletionAuditRecoveryPending(ctx: ExtensionContext, reason
     pauseOptions: undefined,
     pauseRecommended: undefined,
   }, ctx);
+  if (!persisted) return false;
   appendLedger(ctx.cwd, "audit_recovery_pending", {
     goalId: goal.id,
     attemptId: claim.attemptId,
@@ -166,7 +167,7 @@ export function markCompletionAuditRecoveryPending(ctx: ExtensionContext, reason
 /** Park an interrupted completion claim using only its durable workspace path.
  * This is the stale-terminal escape hatch: the retained ExtensionContext is
  * explicitly probe-only, so the heartbeat must not pass it to updateGoal. */
-export function parkCompletionAuditRecovery(cwd: string, reason: string): boolean {
+export function parkCompletionAuditRecovery(cwd: string, reason: string, cursorPatch?: CompletionAuditCursorPatch): boolean {
   const goal = state.goal;
   const claim = goal?.pendingCompletion;
   if (!goal || goal.status !== "auditing" || !claim) {
@@ -177,6 +178,7 @@ export function parkCompletionAuditRecovery(cwd: string, reason: string): boolea
   const recoveryEpisodeKey = claim.recoveryEpisodeKey ?? `${claim.at}:${failureCopy.fingerprint}`;
   const pending: PendingCompletion = {
     ...claim,
+    ...sanitizeCompletionAuditCursorPatch(cursorPatch),
     phase: "recovery-pending",
     recoveryAt: nowIso(),
     recoveryReason: reason,

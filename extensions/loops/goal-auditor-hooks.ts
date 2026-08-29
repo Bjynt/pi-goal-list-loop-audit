@@ -1171,10 +1171,30 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
     ));
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
+    const exceptionReason = `auditor run exception: ${reason}`;
     const recoveryCtx = freshCtxForGeneration(generation);
     const current = state.goal;
+    const durableExceptionClaim = current?.pendingCompletion?.attemptId === claim.attemptId
+      ? current.pendingCompletion
+      : claim;
+    // onAttempt persists the selected ref before the worker launch. If an
+    // unexpected exception escapes the policy after that point, consume the
+    // first call and authorize only its one remaining retry. Otherwise a
+    // fresh session would see just auditorCandidateRef and replay an unknown
+    // provider call as a new first attempt.
+    const exceptionCursor = durableExceptionClaim.auditorCandidateRef
+      && !durableExceptionClaim.auditorRetryCandidateRef
+      && !durableExceptionClaim.auditorRetryAttemptStartedAt
+      && !durableExceptionClaim.auditorFallbackExhausted
+      ? {
+        auditorRetryCandidateRef: durableExceptionClaim.auditorCandidateRef,
+        auditorFailureCount: Math.max(1, Math.min(2, durableExceptionClaim.auditorFailureCount ?? 0)),
+        auditorFailureClass: "transport" as const,
+        auditorFailureAt: new Date().toISOString(),
+      }
+      : undefined;
     if (recoveryCtx && current?.id === goalId && current.pendingCompletion?.attemptId === claim.attemptId) {
-      markCompletionAuditRecoveryPending(recoveryCtx, `auditor run exception: ${reason}`);
+      markCompletionAuditRecoveryPending(recoveryCtx, exceptionReason, exceptionCursor);
       recoveryCtx.ui.notify("Stored completion audit failed before producing a result; the claim is parked for a bounded recovery attempt.", "warning");
       appendLedger(recoveryCtx.cwd, "audit_recovery_exception", {
         goalId,
@@ -1185,7 +1205,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
       // The retained context is probe-only after a generation handoff. The
       // context-free parking helper persists through the durable cwd without
       // writing through a stale ExtensionContext.
-      parkCompletionAuditRecovery(liveCtx.cwd, `auditor run exception: ${reason}`);
+      parkCompletionAuditRecovery(liveCtx.cwd, exceptionReason, exceptionCursor);
     }
     return;
   } finally {
