@@ -921,7 +921,7 @@ function registerAgentTools(pi: any): void {
           parkCompletionAuditRecovery(ctx.cwd, `auditor run exception: ${failureCopy.diagnostic}`);
           return staleToolResult();
         }
-        const currentClaim = state.goal.pendingCompletion ?? completionClaim;
+        const currentClaim = current.pendingCompletion ?? completionClaim;
         const pending: PendingCompletion = {
           ...currentClaim,
           phase: "recovery-pending",
