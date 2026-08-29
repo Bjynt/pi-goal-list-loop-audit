@@ -1053,6 +1053,8 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
         resumeCandidateRef: persistedAuditorCandidateRef,
         attemptedRefs: persistedAuditorAttemptedRefs,
         retryCandidateRef: persistedAuditorRetryCandidateRef,
+        retryAttemptStarted: !!claim.auditorRetryAttemptStartedAt,
+        retryFailureClass: claim.auditorFailureClass,
         onAttempt: (candidate, info) => persistDetachedAuditorCursor(
           generation,
           goalId,
@@ -1061,6 +1063,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
           {
             auditorCandidateRef: info.candidateRef,
             auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
+            auditorRetryAttemptStartedAt: info.attempt === 2 ? new Date().toISOString() : undefined,
             ...(info.failureCount === 0 ? {
               auditorRetryCandidateRef: undefined,
               auditorFailureClass: undefined,
@@ -1079,6 +1082,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
             {
               auditorCandidateRef: info.candidateRef,
               auditorRetryCandidateRef: info.candidateRef,
+              auditorRetryAttemptStartedAt: undefined,
               auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
               auditorFailureCount: 1,
               auditorFailureClass: info.failureClass ?? "provider",
@@ -1112,6 +1116,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
               ? {
                 auditorCandidateRef: next,
                 auditorRetryCandidateRef: undefined,
+                auditorRetryAttemptStartedAt: undefined,
                 auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
                 auditorFailureCount: 0,
                 auditorFailureClass: undefined,
@@ -1121,6 +1126,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
               : {
                 auditorCandidateRef: undefined,
                 auditorRetryCandidateRef: undefined,
+                auditorRetryAttemptStartedAt: undefined,
                 auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
                 auditorFailureCount: 2,
                 auditorFailureClass: info.failureClass,

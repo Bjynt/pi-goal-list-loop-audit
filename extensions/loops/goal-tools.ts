@@ -803,6 +803,8 @@ function registerAgentTools(pi: any): void {
             resumeCandidateRef: persistedAuditorCandidateRef,
             attemptedRefs: persistedAuditorAttemptedRefs,
             retryCandidateRef: persistedAuditorRetryCandidateRef,
+            retryAttemptStarted: !!completionClaim.auditorRetryAttemptStartedAt,
+            retryFailureClass: completionClaim.auditorFailureClass,
             onAttempt: (candidate: AuditorModelCandidate, info: AuditorFallbackAttemptInfo) => {
               const current = detachedAuditContext(auditGeneration, auditGoalId, auditAttemptId);
               if (!current) return false;
@@ -813,6 +815,7 @@ function registerAgentTools(pi: any): void {
                   auditorCandidateRef: info.candidateRef,
                   auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
                   auditorFailureCount: info.failureCount,
+                  auditorRetryAttemptStartedAt: info.attempt === 2 ? new Date().toISOString() : undefined,
                   ...(info.failureCount === 0 ? {
                     auditorRetryCandidateRef: undefined,
                     auditorFailureClass: undefined,
@@ -832,6 +835,7 @@ function registerAgentTools(pi: any): void {
                   auditorCandidateRefs: info.candidateRefs.slice(0, 10),
                   auditorCandidateRef: info.candidateRef,
                   auditorRetryCandidateRef: info.candidateRef,
+                  auditorRetryAttemptStartedAt: undefined,
                   auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
                   auditorFailureCount: 1,
                   auditorFailureClass: info.failureClass ?? "provider",
@@ -868,6 +872,7 @@ function registerAgentTools(pi: any): void {
                   auditorCandidateRefs: info.candidateRefs.slice(0, 10),
                   auditorCandidateRef: next,
                   auditorRetryCandidateRef: undefined,
+                  auditorRetryAttemptStartedAt: undefined,
                   auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
                   auditorFailureCount: next ? 0 : 2,
                   auditorFailureClass: info.failureClass,
