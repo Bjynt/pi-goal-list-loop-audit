@@ -317,10 +317,10 @@ test("v0.35.45: the candidate scan reads a bounded tail per file, not full trans
   let sawMaxBytes: Array<number | undefined> = [];
   const dir = fs.mkdtempSync(path.join("/tmp", "glla-scan-"));
   fs.writeFileSync(path.join(dir, "a.jsonl"), [
-    JSON.stringify({ type: "session_info", name: "explore#rec-1" }),
+    JSON.stringify({ type: "session_info", name: "explore#rec-1234" }),
     JSON.stringify({ role: "user", content: "map model picker needle here" }),
   ].join("\n"));
-  const res = tailChildTranscript(dir, row({ summary: "map model picker" }), {
+  const res = tailChildTranscript(dir, row({ recordId: "rec-123456", summary: "map model picker" }), {
     readFile: (file, maxBytes) => { sawMaxBytes.push(maxBytes); return fs.readFileSync(file); },
     listDir: (d) => fs.readdirSync(d),
     statMtime: (f) => { try { return fs.statSync(f).mtimeMs; } catch { return 0; } },

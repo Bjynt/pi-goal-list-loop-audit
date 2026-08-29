@@ -8,6 +8,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import type { ExtensionContext, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { renderAgentsPanel, tailChildTranscript, TRANSCRIPT_HEADER_SCAN_MAX_BYTES } from "./goal-agents-panel.js";
 
 /** Child pi sessions live under the shared session store, munged by cwd
@@ -38,7 +39,6 @@ function readSessionHeader(file: string, maxBytes?: number): Buffer {
     return fs.readFileSync(file);
   }
 }
-import type { ExtensionContext, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { state, replaceState } from "./goal-state.js";
 import {
   DEFAULT_TOKEN_LIMIT, Goal, ListItem, Status, appendLedger, archiveDir, archivedGoalPath, bumpGoalRevision, sanitizeProviderDisplayText,
