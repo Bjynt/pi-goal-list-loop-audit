@@ -1175,9 +1175,9 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
     const recoveryCtx = freshCtxForGeneration(generation);
     const current = state.goal;
     const currentClaim = current?.pendingCompletion;
-    const durableExceptionClaim = currentClaim?.attemptId === claim.attemptId
+    const durableExceptionClaim: PendingCompletion = currentClaim && currentClaim.attemptId === claim?.attemptId
       ? currentClaim
-      : claim;
+      : claim!;
     // onAttempt persists the selected ref before the worker launch. If an
     // unexpected exception escapes the policy after that point, consume the
     // first call and authorize only its one remaining retry. Otherwise a
