@@ -828,6 +828,9 @@ async function promptModelRefs(
       return undefined;
     }
     const refs = normalizeSelection(v);
+    if (policyBlocked.length > 0) {
+      ctx.ui.notify(`Not saved because policy excludes: ${policyBlocked.join(", ")}`, "warning");
+    }
     if (maxSelections !== undefined && refs.length > maxSelections) {
       ctx.ui.notify(`Only the first ${maxSelections} fallback agents are kept; the remaining selections were refused.`, "warning");
       return refs.slice(0, maxSelections);

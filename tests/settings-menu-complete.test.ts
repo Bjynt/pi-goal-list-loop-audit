@@ -166,6 +166,17 @@ test("v0.36.0: unset auditor thinking mirrors the parent session and the fallbac
   assert.match(byId.get("auditorModelFallbacks")?.description ?? "", /ordered and deselectable/);
 });
 
+test("inherited drafter and auditor model rows identify the session category", () => {
+  const rows = buildSettingsRows(
+    {} as Settings,
+    EMPTY_PROV,
+    { sessionModel: "provider/session", sessionThinkingLevel: "high" },
+  );
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  assert.equal(byId.get("drafterModel")?.valueText, "session model · high");
+  assert.equal(byId.get("auditorModel")?.valueText, "session model · high");
+});
+
 test("all embedded subagent types expose editable fallback-chain rows", () => {
   const rows = buildSettingsRows(
     {
@@ -409,8 +420,12 @@ test("headless `/glla` fallback keeps stall brakes and the v0.34.127 sync list",
   // be visible in the headless /glla listing. Keep this list explicit so a
   // future edit cannot silently drop a synced setting.
   assert.match(fallback, /auditorModelFallbacks:/, "headless fallback must show the ordered auditor chain");
+  assert.match(fallback, /mainAgent:.*\[runtime\]/, "headless fallback must show the current main agent");
+  assert.match(fallback, /formatSettingValue\(p\.value\)/, "headless fallback must serialize structured settings values");
 
   for (const key of [
+    "stateRoot",
+    "auditorAllowedExtensions",
     "decisionPopup",
     "carryover",
     "auditorSameSessionSwap",

@@ -174,6 +174,59 @@ test("main recovery settings are global-only and project copies cannot create a 
   }
 });
 
+test("scope-aware settings editing updates a project override instead of a hidden global baseline", async () => {
+  try {
+    const cwd = tmpCwd();
+    fs.mkdirSync(path.dirname(projectSettingsPath(cwd)), { recursive: true });
+    fs.writeFileSync(projectSettingsPath(cwd), JSON.stringify({ auditCap: 3 }));
+    fs.writeFileSync(GLOBAL_FILE, JSON.stringify({ auditCap: 9 }));
+    const ctx = makeMockCtx(cwd);
+    ctx.ui.inputImpl = async () => "7";
+    await handleSettingChoice("auditCap", ctx as unknown as ExtensionContext);
+
+    assert.equal(loadSettings(cwd).auditCap, 7, "the edited project value is effective immediately");
+    assert.equal(JSON.parse(fs.readFileSync(projectSettingsPath(cwd), "utf8")).auditCap, 7);
+    assert.equal(readGlobal().auditCap, 9, "the global baseline remains unchanged");
+
+    ctx.ui.inputImpl = async () => "";
+    await handleSettingChoice("auditCap", ctx as unknown as ExtensionContext);
+    assert.equal(loadSettings(cwd).auditCap, 9, "clearing the project override reveals the global baseline");
+    assert.equal(JSON.parse(fs.readFileSync(projectSettingsPath(cwd), "utf8")).auditCap, undefined);
+  } finally {
+    restoreGlobal();
+  }
+});
+
+test("forbidden-model editing excludes drafter and auditor fallback chains", async () => {
+  try {
+    fs.writeFileSync(GLOBAL_FILE, JSON.stringify({
+      forbiddenModels: [],
+      drafterModelFallbacks: ["provider/drafter-backup"],
+      auditorModelFallbacks: ["provider/auditor-backup"],
+    }));
+    const ctx = makeMockCtx(tmpCwd());
+    ctx.ui.customStubMode = true;
+    ctx.ui.inputImpl = async () => "provider/drafter-backup,provider/new,provider/auditor-backup";
+    await handleSettingChoice("forbiddenModels", ctx as unknown as ExtensionContext);
+    assert.deepEqual(readGlobal().forbiddenModels, ["provider/new"], "all configured fallback roles stay mutually exclusive");
+    assert.ok(ctx.ui.matching("policy excludes").length >= 1);
+  } finally {
+    restoreGlobal();
+  }
+});
+
+test("numeric settings reject malformed integer prefixes instead of truncating them", async () => {
+  try {
+    const ctx = makeMockCtx(tmpCwd());
+    ctx.ui.inputImpl = async () => "15minutes";
+    await handleSettingChoice("mainModelRetryMinutes", ctx as unknown as ExtensionContext);
+    assert.equal(readGlobal().mainModelRetryMinutes, undefined);
+    assert.ok(ctx.ui.matching("must be a positive integer").length >= 1);
+  } finally {
+    restoreGlobal();
+  }
+});
+
 test("RPC custom stub falls back to typed main-backup editing instead of silently canceling", async () => {
   try {
     const ctx = makeMockCtx(tmpCwd());
