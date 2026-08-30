@@ -26,6 +26,12 @@
   `agent_settled`.
 
 ### Changed
+  The detached auditor now has the same ordered, deselectable, bounded fallback
+  chain as the main agent (`auditorModelFallbacks`, up to 10 refs), with the
+  former singular fallback setting migrated compatibly. An unset auditor
+  thinking level inherits the parent session's live dial, including `max`,
+  while explicit auditor levels remain overrides.
+
   Aggressive recovery retries recoverable provider/host/auditor failures across
   arbitrary durations with bounded per-attempt backoff. Ordinary auditor
   objections become durable TODOs; repeated identical objections with no new

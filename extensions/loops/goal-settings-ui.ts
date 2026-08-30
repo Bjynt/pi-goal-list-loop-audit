@@ -504,7 +504,7 @@ export function resolveAuditorModel(
       const reason = tryRef(event.toRef).reason ?? "model unavailable";
       appendLedger(ctx.cwd, "auditor_model_fallback", { configured: event.toRef, reason });
       const display = providerErrorPresentation(reason, "completion").display;
-      ctx.ui.notify(`Auditor model "${event.toRef}" is unavailable (${display}) — trying the next fallback pin. Fix via /glla → Auditor model.`, "warning");
+      ctx.ui.notify(`Auditor model "${event.toRef}" is unavailable (${display}) — trying the next fallback model. Fix via /glla → Auditor model.`, "warning");
     },
   });
   const candidates: AuditorModelCandidate[] = [];
@@ -556,7 +556,7 @@ export function resolveAuditorModel(
     if (replacement?.ref) {
       ctx.ui.notify(`Session model IS the pinned auditor (${currentRef}) — auditor auto-swapped to ${replacement.ref} so the verifier differs.`, "info");
     } else {
-      ctx.ui.notify(`The session model IS the pinned auditor (${currentRef}) — pin a different /glla → Auditor fallback agent so the verifier can differ.`, "warning");
+      ctx.ui.notify(`The session model IS the pinned auditor (${currentRef}) — select a different /glla → Auditor fallback model so the verifier can differ.`, "warning");
     }
   }
   if (candidates.length > 0) {
@@ -775,6 +775,12 @@ async function promptModelRefs(
     // Enforce the same mutual exclusion in headless/free-form mode as in
     // the TUI picker; a typed forbidden ref must not sneak into a backup
     // chain (and a typed backup must not be added to forbiddenModels).
+    const typedRefs = normalizeModelRefs(v);
+    const policyBlocked = typedRefs.filter((ref) => isForbiddenModel(ref, exclude));
+    if (typedRefs.length > 0 && policyBlocked.length === typedRefs.length) {
+      ctx.ui.notify(`Not saved because policy excludes: ${policyBlocked.join(", ")}`, "warning");
+      return undefined;
+    }
     const refs = normalizeSelection(v);
     if (maxSelections !== undefined && refs.length > maxSelections) {
       ctx.ui.notify(`Only the first ${maxSelections} fallback agents are kept; the remaining selections were refused.`, "warning");

@@ -238,7 +238,7 @@ test("v0.36.0: the auditor chain — pinned primary → ordered fallbacks → se
   assert.match(SRC, /new ModelSelector\(/);
   assert.match(SRC, /All pinned auditor models are unavailable — falling back to the session model/);
   assert.match(SRC, /auditor_model_same_as_session/);
-  assert.match(SRC, /pin a different \/glla → Auditor fallback agent so the verifier can differ/);
+  assert.match(SRC, /select a different \/glla → Auditor fallback model so the verifier can differ/);
   assert.match(SRC, /resolveAuditorModel\(liveCtx, settings\.auditorModel, settings\.auditorModelFallbacks, settings\.auditorSameSessionSwap !== false\)/);
   assert.match(SRC, /resolveAuditorModel\(ctx, settings\.auditorModel, settings\.auditorModelFallbacks, settings\.auditorSameSessionSwap !== false\)/);
   const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");

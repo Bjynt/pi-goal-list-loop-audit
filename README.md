@@ -371,9 +371,11 @@ what happened.
 
 Open `/glla` for the settings table. The most important choices are:
 
-- **Auditor model / thinking level:** the verifier's model and depth;
-- **Main-agent fallback models:** an ordered recovery chain for provider
-  failures;
+- **Auditor model / thinking level:** the verifier's model and depth; when
+  unset, auditor thinking inherits the parent session dial (including `max`);
+- **Main-agent and auditor fallback models:** both roles use the same ordered,
+  deselectable, bounded fallback-chain picker for provider failures; the
+  auditor's session model remains the final last resort;
 - **Auto-resume:** whether persisted work may restart automatically after a
   session loads; explicit resume commands are always available;
 - **State root:** `workingDir` by default, opt-in `sessionDir`;
