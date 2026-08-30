@@ -506,9 +506,12 @@ test("paused shows the reason", () => {
   assert.match(buildStatusText({ goal: g, list: [] }, null, NOW)!, /paused ⏸ auditor disapproved/);
 });
 
-test("paused runtime projection carries goal-scoped activity into the display extras", () => {
+test("runtime activity projection scopes goals and active loops to their own start boundary", () => {
   assert.match(GOAL_UI, /if \(goal\.status !== "active"\) return \{ lastActivityAt, lastStreamActivityAt: streamAt \};/);
   assert.match(GOAL_UI, /Guard by goal creation so a previous item's activity cannot leak/);
+  assert.match(GOAL_UI, /if \(loop\) return displayLoopActivityFor\(ctx, loop\);/);
+  assert.match(GOAL_UI, /const loopTimer = loopTimerPending\(\);/);
+  assert.match(GOAL_UI, /loopStartedAt = Date\.parse\(loop\.startedAt\)/);
 });
 
 test("paused lifecycle projection names owner, queue, last activity, and next transition", () => {
@@ -561,6 +564,7 @@ test("active/in-flight main-model recovery keeps full chain state on status and 
   const status = buildStatusText(state, null, NOW, undefined, extras)!;
   const widget = buildWidgetLines(state, null, NOW, undefined, undefined, extras)!;
   for (const surface of [status, widget.join("\\n")]) {
+    assert.ok(surface.includes("Main-model recovery: primary selected"), surface);
     assert.ok(surface.includes("Order: provider/primary → provider/backup-one → provider/backup-two"), surface);
     assert.ok(surface.includes("Pending switch: provider/backup-two"), surface);
     assert.ok(surface.includes("Attempted: provider/primary"), surface);
@@ -783,6 +787,44 @@ test("active loop shows iteration + best + stall", () => {
   assert.match(s, /loop ↓ iter 12\/50/);
   assert.match(s, /best 41/);
   assert.match(s, /stall 2\/5/);
+});
+
+test("active loop status names evidence-backed working, waiting, and idle states", () => {
+  const loop: LoopState = {
+    target: "reduce TODOs",
+    measureCmd: "grep -c TODO x",
+    direction: "min",
+    iteration: 12,
+    maxIterations: 50,
+    plateauWindow: 5,
+    stallCount: 2,
+    bestValue: 41,
+    lastValue: 43,
+    active: true,
+    history: [],
+    startedAt: "2026-07-21T11:00:00Z",
+  };
+  const state = { goal: null, list: [], loop };
+  const working = buildStatusText(state, null, NOW, undefined, {
+    activity: "working",
+    lastStreamActivityAt: NOW - 1000,
+  })!;
+  assert.match(working, /^glla: \[[▁▂▄▆█]{6} LIVE · WORKING\] · loop ↓ iter 12\/50/);
+
+  const queued = buildStatusText(state, null, NOW, undefined, { activity: "queued" })!;
+  assert.match(queued, /^glla: \[QUEUED\] · loop ↓ iter 12\/50/);
+
+  const idle = buildStatusText(state, null, NOW, undefined, { activity: "idle" })!;
+  assert.match(idle, /^glla: \[IDLE\] · loop ↓ iter 12\/50/);
+
+  const awaiting = buildStatusText(
+    { goal: null, list: [], loop: { ...loop, iteration: 0 } },
+    null,
+    NOW,
+    undefined,
+    { activity: "awaiting-first-turn" },
+  )!;
+  assert.match(awaiting, /^glla: \[AWAITING FIRST TURN\] · loop ↓ iter 0\/50/);
 });
 
 test("v0.29.15 — audit-loop widget names the metric instead of showing the raw grep (\"that weird line\")", () => {
