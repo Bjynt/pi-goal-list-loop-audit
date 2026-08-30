@@ -12,8 +12,8 @@
 
 import { truncateToWidth as tuiTruncateToWidth, visibleWidth as tuiVisibleWidth } from "@earendil-works/pi-tui";
 
-import type { Goal, MainModelRecovery, State } from "./goal-loop-core.js";
-import { compactDisplayText, formatMainModelRecoveryStatus, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
+import type { DurableDeferRecommendationInput, Goal, MainModelRecovery, State } from "./goal-loop-core.js";
+import { buildDurableDeferRecommendation, compactDisplayText, formatMainModelRecoveryStatus, isPersistenceDegraded, lastPersistenceFailure, sanitizeDisplayText, sanitizeProviderAuditReport, sanitizeProviderDisplayText, stripThinkBlocks } from "./goal-loop-core.js";
 import { HELD_ON_RESTORE, type LoopState } from "./goal-loop-forever.js";
 import { auditorSurfaceSuppressed } from "./loops/goal-auditor-surface.js";
 
@@ -145,6 +145,10 @@ export interface WidgetExtras {
   mainModelFallbacks?: string[];
   /** Truthful model-selection provenance for the active goal card/footer. */
   modelProvenance?: ModelProvenanceDisplay;
+  /** Deterministic durable-vs-defer decision surface. Kept optional so the
+   * ordinary goal card remains unchanged; callers that have explicit
+   * recommendation facts get the same semantic plaque order as the prompt. */
+  durableDeferRecommendation?: DurableDeferRecommendationInput;
   /** v0.35.15: the most recent ended auditor quiet stretch (runtime only,
    * never persisted). The footer shows "silent Xm then resumed" while it is
    * fresh so a silence the user missed stays visible afterwards. */
@@ -258,6 +262,26 @@ function modelProvenanceLines(provenance: ModelProvenanceDisplay | undefined, wi
     lines.push(`handled audit: ${truncate(handledAudit, Math.max(16, budget - via.length))}${via}`);
   }
   return lines;
+}
+
+/**
+ * Inspectable UI projection for the durable-vs-defer recommendation path.
+ * This deliberately renders the semantic plaque order returned by the core
+ * decision helper rather than searching policy prose for words. It is also
+ * used by the active goal card when explicit recommendation facts are passed
+ * through WidgetExtras, making the regression fixture exercise real UI code.
+ */
+export function buildDurableDeferDecisionLines(input: DurableDeferRecommendationInput, width?: number): string[] {
+  const recommendation = buildDurableDeferRecommendation(input);
+  const budget = budgetFor(width, 3, 60);
+  const deferLabel = `${recommendation.deferCount} prior defer recommendation${recommendation.deferCount === 1 ? "" : "s"}`;
+  return [
+    `judgment: ${deferLabel} · durable action evaluated first`,
+    ...recommendation.plaques.map((plaque, index) =>
+      `${index + 1}. ${plaque.title} — ${truncate(plaque.body, budget)}${plaque.recommended ? " ◂ recommended" : ""}`,
+    ),
+    `selected: ${recommendation.choice}${recommendation.choice === "inline" ? " (durable fix)" : " (reversible workaround)"}`,
+  ];
 }
 
 // ---- semantic colors (optional; tests call without a theme → plain strings) ----
@@ -1298,6 +1322,10 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   provenance.forEach((line, i) => {
     lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, "dim", line)}`);
   });
+  if (extras?.durableDeferRecommendation) {
+    const judgment = buildDurableDeferDecisionLines(extras.durableDeferRecommendation, width);
+    judgment.forEach((line) => lines.push(`├─ ${paint(theme, "dim", line)}`));
+  }
   if (interrupted) {
     const resumeCmd = isList ? "/list resume" : "/goal resume";
     if (interruptedForNoStart(g)) {
