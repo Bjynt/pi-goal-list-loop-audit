@@ -31,6 +31,7 @@ import {
   lastPersistenceFailure,
   goalStateTransactionPath,
   writeGoalStateTransaction,
+  MAX_AUDITOR_CANDIDATE_REFS,
 } from "../extensions/goal-loop-core.js";
 import { readGoalRuntimeSource } from "./harness/goal-source.js";
 
@@ -99,7 +100,7 @@ test("readState normalizes and bounds the detached-auditor recovery cursor", () 
   assert.equal(pending?.phase, "retry-waiting", "legacy quota-waiting is canonicalized");
   assert.equal(pending?.retryAttempts, 7, "legacy quota attempts remain readable under the generic name");
   assert.deepEqual(pending?.auditorCandidateRefs?.slice(0, 2), ["test/primary", "test/fallback-0"], "candidate refs are deduplicated case-insensitively");
-  assert.equal(pending?.auditorCandidateRefs?.length, 10, "candidate refs are bounded");
+  assert.equal(pending?.auditorCandidateRefs?.length, MAX_AUDITOR_CANDIDATE_REFS, "candidate refs preserve the complete bounded auditor chain");
   assert.equal(pending?.auditorCandidateRef?.length, 200, "candidate ref diagnostics are bounded");
   assert.equal(pending?.auditorRetryCandidateRef, "test/primary");
   assert.equal(pending?.auditorRetryAttemptStartedAt, "2026-07-28T10:00:30.000Z");

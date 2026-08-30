@@ -104,13 +104,13 @@ Off by default. Set a per-goal budget and crossing it pauses the goal:
 ## The auditor model rule
 
 The detached auditor uses an explicit bounded cascade: an optional primary
-pin, an optional fallback pin, then your pi session model. A model that fails
+pin, an ordered list of up to ten fallback pins, then your pi session model. A model that fails
 at runtime is retried once and the next detached candidate is tried; the
 plugin never falls back into the parent in-process session.
 
 ```
-# /glla → Auditor model row (and Auditor fallback), or .pi-glla/settings.json
-{ "auditorModel": "provider/model-id" }
+# /glla → Auditor model row (and Auditor fallback models), or .pi-glla/settings.json
+{ "auditorModel": "provider/model-id", "auditorModelFallbacks": ["provider/backup-1", "provider/backup-2"] }
 ```
 
 If every candidate errors with auth/provider failures, the stored completion
