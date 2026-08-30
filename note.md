@@ -7,7 +7,7 @@
 - **Evidence:** `tests/durable-defer-production-ui.test.ts`, `schemas/goal.schema.json`, `audit/DEFER-DURABLE-GUIDANCE-2026-08-30.jpeg`, and the approved archive `.pi-glla/archive/20260829224747-dc4q1h.md`.
 - **Verification:** changed-path tests and schema/persistence tests pass; `npx tsc --noEmit`, offline auditor-extension checks, and `npm pack --dry-run` pass. The full suite still has unrelated context-growth fixture and auditor timing failures, which remain disclosed rather than suppressed.
 - **Visual caveat:** the committed image is a fresh browser render of exact production widget output, not a live Pi TUI capture. A genuine live-TUI capture remains unavailable.
-- **State:** active goal/list are empty and continuation dispatch is absent; this note update is the only working-tree change.
+- **State:** authoritative active state has no current goal/list item, continuation dispatch is absent, and the working tree is clean.
 
 ## No confirmed GLLA-owned transition was found
 
@@ -22,9 +22,11 @@ The default loop cap remains `maxIterations: 50`; change it only after p90 evide
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260828_232807.png 
 
-## Completed: model-selector parity
+## Model-selector parity — selection policy complete, runtime behavior differs
 
-Fallback chains now match main-model selector behavior: case-insensitive deduplication, order retention, forbidden/unregistered filtering, and the bounded cap are covered by regression tests.
+The shared picker/selector policy is covered by regression tests: case-insensitive deduplication, order retention, forbidden/unregistered filtering, and the bounded cap.
+
+Runtime behavior is intentionally role-specific: main-model recovery and detached auditor recovery walk fallback candidates at runtime; drafter resolution walks its temporary candidate chain. `pi-subagents` currently uses `subagentFallbacks` only at startup, selecting one eligible override and writing one `model:` entry. A child provider failure logs `subagent_provider_error` and does not advance to the next fallback. Its startup resolver also does not preflight `hasConfiguredAuth`, so this is not full runtime/auth parity.
 
 ## Completed: auditor scope boundary
 
@@ -49,6 +51,7 @@ For visual objectives, capture fresh evidence and route image inspection through
 
 # Next
 
+- Decide whether `pi-subagents` needs true runtime fallback; if so, design bounded retry/respawn and auth-gate coverage rather than treating startup selection as failover.
 - Reproduce or explicitly disposition the remaining unrelated full-suite failures without weakening the durable/order evidence.
 - Obtain a genuine live Pi TUI capture if the environment permits; otherwise keep the projection-vs-TUI distinction explicit.
 
