@@ -37,6 +37,11 @@ Shared picker/selector policy is covered by regression tests: case-insensitive d
 
 Visual work now prefers the native image capability of the current main/auditor model. MMX or another external provider is optional and must be explicitly confirmed; no external tool is assumed. If neither native vision nor a confirmed provider is available, visual evidence is unavailable rather than invented. Focused vision, visual-auditor, proactive-pre-read, settings, and model-switch coverage passed (83 tests); `npx tsc --noEmit` is clean.
 
+# Next
+
+## need a clearer wya to tell if we are working here only the secondthinking shows it 
+/home/dracon/Pictures/Screenshots/Screenshot_20260830_133250.png 
+
 # Later
 
 ## Cross-harness and extension review
