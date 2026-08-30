@@ -5,6 +5,7 @@
 - **Runtime:** authoritative active goal/list are empty; continuation dispatch is absent. The latest hardening goal was archived after detached auditor approval.
 - **Latest hardening:** `extensions/goal-loop-auditor-process.ts` now performs an identity-checked final `progress.json` read before consuming `result.json`, closing the fast-worker telemetry handoff race.
 - **Verification:** `npm run release:check` passed with 1,757 tests passed, 1 environment-gated skip, and 0 failures. The focused settings run passed 82/82; TypeScript, offline auditor-extension validation, package dry-run, and `git diff --check` are clean.
+- **Release:** `v0.36.0` is published as a GitHub Release and to npm (`dist-tags.latest = 0.36.0`). Workflow run [33328306780](https://github.com/DraconDev/pi-goal-list-loop-audit/actions/runs/33328306780) completed successfully.
 - **Repository:** working tree is clean and `main` is synchronized with `origin/main`.
 - **Audit boundary:** no reproducible GLLA-owned transition was found for the separate queued-list stall report. Do not turn that report into implementation work without a confirmed transition.
 - **Scope note:** `/home/dracon/Dev/dracon-platform/web/dashboard/.pi-glla/active.jsonl` was not modified. This repository's `.pi-glla/active.jsonl` is authoritative GLLA lifecycle metadata and is committed by the required auto-commit flow.
