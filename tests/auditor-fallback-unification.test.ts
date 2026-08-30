@@ -41,11 +41,17 @@ function fakeContext(): FakeContext {
   const fallback1 = { provider: "test", id: "fallback-1", reasoning: true };
   const fallback2 = { provider: "test", id: "fallback-2", reasoning: true };
   const forbiddenRef = { provider: "test", id: "forbidden", reasoning: true };
+  const extraFallbacks = Array.from({ length: 8 }, (_, index) => ({
+    provider: "test",
+    id: `fallback-${index + 3}`,
+    reasoning: true,
+  }));
   const models = new Map([
     ["test/session", session],
     ["test/primary", primary],
     ["test/fallback-1", fallback1],
     ["test/fallback-2", fallback2],
+    ...extraFallbacks.map((model) => [`test/${model.id}`, model] as const),
     ["test/forbidden", forbiddenRef],
   ]);
   const registry = {
@@ -118,6 +124,17 @@ test("auditor ordered fallback refs retain order and use the main normalizer", a
       ["test/primary", "test/fallback-1"],
     );
     assert.equal(MAX_MAIN_MODEL_FALLBACKS, 10);
+  });
+});
+
+test("auditor keeps all ten fallback slots after a pinned primary", async () => {
+  await withFakeContext(({ ctx, session }) => {
+    const fallbackRefs = Array.from({ length: 10 }, (_, index) => `test/fallback-${index + 1}`);
+    const resolved = resolveAuditorModel(ctx, "test/primary", fallbackRefs, true);
+    const walked = [resolved.model, ...(resolved.fallbackModels ?? []).map((candidate: any) => candidate.model)]
+      .map((model: any) => `${model.provider}/${model.id}`);
+    assert.deepEqual(walked, ["test/primary", ...fallbackRefs, "test/session"]);
+    assert.equal(walked.at(-1), `${session.provider}/${session.id}`, "session remains the final last resort");
   });
 });
 

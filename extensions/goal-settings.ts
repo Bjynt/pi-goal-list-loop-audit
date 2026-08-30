@@ -222,9 +222,9 @@ export interface Settings {
   };
 }
 
-/** These settings describe the main session's provider-recovery policy, not a
- * project artifact. The recovery runtime intentionally reads the global file
- * for them; ignoring project copies keeps the settings table and behavior
+/** These settings describe global provider-recovery policy, not a project
+ * artifact. The recovery runtime intentionally reads the global file for
+ * them; ignoring project copies keeps the settings table and behavior
  * honest instead of showing a project value that the retry path cannot use. */
 const GLOBAL_ONLY_KEYS: ReadonlySet<keyof Settings> = new Set([
   "stateRoot",

@@ -383,7 +383,7 @@ export function buildSettingsRows(
       label: "Same-model swap",
       valueText: show("auditorSameSessionSwap", "on"),
       sourceText: src("auditorSameSessionSwap"),
-      description: "when the pinned auditor IS the session model, walk the fallback pin (verifier ≠ executor) — off = same-model audits stand",
+      description: "when the pinned auditor IS the session model, walk the ordered fallback chain (verifier ≠ executor) — off = same-model audits stand",
     },
     {
       id: "auditorSilent",
