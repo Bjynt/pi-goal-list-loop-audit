@@ -234,7 +234,8 @@ test("v0.36.0: the auditor chain — pinned primary → ordered fallbacks → se
   // the settings contract uses the same ordered fallback array as the main
   // agent, normalized before the selector walks it.
   assert.match(SRC, /configuredFallbackRefs/);
-  assert.match(SRC, /configuredRefs = normalizeMainModelFallbackRefs/);
+  assert.match(SRC, /normalizedFallbackRefs = normalizeMainModelFallbackRefs/);
+  assert.match(SRC, /primaryRef = normalizeModelRefs\(ref\)\[0\]/);
   assert.match(SRC, /new ModelSelector\(/);
   assert.match(SRC, /All pinned auditor models are unavailable — falling back to the session model/);
   assert.match(SRC, /auditor_model_same_as_session/);

@@ -2810,9 +2810,8 @@ function registerAgentTools(pi: any): void {
  */
 /**
  * Resolve the ordered auditor model candidates. The user controls the pins:
- * primary auditor model from `/glla` settings, optional fallback pin, then
- * the pi
- * session model as the final candidate. Runtime failures advance through the
+ * primary auditor model from `/glla` settings, ordered fallback models, then
+ * the pi session model as the final candidate. Runtime failures advance through the
  * same list in `runDetachedCompletionWithFallback`; the plugin never silently
  * invents a provider or falls back into the parent in-process session.
  *
@@ -2820,11 +2819,11 @@ function registerAgentTools(pi: any): void {
  * extension-less worker may not be able to auth it; that failure remains a
  * loud, bounded infrastructure result with the exact model-fix guidance.
  */
-/** v0.31.3: the auditor model chain — pinned primary, pinned fallback,
+/** v0.31.3: the auditor model chain — pinned primary, ordered fallbacks,
  * session model LAST (user design 2026-07-31: "it can be the primary auditor
- * and the session model is always the last; we can have a fallback auditor
+ * and the session model is always the last; we can have fallback auditors
  * too" + "if the session model is the same as the auditor we auto fallback").
- * Two explicit pins and a cascade — no preference tables, no strategy
+ * Explicit pins and a cascade — no preference tables, no strategy
  * resolution (the v0.31.2 diverse-strategy machinery cost more complexity than it
  * bought; it lasted one version). Every hop is LOUD (ledger + notify): the
  * v0.9.12 no-SILENT-substitution law.
