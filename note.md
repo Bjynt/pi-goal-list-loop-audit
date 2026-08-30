@@ -18,6 +18,8 @@
 ## need a clearer wya to tell if we are working here only the secondthinking shows it 
 /home/dracon/Pictures/Screenshots/Screenshot_20260830_133250.png 
 
+## lets do a release 
+
 # Later
 
 ## audit loop keeps losing objective
