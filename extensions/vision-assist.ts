@@ -7,50 +7,53 @@
 // we need to specify that it cant be too eager to switch only preapproved."
 //
 // The vision-assist policy: when the agent needs to SEE something (a
-// screenshot, a UI state, an error dialog), the check routes to the mmx
-// vision CLI (the mmx-cli skill) — NOT to a model switch. A model switch
-// for a vision check is sanctioned only when the target is PREAPPROVED
-// (not in the forbiddenModels policy). This module is pure — no pi runtime
-// calls, no fs — so the rule is unit-testable in isolation; the
-// orchestration layer (goal.ts) injects the guidance into continuation
-// prompts and writes the vision_assist ledger entries.
+// screenshot, a UI state, an error dialog), first use the native image
+// capability of the model currently doing the work. Never assume that an
+// external CLI such as mmx is installed. An external vision provider is an
+// optional, explicitly confirmed fallback — not a model switch and not a
+// package requirement. This module is pure — no pi runtime calls, no fs — so
+// the rule is unit-testable in isolation; the orchestration layer injects the
+// guidance into continuation prompts and writes vision_assist ledger entries.
 
 import { isForbiddenModel, DEFAULT_FORBIDDEN_MODELS } from "./goal-loop-core.js";
 
 /** The vision-assist setting is ON by default (opt-out) — the guidance
- * ships so agents default to mmx vision instead of switching models. */
+ * ships so agents prefer native vision without assuming an external tool. */
 export const VISION_ASSIST_DEFAULT = true;
 
 /** The guidance block injected into continuation prompts (the documented
  * vision-assist routing rule — single source of truth; docs/VISION-ASSIST.md
  * mirrors it for humans). */
-export const VISION_ASSIST_GUIDANCE = `## VISION-ASSIST — SEE WITH MMX, NOT A MODEL SWITCH
+export const VISION_ASSIST_GUIDANCE = `## VISION-ASSIST — USE NATIVE VISION FIRST; EXTERNAL TOOLS ARE OPTIONAL
 
-You cannot see images (screenshots, UI states, error dialogs) with your own
-eyes. When a task needs you to LOOK at something, do NOT switch models to
-get vision — route the check through the mmx vision CLI (the mmx-cli skill)
-instead:
+When a task needs you to LOOK at a screenshot, UI state, error dialog, or
+rendered mockup, first use the native image capability of the model currently
+doing the work (the main model for executor work, or the configured auditor
+model for detached audit work). Do NOT switch models merely to obtain vision,
+and do NOT assume MMX or any other external CLI is installed.
+
+- If an image is attached or otherwise available to the current model, inspect
+  it directly and compare it with the objective. Do not invent observations.
+- If the current model cannot accept images, use an external vision provider
+  only after its availability has been explicitly confirmed. MMX is an optional
+  example, not a default or a requirement:
 
   mmx vision describe --image <path-or-url> --prompt "<question>" --quiet --non-interactive
 
-- The image is usually a screenshot the user already pasted into the
-  conversation (e.g. /home/dracon/Pictures/Screenshots/...). Pass its path
-  straight through; keep the question short and specific ("What does this
-  screenshot show?", "Is there an error dialog?", "What is the terminal
-  output?").
-- Reading the returned description is YOUR job — no model switch needed.
+- If neither native vision nor a confirmed external provider is available,
+  state that visual evidence is unavailable and request a supported capture or
+  user description. Do not silently claim that MMX exists.
 
-MODEL-SWITCH GATE (preapproval only): switching models to "see" is exactly
-the too-eager behavior this setting exists to stop. A switch is sanctioned
-ONLY when the target model is preapproved — i.e. NOT in the forbiddenModels
-policy. The default forbiddenModels list is empty; users can explicitly add
-patterns such as gpt-5.5, sonnet, or opus through /glla settings. Any switch
-to an explicitly forbidden model is blocked and ledgered as a violation
-(forbidden_model_switch), and the vision-assist routing is ledgered as
-vision_assist. Prefer mmx vision for every vision check, even when a
-preapproved vision-capable model exists.`;
+MODEL-SWITCH GATE (preapproval and intent): switching models solely to "see"
+is the too-eager behavior this setting exists to stop. A preapproved model may
+be selected only when the user explicitly requests it or it is needed for the
+ordinary task, not as an assumed vision workaround. The forbiddenModels list
+defaults to empty; users can explicitly add patterns such as gpt-5.5, sonnet,
+or opus through /glla settings. Any switch to an explicitly forbidden model is
+blocked and ledgered as forbidden_model_switch; vision-assist routing is
+ledgered as vision_assist.`;
 
-/** The exact mmx vision describe command for one check. */
+/** The exact optional mmx vision describe command for one external check. */
 export function visionDescribeCommand(imagePath: string, question?: string): string {
   const q = question && question.trim().length > 0 ? question.trim() : "Describe what is shown in the image.";
   return `mmx vision describe --image "${imagePath}" --prompt "${q}" --quiet --non-interactive`;
@@ -65,28 +68,53 @@ export interface VisionCheckRequest {
   targetModelRef?: string;
   /** The forbidden-model policy to gate against (defaults to the policy). */
   forbiddenModels?: readonly string[];
+  /** Set false only when native image input is known to be unavailable. */
+  mainModelVisionCapable?: boolean;
+  /** An external provider is usable only when availability is confirmed. */
+  externalVisionProvider?: "mmx";
+  externalVisionAvailable?: boolean;
+  /** Explicit opt-in for a vision-only model switch; default is no switch. */
+  allowModelSwitch?: boolean;
 }
 
 export type VisionCheckRoute =
-  | { route: "mmx-vision"; command: string; blockedSwitch?: string }
-  | { route: "model-switch"; ref: string; command?: string };
+  | { route: "main-model"; blockedSwitch?: string }
+  | { route: "mmx-vision"; command: string; provider: "mmx"; blockedSwitch?: string }
+  | { route: "model-switch"; ref: string; command?: string }
+  | { route: "unavailable"; reason: string; blockedSwitch?: string };
 
 /**
- * The routing rule: a vision check routes to mmx vision by default. A model
- * switch is sanctioned ONLY when the target is preapproved (not forbidden);
- * a forbidden target forces the mmx-vision route and reports the blocked
- * switch (the preapproval gate). No target model → mmx-vision.
+ * Prefer the current model's native image capability. A confirmed external
+ * provider is an optional fallback; no external tool is assumed. A model
+ * switch is allowed only when the caller explicitly opts into it and the
+ * target is not forbidden. A false native-capability declaration with no
+ * confirmed external provider fails closed instead of inventing a route.
  */
 export function routeVisionCheck(request: VisionCheckRequest): VisionCheckRoute {
   const imagePath = request.imagePath?.trim();
   const command = imagePath ? visionDescribeCommand(imagePath, request.question) : undefined;
-  if (request.targetModelRef) {
-    if (isForbiddenModel(request.targetModelRef, request.forbiddenModels)) {
-      return { route: "mmx-vision", command: command ?? "mmx vision describe --image <path-or-url> --quiet --non-interactive", blockedSwitch: request.targetModelRef };
+  const externalCommand = command ?? "mmx vision describe --image <path-or-url> --quiet --non-interactive";
+  const fallback = (blockedSwitch?: string): VisionCheckRoute => {
+    if (request.externalVisionProvider === "mmx" && request.externalVisionAvailable === true) {
+      return { route: "mmx-vision", command: externalCommand, provider: "mmx", ...(blockedSwitch ? { blockedSwitch } : {}) };
     }
+    if (request.mainModelVisionCapable !== false) {
+      return { route: "main-model", ...(blockedSwitch ? { blockedSwitch } : {}) };
+    }
+    return {
+      route: "unavailable",
+      reason: "native image input is unavailable and no external vision provider was confirmed",
+      ...(blockedSwitch ? { blockedSwitch } : {}),
+    };
+  };
+
+  if (request.targetModelRef && isForbiddenModel(request.targetModelRef, request.forbiddenModels)) {
+    return fallback(request.targetModelRef);
+  }
+  if (request.targetModelRef && request.allowModelSwitch === true) {
     return { route: "model-switch", ref: request.targetModelRef, command };
   }
-  return { route: "mmx-vision", command: command ?? "mmx vision describe --image <path-or-url> --quiet --non-interactive" };
+  return fallback();
 }
 
 export interface VisionAssistLedgerValue {
