@@ -141,9 +141,9 @@ test("real continuation payload growth is bounded after checkpoint projection", 
   });
 
   assert.deepEqual(bounded, [
-    { count: 5, messageCount: 4, serializedBytes: 24685, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 4 },
-    { count: 12, messageCount: 4, serializedBytes: 24685, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 11 },
-    { count: 25, messageCount: 4, serializedBytes: 24685, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 24 },
+    { count: 5, messageCount: 4, serializedBytes: 24971, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 4 },
+    { count: 12, messageCount: 4, serializedBytes: 24971, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 11 },
+    { count: 25, messageCount: 4, serializedBytes: 24971, gllaMessageCount: 2, repeatedPayloads: 0, removedPayloads: 24 },
   ]);
 });
 

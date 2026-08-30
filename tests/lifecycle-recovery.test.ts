@@ -292,21 +292,19 @@ test("v0.34.54: settings after a fresh session_start — the table opens AND a r
   assert.equal(refusals(afterLedger), refusals(beforeLedger), "no NEW refusal after rebind (phase-1 refusal stays in history)");
 
   // (b) a REAL settings write lands through the menu: pick the
-  // autoAcceptDrafts row, answer "on" — the global settings file must
-  // change. (After the write the loop re-renders once; the second custom
-  // call cancels.)
+  // autoAcceptDrafts row, answer "off". Because the effective value is
+  // project-sourced, scope-aware editing updates that project override rather
+  // than writing a hidden global value. (After the write the loop re-renders
+  // once; the second custom call cancels.)
   let pickCount = 0;
   fresh.ui.customImpl = async () => (++pickCount === 1 ? "autoAcceptDrafts" : undefined); // one pick, then cancel — the loop exits
-  fresh.ui.selectImpl = async (title: string) => (title.startsWith("Auto-accept") ? "on" : undefined);
+  fresh.ui.selectImpl = async (title: string) => (title.startsWith("Auto-accept") ? "off" : undefined);
   const globalBefore = fs.readFileSync(GLOBAL_SETTINGS_PATH, "utf-8");
   await pi.command("glla", "", fresh);
   await tick();
-  const globalAfter = JSON.parse(fs.readFileSync(GLOBAL_SETTINGS_PATH, "utf-8")) as Record<string, unknown>;
-  assert.equal(globalAfter.autoAcceptDrafts, true, "the post-rebind settings write landed");
-  assert.ok(globalBefore !== JSON.stringify(globalAfter), "the global settings file actually changed");
-  // saveSettings is a pure file write (no ledger event) — the file IS the
-  // evidence; the project-scope settings file must be untouched by the write:
-  assert.equal(fs.readFileSync(projectSettingsPath(cwd), "utf-8"), JSON.stringify({ autoAcceptDrafts: true }), "project settings untouched — the write went to the global scope");
+  const globalAfter = fs.readFileSync(GLOBAL_SETTINGS_PATH, "utf-8");
+  assert.equal(globalAfter, globalBefore, "the global baseline stays untouched");
+  assert.equal(fs.readFileSync(projectSettingsPath(cwd), "utf-8"), JSON.stringify({}), "the project override was edited in place");
 });
 
 // ────────────────────────────────────────────────────────────────────
