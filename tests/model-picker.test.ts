@@ -259,7 +259,7 @@ test("v0.31.6: same-model swap toggle — default ON, off = same-model audits st
   const SRC = readGoalRuntimeSource();
   assert.match(SRC, /sameSessionSwap = true,\n\): \{ model: any; error\?: string; via\?: string; fallbackModels\?: AuditorModelCandidate\[\] \} \{/);
   assert.equal(SRC.match(/settings\.auditorSameSessionSwap !== false/g)!.length, 2, "both audit call sites pass the toggle (undefined = on)");
-  assert.match(SRC, /const currentPinned = sameSessionSwap && currentRef/); // same-model guard remains explicit
+  assert.match(SRC, /const currentPinned = sameSessionSwap && primaryMatchesSession/); // same-model guard remains explicit
   assert.match(SRC, /case "auditorSameSessionSwap": \{/);
   assert.match(SRC, /off — same-model audits stand; isolation \+ evidence contract still apply/);
   const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");

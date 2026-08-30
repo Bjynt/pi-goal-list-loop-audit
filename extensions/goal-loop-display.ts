@@ -464,7 +464,7 @@ function auditRecoveryPending(g: Goal): boolean {
 export interface AuditDisplayProgress {
   /** Model reference selected for the currently running detached attempt. */
   model?: string;
-  /** Candidate provenance: pinned setting, fallback pin, or session fallback. */
+  /** Candidate provenance: pinned setting, ordered fallback, or session fallback. */
   via?: string;
   currentTool?: string;
   /** JSON-safe tool arguments from the detached worker; display only a safe target summary. */

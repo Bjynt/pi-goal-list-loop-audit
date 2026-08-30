@@ -562,9 +562,7 @@ export function resolveAuditorModel(
   }
   if (sessionModel && currentRef) addCandidate(currentRef, sessionModel, candidates.length > 0 ? "session-fallback" : "session");
 
-  const currentPinned = sameSessionSwap && currentRef
-    ? configuredRefs.find((candidate) => candidate.toLowerCase() === selectorCurrentRef?.toLowerCase())
-    : undefined;
+  const currentPinned = sameSessionSwap && primaryMatchesSession ? primaryRef : undefined;
   if (currentPinned && currentRef) {
     const replacement = candidates.find((candidate) => candidate.via === "fallback-pin" && candidate.ref?.toLowerCase() !== currentRef.toLowerCase());
     appendLedger(ctx.cwd, "auditor_model_same_as_session", { model: currentRef, fallback: replacement?.ref ?? null });
