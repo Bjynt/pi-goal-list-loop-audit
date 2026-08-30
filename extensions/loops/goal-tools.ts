@@ -462,7 +462,7 @@ function durableDeferFactsForGoal(
     ...(choice.choice === "deferred" ? [choice.reason] : []),
   ];
   return normalizeDurableDeferRecommendationInput({
-    durableFix: input.durableFix ?? prior?.durableFix ?? goal.objective,
+    durableFix: input.durableFix?.trim() || prior?.durableFix?.trim() || goal.objective,
     deferRecommendations,
     // A deferred judgment is an explicit assertion that the durable action is
     // blocked for this turn; callers can still pass false when the UI is

@@ -64,6 +64,9 @@
   The recommendation now comes from a typed semantic decision path, including
   the three-defer case, and the active goal card has a deterministic ordered
   plaque fixture so UI ordering is tested rather than inferred from prose.
+  `record_goal_judgment` now persists bounded recommendation facts on the goal
+  and immediately routes them through production `refreshUI()`; the production
+  integration test captures the resulting durable-first card.
 
   See `docs/DESIGN-long-running-supervision.md` for the durable policy and
   future decision checklist.
