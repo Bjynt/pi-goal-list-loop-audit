@@ -436,6 +436,16 @@ function runMechanicalCommand(
       if (termination) void termination.then(() => settle(exitCode, exitSignal));
       else settle(1, null);
     });
+    // A command can exit while a grandchild keeps an inherited stdio pipe
+    // open, or can daemonize a child with stdio ignored. Clean up the owned
+    // detached group on every direct exit, not only on timeout, so a green or
+    // red check cannot strand a background process tree behind it.
+    child.once("exit", (code, childSignal) => {
+      exitCode = code;
+      exitSignal = childSignal;
+      termination ??= terminateMechanicalProcessTree(child).catch(() => {});
+      void termination.then(() => settle(code, childSignal));
+    });
     child.once("close", (code, childSignal) => {
       exitCode = code;
       exitSignal = childSignal;
