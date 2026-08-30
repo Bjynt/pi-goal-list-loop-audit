@@ -118,14 +118,17 @@ export function routeVisionCheck(request: VisionCheckRequest): VisionCheckRoute 
 }
 
 export interface VisionAssistLedgerValue {
-  route: "mmx-vision" | "model-switch";
+  route: VisionCheckRoute["route"];
   command?: string;
+  provider?: "mmx";
   imagePath?: string;
   question?: string;
-  /** model-switch route: the preapproved target. */
+  /** model-switch route: the explicitly allowed target. */
   ref?: string;
-  /** mmx-vision route: a forbidden switch the gate turned into a vision check. */
+  /** A forbidden switch the gate turned into a non-switch route. */
   blockedSwitch?: string;
+  /** unavailable route: why no visual path was safe. */
+  reason?: string;
   at: string;
 }
 
@@ -133,11 +136,13 @@ export interface VisionAssistLedgerValue {
 export function visionAssistLedger(route: VisionCheckRoute, request: VisionCheckRequest, at = new Date().toISOString()): VisionAssistLedgerValue {
   return {
     route: route.route,
-    ...(route.command ? { command: route.command } : {}),
+    ...(typeof (route as { command?: unknown }).command === "string" ? { command: (route as { command: string }).command } : {}),
+    ...(route.route === "mmx-vision" ? { provider: route.provider } : {}),
     ...(request.imagePath?.trim() ? { imagePath: request.imagePath.trim() } : {}),
     ...(request.question?.trim() ? { question: request.question.trim() } : {}),
-    ...(route.route === "model-switch" ? { ref: (route as { ref: string }).ref } : {}),
-    ...(route.route === "mmx-vision" && (route as { blockedSwitch?: string }).blockedSwitch ? { blockedSwitch: (route as { blockedSwitch: string }).blockedSwitch } : {}),
+    ...(route.route === "model-switch" ? { ref: route.ref } : {}),
+    ...(typeof (route as { blockedSwitch?: unknown }).blockedSwitch === "string" ? { blockedSwitch: (route as { blockedSwitch: string }).blockedSwitch } : {}),
+    ...(route.route === "unavailable" ? { reason: route.reason } : {}),
     at,
   };
 }

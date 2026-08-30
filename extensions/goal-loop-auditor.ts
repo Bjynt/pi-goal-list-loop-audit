@@ -198,11 +198,12 @@ export function buildGoalAuditorPrompt(goal: Goal, completionSummary: string | n
     ...(isVisualGoal(goal) ? [
       "",
       "VISUAL AUDIT — FRESH EVIDENCE REQUIRED:",
-      "This goal touches UI/screenshots. Before deciding, capture a FRESH screenshot via",
-      "`mmx vision describe --image <path> --quiet --non-interactive` (or a fresh chrome screenshot) for the current UI state,",
-      "critique what is shown versus the objective, and include that critique VERBATIM inside your <evidence> for the visual contract item.",
-      "Do NOT reuse stale image descriptions from the completion summary — the fresh capture is mandatory evidence.",
-      "Example: `mmx vision describe --image /home/dracon/Pictures/Screenshots/latest.png --prompt \"Does the UI match the objective?\" --quiet --non-interactive`",
+      "This goal touches UI/screenshots. First inspect the fresh image with the current model's native image capability (the main model for executor work or the configured auditor model for detached audit work), if available.",
+      "Do NOT switch models merely to obtain vision, and do NOT assume MMX or any other external CLI is installed.",
+      "If native image input is unavailable, use an external vision provider only after its availability has been explicitly confirmed; MMX is optional, not a requirement.",
+      "If neither path is available, state that visual evidence is unavailable rather than inventing a visual finding.",
+      "Critique what is shown versus the objective, and include that critique VERBATIM inside your <evidence> for the visual contract item.",
+      "Do NOT reuse stale image descriptions from the completion summary — fresh evidence is mandatory."
     ] : []),
     "",
     "Audit checklist:",
