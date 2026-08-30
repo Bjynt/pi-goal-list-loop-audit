@@ -1313,7 +1313,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "auditorSameSessionSwap": {
-      const v = await ctx.ui.select("Same-model swap — when the pinned auditor IS the session model, walk the fallback pin (a same-family model shares the executor's blind spots)", [
+      const v = await ctx.ui.select("Same-model swap — when the pinned auditor IS the session model, walk the ordered fallback chain (a same-family model shares the executor's blind spots)", [
         "on — the verifier differs from the executor (default)",
         "off — same-model audits stand; isolation + evidence contract still apply",
       ]);

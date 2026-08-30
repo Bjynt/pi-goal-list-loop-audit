@@ -189,6 +189,7 @@ import {
   mainModelAutoRetryUntil,
   mainModelRetryDelayMs,
   MAIN_MODEL_AUTO_RETRY_HORIZON_MS,
+  MAX_AUDITOR_CANDIDATE_REFS,
   modelRef,
   normalizeModelRefs,
   sendStormEscalateMs,
@@ -747,7 +748,7 @@ function registerAgentTools(pi: any): void {
       const configuredAuditorRefs = auditorCandidateRefs(auditorCandidates);
       const persistedAuditorAttemptedRefs = (completionClaim.auditorAttemptedRefs ?? [])
         .filter((ref: string) => configuredAuditorRefs.some((candidateRef) => candidateRef.toLowerCase() === ref.toLowerCase()))
-        .slice(0, 10);
+        .slice(0, MAX_AUDITOR_CANDIDATE_REFS);
       const persistedAuditorCandidateRef = completionClaim.auditorCandidateRef
         && configuredAuditorRefs.some((ref) => ref.toLowerCase() === completionClaim.auditorCandidateRef!.toLowerCase())
         ? completionClaim.auditorCandidateRef
@@ -849,9 +850,9 @@ function registerAgentTools(pi: any): void {
               const persisted = updateGoal({
                 pendingCompletion: {
                   ...(state.goal?.pendingCompletion ?? completionClaim),
-                  auditorCandidateRefs: info.candidateRefs.slice(0, 10),
+                  auditorCandidateRefs: info.candidateRefs.slice(0, MAX_AUDITOR_CANDIDATE_REFS),
                   auditorCandidateRef: info.candidateRef,
-                  auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
+                  auditorAttemptedRefs: info.attemptedRefs.slice(0, MAX_AUDITOR_CANDIDATE_REFS),
                   auditorFailureCount: info.failureCount,
                   auditorRetryAttemptStartedAt: info.attempt === 2 ? new Date().toISOString() : undefined,
                   ...(info.failureCount === 0 ? {
@@ -870,11 +871,11 @@ function registerAgentTools(pi: any): void {
               const persisted = updateGoal({
                 pendingCompletion: {
                   ...(state.goal?.pendingCompletion ?? completionClaim),
-                  auditorCandidateRefs: info.candidateRefs.slice(0, 10),
+                  auditorCandidateRefs: info.candidateRefs.slice(0, MAX_AUDITOR_CANDIDATE_REFS),
                   auditorCandidateRef: info.candidateRef,
                   auditorRetryCandidateRef: info.candidateRef,
                   auditorRetryAttemptStartedAt: undefined,
-                  auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
+                  auditorAttemptedRefs: info.attemptedRefs.slice(0, MAX_AUDITOR_CANDIDATE_REFS),
                   auditorFailureCount: 1,
                   auditorFailureClass: info.failureClass ?? "provider",
                   auditorFailureAt: new Date().toISOString(),
@@ -907,11 +908,11 @@ function registerAgentTools(pi: any): void {
               const persisted = updateGoal({
                 pendingCompletion: {
                   ...(state.goal?.pendingCompletion ?? completionClaim),
-                  auditorCandidateRefs: info.candidateRefs.slice(0, 10),
+                  auditorCandidateRefs: info.candidateRefs.slice(0, MAX_AUDITOR_CANDIDATE_REFS),
                   auditorCandidateRef: next,
                   auditorRetryCandidateRef: undefined,
                   auditorRetryAttemptStartedAt: undefined,
-                  auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
+                  auditorAttemptedRefs: info.attemptedRefs.slice(0, MAX_AUDITOR_CANDIDATE_REFS),
                   auditorFailureCount: next ? 0 : 2,
                   auditorFailureClass: info.failureClass,
                   auditorFallbackExhausted: next ? undefined : true,
@@ -925,8 +926,8 @@ function registerAgentTools(pi: any): void {
                 model: auditorCandidateLabel(candidate),
                 candidateRef: info.candidateRef,
                 nextCandidateRef: next,
-                candidateRefs: info.candidateRefs.slice(0, 10),
-                attemptedRefs: info.attemptedRefs.slice(0, 10),
+                candidateRefs: info.candidateRefs.slice(0, MAX_AUDITOR_CANDIDATE_REFS),
+                attemptedRefs: info.attemptedRefs.slice(0, MAX_AUDITOR_CANDIDATE_REFS),
                 failureClass: info.failureClass,
                 error: failureCopy.diagnostic.slice(0, 200),
                 diagnostic: failureCopy.diagnostic,

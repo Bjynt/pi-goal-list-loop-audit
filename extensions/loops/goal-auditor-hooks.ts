@@ -879,7 +879,7 @@ function persistDetachedAuditorCursor(
 
 /**
  * Run a detached audit through a bounded model cascade. Model selection has a
- * primary, optional pinned fallback, and the session model as the last rung.
+ * primary, ordered fallback chain, and the session model as the last rung.
  * A resolved primary can still fail after launch (provider auth, RPC startup,
  * or a dead stream), so selection-time fallback alone is insufficient. Retry
  * the same model once, then advance to the next candidate at most once per
@@ -993,7 +993,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
   const configuredAuditorRefs = auditorCandidateRefs(auditorCandidates);
   const persistedAuditorAttemptedRefs = (claim.auditorAttemptedRefs ?? [])
     .filter((ref) => configuredAuditorRefs.some((candidateRef) => candidateRef.toLowerCase() === ref.toLowerCase()))
-    .slice(0, 10);
+    .slice(0, MAX_AUDITOR_CANDIDATE_REFS);
   const persistedAuditorCandidateRef = claim.auditorCandidateRef
     && configuredAuditorRefs.some((ref) => ref.toLowerCase() === claim.auditorCandidateRef!.toLowerCase())
     ? claim.auditorCandidateRef
@@ -1072,7 +1072,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
           info,
           {
             auditorCandidateRef: info.candidateRef,
-            auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
+            auditorAttemptedRefs: info.attemptedRefs.slice(0, MAX_AUDITOR_CANDIDATE_REFS),
             auditorRetryAttemptStartedAt: info.attempt === 2 ? new Date().toISOString() : undefined,
             ...(info.failureCount === 0 ? {
               auditorRetryCandidateRef: undefined,
@@ -1093,7 +1093,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
               auditorCandidateRef: info.candidateRef,
               auditorRetryCandidateRef: info.candidateRef,
               auditorRetryAttemptStartedAt: undefined,
-              auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
+              auditorAttemptedRefs: info.attemptedRefs.slice(0, MAX_AUDITOR_CANDIDATE_REFS),
               auditorFailureCount: 1,
               auditorFailureClass: info.failureClass ?? "provider",
               auditorFailureAt: new Date().toISOString(),
@@ -1127,7 +1127,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
                 auditorCandidateRef: next,
                 auditorRetryCandidateRef: undefined,
                 auditorRetryAttemptStartedAt: undefined,
-                auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
+                auditorAttemptedRefs: info.attemptedRefs.slice(0, MAX_AUDITOR_CANDIDATE_REFS),
                 auditorFailureCount: 0,
                 auditorFailureClass: undefined,
                 auditorFallbackExhausted: undefined,
@@ -1137,7 +1137,7 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
                 auditorCandidateRef: undefined,
                 auditorRetryCandidateRef: undefined,
                 auditorRetryAttemptStartedAt: undefined,
-                auditorAttemptedRefs: info.attemptedRefs.slice(0, 10),
+                auditorAttemptedRefs: info.attemptedRefs.slice(0, MAX_AUDITOR_CANDIDATE_REFS),
                 auditorFailureCount: 2,
                 auditorFailureClass: info.failureClass,
                 auditorFallbackExhausted: true,
@@ -1153,8 +1153,8 @@ async function retryStoredCompletionAudit(origin: CompletionAuditOrigin = "provi
               model: auditorCandidateLabel(candidate),
               candidateRef: info.candidateRef,
               nextCandidateRef: next,
-              attemptedRefs: info.attemptedRefs.slice(0, 10),
-              candidateRefs: info.candidateRefs.slice(0, 10),
+              attemptedRefs: info.attemptedRefs.slice(0, MAX_AUDITOR_CANDIDATE_REFS),
+              candidateRefs: info.candidateRefs.slice(0, MAX_AUDITOR_CANDIDATE_REFS),
               failureClass: info.failureClass,
               error: failureCopy.diagnostic.slice(0, 200),
               diagnostic: failureCopy.diagnostic,
