@@ -273,13 +273,20 @@ function modelProvenanceLines(provenance: ModelProvenanceDisplay | undefined, wi
  */
 export function buildDurableDeferDecisionLines(input: DurableDeferRecommendationInput, width?: number): string[] {
   const recommendation = buildDurableDeferRecommendation(input);
-  const budget = budgetFor(width, 3, 60);
   const deferLabel = `${recommendation.deferCount} prior defer recommendation${recommendation.deferCount === 1 ? "" : "s"}`;
   return [
     `judgment: ${deferLabel} · durable action evaluated first`,
-    ...recommendation.plaques.map((plaque, index) =>
-      `${index + 1}. ${plaque.title} — ${truncate(plaque.body, budget)}${plaque.recommended ? " ◂ recommended" : ""}`,
-    ),
+    ...recommendation.plaques.map((plaque, index) => {
+      const prefix = `${index + 1}. ${plaque.title} — `;
+      const marker = plaque.recommended ? " ◂ recommended" : "";
+      // Reserve room for the recommendation marker and the outer tree prefix
+      // so a normal 80-column production widget cannot truncate away the
+      // fact that the durable plaque is the selected action.
+      const bodyBudget = width && width > 0
+        ? Math.max(8, width - WIDGET_HORIZONTAL_MARGIN - 3 - visibleLen(prefix) - visibleLen(marker))
+        : budgetFor(width, 3, 60);
+      return `${prefix}${truncate(plaque.body, bodyBudget)}${marker}`;
+    }),
     `selected: ${recommendation.choice}${recommendation.choice === "inline" ? " (durable fix)" : " (reversible workaround)"}`,
   ];
 }
