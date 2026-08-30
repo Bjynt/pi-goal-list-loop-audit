@@ -246,6 +246,222 @@ function safeFileMarkerCompound(command: string): string[] | null {
   return [`test -${flag} ${testPath}`, `grep -q ${marker} ${grepPath}`];
 }
 
+const DEFAULT_MECHANICAL_CHECK_TIMEOUT_MS = 600_000;
+const MECHANICAL_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+const MECHANICAL_OUTPUT_TAIL_CHARS = 64 * 1024;
+const MECHANICAL_CHILD_SHUTDOWN_GRACE_MS = 1_000;
+const MECHANICAL_FORCE_KILL_SETTLE_MS = 250;
+
+interface MechanicalCommandRun {
+  output: string;
+  exitCode: number;
+  signal?: NodeJS.Signals;
+  timedOut: boolean;
+  aborted: boolean;
+  outputLimit: boolean;
+}
+
+function childIsRunning(child: ChildProcess): boolean {
+  return child.exitCode === null && child.signalCode === null;
+}
+
+function destroyChildStreams(child: ChildProcess): void {
+  for (const stream of [child.stdin, child.stdout, child.stderr]) {
+    try { stream?.destroy(); } catch { /* best effort */ }
+  }
+}
+
+function waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<void> {
+  if (!childIsRunning(child)) return Promise.resolve();
+  return new Promise((resolve) => {
+    let timer: NodeJS.Timeout | undefined;
+    const done = () => {
+      if (timer) clearTimeout(timer);
+      child.removeListener("exit", done);
+      child.removeListener("close", done);
+      child.removeListener("error", done);
+      resolve();
+    };
+    child.once("exit", done);
+    child.once("close", done);
+    child.once("error", done);
+    timer = setTimeout(done, timeoutMs);
+    timer.unref?.();
+  });
+}
+
+function signalMechanicalProcessGroup(child: ChildProcess, signal: NodeJS.Signals): boolean {
+  if (process.platform === "win32" || !child.pid) return false;
+  try {
+    // Mechanical commands are spawned detached below, making the PID the
+    // POSIX process-group leader. A negative PID reaches recursive shells,
+    // interpreters, and grandchildren instead of leaving a fork chain behind.
+    process.kill(-child.pid, signal);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function signalMechanicalProcess(child: ChildProcess, signal: NodeJS.Signals): boolean {
+  if (signalMechanicalProcessGroup(child, signal)) return true;
+  try { return child.kill(signal); } catch { return false; }
+}
+
+async function terminateMechanicalProcessTree(child: ChildProcess): Promise<void> {
+  if (process.platform === "win32") {
+    if (child.pid && childIsRunning(child)) {
+      let killer: ChildProcess | undefined;
+      try {
+        killer = spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
+          stdio: "ignore",
+          windowsHide: true,
+        });
+        await waitForChildExit(killer, MECHANICAL_CHILD_SHUTDOWN_GRACE_MS);
+      } catch {
+        /* direct fallback below */
+      }
+    }
+    if (childIsRunning(child)) {
+      try { child.kill(); } catch { /* best effort */ }
+      await waitForChildExit(child, MECHANICAL_FORCE_KILL_SETTLE_MS);
+    }
+    destroyChildStreams(child);
+    return;
+  }
+
+  if (childIsRunning(child)) {
+    signalMechanicalProcess(child, "SIGTERM");
+    await waitForChildExit(child, MECHANICAL_CHILD_SHUTDOWN_GRACE_MS);
+  }
+  // Even when the direct command obeys TERM, its descendants may not. The
+  // group kill after the direct exit closes the orphan-descendant hole.
+  if (child.pid) signalMechanicalProcessGroup(child, "SIGKILL");
+  if (childIsRunning(child)) signalMechanicalProcess(child, "SIGKILL");
+  await waitForChildExit(child, MECHANICAL_FORCE_KILL_SETTLE_MS);
+  destroyChildStreams(child);
+}
+
+function appendMechanicalOutputTail(current: string, chunk: string): string {
+  const combined = current + chunk;
+  return combined.length <= MECHANICAL_OUTPUT_TAIL_CHARS
+    ? combined
+    : combined.slice(-MECHANICAL_OUTPUT_TAIL_CHARS);
+}
+
+function runMechanicalCommand(
+  cwd: string,
+  program: string,
+  args: string[],
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<MechanicalCommandRun> {
+  return new Promise((resolve) => {
+    let child: ChildProcess;
+    try {
+      child = spawn(program, args, {
+        cwd,
+        // A mechanical command is untrusted project code. Give it its own
+        // process group so timeout/abort cleanup reaches every descendant.
+        detached: process.platform !== "win32",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      resolve({
+        output: error instanceof Error ? error.message : String(error),
+        exitCode: 1,
+        timedOut: false,
+        aborted: false,
+        outputLimit: false,
+      });
+      return;
+    }
+
+    let stdoutTail = "";
+    let stderrTail = "";
+    let outputBytes = 0;
+    let timedOut = false;
+    let aborted = false;
+    let outputLimit = false;
+    let launchError: string | undefined;
+    let termination: Promise<void> | undefined;
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+    let exitCode: number | null = null;
+    let exitSignal: NodeJS.Signals | null = null;
+
+    const settle = (code: number | null, childSignal: NodeJS.Signals | null): void => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      const output = [stdoutTail, stderrTail, launchError].filter(Boolean).join("\n");
+      resolve({
+        output,
+        exitCode: code ?? (childSignal || timedOut || aborted || outputLimit || launchError ? 1 : 0),
+        ...(childSignal ? { signal: childSignal } : {}),
+        timedOut,
+        aborted,
+        outputLimit,
+      });
+    };
+
+    const requestTermination = (reason: "timeout" | "abort" | "output-limit"): void => {
+      if (settled) return;
+      if (reason === "timeout") timedOut = true;
+      if (reason === "abort") aborted = true;
+      if (reason === "output-limit") outputLimit = true;
+      termination ??= terminateMechanicalProcessTree(child).catch(() => {});
+      // A descendant that keeps a stdio pipe open must not hold this promise
+      // forever after its process group has been terminated.
+      void termination.then(() => settle(exitCode, exitSignal));
+    };
+
+    const onAbort = (): void => requestTermination("abort");
+    const onOutput = (target: "stdout" | "stderr") => (chunk: Buffer | string): void => {
+      if (settled) return;
+      const text = String(chunk);
+      outputBytes += Buffer.byteLength(text, "utf8");
+      if (target === "stdout") stdoutTail = appendMechanicalOutputTail(stdoutTail, text);
+      else stderrTail = appendMechanicalOutputTail(stderrTail, text);
+      if (outputBytes > MECHANICAL_MAX_OUTPUT_BYTES) requestTermination("output-limit");
+    };
+
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", onOutput("stdout"));
+    child.stderr?.on("data", onOutput("stderr"));
+    child.once("error", (error) => {
+      launchError = error instanceof Error ? error.message : String(error);
+      if (termination) void termination.then(() => settle(exitCode, exitSignal));
+      else settle(1, null);
+    });
+    child.once("close", (code, childSignal) => {
+      exitCode = code;
+      exitSignal = childSignal;
+      if (termination) void termination.then(() => settle(code, childSignal));
+      else settle(code, childSignal);
+    });
+    timer = setTimeout(() => requestTermination("timeout"), timeoutMs);
+    timer.unref?.();
+    if (signal?.aborted) requestTermination("abort");
+    else signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function formatMechanicalFailure(run: MechanicalCommandRun, timeoutMs: number): { output: string; exitCode: number } {
+  const body = run.output.trim() || (run.signal ? `Process terminated by ${run.signal}` : "Command failed");
+  const banner = run.timedOut
+    ? `[mechanical check killed after ${Math.round(timeoutMs / 1000)}s — process tree terminated; output tail below]`
+    : run.aborted
+      ? "[mechanical check aborted — process tree terminated; output tail below]"
+      : run.outputLimit
+        ? "[mechanical check exceeded its 64MB output limit — process tree terminated; output tail below]"
+        : "";
+  const evidence = body.length > 4000 ? "…[truncated head]\n" + body.slice(-4000) : body;
+  return { output: (banner ? banner + "\n" : "") + evidence, exitCode: run.exitCode };
+}
+
 /** v0.35.7: Execute mechanical pre-audit checks deterministically.
  *
  * v0.35.16: default timeout 60s → 10min. The old 60s ceiling killed
