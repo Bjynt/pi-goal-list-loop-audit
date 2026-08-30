@@ -61,6 +61,24 @@ They are already tracked in `audit/EXTENSION-AUDIT-2026-08-21.md` and the
 follow-up comparison/parked-ideas audits. Rotation in particular should be a
 separate migration design, not an opportunistic rewrite during an incident.
 
+## Promoted operational tasklist
+
+A follow-up verification pass promoted seven evidence-backed items into the
+canonical local tasklist at `.pi-glla/audit-loop/findings.md` (lines 290–296):
+
+1. transactional terminal archival and crash reconciliation (high);
+2. fail-closed queue deletion or durable tombstones on every destructive path
+   (high);
+3. crash-safe active-ledger rotation/segmentation (medium);
+4. streaming reducers for the remaining whole-ledger readers (medium);
+5. safe stale `audit-jobs` health reporting and collection (low);
+6. a typed replacement for the ambient `any` runtime bridge (low); and
+7. an import smoke test against the actual packed npm artifact (low).
+
+The tasklist parser reports seven open FIX items and zero unresolved DECIDE
+items. The external `dracon-platform` recursive helper is deliberately absent
+from this GLLA tasklist.
+
 ## Verification
 
 - `npm run release:check`: **1,763 passed, 1 skipped, 0 failed** across 166
@@ -72,4 +90,3 @@ separate migration design, not an opportunistic rewrite during an incident.
 - Focused persistence, auditor, process-ceiling, and shield regressions: all
   passed.
 - `git diff --check`: passed.
-
