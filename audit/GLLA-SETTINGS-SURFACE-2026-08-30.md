@@ -136,8 +136,14 @@ The context-growth fixture mismatch found during the follow-up was fixture-only:
 the durable judgment guidance intentionally added to the continuation template
 changed the deterministic payload from 21,863 to 22,158 characters. The pinned
 measurement expectations were refreshed; checkpoint projection remains bounded.
-The full-suite and `release:check` dispositions are recorded in the verification
-section below and in the companion context-growth audit.
+The first `release:check` attempt also exposed a timing-sensitive auditor-process
+fixture assertion (`phases.includes("thinking")`) while the worker advanced from
+an event heartbeat to a tool phase between parent polls. The GLLA worker and
+parent remained healthy; three isolated reruns of
+`bun test --parallel=1 --max-concurrency=1 --timeout=60000 tests/auditor-process.test.ts`
+passed 32/32, and the subsequent complete `release:check` passed. This is
+recorded as a fixture-observation race, not a production failure. The exact
+suite results are below and in the companion context-growth audit.
 
 ## External / intentional behavior
 
@@ -157,6 +163,10 @@ run passed **82 tests**; `npx tsc --noEmit` passed. The source inspection confir
 all 48 generated/static row instances map to dispatch cases except the
 documented read-only row. The context-growth measurement and checkpoint
 regressions also pass after refreshing the intentional prompt-size fixture.
-The latest full suite and `npm run release:check` results are kept as bounded
-command evidence in the goal audit; any remaining failures are described as
-fixture-only, timing-flaky, or external rather than silently treated as green.
+The complete `npm run release:check` rerun passed: **1,757 tests passed, 1
+environment-gated test skipped, 0 failed**, the Jiti smoke test passed, TypeScript
+reported no errors, the offline auditor-extension check passed, and
+`npm pack --dry-run` produced `pi-goal-list-loop-audit-0.36.0.tgz`. The prior
+single auditor-process failure is retained above as a timing-sensitive fixture
+race and was followed by three focused passes plus the green complete rerun;
+no remaining failure is silently treated as green.
