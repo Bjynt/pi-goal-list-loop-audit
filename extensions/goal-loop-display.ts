@@ -347,6 +347,21 @@ function activityStateBadge(label: string, theme: DisplayTheme | undefined, colo
   return paint(theme, color, `[${label}]`);
 }
 
+/** Shared state marker for host-bearing loop and goal projections. The LIVE
+ * marker is reserved for fresh stream/tool evidence; every other label is a
+ * static state so a stalled provider cannot look productive. */
+function activityStatusMarker(activity: GoalDisplayActivity | undefined, now: number, theme?: DisplayTheme): string | undefined {
+  switch (activity) {
+    case "working": return activityBadge("LIVE · WORKING", now, theme);
+    case "busy": return activityStateBadge("BUSY", theme, "warning");
+    case "queued": return activityStateBadge("QUEUED", theme, "warning");
+    case "idle": return activityStateBadge("IDLE", theme, "warning");
+    case "awaiting-first-turn": return activityStateBadge("AWAITING FIRST TURN", theme, "warning");
+    case "active": return activityStateBadge("ACTIVE", theme, "accent");
+    default: return undefined;
+  }
+}
+
 /** Pause reasons that mean "something broke", not "waiting on the user". */
 const ERROR_PAUSE = /token limit|stalled|infra|auditor.*fail/i;
 const pauseIsError = (g: Goal): boolean => ERROR_PAUSE.test(g.pauseReason ?? "");
@@ -850,14 +865,19 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
     // v0.26.1: surface the refire streak — a spinning supervisor is the
     // zombie signature (hegemon incident: 619 refires, 0 turns).
     const stallSuffix = (extras?.stalls ?? 0) > 0 ? ` · ${paint(theme, "warning", `stalls:${extras!.stalls}`)}` : "";
+    // v0.36.1: loop-only supervision now receives the same evidence-backed
+    // state marker as goals. Without this, a loop's iteration counter moved
+    // while the user still had to infer whether pi was working or waiting.
+    const activityMarker = activityStatusMarker(extras?.activity, now, theme);
+    const activityPrefix = activityMarker ? `${activityMarker} ${paint(theme, "dim", "·")} ` : "";
     // v0.23.0: metricless spec loop — no arrow/best/stall, no plateau.
     if (!l.measureCmd) {
-      return `glla: loop ${paint(theme, "accent", "∞")} iter ${l.iteration}${l.maxIterations > 0 ? `/${l.maxIterations}` : ""} · metricless${stallSuffix}`;
+      return `glla: ${activityPrefix}loop ${paint(theme, "accent", "∞")} iter ${l.iteration}${l.maxIterations > 0 ? `/${l.maxIterations}` : ""} · metricless${stallSuffix}`;
     }
     const arrow = paint(theme, "accent", l.direction === "min" ? "↓" : "↑");
     const stallText = `stall ${l.stallCount}/${l.plateauWindow}`;
     const stall = l.stallCount >= l.plateauWindow - 1 ? paint(theme, "warning", stallText) : stallText;
-    return `glla: loop ${arrow} iter ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"} · best ${l.bestValue ?? "n/a"} · ${stall}${stallSuffix}`;
+    return `glla: ${activityPrefix}loop ${arrow} iter ${l.iteration}/${l.maxIterations > 0 ? l.maxIterations : "∞"} · best ${l.bestValue ?? "n/a"} · ${stall}${stallSuffix}`;
   }
   const g = state.goal;
   const held = heldLoop(state);
@@ -973,7 +993,7 @@ function buildStatusTextBase(state: State, audit?: AuditDisplayProgress | null, 
   if (g.status === "active") {
     const recoverySummary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
     const withRecovery = (value: string): string => recoverySummary.length > 0
-      ? `${value} · ${recoverySummary.map((line) => line.replace(/^Main-model recovery: /, "")).join(" · ")}`
+      ? `${value} · ${recoverySummary.join(" · ")}`
       : value;
     // v0.28.1 (S1/S2): a stale-handle interrupt keeps the goal ACTIVE.
     // It outranks any older operational note on the same state snapshot.
@@ -1318,7 +1338,7 @@ function goalLines(g: Goal, state: State, audit: AuditDisplayProgress | null | u
   if (g.status === "active" && state.mainModelRecovery) {
     const recoverySummary = formatMainModelRecoveryStatus(state.mainModelRecovery, extras?.mainModelFallbacks);
     recoverySummary.forEach((line, i) => {
-      lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, "dim", line.replace(/^Main-model recovery: /, ""))}`);
+      lines.push(`${i === 0 ? "├─" : "│ "} ${paint(theme, "dim", line)}`);
     });
   }
   // Model provenance is a card fact, not a notification: keep it visible

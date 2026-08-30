@@ -587,6 +587,15 @@ function displayActivityFor(ctx: ExtensionContext): {
   lastActivityAt?: number;
   lastStreamActivityAt?: number;
 } {
+  // A loop can be the only live artifact. The old goal-only guard made an
+  // active loop show iteration/elapsed counters but no evidence-backed
+  // WORKING/BUSY/QUEUED/IDLE state, which forced users to infer liveness from
+  // hidden thinking text. Scope the same host projection to the loop's own
+  // start boundary; a previous goal's event must not make a new loop look
+  // live.
+  const loop = state.loop?.active ? state.loop : undefined;
+  if (loop) return displayLoopActivityFor(ctx, loop);
+
   const goal = state.goal;
   if (!goal) return {};
   const goalStartedAt = Date.parse(goal.createdAt);
@@ -634,6 +643,54 @@ function displayActivityFor(ctx: ExtensionContext): {
   // A short idle gap is normal between agent_end and the settled eager
   // continuation. Only surface idle after a real minute with no queued send;
   // otherwise keep the durable state neutral rather than inventing work.
+  if (lastActivityAt === undefined || Date.now() - lastActivityAt >= 60_000) {
+    return { activity: "idle", lastActivityAt, lastStreamActivityAt: streamAt };
+  }
+  return { activity: "active", lastActivityAt, lastStreamActivityAt: streamAt };
+}
+
+function displayLoopActivityFor(ctx: ExtensionContext, loop: LoopState): {
+  activity?: import("../goal-loop-display.js").GoalDisplayActivity;
+  lastActivityAt?: number;
+  lastStreamActivityAt?: number;
+} {
+  const loopStartedAt = Date.parse(loop.startedAt);
+  const lastActivityAt = lastRealActivityAt > 0
+    && (!Number.isFinite(loopStartedAt) || lastRealActivityAt >= loopStartedAt)
+    ? lastRealActivityAt
+    : undefined;
+  const streamAt = streamActivityObserved
+    && (!Number.isFinite(loopStartedAt) || lastStreamActivityAt >= loopStartedAt)
+    ? lastStreamActivityAt
+    : undefined;
+  const hasRealActivity = lastActivityAt !== undefined;
+  const pendingDispatch = pendingContinuationDispatchRef() !== null;
+  const loopTimer = loopTimerPending();
+  // Iteration zero with no dispatch/timer/activity is the honest pre-turn
+  // state. Do not label it IDLE: the loop has not had its first opportunity to
+  // run yet.
+  if (loop.iteration === 0 && !hasRealActivity && streamAt === undefined && !pendingDispatch && !loopTimer) {
+    return { activity: "awaiting-first-turn" };
+  }
+  let idle = false;
+  let pending = false;
+  try {
+    idle = ctx.isIdle();
+    pending = ctx.hasPendingMessages();
+  } catch {
+    return { activity: "active" };
+  }
+  const scheduled = continuationTimerRef() !== null
+    || pendingDispatch
+    || continuationDispatchStoodDownRef()
+    || loopTimer;
+  const streamFresh = streamAt !== undefined && Date.now() - streamAt <= LIVE_STREAM_PROOF_MS;
+  const toolActive = inFlightToolCalls.size > 0;
+  if (toolActive || (!idle && streamFresh)) {
+    return { activity: "working", lastActivityAt, lastStreamActivityAt: streamAt };
+  }
+  if (!idle) return { activity: "busy", lastActivityAt, lastStreamActivityAt: streamAt };
+  if (pending || scheduled) return { activity: "queued", lastActivityAt, lastStreamActivityAt: streamAt };
   if (lastActivityAt === undefined || Date.now() - lastActivityAt >= 60_000) {
     return { activity: "idle", lastActivityAt, lastStreamActivityAt: streamAt };
   }
