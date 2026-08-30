@@ -40,7 +40,7 @@ test("visual auditor prompt injects fresh native/external capture guidance befor
   assert.match(prompt, /native image capability/i, "native model vision is preferred");
   assert.match(prompt, /do NOT assume MMX/i, "external tool availability is not assumed");
   assert.match(prompt, /MMX is optional/i, "MMX is only an explicit fallback");
-  assert.match(prompt, /critique what is shown versus the objective/, "critique instruction");
+  assert.match(prompt, /critique what is shown versus the objective/i, "critique instruction");
   assert.match(prompt, /Do NOT reuse stale image descriptions/, "stale reuse blocked");
   assert.match(prompt, /<evidence>/, "evidence section still required");
 });

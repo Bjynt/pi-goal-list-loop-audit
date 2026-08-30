@@ -52,12 +52,11 @@ export interface Settings {
    * model (block the call). Default ON. Off = the switch stands but the
    * `forbidden_model_switch` ledger entry records the violation. */
   blockForbiddenModelSwitches?: boolean;
-  /** v0.34.72: on (default) → continuation prompts carry the VISION-ASSIST
-   * directive: agents that need to SEE something route the check to the
-   * mmx vision CLI (mmx-cli skill) instead of switching models; a switch
-   * is sanctioned only when the target is preapproved (not forbidden).
-   * Off → no vision guidance is injected (the forbiddenModels gate still
-   * stands). */
+  /** On (default) → continuation prompts carry the VISION-ASSIST
+   * directive: agents that need to SEE something prefer the current model's
+   * native image capability. External providers are optional and model
+   * switches remain gated by forbiddenModels. Off → no vision guidance is
+   * injected (the forbiddenModels gate still stands). */
   visionAssist?: boolean;
   /** Global-only ordered provider/model refs to use when the MAIN session model fails. */
   mainModelFallbacks?: string[];

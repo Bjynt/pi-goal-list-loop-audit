@@ -51,7 +51,7 @@ test("gatherProactivePreRead notes image references without assuming an external
   const block = gatherProactivePreRead(seed, cwd);
   assert.ok(block);
   assert.match(block!, /Image reference/, "image note");
-  assert.match(block!, /native vision when supported/i, "native vision is preferred");
+  assert.match(block!, /native image support/i, "native vision is preferred");
   assert.match(block!, /confirmed external provider/i, "external vision is opt-in");
   assert.doesNotMatch(block!, /mmx vision describe/, "MMX is not assumed by pre-read");
   assert.match(block!, /PROACTIVE PRE-READ/);

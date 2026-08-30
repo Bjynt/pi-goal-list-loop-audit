@@ -1524,10 +1524,9 @@ function observeModelChange(ctx: ExtensionContext, from: string | undefined, to:
       ...(source ? { source } : {}),
       blocked,
     });
-    // v0.34.72 (note.md 2026-08-07): the too-eager-switch symptom — the
-    // agent reached for an expensive model. With vision assist on, record
-    // the routing alternative: seeing is an mmx vision CLI job. Advisory,
-    // not a claim about the switch's motive.
+    // Vision-assist evidence for the too-eager-switch symptom. With vision
+    // assist on, record the native-first routing alternative. Advisory, not
+    // a claim about the switch's motive; external providers are optional.
     if (settings.visionAssist !== false) {
       const vr = routeVisionCheck({ targetModelRef: to, forbiddenModels: settings.forbiddenModels });
       appendLedger(ctx.cwd, "vision_assist", {

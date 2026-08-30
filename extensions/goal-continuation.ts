@@ -1250,9 +1250,10 @@ export function continuationPrompt(goal: Goal): string {
       `## AUDITOR TODO LIST (from ${goal.pauseReason?.includes("cap") ? "the disapproval cap" : "the last audit"})\n\nAddress these objections, in order, before re-calling complete_goal:\n${goal.pendingTasks.map((t, i) => `${i + 1}. ${t}`).join("\n")}`,
     );
   }
-  // v0.34.72 (note.md 2026-08-07): the vision-assist directive — seeing is
-  // an mmx vision CLI job, never a reason to switch models (preapproval
-  // gate: forbiddenModels). Injected whenever the setting is not disabled.
+  // Vision-assist directive — prefer the current model's native image
+  // capability; never assume an external provider or switch models solely to
+  // see (preapproval gate applies to all switches). Injected whenever the
+  // setting is not disabled.
   if (loadSettings(settingsCwd).visionAssist !== false) {
     directives.push(VISION_ASSIST_GUIDANCE);
   }
