@@ -356,15 +356,15 @@ test("extractMechanicalCheckCommands: extracts backticked and raw shell commands
   assert.equal(isSafeMechanicalCommand(extractMechanicalCheckCommands(chainedContract)[0]!), true);
   assert.equal(isSafeMechanicalCommand(extractMechanicalCheckCommands(chainedContract)[1]!), true);
 
-  const res = runMechanicalPreAuditChecks(process.cwd(), ["node --version"]);
+  const res = await runMechanicalPreAuditChecks(process.cwd(), ["node --version"]);
   assert.equal(res.passed, true);
 
-  const failRes = runMechanicalPreAuditChecks(process.cwd(), ["node --definitely-not-a-real-option"]);
+  const failRes = await runMechanicalPreAuditChecks(process.cwd(), ["node --definitely-not-a-real-option"]);
   assert.equal(failRes.passed, false);
   assert.notEqual(failRes.exitCode, 0);
   assert.match(failRes.output!, /bad option|unknown option|invalid option/i);
 
-  const unsafeRes = runMechanicalPreAuditChecks(process.cwd(), ["node --version; printf boom"]);
+  const unsafeRes = await runMechanicalPreAuditChecks(process.cwd(), ["node --version; printf boom"]);
   assert.equal(unsafeRes.passed, false);
   assert.equal(unsafeRes.exitCode, 126);
   assert.doesNotMatch(unsafeRes.output!, /boom/);
@@ -372,9 +372,9 @@ test("extractMechanicalCheckCommands: extracts backticked and raw shell commands
   // v0.36.0: one narrow file-marker assertion is expanded into two
   // shell-free commands, so the release contract can verify both existence
   // and text without allowing arbitrary compound shell syntax.
-  const markerRes = runMechanicalPreAuditChecks(process.cwd(), ["test -s docs/DESIGN-long-running-supervision.md && grep -q 'event-driven' docs/DESIGN-long-running-supervision.md"]);
+  const markerRes = await runMechanicalPreAuditChecks(process.cwd(), ["test -s docs/DESIGN-long-running-supervision.md && grep -q 'event-driven' docs/DESIGN-long-running-supervision.md"]);
   assert.equal(markerRes.passed, true);
-  const unsafeCompound = runMechanicalPreAuditChecks(process.cwd(), ["test -s package.json && printf boom"]);
+  const unsafeCompound = await runMechanicalPreAuditChecks(process.cwd(), ["test -s package.json && printf boom"]);
   assert.equal(unsafeCompound.passed, false);
   assert.equal(unsafeCompound.exitCode, 126);
   assert.doesNotMatch(unsafeCompound.output!, /boom/);
@@ -399,7 +399,7 @@ test("v0.35.16: mechanical checks keep the TAIL of failed output and banner a ti
     "process.exit(3);",
   ].join("\n"));
   try {
-    const res = runMechanicalPreAuditChecks(dir, ["node " + scriptPath]);
+    const res = await runMechanicalPreAuditChecks(dir, ["node " + scriptPath]);
     assert.equal(res.passed, false);
     assert.equal(res.exitCode, 3);
     assert.match(res.output!, /THE_ACTUAL_FAILURE_MARKER/, "the tail (where the failure lives) is kept");
@@ -410,10 +410,46 @@ test("v0.35.16: mechanical checks keep the TAIL of failed output and banner a ti
   // The timeout-kill path banners honestly instead of masquerading as a
   // test failure (the field failure looked like 'exit code 1' with no
   // failing test anywhere).
-  const slow = runMechanicalPreAuditChecks(process.cwd(), ["sleep 5"], 1000);
+  const slow = await runMechanicalPreAuditChecks(process.cwd(), ["sleep 5"], 1000);
   assert.equal(slow.passed, false);
   assert.match(slow.output!, /mechanical check killed after 1s/, "a timeout kill is named as such");
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("mechanical checks stay async and kill descendant processes on timeout", async () => {
+  const { runMechanicalPreAuditChecks } = await import("../extensions/goal-loop-shield.ts");
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-mech-tree-"));
+  const scriptPath = path.join(dir, "spawn-child.js");
+  const startedPath = path.join(dir, "started");
+  const survivorPath = path.join(dir, "survived");
+  const childCode = [
+    "const fs = require('node:fs');",
+    `setTimeout(() => fs.writeFileSync(${JSON.stringify(survivorPath)}, 'survived'), 1500);`,
+  ].join("\n");
+  fs.writeFileSync(scriptPath, [
+    "const fs = require('node:fs');",
+    "const { spawn } = require('node:child_process');",
+    `fs.writeFileSync(${JSON.stringify(startedPath)}, 'started');`,
+    `spawn(process.execPath, ['-e', ${JSON.stringify(childCode)}], { stdio: 'ignore' });`,
+    "setTimeout(() => {}, 10000);",
+  ].join("\n"));
+  try {
+    let timerFired = false;
+    const timer = setTimeout(() => { timerFired = true; }, 20);
+    const result = await runMechanicalPreAuditChecks(dir, ["node " + scriptPath], 500);
+    clearTimeout(timer);
+    assert.equal(timerFired, true, "the pre-audit must not block the event loop");
+    assert.equal(result.passed, false);
+    assert.match(result.output ?? "", /process tree terminated/);
+    assert.equal(fs.existsSync(startedPath), true, "the fixture started before timeout");
+    await new Promise((resolve) => setTimeout(resolve, 1800));
+    assert.equal(fs.existsSync(survivorPath), false, "descendants are killed with the process group");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 
@@ -453,7 +489,7 @@ n=$((n+1)); echo $n > ${counter1}
 [ $n -ge 2 ] && exit 0 || exit 3
 `);
   fs.chmodSync(path.join(cwd1, "flaky.sh"), 0o755);
-  const r1 = runMechanicalPreAuditChecks(cwd1, ["bash " + path.join(cwd1, "flaky.sh")]);
+  const r1 = await runMechanicalPreAuditChecks(cwd1, ["bash " + path.join(cwd1, "flaky.sh")]);
   assert.equal(r1.passed, true, "a transient first-attempt failure is retried and passes");
   assert.match(r1.recoveredRetryNote ?? "", /first attempt failed \(exit 3\); automatic retry passed/);
   assert.equal(fs.readFileSync(counter1, "utf8").trim(), "2", "exactly ONE retry ran");
@@ -462,7 +498,7 @@ n=$((n+1)); echo $n > ${counter1}
   const cwd2 = fs.mkdtempSync(path.join(os.tmpdir(), "mech-retry-2-"));
   fs.writeFileSync(path.join(cwd2, "red.sh"), "#!/bin/bash\necho deterministic-red\nexit 7\n");
   fs.chmodSync(path.join(cwd2, "red.sh"), 0o755);
-  const r2 = runMechanicalPreAuditChecks(cwd2, ["bash " + path.join(cwd2, "red.sh")]);
+  const r2 = await runMechanicalPreAuditChecks(cwd2, ["bash " + path.join(cwd2, "red.sh")]);
   assert.equal(r2.passed, false, "a genuinely red command stays red after the retry");
   assert.equal(r2.exitCode, 7);
   assert.match(r2.output ?? "", /retried once after a failed first attempt \(exit 7\); second attempt also failed/);
@@ -481,7 +517,7 @@ n=$((n+1)); echo $n > ${counter3}
 `);
   fs.chmodSync(path.join(cwd3, "flaky.sh"), 0o755);
   fs.chmodSync(path.join(cwd3, "second.sh"), 0o755);
-  const r3 = runMechanicalPreAuditChecks(cwd3, ["bash " + path.join(cwd3, "flaky.sh"), "bash " + path.join(cwd3, "second.sh")]);
+  const r3 = await runMechanicalPreAuditChecks(cwd3, ["bash " + path.join(cwd3, "flaky.sh"), "bash " + path.join(cwd3, "second.sh")]);
   assert.equal(r3.passed, true);
   assert.equal(fs.readFileSync(counter3, "utf8").trim(), "2");
   assert.equal(fs.readFileSync(marker3, "utf8").trim(), "ran", "later checks still execute after a recovered retry");

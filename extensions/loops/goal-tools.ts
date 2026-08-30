@@ -1999,7 +1999,7 @@ function registerAgentTools(pi: any): void {
     description: "Mark a task in the active goal's task list as complete (does not stop the turn).",    parameters: Type.Object({
       id: Type.String({ description: "Task id to complete" }),
     }),
-    async execute(_id, params, _signal, _onUpdate, execCtx) {
+    async execute(_id, params, signal, _onUpdate, execCtx) {
       const foreign7 = foreignToolGuard(execCtx);
       if (foreign7) return { content: [{ type: "text", text: foreign7 }], details: {} };
       const ctx = currentToolContext(execCtx);
