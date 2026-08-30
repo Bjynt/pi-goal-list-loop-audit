@@ -972,8 +972,10 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     }
     case "mainModelFallbacks": {
       const current = normalizeMainModelFallbackRefs(loadGlobalSettings().mainModelFallbacks);
-      // v0.34.118: forbidden models cannot be valid fallback agents, so hide them.
-      const forbidden = normalizeModelRefs(loadGlobalSettings().forbiddenModels);
+      // v0.34.118: forbidden models cannot be valid fallback agents, so hide
+      // them. The policy may be project-scoped even though this chain is
+      // global-only; use the effective policy the runtime will enforce.
+      const forbidden = normalizeModelRefs(loadSettings(ctx.cwd).forbiddenModels);
       const refs = await promptModelRefs(
         ctx,
         `Main agent fallback models — try order is current → fallback 1 → fallback 2 … (space add/remove, tab order mode with ↑/↓, enter save); forbidden models are skipped`,
@@ -1140,7 +1142,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
         ctx,
         `Drafter fallback agents — ordered, up to ${MAX_MAIN_MODEL_FALLBACKS}; the session agent is the last resort; forbidden models are hidden`,
         current,
-        { excludeRefs: normalizeModelRefs(global.forbiddenModels), maxSelections: MAX_MAIN_MODEL_FALLBACKS, currentRef: modelRef(ctx.model) },
+        { excludeRefs: normalizeModelRefs(loadSettings(ctx.cwd).forbiddenModels), maxSelections: MAX_MAIN_MODEL_FALLBACKS, currentRef: modelRef(ctx.model) },
       );
       if (refs === undefined) return;
       saveSettings("global", ctx.cwd, { drafterModelFallbacks: refs.length ? refs : undefined });
@@ -1263,7 +1265,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
         ? resolvePickedModel(ctx, { kind: "ref", ref: configuredPrimary })
         : ctx.model as any;
       const primaryRef = modelRef(primaryModel) ?? configuredPrimary ?? modelRef(ctx.model);
-      const forbidden = normalizeModelRefs(settings.forbiddenModels);
+      const forbidden = normalizeModelRefs(loadSettings(ctx.cwd).forbiddenModels);
       const refs = await promptModelRefs(
         ctx,
         `Auditor fallback models — try order is auditor primary → fallback 1 → fallback 2 … (space add/remove, tab order mode with ↑/↓, enter save); forbidden models are skipped`,
@@ -1500,7 +1502,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const agentType = id.slice("subagentFallbacks:".length);
       const settings = loadSettings(ctx.cwd);
       const current = settings.subagentFallbacks?.[agentType] ?? [];
-      const refs = await promptModelRefs(ctx, `${agentType} fallback chain — ordered, up to ${MAX_MAIN_MODEL_FALLBACKS} (space to toggle, tab = order mode with ↑/↓, enter to confirm); forbidden models hidden`, current, { excludeRefs: normalizeModelRefs(loadGlobalSettings().forbiddenModels), maxSelections: MAX_MAIN_MODEL_FALLBACKS });
+      const refs = await promptModelRefs(ctx, `${agentType} fallback chain — ordered, up to ${MAX_MAIN_MODEL_FALLBACKS} (space to toggle, tab = order mode with ↑/↓, enter to confirm); forbidden models hidden`, current, { excludeRefs: normalizeModelRefs(settings.forbiddenModels), maxSelections: MAX_MAIN_MODEL_FALLBACKS });
       if (refs === undefined) return;
       const next = { ...(settings.subagentFallbacks ?? {}) };
       if (refs.length > 0) next[agentType] = refs;
