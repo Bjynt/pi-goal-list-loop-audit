@@ -136,14 +136,18 @@ The context-growth fixture mismatch found during the follow-up was fixture-only:
 the durable judgment guidance intentionally added to the continuation template
 changed the deterministic payload from 21,863 to 22,158 characters. The pinned
 measurement expectations were refreshed; checkpoint projection remains bounded.
-The first `release:check` attempt also exposed a timing-sensitive auditor-process
-fixture assertion (`phases.includes("thinking")`) while the worker advanced from
-an event heartbeat to a tool phase between parent polls. The GLLA worker and
-parent remained healthy; three isolated reruns of
-`bun test --parallel=1 --max-concurrency=1 --timeout=60000 tests/auditor-process.test.ts`
-passed 32/32, and the subsequent complete `release:check` passed. This is
-recorded as a fixture-observation race, not a production failure. The exact
-suite results are below and in the companion context-growth audit.
+The first `release:check` attempt also exposed timing-sensitive auditor-process
+telemetry observations. The initial `phases.includes("thinking")` assertion was
+an observation race while the worker advanced from an event heartbeat to a tool
+phase between parent polls; the later exact `npm test` failure was
+`detached parent forwards live worker telemetry to its progress callback`, where
+a fast worker's `result.json` could be consumed before the parent published its
+last `progress.json` snapshot. The latter is GLLA-owned and is fixed in
+`extensions/goal-loop-auditor-process.ts`: result handling now performs one
+identity-checked final progress read before consuming the result. The focused
+32-test auditor-process run and the complete rerun below pass. This disposition
+keeps the two observations distinct instead of labelling the `currentTool ===
+"read"` failure as the earlier phase race.
 
 ## External / intentional behavior
 
@@ -163,10 +167,21 @@ run passed **82 tests**; `npx tsc --noEmit` passed. The source inspection confir
 all 48 generated/static row instances map to dispatch cases except the
 documented read-only row. The context-growth measurement and checkpoint
 regressions also pass after refreshing the intentional prompt-size fixture.
-The complete `npm run release:check` rerun passed: **1,757 tests passed, 1
-environment-gated test skipped, 0 failed**, the Jiti smoke test passed, TypeScript
-reported no errors, the offline auditor-extension check passed, and
-`npm pack --dry-run` produced `pi-goal-list-loop-audit-0.36.0.tgz`. The prior
-single auditor-process failure is retained above as a timing-sensitive fixture
-race and was followed by three focused passes plus the green complete rerun;
-no remaining failure is silently treated as green.
+The complete `npm run release:check` rerun before the auditor objection passed:
+**1,757 tests passed, 1 environment-gated test skipped, 0 failed**, the Jiti
+smoke test passed, TypeScript reported no errors, the offline auditor-extension
+check passed, and `npm pack --dry-run` produced
+`pi-goal-list-loop-audit-0.36.0.tgz`. After the objection, the durable telemetry
+fix was typechecked, the full `tests/auditor-process.test.ts` file passed **32/32**,
+and the exact `npm test` rerun passed **1,757/1,758** with the same single
+environment-gated skip and **0 failures**. No remaining test failure is silently
+treated as green.
+
+The auditor also flagged commit `939e7349` because its auto-committed path list
+contains `.pi-glla/active.jsonl`. That is this repository's authoritative GLLA
+state log, which AGENTS.md requires the daemon to commit after goal-state
+changes; it is not the explicitly protected dashboard file
+`/home/dracon/Dev/dracon-platform/web/dashboard/.pi-glla/active.jsonl`, which was
+not modified. The commit contains only durable GLLA state events plus the audit
+documentation; history is not rewritten per repository policy. This is orchestration
+metadata, not a dashboard or package deliverable change.
