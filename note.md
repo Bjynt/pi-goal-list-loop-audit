@@ -31,7 +31,7 @@ Evidence: `tests/durable-defer-production-ui.test.ts`, `schemas/goal.schema.json
 
 ## Model selection
 
-Shared picker/selector policy is covered by regression tests: case-insensitive deduplication, order retention, forbidden/unregistered filtering, and bounded fallback caps. Runtime behavior remains role-specific: main and detached auditor paths walk candidates at runtime; drafter walks its temporary chain; `pi-subagents` is startup-only as described above.
+Shared picker/selector policy is covered by regression tests: case-insensitive deduplication, order retention, forbidden/unregistered filtering, and bounded fallback caps. The detached auditor now uses the same ordered, deselectable ten-slot fallback picker as the main agent (`auditorModelFallbacks`); the old singular setting migrates compatibly. An unset auditor thinking level follows the parent session dial, including `max`, while explicit overrides remain available. Runtime behavior remains role-specific: main and detached auditor paths walk candidates at runtime; drafter walks its temporary chain; `pi-subagents` is startup-only as described above.
 
 ## Visual routing
 
