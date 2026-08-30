@@ -20,6 +20,10 @@
 
 # Later
 
+## audit loop keeps losing objective
+
+/home/dracon/Pictures/Screenshots/Screenshot_20260830_141842.png 
+
 ## Cross-harness and extension review
 
 Review other harnesses and goal extensions, notably pi goal x, DeepSeek, Codex, Claude, Antigravity, and Grok harnesses.
