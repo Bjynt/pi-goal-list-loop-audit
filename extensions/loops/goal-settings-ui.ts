@@ -483,10 +483,16 @@ export function resolveAuditorModel(
   const configuredFallbackRefs = typeof fallbackRefs === "string"
     ? (fallbackRefs.trim() ? [fallbackRefs.trim()] : [])
     : fallbackRefs ?? [];
-  const configuredRefs = normalizeMainModelFallbackRefs([
-    ...(ref?.trim() ? [ref.trim()] : []),
-    ...configuredFallbackRefs,
-  ]);
+  // The ten-ref bound applies to the fallback setting itself, not to the
+  // primary plus its fallbacks. Keep all ten alternatives when a primary is
+  // pinned, while still deduplicating a primary that was also typed into the
+  // fallback list.
+  const primaryRef = normalizeModelRefs(ref)[0];
+  const normalizedFallbackRefs = normalizeMainModelFallbackRefs(configuredFallbackRefs);
+  const configuredRefs = [
+    ...(primaryRef ? [primaryRef] : []),
+    ...normalizedFallbackRefs.filter((candidate) => candidate.toLowerCase() !== primaryRef?.toLowerCase()),
+  ];
   const settings = loadSettings(ctx.cwd);
   const forbidden = (candidate: string): boolean => isForbiddenModel(candidate, settings.forbiddenModels);
   const selector = new ModelSelector({
@@ -510,13 +516,22 @@ export function resolveAuditorModel(
   const candidates: AuditorModelCandidate[] = [];
   const attempted: string[] = [];
   const seenModels = new Set<string>();
+  // A typed primary may be a bare model id while ModelSelector's current
+  // model ref is provider-qualified. Match through the registry so the
+  // same-session swap gate remains correct for both forms.
+  const selectorCurrentRef = currentRef
+    ? configuredRefs.find((candidate) => modelRef(tryRef(candidate).model)?.toLowerCase() === currentRef.toLowerCase()) ?? currentRef
+    : undefined;
+  const primaryMatchesSession = !!primaryRef
+    && !!currentRef
+    && (primaryRef.toLowerCase() === currentRef.toLowerCase()
+      || modelRef(tryRef(primaryRef).model)?.toLowerCase() === currentRef.toLowerCase());
   const addCandidate = (candidateRef: string, model: any, via: string): void => {
     const key = modelRef(model)?.toLowerCase() ?? candidateRef.toLowerCase();
     if (seenModels.has(key)) return;
     seenModels.add(key);
     candidates.push({ ref: candidateRef, model, via });
   };
-  const primaryRef = ref?.trim() && ref.trim().toLowerCase() !== "unset" ? configuredRefs[0] : undefined;
   // Unlike main recovery, the auditor may deliberately use the session model
   // when same-model swapping is disabled. Seed that configured primary before
   // asking the selector to walk the remaining chain.
@@ -524,7 +539,7 @@ export function resolveAuditorModel(
     !sameSessionSwap
     && primaryRef
     && currentRef
-    && primaryRef.toLowerCase() === currentRef.toLowerCase()
+    && primaryMatchesSession
     && !forbidden(primaryRef)
     && sessionModel
   ) {
@@ -534,7 +549,7 @@ export function resolveAuditorModel(
   for (;;) {
     const selected = selector.selectNextValid(
       { kind: "auditor" },
-      sameSessionSwap ? currentRef : undefined,
+      sameSessionSwap ? selectorCurrentRef : undefined,
       attempted,
     );
     for (const visited of selector.lastVisitedRefs) {
@@ -548,7 +563,7 @@ export function resolveAuditorModel(
   if (sessionModel && currentRef) addCandidate(currentRef, sessionModel, candidates.length > 0 ? "session-fallback" : "session");
 
   const currentPinned = sameSessionSwap && currentRef
-    ? configuredRefs.find((candidate) => candidate.toLowerCase() === currentRef.toLowerCase())
+    ? configuredRefs.find((candidate) => candidate.toLowerCase() === selectorCurrentRef?.toLowerCase())
     : undefined;
   if (currentPinned && currentRef) {
     const replacement = candidates.find((candidate) => candidate.via === "fallback-pin" && candidate.ref?.toLowerCase() !== currentRef.toLowerCase());

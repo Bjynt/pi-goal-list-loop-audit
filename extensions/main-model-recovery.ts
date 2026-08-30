@@ -12,6 +12,10 @@ export const DEFAULT_MAIN_MODEL_PRIMARY_PROBE_MINUTES = 15;
  * outside the UI. Ten alternatives is enough to cross providers/model pools
  * without turning one failure into an unbounded registry walk. */
 export const MAX_MAIN_MODEL_FALLBACKS = 10;
+/** A detached audit can carry one pinned primary, ten configured fallback
+ * refs, and the session model as its final last resort. Cursor persistence
+ * needs room for that complete chain across a host restart. */
+export const MAX_AUDITOR_CANDIDATE_REFS = MAX_MAIN_MODEL_FALLBACKS + 2;
 
 export type MainModelFailbackPolicy = "auto" | "sticky";
 
@@ -78,6 +82,24 @@ export function normalizeModelRefs(value: unknown): string[] {
     if (!ref || ref.toLowerCase() === "unset" || seen.has(ref)) continue;
     seen.add(ref);
     out.push(ref);
+  }
+  return out;
+}
+
+/** Normalize an ordered ref list with an explicit case-insensitive bound.
+ * The generic list parser remains unbounded for callers that need to report
+ * or inspect all user input; bounded settings/state callers opt in here. */
+export function normalizeBoundedModelRefs(value: unknown, max: number): string[] {
+  const limit = Number.isFinite(max) ? Math.max(0, Math.trunc(max)) : 0;
+  if (limit === 0) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const ref of normalizeModelRefs(value)) {
+    const key = ref.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(ref);
+    if (out.length >= limit) break;
   }
   return out;
 }
