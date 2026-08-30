@@ -182,6 +182,7 @@ import {
   mainModelAutoRetryUntil,
   mainModelRetryDelayMs,
   MAIN_MODEL_AUTO_RETRY_HORIZON_MS,
+  MAX_AUDITOR_CANDIDATE_REFS,
   modelRef,
   normalizeModelRefs,
   sendStormEscalateMs,
@@ -870,7 +871,7 @@ function persistDetachedAuditorCursor(
   return updateGoal({
     pendingCompletion: {
       ...claim,
-      auditorCandidateRefs: info.candidateRefs.slice(0, 10),
+      auditorCandidateRefs: info.candidateRefs.slice(0, MAX_AUDITOR_CANDIDATE_REFS),
       ...patch,
     },
   }, current);

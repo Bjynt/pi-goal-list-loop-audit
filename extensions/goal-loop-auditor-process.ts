@@ -31,7 +31,6 @@ import {
   modelRef,
   nextUntriedModelRef,
   normalizeBoundedModelRefs,
-  normalizeMainModelFallbackRefs,
   MAX_AUDITOR_CANDIDATE_REFS,
 } from "./main-model-recovery.js";
 import { ModelSelector, type ModelFallbackEvent } from "./model-selector.js";
