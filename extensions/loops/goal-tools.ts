@@ -126,6 +126,7 @@ isGoalRevisionCurrent,
   type ListItem,
   type DurableDeferRecommendationInput,
   type DurableChoice,
+  type DurableChoiceRecord,
   buildDurableChoiceRecord,
   normalizeDurableDeferRecommendationInput,
 } from "../goal-loop-core.js";
@@ -440,6 +441,35 @@ function verifyTaskMilestone(ctx: ExtensionContext, verificationContract?: strin
   if (!verificationContract?.trim()) return null;
   const result = runMechanicalPreAuditChecks(ctx.cwd, extractMechanicalCheckCommands(verificationContract));
   return result.passed ? null : result;
+}
+
+/** Build the bounded recommendation facts that the production UI projects.
+ * The explicit tool choice is itself the current judgment; optional fields
+ * let the agent name the durable action and preserve the exact prior defer
+ * alternatives instead of making refreshUI infer them from prose. */
+function durableDeferFactsForGoal(
+  goal: Goal,
+  choice: DurableChoiceRecord,
+  input: {
+    durableFix?: string;
+    deferRecommendations?: string[];
+    durableBlocked?: boolean;
+  },
+): DurableDeferRecommendationInput {
+  const prior = goal.durableDeferRecommendation;
+  const deferRecommendations = input.deferRecommendations ?? [
+    ...(prior?.deferRecommendations ?? []),
+    ...(choice.choice === "deferred" ? [choice.reason] : []),
+  ];
+  return normalizeDurableDeferRecommendationInput({
+    durableFix: input.durableFix ?? prior?.durableFix ?? goal.objective,
+    deferRecommendations,
+    // A deferred judgment is an explicit assertion that the durable action is
+    // blocked for this turn; callers can still pass false when the UI is
+    // recording three historical defers while recommending the safe durable
+    // action now.
+    durableBlocked: input.durableBlocked ?? choice.choice === "deferred",
+  });
 }
 
 function registerAgentTools(pi: any): void {
@@ -1728,6 +1758,9 @@ function registerAgentTools(pi: any): void {
       choice: Type.Union([Type.Literal("inline"), Type.Literal("deferred")], { description: "Whether the durable fix is being implemented now or intentionally deferred" }),
       reason: Type.String({ maxLength: 500, description: "Concise reason for the durable-vs-defer choice" }),
       followUp: Type.Optional(Type.String({ maxLength: 500, description: "For a deferred choice, the bounded durable follow-up" })),
+      durableFix: Type.Optional(Type.String({ maxLength: 500, description: "The maintainable root-cause action to show in the goal card" })),
+      deferRecommendations: Type.Optional(Type.Array(Type.String({ maxLength: 500 }), { maxItems: 8, description: "Earlier bounded workaround/defer recommendations to retain as UI evidence" })),
+      durableBlocked: Type.Optional(Type.Boolean({ description: "True only when the durable action is unsafe, impossible, or blocked for this turn" })),
     }),
     async execute(_id, params, _signal, _onUpdate, execCtx) {
       const foreignJudgment = foreignToolGuard(execCtx);
@@ -1738,7 +1771,14 @@ function registerAgentTools(pi: any): void {
       if (state.goal.status !== "active") {
         return { content: [{ type: "text", text: `Goal is already ${state.goal.status}; judgment was not recorded.` }], details: {} };
       }
-      const p = params as { choice: DurableChoice; reason: string; followUp?: string };
+      const p = params as {
+        choice: DurableChoice;
+        reason: string;
+        followUp?: string;
+        durableFix?: string;
+        deferRecommendations?: string[];
+        durableBlocked?: boolean;
+      };
       const record = buildDurableChoiceRecord(p.choice, p.reason, p.followUp);
       if (!record.reason) {
         return { content: [{ type: "text", text: "A non-empty reason is required to record a durable-vs-defer judgment." }], details: {} };
@@ -1746,13 +1786,26 @@ function registerAgentTools(pi: any): void {
       if (record.choice === "deferred" && !record.followUp) {
         return { content: [{ type: "text", text: "A deferred judgment also requires a durable follow-up." }], details: {} };
       }
+      const goal = state.goal;
+      const durableDeferRecommendation = durableDeferFactsForGoal(goal, record, p);
       const landed = appendLedger(ctx.cwd, "durable_defer_choice", {
-        goalId: state.goal.id,
+        goalId: goal.id,
         ...record,
+        durableDeferRecommendation,
       });
       if (!landed) {
         return { content: [{ type: "text", text: "The durable-vs-defer judgment could not be persisted; no choice was recorded." }], details: {} };
       }
+      if (!updateGoal({ durableDeferRecommendation }, ctx)) {
+        return {
+          content: [{ type: "text", text: `Recorded durable-vs-defer judgment: ${record.choice}, but its UI recommendation projection could not be persisted.` }],
+          details: {},
+        };
+      }
+      // The same production refresh path used by lifecycle events must repaint
+      // the card immediately; the next session also recovers the projection
+      // from the state ledger through Goal.durableDeferRecommendation.
+      refreshUI(ctx);
       return {
         content: [{ type: "text", text: `Recorded durable-vs-defer judgment: ${record.choice}.` }],
         details: {},
