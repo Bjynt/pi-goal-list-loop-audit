@@ -19,7 +19,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { state } from "./goal-state.js";
-import { appendLedger, claimRecoveryNotice, nowIso, piGlaDir, isForbiddenModel, isStaleApiError, nextHourlyProbeMs, providerErrorFingerprint, providerErrorPresentation, resolveEffectiveAggressiveSettings, sanitizeProviderDisplayText, supervisorPaused, writeGoalMd, type Goal, type MainModelRecovery, type PendingCompletion } from "./goal-loop-core.js";
+import { appendLedger, claimRecoveryNotice, nowIso, piGlaDir, isForbiddenModel, isStaleApiError, nextHourlyProbeMs, providerErrorFingerprint, providerErrorPresentation, resolveEffectiveAggressiveSettings, sanitizeProviderDisplayText, supervisorPaused, writeGoalMd, MAX_AUDITOR_CANDIDATE_REFS, type Goal, type MainModelRecovery, type PendingCompletion } from "./goal-loop-core.js";
 import { persistStateLine } from "./goal-state.js";
 import { cancelDetachedGoalCompletionAuditor } from "./goal-loop-auditor-process.js";
 import {
@@ -33,6 +33,7 @@ import {
   mainModelRetryDelayMs,
   MAIN_MODEL_AUTO_RETRY_HORIZON_MS,
   modelRef,
+  normalizeBoundedModelRefs,
   normalizeMainModelFallbackRefs,
   requiresMainModelRecovery,
   splitModelRef,
@@ -92,7 +93,7 @@ function sanitizeCompletionAuditCursorPatch(patch: CompletionAuditCursorPatch | 
   if (!patch) return {};
   const cleanRef = (ref: unknown): string | undefined => normalizeMainModelFallbackRefs([ref])[0];
   const cleanRefs = (refs: unknown): string[] | undefined => Array.isArray(refs)
-    ? normalizeMainModelFallbackRefs(refs).slice(0, 10)
+    ? normalizeBoundedModelRefs(refs, MAX_AUDITOR_CANDIDATE_REFS)
     : undefined;
   const cleanFailureClass = typeof patch.auditorFailureClass === "string"
     && AUDITOR_FAILURE_CLASSES.has(patch.auditorFailureClass as PendingCompletion["auditorFailureClass"])

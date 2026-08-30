@@ -112,17 +112,7 @@ export function normalizeBoundedModelRefs(value: unknown, max: number): string[]
  * registry lookup and display.
  */
 export function normalizeMainModelFallbackRefs(value: unknown): string[] {
-  const raw = normalizeModelRefs(value);
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const ref of raw) {
-    const key = ref.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(ref);
-    if (out.length >= MAX_MAIN_MODEL_FALLBACKS) break;
-  }
-  return out;
+  return normalizeBoundedModelRefs(value, MAX_MAIN_MODEL_FALLBACKS);
 }
 
 /** Render the persisted chain exactly as the runtime walks it. Numbering is

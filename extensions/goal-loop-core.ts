@@ -12,10 +12,15 @@ import * as path from "node:path";
 import { createHash } from "node:crypto";
 import { execSync } from "node:child_process";
 import { normalizeProviderErrorText, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText, type QuotaSignal } from "./quota-retry.js";
-import { MAX_MAIN_MODEL_FALLBACKS } from "./main-model-recovery.js";
+import { MAX_AUDITOR_CANDIDATE_REFS, MAX_MAIN_MODEL_FALLBACKS, normalizeBoundedModelRefs } from "./main-model-recovery.js";
 import { resolveGllaStateDir, stateRootPending } from "./glla-state-root.js";
 export { normalizeProviderErrorText, providerErrorFingerprint, providerErrorPresentation, sanitizeProviderAuditReport, sanitizeProviderDisplayText } from "./quota-retry.js";
 export { globalSettingsPath, resolveRuntimeSessionDir, setRuntimeSessionDir, setRuntimeSessionDirFromSessionManager, stateRootPending, type GllaStateRoot } from "./glla-state-root.js";
+
+/** One primary + the ten configured auditor fallbacks + the session-model
+ * last resort. This is separate from the ten-slot settings bound because the
+ * durable cursor must survive the complete runtime chain. */
+export { MAX_AUDITOR_CANDIDATE_REFS } from "./main-model-recovery.js";
 
 /** v0.26.1: consecutive heartbeat refires without a real agent turn
  * before the supervisor gives up (pauses the goal / stops the loop).
@@ -1496,17 +1501,10 @@ function normalizePendingCompletion(value: unknown): PendingCompletion {
   const phase = _phase === "quota-waiting" ? "retry-waiting" : _phase;
   const boundedRefs = (value: unknown): string[] | undefined => {
     if (!Array.isArray(value)) return undefined;
-    const out: string[] = [];
-    const seen = new Set<string>();
-    for (const entry of value) {
-      if (typeof entry !== "string") continue;
-      const ref = entry.trim().slice(0, 200);
-      if (!ref || seen.has(ref.toLowerCase())) continue;
-      seen.add(ref.toLowerCase());
-      out.push(ref);
-      if (out.length >= 10) break;
-    }
-    return out;
+    return normalizeBoundedModelRefs(
+      value.map((entry) => typeof entry === "string" ? entry.trim().slice(0, 200) : entry),
+      MAX_AUDITOR_CANDIDATE_REFS,
+    );
   };
   const auditorCandidateRefs = boundedRefs(_auditorCandidateRefs);
   const auditorAttemptedRefs = boundedRefs(_auditorAttemptedRefs);

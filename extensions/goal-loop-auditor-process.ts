@@ -30,7 +30,9 @@ import {
   mainModelFailureDelayMs,
   modelRef,
   nextUntriedModelRef,
+  normalizeBoundedModelRefs,
   normalizeMainModelFallbackRefs,
+  MAX_AUDITOR_CANDIDATE_REFS,
 } from "./main-model-recovery.js";
 import { ModelSelector, type ModelFallbackEvent } from "./model-selector.js";
 import { buildGoalAuditorPrompt } from "./goal-loop-auditor.js";
@@ -212,7 +214,7 @@ export async function runAuditorFallbackWithPolicy(
     candidate,
     ref: (candidate.ref?.trim() || modelRef(candidate.model) || `auditor/candidate-${index}`),
   }));
-  const refs = normalizeMainModelFallbackRefs(normalized.map((entry) => entry.ref));
+  const refs = normalizeBoundedModelRefs(normalized.map((entry) => entry.ref), MAX_AUDITOR_CANDIDATE_REFS);
   const byRef = new Map<string, AuditorFallbackCandidate>();
   for (const entry of normalized) {
     const key = entry.ref.toLowerCase();
@@ -489,9 +491,9 @@ export async function runAuditorFallbackWithPolicy(
  * walker will use. Persisting refs rather than model objects keeps recovery
  * portable across host restarts and avoids serializing provider credentials. */
 export function auditorCandidateRefs(candidates: AuditorFallbackCandidate[]): string[] {
-  return normalizeMainModelFallbackRefs(candidates.map((candidate, index) =>
+  return normalizeBoundedModelRefs(candidates.map((candidate, index) =>
     candidate.ref?.trim() || modelRef(candidate.model) || `auditor/candidate-${index}`,
-  ));
+  ), MAX_AUDITOR_CANDIDATE_REFS);
 }
 
 /** Classify the final failure without trusting provider prose when the worker
