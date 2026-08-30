@@ -438,9 +438,18 @@ async function resolveDraftActivationConflict(ctx: ExtensionContext, incoming: O
   return "proceed";
 }
 
-function verifyTaskMilestone(ctx: ExtensionContext, verificationContract?: string): { failedCommand?: string; output?: string; exitCode?: number } | null {
+async function verifyTaskMilestone(
+  ctx: ExtensionContext,
+  verificationContract?: string,
+  signal?: AbortSignal,
+): Promise<{ failedCommand?: string; output?: string; exitCode?: number } | null> {
   if (!verificationContract?.trim()) return null;
-  const result = runMechanicalPreAuditChecks(ctx.cwd, extractMechanicalCheckCommands(verificationContract));
+  const result = await runMechanicalPreAuditChecks(
+    ctx.cwd,
+    extractMechanicalCheckCommands(verificationContract),
+    undefined,
+    signal,
+  );
   return result.passed ? null : result;
 }
 
@@ -820,10 +829,12 @@ function registerAgentTools(pi: any): void {
       let retriedOnce = false;
       let fallbackUsed = false;
       // v0.35.7: Deterministic Fast-Fail Pre-Audit — if mechanical contract checks fail,
-      // fail in 200ms with raw output rather than burning 45s on an LLM audit pass.
+      // fail with raw output rather than burning an LLM audit pass. The check
+      // runner is asynchronous and process-group bounded, so it cannot block
+      // the main pi event loop or strand descendants on timeout.
       try {
         const mechanicalCmds = extractMechanicalCheckCommands(auditGoal.verificationContract ?? "");
-        const mechanicalResult = runMechanicalPreAuditChecks(ctx.cwd, mechanicalCmds);
+        const mechanicalResult = await runMechanicalPreAuditChecks(ctx.cwd, mechanicalCmds, undefined, signal);
         if (!mechanicalResult.passed) {
         result = {
           approved: false,
@@ -1766,7 +1777,7 @@ function registerAgentTools(pi: any): void {
       deferRecommendations: Type.Optional(Type.Array(Type.String({ maxLength: 500 }), { maxItems: 8, description: "Earlier bounded workaround/defer recommendations to retain as UI evidence" })),
       durableBlocked: Type.Optional(Type.Boolean({ description: "True only when the durable action is unsafe, impossible, or blocked for this turn" })),
     }),
-    async execute(_id, params, _signal, _onUpdate, execCtx) {
+    async execute(_id, params, signal, _onUpdate, execCtx) {
       const foreignJudgment = foreignToolGuard(execCtx);
       if (foreignJudgment) return { content: [{ type: "text", text: foreignJudgment }], details: {} };
       const ctx = currentToolContext(execCtx);
@@ -2002,7 +2013,7 @@ function registerAgentTools(pi: any): void {
       while (queue.length > 0) {
         const t = queue.shift();
         if (t.id === p.id && t.status !== "complete") {
-          const checkRes = verifyTaskMilestone(ctx, t.verificationContract);
+          const checkRes = await verifyTaskMilestone(ctx, t.verificationContract, signal);
           if (checkRes) {
             return {
               content: [{
@@ -2030,7 +2041,7 @@ function registerAgentTools(pi: any): void {
       id: Type.String(),
       status: Type.Union([Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("complete")]),
     }),
-    async execute(_id, params, _signal, _onUpdate, execCtx) {
+    async execute(_id, params, signal, _onUpdate, execCtx) {
       const foreign8 = foreignToolGuard(execCtx);
       if (foreign8) return { content: [{ type: "text", text: foreign8 }], details: {} };
       const ctx = currentToolContext(execCtx);
@@ -2045,7 +2056,7 @@ function registerAgentTools(pi: any): void {
         const t = queue.shift();
         if (t.id === p.id) {
           if (p.status === "complete") {
-            const checkRes = verifyTaskMilestone(ctx, t.verificationContract);
+            const checkRes = await verifyTaskMilestone(ctx, t.verificationContract, signal);
             if (checkRes) {
               return {
                 content: [{
