@@ -284,6 +284,41 @@ test("T4: input editor — auditorModel set / cleared on empty", async () => {
   }
 });
 
+test("v0.36.0: auditor fallback editor preserves ordered refs, caps at ten, and clears", async () => {
+  try {
+    const ctx = makeMockCtx(tmpCwd());
+    ctx.ui.customStubMode = true;
+    const refs = Array.from({ length: 11 }, (_, i) => `provider/auditor-${i + 1}`);
+    ctx.ui.inputImpl = async (title) => title.startsWith("Auditor fallback models") ? refs.join(",") : undefined;
+    await handleSettingChoice("auditorModelFallbacks", ctx as unknown as ExtensionContext);
+    assert.deepEqual(readGlobal().auditorModelFallbacks, refs.slice(0, 10));
+    assert.ok(ctx.ui.matching("first 10 fallback agents").length >= 1, "the refused 11th selection is visible");
+
+    ctx.ui.inputImpl = async () => "   ";
+    await handleSettingChoice("auditorModelFallbacks", ctx as unknown as ExtensionContext);
+    assert.equal("auditorModelFallbacks" in readGlobal(), false, "clearing removes the persisted chain");
+    assert.deepEqual(loadSettings(tmpCwd()).auditorModelFallbacks, [], "reload keeps the empty default");
+  } finally {
+    restoreGlobal();
+  }
+});
+
+test("v0.36.0: the singular auditor fallback setting migrates to the ordered chain", () => {
+  try {
+    const cwd = tmpCwd();
+    fs.writeFileSync(GLOBAL_FILE, JSON.stringify({ auditorModelFallback: "legacy/auditor" }));
+    assert.deepEqual(loadSettings(cwd).auditorModelFallbacks, ["legacy/auditor"]);
+    assert.equal(settingsProvenance(cwd).auditorModelFallbacks?.source, "global");
+
+    saveSettings("global", cwd, { auditorModelFallbacks: ["new/first", "new/second"] });
+    const saved = readGlobal();
+    assert.deepEqual(saved.auditorModelFallbacks, ["new/first", "new/second"]);
+    assert.equal("auditorModelFallback" in saved, false, "the compatibility alias is removed on the next save");
+  } finally {
+    restoreGlobal();
+  }
+});
+
 test("drafter agent picker immediately offers model-specific thinking and persists both choices", async () => {
   try {
     restoreGlobal();

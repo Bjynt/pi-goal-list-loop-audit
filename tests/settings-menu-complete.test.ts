@@ -146,6 +146,26 @@ test("role rows show each selected model with requested/effective thinking", () 
   assert.equal(byId.get("auditorModelFallbacks")?.valueText, "1/10 · 1. provider/auditor-fallback · low (requested high)");
 });
 
+test("v0.36.0: unset auditor thinking mirrors the parent session and the fallback row uses the main shape", () => {
+  const rows = buildSettingsRows(
+    { auditorModel: "provider/auditor", auditorModelFallbacks: ["provider/backup"] } as Settings,
+    EMPTY_PROV,
+    {
+      sessionModel: "provider/session",
+      sessionThinkingLevel: "max",
+      thinkingLevelsByRef: {
+        "provider/auditor": ["off", "high", "max"],
+        "provider/backup": ["off", "max"],
+      },
+    },
+  );
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  assert.equal(byId.get("auditorModel")?.valueText, "provider/auditor · max");
+  assert.equal(byId.get("auditorThinkingLevel")?.valueText, "max");
+  assert.equal(byId.get("auditorModelFallbacks")?.valueText, "1/10 · 1. provider/backup · max");
+  assert.match(byId.get("auditorModelFallbacks")?.description ?? "", /ordered and deselectable/);
+});
+
 test("all embedded subagent types expose editable fallback-chain rows", () => {
   const rows = buildSettingsRows(
     {
