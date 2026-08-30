@@ -42,7 +42,7 @@ The three-defer plaque-collision report is addressed. Safe durable work remains 
 
 ## Visual auditor follow-up — native vision first, external tools optional
 
-For visual objectives, use the native image capability of the current main/auditor model first; do not assume MMX or any other external CLI is installed. The vision guidance/router now defaults to the current model, uses MMX only when availability is explicitly confirmed, and fails closed when neither native vision nor a confirmed external provider exists. Fresh evidence is still mandatory. The durable/defer goal has a production-path integration test and a fresh production-widget projection; the remaining gap is obtaining an authentic live Pi TUI capture rather than a local projection.
+For visual objectives, use the native image capability of the current main/auditor model first; do not assume MMX or any other external CLI is installed. The vision guidance/router now defaults to the current model, uses MMX only when availability is explicitly confirmed, and fails closed when neither native vision nor a confirmed external provider exists. Fresh evidence is still mandatory. Focused vision, visual-auditor, proactive-pre-read, settings, and model-switch coverage is green (83 tests); `npx tsc --noEmit` is clean. The durable/defer goal has a production-path integration test and a fresh production-widget projection; the remaining gap is obtaining an authentic live Pi TUI capture rather than a local projection.
 
 # Next
 
