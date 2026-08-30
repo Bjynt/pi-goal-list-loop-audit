@@ -193,11 +193,44 @@ let settingsEditContext: ExtensionContext | null = null;
 
 /** Recheck session admission immediately before every settings write. The
  * editor itself awaits user input, so a replacement can happen after the
- * menu-entry probe but before the selected value is saved. */
+ * menu-entry probe but before the selected value is saved.
+ *
+ * Normal menu rows edit the effective setting. A project value therefore must
+ * be written back to the project file; otherwise a global write is hidden by
+ * the still-effective project override and the UI appears not to save. The
+ * explicit project path remains available for toolOverrides/postaudit, while
+ * global-only keys never acquire a project destination because provenance
+ * filters them out in goal-settings.ts.
+ */
 function saveSettings(scope: "global" | "project", cwd: string, patch: Partial<Settings>): void {
   const probe = (globalThis as any).warnIfStaleAtEntry as ((ctx: ExtensionContext, what: string) => boolean) | undefined;
   if (settingsEditContext && typeof probe === "function" && probe(settingsEditContext, "settings save")) return;
-  persistSettings(scope, cwd, patch);
+  if (scope === "project") {
+    persistSettings(scope, cwd, patch);
+    return;
+  }
+
+  const provenance = settingsProvenance(cwd);
+  const globalPatch: Record<string, unknown> = {};
+  const projectPatch: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(patch)) {
+    const destination = provenance[key as keyof Settings]?.source === "project"
+      ? projectPatch
+      : globalPatch;
+    destination[key] = value;
+  }
+  if (Object.keys(projectPatch).length > 0) persistSettings("project", cwd, projectPatch as Partial<Settings>);
+  if (Object.keys(globalPatch).length > 0) persistSettings("global", cwd, globalPatch as Partial<Settings>);
+}
+
+/** Parse the unsigned integer syntax used by the numeric settings editors.
+ * Number.parseInt("15minutes", 10) silently accepted malformed input; a
+ * settings editor must either save the complete value or reject it. */
+function parseSettingsInteger(raw: string): number | undefined {
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return undefined;
+  const value = Number(trimmed);
+  return Number.isSafeInteger(value) ? value : undefined;
 }
 import {
   curateAuditReviewSources,
@@ -1022,8 +1055,8 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const v = await ctx.ui.input("Preferred-primary failback probe cadence", "positive integer minutes; empty = default 15");
       if (v !== undefined) {
         const raw = v.trim();
-        const n = Number.parseInt(raw, 10);
-        if (Number.isInteger(n) && n > 0) saveSettings("global", ctx.cwd, { mainModelPrimaryProbeMinutes: n });
+        const n = parseSettingsInteger(raw);
+        if (n !== undefined && n > 0) saveSettings("global", ctx.cwd, { mainModelPrimaryProbeMinutes: n });
         else if (!raw) saveSettings("global", ctx.cwd, { mainModelPrimaryProbeMinutes: undefined });
         else ctx.ui.notify(`primary probe minutes must be a positive integer, got: ${v}`, "warning");
       }

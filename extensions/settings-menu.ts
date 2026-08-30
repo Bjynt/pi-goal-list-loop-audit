@@ -157,9 +157,13 @@ export function buildSettingsRows(
   const subagentHangMinutes = typeof configuredSubagentHangMinutes === "number"
     ? configuredSubagentHangMinutes
     : settings.subagentHangEscalationMinutes ?? 30;
-  const drafterRef = settings.drafterModel ?? sessionRef;
+  // Inherited role values are intentionally shown as a category rather than
+  // the concrete session ref: the latter makes an unset override look pinned.
+  // The actual session ref remains visible in the read-only mainAgent row and
+  // in the auditor fallback row's final-resort slot.
+  const drafterRef = settings.drafterModel?.trim() ? settings.drafterModel : "session model";
   const drafterThinking = settings.drafterThinkingLevel ?? sessionThinking;
-  const auditorRef = settings.auditorModel ?? sessionRef;
+  const auditorRef = settings.auditorModel?.trim() ? settings.auditorModel : "session model";
   // An unset auditor level follows the live parent dial. This keeps the
   // detached verifier at the same effective reasoning level as the main
   // agent (including max) without preventing an explicit auditor override.
@@ -174,7 +178,7 @@ export function buildSettingsRows(
       valueText: show("autoResume", "default"),
       sourceText: src("autoResume"),
       description:
-        "on: resume on session load too · off: never · default: hold on EVERY load — explicit resume",
+        "on: resume on session load too · off: never · default: hold on a fresh load, rebind on reload/fork — explicit resume",
     },
     {
       id: "decisionPopup",
@@ -407,7 +411,7 @@ export function buildSettingsRows(
       label: "Audit cap",
       valueText: show("auditCap", `${effective.auditCap}`),
       sourceText: src("auditCap"),
-      description: "pause the goal after N consecutive disapprovals (0 = unlimited)",
+      description: "pause the goal after N consecutive disapprovals (0 = unlimited; unset = 10 in aggressive mode, otherwise 5)",
     },
     {
       id: "auditFeedbackChars",
@@ -430,7 +434,7 @@ export function buildSettingsRows(
       label: "Wedge alert minutes",
       valueText: show("wedgeAlertMinutes", `${effective.wedgeAlertMinutes}`),
       sourceText: src("wedgeAlertMinutes"),
-      description: "hung-command alert while the session is busy (0 = off)",
+      description: "hung-command alert while the session is busy (0 = off; unset = 0 in aggressive mode, otherwise 30)",
     },
     {
       id: "subagentHangEscalationMinutes",
@@ -446,7 +450,7 @@ export function buildSettingsRows(
       label: "Stuck max interventions",
       valueText: show("stuckMaxInterventions", `${effective.stuckMaxInterventions}`),
       sourceText: src("stuckMaxInterventions"),
-      description: "consecutive stuck interventions before a loop stops",
+      description: "consecutive stuck interventions before a loop stops (unset = 10 in aggressive mode, otherwise 5)",
     },
     {
       id: "stallEscalationRefires",
