@@ -82,6 +82,20 @@
       "items": { "type": "string" },
       "description": "aggressiveMode audit-cap TODOs: objections extracted from the latest disapproved report, rendered into every continuation until addressed."
     },
+    "durableDeferRecommendation": {
+      "type": "object",
+      "required": ["durableFix", "deferRecommendations"],
+      "properties": {
+        "durableFix": { "type": "string", "maxLength": 500 },
+        "deferRecommendations": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "type": "string", "maxLength": 500 }
+        },
+        "durableBlocked": { "type": "boolean" }
+      },
+      "description": "Bounded durable-vs-defer decision facts projected into the goal card and retained across reloads."
+    },
     "completionSummary": {
       "type": "string",
       "description": "The final completion claim text passed to complete_goal; mirrored into the archive markdown as the final record."
