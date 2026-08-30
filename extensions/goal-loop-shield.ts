@@ -475,9 +475,16 @@ function formatMechanicalFailure(run: MechanicalCommandRun, timeoutMs: number): 
  * slow ones. Failed output now keeps the TAIL, not the head — the end of a
  * killed/failed run shows what was actually happening at death.
  */
-export function runMechanicalPreAuditChecks(cwd: string, commands: string[], timeoutMs = 600_000): MechanicalCheckResult {
+export async function runMechanicalPreAuditChecks(
+  cwd: string,
+  commands: string[],
+  timeoutMs = DEFAULT_MECHANICAL_CHECK_TIMEOUT_MS,
+  signal?: AbortSignal,
+): Promise<MechanicalCheckResult> {
   if (!commands || commands.length === 0) return { passed: true };
-  const { execFileSync } = require("node:child_process");
+  const effectiveTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? timeoutMs
+    : DEFAULT_MECHANICAL_CHECK_TIMEOUT_MS;
   const recoveredRetries: string[] = [];
   for (const rawCommand of commands) {
     const cmd = rawCommand.trim();
@@ -487,7 +494,7 @@ export function runMechanicalPreAuditChecks(cwd: string, commands: string[], tim
       // the conjunction. Keep the original compound text in a failure result
       // so the auditor sees which contract item failed.
       for (const step of compound) {
-        const stepResult = runMechanicalPreAuditChecks(cwd, [step], timeoutMs);
+        const stepResult = await runMechanicalPreAuditChecks(cwd, [step], effectiveTimeoutMs, signal);
         if (!stepResult.passed) return { ...stepResult, failedCommand: rawCommand };
       }
       continue;
@@ -526,43 +533,34 @@ export function runMechanicalPreAuditChecks(cwd: string, commands: string[], tim
     let firstFailure: { output: string; exitCode: number } | null = null;
     let passed = false;
     for (let attempt = 1; attempt <= 2 && !passed; attempt++) {
-      try {
-        // v0.35.25: pass an explicit maxBuffer. The default is 1 MB, and when
-        // a child's output exceeds it Node kills the child with SIGTERM and
-        // throws ENOBUFS — which this function then mislabels via the
-        // signal==="SIGTERM" banner as "killed after 600s" even though the
-        // child died in seconds. Field incident (2026-08-23, five auditor
-        // rounds on hellhunter): the gate `bun test src/lib/game` emits
-        // ~1.17 MB of (all-passing!) output and was unpassable by
-        // construction — both attempts died at ~1 MB with exit 1 while the
-        // identical tree passed green from an interactive shell 19/19
-        // times. 64 MB covers any realistic suite tail without enabling
-        // runaway memory.
-        execFileSync(program, args, { cwd, timeout: timeoutMs, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 });
+      const run = await runMechanicalCommand(cwd, program, args, effectiveTimeoutMs, signal);
+      if (!run.timedOut && !run.aborted && !run.outputLimit && run.exitCode === 0) {
         passed = true;
-      } catch (err: any) {
-        const exitCode = typeof err.status === "number" ? err.status : (typeof err.code === "number" ? err.code : 1);
-        const stdout = err.stdout ? String(err.stdout) : "";
-        const stderr = err.stderr ? String(err.stderr) : "";
-        const combined = (stdout + "\n" + stderr).trim() || err.message || "Command failed";
-        const killed = err.killed === true || err.signal === "SIGTERM" && err.code !== "ENOBUFS";
-        const banner = killed
-          ? `[mechanical check killed after ${Math.round(timeoutMs / 1000)}s — output tail below]`
-          : "";
-        const body = combined.length > 4000 ? "…[truncated head]\n" + combined.slice(-4000) : combined;
-        const failureOutput = (banner ? banner + "\n" : "") + body;
-        if (attempt === 1) {
-          firstFailure = { output: failureOutput, exitCode };
-        } else {
-          return {
-            passed: false,
-            failedCommand: rawCommand,
-            output: firstFailure
-              ? `[mechanical check retried once after a failed first attempt (exit ${firstFailure.exitCode}); second attempt also failed — output tail below]\n` + failureOutput
-              : failureOutput,
-            exitCode,
-          };
-        }
+        continue;
+      }
+      const failure = formatMechanicalFailure(run, effectiveTimeoutMs);
+      // A timeout, caller abort, or output-limit breach is a containment
+      // event, not a transient test wobble. Retrying would immediately start
+      // another untrusted process tree and can recreate the incident.
+      if (run.timedOut || run.aborted || run.outputLimit) {
+        return {
+          passed: false,
+          failedCommand: rawCommand,
+          output: failure.output,
+          exitCode: failure.exitCode,
+        };
+      }
+      if (attempt === 1) {
+        firstFailure = failure;
+      } else {
+        return {
+          passed: false,
+          failedCommand: rawCommand,
+          output: firstFailure
+            ? `[mechanical check retried once after a failed first attempt (exit ${firstFailure.exitCode}); second attempt also failed — output tail below]\n` + failure.output
+            : failure.output,
+          exitCode: failure.exitCode,
+        };
       }
     }
     if (passed && firstFailure) {
