@@ -451,7 +451,7 @@ const THINKING_DESCR: Record<string, string> = {
   minimal: "~1k tokens",
   low: "~2k tokens",
   medium: "~8k tokens",
-  high: "the default; the gate must not ride the session's coding dial",
+  high: "deep reasoning",
   xhigh: "~32k tokens",
   max: "maximum reasoning",
 };
@@ -459,7 +459,7 @@ const THINKING_DESCR: Record<string, string> = {
 export function resolveAuditorModel(
   ctx: ExtensionContext,
   ref?: string,
-  fallbackRef?: string,
+  fallbackRefs?: string | readonly string[],
   sameSessionSwap = true,
 ): { model: any; error?: string; via?: string; fallbackModels?: AuditorModelCandidate[] } {
   const sessionModel = ctx.model as any;
@@ -480,9 +480,14 @@ export function resolveAuditorModel(
     const model = matches.find((candidate: any) => ctx.modelRegistry.hasConfiguredAuth(candidate));
     return model ? { model } : { reason: "no available model matching" };
   };
+  const configuredFallbackRefs = Array.isArray(fallbackRefs)
+    ? fallbackRefs
+    : fallbackRefs?.trim()
+      ? [fallbackRefs.trim()]
+      : [];
   const configuredRefs = normalizeMainModelFallbackRefs([
     ...(ref?.trim() ? [ref.trim()] : []),
-    ...(fallbackRef?.trim() ? [fallbackRef.trim()] : []),
+    ...configuredFallbackRefs,
   ]);
   const settings = loadSettings(ctx.cwd);
   const forbidden = (candidate: string): boolean => isForbiddenModel(candidate, settings.forbiddenModels);
@@ -567,9 +572,9 @@ export function resolveAuditorModel(
   return { model: undefined, error: "no session model and no auditorModel configured — set one with /glla → Auditor model" };
 }
 
-// Model selection is explicit and bounded: primary pin → optional fallback
-// pin → session model. A resolved primary can still fail after launch, so the
-// completion path walks the same ordered candidates after one same-model
+// Model selection is explicit and bounded: primary pin → ordered fallback
+// models → session model. A resolved primary can still fail after launch, so
+// the completion path walks the same ordered candidates after one same-model
 // retry; every candidate remains a detached extension-less audit. There is
 // no in-process fallback into the parent session and no silent tier ranking.
 
@@ -1153,6 +1158,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
         } catch { pickedModel = undefined; } // levels fall back to the full ladder below
       }
       const curThinking = loadSettings(ctx.cwd).auditorThinkingLevel;
+      const inheritedThinking = ctx.thinkingLevel ?? "max";
       const levels = auditorThinkingLevels(pickedModel);
       if (levels.length <= 1) {
         ctx.ui.notify(`Auditor model: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref} — this model exposes no thinking levels (auditor runs with thinking off).`, "info");
@@ -1173,6 +1179,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       // Auditor thinking row fixes that with the same ladder + dialog the
       // model flow uses.
       const curThinking = loadSettings(ctx.cwd).auditorThinkingLevel;
+      const inheritedThinking = ctx.thinkingLevel ?? "max";
       const resolved = resolveAuditorModel(ctx);
       const levels = auditorThinkingLevels(resolved.model);
       if (levels.length <= 1) {
@@ -1189,11 +1196,25 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       if (t) saveSettings("global", ctx.cwd, { auditorThinkingLevel: t.split(" ")[0] as Settings["auditorThinkingLevel"] });
       return;
     }
-    case "auditorModelFallback": {
-      const pick = await promptModelRef(ctx, "Auditor fallback agent (runtime failure or same-session swap)", "provider/model-id — empty clears the fallback", { excludeRefs: loadSettings(ctx.cwd).forbiddenModels });
-      if (pick === undefined) return;
-      saveSettings("global", ctx.cwd, { auditorModelFallback: pick.kind === "session" ? undefined : pick.ref });
-      if (pick.kind === "session") ctx.ui.notify("Auditor fallback cleared — a session on the pinned auditor model keeps that model.", "info");
+    case "auditorModelFallbacks": {
+      const settings = loadGlobalSettings();
+      const current = normalizeMainModelFallbackRefs(settings.auditorModelFallbacks);
+      const primaryRef = settings.auditorModel?.trim() || modelRef(ctx.model);
+      const forbidden = normalizeModelRefs(settings.forbiddenModels);
+      const refs = await promptModelRefs(
+        ctx,
+        `Auditor fallback models — try order is auditor primary → fallback 1 → fallback 2 … (space add/remove, tab order mode with ↑/↓, enter save); forbidden models are skipped`,
+        current,
+        { excludeRefs: forbidden, maxSelections: MAX_MAIN_MODEL_FALLBACKS, currentRef: primaryRef },
+      );
+      if (refs === undefined) return;
+      saveSettings("global", ctx.cwd, { auditorModelFallbacks: refs.length ? refs : undefined });
+      ctx.ui.notify(
+        refs.length
+          ? `Auditor fallback models saved in order: ${refs.join(" → ")}`
+          : "Auditor fallback models cleared — the session model remains the last resort.",
+        "info",
+      );
       return;
     }
     case "auditorAllowedExtensions": {
