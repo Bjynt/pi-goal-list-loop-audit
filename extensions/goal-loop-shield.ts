@@ -387,6 +387,8 @@ function runMechanicalCommand(
     let termination: Promise<void> | undefined;
     let settled = false;
     let timer: NodeJS.Timeout | undefined;
+    let settleFallbackTimer: NodeJS.Timeout | undefined;
+    let closeSeen = false;
     let exitCode: number | null = null;
     let exitSignal: NodeJS.Signals | null = null;
 
@@ -394,8 +396,10 @@ function runMechanicalCommand(
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      if (settleFallbackTimer) clearTimeout(settleFallbackTimer);
       signal?.removeEventListener("abort", onAbort);
       const output = [stdoutTail, stderrTail, launchError].filter(Boolean).join("\n");
+      destroyChildStreams(child);
       resolve({
         output,
         exitCode: code ?? (childSignal || timedOut || aborted || outputLimit || launchError ? 1 : 0),
@@ -403,6 +407,24 @@ function runMechanicalCommand(
         timedOut,
         aborted,
         outputLimit,
+      });
+    };
+
+    const settleAfterTermination = (code: number | null, childSignal: NodeJS.Signals | null): void => {
+      if (!termination) {
+        settle(code, childSignal);
+        return;
+      }
+      void termination.then(() => {
+        if (closeSeen) {
+          settle(code, childSignal);
+          return;
+        }
+        // A descendant that escaped the process group can keep a pipe open;
+        // do not let that defeat the bounded runner, but give normal stdio a
+        // short window to drain before returning the diagnostic tail.
+        settleFallbackTimer ??= setTimeout(() => settle(exitCode, exitSignal), MECHANICAL_FORCE_KILL_SETTLE_MS);
+        settleFallbackTimer.unref?.();
       });
     };
 
@@ -414,7 +436,7 @@ function runMechanicalCommand(
       termination ??= terminateMechanicalProcessTree(child).catch(() => {});
       // A descendant that keeps a stdio pipe open must not hold this promise
       // forever after its process group has been terminated.
-      void termination.then(() => settle(exitCode, exitSignal));
+      settleAfterTermination(exitCode, exitSignal);
     };
 
     const onAbort = (): void => requestTermination("abort");
@@ -433,7 +455,7 @@ function runMechanicalCommand(
     child.stderr?.on("data", onOutput("stderr"));
     child.once("error", (error) => {
       launchError = error instanceof Error ? error.message : String(error);
-      if (termination) void termination.then(() => settle(exitCode, exitSignal));
+      if (termination) settleAfterTermination(exitCode, exitSignal);
       else settle(1, null);
     });
     // A command can exit while a grandchild keeps an inherited stdio pipe
@@ -444,12 +466,13 @@ function runMechanicalCommand(
       exitCode = code;
       exitSignal = childSignal;
       termination ??= terminateMechanicalProcessTree(child).catch(() => {});
-      void termination.then(() => settle(code, childSignal));
+      settleAfterTermination(code, childSignal);
     });
     child.once("close", (code, childSignal) => {
+      closeSeen = true;
       exitCode = code;
       exitSignal = childSignal;
-      if (termination) void termination.then(() => settle(code, childSignal));
+      if (termination) settleAfterTermination(code, childSignal);
       else settle(code, childSignal);
     });
     timer = setTimeout(() => requestTermination("timeout"), timeoutMs);
