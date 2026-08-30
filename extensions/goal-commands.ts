@@ -2631,7 +2631,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
       fmt("autoAcceptDrafts", "autoAccept"),
       fmt("decisionPopup", "decisionPopup"),
       fmt("carryover", "carryover"),
-      fmt("auditorModelFallback", "auditorModelFallback"),
+      `auditorModelFallbacks: ${formatMainModelFallbacks(effectiveSettings.auditorModelFallbacks)}  [${prov.auditorModelFallbacks?.source ?? "default"}]`,
       fmt("auditorSameSessionSwap", "auditorSameSessionSwap"),
       fmt("auditorSilent", "auditorSilent"),
       fmt("auditorProgressSignals", "auditorProgressSignals"),

@@ -737,7 +737,7 @@ function registerAgentTools(pi: any): void {
       const auditGoalId = auditGoal.id;
       const auditAttemptId = completionClaim.attemptId!;
       const settings = loadSettings(ctx.cwd);
-      const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(ctx, settings.auditorModel, settings.auditorModelFallback, settings.auditorSameSessionSwap !== false);
+      const { model: auditorModel, error: modelError, via, fallbackModels } = resolveAuditorModel(ctx, settings.auditorModel, settings.auditorModelFallbacks, settings.auditorSameSessionSwap !== false);
       if (modelError) {
         const modelFailureCopy = providerErrorPresentation(modelError, "completion");
         ctx.ui.notify(`Auditor model issue: ${modelFailureCopy.display}. ${modelFailureCopy.action}`, "warning");
@@ -787,7 +787,10 @@ function registerAgentTools(pi: any): void {
           completionSummary: finalSummary,
           verificationSummary: p.verificationSummary,
           model: candidate.model,
-          thinkingLevel: (settings.auditorThinkingLevel ?? "high") as any, // may be "max" — pi ≥0.83 understands it; the dev-types predate it
+          // Unset follows the parent session dial, matching the Auditor
+          // settings row; max is the safe detached default when a headless
+          // context does not expose a thinking level.
+          thinkingLevel: (settings.auditorThinkingLevel ?? ctx.thinkingLevel ?? "max") as any, // pi ≥0.83 understands max; dev-types predate it
           allowedExtensions: settings.auditorAllowedExtensions,
           // The host tool's AbortSignal is the explicit user-stop boundary
           // for the detached audit. It lets the Esc escape hatch settle the

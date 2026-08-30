@@ -480,11 +480,9 @@ export function resolveAuditorModel(
     const model = matches.find((candidate: any) => ctx.modelRegistry.hasConfiguredAuth(candidate));
     return model ? { model } : { reason: "no available model matching" };
   };
-  const configuredFallbackRefs = Array.isArray(fallbackRefs)
-    ? fallbackRefs
-    : fallbackRefs?.trim()
-      ? [fallbackRefs.trim()]
-      : [];
+  const configuredFallbackRefs = typeof fallbackRefs === "string"
+    ? (fallbackRefs.trim() ? [fallbackRefs.trim()] : [])
+    : fallbackRefs ?? [];
   const configuredRefs = normalizeMainModelFallbackRefs([
     ...(ref?.trim() ? [ref.trim()] : []),
     ...configuredFallbackRefs,
@@ -1166,7 +1164,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       }
       const t = await ctx.ui.select(
         "Auditor thinking — DETACHED auditor worker ONLY (your session model's thinking is untouched)",
-        levels.map((lv) => `${lv} — ${THINKING_DESCR[lv] ?? ""}${lv === (curThinking ?? "high") ? " (current)" : ""}`),
+        levels.map((lv) => `${lv} — ${THINKING_DESCR[lv] ?? ""}${lv === (curThinking ?? inheritedThinking) ? " (current)" : ""}`),
       );
       if (t) saveSettings("global", ctx.cwd, { auditorThinkingLevel: t.split(" ")[0] as Settings["auditorThinkingLevel"] });
       ctx.ui.notify(`Auditor model: ${pick.kind === "session" ? "session model (override cleared)" : pick.ref}${t ? ` · thinking ${t.split(" ")[0]}` : ""}`, "info");
@@ -1191,7 +1189,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       }
       const t = await ctx.ui.select(
         "Auditor thinking — DETACHED auditor worker ONLY (your session model's thinking is untouched)",
-        levels.map((lv) => `${lv} — ${THINKING_DESCR[lv] ?? ""}${lv === (curThinking ?? "high") ? " (current)" : ""}`),
+        levels.map((lv) => `${lv} — ${THINKING_DESCR[lv] ?? ""}${lv === (curThinking ?? inheritedThinking) ? " (current)" : ""}`),
       );
       if (t) saveSettings("global", ctx.cwd, { auditorThinkingLevel: t.split(" ")[0] as Settings["auditorThinkingLevel"] });
       return;

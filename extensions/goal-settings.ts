@@ -384,8 +384,11 @@ function migrateLegacySettings(value: Partial<Settings>): Record<string, unknown
   // v0.36.0: preserve the old one-slot auditor pin while moving every read
   // and write to the ordered array used by the main-agent picker. An
   // explicitly present array wins, including [] (the user's clear action).
-  if (migrated.auditorModelFallbacks === undefined && typeof migrated.auditorModelFallback === "string") {
-    migrated.auditorModelFallbacks = [migrated.auditorModelFallback];
+  if (migrated.auditorModelFallbacks === undefined
+      && Object.prototype.hasOwnProperty.call(value, "auditorModelFallback")) {
+    migrated.auditorModelFallbacks = typeof migrated.auditorModelFallback === "string"
+      ? [migrated.auditorModelFallback]
+      : undefined;
   }
   delete migrated.auditorModelFallback;
   if (migrated.hourlyRetryProbe === undefined && typeof migrated.hourlyQuotaProbe === "boolean") {
