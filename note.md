@@ -18,6 +18,8 @@ This remains a separate unresolved report. Do not turn it into implementation wo
 PR #38 was reviewed/merged as part of the lifecycle and auditor hardening work:
 https://github.com/DraconDev/pi-goal-list-loop-audit/pull/38
 
+PR #37 was closed on 2026-08-30 because its intent is addressed by the narrowed current-main adaptation; its older implementation was not merged unchanged. See `audit/PR-37-PROMPT-POLICY-ADAPTATION-2026-08-29.md`. AVO-related PRs #22 and #36 remain open for later review.
+
 The default loop cap remains `maxIterations: 50`; change it only after p90 evidence supports a safer default.
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260828_232807.png 
@@ -58,6 +60,8 @@ For visual objectives, capture fresh evidence and route image inspection through
 ## we are still not doing perfect summaries at the end of objectives
 
 lets look into how others do it plugins and codex/claude/agy
+
+## when we are making up the objective during goal start or audit for example show that we are instead of jsut looking laggy and frrozen
 
 # Later
 
