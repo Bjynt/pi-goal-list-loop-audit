@@ -1,71 +1,51 @@
 # Now
 
-## GLLA status — 2026-08-30
+## Current state — 2026-08-30
 
-- **Complete:** the durable-vs-defer guidance goal is archived after the detached auditor approved it at `2026-08-30T00:54:53Z`.
-- **Shipped:** bounded durable/defer facts persist on `Goal` and in `durable_defer_choice`; production flows through `record_goal_judgment → refreshUI() → buildWidgetLines()`; semantic plaques keep `Durable fix` before `Defer / workaround`.
-- **Evidence:** `tests/durable-defer-production-ui.test.ts`, `schemas/goal.schema.json`, `audit/DEFER-DURABLE-GUIDANCE-2026-08-30.jpeg`, and `.pi-glla/archive/20260829224747-dc4q1h.md`.
-- **Verification:** focused changed-path tests, schema/persistence tests, `npx tsc --noEmit`, offline auditor-extension checks, and `npm pack --dry-run` pass. The full suite still has unrelated context-growth fixture and auditor timing failures.
-- **Visual caveat:** the committed image is a fresh browser render of exact production widget output, not a live Pi TUI capture. A genuine live-TUI capture remains unavailable.
-- **State:** authoritative active state has no current goal/list item and continuation dispatch is absent.
+- **Runtime:** authoritative active goal/list are empty; continuation dispatch is absent.
+- **Audit boundary:** no reproducible GLLA-owned transition was found for the separate queued-list stall report. Do not turn that report into implementation work without a confirmed transition.
+- **PR queue:** PR #38 is merged; PR #37 is closed because its intent was addressed by the narrowed current-main adaptation. AVO-related PRs #22 and #36 remain open for later review.
 
-## No confirmed GLLA-owned transition was found
+## Open work / candidate next focus
 
-This remains a separate unresolved report. Do not turn it into implementation work without a reproducible GLLA-owned runtime transition.
+1. **Subagent fallback semantics:** decide whether `pi-subagents` needs true runtime fallback. It currently selects one startup override; child provider failures log `subagent_provider_error` but do not advance the chain. If runtime failover is required, design bounded retry/respawn and `hasConfiguredAuth` coverage.
+2. **Full-suite triage:** reproduce or explicitly disposition the unrelated context-growth fixture and auditor timing failures without weakening the durable/order evidence.
+3. **Live evidence:** obtain a genuine live Pi TUI capture if the environment permits; otherwise preserve the projection-vs-TUI distinction.
+4. **Summary/start UX:** investigate the remaining note items about incomplete end-of-objective summaries and visibly showing objective creation/audit work instead of appearing laggy or frozen.
 
-## Investigated
+# Done / verified
 
-PR #38 was reviewed/merged as part of the lifecycle and auditor hardening work:
-https://github.com/DraconDev/pi-goal-list-loop-audit/pull/38
-
-PR #37 was closed on 2026-08-30 because its intent is addressed by the narrowed current-main adaptation; its older implementation was not merged unchanged. See `audit/PR-37-PROMPT-POLICY-ADAPTATION-2026-08-29.md`. AVO-related PRs #22 and #36 remain open for later review.
-
-The default loop cap remains `maxIterations: 50`; change it only after p90 evidence supports a safer default.
-
-## Model-selector parity — selection policy complete, runtime behavior differs
-
-The shared picker/selector policy is covered by regression tests: case-insensitive deduplication, order retention, forbidden/unregistered filtering, and the bounded cap.
-
-Runtime behavior is role-specific: main-model recovery and detached auditor recovery walk fallback candidates at runtime; drafter resolution walks its temporary candidate chain. `pi-subagents` currently uses `subagentFallbacks` only at startup, selecting one eligible override and writing one `model:` entry. A child provider failure logs `subagent_provider_error` and does not advance to the next fallback. Its startup resolver also does not preflight `hasConfiguredAuth`, so this is not full runtime/auth parity.
-
-## Completed: auditor scope boundary
-
-Auditors may explore outside context, but outside findings are informational and cannot become Required fixes or auto-queued work.
-
-## Completed: proactive draft pre-read
-
-Drafting now performs bounded proactive evidence gathering before asking avoidable questions, while retaining conservative caps and fail-closed behavior.
-
-## Completed: durable over defer
+## Durable over defer
 
 The three-defer plaque-collision report is addressed. Safe durable work remains `inline`; only an explicit unsafe/impossible/blocked fact selects `deferred`. The decision is ledgered, persisted on the goal, and rendered durable-first.
 
-## Visual auditor follow-up — native vision first, external tools optional
+Evidence: `tests/durable-defer-production-ui.test.ts`, `schemas/goal.schema.json`, `audit/DEFER-DURABLE-GUIDANCE-2026-08-30.jpeg`, and `.pi-glla/archive/20260829224747-dc4q1h.md`. The committed image is a fresh browser render of exact production widget output, not a live Pi TUI capture.
 
-For visual objectives, use the native image capability of the current main/auditor model first; do not assume MMX or any other external CLI is installed. The vision guidance/router now defaults to the current model, uses MMX only when availability is explicitly confirmed, and fails closed when neither native vision nor a confirmed external provider exists. Fresh evidence is still mandatory. Focused vision, visual-auditor, proactive-pre-read, settings, and model-switch coverage is green (83 tests); `npx tsc --noEmit` is clean. The durable/defer goal has a production-path integration test and a fresh production-widget projection; the remaining gap is obtaining an authentic live Pi TUI capture rather than a local projection.
+## Lifecycle and auditor hardening
 
-# Next
+- Auditor scope is bounded: outside findings are informational and cannot become Required fixes or auto-queued work.
+- Proactive draft pre-read is bounded and fail-closed.
+- PR #38 was reviewed and merged: https://github.com/DraconDev/pi-goal-list-loop-audit/pull/38
+- PR #37 was closed on 2026-08-30 because its older implementation was not merged unchanged; the intent is covered by the current-main adaptation. See `audit/PR-37-PROMPT-POLICY-ADAPTATION-2026-08-29.md`.
+- The default loop cap remains `maxIterations: 50` pending p90 evidence.
 
-- Decide whether `pi-subagents` needs true runtime fallback; if so, design bounded retry/respawn and auth-gate coverage rather than treating startup selection as failover.
-- Reproduce or explicitly disposition the remaining unrelated full-suite failures without weakening the durable/order evidence.
-- Obtain a genuine live Pi TUI capture if the environment permits; otherwise keep the projection-vs-TUI distinction explicit.
-- Keep visual-audit evidence honest when the current model lacks native image input: use only a confirmed external provider or state that visual evidence is unavailable.
+## Model selection
 
-## we are still not doing perfect summaries at the end of objectives
+Shared picker/selector policy is covered by regression tests: case-insensitive deduplication, order retention, forbidden/unregistered filtering, and bounded fallback caps. Runtime behavior remains role-specific: main and detached auditor paths walk candidates at runtime; drafter walks its temporary chain; `pi-subagents` is startup-only as described above.
 
-lets look into how others do it plugins and codex/claude/agy
+## Visual routing
 
-## when we are making up the objective during goal start or audit for example show that we are instead of jsut looking laggy and frrozen
+Visual work now prefers the native image capability of the current main/auditor model. MMX or another external provider is optional and must be explicitly confirmed; no external tool is assumed. If neither native vision nor a confirmed provider is available, visual evidence is unavailable rather than invented. Focused vision, visual-auditor, proactive-pre-read, settings, and model-switch coverage passed (83 tests); `npx tsc --noEmit` is clean.
 
 # Later
 
-## check out out other harnesses and goal extensions 
-nottably pi goal x, deepseek harness, codex, cladue, antirgravity, grok harness
+## Cross-harness and extension review
 
-## nvidia AVO careful consideration 
+Review other harnesses and goal extensions, notably pi goal x, DeepSeek, Codex, Claude, Antigravity, and Grok harnesses.
 
-we have prs too it too but apparently incomplete
+## NVIDIA AVO
+
+There are related PRs, but they may be incomplete. Revisit after the current GLLA-owned work is prioritized:
 https://github.com/DraconDev/pi-goal-list-loop-audit/pulls
 
 # Idea
-
