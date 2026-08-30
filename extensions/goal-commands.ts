@@ -2605,14 +2605,26 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   // require the interactive settings table so the command namespace stays
   // unambiguous and action-oriented.
   const prov = settingsProvenance(ctx.cwd);
+  const formatSettingValue = (value: unknown): string => {
+    if (value === undefined) return "(unset)";
+    if (typeof value === "object" && value !== null) {
+      try { return JSON.stringify(value); } catch { return "(unserializable)"; }
+    }
+    return String(value);
+  };
   const fmt = (k: keyof Settings, label: string) => {
     const p = prov[k];
-    const v = p.value === undefined ? "(unset)" : String(p.value);
-    return `${label}: ${v}  [${p.source}]`;
+    return `${label}: ${formatSettingValue(p.value)}  [${p.source}]`;
   };
   const effectiveSettings = loadSettings(ctx.cwd);
+  const sessionModel = (ctx.model as any)?.provider && (ctx.model as any)?.id
+    ? `${(ctx.model as any).provider}/${(ctx.model as any).id}`
+    : "(unknown)";
+  const sessionThinking = ctx.thinkingLevel ?? "off";
   ctx.ui.notify(
     [
+      fmt("stateRoot", "stateRoot"),
+      `mainAgent: ${sessionModel} · ${sessionThinking}  [runtime]`,
       `mainAgentFallbackModels: ${formatMainModelFallbacks(effectiveSettings.mainModelFallbacks)}  [${prov.mainModelFallbacks?.source ?? "default"}]`,
       fmt("mainModelRetryMinutes", "mainModelRetryMinutes (base minutes; doubles per attempt)"),
       fmt("mainModelFailback", "mainModelFailback (auto/sticky)"),
@@ -2632,6 +2644,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
       fmt("decisionPopup", "decisionPopup"),
       fmt("carryover", "carryover"),
       `auditorModelFallbacks: ${formatMainModelFallbacks(effectiveSettings.auditorModelFallbacks)}  [${prov.auditorModelFallbacks?.source ?? "default"}]`,
+      fmt("auditorAllowedExtensions", "auditorAllowedExtensions"),
       fmt("auditorSameSessionSwap", "auditorSameSessionSwap"),
       fmt("auditorSilent", "auditorSilent"),
       fmt("auditorProgressSignals", "auditorProgressSignals"),
@@ -2655,7 +2668,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
       `postaudit: ${JSON.stringify(loadSettings(ctx.cwd).postaudit ?? loadSettings(ctx.cwd).reviewer ?? {}) || '(unset — defaults)'}`,
       // v0.25.6: effective per-type subagent model resolution.
       ...OVERRIDABLE_AGENT_TYPES.map(
-        (t) => `subagent ${t}: ${resolveEffectiveSubagentModel(t, loadSettings(ctx.cwd), (ctx.model as any)?.id ? `${(ctx.model as any).provider}/${(ctx.model as any).id}` : undefined)}`,
+        (t) => `subagent ${t}: ${resolveEffectiveSubagentModel(t, effectiveSettings, sessionModel === "(unknown)" ? undefined : sessionModel)}`,
       ),
       `\nglobal:  ${globalSettingsPath()}`,
       `project: ${projectSettingsPath(ctx.cwd)}`,

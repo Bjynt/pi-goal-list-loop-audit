@@ -1145,13 +1145,16 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "forbiddenModels": {
-      const current = normalizeModelRefs(loadGlobalSettings().forbiddenModels);
-      // v0.34.118: a current fallback cannot simultaneously be forbidden.
-      // Include both the main chain and any glla-managed subagent chains.
-      const global = loadGlobalSettings();
+      const settings = loadSettings(ctx.cwd);
+      const current = normalizeModelRefs(settings.forbiddenModels);
+      // A configured fallback cannot simultaneously be forbidden. Use the
+      // effective settings so project-scoped chains are protected too, and
+      // cover every role that has a fallback chain (not just main/subagents).
       const fallbackRefs = [
-        ...normalizeMainModelFallbackRefs(global.mainModelFallbacks),
-        ...Object.values(global.subagentFallbacks ?? {}).flatMap((chain) => normalizeModelRefs(chain)),
+        ...normalizeMainModelFallbackRefs(settings.mainModelFallbacks),
+        ...normalizeMainModelFallbackRefs(settings.drafterModelFallbacks),
+        ...normalizeMainModelFallbackRefs(settings.auditorModelFallbacks),
+        ...Object.values(settings.subagentFallbacks ?? {}).flatMap((chain) => normalizeModelRefs(chain)),
       ];
       const refs = await promptModelRefs(
         ctx,
@@ -1176,8 +1179,8 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const v = await ctx.ui.input("Main recovery base wait", "positive integer minutes; empty = default 15 (then doubles per attempt, capped at 5h)");
       if (v !== undefined) {
         const raw = v.trim();
-        const n = Number.parseInt(raw, 10);
-        if (Number.isInteger(n) && n > 0) saveSettings("global", ctx.cwd, { mainModelRetryMinutes: n });
+        const n = parseSettingsInteger(raw);
+        if (n !== undefined && n > 0) saveSettings("global", ctx.cwd, { mainModelRetryMinutes: n });
         else if (!raw) saveSettings("global", ctx.cwd, { mainModelRetryMinutes: undefined });
         else ctx.ui.notify(`main model retry minutes must be a positive integer, got: ${v}`, "warning");
       }
@@ -1282,7 +1285,7 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       // extensions/auditor-extensions.ts); selected paths ride the auditor
       // request and the worker passes them as `pi --extension <path>` under
       // the still intact --no-extensions discovery off switch.
-      const currentExts = normalizeAuditorAllowedExtensions(loadGlobalSettings().auditorAllowedExtensions);
+      const currentExts = normalizeAuditorAllowedExtensions(loadSettings(ctx.cwd).auditorAllowedExtensions);
       const discovered = discoverAuditorExtensions(os.homedir(), ctx.cwd);
       const discoveredSpecs = new Set(discovered.map((entry) => entry.spec));
       const extItems: ModelPickItem[] = [
@@ -1352,11 +1355,14 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "auditCap": {
-      const v = await ctx.ui.input("Consecutive auditor disapprovals before the goal pauses", "non-negative integer; 0 = unlimited, empty = default 5");
+      const current = loadSettings(ctx.cwd);
+      const defaultCap = resolveEffectiveAggressiveSettings({ ...current, auditCap: undefined }).auditCap;
+      const v = await ctx.ui.input("Consecutive auditor disapprovals before the goal pauses", `non-negative integer; 0 = unlimited, empty = current default ${defaultCap}`);
       if (v !== undefined) {
-        const n = Number.parseInt(v.trim(), 10);
-        if (Number.isFinite(n) && n >= 0) saveSettings("global", ctx.cwd, { auditCap: n });
-        else if (!v.trim()) saveSettings("global", ctx.cwd, { auditCap: undefined });
+        const raw = v.trim();
+        const n = parseSettingsInteger(raw);
+        if (n !== undefined && n >= 0) saveSettings("global", ctx.cwd, { auditCap: n });
+        else if (!raw) saveSettings("global", ctx.cwd, { auditCap: undefined });
         else ctx.ui.notify(`Not a non-negative integer: ${v}`, "warning");
       }
       return;
@@ -1373,11 +1379,14 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "wedgeAlertMinutes": {
-      const v = await ctx.ui.input("Wedge alert threshold (minutes)", "non-negative integer; 0 = off, empty = default 30");
+      const current = loadSettings(ctx.cwd);
+      const defaultWedge = resolveEffectiveAggressiveSettings({ ...current, wedgeAlertMinutes: undefined }).wedgeAlertMinutes;
+      const v = await ctx.ui.input("Wedge alert threshold (minutes)", `non-negative integer; 0 = off, empty = current default ${defaultWedge}`);
       if (v !== undefined) {
-        const n = Number.parseInt(v.trim(), 10);
-        if (Number.isFinite(n) && n >= 0) saveSettings("global", ctx.cwd, { wedgeAlertMinutes: n });
-        else if (!v.trim()) saveSettings("global", ctx.cwd, { wedgeAlertMinutes: undefined });
+        const raw = v.trim();
+        const n = parseSettingsInteger(raw);
+        if (n !== undefined && n >= 0) saveSettings("global", ctx.cwd, { wedgeAlertMinutes: n });
+        else if (!raw) saveSettings("global", ctx.cwd, { wedgeAlertMinutes: undefined });
         else ctx.ui.notify(`Not a non-negative integer: ${v}`, "warning");
       }
       return;
@@ -1386,20 +1395,23 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const v = await ctx.ui.input("Subagent hang action threshold (minutes)", "0 = warning/telemetry only; positive integer >= 5; empty = default 30");
       if (v !== undefined) {
         const raw = v.trim();
-        const n = Number.parseInt(raw, 10);
-        if (Number.isFinite(n) && n === 0) saveSettings("global", ctx.cwd, { subagentHangEscalationMinutes: 0 });
-        else if (Number.isFinite(n) && n >= 5) saveSettings("global", ctx.cwd, { subagentHangEscalationMinutes: n });
+        const n = parseSettingsInteger(raw);
+        if (n !== undefined && n === 0) saveSettings("global", ctx.cwd, { subagentHangEscalationMinutes: 0 });
+        else if (n !== undefined && n >= 5) saveSettings("global", ctx.cwd, { subagentHangEscalationMinutes: n });
         else if (!raw) saveSettings("global", ctx.cwd, { subagentHangEscalationMinutes: undefined });
         else ctx.ui.notify(`Subagent hang action must be 0 or an integer >= 5 minutes: ${v}`, "warning");
       }
       return;
     }
     case "stuckMaxInterventions": {
-      const v = await ctx.ui.input("Consecutive stuck interventions before a loop stops", "positive integer; empty = default 5 (10 under aggressiveMode)");
+      const current = loadSettings(ctx.cwd);
+      const defaultStuck = resolveEffectiveAggressiveSettings({ ...current, stuckMaxInterventions: undefined }).stuckMaxInterventions;
+      const v = await ctx.ui.input("Consecutive stuck interventions before a loop stops", `positive integer; empty = current default ${defaultStuck}`);
       if (v !== undefined) {
-        const n = Number.parseInt(v.trim(), 10);
-        if (Number.isFinite(n) && n > 0) saveSettings("global", ctx.cwd, { stuckMaxInterventions: n });
-        else if (!v.trim()) saveSettings("global", ctx.cwd, { stuckMaxInterventions: undefined });
+        const raw = v.trim();
+        const n = parseSettingsInteger(raw);
+        if (n !== undefined && n > 0) saveSettings("global", ctx.cwd, { stuckMaxInterventions: n });
+        else if (!raw) saveSettings("global", ctx.cwd, { stuckMaxInterventions: undefined });
         else ctx.ui.notify(`Not a positive integer: ${v}`, "warning");
       }
       return;
@@ -1407,9 +1419,10 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     case "stallEscalationRefires": {
       const v = await ctx.ui.input("Heartbeat refires without a turn before the goal pauses / loop stops", "non-negative integer; 0 = never escalate, empty = default 5");
       if (v !== undefined) {
-        const n = Number.parseInt(v.trim(), 10);
-        if (Number.isFinite(n) && n >= 0) saveSettings("global", ctx.cwd, { stallEscalationRefires: n });
-        else if (!v.trim()) saveSettings("global", ctx.cwd, { stallEscalationRefires: undefined });
+        const raw = v.trim();
+        const n = parseSettingsInteger(raw);
+        if (n !== undefined && n >= 0) saveSettings("global", ctx.cwd, { stallEscalationRefires: n });
+        else if (!raw) saveSettings("global", ctx.cwd, { stallEscalationRefires: undefined });
         else ctx.ui.notify(`Not a non-negative integer: ${v}`, "warning");
       }
       return;
@@ -1418,8 +1431,8 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       const v = await ctx.ui.input("Automatic retries after a busy zero-stream abort", "integer from 0 to 10; 0 = manual resume only; empty = default 3");
       if (v !== undefined) {
         const raw = v.trim();
-        const n = Number.parseInt(raw, 10);
-        if (/^\d+$/.test(raw) && Number.isInteger(n) && n >= 0 && n <= MAX_ZOMBIE_RETRY_ATTEMPTS) {
+        const n = parseSettingsInteger(raw);
+        if (n !== undefined && n >= 0 && n <= MAX_ZOMBIE_RETRY_ATTEMPTS) {
           saveSettings("global", ctx.cwd, { zombieRetryMaxAttempts: n });
         } else if (!raw) {
           saveSettings("global", ctx.cwd, { zombieRetryMaxAttempts: undefined });
@@ -1432,9 +1445,10 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     case "stallShortWords": {
       const v = await ctx.ui.input("Stall short words threshold", "non-negative integer; 0 = off, empty = default 15");
       if (v !== undefined) {
-        const n = Number.parseInt(v.trim(), 10);
-        if (Number.isFinite(n) && n >= 0) saveSettings("global", ctx.cwd, { stallShortWords: n });
-        else if (!v.trim()) saveSettings("global", ctx.cwd, { stallShortWords: undefined });
+        const raw = v.trim();
+        const n = parseSettingsInteger(raw);
+        if (n !== undefined && n >= 0) saveSettings("global", ctx.cwd, { stallShortWords: n });
+        else if (!raw) saveSettings("global", ctx.cwd, { stallShortWords: undefined });
         else ctx.ui.notify(`Not a non-negative integer: ${v}`, "warning");
       }
       return;
@@ -1504,9 +1518,10 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     case "tokenLimit": {
       const v = await ctx.ui.input("Per-goal token budget", "non-negative integer; 0 or empty = off (no cap)");
       if (v !== undefined) {
-        const n = Number.parseInt(v.trim(), 10);
-        if (Number.isFinite(n) && n >= 0) saveSettings("global", ctx.cwd, { tokenLimit: n });
-        else if (!v.trim()) saveSettings("global", ctx.cwd, { tokenLimit: undefined });
+        const raw = v.trim();
+        const n = parseSettingsInteger(raw);
+        if (n !== undefined && n >= 0) saveSettings("global", ctx.cwd, { tokenLimit: n });
+        else if (!raw) saveSettings("global", ctx.cwd, { tokenLimit: undefined });
         else ctx.ui.notify(`Not a non-negative integer: ${v}`, "warning");
       }
       return;
