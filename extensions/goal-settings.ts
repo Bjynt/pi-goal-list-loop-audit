@@ -83,9 +83,13 @@ export interface Settings {
   mainModelPrimaryProbeMinutes?: number;
   /** "provider/model-id" or bare "model-id". Unset → session model. */
   auditorModel?: string;
-  /** v0.31.3/v0.34.25: next detached auditor candidate when the primary
-   * model is the session model or fails at runtime. Unset → session model
-   * remains the final fallback. */
+  /** Global-only ordered provider/model refs to try after the detached
+   * auditor primary fails or is skipped. The session model remains the final
+   * fallback. The shape and cap match mainModelFallbacks. */
+  auditorModelFallbacks?: string[];
+  /** @deprecated v0.36.0: singular compatibility alias. Reads and writes
+   * migrate it to auditorModelFallbacks; new UI/runtime code uses the ordered
+   * array. */
   auditorModelFallback?: string;
   /** v0.31.6: when the pinned auditor IS the session model, walk the
    * fallback pin (verifier ≠ executor). Default ON (undefined); false =
@@ -233,6 +237,7 @@ const GLOBAL_ONLY_KEYS: ReadonlySet<keyof Settings> = new Set([
   "drafterModel",
   "drafterThinkingLevel",
   "drafterModelFallbacks",
+  "auditorModelFallbacks",
 ]);
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -262,13 +267,15 @@ export const DEFAULT_SETTINGS: Settings = {
   // extension-based model providers otherwise cannot run in the detached
   // auditor).
   auditorAllowedExtensions: [],
-  // Unset = "high" at the call site (v0.31.2). The auditor is the
-  // verification gate: its depth must NOT ride the session's coding-speed
-  // thinking dial (user 2026-07-31: "we should also select its thinking
-  // level — we don't keep switching it"). v0.31.4: picked alongside the
-  // model in /glla → Auditor model; v0.34.127 adds the standalone Auditor
-  // thinking row (the claimed "/glla thinking=" action never existed).
+  // Unset = inherit the live session thinking level. This keeps the detached
+  // auditor's reasoning dial aligned with the parent by default (including
+  // max), while an explicit auditorThinkingLevel remains an intentional
+  // override. v0.31.4: picked alongside the model in /glla → Auditor model;
+  // v0.34.127 adds the standalone Auditor thinking row.
   auditorThinkingLevel: undefined,
+  // The auditor fallback chain follows the same ordered, bounded picker style
+  // as the main-agent chain. The session model is still the final last resort.
+  auditorModelFallbacks: [],
   // v0.34.66: final-only auditor stream is the default — the HUD never
   // shows the report assembling word-by-word again (note.md #4).
   auditorSilent: true,
@@ -319,6 +326,7 @@ function normalizeLoadedSettings(settings: Settings): Settings {
   // all see the same bounded value.
   settings.mainModelFallbacks = normalizeMainModelFallbackRefs(settings.mainModelFallbacks);
   settings.drafterModelFallbacks = normalizeMainModelFallbackRefs(settings.drafterModelFallbacks);
+  settings.auditorModelFallbacks = normalizeMainModelFallbackRefs(settings.auditorModelFallbacks);
   // v0.35.115 parity: subagent fallback chains use the same bounded,
   // case-insensitive dedup as the main chain so ordering/fallback
   // strategy stays coherent across scopes.
@@ -373,6 +381,13 @@ function normalizeLoadedSettings(settings: Settings): Settings {
 
 function migrateLegacySettings(value: Partial<Settings>): Record<string, unknown> {
   const migrated = { ...(value as Record<string, unknown>) };
+  // v0.36.0: preserve the old one-slot auditor pin while moving every read
+  // and write to the ordered array used by the main-agent picker. An
+  // explicitly present array wins, including [] (the user's clear action).
+  if (migrated.auditorModelFallbacks === undefined && typeof migrated.auditorModelFallback === "string") {
+    migrated.auditorModelFallbacks = [migrated.auditorModelFallback];
+  }
+  delete migrated.auditorModelFallback;
   if (migrated.hourlyRetryProbe === undefined && typeof migrated.hourlyQuotaProbe === "boolean") {
     migrated.hourlyRetryProbe = migrated.hourlyQuotaProbe;
   }
@@ -422,7 +437,7 @@ export const SETTINGS_KEYS: Array<keyof Settings> = [
   "blockForbiddenModelSwitches",
   "visionAssist",
   "auditorModel",
-  "auditorModelFallback",
+  "auditorModelFallbacks",
   "auditorAllowedExtensions",
   "auditorSameSessionSwap",
   "auditorThinkingLevel",
@@ -553,7 +568,7 @@ export function saveSettings(scope: "global" | "project", cwd: string, patch: Pa
         continue;
       }
       if (v === undefined) delete next[k]; // key=unset removes the key
-      else if (k === "mainModelFallbacks" || k === "drafterModelFallbacks") next[k] = normalizeMainModelFallbackRefs(v);
+      else if (k === "mainModelFallbacks" || k === "drafterModelFallbacks" || k === "auditorModelFallbacks") next[k] = normalizeMainModelFallbackRefs(v);
       else if (k === "subagentFallbacks" && v && typeof v === "object") {
         const normalized: Record<string, string[]> = {};
         for (const [agent, chain] of Object.entries(v as Record<string, unknown>)) {

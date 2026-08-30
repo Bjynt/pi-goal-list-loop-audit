@@ -160,7 +160,10 @@ export function buildSettingsRows(
   const drafterRef = settings.drafterModel ?? sessionRef;
   const drafterThinking = settings.drafterThinkingLevel ?? sessionThinking;
   const auditorRef = settings.auditorModel ?? sessionRef;
-  const auditorThinking = settings.auditorThinkingLevel ?? "high";
+  // An unset auditor level follows the live parent dial. This keeps the
+  // detached verifier at the same effective reasoning level as the main
+  // agent (including max) without preventing an explicit auditor override.
+  const auditorThinking = settings.auditorThinkingLevel ?? sessionThinking;
 
   // ── Keep-going ──
   rows.push(
@@ -341,25 +344,25 @@ export function buildSettingsRows(
       label: "Auditor agent",
       valueText: modelThinkingText(auditorRef, auditorThinking, subagent),
       sourceText: src("auditorModel"),
-      description: "provider/model override for the isolated auditor agent — you pick its thinking level right after the agent",
+      description: "provider/model override for the isolated auditor agent — the fallback chain below runs after this primary; its thinking defaults to the parent session",
     },
     {
       id: "auditorThinkingLevel",
       section: "auditor",
       label: "Auditor thinking",
-      valueText: settings.auditorThinkingLevel ?? "high (default)",
+      valueText: settings.auditorThinkingLevel ?? sessionThinking,
       sourceText: src("auditorThinkingLevel"),
-      description: "DETACHED auditor worker's reasoning level — also picked right after the auditor model; your session's thinking is untouched",
+      description: "DETACHED auditor worker's reasoning level — unset inherits the parent session dial (including max); an explicit value overrides it",
     },
     {
-      id: "auditorModelFallback",
+      id: "auditorModelFallbacks",
       section: "auditor",
-      label: "Auditor fallback agent",
-      valueText: settings.auditorModelFallback
-        ? modelThinkingText(settings.auditorModelFallback, auditorThinking, subagent)
-        : `${sessionRef} · ${auditorThinking} (last resort)`,
-      sourceText: src("auditorModelFallback"),
-      description: "walked when the primary agent is unavailable OR IS the session model (the verifier should differ) — unset = the session model is the last resort",
+      label: `Fallback models (up to ${MAX_MAIN_MODEL_FALLBACKS})`,
+      valueText: settings.auditorModelFallbacks?.length
+        ? `${settings.auditorModelFallbacks.length}/${MAX_MAIN_MODEL_FALLBACKS} · ${settings.auditorModelFallbacks.map((ref, index) => `${index + 1}. ${modelThinkingText(ref, auditorThinking, subagent)}`).join(" → ")}`
+        : `0/${MAX_MAIN_MODEL_FALLBACKS} · ${sessionRef} · ${auditorThinking} (last resort)`,
+      sourceText: src("auditorModelFallbacks"),
+      description: "ordered and deselectable: auditor primary → fallback 1 → fallback 2…; every recoverable auditor failure advances one eligible candidate at a time, then returns to the session model",
     },
     {
       id: "auditorAllowedExtensions",
