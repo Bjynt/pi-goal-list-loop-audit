@@ -1246,6 +1246,28 @@ export async function runDetachedGoalCompletionAuditor(args: {
           if (result.protocolVersion !== PROTOCOL_VERSION || result.attemptId !== attemptId || result.requestHash !== request.requestHash) {
             return infra(model, thinkingLevel, "auditor result identity/request-hash mismatch", "", capturedRevisionToken, "no-verdict");
           }
+          // A fast worker can publish progress.json and result.json between
+          // two parent polls. Read the final progress snapshot once more
+          // before consuming the result so the callback cannot miss the
+          // worker's last live tool/report telemetry (the result protocol
+          // is ordered after progress publication). A missing snapshot is
+          // tolerated for legacy/result-only test workers.
+          try {
+            const finalProgress = await readJson<AuditorProgressFile>(progressPath);
+            if (finalProgress.protocolVersion !== PROTOCOL_VERSION || finalProgress.attemptId !== attemptId || finalProgress.requestHash !== request.requestHash) {
+              return infra(model, thinkingLevel, "auditor progress identity/request-hash mismatch", "", capturedRevisionToken, "no-verdict");
+            }
+            lastProgress = finalProgress;
+            const serializedFinalProgress = stableJson(finalProgress);
+            if (serializedFinalProgress !== lastProgressSerialized) {
+              lastProgressSerialized = serializedFinalProgress;
+              args.onProgress?.(asProgress(finalProgress, startedAt));
+            }
+          } catch (progressError) {
+            if ((progressError as NodeJS.ErrnoException).code !== "ENOENT") {
+              return infra(model, thinkingLevel, `invalid auditor progress: ${progressError instanceof Error ? progressError.message : String(progressError)}`, "", capturedRevisionToken, "no-verdict");
+            }
+          }
           const output = stripThinkBlocks(result.output);
           if (!result.ok) {
             const error = result.error || "detached auditor failed";
