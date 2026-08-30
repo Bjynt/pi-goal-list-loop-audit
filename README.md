@@ -259,6 +259,9 @@ templates, themes, or context files, so its model must be usable in a plain pi
 session. It is independent verification, not an OS sandbox: the auditor's
 `bash` tool can still change files if a prompt or verifier tells it to. Keep
 verification commands bounded and treat repository permissions accordingly.
+On Linux, both direct contract checks and the detached auditor enforce a
+256-process process-group ceiling to contain recursive helper/test launches;
+cross-platform timeout and process-tree cleanup remain in place as well.
 
 ## Recommended pi extensions
 

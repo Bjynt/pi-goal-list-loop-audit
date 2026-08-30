@@ -26,6 +26,12 @@ const DEFAULT_TOOL_TIMEOUT_MS = 5 * 60_000;
 // kill and destroy the pipes so this worker can finish and exit too.
 const DEFAULT_CHILD_SHUTDOWN_GRACE_MS = 1_000;
 const FORCE_KILL_SETTLE_MS = 250;
+// A project command run through the auditor may be untrusted code. Keep a
+// generous ceiling for parallel test runners, but stop a recursive helper
+// before it can turn a single audit into a host-wide process storm. The
+// parent-side mechanical shield has the same ceiling for its direct checks.
+const DEFAULT_MAX_PROCESS_GROUP_SIZE = 256;
+const PROCESS_GROUP_POLL_MS = 100;
 // stdout EOF normally precedes ChildProcess `close`. Give the child a short
 // window to report its real exit code/signal and drain stderr before publishing
 // a no-verdict result. A child that closes stdout but remains alive is still
@@ -52,6 +58,20 @@ function linuxProcessGroupId(pid) {
   } catch {
     return undefined;
   }
+}
+
+function linuxProcessGroupSize(group) {
+  if (group === undefined || process.platform !== "linux") return undefined;
+  let entries;
+  try { entries = readdirSync("/proc"); } catch { return undefined; }
+  let count = 0;
+  for (const entry of entries) {
+    if (!/^\d+$/.test(entry)) continue;
+    const pid = Number(entry);
+    if (pid <= 1 || linuxProcessGroupId(pid) !== group) continue;
+    count++;
+  }
+  return count;
 }
 
 function signalPosixProcessGroup(group, signal) {
@@ -411,6 +431,7 @@ async function main() {
   let streamError;
   let pi;
   let inactivityTimer;
+  let processGroupTimer;
   let rpcCloseGraceTimer;
   // `lastActivityAt` is user-visible and must remain unset until a real RPC
   // event arrives. The separate probe clock keeps the inactivity brake armed
@@ -420,6 +441,10 @@ async function main() {
   let progressWrite = Promise.resolve();
   const configuredStallMs = Number(process.env.GLLA_AUDITOR_STALL_MS ?? 10 * 60_000);
   const AUDITOR_STALL_MS = Number.isFinite(configuredStallMs) ? Math.max(50, configuredStallMs) : 10 * 60_000;
+  const configuredProcessGroupSize = Number(process.env.GLLA_AUDITOR_MAX_PROCESS_GROUP_SIZE ?? DEFAULT_MAX_PROCESS_GROUP_SIZE);
+  const MAX_PROCESS_GROUP_SIZE = Number.isInteger(configuredProcessGroupSize)
+    ? Math.min(DEFAULT_MAX_PROCESS_GROUP_SIZE, Math.max(2, configuredProcessGroupSize))
+    : DEFAULT_MAX_PROCESS_GROUP_SIZE;
 
   const progress = (phase = "running") => {
     const file = {
@@ -466,6 +491,7 @@ async function main() {
     // without changing the exact result output used for verdict parsing.
     appendRecentOutput(recentOutput, recentReportLine, "", true);
     if (inactivityTimer) clearInterval(inactivityTimer);
+    if (processGroupTimer) clearInterval(processGroupTimer);
     if (rpcCloseGraceTimer) clearTimeout(rpcCloseGraceTimer);
     for (const timer of toolTimers.values()) clearTimeout(timer);
     toolTimers.clear();
@@ -554,6 +580,29 @@ async function main() {
       stdio: ["pipe", "pipe", "pipe"],
       ...launch.options,
     });
+
+    // The worker is detached into its own group by the parent; normal RPC and
+    // shell descendants inherit that group. Count both identities because a
+    // runtime is allowed to create a separate group for its own child tree.
+    // This is a containment fence, not a progress timeout: a legitimate audit
+    // remains eligible while its group stays below the ceiling.
+    const processGroups = [...new Set([
+      linuxProcessGroupId(process.pid),
+      pi.pid ? linuxProcessGroupId(pi.pid) : undefined,
+    ].filter((group) => group !== undefined))];
+    if (processGroups.length > 0) {
+      processGroupTimer = setInterval(() => {
+        if (finalized || !pi || !childRunning(pi)) return;
+        for (const group of processGroups) {
+          const size = linuxProcessGroupSize(group);
+          if (size !== undefined && size > MAX_PROCESS_GROUP_SIZE) {
+            void finish(false, `Auditor stalled — process group exceeded its ${MAX_PROCESS_GROUP_SIZE}-process safety limit; the worker process tree was aborted.`).catch(() => {});
+            break;
+          }
+        }
+      }, PROCESS_GROUP_POLL_MS);
+      processGroupTimer.unref?.();
+    }
 
     const stallLabel = AUDITOR_STALL_MS >= 60_000
       ? `${Math.max(1, Math.round(AUDITOR_STALL_MS / 60_000))}m`

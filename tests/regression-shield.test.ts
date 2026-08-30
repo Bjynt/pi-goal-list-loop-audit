@@ -452,6 +452,27 @@ test("mechanical checks stay async and kill descendant processes on timeout", as
   }
 });
 
+test("mechanical checks stop a runaway process group before the wall timeout", async () => {
+  const { runMechanicalPreAuditChecks } = await import("../extensions/goal-loop-shield.ts");
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-mech-fork-"));
+  const scriptPath = path.join(dir, "spawn-many.js");
+  fs.writeFileSync(scriptPath, [
+    "const { spawn } = require('node:child_process');",
+    "for (let i = 0; i < 12; i++) spawn(process.execPath, ['-e', 'setTimeout(() => {}, 10000)'], { stdio: 'ignore' });",
+    "setTimeout(() => {}, 10000);",
+  ].join("\n"));
+  try {
+    const result = await runMechanicalPreAuditChecks(dir, ["node " + scriptPath], 5000, undefined, 4);
+    assert.equal(result.passed, false);
+    assert.match(result.output ?? "", /process group safety limit/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 
 test("v0.35.18: resolveCanonicalRunnerCommand maps raw runners to their canonical package script", async () => {
   const { resolveCanonicalRunnerCommand } = await import("../extensions/goal-loop-backoff.ts");

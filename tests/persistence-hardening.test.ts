@@ -63,6 +63,28 @@ test("readState: a truncated trailing active.jsonl line loads cleanly (mid-write
   assert.deepEqual(s.list, []);
 });
 
+test("large JSONL records do not break forward or reverse ledger scans", () => {
+  const cwd = tmpdir();
+  fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });
+  const stateLine = JSON.stringify({
+    type: "state",
+    value: { goal: { id: "g-chunk", objective: "chunk boundary", status: "active", policy: "goal" }, list: [] },
+    at: "2026-07-28T10:01:00.000Z",
+  });
+  const largeEvent = JSON.stringify({ type: "telemetry", value: "x".repeat(70 * 1024), at: "2026-07-28T10:00:00.000Z" });
+  const truncated = '{"type":"state","value":{"goal":{"id":"g-torn"';
+  fs.writeFileSync(path.join(cwd, ".pi-glla", "active.jsonl"), `${largeEvent}\n${stateLine}\n${truncated}`);
+
+  assert.equal(readState(cwd).goal?.id, "g-chunk", "forward scanning handles a record spanning read chunks");
+  assert.equal(writeGoalStateTransaction(cwd, { goal: null, list: [] } as never), true);
+  const transaction = JSON.parse(fs.readFileSync(goalStateTransactionPath(cwd), "utf8")) as { baseStateLineHash?: string };
+  assert.equal(
+    transaction.baseStateLineHash,
+    createHash("sha256").update(stateLine, "utf8").digest("hex"),
+    "reverse scanning skips a torn tail and fingerprints the latest valid state line",
+  );
+});
+
 test("readState normalizes and bounds the detached-auditor recovery cursor", () => {
   const cwd = tmpdir();
   fs.mkdirSync(path.join(cwd, ".pi-glla"), { recursive: true });

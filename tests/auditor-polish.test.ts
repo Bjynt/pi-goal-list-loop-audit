@@ -64,6 +64,32 @@ test("audit log: append + read round-trip, malformed lines skipped", () => {
   assert.equal(last1[0]!.verdict, "approved");
 });
 
+test("audit log bounded tail scans large records from the end", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glla-auditlog-tail-"));
+  const entry: AuditLogEntry = {
+    at: "2026-07-25T20:00:00Z",
+    goalId: "20260725-old123",
+    objective: "old entry",
+    verdict: "disapproved",
+    model: "MiniMax-M3",
+    thinkingLevel: "high",
+    report: "old",
+  };
+  appendAuditLog(dir, entry);
+  appendAuditLog(dir, {
+    ...entry,
+    at: "2026-07-25T21:00:00Z",
+    goalId: "20260725-large1",
+    report: "R".repeat(70 * 1024),
+  });
+  fs.appendFileSync(auditLogPath(dir), "truncated audit record\n");
+
+  const tail = readAuditLog(dir, 1);
+  assert.equal(tail.length, 1);
+  assert.equal(tail[0]!.goalId, "20260725-large1", "a malformed tail is skipped without rereading the full log");
+  assert.equal(tail[0]!.report.length, 70 * 1024);
+});
+
 test("formatAuditLog: one line per verdict with glyph, goal, model, first report line", () => {
   const entries: AuditLogEntry[] = [
     { at: "2026-07-25T20:00:00Z", goalId: "20260725-abc123", objective: "x", verdict: "disapproved", model: "MiniMax-M3", thinkingLevel: "high", report: "\n## Audit result\nbody" },

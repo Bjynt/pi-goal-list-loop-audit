@@ -1005,6 +1005,49 @@ process.stdin.on("data", (chunk) => {
   }
 });
 
+test("real worker stops a runaway RPC process group before it becomes a storm", async () => {
+  if (process.platform !== "linux") return;
+  const dir = await mkdtemp(path.join(tmpdir(), "glla-process-cap-"));
+  const fakePi = path.join(dir, "forking-pi.mjs");
+  const worker = path.resolve(process.cwd(), "scripts/goal-auditor-worker.mjs");
+  const survivor = path.join(dir, "survivor");
+  await writeFile(fakePi, `#!/usr/bin/env node
+import { spawn } from "node:child_process";
+let handled = false;
+process.stdin.on("data", (chunk) => {
+  if (handled || !String(chunk).includes("\\n")) return;
+  handled = true;
+  for (let i = 0; i < 12; i++) {
+    spawn(process.execPath, ["-e", ${JSON.stringify(`setTimeout(() => require("node:fs").writeFileSync(${JSON.stringify(survivor)}, "survived"), 1500)`) }], { stdio: "ignore" });
+  }
+});
+setInterval(() => {}, 10000);
+`);
+  await chmod(fakePi, 0o700);
+  try {
+    const result = await runDetachedGoalCompletionAuditor({
+      cwd: dir,
+      goal,
+      model: "test/provider-model",
+      thinkingLevel: "high",
+      runtime: {
+        workerPath: worker,
+        env: { GLLA_PI_BINARY: fakePi, GLLA_AUDITOR_MAX_PROCESS_GROUP_SIZE: "4" },
+        attemptId: () => "attempt-process-cap",
+        pollIntervalMs: 10,
+        wallTimeoutMs: 10_000,
+      },
+    });
+    assert.equal(result.approved, false);
+    assert.equal(result.disapproved, false);
+    assert.match(result.error ?? "", /process group exceeded its 4-process safety limit/);
+    await new Promise((resolve) => setTimeout(resolve, 1800));
+    assert.equal(existsSync(survivor), false, "the process-group cap also terminates forked descendants");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("worker launches pi with the exact auditor RPC contract and one LF JSONL prompt", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "glla-worker-"));
   const piLog = path.join(dir, "pi-log.json");

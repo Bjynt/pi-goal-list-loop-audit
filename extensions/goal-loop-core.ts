@@ -1343,34 +1343,108 @@ export function runPersistStep<T>(what: string, fn: () => T): T | undefined {
   }
 }
 
+/** Read a JSONL file a line at a time without materialising the whole file.
+ * GLLA's active ledger is append-only and can live for months; a cold load
+ * must not briefly hold both a multi-megabyte string and a split-line array in
+ * the main pi process. The callback runs synchronously to preserve the
+ * existing persistence ordering/error contract. */
+function scanLedgerLines(file: string, onLine: (line: string) => void): void {
+  const fd = fs.openSync(file, "r");
+  const chunk = Buffer.alloc(64 * 1024);
+  let carry = Buffer.alloc(0);
+  try {
+    while (true) {
+      const bytesRead = fs.readSync(fd, chunk, 0, chunk.length, null);
+      if (bytesRead <= 0) break;
+      const data = carry.length > 0
+        ? Buffer.concat([carry, chunk.subarray(0, bytesRead)])
+        : chunk.subarray(0, bytesRead);
+      let start = 0;
+      while (true) {
+        const newline = data.indexOf(0x0a, start);
+        if (newline < 0) break;
+        onLine(data.subarray(start, newline).toString("utf8"));
+        start = newline + 1;
+      }
+      carry = start === data.length ? Buffer.alloc(0) : Buffer.from(data.subarray(start));
+    }
+    if (carry.length > 0) onLine(carry.toString("utf8"));
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** Find one matching ledger line from the end using bounded chunks. This is
+ * the hot path for goal-state transactions: looking up the last durable state
+ * must remain proportional to the recent tail, not the complete ledger. */
+function scanLedgerLinesReverse(file: string, matches: (line: string) => boolean): string | undefined {
+  const fd = fs.openSync(file, "r");
+  const chunkSize = 64 * 1024;
+  let position = fs.fstatSync(fd).size;
+  let carry = Buffer.alloc(0);
+  try {
+    while (position > 0) {
+      const start = Math.max(0, position - chunkSize);
+      const requested = position - start;
+      const chunk = Buffer.alloc(requested);
+      const bytesRead = fs.readSync(fd, chunk, 0, requested, start);
+      if (bytesRead <= 0) break;
+      const data = carry.length > 0
+        ? Buffer.concat([chunk.subarray(0, bytesRead), carry])
+        : chunk.subarray(0, bytesRead);
+      let end = data.length;
+      while (true) {
+        const newline = data.lastIndexOf(0x0a, end - 1);
+        if (newline < 0) break;
+        const line = data.subarray(newline + 1, end).toString("utf8");
+        if (line && matches(line)) return line;
+        end = newline;
+      }
+      carry = Buffer.from(data.subarray(0, end));
+      position = start;
+    }
+    const firstLine = carry.toString("utf8");
+    return firstLine && matches(firstLine) ? firstLine : undefined;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 export function readState(cwd: string): State {
   const file = ledgerPath(cwd);
   // v0.28.6 (E1): an unreadable ledger (EACCES, EIO) degrades loudly
   // instead of throwing out of session_start.
-  const raw = runPersistStep("readState", () => (fs.existsSync(file) ? fs.readFileSync(file, "utf-8") : ""));
+  const loaded = runPersistStep("readState", () => {
+    const parsed: Partial<State> = {};
+    let lastStateAt: string | undefined;
+    let lastStateLine: string | undefined;
+    if (fs.existsSync(file)) {
+      scanLedgerLines(file, (line) => {
+        if (!line) return;
+        try {
+          const evt = JSON.parse(line);
+          if (evt.type === "state") {
+            Object.assign(parsed, evt.value ?? {});
+            if (typeof evt.at === "string") {
+              lastStateAt = evt.at;
+              lastStateLine = line;
+            }
+          }
+        } catch {
+          // skip malformed lines — a truncated trailing line (mid-write kill)
+          // must not lose the rest of the state
+        }
+      });
+    }
+    return { parsed, lastStateAt, lastStateLine };
+  });
   // Do not return early for an empty/missing ledger: a process can die after
   // writing the first complete transaction snapshot but before the first
   // active.jsonl state line. The transaction reader below is the recovery
   // source for that initial projection.
-  const lines = typeof raw === "string" ? raw.split("\n").filter(Boolean) : [];
-  let parsed: Partial<State> = {};
-  let lastStateAt: string | undefined;
-  let lastStateLine: string | undefined;
-  for (const line of lines) {
-    try {
-      const evt = JSON.parse(line);
-      if (evt.type === "state") {
-        parsed = { ...parsed, ...evt.value };
-        if (typeof evt.at === "string") {
-          lastStateAt = evt.at;
-          lastStateLine = line;
-        }
-      }
-    } catch {
-      // skip malformed lines — a truncated trailing line (mid-write kill)
-      // must not lose the rest of the state
-    }
-  }
+  let parsed = loaded?.parsed ?? {};
+  const lastStateAt = loaded?.lastStateAt;
+  const lastStateLine = loaded?.lastStateLine;
   // A goal projection can land between the markdown and ledger writes when
   // the process dies. Prefer the complete transaction snapshot when it is
   // still fenced to the last durable state line; otherwise an old orphan is
@@ -1682,16 +1756,15 @@ function stateLineFingerprint(line: string): string {
 function lastDurableStateLine(cwd: string): string | undefined {
   if (stateRootPending()) return undefined;
   try {
-    const raw = fs.readFileSync(ledgerPath(cwd), "utf-8");
-    const lines = raw.split("\n").filter(Boolean);
-    for (let i = lines.length - 1; i >= 0; i -= 1) {
+    return scanLedgerLinesReverse(ledgerPath(cwd), (line) => {
       try {
-        const evt = JSON.parse(lines[i]!);
-        if (evt.type === "state" && typeof evt.at === "string") return lines[i];
+        const evt = JSON.parse(line);
+        return evt.type === "state" && typeof evt.at === "string";
       } catch {
         // Ignore malformed/truncated ledger lines when locating the base.
+        return false;
       }
-    }
+    });
   } catch {
     // An absent/unreadable base ledger is represented by no hash.
   }
@@ -2865,6 +2938,31 @@ export function appendAuditLog(cwd: string, entry: AuditLogEntry): void {
 }
 
 export function readAuditLog(cwd: string, limit?: number): AuditLogEntry[] {
+  // The normal command path asks for a bounded newest tail. Read that tail
+  // from the end so an append-only audit log cannot turn every `/glla audits`
+  // invocation into a whole-file string allocation and JSON parse. Keep the
+  // unbounded path below for reviewer curation, which intentionally needs the
+  // complete history.
+  if (limit !== undefined && Number.isInteger(limit) && limit > 0) {
+    const newest: AuditLogEntry[] = [];
+    try {
+      scanLedgerLinesReverse(auditLogPath(cwd), (line) => {
+        const t = line.trim();
+        if (!t) return false;
+        try {
+          const e = JSON.parse(t);
+          if (e && typeof e.goalId === "string" && typeof e.verdict === "string") newest.push(e as AuditLogEntry);
+        } catch {
+          /* skip malformed */
+        }
+        return newest.length >= limit;
+      });
+    } catch {
+      return [];
+    }
+    return newest.reverse();
+  }
+
   let raw: string;
   try {
     raw = fs.readFileSync(auditLogPath(cwd), "utf-8");

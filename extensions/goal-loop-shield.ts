@@ -251,6 +251,14 @@ const MECHANICAL_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 const MECHANICAL_OUTPUT_TAIL_CHARS = 64 * 1024;
 const MECHANICAL_CHILD_SHUTDOWN_GRACE_MS = 1_000;
 const MECHANICAL_FORCE_KILL_SETTLE_MS = 250;
+/** A verification command may be project code, but it must not be able to
+ * consume the host by recursively forking faster than the wall timeout can
+ * react. This is intentionally generous for parallel test runners while
+ * still stopping the 1,000-process self-invocation shape observed in the
+ * field. Linux is the only platform with a cheap process-group census; the
+ * existing timeout/tree teardown remains the portable fallback elsewhere. */
+export const MAX_MECHANICAL_PROCESS_GROUP_SIZE = 256;
+const MECHANICAL_PROCESS_GROUP_POLL_MS = 100;
 
 interface MechanicalCommandRun {
   output: string;
@@ -259,10 +267,44 @@ interface MechanicalCommandRun {
   timedOut: boolean;
   aborted: boolean;
   outputLimit: boolean;
+  processGroupLimit: boolean;
+  processGroupLimitSize: number;
 }
 
 function childIsRunning(child: ChildProcess): boolean {
   return child.exitCode === null && child.signalCode === null;
+}
+
+function linuxProcessGroupId(pid: number): number | undefined {
+  if (process.platform !== "linux") return undefined;
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    const end = stat.lastIndexOf(")");
+    if (end < 0) return undefined;
+    const fields = stat.slice(end + 2).trim().split(/\s+/);
+    const group = Number(fields[2]); // stat field 5, after pid/comm/state/ppid
+    return Number.isInteger(group) && group > 1 ? group : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function linuxProcessGroupSize(group: number): number | undefined {
+  if (process.platform !== "linux") return undefined;
+  let entries: string[];
+  try {
+    entries = fs.readdirSync("/proc");
+  } catch {
+    return undefined;
+  }
+  let count = 0;
+  for (const entry of entries) {
+    if (!/^\d+$/.test(entry)) continue;
+    const pid = Number(entry);
+    if (pid <= 1 || linuxProcessGroupId(pid) !== group) continue;
+    count++;
+  }
+  return count;
 }
 
 function destroyChildStreams(child: ChildProcess): void {
@@ -342,6 +384,12 @@ async function terminateMechanicalProcessTree(child: ChildProcess): Promise<void
   destroyChildStreams(child);
 }
 
+function normalizeMechanicalProcessGroupLimit(value: number | undefined): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 2
+    ? Math.min(MAX_MECHANICAL_PROCESS_GROUP_SIZE, value)
+    : MAX_MECHANICAL_PROCESS_GROUP_SIZE;
+}
+
 function appendMechanicalOutputTail(current: string, chunk: string): string {
   const combined = current + chunk;
   return combined.length <= MECHANICAL_OUTPUT_TAIL_CHARS
@@ -355,8 +403,10 @@ function runMechanicalCommand(
   args: string[],
   timeoutMs: number,
   signal?: AbortSignal,
+  maxProcessGroupSize = MAX_MECHANICAL_PROCESS_GROUP_SIZE,
 ): Promise<MechanicalCommandRun> {
   return new Promise((resolve) => {
+    const processGroupLimitSize = normalizeMechanicalProcessGroupLimit(maxProcessGroupSize);
     let child: ChildProcess;
     try {
       child = spawn(program, args, {
@@ -373,6 +423,8 @@ function runMechanicalCommand(
         timedOut: false,
         aborted: false,
         outputLimit: false,
+        processGroupLimit: false,
+        processGroupLimitSize,
       });
       return;
     }
@@ -383,10 +435,12 @@ function runMechanicalCommand(
     let timedOut = false;
     let aborted = false;
     let outputLimit = false;
+    let processGroupLimit = false;
     let launchError: string | undefined;
     let termination: Promise<void> | undefined;
     let settled = false;
     let timer: NodeJS.Timeout | undefined;
+    let processGroupTimer: NodeJS.Timeout | undefined;
     let settleFallbackTimer: NodeJS.Timeout | undefined;
     let closeSeen = false;
     let exitCode: number | null = null;
@@ -396,6 +450,7 @@ function runMechanicalCommand(
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      if (processGroupTimer) clearInterval(processGroupTimer);
       if (settleFallbackTimer) clearTimeout(settleFallbackTimer);
       signal?.removeEventListener("abort", onAbort);
       const output = [stdoutTail, stderrTail, launchError].filter(Boolean).join("\n");
@@ -407,6 +462,8 @@ function runMechanicalCommand(
         timedOut,
         aborted,
         outputLimit,
+        processGroupLimit,
+        processGroupLimitSize,
       });
     };
 
@@ -428,11 +485,12 @@ function runMechanicalCommand(
       });
     };
 
-    const requestTermination = (reason: "timeout" | "abort" | "output-limit"): void => {
+    const requestTermination = (reason: "timeout" | "abort" | "output-limit" | "process-limit"): void => {
       if (settled) return;
       if (reason === "timeout") timedOut = true;
       if (reason === "abort") aborted = true;
       if (reason === "output-limit") outputLimit = true;
+      if (reason === "process-limit") processGroupLimit = true;
       termination ??= terminateMechanicalProcessTree(child).catch(() => {});
       // A descendant that keeps a stdio pipe open must not hold this promise
       // forever after its process group has been terminated.
@@ -477,6 +535,15 @@ function runMechanicalCommand(
     });
     timer = setTimeout(() => requestTermination("timeout"), timeoutMs);
     timer.unref?.();
+    const processGroup = child.pid ? linuxProcessGroupId(child.pid) : undefined;
+    if (processGroup !== undefined) {
+      processGroupTimer = setInterval(() => {
+        if (settled || !childIsRunning(child)) return;
+        const size = linuxProcessGroupSize(processGroup);
+        if (size !== undefined && size > processGroupLimitSize) requestTermination("process-limit");
+      }, MECHANICAL_PROCESS_GROUP_POLL_MS);
+      processGroupTimer.unref?.();
+    }
     if (signal?.aborted) requestTermination("abort");
     else signal?.addEventListener("abort", onAbort, { once: true });
   });
@@ -485,12 +552,14 @@ function runMechanicalCommand(
 function formatMechanicalFailure(run: MechanicalCommandRun, timeoutMs: number): { output: string; exitCode: number } {
   const body = run.output.trim() || (run.signal ? `Process terminated by ${run.signal}` : "Command failed");
   const banner = run.timedOut
-    ? `[mechanical check killed after ${Math.round(timeoutMs / 1000)}s — process tree terminated; output tail below]`
-    : run.aborted
-      ? "[mechanical check aborted — process tree terminated; output tail below]"
-      : run.outputLimit
-        ? "[mechanical check exceeded its 64MB output limit — process tree terminated; output tail below]"
-        : "";
+      ? `[mechanical check killed after ${Math.round(timeoutMs / 1000)}s — process tree terminated; output tail below]`
+      : run.aborted
+        ? "[mechanical check aborted — process tree terminated; output tail below]"
+        : run.processGroupLimit
+          ? `[mechanical check exceeded its ${run.processGroupLimitSize}-process group safety limit — process tree terminated; output tail below]`
+          : run.outputLimit
+            ? "[mechanical check exceeded its 64MB output limit — process tree terminated; output tail below]"
+            : "";
   const evidence = body.length > 4000 ? "…[truncated head]\n" + body.slice(-4000) : body;
   return { output: (banner ? banner + "\n" : "") + evidence, exitCode: run.exitCode };
 }
@@ -513,11 +582,13 @@ export async function runMechanicalPreAuditChecks(
   commands: string[],
   timeoutMs = DEFAULT_MECHANICAL_CHECK_TIMEOUT_MS,
   signal?: AbortSignal,
+  maxProcessGroupSize = MAX_MECHANICAL_PROCESS_GROUP_SIZE,
 ): Promise<MechanicalCheckResult> {
   if (!commands || commands.length === 0) return { passed: true };
   const effectiveTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0
     ? timeoutMs
     : DEFAULT_MECHANICAL_CHECK_TIMEOUT_MS;
+  const effectiveProcessGroupSize = normalizeMechanicalProcessGroupLimit(maxProcessGroupSize);
   const recoveredRetries: string[] = [];
   for (const rawCommand of commands) {
     const cmd = rawCommand.trim();
@@ -527,7 +598,7 @@ export async function runMechanicalPreAuditChecks(
       // the conjunction. Keep the original compound text in a failure result
       // so the auditor sees which contract item failed.
       for (const step of compound) {
-        const stepResult = await runMechanicalPreAuditChecks(cwd, [step], effectiveTimeoutMs, signal);
+        const stepResult = await runMechanicalPreAuditChecks(cwd, [step], effectiveTimeoutMs, signal, effectiveProcessGroupSize);
         if (!stepResult.passed) return { ...stepResult, failedCommand: rawCommand };
       }
       continue;
@@ -566,8 +637,8 @@ export async function runMechanicalPreAuditChecks(
     let firstFailure: { output: string; exitCode: number } | null = null;
     let passed = false;
     for (let attempt = 1; attempt <= 2 && !passed; attempt++) {
-      const run = await runMechanicalCommand(cwd, program, args, effectiveTimeoutMs, signal);
-      if (!run.timedOut && !run.aborted && !run.outputLimit && run.exitCode === 0) {
+      const run = await runMechanicalCommand(cwd, program, args, effectiveTimeoutMs, signal, effectiveProcessGroupSize);
+      if (!run.timedOut && !run.aborted && !run.outputLimit && !run.processGroupLimit && run.exitCode === 0) {
         passed = true;
         continue;
       }
@@ -575,7 +646,7 @@ export async function runMechanicalPreAuditChecks(
       // A timeout, caller abort, or output-limit breach is a containment
       // event, not a transient test wobble. Retrying would immediately start
       // another untrusted process tree and can recreate the incident.
-      if (run.timedOut || run.aborted || run.outputLimit) {
+      if (run.timedOut || run.aborted || run.outputLimit || run.processGroupLimit) {
         return {
           passed: false,
           failedCommand: rawCommand,

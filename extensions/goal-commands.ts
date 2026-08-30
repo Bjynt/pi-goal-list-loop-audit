@@ -2301,7 +2301,7 @@ function cmdAudits(args: string, ctx: ExtensionContext): void {
       ctx.ui.notify(`Latest audit on this goal — ${fromGoal.model} (${fromGoal.at})\n${sanitizeProviderAuditReport(fromGoal.report)}`, "info");
       return;
     }
-    const latest = readAuditLog(ctx.cwd).at(-1);
+    const latest = readAuditLog(ctx.cwd, 1).at(-1);
     ctx.ui.notify(latest ? `Latest audit — ${latest.verdict} (${latest.model}, ${latest.at})\n${sanitizeProviderAuditReport(latest.report)}` : "No audits logged yet.", "info");
     return;
   }

@@ -22,6 +22,11 @@ GLLA automation is **event-driven and progress-aware**, not duration-guessed.
   Detached auditors have no unconditional wall-clock expiry: legacy wall
   metadata is ignored, while confirmed silence and an individual tool timeout
   remain the bounded safety mechanisms.
+- Project verification commands run in an owned process group. On Linux, GLLA
+  also counts that group every 100ms and aborts it above 256 processes; this
+  catches recursive test/helper launches before a long wall timeout can become
+  a host-wide process or swap storm. The limit is a containment result, never
+  an automatic retry.
 - Timers remain useful for per-attempt backoff, watchdogs, and host safety. A
   timer is never evidence that work completed and is not the definition of a
   long-running process's lifetime. Detached-auditor first-event silence starts
