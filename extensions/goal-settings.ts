@@ -92,7 +92,7 @@ export interface Settings {
    * array. */
   auditorModelFallback?: string;
   /** v0.31.6: when the pinned auditor IS the session model, walk the
-   * fallback pin (verifier ≠ executor). Default ON (undefined); false =
+   * ordered fallback chain (verifier ≠ executor). Default ON (undefined); false =
    * same-model audits stand — the isolated session + evidence contract is
    * the first-order defense either way; diversity is the second-order one
    * the user may deliberately trade away. */

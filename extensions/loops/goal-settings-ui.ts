@@ -1203,7 +1203,14 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
     case "auditorModelFallbacks": {
       const settings = loadGlobalSettings();
       const current = normalizeMainModelFallbackRefs(settings.auditorModelFallbacks);
-      const primaryRef = settings.auditorModel?.trim() || modelRef(ctx.model);
+      const configuredPrimary = settings.auditorModel?.trim();
+      // auditorModel also accepts a bare model id. Canonicalize it before
+      // passing currentRef to the multi-picker so the selected primary is
+      // disabled even when it was saved without its provider prefix.
+      const primaryModel = configuredPrimary
+        ? resolvePickedModel(ctx, { kind: "ref", ref: configuredPrimary })
+        : ctx.model as any;
+      const primaryRef = modelRef(primaryModel) ?? configuredPrimary ?? modelRef(ctx.model);
       const forbidden = normalizeModelRefs(settings.forbiddenModels);
       const refs = await promptModelRefs(
         ctx,
