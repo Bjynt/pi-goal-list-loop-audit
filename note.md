@@ -52,6 +52,10 @@ For visual objectives, capture fresh evidence and route image inspection through
 - Reproduce or explicitly disposition the remaining unrelated full-suite failures without weakening the durable/order evidence.
 - Obtain a genuine live Pi TUI capture if the environment permits; otherwise keep the projection-vs-TUI distinction explicit.
 
+## we are still not doing perfect summaries at the end of objectives
+
+lets look into how others do it plugins and codex/claude/agy
+
 # Later
 
 ## check out out other harnesses and goal extensions 
