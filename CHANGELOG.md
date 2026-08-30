@@ -61,6 +61,9 @@
   inline and deferred choices are persisted as bounded ledger events, with a
   required durable follow-up for intentional deferrals. The policy keeps the
   durable action ahead of defer and pins the plaque-ordering regression.
+  The recommendation now comes from a typed semantic decision path, including
+  the three-defer case, and the active goal card has a deterministic ordered
+  plaque fixture so UI ordering is tested rather than inferred from prose.
 
   See `docs/DESIGN-long-running-supervision.md` for the durable policy and
   future decision checklist.
