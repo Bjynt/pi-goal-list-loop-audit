@@ -2608,7 +2608,7 @@ async function cmdSettings(args: string, ctx: ExtensionContext): Promise<void> {
   const formatSettingValue = (value: unknown): string => {
     if (value === undefined) return "(unset)";
     if (typeof value === "object" && value !== null) {
-      try { return JSON.stringify(value); } catch { return "(unserializable)"; }
+      try { return JSON.stringify(value) ?? "(unserializable)"; } catch { return "(unserializable)"; }
     }
     return String(value);
   };

@@ -22,7 +22,7 @@ test("/glla settings persists explicit auto-resume off (tri-state, not undefined
 test("settings table shows the tri-state honestly", () => {
   const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
   assert.match(MENU, /valueText: show\("autoResume", "default"\)/);
-  assert.match(MENU, /default: hold on EVERY load/);
+  assert.match(MENU, /default: hold on a fresh load, rebind on reload\/fork/);
   assert.match(SRC, /default — hold on load, rebind on reload\/fork/);
 });
 

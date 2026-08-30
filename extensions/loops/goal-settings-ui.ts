@@ -624,7 +624,7 @@ export function resolveAuditorModel(
 
 /**
  * The /glla interactive settings UI (v0.8.0): a menu loop over pi's dialog
- * primitives. Pick a setting → edit it → saved to GLOBAL → back to the menu.
+ * primitives. Pick a setting → edit it → saved to its effective scope → back to the menu.
  * Done/Esc exits. Settings are edited here; `/glla <action>` is reserved for
  * operational commands such as status, resume, stats, and audits.
  */
@@ -791,8 +791,8 @@ async function promptModelRef(
  *
  * v0.34.118: `opts.excludeRefs` filters out a set of refs from the picker
  * (typical use: when picking fallback agents, exclude the user's forbidden
- * models; when picking forbidden models, exclude current fallback agents — the two lists
- * are mutually exclusive by design). Configured refs are kept at the top of
+ * models; when picking forbidden models, exclude every configured fallback
+ * agent — the two lists are mutually exclusive by design). Configured refs are kept at the top of
  * the picker so their order is visible; an unavailable or policy-blocked ref
  * is rendered with its reason and can be removed explicitly. */
 async function promptModelRefs(
