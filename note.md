@@ -1,40 +1,56 @@
 # Now
 
+## GLLA status — 2026-08-30
 
+- **Complete:** the durable-vs-defer guidance goal is archived after the detached auditor approved it at `2026-08-30T00:54:53Z`.
+- **Shipped:** bounded durable/defer facts persist on `Goal` and in `durable_defer_choice`; production flows through `record_goal_judgment → refreshUI() → buildWidgetLines()`; semantic plaques keep `Durable fix` before `Defer / workaround`.
+- **Evidence:** `tests/durable-defer-production-ui.test.ts`, `schemas/goal.schema.json`, `audit/DEFER-DURABLE-GUIDANCE-2026-08-30.jpeg`, and the approved archive `.pi-glla/archive/20260829224747-dc4q1h.md`.
+- **Verification:** changed-path tests and schema/persistence tests pass; `npx tsc --noEmit`, offline auditor-extension checks, and `npm pack --dry-run` pass. The full suite still has unrelated context-growth fixture and auditor timing failures, which remain disclosed rather than suppressed.
+- **Visual caveat:** the committed image is a fresh browser render of exact production widget output, not a live Pi TUI capture. A genuine live-TUI capture remains unavailable.
+- **State:** active goal/list are empty and continuation dispatch is absent; this note update is the only working-tree change.
 
+## No confirmed GLLA-owned transition was found
 
-## No confoirmed glla ownedtransition was found
+This remains a separate unresolved report. Do not turn it into implementation work without a reproducible GLLA-owned runtime transition.
 
-## investigate
+## Investigated
 
+PR #38 was reviewed/merged as part of the lifecycle and auditor hardening work:
 https://github.com/DraconDev/pi-goal-list-loop-audit/pull/38
 
-## maybe turn limit too harsh ? in bigger projects we hit it despite seeming correct use
+The default loop cap remains `maxIterations: 50`; change it only after p90 evidence supports a safer default.
 
 /home/dracon/Pictures/Screenshots/Screenshot_20260828_232807.png 
 
-## make sure model selectors as as good as the main model selector with fallbacks
+## Completed: model-selector parity
 
-## audits should focus on the project at hand they can explore outside but we dont want it to turn into a fix the world
+Fallback chains now match main-model selector behavior: case-insensitive deduplication, order retention, forbidden/unregistered filtering, and the bounded cap are covered by regression tests.
 
-## proactive evidence gathering for draft
+## Completed: auditor scope boundary
 
-currently draft fires first if we use like /goal and even if provided claism and evidence the ai didnt look at it, like pictures and asks me quesitons, 
-while it owuld be in some cases would be useful to run a miniaudit 
+Auditors may explore outside context, but outside findings are informational and cannot become Required fixes or auto-queued work.
 
-## we should prefer long term focused action, i just got recommended 3 defers 
+## Completed: proactive draft pre-read
 
-/home/dracon/Pictures/Screenshots/Screenshot_20260829_185215.png 
-this had the best solution last 
+Drafting now performs bounded proactive evidence gathering before asking avoidable questions, while retaining conservative caps and fail-closed behavior.
 
-audit can fix more in line if makes snse
+## Completed: durable over defer
 
-## auditor 
+The three-defer plaque-collision report is addressed. Safe durable work remains `inline`; only an explicit unsafe/impossible/blocked fact selects `deferred`. The decision is ledgered, persisted on the goal, and rendered durable-first.
 
-not sure but for visual tasks do we take new picutres? so for anything visual the auditor should take a picture look at it and critique it and feed it back int othe main 
-currenlty visual problems seem to pass throug way more 
+Original evidence:
+/home/dracon/Pictures/Screenshots/Screenshot_20260829_185215.png
+
+Auditors may approve in-line fixes when the durable root-cause change is clearly the contract-preserving path.
+
+## Visual auditor follow-up
+
+For visual objectives, capture fresh evidence and route image inspection through MMX. The durable/defer goal now has a production-path integration test and a fresh production-widget projection; the remaining gap is obtaining an authentic live Pi TUI capture rather than a local projection.
 
 # Next
+
+- Reproduce or explicitly disposition the remaining unrelated full-suite failures without weakening the durable/order evidence.
+- Obtain a genuine live Pi TUI capture if the environment permits; otherwise keep the projection-vs-TUI distinction explicit.
 
 # Later
 
