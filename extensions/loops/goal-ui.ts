@@ -651,6 +651,7 @@ function refreshUI(ctx: ExtensionContext): void {
     const settings = loadSettings(ctx.cwd);
     const sessionRef = modelRef(ctx.model);
     const recovery = state.mainModelRecovery;
+    const durableDeferRecommendation = state.goal?.durableDeferRecommendation;
     const fallbackRefs = settings.mainModelFallbacks ?? [];
     const skippedForbiddenRefs = [
       ...fallbackRefs.filter((ref) => isForbiddenModel(ref, settings.forbiddenModels)),
@@ -690,6 +691,7 @@ function refreshUI(ctx: ExtensionContext): void {
       auditorProgressSignals: settings.auditorProgressSignals !== false,
       mainModelFallbacks: fallbackRefs,
       modelProvenance,
+      ...(durableDeferRecommendation ? { durableDeferRecommendation } : {}),
       ...(lastAuditorQuietStretch ? { auditorQuietStretch: lastAuditorQuietStretch } : {}),
     };
     // Settings are loaded once for the remaining projections; the explicit
