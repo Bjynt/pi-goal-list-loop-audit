@@ -1,9 +1,10 @@
 # /glla menu presentation review — 2026-08-19
 
-**Status:** UX review of the existing settings menu; no source change is
-supported by this review. The current surface already does the right thing in
-most places; the proposal below tightens a few presentation rules and lists
-candidate tab additions for the next feature pass.
+**Status:** historical UX review. The presentation follow-up landed in the
+0.36.0 settings pass: inherited model categories, corrected default copy,
+headless projection, scope-aware saves, and ordered fallback policy are now
+covered by source and regression tests. The remaining proposals below are
+candidates, not current behavior.
 
 ## Note on the Designer subagent
 
@@ -21,9 +22,9 @@ The TUI table lives in `extensions/settings-menu.ts`. The legacy flat
 | Tab id         | Label          | Examples                                                |
 |----------------|----------------|---------------------------------------------------------|
 | `keep-going`   | Keep-going     | autoResume, decisionPopup, carryover, autoAcceptDrafts, aggressiveMode, visionAssist, forbiddenModels, blockForbiddenModelSwitches |
-| `main-agent`   | Main agent     | mainAgent (current), mainModelFallbacks, mainModelRetryMinutes, hourlyRetryProbe |
+| `main-agent`   | Main agent     | mainAgent (current), mainModelFallbacks, mainModelRetryMinutes, mainModelFailback, primary-probe cadence, hourlyRetryProbe |
 | `drafter`      | Drafter        | drafterModel, drafterThinkingLevel, drafterModelFallbacks |
-| `auditor`      | Auditor        | auditorModel, auditorThinkingLevel, auditorModelFallback, auditorSameSessionSwap, auditorSilent, auditorProgressSignals, auditCap, auditFeedbackChars |
+| `auditor`      | Auditor        | auditorModel, auditorThinkingLevel, auditorModelFallbacks, auditorAllowedExtensions, auditorSameSessionSwap, auditorSilent, auditorProgressSignals, auditCap, auditFeedbackChars |
 | `subagents`    | Subagents      | subagentFallbacks:<name>, subagentModelStrategy, subagentModelOverrides.<name>, subagentResolved |
 | `stall-brakes` | Stall brakes   | wedgeAlertMinutes, stuckMaxInterventions, stallEscalationRefires, stallShortWords, stallSimilarityThreshold |
 | `other`        | Other          | notifyCmd, tokenLimit, toolOverrides, postaudit (sub-menu) |
@@ -45,12 +46,10 @@ lists rows as `[section] label — value [source] — description`.
    This is intentional (sub-menus do not bind a setting value), but
    newcomers read it as a missing value. The row could read `→ sub-menu`
    with SOURCE = `runtime` to make the affordance explicit.
-3. **`auditorModel` VALUE echoes the session model when no override is set.**
-   `modelThinkingText(auditorRef, auditorThinking, subagent)` substitutes
-   `sessionRef` when `settings.auditorModel` is unset. That is correct, but
-   the VALUE column then reads as if the user picked the auditor model
-   themselves. The user feedback ("show `session model` as a category")
-   applies here: rows whose value is inherited should say so.
+3. **`auditorModel` VALUE echoed the session model when no override was set.**
+   This finding is closed by the 0.36.0 presentation change: inherited drafter
+   and auditor rows now say `session model`, so the VALUE column no longer
+   looks like a pinned override.
 4. **`subagentResolved` is a runtime row with `sourceText: "runtime"` and a
    composite VALUE** that can mix per-agent resolutions into one line. It is
    useful but the column padding makes it the widest row in the menu, which
@@ -170,10 +169,9 @@ that lands it. A focused regression set would cover:
 - `tests/settings-editors.test.ts` — pin per-editor validation and the
   loud-fail behavior on bad input.
 
-**Conclusion:** the menu's information architecture is correct and the
-existing presentation rules already honor the user's "truncate to fit" and
-"show SOURCE" expectations. The two concrete fixes worth landing are (1)
-replace the literal session-model ref with `session model` on inherited
-rows, and (2) surface the Status tab proposal as the next-pass UX win.
-Neither requires modifying the public command surface or the persisted
-settings schema.
+**Conclusion:** the menu's information architecture remains correct and the
+existing presentation rules honor the user's "truncate to fit" and "show
+SOURCE" expectations. The inherited-model category and related settings-surface
+fixes are now landed; headless `/glla` also exposes the complete structured
+projection. The Status-tab, wrapping, and first-open-help ideas remain optional
+future UX work and are not required for the current persisted schema.

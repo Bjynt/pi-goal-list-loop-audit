@@ -17,6 +17,27 @@ The runtime path also supplies the active loop state, including for loop-only
 sessions and paused-goal-plus-loop sessions. No provider request, session write,
 or transcript mutation is performed by the offline probe.
 
+## Follow-up fixture refresh — 2026-08-30
+
+The continuation template subsequently gained the explicit
+`record_goal_judgment` tool guidance. That is an intentional GLLA-owned prompt
+change, so the deterministic size fixture was refreshed rather than weakening
+its assertions. The current `continuationPrompt()` output is **22,158 UTF-16
+characters / 22,260 UTF-8 bytes**. Current before-projection rows are:
+
+| Repeated continuations | Messages | Serialized | GLLA chars | Estimated tokens | Repeated serialized bytes |
+|---:|---:|---:|---:|---:|---:|
+| 0 | 2 | 183 B | 0 | 13 | 0 B |
+| 1 | 3 | 22,819 B | 22,158 | 5,553 | 0 B |
+| 5 | 7 | 113,363 B | 110,790 | 27,711 | 90,544 B |
+| 12 | 14 | 271,815 B | 265,896 | 66,487 | 248,996 B |
+| 25 | 27 | 566,083 B | 553,950 | 138,501 | 543,264 B |
+
+The authoritative checkpoint projection remains bounded: the current 5/12/25
+rows each project to 4 messages and 24,036 serialized bytes. The original
+before/after table below is retained as historical evidence from the prior
+prompt version; the regression tests now pin this current fixture explicitly.
+
 ## Exact provider-token capture
 
 The first completion attempt reported only a `textChars / 4` estimate. That
@@ -51,8 +72,8 @@ npx tsc --noEmit
 git diff --check
 ```
 
-The deterministic fixture produced the following before/after structural and
-raw-field shape. `After messages/bytes` is the same input after
+The original deterministic fixture produced the following before/after
+structural and raw-field shape. `After messages/bytes` is the same input after
 `projectBoundedGllaContext()`. The after projection retains one newest
 `goal-event` and inserts one authoritative checkpoint when old payloads are
 removed. The checkpoint was 1,112 characters for this fixture and the hard
@@ -102,11 +123,12 @@ are retained.
 
 `tests/context-growth-measurement.test.ts` continues to:
 
-- pin the exact continuation payload size (21,246 UTF-16 characters and
-  21,350 UTF-8 bytes);
-- pin the complete 0/1/5/12/25 before-measurement shape, including message
-  counts, serialized bytes, text counts, estimated counts, repeated-payload
-  counts, and provider sample/input/output/cache/total values;
+- pin the exact current continuation payload size (22,158 UTF-16 characters and
+  22,260 UTF-8 bytes); the preceding 21,246/21,350 values belong to the
+  historical prompt version documented above;
+- pin the complete current 0/1/5/12/25 before-measurement shape, including
+  message counts, serialized bytes, text counts, estimated counts,
+  repeated-payload counts, and provider sample/input/output/cache/total values;
 - verify exact provider usage extraction and rejection of partial/invalid
   usage; and
 - keep failed error-only turns and ordinary conversation separate from GLLA

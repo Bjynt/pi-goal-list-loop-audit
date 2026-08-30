@@ -2,12 +2,15 @@
 
 **Scope:** current checkout (`package.json` 0.36.0), `buildSettingsRows`,
 `handleSettingChoice`, settings persistence, and the headless `/glla` dump.
-This pass was read-only; no source behavior was changed.
+The inventory below is the original read-only audit; the follow-up disposition
+records the fixes landed afterward in the same checkout.
 
 ## Inventory
 
-`G` means the row has an interactive GLLA dispatcher and writes the global
-settings file. `P` means it writes project settings. `E` means the row is a
+`G` means the row has an interactive GLLA dispatcher and persists through the
+settings layer; the scope-aware UI wrapper writes a project override when the
+effective value is project-sourced and otherwise writes global settings.
+`P` means it explicitly writes project settings. `E` means the row is a
 runtime/external control and has no GLLA persistence. `R` means intentionally
 read-only. All writes funnel through `saveSettings` in
 `extensions/goal-settings.ts:553-580`; the UI wrapper also performs the stale
@@ -50,10 +53,13 @@ case; the sole intentional exception is `subagentResolved`.
   candidate state separately allows 12 entries.
 - Auditor launch sites consume the effective settings at
   `extensions/loops/goal-tools.ts:741-800` and
-  `extensions/loops/goal-auditor-hooks.ts:986-1050`.
+  `extensions/loops/goal-auditor-hooks.ts:986-1050`; the allowed-extension
+  editor uses the same effective/project-aware settings boundary.
 - The interactive TUI builds all rows from `settingsProvenance` at
   `goal-settings-ui.ts:609-630`; the emergency flat selector maps the same row
   ids by full `[section] label` prefix at `:651-688`.
+- Ordinary row edits are scope-aware: a project-sourced key is written back to
+  that project's settings file, while `GLOBAL_ONLY_KEYS` remains global-only.
 - `mainAgent` is external to GLLA: the handler deliberately does not save a
   main model, and points to Pi's normal model/thinking selectors.
 
@@ -101,6 +107,38 @@ case; the sole intentional exception is `subagentResolved`.
    omission can only arise when adding a forbidden pattern after an existing
    chain, but it leaves the two-way policy inconsistent.
 
+## Follow-up disposition
+
+All six GLLA-owned findings above are addressed:
+
+1. **Inherited model presentation — fixed.** Unset drafter/auditor model rows
+   now say `session model` (and inherited thinking is labeled as such) instead
+   of presenting a concrete provider/id as a pinned override.
+2. **Aggressive defaults — fixed.** Audit-cap and wedge-alert editors compute
+   their current effective default from the aggressive-mode matrix; the copy
+   no longer hard-codes the conservative values.
+3. **Auto-resume copy — fixed.** The table and selector now distinguish a
+   fresh-load hold from reload/fork rebinding and explicit `/goal resume`.
+4. **Headless projection — fixed.** The no-UI `/glla` dump includes the runtime
+   main-agent row, state root, allowed extensions, every persisted row, and
+   per-type effective subagent resolution. Arrays/maps use JSON serialization
+   rather than `[object Object]`; fallback chains retain numbered order.
+5. **Project editing — fixed.** Normal edits route to the project file when
+   provenance says the effective value is project-sourced. The existing
+   `GLOBAL_ONLY_KEYS` filter still prevents recovery policy from acquiring a
+   misleading project destination.
+6. **Forbidden-chain parity — fixed.** Forbidden-model editing now excludes
+   main, drafter, auditor, and all built-in subagent fallback refs, using the
+   effective project/global policy. Each fallback editor applies the same
+   effective policy before saving.
+
+The context-growth fixture mismatch found during the follow-up was fixture-only:
+the durable judgment guidance intentionally added to the continuation template
+changed the deterministic payload from 21,863 to 22,158 characters. The pinned
+measurement expectations were refreshed; checkpoint projection remains bounded.
+The full-suite and `release:check` dispositions are recorded in the verification
+section below and in the companion context-growth audit.
+
 ## External / intentional behavior
 
 - Pi owns the active `mainAgent` model/thinking selector; GLLA only observes
@@ -114,8 +152,11 @@ case; the sole intentional exception is `subagentResolved`.
 
 ## Verification performed
 
-Focused settings/menu, picker, persistence, and TypeScript checks were already
-passing in this checkout: 72 focused tests and `npx tsc --noEmit`. The source
-inspection above additionally confirms all 48 generated/static row instances
-map to dispatch cases except the documented read-only row. Broader release
-checks retain the previously documented unrelated fixture/flakiness failures.
+The follow-up focused settings/menu, picker, persistence, and auditor-extension
+run passed **82 tests**; `npx tsc --noEmit` passed. The source inspection confirms
+all 48 generated/static row instances map to dispatch cases except the
+documented read-only row. The context-growth measurement and checkpoint
+regressions also pass after refreshing the intentional prompt-size fixture.
+The latest full suite and `npm run release:check` results are kept as bounded
+command evidence in the goal audit; any remaining failures are described as
+fixture-only, timing-flaky, or external rather than silently treated as green.
