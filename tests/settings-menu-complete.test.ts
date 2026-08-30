@@ -121,7 +121,7 @@ test("role rows show each selected model with requested/effective thinking", () 
       drafterModelFallbacks: ["provider/no-max", "provider/also-max"],
       auditorModel: "provider/auditor",
       auditorThinkingLevel: "high",
-      auditorModelFallback: "provider/auditor-fallback",
+      auditorModelFallbacks: ["provider/auditor-fallback"],
     } as Settings,
     EMPTY_PROV,
     {
@@ -143,7 +143,7 @@ test("role rows show each selected model with requested/effective thinking", () 
     byId.get("drafterModelFallbacks")?.valueText,
     "provider/no-max · high (requested max) → provider/also-max · max",
   );
-  assert.equal(byId.get("auditorModelFallback")?.valueText, "provider/auditor-fallback · low (requested high)");
+  assert.equal(byId.get("auditorModelFallbacks")?.valueText, "1/10 · 1. provider/auditor-fallback · low (requested high)");
 });
 
 test("all embedded subagent types expose editable fallback-chain rows", () => {
@@ -177,6 +177,7 @@ test("key rows from v0.27.0 settings menu are all present (menu coverage contrac
     "drafterThinkingLevel",
     "auditorModel",
     "auditorThinkingLevel",
+    "auditorModelFallbacks",
     "auditorSilent",
     "auditCap",
     "auditFeedbackChars",
@@ -390,7 +391,7 @@ test("headless `/glla` fallback keeps stall brakes and the v0.34.127 sync list",
   for (const key of [
     "decisionPopup",
     "carryover",
-    "auditorModelFallback",
+    "auditorModelFallbacks",
     "auditorSameSessionSwap",
     "auditorSilent",
     "auditorProgressSignals",
