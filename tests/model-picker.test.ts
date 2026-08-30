@@ -198,11 +198,13 @@ test("v0.29.17 wiring: model-valued settings use the fuzzy picker; unavailable a
   assert.match(SRC, /no configured auth for \$\{provider\}/, "unkeyed provider counts as unavailable");
 });
 
-test("v0.31.2/0.31.3: auditor thinking defaults to sticky high — never the session dial", () => {
+test("v0.36.0: auditor thinking inherits the parent dial unless explicitly overridden", () => {
   const SRC = readGoalRuntimeSource();
-  // v0.31.8: cast — the saved level may be "max" (pi ≥0.83; dev-types predate it)
-  assert.equal(SRC.match(/thinkingLevel: \(settings\.auditorThinkingLevel \?\? "high"\) as any,/g)!.length, 2, "both audit call sites floor at high");
-  assert.ok(!SRC.includes("getSessionThinkingLevel"), "the session-dial follower is gone");
+  // An unset auditor level follows the live parent session at both audit launch
+  // sites; max is the detached/headless default when the host exposes no dial.
+  assert.match(SRC, /thinkingLevel: \(settings\.auditorThinkingLevel \?\? ctx\.thinkingLevel \?\? "max"\) as any,/);
+  assert.match(SRC, /thinkingLevel: \(settings\.auditorThinkingLevel \?\? liveCtx\.thinkingLevel \?\? "max"\) as any,/);
+  assert.ok(!SRC.includes("getSessionThinkingLevel"), "the session-dial follower is explicit context, not a hidden helper");
   const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
   // v0.31.4: thinking is chained into the Auditor model drill-in ("we are
   // setting the thinking when we select the model"); v0.34.127 adds the
@@ -214,38 +216,40 @@ test("v0.31.2/0.31.3: auditor thinking defaults to sticky high — never the ses
   const UI = fs.readFileSync("extensions/loops/goal-settings-ui.ts", "utf-8");
   assert.ok(UI.includes('case "auditorThinkingLevel"'), "standalone thinking row has a dispatcher case");
   assert.ok(!UI.includes('/glla thinking='), "the never-existing /glla thinking= claim is gone");
-  // v0.31.5: unset fallback displays as what it semantically IS — the
-  // cascade's last rung ("maybe have a def fallback to session").
-  assert.match(MENU, /valueText: settings\.auditorModelFallback/);
+  // v0.36.0: the auditor fallback row is the same ordered multi-select
+  // shape as mainModelFallbacks.
+  assert.match(MENU, /valueText: settings\.auditorModelFallbacks/);
   const caseIdx2 = SRC.indexOf('case "auditorModel": {');
   assert.match(SRC.slice(caseIdx2, caseIdx2 + 2600), /"Auditor thinking — DETACHED auditor worker ONLY/);
   // v0.34.127: the standalone row is dispatchable (no dead id) — the old
   // v0.31.4 "no row" contract is superseded by the row + its case.
   assert.ok(SRC.includes('case "auditorThinkingLevel"'), "standalone thinking row case present");
   const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
-  assert.match(SETTINGS, /must NOT ride the session's coding-speed/);
+  assert.match(SETTINGS, /inherit the live session thinking level/);
 });
 
-test("v0.31.3: the auditor chain — pinned primary → pinned fallback → session LAST; same-as-session auto-swap", () => {
+test("v0.36.0: the auditor chain — pinned primary → ordered fallbacks → session LAST; same-as-session auto-swap", () => {
   const SRC = readGoalRuntimeSource();
   // The cascade is assembled through the canonical normalizer and selector;
-  // the settings contract remains the existing primary + singular fallback.
+  // the settings contract uses the same ordered fallback array as the main
+  // agent, normalized before the selector walks it.
+  assert.match(SRC, /configuredFallbackRefs/);
   assert.match(SRC, /configuredRefs = normalizeMainModelFallbackRefs/);
   assert.match(SRC, /new ModelSelector\(/);
   assert.match(SRC, /All pinned auditor models are unavailable — falling back to the session model/);
   assert.match(SRC, /auditor_model_same_as_session/);
   assert.match(SRC, /pin a different \/glla → Auditor fallback agent so the verifier can differ/);
-  assert.match(SRC, /resolveAuditorModel\(liveCtx, settings\.auditorModel, settings\.auditorModelFallback, settings\.auditorSameSessionSwap !== false\)/);
-  assert.match(SRC, /resolveAuditorModel\(ctx, settings\.auditorModel, settings\.auditorModelFallback, settings\.auditorSameSessionSwap !== false\)/);
+  assert.match(SRC, /resolveAuditorModel\(liveCtx, settings\.auditorModel, settings\.auditorModelFallbacks, settings\.auditorSameSessionSwap !== false\)/);
+  assert.match(SRC, /resolveAuditorModel\(ctx, settings\.auditorModel, settings\.auditorModelFallbacks, settings\.auditorSameSessionSwap !== false\)/);
   const SETTINGS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
-  assert.match(SETTINGS, /auditorModelFallback\?: string;/);
-  assert.doesNotMatch(SETTINGS, /auditorModelFallbacks\?: string\[\];/);
+  assert.match(SETTINGS, /auditorModelFallbacks\?: string\[\];/);
+  assert.match(SETTINGS, /@deprecated v0\.36\.0: singular compatibility alias/);
   const MENU = fs.readFileSync("extensions/settings-menu.ts", "utf-8");
-  assert.match(MENU, /id: "auditorModelFallback"/);
-  assert.doesNotMatch(MENU, /id: "auditorModelFallbacks"/);
-  assert.match(MENU, /section: "auditor",[\s\S]{0,200}?Auditor fallback agent/);
-  assert.match(SRC, /case "auditorModelFallback": \{/);
-  assert.doesNotMatch(SRC, /case "auditorModelFallbacks": \{/);
+  assert.match(MENU, /id: "auditorModelFallbacks"/);
+  assert.doesNotMatch(MENU, /id: "auditorModelFallback"[^s]/);
+  assert.match(MENU, /section: "auditor",[\s\S]{0,220}?Fallback models \(up to/);
+  assert.match(SRC, /case "auditorModelFallbacks": \{/);
+  assert.doesNotMatch(SRC, /case "auditorModelFallback": \{/);
   // The v0.31.2 "diverse" machinery is gone (complexity cost > benefit):
   assert.ok(!SRC.includes("pickDiverseAuditorModel") && !SRC.includes('"diverse"'), "diverse strategy removed");
 });

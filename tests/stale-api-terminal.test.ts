@@ -196,7 +196,7 @@ test("v0.32.0: audit-opportunistic fix batch — dispose, keys, caps, message", 
   const AUD = fs.readFileSync("extensions/goal-loop-auditor-process.ts", "utf-8");
   assert.match(AUD, /child\.kill\("SIGTERM"\)/); // detached auditor children are terminated on teardown
   const GS = fs.readFileSync("extensions/goal-settings.ts", "utf-8");
-  assert.match(GS, /"auditorModelFallback",/); // provenance-tracked — menu row shows pinned value
+  assert.match(GS, /"auditorModelFallbacks",/); // provenance-tracked — menu row shows the ordered fallback chain
   assert.match(GS, /"auditorSameSessionSwap",/);
   const GOAL = readGoalRuntimeSource();
   assert.match(GOAL, /slice\(0, 50\)/); // fan-out cap

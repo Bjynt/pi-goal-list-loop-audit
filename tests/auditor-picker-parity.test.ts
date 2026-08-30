@@ -114,16 +114,29 @@ test("v0.35.24: a typed forbidden ref is REFUSED by the auditor picker, never pe
   assert.ok(warnings.some((w) => w.includes("claude-sonnet")), "the refusal names the refused ref");
 });
 
-test("v0.35.24: the fallback-agent picker applies the same filtering", async () => {
-  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({ forbiddenModels: ["minimax"], auditorModelFallback: "keep/me" }));
+test("v0.36.0: the ordered auditor fallback picker applies the same filtering", async () => {
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({ forbiddenModels: ["minimax"], auditorModelFallbacks: ["keep/me"] }));
   const cwd = "/tmp/glla-auditor-parity-fb2-" + Date.now();
   fs.mkdirSync(cwd + "/.pi-glla", { recursive: true });
   const ctx: any = editorCtx(cwd);
   ctx.ui.input = async () => "minimax/MiniMax-M3";
 
-  await handleSettingChoice("auditorModelFallback", ctx);
+  await handleSettingChoice("auditorModelFallbacks", ctx);
 
-  assert.equal(readGlobal().auditorModelFallback, "keep/me", "the forbidden ref did not overwrite the existing fallback pin");
+  assert.deepEqual(readGlobal().auditorModelFallbacks, ["keep/me"], "the forbidden ref did not overwrite the existing fallback chain");
+});
+
+test("v0.36.0: the ordered auditor fallback picker keeps the first ten refs in typed order", async () => {
+  fs.writeFileSync(GLOBAL_SETTINGS_PATH, JSON.stringify({}));
+  const cwd = "/tmp/glla-auditor-parity-chain-" + Date.now();
+  fs.mkdirSync(cwd + "/.pi-glla", { recursive: true });
+  const ctx: any = editorCtx(cwd);
+  const refs = Array.from({ length: 11 }, (_, i) => `provider/auditor-${i + 1}`);
+  ctx.ui.input = async () => refs.join(",");
+
+  await handleSettingChoice("auditorModelFallbacks", ctx);
+
+  assert.deepEqual(readGlobal().auditorModelFallbacks, refs.slice(0, 10));
 });
 
 test("v0.35.24: buildModelPickItems excludes forbidden refs for the auditor slot (list-level filter)", () => {

@@ -1,8 +1,8 @@
 // tests/auditor-fallback-unification.test.ts
 //
-// The auditor keeps its existing two configured slots and detached-worker
-// spawn shape, but its resolver and runtime retry walker must use the same
-// ordering primitives as main-model-recovery and drafter-model.
+// The auditor keeps its detached-worker spawn shape, but its resolver and
+// runtime retry walker use the same bounded ordered-chain primitives as the
+// main agent and drafter.
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
@@ -108,11 +108,11 @@ function result(overrides: Partial<GoalAuditorResult> = {}): GoalAuditorResult {
   };
 }
 
-test("auditor configured refs retain order and use the main normalizer", async () => {
-  await withFakeContext(({ ctx, primary, fallback1, session }) => {
-    const resolved = resolveAuditorModel(ctx, "test/primary", "test/fallback-1", true);
+test("auditor ordered fallback refs retain order and use the main normalizer", async () => {
+  await withFakeContext(({ ctx, primary, fallback1, fallback2, session }) => {
+    const resolved = resolveAuditorModel(ctx, "test/primary", ["test/fallback-1", "test/fallback-2"], true);
     const walked = [resolved.model, ...(resolved.fallbackModels ?? []).map((candidate: any) => candidate.model)];
-    assert.deepEqual(walked, [primary, fallback1, session]);
+    assert.deepEqual(walked, [primary, fallback1, fallback2, session]);
     assert.deepEqual(
       normalizeMainModelFallbackRefs(["test/primary", "TEST/PRIMARY", "test/fallback-1"]),
       ["test/primary", "test/fallback-1"],
