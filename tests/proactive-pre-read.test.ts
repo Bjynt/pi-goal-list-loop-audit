@@ -43,7 +43,7 @@ test("gatherProactivePreRead surfaces bounded file evidence and seed excerpt bef
   assert.doesNotMatch(block!, /x{1000}/ as RegExp, "truncated, not full 2000");
 });
 
-test("gatherProactivePreRead notes image references without a model switch", () => {
+test("gatherProactivePreRead notes image references without assuming an external tool", () => {
   const cwd = tmpCwd();
   fs.mkdirSync(path.join(cwd, "pics"), { recursive: true });
   // No actual image file needed — reference alone is enough.
@@ -51,7 +51,9 @@ test("gatherProactivePreRead notes image references without a model switch", () 
   const block = gatherProactivePreRead(seed, cwd);
   assert.ok(block);
   assert.match(block!, /Image reference/, "image note");
-  assert.match(block!, /mmx vision describe/, "mmx routing, not model switch");
+  assert.match(block!, /native vision when supported/i, "native vision is preferred");
+  assert.match(block!, /confirmed external provider/i, "external vision is opt-in");
+  assert.doesNotMatch(block!, /mmx vision describe/, "MMX is not assumed by pre-read");
   assert.match(block!, /PROACTIVE PRE-READ/);
 });
 

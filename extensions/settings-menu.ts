@@ -215,7 +215,7 @@ export function buildSettingsRows(
       valueText: show("visionAssist", "on"),
       sourceText: src("visionAssist"),
       description:
-        "on: continuation prompts route 'can't see' checks to the mmx vision CLI instead of switching models; switches stay preapproved-only (forbiddenModels gate)",
+        "on: continuation prompts prefer the current model's native vision; confirmed external tools are optional; no vision-only model switch (forbiddenModels gate)",
     },
     // ── Main agent ──
     {

@@ -898,13 +898,13 @@ export async function handleSettingChoice(id: string, ctx: ExtensionContext): Pr
       return;
     }
     case "visionAssist": {
-      const v = await ctx.ui.select("Vision assist — when the agent can't see, route the check to the mmx vision CLI instead of switching models (preapproval gate: forbiddenModels)", [
-        "on — continuation prompts carry the VISION-ASSIST directive; seeing = mmx vision, switches stay preapproved-only (default)",
+      const v = await ctx.ui.select("Vision assist — prefer the current model's native image capability; external providers are optional (preapproval gate: forbiddenModels)", [
+        "on — continuation prompts carry native-first VISION-ASSIST guidance; no vision-only model switch (default)",
         "off — no vision guidance injected; the forbiddenModels gate still blocks forbidden switches",
       ]);
       if (v) {
         saveSettings("global", ctx.cwd, { visionAssist: v.startsWith("off") ? false : undefined });
-        ctx.ui.notify(v.startsWith("off") ? "Vision assist OFF — no mmx routing guidance; the model-switch gate still stands." : "Vision assist ON — 'can't see' checks route to mmx vision, switches stay preapproved-only.", "info");
+        ctx.ui.notify(v.startsWith("off") ? "Vision assist OFF — no native-vision guidance; the model-switch gate still stands." : "Vision assist ON — native vision first; external providers require confirmation and vision-only switches stay off.", "info");
       }
       return;
     }

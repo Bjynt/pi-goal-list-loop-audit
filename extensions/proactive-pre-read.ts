@@ -5,10 +5,10 @@
  * bounded evidence for the claims/pictures the user supplied. This module
  * extracts candidate file/image paths from the drafting seed, reads at most
  * 3 files (800 chars each) relative to the project cwd, and returns a
- * bounded evidence block to prepend to the drafting prompt. No model
- * switch is performed — image evidence is surfaced as a path note so the
- * mmx vision CLI can be invoked explicitly when needed (vision-assist
- * routing, not a silent model swap).
+ * bounded evidence block to prepend to the drafting prompt. No model switch or
+ * external vision call is performed — image evidence is surfaced as a path
+ * note so the current model can inspect it natively when supported, or a
+ * confirmed external provider can be used explicitly.
  */
 
 import * as fs from "node:fs";
@@ -36,15 +36,16 @@ function tryRead(cwd: string, candidate: string): { kind: "text"; snippet: strin
   // Preserve the candidate for display; resolve relative to cwd for reads.
   const resolved = path.isAbsolute(candidate) ? candidate : path.resolve(cwd, candidate);
   if (image) {
-    // Cheap existence check — no bytes loaded. The auditor/visual pass
-    // drives the actual mmx vision describe; the pre-read just flags it.
+    // Cheap existence check — no bytes loaded. The pre-read only flags the
+    // image; inspection belongs to the current model or an explicitly
+    // confirmed external provider.
     try {
       const st = fs.statSync(resolved);
-      if (st.isFile()) return { kind: "image", note: `Image evidence: ${candidate} — ${st.size} bytes, inspect via mmx vision describe --image ${candidate} --quiet --non-interactive` };
+      if (st.isFile()) return { kind: "image", note: `Image evidence: ${candidate} — ${st.size} bytes; inspect with native vision when supported, otherwise use a confirmed external provider` };
     } catch {}
     // Also accept the raw token as evidence even if not on disk — the
     // drafting prompt still sees that an image was referenced.
-    return { kind: "image", note: `Image reference: ${candidate} — inspect via mmx vision describe` };
+    return { kind: "image", note: `Image reference: ${candidate} — visual inspection requires native image support or a confirmed external provider` };
   }
   try {
     const raw = fs.readFileSync(resolved, "utf-8");

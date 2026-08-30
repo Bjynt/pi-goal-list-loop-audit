@@ -30,15 +30,16 @@ test("isVisualGoal detects UI/screenshot/visual goals", () => {
   assert.equal(isVisualGoal(seedGoal({ objective: "Proactive evidence gathering before draft" })), false);
 });
 
-test("visual auditor prompt injects fresh mmx/chrome capture before verdict", () => {
+test("visual auditor prompt injects fresh native/external capture guidance before verdict", () => {
   const visual = seedGoal({
     objective: "Make visual auditor take fresh pictures for visual goals — currently visual problems pass through because auditor reuses old evidence",
     verificationContract: "for goals touching UI/screenshots, auditor captures a fresh screenshot via mmx/chrome, critiques it, and feeds the critique back into the audit verdict, with a test or fixture pinning the path.",
   });
   const prompt = buildGoalAuditorPrompt(visual, "completion", "verification");
   assert.match(prompt, /VISUAL AUDIT — FRESH EVIDENCE REQUIRED/, "header injected");
-  assert.match(prompt, /mmx vision describe --image/, "fresh mmx command present");
-  assert.match(prompt, /chrome screenshot/, "chrome alternative present");
+  assert.match(prompt, /native image capability/i, "native model vision is preferred");
+  assert.match(prompt, /do NOT assume MMX/i, "external tool availability is not assumed");
+  assert.match(prompt, /MMX is optional/i, "MMX is only an explicit fallback");
   assert.match(prompt, /critique what is shown versus the objective/, "critique instruction");
   assert.match(prompt, /Do NOT reuse stale image descriptions/, "stale reuse blocked");
   assert.match(prompt, /<evidence>/, "evidence section still required");
@@ -56,10 +57,11 @@ test("non-visual goals keep the original prompt without fresh capture", () => {
   assert.match(prompt, /You are the independent completion auditor/);
 });
 
-test("visual prompt fixture pins the exact mmx command shape", () => {
+test("visual prompt fixture does not assume an external vision command", () => {
   const g = seedGoal({ objective: "Screenshot regression in the studio — visual check", verificationContract: "screenshot" });
   const p = buildGoalAuditorPrompt(g, null, null);
-  // Pin the exact flag set the executor's vision-assist skill uses.
-  assert.match(p, /mmx vision describe --image <path> --quiet --non-interactive/);
-  assert.match(p, /Example:.*mmx vision describe --image/);
+  assert.match(p, /native image capability/i);
+  assert.match(p, /If native image input is unavailable/i);
+  assert.match(p, /MMX is optional, not a requirement/i);
+  assert.doesNotMatch(p, /Example:.*mmx vision describe --image/);
 });

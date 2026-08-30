@@ -248,8 +248,9 @@ export const DEFAULT_SETTINGS: Settings = {
   // remains enabled for any explicit list.
   forbiddenModels: [...DEFAULT_FORBIDDEN_MODELS],
   blockForbiddenModelSwitches: true,
-  // v0.34.72: vision-assist routing is the default — seeing is an mmx
-  // vision CLI job, never a reason to switch models (note.md 2026-08-07).
+  // Vision-assist guidance is on by default: prefer native vision in the
+  // current model; never assume an external provider or switch models solely
+  // to see (note.md 2026-08-30).
   visionAssist: true,
   mainModelRetryMinutes: 15,
   mainModelFailback: "auto",
