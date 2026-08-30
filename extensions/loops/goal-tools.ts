@@ -124,8 +124,10 @@ isGoalRevisionCurrent,
   nextHourlyProbeMs,
   type ModelSwitchRecord,
   type ListItem,
+  type DurableDeferRecommendationInput,
   type DurableChoice,
   buildDurableChoiceRecord,
+  normalizeDurableDeferRecommendationInput,
 } from "../goal-loop-core.js";
 import {
   createContinuationDispatch,

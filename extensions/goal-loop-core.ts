@@ -429,6 +429,10 @@ export interface Goal {
    * aggressiveMode keeps the goal active past the disapproval cap. Rendered
    * into every continuation prompt until the next audit clears them. */
   pendingTasks?: string[];
+  /** v0.36.1: explicit durable-vs-defer facts retained with the active goal
+   * so every UI refresh can project the same recommendation the agent
+   * recorded in the ledger, including after a reload. */
+  durableDeferRecommendation?: DurableDeferRecommendationInput;
   activePath?: string;
   archivedPath?: string;
   usage: {
@@ -2147,6 +2151,24 @@ function compactDurableDeferText(value: string): string {
   return value.replace(/\s+/g, " ").trim().slice(0, 500);
 }
 
+/** Normalize the bounded facts persisted with a goal and projected into the
+ * UI. The recommendation surface is evidence-bearing state, not a transcript
+ * dump: keep one durable action and at most eight compact fallback notes. */
+export function normalizeDurableDeferRecommendationInput(
+  input: DurableDeferRecommendationInput,
+): DurableDeferRecommendationInput {
+  const durableFix = compactDurableDeferText(input.durableFix);
+  const deferRecommendations = input.deferRecommendations
+    .map((recommendation) => compactDurableDeferText(recommendation))
+    .filter(Boolean)
+    .slice(0, 8);
+  return {
+    durableFix,
+    deferRecommendations,
+    ...(input.durableBlocked !== undefined ? { durableBlocked: input.durableBlocked } : {}),
+  };
+}
+
 /**
  * Resolve the long-running recommendation from its actual decision facts.
  * Previous defer recommendations do not demote a safe durable fix; only an
@@ -2162,9 +2184,10 @@ export function recommendDurableDeferChoice(input: DurableDeferRecommendationInp
  * a future wording change cannot make a first-occurrence test look semantic.
  */
 export function buildDurableDeferRecommendation(input: DurableDeferRecommendationInput): DurableDeferRecommendation {
-  const durableFix = compactDurableDeferText(input.durableFix) || "the durable root-cause fix";
-  const deferCount = input.deferRecommendations.filter((recommendation) => compactDurableDeferText(recommendation).length > 0).length;
-  const choice = recommendDurableDeferChoice(input);
+  const facts = normalizeDurableDeferRecommendationInput(input);
+  const durableFix = facts.durableFix || "the durable root-cause fix";
+  const deferCount = facts.deferRecommendations.length;
+  const choice = recommendDurableDeferChoice(facts);
   const plaques: Record<DurableDeferPlaqueKind, DurableDeferPlaque> = {
     durable: {
       kind: "durable",
