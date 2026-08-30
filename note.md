@@ -1,14 +1,15 @@
 # Now
 
-## Visual auditor follow-up
+## Visual auditor follow-up — native vision first, external tools optional
 
-For visual objectives, capture fresh evidence and route image inspection through MMX. The durable/defer goal now has a production-path integration test and a fresh production-widget projection; the remaining gap is obtaining an authentic live Pi TUI capture rather than a local projection.
+For visual objectives, use the native image capability of the current main/auditor model first; do not assume MMX or any other external CLI is installed. The vision guidance/router now defaults to the current model, uses MMX only when availability is explicitly confirmed, and fails closed when neither native vision nor a confirmed external provider exists. Fresh evidence is still mandatory. The durable/defer goal has a production-path integration test and a fresh production-widget projection; the remaining gap is obtaining an authentic live Pi TUI capture rather than a local projection.
 
 # Next
 
 - Decide whether `pi-subagents` needs true runtime fallback; if so, design bounded retry/respawn and auth-gate coverage rather than treating startup selection as failover.
 - Reproduce or explicitly disposition the remaining unrelated full-suite failures without weakening the durable/order evidence.
 - Obtain a genuine live Pi TUI capture if the environment permits; otherwise keep the projection-vs-TUI distinction explicit.
+- Keep visual-audit evidence honest when the current model lacks native image input: use only a confirmed external provider or state that visual evidence is unavailable.
 
 ## we are still not doing perfect summaries at the end of objectives
 

@@ -6,19 +6,19 @@
 // another model or cli like mmx vision to see if stuck. but not just this
 // we need to specify that it cant be too eager to switch only preapproved."
 //
-// Contract: a documented vision-assist guidance/helper routes stuck-vision
-// checks to mmx vision, a test pins the guidance and the preapproval gate,
-// suite green + tsc clean.
+// Contract: documented vision-assist guidance prefers the current model's
+// native image capability, never assumes an external CLI, and permits a
+// confirmed optional provider only as a fallback. Suite green + tsc clean.
 //
-// Pinned here: (a) VISION_ASSIST_GUIDANCE (the single source of truth)
-// carries the mmx vision command AND the preapproval rule; (b)
-// docs/VISION-ASSIST.md documents both; (c) the pure router routes a
-// forbidden-target vision check to mmx vision with blockedSwitch, allows a
-// preapproved switch, and defaults to mmx-vision; (d) the preapproval gate
-// itself (isForbiddenModel + DEFAULT_FORBIDDEN_MODELS); (e) continuation
-// prompts carry the directive by default and drop it when visionAssist is
-// off; (f) a forbidden switch observed at runtime also records the
-// vision_assist routing entry (off → no entry).
+// Pinned here: (a) VISION_ASSIST_GUIDANCE (the single source of truth) carries
+// native-first guidance, optional MMX wording, and the preapproval rule; (b)
+// docs/VISION-ASSIST.md documents the same; (c) the pure router defaults to
+// the current model, fails closed when native vision is known unavailable,
+// uses confirmed MMX only when explicitly available, and requires explicit
+// opt-in for model switches; (d) the preapproval gate itself; (e)
+// continuation prompts carry the directive by default and drop it when
+// visionAssist is off; (f) a forbidden switch observed at runtime records
+// the vision_assist routing entry (off → no entry).
 
 import { test, afterEach } from "node:test";
 import * as assert from "node:assert/strict";
@@ -76,30 +76,36 @@ afterEach(() => {
 
 // ── (a) the guidance block ─────────────────────────────────────────────
 
-test("VISION_ASSIST_GUIDANCE routes stuck-vision checks to mmx vision", () => {
+test("VISION_ASSIST_GUIDANCE prefers native vision without assuming MMX", () => {
   assert.equal(VISION_ASSIST_DEFAULT, true, "the setting defaults ON");
+  assert.match(VISION_ASSIST_GUIDANCE, /native image capability/i);
   assert.match(VISION_ASSIST_GUIDANCE, /mmx vision describe --image <path-or-url>/);
-  assert.match(VISION_ASSIST_GUIDANCE, /--prompt/);
+  assert.match(VISION_ASSIST_GUIDANCE, /optional/i);
   assert.match(VISION_ASSIST_GUIDANCE, /do NOT switch models/i);
+  assert.match(VISION_ASSIST_GUIDANCE, /do NOT assume MMX/i);
   assert.match(VISION_ASSIST_GUIDANCE, /preapproved/i, "the preapproval rule is in the guidance");
   assert.match(VISION_ASSIST_GUIDANCE, /forbiddenModels/, "the gate is named");
-  assert.match(VISION_ASSIST_GUIDANCE, /default forbiddenModels list is empty/i, "the empty default is truthful");
+  assert.match(VISION_ASSIST_GUIDANCE, /defaults to empty/i, "the empty default is truthful");
   assert.match(VISION_ASSIST_GUIDANCE, /gpt-5\.5|sonnet|opus/, "explicit policy examples remain named");
   assert.match(VISION_ASSIST_GUIDANCE, /forbidden_model_switch/, "violations are ledgered");
   assert.match(VISION_ASSIST_GUIDANCE, /vision_assist/, "the routing entry is ledgered");
+  assert.doesNotMatch(VISION_ASSIST_GUIDANCE, /Prefer mmx vision for every vision check/i);
 });
 
-test("docs/VISION-ASSIST.md documents the guidance AND the preapproval gate", () => {
+test("docs/VISION-ASSIST.md documents native-first guidance and the preapproval gate", () => {
   const doc = fs.readFileSync(path.resolve("docs", "VISION-ASSIST.md"), "utf-8");
+  assert.match(doc, /native image capability/i);
   assert.match(doc, /mmx vision describe --image <path-or-url>/);
+  assert.match(doc, /optional/i);
   assert.match(doc, /preapproval gate/i);
   assert.match(doc, /forbiddenModels/);
-  assert.match(doc, /Default forbidden list: empty/i, "the documented default is truthful");
+  assert.match(doc, /Default `forbiddenModels` is empty/i, "the documented default is truthful");
   assert.match(doc, /visionAssist/, "the setting is documented");
   assert.match(doc, /`\/glla`\s+→\s+\*\*Keep-going\*\*\s+→\s+\*\*Vision assist\*\*/, "the documented navigation matches the settings menu");
   assert.match(doc, /\*\*Forbidden models\*\*/, "the forbidden-model editor is documented as a settings row");
   assert.doesNotMatch(doc, /\/glla\s+(?:forbiddenModels|visionAssist)=/, "invalid argument-style /glla syntax is not documented");
   assert.match(doc, /vision_assist/, "the ledger type is documented");
+  assert.match(doc, /Never invent/i);
 });
 
 // ── (c) the command builder + pure router ──────────────────────────────
@@ -114,31 +120,45 @@ test("visionDescribeCommand builds the exact mmx call", () => {
   assert.ok(bare.includes("Describe what is shown in the image."), "a default question is provided");
 });
 
-test("routeVisionCheck: a forbidden target routes to mmx vision with blockedSwitch (preapproval gate fires)", () => {
+test("routeVisionCheck: a forbidden target stays on the current model", () => {
   const forbidden = ["gpt-5.5", "sonnet", "opus"];
   const r = routeVisionCheck({ targetModelRef: "openai/gpt-5.5", forbiddenModels: forbidden });
-  assert.equal(r.route, "mmx-vision");
+  assert.equal(r.route, "main-model");
   assert.equal((r as { blockedSwitch?: string }).blockedSwitch, "openai/gpt-5.5");
-  // with an image the command is concrete
-  const r2 = routeVisionCheck({ targetModelRef: "anthropic/claude-sonnet-4-5", imagePath: "/tmp/ui.png", question: "What state is the UI in?", forbiddenModels: forbidden });
-  assert.equal(r2.route, "mmx-vision");
-  assert.ok((r2 as { command: string }).command.includes("/tmp/ui.png"));
-  assert.equal((r2 as { blockedSwitch?: string }).blockedSwitch, "anthropic/claude-sonnet-4-5");
 });
 
-test("routeVisionCheck: a preapproved target switch is allowed (not gated)", () => {
-  const r = routeVisionCheck({ targetModelRef: "minimax/minimax-m3" });
-  assert.equal(r.route, "model-switch");
-  assert.equal((r as { ref: string }).ref, "minimax/minimax-m3");
-  assert.equal((r as { blockedSwitch?: string }).blockedSwitch, undefined);
-});
-
-test("routeVisionCheck: no target model → mmx-vision by default", () => {
-  const r = routeVisionCheck({ imagePath: "/tmp/shot.png" });
+test("routeVisionCheck: confirmed MMX is an optional external fallback", () => {
+  const r = routeVisionCheck({
+    imagePath: "/tmp/ui.png",
+    question: "What state is the UI in?",
+    mainModelVisionCapable: false,
+    externalVisionProvider: "mmx",
+    externalVisionAvailable: true,
+  });
   assert.equal(r.route, "mmx-vision");
-  assert.ok((r as { command: string }).command.includes("/tmp/shot.png"));
+  assert.equal((r as { provider: string }).provider, "mmx");
+  assert.ok((r as { command: string }).command.includes("/tmp/ui.png"));
+});
+
+test("routeVisionCheck: native vision is the default and no external tool is assumed", () => {
+  const r = routeVisionCheck({ imagePath: "/tmp/shot.png" });
+  assert.equal(r.route, "main-model");
   const noImage = routeVisionCheck({});
-  assert.equal(noImage.route, "mmx-vision");
+  assert.equal(noImage.route, "main-model");
+});
+
+test("routeVisionCheck: known unavailable native vision fails closed", () => {
+  const r = routeVisionCheck({ mainModelVisionCapable: false, imagePath: "/tmp/shot.png" });
+  assert.equal(r.route, "unavailable");
+  assert.match((r as { reason: string }).reason, /no external vision provider was confirmed/);
+});
+
+test("routeVisionCheck: model switch requires explicit opt-in", () => {
+  const r = routeVisionCheck({ targetModelRef: "minimax/minimax-m3" });
+  assert.equal(r.route, "main-model");
+  const optedIn = routeVisionCheck({ targetModelRef: "minimax/minimax-m3", allowModelSwitch: true });
+  assert.equal(optedIn.route, "model-switch");
+  assert.equal((optedIn as { ref: string }).ref, "minimax/minimax-m3");
 });
 
 // ── (d) the preapproval gate itself ────────────────────────────────────
@@ -156,14 +176,14 @@ test("isForbiddenModel: v0.34.115 default is empty — no model is forbidden by 
   assert.equal(isForbiddenModel("anthropic/claude-opus-4-5", explicit), true);
 });
 
-test("visionAssistLedger builds the audit payload", () => {
+test("visionAssistLedger builds a native-model audit payload", () => {
   const forbidden = ["gpt-5.5", "sonnet", "opus"];
   const r = routeVisionCheck({ targetModelRef: "openai/gpt-5.5", imagePath: "/tmp/ui.png", forbiddenModels: forbidden });
   const v = visionAssistLedger(r, { targetModelRef: "openai/gpt-5.5", imagePath: "/tmp/ui.png", forbiddenModels: forbidden }, "2026-08-07T00:00:00.000Z");
-  assert.equal(v.route, "mmx-vision");
+  assert.equal(v.route, "main-model");
   assert.equal(v.blockedSwitch, "openai/gpt-5.5");
   assert.equal(v.imagePath, "/tmp/ui.png");
-  assert.ok(v.command!.includes("/tmp/ui.png"));
+  assert.equal(v.command, undefined, "native routing does not invent an external command");
   assert.equal(v.at, "2026-08-07T00:00:00.000Z");
 });
 
@@ -178,13 +198,14 @@ async function continuationFixture(extra: Record<string, unknown> = {}) {
   return { cwd, ctx };
 }
 
-test("continuation prompts carry the VISION-ASSIST directive by default", async () => {
+test("continuation prompts carry native-first VISION-ASSIST guidance by default", async () => {
   const { cwd } = await continuationFixture();
   const conts = sentContinuations();
   assert.ok(conts.length >= 1, "a continuation was sent");
   const last = conts.at(-1)!;
   assert.match(last, /VISION-ASSIST/);
-  assert.match(last, /mmx vision describe/);
+  assert.match(last, /native image capability/i);
+  assert.match(last, /do NOT assume MMX/i);
   assert.match(last, /preapproved/);
   void cwd;
 });
@@ -223,7 +244,7 @@ test("a forbidden switch at runtime records the vision_assist routing entry", as
   assert.equal(forbidden[0]!.value.to, "openai/gpt-5.5");
   const va = readLedger(cwd).filter((e) => e.type === "vision_assist");
   assert.equal(va.length, 1, "the routing entry landed");
-  assert.equal(va[0]!.value.route, "mmx-vision");
+  assert.equal(va[0]!.value.route, "main-model");
   assert.equal(va[0]!.value.blockedSwitch, "openai/gpt-5.5");
   assert.equal(va[0]!.value.reason, "forbidden_model_switch");
 });
