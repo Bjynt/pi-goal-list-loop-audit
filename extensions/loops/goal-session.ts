@@ -1469,7 +1469,9 @@ function isWorkerSessionCtx(ctx: ExtensionContext): boolean {
   try {
     return !ctx.hasUI && (ctx.mode === "print" || ctx.mode === "json");
   } catch {
-    return false;
+    // A stale or otherwise unusable context must not be admitted to the host
+    // plane. Every session-bound getter can throw after a replacement/reload.
+    return true;
   }
 }
 
@@ -1496,13 +1498,18 @@ function isHostSuccessorCtx(ctx: ExtensionContext): boolean {
  * plane. Owner liveness remains fail-closed unless this instance has already
  * declared the old handle terminal. */
 function isHostSuccessorContact(ctx: ExtensionContext): boolean {
-  if (isWorkerSessionCtx(ctx)) return false;
-  const recordedOwner = ownerSession ?? deadOwnerSession;
-  if (recordedOwner === null || ctx.sessionManager === recordedOwner) return false;
-  if (!isHostSuccessorCtx(ctx)) return false;
-  const recordedCwd = ownerSession !== null ? ownerCwd : deadOwnerCwd;
-  if (recordedCwd && ctx.cwd !== recordedCwd) return false;
-  return staleTerminalDone || !ownerProbeLive();
+  try {
+    if (isWorkerSessionCtx(ctx)) return false;
+    const recordedOwner = ownerSession ?? deadOwnerSession;
+    if (recordedOwner === null || ctx.sessionManager === recordedOwner) return false;
+    if (!isHostSuccessorCtx(ctx)) return false;
+    const recordedCwd = ownerSession !== null ? ownerCwd : deadOwnerCwd;
+    if (recordedCwd && ctx.cwd !== recordedCwd) return false;
+    return staleTerminalDone || !ownerProbeLive();
+  } catch {
+    // Late events can carry a context invalidated by session replacement.
+    return false;
+  }
 }
 
 /** v0.34.25: same-host successor absorption. pi can replace the host session
@@ -1718,7 +1725,13 @@ function rememberCtx(ctx: ExtensionContext): void {
 
 /** True when ctx belongs to a subagent/foreign session, not the loop owner. */
 function isForeignCtx(ctx: ExtensionContext): boolean {
-  return processOwnerDeniedCwd === ctx.cwd || isWorkerSessionCtx(ctx) || (ownerSession !== null && ctx.sessionManager !== ownerSession);
+  try {
+    if (isWorkerSessionCtx(ctx)) return true;
+    return processOwnerDeniedCwd === ctx.cwd || (ownerSession !== null && ctx.sessionManager !== ownerSession);
+  } catch {
+    // Treat stale/ambiguous contexts as foreign and fail closed.
+    return true;
+  }
 }
 
 /**
