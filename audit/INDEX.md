@@ -14,6 +14,7 @@ the open notes (`note.md` host lifecycle / completion recap /
 long-term preferences).
 
 **Most recent (2026-08-31):**
+- `LIVE-ACTIVITY-AND-RESUME-2026-08-31.md` — generation-scoped activity cleanup, real `/glla resume` host evidence, uniform auditor recovery, and queued-list disposition
 - `UI-REPAINT-AND-AUDITOR-PROMPT-2026-08-31.md` — durable UI repaint bypass and escaped detached-auditor payload boundaries; Codex-informed follow-up
 - `EXPLORE-CHILD-SESSION-TRIAGE-2026-08-29.md` — MMX-corroborated loadable Explore-session triage; fixed GLLA's exact child-transcript correlation while leaving Pi/pi-subagents session-picker ownership unchanged
 - `LIST-STALL-REPRODUCTION-2026-08-29.md` — MockPi reproduction of the screenshot-shaped waiting queue and list-completion cascade; no confirmed GLLA-owned stall
@@ -103,6 +104,10 @@ long-term preferences).
 | v0.34.121 | v0.34.121-OBJECTIVE-LIFECYCLE-FOLLOWUP.md | OBJECTIVE-LIFECYCLE-FOLLOWUP-2026-08-09.md |
 
 ## Topic index (canonical docs, newest first)
+
+**2026-08-31**
+- LIVE-ACTIVITY-AND-RESUME-2026-08-31.md — generation-scoped live activity, `/glla resume` RPC reproduction, auditor recovery, and queue disposition
+- UI-REPAINT-AND-AUDITOR-PROMPT-2026-08-31.md — forced durable repaint and escaped auditor payload boundaries
 
 **2026-08-29**
 - EXPLORE-CHILD-SESSION-TRIAGE-2026-08-29.md — loadable Explore-session evidence, exact GLLA transcript correlation fix, and bounded screenshot attribution
